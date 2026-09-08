@@ -322,9 +322,28 @@ wrong wall, the seal material being the same brick.
 **The pool repeats a variant, and says so.** With two connector variants and two
 filler slots the draw may seat one of them twice, which makes every anchor that
 prefab declares ambiguous — `DW0498`, advisory, in the expected-warnings ledger.
-The gallery hangs nothing on those anchors, which is the branch the diagnostic
-sanctions; the alternative it names is more distinct variants, and that is a
-choice about the pool rather than about the seed.
+The alternative it names is more distinct variants, and that is a choice about
+the pool rather than about the seed.
+
+**And the annex says what it does NOT guarantee.** `area/annex` seats three
+pieces of a four-member pool, and the layout is only ever obliged to seat one of
+them: the `entry` member, at the area origin. Everything else arrives because
+the campaign required an anchor that piece carries, or because the filler draw
+picked it. So the annex guarantees exactly `anchor/annex-threshold` — one of the
+four names its pieces declare between them — and `trigger/stand-in-the-second-bay`
+deliberately hangs on `anchor/annex-second-bay`, which is not one of them.
+`DW0889`, advisory, in the expected-warnings ledger, on every `validate`,
+`analyze` and `build`.
+
+Read the pair together, because they are about the same anchor and say different
+things. `DW0498` needs the settled draw: `gallery-annex-cell-b` is seated twice,
+so the name has two carriers and resolution takes the first. `DW0889` needs no
+draw at all: nothing obliges the layout to seat that connector, so the name might
+not have been in the world to begin with. The trigger is green on both counts —
+the draw does seat it — which is exactly why neither code refuses. What they buy
+is that a creator reading this campaign learns the constraint before spending a
+build, and `delvec prefab anchors --pool pool/gallery-annex` states the same set
+with no campaign at all.
 
 **One camera derivation is unguarded, and this tileset guards itself against it.**
 `DW0724` refuses a **player-POV** camera whose eye cell is occupied — "fix the

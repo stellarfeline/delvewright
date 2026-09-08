@@ -3698,7 +3698,14 @@ fn collect_required_elements(
 /// (NPCs in this area), `reach-anchor` targets and `open-gate` anchors (quests
 /// planned in this area). Sorted + deduped for deterministic solver input. These
 /// are the anchors the solver must guarantee exist in the assembled layout.
-fn required_anchors_for_area(campaign: &Campaign, area_id: &str) -> Vec<String> {
+///
+/// Reachable outside this module because it is the engine's definition of *a
+/// campaign reference the layout must honour*, and two passes now rest on it:
+/// this one, which hands the set to the solver, and
+/// [`crate::compiler::guarantee`], which reports at validation which anchors an
+/// area therefore guarantees. Re-deriving it there would be exactly the second
+/// enumeration this function's own consumers already refuse to write.
+pub(crate) fn required_anchors_for_area(campaign: &Campaign, area_id: &str) -> Vec<String> {
     let mut set: BTreeSet<String> = BTreeSet::new();
     for npc in &campaign.npcs.content.npcs {
         if npc.area.as_str() == area_id {

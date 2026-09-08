@@ -445,9 +445,7 @@ pub fn solve_area(
     })?;
 
     // Entry piece (role `entry`). Exactly one is expected; the first wins.
-    let entry_prefab = members
-        .iter()
-        .find(|m| m.role == "entry")
+    let entry_prefab = entry_member(members)
         .map(|m| m.prefab.clone())
         .ok_or_else(|| {
             SolveError::new(
@@ -460,55 +458,23 @@ pub fn solve_area(
             )
         })?;
 
-    // Anchors the (already-fixed) entry piece provides. Role-aware capping never
-    // re-adds the entry as a required/cap piece: it is placed exactly once, at the
-    // origin, and already resolves its own anchors (e.g. spawn-hall's `spawn` +
-    // `anchor/exit`). Without this, an NPC anchored to `anchor/exit` used to force
-    // a *second* spawn-hall (hollow-vigil's duplicate-spawn bug).
-    let entry_anchors: BTreeSet<String> = registry
-        .get(&entry_prefab)
-        .map(|m| m.anchors.keys().cloned().collect())
-        .unwrap_or_default();
-
-    // Map each required anchor to the pool piece that carries it. Iterate anchors
-    // in sorted order for determinism (plan.rs already passes a sorted set; sorting
-    // a local copy makes direct solver calls deterministic too, and matches the
-    // former byte output). Coverage-reuse: if an already-selected required piece
-    // already carries this anchor, do not add a second piece — this makes
-    // hollow-vigil's `anchor/objective` resolve to the boss-hall that `anchor/boss`
-    // already forces, instead of pulling in a redundant shrine that would also
-    // define `anchor/objective` (→ ambiguity). Entry-role carriers are excluded.
     let mut sorted_anchors: Vec<String> = required_anchors.to_vec();
     sorted_anchors.sort();
     sorted_anchors.dedup();
-    let mut required_prefabs: Vec<String> = Vec::new();
-    for anchor in &sorted_anchors {
-        if entry_anchors.contains(anchor) {
-            continue;
-        }
-        if required_prefabs
-            .iter()
-            .any(|p| piece_defines(registry, p, anchor))
-        {
-            continue;
-        }
-        let prefab = registry
-            .pool_prefabs_with_anchor(pool_id, anchor)
-            .into_iter()
-            .find(|p| !is_entry_role(members, p));
-        let Some(prefab) = prefab else {
-            return Err(SolveError::new(
-                DW_UNSATISFIABLE_ANCHOR,
-                format!(
-                    "prefab pool `{pool_id}` has no non-entry piece providing required anchor \
+    let mut required_prefabs =
+        required_carriers(registry, pool_id, members, &entry_prefab, &sorted_anchors).map_err(
+            |anchor| {
+                SolveError::new(
+                    DW_UNSATISFIABLE_ANCHOR,
+                    format!(
+                        "prefab pool `{pool_id}` has no non-entry piece providing required anchor \
                      `{anchor}` — either the campaign references an anchor the pool cannot supply \
                      (use one a pool piece carries), or the pool is missing a piece that defines \
                      `{anchor}` (add it to the pool metadata)"
-                ),
-            ));
-        };
-        required_prefabs.push(prefab);
-    }
+                    ),
+                )
+            },
+        )?;
 
     // Order required pieces so single-socket dead-ends come last, boss-hall
     // absolutely last (farthest terminal). Through-rooms (≥2 sockets) go first so
@@ -954,6 +920,73 @@ fn is_entry_role(members: &[PoolMember], prefab_id: &str) -> bool {
     members
         .iter()
         .any(|m| m.prefab == prefab_id && m.role == "entry")
+}
+
+/// **The one member every draw of this pool seats**, or `None` when the pool
+/// declares none (which is [`DW_NO_ENTRY`]).
+///
+/// Named rather than open-coded because two readers now need it and they must
+/// not disagree: [`solve_area`] places it at the area origin before growth, and
+/// [`crate::compiler::guarantee`] reports it as the reason an area guarantees
+/// anything at all. First wins, which is the rule the solver has always used.
+pub(crate) fn entry_member(members: &[PoolMember]) -> Option<&PoolMember> {
+    members.iter().find(|m| m.role == "entry")
+}
+
+/// **Which pool member the layout is FORCED to seat for each required anchor**,
+/// in the order the solver will place them — `Err(anchor)` for the first
+/// required anchor no non-entry member can supply ([`DW_UNSATISFIABLE_ANCHOR`]).
+///
+/// This is the whole of the layout's conditional guarantee, and it is computed
+/// from declarations alone: no geometry, no PRNG, no `.nbt`. That is why it can
+/// be asked at validation — [`crate::compiler::guarantee`] calls it to answer
+/// *which anchors does this area guarantee* before a piece is placed — and why
+/// it lives here rather than being re-derived there. A second implementation of
+/// this loop would be a second answer to the question the solver decides.
+///
+/// Two exclusions, both the solver's own and both load-bearing:
+///
+/// * an anchor the **entry** piece already provides forces nothing (the entry is
+///   placed exactly once, at the origin, and already resolves its own anchors —
+///   without this, an NPC on `anchor/exit` forced a *second* spawn hall);
+/// * an anchor an already-forced piece **also** carries forces nothing, so a
+///   boss hall that provides two required anchors is seated once rather than
+///   pulling in a redundant second carrier that would make both ambiguous
+///   (`DW0305`).
+///
+/// `required_anchors` must already be sorted and deduped; the caller does that
+/// so the order the pieces are placed in is a property of the campaign rather
+/// than of the walk that collected them (ADR-0006).
+pub(crate) fn required_carriers(
+    registry: &PrefabRegistry,
+    pool_id: &str,
+    members: &[PoolMember],
+    entry_prefab: &str,
+    required_anchors: &[String],
+) -> Result<Vec<String>, String> {
+    // Anchors the (already-fixed) entry piece provides.
+    let entry_anchors: BTreeSet<String> = registry
+        .get(entry_prefab)
+        .map(|m| m.anchors.keys().cloned().collect())
+        .unwrap_or_default();
+    let mut out: Vec<String> = Vec::new();
+    for anchor in required_anchors {
+        if entry_anchors.contains(anchor) {
+            continue;
+        }
+        if out.iter().any(|p| piece_defines(registry, p, anchor)) {
+            continue;
+        }
+        let prefab = registry
+            .pool_prefabs_with_anchor(pool_id, anchor)
+            .into_iter()
+            .find(|p| !is_entry_role(members, p));
+        let Some(prefab) = prefab else {
+            return Err(anchor.clone());
+        };
+        out.push(prefab);
+    }
+    Ok(out)
 }
 
 /// Whether a prefab is a stair connector: ≥2 sockets whose local `y` differs (a
