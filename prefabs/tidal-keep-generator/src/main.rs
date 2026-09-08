@@ -35,7 +35,7 @@ use std::path::Path;
 /// The cross-tileset invariants and the connection derivation, shared as a
 /// crate so the rule is compiled once and its own tests run with the
 /// generators' (`prefabs/invariants`).
-use prefab_invariants::{connections, invariants, walkplane, waterline};
+use prefab_invariants::{connections, document, invariants, walkplane, waterline};
 
 use flate2::{Compression, GzBuilder};
 
@@ -273,8 +273,11 @@ fn write_piece(out: &Path, spec: &Spec) {
                          (tidal-keep-gen), ADR-0006; regenerating yields byte-identical NBT.",
         },
     };
-    let json = serde_json::to_string_pretty(&meta).expect("json") + "\n";
-    std::fs::write(out.join(format!("{}.json", spec.id)), json).expect("write json");
+    // The generator owns what it measures and nothing else: a key a later step
+    // added — an anchor a campaign binds, an entry role, a shown face, a
+    // lighting verdict measured at admission — survives this write
+    // (`prefab_invariants::document`).
+    document::write_preserving(&out.join(format!("{}.json", spec.id)), &meta);
     println!(
         "wrote {:<22} {:>3}x{:>3}x{:>3}  {:>8} nbt bytes  profile {:<4} min-light {:>2}  \
          {} sockets  {} anchors",

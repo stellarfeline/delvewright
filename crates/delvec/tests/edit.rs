@@ -1021,6 +1021,8 @@ fn quests_with(extra: serde_json::Value) -> serde_json::Value {
 /// trigger cell is `[7, 1, 6]` and dispenser socket `[8, 1, 6]` — exactly the
 /// two cells the fixture's own `batch/hearth-nook` carves.
 fn prefabs_with_trap(name: &str) -> PathBuf {
+    use delvec::admit::structure::{PaletteEntry, Structure};
+
     let dir = tmp(name);
     common::copy_dir_all(&common::prefabs_dir(), &dir);
     let path = dir.join("hello-room.json");
@@ -1029,6 +1031,25 @@ fn prefabs_with_trap(name: &str) -> PathBuf {
     meta["anchors"]["anchor/trap"] =
         serde_json::json!({ "pos": [7, 1, 6], "dispenser": [8, 1, 6] });
     std::fs::write(&path, serde_json::to_string_pretty(&meta).unwrap()).unwrap();
+    // **The dispenser socket is hardware, so the fixture wires one.** A trap's
+    // `dispenser` is a claim about the piece's own bytes and `DW0888` holds it
+    // to them: a declaration over an empty cell is refused at validation, which
+    // would end this run one tier before the finding it is about.
+    let nbt = dir.join("hello-room.nbt");
+    let mut s = Structure::read(&std::fs::read(&nbt).unwrap()).unwrap();
+    s.set_cell(
+        [8, 1, 6],
+        PaletteEntry::simple("minecraft:dispenser"),
+        Some(delvec::schem::nbt::Nbt::Compound(
+            [(
+                "id".to_string(),
+                delvec::schem::nbt::Nbt::String("minecraft:dispenser".to_string()),
+            )]
+            .into_iter()
+            .collect(),
+        )),
+    );
+    std::fs::write(&nbt, s.write()).unwrap();
     dir
 }
 

@@ -2417,8 +2417,26 @@
       "triage": "capability"
     },
     {
+      "applies_when": {
+        "files": [
+          "world.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "prefix": {
+            "id": "area/"
+          }
+        }
+      },
+      "binding": {
+        "glob": "**/*.nbt",
+        "kind": "out"
+      },
       "campaign": "gallery",
-      "carrier": null,
+      "carrier": {
+        "kind": "tool",
+        "script": "check-generator-preservation.py"
+      },
       "finding": "a tileset generator re-emits a whole prefab metadata document, so re-running one over the library deletes every key added after generation — the anchors a campaign binds by name, an entry role, a shown-faces declaration, a lighting verdict measured at admission rather than estimated — and nothing binds the generators, so the deletion is silent and is discovered only by a campaign that no longer resolves an anchor it names",
       "general_form": "a generator may not delete a key it did not write: re-running every document-writing generator over the committed library preserves every key the generator does not own, and that preservation is checked over the whole library rather than argued per generator",
       "id": "lib-01",
@@ -2427,8 +2445,22 @@
       "triage": "capability"
     },
     {
+      "binding": {
+        "files": [
+          "world.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "prefix": {
+            "id": "area/"
+          }
+        }
+      },
       "campaign": "gallery",
-      "carrier": null,
+      "carrier": {
+        "code": "DW0888",
+        "kind": "dw"
+      },
       "finding": "a prefab document's connector declares a local position, an opening and a facing, and nothing holds any of the three to the bytes: a connector pointed at a cell holding solid stone instead of a jigsaw block passes the audit through both its file and its directory arm at exit 0 and is still called seatable by the seating command, so a piece whose sockets have moved under a regeneration ships with a document that names cells the structure does not have",
       "general_form": "a declaration a prefab document makes about its own bytes is borne out by those bytes or refused, for every such key rather than for the one that was noticed: the waterline has that check and the connector's position, opening and facing do not, and the rule is one rule over the class of byte-asserting keys",
       "id": "lib-02",
