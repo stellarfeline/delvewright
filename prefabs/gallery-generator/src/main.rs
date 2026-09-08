@@ -37,7 +37,7 @@ use serde::Serialize;
 /// The cross-tileset invariants and the connection derivation, shared as a
 /// crate so the rule is compiled once and its own tests run with the
 /// generators' (`prefabs/invariants`).
-use prefab_invariants::{connections, invariants, walkplane, waterline};
+use prefab_invariants::{connections, document, invariants, walkplane, waterline};
 
 /// MC 1.21.11 data version (ADR-0009).
 const DATA_VERSION: i32 = 4671;
@@ -1426,10 +1426,9 @@ fn write_piece(out: &Path) {
         .unwrap_or_else(|e| panic!("write {}: {e}", nbt_path.display()));
 
     let meta_path = out.join(format!("{ID}.json"));
-    let mut meta = serde_json::to_string_pretty(&meta).expect("metadata serializes");
-    meta.push('\n');
-    std::fs::write(&meta_path, meta.as_bytes())
-        .unwrap_or_else(|e| panic!("write {}: {e}", meta_path.display()));
+    // Merged onto whatever is already there: a generator deletes nothing it did
+    // not write (`prefab_invariants::document`).
+    document::write_preserving(&meta_path, &meta);
 
     println!(
         "wrote {} ({} blocks, {} palette entries, {} gz bytes) and {}",
@@ -2155,14 +2154,9 @@ fn write_annex(out: &Path) {
         std::fs::write(out.join(format!("{}.nbt", t.id)), &framed)
             .unwrap_or_else(|e| panic!("write {}.nbt: {e}", t.id));
 
-        let mut meta = serde_json::to_string_pretty(&tile_meta).expect("metadata serializes");
-        meta.push('\n');
-        std::fs::write(out.join(format!("{}.json", t.id)), meta.as_bytes())
-            .unwrap_or_else(|e| panic!("write {}.json: {e}", t.id));
+        document::write_preserving(&out.join(format!("{}.json", t.id)), &tile_meta);
     }
-    let mut pool = serde_json::to_string_pretty(&pools()).expect("pool serializes");
-    pool.push('\n');
-    std::fs::write(out.join("pools.json"), pool.as_bytes()).expect("write pools.json");
+    document::write_preserving(&out.join("pools.json"), &pools());
     assert_eq!(
         anchors_proven,
         ANNEX_TILES.len(),
@@ -2253,9 +2247,7 @@ fn write_shard(out: &Path) {
     if let Some(w) = walkplane::walk_y(s.size, &cells) {
         meta["walk_y"] = serde_json::json!(w);
     }
-    let mut t = serde_json::to_string_pretty(&meta).expect("metadata serializes");
-    t.push(chr_nl());
-    std::fs::write(out.join(format!("{SHARD_ID}.json")), t.as_bytes()).expect("write shard json");
+    document::write_preserving(&out.join(format!("{SHARD_ID}.json")), &meta);
     println!("{SHARD_ID}: fragment source written");
 }
 
@@ -2470,9 +2462,7 @@ fn write_yard(out: &Path) {
     std::fs::write(out.join(format!("{YARD_ID}.nbt")), &framed).expect("write yard nbt");
     let mut yard = yard_metadata();
     declare_walk_y(YARD_ID, &s, &mut yard);
-    let mut t = serde_json::to_string_pretty(&yard).expect("metadata serializes");
-    t.push(chr_nl());
-    std::fs::write(out.join(format!("{YARD_ID}.json")), t.as_bytes()).expect("write yard json");
+    document::write_preserving(&out.join(format!("{YARD_ID}.json")), &yard);
     println!(
         "{YARD_ID}: detail piece written — {}x{}x{} to fill the exit box's frame exactly",
         YARD_SIZE[0], YARD_SIZE[1], YARD_SIZE[2]
@@ -2619,18 +2609,12 @@ fn write_quay(out: &Path) {
     gz.write_all(&nbt).expect("gzip write");
     let framed = gz.finish().expect("gzip finish");
     std::fs::write(out.join(format!("{QUAY_ID}.nbt")), &framed).expect("write quay nbt");
-    let mut t = serde_json::to_string_pretty(&meta).expect("metadata serializes");
-    t.push(chr_nl());
-    std::fs::write(out.join(format!("{QUAY_ID}.json")), t.as_bytes()).expect("write quay json");
+    document::write_preserving(&out.join(format!("{QUAY_ID}.json")), &meta);
     println!(
         "{QUAY_ID}: shore piece written — walk plane at local y={}, waterline {}, \
          {} fluid source(s) examined, {} at the piece's own face",
         meta["walk_y"], meta["waterline_y"], fluid.examined, fluid.at_edge
     );
-}
-
-fn chr_nl() -> char {
-    10_u8 as char
 }
 
 fn main() {
