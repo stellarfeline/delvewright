@@ -862,9 +862,11 @@ pub fn campaign_bound_to(dst: &Path, id: &str) -> PathBuf {
 /// declared, and it asks only where the party's own air reaches: a fixture whose
 /// campaign is one sealed room never meets it. A fixture that opens a doorway
 /// onto the void, or stands a shore piece under an open sky, does — and the
-/// shipped library declares no `shown_faces`, because which of a piece's sides
-/// are finished exterior surface is a claim about the ASSET and belongs to the
-/// content repository's own adoption of the field.
+/// shipped library declares `shown_faces` on some of its pieces and not on
+/// others, because which of a piece's sides are finished exterior surface is a
+/// claim about the ASSET and is the content repository's to make. Which pieces
+/// carry it is a fact about a library this repository does not own, so no
+/// fixture may depend on it either way.
 ///
 /// So a fixture about daylight, or teleports, or a boundary drop, gets a library
 /// in which every piece says its sides are its own. It is the same move
@@ -916,11 +918,14 @@ pub fn shown_prefabs_dir(tag: &str) -> PathBuf {
         declare_shown_faces_at(&path);
         // And its own walk plane, measured the same way — off the piece's own
         // bytes, by the engine's own standable rule. `walk_y` is what an ocean
-        // area's origin is derived from (spec-0060 §3.2) and it has no default;
-        // the shipped library declares none, because writing it is the content
-        // repository's own adoption of the field (spec-0060 §8), so a fixture
-        // that seats a library piece on a sea would meet `DW0886` instead of
-        // the check it is about.
+        // area's origin is derived from (spec-0060 §3.2) and it has no default,
+        // so a fixture seating a piece that declares none meets `DW0886`
+        // instead of the check it is about. Whether the library declares one is
+        // the content repository's own business (spec-0060 §8): at the pinned
+        // revision every piece does and this write puts back the number that is
+        // already there, at the previous pin none did and it supplied all of
+        // them. The fixture depends on neither, which is why the measurement is
+        // taken here rather than read.
         declare_walk_y_at(&path);
         patched += 1;
     }
