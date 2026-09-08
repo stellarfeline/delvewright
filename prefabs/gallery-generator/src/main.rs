@@ -631,6 +631,29 @@ impl Palette {
     }
 }
 
+/// `minecraft:tripwire[attached=true]` -> `("minecraft:tripwire", [("attached",
+/// "true")])`.
+///
+/// One spelling of a block state, read where it is declared. The alternative was
+/// a second constant beside [`Anchor::trigger_block`] holding the same block in
+/// a different shape, which is two authorities on one fact.
+fn split_state(declared: &'static str) -> (&'static str, Vec<(&'static str, &'static str)>) {
+    match declared.split_once('[') {
+        None => (declared, Vec::new()),
+        Some((name, rest)) => (
+            name,
+            rest.trim_end_matches(']')
+                .split(',')
+                .filter(|s| !s.is_empty())
+                .map(|term| {
+                    term.split_once('=')
+                        .unwrap_or_else(|| panic!("{ID}: `{declared}` is not a block state"))
+                })
+                .collect(),
+        ),
+    }
+}
+
 fn block_at(
     x: i32,
     y: i32,
@@ -706,6 +729,33 @@ fn build() -> Structure {
             }
         }
     }
+    // **A trap's trigger is HARDWARE the piece wires**, not a sentence the
+    // document tells the compiler. A flag gate physically removes that block
+    // while it is shut and puts it back verbatim when it opens, so a
+    // `trigger_block` over an air cell makes opening the gate create a block the
+    // piece never had — which is what `DW0888` refuses. Every anchor that
+    // declares one gets it here, from the same constant the metadata is written
+    // from, so the two halves cannot say different things.
+    let mut triggers = 0usize;
+    for a in ANCHORS {
+        let Some(declared) = a.trigger_block else {
+            continue;
+        };
+        let (name, props) = split_state(declared);
+        let refs: Vec<(&str, &str)> = props.iter().map(|(k, v)| (*k, *v)).collect();
+        let state = palette.idx(name, (!refs.is_empty()).then_some(&refs[..]));
+        let cell = blocks
+            .iter_mut()
+            .find(|b| b.pos == a.pos)
+            .unwrap_or_else(|| panic!("{ID}: anchor `{}` is outside the piece", a.name));
+        cell.state = state;
+        triggers += 1;
+    }
+    assert!(
+        triggers > 0,
+        "{ID}: no anchor declares a `trigger_block`, so the trap-hardware surface is unbound"
+    );
+    println!("{ID}: wired {triggers} declared trap trigger(s) into the blocks");
     for (i, e) in palette.entries.iter().enumerate() {
         assert!(
             blocks.iter().any(|b| b.state == i as i32),
@@ -745,9 +795,14 @@ fn assert_anchors_are_standable(s: &Structure) {
     };
     for a in ANCHORS {
         let [x, y, z] = a.pos;
+        // Air, or the trap trigger this very anchor declares. A pressure plate
+        // and a tripwire are the two blocks a body stands ON rather than in, and
+        // an anchor that declares one is an anchor whose own cell holds it —
+        // demanding air there would forbid the hardware the document promises.
+        let want = a.trigger_block.map(|b| split_state(b).0);
         assert_eq!(
             at([x, y, z]),
-            "minecraft:air",
+            want.unwrap_or("minecraft:air"),
             "{ID}: anchor `{}` stands in a solid cell",
             a.name
         );

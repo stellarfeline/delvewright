@@ -43,7 +43,12 @@ impl SocketDecl {
 }
 
 /// The vanilla jigsaw `orientation` for a horizontal outward `facing`.
-fn orientation(facing: &str) -> Result<&'static str, String> {
+///
+/// Public because a declaration is judged against the block it claims to
+/// describe: `compiler::claims` asks this the same question the carver answers,
+/// so the socket a tool writes and the socket a check reads cannot come to mean
+/// two different orientations.
+pub fn orientation(facing: &str) -> Result<&'static str, String> {
     Ok(match facing {
         "north" => "north_up",
         "south" => "south_up",
@@ -60,7 +65,11 @@ fn orientation(facing: &str) -> Result<&'static str, String> {
 /// The `w × h` opening cells at a wall socket, given the jigsaw (bottom-centre)
 /// cell, facing axis, and opening size. Width is centred on the jigsaw cell;
 /// height climbs from the jigsaw cell.
-fn opening_cells(local_pos: [i32; 3], facing: &str, opening: [i32; 2]) -> Vec<[i32; 3]> {
+///
+/// Public for the same reason [`orientation`] is: the cells this carves are the
+/// cells a declared `opening` claims are open, and a checker that computed them
+/// its own way would be a second authority on what an opening IS.
+pub fn opening_cells(local_pos: [i32; 3], facing: &str, opening: [i32; 2]) -> Vec<[i32; 3]> {
     let [px, py, pz] = local_pos;
     let (w, h) = (opening[0], opening[1]);
     let half = (w - 1) / 2;
