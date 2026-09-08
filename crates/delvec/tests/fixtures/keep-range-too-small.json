@@ -24,7 +24,9 @@
         "seed": 20260730,
         "target_minutes": 6,
         "theme": "A gatehouse on the moor, and the stone keep it guards.",
-        "title": "The Keep Crawl"
+        "time": "noon",
+        "title": "The Keep Crawl",
+        "weather": "clear"
       },
       "dsl_version": "0.22.0",
       "stage": "world"

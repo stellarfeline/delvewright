@@ -34,6 +34,8 @@ fn world_with(prefab: &str) -> String {
     "premise": "One locked door stands between you and the road home.",
     "seed": 20260729,
     "target_minutes": 5,
+    "time": "noon",
+    "weather": "clear",
     "areas": [
       {{ "id": "area/keep", "name": "The Keep", "prefab": "{prefab}" }}
     ]

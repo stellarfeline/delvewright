@@ -21,6 +21,8 @@ const WORLD_V06: &str = r#"{
     "premise": "One locked door stands between you and the road home.",
     "seed": 20260729,
     "target_minutes": 5,
+    "time": "noon",
+    "weather": "clear",
     "horizon": "ocean",
     "boundary": { "margin": 24, "message": "The tide turns you back." },
     "areas": [
@@ -40,6 +42,8 @@ const WORLD_V06_OCEAN_NO_BOUNDARY: &str = r#"{
     "premise": "One locked door stands between you and the road home.",
     "seed": 20260729,
     "target_minutes": 5,
+    "time": "noon",
+    "weather": "clear",
     "horizon": "ocean",
     "areas": [
       { "id": "area/keep", "name": "The Keep", "prefab": "prefab/hello-room" }
@@ -58,6 +62,8 @@ const WORLD_V06_VOID: &str = r#"{
     "premise": "One locked door stands between you and the road home.",
     "seed": 20260729,
     "target_minutes": 5,
+    "time": "noon",
+    "weather": "clear",
     "horizon": "void",
     "areas": [
       { "id": "area/keep", "name": "The Keep", "prefab": "prefab/hello-room" }

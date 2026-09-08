@@ -23,6 +23,8 @@ fn world_doc(version: &str, mitigation: bool) -> String {
     "premise": "One locked door stands between you and the road home.",
     "seed": 20260729,
     "target_minutes": 5,
+    "time": "noon",
+    "weather": "clear",
     "areas": [
       {{
         "id": "area/keep",

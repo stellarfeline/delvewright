@@ -415,6 +415,8 @@ fn world_doc() -> String {
     "premise": "One locked door stands between you and the road home. The Keeper holds the key, and only conversation will move him.",
     "seed": 20260729,
     "target_minutes": 5,
+    "time": "noon",
+    "weather": "clear",
     "areas": [
       { "id": "area/keep", "name": "The Keep", "prefab": "prefab/hello-room" },
       { "id": "area/tower", "name": "The Tower", "prefab": "prefab/broken-threshold",
@@ -1017,6 +1019,8 @@ fn an_open_way_in_a_world_that_stages_no_way_is_still_dw0547() {
     "premise": "One locked door stands between you and the road home. The Keeper holds the key, and only conversation will move him.",
     "seed": 20260729,
     "target_minutes": 5,
+    "time": "noon",
+    "weather": "clear",
     "areas": [ { "id": "area/keep", "name": "The Keep", "prefab": "prefab/hello-room" } ]
   }
 }"#;

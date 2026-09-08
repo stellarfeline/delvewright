@@ -429,6 +429,7 @@ fn worldless_campaign(volley_anchor: &str) -> Campaign {
     "theme": "A lonely keep at the edge of the moor.",
     "premise": "One locked door stands between you and the road home.",
     "seed": 20260729, "target_minutes": 5,
+    "time": "noon", "weather": "clear",
     "areas": [ { "id": "area/keep", "name": "The Keep", "prefab": "prefab/hello-room" } ]
   }
 }"#

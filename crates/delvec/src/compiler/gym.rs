@@ -635,6 +635,8 @@ pub fn generate(table: &Metrics, campaign_id: &str) -> Gym {
                             names. Walk it once and the standard stops being a seed.",
                 "seed": 20260821,
                 "target_minutes": target_minutes,
+                "time": "noon",
+                "weather": "clear",
                 "theme": "A gym of bays: the ladder, the doorways, the climbs and the fall.",
                 "title": "The Metrics Gym",
             },

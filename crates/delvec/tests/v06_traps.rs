@@ -70,6 +70,8 @@ fn world_v06() -> serde_json::Value {
             "premise": "One locked door stands between you and the road home.",
             "seed": 20260729,
             "target_minutes": 5,
+            "time": "noon",
+            "weather": "clear",
             "areas": [ { "id": "area/keep", "name": "The Keep", "prefab": "prefab/hello-room" } ]
         }
     })

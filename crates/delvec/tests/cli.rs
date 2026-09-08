@@ -1398,6 +1398,8 @@ fn v06_ocean_boundary_builds_byte_identical_and_wires_return() {
     "premise": "One locked door stands between you and the road home.",
     "seed": 20260729,
     "target_minutes": 5,
+    "time": "noon",
+    "weather": "clear",
     "horizon": "ocean",
     "boundary": { "margin": 20 },
     "areas": [

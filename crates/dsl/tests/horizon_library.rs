@@ -31,6 +31,8 @@ fn world(version: &str, horizon: &str) -> String {
     "premise": "One locked door stands between you and the road home. The Keeper holds the key, and only conversation will move him.",
     "seed": 20260729,
     "target_minutes": 5,
+    "time": "noon",
+    "weather": "clear",
     "theme": "A lonely keep at the edge of the moor.",
     "title": "The Keeper's Door"
   }},
