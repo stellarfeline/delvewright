@@ -12,13 +12,13 @@
         "prefab_pool": "pool/stone-keep"
       }
     ],
-    "time": "noon",
-    "weather": "clear",
     "premise": "The skinned Keeper sends you to clear the guard, take the key, unbar the door, and reach the shrine — with narration, props, a live-tuned wave, an NPC that moves and departs, environment triggers, and a cutscene.",
     "seed": 20260731,
     "target_minutes": 8,
     "theme": "A ruined keep exercising every DSL v0.4 verb.",
-    "title": "Showcase of the Keep"
+    "time": "noon",
+    "title": "Showcase of the Keep",
+    "weather": "clear"
   },
   "dsl_version": "0.22.0",
   "stage": "world"

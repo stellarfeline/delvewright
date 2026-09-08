@@ -13,13 +13,13 @@
         "prefab": "prefab/keep-room-small-b"
       }
     ],
-    "time": "noon",
-    "weather": "clear",
     "premise": "The bell is rung in the hall; what it answers for is kept in the vault.",
     "seed": 20260825,
     "target_minutes": 5,
     "theme": "A watch-hall and the vault it guards, a yard apart.",
-    "title": "The Long Yard"
+    "time": "noon",
+    "title": "The Long Yard",
+    "weather": "clear"
   },
   "dsl_version": "0.22.0",
   "stage": "world"

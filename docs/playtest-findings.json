@@ -2397,12 +2397,24 @@
       "triage": "capability"
     },
     {
+      "applies_when": {
+        "glob": "world.json",
+        "kind": "campaign"
+      },
+      "binding": {
+        "file": "design-record.json",
+        "kind": "artifact",
+        "path": "references"
+      },
       "campaign": "the-tidewatch",
-      "carrier": null,
+      "carrier": {
+        "code": "DW0890",
+        "kind": "dw"
+      },
       "finding": "a delve whose approved concept art is entirely night scenes was built, rendered and reviewed under noon daylight, because the world's time of day is an optional declaration written at the first authoring step, before the art the design gate approves exists, and nothing between the gate and the build compares the two; the mismatch was found by eye on the first point-of-view frame, after the build and the render had already been paid for",
       "general_form": "the world state a campaign declares and the art its design gate approved are held to each other before the build spends a render: the declaration is refused, or reported at the step that can still change it, when the approved reference and the declared world disagree about a property both state",
       "id": "drill3-01",
-      "note": "Queued with no carrier on purpose: no check of this shape exists, so the gate reds by default and says so, which is the honest state of the engine. The instance was repaired on the drill's own branch by declaring the time and rebuilding; the general form is unbuilt. The measured cost of finding it by eye instead: the review-tier render is about five minutes of ten cores per frame and the build emitted 36 scenes.",
+      "note": "Closed by spec-0061: DW0890 holds the approved design's rows to the skies the world can reach, at validation, before anything is placed. The binding counts rows in validation/design-record.json, which every build writes even with no record, so a campaign that has approved no design counts zero. applies_when is world.json because every campaign is a member of the class — every campaign owes a design gate — so INAPPLICABLE is unreachable by construction and a zero is UNBOUND, refused. A skipped design gate is not a design choice.",
       "round": "drill-3",
       "triage": "capability"
     },

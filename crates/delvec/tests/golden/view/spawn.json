@@ -1,42 +1,18 @@
 {
-  "sdfVersion": 9,
-  "name": "mini_spawn",
-  "width": 1024,
-  "height": 1024,
-  "yClipMin": 56,
-  "yClipMax": 85,
-  "exposure": 1.0,
-  "postprocess": "GAMMA",
-  "outputMode": "PNG",
-  "renderTime": 0,
-  "spp": 0,
-  "sppTarget": 500,
-  "rayDepth": 5,
-  "pathTrace": true,
-  "dumpFrequency": 500,
-  "saveSnapshots": false,
-  "emittersEnabled": true,
-  "emitterIntensity": 13.0,
-  "sunEnabled": true,
-  "stillWater": false,
-  "world": {
-    "path": "world",
-    "dimension": 0
-  },
   "camera": {
+    "fov": 70.0,
     "name": "camera 1",
+    "orientation": {
+      "pitch": -1.2925035775644007,
+      "roll": 0.0,
+      "yaw": 1.5707963267948966
+    },
     "position": {
       "x": 5.5,
       "y": 68.0,
       "z": -2.5
     },
-    "orientation": {
-      "roll": 0.0,
-      "pitch": -1.2925035775644007,
-      "yaw": 1.5707963267948966
-    },
-    "projectionMode": "PINHOLE",
-    "fov": 70.0
+    "projectionMode": "PINHOLE"
   },
   "chunkList": [
     [
@@ -47,5 +23,29 @@
       1,
       0
     ]
-  ]
+  ],
+  "dumpFrequency": 500,
+  "emitterIntensity": 13.0,
+  "emittersEnabled": true,
+  "exposure": 1.0,
+  "height": 1024,
+  "name": "mini_spawn",
+  "outputMode": "PNG",
+  "pathTrace": true,
+  "postprocess": "GAMMA",
+  "rayDepth": 5,
+  "renderTime": 0,
+  "saveSnapshots": false,
+  "sdfVersion": 9,
+  "spp": 0,
+  "sppTarget": 500,
+  "stillWater": false,
+  "sunEnabled": true,
+  "width": 1024,
+  "world": {
+    "dimension": 0,
+    "path": "world"
+  },
+  "yClipMax": 85,
+  "yClipMin": 56
 }

@@ -1578,3 +1578,81 @@ def test_every_live_ledger_row_anchors_its_absence_in_the_source(gate):
         if not gate._absence_is_declared(r["binding"], r.get("applies_when"))
     ]
     assert build_side_only == [], build_side_only
+
+
+# ---------------------------------------------------------------------------
+# The design gate (spec-0061): a build the owner walks carries an approved
+# design, or is not staged
+# ---------------------------------------------------------------------------
+#
+# `drill3-01`'s row, driven from fixtures in all three directions. The row is
+# the shape the ledger really carries: a `dw` carrier, a count of rows in a
+# derived artifact, and a precondition measured over the campaign SOURCE.
+# `INAPPLICABLE` is unreachable for it by construction — every campaign has a
+# `world.json`, so every campaign is a member of the class — and that is the
+# point rather than an accident: a skipped design gate is not a design choice.
+
+DESIGN_ROW = {
+    "id": "drill3-01-like",
+    "finding": "a night delve was built, rendered and reviewed under noon daylight",
+    "carrier": {"kind": "dw", "code": "DW0890"},
+    "binding": {"kind": "artifact", "file": "design-record.json", "path": "references"},
+    "applies_when": {"kind": "campaign", "glob": "world.json"},
+}
+
+
+def design_subject(gate, tmp_path, *, references, record=True, unparseable=False):
+    """A campaign with a `world.json` and a build whose design ledger says
+    `references`. `record=False` omits the ledger entirely — the *I could not
+    look* state, which is a different fact from a ledger reporting zero."""
+    camp = make_campaign(tmp_path, objectives=[{"type": "interact"}])
+    (camp / "world.json").write_text(json.dumps({"content": {"time": "night"}}))
+    build = make_build(tmp_path)
+    path = build / "validation" / "design-record.json"
+    if unparseable:
+        path.write_text("{ this is not JSON")
+    elif record:
+        path.write_text(
+            json.dumps({"references": references, "image_files": references})
+        )
+    return gate.Subject(camp, build)
+
+
+def test_a_campaign_with_no_approved_design_is_refused_at_staging(gate, tmp_path):
+    """Zero approved reference images on a campaign that exists. The class is
+    present — every campaign owes a design gate — and nothing binds to it, so
+    the gate refuses rather than calling the zero a design choice."""
+    subj = design_subject(gate, tmp_path, references=0)
+    r = gate.adjudicate(DESIGN_ROW, gate.Engine(), subj)
+    assert r["verdict"] == "UNBOUND", r
+    assert r["binding"] == 0
+    assert r["precondition"] == 1, "every campaign is a member of the class"
+
+
+def test_one_approved_reference_image_binds_the_design_gate(gate, tmp_path):
+    subj = design_subject(gate, tmp_path, references=1)
+    r = gate.adjudicate(DESIGN_ROW, gate.Engine(), subj)
+    assert r["verdict"] == "BOUND", r
+    assert r["binding"] == 1
+
+
+def test_a_design_record_the_gate_cannot_parse_is_missing_check(gate, tmp_path):
+    """Format rot, not a design finding: the gate says it could not read the
+    document rather than reporting a zero it never measured."""
+    subj = design_subject(gate, tmp_path, references=0, unparseable=True)
+    r = gate.adjudicate(DESIGN_ROW, gate.Engine(), subj)
+    assert r["verdict"] == "MISSING-CHECK", r
+
+
+def test_a_build_that_wrote_no_design_record_is_missing_check(gate, tmp_path):
+    """The ledger is written by every build, so its absence is the engine
+    failing to look — never a campaign with no approved design."""
+    subj = design_subject(gate, tmp_path, references=0, record=False)
+    r = gate.adjudicate(DESIGN_ROW, gate.Engine(), subj)
+    assert r["verdict"] == "MISSING-CHECK", r
+
+
+def test_the_design_record_is_a_stage_document_the_gate_holds(gate):
+    """Without this the gate has no parsed copy of a document the compiler
+    reads, and a campaign carrying one reds `MISSING-CHECK` as format rot."""
+    assert "design.json" in gate.Subject.STAGE_FILES

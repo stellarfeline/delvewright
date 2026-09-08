@@ -94,7 +94,7 @@ while IFS= read -r row <&3; do
   echo "---- ${project}: build ${campaign} -> validation/${tree}"
   if [ "$generator" != "-" ]; then
     mkdir -p "$repo/${prefabs}"
-    ( cd "$repo" && cargo run --quiet --manifest-path "$generator" -- "$prefabs" --skins "$skins" >/dev/null </dev/null )
+    ( cd "$repo" && cargo run --quiet --manifest-path "$generator" -- "$prefabs" --skins "$skins" --design "$repo/gallery/design" >/dev/null </dev/null )
   fi
   rm -rf "${repo:?}/validation/${tree}"
   if ! ( cd "$repo" && "$delvec" build "$campaign" -o "validation/${tree}" --prefabs "$prefabs" >/dev/null 2>&1 </dev/null ); then

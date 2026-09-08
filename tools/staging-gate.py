@@ -343,6 +343,11 @@ class Subject:
         "layout-graph.json",
         "site-plan.json",
         "detail-plan.json",
+        # The design record (spec-0061). Held here so the gate holds a parsed
+        # copy of every document the compiler reads: without it, a campaign
+        # carrying one reds `MISSING-CHECK` as format rot rather than being
+        # judged on what it says.
+        "design.json",
     )
 
     def __init__(self, campaign: pathlib.Path, build: pathlib.Path) -> None:
