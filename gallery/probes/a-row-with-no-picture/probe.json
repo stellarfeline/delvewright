@@ -1,0 +1,13 @@
+{
+  "code": "DW0890",
+  "patch": [
+    {
+      "doc": "design.json",
+      "op": "replace",
+      "path": "/content/references/0/name",
+      "value": "concept/a-view-nobody-drew"
+    }
+  ],
+  "units": [],
+  "why": "A row is the approval of one file. Pointing row 0 at a stem no file under `design/concept/` answers to leaves an approval of nothing — and leaves the file it used to name unrecorded, which the same code reports from the other side. The refusal lists the files that ARE present, because a name that resolves to nothing is repaired by looking at the directory."
+}

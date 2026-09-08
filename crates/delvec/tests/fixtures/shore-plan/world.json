@@ -1,0 +1,19 @@
+{
+  "campaign_id": "shore-plan",
+  "content": {
+    "areas": [],
+    "boundary": {
+      "margin": 20
+    },
+    "horizon": "ocean",
+    "premise": "Five places on one plane, four documents and no authored geometry. The whole map stands one course over the sea, which is the relationship a horizon with water is for.",
+    "seed": 20260821,
+    "target_minutes": 5,
+    "theme": "A blockout on an ocean: mass, seams and a plane that stands clear of the water.",
+    "time": "noon",
+    "title": "The Standing Shore",
+    "weather": "clear"
+  },
+  "dsl_version": "0.22.0",
+  "stage": "world"
+}

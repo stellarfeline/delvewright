@@ -1,0 +1,848 @@
+//! spec-0016 §1 (souls-mode bonfires) end-to-end tests, driven by the
+//! `souls-bonfire` fixture: the v0.6 checkpoint showcase with its
+//! `set-checkpoint` replaced by a `bonfire` (with `on_rest`) and its critical
+//! wave marked `respawns_on_rest`. A clean build proves the bonfire inherits the
+//! DW0315 (no-stranding) and DW0316 (standable placement) obligations — a
+//! bonfire IS a checkpoint to those proofs.
+
+mod common;
+
+use std::collections::BTreeMap;
+
+use delvec::compiler::commands::CommandTree;
+use delvec::compiler::emit::{self, BuildOutput};
+use delvec::compiler::load::load_campaign_dir;
+use delvec::compiler::plan::Plan;
+use delvec::compiler::registry::{FullEntityRegistry, FullItemRegistry, PrefabRegistry};
+use delvewright_dsl::{parse_campaign, validate_campaign_with};
+
+const NS: &str = "souls-bonfire";
+
+fn fixture_dir() -> std::path::PathBuf {
+    common::compiler_fixtures_dir().join(NS)
+}
+
+/// Build the fixture. A clean build is itself the DW0315/DW0316 proof for the
+/// bonfire (the checkpoint proofs run over `plan.checkpoints`, which a bonfire
+/// joins).
+fn build_fixture() -> BuildOutput {
+    build_campaign(&fixture_campaign())
+}
+
+/// The parsed fixture campaign, for tests that vary one declaration and rebuild.
+fn fixture_campaign() -> delvewright_dsl::Campaign {
+    let loaded = load_campaign_dir(&fixture_dir()).unwrap();
+    parse_campaign(&loaded.raw).expect("souls-bonfire parses")
+}
+
+/// Validate + plan + emit a (possibly modified) fixture campaign.
+fn build_campaign(campaign: &delvewright_dsl::Campaign) -> BuildOutput {
+    let dir = fixture_dir();
+    let loaded = load_campaign_dir(&dir).unwrap();
+    let campaign = campaign.clone();
+    let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
+
+    let items = FullItemRegistry::v1_21_11();
+    let entities = FullEntityRegistry::v1_21_11();
+    let diags = validate_campaign_with(&campaign, &items, &prefabs, &entities);
+    assert!(
+        diags.is_empty(),
+        "souls-bonfire must validate clean: {diags:#?}"
+    );
+
+    let plan = Plan::build(&campaign, &prefabs).expect("plan builds");
+    let mut structures: BTreeMap<String, Vec<u8>> = BTreeMap::new();
+    for area in &plan.areas {
+        for piece in &area.pieces {
+            for t in &piece.templates {
+                let bytes = std::fs::read(common::prefabs_dir().join(&t.structure_file)).unwrap();
+                structures.insert(t.structure_file.clone(), bytes);
+            }
+        }
+    }
+    let mut skins: BTreeMap<String, Vec<u8>> = BTreeMap::new();
+    for npc in &campaign.npcs.content.npcs {
+        if let Some(skin) = &npc.skin {
+            let png = std::fs::read(dir.join("skins").join(format!("{}.png", skin.texture_id)))
+                .expect("skin png present");
+            skins.insert(skin.texture_id.clone(), png);
+        }
+    }
+    let tree = CommandTree::v1_21_11();
+    emit::build(
+        &plan,
+        &loaded.inputs,
+        &structures,
+        &tree,
+        &prefabs,
+        None,
+        &skins,
+    )
+    .expect("every emitted command validates (DW0315/DW0316 hold for the bonfire)")
+}
+
+fn fn_body<'a>(out: &'a BuildOutput, name: &str) -> &'a str {
+    let path = format!("datapack/data/{NS}/function/{name}.mcfunction");
+    std::str::from_utf8(
+        out.get(&path)
+            .unwrap_or_else(|| panic!("missing fn {name}")),
+    )
+    .unwrap()
+}
+
+fn all_functions(out: &BuildOutput) -> String {
+    let mut s = String::new();
+    for (path, bytes) in out {
+        if path.starts_with("datapack/") && path.ends_with(".mcfunction") {
+            s.push_str(std::str::from_utf8(bytes).unwrap());
+            s.push('\n');
+        }
+    }
+    s
+}
+
+/// A `bonfire` does NOT move the respawn point when its beat fires — it only
+/// ARMS the rest affordance. This is the whole difference from `set-checkpoint`
+/// (spec-0016 §1): the checkpoint moves when the party rests.
+#[test]
+fn bonfire_arms_a_rest_affordance_and_does_not_move_the_checkpoint() {
+    let out = build_fixture();
+    let all = all_functions(&out);
+    // The arming line: a guarded interaction summon, never a bare one.
+    assert!(
+        all.contains(
+            "execute unless entity @e[tag=dw_bonfire_0] run summon minecraft:interaction "
+        ),
+        "the bonfire beat summons its rest affordance, guarded on absence"
+    );
+    assert!(
+        all.contains("Tags:[\"dw_fixture\",\"dw_bonfire_0\"]"),
+        "the affordance carries the bonfire's stable content-ordered tag"
+    );
+    // The beat that arms the bonfire must NOT itself carry `spawnpoint @a` — that
+    // is the rest function's job.
+    let arming = fn_body(&out, "complete_o_slay");
+    assert!(
+        !arming.contains("spawnpoint @a"),
+        "arming a bonfire must not move the respawn point: {arming}"
+    );
+}
+
+/// Resting moves the party respawn point and mirrors it into `dw:cp` — the same
+/// shared contract `set-checkpoint` writes (spec-0013's boundary return reads it).
+#[test]
+fn resting_moves_the_party_respawn_point() {
+    let out = build_fixture();
+    let rest = fn_body(&out, "bonfire_rest_0");
+    assert!(
+        rest.lines().any(|l| l.starts_with("spawnpoint @a ")),
+        "rest sets the party spawnpoint: {rest}"
+    );
+    assert!(
+        rest.contains("data modify storage dw:cp pos set value ["),
+        "rest mirrors the cell into dw:cp: {rest}"
+    );
+    assert!(
+        rest.contains("scoreboard players set #cp dw.sys 0"),
+        "rest marks itself the active checkpoint: {rest}"
+    );
+}
+
+/// Right-clicking a bonfire opens a CHOICE, never an immediate rest — the
+/// campfire must be a real interaction. The click is
+/// picked up by the vanilla `player_interacted_with_entity` advancement, which is
+/// what makes `@s` the clicking player and therefore what makes a `dialog show`
+/// possible at all; the advancement revokes itself so a bonfire is re-openable
+/// forever (a rest point is used, never consumed).
+#[test]
+fn right_click_opens_the_choice_and_the_bonfire_stays_reusable() {
+    let out = build_fixture();
+    let adv = std::str::from_utf8(
+        out.get(&format!("datapack/data/{NS}/advancement/bf_0.json"))
+            .expect("one advancement per bonfire"),
+    )
+    .unwrap();
+    assert!(
+        adv.contains("minecraft:player_interacted_with_entity")
+            && adv.contains("dw_bonfire_0")
+            && adv.contains(&format!("{NS}:bonfire_open_0")),
+        "the bonfire's right-click runs its opener as the clicking player: {adv}"
+    );
+    let open = fn_body(&out, "bonfire_open_0");
+    assert!(
+        open.contains(&format!("advancement revoke @s only {NS}:bf_0")),
+        "the opener re-arms itself, so a bonfire may be visited again: {open}"
+    );
+    assert!(
+        open.contains(&format!("dialog show @s {NS}:bonfire_0")),
+        "the click shows the two-option dialog, not a rest: {open}"
+    );
+    // The answer channel is a TRIGGER: a dialog button runs its command as the
+    // player, and `/trigger` is the only command a non-operator player may run.
+    assert!(
+        open.contains("scoreboard players reset @s dw.rest")
+            && open.contains("scoreboard players enable @s dw.rest"),
+        "a stale answer is cleared before the channel is opened: {open}"
+    );
+    assert!(
+        fn_body(&out, "setup").contains("scoreboard objectives add dw.rest trigger"),
+        "dw.rest must be a trigger objective"
+    );
+}
+
+/// EXACTLY two options, in the owner's order: *rest and save*, then *save only*.
+/// The dialog is what the ruling is about, so this pins its whole shape.
+#[test]
+fn the_rest_dialog_offers_exactly_two_options() {
+    let out = build_fixture();
+    let dialog: serde_json::Value = serde_json::from_slice(
+        out.get(&format!("datapack/data/{NS}/dialog/bonfire_0.json"))
+            .expect("one rest dialog per bonfire"),
+    )
+    .unwrap();
+    assert_eq!(dialog["type"], "minecraft:multi_action");
+    // i18n v2 (spec-0029): every player-visible string is emitted as a text
+    // COMPONENT. The fixture authors no `prompt`/`rest_label`/`save_label`, so
+    // these three are the compiler's own CHROME — a `delvewright.ui.bonfire.*`
+    // translate key carrying the canonical English as its fallback, so a Chinese
+    // client reads them in Chinese instead of the English a bare literal froze in.
+    // An AUTHORED label would carry the campaign's own `fx.….rest_label` key.
+    use delvewright_dsl::chrome;
+    assert_eq!(dialog["title"]["translate"], chrome::BONFIRE_TITLE.key);
+    assert_eq!(dialog["title"]["fallback"], "Bonfire");
+    let actions = dialog["actions"].as_array().expect("actions is a list");
+    assert_eq!(actions.len(), 2, "exactly two options: {dialog:#?}");
+    assert_eq!(actions[0]["label"]["translate"], chrome::BONFIRE_REST.key);
+    assert_eq!(actions[0]["label"]["fallback"], "Rest and save");
+    assert_eq!(actions[0]["action"]["command"], "/trigger dw.rest set 2");
+    assert_eq!(actions[1]["label"]["translate"], chrome::BONFIRE_SAVE.key);
+    assert_eq!(actions[1]["label"]["fallback"], "Save only");
+    assert_eq!(actions[1]["action"]["command"], "/trigger dw.rest set 1");
+    // Both labels are captions, not sentences (the fixed-width button rule) —
+    // in EVERY language the compiler ships them in, since any of them can be what
+    // the player actually reads.
+    for a in actions {
+        let key = a["label"]["translate"].as_str().unwrap();
+        for (code, _) in [("en_us", ()), ("zh_cn", ())] {
+            let entries = chrome::lang_entries(code);
+            let label = entries
+                .get(key)
+                .cloned()
+                .unwrap_or_else(|| a["label"]["fallback"].as_str().unwrap().to_string());
+            assert!(
+                label.chars().count() <= 20,
+                "label too wide in `{code}`: `{label}`"
+            );
+        }
+    }
+}
+
+/// The tick turns each answer into the chosen function, per bonfire. `dw.rest_at`
+/// is what keeps a campaign with several bonfires from routing every answer to
+/// the first one.
+#[test]
+fn the_two_answers_dispatch_to_two_different_functions() {
+    let out = build_fixture();
+    let tick = fn_body(&out, "tick");
+    assert!(
+        tick.contains(&format!(
+            "execute as @a[scores={{dw.rest=1,dw.rest_at=0}}] run function {NS}:bonfire_pick_save_0"
+        )),
+        "answer 1 = save only: {tick}"
+    );
+    assert!(
+        tick.contains(&format!(
+            "execute as @a[scores={{dw.rest=2,dw.rest_at=0}}] run function {NS}:bonfire_pick_rest_0"
+        )),
+        "answer 2 = rest and save: {tick}"
+    );
+    // No one-shot sentinel guards either dispatch: a bonfire is rested at many
+    // times over a delve (contrast the one-shot `#trapdis_<id>`).
+    assert!(
+        !tick.contains("unless score #bonfire_0"),
+        "resting must not be one-shot: {tick}"
+    );
+}
+
+/// **Save only sets the checkpoint. Nothing else.**
+/// This is the assertion that keeps the cheap option from quietly growing a
+/// heal, a re-seat or an `on_rest` beat.
+#[test]
+fn save_only_is_the_checkpoint_and_nothing_else() {
+    let out = build_fixture();
+    let save = fn_body(&out, "bonfire_save_0");
+    let rest = fn_body(&out, "bonfire_rest_0");
+    assert_eq!(
+        save.lines().collect::<Vec<_>>(),
+        vec![
+            "spawnpoint @a 44 65 2",
+            "data modify storage dw:cp pos set value [44, 65, 2]",
+            "scoreboard players set #cp dw.sys 0",
+        ],
+        "save-only is exactly the three checkpoint lines: {save}"
+    );
+    // Everything a rest adds on top is genuinely absent from save-only.
+    for extra in [
+        "wave_reseat_guards",
+        "You rest at the shrine fire.",
+        "bonfire_restore",
+    ] {
+        assert!(!save.contains(extra), "save-only must not {extra}: {save}");
+    }
+    assert!(
+        rest.contains("wave_reseat_guards") && rest.contains("You rest at the shrine fire."),
+        "…while the rest path still does all of it: {rest}"
+    );
+    let pick = fn_body(&out, "bonfire_pick_save_0");
+    assert!(
+        pick.contains("scoreboard players reset @s dw.rest")
+            && pick.contains(&format!("function {NS}:bonfire_save_0")),
+        "the save-only pick consumes the answer and saves: {pick}"
+    );
+}
+
+/// **Rest = full restore + the party-wide save.** Healing and feeding are
+/// `instant_health`/`saturation` because vanilla exposes no `/health` or `/food`
+/// command and `/data merge entity` refuses players — those two effects ARE the
+/// primitive. Curing is enumerated rather than `effect clear @s`, which would
+/// also strip the per-area night-vision mitigation clock and any beneficial
+/// effect the story granted.
+#[test]
+fn rest_restores_the_player_then_saves_the_party() {
+    let out = build_fixture();
+    let pick = fn_body(&out, "bonfire_pick_rest_0");
+    assert_eq!(
+        pick.lines().collect::<Vec<_>>(),
+        vec![
+            "scoreboard players reset @s dw.rest",
+            &format!("function {NS}:bonfire_restore"),
+            &format!("function {NS}:bonfire_rest_0"),
+        ],
+        "restore the resting player, then run the party-wide rest: {pick}"
+    );
+    let restore = fn_body(&out, "bonfire_restore");
+    assert!(
+        restore.starts_with(
+            "effect give @s minecraft:instant_health 1 9 true\n\
+             effect give @s minecraft:saturation 1 9 true\n"
+        ),
+        "health and hunger first: {restore}"
+    );
+    for harmful in [
+        "minecraft:poison",
+        "minecraft:wither",
+        "minecraft:blindness",
+    ] {
+        assert!(
+            restore.contains(&format!("effect clear @s {harmful}")),
+            "a rest cures {harmful}: {restore}"
+        );
+    }
+    assert!(
+        !restore.contains("effect clear @s\n") && !restore.contains("minecraft:night_vision"),
+        "a rest must never blanket-clear effects (it would strip the area \
+         night-vision mitigation): {restore}"
+    );
+    assert!(
+        restore
+            .trim_end()
+            .ends_with(&format!("function {NS}:bonfire_flask")),
+        "and it refills the flask last: {restore}"
+    );
+}
+
+/// The flask: resting replenishes the resting player's OWN class kit entry to its
+/// declared count. `clear` + `give` rather than `item replace`, because a kit item
+/// has no fixed slot — and the class is read off the `dw_class_<class>` tag the
+/// class apply adds, which is emitted only for a campaign that declares a flask.
+#[test]
+fn resting_replenishes_the_flask_to_its_declared_count() {
+    let out = build_fixture();
+    let flask = fn_body(&out, "bonfire_flask");
+    assert_eq!(
+        flask.lines().collect::<Vec<_>>(),
+        vec![
+            "execute if entity @s[tag=dw_class_warden] run clear @s \
+             minecraft:potion[potion_contents={custom_effects:[{id:\"minecraft:instant_health\",\
+             amplifier:1}],custom_color:16751664}]",
+            "execute if entity @s[tag=dw_class_warden] run give @s \
+             minecraft:potion[custom_name={\"italic\":false,\"text\":\"Ashen Flask\"},\
+             potion_contents={custom_effects:[{id:\"minecraft:instant_health\",amplifier:1}],\
+             custom_color:16751664}] 3",
+        ],
+        "the flask is cleared and re-given at the declared count: {flask}"
+    );
+    assert!(
+        fn_body(&out, "class_apply_warden").contains("tag @s add dw_class_warden"),
+        "taking the class records which flask is yours"
+    );
+    // Death is a rest's twin (spec-0016 §1): vanilla already returns the dead
+    // player at full health, but not with a full flask, so the respawn path
+    // refills it too — otherwise retry costs a second walk to the same fire.
+    assert!(
+        fn_body(&out, "cp_on_respawn_0").contains(&format!("function {NS}:bonfire_flask")),
+        "a respawn at a bonfire refills the flask"
+    );
+}
+
+/// One authored `on_rest` bundle, two audiences (spec-0018). Resting is a PARTY
+/// event dispatched from the tick, so its player-facing effects address `@a` —
+/// the party rests together. A respawn belongs to the ONE player who died, so the
+/// same bundle addresses `@s` there. Party state (`set-flag`) names no player on
+/// either path and fires exactly once.
+#[test]
+fn on_rest_runs_at_the_right_audience_on_both_paths() {
+    let out = build_fixture();
+    let rest = fn_body(&out, "bonfire_rest_0");
+    let respawn = fn_body(&out, "cp_on_respawn_0");
+    assert!(
+        rest.contains("tellraw @a {\"text\":\"You rest at the shrine fire.\"}"),
+        "the whole party sees the rest: {rest}"
+    );
+    assert!(
+        respawn.contains("tellraw @s {\"text\":\"You rest at the shrine fire.\"}"),
+        "only the player who died sees it on the respawn path: {respawn}"
+    );
+    for (label, body) in [("rest", rest), ("respawn", respawn)] {
+        assert!(
+            body.contains("scoreboard players set #party dw.f_rested 1"),
+            "the on_rest set-flag is party state on the {label} path: {body}"
+        );
+    }
+}
+
+/// A `respawns_on_rest` wave is re-seated on every rest and on every respawn at a
+/// bonfire — but only once the party has actually met it (the seated sentinel).
+#[test]
+fn respawns_on_rest_wave_is_reseated_by_rest_and_respawn() {
+    let out = build_fixture();
+    let spawn = fn_body(&out, "spawn_guards");
+    assert!(
+        spawn.contains("scoreboard players set #wseat_guards dw.sys 1"),
+        "spawning the wave marks it seated: {spawn}"
+    );
+    let reseat = fn_body(&out, "wave_reseat_guards");
+    assert_eq!(
+        reseat.lines().collect::<Vec<_>>(),
+        vec![
+            "kill @e[tag=dw_wave_guards]",
+            &format!("function {NS}:spawn_guards")
+        ],
+        "the re-seat clears survivors then re-runs the authored spawn"
+    );
+    let guard = format!(
+        "execute if score #wseat_guards dw.sys matches 1 run function {NS}:wave_reseat_guards"
+    );
+    assert!(
+        fn_body(&out, "bonfire_rest_0").contains(&guard),
+        "a rest re-seats the wave"
+    );
+    assert!(
+        fn_body(&out, "cp_on_respawn_0").contains(&guard),
+        "a respawn at the bonfire re-seats it too"
+    );
+    // An unmarked wave is never re-seated.
+    assert!(
+        !all_functions(&out).contains("wave_reseat_ambush"),
+        "only a `respawns_on_rest` wave gets a re-seat function"
+    );
+}
+
+/// The proven path RESTS (bell round-3 finding, 2026-08-03). A bonfire arms an
+/// affordance and moves nothing until the party rests — souls-correct, and also
+/// invisible to a ladder that walked past every fire without touching one, so
+/// die-retry respawned at world spawn instead of at the bonfire it had just
+/// passed. Resting is the intended loop, so the exported path performs it, right
+/// after the beat that arms the fire.
+#[test]
+fn the_exported_critical_path_rests_at_each_bonfire() {
+    let out = build_fixture();
+    let path: serde_json::Value =
+        serde_json::from_slice(out.get("critical-path.json").expect("path emitted")).unwrap();
+    let steps = path["steps"].as_array().unwrap();
+    let (i, rest) = steps
+        .iter()
+        .enumerate()
+        .find(|(_, s)| s["action"] == "rest")
+        .expect("the path rests at the bonfire");
+    assert_eq!(rest["bonfire"], 0);
+    assert_eq!(rest["anchor"], "anchor/objective");
+    assert_eq!(rest["pos"], serde_json::json!([44, 65, 2]));
+    // The "rest and save" answer, verbatim — the same chat line the dialog button
+    // runs. (The right-click that ENABLES the trigger is the harness's job.)
+    assert_eq!(rest["command"], "/trigger dw.rest set 2");
+    // Spliced after the arming beat, never before it: the fixture arms the
+    // bonfire on `obj/slay`, so the rest follows that kill step.
+    assert_eq!(
+        steps[i - 1]["objective"],
+        "obj/slay",
+        "the rest follows the beat that arms the bonfire: {steps:#?}"
+    );
+    // A path export change only — no OTHER step moved, so every `fire_step` index
+    // and every nav proof still sees what it always saw.
+    assert_eq!(
+        steps.iter().filter(|s| s["action"] == "rest").count(),
+        1,
+        "one rest per bonfire"
+    );
+}
+
+/// The generated PackTest suite covers both runtime behaviours the bonfire adds:
+/// a rest moves the party checkpoint, and a rest re-seats a met wave (and only a
+/// met one). Batch-model compliant: each template clears its own entity/score
+/// residue at entry and exit.
+#[test]
+fn bonfire_runtime_behaviour_is_packtested() {
+    let out = build_fixture();
+    let rest = std::str::from_utf8(
+        out.get(&format!(
+            "packtest-datapack/data/{NS}/test/souls_bonfire_rest.mcfunction"
+        ))
+        .expect("bonfire rest PackTest emitted"),
+    )
+    .unwrap();
+    assert!(
+        rest.contains(&format!("function {NS}:bonfire_rest_0")),
+        "the template drives the REAL rest function: {rest}"
+    );
+    assert!(
+        rest.contains("data modify storage dw:cp pos set value [0, 0, 0]")
+            && rest.matches("assert score").count() == 3,
+        "the mirror is scrubbed then asserted on all three axes: {rest}"
+    );
+
+    let reseat = std::str::from_utf8(
+        out.get(&format!(
+            "packtest-datapack/data/{NS}/test/souls_bonfire_reseat.mcfunction"
+        ))
+        .expect("bonfire re-seat PackTest emitted"),
+    )
+    .unwrap();
+    assert!(
+        reseat.contains("assert score #bu_bfs dw.sys matches 0"),
+        "an unmet wave is not conjured by a rest: {reseat}"
+    );
+    assert!(
+        reseat.contains("assert score #br_bfs dw.sys matches 2"),
+        "a met, wiped wave stands again at its authored count after a rest: {reseat}"
+    );
+    // No chip-through: a SURVIVOR the party chipped must be
+    // removed and replaced, not left standing at whatever health it had. Proven by
+    // identity, not arithmetic — the brand cannot survive a re-summon.
+    assert!(
+        reseat.contains("data modify entity @e[tag=dw_wave_guards,limit=1] Health set value 1.0f")
+            && reseat.contains("tag @e[tag=dw_wave_guards,limit=1] add dw_bfchip"),
+        "the template chips and brands one survivor: {reseat}"
+    );
+    assert!(
+        reseat.contains("assert score #bp_bfs dw.sys matches 1")
+            && reseat.contains("assert score #bc_bfs dw.sys matches 0")
+            && reseat.contains("assert score #bf_bfs dw.sys matches 2"),
+        "the branded survivor is gone after a rest and the wave stands full: {reseat}"
+    );
+    assert!(
+        reseat
+            .trim_end()
+            .ends_with("scoreboard players set #wseat_guards dw.sys 0"),
+        "the template leaves no residue for the shared batch: {reseat}"
+    );
+}
+
+/// **Stationed re-seat**. A beaten `respawns_on_rest`
+/// wave does come back — but it comes back where it was FIRST seated, in the
+/// state it was first seated in, never in the state the party last left it in.
+///
+/// The engine satisfies this by construction: the re-seat re-enters through the
+/// wave's own `spawn_<wave>`, so "the spawn state" and "the stationed state" are
+/// the same bytes. This test pins that identity, because it is the whole reason
+/// the ruling needs no separate re-stationing pass — if a future change ever
+/// gives `wave_reseat_<wave>` a body of its own, the two can drift apart and a
+/// re-seated squad could keep the previous life's routing.
+#[test]
+fn the_reseat_re_enters_through_the_wave_s_own_spawn() {
+    let out = build_fixture();
+    let reseat = fn_body(&out, "wave_reseat_guards");
+    assert_eq!(
+        reseat.lines().count(),
+        2,
+        "the re-seat is exactly `kill` + the authored spawn — any third line is state the \
+         first summon never wrote: {reseat}"
+    );
+    assert!(
+        reseat.trim_end().ends_with(&format!("{NS}:spawn_guards")),
+        "the stationed state IS the spawn state: {reseat}"
+    );
+    // A non-lane wave is stationed by having no routing at all: vanilla-local AI
+    // only, so no patrol NBT may appear on it on any path.
+    let spawn = fn_body(&out, "spawn_guards");
+    assert!(
+        !spawn.contains("Patrolling") && !spawn.contains("patrol_target"),
+        "a non-lane wave stands at its anchor under native AI, never routed: {spawn}"
+    );
+}
+
+/// …and the claim is checked on a live server, from the worst state the wave can
+/// be in: hauled onto the party, off its footing, every mob branded.
+#[test]
+fn the_stationed_reseat_is_packtested() {
+    let out = build_fixture();
+    let t = std::str::from_utf8(
+        out.get(&format!(
+            "packtest-datapack/data/{NS}/test/souls_reseat_stationed.mcfunction"
+        ))
+        .expect("the stationed re-seat PackTest is emitted"),
+    )
+    .unwrap();
+    assert!(
+        t.contains("run tp @e[tag=dw_wave_guards] ~ ~ ~"),
+        "the wave is dragged onto the party BEFORE the re-seat, or the proximity claim is \
+         vacuous: {t}"
+    );
+    assert!(
+        t.contains(&format!("function {NS}:bonfire_rest_0")),
+        "the re-seat is driven through the REAL rest function: {t}"
+    );
+    assert!(
+        t.contains("assert score #n_rsst dw.sys matches 2"),
+        "the authored count is standing again: {t}"
+    );
+    assert!(
+        t.contains("execute store result score #b_rsst dw.sys if entity @e[tag=dw_brand_guards]")
+            && t.contains("assert score #b_rsst dw.sys matches 0"),
+        "not one mob of the previous life survives the re-seat — identity, not arithmetic: {t}"
+    );
+    assert!(
+        t.contains("distance=..1") && t.contains("assert score #d_rsst dw.sys matches 2"),
+        "every mob is back on the wave's own seating footing, not where it was chasing from: {t}"
+    );
+    assert!(
+        t.contains("assert score #p_rsst dw.sys matches 0"),
+        "a non-lane wave carries no patrol NBT after a re-seat either: {t}"
+    );
+    assert!(
+        t.trim_end()
+            .ends_with("tag @a[tag=dw_rsst,limit=1] remove dw_rsst"),
+        "the template leaves no residue for the shared batch: {t}"
+    );
+}
+
+/// The two options must *differ at runtime*, so a live server has to see the
+/// difference. Health cannot carry it — PackTest fake
+/// players are immune to `/damage`, so a dummy can never be hurt and therefore
+/// never be seen to be healed — but the flask can: `clear <player> <item> 0`
+/// counts without removing.
+#[test]
+fn the_two_options_are_packtested_apart() {
+    let out = build_fixture();
+    let t = std::str::from_utf8(
+        out.get(&format!(
+            "packtest-datapack/data/{NS}/test/souls_bonfire_options.mcfunction"
+        ))
+        .expect("the option PackTest is emitted"),
+    )
+    .unwrap();
+    assert!(
+        t.contains(&format!("run function {NS}:bonfire_pick_save_0"))
+            && t.contains(&format!("run function {NS}:bonfire_pick_rest_0")),
+        "the template drives BOTH real option functions: {t}"
+    );
+    // Save-only leaves the single baseline flask alone …
+    assert!(
+        t.contains("assert score #bo_save dw.sys matches 1"),
+        "save-only must not refill the flask: {t}"
+    );
+    // … and still moves the checkpoint …
+    assert!(
+        t.contains("assert score #bo_cp dw.sys matches 44"),
+        "save-only still saves: {t}"
+    );
+    // … while the rest brings it back to the declared count.
+    assert!(
+        t.contains("assert score #bo_rest dw.sys matches 3"),
+        "a rest replenishes the flask to its declared count: {t}"
+    );
+    assert!(
+        t.trim_end().ends_with("remove dw_class_warden"),
+        "the template leaves no residue for the shared batch: {t}"
+    );
+}
+
+/// The contents round-trip, on a live server: a rest
+/// must refill the flask with the **same** bottle, not with a lookalike.
+///
+/// The template counts through the flask's own item predicate, so every count in
+/// it is of potions whose `potion_contents` match exactly; the added bare-id
+/// count closes the other half. A replenish that handed over a differently-filled
+/// bottle (say the contents-less placeholder) would leave the exact-match count
+/// at the baseline 1 while the bare-id count reached 4 — each assertion catches
+/// one of the two ways that can go wrong.
+#[test]
+fn the_packtested_refill_is_the_same_bottle() {
+    let out = build_fixture();
+    let t = std::str::from_utf8(
+        out.get(&format!(
+            "packtest-datapack/data/{NS}/test/souls_bonfire_options.mcfunction"
+        ))
+        .unwrap(),
+    )
+    .unwrap();
+    let pred = "minecraft:potion[potion_contents={custom_effects:[{id:\"minecraft:instant_health\"\
+                ,amplifier:1}],custom_color:16751664}]";
+    assert!(
+        t.contains(&format!("run clear @a[tag=dw_bfopt,limit=1] {pred} 0")),
+        "the flask is counted through its exact components: {t}"
+    );
+    assert!(
+        t.contains("give @a[tag=dw_bfopt,limit=1] minecraft:potion[custom_name="),
+        "and the baseline bottle is filled exactly as the class kit fills it: {t}"
+    );
+    assert!(
+        t.contains("assert score #bo_any dw.sys matches 3"),
+        "no extra bottle of any other filling may be in the bag after a rest: {t}"
+    );
+}
+
+/// The two give sites — the class kit and the bonfire replenish — must emit the
+/// **identical** item, because the replenish clears by the components it gives.
+/// A drift between them does not fail loudly: the `clear` misses the bottle the
+/// player carries, the `give` adds another, and the per-rest budget quietly
+/// becomes a stockpile. One helper feeds both; this is the regression that keeps
+/// it that way.
+#[test]
+fn the_kit_give_and_the_refill_give_are_the_same_item() {
+    let out = build_fixture();
+    let kit = fn_body(&out, "class_apply_warden");
+    let flask = fn_body(&out, "bonfire_flask");
+    let stack = kit
+        .lines()
+        .find(|l| l.contains("minecraft:potion"))
+        .expect("the class kit hands out the flask")
+        .trim_start_matches("give @s ")
+        .to_string();
+    assert!(
+        flask.contains(&format!("give @s {stack}")),
+        "the refill gives the identical stack the kit does:\nkit:   {stack}\nflask: {flask}"
+    );
+    // And the clear names that same filling, so it takes the carried bottle
+    // rather than every potion in the bag.
+    let filling = stack
+        .split_once("potion_contents=")
+        .expect("the flask carries contents")
+        .1
+        .trim_end_matches(" 3")
+        .trim_end_matches(']');
+    assert!(
+        flask.contains(&format!(
+            "clear @s minecraft:potion[potion_contents={filling}]"
+        )),
+        "the clear matches the same filling it gives back: {flask}"
+    );
+}
+
+/// A **named vanilla potion** is the other half of the surface: `"potion":
+/// "minecraft:strong_healing"` compiles to the real Potion of Healing II, with no
+/// custom effect list at all.
+#[test]
+fn a_named_potion_compiles_to_the_vanilla_brew() {
+    let mut c = fixture_campaign();
+    let kit = &mut c.classes.content.classes[0].kit;
+    let f = kit.iter_mut().find(|k| k.flask).unwrap();
+    f.contents = Some(delvewright_dsl::PotionContents {
+        potion: Some("minecraft:strong_healing".to_string()),
+        effects: vec![],
+        color: None,
+    });
+    let out = build_campaign(&c);
+    assert!(
+        fn_body(&out, "bonfire_flask")
+            .contains("potion_contents={potion:\"minecraft:strong_healing\"}"),
+        "the named potion is emitted verbatim as the component's `potion` field"
+    );
+}
+
+// --- spec-0021 coexistence with the affordance hardware pass ---
+
+/// An **equipped actor** and the compiler-owned affordance hardware must
+/// coexist: the bonfire is permanent hardware (`retired_by: None`), so `DW0421`
+/// treats ANY `kill` reaching its `dw_hw_*` tag in the shipped datapack as an
+/// erasure. spec-0021 emission must therefore stay clear of it — actor gear is
+/// summon NBT, container fills are `item replace block`, and the only `kill`
+/// spec-0021 emits at all lives in `packtest-datapack/`, which the proof
+/// deliberately does not judge (ADR-0003).
+///
+/// This builds the bonfire fixture with an equipped actor spliced in, so both
+/// passes run over one datapack. A clean build IS the coexistence proof:
+/// `affordance::check` runs on the finished tree and would fail the build.
+#[test]
+fn an_equipped_actor_coexists_with_affordance_hardware() {
+    let dir = fixture_dir();
+    let mut loaded = load_campaign_dir(&dir).unwrap();
+
+    // Splice an equipped actor into the fixture's stage-5 doc, in memory.
+    let mut q: serde_json::Value = serde_json::from_str(&loaded.raw.quests).unwrap();
+    q["content"]["actors"] = serde_json::json!([{
+        "id": "actor/elite",
+        "entity": "minecraft:wither_skeleton",
+        // NOT the bonfire's own anchor: a body standing on an affordance
+        // eclipses it (`DW0359`), which is a separate, correct proof.
+        "anchor": "anchor/wave",
+        "equipment": {
+            "head": { "item": "minecraft:netherite_helmet",
+                      "enchantments": { "minecraft:protection": 4 } },
+            "main_hand": { "item": "minecraft:netherite_sword",
+                           "enchantments": { "minecraft:sharpness": 5 } }
+        }
+    }]);
+    loaded.raw.quests = serde_json::to_string(&q).unwrap();
+
+    let campaign = parse_campaign(&loaded.raw).expect("parses with an equipped actor");
+    let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
+    let items = FullItemRegistry::v1_21_11();
+    let entities = FullEntityRegistry::v1_21_11();
+    let diags = validate_campaign_with(&campaign, &items, &prefabs, &entities);
+    assert!(diags.is_empty(), "must validate clean: {diags:#?}");
+
+    let plan = Plan::build(&campaign, &prefabs).expect("plan builds");
+    let mut structures: BTreeMap<String, Vec<u8>> = BTreeMap::new();
+    for area in &plan.areas {
+        for piece in &area.pieces {
+            for t in &piece.templates {
+                let bytes = std::fs::read(common::prefabs_dir().join(&t.structure_file)).unwrap();
+                structures.insert(t.structure_file.clone(), bytes);
+            }
+        }
+    }
+    let mut skins: BTreeMap<String, Vec<u8>> = BTreeMap::new();
+    for npc in &campaign.npcs.content.npcs {
+        if let Some(skin) = &npc.skin {
+            let png = std::fs::read(dir.join("skins").join(format!("{}.png", skin.texture_id)))
+                .expect("skin png present");
+            skins.insert(skin.texture_id.clone(), png);
+        }
+    }
+    let tree = CommandTree::v1_21_11();
+    // DW0420/DW0421 run inside `emit::build` over the finished tree.
+    let out = emit::build(
+        &plan,
+        &loaded.inputs,
+        &structures,
+        &tree,
+        &prefabs,
+        None,
+        &skins,
+    )
+    .expect("affordance proofs hold with spec-0021 emission present");
+
+    // The gear really is there (so the build proved something, not nothing)…
+    let spawn = fn_body(&out, "spawn_actor_elite");
+    assert!(
+        spawn.contains("minecraft:netherite_sword"),
+        "the equipped actor must actually be emitted:\n{spawn}"
+    );
+    // …and the bonfire's visible hardware survives in the shipped datapack.
+    let all = all_functions(&out);
+    assert!(
+        all.contains("dw_hw_dw_bonfire_"),
+        "the bonfire's compiler-owned hardware must still be summoned"
+    );
+}

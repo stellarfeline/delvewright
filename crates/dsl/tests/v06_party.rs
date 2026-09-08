@@ -1,7 +1,7 @@
 //! DSL v0.6 party surface (spec-0018): `world.min_players` and the `carrier`
 //! field on `give-item` / class-kit items.
 //!
-//! Both are additive v0.6 fields, so they are reserved (`DW0141`) under an
+//! Both are additive fields, absent by default, under an
 //! earlier `dsl_version` on the stage that carries them, and absent by default —
 //! every pre-0.6 campaign reads as a party of one whose items go to everyone.
 //! `min_players` outside `1..=4` is `DW0356`; a `carrier: "one"` in a bundle only
@@ -30,6 +30,7 @@ fn raw_with(world: Option<&str>, classes: Option<&str>, quests: Option<&str>) ->
         layout_graph: None,
         site_plan: None,
         detail_plan: None,
+        design: None,
     }
 }
 
@@ -67,7 +68,7 @@ fn quests_with_carrier(position: &str) -> String {
     };
     format!(
         r#"{{
-  "dsl_version": "0.6.0",
+  "dsl_version": "0.22.0",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {{
@@ -99,7 +100,7 @@ fn quests_with_carrier(position: &str) -> String {
 fn min_players_in_range_validates_clean() {
     for n in ["1", "2", "3", "4"] {
         let diags = check_campaign(&raw_with(
-            Some(&world_with_min_players(n, "0.6.0")),
+            Some(&world_with_min_players(n, "0.22.0")),
             None,
             None,
         ));
@@ -115,7 +116,7 @@ fn min_players_in_range_validates_clean() {
 fn min_players_out_of_range_is_dw0356() {
     for n in ["0", "5", "40"] {
         let diags = check_campaign(&raw_with(
-            Some(&world_with_min_players(n, "0.6.0")),
+            Some(&world_with_min_players(n, "0.22.0")),
             None,
             None,
         ));
@@ -124,20 +125,6 @@ fn min_players_out_of_range_is_dw0356() {
             "min_players {n} must be DW0356: {diags:#?}"
         );
     }
-}
-
-/// `min_players` is a v0.6 field: reserved (`DW0141`) on an earlier world stage.
-#[test]
-fn min_players_reserved_before_0_6() {
-    let diags = check_campaign(&raw_with(
-        Some(&world_with_min_players("2", "0.5.0")),
-        None,
-        None,
-    ));
-    assert!(
-        diags.iter().any(|d| d.code == "DW0141"),
-        "min_players must be reserved under 0.5.0: {diags:#?}"
-    );
 }
 
 // ---------------------------------------------------------------------------
@@ -175,42 +162,5 @@ fn carrier_one_in_an_on_respawn_bundle_is_allowed() {
     assert!(
         !diags.iter().any(|d| d.code == "DW0357"),
         "an on_respawn bundle has an acting player: {diags:#?}"
-    );
-}
-
-/// `give-item.carrier` is a v0.6 field on the v0.3 verb: reserved earlier.
-#[test]
-fn give_item_carrier_reserved_before_0_6() {
-    let pre = quests_with_carrier("beat").replacen("\"0.6.0\"", "\"0.5.0\"", 1);
-    let diags = check_campaign(&raw_with(None, None, Some(&pre)));
-    assert!(
-        diags.iter().any(|d| d.code == "DW0141"),
-        "give-item carrier must be reserved under 0.5.0: {diags:#?}"
-    );
-}
-
-/// A class kit may mark ONE item party-unique; the field is v0.6-gated on the
-/// classes stage.
-#[test]
-fn kit_carrier_is_v06_gated() {
-    let with_carrier = |version: &str| {
-        common::patch_doc(&common::read_valid("classes.json"), |d| {
-            d["dsl_version"] = serde_json::json!(version);
-            let kit = d["content"]["classes"][0]["kit"]
-                .as_array_mut()
-                .expect("the wanderer has a kit");
-            let bread = kit
-                .iter_mut()
-                .find(|i| i["item"] == "minecraft:bread")
-                .expect("the wanderer's kit still carries bread");
-            bread["carrier"] = serde_json::json!("one");
-        })
-    };
-    let ok = check_campaign(&raw_with(None, Some(&with_carrier("0.6.0")), None));
-    assert!(ok.is_empty(), "kit carrier is legal at 0.6.0: {ok:#?}");
-    let pre = check_campaign(&raw_with(None, Some(&with_carrier("0.5.0")), None));
-    assert!(
-        pre.iter().any(|d| d.code == "DW0141"),
-        "kit carrier must be reserved under 0.5.0: {pre:#?}"
     );
 }

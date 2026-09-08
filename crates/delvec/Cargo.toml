@@ -1,0 +1,99 @@
+[package]
+# `delvec` — the delve creator: the ONE binary the engine ships (ADR-0023 §3)
+# and the one package the engine is (ADR-0025). `src/lib.rs` is the engine as a
+# library — the compiler, the grammar back end, schematic conversion, prefab
+# admission, playtest harvesting and the GPU render arms, one module each —
+# and `src/main.rs` is the clap root that mounts every module's command line as
+# a subcommand. `tests/` holds every integration test (`CARGO_BIN_EXE_delvec`
+# is set only for this package's own).
+#
+# The PACKAGE is `delvec` because `cargo install` resolves by CRATE name, never
+# by binary name. ADR-0016 names the engine `delvec`; this makes the registry
+# agree with the ADR. Nothing else is ever published beside it except the
+# campaign format, `delvewright-dsl`, on its own version line: a feature adds a
+# module here, never a crate.
+name = "delvec"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "The delve creator for Minecraft Java Edition adventure maps: one binary that compiles staged campaign documents into a datapack, proves the map completable, authors and admits prefabs, and renders what it built."
+readme = "README.md"
+keywords = ["minecraft", "datapack", "compiler", "adventure"]
+categories = ["command-line-utilities", "game-development"]
+# `cargo package` ships everything git tracks unless excluded. `tests/` is
+# megabytes of fixtures that a `cargo install delvec` never compiles.
+exclude = ["tests/"]
+
+[lib]
+name = "delvec"
+path = "src/lib.rs"
+
+[[bin]]
+name = "delvec"
+path = "src/main.rs"
+
+[dependencies]
+# The campaign format, on its own version line through
+# `[workspace.dependencies]` (`=` requirement, ADR-0023 §6 as ADR-0025 leaves it).
+delvewright-dsl.workspace = true
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+clap = { version = "4", features = ["derive"] }
+# Datapack hashing (`manifest.json`, the emitted tree's SHA-256 index) and the
+# grammar back end's provenance row. MIT/Apache-2.0.
+sha2 = "0.10"
+
+# `walk-record.json` is the one document a campaign author writes by hand that
+# is not a stage document, so it has no `Stage` and cannot reach
+# `delvewright_dsl::schema`. It gets its schema derived from its own struct
+# here instead — the same crate the rest of the DSL's schemas come from, so
+# there is no second schema generator and no hand-written copy of the form.
+# MIT.
+schemars = "1"
+
+# `crc32fast` supplies the CRC-32 the per-delve NPC-skin resource pack zip needs
+# (spec-0009 bake). The zip is hand-written with the STORE method and fixed zero
+# timestamps so its bytes — and thus its sha1 — are deterministic (ADR-0006).
+# MIT/Apache-2.0.
+crc32fast = "1"
+
+# Vanilla structure templates are gzip-framed Java NBT: `fastnbt` reads and
+# writes the NBT, `flate2` supplies the gzip container (mtime pinned to 0 for
+# byte-identity, ADR-0006). MIT/Apache-2.0.
+fastnbt = "2"
+flate2 = "1"
+
+# The render arms decode and composite PNGs: block textures out of the client
+# jar for the derived colour table, rendered frames for the fidelity colour-key
+# scan and double-render comparison, the contact sheet's tiled cells. The feature
+# set is the one the linked binary already had: the GPU arms declared the crate's
+# defaults and cargo unified them over the CPU arms' `png`-only declaration.
+# Narrowing it is a separate, measured decision. MIT/Apache-2.0.
+image = "0.24"
+
+# The client jar is a zip, and the render arms read block textures and
+# `data/**/worldgen/biome/*.json` straight out of it, by name, lazily — the jar
+# is a creator prerequisite, never redistributed (ADR-0010). `deflate` only: the
+# jar uses no other method, and the defaults would add 29 crates of AES, bzip2,
+# lzma and zstd codecs plus three `-sys` C builds. MIT.
+zip = { version = "2", default-features = false, features = ["deflate"] }
+
+# Nucleation (MIT) — headless mesher + wgpu GPU renderer behind `delvec render`,
+# from crates.io at the exact version `versions.toml [render].nucleation_version`
+# records (checked by validation/check-versions.sh). `pollster` blocks on the
+# renderer's async init. Both MIT/Apache-2.0.
+nucleation = { version = "=0.10.14", features = ["rendering"] }
+pollster = "0.4"
+
+# `blake3` is a non-optional dependency of Nucleation, and its build script
+# compiles C or assembly for the host — which a `cargo check --target` from a
+# machine without that target's C compiler cannot do, so the cross-build shelf
+# gate (`tools/build-release-binaries.sh --check-only`) would red on every
+# target but the host's own. `pure` turns every C and assembly path off and
+# leaves the Rust implementation; nothing here hashes enough for the speed to
+# matter. Declared here, not in nucleation's manifest, because a feature is
+# unioned across the graph and this is the crate that needs it. MIT/Apache-2.0.
+blake3 = { version = "1", features = ["pure"] }
+

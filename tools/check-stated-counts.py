@@ -137,7 +137,7 @@ _HEADING_RE = re.compile(r"^(#{1,6})\s")
 def strip_code_fences(text: str) -> str:
     """Blank out fenced code blocks, keeping line numbers intact.
 
-    A shell transcript is not a claim: `delve-grammar expand --region 15x9x3`
+    A shell transcript is not a claim: `delvec grammar expand --region 15x9x3`
     carries numbers that name nothing enumerable.
     """
     out, fence = [], None
@@ -187,7 +187,7 @@ def section_of(text: str, heading: str) -> str:
 
 # --------------------------------------------------------------------- oracles
 
-_LIBRARY_MOD = "crates/grammar/src/library/mod.rs"
+_LIBRARY_MOD = "crates/delvec/src/grammar/library/mod.rs"
 _GRAMMAR_MD = "docs/reference/grammar.md"
 _INDEX_SECTION = r"^## 2c\. "
 _COMPILER_MD = "docs/reference/compiler.md"
@@ -208,7 +208,7 @@ _INDEX_ROW_RE = re.compile(
 
 
 def library_program_ids(root: pathlib.Path) -> list[str]:
-    """Every id in `library::PROGRAMS` — what `delve-grammar list` names."""
+    """Every id in `library::PROGRAMS` — what `delvec grammar list` names."""
     src = (root / _LIBRARY_MOD).read_text(encoding="utf-8")
     m = _PROGRAMS_RE.search(src)
     if not m:
@@ -302,7 +302,7 @@ def oracle_idiom_techniques(root: pathlib.Path) -> tuple[int, str]:
     )
 
 
-_EMISSION_FIXTURE = "crates/compiler/tests/fixtures/light/emission-1.21.11.tsv"
+_EMISSION_FIXTURE = "crates/delvec/tests/fixtures/light/emission-1.21.11.tsv"
 
 
 def _emission_rows(root: pathlib.Path) -> list[tuple[str, int, int]]:
@@ -340,7 +340,7 @@ def oracle_emission_states(root: pathlib.Path) -> tuple[int, str]:
 #: expected to equal the oracle plus the offset.
 ORACLES: dict[str, dict] = {
     "library-programs": {
-        "describe": "programs `delve-grammar list` names",
+        "describe": "programs `delvec grammar list` names",
         "compute": oracle_library_programs,
         "phrasings": [
             (rf"\b({CARD}) library programs\b", 0),
@@ -425,7 +425,7 @@ def structural_claims(root: pathlib.Path) -> list[str]:
         errors.append(
             f"{_GRAMMAR_MD} §2c's index table has a row for "
             f"{', '.join(extra)}, which `library::PROGRAMS` does not carry — "
-            "`delve-grammar show --program <id>` refuses it."
+            "`delvec grammar show --program <id>` refuses it."
         )
     if len(table_ids) != len(rows):
         errors.append(

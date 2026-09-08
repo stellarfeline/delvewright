@@ -317,6 +317,16 @@ class Binder:
                 if value.get(tag_prop) == tag_value:
                     uid = f"{owner}::{tag_value}"
                     self._hit(uid, ptr)
+                    # A struct with a `#[serde(flatten)]` enum declares BOTH its
+                    # own properties and the variants' — `QuestEffect` carries
+                    # `when` and `happening` beside the flattened `Verb`. serde
+                    # reads both, so this walk reads both; binding only the
+                    # variant's half left the outer fields, and everything
+                    # beneath them, reading as unbound on a gallery that writes
+                    # them. Each key belongs to exactly one of the two property
+                    # sets, so neither is counted twice.
+                    if schema.get("properties"):
+                        self._object(schema, owner, value, ptr, skip=tag_prop)
                     self._object(b, uid, value, ptr, skip=tag_prop)
                     return
             # A lone non-null branch is `Option<T>`, and T may itself be a union:

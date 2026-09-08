@@ -3,7 +3,7 @@
 //!
 //! # Why this exists
 //!
-//! CLAUDE.md, on the `delve-admit` finding: *an EMITTED command is
+//! CLAUDE.md, on the `delvec prefab` finding: *an EMITTED command is
 //! checked against the pinned command tree by the emitter, not by a test, because
 //! the operator running the tool does not run `cargo test`.* Blocks had no such
 //! rule. The consequence is measured, not hypothetical: 1.21.11 renamed
@@ -14,18 +14,18 @@
 //! `.nbt` is well-formed, the byte-identity gate passes, the tower simply has no
 //! ropes, and nothing anywhere says so. The same class is in the shipped
 //! library: `hero-temple-ruin-arch.nbt` carries `minecraft:chain` at `[4, 9, 13]`
-//! (1 of 36 prefabs, measured 2026-08-11 with `delve-admit audit`).
+//! (1 of 36 prefabs, measured 2026-08-11 with `delvec prefab audit`).
 //!
 //! So this module is the block half of the command rule. It lives here, beside
 //! the other pinned registries, because the registry is a fact about the pinned
 //! game rather than about any one reader of it: the structure-template writer
-//! (`delvewright_schem`, which re-exports this module), the grammar back end,
+//! (`delvec::schem`, which re-exports this module), the grammar back end,
 //! the admission audit and the compiler's own render surface all check against
 //! this one table. And no crate is the only site that turns a palette into
 //! `.nbt` bytes — reasoning as though one were is what left the sixth emitter
-//! unguarded. The six `prefabs/*-generator` workspaces cannot
-//! depend on this crate at all and reach the same rule through
-//! `prefabs/invariants.rs`. Which sites owe it is therefore not remembered: it
+//! unguarded. The seven `prefabs/*-generator` packages may not depend on
+//! `delvec` and reach the same rule through `prefab-invariants`, which depends
+//! on this crate. Which sites owe it is therefore not remembered: it
 //! is discovered from the ingredient by `tools/check-structure-emitters.py`,
 //! which treats every tracked file that calls the NBT serialiser as a
 //! candidate, and requires each to name the rule or declare why it need not.
@@ -47,16 +47,16 @@ use std::sync::OnceLock;
 
 /// The pinned registry's JSON text, vendored beside the other 1.21.11 data.
 ///
-/// A source include rather than a crate dependency: the file is one authority
-/// shared by this crate, the grammar back end and the five out-of-workspace
-/// prefab generators (`prefabs/invariants.rs`), none of which may depend on
+/// One authority, shared by this crate, the grammar back end and the
+/// out-of-workspace prefab generators, which read the same file
+/// (`prefabs/invariants/src/invariants.rs`) because none of them may depend on
 /// `delvec`. A moved data file is a compile error, which is the loud failure.
 const REGISTRY_JSON: &str = include_str!("../data/blocks-1.21.11.json");
 
 /// The shape-carrying properties per block: the properties named by `multipart`
 /// selectors in the block's own blockstate definition, derived from the 1.21.11
 /// client jar by `tools/extract-shape-properties.py` (see
-/// `crates/compiler/data/PROVENANCE.md`). A `variants` property picks one
+/// `crates/delvec/data/PROVENANCE.md`). A `variants` property picks one
 /// complete model, so omitting it renders the author's default; a `multipart`
 /// property *assembles* the model, so omitting it drops geometry — wall arms,
 /// pane connections, vine faces. That is the class line `DW0735` fires on.
@@ -84,13 +84,13 @@ const DEFAULTS_JSON: &str = include_str!("../data/block-defaults-1.21.11.json");
 /// it twice with two different answers. The registry says *whether the pin has
 /// this id*; it cannot say *what the pin will hold instead* — and a check that
 /// judges a pre-pin template's id AS WRITTEN is judging a name in the wrong
-/// vocabulary. `delve-admit audit` did exactly that: the spelling rule passed
+/// vocabulary. `delvec prefab audit` did exactly that: the spelling rule passed
 /// `minecraft:chain` in a DataVersion-2975 template because the fixer migrates
 /// it, and the palette allowlist refused the same cell in the next breath
 /// because `minecraft:chain` is not a name at the pin.
 ///
 /// Derived from Mojang's own published data by
-/// `tools/extract-block-renames.py` (see `crates/compiler/data/PROVENANCE.md`):
+/// `tools/extract-block-renames.py` (see `crates/delvec/data/PROVENANCE.md`):
 /// which ids left the registry and when, from the per-version block registries;
 /// what each became, from the crafting recipe whose ingredient side is
 /// unchanged across the version step. A removal the recipe graph cannot pair is
@@ -435,7 +435,7 @@ impl BlockRegistry {
     /// forever — the shape rule (`DW0735`) and its whole library sweep would go
     /// green by ceasing to bind, over a library whose walls are still isolated
     /// posts. What an emitter owes instead is the connection derived from the
-    /// blocks beside the cell (`prefabs/connections.rs`), and
+    /// blocks beside the cell (`prefabs/invariants/src/connections.rs`), and
     /// `tools/check-structure-emitters.py` is what holds every emitter to it.
     pub fn default_state(&self, name: &str) -> Option<&BTreeMap<String, String>> {
         self.defaults.get(namespace(name).as_ref())
@@ -495,7 +495,7 @@ impl BlockRegistry {
     /// takes vanilla's five stair values, and nothing else in the game has one.
     ///
     /// The derivation matters because the property it feeds
-    /// (`delvewright_schem::stairs::derive_shape`) tests *any* stair against *any* other
+    /// (`delvec::schem::stairs::derive_shape`) tests *any* stair against *any* other
     /// — an oak stair mitres against a stone-brick one — so a hand-kept list
     /// would be wrong the day a version adds a stair, in the silent direction.
     pub fn is_stairs(&self, name: &str) -> bool {
@@ -566,7 +566,7 @@ impl BlockRegistry {
     /// names; `reflected[i]` says local axis `i` runs *backwards* along it. A
     /// grammar frame permutes and reflects the *geometry* a rule describes and
     /// never touches block-state properties
-    /// (`crates/grammar/src/orient.rs`), so a literal `facing`/`axis`/
+    /// (`crates/delvec/src/grammar/orient.rs`), so a literal `facing`/`axis`/
     /// connection property is correct only if the frame fixes the direction it
     /// names. The check transforms the state through the frame — mapping
     /// direction-valued properties, axis-valued properties, direction-*named*
@@ -639,7 +639,7 @@ impl BlockRegistry {
     /// judged at all*. Telling those apart is not a question about the state
     /// alone either — it is a question about which frames the scope could have
     /// stood in, which is why the caller supplies them
-    /// (`delvewright_grammar::orient::FrameSet`).
+    /// (`delvec::grammar::orient::FrameSet`).
     ///
     /// The answer is the union of what `oriented_mismatch` reports over
     /// `frames`, so the two can never disagree about what frame-sensitivity

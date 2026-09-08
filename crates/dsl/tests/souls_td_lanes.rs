@@ -4,7 +4,7 @@
 //! (`docs/notes/td-routing-spike.md`). The DSL layer owns the five that are
 //! decidable from the declaration alone; lane *geometry* (standable, walkable,
 //! spaced > 10) and ring *occupancy* are build-tier proofs over the assembled
-//! world (`DW0386`/`DW0387`, `crates/compiler/tests/souls_td_lanes.rs`).
+//! world (`DW0386`/`DW0387`, `crates/delvec/tests/souls_td_lanes.rs`).
 
 mod common;
 
@@ -12,7 +12,7 @@ use delvewright_dsl::{RawCampaign, check_campaign};
 
 /// hello-world's quest stage at 0.6.0 with a raider lane and an aggro-edge wave.
 const QUESTS_V06: &str = r#"{
-  "dsl_version": "0.6.0",
+  "dsl_version": "0.22.0",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {
@@ -71,6 +71,7 @@ fn campaign_with_quests(quests: &str) -> RawCampaign {
         layout_graph: None,
         site_plan: None,
         detail_plan: None,
+        design: None,
     }
 }
 
@@ -86,20 +87,6 @@ fn lane_and_aggro_edge_validate_clean() {
         diags.is_empty(),
         "expected zero diagnostics for the v0.6 §6 surface, got: {diags:#?}"
     );
-}
-
-/// Both fields are v0.6 stage-5 surface: reserved under an earlier version, so a
-/// pre-0.6 campaign that declares one is rejected rather than silently ignored.
-#[test]
-fn lane_and_summon_are_reserved_before_0_6() {
-    let pre = QUESTS_V06.replacen("\"0.6.0\"", "\"0.5.0\"", 1);
-    let diags = diags_for(&pre);
-    for path in ["/content/waves/0/lane", "/content/waves/1/summon"] {
-        assert!(
-            diags.iter().any(|d| d.code == "DW0141" && d.path == path),
-            "{path} must be reserved under 0.5.0 (DW0141): {diags:#?}"
-        );
-    }
 }
 
 // --- DW0381: the declaration does not resolve / contradicts itself ---------

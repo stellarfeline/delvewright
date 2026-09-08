@@ -15,6 +15,7 @@ import {
   gateRegionCells,
   gateRetryBudgetMs,
   gateWindowWaitMs,
+  gatesBindingWalk,
   gatesCrossedByHop,
   hopCrossesGate,
   insideGate,
@@ -171,4 +172,45 @@ test("the crossing estimate is entry latency plus distance at a conservative wal
     crossingEstimateMs([260, 61, 12], [260, 61, 15]) < openMs(tide),
     "the designed 36t window admits the staged crossing",
   );
+});
+
+// --- which gates bind ONE walk -----------------------------------
+
+test("a matched leg binds exactly the gates the compiler proved its route crosses", () => {
+  const b = gatesBindingWalk(true, [portcullis], [portcullis, tide]);
+  assert.deepEqual(b.gates, [portcullis], "the leg's own subset, not the whole table");
+  assert.deepEqual(b.withheld, []);
+  assert.match(b.source, /proven route/);
+});
+
+test("a matched leg that crosses nothing binds nothing — a proof, not a gap", () => {
+  // The distinction the `matched` flag exists for: the compiler PROVED this route
+  // crosses no gate, so the declared table must not be substituted for its answer.
+  const b = gatesBindingWalk(true, [], [portcullis, tide]);
+  assert.deepEqual(b.gates, []);
+  assert.deepEqual(b.withheld, []);
+});
+
+test("a walk with no proven leg binds the campaign's declared table", () => {
+  // The death-loop approach, the die-retry return, a mob or actor chase: no leg
+  // matches, so there is no route to narrow the table with, and a shut declared
+  // clock must not read as broken geometry.
+  const b = gatesBindingWalk(false, [], [portcullis]);
+  assert.deepEqual(b.gates, [portcullis]);
+  assert.deepEqual(b.withheld, []);
+  assert.match(b.source, /declared gate table/);
+});
+
+test("a crush gate is withheld from an unproven walk, and named as withheld", () => {
+  // Staging a crush entry needs the compiler-pinned mouth DW0378's margin proof is
+  // about; a walk with no proven leg has none, so those rules would fire on a
+  // premise they do not have. Withheld, and said out loud — never silently dropped.
+  const b = gatesBindingWalk(false, [], [portcullis, tide]);
+  assert.deepEqual(b.gates, [portcullis]);
+  assert.deepEqual(b.withheld, [tide]);
+});
+
+test("a campaign declaring no gate binds nothing, matched or not", () => {
+  assert.deepEqual(gatesBindingWalk(false, [], []).gates, []);
+  assert.deepEqual(gatesBindingWalk(true, [], []).gates, []);
 });

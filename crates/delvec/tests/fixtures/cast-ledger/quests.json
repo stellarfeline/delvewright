@@ -1,0 +1,102 @@
+{
+  "campaign_id": "cast-ledger",
+  "content": {
+    "quests": [
+      {
+        "cast": {
+          "npc/keeper": {
+            "at": "anchor/keeper-stand",
+            "dialogue": "dlg/greeting",
+            "doing": "barring the door with his body"
+          },
+          "npc/sleeper": {
+            "at": "anchor/exit",
+            "dialogue": {
+              "barks": [
+                "...mm. Not my watch.",
+                "...tell the captain I never left.",
+                "...mm."
+              ]
+            },
+            "doing": "wine-drowned sleep against the wall"
+          }
+        },
+        "happening": {
+          "text": "the party takes on quest/ask",
+          "verb": "learns"
+        },
+        "id": "quest/ask",
+        "objectives": [
+          {
+            "happening": {
+              "text": "the party completes obj/talk",
+              "verb": "learns"
+            },
+            "id": "obj/talk",
+            "npc": "npc/keeper",
+            "type": "talk-to"
+          }
+        ],
+        "on_complete": [
+          {
+            "anchor": "anchor/door",
+            "happening": {
+              "text": "the gate at anchor/door opens",
+              "verb": "opens"
+            },
+            "type": "open-gate"
+          }
+        ],
+        "trigger": {
+          "type": "campaign-start"
+        }
+      },
+      {
+        "cast": {
+          "npc/keeper": {
+            "at": "anchor/keeper-stand",
+            "dialogue": "dlg/farewell",
+            "doing": "standing aside, watching you go"
+          },
+          "npc/sleeper": {
+            "at": "anchor/exit",
+            "dialogue": "none",
+            "doing": "dead asleep, past waking"
+          }
+        },
+        "happening": {
+          "text": "the party takes on quest/leave",
+          "verb": "learns"
+        },
+        "id": "quest/leave",
+        "objectives": [
+          {
+            "anchor": "anchor/exit",
+            "happening": {
+              "text": "the party completes obj/exit",
+              "verb": "arrives"
+            },
+            "id": "obj/exit",
+            "radius": 2,
+            "type": "reach-anchor"
+          }
+        ],
+        "on_complete": [
+          {
+            "happening": {
+              "text": "the delve is complete",
+              "verb": "survives"
+            },
+            "type": "campaign-complete"
+          }
+        ],
+        "trigger": {
+          "quest": "quest/ask",
+          "type": "quest-complete"
+        }
+      }
+    ]
+  },
+  "dsl_version": "0.22.0",
+  "stage": "quests"
+}

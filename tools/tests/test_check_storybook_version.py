@@ -38,10 +38,9 @@ def gate(tmp_path, monkeypatch):
     assert spec.loader is not None
     spec.loader.exec_module(module)
 
-    cargo_toml = tmp_path / "crates" / "compiler" / "Cargo.toml"
-    cargo_toml.parent.mkdir(parents=True)
+    cargo_toml = tmp_path / "Cargo.toml"
     cargo_toml.write_text(
-        f'[package]\nname = "delvec"\nversion = "{ENGINE_DELVEC}"\n'
+        f'[workspace.package]\nversion = "{ENGINE_DELVEC}"\n'
         'edition = "2024"\n',
         encoding="utf-8",
     )
@@ -49,7 +48,7 @@ def gate(tmp_path, monkeypatch):
     root.mkdir(parents=True)
 
     monkeypatch.setattr(module, "REPO_ROOT", tmp_path)
-    monkeypatch.setattr(module, "COMPILER_CARGO_TOML", cargo_toml)
+    monkeypatch.setattr(module, "ROOT_CARGO_TOML", cargo_toml)
     monkeypatch.setattr(module, "DEFAULT_CAMPAIGNS_ROOT", root)
     monkeypatch.setattr(module, "ALLOWLIST", {})
     # The Minecraft pin is engine state exactly as `DELVEC_VERSION` is, and the

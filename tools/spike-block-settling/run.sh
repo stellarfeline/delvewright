@@ -10,8 +10,8 @@
 #     stair's neighbours on every block update. A random field of stairs (two
 #     different stair blocks, both halves, all four facings, air holes) is
 #     placed, settled, and every cell's resulting `shape` read back. The result
-#     is `observations.json`, which `crates/schem/tests/stairs.rs` replays
-#     against `delvewright_schem::stairs::derive_shape` — so the implementation
+#     is `observations.json`, which `crates/delvec/tests/schem_stair_shape_measured.rs` replays
+#     against `delvec::schem::stairs::derive_shape` — so the implementation
 #     is pinned to the GAME's answer, cell for cell, in CI, with no server.
 #
 #   - WATER. Three placements that decide what "a body of water stays where it

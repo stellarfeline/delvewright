@@ -41,7 +41,7 @@ flowchart TD
     HB --> WS
     SH --> IN
     HB --> IN
-    IN[["Init — six binaries over two target dirs,<br/>client jar, Chunky, reference-image path,<br/>content symlink"]]
+    IN[["Init — one binary, delvec,<br/>client jar, Chunky, reference-image path,<br/>content symlink"]]
     IN --> PM{areas[] or site plan?}
     PM --> WS
     WS[["1 · workspace in the CONTENT repo<br/>campaigns/campaigns/id/<br/>documents + GENERATION.md + DESIGN.md"]]
@@ -158,10 +158,10 @@ something it does not check is how a green run ships a broken delve.
 
 | # | Gate | Proves | Does **not** prove |
 |---|---|---|---|
-| 4 | design gate | that the owner has seen the design **in the medium she reviews in** — the whole story, every scene, near view and far — and said yes. The images at *this* gate are **reference images**: concept art drawn from the scene description before any prefab exists, optionally by `tools/refimg.py`. A render is a candidate prefab imaged by `delve-render`, and belongs to curation later. **The approved images are then committed to `campaigns/<id>/design/`** with the approval date and the approved names | nothing, if it was built from orbit renders. "Is the set pretty" is a different question from "what does a player walking in experience". And **nothing at all in a later session, if the approval was never persisted**: `refimg` writes to a gitignored directory, so an approval left in a published page is unreachable by every round that follows it — which is how a whole campaign round got authored against no design and had to be abandoned |
+| 4 | design gate | that the owner has seen the design **in the medium she reviews in** — the whole story, every scene, near view and far — and said yes. The images at *this* gate are **reference images**: concept art drawn from the scene description before any prefab exists, optionally by `tools/refimg.py`. A render is a candidate prefab imaged by `delvec render`, and belongs to curation later. **The approved images are then committed to `campaigns/<id>/design/`** with the approval date and the approved names. Since spec-0061 the engine also reads that approval: `design.json` records one row per approved image with the `time` and `weather` it was drawn under, and `DW0890` refuses at the next `delvec validate` when the skies the built world reaches and the skies the rows state are not equal, or when a row and a file do not answer to each other. **The page's own half is not written yet** — spec-0061 §10 names it, and until it lands nothing tells a creator to write the row at the moment of approving | nothing, if it was built from orbit renders. "Is the set pretty" is a different question from "what does a player walking in experience". And **nothing at all in a later session, if the approval was never persisted**: `refimg` writes to a gitignored directory, so an approval left in a published page is unreachable by every round that follows it — which is how a whole campaign round got authored against no design and had to be abandoned |
 | 7 | `delvec analyze` | the quest graph is reachable, no deadlock, darkness is mitigated | that any of it is *good* |
 | 8 | `delvec build` | the DSL compiles to a datapack | nothing about play |
-| 9 | the walk | somebody has stood in the world — scale, route legibility, silhouette; and the staging gate has run, because `owner-play.yaml` is the only file publishing 25565 and it refuses a build with no admission token minted for that exact tree | nothing mechanical. A red gate is the list of defect classes the playtester is unprotected from, drawn from every finding ever reported on any campaign — an `UNBOUND` row on a campaign that contains none of the objects it is about is a fact about the ledger, not about the delve |
+| 9 | the walk | somebody has stood in the world — scale, route legibility, silhouette; and the staging gate has run, because `owner-play.yaml` is the only file publishing 25565 and it refuses a build with no admission token minted for that exact tree | nothing mechanical. A red gate is the list of defect classes the playtester is unprotected from, drawn from every finding ever reported on any campaign; it refuses only where an object of the class is PRESENT and nothing binds to it. A campaign that contains none of a class's objects reads `INAPPLICABLE` — counted, named in the token, announced at boot, and not a refusal: absence of an optional surface is a design choice, and a required one cannot be absent from a build that compiled |
 | 11 | branch chronicle | every branch's storyline is coherent **in sequence**, and every branch-divergent dialogue line is licensed by a chronicle line, cited by number in `GENERATION.md` | anything on a branch with no rows — an empty table is a **fail**, not a pass |
 | 10 | machine ladder | PackTest green; the bot completes the critical path; it survives `die-retry`; every declared branch was walked | that any fight was measured — read `floor_gate`. `covered`/`not_covered`/`actors[]` **all empty** means no body declares a tier and the gate examined nothing. The island sat in exactly that state, green, for nineteen rounds |
 | 12 | visual review | the frame matches the shot's `expect` — **read the POV sequence in route order first**, orbit renders second | `DW0308` proves a camera path is air, not that the shot points at the subject — round 6 shipped an inside-out cinematic that was fully DW-green |
@@ -321,7 +321,12 @@ because that is what the rewrite will consume. Not a proposal — an inventory.
    shipped frame). Its acquisition is now an `Init` step on the page
    (`ChunkyLauncher.jar` + `--update snapshot`), because a review step whose
    primary evidence needs a tool `Init` never established is a review step that
-   silently does not happen.
+   silently does not happen. What that line installs is **today's snapshot core,
+   never the pinned one** — the launcher's `--update` takes a release channel and
+   the update site serves the current jar whatever name it is asked for
+   (`docs/reference/tools.md` §4a) — so `validation/render-shots.sh` names the pin
+   beside the core actually installed at the end of every run, and a review over a
+   mismatch says so rather than reading as pinned.
 4. **The ladder's project id is chosen by hand** (`dw-<campaign>-r<round>`).
    Required everywhere, defaulted nowhere — deliberately, since a shared default
    is what the mutex used to paper over.
@@ -338,6 +343,21 @@ because that is what the rewrite will consume. Not a proposal — an inventory.
    12 members of `pool/stone-keep`), because a promise that reads as free is the
    half a reader believes.
 
+4a-bis. **What a pool area guarantees is now an engine answer, and the page's
+   inline script for it is superseded.** The page asks the library which anchors
+   an area can be designed against by running a `python3 - <<'EOF'` snippet over
+   `prefabs/pools.json` that prints each pool's `entry`-role member's anchors.
+   `delvec prefab anchors [--pool <id>]` answers the same question from the
+   engine's own implementation — the same one `DW0889` reports from — so the
+   answer and the build cannot disagree, and it states the rest of the
+   vocabulary with the carrier and role each name would have to arrive on. It
+   also states the half a snippet over `pools.json` cannot: an anchor a campaign
+   REQUIRES (an objective, an NPC stand, a wave spawn, a lane waypoint, an
+   anchor-bearing effect) forces the solver to seat its carrier, so the
+   guaranteed set for an area is the entry member's anchors plus everything
+   those forced carriers declare — which is why `hollow-vigil` guarantees all
+   ten of `pool/vertical-keep`'s names and the library-only answer is two.
+
 4b. **`collect` + `container` is satisfiable by one piece in the shipped
    library.** Exactly 1 of 36 prefabs stands an anchor on a chest or barrel
    (`island-mountain`), five contain one anywhere, and two declare an anchor
@@ -349,7 +369,7 @@ because that is what the rewrite will consume. Not a proposal — an inventory.
    frontmatter carries `version:`, `requires: delvec:` and `verified_with:`, and
    the campaigns repository's `tools/check-skill-version.py` binds all three: the
    window must contain the engine at `[engine].authoring_ref`, `verified_with`
-   must equal that engine's `crates/compiler/Cargo.toml` version in **both**
+   must equal that engine's root `Cargo.toml` `[workspace.package] version` in **both**
    directions, and every subcommand and long flag the skill names must exist in
    its clap CLI. The values and the counts are not copied
    here — the checker prints its own binding count on every run, and a literal

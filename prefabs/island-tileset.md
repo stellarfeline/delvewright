@@ -35,7 +35,7 @@ PackTests all derive from placement — and ships as an island floating above an
 inescapable sea.
 
 **Why the walk plane is one above the waterline.** The compiler flood
-(`crates/compiler/src/assembled.rs`) is a conservative superset of vanilla water
+(`crates/delvec/src/compiler/assembled.rs`) is a conservative superset of vanilla water
 flow: it spreads horizontally (7-decay) and downward but **never climbs**. A y=3
 walk surface sitting on solid-at-y=2 land therefore can never be reached by the
 sea — dry standable cells are dry *by construction*, not by keeping their
@@ -112,8 +112,8 @@ than moored to a specific beach.
 
 ## Terrain pieces (greenfield + mountain)
 
-Built by the sibling `prefabs/island-terrain-generator` (its own `[workspace]`),
-these complete the contiguous island: the connectors between the beach camp and the
+Built by the sibling `prefabs/island-terrain-generator` (a member of the
+`prefabs/` workspace), these complete the contiguous island: the connectors between the beach camp and the
 mountain, and the mountain terminal with its cavern. All adopt the island convention
 above (`island:socket` at `floor_y=2`, walk plane y=3) — built at the ground datum,
 then lifted +2 onto a solid substrate so every socket/anchor lands on the shared
@@ -166,7 +166,7 @@ spruce / oak / dark-oak planks · spruce / stripped-spruce logs · spruce stairs
 trapdoors / buttons · white / black wool (sail + eye) · lantern · barrel ·
 decorated pot · water. The merged `island-beach-camp` therefore draws from both
 lists (the galley palette is stamped into it, plus spruce planks / oak fence for
-the gangplank). Every id is on the `delve-admit` building allowlist (DW0730); no
+the gangplank). Every id is on the `delvec prefab` building allowlist (DW0730); no
 command/structure blocks, no NBT-bearing block entities — re-audited after the
 merge on both regenerated pieces.
 
@@ -186,7 +186,7 @@ reuses only Delvewright's own cave-generator primitives.
 
 ## Render-critique loop
 
-Rendered with `delve-render piece` on the pinned 1.21.11 client jar. The galley's
+Rendered with `delvec render piece` on the pinned 1.21.11 client jar. The galley's
 square sail was moved off the mast plane (one cell forward) so the mast reads
 behind it instead of bisecting it into a cross; the beach tents were raised from a
 2-tall wool pile to a clear 3-tall A-frame with an open front gable. Renders are

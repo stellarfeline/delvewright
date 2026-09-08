@@ -127,9 +127,9 @@ test("nextLegWaypoints does not consume on a sub-walk to an unrelated position",
   assert.equal(m.cursor, 1);
 });
 
-test("an unknown version is rejected", () => {
+test("an empty version is rejected", () => {
   assert.throws(
-    () => parseWaypoints({ ...VALID, version: "9.9.9" }),
+    () => parseWaypoints({ ...VALID, version: "" }),
     (err: unknown) => err instanceof WaypointsParseError && /version/.test(err.message),
   );
 });
@@ -297,9 +297,13 @@ test("nextLegWaypoints surfaces the matched leg's gates, and none when unmatched
   const hit = nextLegWaypoints(wp.legs, 0, [24, 63, -14]);
   assert.equal(hit.timedGates.length, 1);
   assert.equal(hit.cursor, 1);
-  // A sub-walk that matches no leg gets no gates — an unmatched walk is never
-  // granted the retry licence.
+  assert.equal(hit.matched, true);
+  // A sub-walk that matches no leg surfaces no LEG gates — there is no proven route
+  // to read them off. Which gates then bind that walk is `gatesBindingWalk`'s
+  // question, and `matched` is what lets it tell this from a proven route that
+  // crosses nothing.
   const miss = nextLegWaypoints(wp.legs, 0, [99, 63, 0]);
+  assert.equal(miss.matched, false);
   assert.deepEqual(miss.timedGates, []);
   assert.equal(miss.cursor, 0);
 });

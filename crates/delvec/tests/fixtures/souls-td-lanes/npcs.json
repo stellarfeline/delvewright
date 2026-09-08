@@ -1,0 +1,8 @@
+{
+  "campaign_id": "souls-td-lanes",
+  "content": {
+    "npcs": []
+  },
+  "dsl_version": "0.22.0",
+  "stage": "npcs"
+}

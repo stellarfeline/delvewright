@@ -1,0 +1,15 @@
+# The credential itself, reachable from a job that pauses for nobody.
+name: fixture — an ungated registry token
+on:
+  push:
+    branches: [main]
+jobs:
+  upload:
+    name: send it
+    runs-on: ubuntu-latest
+    steps:
+      - uses: ./.github/actions/fixture-checkout
+      - name: publish
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: cargo publish -p fixture

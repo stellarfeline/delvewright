@@ -199,7 +199,7 @@ def main() -> int:
         die(
             f"no prefab directory at `{prefabs}`. The gallery's piece is GENERATED and never "
             "committed: `cargo run --manifest-path prefabs/gallery-generator/Cargo.toml -- "
-            "<dir> --skins gallery/skins`."
+            "<dir> --skins gallery/skins --design gallery/design`."
         )
 
     point = args.point

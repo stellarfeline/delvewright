@@ -1,0 +1,23 @@
+# A gate with nothing behind it: an environment-gated job in which this checker
+# recognises no publishing act. That is what a renamed verb or a lost parse
+# looks like from the inside, and it is a refusal rather than a clean tree.
+name: fixture — a gate over nothing
+on:
+  push:
+    tags: ["v[0-9]+.[0-9]+.[0-9]+"]
+jobs:
+  publish:
+    name: publish (owner approval)
+    runs-on: ubuntu-latest
+    environment: crates-io
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: ./.github/actions/fixture-checkout
+      - name: the gate actually bound
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash tools/assert-run-approved.sh crates-io
+      - name: send it, somehow
+        run: bash tools/upload-everything.sh

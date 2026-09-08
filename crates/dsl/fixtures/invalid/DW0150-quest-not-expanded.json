@@ -30,7 +30,7 @@
           }
         ]
       },
-      "dsl_version": "0.2.0",
+      "dsl_version": "0.22.0",
       "stage": "quest-plan"
     }
   },

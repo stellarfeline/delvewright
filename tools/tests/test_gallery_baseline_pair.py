@@ -248,7 +248,7 @@ def test_versions_toml_is_not_an_emission_input_and_a_lookalike_is_not_under():
     different file.
     """
     assert "versions.toml" not in GB.EMISSION_INPUTS
-    assert GB.under("crates/compiler/src/emit.rs", "crates/")
+    assert GB.under("crates/delvec/src/compiler/emit.rs", "crates/")
     assert not GB.under("crates.bak/x.rs", "crates/")
     assert GB.under("gallery/world.json", "gallery/")
     assert not GB.under("gallery-prefabs/x.nbt", "gallery/")
