@@ -98,22 +98,27 @@ fn placed_ys(out: &Path) -> Vec<i32> {
         .collect()
 }
 
-/// A shore room with no water in it at all: three courses of solid plinth, a
-/// floor at local y=3, walls and a lit roof.
+/// A shore room with no water in it at all: `floor` courses of solid plinth, a
+/// walk plane at local y=`floor`, walls and a lit roof.
 ///
 /// Waterless on purpose. A piece that authors water and states no waterline is
 /// `DW0886`'s unstated shore — correctly — so a fixture about anything ELSE on
 /// an ocean has to be a piece with no shore to state.
-fn waterless_shore(dir: &Path) {
-    let size = [11, 9, 11];
+///
+/// The plinth is a PARAMETER because a walk plane is a measurement of the
+/// blocks: `DW0888` holds `walk_y` to them, so a fixture that wants a piece
+/// whose walk plane is one course lower builds one course less plinth and moves
+/// its anchors onto it, rather than editing the number over unmoved bytes.
+fn waterless_shore(dir: &Path, floor: i32) {
+    let size = [11, floor + 6, 11];
     let mut cells: Vec<([i32; 3], &str)> = Vec::new();
     for x in 0..size[0] {
         for z in 0..size[2] {
-            for y in 0..3 {
+            for y in 0..floor {
                 cells.push(([x, y, z], "minecraft:stone"));
             }
             let lamp = matches!((x, z), (3, 3) | (3, 7) | (7, 3) | (7, 7));
-            for y in 3..size[1] {
+            for y in floor..size[1] {
                 if x == 0 || x == size[0] - 1 || z == 0 || z == size[2] - 1 || y == size[1] - 1 {
                     let roof = y == size[1] - 1;
                     cells.push((
@@ -140,6 +145,17 @@ fn waterless_shore(dir: &Path) {
         let obj = doc.as_object_mut().unwrap();
         obj.remove("waterline_y");
         obj["structure"]["size"] = serde_json::json!(size);
+        obj["walk_y"] = serde_json::json!(floor);
+        // Every named place stands on the floor this piece really has. An anchor
+        // left at the old plane is a cell with nothing under it, which is a
+        // different finding from the one a caller of this fixture is measuring.
+        if let Some(anchors) = obj.get_mut("anchors").and_then(|a| a.as_object_mut()) {
+            for a in anchors.values_mut() {
+                if let Some(pos) = a.get_mut("pos").and_then(|p| p.as_array_mut()) {
+                    pos[1] = serde_json::json!(floor);
+                }
+            }
+        }
     }
     std::fs::write(&path, serde_json::to_string_pretty(&doc).unwrap() + "\n").unwrap();
 }
@@ -158,7 +174,7 @@ fn no_ocean_build_puts_a_walk_cell_at_or_below_the_sea() {
             // A shore whose tide pool is gone: no water, so no waterline to
             // declare, and the piece is seated by its walk plane alone. That is
             // the case the retired global datum could not express at all.
-            waterless_shore(&dir);
+            waterless_shore(&dir, 3);
         }
         let camp = ocean_campaign(tag);
         let (code, text, out) = build(tag, &camp, &dir);
@@ -303,7 +319,7 @@ fn a_pool_that_cannot_be_seated_is_refused_at_analyze_having_placed_nothing() {
 }
 
 /// **`walk_y` reaches the surface it changes** (spec-0060 §10.9): perturb one
-/// piece's declared walk plane and an emitted byte moves.
+/// piece's walk plane and an emitted byte moves.
 ///
 /// The byte is the `place template` line's y, which is the whole point of the
 /// declaration: an ocean area's origin IS `walk_ref_y - walk_y`, so a piece that
@@ -311,22 +327,18 @@ fn a_pool_that_cannot_be_seated_is_refused_at_analyze_having_placed_nothing() {
 /// datapack says so. A declaration that moved no emitted byte would be a field
 /// the engine reads and the world does not.
 ///
-/// The waterline is removed first, deliberately: with one declared, moving the
-/// walk plane moves the waterline off the sea and `DW0344`'s first arm refuses
-/// before anything is emitted — which is that rule working, and would leave this
-/// one nothing to measure.
+/// The perturbation moves the BLOCKS and the number together, because that is
+/// what a walk plane is: `DW0888` holds the declaration to the bytes, so a
+/// document edited over an unmoved floor is refused before anything is emitted —
+/// which is that rule working, and would leave this one nothing to measure. The
+/// waterline is removed for the same reason one stage over: with one declared,
+/// moving the walk plane moves the waterline off the sea and `DW0344`'s first
+/// arm refuses first.
 #[test]
 fn perturbing_a_pieces_walk_plane_moves_an_emitted_byte() {
-    let seat_at = |tag: &str, walk_y: i64| -> Vec<i32> {
+    let seat_at = |tag: &str, walk_y: i32| -> Vec<i32> {
         let dir = common::ocean_prefabs_dir(&format!("walk-moves-{tag}"), common::OceanRoom::Shore);
-        waterless_shore(&dir);
-        let path = dir.join("hello-room.json");
-        let mut doc: serde_json::Value =
-            serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
-        doc.as_object_mut()
-            .unwrap()
-            .insert("walk_y".into(), serde_json::json!(walk_y));
-        std::fs::write(&path, serde_json::to_string_pretty(&doc).unwrap() + "\n").unwrap();
+        waterless_shore(&dir, walk_y);
         let camp = ocean_campaign(tag);
         let (code, text, out) = build(tag, &camp, &dir);
         assert_eq!(code, 0, "`{tag}` builds:\n{text}");

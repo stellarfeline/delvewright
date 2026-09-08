@@ -1963,8 +1963,13 @@ fn ocean_waterline_off_sea_level_is_refused_at_validation_with_dw0344() {
         "the refusal names the walk plane that seats this waterline on the sea:\n{log}"
     );
 
-    // A `void` world has no sea for a waterline to miss, so the same metadata is
-    // not checked there.
+    // A `void` world has no sea for a waterline to miss, so the WATERLINE
+    // declaration is not checked there. The walk plane is put back first: it is
+    // a measurement of the blocks and `DW0888` holds it to them on every base,
+    // so leaving the perturbed number in place would refuse this arm for the
+    // half of the edit it is not about.
+    meta["walk_y"] = serde_json::json!(3);
+    write_meta(&meta);
     let void_camp = tmp("dw0344-arm1-void-camp");
     copy_dir(&common::hello_world_dir(), &void_camp);
     let out_void = tmp("dw0344-arm1-void-out");

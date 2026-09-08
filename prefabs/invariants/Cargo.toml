@@ -12,4 +12,5 @@ path = "src/lib.rs"
 # Block knowledge — the pinned registry's own crate. `blockshape` and `fluid`
 # are re-exported from here rather than source-included out of `crates/`.
 delvewright-dsl.workspace = true
+serde.workspace = true
 serde_json.workspace = true

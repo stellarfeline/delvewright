@@ -19,6 +19,7 @@
 //! - [`calibrate`]: `delvec calibrate` — a harvested rehearsal report turned back into anchor + offset patches.
 //! - [`camera`]: cutscene camera geometry: the eased dolly and the `shot_style` expansion, shared by emission and validation.
 //! - [`cast`]: the NPC scene ledger (`DW0460`–`DW0467`).
+//! - [`claims`]: a prefab document says nothing its own bytes deny — every byte-asserting key of the document, one rule (`DW0888`).
 //! - [`clearance`]: the body-vs-block proof — no body occupies the same space as block geometry (`DW0450`/`DW0451`).
 //! - [`combat`]: compile-time combat winnability — the arithmetic half of the combat proofs.
 //! - [`commands`]: the vendored 1.21.11 Brigadier command-tree validator.
@@ -87,6 +88,7 @@ pub mod burial;
 pub mod calibrate;
 pub mod camera;
 pub mod cast;
+pub mod claims;
 pub mod clearance;
 pub mod combat;
 pub mod commands;
