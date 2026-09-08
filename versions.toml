@@ -236,39 +236,73 @@ aarch64-unknown-linux-gnu = "ubuntu-22.04-arm"
 # reds on a count instead of sweeping as a silent zero. Moving this `sha` without
 # it is a tier-1 red (validation/check-versions.sh).
 repo = "stellarfeline/delvewright-campaigns"
-# Content `main` tip at which the prefab library declares its entry points by
-# ROLE. An entry is a role, not a spelling: this engine no longer matches an
-# anchor's NAME to find where a party arrives, so the library it is pointed at
-# must say so on the anchor, and at the previous pin none of it did. This pin is
-# what makes that true, and it is why the pin and the engine change are one act
-# rather than two.
+# Content `main` tip at which every piece in the library declares the plane it
+# stands a body on, and declares a waterline only where its own bytes hold
+# water. `walk_y` has no default — an ocean area's origin is derived from it
+# (spec-0060 §3.2) — and `DW0887` holds a declared `waterline_y` to the `.nbt`
+# beside it, so a library this engine is pointed at has to answer both. At the
+# previous pin it answered neither.
 #
 # What moves under `prefabs/`, cross-checked by parsing both trees rather than
-# by reading the line diff: five documents — `cave-shore`, `hello-room`,
-# `island-beach-camp`, `island-galley`, `keep-spawn-hall` — and each gains
-# EXACTLY ONE key, its entry anchor's `"role": "entry"`. Nothing else about any
-# of them differs: no cell, facing, connector, contract or licence value. Of 37
-# library documents, 5 declared an entry by name and 0 by role before; 5 declare
-# it by role after, and they are the same five pieces. `hello-room.json`'s
-# larger line count is the writer re-emitting a hand-formatted document in its
-# own canonical form — one added key by the parsed comparison, zero changed
-# values.
+# by reading the line diff: every leaf of every document, compared by path. The
+# library carries 37 documents at both pins — 36 pieces and `pools.json` — and
+# none is added, removed or renamed. Three keys change, and nothing else:
 #
-# Nothing under `campaigns/` moves at all in this interval (`git diff --name-only
-# -- campaigns/` is empty), so neither `hollow-vigil` nor `nobodys-cave-island`
-# gained, lost or moved a build input; neither declares `design/programs/`, and
-# the pinned tree holds no such path anywhere, so the zone inventory restated in
+#   `walk_y`      — declared on 0 of the 36 pieces before, 36 of 36 after. 31 of
+#                   them come from the four document-writing generators (keep
+#                   13, cave 13, island 2, terrain 3 — enumerated by running
+#                   each generator into a scratch directory and listing what it
+#                   emitted, not by grepping for its name), and 5 from the
+#                   pieces no generator writes: `hello-room` and the four
+#                   `hero-*`.
+#   `waterline_y` — 5 declarations before, 3 after. Deleted from
+#                   `island-greenfield`, `island-greenfield-bend` and
+#                   `island-mountain`, which author no water at all; gained by
+#                   `cave-shore`, whose 16 water cells all stand at local y=1.
+#                   Read straight out of the gzip stream by a standalone NBT
+#                   reader sharing no configuration with `delvec`: 2 of the 5
+#                   declarations were borne out before, 3 of 3 are after, and 0
+#                   stand over no water.
+#   `shown_faces` — 0 documents before, 4 after: `island-galley`,
+#                   `island-greenfield`, `island-greenfield-bend` and
+#                   `island-mountain`. The 13 cave pieces and the 13 keep pieces
+#                   declare none on purpose — sealed interiors and cut edges,
+#                   the case `DW0885`'s own message names — so their absence is
+#                   a judgement about the asset, not a gap.
+#
+# Three VALUES change, each a fact about bytes that moved with them:
+# `island-greenfield` and `island-greenfield-bend` grow one course
+# (`structure.size` [17,10,15] -> [17,11,15]), and `cave-shore`'s connector
+# `local_pos` follows its jigsaw block from (6,1,0) to (6,2,0) — the old cell
+# holds andesite in the new bytes, so the committed value named solid rock.
+# Exactly 3 of the 36 `.nbt` move, by sha256 over both sets, `cave-shore` from
+# 2537 to 2539 bytes; every document's `structure.size` agrees with its own
+# bytes, 36 of 36, at both pins. No anchor, facing, contract, lighting or
+# licence value differs anywhere.
+#
+# Nothing under `campaigns/` moves at all in this interval (`git diff
+# --name-only a8c3f988 8e09c30c -- campaigns/` is empty), so neither
+# `hollow-vigil` nor `nobodys-cave-island` gained, lost or moved a build input;
+# `git ls-tree -r --name-only` over the new tip holds no `design/programs/` path
+# anywhere, so the zone inventory restated in
 # `.github/content-zone-corpus.json` stays at zero for both.
 #
 # The rest of the batch is the content repository's own CI, skill page and
 # authoring-pin tooling, upstream of everything this repo reads: no file it
 # touches is an input the compiler is handed through `--prefabs`.
 #
+# WHAT CARRIES EACH CLAIM. `validation/check-versions.sh` holds this `sha` equal
+# to `content_sha` in `.github/content-zone-corpus.json`, and
+# `tools/check-pins.py` holds it equal to the `content-repo` entry in
+# `.github/pins.toml`. `crates/delvec/tests/grammar_campaign_zones.rs` checks
+# the restated inventory against the checkout and prints what it bound.
+# `crates/delvec/tests/registry_load.rs` reads every document at the pin and
+# DERIVES how many declare `waterline_y`, so that count is never retyped here.
 # `DW0735` says a state that omits a shape-carrying property drops the geometry
 # the property assembles; the library sweep (`crates/delvec/tests/admit_library.rs`)
 # asks it of every admitted piece on every run and prints its own binding count
 # there, which is where that number belongs.
-sha = "a8c3f98831735aa370908a43d37db85d09fae25c"
+sha = "8e09c30c17c78538ac0b6c36fa5edc5f681a45eb"
 
 [render]
 # The render layer (spec-0007 rendering infra / spec-0003 visual tier). Renders
