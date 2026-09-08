@@ -869,7 +869,7 @@ fn dw0880_refuses_two_faces_at_one_place() {
     )));
     assert_eq!(
         code,
-        delvewright_compiler::stake::DW_STAKE_TWO_FACES,
+        delvec::compiler::stake::DW_STAKE_TWO_FACES,
         "a place wears one face"
     );
 

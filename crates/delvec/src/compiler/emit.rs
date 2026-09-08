@@ -794,9 +794,11 @@ pub fn build_with_warnings(
     // stake and the rule's common branch positions at a runtime death point — so
     // four stakes a death drops are four coincident boxes unless the hardware
     // belongs to the place. It does; this is what keeps its one face decidable.
-    crate::stake::check_marker_faces(plan.campaign).map_err(|e| BuildFailure::Diagnostic {
-        code: e.code,
-        message: e.message,
+    crate::compiler::stake::check_marker_faces(plan.campaign).map_err(|e| {
+        BuildFailure::Diagnostic {
+            code: e.code,
+            message: e.message,
+        }
     })?;
 
     // …and no two bodies the party CLICKS may stand close enough that the

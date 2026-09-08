@@ -161,7 +161,7 @@ pub const DW_STAKE_UNSAFE_ANCHOR: DwCode = DwCode::new("DW0526", ExitTier::Build
 /// collects it — so a second death's drop finds the first's marker standing and
 /// reuses it. Co-droppability is not the question; sharing a place is, and every
 /// stake shares every place.
-pub const DW_STAKE_TWO_FACES: DwCode = DwCode::every_version("DW0880", ExitTier::Build);
+pub const DW_STAKE_TWO_FACES: DwCode = DwCode::new("DW0880", ExitTier::Build);
 
 /// The stakes that can actually leave a marker — every stake but the
 /// `max_live: 0` no-death-cost configuration, which places nothing and therefore
