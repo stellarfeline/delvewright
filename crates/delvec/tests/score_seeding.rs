@@ -28,6 +28,18 @@ use delvewright_dsl::{Campaign, RawCampaign, parse_campaign};
 
 fn parse_dir(dir: &std::path::Path) -> Campaign {
     let read = |n: &str| std::fs::read_to_string(dir.join(n)).unwrap();
+    // The optional stage is READ, not assumed absent. `world-edits.json` used to
+    // be hard-coded to `None` here, so a fixture that carries one was loaded as a
+    // different campaign from the one `delvec build` loads from the same
+    // directory — and the sweep below is over shipped fixtures, i.e. exactly the
+    // campaigns something else builds for real. Presence is decided by the read:
+    // only `NotFound` is absent, so an unreadable file is a failure and never a
+    // silent omission.
+    let world_edits = match std::fs::read_to_string(dir.join("world-edits.json")) {
+        Ok(text) => Some(text),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
+        Err(e) => panic!("{}: {e}", dir.join("world-edits.json").display()),
+    };
     parse_campaign(&RawCampaign {
         world: read("world.json"),
         npcs: read("npcs.json"),
@@ -35,7 +47,7 @@ fn parse_dir(dir: &std::path::Path) -> Campaign {
         quest_plan: read("quest-plan.json"),
         quests: read("quests.json"),
         dialogue: read("dialogue.json"),
-        world_edits: None,
+        world_edits,
         geometry_brief: None,
         layout_graph: None,
         site_plan: None,

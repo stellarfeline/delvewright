@@ -31,7 +31,7 @@ fn hw(name: &str) -> String {
 fn quests_doc(extra: &str, talk_effects: &str) -> String {
     format!(
         r#"{{
-  "dsl_version": "0.22.0",
+  "dsl_version": "0.23.0",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {{
@@ -55,7 +55,110 @@ fn quests_doc(extra: &str, talk_effects: &str) -> String {
     )
 }
 
+/// A second way through the keep's dividing wall, at its west end.
+///
+/// `hello-room` has one 2-wide doorway in the middle of that wall, and
+/// `anchor/exit` — where this file's lethal volume goes — is three cells beyond
+/// it. A volume kills on hitbox intersection, so the cells that share a face with
+/// one are not footing for any body, and a one-cell drop at the exit anchor
+/// therefore seals the only door. The fixture gains the geometry rather than the
+/// rule being narrowed to fit it. West rather than east because an endpoint snap
+/// breaks ties lexicographically and picks `[3, 65, 8]` over `[7, 65, 8]`.
+const SIDE_DOOR: &str = r#"{
+  "dsl_version": "0.23.0",
+  "campaign_id": "hello-world",
+  "stage": "world-edits",
+  "content": {
+    "batches": [
+      {
+        "id": "batch/the-burn-and-the-side-door",
+        "area": "area/keep",
+        "note": "the floor of molten stone at the road's end, and the second way through the dividing wall, in ONE batch: every proof re-runs after every batch, so the signal and the way past it have to arrive together",
+        "edits": [
+          {
+            "verb": "select",
+            "name": "region/the-burn",
+            "shape": {
+              "kind": "box",
+              "frame": { "kind": "piece-local", "piece": 0, "prefab": "prefab/hello-room" },
+              "min": [4, 0, 7],
+              "max": [6, 0, 9]
+            }
+          },
+          {
+            "verb": "replace",
+            "region": "region/the-burn",
+            "matching": ["minecraft:stone"],
+            "recipe": { "blocks": [{ "block": "minecraft:magma_block", "weight": 1.0 }] }
+          },
+          {
+            "verb": "select",
+            "name": "region/side-door",
+            "shape": {
+              "kind": "box",
+              "frame": { "kind": "piece-local", "piece": 0, "prefab": "prefab/hello-room" },
+              "min": [2, 1, 6],
+              "max": [2, 2, 6]
+            }
+          },
+          {
+            "verb": "replace",
+            "region": "region/side-door",
+            "matching": ["minecraft:stone"],
+            "recipe": { "blocks": [{ "block": "minecraft:air", "weight": 1.0 }] }
+          }
+        ]
+      }
+    ]
+  }
+}"#;
+
+/// The floor course under a threshold volume's keep-out, in molten stone.
+///
+/// A volume laid across the keep's one doorway catches the floor on both sides of
+/// the wall, and floor a killing volume catches may not read as ordinary stone
+/// (`DW0891`, spec-0062). So the band `z = 5..7` of the keep's floor is magma,
+/// and the volume that catches it declares so.
+const BURNING_THRESHOLD: &str = r#"{
+  "dsl_version": "0.23.0",
+  "campaign_id": "hello-world",
+  "stage": "world-edits",
+  "content": {
+    "batches": [
+      {
+        "id": "batch/burning-threshold",
+        "area": "area/keep",
+        "note": "the floor the threshold volume catches, in the block that shows it",
+        "edits": [
+          {
+            "verb": "select",
+            "name": "region/threshold-floor",
+            "shape": {
+              "kind": "box",
+              "frame": { "kind": "piece-local", "piece": 0, "prefab": "prefab/hello-room" },
+              "min": [0, 0, 5],
+              "max": [8, 0, 7]
+            }
+          },
+          {
+            "verb": "replace",
+            "region": "region/threshold-floor",
+            "matching": ["minecraft:stone"],
+            "recipe": { "blocks": [{ "block": "minecraft:magma_block", "weight": 1.0 }] }
+          }
+        ]
+      }
+    ]
+  }
+}"#;
+
 fn parse_hw(quests: &str) -> Campaign {
+    parse_hw_with_edits(quests, None)
+}
+
+/// [`parse_hw`], with an optional stage-7 `world-edits` document — the door a
+/// campaign that declares a lethal volume at the exit needs.
+fn parse_hw_with_edits(quests: &str, world_edits: Option<&str>) -> Campaign {
     let raw = RawCampaign {
         world: hw("world.json"),
         npcs: hw("npcs.json"),
@@ -63,7 +166,7 @@ fn parse_hw(quests: &str) -> Campaign {
         quest_plan: hw("quest-plan.json"),
         quests: quests.to_string(),
         dialogue: hw("dialogue.json"),
-        world_edits: None,
+        world_edits: world_edits.map(str::to_string),
         geometry_brief: None,
         layout_graph: None,
         site_plan: None,
@@ -482,11 +585,16 @@ fn a_stake_has_no_compile_time_cell_to_eclipse() {
 #[test]
 fn the_placement_table_is_a_compile_time_chain_with_no_search() {
     let with_volume = format!(
-        "{PURSE_AND_STAKE},\n    \"lethal_volumes\": [ {{ \"id\": \"lethal/the-drop\", \
+        "{PURSE_AND_STAKE},\n    \"lethal_volumes\": [ {{ \"id\": \"lethal/the-burn\", \
          \"region\": {{ \"anchor\": \"anchor/exit\", \"extent\": [0, 0, 0] }}, \
-         \"message\": \"The floor gives way.\" }} ]"
+         \"message\": \"The road ends at a floor of molten stone.\", \
+         \"damage_type\": \"fire\", \
+         \"shown_by\": [\"minecraft:magma_block\"] }} ]"
     );
-    let out = build(&parse_hw(&quests_doc(&with_volume, "")));
+    let out = build(&parse_hw_with_edits(
+        &quests_doc(&with_volume, ""),
+        Some(SIDE_DOOR),
+    ));
     let route = fnc(&out, "stk_route_embers");
 
     let rows: Vec<&str> = route
@@ -685,8 +793,9 @@ fn no_anchor_stands_on_ground_the_runtime_rewrites() {
 fn a_stake_with_no_route_back_fails_to_compile() {
     let cut = format!(
         "{PURSE_AND_STAKE},\n    \"lethal_volumes\": [ {{ \"id\": \"lethal/the-threshold\", \
-         \"region\": {{ \"anchor\": \"anchor/door\", \"extent\": [3, 3, 1] }}, \
-         \"message\": \"The threshold has gone.\" }} ]"
+         \"region\": {{ \"anchor\": \"anchor/door\", \"extent\": [3, 3, 0] }}, \
+         \"message\": \"The threshold burns.\", \"damage_type\": \"fire\", \
+         \"shown_by\": [\"minecraft:magma_block\"] }} ]"
     );
     // One objective only, so no leg of the critical path crosses the volume.
     let one_beat = quests_doc(&cut, "").replace(
@@ -708,11 +817,205 @@ fn a_stake_with_no_route_back_fails_to_compile() {
             r#"[ { "type": "open-gate", "anchor": "anchor/door" } ]"#,
             r#"[ { "type": "set-checkpoint", "anchor": "anchor/exit" } ]"#,
         );
-    let code = failure_code(&parse_hw(&one_beat));
+    let code = failure_code(&parse_hw_with_edits(&one_beat, Some(BURNING_THRESHOLD)));
     assert_eq!(
         code,
         delvec::compiler::stake::DW_STAKE_NO_ROUTE_BACK,
         "a respawn point with no way back to where the party can die strands a stake"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// One death, two datums — the marker is a PLACE
+// ---------------------------------------------------------------------------
+
+/// A campaign whose one death forfeits TWO datums: two stakes, two `drop-stake`
+/// effects in one `on_death` bundle, and nothing else changed.
+fn two_stake_source(second_marker: &str) -> String {
+    let src = PURSE_AND_STAKE
+        .replace(
+            r#"      { "id": "state/embers", "scope": "player", "initial": 5, "name": "Embers",
+        "note": "what the keeper takes and the drop takes back" }"#,
+            r#"      { "id": "state/embers", "scope": "player", "initial": 5, "name": "Embers",
+        "note": "what the keeper takes and the drop takes back" },
+      { "id": "state/relics", "scope": "player", "initial": 3, "name": "Relics",
+        "note": "the second thing a death takes" }"#,
+        )
+        .replace(
+            r#"      { "id": "stake/embers", "state": "state/embers",
+        "collected_message": "You take back what the drop took." }"#,
+            &format!(
+                r#"      {{ "id": "stake/embers", "state": "state/embers",
+        "marker_item": "minecraft:lantern",
+        "collected_message": "You take back what the drop took." }},
+      {{ "id": "stake/relics", "state": "state/relics",
+        "marker_item": "{second_marker}",
+        "collected_message": "You take back the relics." }}"#
+            ),
+        )
+        .replace(
+            r#"    "on_death": [ { "type": "drop-stake", "stake": "stake/embers" } ],"#,
+            r#"    "on_death": [ { "type": "drop-stake", "stake": "stake/embers" },
+                   { "type": "drop-stake", "stake": "stake/relics" } ],"#,
+        );
+    assert_ne!(
+        src, PURSE_AND_STAKE,
+        "the second stake really was spliced in"
+    );
+    src
+}
+
+/// **A death that forfeits two datums leaves ONE `minecraft:interaction`.**
+///
+/// This is the defect the whole shape exists for, stated as the emission fact it
+/// is. The compile-time placement table is keyed on (respawn seat, death region)
+/// and never on the stake, and the rule's common branch positions at the death
+/// point itself — so every stake one death drops resolves to one position. A
+/// marker keyed to the stake therefore summoned one `1.0 × 2.0` box per stake at
+/// that one cell: coincident hitboxes entered by any ray at the same distance, an
+/// exact tie the client resolves by entity iteration order, which is precisely
+/// what `DW0878` refuses between two authored affordances.
+///
+/// **No placement rule could have repaired it**, which is why the assertion is
+/// about the hardware rather than about the anchors: the common branch's position
+/// is chosen at runtime and no compile-time separation reaches it.
+///
+/// Counted over the whole shipped datapack rather than over one function, so a
+/// second summon reintroduced anywhere reds — the emitter is the population.
+#[test]
+fn one_death_two_datums_leave_one_interaction_box() {
+    let out = build(&parse_hw(&quests_doc(
+        &two_stake_source("minecraft:lantern"),
+        "",
+    )));
+
+    let mut summons: Vec<String> = Vec::new();
+    let mut examined = 0usize;
+    for (path, bytes) in &out {
+        if !path.ends_with(".mcfunction") || path.starts_with("packtest-datapack/") {
+            continue;
+        }
+        examined += 1;
+        for line in String::from_utf8(bytes.clone()).unwrap().lines() {
+            if line.contains("summon minecraft:interaction") && line.contains("dw_stk") {
+                summons.push(format!("{path}: {line}"));
+            }
+        }
+    }
+    assert!(examined > 0, "the datapack really has functions to read");
+    assert_eq!(
+        summons.len(),
+        1,
+        "two stakes, one place: a death that forfeits two datums must leave ONE \
+         `minecraft:interaction`, or the two boxes are coincident and the client resolves \
+         the pick by iteration order. Found:\n{summons:#?}"
+    );
+    assert!(
+        summons[0].contains("stk_place.mcfunction"),
+        "…and it is made by the one function that makes a place: {}",
+        summons[0]
+    );
+
+    // Both stakes really route through it — otherwise the count above could be one
+    // because a stake stopped placing anything at all.
+    for s in ["embers", "relics"] {
+        let fill = fnc(&out, &format!("stk_fill_{s}"));
+        assert!(
+            fill.starts_with("function hello-world:stk_place"),
+            "`stk_fill_{s}` makes the place before it takes a slot:\n{fill}"
+        );
+    }
+
+    // One press returns BOTH datums: the place is offered to every stake.
+    let collect = fnc(&out, "stk_collect");
+    for s in ["embers", "relics"] {
+        assert!(
+            collect.contains(&format!("function hello-world:stk_collect_{s}")),
+            "one right-click gives back every wager left at the place:\n{collect}"
+        );
+    }
+
+    // …and one advancement fires it, because there is one box to click. Two
+    // advancements on one entity would be granted at most one per tick, so which
+    // wagers came back would depend on which grant the server reached.
+    let advs: Vec<&String> = out
+        .keys()
+        .filter(|p| p.starts_with("datapack/data/hello-world/advancement/stk"))
+        .collect();
+    assert_eq!(
+        advs,
+        vec![&"datapack/data/hello-world/advancement/stk_collect.json".to_string()],
+        "one box, one advancement"
+    );
+
+    // One collector on the tick, and one legal killer for the one piece of hardware.
+    let tick = fnc(&out, "tick");
+    assert_eq!(
+        tick.lines()
+            .filter(|l| l.contains("run function hello-world:stk_gc"))
+            .count(),
+        1,
+        "one place class, one garbage collector:\n{tick}"
+    );
+}
+
+/// `DW0880`: two stakes that can each leave a marker must agree what a place
+/// looks like.
+///
+/// A place holds one marker and one glowing display, so the display renders one
+/// item — and two declarations cannot both be it. Without the refusal, whichever
+/// stake happened to fill the place first would silently decide what every other
+/// stake's marker looks like, and the losing declaration would be read, emitted
+/// nowhere, and disagree with what the player sees.
+///
+/// Both directions, so the refusal cannot be passing for some other reason: the
+/// same campaign with the same item on both stakes builds.
+#[test]
+fn dw0880_refuses_two_faces_at_one_place() {
+    let code = failure_code(&parse_hw(&quests_doc(
+        &two_stake_source("minecraft:soul_lantern"),
+        "",
+    )));
+    assert_eq!(
+        code,
+        delvec::compiler::stake::DW_STAKE_TWO_FACES,
+        "a place wears one face"
+    );
+
+    let agreed = build(&parse_hw(&quests_doc(
+        &two_stake_source("minecraft:lantern"),
+        "",
+    )));
+    let place = fnc(&agreed, "stk_place");
+    assert!(
+        place.contains("item:{id:\"minecraft:lantern\",count:1}"),
+        "…and with both stakes agreeing, the place wears the item they named:\n{place}"
+    );
+
+    // The binding the proof states: a campaign whose every stake is `max_live: 0`
+    // places nothing and must report zero rather than passing for free.
+    let ledger: serde_json::Value =
+        serde_json::from_str(&text(&agreed, "validation/stake-gate.json")).unwrap();
+    assert_eq!(
+        ledger["marker_leaving_stakes"],
+        serde_json::json!(2),
+        "the face proof examined both stakes: {ledger}"
+    );
+    let none = PURSE_AND_STAKE.replace(
+        r#"      { "id": "stake/embers", "state": "state/embers","#,
+        r#"      { "id": "stake/embers", "state": "state/embers", "max_live": 0,"#,
+    );
+    let quiet = build(&parse_hw(&quests_doc(&none, "")));
+    let ledger: serde_json::Value =
+        serde_json::from_str(&text(&quiet, "validation/stake-gate.json")).unwrap();
+    assert_eq!(
+        ledger["marker_leaving_stakes"],
+        serde_json::json!(0),
+        "a stake that never places a marker owns no part of the place: {ledger}"
+    );
+    assert!(
+        !quiet.contains_key("datapack/data/hello-world/function/stk_place.mcfunction"),
+        "…and no place is made at all"
     );
 }
 
@@ -727,14 +1030,21 @@ fn a_stake_with_no_route_back_fails_to_compile() {
 #[test]
 fn collecting_restores_the_amount_and_is_idempotent() {
     let out = build(&purse_campaign());
-    let collect = fnc(&out, "stk_collect_embers");
+    // The right-click handler is ONE function for the campaign, because there is
+    // one box at a place however many stakes left a wager there.
+    let collect = fnc(&out, "stk_collect");
     assert!(
-        collect.starts_with("advancement revoke @s only hello-world:stk_embers"),
+        collect.starts_with("advancement revoke @s only hello-world:stk_collect"),
         "the grant is consumed first:\n{collect}"
     );
     assert!(
-        collect.contains("run return run function hello-world:stk_take_embers_0"),
-        "`return run` means at most ONE slot is taken per press:\n{collect}"
+        collect.contains("function hello-world:stk_collect_embers"),
+        "…and the place is then offered to every declared stake:\n{collect}"
+    );
+    let mine = fnc(&out, "stk_collect_embers");
+    assert!(
+        mine.contains("run return run function hello-world:stk_take_embers_0"),
+        "`return run` means at most ONE slot of this stake is taken per press:\n{mine}"
     );
 
     let take = fnc(&out, "stk_take_embers_0");
@@ -756,14 +1066,14 @@ fn collecting_restores_the_amount_and_is_idempotent() {
         }
         if String::from_utf8(bytes.clone())
             .unwrap()
-            .contains("kill @e[tag=dw_hw_dw_stk_embers")
+            .contains("kill @e[tag=dw_hw_dw_stk")
         {
             killers.push(path.clone());
         }
     }
     assert_eq!(
         killers,
-        vec!["datapack/data/hello-world/function/stk_gc_embers.mcfunction".to_string()],
+        vec!["datapack/data/hello-world/function/stk_gc.mcfunction".to_string()],
         "one piece of hardware, one legal killer"
     );
 }
@@ -929,9 +1239,10 @@ fn the_packtest_tier_covers_what_it_can_witness_and_claims_nothing_more() {
     );
     assert!(
         stake.contains("function hello-world:stk_drop_embers")
-            && stake.contains("function hello-world:stk_collect_embers")
-            && stake.contains("if entity @e[tag=dw_stk_embers]"),
-        "the drop → collect round trip is driven end to end:\n{stake}"
+            && stake.contains("function hello-world:stk_collect")
+            && stake.contains("if entity @e[tag=dw_stk,distance=..1]"),
+        "the drop → collect round trip is driven end to end, through the REAL \
+         right-click handler rather than this stake's own half of it:\n{stake}"
     );
     assert!(
         stake.contains("NOT a death test"),
@@ -991,7 +1302,11 @@ fn the_ci_fixture_validates_and_emits_the_chain() {
         "stk_route_embers",
         "stk_fill_embers",
         "stk_collect_embers",
-        "stk_gc_embers",
+        // The shared half: one place, one collector, one retirer.
+        "stk_place",
+        "stk_collect",
+        "stk_ref",
+        "stk_gc",
         "shop_open_0",
         "shop_pick_0_0",
     ] {

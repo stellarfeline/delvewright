@@ -209,14 +209,14 @@ fn the_smallest_authorable_volume_is_still_the_cube_that_closed_hv01() {
 /// the completion volume and arriving completes.
 #[test]
 fn a_volume_with_footing_in_it_is_clean() {
-    with_plan("0.22.0", 2, |plan| {
+    with_plan("0.23.0", 2, |plan| {
         let (pos, _) = only_site(plan);
         let world = floor_at([pos[0], pos[1] - 1, pos[2]]);
         assert!(
             world.is_standable(pos),
             "the fixture's premise: the anchor cell is standable"
         );
-        judge_reach_completion(plan, &world, &BTreeMap::new())
+        judge_reach_completion(plan, &world, &BTreeMap::new(), Some(pos))
             .expect("a reach whose own cell is standable completes");
     });
 }
@@ -227,7 +227,7 @@ fn a_volume_with_footing_in_it_is_clean() {
 /// occupy.
 #[test]
 fn a_volume_no_body_can_stand_in_is_refused() {
-    with_plan("0.22.0", 2, |plan| {
+    with_plan("0.23.0", 2, |plan| {
         let (pos, obj) = only_site(plan);
         let footing = [pos[0] + 4, pos[1], pos[2]];
         let world = floor_at([footing[0], footing[1] - 1, footing[2]]);
@@ -238,7 +238,7 @@ fn a_volume_no_body_can_stand_in_is_refused() {
             !reach_completion(pos, 2).certainly_completes_from(footing),
             "the fixture's premise: the only footing lies outside the completion volume"
         );
-        let err = judge_reach_completion(plan, &world, &BTreeMap::new())
+        let err = judge_reach_completion(plan, &world, &BTreeMap::new(), Some(footing))
             .expect_err("a volume with no standable cell must be refused");
         assert_eq!(err.code, DW_REACH_UNCOMPLETABLE);
         assert!(
@@ -272,7 +272,7 @@ fn a_volume_no_body_can_stand_in_is_refused() {
 /// other end of the same arithmetic.
 #[test]
 fn an_arrival_inside_the_snap_radius_but_outside_the_volume_is_refused() {
-    with_plan("0.22.0", 1, |plan| {
+    with_plan("0.23.0", 1, |plan| {
         let (pos, obj) = only_site(plan);
         let mut solid = BTreeSet::new();
         solid.insert([pos[0], pos[1] - 1, pos[2]]); // the volume is occupiable…
@@ -292,7 +292,7 @@ fn an_arrival_inside_the_snap_radius_but_outside_the_volume_is_refused() {
         let step = reach_step(plan, &obj);
 
         let arrivals: BTreeMap<usize, [i32; 3]> = [(step, arrival)].into_iter().collect();
-        let err = judge_reach_completion(plan, &world, &arrivals)
+        let err = judge_reach_completion(plan, &world, &arrivals, Some(arrival))
             .expect_err("an arrival outside the completion volume must be refused");
         assert_eq!(err.code, DW_REACH_UNCOMPLETABLE);
         assert!(
@@ -304,7 +304,7 @@ fn an_arrival_inside_the_snap_radius_but_outside_the_volume_is_refused() {
         // …and the SAME world with the walk ending on the anchor's own cell is
         // clean. One thing moved, and it is the one the rule is about.
         let good: BTreeMap<usize, [i32; 3]> = [(step, pos)].into_iter().collect();
-        judge_reach_completion(plan, &world, &good)
+        judge_reach_completion(plan, &world, &good, Some(arrival))
             .expect("an arrival inside the volume completes");
     });
 }
@@ -356,8 +356,8 @@ fn dw0850_binds_at_the_engines_version() {
     with_plan(delvewright_dsl::DSL_VERSION, 2, |plan| {
         let (pos, _) = only_site(plan);
         let world = floor_at([pos[0] + 4, pos[1] - 1, pos[2]]);
-        let err =
-            judge_reach_completion(plan, &world, &BTreeMap::new()).expect_err("DW0850 must bind");
+        let err = judge_reach_completion(plan, &world, &BTreeMap::new(), None)
+            .expect_err("DW0850 must bind");
         assert_eq!(err.code, DW_REACH_UNCOMPLETABLE, "{}", err.message);
     });
 }
@@ -430,7 +430,7 @@ fn a_raised_anchor_whose_volume_reaches_the_floor_below_is_refused() {
             world.is_standable([pos[0] + 3, pos[1] - 3, pos[2]]),
             "and the hall floor three courses down is standable"
         );
-        judge_reach_completion(plan, &world, &BTreeMap::new())
+        judge_reach_completion(plan, &world, &BTreeMap::new(), Some(entry(pos)))
             .expect("DW0850 is green here: the volume holds the dais");
         assert!(
             world.is_standable(entry(pos)),
@@ -761,4 +761,228 @@ fn a_derived_world_honours_the_radius_too() {
     let n = assert_agreement("blockout", &path, &ticks);
     assert_eq!(n, steps.len());
     assert!(n >= 2, "binding: {n} reach objective(s) examined");
+}
+
+// ============================ 2c. one judgement, two callers (spec-0062 §7) ==
+
+/// **Two rooms, one wall, and the anchor inside it.**
+///
+/// A floor spanning both rooms with a one-thick wall standing on it, the anchor
+/// cell IN the wall, and the wall long enough that no way around it lies inside
+/// the completion volume. Both sides hold footing, both sides are equidistant
+/// from the anchor, and neither can walk to the other without leaving the cube.
+///
+/// This is the case the single-cell reference got wrong, and the direction of
+/// the error is why it matters: the reference was resolved by a
+/// `(distance², cell)` tie-break among equidistant candidates, so ONE side became
+/// "the anchor's footing" and the other side's floor was reported as floor
+/// nothing can arrive at — a verdict that depended on which lip the tie fell to,
+/// which is not a rule about the world. The footing SET (spec-0062 §7.1) is the
+/// repair, and zero off-floor cells is what it looks like.
+#[test]
+fn an_anchor_in_a_wall_is_arrived_at_from_either_side() {
+    with_plan(delvewright_dsl::DSL_VERSION, 2, |plan| {
+        let (pos, _) = only_site(plan);
+        let mut solid = BTreeSet::new();
+        // The floor of both rooms, wide enough that the completion volume never
+        // reaches its edge.
+        for dx in -6..=6 {
+            for dz in -6..=6 {
+                solid.insert([pos[0] + dx, pos[1] - 1, pos[2] + dz]);
+            }
+        }
+        // The wall: one cell thick on x, two courses tall, running the whole
+        // depth of the volume and four cells past it on each side, so there is
+        // no way around it INSIDE the cube.
+        for dz in -4..=4 {
+            for dy in 0..=1 {
+                solid.insert([pos[0], pos[1] + dy, pos[2] + dz]);
+            }
+        }
+        let world = World::from_solid_and_flooded(solid, BTreeSet::new());
+        assert!(
+            !world.is_standable(pos),
+            "the fixture's premise: the anchor cell is the wall itself"
+        );
+        let west = [pos[0] - 1, pos[1], pos[2]];
+        let east = [pos[0] + 1, pos[1], pos[2]];
+        assert!(
+            world.is_standable(west) && world.is_standable(east),
+            "and both rooms have floor against it"
+        );
+        assert!(
+            world.find_path(west, east).is_some(),
+            "the two rooms ARE joined, four cells past the volume — the walk this rule \
+             refuses is the one that stays inside the cube, not one that leaves the room"
+        );
+
+        // The party comes in on the west side, and walks round the wall's end, so
+        // both rooms are in the population.
+        let (binding, verdict) = check_reach_footprint(plan, &world, Some(west));
+        assert!(
+            verdict.is_ok(),
+            "an anchor a body arrives at from either side is not off-floor: {:?}",
+            verdict.err()
+        );
+        assert_eq!(binding.sites, 1, "binding: reach objectives examined");
+        assert_eq!(binding.off_floor, 0, "binding: off-floor cells");
+        assert!(
+            binding.cells >= 4,
+            "binding: {} footprint cell(s) — a zero here would make the green vacuous",
+            binding.cells
+        );
+    });
+}
+
+/// **A radius the message names is one the engine has re-judged, and where none
+/// answers it says so** (spec-0062 §7.2).
+///
+/// An anchor floating five courses over a hall floor: no radius from 1 to
+/// `SNAP_RADIUS` puts standable footing inside the completion volume, so there is
+/// no number to name and the remedy is the anchor's placement. Asserted at the
+/// authored radius 1 AND at 3, because the search ceiling is
+/// `max(authored, SNAP_RADIUS)` and the sentence a reader gets must not depend on
+/// which side of that the authored number falls.
+#[test]
+fn dw0850_names_no_radius_when_none_answers() {
+    for radius in [1u32, 3] {
+        with_plan(delvewright_dsl::DSL_VERSION, radius, |plan| {
+            let (pos, _) = only_site(plan);
+            let mut solid = BTreeSet::new();
+            for dx in -6..=6 {
+                for dz in -6..=6 {
+                    solid.insert([pos[0] + dx, pos[1] - 6, pos[2] + dz]);
+                }
+            }
+            let world = World::from_solid_and_flooded(solid, BTreeSet::new());
+            let hall = [pos[0], pos[1] - 5, pos[2]];
+            assert!(
+                world.is_standable(hall),
+                "the fixture's premise: there is a hall floor, five courses down"
+            );
+            let err = judge_reach_completion(plan, &world, &BTreeMap::new(), Some(hall))
+                .expect_err("a volume with no standable cell must be refused");
+            assert_eq!(err.code, DW_REACH_UNCOMPLETABLE, "{}", err.message);
+            assert!(
+                err.message.contains("No radius from 1 to 3 answers here"),
+                "at radius {radius} the message says no radius answers: {}",
+                err.message
+            );
+            assert!(
+                !err.message.contains("set `radius"),
+                "and it names none: {}",
+                err.message
+            );
+            assert!(
+                err.message.contains("the remedy is the anchor's placement"),
+                "and it sends the author to the anchor: {}",
+                err.message
+            );
+        });
+    }
+}
+
+/// **`DW0850` names the radius that answers, and it is verified there.**
+///
+/// The same anchor with the hall floor two courses down instead of five: radius 1
+/// holds nothing, radius 2 reaches the floor, and the judgement taken again at 2
+/// is green — so 2 is what the message names. A radius derived from the geometry
+/// and never re-judged is how this pair came to prescribe each other's refusal.
+#[test]
+fn dw0850_names_the_smallest_radius_that_answers() {
+    with_plan(delvewright_dsl::DSL_VERSION, 1, |plan| {
+        let (pos, _) = only_site(plan);
+        let mut solid = BTreeSet::new();
+        for dx in -6..=6 {
+            for dz in -6..=6 {
+                solid.insert([pos[0] + dx, pos[1] - 3, pos[2] + dz]);
+            }
+        }
+        let world = World::from_solid_and_flooded(solid, BTreeSet::new());
+        let hall = [pos[0], pos[1] - 2, pos[2]];
+        assert!(
+            world.is_standable(hall),
+            "the hall floor is two courses down"
+        );
+        let err = judge_reach_completion(plan, &world, &BTreeMap::new(), Some(hall))
+            .expect_err("at radius 1 the volume holds nothing");
+        assert_eq!(err.code, DW_REACH_UNCOMPLETABLE, "{}", err.message);
+        assert!(
+            err.message.contains("set `radius: 2`"),
+            "the message names the radius that answers: {}",
+            err.message
+        );
+    });
+    // …and taking the move reaches a different verdict, over the identical world.
+    with_plan(delvewright_dsl::DSL_VERSION, 2, |plan| {
+        let (pos, _) = only_site(plan);
+        let mut solid = BTreeSet::new();
+        for dx in -6..=6 {
+            for dz in -6..=6 {
+                solid.insert([pos[0] + dx, pos[1] - 3, pos[2] + dz]);
+            }
+        }
+        let world = World::from_solid_and_flooded(solid, BTreeSet::new());
+        let hall = [pos[0], pos[1] - 2, pos[2]];
+        judge_reach_completion(plan, &world, &BTreeMap::new(), Some(hall))
+            .expect("the radius the message named is one the engine had re-judged");
+        let (_, verdict) = check_reach_footprint(plan, &world, Some(hall));
+        assert!(
+            verdict.is_ok(),
+            "and the OTHER rule is green there too, which is what `verified` means: {:?}",
+            verdict.err()
+        );
+    });
+}
+
+/// **Neither reach rule derives geometry of its own** (spec-0062 §7, criterion 7).
+///
+/// One judgement over one world, and the two checks read it. Asserted against the
+/// source rather than trusted, because the defect this repairs is precisely two
+/// derivations of one arrangement drifting apart: the standable set, the anchor's
+/// footing and the walk inside the volume each existed twice, and the two rules
+/// came to prescribe each other's refusal.
+///
+/// The reader is deliberately crude — it slices each function's body out of
+/// `reach.rs` and looks for the names that derive geometry. A crude reader that
+/// reds on a real reintroduction is worth more than a clever one nobody trusts.
+#[test]
+fn the_two_reach_rules_share_one_judgement() {
+    let src =
+        std::fs::read_to_string(common::repo_root().join("crates/delvec/src/compiler/reach.rs"))
+            .unwrap();
+    let derivations = [
+        "is_standable",
+        "possibly_completes_from",
+        "footprint_candidates",
+        "anchor_footing",
+        "cells_that_reach",
+        "neighbors",
+    ];
+    let mut checked = 0;
+    for name in [
+        "pub fn judge_reach_completion(",
+        "pub fn check_reach_footprint(",
+    ] {
+        let start = src
+            .find(name)
+            .unwrap_or_else(|| panic!("{name} is in reach.rs"));
+        // The body runs to the next top-level item.
+        let rest = &src[start..];
+        let end = rest[1..].find("\n}\n").map_or(rest.len(), |i| i + 1);
+        let body = &rest[..end];
+        for d in derivations {
+            assert!(
+                !body.contains(d),
+                "{name} calls `{d}` — the geometry belongs to `ReachJudgement::take`, and a \
+                 second derivation of it is what let `DW0850` and `DW0881` disagree"
+            );
+        }
+        assert!(
+            body.contains("ReachJudgement::take"),
+            "{name} takes the shared judgement"
+        );
+        checked += 1;
+    }
+    assert_eq!(checked, 2, "both callers examined");
 }

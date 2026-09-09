@@ -15,7 +15,7 @@ use delvewright_dsl::{RawCampaign, check_campaign};
 /// that wears an axe and a helm, drops **only** the axe, and yields a key the
 /// door quest then collects.
 const QUESTS_V09: &str = r#"{
-  "dsl_version": "0.22.0",
+  "dsl_version": "0.23.0",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {

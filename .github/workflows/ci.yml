@@ -80,7 +80,7 @@ jobs:
   # the `crates-io` approval held the single pending slot GitHub keeps per group,
   # and 21 successors were cancelled with zero jobs — `0.21.2` was bumped on
   # `main` inside that window, never reached crates.io, and was replaced by
-  # `0.22.0` with nothing anywhere going red. `tools/check-dsl-version-published.py`
+  # `0.23.0` with nothing anywhere going red. `tools/check-dsl-version-published.py`
   # refuses the replacement instead: the number a change moves AWAY from must be
   # on the registry. Its own header says why the subject is the retired number
   # and not the current one.

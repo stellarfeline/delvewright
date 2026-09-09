@@ -136,6 +136,100 @@ pub const DW_STAKE_NO_ROUTE_BACK: DwCode = DwCode::new("DW0525", ExitTier::Build
 /// opposite: there *is* a route back, and the ground it ends on is the problem.
 pub const DW_STAKE_UNSAFE_ANCHOR: DwCode = DwCode::new("DW0526", ExitTier::Build);
 
+/// `DW0880`: two stakes that can each leave a marker declare **different**
+/// `marker_item`s, so the place a death leaves would have to wear two faces.
+///
+/// A marker is a *place* — the spot a death left its wagers — and there is one
+/// marker at a place however many datums were forfeited there. That is forced
+/// rather than chosen: the placement table is keyed on (respawn seat, death
+/// region) and never on the stake, so every stake one death drops resolves to one
+/// anchor, and the rule's common branch leaves the stake at the death point, a
+/// position chosen at runtime that no compile-time separation can reach. One box
+/// per place is also what stops four coincident `1.0 × 2.0` interaction hitboxes
+/// being an exact ray-pick tie — the defect [`crate::eclipse::DW_AFFORDANCE_CONTEST`]
+/// refuses for authored affordances.
+///
+/// So the display standing at a place renders ONE item, and every stake that can
+/// leave a marker has to name that item. The alternative is the silent kind of
+/// wrong: whichever stake happened to fill the place first would decide its face,
+/// and the other declarations would be read, emitted nowhere, and disagree with
+/// what the player sees.
+///
+/// **Not restricted to stakes one death can drop together.** Two stakes whose
+/// `on_death` gates are mutually exclusive still land at the same places across
+/// different deaths, and a marker outlives the death that made it until somebody
+/// collects it — so a second death's drop finds the first's marker standing and
+/// reuses it. Co-droppability is not the question; sharing a place is, and every
+/// stake shares every place.
+pub const DW_STAKE_TWO_FACES: DwCode = DwCode::new("DW0880", ExitTier::Build);
+
+/// The stakes that can actually leave a marker — every stake but the
+/// `max_live: 0` no-death-cost configuration, which places nothing and therefore
+/// owns no part of the shared hardware.
+///
+/// The binding [`check_marker_faces`] states, and the set [`crate::emit`] reads
+/// when it emits the one `stk_place`: **one function, so the proof and the
+/// emission can never come to describe different sets.**
+pub fn marking_stakes(c: &Campaign) -> Vec<&delvewright_dsl::Stake> {
+    c.quests
+        .content
+        .stakes
+        .iter()
+        .filter(|s| s.max_live() > 0)
+        .collect()
+}
+
+/// Prove every place a death can leave wears one face (`DW0880`).
+///
+/// Build tier (exit 3), pure comparison over the declarations — no world, no
+/// geometry. Returns the binding: the stakes examined, which is a campaign's
+/// marker-leaving stakes and not its stakes, so a campaign whose every stake is
+/// `max_live: 0` reports zero and says so rather than passing for free.
+///
+/// # Errors
+///
+/// [`DW_STAKE_TWO_FACES`] naming the first two stakes that disagree, in
+/// declaration order, so the report is deterministic (ADR-0006).
+pub fn check_marker_faces(c: &Campaign) -> Result<usize, Failure> {
+    let marking = marking_stakes(c);
+    let Some(first) = marking.first() else {
+        return Ok(0);
+    };
+    for other in marking.iter().skip(1) {
+        if other.marker_item() != first.marker_item() {
+            return Err(Failure {
+                code: DW_STAKE_TWO_FACES,
+                message: format!(
+                    "stake `{}` renders its marker as `{}` and stake `{}` renders its marker as \
+                     `{}`, and both can leave one. A recovery stake's marker is a PLACE — the \
+                     spot a death left its wagers — and a place holds ONE marker however many \
+                     datums were forfeited there: the placement table is keyed on (respawn seat, \
+                     death region) and never on the stake, so every stake a death drops resolves \
+                     to one anchor, and a death on ordinary ground leaves its stake where the \
+                     player fell, which is one position for all of them. One box per place is \
+                     also what keeps the hitboxes out of an exact ray-pick tie (`DW0878`): \
+                     coincident `1.0 x 2.0` interaction entities are entered by any ray at the \
+                     same distance and the client resolves the tie by iteration order. So the \
+                     glowing display at a place shows one item, and two declarations cannot both \
+                     be it — whichever stake filled the place first would silently decide what \
+                     every other stake's marker looks like. Prescription: give every stake that \
+                     can leave a marker the same `marker_item`. This is not about ONE death: a \
+                     marker outlives the death that made it until it is collected, so a later \
+                     death's drop finds an earlier one's marker standing and reuses it, whatever \
+                     gates separate the two `on_death` bundles. A stake that must look different \
+                     is a stake that must land somewhere else, and the engine has one place per \
+                     death.",
+                    first.id,
+                    first.marker_item(),
+                    other.id,
+                    other.marker_item(),
+                ),
+            });
+        }
+    }
+    Ok(marking.len())
+}
+
 /// One respawn seat the table is keyed on: the value `#cp dw.sys` holds while it is
 /// in force, a human label, the standable cell, and the earliest critical-path step
 /// at which it can be in force.
@@ -161,8 +255,39 @@ pub struct DeathRegion {
     /// Inclusive world-space corners.
     pub region: ([i32; 3], [i32; 3]),
     /// Whether this region is a lethal volume (as opposed to runtime-mutable
-    /// ground). Carried so a diagnostic can give the right prescription.
+    /// ground). Carried so a diagnostic can give the right prescription, and so
+    /// [`DeathRegion::holds_no_anchor`] knows which reading of the box to take.
     pub lethal: bool,
+}
+
+impl DeathRegion {
+    /// **Is `cell` one this region forbids a stake anchor to stand in?**
+    ///
+    /// The two kinds of region forbid by different mechanisms, so they read their
+    /// own box differently, and the difference is exactly one cell of shell.
+    ///
+    /// A **runtime-mutable** region acts on BLOCKS: the runtime fills it solid or
+    /// clears it to air, so what it can destroy is a marker inside its own cells.
+    /// Cell containment is the whole of that rule.
+    ///
+    /// A **lethal volume** acts on BODIES, through a vanilla selector, and the
+    /// server adjudicates that selector against the body's whole hitbox — so it
+    /// kills a player whose feet cell is outside the declared box but whose body
+    /// reaches into it ([`delvewright_dsl::metrics::selector_reaches_body_in_cell`]).
+    /// An anchor there is a place the delve invites the player to walk back to and
+    /// then kills them for standing on: the gallery's west pit `[1,63,2]..[3,67,4]`
+    /// anchored at `[1,65,5]`, one cell past the `+z` face, and the bot died at
+    /// `[3.85, 65.00, 5.14]` on the walk off it — a real kill by a real volume,
+    /// which the run then had to report against the volume whose trial was open.
+    #[must_use]
+    pub fn holds_no_anchor(&self, cell: [i32; 3]) -> bool {
+        let (lo, hi) = self.region;
+        if self.lethal {
+            delvewright_dsl::metrics::selector_reaches_body_in_cell(lo, hi, cell)
+        } else {
+            in_box(cell, self.region)
+        }
+    }
 }
 
 /// One row of the table: *a death in this region, with this seat in force, leaves
@@ -231,6 +356,10 @@ pub struct StakeGate {
     /// Cells that are reachable from the entry but **not** from some seat — the
     /// one-way-drop set, which must be empty or `DW0525` fires.
     pub stranded_cells: usize,
+    /// Stakes that can actually leave a marker — the set `DW0880` compared and the
+    /// set the one `stk_place` is emitted for. Zero means every declared stake is
+    /// `max_live: 0`, so no place is ever made and the face proof examined nothing.
+    pub marking: usize,
 }
 
 impl StakeGate {
@@ -252,6 +381,7 @@ impl StakeGate {
             "distinct_anchors": self.anchors,
             "runtime_mutable_cells_excluded": self.mutable_cells,
             "stranded_cells": self.stranded_cells,
+            "marker_leaving_stakes": self.marking,
             "unbound": self.unbound(),
         })
     }
@@ -410,30 +540,36 @@ fn unsafe_footing(regions: &[LabelledBox]) -> BTreeSet<[i32; 3]> {
 }
 
 /// **The rule itself**, over already-computed sets: the cell reachable from a seat
-/// that minimises distance to a death region, excluding the region itself and any
-/// ground the runtime rewrites.
+/// that minimises distance to a death region, excluding every cell the region
+/// forbids an anchor and any ground the runtime rewrites.
 ///
 /// Split out from [`build`] so the rule can be exercised on stated inputs rather
 /// than only through a whole campaign — the two failure modes it distinguishes are
 /// geometric facts about three sets, and a test that has to build a world to reach
 /// them is a test of the world.
 ///
+/// What "outside the region" means is the region's own answer
+/// ([`DeathRegion::holds_no_anchor`]), never a box test written here: a lethal
+/// volume forbids the shell of cells its selector can still reach a body in, and
+/// picking one of those puts the stake — and the walk back to it — inside the
+/// hazard the stake exists to recover from.
+///
 /// Ties break lexicographically on the cell, so the answer is deterministic
 /// (ADR-0006) and independent of the iteration order of the set handed in.
 ///
 /// # Errors
 ///
-/// [`DW_STAKE_NO_ROUTE_BACK`] when nothing outside the region is reachable at all;
+/// [`DW_STAKE_NO_ROUTE_BACK`] when nothing the region allows is reachable at all;
 /// [`DW_STAKE_UNSAFE_ANCHOR`] when something is, but every candidate stands on
 /// ground the runtime removes.
 pub fn choose_anchor(
     reachable: &BTreeSet<[i32; 3]>,
     unsafe_cells: &BTreeSet<[i32; 3]>,
-    region: ([i32; 3], [i32; 3]),
+    region: &DeathRegion,
 ) -> Result<[i32; 3], DwCode> {
     let outside: Vec<[i32; 3]> = reachable
         .iter()
-        .filter(|c| !in_box(**c, region))
+        .filter(|c| !region.holds_no_anchor(**c))
         .copied()
         .collect();
     if outside.is_empty() {
@@ -442,7 +578,7 @@ pub fn choose_anchor(
     outside
         .iter()
         .filter(|c| !unsafe_cells.contains(*c))
-        .min_by_key(|c| (box_dist2(**c, region), **c))
+        .min_by_key(|c| (box_dist2(**c, region.region), **c))
         .copied()
         .ok_or(DW_STAKE_UNSAFE_ANCHOR)
 }
@@ -554,6 +690,11 @@ pub fn build(
     // The rule's degenerate branch places the stake AT the death point, so the
     // obligation it carries is that the death point leads home. A one-way drop is
     // exactly the campaign that fails here, and it is `AC8`.
+    //
+    // "In a region" is the region's own answer, the same one the anchor rule takes
+    // — a cell whose body the volume's selector reaches is one the runtime's own
+    // `stk_route` selector projects to the region's lip, so it is not a cell whose
+    // stake can strand.
     let from_entry = match seats.first() {
         Some(s) if s.cp == -1 => reach[0].clone(),
         _ => world.reachable_walkable(&seats.iter().map(|s| s.cell).collect::<Vec<_>>()),
@@ -563,7 +704,7 @@ pub fn build(
         let stranded: Vec<[i32; 3]> = from_entry
             .iter()
             .filter(|c| !reach[i].contains(*c))
-            .filter(|c| !regions.iter().any(|r| in_box(**c, r.region)))
+            .filter(|c| !regions.iter().any(|r| r.holds_no_anchor(**c)))
             .copied()
             .collect();
         stranded_cells += stranded.len();
@@ -593,7 +734,7 @@ pub fn build(
     for (si, seat) in seats.iter().enumerate() {
         for (ri, region) in regions.iter().enumerate() {
             // The rule, over the sets computed above.
-            let picked = choose_anchor(&reach[si], &unsafe_cells, region.region);
+            let picked = choose_anchor(&reach[si], &unsafe_cells, region);
             let cell = match picked {
                 Ok(c) => c,
                 Err(code) => {
@@ -639,6 +780,7 @@ pub fn build(
         anchors: anchors.len(),
         mutable_cells: unsafe_cells.len(),
         stranded_cells,
+        marking: marking_stakes(plan.campaign).len(),
     };
     Ok(Some(StakeTable {
         seats,
@@ -678,19 +820,86 @@ mod tests {
         assert!(!s.contains(&[0, 12, 0]));
     }
 
+    /// A runtime-mutable region: the block half of the table, whose rule is cell
+    /// containment because what it destroys is a marker's own block.
+    fn mutable(region: ([i32; 3], [i32; 3])) -> DeathRegion {
+        DeathRegion {
+            label: "a lift car".to_string(),
+            region,
+            lethal: false,
+        }
+    }
+
+    /// A lethal volume: the body half, whose rule is what its selector can reach.
+    fn lethal(region: ([i32; 3], [i32; 3])) -> DeathRegion {
+        DeathRegion {
+            label: "a lethal volume".to_string(),
+            region,
+            lethal: true,
+        }
+    }
+
     /// The rule, on stated sets: the reachable cell nearest the region wins, ties
     /// break lexicographically, and the region's own cells are never candidates.
     #[test]
     fn the_anchor_is_the_nearest_reachable_cell_outside_the_region() {
-        let region = ([0, 0, 0], [0, 0, 0]);
+        let region = mutable(([0, 0, 0], [0, 0, 0]));
         let reachable: BTreeSet<[i32; 3]> = [[0, 0, 0], [5, 0, 0], [2, 0, 0], [0, 0, 2]]
             .into_iter()
             .collect();
         assert_eq!(
-            choose_anchor(&reachable, &BTreeSet::new(), region).unwrap(),
+            choose_anchor(&reachable, &BTreeSet::new(), &region).unwrap(),
             [0, 0, 2],
             "distance 2 either way, and [0,0,2] is lexicographically first — the tie \
              break is part of the contract (ADR-0006)"
+        );
+    }
+
+    /// **The gallery's west pit, as `delvec` really resolves it.**
+    ///
+    /// The volume is `[1,63,2]..[3,67,4]`, and `[1,65,5]` — one cell past the `+z`
+    /// face — was the anchor every seat's row pointed at. It is not a cell outside
+    /// the volume in any sense the SERVER uses: the emitted selector covers
+    /// `[1,4] x [63,68] x [2,5]` and a body standing in that cell reaches back to
+    /// `z = 4.7`, so the volume kills whoever walks the recovery back to it. The
+    /// live ladder measured exactly that: the stake trial for the east pit opened
+    /// with the bot standing at `[2, 65, 5]`, and it died at
+    /// `[3.85, 65.00, 5.14]` — the west pit's kill, charged to the east pit's
+    /// trial, which then reported that its own volume had not been exercised.
+    ///
+    /// The cell one further out is the answer, and this pins that the rule takes
+    /// exactly one cell of shell rather than a number somebody chose.
+    #[test]
+    fn a_lethal_volumes_anchor_is_never_a_cell_its_selector_can_kill_in() {
+        let region = lethal(([1, 63, 2], [3, 67, 4]));
+        let reachable: BTreeSet<[i32; 3]> = [[1, 65, 5], [2, 65, 5], [1, 65, 6], [10, 65, 24]]
+            .into_iter()
+            .collect();
+        assert!(
+            region.holds_no_anchor([1, 65, 5]),
+            "the cell the compiler used to pick: a body in it stands within half a \
+             width of the +z face and the volume's own selector matches it"
+        );
+        assert!(
+            !region.holds_no_anchor([1, 65, 6]),
+            "one further out is clear"
+        );
+        assert_eq!(
+            choose_anchor(&reachable, &BTreeSet::new(), &region).unwrap(),
+            [1, 65, 6],
+        );
+        // The same box read as runtime-mutable ground keeps the old answer: that
+        // region destroys BLOCKS, and a marker one cell outside it is untouched.
+        assert_eq!(
+            choose_anchor(
+                &reachable,
+                &BTreeSet::new(),
+                &mutable(([1, 63, 2], [3, 67, 4]))
+            )
+            .unwrap(),
+            [1, 65, 5],
+            "the two kinds of region forbid by different mechanisms, and the \
+             difference is exactly this cell"
         );
     }
 
@@ -698,11 +907,33 @@ mod tests {
     /// one-way drop.
     #[test]
     fn dw0525_fires_when_nothing_outside_the_region_is_reachable() {
-        let region = ([0, 0, 0], [4, 4, 4]);
+        let region = mutable(([0, 0, 0], [4, 4, 4]));
         let reachable: BTreeSet<[i32; 3]> = [[1, 1, 1], [2, 2, 2]].into_iter().collect();
         assert_eq!(
-            choose_anchor(&reachable, &BTreeSet::new(), region),
+            choose_anchor(&reachable, &BTreeSet::new(), &region),
             Err(DW_STAKE_NO_ROUTE_BACK)
+        );
+    }
+
+    /// The same refusal, reached by the shell rather than by the box: every cell a
+    /// route back ends on is one the volume's selector still kills in. `DW0525` is
+    /// the honest answer — there is nowhere to leave the stake — and the alternative
+    /// is an anchor the delve kills the player for standing on.
+    #[test]
+    fn dw0525_fires_when_every_reachable_cell_is_inside_a_lethal_volumes_reach() {
+        let region = lethal(([0, 0, 0], [0, 0, 0]));
+        let reachable: BTreeSet<[i32; 3]> = [[0, 0, 0], [1, 0, 0], [0, 0, 1]].into_iter().collect();
+        assert_eq!(
+            choose_anchor(&reachable, &BTreeSet::new(), &region),
+            Err(DW_STAKE_NO_ROUTE_BACK)
+        );
+        // A cell two out is reachable by nothing the volume can touch, and the same
+        // sets plus that cell resolve — so the refusal above is not vacuous.
+        let mut wider = reachable.clone();
+        wider.insert([2, 0, 0]);
+        assert_eq!(
+            choose_anchor(&wider, &BTreeSet::new(), &region).unwrap(),
+            [2, 0, 0]
         );
     }
 
@@ -711,11 +942,11 @@ mod tests {
     /// A marker left there would be destroyed by the next ride (spec-0031's ruling).
     #[test]
     fn dw0526_fires_when_every_route_back_ends_on_ground_the_runtime_rewrites() {
-        let region = ([0, 0, 0], [0, 0, 0]);
+        let region = mutable(([0, 0, 0], [0, 0, 0]));
         let reachable: BTreeSet<[i32; 3]> = [[0, 0, 0], [3, 0, 0], [4, 0, 0]].into_iter().collect();
         let unsafe_cells: BTreeSet<[i32; 3]> = [[3, 0, 0], [4, 0, 0]].into_iter().collect();
         assert_eq!(
-            choose_anchor(&reachable, &unsafe_cells, region),
+            choose_anchor(&reachable, &unsafe_cells, &region),
             Err(DW_STAKE_UNSAFE_ANCHOR),
             "the distinction matters: DW0525 says there is no way back, DW0526 says \
              the way back ends on ground that will not hold a marker"
@@ -723,7 +954,7 @@ mod tests {
         // …and with the same sets minus the unsafe marking, the same call succeeds,
         // so the test above is not passing for some other reason.
         assert_eq!(
-            choose_anchor(&reachable, &BTreeSet::new(), region).unwrap(),
+            choose_anchor(&reachable, &BTreeSet::new(), &region).unwrap(),
             [3, 0, 0]
         );
     }

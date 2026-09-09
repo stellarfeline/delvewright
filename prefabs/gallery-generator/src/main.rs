@@ -63,6 +63,64 @@ const DIVIDER_Z: i32 = 15;
 /// prefab-declared gate anchor opens.
 const GATES: [(i32, i32); 5] = [(14, 15), (24, 25), (4, 5), (9, 10), (19, 20)];
 
+/// **The west terrace, and the well cut through it** — the gallery's pit whose
+/// keep-out lies under the rim (spec-0062 §10).
+///
+/// A killing volume that catches floor the party walks is refused (`DW0891`),
+/// and the repair is to MOVE THE HAZARD, never to mark walkable-looking ground
+/// unwalkable. So the west pit is a real pit: a terrace three courses over the
+/// near hall's west corner, with a one-cell well cut down through it to the
+/// hall's own floor. The volume sits at the well's bottom, its keep-out's top
+/// course lies a full body under the rim, and every cell of that keep-out at the
+/// walk plane is terrace stone.
+///
+/// `(x0, x1, z0, z1)` inclusive, in room space.
+const TERRACE: (i32, i32, i32, i32) = (0, 5, 1, 6);
+
+/// The terrace's top solid course: solid `y ∈ 1..=TERRACE_TOP_Y`, so its rim is
+/// walked at `y = TERRACE_TOP_Y + 1`.
+///
+/// Three courses is not a round number, it is the rule: a body steps one course
+/// ([`prefab_invariants`]'s own walk), so a rim three over the well's floor is a
+/// place nothing can walk down into. The well's bottom is therefore outside the
+/// population `DW0891` measures against, which is what makes a hole in the floor
+/// *checked and clear* rather than *caught*.
+const TERRACE_TOP_Y: i32 = 3;
+
+/// The well's column, `(x, z)` — the cell `anchor/west-pit` names, cut open from
+/// the hall's floor to the terrace's rim.
+const WELL: (i32, i32) = (2, 3);
+
+/// The treads that climb the terrace from the near hall, `(x, top_y)` on the
+/// well's own `z` — one course of rise each, so the rim is somewhere the party
+/// can actually stand and look in. Without them the terrace is scenery and every
+/// reach anchored on the well is `DW0850`.
+///
+/// They stand OUTSIDE the terrace, and the terrace is drawn wide enough that no
+/// hall-floor cell lies nearer the well than its own rim does. That is not
+/// decoration: `DW0881` measures the anchor's footing as the nearest standable
+/// cells to it, so a strip of hall floor two cells south of the well would be
+/// "where a body arrives at the well" and the rim three courses up would be
+/// floor nothing can walk to it from.
+const TERRACE_STEPS: [(i32, i32); 2] = [(7, 1), (6, 2)];
+
+/// **The east strip: a flush hazard that shows itself** (spec-0062 §3).
+///
+/// The other half of the ruling. This volume is level with the floor on purpose
+/// — the block IS the signal — so the floor course under every cell it catches
+/// is molten stone, and `lethal/east-pit` declares `shown_by`. The span is the
+/// volume's keep-out at the walk plane, one cell wider than the volume on every
+/// side, because that is exactly how far a body's hitbox reaches into it.
+///
+/// `(x0, x1, z0, z1)` inclusive, in room space.
+const BURNING_STRIP: (i32, i32, i32, i32) = (18, 22, 1, 4);
+
+/// What the burning strip is made of — one of the blocks vanilla hurts a body
+/// with ([`delvewright_dsl::blockshape::HURTING_BLOCKS_1_21_11`], reached here
+/// through the campaign's own `shown_by`), and a full cube, so the floor it
+/// makes is floor.
+const BURNING_BLOCK: &str = "minecraft:magma_block";
+
 /// One named place in the hall.
 ///
 /// Two of its keys read as the same question and are not. **`note` is prose for
@@ -663,7 +721,14 @@ fn block_at(
     &'static str,
     Option<&'static [(&'static str, &'static str)]>,
 ) {
-    if y == 0 || y == SIZE[1] - 1 {
+    if y == 0 {
+        let (bx0, bx1, bz0, bz1) = BURNING_STRIP;
+        if (bx0..=bx1).contains(&x) && (bz0..=bz1).contains(&z) {
+            return (BURNING_BLOCK, None);
+        }
+        return ("minecraft:stone", None);
+    }
+    if y == SIZE[1] - 1 {
         return ("minecraft:stone", None);
     }
     if x == 0 || x == SIZE[0] - 1 || z == 0 || z == SIZE[2] - 1 {
@@ -675,6 +740,24 @@ fn block_at(
                 return ("minecraft:iron_bars", None);
             }
         }
+        return ("minecraft:stone", None);
+    }
+    // The west terrace and its well. The well column is cut before the terrace
+    // fills, so the hole is a hole rather than a cell the terrace happens to
+    // miss — one order, one authority.
+    let (tx0, tx1, tz0, tz1) = TERRACE;
+    if (tx0..=tx1).contains(&x)
+        && (tz0..=tz1).contains(&z)
+        && (1..=TERRACE_TOP_Y).contains(&y)
+        && (x, z) != WELL
+    {
+        return ("minecraft:stone", None);
+    }
+    if z == WELL.1
+        && TERRACE_STEPS
+            .iter()
+            .any(|&(sx, top)| sx == x && (1..=top).contains(&y))
+    {
         return ("minecraft:stone", None);
     }
     let (cx0, cx1, cy, cz0, cz1) = CANOPY;
@@ -713,6 +796,7 @@ fn build() -> Structure {
             "minecraft:chest",
             Some(&[("facing", "north"), ("type", "single")][..]),
         ),
+        (BURNING_BLOCK, None),
     ] {
         palette.idx(name, props);
     }

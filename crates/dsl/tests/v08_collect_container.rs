@@ -64,7 +64,7 @@ const ADOPTED: &str = r#", "container": "anchor/door", "item_name": "Cheese", "f
 
 #[test]
 fn the_adoption_surface_validates_clean_at_v08() {
-    let diags = check_campaign(&campaign_with(quests("0.22.0", ADOPTED)));
+    let diags = check_campaign(&campaign_with(quests("0.23.0", ADOPTED)));
     assert!(
         diags.is_empty(),
         "expected zero diagnostics for a v0.8 adopted-container collect, got: {diags:#?}"
@@ -75,7 +75,7 @@ fn the_adoption_surface_validates_clean_at_v08() {
 #[test]
 fn an_invented_container_anchor_is_dw0142() {
     let diags = check_campaign(&campaign_with(quests(
-        "0.22.0",
+        "0.23.0",
         r#", "container": "anchor/no-such-barrel""#,
     )));
     let d = diags
@@ -91,7 +91,7 @@ fn an_invented_container_anchor_is_dw0142() {
 #[test]
 fn padding_past_the_last_slot_is_dw0432() {
     let diags = check_campaign(&campaign_with(quests(
-        "0.22.0",
+        "0.23.0",
         r#", "container": "anchor/door", "fill_count": 27"#,
     )));
     let d = diags
@@ -104,7 +104,7 @@ fn padding_past_the_last_slot_is_dw0432() {
     // The exact ceiling validates: 26 padding stacks + the objective's own = 27.
     assert!(
         !check_campaign(&campaign_with(quests(
-            "0.22.0",
+            "0.23.0",
             r#", "container": "anchor/door", "fill_count": 26"#,
         )))
         .iter()
@@ -119,7 +119,7 @@ fn padding_past_the_last_slot_is_dw0432() {
 fn a_loot_entry_and_an_adopted_collect_on_one_anchor_is_dw0435() {
     let quests = format!(
         r#"{{
-  "dsl_version": "0.22.0",
+  "dsl_version": "0.23.0",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {{
@@ -160,7 +160,7 @@ fn a_loot_entry_and_an_adopted_collect_on_one_anchor_is_dw0435() {
 #[test]
 fn two_adopted_collects_on_one_anchor_is_dw0435() {
     let quests = r#"{
-  "dsl_version": "0.22.0",
+  "dsl_version": "0.23.0",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {
@@ -191,7 +191,7 @@ fn two_adopted_collects_on_one_anchor_is_dw0435() {
 /// translates like every other player-visible string.
 #[test]
 fn item_name_enters_the_l10n_inventory() {
-    let c = parse_campaign(&campaign_with(quests("0.22.0", ADOPTED))).expect("parses");
+    let c = parse_campaign(&campaign_with(quests("0.23.0", ADOPTED))).expect("parses");
     let inv = l10n::inventory(&c);
     assert_eq!(
         inv.get("obj.open-the-door.cheese.item_name")
@@ -218,7 +218,7 @@ fn stage5_schema_exports_the_adoption_fields() {
 /// from the DSL alone.
 #[test]
 fn an_unadopted_collect_serializes_without_the_new_fields() {
-    let c = parse_campaign(&campaign_with(quests("0.22.0", ""))).expect("parses");
+    let c = parse_campaign(&campaign_with(quests("0.23.0", ""))).expect("parses");
     let json = serde_json::to_string(&c.quests.content).expect("serializes");
     for field in ["container", "item_name", "fill_count"] {
         assert!(

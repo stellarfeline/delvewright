@@ -1,0 +1,90 @@
+{
+  "campaign_id": "lethal-volume",
+  "content": {
+    "batches": [
+      {
+        "area": "area/keep",
+        "edits": [
+          {
+            "name": "region/the-burn",
+            "shape": {
+              "frame": {
+                "kind": "piece-local",
+                "piece": 0,
+                "prefab": "prefab/hello-room"
+              },
+              "kind": "box",
+              "max": [
+                6,
+                0,
+                9
+              ],
+              "min": [
+                4,
+                0,
+                7
+              ]
+            },
+            "verb": "select"
+          },
+          {
+            "matching": [
+              "minecraft:stone"
+            ],
+            "recipe": {
+              "blocks": [
+                {
+                  "block": "minecraft:magma_block",
+                  "weight": 1.0
+                }
+              ]
+            },
+            "region": "region/the-burn",
+            "verb": "replace"
+          },
+          {
+            "name": "region/side-door",
+            "shape": {
+              "frame": {
+                "kind": "piece-local",
+                "piece": 0,
+                "prefab": "prefab/hello-room"
+              },
+              "kind": "box",
+              "max": [
+                2,
+                2,
+                6
+              ],
+              "min": [
+                2,
+                1,
+                6
+              ]
+            },
+            "verb": "select"
+          },
+          {
+            "matching": [
+              "minecraft:stone"
+            ],
+            "recipe": {
+              "blocks": [
+                {
+                  "block": "minecraft:air",
+                  "weight": 1.0
+                }
+              ]
+            },
+            "region": "region/side-door",
+            "verb": "replace"
+          }
+        ],
+        "id": "batch/the-burn-and-the-side-door",
+        "note": "The floor of molten stone at the road's end, and the second way through the dividing wall, in ONE batch. A body is as wide as its hitbox, so the nine cells around this killing volume are cells no route may use: the side door is what leaves the party a way through, and the magma is what tells them why they may not walk here (DW0891). One batch, because every proof re-runs after every batch — signalled last, the floor read as stone while the earlier batch was judged; carved last, the route was shut while the burn was judged."
+      }
+    ]
+  },
+  "dsl_version": "0.23.0",
+  "stage": "world-edits"
+}

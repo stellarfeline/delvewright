@@ -669,6 +669,19 @@ fn check_batch_invariants(
         message: format!("after world-edits batch `{bid}`: {}", e.message),
     };
     if crate::compiler::nav::needs_world(plan) {
+        // `DW0891` before `DW0510`, here as in `emit::build` — spec-0062 §4's
+        // order, and this is the OTHER entry point it has to hold at. A batch
+        // replay that asked the route proof first would report a closed route
+        // over a hazard nobody could see, which is the symptom rather than the
+        // cause; and a rule bound at one of two doors is bound at neither.
+        crate::compiler::lethal::check_danger_is_visible(
+            plan,
+            &with_fixtures,
+            &assembled.blocks,
+            plan.campaign_start().map(|(_, pos)| pos),
+        )
+        .1
+        .map_err(ctx)?;
         crate::compiler::nav::check_critical_path(plan, &with_fixtures).map_err(ctx)?;
         crate::compiler::nav::check_checkpoints(plan, &with_fixtures).map_err(ctx)?;
     }

@@ -787,6 +787,20 @@ pub fn build_with_warnings(
         }
     })?;
 
+    // …and a recovery stake's marker is a PLACE, so every stake that can leave one
+    // has to agree what a place looks like (DW0880). Same family, same tier, and
+    // here for the same reason: one place holds ONE `minecraft:interaction`,
+    // because the placement table is keyed on (seat, region) rather than on the
+    // stake and the rule's common branch positions at a runtime death point — so
+    // four stakes a death drops are four coincident boxes unless the hardware
+    // belongs to the place. It does; this is what keeps its one face decidable.
+    crate::compiler::stake::check_marker_faces(plan.campaign).map_err(|e| {
+        BuildFailure::Diagnostic {
+            code: e.code,
+            message: e.message,
+        }
+    })?;
+
     // …and no two bodies the party CLICKS may stand close enough that the
     // crosshair cannot tell them apart (DW0489). `DW0359` above compares a body
     // against an affordance and skips every walker; this reads the v0.7 cast
@@ -1026,24 +1040,79 @@ pub fn build_with_warnings(
                 message: e.message,
             })?;
 
+            // Seat each wave mob on a validated standable cell near its anchor, in
+            // room only (DW0312 if the room lacks the footing) — or, for a
+            // `summon: aggro-edge` wave, on its perception ring (DW0387).
+            //
+            // **Before the proofs, because a wave's seats are posted places.** A
+            // seated mob is put where it is by declaration and not by walking,
+            // exactly like an NPC's anchor, so `lethal::check_respawn_seats` has
+            // to be able to see it — and the cells are a measurement of the
+            // assembled world (the footing the room really offers), which no
+            // reading of the plan alone can produce. Everything below is a
+            // consumer of this answer; nothing it needs is computed below it.
+            let (waves, rings) = plan_wave_spawns(plan, &world)?;
             let (moves, actor_moves) = if crate::compiler::nav::needs_world(plan) {
                 let m = crate::compiler::nav::plan_moves(plan, &world)?;
                 // move-actor (spec-0014): A* over the actor's footprint; DW0325 if
                 // unroutable. Planned alongside move-npc from the same occupancy model.
                 let am = crate::compiler::nav::plan_actor_moves(plan, &world)?;
                 crate::compiler::nav::check_cutscenes(plan, &world, &m, &am)?;
+                // spec-0031: the one lethal-volume obligation routing cannot see.
+                // A respawn SEAT inside a volume is reached by teleport and routes
+                // perfectly while killing the party on arrival, forever. The wave
+                // seating goes in with it: a mob put on a cell by the seating pass
+                // is put there by declaration too, and its body is not the walker
+                // the footing was proven for.
+                //
+                // **Before the route proofs, and that ordering is a judgement.** A
+                // volume that swallows a posted place usually closes the route to
+                // it as well, so the two findings arrive together — and `DW0510`
+                // then sends the author to "move the volume, or give the party a
+                // route around it" when what is actually wrong is that their
+                // Keeper is standing in the pit. The specific cause is the more
+                // actionable message, and the route closure is its symptom. This
+                // proof reads the plan and the seating, never the routes, so
+                // nothing is lost by asking it first.
+                let lethal_seats = crate::compiler::lethal::check_respawn_seats(
+                    plan,
+                    campaign_spawn(plan),
+                    &waves,
+                )?;
+                // spec-0062: **danger is visible, or the engine refuses it.**
+                // `DW0891`, asked BEFORE every route proof and after `DW0511`,
+                // and the order is the judgement §4 records: a volume that
+                // catches walked floor usually closes a route as well and often
+                // sits under a reach, so asked first the refusal names the
+                // cause, and `DW0510`, `DW0850` and `DW0881` then judge a volume
+                // the player can see. This proof reads the plan's volumes, the
+                // lethality-free population and the block map, never a route, so
+                // nothing is lost by asking it here.
+                let danger = if plan.lethal_volumes.is_empty() {
+                    crate::compiler::lethal::DangerVisibility::default()
+                } else {
+                    let blocks = match &edit_replay {
+                        Some(er) => er.assembled.blocks.clone(),
+                        None => crate::compiler::assembled::assembled_blocks(plan, structures),
+                    };
+                    let (binding, verdict) = crate::compiler::lethal::check_danger_is_visible(
+                        plan,
+                        &world,
+                        &blocks,
+                        campaign_spawn(plan),
+                    );
+                    // Stated whether it found anything or not, and before the
+                    // verdict is taken: a refusal owes its reader the population
+                    // it was measured against as much as a pass does.
+                    eprintln!("{}", binding.line());
+                    verdict?;
+                    binding
+                };
                 crate::compiler::nav::check_critical_path(plan, &world)?;
                 // v0.6 checkpoint no-stranding + placement proofs (spec-0012,
                 // DW0315/DW0316) and stealth-zone standable/reachable proofs
                 // (spec-0014, DW0327), re-rooting DW0311 reachability at each beat.
                 crate::compiler::nav::check_checkpoints(plan, &world)?;
-                // spec-0031: the one lethal-volume obligation routing cannot see.
-                // Every route proof already treats a volume's cells as impassable
-                // (`nav::World::with_lethal`), so `DW0510` fell out of DW0311
-                // above; a respawn SEAT inside a volume is reached by teleport and
-                // routes perfectly while killing the party on arrival, forever.
-                let lethal_seats =
-                    crate::compiler::lethal::check_respawn_seats(plan, campaign_spawn(plan))?;
                 if !plan.lethal_volumes.is_empty() {
                     lethal_gate = Some(crate::compiler::lethal::gate(
                         plan.campaign,
@@ -1053,6 +1122,7 @@ pub fn build_with_warnings(
                         crate::compiler::nav::critical_leg_count(plan),
                         // One template per resolved volume (see `emit_packtest`).
                         plan.lethal_volumes.len(),
+                        danger,
                     ));
                 }
                 // spec-0032: the recovery stake's placement table and its proofs
@@ -1151,7 +1221,12 @@ pub fn build_with_warnings(
                 // proof judges — the endpoint snap searches three blocks and
                 // the completion cube reaches one, so a route can be proven,
                 // exported and walked to a cell that never fires the objective.
-                crate::compiler::reach::check_reach_completion(plan, &world, &routes)?;
+                crate::compiler::reach::check_reach_completion(
+                    plan,
+                    &world,
+                    &routes,
+                    campaign_spawn(plan),
+                )?;
                 // `DW0881`: the other direction of the same sentence. `DW0850`
                 // asks whether the party can complete this at all; this asks
                 // whether anybody can complete it WITHOUT arriving. The volume is
@@ -1304,10 +1379,6 @@ pub fn build_with_warnings(
                     })?;
             warnings.extend(traversal_warnings);
             traversal_gate = Some(gate);
-            // Seat each wave mob on a validated standable cell near its anchor, in
-            // room only (DW0312 if the room lacks the footing) — or, for a
-            // `summon: aggro-edge` wave, on its perception ring (DW0387).
-            let (waves, rings) = plan_wave_spawns(plan, &world)?;
             // …and prove the sun is not going to fight the party's battle for it
             // (DW0496). Runs HERE because it needs the seated cells:
             // the question is whether open sky stands within one aggro radius of
@@ -2886,6 +2957,25 @@ fn emit_functions(
             plan::WAVE_OBJECTIVE
         ));
     }
+    // The credited-kill ledger, one holder per wave that gets machinery
+    // ([`wave_credited_holder`]). Seeded here rather than left to `spawn_<wave>`
+    // because the census RENDERS it as a `score` component: a holder with no
+    // score renders as the empty string, which would put two spaces in the middle
+    // of an anchored line the harness matches whole — a census that silently
+    // stops parsing, which reads to the ladder as "the census did not answer".
+    // Every other read of a wave holder is a guarded `execute if score`, where
+    // absence is a legitimate false; a `tellraw` has no such guard, so the holder
+    // must exist from world init. Empty for a campaign with no waves, so v0.2
+    // setup is byte-identical.
+    for w in &c.quests.content.waves {
+        if !wave_placements.contains_key(w.id.as_str()) {
+            continue;
+        }
+        setup.push(format!(
+            "scoreboard players set {} dw.sys 0",
+            wave_credited_holder(w.id.as_str())
+        ));
+    }
     for flag in declared_flags(c) {
         setup.push(format!(
             "scoreboard objectives add {} dummy",
@@ -3485,6 +3575,60 @@ fn emit_functions(
                 safe_obj_fn(o.id().as_str())
             ));
         }
+    }
+    // **The wave countdown is a MEASUREMENT of the living bodies, not a tally of
+    // kills.** One line pair per spawned wave, recomputed every tick, ahead of
+    // every gate that reads the countdown.
+    //
+    // What this exists to remove: `k_reward_<wave>` decrements the countdown from
+    // a `minecraft:player_killed_entity` advancement, and vanilla has no trigger
+    // for "this entity died". A wave mob that dies any other way — a fall, a
+    // lethal volume, a trap, fire, drowning, another mob, a `/kill` — was
+    // therefore never counted, and the countdown could not reach zero however
+    // empty the room was. The `kill` objective then stayed open forever, taking
+    // with it everything gated behind it: its quest, and every later objective
+    // whose `after`/`requires_flags` name it. Measured on the gallery's own bot
+    // ladder: of three `wave/muster` bodies, one fell to its death and two were
+    // cut down, the countdown stopped at 1, `obj/clear-the-muster` never
+    // completed, and the drop-gated `collect` behind it timed out with the bone
+    // already in the bot's pocket.
+    //
+    // A dying body is not a standing one: `/kill` and lethal damage set `Health`
+    // to `0.0f` immediately but leave the entity in the world for its death
+    // animation, so a plain `@e[tag=…]` would keep counting corpses for a second
+    // after the room went quiet. `nbt=!{Health:0.0f}` is the vanilla primitive
+    // that separates them, and it makes the clear land on the tick of the last
+    // death rather than twenty ticks later.
+    //
+    // The guard is `matches 1..`, so this only ever CORRECTS a countdown a spawn
+    // has already opened: a wave that has not spawned has no score at all and
+    // must not acquire one (a zero there would complete its `kill` objective on
+    // tick one), and a wave already at zero is left alone — which is also what
+    // keeps a `respawns_on_rest` wave's re-seat authoritative, since
+    // `spawn_<wave>` writes the fresh total before this line next reads it.
+    // Written as `store` into a scratch holder plus a guarded copy rather than as
+    // one `execute if … store result …`: a `store` that sits AFTER a failed
+    // condition is exactly the shape whose write-or-not-write nobody should have
+    // to remember, and the two-line form has no such question in it.
+    //
+    // This is NOT the census (`wave_census_<wave>`): that one answers the
+    // harness, tellraws a line per mob, and counts corpses on purpose so a
+    // report can see them. Sharing it here would put a chat line per mob on
+    // every tick.
+    //
+    // Empty for a campaign with no spawned wave — i.e. every v0.2 campaign — so
+    // hello-world and keep-crawl stay byte-identical.
+    for w in wave_machinery_waves(plan, wave_placements) {
+        let counter = plan::wave_counter(w.id.as_str());
+        let obj = plan::WAVE_OBJECTIVE;
+        tick.push(format!(
+            "execute store result score {WAVE_LIVE} dw.sys if entity @e[tag={},nbt=!{{Health:0.0f}}]",
+            plan::wave_tag(w.id.as_str())
+        ));
+        tick.push(format!(
+            "execute if score {counter} {obj} matches 1.. run scoreboard players operation \
+             {counter} {obj} = {WAVE_LIVE} dw.sys"
+        ));
     }
     // Per-tick objective completion checks. `reach-anchor` (proximity) is
     // unchanged for v0.2; `kill` (wave countdown reached zero) and `interact`
@@ -4299,6 +4443,14 @@ fn emit_functions(
             plan::WAVE_OBJECTIVE,
             plan::wave_total(w)
         ));
+        // A fresh seating starts a fresh attribution ([`wave_credited_holder`]):
+        // the credited-kill ledger is about THIS cohort, so a re-seat's own
+        // `kill @e[tag=…]` sweep — which credits nobody — must not be carried into
+        // the count of what the party felled afterwards.
+        body.push(format!(
+            "scoreboard players set {} dw.sys 0",
+            wave_credited_holder(w.id.as_str())
+        ));
         // spec-0016 §6: a lane wave spawns as a Raider PATROL SQUAD — one leader,
         // everyone `Patrolling:1b` and pointed at the first proven waypoint. The
         // squad's own march clock starts with it. Empty for every other wave, so
@@ -4520,7 +4672,10 @@ fn emit_functions(
                 ]),
             ));
         }
-        // kill reward: each slain wave mob decrements the countdown, then re-arms.
+        // kill reward: each slain wave mob decrements the countdown, records that
+        // a PLAYER was credited with the death ([`wave_credited_holder`]), then
+        // re-arms. The advancement's trigger is `player_killed_entity` over this
+        // wave's tag, so reaching here IS the credit — nothing else can.
         fns.push((
             format!("k_reward_{}", plan::safe_local(w.id.as_str())),
             lines(&[
@@ -4528,6 +4683,10 @@ fn emit_functions(
                     "scoreboard players remove {} {} 1",
                     plan::wave_counter(w.id.as_str()),
                     plan::WAVE_OBJECTIVE
+                ),
+                format!(
+                    "scoreboard players add {} dw.sys 1",
+                    wave_credited_holder(w.id.as_str())
                 ),
                 format!(
                     "advancement revoke @s only {ns}:k_{}",
@@ -6688,15 +6847,21 @@ fn affordances(plan: &Plan) -> Vec<crate::compiler::affordance::Affordance> {
             retired_by: None,
         });
     }
-    for (st, safe) in stakes(plan) {
-        if st.max_live() == 0 {
-            continue;
-        }
+    // One entry, because there is one piece of hardware: the marker is a PLACE and
+    // every stake a death forfeits leaves its wager at the same one. Registering it
+    // per stake would name four owners for one entity and four retirers for one
+    // `kill`, which is precisely the bookkeeping `DW0421` exists to refuse.
+    let marking: Vec<String> = stakes(plan)
+        .into_iter()
+        .filter(|(st, _)| st.max_live() > 0)
+        .map(|(st, _)| st.id.as_str().to_string())
+        .collect();
+    if !marking.is_empty() {
         out.push(crate::compiler::affordance::Affordance {
-            id: st.id.as_str().to_string(),
-            kind: "recovery stake",
-            tag: stk_tag(&safe),
-            retired_by: Some(format!("stk_gc_{safe}")),
+            id: marking.join(", "),
+            kind: "recovery stake marker",
+            tag: stk_tag(),
+            retired_by: Some(STK_GC_FN.to_string()),
         });
     }
     out
@@ -7143,6 +7308,40 @@ fn wave_seated_holder(wave_id: &str) -> String {
     format!("#wseat_{}", plan::safe_local(wave_id))
 }
 
+/// The fake-player scoreboard holder counting the wave's deaths **a player was
+/// credited with**, since the seating in force — written by `spawn_<wave>` (which
+/// zeroes it) and by `k_reward_<wave>` (which adds one per credited kill), and
+/// stated on the census line.
+///
+/// ## What it exists to separate
+///
+/// The countdown is a measurement of what still STANDS, so it clears whether a
+/// body was cut down or fell into a lethal volume — which is the whole point of
+/// it, and which is also why nothing downstream can tell the two apart any more.
+/// The floor gate needs exactly that distinction: it reports an encounter the
+/// content billed `elite`/`boss` that the UNASSISTED bot beat cold, and a
+/// cohort the world killed is not a fight the bot beat. Measured on the gallery's
+/// own bot ladder: of three `wave/muster` bodies one withered in `lethal/east-pit`
+/// and one fell, the bot felled the third, and the advisory said the bot had
+/// beaten the encounter on its first attempt.
+///
+/// `minecraft:player_killed_entity` is the only trigger vanilla has here, and it
+/// fires exactly for the case this holder is about, so the ledger is the
+/// advancement's own count and never a table the compiler invents.
+///
+/// ## Why the SEATING is not on the wire beside it
+///
+/// A reader wants "how many died with nobody credited", which is
+/// `seated - standing - credited`. `standing` and `credited` are runtime facts
+/// only the server holds. `seated` is not: `spawn_<wave>` writes
+/// [`plan::wave_total`], a compile-time constant, and the same constant already
+/// reaches the harness as `combat-plan.json`'s `count`. Putting it on the census
+/// line too would ship one fact by two routes, which is a pair that can disagree
+/// rather than a second measurement.
+fn wave_credited_holder(wave_id: &str) -> String {
+    format!("#wcred_{}", plan::safe_local(wave_id))
+}
+
 /// The re-seat lines a bonfire runs on every rest and on every respawn at it
 /// (spec-0016 §1), in a fixed order: the `respawns_on_rest` waves, then the
 /// **undefeated** refresh — billed elite/boss waves, then hostile actors. Empty
@@ -7540,6 +7739,16 @@ const STK_GOT: &str = "#stk_got";
 /// The `dw.sys` fake player holding the constant `100`, for a proportional forfeit.
 const STK_HUNDRED: &str = "#stk_100";
 
+/// The one function that summons a marker: **the place**, made once however many
+/// wagers a death leaves there.
+const STK_PLACE_FN: &str = "stk_place";
+/// The one right-click handler, behind the one advancement on [`stk_tag`].
+const STK_COLLECT_FN: &str = "stk_collect";
+/// The one live-wager count at `#stk_x/y/z`, over every declared stake.
+const STK_REF_FN: &str = "stk_ref";
+/// The one function permitted to retire a marker (`DW0421`).
+const STK_GC_FN: &str = "stk_gc";
+
 /// The per-player objective holding slot `k`'s **amount** for stake `s`.
 fn stk_amount_obj(s: &str, k: u32) -> String {
     format!("dw.kv{k}_{s}")
@@ -7552,11 +7761,27 @@ fn stk_live_obj(s: &str, k: u32) -> String {
 fn stk_pos_obj(s: &str, k: u32, axis: usize) -> String {
     format!("dw.k{}{k}_{s}", ["x", "y", "z"][axis])
 }
-/// The interaction hitbox tag for stake `s`'s markers. **One tag for every marker
-/// of a stake**, not one per marker: a marker is a *place*, and which players have
-/// a wager there is the per-player ledger's business, not the entity's.
-fn stk_tag(s: &str) -> String {
-    format!("dw_stk_{s}")
+/// The interaction hitbox tag for **every** stake marker in the campaign.
+///
+/// **One tag for every marker, and one marker for every place.** A marker is a
+/// *place* — the spot a death left its wagers — and which players have a wager
+/// there, in which datum, is the per-player ledger's business rather than the
+/// entity's. That sentence was already written here when the tag was
+/// `dw_stk_<s>`, and the binding contradicted it: keyed to the STAKE, a death
+/// that forfeits four datums summons four `minecraft:interaction` boxes,
+/// `1.0 × 2.0`, at one position. Coincident boxes are an exact ray-pick tie the
+/// client resolves by entity iteration order — the defect `DW0878` refuses for
+/// authored affordances, produced by the compiler for its own hardware.
+///
+/// **Placement cannot repair it, and that is why the tag is what changed.** The
+/// compile-time table is keyed on (respawn seat, death region), never on the
+/// stake, so every stake a death drops resolves to one anchor; and the rule's
+/// common branch — a death on ordinary walkable ground leaves its stake where the
+/// player fell — positions at a cell chosen at RUNTIME, which no compile-time
+/// separation can reach at all. There is one place per death either way. So the
+/// place holds one box, and the wagers left there are counted in the ledger.
+fn stk_tag() -> String {
+    "dw_stk".to_string()
 }
 
 /// Every declared stake, paired with the `safe_local` segment naming its functions
@@ -7776,16 +8001,14 @@ fn economy_tick(plan: &Plan) -> Vec<String> {
             ));
         }
     }
-    for (st, safe) in stakes(plan) {
-        // `max_live: 0` is the no-death-cost configuration: no marker is ever
-        // placed, so there is no marker machinery at all — not even a collector
-        // looping over an empty selector.
-        if st.max_live() == 0 {
-            continue;
-        }
+    // ONE collector over ONE marker class. `max_live: 0` is the no-death-cost
+    // configuration: such a stake never places a marker, so a campaign whose every
+    // stake is configured that way has no marker machinery at all — not even a
+    // collector looping over an empty selector.
+    if stakes(plan).iter().any(|(st, _)| st.max_live() > 0) {
         out.push(format!(
-            "execute as @e[tag={}] at @s run function {ns}:stk_gc_{safe}",
-            stk_tag(&safe)
+            "execute as @e[tag={}] at @s run function {ns}:{STK_GC_FN}",
+            stk_tag()
         ));
     }
     out
@@ -7845,22 +8068,41 @@ fn stake_forfeit_lines(plan: &Plan, st: &delvewright_dsl::Stake) -> Vec<String> 
 
 /// Every emitted function the recovery stake needs (DSL v0.10, spec-0032).
 ///
-/// The chain, for one stake:
+/// # A marker is a PLACE, and a death leaves one place
+///
+/// The hardware is emitted once for the campaign, not once per stake, and that is
+/// the whole shape of this function. A death that forfeits several datums fires
+/// several `drop-stake` effects, and every one of them resolves to the SAME
+/// position — the placement table is keyed on (respawn seat, death region) and
+/// never on the stake, and the rule's common branch positions at the death point
+/// itself. Summoning one `minecraft:interaction` per stake therefore put four
+/// coincident `1.0 × 2.0` boxes at one cell: an exact ray-pick tie the client
+/// resolves by entity iteration order, which is the defect `DW0878` refuses for
+/// authored affordances and the compiler was producing for its own hardware.
+///
+/// **No placement rule can repair that**, because the common branch's position is
+/// chosen at runtime. So the place holds one box and one glowing display, and what
+/// was left there is counted in the per-player ledger — which is where a wager
+/// always lived.
+///
+/// The chain. Shared functions first, then the per-stake ones:
 ///
 /// | function | run as | what it does |
 /// |---|---|---|
+/// | `stk_place` | the corpse, positioned | summon the marker if this place has none |
+/// | `stk_collect` | the collecting player | read the marker's position, then offer it to every stake |
+/// | `stk_ref` | each player | count live wagers at `#stk_x/y/z`, over every stake |
+/// | `stk_gc` | each marker | retire a marker nobody has a wager at — **the one legal killer of its hardware** (`DW0421`) |
 /// | `stk_drop_<s>` | the corpse | apply the retention policy, compute and debit the forfeit, then route |
 /// | `stk_route_<s>` | the corpse | **the compile-time table**, as one `execute if` chain — the death region test, the respawn-seat test, and the anchor each pair resolved to |
 /// | `stk_put_<s>_<n>` | the corpse | position at table anchor `n` |
 /// | `stk_here_<s>` | the corpse | position at the death point (the rule's degenerate branch) |
-/// | `stk_fill_<s>` | the corpse, positioned | summon the marker if this place has none, then take the first free slot |
+/// | `stk_fill_<s>` | the corpse, positioned | make the place, then take this stake's first free slot |
 /// | `stk_slot_<s>_<k>` | the corpse, positioned | write the amount and the marker's position into slot `k` |
 /// | `stk_evict_<s>` | the corpse | the `replace` policy: free slot 0 |
-/// | `stk_collect_<s>` | the collecting player | identify which slot this marker holds, and take it |
+/// | `stk_collect_<s>` | the collecting player | identify which of this stake's slots the marker holds, and take it |
 /// | `stk_take_<s>_<k>` | the collecting player | restore the amount, clear the slot, say so |
 /// | `stk_pool_<s>` | each player | the `collect_by: anyone` sweep |
-/// | `stk_ref_<s>` | each player | count live slots at `#stk_x/y/z` |
-/// | `stk_gc_<s>` | each marker | retire a marker nobody has a wager at — **the one legal killer of its hardware** (`DW0421`) |
 ///
 /// **Idempotency under a double right-click in one tick** (AC6) is structural, not
 /// timed: `stk_take_<s>_<k>` sets the slot's live flag to 0 as part of taking it, so
@@ -7872,10 +8114,37 @@ fn emit_stake_functions(
 ) -> Vec<(String, String)> {
     let ns = &plan.namespace;
     let mut fns: Vec<(String, String)> = Vec::new();
+    let tag = stk_tag();
+    let hw = crate::compiler::affordance::hardware_tag(&tag);
+    // Every stake that can actually leave a marker. `max_live: 0` is the
+    // no-death-cost configuration and places nothing, so it owns no part of the
+    // shared hardware either.
+    let marking: Vec<(&delvewright_dsl::Stake, String)> = stakes(plan)
+        .into_iter()
+        .filter(|(st, _)| st.max_live() > 0)
+        .collect();
+
+    // --- stk_place: the place, made once --------------------------------------
+    // The item every marker renders as is `DW0880`'s subject: a place wears one
+    // face, so every stake that can leave a marker has been proved to declare the
+    // same one and reading the first is reading all of them.
+    if let Some((first, _)) = marking.first() {
+        fns.push((
+            STK_PLACE_FN.to_string(),
+            lines(&[
+                format!(
+                    "execute unless entity @e[tag={tag},distance=..1] run summon minecraft:interaction ~ ~ ~ {{width:1.0f,height:2.0f,response:1b,Invulnerable:1b,Tags:[{FIXTURE_NBT}\"{tag}\"]}}"
+                ),
+                format!(
+                    "execute unless entity @e[tag={hw},distance=..1] run summon minecraft:item_display ~ ~ ~ {{Glowing:1b,Tags:[{FIXTURE_NBT}\"dw_marker\",\"{hw}\"],billboard:\"center\",item:{{id:\"{}\",count:1}}}}",
+                    first.marker_item()
+                ),
+            ]),
+        ));
+    }
+
     for (st, safe) in stakes(plan) {
         let max = st.max_live();
-        let tag = stk_tag(&safe);
-        let hw = crate::compiler::affordance::hardware_tag(&tag);
         let obj = plan::state_score(st.state.as_str());
 
         // --- stk_drop: policy, forfeit, route --------------------------------
@@ -7905,7 +8174,7 @@ fn emit_stake_functions(
         if max > 0 {
             // --- stk_evict: the `replace` policy -----------------------------
             // The evicted marker is NOT killed here. Its liveness is decided by the
-            // reference count in `stk_gc_<s>`, which is the one mechanism that
+            // reference count in `stk_gc`, which is the one mechanism that
             // retires a marker — so an eviction whose marker sits in an unloaded
             // chunk is not a leak, it is a retirement deferred to the tick that
             // chunk next loads.
@@ -7955,16 +8224,8 @@ fn emit_stake_functions(
                 lines(&[format!("execute at @s run function {ns}:stk_fill_{safe}")]),
             ));
 
-            // --- stk_fill: the marker, then the first free slot ---------------
-            let mut fill: Vec<String> = vec![
-                format!(
-                    "execute unless entity @e[tag={tag},distance=..1] run summon minecraft:interaction ~ ~ ~ {{width:1.0f,height:2.0f,response:1b,Invulnerable:1b,Tags:[{FIXTURE_NBT}\"{tag}\"]}}"
-                ),
-                format!(
-                    "execute unless entity @e[tag={hw},distance=..1] run summon minecraft:item_display ~ ~ ~ {{Glowing:1b,Tags:[{FIXTURE_NBT}\"dw_marker\",\"{hw}\"],billboard:\"center\",item:{{id:\"{}\",count:1}}}}",
-                    st.marker_item()
-                ),
-            ];
+            // --- stk_fill: the place, then the first free slot -----------------
+            let mut fill: Vec<String> = vec![format!("function {ns}:{STK_PLACE_FN}")];
             for k in 0..max {
                 fill.push(format!(
                     "execute unless score @s {} matches 1 run return run function {ns}:stk_slot_{safe}_{k}",
@@ -7995,14 +8256,11 @@ fn emit_stake_functions(
                 fns.push((format!("stk_slot_{safe}_{k}"), lines(&slot)));
             }
 
-            // --- stk_collect: the right-click ---------------------------------
-            let mut collect: Vec<String> =
-                vec![format!("advancement revoke @s only {ns}:stk_{safe}")];
-            for (axis, s) in [STK_X, STK_Y, STK_Z].iter().enumerate() {
-                collect.push(format!(
-                    "execute at @s store result score {s} dw.sys run data get entity @e[tag={tag},limit=1,sort=nearest] Pos[{axis}]"
-                ));
-            }
+            // --- stk_collect_<s>: what THIS stake holds at the marker ---------
+            // The marker's position is already in `#stk_x/y/z` — `stk_collect`
+            // read it once for every stake, because it is a property of the place
+            // and not of any wager left there.
+            let mut collect: Vec<String> = Vec::new();
             match st.collect_by() {
                 delvewright_dsl::CollectBy::Owner => {
                     for k in 0..max {
@@ -8066,33 +8324,54 @@ fn emit_stake_functions(
                     fns.push((format!("stk_take_{safe}_{k}"), lines(&take)));
                 }
             }
+        }
+    }
 
-            // --- stk_ref / stk_gc: who still has a wager here ------------------
-            let mut refs: Vec<String> = Vec::new();
-            for k in 0..max {
+    // --- stk_collect / stk_ref / stk_gc: one place, every wager ---------------
+    if !marking.is_empty() {
+        // The right-click. One advancement fires it, because there is one box to
+        // click; the place is located once and then offered to every stake, so a
+        // death that left three datums here gives all three back in one press.
+        let mut collect: Vec<String> =
+            vec![format!("advancement revoke @s only {ns}:{STK_COLLECT_FN}")];
+        for (axis, s) in [STK_X, STK_Y, STK_Z].iter().enumerate() {
+            collect.push(format!(
+                "execute at @s store result score {s} dw.sys run data get entity @e[tag={tag},limit=1,sort=nearest] Pos[{axis}]"
+            ));
+        }
+        for (_, safe) in &marking {
+            collect.push(format!("function {ns}:stk_collect_{safe}"));
+        }
+        fns.push((STK_COLLECT_FN.to_string(), lines(&collect)));
+
+        // Who still has a wager here — over every stake, because one live wager in
+        // any datum is what keeps this place a place.
+        let mut refs: Vec<String> = Vec::new();
+        for (st, safe) in &marking {
+            for k in 0..st.max_live() {
                 refs.push(format!(
                     "execute{} run scoreboard players add {STK_REF} dw.sys 1",
-                    slot_match(&safe, k)
+                    slot_match(safe, k)
                 ));
             }
-            fns.push((format!("stk_ref_{safe}"), lines(&refs)));
-
-            let mut gc: Vec<String> = Vec::new();
-            for (axis, s) in [STK_X, STK_Y, STK_Z].iter().enumerate() {
-                gc.push(format!(
-                    "execute store result score {s} dw.sys run data get entity @s Pos[{axis}]"
-                ));
-            }
-            gc.push(format!("scoreboard players set {STK_REF} dw.sys 0"));
-            gc.push(format!("execute as @a run function {ns}:stk_ref_{safe}"));
-            gc.push(format!(
-                "execute if score {STK_REF} dw.sys matches 0 run kill @e[tag={hw},limit=1,sort=nearest]"
-            ));
-            gc.push(format!(
-                "execute if score {STK_REF} dw.sys matches 0 run kill @s"
-            ));
-            fns.push((format!("stk_gc_{safe}"), lines(&gc)));
         }
+        fns.push((STK_REF_FN.to_string(), lines(&refs)));
+
+        let mut gc: Vec<String> = Vec::new();
+        for (axis, s) in [STK_X, STK_Y, STK_Z].iter().enumerate() {
+            gc.push(format!(
+                "execute store result score {s} dw.sys run data get entity @s Pos[{axis}]"
+            ));
+        }
+        gc.push(format!("scoreboard players set {STK_REF} dw.sys 0"));
+        gc.push(format!("execute as @a run function {ns}:{STK_REF_FN}"));
+        gc.push(format!(
+            "execute if score {STK_REF} dw.sys matches 0 run kill @e[tag={hw},limit=1,sort=nearest]"
+        ));
+        gc.push(format!(
+            "execute if score {STK_REF} dw.sys matches 0 run kill @s"
+        ));
+        fns.push((STK_GC_FN.to_string(), lines(&gc)));
     }
     fns
 }
@@ -11808,13 +12087,21 @@ fn census_component(ns: &str, token: &str, wave_id: &str, holders: &[&str]) -> V
 }
 
 /// The census SUMMARY line: sequence, how many of the wave stand, how many of
-/// those are branded (fought in a previous life), how many are below full health.
+/// those are branded (fought in a previous life), how many are below full health,
+/// and how many of its deaths since the seating in force a player was credited
+/// with ([`wave_credited_holder`]).
+///
+/// The last field is the one that is not about the bodies standing there: every
+/// other number describes the survivors, and `credited` describes the fallen. It
+/// is what lets a reader subtract — `count - present - credited` is how many of
+/// the wave died with nobody credited, i.e. how many the WORLD killed.
 fn census_summary_component(ns: &str, wave_id: &str) -> Value {
+    let credited = wave_credited_holder(wave_id);
     census_component(
         ns,
         plan::MARKER_TOKEN_CENSUS,
         wave_id,
-        &["#wcen_seq", "#wcen_n", "#wcen_b", "#wcen_d"],
+        &["#wcen_seq", "#wcen_n", "#wcen_b", "#wcen_d", &credited],
     )
 }
 
@@ -11861,6 +12148,13 @@ const COLLECT_HOLD: &str = "dw.hold";
 /// tick — the lobby gate's only input (spec-0018 `world.min_players`). Emitted
 /// only for a campaign that declares `min_players >= 2`.
 const LOBBY_COUNT: &str = "#lobby";
+
+/// The `dw.sys` scratch holder the per-tick wave recount writes the standing-body
+/// count into, one wave at a time, immediately before copying it over that wave's
+/// countdown. Shared across waves on purpose: `tick` is one atomic function call,
+/// so the write and the read that consumes it cannot be interleaved with another
+/// wave's — the same argument the census makes for `#wcen_*`.
+const WAVE_LIVE: &str = "#wlive";
 
 /// The lobby's waiting message (spec-0018): a live "x / n" actionbar for players
 /// who have not taken a class yet, while the party is short. The count is a
@@ -12872,13 +13166,15 @@ fn emit_advancements(plan: &Plan, chrome: &delvewright_dsl::Chrome) -> Vec<(Stri
             }),
         ));
     }
-    for (st, safe) in stakes(plan) {
-        if st.max_live() == 0 {
-            continue;
-        }
-        let tag = stk_tag(&safe);
+    // ONE advancement for every stake, because there is one box to click: a marker
+    // is a place, and the place offers itself to every stake the death left there.
+    // One per stake would grant several advancements for a single right-click on a
+    // single entity, and vanilla grants an advancement at most once per tick — so
+    // the wagers a player got back would depend on which grant the server got to.
+    if stakes(plan).iter().any(|(st, _)| st.max_live() > 0) {
+        let tag = stk_tag();
         advs.push((
-            format!("stk_{safe}"),
+            STK_COLLECT_FN.to_string(),
             json!({
                 "criteria": {
                     "interact": {
@@ -12891,7 +13187,7 @@ fn emit_advancements(plan: &Plan, chrome: &delvewright_dsl::Chrome) -> Vec<(Stri
                         }
                     }
                 },
-                "rewards": { "function": format!("{ns}:stk_collect_{safe}") }
+                "rewards": { "function": format!("{ns}:{STK_COLLECT_FN}") }
             }),
         ));
     }
@@ -17480,8 +17776,21 @@ fn emit_v06_packtests(plan: &Plan, out: &mut BuildOutput) {
 fn emit_fixture_packtests(plan: &Plan, out: &mut BuildOutput) {
     let ns = &plan.namespace;
     let title = artifact_title(plan.campaign);
-    let sts = stakes(plan);
-    if sts.is_empty() {
+    // Every stake that can leave a marker, driven by ONE template per teleport.
+    //
+    // The marker is a place, so every stake summons the same two entities through
+    // the same `stk_place` at the same position — one template per (teleport,
+    // stake) would be four templates racing to put one entity at one absolute
+    // coordinate on a shared batch server, which is a collision rather than four
+    // proofs. Every member of the family is still driven, in one breath, which is
+    // both what `DW0810` demands and a stronger claim than the split templates
+    // made: the marker that survives the ride is one a death left several wagers
+    // at.
+    let marking: Vec<(&delvewright_dsl::Stake, String)> = stakes(plan)
+        .into_iter()
+        .filter(|(st, _)| st.max_live() > 0)
+        .collect();
+    if marking.is_empty() {
         return;
     }
     let mut seen: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
@@ -17504,80 +17813,88 @@ fn emit_fixture_packtests(plan: &Plan, out: &mut BuildOutput) {
             (lo[2] + hi[2]) / 2,
         ];
         let at = format!("{} {} {}", mid[0] as f64 + 0.5, mid[1], mid[2] as f64 + 0.5);
-        for (st, safe) in &sts {
-            if st.max_live() == 0 {
-                continue;
-            }
-            let tag = stk_tag(safe);
-            let hw = crate::compiler::affordance::hardware_tag(&tag);
-            let body = format!("dw_fixbody_{key}_{safe}");
-            let (pin, me) = pin_dummy(&format!("dw_fixtest_{key}_{safe}"));
-            let sc = format!("{key}_{safe}");
-            let mut t = packtest_header(&format!(
-                "{title}: `{name}` carries a body out of its volume and leaves the recovery \
-                 stake `{}` standing — a marker is a PLACE, and moving it would move the \
-                 position its ledger recorded (DW0545)",
-                st.id
-            ));
-            t.push(format!("function {ns}:setup"));
-            t.push(pin);
-            // Own entity and ledger state: a sibling template's leftovers would
-            // defeat the guarded summon inside `stk_fill_<s>`.
-            t.push(format!("kill @e[tag={tag}]"));
-            t.push(format!("kill @e[tag={hw}]"));
-            t.push(format!("kill @e[tag={body}]"));
+        let tag = stk_tag();
+        let hw = crate::compiler::affordance::hardware_tag(&tag);
+        let body = format!("dw_fixbody_{key}");
+        let (pin, me) = pin_dummy(&format!("dw_fixtest_{key}"));
+        let sc = key.to_string();
+        let mut t = packtest_header(&format!(
+            "{title}: `{name}` carries a body out of its volume and leaves the recovery stake's \
+             marker standing — a marker is a PLACE, and moving it would move the position its \
+             ledger recorded (DW0545)"
+        ));
+        t.push(format!("function {ns}:setup"));
+        t.push(pin);
+        // Own entity and ledger state: a sibling template's leftovers would
+        // defeat the guarded summon inside `stk_place`. Scoped to the place this
+        // template is about — the marker tag is one class for the whole campaign,
+        // so an unqualified `kill` here would reach into a sibling's structure.
+        t.push(format!(
+            "execute positioned {at} run kill @e[tag={tag},distance=..1]"
+        ));
+        t.push(format!(
+            "execute positioned {at} run kill @e[tag={hw},distance=..1]"
+        ));
+        t.push(format!("kill @e[tag={body}]"));
+        for (st, safe) in &marking {
             for k in 0..st.max_live() {
                 t.push(format!(
                     "scoreboard players set {me} {} 0",
                     stk_live_obj(safe, k)
                 ));
             }
-            // A real marker, put down by the real drop path, in the car.
+        }
+        // A real marker, put down by the real drop path, in the car — with a
+        // wager on it from EVERY stake that can leave one, because that is what a
+        // death which forfeits several datums leaves there.
+        for (_, safe) in &marking {
             t.push(format!(
                 "execute as {me} positioned {at} run function {ns}:stk_fill_{safe}"
             ));
-            // Bound, not assumed: both halves are inside the volume the `tp` sweeps.
-            t.push(format!(
-                "execute store result score #fx_in_{sc} dw.sys if entity @e[tag={tag},{bx}]"
-            ));
-            t.push(format!("assert score #fx_in_{sc} dw.sys matches 1"));
-            t.push(format!(
-                "execute store result score #fx_hw_{sc} dw.sys if entity @e[tag={hw},{bx}]"
-            ));
-            t.push(format!("assert score #fx_hw_{sc} dw.sys matches 1"));
-            // A passenger, so "nothing moved" cannot read as a pass.
-            t.push(format!(
-                "summon minecraft:zombie {at} {{Tags:[\"{body}\"],NoAI:1b,Silent:1b,\
-                 PersistenceRequired:1b}}"
-            ));
-            t.push(format!("function {ns}:{name}"));
-            t.push(format!(
-                "execute store result score #fx_body_{sc} dw.sys if entity @e[tag={body},{bx}]"
-            ));
-            t.push(format!("assert score #fx_body_{sc} dw.sys matches 0"));
-            // …and the place stayed a place.
-            t.push(format!(
-                "execute store result score #fx_stay_{sc} dw.sys if entity @e[tag={tag},{bx}]"
-            ));
-            t.push(format!("assert score #fx_stay_{sc} dw.sys matches 1"));
-            t.push(format!(
-                "execute store result score #fx_hwstay_{sc} dw.sys if entity @e[tag={hw},{bx}]"
-            ));
-            t.push(format!("assert score #fx_hwstay_{sc} dw.sys matches 1"));
-            t.push(format!("kill @e[tag={body}]"));
-            t.push(format!("kill @e[tag={tag}]"));
-            t.push(format!("kill @e[tag={hw}]"));
+        }
+        // Bound, not assumed: both halves are inside the volume the `tp` sweeps.
+        t.push(format!(
+            "execute store result score #fx_in_{sc} dw.sys if entity @e[tag={tag},{bx}]"
+        ));
+        t.push(format!("assert score #fx_in_{sc} dw.sys matches 1"));
+        t.push(format!(
+            "execute store result score #fx_hw_{sc} dw.sys if entity @e[tag={hw},{bx}]"
+        ));
+        t.push(format!("assert score #fx_hw_{sc} dw.sys matches 1"));
+        // A passenger, so "nothing moved" cannot read as a pass.
+        t.push(format!(
+            "summon minecraft:zombie {at} {{Tags:[\"{body}\"],NoAI:1b,Silent:1b,\
+             PersistenceRequired:1b}}"
+        ));
+        t.push(format!("function {ns}:{name}"));
+        t.push(format!(
+            "execute store result score #fx_body_{sc} dw.sys if entity @e[tag={body},{bx}]"
+        ));
+        t.push(format!("assert score #fx_body_{sc} dw.sys matches 0"));
+        // …and the place stayed a place.
+        t.push(format!(
+            "execute store result score #fx_stay_{sc} dw.sys if entity @e[tag={tag},{bx}]"
+        ));
+        t.push(format!("assert score #fx_stay_{sc} dw.sys matches 1"));
+        t.push(format!(
+            "execute store result score #fx_hwstay_{sc} dw.sys if entity @e[tag={hw},{bx}]"
+        ));
+        t.push(format!("assert score #fx_hwstay_{sc} dw.sys matches 1"));
+        t.push(format!("kill @e[tag={body}]"));
+        t.push(format!("kill @e[tag={tag},{bx}]"));
+        t.push(format!("kill @e[tag={hw},{bx}]"));
+        for (st, safe) in &marking {
             for k in 0..st.max_live() {
                 t.push(format!(
                     "scoreboard players set {me} {} 0",
                     stk_live_obj(safe, k)
                 ));
             }
-            out.insert(
-                format!("packtest-datapack/data/{ns}/test/fixture_{sc}.mcfunction"),
-                lines(&t).into_bytes(),
-            );
         }
+        out.insert(
+            format!("packtest-datapack/data/{ns}/test/fixture_{sc}.mcfunction"),
+            lines(&t).into_bytes(),
+        );
     }
 }
 
@@ -17792,7 +18109,7 @@ fn emit_economy_packtests(plan: &Plan, out: &mut BuildOutput) {
             continue;
         }
         let obj = plan::state_score(st.state.as_str());
-        let tag = stk_tag(&safe);
+        let tag = stk_tag();
         let (pin, me) = pin_dummy(&format!("dw_stktest_{safe}"));
         let mut t = packtest_header(&format!(
             "{title}: a stake takes the declared share and gives back exactly what it took \
@@ -17802,10 +18119,15 @@ fn emit_economy_packtests(plan: &Plan, out: &mut BuildOutput) {
         t.push(format!("function {ns}:setup"));
         t.push(pin);
         // Own entity state: a sibling template's leftover marker would defeat the
-        // guarded summon inside `stk_fill_<s>` and make the collect assert on air.
-        t.push(format!("kill @e[tag={tag}]"));
+        // guarded summon inside `stk_place` and make the collect assert on air.
+        // Scoped to THIS dummy's own place, because the marker tag is one class for
+        // the whole campaign: an unqualified `kill` would reach into every sibling
+        // template's structure on the shared batch server.
         t.push(format!(
-            "kill @e[tag={}]",
+            "execute at {me} run kill @e[tag={tag},distance=..1]"
+        ));
+        t.push(format!(
+            "execute at {me} run kill @e[tag={},distance=..1]",
             crate::compiler::affordance::hardware_tag(&tag)
         ));
         for k in 0..st.max_live() {
@@ -17841,12 +18163,15 @@ fn emit_economy_packtests(plan: &Plan, out: &mut BuildOutput) {
         // uses on the pinned toolserver, so this claim is made in a spelling that
         // is known to run rather than in one that merely reads well.
         t.push(format!(
-            "execute store result score #stk_mark_{safe} dw.sys if entity @e[tag={tag}]"
+            "execute at {me} store result score #stk_mark_{safe} dw.sys if entity @e[tag={tag},distance=..1]"
         ));
-        t.push(format!("assert score #stk_mark_{safe} dw.sys matches 1.."));
-        // …and collecting gives back exactly what was taken, no more.
+        t.push(format!("assert score #stk_mark_{safe} dw.sys matches 1"));
+        // …and collecting gives back exactly what was taken, no more. Driven
+        // through the REAL right-click handler — the one the one advancement on
+        // the one marker tag fires — never through this stake's own half of it,
+        // so a collector that stopped offering the place to every stake reds here.
         t.push(format!(
-            "execute as {me} run function {ns}:stk_collect_{safe}"
+            "execute as {me} run function {ns}:{STK_COLLECT_FN}"
         ));
         t.push(format!(
             "execute store result score #stk_back_{safe} dw.sys run scoreboard players get {me} {obj}"
@@ -17855,7 +18180,7 @@ fn emit_economy_packtests(plan: &Plan, out: &mut BuildOutput) {
         // A second press in the same breath is a no-op — the slot went dead as part
         // of being taken, so idempotence is structural rather than timed (AC6).
         t.push(format!(
-            "execute as {me} run function {ns}:stk_collect_{safe}"
+            "execute as {me} run function {ns}:{STK_COLLECT_FN}"
         ));
         t.push(format!(
             "execute store result score #stk_twice_{safe} dw.sys run scoreboard players get {me} {obj}"
@@ -17863,6 +18188,124 @@ fn emit_economy_packtests(plan: &Plan, out: &mut BuildOutput) {
         t.push(format!("assert score #stk_twice_{safe} dw.sys matches 40"));
         out.insert(
             format!("packtest-datapack/data/{ns}/test/v10_stake_{safe}.mcfunction"),
+            lines(&t).into_bytes(),
+        );
+    }
+
+    // --- 3. TWO datums, ONE place -----------------------------------------
+    // The template this defect owes. A death that forfeits two datums fires two
+    // `drop-stake` effects at one position; the marker is a PLACE, so what must be
+    // true is that the two drops leave ONE `minecraft:interaction` there, that one
+    // right-click on it returns BOTH datums, and that the place then retires. Two
+    // boxes at one cell would be an exact ray-pick tie — coincident `1.0 × 2.0`
+    // hitboxes the client resolves by iteration order — which is the shape
+    // `DW0878` refuses for authored affordances.
+    //
+    // Not a death test: this tier's fake player cannot die (see above), so the two
+    // drops are driven the way `on_death` drives them, as two calls in one breath
+    // from one position. The death EDGE stays the bot tier's (AC9); what is proved
+    // here is everything downstream of it.
+    let two: Vec<(&delvewright_dsl::Stake, String)> = stakes(plan)
+        .into_iter()
+        .filter(|(st, _)| {
+            st.max_live() > 0 && !matches!(st.forfeit(), delvewright_dsl::Forfeit::None)
+        })
+        .take(2)
+        .collect();
+    if let [(a, sa), (b, sb)] = two.as_slice()
+        && a.state != b.state
+    {
+        let tag = stk_tag();
+        let hw = crate::compiler::affordance::hardware_tag(&tag);
+        let (oa, ob) = (
+            plan::state_score(a.state.as_str()),
+            plan::state_score(b.state.as_str()),
+        );
+        let (pin, me) = pin_dummy("dw_stkpair");
+        let mut t = packtest_header(&format!(
+            "{title}: one death's two forfeits leave ONE place, and one press gives both back \
+             (spec-0032). Two coincident `minecraft:interaction` boxes would be the ray-pick \
+             tie `DW0878` refuses for authored affordances. NOT a death test — a PackTest fake \
+             player cannot die; the death edge is the bot tier's (AC9)."
+        ));
+        t.push(format!("function {ns}:setup"));
+        t.push(pin);
+        // Scoped to this dummy's own place: the marker tag is one class for the
+        // whole campaign, so an unqualified `kill` would reach into every sibling
+        // template's structure on the shared batch server.
+        t.push(format!(
+            "execute at {me} run kill @e[tag={tag},distance=..1]"
+        ));
+        t.push(format!(
+            "execute at {me} run kill @e[tag={hw},distance=..1]"
+        ));
+        for (st, safe) in [(a, sa), (b, sb)] {
+            for k in 0..st.max_live() {
+                t.push(format!(
+                    "scoreboard players set {me} {} 0",
+                    stk_live_obj(safe, k)
+                ));
+                t.push(format!(
+                    "scoreboard players set {me} {} 0",
+                    stk_amount_obj(safe, k)
+                ));
+            }
+        }
+        t.push(format!("scoreboard players set {me} {oa} 40"));
+        t.push(format!("scoreboard players set {me} {ob} 40"));
+        // One position, two drops — `on_death`'s own shape.
+        t.push(format!(
+            "execute as {me} at {me} run function {ns}:stk_drop_{sa}"
+        ));
+        t.push(format!(
+            "execute as {me} at {me} run function {ns}:stk_drop_{sb}"
+        ));
+        // ONE box, not two. This is the assertion the whole template exists for:
+        // `matches 1` and not `matches 1..`, because two is the defect.
+        t.push(format!(
+            "execute at {me} store result score #stkpair_boxes dw.sys if entity @e[tag={tag},distance=..1]"
+        ));
+        t.push("assert score #stkpair_boxes dw.sys matches 1".to_string());
+        t.push(format!(
+            "execute at {me} store result score #stkpair_hw dw.sys if entity @e[tag={hw},distance=..1]"
+        ));
+        t.push("assert score #stkpair_hw dw.sys matches 1".to_string());
+        // Both purses really lost something, so the press below cannot pass by
+        // giving back nothing.
+        t.push(format!(
+            "execute store result score #stkpair_lost_a dw.sys run scoreboard players get {me} {oa}"
+        ));
+        t.push("assert score #stkpair_lost_a dw.sys matches ..39".to_string());
+        t.push(format!(
+            "execute store result score #stkpair_lost_b dw.sys run scoreboard players get {me} {ob}"
+        ));
+        t.push("assert score #stkpair_lost_b dw.sys matches ..39".to_string());
+        // One press on the one place gives BOTH datums back.
+        t.push(format!(
+            "execute as {me} run function {ns}:{STK_COLLECT_FN}"
+        ));
+        t.push(format!(
+            "execute store result score #stkpair_back_a dw.sys run scoreboard players get {me} {oa}"
+        ));
+        t.push("assert score #stkpair_back_a dw.sys matches 40".to_string());
+        t.push(format!(
+            "execute store result score #stkpair_back_b dw.sys run scoreboard players get {me} {ob}"
+        ));
+        t.push("assert score #stkpair_back_b dw.sys matches 40".to_string());
+        // …and the place, with no wager left at it, retires — the whole of it.
+        t.push(format!(
+            "execute at {me} as @e[tag={tag},distance=..1] at @s run function {ns}:{STK_GC_FN}"
+        ));
+        t.push(format!(
+            "execute at {me} store result score #stkpair_gone dw.sys if entity @e[tag={tag},distance=..1]"
+        ));
+        t.push("assert score #stkpair_gone dw.sys matches 0".to_string());
+        t.push(format!(
+            "execute at {me} store result score #stkpair_hwgone dw.sys if entity @e[tag={hw},distance=..1]"
+        ));
+        t.push("assert score #stkpair_hwgone dw.sys matches 0".to_string());
+        out.insert(
+            format!("packtest-datapack/data/{ns}/test/v10_stake_two_datums.mcfunction"),
             lines(&t).into_bytes(),
         );
     }
@@ -19486,6 +19929,62 @@ fn emit_verb_packtests(plan: &Plan, out: &mut BuildOutput) {
             obj_score(id.as_str())
         ));
         write("verb_kill", b);
+    }
+
+    // kill, with NOBODY credited for the deaths. The countdown used to be a tally
+    // of `minecraft:player_killed_entity` grants, and vanilla has no trigger for
+    // "this entity died" — so a wave mob that fell, burned, drowned, walked into a
+    // lethal volume or was cut down by another mob left the countdown stuck above
+    // zero and the objective open forever, along with everything gated behind it.
+    // `/kill` is the cheapest death vanilla has that credits no player, and it is
+    // the same shape as every one of those: health to zero, no advancement.
+    //
+    // Deliberately NOT written as a variant of `verb_kill`: that one drives
+    // `k_reward_<wave>` by hand, so it can only ever prove the tally path. This
+    // one never touches the reward, which is exactly what makes it able to fail.
+    if let Some((qid, o)) = first_kill
+        && let Objective::Kill { id, wave, .. } = o
+        && let Some(w) = plan::wave_of(c, wave.as_str())
+    {
+        let total = plan::wave_total(w);
+        let ws = plan::safe_local(wave.as_str());
+        let tag = plan::wave_tag(wave.as_str());
+        let counter = plan::wave_counter(wave.as_str());
+        let wobj = plan::WAVE_OBJECTIVE;
+        let (pin, sel) = pin_dummy("dw_t_vkun");
+        let mut b = packtest_header(&format!(
+            "{}: wave `{wave}` clears when its bodies die with no player credited",
+            artifact_title(c)
+        ));
+        b.push(format!("function {ns}:setup"));
+        b.push(pin);
+        b.push(format!(
+            "scoreboard players set {} {} 0",
+            plan::PARTY,
+            obj_score(id.as_str())
+        ));
+        b.extend(packtest_preamble(plan, qid, o, true, &sel));
+        // Own init: `spawn_<wave>` is unguarded and a sibling may already have
+        // fired it, so clear before spawning — the spawn is what writes the total.
+        b.push(format!("kill @e[tag={tag}]"));
+        b.push(format!("function {ns}:spawn_{ws}"));
+        b.push(format!("assert score {counter} {wobj} matches {total}"));
+        // Every body dies, and no player is credited with any of it.
+        b.push(format!("kill @e[tag={tag}]"));
+        b.push(format!("function {ns}:tick"));
+        // The outcome is the objective, and only the countdown reaching zero can
+        // produce it — so this one assertion carries the whole mechanism,
+        // including that corpses still in their death animation are not counted.
+        // The countdown itself is deliberately NOT asserted here: after the drive
+        // it is an outcome `spawn_<wave>` also writes, and `DW0807` would then
+        // (correctly) make every gate on the quest that spawns this wave this
+        // template's business.
+        b.push(format!(
+            "assert score {} {} matches 1",
+            plan::PARTY,
+            obj_score(id.as_str())
+        ));
+        write("verb_kill_uncredited", b);
     }
 
     // collect: satisfy guards + hold the item, run the collect reward, assert.

@@ -22,8 +22,10 @@ import type {
   DieRetryBinding,
   EncounterPhase,
   EncounterTier,
+  FightAttribution,
   FloorLedger,
   PerformedRest,
+  UnassistedOutcome,
 } from "./combat.ts";
 import type { DeathLoopBinding, LethalTrial } from "./death-loop.ts";
 import type { ClassifiedDeath } from "./teardown.ts";
@@ -68,6 +70,29 @@ export interface EncounterReport {
   readonly assistPolicy: "assisted" | "unassisted-first";
   readonly phaseReached: EncounterPhase;
   readonly assistWindows: number;
+  /**
+   * Who felled this encounter's bodies, as the compiler's census answered.
+   *
+   * `phase_reached: cleared` says the step ended; it has never said who ended it.
+   * A delve is full of things that kill a mob with no bot in them, and the
+   * engine's own gallery seats `wave/muster` within a stride of a lethal volume
+   * and a drop — so an encounter can read `cleared` over a cohort the bot barely
+   * touched. This is the evidence that separates the two, and `unattributed` (with
+   * its reason) is a legitimate value: no census answered is a fact about the
+   * probe, and it must not be readable as a clean win.
+   */
+  readonly attribution: FightAttribution;
+  /**
+   * What the inverted floor gate's ONE honest unassisted attempt observed —
+   * `undefined` on an encounter whose policy takes no such attempt.
+   *
+   * The gate's own measurement, and it reached the artifact nowhere. Three
+   * gallery runs of one tree ended `won`, `died` and `died`, and their rows here
+   * were identical: `phase_reached: "cleared"` in all three, because the
+   * assisted retry cleared the fight either way. A gate whose result cannot be
+   * read off its own report is a gate nobody can disbelieve.
+   */
+  readonly unassisted?: UnassistedOutcome;
 }
 
 /**
@@ -401,6 +426,29 @@ export class RunReport {
         assist_policy: e.assistPolicy,
         phase_reached: e.phaseReached,
         assist_windows: e.assistWindows,
+        attribution:
+          e.attribution.kind === "measured"
+            ? {
+                bodies: e.attribution.bodies,
+                standing: e.attribution.standing,
+                credited: e.attribution.credited,
+                uncredited: e.attribution.uncredited,
+              }
+            : { unattributed: e.attribution.reason },
+        // The floor gate's own measurement, per encounter. `null` where the
+        // policy takes no unassisted attempt; otherwise the result, the health
+        // the sample was taken at, and what the attempt reached — so two runs
+        // that ended differently differ HERE instead of nowhere.
+        unassisted: e.unassisted
+          ? {
+              result: e.unassisted.result,
+              health_at_start: e.unassisted.healthAtStart,
+              max_health: e.unassisted.maxHealth,
+              engaged: e.unassisted.engaged,
+              killed: e.unassisted.killed,
+              detail: e.unassisted.detail ?? null,
+            }
+          : null,
       })),
       // spec-0023 §3: "the run artifact names every assist window (encounter id,
       // ticks)". Loudly, and including any the harness failed to close.
@@ -492,6 +540,10 @@ export class RunReport {
                 volumes_entered: this.deathLoopBinding.volumesEntered,
                 deaths_observed: this.deathLoopBinding.deathsObserved,
                 stakes_examined: this.deathLoopBinding.stakesExamined,
+                // Places examined and DATUMS examined are different numbers: a
+                // death that forfeits four datums leaves one place, so a run
+                // reporting one of each has asserted a quarter of the promise.
+                datums_examined: this.deathLoopBinding.datumsExamined,
                 seats_matched: this.deathLoopBinding.seatsMatched,
                 walks_back: this.deathLoopBinding.walksBack,
                 unbound: this.deathLoopBinding.deathsObserved === 0,
@@ -499,28 +551,36 @@ export class RunReport {
         trials: this.lethalTrials.map((t) => ({
           volume: t.volume,
           entry_cell: [...t.entryCell],
-          stake: t.stake ?? null,
-          objective: t.objective ?? null,
+          // One row per datum this death forfeits, because a death that takes four
+          // things promises four things and leaves them all at one place.
+          wagers: t.wagers.map((w) => ({
+            stake: w.stake,
+            objective: w.objective,
+            balance_before: w.balanceBefore ?? null,
+            balance_after_death: w.balanceAfterDeath ?? null,
+            // Computed from the DECLARED forfeit rule, never from the emission.
+            expected_forfeit: w.expectedForfeit ?? null,
+            balance_after_collect: w.balanceAfterCollect ?? null,
+          })),
           died: t.died,
           death_pos: t.deathPos ?? null,
           // The volume's OWN promised line, seen by the player it was about.
           wording_seen: t.wordingSeen,
-          balance_before: t.balanceBefore ?? null,
-          balance_after_death: t.balanceAfterDeath ?? null,
-          // Computed from the DECLARED forfeit rule, never from the emission.
-          expected_forfeit: t.expectedForfeit ?? null,
           respawn_pos: t.respawnPos ?? null,
           respawn_seat: t.respawnSeat ?? null,
           // Where the compile-time placement table said the stake would be.
           expected_anchor: t.expectedAnchor ?? null,
           marker_pos: t.markerPos ?? null,
+          // How many markers stood there. One death leaves ONE place; a second box
+          // at the same cell is a ray-pick tie the client resolves by iteration
+          // order, which no "the nearest interaction" reading could ever state.
+          markers_found: t.markersFound,
           walked_back: t.walkedBack,
           // Packets SENT in one event-loop turn, not collections adjudicated: a
           // client cannot observe how many the server resolved in one tick, and
           // vanilla's once-per-tick advancement grant usually absorbs the second.
           // The claim is the outcome below, never this count.
           collect_clicks_sent: t.collectClicks,
-          balance_after_collect: t.balanceAfterCollect ?? null,
           marker_retired: t.markerRetired,
           abandoned: t.abandoned ?? null,
         })),
@@ -587,6 +647,8 @@ export class RunReport {
                 carried_over: t.reengage.carriedOver,
                 health_readable: t.reengage.healthReadable,
                 damaged: t.reengage.damaged,
+                // The count half's correction, stated beside the count it corrects.
+                credited: t.reengage.credited,
                 nearest_blocks: t.reengage.nearest ?? null,
                 farthest_blocks: t.reengage.farthest ?? null,
                 settle_ms: t.reengage.settleMs,

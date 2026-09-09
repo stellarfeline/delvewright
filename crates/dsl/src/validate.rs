@@ -447,6 +447,54 @@ fn lethal_volume_checks(c: &Campaign, anchors: &dyn AnchorRegistry, d: &mut Vec<
                 ),
             ));
         }
+        // `DW0891`, document arm (spec-0062 §4): a `shown_by` id that is a known
+        // block and not one vanilla hurts a body with. Nothing has to be placed
+        // to know it, so it is refused here rather than three passes later, and
+        // the message prints the set the author may choose from — a remedy that
+        // named no candidates would be a remedy an author has to guess at.
+        //
+        // An id the pinned version does not have at all is `DW0193`, the code
+        // every block id in the DSL validates under, and deliberately not this
+        // rule's: a typo is a typo wherever it is written.
+        for (j, block) in v.shown_by.iter().enumerate() {
+            if crate::blocks::BlockRegistry::v1_21_11()
+                .validate_state_string(block)
+                .is_err()
+            {
+                d.push(Diagnostic::error(
+                    codes::BLOCK_UNKNOWN,
+                    "quests",
+                    format!("/content/lethal_volumes/{i}/shown_by/{j}"),
+                    format!(
+                        "lethal volume `{}` declares `shown_by` block `{block}`, which is not a \
+                         block state of Minecraft Java 1.21.11",
+                        v.id
+                    ),
+                ));
+                continue;
+            }
+            if crate::blockshape::hurts_body(block) {
+                continue;
+            }
+            d.push(Diagnostic::error(
+                codes::LETHAL_INVISIBLE,
+                "quests",
+                format!("/content/lethal_volumes/{i}/shown_by/{j}"),
+                format!(
+                    "lethal volume `{}` declares `shown_by` block `{block}`, which vanilla does \
+                     not hurt a body with — so it shows a player nothing, and floor made of it \
+                     reads as safe however this volume is declared. `shown_by` says what the \
+                     player SEES; it is not a word that switches the rule off. Name the block \
+                     that shows the danger, from the set vanilla hurts a body with: {}.",
+                    v.id,
+                    crate::blockshape::HURTING_BLOCKS_1_21_11
+                        .iter()
+                        .map(|b| format!("`{b}`"))
+                        .collect::<Vec<_>>()
+                        .join(", "),
+                ),
+            ));
+        }
         if v.message.trim().is_empty() {
             d.push(Diagnostic::error(
                 codes::LETHAL_MESSAGE_BLANK,

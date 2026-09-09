@@ -49,6 +49,24 @@ mod common;
 // ---------------------------------------------------------------------------
 
 fn tmp(name: &str) -> PathBuf {
+    // **A name is claimed once, and a second claim is a panic.** Two rows that
+    // pick the same tag get the same directory, and the second one's setup wipes
+    // the first one's world underneath it — an intermittent whose colour depends
+    // on which thread got there first, which is the shape CLAUDE.md calls an
+    // under-specified test. It happened: `campaign("fiction")` and a lethal-volume
+    // row both resolved to `remedy-camp-fiction`, and `dw0887`'s move reddened at
+    // exit 3 in the full workspace run and passed alone every time.
+    static CLAIMED: std::sync::Mutex<Option<std::collections::BTreeSet<String>>> =
+        std::sync::Mutex::new(None);
+    let mut g = CLAIMED.lock().unwrap();
+    let claimed = g.get_or_insert_with(std::collections::BTreeSet::new);
+    assert!(
+        claimed.insert(name.to_string()),
+        "two rows of this file claim the scratch directory `remedy-{name}`. A shared \
+         directory is a shared world, and the second row's setup wipes the first row's \
+         out from under it — pick a distinct tag"
+    );
+    drop(g);
     let dir = Path::new(env!("CARGO_TARGET_TMPDIR")).join(format!("remedy-{name}"));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
@@ -76,7 +94,7 @@ fn campaign(tag: &str, horizon: Option<serde_json::Value>) -> PathBuf {
     common::copy_dir_all(&common::hello_world_dir(), &camp);
     let mut world: serde_json::Value =
         serde_json::from_str(&std::fs::read_to_string(camp.join("world.json")).unwrap()).unwrap();
-    world["dsl_version"] = serde_json::json!("0.22.0");
+    world["dsl_version"] = serde_json::json!("0.23.0");
     if let Some(h) = horizon {
         let content = world["content"].as_object_mut().unwrap();
         content.insert("horizon".into(), h);
@@ -928,7 +946,7 @@ fn dw0320_adding_a_boundary_or_choosing_void_both_reach_a_different_verdict() {
     common::copy_dir_all(&common::hello_world_dir(), &camp);
     let mut world: serde_json::Value =
         serde_json::from_str(&std::fs::read_to_string(camp.join("world.json")).unwrap()).unwrap();
-    world["dsl_version"] = serde_json::json!("0.22.0");
+    world["dsl_version"] = serde_json::json!("0.23.0");
     world["content"]
         .as_object_mut()
         .unwrap()
@@ -1234,4 +1252,325 @@ fn dw0890_recording_the_image_deleting_it_and_authoring_the_document_all_build()
     let (code, after) = build("file-no-doc-green", &c, &dir);
     assert_eq!(code, 0, "authoring the document builds:\n{after}");
     assert!(!after.contains("DW0890 [error]"), "{after}");
+}
+
+// ---------------------------------------------------------------------------
+// DW0891 — the three moves a killing volume the player cannot see names
+// ---------------------------------------------------------------------------
+
+/// The `lethal-volume` fixture, copied so a move can be taken on it.
+///
+/// It is the campaign spec-0062 §8 declares: a one-cell killing volume at
+/// `anchor/exit`, the nine cells of floor its keep-out catches laid in molten
+/// stone, and `shown_by: ["minecraft:magma_block"]` saying so. Green as it
+/// ships, which is what makes it a place to take a move FROM: each row below
+/// perturbs it into one of `DW0891`'s three shapes and then takes the move that
+/// shape's message names.
+fn lethal_campaign(tag: &str) -> PathBuf {
+    let camp = tmp(&format!("lethal-{tag}"));
+    common::copy_dir_all(
+        &common::repo_root().join("crates/delvec/tests/fixtures/lethal-volume"),
+        &camp,
+    );
+    camp
+}
+
+/// Read, edit and write back one stage document of a campaign copy.
+fn edit_doc(camp: &Path, doc: &str, f: impl FnOnce(&mut serde_json::Value)) {
+    let path = camp.join(doc);
+    let mut v: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+    f(&mut v);
+    std::fs::write(&path, serde_json::to_string_pretty(&v).unwrap() + "\n").unwrap();
+}
+
+/// The campaign's one lethal volume, as a mutable object.
+fn volume(v: &mut serde_json::Value) -> &mut serde_json::Map<String, serde_json::Value> {
+    v["content"]["lethal_volumes"][0].as_object_mut().unwrap()
+}
+
+/// **AUTHOR one of the blocks vanilla hurts with under those cells and DECLARE
+/// it.** The third move `DW0891`'s first shape names, and the one a creator
+/// takes when the hazard is MEANT to be flush.
+///
+/// The refusal is manufactured by deleting the declaration from a fixture whose
+/// floor already carries the signal, so the perturbation is one line and the
+/// move is the same line put back. That direction is deliberate: it proves the
+/// move reaches green over a world nothing else about has changed.
+#[test]
+fn dw0891_declaring_the_block_that_shows_the_hazard_builds() {
+    let dir = common::prefabs_dir();
+    let camp = lethal_campaign("shown-by");
+    edit_doc(&camp, "quests.json", |v| {
+        volume(v).remove("shown_by");
+    });
+    let (code, before) = build("dw0891-unsignalled", &camp, &dir);
+    assert_eq!(
+        code, 3,
+        "an unsignalled volume over walked floor is refused:\n{before}"
+    );
+    assert!(
+        before.contains("DW0891") && before.contains("declare it in `shown_by`"),
+        "the message names the move:\n{before}"
+    );
+    edit_doc(&camp, "quests.json", |v| {
+        volume(v).insert(
+            "shown_by".into(),
+            serde_json::json!(["minecraft:magma_block"]),
+        );
+    });
+    let (code, after) = build("dw0891-signalled", &camp, &dir);
+    assert_eq!(code, 0, "declaring what shows it builds:\n{after}");
+    assert!(!after.contains("DW0891"), "{after}");
+}
+
+/// **DELETE the declaration.** The move `DW0891`'s second shape names — a
+/// `shown_by` block under or in no caught cell.
+///
+/// The move ends green here rather than at the first shape, because the volume's
+/// other declared signal still covers every cell it catches. The chain's other
+/// branch — a volume whose whole declaration is a fiction, where deleting it
+/// uncovers floor and lands on the first shape — is the row above, taken from
+/// the other end.
+#[test]
+fn dw0891_deleting_a_signal_the_bytes_do_not_hold_builds() {
+    let dir = common::prefabs_dir();
+    let camp = lethal_campaign("fiction");
+    edit_doc(&camp, "quests.json", |v| {
+        volume(v).insert(
+            "shown_by".into(),
+            serde_json::json!(["minecraft:magma_block", "minecraft:cactus"]),
+        );
+    });
+    let (code, before) = build("dw0891-fiction", &camp, &dir);
+    assert_eq!(
+        code, 3,
+        "a signal the bytes do not hold is refused:\n{before}"
+    );
+    assert!(
+        before.contains("DW0891") && before.contains("Delete the declaration"),
+        "the message names the move:\n{before}"
+    );
+    edit_doc(&camp, "quests.json", |v| {
+        volume(v).insert(
+            "shown_by".into(),
+            serde_json::json!(["minecraft:magma_block"]),
+        );
+    });
+    let (code, after) = build("dw0891-fiction-deleted", &camp, &dir);
+    assert_eq!(code, 0, "deleting the fiction builds:\n{after}");
+    assert!(!after.contains("DW0891"), "{after}");
+}
+
+/// **NAME the block that shows the danger, from the set the message prints.**
+/// The move `DW0891`'s document arm names, taken at validation tier with nothing
+/// placed.
+///
+/// `minecraft:stone` is borne out by the bytes — the floor really is stone in
+/// most of the room — and shows a player nothing, which is exactly why the arm
+/// exists: `shown_by` is what the player SEES, not a word that switches the rule
+/// off.
+#[test]
+fn dw0891_naming_a_block_vanilla_hurts_with_passes_validation() {
+    let dir = common::prefabs_dir();
+    let camp = lethal_campaign("document-arm");
+    edit_doc(&camp, "quests.json", |v| {
+        volume(v).insert("shown_by".into(), serde_json::json!(["minecraft:stone"]));
+    });
+    let r = delvec(&[
+        "validate",
+        camp.to_str().unwrap(),
+        "--prefabs",
+        dir.to_str().unwrap(),
+    ]);
+    let before = log(&r);
+    assert_eq!(r.status.code(), Some(1), "refused at validation:\n{before}");
+    assert!(
+        before.contains("DW0891") && before.contains("Name the block that shows the danger"),
+        "the message names the move and prints the set:\n{before}"
+    );
+    assert!(
+        before.contains("`minecraft:magma_block`"),
+        "the set it prints holds the block this floor really carries:\n{before}"
+    );
+    edit_doc(&camp, "quests.json", |v| {
+        volume(v).insert(
+            "shown_by".into(),
+            serde_json::json!(["minecraft:magma_block"]),
+        );
+    });
+    let (code, after) = build("dw0891-document-arm-green", &camp, &dir);
+    assert_eq!(
+        code, 0,
+        "naming a block vanilla hurts with builds:\n{after}"
+    );
+    assert!(!after.contains("DW0891"), "{after}");
+}
+
+// ---------------------------------------------------------------------------
+// DW0881 — the move for a volume no radius can narrow to
+// ---------------------------------------------------------------------------
+
+/// A hello-world copy whose one `reach` objective names `anchor` at `radius`.
+///
+/// Both are single fields of `quests.json`, so "move the anchor" and "lower the
+/// radius" are each one edit to one document — which is what makes them moves an
+/// author can take rather than geometry only a generator could produce.
+fn reach_campaign(tag: &str, anchor: &str, radius: u32) -> PathBuf {
+    let camp = tmp(&format!("reach-{tag}"));
+    common::copy_dir_all(&common::hello_world_dir(), &camp);
+    let path = camp.join("quests.json");
+    let mut v: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+    let o = &mut v["content"]["quests"][0]["objectives"][1];
+    assert_eq!(
+        o["type"], "reach-anchor",
+        "the fixture's second objective is the reach"
+    );
+    o["anchor"] = serde_json::json!(anchor);
+    o["radius"] = serde_json::json!(radius);
+    std::fs::write(&path, serde_json::to_string_pretty(&v).unwrap() + "\n").unwrap();
+    camp
+}
+
+/// **The world both halves of the row are judged over**, built once and shared,
+/// so the move is the only thing that differs between them.
+///
+/// A hall floor at the anchors' own standing plane, and — reached only by a
+/// stair four cells clear of it — a shelf two courses down that runs past
+/// `anchor/exit` on the far side. A body on that shelf is somewhere the party
+/// really can stand, and it completes a reach on `anchor/exit` at every radius
+/// from 1 up, because vanilla adjudicates the selector against a whole body box
+/// and a body two courses down still rises into the volume. It cannot climb to
+/// the anchor inside any of those volumes: the stair that gets it there is
+/// further out than the widest of them.
+///
+/// `anchor/keeper-stand` stands on the same hall floor four cells short of the
+/// shelf, so nothing of the shelf is inside its volume at all.
+fn hall_with_a_shelf(exit: [i32; 3], keeper: [i32; 3]) -> delvec::compiler::nav::World {
+    let y0 = exit[1];
+    let mut solid = std::collections::BTreeSet::new();
+    // The hall floor, wide enough to hold both anchors and the stair.
+    for x in exit[0] - 8..=exit[0] + 8 {
+        for z in keeper[2] - 8..=exit[2] + 8 {
+            solid.insert([x, y0 - 1, z]);
+        }
+    }
+    // The shelf, two courses down, on the far side of `anchor/exit` — the hall
+    // floor over it is cut away so the two are different places.
+    for z in exit[2] + 1..=exit[2] + 3 {
+        for x in exit[0] - 3..=exit[0] + 3 {
+            solid.remove(&[x, y0 - 1, z]);
+            solid.insert([x, y0 - 3, z]);
+        }
+        // The one way down onto it: a single tread four cells to the side, so
+        // no completion volume this row authors ever covers it. Two one-course
+        // steps, hall -> tread -> shelf.
+        solid.remove(&[exit[0] + 4, y0 - 1, z]);
+        solid.insert([exit[0] + 4, y0 - 2, z]);
+    }
+    delvec::compiler::nav::World::from_solid_and_flooded(solid, std::collections::BTreeSet::new())
+}
+
+/// The resolved cell of one anchor, off the plan the campaign builds.
+fn anchor_cell(plan: &Plan, anchor: &str) -> [i32; 3] {
+    let area = plan
+        .quest_area(plan.campaign.quests.content.quests[0].id.as_str())
+        .unwrap_or("");
+    delvec::compiler::reach::anchor_arrival(plan, area, anchor)
+        .unwrap_or_else(|| panic!("`{anchor}` resolves"))
+}
+
+/// **MOVE THE ANCHOR, when no radius answers** — the move `DW0881` names for a
+/// volume it cannot be narrowed out of (spec-0062 §7.2).
+///
+/// `DW0881` stays the raised code here, and that is the point of the row rather
+/// than an incidental fact about it. Its finding is that the volume reaches a
+/// second floor; where no radius from 1 to the authored one clears that floor,
+/// the answer is not a radius at all, so the message names the anchor's
+/// placement and names `DW0850` as the rule that owns and judges that remedy.
+/// Raising `DW0850` here instead would name the right remedy under the wrong
+/// subject and would rename a rule that has already fired; the property both
+/// readings must keep is spec-0060 §3's — **no diagnostic names a remedy the
+/// creator cannot reach** — and this row is the check that this one does not.
+///
+/// The move's terminal is exit 0's equivalent for a judgement taken directly:
+/// green under BOTH reach rules, over the identical world, with only the
+/// objective's `anchor` moved.
+#[test]
+fn dw0881_moving_the_anchor_answers_where_no_radius_can() {
+    let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
+    // Where the two anchors land, read off a plan rather than assumed.
+    let (exit, keeper) = {
+        let camp = reach_campaign("probe", "anchor/exit", 2);
+        let c = parse_campaign(&load_campaign_dir(&camp).unwrap().raw).unwrap();
+        let plan = Plan::build(&c, &prefabs).unwrap();
+        (
+            anchor_cell(&plan, "anchor/exit"),
+            anchor_cell(&plan, "anchor/keeper-stand"),
+        )
+    };
+    let world = hall_with_a_shelf(exit, keeper);
+    let entry = [exit[0], exit[1], keeper[2] - 4];
+    assert!(
+        world.is_standable(entry) && world.is_standable(exit) && world.is_standable(keeper),
+        "the fixture's premises: a hall the party stands in, holding both anchors"
+    );
+    let shelf = [exit[0], exit[1] - 2, exit[2] + 3];
+    assert!(
+        world.is_standable(shelf),
+        "and a shelf two courses under it"
+    );
+    assert!(
+        world.reachable_walkable(&[entry]).contains(&shelf),
+        "which the party really can walk to — an offender nobody can stand on is \
+         outside this rule, and the row would prove nothing"
+    );
+
+    // Red: no radius from 1 to the authored one clears the shelf.
+    let camp = reach_campaign("no-radius", "anchor/exit", 2);
+    let c = parse_campaign(&load_campaign_dir(&camp).unwrap().raw).unwrap();
+    let plan = Plan::build(&c, &prefabs).unwrap();
+    let (binding, verdict) =
+        delvec::compiler::reach::check_reach_footprint(&plan, &world, Some(entry));
+    let err = verdict.expect_err("a volume that reaches a floor nothing climbs from is refused");
+    assert_eq!(err.code.to_string(), "DW0881", "{}", err.message);
+    assert!(binding.off_floor > 0, "binding: {binding:?}");
+    assert!(
+        err.message.contains("No radius from 1 to 2 answers here"),
+        "the message says lowering the radius is not the move:\n{}",
+        err.message
+    );
+    assert!(
+        err.message.contains("move the anchor"),
+        "and names the anchor's placement as the remedy:\n{}",
+        err.message
+    );
+    assert!(
+        err.message.contains("`DW0850`"),
+        "and names the rule that owns that remedy:\n{}",
+        err.message
+    );
+
+    // The move: one field of one document. The world does not change.
+    let moved = reach_campaign("anchor-moved", "anchor/keeper-stand", 2);
+    let c = parse_campaign(&load_campaign_dir(&moved).unwrap().raw).unwrap();
+    let plan = Plan::build(&c, &prefabs).unwrap();
+    let (binding, verdict) =
+        delvec::compiler::reach::check_reach_footprint(&plan, &world, Some(entry));
+    assert!(
+        verdict.is_ok(),
+        "moving the anchor reaches a different verdict: {:?}",
+        verdict.err()
+    );
+    assert_eq!(binding.off_floor, 0, "binding: {binding:?}");
+    assert!(
+        binding.cells > 1,
+        "binding: {} footprint cell(s) — a green over one cell would be vacuous",
+        binding.cells
+    );
+    // …and the OTHER rule of the pair is green there too, which is what makes
+    // the terminal a terminal rather than a hop to the next refusal.
+    delvec::compiler::reach::judge_reach_completion(&plan, &world, &BTreeMap::new(), Some(entry))
+        .expect("and DW0850 has nothing to say about the moved anchor");
 }

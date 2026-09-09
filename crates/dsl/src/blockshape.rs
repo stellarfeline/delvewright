@@ -600,6 +600,66 @@ pub fn floor_top_16(name: &str) -> Option<u8> {
     collision_class(name).floor_top_16()
 }
 
+// ---------------------------------------------------------------------------
+// What a block does to a body that touches it (spec-0062 §3)
+// ---------------------------------------------------------------------------
+
+/// **The blocks vanilla hurts a body with**, in pinned Minecraft Java 1.21.11 —
+/// bare ids, sorted, one authority.
+///
+/// Provenance is [`crate::metrics::Provenance::VanillaRule`] and the qualifier
+/// matters: this repository has **not** measured a running server for every row.
+/// The rule each row states is that standing in, on or against the block deals
+/// damage to a player with no armour enchantment and no status effect, per the
+/// Minecraft Wiki's own per-block pages for the pinned version (`Lava`, `Fire`,
+/// `Soul Fire`, `Magma Block`, `Cactus`, `Sweet Berry Bush`, `Wither Rose`,
+/// `Pointed Dripstone`, `Campfire`, `Soul Campfire`, `Powder Snow`).
+///
+/// It is a table of **signals**, not of hazards the engine models. Nothing here
+/// kills anybody in a delve — the killing is a declared `lethal_volumes[]` box
+/// and a `/damage` on the death edge. What this list answers is the one question
+/// spec-0062 §3 asks: *would a player looking at this floor read it as dangerous
+/// before they stood on it?* A block that hurts is a block that reads that way;
+/// `minecraft:stone` is not, whatever a declaration claims.
+///
+/// Two rows never meet a cell a body can stand in, and they are in the list
+/// deliberately rather than by oversight: `lava` and `powder_snow` are a fluid
+/// and a body-swallowing block, so no walked cell holds either — but a killing
+/// volume drawn one course under a lava surface is the ordinary lava lake, and
+/// its declaration may say so.
+pub const HURTING_BLOCKS_1_21_11: &[&str] = &[
+    "minecraft:cactus",
+    "minecraft:campfire",
+    "minecraft:fire",
+    "minecraft:lava",
+    "minecraft:magma_block",
+    "minecraft:pointed_dripstone",
+    "minecraft:powder_snow",
+    "minecraft:soul_campfire",
+    "minecraft:soul_fire",
+    "minecraft:sweet_berry_bush",
+    "minecraft:wither_rose",
+];
+
+/// **Does this block state damage a body that meets it?** —
+/// [`HURTING_BLOCKS_1_21_11`], asked of the bare id.
+///
+/// State-insensitive by construction, and the direction is the sound one for
+/// what asks: a `campfire[lit=false]` is a cold campfire, but a rule that reads
+/// a *signal* off the bytes wants the block a player recognises, and a player
+/// reads a fire pit as a fire pit. The reverse error — accepting `stone` because
+/// somebody wrote it in a `shown_by` — is the one this predicate exists to make
+/// impossible.
+/// The list is written the way a creator writes a block — namespaced, because
+/// that is what a `shown_by` entry and a diagnostic's own printed set both are —
+/// and matched the way every other classifier here matches, on the bare id. One
+/// list, both readings.
+#[must_use]
+pub fn hurts_body(name: &str) -> bool {
+    let bare = bare_id(name);
+    HURTING_BLOCKS_1_21_11.iter().any(|id| bare_id(id) == bare)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -825,6 +885,63 @@ mod tests {
         assert_eq!(
             collision_class("minecraft:white_candle_cake"),
             Collision::FullCube
+        );
+    }
+
+    /// **The hurting-block set is the set spec-0062 §3 names, and it is spelled
+    /// in ids the pinned game has** (spec-0062 criterion 2).
+    ///
+    /// Three assertions, and the third is the one that pins the table rather
+    /// than restating it: every row resolves in the 1.21.11 block registry, so a
+    /// typo or a renamed id is a red here instead of a `shown_by` nobody can
+    /// satisfy. The denominator is stated because a list that silently lost a
+    /// row would otherwise pass every membership assertion it still had.
+    #[test]
+    fn the_hurting_block_set_is_the_blocks_vanilla_hurts_with() {
+        let named = [
+            "minecraft:lava",
+            "minecraft:fire",
+            "minecraft:soul_fire",
+            "minecraft:magma_block",
+            "minecraft:cactus",
+            "minecraft:sweet_berry_bush",
+            "minecraft:wither_rose",
+            "minecraft:pointed_dripstone",
+            "minecraft:campfire",
+            "minecraft:soul_campfire",
+            "minecraft:powder_snow",
+        ];
+        assert_eq!(
+            HURTING_BLOCKS_1_21_11.len(),
+            named.len(),
+            "the hurting-block table and spec-0062 §3 disagree about how many blocks vanilla \
+             hurts a body with"
+        );
+        for id in named {
+            assert!(hurts_body(id), "{id} is a block vanilla hurts a body with");
+            // The bare spelling and a state suffix are the same block.
+            assert!(hurts_body(bare_id(id)), "{id}, bare");
+        }
+        assert!(hurts_body("minecraft:campfire[lit=true]"));
+        // The floor a player reads as safe, whatever a declaration claims.
+        for id in [
+            "minecraft:stone",
+            "minecraft:air",
+            "minecraft:oak_planks",
+            "minecraft:water",
+        ] {
+            assert!(!hurts_body(id), "{id} shows a player nothing");
+        }
+        let registry = crate::blocks::BlockRegistry::v1_21_11();
+        for id in HURTING_BLOCKS_1_21_11 {
+            assert!(
+                registry.properties(id).is_some(),
+                "{id} is not a block of the pinned 1.21.11 registry"
+            );
+        }
+        assert!(
+            HURTING_BLOCKS_1_21_11.windows(2).all(|w| w[0] < w[1]),
+            "the hurting-block table is not sorted, so its printed set is not deterministic"
         );
     }
 }

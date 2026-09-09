@@ -44,7 +44,7 @@ fn npcs_doc(base_entity: &str, anchor: &str) -> String {
 fn quests_doc(interact_anchor: &str) -> String {
     format!(
         r#"{{
-  "dsl_version": "0.22.0",
+  "dsl_version": "0.23.0",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {{
@@ -463,7 +463,7 @@ fn contest_binding(quests: &str, quest_plan: &str) -> Vec<(&'static str, String,
 fn two_quests_one_anchor(second_gate: &str) -> String {
     format!(
         r#"{{
-  "dsl_version": "0.22.0",
+  "dsl_version": "0.23.0",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {{
@@ -502,7 +502,7 @@ fn two_quests_one_anchor(second_gate: &str) -> String {
 fn one_quest_two_objectives(second_gate: &str) -> String {
     format!(
         r#"{{
-  "dsl_version": "0.22.0",
+  "dsl_version": "0.23.0",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {{
