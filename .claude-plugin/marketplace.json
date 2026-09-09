@@ -1,0 +1,15 @@
+{
+  "name": "delvewright",
+  "owner": {
+    "name": "stellarfeline",
+    "url": "https://github.com/stellarfeline"
+  },
+  "description": "The Delvewright delve creator: one page that takes a creative prompt to a joinable, machine-validated Minecraft adventure.",
+  "plugins": [
+    {
+      "name": "delvewright",
+      "source": "./.claude/skills/delvewright",
+      "description": "/delvewright:new-delve — author a delve end to end: staged DSL documents, deterministic compile, machine validation, joinable output."
+    }
+  ]
+}
