@@ -1406,3 +1406,171 @@ fn dw0891_naming_a_block_vanilla_hurts_with_passes_validation() {
     );
     assert!(!after.contains("DW0891"), "{after}");
 }
+
+// ---------------------------------------------------------------------------
+// DW0881 — the move for a volume no radius can narrow to
+// ---------------------------------------------------------------------------
+
+/// A hello-world copy whose one `reach` objective names `anchor` at `radius`.
+///
+/// Both are single fields of `quests.json`, so "move the anchor" and "lower the
+/// radius" are each one edit to one document — which is what makes them moves an
+/// author can take rather than geometry only a generator could produce.
+fn reach_campaign(tag: &str, anchor: &str, radius: u32) -> PathBuf {
+    let camp = tmp(&format!("reach-{tag}"));
+    common::copy_dir_all(&common::hello_world_dir(), &camp);
+    let path = camp.join("quests.json");
+    let mut v: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+    let o = &mut v["content"]["quests"][0]["objectives"][1];
+    assert_eq!(
+        o["type"], "reach-anchor",
+        "the fixture's second objective is the reach"
+    );
+    o["anchor"] = serde_json::json!(anchor);
+    o["radius"] = serde_json::json!(radius);
+    std::fs::write(&path, serde_json::to_string_pretty(&v).unwrap() + "\n").unwrap();
+    camp
+}
+
+/// **The world both halves of the row are judged over**, built once and shared,
+/// so the move is the only thing that differs between them.
+///
+/// A hall floor at the anchors' own standing plane, and — reached only by a
+/// stair four cells clear of it — a shelf two courses down that runs past
+/// `anchor/exit` on the far side. A body on that shelf is somewhere the party
+/// really can stand, and it completes a reach on `anchor/exit` at every radius
+/// from 1 up, because vanilla adjudicates the selector against a whole body box
+/// and a body two courses down still rises into the volume. It cannot climb to
+/// the anchor inside any of those volumes: the stair that gets it there is
+/// further out than the widest of them.
+///
+/// `anchor/keeper-stand` stands on the same hall floor four cells short of the
+/// shelf, so nothing of the shelf is inside its volume at all.
+fn hall_with_a_shelf(exit: [i32; 3], keeper: [i32; 3]) -> delvec::compiler::nav::World {
+    let y0 = exit[1];
+    let mut solid = std::collections::BTreeSet::new();
+    // The hall floor, wide enough to hold both anchors and the stair.
+    for x in exit[0] - 8..=exit[0] + 8 {
+        for z in keeper[2] - 8..=exit[2] + 8 {
+            solid.insert([x, y0 - 1, z]);
+        }
+    }
+    // The shelf, two courses down, on the far side of `anchor/exit` — the hall
+    // floor over it is cut away so the two are different places.
+    for z in exit[2] + 1..=exit[2] + 3 {
+        for x in exit[0] - 3..=exit[0] + 3 {
+            solid.remove(&[x, y0 - 1, z]);
+            solid.insert([x, y0 - 3, z]);
+        }
+        // The one way down onto it: a single tread four cells to the side, so
+        // no completion volume this row authors ever covers it. Two one-course
+        // steps, hall -> tread -> shelf.
+        solid.remove(&[exit[0] + 4, y0 - 1, z]);
+        solid.insert([exit[0] + 4, y0 - 2, z]);
+    }
+    delvec::compiler::nav::World::from_solid_and_flooded(solid, std::collections::BTreeSet::new())
+}
+
+/// The resolved cell of one anchor, off the plan the campaign builds.
+fn anchor_cell(plan: &Plan, anchor: &str) -> [i32; 3] {
+    let area = plan
+        .quest_area(plan.campaign.quests.content.quests[0].id.as_str())
+        .unwrap_or("");
+    delvec::compiler::reach::anchor_arrival(plan, area, anchor)
+        .unwrap_or_else(|| panic!("`{anchor}` resolves"))
+}
+
+/// **MOVE THE ANCHOR, when no radius answers** — the move `DW0881` names for a
+/// volume it cannot be narrowed out of (spec-0062 §7.2).
+///
+/// `DW0881` stays the raised code here, and that is the point of the row rather
+/// than an incidental fact about it. Its finding is that the volume reaches a
+/// second floor; where no radius from 1 to the authored one clears that floor,
+/// the answer is not a radius at all, so the message names the anchor's
+/// placement and names `DW0850` as the rule that owns and judges that remedy.
+/// Raising `DW0850` here instead would name the right remedy under the wrong
+/// subject and would rename a rule that has already fired; the property both
+/// readings must keep is spec-0060 §3's — **no diagnostic names a remedy the
+/// creator cannot reach** — and this row is the check that this one does not.
+///
+/// The move's terminal is exit 0's equivalent for a judgement taken directly:
+/// green under BOTH reach rules, over the identical world, with only the
+/// objective's `anchor` moved.
+#[test]
+fn dw0881_moving_the_anchor_answers_where_no_radius_can() {
+    let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
+    // Where the two anchors land, read off a plan rather than assumed.
+    let (exit, keeper) = {
+        let camp = reach_campaign("probe", "anchor/exit", 2);
+        let c = parse_campaign(&load_campaign_dir(&camp).unwrap().raw).unwrap();
+        let plan = Plan::build(&c, &prefabs).unwrap();
+        (
+            anchor_cell(&plan, "anchor/exit"),
+            anchor_cell(&plan, "anchor/keeper-stand"),
+        )
+    };
+    let world = hall_with_a_shelf(exit, keeper);
+    let entry = [exit[0], exit[1], keeper[2] - 4];
+    assert!(
+        world.is_standable(entry) && world.is_standable(exit) && world.is_standable(keeper),
+        "the fixture's premises: a hall the party stands in, holding both anchors"
+    );
+    let shelf = [exit[0], exit[1] - 2, exit[2] + 3];
+    assert!(
+        world.is_standable(shelf),
+        "and a shelf two courses under it"
+    );
+    assert!(
+        world.reachable_walkable(&[entry]).contains(&shelf),
+        "which the party really can walk to — an offender nobody can stand on is \
+         outside this rule, and the row would prove nothing"
+    );
+
+    // Red: no radius from 1 to the authored one clears the shelf.
+    let camp = reach_campaign("no-radius", "anchor/exit", 2);
+    let c = parse_campaign(&load_campaign_dir(&camp).unwrap().raw).unwrap();
+    let plan = Plan::build(&c, &prefabs).unwrap();
+    let (binding, verdict) =
+        delvec::compiler::reach::check_reach_footprint(&plan, &world, Some(entry));
+    let err = verdict.expect_err("a volume that reaches a floor nothing climbs from is refused");
+    assert_eq!(err.code.to_string(), "DW0881", "{}", err.message);
+    assert!(binding.off_floor > 0, "binding: {binding:?}");
+    assert!(
+        err.message.contains("No radius from 1 to 2 answers here"),
+        "the message says lowering the radius is not the move:\n{}",
+        err.message
+    );
+    assert!(
+        err.message.contains("move the anchor"),
+        "and names the anchor's placement as the remedy:\n{}",
+        err.message
+    );
+    assert!(
+        err.message.contains("`DW0850`"),
+        "and names the rule that owns that remedy:\n{}",
+        err.message
+    );
+
+    // The move: one field of one document. The world does not change.
+    let moved = reach_campaign("anchor-moved", "anchor/keeper-stand", 2);
+    let c = parse_campaign(&load_campaign_dir(&moved).unwrap().raw).unwrap();
+    let plan = Plan::build(&c, &prefabs).unwrap();
+    let (binding, verdict) =
+        delvec::compiler::reach::check_reach_footprint(&plan, &world, Some(entry));
+    assert!(
+        verdict.is_ok(),
+        "moving the anchor reaches a different verdict: {:?}",
+        verdict.err()
+    );
+    assert_eq!(binding.off_floor, 0, "binding: {binding:?}");
+    assert!(
+        binding.cells > 1,
+        "binding: {} footprint cell(s) — a green over one cell would be vacuous",
+        binding.cells
+    );
+    // …and the OTHER rule of the pair is green there too, which is what makes
+    // the terminal a terminal rather than a hop to the next refusal.
+    delvec::compiler::reach::judge_reach_completion(&plan, &world, &BTreeMap::new(), Some(entry))
+        .expect("and DW0850 has nothing to say about the moved anchor");
+}

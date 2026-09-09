@@ -300,9 +300,17 @@ the world. So:
    names: `DW0850` names `radius: r_min` as a verified move (the judgement is
    taken again at `r_min` before the number is printed) and its *never widen
    the volume* leaves the message; `DW0881`'s *lower `radius` until…* names
-   `r_min` or says that no radius from 1 to the authored one answers, in which
-   case the remedy is the anchor's placement and the code is `DW0850`. A
-   radius above the authored one is never proposed.
+   `r_min` where one answers, and where no radius from 1 to the authored one
+   answers it stays the raised code and names **the anchor's placement** as the
+   remedy, together with `DW0850` as the rule that owns that remedy and judges
+   it. A radius above the authored one is never proposed. The property this
+   preserves is spec-0060 §3's: **no diagnostic names a remedy the creator
+   cannot reach** — "move the anchor" is reachable and is `DW0850`'s to judge,
+   while raising a radius diagnostic for a case whose only answer is not a
+   radius would name the right remedy under the wrong subject and would rename
+   a rule that has already fired. This is **not** a loosening and must not be
+   read as one: the criterion asserts exactly what it asserted, and what is
+   corrected is only which code is named as carrying the remedy.
 
 The earlier draft's single judgement over one `World`, with the two checks as
 its callers and no geometry of their own, is how (1) and (2) are stated once;
