@@ -97,8 +97,15 @@ def test_a_site_that_stopped_carrying_the_number_reds(scratch: Path) -> None:
     root_manifest = scratch / "Cargo.toml"
     text = root_manifest.read_text(encoding="utf-8")
     assert 'path = "crates/dsl"' in text
+    # The number comes from the tree, never from a literal here. Spelling it out
+    # made this perturbation silently stop perturbing the moment the number
+    # moved: the replace matched nothing, the gate stayed green because nothing
+    # was broken, and the row read as a red gate rather than as an inert test.
+    # The match count is asserted for the same reason.
+    pin = f'version = "={version_sites._declared(scratch)["dsl"]}" }}'
+    assert text.count(pin) == 1, f"the workspace pin `{pin}` is the thing this row breaks"
     root_manifest.write_text(
-        text.replace('version = "=0.22.1" }', 'version = "=0.0.0" }'), encoding="utf-8"
+        text.replace(pin, 'version = "=0.0.0" }'), encoding="utf-8"
     )
     r = run("verify", root=scratch)
     assert r.returncode == 1
