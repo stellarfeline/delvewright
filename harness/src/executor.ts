@@ -79,6 +79,7 @@ import {
 import {
   bodyInVolume,
   entryCellOf,
+  inBox,
   markersAt,
   expectedForfeit,
   volumeReachesCell,
@@ -2411,7 +2412,19 @@ export class MineflayerExecutor implements StepExecutor {
    */
   useDeathPlan(plan: DeathPlan): void {
     this.deathPlan = plan;
-    this.lethalBoxes = plan.volumes.map((v) => v.keepOut);
+    // The DECLARED regions, not the keep-out boxes, and the difference is a
+    // defect a clean auto-merge produced rather than a preference.
+    // `applyLethalExclusion` widens whatever it is handed, by the harness's own
+    // mirror of the server's rule (`volumeReachesCell`); the plan's `keep_out`
+    // is the compiler's answer to the same widening, already applied. Handing
+    // the second to the first widens twice and excludes a shell the compiler
+    // never refused — walkable ground the bot would then report as no path.
+    // One box, one widening. `keep_out` stays the contract's own answer and is
+    // held against `bodyInVolume` by `death-loop.test.ts`; which of the two
+    // rules the NAVIGATOR should read is one question, and it is answered here
+    // by the wider of the two — it excludes everything the keep-out box does,
+    // plus the course at `hi.y + 1`, so nothing this branch proved is lost.
+    this.lethalBoxes = plan.volumes.map((v) => v.region);
   }
 
   /** Every walk into a lethal volume this run made, and what it observed. */
