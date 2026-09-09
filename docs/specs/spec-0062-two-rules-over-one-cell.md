@@ -3,9 +3,10 @@
 - **Status**: Proposed
 - **Ground**: written against engine `c90da006` (`origin/main`) and the branch
   `fix/a-body-has-a-width` at `8756b398`, read only — it widens a killing
-  volume's impassable set by the body that walks into it. The finding is ledger
-  row `gal-04`, carrier `null`, on the branch
-  `chore/a-reach-anchor-inside-a-killing-volume`. The round that wrote the row
+  volume's impassable set by the body that walks into it. The defect lives on
+  that branch and nowhere else — `main` has no widened volume, so nothing here
+  reproduces on it — and the branch is where it blocks, red on the tests the
+  cycle produces. The round that found it
   measured the defect by building; this spec re-derives the geometry it names
   from the branch's own `metrics::keep_out_box` formula and the fixture's
   prefab document (§1.1), and says so where it does.
