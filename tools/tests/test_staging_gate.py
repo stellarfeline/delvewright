@@ -980,7 +980,7 @@ def dialogue_campaign(tmp_path, where, nodes):
     (d / "dialogue.json").write_text(
         json.dumps(
             {
-                "dsl_version": "0.22.0",
+                "dsl_version": "0.22.1",
                 "stage": "dialogue",
                 "content": {"dialogues": [{"npc": "npc/a", "root": "dlg/r", "nodes": nodes}]},
             }
@@ -1035,7 +1035,7 @@ def test_the_live_cast_precondition_binds_on_a_declared_quest(gate, tmp_path):
         d.mkdir(parents=True, exist_ok=True)
         (d / "quests.json").write_text(
             json.dumps(
-                {"dsl_version": "0.22.0", "stage": 5, "content": {"quests": quest_nodes}}
+                {"dsl_version": "0.22.1", "stage": 5, "content": {"quests": quest_nodes}}
             )
         )
         return d

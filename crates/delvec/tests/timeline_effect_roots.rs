@@ -45,7 +45,7 @@ use delvewright_dsl::{Campaign, RawCampaign, parse_campaign};
 fn quests_doc(traps: &str) -> String {
     format!(
         r#"{{
-  "dsl_version": "0.22.0",
+  "dsl_version": "0.22.1",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {{
@@ -108,7 +108,7 @@ const TRAP_WALKS_THEN_SEALS: &str = r#"{
 /// but the bundle is a plain `Vec<QuestEffect>` and is really lowered, into
 /// `cp_on_respawn_<i>`.
 const DIALOGUE_SEALS_THEN_WALKS: &str = r#"{
-  "dsl_version": "0.22.0",
+  "dsl_version": "0.22.1",
   "campaign_id": "hello-world",
   "stage": "dialogue",
   "content": {
@@ -293,7 +293,7 @@ fn a_trap_payload_walk_is_planned_and_emitted() {
 /// whose text names its root, so the walk's own output states which roots it
 /// reached.
 const FIVE_ROOT_QUESTS: &str = r#"{
-  "dsl_version": "0.22.0",
+  "dsl_version": "0.22.1",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {
@@ -330,7 +330,7 @@ const FIVE_ROOT_QUESTS: &str = r#"{
 }"#;
 
 const FIVE_ROOT_DIALOGUE: &str = r#"{
-  "dsl_version": "0.22.0",
+  "dsl_version": "0.22.1",
   "campaign_id": "hello-world",
   "stage": "dialogue",
   "content": {

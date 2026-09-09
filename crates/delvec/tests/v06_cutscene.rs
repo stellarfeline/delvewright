@@ -22,7 +22,7 @@ const NS: &str = "hello-world";
 fn quests_doc(cutscene: &str) -> String {
     format!(
         r#"{{
-  "dsl_version": "0.22.0",
+  "dsl_version": "0.22.1",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {{

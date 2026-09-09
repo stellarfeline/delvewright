@@ -57,7 +57,7 @@ fn world_with_difficulty(value: &str, version: &str) -> String {
 fn quests_with_actor(attrs: &str) -> String {
     format!(
         r#"{{
-  "dsl_version": "0.22.0",
+  "dsl_version": "0.22.1",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {{
@@ -99,7 +99,7 @@ fn codes(raw: &RawCampaign) -> Vec<String> {
 #[test]
 fn easy_normal_hard_all_validate() {
     for value in ["easy", "normal", "hard"] {
-        let raw = raw_with(Some(&world_with_difficulty(value, "0.22.0")), None);
+        let raw = raw_with(Some(&world_with_difficulty(value, "0.22.1")), None);
         let d = check_campaign(&raw);
         assert!(d.is_empty(), "`{value}` must validate clean: {d:#?}");
     }
@@ -110,7 +110,7 @@ fn easy_normal_hard_all_validate() {
 /// than letting the schema emit "unknown variant".
 #[test]
 fn peaceful_is_rejected_with_its_rationale() {
-    let raw = raw_with(Some(&world_with_difficulty("peaceful", "0.22.0")), None);
+    let raw = raw_with(Some(&world_with_difficulty("peaceful", "0.22.1")), None);
     let d = check_campaign(&raw);
     let hit = d
         .iter()
@@ -171,7 +171,7 @@ fn actors_without_waves_or_declared_difficulty_warn() {
 #[test]
 fn declared_difficulty_silences_the_actor_warning() {
     let raw = raw_with(
-        Some(&world_with_difficulty("normal", "0.22.0")),
+        Some(&world_with_difficulty("normal", "0.22.1")),
         Some(&quests_with_actor("")),
     );
     assert!(
@@ -194,7 +194,7 @@ fn actor_attributes_validate_under_v06() {
     let attrs =
         r#", "attributes": { "max_health": 200.0, "attack_damage": 12.0, "follow_range": 24.0 }"#;
     let raw = raw_with(
-        Some(&world_with_difficulty("hard", "0.22.0")),
+        Some(&world_with_difficulty("hard", "0.22.1")),
         Some(&quests_with_actor(attrs)),
     );
     let d = check_campaign(&raw);
@@ -207,7 +207,7 @@ fn actor_attributes_validate_under_v06() {
 fn unknown_actor_attribute_is_a_schema_error() {
     let attrs = r#", "attributes": { "armor_toughness": 8.0 }"#;
     let raw = raw_with(
-        Some(&world_with_difficulty("hard", "0.22.0")),
+        Some(&world_with_difficulty("hard", "0.22.1")),
         Some(&quests_with_actor(attrs)),
     );
     assert!(

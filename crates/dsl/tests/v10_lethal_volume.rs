@@ -79,7 +79,7 @@ fn codes(quests: String) -> Vec<String> {
 /// A lethal volume declared at 0.10.0 validates clean.
 #[test]
 fn a_well_formed_volume_validates_clean() {
-    let d = check_campaign(&raw(quests_doc("0.22.0", GOOD)));
+    let d = check_campaign(&raw(quests_doc("0.22.1", GOOD)));
     assert!(
         d.is_empty(),
         "a v0.10 lethal volume validates clean: {d:#?}"
@@ -91,7 +91,7 @@ fn a_well_formed_volume_validates_clean() {
 #[test]
 fn a_blank_message_is_dw0512() {
     let c = codes(quests_doc(
-        "0.22.0",
+        "0.22.1",
         r#"{ "id": "lethal/mute", "region": { "anchor": "anchor/exit", "extent": [1, 1, 1] },
              "message": "   " }"#,
     ));
@@ -106,7 +106,7 @@ fn a_blank_message_is_dw0512() {
 #[test]
 fn id_and_anchor_defects_are_reported() {
     let c = codes(quests_doc(
-        "0.22.0",
+        "0.22.1",
         r#"{ "id": "lethal/Bad Id", "region": { "anchor": "anchor/exit", "extent": [0, 0, 0] },
              "message": "a" },
            { "id": "lethal/dup", "region": { "anchor": "anchor/exit", "extent": [0, 0, 0] },
@@ -123,7 +123,7 @@ fn id_and_anchor_defects_are_reported() {
 /// under a key derived from the volume's own id.
 #[test]
 fn the_message_is_inventoried() {
-    let c = parse_campaign(&raw(quests_doc("0.22.0", GOOD))).expect("parses");
+    let c = parse_campaign(&raw(quests_doc("0.22.1", GOOD))).expect("parses");
     let inv: BTreeMap<String, String> = l10n_inventory(&c);
     assert_eq!(
         inv.get("lethal.the-drop.message").map(String::as_str),
@@ -137,7 +137,7 @@ fn the_message_is_inventoried() {
 #[test]
 fn an_unknown_field_is_a_schema_rejection() {
     let c = codes(quests_doc(
-        "0.22.0",
+        "0.22.1",
         r#"{ "id": "lethal/x", "region": { "anchor": "anchor/exit", "extent": [0, 0, 0] },
              "message": "a", "kills_players_only": true }"#,
     ));
