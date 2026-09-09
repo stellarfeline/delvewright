@@ -5,9 +5,8 @@
   content repository at `ee25912f` (its `main`), read only. The page measured
   is `.claude/skills/new-delve/SKILL.md` at that content revision: 3669 lines,
   217,647 bytes, body 3661 lines behind an eight-line frontmatter, zero bundled
-  files. `docs/reference/front-end-standard.md` is read at `1e0cf91a`, the head
-  of its own unmerged branch; every "the record §n" below cites it, and this
-  spec cannot merge before it does. The engine release named throughout is the
+  files. `docs/reference/front-end-standard.md` is read at `main` (`3935f2b2`);
+  every "the record §n" below cites it. The engine release named throughout is the
   newest one, `v1.4.0`, whose tag resolves to `d8d87ef6` and whose shelf carries
   five archives plus one `SHA256SUMS` — the pair the content repository's
   `versions.toml` already pins as `release` and `authoring_ref`.
@@ -20,14 +19,12 @@
 - **Rulings obeyed**, each stated where it binds: the prefab library is an
   optional clone; the plugin is written for an agent that can obtain what is
   written down; Init is exact. §1 says where the second and third meet.
-- **Owed elsewhere, not allocated here**: one ADR refining ADR-0014, in two
-  clauses — its first Decision bullet makes the content repository *the*
-  working directory, and the first ruling makes it an optional one; its third
-  bullet has the plugin *carry* the compose rig, and §3 reaches the rig through
-  the pinned engine checkout instead, because the page needs thirty-seven paths
-  of that tree and a copy of any of them is a second authority. Both are
-  departures from ADR-0014's wording, not from its intent; the planner numbers
-  the ADR, and this spec executes the clauses as rulings.
+- **ADR-0027** records the two clauses in which this design departs from
+  ADR-0014's wording and not from its intent: the content repository is an
+  optional clone, not *the* working directory; and the plugin reaches the
+  compose rig through the pinned engine checkout instead of carrying it,
+  because the page needs thirty-seven paths of that tree and a copy of any of
+  them is a second authority. This spec executes both.
 - **Non-goals**: the client-jar pin (ADR-0021 §5, still owed); the `/validate`
   and `/release` skills; any runtime other than Claude Code; a mechanism that
   fetches an optional thing on the creator's behalf; auto-update policy beyond
@@ -152,12 +149,56 @@ directory.
 
 | omitted | why |
 |---|---|
-| `bin/` | it cannot select an executable by platform or architecture (silent, §4c), and five archives of ten megabytes each would be checked into a git tree per release; the archive is fetched by Init (§6 I3) |
+| `bin/` | a binary there cannot be selected by platform or architecture (silent, §4c), and five archives of ten megabytes each would be checked into a git tree per release. A **selector** there — a platform-independent script that identifies the host and fetches the matching archive — has no such problem, and this design has exactly that script; it lives in `scripts/` and is invoked by name, for the reasons the paragraph after this table gives |
 | `hooks/` | a `SessionStart` hook that fetched the toolchain would be a mechanism with no stop, no hand-over and no visible failure, running in every session rather than at Init — the wandering the third ruling forbids, automated |
 | `dependencies` | the standard's one composition mechanism installs and enables what it names; there is no optional dependency (silent, §4b), and the library is optional by the first ruling |
 | `userConfig` | it would ask "where is your library" at enable time, before the creative decision that answers it, and substitute an untracked value into a deterministic procedure |
 | `settings.json`, `.mcp.json`, `.lsp.json`, `commands/`, `agents/`, `package.json` | nothing in the run needs them; a plugin that carries a component nobody invokes is the unrun vacuity shape |
-| the compose rig, the Python tools, `versions.toml` of the engine | the page names thirty-seven distinct paths under the engine tree; carrying any of them is a second copy, and the tree at the pinned revision is already the source-build floor ADR-0023 §2 keeps present. Init clones it (§6 I2) |
+| the compose rig, the Python tools, `versions.toml` of the engine | the page names thirty-seven distinct paths under the engine tree; carrying any of them is a second copy, and the tree at the pinned revision is already the source-build floor ADR-0023 §2 keeps present. Init clones it (§6 I2, ADR-0027 §2) |
+
+**The selector, and where it lives.** The one piece of the toolchain the
+standard cannot select for us is selected by a script of ours:
+`scripts/fetch-delvec.py`, stdlib Python, run once by Init I3a. It reads the
+pin beside the page, maps the host (`platform.system()` and
+`platform.machine()`) onto the five targets `[engine].targets` names at the
+pinned revision, downloads that archive and `SHA256SUMS`, parses the checksum
+file in both forms coreutils writes (a space, or a space and the binary-mode
+marker `*`, before the name), verifies the bytes, unpacks with `tarfile`, and
+asserts `delvec --version` equals the pin — and it exits with one code per
+refusal, so I3a's failure table binds to codes rather than to prose: *no
+target for this host* (take the floor), *download failed* (take the floor),
+*checksum mismatch* (refuse; never the floor, never a retry), *version is not
+the pin's* (stop). Python is already on the machine when I3a runs — I1
+requires 3.11 for `tomllib` — so the script costs the creator nothing they do
+not already have, and it removes four tools the shell form depended on
+(`curl`, `sha256sum`/`shasum`, `grep`, `tar`).
+
+It is not the mechanism the second ruling forbids, and the reason is the third
+ruling and not convenience: the script saves the agent no effort it would
+otherwise spend — it **removes its choices**. Which archive, which checksum
+tool, how to read a `SHA256SUMS` row, whether a failed download is retried,
+whether a mismatched digest is "probably fine": every one of those is a place
+two agents could diverge and two creators end up with two toolchains. A script
+whose only job was to fetch an *optional* thing would be the forbidden kind;
+this one fetches the instrument, and its job is that there is one way to do it.
+
+Placement is the only question left, and it is decided by what changes for a
+creator, not by what the manifest can hold. In `bin/` the script would be a
+bare command on the Bash tool's `PATH`; nothing runs `bin/` on install or
+first enable (the record §4c is silent on any such event), so Init invokes it
+either way. Invoking it as a bare command makes the step depend on three
+things the standard does not promise and one platform does not supply: an
+execute bit that survives git on Windows, a shebang the shell honours there,
+and an interpreter answering to the name `python3` (the Windows installer from
+python.org ships `python.exe` and the `py` launcher and no `python3.exe`;
+these are read from the platforms' own documentation and not verified on a
+Windows machine in this round). Each fails as `command not found`, which reads
+as a broken plugin. Invoking it as `"$DELVEWRIGHT_PYTHON"
+scripts/fetch-delvec.py` from the skill root depends only on what I1 has
+already verified, is the same line on all five targets, and names its failures.
+So the script sits in `scripts/`, the standard's own home for executable code
+a skill runs (§1f), and the page names it by relative path with execution
+intent stated.
 
 ## 4. The marketplace
 
@@ -211,7 +252,11 @@ A future author decides where a line goes by three tests, in this order:
    agent fills in — a path, a choice, a name it read off the machine — stays
    inline; a block it would paste verbatim becomes a file whose output alone
    enters context. A script replaces an algorithm (a mapping, a verification,
-   a parse), never a decision and never a single command.
+   a parse), never a decision and never a single command. A script is
+   admitted under the third ruling, never under convenience: it exists where
+   two agents left to their own commands could reach two different toolchains
+   from one page, and a script that only fetched an optional input would be
+   the mechanism the second ruling forbids (§3, *the selector*).
 
 The page also answers to what survives compaction: Claude Code re-attaches the
 first 5,000 tokens of a loaded skill (cited, §1d), so the page is ordered by
@@ -229,7 +274,7 @@ rule:
 | Who runs this page; What you are building; The shape of the run | 95 | the page |
 | Reference: turning a prompt into a campaign (named by no step) | 30 | the page, inside *What you are building* — what a prompt pins is honoured at every stage, so it is held at every step |
 | Hard rules (named by no step) | 27 | the page, as the standing constraints — they hold at every step by their nature |
-| Init | 580 | the page keeps the mode test, the step list with each step's postcondition and the *Init is finished when* checklist; `references/init.md` carries the commands and every failure's meaning; three scripts (`host-target`, `find-jdk`, `fetch-client-jar`) carry the three algorithms |
+| Init | 580 | the page keeps the mode test, the step list with each step's postcondition and the *Init is finished when* checklist; `references/init.md` carries the commands and every failure's meaning; three scripts (`fetch-delvec`, `find-jdk`, `fetch-client-jar`) carry the three algorithms |
 | Which placement model | 71 | the page keeps the question and the tie rule; `references/placement.md` carries the test and its command |
 | Steps 1–14 | 1434 | each step's entry, exit, stop and pointer on the page (about ten lines each); every body over that in `references/<step>.md` — `workspace`, `placement`, `story`, `design-gate`, `content`, `build` (steps 6–8 together), `walk`, `ladder`, `chronicle`, `visual-review`, `detail`, `hand-over` |
 | the eight `Reference:` topics | 1364 | `references/quest-capabilities.md`, `writing-craft.md`, `map-reference.md`, `new-pieces.md`, `other-languages.md`, `tools-by-symptom.md`, `when-red.md`, `pitfalls.md`, each named from the step that reads it |
@@ -263,9 +308,9 @@ for one engine.
 | step | precondition | what is established | failure and what it means |
 |---|---|---|---|
 | **I0 · mode** | none | `DELVEWRIGHT_MODE` is `dev` when the working directory carries `crates/delvec/Cargo.toml` and `.claude/skills/delvewright/skills/new-delve/SKILL.md`, else `creator`. Dev: `DELVEWRIGHT_ENGINE` is the working directory and `campaigns/` there must resolve to a directory. Creator: `DELVEWRIGHT_ENGINE` is `~/.delvewright/engine` | a dev checkout whose `campaigns/` dangles: stop — a campaign is never written into the engine repository, and the link is what keeps it out |
-| **I1 · already on the machine** | I0 | `git`; `python3` ≥ 3.11 (`tomllib`); `java` ≥ 21, enumerated with `scripts/find-jdk` before halting, the chosen JDK exported; `docker info`. Not here: Rust (it belongs to I3b and to dev mode, ADR-0023 §1) and `git-lfs` (it belongs to the library, I6) | Java below 21 with no 21 on the disk: halt, the install is the user's. Docker absent: halt, steps 9–10 cannot run |
+| **I1 · already on the machine** | I0 | `git`; a Python ≥ 3.11 (`tomllib`) — tried as `python3`, then `python`, then `py -3`, and the first that answers is recorded as `DELVEWRIGHT_PYTHON` and used by every Python invocation on the page; `java` ≥ 21, enumerated with `scripts/find-jdk` before halting, the chosen JDK exported; `docker info`. Not here: Rust (it belongs to I3b and to dev mode, ADR-0023 §1) and `git-lfs` (it belongs to the library, I6) | no Python at 3.11: halt, the install is the user's. Java below 21 with no 21 on the disk: halt, likewise. Docker absent: halt, steps 9–10 cannot run |
 | **I2 · the engine tree** | I1 | creator: `release` and `ref` read from `versions.toml` beside the page, never restated; clone if absent, `fetch`, `checkout --detach "$ref"`, confirm `rev-parse HEAD` equals `ref`. Dev: record `rev-parse HEAD` of the working directory | `unable to read tree`: the pin names a revision the remote no longer carries — stop, never fall to a branch |
-| **I3a · `delvec`, the archive** | I2, creator | `TARGET` from `scripts/host-target` (an enumerated map from `uname -s`/`uname -m` to the five targets in `[engine].targets`, refusing any other pair); download `delvec-$release-$TARGET.tar.gz` and `SHA256SUMS` into `~/.delvewright/bin`; extract this archive's line accepting both the text and the binary-mode marker coreutils writes; verify; extract; `delvec --version` **equals** the release's number | an unknown host: I3b. A download that fails: I3b. **A checksum mismatch is a refusal**, never I3b and never a retry. A version that is not the pin's: stop — the shelf served a different engine than the page was written against |
+| **I3a · `delvec`, the archive** | I2, creator | one command: `"$DELVEWRIGHT_PYTHON" scripts/fetch-delvec.py --into ~/.delvewright/bin`, run from the skill root. It maps the host onto `[engine].targets` at `ref`, downloads `delvec-$release-$TARGET.tar.gz` and `SHA256SUMS`, reads this archive's row in either form coreutils writes, verifies, unpacks, and asserts `delvec --version` **equals** the release's number; it prints what it bound (target, archive, digest, version) | exit *no target for this host*: I3b. Exit *download failed*: I3b. Exit *checksum mismatch*: **a refusal**, never I3b and never a retry. Exit *version is not the pin's*: stop — the shelf served a different engine than the page was written against |
 | **I3b · `delvec`, the floor** | I3a could not complete, or dev | `cargo` present, else a hand-over: the floor needs a Rust toolchain and installing one touches the machine outside the project — offer `rustup`, wait. Build inside the engine tree (`cargo build --release -p delvec`, from inside the clone so `rust-toolchain.toml` binds), `cargo --version` and `rustc --version` equal to the channel that file names; PATH gains `target/release`. Dev: `delvec --version` equals the checkout's own `versions.toml [engine].version` | a channel mismatch: the `cd` did not take, everything built is wrong — rebuild. Dev version mismatch: a stale binary — rebuild |
 | **I3c · the whole binary** | I3a or I3b | `delvec render fidelity-gate` exits 0; the `dsl` number `delvec --version` prints is written down for step 1 | a non-zero: the GPU arms do not answer on this machine — stop, the visual half cannot be reviewed |
 | **I4 · the environment** | I3 | `~/.delvewright/env.sh` written with `JAVA_HOME`, `DELVEWRIGHT_MODE`, `DELVEWRIGHT_ENGINE`, `PATH` (the bin or the target directory first), and `DELVEWRIGHT_PREFABS` once I6 sets it; every later command on the page runs as `. ~/.delvewright/env.sh && <command>` | — |
@@ -283,10 +328,13 @@ for one engine.
   I3b**, which refuse a binary whose `--version` is not the pin's number. The
   window is a claim a reader sees; the equality is the claim the run enforces.
 - *`bin/` cannot select a binary by platform or architecture* (silent, §4c). It
-  is carried by **`scripts/host-target`** and by **I3a's refusal**: the map is
-  the engine's own `[engine].targets`, read from the tree at `ref` so a target
-  added upstream is a line in the map and not a guess; a host outside it takes
-  the floor, which is the answer ADR-0023 §2 gives for exactly that machine.
+  is carried by **`scripts/fetch-delvec.py`** and by **I3a's refusal codes**:
+  the map is the engine's own `[engine].targets`, read from the tree at `ref`
+  so a target added upstream is a line in the map and not a guess; a host
+  outside it takes the floor, which is the answer ADR-0023 §2 gives for exactly
+  that machine. The same script is what makes archive verification hold on
+  Windows: the page's shell form matches four of the five published
+  `SHA256SUMS` rows, and the Windows row is the one it misses.
 
 **Output.** `.out/` under the working directory is scratch; the tree the
 machine ladder boots is `"$DELVEWRIGHT_ENGINE/validation/delve-output"`, the
@@ -443,8 +491,7 @@ been under a documentation gate, and the move puts it under all of them.
    pointer to the content gates and the "future bootstrap" wording;
    `docs/reference/distribution-size.md` points at the new path;
    `docs/ROADMAP.md`'s M4 bullet reads as done for this item; ADR-0023's
-   revisit trigger for this event is noted as fired in the ADR the planner
-   numbers.
+   revisit trigger for this event is answered by ADR-0027.
 
 The content pull request (§9) follows, and is drafted until the first merges.
 
@@ -504,14 +551,18 @@ written. Where the tree cannot yet satisfy a criterion the verdict is a debt.
     tool that cannot run there is a ledger row, never a skipped step.*
 11. **Init is exact.** `references/init.md` states, for each of I0–I8, the
     precondition, the commands, the postcondition and every failure's meaning
-    named in §6; `SKILL.md` carries the I8 checklist; `scripts/host-target`
-    refuses a host outside `[engine].targets` at `ref` and its map is read
-    from that file; I3a's checksum extraction accepts the binary-mode marker.
-    A test runs `host-target` under each of the five `uname` pairs and one
-    other and asserts five targets and one refusal. *Tree: debt — Init at
+    named in §6; `SKILL.md` carries the I8 checklist; `scripts/fetch-delvec.py`
+    is stdlib-only, reads its map from `[engine].targets` at `ref`, and exits
+    with a distinct code for each of the four refusals §3 names. Its tests:
+    the host map under each of the five `(system, machine)` pairs and one
+    other yields five targets and one refusal; the `SHA256SUMS` parser reads
+    a row in both the text form and the binary-mode form, against the
+    published `v1.4.0` file as a fixture; a digest perturbed by one byte is
+    the checksum refusal and never a second download; a binary answering a
+    version other than the pin's is the version refusal. *Tree: debt — Init at
     `ee25912f` lists Rust and `git-lfs` as prerequisites, clones beside the
-    content repository, and its extraction matches four of the five rows
-    (measured against the published `SHA256SUMS`).*
+    content repository, and its shell extraction matches four of the five
+    rows (measured against the published `SHA256SUMS`).*
 12. **The mode test.** I0's two conditions are the only mode test on the page;
     `grep -c` for `DELVEWRIGHT_MODE` assignments in `SKILL.md` plus
     `references/` is 1, and no line reads "in dev mode" outside I0, I2, I3 and
