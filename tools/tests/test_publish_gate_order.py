@@ -54,6 +54,7 @@ import json
 import os
 import re
 import shutil
+import sys
 import subprocess
 import threading
 import tomllib
@@ -206,15 +207,29 @@ def _scratch_clone(tmp_path: Path, check_src: str, publish_src: str) -> Path:
     (tree / "tools" / "lib").mkdir(parents=True)
     (tree / "tools" / "check-publishable.sh").write_text(check_src, encoding="utf-8")
     (tree / "tools" / "crates-io-publish.sh").write_text(publish_src, encoding="utf-8")
-    shutil.copy(LIB / "checksum.sh", tree / "tools" / "lib" / "checksum.sh")
-    shutil.copy(LIB / "package-verify.sh", tree / "tools" / "lib" / "package-verify.sh")
-    # The sparse-index reader and its bind test, which `crates-io-publish.sh`
-    # calls rather than carrying (a second gate now asks the same registry the
-    # same question). A clone without it fails AT the bind test, which is the
-    # right refusal for the wrong reason: the script would be judged on a lookup
-    # that was never there rather than on one that answered.
-    shutil.copy(LIB / "crates_index.py", tree / "tools" / "lib" / "crates_index.py")
+    # EVERY shared lib, not a list of the ones these scripts happened to call
+    # when this was written. The list was `checksum.sh`, `package-verify.sh` and
+    # `crates_index.py`; `crates-io-publish.sh` then gained a fourth
+    # (`version_sites.py`) and the clone failed AT the new bind test — the right
+    # refusal for the wrong reason, judging the script on a helper that was never
+    # there rather than on one that answered. A hand-written file list is a claim
+    # about a directory that nothing re-checks, so the directory is the list.
+    for lib in sorted(LIB.iterdir()):
+        if lib.is_file():
+            shutil.copy(lib, tree / "tools" / "lib" / lib.name)
     shutil.copy(REPO / "versions.toml", tree / "versions.toml")
+    # …and every file the version-site rows name, for the same reason: those rows
+    # are resolved against the tree on every run of `crates-io-publish.sh`, so a
+    # clone without them is one the script correctly refuses to plan in. Derived
+    # from the rows themselves, so a row added later is carried without a second
+    # edit here.
+    sys.path.insert(0, str(LIB))
+    import version_sites
+
+    for rel in sorted({str(r["path"]) for rows in version_sites.ROWS.values() for r in rows}):
+        dst = tree / rel
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy(REPO / rel, dst)
     return tree
 
 

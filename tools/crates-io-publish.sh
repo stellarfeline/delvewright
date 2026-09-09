@@ -188,6 +188,14 @@ index_cksum() { # <crate-name> <version>
   python3 "$ROOT/tools/lib/crates_index.py" cksum "$1" "$2"
 }
 
+# THE SITE LIST IS NOT WRITTEN HERE either, for the same reason and after the
+# same failure: the refusal below tells a reader where to move a version, and
+# that list was a literal nothing read. `tools/lib/version_sites.py` owns the
+# rows, prints them, and resolves every one of them against the tree.
+version_sites() { # verify | advise --kind <dsl|engine> --version <v> [--count]
+  python3 "$ROOT/tools/lib/version_sites.py" "$@" --root "$ROOT"
+}
+
 # Where tools/check-publishable.sh packages, and where `--only` packages: its
 # verify target directory. One statement of the path, because two things read
 # it — `tools/lib/package-verify.sh` says why it sits beside `target/`, not
@@ -333,6 +341,19 @@ python3 "$ROOT/tools/lib/crates_index.py" bind-test || {
 }
 echo
 
+# The refusal this script can print names the places a version lives, and a
+# message that names a place the tree does not have is worse than no message: the
+# reader follows it exactly and is still red. So the rows are resolved here, on
+# EVERY run — a check bound only to the failure path it decorates is a check
+# nobody exercises, and this one had been wrong in three places for as long as
+# anyone had looked.
+echo "== version-site advice bind test =="
+version_sites verify || {
+  echo "crates-io-publish: refusing to plan behind advice that names a place this tree does not have." >&2
+  exit 1
+}
+echo
+
 # ------------------------------------------------------------------- the plan
 # Publish order, as versions.toml states it: the format crate, then the engine
 # (ADR-0025); each name's version is its own line's. bash 3.2 (macOS) has no
@@ -414,20 +435,27 @@ while [ "$i" -lt "${#NAMES[@]}" ]; do
       printf '  FAIL    %s %s is on crates.io as a DIFFERENT crate\n' "$n" "$v"
       echo >&2
       echo "crates-io-publish: $n $v cannot be republished — a crates.io version is permanent." >&2
+      # The site list is NOT written here. `tools/lib/version_sites.py` owns it,
+      # and the same rows this prints are the rows `dw_verify_version_sites`
+      # resolved against the tree at the top of this run — so the message cannot
+      # name a symbol the tree lost, and the count is the list's length rather
+      # than a word typed beside it. Both halves of the old literal had rotted:
+      # it named `SUPPORTED_DSL_VERSION` for a constant called `DSL_VERSION`, and
+      # said "all four" of a set that is seven, missing the root Cargo.toml
+      # `[workspace.dependencies]` pin whose omission fails the next `--locked`
+      # build outright.
       if [ "$n" = "$DSL_CRATE" ]; then
-        # The DSL crate's version IS the dsl_version, so moving it moves four
-        # statements of one number that validation/check-versions.sh holds equal.
-        # Nothing is re-tagged for it: .github/workflows/dsl-crate-publish.yml
-        # uploads it off `main`.
-        echo "  $DSL_CRATE $v must move. It is the dsl_version, so all four of these carry it:" >&2
-        echo "    crates/dsl/Cargo.toml            [package] version" >&2
-        echo "    crates/dsl/src/envelope.rs       SUPPORTED_DSL_VERSION" >&2
-        echo "    versions.toml                    [engine] dsl_crate_version" >&2
-        echo "    versions.toml                    [engine] dsl_crate_req (=<version>)" >&2
+        sites="$(version_sites advise --kind dsl --version "$v")"
+        count="$(version_sites advise --kind dsl --version "$v" --count)"
+        echo "  $DSL_CRATE $v must move. It is the dsl_version, so all $count of these carry it:" >&2
+        echo "$sites" >&2
         echo "  A format change bumps the minor, a Rust-API-only change bumps the patch." >&2
         echo "  Push the bump to main and the publish hook uploads it; no tag is involved." >&2
       else
-        echo "  Bump [engine] version (and the root Cargo.toml [workspace.package] + [workspace.dependencies] it binds) in versions.toml and re-tag." >&2
+        sites="$(version_sites advise --kind engine --version "$v")"
+        count="$(version_sites advise --kind engine --version "$v" --count)"
+        echo "  $n $v is on the engine release line. Bump it and re-tag; all $count of these carry it:" >&2
+        echo "$sites" >&2
       fi
       exit 1
     fi
