@@ -1194,7 +1194,7 @@ def online(rep: Report, engine: pathlib.Path, repo: str, release: str, rev: str,
 DESTINATIONS: dict[str, str] = {}
 
 
-def freeze(source_path: pathlib.Path) -> int:
+def freeze(source_path: pathlib.Path, repo: str, revision: str) -> int:
     source = source_path.read_text(encoding="utf-8")
     where: dict[str, list[str]] = {}
     for path in page_files():
@@ -1218,8 +1218,8 @@ def freeze(source_path: pathlib.Path) -> int:
                 "heading-preservation rule and is written by `--freeze`, never by "
                 "hand."
             ),
-            "repo": "stellarfeline/delvewright-campaigns",
-            "revision": "ee25912fe96071c0a3058c7d161498ec0c05dc6f",
+            "repo": repo,
+            "revision": revision,
             "path": ".claude/skills/new-delve/SKILL.md",
             "blob": blob,
             "sha256": hashlib.sha256(raw).hexdigest(),
@@ -1230,7 +1230,13 @@ def freeze(source_path: pathlib.Path) -> int:
         "headings": census_rows(source, destinations),
     }
     CENSUS.parent.mkdir(parents=True, exist_ok=True)
-    CENSUS.write_text(json.dumps(census, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    # Canonical form on the way out — object keys sorted, two-space indent,
+    # non-ASCII raw, one trailing newline — so a re-freeze does not red the
+    # repository's own JSON sweep, and a `--freeze` diff is only what moved.
+    CENSUS.write_text(
+        json.dumps(census, indent=2, ensure_ascii=False, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
     print(f"froze {len(census['headings'])} heading(s) into {rel(CENSUS)}")
     return 0
 
@@ -1251,13 +1257,31 @@ def main(argv: list[str] | None = None) -> int:
     )
     ap.add_argument("--freeze", action="store_true", help="rewrite the heading census")
     ap.add_argument("--from", dest="source", type=pathlib.Path, help="with --freeze: the pre-split page")
+    ap.add_argument(
+        "--source-repo",
+        default="stellarfeline/delvewright-campaigns",
+        help="with --freeze: the repository the pre-split page was moved from",
+    )
+    ap.add_argument(
+        "--source-revision",
+        default=None,
+        help=(
+            "with --freeze: the revision it was moved from. Required, and never "
+            "defaulted to a literal in this file: a revision written into a tool "
+            "is a pin outside the registry's reach."
+        ),
+    )
     args = ap.parse_args(argv)
 
     if args.freeze:
-        if args.source is None:
-            print("--freeze needs --from <the pre-split page>", file=sys.stderr)
+        if args.source is None or args.source_revision is None:
+            print(
+                "--freeze needs --from <the pre-split page> and --source-revision "
+                "<the revision it was moved from>",
+                file=sys.stderr,
+            )
             return 2
-        return freeze(args.source)
+        return freeze(args.source, args.source_repo, args.source_revision)
 
     print(f"== check-skill-page — {rel(SKILL)} ==")
     rep = Report()

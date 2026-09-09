@@ -80,10 +80,13 @@ jobs:
       # at the versions `versions.toml [ci]` pins.
       - name: the format's own readings of the plugin
         run: |
+          # One line, semicolon-separated: a block scalar ends at the first
+          # line indented less than the block, so a python program written
+          # across lines here either breaks the YAML at column 0 or arrives at
+          # the interpreter indented. Both are simple statements, so one line
+          # costs nothing.
           read_pin() {
-            python3 -c 'import sys, tomllib
-sys.stdout.reconfigure(newline="\n")
-print(tomllib.load(open("versions.toml","rb"))["ci"][sys.argv[1]])' "$1"
+            python3 -c 'import sys, tomllib; sys.stdout.reconfigure(newline="\n"); print(tomllib.load(open("versions.toml","rb"))["ci"][sys.argv[1]])' "$1"
           }
           SKILLS_REF="$(read_pin skills_ref_version)"
           CLAUDE_CODE="$(read_pin claude_code_version)"

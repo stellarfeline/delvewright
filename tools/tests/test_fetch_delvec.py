@@ -174,7 +174,7 @@ def rig(mod, tmp_path, monkeypatch):
     pin.write_text(
         '[engine]\nrepo = "stellarfeline/delvewright"\n'
         'release = "v1.4.0"\n'
-        'ref = "0123456789abcdef0123456789abcdef01234567"\n',
+        f'ref = "{"0" * 40}"\n',  # a placeholder, not a revision: nothing fetches it
         encoding="utf-8",
     )
     monkeypatch.setattr(

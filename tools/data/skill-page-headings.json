@@ -1,338 +1,338 @@
 {
-  "source": {
-    "note": "The `/new-delve` page as it stood before spec-0063 §10 split it. This census is the denominator of check-skill-page.py's heading-preservation rule and is written by `--freeze`, never by hand.",
-    "repo": "stellarfeline/delvewright-campaigns",
-    "revision": "ee25912fe96071c0a3058c7d161498ec0c05dc6f",
-    "path": ".claude/skills/new-delve/SKILL.md",
-    "blob": "26848dc456d3eb7f1301901e4ff46dd36ea35c8f",
-    "sha256": "3fd5583ab08d5dd6750a37a015191c30219f4bea0c4eea4b101fd2549e192ec9",
-    "lines": 3670,
-    "bytes": 217647
-  },
   "dividers": [
     "The steps",
     "Reference"
   ],
   "headings": [
     {
+      "destination": "SKILL.md",
       "heading": "/new-delve — building a delve, end to end",
-      "section": "/new-delve — building a delve, end to end",
-      "destination": "SKILL.md"
+      "section": "/new-delve — building a delve, end to end"
     },
     {
+      "destination": "SKILL.md",
       "heading": "Who runs this page, and what is not yours",
-      "section": "Who runs this page, and what is not yours",
-      "destination": "SKILL.md"
+      "section": "Who runs this page, and what is not yours"
     },
     {
+      "destination": "SKILL.md",
       "heading": "What you are building",
-      "section": "What you are building",
-      "destination": "SKILL.md"
+      "section": "What you are building"
     },
     {
+      "destination": "SKILL.md",
       "heading": "The shape of the run",
-      "section": "The shape of the run",
-      "destination": "SKILL.md"
+      "section": "The shape of the run"
     },
     {
+      "destination": "SKILL.md",
       "heading": "Init — build the toolchain before you author anything",
-      "section": "Init — build the toolchain before you author anything",
-      "destination": "SKILL.md"
+      "section": "Init — build the toolchain before you author anything"
     },
     {
+      "destination": "restated",
       "heading": "0. What has to be on the machine already",
-      "section": "Init — build the toolchain before you author anything",
-      "destination": "restated"
+      "section": "Init — build the toolchain before you author anything"
     },
     {
+      "destination": "restated",
       "heading": "1. Materialise this repository's prefabs",
-      "section": "Init — build the toolchain before you author anything",
-      "destination": "restated"
+      "section": "Init — build the toolchain before you author anything"
     },
     {
+      "destination": "restated",
       "heading": "2. The toolchain: `delvec`, downloaded; the engine tree, beside this repository",
-      "section": "Init — build the toolchain before you author anything",
-      "destination": "restated"
+      "section": "Init — build the toolchain before you author anything"
     },
     {
+      "destination": "restated",
       "heading": "2a. `delvec` from the release shelf — the default",
-      "section": "Init — build the toolchain before you author anything",
-      "destination": "restated"
+      "section": "Init — build the toolchain before you author anything"
     },
     {
+      "destination": "restated",
       "heading": "2b. The floor: build it from source",
-      "section": "Init — build the toolchain before you author anything",
-      "destination": "restated"
+      "section": "Init — build the toolchain before you author anything"
     },
     {
+      "destination": "restated",
       "heading": "2c. One binary, and where its capabilities live",
-      "section": "Init — build the toolchain before you author anything",
-      "destination": "restated"
+      "section": "Init — build the toolchain before you author anything"
     },
     {
+      "destination": "restated",
       "heading": "3. `--prefabs prefabs` — the flag that is not optional here",
-      "section": "Init — build the toolchain before you author anything",
-      "destination": "restated"
+      "section": "Init — build the toolchain before you author anything"
     },
     {
+      "destination": "restated",
       "heading": "4. The 1.21.11 client jar — the user picks how it arrives",
-      "section": "Init — build the toolchain before you author anything",
-      "destination": "restated"
+      "section": "Init — build the toolchain before you author anything"
     },
     {
+      "destination": "restated",
       "heading": "5. Chunky — named here, fetched at step 12",
-      "section": "Init — build the toolchain before you author anything",
-      "destination": "restated"
+      "section": "Init — build the toolchain before you author anything"
     },
     {
+      "destination": "restated",
       "heading": "6. Reference images — read the two paths before you spend anything",
-      "section": "Init — build the toolchain before you author anything",
-      "destination": "restated"
+      "section": "Init — build the toolchain before you author anything"
     },
     {
+      "destination": "restated",
       "heading": "7. Python, only when an NPC needs a face of its own",
-      "section": "Init — build the toolchain before you author anything",
-      "destination": "restated"
+      "section": "Init — build the toolchain before you author anything"
     },
     {
+      "destination": "SKILL.md",
       "heading": "Init is finished when every one of these answers",
-      "section": "Init — build the toolchain before you author anything",
-      "destination": "SKILL.md"
+      "section": "Init — build the toolchain before you author anything"
     },
     {
+      "destination": "references/init.md",
       "heading": "Where output goes, and the one place it cannot go",
-      "section": "Init — build the toolchain before you author anything",
-      "destination": "references/init.md"
+      "section": "Init — build the toolchain before you author anything"
     },
     {
+      "destination": "SKILL.md",
       "heading": "Which placement model",
-      "section": "Which placement model",
-      "destination": "SKILL.md"
+      "section": "Which placement model"
     },
     {
+      "destination": "references/placement.md",
       "heading": "The test, and how to run it",
-      "section": "Which placement model",
-      "destination": "references/placement.md"
+      "section": "Which placement model"
     },
     {
+      "destination": "SKILL.md",
       "heading": "The steps",
-      "section": "The steps",
-      "destination": "SKILL.md"
+      "section": "The steps"
     },
     {
+      "destination": "SKILL.md",
       "heading": "1. The workspace, and the documents you are going to write",
-      "section": "1. The workspace, and the documents you are going to write",
-      "destination": "SKILL.md"
+      "section": "1. The workspace, and the documents you are going to write"
     },
     {
+      "destination": "SKILL.md",
       "heading": "2. Placement — where everything is",
-      "section": "2. Placement — where everything is",
-      "destination": "SKILL.md"
+      "section": "2. Placement — where everything is"
     },
     {
+      "destination": "references/placement.md",
       "heading": "2A. `areas[]`",
-      "section": "2. Placement — where everything is",
-      "destination": "references/placement.md"
+      "section": "2. Placement — where everything is"
     },
     {
+      "destination": "references/placement.md",
       "heading": "2B. The site plan",
-      "section": "2. Placement — where everything is",
-      "destination": "references/placement.md"
+      "section": "2. Placement — where everything is"
     },
     {
+      "destination": "SKILL.md",
       "heading": "3. The story documents — `npcs`, `classes`, `quest-plan`",
-      "section": "3. The story documents — `npcs`, `classes`, `quest-plan`",
-      "destination": "SKILL.md"
+      "section": "3. The story documents — `npcs`, `classes`, `quest-plan`"
     },
     {
+      "destination": "references/story.md",
       "heading": "Where step 3 ends",
-      "section": "3. The story documents — `npcs`, `classes`, `quest-plan`",
-      "destination": "references/story.md"
+      "section": "3. The story documents — `npcs`, `classes`, `quest-plan`"
     },
     {
+      "destination": "SKILL.md",
       "heading": "4. The design gate — STOP, the user says yes",
-      "section": "4. The design gate — STOP, the user says yes",
-      "destination": "SKILL.md"
+      "section": "4. The design gate — STOP, the user says yes"
     },
     {
+      "destination": "SKILL.md",
       "heading": "5. The content documents — `quests` and `dialogue`",
-      "section": "5. The content documents — `quests` and `dialogue`",
-      "destination": "SKILL.md"
+      "section": "5. The content documents — `quests` and `dialogue`"
     },
     {
+      "destination": "SKILL.md",
       "heading": "6. `delvec fmt` — every campaign, every time",
-      "section": "6. `delvec fmt` — every campaign, every time",
-      "destination": "SKILL.md"
+      "section": "6. `delvec fmt` — every campaign, every time"
     },
     {
+      "destination": "SKILL.md",
       "heading": "7. `delvec analyze`",
-      "section": "7. `delvec analyze`",
-      "destination": "SKILL.md"
+      "section": "7. `delvec analyze`"
     },
     {
+      "destination": "SKILL.md",
       "heading": "8. `delvec build`",
-      "section": "8. `delvec build`",
-      "destination": "SKILL.md"
+      "section": "8. `delvec build`"
     },
     {
+      "destination": "SKILL.md",
       "heading": "9. The walk — STOP, this one is the user's",
-      "section": "9. The walk — STOP, this one is the user's",
-      "destination": "SKILL.md"
+      "section": "9. The walk — STOP, this one is the user's"
     },
     {
+      "destination": "SKILL.md",
       "heading": "10. The machine ladder",
-      "section": "10. The machine ladder",
-      "destination": "SKILL.md"
+      "section": "10. The machine ladder"
     },
     {
+      "destination": "SKILL.md",
       "heading": "11. The branch chronicle — only when the plan declares `branch_points`",
-      "section": "11. The branch chronicle — only when the plan declares `branch_points`",
-      "destination": "SKILL.md"
+      "section": "11. The branch chronicle — only when the plan declares `branch_points`"
     },
     {
+      "destination": "SKILL.md",
       "heading": "12. Visual review",
-      "section": "12. Visual review",
-      "destination": "SKILL.md"
+      "section": "12. Visual review"
     },
     {
+      "destination": "SKILL.md",
       "heading": "13. Detail — site-plan campaigns only, and only after the walk",
-      "section": "13. Detail — site-plan campaigns only, and only after the walk",
-      "destination": "SKILL.md"
+      "section": "13. Detail — site-plan campaigns only, and only after the walk"
     },
     {
+      "destination": "SKILL.md",
       "heading": "14. Hand it over",
-      "section": "14. Hand it over",
-      "destination": "SKILL.md"
+      "section": "14. Hand it over"
     },
     {
+      "destination": "restated",
       "heading": "Reference",
-      "section": "Reference",
-      "destination": "restated"
+      "section": "Reference"
     },
     {
+      "destination": "SKILL.md",
       "heading": "Reference: turning a prompt into a campaign",
-      "section": "Reference: turning a prompt into a campaign",
-      "destination": "SKILL.md"
+      "section": "Reference: turning a prompt into a campaign"
     },
     {
+      "destination": "references/quest-capabilities.md",
       "heading": "Reference: what a quest can do",
-      "section": "Reference: what a quest can do",
-      "destination": "references/quest-capabilities.md"
+      "section": "Reference: what a quest can do"
     },
     {
+      "destination": "references/quest-capabilities.md",
       "heading": "Objectives",
-      "section": "Reference: what a quest can do",
-      "destination": "references/quest-capabilities.md"
+      "section": "Reference: what a quest can do"
     },
     {
+      "destination": "references/quest-capabilities.md",
       "heading": "Items, containers and loot",
-      "section": "Reference: what a quest can do",
-      "destination": "references/quest-capabilities.md"
+      "section": "Reference: what a quest can do"
     },
     {
+      "destination": "references/quest-capabilities.md",
       "heading": "State, flags and gates",
-      "section": "Reference: what a quest can do",
-      "destination": "references/quest-capabilities.md"
+      "section": "Reference: what a quest can do"
     },
     {
+      "destination": "references/quest-capabilities.md",
       "heading": "The story layer",
-      "section": "Reference: what a quest can do",
-      "destination": "references/quest-capabilities.md"
+      "section": "Reference: what a quest can do"
     },
     {
+      "destination": "references/quest-capabilities.md",
       "heading": "Dialogue",
-      "section": "Reference: what a quest can do",
-      "destination": "references/quest-capabilities.md"
+      "section": "Reference: what a quest can do"
     },
     {
+      "destination": "references/quest-capabilities.md",
       "heading": "Things that change the world",
-      "section": "Reference: what a quest can do",
-      "destination": "references/quest-capabilities.md"
+      "section": "Reference: what a quest can do"
     },
     {
+      "destination": "references/quest-capabilities.md",
       "heading": "Danger, death and money",
-      "section": "Reference: what a quest can do",
-      "destination": "references/quest-capabilities.md"
+      "section": "Reference: what a quest can do"
     },
     {
+      "destination": "references/quest-capabilities.md",
       "heading": "Bodies",
-      "section": "Reference: what a quest can do",
-      "destination": "references/quest-capabilities.md"
+      "section": "Reference: what a quest can do"
     },
     {
+      "destination": "references/quest-capabilities.md",
       "heading": "Sealed things, and pacing",
-      "section": "Reference: what a quest can do",
-      "destination": "references/quest-capabilities.md"
+      "section": "Reference: what a quest can do"
     },
     {
+      "destination": "references/writing-craft.md",
       "heading": "Reference: writing craft",
-      "section": "Reference: writing craft",
-      "destination": "references/writing-craft.md"
+      "section": "Reference: writing craft"
     },
     {
+      "destination": "references/writing-craft.md",
       "heading": "A. Automatic-phrasing tells",
-      "section": "Reference: writing craft",
-      "destination": "references/writing-craft.md"
+      "section": "Reference: writing craft"
     },
     {
+      "destination": "references/writing-craft.md",
       "heading": "B. Convergence is the real tell — vary the posture per campaign",
-      "section": "Reference: writing craft",
-      "destination": "references/writing-craft.md"
+      "section": "Reference: writing craft"
     },
     {
+      "destination": "references/writing-craft.md",
       "heading": "C. HARD RULE — dialogue options are labels, not sentences",
-      "section": "Reference: writing craft",
-      "destination": "references/writing-craft.md"
+      "section": "Reference: writing craft"
     },
     {
+      "destination": "references/writing-craft.md",
       "heading": "D. HARD RULE — a name spelled the same way IS the same name",
-      "section": "Reference: writing craft",
-      "destination": "references/writing-craft.md"
+      "section": "Reference: writing craft"
     },
     {
+      "destination": "references/writing-craft.md",
       "heading": "E. Plain-prose baseline (Strunk 1918, public domain)",
-      "section": "Reference: writing craft",
-      "destination": "references/writing-craft.md"
+      "section": "Reference: writing craft"
     },
     {
+      "destination": "references/map-reference.md",
       "heading": "Reference: drawing the map's reference",
-      "section": "Reference: drawing the map's reference",
-      "destination": "references/map-reference.md"
+      "section": "Reference: drawing the map's reference"
     },
     {
+      "destination": "references/new-pieces.md",
       "heading": "Reference: when the prefab library has no piece you need",
-      "section": "Reference: when the prefab library has no piece you need",
-      "destination": "references/new-pieces.md"
+      "section": "Reference: when the prefab library has no piece you need"
     },
     {
+      "destination": "references/other-languages.md",
       "heading": "Reference: other languages",
-      "section": "Reference: other languages",
-      "destination": "references/other-languages.md"
+      "section": "Reference: other languages"
     },
     {
+      "destination": "references/tools-by-symptom.md",
       "heading": "Reference: tools by symptom",
-      "section": "Reference: tools by symptom",
-      "destination": "references/tools-by-symptom.md"
+      "section": "Reference: tools by symptom"
     },
     {
+      "destination": "references/when-red.md",
       "heading": "Reference: when something goes red",
-      "section": "Reference: when something goes red",
-      "destination": "references/when-red.md"
+      "section": "Reference: when something goes red"
     },
     {
+      "destination": "references/pitfalls.md",
       "heading": "Reference: authoring pitfalls",
-      "section": "Reference: authoring pitfalls",
-      "destination": "references/pitfalls.md"
+      "section": "Reference: authoring pitfalls"
     },
     {
+      "destination": "references/playtest-rounds.md",
       "heading": "Playtest rounds",
-      "section": "Playtest rounds",
-      "destination": "references/playtest-rounds.md"
+      "section": "Playtest rounds"
     },
     {
+      "destination": "SKILL.md",
       "heading": "Hard rules",
-      "section": "Hard rules",
-      "destination": "SKILL.md"
+      "section": "Hard rules"
     }
-  ]
+  ],
+  "source": {
+    "blob": "26848dc456d3eb7f1301901e4ff46dd36ea35c8f",
+    "bytes": 217647,
+    "lines": 3670,
+    "note": "The `/new-delve` page as it stood before spec-0063 §10 split it. This census is the denominator of check-skill-page.py's heading-preservation rule and is written by `--freeze`, never by hand.",
+    "path": ".claude/skills/new-delve/SKILL.md",
+    "repo": "stellarfeline/delvewright-campaigns",
+    "revision": "ee25912fe96071c0a3058c7d161498ec0c05dc6f",
+    "sha256": "3fd5583ab08d5dd6750a37a015191c30219f4bea0c4eea4b101fd2549e192ec9"
+  }
 }

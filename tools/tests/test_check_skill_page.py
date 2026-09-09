@@ -134,11 +134,13 @@ def test_a_name_that_is_not_the_directory_reds(mod, tree, engine):
 
 
 def test_a_branch_name_in_ref_reds(mod, tree, engine):
-    edit(
-        tree / "versions.toml",
-        'ref = "d8d87ef60583a4643fab28e07aee18f73d93fa84"',
-        'ref = "main"',
-    )
+    """The revision is read out of the pin, never written down here.
+
+    A gate's guard that pasted the revision would be a second copy of it, in a
+    file pin discovery reads — which is the very defect rule 2 exists for.
+    """
+    _repo, _release, rev = mod.read_pin()
+    edit(tree / "versions.toml", f'ref = "{rev}"', 'ref = "main"')
     assert has(run(mod, engine), "not a full 40-hex revision")
 
 
