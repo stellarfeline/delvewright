@@ -188,22 +188,24 @@ Read it now and run from it. The table below is the order and the postconditions
 | step | what it establishes, and what has to be true after it |
 |---|---|
 | **I0 · mode** | `DELVEWRIGHT_MODE` is `dev` when the working directory carries **both** `crates/delvec/Cargo.toml` and `.claude/skills/delvewright/skills/new-delve/SKILL.md`, else `creator`. `DELVEWRIGHT_ENGINE` is the working directory in dev, `~/.delvewright/engine` otherwise. Dev: `campaigns/` there resolves to a directory, or **stop** |
-| **I1 · already here** | `git`; a Python ≥ 3.11 recorded as `DELVEWRIGHT_PYTHON` and used by every Python invocation on this page; `java` ≥ 21, enumerated with `scripts/find-jdk.py` before halting, and exported; `docker info` exits 0. Not here: Rust and `git-lfs` |
-| **I2 · engine tree** | `versions.toml` beside this page is read, never restated. Creator: the clone at `~/.delvewright/engine` is `--detach`ed at `[engine].ref` and `rev-parse HEAD` equals it. Dev: HEAD is recorded and said out loud |
-| **I3a · `delvec`** | `"$DELVEWRIGHT_PYTHON" scripts/fetch-delvec.py --into ~/.delvewright/bin`, run from the skill root, exits 0 having printed its target, archive, digest and version. Exit 3 or 4 → I3b. **Exit 5 is a refusal** — never the floor, never a retry. Exit 6: stop |
+| **I1 · already here** | `git`; a Python ≥ 3.11 recorded as `DELVEWRIGHT_PYTHON` and used by every Python invocation on this page; the **skill root** recorded as `DELVEWRIGHT_SKILL` — every bundled path below is `"$DELVEWRIGHT_SKILL/…"`, and it is never the working directory; `java` ≥ 21, enumerated with `scripts/find-jdk.py` before halting, and exported; `docker info` exits 0. Not here: Rust and `git-lfs` |
+| **I2 · engine tree** | `"$DELVEWRIGHT_SKILL/versions.toml"` is read, never restated. Creator: the clone at `~/.delvewright/engine` is `--detach`ed at `[engine].ref` and `rev-parse HEAD` equals it. Dev: HEAD is recorded and said out loud |
+| **I3a · `delvec`** | `"$DELVEWRIGHT_PYTHON" "$DELVEWRIGHT_SKILL/scripts/fetch-delvec.py" --into ~/.delvewright/bin` exits 0 having printed its target, archive, digest and version. Exit 3 or 4 → I3b. **Exit 5 is a refusal** — never the floor, never a retry. Exit 6: stop |
 | **I3b · the floor** | Only after exit 3 or 4, and in dev mode always. `cargo build --release -p delvec` **from inside** the engine tree, with `cargo --version` and `rustc --version` equal to the channel `rust-toolchain.toml` names. No `cargo`: hand over `rustup` and wait |
-| **I3c · the binary** | `delvec --version` answers and `render fidelity-gate` exits 0. **Write down the `dsl` number** — step 1 needs it on every document |
-| **I4 · environment** | `~/.delvewright/env.sh` carries `JAVA_HOME`, `DELVEWRIGHT_MODE`, `DELVEWRIGHT_ENGINE`, `DELVEWRIGHT_PYTHON`, `DELVEWRIGHT_PREFABS` and `PATH`. Every later command runs as `. ~/.delvewright/env.sh && <command>` |
-| **I5 · client jar** | **STOP — the user's choice.** Download by default, or a copy from a directory they name. Either way the jar lands at `~/.chunky/resources/minecraft.jar`, and a texture-reading command over a piece `delvec grammar expand` just wrote answers |
+| **I3c · the binary** | `delvec --version` answers. **Write down the `dsl` number** — step 1 needs it on every document. The GPU arms are **not** asked here: they draw with the client jar I5 fetches, so a gate run now refuses on every clean machine there is, for a reason this page created |
+| **I4 · environment** | `~/.delvewright/env.sh` carries `JAVA_HOME`, `DELVEWRIGHT_MODE`, `DELVEWRIGHT_ENGINE`, `DELVEWRIGHT_PYTHON`, `DELVEWRIGHT_SKILL`, `DELVEWRIGHT_PREFABS` and `PATH`. Every later command runs as `. ~/.delvewright/env.sh && <command>` |
+| **I5 · client jar** | **STOP — the user's choice.** Download by default, or a copy from a directory they name. Either way the jar lands at `~/.chunky/resources/minecraft.jar` and you have looked at it there. That it *reads* is I8's line |
 | **I6 · the library** | `DELVEWRIGHT_PREFABS` names a prefabs directory and you have said which of the four cases produced it. **Nothing is cloned here** — step 2 takes the shipped library, if the campaign wants one |
 | **I7 · named, not installed** | Chunky's source answers (a non-zero is said out loud, not a stop). On the drawing path only: `refimg.py --dry-run` exits 0. The skin toolchain is not mentioned |
+| **I8 · finished when** | Every line of the checklist below answers, through `env.sh`. This is the one place the toolchain is exercised end to end, because three of those lines need the jar, the binary and the library at once |
 
-### Init is finished when every one of these answers
+### I8 — Init is finished when every one of these answers
 
 Each of them through `env.sh`, since a line answering wrongly because the
 environment was lost is indistinguishable from a missing tool:
 
 ```sh
+mkdir -p .out
 java -version                            # 21 or newer
 echo "$DELVEWRIGHT_ENGINE"               # the engine checkout, non-empty
 delvec --version                         # the compiler, and the dsl number
@@ -220,7 +222,9 @@ docker info                              # the ladder and the play server
 binary those lines already exercised, so there is nothing separate to check for
 them. The drawing path adds `refimg.py --dry-run`. **Any line answering wrongly
 means Init is not finished**, and a run that continues authors against a
-half-built toolchain.
+half-built toolchain — `references/init.md`'s I8 says what each one means when
+it does not answer, and `render fidelity-gate` in particular says three
+different things.
 
 ## Which placement model
 
