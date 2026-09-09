@@ -70,3 +70,4 @@ machine-checkable assertions — each criterion maps to a CI check.
 | [spec-0060](spec-0060-a-horizon-and-a-piece-set-are-a-pair.md) | A horizon and a piece set are a pair | Proposed |
 | [spec-0061](spec-0061-the-approved-hour-is-the-built-hour.md) | The approved hour is the built hour — the design record states the sky, and the world is held to it | Proposed |
 | [spec-0062](spec-0062-danger-is-visible-or-the-engine-refuses-it.md) | Danger is visible, or the engine refuses it — a killing volume that reaches floor the player reads as safe is refused, and a flush hazard declares the block that shows it | Proposed |
+| [spec-0063](spec-0063-the-front-end-as-a-product.md) | The front end as a product — one plugin, a page that is a spine, an exact Init, an optional library | Proposed |
