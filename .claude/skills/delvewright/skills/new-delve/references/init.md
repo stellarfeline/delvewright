@@ -60,9 +60,14 @@ path the archive arrives built, and demanding a compiler for a download is the
 front-loading this Init exists to remove. `git-lfs` belongs to the library,
 which is optional and is taken at the step that needs it.
 
-**Python is found by asking, and the answer is recorded once.** Three names
-answer to a Python on the three platforms, and the first that answers at 3.11 or
-above is `DELVEWRIGHT_PYTHON` for the whole run:
+**Python is found by asking, and the answer is recorded once.** Three names may
+answer to a Python across the three platforms, and none of them answers
+everywhere: on Windows the documented commands are `python` and the `py`
+launcher, and while the Python install manager does ship a `python3`, its own
+documentation says that one "is not meant to be widely used or recommended" and
+describes environments where `python3.exe` is simply not there. So the first
+name that answers at 3.11 or above is recorded as `DELVEWRIGHT_PYTHON` for the
+whole run, and nothing below invokes a Python by any other name:
 
 ```sh
 for c in python3 python "py -3" ; do
@@ -71,9 +76,8 @@ for c in python3 python "py -3" ; do
 done
 ```
 
-Nothing below invokes a Python by any other name. **No Python at 3.11: halt** —
-installing one is the user's action on their own machine, and there is no
-version of this page that runs without `tomllib`.
+**No Python at 3.11: halt** — installing one is the user's action on their own
+machine, and there is no version of this page that runs without `tomllib`.
 
 **Java is a stop — but look before you halt.** A machine whose default `java`
 answers below 21 very often *has* a 21 sitting beside it, unselected. Installing

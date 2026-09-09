@@ -189,10 +189,18 @@ first enable (the record §4c is silent on any such event), so Init invokes it
 either way. Invoking it as a bare command makes the step depend on three
 things the standard does not promise and one platform does not supply: an
 execute bit that survives git on Windows, a shebang the shell honours there,
-and an interpreter answering to the name `python3` (the Windows installer from
-python.org ships `python.exe` and the `py` launcher and no `python3.exe`;
-these are read from the platforms' own documentation and not verified on a
-Windows machine in this round). Each fails as `command not found`, which reads
+and an interpreter answering to the name `python3`. **That last was written as a
+flat absence and it is not one**, and the implementing round corrected it
+against python.org's own current *Using Python on Windows*: the Python
+install manager does ship a `python3` command, and the same page says it "is
+intended to catch accidental uses of the typical POSIX command on Windows,
+but is not meant to be widely used or recommended" — while a second passage
+describes handling "cases where the shebang specifies `/usr/bin/env python3`
+but `python3.exe` is not present in the active environment". So the name may
+be present and may not, its publisher documents it as not to be relied on,
+and the conclusion this paragraph draws stands on firmer evidence than the
+claim it replaces. Read from the platform's own documentation; **no Windows
+machine was tested**, and that half is unchanged. Each fails as `command not found`, which reads
 as a broken plugin. Invoking it as `"$DELVEWRIGHT_PYTHON"
 scripts/fetch-delvec.py` from the skill root depends only on what I1 has
 already verified, is the same line on all five targets, and names its failures.
