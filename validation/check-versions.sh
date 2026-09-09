@@ -62,6 +62,8 @@ emit("MECHA_REQUIRES_PYTHON", d["ci"]["mecha_requires_python"])
 emit("MECHA_REQUIRES_BEET",   d["ci"]["mecha_requires_beet"])
 emit("BEET_VERSION",         d["ci"]["beet_version"])
 emit("PYTEST_VERSION",       d["ci"]["pytest_version"])
+emit("SKILLS_REF_VERSION",   d["ci"]["skills_ref_version"])
+emit("CLAUDE_CODE_VERSION",  d["ci"]["claude_code_version"])
 emit("SKINPY_EXTENDED",      d["skin"]["skinpy_extended"])
 PY
 )"
@@ -581,6 +583,28 @@ if [ -f "$BOOTSTRAP_SH" ]; then
 else
   fail "validation/server-bootstrap-cache.sh missing — it is the single-fetch bootstrap tier 2 depends on"
 fi
+
+# ---------------------------------------------------------------------------
+# The plugin's two format validators (versions.toml [ci], spec-0063 §8).
+#
+# They are the one pair whose consumer must NOT carry the literal: ci.yml reads
+# both numbers out of versions.toml at run time, so what is asserted here is the
+# INDIRECTION — that the workflow reads each key — and, in the same breath, that
+# no second copy of either number stands anywhere in it. A binder that only
+# looked for the literal would pass a workflow that had stopped reading the
+# manifest and pinned its own.
+echo "== Plugin format validators =="
+for key in skills_ref_version claude_code_version; do
+  if grep -qF -- "$key" "$CI_WF"; then
+    pass "ci.yml reads [ci].$key from versions.toml"
+  else
+    fail "ci.yml never reads [ci].$key — the validator it pins is then pinned by nothing"
+  fi
+done
+no_conflict "skills-ref version (no second copy)" 'skills-ref@[0-9][0-9.]*' \
+  "skills-ref@$SKILLS_REF_VERSION" "$CI_WF"
+no_conflict "claude-code version (no second copy)" '@anthropic-ai/claude-code@[0-9][0-9.]*' \
+  "@anthropic-ai/claude-code@$CLAUDE_CODE_VERSION" "$CI_WF"
 
 echo
 if [ "$fails" -ne 0 ]; then

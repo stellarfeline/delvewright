@@ -404,6 +404,21 @@ beet_version = "0.116.0"
 # Consumed by: .github/workflows/ci.yml (skin toolchain, i18n translation tool).
 pytest_version = "9.1.1"
 
+# The two READINGS OF THE PLUGIN BY THE FORMAT'S OWN IMPLEMENTATIONS
+# (spec-0063 §8). `tools/check-skill-page.py` is this project's judgement of the
+# page; these two are the standard's, and neither can stand in for the other —
+# ours knows about the pin, the engine and the split, and theirs knows what the
+# loader will actually accept.
+#
+# Both are INSTRUMENTS of a required status check, so both are named literally:
+# an unpinned validator is one whose verdict can move with nothing in any diff
+# to show what changed. Both were confirmed to run unauthenticated before being
+# named here — `claude plugin validate` reads a manifest off disk and asks the
+# network nothing.
+# Consumed by: .github/workflows/ci.yml (manifest consistency).
+skills_ref_version = "0.1.5"
+claude_code_version = "2.1.265"
+
 [skin]
 # skinpy-extended (MIT, ADR-0013 allowlist), the part/face-addressable composer
 # and isometric preview renderer `tools/skin` is built on (spec-0009). Pinned

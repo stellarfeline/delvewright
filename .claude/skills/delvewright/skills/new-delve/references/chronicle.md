@@ -25,10 +25,15 @@ c. Read it against the dialogue **reachable on that branch**. **Every dialogue
 d. Write the **citation table into `GENERATION.md`**. Every finding and every
    clearance cites chronicle lines by number:
 
-   | branch | claim reviewed (dialogue/design beat) | chronicle line(s) | verdict |
+   | claim reviewed (dialogue/design beat) | branch | chronicle line(s) | verdict |
    |---|---|---|---|
-   | `branch/flee` | Elpenor: "We lost him at the mouth." | 14 `departs` | cleared |
-   | `branch/flee` | Kalliope: "Antiphos is dead." | — | **FINDING** — no chronicle line licenses a death on this branch |
+   | Elpenor: "We lost him at the mouth." | `branch/flee` | 14 `departs` | cleared |
+   | Kalliope: "Antiphos is dead." | `branch/flee` | — | **FINDING** — no chronicle line licenses a death on this branch |
+
+   **The claim is the key column, so it is written first.** A branch has as
+   many rows as it has claims, and a table keyed on the branch has one key
+   repeated down the page — which is a doubled row and a reviewed claim wearing
+   the same face.
 
 The pass **fails** if any branch-divergent dialogue line has no citation, if a
 branch has no table rows at all, or if any row's verdict is a finding. A finding

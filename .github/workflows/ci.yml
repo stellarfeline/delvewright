@@ -29,7 +29,15 @@ jobs:
     name: manifest consistency (versions.toml)
     runs-on: ubuntu-latest
     steps:
+      # Full history, and it is `check-skill-page.py` below that needs it: the
+      # page is judged against the engine at `[engine].ref` and the split is
+      # judged against the blob the move commit carries, and a shallow checkout
+      # serves neither. A gate that cannot reach its instrument refuses rather
+      # than judging against whatever is on disk, so a shallow clone here would
+      # be a red and not a silence.
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       # ubuntu-latest ships python3 (>=3.11, has stdlib tomllib) and bash.
       - name: consumers agree with versions.toml
         run: bash validation/check-versions.sh
@@ -50,6 +58,41 @@ jobs:
       # a finding rather than a pass.
       - name: every pin is declared
         run: python3 tools/check-pins.py
+
+      # The creator-facing plugin, held to its pin, its layout and the engine
+      # it names (spec-0063 §8). Offline here, on every push, because the event
+      # it guards is an EDIT TO THE PAGE and this is the job that sees one when
+      # it happens; the online half is in `content pin`, the job that already
+      # asks the remote about pins.
+      #
+      # `fetch-depth: 0` above is what lets it materialise the engine at
+      # `[engine].ref` and re-derive the pre-split heading census from the blob
+      # the move commit carries. Without the history it refuses rather than
+      # judging the page against this checkout's own working tree, which is by
+      # construction a NEWER engine than any creator runs.
+      - name: the creator plugin is held to its pin and its layout
+        run: python3 tools/check-skill-page.py --base origin/main
+
+      # The format's own implementations, reading the same artifact. Ours knows
+      # about the pin, the engine and the split; these know what the loader will
+      # actually accept, and neither substitutes for the other. Acquired by the
+      # step that runs them (ADR-0023's rule for a tool that cannot be bundled),
+      # at the versions `versions.toml [ci]` pins.
+      - name: the format's own readings of the plugin
+        run: |
+          read_pin() {
+            python3 -c 'import sys, tomllib
+sys.stdout.reconfigure(newline="\n")
+print(tomllib.load(open("versions.toml","rb"))["ci"][sys.argv[1]])' "$1"
+          }
+          SKILLS_REF="$(read_pin skills_ref_version)"
+          CLAUDE_CODE="$(read_pin claude_code_version)"
+          npx --yes "skills-ref@$SKILLS_REF" validate \
+            .claude/skills/delvewright/skills/new-delve
+          npx --yes "@anthropic-ai/claude-code@$CLAUDE_CODE" plugin validate \
+            --strict .claude/skills/delvewright
+          npx --yes "@anthropic-ai/claude-code@$CLAUDE_CODE" plugin validate \
+            --strict .claude-plugin/marketplace.json
 
   # The DSL crate's version IS the `dsl_version`, and it goes to crates.io off
   # `main` rather than off a release tag (.github/workflows/dsl-crate-publish.yml).
@@ -1003,8 +1046,25 @@ jobs:
         run: |
           git -C campaigns fetch --unshallow origin main:refs/remotes/origin/main \
             || git -C campaigns fetch origin main:refs/remotes/origin/main
+      # `skill-page-engine` is judged by this same call, and its checkout is
+      # `.` — the pinned repository IS this one, so the history the question is
+      # about is the one already checked out. It is passed explicitly rather
+      # than defaulted: a policy that silently skipped when no path was named
+      # is the omission the flag exists to prevent, and "this repo" is an answer
+      # somebody has to give.
       - name: the content pin is measured against what it names
-        run: python3 tools/check-pins.py --online --checkout content-repo=campaigns
+        run: |
+          git fetch --tags --force origin
+          python3 tools/check-pins.py --online \
+            --checkout content-repo=campaigns \
+            --checkout skill-page-engine=.
+      # The other half of `skill-page-engine`, and the one only the remote can
+      # answer: the tag resolves to the pinned revision, and the release carries
+      # one archive per target the engine declares at that revision plus a
+      # `SHA256SUMS`. A partial shelf means Init I3a falls to the source build
+      # on exactly the platforms nobody tested.
+      - name: the plugin's shelf carries every target
+        run: python3 tools/check-skill-page.py --online --base origin/main
       # A campaign's ZONE PROGRAMS are the grammar IR a zone's prefab is
       # expanded from; they live under `design/programs/`, and a campaign that
       # has them may carry no `world.json` at all yet (the drowned-bell remake

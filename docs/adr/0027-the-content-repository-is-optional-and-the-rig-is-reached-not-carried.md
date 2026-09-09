@@ -2,7 +2,7 @@
 
 - **Status**: Proposed
 - **Date**: 2026-09-09
-- **Source**: two rulings on the creator-facing front end, recorded while
+- **Source**: two constraints on the creator-facing front end, settled while
   spec-0063 was designed against ADR-0014: the shipped prefab library is of
   little use to a creator without a community around it, so the content
   repository is cloned only by a creator who wants that library; and the page

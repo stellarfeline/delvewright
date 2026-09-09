@@ -1,19 +1,19 @@
 {
-  "name": "delvewright",
-  "version": "1.0.0",
-  "description": "Generate a complete, playable, machine-validated Minecraft adventure map from a creative prompt. Ships /delvewright:new-delve.",
   "author": {
     "name": "stellarfeline",
     "url": "https://github.com/stellarfeline"
   },
+  "description": "Generate a complete, playable, machine-validated Minecraft adventure map from a creative prompt. Ships /delvewright:new-delve.",
   "homepage": "https://github.com/stellarfeline/delvewright",
-  "repository": "https://github.com/stellarfeline/delvewright",
-  "license": "GPL-3.0-or-later",
   "keywords": [
     "minecraft",
     "datapack",
     "adventure-map",
     "level-design",
     "worldgen"
-  ]
+  ],
+  "license": "GPL-3.0-or-later",
+  "name": "delvewright",
+  "repository": "https://github.com/stellarfeline/delvewright",
+  "version": "1.0.0"
 }
