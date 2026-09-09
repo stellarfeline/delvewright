@@ -5,10 +5,23 @@ Delvewright's creator-facing front end is a Claude Code skill. This page records
 distribution, and measures the `/new-delve` page against it. It is a record, not
 a plan: it proposes nothing and decides nothing.
 
+**The form is already decided.** ADR-0014 rules that the skill ships as a Claude
+Code plugin distributed through a plugin marketplace, that the plugin carries the
+compose rig and bootstraps pinned, checksum-verified binaries from GitHub
+Releases, that the content repository is the creator's working directory rather
+than the skill's home, and that the skill is dual-mode — engine checkout uses
+`cargo run`, content-repo workdir uses plugin-managed binaries. Implementation
+was deferred. So this page does not ask what form to take: it records **what the
+standard requires of the form already chosen**, which makes each requirement a
+work item. ADR-0014 names three; the first, multi-platform binary releases, is
+closed by ADR-0023 and the release archives, and the two live ones are
+**dual-mode skill path resolution** and **plugin + marketplace + content-repo
+recommendation config**. A finding that bears on one names it.
+
 Every finding below is marked **CITED** (the source states it) or **AUTHORED**
 (a judgement made here from what the sources state). Where the documentation
 does not answer a question this project depends on, the finding says **SILENT**
-and stops there. Sources are listed in §6 and cited inline by short name.
+and stops there. Sources are listed in §7 and cited inline by short name.
 
 Two standards are in play and they are not the same document. The **Agent Skills
 specification** is the cross-vendor open format. **Claude Code** implements it
@@ -109,6 +122,13 @@ Code's table. Under the rules above they are legal on the Claude Code path and
 each one is a hard error on the claude.ai / Skills API / `package_skill.py`
 path. The format's own place for all three is `metadata`. The content
 repository enforces them with its own gate, `tools/check-skill-version.py`.
+
+**Work item: plugin + marketplace + content-repo recommendation config.** Under
+the form ADR-0014 chose — a plugin installed from a marketplace — the Claude
+Code path is the one taken, so the three fields stay legal exactly as written
+and the hard-error path is never reached. The requirement the standard places
+here is not that they move, but that anything published to claude.ai, the Skills
+API or `package_skill.py` cannot carry them.
 
 ### 1d. Length
 
@@ -438,6 +458,28 @@ settable per entry in managed settings.
 marketplace is the shape the standard is built for, and it replaces `git pull`
 with `/plugin marketplace update` — or with nothing, once auto-update is on.
 
+**Work item: plugin + marketplace + content-repo recommendation config.** What
+the standard requires of it, in full: a `.claude-plugin/marketplace.json` at a
+repository root naming `name`, `owner` and the plugin's `source`; a
+`.claude-plugin/plugin.json` whose `name` becomes the invocation namespace
+(`/<plugin>:new-delve`); the page at `skills/new-delve/SKILL.md` under the
+plugin root, or at the plugin root as a lone `SKILL.md`; a `version` bumped on
+every release, or none, in which case the commit SHA is the version; and, for
+ADR-0014's "settings recommend the plugin", `extraKnownMarketplaces` plus
+`enabledPlugins` in the content repository's `.claude/settings.json`. **CITED**
+(*Plugin marketplaces*, *Plugins reference*, *Create plugins*, *Discover
+plugins*).
+
+Two constraints on that last one are requirements in their own right. **CITED**
+(*Discover plugins*): trusting the folder adds the marketplace without a further
+prompt, but "adding the marketplace doesn't install plugins that come from an
+external source, on any path that loads plugins" — a plugin that only the
+project's `.claude/settings.json` enables, sourced from a GitHub repository, "doesn't
+load until the team member installs it", and Claude Code reports it as not
+installed and shows the `claude plugin install` command to run. And auto-update
+is off by default for a third-party marketplace, so a newer page arrives when
+the creator turns it on or updates by hand.
+
 ### 4b. An optional asset pack
 
 The question: a body of data a creator may or may not install, versioned apart
@@ -477,6 +519,15 @@ may populate.
 page to be told where a creator's asset library is, if they have one. It asks;
 it does not install, version or update anything.
 
+**Work item: dual-mode skill path resolution.** `userConfig` is also the
+standard's answer to the mode question ADR-0014 defers. It prompts at enable
+time for a typed value with a `default`, and a non-sensitive value substitutes
+into skill content as `${user_config.KEY}` — so "which checkout is this, and
+where does the prefab library sit" is a declared, creator-supplied `directory`
+rather than something the page detects at run time. **CITED** (*Plugins
+reference*). Whether the page should ask or detect is not a question the
+documentation answers, and this record does not answer it either.
+
 ### 4c. Installing a native binary
 
 **CITED** (*Discover plugins*). The documentation states the negative directly,
@@ -508,6 +559,15 @@ prose Claude Code accepts and does not act on. Under the standard a version
 requirement is a sentence in the body that the agent reads and enforces, or a
 script the agent runs — which is what `/new-delve` already does in its Init
 section.
+
+**Work items: dual-mode skill path resolution, and plugin + marketplace +
+content-repo recommendation config.** ADR-0014's clause that the skill
+"bootstraps pinned, checksum-verified multi-platform binaries from GitHub
+Releases" has no manifest surface of its own. The standard offers three places to
+put it and no fourth: bundled in `bin/`, fetched by a `SessionStart` hook into
+`${CLAUDE_PLUGIN_DATA}`, or done by the page's own Init steps. Whichever is
+chosen, the version check remains the plugin's own work — nothing in the
+manifest declares or verifies it.
 
 ---
 </content>
@@ -601,11 +661,28 @@ which, in a single file, is what happens anyway.
 
 ---
 
-## 6. Sources
+## 6. One record disagrees with the decision
 
-Anthropic's own documentation is the primary source throughout. No secondary
-source is cited on this page; where a claim rests on something not read
-verbatim, the finding says so.
+**CITED**, from this tree. `docs/reference/skill-workflow.md` line 11 gives the
+reason the page lives in the content repository as "because a creator clones that
+repository and no other (ADR-0014)". ADR-0014's Decision section decides the
+skill "ships as a Claude Code plugin distributed via a plugin marketplace under
+this GitHub account", with the content repository as the creator's working
+directory and its Claude Code settings merely recommending the plugin. The
+citation carries a decision the ADR does not make: living in the content
+repository is what ADR-0014 replaces, not what it authorises.
+
+Recorded, not fixed. The correction belongs with the restructure that moves the
+page, because until then the line describes where the page actually is.
+
+---
+
+## 7. Sources
+
+Anthropic's own documentation is the primary source for the standard throughout.
+No secondary source is cited on this page; where a claim rests on something not
+read verbatim, the finding says so. ADR-0014, ADR-0023 and
+`docs/reference/skill-workflow.md` are cited from this tree.
 
 - *Specification* — Agent Skills, "Specification", <https://agentskills.io/specification>
 - *Overview* — Claude Docs, "Agent Skills", <https://platform.claude.com/docs/en/agents-and-tools/agent-skills/overview>
