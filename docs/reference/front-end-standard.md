@@ -574,9 +574,13 @@ manifest declares or verifies it.
 
 ## 5. Our page, measured
 
-Measured from `.claude/skills/new-delve/SKILL.md` in the content repository, at
-`origin/main`, by a parse that tracks fenced code blocks so that a `#` inside a
-shell block is not counted as a heading.
+Measured by a parse that tracks fenced code blocks so that a `#` inside a shell
+block is not counted as a heading, over the page at the one revision spec-0063
+moved it from: `.claude/skills/new-delve/SKILL.md` in the content repository at
+`ee25912f`. It is the measurement that decided the split, and it is frozen at
+that revision on purpose — the page's current shape is measured by
+`tools/check-skill-page.py` on every push, and a second hand-written census
+here would be a second authority for it.
 
 **The skill directory holds exactly one file.** There is no `scripts/`, no
 `references/`, no `assets/` — no level-3 content at all.
@@ -672,8 +676,12 @@ directory and its Claude Code settings merely recommending the plugin. The
 citation carries a decision the ADR does not make: living in the content
 repository is what ADR-0014 replaces, not what it authorises.
 
-Recorded, not fixed. The correction belongs with the restructure that moves the
-page, because until then the line describes where the page actually is.
+Fixed by the restructure that moved the page (spec-0063 §10). `skill-workflow.md`
+now says the page lives in this repository, and gives ADR-0014's form and
+ADR-0027 §2 as the reason. The measurements in §5 above are of the page as it
+stood at that move and are not re-taken here: this record's subject is what the
+standard requires, and the page's own shape is measured by
+`tools/check-skill-page.py` on every push.
 
 ---
 

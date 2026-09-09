@@ -179,8 +179,10 @@ rust_toolchain = "1.97.1"
 # carries no cross-linker and no cross C compiler.
 #
 # Windows ships `.tar.gz` like everything else rather than `.zip`: one archive
-# format is one extraction path for ADR-0014's future bootstrap, and a format
-# branch is somewhere for the shelf to end up half-built. Windows 10 1803+ ships
+# format is one extraction path for the plugin's own selector
+# (`.claude/skills/delvewright/skills/new-delve/scripts/fetch-delvec.py`, which
+# unpacks with stdlib `tarfile` and knows one format), and a format branch is
+# somewhere for the shelf to end up half-built. Windows 10 1803+ ships
 # bsdtar and Windows 11 Explorer opens `.tar.gz` natively.
 targets = [
     "x86_64-unknown-linux-gnu",
