@@ -227,4 +227,7 @@ matches the volume against a 0.6-wide hitbox, so a body whose feet cell sits one
 outside the box is one the volume kills. `volumeReachesCell` asks that of
 `bodyInVolume`, and `compiler::stake::DeathRegion::holds_no_anchor` keeps the
 stake anchor the bot walks back to out of the same shell — the two have to agree,
-because the anchor is where the approach and the walk back both end.
+because the anchor is where the approach and the walk back both end. Each side
+now sweeps the same box over the same 441-cell grid and states the same 175
+reached, so that agreement is a number both hold rather than a claim each makes
+about the other.

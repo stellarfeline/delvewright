@@ -5394,7 +5394,15 @@ derived from the body and never chosen. An anchor inside that shell is a place
 the delve invites the player to walk back to and then kills them for standing on,
 and the bot ladder measured exactly that on the gallery — west pit
 `[1,63,2]..[3,67,4]`, anchor `[1,65,5]`, three runs, three deaths at cell
-`[3,65,5]` on the walk off it.
+`[3,65,5]` on the walk off it. The harness holds the same rule for the walk that
+reaches the anchor (`volumeReachesCell`), so the two are written twice in two
+languages and computed differently — a sweep of the cell's extent here, a clamp
+to the nearest position there. Neither may drift: each side sweeps the same box
+over the same 441-cell grid and states the same 175 reached
+(`the_cell_rule_agrees_with_a_swept_body_box`,
+`volumeReachesCell agrees with a swept body box, and with the compiler's count`),
+so the agreement is a shared number rather than each doc comment asserting the
+other's.
 
 #### The three ways a stake can be pulled out from under itself
 
