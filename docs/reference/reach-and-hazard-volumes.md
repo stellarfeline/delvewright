@@ -96,7 +96,8 @@ stated margin between a killing volume and the footing beside it*.
   its centre, so a `reach` anchored on the killing cell completes at radius two
   and at no smaller radius; the objective fires when the party stands short of
   the drop, which is what "reach the edge" means. This is the rule
-  spec-0062 §4 adopts; the gap it stands on is the absence named in §2.
+  spec-0062 §7 keeps, for a volume whose floor shows the hazard (spec-0062
+  §3); the gap it stands on is the absence named in §2.
 
 ## 4. Sources
 
