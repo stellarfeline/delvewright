@@ -821,3 +821,92 @@ fn a_signal_on_a_volume_that_catches_nothing_is_dw0891() {
         );
     });
 }
+
+// --- the fixture, perturbed (spec-0062 §8 / criterion 5) -------------------
+
+/// The `lethal-volume` fixture copied into scratch, with one stage document
+/// edited, then built. Returns the exit code and everything the run said.
+fn fixture_perturbed(
+    tag: &str,
+    doc: &str,
+    f: impl FnOnce(&mut serde_json::Value),
+) -> (i32, String) {
+    let dir = std::path::Path::new(env!("CARGO_TARGET_TMPDIR")).join(format!("lv-{tag}"));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    common::copy_dir_all(
+        &common::repo_root().join("crates/delvec/tests/fixtures/lethal-volume"),
+        &dir,
+    );
+    let path = dir.join(doc);
+    let mut v: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+    f(&mut v);
+    std::fs::write(&path, serde_json::to_string_pretty(&v).unwrap() + "\n").unwrap();
+    let out = std::path::Path::new(env!("CARGO_TARGET_TMPDIR")).join(format!("lv-out-{tag}"));
+    let _ = std::fs::remove_dir_all(&out);
+    let r = std::process::Command::new(env!("CARGO_BIN_EXE_delvec"))
+        .args([
+            "build",
+            dir.to_str().unwrap(),
+            "-o",
+            out.to_str().unwrap(),
+            "--prefabs",
+            common::prefabs_dir().to_str().unwrap(),
+        ])
+        .output()
+        .expect("delvec runs");
+    (
+        r.status.code().unwrap_or(-1),
+        format!(
+            "{}{}",
+            String::from_utf8_lossy(&r.stdout),
+            String::from_utf8_lossy(&r.stderr)
+        ),
+    )
+}
+
+/// **The floor is what shows the hazard, and deleting it is `DW0891`.**
+///
+/// The fixture's `world-edits` lays magma under exactly the nine cells the
+/// volume catches. Take that batch out and the volume's declaration is left
+/// standing over plain stone: nine cells of walked floor caught, none of them
+/// showing anything, and the declared signal borne out by nothing. The refusal
+/// names both the floor and the volume — the perturbation is one batch and it
+/// reddens loudly rather than quietly.
+#[test]
+fn the_fixture_without_its_molten_floor_is_dw0891() {
+    let (code, log) = fixture_perturbed("no-magma", "world-edits.json", |v| {
+        let edits = v["content"]["batches"][0]["edits"].as_array_mut().unwrap();
+        // The first two edits ARE the burn: the select and the replace. What is
+        // left is the side door alone.
+        edits.drain(0..2);
+    });
+    assert_eq!(code, 3, "an unsignalled floor is refused:\n{log}");
+    assert!(log.contains("DW0891"), "{log}");
+    assert!(
+        log.contains("y=65 (9 cell(s)"),
+        "and it names the nine cells of floor the volume catches, by course:\n{log}"
+    );
+}
+
+/// **At `radius: 1` the completion volume holds no footing, and the move the
+/// message names is the radius the fixture ships with** (spec-0062 §7.2).
+///
+/// A flush hazard's anchor is a cell no body may stand on, so the reach's
+/// footing lies two cells out on three sides and the `radius: 1` cube is the
+/// keep-out plus a course of air. The number `DW0850` names is verified before
+/// it is printed — the judgement is taken again at 2 and comes back green — and
+/// 2 is what the fixture ships.
+#[test]
+fn the_fixture_at_radius_one_is_dw0850_naming_radius_two() {
+    let (code, log) = fixture_perturbed("radius-1", "quests.json", |v| {
+        v["content"]["quests"][0]["objectives"][1]["radius"] = serde_json::json!(1);
+    });
+    assert_eq!(code, 3, "a volume with no footing in it is refused:\n{log}");
+    assert!(log.contains("DW0850"), "{log}");
+    assert!(
+        log.contains("set `radius: 2`"),
+        "and it names the radius the fixture ships with:\n{log}"
+    );
+}
