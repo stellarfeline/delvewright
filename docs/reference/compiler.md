@@ -15,8 +15,8 @@ Methodology; CI enforces the DW-code subset — see `tools/check-dw-codes.py`).
   `delvec prefab`, `delvec grammar`, `delvec render`, `delvec harvest` — and
   the scripts around it (`tools/`, `validation/`) are indexed in
   [`tools.md`](tools.md).
-- Versions (as of this doc): `delvec 1.4.0`, `dsl 0.22.0`, `mc 1.21.11`.
-  `dsl 0.22.0` is the **one** `dsl_version` this engine accepts (ADR-0024): every
+- Versions (as of this doc): `delvec 1.4.0`, `dsl 0.22.1`, `mc 1.21.11`.
+  `dsl 0.22.1` is the **one** `dsl_version` this engine accepts (ADR-0024): every
   stage document, map-pipeline document and l10n sidecar declares it, and any
   other number is refused at the envelope with `DW0102`, which names it. The
   number says which surface a document was written against and promises
@@ -1045,7 +1045,7 @@ Mechanism level (not full mcfunction). See `crates/delvec/src/compiler/emit.rs`.
 | cast bark pool (v0.7) | `bark_<npc>_<scene>` advances `#bk_<npc>_<scene>` on the shared `dw.sys` objective by 1, wraps it with `matches <n+1>.. → set 1`, then `execute if score … matches <i> run tellraw @s [{name},": ",{line, italic}]`. An explicit clause ladder, never `%=` and never RNG (ADR-0006): the n-th right-click always yields the same line. Bark text is baked localized at emit time like every other player-visible string. |
 | class select | Dialog button → `/trigger dw.class set <n>`, dispatched per tick to `class_apply_<c>` (kit, `dw.classed`, campaign-start party arming, teleport to the entry point). **One-shot per player**: the trigger is re-armed each tick only for a player who has not classed (`class_arm`), and the dispatch carries the same `unless score @s dw.classed matches 1` guard — see "The class trigger is ONE-SHOT per player" in §4 Hard invariants. Generated PackTests: `class_trigger_once` for the seal (a property of the trigger, not of any class), plus `class_apply_<c>` **per declared class** for that class's own kit, worn tag and entry warp (`DW0811`'s `class-apply` claim). |
 | `reach-anchor` | Per-tick `execute if entity @s[…]` over the completion volume `reach::reach_completion` returns — a box of half-extent `max(1, radius)` at the anchor cell (v0.2: a `distance=..radius` sphere), formatted from that value rather than restated here; glowing `end_rod` `item_display` marker (tag `dw_r_<obj>`), labeled with the objective `title` — an **untitled** objective gets a nameless glowing marker, never a raw-id label. Completion despawns the marker (`kill @e[tag=dw_r_<obj>]`). |
-| `kill` / `spawn-wave` | `spawn-wave` summons mobs (AI on) tag `dw_wave_<id>`, countdown `#<id> dw.wave`; `player_killed_entity` advancement decrements; `kill` completes at 0. Armed species get `equipment` NBT (drop 0): `wither_skeleton→stone_sword`, `skeleton`/`stray→bow`, `pillager→crossbow`, `vindicator→iron_axe` (the pillager row is load-bearing, not cosmetic — see `waves[].lane`/`DW0384`). **Arming assertion (generated `verb_kill`)**: the test picks the wave's first mob with an **effective** main hand — the author's `equipment.main_hand` when given, the default table otherwise (`emit::effective_mainhand`, the same source the summon NBT reads) — and asserts that exact item via `execute if items entity … weapon.mainhand <item>`. Deriving it from the default table alone shipped a self-contradicting delve: the-drowned-bell summoned `stone_axe` vindicators while its generated test demanded `iron_axe`, so a correct campaign failed on a real server; the override case also *extends* coverage to authored weapons on species the table calls unarmed. **Mob placement:** each mob is seated on a distinct compiler-validated standable cell (2-tall clearance, solid floor) chosen by a deterministic BFS outward from the wave anchor over the assembled occupancy world (`compiler::nav`), ordered by ascending BFS distance with a fixed `(y,z,x)` tie-break. The flood-fill is confined to the anchor's own assembled piece, so a flock never crosses a socket seam into a neighbouring room. A wave needing more footing than its room offers is `DW0312` (never `+x`-strung mobs piling into blocks or spilling toward void). **spec-0016 §6 changes where, not how:** a `summon: aggro-edge` wave is seated on per-mob perception RINGS across the whole area instead (`DW0387`), and a `lane` wave additionally carries the patrol NBT and starts its `lane_tick_<wave>` clock at the end of its own `spawn_<wave>` (so a wave that never spawns never ticks, and a bonfire re-seat re-arms the clock through the same replace-mode `schedule`). **Census probe:** every wave also gets `wave_census_<wave>`, `wave_census_one_<wave>`, `wave_brand_<wave>` and `wave_unbrand_<wave>`. The census zeroes `#wcen_n`/`#wcen_b`/`#wcen_d`, bumps `#wcen_seq`, runs the per-mob function `as @e[tag=dw_wave_<id>]`, and states the totals on the anchored marker channel as `[dw:census <ns> <wave> <seq> <present> <branded> <damaged>]`, one `[dw:censusmob <ns> <wave> <seq> <x> <y> <z> <health> <max>]` per mob first (all ×100 fixed-point, so nothing crosses chat as a float). `damaged` compares `data get entity @s Health` against `attribute @s minecraft:max_health get` — vanilla's own primitives, so it is never a table the compiler refuses to invent (`DW0475`) and never a value the client happened to be sent (an unmodified max health is not on the wire at all). `wave_brand_<wave>` stamps `dw_brand_<wave>` on the wave's living mobs and the unbrand clears it, which is how the die-retry ladder names a survivor **by identity**: a re-summon cannot carry the stamp. This exists because the ladder used to count silhouettes — every entity the client tracked, anything taller than half a block — and reported the drowned bell's ambush husks, 57 blocks away at another encounter, as wave mobs a re-seat had failed to remove. Generated PackTest `wave_census` proves the arithmetic live, including that a bystander of the wave's own species summoned on the wave's own anchor cell moves no count. **Which waves get machinery (uniform emission):** all of it is gated on the wave resolving a spawn AREA, and that resolution (`plan::wave_area`) walks every effect root **deep**, through `QuestEffect::nested_effect_lists` — the same nesting authority emission itself walks — so a `spawn-wave` inside a `sequence` step, a `set-checkpoint` `on_respawn`, a `bonfire` `on_rest`, a `begin-stealth` `on_caught`, a `move-npc`/`move-actor` `on_arrive` or a trap `payload` registers exactly like a top-level one. It used to scan the top-level chains only, which cost the island's round 21 two of its three storm waves: fired from step 7 of a `sequence`, they resolved no area, got no machinery at all, and the `seq_…` function shipped `function <ns>:spawn_…` pointing at nothing. `DW0497` is now the standing proof that no emitter can ship that shape again. A wave declared in `waves[]` that nothing fires anywhere is unchanged — it resolves an area only through the defensive `kill`-objective fallback, and otherwise emits nothing (`DW0171` owns the killed-but-never-spawned case, `DW0310` the spawned-but-unplaceable one). |
+| `kill` / `spawn-wave` | `spawn-wave` summons mobs (AI on) tag `dw_wave_<id>`, countdown `#<id> dw.wave`; `kill` completes at 0. **The countdown is a measurement of what still stands, not a tally of kills.** `tick` recomputes it for every spawned wave, ahead of every gate that reads it: `execute store result score #wlive dw.sys if entity @e[tag=dw_wave_<id>,nbt=!{Health:0.0f}]` then `execute if score #<id> dw.wave matches 1.. run scoreboard players operation #<id> dw.wave = #wlive dw.sys`. Three parts carry the rule. The `Health` filter separates a standing body from one still playing its death animation, so the clear lands on the tick of the last death rather than twenty ticks later. The `matches 1..` guard means the line only ever CORRECTS a countdown a spawn has opened — an unspawned wave has no score at all and must not acquire one, or its `kill` objective would complete on tick one, and a `respawns_on_rest` re-seat writes its fresh total before this next reads it. And the scratch holder is shared across waves because `tick` is one atomic function call, the same argument `#wcen_*` makes. Vanilla has no trigger for “this entity died”, so the `player_killed_entity` advancement `k_<id>` and its reward `k_reward_<id>` can only ever see a CREDITED kill: they still decrement on the tick of the kill, and the recount is what makes a body that fell, burned, drowned, walked into a lethal volume or was cut down by another mob count the same as one the party felled. Generated PackTests `verb_kill` (the countdown drained through the reward) and `verb_kill_uncredited` (every body killed with no player credited, one tick, the objective complete) — the second never touches `k_reward_<id>`, which is what makes it able to fail. Armed species get `equipment` NBT (drop 0): `wither_skeleton→stone_sword`, `skeleton`/`stray→bow`, `pillager→crossbow`, `vindicator→iron_axe` (the pillager row is load-bearing, not cosmetic — see `waves[].lane`/`DW0384`). **Arming assertion (generated `verb_kill`)**: the test picks the wave's first mob with an **effective** main hand — the author's `equipment.main_hand` when given, the default table otherwise (`emit::effective_mainhand`, the same source the summon NBT reads) — and asserts that exact item via `execute if items entity … weapon.mainhand <item>`. Deriving it from the default table alone shipped a self-contradicting delve: the-drowned-bell summoned `stone_axe` vindicators while its generated test demanded `iron_axe`, so a correct campaign failed on a real server; the override case also *extends* coverage to authored weapons on species the table calls unarmed. **Mob placement:** each mob is seated on a distinct compiler-validated standable cell (2-tall clearance, solid floor) chosen by a deterministic BFS outward from the wave anchor over the assembled occupancy world (`compiler::nav`), ordered by ascending BFS distance with a fixed `(y,z,x)` tie-break. The flood-fill is confined to the anchor's own assembled piece, so a flock never crosses a socket seam into a neighbouring room. A wave needing more footing than its room offers is `DW0312` (never `+x`-strung mobs piling into blocks or spilling toward void). **spec-0016 §6 changes where, not how:** a `summon: aggro-edge` wave is seated on per-mob perception RINGS across the whole area instead (`DW0387`), and a `lane` wave additionally carries the patrol NBT and starts its `lane_tick_<wave>` clock at the end of its own `spawn_<wave>` (so a wave that never spawns never ticks, and a bonfire re-seat re-arms the clock through the same replace-mode `schedule`). **Census probe:** every wave also gets `wave_census_<wave>`, `wave_census_one_<wave>`, `wave_brand_<wave>` and `wave_unbrand_<wave>`. The census zeroes `#wcen_n`/`#wcen_b`/`#wcen_d`, bumps `#wcen_seq`, runs the per-mob function `as @e[tag=dw_wave_<id>]`, and states the totals on the anchored marker channel as `[dw:census <ns> <wave> <seq> <present> <branded> <damaged> <credited>]`, one `[dw:censusmob <ns> <wave> <seq> <x> <y> <z> <health> <max>]` per mob first (all ×100 fixed-point, so nothing crosses chat as a float). **`credited` is the only field about the FALLEN**, and it is what the inverted floor gate reads: `#wcred_<wave>` counts the wave's deaths a player was credited with since the seating in force — seeded to 0 in `setup`, set back to 0 by `spawn_<wave>` so a re-seat's own uncredited `kill @e[tag=…]` sweep is not charged to the next cohort, and incremented by `k_reward_<wave>`, which is where vanilla's only credit (`minecraft:player_killed_entity`) lands. `count - present - credited` is therefore how many of the wave the WORLD killed — a fall, a lethal volume, a trap, another mob — which the countdown deliberately stopped distinguishing. The `setup` seed is load-bearing: the census renders the holder as a `score` component, and a holder with no score renders as the empty string, producing a line no reader parses. The SEATING is deliberately not on the wire beside it — `spawn_<wave>` writes a compile-time constant that already reaches the harness as `combat-plan.json`'s `count`, and one fact by two routes is a pair that can disagree, not a second measurement. `damaged` compares `data get entity @s Health` against `attribute @s minecraft:max_health get` — vanilla's own primitives, so it is never a table the compiler refuses to invent (`DW0475`) and never a value the client happened to be sent (an unmodified max health is not on the wire at all). `wave_brand_<wave>` stamps `dw_brand_<wave>` on the wave's living mobs and the unbrand clears it, which is how the die-retry ladder names a survivor **by identity**: a re-summon cannot carry the stamp. This exists because the ladder used to count silhouettes — every entity the client tracked, anything taller than half a block — and reported the drowned bell's ambush husks, 57 blocks away at another encounter, as wave mobs a re-seat had failed to remove. Generated PackTest `wave_census` proves the arithmetic live, including that a bystander of the wave's own species summoned on the wave's own anchor cell moves no count. **Which waves get machinery (uniform emission):** all of it is gated on the wave resolving a spawn AREA, and that resolution (`plan::wave_area`) walks every effect root **deep**, through `QuestEffect::nested_effect_lists` — the same nesting authority emission itself walks — so a `spawn-wave` inside a `sequence` step, a `set-checkpoint` `on_respawn`, a `bonfire` `on_rest`, a `begin-stealth` `on_caught`, a `move-npc`/`move-actor` `on_arrive` or a trap `payload` registers exactly like a top-level one. It used to scan the top-level chains only, which cost the island's round 21 two of its three storm waves: fired from step 7 of a `sequence`, they resolved no area, got no machinery at all, and the `seq_…` function shipped `function <ns>:spawn_…` pointing at nothing. `DW0497` is now the standing proof that no emitter can ship that shape again. A wave declared in `waves[]` that nothing fires anywhere is unchanged — it resolves an area only through the defensive `kill`-objective fallback, and otherwise emits nothing (`DW0171` owns the killed-but-never-spawned case, `DW0310` the spawned-but-unplaceable one). |
 | `collect` | Chest at anchor pre-loaded `count×item`; `inventory_changed` advancement runs guarded completion. **v0.8 adoption:** with a `container`, `activate_<obj>` emits **no `setblock`** and fills the prefab's own chest/barrel at the container anchor's cell instead — `item replace block <x> <y> <z> container.<slot> with <item>[custom_name=…] <count>`, slot `0` the required stack and slots `1..=fill_count` the padding that makes it read full. The component suffix is rendered by the same helper `loot` uses (`emit::container_stack_components`), so a named quest item and a named loot stack cannot drift apart. Fill time is unchanged — **activation**, not world-init — which keeps gap 13's contract: a late objective's items are not lootable from minute one, and an item pocketed before activation still completes it via the per-tick held check. Generated PackTest `collect_container` (only when some collect adopts): clear the adopted slots, run the objective's own `activate_<obj>`, assert the filled item count across the container (`if items block … container.* <item>` = `count × (fill_count+1)` — a dropped fill reads 0, padding that overwrote slot 0 reads one stack short), then put the **named** stack in the player's inventory and tick, asserting completion. That last phase is the point: it proves on a live server that a `custom_name` component does not change what the adjudication sees. |
 | `interact` | `minecraft:interaction` (tag `dw_i_<obj>`) + `player_interacted_with_entity` advancement + `/trigger dw.i_<obj>`. **`requires_item` = `execute … if items entity @s weapon.mainhand <item>` — HELD, not possessed**; a campaign that declares none is untouched. Optional `missing_item_hint` (v0.7) adds ONE line to `tick`: `execute as @a[scores={dw.i_<obj>=1..}]<same activation guard> unless items entity @s weapon.mainhand <item> run tellraw @s {"text":…}` — placed between the completion line and the trigger reset, so it rides the existing two-phase click handling (advancement reward sets the trigger, `tick` reads it and resets it) and one click narrates once. Guarded identically to the completion line, so a not-yet-active or already-finished objective answers a stray click with the old silence. Generated `verb_interact_held` PackTest proves the semantics live in two phases on one dummy — item in `inventory.0` with an empty hand must NOT complete (and asserts, via `if items entity @s container.*`, that the item really is carried, so the phase is not vacuous), then the same item in `weapon.mainhand` completes; the `tellraw` itself is asserted in Rust because a chat line leaves no game state for PackTest to look at. `packtest_preamble` therefore places a `requires_item` in `weapon.mainhand` rather than `give`-ing it (the old `give` only satisfied the old gate because a fresh dummy's first free slot happens to be its selected one). Glowing lantern `item_display` marker (also tag `dw_i_<obj>`, only when no `prop`), labeled with the objective `title` — untitled → nameless glow, never a raw-id label. `prop{block}` = `setblock` affordance. Completion despawns both entities (`kill @e[tag=dw_i_<obj>]`) so a finished objective is not clickable; the `prop` block persists as scenery. **Arming before adjudication.** The completion line is gated on `#party dw.qa_<quest>` and the very next line resets the trigger with NO guard at all, so a click is spent whether or not it landed. That pair is only safe because `tick`'s completion loop visits quests in **arming order** (`emit::quests_in_arming_order`, a stable topological sort over the `quest-complete` edges): the completion loop is the one place a quest is armed — a completion line runs `complete_<obj>` → `check_q_<q>` → `complete_q_<q>`, which writes `dw.qa_<next>` — so a quest's lines must precede the lines of any quest it arms, or a click already pending when its quest arms is adjudicated against an unarmed quest and then thrown away. Nothing in the DSL orders quest declarations, so before this the guarantee was an accident of the JSON array. The sort is stable, so a campaign already declared in arming order is byte-identical. The unconditional reset is deliberate and stays: a trigger fired long before arming is DISCARDED, never banked — a banked click would auto-complete the objective the moment the quest armed, with nobody having clicked. Losing input is a bug; fabricating it is worse. Pinned by `tests/tick_arming.rs` (the invariant over every fixture, plus a campaign deliberately declared out of order) and by the generated `verb_interact_arming` PackTest (premature click → no completion and no banked score; arming alone → still nothing; a real click after arming → completes). |
 | stage-5 `loot[]` (spec-0021) | `setup_finish` emits one `item replace block <x> <y> <z> container.<slot> with <item>[components] <count>` per declared stack, slot = declaration index. `components` carries `custom_name` (localized) and `enchantments` when present. The container itself is never emitted — it is prefab furniture, proven present by `DW0431`. A campaign with no `loot` emits nothing here and stays byte-identical. |
@@ -1486,8 +1486,10 @@ CI-enforced over every fixture family by `tests/packtest_batch.rs`):
   `#lane_<wave>`) are deliberately shared — tests drive them and initialize them
   explicitly. The line between the two is **who writes the holder**: a name an
   emitted campaign function owns is runtime state no template can suffix, so the
-  census answers `#wcen_n`/`#wcen_b`/`#wcen_d` (written by `wave_census_<wave>`)
-  and the party-unique kit latches `#kit_<class>_<k>` (written by
+  census answers `#wcen_n`/`#wcen_b`/`#wcen_d` (written by `wave_census_<wave>`),
+  the wave recount's scratch `#wlive` (written by `tick`), the per-wave
+  credited-kill ledger `#wcred_<wave>` (written by `setup`, `spawn_<wave>` and
+  `k_reward_<wave>`) and the party-unique kit latches `#kit_<class>_<k>` (written by
   `class_apply_<class>`) are runtime, not scratch — a template can only drive or
   reset them. Where a runtime answer is *asserted*, the template copies it into
   its own scratch first (`#wcn_<n>_<wave>`) so the assertion reads a holder it
@@ -3796,7 +3798,7 @@ to a list of codes.
 |------|---------|
 | `DW0100` | Document does not conform to its stage schema (unknown field / wrong type / missing required field, incl. persona). Parse-time. |
 | `DW0101` | `stage` field ≠ document slot. |
-| `DW0102` | The document's `dsl_version` is not the one this engine accepts, `0.22.0`; the message names it (ADR-0024). Raised per stage document by `dsl::validate::envelope`, and for an l10n sidecar under `DW0180`. |
+| `DW0102` | The document's `dsl_version` is not the one this engine accepts, `0.22.1`; the message names it (ADR-0024). Raised per stage document by `dsl::validate::envelope`, and for an l10n sidecar under `DW0180`. |
 | `DW0103` | `campaign_id` differs across stages. |
 | `DW0110` | Malformed id syntax (not kebab-case / wrong-missing prefix). **The message names the form of the type it rejected**, derived from that id type's own `PREFIX` — `` `dlg/<kebab>` `` for a dialogue node, `` `class/<kebab>` `` for a class — rather than restating the general rule beside three fixed examples. One macro in `dsl::validate::syntax` is the single path every id type's syntax refusal goes through, so the answer comes from the type at every site: `ids::syntax_form`. The per-section refusals that spell their own prefix by hand (`wave/`, `trigger/`, `trap/`, `shortcut/`, `ambush/`, `timed-gate/`, `loot/`) are the same fact copied, which is why the general path did not have it. |
 | `DW0111` | Duplicate id in namespace (incl. two dialogue trees for one NPC). |
@@ -4945,9 +4947,9 @@ that exists and reports zero is a finding rather than an absence.
 marker has no such cell** — its position is the death point, or a row of the
 compile-time placement table picked by the respawn seat in force — so a lift and
 a stake in one room shipped a silent defect: the ride carried the marker away
-from the position its ledger recorded, and the next tick `stk_gc_<s>` found
-nobody holding a wager there and retired it. The wager was not uncollectable, it
-was deleted.
+from the position its ledger recorded, and the next tick `stk_gc` found nobody
+holding a wager there and retired it. The wager was not uncollectable, it was
+deleted.
 
 The two obvious fixes are both defects CLAUDE.md names. *Teleport exempts engine
 machinery* re-implements a general mechanism privately inside one verb; *the
@@ -5005,12 +5007,17 @@ does not read it). It can never be caused or fixed by campaign JSON: it is an
 engine self-check, run on every build.
 
 **The runtime half is the only half that can witness the original defect**, and it
-is generated rather than argued: one PackTest template per (`teleport` × `stake`)
-pair leaves a real marker in a real volume through the campaign's own
-`stk_fill_<s>`, rides the campaign's own `teleport_<key>`, and asserts a plain
-body **left** the box while both halves of the marker stayed. The body assertion
-is what stops it being one-directional — without it, an engine whose teleport did
-nothing at all would pass.
+is generated rather than argued: one PackTest template per `teleport`, in a
+campaign that declares a stake able to leave a marker, puts a real marker in a
+real volume through the campaign's own `stk_fill_<id>`, rides the campaign's own
+`teleport_<key>`, and asserts a plain body **left** the box while both halves of
+the marker stayed. The body assertion is what stops it being one-directional —
+without it, an engine whose teleport did nothing at all would pass. One template
+per teleport rather than per (`teleport`, `stake`) pair because the marker is one
+object: every stake summons the same two entities through the same `stk_place`,
+so a second template for a second stake would race the first for one entity at
+one position on the shared batch server. Every selector such a template writes
+over the marker class is scoped to the place it is about, for the same reason.
 
 Binding: `validation/fixture-gate.json` states how many entities declared each
 class, how many box-narrowed selectors were examined, and how many runtime
@@ -5305,7 +5312,7 @@ this engine travels, `emit::tr` → `{"translate":…,"fallback":…}`, and vani
 own broadcast still fires, worded by the declared `damage_type`: the party reads
 *who* died, the victim reads *what the place was*.
 
-### DW0520–DW0527 — trade and the recovery stake (`dsl::validate` / `compiler::stake`; spec-0032, DSL v0.10)
+### DW0520–DW0527, DW0880 — trade and the recovery stake (`dsl::validate` / `compiler::stake`; spec-0032, DSL v0.10)
 
 **There is no price diagnostic here, and its absence is the design.** A price is a
 [`Gate`] term — the numeric comparison spec-0031 put in the shared gate rather than
@@ -5323,7 +5330,33 @@ schema and `crates/delvec/tests/v10_economy.rs` the negative half (no `price`,
 `DW0520`–`DW0524` and `DW0527` are declaration and authoring rules and live in `dsl::validate`. `DW0525` and
 `DW0526` are the **placement table's** proofs and live in `compiler::stake`,
 because where a stake lands is a question about the solved layout — the same split
-a lethal volume's `DW0512` and `DW0510`/`DW0511` make.
+a lethal volume's `DW0512` and `DW0510`/`DW0511` make. `DW0880` lives there too,
+and is about the marker rather than the anchor.
+
+#### A marker is a PLACE, and a death leaves one place
+
+The hardware is one class for the campaign — the `minecraft:interaction` box
+tagged `dw_stk` and the glowing `minecraft:item_display` beside it, both summoned
+by `stk_place` — and there is one of it at a place however many datums a death
+forfeited there. That is forced rather than chosen. The placement table is keyed
+on (respawn seat, death region) and never on the stake, so every stake one death
+drops resolves to one anchor; and the rule degenerates to *leave it where the
+player fell*, a position chosen at runtime that no compile-time separation can
+reach. Four `1.0 × 2.0` boxes at one cell are coincident: any pick ray enters them
+at the same distance and the client resolves the tie by entity iteration order,
+which is exactly what `DW0878` refuses between two authored affordances.
+
+So the place holds one box, and what was left there is counted in the per-player
+ledger — where a wager always lived. One advancement fires one `stk_collect`,
+which locates the place and offers it to every declared stake in turn, so one
+right-click returns every datum that death left; `stk_ref` counts live wagers at
+that position across every stake, and `stk_gc` — the one function permitted to
+retire the hardware (`DW0421`) — deletes a place nobody has a wager at. Each
+stake keeps its own forfeit rule, retention policy, collect rule, slots and
+message: those are properties of a wager, not of a place.
+
+What a place cannot hold is two answers to what it looks like, and that is
+`DW0880`.
 
 #### The placement rule, and why it is a table rather than a search
 
@@ -5348,6 +5381,29 @@ floor; spec-0031's ruling that a stake left on the car would be deleted by the n
 ride). Both are boxes, so the runtime lookup is a selector test on the corpse
 (`@s[x=…,dx=…]`) rather than a search.
 
+**What a region forbids an anchor is the region's own answer, and the two kinds
+answer differently.** A runtime-mutable region acts on BLOCKS, so what it can
+destroy is a marker in one of its own cells and cell containment is the whole
+rule. A lethal volume acts on BODIES, through a vanilla selector the server
+adjudicates against the body's whole hitbox — `@a[x=lo,dx=hi-lo,…]` covers
+`[lo, hi + 1]` on each axis and matches on intersection, so it kills a
+`metrics::PLAYER_WIDTH`-wide body whose feet cell is one outside the box.
+`DeathRegion::holds_no_anchor` therefore refuses a lethal volume the shell of
+cells `metrics::selector_reaches_body_in_cell` reports: one cell on every axis,
+derived from the body and never chosen. An anchor inside that shell is a place
+the delve invites the player to walk back to and then kills them for standing on,
+and the bot ladder measured exactly that on the gallery — west pit
+`[1,63,2]..[3,67,4]`, anchor `[1,65,5]`, three runs, three deaths at cell
+`[3,65,5]` on the walk off it. The harness holds the same rule for the walk that
+reaches the anchor (`volumeReachesCell`), so the two are written twice in two
+languages and computed differently — a sweep of the cell's extent here, a clamp
+to the nearest position there. Neither may drift: each side sweeps the same box
+over the same 441-cell grid and states the same 175 reached
+(`the_cell_rule_agrees_with_a_swept_body_box`,
+`volumeReachesCell agrees with a swept body box, and with the compiler's count`),
+so the agreement is a shared number rather than each doc comment asserting the
+other's.
+
 #### The three ways a stake can be pulled out from under itself
 
 Two are `DW0526`'s, one is not, and the third is named rather than left silent.
@@ -5356,7 +5412,7 @@ Two are `DW0526`'s, one is not, and the third is named rather than left silent.
 |---|---|---|
 | **Runtime-mutable ground** — `close-gate`, `set-block`, `collapse`, a shortcut's or a timed gate's seal | yes | the case spec-0031's ruling was written for: a stake left on a lift car is deleted by the next ride. |
 | **`fill-region` / `clear-region`** | yes, and it is *the same defect* | a `clear-region` deletes the block a marker stands on exactly as a departing car does. They enter through `QuestEffect::region_write` — the DSL's own answer to "which verbs rewrite a box" — so a later verb of that family is covered by existing rather than by being remembered. |
-| **A `teleport`'s `from` box** | **no — a deliberate ruling; closed by `DW0545` one layer away** | a teleport moves *entities*, not blocks: the ground under the marker is untouched, and what moves is the marker itself, away from the position the collecting player's ledger recorded — after which `stk_gc_<s>` finds nobody holding a wager there and retires it, taking the wager with it. Different defect, different fix, and not one a box check on this axis could state — `DW0526` is about **footing**, and a marker's position is chosen at RUNTIME, so no compile-time geometry test knows where it will be. |
+| **A `teleport`'s `from` box** | **no — a deliberate ruling; closed by `DW0545` one layer away** | a teleport moves *entities*, not blocks: the ground under the marker is untouched, and what moves is the marker itself, away from the position the collecting player's ledger recorded — after which `stk_gc` finds nobody holding a wager there and retires it, taking the wager with it. Different defect, different fix, and not one a box check on this axis could state — `DW0526` is about **footing**, and a marker's position is chosen at RUNTIME, so no compile-time geometry test knows where it will be. |
 
 The teleport case cannot simply inherit the teleport's own `DW0542` either, and the
 reason is the shape spec-0031 named when it refused to inherit `lethal_volumes[]`'s
@@ -5400,12 +5456,15 @@ twice independently, 2026-08-03 and 2026-08-09). So that tier cannot witness a
 player death, and therefore cannot prove the edge from a death to a stake being
 placed. Two templates are generated and both are honest about what they cover:
 `v10_shop_purchase` drives an offer handler as its own dummy and proves the debit
-and the refusal; `v10_stake_<id>` drives `stk_drop_<id>` and `stk_collect_<id>` and
-proves that the declared share leaves the purse, that a marker really stands where
-the drop put it, that collecting returns **exactly** what was taken, and that a
-second collection in the same breath returns nothing more. No template is generated
-for the death edge itself — a template that bound to nothing and reported green is
-the vacuity CLAUDE.md names, and it is worse than an absence because review cannot
+and the refusal; `v10_stake_<id>` drives `stk_drop_<id>` and the campaign's real
+`stk_collect` and proves that the declared share leaves the purse, that a marker
+really stands where the drop put it, that collecting returns **exactly** what was
+taken, and that a second collection in the same breath returns nothing more; and
+`v10_stake_two_datums` drives two forfeits from one position and proves that the
+two leave **one** `minecraft:interaction` and one display, that one press returns
+both datums, and that the place then retires. No template is generated for the
+death edge itself — a template that bound to nothing and reported green is the
+vacuity CLAUDE.md names, and it is worse than an absence because review cannot
 see it.
 
 **The open obligation, stated the way spec-0031 stated its own.** spec-0032's
@@ -5454,7 +5513,8 @@ Binding (playtest-methodology rule 1): a campaign with a stake emits
 `validation/stake-gate.json` — stakes declared, respawn seats and death regions the
 table is keyed on (and how many of those regions are lethal volumes), quest-state
 configurations enumerated, rows proved, distinct anchors resolved, runtime-mutable
-cells excluded, and stranded cells found. A campaign with no stake emits **no file
+cells excluded, stranded cells found, and how many of the declared stakes can
+actually leave a marker. A campaign with no stake emits **no file
 at all**, so a file that exists and reports zero is a finding rather than an
 absence.
 
@@ -5468,6 +5528,7 @@ absence.
 | `DW0525` | **No walkable route back.** From some respawn seat, under every quest state that can hold while it is in force, there is no reachable cell a stake could stand on for deaths in some region — or there are cells a player can walk to and die on that the seat cannot reach at all (the one-way drop). Build-tier (exit 3), `compiler::stake`. The message names the death region, the seat and how many quest states were examined. Prescription: give the drop a way back (a shortcut, a ladder), or declare the place a `lethal_volume` so the stake is projected to its near lip instead — never delete the stake to silence it. |
 | `DW0527` | **A comparison read after the bundle changed what it compares.** An effect's `requires_state` names a datum that an earlier effect in the same bundle writes **behind a gate on that same datum** — so the comparison is made on the far side of the boundary the bundle just tested. Warning-tier (exit 0), `dsl::validate`. Found in the emitted output of this feature's own first shop: written "purchase, then apology", buying your LAST coin debits it and the `at-most` apology — evaluated after the debit — then holds too, so the player is charged AND told they cannot afford it. The fix is always local: put every reading effect ahead of the write. An **unconditional** write followed by a comparison is deliberately NOT diagnosed — `set-state toll 0` and then a door gated on `toll at-most 0` is the ordinary sequenced idiom and plainly means the value the bundle just produced. **Its scope is ONE bundle's own effect list, and that is what it does not cover**: a write and a read four beats apart are two bundles, so a `clear-state` that empties a datum a later objective's gate depends on is invisible here. `DW0879` is that question, asked over the path rather than over a list. Prescription: reorder, or gate on something this bundle does not change. |
 | `DW0526` | **No safe footing.** Every cell reachable from the seat that a stake could be projected onto for some death region stands on a block the runtime removes — a lift car, a sealed gate region, a collapsed floor — so a marker left there would be destroyed by the next ride. Build-tier (exit 3), `compiler::stake`. Distinguished from `DW0525` because the prescription is the opposite: there IS a route back, and the ground it ends on is the problem. |
+| `DW0880` | **Two stakes that can each leave a marker disagree about what a place looks like.** Two `stakes[]` entries with `max_live` above zero declare a different `marker_item`. Build-tier (exit 3), `compiler::stake::check_marker_faces`, run beside `DW0878` and the rest of the ray-pick family. A marker is a **place** — the spot a death left its wagers — and a place holds ONE `minecraft:interaction` and one glowing display however many datums were forfeited there, because the placement table is keyed on (respawn seat, death region) rather than on the stake and the rule's common branch leaves the stake at the death point. The display therefore renders one item, and two declarations cannot both be it: whichever stake filled the place first would silently decide what every other stake's marker looks like, and the losing declaration would be read, emitted nowhere, and disagree with what the player sees. **Not a question about one death.** A marker outlives the death that made it until somebody collects it, so a later death's drop finds an earlier one's marker standing and reuses it, whatever gates separate the two `on_death` bundles — co-droppability is not the test, and every stake shares every place. **Binding:** the marker-leaving stakes it compared, stated as `marker_leaving_stakes` in `validation/stake-gate.json`; a campaign whose every stake is `max_live: 0` places nothing, reports zero, and emits no `stk_place` at all. Prescription: give every stake that can leave a marker the same `marker_item`. A stake that must look different is a stake that must land somewhere else, and the engine has one place per death. |
 
 ### DW0495 — emitted score-read integrity (`compiler::seeding`; error; exit 3)
 

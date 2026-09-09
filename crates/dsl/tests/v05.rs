@@ -11,7 +11,7 @@ use delvewright_dsl::{RawCampaign, check_campaign};
 
 /// A v0.5 stage-1 world document declaring time, weather and an area `lighting`.
 const WORLD_V05: &str = r#"{
-  "dsl_version": "0.22.0",
+  "dsl_version": "0.22.1",
   "campaign_id": "hello-world",
   "stage": "world",
   "content": {

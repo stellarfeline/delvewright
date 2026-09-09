@@ -1,7 +1,12 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { RunReport, STAGES, reportPathFromEnv } from "../src/report.ts";
-import { AssistLedger, type DeathTrial, type Encounter } from "../src/combat.ts";
+import {
+  AssistLedger,
+  waveAttribution,
+  type DeathTrial,
+  type Encounter,
+} from "../src/combat.ts";
 
 const ENC: Encounter = {
   wave: "wave/bellkeeper",
@@ -372,6 +377,7 @@ test("the report states each encounter's assist policy and how far the run got",
       assistPolicy: "unassisted-first",
       phaseReached: "die-retry",
       assistWindows: 0,
+      attribution: { kind: "unattributed", reason: "the run never reached the fight" },
     },
   ]);
   const json = report.toJSON() as { encounters: Record<string, unknown>[] };
@@ -379,6 +385,43 @@ test("the report states each encounter's assist policy and how far the run got",
   assert.equal(json["encounters"][0]!["assist_policy"], "unassisted-first");
   assert.equal(json["encounters"][0]!["phase_reached"], "die-retry");
   assert.equal(json["encounters"][0]!["assist_windows"], 0);
+});
+
+// `phase_reached: cleared` says the step ended; it never said who ended it. A
+// gallery encounter standing beside a lethal volume reads `cleared` over a cohort
+// the bot barely touched, which is what this field exists to separate.
+test("an encounter row states who felled its bodies, and says so when nobody can tell", () => {
+  const report = new RunReport("gallery", "normal");
+  report.recordEncounters([
+    {
+      encounter: ENC.objective,
+      wave: ENC.wave,
+      tier: ENC.tier,
+      assistPolicy: "unassisted-first",
+      phaseReached: "cleared",
+      assistWindows: 0,
+      attribution: waveAttribution(3, 0, 1),
+    },
+    {
+      encounter: "obj/second",
+      wave: "wave/second",
+      tier: ENC.tier,
+      assistPolicy: "assisted",
+      phaseReached: "cleared",
+      assistWindows: 1,
+      attribution: { kind: "unattributed", reason: "no wave census answered" },
+    },
+  ]);
+  const json = report.toJSON() as { encounters: Record<string, unknown>[] };
+  assert.deepEqual(json["encounters"][0]!["attribution"], {
+    bodies: 3,
+    standing: 0,
+    credited: 1,
+    uncredited: 2,
+  });
+  assert.deepEqual(json["encounters"][1]!["attribution"], {
+    unattributed: "no wave census answered",
+  });
 });
 
 test("a die-retry entry says whether its loop ever reached a verdict", () => {
@@ -421,6 +464,7 @@ test("a die-retry entry publishes what the settled re-engage probe saw", () => {
         carriedOver: 0,
         healthReadable: 3,
         damaged: 0,
+        credited: 2,
         nearest: 12.5,
         farthest: 61.25,
         settleMs: 750,
@@ -432,6 +476,7 @@ test("a die-retry entry publishes what the settled re-engage probe saw", () => {
   assert.equal(json["die_retry"][0]!["reseats_on_rest"], true);
   assert.equal(re["present"], 3);
   assert.equal(re["carried_over"], 0);
+  assert.equal(re["credited"], 2, "the correction the count half was judged against");
   assert.equal(re["farthest_blocks"], 61.25, "how far a feral mob strayed is evidence");
   assert.equal(re["settle_ms"], 750);
 });

@@ -206,6 +206,66 @@ pub fn step_allowed(rise_16: i64, head_clear: impl FnOnce() -> bool) -> bool {
     }
 }
 
+/// **Does the selector volume of the inclusive block box `lo..=hi` reach a body
+/// standing anywhere in `cell`?**
+///
+/// Vanilla's `@a[x=lo.x,dx=hi.x-lo.x,…]` builds the AABB `[lo, hi + 1]` on each
+/// axis — `EntitySelectorParser::createAabb` adds the block's own extent on the
+/// positive side, which is why `dx=0` still selects a whole block column — and
+/// keeps every entity whose own box **intersects** it. A standing body is
+/// [`PLAYER_WIDTH`] square about its position and [`PLAYER_HEIGHT`] tall from its
+/// feet, so a volume matches bodies whose FEET CELL it does not contain: half a
+/// width past every horizontal face, and a course below the bottom layer where
+/// only the head is inside.
+///
+/// This is the **generous** reading of that test — *could any body standing in
+/// this cell be matched* — because every caller uses it to keep a body OUT. A
+/// cell it clears is one no body standing in it can be selected from; a cell it
+/// reports is one some body standing in it can. Horizontally the whole cell of
+/// positions counts, since nothing makes a walking player stop at a cell centre
+/// and a pathfinder routinely parks one flush against a face.
+///
+/// The comparison is non-strict where vanilla's `AABB.intersects` is strict, so
+/// a body that exactly TOUCHES a face counts here and does not on the server.
+/// That is the same hair of generosity `bodyInVolume` takes in the harness, kept
+/// identical on purpose so the two sides cannot answer differently about a cell,
+/// and it costs one layer: a body whose feet sit exactly on the volume's ceiling
+/// is reported and is not really killed. Generous is the safe direction for a
+/// rule that keeps bodies out, and being the SAME on both sides matters more
+/// than the layer.
+///
+/// A consequence worth stating rather than leaving to be discovered: horizontally
+/// the shell is one cell wide for any body narrower than two blocks, so
+/// [`PLAYER_WIDTH`] does not decide it — the sweep over the cell's own positions
+/// does. [`PLAYER_HEIGHT`] does decide the vertical shell.
+///
+/// The engine's other reader of the same vanilla rule is
+/// `compiler::reach::ReachCompletion::possibly_completes_from`, which asks it of
+/// one stated body position rather than of a cell of them; the harness's is
+/// `bodyInVolume` in `harness/src/death-loop.ts`.
+///
+/// Here rather than in `delvec` for the reason [`step_allowed`] is here: the body
+/// is this table's, and a second copy of the arithmetic beside it is what this
+/// module exists to stop.
+#[must_use]
+pub fn selector_reaches_body_in_cell(lo: [i32; 3], hi: [i32; 3], cell: [i32; 3]) -> bool {
+    let half = PLAYER_WIDTH / 2.0;
+    // The extreme reach of a body standing anywhere in `cell`: horizontally every
+    // position of the cell, each carrying half a width past itself; vertically the
+    // feet on the cell floor and the head PLAYER_HEIGHT above them.
+    let body_lo = [
+        f64::from(cell[0]) - half,
+        f64::from(cell[1]),
+        f64::from(cell[2]) - half,
+    ];
+    let body_hi = [
+        f64::from(cell[0]) + 1.0 + half,
+        f64::from(cell[1]) + PLAYER_HEIGHT,
+        f64::from(cell[2]) + 1.0 + half,
+    ];
+    (0..3).all(|i| body_lo[i] <= f64::from(hi[i]) + 1.0 && body_hi[i] >= f64::from(lo[i]))
+}
+
 /// Ticks a jumping player spends off the ground, apex to landing included.
 pub const JUMP_AIRBORNE_TICKS: f64 = 12.0;
 
