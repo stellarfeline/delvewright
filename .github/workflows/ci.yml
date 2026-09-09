@@ -29,15 +29,12 @@ jobs:
     name: manifest consistency (versions.toml)
     runs-on: ubuntu-latest
     steps:
-      # Full history, and it is `check-skill-page.py` below that needs it: the
-      # page is judged against the engine at `[engine].ref` and the split is
-      # judged against the blob the move commit carries, and a shallow checkout
-      # serves neither. A gate that cannot reach its instrument refuses rather
-      # than judging against whatever is on disk, so a shallow clone here would
-      # be a red and not a silence.
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
+      # `check-skill-page.py` below reads two objects an ordinary shallow
+      # checkout does not carry, and refuses rather than judging the page
+      # against whatever is on disk. Three targeted fetches, every sha read at
+      # run time; the action says why it is not `fetch-depth: 0`.
+      - uses: ./.github/actions/skill-page-objects
       # ubuntu-latest ships python3 (>=3.11, has stdlib tomllib) and bash.
       - name: consumers agree with versions.toml
         run: bash validation/check-versions.sh
@@ -65,11 +62,6 @@ jobs:
       # it happens; the online half is in `content pin`, the job that already
       # asks the remote about pins.
       #
-      # `fetch-depth: 0` above is what lets it materialise the engine at
-      # `[engine].ref` and re-derive the pre-split heading census from the blob
-      # the move commit carries. Without the history it refuses rather than
-      # judging the page against this checkout's own working tree, which is by
-      # construction a NEWER engine than any creator runs.
       - name: the creator plugin is held to its pin and its layout
         run: python3 tools/check-skill-page.py --base origin/main
 
@@ -521,6 +513,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      # This job's NAME says i18n and its step runs the WHOLE `tools/tests`
+      # suite, `test_check_skill_page.py` among them — so it needs the same two
+      # objects `check-skill-page.py` does, and on a shallow checkout it fails
+      # with 2 failed and 27 errors that name an engine revision rather than
+      # anything about i18n.
+      - uses: ./.github/actions/skill-page-objects
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
@@ -1024,6 +1022,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      # `check-skill-page.py --online` below is the third caller, and it reads
+      # the same two objects the offline run does. Without them it refuses at
+      # exit 2 before it ever reaches the remote, so the online half would be a
+      # step that has never once asked its question.
+      - uses: ./.github/actions/skill-page-objects
       # LFS off: neither step below reads a prefab `.nbt` BODY — the pin check
       # is git history, and the zone-program audit expands the IR geometrically
       # (`crates/delvec/src/grammar`'s `expand`), never touching a file under
