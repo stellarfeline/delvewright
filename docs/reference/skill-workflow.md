@@ -6,12 +6,21 @@ audience separation). This is a **current-state record**, the same class as
 `compiler.md` — it describes the skill as it is checked in today, not the one we
 intend to build.
 
-The page itself lives in the CAMPAIGNS repository, at
-[`.claude/skills/new-delve/SKILL.md`](https://github.com/stellarfeline/delvewright-campaigns/blob/main/.claude/skills/new-delve/SKILL.md),
-because a creator clones that repository and no other (ADR-0014). So do the two
-gates over it. This file stays here: it is about how an agent driving the page
-splits the work, which is engine-side planner material and is deliberately not
-on the page.
+The page itself lives in THIS repository, inside the Claude Code plugin a
+creator installs from a marketplace: the spine at
+[`.claude/skills/delvewright/skills/new-delve/SKILL.md`](../../.claude/skills/delvewright/skills/new-delve/SKILL.md),
+its bundled `references/` and `scripts/`, and `versions.toml` beside it naming
+the one engine it is proven on. That is ADR-0014's form executed by spec-0063,
+and ADR-0027 §2 is why it lives here rather than in the content repository: the
+page reaches thirty-seven paths under the engine tree, and a copy of any of them
+would be a second authority for a file sitting on the same disk. A creator
+clones nothing to get it — `/plugin marketplace add` and `/plugin install` put
+it in Claude Code's own cache. `tools/check-skill-page.py` is the one gate over
+it, in this repository, judging it against the engine at `[engine].ref`.
+
+This file stays beside it rather than in it: it is about how an agent driving
+the page splits the work, which is engine-side planner material and is
+deliberately not on the page.
 
 Two things it is deliberately not: a spec (nothing here is a decision being
 proposed) and a tutorial (a creator never reads it).

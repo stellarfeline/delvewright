@@ -1,0 +1,69 @@
+name: Fetch what the skill-page gate reads
+description: >
+  `tools/check-skill-page.py` judges the creator plugin against two objects that
+  a shallow `actions/checkout` does not carry: the ENGINE at
+  `[engine].ref`, materialised with `git archive`, and the PRE-SPLIT PAGE's blob,
+  from which the heading census is re-derived. It also diffs the plugin root
+  against `origin/main`, which a shallow checkout has no ref for.
+
+  The gate refuses rather than judging the page against whatever is on disk, so
+  on a shallow clone every one of its rules errors — measured: 2 failed and 27
+  errors in `tools/tests`, and exit 2 from the CLI. This action is what makes
+  them run, and it is a composite action rather than three copies of a script
+  because three jobs need it and a rule that lives inside one caller is a rule
+  the next caller cannot reuse.
+
+  EVERY SHA IS READ AT RUN TIME, never written here. A revision pasted into a
+  workflow is the stale literal the pin exists to remove, and the gate's own
+  rule 2 reds on exactly that shape elsewhere.
+
+  Targeted fetches, not `fetch-depth: 0`. `git fetch origin <sha>` serves a BLOB
+  as well as a commit — measured against this remote — so the whole history is
+  never needed: the three fetches cost about 23 MB and four seconds against the
+  hundreds of megabytes a full history would.
+
+runs:
+  using: composite
+  steps:
+    - name: read the objects the gate reads, from the files that name them
+      id: objects
+      shell: bash
+      run: |
+        python3 - <<'PY' >> "$GITHUB_OUTPUT"
+        import json, sys, tomllib
+        sys.stdout.reconfigure(newline="\n")  # tools/check-python-shell-newlines.py
+        pin = ".claude/skills/delvewright/skills/new-delve/versions.toml"
+        print(f"ref={tomllib.load(open(pin, 'rb'))['engine']['ref']}")
+        census = json.load(open("tools/data/skill-page-headings.json"))
+        print(f"blob={census['source']['blob']}")
+        PY
+        echo "skill-page objects: $(grep -E '^(ref|blob)=' "$GITHUB_OUTPUT" | tr '\n' ' ')"
+
+    # The engine the page is written against. By SHA, which is the same fetch a
+    # creator's Init performs — a revision the remote will not serve fails here
+    # in the same words it would fail for them.
+    - name: fetch the pinned engine revision, the way an Init fetches it
+      shell: bash
+      env:
+        REF: ${{ steps.objects.outputs.ref }}
+      run: git fetch --no-tags --quiet origin "$REF"
+
+    # The page as it stood before the split. The census is a MEASUREMENT and the
+    # gate re-derives it from these bytes rather than believing the committed
+    # file; without them it falls back to the frozen record and says so, which
+    # is a quieter gate than the one this repository committed.
+    - name: fetch the pre-split page's blob, so the census is re-derived
+      shell: bash
+      env:
+        BLOB: ${{ steps.objects.outputs.blob }}
+      run: git fetch --no-tags --quiet origin "$BLOB"
+
+    # `--base origin/main`, for the version-bump rule. `--depth=1` is right HERE
+    # and nowhere a developer runs it: the checkout is already shallow, so there
+    # is one commit to fetch and no full history to truncate
+    # (`tools/lib/gitbase.py` prints the other form to whoever runs it locally).
+    # The rule diffs two trees and reads one blob out of the base, so one commit
+    # is all it needs.
+    - name: fetch origin/main for the version-bump rule
+      shell: bash
+      run: git fetch --no-tags --depth=1 origin main:refs/remotes/origin/main

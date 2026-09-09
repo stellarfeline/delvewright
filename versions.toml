@@ -179,8 +179,10 @@ rust_toolchain = "1.97.1"
 # carries no cross-linker and no cross C compiler.
 #
 # Windows ships `.tar.gz` like everything else rather than `.zip`: one archive
-# format is one extraction path for ADR-0014's future bootstrap, and a format
-# branch is somewhere for the shelf to end up half-built. Windows 10 1803+ ships
+# format is one extraction path for the plugin's own selector
+# (`.claude/skills/delvewright/skills/new-delve/scripts/fetch-delvec.py`, which
+# unpacks with stdlib `tarfile` and knows one format), and a format branch is
+# somewhere for the shelf to end up half-built. Windows 10 1803+ ships
 # bsdtar and Windows 11 Explorer opens `.tar.gz` natively.
 targets = [
     "x86_64-unknown-linux-gnu",
@@ -403,6 +405,21 @@ beet_version = "0.116.0"
 # collection or assertion behaviour moves a required check's verdict.
 # Consumed by: .github/workflows/ci.yml (skin toolchain, i18n translation tool).
 pytest_version = "9.1.1"
+
+# The two READINGS OF THE PLUGIN BY THE FORMAT'S OWN IMPLEMENTATIONS
+# (spec-0063 §8). `tools/check-skill-page.py` is this project's judgement of the
+# page; these two are the standard's, and neither can stand in for the other —
+# ours knows about the pin, the engine and the split, and theirs knows what the
+# loader will actually accept.
+#
+# Both are INSTRUMENTS of a required status check, so both are named literally:
+# an unpinned validator is one whose verdict can move with nothing in any diff
+# to show what changed. Both were confirmed to run unauthenticated before being
+# named here — `claude plugin validate` reads a manifest off disk and asks the
+# network nothing.
+# Consumed by: .github/workflows/ci.yml (manifest consistency).
+skills_ref_version = "0.1.5"
+claude_code_version = "2.1.265"
 
 [skin]
 # skinpy-extended (MIT, ADR-0013 allowlist), the part/face-addressable composer

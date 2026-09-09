@@ -179,6 +179,59 @@ enforced separately by validation/check-versions.sh and
 .github/content-zone-corpus.json.
 """
 
+[[pin]]
+id = "skill-page-engine"
+value = "d8d87ef60583a4643fab28e07aee18f73d93fa84"
+sites = [".claude/skills/delvewright/skills/new-delve/versions.toml"]
+repo = "stellarfeline/delvewright"
+policy = "release"
+judged_by = ".github/workflows/ci.yml"
+why = """
+The ONE engine the creator-facing page is written against and proven on
+(spec-0063 §8, ADR-0027 §2). It decides two acquisitions: `[engine].ref` is the
+revision Init I2 clones into `~/.delvewright/engine`, and `[engine].release` is
+the tag whose archive Init I3a downloads and checksum-verifies. They are the
+same engine arriving by ADR-0023's two channels, so they move together.
+
+WHY `release` AND NOT `track`. This value must be a commit a `v<semver>` tag
+points at, and that is not the vocabulary happening to fit — it is the property
+the pin needs. A creator who takes the archive gets whatever the shelf built,
+and a developer who falls to the source build gets whatever the tree compiles;
+holding the pin to a TAG is what makes those two the same engine. A revision
+with no release behind it has no shelf, so `fetch-delvec.py` would refuse every
+platform and every creator would silently take the floor.
+
+DRIFT PAST IT IS NOT A FINDING, for the same reason it is not one for
+`content-repo`: what a creator needs is the engine the page was WALKED against,
+not the newest one. Staleness here is established by walking `/new-delve` Init
+end to end against a candidate revision, which no job in this repository can
+perform — and saying so is the honest half.
+
+WHAT ACTUALLY READS IT, because a pin whose only reader is prose is a doc line:
+
+  - `tools/check-pins.py` (offline, required job): discovery finds the literal
+    in the site above and demands this entry; the entry keeping a value the site
+    no longer holds reds as a registry that drifted from its site.
+  - `tools/check-pins.py --online` (same job): a `v<semver>` tag must point at
+    this commit, which a revision somebody merely stopped looking at cannot do.
+  - `tools/check-skill-page.py` (offline, required job): the one reader that
+    uses the revision as an INSTRUMENT rather than judging the literal. It
+    materialises the engine at this value and holds the page's
+    `metadata.requires_delvec` window, every `delvec` subcommand and flag the
+    page and its references name, every campaign stage document the engine
+    defines, every `WorldContent` field, and every number the page states about
+    the idiom index, against that one engine. Move it to an engine whose CLI has
+    dropped a subcommand the page drives and the page reds — which is the point,
+    because that is exactly what a creator would hit at Init.
+  - `tools/check-skill-page.py --online` (same job): the tag resolves to this
+    revision, and the release carries one archive per target the engine declares
+    at this revision plus a `SHA256SUMS`. A partial shelf means I3a falls to the
+    source build on exactly the platforms nobody tested.
+  - `.claude/skills/delvewright/skills/new-delve/scripts/fetch-delvec.py`, on a
+    creator's own machine: it reads the value out of the site above and maps the
+    host against `[engine].targets` in the engine tree AT this revision.
+"""
+
 # ---------------------------------------------------------------------------
 # Third-party bytes
 # ---------------------------------------------------------------------------
@@ -652,6 +705,55 @@ an ordinary reviewed edit; what it may not be is silent.
 # ---------------------------------------------------------------------------
 # The skin toolchain's one third-party dependency
 # ---------------------------------------------------------------------------
+
+[[pin]]
+id = "skills-ref"
+value = "0.1.5"
+sites = ["versions.toml"]
+policy = "immutable"
+bound_by = "validation/check-versions.sh"
+bound_key = "skills_ref_version"
+why = """
+The Agent Skills reference library's own validator, run over the `/new-delve`
+skill directory in a required status check (spec-0063 §8). It is an INSTRUMENT
+and not a convenience: it decides whether the page's frontmatter is legal by the
+FORMAT's rule rather than by this project's, and a validator whose version can
+move underneath a gate moves that gate's verdict with nothing in any diff to
+show it did.
+
+`immutable`, on the same published-artifact argument as `pytest`: a bump is an
+ordinary reviewed edit that re-runs the reading; what it may not be is silent.
+
+BINDING, and it is the unusual half. `ci.yml` carries no literal — it reads the
+number out of `versions.toml` at run time — so the binder does not look for a
+copy, it asserts the INDIRECTION: that the workflow reads this key, and that no
+second `skills-ref@<version>` stands anywhere in it. A binder that only looked
+for a literal would pass a workflow that had quietly stopped reading the
+manifest.
+"""
+
+[[pin]]
+id = "claude-code"
+value = "2.1.265"
+sites = ["versions.toml"]
+policy = "immutable"
+bound_by = "validation/check-versions.sh"
+bound_key = "claude_code_version"
+why = """
+Claude Code's own `plugin validate --strict`, run over the plugin root and over
+the marketplace manifest in a required status check (spec-0063 §8). The other
+half of the pair above: `skills-ref` reads the SKILL by the cross-vendor format,
+this reads the PLUGIN by the runtime that will actually load it, and neither
+substitutes for the other.
+
+CONFIRMED TO RUN UNAUTHENTICATED before it was named here — spec-0063 criterion
+10 left that to be established rather than assumed. `plugin validate` reads a
+manifest off disk and asks the network nothing: run with `HOME` pointed at an
+empty directory and every credential unset, both invocations exit 0. So it is a
+step and not a ledger row.
+
+`immutable` and bound exactly as `skills-ref` is, for the same reasons.
+"""
 
 [[pin]]
 id = "skinpy-extended"

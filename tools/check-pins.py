@@ -241,7 +241,15 @@ FETCH_SITES = (
     # rustup downloads the channel named in it, inside worktrees too, and no
     # workflow overrides it — so it is the file that literally causes a toolchain
     # to be fetched, and a pin written there was outside the registry's reach.
-    "versions.toml",
+    #
+    # `versions.toml` is matched by BASENAME and not at the root alone. It is a
+    # file KIND in this project — a manifest whose keys decide which version of
+    # an external thing gets fetched — and the second one to exist is the
+    # creator plugin's own pin (spec-0063 §8), which names the engine revision
+    # a creator's Init clones and the release their Init downloads. A pattern
+    # anchored at the root would have left both outside pin discovery while
+    # looking exactly like a pattern that covered them.
+    "**/versions.toml",
     "rust-toolchain.toml",
     "**/Cargo.toml",
     "**/package.json",

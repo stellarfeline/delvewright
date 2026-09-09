@@ -34,19 +34,25 @@ see §2.
 
 ## 2. What the skill's authoring loop genuinely needs
 
-Established by reading the `/new-delve` page (the loop, §"The loop", and
-§"Authoring tools") against [`tools.md`](tools.md), not from assumption. The
-page lives in the campaigns repository, at
-[`.claude/skills/new-delve/SKILL.md`](https://github.com/stellarfeline/delvewright-campaigns/blob/main/.claude/skills/new-delve/SKILL.md).
+Established by reading the `/new-delve` page against [`tools.md`](tools.md), not
+from assumption. The page is the spine of a Claude Code plugin in THIS
+repository, at
+[`.claude/skills/delvewright/`](../../.claude/skills/delvewright/) — spec-0063,
+ADR-0027 §2. A creator clones nothing to get it: `/plugin marketplace add`
+followed by `/plugin install` clones the marketplace into Claude Code's own
+cache and copies the plugin out, and their own filesystem gets no working tree.
 
 ### Required
 
 | item | download | on disk | how it is obtained |
 |---|---|---|---|
-| `SKILL.md` | 88,834 B | same | the skill itself |
+| the plugin (30 files) | 264,683 B | same | `/plugin install delvewright@delvewright` |
+| — of which `SKILL.md`, the spine | 23,539 B | same | always in context once the skill loads |
+| — of which `references/` (24 files) | 214,119 B | same | level 3: costs nothing until a step reads one |
+| — of which `scripts/` (3 files) | 25,455 B | same | level 3: run through bash, only the output enters context |
 | `delvec` binary | 9,256,047 B | 24,489,840 B | release shelf (default), `cargo install`, or a checkout (ADR-0023 §1–§2) |
 | `LICENSE` (travels in every archive) | — | 35,149 B | inside the archive |
-| prefab library (`campaigns/prefabs`) | 95,355 B | 479,232 B, 74 files | the content repo |
+| prefab library (`campaigns/prefabs`) | 95,355 B | 479,232 B, 74 files | the content repo — **OPTIONAL** (ADR-0027 §1): taken at step 2 by a campaign that seats shipped pieces, and by no other |
 
 ```
 bash tools/build-release-binaries.sh --target aarch64-apple-darwin
