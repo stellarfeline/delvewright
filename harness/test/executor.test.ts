@@ -3483,13 +3483,18 @@ class GatedApproachBot extends DrivableFakeBot {
 /** The west pit with a placement row, so the stage actually walks to a near lip. */
 function westPitPlanWithLip(): ReturnType<typeof parseDeathPlan> {
   return parseDeathPlan({
-    format_version: 1,
+    format_version: 2,
     version: "0.23.0",
     campaign_id: "gallery",
     lethal_volumes: [
       {
         id: "lethal/west-pit",
         region: { lo: [1, 63, 2], hi: [3, 67, 4] },
+        // The same box `westPitPlan` carries, and the same answer: the volume
+        // widened by a player's half-width, one cell out horizontally and
+        // `ceil(height)` down. Derived from the region rather than copied —
+        // `metrics::keep_out_box` on [1,63,2]..=[3,67,4] with a 0.6 x 1.8 body.
+        keep_out: { lo: [0, 62, 1], hi: [4, 67, 5] },
         message: "The floor in the west corner is not a floor.",
         message_key: "lethal.west-pit.message",
         damage_type: "minecraft:fall",
@@ -3502,7 +3507,14 @@ function westPitPlanWithLip(): ReturnType<typeof parseDeathPlan> {
       regions: [
         { label: "west-pit", lethal: true, volume: "lethal/west-pit", region: { lo: [1, 63, 2], hi: [3, 67, 4] } },
       ],
-      rows: [{ seat: 0, region: 0, anchor: [1, 65, 5] }],
+      // The near lip, as `stake::choose_anchor` now picks one: the nearest cell
+      // to the region that lies OUTSIDE the keep-out. This row used to name
+      // [1, 65, 5], which is one step past the pit's south face and inside the
+      // keep-out — a cell the volume kills from, and so a goal the navigator
+      // itself refuses. Its `box_dist2` to the region is 4, the same as the
+      // cell it replaces had before the keep-out existed: the lip moved one
+      // cell out because a body has a width, not because the scenario changed.
+      rows: [{ seat: 0, region: 0, anchor: [1, 65, 6] }],
     },
     binding: {
       lethal_volumes: 1,
