@@ -382,6 +382,11 @@ pub struct ReachJudgement {
     pub radius: u32,
     /// Cells of the volume a body can stand in — `DW0850`'s *occupiable* half.
     pub standable: Vec<[i32; 3]>,
+    /// The denominator the footprint is drawn from: cells the volume covers
+    /// before the world is asked anything. Carried on the judgement rather than
+    /// re-derived by its caller, so `DW0881`'s binding line counts the same
+    /// candidates the footprint was filtered out of.
+    pub candidates: usize,
     /// The footprint: every standable cell whose body box could meet the volume,
     /// confined to the population (plus the anchor's own footing, which is in by
     /// construction — the party is proven to reach it by `DW0311`).
@@ -417,8 +422,9 @@ impl ReachJudgement {
             .into_iter()
             .filter(|&c| world.is_standable(c))
             .collect();
-        let touching: BTreeSet<[i32; 3]> = vol
-            .footprint_candidates()
+        let candidates = vol.footprint_candidates();
+        let n_candidates = candidates.len();
+        let touching: BTreeSet<[i32; 3]> = candidates
             .into_iter()
             .filter(|&c| world.is_standable(c) && vol.possibly_completes_from(c, world.feet_y(c)))
             .collect();
@@ -436,6 +442,7 @@ impl ReachJudgement {
             vol,
             radius,
             standable,
+            candidates: n_candidates,
             footprint,
             footing,
             arriving,
@@ -802,7 +809,7 @@ pub fn check_reach_footprint(
         // One judgement, taken once, read by both rules — this check derives no
         // standable set, footing or walk of its own (spec-0062 §7).
         let judged = ReachJudgement::take(world, &standing, site.pos, site.radius);
-        binding.candidates += judged.vol.footprint_candidates().len();
+        binding.candidates += judged.candidates;
         binding.cells += judged.footprint.len();
         if judged.footing.is_empty() {
             // An empty volume is `DW0850`'s finding, stated in its own words at

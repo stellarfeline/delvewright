@@ -675,3 +675,149 @@ fn the_ci_fixture_validates_and_emits_its_template() {
         "the fixture emits the template the tier-2 pass runs"
     );
 }
+
+// --- DW0891: the population is the lethality-free one ----------------------
+
+/// The `lethal-volume` fixture, planned, with the world and the block map the
+/// build judges it over — everything `check_danger_is_visible` takes.
+fn with_fixture<R>(
+    f: impl FnOnce(&Plan, &delvec::compiler::nav::World, &BTreeMap<[i32; 3], String>) -> R,
+) -> R {
+    let dir = common::repo_root().join("crates/delvec/tests/fixtures/lethal-volume");
+    let raw = delvewright_dsl::RawCampaign {
+        world: std::fs::read_to_string(dir.join("world.json")).unwrap(),
+        npcs: std::fs::read_to_string(dir.join("npcs.json")).unwrap(),
+        classes: std::fs::read_to_string(dir.join("classes.json")).unwrap(),
+        quest_plan: std::fs::read_to_string(dir.join("quest-plan.json")).unwrap(),
+        quests: std::fs::read_to_string(dir.join("quests.json")).unwrap(),
+        dialogue: std::fs::read_to_string(dir.join("dialogue.json")).unwrap(),
+        world_edits: Some(std::fs::read_to_string(dir.join("world-edits.json")).unwrap()),
+        geometry_brief: None,
+        layout_graph: None,
+        site_plan: None,
+        detail_plan: None,
+        design: None,
+    };
+    let mut c = parse_campaign(&raw).expect("the fixture parses");
+    delvewright_dsl::tag_translatables(&mut c);
+    let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
+    let plan = Plan::build(&c, &prefabs).expect("plan builds");
+    let s = structures(&plan);
+    // The EDITED world — the fixture's magma floor is laid by a batch, and a
+    // world built from the placed bytes alone would have stone where the signal
+    // is. `assembled::edit_replay` is what `emit::build` takes for a campaign
+    // that declares `world-edits`.
+    let replay = delvec::compiler::edit::replay(&plan, &prefabs, &s)
+        .expect("the edit script replays")
+        .expect("the fixture declares world-edits");
+    let occ = delvec::compiler::assembled::occupancy_of(
+        replay.assembled.blocks.clone(),
+        &replay.assembled.open_gates,
+    );
+    let world = delvec::compiler::nav::World::from_occupancy(
+        occ,
+        delvec::compiler::nav::Premises::of_plan(&plan, replay.assembled.gate_seals.clone()),
+    );
+    let blocks = replay.assembled.blocks.clone();
+    f(&plan, &world, &blocks)
+}
+
+/// **The check reads the LETHALITY-FREE world, and that is its whole binding**
+/// (spec-0062 §10.4).
+///
+/// This is the vacuity trap the spec names, and it is not hypothetical. The walk
+/// model already refuses every cell of the keep-out
+/// (`World::standable_fp` through `World::meets_lethal_fp`), so a population
+/// taken from the world the router walks can never contain a caught cell: the
+/// check would be green over every volume ever written while matching nothing at
+/// all, and no fixture would ever go red to say so.
+///
+/// So the perturbation is the vacuous shape itself. The same judgement is taken
+/// twice over one fixture, once against each world, and the two numbers are the
+/// finding: **zero** caught cells over the lethal-applied world, **nine** over
+/// the counterfactual `World::without_lethal` the check really reads. Nine is
+/// the floor course the fixture lays in magma, cell for cell.
+#[test]
+fn the_population_is_the_lethality_free_one() {
+    with_fixture(|plan, world, blocks| {
+        let entry = plan.campaign_start().map(|(_, pos)| pos);
+        assert!(entry.is_some(), "the fixture resolves an entry spawn");
+
+        // The check as it is bound: over the counterfactual, which is what
+        // `check_danger_is_visible` builds for itself.
+        let (bound, verdict) =
+            delvec::compiler::lethal::check_danger_is_visible(plan, world, blocks, entry);
+        assert!(verdict.is_ok(), "the fixture is green: {:?}", verdict.err());
+        assert_eq!(
+            bound.caught(),
+            9,
+            "over the lethality-free world the volume catches the nine cells of floor \
+         the fixture lays in magma: {bound:?}"
+        );
+        assert_eq!(bound.shown(), 9, "and every one of them shows: {bound:?}");
+
+        // The same judgement over a world whose lethality has ALREADY been applied —
+        // the vacuous shape. `without_lethal` is idempotent, so handing the check a
+        // world that already carries no volumes is not the perturbation; what is, is
+        // taking the population from the world the ROUTER walks. Done here directly,
+        // so the number this check would report if it read the wrong world is on the
+        // record beside the number it does report.
+        let applied = world.reachable_walkable(&[entry.unwrap()]);
+        let body = delvewright_dsl::metrics::Body::PLAYER;
+        let v = &plan.lethal_volumes[0];
+        let (klo, khi) = delvewright_dsl::metrics::keep_out_box(body, v.region.0, v.region.1);
+        let caught_over_the_applied_world = applied
+            .iter()
+            .filter(|c| (0..3).all(|i| klo[i] <= c[i] && c[i] <= khi[i]))
+            .count();
+        assert_eq!(
+            caught_over_the_applied_world, 0,
+            "the vacuous shape: over the world the router walks, the keep-out is already \
+         impassable, so this population holds no caught cell and the check would be \
+         green over every volume ever written"
+        );
+        assert!(
+            bound.population > applied.len(),
+            "and the counterfactual population is the larger of the two — {} cell(s) \
+         against {}",
+            bound.population,
+            applied.len()
+        );
+    });
+}
+
+/// **A declared signal on a volume that catches nothing** — `DW0891`'s second
+/// shape with an empty caught set, which says a different thing from the same
+/// shape with a full one: the volume needs no signal at all, so the declaration
+/// is what is wrong.
+///
+/// The empty population is reached by judging the fixture's own volume over a
+/// world with no floor in it at all — a world nothing can stand in, so nothing
+/// can be caught. That is the smallest thing that produces the branch, and it is
+/// the branch that matters: the message has to say the volume catches nothing
+/// rather than report "no cell bears it out" over a set nobody could have filled.
+#[test]
+fn a_signal_on_a_volume_that_catches_nothing_is_dw0891() {
+    with_fixture(|plan, _world, blocks| {
+        let empty = delvec::compiler::nav::World::from_solid_and_flooded(
+            std::collections::BTreeSet::new(),
+            std::collections::BTreeSet::new(),
+        );
+        let (bound, verdict) =
+            delvec::compiler::lethal::check_danger_is_visible(plan, &empty, blocks, None);
+        assert_eq!(bound.population, 0, "no floor, no population: {bound:?}");
+        assert_eq!(bound.caught(), 0, "and so nothing caught: {bound:?}");
+        let f = verdict.expect_err("a declaration nothing bears out is refused");
+        assert_eq!(f.code.to_string(), "DW0891");
+        assert!(
+            f.message.contains("catches no walked floor at all"),
+            "the message says the volume needs no signal, not that the list is wrong: {}",
+            f.message
+        );
+        assert!(
+            f.message.contains("Delete the declaration"),
+            "and it names the move: {}",
+            f.message
+        );
+    });
+}
