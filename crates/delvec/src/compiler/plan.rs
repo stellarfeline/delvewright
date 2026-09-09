@@ -486,6 +486,9 @@ pub struct LethalVolumePlan {
     pub message: String,
     /// The damage type the kill is dealt with.
     pub damage_type: delvewright_dsl::DamageKind,
+    /// The blocks the volume declares as showing it (spec-0062 §3), as
+    /// declared. Read by `DW0891` against the assembled bytes, per caught cell.
+    pub shown_by: Vec<String>,
 }
 
 impl LethalVolumePlan {
@@ -5931,6 +5934,7 @@ fn collect_lethal_volumes(
                 damage_type: v
                     .damage_type
                     .unwrap_or(delvewright_dsl::DamageKind::Generic),
+                shown_by: v.shown_by.clone(),
             })
         })
         .collect()

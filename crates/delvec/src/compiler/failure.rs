@@ -58,3 +58,49 @@ impl Failure {
         }
     }
 }
+
+/// How many offending cells a floor names before the message says "and N more".
+///
+/// The list is what an author walks to; the count is what tells them how much of
+/// the floor is affected. Both are needed, and a message that printed 400 cells
+/// would be neither.
+pub const SHOWN_PER_FLOOR: usize = 6;
+
+/// **A set of offending cells, as a reader walks it: grouped by floor, six named
+/// per floor, then a count.**
+///
+/// One formatter, because two rules print the same set about the same world.
+/// `DW0881` says which floor cells complete an objective they cannot walk to;
+/// `DW0891` (spec-0062 §4) says which floor cells a killing volume catches
+/// without showing it. A reader who has read one is reading the same shape in
+/// the other, and a second copy would be free to drift from it.
+///
+/// Deterministic: a `BTreeMap` keyed by `y`, and the cells in the order the
+/// caller enumerated them (ADR-0006).
+pub fn cells_by_floor(cells: &[[i32; 3]]) -> String {
+    let mut by_y: std::collections::BTreeMap<i32, Vec<[i32; 3]>> =
+        std::collections::BTreeMap::new();
+    for c in cells {
+        by_y.entry(c[1]).or_default().push(*c);
+    }
+    by_y.iter()
+        .map(|(y, cs)| {
+            let shown = cs
+                .iter()
+                .take(SHOWN_PER_FLOOR)
+                .map(|c| format!("{c:?}"))
+                .collect::<Vec<_>>()
+                .join(", ");
+            let rest = cs.len().saturating_sub(SHOWN_PER_FLOOR);
+            if rest == 0 {
+                format!("y={y} ({} cell(s): {shown})", cs.len())
+            } else {
+                format!(
+                    "y={y} ({} cell(s): {shown}, and {rest} more on the same floor)",
+                    cs.len()
+                )
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("; ")
+}

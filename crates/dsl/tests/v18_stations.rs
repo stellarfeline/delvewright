@@ -33,7 +33,7 @@ use serde_json::{Value, json};
 /// is a fact read off this text and not one the checker computed for itself.
 const GRAPH: &str = r#"{
   "campaign_id": "hello-world",
-  "dsl_version": "0.22.0",
+  "dsl_version": "0.23.0",
   "stage": "layout-graph",
   "content": {
     "nodes": [
@@ -79,7 +79,7 @@ const GRAPH: &str = r#"{
 
 const BRIEF: &str = r#"{
   "campaign_id": "hello-world",
-  "dsl_version": "0.22.0",
+  "dsl_version": "0.23.0",
   "stage": "geometry-brief",
   "content": {
     "facts": [
@@ -93,7 +93,7 @@ const BRIEF: &str = r#"{
 /// what puts the derived vocabulary in front of the checks.
 const PLAN: &str = r#"{
   "campaign_id": "hello-world",
-  "dsl_version": "0.22.0",
+  "dsl_version": "0.23.0",
   "stage": "site-plan",
   "content": {
     "region": { "min": [0, 60, 0], "extent": [64, 24, 64] },

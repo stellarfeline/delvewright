@@ -1207,7 +1207,7 @@ impl World {
     /// volumes. Without the counterfactual the author gets "no collision-free
     /// path" over geometry that looks perfectly open — the reachability report
     /// that sends someone to fix the prefab.
-    fn without_lethal(&self) -> World {
+    pub fn without_lethal(&self) -> World {
         World {
             solid: self.solid.clone(),
             tall: self.tall.clone(),

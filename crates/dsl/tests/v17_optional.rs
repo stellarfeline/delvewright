@@ -16,8 +16,8 @@ use std::collections::BTreeSet;
 use delvewright_dsl::{RawCampaign, check_campaign};
 use serde_json::{Value, json};
 
-const OLD: &str = "0.22.0";
-const NEW: &str = "0.22.0";
+const OLD: &str = "0.23.0";
+const NEW: &str = "0.23.0";
 
 // ---------------------------------------------------------------------------
 // Fixture construction
@@ -407,7 +407,7 @@ fn every_refusal_binds_and_is_the_only_thing_that_could_have_caught_it() {
 fn the_new_refusals_are_inert_when_nothing_is_optional() {
     let new_codes = ["DW0866", "DW0867", "DW0868"];
     let mut checked = 0usize;
-    for version in ["0.22.0", "0.22.0", OLD, NEW] {
+    for version in ["0.23.0", "0.23.0", OLD, NEW] {
         for finale_deps in [vec![], vec![STRAND]] {
             for strand_after_finale in [false, true] {
                 let f = Fixture {

@@ -568,13 +568,6 @@ fn cells_that_reach(
     seen
 }
 
-/// How many offending cells a floor names before the diagnostic says "and N more".
-///
-/// The list is what an author walks to; the count is what tells them how much of
-/// the floor is affected. Both are needed, and a message that printed 400 cells
-/// would be neither.
-const SHOWN_PER_FLOOR: usize = 6;
-
 /// `DW0881`: **everywhere a `reach` completes from is somewhere a body arrived
 /// at.**
 ///
@@ -670,31 +663,7 @@ pub fn check_reach_footprint(
             others.push(site.objective_id.clone());
             continue;
         }
-        let mut by_y: BTreeMap<i32, Vec<[i32; 3]>> = BTreeMap::new();
-        for c in &off {
-            by_y.entry(c[1]).or_default().push(*c);
-        }
-        let floors = by_y
-            .iter()
-            .map(|(y, cs)| {
-                let shown = cs
-                    .iter()
-                    .take(SHOWN_PER_FLOOR)
-                    .map(|c| format!("{c:?}"))
-                    .collect::<Vec<_>>()
-                    .join(", ");
-                let rest = cs.len().saturating_sub(SHOWN_PER_FLOOR);
-                if rest == 0 {
-                    format!("y={y} ({} cell(s): {shown})", cs.len())
-                } else {
-                    format!(
-                        "y={y} ({} cell(s): {shown}, and {rest} more on the same floor)",
-                        cs.len()
-                    )
-                }
-            })
-            .collect::<Vec<_>>()
-            .join("; ");
+        let floors = crate::compiler::failure::cells_by_floor(&off);
         first = Some(Failure {
             code: DW_REACH_OFF_FLOOR,
             message: format!(

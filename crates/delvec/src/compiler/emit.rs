@@ -1065,6 +1065,35 @@ pub fn build_with_warnings(
                     campaign_spawn(plan),
                     &waves,
                 )?;
+                // spec-0062: **danger is visible, or the engine refuses it.**
+                // `DW0891`, asked BEFORE every route proof and after `DW0511`,
+                // and the order is the judgement §4 records: a volume that
+                // catches walked floor usually closes a route as well and often
+                // sits under a reach, so asked first the refusal names the
+                // cause, and `DW0510`, `DW0850` and `DW0881` then judge a volume
+                // the player can see. This proof reads the plan's volumes, the
+                // lethality-free population and the block map, never a route, so
+                // nothing is lost by asking it here.
+                let danger = if plan.lethal_volumes.is_empty() {
+                    crate::compiler::lethal::DangerVisibility::default()
+                } else {
+                    let blocks = match &edit_replay {
+                        Some(er) => er.assembled.blocks.clone(),
+                        None => crate::compiler::assembled::assembled_blocks(plan, structures),
+                    };
+                    let (binding, verdict) = crate::compiler::lethal::check_danger_is_visible(
+                        plan,
+                        &world,
+                        &blocks,
+                        campaign_spawn(plan),
+                    );
+                    // Stated whether it found anything or not, and before the
+                    // verdict is taken: a refusal owes its reader the population
+                    // it was measured against as much as a pass does.
+                    eprintln!("{}", binding.line());
+                    verdict?;
+                    binding
+                };
                 crate::compiler::nav::check_critical_path(plan, &world)?;
                 // v0.6 checkpoint no-stranding + placement proofs (spec-0012,
                 // DW0315/DW0316) and stealth-zone standable/reachable proofs
@@ -1079,6 +1108,7 @@ pub fn build_with_warnings(
                         crate::compiler::nav::critical_leg_count(plan),
                         // One template per resolved volume (see `emit_packtest`).
                         plan.lethal_volumes.len(),
+                        danger,
                     ));
                 }
                 // spec-0032: the recovery stake's placement table and its proofs

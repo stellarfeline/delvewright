@@ -106,6 +106,8 @@ pub struct LethalGate {
     /// compile-time-only green over a runtime mechanism is the vacuity this
     /// number exists to make visible.
     pub packtests: usize,
+    /// What `DW0891` looked at, per volume and over the campaign (spec-0062 §5).
+    pub visibility: DangerVisibility,
 }
 
 impl LethalGate {
@@ -123,8 +125,321 @@ impl LethalGate {
             "critical_path_legs_examined": self.legs,
             "packtest_templates": self.packtests,
             "unbound": self.unbound(),
+            "danger_visibility": self.visibility.to_json(),
         })
     }
+}
+
+// ---------------------------------------------------------------------------
+// Danger is visible, or the engine refuses it (spec-0062)
+// ---------------------------------------------------------------------------
+
+/// `DW0891`: **a killing volume the player cannot see** (spec-0062 §4).
+///
+/// One code, three shapes, one rule — *a killing volume and what shows it
+/// agree*. The full derivation is on
+/// [`delvewright_dsl::codes::LETHAL_INVISIBLE`], which is where the code itself
+/// is declared: the document arm lives in `dsl::validate`, so a second constant
+/// here would be one number for two rules.
+pub const DW_LETHAL_INVISIBLE: DwCode = delvewright_dsl::codes::LETHAL_INVISIBLE;
+
+/// What `DW0891` examined for one volume (spec-0062 §5).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct VolumeVisibility {
+    /// The volume's authored id.
+    pub id: String,
+    /// The cells a player body can be caught from —
+    /// [`delvewright_dsl::metrics::keep_out_box`] of the resolved region.
+    pub keep_out: ([i32; 3], [i32; 3]),
+    /// `K ∩ P`: the keep-out cells the party can walk to, over the world with
+    /// lethality removed. Sorted (ADR-0006).
+    pub caught: Vec<[i32; 3]>,
+    /// Of [`Self::caught`], the cells whose floor or own block is one of
+    /// [`Self::shown_by`].
+    pub shown: Vec<[i32; 3]>,
+    /// The blocks the volume declares as showing it, as declared.
+    pub shown_by: Vec<String>,
+}
+
+impl VolumeVisibility {
+    /// This volume's row of the ledger.
+    pub fn to_json(&self) -> serde_json::Value {
+        serde_json::json!({
+            "id": self.id,
+            "keep_out": { "lo": self.keep_out.0, "hi": self.keep_out.1 },
+            "caught": self.caught.len(),
+            "caught_cells": self.caught,
+            "shown": self.shown.len(),
+            "shown_by": self.shown_by,
+        })
+    }
+}
+
+/// What `DW0891` examined over the whole campaign (spec-0062 §5).
+///
+/// A volume that catches nothing prints its zero **beside the population**, so a
+/// pit whose keep-out lies wholly under the floor reads as *checked and clear*
+/// rather than as *unbound*: the denominator is what tells the two apart.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct DangerVisibility {
+    /// Cells the party can walk to from everywhere it is PUT, over the world
+    /// with lethality removed — the population `P`.
+    pub population: usize,
+    /// One row per resolved volume, in declaration order.
+    pub volumes: Vec<VolumeVisibility>,
+    /// `shown_by` entries examined, over every volume.
+    pub declarations: usize,
+    /// Of those, the ones some caught cell bears out.
+    pub borne_out: usize,
+}
+
+impl DangerVisibility {
+    /// Caught cells over every volume.
+    pub fn caught(&self) -> usize {
+        self.volumes.iter().map(|v| v.caught.len()).sum()
+    }
+
+    /// Of those, the ones that show their hazard.
+    pub fn shown(&self) -> usize {
+        self.volumes.iter().map(|v| v.shown.len()).sum()
+    }
+
+    /// The one line this proof owes its reader.
+    pub fn line(&self) -> String {
+        format!(
+            "danger-visibility binding: {} volume(s) examined against a walked population of {} \
+             cell(s); {} cell(s) caught, {} shown, {} read as safe floor; {} declaration(s) of {} \
+             borne out by the bytes.",
+            self.volumes.len(),
+            self.population,
+            self.caught(),
+            self.shown(),
+            self.caught() - self.shown(),
+            self.borne_out,
+            self.declarations,
+        )
+    }
+
+    /// The ledger's `danger_visibility` object.
+    pub fn to_json(&self) -> serde_json::Value {
+        serde_json::json!({
+            "population": self.population,
+            "caught": self.caught(),
+            "shown": self.shown(),
+            "reads_as_safe_floor": self.caught() - self.shown(),
+            "declarations": { "examined": self.declarations, "borne_out": self.borne_out },
+            "volumes": self.volumes.iter().map(VolumeVisibility::to_json).collect::<Vec<_>>(),
+        })
+    }
+}
+
+/// Does the block under or in `cell` show one of `shown_by`?
+///
+/// **Under or in, never beside** (spec-0062 §2). A shore cell next to lava
+/// stands on stone and holds air; the lava beside it is not what the body is on.
+/// A block with a collision top (`magma_block`, `cactus`) is the FLOOR under the
+/// cell; one with an empty collision shape (`fire`, `sweet_berry_bush`) stands
+/// IN it, passable to the walker. Both readings are here because the model
+/// already knows which a block is, and asking for one alone would miss the other
+/// kind of signal entirely.
+///
+/// Matched on the bare id, so a `campfire[lit=true]` in the bytes answers a
+/// `minecraft:campfire` declaration — the same reading
+/// [`delvewright_dsl::blockshape::hurts_body`] takes.
+fn cell_shows(
+    blocks: &std::collections::BTreeMap<[i32; 3], String>,
+    cell: [i32; 3],
+    shown_by: &[String],
+) -> bool {
+    let under = [cell[0], cell[1] - 1, cell[2]];
+    [under, cell].iter().any(|c| {
+        blocks.get(c).is_some_and(|b| {
+            let bare = delvewright_dsl::blockshape::bare_id(b);
+            shown_by
+                .iter()
+                .any(|s| delvewright_dsl::blockshape::bare_id(s) == bare)
+        })
+    })
+}
+
+/// **Every cell the party is PUT at** — the roots of the population `P`
+/// (spec-0062 §2 decision 1).
+///
+/// The entry spawn, every `set-checkpoint` and `bonfire` seat, and every
+/// transit-teleport destination. Rooted at all of them and not at the entry
+/// alone, as `DW0881`'s population is: a party teleported into an area stands on
+/// that area's floor, and a rule that judged only what walks from the door would
+/// be silent about every area reached by a teleport.
+///
+/// Deterministic: entry, then checkpoints in content order, then teleports in
+/// declaration order (ADR-0006).
+fn population_roots(plan: &Plan, entry: Option<[i32; 3]>) -> Vec<[i32; 3]> {
+    let mut out: Vec<[i32; 3]> = Vec::new();
+    out.extend(entry);
+    out.extend(plan.checkpoints.iter().map(|cp| cp.pos));
+    out.extend(plan.transit_teleports.iter().map(|(_, to)| *to));
+    out
+}
+
+/// `DW0891`: **prove no killing volume reaches a cell the player would read as
+/// safe floor** (spec-0062).
+///
+/// The ruling this implements is the owner's, and it is why the constraint is
+/// here rather than in the walk graph: *avoiding a lethal volume's collateral
+/// damage is never done by marking ground that looks walkable as unwalkable —
+/// the player does not know.* The keep-out the routing model already refuses
+/// ([`crate::compiler::nav::World::meets_lethal_fp`]) answers a different
+/// question, asked earlier: **does this volume, as declared, reach a cell the
+/// player would read as safe floor?** If it does, the declaration is refused and
+/// the creator moves the volume.
+///
+/// # The population is the lethality-free one, and that is load-bearing
+///
+/// The walk model already refuses the keep-out, so a population taken from the
+/// lethal-APPLIED world can never contain a caught cell: over that world this
+/// check is green for every volume ever written, while binding to nothing. It
+/// therefore reads the counterfactual [`crate::compiler::nav::World::without_lethal`] —
+/// the identical world `DW0510` is already derived from — and
+/// `the_population_is_the_lethality_free_one` perturbs it back to the vacuous
+/// shape and asserts the zero (spec-0062 §10.4).
+///
+/// # What it does NOT do
+///
+/// Nothing here changes the walk graph. The router still refuses every cell of
+/// the keep-out, the recovery stake still chooses its lip outside it, and
+/// `death-plan.json` still carries it to the bot. A visible hazard is still a
+/// hazard; what `DW0891` guarantees is that the cells the walk graph loses are
+/// cells a player could see were dangerous.
+///
+/// Returns the binding beside the verdict, so the line a run prints is a count
+/// over every volume rather than over the ones that preceded the failure.
+pub fn check_danger_is_visible(
+    plan: &Plan,
+    world: &crate::compiler::nav::World,
+    blocks: &std::collections::BTreeMap<[i32; 3], String>,
+    entry: Option<[i32; 3]>,
+) -> (DangerVisibility, Result<(), Failure>) {
+    let mut binding = DangerVisibility::default();
+    if plan.lethal_volumes.is_empty() {
+        return (binding, Ok(()));
+    }
+    let body = delvewright_dsl::metrics::Body::PLAYER;
+    // The counterfactual, not the world the router walks. See the note above.
+    let open = world.without_lethal();
+    let population = open.reachable_walkable(&population_roots(plan, entry));
+    binding.population = population.len();
+
+    for v in &plan.lethal_volumes {
+        let (klo, khi) = delvewright_dsl::metrics::keep_out_box(body, v.region.0, v.region.1);
+        let caught: Vec<[i32; 3]> = population
+            .iter()
+            .copied()
+            .filter(|c| (0..3).all(|i| klo[i] <= c[i] && c[i] <= khi[i]))
+            .collect();
+        let shown: Vec<[i32; 3]> = caught
+            .iter()
+            .copied()
+            .filter(|&c| cell_shows(blocks, c, &v.shown_by))
+            .collect();
+        binding.declarations += v.shown_by.len();
+        binding.borne_out += v
+            .shown_by
+            .iter()
+            .filter(|s| {
+                caught
+                    .iter()
+                    .any(|&c| cell_shows(blocks, c, std::slice::from_ref(*s)))
+            })
+            .count();
+        binding.volumes.push(VolumeVisibility {
+            id: v.id.clone(),
+            keep_out: (klo, khi),
+            caught,
+            shown,
+            shown_by: v.shown_by.clone(),
+        });
+    }
+
+    // The verdict, per volume in declaration order and both shapes per volume:
+    // caught floor that shows nothing first, because a volume that catches floor
+    // is wrong about the world and a fiction is only wrong about the document.
+    let mut verdict: Option<Failure> = None;
+    'volumes: for (v, row) in plan.lethal_volumes.iter().zip(&binding.volumes) {
+        let unseen: Vec<[i32; 3]> = row
+            .caught
+            .iter()
+            .copied()
+            .filter(|c| !row.shown.contains(c))
+            .collect();
+        if !unseen.is_empty() {
+            let declared = if v.shown_by.is_empty() {
+                "It declares no `shown_by` at all".to_string()
+            } else {
+                format!(
+                    "It declares `shown_by` {}, which no cell of this floor bears out",
+                    v.shown_by
+                        .iter()
+                        .map(|b| format!("`{b}`"))
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                )
+            };
+            verdict = Some(Failure {
+                code: DW_LETHAL_INVISIBLE,
+                message: format!(
+                    "lethal volume `{}` catches {} cell(s) of floor the party walks, and \
+                         nothing in the world says so: {}. A volume kills by a box selector and \
+                         the server adjudicates that on hitbox INTERSECTION, so the cells a body \
+                         can be caught from are the volume's own box widened by half a body — the \
+                         keep-out {:?}..={:?} — and every one of these is standing room a player \
+                         reads as ordinary floor. {declared}. Danger is visible, or the engine \
+                         refuses it: no cell of the keep-out may be floor the party walks unless \
+                         the block under or in it is one of `shown_by`. Lower the volume so its \
+                         keep-out's top course lies UNDER the floor (a pit's volume sits at the \
+                         pit's bottom, on an anchor at the pit's bottom); draw its `extent` in so \
+                         the keep-out stops one cell short of the floor; or author one of the \
+                         blocks vanilla hurts a body with under those cells and declare it in \
+                         `shown_by`. Do NOT repair this by marking the floor unwalkable — the \
+                         compiler knows and the player does not.",
+                    row.id,
+                    unseen.len(),
+                    crate::compiler::failure::cells_by_floor(&unseen),
+                    row.keep_out.0,
+                    row.keep_out.1,
+                ),
+            });
+            break 'volumes;
+        }
+        for block in &v.shown_by {
+            if row
+                .caught
+                .iter()
+                .any(|&c| cell_shows(blocks, c, std::slice::from_ref(block)))
+            {
+                continue;
+            }
+            verdict = Some(Failure {
+                code: DW_LETHAL_INVISIBLE,
+                message: format!(
+                    "lethal volume `{}` declares `shown_by` block `{block}`, and it stands \
+                         under or in none of the {} cell(s) of walked floor this volume catches. \
+                         A declaration is a claim about the assembled bytes and this one is not \
+                         borne out by them{}. Delete the declaration, or author `{block}` under \
+                         the cells this volume catches.",
+                    row.id,
+                    row.caught.len(),
+                    if row.caught.is_empty() {
+                        " — the volume catches no walked floor at all, so it needs no signal \
+                             and the declaration is what is wrong"
+                    } else {
+                        ""
+                    },
+                ),
+            });
+            break 'volumes;
+        }
+    }
+    (binding, verdict.map_or(Ok(()), Err))
 }
 
 /// One posted place: what a diagnostic calls it, the cell the campaign puts a
@@ -388,6 +703,7 @@ pub fn gate(
     seats: usize,
     legs: usize,
     packtests: usize,
+    visibility: DangerVisibility,
 ) -> LethalGate {
     LethalGate {
         declared: c.quests.content.lethal_volumes.len(),
@@ -396,5 +712,6 @@ pub fn gate(
         seats,
         legs,
         packtests,
+        visibility,
     }
 }

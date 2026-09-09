@@ -3231,7 +3231,7 @@ class DrivableFakeBot extends FakeBot {
 function oneVolumePlan(): ReturnType<typeof parseDeathPlan> {
   return parseDeathPlan({
     format_version: 2,
-    version: "0.22.0",
+    version: "0.23.0",
     campaign_id: "probe",
     lethal_volumes: [
       {
@@ -3264,7 +3264,7 @@ function oneVolumePlan(): ReturnType<typeof parseDeathPlan> {
 function westPitPlan(): ReturnType<typeof parseDeathPlan> {
   return parseDeathPlan({
     format_version: 2,
-    version: "0.22.0",
+    version: "0.23.0",
     campaign_id: "gallery",
     lethal_volumes: [
       {
@@ -3484,7 +3484,7 @@ class GatedApproachBot extends DrivableFakeBot {
 function westPitPlanWithLip(): ReturnType<typeof parseDeathPlan> {
   return parseDeathPlan({
     format_version: 1,
-    version: "0.22.0",
+    version: "0.23.0",
     campaign_id: "gallery",
     lethal_volumes: [
       {
@@ -3518,7 +3518,7 @@ function westPitPlanWithLip(): ReturnType<typeof parseDeathPlan> {
 
 /** The gallery's three doors, as `delvec` exports them, on a leg that goes elsewhere. */
 const GALLERY_DOORS = {
-  version: "0.22.0",
+  version: "0.23.0",
   campaign_id: "gallery",
   timed_gates: [
     {
