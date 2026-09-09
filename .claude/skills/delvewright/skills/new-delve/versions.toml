@@ -1,0 +1,20 @@
+# The page's own pin: the ONE engine this page is written against and proven on.
+#
+# spec-0063 §8. The page reads `release` and `ref` from this file and restates
+# neither — a literal on the page goes stale and nothing catches it; an
+# indirection stays true and `tools/check-skill-page.py` holds it.
+#
+# `release` and `ref` are the same engine arriving by the two channels ADR-0023
+# names: the archive on the release shelf (the default acquisition) and the
+# source tree the floor builds from. They move together, in the pull request
+# that walks the page against the newer engine.
+#
+# Registered in `.github/pins.toml` under the `release` policy — the value must
+# be a commit a `v<semver>` tag points at, which a revision somebody merely
+# stopped looking at cannot be. Drift past it is not a finding: what an author
+# needs is the engine the page was WALKED against, not the newest one.
+
+[engine]
+repo = "stellarfeline/delvewright"
+release = "v1.4.0"
+ref = "d8d87ef60583a4643fab28e07aee18f73d93fa84"
