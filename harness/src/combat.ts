@@ -774,22 +774,129 @@ export interface UnassistedOutcome {
 }
 
 /**
+ * Who felled the bodies of a fight the floor gate is judging.
+ *
+ * The gate's whole claim is *the unassisted bot beat this cold*, and a delve is
+ * full of things that kill a mob without any bot in it: a fall, a lethal volume,
+ * a trap, another mob. The engine's own gallery does exactly that — `wave/muster`
+ * seats three bodies within a stride of `lethal/east-pit` and a fall — and the
+ * gate reported an `elite` beaten on the first attempt over a cohort in which the
+ * bot had confirmed ONE kill while two withered and fell. The advisory was not
+ * merely noisy: it advised the author to make an encounter harder on the strength
+ * of a fight the world had mostly fought.
+ *
+ * This is the fight's attribution, and it belongs to the fight rather than to
+ * either gate: a wave and an unleashed actor are both bodies somebody felled, and
+ * both gates are the same claim about the same thing. A run that cannot say who
+ * felled them says so — {@link unattributed} — rather than leaving the reader to
+ * read silence as a clean win.
+ */
+export type FightAttribution =
+  | {
+      readonly kind: "measured";
+      /** Bodies the fight seated. */
+      readonly bodies: number;
+      /** Of those, still standing when the attempt ended. */
+      readonly standing: number;
+      /** Deaths vanilla credited to a player. */
+      readonly credited: number;
+      /** Deaths nothing credited to a player — the world's kills. */
+      readonly uncredited: number;
+    }
+  | { readonly kind: "unattributed"; readonly reason: string };
+
+/**
+ * The attribution of a wave attempt, from the compiler's own census.
+ *
+ * `bodies` is the seating the compiler declared and `spawn_<wave>` wrote;
+ * `standing` and `credited` are the server's answer. `uncredited` is the
+ * remainder, floored at zero — the three numbers are read at slightly different
+ * instants (a census is a round trip), so a body that dies between the two can
+ * make the arithmetic transiently negative, and a negative body count is not a
+ * fact about anything.
+ */
+export function waveAttribution(
+  bodies: number,
+  standing: number,
+  credited: number,
+): FightAttribution {
+  return {
+    kind: "measured",
+    bodies,
+    standing,
+    credited,
+    uncredited: Math.max(0, bodies - standing - credited),
+  };
+}
+
+/** How an attribution reads inside a finding. */
+function attributionClause(a: FightAttribution): string {
+  if (a.kind === "unattributed") {
+    return `This run cannot say who felled it (${a.reason}), so the advisory is not ` +
+      `evidence that the BOT did.`;
+  }
+  return (
+    `All ${a.credited} of the ${a.bodies} bodies that fell were credited to the party.`
+  );
+}
+
+/**
+ * Why an attribution disqualifies the attempt from measuring the fight, or
+ * `undefined` when it does not.
+ *
+ * Shared by both floor gates because it is one question about one kind of object.
+ * Two disqualifying shapes, and neither is a failure — the run continues either
+ * way; what changes is what the report is allowed to CLAIM.
+ */
+function attributionConfound(a: FightAttribution): string | undefined {
+  if (a.kind === "unattributed") return undefined;
+  if (a.uncredited > 0) {
+    return (
+      `${a.uncredited} of its ${a.bodies} bodies died with NO player credited — the ` +
+      `world killed them (a fall, a lethal volume, a trap, another mob), and the bot ` +
+      `was credited with ${a.credited}`
+    );
+  }
+  if (a.credited === 0) {
+    return `the party was credited with none of its ${a.bodies} bodies`;
+  }
+  return undefined;
+}
+
+/**
  * The floor finding, or `undefined` when there is nothing to say.
  *
  * WARNING tier by construction — it returns prose, never a failure. A fight the
  * bot beats cold is a design signal for the author, and spec-0023 is explicit
  * that content decides. Ordinary encounters carry no expectation at all, so they
  * never produce a finding however easily they fall.
+ *
+ * The advisory is stated only over bodies the bot actually beat. Where the
+ * attribution says otherwise the finding is still emitted — an encounter whose
+ * cohort the world keeps killing is worth an author's attention on its own — but
+ * it names the confound instead of advising a difficulty change nobody has
+ * measured a case for.
  */
 export function floorFinding(
   enc: Encounter,
   outcome: UnassistedOutcome,
+  attribution: FightAttribution,
 ): string | undefined {
   if (enc.tier === "ordinary") return undefined;
   if (!outcome.attempted || !outcome.won) return undefined;
+  const confound = attributionConfound(attribution);
+  if (confound !== undefined) {
+    return (
+      `${enc.wave} is billed \`${enc.tier}\` and the unassisted attempt cleared it, but ` +
+      `${confound}. This attempt does not measure the fight, so no difficulty advisory ` +
+      `is drawn from it — the volume, drop or hazard standing in the encounter is the ` +
+      `finding.`
+    );
+  }
   return (
     `${enc.wave} is billed \`${enc.tier}\` and the UNASSISTED bot beat it on its first ` +
-    `attempt. The bot is a poor fencer by design — a fight it wins cold is very ` +
+    `attempt. ${attributionClause(attribution)} The bot is a poor fencer by design — a ` +
+    `fight it wins cold is very ` +
     `likely too easy to carry that billing in a souls delve. Advisory: raise the ` +
     `stack, or drop the tier to \`ordinary\`.`
   );
@@ -903,18 +1010,58 @@ export interface ActorTrial {
 }
 
 /**
+ * Why an actor fight cannot be attributed today.
+ *
+ * The census is the general mechanism for "who felled this", and its binding is
+ * too narrow to reach here: the compiler emits `wave_census_<wave>` per WAVE, and
+ * an actor's body carries `dw_actor_<id>` with no census walking it. So the actor
+ * gate reads `won-first-try` off the body vanishing from the client's entity map,
+ * which is the same silhouette guess the wave gate stopped making — and the
+ * gallery's own `actor/hall-moth` suffocated in a wall on the run that measured
+ * this, which is precisely the case it cannot see. Naming the gap is the honest
+ * state; a second, actor-shaped attribution mechanism would be strictly weaker
+ * than widening the census, which is where the repair belongs.
+ */
+export const ACTOR_ATTRIBUTION_GAP =
+  "no census walks an actor's `dw_actor_<id>` tag, so the server was never asked who felled it";
+
+/** An actor fight's attribution: the named gap, until a census reaches actors. */
+export function actorAttribution(): FightAttribution {
+  return { kind: "unattributed", reason: ACTOR_ATTRIBUTION_GAP };
+}
+
+/**
  * The floor finding for an actor fight, or `undefined` when there is nothing to
  * say. Same rule and same tier as the wave gate: WARNING, never a failure.
  *
  * A bot that loses is exactly the design — spec-0023 downgraded bot melee
  * competence from gate-critical to telemetry so a souls delve could be as hard
  * as it likes. What is worth saying out loud is the inverse.
+ *
+ * It takes the same {@link FightAttribution} the wave gate takes, because it is
+ * the same claim about the same kind of object. Today an actor's is always the
+ * named gap; when a census reaches actor tags this reads a measurement with no
+ * further change here.
  */
-export function actorFloorFinding(t: ActorTrial): string | undefined {
+export function actorFloorFinding(
+  t: ActorTrial,
+  attribution: FightAttribution,
+): string | undefined {
   if (t.tier === "ordinary" || t.outcome !== "won-first-try") return undefined;
+  const confound = attributionConfound(attribution);
+  if (confound !== undefined) {
+    return (
+      `${t.actor} is billed \`${t.tier}\` and the unassisted attempt ended with the body ` +
+      `down, but ${confound}. This attempt does not measure the fight, so no difficulty ` +
+      `advisory is drawn from it.`
+    );
+  }
+  const caveat =
+    attribution.kind === "unattributed" ? ` ${attributionClause(attribution)}` : "";
   return (
     `${t.actor} is billed \`${t.tier}\` and the UNASSISTED bot beat it on its first attempt ` +
-    `(${t.swings} swing(s), ${(t.elapsedMs / 1000).toFixed(1)}s after ${t.afterObjective}). The ` +
+    `(${t.swings} swing(s), ${(t.elapsedMs / 1000).toFixed(1)}s after ${t.afterObjective}).` +
+    `${caveat} The ` +
     `bot is a poor fencer by design — a fight it wins cold is very likely too easy to carry ` +
     `that billing in a souls delve. Advisory: raise the stack, or drop the tier to \`ordinary\`.`
   );
@@ -1095,6 +1242,20 @@ export interface ReengageObservation {
    * view, which is never sent an unmodified max health at all. */
   readonly healthReadable: number;
   readonly damaged: number;
+  /**
+   * Deaths of this wave the party was credited with SINCE ITS SEATING — the
+   * census's own last total, zeroed by `spawn_<wave>` and therefore zeroed by
+   * every re-seat.
+   *
+   * It is here because the walk back is not a walk. The return leg is assisted
+   * and the bot DEFENDS itself on it: a re-seated mob that hits the bot twice
+   * within four blocks is put down before the leg resumes
+   * (`[defend] die-retry return …: zombie#63 is down`), and the settle that
+   * follows then counts one body fewer. Without this field the fidelity verdict
+   * cannot tell "the re-seat came back short" from "I killed one of them on my
+   * way to look", and it reported the second as the first.
+   */
+  readonly credited: number;
   /** Distance spread from the encounter anchor, for the wandered-mob case. */
   readonly nearest: number | undefined;
   readonly farthest: number | undefined;
@@ -1127,6 +1288,7 @@ export function observationOf(
     carriedOver: census.summary.branded,
     healthReadable: census.mobs.length,
     damaged: census.summary.damaged,
+    credited: census.summary.credited,
     nearest: distances.length > 0 ? Math.min(...distances) : undefined,
     farthest: distances.length > 0 ? Math.max(...distances) : undefined,
     settleMs,
@@ -1157,19 +1319,59 @@ export function reseatFidelityFinding(
       `grinds it down one swing per death.`
     );
   }
-  if (obs.present < obs.declared) {
+  // The shortfall is measured against what the wave BROUGHT BACK, not against
+  // what is left standing when the probe finally looks: a body the party was
+  // credited with since the seating is a body the re-seat did produce and the
+  // bot then felled on its own assisted way back. The correction can only ever
+  // be supplied by a kill vanilla actually credited, which is exactly what a
+  // genuinely short re-seat cannot produce — a cohort that came back two-strong
+  // has no third death to its name and still reds here.
+  if (obs.present + obs.credited < obs.declared) {
     return (
-      `${where}: the re-seated wave came back SHORT — ${obs.present} mob(s) standing, ` +
+      `${where}: the re-seated wave came back SHORT — ${obs.present} mob(s) standing` +
+      `${obs.credited > 0 ? ` and ${obs.credited} felled by the party since the re-seat` : ""}, ` +
       `${obs.declared} declared. A retry must face the fight the first life faced.`
     );
   }
-  if (obs.damaged > 0) {
+  // The health half takes the same confound and has NO exact correction: the
+  // census counts credited DEATHS, never blows landed, so a mob the bot traded
+  // with on the way back and left standing is indistinguishable from one the
+  // re-seat brought back wounded. Judged only over a cohort the party has not
+  // touched since its seating; otherwise the reading is declared unjudged by
+  // name (see {@link reseatFidelityUnjudged}) rather than passed in silence.
+  if (obs.damaged > 0 && obs.credited === 0) {
     return (
       `${where}: ${obs.damaged} of the ${obs.healthReadable} wave mob(s) whose health could ` +
       `be read came back BELOW full. The player respawns whole; so must the wave.`
     );
   }
   return undefined;
+}
+
+/**
+ * Why this trial's HEALTH half proved nothing, or `undefined` when it proved
+ * something.
+ *
+ * A gap, never a failure: the encounter is not at fault and the bot is not
+ * either — the return leg defends itself, and a cohort the party has traded
+ * blows with since its seating cannot be read for the wounds the RE-SEAT left.
+ * It is stated so that a stage which judged no health reading is never mistaken
+ * for one that judged them all and found them whole.
+ */
+export function reseatFidelityUnjudged(
+  wave: string,
+  attempt: number,
+  phase: DeathPhase,
+  obs: ReengageObservation,
+): string | undefined {
+  if (obs.credited === 0) return undefined;
+  return (
+    `${wave} death ${attempt} (${phase}): re-seat health fidelity UNJUDGED — the party was ` +
+    `credited with ${obs.credited} of this wave since it was re-seated (the return leg ` +
+    `defends itself), so ${obs.damaged} of ${obs.healthReadable} readable mob(s) standing ` +
+    `below full health says nothing about what the re-seat brought back. The count half was ` +
+    `still judged, corrected by those ${obs.credited}.`
+  );
 }
 
 /** One scripted death and everything proved about the loop it opened. */
@@ -1457,6 +1659,17 @@ export function checkpointPrecondition(
 /** Every finding across a stage's trials, in order. */
 export function dieRetryFindings(trials: readonly DeathTrial[]): string[] {
   return trials.map(trialVerdict).filter((v): v is string => v !== undefined);
+}
+
+/**
+ * Every re-seat reading this stage could NOT judge, in order — advisories, never
+ * failures. Empty when every re-seating trial's health half was judged.
+ */
+export function dieRetryFidelityGaps(trials: readonly DeathTrial[]): string[] {
+  return trials
+    .filter((t) => t.reseats && t.outcome === "re-engaged" && t.reengage !== undefined)
+    .map((t) => reseatFidelityUnjudged(t.wave, t.attempt, t.phase, t.reengage!))
+    .filter((v): v is string => v !== undefined);
 }
 
 /**

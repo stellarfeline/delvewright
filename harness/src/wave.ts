@@ -103,17 +103,118 @@ export function creditsWaveKill(
   return Math.hypot(deathPos.x - a.x, deathPos.y - a.y, deathPos.z - a.z) <= near;
 }
 
+// ---------------------------------------------------------------------------
+// The wave's clear, as the SERVER states it
+// ---------------------------------------------------------------------------
+
 /**
- * Whether the fight is over judged by the LIVE mobs, not by the wave's declared count.
+ * How many consecutive census answers must report nothing of the wave standing
+ * before the fight is called over.
  *
- * True when the bot has engaged at least one mob, every mob it engaged is down (gone,
- * or written off as unkillable), and no hostile it could still fight is within
- * {@link WAVE_ENGAGE_NEAR}. That is the honest reading of "the wave is beaten" when
- * some member died in a way the confirmed-kill counter could not attribute — the case
- * `killed >= count` can never see, because `count` is the wave's ORIGINAL size.
+ * Deliberately much smaller than {@link WAVE_CLEAR_STREAK}, and the reason is
+ * that the two guard different things. The client-side streak guards a one-FRAME
+ * gap in entity tracking: the bot is looking at a world it is told about late and
+ * incompletely, so a single empty poll means very little. A census is one atomic
+ * server function walking the wave's own tag, and it counts a body still playing
+ * its death animation as present — it errs toward saying the wave STANDS, which
+ * is the safe direction. Two agreeing answers, each its own round trip, rule out
+ * a torn read without paying eight of them.
+ */
+export const WAVE_CENSUS_CLEAR_STREAK = 2;
+
+/**
+ * What this step's censuses have said so far.
  *
- * Conservative by construction: it cannot fire before the bot has fought something, and
- * it cannot fire while anything hostile is still near enough to be part of the fight.
+ * The kill step's terminal condition is the server's answer, not the bot's tally
+ * of what it watched die. Two failures made that necessary, and the second is the
+ * one no client-side rule can reach:
+ *
+ *   * a body that dies in a way the proximity rule cannot attribute — off the
+ *     anchor, in a lethal volume, down a fall — is never credited, so
+ *     `killed >= count` is unreachable for the whole rest of the step;
+ *   * a scripted die-retry death RE-SEATS a `respawns_on_rest` wave, and a
+ *     re-seat resets what the server says while a private counter carries on
+ *     counting a cohort that no longer exists.
+ *
+ * Measured on the gallery ladder: the bot confirmed one kill of a three-body
+ * wave whose other two had already withered and fallen, and `1/3` was as far as
+ * that counter could ever get.
+ */
+export interface WaveCensusWatch {
+  /** Census answers received this step. */
+  answers: number;
+  /** Consecutive answers reporting zero standing, since the last non-zero one. */
+  clearStreak: number;
+  /** The most mobs any answer reported standing — the step's own binding count. */
+  peakStanding: number;
+  /** The last answer's standing count, or `undefined` before the first answer. */
+  standing: number | undefined;
+  /**
+   * Whether any answer has been positive EVIDENCE THAT THE WAVE EXISTS — bodies
+   * of it standing, or deaths of it credited to the party since its seating.
+   *
+   * This is what stops the terminal condition being vacuous. "Nothing of this
+   * wave stands" is the same sentence whether the wave is beaten or has simply
+   * not been seated yet, and a step that ended on the second reading would report
+   * a fight nobody fought. Both facts here are positive: a body seen, or a body
+   * felled. Neither can be produced by a wave that never spawned.
+   */
+  seen: boolean;
+}
+
+/** One census's answer, as the terminal condition reads it. */
+export interface CensusAnswer {
+  /** Bodies of the wave standing. */
+  readonly present: number;
+  /** Deaths of the wave the party was credited with, since its seating. */
+  readonly credited: number;
+}
+
+/** A fresh watch, before any census has answered. */
+export function beginCensusWatch(): WaveCensusWatch {
+  return { answers: 0, clearStreak: 0, peakStanding: 0, standing: undefined, seen: false };
+}
+
+/**
+ * Record one census answer. A census that did not come back is NOT an answer —
+ * pass `undefined` and nothing moves, because a silent zero would read as "the
+ * wave is gone" and end a fight on a broken probe.
+ */
+export function observeCensus(w: WaveCensusWatch, answer: CensusAnswer | undefined): void {
+  if (answer === undefined) return;
+  w.answers += 1;
+  w.standing = answer.present;
+  w.peakStanding = Math.max(w.peakStanding, answer.present);
+  w.clearStreak = answer.present === 0 ? w.clearStreak + 1 : 0;
+  if (answer.present > 0 || answer.credited > 0) w.seen = true;
+}
+
+/**
+ * Whether the server has said, consistently, that nothing of this wave stands —
+ * having first said the wave was there at all.
+ *
+ * Two conditions and both are load-bearing. {@link WaveCensusWatch.seen} is the
+ * anti-vacuity half: without it, a census asked before a spawn or a re-seat lands
+ * reports zero and would end a fight nobody fought. The streak is the torn-read
+ * half. A watch nobody fed clears nothing, so a probe that never answers can
+ * never end a step; the pre-census exits still cover that, saying so.
+ */
+export function censusCleared(
+  w: WaveCensusWatch,
+  streak: number = WAVE_CENSUS_CLEAR_STREAK,
+): boolean {
+  return w.seen && w.clearStreak >= streak;
+}
+
+/**
+ * Whether the fight LOOKS over from the client — every mob the bot engaged is down
+ * and nothing hostile is near enough to still be part of it.
+ *
+ * A driver, never a terminal condition: what ENDS the step is
+ * {@link censusCleared}, the server's own answer. This is what prompts the step to
+ * ask, and it is deliberately conservative — it cannot fire before the bot has
+ * fought something, and it cannot fire while anything hostile is within
+ * {@link WAVE_ENGAGE_NEAR}.
  */
 export function waveEngagementCleared(opts: {
   readonly engagedIds: readonly number[];
