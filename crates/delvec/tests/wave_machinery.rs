@@ -148,6 +148,22 @@ fn top_level_quests() -> String {
     )
 }
 
+/// The same wave, fired top-level and ALSO adjudicated by a `kill` objective, so
+/// `tick` carries both the countdown's recount and a gate that reads it. Neither
+/// other fixture here does: their wave is a live threat nothing completes on, so
+/// the countdown has no reader at all and an ordering assertion over them would
+/// bind to nothing.
+fn top_level_quests_with_kill_objective() -> String {
+    top_level_quests().replace(
+        r#"{ "type": "reach-anchor", "id": "obj/exit", "anchor": "anchor/exit",
+            "radius": 2, "after": ["obj/talk"] }"#,
+        r#"{ "type": "reach-anchor", "id": "obj/exit", "anchor": "anchor/exit",
+            "radius": 2, "after": ["obj/talk"] },
+          { "type": "kill", "id": "obj/clear", "wave": "wave/ambush",
+            "after": ["obj/talk"] }"#,
+    )
+}
+
 /// Every per-wave support function the emitter owns (`docs/reference/compiler.md`,
 /// the `kill`/`spawn-wave` row + the census probe).
 const MACHINERY: [&str; 6] = [
@@ -281,5 +297,102 @@ fn credited_kills_are_ledgered_per_seating_and_stated_on_the_census() {
     assert!(
         seq < dam && dam < cred,
         "the census line's fields are positional; credited comes last:\n{census}"
+    );
+}
+
+/// **Two writers of one countdown, and nothing static held them together.**
+///
+/// The wave countdown `#<id> dw.wave` has two authors, landed by two different
+/// changes, and they answer the same question at different instants:
+///
+///   * `k_reward_<wave>` decrements it on the tick of a CREDITED kill — the
+///     `minecraft:player_killed_entity` advancement's reward, the only credit
+///     vanilla issues;
+///   * `tick` recomputes it from the bodies that still stand, ahead of every
+///     gate that reads it, so a body that fell, burned, drowned or was cut down
+///     by another mob clears the wave exactly like one the party felled.
+///
+/// Each arrived with live proof only: the decrement with the generated
+/// `verb_kill`, the recount with `verb_kill_uncredited`. Both are PackTests, so
+/// `cargo test` had no opinion about either, and the credited-kill LEDGER
+/// (`#wcred_<wave>`) is written in the same three-line function as the decrement
+/// — a change that took the decrement out "because the recount handles it" would
+/// leave every Rust test in this file green, including the one directly above.
+///
+/// So this asserts the pair rather than either half: both writers present, the
+/// recount ahead of the gate that reads it, and the two holders kept apart —
+/// `tick` recomputes the COUNTDOWN and must never touch the ledger, which counts
+/// deaths since a seating and is the only field of the census about the fallen.
+#[test]
+fn the_countdown_has_both_its_writers_and_the_recount_precedes_the_gate() {
+    let out = build_ok(&parse_hw_with(&[(
+        "quests.json",
+        top_level_quests_with_kill_objective(),
+    )]));
+    let counter = "#ambush dw.wave";
+    let ledger = "#wcred_ambush dw.sys";
+
+    // 1. The credited-kill decrement stays where vanilla's only credit lands,
+    //    beside the ledger increment. Neither displaces the other.
+    let reward = fn_body(&out, "k_reward_ambush");
+    assert!(
+        reward.contains(&format!("scoreboard players remove {counter} 1")),
+        "`k_reward_<wave>` must still decrement the countdown on a credited kill: \
+         the recount corrects it on the NEXT tick, so dropping this makes a fight \
+         the party wins clear a tick later than the kill it won on:\n{reward}"
+    );
+    assert!(
+        reward.contains(&format!("scoreboard players add {ledger} 1")),
+        "…and record the credit in the per-wave ledger:\n{reward}"
+    );
+
+    // 2. The recount is in `tick`, in both its lines, and it writes the COUNTDOWN.
+    let tick = fn_body(&out, "tick");
+    let store = "execute store result score #wlive dw.sys if entity \
+                 @e[tag=dw_wave_ambush,nbt=!{Health:0.0f}]";
+    let copy = format!(
+        "execute if score {counter} matches 1.. run scoreboard players operation \
+         {counter} = #wlive dw.sys"
+    );
+    let store_at = tick
+        .find(store)
+        .unwrap_or_else(|| panic!("no standing-body recount in `tick`:\n{tick}"));
+    let copy_at = tick
+        .find(&copy)
+        .unwrap_or_else(|| panic!("no guarded copy of the recount in `tick`:\n{tick}"));
+    assert!(
+        store_at < copy_at,
+        "the scratch is written before it is read:\n{tick}"
+    );
+
+    // 3. …AHEAD of every gate that reads the countdown. A recount emitted after
+    //    the completion check answers a tick late, which is the whole defect the
+    //    recount exists to remove, wearing a green test.
+    let gates: Vec<usize> = tick
+        .match_indices(&format!("if score {counter} matches ..0"))
+        .map(|(i, _)| i)
+        .collect();
+    assert!(
+        !gates.is_empty(),
+        "the fixture must contain a gate that reads the countdown, or this \
+         assertion binds to nothing:\n{tick}"
+    );
+    for gate in &gates {
+        assert!(
+            copy_at < *gate,
+            "the recount must precede every gate reading the countdown \
+             (recount at {copy_at}, gate at {gate}):\n{tick}"
+        );
+    }
+
+    // 4. The two holders answer different questions and must not converge: the
+    //    countdown is what still STANDS, the ledger is what the party FELLED
+    //    since the seating in force. A `tick` that wrote the ledger would make
+    //    the census's only field about the fallen a second copy of the countdown.
+    assert!(
+        !tick.contains("#wcred_"),
+        "`tick` recomputes the countdown and never the credited-kill ledger — the \
+         ledger counts deaths since a seating, which no per-tick census of the \
+         living can produce:\n{tick}"
     );
 }

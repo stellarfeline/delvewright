@@ -12,6 +12,8 @@ import {
   DeathPlanParseError,
   SUPPORTED_DEATH_PLAN_FORMAT,
   bodyInVolume,
+  PLAYER_HEIGHT,
+  PLAYER_WIDTH,
   boxCells,
   deathLoopBinding,
   deathLoopBindingFailures,
@@ -311,6 +313,74 @@ test("a body at the centre of any cell of the box is one the volume kills", () =
     );
   }
   assert.equal(boxCells(WEST_PIT).length, 45, "45 cells examined, not a subset of them");
+});
+
+/**
+ * **One rule, two languages, and only one of them had a proof.**
+ *
+ * `volumeReachesCell` here and
+ * `delvewright_dsl::metrics::selector_reaches_body_in_cell` in the compiler are
+ * the SAME rule — which cells a lethal volume's selector can kill a standing body
+ * in. They have to be: the compiler uses it to pick the cell it puts a recovery
+ * stake's anchor on, and the harness uses it to decide which cells the bot may
+ * walk through to reach that anchor. If they part company by one cell of shell,
+ * the compiler anchors a stake in a cell the harness routes the bot straight
+ * into, and the delve kills the player at the very place it invited them back to.
+ *
+ * They are also written differently, which is why agreeing by inspection is not
+ * enough. The Rust side sweeps the cell's whole extent — `[cell - half,
+ * cell + 1 + half]` — and asks whether that intersects the region. This side
+ * clamps to the single position inside the cell nearest the volume on each axis
+ * and asks {@link bodyInVolume} once, which is sound only because the volume is
+ * an interval per axis and `bodyInVolume` is monotone in the position. Two
+ * arguments, one answer, and each side's doc comment asserted the other's
+ * agreement with nothing checking it.
+ *
+ * `crates/dsl/tests/metrics.rs::the_cell_rule_agrees_with_a_swept_body_box`
+ * sweeps this exact box over this exact grid and states 441 examined / 175
+ * reached. This is the mirror of it, over the same box and the same grid, with
+ * the same two numbers — so the two implementations are pinned to one measurement
+ * rather than to one another's prose, and either drifting reds on its own side.
+ */
+test("volumeReachesCell agrees with a swept body box, and with the compiler's count", () => {
+  // Every body position the cell can hold, at 1/20 of a block — the thing the
+  // clamp is a shortcut FOR, written out rather than reused.
+  const swept = (c: readonly [number, number, number]): boolean => {
+    const half = PLAYER_WIDTH / 2;
+    for (let i = 0; i <= 20; i++) {
+      for (let k = 0; k <= 20; k++) {
+        const px = c[0] + i / 20;
+        const pz = c[2] + k / 20;
+        const lo = [px - half, c[1], pz - half];
+        const hi = [px + half, c[1] + PLAYER_HEIGHT, pz + half];
+        if ([0, 1, 2].every((a) => lo[a]! <= WEST_PIT.hi[a]! + 1 && hi[a]! >= WEST_PIT.lo[a]!)) {
+          return true;
+        }
+      }
+    }
+    return false;
+  };
+  let examined = 0;
+  let reached = 0;
+  for (let x = -1; x <= 5; x++) {
+    for (let y = 61; y <= 69; y++) {
+      for (let z = 0; z <= 6; z++) {
+        const c = [x, y, z] as const;
+        assert.equal(volumeReachesCell(c, WEST_PIT), swept(c), `cell [${c.join(", ")}]`);
+        examined += 1;
+        if (swept(c)) reached += 1;
+      }
+    }
+  }
+  assert.equal(examined, 7 * 9 * 7, "441 cells examined, not a subset of them");
+  // The box is 3x5x3 and the reach is one cell of shell on every axis: 5x7x5.
+  // The compiler's own test states this same 175 over this same box; a rule that
+  // widened or narrowed on either side parts from the other here.
+  assert.equal(reached, 5 * 7 * 5);
+  // …and the reading this replaces — cell containment, which is what
+  // `applyLethalExclusion` and `choose_anchor` both used — covers 3x5x3, so a
+  // collapse back to it loses 130 of the 175.
+  assert.equal(boxCells(WEST_PIT).length, 3 * 5 * 3);
 });
 
 /**
