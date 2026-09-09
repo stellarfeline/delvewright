@@ -1,5 +1,14 @@
 .DS_Store
+# An unanchored `references/`, so it matches that directory name at ANY depth.
+# It swallowed the plugin's own `references/` the first time one existed — the
+# skill format's standard home for level-3 content (spec-0063 §5) — and a
+# gitignored file is invisible to every worktree, so the split committed a page
+# whose every pointer resolved to nothing. Nothing tracked has ever lived under
+# a `references/` other than the plugin's, so the exception is named here rather
+# than the rule narrowed to a directory nobody can now identify.
 references/
+!.claude/skills/**/references/
+!.claude/skills/**/references/**
 target/
 node_modules/
 *.log
