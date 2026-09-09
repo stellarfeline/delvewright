@@ -5089,6 +5089,23 @@ pub struct LethalVolume {
     /// than a scripted hit can.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub damage_type: Option<DamageKind>,
+    /// **The blocks that show a player this floor kills** (spec-0062 §3).
+    ///
+    /// A lava surface, a magma floor, a bed of spikes, a burning strip: the
+    /// danger is level with the footing because the block *is* the signal. This
+    /// is where a volume says so, and it is a claim about the assembled bytes
+    /// rather than a word that switches a rule off — `DW0891` checks it per
+    /// caught cell against the block under or in that cell, refuses a listed
+    /// block no caught cell bears out, and refuses at validation any id vanilla
+    /// does not hurt a body with.
+    ///
+    /// Empty is the ordinary case and means the ordinary thing: this volume
+    /// catches no floor the party walks, because it sits at the bottom of a pit
+    /// or a course under a lake's surface. It does **not** exempt a cell from
+    /// the walk graph — a visible hazard is still a hazard, and the router
+    /// refuses every cell of the keep-out either way.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub shown_by: Vec<String>,
 }
 
 // ---------------------------------------------------------------------------

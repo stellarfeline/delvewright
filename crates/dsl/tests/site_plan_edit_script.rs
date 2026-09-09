@@ -67,7 +67,7 @@ fn site_plan_campaign(world_edits: &str) -> RawCampaign {
 fn script(area: &str, edits: &str) -> String {
     format!(
         r#"{{
-  "dsl_version": "0.22.1",
+  "dsl_version": "0.23.0",
   "campaign_id": "gallery",
   "stage": "world-edits",
   "content": {{

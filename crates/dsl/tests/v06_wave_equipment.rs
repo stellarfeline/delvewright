@@ -12,7 +12,7 @@ use delvewright_dsl::{RawCampaign, check_campaign};
 /// A v0.6 quests document with a wave whose zombie wears boots and carries a
 /// sword (both in the vendored v0 item-registry subset the DSL tests use).
 const QUESTS_V06: &str = r#"{
-  "dsl_version": "0.22.1",
+  "dsl_version": "0.23.0",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {

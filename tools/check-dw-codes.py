@@ -665,6 +665,14 @@ REMEDY_TEST = REPO_ROOT / "crates" / "delvec" / "tests" / "remedy_reachability.r
 # A message that merely mentions `void` while describing what a horizon is does
 # not match, and a move that names neither is not the kind of remedy this gate is
 # about (it prescribes nothing an author has to go and find).
+# **What bounds the set is this list, and that is a recorded gap.** The verbs are
+# enumerated one at a time, so a rule whose imperative is not among them prescribes
+# a move this cross-check cannot see. Measured on this tree: adding the four
+# imperatives spec-0062's own diagnostics use (`set <field>:`, `lower the volume`,
+# `delete the declaration`, `move the anchor`) newly binds **7** codes — DW0317,
+# DW0342, DW0450, DW0502, DW0522, DW0850, DW0866 — each of which would then owe a
+# row in `remedy_reachability.rs`. That widening is a ledger row, not an
+# allowlist entry, and it is not taken here.
 MOVE_VERB_RE = re.compile(
     # The numbered form every multi-move message uses...
     r"\((?:1|2|3)\)\s+(?:BURY|PLACE|DECLARE|CHOOSE|RAISE|CORRECT|DELETE|AUTHOR|SEAL)\b"
@@ -675,8 +683,20 @@ MOVE_VERB_RE = re.compile(
     # it.
     r"|(?:Give the campaign|[Ss]et `horizon` to|[Rr]e-?author|[Ss]plit the pool)"
 )
+# **The subject of a move: a backticked field, or a named object** (spec-0062
+# §10.8). It began as bases and documents, which is the quantifier spec-0060 §10.3
+# wrote — and a quantifier is part of what a check says, so it was worth widening
+# once a rule started prescribing a FIELD (`set radius: 3`) rather than a base.
+#
+# The number this widening newly binds is **0**, measured rather than assumed, and
+# the measurement is the finding: the subject was never the limiting term. Every
+# message in this repository that names a base or a document also names it in a
+# backtick, so widening the subject binds the same 7 codes. What bounds the set is
+# `MOVE_VERB_RE`, whose imperatives are enumerated one at a time — see the note on
+# it. `codes_that_prescribe_a_move` prints its count so that a later widening on
+# either side is a number a reader can compare against this one.
 MOVE_SUBJECT_RE = re.compile(
-    r"`(?:void|ocean|valley)`|`horizon`|site plan|`[a-z0-9-]+\.json`|\{base\}\.json|"
+    r"`[A-Za-z_][A-Za-z0-9_.:\- ]*`|site plan|\{base\}\.json|"
     r"`\{base_file\}\.json`|`\{file\}\.json`"
 )
 
@@ -872,6 +892,11 @@ def main() -> int:
     # `remedy_reachability.rs`, which builds the campaign that takes the move and
     # asserts it reaches a different verdict.
     prescribing = codes_that_prescribe_a_move()
+    print(
+        f"remedy cross-check binding: {len(prescribing)} code(s) whose message names a "
+        f"backticked field or a named object as a MOVE, out of {len(src)} in source "
+        f"({', '.join(sorted(prescribing)) or 'none'})"
+    )
     if not prescribing:
         errors.append(
             "the remedy cross-check matched ZERO diagnostics that name a base or a document "

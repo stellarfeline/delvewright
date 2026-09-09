@@ -31,7 +31,7 @@ fn hw(name: &str) -> String {
 fn quests_doc(extra: &str, talk_effects: &str) -> String {
     format!(
         r#"{{
-  "dsl_version": "0.22.1",
+  "dsl_version": "0.23.0",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {{
@@ -55,7 +55,110 @@ fn quests_doc(extra: &str, talk_effects: &str) -> String {
     )
 }
 
+/// A second way through the keep's dividing wall, at its west end.
+///
+/// `hello-room` has one 2-wide doorway in the middle of that wall, and
+/// `anchor/exit` — where this file's lethal volume goes — is three cells beyond
+/// it. A volume kills on hitbox intersection, so the cells that share a face with
+/// one are not footing for any body, and a one-cell drop at the exit anchor
+/// therefore seals the only door. The fixture gains the geometry rather than the
+/// rule being narrowed to fit it. West rather than east because an endpoint snap
+/// breaks ties lexicographically and picks `[3, 65, 8]` over `[7, 65, 8]`.
+const SIDE_DOOR: &str = r#"{
+  "dsl_version": "0.23.0",
+  "campaign_id": "hello-world",
+  "stage": "world-edits",
+  "content": {
+    "batches": [
+      {
+        "id": "batch/the-burn-and-the-side-door",
+        "area": "area/keep",
+        "note": "the floor of molten stone at the road's end, and the second way through the dividing wall, in ONE batch: every proof re-runs after every batch, so the signal and the way past it have to arrive together",
+        "edits": [
+          {
+            "verb": "select",
+            "name": "region/the-burn",
+            "shape": {
+              "kind": "box",
+              "frame": { "kind": "piece-local", "piece": 0, "prefab": "prefab/hello-room" },
+              "min": [4, 0, 7],
+              "max": [6, 0, 9]
+            }
+          },
+          {
+            "verb": "replace",
+            "region": "region/the-burn",
+            "matching": ["minecraft:stone"],
+            "recipe": { "blocks": [{ "block": "minecraft:magma_block", "weight": 1.0 }] }
+          },
+          {
+            "verb": "select",
+            "name": "region/side-door",
+            "shape": {
+              "kind": "box",
+              "frame": { "kind": "piece-local", "piece": 0, "prefab": "prefab/hello-room" },
+              "min": [2, 1, 6],
+              "max": [2, 2, 6]
+            }
+          },
+          {
+            "verb": "replace",
+            "region": "region/side-door",
+            "matching": ["minecraft:stone"],
+            "recipe": { "blocks": [{ "block": "minecraft:air", "weight": 1.0 }] }
+          }
+        ]
+      }
+    ]
+  }
+}"#;
+
+/// The floor course under a threshold volume's keep-out, in molten stone.
+///
+/// A volume laid across the keep's one doorway catches the floor on both sides of
+/// the wall, and floor a killing volume catches may not read as ordinary stone
+/// (`DW0891`, spec-0062). So the band `z = 5..7` of the keep's floor is magma,
+/// and the volume that catches it declares so.
+const BURNING_THRESHOLD: &str = r#"{
+  "dsl_version": "0.23.0",
+  "campaign_id": "hello-world",
+  "stage": "world-edits",
+  "content": {
+    "batches": [
+      {
+        "id": "batch/burning-threshold",
+        "area": "area/keep",
+        "note": "the floor the threshold volume catches, in the block that shows it",
+        "edits": [
+          {
+            "verb": "select",
+            "name": "region/threshold-floor",
+            "shape": {
+              "kind": "box",
+              "frame": { "kind": "piece-local", "piece": 0, "prefab": "prefab/hello-room" },
+              "min": [0, 0, 5],
+              "max": [8, 0, 7]
+            }
+          },
+          {
+            "verb": "replace",
+            "region": "region/threshold-floor",
+            "matching": ["minecraft:stone"],
+            "recipe": { "blocks": [{ "block": "minecraft:magma_block", "weight": 1.0 }] }
+          }
+        ]
+      }
+    ]
+  }
+}"#;
+
 fn parse_hw(quests: &str) -> Campaign {
+    parse_hw_with_edits(quests, None)
+}
+
+/// [`parse_hw`], with an optional stage-7 `world-edits` document — the door a
+/// campaign that declares a lethal volume at the exit needs.
+fn parse_hw_with_edits(quests: &str, world_edits: Option<&str>) -> Campaign {
     let raw = RawCampaign {
         world: hw("world.json"),
         npcs: hw("npcs.json"),
@@ -63,7 +166,7 @@ fn parse_hw(quests: &str) -> Campaign {
         quest_plan: hw("quest-plan.json"),
         quests: quests.to_string(),
         dialogue: hw("dialogue.json"),
-        world_edits: None,
+        world_edits: world_edits.map(str::to_string),
         geometry_brief: None,
         layout_graph: None,
         site_plan: None,
@@ -482,11 +585,16 @@ fn a_stake_has_no_compile_time_cell_to_eclipse() {
 #[test]
 fn the_placement_table_is_a_compile_time_chain_with_no_search() {
     let with_volume = format!(
-        "{PURSE_AND_STAKE},\n    \"lethal_volumes\": [ {{ \"id\": \"lethal/the-drop\", \
+        "{PURSE_AND_STAKE},\n    \"lethal_volumes\": [ {{ \"id\": \"lethal/the-burn\", \
          \"region\": {{ \"anchor\": \"anchor/exit\", \"extent\": [0, 0, 0] }}, \
-         \"message\": \"The floor gives way.\" }} ]"
+         \"message\": \"The road ends at a floor of molten stone.\", \
+         \"damage_type\": \"fire\", \
+         \"shown_by\": [\"minecraft:magma_block\"] }} ]"
     );
-    let out = build(&parse_hw(&quests_doc(&with_volume, "")));
+    let out = build(&parse_hw_with_edits(
+        &quests_doc(&with_volume, ""),
+        Some(SIDE_DOOR),
+    ));
     let route = fnc(&out, "stk_route_embers");
 
     let rows: Vec<&str> = route
@@ -685,8 +793,9 @@ fn no_anchor_stands_on_ground_the_runtime_rewrites() {
 fn a_stake_with_no_route_back_fails_to_compile() {
     let cut = format!(
         "{PURSE_AND_STAKE},\n    \"lethal_volumes\": [ {{ \"id\": \"lethal/the-threshold\", \
-         \"region\": {{ \"anchor\": \"anchor/door\", \"extent\": [3, 3, 1] }}, \
-         \"message\": \"The threshold has gone.\" }} ]"
+         \"region\": {{ \"anchor\": \"anchor/door\", \"extent\": [3, 3, 0] }}, \
+         \"message\": \"The threshold burns.\", \"damage_type\": \"fire\", \
+         \"shown_by\": [\"minecraft:magma_block\"] }} ]"
     );
     // One objective only, so no leg of the critical path crosses the volume.
     let one_beat = quests_doc(&cut, "").replace(
@@ -708,7 +817,7 @@ fn a_stake_with_no_route_back_fails_to_compile() {
             r#"[ { "type": "open-gate", "anchor": "anchor/door" } ]"#,
             r#"[ { "type": "set-checkpoint", "anchor": "anchor/exit" } ]"#,
         );
-    let code = failure_code(&parse_hw(&one_beat));
+    let code = failure_code(&parse_hw_with_edits(&one_beat, Some(BURNING_THRESHOLD)));
     assert_eq!(
         code,
         delvec::compiler::stake::DW_STAKE_NO_ROUTE_BACK,

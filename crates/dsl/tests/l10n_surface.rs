@@ -97,6 +97,7 @@ const SURFACE: &[(&str, &str, Kind)] = &[
     ("KitItem", "item", Reference),
     ("KitItem", "name", Inventoried),
     ("LethalVolume", "message", Inventoried),
+    ("LethalVolume", "shown_by", Reference),
     ("Forfeit", "kind", Machine),
     ("Shop", "title", Inventoried),
     ("Shop", "marker_item", Reference),
@@ -473,7 +474,7 @@ fn fixture_with_actors() -> delvewright_dsl::Campaign {
     let read =
         |f: &str| std::fs::read_to_string(dir.join(f)).unwrap_or_else(|e| panic!("read {f}: {e}"));
     let mut quests: Value = serde_json::from_str(&read("quests.json")).expect("quests parse");
-    quests["dsl_version"] = Value::String("0.22.1".to_string());
+    quests["dsl_version"] = Value::String("0.23.0".to_string());
     // A narrate, so the `fx.…` key kind binds too.
     quests["content"]["quests"][0]["on_complete"] = serde_json::json!([
         { "type": "narrate", "text": "The hall falls quiet." }

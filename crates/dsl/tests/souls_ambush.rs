@@ -16,7 +16,7 @@ mod common;
 use delvewright_dsl::{RawCampaign, TriggerOn, check_campaign, l10n_inventory, parse_campaign};
 
 const QUESTS_V06: &str = r#"{
-  "dsl_version": "0.22.1",
+  "dsl_version": "0.23.0",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {

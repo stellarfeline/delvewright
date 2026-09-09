@@ -92,6 +92,7 @@
     "obj.near-hall.take-the-emeralds.title": "取走绿宝石",
     "obj.the-reliquary.look-in-the-east-bay.title": "查看东侧龛",
     "obj.the-reliquary.look-in-the-west-bay.title": "查看西侧龛",
+    "obj.the-reliquary.look-into-the-well.title": "俯瞰井口",
     "quest.far-hall.goal": "越过铁栅之墙，清空墙后点起的兵。",
     "quest.near-hall.goal": "读完近厅：说话的角色、可按下的东西、柜台。",
     "quest.the-reliquary.goal": "看一眼厅中两侧的旧物龛。",
@@ -116,7 +117,7 @@
     "world.outro": "厅中每一只展柜都已读过。",
     "world.title": "陈列厅"
   },
-  "dsl_version": "0.22.1",
+  "dsl_version": "0.23.0",
   "kind": "l10n",
   "lang": "zh-cn"
 }

@@ -35,7 +35,7 @@ const DEATH_PLAN_SUBPATH = ["validation", "death-plan.json"] as const;
  * one is REFUSED rather than half-read: a bot that silently ignores a field it
  * does not know reports a green over assertions it never made.
  */
-export const SUPPORTED_DEATH_PLAN_FORMAT = 1;
+export const SUPPORTED_DEATH_PLAN_FORMAT = 2;
 
 /** An inclusive world-space box. */
 export interface Box {
@@ -47,6 +47,21 @@ export interface Box {
 export interface LethalVolume {
   readonly id: string;
   readonly region: Box;
+  /**
+   * **The cells a player’s own body may not stand in.** The volume widened by
+   * the player’s half-width, computed by the compiler and carried here.
+   *
+   * It is not `region`, and the difference is the whole reason this field
+   * exists: a volume kills with a box selector, the server adjudicates a box
+   * selector on hitbox INTERSECTION, and a player standing in the cell beside a
+   * volume’s face reaches into it. So `region` is where the bot must WALK to
+   * die on purpose, and this is where it must not walk by accident — and a
+   * death anywhere in here is this volume’s kill, not a run fault.
+   *
+   * Read, never derived. Re-deriving it would put the engine’s
+   * cell-versus-hitbox rule in a second language where no Rust test reaches it.
+   */
+  readonly keepOut: Box;
   /** The canonical English the volume promises the player who dies in it. */
   readonly message: string;
   readonly messageKey: string | undefined;
@@ -294,6 +309,7 @@ export function parseDeathPlan(raw: unknown): DeathPlan {
     return {
       id: requireString(v["id"], `${p}/id`),
       region: requireBox(v["region"], `${p}/region`),
+      keepOut: requireBox(v["keep_out"], `${p}/keep_out`),
       message: requireString(v["message"], `${p}/message`),
       messageKey: optionalString(v["message_key"], `${p}/message_key`),
       damageType: requireString(v["damage_type"], `${p}/damage_type`),

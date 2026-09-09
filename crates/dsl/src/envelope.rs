@@ -23,7 +23,7 @@ use crate::stages::{
 /// why, and it promises nothing about any other engine: a released campaign is
 /// built by the engine it pins (`versions.toml`), and a surface change bumps
 /// this number and moves every document in this repository with it.
-pub const DSL_VERSION: &str = "0.22.1";
+pub const DSL_VERSION: &str = "0.23.0";
 
 /// Which stage a document belongs to.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]

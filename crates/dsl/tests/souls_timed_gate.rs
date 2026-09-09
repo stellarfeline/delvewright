@@ -10,7 +10,7 @@ mod common;
 use delvewright_dsl::{RawCampaign, check_campaign};
 
 const QUESTS_V06: &str = r#"{
-  "dsl_version": "0.22.1",
+  "dsl_version": "0.23.0",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {
@@ -141,7 +141,7 @@ fn malformed_timed_gate_id_is_dw0377() {
 /// The v0.6 gate with a jam lever on a real anchor. `anchor/keeper-stand` is a
 /// second anchor `prefab/hello-room` exposes, so it resolves.
 const QUESTS_DISARM: &str = r#"{
-  "dsl_version": "0.22.1",
+  "dsl_version": "0.23.0",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {

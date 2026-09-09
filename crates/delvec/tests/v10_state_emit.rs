@@ -78,7 +78,7 @@ fn patched_prefabs() -> PathBuf {
 }
 
 const WORLD: &str = r#"{
-  "dsl_version": "0.22.1",
+  "dsl_version": "0.23.0",
   "campaign_id": "cast-ledger",
   "stage": "world",
   "content": {
@@ -97,7 +97,7 @@ const WORLD: &str = r#"{
 /// Two data — one shared by the party, one held per player — read by a gate at
 /// every consumer class the engine has, and written by all three verbs.
 const QUESTS: &str = r#"{
-  "dsl_version": "0.22.1",
+  "dsl_version": "0.23.0",
   "campaign_id": "cast-ledger",
   "stage": "quests",
   "content": {
@@ -193,7 +193,7 @@ const QUESTS: &str = r#"{
 }"#;
 
 const DIALOGUE: &str = r#"{
-  "dsl_version": "0.22.1",
+  "dsl_version": "0.23.0",
   "campaign_id": "cast-ledger",
   "stage": "dialogue",
   "content": {

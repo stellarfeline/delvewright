@@ -3,9 +3,9 @@
   "content": {
     "lethal_volumes": [
       {
-        "damage_type": "fall",
-        "id": "lethal/the-drop",
-        "message": "The stone floor gives way beneath you.",
+        "damage_type": "fire",
+        "id": "lethal/the-burn",
+        "message": "The road ends at a floor of molten stone.",
         "region": {
           "anchor": "anchor/exit",
           "extent": [
@@ -13,7 +13,10 @@
             0,
             0
           ]
-        }
+        },
+        "shown_by": [
+          "minecraft:magma_block"
+        ]
       }
     ],
     "on_death": [
@@ -192,6 +195,6 @@
       }
     ]
   },
-  "dsl_version": "0.22.1",
+  "dsl_version": "0.23.0",
   "stage": "quests"
 }

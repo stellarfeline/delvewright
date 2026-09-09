@@ -56,6 +56,11 @@
         "node": "node/near-hall",
         "objective": "obj/look-in-the-west-bay",
         "quest": "quest/the-reliquary"
+      },
+      {
+        "node": "node/near-hall",
+        "objective": "obj/look-into-the-well",
+        "quest": "quest/the-reliquary"
       }
     ],
     "critical_path": [
@@ -215,6 +220,6 @@
       }
     ]
   },
-  "dsl_version": "0.22.1",
+  "dsl_version": "0.23.0",
   "stage": "layout-graph"
 }
