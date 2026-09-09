@@ -28,13 +28,20 @@ of where this page was loaded from, not of an environment variable, not of what
 happens to be on `PATH`.
 
 ```sh
-if [ -f crates/delvec/Cargo.toml ] \
-   && [ -f .claude/skills/delvewright/skills/new-delve/SKILL.md ]; then
-  DELVEWRIGHT_MODE=dev;    DELVEWRIGHT_ENGINE="$PWD"
-else
-  DELVEWRIGHT_MODE=creator; DELVEWRIGHT_ENGINE="$HOME/.delvewright/engine"
-fi
+DELVEWRIGHT_MODE="$(
+  if [ -f crates/delvec/Cargo.toml ] \
+     && [ -f .claude/skills/delvewright/skills/new-delve/SKILL.md ]
+  then echo dev; else echo creator; fi
+)"
+[ "$DELVEWRIGHT_MODE" = dev ] \
+  && DELVEWRIGHT_ENGINE="$PWD" \
+  || DELVEWRIGHT_ENGINE="$HOME/.delvewright/engine"
 ```
+
+**One assignment, on purpose.** The mode is written here and read everywhere
+else; a form with a branch per assignment is a form somebody adds a third branch
+to, and a third mode is a page that behaves two ways nobody wrote down.
+
 
 Both conditions, never one: a directory carrying only the first is a checkout of
 the engine that does not carry this page, and a directory carrying only the
@@ -55,9 +62,9 @@ without it.
 | **Java 21+** | **the pinned game's own requirement** — 1.21.11 declares `javaVersion.majorVersion: 21` in Mojang's version manifest, and every jar-reading checker runs under it. Chunky is not where this number comes from: its launcher and `--update snapshot` both run under 17 | `java -version` |
 | Docker | the machine ladder and the play server | `docker info` |
 
-**Not here, deliberately.** Rust belongs to I3b and to dev mode: on the default
-path the archive arrives built, and demanding a compiler for a download is the
-front-loading this Init exists to remove. `git-lfs` belongs to the library,
+**Not here, deliberately.** Rust belongs to I3b: on the default path the archive
+arrives built, and demanding a compiler for a download is the front-loading this
+Init exists to remove. `git-lfs` belongs to the library,
 which is optional and is taken at the step that needs it.
 
 **Python is found by asking, and the answer is recorded once.** Three names may

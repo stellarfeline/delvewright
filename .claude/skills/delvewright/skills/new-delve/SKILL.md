@@ -63,7 +63,7 @@ the documents you wrote.
 
 **A campaign lives under the working directory**, at `campaigns/<campaign-id>/`,
 whatever that directory is: an empty one the user started Claude Code in, a
-clone of the content repository, or the engine checkout in dev mode. Read the
+clone of the content repository, or a checkout of the engine itself. Read the
 engine constitution at `"$DELVEWRIGHT_ENGINE/CLAUDE.md"` once Init has cloned
 it; the forbidden zones apply in full. That file names its own other half,
 `CLAUDE.local.md`, and tells whoever lacks it to say so and ask "before
