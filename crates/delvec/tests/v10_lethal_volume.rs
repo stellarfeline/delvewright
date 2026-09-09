@@ -180,15 +180,23 @@ fn text(out: &BuildOutput, path: &str) -> String {
     .unwrap()
 }
 
-/// The drop at the road's edge — the one cell of `anchor/exit`. It is only
-/// harmless with [`SIDE_DOOR`] carved: **a body is as wide as its hitbox**, so
-/// the cells around a killing volume are cells no route may use, and this room
-/// was built with one 2-wide doorway that opens straight onto the drop's edge.
+/// **The burning floor at the road's edge** — the one cell of `anchor/exit`, over
+/// a floor of molten stone (spec-0062 §8).
+///
+/// It is only legal with [`SIDE_DOOR`] carved AND its floor laid in magma, and
+/// the two are one fixture for one reason. **A body is as wide as its hitbox**,
+/// so the nine cells around this volume are cells no route may use; this room was
+/// built with one 2-wide doorway that opens straight onto the drop's edge, so the
+/// side door is what leaves the party a way through. And those nine cells are
+/// floor the party can walk to, so under `DW0891` they may not read as ordinary
+/// stone: the fixture lays magma under exactly them and declares it. Danger is
+/// visible, or the engine refuses it.
 const HARMLESS: &str = r#"{
-  "id": "lethal/the-drop",
+  "id": "lethal/the-burn",
   "region": { "anchor": "anchor/exit", "extent": [0, 0, 0] },
-  "message": "The undertow takes you.",
-  "damage_type": "fall"
+  "message": "The road ends at a floor of molten stone.",
+  "damage_type": "fire",
+  "shown_by": ["minecraft:magma_block"]
 }"#;
 
 /// A second way through the keep's dividing wall, at its west end.
@@ -212,10 +220,26 @@ const SIDE_DOOR: &str = r#"{
   "content": {
     "batches": [
       {
-        "id": "batch/side-door",
+        "id": "batch/the-burn-and-the-side-door",
         "area": "area/keep",
-        "note": "a second way through the dividing wall, clear of the drop",
+        "note": "ONE batch, and that is the fixture: every proof re-runs after every batch, so the floor of molten stone and the way past it have to arrive together — signalled last, the floor read as stone while the earlier batch was judged (DW0891); carved last, the route was shut while the burn was judged (DW0510)",
         "edits": [
+          {
+            "verb": "select",
+            "name": "region/the-burn",
+            "shape": {
+              "kind": "box",
+              "frame": { "kind": "piece-local", "piece": 0, "prefab": "prefab/hello-room" },
+              "min": [4, 0, 7],
+              "max": [6, 0, 9]
+            }
+          },
+          {
+            "verb": "replace",
+            "region": "region/the-burn",
+            "matching": ["minecraft:stone"],
+            "recipe": { "blocks": [{ "block": "minecraft:magma_block", "weight": 1.0 }] }
+          },
           {
             "verb": "select",
             "name": "region/side-door",
@@ -251,7 +275,8 @@ fn a_volume_emits_a_tick_driver_and_a_killing_body() {
         &quests_doc(
             r#"{ "id": "lethal/pit",
              "region": { "anchor": "anchor/exit", "extent": [0, 0, 0] },
-             "message": "The pit takes you.", "damage_type": "fire" }"#,
+             "message": "The pit takes you.", "damage_type": "fire",
+             "shown_by": ["minecraft:magma_block"] }"#,
             "",
         ),
         Some(SIDE_DOOR),
@@ -354,17 +379,82 @@ fn no_volume_emits_nothing() {
 
 // --- DW0510: the completability proof knows about it -----------------------
 
-/// The keep has exactly one doorway. A volume across it leaves the party no route
-/// to the exit objective, and the build fails naming the volume — not with a
-/// reachability complaint about geometry that is perfectly walkable.
+/// The volume across the doorway, and the ORDER two rules answer it in
+/// (spec-0062 §4 and criterion 6).
+const THRESHOLD: &str = r#"{
+  "id": "lethal/the-threshold",
+  "region": { "anchor": "anchor/door", "extent": [3, 3, 0] },
+  "message": "The threshold burns."
+}"#;
+
+/// The same volume with the floor it catches laid in magma and declared.
+const THRESHOLD_SIGNALLED: &str = r#"{
+  "id": "lethal/the-threshold",
+  "region": { "anchor": "anchor/door", "extent": [3, 3, 0] },
+  "message": "The threshold burns.",
+  "damage_type": "fire",
+  "shown_by": ["minecraft:magma_block"]
+}"#;
+
+/// The floor course under [`THRESHOLD`]'s keep-out, in molten stone: the band
+/// `z = 5..7` of the keep's floor, which covers every walked cell the volume
+/// catches. Nothing else in the piece moves.
+const BURNING_THRESHOLD: &str = r#"{
+  "dsl_version": "0.23.0",
+  "campaign_id": "hello-world",
+  "stage": "world-edits",
+  "content": {
+    "batches": [
+      {
+        "id": "batch/burning-threshold",
+        "area": "area/keep",
+        "note": "the floor the threshold volume catches, in the block that shows it",
+        "edits": [
+          {
+            "verb": "select",
+            "name": "region/threshold-floor",
+            "shape": {
+              "kind": "box",
+              "frame": { "kind": "piece-local", "piece": 0, "prefab": "prefab/hello-room" },
+              "min": [0, 0, 5],
+              "max": [8, 0, 7]
+            }
+          },
+          {
+            "verb": "replace",
+            "region": "region/threshold-floor",
+            "matching": ["minecraft:stone"],
+            "recipe": { "blocks": [{ "block": "minecraft:magma_block", "weight": 1.0 }] }
+          }
+        ]
+      }
+    ]
+  }
+}"#;
+
+/// **The order, as a property** (spec-0062 §4, criterion 6). The keep has exactly
+/// one doorway; a volume across it both catches the floor the party walks and
+/// closes the only route to the exit objective. Two rules are true about it, and
+/// the one the build reports is the CAUSE: nothing in that room says it kills.
+/// `DW0510` — the route closure — is its symptom, and an author sent to "give the
+/// party a route around it" would be repairing the wrong thing.
 #[test]
-fn a_volume_across_the_only_route_is_dw0510() {
-    let c = parse_hw(&quests_doc(
-        r#"{ "id": "lethal/the-threshold",
-             "region": { "anchor": "anchor/door", "extent": [3, 3, 0] },
-             "message": "The threshold burns." }"#,
-        "",
-    ));
+fn a_volume_that_catches_floor_and_closes_the_route_is_dw0891_not_dw0510() {
+    let c = parse_hw(&quests_doc(THRESHOLD, ""));
+    assert_eq!(failure_code(&c), "DW0891");
+}
+
+/// **The same volume with its floor signalled: now `DW0510`.** One thing moved —
+/// the floor under the keep-out is molten stone and the volume declares it — and
+/// the verdict moves with it. This is what makes the pair a statement about the
+/// order rather than about which check happens to run first: a volume the player
+/// can see is judged by the route proofs exactly as before.
+#[test]
+fn a_signalled_volume_across_the_only_route_is_dw0510() {
+    let c = parse_hw_with_edits(
+        &quests_doc(THRESHOLD_SIGNALLED, ""),
+        Some(BURNING_THRESHOLD),
+    );
     assert_eq!(failure_code(&c), "DW0510");
 }
 
@@ -380,18 +470,16 @@ fn a_volume_across_the_only_route_is_dw0510() {
 /// The edit is two-by-two of floor re-dressed in cobblestone: it changes nothing
 /// a route can feel, so a difference in verdict between this test and its
 /// no-edits twin above can only be the arm.
+///
+/// The code it now meets is `DW0891` rather than `DW0510`, and that is a
+/// STRONGER statement of the same claim: the batch replay is a second entry point
+/// for these proofs, and `DW0891` is asked there — before the route proof, as
+/// spec-0062 §4 orders it — over the volumes this arm carries. A gate bound at
+/// one of two doors is bound at neither.
 #[test]
-fn a_volume_across_the_only_route_is_dw0510_under_edits() {
-    let c = parse_hw_with_edits(
-        &quests_doc(
-            r#"{ "id": "lethal/the-threshold",
-             "region": { "anchor": "anchor/door", "extent": [3, 3, 0] },
-             "message": "The threshold burns." }"#,
-            "",
-        ),
-        Some(ONE_BATCH),
-    );
-    assert_eq!(failure_code(&c), "DW0510");
+fn a_volume_across_the_only_route_is_refused_under_edits_too() {
+    let c = parse_hw_with_edits(&quests_doc(THRESHOLD, ""), Some(ONE_BATCH));
+    assert_eq!(failure_code(&c), "DW0891");
 }
 
 /// The **binding count** the same defect showed from the other side, and the
@@ -414,23 +502,24 @@ fn the_lethal_ledger_binds_on_the_edit_replay_arm() {
     );
 }
 
-/// The same proof, one step earlier: an objective whose only footing lies inside a
-/// volume is a player killed by standing where the objective is.
+/// An objective buried in a volume: thirty cells of the room the party walks are
+/// inside the killing box's reach, and the room says nothing about any of them.
 ///
 /// The volume is sized to reach the exit and NOTHING the campaign posts a body
 /// on. A `[6, 6, 6]` box swallowed the entry spawn as well, and the seat proof —
-/// which now runs first, because a Keeper standing in a pit is a more actionable
-/// message than the route closure it causes — reported that instead. Two true
-/// findings, and the fixture has to state which one it is about.
+/// which runs first, because a Keeper standing in a pit is a more actionable
+/// message than the route closure it causes — reported that instead. Three true
+/// findings now, and the fixture has to state which one it is about: `DW0891`
+/// names the cause, `DW0510` the route it closes, `DW0511` the body it swallows.
 #[test]
-fn an_objective_buried_in_a_volume_is_dw0510() {
+fn an_objective_buried_in_an_unsignalled_volume_is_dw0891() {
     let c = parse_hw(&quests_doc(
         r#"{ "id": "lethal/the-exit",
              "region": { "anchor": "anchor/exit", "extent": [2, 2, 2] },
              "message": "Nothing here is survivable." }"#,
         "",
     ));
-    assert_eq!(failure_code(&c), "DW0510");
+    assert_eq!(failure_code(&c), "DW0891");
 }
 
 // --- DW0511: the death loop routing cannot see -----------------------------
@@ -475,7 +564,7 @@ fn each_volume_gets_a_packtest_that_binds() {
     let out = build(&c);
     let t = text(
         &out,
-        "packtest-datapack/data/hello-world/test/lethal_the_drop.mcfunction",
+        "packtest-datapack/data/hello-world/test/lethal_the_burn.mcfunction",
     );
     assert!(
         t.contains("summon minecraft:zombie"),
@@ -486,7 +575,7 @@ fn each_volume_gets_a_packtest_that_binds() {
         "the template proves its dummy is INSIDE the volume before asserting the kill: {t}"
     );
     assert!(
-        t.contains("function hello-world:lethal_the_drop"),
+        t.contains("function hello-world:lethal_the_burn"),
         "the template drives the volume's real generated function: {t}"
     );
     assert!(
@@ -502,7 +591,7 @@ fn each_volume_gets_a_packtest_that_binds() {
     // for it: a body that provably never dies must never produce the claim.
     let claim = text(
         &out,
-        "packtest-datapack/data/hello-world/test/lethal_the_drop_claim.mcfunction",
+        "packtest-datapack/data/hello-world/test/lethal_the_burn_claim.mcfunction",
     );
     assert!(
         claim.contains("scoreboard players set #leth_hp dw.sys 0"),
@@ -514,8 +603,8 @@ fn each_volume_gets_a_packtest_that_binds() {
     // Measured: with the player line deleted from the driver, a template that
     // called `lethal_<id>_kill` directly still passed 12/12.
     assert!(
-        claim.contains("function hello-world:lethal_the_drop\n")
-            && !claim.contains("run function hello-world:lethal_the_drop_kill")
+        claim.contains("function hello-world:lethal_the_burn\n")
+            && !claim.contains("run function hello-world:lethal_the_burn_kill")
             && claim.contains("assert score #leth_hp dw.sys matches 1.."),
         "the template drives the volume's DRIVER (which carries the player re-bind), \
          not its kill function: {claim}"
@@ -582,7 +671,7 @@ fn the_ci_fixture_validates_and_emits_its_template() {
     delvewright_dsl::tag_translatables(&mut c);
     let out = build(&c);
     assert!(
-        out.contains_key("packtest-datapack/data/lethal-volume/test/lethal_the_drop.mcfunction"),
+        out.contains_key("packtest-datapack/data/lethal-volume/test/lethal_the_burn.mcfunction"),
         "the fixture emits the template the tier-2 pass runs"
     );
 }

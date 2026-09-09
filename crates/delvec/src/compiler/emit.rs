@@ -1207,7 +1207,12 @@ pub fn build_with_warnings(
                 // proof judges — the endpoint snap searches three blocks and
                 // the completion cube reaches one, so a route can be proven,
                 // exported and walked to a cell that never fires the objective.
-                crate::compiler::reach::check_reach_completion(plan, &world, &routes)?;
+                crate::compiler::reach::check_reach_completion(
+                    plan,
+                    &world,
+                    &routes,
+                    campaign_spawn(plan),
+                )?;
                 // `DW0881`: the other direction of the same sentence. `DW0850`
                 // asks whether the party can complete this at all; this asks
                 // whether anybody can complete it WITHOUT arriving. The volume is

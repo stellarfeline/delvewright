@@ -343,6 +343,143 @@ pub fn sites(plan: &Plan) -> Vec<ReachSite> {
     out
 }
 
+// ---------------------------------------------------------------------------
+// One judgement, two callers (spec-0062 §7)
+// ---------------------------------------------------------------------------
+
+/// **The population a reach rule judges against**: every cell the party can walk
+/// to from where the campaign starts it.
+///
+/// One derivation, so `DW0850` and `DW0881` cannot draw their footing from two
+/// different worlds. A campaign with no resolvable start has no party to reason
+/// about; the empty set is what says so, and every binding line prints its size.
+pub fn standing_population(world: &World, entry: Option<[i32; 3]>) -> BTreeSet<[i32; 3]> {
+    match entry {
+        Some(e) => world.reachable_walkable(&[e]),
+        None => BTreeSet::new(),
+    }
+}
+
+/// **The whole geometry of one `reach` at one radius, taken once** (spec-0062 §7).
+///
+/// `DW0850` and `DW0881` are two readings of one arrangement — a completion
+/// volume, the footing inside it, and whether that footing is one place a body
+/// walks or several it cannot walk between — and before this type each derived
+/// its own standable set, its own reference cell and (for `DW0881`) its own walk.
+/// Two derivations of one geometry is two answers a campaign can be caught
+/// between, which is exactly what happened: the ring of a killing volume
+/// swallowed the rim, `DW0850` demanded a wider radius and `DW0881` a narrower
+/// one, and the fixture could satisfy neither.
+///
+/// So the geometry is derived here, once, and the two checks read it. Neither
+/// derives a standable set, a footing or a walk of its own — which is a property
+/// `the_two_reach_rules_share_one_judgement` asserts against the source rather
+/// than a habit.
+pub struct ReachJudgement {
+    /// The completion volume at the radius this judgement was taken at.
+    pub vol: ReachCompletion,
+    /// The radius it was taken at.
+    pub radius: u32,
+    /// Cells of the volume a body can stand in — `DW0850`'s *occupiable* half.
+    pub standable: Vec<[i32; 3]>,
+    /// The footprint: every standable cell whose body box could meet the volume,
+    /// confined to the population (plus the anchor's own footing, which is in by
+    /// construction — the party is proven to reach it by `DW0311`).
+    pub footprint: BTreeSet<[i32; 3]>,
+    /// **The anchor's footing SET**, and the plural is the rule (spec-0062 §7.1):
+    /// the anchor's own cell when it is standable, otherwise every footprint cell
+    /// at the minimum distance² from the anchor.
+    ///
+    /// A single reference cell was a resolve-by-name over a scope where names are
+    /// not unique: three lips of a pit at distance² 4, one chosen by
+    /// `(distance², cell)`, and the verdict then depended on which side the tie
+    /// fell — which is not a rule about the world. The set stops refusing
+    /// whichever lips the tie-break did not pick, and refuses floor farther from
+    /// the anchor than its footing exactly as before.
+    pub footing: BTreeSet<[i32; 3]>,
+    /// Footprint cells that can walk, inside the footprint, to **some** cell of
+    /// [`Self::footing`].
+    pub arriving: BTreeSet<[i32; 3]>,
+}
+
+impl ReachJudgement {
+    /// Take the judgement for a `reach` at `pos` with completion radius `radius`,
+    /// over `world`, against the walked population `standing`.
+    pub fn take(
+        world: &World,
+        standing: &BTreeSet<[i32; 3]>,
+        pos: [i32; 3],
+        radius: u32,
+    ) -> ReachJudgement {
+        let vol = reach_completion(pos, radius);
+        let standable: Vec<[i32; 3]> = vol
+            .cells()
+            .into_iter()
+            .filter(|&c| world.is_standable(c))
+            .collect();
+        let touching: BTreeSet<[i32; 3]> = vol
+            .footprint_candidates()
+            .into_iter()
+            .filter(|&c| world.is_standable(c) && vol.possibly_completes_from(c, world.feet_y(c)))
+            .collect();
+        let seed = anchor_footing(pos, &touching);
+        let footprint: BTreeSet<[i32; 3]> = match seed {
+            Some(f) => touching
+                .into_iter()
+                .filter(|c| f.contains(c) || standing.contains(c))
+                .collect(),
+            None => touching,
+        };
+        let footing = anchor_footing(pos, &footprint).unwrap_or_default();
+        let arriving = cells_that_reach(world, &footprint, &footing);
+        ReachJudgement {
+            vol,
+            radius,
+            standable,
+            footprint,
+            footing,
+            arriving,
+        }
+    }
+
+    /// Footprint cells no body can walk to the anchor's footing from without
+    /// leaving the volume — `DW0881`'s finding, sorted (ADR-0006).
+    pub fn off_floor(&self) -> Vec<[i32; 3]> {
+        self.footprint.difference(&self.arriving).copied().collect()
+    }
+
+    /// Whether this radius answers both rules: the volume holds footing and
+    /// everything it reaches is footing a body arrives on.
+    pub fn green(&self) -> bool {
+        !self.standable.is_empty() && self.off_floor().is_empty()
+    }
+}
+
+/// **The smallest radius that answers both reach rules**, searched `1..=ceiling`,
+/// or `None` when none of them does (spec-0062 §7.2).
+///
+/// It is a **verified** move, not an arithmetic one: the judgement is taken again
+/// at each candidate and the number is printed only when that judgement is green.
+/// A radius derived from the volume's own geometry and never re-judged is a
+/// remedy nobody has taken, and the pair `DW0850`/`DW0881` is precisely where
+/// that costs — one rule's move is the other's refusal.
+pub fn smallest_answering_radius(
+    world: &World,
+    standing: &BTreeSet<[i32; 3]>,
+    pos: [i32; 3],
+    ceiling: u32,
+) -> Option<u32> {
+    (1..=ceiling).find(|&r| ReachJudgement::take(world, standing, pos, r).green())
+}
+
+/// How far above an authored radius `DW0850` may look for one that answers.
+///
+/// [`SNAP_RADIUS`], because that is how far every other proof in this compiler
+/// looks for footing: a body the route model would not snap to is a body this
+/// volume has no business completing for. The ceiling is `max(authored, this)`,
+/// so a campaign that already authored a wider volume is searched over its own.
+const RADIUS_SEARCH_CEILING: u32 = SNAP_RADIUS as u32;
+
 /// `DW0850`: **the volume that completes a `reach`, and the footing a body can
 /// reach it from, are the same place.**
 ///
@@ -367,6 +504,7 @@ pub fn check_reach_completion(
     plan: &Plan,
     world: &World,
     routes: &[LegRoute],
+    entry: Option<[i32; 3]>,
 ) -> Result<(), Failure> {
     // The one place a leg's ARRIVAL is read off a route: the last cell of the
     // A* polyline, which is the snapped endpoint the walk actually delivers the
@@ -378,7 +516,7 @@ pub fn check_reach_completion(
         .iter()
         .filter_map(|l| l.cells.last().map(|&c| (l.to_step, c)))
         .collect();
-    judge_reach_completion(plan, world, &arrivals)
+    judge_reach_completion(plan, world, &arrivals, entry)
 }
 
 /// The judgement [`check_reach_completion`] makes, over plain data: `arrivals`
@@ -387,16 +525,38 @@ pub fn judge_reach_completion(
     plan: &Plan,
     world: &World,
     arrivals: &BTreeMap<usize, [i32; 3]>,
+    entry: Option<[i32; 3]>,
 ) -> Result<(), Failure> {
+    let standing = standing_population(world, entry);
     for site in sites(plan) {
-        let vol = reach_completion(site.pos, site.radius);
-
-        let standable: Vec<[i32; 3]> = vol
-            .cells()
-            .into_iter()
-            .filter(|&c| world.is_standable(c))
-            .collect();
+        let judged = ReachJudgement::take(world, &standing, site.pos, site.radius);
+        let vol = &judged.vol;
+        let standable = &judged.standable;
         if standable.is_empty() {
+            // The move, and it is VERIFIED before it is printed (spec-0062
+            // §7.2): the judgement is taken again at each candidate radius and
+            // the number appears only where that judgement is green. A radius
+            // derived from the geometry and never re-judged is how this pair
+            // came to name each other's refusal as a remedy.
+            let ceiling = site.radius.max(RADIUS_SEARCH_CEILING);
+            let move_to = smallest_answering_radius(world, &standing, site.pos, ceiling)
+                .map_or_else(
+                    || {
+                        format!(
+                            "No radius from 1 to {ceiling} answers here — every one either holds \
+                             no footing at all or holds floor a body cannot walk to the anchor \
+                             from — so the remedy is the anchor's placement: move it onto floor \
+                             the party can stand on, or give its cell standable floor of its own."
+                        )
+                    },
+                    |r| {
+                        format!(
+                            "The smallest radius whose volume holds footing a body arrives on is \
+                             {r}, verified by taking this judgement again there: set \
+                             `radius: {r}`, or move the anchor onto the floor."
+                        )
+                    },
+                );
             return Err(Failure {
                 code: DW_REACH_UNCOMPLETABLE,
                 message: format!(
@@ -404,9 +564,7 @@ pub fn judge_reach_completion(
                      no cell of that volume is standable in the final assembled world — so \
                      arriving cannot complete it, however the party gets there. The completion \
                      volume and the footing are the same question and this campaign answers it \
-                     two ways. Fix the geometry or move the anchor onto the floor; never widen \
-                     the volume to reach the body, which is how this defect was closed once \
-                     before and left every other instance live.",
+                     two ways. {move_to}",
                     site.objective_id,
                     vol.describe(),
                     site.anchor_id,
@@ -500,37 +658,51 @@ impl ReachFootprintBinding {
     }
 }
 
-/// Where the anchor's OWN footing is: the cell a body stands in when it has
-/// arrived at `pos`.
+/// **Where the anchor's OWN footing is** — the cells a body stands in when it
+/// has arrived at `pos`, as a SET (spec-0062 §7.1).
 ///
-/// Asked of the world in the order every other proof in this compiler asks it —
-/// the anchor cell itself, then [`World::snap`] at [`SNAP_RADIUS`], which is what
-/// `check_critical_path` routes to — and only then, when neither answer is a cell
-/// that could complete, the nearest footprint cell by `(distance², cell)`. The
-/// fallback exists because the reference has to be inside the footprint for the
-/// walk below to mean anything, and it is deterministic (ADR-0006).
-fn anchor_footing(world: &World, pos: [i32; 3], cells: &BTreeSet<[i32; 3]>) -> Option<[i32; 3]> {
+/// The anchor's own cell when it is standable, and then the answer is one cell
+/// and nothing about the rule changes. Otherwise **every** footprint cell at the
+/// minimum distance² from the anchor.
+///
+/// [`World::snap`] is deliberately NOT consulted, and its absence is the repair:
+/// the snap resolves a cell by `(distance², cell)` among candidates that are
+/// often equidistant, which is exactly the tie-break this rule may not rest on.
+/// Its own defect — preferring a lip the party cannot reach over a doorway it can
+/// — is recorded against the snap (spec-0062 §9) and is not repaired here.
+///
+/// The plural is the repair, and it is declared as a **loosening** in those
+/// words: the rule used to name one cell, chosen among equidistant candidates by
+/// a `(distance², cell)` tie-break, and then demanded that every other footprint
+/// cell walk to that one. For an anchor no body can stand on — a one-cell killing
+/// volume, a lever in a wall, a solid altar — the lips around it are equidistant
+/// and mutually unreachable inside the volume, so the verdict depended on which
+/// lip the tie fell to, which is not a rule about the world. A resolve-by-name
+/// over a scope where names are not unique yields a candidate, not a match.
+///
+/// What the loosening does NOT relax: floor farther from the anchor than its
+/// footing is refused exactly as before, because the set is taken at the MINIMUM
+/// distance² and nothing beyond it joins.
+///
+/// Deterministic: a `BTreeSet` and integer distances (ADR-0006).
+fn anchor_footing(pos: [i32; 3], cells: &BTreeSet<[i32; 3]>) -> Option<BTreeSet<[i32; 3]>> {
     if cells.contains(&pos) {
-        return Some(pos);
+        return Some(BTreeSet::from([pos]));
     }
-    if let Some(s) = world.snap(pos, SNAP_RADIUS)
-        && cells.contains(&s)
-    {
-        return Some(s);
-    }
-    cells.iter().copied().min_by_key(|c| {
-        let d2: i64 = (0..3)
+    let d2 = |c: &[i32; 3]| -> i64 {
+        (0..3)
             .map(|i| {
                 let d = i64::from(c[i] - pos[i]);
                 d * d
             })
-            .sum();
-        (d2, *c)
-    })
+            .sum()
+    };
+    let nearest = cells.iter().map(d2).min()?;
+    Some(cells.iter().copied().filter(|c| d2(c) == nearest).collect())
 }
 
-/// The cells of `cells` from which a body can walk to `footing` without ever
-/// leaving `cells`.
+/// The cells of `cells` from which a body can walk to **some** cell of `footing`
+/// without ever leaving `cells`.
 ///
 /// Run BACKWARDS: the forward step graph is built over the footprint with
 /// [`World::neighbors`] — the engine's one step rule, so this walk and every
@@ -539,12 +711,17 @@ fn anchor_footing(world: &World, pos: [i32; 3], cells: &BTreeSet<[i32; 3]>) -> O
 /// different question (what the anchor can get to), and a one-way drop off the
 /// loft into the hall would then excuse the hall floor.
 ///
+/// `footing` is a set rather than a cell for the reason [`anchor_footing`] gives:
+/// where the anchor is not itself standable there is no ONE cell that is its
+/// footing, and the demand is arriving at the anchor, not at whichever of its
+/// lips a tie-break named.
+///
 /// Deterministic: `BTreeMap`/`BTreeSet` throughout and `neighbors`' own fixed
 /// order (ADR-0006).
 fn cells_that_reach(
     world: &World,
     cells: &BTreeSet<[i32; 3]>,
-    footing: [i32; 3],
+    footing: &BTreeSet<[i32; 3]>,
 ) -> BTreeSet<[i32; 3]> {
     let mut pred: BTreeMap<[i32; 3], Vec<[i32; 3]>> = BTreeMap::new();
     for &from in cells {
@@ -554,10 +731,8 @@ fn cells_that_reach(
             }
         }
     }
-    let mut seen: BTreeSet<[i32; 3]> = BTreeSet::new();
-    seen.insert(footing);
-    let mut queue: VecDeque<[i32; 3]> = VecDeque::new();
-    queue.push_back(footing);
+    let mut seen: BTreeSet<[i32; 3]> = footing.clone();
+    let mut queue: VecDeque<[i32; 3]> = footing.iter().copied().collect();
     while let Some(c) = queue.pop_front() {
         for &p in pred.get(&c).map(Vec::as_slice).unwrap_or(&[]) {
             if seen.insert(p) {
@@ -611,13 +786,11 @@ pub fn check_reach_footprint(
     world: &World,
     entry: Option<[i32; 3]>,
 ) -> (ReachFootprintBinding, Result<(), Failure>) {
-    let standing: BTreeSet<[i32; 3]> = match entry {
-        Some(e) => world.reachable_walkable(&[e]),
-        // A campaign with no resolvable start has no party to reason about, and
-        // an empty population would make every green here vacuous. Say so with a
-        // zero binding rather than by passing quietly.
-        None => BTreeSet::new(),
-    };
+    // A campaign with no resolvable start has no party to reason about, and an
+    // empty population would make every green here vacuous. `standing_population`
+    // says so with a zero binding rather than by passing quietly, and it is the
+    // same population `DW0850` judges against.
+    let standing = standing_population(world, entry);
     let mut binding = ReachFootprintBinding {
         standing: standing.len(),
         ..ReachFootprintBinding::default()
@@ -626,31 +799,17 @@ pub fn check_reach_footprint(
     let mut others: Vec<String> = Vec::new();
     for site in sites(plan) {
         binding.sites += 1;
-        let vol = reach_completion(site.pos, site.radius);
-        let candidates = vol.footprint_candidates();
-        binding.candidates += candidates.len();
-        let touching: BTreeSet<[i32; 3]> = candidates
-            .into_iter()
-            .filter(|&c| world.is_standable(c) && vol.possibly_completes_from(c, world.feet_y(c)))
-            .collect();
-        // The anchor's own footing is in by construction: the party is proven to
-        // reach it by `DW0311`, and a walk that started outside its own root
-        // would have nothing to measure connectivity against.
-        let cells: BTreeSet<[i32; 3]> = match anchor_footing(world, site.pos, &touching) {
-            Some(f) => touching
-                .into_iter()
-                .filter(|c| *c == f || standing.contains(c))
-                .collect(),
-            None => touching,
-        };
-        binding.cells += cells.len();
-        let Some(footing) = anchor_footing(world, site.pos, &cells) else {
+        // One judgement, taken once, read by both rules — this check derives no
+        // standable set, footing or walk of its own (spec-0062 §7).
+        let judged = ReachJudgement::take(world, &standing, site.pos, site.radius);
+        binding.candidates += judged.vol.footprint_candidates().len();
+        binding.cells += judged.footprint.len();
+        if judged.footing.is_empty() {
             // An empty volume is `DW0850`'s finding, stated in its own words at
             // the same site; saying it twice in two vocabularies helps nobody.
             continue;
-        };
-        let arriving = cells_that_reach(world, &cells, footing);
-        let off: Vec<[i32; 3]> = cells.difference(&arriving).copied().collect();
+        }
+        let off = judged.off_floor();
         binding.off_floor += off.len();
         if off.is_empty() {
             continue;
@@ -664,12 +823,43 @@ pub fn check_reach_footprint(
             continue;
         }
         let floors = crate::compiler::failure::cells_by_floor(&off);
+        // The move, verified before it is printed and never a radius ABOVE the
+        // authored one (spec-0062 §7.2): this rule's whole finding is that the
+        // volume reaches too far, so a wider one cannot be its remedy. Where no
+        // radius from 1 to the authored one answers, the remedy is the anchor's
+        // placement — which is the move `DW0850` names and `remedy_reachability`
+        // takes under that code.
+        let footing = judged
+            .footing
+            .iter()
+            .map(|c| format!("{c:?}"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let move_to = smallest_answering_radius(world, &standing, site.pos, site.radius)
+            .map_or_else(
+                || {
+                    format!(
+                        "No radius from 1 to {} answers here, so lowering it is not the move: \
+                         move the anchor so the floor it stands on is the only one inside the \
+                         volume, or join the floors INSIDE the volume with a way up. An anchor \
+                         no radius can seat is `DW0850`'s finding and carries the same move.",
+                        site.radius
+                    )
+                },
+                |r| {
+                    format!(
+                        "Set `radius: {r}` — the smallest radius whose volume covers only floor \
+                         a body arrives on, verified by taking this judgement again there — or \
+                         move the anchor so that floor is the only one inside it."
+                    )
+                },
+            );
         first = Some(Failure {
             code: DW_REACH_OFF_FLOOR,
             message: format!(
                 "reach objective `{}` completes for any body whose hitbox meets {} at anchor \
                  `{}`, and {} standable cell(s) inside it stand on floor a body cannot walk to \
-                 the anchor's own footing {footing:?} from without leaving that volume: {floors}. \
+                 the anchor's own footing ({footing}) from without leaving that volume: {floors}. \
                  Vanilla adjudicates the selector against the whole body box, which rises {} \
                  blocks from the feet, so the volume reaches every floor within a course of it \
                  and a party standing on any of them completes this objective without arriving \
@@ -679,13 +869,11 @@ pub fn check_reach_footprint(
                  the anchor's own height, walled off from it inside the volume, is the same \
                  defect laid flat. `reach` means arriving where the anchor is and the volume is \
                  a tolerance around that, so a tolerance that admits a place you cannot walk to \
-                 the anchor from is not a tolerance. Lower `radius` until the volume covers only \
-                 the anchor's own floor, or move the anchor so that floor is the only one inside \
-                 it. Joining the two INSIDE the volume is the third answer and this rule passes \
-                 it: a body on a stair, or on a walk, that the volume covers end to end is \
-                 arriving.",
+                 the anchor from is not a tolerance. {move_to} Joining the two INSIDE the volume \
+                 is the third answer and this rule passes it: a body on a stair, or on a walk, \
+                 that the volume covers end to end is arriving.",
                 site.objective_id,
-                vol.describe(),
+                judged.vol.describe(),
                 site.anchor_id,
                 off.len(),
                 delvewright_dsl::metrics::PLAYER_HEIGHT,

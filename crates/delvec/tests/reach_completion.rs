@@ -216,7 +216,7 @@ fn a_volume_with_footing_in_it_is_clean() {
             world.is_standable(pos),
             "the fixture's premise: the anchor cell is standable"
         );
-        judge_reach_completion(plan, &world, &BTreeMap::new())
+        judge_reach_completion(plan, &world, &BTreeMap::new(), Some(pos))
             .expect("a reach whose own cell is standable completes");
     });
 }
@@ -238,7 +238,7 @@ fn a_volume_no_body_can_stand_in_is_refused() {
             !reach_completion(pos, 2).certainly_completes_from(footing),
             "the fixture's premise: the only footing lies outside the completion volume"
         );
-        let err = judge_reach_completion(plan, &world, &BTreeMap::new())
+        let err = judge_reach_completion(plan, &world, &BTreeMap::new(), Some(footing))
             .expect_err("a volume with no standable cell must be refused");
         assert_eq!(err.code, DW_REACH_UNCOMPLETABLE);
         assert!(
@@ -292,7 +292,7 @@ fn an_arrival_inside_the_snap_radius_but_outside_the_volume_is_refused() {
         let step = reach_step(plan, &obj);
 
         let arrivals: BTreeMap<usize, [i32; 3]> = [(step, arrival)].into_iter().collect();
-        let err = judge_reach_completion(plan, &world, &arrivals)
+        let err = judge_reach_completion(plan, &world, &arrivals, Some(arrival))
             .expect_err("an arrival outside the completion volume must be refused");
         assert_eq!(err.code, DW_REACH_UNCOMPLETABLE);
         assert!(
@@ -304,7 +304,7 @@ fn an_arrival_inside_the_snap_radius_but_outside_the_volume_is_refused() {
         // …and the SAME world with the walk ending on the anchor's own cell is
         // clean. One thing moved, and it is the one the rule is about.
         let good: BTreeMap<usize, [i32; 3]> = [(step, pos)].into_iter().collect();
-        judge_reach_completion(plan, &world, &good)
+        judge_reach_completion(plan, &world, &good, Some(arrival))
             .expect("an arrival inside the volume completes");
     });
 }
@@ -356,8 +356,8 @@ fn dw0850_binds_at_the_engines_version() {
     with_plan(delvewright_dsl::DSL_VERSION, 2, |plan| {
         let (pos, _) = only_site(plan);
         let world = floor_at([pos[0] + 4, pos[1] - 1, pos[2]]);
-        let err =
-            judge_reach_completion(plan, &world, &BTreeMap::new()).expect_err("DW0850 must bind");
+        let err = judge_reach_completion(plan, &world, &BTreeMap::new(), None)
+            .expect_err("DW0850 must bind");
         assert_eq!(err.code, DW_REACH_UNCOMPLETABLE, "{}", err.message);
     });
 }
@@ -430,7 +430,7 @@ fn a_raised_anchor_whose_volume_reaches_the_floor_below_is_refused() {
             world.is_standable([pos[0] + 3, pos[1] - 3, pos[2]]),
             "and the hall floor three courses down is standable"
         );
-        judge_reach_completion(plan, &world, &BTreeMap::new())
+        judge_reach_completion(plan, &world, &BTreeMap::new(), Some(entry(pos)))
             .expect("DW0850 is green here: the volume holds the dais");
         assert!(
             world.is_standable(entry(pos)),

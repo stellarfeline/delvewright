@@ -97,6 +97,7 @@ const SURFACE: &[(&str, &str, Kind)] = &[
     ("KitItem", "item", Reference),
     ("KitItem", "name", Inventoried),
     ("LethalVolume", "message", Inventoried),
+    ("LethalVolume", "shown_by", Reference),
     ("Forfeit", "kind", Machine),
     ("Shop", "title", Inventoried),
     ("Shop", "marker_item", Reference),
