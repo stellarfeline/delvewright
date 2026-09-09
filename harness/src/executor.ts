@@ -1294,6 +1294,12 @@ export class MineflayerExecutor implements StepExecutor {
    * proof; without the same fact here the bot walks its way back from a death
    * straight through the hazard it just died in, and a run intermittently dies
    * twice for reasons no content author could reproduce.
+   *
+   * These are each volume’s `keep_out` box and NOT its `region`: the volume
+   * kills on hitbox intersection, so the cell beside its face is a cell the bot
+   * dies standing in. Excluding only the region is what put the bot on
+   * `[12, 65, 21]` — one cell east of a pit — and killed it there twice, with
+   * every compile-time proof green.
    */
   private lethalBoxes: readonly Box[] = [];
   /** Suspended for exactly one walk: the deliberate step INTO a volume. */
@@ -2327,7 +2333,7 @@ export class MineflayerExecutor implements StepExecutor {
    */
   useDeathPlan(plan: DeathPlan): void {
     this.deathPlan = plan;
-    this.lethalBoxes = plan.volumes.map((v) => v.region);
+    this.lethalBoxes = plan.volumes.map((v) => v.keepOut);
   }
 
   /** Every walk into a lethal volume this run made, and what it observed. */
@@ -2599,13 +2605,29 @@ export class MineflayerExecutor implements StepExecutor {
     trial.deathPos = this.death?.position ? [...this.death.position] : undefined;
     trial.wordingSeen = this.wordWatch?.seen === true;
     this.wordWatch = undefined;
-    // Credited only when the player died INSIDE the declared box. A death on the
-    // way there is a run fault, not this volume's kill, and crediting it would let
-    // any lethal accident anywhere pass as a proof that this box works.
-    const inside =
-      trial.deathPos !== undefined && bodyInVolume(trial.deathPos, volume.region);
-    // A death inside the box is itself an observation that the body was inside it.
-    if (observed && inside) trial.enteredVolume = true;
+    // Credited when the volume's own selector would have matched the body —
+    // `bodyInVolume`, the server's rule, asked of the exact position. That is
+    // the certain case in both directions, so it neither invents a kill nor
+    // disowns one, and it is a sharper answer than this branch's first one
+    // (`inBox(deathPos, keepOut)`), which asked whether SOME position in the
+    // body's cell could have met the volume.
+    const inside = trial.deathPos !== undefined && bodyInVolume(trial.deathPos, volume.region);
+    // …and whether the body was ever IN the volume is a different question,
+    // asked of the feet.
+    //
+    // **The two came apart the moment credit stopped meaning cell containment,
+    // and the inference `enteredVolume = inside` did not.** A body killed from
+    // one cell out from a face is matched by the selector and never had its feet
+    // in the hole — so reading `inside` here reports it as having stood in the
+    // volume, which is exactly the distinction
+    // {@link LethalTrial.enteredVolume} was added to make (*the volume did not
+    // kill what was in it* against *nothing was ever in it*). The walk sets it
+    // from `feetInside(volume.region)`, a cell test, and so does this: the block
+    // a body is in is the FLOOR of its position.
+    if (observed && trial.deathPos !== undefined) {
+      const feet = trial.deathPos.map(Math.floor) as unknown as Vec3Tuple;
+      if (inBox(feet, volume.region)) trial.enteredVolume = true;
+    }
     trial.died = observed && inside;
     if (navFault !== undefined) {
       trial.abandoned = navFault;

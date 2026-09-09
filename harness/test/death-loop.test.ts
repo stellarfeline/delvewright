@@ -29,6 +29,7 @@ import {
   type LethalVolume,
   type StakeRule,
 } from "../src/death-loop.ts";
+import type { Vec3Tuple } from "../src/critical-path.ts";
 
 /** The economy fixture's plan, as `delvec` really emits it. */
 function planDoc(): Record<string, unknown> {
@@ -40,6 +41,7 @@ function planDoc(): Record<string, unknown> {
       {
         id: "lethal/the-drop",
         region: { lo: [5, 65, 8], hi: [5, 65, 8] },
+        keep_out: { lo: [4, 64, 7], hi: [6, 65, 9] },
         message: "The stone floor gives way beneath you.",
         message_key: "lethal.the-drop.message",
         damage_type: "minecraft:fall",
@@ -111,6 +113,7 @@ function plan(): DeathPlan {
 const VOLUME: LethalVolume = {
   id: "lethal/the-drop",
   region: { lo: [5, 65, 8], hi: [5, 65, 8] },
+  keepOut: { lo: [4, 64, 7], hi: [6, 65, 9] },
   message: "The stone floor gives way beneath you.",
   messageKey: "lethal.the-drop.message",
   damageType: "minecraft:fall",
@@ -169,6 +172,98 @@ test("the emitted plan parses, and every declaration survives the round trip", (
   assert.deepEqual(p.stakes[0]!.forfeit, { kind: "all" });
   assert.equal(p.stakes[0]!.currency.objective, "dw.s_embers");
   assert.equal(p.binding.unbound, false);
+});
+
+test("a volume's keep-out box is READ, and it is not the volume", () => {
+  const p = plan();
+  const v = p.volumes[0]!;
+  // The compiler's answer, carried whole. The bot never derives it: the rule
+  // that a body one cell out from a face is inside the volume lives in the
+  // engine, and a second copy of it here is a copy no Rust test reaches.
+  assert.deepEqual(v.keepOut, { lo: [4, 64, 7], hi: [6, 65, 9] });
+  assert.notDeepEqual(v.keepOut, v.region);
+  // …and the difference is exactly the class of death the old rule lost. A body
+  // standing one cell east of this one-cell volume is killed by it and is not in
+  // it, so the cell test says "outside" and the keep-out test says "this
+  // volume".
+  const besideTheFace: readonly [number, number, number] = [6, 65, 8];
+  assert.equal(inBox(besideTheFace, v.region), false);
+  assert.equal(inBox(besideTheFace, v.keepOut), true);
+});
+
+test("`bodyInVolume` and the compiler's exported `keep_out` are the same rule", () => {
+  // **Two implementations of one fact, in two languages, and this is what holds
+  // them together.** `bodyInVolume` is the server's rule re-derived here, over an
+  // exact position; `keep_out` is the compiler's answer to the cell question —
+  // which FEET CELLS a body can meet the volume from — computed by
+  // `dsl::metrics::keep_out_box` and carried in the plan. Neither can replace the
+  // other (one takes a position, one takes a cell), so the honest thing is to
+  // make them provably agree rather than let them coexist.
+  //
+  // The bridge: a cell belongs in `keep_out` exactly when SOME position inside it
+  // satisfies `bodyInVolume`. Sampled at the cell's own interior corners, which
+  // is where the predicate's extremes are — it is monotone in each span.
+  const v = plan().volumes[0]!;
+  const d = 1e-6;
+  const reachable = (cell: Vec3Tuple): boolean => {
+    for (const dx of [d, 1 - d]) {
+      for (const dz of [d, 1 - d]) {
+        if (bodyInVolume([cell[0] + dx, cell[1], cell[2] + dz], v.region)) return true;
+      }
+    }
+    return false;
+  };
+  let examined = 0;
+  const disagreed: string[] = [];
+  for (let x = v.region.lo[0] - 3; x <= v.region.hi[0] + 3; x++) {
+    for (let y = v.region.lo[1] - 3; y <= v.region.hi[1] + 3; y++) {
+      for (let z = v.region.lo[2] - 3; z <= v.region.hi[2] + 3; z++) {
+        const cell: Vec3Tuple = [x, y, z];
+        examined += 1;
+        if (reachable(cell) !== inBox(cell, v.keepOut)) disagreed.push(`[${cell.join(", ")}]`);
+      }
+    }
+  }
+  // Binding, computed from the objects rather than written beside them: the
+  // volume's box grown by three on every side.
+  assert.equal(examined, 7 * 7 * 7);
+  // **The one boundary they read differently, measured rather than predicted.**
+  // Every disagreement sits on a single plane — feet exactly on the volume's
+  // ceiling, `hi.y + 1` — and there are nine of them, the whole horizontal ring
+  // at that height. One cause: `bodyInVolume` compares `min <= hi + 1`
+  // NON-strictly, so a body whose feet touch the ceiling counts as intersecting,
+  // while vanilla's own `AABB::intersects` is strict and `keep_out_box` takes
+  // that reading.
+  //
+  // It is a difference of DIRECTION and each side is pointed the safe way for
+  // what it decides. `keep_out` decides FOOTING, where a generous rule would
+  // refuse ground that is fine, so it is strict. `bodyInVolume` decides CREDIT,
+  // where generous can only fail to disown a real death and can never invent one
+  // out of a body that is not there. The residue is named rather than smoothed
+  // over: on this plane the credit rule would attribute to the volume a death
+  // suffered by a body standing on top of it.
+  //
+  // Asserted as the PROPERTY and not as a list of cells, so it stays true for a
+  // volume of another shape — and with a non-zero count, so it cannot go quietly
+  // vacuous if one side stops answering.
+  const ceiling = v.region.hi[1]! + 1;
+  assert.equal(disagreed.length, 9, `disagreements: ${disagreed.join(" ")}`);
+  assert.deepEqual(
+    disagreed.filter((c) => !c.startsWith(`[`) || !c.includes(`, ${ceiling}, `)),
+    [],
+    "every cell the two readings differ on has its feet exactly on the volume's ceiling",
+  );
+});
+
+test("a plan that omits keep_out is REFUSED — the bot may not guess the ring", () => {
+  const doc = planDoc();
+  const volumes = doc["lethal_volumes"] as Record<string, unknown>[];
+  delete volumes[0]!["keep_out"];
+  assert.throws(() => parseDeathPlan(doc), (e: unknown) => {
+    assert.ok(e instanceof DeathPlanParseError);
+    assert.equal(e.pointer, "/lethal_volumes/0/keep_out");
+    return true;
+  });
 });
 
 test("a plan from a newer contract is REFUSED, never half-read", () => {
