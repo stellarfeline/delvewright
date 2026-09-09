@@ -19,7 +19,7 @@ authored against and the parser that reads it cannot disagree.
 
 ```toml
 [dependencies]
-delvewright-dsl = "0.22"
+delvewright-dsl = "0.23"
 ```
 
 ```rust

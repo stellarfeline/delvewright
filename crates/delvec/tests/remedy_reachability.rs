@@ -49,6 +49,24 @@ mod common;
 // ---------------------------------------------------------------------------
 
 fn tmp(name: &str) -> PathBuf {
+    // **A name is claimed once, and a second claim is a panic.** Two rows that
+    // pick the same tag get the same directory, and the second one's setup wipes
+    // the first one's world underneath it — an intermittent whose colour depends
+    // on which thread got there first, which is the shape CLAUDE.md calls an
+    // under-specified test. It happened: `campaign("fiction")` and a lethal-volume
+    // row both resolved to `remedy-camp-fiction`, and `dw0887`'s move reddened at
+    // exit 3 in the full workspace run and passed alone every time.
+    static CLAIMED: std::sync::Mutex<Option<std::collections::BTreeSet<String>>> =
+        std::sync::Mutex::new(None);
+    let mut g = CLAIMED.lock().unwrap();
+    let claimed = g.get_or_insert_with(std::collections::BTreeSet::new);
+    assert!(
+        claimed.insert(name.to_string()),
+        "two rows of this file claim the scratch directory `remedy-{name}`. A shared \
+         directory is a shared world, and the second row's setup wipes the first row's \
+         out from under it — pick a distinct tag"
+    );
+    drop(g);
     let dir = Path::new(env!("CARGO_TARGET_TMPDIR")).join(format!("remedy-{name}"));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
@@ -1234,4 +1252,157 @@ fn dw0890_recording_the_image_deleting_it_and_authoring_the_document_all_build()
     let (code, after) = build("file-no-doc-green", &c, &dir);
     assert_eq!(code, 0, "authoring the document builds:\n{after}");
     assert!(!after.contains("DW0890 [error]"), "{after}");
+}
+
+// ---------------------------------------------------------------------------
+// DW0891 — the three moves a killing volume the player cannot see names
+// ---------------------------------------------------------------------------
+
+/// The `lethal-volume` fixture, copied so a move can be taken on it.
+///
+/// It is the campaign spec-0062 §8 declares: a one-cell killing volume at
+/// `anchor/exit`, the nine cells of floor its keep-out catches laid in molten
+/// stone, and `shown_by: ["minecraft:magma_block"]` saying so. Green as it
+/// ships, which is what makes it a place to take a move FROM: each row below
+/// perturbs it into one of `DW0891`'s three shapes and then takes the move that
+/// shape's message names.
+fn lethal_campaign(tag: &str) -> PathBuf {
+    let camp = tmp(&format!("lethal-{tag}"));
+    common::copy_dir_all(
+        &common::repo_root().join("crates/delvec/tests/fixtures/lethal-volume"),
+        &camp,
+    );
+    camp
+}
+
+/// Read, edit and write back one stage document of a campaign copy.
+fn edit_doc(camp: &Path, doc: &str, f: impl FnOnce(&mut serde_json::Value)) {
+    let path = camp.join(doc);
+    let mut v: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+    f(&mut v);
+    std::fs::write(&path, serde_json::to_string_pretty(&v).unwrap() + "\n").unwrap();
+}
+
+/// The campaign's one lethal volume, as a mutable object.
+fn volume(v: &mut serde_json::Value) -> &mut serde_json::Map<String, serde_json::Value> {
+    v["content"]["lethal_volumes"][0].as_object_mut().unwrap()
+}
+
+/// **AUTHOR one of the blocks vanilla hurts with under those cells and DECLARE
+/// it.** The third move `DW0891`'s first shape names, and the one a creator
+/// takes when the hazard is MEANT to be flush.
+///
+/// The refusal is manufactured by deleting the declaration from a fixture whose
+/// floor already carries the signal, so the perturbation is one line and the
+/// move is the same line put back. That direction is deliberate: it proves the
+/// move reaches green over a world nothing else about has changed.
+#[test]
+fn dw0891_declaring_the_block_that_shows_the_hazard_builds() {
+    let dir = common::prefabs_dir();
+    let camp = lethal_campaign("shown-by");
+    edit_doc(&camp, "quests.json", |v| {
+        volume(v).remove("shown_by");
+    });
+    let (code, before) = build("dw0891-unsignalled", &camp, &dir);
+    assert_eq!(
+        code, 3,
+        "an unsignalled volume over walked floor is refused:\n{before}"
+    );
+    assert!(
+        before.contains("DW0891") && before.contains("declare it in `shown_by`"),
+        "the message names the move:\n{before}"
+    );
+    edit_doc(&camp, "quests.json", |v| {
+        volume(v).insert(
+            "shown_by".into(),
+            serde_json::json!(["minecraft:magma_block"]),
+        );
+    });
+    let (code, after) = build("dw0891-signalled", &camp, &dir);
+    assert_eq!(code, 0, "declaring what shows it builds:\n{after}");
+    assert!(!after.contains("DW0891"), "{after}");
+}
+
+/// **DELETE the declaration.** The move `DW0891`'s second shape names — a
+/// `shown_by` block under or in no caught cell.
+///
+/// The move ends green here rather than at the first shape, because the volume's
+/// other declared signal still covers every cell it catches. The chain's other
+/// branch — a volume whose whole declaration is a fiction, where deleting it
+/// uncovers floor and lands on the first shape — is the row above, taken from
+/// the other end.
+#[test]
+fn dw0891_deleting_a_signal_the_bytes_do_not_hold_builds() {
+    let dir = common::prefabs_dir();
+    let camp = lethal_campaign("fiction");
+    edit_doc(&camp, "quests.json", |v| {
+        volume(v).insert(
+            "shown_by".into(),
+            serde_json::json!(["minecraft:magma_block", "minecraft:cactus"]),
+        );
+    });
+    let (code, before) = build("dw0891-fiction", &camp, &dir);
+    assert_eq!(
+        code, 3,
+        "a signal the bytes do not hold is refused:\n{before}"
+    );
+    assert!(
+        before.contains("DW0891") && before.contains("Delete the declaration"),
+        "the message names the move:\n{before}"
+    );
+    edit_doc(&camp, "quests.json", |v| {
+        volume(v).insert(
+            "shown_by".into(),
+            serde_json::json!(["minecraft:magma_block"]),
+        );
+    });
+    let (code, after) = build("dw0891-fiction-deleted", &camp, &dir);
+    assert_eq!(code, 0, "deleting the fiction builds:\n{after}");
+    assert!(!after.contains("DW0891"), "{after}");
+}
+
+/// **NAME the block that shows the danger, from the set the message prints.**
+/// The move `DW0891`'s document arm names, taken at validation tier with nothing
+/// placed.
+///
+/// `minecraft:stone` is borne out by the bytes — the floor really is stone in
+/// most of the room — and shows a player nothing, which is exactly why the arm
+/// exists: `shown_by` is what the player SEES, not a word that switches the rule
+/// off.
+#[test]
+fn dw0891_naming_a_block_vanilla_hurts_with_passes_validation() {
+    let dir = common::prefabs_dir();
+    let camp = lethal_campaign("document-arm");
+    edit_doc(&camp, "quests.json", |v| {
+        volume(v).insert("shown_by".into(), serde_json::json!(["minecraft:stone"]));
+    });
+    let r = delvec(&[
+        "validate",
+        camp.to_str().unwrap(),
+        "--prefabs",
+        dir.to_str().unwrap(),
+    ]);
+    let before = log(&r);
+    assert_eq!(r.status.code(), Some(1), "refused at validation:\n{before}");
+    assert!(
+        before.contains("DW0891") && before.contains("Name the block that shows the danger"),
+        "the message names the move and prints the set:\n{before}"
+    );
+    assert!(
+        before.contains("`minecraft:magma_block`"),
+        "the set it prints holds the block this floor really carries:\n{before}"
+    );
+    edit_doc(&camp, "quests.json", |v| {
+        volume(v).insert(
+            "shown_by".into(),
+            serde_json::json!(["minecraft:magma_block"]),
+        );
+    });
+    let (code, after) = build("dw0891-document-arm-green", &camp, &dir);
+    assert_eq!(
+        code, 0,
+        "naming a block vanilla hurts with builds:\n{after}"
+    );
+    assert!(!after.contains("DW0891"), "{after}");
 }

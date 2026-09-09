@@ -1,0 +1,15 @@
+{
+  "code": "DW0891",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "replace",
+      "path": "/content/lethal_volumes/1/shown_by",
+      "value": [
+        "minecraft:cactus"
+      ]
+    }
+  ],
+  "units": [],
+  "why": "One edit: the east strip keeps its molten floor and declares that what shows it is a cactus. `shown_by` is a claim about the assembled bytes, held to the standard `waterline_y` is held to (spec-0060 §4), so it is checked per caught cell against the block map the world proofs read — and `minecraft:cactus` stands under or in none of the twenty cells this volume catches. A declaration nobody's bytes bear out is a fiction, and a fiction here is worse than an omission: it is the word that would let a creator switch the rule off by writing something. `minecraft:cactus` is deliberately IN the set vanilla hurts a body with, so the document arm has nothing to say and the refusal is the world arm's — the perturbation reaches the check that reads the bytes, not the one that reads the id. It declares no unit: `shown_by` is bound by the east strip in the gallery proper, and what must not compile is a signal the floor does not carry."
+}
