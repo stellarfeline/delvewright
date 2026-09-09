@@ -477,6 +477,47 @@ export function bodyInVolume(
   return spans.every(([min, max], i) => min <= box.hi[i]! + 1 && max >= box.lo[i]!);
 }
 
+/**
+ * **Could this volume's selector reach a body standing anywhere in `cell`?**
+ *
+ * The cell-shaped question, asked of the SERVER's rule — not a second reading of
+ * it. {@link bodyInVolume} answers about one exact body position; a pathfinder
+ * deals in cells, and a body standing in a cell may be anywhere in it, so the
+ * position this asks about is the one inside `cell` that comes nearest the
+ * volume on each axis. The volume is an interval on every axis and
+ * `bodyInVolume` is monotone in the position, so the nearest point is the whole
+ * of the question: if it is not matched, nothing in the cell is.
+ *
+ * This exists because the navigator and the server disagreed by exactly one cell
+ * of shell. The exclusion the pathfinder took kept the bot out of the cells
+ * INSIDE a lethal volume, while the volume's own selector kills a 0.6-wide body
+ * a third of a block past its face. On the gallery, `lethal/west-pit`
+ * `[1,63,2]..[3,67,4]` therefore killed the bot at `[3.85, 65.00, 5.14]` — cell
+ * `[3,65,5]`, one outside the box and inside the reach — on a walk that had
+ * nothing to do with the west pit, and the trial that was open at the time (the
+ * EAST pit's) had to report a death outside its own volume.
+ *
+ * Kept out is the safe direction to be generous in: a cell this reports is one
+ * some body in it can be killed from, and routing around it costs a detour.
+ * `compiler::stake::DeathRegion::holds_no_anchor` is the same rule on the other
+ * side, and it is what makes the anchor this bot walks back to a cell the walk
+ * is allowed to reach.
+ */
+export function volumeReachesCell(
+  cell: Vec3Tuple,
+  box: Box,
+  width = PLAYER_WIDTH,
+  height = PLAYER_HEIGHT,
+): boolean {
+  const nearest = (axis: number): number => {
+    const mid = (box.lo[axis]! + box.hi[axis]! + 1) / 2;
+    return Math.min(Math.max(mid, cell[axis]!), cell[axis]! + 1);
+  };
+  // `y` is the feet, and feet stand on the cell floor — there is no interval to
+  // clamp there, which is why only the horizontal axes are swept.
+  return bodyInVolume([nearest(0), cell[1]!, nearest(2)], box, width, height);
+}
+
 /** Every cell of an inclusive box, in a fixed order. */
 export function boxCells(box: Box): Vec3Tuple[] {
   const out: Vec3Tuple[] = [];

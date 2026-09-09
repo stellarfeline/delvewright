@@ -221,4 +221,10 @@ Of exactly the class spec-0023 already sanctions for `/damage @s` and
 
 The bot also treats every declared lethal volume as impassable when pathfinding,
 exactly as the compiler does, so the walk back from a death never routes through
-the hazard that caused it.
+the hazard that caused it. What it excludes is every cell the volume can KILL in,
+which is one cell of shell wider than the declared box on every axis: the server
+matches the volume against a 0.6-wide hitbox, so a body whose feet cell sits one
+outside the box is one the volume kills. `volumeReachesCell` asks that of
+`bodyInVolume`, and `compiler::stake::DeathRegion::holds_no_anchor` keeps the
+stake anchor the bot walks back to out of the same shell — the two have to agree,
+because the anchor is where the approach and the walk back both end.

@@ -15,6 +15,9 @@ import {
   dieRetryFindings,
   scriptedDeathRefusal,
   floorFinding,
+  unmeasuredFloorFinding,
+  UNASSISTED_RESULTS,
+  type UnassistedOutcome,
   giveUpBudgetFor,
   openTrial,
   unboundedEncounterNote,
@@ -216,33 +219,37 @@ test("an assist window the harness never closed is reported, not swallowed", () 
 
 // --- the inverted floor gate ------------------------------------------------
 
+/** One unassisted attempt, as the executor records it. */
+function attempt(over: Partial<UnassistedOutcome> = {}): UnassistedOutcome {
+  return { result: "won", healthAtStart: 20, maxHealth: 20, engaged: 3, killed: 3, ...over };
+}
+
 test("an elite the unassisted bot beats first try is a floor finding", () => {
-  const finding = floorFinding(
-    encounter({ tier: "elite" }),
-    { attempted: true, won: true },
-    waveAttribution(2, 0, 2),
-  );
+  const finding = floorFinding(encounter({ tier: "elite" }), attempt(), waveAttribution(2, 0, 2));
   assert.ok(finding);
   assert.match(finding, /billed `elite`/);
   assert.match(finding, /Advisory/);
+  // The state the sample was taken at is IN the finding: two runs of one tree
+  // that disagree have to disagree somewhere a reader can see.
+  assert.match(finding, /20\.0\/20 health/);
 });
 
 test("an elite the unassisted bot LOSES to says nothing", () => {
-  assert.equal(
-    floorFinding(
-      encounter({ tier: "boss" }),
-      { attempted: true, won: false },
-      waveAttribution(2, 2, 0),
-    ),
-    undefined,
-  );
+  for (const result of ["died", "held"] as const) {
+    assert.equal(
+      floorFinding(
+        encounter({ tier: "boss" }),
+        attempt({ result, engaged: 2, killed: 1 }),
+        waveAttribution(2, 2, 0),
+      ),
+      undefined,
+      result,
+    );
+  }
 });
 
 test("an ordinary encounter carries no floor expectation however easily it falls", () => {
-  assert.equal(
-    floorFinding(encounter(), { attempted: true, won: true }, waveAttribution(2, 0, 2)),
-    undefined,
-  );
+  assert.equal(floorFinding(encounter(), attempt(), waveAttribution(2, 0, 2)), undefined);
 });
 
 // **The defect.** The gallery seats `wave/muster`'s three bodies within a stride
@@ -252,13 +259,16 @@ test("an ordinary encounter carries no floor expectation however easily it falls
 test("a cohort the world mostly killed is not a fight the bot beat", () => {
   const finding = floorFinding(
     encounter({ tier: "elite", count: 3 }),
-    { attempted: true, won: true },
+    attempt({ engaged: 3, killed: 1 }),
     waveAttribution(3, 0, 1),
   );
   assert.ok(finding, "the encounter is still worth the author's attention");
   assert.match(finding, /2 of its 3 bodies died with NO player credited/);
   assert.match(finding, /does not measure the fight/);
   assert.doesNotMatch(finding, /Advisory: raise the stack/);
+  // The two sides of this merge are ONE finding: the confound names who felled
+  // the cohort, and the observation names the state the sample was taken at.
+  assert.match(finding, /20\.0\/20 health/);
 });
 
 // The step can END without the wave being down: with nothing eligible left to
@@ -268,7 +278,7 @@ test("a cohort the world mostly killed is not a fight the bot beat", () => {
 test("an encounter cleared with the party credited for nothing draws no advisory", () => {
   const finding = floorFinding(
     encounter({ tier: "boss", count: 2 }),
-    { attempted: true, won: true },
+    attempt({ engaged: 2, killed: 0 }),
     waveAttribution(2, 2, 0),
   );
   assert.match(String(finding), /credited with none of its 2 bodies/);
@@ -276,7 +286,7 @@ test("an encounter cleared with the party credited for nothing draws no advisory
 });
 
 test("an attempt no census could attribute says so instead of claiming a clean win", () => {
-  const finding = floorFinding(encounter({ tier: "elite" }), { attempted: true, won: true }, {
+  const finding = floorFinding(encounter({ tier: "elite" }), attempt(), {
     kind: "unattributed",
     reason: "no wave census answered during the unassisted attempt",
   });
@@ -290,6 +300,44 @@ test("the attribution floors at zero rather than reporting a negative body count
   const a = waveAttribution(3, 1, 3);
   assert.equal(a.kind, "measured");
   assert.equal(a.kind === "measured" ? a.uncredited : -1, 0);
+});
+
+/**
+ * The gallery's intermittency, as a rule rather than as three ladder runs.
+ *
+ * The bot losing a souls fight and the bot never reaching one produced the SAME
+ * silence, and silence reads as "the fight held". They are different facts with
+ * different owners, so the gate says the second one out loud.
+ */
+test("a billed fight the unassisted bot never engaged is an UNMEASURED floor, not a silence", () => {
+  const enc = encounter({ tier: "elite" });
+  const never = attempt({ result: "unengaged", engaged: 0, killed: 0, detail: "kill timed out" });
+  assert.equal(
+    floorFinding(enc, never, waveAttribution(1, 1, 0)),
+    undefined,
+    "it did not beat anything",
+  );
+  const finding = unmeasuredFloorFinding(enc, never);
+  assert.ok(finding);
+  assert.match(finding, /did NOT measure it/);
+  assert.match(finding, /0 of its bodies/);
+  assert.match(finding, /kill timed out/);
+  // …and a fight it DID reach and lose is a measurement: the gate stays quiet,
+  // which is what makes the line above mean something.
+  assert.equal(
+    unmeasuredFloorFinding(enc, attempt({ result: "died", engaged: 2, killed: 1 })),
+    undefined,
+  );
+  assert.equal(
+    unmeasuredFloorFinding(enc, attempt({ result: "held", engaged: 1, killed: 0 })),
+    undefined,
+  );
+  // An ordinary encounter is outside the gate in both directions.
+  assert.equal(unmeasuredFloorFinding(encounter(), never), undefined);
+});
+
+test("the gate names five endings, and the four not-won ones are not one bucket", () => {
+  assert.deepEqual([...UNASSISTED_RESULTS], ["won", "died", "held", "unengaged", "not-attempted"]);
 });
 
 // --- die-retry (spec-0023 §1) -----------------------------------------------

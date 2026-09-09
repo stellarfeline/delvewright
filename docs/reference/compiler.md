@@ -5381,6 +5381,21 @@ floor; spec-0031's ruling that a stake left on the car would be deleted by the n
 ride). Both are boxes, so the runtime lookup is a selector test on the corpse
 (`@s[x=…,dx=…]`) rather than a search.
 
+**What a region forbids an anchor is the region's own answer, and the two kinds
+answer differently.** A runtime-mutable region acts on BLOCKS, so what it can
+destroy is a marker in one of its own cells and cell containment is the whole
+rule. A lethal volume acts on BODIES, through a vanilla selector the server
+adjudicates against the body's whole hitbox — `@a[x=lo,dx=hi-lo,…]` covers
+`[lo, hi + 1]` on each axis and matches on intersection, so it kills a
+`metrics::PLAYER_WIDTH`-wide body whose feet cell is one outside the box.
+`DeathRegion::holds_no_anchor` therefore refuses a lethal volume the shell of
+cells `metrics::selector_reaches_body_in_cell` reports: one cell on every axis,
+derived from the body and never chosen. An anchor inside that shell is a place
+the delve invites the player to walk back to and then kills them for standing on,
+and the bot ladder measured exactly that on the gallery — west pit
+`[1,63,2]..[3,67,4]`, anchor `[1,65,5]`, three runs, three deaths at cell
+`[3,65,5]` on the walk off it.
+
 #### The three ways a stake can be pulled out from under itself
 
 Two are `DW0526`'s, one is not, and the third is named rather than left silent.

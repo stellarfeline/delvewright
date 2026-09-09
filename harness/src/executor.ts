@@ -47,6 +47,7 @@ import {
   assistPolicy,
   deathPhases,
   floorFinding,
+  unmeasuredFloorFinding,
   checkpointPrecondition,
   giveUpBudgetFor,
   observationOf,
@@ -70,6 +71,8 @@ import {
   type FightAttribution,
   type PerformedRest,
   type ReengageObservation,
+  type UnassistedOutcome,
+  type UnassistedResult,
   type UnkillableBody,
   type WaveCensus,
 } from "./combat.ts";
@@ -78,7 +81,7 @@ import {
   entryCellOf,
   markersAt,
   expectedForfeit,
-  inBox,
+  volumeReachesCell,
   openLethalTrial,
   seatAtRespawn,
   stakesDropped,
@@ -1443,7 +1446,8 @@ export class MineflayerExecutor implements StepExecutor {
    * `assist_windows` array (spec-0023 takes no assist while deliberately dying,
    * nor on a billed encounter's honest first attempt). */
   private readonly encounterPhases = new Map<string, EncounterPhase>();
-  /** Inverted floor gate findings: billed fights the unassisted bot beat cold. */
+  /** Inverted floor gate findings: billed fights the unassisted bot beat cold,
+   * and billed fights it never reached — the gate's two sayable things. */
   private readonly floorFindings: string[] = [];
   /**
    * Who felled each wave's bodies, as its last census answered. The floor gate's
@@ -1452,6 +1456,14 @@ export class MineflayerExecutor implements StepExecutor {
    * and before this nothing anywhere could tell the two apart.
    */
   private readonly waveAttributions = new Map<string, FightAttribution>();
+  /** What the one honest unassisted attempt observed, per wave. The floor gate's
+   * own measurement, which the run artifact carried nowhere before: three runs of
+   * one gallery tree ended `won`, `died`, `died` and wrote identical rows. */
+  private readonly unassisted = new Map<string, UnassistedOutcome>();
+  /** The live kill bookkeeping per wave, kept past the step that made it so a
+   * caller can say what its fight actually reached. `activeWave` is the one in
+   * flight; this is every one the run has opened. */
+  private readonly engagements = new Map<string, WaveEngagement>();
   /** Every body that outlived its kind's melee budget, with the arithmetic
    * that budgeted it. Recorded rather than absorbed: the six-second timer
    * this replaced blacklisted such a body and said nothing at all. */
@@ -2531,14 +2543,25 @@ export class MineflayerExecutor implements StepExecutor {
     return this.myScore(objective);
   }
 
-  /** Make every declared lethal volume impassable to the pathfinder. */
+  /**
+   * Make every cell a declared lethal volume can KILL IN impassable to the
+   * pathfinder — which is not the same set as the cells inside the volume.
+   *
+   * The server adjudicates the volume against a body's whole hitbox, so it kills
+   * a player whose feet cell is one outside the box ({@link volumeReachesCell},
+   * the cell-shaped reading of {@link bodyInVolume}). Excluding only the box left
+   * the shell of cells the volume still reaches open to every walk, and the bot
+   * duly died on one: the gallery's east-pit trial opened with the bot parked at
+   * `[2, 65, 5]` and it was killed at `[3.85, 65.00, 5.14]` by the WEST pit,
+   * which the stage then had to report against the east pit's declared volume.
+   */
   private applyLethalExclusion(movements: InstanceType<typeof Movements>): void {
     if (this.lethalExclusionSuspended || this.lethalBoxes.length === 0) return;
     const boxes = this.lethalBoxes;
     movements.exclusionAreasStep.push((block): number => {
       const p = block.position;
       const cell: Vec3Tuple = [p.x, p.y, p.z];
-      return boxes.some((b) => inBox(cell, b)) ? LETHAL_STEP_COST : 0;
+      return boxes.some((b) => volumeReachesCell(cell, b)) ? LETHAL_STEP_COST : 0;
     });
   }
 
@@ -3706,6 +3729,10 @@ export class MineflayerExecutor implements StepExecutor {
     // ever to reach `step.count` — measured on the gallery, where two of three
     // bodies withered and fell and `1/3` was as far as the tally could get.
     const watch = beginCensusWatch();
+    // Kept past the step, so what the fight REACHED survives the exception the
+    // step throws. A caller that has to reconstruct "did the bot swing at
+    // anything" from a message string is reading prose for a measurement.
+    this.engagements.set(step.wave, engagement);
     const onGone = (e: Entity): void => {
       if (!creditsWaveKill(engagement, e.id, e.position)) return;
       engagement.credited.add(e.id);
@@ -4021,6 +4048,12 @@ export class MineflayerExecutor implements StepExecutor {
     return this.encounterPhases.get(wave) ?? "not-reached";
   }
 
+  /** What the inverted floor gate's one unassisted attempt at `wave` observed.
+   * `undefined` when the policy took none, or the run never got there. */
+  unassistedOutcome(wave: string): UnassistedOutcome | undefined {
+    return this.unassisted.get(wave);
+  }
+
   /** Inverted floor-gate findings (advisory, spec-0023). */
   floorGateFindings(): readonly string[] {
     return this.floorFindings;
@@ -4099,20 +4132,28 @@ export class MineflayerExecutor implements StepExecutor {
     }
     if (assistPolicy(enc) === "unassisted-first") {
       this.encounterPhases.set(enc.wave, "unassisted");
-      const won = await this.attemptUnassisted(step, enc);
+      const outcome = await this.attemptUnassisted(step, enc);
+      this.unassisted.set(enc.wave, outcome);
+      process.stderr.write(
+        `[floor] ${step.wave}: unassisted outcome \`${outcome.result}\` — opened at ` +
+          `${outcome.healthAtStart.toFixed(1)}/${outcome.maxHealth} health, ` +
+          `${outcome.engaged} body/bodies engaged, ${outcome.killed} down\n`,
+      );
       // The attribution the attempt's own last census gave. `unattributed` only
       // when no census answered during it, which is a fact about the probe rather
-      // than about the fight, and says so.
-      const finding = floorFinding(
-        enc,
-        { attempted: true, won },
-        this.waveAttribution(enc.wave),
-      );
-      if (finding) {
+      // than about the fight, and says so. `unmeasuredFloorFinding` takes no
+      // attribution: it fires exactly where no attempt was made, and there is
+      // nothing there to attribute.
+      const attribution = this.waveAttribution(enc.wave);
+      for (const finding of [
+        floorFinding(enc, outcome, attribution),
+        unmeasuredFloorFinding(enc, outcome),
+      ]) {
+        if (finding === undefined) continue;
         this.floorFindings.push(finding);
         process.stderr.write(`[floor] ${finding}\n`);
       }
-      if (won) {
+      if (outcome.result === "won") {
         this.encounterPhases.set(enc.wave, "cleared");
         return;
       }
@@ -4292,23 +4333,70 @@ export class MineflayerExecutor implements StepExecutor {
   }
 
   /**
-   * One honest, unassisted attempt at a billed encounter. Returns whether the bot
-   * cleared it; a death or a timeout is a normal `false`, not a failed run — the
-   * bot losing a souls fight is the DESIGN, and spec-0023 downgraded bot melee
-   * competence from gate-critical to telemetry precisely so it could be.
+   * **The floor measurement never opens over an unrecovered death.**
+   *
+   * The die-retry stage runs first and dies on purpose, so the bot can arrive at
+   * this line still on the death screen. Opened there, the attempt is charged a
+   * `died` it did not take — the gallery produced exactly that: `opened at
+   * 0.0/20 health, 0 bodies engaged, 0 down`, which is a verdict about a delve
+   * written by the harness leaving its own bot dead. The same rule the death
+   * loop's trials already keep.
+   *
+   * Health is NOT settled first, and that is a measurement rather than an
+   * omission. Standing next to a live elite waiting to regenerate is not
+   * something a player does and not something the bot survives: made to try it,
+   * the gallery run above was beaten to death during the wait, since
+   * `eatDecision` correctly refuses to eat with a hostile in reach. And full
+   * health does not decide the fight anyway — two gallery runs opened at
+   * `20.0/20` and both ended `died`. So the health is RECORDED, which is what
+   * makes two samples comparable, and not manufactured.
    */
-  private async attemptUnassisted(step: KillStep, enc: Encounter): Promise<boolean> {
+  private async openFloorMeasurement(step: KillStep): Promise<number | undefined> {
+    if (this.death !== undefined) {
+      process.stderr.write(
+        `[floor] ${step.wave}: the bot was still dead when the unassisted attempt opened — ` +
+          `recovering first, because a corpse measures nothing\n`,
+      );
+      await this.recoverFromDeath();
+    }
+    if (this.death !== undefined) return undefined;
+    return this.requireBot().health;
+  }
+
+  private async attemptUnassisted(step: KillStep, enc: Encounter): Promise<UnassistedOutcome> {
+    const seen = (): { engaged: number; killed: number } => {
+      const e = this.engagements.get(step.wave);
+      return { engaged: e?.engaged.size ?? 0, killed: e?.killed ?? 0 };
+    };
+    const opened = await this.openFloorMeasurement(step);
+    if (opened === undefined) {
+      return {
+        result: "not-attempted",
+        healthAtStart: 0,
+        maxHealth: PLAYER_MAX_HEALTH,
+        engaged: 0,
+        killed: 0,
+        detail: "the bot was dead when the attempt opened and could not be recovered",
+      };
+    }
+    const healthAtStart = opened;
     process.stderr.write(
-      `[floor] ${step.wave} is billed \`${enc.tier}\` — one unassisted attempt first\n`,
+      `[floor] ${step.wave} is billed \`${enc.tier}\` — one unassisted attempt first, ` +
+        `opening at ${healthAtStart.toFixed(1)}/${PLAYER_MAX_HEALTH} health\n`,
     );
     try {
       await this.fightWave(step);
-      return true;
+      return { result: "won", healthAtStart, maxHealth: PLAYER_MAX_HEALTH, ...seen() };
     } catch (err) {
       const detail = err instanceof Error ? err.message : String(err);
       process.stderr.write(`[floor] ${step.wave}: unassisted attempt ended — ${detail}\n`);
-      if (this.death) await this.respawnAndRearm();
-      return false;
+      const died = this.death !== undefined;
+      if (died) await this.respawnAndRearm();
+      const counts = seen();
+      // A death is a measurement whatever it engaged; a timeout is one only if the
+      // bot actually reached a body. Nothing else can tell the two apart later.
+      const result: UnassistedResult = died ? "died" : counts.engaged > 0 ? "held" : "unengaged";
+      return { result, healthAtStart, maxHealth: PLAYER_MAX_HEALTH, detail, ...counts };
     }
   }
 

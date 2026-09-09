@@ -465,6 +465,7 @@ async function main(): Promise<number> {
         phaseReached: executor.encounterPhase(enc.wave),
         assistWindows: assists.filter((w) => w.wave === enc.wave).length,
         attribution: executor.waveAttribution(enc.wave),
+        unassisted: executor.unassistedOutcome(enc.wave),
       }),
     );
     report.recordEncounters(encounterReports);
