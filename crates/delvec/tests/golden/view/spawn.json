@@ -19,6 +19,10 @@
   "emitterIntensity": 13.0,
   "sunEnabled": true,
   "stillWater": false,
+  "sun": {
+    "altitude": 0.216882,
+    "azimuth": 3.141593
+  },
   "world": {
     "path": "world",
     "dimension": 0

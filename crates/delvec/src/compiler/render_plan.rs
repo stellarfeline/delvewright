@@ -80,6 +80,25 @@
 //! ambient water plane at exactly the compiler's datum. `horizon: void` (the
 //! default) emits no key, keeping every existing plan byte-identical.
 //!
+//! ## `sky` (the declared hour reaches the renderer)
+//!
+//! `world.json` states the hour the delve is played at, `DW0890` holds the
+//! approved design's rows equal to the skies this world reaches, and step 12
+//! tells the creator to read the sky off the first frame. That chain used to end
+//! at a renderer nobody told: no scene carried a sun, so every frame — of a dusk
+//! delve, of a midnight one — came off Chunky's own default and showed midday
+//! blue. The guarantees all held and the thing they protect was never emitted.
+//!
+//! So the plan states the hour as a fact of the campaign, exactly as it states
+//! [`horizon_fact`]: `{"time": "dusk", "daytime_ticks": 12000}` — the keyword an
+//! author wrote and the vanilla `daytime` tick it sets, which is the number the
+//! sun's position is a function of. `delvec scene` turns it into a Chunky sun
+//! ([`crate::compiler::view::scene::sun_at`]) and refuses a plan that omits it,
+//! so no frame can be taken under a default sun again.
+//!
+//! **The weather is deliberately not here.** Chunky has no rain, and a key a
+//! renderer cannot act on is the same unemitted shape one level along.
+//!
 //! ## `lighting` stamp (declared-dark areas stay reviewable)
 //!
 //! POV and interior shots carry a `lighting` stamp derived **purely from the
@@ -267,28 +286,14 @@ pub fn pov_shots(plan: &Plan, routes: &[LegRoute]) -> Vec<PovShot> {
                         n[1] as f64 + EYE_HEIGHT,
                         n[2] as f64 + 0.5,
                     ],
-                    false,
+                    Arrival::Walking,
                 )
             } else {
-                // Leg's final waypoint: frame the objective anchor (raw `to`) at
-                // body height. The snapped standing waypoint often sits directly on
-                // or above the anchor, so aiming straight at it looks vertically at
-                // the floor; when the anchor is within ~2 blocks horizontally, keep
-                // the approach heading (previous → last waypoint) and aim a few
-                // blocks ahead at the anchor's height — a forward arrival frame with
-                // the objective in view, never a straight-down floor shot.
+                // Leg's final waypoint: the frame is of the objective it arrives
+                // at, and [`arrival_aim`] is what decides where to point.
                 let t = route.to;
                 let anchor = [t[0] as f64 + 0.5, t[1] as f64 + 1.0, t[2] as f64 + 0.5];
-                let horiz = ((anchor[0] - eye[0]).powi(2) + (anchor[2] - eye[2]).powi(2)).sqrt();
-                if horiz >= 2.0 {
-                    (anchor, true)
-                } else {
-                    let dir = approach_heading(&wps, anchor, eye);
-                    (
-                        [eye[0] + dir[0] * 4.0, anchor[1], eye[2] + dir[1] * 4.0],
-                        true,
-                    )
-                }
+                arrival_aim(&wps, eye, anchor)
             };
             let compass = compass_toward(eye, look_at);
             let expect_line = compose_pov_expect(&ctx, compass, arriving);
@@ -314,29 +319,109 @@ pub fn pov_shots(plan: &Plan, routes: &[LegRoute]) -> Vec<PovShot> {
     shots
 }
 
-/// The horizontal unit heading `(dx, dz)` the player faces on arrival: the last
-/// walked segment (previous → final waypoint), falling back to eye→anchor, then to
-/// east — never a zero vector, so the arrival camera always faces a definite way.
-fn approach_heading(wps: &[[i32; 3]], anchor: [f64; 3], eye: [f64; 3]) -> [f64; 2] {
-    let candidates = [
-        wps.len()
-            .checked_sub(2)
-            .map(|p| {
-                let a = wps[p];
-                let b = wps[wps.len() - 1];
-                [(b[0] - a[0]) as f64, (b[2] - a[2]) as f64]
-            })
-            .unwrap_or([0.0, 0.0]),
-        [anchor[0] - eye[0], anchor[2] - eye[2]],
-        [1.0, 0.0],
-    ];
-    for c in candidates {
-        let len = (c[0] * c[0] + c[1] * c[1]).sqrt();
-        if len > 1e-6 {
-            return [c[0] / len, c[1] / len];
-        }
+/// What a POV frame is a frame OF, which is also what its `expect` line may
+/// claim. **A shot's `expect` is a claim the emitter has to be able to keep**,
+/// so the two are decided together and there is no way to compose the sentence
+/// without saying which of these the aim came out as.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Arrival {
+    /// Mid-leg: the camera looks along the walk at the next waypoint.
+    Walking,
+    /// The leg's last waypoint, with the objective anchor somewhere ahead of the
+    /// eye — the camera is aimed at it and the frame contains it.
+    AtObjectiveAhead,
+    /// The leg's last waypoint, with the objective anchor in the eye's **own**
+    /// horizontal cell: the player is standing on top of it. No horizontal aim
+    /// puts it in frame, so the camera keeps the approach heading and the
+    /// `expect` line stops claiming the objective is ahead.
+    AtObjectiveUnderfoot,
+}
+
+/// How far ahead an arrival frame aims when the objective is closer than that:
+/// a first-person view wants depth in front of the eye, not a wall of anchor.
+const ARRIVAL_LOOK_DISTANCE: f64 = 4.0;
+
+/// Below this horizontal separation (blocks) the objective anchor is treated as
+/// being in the eye's own column: `[Arrival::AtObjectiveUnderfoot]`. Half a
+/// block, because eye and anchor are both block-centred, so anything they do not
+/// share a cell with is at least a whole block away.
+const UNDERFOOT_RADIUS: f64 = 0.5;
+
+/// Where an arrival frame looks, and what it is therefore allowed to claim.
+///
+/// **The aim is derived from the objective and from nothing else.** It used to
+/// be derived from the walk: when the anchor was within two blocks horizontally
+/// the camera extended the last leg's heading a fixed distance and the objective
+/// was never consulted, while the `expect` line went on asserting *the objective
+/// should be ahead in frame*. On a route that arrives by walking PAST an anchor
+/// and turning — the ordinary shape of arriving at an NPC beside a bench — the
+/// heading points 180° away from it: two frames of the drill campaign stood one
+/// block from the counter's body, looked four blocks the other way, and returned
+/// a wall and an empty floor under an `expect` line saying the counter was
+/// there. Nothing about that is a convention question: `look_at` is a world
+/// point, so the sign of `dot((look_at − eye)ₕ, (anchor − eye)ₕ)` settles it.
+///
+/// Three cases, and the objective decides which:
+///
+/// * far enough to frame directly (≥ [`ARRIVAL_LOOK_DISTANCE`]) — look straight
+///   at the anchor;
+/// * closer than that but in a different column — look **along the direction of
+///   the anchor**, out to [`ARRIVAL_LOOK_DISTANCE`] at the anchor's height. The
+///   objective is then centred and near, with the room behind it, rather than
+///   filling the frame or dragging the pitch toward the floor;
+/// * inside the eye's own column ([`UNDERFOOT_RADIUS`]) — the player is standing
+///   on it. There is no aim that shows it, so the camera keeps the walked
+///   heading and the sentence changes.
+fn arrival_aim(wps: &[[i32; 3]], eye: [f64; 3], anchor: [f64; 3]) -> ([f64; 3], Arrival) {
+    let (dx, dz) = (anchor[0] - eye[0], anchor[2] - eye[2]);
+    let horiz = (dx * dx + dz * dz).sqrt();
+    if horiz >= ARRIVAL_LOOK_DISTANCE {
+        return (anchor, Arrival::AtObjectiveAhead);
     }
-    [1.0, 0.0]
+    if horiz > UNDERFOOT_RADIUS {
+        let (ux, uz) = (dx / horiz, dz / horiz);
+        return (
+            [
+                eye[0] + ux * ARRIVAL_LOOK_DISTANCE,
+                anchor[1],
+                eye[2] + uz * ARRIVAL_LOOK_DISTANCE,
+            ],
+            Arrival::AtObjectiveAhead,
+        );
+    }
+    let dir = walked_heading(wps);
+    (
+        [
+            eye[0] + dir[0] * ARRIVAL_LOOK_DISTANCE,
+            anchor[1],
+            eye[2] + dir[1] * ARRIVAL_LOOK_DISTANCE,
+        ],
+        Arrival::AtObjectiveUnderfoot,
+    )
+}
+
+/// The horizontal unit heading `(dx, dz)` of the last walked segment (previous →
+/// final waypoint), falling back to east — never a zero vector, so an arrival
+/// camera with nothing to aim at still faces a definite way.
+///
+/// Only [`Arrival::AtObjectiveUnderfoot`] reads this. The anchor is deliberately
+/// not a fallback here: a heading toward an anchor in the eye's own column is
+/// the sub-block direction of a rounding error.
+fn walked_heading(wps: &[[i32; 3]]) -> [f64; 2] {
+    let last = wps.len() - 1;
+    let seg = last
+        .checked_sub(1)
+        .map(|p| {
+            let (a, b) = (wps[p], wps[last]);
+            [(b[0] - a[0]) as f64, (b[2] - a[2]) as f64]
+        })
+        .unwrap_or([0.0, 0.0]);
+    let len = (seg[0] * seg[0] + seg[1] * seg[1]).sqrt();
+    if len > 1e-6 {
+        [seg[0] / len, seg[1] / len]
+    } else {
+        [1.0, 0.0]
+    }
 }
 
 /// The objective id whose critical-path step is `step` (inverse of
@@ -392,28 +477,39 @@ fn leg_context(plan: &Plan, route: &LegRoute, objective: Option<&str>) -> LegCon
     }
 }
 
-/// Compose the one-sentence POV description.
-fn compose_pov_expect(ctx: &LegContext, compass: &str, arriving: bool) -> String {
+/// Compose the one-sentence POV description — **the claim the aim keeps**, which
+/// is why [`Arrival`] and not a bool decides it: the underfoot case cannot say
+/// the objective is ahead, and a reviewer told to look for it there would record
+/// a finding against a frame that is correct.
+fn compose_pov_expect(ctx: &LegContext, compass: &str, arriving: Arrival) -> String {
     let place = if ctx.area_name.is_empty() {
         String::new()
     } else {
         format!(" in {}", ctx.area_name)
     };
-    if arriving {
-        let hint = ctx
-            .hint
+    let hint = || {
+        ctx.hint
             .as_ref()
             .map(|h| format!(" ({h})"))
-            .unwrap_or_default();
-        format!(
-            "First-person view arriving at {}{place}{hint} — the objective should be ahead in frame.",
-            ctx.target
-        )
-    } else {
-        format!(
+            .unwrap_or_default()
+    };
+    match arriving {
+        Arrival::AtObjectiveAhead => format!(
+            "First-person view arriving at {}{place}{} — the objective should be ahead in frame.",
+            ctx.target,
+            hint()
+        ),
+        Arrival::AtObjectiveUnderfoot => format!(
+            "First-person view arriving at {}{place}{} — the objective is in the cell the player \
+             stands in, so it is under the frame and not in it; the view looks {compass} along the \
+             way the player walked in.",
+            ctx.target,
+            hint()
+        ),
+        Arrival::Walking => format!(
             "First-person view walking {compass}{place} toward {} — the path ahead should be open.",
             ctx.target
-        )
+        ),
     }
 }
 
@@ -939,6 +1035,7 @@ pub fn render_plan(
         "layout_aabb": { "min": amin, "max": amax },
         "camera_convention": "yaw/pitch degrees; yaw=atan2(-dz,dx) (0=+X,90=-Z); pitch=atan2(-dy,horiz) (+down)",
         "camera_eye_proof": { "cameras": out.eyes.len(), "pulled_in": out.pulled_in },
+        "sky": sky_fact(c),
         "shots": out.shots,
     });
     if let Some(h) = horizon_fact(c, plan) {
@@ -947,6 +1044,33 @@ pub fn render_plan(
             .insert("horizon".to_string(), h);
     }
     Ok((root, warnings))
+}
+
+/// **The hour this delve is played at**, as the render layer needs it.
+///
+/// Two fields, and the second is the one that carries the meaning: `time` is the
+/// keyword the author wrote (so a creator reading the plan reads their own
+/// document's vocabulary), and `daytime_ticks` is the vanilla `daytime` value
+/// that keyword sets — the number the sun's position in the sky is a function
+/// of. The renderer derives its sun from the ticks and never from the keyword,
+/// so a state vanilla does not name (`dusk` is `12000`, not a keyword) is worth
+/// exactly as much as one it does.
+///
+/// Always present: `world.json`'s `time` is required and has no default, which
+/// is the whole reason there is a single hour to state.
+///
+/// It is the **declared initial** hour — the one the world save is written at
+/// and therefore the one every frame is of. A campaign whose story moves the
+/// clock with `set-time` reaches other hours at play, and `DW0890` holds the
+/// approved design's rows equal to that whole reachable set; a still frame has
+/// one sun and cannot be evidence about the beats after the cut. The plan states
+/// the hour it can keep rather than a set it cannot.
+fn sky_fact(c: &Campaign) -> Value {
+    let t = c.world.content.time;
+    json!({
+        "time": t.keyword(),
+        "daytime_ticks": t.daytime_ticks(),
+    })
 }
 
 /// The world-generator horizon (spec-0013) as the render layer needs it, or
@@ -1229,19 +1353,105 @@ mod pov_tests {
         assert_eq!(first_clause("no punctuation here"), "no punctuation here");
     }
 
+    /// The horizontal sign test the withdrawn convention argument never needed:
+    /// `look_at` is a world point, so `dot((look_at − eye)ₕ, (anchor − eye)ₕ)`
+    /// settles whether the frame contains the objective, with no yaw mapping
+    /// anywhere in it.
+    fn objective_is_ahead(eye: [f64; 3], look_at: [f64; 3], anchor: [f64; 3]) -> bool {
+        let (ax, az) = (look_at[0] - eye[0], look_at[2] - eye[2]);
+        let (bx, bz) = (anchor[0] - eye[0], anchor[2] - eye[2]);
+        ax * bx + az * bz > 0.0
+    }
+
+    /// **The defect this derivation exists to close.** A route that walks past
+    /// the anchor and turns — the exact `pov/leg0/wp1` of the first full drill:
+    /// eye `[18.5, 65.62, 17.5]`, approach heading −X, the counter's body one
+    /// block along +X. The aim used to extend the heading four blocks and frame
+    /// a wall while its `expect` line said the objective was there.
     #[test]
-    fn approach_heading_uses_the_last_segment_then_falls_back() {
-        // Last segment runs +X (east); heading is the unit +X.
-        let wps = [[0, 65, 0], [3, 65, 0], [5, 65, 0]];
-        let h = approach_heading(&wps, [6.5, 66.0, 0.5], [5.5, 66.62, 0.5]);
+    fn an_arrival_frame_faces_the_objective_and_not_the_approach() {
+        let wps = [[22, 64, 17], [18, 64, 17]];
+        let eye = [18.5, 65.62, 17.5];
+        let anchor = [19.5, 65.0, 17.5];
+        let (look_at, arrival) = arrival_aim(&wps, eye, anchor);
+        assert_eq!(arrival, Arrival::AtObjectiveAhead);
         assert!(
-            (h[0] - 1.0).abs() < 1e-9 && h[1].abs() < 1e-9,
-            "heading east: {h:?}"
+            objective_is_ahead(eye, look_at, anchor),
+            "aimed away from the objective: {look_at:?}"
         );
-        // A single-waypoint leg has no segment → fall back to eye→anchor.
+        // The walked heading is −X and the objective is +X, so this is the case
+        // the old rule got backwards rather than one it happened to agree on.
+        assert!(look_at[0] > eye[0], "{look_at:?}");
+        // The frame keeps its depth: it looks PAST the near anchor, not at it.
+        assert!((look_at[0] - eye[0]).abs() > 1.0, "{look_at:?}");
+        assert_eq!(look_at[1], anchor[1], "aimed at the anchor's own height");
+    }
+
+    /// The aim follows the objective when the objective moves — including
+    /// through the far branch, where the anchor is framed directly.
+    #[test]
+    fn moving_the_objective_moves_the_aim() {
+        let wps = [[22, 64, 17], [18, 64, 17]];
+        let eye = [18.5, 65.62, 17.5];
+        for anchor in [
+            [19.5, 65.0, 17.5], // +X, one block: near branch
+            [17.5, 65.0, 17.5], // −X, one block: near branch, other way
+            [18.5, 65.0, 23.5], // +Z, six blocks: far branch
+            [18.5, 65.0, 11.5], // −Z, six blocks: far branch
+        ] {
+            let (look_at, arrival) = arrival_aim(&wps, eye, anchor);
+            assert_eq!(arrival, Arrival::AtObjectiveAhead, "{anchor:?}");
+            assert!(
+                objective_is_ahead(eye, look_at, anchor),
+                "anchor {anchor:?} is not ahead of {look_at:?}"
+            );
+        }
+    }
+
+    /// The one case with no answer, and the case the old rule was written for:
+    /// the standing waypoint snapped onto the anchor's own column. Nothing can
+    /// be aimed at it, so the sentence stops claiming otherwise.
+    #[test]
+    fn an_objective_underfoot_is_not_claimed_to_be_in_frame() {
+        // Last segment runs +X (east), and the anchor is in the eye's own cell.
+        let wps = [[0, 65, 0], [3, 65, 0], [5, 65, 0]];
+        let eye = [5.5, 66.62, 0.5];
+        let anchor = [5.5, 66.0, 0.5];
+        let (look_at, arrival) = arrival_aim(&wps, eye, anchor);
+        assert_eq!(arrival, Arrival::AtObjectiveUnderfoot);
+        assert!((look_at[0] - (eye[0] + 4.0)).abs() < 1e-9, "{look_at:?}");
+        assert!((look_at[2] - eye[2]).abs() < 1e-9, "{look_at:?}");
+
+        let ctx = LegContext {
+            area_id: "area/keep".into(),
+            area_name: "the keep".into(),
+            target: "the well".into(),
+            hint: None,
+        };
+        let line = compose_pov_expect(&ctx, "east", arrival);
+        assert!(
+            !line.contains("ahead in frame"),
+            "the frame does not contain it: {line}"
+        );
+        assert!(line.contains("under the frame"), "{line}");
+        // And the ordinary arrival still claims it, so this is not a blanket
+        // retreat from the claim.
+        let ahead = compose_pov_expect(&ctx, "east", Arrival::AtObjectiveAhead);
+        assert!(
+            ahead.contains("the objective should be ahead in frame"),
+            "{ahead}"
+        );
+    }
+
+    /// A single-waypoint leg has no walked segment; the underfoot fallback still
+    /// faces a definite way rather than emitting a zero-length aim.
+    #[test]
+    fn a_single_waypoint_arrival_still_faces_somewhere() {
         let one = [[5, 65, 0]];
-        let h2 = approach_heading(&one, [5.5, 66.0, 9.5], [5.5, 66.62, 5.5]);
-        assert!(h2[1] > 0.9, "falls back to eye→anchor (south): {h2:?}");
+        let eye = [5.5, 66.62, 0.5];
+        let (look_at, arrival) = arrival_aim(&one, eye, [5.5, 66.0, 0.5]);
+        assert_eq!(arrival, Arrival::AtObjectiveUnderfoot);
+        assert_ne!([look_at[0], look_at[2]], [eye[0], eye[2]]);
     }
 
     #[test]
