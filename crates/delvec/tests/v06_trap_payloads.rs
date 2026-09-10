@@ -15,7 +15,7 @@ use delvec::compiler::emit::{self, BuildFailure, BuildOutput};
 use delvec::compiler::load::load_campaign_dir;
 use delvec::compiler::plan::Plan;
 use delvec::compiler::registry::{FullEntityRegistry, FullItemRegistry, PrefabRegistry};
-use delvewright_dsl::{parse_campaign, validate_campaign_with};
+use delvewright_dsl::{DSL_VERSION, parse_campaign, validate_campaign_with};
 
 const NS: &str = "hello-world";
 
@@ -56,7 +56,7 @@ fn payload_prefabs(name: &str, extra: &[(&str, serde_json::Value)]) -> PathBuf {
 
 fn world_v06() -> serde_json::Value {
     serde_json::json!({
-        "dsl_version": "0.24.0",
+        "dsl_version": DSL_VERSION,
         "campaign_id": "hello-world",
         "stage": "world",
         "content": {
@@ -74,7 +74,7 @@ fn world_v06() -> serde_json::Value {
 
 fn quests_v06(trap: serde_json::Value) -> serde_json::Value {
     serde_json::json!({
-        "dsl_version": "0.24.0",
+        "dsl_version": DSL_VERSION,
         "campaign_id": "hello-world",
         "stage": "quests",
         "content": {

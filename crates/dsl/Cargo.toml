@@ -3,12 +3,14 @@ name = "delvewright-dsl"
 # This crate DEFINES the campaign format, so its package number IS the format's
 # number: the `dsl_version` every document declares and `delvec fmt` writes.
 # A format change bumps the minor; a Rust-API-only change bumps the patch.
-# `DSL_VERSION` (src/envelope.rs) states the same number as a literal — gates
-# read that literal textually — and a unit test beside it holds
-# the two equal; validation/check-versions.sh binds both to `[engine]
-# dsl_crate_version` in versions.toml, together with the `=` requirement every
-# engine crate declares on it.
-version = "0.24.0"
+# THIS LINE IS THE AUTHORITY. `DSL_VERSION` (src/envelope.rs) reads it through
+# `env!("CARGO_PKG_VERSION")`, so no Rust source restates it;
+# validation/check-versions.sh binds it to `[engine] dsl_crate_version` in
+# versions.toml, together with the `=` requirement every engine crate declares
+# on it, and `tools/lib/version_sites.py verify` refuses any other file that
+# states this number without being derived from it, written by a tool, or
+# allowlisted as a counter-example.
+version = "0.24.1"
 edition = "2024"
 # The toolchain this repo actually builds and tests on (rust-toolchain.toml).
 # Asserted equal to that pin by check-versions.sh: a `rust-version` looser than

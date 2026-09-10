@@ -26,6 +26,7 @@ use delvec::compiler::plan::Plan;
 use delvec::compiler::registry::{FullEntityRegistry, FullItemRegistry, PrefabRegistry};
 use delvewright_dsl::gate::{GateConsumer, for_each_gate};
 use delvewright_dsl::{parse_campaign, validate_campaign_with};
+use std::sync::LazyLock;
 
 const NS: &str = "cast-ledger";
 
@@ -77,8 +78,10 @@ fn patched_prefabs() -> PathBuf {
     .clone()
 }
 
-const WORLD: &str = r#"{
-  "dsl_version": "0.24.0",
+static WORLD: LazyLock<String> = LazyLock::new(|| {
+    common::at_dsl_version(
+        r#"{
+  "dsl_version": "%dsl_version%",
   "campaign_id": "cast-ledger",
   "stage": "world",
   "content": {
@@ -92,12 +95,16 @@ const WORLD: &str = r#"{
     "difficulty": "normal",
     "areas": [ { "id": "area/keep", "name": "The Keep", "prefab": "prefab/hello-room" } ]
   }
-}"#;
+}"#,
+    )
+});
 
 /// Two data — one shared by the party, one held per player — read by a gate at
 /// every consumer class the engine has, and written by all three verbs.
-const QUESTS: &str = r#"{
-  "dsl_version": "0.24.0",
+static QUESTS: LazyLock<String> = LazyLock::new(|| {
+    common::at_dsl_version(
+        r#"{
+  "dsl_version": "%dsl_version%",
   "campaign_id": "cast-ledger",
   "stage": "quests",
   "content": {
@@ -190,10 +197,14 @@ const QUESTS: &str = r#"{
       }
     ]
   }
-}"#;
+}"#,
+    )
+});
 
-const DIALOGUE: &str = r#"{
-  "dsl_version": "0.24.0",
+static DIALOGUE: LazyLock<String> = LazyLock::new(|| {
+    common::at_dsl_version(
+        r#"{
+  "dsl_version": "%dsl_version%",
   "campaign_id": "cast-ledger",
   "stage": "dialogue",
   "content": {
@@ -227,7 +238,9 @@ const DIALOGUE: &str = r#"{
       }
     ]
   }
-}"#;
+}"#,
+    )
+});
 
 /// Materialize the campaign and build it, returning `(output, binding ledger)`.
 fn build(who: &str) -> (BuildOutput, delvewright_dsl::GateBinding) {
@@ -239,9 +252,9 @@ fn build(who: &str) -> (BuildOutput, delvewright_dsl::GateBinding) {
         )
         .unwrap();
     }
-    std::fs::write(dir.join("world.json"), WORLD).unwrap();
-    std::fs::write(dir.join("quests.json"), QUESTS).unwrap();
-    std::fs::write(dir.join("dialogue.json"), DIALOGUE).unwrap();
+    std::fs::write(dir.join("world.json"), WORLD.as_str()).unwrap();
+    std::fs::write(dir.join("quests.json"), QUESTS.as_str()).unwrap();
+    std::fs::write(dir.join("dialogue.json"), DIALOGUE.as_str()).unwrap();
 
     let prefab_dir = patched_prefabs();
     let loaded = load_campaign_dir(&dir).unwrap();

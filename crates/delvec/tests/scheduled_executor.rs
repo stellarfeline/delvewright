@@ -38,6 +38,7 @@ use delvec::compiler::load::load_campaign_dir;
 use delvec::compiler::plan::Plan;
 use delvec::compiler::registry::PrefabRegistry;
 use delvewright_dsl::{Campaign, RawCampaign, parse_campaign};
+use std::sync::LazyLock;
 
 // ---------------------------------------------------------------------------
 // command-line analysis
@@ -217,8 +218,10 @@ fn read_hw(name: &str) -> String {
 /// * nested `sequence` with an inline (`at_ticks: 0`) and a scheduled
 ///   (`at_ticks: 20`) step, so the timeline is reached through a scheduled
 ///   bundle — the nested-recursion case.
-const SCHEDULED_QUESTS: &str = r#"{
-  "dsl_version": "0.24.0",
+static SCHEDULED_QUESTS: LazyLock<String> = LazyLock::new(|| {
+    common::at_dsl_version(
+        r#"{
+  "dsl_version": "%dsl_version%",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {
@@ -257,7 +260,9 @@ const SCHEDULED_QUESTS: &str = r#"{
       }
     ]
   }
-}"#;
+}"#,
+    )
+});
 
 fn build_scheduled_hello_world() -> BuildOutput {
     let raw = RawCampaign {

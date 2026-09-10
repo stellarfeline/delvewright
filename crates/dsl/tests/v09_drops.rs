@@ -10,12 +10,15 @@
 mod common;
 
 use delvewright_dsl::{RawCampaign, check_campaign};
+use std::sync::LazyLock;
 
 /// A v0.9 quests document shaped like the bell remake's gate boss: a boss wave
 /// that wears an axe and a helm, drops **only** the axe, and yields a key the
 /// door quest then collects.
-const QUESTS_V09: &str = r#"{
-  "dsl_version": "0.24.0",
+static QUESTS_V09: LazyLock<String> = LazyLock::new(|| {
+    common::at_dsl_version(
+        r#"{
+  "dsl_version": "%dsl_version%",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {
@@ -54,7 +57,9 @@ const QUESTS_V09: &str = r#"{
       }
     ]
   }
-}"#;
+}"#,
+    )
+});
 
 fn campaign_with_quests(quests: &str) -> RawCampaign {
     RawCampaign {
@@ -84,7 +89,7 @@ fn codes(quests: &str) -> Vec<String> {
 /// and the collect that takes the token off it — validates clean under 0.9.0.
 #[test]
 fn declared_drops_validate_clean() {
-    let diags = check_campaign(&campaign_with_quests(QUESTS_V09));
+    let diags = check_campaign(&campaign_with_quests(QUESTS_V09.as_str()));
     assert!(
         diags.is_empty(),
         "expected zero diagnostics for a v0.9 declared drop, got: {diags:#?}"
@@ -262,7 +267,8 @@ fn quest_item_drop_id_is_registry_checked() {
 /// authoritative l10n key inventory and translates like any other line.
 #[test]
 fn quest_item_drop_name_is_inventoried() {
-    let c = delvewright_dsl::parse_campaign(&campaign_with_quests(QUESTS_V09)).expect("parses");
+    let c = delvewright_dsl::parse_campaign(&campaign_with_quests(QUESTS_V09.as_str()))
+        .expect("parses");
     let inv = delvewright_dsl::l10n_inventory(&c);
     assert!(
         inv.contains_key("wave.gate-boss.mob.0.drop.1.name"),

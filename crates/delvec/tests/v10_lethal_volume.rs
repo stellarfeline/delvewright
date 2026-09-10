@@ -14,7 +14,8 @@ use delvec::compiler::commands::CommandTree;
 use delvec::compiler::emit::{self, BuildOutput};
 use delvec::compiler::plan::Plan;
 use delvec::compiler::registry::PrefabRegistry;
-use delvewright_dsl::{Campaign, RawCampaign, parse_campaign};
+use delvewright_dsl::{Campaign, DSL_VERSION, RawCampaign, parse_campaign};
+use std::sync::LazyLock;
 
 fn hw(name: &str) -> String {
     std::fs::read_to_string(common::hello_world_dir().join(name)).unwrap()
@@ -25,7 +26,7 @@ fn hw(name: &str) -> String {
 fn quests_doc(volumes: &str, talk_effects: &str) -> String {
     format!(
         r#"{{
-  "dsl_version": "0.24.0",
+  "dsl_version": "{DSL_VERSION}",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {{
@@ -90,8 +91,10 @@ fn parse_hw_with_edits(quests: &str, world_edits: Option<&str>) -> Campaign {
 /// cobblestone. Both blocks are full cubes, so the geometry every proof reasons
 /// over is untouched and the only thing this changes is WHICH ARM builds the
 /// world.
-const ONE_BATCH: &str = r#"{
-  "dsl_version": "0.24.0",
+static ONE_BATCH: LazyLock<String> = LazyLock::new(|| {
+    common::at_dsl_version(
+        r#"{
+  "dsl_version": "%dsl_version%",
   "campaign_id": "hello-world",
   "stage": "world-edits",
   "content": {
@@ -121,7 +124,9 @@ const ONE_BATCH: &str = r#"{
       }
     ]
   }
-}"#;
+}"#,
+    )
+});
 
 fn structures(plan: &Plan) -> BTreeMap<String, Vec<u8>> {
     let mut out = BTreeMap::new();
@@ -213,8 +218,10 @@ const HARMLESS: &str = r#"{
 /// anything can walk to it, so `[3, 65, 8]` wins the tie over `[7, 65, 8]`. A
 /// door on the east side leaves the route proof staring at a cell it cannot
 /// reach.
-const SIDE_DOOR: &str = r#"{
-  "dsl_version": "0.24.0",
+static SIDE_DOOR: LazyLock<String> = LazyLock::new(|| {
+    common::at_dsl_version(
+        r#"{
+  "dsl_version": "%dsl_version%",
   "campaign_id": "hello-world",
   "stage": "world-edits",
   "content": {
@@ -260,7 +267,9 @@ const SIDE_DOOR: &str = r#"{
       }
     ]
   }
-}"#;
+}"#,
+    )
+});
 
 // --- emission -------------------------------------------------------------
 
@@ -279,7 +288,7 @@ fn a_volume_emits_a_tick_driver_and_a_killing_body() {
              "shown_by": ["minecraft:magma_block"] }"#,
             "",
         ),
-        Some(SIDE_DOOR),
+        Some(SIDE_DOOR.as_str()),
     );
     let out = build(&c);
     let tick = text(&out, "datapack/data/hello-world/function/tick.mcfunction");
@@ -399,8 +408,10 @@ const THRESHOLD_SIGNALLED: &str = r#"{
 /// The floor course under [`THRESHOLD`]'s keep-out, in molten stone: the band
 /// `z = 5..7` of the keep's floor, which covers every walked cell the volume
 /// catches. Nothing else in the piece moves.
-const BURNING_THRESHOLD: &str = r#"{
-  "dsl_version": "0.24.0",
+static BURNING_THRESHOLD: LazyLock<String> = LazyLock::new(|| {
+    common::at_dsl_version(
+        r#"{
+  "dsl_version": "%dsl_version%",
   "campaign_id": "hello-world",
   "stage": "world-edits",
   "content": {
@@ -430,7 +441,9 @@ const BURNING_THRESHOLD: &str = r#"{
       }
     ]
   }
-}"#;
+}"#,
+    )
+});
 
 /// **The order, as a property** (spec-0062 §4, criterion 6). The keep has exactly
 /// one doorway; a volume across it both catches the floor the party walks and
@@ -453,7 +466,7 @@ fn a_volume_that_catches_floor_and_closes_the_route_is_dw0891_not_dw0510() {
 fn a_signalled_volume_across_the_only_route_is_dw0510() {
     let c = parse_hw_with_edits(
         &quests_doc(THRESHOLD_SIGNALLED, ""),
-        Some(BURNING_THRESHOLD),
+        Some(BURNING_THRESHOLD.as_str()),
     );
     assert_eq!(failure_code(&c), "DW0510");
 }
@@ -478,7 +491,7 @@ fn a_signalled_volume_across_the_only_route_is_dw0510() {
 /// one of two doors is bound at neither.
 #[test]
 fn a_volume_across_the_only_route_is_refused_under_edits_too() {
-    let c = parse_hw_with_edits(&quests_doc(THRESHOLD, ""), Some(ONE_BATCH));
+    let c = parse_hw_with_edits(&quests_doc(THRESHOLD, ""), Some(ONE_BATCH.as_str()));
     assert_eq!(failure_code(&c), "DW0891");
 }
 
@@ -491,7 +504,7 @@ fn a_volume_across_the_only_route_is_refused_under_edits_too() {
 /// asserted non-zero on the arm where it was zero.
 #[test]
 fn the_lethal_ledger_binds_on_the_edit_replay_arm() {
-    let c = parse_hw_with_edits(&quests_doc(HARMLESS, ""), Some(SIDE_DOOR));
+    let c = parse_hw_with_edits(&quests_doc(HARMLESS, ""), Some(SIDE_DOOR.as_str()));
     let out = build(&c);
     let ledger: serde_json::Value =
         serde_json::from_str(&text(&out, "validation/lethal-gate.json")).unwrap();
@@ -560,7 +573,7 @@ fn an_npc_posted_inside_a_volume_is_dw0511() {
 /// the volume killed it, so a template that bound to nothing cannot pass.
 #[test]
 fn each_volume_gets_a_packtest_that_binds() {
-    let c = parse_hw_with_edits(&quests_doc(HARMLESS, ""), Some(SIDE_DOOR));
+    let c = parse_hw_with_edits(&quests_doc(HARMLESS, ""), Some(SIDE_DOOR.as_str()));
     let out = build(&c);
     let t = text(
         &out,
@@ -616,7 +629,7 @@ fn each_volume_gets_a_packtest_that_binds() {
 /// re-deriving it from an empty diagnostics list.
 #[test]
 fn the_binding_ledger_states_its_counts() {
-    let c = parse_hw_with_edits(&quests_doc(HARMLESS, ""), Some(SIDE_DOOR));
+    let c = parse_hw_with_edits(&quests_doc(HARMLESS, ""), Some(SIDE_DOOR.as_str()));
     let out = build(&c);
     let gate: serde_json::Value =
         serde_json::from_str(&text(&out, "validation/lethal-gate.json")).unwrap();
@@ -641,7 +654,7 @@ fn the_binding_ledger_states_its_counts() {
 /// Determinism (ADR-0006): two builds of a lethal-volume campaign are byte-equal.
 #[test]
 fn a_lethal_volume_build_is_byte_identical_across_runs() {
-    let c = parse_hw_with_edits(&quests_doc(HARMLESS, ""), Some(SIDE_DOOR));
+    let c = parse_hw_with_edits(&quests_doc(HARMLESS, ""), Some(SIDE_DOOR.as_str()));
     assert_eq!(build(&c), build(&c));
 }
 

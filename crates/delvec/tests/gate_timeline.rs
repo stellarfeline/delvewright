@@ -23,7 +23,7 @@ use delvec::compiler::nav;
 use delvec::compiler::plan::Plan;
 use delvec::compiler::registry::{FullEntityRegistry, FullItemRegistry, PrefabRegistry};
 use delvec::compiler::timeline;
-use delvewright_dsl::{Campaign, RawCampaign, parse_campaign};
+use delvewright_dsl::{Campaign, DSL_VERSION, RawCampaign, parse_campaign};
 
 /// A hello-world `quests` doc carrying a stage-5 actor plus a caller-supplied
 /// `on_complete` body (raw JSON array contents, no surrounding brackets).
@@ -35,7 +35,7 @@ use delvewright_dsl::{Campaign, RawCampaign, parse_campaign};
 fn quests_doc(on_complete: &str) -> String {
     format!(
         r#"{{
-  "dsl_version": "0.24.0",
+  "dsl_version": "{DSL_VERSION}",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {{
@@ -273,8 +273,9 @@ fn conditional_close_gate_seals_nothing() {
 /// player's forced route; this proof deliberately stays quiet.
 #[test]
 fn close_gate_in_another_bundle_does_not_seal_this_timeline() {
-    let quests = r#"{
-  "dsl_version": "0.24.0",
+    let quests = common::at_dsl_version(
+        r#"{
+  "dsl_version": "%dsl_version%",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {
@@ -300,8 +301,9 @@ fn close_gate_in_another_bundle_does_not_seal_this_timeline() {
       }
     ]
   }
-}"#;
-    let c = parse_hw(quests);
+}"#,
+    );
+    let c = parse_hw(&quests);
     let prefabs = prefabs();
     let plan = Plan::build(&c, &prefabs).expect("plan builds");
     let mut structures: BTreeMap<String, Vec<u8>> = BTreeMap::new();

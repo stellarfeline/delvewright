@@ -18,7 +18,8 @@ use delvec::compiler::commands::CommandTree;
 use delvec::compiler::emit::{self, BuildOutput};
 use delvec::compiler::plan::Plan;
 use delvec::compiler::registry::PrefabRegistry;
-use delvewright_dsl::{Campaign, RawCampaign, parse_campaign};
+use delvewright_dsl::{Campaign, DSL_VERSION, RawCampaign, parse_campaign};
+use std::sync::LazyLock;
 
 fn hw(name: &str) -> String {
     std::fs::read_to_string(common::hello_world_dir().join(name)).unwrap()
@@ -31,7 +32,7 @@ fn hw(name: &str) -> String {
 fn quests_doc(extra: &str, talk_effects: &str) -> String {
     format!(
         r#"{{
-  "dsl_version": "0.24.0",
+  "dsl_version": "{DSL_VERSION}",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {{
@@ -64,8 +65,10 @@ fn quests_doc(extra: &str, talk_effects: &str) -> String {
 /// therefore seals the only door. The fixture gains the geometry rather than the
 /// rule being narrowed to fit it. West rather than east because an endpoint snap
 /// breaks ties lexicographically and picks `[3, 65, 8]` over `[7, 65, 8]`.
-const SIDE_DOOR: &str = r#"{
-  "dsl_version": "0.24.0",
+static SIDE_DOOR: LazyLock<String> = LazyLock::new(|| {
+    common::at_dsl_version(
+        r#"{
+  "dsl_version": "%dsl_version%",
   "campaign_id": "hello-world",
   "stage": "world-edits",
   "content": {
@@ -111,7 +114,9 @@ const SIDE_DOOR: &str = r#"{
       }
     ]
   }
-}"#;
+}"#,
+    )
+});
 
 /// The floor course under a threshold volume's keep-out, in molten stone.
 ///
@@ -119,8 +124,10 @@ const SIDE_DOOR: &str = r#"{
 /// the wall, and floor a killing volume catches may not read as ordinary stone
 /// (`DW0891`, spec-0062). So the band `z = 5..7` of the keep's floor is magma,
 /// and the volume that catches it declares so.
-const BURNING_THRESHOLD: &str = r#"{
-  "dsl_version": "0.24.0",
+static BURNING_THRESHOLD: LazyLock<String> = LazyLock::new(|| {
+    common::at_dsl_version(
+        r#"{
+  "dsl_version": "%dsl_version%",
   "campaign_id": "hello-world",
   "stage": "world-edits",
   "content": {
@@ -150,7 +157,9 @@ const BURNING_THRESHOLD: &str = r#"{
       }
     ]
   }
-}"#;
+}"#,
+    )
+});
 
 fn parse_hw(quests: &str) -> Campaign {
     parse_hw_with_edits(quests, None)
@@ -593,7 +602,7 @@ fn the_placement_table_is_a_compile_time_chain_with_no_search() {
     );
     let out = build(&parse_hw_with_edits(
         &quests_doc(&with_volume, ""),
-        Some(SIDE_DOOR),
+        Some(SIDE_DOOR.as_str()),
     ));
     let route = fnc(&out, "stk_route_embers");
 
@@ -817,7 +826,10 @@ fn a_stake_with_no_route_back_fails_to_compile() {
             r#"[ { "type": "open-gate", "anchor": "anchor/door" } ]"#,
             r#"[ { "type": "set-checkpoint", "anchor": "anchor/exit" } ]"#,
         );
-    let code = failure_code(&parse_hw_with_edits(&one_beat, Some(BURNING_THRESHOLD)));
+    let code = failure_code(&parse_hw_with_edits(
+        &one_beat,
+        Some(BURNING_THRESHOLD.as_str()),
+    ));
     assert_eq!(
         code,
         delvec::compiler::stake::DW_STAKE_NO_ROUTE_BACK,

@@ -75,6 +75,7 @@ use delvec::compiler::emit::{self, BuildOutput};
 use delvec::compiler::load::load_campaign_dir;
 use delvec::compiler::plan::Plan;
 use delvec::compiler::registry::PrefabRegistry;
+use delvewright_dsl::DSL_VERSION;
 use delvewright_dsl::parse_campaign;
 
 /// Build any valid campaign directory (loading `skins/` when the campaign
@@ -127,7 +128,7 @@ fn build_actor_hello_world() -> BuildOutput {
         std::fs::copy(src.join(f), dst.join(f)).unwrap();
     }
     common::patch_file(&dst.join("quests.json"), |d| {
-        d["dsl_version"] = serde_json::json!("0.24.0");
+        d["dsl_version"] = serde_json::json!(DSL_VERSION);
         common::objective_effects(d, 0, "obj/talk").extend([
             serde_json::json!({ "type": "spawn-actor", "actor": "actor/giant" }),
             serde_json::json!({
@@ -162,11 +163,11 @@ fn build_handoff_hello_world() -> BuildOutput {
         std::fs::copy(src.join(f), dst.join(f)).unwrap();
     }
     common::patch_file(&dst.join("npcs.json"), |d| {
-        d["dsl_version"] = serde_json::json!("0.24.0");
+        d["dsl_version"] = serde_json::json!(DSL_VERSION);
         d["content"]["npcs"][0]["deferred"] = serde_json::json!(true);
     });
     common::patch_file(&dst.join("quests.json"), |d| {
-        d["dsl_version"] = serde_json::json!("0.24.0");
+        d["dsl_version"] = serde_json::json!(DSL_VERSION);
         common::objective_effects(d, 0, "obj/talk").extend([
             serde_json::json!({ "type": "spawn-actor", "actor": "actor/giant" }),
             serde_json::json!({

@@ -19,13 +19,13 @@
 
 mod common;
 
-use delvewright_dsl::{Diagnostic, RawCampaign, check_campaign};
+use delvewright_dsl::{DSL_VERSION, Diagnostic, RawCampaign, check_campaign};
 
 /// A world doc binding one area to `prefab`, verbatim.
 fn world_with(prefab: &str) -> String {
     format!(
         r#"{{
-  "dsl_version": "0.24.0",
+  "dsl_version": "{DSL_VERSION}",
   "campaign_id": "hello-world",
   "stage": "world",
   "content": {{
@@ -49,7 +49,7 @@ fn world_with(prefab: &str) -> String {
 fn quests_collecting_at(anchor: &str) -> String {
     format!(
         r#"{{
-  "dsl_version": "0.24.0",
+  "dsl_version": "{DSL_VERSION}",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {{

@@ -20,7 +20,7 @@ use delvec::compiler::eclipse::{DW_AFFORDANCE_CONTEST, DW_BODY_ECLIPSE};
 use delvec::compiler::emit::{self, BuildFailure};
 use delvec::compiler::plan::Plan;
 use delvec::compiler::registry::PrefabRegistry;
-use delvewright_dsl::{Diagnostic, RawCampaign, Severity, parse_campaign};
+use delvewright_dsl::{DSL_VERSION, Diagnostic, RawCampaign, Severity, parse_campaign};
 
 /// The hello-room prefab's anchors: `anchor/keeper-stand` at local `[5, 1, 4]`,
 /// `spawn` at `[5, 1, 2]` (two cells north) and `anchor/exit` at `[5, 1, 8]`
@@ -44,7 +44,7 @@ fn npcs_doc(base_entity: &str, anchor: &str) -> String {
 fn quests_doc(interact_anchor: &str) -> String {
     format!(
         r#"{{
-  "dsl_version": "0.24.0",
+  "dsl_version": "{DSL_VERSION}",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {{
@@ -463,7 +463,7 @@ fn contest_binding(quests: &str, quest_plan: &str) -> Vec<(&'static str, String,
 fn two_quests_one_anchor(second_gate: &str) -> String {
     format!(
         r#"{{
-  "dsl_version": "0.24.0",
+  "dsl_version": "{DSL_VERSION}",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {{
@@ -502,7 +502,7 @@ fn two_quests_one_anchor(second_gate: &str) -> String {
 fn one_quest_two_objectives(second_gate: &str) -> String {
     format!(
         r#"{{
-  "dsl_version": "0.24.0",
+  "dsl_version": "{DSL_VERSION}",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {{

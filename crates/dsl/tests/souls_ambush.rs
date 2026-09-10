@@ -14,9 +14,12 @@
 mod common;
 
 use delvewright_dsl::{RawCampaign, TriggerOn, check_campaign, l10n_inventory, parse_campaign};
+use std::sync::LazyLock;
 
-const QUESTS_V06: &str = r#"{
-  "dsl_version": "0.24.0",
+static QUESTS_V06: LazyLock<String> = LazyLock::new(|| {
+    common::at_dsl_version(
+        r#"{
+  "dsl_version": "%dsl_version%",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {
@@ -44,7 +47,9 @@ const QUESTS_V06: &str = r#"{
       }
     ]
   }
-}"#;
+}"#,
+    )
+});
 
 /// hello-world's world stage raised to 0.6.0 with a declared `difficulty`.
 ///
@@ -85,7 +90,7 @@ fn campaign_with_quests(quests: &str) -> RawCampaign {
 /// test: the engine never demands a tell.
 #[test]
 fn untelegraphed_ambush_validates_clean() {
-    let diags = check_campaign(&campaign_with_quests(QUESTS_V06));
+    let diags = check_campaign(&campaign_with_quests(QUESTS_V06.as_str()));
     assert!(
         diags.is_empty(),
         "an un-telegraphed ambush is legitimate souls vocabulary: {diags:#?}"
@@ -101,7 +106,7 @@ fn ambush_desugars_to_a_one_shot_trigger() {
         "\"trigger\": { \"on\": \"approach\", \"range\": 3 }",
         "\"trigger\": { \"on\": \"approach\", \"range\": 3 },\n        \"telegraph\": [ { \"type\": \"narrate\", \"text\": \"Gravel shifts behind you.\", \"style\": \"subtitle\" } ]",
     );
-    assert_ne!(telegraphed, QUESTS_V06);
+    assert_ne!(telegraphed, QUESTS_V06.as_str());
     let campaign = parse_campaign(&campaign_with_quests(&telegraphed)).expect("parses");
     let trig = campaign
         .quests
@@ -152,7 +157,7 @@ fn telegraph_strings_enter_the_l10n_inventory() {
 #[test]
 fn ambush_with_no_actors_is_dw0375() {
     let bad = QUESTS_V06.replace("\"actors\": [\"actor/lurker\"]", "\"actors\": []");
-    assert_ne!(bad, QUESTS_V06);
+    assert_ne!(bad, QUESTS_V06.as_str());
     let diags = check_campaign(&campaign_with_quests(&bad));
     assert!(
         diags.iter().any(|d| d.code == "DW0375"),

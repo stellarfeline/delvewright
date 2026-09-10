@@ -20,20 +20,21 @@ use delvec::compiler::emit::{self, BuildFailure, BuildOutput};
 use delvec::compiler::gates;
 use delvec::compiler::plan::Plan;
 use delvec::compiler::registry::{FullEntityRegistry, FullItemRegistry, PrefabRegistry};
-use delvewright_dsl::{Campaign, Diagnostic, RawCampaign, parse_campaign};
+use delvewright_dsl::{Campaign, DSL_VERSION, Diagnostic, RawCampaign, parse_campaign};
+use std::sync::LazyLock;
 
 /// A hello-world `quests` doc at `dsl_version`, opening `anchor/door` on the talk
 /// objective and running `on_complete` after the exit is reached — where a
 /// `close-gate` seals nothing still to be walked.
-fn quests_doc(version: &str, on_complete: &str) -> String {
-    quests_doc_with(version, on_complete, "")
+fn quests_doc(on_complete: &str) -> String {
+    quests_doc_with(on_complete, "")
 }
 
 /// As [`quests_doc`], plus a raw `triggers` array body (no surrounding brackets).
-fn quests_doc_with(version: &str, on_complete: &str, triggers: &str) -> String {
+fn quests_doc_with(on_complete: &str, triggers: &str) -> String {
     format!(
         r#"{{
-  "dsl_version": "{version}",
+  "dsl_version": "{DSL_VERSION}",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {{
@@ -61,8 +62,9 @@ fn quests_doc_with(version: &str, on_complete: &str, triggers: &str) -> String {
 /// A hello-world `quests` doc whose ONLY `close-gate` lives in a `traps[]`
 /// payload — an effect root the quests stage owns but the older gate scans skip.
 fn quests_doc_trap_payload() -> String {
-    r#"{
-  "dsl_version": "0.24.0",
+    common::at_dsl_version(
+        r#"{
+  "dsl_version": "%dsl_version%",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {
@@ -91,7 +93,8 @@ fn quests_doc_trap_payload() -> String {
       }
     ]
   }
-}"#
+}"#,
+    )
     .to_string()
 }
 
@@ -99,8 +102,10 @@ fn quests_doc_trap_payload() -> String {
 /// option's `set-checkpoint` `on_respawn` bundle — a `Vec<QuestEffect>` hanging
 /// off the *dialogue* stage, which `emit_quest_effect` really does lower (into
 /// `cp_on_respawn_<i>`).
-const DIALOGUE_SEALS_ON_RESPAWN: &str = r#"{
-  "dsl_version": "0.24.0",
+static DIALOGUE_SEALS_ON_RESPAWN: LazyLock<String> = LazyLock::new(|| {
+    common::at_dsl_version(
+        r#"{
+  "dsl_version": "%dsl_version%",
   "campaign_id": "hello-world",
   "stage": "dialogue",
   "content": {
@@ -119,7 +124,9 @@ const DIALOGUE_SEALS_ON_RESPAWN: &str = r#"{
       ] }
     ]
   }
-}"#;
+}"#,
+    )
+});
 
 fn read_hw(name: &str) -> String {
     std::fs::read_to_string(common::hello_world_dir().join(name)).unwrap()
@@ -245,7 +252,7 @@ const SEAL_IT_SILENT: &str = r#"{ "type": "close-gate", "anchor": "anchor/door" 
 /// all three the stone says nothing.
 #[test]
 fn a_sealed_gate_answers_a_right_click() {
-    let c = parse_hw(&quests_doc("0.24.0", SEAL_IT));
+    let c = parse_hw(&quests_doc(SEAL_IT));
     let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
     let out = build(&c, &prefabs);
 
@@ -301,7 +308,7 @@ fn a_sealed_gate_answers_a_right_click() {
 /// of.
 #[test]
 fn an_unanswered_seal_is_dw0429() {
-    let c = parse_hw(&quests_doc("0.24.0", SEAL_IT_SILENT));
+    let c = parse_hw(&quests_doc(SEAL_IT_SILENT));
     let diags = diagnostics(&c);
     let d = diags
         .iter()
@@ -320,7 +327,6 @@ fn an_unanswered_seal_is_dw0429() {
 #[test]
 fn an_authored_hint_discharges_the_obligation() {
     let c = parse_hw(&quests_doc(
-        "0.24.0",
         r#"{ "type": "close-gate", "anchor": "anchor/door",
              "sealed_hint": "The bars will not lift for you.",
              "happening": { "verb": "seals", "text": "The bars come down." } },
@@ -354,7 +360,7 @@ fn an_authored_hint_discharges_the_obligation() {
 /// synthesis's alone: one press, riding the seal's own hitboxes.
 #[test]
 fn the_press_ledger_counts_the_compilers_own_press() {
-    let c = parse_hw(&quests_doc("0.24.0", SEAL_IT));
+    let c = parse_hw(&quests_doc(SEAL_IT));
     assert!(
         c.quests.content.triggers.is_empty(),
         "this fixture must author no trigger, or the count below is not the \
@@ -390,7 +396,6 @@ fn the_press_ledger_counts_the_compilers_own_press() {
 #[test]
 fn an_authored_trigger_replaces_the_compilers_seal_answer() {
     let c = parse_hw(&quests_doc_with(
-        "0.24.0",
         SEAL_IT,
         r#"{ "id": "trigger/the-stone", "at": "anchor/door", "on": { "on": "use" },
              "once": false, "audience": "presser",
@@ -418,7 +423,7 @@ fn an_authored_trigger_replaces_the_compilers_seal_answer() {
 /// that fires twice must not stack a second set of hitboxes.
 #[test]
 fn closing_the_gate_arms_the_answer_idempotently() {
-    let c = parse_hw(&quests_doc("0.24.0", SEAL_IT));
+    let c = parse_hw(&quests_doc(SEAL_IT));
     let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
     let out = build(&c, &prefabs);
     assert!(
@@ -435,7 +440,7 @@ fn closing_the_gate_arms_the_answer_idempotently() {
 /// swallows right-clicks aimed through it.
 #[test]
 fn opening_the_gate_takes_the_answer_down() {
-    let c = parse_hw(&quests_doc("0.24.0", SEAL_IT));
+    let c = parse_hw(&quests_doc(SEAL_IT));
     let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
     let out = build(&c, &prefabs);
     assert!(
@@ -449,7 +454,6 @@ fn opening_the_gate_takes_the_answer_down() {
 #[test]
 fn an_authored_hint_replaces_the_canonical_english() {
     let c = parse_hw(&quests_doc(
-        "0.24.0",
         r#"{ "type": "close-gate", "anchor": "anchor/door",
              "sealed_hint": "The bars will not lift for you.",
              "happening": { "verb": "seals", "text": "The bars come down." } },
@@ -473,7 +477,7 @@ fn an_authored_hint_replaces_the_canonical_english() {
 /// every one of its six cells is clickable and gets exactly one hitbox.
 #[test]
 fn the_seal_arms_one_hitbox_per_clickable_cell() {
-    let c = parse_hw(&quests_doc("0.24.0", SEAL_IT));
+    let c = parse_hw(&quests_doc(SEAL_IT));
     let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
     let out = build(&c, &prefabs);
     let arm = function(&out, "seal_arm_door");
@@ -494,7 +498,6 @@ fn the_seal_arms_one_hitbox_per_clickable_cell() {
 #[test]
 fn a_click_trigger_on_the_gate_rides_the_seal() {
     let c = parse_hw(&quests_doc_with(
-        "0.24.0",
         SEAL_IT,
         r#"{ "id": "trigger/wont-budge", "at": "anchor/door", "on": { "on": "strike" },
              "once": false,
@@ -534,7 +537,6 @@ fn dw0422_a_second_affordance_inside_the_seal() {
     std::fs::write(&hello, serde_json::to_string_pretty(&meta).unwrap()).unwrap();
 
     let c = parse_hw(&quests_doc_with(
-        "0.24.0",
         SEAL_IT,
         r#"{ "id": "trigger/latch", "at": "anchor/latch", "on": { "on": "use" },
              "once": false,
@@ -557,7 +559,6 @@ fn dw0422_a_second_affordance_inside_the_seal() {
 #[test]
 fn dw0423_two_wordings_for_one_gate() {
     let c = parse_hw(&quests_doc_with(
-        "0.24.0",
         r#"{ "type": "close-gate", "anchor": "anchor/door",
              "sealed_hint": "The bars will not lift.",
              "happening": { "verb": "seals", "text": "The bars come down." } },
@@ -580,7 +581,6 @@ fn dw0423_two_wordings_for_one_gate() {
 #[test]
 fn one_wording_repeated_is_not_a_conflict() {
     let c = parse_hw(&quests_doc_with(
-        "0.24.0",
         r#"{ "type": "close-gate", "anchor": "anchor/door",
              "sealed_hint": "The bars will not lift.",
              "happening": { "verb": "seals", "text": "The bars come down." } },
@@ -634,8 +634,8 @@ fn a_trap_payload_seal_is_armed() {
 /// `cp_on_respawn_<i>`.
 #[test]
 fn a_dialogue_nested_seal_is_armed() {
-    let quests = quests_doc("0.24.0", r#"{ "type": "campaign-complete" }"#);
-    let c = parse_hw_with_dialogue(&quests, DIALOGUE_SEALS_ON_RESPAWN);
+    let quests = quests_doc(r#"{ "type": "campaign-complete" }"#);
+    let c = parse_hw_with_dialogue(&quests, DIALOGUE_SEALS_ON_RESPAWN.as_str());
     let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
     let out = build(&c, &prefabs);
     let respawn = function(&out, "cp_on_respawn_0");
@@ -659,7 +659,6 @@ fn a_dialogue_nested_seal_is_armed() {
 #[test]
 fn dw0423_reaches_a_dialogue_nested_wording() {
     let quests = quests_doc(
-        "0.24.0",
         r#"{ "type": "close-gate", "anchor": "anchor/door",
              "sealed_hint": "The bars will not lift.",
              "happening": { "verb": "seals", "text": "The bars come down." } },
@@ -689,7 +688,7 @@ fn dw0423_reaches_a_dialogue_nested_wording() {
 /// A campaign that seals no gate emits none of this machinery at all.
 #[test]
 fn no_seal_no_machinery() {
-    let c = parse_hw(&quests_doc("0.24.0", r#"{ "type": "campaign-complete" }"#));
+    let c = parse_hw(&quests_doc(r#"{ "type": "campaign-complete" }"#));
     let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
     let out = build(&c, &prefabs);
     assert!(

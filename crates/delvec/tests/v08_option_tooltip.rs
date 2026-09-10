@@ -22,6 +22,7 @@ use delvec::compiler::emit::{self, BuildOutput};
 use delvec::compiler::load::load_campaign_dir;
 use delvec::compiler::plan::Plan;
 use delvec::compiler::registry::PrefabRegistry;
+use delvewright_dsl::DSL_VERSION;
 use delvewright_dsl::parse_campaign;
 
 /// The wine beat's shape: a caption on the button, the whole spoken line hovering.
@@ -66,7 +67,7 @@ fn hello_world_with_dialogue(
     let dpath = tmp.join("dialogue.json");
     let mut dlg: serde_json::Value =
         serde_json::from_str(&std::fs::read_to_string(&dpath).unwrap()).unwrap();
-    dlg["dsl_version"] = serde_json::json!("0.24.0");
+    dlg["dsl_version"] = serde_json::json!(DSL_VERSION);
     mutate(&mut dlg);
     std::fs::write(&dpath, serde_json::to_string_pretty(&dlg).unwrap()).unwrap();
     tmp

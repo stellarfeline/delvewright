@@ -23,7 +23,12 @@ use crate::stages::{
 /// why, and it promises nothing about any other engine: a released campaign is
 /// built by the engine it pins (`versions.toml`), and a surface change bumps
 /// this number and moves every document in this repository with it.
-pub const DSL_VERSION: &str = "0.24.0";
+///
+/// **This crate's package version IS the format's number** (ADR-0024), so the
+/// number is read from the manifest rather than restated here: there is one
+/// place to move it, and a literal in this file could not disagree with
+/// `Cargo.toml` even in principle.
+pub const DSL_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 /// Which stage a document belongs to.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -355,11 +360,20 @@ pub fn check_campaign(raw: &RawCampaign) -> Vec<Diagnostic> {
 mod version_tests {
     use super::*;
 
-    /// **The crate's version is the format's number** (ADR-0024). `DSL_VERSION`
-    /// is stated as a literal because gates read it textually; this is what
-    /// keeps the literal and `Cargo.toml`'s `version` from drifting apart.
+    /// The number is the crate's own (ADR-0024) by construction, so nothing here
+    /// can hold the two apart. What is still worth asserting is its SHAPE: every
+    /// gate that reads it — `delvec fmt`, `DW0102`, the release plumbing — treats
+    /// it as an exact `major.minor.patch`, and a manifest version carrying a
+    /// pre-release or build suffix would reach them as one.
     #[test]
-    fn the_accepted_dsl_version_is_the_crate_version() {
-        assert_eq!(DSL_VERSION, env!("CARGO_PKG_VERSION"));
+    fn the_accepted_dsl_version_is_an_exact_three_part_number() {
+        let parts: Vec<&str> = DSL_VERSION.split('.').collect();
+        assert_eq!(parts.len(), 3, "DSL_VERSION is `{DSL_VERSION}`");
+        assert!(
+            parts
+                .iter()
+                .all(|p| !p.is_empty() && p.bytes().all(|b| b.is_ascii_digit())),
+            "DSL_VERSION is `{DSL_VERSION}`"
+        );
     }
 }

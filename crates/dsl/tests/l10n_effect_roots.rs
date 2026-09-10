@@ -13,8 +13,8 @@ mod common;
 use std::collections::BTreeMap;
 
 use delvewright_dsl::{
-    Campaign, L10nDoc, L10nKind, RawCampaign, l10n_inventory, localize, on_screen_narrates,
-    parse_campaign, validate_l10n,
+    Campaign, DSL_VERSION, L10nDoc, L10nKind, RawCampaign, l10n_inventory, localize,
+    on_screen_narrates, parse_campaign, validate_l10n,
 };
 
 /// The trap-payload narrate's inventory key (`fx.trap.<trap>.<i>`, keyed exactly
@@ -38,7 +38,7 @@ fn world_doc() -> String {
 fn quests_doc(traps: &str) -> String {
     format!(
         r#"{{
-  "dsl_version": "0.24.0",
+  "dsl_version": "{DSL_VERSION}",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {{
@@ -139,7 +139,7 @@ fn sidecar_for(c: &Campaign) -> BTreeMap<String, L10nDoc> {
         .map(|(k, v)| (k, format!("[zh] {v}")))
         .collect();
     let doc = L10nDoc {
-        dsl_version: "0.24.0".to_string(),
+        dsl_version: DSL_VERSION.to_string(),
         campaign_id: c.world.campaign_id.clone(),
         kind: L10nKind::L10n,
         lang: "zh-cn".to_string(),

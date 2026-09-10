@@ -6,11 +6,14 @@
 mod common;
 
 use delvewright_dsl::{RawCampaign, check_campaign};
+use std::sync::LazyLock;
 
 /// A v0.6 quests document that opens `anchor/door` then re-seals it with a
 /// `close-gate` after the exit is reached (on_complete — nothing left to walk).
-const QUESTS_V06: &str = r#"{
-  "dsl_version": "0.24.0",
+static QUESTS_V06: LazyLock<String> = LazyLock::new(|| {
+    common::at_dsl_version(
+        r#"{
+  "dsl_version": "%dsl_version%",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {
@@ -41,7 +44,9 @@ const QUESTS_V06: &str = r#"{
       }
     ]
   }
-}"#;
+}"#,
+    )
+});
 
 fn campaign_with_quests(quests: &str) -> RawCampaign {
     RawCampaign {
@@ -63,7 +68,7 @@ fn campaign_with_quests(quests: &str) -> RawCampaign {
 /// `close-gate` validates clean under `dsl_version 0.6.0`.
 #[test]
 fn close_gate_validates_clean() {
-    let diags = check_campaign(&campaign_with_quests(QUESTS_V06));
+    let diags = check_campaign(&campaign_with_quests(QUESTS_V06.as_str()));
     assert!(
         diags.is_empty(),
         "expected zero diagnostics for a v0.6 close-gate, got: {diags:#?}"

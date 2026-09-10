@@ -21,7 +21,7 @@ use delvec::compiler::commands::CommandTree;
 use delvec::compiler::emit::{self, BuildOutput};
 use delvec::compiler::plan::Plan;
 use delvec::compiler::registry::PrefabRegistry;
-use delvewright_dsl::{RawCampaign, parse_campaign};
+use delvewright_dsl::{DSL_VERSION, RawCampaign, parse_campaign};
 
 const NS: &str = "hello-world";
 
@@ -57,7 +57,7 @@ fn npcs_deferred() -> String {
 fn quests_doc(on_arrive: &str) -> String {
     format!(
         r#"{{
-  "dsl_version": "0.24.0",
+  "dsl_version": "{DSL_VERSION}",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {{

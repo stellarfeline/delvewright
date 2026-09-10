@@ -80,6 +80,27 @@ pub fn apply(fixture: &InvalidFixture) -> RawCampaign {
     raw
 }
 
+/// Give an override document the envelope key it deliberately does not carry.
+///
+/// A fixture for `DW0100` is about a persona missing a field; it needs a valid
+/// envelope only to get as far as its own subject, and a `dsl_version` written
+/// into the file would be this engine's number restated in 37 places that have
+/// nothing to say about versions. So the fixtures state none and this supplies
+/// it — a fixture *cannot* hold a stale one.
+///
+/// A document that DOES state one keeps it: that is the one fixture whose
+/// subject IS the version (`DW0102-bad-dsl-version.json`, `9.9.9`).
+fn stamp(doc: &mut serde_json::Value) {
+    if let Some(obj) = doc.as_object_mut()
+        && !obj.contains_key("dsl_version")
+    {
+        obj.insert(
+            "dsl_version".to_string(),
+            serde_json::Value::String(delvewright_dsl::DSL_VERSION.to_string()),
+        );
+    }
+}
+
 /// Load every invalid fixture (sorted by filename for determinism).
 pub fn load_invalid() -> Vec<(String, InvalidFixture)> {
     let mut entries: Vec<PathBuf> = fs::read_dir(invalid_dir())
@@ -93,11 +114,36 @@ pub fn load_invalid() -> Vec<(String, InvalidFixture)> {
         .map(|p| {
             let name = p.file_name().unwrap().to_string_lossy().into_owned();
             let src = fs::read_to_string(&p).unwrap_or_else(|e| panic!("read {name}: {e}"));
-            let fixture: InvalidFixture =
+            let mut fixture: InvalidFixture =
                 serde_json::from_str(&src).unwrap_or_else(|e| panic!("parse {name}: {e}"));
+            for doc in fixture.documents.values_mut() {
+                stamp(doc);
+            }
             (name, fixture)
         })
         .collect()
+}
+
+/// The placeholder a test document writes where the envelope's `dsl_version`
+/// goes. Deliberately not version-shaped: a document that reaches the parser
+/// still carrying it is refused by name (`DW0102` quotes it), never mistaken
+/// for a stale number.
+pub const VERSION_TOKEN: &str = "%dsl_version%";
+
+/// A test document at the one `dsl_version` this engine accepts.
+///
+/// The number is [`delvewright_dsl::DSL_VERSION`] and appears in no test file:
+/// a bump moves the constant and reaches every document through here. Panics
+/// when the token is absent, for the same reason [`patch_doc`] parses rather
+/// than splices — a `str::replace` that matches nothing returns its input
+/// unchanged, and the test then asserts against a document it never stamped.
+pub fn at_dsl_version(doc: &str) -> String {
+    assert!(
+        doc.contains(VERSION_TOKEN),
+        "document carries no `{VERSION_TOKEN}` placeholder, so stamping it did \
+         nothing; write the envelope key as \"dsl_version\": \"{VERSION_TOKEN}\""
+    );
+    doc.replace(VERSION_TOKEN, delvewright_dsl::DSL_VERSION)
 }
 
 /// Patch a JSON document **structurally**: parse the text, hand the closure the

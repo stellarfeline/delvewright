@@ -10,12 +10,15 @@
 
 mod common;
 
-use delvewright_dsl::{RawCampaign, check_campaign, l10n_inventory, parse_campaign};
+use delvewright_dsl::{DSL_VERSION, RawCampaign, check_campaign, l10n_inventory, parse_campaign};
+use std::sync::LazyLock;
 
 /// A v0.6 quests document with a bonfire (with an `on_rest` narrate) and a wave
 /// that re-seats on rest.
-const QUESTS_V06: &str = r#"{
-  "dsl_version": "0.24.0",
+static QUESTS_V06: LazyLock<String> = LazyLock::new(|| {
+    common::at_dsl_version(
+        r#"{
+  "dsl_version": "%dsl_version%",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {
@@ -48,14 +51,16 @@ const QUESTS_V06: &str = r#"{
       }
     ]
   }
-}"#;
+}"#,
+    )
+});
 
 /// The hello-world classes doc with a `flask` kit entry spliced in (v0.8): a
 /// bonfire campaign owes the party one, and a campaign that does not is `DW0476`.
 fn classes_with_flask() -> String {
     let mut v: serde_json::Value =
         serde_json::from_str(&common::read_valid("classes.json")).unwrap();
-    v["dsl_version"] = serde_json::json!("0.24.0");
+    v["dsl_version"] = serde_json::json!(DSL_VERSION);
     for class in v["content"]["classes"].as_array_mut().unwrap() {
         class["kit"]
             .as_array_mut()
@@ -91,7 +96,7 @@ fn campaign_with(quests: &str, classes: &str) -> RawCampaign {
 /// The whole spec-0016 §1 surface validates clean under 0.6.0.
 #[test]
 fn bonfire_and_rest_reseat_validate_clean() {
-    let diags = check_campaign(&campaign_with_quests(QUESTS_V06));
+    let diags = check_campaign(&campaign_with_quests(QUESTS_V06.as_str()));
     assert!(
         diags.is_empty(),
         "expected zero diagnostics for a v0.6 bonfire campaign, got: {diags:#?}"
@@ -106,7 +111,7 @@ fn bonfire_unknown_anchor_is_dw0142() {
         "\"anchor\": \"anchor/keeper-stand\",\n              \"on_rest\"",
         "\"anchor\": \"anchor/invented\",\n              \"on_rest\"",
     );
-    assert_ne!(bad, QUESTS_V06, "the substitution must apply");
+    assert_ne!(bad, QUESTS_V06.as_str(), "the substitution must apply");
     let diags = check_campaign(&campaign_with_quests(&bad));
     assert!(
         diags.iter().any(|d| d.code == "DW0142"),
@@ -119,9 +124,14 @@ fn bonfire_unknown_anchor_is_dw0142() {
 #[test]
 fn respawns_on_rest_without_a_bonfire_is_dw0356() {
     let no_bonfire = QUESTS_V06
+        .as_str()
         .replace("\"bonfire\"", "\"set-checkpoint\"")
         .replace("\"on_rest\"", "\"on_respawn\"");
-    assert_ne!(no_bonfire, QUESTS_V06, "the substitution must apply");
+    assert_ne!(
+        no_bonfire,
+        QUESTS_V06.as_str(),
+        "the substitution must apply"
+    );
     let diags = check_campaign(&campaign_with_quests(&no_bonfire));
     assert!(
         diags.iter().any(|d| d.code == "DW0370"),
@@ -134,7 +144,7 @@ fn respawns_on_rest_without_a_bonfire_is_dw0356() {
 /// key is deterministic (ADR-0006).
 #[test]
 fn on_rest_strings_enter_the_l10n_inventory() {
-    let campaign = parse_campaign(&campaign_with_quests(QUESTS_V06)).expect("parses");
+    let campaign = parse_campaign(&campaign_with_quests(QUESTS_V06.as_str())).expect("parses");
     let inv = l10n_inventory(&campaign);
     let key = inv
         .iter()
@@ -157,7 +167,7 @@ fn on_rest_strings_enter_the_l10n_inventory() {
 /// one, so the compiler refuses rather than shipping a bonfire that only saves.
 #[test]
 fn a_bonfire_campaign_without_a_flask_is_dw0490() {
-    let diags = campaign_with(QUESTS_V06, &common::read_valid("classes.json"));
+    let diags = campaign_with(QUESTS_V06.as_str(), &common::read_valid("classes.json"));
     let diags = check_campaign(&diags);
     let hit = diags
         .iter()
@@ -176,6 +186,7 @@ fn a_bonfire_campaign_without_a_flask_is_dw0490() {
 #[test]
 fn a_campaign_without_a_bonfire_needs_no_flask() {
     let no_bonfire = QUESTS_V06
+        .as_str()
         .replace("\"bonfire\"", "\"set-checkpoint\"")
         .replace("\"on_rest\"", "\"on_respawn\"")
         .replace("\"respawns_on_rest\": true,", "");
@@ -202,7 +213,7 @@ fn a_boss_wave_may_not_declare_respawns_on_rest_dw0489() {
         "\"respawns_on_rest\": true,",
         "\"respawns_on_rest\": true, \"tier\": \"boss\",",
     );
-    assert_ne!(boss, QUESTS_V06, "the substitution must apply");
+    assert_ne!(boss, QUESTS_V06.as_str(), "the substitution must apply");
     let diags = check_campaign(&campaign_with_quests(&boss));
     assert!(
         diags

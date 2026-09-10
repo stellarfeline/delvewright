@@ -18,12 +18,15 @@
 mod common;
 
 use delvewright_dsl::{RawCampaign, check_campaign};
+use std::sync::LazyLock;
 
 /// A v0.6 quests doc exercising `forbids_flags` on an objective, a quest
 /// effect, a trigger (trigger-level and effect-level). `flag/armed` and
 /// `flag/stood-down` are both produced by `set-flag` effects.
-const QUESTS_FORBIDS: &str = r#"{
-  "dsl_version": "0.24.0",
+static QUESTS_FORBIDS: LazyLock<String> = LazyLock::new(|| {
+    common::at_dsl_version(
+        r#"{
+  "dsl_version": "%dsl_version%",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {
@@ -59,7 +62,9 @@ const QUESTS_FORBIDS: &str = r#"{
       }
     ]
   }
-}"#;
+}"#,
+    )
+});
 
 fn campaign_with_quests(quests: &str) -> RawCampaign {
     RawCampaign {
@@ -82,7 +87,7 @@ fn campaign_with_quests(quests: &str) -> RawCampaign {
 /// validates clean under 0.6.0.
 #[test]
 fn forbids_flags_validates_clean() {
-    let diags = check_campaign(&campaign_with_quests(QUESTS_FORBIDS));
+    let diags = check_campaign(&campaign_with_quests(QUESTS_FORBIDS.as_str()));
     assert!(
         diags.is_empty(),
         "forbids_flags across all quests-stage sites must validate clean: {diags:#?}"
@@ -140,7 +145,7 @@ fn forbids_only_completing_option_is_dw0191() {
             r#""forbids_flags": ["flag/armed"], "effects": ["#,
             1,
         );
-    let mut raw = campaign_with_quests(QUESTS_FORBIDS);
+    let mut raw = campaign_with_quests(QUESTS_FORBIDS.as_str());
     raw.dialogue = dialogue;
     let diags = check_campaign(&raw);
     assert!(

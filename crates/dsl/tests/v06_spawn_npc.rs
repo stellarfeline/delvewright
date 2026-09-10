@@ -9,10 +9,13 @@
 mod common;
 
 use delvewright_dsl::{RawCampaign, check_campaign};
+use std::sync::LazyLock;
 
 /// Stage 2 with a deferred second NPC.
-const NPCS: &str = r#"{
-  "dsl_version": "0.24.0",
+static NPCS: LazyLock<String> = LazyLock::new(|| {
+    common::at_dsl_version(
+        r#"{
+  "dsl_version": "%dsl_version%",
   "campaign_id": "hello-world",
   "stage": "npcs",
   "content": {
@@ -52,11 +55,15 @@ const NPCS: &str = r#"{
       }
     ]
   }
-}"#;
+}"#,
+    )
+});
 
 /// Stage 4: two quests, `quest/second` depending on `quest/open-the-door`.
-const QUEST_PLAN: &str = r#"{
-  "dsl_version": "0.24.0",
+static QUEST_PLAN: LazyLock<String> = LazyLock::new(|| {
+    common::at_dsl_version(
+        r#"{
+  "dsl_version": "%dsl_version%",
   "campaign_id": "hello-world",
   "stage": "quest-plan",
   "content": {
@@ -82,11 +89,15 @@ const QUEST_PLAN: &str = r#"{
     ],
     "finale": "quest/second"
   }
-}"#;
+}"#,
+    )
+});
 
 /// Stage 6: a tree per NPC (`DW0152`), the latecomer's completing its `talk-to`.
-const DIALOGUE: &str = r#"{
-  "dsl_version": "0.24.0",
+static DIALOGUE: LazyLock<String> = LazyLock::new(|| {
+    common::at_dsl_version(
+        r#"{
+  "dsl_version": "%dsl_version%",
   "campaign_id": "hello-world",
   "stage": "dialogue",
   "content": {
@@ -119,11 +130,15 @@ const DIALOGUE: &str = r#"{
       }
     ]
   }
-}"#;
+}"#,
+    )
+});
 
 /// Stage 5: quest 1 spawns the latecomer when the door opens; quest 2 talks to her.
-const QUESTS: &str = r#"{
-  "dsl_version": "0.24.0",
+static QUESTS: LazyLock<String> = LazyLock::new(|| {
+    common::at_dsl_version(
+        r#"{
+  "dsl_version": "%dsl_version%",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {
@@ -152,7 +167,9 @@ const QUESTS: &str = r#"{
       }
     ]
   }
-}"#;
+}"#,
+    )
+});
 
 fn campaign(npcs: &str, quests: &str, dialogue: &str) -> RawCampaign {
     RawCampaign {
@@ -172,7 +189,7 @@ fn campaign(npcs: &str, quests: &str, dialogue: &str) -> RawCampaign {
 }
 
 fn base() -> RawCampaign {
-    campaign(NPCS, QUESTS, DIALOGUE)
+    campaign(NPCS.as_str(), QUESTS.as_str(), DIALOGUE.as_str())
 }
 
 /// A deferred NPC with a `spawn-npc` in a prerequisite quest validates clean.
@@ -193,7 +210,7 @@ fn spawn_npc_unknown_npc_is_dw0112() {
         r#"{ "type": "spawn-npc", "npc": "npc/latecomer" }"#,
         r#"{ "type": "spawn-npc", "npc": "npc/nobody" }"#,
     );
-    let diags = check_campaign(&campaign(NPCS, &bad, DIALOGUE));
+    let diags = check_campaign(&campaign(NPCS.as_str(), &bad, DIALOGUE.as_str()));
     assert!(
         diags.iter().any(|d| d.code == "DW0112"),
         "an unknown spawn-npc target must be DW0112: {diags:#?}"
@@ -207,7 +224,7 @@ fn dialogue_spawn_npc_unknown_npc_is_dw0112() {
         r#"{ "label": "Who are you?", "effects": [ { "type": "complete-objective", "objective": "obj/meet" } ] }"#,
         r#"{ "label": "Who are you?", "effects": [ { "type": "complete-objective", "objective": "obj/meet" }, { "type": "spawn-npc", "npc": "npc/nobody" } ] }"#,
     );
-    let diags = check_campaign(&campaign(NPCS, QUESTS, &bad_dlg));
+    let diags = check_campaign(&campaign(NPCS.as_str(), QUESTS.as_str(), &bad_dlg));
     assert!(
         diags.iter().any(|d| d.code == "DW0112"),
         "an unknown dialogue spawn-npc target must be DW0112: {diags:#?}"
@@ -227,7 +244,7 @@ fn deferred_npc_never_spawned_is_dw0197() {
         !no_spawn.contains("spawn-npc"),
         "fixture edit must remove the spawn"
     );
-    let diags = check_campaign(&campaign(NPCS, &no_spawn, DIALOGUE));
+    let diags = check_campaign(&campaign(NPCS.as_str(), &no_spawn, DIALOGUE.as_str()));
     assert!(
         diags.iter().any(|d| d.code == "DW0197"),
         "a deferred npc nobody spawns must be DW0197: {diags:#?}"
@@ -242,8 +259,9 @@ fn talk_to_before_spawn_in_dag_is_dw0198() {
     // latecomer lives there too, but the spawn is on `on_complete`, i.e. only after
     // the whole quest (including the talk-to) is done... to make the DAG order
     // unambiguous, put the talk-to in quest 1 and the spawn in quest 2.
-    let swapped = r#"{
-  "dsl_version": "0.24.0",
+    let swapped = common::at_dsl_version(
+        r#"{
+  "dsl_version": "%dsl_version%",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {
@@ -273,8 +291,9 @@ fn talk_to_before_spawn_in_dag_is_dw0198() {
       }
     ]
   }
-}"#;
-    let diags = check_campaign(&campaign(NPCS, swapped, DIALOGUE));
+}"#,
+    );
+    let diags = check_campaign(&campaign(NPCS.as_str(), &swapped, DIALOGUE.as_str()));
     assert!(
         diags.iter().any(|d| d.code == "DW0198"),
         "a talk-to that provably precedes every spawn-npc must be DW0198: {diags:#?}"

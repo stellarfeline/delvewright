@@ -139,6 +139,14 @@ def test_a_row_for_another_name_is_not_this_archive(mod):
 # ------------------------------------------------------------- the refusals --
 
 
+# `VERSION_RE` reads the FIRST field and nothing else, so the `dsl` field of a
+# fake binary's `--version` line is never compared to anything. It names a
+# number this tree does not hold, so the engine's own `dsl_version` bump cannot
+# reach this file. `1.4.0` beside it is the rig's invented pin (`release =
+# "v1.4.0"` below), which the script does read.
+_UNREAD_DSL = "0.0.0"
+
+
 def _archive(version_line: str) -> bytes:
     """A `.tar.gz` carrying one executable `delvec` that prints `version_line`."""
     script = f"#!/bin/sh\necho '{version_line}'\n".encode()
@@ -189,7 +197,7 @@ def _run(mod, pin, tmp_path, shelf, monkeypatch, system="Linux", machine="x86_64
 
 
 def test_a_matching_digest_installs_and_reports_what_it_bound(mod, rig, tmp_path, monkeypatch):
-    shelf = _Shelf(_archive("delvec 1.4.0, dsl 0.24.0, mc 1.21.11"))
+    shelf = _Shelf(_archive(f"delvec 1.4.0, dsl {_UNREAD_DSL}, mc 1.21.11"))
     assert _run(mod, rig, tmp_path, shelf, monkeypatch) == 0
     assert (tmp_path / "bin" / "delvec").is_file()
     assert len(shelf.fetched) == 2  # the sums, then the archive. Never more.
@@ -204,7 +212,7 @@ def test_one_perturbed_byte_is_the_checksum_refusal_and_never_a_second_download(
     the published row disagree with the bytes — because that is the shape a
     corrupted transfer and a substituted archive both take.
     """
-    archive = _archive("delvec 1.4.0, dsl 0.24.0, mc 1.21.11")
+    archive = _archive(f"delvec 1.4.0, dsl {_UNREAD_DSL}, mc 1.21.11")
     real = hashlib.sha256(archive).hexdigest()
     perturbed = ("0" if real[0] != "0" else "1") + real[1:]
     assert perturbed != real and len(perturbed) == len(real)

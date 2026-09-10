@@ -18,7 +18,7 @@
 
 mod common;
 
-use delvewright_dsl::{RawCampaign, Severity, check_campaign};
+use delvewright_dsl::{DSL_VERSION, RawCampaign, Severity, check_campaign};
 
 fn raw_with(world: Option<&str>, quests: Option<&str>) -> RawCampaign {
     RawCampaign {
@@ -42,9 +42,9 @@ fn raw_with(world: Option<&str>, quests: Option<&str>) -> RawCampaign {
 }
 
 /// hello-world's world stage at `version` with a declared `difficulty`.
-fn world_with_difficulty(value: &str, version: &str) -> String {
+fn world_with_difficulty(value: &str) -> String {
     common::read_valid("world.json")
-        .replacen("\"0.2.0\"", &format!("\"{version}\""), 1)
+        .replacen("\"0.2.0\"", &format!("\"{DSL_VERSION}\""), 1)
         .replacen(
             "\"target_minutes\": 5,",
             &format!("\"target_minutes\": 5,\n    \"difficulty\": \"{value}\","),
@@ -57,7 +57,7 @@ fn world_with_difficulty(value: &str, version: &str) -> String {
 fn quests_with_actor(attrs: &str) -> String {
     format!(
         r#"{{
-  "dsl_version": "0.24.0",
+  "dsl_version": "{DSL_VERSION}",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {{
@@ -99,7 +99,7 @@ fn codes(raw: &RawCampaign) -> Vec<String> {
 #[test]
 fn easy_normal_hard_all_validate() {
     for value in ["easy", "normal", "hard"] {
-        let raw = raw_with(Some(&world_with_difficulty(value, "0.24.0")), None);
+        let raw = raw_with(Some(&world_with_difficulty(value)), None);
         let d = check_campaign(&raw);
         assert!(d.is_empty(), "`{value}` must validate clean: {d:#?}");
     }
@@ -110,7 +110,7 @@ fn easy_normal_hard_all_validate() {
 /// than letting the schema emit "unknown variant".
 #[test]
 fn peaceful_is_rejected_with_its_rationale() {
-    let raw = raw_with(Some(&world_with_difficulty("peaceful", "0.24.0")), None);
+    let raw = raw_with(Some(&world_with_difficulty("peaceful")), None);
     let d = check_campaign(&raw);
     let hit = d
         .iter()
@@ -171,7 +171,7 @@ fn actors_without_waves_or_declared_difficulty_warn() {
 #[test]
 fn declared_difficulty_silences_the_actor_warning() {
     let raw = raw_with(
-        Some(&world_with_difficulty("normal", "0.24.0")),
+        Some(&world_with_difficulty("normal")),
         Some(&quests_with_actor("")),
     );
     assert!(
@@ -194,7 +194,7 @@ fn actor_attributes_validate_under_v06() {
     let attrs =
         r#", "attributes": { "max_health": 200.0, "attack_damage": 12.0, "follow_range": 24.0 }"#;
     let raw = raw_with(
-        Some(&world_with_difficulty("hard", "0.24.0")),
+        Some(&world_with_difficulty("hard")),
         Some(&quests_with_actor(attrs)),
     );
     let d = check_campaign(&raw);
@@ -207,7 +207,7 @@ fn actor_attributes_validate_under_v06() {
 fn unknown_actor_attribute_is_a_schema_error() {
     let attrs = r#", "attributes": { "armor_toughness": 8.0 }"#;
     let raw = raw_with(
-        Some(&world_with_difficulty("hard", "0.24.0")),
+        Some(&world_with_difficulty("hard")),
         Some(&quests_with_actor(attrs)),
     );
     assert!(

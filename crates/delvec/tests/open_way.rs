@@ -29,7 +29,7 @@ use delvec::grammar::ir::{
     Rounding, Size, Split, Way,
 };
 use delvec::grammar::{Axis, BlockState, Box3, ExpandOptions, export_prefab};
-use delvewright_dsl::{Campaign, RawCampaign, parse_campaign};
+use delvewright_dsl::{Campaign, DSL_VERSION, RawCampaign, parse_campaign};
 
 /// The vault is `9 x 8 x 11`: a low room, a raised room, a flight between them
 /// whose treads are missing, and a shaft through the roof.
@@ -405,8 +405,8 @@ fn hw(name: &str) -> String {
 
 /// Hello-world's world with a second area holding the way-carrying piece.
 fn world_doc() -> String {
-    r#"{
-  "dsl_version": "0.24.0",
+    common::at_dsl_version(r#"{
+  "dsl_version": "%dsl_version%",
   "campaign_id": "hello-world",
   "stage": "world",
   "content": {
@@ -423,7 +423,7 @@ fn world_doc() -> String {
         "mitigation": "night-vision" }
     ]
   }
-}"#
+}"#)
     .to_string()
 }
 
@@ -432,8 +432,9 @@ fn world_doc() -> String {
 /// way and scenery behind one.
 fn quest_plan_doc(tower: bool) -> String {
     if !tower {
-        return r#"{
-  "dsl_version": "0.24.0",
+        return common::at_dsl_version(
+            r#"{
+  "dsl_version": "%dsl_version%",
   "campaign_id": "hello-world",
   "stage": "quest-plan",
   "content": {
@@ -444,11 +445,13 @@ fn quest_plan_doc(tower: bool) -> String {
         "mandatory": true, "npcs": ["npc/keeper"] }
     ]
   }
-}"#
+}"#,
+        )
         .to_string();
     }
-    r#"{
-  "dsl_version": "0.24.0",
+    common::at_dsl_version(
+        r#"{
+  "dsl_version": "%dsl_version%",
   "campaign_id": "hello-world",
   "stage": "quest-plan",
   "content": {
@@ -462,7 +465,8 @@ fn quest_plan_doc(tower: bool) -> String {
         "goal": "Cross the mended threshold.", "mandatory": true, "npcs": [] }
     ]
   }
-}"#
+}"#,
+    )
     .to_string()
 }
 
@@ -524,7 +528,7 @@ fn quests_doc(opening: Opening, tower: bool) -> String {
         }));
     }
     let doc = serde_json::json!({
-      "dsl_version": "0.24.0",
+      "dsl_version": DSL_VERSION,
       "campaign_id": "hello-world",
       "stage": "quests",
       "content": { "on_death": on_death, "quests": quests }
@@ -1009,8 +1013,9 @@ fn an_open_way_naming_no_staged_way_is_dw0547() {
 #[test]
 fn an_open_way_in_a_world_that_stages_no_way_is_still_dw0547() {
     let dir = common::prefabs_dir();
-    let plain = r#"{
-  "dsl_version": "0.24.0",
+    let plain = common::at_dsl_version(
+        r#"{
+  "dsl_version": "%dsl_version%",
   "campaign_id": "hello-world",
   "stage": "world",
   "content": {
@@ -1023,7 +1028,8 @@ fn an_open_way_in_a_world_that_stages_no_way_is_still_dw0547() {
     "weather": "clear",
     "areas": [ { "id": "area/keep", "name": "The Keep", "prefab": "prefab/hello-room" } ]
   }
-}"#;
+}"#,
+    );
     let c = campaign_with(plain.to_string(), quests_doc(Opening::Before, false), false);
     let err = plan_err(&c, &dir, "a way no piece stages cannot be opened");
     assert_eq!(err.failure.code.id(), "DW0547");

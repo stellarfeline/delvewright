@@ -14,7 +14,8 @@
 mod common;
 
 use delvec::compiler::promise;
-use delvewright_dsl::{Campaign, RawCampaign, parse_campaign};
+use delvewright_dsl::{Campaign, DSL_VERSION, RawCampaign, parse_campaign};
+use std::sync::LazyLock;
 
 fn hw(name: &str) -> String {
     std::fs::read_to_string(
@@ -25,40 +26,52 @@ fn hw(name: &str) -> String {
     .unwrap()
 }
 
-const NPCS: &str = r#"{
-  "dsl_version": "0.24.0", "campaign_id": "hello-world", "stage": "npcs",
+static NPCS: LazyLock<String> = LazyLock::new(|| {
+    common::at_dsl_version(
+        r#"{
+  "dsl_version": "%dsl_version%", "campaign_id": "hello-world", "stage": "npcs",
   "content": { "npcs": [
     { "id": "npc/keeper", "name": "The Keeper", "role": "quest-giver",
       "area": "area/keep", "anchor": "anchor/keeper-stand", "base_entity": "minecraft:villager",
       "persona": { "archetype": "stoic gatekeeper", "speech_style": "Terse.", "motivation": "Guard the gate." } }
   ] }
-}"#;
+}"#,
+    )
+});
 
-const QUEST_PLAN: &str = r#"{
-  "dsl_version": "0.24.0", "campaign_id": "hello-world", "stage": "quest-plan",
+static QUEST_PLAN: LazyLock<String> = LazyLock::new(|| {
+    common::at_dsl_version(
+        r#"{
+  "dsl_version": "%dsl_version%", "campaign_id": "hello-world", "stage": "quest-plan",
   "content": { "quests": [
     { "id": "quest/one", "goal": "Speak with the Keeper.", "area": "area/keep",
       "npcs": ["npc/keeper"], "depends_on": [], "mandatory": true, "act": 1 },
     { "id": "quest/two", "goal": "Leave the keep.", "area": "area/keep",
       "npcs": [], "depends_on": ["quest/one"], "mandatory": true, "act": 1 }
   ], "finale": "quest/two" }
-}"#;
+}"#,
+    )
+});
 
-const DIALOGUE: &str = r#"{
-  "dsl_version": "0.24.0", "campaign_id": "hello-world", "stage": "dialogue",
+static DIALOGUE: LazyLock<String> = LazyLock::new(|| {
+    common::at_dsl_version(
+        r#"{
+  "dsl_version": "%dsl_version%", "campaign_id": "hello-world", "stage": "dialogue",
   "content": { "dialogues": [
     { "npc": "npc/keeper", "root": "dlg/greeting", "nodes": [
       { "id": "dlg/greeting", "text": "Halt.", "options": [
         { "label": "Open the door.", "effects": [{ "type": "complete-objective", "objective": "obj/talk" }] } ] } ] }
   ] }
-}"#;
+}"#,
+    )
+});
 
 /// A two-quest stage-5 document. `second` is `quest/two`'s objective list and
 /// `complete` its `on_complete` bundle, so one fixture serves every rule.
 fn quests(second: &str, complete: &str) -> String {
     format!(
         r#"{{
-  "dsl_version": "0.24.0", "campaign_id": "hello-world", "stage": "quests",
+  "dsl_version": "{DSL_VERSION}", "campaign_id": "hello-world", "stage": "quests",
   "content": {{
     "waves": [ {{ "id": "wave/garrison", "anchor": "anchor/exit",
                   "mobs": [ {{ "entity": "minecraft:zombie", "count": 2 }} ] }} ],

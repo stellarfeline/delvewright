@@ -26,6 +26,7 @@ because the rows are resolved — the printed prose would be identical.
 
 from __future__ import annotations
 
+import json
 import shutil
 import subprocess
 import sys
@@ -54,11 +55,18 @@ def run(*args: str, root: Path) -> subprocess.CompletedProcess[str]:
 
 @pytest.fixture()
 def scratch(tmp_path: Path) -> Path:
-    """A tree holding exactly the files the rows name, copied from the real one."""
+    """A tree holding exactly the files the rows name, copied from the real one.
+
+    It is a real git repository because the sweep's population is `git ls-files`
+    — the derivation is the point, and a fixture that faked the population would
+    be testing a different checker from the one CI runs.
+    """
     for rel in TOUCHED:
         dst = tmp_path / rel
         dst.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(REPO / rel, dst)
+    subprocess.run(["git", "-C", str(tmp_path), "init", "-q"], check=True)
+    subprocess.run(["git", "-C", str(tmp_path), "add", "-A"], check=True)
     return tmp_path
 
 
@@ -163,3 +171,104 @@ def test_the_script_refuses_to_plan_behind_advice_it_cannot_resolve() -> None:
     # It runs before the plan, beside the index bind test — not inside the `FAIL`
     # arm, which almost never executes.
     assert src.index("version_sites verify") < src.index("== what crates.io already holds ==")
+
+
+# ---------------------------------------------------------------------------
+# The fourth shape: a version literal nobody derived, regenerated or allowlisted
+# ---------------------------------------------------------------------------
+#
+# The rows above say where the number is SUPPOSED to be, and for as long as that
+# was all they said, the number was also in 446 other files — 319 of which
+# changed nothing but that one string in a single bump. These tests perturb the
+# tree TOWARD that shape and check the sweep reds, with a perturbation only this
+# gate could catch: every other version gate in the tree is green on all of them.
+
+
+def _dsl_version() -> str:
+    return version_sites._declared(REPO)["dsl"]
+
+
+def test_the_sweep_states_its_binding_with_a_denominator() -> None:
+    r = run("verify", root=REPO)
+    assert r.returncode == 0, r.stderr
+    v = _dsl_version()
+    assert f"tracked file(s) state `{v}`" in r.stdout
+    population, carriers, shapes, findings = version_sites.sweep(REPO, v)
+    assert not findings
+    assert 0 < carriers < population, (carriers, population)
+    # Not vacuous in the other direction either: the sweep must actually be
+    # reaching the campaign documents, which are the population that grew.
+    assert carriers > 100, carriers
+
+
+def test_a_hand_typed_literal_in_a_rust_test_reds(scratch: Path) -> None:
+    """The 45 `.rs` files of the bump: `quests_doc("0.23.0")` and its siblings."""
+    assert run("verify", root=scratch).returncode == 0, "the scratch tree starts green"
+    planted = scratch / "crates/delvec/tests/planted.rs"
+    planted.parent.mkdir(parents=True, exist_ok=True)
+    planted.write_text(f'fn doc() -> String {{ quests_doc("{_dsl_version()}") }}\n', encoding="utf-8")
+    subprocess.run(["git", "-C", str(scratch), "add", "-A"], check=True)
+    r = run("verify", root=scratch)
+    assert r.returncode == 1, r.stdout
+    assert "crates/delvec/tests/planted.rs" in r.stderr
+    assert "none of the three legitimate shapes" in r.stderr
+
+
+def test_a_number_in_a_json_document_that_is_not_its_own_envelope_reds(scratch: Path) -> None:
+    """A JSON file may declare the surface it was written against — and nothing else.
+
+    This is the distinction the naive reading of the rule would break: a campaign
+    document's `dsl_version` is the document being self-describing (ADR-0024) and
+    stays. A number sitting under any other key was typed by a person.
+    """
+    v = _dsl_version()
+    good = scratch / "camp/world.json"
+    good.parent.mkdir(parents=True, exist_ok=True)
+    good.write_text(json.dumps({"dsl_version": v, "stage": "world"}), encoding="utf-8")
+    subprocess.run(["git", "-C", str(scratch), "add", "-A"], check=True)
+    assert run("verify", root=scratch).returncode == 0, "a self-describing document is legitimate"
+
+    good.write_text(json.dumps({"dsl_version": v, "note": f"written against {v}"}), encoding="utf-8")
+    subprocess.run(["git", "-C", str(scratch), "add", "-A"], check=True)
+    r = run("verify", root=scratch)
+    assert r.returncode == 1
+    assert "camp/world.json" in r.stderr
+    assert "typed by a person" in r.stderr
+
+
+def test_an_extra_site_in_a_row_s_own_file_reds(scratch: Path) -> None:
+    """A row is a census of its file, so a second mention in it is a finding too."""
+    v = _dsl_version()
+    manifest = scratch / "Cargo.toml"
+    manifest.write_text(
+        manifest.read_text(encoding="utf-8") + f"\n# see {v}\n", encoding="utf-8"
+    )
+    subprocess.run(["git", "-C", str(scratch), "add", "-A"], check=True)
+    r = run("verify", root=scratch)
+    assert r.returncode == 1
+    assert "its row(s) account for" in r.stderr
+
+
+def test_a_stale_allowlist_entry_is_reported(scratch: Path) -> None:
+    """An allowlist that names nothing measures nothing — the sixth vacuity mode."""
+    r = subprocess.run(
+        [sys.executable, "-c",
+         "import sys; sys.path.insert(0, %r); import version_sites as m;"
+         "m.COUNTEREXAMPLES['docs/gone.md'] = 'a reason nobody can check';"
+         "raise SystemExit(m.verify(__import__('pathlib').Path(%r)))"
+         % (str(SITES.parent), str(scratch))],
+        capture_output=True, text=True,
+    )
+    assert r.returncode == 1
+    assert "docs/gone.md" in r.stderr
+
+
+def test_the_blast_radius_is_the_hand_edited_set() -> None:
+    """"What does a bump edit" is a number a person can check, not a claim."""
+    hand, shapes = version_sites.blast_radius(REPO)
+    assert hand, "no file is hand-edited, so the number came from nowhere"
+    assert set(hand) == {f for s in version_sites.HAND for f in shapes.get(s, [])}
+    r = run("blast-radius", "--count", root=REPO)
+    assert r.returncode == 0 and int(r.stdout.strip()) == len(hand)
+    # The authority is one of them, and it is the crate manifest (ADR-0024).
+    assert "crates/dsl/Cargo.toml" in hand
