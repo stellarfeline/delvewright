@@ -13,8 +13,9 @@ noticing, because **nothing anywhere read it**:
     has been for as long as `validation/check-versions.sh` has asserted it. A
     diagnostic naming a symbol that does not exist sends its reader looking for
     nothing;
-  * it said *all four of these carry it* and listed four. There are seven, and
-    the missing one is the root `Cargo.toml` `[workspace.dependencies]` pin —
+  * it said *all four of these carry it* and listed four. It was already a set
+    of seven, and the missing one is the root `Cargo.toml`
+    `[workspace.dependencies]` pin —
     omitting it is the worst kind of omission, because a reader who follows the
     message exactly then gets `failed to select a version for the requirement
     delvewright-dsl = "=<old>"` from the very next `--locked` build. Measured:
@@ -31,7 +32,7 @@ The count in the sentence is now `len(rows)` and the rows are this module's, so
 A corrected literal is a literal, and it rots the same way the last one did. So
 every row here carries how to FIND itself, and `verify` resolves all of them
 against the tree: the file must exist, and the site must actually hold the
-number `versions.toml` declares. A renamed constant, a moved table or a site
+number the AUTHORITY row declares. A renamed constant, a moved table or a site
 that stopped carrying the number reds `crates-io-publish.sh` on its next run —
 which is every run, not only the rare one that prints the advice, because a gate
 bound to its own failure path is a gate nobody exercises.
@@ -43,6 +44,16 @@ different failure from two numbers disagreeing and is the one that had happened.
 The two are kept from drifting the cheap way — this module resolves each row
 against the tree, so a site `check-versions.sh` moves and this one does not
 follow is red here on the next run rather than silently wrong in prose.
+
+## And why the rows are not enough
+
+Rows say where the number is SUPPOSED to be. For as long as that was all they
+said, the number was also in 446 other files: a `dsl_version` bump touched 816
+occurrences and **319 of the 489 files in that pull request changed nothing but
+that one string**. So `verify` also SWEEPS the tree — see the block above
+`GENERATED_JSON_ROOTS` for the rule it applies and the three shapes a version
+literal may take — and `blast-radius` answers *what does a bump edit* with a
+number a person can check.
 """
 
 from __future__ import annotations
@@ -57,15 +68,19 @@ from pathlib import Path
 
 # --- how a row says where it is ---------------------------------------------
 #
-# Three kinds, because three shapes of file hold a version and a single regex
+# Four kinds, because four shapes of file hold a version and a single regex
 # over all of them would be the "one shared parse rule" written as a wildcard.
 #
 #   toml   — a key in a named table, compared as a VALUE (`tomllib`, so the
 #            table is resolved rather than guessed at from indentation);
-#   regex  — a Rust source line, matched with the version interpolated;
+#   regex  — a Rust source line, matched with the version interpolated, or (with
+#            `literal: False`) a DERIVATION with no version in it to interpolate;
 #   lock   — a `Cargo.lock` `[[package]]` entry, which is two lines and cannot
 #            be matched by one, and which cargo owns: it is listed so the reader
-#            knows it moves, and named as cargo's so nobody hand-edits it.
+#            knows it moves, and named as cargo's so nobody hand-edits it;
+#   present— a document a tool writes, where all this row asks is that the number
+#            is in it. WHERE it may sit, and that no other version literal sits
+#            beside it, belongs to the gate that writes it.
 
 ROWS: dict[str, list[dict[str, object]]] = {
     # The DSL crate's version IS the `dsl_version` (ADR-0024), so every one of
