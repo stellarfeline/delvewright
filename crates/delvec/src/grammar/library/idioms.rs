@@ -65,7 +65,7 @@ fn rounded(axis: Axis, sizes: Vec<Size>, rounding: Rounding, children: Vec<Node>
     Node::Split(Split {
         axis,
         sizes,
-        rounding,
+        rounding: Some(rounding),
         repeat: false,
         orient: Reorient::KEEP,
         children,
@@ -391,13 +391,14 @@ pub fn erosion() -> Program {
 ///
 /// Three bands here, with the air share rising 0 → some → most.
 ///
-/// **The bands are a rounded split, and at this region that is load-bearing.**
-/// Thirteen courses do not divide by three: under the default `truncate` the
-/// pieces are 4, 4, 4 and the thirteenth course is never written at all — a
-/// course of daylight along the top of the wall, which no gate reads. The
-/// rounding is [`Rounding::End`] so the odd course goes to the band that should
-/// absorb it, the ruined one. `tests/idioms.rs` runs the truncating variant and
-/// measures the missing course.
+/// **The bands are a rounded split, and at this region the mode is a real
+/// choice.** Thirteen courses do not divide by three, so one band is a course
+/// deeper than the other two. The rounding is [`Rounding::End`] so the odd
+/// course goes to the band that should absorb it, the ruined one.
+/// `tests/grammar_idioms.rs` drives the split through every mode and demands
+/// the top course back from each — the perturbation of the hole upstream's
+/// truncating layout left there, which made the pieces 4, 4, 4 and never wrote
+/// the thirteenth course at all.
 ///
 /// More bands is a smoother gradient and nothing else: this is the axis along
 /// which the technique scales.

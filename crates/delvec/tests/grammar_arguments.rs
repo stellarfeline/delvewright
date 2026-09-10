@@ -79,7 +79,7 @@ fn split_exact(axis: Axis, sizes: Vec<Size>, children: Vec<Node>) -> Node {
     Node::Split(Split {
         axis,
         sizes,
-        rounding: Rounding::Start,
+        rounding: Some(Rounding::Start),
         repeat: false,
         orient: Reorient::KEEP,
         children,
@@ -109,7 +109,7 @@ fn copy(suffix: &str, axis: Axis, dim: DimRef, paint: &str, inset: i64) -> Vec<(
             Node::Split(Split {
                 axis: Axis::Y,
                 sizes: vec![abs(1), rel(1)],
-                rounding: Rounding::Start,
+                rounding: Some(Rounding::Start),
                 repeat: false,
                 orient: Reorient::KEEP,
                 children: vec![Node::fill(paint), Node::call(&shoulders)],
@@ -820,7 +820,7 @@ fn a_frame_has_the_extent_of_its_body_and_no_more() {
     let program = probe(Node::Split(Split {
         axis: Axis::X,
         sizes: vec![rel(1), rel(1)],
-        rounding: Rounding::Start,
+        rounding: Some(Rounding::Start),
         repeat: false,
         orient: Reorient::KEEP,
         children: vec![
@@ -847,7 +847,7 @@ fn an_inner_frame_shadows_the_outer_one() {
         Node::Split(Split {
             axis: Axis::X,
             sizes: vec![rel(1), rel(1)],
-            rounding: Rounding::Start,
+            rounding: Some(Rounding::Start),
             repeat: false,
             orient: Reorient::KEEP,
             children: vec![inner, Node::call("leaf")],
@@ -887,7 +887,7 @@ fn one_frames_bindings_are_simultaneous_not_sequential() {
                         blocks: Expr::param("b"),
                     },
                 ],
-                rounding: Rounding::Truncate,
+                rounding: None,
                 repeat: false,
                 orient: Reorient::KEEP,
                 children: vec![Node::fill("wall"), Node::Void],

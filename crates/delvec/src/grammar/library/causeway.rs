@@ -375,9 +375,9 @@ pub fn causeway() -> Program {
 /// is what puts the berm and the post's own column at the same `X` by
 /// construction — see the module note on why that is not a tidiness argument.
 ///
-/// `split_exact`, not `split`: the two flanks are relative and truncation would
-/// leave the far one short, i.e. a strip of unwritten (air) cells running the
-/// length of a wall that is supposed to be solid.
+/// `split_exact`: with two relative flanks the odd block has to be given to
+/// one of them, and giving it to the near flank keeps the spine's column at the
+/// same `X` for every width the causeway is built at.
 fn section(flank: &str, spine: &str) -> Node {
     split_exact(
         Axis::X,
