@@ -18,7 +18,6 @@
     "valley-site.en:datapack/data/gallery/dialog/bank_warden_bank_weather.json",
     "valley-site.en:datapack/data/gallery/dialog/class_select.json",
     "valley-site.en:datapack/data/gallery/function/activate_o_far_corner.mcfunction",
-    "valley-site.en:datapack/data/gallery/function/bonfire_flask.mcfunction",
     "valley-site.en:datapack/data/gallery/function/boundary_return.mcfunction",
     "valley-site.en:datapack/data/gallery/function/boundary_tick.mcfunction",
     "valley-site.en:datapack/data/gallery/function/campaign_complete.mcfunction",
@@ -185,7 +184,7 @@
   "classes": {
     "PackTest": 18,
     "creator overlay": 15,
-    "datapack function": 61,
+    "datapack function": 60,
     "other": 17,
     "server config": 3,
     "validation ledger": 64

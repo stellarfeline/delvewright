@@ -3100,7 +3100,7 @@
     "delvec_version": "1.4.0",
     "dsl_version": "0.24.2",
     "inputs": {
-      "classes.json": "11184e1d15d51fb355b36849071c5c3a9ecf3f29bd1753f30f8c0777abd03a80",
+      "classes.json": "2e170af1d26b60a39d34f9155228ec4d54d7fb55883b46570ada7abf3efd51b2",
       "design.json": "23da66290ff087728512ca5fc4af9b6bc90f06a4de61756a0605e3e7386842ed",
       "dialogue.json": "11ef795bd76085ba554a3a5ac3a79d9d23a2762a1566f37b41ea0a17e395f4cf",
       "geometry-brief.json": "2589f9ba5cfa8a8f097793299d40417008d9efe7282cacc79f55aaa59dcaa825",
@@ -3132,14 +3132,13 @@
       "datapack/data/gallery/dialog/bank_warden_bank_weather.json": "dca418c1f84e84ef0300ca1ff9ddbab9422960c211351195fe7e4dea6587aeca",
       "datapack/data/gallery/dialog/class_select.json": "9e6474686fe1b952d86792df3e86b4afc0e726e4d00c375d1dd7ce601bdfdf72",
       "datapack/data/gallery/function/activate_o_far_corner.mcfunction": "19b7179adab184d208df9e4a9fea50ebeb40e46497891e3388cdb52eddcefd2b",
-      "datapack/data/gallery/function/bonfire_flask.mcfunction": "2243928bae4cfe12c31b2562b75cb6e2c4eb7477be56eee994ba170e48ea65bb",
       "datapack/data/gallery/function/boundary_return.mcfunction": "8be9a436be60a31ce7da2f2cd9a9bfdb689dd70ec3a5ad366e7046be92d25970",
       "datapack/data/gallery/function/boundary_tick.mcfunction": "5e8b0ba0775913ee07004767b2b43217d206d12dcad636e42ac923539ab63f72",
       "datapack/data/gallery/function/campaign_complete.mcfunction": "006bd0f7444ea7c7dd3cbf6a9d05fd3bd6c20aa01b19d084b71f6b8d6fd352ac",
       "datapack/data/gallery/function/cast_bank_warden.mcfunction": "1852256157ea6107c5be588bab78ee14f951d5535fc7f395694994724125aef2",
       "datapack/data/gallery/function/check_q_walk_the_bank.mcfunction": "f591465fd60aad124d58d73ae3e8cae9c0c118f4ed45034806247d122fbac1b0",
-      "datapack/data/gallery/function/class_apply_wanderer.mcfunction": "d8e3c52764961d497d23247a00c7834d298b4992c4a6d32d3deb4350cd5c815b",
-      "datapack/data/gallery/function/class_apply_warder.mcfunction": "b26b095bab1c74a28f8baaca48f54a3520ac2c233301a1f96c6bf055d6bda273",
+      "datapack/data/gallery/function/class_apply_wanderer.mcfunction": "57a201833d97b413e25fa9f380a5c56a3ae39d50ab62046080607d5b17f6c3dd",
+      "datapack/data/gallery/function/class_apply_warder.mcfunction": "02e6722196c2ec8e4d3f29594191d3c55210ab932641094c58a2defd0a804c7f",
       "datapack/data/gallery/function/class_arm.mcfunction": "77b81cad0b51f554b36ede977ab11e50227ee337f9df3f707e072a33a79f2ca5",
       "datapack/data/gallery/function/complete_o_ask_the_warden.mcfunction": "406f21260543e1b8bbc5269da55e4b6cfe5ba1e369079199af2555de405356b4",
       "datapack/data/gallery/function/complete_o_far_corner.mcfunction": "e615c533f7097cdb06257363e401f1a9bae2eabe22afaed9ad26c1df02f214ec",
@@ -3189,9 +3188,9 @@
       "packtest-datapack/data/gallery/function/pt_sched_probe.mcfunction": "01bd2b5e87ff568d6559366a2814134119edc6563a15f39596dbc88f4ee0852e",
       "packtest-datapack/data/gallery/test/campaign.mcfunction": "a0c20861cc89ed3836f3c85d9bb2c661d018f043bd63c6cf647c507aaab34c8d",
       "packtest-datapack/data/gallery/test/cast_ladder_bank_warden.mcfunction": "e660e90942e793d8f525e06b6954b9b1c285c5fdfda8f30b154c53dc1dfabfe1",
-      "packtest-datapack/data/gallery/test/class_apply_wanderer.mcfunction": "8ec0cc5799534fd04317edcf257710c1d5b6db3053ebee0c172fb2fe92ad9430",
-      "packtest-datapack/data/gallery/test/class_apply_warder.mcfunction": "3efa48a9fe88c4bfe4f1eacfc1ddbe9c1e5aa10d36d1ef63f35930fbdedb445b",
-      "packtest-datapack/data/gallery/test/class_trigger_once.mcfunction": "baa7a0c88c8e03bc6e2529eaa54c67f10d48e6c3cdc993d2063797d70d3af443",
+      "packtest-datapack/data/gallery/test/class_apply_wanderer.mcfunction": "c87e1ced98c143d5fa5f1fd62719728150cb0904148dee2ded93906f3c54b12c",
+      "packtest-datapack/data/gallery/test/class_apply_warder.mcfunction": "da30961811ecb135dc9e83d2b727f2d2a1b5ce86f7f3b97725708cfe14572a93",
+      "packtest-datapack/data/gallery/test/class_trigger_once.mcfunction": "94b58429e7e37d3611a2714f6ee3f8864026695438fb6b15f10130c004b07f0e",
       "packtest-datapack/data/gallery/test/declared_difficulty.mcfunction": "ccd5e8d5d3f982d82680997d0058dfe94cc5eaddfec2e4434d7ddd800997b251",
       "packtest-datapack/data/gallery/test/dialogue_trigger_rearm.mcfunction": "0f19cd1a69144d09b274f9125cf6f01e207ca27117643df29eea27bd90d17e0d",
       "packtest-datapack/data/gallery/test/dlg_mask_bank_warden_bank_greeting.mcfunction": "ae0c40b91763f21595e6b3a0dff6a9ea78db542557ea93334650ada6368afdfd",
@@ -3220,7 +3219,7 @@
       "validation/stealth-judge.json": "98bc80b51974a292c61a0235cd8fb7b509ded3850c92b7d53fb5a60d538a6da1",
       "validation/traversal-gate.json": "9e72205c3ce0cf4e64cf2a74efe36911e36e507b32353144bddfaa8610601ce0",
       "validation/watch-claims.json": "c3ef5ec102e5656f07c50ba64e87430ab2c8c83e03aba155e5193fc0f5f1443f",
-      "validation/watch-ledger.json": "8871da00a86242b9507f74cb44bebf92c49c3fd55a7174aec702ddb57bded88f"
+      "validation/watch-ledger.json": "2fd55384752f7c9b5a2c0c1f2dacead46a90b792e7aad19b82ef36988c62506a"
     }
   },
   "void-horizon.en": {
