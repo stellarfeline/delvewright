@@ -240,6 +240,12 @@ delvec --prefabs "$DELVEWRIGHT_PREFABS" render fidelity-gate
 435 shots for the shipped library — which is a library-curation tool, not a
 campaign-review one. A site-plan campaign has no prefabs at this step at all.
 
+**A piece whose light nobody has measured is refused here** (`DW0894`) —
+`delvec --prefabs "$DELVEWRIGHT_PREFABS" prefab lighting <piece> --write` measures
+it over its own bytes and writes the profile; a measured `dark` renders. Read the
+`DW0895` line the same run prints: how much of that piece's roofed floor no body
+can walk to.
+
 Open the exterior/top/interior/anchor PNGs and check each against its `expect`
 line: marker visible? room not dark? NPC facing the camera with its name as text
 rather than JSON? seam clean? **Findings are document-level** — fix the campaign

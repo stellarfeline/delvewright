@@ -21,6 +21,7 @@ use std::process::ExitCode;
 use clap::{Args, Subcommand};
 
 use crate::compiler::view::cli::{fail, resolve_textures};
+use crate::compiler::view::showing;
 use crate::compiler::view::tileset;
 use crate::render::detect;
 use crate::render::diag::{DW_INPUT, DW_MISSING_TEXTURE, DW_OUTPUT, DW_RENDER, Diagnostic, exit};
@@ -211,6 +212,28 @@ fn render_piece(
     let st = piece.structure();
     let meta = PrefabMeta::at_path(&meta_path)
         .map_err(|e| (Diagnostic::error(DW_INPUT, e), exit::INPUT))?;
+
+    // **The second and third doors** onto `compiler::view::showing` — this
+    // function is what both `delvec render piece` and `delvec render batch`
+    // draw through, and a gate bound at one of the doors a piece reaches an eye
+    // through is bound at none. Asked before a single frame is planned: the
+    // whole value of a refusal owed to a reviewer is that it arrives before the
+    // twenty-eight PNGs do.
+    let id = input
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("prefab");
+    let enclosure = showing::survey(st);
+    if let Some(d) = enclosure.finding(id) {
+        d.print(json);
+    }
+    eprintln!("{}", enclosure.line(id));
+    let light = showing::LightVerdict::of([(id, meta.as_ref())]);
+    eprintln!("{}", light.line());
+    if let Some(d) = light.finding() {
+        return Err((d, exit::INPUT));
+    }
+
     let mut plan = shots::plan_piece(st, meta.as_ref(), views).map_err(|d| (d, exit::INPUT))?;
     for d in &plan.diagnostics {
         d.print(json);

@@ -449,6 +449,17 @@ delvec render piece out/<id>.nbt   -o shots/ --size 640   # one structure templa
 delvec render piece out/<id>.json  -o shots/ --size 640   # a zone that shipped as a tile set
 ```
 
+**Two things are said about the piece before a single frame is planned, because
+neither is visible in a picture** (`DW0894` / `DW0895`, `compiler.md` §5). The
+first is a refusal: a piece whose document declares `"profile": "unmeasured"`, or
+declares no `lighting` block, or has no document at all, is not drawn — the
+renderer lights every frame for the camera and not for the body, so a picture is
+the one medium darkness does not show in. Run `delvec prefab lighting <piece>
+--write` (§7) and render again; a measured `dark` is fine, not knowing is not.
+The second is a report: how much of the piece's roofed floor no body can walk to,
+which pockets it forms, and — where the walk was turned back by the step rule —
+the cell to open. The same two run on `delvec viewer`.
+
 Which of the two the expand wrote is a fact about the region (§6); pass whichever
 file is there. The manifest reassembles the tiles first, so every camera below —
 the orbit shots and the eye shots alike — frames the whole zone and a body can

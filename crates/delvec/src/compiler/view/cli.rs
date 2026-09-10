@@ -30,7 +30,7 @@ use crate::compiler::view::diag::{
 use crate::compiler::view::panorama::{self, Bearing, PanoramaOptions};
 use crate::compiler::view::scene::{self, SceneOptions};
 use crate::compiler::view::sheet::{self, ScoreSet, SheetOptions};
-use crate::compiler::view::{cache, index, nbt, viewer};
+use crate::compiler::view::{cache, index, nbt, showing, viewer};
 
 /// The options every render arm shares. On `delvec render` these were three
 /// global flags; here they are declared by the arms that read them, so that
@@ -767,6 +767,28 @@ fn run_viewer(inputs: &[PathBuf], out: &Path, title: Option<&str>, vopts: &ViewO
         Ok(m) => m,
         Err(d) => return fail(d, vopts.json, exit::INPUT),
     };
+
+    // **Before the page, not after it** (`compiler::view::showing`). A viewer
+    // page is one of the three doors a piece reaches a person's eye through, and
+    // the two things a person cannot see in a picture are said here: whether
+    // anybody ever measured this building's light, and how much of its roofed
+    // floor no body can walk to. Asked before the client jar is opened, because
+    // a refusal owed to a reviewer is worth nothing after the page is written.
+    let light = showing::LightVerdict::of(models.iter().map(|m| (m.id(), m.meta())));
+    for model in &models {
+        let enclosure = showing::survey(model.structure());
+        if let Some(d) = enclosure.finding(model.id()) {
+            d.print(vopts.json);
+        }
+        eprintln!("{}", enclosure.line(model.id()));
+    }
+    if let Some(d) = light.finding() {
+        d.print(vopts.json);
+    }
+    eprintln!("{}", light.line());
+    if light.is_refusal() {
+        return ExitCode::from(exit::INPUT);
+    }
 
     let title = title.map(|t| t.to_string()).unwrap_or_else(|| {
         if models.len() == 1 {

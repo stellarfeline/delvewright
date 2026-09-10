@@ -228,6 +228,16 @@ this needs are subcommands of the one binary Init I3 installed.
    delvec --prefabs "$DELVEWRIGHT_PREFABS" render piece out/<id>.nbt -o shots/
    ```
 
+   **This step refuses a piece whose light nobody has measured** (`DW0894`): the
+   grammar writes `"profile": "unmeasured"` because it places blocks and not
+   photons, and a picture is the one medium darkness does not show in. Run
+   `delvec --prefabs "$DELVEWRIGHT_PREFABS" prefab lighting out/<id>.json --write`
+   first — it measures the piece over its own bytes, writes the profile, and
+   reports the distribution of dark cells. A measured `dark` renders; not knowing
+   does not. The same run reports the roofed floor no body can walk to and the
+   step the walk was refused at (`DW0895`) — read it: a room with a ceiling and no
+   way in renders exactly like a room with a door.
+
    and compare against the scene description from 1 above. The gates prove it is
    buildable and walkable; they
    say nothing about whether it is the scene you asked for. If the expand wrote a
