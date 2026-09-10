@@ -299,15 +299,21 @@ for name in engine_names:
 got_name, got_ver = dsl["package"]["name"], dsl["package"]["version"]
 (ok if got_name == e["dsl_crate"] else bad)(f"dsl package name {got_name!r} (manifest: {e['dsl_crate']!r})")
 (ok if got_ver == e["dsl_crate_version"] else bad)(f"dsl package version {got_ver!r} (manifest: {e['dsl_crate_version']!r})")
-# The DSL crate's version IS the format's number: the accepted `dsl_version`
-# the envelope states must be the crate's package version, or a document would
-# declare a format no published crate carries.
+# The DSL crate's version IS the format's number, and the envelope now READS it
+# (`env!("CARGO_PKG_VERSION")`) instead of restating it. So there is no second
+# literal to hold equal — what is asserted is the DERIVATION, which is stronger:
+# a literal put back here would be a second authority, and a bump would have to
+# find it.
 import re as _re0
 env_src = (root / "crates/dsl/src/envelope.rs").read_text(encoding="utf-8")
-m0 = _re0.search(r'pub\s+const\s+DSL_VERSION\s*:\s*&str\s*=\s*"([^"]+)"', env_src)
-supported = m0.group(1) if m0 else "<not found>"
-(ok if supported == e["dsl_crate_version"] else bad)(
-    f"envelope DSL_VERSION {supported!r} == dsl crate version (manifest: {e['dsl_crate_version']!r})")
+derived = _re0.search(
+    r'pub\s+const\s+DSL_VERSION\s*:\s*&str\s*=\s*env!\("CARGO_PKG_VERSION"\)\s*;', env_src)
+(ok if derived else bad)(
+    "envelope DSL_VERSION is derived from the crate's own package version "
+    '(`env!("CARGO_PKG_VERSION")`), so no Rust source restates it')
+stray = _re0.search(r'pub\s+const\s+DSL_VERSION\s*:\s*&str\s*=\s*"', env_src)
+(ok if not stray else bad)(
+    "envelope states no DSL_VERSION literal (a literal is a second authority)")
 
 # 2. The one binary: the `delvec` package carries exactly one `[[bin]]` named
 #    `delvec`, and no other member carries any (ADR-0023 §3).

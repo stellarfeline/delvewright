@@ -16,9 +16,9 @@ Methodology; CI enforces the DW-code subset — see `tools/check-dw-codes.py`).
   the scripts around it (`tools/`, `validation/`) are indexed in
   [`tools.md`](tools.md).
 - Versions (as of this doc): `delvec 1.4.0`, `dsl 0.24.0`, `mc 1.21.11`.
-  `dsl 0.24.0` is the **one** `dsl_version` this engine accepts (ADR-0024): every
-  stage document, map-pipeline document and l10n sidecar declares it, and any
-  other number is refused at the envelope with `DW0102`, which names it. The
+  The `dsl` number is the **one** `dsl_version` this engine accepts (ADR-0024):
+  every stage document, map-pipeline document and l10n sidecar declares it, and
+  any other number is refused at the envelope with `DW0102`, which names it. The
   number says which surface a document was written against and promises
   nothing about any other engine — a released campaign is built by the engine
   it pins (`versions.toml`), and a surface change bumps this number and moves
@@ -27,9 +27,10 @@ Methodology; CI enforces the DW-code subset — see `tools/check-dw-codes.py`).
   minor, a Rust-API-only change the patch), and a patch bump is a new accepted
   number too — the full number is declared and the full number is judged. This line is
   not prose: it is bound by equality to the root `Cargo.toml`
-  (`[workspace.package] version`), `crates/dsl/src/envelope.rs`
-  (`DSL_VERSION`) and `versions.toml` by
-  `tools/check-reference-versions.py`, in both directions.
+  (`[workspace.package] version`), `crates/dsl/Cargo.toml` (`[package] version`,
+  which `DSL_VERSION` reads through `env!("CARGO_PKG_VERSION")`) and
+  `versions.toml` by `tools/check-reference-versions.py`, in both directions —
+  and it is WRITTEN by that tool's `--write`, never retyped.
 
 ---
 
