@@ -95,7 +95,12 @@ pub fn run(args: PrefabArgs, prefabs_dir: &Path, json: bool) -> ExitCode {
         PrefabCommand::Catalog { cmd } => match cmd {
             CatalogCmd::Validate { files } => run_catalog_validate(&files, json),
         },
-        PrefabCommand::Gallery { dir, out, id, cols } => run_gallery(&dir, &out, id, cols, json),
+        PrefabCommand::Gallery {
+            path,
+            out,
+            id,
+            cols,
+        } => run_gallery(&path, &out, id, cols, json),
         PrefabCommand::Curate { log, layout, out } => {
             run_curate(&log, &layout, out.as_deref(), json)
         }
@@ -1508,51 +1513,126 @@ fn run_catalog_validate(files: &[PathBuf], json: bool) -> ExitCode {
     }
 }
 
-fn run_gallery(dir: &Path, out: &Path, id: Option<String>, cols: usize, json: bool) -> ExitCode {
+/// One exhibit from one whole prefab `.nbt`, refusing a lone tile.
+fn gallery_candidate_from_nbt(p: &Path, json: bool) -> Result<Candidate, ExitCode> {
+    // The door nobody would point at deliberately: walking `*.nbt` in a
+    // directory that holds a tile set puts each tile on a plinth as if it
+    // were a prefab, and a reviewer walks past five slices of one building
+    // believing they reviewed five pieces.
+    refuse_fragment(
+        p,
+        "show",
+        "put one slice of a building on a plinth as if it were a piece",
+        json,
+    )?;
+    let bytes = match std::fs::read(p) {
+        Ok(b) => b,
+        Err(e) => {
+            return Err(input_err(
+                &format!("cannot read {}: {e}", p.display()),
+                json,
+            ));
+        }
+    };
+    let stem = p.file_stem().and_then(|s| s.to_str()).unwrap_or("piece");
+    let asset_id = match PrefabMeta::beside_nbt(p) {
+        Ok(Some(m)) => m.prefab_id.trim_start_matches("prefab/").to_string(),
+        Ok(None) => stem.to_string(),
+        Err(e) => return Err(input_err(&e, json)),
+    };
+    Candidate::from_nbt(&asset_id, stem, bytes)
+        .map_err(|e| input_err(&format!("{}: {e}", p.display()), json))
+}
+
+/// One exhibit from a tile-set manifest — the whole zone, placed from every
+/// template it declares, under one label.
+///
+/// This is the other half of the pair `DW0739` names. That refusal ends with
+/// *use the whole zone: pass `<base>.json`*, and until this existed the sentence
+/// sent its reader to a path this command could not open: the pair defect
+/// `CLAUDE.md` names, *a remedy one prescribes and the other refuses*. Nothing
+/// about the refusal is weakened to reach here — a lone tile is still refused at
+/// the door above, because showing a whole zone and showing one slice of it are
+/// different inputs, and the difference is the manifest.
+fn gallery_candidate_from_manifest(manifest: &Path, json: bool) -> Result<Candidate, ExitCode> {
+    // `read_zone` is the one reader: it validates the manifest tiles its own
+    // zone and that every tile on disk is the size the document claims, so a
+    // holed or re-exported set is refused here rather than arriving in-world as
+    // a building with a gap in it.
+    let (set, tiles) = match read_zone(manifest) {
+        Ok(v) => v,
+        Err(e) => return Err(input_err(&e, json)),
+    };
+    let dir = manifest.parent().unwrap_or(Path::new("."));
+    let mut parts: Vec<(TilePart, Vec<u8>)> = Vec::with_capacity(tiles.len());
+    for (part, _) in &tiles {
+        let path = dir.join(&part.file);
+        match std::fs::read(&path) {
+            Ok(b) => parts.push((part.clone(), b)),
+            Err(e) => {
+                return Err(input_err(
+                    &format!("cannot read {}: {e}", path.display()),
+                    json,
+                ));
+            }
+        }
+    }
+    let asset_id = match PrefabMeta::read(manifest) {
+        Ok(Some(m)) => m.prefab_id.trim_start_matches("prefab/").to_string(),
+        Ok(None) => set.base.clone(),
+        Err(e) => return Err(input_err(&e, json)),
+    };
+    Candidate::from_tile_set(&asset_id, &set.base, set.size, &parts)
+        .map_err(|e| input_err(&format!("{}: {e}", manifest.display()), json))
+}
+
+/// `delvec prefab gallery <path>`: the one command whose whole purpose is *let a
+/// person walk a prefab*.
+///
+/// `path` is whatever the creator is holding — a directory of pieces, one
+/// piece's `.nbt`, or the `.json` manifest of a zone that ships as a tile set.
+/// They do not have to know which kind they have, and no shape needs a different
+/// flag: a distinction the caller would have to make is one this command can
+/// make from the path it was handed anyway.
+fn run_gallery(path: &Path, out: &Path, id: Option<String>, cols: usize, json: bool) -> ExitCode {
+    let ext = path.extension().and_then(|s| s.to_str());
     let gallery_id = id.unwrap_or_else(|| {
-        dir.file_name()
-            .and_then(|s| s.to_str())
+        let name = match ext {
+            Some("json") | Some("nbt") => path.file_stem(),
+            _ => path.file_name(),
+        };
+        name.and_then(|s| s.to_str())
             .unwrap_or("gallery")
             .to_string()
     });
-    let mut nbts: Vec<PathBuf> = match std::fs::read_dir(dir) {
-        Ok(rd) => rd
-            .filter_map(|e| e.ok().map(|e| e.path()))
-            .filter(|p| p.extension().and_then(|s| s.to_str()) == Some("nbt"))
-            .collect(),
-        Err(e) => return input_err(&format!("cannot read {}: {e}", dir.display()), json),
-    };
-    nbts.sort();
-    if nbts.is_empty() {
-        return input_err(&format!("no .nbt candidates in {}", dir.display()), json);
-    }
     let mut cands: Vec<Candidate> = Vec::new();
-    for p in &nbts {
-        // The door nobody would point at deliberately: walking `*.nbt` in a
-        // directory that holds a tile set puts each tile on a plinth as if it
-        // were a prefab, and a reviewer walks past five slices of one building
-        // believing they reviewed five pieces.
-        if let Err(code) = refuse_fragment(
-            p,
-            "show",
-            "put one slice of a building on a plinth as if it were a piece",
-            json,
-        ) {
-            return code;
-        }
-        let bytes = match std::fs::read(p) {
-            Ok(b) => b,
-            Err(e) => return input_err(&format!("cannot read {}: {e}", p.display()), json),
-        };
-        let stem = p.file_stem().and_then(|s| s.to_str()).unwrap_or("piece");
-        let asset_id = match PrefabMeta::beside_nbt(p) {
-            Ok(Some(m)) => m.prefab_id.trim_start_matches("prefab/").to_string(),
-            Ok(None) => stem.to_string(),
-            Err(e) => return input_err(&e, json),
-        };
-        match Candidate::from_nbt(&asset_id, stem, bytes) {
+    match ext {
+        Some("json") => match gallery_candidate_from_manifest(path, json) {
             Ok(c) => cands.push(c),
-            Err(e) => return input_err(&format!("{}: {e}", p.display()), json),
+            Err(code) => return code,
+        },
+        Some("nbt") => match gallery_candidate_from_nbt(path, json) {
+            Ok(c) => cands.push(c),
+            Err(code) => return code,
+        },
+        _ => {
+            let mut nbts: Vec<PathBuf> = match std::fs::read_dir(path) {
+                Ok(rd) => rd
+                    .filter_map(|e| e.ok().map(|e| e.path()))
+                    .filter(|p| p.extension().and_then(|s| s.to_str()) == Some("nbt"))
+                    .collect(),
+                Err(e) => return input_err(&format!("cannot read {}: {e}", path.display()), json),
+            };
+            nbts.sort();
+            if nbts.is_empty() {
+                return input_err(&format!("no .nbt candidates in {}", path.display()), json);
+            }
+            for p in &nbts {
+                match gallery_candidate_from_nbt(p, json) {
+                    Ok(c) => cands.push(c),
+                    Err(code) => return code,
+                }
+            }
         }
     }
     // Emission validates every line it wrote against the pinned 1.21.11 command
@@ -1580,8 +1660,13 @@ fn run_gallery(dir: &Path, out: &Path, id: Option<String>, cols: usize, json: bo
         Diagnostic::error(DW_GALLERY, format!("cannot write gallery: {e}")).print(json);
         return ExitCode::from(EXIT_OUTPUT);
     }
+    // The count states the EXHIBITS and the templates they were placed from,
+    // because for a tiled zone those are different numbers and a single one
+    // cannot say which. `1 piece (9 template(s))` is a whole castle; `9 pieces`
+    // would be the fragment answer wearing a success message.
+    let templates: usize = cands.iter().map(|c| c.tiles.len()).sum();
     eprintln!(
-        "gallery `{gallery_id}`: {} pieces -> {}",
+        "gallery `{gallery_id}`: {} piece(s) from {templates} template(s) -> {}",
         cands.len(),
         out.display()
     );

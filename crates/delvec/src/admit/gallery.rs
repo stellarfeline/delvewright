@@ -25,6 +25,7 @@ use serde::Serialize;
 
 use crate::admit::catalog::{Curation, CurationNote};
 use crate::admit::structure::Structure;
+use crate::schem::split::TilePart;
 
 /// Datapack namespace for the gallery.
 const NS: &str = "admit";
@@ -35,16 +36,39 @@ const MARGIN: i32 = 3;
 /// The report schema version.
 pub const CURATION_VERSION: &str = "0.1.0";
 
-/// One candidate piece to display.
+/// One structure template an exhibit is made of.
+///
+/// A whole prefab is one of these at `[0, 0, 0]`. A zone past the 48-per-axis
+/// template cap ships as several, and the exhibit is all of them at the
+/// zone-local offsets its manifest declares — which is the only transform
+/// reassembly needs (`crate::schem::split::TilePart::offset`).
+#[derive(Debug, Clone)]
+pub struct CandidateTile {
+    /// Appended to the exhibit's sanitized id to name this tile's structure
+    /// resource. Empty for a single-template piece, so an untiled gallery emits
+    /// exactly the resource paths it always did.
+    pub suffix: String,
+    /// Where this tile's corner sits inside the exhibit.
+    pub offset: [i32; 3],
+    /// Raw gzip-framed structure `.nbt` bytes (copied verbatim into the datapack).
+    pub nbt: Vec<u8>,
+}
+
+/// One candidate exhibit to display.
+///
+/// **The unit is the thing a person walks around, not the file it arrived in.**
+/// A zone that ships as tiles is one exhibit with one label and one AABB, placed
+/// as several templates — because a browse world showing nine plinths of one
+/// castle is the fragment answer this engine refuses everywhere else.
 #[derive(Debug, Clone)]
 pub struct Candidate {
     /// Stable asset id (from the sibling metadata's `prefab_id`, else file stem).
     pub asset_id: String,
     /// Human label shown in-game (falls back to the asset id).
     pub label: String,
-    /// Raw gzip-framed structure `.nbt` bytes (copied verbatim into the datapack).
-    pub nbt: Vec<u8>,
-    /// Structure size (parsed for grid layout + AABB).
+    /// The templates this exhibit is placed from, in a deterministic order.
+    pub tiles: Vec<CandidateTile>,
+    /// The whole exhibit's size (grid layout + AABB + label position).
     pub size: [i32; 3],
 }
 
@@ -55,7 +79,46 @@ impl Candidate {
         Ok(Candidate {
             asset_id: asset_id.to_string(),
             label: label.to_string(),
-            nbt,
+            tiles: vec![CandidateTile {
+                suffix: String::new(),
+                offset: [0, 0, 0],
+                nbt,
+            }],
+            size,
+        })
+    }
+
+    /// Build one candidate from a whole tiled zone: its manifest's `size`, and
+    /// one tile per part at the part's zone-local offset.
+    ///
+    /// The caller has already read the manifest and the bytes beside it
+    /// (`read_zone` validates that the two are the same export), so this takes
+    /// the parts it was given and does not re-open anything.
+    pub fn from_tile_set(
+        asset_id: &str,
+        label: &str,
+        size: [i32; 3],
+        parts: &[(TilePart, Vec<u8>)],
+    ) -> Result<Candidate, String> {
+        if parts.is_empty() {
+            return Err("a tile set with no tiles has nothing to show".to_string());
+        }
+        let mut tiles: Vec<CandidateTile> = parts
+            .iter()
+            .map(|(part, nbt)| CandidateTile {
+                suffix: format!(
+                    ".x{}y{}z{}",
+                    part.grid_index[0], part.grid_index[1], part.grid_index[2]
+                ),
+                offset: part.offset,
+                nbt: nbt.clone(),
+            })
+            .collect();
+        tiles.sort_by(|a, b| a.suffix.cmp(&b.suffix));
+        Ok(Candidate {
+            asset_id: asset_id.to_string(),
+            label: label.to_string(),
+            tiles,
             size,
         })
     }
@@ -171,12 +234,15 @@ fn emit_unchecked(gallery_id: &str, cands: &[Candidate], cols: usize) -> BTreeMa
         &serde_json::json!({ "values": [format!("{NS}:tick")] }),
     );
 
-    // structures (verbatim gzip bytes).
+    // structures (verbatim gzip bytes) — one per tile, so a zone that ships as
+    // nine templates arrives as nine resources under one exhibit's name.
     for p in &placed {
-        out.insert(
-            format!("datapack/data/{NS}/structure/{}.nbt", p.safe),
-            p.cand.nbt.clone(),
-        );
+        for tile in &p.cand.tiles {
+            out.insert(
+                format!("datapack/data/{NS}/structure/{}{}.nbt", p.safe, tile.suffix),
+                tile.nbt.clone(),
+            );
+        }
     }
 
     // functions.
@@ -265,14 +331,22 @@ fn emit_functions(placed: &[Placed]) -> Vec<(String, String)> {
     ];
     fns.push(("tick".to_string(), lines(&tick)));
 
-    // place: idempotent template placement.
+    // place: idempotent template placement, one line per tile at the exhibit's
+    // origin plus that tile's zone-local offset. A single-template piece has one
+    // tile at [0,0,0], so its line is byte-identical to what it always was.
     let place: Vec<String> = placed
         .iter()
-        .map(|p| {
-            format!(
-                "place template {NS}:{} {} {} {}",
-                p.safe, p.origin[0], p.origin[1], p.origin[2]
-            )
+        .flat_map(|p| {
+            p.cand.tiles.iter().map(move |tile| {
+                format!(
+                    "place template {NS}:{}{} {} {} {}",
+                    p.safe,
+                    tile.suffix,
+                    p.origin[0] + tile.offset[0],
+                    p.origin[1] + tile.offset[1],
+                    p.origin[2] + tile.offset[2]
+                )
+            })
         })
         .collect();
     fns.push(("place".to_string(), lines(&place)));
