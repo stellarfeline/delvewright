@@ -67,7 +67,8 @@ without it.
 | `git` | I2 clones the engine tree, in creator mode | `git --version` |
 | **Python 3.11+** | `tomllib` is stdlib from 3.11, and I3a's selector reads the pin with it. The three scripts in the skill root are stdlib Python | see below |
 | **Java 21+** | **the pinned game's own requirement** — 1.21.11 declares `javaVersion.majorVersion: 21` in Mojang's version manifest, and every jar-reading checker runs under it. Chunky is not where this number comes from: its launcher and `--update snapshot` both run under 17 | `java -version` |
-| Docker | the machine ladder and the play server | `docker info` |
+| Docker | the play server at step 9, which drives `docker run` directly | `docker info` |
+| **Compose v2** | **a second install, and the whole of step 10 needs it** — every ladder entry point builds a `docker compose -p …` command line | `docker compose version` |
 
 **Not here, deliberately.** Rust belongs to I3b: on the default path the archive
 arrives built, and demanding a compiler for a download is the front-loading this
@@ -166,6 +167,20 @@ with a traceback that never names the version, several hours into the run, and
 reads as a broken gate.
 
 **Docker absent: halt.** Steps 9 and 10 cannot run at all without it.
+
+**Compose answering and Docker answering are two different facts, so ask for
+both.** Compose v2 is a **per-user CLI plugin** — a file under
+`$DOCKER_CONFIG/cli-plugins` (or `~/.docker/cli-plugins`), installed beside the
+engine and not by it — so a machine can have a perfectly working daemon and no
+`docker compose` at all: a CLI-only install, a CI image, a `DOCKER_CONFIG`
+pointing somewhere else. `docker info` exits 0 on every one of them. **Compose
+absent: halt for step 10 the same way.** What you avoid by asking here is the
+failure this whole section exists to prevent: `docker compose -p …` with no
+plugin to resolve it hands `-p` to `docker` itself, and the ladder dies hours
+into the run with `unknown shorthand flag: 'p' in -p` and a usage screen — with
+two of its own guards failing first and unhelpfully, `ladder-images` refusing to
+judge on an empty answer and `fresh-volumes` reporting the image class NOT
+JUDGED. None of those three lines names Compose.
 
 ## I2 — the engine tree
 
@@ -522,13 +537,24 @@ the gate:
     env | grep -Eo '^[A-Z0-9_]*(API_KEY|APIKEY|TOKEN)[A-Z0-9_]*' | sort
     ```
 
-    If one of them belongs to an image provider, write **that** name into
-    `api_key_env` and set `provider`/`model` to match it. Copying the example
-    name literally and then finding it unset is how a run spends a turn of the
-    user's asking for a key they already have under another name. **Read the
-    list, do not count it**: the pattern matches any name carrying `TOKEN`, and
-    on a machine that has never drawn anything the only hit is the harness's own
-    `CLAUDE_CODE_MESSAGING_TOKEN`, which is not a provider key.
+    **A name is evidence of a provider only when it NAMES one.** A variable
+    carrying `GEMINI` or `IDEOGRAM` says which of the two it is for, so write
+    that name into `api_key_env` and set `provider`/`model` to match it —
+    copying the example name literally and then finding it unset is how a run
+    spends a turn of the user's asking for a key they already have under another
+    name. **A provider-neutral name is a candidate, not a match**, and
+    `DELVEWRIGHT_REFIMG_API_KEY` is exactly that: it says what the key is *for*
+    and nothing about *whose* it is, and nothing in the engine tree resolves it —
+    `grep -rn DELVEWRIGHT_REFIMG_API_KEY "$DELVEWRIGHT_ENGINE"` returns nothing,
+    because the convention in `delvewright.toml` is one variable per provider and
+    a shared name is the case it did not anticipate. **Never guess between the
+    two.** Ask the user which provider that key is for, in one line, naming the
+    variable you found — that is a turn; a wrong guess is `HTTP 401: Access
+    denied` from a provider the key was never issued by, which reads like a dead
+    key rather than a wrong address and sends the next turn to the user anyway.
+    **Read the list, do not count it**: the pattern matches any name carrying
+    `TOKEN`, and on a machine that has never drawn anything the only hit is the
+    harness's own `CLAUDE_CODE_MESSAGING_TOKEN`, which is not a provider key.
   - **Only when the list holds no provider key at all, ask the user for one.**
     That is the ordinary case on a clean machine, so ask for the whole thing at
     once rather than one field per turn, and ask for exactly this:
@@ -557,6 +583,30 @@ the gate:
 
 Absent configuration exits 2 and says exactly what to add. A malformed one is a
 hard error.
+
+**The two providers do not hold a series to one style the same way, and the
+difference is settled HERE, where the provider is chosen — not at the command
+that fails.** A reference is several full-frame views of one place, the first
+setting the style and every later one anchored to it, and each provider takes a
+different anchor and a different frame vocabulary:
+
+| | anchor every later view with | frame each view with | the style contract goes |
+|---|---|---|---|
+| `gemini-native` | `--chain-from` with view 1's interaction id — the structural anchor; `--style-ref` with view 1's image also works | `--aspect-ratio` / `--image-size` | in `--style-note`, held constant |
+| `ideogram-v3` | `--style-ref` with view 1's image — **it has no interaction chaining** | `--resolution` as `WxH` | **in the prompt itself**, repeated per call |
+
+`--style-ref` is therefore the one anchor both providers take, and a run that
+wants one method for both uses it. Every mismatch is a refusal at `--dry-run`,
+free and by name — `--chain-from: provider 'ideogram-v3' has no interaction
+chaining`, `--style-note: provider 'ideogram-v3' has no system-instruction
+channel; put the style contract in the prompt itself`, `--aspect-ratio: provider
+'ideogram-v3' has no aspect_ratio — it frames a picture with --resolution` — so
+nothing is ever silently dropped. But the refusal arrives mid-series; the row
+above is what stops you writing the series against the wrong vocabulary.
+`--style-code` is Ideogram's own exact-reuse anchor and it is **not** an option
+for a run: the generate response was measured not to return one, so the code can
+only be read off the web UI, which is a human at a browser in the middle of an
+agent's series. Say out loud which of the two rows this run is on.
 
 On path B this is a **hard prerequisite of the whole run**, not of one step. For
 a site-plan campaign the map's own reference is the first thing written and
@@ -592,6 +642,7 @@ consistent.)
 | `grammar expand` then `palette` | the texture ladder. A `DW0723` here says the same thing it says on the line above; a `DW0722` says `.out/` is missing |
 | the Chunky probe | not a stop — said out loud at I7, and a stop at step 12 |
 | `docker info` | steps 9 and 10 cannot run. Halt |
+| `docker compose version` | the daemon is fine and the **Compose plugin** is not installed for this user — `docker info` above already passed and says nothing about it. Step 10 cannot run: halt for it. `docker: unknown command: docker compose` is the whole message you get |
 
 **Any line answering wrongly means Init is not finished**, and a run that
 continues authors against a half-built toolchain.

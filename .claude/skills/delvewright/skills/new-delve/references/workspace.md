@@ -115,6 +115,21 @@ reads:
 
 ## The campaign's own branch
 
+**First ask whether the working directory is a repository at all**, because Init
+I6's fourth case — "anything else" — is an ordinary directory that has never
+been one, and on it every instruction below fails at `git rev-parse`:
+
+```sh
+git -C . rev-parse --is-inside-work-tree 2>/dev/null || echo "no repository here"
+```
+
+**No repository: `git init` it, and carry on.** A campaign is the artifact of
+record and it needs a history of its own from the first document, not a clone of
+anything: the content repository is where a *published* campaign goes, and a
+run that has not reached the design gate has nothing to publish. Say in one line
+that you did it and where. Everything below then applies unchanged, except that
+there is no `main` to keep off — the first branch you make is the campaign's.
+
 **Commit the campaign onto its own `campaign/<campaign-id>` branch**, as soon
 as the documents are on disk — not onto `main`, and not held back until
 everything is green. A campaign is in progress until somebody has walked it, and

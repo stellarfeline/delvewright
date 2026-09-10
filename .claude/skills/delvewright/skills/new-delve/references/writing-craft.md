@@ -1,5 +1,3 @@
-@@TOC@@
-
 ## Contents
 
 - [Reference: writing craft](#reference-writing-craft)

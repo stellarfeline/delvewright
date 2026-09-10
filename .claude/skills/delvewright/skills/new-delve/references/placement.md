@@ -175,6 +175,14 @@ Three documents, in this order, each the input the next one needs. **The order
 is the only order that compiles** — there is no blockout document and nothing to
 author early, so no later document can reach green first.
 
+**These three are the hardest documents on the page to read out of a schema, and
+`delvec metrics --gym <dir>` writes all three of them filled in.** It builds a
+whole site-plan campaign out of the metrics table — nine complete documents that
+build — so it is where you go for a worked `geometry-brief.json`,
+`layout-graph.json` and `site-plan.json` rather than dereferencing
+`delvec schema --stage all`. Read the gym's copy, then write your own; the
+schema is still the authority on form.
+
 **Before any of them: the whole map gets a reference of its own.** A composition
 written without one is free invention with no criterion. On path A of Init I7 it is already in `design/reference/` — read it. On path B, draw it now; the
 form and the commands are in *Reference: drawing the map's reference*.
