@@ -407,14 +407,32 @@ fn walk_plane_over_waterline(base: HorizonBase, f: &PieceFacts) -> Option<Reason
 /// `members` is `(prefab id, declared walk_y)` because that is all the rule
 /// needs: no bytes, no placement. `label` names what the reason is about — an
 /// area at validation, a pool at the command line.
+/// **What the base's walk-plane datum IS, in one clause** — the half of a
+/// refusal that says why the number is that number.
+///
+/// One phrase per base rather than one per message: a base gained a walk plane
+/// (`valley`) while every sentence about one still said *one block above the
+/// sea*, and a message that names the wrong world is worse than one that names
+/// none.
+fn walk_ref_note(base: HorizonBase) -> &'static str {
+    match base {
+        HorizonBase::Ocean => "one block above the sea",
+        HorizonBase::Valley => "the valley's own gap floor, the ground outside the map's edge",
+        // `void` has no walk-plane datum at all, so no caller reaches this arm;
+        // it answers rather than panicking, because a phrase is not worth an
+        // abort and the arm is here so the enum is answered for whole.
+        HorizonBase::Void => "this base has no walk-plane datum",
+    }
+}
+
 pub fn set_walk_plane(
     base: HorizonBase,
     label: &str,
     members: &[(String, Option<i32>)],
 ) -> SetPlane {
-    if crate::compiler::horizon::walk_ref_y(base).is_none() {
+    let Some(walk_ref) = crate::compiler::horizon::walk_ref_y(base) else {
         return SetPlane::NotDerived;
-    }
+    };
     let mut planes: std::collections::BTreeSet<i32> = std::collections::BTreeSet::new();
     let mut silent: Vec<&str> = Vec::new();
     for (id, walk) in members {
@@ -425,7 +443,6 @@ pub fn set_walk_plane(
             None => silent.push(id.as_str()),
         }
     }
-    let walk_ref = crate::compiler::horizon::OCEAN_WALK_REF_Y;
     if !silent.is_empty() {
         return SetPlane::Refused(vec![Reason {
             shape: Shape::NoWalkPlane,
@@ -439,13 +456,14 @@ pub fn set_walk_plane(
             ),
             full: format!(
                 "`{label}` is seated on a `{base}` horizon, whose datum is a WALK PLANE at \
-                 y={walk_ref} — one block above the sea — so the origin is derived from the \
+                 y={walk_ref} — {what} — so the origin is derived from the \
                  piece set's own `walk_y`. {n} of its {total} member(s) declare none: {list}. \
                  There is no default to fall back on and there deliberately is not one: a \
                  default is one tileset's authoring convention promoted to a world constant, and \
                  it is why every piece of every other library used to land with its floor under \
                  the sea. DECLARE `walk_y` on each piece named above — it is a measurement of \
                  the piece, written by the generator that built it",
+                what = walk_ref_note(base),
                 base = base.token(),
                 n = silent.len(),
                 total = members.len(),

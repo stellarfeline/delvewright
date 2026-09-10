@@ -16,7 +16,7 @@
 //! * fills name block states (or palette roles) instead of integer material ids
 //!   registered in a global side table.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
 use serde::{Deserialize, Serialize};
@@ -26,8 +26,9 @@ use crate::grammar::export::AnchorRole;
 use crate::grammar::geom::{Axis, Mirror, Orientation};
 use crate::grammar::version::{
     ANCHOR_ROLE_SINCE, BIND_SINCE, CONTRACT_SINCE, INCLUDE_SINCE, LATEST_PROGRAM_VERSION,
-    LOCAL_FRAME_SINCE, MIRROR_SINCE, WAY_SINCE, has_anchor_role, has_bind, has_contract,
-    has_include, has_local_frame, has_mirror, has_way, is_supported_version,
+    LOCAL_FRAME_SINCE, MIRROR_SINCE, SHOWN_FACES_SINCE, WAY_SINCE, has_anchor_role, has_bind,
+    has_contract, has_include, has_local_frame, has_mirror, has_shown_faces, has_way,
+    is_supported_version,
 };
 
 // ---------------------------------------------------------------------------
@@ -1481,6 +1482,40 @@ pub struct Program {
     /// from an empty contract.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub contract: Option<Contract>,
+    /// **Which of this building's own six sides are finished exterior surface**
+    /// — the list the export writes into the prefab's
+    /// [`shown_faces`](crate::schem::prefab::PrefabMetadata::shown_faces), and
+    /// the one `DW0885` reads ([`crate::compiler::burial`]).
+    ///
+    /// Spelled with the six words the rest of the engine spells a side with
+    /// (`north`/`south`/`east`/`west`/`up`/`down`,
+    /// [`crate::compiler::faces::dir_vector`]), in any order, each at most once.
+    /// Empty — the default — is the strict answer and means no side is: the
+    /// world must bury every outward face, which is what a piece authored to
+    /// stand inside a hill wants.
+    ///
+    /// **It is the program's to say, and this reverses the export's earlier
+    /// reading of it.** That reading was *a program says what a building IS;
+    /// which of its sides a player is meant to look at is a fact about where it
+    /// is placed*. The premise is right and the conclusion does not follow, for
+    /// one reason: `shown_faces` does not name the sides a player happens to
+    /// look at. [`crate::compiler::burial`] defines it as the sides that are
+    /// finished exterior surface, and says in the same breath that it "is a
+    /// claim about the PIECE, made in the prefab document, so it changes what
+    /// that piece is in every world". A castle's outer wall is finished
+    /// exterior surface in every world it is ever put in, and a cave mouth's
+    /// cut rock is finished in none — which of the two a side is, is part of
+    /// what the building is, and the program is where a building is said.
+    ///
+    /// The practical half is that nothing else can hold it. The export rewrites
+    /// the metadata on every expansion, so a value typed into the metadata by
+    /// hand is erased by the next `delvec grammar expand`; and it cannot be
+    /// measured off the geometry either, because the whole distinction
+    /// `DW0885` exists for — a hull the player walks up to against a hillside's
+    /// cut edge — is invisible in the blocks. Declared here, it survives every
+    /// re-expansion, because every re-expansion writes it again.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub shown_faces: Vec<String>,
 }
 
 /// A program that cannot be expanded, found before any work is done.
@@ -1590,6 +1625,14 @@ pub enum ProgramError {
         declared: String,
         /// Where it was written — a rule name, or `"contract"`.
         written_by: String,
+    },
+    /// `shown_faces` names something that is not one of the six sides, or names
+    /// one of them twice.
+    BadShownFace {
+        /// The entry as written.
+        face: String,
+        /// What is wrong with it: `"not a side"` or `"written twice"`.
+        why: &'static str,
     },
     /// A region name is not kebab-case, or is the reserved exterior name.
     BadRegionName {
@@ -1769,6 +1812,13 @@ impl fmt::Display for ProgramError {
                  program declares version {declared}. Raise the program's `version` to write it; \
                  leaving it where it is keeps this document compiling exactly as it always has"
             ),
+            ProgramError::BadShownFace { face, why } => write!(
+                f,
+                "`shown_faces` carries {face:?}, {why}. A side of the building is spelled with one \
+                 of the six words the rest of the engine spells one with — \"north\", \"south\", \
+                 \"east\", \"west\", \"up\", \"down\" — and each side is either finished exterior \
+                 surface or it is not, so naming one twice says nothing the first entry did not"
+            ),
             ProgramError::BadRegionName { written_by, region } => write!(
                 f,
                 "{written_by} names the contract region {region:?}, which is not a usable name: a \
@@ -1851,7 +1901,14 @@ impl Program {
             include: Vec::new(),
             rules: BTreeMap::new(),
             contract: None,
+            shown_faces: Vec::new(),
         }
+    }
+
+    /// Declare a side finished exterior surface (builder form).
+    pub fn showing(mut self, face: &str) -> Program {
+        self.shown_faces.push(face.to_string());
+        self
     }
 
     /// Compose another program document under a prefix (builder form).
@@ -1996,6 +2053,7 @@ impl Program {
         // — an unknown rule named `z0/plan` — and name neither the include nor
         // the loader that was skipped.
         self.check_include_fence()?;
+        self.check_shown_faces()?;
         if let Some(first) = self.include.first() {
             return Err(ProgramError::UnresolvedInclude {
                 prefix: first.prefix.clone(),
@@ -2050,6 +2108,42 @@ impl Program {
                     self.include[0].program, self.include[0].prefix
                 ),
             });
+        }
+        Ok(())
+    }
+
+    /// The `shown_faces` list: fenced by the version, spelled in the engine's
+    /// one face vocabulary, and each side named at most once.
+    ///
+    /// The vocabulary comes from [`crate::compiler::faces::dir_vector`] rather
+    /// than from a list written here, because a second list is a second answer
+    /// waiting to disagree with the one `DW0885` reads.
+    fn check_shown_faces(&self) -> Result<(), ProgramError> {
+        if self.shown_faces.is_empty() {
+            return Ok(());
+        }
+        if !has_shown_faces(&self.version) {
+            return Err(ProgramError::FencedConstruct {
+                construct: "a `shown_faces` list",
+                since: SHOWN_FACES_SINCE,
+                declared: self.version.clone(),
+                written_by: "the program".to_string(),
+            });
+        }
+        let mut seen: BTreeSet<&str> = BTreeSet::new();
+        for face in &self.shown_faces {
+            if crate::compiler::faces::dir_vector(face).is_none() {
+                return Err(ProgramError::BadShownFace {
+                    face: face.clone(),
+                    why: "which is not one of the six sides",
+                });
+            }
+            if !seen.insert(face.as_str()) {
+                return Err(ProgramError::BadShownFace {
+                    face: face.clone(),
+                    why: "which it already carries",
+                });
+            }
         }
         Ok(())
     }

@@ -70,7 +70,7 @@
 
 /// The latest program document version this crate implements — what
 /// [`Program::new`](crate::grammar::ir::Program::new) stamps on a program built today.
-pub const LATEST_PROGRAM_VERSION: &str = "1.8.0";
+pub const LATEST_PROGRAM_VERSION: &str = "1.9.0";
 
 /// Every program document version the format has, oldest first — the ledger.
 ///
@@ -95,8 +95,11 @@ pub const LATEST_PROGRAM_VERSION: &str = "1.8.0";
 /// * `1.8.0` — what a mark is FOR (spec-0046): `role` on a `mark`, written
 ///   through to the exported anchor's metadata, so a generated zone can declare
 ///   the cell a body arrives at without spelling a name its keys cannot take.
+/// * `1.9.0` — which of the building's own sides are finished exterior surface
+///   (`DW0885`): the program-level `shown_faces` list, written through to the
+///   exported prefab's own `shown_faces` on every expansion.
 pub const SUPPORTED_PROGRAM_VERSIONS: &[&str] = &[
-    "1.0.0", "1.1.0", "1.2.0", "1.3.0", "1.4.0", "1.5.0", "1.6.0", "1.7.0", "1.8.0",
+    "1.0.0", "1.1.0", "1.2.0", "1.3.0", "1.4.0", "1.5.0", "1.6.0", "1.7.0", "1.8.0", "1.9.0",
 ];
 
 /// Ledger entries whose surface a **sibling** change introduces: the version,
@@ -138,6 +141,11 @@ pub const WAY_SINCE: &str = "1.7.0";
 /// The version at which a mark may declare **what the anchor is for** — the
 /// role the compiler resolves it by (spec-0046 §3).
 pub const ANCHOR_ROLE_SINCE: &str = "1.8.0";
+
+/// The version at which a program may declare **which of its own sides are
+/// finished exterior surface** — the list the export writes into the prefab's
+/// `shown_faces`, which `DW0885` reads (`crate::compiler::burial`).
+pub const SHOWN_FACES_SINCE: &str = "1.9.0";
 
 /// The fence constant that introduces `version`'s surface, when `version` is a
 /// ledger entry this crate does not implement; `None` otherwise.
@@ -223,6 +231,12 @@ pub fn has_anchor_role(version: &str) -> bool {
     is_supported_version(version) && minor_ordinal(version) >= minor_ordinal(ANCHOR_ROLE_SINCE)
 }
 
+/// True if `version` may declare which of the building's sides are finished
+/// exterior surface.
+pub fn has_shown_faces(version: &str) -> bool {
+    is_supported_version(version) && minor_ordinal(version) >= minor_ordinal(SHOWN_FACES_SINCE)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -241,6 +255,7 @@ mod tests {
         ("INCLUDE_SINCE", INCLUDE_SINCE, has_include),
         ("WAY_SINCE", WAY_SINCE, has_way),
         ("ANCHOR_ROLE_SINCE", ANCHOR_ROLE_SINCE, has_anchor_role),
+        ("SHOWN_FACES_SINCE", SHOWN_FACES_SINCE, has_shown_faces),
     ];
 
     #[test]

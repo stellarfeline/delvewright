@@ -1877,6 +1877,23 @@ fn after_ordering(c: &Campaign, d: &mut Vec<Diagnostic>) {
 
 /// The spec-0026 **horizon library**: a declared horizon's params are
 /// range-checked here, and a param that belongs to another base is refused.
+/// **How far this campaign is from being one piece**, in a clause — the half of
+/// `DW0855` that tells a creator which of the three moves is one step away.
+///
+/// It names the count it read, so a reader can see what the refusal counted
+/// rather than being told a category.
+fn one_piece_gap(c: &Campaign) -> String {
+    let areas = &c.world.content.areas;
+    match areas.len() {
+        0 => ", and no area is declared at all".to_string(),
+        1 => format!(
+            ", and its one area `{id}` draws from a pool rather than binding a single `prefab`",
+            id = areas[0].id.as_str(),
+        ),
+        n => format!(", which is {n} areas rather than one"),
+    }
+}
+
 fn horizon_param_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
     use crate::stages::{HorizonBase, horizon_defaults};
 
@@ -1916,26 +1933,34 @@ fn horizon_param_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
         }
     }
 
-    // A base that BUILDS terrain needs a map to build it around, and the only
-    // statement of a whole map's extent this engine has is a site plan's
-    // `region`. Refused here rather than at the build, because it is a fact
-    // about the documents: nothing has to be placed to know that nothing states
-    // an extent.
-    if r.base.has_surround() && c.site_plan.is_none() {
+    // A base that BUILDS terrain needs a map to build it around, and whether
+    // this campaign states one is `crate::placement::Extent`'s answer — the same
+    // one `compiler::plan::surround_rect` derives the rectangle from, so the
+    // tier that refuses and the tier that builds cannot disagree about which
+    // campaigns have an extent. Refused here rather than at the build because it
+    // is a fact about the documents: nothing has to be placed to know that
+    // nothing states an extent.
+    if r.base.has_surround() && !crate::placement::Extent::of(c).is_stated() {
         d.push(Diagnostic::error(
             codes::SURROUND_NO_REGION,
             "world",
             "/content/horizon/base",
             format!(
                 "`horizon` base `{base}` builds terrain around the map, and this campaign never \
-                 says how big the map is. A surround rings a DECLARED extent — the `region` of a \
-                 site plan — and this campaign has no site plan, so its only statement of where \
-                 anything is is `areas[]`. The union of whatever those place is not a \
-                 substitute: areas sit on the compiler's fixed stride with void between them, so \
-                 that union is mostly nothing and the horizon would be a mountain range built \
-                 around empty space. Give the campaign a site plan, or set `horizon` to `void` \
-                 or `ocean`, which need no map to be a horizon of.",
-                base = r.base.token()
+                 says how big the map is. A surround rings a DECLARED extent, and this campaign \
+                 declares none: it places {n} area(s) with `areas[]`{how}. The union of whatever \
+                 those place is not a substitute — areas sit on the compiler's fixed stride with \
+                 void between them, and a pool's footprint is whatever the solver drew — so that \
+                 union is mostly nothing and the horizon would be a mountain range built around \
+                 empty space. There are three moves and all three are reachable from here: make \
+                 the map ONE PIECE — a single area bound to a single `prefab`, whose own declared \
+                 region is then the map's extent, which is how a site (a building with its \
+                 island, its moat and its banks in one box) is placed; or give the campaign a \
+                 site plan and declare `areas` empty, which is the same choice `DW0839` asks for; \
+                 or set `horizon` to `void` or `ocean`, which need no map to be a horizon of.",
+                base = r.base.token(),
+                n = c.world.content.areas.len(),
+                how = one_piece_gap(c),
             ),
         ));
     }
