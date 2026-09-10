@@ -2521,6 +2521,189 @@
       "note": "Reported by the round that turned the walk-plane requirement on for every base, which found that turning it on made no difference on `valley` because nothing legal reaches it. The round was told to report rather than to widen the rule or to add a probe that hides the gap behind another refusal, and did. Closed by making `compiler::seating::check` read the site plan's own resolver and ask each placed box the same question a prefab is asked, through one predicate (`seating::feet_under_the_sea`), and by giving the binding line a numerator and a denominator per placement model. Reproduced before the change and after, on the gallery's site-plan overlay with nothing altered but `horizon: ocean`: `delvec analyze` exited 0 with `0 of 0 area(s)` while `node/undercroft` stood at y=60, two courses under the sea plane at y=62, and the build then refused it at DW0344 after the assembly; after, `analyze` exits 1 at DW0886 naming the place, and the line reads `site plan: 7 of 7 box(es) judged against this base`. The binding counts the plan's boxes — the objects the new arm quantifies over — and its precondition is whether the campaign declares a site plan at all, both measured over the campaign source. On the gallery: 7 boxes on the site-plan point, 0 boxes and 0 preconditions on the primary and on both horizon overlays, which place with `areas[]` and are gal-02's subject.",
       "round": null,
       "triage": "capability"
+    },
+    {
+      "applies_when": {
+        "files": [
+          "world.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "prefix": {
+            "id": "area/"
+          }
+        }
+      },
+      "binding": {
+        "glob": "**/*.nbt",
+        "kind": "out"
+      },
+      "campaign": "gallery",
+      "carrier": null,
+      "finding": "a building the grammar exported was put in front of a person to look at while its own metadata declared `lighting: {\"profile\": \"unmeasured\"}` — the true statement that export can make, since the grammar places blocks and not photons — and nothing had measured it, because the only two things that measure light are a command somebody has to type and the compiler's assembled-world survey, which quantifies over the areas of a campaign; a piece that enters no campaign meets neither, and the probe answered `dark` in one command: 1498 of 8972 walkable cells below light 3, 984 of them at light 0",
+      "general_form": "a piece's light is measured over its own bytes before anybody is asked to look at the piece, on every piece that ships rather than only on the ones a campaign admits: an `unmeasured` profile is either measured where the piece is produced or refused where the piece is shown, and what is reported is the distribution of dark cells rather than the darkest one",
+      "id": "eng-01",
+      "note": "Re-derived on this tree rather than transcribed: `grammar::export::LIGHTING_PROFILE` is `UNMEASURED` for every grammar-exported prefab and its own comment says admission to a campaign still runs the probe, and `compiler::light::relight_over` walks `plan.areas` and floods from each area's resolved anchors — so the class the survey cannot reach is exactly a piece no area seats. The 1498/8972/984 figures are carried from the round that measured the building and were not re-measured here; the building is not in this repository. Binding measured with this gate's own `probe()` over every point of the gallery domain: 3 piece file(s) on each of easy, hard, primary (en and zh-cn) and void-horizon, 4 on ocean-horizon, 148 on the site-plan blockout — non-zero on all 7. Precondition (areas declared) 2, 2, 2, 2, 3 and a measured 0 on the site-plan point, which places by site plan. Queued first because this is the one finding here that has already reached a person's eye.",
+      "round": null,
+      "triage": "capability"
+    },
+    {
+      "applies_when": {
+        "files": [
+          "world.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "prefix": {
+            "id": "area/"
+          }
+        }
+      },
+      "binding": {
+        "glob": "**/*.nbt",
+        "kind": "out"
+      },
+      "campaign": "gallery",
+      "carrier": null,
+      "finding": "the lighting probe's `dark` verdict is a warning, so a building measured with 984 pitch-black walkable floor cells passes at exit 0 the very command that measured it, and nothing between that verdict and a person's eye refuses it",
+      "general_form": "a measured `dark` verdict over floor a player walks on is a refusal at the step that measured it, or the severity is a decision recorded against this row and not a default nobody chose",
+      "id": "eng-02",
+      "note": "`DW0751` is raised through `Diagnostic::warning` in `delvec::admit::run`, is documented, and is asserted by a test, so the code exists and the severity is the finding — this row records the open judgement and changes nothing. Inside a campaign the same darkness is refused: `DW0210` is analysis tier over every reachable walkable cell of an area, so the gap is the standalone probe, which is the only thing that ever looks at a piece no campaign seats. Binding is eng-01's, measured the same way and non-zero on all 7 gallery points.",
+      "round": null,
+      "triage": "capability"
+    },
+    {
+      "binding": {
+        "files": [
+          "world.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "prefix": {
+            "id": "area/"
+          }
+        }
+      },
+      "campaign": "gallery",
+      "carrier": null,
+      "finding": "the engine's one step rule requires the cell two courses above the TAKEOFF to be clear for any full-block rise, so a body needs three courses of headroom where it jumps and two where it walks; a stairwell opening cut one course short therefore leaves every storey above it unreachable while every render, every plan and every piece-level test still reads as walkable — opening the well one course further moved one building's measured reachability from 52.0% to 76.7% with no other number moving, and the same flight alone in an open box tests fully reachable, so nothing smaller than the whole building reproduces it",
+      "general_form": "a vertical opening a route depends on is judged against the step rule's own headroom demand and named where it is short, with the courses it is missing — the engine says which opening cut the storey off, rather than answering only that a cell is unreachable",
+      "id": "eng-03",
+      "note": "The rule was re-derived from source, not transcribed: `delvec::schem::nav::can_step` asks `passable([from.x, from.y + 2, from.z])` for the head sweep and `compiler::nav::World::neighbors_fp` asks the footprint's own `c[1] + fp.height`, both through the single `delvewright_dsl::metrics::step_allowed`; a standable cell already needs its own cell and the one above it passable, so a jump costs three courses at the takeoff and a walk costs two. The two reachability percentages are carried from the round that measured them. The binding is identity-shaped and therefore self-measuring, so it declares no `applies_when`: 2 area(s) on easy, hard and both primary points, 3 on ocean-horizon, 2 on void-horizon, and a measured 0 on the site-plan blockout. Queued third: it lets nothing wrong ship — the refusal is correct — but it is the finding that stops a building being finished, and it is invisible at every scale below the whole.",
+      "round": null,
+      "triage": "capability"
+    },
+    {
+      "binding": {
+        "files": [
+          "world.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "prefix": {
+            "id": "area/"
+          }
+        }
+      },
+      "campaign": "gallery",
+      "carrier": null,
+      "finding": "a cell that is enclosed and has no way into it is counted by nobody: the build already computes both halves — the assembled block map the light model floods, which holds every sealed cavity, and the walkable set the nav flood reaches from an area's anchors, which drops them — and reports neither the difference nor its size, so 690 roofed cells with no way in were counted by hand",
+      "general_form": "the build reports the cells that are enclosed and unreachable, with a count and a place, because a room nobody can enter is either a modelling error or a fact its author has to be told before anybody renders it",
+      "id": "eng-04",
+      "note": "Both halves re-derived in `compiler::light`: `relight_over` builds the survey from `nav.reachable_walkable(&starts)` per area and `continue`s past an area whose reachable set is empty, while `LightModel::from_blocks` holds the whole assembled world; nothing subtracts one from the other. The 690 is carried from the round that counted it. Sibling of eng-03 — an opening one course short is one way a cell joins this set, and a diagnostic that answered eng-03 would very likely be this one's carrier too. Binding is eng-03's, measured the same way.",
+      "round": null,
+      "triage": "capability"
+    },
+    {
+      "applies_when": {
+        "files": [
+          "world.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "prefix": {
+            "id": "area/"
+          }
+        }
+      },
+      "binding": {
+        "glob": "**/*.nbt",
+        "kind": "out"
+      },
+      "campaign": "gallery",
+      "carrier": null,
+      "finding": "a tileset generator decides `passable` and `standable` from its own list of block ids instead of asking the engine's block authority, so every route it proves is proved against a body the engine does not model — its `standable` accepts any non-air block under a route cell as floor, which reads a torch, a candle, a carpet, a plate, a tuft, a snow layer, a vine, a fence top, a wall top, lava or flowing water as support — while the same generator measures its `walk_y` through the shared walk-plane invariant, so one generator holds two authorities at once; it runs on every push, and the tool inventory lists it as in service",
+      "general_form": "passable, standable and floor are asked of `delvewright_dsl::blockshape` everywhere a body is modelled, generators included, and a second implementation of the class is a red rather than an argument — the rule is bound over the generator corpus rather than transplanted by hand at each generator round",
+      "id": "eng-05",
+      "note": "Re-derived structurally in `prefabs/tidal-keep-generator/src/common.rs`: `passable` matches five id shapes of its own and `standable` requires only `Grid::is_solid` under the feet, while the same crate's entry point takes `walkplane::walk_y` from `prefab_invariants`. The disagreement count — 21 of 49 real states over 52 probed — is carried from the audit round that planted it and was not re-probed here. The library census WAS re-derived and is smaller than the round reported: the content library ships 36 prefab pieces, in 74 files (36 `.nbt`, 36 `.json`, `pools.json` and the asset licence), and 0 of the 36 is one of this generator's; the round's `0 of the 74` counted files, not pieces, and the zero is the same either way. Same object class and same binding as lib-01, which is the row that already says no gate binds the generators.",
+      "round": null,
+      "triage": "capability"
+    },
+    {
+      "binding": {
+        "files": [
+          "world.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "prefix": {
+            "id": "area/"
+          }
+        }
+      },
+      "campaign": "gallery",
+      "carrier": null,
+      "finding": "the light model keeps its own hand-written answer to which blocks a body passes through — a list of ids plus the suffixes `_pressure_plate`, `_carpet` and `_fence_gate` — instead of asking the block authority for the class, and exactly one of its clauses asks a class predicate at all; a block the nav model calls passable and this list does not measures light 0 in a cell a body may legally stand in, which is a darkness that is not there, and the test guarding the coupling asserts hand-picked ids rather than quantifying over the class",
+      "general_form": "the light model asks `delvewright_dsl::blockshape` for the passable class rather than restating it, and the coupling is asserted by quantifying over the class — every nav-passable block passes light — instead of over a list somebody remembered",
+      "id": "eng-06",
+      "note": "Re-derived in `compiler::light::passes_light` on this tree: one `matches!` arm of literal ids, three suffix tests, one id equality, and a single class-level call (`assembled::is_no_collision_plant`) whose own comment states the coupling invariant the rest of the function restates by hand. The direction of the error is stated in the function's own header as the safe one for the arms it names, which is a per-arm argument rather than a property of the class — the shape this general form is about. Binding is eng-03's, measured the same way.",
+      "round": null,
+      "triage": "capability"
+    },
+    {
+      "applies_when": {
+        "glob": "world.json",
+        "kind": "campaign"
+      },
+      "binding": {
+        "file": "design-record.json",
+        "kind": "artifact",
+        "path": "references"
+      },
+      "campaign": "gallery",
+      "carrier": null,
+      "finding": "nothing holds a built delve to the pictures its design gate approved except the sky token both documents state: the approved image's bytes are never opened, so the recorded picture need not be the picture approved, and no geometry is compared to any of them",
+      "general_form": "what an approved picture is authority over is stated and then held by something — at the floor, that the file a record names is the file that was approved, identified by its bytes and not by its path, so a swapped or emptied render is a red rather than a silence; whether the picture is also dimensional authority is a decision, and the row is open until it is made",
+      "id": "eng-07",
+      "note": "Planted on this tree with a release binary, not reasoned about. Over the gallery primary campaign: overwriting one approved render's bytes with another approved render's, and then replacing the same file with five bytes of text, each leave `delvec analyze` at exit 0 with output identical line for line to the unperturbed run. The control — moving one recorded row's `time` from `night` to `day` — reds at exit 1 on `DW0890`, naming the hour, so the document half of the gate is live and it is the image half that is absent. `validation/design-record.json` counts rows and files and states the bytes of neither. The engine's own pages call reference imagery style authority and never dimensional authority, so the geometric half is a recorded property rather than a defect and this row does not prejudge it; the identity half is a gap whichever way that decision goes. Binding measured with this gate's own `probe()`: 6 recorded reference(s) on all 7 gallery points, the site-plan blockout included, over a precondition of 1 campaign-source `world.json` on each — the same pair drill3-01 uses, which is that row's carrier and this row's gap.",
+      "round": null,
+      "triage": "capability"
+    },
+    {
+      "applies_when": {
+        "files": [
+          "world.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "prefix": {
+            "id": "area/"
+          }
+        }
+      },
+      "binding": {
+        "file": "traversal-gate.json",
+        "kind": "artifact",
+        "path": "route_cells"
+      },
+      "campaign": "gallery",
+      "carrier": null,
+      "finding": "the authority on which blocks damage a body is consulted once in the whole engine, and not by anything that models a route: the lighting pass's campfire arm knows on its own that a campfire is a damage source and bars it from path cells by name, and the walk model's `World` holds cell sets with no block identity at all, so a route cannot be asked whether the block it crosses hurts — a proven path over the top face of lava is refused by nothing in that model",
+      "general_form": "whether a cell hurts a body is asked of the block authority by everything that models a body, the router included, rather than being known privately by the one verb that first needed it",
+      "id": "eng-08",
+      "note": "Read from types and call sites, not planted, and recorded at that strength. `delvewright_dsl::blockshape::hurts_body` names 11 blocks and has exactly one live call site outside its own module, in `delvewright_dsl::validate`; the mention in `compiler::lethal` is a doc comment, not a call. `compiler::nav::World` holds solid, tall, use_gates, flooded, partial, waterloggable and lethal cell sets, and no block names. Today's consequence is zero and this row says so: the fixture enum has four arms and `campfire` is the only one in the hurting set, so the private knowledge and the authority agree by accident rather than by construction. Queued last for that reason. Binding measured with this gate's own `probe()`: 102 route cell(s) on each of the six assembled gallery points and a measured 0 on the site-plan blockout, whose precondition (areas declared) is also 0.",
+      "round": null,
+      "triage": "capability"
     }
   ],
   "ledger_version": "2026-08-11"
