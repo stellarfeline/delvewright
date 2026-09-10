@@ -622,6 +622,19 @@ jobs:
       # mechanism is the privately-re-implemented-general-mechanism defect.
       - name: documented versions match the build (reference + crates.io pages)
         run: python3 tools/check-reference-versions.py
+      # The same number, asked of the WHOLE TREE rather than of the places
+      # somebody remembered. A `dsl_version` bump moved 446 files and 816
+      # occurrences, and 319 of those files changed nothing but that one string:
+      # Rust tests passing the literal to a helper that already took it as a
+      # parameter, and fixtures for a different diagnostic carrying an envelope
+      # only to reach their own subject. `version_sites.py verify` now sweeps
+      # `git ls-files` and refuses any carrier that is not derived, written by a
+      # named tool, or an allowlisted counter-example — and prints how many files
+      # a bump edits by hand. It also runs inside `crates-io-publish.sh`; here it
+      # is bound to a job that needs no network, so a registry flake cannot be
+      # what hides a fourth shape. Deterministic, offline, stdlib-only python3.
+      - name: the dsl_version has one authority (whole-tree sweep)
+        run: python3 tools/lib/version_sites.py verify
       # Nothing in the type system stops a walk over the campaign's effects from
       # enumerating the five effect roots by hand, and thirteen of them did — each
       # naming a different three or four, none of them ever red, because a walk
