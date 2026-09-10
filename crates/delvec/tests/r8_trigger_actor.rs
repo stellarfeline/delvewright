@@ -30,6 +30,7 @@ use delvec::compiler::emit::{self, BuildOutput};
 use delvec::compiler::load::load_campaign_dir;
 use delvec::compiler::plan::Plan;
 use delvec::compiler::registry::PrefabRegistry;
+use delvewright_dsl::DSL_VERSION;
 use delvewright_dsl::parse_campaign;
 
 const NS: &str = "hello-world";
@@ -86,7 +87,7 @@ fn build_two_trigger(entity: &str) -> BuildOutput {
         std::fs::copy(src.join(f), dst.join(f)).unwrap();
     }
     common::patch_file(&dst.join("quests.json"), |d| {
-        d["dsl_version"] = serde_json::json!("0.24.0");
+        d["dsl_version"] = serde_json::json!(DSL_VERSION);
         d["content"]["triggers"] = serde_json::json!([
             { "id": "trigger/wake", "on": { "on": "strike-npc", "npc": "npc/keeper" },
               "once": false, "requires_flags": ["flag/asleep"],
@@ -134,7 +135,7 @@ fn build_four_moves() -> BuildOutput {
         })
         .collect();
     common::patch_file(&dst.join("quests.json"), |d| {
-        d["dsl_version"] = serde_json::json!("0.24.0");
+        d["dsl_version"] = serde_json::json!(DSL_VERSION);
         let effects = common::objective_effects(d, 0, "obj/talk");
         for i in 1..=4 {
             effects
@@ -426,7 +427,7 @@ fn build_four_moves_with_vanish() -> BuildOutput {
         std::fs::copy(src.join(f), dst.join(f)).unwrap();
     }
     common::patch_file(&dst.join("quests.json"), |d| {
-        d["dsl_version"] = serde_json::json!("0.24.0");
+        d["dsl_version"] = serde_json::json!(DSL_VERSION);
         common::objective_effects(d, 0, "obj/talk").extend([
             serde_json::json!({ "type": "spawn-actor", "actor": "actor/a1" }),
             serde_json::json!({

@@ -26,7 +26,9 @@ use delvec::compiler::emit::{self, BuildOutput};
 use delvec::compiler::load::load_campaign_dir;
 use delvec::compiler::plan::Plan;
 use delvec::compiler::registry::PrefabRegistry;
+use delvewright_dsl::DSL_VERSION;
 use delvewright_dsl::parse_campaign;
+use std::sync::LazyLock;
 
 const NS: &str = "hello-world";
 
@@ -118,8 +120,10 @@ fn setup(out: &BuildOutput) -> &str {
 
 /// A v0.6 quests doc that spawns a wave — the case whose derived difficulty is
 /// `easy`, so a declaration must be seen to *override* it, not merely fill a gap.
-const WAVE_QUESTS: &str = r#"{
-  "dsl_version": "0.24.0",
+static WAVE_QUESTS: LazyLock<String> = LazyLock::new(|| {
+    common::at_dsl_version(
+        r#"{
+  "dsl_version": "%dsl_version%",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {
@@ -145,14 +149,16 @@ const WAVE_QUESTS: &str = r#"{
         "mobs": [ { "entity": "minecraft:zombie", "count": 2 } ] }
     ]
   }
-}"#;
+}"#,
+    )
+});
 
 /// A v0.6 quests doc with one scripted actor, spawned then unleashed.
 /// `{extra}` is spliced into the actor object.
 fn actor_quests(extra: &str) -> String {
     format!(
         r#"{{
-  "dsl_version": "0.24.0",
+  "dsl_version": "{DSL_VERSION}",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {{
@@ -205,7 +211,7 @@ fn absent_difficulty_keeps_the_derivation_and_emits_nothing() {
         "no declaration, no generated difficulty test"
     );
 
-    let waves = build_hw(None, Some(WAVE_QUESTS));
+    let waves = build_hw(None, Some(WAVE_QUESTS.as_str()));
     assert!(
         properties(&waves).contains("difficulty=easy"),
         "a wave campaign still derives `easy`"
@@ -223,10 +229,10 @@ fn absent_difficulty_keeps_the_derivation_and_emits_nothing() {
 fn the_server_readme_states_the_difficulty_the_properties_state() {
     let cases = [
         (None, None, "peaceful"),
-        (None, Some(WAVE_QUESTS), "easy"),
+        (None, Some(WAVE_QUESTS.as_str()), "easy"),
         (Some("easy"), None, "easy"),
         (Some("normal"), None, "normal"),
-        (Some("hard"), Some(WAVE_QUESTS), "hard"),
+        (Some("hard"), Some(WAVE_QUESTS.as_str()), "hard"),
     ];
     for (declared, quests, expected) in cases {
         let out = build_hw(declared, quests);
@@ -274,7 +280,7 @@ fn declared_difficulty_drives_properties_and_the_sealing_baseline() {
 /// gap: a wave campaign that says `hard` ships `hard`, not the historical `easy`.
 #[test]
 fn declared_difficulty_overrides_the_wave_derivation() {
-    let out = build_hw(Some("hard"), Some(WAVE_QUESTS));
+    let out = build_hw(Some("hard"), Some(WAVE_QUESTS.as_str()));
     assert!(properties(&out).contains("difficulty=hard"));
     assert!(!properties(&out).contains("difficulty=easy"));
     assert!(setup(&out).contains("difficulty hard"));
@@ -283,8 +289,8 @@ fn declared_difficulty_overrides_the_wave_derivation() {
 /// Same DSL ⇒ same bytes, with the field declared (ADR-0006).
 #[test]
 fn declared_difficulty_is_deterministic() {
-    let a = build_hw(Some("normal"), Some(WAVE_QUESTS));
-    let b = build_hw(Some("normal"), Some(WAVE_QUESTS));
+    let a = build_hw(Some("normal"), Some(WAVE_QUESTS.as_str()));
+    let b = build_hw(Some("normal"), Some(WAVE_QUESTS.as_str()));
     assert_eq!(a.keys().collect::<Vec<_>>(), b.keys().collect::<Vec<_>>());
     for (path, bytes) in &a {
         assert_eq!(bytes, &b[path], "byte mismatch in {path}");

@@ -230,6 +230,13 @@ def _scratch_clone(tmp_path: Path, check_src: str, publish_src: str) -> Path:
         dst = tree / rel
         dst.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy(REPO / rel, dst)
+    # …and it is a real git repository, because the same `verify` sweeps the tree
+    # for a version literal nobody derived, regenerated or allowlisted, and its
+    # population is `git ls-files`. The derivation is the point: a clone that
+    # faked the population would be exercising a different checker from the one
+    # `crates-io-publish.sh` actually runs.
+    subprocess.run(["git", "-C", str(tree), "init", "-q"], check=True)
+    subprocess.run(["git", "-C", str(tree), "add", "-A"], check=True)
     return tree
 
 

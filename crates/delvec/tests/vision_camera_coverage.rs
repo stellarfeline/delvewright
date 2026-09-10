@@ -21,7 +21,7 @@ use delvec::compiler::commands::CommandTree;
 use delvec::compiler::emit::{self, BuildOutput};
 use delvec::compiler::plan::Plan;
 use delvec::compiler::registry::PrefabRegistry;
-use delvewright_dsl::{RawCampaign, parse_campaign};
+use delvewright_dsl::{DSL_VERSION, RawCampaign, parse_campaign};
 
 /// Vanilla's night-vision wind-down, in seconds (`GameRenderer` ramps below
 /// 200 ticks remaining). Mirrored here so the test states the requirement in its
@@ -36,7 +36,7 @@ fn read(dir: &std::path::Path, name: &str) -> String {
 fn world_with_mitigation() -> String {
     let w = read(&common::hello_world_dir(), "world.json");
     let mut v: serde_json::Value = serde_json::from_str(&w).unwrap();
-    v["dsl_version"] = serde_json::json!("0.24.0");
+    v["dsl_version"] = serde_json::json!(DSL_VERSION);
     v["content"]["areas"][0]["mitigation"] = serde_json::json!("night-vision");
     serde_json::to_string(&v).unwrap()
 }

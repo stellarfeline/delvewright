@@ -8,11 +8,14 @@
 mod common;
 
 use delvewright_dsl::{RawCampaign, check_campaign};
+use std::sync::LazyLock;
 
 /// A v0.6 quests document with a wave whose zombie wears boots and carries a
 /// sword (both in the vendored v0 item-registry subset the DSL tests use).
-const QUESTS_V06: &str = r#"{
-  "dsl_version": "0.24.0",
+static QUESTS_V06: LazyLock<String> = LazyLock::new(|| {
+    common::at_dsl_version(
+        r#"{
+  "dsl_version": "%dsl_version%",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {
@@ -41,7 +44,9 @@ const QUESTS_V06: &str = r#"{
       }
     ]
   }
-}"#;
+}"#,
+    )
+});
 
 fn campaign_with_quests(quests: &str) -> RawCampaign {
     RawCampaign {
@@ -63,7 +68,7 @@ fn campaign_with_quests(quests: &str) -> RawCampaign {
 /// Wave-mob `equipment` with registry-known item ids validates clean under 0.6.0.
 #[test]
 fn wave_equipment_validates_clean() {
-    let diags = check_campaign(&campaign_with_quests(QUESTS_V06));
+    let diags = check_campaign(&campaign_with_quests(QUESTS_V06.as_str()));
     assert!(
         diags.is_empty(),
         "expected zero diagnostics for a v0.6 wave-mob equipment, got: {diags:#?}"

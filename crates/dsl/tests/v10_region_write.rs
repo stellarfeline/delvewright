@@ -7,7 +7,7 @@
 //! `DW0142` reference scan, the numeric gate is the one gate — the point of moving
 //! the capability to the region is that none of those needed re-deriving.
 
-use delvewright_dsl::{RawCampaign, check_campaign, parse_campaign};
+use delvewright_dsl::{DSL_VERSION, RawCampaign, check_campaign, parse_campaign};
 
 fn hw(name: &str) -> String {
     std::fs::read_to_string(
@@ -20,10 +20,10 @@ fn hw(name: &str) -> String {
 
 /// A hello-world `quests` doc at `version` whose `obj/talk` bundle carries
 /// `effects` (a raw JSON array body, no surrounding brackets) after the open-gate.
-fn quests_doc(version: &str, effects: &str) -> String {
+fn quests_doc(effects: &str) -> String {
     format!(
         r#"{{
-  "dsl_version": "{version}",
+  "dsl_version": "{DSL_VERSION}",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {{
@@ -94,7 +94,7 @@ const CLEAR: &str = r#"{ "type": "clear-region",
 /// filling and clearing a declared region is expressible without naming a gate.
 #[test]
 fn a_region_write_validates_clean_without_naming_a_gate() {
-    let d = check_campaign(&raw(quests_doc("0.24.0", &format!("{FILL}, {CLEAR}"))));
+    let d = check_campaign(&raw(quests_doc(&format!("{FILL}, {CLEAR}"))));
     assert!(d.is_empty(), "a v0.10 region write validates clean: {d:#?}");
 }
 
@@ -106,7 +106,7 @@ fn unknown_fill_block_is_dw0193() {
     let body = r#"{ "type": "fill-region",
          "region": { "anchor": "anchor/exit", "extent": [0, 0, 0] },
          "block": "minecraft:not_a_real_block" }"#;
-    let c = codes(quests_doc("0.24.0", body));
+    let c = codes(quests_doc(body));
     assert!(
         c.contains(&"DW0193".to_string()),
         "an unknown fill-region block must be DW0193: {c:?}"
@@ -125,7 +125,7 @@ fn dangling_region_anchor_is_dw0142() {
         r#"{ "type": "clear-region",
              "region": { "anchor": "anchor/nowhere", "extent": [0, 0, 0] } }"#,
     ] {
-        let c = codes(quests_doc("0.24.0", body));
+        let c = codes(quests_doc(body));
         assert!(
             c.contains(&"DW0142".to_string()),
             "a dangling region anchor must be DW0142: {c:?}"
@@ -147,7 +147,7 @@ fn a_region_write_carries_the_whole_gate() {
            "forbids_flags": ["flag/riding"],
            "requires_state": [ { "state": "state/floor", "op": "equals", "value": 1 } ]
          } }"#;
-    let c = parse_campaign(&raw(quests_doc("0.24.0", body))).expect("campaign parses");
+    let c = parse_campaign(&raw(quests_doc(body))).expect("campaign parses");
     let eff = &talk_effects(&c)[1];
     assert_eq!(eff.verb.tag(), "fill-region");
     assert_eq!(eff.requires_flags().len(), 1);
@@ -159,8 +159,7 @@ fn a_region_write_carries_the_whole_gate() {
 /// `None` for the block on a clear — one shape, two spellings.
 #[test]
 fn region_write_accessor_answers_for_both_verbs() {
-    let c = parse_campaign(&raw(quests_doc("0.24.0", &format!("{FILL}, {CLEAR}"))))
-        .expect("campaign parses");
+    let c = parse_campaign(&raw(quests_doc(&format!("{FILL}, {CLEAR}")))).expect("campaign parses");
     let effs = talk_effects(&c);
     let (zone, block) = effs[1]
         .region_write()

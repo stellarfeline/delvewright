@@ -65,7 +65,7 @@ wall-clock time, or absolute paths.
 
 ## Compatibility
 
-- **Campaign format**: `dsl_version` `0.24.0`, the one number this crate accepts;
+- **Campaign format**: `dsl_version` `0.24.1`, the one number this crate accepts;
   any other is refused at the envelope.
 - **Minecraft**: Java Edition 1.21.11.
 - **Rust**: 1.97.1 or newer.

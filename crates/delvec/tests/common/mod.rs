@@ -68,7 +68,7 @@ pub fn materialize_from(base: &Path, patch: &serde_json::Value, dst: &Path) {
     if let Some(docs) = patch.get("documents").and_then(|d| d.as_object()) {
         for (stage, doc) in docs {
             let file = dst.join(format!("{stage}.json"));
-            let text = serde_json::to_string_pretty(doc).unwrap();
+            let text = serde_json::to_string_pretty(&stamped(doc)).unwrap();
             std::fs::write(file, text).unwrap();
         }
     }
@@ -223,10 +223,30 @@ pub fn materialize(patch: &serde_json::Value, dst: &Path) {
     if let Some(docs) = patch.get("documents").and_then(|d| d.as_object()) {
         for (stage, doc) in docs {
             let file = dst.join(format!("{stage}.json"));
-            let text = serde_json::to_string_pretty(doc).unwrap();
+            let text = serde_json::to_string_pretty(&stamped(doc)).unwrap();
             std::fs::write(file, text).unwrap();
         }
     }
+}
+
+/// Give an override document the envelope key it deliberately does not carry.
+///
+/// The patch fixtures state no `dsl_version`: a fixture for `DW0100` is about a
+/// persona missing a field, and a number written into that file would be this
+/// engine's restated where nothing is about versions. A document that DOES
+/// state one keeps it — that is the fixture whose subject IS the version
+/// (`crates/dsl/fixtures/invalid/DW0102-bad-dsl-version.json`, `9.9.9`).
+fn stamped(doc: &serde_json::Value) -> serde_json::Value {
+    let mut out = doc.clone();
+    if let Some(obj) = out.as_object_mut()
+        && !obj.contains_key("dsl_version")
+    {
+        obj.insert(
+            "dsl_version".to_string(),
+            serde_json::Value::String(delvewright_dsl::DSL_VERSION.to_string()),
+        );
+    }
+    out
 }
 
 /// The build-input map for a campaign directory: the stage documents and, under
@@ -239,6 +259,28 @@ pub fn campaign_inputs(dir: &Path) -> std::collections::BTreeMap<String, Vec<u8>
     delvec::compiler::load::load_campaign_dir(dir)
         .expect("campaign dir loads")
         .inputs
+}
+
+/// The placeholder a test document writes where the envelope's `dsl_version`
+/// goes. Deliberately not version-shaped: a document that reaches the parser
+/// still carrying it is refused by name (`DW0102` quotes it), never mistaken
+/// for a stale number.
+pub const VERSION_TOKEN: &str = "%dsl_version%";
+
+/// A test document at the one `dsl_version` this engine accepts.
+///
+/// The number is [`delvewright_dsl::DSL_VERSION`] and appears in no test file:
+/// a bump moves the constant and reaches every document through here. Panics
+/// when the token is absent, for the same reason [`patch_doc`] parses rather
+/// than splices — a `str::replace` that matches nothing returns its input
+/// unchanged, and the test then asserts against a document it never stamped.
+pub fn at_dsl_version(doc: &str) -> String {
+    assert!(
+        doc.contains(VERSION_TOKEN),
+        "document carries no `{VERSION_TOKEN}` placeholder, so stamping it did \
+         nothing; write the envelope key as \"dsl_version\": \"{VERSION_TOKEN}\""
+    );
+    doc.replace(VERSION_TOKEN, delvewright_dsl::DSL_VERSION)
 }
 
 /// Patch a JSON document **structurally**: parse the text, hand the closure the

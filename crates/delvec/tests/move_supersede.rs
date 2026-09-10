@@ -40,14 +40,17 @@ use delvec::compiler::emit::{self, BuildOutput};
 use delvec::compiler::plan::Plan;
 use delvec::compiler::registry::PrefabRegistry;
 use delvewright_dsl::{Campaign, RawCampaign, parse_campaign};
+use std::sync::LazyLock;
 
 fn read_hw(name: &str) -> String {
     std::fs::read_to_string(common::hello_world_dir().join(name)).unwrap()
 }
 
 /// One `move-npc` for the keeper (the pre-existing single-walk shape).
-const QUESTS_ONE_WALK: &str = r#"{
-  "dsl_version": "0.24.0",
+static QUESTS_ONE_WALK: LazyLock<String> = LazyLock::new(|| {
+    common::at_dsl_version(
+        r#"{
+  "dsl_version": "%dsl_version%",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {
@@ -70,7 +73,9 @@ const QUESTS_ONE_WALK: &str = r#"{
       }
     ]
   }
-}"#;
+}"#,
+    )
+});
 
 /// Two `move-npc` legs for the SAME body: a long one (keeper-stand → exit, 28
 /// waypoint ticks) and a short one (exit → door, 21) — the island's overlap shape,
@@ -85,8 +90,10 @@ fn quests_two_walks() -> String {
 }
 
 /// One `move-actor` leg for a puppet (the pre-existing single-leg shape).
-const QUESTS_ONE_LEG: &str = r#"{
-  "dsl_version": "0.24.0",
+static QUESTS_ONE_LEG: LazyLock<String> = LazyLock::new(|| {
+    common::at_dsl_version(
+        r#"{
+  "dsl_version": "%dsl_version%",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {
@@ -113,7 +120,9 @@ const QUESTS_ONE_LEG: &str = r#"{
       }
     ]
   }
-}"#;
+}"#,
+    )
+});
 
 /// Two `move-actor` legs for the SAME puppet: a long one (keeper-stand → exit) and a
 /// short one (exit → door, planned from the first leg's target — moves chain) — the

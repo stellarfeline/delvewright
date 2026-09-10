@@ -29,7 +29,7 @@ use delvec::compiler::commands::CommandTree;
 use delvec::compiler::emit::{self, BuildOutput};
 use delvec::compiler::plan::Plan;
 use delvec::compiler::registry::PrefabRegistry;
-use delvewright_dsl::{Campaign, RawCampaign, parse_campaign};
+use delvewright_dsl::{Campaign, DSL_VERSION, RawCampaign, parse_campaign};
 
 const NS: &str = "hello-world";
 
@@ -92,7 +92,7 @@ fn build(quests: &str, dialogue: Option<&str>) -> BuildOutput {
 fn quests_doc(prelude: &str, effects: &str) -> String {
     format!(
         r#"{{
-  "dsl_version": "0.24.0",
+  "dsl_version": "{DSL_VERSION}",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {{
@@ -133,7 +133,7 @@ fn trap_prelude(effects: &str) -> String {
 fn respawn_dialogue(effects: &str) -> String {
     format!(
         r#"{{
-  "dsl_version": "0.24.0",
+  "dsl_version": "{DSL_VERSION}",
   "campaign_id": "hello-world",
   "stage": "dialogue",
   "content": {{
@@ -317,7 +317,7 @@ fn a_set_flag_in_a_dialogue_respawn_bundle_gets_its_objective() {
 fn every_effect_root_declares_the_objectives_it_writes() {
     let quests = format!(
         r#"{{
-  "dsl_version": "0.24.0",
+  "dsl_version": "{DSL_VERSION}",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {{

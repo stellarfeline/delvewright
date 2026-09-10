@@ -15,10 +15,10 @@ Methodology; CI enforces the DW-code subset — see `tools/check-dw-codes.py`).
   `delvec prefab`, `delvec grammar`, `delvec render`, `delvec harvest` — and
   the scripts around it (`tools/`, `validation/`) are indexed in
   [`tools.md`](tools.md).
-- Versions (as of this doc): `delvec 1.4.0`, `dsl 0.24.0`, `mc 1.21.11`.
-  `dsl 0.24.0` is the **one** `dsl_version` this engine accepts (ADR-0024): every
-  stage document, map-pipeline document and l10n sidecar declares it, and any
-  other number is refused at the envelope with `DW0102`, which names it. The
+- Versions (as of this doc): `delvec 1.4.0`, `dsl 0.24.1`, `mc 1.21.11`.
+  The `dsl` number is the **one** `dsl_version` this engine accepts (ADR-0024):
+  every stage document, map-pipeline document and l10n sidecar declares it, and
+  any other number is refused at the envelope with `DW0102`, which names it. The
   number says which surface a document was written against and promises
   nothing about any other engine — a released campaign is built by the engine
   it pins (`versions.toml`), and a surface change bumps this number and moves
@@ -27,9 +27,10 @@ Methodology; CI enforces the DW-code subset — see `tools/check-dw-codes.py`).
   minor, a Rust-API-only change the patch), and a patch bump is a new accepted
   number too — the full number is declared and the full number is judged. This line is
   not prose: it is bound by equality to the root `Cargo.toml`
-  (`[workspace.package] version`), `crates/dsl/src/envelope.rs`
-  (`DSL_VERSION`) and `versions.toml` by
-  `tools/check-reference-versions.py`, in both directions.
+  (`[workspace.package] version`), `crates/dsl/Cargo.toml` (`[package] version`,
+  which `DSL_VERSION` reads through `env!("CARGO_PKG_VERSION")`) and
+  `versions.toml` by `tools/check-reference-versions.py`, in both directions —
+  and it is WRITTEN by that tool's `--write`, never retyped.
 
 ---
 
@@ -3871,7 +3872,7 @@ to a list of codes.
 |------|---------|
 | `DW0100` | Document does not conform to its stage schema (unknown field / wrong type / missing required field, incl. persona). Parse-time. |
 | `DW0101` | `stage` field ≠ document slot. |
-| `DW0102` | The document's `dsl_version` is not the one this engine accepts, `0.24.0`; the message names it (ADR-0024). Raised per stage document by `dsl::validate::envelope`, and for an l10n sidecar under `DW0180`. |
+| `DW0102` | The document's `dsl_version` is not the one this engine accepts, `0.24.1`; the message names it (ADR-0024). Raised per stage document by `dsl::validate::envelope`, and for an l10n sidecar under `DW0180`. |
 | `DW0103` | `campaign_id` differs across stages. |
 | `DW0110` | Malformed id syntax (not kebab-case / wrong-missing prefix). **The message names the form of the type it rejected**, derived from that id type's own `PREFIX` — `` `dlg/<kebab>` `` for a dialogue node, `` `class/<kebab>` `` for a class — rather than restating the general rule beside three fixed examples. One macro in `dsl::validate::syntax` is the single path every id type's syntax refusal goes through, so the answer comes from the type at every site: `ids::syntax_form`. The per-section refusals that spell their own prefix by hand (`wave/`, `trigger/`, `trap/`, `shortcut/`, `ambush/`, `timed-gate/`, `loot/`) are the same fact copied, which is why the general path did not have it. |
 | `DW0111` | Duplicate id in namespace (incl. two dialogue trees for one NPC). |

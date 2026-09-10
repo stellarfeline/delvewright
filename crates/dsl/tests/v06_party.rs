@@ -9,7 +9,7 @@
 
 mod common;
 
-use delvewright_dsl::{RawCampaign, check_campaign};
+use delvewright_dsl::{DSL_VERSION, RawCampaign, check_campaign};
 
 fn raw_with(world: Option<&str>, classes: Option<&str>, quests: Option<&str>) -> RawCampaign {
     RawCampaign {
@@ -35,9 +35,9 @@ fn raw_with(world: Option<&str>, classes: Option<&str>, quests: Option<&str>) ->
 }
 
 /// hello-world's world stage at 0.6.0 with a declared `min_players`.
-fn world_with_min_players(n: &str, version: &str) -> String {
+fn world_with_min_players(n: &str) -> String {
     common::read_valid("world.json")
-        .replacen("\"0.2.0\"", &format!("\"{version}\""), 1)
+        .replacen("\"0.2.0\"", &format!("\"{DSL_VERSION}\""), 1)
         .replacen(
             "\"target_minutes\": 5,",
             &format!("\"target_minutes\": 5,\n    \"min_players\": {n},"),
@@ -68,7 +68,7 @@ fn quests_with_carrier(position: &str) -> String {
     };
     format!(
         r#"{{
-  "dsl_version": "0.24.0",
+  "dsl_version": "{DSL_VERSION}",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {{
@@ -99,11 +99,7 @@ fn quests_with_carrier(position: &str) -> String {
 #[test]
 fn min_players_in_range_validates_clean() {
     for n in ["1", "2", "3", "4"] {
-        let diags = check_campaign(&raw_with(
-            Some(&world_with_min_players(n, "0.24.0")),
-            None,
-            None,
-        ));
+        let diags = check_campaign(&raw_with(Some(&world_with_min_players(n)), None, None));
         assert!(
             diags.is_empty(),
             "min_players {n} must validate clean: {diags:#?}"
@@ -115,11 +111,7 @@ fn min_players_in_range_validates_clean() {
 #[test]
 fn min_players_out_of_range_is_dw0356() {
     for n in ["0", "5", "40"] {
-        let diags = check_campaign(&raw_with(
-            Some(&world_with_min_players(n, "0.24.0")),
-            None,
-            None,
-        ));
+        let diags = check_campaign(&raw_with(Some(&world_with_min_players(n)), None, None));
         assert!(
             diags.iter().any(|d| d.code == "DW0356"),
             "min_players {n} must be DW0356: {diags:#?}"

@@ -421,3 +421,64 @@ def test_an_empty_tier_table_is_a_finding_not_an_empty_agreement(gate):
     codes, rows = gate.documented_analysis_codes()
     assert codes == set()
     assert rows == 0
+
+
+# ---------------------------------------------------------------------------
+# A constant name the tree uses twice
+# ---------------------------------------------------------------------------
+#
+# `codes::DSL_VERSION` is `DW0102`; `delvewright_dsl::DSL_VERSION` is the campaign
+# format's number. The remedy cross-check resolved the code by BARE NAME, so every
+# mention of the second read as a mention of the first — and the day the tests
+# stopped typing the version out and started deriving it, `DW0102` was charged
+# with a move written 6000 characters away in `remedy_reachability.rs`.
+
+
+def test_an_ambiguous_constant_name_is_matched_through_its_path(gate):
+    """The false positive, and that resolving it does not stop the gate seeing
+    the unambiguous case."""
+    _rs(
+        gate,
+        "dsl",
+        "diagnostic.rs",
+        'pub const DSL_VERSION: DwCode = DwCode::new("DW0102", ExitTier::Build);\n'
+        'pub const OTHER: DwCode = DwCode::new("DW0855", ExitTier::Build);\n',
+    )
+    # The OTHER constant is unambiguous and really does prescribe a move.
+    _rs(
+        gate,
+        "dsl",
+        "validate.rs",
+        'let d = Diagnostic::error(codes::OTHER, "Split the pool: give the campaign a `prefab` it can place");\n',
+    )
+    assert gate.ambiguous_code_names({"DSL_VERSION", "OTHER"}) == set()
+    assert set(gate.codes_that_prescribe_a_move()) == {"DW0855"}
+
+    # Now the tree gains a second, unrelated `DSL_VERSION` — the shape the
+    # engine actually has — and a move sits within the window after it.
+    _rs(
+        gate,
+        "dsl",
+        "envelope.rs",
+        'pub const DSL_VERSION: &str = env!("CARGO_PKG_VERSION");\n'
+        'fn later() { let _ = "Split the pool: give the campaign a `prefab` it can place"; }\n',
+    )
+    assert gate.ambiguous_code_names({"DSL_VERSION", "OTHER"}) == {"DSL_VERSION"}
+    assert set(gate.codes_that_prescribe_a_move()) == {"DW0855"}, (
+        "DW0102 must not be charged with a move written beside the OTHER DSL_VERSION"
+    )
+
+
+def test_the_qualifier_is_not_applied_to_an_unambiguous_name(gate):
+    """Requiring `codes::` everywhere drops the binding from 7 codes to 2 on the
+    live tree, because several diagnostics cite a bare `&str` constant. The
+    narrowing is bound to the ambiguity, not to taste."""
+    _rs(gate, "dsl", "diagnostic.rs", 'pub const LONE: DwCode = DwCode::new("DW0855", ExitTier::Build);\n')
+    _rs(
+        gate,
+        "dsl",
+        "validate.rs",
+        'let d = Diagnostic::error(LONE, "Split the pool: give the campaign a `prefab` it can place");\n',
+    )
+    assert gate.ambiguous_code_names({"LONE"}) == set()
+    assert set(gate.codes_that_prescribe_a_move()) == {"DW0855"}

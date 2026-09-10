@@ -11,7 +11,7 @@ use delvec::compiler::emit::{self, BuildOutput};
 use delvec::compiler::gates;
 use delvec::compiler::plan::Plan;
 use delvec::compiler::registry::{FullEntityRegistry, FullItemRegistry, PrefabRegistry};
-use delvewright_dsl::{Campaign, RawCampaign, parse_campaign};
+use delvewright_dsl::{Campaign, DSL_VERSION, RawCampaign, parse_campaign};
 
 /// A hello-world `quests` doc that opens `anchor/door` on the talk objective and
 /// runs `on_complete` (a raw JSON array body, no surrounding brackets) after the
@@ -19,7 +19,7 @@ use delvewright_dsl::{Campaign, RawCampaign, parse_campaign};
 fn quests_doc(on_complete: &str) -> String {
     format!(
         r#"{{
-  "dsl_version": "0.24.0",
+  "dsl_version": "{DSL_VERSION}",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {{

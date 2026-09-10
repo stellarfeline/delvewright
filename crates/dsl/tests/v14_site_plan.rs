@@ -24,8 +24,9 @@
 
 mod common;
 
-use delvewright_dsl::{RawCampaign, check_campaign};
+use delvewright_dsl::{DSL_VERSION, RawCampaign, check_campaign};
 use serde_json::{Value, json};
+use std::sync::LazyLock;
 
 /// The graph the plan embeds. Six places, seven ways a body passes and one line
 /// of sight, bound to the hello-world campaign's one quest.
@@ -40,9 +41,11 @@ use serde_json::{Value, json};
 ///        ╲             ║                                           ╲ ╱
 ///         ╲────────► [cellar]                                     [pit]
 /// ```
-const GRAPH: &str = r#"{
+static GRAPH: LazyLock<String> = LazyLock::new(|| {
+    common::at_dsl_version(
+        r#"{
   "campaign_id": "hello-world",
-  "dsl_version": "0.24.0",
+  "dsl_version": "%dsl_version%",
   "stage": "layout-graph",
   "content": {
     "nodes": [
@@ -76,11 +79,15 @@ const GRAPH: &str = r#"{
       { "quest": "quest/open-the-door", "objective": "obj/exit", "node": "node/hall" }
     ]
   }
-}"#;
+}"#,
+    )
+});
 
-const BRIEF: &str = r#"{
+static BRIEF: LazyLock<String> = LazyLock::new(|| {
+    common::at_dsl_version(
+        r#"{
   "campaign_id": "hello-world",
-  "dsl_version": "0.24.0",
+  "dsl_version": "%dsl_version%",
   "stage": "geometry-brief",
   "content": {
     "facts": [
@@ -96,7 +103,9 @@ const BRIEF: &str = r#"{
         "note": "Grade is at sixty-four." }
     ]
   }
-}"#;
+}"#,
+    )
+});
 
 /// The green map, drawn by hand.
 ///
@@ -135,7 +144,9 @@ const BRIEF: &str = r#"{
 /// * **five identities hold**: the region is 64 across, the hall is 16 by 8, the
 ///   porch centre `(7.5, 7.5)` stands 26 blocks from the vault centre
 ///   `(33.5, 7.5)` which is at least the 24 the brief asks for, and grade is 64.
-const PLAN: &str = r#"{
+static PLAN: LazyLock<String> = LazyLock::new(|| {
+    common::at_dsl_version(
+        r#"{
   "campaign_id": "hello-world",
   "content": {
     "boxes": [
@@ -421,9 +432,11 @@ const PLAN: &str = r#"{
       }
     ]
   },
-  "dsl_version": "0.24.0",
+  "dsl_version": "%dsl_version%",
   "stage": "site-plan"
-}"#;
+}"#,
+    )
+});
 
 // ---------------------------------------------------------------------------
 // Harness
@@ -503,7 +516,7 @@ fn codes_of(raw: &RawCampaign) -> Vec<String> {
 
 /// Validate the green campaign with the plan perturbed by one edit.
 fn plan_with(patch: impl FnOnce(&mut Value)) -> Vec<String> {
-    let mut v: Value = serde_json::from_str(PLAN).expect("the green plan parses");
+    let mut v: Value = serde_json::from_str(PLAN.as_str()).expect("the green plan parses");
     patch(&mut v);
     let text = serde_json::to_string(&v).expect("re-serialize");
     codes_of(&campaign(
@@ -516,7 +529,7 @@ fn plan_with(patch: impl FnOnce(&mut Value)) -> Vec<String> {
 /// The same, with the message texts, for the assertions that check a refusal
 /// says the numbers an author needs.
 fn plan_diags(patch: impl FnOnce(&mut Value)) -> Vec<delvewright_dsl::Diagnostic> {
-    let mut v: Value = serde_json::from_str(PLAN).expect("the green plan parses");
+    let mut v: Value = serde_json::from_str(PLAN.as_str()).expect("the green plan parses");
     patch(&mut v);
     let text = serde_json::to_string(&v).expect("re-serialize");
     check_campaign(&campaign(
@@ -1266,12 +1279,14 @@ fn an_empty_identity_gate_is_a_stated_finding_not_a_silent_pass() {
 /// The other side of the same emptiness.
 #[test]
 fn an_empty_brief_is_named_as_the_empty_side() {
-    let empty_brief = r#"{"campaign_id":"hello-world","dsl_version":"0.24.0",
-      "stage":"geometry-brief","content":{}}"#;
+    let empty_brief = common::at_dsl_version(
+        r#"{"campaign_id":"hello-world","dsl_version":"%dsl_version%",
+      "stage":"geometry-brief","content":{}}"#,
+    );
     let d = check_campaign(&campaign(
         Some(PLAN.to_string()),
         Some(GRAPH.to_string()),
-        Some(empty_brief.to_string()),
+        Some(empty_brief),
     ));
     assert!(
         d.iter()
@@ -1504,7 +1519,7 @@ fn no_stage_five_verb_calls_a_synthesized_anchor_an_invented_name() {
     // none of their checks were allowed to look at, and passed on the UNREPAIRED
     // tree. That is the constitution's `unfenced` vacuity mode exactly, and it
     // was caught only by red-demoing the repair it was written for.
-    quests["dsl_version"] = json!("0.24.0");
+    quests["dsl_version"] = json!(DSL_VERSION);
     // The fixture is a 0.2.0 document, and the newer stage requires an
     // objective's player-facing `title`.
     quests["content"]["quests"][0]["objectives"][1]["title"] = json!("Leave by the vault");
@@ -1588,7 +1603,7 @@ fn a_shortcut_on_a_derived_world_resolves_its_gate_and_its_unlock() {
     let mut quests: Value = serde_json::from_str(&raw.quests).expect("quests parse");
     // `shortcut_checks` is fenced at 0.6.0; below it the declaration is parsed
     // and never examined, which is a green that means nothing.
-    quests["dsl_version"] = json!("0.24.0");
+    quests["dsl_version"] = json!(DSL_VERSION);
     quests["content"]["quests"][0]["on_objective_complete"]["obj/talk"] = json!([]);
     quests["content"]["shortcuts"] = json!([{
         "id": "shortcut/vault-door",
@@ -1707,7 +1722,7 @@ fn no_refusal_on_a_derived_map_prescribes_a_prefab_document() {
     // 0.2.0, and adding a declaration a check is not allowed to look at is the
     // `unfenced` vacuity mode.
     let mut quests: Value = serde_json::from_str(&raw.quests).expect("quests parse");
-    quests["dsl_version"] = json!("0.24.0");
+    quests["dsl_version"] = json!(DSL_VERSION);
     quests["content"]["quests"][0]["objectives"][1]["title"] = json!("Leave by the vault");
     quests["content"]["quests"][0]["on_objective_complete"]["obj/talk"] = json!([]);
     let c = &mut quests["content"];
@@ -2004,7 +2019,7 @@ fn a_loop_that_does_not_close_is_refused_at_the_seam_that_closes_it() {
 #[test]
 fn reordering_the_seams_of_a_consistent_plan_moves_no_corner() {
     let corners = |patch: fn(&mut Value)| -> Vec<String> {
-        let mut v: Value = serde_json::from_str(PLAN).expect("parses");
+        let mut v: Value = serde_json::from_str(PLAN.as_str()).expect("parses");
         patch(&mut v);
         let raw = campaign(
             Some(serde_json::to_string(&v).expect("re-serialize")),
@@ -2062,7 +2077,7 @@ fn one_extent_edit_raises_findings_about_that_box_alone() {
     );
     // And the vault, hung off the hall's east face, moved with it — read from
     // the derivation, not from a document that was never edited.
-    let mut v: Value = serde_json::from_str(PLAN).expect("parses");
+    let mut v: Value = serde_json::from_str(PLAN.as_str()).expect("parses");
     boxes(&mut v)[box_of("node/hall")]["extent"] = json!([20, 16]);
     let raw = campaign(
         Some(serde_json::to_string(&v).expect("re-serialize")),

@@ -13,6 +13,7 @@
 mod common;
 
 use delvewright_dsl::{RawCampaign, check_campaign};
+use std::sync::LazyLock;
 
 fn campaign_with(npcs: &str, quests: &str, dialogue: &str) -> RawCampaign {
     RawCampaign {
@@ -41,8 +42,10 @@ fn valid_dialogue_v04() -> String {
 
 /// The hello-world quests document, at v0.4.0, with no v0.4 constructs — used as
 /// the base that individual tests inject one bad construct into.
-const QUESTS_BASE: &str = r#"{
-  "dsl_version": "0.24.0",
+static QUESTS_BASE: LazyLock<String> = LazyLock::new(|| {
+    common::at_dsl_version(
+        r#"{
+  "dsl_version": "%dsl_version%",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {
@@ -61,13 +64,15 @@ const QUESTS_BASE: &str = r#"{
       }
     ]
   }
-}"#;
+}"#,
+    )
+});
 
 #[test]
 fn v04_base_campaign_validates_clean() {
     let diags = check_campaign(&campaign_with(
         &valid_npcs_v04(),
-        QUESTS_BASE,
+        QUESTS_BASE.as_str(),
         &valid_dialogue_v04(),
     ));
     assert!(
@@ -88,7 +93,11 @@ fn malformed_skin_texture_id_is_dw0190() {
          \"model\": \"wide\" },",
         1,
     );
-    let diags = check_campaign(&campaign_with(&npcs, QUESTS_BASE, &valid_dialogue_v04()));
+    let diags = check_campaign(&campaign_with(
+        &npcs,
+        QUESTS_BASE.as_str(),
+        &valid_dialogue_v04(),
+    ));
     assert!(
         diags.iter().any(|d| d.code == "DW0190"),
         "malformed texture_id must be DW0190: {diags:#?}"
@@ -113,7 +122,11 @@ fn all_completing_options_flag_gated_is_dw0191() {
             .expect("the greeting node still holds the only completing option");
         completing["requires_flags"] = serde_json::json!(["flag/never-set"]);
     });
-    let diags = check_campaign(&campaign_with(&valid_npcs_v04(), QUESTS_BASE, &dialogue));
+    let diags = check_campaign(&campaign_with(
+        &valid_npcs_v04(),
+        QUESTS_BASE.as_str(),
+        &dialogue,
+    ));
     assert!(
         diags.iter().any(|d| d.code == "DW0191"),
         "an all-flag-gated talk-to must be DW0191: {diags:#?}"
@@ -124,8 +137,10 @@ fn all_completing_options_flag_gated_is_dw0191() {
 // DW0192 — wave-mob `effects[].effect` not a known status-effect id
 // ---------------------------------------------------------------------------
 
-const QUESTS_BAD_WAVE_EFFECT: &str = r#"{
-  "dsl_version": "0.24.0",
+static QUESTS_BAD_WAVE_EFFECT: LazyLock<String> = LazyLock::new(|| {
+    common::at_dsl_version(
+        r#"{
+  "dsl_version": "%dsl_version%",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {
@@ -153,13 +168,15 @@ const QUESTS_BAD_WAVE_EFFECT: &str = r#"{
       }
     ]
   }
-}"#;
+}"#,
+    )
+});
 
 #[test]
 fn unknown_wave_mob_effect_is_dw0192() {
     let diags = check_campaign(&campaign_with(
         &valid_npcs_v04(),
-        QUESTS_BAD_WAVE_EFFECT,
+        QUESTS_BAD_WAVE_EFFECT.as_str(),
         &valid_dialogue_v04(),
     ));
     assert!(
@@ -195,8 +212,10 @@ fn unknown_set_block_id_is_dw0193() {
 // DW0194 — environment-trigger id malformed/duplicated, or `approach` range 0
 // ---------------------------------------------------------------------------
 
-const QUESTS_BAD_TRIGGER: &str = r#"{
-  "dsl_version": "0.24.0",
+static QUESTS_BAD_TRIGGER: LazyLock<String> = LazyLock::new(|| {
+    common::at_dsl_version(
+        r#"{
+  "dsl_version": "%dsl_version%",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {
@@ -223,13 +242,15 @@ const QUESTS_BAD_TRIGGER: &str = r#"{
       }
     ]
   }
-}"#;
+}"#,
+    )
+});
 
 #[test]
 fn malformed_trigger_id_is_dw0194() {
     let diags = check_campaign(&campaign_with(
         &valid_npcs_v04(),
-        QUESTS_BAD_TRIGGER,
+        QUESTS_BAD_TRIGGER.as_str(),
         &valid_dialogue_v04(),
     ));
     assert!(
@@ -299,8 +320,10 @@ fn strike_trigger_on_an_npc_anchor_is_not_dw0350() {
 /// Two quests: `quest/open-the-door` despawns `npc/keeper` when its `obj/talk`
 /// completes; `quest/second` (triggered by the first's completion, and the
 /// declared finale) has its own `talk-to` on the now-despawned `npc/keeper`.
-const QUEST_PLAN_TWO_QUESTS: &str = r#"{
-  "dsl_version": "0.24.0",
+static QUEST_PLAN_TWO_QUESTS: LazyLock<String> = LazyLock::new(|| {
+    common::at_dsl_version(
+        r#"{
+  "dsl_version": "%dsl_version%",
   "campaign_id": "hello-world",
   "stage": "quest-plan",
   "content": {
@@ -326,10 +349,14 @@ const QUEST_PLAN_TWO_QUESTS: &str = r#"{
     ],
     "finale": "quest/second"
   }
-}"#;
+}"#,
+    )
+});
 
-const QUESTS_DESPAWNED_REF: &str = r#"{
-  "dsl_version": "0.24.0",
+static QUESTS_DESPAWNED_REF: LazyLock<String> = LazyLock::new(|| {
+    common::at_dsl_version(
+        r#"{
+  "dsl_version": "%dsl_version%",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {
@@ -359,13 +386,17 @@ const QUESTS_DESPAWNED_REF: &str = r#"{
       }
     ]
   }
-}"#;
+}"#,
+    )
+});
 
 /// The base dialogue tree, plus a third root option completing `obj/talk2` (so
 /// `quest/second`'s objective has a reachable completing option too — DW0195 is
 /// the deep despawn-ordering guard, not a dialogue-coverage gap).
-const DIALOGUE_TWO_OBJECTIVES: &str = r#"{
-  "dsl_version": "0.24.0",
+static DIALOGUE_TWO_OBJECTIVES: LazyLock<String> = LazyLock::new(|| {
+    common::at_dsl_version(
+        r#"{
+  "dsl_version": "%dsl_version%",
   "campaign_id": "hello-world",
   "stage": "dialogue",
   "content": {
@@ -392,7 +423,9 @@ const DIALOGUE_TWO_OBJECTIVES: &str = r#"{
       }
     ]
   }
-}"#;
+}"#,
+    )
+});
 
 #[test]
 fn talk_to_targets_despawned_npc_is_dw0195() {

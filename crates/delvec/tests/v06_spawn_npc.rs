@@ -35,8 +35,9 @@ fn npcs_doc(deferred: bool) -> String {
 /// hello-world's `quests` doc raised to 0.6 with an `approach` trigger that fires
 /// the keeper's entrance — the natural staging shape (walk in, the NPC appears).
 fn quests_doc() -> String {
-    r#"{
-  "dsl_version": "0.24.0",
+    common::at_dsl_version(
+        r#"{
+  "dsl_version": "%dsl_version%",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {
@@ -65,7 +66,8 @@ fn quests_doc() -> String {
       }
     ]
   }
-}"#
+}"#,
+    )
     .to_string()
 }
 

@@ -706,6 +706,26 @@ MOVE_SUBJECT_RE = re.compile(
 MOVE_WINDOW = 6000
 
 
+# A `pub const NAME:` whose value is NOT a DW code. Its only use is to find the
+# names a bare-name scan cannot resolve.
+NON_CODE_CONST_RE = re.compile(r"(?m)^\s*pub const ([A-Z][A-Z0-9_]*)\s*:(?![^\n]*\"DW[0-9]{4}\")")
+
+
+def ambiguous_code_names(code_names: set[str]) -> set[str]:
+    """Diagnostic-constant names the tree also uses for something else.
+
+    `DSL_VERSION` names both `DW0102` and the campaign format's number. A scan
+    for the bare name cannot tell them apart, so those names — and only those —
+    are matched through `codes::<NAME>`.
+    """
+    out: set[str] = set()
+    for rs in sorted(CRATES_DIR.rglob("*.rs")):
+        for name in NON_CODE_CONST_RE.findall(rs.read_text(encoding="utf-8")):
+            if name in code_names:
+                out.add(name)
+    return out
+
+
 def codes_that_prescribe_a_move() -> dict[str, set[str]]:
     """`DW code -> {file:line}` for every message that names a base or a document
     as a move.
@@ -714,18 +734,34 @@ def codes_that_prescribe_a_move() -> dict[str, set[str]]:
     `DWxxxx` literal near the text: a diagnostic's message never repeats its own
     number, so a literal-based reading would bind to nothing and report a clean
     zero.
+
+    **A name that is not unique in the tree is matched through its qualified
+    path** (CLAUDE.md: a resolve-by-name over a scope where names are not unique
+    yields a candidate, not a match). `codes::DSL_VERSION` is `DW0102`;
+    `delvewright_dsl::DSL_VERSION` is the campaign format's number, and a
+    bare-name scan reads every mention of the second as a mention of the first,
+    then blames `DW0102` for whatever move happens to be written within 6000
+    characters of it — which is exactly what it did the day the tests stopped
+    typing that number out and started deriving it. `SCHEMA` is the other such
+    pair today. The qualifier is applied ONLY to the ambiguous names, computed
+    from the tree by `ambiguous_code_names()`: applying it to all of them drops
+    the binding from 7 codes to 2, because several diagnostics cite a bare
+    `&str` constant rather than a `codes::` path, and that would be a loosening
+    wearing a precision's clothes.
     """
     consts = declared_constants()
     by_name: dict[str, str] = {}
     for code, pairs in consts.items():
         for _crate, name in pairs:
             by_name[name] = code
+    ambiguous = ambiguous_code_names(set(by_name))
     found: dict[str, set[str]] = {}
     for rs in sorted(CRATES_DIR.rglob("*.rs")):
         raw = rs.read_text(encoding="utf-8")
         text = strip_comments(raw)
         for name, code in by_name.items():
-            for m in re.finditer(r"\b" + re.escape(name) + r"\b", text):
+            pat = (r"\bcodes::" if name in ambiguous else r"\b") + re.escape(name) + r"\b"
+            for m in re.finditer(pat, text):
                 window = text[m.end() : m.end() + MOVE_WINDOW]
                 # Stop at the next code constant: a window that runs into the
                 # next diagnostic would attribute its moves to this one.
@@ -738,7 +774,7 @@ def codes_that_prescribe_a_move() -> dict[str, set[str]]:
                 for other in by_name:
                     if other == name:
                         continue
-                    hit = window.find(other)
+                    hit = window.find(f"codes::{other}" if other in ambiguous else other)
                     if hit != -1:
                         cut = min(cut, hit)
                 for boundary in (
@@ -892,10 +928,13 @@ def main() -> int:
     # `remedy_reachability.rs`, which builds the campaign that takes the move and
     # asserts it reaches a different verdict.
     prescribing = codes_that_prescribe_a_move()
+    ambiguous = ambiguous_code_names({n for pairs in declared_constants().values() for _c, n in pairs})
     print(
         f"remedy cross-check binding: {len(prescribing)} code(s) whose message names a "
         f"backticked field or a named object as a MOVE, out of {len(src)} in source "
-        f"({', '.join(sorted(prescribing)) or 'none'})"
+        f"({', '.join(sorted(prescribing)) or 'none'}); "
+        f"{len(ambiguous)} constant name(s) the tree also uses for something else "
+        f"({', '.join(sorted(ambiguous)) or 'none'}) matched through `codes::`"
     )
     if not prescribing:
         errors.append(

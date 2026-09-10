@@ -10,9 +10,12 @@
 mod common;
 
 use delvewright_dsl::{RawCampaign, check_campaign};
+use std::sync::LazyLock;
 
-const QUESTS_V06: &str = r#"{
-  "dsl_version": "0.24.0",
+static QUESTS_V06: LazyLock<String> = LazyLock::new(|| {
+    common::at_dsl_version(
+        r#"{
+  "dsl_version": "%dsl_version%",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {
@@ -44,7 +47,9 @@ const QUESTS_V06: &str = r#"{
       { "id": "shortcut/inner-door", "gate": "anchor/door", "unlock": "anchor/exit" }
     ]
   }
-}"#;
+}"#,
+    )
+});
 
 fn campaign_with_quests(quests: &str) -> RawCampaign {
     RawCampaign {
@@ -66,7 +71,7 @@ fn campaign_with_quests(quests: &str) -> RawCampaign {
 /// A well-formed shortcut validates clean under 0.6.0.
 #[test]
 fn shortcut_validates_clean() {
-    let diags = check_campaign(&campaign_with_quests(QUESTS_V06));
+    let diags = check_campaign(&campaign_with_quests(QUESTS_V06.as_str()));
     assert!(
         diags.is_empty(),
         "expected zero diagnostics for a v0.6 shortcut, got: {diags:#?}"
@@ -92,7 +97,7 @@ fn invented_shortcut_anchor_is_dw0371() {
         "\"unlock\": \"anchor/exit\"",
         "\"unlock\": \"anchor/invented\"",
     );
-    assert_ne!(bad, QUESTS_V06);
+    assert_ne!(bad, QUESTS_V06.as_str());
     let diags = check_campaign(&campaign_with_quests(&bad));
     assert!(
         diags
@@ -122,7 +127,7 @@ fn close_gate_on_a_shortcut_gate_is_dw0372() {
         "\"on_objective_complete\": { \"obj/talk\": [] }",
         "\"on_objective_complete\": { \"obj/talk\": [ { \"type\": \"sequence\", \"steps\": [ { \"at_ticks\": 10, \"effects\": [ { \"type\": \"close-gate\", \"anchor\": \"anchor/door\" } ] } ] } ] }",
     );
-    assert_ne!(bad, QUESTS_V06);
+    assert_ne!(bad, QUESTS_V06.as_str());
     let diags = check_campaign(&campaign_with_quests(&bad));
     assert!(
         diags.iter().any(|d| d.code == "DW0372"),
@@ -134,7 +139,7 @@ fn close_gate_on_a_shortcut_gate_is_dw0372() {
 /// is untouched by the shortcut rule.
 #[test]
 fn close_gate_on_an_unowned_gate_is_still_legal() {
-    let no_shortcut = QUESTS_V06
+    let no_shortcut = QUESTS_V06.as_str()
         .replace(
             "\"on_objective_complete\": { \"obj/talk\": [] }",
             "\"on_objective_complete\": { \"obj/talk\": [ { \"type\": \"close-gate\", \"anchor\": \"anchor/door\" } ] }",

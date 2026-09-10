@@ -10,7 +10,8 @@ use delvec::compiler::commands::CommandTree;
 use delvec::compiler::emit::{self, BuildFailure, BuildOutput};
 use delvec::compiler::plan::Plan;
 use delvec::compiler::registry::PrefabRegistry;
-use delvewright_dsl::{Campaign, RawCampaign, parse_campaign};
+use delvewright_dsl::{Campaign, DSL_VERSION, RawCampaign, parse_campaign};
+use std::sync::LazyLock;
 
 fn read_hw(name: &str) -> String {
     std::fs::read_to_string(common::hello_world_dir().join(name)).unwrap()
@@ -83,8 +84,10 @@ fn fn_body(out: &BuildOutput, needle: &str) -> String {
 /// function name as a deferred NPC's summon: wave `wave/npc-x` → `spawn_npc_x`,
 /// npc `npc/x` → `spawn_npc_x`. `safe_local` drops the `<kind>/` prefix and folds
 /// `-` to `_`, so the two ids collide even though nothing about them looks alike.
-const COLLIDING_QUESTS: &str = r#"{
-  "dsl_version": "0.24.0",
+static COLLIDING_QUESTS: LazyLock<String> = LazyLock::new(|| {
+    common::at_dsl_version(
+        r#"{
+  "dsl_version": "%dsl_version%",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {
@@ -111,7 +114,9 @@ const COLLIDING_QUESTS: &str = r#"{
       }
     ]
   }
-}"#;
+}"#,
+    )
+});
 
 /// `dialogue` with a (minimal) tree for the second NPC — every stage-2 NPC needs
 /// one (cross-stage 1:1), and only NPCs with a tree reach the emitter's npc plan.
@@ -136,7 +141,7 @@ fn npcs_with_deferred_x() -> String {
     extra["anchor"] = "anchor/exit".into();
     extra["deferred"] = true.into();
     npcs.push(extra);
-    v["dsl_version"] = "0.24.0".into();
+    v["dsl_version"] = DSL_VERSION.into();
     serde_json::to_string(&v).unwrap()
 }
 
@@ -188,7 +193,7 @@ fn non_colliding_names_build_and_emit_both() {
 /// encoding (and so the cap) only exists for v0.4+ campaigns.
 fn quests_v04() -> String {
     let mut v: serde_json::Value = serde_json::from_str(&read_hw("quests.json")).unwrap();
-    v["dsl_version"] = "0.24.0".into();
+    v["dsl_version"] = DSL_VERSION.into();
     serde_json::to_string(&v).unwrap()
 }
 
@@ -198,7 +203,7 @@ fn quests_v04() -> String {
 /// which panics outright at 32 options.
 fn dialogue_with_gated_options(n: usize) -> String {
     let mut v: serde_json::Value = serde_json::from_str(&read_hw("dialogue.json")).unwrap();
-    v["dsl_version"] = "0.24.0".into();
+    v["dsl_version"] = DSL_VERSION.into();
     let opts = v["content"]["dialogues"][0]["nodes"][0]["options"]
         .as_array_mut()
         .unwrap();
@@ -285,7 +290,7 @@ fn completion_advancement_description_is_campaign_derived() {
 #[test]
 fn authored_world_outro_is_used() {
     let mut world: serde_json::Value = serde_json::from_str(&read_hw("world.json")).unwrap();
-    world["dsl_version"] = "0.24.0".into();
+    world["dsl_version"] = DSL_VERSION.into();
     world["content"]["outro"] = "The moor keeps its silence.".into();
     let out = build_ok(&parse_hw_with(&[(
         "world.json",

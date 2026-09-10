@@ -13,14 +13,14 @@
 
 mod common;
 
-use delvewright_dsl::{RawCampaign, check_campaign};
+use delvewright_dsl::{DSL_VERSION, RawCampaign, check_campaign};
 
 /// hello-world's quests stage with one actor, optionally tiered, at the given
 /// quests-stage `dsl_version`.
-fn quests_with_actor_tier(tier: &str, version: &str) -> String {
+fn quests_with_actor_tier(tier: &str) -> String {
     format!(
         r#"{{
-  "dsl_version": "{version}",
+  "dsl_version": "{DSL_VERSION}",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {{
@@ -72,10 +72,9 @@ fn raw_with_quests(quests: String) -> RawCampaign {
 #[test]
 fn every_tier_keyword_validates_at_v08() {
     for tier in ["ordinary", "elite", "boss"] {
-        let raw = raw_with_quests(quests_with_actor_tier(
-            &format!(",\n         \"tier\": \"{tier}\""),
-            "0.24.0",
-        ));
+        let raw = raw_with_quests(quests_with_actor_tier(&format!(
+            ",\n         \"tier\": \"{tier}\""
+        )));
         let d = check_campaign(&raw);
         // `DW0469` is the fixture's own pre-existing advisory (a fighting actor
         // in a campaign that declares no `world.difficulty`) and has nothing to

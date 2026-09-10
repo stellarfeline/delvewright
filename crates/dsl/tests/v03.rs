@@ -10,10 +10,13 @@
 mod common;
 
 use delvewright_dsl::{Envelope, QuestsContent, RawCampaign, check_campaign, to_canonical_string};
+use std::sync::LazyLock;
 
 /// Stage 5 exercising all v0.3 verbs, waves and a flag causal chain.
-const QUESTS_V03: &str = r#"{
-  "dsl_version": "0.24.0",
+static QUESTS_V03: LazyLock<String> = LazyLock::new(|| {
+    common::at_dsl_version(
+        r#"{
+  "dsl_version": "%dsl_version%",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {
@@ -47,7 +50,9 @@ const QUESTS_V03: &str = r#"{
       { "id": "wave/guards", "anchor": "anchor/keeper-stand", "mobs": [ { "entity": "minecraft:zombie", "count": 2, "name": "Keep Guard" } ] }
     ]
   }
-}"#;
+}"#,
+    )
+});
 
 /// Re-stamp a stage document's `dsl_version` to 0.3.0.
 fn to_v03(doc: &str) -> String {
@@ -86,7 +91,8 @@ fn v03_verbs_campaign_validates_clean() {
 
 #[test]
 fn v03_quests_canonical_roundtrip_is_idempotent() {
-    let env: Envelope<QuestsContent> = serde_json::from_str(QUESTS_V03).expect("parse v0.3 quests");
+    let env: Envelope<QuestsContent> =
+        serde_json::from_str(QUESTS_V03.as_str()).expect("parse v0.3 quests");
     let once = to_canonical_string(&env).expect("canonical serialize");
     let reparsed: Envelope<QuestsContent> =
         serde_json::from_str(&once).expect("re-parse canonical");

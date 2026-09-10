@@ -25,6 +25,7 @@ use delvec::compiler::emit::{self, BuildFailure, BuildOutput};
 use delvec::compiler::plan::Plan;
 use delvec::compiler::registry::PrefabRegistry;
 use delvewright_dsl::{Campaign, RawCampaign, parse_campaign};
+use std::sync::LazyLock;
 
 fn read_hw(name: &str) -> String {
     std::fs::read_to_string(common::hello_world_dir().join(name)).unwrap()
@@ -101,8 +102,10 @@ fn fn_body(out: &BuildOutput, name: &str) -> String {
 /// area anyway and hide the defect. A kill-less wave is first-class content
 /// (spec-0008 §4 live threat), and it is exactly the shape that lost its
 /// machinery.
-const SEQ_WAVE_QUESTS: &str = r#"{
-  "dsl_version": "0.24.0",
+static SEQ_WAVE_QUESTS: LazyLock<String> = LazyLock::new(|| {
+    common::at_dsl_version(
+        r#"{
+  "dsl_version": "%dsl_version%",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {
@@ -133,7 +136,9 @@ const SEQ_WAVE_QUESTS: &str = r#"{
       }
     ]
   }
-}"#;
+}"#,
+    )
+});
 
 /// The control: the same wave fired from the TOP-LEVEL bundle. This shape always
 /// worked; it is here so the pair isolates the nesting as the variable.

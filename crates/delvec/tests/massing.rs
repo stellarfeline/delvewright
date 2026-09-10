@@ -7,6 +7,7 @@
 
 mod common;
 
+use delvewright_dsl::DSL_VERSION;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
@@ -64,7 +65,7 @@ fn massing_copy(name: &str) -> PathBuf {
 
 fn set_batches(dir: &Path, campaign_id: &str, batches: serde_json::Value) {
     let doc = serde_json::json!({
-        "dsl_version": "0.24.0",
+        "dsl_version": DSL_VERSION,
         "campaign_id": campaign_id,
         "stage": "world-edits",
         "content": { "batches": batches }

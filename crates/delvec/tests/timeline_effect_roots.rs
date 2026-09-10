@@ -28,7 +28,8 @@ use delvec::compiler::commands::CommandTree;
 use delvec::compiler::emit::{self, BuildFailure, BuildOutput};
 use delvec::compiler::plan::Plan;
 use delvec::compiler::registry::{FullEntityRegistry, FullItemRegistry, PrefabRegistry};
-use delvewright_dsl::{Campaign, RawCampaign, parse_campaign};
+use delvewright_dsl::{Campaign, DSL_VERSION, RawCampaign, parse_campaign};
+use std::sync::LazyLock;
 
 /// A hello-world `quests` doc carrying the stage-5 puppet plus a caller-supplied
 /// raw `traps` array body (no surrounding brackets).
@@ -45,7 +46,7 @@ use delvewright_dsl::{Campaign, RawCampaign, parse_campaign};
 fn quests_doc(traps: &str) -> String {
     format!(
         r#"{{
-  "dsl_version": "0.24.0",
+  "dsl_version": "{DSL_VERSION}",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {{
@@ -107,8 +108,10 @@ const TRAP_WALKS_THEN_SEALS: &str = r#"{
 /// movement verb of its own, which is why the walk stopped at the quests stage —
 /// but the bundle is a plain `Vec<QuestEffect>` and is really lowered, into
 /// `cp_on_respawn_<i>`.
-const DIALOGUE_SEALS_THEN_WALKS: &str = r#"{
-  "dsl_version": "0.24.0",
+static DIALOGUE_SEALS_THEN_WALKS: LazyLock<String> = LazyLock::new(|| {
+    common::at_dsl_version(
+        r#"{
+  "dsl_version": "%dsl_version%",
   "campaign_id": "hello-world",
   "stage": "dialogue",
   "content": {
@@ -130,7 +133,9 @@ const DIALOGUE_SEALS_THEN_WALKS: &str = r#"{
       ] }
     ]
   }
-}"#;
+}"#,
+    )
+});
 
 fn read_hw(name: &str) -> String {
     std::fs::read_to_string(common::hello_world_dir().join(name)).unwrap()
@@ -229,7 +234,7 @@ fn a_trap_payload_walk_across_its_own_seal_is_dw0410() {
 /// the quests stage entirely, so this bundle was invisible to every nav proof.
 #[test]
 fn a_dialogue_respawn_walk_across_its_own_seal_is_dw0410() {
-    let c = parse_hw(&quests_doc(""), Some(DIALOGUE_SEALS_THEN_WALKS));
+    let c = parse_hw(&quests_doc(""), Some(DIALOGUE_SEALS_THEN_WALKS.as_str()));
     assert_validates(&c);
     let Err(err) = try_build(&c, &prefabs()) else {
         panic!("an on_respawn walk across the bundle's own seal must fail the timeline proof");
@@ -292,8 +297,10 @@ fn a_trap_payload_walk_is_planned_and_emitted() {
 /// A campaign exercising **all five** roots at once, each carrying one `narrate`
 /// whose text names its root, so the walk's own output states which roots it
 /// reached.
-const FIVE_ROOT_QUESTS: &str = r#"{
-  "dsl_version": "0.24.0",
+static FIVE_ROOT_QUESTS: LazyLock<String> = LazyLock::new(|| {
+    common::at_dsl_version(
+        r#"{
+  "dsl_version": "%dsl_version%",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {
@@ -327,10 +334,14 @@ const FIVE_ROOT_QUESTS: &str = r#"{
       }
     ]
   }
-}"#;
+}"#,
+    )
+});
 
-const FIVE_ROOT_DIALOGUE: &str = r#"{
-  "dsl_version": "0.24.0",
+static FIVE_ROOT_DIALOGUE: LazyLock<String> = LazyLock::new(|| {
+    common::at_dsl_version(
+        r#"{
+  "dsl_version": "%dsl_version%",
   "campaign_id": "hello-world",
   "stage": "dialogue",
   "content": {
@@ -351,7 +362,9 @@ const FIVE_ROOT_DIALOGUE: &str = r#"{
       ] }
     ]
   }
-}"#;
+}"#,
+    )
+});
 
 /// The staged walk reaches every root emission does, in the one order
 /// `plan::for_each_effect_root` fixes. This is the pin that would have caught the
@@ -359,7 +372,7 @@ const FIVE_ROOT_DIALOGUE: &str = r#"{
 /// reordered is a diff here, not a silent proof hole three consumers deep.
 #[test]
 fn the_walk_reaches_all_five_roots_in_the_fixed_order() {
-    let c = parse_hw(FIVE_ROOT_QUESTS, Some(FIVE_ROOT_DIALOGUE));
+    let c = parse_hw(FIVE_ROOT_QUESTS.as_str(), Some(FIVE_ROOT_DIALOGUE.as_str()));
     assert_validates(&c);
     let plan = Plan::build(&c, &prefabs()).expect("plan builds");
     let roots: Vec<&str> = delvec::compiler::timeline::walk(&plan)
