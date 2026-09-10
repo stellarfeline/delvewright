@@ -1427,13 +1427,33 @@ def manifest_rules(rep: Report, base: str | None) -> None:
             )
     rep.bind("marketplace plugin entr(y/ies)", len(entries) if isinstance(entries, list) else 0, 1)
 
-    # -- the version moves with the plugin -----------------------------------
+    version_bump_rule(rep, base, version)
+
+
+def version_bump_rule(
+    rep: Report,
+    base: str | None,
+    version: object,
+    repo: pathlib.Path | None = None,
+    plugin_root: pathlib.Path | None = None,
+) -> None:
+    """The version moves with the plugin.
+
+    A FUNCTION rather than the tail of `manifest_rules`, because this is the one
+    rule on the page whose subject is a git history: it cannot be exercised by
+    perturbing a copy of the plugin the way every other rule is, so the only way
+    a test can reach it is to hand it a repository of its own. `repo` and
+    `plugin_root` default to this tree's, so the caller in `manifest_rules` says
+    nothing it did not say before.
+    """
     if base is None:
         print("  --   version-bump rule: not run (no --base given)")
         return
-    plugin_rel = str(PLUGIN_ROOT.relative_to(REPO))
+    repo = REPO if repo is None else repo
+    plugin_root = PLUGIN_ROOT if plugin_root is None else plugin_root
+    plugin_rel = str(plugin_root.relative_to(repo))
     diff = subprocess.run(
-        ["git", "-C", str(REPO), "diff", "--name-only", base, "--", plugin_rel],
+        ["git", "-C", str(repo), "diff", "--name-only", base, "--", plugin_rel],
         capture_output=True,
         text=True,
     )
@@ -1449,7 +1469,7 @@ def manifest_rules(rep: Report, base: str | None) -> None:
     if not touched:
         return
     show = subprocess.run(
-        ["git", "-C", str(REPO), "show", f"{base}:{plugin_rel}/.claude-plugin/plugin.json"],
+        ["git", "-C", str(repo), "show", f"{base}:{plugin_rel}/.claude-plugin/plugin.json"],
         capture_output=True,
         text=True,
     )

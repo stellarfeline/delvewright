@@ -445,6 +445,30 @@ def test_a_program_a_later_step_invokes_and_init_never_proves_reds(mod, tree, en
     assert has(run(mod, engine), "invokes `docker compose`, and Init proves it nowhere")
 
 
+def test_the_rule_reaches_the_reference_that_actually_runs_the_ladder(mod, tree, engine):
+    """**`references/walk.md` is inside rule 16's population, by name.**
+
+    The rule and the file have different authors: the rule was written where
+    `SKILL.md` invokes Compose, and `walk.md` — the page that brings the server
+    up for the walk — was rewritten afterwards. The test above would stay green
+    if that rewrite had moved walk.md's `docker compose` line out of a fence or
+    behind a variable, because SKILL.md alone still satisfies it, and the rule
+    would then be saying nothing about the one step whose whole ladder is built
+    on Compose.
+
+    So this asserts the population rather than the refusal: the finding names
+    walk.md, which it can only do if walk.md really invokes an acquired program
+    in a fenced span the rule reads.
+    """
+    edit(tree / "SKILL.md", "\ndocker compose version", "\n# (nothing here)")
+    init = tree / "references" / "init.md"
+    text = init.read_text(encoding="utf-8")
+    assert "docker compose version" in text
+    init.write_text(text.replace("docker compose version", "docker info"), "utf-8")
+    rep = run(mod, engine)
+    assert has(rep, "references/walk.md invokes `docker compose`"), rep.findings
+
+
 def test_a_command_named_only_in_inline_PROSE_inside_init_does_not_prove_it(
     mod, tree, engine
 ):
@@ -453,6 +477,76 @@ def test_a_command_named_only_in_inline_PROSE_inside_init_does_not_prove_it(
     output paths; that sentence must not stand in for a check."""
     proofs = mod.init_proof_set()
     assert not any("--profile play" in p for p in proofs), sorted(proofs)
+
+
+# ------------------------------------------- the version moves with the plugin --
+
+
+def _plugin_repo(tmp_path: pathlib.Path, mod, version: str) -> pathlib.Path:
+    """A repository of its own, holding a plugin root at the real layout.
+
+    The rule's subject is a git HISTORY, so no perturbation of a copied tree can
+    reach it — this is the smallest thing that can be a base and a head.
+    """
+    repo = tmp_path / "repo"
+    plugin = repo / ".claude" / "skills" / "delvewright"
+    (plugin / ".claude-plugin").mkdir(parents=True)
+    (plugin / ".claude-plugin" / "plugin.json").write_text(
+        json.dumps({"name": "delvewright", "version": version}) + "\n", encoding="utf-8"
+    )
+    (plugin / "page.md").write_text("the page, as it was\n", encoding="utf-8")
+    for args in (
+        ["init"],
+        ["config", "user.email", "t@example.invalid"],
+        ["config", "user.name", "t"],
+        ["add", "-A"],
+        ["commit", "-m", "base"],
+    ):
+        r = subprocess.run(["git", "-C", str(repo), *args], capture_output=True, text=True)
+        assert r.returncode == 0, r.stderr
+    return repo
+
+
+def test_a_page_edit_with_no_version_bump_reds(mod, tmp_path):
+    """**The rule all three sides of a merge lean on.** Every branch that edits
+    the page sets the same new number, and the identical edit merges clean — so
+    the only thing standing between "three branches bumped it" and "nobody
+    bumped it" is this rule, and until now nothing exercised it."""
+    repo = _plugin_repo(tmp_path, mod, "1.2.0")
+    plugin = repo / ".claude" / "skills" / "delvewright"
+    (plugin / "page.md").write_text("the page, edited\n", encoding="utf-8")
+
+    rep = mod.Report()
+    mod.version_bump_rule(rep, "HEAD", "1.2.0", repo=repo, plugin_root=plugin)
+    assert any("differ from HEAD" in f and "'1.2.0' on both sides" in f for f in rep.findings), (
+        rep.findings
+    )
+
+
+def test_the_same_edit_under_a_moved_version_holds(mod, tmp_path):
+    """The perturbation only the bump can survive — without it the test above
+    would pass on a rule that reds at every edit."""
+    repo = _plugin_repo(tmp_path, mod, "1.1.0")
+    plugin = repo / ".claude" / "skills" / "delvewright"
+    (plugin / "page.md").write_text("the page, edited\n", encoding="utf-8")
+    (plugin / ".claude-plugin" / "plugin.json").write_text(
+        json.dumps({"name": "delvewright", "version": "1.2.0"}) + "\n", encoding="utf-8"
+    )
+
+    rep = mod.Report()
+    mod.version_bump_rule(rep, "HEAD", "1.2.0", repo=repo, plugin_root=plugin)
+    assert rep.findings == [], rep.findings
+
+
+def test_an_untouched_plugin_owes_no_bump(mod, tmp_path):
+    """And the rule binds to the EDIT, not to the number: a tree that changed
+    nothing under the plugin root is not asked to publish an update."""
+    repo = _plugin_repo(tmp_path, mod, "1.2.0")
+    plugin = repo / ".claude" / "skills" / "delvewright"
+
+    rep = mod.Report()
+    mod.version_bump_rule(rep, "HEAD", "1.2.0", repo=repo, plugin_root=plugin)
+    assert rep.findings == [], rep.findings
 
 
 # --------------------------------------------------------------- the gate refuses --

@@ -848,6 +848,82 @@ fn the_walk_record_schema_offers_unwalked() {
     );
 }
 
+/// **The committed probe refuses on its VERDICT, not on a stale key.**
+///
+/// `gallery/probes/a-record-that-says-nobody-walked` is the gallery's
+/// demonstration that `DW0841` reads the `verdict` field. `DW0841` has a second
+/// arm — the freshness key, which refuses a record taken over a whole that has
+/// since moved — and it refuses with *the same code*. So a probe whose hashes
+/// have gone stale still exits non-zero, still names `DW0841`, and demonstrates
+/// the wrong rule; the coverage gate, which asks only whether the named code
+/// appears, cannot tell the two apart. The probe's own manifest says this is
+/// what it depends on.
+///
+/// That makes the key a standing obligation on every engine change that can
+/// reach the derived grid or the ways — a class this probe cannot survive
+/// silently and this test can. The assertion is therefore not that a refusal
+/// happened: it is that BOTH halves of the key compared equal, so the verdict is
+/// the only thing left that can be doing the refusing.
+#[test]
+fn the_committed_unwalked_probe_refuses_on_the_verdict_and_not_on_a_stale_key() {
+    let gallery = common::repo_root().join("gallery");
+    let probe = gallery.join("probes/a-record-that-says-nobody-walked");
+    let camp = tempdir("probe-unwalked");
+
+    // The materialisation `tools/gallery_domain.py` performs for a point: the
+    // primary's stage documents, then the point's own laid over them. This probe
+    // declares no `patch`, so everything but its own documents is the primary.
+    for src in [gallery.clone(), probe.clone()] {
+        for entry in std::fs::read_dir(&src).expect("the point is readable") {
+            let path = entry.unwrap().path();
+            let name = path.file_name().unwrap().to_string_lossy().to_string();
+            if path.is_dir() {
+                if name == "l10n" {
+                    common::copy_dir_all(&path, &camp.join("l10n"));
+                }
+                continue;
+            }
+            if name.ends_with(".json") && name != "probe.json" {
+                std::fs::copy(&path, camp.join(&name)).unwrap();
+            }
+        }
+    }
+
+    // The code asserted below is READ from the probe, so this test cannot drift
+    // from the object it is about.
+    let manifest: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(probe.join("probe.json")).unwrap()).unwrap();
+    let declared = manifest["code"].as_str().expect("the probe names its code");
+
+    let c = campaign_at(&camp);
+    let record = walk_record_at(&camp).expect("the probe ships a walk record");
+    let (diags, binding) = detail::check_walk(&c, Some(&record));
+
+    let e = errors(&diags);
+    assert_eq!(e.len(), 1, "one refusal, not a pile: {:?}", codes(&diags));
+    assert_eq!(e[0].code, declared, "the code the probe's manifest names");
+    assert!(
+        e[0].message.contains("unwalked") && e[0].message.contains("Nobody has walked"),
+        "and it is the VERDICT arm that refused: {}",
+        e[0].message
+    );
+    assert!(
+        !e[0].message.contains("DIFFERENT GRID") && !e[0].message.contains("different whole"),
+        "not the freshness arm, which would be the same code demonstrating \
+         another rule: {}",
+        e[0].message
+    );
+    assert_eq!(
+        (binding.records, binding.compared, binding.rows),
+        (1, detail::WalkBinding::KEYED_HALVES, 1),
+        "and both halves of the key were compared and found equal — an engine \
+         change that moves the derived grid or the ways reds HERE, where the \
+         cause is named, rather than leaving the probe a demonstration of \
+         staleness that still exits non-zero: {}",
+        binding.line()
+    );
+}
+
 /// **Both entry points, demonstrated.** The handing refuses on the same rule and
 /// the same code, and it asks the question of a campaign that has no
 /// `detail-plan` yet — which is exactly the campaign asking for its first
