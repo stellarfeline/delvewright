@@ -2238,6 +2238,257 @@ fn every_riser_is_one_block_and_every_tread_is_standable() {
     assert_eq!(steps[0][1], out.anchors["anchor/stair-head"].pos[1]);
 }
 
+/// **The cell a body steps up onto, for one pair of treads.**
+///
+/// `hi` is the upper tread's standable cell and `lo` the tread below it, so the
+/// riser is the upper tread's floor at its own down-travel end: one course
+/// under `hi`, one cell up-travel of `lo`. Derived from the anchors rather than
+/// from `tread`, so the same reading holds at any run.
+fn riser_cell(hi: [i32; 3], lo: [i32; 3]) -> [i32; 3] {
+    [hi[0], hi[1] - 1, lo[2] - 1]
+}
+
+/// **A climb is made of stairs.** Every riser — the cell a body steps up onto —
+/// is a stair block whose tall half stands up-travel, so the run reads as a
+/// staircase instead of as a column of cubes.
+///
+/// The facing is not a literal here either: it is derived from the two landings
+/// the same way a player derives it, by asking which way the climb goes, and the
+/// rule reaches it through the scope's own axis frame rather than through the
+/// world's. `the_flight_stands_up_in_a_turned_frame` is the other half of that
+/// claim.
+///
+/// **Two controls, because "there is a stair here" is the easy half.** The
+/// lowest tread is level with the foot landing, so it is *not* a riser and must
+/// carry no stair — a rule that simply painted every course's end would fail
+/// that. And `boulder_stair`, flat by construction, read by the same code in
+/// the same box, must hold no stair at all — so a reading that found stairs in
+/// anything would fail there.
+///
+/// Binding: 7 risers, 1 flat tread, 1 flat control.
+#[test]
+fn every_riser_is_a_stair_block_whose_tall_half_stands_up_travel() {
+    let out = expand_at(&stair_flight(), FLIGHT_REGION, FLIGHT_SEED);
+    let model = &out.model;
+    let foot = out.anchors["anchor/stair-foot"].pos;
+    let head = out.anchors["anchor/stair-head"].pos;
+
+    // Travel climbs toward the head landing. The head is at the lower `Z` here,
+    // so up-travel is `-Z` — which is what vanilla calls `north`, and what a
+    // stair's tall half stands on when it is written `facing=north`.
+    assert!(head[2] < foot[2], "the fixture's travel direction moved");
+    let up_travel = "north";
+
+    let steps = indexed(&out.anchors, "stair-step");
+    assert_eq!(steps.len(), 8);
+    let mut risers = 0;
+    for w in steps.windows(2) {
+        let (hi, lo) = (w[0], w[1]);
+        let at = riser_cell(hi, lo);
+        let state = model.get(at).unwrap_or_else(|| {
+            panic!("riser {at:?} between {lo:?} and {hi:?} is outside the model")
+        });
+        assert!(
+            state.name.ends_with("_stairs"),
+            "the riser at {at:?} between {lo:?} and {hi:?} is {state} — a body climbing \
+             this run steps up a whole cube, which is the defect this rule exists not to \
+             have"
+        );
+        assert_eq!(
+            state.properties.get("facing").map(String::as_str),
+            Some(up_travel),
+            "the riser at {at:?} is {state}; its tall half stands away from the climb, \
+             so a body meets a full block on the way up and an overhang on the way down"
+        );
+        assert_eq!(
+            state.properties.get("half").map(String::as_str),
+            Some("bottom"),
+            "the riser at {at:?} is {state} — a top half is a soffit, not a step"
+        );
+        assert_eq!(
+            state.properties.get("shape").map(String::as_str),
+            Some("straight"),
+            "the riser at {at:?} is {state}; a straight run derives `straight`, and a \
+             shape the game re-derives is the one thing every tool here would agree \
+             with and the world would not"
+        );
+        risers += 1;
+    }
+    assert_eq!(risers, 7, "seven risers between eight treads");
+
+    // Control one: the lowest tread is level with the foot landing, so its own
+    // down-travel end is floor and not a riser.
+    let flat = [steps[7][0], steps[7][1] - 1, steps[7][2] + 1];
+    let state = model.get(flat).expect("the lowest tread's floor");
+    assert!(
+        !state.name.ends_with("_stairs"),
+        "the lowest tread is level with the foot landing and carries {state} — a stair \
+         there is a half-block dip in flat floor"
+    );
+
+    // Control two: the flat rule, in the same box, read by the same code.
+    let control = expand_at(&boulder_stair(), FLIGHT_REGION, FLIGHT_SEED);
+    let stairs = control
+        .model
+        .region()
+        .positions()
+        .filter(|p| {
+            control
+                .model
+                .get(*p)
+                .is_some_and(|s| s.name.ends_with("_stairs"))
+        })
+        .count();
+    assert_eq!(
+        stairs, 0,
+        "boulder_stair is flat by construction and the same reading found {stairs} \
+         stair(s) in it — the reading above is not measuring what it says"
+    );
+}
+
+/// **The stairs changed what the climb looks like and not what it walks.**
+///
+/// `delvewright_dsl::blockshape` reads any stair as a full cube — the module's
+/// own refusing direction, since a shape it has not measured out of the pin is
+/// never credited with being thinner than one. So a riser laid in stair blocks
+/// occupies the same cell, holds a body at the same height and offers the same
+/// step as the cube it replaced, and **no reachability verdict moves**: the walk
+/// plane, the standable set and the both-ways gate are identical to the cube
+/// run's, cell for cell.
+///
+/// That is worth a test rather than a sentence, because it is the claim the
+/// change had to make good on. The same test also proves the element is
+/// **bound**: rebinding `step` moves the emitted bytes, so a `step` that
+/// stopped arriving would be a red here rather than a quiet restyling of
+/// nothing.
+///
+/// Binding: 913 filled cells, 66 standable, 21 stair cells.
+#[test]
+fn the_stair_risers_move_the_bytes_and_not_the_walk() {
+    let out = expand_at(&stair_flight(), FLIGHT_REGION, FLIGHT_SEED);
+
+    // The same rule with its risers rebound to the shell's own stone: the
+    // geometry this program laid before a climb was made of stairs.
+    let cubes = stair_flight().role("step", BlockState::simple("stone"));
+    let plain = expand_at(&cubes, FLIGHT_REGION, FLIGHT_SEED);
+
+    let stair_cells = out
+        .model
+        .region()
+        .positions()
+        .filter(|p| {
+            out.model
+                .get(*p)
+                .is_some_and(|s| s.name.ends_with("_stairs"))
+        })
+        .count();
+    assert_eq!(
+        stair_cells, 21,
+        "seven risers three cells wide; the fixture's stair count moved"
+    );
+    assert_ne!(
+        out.model.canonical_bytes(),
+        plain.model.canonical_bytes(),
+        "rebinding `step` moved no byte, so the role is inert and the run is still \
+         cubes under a new name"
+    );
+    assert!(
+        delvewright_dsl::blockshape::collision_class("minecraft:stone_stairs")
+            == delvewright_dsl::blockshape::collision_class("minecraft:stone"),
+        "a stair no longer reads as a full cube to the one collision table, so the \
+         equalities below are no longer the claim this test is making"
+    );
+
+    // …and nothing about the walk moved.
+    let stair_cells_standable = standable_cells(&out.model);
+    let plain_cells = standable_cells(&plain.model);
+    assert_eq!(
+        stair_cells_standable, plain_cells,
+        "the stair risers moved the walk plane; the climb is judged on different \
+         cells than the cube run was"
+    );
+    assert_eq!(stair_cells_standable.len(), 66);
+    assert_eq!(out.anchors, plain.anchors, "the anchors moved");
+    for (from, to) in [
+        ("anchor/stair-foot", "anchor/stair-head"),
+        ("anchor/stair-head", "anchor/stair-foot"),
+    ] {
+        assert_eq!(
+            connected(
+                &out.model,
+                &stair_cells_standable,
+                &cell(&out, from),
+                &cell(&out, to)
+            ),
+            connected(
+                &plain.model,
+                &plain_cells,
+                &cell(&plain, from),
+                &cell(&plain, to)
+            ),
+            "the both-ways gate answers differently for the stair run and the cube run \
+             ({from} -> {to})"
+        );
+    }
+}
+
+/// **The riser's facing is not a world literal.** Turn the region so the frame's
+/// `Largest` reorientation puts the run on the world `X` axis, and the same rule
+/// must write the stair that faces up-travel *there* — which is a different
+/// world facing and the same local one.
+///
+/// This is what `Paint::Local` buys and what a per-orientation guard would have
+/// had to spell out four times. A rule that wrote a world-frame `north` would
+/// pass every gate in the untweaked box and lay its stairs across the run here.
+///
+/// Binding: 21 risers cells in each of two frames.
+#[test]
+fn the_flight_stands_up_in_a_turned_frame() {
+    let along_z = expand_at(&stair_flight(), FLIGHT_REGION, FLIGHT_SEED);
+    let turned = Box3::at_origin([
+        FLIGHT_REGION.size[2],
+        FLIGHT_REGION.size[1],
+        FLIGHT_REGION.size[0],
+    ]);
+    let along_x = expand_at(&stair_flight(), turned, FLIGHT_SEED);
+
+    let facings = |out: &Expansion| -> BTreeSet<String> {
+        out.model
+            .region()
+            .positions()
+            .filter_map(|p| out.model.get(p))
+            .filter(|s| s.name.ends_with("_stairs"))
+            .filter_map(|s| s.properties.get("facing").cloned())
+            .collect()
+    };
+
+    let flat = facings(&along_z);
+    let stood = facings(&along_x);
+    assert_eq!(
+        flat,
+        BTreeSet::from(["north".to_string()]),
+        "the run climbs toward -Z in this box"
+    );
+    assert_eq!(
+        stood,
+        BTreeSet::from(["west".to_string()]),
+        "the frame put the run on the world X axis and the stairs did not follow it; \
+         a world-frame literal lays its steps across the climb"
+    );
+
+    // Both frames still climb, so the turned box is a real flight and not a
+    // refusal that happened to have the facing this test wanted.
+    for out in [&along_z, &along_x] {
+        let cells = standable_cells(&out.model);
+        assert!(connected(
+            &out.model,
+            &cells,
+            &cell(out, "anchor/stair-foot"),
+            &cell(out, "anchor/stair-head")
+        ));
+    }
+}
+
 /// **The teeth, in the direction that actually drifts.** `broken_step` raises
 /// one tread — the last one, picked out of the recursion by a guard on the
 /// remaining run rather than by an index — so exactly one riser becomes 2 and
