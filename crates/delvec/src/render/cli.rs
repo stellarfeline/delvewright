@@ -228,7 +228,7 @@ fn render_piece(
         d.print(json);
     }
     eprintln!("{}", enclosure.line(id));
-    let light = showing::LightVerdict::of([(id, meta.as_ref())]);
+    let light = showing::LightVerdict::of([(id, meta.as_ref(), enclosure.standable)]);
     eprintln!("{}", light.line());
     if let Some(d) = light.finding() {
         return Err((d, exit::INPUT));

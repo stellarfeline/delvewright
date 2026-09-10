@@ -774,14 +774,24 @@ fn run_viewer(inputs: &[PathBuf], out: &Path, title: Option<&str>, vopts: &ViewO
     // anybody ever measured this building's light, and how much of its roofed
     // floor no body can walk to. Asked before the client jar is opened, because
     // a refusal owed to a reviewer is worth nothing after the page is written.
-    let light = showing::LightVerdict::of(models.iter().map(|m| (m.id(), m.meta())));
-    for model in &models {
-        let enclosure = showing::survey(model.structure());
+    let surveys: Vec<showing::Enclosure> = models
+        .iter()
+        .map(|m| showing::survey(m.structure()))
+        .collect();
+    for (model, enclosure) in models.iter().zip(&surveys) {
         if let Some(d) = enclosure.finding(model.id()) {
             d.print(vopts.json);
         }
         eprintln!("{}", enclosure.line(model.id()));
     }
+    // The light verdict's one escape is a COUNT off these same bytes, never a
+    // word in the document — see `LightVerdict::of`.
+    let light = showing::LightVerdict::of(
+        models
+            .iter()
+            .zip(&surveys)
+            .map(|(m, e)| (m.id(), m.meta(), e.standable)),
+    );
     if let Some(d) = light.finding() {
         d.print(vopts.json);
     }

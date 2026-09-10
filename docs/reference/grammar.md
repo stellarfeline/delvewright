@@ -810,10 +810,12 @@ program's lighting is the program's own business. The period is the split's own
 pattern, so it is a real control — widen it and the same gallery has fewer
 sconces.
 
-It matters because a piece that places no light **is** dark, the grammar cannot
-warn about it, and the emitted metadata says `"profile": "unmeasured"` and means
-it: expansion places blocks, not photons. `delvec prefab lighting --write`
-(procedure §7) is where the number comes from — and a program whose contract
+It matters because a piece that places no light **is** dark, and the grammar
+cannot warn about it — but it no longer ships without the number either: the
+export measures the piece over its own bytes and writes the profile, so a dark
+program says `"profile": "dark"` with its binding beside it. `delvec prefab
+lighting --write` (procedure §7) is the same measurement through the other
+door, for a piece that came from somewhere else — and a program whose contract
 declares every space `enclosed` is measured there with no sky at all, so the
 figure is exactly the light this program placed. Nothing is borrowed from an
 open air the piece will not be standing in.
@@ -3204,12 +3206,26 @@ does not itself model:
   and empty rather than absent, because "this piece has no sockets" and "this
   metadata was written before sockets existed" are different claims, and
   `delvec prefab socket` appends to it.
-- **`"profile": "unmeasured"`.** A lighting profile is a *measurement*, taken by
-  the live 1.21.11 probe. Expansion places blocks, not photons, so it declares
-  the true thing and admission to a campaign still runs the probe. `unmeasured`
-  is not a synonym for an absent `lighting` block: absence means legacy metadata
-  predating the field, this is a positive statement that a measurement is owed.
-  A `lit`/`dim`/`dark` declaration still cannot omit `measured_min_light` /
+- **`lighting` is measured, over the bytes the export just froze.** The probe is
+  the compiler's own block+sky flood — the figure `delvec prefab lighting` prints
+  and `DW0751` grades — run at the moment of production, under the sky the
+  piece's own spatial contract claims. The `method` line states the binding it
+  was taken over, the sky it was taken at, and that it is a static estimate and
+  not a live server probe. Deterministic like everything else here: the same
+  program at the same seed over the same region writes the same document.
+  Expansion once declared `"profile": "unmeasured"` on the argument that it
+  places blocks and not photons and that admission to a campaign runs the probe;
+  the first clause was overtaken by the static measurement and the second was
+  never true of a piece that enters no campaign. It also made `--write` and the
+  next `expand` a pair of mutually-defeating actions — the command wrote the
+  profile the expansion then reset.
+- **`"profile": "unmeasured"` remains, for a piece with nowhere in it to stand.**
+  With no player space there is no floor to measure and no measurement to state;
+  five of the rule library's 36 programs are that shape, and all five are
+  demonstrations of an IR construct rather than buildings. It is not a synonym
+  for an absent `lighting` block: absence means legacy metadata predating the
+  field, this is a positive statement that a measurement is owed. A
+  `lit`/`dim`/`dark` declaration still cannot omit `measured_min_light` /
   `measured`, and an `unmeasured` one may not carry them (`delvewright-dsl`
   refuses both at parse).
 

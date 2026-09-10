@@ -143,7 +143,12 @@ pub struct LightVerdict {
     pub examined: usize,
     /// Of those, how many carry a measured profile.
     pub measured: usize,
-    /// The ones that do not, by piece id, with what they declare instead.
+    /// Of those, how many carry none and have **nowhere in them to stand**, so
+    /// there is no floor for a measurement to be about. Counted and never
+    /// refused — and measured off the bytes, never read from the document.
+    pub no_player_space: usize,
+    /// The ones that do not carry a measurement and do have floor, by piece id,
+    /// with what they declare instead.
     pub unmeasured: Vec<(String, &'static str)>,
 }
 
@@ -167,16 +172,42 @@ fn unmeasured_reason(meta: Option<&PrefabMeta>) -> Option<&'static str> {
 
 impl LightVerdict {
     /// Judge the pieces a run is about to draw, in the order it will draw them.
-    pub fn of<'a>(pieces: impl IntoIterator<Item = (&'a str, Option<&'a PrefabMeta>)>) -> Self {
+    ///
+    /// `standable` is how many cells of that piece a body can stand in **at
+    /// all**, taken from its own bytes by the survey that runs beside this one.
+    ///
+    /// # The one thing that is not refused, and why it cannot be forged
+    ///
+    /// A piece with nowhere in it to stand has no floor to be dark: there is
+    /// nothing for a measurement to be about, and `unmeasured` is the true
+    /// answer rather than a missing one. Five of the rule library's 36 programs
+    /// are that — `idiom-arguments`, `idiom-erosion`, `idiom-mirror`,
+    /// `idiom-repetition`, `negated-guard`, demonstrations of an IR construct
+    /// rather than buildings — and every one of them reports `standable_cells: 0`.
+    ///
+    /// **This is an escape the defect cannot supply.** It is not a field, a flag
+    /// or a word in the document; it is a count the engine takes from the blocks
+    /// at the moment of showing. The defect this gate exists to catch is a dark
+    /// ROOM, and a room has floor by definition — a piece that could pass through
+    /// here has no cell a player could ever be dark in.
+    ///
+    /// A sealed crypt is deliberately NOT in it: it has floor, so it is refused
+    /// until somebody measures it, which is `DW0752`'s "socket it first, then
+    /// probe it" and not a reason to show it unmeasured.
+    pub fn of<'a>(
+        pieces: impl IntoIterator<Item = (&'a str, Option<&'a PrefabMeta>, usize)>,
+    ) -> Self {
         let mut v = LightVerdict {
             examined: 0,
             measured: 0,
+            no_player_space: 0,
             unmeasured: Vec::new(),
         };
-        for (id, meta) in pieces {
+        for (id, meta, standable) in pieces {
             v.examined += 1;
             match unmeasured_reason(meta) {
                 None => v.measured += 1,
+                Some(_) if standable == 0 => v.no_player_space += 1,
                 Some(why) => v.unmeasured.push((id.to_string(), why)),
             }
         }
@@ -187,8 +218,9 @@ impl LightVerdict {
     pub fn line(&self) -> String {
         format!(
             "light measurement: {} of {} piece(s) about to be shown carry a measured lighting \
-             profile",
-            self.measured, self.examined
+             profile ({} carr(y/ies) none and have nowhere in them to stand, so there is no floor \
+             to measure)",
+            self.measured, self.examined, self.no_player_space
         )
     }
 
@@ -212,11 +244,13 @@ impl LightVerdict {
                  places blocks, not photons) and the only two things that measure light are this \
                  command's absence of one and the compiler's assembled-world survey (`DW0210`), \
                  which quantifies over the areas of a CAMPAIGN: a piece that enters no campaign \
-                 meets neither. Measure it over its own bytes first — `delvec prefab lighting \
-                 <piece> --write` floods the piece at both ends of the sky table, writes the \
-                 profile and the binding it was taken over, and reports the DISTRIBUTION of dark \
-                 cells rather than the darkest one (`DW0751`). A `dark` result is not a bar to \
-                 showing the piece; not knowing is",
+                 meets neither. A piece the grammar produces is measured where it is produced, so \
+                 this is a piece that came from somewhere else, or from an expansion older than \
+                 that rule: re-expand it, or measure it over its own bytes with `delvec prefab \
+                 lighting <piece> --write`, which floods it at both ends of the sky table, writes \
+                 the profile and the binding it was taken over, and reports the DISTRIBUTION of \
+                 dark cells rather than the darkest one (`DW0751`). A `dark` result is not a bar \
+                 to showing the piece; not knowing is",
                 self.unmeasured.len(),
                 self.examined,
                 named.join(", ")
@@ -506,13 +540,15 @@ mod tests {
     fn every_shape_of_not_knowing_is_refused_and_says_which() {
         let m = unmeasured();
         let none = PrefabMeta::default();
+        // Every one of them has floor: the escape below is a count off the
+        // bytes, and a piece with floor cannot reach it.
         let v = LightVerdict::of([
-            ("measured", Some(&lit())),
-            ("declared-unmeasured", Some(&m)),
-            ("no-lighting-block", Some(&none)),
-            ("no-document", None),
+            ("measured", Some(&lit()), 40),
+            ("declared-unmeasured", Some(&m), 40),
+            ("no-lighting-block", Some(&none), 40),
+            ("no-document", None, 40),
         ]);
-        assert_eq!((v.examined, v.measured), (4, 1));
+        assert_eq!((v.examined, v.measured, v.no_player_space), (4, 1, 0));
         let d = v.finding().expect("three unmeasured pieces refuse");
         assert_eq!(d.code, "DW0894");
         assert!(d.is_error());
@@ -530,7 +566,7 @@ mod tests {
     fn a_measured_dark_piece_is_shown() {
         let mut dark = lit();
         dark.lighting.as_mut().unwrap().profile = LightingProfile::Dark;
-        let v = LightVerdict::of([("dark-crypt", Some(&dark))]);
+        let v = LightVerdict::of([("dark-crypt", Some(&dark), 40)]);
         assert_eq!((v.examined, v.measured), (1, 1));
         assert!(v.finding().is_none());
         assert!(!v.is_refusal());
@@ -544,6 +580,37 @@ mod tests {
         let v = LightVerdict::of([]);
         assert!(v.line().contains("0 of 0 piece(s)"), "{}", v.line());
         assert!(v.finding().is_none());
+    }
+
+    /// **The one escape, and the thing it demands that the defect cannot
+    /// produce.** A piece with nowhere in it to stand has no floor to be dark, so
+    /// `unmeasured` is the true answer there and showing it is not a risk. The
+    /// escape is a COUNT taken from the bytes at the moment of showing, never a
+    /// field, a flag or a word in the document — the perturbation is the one that
+    /// matters: give the same undocumented piece a single standable cell and it
+    /// is refused.
+    #[test]
+    fn nowhere_to_stand_is_shown_and_one_cell_of_floor_is_not() {
+        let none = PrefabMeta::default();
+        let empty = LightVerdict::of([("idiom-mirror", Some(&none), 0)]);
+        assert_eq!((empty.examined, empty.no_player_space), (1, 1));
+        assert!(empty.finding().is_none(), "nothing to be dark in");
+        assert!(!empty.is_refusal());
+        assert!(
+            empty
+                .line()
+                .contains("1 carr(y/ies) none and have nowhere in them to stand"),
+            "the escape is counted where a reader sees it: {}",
+            empty.line()
+        );
+
+        let floored = LightVerdict::of([("idiom-mirror", Some(&none), 1)]);
+        assert_eq!(floored.no_player_space, 0);
+        assert!(
+            floored.is_refusal(),
+            "one cell a body can stand in is one cell it can be dark in"
+        );
+        assert_eq!(floored.finding().unwrap().code, "DW0894");
     }
 
     /// **The stairwell cut one course short, at the smallest scale that shows
