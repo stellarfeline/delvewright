@@ -234,22 +234,23 @@ fn emit_functions(placed: &[Placed]) -> Vec<(String, String)> {
         "gamerule immediate_respawn true".to_string(),
         "scoreboard players set #t admit.sys 0".to_string(),
     ];
-    // forceload each cell + the spawn platform (chunk regions).
-    load.push(format!(
-        "forceload add {} {} {} {}",
+    // forceload each cell + the spawn platform (chunk regions). Through the same
+    // one helper the campaign compiler emits its spans with — an admission cell is
+    // small, but a second site that writes the command by hand is a second site
+    // that can name more chunks than one command may.
+    load.extend(crate::compiler::commands::forceload_add_lines(
         spawn[0] - 2,
         spawn[2] - 2,
         spawn[0] + 2,
-        spawn[2] + 2
+        spawn[2] + 2,
     ));
     for p in placed {
         let [ox, _, oz] = p.origin;
-        load.push(format!(
-            "forceload add {} {} {} {}",
+        load.extend(crate::compiler::commands::forceload_add_lines(
             ox,
             oz,
             ox + p.cand.size[0] - 1,
-            oz + p.cand.size[2] - 1
+            oz + p.cand.size[2] - 1,
         ));
     }
     fns.push(("load".to_string(), lines(&load)));

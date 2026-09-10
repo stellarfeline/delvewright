@@ -105,12 +105,29 @@ Methodology; CI enforces the DW-code subset — see `tools/check-dw-codes.py`).
   function down with it, silently. The tree already carries the fact, so the
   compiler enforces it rather than leaving it to folklore; the party form of
   `damage-players` is `execute as @a[…] run damage @s …`.
-  **One value-level exception**: an SNBT integer literal in a
+  **Value-level exceptions** — bounds the command's own handler keeps *after* the
+  parse has succeeded, which the tree cannot express because Brigadier describes
+  only how a line parses. Such a line passes the tree and is refused by the
+  running server, and because a refused command is not a parse failure the rest
+  of the function still runs and nothing reads the reply. Each such bound that
+  has cost something is one named function in `compiler::commands`; there are two.
+  (1) An SNBT integer literal in a
   `key:value` position whose suffix cannot hold it — NBT bytes and shorts are
   signed, so `text_opacity:255b` is structurally flawless and unparseable, and
   1.21.11 answers "Failed to parse number: Value out of range" by dropping the
   entire function. Quoted spans are skipped, and a bare standalone number is not
-  examined, so it cannot mistake prose for a value. `delvec prefab`'s gallery is the
+  examined, so it cannot mistake prose for a value.
+  (2) A `forceload` rectangle naming more than `FORCELOAD_MAX_CHUNKS` (256)
+  chunks. `forceload add -76 -76 176 176` is a perfectly good `forceload add
+  <column_pos> <column_pos>`; 1.21.11 answers "Too many chunks in the specified
+  area (maximum 256, but specified 289)" and marks **nothing**, so the world
+  boots with the placement's chunks unloaded while every static gate stays green.
+  The ceiling is on the **area**, not on a side — a 1 × 257 strip is refused too
+  — and `forceload remove` over a rectangle goes to the same handler; both facts
+  were read off the pinned server rather than a wiki. Judged only where all four
+  coordinates are plain integers, so a relative coordinate is left to the server
+  like every other value. The emission side is under **forceload lifecycle**
+  below. `delvec prefab`'s gallery is the
   second consumer of this validator: it emits `.mcfunction` into a datapack
   exactly as `delvec` does, so it now runs the same tree over its own output
   before writing anything (`gallery::validate_functions`, `DW0760`) rather than
@@ -3784,6 +3801,21 @@ world. Invariants:
   every other write in the function. **Piece forceloads are never released** —
   the gameplay tick machinery (gate fills, wave spawns, checkpoint and trap block
   reads) keeps addressing those chunks for the whole session.
+  **A span is split, never refused.** Every `forceload add` this compiler emits —
+  piece bboxes, edit AABBs and the gallery admission pack's own cells alike —
+  goes out through `commands::forceload_add_lines`, and nothing writes the
+  command by hand. A span inside `FORCELOAD_MAX_CHUNKS` (256) emits the single
+  line it always did, coordinates untouched, so a campaign that never reached the
+  ceiling is byte-identical; a span past it is cut into a grid of
+  `ceil(w/16) × ceil(h/16)` tiles, each axis into runs of as near equal length as
+  they divide, so no tile exceeds 16 chunks on a side and none is a one-chunk
+  sliver beside a full one. Splitting rather than refusing is the ruling: the
+  span is **derived** — a piece's own bbox, or the ring a horizon grows around
+  one, which for a 101 × 101 piece under `valley` is 17 × 17 = 289 chunks — so a
+  refusal would hand a creator a legal piece under a legal horizon and no act
+  that clears it, while vanilla caps only what *one command* may name and never
+  how many chunks a world may hold. The command validator's forceload exception
+  above is what makes a site that forgets the helper impossible to ship.
 
 ---
 
