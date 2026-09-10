@@ -2345,17 +2345,6 @@
       "triage": "capability"
     },
     {
-      "applies_when": {
-        "files": [
-          "site-plan.json"
-        ],
-        "kind": "dsl",
-        "match": {
-          "has": [
-            "node"
-          ]
-        }
-      },
       "binding": {
         "glob": "walk-record.json",
         "kind": "campaign"
@@ -2368,7 +2357,7 @@
       "finding": "the walk record's freshness key was taken over the canonical bytes of the site plan and the layout graph, and the canonical writer stamps the engine's own format number into every document it writes, so each format bump re-opened DW0841 on every walked campaign at once with no box, seam or edge moved; the repair the refusal prescribes is to walk the whole again, which cannot be performed honestly for a change that cannot have changed the walk, and what happened instead was the record edited by hand twice and reverted once, leaving the gate red",
       "general_form": "the walk record's freshness key is over what the walk depends on and nothing else — the derived grid (every placed box's corner, extent, floor and headroom, every placed seam's cells, crossing and rise, the whole's volumes and region) and the ways a body moves by (every edge whole, the entry, the goal, the critical path, the beats, the stations) — so a dsl_version bump, a reformat, a reworded note or a renamed intent leaves both halves unchanged and a box moved one block moves the grid; and the hashes the refusal tells the author to copy are printed at validation, refused runs included, so the remedy is reachable from the state that needs it",
       "id": "gal-01",
-      "note": "Reproduced before repair: with the engine at 0.21.0 and the gallery's 34 documents bumped with it, `delvec build site-plan` exited 1 at DW0841 and tools/gallery-build.py refused, so no committed act could produce the tree a re-walk needs. Denominator: one walk-record.json per walked campaign, and 3 of 3 records in this tree (the site-plan overlay and the two probes that carry one) were re-keyed by the instrument with their verdicts unchanged.",
+      "note": "Reproduced before repair: with the engine at 0.21.0 and the gallery's 34 documents bumped with it, `delvec build site-plan` exited 1 at DW0841 and tools/gallery-build.py refused, so no committed act could produce the tree a re-walk needs. Denominator: one walk-record.json per walked campaign, and 3 of 3 records in this tree (the site-plan overlay and the two probes that carry one) were re-keyed by the instrument with their verdicts unchanged. This row declares NO `applies_when`, and that is the measurement rather than the absence of one: the binding is a campaign-source glob with no `contains`, so the file IS the object and the probe is self-measuring, exactly the shape `probe_is_self_measuring` recognises. The precondition it used to declare — `site-plan.json` has a node — counts a population one step behind nothing: the objects that carry this defect are walk records, and a site plan with nodes cannot carry it until one exists. That precondition therefore reported UNBOUND on every site-plan campaign's FIRST staging, which is the staging whose whole purpose is the walk that writes the record, and `references/walk.md` forbids writing the record before that walk — a red no creator could clear, on a gate whose only route through was the deliberate override. Measured with the precondition removed: 0 binding, 0 precondition, OUT-OF-STAGE on a pre-detail blockout and INAPPLICABLE elsewhere, and BOUND from the second staging onward, when a record exists for DW0841's key to be over.",
       "round": null,
       "triage": "capability"
     },

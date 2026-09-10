@@ -190,6 +190,13 @@ again in `tools/tests/test_staging_gate.py`.
 build" is a question about emitted artifacts, and a ledger checked against
 source alone would be exactly the compile-time-only green rule 1 warns about.
 
+`--report` and `--json` are REFUSED inside `--build`. This gate does not write
+into the tree it measures — see *An instrument does not write into what it
+measures* below. `<build>/staging-admission.json` is the one artifact that has
+to live there and `--admit` may not rename it; and every artifact this gate
+writes carries a marker, so no build-tree probe counts one wherever it sits or
+whatever it is called. The count skipped is stated on every report.
+
 Exit 0 = every class this build CONTAINS carries a live, binding check (plus
 any justified exemptions, and the counted classes it contains none of).
 Exit 1 = at least one present class does not — the build is NOT stageable.
@@ -235,6 +242,50 @@ PASS_VERDICTS = ("BOUND",)
 
 VALID_DISPOSITIONS = ("no-machine-form", "not-a-defect")
 MIN_JUSTIFICATION = 24  # chars — a justification has to say something
+
+# ---------------------------------------------------------------------------
+# An instrument does not write into what it measures
+# ---------------------------------------------------------------------------
+#
+# The report describes the ledger, so it prints the very strings the ledger's
+# own probes search the build tree for. Written INSIDE `--build` — which is
+# what the staging surface did — it became, from the second run onward, a file
+# that satisfied the probe it was describing.
+#
+# Measured on one fixed tree with one variable moved both ways: a freshly built
+# tree of 120 files reported 3 red; the same tree plus the gate's own report,
+# 121 files, reported 4, the added row being the one whose probe globs `**` for
+# a block id the report names while describing it; the report removed, 120
+# files, 3 again. `grep -rl` for that string over the 121 files returned
+# exactly the report.
+#
+# The consequence was not a wrong number, it was a moving one: the run that
+# prints `N` and the run handed `--acknowledge-red N` disagreed by one, so the
+# anti-habit guard on the override refused every time the documented sequence
+# was followed. That guard is correct and is not touched. This is the other
+# half.
+#
+# The repair is two rules, and they answer different questions.
+#
+# WHERE IT MAY BE WRITTEN. `--report` and `--json` are refused inside `--build`,
+# at the flag, where the mistake is made. The admission token is the one gate
+# artifact that MUST live there — `validation/staging-admission.sh` reads it out
+# of the served tree — so it lives at exactly one name, and `--admit` may not
+# put it anywhere else inside the tree.
+#
+# WHAT MAY BE COUNTED. Every artifact this gate writes carries the marker below
+# in its first line, and no build-tree probe counts a file that carries it —
+# whatever it is called, and however it got there. The refusal is why one should
+# never be inside the tree; this is why a copied one still cannot move a count,
+# which is the perturbation the repair has to survive.
+ADMISSION_NAME = "staging-admission.json"
+GATE_ARTIFACT_MARKER = "delvewright-staging-gate-artifact"
+GATE_ARTIFACT_KEY = "_delvewright-staging-gate-artifact"
+# Bytes of a candidate read while looking for the marker. Every artifact this
+# gate writes carries it in the first line: the report opens with an HTML
+# comment, and both JSON documents are written `sort_keys=True` with a key
+# beginning `_`, which sorts before every other key either of them holds.
+GATE_MARKER_WINDOW = 4096
 
 # Sentinel for "this cache has not been filled yet", distinct from a cached
 # `None` (which means "the build tree cannot answer").
@@ -573,6 +624,25 @@ def _absent_stage_docs(files: list, pred: dict, subj: Subject) -> tuple[int | No
     )
 
 
+def is_gate_artifact(p: pathlib.Path) -> bool:
+    """Did this gate write this file?
+
+    Asked of the bytes, never of the path: the defect being closed is a gate
+    artifact standing inside the tree the gate measures, and the shape it took
+    was a REPORT, whose name the caller chooses. A rule keyed to the admission
+    token's name would have skipped the one artifact that was never the
+    problem. Only the first [`GATE_MARKER_WINDOW`] bytes are read, which is
+    where every artifact written below carries the marker, so this costs a
+    header read per candidate rather than a second pass over the tree.
+    """
+    try:
+        with p.open("rb") as fh:
+            head = fh.read(GATE_MARKER_WINDOW)
+    except OSError:
+        return False
+    return GATE_ARTIFACT_MARKER.encode() in head
+
+
 def glob_paths(root: pathlib.Path, pattern: str):
     """Every path under `root` whose root-relative posix name matches `pattern`.
 
@@ -635,8 +705,16 @@ def probe(binding: dict, subj: Subject) -> tuple[int | None, str]:
         rx = re.compile(contains) if contains else None
         hits = 0
         matched = 0
+        # The gate's own artifacts are not evidence about the build. Recognised
+        # by the marker they carry rather than by where they sit, so a report
+        # copied into the tree by hand is skipped exactly as the token is. The
+        # number skipped is reported, never silent.
+        skipped = 0
         for p in glob_paths(root, pattern):
             if not p.is_file():
+                continue
+            if kind == "out" and is_gate_artifact(p):
+                skipped += 1
                 continue
             matched += 1
             if rx is None:
@@ -650,6 +728,8 @@ def probe(binding: dict, subj: Subject) -> tuple[int | None, str]:
         detail = f"{hits} file(s) under {pattern}"
         if rx is not None:
             detail += f" matching /{contains}/ (of {matched} candidates)"
+        if skipped:
+            detail += f", {skipped} gate artifact(s) excluded"
         return hits, detail
 
     return None, f"unknown binding kind `{kind}`"
@@ -1096,6 +1176,10 @@ def render_report(doc: dict, subj: Subject, results: list[dict], strict: bool) -
         reds = reds + exempt
 
     L = []
+    # First line, so `is_gate_artifact` finds it in one header read. A file
+    # carrying this is this gate's own output and is never evidence about a
+    # build — see *An instrument does not write into what it measures*.
+    L.append(f"<!-- {GATE_ARTIFACT_MARKER} -->")
     L.append(f"# Staging gate — `{subj.name}`")
     L.append("")
     L.append(f"- Campaign source: `{subj.campaign}`")
@@ -1110,6 +1194,14 @@ def render_report(doc: dict, subj: Subject, results: list[dict], strict: bool) -
         else "assembled (this build claims its content is complete)"
     )
     L.append(f"- Subject stage: {stage}")
+    n_excl = sum(
+        1 for p in sorted(subj.build.rglob("*")) if p.is_file() and is_gate_artifact(p)
+    )
+    L.append(
+        f"- Build-tree probes: {n_excl} gate artifact(s) excluded (recognised by "
+        "the marker every one of them carries, never by name; a report is "
+        "refused inside the tree it measures)"
+    )
     L.append("")
     L.append("## Verdict")
     L.append("")
@@ -1236,6 +1328,21 @@ def esc(s: str) -> str:
     return str(s).replace("|", "\\|").replace("\n", " ")
 
 
+def _inside(path: pathlib.Path, root: pathlib.Path) -> bool:
+    """Does `path` resolve to somewhere under `root`?
+
+    Resolved on both sides, so a symlink, a `..` or a relative spelling cannot
+    smuggle a gate artifact into the measured tree under a name that does not
+    look like one. `Path.resolve()` does not require the file to exist, which
+    matters: nothing has been written yet when this is asked.
+    """
+    try:
+        path.resolve().relative_to(root.resolve())
+    except ValueError:
+        return False
+    return True
+
+
 def build_fingerprint(build: pathlib.Path) -> str | None:
     """This build tree's identity, for an admission token to bind to.
 
@@ -1269,6 +1376,10 @@ def write_admission(
     oos = [r for r in results if r["verdict"] == "OUT-OF-STAGE"]
     inap = [r for r in results if r["verdict"] == "INAPPLICABLE"]
     doc = {
+        # Sorts first under `sort_keys`, so the marker is inside the header read
+        # `is_gate_artifact` makes. The token is the one gate artifact that has
+        # to live inside the measured tree, and it is not evidence about it.
+        GATE_ARTIFACT_KEY: True,
         "schema": 1,
         "campaign": subj.name,
         "build_fingerprint": fingerprint,
@@ -1349,6 +1460,35 @@ def main() -> int:
     if not args.build.is_dir():
         print(f"staging-gate: no build tree {args.build}", file=sys.stderr)
         return 2
+    for flag, dest in (
+        ("--report", args.report),
+        ("--json", args.json_out),
+        ("--admit", args.admit),
+    ):
+        if dest is None or not _inside(dest, args.build):
+            continue
+        if flag == "--admit" and dest.resolve() == (args.build / ADMISSION_NAME).resolve():
+            continue
+        print(
+            f"staging-gate: {flag} {dest} is INSIDE the build tree this gate "
+            "measures — refused.",
+            file=sys.stderr,
+        )
+        print(
+            "  This report names every ledger row, which means it prints the "
+            "strings the ledger's own probes search this tree for. A run after "
+            "it lands counts it as evidence about the build, and the red count "
+            "moves between the run that prints N and the run handed "
+            "--acknowledge-red N.",
+            file=sys.stderr,
+        )
+        print(
+            f"  Write it beside the tree instead, e.g. {args.build.name}.gate/"
+            f"{dest.name}. The only gate artifact this tree may hold is "
+            f"{ADMISSION_NAME}, at the build root.",
+            file=sys.stderr,
+        )
+        return 2
     try:
         doc = load_ledger(args.ledger)
     except (OSError, ValueError, json.JSONDecodeError) as e:
@@ -1373,7 +1513,13 @@ def main() -> int:
         args.json_out.parent.mkdir(parents=True, exist_ok=True)
         args.json_out.write_text(
             json.dumps(
-                {"campaign": subj.name, "findings": results}, indent=2, sort_keys=True
+                {
+                    GATE_ARTIFACT_KEY: True,
+                    "campaign": subj.name,
+                    "findings": results,
+                },
+                indent=2,
+                sort_keys=True,
             )
             + "\n",
             encoding="utf-8",

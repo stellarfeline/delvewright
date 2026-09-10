@@ -31,7 +31,7 @@ fn hw(name: &str) -> String {
 fn quests_doc(extra: &str, talk_effects: &str) -> String {
     format!(
         r#"{{
-  "dsl_version": "0.23.0",
+  "dsl_version": "0.24.0",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {{
@@ -65,7 +65,7 @@ fn quests_doc(extra: &str, talk_effects: &str) -> String {
 /// rule being narrowed to fit it. West rather than east because an endpoint snap
 /// breaks ties lexicographically and picks `[3, 65, 8]` over `[7, 65, 8]`.
 const SIDE_DOOR: &str = r#"{
-  "dsl_version": "0.23.0",
+  "dsl_version": "0.24.0",
   "campaign_id": "hello-world",
   "stage": "world-edits",
   "content": {
@@ -120,7 +120,7 @@ const SIDE_DOOR: &str = r#"{
 /// (`DW0891`, spec-0062). So the band `z = 5..7` of the keep's floor is magma,
 /// and the volume that catches it declares so.
 const BURNING_THRESHOLD: &str = r#"{
-  "dsl_version": "0.23.0",
+  "dsl_version": "0.24.0",
   "campaign_id": "hello-world",
   "stage": "world-edits",
   "content": {

@@ -82,7 +82,7 @@ CHECKSUMS = "SHA256SUMS"
 # platforms out of five and says nothing on the fifth.
 ROW_RE = re.compile(r"^(?P<digest>[0-9a-f]{64})[ \t]+\*?(?P<name>\S.*?)[ \t]*$")
 
-# `delvec 1.4.0, dsl 0.23.0, mc 1.21.11` — the number is the first field.
+# `delvec 1.4.0, dsl 0.24.0, mc 1.21.11` — the number is the first field.
 VERSION_RE = re.compile(r"^delvec\s+(?P<version>\d+\.\d+\.\d+)\b")
 
 # `platform.machine()` says several things for one architecture, and which one

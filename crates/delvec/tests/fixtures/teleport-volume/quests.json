@@ -166,6 +166,6 @@
       }
     ]
   },
-  "dsl_version": "0.23.0",
+  "dsl_version": "0.24.0",
   "stage": "quests"
 }

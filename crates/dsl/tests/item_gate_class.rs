@@ -32,7 +32,7 @@ use delvewright_dsl::{RawCampaign, check_campaign};
 
 /// Two classes, only one of which carries `stripped_oak_log`.
 const TWO_CLASSES_ONE_CARRIER: &str = r#"{
-  "dsl_version": "0.23.0",
+  "dsl_version": "0.24.0",
   "campaign_id": "hello-world",
   "stage": "classes",
   "content": {
@@ -58,7 +58,7 @@ const TWO_CLASSES_ONE_CARRIER: &str = r#"{
 
 /// The same two classes, both carrying the gated item.
 const TWO_CLASSES_BOTH_CARRY: &str = r#"{
-  "dsl_version": "0.23.0",
+  "dsl_version": "0.24.0",
   "campaign_id": "hello-world",
   "stage": "classes",
   "content": {
@@ -139,7 +139,7 @@ fn dw0849(diags: &[delvewright_dsl::Diagnostic]) -> Vec<&delvewright_dsl::Diagno
 fn an_item_only_one_class_carries_is_refused() {
     let diags = check_campaign(&campaign(
         TWO_CLASSES_ONE_CARRIER,
-        quests("0.23.0", "", "", ""),
+        quests("0.24.0", "", "", ""),
     ));
     let hits = dw0849(&diags);
     assert_eq!(
@@ -174,7 +174,7 @@ fn an_item_only_one_class_carries_is_refused() {
 fn an_item_nothing_supplies_at_all_is_refused_and_says_so() {
     let no_carrier =
         TWO_CLASSES_ONE_CARRIER.replace("minecraft:stripped_oak_log", "minecraft:stick");
-    let diags = check_campaign(&campaign(&no_carrier, quests("0.23.0", "", "", "")));
+    let diags = check_campaign(&campaign(&no_carrier, quests("0.24.0", "", "", "")));
     let hits = dw0849(&diags);
     assert_eq!(
         hits.len(),
@@ -195,7 +195,7 @@ fn an_item_nothing_supplies_at_all_is_refused_and_says_so() {
 fn an_item_every_class_carries_is_clean() {
     let diags = check_campaign(&campaign(
         TWO_CLASSES_BOTH_CARRY,
-        quests("0.23.0", "", "", ""),
+        quests("0.24.0", "", "", ""),
     ));
     assert!(
         dw0849(&diags).is_empty(),
@@ -211,7 +211,7 @@ fn a_collect_objective_discharges_the_gate() {
             "count": 1, "anchor": "anchor/exit", "after": ["obj/talk"] }"#;
     let diags = check_campaign(&campaign(
         TWO_CLASSES_ONE_CARRIER,
-        quests("0.23.0", collect, "", ""),
+        quests("0.24.0", collect, "", ""),
     ));
     assert!(
         dw0849(&diags).is_empty(),
@@ -226,7 +226,7 @@ fn a_give_item_effect_discharges_the_gate() {
           { "type": "give-item", "item": "minecraft:stripped_oak_log", "count": 1 }"#;
     let diags = check_campaign(&campaign(
         TWO_CLASSES_ONE_CARRIER,
-        quests("0.23.0", "", give, ""),
+        quests("0.24.0", "", give, ""),
     ));
     assert!(
         dw0849(&diags).is_empty(),
@@ -245,7 +245,7 @@ fn a_loot_container_discharges_the_gate() {
     ]"#;
     let diags = check_campaign(&campaign(
         TWO_CLASSES_ONE_CARRIER,
-        quests("0.23.0", "", "", loot),
+        quests("0.24.0", "", "", loot),
     ));
     assert!(
         dw0849(&diags).is_empty(),
@@ -258,7 +258,7 @@ fn a_loot_container_discharges_the_gate() {
 /// what makes that distinguishable from a check that stopped working.
 #[test]
 fn a_campaign_with_no_item_gate_binds_zero_and_says_nothing() {
-    let ungated = quests("0.23.0", "", "", "")
+    let ungated = quests("0.24.0", "", "", "")
         .replace(r#", "requires_item": "minecraft:stripped_oak_log""#, "");
     assert!(
         !ungated.contains("requires_item"),

@@ -285,7 +285,7 @@ fn write_detail_plan(dir: &Path, details: &[serde_json::Value]) {
             "palette": { "role/wall": "minecraft:stone_bricks", "role/floor": "minecraft:tuff" },
             "details": details,
         },
-        "dsl_version": "0.23.0",
+        "dsl_version": "0.24.0",
         "stage": "detail-plan",
     });
     std::fs::write(
@@ -759,6 +759,92 @@ fn dw0841_refuses_a_record_whose_verdict_is_findings() {
         e[0].message.contains("the hub reads as a corridor"),
         "the walker's own words travel to the refusal: {}",
         e[0].message
+    );
+}
+
+/// **The record can say that nobody walked, and the gate refuses on the FIELD.**
+///
+/// The closed set held two values and both opened *"the whole was walked"*, so
+/// every legal record asserted a walk. A build stood up and taken down, a walk
+/// abandoned, a walk cut short — none of those had a legal spelling, and the
+/// truth could only go into `findings[]`, which is free prose no check reads.
+/// Measured before the third value existed: a record whose first finding read
+/// `THIS IS NOT A WALK RECORD — NO HUMAN WALKED THIS BUILD` was quoted back
+/// verbatim by the refusal and refused on `verdict: "findings"`; the same file
+/// with `verdict: "passed"` — the value `references/detail.md` taught — was
+/// admitted, and detail work would have begun on a whole nobody had stood in,
+/// carrying that sentence along unread.
+///
+/// So the assertion below is not that the message is nice. It is that the fact
+/// *nobody walked this* now lives in a FIELD, and that the field is what the
+/// gate reads: the prose here says nothing of the kind, and the refusal still
+/// names the absence.
+#[test]
+fn dw0841_refuses_a_record_that_says_nobody_walked() {
+    let tmp = tempdir("dw0841-unwalked");
+    let d = detailed(&tmp, &["node/exit"]);
+    common::patch_file(&d.campaign.join("walk-record.json"), |v| {
+        v["verdict"] = serde_json::json!("unwalked");
+        v["findings"] = serde_json::json!([
+            { "subject": "node/hall", "note": "the hub reads as a corridor" }
+        ]);
+    });
+    let (diags, _) = check_at(&d);
+    let e = errors(&diags);
+    assert_eq!(e.len(), 1, "{:?}", codes(&diags));
+    assert_eq!(
+        e[0].code, "DW0841",
+        "one class — detail work is not unlocked by a passed walk of this whole \
+         — and a code per enum value would be a code per value"
+    );
+    assert!(
+        e[0].message.contains("unwalked") && e[0].message.contains("Nobody has walked"),
+        "the refusal names the value it read and what that value means: {}",
+        e[0].message
+    );
+    assert!(
+        !e[0].message.contains("Answer the findings"),
+        "and it does NOT prescribe the `findings` remedy, which would send an \
+         author to repair a whole nobody has judged: {}",
+        e[0].message
+    );
+
+    // The perturbation only this repair can survive: the same file, the same
+    // prose, the one value moved to the one that admits detail.
+    common::patch_file(&d.campaign.join("walk-record.json"), |v| {
+        v["verdict"] = serde_json::json!("passed");
+    });
+    let (diags, _) = check_at(&d);
+    assert!(
+        !codes(&diags).iter().any(|c| c == "DW0841"),
+        "and only `passed` opens it, so the verdict is doing the work: {:?}",
+        codes(&diags)
+    );
+}
+
+/// **The exported schema offers the third value.** `delvec schema --stage
+/// walk-record` is what the authoring step opens, so a value the type has and
+/// the schema does not is a value nobody can find.
+#[test]
+fn the_walk_record_schema_offers_unwalked() {
+    let s = serde_json::to_string(&detail::walk_record_schema()).expect("schema");
+    let v: serde_json::Value = serde_json::from_str(&s).expect("json");
+    let en = v["$defs"]["Verdict"]["oneOf"]
+        .as_array()
+        .expect("Verdict is a oneOf of const-valued variants");
+    let values: Vec<String> = en
+        .iter()
+        .filter_map(|b| b["const"].as_str().map(str::to_string))
+        .collect();
+    assert_eq!(
+        values,
+        vec!["passed", "findings", "unwalked"],
+        "the closed set the author chooses from"
+    );
+    assert!(
+        s.contains("NOBODY WALKED IT"),
+        "and the schema's own description says which one to reach for when no \
+         walk happened"
     );
 }
 
@@ -1347,7 +1433,7 @@ fn dw0842_refuses_a_gate_station_bound_to_a_cell() {
     // Declare a gate station on the bound place and bind it to `seat0`, which
     // is a point: the piece has a cell where the campaign promised a volume.
     common::patch_file(&d.campaign.join("layout-graph.json"), |v| {
-        v["dsl_version"] = serde_json::json!("0.23.0");
+        v["dsl_version"] = serde_json::json!("0.24.0");
         for n in v["content"]["nodes"].as_array_mut().unwrap() {
             if n["id"] == "node/exit" {
                 n["stations"] = serde_json::json!([
