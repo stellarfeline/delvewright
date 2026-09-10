@@ -7,6 +7,17 @@ import { BotDeathError } from "../src/death.ts";
 import type { AssertCompleteStep } from "../src/critical-path.ts";
 import { lethalTrialFailures, parseDeathPlan } from "../src/death-loop.ts";
 
+/** The `dsl_version` an emitted plan carries.
+ *
+ * The harness never compares it to anything: `death-loop.ts` and `combat.ts`
+ * require a non-empty string and pass it through, and nothing downstream reads
+ * it. So these fixtures name a number that is deliberately NOT the engine's —
+ * a bump moves one file, and this one is not it, and a fixture that started
+ * agreeing with the engine would be claiming a coupling the harness does not
+ * have.
+ */
+const PLAN_VERSION = "0.0.0-fixture";
+
 // Minimal Vec3 stand-in with the methods the executor reads off bot.entity.position.
 class FakeVec3 {
   readonly x: number;
@@ -3375,7 +3386,7 @@ class DrivableFakeBot extends FakeBot {
 function oneVolumePlan(): ReturnType<typeof parseDeathPlan> {
   return parseDeathPlan({
     format_version: 2,
-    version: "0.24.0",
+    version: PLAN_VERSION,
     campaign_id: "probe",
     lethal_volumes: [
       {
@@ -3408,7 +3419,7 @@ function oneVolumePlan(): ReturnType<typeof parseDeathPlan> {
 function westPitPlan(): ReturnType<typeof parseDeathPlan> {
   return parseDeathPlan({
     format_version: 2,
-    version: "0.24.0",
+    version: PLAN_VERSION,
     campaign_id: "gallery",
     lethal_volumes: [
       {
@@ -3628,7 +3639,7 @@ class GatedApproachBot extends DrivableFakeBot {
 function westPitPlanWithLip(): ReturnType<typeof parseDeathPlan> {
   return parseDeathPlan({
     format_version: 2,
-    version: "0.24.0",
+    version: PLAN_VERSION,
     campaign_id: "gallery",
     lethal_volumes: [
       {
@@ -3674,7 +3685,7 @@ function westPitPlanWithLip(): ReturnType<typeof parseDeathPlan> {
 
 /** The gallery's three doors, as `delvec` exports them, on a leg that goes elsewhere. */
 const GALLERY_DOORS = {
-  version: "0.24.0",
+  version: PLAN_VERSION,
   campaign_id: "gallery",
   timed_gates: [
     {

@@ -39,6 +39,14 @@ def gate():
 LIVE_CODE = "DW0100"
 
 
+# The staging gate RECORDS a campaign's declared `dsl_version` in its report and
+# compares it to nothing (`stage_versions` in tools/staging-gate.py). Every
+# fixture here therefore names a number chosen for the test rather than the
+# engine's, which is what the other literals in this file already do — a
+# `dsl_version` bump edits the engine and never this file.
+FIXTURE_DSL_VERSION = "0.10.0"
+
+
 def make_campaign(tmp_path, *, objectives, dsl_version="0.10.0"):
     """A minimal campaign source tree: one stage file with the given nodes."""
     d = tmp_path / "camp"
@@ -980,7 +988,7 @@ def dialogue_campaign(tmp_path, where, nodes):
     (d / "dialogue.json").write_text(
         json.dumps(
             {
-                "dsl_version": "0.24.0",
+                "dsl_version": FIXTURE_DSL_VERSION,
                 "stage": "dialogue",
                 "content": {"dialogues": [{"npc": "npc/a", "root": "dlg/r", "nodes": nodes}]},
             }
@@ -1035,7 +1043,7 @@ def test_the_live_cast_precondition_binds_on_a_declared_quest(gate, tmp_path):
         d.mkdir(parents=True, exist_ok=True)
         (d / "quests.json").write_text(
             json.dumps(
-                {"dsl_version": "0.24.0", "stage": 5, "content": {"quests": quest_nodes}}
+                {"dsl_version": FIXTURE_DSL_VERSION, "stage": 5, "content": {"quests": quest_nodes}}
             )
         )
         return d
