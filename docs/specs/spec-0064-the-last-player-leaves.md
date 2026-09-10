@@ -108,6 +108,23 @@ direction: a lagging server with a party inside it is never reset.
    The two keys do **not** enter the compiler's pinned set: they are operator
    transport, not world state, which is the line `compiler.md` already draws.
 
+**What the window cannot see, and it was measured rather than reasoned about.**
+The daemon's state machine only leaves `II` (initial idle) when a *reading* is
+non-zero, and this spec disables the initial-idle stop (§5). So a presence that
+falls entirely between two readings — a visitor who joins and leaves inside one
+`AUTOSTOP_PERIOD` — is never seen, the machine stays in `II`, and no reset
+follows. Reproduced under a plain `docker run` with `DELVE_RESET_WHEN_EMPTY=60`:
+a visitor joined, killed the cast, set a score and left within about fifteen
+seconds; four minutes later the delve had not been rebuilt, and the world came
+back only when the container was restarted. What the next arrival can see of such
+a visit is bounded by what fits inside one reading: a player-data file and a
+`usercache.json` entry under a UUID that is not theirs. The residual is stated
+rather than engineered away, because both alternatives are worse — arming the
+initial-idle stop rebuilds an unjoined delve every `W` seconds forever, and a
+second observer inside the image is a second mechanism for one rule. A host who
+wants it closed shortens nothing: the boot resets, so restarting the container
+does.
+
 **No new listener, and no private copy of the rejection rule.** The reading
 goes to the game port the delve already publishes; the stop is a signal to a
 process. Nothing inside the container issues a live command, so
