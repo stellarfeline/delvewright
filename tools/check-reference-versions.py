@@ -424,6 +424,19 @@ def write_claims(root: pathlib.Path, real_delvec: str, real_dsl: str, real_mc: s
         if crate.rust_version:
             text, n = _sub_group(text, README_RUST_RE, {1: crate.rust_version})
             moved += n
+        # The `[dependencies]` line naming the page's OWN crate. Rule 2 admits
+        # exactly one value there — the crate's current major.minor, cargo's
+        # caret convention — so it is a bound claim and `--write` can move it.
+        # It is here because the dry run of the next bump found it: everything
+        # else on the page moved and this one line did not, which made a
+        # published page the fourth file a bump edits by hand. A dependency on
+        # any OTHER crate is untouched; that number is not this build's.
+        text, n = _sub_group(
+            text,
+            re.compile(r"^" + re.escape(crate.name) + r'\s*=\s*"\^?(\d+\.\d+)"', re.M),
+            {1: ".".join(crate.version.split(".")[:2])},
+        )
+        moved += n
         crate.readme.write_text(text, encoding="utf-8")
     return moved
 

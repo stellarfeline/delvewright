@@ -244,6 +244,31 @@ def test_missing_dsl_version_constant_exits_2(gate):
     assert gate.main([]) == 2
 
 
+def test_write_moves_the_pages_own_dependency_requirement(gate):
+    """The dry run of the next bump found this one: everything else on the page
+    moved and the `[dependencies]` snippet did not, which made a published page
+    the fourth file a bump edits by hand. Rule 2 admits exactly one value there
+    — the crate's current major.minor — so it is a bound claim, not a guess."""
+    page = README_TEMPLATE.format(mc="1.21.11", prose_mc="1.21.11", dsl="0.19.0", rust="1.97.1")
+    page += '\n```toml\n[dependencies]\npublished-crate = "1.0"\n```\n'
+    assert run(gate, page_text=page) == 1, "a stale requirement for the page's own crate is red"
+    assert gate.main(["--write"]) == 0, "…and --write moves it, because rule 2 admits one value"
+    moved = (gate.REPO_ROOT / "crates" / "published" / "README.md").read_text(encoding="utf-8")
+    assert 'published-crate = "1.1"' in moved, moved
+
+
+def test_write_leaves_another_crates_number_alone(gate):
+    """A third-party requirement is not this build's number to move. It still
+    reds under rule 2 — nothing here knows what it should say — and `--write`
+    leaves it exactly as it found it."""
+    page = README_TEMPLATE.format(mc="1.21.11", prose_mc="1.21.11", dsl="0.19.0", rust="1.97.1")
+    page += '\n```toml\n[dependencies]\nsomeone-else = "0.3"\n```\n'
+    assert run(gate, page_text=page) == 1
+    assert gate.main(["--write"]) == 1
+    after = (gate.REPO_ROOT / "crates" / "published" / "README.md").read_text(encoding="utf-8")
+    assert 'someone-else = "0.3"' in after, after
+
+
 def test_write_moves_every_bound_claim_and_then_passes(gate):
     """`--write` is what makes these three documents SHAPE 2 rather than three
     more places a person retypes the number: a bump runs it, and the checking
