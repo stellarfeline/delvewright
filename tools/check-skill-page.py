@@ -1666,17 +1666,21 @@ def main(argv: list[str] | None = None) -> int:
     zero = [what for what, bound, _of in rep.bindings if bound == 0]
     for what, bound, of in rep.bindings:
         print(f"-- binding: {bound} of {of} {what}")
+    # Both verdicts, always, and the findings FIRST: a run that reported only
+    # "a binding of zero" and swallowed nine findings it already held told the
+    # reader less than it knew, which is the same defect as a gate that refuses
+    # without stating what it examined.
+    if rep.findings:
+        print(f"check-skill-page: FAIL — {len(rep.findings)} finding(s)", file=sys.stderr)
+        for finding in rep.findings:
+            print(f"  - {finding}", file=sys.stderr)
     if zero:
         print(
             f"check-skill-page: FAIL — a binding of zero on: {', '.join(zero)}. A "
             f"green that binds to nothing is vacuous, not a pass.",
             file=sys.stderr,
         )
-        return 1
-    if rep.findings:
-        print(f"check-skill-page: FAIL — {len(rep.findings)} finding(s)", file=sys.stderr)
-        for finding in rep.findings:
-            print(f"  - {finding}", file=sys.stderr)
+    if rep.findings or zero:
         return 1
     print(f"check-skill-page: ok — every rule held, against engine {rev}")
     return 0

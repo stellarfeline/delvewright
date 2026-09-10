@@ -465,6 +465,23 @@ def test_an_unreachable_pinned_engine_refuses_rather_than_judging_the_working_tr
     assert "cannot serve" in str(caught.value)
 
 
+def test_a_zero_binding_does_not_swallow_the_findings(mod, capsys, monkeypatch):
+    """Both verdicts, always. A run that reported only `a binding of zero` and
+    kept the findings it already held told the reader less than it knew — the
+    same defect as a gate that refuses without saying what it examined."""
+
+    def both(rep, *_args, **_kwargs):
+        rep.find("a finding the reader has to see")
+        rep.bind("thing(s) nothing bound to", 0, 3)
+
+    monkeypatch.setattr(mod, "materialise", lambda _rev, into: into)
+    monkeypatch.setattr(mod, "check", both)
+    assert mod.main([]) == 1
+    err = capsys.readouterr().err
+    assert "a finding the reader has to see" in err
+    assert "a binding of zero on: thing(s) nothing bound to" in err
+
+
 def test_the_cli_exits_zero_on_the_committed_tree():
     proc = subprocess.run(
         ["python3", str(GATE)], capture_output=True, text=True, cwd=str(REPO)
