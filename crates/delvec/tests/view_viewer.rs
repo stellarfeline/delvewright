@@ -911,3 +911,92 @@ fn the_showing_gate_states_both_of_its_bindings() {
         assert!(stderr.contains(probe), "{probe} missing from: {stderr}");
     }
 }
+
+/// **The GPU arms judge the piece before they look for a renderer.**
+///
+/// `delvec render piece` and `delvec render batch` resolve textures and
+/// initialise a GPU before they draw, and the showing gate used to sit after
+/// both — so on a machine with no client jar a creator was told *I could not
+/// find your textures*, which is true and useless, instead of *this piece was
+/// never measured*. The ordering is the whole value of the refusal: after the
+/// pack it costs a GPU init, and after the frames it costs a directory of PNGs
+/// the reviewer has to be told to ignore.
+///
+/// Asserted by pointing both arms at a deliberately absent texture path. No GPU
+/// and no client jar are needed to run this, which is the point: if the gate ever
+/// slides back behind `resolve_textures`, the exit code changes from `2`
+/// (`DW0894`) to `5` (renderer/textures) and this reddens.
+#[test]
+fn the_render_arms_refuse_an_unmeasured_piece_before_they_resolve_textures() {
+    let Some(src) = prefab("keep-alcove.nbt") else {
+        eprintln!("skip: no content symlink");
+        return;
+    };
+    let dir = tmp("render-order");
+    let nbt = dir.join("unmeasured.nbt");
+    std::fs::copy(&src, &nbt).unwrap();
+    // A whole document, because `batch` walks every `.json` in the directory to
+    // find the tile-set manifests: one with neither `structure` nor
+    // `structure_set` is refused as unreadable metadata before this gate is
+    // reached, which would make the assertion below pass for the wrong reason.
+    let size = delvec::compiler::view::nbt::parse_structure(&nbt)
+        .expect("the fixture parses")
+        .size;
+    std::fs::write(
+        nbt.with_extension("json"),
+        serde_json::to_string_pretty(&serde_json::json!({
+            "prefab_id": "prefab/unmeasured",
+            "anchors": {},
+            "structure": {
+                "file": "unmeasured.nbt",
+                "id": "unmeasured",
+                "size": size,
+                "data_version": 4671,
+            },
+            "lighting": { "profile": "unmeasured" },
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+    let absent = dir.join("no-such-client-jar");
+
+    for args in [
+        vec!["piece", nbt.to_str().unwrap()],
+        vec!["batch", dir.to_str().unwrap()],
+    ] {
+        let arm = args[0].to_string();
+        // **Every fallback closed, or this test only discriminates on a machine
+        // with no client jar.** `resolve_textures` tries `--textures`, then
+        // `$DELVEWRIGHT_CLIENT_JAR`, then `$HOME/.chunky/resources/minecraft.jar`
+        // — so on a developer's own machine it succeeds whatever `--textures`
+        // says, the run reaches the gate either way, and the assertion below
+        // passes for both orderings. Measured: with the gate deliberately moved
+        // behind `resolve_textures`, this test stayed green here and would have
+        // reddened only in CI. Pointing all three at the same absent path makes
+        // the ordering the only thing that decides the exit code, on every
+        // machine.
+        let r = Command::new(BIN)
+            .arg("render")
+            .arg("--textures")
+            .arg(&absent)
+            .args(&args)
+            .arg("-o")
+            .arg(dir.join("shots"))
+            .env("DELVEWRIGHT_CLIENT_JAR", &absent)
+            .env("HOME", &dir)
+            .output()
+            .unwrap();
+        let stderr = String::from_utf8_lossy(&r.stderr);
+        assert_eq!(
+            r.status.code(),
+            Some(2),
+            "`render {arm}` must refuse on the piece (exit 2), not on the missing \
+             textures (exit 5): {stderr}"
+        );
+        assert!(stderr.contains("DW0894"), "`render {arm}`: {stderr}");
+        assert!(
+            !stderr.contains("DW0723"),
+            "`render {arm}` looked for a renderer before judging the piece: {stderr}"
+        );
+    }
+}
