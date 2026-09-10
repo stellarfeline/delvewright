@@ -277,22 +277,25 @@ impl Size {
 
 /// Where the leftover blocks of a relative split go.
 ///
-/// Upstream declares these four modes but implements only the truncating one:
-/// `make_split` computes `int(reltotal/relsizes)` and silently drops the
-/// remainder, so the children of a split need not cover their parent. We keep
-/// [`Rounding::Truncate`] bit-compatible with that and give the other three the
-/// behaviour their names require, so a program can ask for an exact cover.
+/// **A split's pieces cover its parent exactly.** Upstream declared four modes
+/// and implemented only a truncating one: `make_split` computed
+/// `int(reltotal/relsizes)` and dropped the indivisible remainder, so the
+/// children of a split need not cover their parent and the far end of the axis
+/// was simply never written. That hole is not addressable — no child owns it,
+/// so nothing can fill it, light it or seal it — and it passes every gate,
+/// because a cell nobody wrote is a cell nobody examines. There is therefore no
+/// mode that drops it: the three below only choose *where* it lands.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Rounding {
-    /// Drop the remainder; the split may leave a gap at the far end.
-    #[default]
-    Truncate,
     /// Give the remainder to the earliest relative pieces.
     Start,
     /// Give the remainder to the latest relative pieces.
     End,
-    /// Give the remainder to the middle relative pieces.
+    /// Give the remainder to the middle relative pieces. The default: a
+    /// pattern written symmetrically stays as near symmetric as the extent
+    /// allows.
+    #[default]
     Middle,
 }
 
@@ -422,9 +425,11 @@ pub struct Split {
     pub axis: Axis,
     /// The piece pattern, in order.
     pub sizes: Vec<Size>,
-    /// Where leftover blocks go.
-    #[serde(default, skip_serializing_if = "is_default")]
-    pub rounding: Rounding,
+    /// Where leftover blocks go, when the author has said. `None` is
+    /// [`Rounding::default`]; the distinction is what lets a `rounding` on a
+    /// split with nothing to round be refused rather than ignored.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rounding: Option<Rounding>,
     /// Repeat the pattern until the axis is consumed, clamping the last piece.
     #[serde(default, skip_serializing_if = "is_false")]
     pub repeat: bool,
@@ -435,6 +440,14 @@ pub struct Split {
     /// when a `repeat` split produces more pieces than children — upstream's
     /// `while items: void(); fill()` idiom.
     pub children: Vec<Node>,
+}
+
+impl Split {
+    /// The rounding this split is laid out under: what the author wrote, or
+    /// the default when they wrote nothing.
+    pub fn rounding_mode(&self) -> Rounding {
+        self.rounding.unwrap_or_default()
+    }
 }
 
 fn is_default<T: Default + PartialEq>(v: &T) -> bool {
@@ -1532,8 +1545,8 @@ pub enum ProgramError {
         /// The rule (or `"palette:<role>"`).
         symbol: String,
     },
-    /// `Rounding` other than `Truncate` on a split with no relative pieces has
-    /// nowhere to put the remainder.
+    /// A `rounding` written on a split with no relative pieces has nowhere to
+    /// put the remainder.
     RoundingWithoutRelative {
         /// The rule.
         symbol: String,
@@ -1709,7 +1722,7 @@ impl fmt::Display for ProgramError {
             }
             ProgramError::RoundingWithoutRelative { symbol } => write!(
                 f,
-                "rule {symbol:?} asks for non-truncating rounding on a split with no relative pieces"
+                "rule {symbol:?} writes `rounding` on a split with no relative pieces, so there is no remainder to place"
             ),
             ProgramError::SplitAxisOutsideSplit { symbol } => {
                 write!(f, "rule {symbol:?} uses `split_axis` outside a split")
@@ -2368,7 +2381,7 @@ impl Program {
                     .sizes
                     .iter()
                     .any(|s| matches!(s, Size::Relative { .. }));
-                if split.rounding != Rounding::Truncate && !has_relative {
+                if split.rounding.is_some() && !has_relative {
                     return Err(ProgramError::RoundingWithoutRelative {
                         symbol: symbol.to_string(),
                     });

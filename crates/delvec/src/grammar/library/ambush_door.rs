@@ -118,10 +118,9 @@ pub fn ambush_door() -> Program {
                     ),
                     cmp(dim(DimRef::Z), CmpOp::Ge, int(MIN_LENGTH)),
                 ]),
-                // `split_exact`, not `split`: two relative pieces under
-                // truncation leave the far end of the box with no floor written,
-                // and a hole in the floor would break the only-route gate for a
-                // reason that has nothing to do with the door.
+                // `split_exact`: the odd block joins the near flank, so the
+                // wall it names sits at or just past the middle of the box, and
+                // where the door stands does not drift with the box's length.
                 split_exact(
                     Axis::Z,
                     vec![rel(1), abs(1), rel(1)],
