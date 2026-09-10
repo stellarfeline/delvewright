@@ -68,7 +68,7 @@ fn quests_with_carrier(position: &str) -> String {
     };
     format!(
         r#"{{
-  "dsl_version": "0.23.0",
+  "dsl_version": "0.24.0",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {{
@@ -100,7 +100,7 @@ fn quests_with_carrier(position: &str) -> String {
 fn min_players_in_range_validates_clean() {
     for n in ["1", "2", "3", "4"] {
         let diags = check_campaign(&raw_with(
-            Some(&world_with_min_players(n, "0.23.0")),
+            Some(&world_with_min_players(n, "0.24.0")),
             None,
             None,
         ));
@@ -116,7 +116,7 @@ fn min_players_in_range_validates_clean() {
 fn min_players_out_of_range_is_dw0356() {
     for n in ["0", "5", "40"] {
         let diags = check_campaign(&raw_with(
-            Some(&world_with_min_players(n, "0.23.0")),
+            Some(&world_with_min_players(n, "0.24.0")),
             None,
             None,
         ));

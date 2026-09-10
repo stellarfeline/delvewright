@@ -352,7 +352,8 @@ first command.
 
 ## 13. Detail — site-plan campaigns only, and only after the walk
 
-Optional, and impossible before `walk-record.json` exists (`DW0841`).
+Optional, and impossible until `walk-record.json` records a **passed** walk
+(`DW0841`) — a record saying nobody walked is a legal record and refuses too.
 **Produces**: `detail-plan.json`, one place at a time. **Read**:
 `references/detail.md`; a piece the library does not have is
 `references/new-pieces.md`.

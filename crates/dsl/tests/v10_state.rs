@@ -100,7 +100,7 @@ fn quests_doc(version: &str) -> String {
 /// The whole v0.10 surface validates clean at `0.10.0`.
 #[test]
 fn runtime_state_validates_clean() {
-    let raw = campaign_with(&quests_doc("0.23.0"), None);
+    let raw = campaign_with(&quests_doc("0.24.0"), None);
     let d = check_campaign(&raw);
     assert!(d.is_empty(), "expected clean, got: {d:#?}");
 }
@@ -108,7 +108,7 @@ fn runtime_state_validates_clean() {
 /// `DW0500`: a comparison, and a verb, naming a datum nobody declared.
 #[test]
 fn an_undeclared_datum_is_rejected() {
-    let doc = quests_doc("0.23.0").replace(
+    let doc = quests_doc("0.24.0").replace(
         r#""state": "state/ride", "value": 1"#,
         r#""state": "state/purse", "value": 1"#,
     );
@@ -119,7 +119,7 @@ fn an_undeclared_datum_is_rejected() {
         check_campaign(&raw)
     );
 
-    let doc = quests_doc("0.23.0").replace(
+    let doc = quests_doc("0.24.0").replace(
         r#"{ "state": "state/toll", "op": "at-most", "value": 0 }"#,
         r#"{ "state": "state/purse", "op": "at-most", "value": 0 }"#,
     );
@@ -137,7 +137,7 @@ fn an_undeclared_datum_is_rejected() {
 fn a_datum_read_but_never_written_is_rejected() {
     // Drop both writes of `state/toll`, leaving the objective gate and the
     // trigger gate reading a datum frozen at its initial.
-    let doc = quests_doc("0.23.0")
+    let doc = quests_doc("0.24.0")
         .replace(
             r#"{ "type": "add-state", "state": "state/toll", "amount": -1 },
 "#,
@@ -161,7 +161,7 @@ fn a_datum_read_but_never_written_is_rejected() {
 #[test]
 fn a_datum_never_read_is_rejected() {
     // (a) written, never read: drop the objective gate that reads `state/toll`.
-    let doc = quests_doc("0.23.0")
+    let doc = quests_doc("0.24.0")
         .replace(
             r#",
             "requires_state": [ { "state": "state/toll", "op": "at-most", "value": 0 } ] }"#,
@@ -179,7 +179,7 @@ fn a_datum_never_read_is_rejected() {
     );
 
     // (b) declared and never touched at all.
-    let doc = quests_doc("0.23.0").replace(
+    let doc = quests_doc("0.24.0").replace(
         r#"{ "id": "state/ride", "scope": "party" }"#,
         r#"{ "id": "state/ride", "scope": "party" },
       { "id": "state/dust", "scope": "party" }"#,
@@ -197,7 +197,7 @@ fn a_datum_never_read_is_rejected() {
 /// scheduler-only `sequence` step.
 #[test]
 fn a_player_scoped_datum_needs_an_acting_player() {
-    let doc = quests_doc("0.23.0").replace(
+    let doc = quests_doc("0.24.0").replace(
         r#"{ "id": "state/toll", "scope": "party", "initial": 3,"#,
         r#"{ "id": "state/toll", "scope": "player", "initial": 3,"#,
     );
@@ -212,7 +212,7 @@ fn a_player_scoped_datum_needs_an_acting_player() {
     // per-player datum read or written there has no subject either. Three of the
     // seven roots are like this (R3, R4, R6) and four are not — the answer is
     // `EffectRootKind::runs_with_acting_player`'s, not this check's.
-    let doc = quests_doc("0.23.0")
+    let doc = quests_doc("0.24.0")
         .replace(
             r#"{ "id": "state/ride", "scope": "party" }"#,
             r#"{ "id": "state/ride", "scope": "player" }"#,
@@ -233,7 +233,7 @@ fn a_player_scoped_datum_needs_an_acting_player() {
 
     // Root R6: a shortcut's `on_unlock` is emitted `Audience::Scheduled` too, and
     // the READ side fails the same way as the write side.
-    let doc = quests_doc("0.23.0")
+    let doc = quests_doc("0.24.0")
         .replace(
             r#"{ "id": "state/ride", "scope": "party" }"#,
             r#"{ "id": "state/ride", "scope": "player" }"#,
@@ -259,7 +259,7 @@ fn a_player_scoped_datum_needs_an_acting_player() {
 
     // …and the four roots that DO have one are clean: `on_death` is the dying
     // player's own beat, so a per-player write there is exactly right.
-    let doc = quests_doc("0.23.0")
+    let doc = quests_doc("0.24.0")
         .replace(
             r#"{ "id": "state/ride", "scope": "party" }"#,
             r#"{ "id": "state/ride", "scope": "player" }"#,
@@ -277,7 +277,7 @@ fn a_player_scoped_datum_needs_an_acting_player() {
 
     // The scheduler seam: a `sequence` step writes a per-player datum with no
     // player to write it to — the same seam `DW0357` polices for `carrier: one`.
-    let doc = quests_doc("0.23.0")
+    let doc = quests_doc("0.24.0")
         .replace(
             r#"{ "id": "state/ride", "scope": "party" }"#,
             r#"{ "id": "state/ride", "scope": "player" }"#,
@@ -299,7 +299,7 @@ fn a_player_scoped_datum_needs_an_acting_player() {
 /// is a declared id like every other, and its scope has to be a single fact.
 #[test]
 fn datum_ids_follow_the_ordinary_id_rules() {
-    let doc = quests_doc("0.23.0").replace(
+    let doc = quests_doc("0.24.0").replace(
         r#"{ "id": "state/ride", "scope": "party" }"#,
         r#"{ "id": "state/ride", "scope": "party" },
       { "id": "state/ride", "scope": "player" }"#,
@@ -309,7 +309,7 @@ fn datum_ids_follow_the_ordinary_id_rules() {
         "a datum declared twice is DW0111"
     );
 
-    let doc = quests_doc("0.23.0").replace(r#""id": "state/ride""#, r#""id": "state/Ride""#);
+    let doc = quests_doc("0.24.0").replace(r#""id": "state/ride""#, r#""id": "state/Ride""#);
     assert!(
         codes(&campaign_with(&doc, None)).contains(&"DW0110".to_string()),
         "a malformed datum id is DW0110"
@@ -368,7 +368,7 @@ fn a_guard_on_one_verb_round_trips_through_the_one_guard() {
 #[test]
 fn a_gate_inside_the_newest_effect_roots_is_still_walked() {
     // R7 — the campaign-wide `on_death` bundle.
-    let doc = quests_doc("0.23.0").replace(
+    let doc = quests_doc("0.24.0").replace(
         r#"    "quests": ["#,
         r#"    "on_death": [
       { "type": "narrate",
@@ -384,7 +384,7 @@ fn a_gate_inside_the_newest_effect_roots_is_still_walked() {
     );
 
     // R6 — a shortcut's `on_unlock` bundle.
-    let doc = quests_doc("0.23.0").replace(
+    let doc = quests_doc("0.24.0").replace(
         r#"    "quests": ["#,
         r#"    "shortcuts": [
       { "id": "shortcut/back-way", "gate": "anchor/door", "unlock": "anchor/exit",

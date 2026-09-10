@@ -28,20 +28,28 @@ footprint and a smaller building means a smaller box, which is a site-plan edit
 and another walk.
 
 1. **Record the walk the user did at step 9.** The `verdict` is theirs, not
-   yours; if nobody has walked this build, you cannot write this file and detail
-   does not start. Write `walk-record.json` beside the
+   yours. Write `walk-record.json` beside the
    documents — `delvec schema --stage walk-record` is its shape. It is a
    campaign artifact rather than a stage document, so it carries no
    `dsl_version`, no `campaign_id` and no `stage`. Fill it with the three hashes
    every site-plan build prints (`site_plan_sha256`, `layout_graph_sha256`,
-   `blockout_sha256`), the engine revision printed beside them, `verdict:
-   "passed"`, and whatever the walk noted. **Copy all four out of the build
-   output rather than computing them.** Nothing about detail compiles without it
-   (`DW0841`), including asking for an allocation. **The first two hashes are
+   `blockout_sha256`), the engine revision printed beside them, the verdict, and
+   whatever the walk noted. **Copy all four out of the build output rather than
+   computing them.** Nothing about detail compiles without it (`DW0841`),
+   including asking for an allocation. **The first two hashes are
    the record's freshness key**: the whole a walk judges is derived from the
    plan AND the graph, so editing either one — even an edit that moves no block,
    such as which side a barred way opens from — re-opens this gate and asks for
    another walk.
+
+   **`verdict` is one of three and you transcribe it, you never choose it.**
+   `passed` — they walked it and it is fit to detail; the only value that opens
+   this step. `findings` — they walked it and something must change first.
+   `unwalked` — **nobody walked it**: abandoned, cut short, or a build stood up
+   and taken down. Reach for `unwalked` for every one of those; it is the only
+   value that does not assert a walk, and `DW0841` refuses on the field, so the
+   truth stops detail by itself. Putting it in `findings[]` instead does not:
+   that list is prose, and no check reads prose.
 2. **`delvec --prefabs "$DELVEWRIGHT_PREFABS" allocation <campaign-dir> <place>`** — the frame's extents, the
    datum, every seam with the face class it must be answered by, and the owed
    anchor names. Build the piece against that and nothing else. It is an input

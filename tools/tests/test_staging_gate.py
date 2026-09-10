@@ -980,7 +980,7 @@ def dialogue_campaign(tmp_path, where, nodes):
     (d / "dialogue.json").write_text(
         json.dumps(
             {
-                "dsl_version": "0.23.0",
+                "dsl_version": "0.24.0",
                 "stage": "dialogue",
                 "content": {"dialogues": [{"npc": "npc/a", "root": "dlg/r", "nodes": nodes}]},
             }
@@ -1035,7 +1035,7 @@ def test_the_live_cast_precondition_binds_on_a_declared_quest(gate, tmp_path):
         d.mkdir(parents=True, exist_ok=True)
         (d / "quests.json").write_text(
             json.dumps(
-                {"dsl_version": "0.23.0", "stage": 5, "content": {"quests": quest_nodes}}
+                {"dsl_version": "0.24.0", "stage": 5, "content": {"quests": quest_nodes}}
             )
         )
         return d
@@ -1656,3 +1656,370 @@ def test_the_design_record_is_a_stage_document_the_gate_holds(gate):
     """Without this the gate has no parsed copy of a document the compiler
     reads, and a campaign carrying one reds `MISSING-CHECK` as format rot."""
     assert "design.json" in gate.Subject.STAGE_FILES
+
+
+# ---------------------------------------------------------------------------
+# An instrument does not write into what it measures
+#
+# The report names every ledger row, so it prints the strings the ledger's own
+# probes search the build tree for. Written INSIDE `--build` — which is what
+# the staging surface did — it became, from the second run onward, a file that
+# satisfied the probe it was describing, and the red count moved by one between
+# the run that prints `N` and the run handed `--acknowledge-red N`. The
+# anti-habit guard on the override then refused every time the documented
+# sequence was followed.
+#
+# The guard is CORRECT and is not touched here — the last test in this block
+# drives it and requires it to keep refusing. What is repaired is the write.
+# ---------------------------------------------------------------------------
+
+
+# A row whose probe reads the BUILD TREE for a string the gate's own report
+# prints while describing the row. `bell-12` is exactly this shape over
+# `minecraft:mannequin`; the needle here is this row's own id, which the report
+# prints in the per-finding table, so the fixture reproduces the mechanism
+# without depending on today's ledger.
+SELF_HIT_ROW = {
+    "id": "selfhit",
+    "finding": "a probe that reads the build tree for a string this report prints",
+    "carrier": {"kind": "dw", "code": LIVE_CODE},
+    "binding": {"kind": "out", "glob": "**", "contains": "selfhit"},
+}
+
+
+def test_a_report_written_inside_the_build_tree_is_refused(gate, tmp_path):
+    """The entry-point refusal: the error is refused where it is entered."""
+    # `gate_cli` builds the fixture; the path the report must NOT take is only
+    # knowable once the tree exists, so the refusal is driven by a second run.
+    _, tree = gate_cli(
+        tmp_path, "inside", [{"type": "narrate"}], [dict(BOUND_ROW, id="ok")]
+    )
+    proc = subprocess.run(
+        [
+            sys.executable, str(SCRIPT),
+            "--campaign", str(tmp_path / "inside" / "camp"),
+            "--build", str(tree),
+            "--ledger", str(tmp_path / "inside" / "led.json"),
+            "--report", str(tree / "staging-gate.md"),
+        ],
+        capture_output=True, text=True,
+    )
+    assert proc.returncode == 2, proc.stdout + proc.stderr
+    assert "INSIDE the build tree this gate measures" in proc.stderr
+    assert not (tree / "staging-gate.md").exists(), "and it wrote nothing"
+    # The refusal names where to put it instead, so it is actionable.
+    assert ".gate/" in proc.stderr
+
+
+def test_a_json_verdict_file_inside_the_build_tree_is_refused_too(gate, tmp_path):
+    _, tree = gate_cli(
+        tmp_path, "jsoninside", [{"type": "narrate"}], [dict(BOUND_ROW, id="ok")]
+    )
+    proc = subprocess.run(
+        [
+            sys.executable, str(SCRIPT),
+            "--campaign", str(tmp_path / "jsoninside" / "camp"),
+            "--build", str(tree),
+            "--ledger", str(tmp_path / "jsoninside" / "led.json"),
+            "--json", str(tree / "verdicts.json"),
+        ],
+        capture_output=True, text=True,
+    )
+    assert proc.returncode == 2, proc.stdout + proc.stderr
+    assert "--json" in proc.stderr
+    assert not (tree / "verdicts.json").exists()
+
+
+def test_the_admission_token_may_live_there_and_only_under_its_one_name(gate, tmp_path):
+    """The token has to be inside the tree — `validation/staging-admission.sh`
+    reads it out of the served tree — so it is the one exception, at one name.
+    A token under any other name inside the tree is refused: a name the
+    exclusion does not know is a file the next run counts."""
+    proc, tree = gate_cli(tmp_path, "admit", [{"type": "narrate"}], [dict(BOUND_ROW, id="ok")])
+    assert proc.returncode == 0, proc.stderr
+    assert (tree / "staging-admission.json").is_file(), "the default lands, unrefused"
+
+    proc = subprocess.run(
+        [
+            sys.executable, str(SCRIPT),
+            "--campaign", str(tmp_path / "admit" / "camp"),
+            "--build", str(tree),
+            "--ledger", str(tmp_path / "admit" / "led.json"),
+            "--admit", str(tree / "elsewhere.json"),
+        ],
+        capture_output=True, text=True,
+    )
+    assert proc.returncode == 2, proc.stdout + proc.stderr
+    assert "--admit" in proc.stderr
+    assert not (tree / "elsewhere.json").exists()
+
+
+def test_the_gates_own_token_is_not_counted_as_evidence_about_the_build(gate, tmp_path):
+    """The artifact that has to live inside the measured tree.
+
+    The token names the reds, so it carries the needle of any row whose probe
+    globs the tree for a finding id. Counted, the row would report 1 and the red
+    list would move between two runs of an unchanged campaign.
+    """
+    camp = make_campaign(tmp_path, objectives=[{"type": "narrate"}])
+    build = make_build(tmp_path)
+    (build / "staging-admission.json").write_text(
+        json.dumps({gate.GATE_ARTIFACT_KEY: True, "reds": ["selfhit"]})
+    )
+    subj = gate.Subject(camp, build)
+    r = gate.adjudicate(SELF_HIT_ROW, gate.Engine(), subj)
+    assert r["binding"] == 0, r
+    assert "1 gate artifact(s) excluded" in r["detail"], r["detail"]
+
+
+def test_a_report_planted_in_the_tree_by_hand_is_skipped_too(gate, tmp_path):
+    """The perturbation the brief names: plant the report inside the tree and
+    check the count does not move.
+
+    A report has no business in a build tree and the flag now refuses to put one
+    there — but a copy is one `cp` away, and a rule keyed to the token's NAME
+    would skip the artifact that was never the problem while counting the one
+    that was. The marker is on the bytes, so the name is irrelevant.
+    """
+    camp = make_campaign(tmp_path, objectives=[{"type": "narrate"}])
+    build = make_build(tmp_path)
+    subj = gate.Subject(camp, build)
+    clean = gate.adjudicate(SELF_HIT_ROW, gate.Engine(), subj)
+    assert clean["binding"] == 0, clean
+
+    (build / "whatever-someone-called-it.md").write_text(
+        gate.render_report({"ledger_version": "x"}, subj, [clean], False)
+    )
+    planted = gate.adjudicate(SELF_HIT_ROW, gate.Engine(), gate.Subject(camp, build))
+    assert planted["binding"] == 0, (
+        "the count does not move when the gate's own report is in the tree: "
+        + str(planted)
+    )
+    assert "1 gate artifact(s) excluded" in planted["detail"]
+
+
+def test_and_the_same_report_with_its_marker_stripped_is_counted(gate, tmp_path):
+    """The other direction, so the test above is not measuring a dead probe.
+
+    The same bytes minus the one line that says whose file this is are an
+    ordinary file in a build tree, and an ordinary file in a build tree is
+    evidence.
+    """
+    camp = make_campaign(tmp_path, objectives=[{"type": "narrate"}])
+    build = make_build(tmp_path)
+    subj = gate.Subject(camp, build)
+    report = gate.render_report(
+        {"ledger_version": "x"},
+        subj,
+        [gate.adjudicate(SELF_HIT_ROW, gate.Engine(), subj)],
+        False,
+    )
+    stripped = "\n".join(
+        ln for ln in report.split("\n") if gate.GATE_ARTIFACT_MARKER not in ln
+    )
+    assert gate.GATE_ARTIFACT_MARKER not in stripped
+    (build / "whatever-someone-called-it.md").write_text(stripped)
+    r = gate.adjudicate(SELF_HIT_ROW, gate.Engine(), gate.Subject(camp, build))
+    assert r["binding"] == 1, r
+
+
+def test_the_red_count_does_not_move_between_two_runs_of_one_tree(gate, tmp_path):
+    """The whole defect, end to end, over the real CLI.
+
+    Two runs, one unchanged campaign and one unchanged build tree, with the
+    self-hitting row live. Before the repair the second run counted the first
+    run's report and reported one more red. The counts must be equal, and the
+    second run's `--acknowledge-red` must be admitted by the number the first
+    run printed.
+    """
+    root = tmp_path / "twice"
+    root.mkdir()
+    camp = make_campaign(root, objectives=[{"type": "narrate"}])
+    tree = make_build(root)
+    (tree / "manifest.json").write_text(json.dumps({"inputs": {"quests.json": "0" * 8}}))
+    ledger = root / "led.json"
+    ledger.write_text(json.dumps({"findings": [dict(SELF_HIT_ROW)]}))
+    report = root / "out.gate" / "staging-gate.md"
+
+    def once(*extra):
+        return subprocess.run(
+            [
+                sys.executable, str(SCRIPT),
+                "--campaign", str(camp), "--build", str(tree),
+                "--ledger", str(ledger), "--report", str(report), *extra,
+            ],
+            capture_output=True, text=True,
+        )
+
+    first = once()
+    assert first.returncode == 1, first.stderr
+    assert "--acknowledge-red 1" in first.stderr
+    assert report.is_file(), "the report landed — beside the tree, not inside it"
+    assert "0 gate artifact(s) excluded" in report.read_text(), (
+        "and nothing of the gate's was in the tree to skip on the first run"
+    )
+
+    second = once()
+    assert second.returncode == 1, second.stderr
+    assert "--acknowledge-red 1" in second.stderr, (
+        "the count did not move between two runs of one tree: " + second.stderr
+    )
+
+    # The prescribed sequence completes: read N, run again with N. This one
+    # mints a token, INSIDE the tree, whose `reds` list names the very row
+    # whose probe globs the tree for that string.
+    third = once("--stage-anyway", "a deliberate look at one beat, not a QC round",
+                 "--acknowledge-red", "1")
+    assert third.returncode == 0, third.stdout + third.stderr
+    token = tree / "staging-admission.json"
+    assert "selfhit" in token.read_text(), (
+        "the fixture only means something if the token really carries the needle"
+    )
+
+    # And a run after that token exists reports the same list. Counted, the row
+    # would go BOUND, the red list would empty, and the same --acknowledge-red
+    # the page just told the creator to type would be refused for overriding
+    # nothing.
+    fourth = once()
+    assert fourth.returncode == 1, fourth.stdout + fourth.stderr
+    assert "--acknowledge-red 1" in fourth.stderr
+    assert "1 gate artifact(s) excluded" in report.read_text()
+
+
+def test_the_stale_count_guard_still_refuses(gate, tmp_path):
+    """The half that is CORRECT and may not be weakened. An acknowledged count
+    that does not match the list is refused, and the refusal says the number
+    moved. Nothing above may make this pass."""
+    root = tmp_path / "guard"
+    root.mkdir()
+    camp = make_campaign(root, objectives=[{"type": "narrate"}])
+    tree = make_build(root)
+    (tree / "manifest.json").write_text(json.dumps({"inputs": {"quests.json": "0" * 8}}))
+    ledger = root / "led.json"
+    ledger.write_text(json.dumps({"findings": [
+        {"id": "a", "finding": "uncovered", "carrier": None},
+        {"id": "b", "finding": "uncovered", "carrier": None},
+    ]}))
+    proc = subprocess.run(
+        [
+            sys.executable, str(SCRIPT), "--campaign", str(camp), "--build", str(tree),
+            "--ledger", str(ledger),
+            "--stage-anyway", "a deliberate look at one beat, not a QC round",
+            "--acknowledge-red", "1",
+        ],
+        capture_output=True, text=True,
+    )
+    assert proc.returncode == 2, proc.stdout + proc.stderr
+    assert "does not match the 2 red finding(s)" in proc.stderr
+    assert "The number moved since you last looked" in proc.stderr
+    assert not (tree / "staging-admission.json").exists()
+
+
+def test_the_staging_surface_writes_its_report_outside_the_tree(gate):
+    """The invocation, not a doc line. `playtest-server.sh` is the caller that
+    put the report inside the tree; if it goes back, this reds."""
+    root = pathlib.Path(__file__).resolve().parents[2]
+    server = (root / "tools" / "playtest-server.sh").read_text()
+    assert '--report "$GATE_REPORT"' in server
+    assert 'GATE_DIR="${OUT_DIR%/}.gate"' in server
+    assert '"$OUT_DIR/staging-gate.md"' not in server, (
+        "the report is a sibling of the build tree, never a child of it"
+    )
+
+
+# ---------------------------------------------------------------------------
+# A gate whose green depends on an artifact its own step forbids producing yet
+#
+# `gal-01` binds on `walk-record.json` in the campaign source. `references/
+# walk.md` forbids writing that file until the walk has happened — and the walk
+# is what the staging this gate guards EXISTS for. So on a site-plan campaign's
+# first staging the row measured zero against a precondition (`site-plan.json`
+# has a node) that was never the class's own population: the objects that carry
+# a walk-record defect are walk records. The row reported UNBOUND by
+# construction and the only route through was the deliberate override.
+#
+# The binding is a campaign-source glob with no `contains`, so the file IS the
+# object and the probe measures its own precondition. The row declares no
+# `applies_when` now, and these drive what it says at each stage.
+# ---------------------------------------------------------------------------
+
+
+WALK_RECORD_ROW = {
+    "id": "walkrec",
+    "finding": "the walk record's freshness key re-opened on edits the walk cannot depend on",
+    "carrier": {"kind": "dw", "code": LIVE_CODE},
+    "binding": {"kind": "campaign", "glob": "walk-record.json"},
+}
+
+
+def walk_subject(gate, tmp_path, *, record: bool, pre_detail: bool):
+    camp = make_campaign(tmp_path, objectives=[{"type": "narrate"}])
+    (camp / "site-plan.json").write_text(
+        json.dumps({"content": {"places": [{"node": "node/hall"}]}})
+    )
+    if record:
+        (camp / "walk-record.json").write_text(json.dumps({"verdict": "passed"}))
+    build = make_build(tmp_path)
+    inputs = {"quests.json": "0" * 8, "site-plan.json": "1" * 8}
+    if not pre_detail:
+        inputs["detail-plan.json"] = "2" * 8
+        (camp / "detail-plan.json").write_text(json.dumps({"content": {"details": []}}))
+    (build / "manifest.json").write_text(json.dumps({"inputs": inputs}))
+    return gate.Subject(camp, build)
+
+
+def test_before_the_first_walk_the_row_is_out_of_stage_not_unbound(gate, tmp_path):
+    """What the row says before a walk exists. Not BOUND — nothing is
+    fabricated, no object is manufactured, and the class is named in the token,
+    printed in its own section and announced at boot. What it stops being is a
+    refusal a creator has no act that could clear."""
+    subj = walk_subject(gate, tmp_path, record=False, pre_detail=True)
+    assert subj.pre_detail is True
+    r = gate.adjudicate(WALK_RECORD_ROW, gate.Engine(), subj)
+    assert r["verdict"] == "OUT-OF-STAGE", r
+    assert r["binding"] == 0 and r["precondition"] == 0
+    assert "this build does not claim to be the build that could" in r["detail"]
+
+
+def test_after_the_walk_the_same_row_binds(gate, tmp_path):
+    """One variable moves — the record the walk produces — and the class goes
+    live. The blockout allowance is a statement about one staging of one stage,
+    never about this row."""
+    subj = walk_subject(gate, tmp_path, record=True, pre_detail=True)
+    r = gate.adjudicate(WALK_RECORD_ROW, gate.Engine(), subj)
+    assert r["verdict"] == "BOUND", r
+    assert r["binding"] == 1
+
+
+def test_off_the_blockout_a_missing_record_is_not_out_of_stage(gate, tmp_path):
+    """And the allowance does not follow the campaign. The moment it details,
+    the same measured double zero is the counted `INAPPLICABLE` — no blockout
+    wording, and `--strict`'s floor stops treating it as a stage claim."""
+    subj = walk_subject(gate, tmp_path, record=False, pre_detail=False)
+    assert subj.pre_detail is False
+    r = gate.adjudicate(WALK_RECORD_ROW, gate.Engine(), subj)
+    assert r["verdict"] == "INAPPLICABLE", r
+
+
+def test_the_live_ledger_row_declares_no_precondition_over_the_site_plan(gate):
+    """The ledger's own shape, because the repair is in the row.
+
+    A precondition counting site-plan nodes is a population one step behind
+    nothing: the objects that carry this defect are walk records. Declared, it
+    turned a structurally unavoidable zero into a refusal on every site-plan
+    campaign's first staging.
+    """
+    root = pathlib.Path(__file__).resolve().parents[2]
+    ledger = json.loads((root / "docs" / "playtest-findings.json").read_text())
+    row = next(r for r in ledger["findings"] if r["id"] == "gal-01")
+    assert row["binding"] == {"kind": "campaign", "glob": "walk-record.json"}
+    assert "applies_when" not in row
+    assert gate.probe_is_self_measuring(row["binding"], _AnyCampaign()) is True
+
+
+class _AnyCampaign:
+    """Just enough of a `Subject` for the self-measuring test: a campaign
+    directory that holds no `walk-record.json`, which is the state the
+    recogniser has to answer True for."""
+
+    campaign = pathlib.Path("/nonexistent-campaign-dir")
