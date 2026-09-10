@@ -58,6 +58,15 @@ WHAT IS CHECKED, AND THE PERTURBATION THAT REDS EACH
                                                RED: a moved directory
    13  `--online`: the tag `release` resolves to `ref`; the release carries an
        archive per target at `ref`, plus `SHA256SUMS`.  RED: a shelf missing a target
+   14  no shipped file carries an unsubstituted template placeholder.
+                                               RED: `@@TOC@@` at the top of a reference
+   15  every `refimg.py` flag a page file names that SOME supported provider
+       refuses is named beside every provider that refuses it.
+                                               RED: `--chain-from` taught as the method,
+                                                    with `ideogram-v3` unmentioned
+   16  every acquired program a step after Init invokes is proven in Init.
+                                               RED: `docker compose` in step 10's
+                                                    scripts, `docker info` in Init
 
 RULE 10 AND THE ONE THING IT CANNOT ASSERT
 
@@ -86,6 +95,7 @@ unusable and it checked nothing.
 from __future__ import annotations
 
 import argparse
+import ast
 import importlib.util
 import json
 import os
@@ -112,8 +122,16 @@ API = "https://api.github.com"
 ARCHIVE = "delvec-{release}-{target}.tar.gz"
 CHECKSUMS = "SHA256SUMS"
 
-# Paths inside the engine tree, materialised at `ref`.
-ENGINE_PATHS = ("Cargo.toml", "crates", "docs/reference/grammar.md", "versions.toml")
+# Paths inside the engine tree, materialised at `ref`. `tools/refimg.py` is here
+# because rule 15 asks THAT tool, at the pinned revision, which flags each
+# provider refuses — rather than keeping a second copy of its capability table.
+ENGINE_PATHS = (
+    "Cargo.toml",
+    "crates",
+    "docs/reference/grammar.md",
+    "versions.toml",
+    "tools/refimg.py",
+)
 
 STAGE_ARM_RE = re.compile(r'Stage::\w+\s*=>\s*"([a-z][a-z0-9-]*)"')
 SEMVER_RE = re.compile(r"^(\d+)\.(\d+)\.(\d+)$")
@@ -144,6 +162,96 @@ PREFABS_ARGUMENT = '"$DELVEWRIGHT_PREFABS"'
 
 RESTATED = "restated"
 RESTATED_SECTION = "Init — build the toolchain before you author anything"
+
+# --- rule 14: an unsubstituted template placeholder --------------------------
+#
+# `references/writing-craft.md` shipped to the marketplace at 1.1.0 with
+# `@@TOC@@` as line 1 — the first thing a creator reads in the file the page
+# calls a HARD RULE twice. Nothing renders these pages, so nothing substituted
+# it and nothing failed. The general shape is a delimited SHOUTING token: an
+# author writes one when they expect a generator to fill it in, and a page with
+# no generator ships it verbatim.
+PLACEHOLDER_RE = re.compile(
+    r"@@[A-Z][A-Z0-9_]{0,31}@@"
+    r"|\{\{\s*[A-Z][A-Z0-9_]{0,31}\s*\}\}"
+    r"|%%[A-Z][A-Z0-9_]{0,31}%%"
+    r"|<<[A-Z][A-Z0-9_]{0,31}>>"
+)
+
+# --- rule 15: the reference-image tool's per-provider capabilities -----------
+#
+# `tools/refimg.py` refuses a flag the CONFIGURED provider cannot honour, by
+# name: `--chain-from: provider 'ideogram-v3' has no interaction chaining.`
+# Two reference pages taught `--chain-from` and `--style-note` as THE method for
+# holding a series to one style, and on one of the two providers the page's own
+# request text offers, the whole method is refused — with no page saying so and
+# no page naming the substitute. So: a page that names a flag some provider
+# refuses must name that provider too, where a creator choosing one will see it.
+#
+# The verdict is the TOOL's, never this gate's. Each flag is put to a real
+# `--dry-run` (free, offline, no call made) against each provider in turn, and a
+# capability refusal is recognised by the sentence the tool itself prints. The
+# values below exist only so `argparse` accepts the flag; a wrong one cannot
+# manufacture a verdict, because a value refusal does not carry that sentence.
+REFIMG = "refimg.py"
+REFIMG_PROBE_VALUES = {
+    "--chain-from": "probe-interaction-id",
+    "--style-note": "one style, held constant",
+    "--style-code": "A1B2C3D4",
+    "--style-ref": None,  # filled in with a real file: the tool opens it
+    "--seed": "1",
+    "--count": "1",
+    "--aspect-ratio": "16:9",
+    "--image-size": "2K",
+    "--resolution": "1344x768",
+    "--rendering-speed": "TURBO",
+}
+# Flags that carry no capability at all — they name a file, a prompt or the mode.
+REFIMG_NEUTRAL = {"--prompt", "--prompt-file", "--out", "--dry-run", "--model"}
+CAPABILITY_REFUSAL = "provider {provider!r} has no"
+
+# --- rule 16: Init proves what a later step invokes --------------------------
+#
+# Init I1's own words: *"a jar-reading tool whose Java is too old exits non-zero
+# with a traceback that never names the version, several hours into the run, and
+# reads as a broken gate."* I7 opens by promising that nothing later stops on a
+# missing tool without Init having said so. That promise was not kept for
+# Compose: I1 and I8 both proved Docker with `docker info`, which passes on a
+# machine with no `docker compose` at all — Compose v2 is a per-user CLI plugin —
+# and the ladder then died at step 10 with `unknown shorthand flag: 'p' in -p`.
+#
+# So: every program from the registry below that a step AFTER Init invokes must
+# be proven where Init states its proofs — I1's table, I1's own shell blocks, or
+# the I8 checklist on `SKILL.md`. Prose elsewhere in Init does not prove a tool;
+# `docker compose … --profile play` appears in Init as a sentence about output
+# paths and proves nothing.
+#
+# The registry is closed and enumerated here: these are the programs a machine
+# may simply not have, and that no `$DELVEWRIGHT_*` variable stands in for. A
+# program the page starts invoking that is not in this list is invisible to this
+# rule — which is why the list is short, ordinary and stated rather than derived.
+ACQUIRED = (
+    "docker compose",
+    "docker",
+    "git-lfs",
+    "git",
+    "java",
+    "node",
+    "npm",
+    "cargo",
+    "rustc",
+    "curl",
+    "unzip",
+    "jq",
+)
+# Programs Init deliberately does not prove at I1, each with where it IS taken.
+# A defect cannot add itself here: this is a fixed list in the gate, not a field
+# an author writes beside the invocation.
+ACQUIRED_DEFERRED = {
+    "cargo": "I3b — the source floor, entered only on I3a's exit 3 or 4",
+    "rustc": "I3b — the source floor, entered only on I3a's exit 3 or 4",
+    "git-lfs": "the shipped library, optional and taken at the step that wants it",
+}
 
 sys.path.insert(0, str(REPO / "tools"))
 from lib.clap_surface import kebab, normalize, parse_cli  # noqa: E402
@@ -883,6 +991,11 @@ def check(rep: Report, engine: pathlib.Path, rev: str, release: str, base: str |
             )
     rep.bind("piece-reading invocation(s)", piece_refs, len(calls))
 
+    # -- 14/15/16. what the first full drill found ---------------------------
+    placeholder_rule(rep)
+    refimg_rule(rep, engine)
+    init_proves_rule(rep)
+
     # -- 10. the split dropped nothing ---------------------------------------
     heading_rule(rep)
 
@@ -907,6 +1020,259 @@ def slug(text: str) -> str:
     """
     s = re.sub(r"[^a-z0-9 \-]", "", text.lower())
     return s.strip().replace(" ", "-")
+
+
+def shipped() -> list[pathlib.Path]:
+    """Every authored file of the plugin — the artifact the marketplace serves.
+
+    Wider than `bundled()` on purpose: `@@TOC@@` reached a creator's disk
+    because the whole plugin root ships, not only the two directories rule 7
+    enumerates.
+    """
+    out: list[pathlib.Path] = []
+    for p in sorted(PLUGIN_ROOT.rglob("*")):
+        if p.is_file() and not (NOT_AUTHORED & set(p.relative_to(PLUGIN_ROOT).parts)):
+            out.append(p)
+    return out
+
+
+def placeholder_rule(rep: Report) -> None:
+    """Rule 14: no shipped file carries an unsubstituted template placeholder."""
+    files = shipped()
+    clean = 0
+    for path in files:
+        try:
+            text = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            clean += 1  # a binary asset carries no placeholder to leave behind
+            continue
+        found = sorted({m.group(0) for m in PLACEHOLDER_RE.finditer(text)})
+        if not found:
+            clean += 1
+            continue
+        for token in found:
+            line = next(
+                i for i, ln in enumerate(text.split("\n"), 1) if token in ln
+            )
+            rep.find(
+                f"{rel(path)}:{line} carries the unsubstituted placeholder "
+                f"`{token}`. Nothing renders these pages — they ship as written — "
+                f"so a placeholder is what the creator reads. Write the thing, or "
+                f"delete the line."
+            )
+    rep.bind("shipped file(s) free of a placeholder", clean, len(files))
+
+
+def refimg_probe(
+    refimg: pathlib.Path, workdir: pathlib.Path, provider: str, model: str, frame: str
+) -> object:
+    """Configure `workdir` for one provider and return a runner for one flag.
+
+    The tool resolves its config as `<its parent's parent>/delvewright.local.toml`,
+    so a provider is selected by writing that file — which is how a creator
+    selects one, and therefore how this gate must.
+    """
+    (refimg.parent.parent / "delvewright.local.toml").write_text(
+        f'[refimg]\nprovider = "{provider}"\nmodel = "{model}"\n'
+        f'api_key_env = "DELVEWRIGHT_SKILL_PAGE_PROBE"\n{frame}\n',
+        encoding="utf-8",
+    )
+
+    def run(flag: str, value: str | None) -> tuple[int, str]:
+        argv = [sys.executable, str(refimg), "--prompt", "probe", "--dry-run",
+                "--out", str(workdir / "probe")]
+        argv += [flag] if value is None else [flag, value]
+        proc = subprocess.run(argv, capture_output=True, text=True, cwd=str(workdir))
+        return proc.returncode, proc.stdout + proc.stderr
+
+    return run
+
+
+def refimg_rule(rep: Report, engine: pathlib.Path) -> None:
+    """Rule 15: a flag some provider refuses is named beside that provider."""
+    refimg = engine / "tools" / REFIMG
+    if not refimg.is_file():
+        raise Unusable(
+            f"the engine at the pin carries no tools/{REFIMG}. It is the page's "
+            f"only reference-image producer, and rule 15 asks it — rather than a "
+            f"second copy of its capability table — which flags each provider "
+            f"refuses. Fix the path; do not drop the rule."
+        )
+    source = refimg.read_text(encoding="utf-8")
+    providers: dict[str, dict] = {}
+    for node in ast.walk(ast.parse(source)):
+        if isinstance(node, ast.Assign) and any(
+            isinstance(t, ast.Name) and t.id == "PROVIDERS" for t in node.targets
+        ):
+            providers = ast.literal_eval(node.value)
+    if not providers:
+        raise Unusable(
+            f"could not read `PROVIDERS` out of tools/{REFIMG} at the pin — the "
+            f"table rule 15 enumerates has moved or changed shape."
+        )
+
+    # Every refimg flag the page NAMES, in a command or in a sentence about one.
+    # The defect lived in prose — two pages teaching a method, not running it — so
+    # a scan of invocations alone would have bound to nothing. A span that names
+    # `delvec` belongs to the compiler's surface and rule 4 already judges it.
+    named: dict[str, set[str]] = {}
+    for path in page_files():
+        for span, _fenced in code_spans(path.read_text(encoding="utf-8")):
+            if "delvec" in span:
+                continue
+            for flag in REFIMG_PROBE_VALUES:
+                if re.search(rf"(?<![\w-]){re.escape(flag)}(?![\w-])", span):
+                    named.setdefault(rel(path), set()).add(flag)
+    mentioned = {f for flags in named.values() for f in flags}
+
+    # Ask the tool, once per (provider, flag). Free: `--dry-run` calls nothing.
+    with tempfile.TemporaryDirectory() as tmp:
+        work = pathlib.Path(tmp)
+        (work / "tools").mkdir()
+        probe_image = work / "tools" / "style-ref.png"
+        probe_image.write_bytes(b"\x89PNG\r\n\x1a\n")
+        values = dict(REFIMG_PROBE_VALUES, **{"--style-ref": str(probe_image)})
+        refuses: dict[str, set[str]] = {f: set() for f in sorted(mentioned)}
+        for provider, spec in sorted(providers.items()):
+            frame = "\n".join(
+                f'{k} = "{values["--" + kebab(k)]}"'
+                for k in spec.get("frame", ())
+                if "--" + kebab(k) in values
+            )
+            run = refimg_probe(
+                refimg, work, provider, str(spec.get("model") or provider), frame
+            )
+            sentence = CAPABILITY_REFUSAL.format(provider=provider)
+            for flag in sorted(mentioned):
+                _code, output = run(flag, values[flag])
+                if sentence in output and flag in output:
+                    refuses[flag].add(provider)
+
+    checked = covered = 0
+    for where, flags in sorted(named.items()):
+        for flag in sorted(flags - REFIMG_NEUTRAL):
+            checked += 1
+            text = next(
+                p.read_text(encoding="utf-8") for p in page_files() if rel(p) == where
+            )
+            missing = sorted(p for p in refuses[flag] if p not in text)
+            if missing:
+                rep.find(
+                    f"{where} names `{flag}`, which "
+                    f"{', '.join(sorted(refuses[flag]))} refuses, and never names "
+                    f"{' or '.join(missing)}. A creator on that provider meets the "
+                    f"refusal mid-series instead of reading it where the provider is "
+                    f"chosen — say which providers the method is for, and what the "
+                    f"other one uses instead."
+                )
+            else:
+                covered += 1
+    rep.bind("refimg flag mention(s) covered", covered, checked)
+    rep.bind(
+        "refimg flag(s) some provider refuses",
+        sum(1 for f in refuses.values() if f),
+        len(refuses),
+    )
+
+
+def init_proof_set() -> set[str]:
+    """The programs Init actually RUNS, from the two places it states proofs."""
+    init = (SKILL_ROOT / "references" / "init.md").read_text(encoding="utf-8")
+    page = SKILL.read_text(encoding="utf-8")
+    proofs: list[str] = []
+
+    # I1's table: the third column of every row — the `check` a tool must pass.
+    section = init.split("\n## I1 ")[1].split("\n## ")[0] if "\n## I1 " in init else ""
+    for line in section.split("\n"):
+        if line.startswith("|") and line.count("|") >= 4:
+            proofs.extend(INLINE_CODE_RE.findall(line.split("|")[3]))
+    # Plus every command in an Init FENCE: a fenced line in `init.md` is a line
+    # Init runs on the machine, so it exercises the tool exactly as a check does.
+    # Only fences — an INLINE span in Init is prose ABOUT a command, and
+    # `docker compose … --profile play` sits there as a sentence about output
+    # paths while proving nothing about the plugin being installed.
+    proofs.extend(fenced_lines(init))
+
+    # The I8 checklist, which lives on `SKILL.md`.
+    for heading, body in sections(page):
+        if heading.startswith("I8 "):
+            proofs.extend(fenced_lines(body))
+    return {p.strip() for p in proofs}
+
+
+def fenced_lines(markdown: str) -> list[str]:
+    return [line for line, fenced in code_spans(markdown) if fenced]
+
+
+def sections(markdown: str) -> list[tuple[str, str]]:
+    """`(heading, body)` per heading, fences tracked."""
+    out: list[tuple[str, str]] = []
+    heading, body, fence = None, [], False
+    for line in markdown.split("\n"):
+        if FENCE_RE.match(line):
+            fence = not fence
+        elif not fence:
+            m = HEADING_RE.match(line)
+            if m is not None:
+                if heading is not None:
+                    out.append((heading, "\n".join(body)))
+                heading, body = m.group(1).strip(), []
+                continue
+        body.append(line)
+    if heading is not None:
+        out.append((heading, "\n".join(body)))
+    return out
+
+
+def invoked_program(command: str) -> str | None:
+    """The acquired program a shell command line invokes, if it invokes one."""
+    stripped = command.strip().lstrip("$ ")
+    # Leading `VAR=value` assignments belong to the environment, not the command.
+    while re.match(r"^[A-Z_][A-Z0-9_]*=\S*\s+", stripped):
+        stripped = stripped.split(None, 1)[1]
+    for program in ACQUIRED:  # longest spelling first: `docker compose` over `docker`
+        if stripped == program or stripped.startswith(program + " "):
+            return program
+    return None
+
+
+def init_proves_rule(rep: Report) -> None:
+    """Rule 16: every acquired program a step after Init invokes, Init proves."""
+    proven = {
+        program
+        for proof in init_proof_set()
+        if (program := invoked_program(proof)) is not None
+    }
+    later = [
+        p
+        for p in page_files()
+        if p.name != "init.md"  # Init's own commands are the proofs, not the debt
+    ]
+    invocations_seen = 0
+    ok = 0
+    for path in later:
+        for span, fenced in code_spans(path.read_text(encoding="utf-8")):
+            if not fenced:
+                continue
+            program = invoked_program(span)
+            if program is None:
+                continue
+            invocations_seen += 1
+            if program in proven:
+                ok += 1
+            elif program in ACQUIRED_DEFERRED:
+                ok += 1
+            else:
+                rep.find(
+                    f"{rel(path)} invokes `{program}`, and Init proves it nowhere:\n"
+                    f"      {span.strip()}\n"
+                    f"      Init's I1 table and the I8 checklist are where a tool is "
+                    f"proven, and neither runs it. A machine without it reaches this "
+                    f"line hours in, and the failure names something else — which is "
+                    f"the class Init exists to remove."
+                )
+    rep.bind("acquired-program invocation(s) proven by Init", ok, invocations_seen)
+    rep.bind("acquired program(s) proven at Init", len(proven), len(ACQUIRED))
 
 
 def heading_rule(rep: Report) -> None:
@@ -1300,17 +1666,21 @@ def main(argv: list[str] | None = None) -> int:
     zero = [what for what, bound, _of in rep.bindings if bound == 0]
     for what, bound, of in rep.bindings:
         print(f"-- binding: {bound} of {of} {what}")
+    # Both verdicts, always, and the findings FIRST: a run that reported only
+    # "a binding of zero" and swallowed nine findings it already held told the
+    # reader less than it knew, which is the same defect as a gate that refuses
+    # without stating what it examined.
+    if rep.findings:
+        print(f"check-skill-page: FAIL — {len(rep.findings)} finding(s)", file=sys.stderr)
+        for finding in rep.findings:
+            print(f"  - {finding}", file=sys.stderr)
     if zero:
         print(
             f"check-skill-page: FAIL — a binding of zero on: {', '.join(zero)}. A "
             f"green that binds to nothing is vacuous, not a pass.",
             file=sys.stderr,
         )
-        return 1
-    if rep.findings:
-        print(f"check-skill-page: FAIL — {len(rep.findings)} finding(s)", file=sys.stderr)
-        for finding in rep.findings:
-            print(f"  - {finding}", file=sys.stderr)
+    if rep.findings or zero:
         return 1
     print(f"check-skill-page: ok — every rule held, against engine {rev}")
     return 0

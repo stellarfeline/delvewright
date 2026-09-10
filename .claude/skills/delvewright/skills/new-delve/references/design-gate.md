@@ -68,14 +68,30 @@ image of the built map; there is not one.
   full-frame views**, never one canvas cut into panels — the form is in
   *Reference: drawing the map's reference*.
   - **Anchor every scene on the map's own view 1, under the map series'
-    style note.** The scenes are places in one map, so they are one series
-    with it: pass view 1's interaction id — read out of its sidecar's
-    `.id` — to `--chain-from` on every scene, with the same `--style-note`
-    string the map views were drawn under. Anchor each on view 1 itself,
-    never on the scene before it, for the reason the map series does it:
-    chaining picture to picture compounds the drift instead of bounding
-    it. Twenty scenes then come back in one hand, and a reviewer reads the
-    set as one place rather than twenty unrelated pictures.
+    style contract.** The scenes are places in one map, so they are one
+    series with it: every scene is anchored on view 1 and carries the same
+    style contract string the map views were drawn under. *How* the anchor
+    and the contract are passed belongs to the configured provider, and
+    Init I7 carries the row — on `gemini-native` it is view 1's interaction
+    id to `--chain-from` plus `--style-note`; on `ideogram-v3` there is no
+    interaction chaining and no system-instruction channel, so it is view
+    1's image file to `--style-ref` with the contract prepended to each
+    prompt. Anchor each on view 1 itself, never on the scene before it, for
+    the reason the map series does it: chaining picture to picture
+    compounds the drift instead of bounding it. Twenty scenes then come
+    back in one hand, and a reviewer reads the set as one place rather than
+    twenty unrelated pictures.
+  - **Open every returned image and read it against the style contract
+    before it goes in the walkthrough.** The contract is an instruction to
+    a model, not a guarantee about the return, and the anchor bounds drift
+    rather than removing it — a violation in scene fourteen is exactly as
+    likely as one in scene two, and later views are the region nothing else
+    checks. A view that breaks the contract is re-drawn **once** on the
+    same prompt and anchor; if the second return breaks it too, put both in
+    front of the user and say what the violation is rather than paying for
+    a third. **Never assemble the walkthrough from filenames**: an image
+    nobody opened carries the user's approval the moment they say yes to
+    it.
 
 ## The hour, read against the pictures
 

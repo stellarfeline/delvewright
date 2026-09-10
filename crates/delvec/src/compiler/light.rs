@@ -1398,8 +1398,13 @@ pub(crate) fn relight_area(
                         "area `{area_id}`: declared relight fixture `{}` cannot reach \
                          `min_light` {min_light} — the darkest reachable walkable cell at {dark:?} \
                          has no valid placement site left. Fix in {}: \
-                         choose a fixture that fits the geometry (`lantern`/`shroomlight` need \
-                         less clearance than `torch`/`campfire`), lower the declared `min_light` \
+                         choose a fixture whose ATTACHMENT SURFACE this geometry has — what \
+                         decides is the surface a fixture mounts on, not how much clearance it \
+                         wants: `torch` takes a floor OR any wall face and `shroomlight` replaces \
+                         any solid block bordering air, so those two site the most widely, while \
+                         `lantern` needs a ceiling above it (a floor only off the walkable set) \
+                         and `campfire` needs a floor AND is barred from every path cell and its \
+                         four neighbours. Or lower the declared `min_light` \
                          (still within 1..=14), or open the room so a fixture site exists. Do NOT \
                          relax this by widening the reachable set — the cell is genuinely lit \
                          below target (spec-0010 DW0211)",
