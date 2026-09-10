@@ -17,15 +17,14 @@
 
 mod common;
 
-use delvewright_dsl::DSL_VERSION;
-use delvewright_dsl::{RawCampaign, check_campaign, l10n, parse_campaign};
+use delvewright_dsl::{DSL_VERSION, RawCampaign, check_campaign, l10n, parse_campaign};
 
 /// hello-world's dialogue stage at `version`, with `tooltip` spliced into the
 /// first option of the root node (or nothing at all when `tooltip` is empty).
-fn dialogue_with_tooltip(tooltip: &str, version: &str) -> String {
+fn dialogue_with_tooltip(tooltip: &str) -> String {
     format!(
         r#"{{
-  "dsl_version": "{version}",
+  "dsl_version": "{DSL_VERSION}",
   "campaign_id": "hello-world",
   "stage": "dialogue",
   "content": {{
@@ -80,19 +79,16 @@ fn raw_with_dialogue(dialogue: String) -> RawCampaign {
     }
 }
 
-fn with_tooltip(version: &str) -> RawCampaign {
-    raw_with_dialogue(dialogue_with_tooltip(
-        &format!(
-            ", \"tooltip\": {}",
-            serde_json::Value::String(FULL_LINE.into())
-        ),
-        version,
-    ))
+fn with_tooltip() -> RawCampaign {
+    raw_with_dialogue(dialogue_with_tooltip(&format!(
+        ", \"tooltip\": {}",
+        serde_json::Value::String(FULL_LINE.into())
+    )))
 }
 
 #[test]
 fn an_option_tooltip_validates_clean_at_v08() {
-    let d = check_campaign(&with_tooltip(DSL_VERSION));
+    let d = check_campaign(&with_tooltip());
     assert!(
         d.is_empty(),
         "an authored tooltip must validate clean: {d:#?}"
@@ -103,7 +99,7 @@ fn an_option_tooltip_validates_clean_at_v08() {
 /// and translated exactly as the caption is — under its own key, beside the label's.
 #[test]
 fn an_option_tooltip_enters_the_l10n_inventory() {
-    let c = parse_campaign(&with_tooltip(DSL_VERSION)).expect("parses");
+    let c = parse_campaign(&with_tooltip()).expect("parses");
     let inv = l10n::inventory(&c);
     assert_eq!(
         inv.get("dlg.keeper.greeting.opt.0.tooltip")
@@ -145,8 +141,7 @@ fn an_option_tooltip_enters_the_l10n_inventory() {
 /// start demanding translations for a string nobody authored.
 #[test]
 fn an_absent_tooltip_contributes_no_key() {
-    let c =
-        parse_campaign(&raw_with_dialogue(dialogue_with_tooltip("", DSL_VERSION))).expect("parses");
+    let c = parse_campaign(&raw_with_dialogue(dialogue_with_tooltip(""))).expect("parses");
     assert!(
         l10n::inventory(&c).keys().all(|k| !k.ends_with(".tooltip")),
         "an unauthored tooltip must be absent from the inventory"

@@ -17,8 +17,9 @@ use delvec::compiler::light;
 use delvec::compiler::load::load_campaign_dir;
 use delvec::compiler::plan::Plan;
 use delvec::compiler::registry::PrefabRegistry;
-use delvewright_dsl::DSL_VERSION;
-use delvewright_dsl::{AreaLighting, Campaign, Fixture, WorldTime, WorldWeather, parse_campaign};
+use delvewright_dsl::{
+    AreaLighting, Campaign, DSL_VERSION, Fixture, WorldTime, WorldWeather, parse_campaign,
+};
 
 /// Parse the real hello-world campaign (a single lit prefab area).
 fn hello_world() -> Campaign {

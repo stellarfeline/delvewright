@@ -30,8 +30,7 @@ use delvec::compiler::registry::PrefabRegistry;
 use delvec::compiler::traversal::{
     DW_BARRIER_SURMOUNTED, DW_TRAVERSAL_IMPOSSIBLE, Locomotion, Traversal,
 };
-use delvewright_dsl::DSL_VERSION;
-use delvewright_dsl::{Diagnostic, RawCampaign, Severity, parse_campaign};
+use delvewright_dsl::{DSL_VERSION, Diagnostic, RawCampaign, Severity, parse_campaign};
 use std::sync::LazyLock;
 
 fn read_hw(name: &str) -> String {

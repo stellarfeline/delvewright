@@ -42,8 +42,7 @@ use std::collections::BTreeSet;
 use delvec::compiler::analyze::analyze_campaign;
 use delvec::compiler::flow::gate_flags;
 use delvec::compiler::registry::{FullEntityRegistry, FullItemRegistry, PrefabRegistry};
-use delvewright_dsl::DSL_VERSION;
-use delvewright_dsl::{Campaign, RawCampaign, parse_campaign};
+use delvewright_dsl::{Campaign, DSL_VERSION, RawCampaign, parse_campaign};
 use std::sync::LazyLock;
 
 // ---------------------------------------------------------------------------

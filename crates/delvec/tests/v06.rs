@@ -14,9 +14,9 @@ use delvec::compiler::load::load_campaign_dir;
 use delvec::compiler::plan::Plan;
 use delvec::compiler::registry::PrefabRegistry;
 use delvec::compiler::textfit;
-use delvewright_dsl::DSL_VERSION;
 use delvewright_dsl::{
-    Campaign, L10nDoc, RawCampaign, Severity, art_narrates, on_screen_narrates, parse_campaign,
+    Campaign, DSL_VERSION, L10nDoc, RawCampaign, Severity, art_narrates, on_screen_narrates,
+    parse_campaign,
 };
 
 /// A v0.6 `quests` document whose single quest fires the given `on_complete`

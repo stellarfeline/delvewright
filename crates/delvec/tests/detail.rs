@@ -31,8 +31,7 @@ use delvec::compiler::blockout::{self, Perturb};
 use delvec::compiler::detail::{self, Allocation};
 use delvec::compiler::plan::Plan;
 use delvec::compiler::registry::PrefabRegistry;
-use delvewright_dsl::DSL_VERSION;
-use delvewright_dsl::{Campaign, NodeId, Severity};
+use delvewright_dsl::{Campaign, DSL_VERSION, NodeId, Severity};
 
 // ---------------------------------------------------------------------------
 // The fixture, and the pieces cut out of its massing

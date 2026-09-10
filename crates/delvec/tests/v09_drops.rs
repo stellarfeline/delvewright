@@ -24,8 +24,7 @@ use delvec::compiler::commands::CommandTree;
 use delvec::compiler::emit::{self, BuildOutput};
 use delvec::compiler::plan::Plan;
 use delvec::compiler::registry::{FullEntityRegistry, FullItemRegistry, PrefabRegistry};
-use delvewright_dsl::DSL_VERSION;
-use delvewright_dsl::{Campaign, RawCampaign, parse_campaign, validate_campaign_with};
+use delvewright_dsl::{Campaign, DSL_VERSION, RawCampaign, parse_campaign, validate_campaign_with};
 
 /// A v0.9 hello-world quests doc. `{wave_extra}` splices into the boss wave's
 /// single mob; `{actors}` splices an optional `actors` section, `{collect}` an

@@ -17,8 +17,7 @@
 
 mod common;
 
-use delvewright_dsl::DSL_VERSION;
-use delvewright_dsl::{RawCampaign, check_campaign};
+use delvewright_dsl::{DSL_VERSION, RawCampaign, check_campaign};
 
 fn campaign_with(quests: &str) -> RawCampaign {
     RawCampaign {

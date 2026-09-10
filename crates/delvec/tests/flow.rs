@@ -26,8 +26,7 @@ use delvec::compiler::analyze::analyze_campaign;
 use delvec::compiler::flow::{Flow, PathStep, Playthrough};
 use delvec::compiler::load::load_campaign_dir;
 use delvec::compiler::registry::PrefabRegistry;
-use delvewright_dsl::DSL_VERSION;
-use delvewright_dsl::{Campaign, parse_campaign};
+use delvewright_dsl::{Campaign, DSL_VERSION, parse_campaign};
 
 fn branch_endings_dir() -> PathBuf {
     common::compiler_fixtures_dir().join("branch-endings")

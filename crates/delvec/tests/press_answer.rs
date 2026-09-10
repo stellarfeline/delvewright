@@ -67,8 +67,7 @@ use delvec::compiler::emit::{self, BuildFailure, BuildOutput};
 use delvec::compiler::load::load_campaign_dir;
 use delvec::compiler::plan::Plan;
 use delvec::compiler::registry::{FullEntityRegistry, FullItemRegistry, PrefabRegistry};
-use delvewright_dsl::DSL_VERSION;
-use delvewright_dsl::{Campaign, EnvTrigger, parse_campaign};
+use delvewright_dsl::{Campaign, DSL_VERSION, EnvTrigger, parse_campaign};
 
 /// The `souls-shortcut` fixture: a doorway slab sealed from world-load, opened
 /// from the far side, with the author's own **left**-click answer already on it.

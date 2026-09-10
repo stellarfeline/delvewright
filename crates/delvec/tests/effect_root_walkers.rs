@@ -65,8 +65,9 @@ use delvec::compiler::flow::gate_flags;
 use delvec::compiler::load::{LoadedCampaign, load_campaign_dir};
 use delvec::compiler::plan::Plan;
 use delvec::compiler::registry::{FullEntityRegistry, FullItemRegistry, PrefabRegistry};
-use delvewright_dsl::DSL_VERSION;
-use delvewright_dsl::{Campaign, EffectRootKind, EffectSite, QuestEffect, parse_campaign};
+use delvewright_dsl::{
+    Campaign, DSL_VERSION, EffectRootKind, EffectSite, QuestEffect, parse_campaign,
+};
 
 /// The `souls-shortcut` fixture is the base for every row, because it is the only
 /// one in the tree that already carries a **shortcut** — root 6 needs real

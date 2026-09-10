@@ -20,8 +20,7 @@ use delvec::compiler::eclipse::{DW_AFFORDANCE_CONTEST, DW_BODY_ECLIPSE};
 use delvec::compiler::emit::{self, BuildFailure};
 use delvec::compiler::plan::Plan;
 use delvec::compiler::registry::PrefabRegistry;
-use delvewright_dsl::DSL_VERSION;
-use delvewright_dsl::{Diagnostic, RawCampaign, Severity, parse_campaign};
+use delvewright_dsl::{DSL_VERSION, Diagnostic, RawCampaign, Severity, parse_campaign};
 
 /// The hello-room prefab's anchors: `anchor/keeper-stand` at local `[5, 1, 4]`,
 /// `spawn` at `[5, 1, 2]` (two cells north) and `anchor/exit` at `[5, 1, 8]`

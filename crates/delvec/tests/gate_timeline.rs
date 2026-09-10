@@ -23,8 +23,7 @@ use delvec::compiler::nav;
 use delvec::compiler::plan::Plan;
 use delvec::compiler::registry::{FullEntityRegistry, FullItemRegistry, PrefabRegistry};
 use delvec::compiler::timeline;
-use delvewright_dsl::DSL_VERSION;
-use delvewright_dsl::{Campaign, RawCampaign, parse_campaign};
+use delvewright_dsl::{Campaign, DSL_VERSION, RawCampaign, parse_campaign};
 
 /// A hello-world `quests` doc carrying a stage-5 actor plus a caller-supplied
 /// `on_complete` body (raw JSON array contents, no surrounding brackets).

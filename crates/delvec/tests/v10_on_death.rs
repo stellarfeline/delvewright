@@ -39,8 +39,7 @@ use delvec::compiler::emit::{self, BuildOutput};
 use delvec::compiler::load::{LoadedCampaign, load_campaign_dir};
 use delvec::compiler::plan::Plan;
 use delvec::compiler::registry::{FullEntityRegistry, FullItemRegistry, PrefabRegistry};
-use delvewright_dsl::DSL_VERSION;
-use delvewright_dsl::{Campaign, QuestEffect, parse_campaign, validate_campaign_with};
+use delvewright_dsl::{Campaign, DSL_VERSION, QuestEffect, parse_campaign, validate_campaign_with};
 
 /// A campaign **with** checkpoints (so both sides of the edge are live).
 const CP: &str = "v06-checkpoints";

@@ -4,10 +4,9 @@
 
 mod common;
 
-use delvewright_dsl::DSL_VERSION;
-use delvewright_dsl::{RawCampaign, check_campaign};
+use delvewright_dsl::{DSL_VERSION, RawCampaign, check_campaign};
 
-fn world_doc(version: &str, mitigation: bool) -> String {
+fn world_doc(mitigation: bool) -> String {
     let mit = if mitigation {
         ",\n        \"mitigation\": \"night-vision\""
     } else {
@@ -15,7 +14,7 @@ fn world_doc(version: &str, mitigation: bool) -> String {
     };
     format!(
         r#"{{
-  "dsl_version": "{version}",
+  "dsl_version": "{DSL_VERSION}",
   "campaign_id": "hello-world",
   "stage": "world",
   "content": {{
@@ -58,7 +57,7 @@ fn campaign(world: &str) -> RawCampaign {
 /// `mitigation: "night-vision"` validates clean under `dsl_version 0.6.0`.
 #[test]
 fn mitigation_validates_clean_at_0_6() {
-    let diags = check_campaign(&campaign(&world_doc(DSL_VERSION, true)));
+    let diags = check_campaign(&campaign(&world_doc(true)));
     assert!(
         diags.is_empty(),
         "expected zero diagnostics for a v0.6 area mitigation, got: {diags:#?}"
@@ -69,7 +68,7 @@ fn mitigation_validates_clean_at_0_6() {
 /// pass — the enum is closed.
 #[test]
 fn unknown_mitigation_value_is_dw0100() {
-    let bad = world_doc(DSL_VERSION, true).replace("night-vision", "renamed-potion");
+    let bad = world_doc(true).replace("night-vision", "renamed-potion");
     let diags = check_campaign(&campaign(&bad));
     assert!(
         diags.iter().any(|d| d.code == "DW0100"),
@@ -80,7 +79,7 @@ fn unknown_mitigation_value_is_dw0100() {
 /// Absent `mitigation` (the pre-0.6 shape) still validates — the field is additive.
 #[test]
 fn absent_mitigation_is_unchanged() {
-    let diags = check_campaign(&campaign(&world_doc(DSL_VERSION, false)));
+    let diags = check_campaign(&campaign(&world_doc(false)));
     assert!(
         diags.is_empty(),
         "absent mitigation must validate: {diags:#?}"

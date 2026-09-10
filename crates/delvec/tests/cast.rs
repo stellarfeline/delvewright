@@ -9,8 +9,7 @@
 mod common;
 
 use delvec::compiler::cast;
-use delvewright_dsl::DSL_VERSION;
-use delvewright_dsl::{Campaign, RawCampaign, parse_campaign};
+use delvewright_dsl::{Campaign, DSL_VERSION, RawCampaign, parse_campaign};
 use std::sync::LazyLock;
 
 fn hw(name: &str) -> String {

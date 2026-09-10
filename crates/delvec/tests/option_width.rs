@@ -8,14 +8,13 @@
 
 mod common;
 
-use delvewright_dsl::DSL_VERSION;
 use std::collections::BTreeMap;
 
 use delvec::compiler::textfit::{
     self, BUTTON_LABEL_BUDGET, DIALOG_BUTTON_WIDTH, DW_OPTION_LABEL_SCROLLS,
 };
 use delvewright_dsl::{
-    Campaign, L10nDoc, RawCampaign, Severity, dialogue_option_labels, parse_campaign,
+    Campaign, DSL_VERSION, L10nDoc, RawCampaign, Severity, dialogue_option_labels, parse_campaign,
 };
 
 fn read_hw(name: &str) -> String {

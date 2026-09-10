@@ -22,8 +22,7 @@ use delvec::compiler::crosshair::{DW_CROSSHAIR_CONTEST, threshold};
 use delvec::compiler::emit::{self, BuildFailure};
 use delvec::compiler::plan::Plan;
 use delvec::compiler::registry::PrefabRegistry;
-use delvewright_dsl::DSL_VERSION;
-use delvewright_dsl::{Diagnostic, RawCampaign, Severity, parse_campaign};
+use delvewright_dsl::{DSL_VERSION, Diagnostic, RawCampaign, Severity, parse_campaign};
 use std::sync::LazyLock;
 
 fn hw(name: &str) -> String {

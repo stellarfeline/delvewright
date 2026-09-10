@@ -29,8 +29,7 @@ use delvec::grammar::ir::{
     Rounding, Size, Split, Way,
 };
 use delvec::grammar::{Axis, BlockState, Box3, ExpandOptions, export_prefab};
-use delvewright_dsl::DSL_VERSION;
-use delvewright_dsl::{Campaign, RawCampaign, parse_campaign};
+use delvewright_dsl::{Campaign, DSL_VERSION, RawCampaign, parse_campaign};
 
 /// The vault is `9 x 8 x 11`: a low room, a raised room, a flight between them
 /// whose treads are missing, and a shaft through the roof.

@@ -6,16 +6,15 @@
 
 mod common;
 
-use delvewright_dsl::DSL_VERSION;
-use delvewright_dsl::{RawCampaign, check_campaign};
+use delvewright_dsl::{DSL_VERSION, RawCampaign, check_campaign};
 
 /// A stage-5 `quests` document whose single quest fires a `play-sound` and an
-/// `art`-styled `narrate` on completion. `{ver}` is substituted for the stage's
-/// `dsl_version`.
-fn quests_doc(ver: &str) -> String {
+/// `art`-styled `narrate` on completion, at the one `dsl_version` this engine
+/// accepts.
+fn quests_doc() -> String {
     format!(
         r#"{{
-  "dsl_version": "{ver}",
+  "dsl_version": "{DSL_VERSION}",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {{
@@ -64,7 +63,7 @@ fn campaign_with_quests(quests: &str) -> RawCampaign {
 /// `play-sound` + `narrate style: art` validate clean under `dsl_version 0.6.0`.
 #[test]
 fn v06_surface_validates_clean() {
-    let diags = check_campaign(&campaign_with_quests(&quests_doc(DSL_VERSION)));
+    let diags = check_campaign(&campaign_with_quests(&quests_doc()));
     assert!(
         diags.is_empty(),
         "expected zero diagnostics for the v0.6 surface, got: {diags:#?}"

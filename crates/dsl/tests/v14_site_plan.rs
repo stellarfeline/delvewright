@@ -24,8 +24,7 @@
 
 mod common;
 
-use delvewright_dsl::DSL_VERSION;
-use delvewright_dsl::{RawCampaign, check_campaign};
+use delvewright_dsl::{DSL_VERSION, RawCampaign, check_campaign};
 use serde_json::{Value, json};
 use std::sync::LazyLock;
 

@@ -64,8 +64,7 @@ use delvec::compiler::reach::{
     judge_reach_completion, reach_completion, sites,
 };
 use delvec::compiler::registry::PrefabRegistry;
-use delvewright_dsl::DSL_VERSION;
-use delvewright_dsl::{Campaign, RawCampaign, parse_campaign};
+use delvewright_dsl::{Campaign, DSL_VERSION, RawCampaign, parse_campaign};
 
 // ============================================================ unit fixtures ==
 
@@ -74,10 +73,10 @@ fn read_hw(name: &str) -> String {
 }
 
 /// hello-world with its exit beat turned into a `reach` on `anchor/exit`.
-fn quests(version: &str, radius: u32) -> String {
+fn quests(radius: u32) -> String {
     format!(
         r#"{{
-  "dsl_version": "{version}",
+  "dsl_version": "{DSL_VERSION}",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {{
@@ -98,13 +97,13 @@ fn quests(version: &str, radius: u32) -> String {
     )
 }
 
-fn campaign(version: &str, radius: u32) -> Campaign {
+fn campaign(radius: u32) -> Campaign {
     parse_campaign(&RawCampaign {
         world: read_hw("world.json"),
         npcs: read_hw("npcs.json"),
         classes: read_hw("classes.json"),
         quest_plan: read_hw("quest-plan.json"),
-        quests: quests(version, radius),
+        quests: quests(radius),
         dialogue: read_hw("dialogue.json"),
         world_edits: None,
         geometry_brief: None,
@@ -118,8 +117,8 @@ fn campaign(version: &str, radius: u32) -> Campaign {
 
 /// A `Plan` borrows its campaign, so the campaign has to outlive it — hence a
 /// closure rather than a returned `Plan`.
-fn with_plan<R>(version: &str, radius: u32, f: impl FnOnce(&Plan) -> R) -> R {
-    let c = campaign(version, radius);
+fn with_plan<R>(radius: u32, f: impl FnOnce(&Plan) -> R) -> R {
+    let c = campaign(radius);
     let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
     let plan = Plan::build(&c, &prefabs).expect("plan builds");
     f(&plan)
@@ -210,7 +209,7 @@ fn the_smallest_authorable_volume_is_still_the_cube_that_closed_hv01() {
 /// the completion volume and arriving completes.
 #[test]
 fn a_volume_with_footing_in_it_is_clean() {
-    with_plan(DSL_VERSION, 2, |plan| {
+    with_plan(2, |plan| {
         let (pos, _) = only_site(plan);
         let world = floor_at([pos[0], pos[1] - 1, pos[2]]);
         assert!(
@@ -228,7 +227,7 @@ fn a_volume_with_footing_in_it_is_clean() {
 /// occupy.
 #[test]
 fn a_volume_no_body_can_stand_in_is_refused() {
-    with_plan(DSL_VERSION, 2, |plan| {
+    with_plan(2, |plan| {
         let (pos, obj) = only_site(plan);
         let footing = [pos[0] + 4, pos[1], pos[2]];
         let world = floor_at([footing[0], footing[1] - 1, footing[2]]);
@@ -273,7 +272,7 @@ fn a_volume_no_body_can_stand_in_is_refused() {
 /// other end of the same arithmetic.
 #[test]
 fn an_arrival_inside_the_snap_radius_but_outside_the_volume_is_refused() {
-    with_plan(DSL_VERSION, 1, |plan| {
+    with_plan(1, |plan| {
         let (pos, obj) = only_site(plan);
         let mut solid = BTreeSet::new();
         solid.insert([pos[0], pos[1] - 1, pos[2]]); // the volume is occupiable…
@@ -354,7 +353,7 @@ fn the_delivered_into_half_cannot_fire_at_or_above_the_snap_radius() {
 /// fixture declares is the engine's own constant, never a literal.
 #[test]
 fn dw0850_binds_at_the_engines_version() {
-    with_plan(delvewright_dsl::DSL_VERSION, 2, |plan| {
+    with_plan(2, |plan| {
         let (pos, _) = only_site(plan);
         let world = floor_at([pos[0] + 4, pos[1] - 1, pos[2]]);
         let err = judge_reach_completion(plan, &world, &BTreeMap::new(), None)
@@ -419,7 +418,7 @@ fn with_a_flight(anchor: [i32; 3], half: i32) -> BTreeSet<[i32; 3]> {
 /// volume also holds.
 #[test]
 fn a_raised_anchor_whose_volume_reaches_the_floor_below_is_refused() {
-    with_plan(delvewright_dsl::DSL_VERSION, 3, |plan| {
+    with_plan(3, |plan| {
         let (pos, obj) = only_site(plan);
         let world = World::from_solid_and_flooded(hall_and_dais(pos, 5), BTreeSet::new());
         // The premises, checked rather than assumed.
@@ -478,7 +477,7 @@ fn a_raised_anchor_whose_volume_reaches_the_floor_below_is_refused() {
 /// this too, and would be pointed one way.
 #[test]
 fn a_way_up_inside_the_volume_is_arriving_and_passes() {
-    with_plan(delvewright_dsl::DSL_VERSION, 3, |plan| {
+    with_plan(3, |plan| {
         let (pos, _) = only_site(plan);
         let world = World::from_solid_and_flooded(with_a_flight(pos, 5), BTreeSet::new());
         // The premise: the treads really are standable, and really are inside the
@@ -516,7 +515,7 @@ fn a_way_up_inside_the_volume_is_arriving_and_passes() {
 /// below. One number moved.
 #[test]
 fn a_volume_that_stops_above_the_lower_floor_is_silent() {
-    with_plan(delvewright_dsl::DSL_VERSION, 1, |plan| {
+    with_plan(1, |plan| {
         let (pos, _) = only_site(plan);
         let world = World::from_solid_and_flooded(hall_and_dais(pos, 5), BTreeSet::new());
         let (binding, verdict) = check_reach_footprint(plan, &world, Some(entry(pos)));
@@ -561,7 +560,7 @@ fn a_body_one_course_under_the_volume_still_reaches_into_it() {
 /// to be that wide before it reaches a floor three courses down.
 #[test]
 fn dw0881_binds_at_the_engines_version() {
-    with_plan(delvewright_dsl::DSL_VERSION, 4, |plan| {
+    with_plan(4, |plan| {
         let (pos, _) = only_site(plan);
         let world = World::from_solid_and_flooded(hall_and_dais(pos, 6), BTreeSet::new());
         let (_, verdict) = check_reach_footprint(plan, &world, Some(entry(pos)));
@@ -782,7 +781,7 @@ fn a_derived_world_honours_the_radius_too() {
 /// repair, and zero off-floor cells is what it looks like.
 #[test]
 fn an_anchor_in_a_wall_is_arrived_at_from_either_side() {
-    with_plan(delvewright_dsl::DSL_VERSION, 2, |plan| {
+    with_plan(2, |plan| {
         let (pos, _) = only_site(plan);
         let mut solid = BTreeSet::new();
         // The floor of both rooms, wide enough that the completion volume never
@@ -847,7 +846,7 @@ fn an_anchor_in_a_wall_is_arrived_at_from_either_side() {
 #[test]
 fn dw0850_names_no_radius_when_none_answers() {
     for radius in [1u32, 3] {
-        with_plan(delvewright_dsl::DSL_VERSION, radius, |plan| {
+        with_plan(radius, |plan| {
             let (pos, _) = only_site(plan);
             let mut solid = BTreeSet::new();
             for dx in -6..=6 {
@@ -891,7 +890,7 @@ fn dw0850_names_no_radius_when_none_answers() {
 /// and never re-judged is how this pair came to prescribe each other's refusal.
 #[test]
 fn dw0850_names_the_smallest_radius_that_answers() {
-    with_plan(delvewright_dsl::DSL_VERSION, 1, |plan| {
+    with_plan(1, |plan| {
         let (pos, _) = only_site(plan);
         let mut solid = BTreeSet::new();
         for dx in -6..=6 {
@@ -915,7 +914,7 @@ fn dw0850_names_the_smallest_radius_that_answers() {
         );
     });
     // …and taking the move reaches a different verdict, over the identical world.
-    with_plan(delvewright_dsl::DSL_VERSION, 2, |plan| {
+    with_plan(2, |plan| {
         let (pos, _) = only_site(plan);
         let mut solid = BTreeSet::new();
         for dx in -6..=6 {

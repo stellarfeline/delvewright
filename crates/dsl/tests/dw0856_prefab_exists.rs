@@ -19,8 +19,7 @@
 
 mod common;
 
-use delvewright_dsl::DSL_VERSION;
-use delvewright_dsl::{Diagnostic, RawCampaign, check_campaign};
+use delvewright_dsl::{DSL_VERSION, Diagnostic, RawCampaign, check_campaign};
 
 /// A world doc binding one area to `prefab`, verbatim.
 fn world_with(prefab: &str) -> String {

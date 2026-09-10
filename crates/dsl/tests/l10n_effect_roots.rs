@@ -10,12 +10,11 @@
 
 mod common;
 
-use delvewright_dsl::DSL_VERSION;
 use std::collections::BTreeMap;
 
 use delvewright_dsl::{
-    Campaign, L10nDoc, L10nKind, RawCampaign, l10n_inventory, localize, on_screen_narrates,
-    parse_campaign, validate_l10n,
+    Campaign, DSL_VERSION, L10nDoc, L10nKind, RawCampaign, l10n_inventory, localize,
+    on_screen_narrates, parse_campaign, validate_l10n,
 };
 
 /// The trap-payload narrate's inventory key (`fx.trap.<trap>.<i>`, keyed exactly

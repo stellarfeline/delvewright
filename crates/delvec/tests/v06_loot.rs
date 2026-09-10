@@ -14,8 +14,7 @@ use delvec::compiler::commands::CommandTree;
 use delvec::compiler::emit;
 use delvec::compiler::plan::Plan;
 use delvec::compiler::registry::{FullEntityRegistry, FullItemRegistry, PrefabRegistry};
-use delvewright_dsl::DSL_VERSION;
-use delvewright_dsl::{Campaign, RawCampaign, parse_campaign, validate_campaign_with};
+use delvewright_dsl::{Campaign, DSL_VERSION, RawCampaign, parse_campaign, validate_campaign_with};
 
 fn quests_doc(loot: &str) -> String {
     quests_doc_with(loot, "")

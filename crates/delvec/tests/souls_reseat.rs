@@ -29,8 +29,7 @@ use delvec::compiler::emit::{self, BuildOutput};
 use delvec::compiler::load::load_campaign_dir;
 use delvec::compiler::plan::Plan;
 use delvec::compiler::registry::{FullEntityRegistry, FullItemRegistry, PrefabRegistry};
-use delvewright_dsl::DSL_VERSION;
-use delvewright_dsl::{Campaign, parse_campaign, validate_campaign_with};
+use delvewright_dsl::{Campaign, DSL_VERSION, parse_campaign, validate_campaign_with};
 
 const NS: &str = "souls-bonfire";
 

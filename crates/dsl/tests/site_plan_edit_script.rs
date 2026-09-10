@@ -24,8 +24,7 @@
 //! The campaign here is the gallery's own committed site-plan overlay, so the
 //! fixture is a real site-plan campaign rather than a hand-built stand-in.
 
-use delvewright_dsl::DSL_VERSION;
-use delvewright_dsl::{RawCampaign, check_campaign};
+use delvewright_dsl::{DSL_VERSION, RawCampaign, check_campaign};
 
 fn repo_root() -> std::path::PathBuf {
     std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))

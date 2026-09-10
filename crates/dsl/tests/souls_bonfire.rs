@@ -10,8 +10,7 @@
 
 mod common;
 
-use delvewright_dsl::DSL_VERSION;
-use delvewright_dsl::{RawCampaign, check_campaign, l10n_inventory, parse_campaign};
+use delvewright_dsl::{DSL_VERSION, RawCampaign, check_campaign, l10n_inventory, parse_campaign};
 use std::sync::LazyLock;
 
 /// A v0.6 quests document with a bonfire (with an `on_rest` narrate) and a wave

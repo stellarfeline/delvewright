@@ -20,8 +20,7 @@
 
 mod common;
 
-use delvewright_dsl::DSL_VERSION;
-use delvewright_dsl::{RawCampaign, check_campaign};
+use delvewright_dsl::{DSL_VERSION, RawCampaign, check_campaign};
 use std::sync::LazyLock;
 
 /// A v0.7 quests document with a bonfire and a wave that re-seats on rest,
