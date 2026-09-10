@@ -6,10 +6,13 @@
 mod common;
 
 use delvewright_dsl::{RawCampaign, check_campaign, l10n_inventory, parse_campaign};
+use std::sync::LazyLock;
 
 /// A v0.8 quests document that seals `anchor/door` with an authored answer.
-const QUESTS_V08: &str = r#"{
-  "dsl_version": "0.24.0",
+static QUESTS_V08: LazyLock<String> = LazyLock::new(|| {
+    common::at_dsl_version(
+        r#"{
+  "dsl_version": "%dsl_version%",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {
@@ -36,7 +39,9 @@ const QUESTS_V08: &str = r#"{
       }
     ]
   }
-}"#;
+}"#,
+    )
+});
 
 fn campaign_with_quests(quests: &str) -> RawCampaign {
     RawCampaign {
@@ -58,7 +63,7 @@ fn campaign_with_quests(quests: &str) -> RawCampaign {
 /// An authored `sealed_hint` validates clean under `dsl_version 0.8.0`.
 #[test]
 fn sealed_hint_validates_clean_at_0_8() {
-    let diags = check_campaign(&campaign_with_quests(QUESTS_V08));
+    let diags = check_campaign(&campaign_with_quests(QUESTS_V08.as_str()));
     assert!(
         diags.is_empty(),
         "expected zero diagnostics for a v0.8 sealed_hint, got: {diags:#?}"
@@ -70,7 +75,7 @@ fn sealed_hint_validates_clean_at_0_8() {
 /// `narrate` line.
 #[test]
 fn an_authored_hint_is_inventoried() {
-    let c = parse_campaign(&campaign_with_quests(QUESTS_V08)).expect("campaign parses");
+    let c = parse_campaign(&campaign_with_quests(QUESTS_V08.as_str())).expect("campaign parses");
     let inv = l10n_inventory(&c);
     assert_eq!(
         inv.get("fx.open-the-door.done.0.sealed_hint")

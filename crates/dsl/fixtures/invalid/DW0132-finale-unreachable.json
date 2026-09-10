@@ -28,7 +28,6 @@
           }
         ]
       },
-      "dsl_version": "0.24.0",
       "stage": "quest-plan"
     },
     "quests": {
@@ -87,7 +86,6 @@
           }
         ]
       },
-      "dsl_version": "0.24.0",
       "stage": "quests"
     }
   },

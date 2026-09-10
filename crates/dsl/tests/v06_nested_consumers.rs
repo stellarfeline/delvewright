@@ -7,6 +7,7 @@
 
 mod common;
 
+use delvewright_dsl::DSL_VERSION;
 use delvewright_dsl::{RawCampaign, check_campaign};
 
 /// A v0.6 quests doc whose `on_complete` is a single `sequence` wrapping the given
@@ -14,7 +15,7 @@ use delvewright_dsl::{RawCampaign, check_campaign};
 fn quests_with_sequence(seq_effects: &str) -> String {
     format!(
         r#"{{
-  "dsl_version": "0.24.0",
+  "dsl_version": "{DSL_VERSION}",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {{

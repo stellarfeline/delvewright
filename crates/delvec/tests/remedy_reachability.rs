@@ -40,6 +40,7 @@ use delvec::compiler::emit::{self, BuildFailure, BuildOutput};
 use delvec::compiler::load::load_campaign_dir;
 use delvec::compiler::plan::Plan;
 use delvec::compiler::registry::PrefabRegistry;
+use delvewright_dsl::DSL_VERSION;
 use delvewright_dsl::parse_campaign;
 
 mod common;
@@ -94,7 +95,7 @@ fn campaign(tag: &str, horizon: Option<serde_json::Value>) -> PathBuf {
     common::copy_dir_all(&common::hello_world_dir(), &camp);
     let mut world: serde_json::Value =
         serde_json::from_str(&std::fs::read_to_string(camp.join("world.json")).unwrap()).unwrap();
-    world["dsl_version"] = serde_json::json!("0.24.0");
+    world["dsl_version"] = serde_json::json!(DSL_VERSION);
     if let Some(h) = horizon {
         let content = world["content"].as_object_mut().unwrap();
         content.insert("horizon".into(), h);
@@ -946,7 +947,7 @@ fn dw0320_adding_a_boundary_or_choosing_void_both_reach_a_different_verdict() {
     common::copy_dir_all(&common::hello_world_dir(), &camp);
     let mut world: serde_json::Value =
         serde_json::from_str(&std::fs::read_to_string(camp.join("world.json")).unwrap()).unwrap();
-    world["dsl_version"] = serde_json::json!("0.24.0");
+    world["dsl_version"] = serde_json::json!(DSL_VERSION);
     world["content"]
         .as_object_mut()
         .unwrap()

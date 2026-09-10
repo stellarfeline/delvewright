@@ -17,6 +17,7 @@
 
 mod common;
 
+use delvewright_dsl::DSL_VERSION;
 use delvewright_dsl::{RawCampaign, check_campaign};
 
 fn campaign_with_quests(quests: &str) -> RawCampaign {
@@ -42,7 +43,7 @@ fn campaign_with_quests(quests: &str) -> RawCampaign {
 fn quests_doc(effects: &str, triggers: &str) -> String {
     format!(
         r#"{{
-  "dsl_version": "0.24.0",
+  "dsl_version": "{DSL_VERSION}",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {{
@@ -180,7 +181,7 @@ fn trigger_effect_on_a_real_anchor_validates_clean() {
 fn two_quest_doc(despawn: &str) -> (String, String) {
     let quests = format!(
         r#"{{
-  "dsl_version": "0.24.0",
+  "dsl_version": "{DSL_VERSION}",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {{
@@ -209,8 +210,9 @@ fn two_quest_doc(despawn: &str) -> (String, String) {
   }}
 }}"#
     );
-    let plan = r#"{
-  "dsl_version": "0.24.0",
+    let plan = common::at_dsl_version(
+        r#"{
+  "dsl_version": "%dsl_version%",
   "campaign_id": "hello-world",
   "stage": "quest-plan",
   "content": {
@@ -222,7 +224,8 @@ fn two_quest_doc(despawn: &str) -> (String, String) {
     ],
     "finale": "quest/second"
   }
-}"#;
+}"#,
+    );
     (quests, plan.to_string())
 }
 

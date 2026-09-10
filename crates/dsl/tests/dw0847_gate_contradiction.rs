@@ -17,6 +17,7 @@
 
 mod common;
 
+use delvewright_dsl::DSL_VERSION;
 use delvewright_dsl::{RawCampaign, check_campaign};
 
 fn campaign_with(quests: &str) -> RawCampaign {
@@ -48,7 +49,7 @@ fn codes(raw: &RawCampaign) -> Vec<String> {
 fn quests_doc(objective_terms: &str) -> String {
     format!(
         r#"{{
-  "dsl_version": "0.24.0",
+  "dsl_version": "{DSL_VERSION}",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {{
@@ -129,8 +130,9 @@ fn a_satisfiable_multi_term_gate_is_clean() {
 /// same emptiness one axis over, and needs no v0.10 surface to commit.
 #[test]
 fn a_flag_required_and_forbidden_at_once_is_refused() {
-    let quests = r#"{
-  "dsl_version": "0.24.0",
+    let quests = common::at_dsl_version(
+        r#"{
+  "dsl_version": "%dsl_version%",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {
@@ -156,8 +158,9 @@ fn a_flag_required_and_forbidden_at_once_is_refused() {
       }
     ]
   }
-}"#;
-    let raw = campaign_with(quests);
+}"#,
+    );
+    let raw = campaign_with(&quests);
     assert!(
         codes(&raw).contains(&"DW0847".to_string()),
         "requires+forbids of one flag must be refused: {:?}",
@@ -169,8 +172,9 @@ fn a_flag_required_and_forbidden_at_once_is_refused() {
 /// hold declares a branch scene no branch can ever reach.
 #[test]
 fn a_contradictory_cast_placement_gate_is_refused() {
-    let quests = r#"{
-  "dsl_version": "0.24.0",
+    let quests = common::at_dsl_version(
+        r#"{
+  "dsl_version": "%dsl_version%",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {
@@ -198,8 +202,9 @@ fn a_contradictory_cast_placement_gate_is_refused() {
       }
     ]
   }
-}"#;
-    let raw = campaign_with(quests);
+}"#,
+    );
+    let raw = campaign_with(&quests);
     assert!(
         codes(&raw).contains(&"DW0847".to_string()),
         "a cast placement's contradictory gate must be refused: {:?}",

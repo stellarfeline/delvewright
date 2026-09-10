@@ -8,10 +8,13 @@
 mod common;
 
 use delvewright_dsl::{RawCampaign, check_campaign};
+use std::sync::LazyLock;
 
 /// A v0.5 stage-1 world document declaring time, weather and an area `lighting`.
-const WORLD_V05: &str = r#"{
-  "dsl_version": "0.24.0",
+static WORLD_V05: LazyLock<String> = LazyLock::new(|| {
+    common::at_dsl_version(
+        r#"{
+  "dsl_version": "%dsl_version%",
   "campaign_id": "hello-world",
   "stage": "world",
   "content": {
@@ -31,7 +34,9 @@ const WORLD_V05: &str = r#"{
       }
     ]
   }
-}"#;
+}"#,
+    )
+});
 
 fn campaign_with_world(world: &str) -> RawCampaign {
     RawCampaign {
@@ -53,7 +58,7 @@ fn campaign_with_world(world: &str) -> RawCampaign {
 /// v0.5 time/weather/lighting validate clean under `dsl_version 0.5.0`.
 #[test]
 fn v05_world_surface_validates_clean() {
-    let diags = check_campaign(&campaign_with_world(WORLD_V05));
+    let diags = check_campaign(&campaign_with_world(WORLD_V05.as_str()));
     assert!(
         diags.is_empty(),
         "expected zero diagnostics for the v0.5 world surface, got: {diags:#?}"

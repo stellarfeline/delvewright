@@ -13,6 +13,7 @@
 
 mod common;
 
+use delvewright_dsl::DSL_VERSION;
 use delvewright_dsl::{RawCampaign, check_campaign};
 
 /// hello-world's quests stage with one actor, optionally tiered, at the given
@@ -74,7 +75,7 @@ fn every_tier_keyword_validates_at_v08() {
     for tier in ["ordinary", "elite", "boss"] {
         let raw = raw_with_quests(quests_with_actor_tier(
             &format!(",\n         \"tier\": \"{tier}\""),
-            "0.24.0",
+            DSL_VERSION,
         ));
         let d = check_campaign(&raw);
         // `DW0469` is the fixture's own pre-existing advisory (a fighting actor

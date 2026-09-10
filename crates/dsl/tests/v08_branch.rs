@@ -6,7 +6,11 @@
 //! declaration in the DSL. The proofs *about* branches (`DW0480`–`DW0485`) are
 //! compiler-tier and live in `crates/delvec/tests/branch.rs`.
 
+mod common;
+
+use delvewright_dsl::DSL_VERSION;
 use delvewright_dsl::{Diagnostic, RawCampaign, check_campaign};
+use std::sync::LazyLock;
 
 fn hw(name: &str) -> String {
     std::fs::read_to_string(
@@ -17,17 +21,23 @@ fn hw(name: &str) -> String {
     .unwrap()
 }
 
-const NPCS: &str = r#"{
-  "dsl_version": "0.24.0", "campaign_id": "hello-world", "stage": "npcs",
+static NPCS: LazyLock<String> = LazyLock::new(|| {
+    common::at_dsl_version(
+        r#"{
+  "dsl_version": "%dsl_version%", "campaign_id": "hello-world", "stage": "npcs",
   "content": { "npcs": [
     { "id": "npc/keeper", "name": "The Keeper", "role": "quest-giver",
       "area": "area/keep", "anchor": "anchor/keeper-stand", "base_entity": "minecraft:villager",
       "persona": { "archetype": "stoic gatekeeper", "speech_style": "Terse.", "motivation": "Guard the gate." } }
   ] }
-}"#;
+}"#,
+    )
+});
 
-const DIALOGUE: &str = r#"{
-  "dsl_version": "0.24.0", "campaign_id": "hello-world", "stage": "dialogue",
+static DIALOGUE: LazyLock<String> = LazyLock::new(|| {
+    common::at_dsl_version(
+        r#"{
+  "dsl_version": "%dsl_version%", "campaign_id": "hello-world", "stage": "dialogue",
   "content": { "dialogues": [
     { "npc": "npc/keeper", "root": "dlg/greeting", "nodes": [
       { "id": "dlg/greeting", "text": "Halt.", "options": [
@@ -40,7 +50,9 @@ const DIALOGUE: &str = r#"{
                        { "type": "complete-objective", "objective": "obj/talk" } ],
           "happening": { "verb": "believes", "text": "The party refuses the watch." } } ] } ] }
   ] }
-}"#;
+}"#,
+    )
+});
 
 /// Stage 5 at `version`, with the fixed two-quest shape.
 fn quests(version: &str) -> String {
@@ -107,7 +119,11 @@ fn diags(plan_doc: String, quests_doc: String, dialogue_doc: &str) -> Vec<Diagno
 }
 
 fn green() -> Vec<Diagnostic> {
-    diags(plan("0.24.0", POINTS), quests("0.24.0"), DIALOGUE)
+    diags(
+        plan(DSL_VERSION, POINTS),
+        quests(DSL_VERSION),
+        DIALOGUE.as_str(),
+    )
 }
 
 fn has(d: &[Diagnostic], code: &str) -> bool {
@@ -128,7 +144,11 @@ fn v08_reference_campaign_is_clean() {
 fn malformed_branch_id_is_dw0110() {
     let bad = POINTS.replace("branch/hold", "hold");
     assert!(has(
-        &diags(plan("0.24.0", &bad), quests("0.24.0"), DIALOGUE),
+        &diags(
+            plan(DSL_VERSION, &bad),
+            quests(DSL_VERSION),
+            DIALOGUE.as_str()
+        ),
         "DW0110"
     ));
 }
@@ -138,7 +158,11 @@ fn malformed_branch_id_is_dw0110() {
 #[test]
 fn leads_to_without_a_known_prefix_is_dw0110() {
     let bad = POINTS.replace("\"leads_to\": \"ending/out\"", "\"leads_to\": \"the-road\"");
-    let d = diags(plan("0.24.0", &bad), quests("0.24.0"), DIALOGUE);
+    let d = diags(
+        plan(DSL_VERSION, &bad),
+        quests(DSL_VERSION),
+        DIALOGUE.as_str(),
+    );
     let hit = d
         .iter()
         .find(|x| x.code == "DW0110" && x.path.contains("leads_to"))
@@ -150,7 +174,11 @@ fn leads_to_without_a_known_prefix_is_dw0110() {
 #[test]
 fn duplicate_branch_id_is_dw0111() {
     let bad = POINTS.replace("branch/bolt", "branch/hold");
-    let d = diags(plan("0.24.0", &bad), quests("0.24.0"), DIALOGUE);
+    let d = diags(
+        plan(DSL_VERSION, &bad),
+        quests(DSL_VERSION),
+        DIALOGUE.as_str(),
+    );
     let hit = d
         .iter()
         .find(|x| x.code == "DW0111")
@@ -176,7 +204,11 @@ fn dangling_branch_reference_is_dw0112() {
             "\"leads_to\": \"ending/nowhere\"",
         ),
     ] {
-        let d = diags(plan("0.24.0", &bad), quests("0.24.0"), DIALOGUE);
+        let d = diags(
+            plan(DSL_VERSION, &bad),
+            quests(DSL_VERSION),
+            DIALOGUE.as_str(),
+        );
         assert!(has(&d, "DW0112"), "{bad}\n{d:#?}");
     }
 }
@@ -193,7 +225,11 @@ fn branch_flag_outside_forks_on_is_dw0112() {
             "\"forks_on\": [\"flag/wait\", \"flag/flee\"]",
             "\"forks_on\": [\"flag/wait\"]",
         );
-    let d = diags(plan("0.24.0", &bad), quests("0.24.0"), DIALOGUE);
+    let d = diags(
+        plan(DSL_VERSION, &bad),
+        quests(DSL_VERSION),
+        DIALOGUE.as_str(),
+    );
     assert!(has(&d, "DW0112"), "{d:#?}");
 }
 
@@ -201,7 +237,11 @@ fn branch_flag_outside_forks_on_is_dw0112() {
 #[test]
 fn forking_on_an_unproduced_flag_is_dw0172() {
     let bad = POINTS.replace("flag/flee", "flag/ghost");
-    let d = diags(plan("0.24.0", &bad), quests("0.24.0"), DIALOGUE);
+    let d = diags(
+        plan(DSL_VERSION, &bad),
+        quests(DSL_VERSION),
+        DIALOGUE.as_str(),
+    );
     let hit = d
         .iter()
         .find(|x| x.code == "DW0172" && x.path.contains("forks_on"))
@@ -214,8 +254,8 @@ fn forking_on_an_unproduced_flag_is_dw0172() {
 #[test]
 fn dangling_happening_subject_is_dw0112() {
     let bad =
-        quests("0.24.0").replace("\"subject\": \"npc/keeper\"", "\"subject\": \"npc/nobody\"");
-    let d = diags(plan("0.24.0", POINTS), bad, DIALOGUE);
+        quests(DSL_VERSION).replace("\"subject\": \"npc/keeper\"", "\"subject\": \"npc/nobody\"");
+    let d = diags(plan(DSL_VERSION, POINTS), bad, DIALOGUE.as_str());
     let hit = d
         .iter()
         .find(|x| x.code == "DW0112" && x.path.contains("subject"))
@@ -227,10 +267,10 @@ fn dangling_happening_subject_is_dw0112() {
 /// tracks by hand, and resolves without a registry.
 #[test]
 fn item_subject_is_a_free_namespace() {
-    let ok = quests("0.24.0").replace(
+    let ok = quests(DSL_VERSION).replace(
         "\"subject\": \"npc/keeper\"",
         "\"subject\": \"item/warden-token\"",
     );
-    let d = diags(plan("0.24.0", POINTS), ok, DIALOGUE);
+    let d = diags(plan(DSL_VERSION, POINTS), ok, DIALOGUE.as_str());
     assert!(d.is_empty(), "{d:#?}");
 }

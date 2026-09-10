@@ -59,8 +59,8 @@ fn parse(deferred: bool, quests: &str) -> Campaign {
 /// A v0.6 quests doc skeleton; `{TALK_FX}` and `{COMPLETE_FX}` are the
 /// `obj/talk` completion bundle and the quest `on_complete` bundle.
 fn quests(talk_fx: &str, complete_fx: &str) -> String {
-    r#"{
-  "dsl_version": "0.24.0",
+    common::at_dsl_version(r#"{
+  "dsl_version": "%dsl_version%",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {
@@ -79,7 +79,7 @@ fn quests(talk_fx: &str, complete_fx: &str) -> String {
       }
     ]
   }
-}"#
+}"#)
     .replacen("{TALK_FX}", talk_fx, 1)
     .replacen("{COMPLETE_FX}", complete_fx, 1)
 }

@@ -17,6 +17,7 @@ use delvec::compiler::emit::{self, BuildOutput};
 use delvec::compiler::plan::Plan;
 use delvec::compiler::registry::PrefabRegistry;
 use delvewright_dsl::{Campaign, RawCampaign, parse_campaign};
+use std::sync::LazyLock;
 
 fn read_hw(name: &str) -> String {
     std::fs::read_to_string(common::hello_world_dir().join(name)).unwrap()
@@ -25,8 +26,10 @@ fn read_hw(name: &str) -> String {
 /// A v0.6 quests doc: the keeper's walk carries an `on_arrive` (set-flag), an
 /// effect and two objectives carry `forbids_flags`, and an approach trigger is
 /// armed by `flag/arrived` but stood down by `flag/blocked`.
-const QUESTS_V06: &str = r#"{
-  "dsl_version": "0.24.0",
+static QUESTS_V06: LazyLock<String> = LazyLock::new(|| {
+    common::at_dsl_version(
+        r#"{
+  "dsl_version": "%dsl_version%",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {
@@ -64,7 +67,9 @@ const QUESTS_V06: &str = r#"{
       }
     ]
   }
-}"#;
+}"#,
+    )
+});
 
 /// hello-world's dialogue with the completing option `forbids_flags`-gated.
 fn dialogue_with_forbids() -> String {

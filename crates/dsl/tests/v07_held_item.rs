@@ -4,6 +4,7 @@
 
 mod common;
 
+use delvewright_dsl::DSL_VERSION;
 use delvewright_dsl::{RawCampaign, check_campaign, l10n, parse_campaign};
 
 /// hello-world's single quest with an `interact` objective, parameterised on the
@@ -54,7 +55,7 @@ const GATED: &str = r#", "requires_item": "minecraft:iron_sword", "missing_item_
 /// A gated `interact` carrying its empty-hand line validates clean under v0.7.
 #[test]
 fn missing_item_hint_validates_clean_under_v07() {
-    let diags = check_campaign(&campaign_with(quests("0.24.0", GATED)));
+    let diags = check_campaign(&campaign_with(quests(DSL_VERSION, GATED)));
     assert!(
         diags.is_empty(),
         "expected zero diagnostics for a v0.7 held-item interact, got: {diags:#?}"
@@ -66,7 +67,7 @@ fn missing_item_hint_validates_clean_under_v07() {
 #[test]
 fn missing_item_hint_without_requires_item_is_an_error() {
     let orphan = r#", "missing_item_hint": "The bar will not shift with bare hands.""#;
-    let diags = check_campaign(&campaign_with(quests("0.24.0", orphan)));
+    let diags = check_campaign(&campaign_with(quests(DSL_VERSION, orphan)));
     let d = diags
         .iter()
         .find(|d| d.code == "DW0437")
@@ -81,7 +82,7 @@ fn missing_item_hint_without_requires_item_is_an_error() {
     // Control: the same hint WITH a gate is clean, so DW0437 is about the pairing
     // and not about the field's mere presence.
     assert!(
-        !check_campaign(&campaign_with(quests("0.24.0", GATED)))
+        !check_campaign(&campaign_with(quests(DSL_VERSION, GATED)))
             .iter()
             .any(|d| d.code == "DW0437"),
         "a paired hint must not raise DW0437"
@@ -92,7 +93,7 @@ fn missing_item_hint_without_requires_item_is_an_error() {
 /// player-visible string.
 #[test]
 fn missing_item_hint_enters_the_l10n_inventory() {
-    let c = parse_campaign(&campaign_with(quests("0.24.0", GATED))).expect("parses");
+    let c = parse_campaign(&campaign_with(quests(DSL_VERSION, GATED))).expect("parses");
     let inv = l10n::inventory(&c);
     let key = "obj.open-the-door.pry.missing_item_hint";
     assert_eq!(

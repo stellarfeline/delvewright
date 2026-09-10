@@ -15,14 +15,16 @@ use delvec::compiler::commands::CommandTree;
 use delvec::compiler::emit;
 use delvec::compiler::plan::{Plan, Step};
 use delvec::compiler::registry::{FullEntityRegistry, FullItemRegistry, PrefabRegistry};
+use delvewright_dsl::DSL_VERSION;
 use delvewright_dsl::{Campaign, RawCampaign, parse_campaign, validate_campaign_with};
+use std::sync::LazyLock;
 
 /// hello-world's quests stage with one `collect`, parameterised on the adoption
 /// fields the objective declares.
 fn quests_doc(fields: &str) -> String {
     format!(
         r#"{{
-  "dsl_version": "0.24.0",
+  "dsl_version": "{DSL_VERSION}",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {{
@@ -46,8 +48,10 @@ fn quests_doc(fields: &str) -> String {
 
 /// A stage-7 batch that stands a barrel on the collect's anchor cell — the
 /// prefab furniture the objective adopts.
-const BARREL_EDITS: &str = r#"{
-  "dsl_version": "0.24.0",
+static BARREL_EDITS: LazyLock<String> = LazyLock::new(|| {
+    common::at_dsl_version(
+        r#"{
+  "dsl_version": "%dsl_version%",
   "campaign_id": "hello-world",
   "stage": "world-edits",
   "content": {
@@ -76,7 +80,9 @@ const BARREL_EDITS: &str = r#"{
       }
     ]
   }
-}"#;
+}"#,
+    )
+});
 
 fn read_hw(name: &str) -> String {
     std::fs::read_to_string(common::hello_world_dir().join(name)).unwrap()
@@ -171,7 +177,8 @@ fn adopting_a_container_that_is_not_there_is_dw0438() {
 /// each padding stack repeats it in the slots after it.
 #[test]
 fn an_adopted_barrel_is_filled_in_place_named_and_padded() {
-    let out = try_build(ADOPTED, Some(BARREL_EDITS)).expect("builds over the edited world");
+    let out =
+        try_build(ADOPTED, Some(BARREL_EDITS.as_str())).expect("builds over the edited world");
     let f = text(
         &out,
         "datapack/data/hello-world/function/activate_o_cheese.mcfunction",
@@ -263,7 +270,7 @@ fn the_critical_path_step_follows_the_adopted_container() {
 /// component must not change what the adjudication sees.
 #[test]
 fn the_generated_packtest_drives_the_adopted_container_and_the_named_stack() {
-    let out = try_build(ADOPTED, Some(BARREL_EDITS)).expect("builds");
+    let out = try_build(ADOPTED, Some(BARREL_EDITS.as_str())).expect("builds");
     let pt = text(
         &out,
         "packtest-datapack/data/hello-world/test/collect_container.mcfunction",

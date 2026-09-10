@@ -8,9 +8,12 @@
 mod common;
 
 use delvewright_dsl::{RawCampaign, check_campaign};
+use std::sync::LazyLock;
 
-const QUESTS_V06: &str = r#"{
-  "dsl_version": "0.24.0",
+static QUESTS_V06: LazyLock<String> = LazyLock::new(|| {
+    common::at_dsl_version(
+        r#"{
+  "dsl_version": "%dsl_version%",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {
@@ -30,7 +33,9 @@ const QUESTS_V06: &str = r#"{
       { "id": "timed-gate/inner-door", "gate": "anchor/door", "open_ticks": 60, "closed_ticks": 40 }
     ]
   }
-}"#;
+}"#,
+    )
+});
 
 fn campaign_with_quests(quests: &str) -> RawCampaign {
     RawCampaign {
@@ -52,7 +57,7 @@ fn campaign_with_quests(quests: &str) -> RawCampaign {
 /// A well-formed timed gate validates clean under 0.6.0.
 #[test]
 fn timed_gate_validates_clean() {
-    let diags = check_campaign(&campaign_with_quests(QUESTS_V06));
+    let diags = check_campaign(&campaign_with_quests(QUESTS_V06.as_str()));
     assert!(
         diags.is_empty(),
         "expected zero diagnostics for a v0.6 timed gate, got: {diags:#?}"
@@ -65,9 +70,10 @@ fn timed_gate_validates_clean() {
 fn zero_length_half_cycle_is_dw0377() {
     for field in ["open_ticks", "closed_ticks"] {
         let bad = QUESTS_V06
+            .as_str()
             .replace(&format!("\"{field}\": 60"), &format!("\"{field}\": 0"))
             .replace(&format!("\"{field}\": 40"), &format!("\"{field}\": 0"));
-        assert_ne!(bad, QUESTS_V06, "{field} substitution must apply");
+        assert_ne!(bad, QUESTS_V06.as_str(), "{field} substitution must apply");
         let diags = check_campaign(&campaign_with_quests(&bad));
         assert!(
             diags.iter().any(|d| d.code == "DW0377"),
@@ -83,7 +89,7 @@ fn phase_beyond_the_cycle_is_dw0377() {
         "\"closed_ticks\": 40 }",
         "\"closed_ticks\": 40, \"phase\": 100 }",
     );
-    assert_ne!(bad, QUESTS_V06);
+    assert_ne!(bad, QUESTS_V06.as_str());
     let diags = check_campaign(&campaign_with_quests(&bad));
     assert!(
         diags.iter().any(|d| d.code == "DW0377"),
@@ -99,7 +105,7 @@ fn two_clocks_on_one_gate_is_dw0377() {
         "{ \"id\": \"timed-gate/inner-door\", \"gate\": \"anchor/door\", \"open_ticks\": 60, \"closed_ticks\": 40 }",
         "{ \"id\": \"timed-gate/inner-door\", \"gate\": \"anchor/door\", \"open_ticks\": 60, \"closed_ticks\": 40 },\n      { \"id\": \"timed-gate/inner-door-b\", \"gate\": \"anchor/door\", \"open_ticks\": 20, \"closed_ticks\": 20 }",
     );
-    assert_ne!(bad, QUESTS_V06);
+    assert_ne!(bad, QUESTS_V06.as_str());
     let diags = check_campaign(&campaign_with_quests(&bad));
     assert!(
         diags.iter().any(|d| d.code == "DW0377"),
@@ -115,7 +121,7 @@ fn a_shortcut_gate_on_a_clock_is_dw0377() {
         "    \"timed_gates\": [",
         "    \"shortcuts\": [ { \"id\": \"shortcut/inner-door\", \"gate\": \"anchor/door\", \"unlock\": \"anchor/exit\" } ],\n    \"timed_gates\": [",
     );
-    assert_ne!(bad, QUESTS_V06);
+    assert_ne!(bad, QUESTS_V06.as_str());
     let diags = check_campaign(&campaign_with_quests(&bad));
     assert!(
         diags.iter().any(|d| d.code == "DW0377"),
@@ -140,8 +146,10 @@ fn malformed_timed_gate_id_is_dw0377() {
 
 /// The v0.6 gate with a jam lever on a real anchor. `anchor/keeper-stand` is a
 /// second anchor `prefab/hello-room` exposes, so it resolves.
-const QUESTS_DISARM: &str = r#"{
-  "dsl_version": "0.24.0",
+static QUESTS_DISARM: LazyLock<String> = LazyLock::new(|| {
+    common::at_dsl_version(
+        r#"{
+  "dsl_version": "%dsl_version%",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {
@@ -162,12 +170,14 @@ const QUESTS_DISARM: &str = r#"{
         "disarm": { "via": "anchor/exit", "sets_flag": "flag/portcullis-jammed" } }
     ]
   }
-}"#;
+}"#,
+    )
+});
 
 /// A well-formed disarm validates clean.
 #[test]
 fn timed_gate_disarm_validates_clean() {
-    let diags = check_campaign(&campaign_with_quests(QUESTS_DISARM));
+    let diags = check_campaign(&campaign_with_quests(QUESTS_DISARM.as_str()));
     assert!(
         diags.is_empty(),
         "expected zero diagnostics for a jammable timed gate, got: {diags:#?}"
@@ -186,7 +196,7 @@ fn a_disarm_flag_is_a_declared_producer() {
          \"effects\": [ { \"type\": \"narrate\", \"text\": \"The bars hang jammed.\" } ] } ],\n\
          \x20   \"timed_gates\": [",
     );
-    assert_ne!(gated, QUESTS_DISARM);
+    assert_ne!(gated, QUESTS_DISARM.as_str());
     let diags = check_campaign(&campaign_with_quests(&gated));
     assert!(
         diags.is_empty(),
@@ -198,7 +208,7 @@ fn a_disarm_flag_is_a_declared_producer() {
 #[test]
 fn unresolvable_disarm_anchor_is_dw0377() {
     let bad = QUESTS_DISARM.replace("\"via\": \"anchor/exit\"", "\"via\": \"anchor/invented\"");
-    assert_ne!(bad, QUESTS_DISARM);
+    assert_ne!(bad, QUESTS_DISARM.as_str());
     let diags = check_campaign(&campaign_with_quests(&bad));
     assert!(
         diags
@@ -213,7 +223,7 @@ fn unresolvable_disarm_anchor_is_dw0377() {
 #[test]
 fn a_disarm_on_its_own_gate_anchor_is_dw0377() {
     let bad = QUESTS_DISARM.replace("\"via\": \"anchor/exit\"", "\"via\": \"anchor/door\"");
-    assert_ne!(bad, QUESTS_DISARM);
+    assert_ne!(bad, QUESTS_DISARM.as_str());
     let diags = check_campaign(&campaign_with_quests(&bad));
     assert!(
         diags
@@ -233,7 +243,7 @@ fn close_gate_on_a_disarmable_gate_is_dw0389() {
         "\"on_complete\": [ { \"type\": \"close-gate\", \"anchor\": \"anchor/door\" }, \
          { \"type\": \"campaign-complete\" } ]",
     );
-    assert_ne!(bad, QUESTS_DISARM);
+    assert_ne!(bad, QUESTS_DISARM.as_str());
     let diags = check_campaign(&campaign_with_quests(&bad));
     assert!(
         diags.iter().any(|d| d.code == "DW0389"),
@@ -252,7 +262,7 @@ fn a_nested_close_gate_on_a_disarmable_gate_is_dw0389() {
          \"steps\": [ { \"at_ticks\": 0, \"effects\": [ { \"type\": \"close-gate\", \"anchor\": \
          \"anchor/door\" } ] } ] } ] } ],\n    \"timed_gates\": [",
     );
-    assert_ne!(bad, QUESTS_DISARM);
+    assert_ne!(bad, QUESTS_DISARM.as_str());
     let diags = check_campaign(&campaign_with_quests(&bad));
     assert!(
         diags.iter().any(|d| d.code == "DW0389"),
@@ -269,7 +279,7 @@ fn close_gate_on_a_plain_timed_gate_is_not_dw0389() {
         "\"on_complete\": [ { \"type\": \"close-gate\", \"anchor\": \"anchor/door\" }, \
          { \"type\": \"campaign-complete\" } ]",
     );
-    assert_ne!(ok, QUESTS_V06);
+    assert_ne!(ok, QUESTS_V06.as_str());
     let diags = check_campaign(&campaign_with_quests(&ok));
     assert!(
         !diags.iter().any(|d| d.code == "DW0389"),

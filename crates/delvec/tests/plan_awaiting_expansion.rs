@@ -20,6 +20,7 @@
 mod common;
 
 use delvewright_dsl::{Campaign, RawCampaign, parse_campaign};
+use std::sync::LazyLock;
 
 fn hw(name: &str) -> String {
     std::fs::read_to_string(common::hello_world_dir().join(name)).unwrap()
@@ -27,34 +28,46 @@ fn hw(name: &str) -> String {
 
 /// hello-world's world and cast, with `quest/side-trip` added to the plan so
 /// there are two planned quests and the count below is not one.
-const QUEST_PLAN: &str = r#"{
-  "dsl_version": "0.24.0", "campaign_id": "hello-world", "stage": "quest-plan",
+static QUEST_PLAN: LazyLock<String> = LazyLock::new(|| {
+    common::at_dsl_version(
+        r#"{
+  "dsl_version": "%dsl_version%", "campaign_id": "hello-world", "stage": "quest-plan",
   "content": { "quests": [
     { "id": "quest/open-the-door", "goal": "Get the Keeper to open the door.", "area": "area/keep",
       "npcs": ["npc/keeper"], "depends_on": [], "mandatory": true, "act": 1 },
     { "id": "quest/side-trip", "goal": "A prerequisite nobody has written yet.", "area": "area/keep",
       "npcs": [], "depends_on": [], "mandatory": true, "act": 1 }
   ], "finale": "quest/open-the-door" }
-}"#;
+}"#,
+    )
+});
 
 /// Stage 5 exactly as `DW0874`'s stubbing recipe would have it.
-const EMPTY_STAGE_FIVE: &str = r#"{
-  "dsl_version": "0.24.0", "campaign_id": "hello-world", "stage": "quests",
+static EMPTY_STAGE_FIVE: LazyLock<String> = LazyLock::new(|| {
+    common::at_dsl_version(
+        r#"{
+  "dsl_version": "%dsl_version%", "campaign_id": "hello-world", "stage": "quests",
   "content": { "quests": [] }
-}"#;
+}"#,
+    )
+});
 
 /// Stage 5 as an author would write it if a diagnostic told them to stub their
 /// way out: one quest per planned quest, carrying **only** what the schema
 /// requires — `id`, `trigger`, `objectives`, `on_complete`.
-const MINIMAL_STAGE_FIVE: &str = r#"{
-  "dsl_version": "0.24.0", "campaign_id": "hello-world", "stage": "quests",
+static MINIMAL_STAGE_FIVE: LazyLock<String> = LazyLock::new(|| {
+    common::at_dsl_version(
+        r#"{
+  "dsl_version": "%dsl_version%", "campaign_id": "hello-world", "stage": "quests",
   "content": { "quests": [
     { "id": "quest/open-the-door", "trigger": { "type": "campaign-start" },
       "objectives": [], "on_complete": [] },
     { "id": "quest/side-trip", "trigger": { "type": "campaign-start" },
       "objectives": [], "on_complete": [] }
   ] }
-}"#;
+}"#,
+    )
+});
 
 fn campaign(quests: &str) -> Campaign {
     parse_campaign(&RawCampaign {
@@ -100,14 +113,14 @@ fn count(codes: &[String], want: &str) -> usize {
 /// message says the opposite in as many words.
 #[test]
 fn stubbing_the_expansions_raises_the_error_count() {
-    let awaiting = codes(EMPTY_STAGE_FIVE);
+    let awaiting = codes(EMPTY_STAGE_FIVE.as_str());
     assert_eq!(
         count(&awaiting, "DW0150"),
         1,
         "a plan awaiting expansion is one grouped DW0150: {awaiting:?}"
     );
 
-    let stubbed = codes(MINIMAL_STAGE_FIVE);
+    let stubbed = codes(MINIMAL_STAGE_FIVE.as_str());
     assert_eq!(
         count(&stubbed, "DW0150"),
         0,
@@ -135,6 +148,6 @@ fn stubbing_the_expansions_raises_the_error_count() {
 /// builds, so nothing above is green because a check stopped binding.
 #[test]
 fn neither_state_is_accepted() {
-    assert!(!codes(EMPTY_STAGE_FIVE).is_empty());
-    assert!(!codes(MINIMAL_STAGE_FIVE).is_empty());
+    assert!(!codes(EMPTY_STAGE_FIVE.as_str()).is_empty());
+    assert!(!codes(MINIMAL_STAGE_FIVE.as_str()).is_empty());
 }

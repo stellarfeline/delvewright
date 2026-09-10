@@ -23,14 +23,17 @@ use delvec::compiler::analyze::analyze_campaign;
 use delvec::compiler::registry::PrefabRegistry;
 use delvewright_dsl::validate::validate_campaign;
 use delvewright_dsl::{RawCampaign, parse_campaign};
+use std::sync::LazyLock;
 
 mod common;
 
 /// A two-place map with a one-way drop into a room that has no way out. Drawn by
 /// hand; the fault is stated in the comment above it, not computed.
-const STRANDED: &str = r#"{
+static STRANDED: LazyLock<String> = LazyLock::new(|| {
+    common::at_dsl_version(
+        r#"{
   "campaign_id": "hello-world",
-  "dsl_version": "0.24.0",
+  "dsl_version": "%dsl_version%",
   "stage": "layout-graph",
   "content": {
     "nodes": [
@@ -49,7 +52,9 @@ const STRANDED: &str = r#"{
       { "quest": "quest/open-the-door", "objective": "obj/exit", "node": "node/porch" }
     ]
   }
-}"#;
+}"#,
+    )
+});
 
 fn campaign_with_graph(graph: Option<&str>) -> delvewright_dsl::Campaign {
     let hw = common::hello_world_dir();
@@ -79,7 +84,7 @@ fn campaign_with_graph(graph: Option<&str>) -> delvewright_dsl::Campaign {
 /// red.
 #[test]
 fn the_validation_pass_runs_the_graph_proofs() {
-    let c = campaign_with_graph(Some(STRANDED));
+    let c = campaign_with_graph(Some(STRANDED.as_str()));
     let codes: Vec<String> = validate_campaign(&c).into_iter().map(|d| d.code).collect();
     assert!(
         codes.contains(&"DW0819".to_string()),
@@ -99,7 +104,7 @@ fn the_validation_pass_runs_the_graph_proofs() {
 fn the_analysis_pass_does_not_raise_them_a_second_time() {
     let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir())
         .expect("the hello-world prefab library loads");
-    let c = campaign_with_graph(Some(STRANDED));
+    let c = campaign_with_graph(Some(STRANDED.as_str()));
     let codes: Vec<String> = analyze_campaign(&c, &prefabs)
         .into_iter()
         .map(|d| d.code)
@@ -132,7 +137,7 @@ fn a_campaign_with_no_graph_is_untouched_by_the_graph_proofs() {
             .filter(|c| c.starts_with("DW081") || c.starts_with("DW082"))
             .collect()
     };
-    let with = layout_codes(&campaign_with_graph(Some(STRANDED)));
+    let with = layout_codes(&campaign_with_graph(Some(STRANDED.as_str())));
     let without = layout_codes(&campaign_with_graph(None));
     assert!(
         without.is_empty(),

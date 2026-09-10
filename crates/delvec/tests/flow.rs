@@ -26,6 +26,7 @@ use delvec::compiler::analyze::analyze_campaign;
 use delvec::compiler::flow::{Flow, PathStep, Playthrough};
 use delvec::compiler::load::load_campaign_dir;
 use delvec::compiler::registry::PrefabRegistry;
+use delvewright_dsl::DSL_VERSION;
 use delvewright_dsl::{Campaign, parse_campaign};
 
 fn branch_endings_dir() -> PathBuf {
@@ -515,7 +516,7 @@ fn beach_docs(gated: bool, keepsake: bool) -> serde_json::Value {
     );
     serde_json::json!({
         "quest-plan": {
-            "dsl_version": "0.24.0",
+            "dsl_version": DSL_VERSION,
             "campaign_id": "hello-world",
             "stage": "quest-plan",
             "content": {
@@ -532,7 +533,7 @@ fn beach_docs(gated: bool, keepsake: bool) -> serde_json::Value {
             }
         },
         "quests": {
-            "dsl_version": "0.24.0",
+            "dsl_version": DSL_VERSION,
             "campaign_id": "hello-world",
             "stage": "quests",
             "content": {
@@ -565,7 +566,7 @@ fn beach_docs(gated: bool, keepsake: bool) -> serde_json::Value {
             }
         },
         "dialogue": {
-            "dsl_version": "0.24.0",
+            "dsl_version": DSL_VERSION,
             "campaign_id": "hello-world",
             "stage": "dialogue",
             "content": {
@@ -642,7 +643,7 @@ fn a_legitimately_optional_beat_passes() {
 fn a_flag_edge_skip_reds() {
     let docs = serde_json::json!({
         "quest-plan": {
-            "dsl_version": "0.24.0", "campaign_id": "hello-world", "stage": "quest-plan",
+            "dsl_version": DSL_VERSION, "campaign_id": "hello-world", "stage": "quest-plan",
             "content": {
                 "quests": [{
                     "id": "quest/hide", "goal": "Take cover, then answer the stone.",
@@ -653,7 +654,7 @@ fn a_flag_edge_skip_reds() {
             }
         },
         "quests": {
-            "dsl_version": "0.24.0", "campaign_id": "hello-world", "stage": "quests",
+            "dsl_version": DSL_VERSION, "campaign_id": "hello-world", "stage": "quests",
             "content": {
                 "quests": [{
                     "id": "quest/hide",
@@ -677,7 +678,7 @@ fn a_flag_edge_skip_reds() {
             }
         },
         "dialogue": {
-            "dsl_version": "0.24.0", "campaign_id": "hello-world", "stage": "dialogue",
+            "dsl_version": DSL_VERSION, "campaign_id": "hello-world", "stage": "dialogue",
             "content": {
                 "dialogues": [{
                     "npc": "npc/keeper", "root": "dlg/greeting",

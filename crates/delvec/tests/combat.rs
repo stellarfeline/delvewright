@@ -17,6 +17,7 @@ use delvec::compiler::emit::{self, BuildFailure, BuildOutput};
 use delvec::compiler::load::load_campaign_dir;
 use delvec::compiler::plan::Plan;
 use delvec::compiler::registry::{FullEntityRegistry, FullItemRegistry, PrefabRegistry};
+use delvewright_dsl::DSL_VERSION;
 use delvewright_dsl::{Diagnostic, parse_campaign, validate_campaign_with};
 
 const NS: &str = "souls-bonfire";
@@ -283,7 +284,7 @@ fn vanilla_stat_mobs_warn_dw0475_and_still_build() {
 fn the_combat_plan_is_validation_only_and_names_the_tier() {
     let tmp = TempCampaign::new();
     campaign_with(tmp.path(), |quests, _| {
-        quests["dsl_version"] = serde_json::json!("0.24.0");
+        quests["dsl_version"] = serde_json::json!(DSL_VERSION);
         quests["content"]["waves"][0]["tier"] = serde_json::json!("boss");
         // `wave/guards` is `souls-bonfire`'s only `respawns_on_rest` wave, and
         // souls ruling 5/7 forbids a `tier: boss` wave from
@@ -388,7 +389,7 @@ fn build_with_actor(
     extra_triggers: Vec<serde_json::Value>,
 ) -> (serde_json::Value, Vec<Diagnostic>, BuildOutput) {
     campaign_with(tmp.path(), |quests, _| {
-        quests["dsl_version"] = serde_json::json!("0.24.0");
+        quests["dsl_version"] = serde_json::json!(DSL_VERSION);
         quests["content"]["actors"] = serde_json::json!([actor]);
         let triggers = quests["content"]["triggers"].as_array_mut().unwrap();
         triggers.extend(extra_triggers);
@@ -590,7 +591,7 @@ fn an_untiered_hostile_is_reason_enough_to_ship_a_ledger() {
     let quests_path = tmp.path().join("quests.json");
     let mut quests: serde_json::Value =
         serde_json::from_str(&std::fs::read_to_string(&quests_path).unwrap()).unwrap();
-    quests["dsl_version"] = serde_json::json!("0.24.0");
+    quests["dsl_version"] = serde_json::json!(DSL_VERSION);
     quests["content"]["actors"] = serde_json::json!([{
         "id": "actor/barrow-warden",
         "entity": "minecraft:wither_skeleton",
@@ -630,7 +631,7 @@ fn an_optional_tiered_wave_is_uncovered_too() {
     // ever measures.
     let tmp = TempCampaign::new();
     campaign_with(tmp.path(), |quests, _| {
-        quests["dsl_version"] = serde_json::json!("0.24.0");
+        quests["dsl_version"] = serde_json::json!(DSL_VERSION);
         quests["content"]["waves"][1]["tier"] = serde_json::json!("elite");
     });
     let (out, diags) = build(tmp.path()).expect("an optional tiered wave builds");
@@ -1053,7 +1054,7 @@ fn strip_food(classes: &mut serde_json::Value) {
 fn a_foodless_party_fighting_only_actors_warns_dw0474() {
     let tmp = TempCampaign::new();
     campaign_with(tmp.path(), |quests, classes| {
-        quests["dsl_version"] = serde_json::json!("0.24.0");
+        quests["dsl_version"] = serde_json::json!(DSL_VERSION);
         no_mandatory_wave(quests);
         quests["content"]["actors"] = serde_json::json!([barrow_warden()]);
         quests["content"]["triggers"]
@@ -1089,7 +1090,7 @@ fn a_foodless_party_fighting_only_actors_warns_dw0474() {
 fn the_same_actor_only_campaign_with_food_is_clean() {
     let tmp = TempCampaign::new();
     campaign_with(tmp.path(), |quests, _| {
-        quests["dsl_version"] = serde_json::json!("0.24.0");
+        quests["dsl_version"] = serde_json::json!(DSL_VERSION);
         no_mandatory_wave(quests);
         quests["content"]["actors"] = serde_json::json!([barrow_warden()]);
         quests["content"]["triggers"]

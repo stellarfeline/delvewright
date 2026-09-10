@@ -14,6 +14,7 @@ use delvec::compiler::load::load_campaign_dir;
 use delvec::compiler::plan::Plan;
 use delvec::compiler::registry::PrefabRegistry;
 use delvec::compiler::textfit;
+use delvewright_dsl::DSL_VERSION;
 use delvewright_dsl::{
     Campaign, L10nDoc, RawCampaign, Severity, art_narrates, on_screen_narrates, parse_campaign,
 };
@@ -23,7 +24,7 @@ use delvewright_dsl::{
 fn quests_doc(on_complete: &str) -> String {
     format!(
         r#"{{
-  "dsl_version": "0.24.0",
+  "dsl_version": "{DSL_VERSION}",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {{
@@ -193,7 +194,7 @@ fn zh_art_translation_is_dw0328() {
     // The art narrate's l10n key, translated to non-renderable Han in the sidecar.
     let key = art_narrates(&c)[0].key.clone();
     let sidecar_json = serde_json::json!({
-        "dsl_version": "0.24.0",
+        "dsl_version": DSL_VERSION,
         "campaign_id": "hello-world",
         "kind": "l10n",
         "lang": "zh-cn",
@@ -601,7 +602,7 @@ fn overlong_zh_subtitle_translation_is_dw0330() {
     );
     let key = on_screen_narrates(&c)[0].key.clone();
     let sidecar_json = serde_json::json!({
-        "dsl_version": "0.24.0",
+        "dsl_version": DSL_VERSION,
         "campaign_id": "hello-world",
         "kind": "l10n",
         "lang": "zh-cn",

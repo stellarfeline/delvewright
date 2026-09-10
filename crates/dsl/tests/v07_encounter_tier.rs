@@ -13,6 +13,7 @@
 
 mod common;
 
+use delvewright_dsl::DSL_VERSION;
 use delvewright_dsl::{RawCampaign, check_campaign};
 
 /// hello-world with a `waves` section whose single wave carries `tier`, at the
@@ -74,7 +75,7 @@ fn every_tier_keyword_validates_at_v07() {
     for tier in ["ordinary", "elite", "boss"] {
         let raw = raw_with_quests(quests_with_tier(
             &format!(",\n         \"tier\": \"{tier}\""),
-            "0.24.0",
+            DSL_VERSION,
         ));
         let d = check_campaign(&raw);
         assert!(d.is_empty(), "`{tier}` must validate clean: {d:#?}");

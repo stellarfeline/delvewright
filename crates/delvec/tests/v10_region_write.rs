@@ -16,6 +16,7 @@ use delvec::compiler::commands::CommandTree;
 use delvec::compiler::emit::{self, BuildOutput};
 use delvec::compiler::plan::{Plan, RegionWrite};
 use delvec::compiler::registry::PrefabRegistry;
+use delvewright_dsl::DSL_VERSION;
 use delvewright_dsl::{Campaign, RawCampaign, parse_campaign};
 
 fn hw(name: &str) -> String {
@@ -59,7 +60,7 @@ fn prefabs_with_doorstep(name: &str) -> PathBuf {
 fn quests_doc(effects: &str) -> String {
     format!(
         r#"{{
-  "dsl_version": "0.24.0",
+  "dsl_version": "{DSL_VERSION}",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {{
@@ -396,8 +397,9 @@ fn a_bare_water_fill_is_refused_exactly_like_the_namespaced_one() {
 /// (world `[5,66,8]`). The step does not exist in the assembled world; it exists
 /// only from the point in the quest graph where the fill fires.
 fn quests_doc_over_a_laid_step() -> String {
-    r#"{
-  "dsl_version": "0.24.0",
+    common::at_dsl_version(
+        r#"{
+  "dsl_version": "%dsl_version%",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {
@@ -422,7 +424,8 @@ fn quests_doc_over_a_laid_step() -> String {
       }
     ]
   }
-}"#
+}"#,
+    )
     .to_string()
 }
 

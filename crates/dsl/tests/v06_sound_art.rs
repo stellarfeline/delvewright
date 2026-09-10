@@ -6,6 +6,7 @@
 
 mod common;
 
+use delvewright_dsl::DSL_VERSION;
 use delvewright_dsl::{RawCampaign, check_campaign};
 
 /// A stage-5 `quests` document whose single quest fires a `play-sound` and an
@@ -63,7 +64,7 @@ fn campaign_with_quests(quests: &str) -> RawCampaign {
 /// `play-sound` + `narrate style: art` validate clean under `dsl_version 0.6.0`.
 #[test]
 fn v06_surface_validates_clean() {
-    let diags = check_campaign(&campaign_with_quests(&quests_doc("0.24.0")));
+    let diags = check_campaign(&campaign_with_quests(&quests_doc(DSL_VERSION)));
     assert!(
         diags.is_empty(),
         "expected zero diagnostics for the v0.6 surface, got: {diags:#?}"

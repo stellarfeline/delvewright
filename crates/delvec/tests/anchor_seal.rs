@@ -16,6 +16,7 @@ use delvec::compiler::commands::CommandTree;
 use delvec::compiler::emit::{self, BuildFailure, BuildOutput};
 use delvec::compiler::plan::Plan;
 use delvec::compiler::registry::PrefabRegistry;
+use delvewright_dsl::DSL_VERSION;
 use delvewright_dsl::{Campaign, RawCampaign, parse_campaign};
 
 /// A hello-world `quests` doc whose `obj/talk` completion fires `effects` (a raw
@@ -29,7 +30,7 @@ fn quests_doc(effects: &str) -> String {
 fn quests_doc_with(prelude: &str, effects: &str) -> String {
     format!(
         r#"{{
-  "dsl_version": "0.24.0",
+  "dsl_version": "{DSL_VERSION}",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {{
@@ -232,7 +233,7 @@ fn trap_prelude(effects: &str) -> String {
 fn respawn_dialogue(effects: &str) -> String {
     format!(
         r#"{{
-  "dsl_version": "0.24.0",
+  "dsl_version": "{DSL_VERSION}",
   "campaign_id": "hello-world",
   "stage": "dialogue",
   "content": {{
@@ -403,7 +404,7 @@ fn typod_anchor_in_a_dialogue_respawn_bundle_is_dw0360() {
 fn worldless_campaign(volley_anchor: &str) -> Campaign {
     let quests = format!(
         r#"{{
-  "dsl_version": "0.24.0", "campaign_id": "hello-world", "stage": "quests",
+  "dsl_version": "{DSL_VERSION}", "campaign_id": "hello-world", "stage": "quests",
   "content": {{
     "quests": [ {{
       "id": "quest/open-the-door",
@@ -422,8 +423,9 @@ fn worldless_campaign(volley_anchor: &str) -> Campaign {
 }}"#
     );
     parse_campaign(&RawCampaign {
-        world: r#"{
-  "dsl_version": "0.24.0", "campaign_id": "hello-world", "stage": "world",
+        world: common::at_dsl_version(
+            r#"{
+  "dsl_version": "%dsl_version%", "campaign_id": "hello-world", "stage": "world",
   "content": {
     "title": "The Keeper's Door",
     "theme": "A lonely keep at the edge of the moor.",
@@ -432,28 +434,35 @@ fn worldless_campaign(volley_anchor: &str) -> Campaign {
     "time": "noon", "weather": "clear",
     "areas": [ { "id": "area/keep", "name": "The Keep", "prefab": "prefab/hello-room" } ]
   }
-}"#
+}"#,
+        )
         .to_string(),
-        npcs: r#"{
-  "dsl_version": "0.24.0", "campaign_id": "hello-world", "stage": "npcs",
+        npcs: common::at_dsl_version(
+            r#"{
+  "dsl_version": "%dsl_version%", "campaign_id": "hello-world", "stage": "npcs",
   "content": { "npcs": [] }
-}"#
+}"#,
+        )
         .to_string(),
         classes: read_hw("classes.json"),
-        quest_plan: r#"{
-  "dsl_version": "0.24.0", "campaign_id": "hello-world", "stage": "quest-plan",
+        quest_plan: common::at_dsl_version(
+            r#"{
+  "dsl_version": "%dsl_version%", "campaign_id": "hello-world", "stage": "quest-plan",
   "content": {
     "quests": [ { "id": "quest/open-the-door", "goal": "Leave the keep.",
       "area": "area/keep", "npcs": [], "depends_on": [], "mandatory": true, "act": 1 } ],
     "finale": "quest/open-the-door"
   }
-}"#
+}"#,
+        )
         .to_string(),
         quests,
-        dialogue: r#"{
-  "dsl_version": "0.24.0", "campaign_id": "hello-world", "stage": "dialogue",
+        dialogue: common::at_dsl_version(
+            r#"{
+  "dsl_version": "%dsl_version%", "campaign_id": "hello-world", "stage": "dialogue",
   "content": { "dialogues": [] }
-}"#
+}"#,
+        )
         .to_string(),
         world_edits: None,
         geometry_brief: None,

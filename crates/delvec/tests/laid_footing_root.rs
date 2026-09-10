@@ -37,6 +37,7 @@ use delvec::compiler::commands::CommandTree;
 use delvec::compiler::emit::{self, BuildOutput};
 use delvec::compiler::plan::Plan;
 use delvec::compiler::registry::PrefabRegistry;
+use delvewright_dsl::DSL_VERSION;
 use delvewright_dsl::{Campaign, RawCampaign, parse_campaign};
 
 fn hw(name: &str) -> String {
@@ -66,7 +67,7 @@ fn prefabs_with_doorstep(name: &str) -> PathBuf {
 /// footing and nothing else.
 fn fence_the_doorway() -> String {
     serde_json::json!({
-        "dsl_version": "0.24.0",
+        "dsl_version": DSL_VERSION,
         "campaign_id": "hello-world",
         "stage": "world-edits",
         "content": { "batches": [ {
@@ -99,7 +100,7 @@ const LAY_THE_FLOOR: &str = r#"{ "type": "fill-region",
 fn quests_doc(forced_extra: &str, on_death: &str) -> String {
     format!(
         r#"{{
-  "dsl_version": "0.24.0",
+  "dsl_version": "{DSL_VERSION}",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {{
@@ -183,7 +184,7 @@ fn all_functions(out: &BuildOutput) -> String {
 fn plan_with_second_quest(mandatory: bool) -> String {
     format!(
         r#"{{
-  "dsl_version": "0.24.0",
+  "dsl_version": "{DSL_VERSION}",
   "campaign_id": "hello-world",
   "stage": "quest-plan",
   "content": {{
@@ -204,7 +205,7 @@ fn plan_with_second_quest(mandatory: bool) -> String {
 fn parse_two_quest(mandatory: bool) -> Campaign {
     let quests = format!(
         r#"{{
-  "dsl_version": "0.24.0",
+  "dsl_version": "{DSL_VERSION}",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {{

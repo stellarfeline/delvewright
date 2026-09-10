@@ -39,6 +39,7 @@ use delvec::compiler::emit::{self, BuildOutput};
 use delvec::compiler::load::{LoadedCampaign, load_campaign_dir};
 use delvec::compiler::plan::Plan;
 use delvec::compiler::registry::{FullEntityRegistry, FullItemRegistry, PrefabRegistry};
+use delvewright_dsl::DSL_VERSION;
 use delvewright_dsl::{Campaign, QuestEffect, parse_campaign, validate_campaign_with};
 
 /// A campaign **with** checkpoints (so both sides of the edge are live).
@@ -64,7 +65,7 @@ fn load(ns: &str) -> LoadedCampaign {
 fn campaign(loaded: &LoadedCampaign, with_on_death: bool) -> Campaign {
     let mut c = parse_campaign(&loaded.raw).expect("fixture parses");
     if with_on_death {
-        c.quests.dsl_version = "0.24.0".to_string();
+        c.quests.dsl_version = DSL_VERSION.to_string();
         c.quests.content.on_death = on_death_bundle();
     }
     c

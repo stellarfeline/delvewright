@@ -24,6 +24,7 @@
 //! course of its plinth carved out reds, with a perturbation nothing else in
 //! this file could catch.
 
+use delvewright_dsl::DSL_VERSION;
 use std::path::{Path, PathBuf};
 use std::process::{Command as Proc, Output};
 
@@ -62,7 +63,7 @@ fn ocean_campaign(tag: &str) -> PathBuf {
     common::copy_dir_all(&common::hello_world_dir(), &camp);
     let mut world: serde_json::Value =
         serde_json::from_str(&std::fs::read_to_string(camp.join("world.json")).unwrap()).unwrap();
-    world["dsl_version"] = serde_json::json!("0.24.0");
+    world["dsl_version"] = serde_json::json!(DSL_VERSION);
     let content = world["content"].as_object_mut().unwrap();
     content.insert("horizon".into(), serde_json::json!("ocean"));
     content.insert("boundary".into(), serde_json::json!({ "margin": 20 }));
@@ -254,7 +255,7 @@ fn a_carve_that_lowers_a_floor_to_the_sea_plane_reds() {
     std::fs::write(
         camp.join("world-edits.json"),
         serde_json::to_string_pretty(&serde_json::json!({
-            "dsl_version": "0.24.0",
+            "dsl_version": DSL_VERSION,
             "campaign_id": "hello-world",
             "stage": "world-edits",
             "content": {

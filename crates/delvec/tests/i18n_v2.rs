@@ -16,6 +16,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 use std::process::Command;
 
+use delvewright_dsl::DSL_VERSION;
 use serde_json::Value;
 
 const BIN: &str = env!("CARGO_BIN_EXE_delvec");
@@ -849,7 +850,7 @@ fn renaming_one_body_makes_another_bodys_row_stale_dw0187() {
     // onward (`l10n::ACTOR_NAME_ENTRY`): the widening that inventoried
     // it landed over v0.6 surface. The
     // pair to this line is `an_actor_nameplate_is_not_demanded_below_0_10`.
-    q["dsl_version"] = serde_json::json!("0.24.0");
+    q["dsl_version"] = serde_json::json!(DSL_VERSION);
     q["content"]["actors"] = serde_json::json!([
         { "id": "actor/ram-a", "entity": "minecraft:sheep",
           "name": "Ram of the Cave", "anchor": "anchor/hall" },

@@ -42,7 +42,9 @@ use std::collections::BTreeSet;
 use delvec::compiler::analyze::analyze_campaign;
 use delvec::compiler::flow::gate_flags;
 use delvec::compiler::registry::{FullEntityRegistry, FullItemRegistry, PrefabRegistry};
+use delvewright_dsl::DSL_VERSION;
 use delvewright_dsl::{Campaign, RawCampaign, parse_campaign};
+use std::sync::LazyLock;
 
 // ---------------------------------------------------------------------------
 // fixture plumbing
@@ -99,7 +101,7 @@ fn codes(c: &Campaign) -> Vec<String> {
 fn quests_doc(prelude: &str, exit_tail: &str) -> String {
     format!(
         r#"{{
-  "dsl_version": "0.24.0",
+  "dsl_version": "{DSL_VERSION}",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {{
@@ -146,8 +148,10 @@ const ALARM_FROM_TRIGGER: &str = r#""triggers": [
 /// fires only when somebody dies, so it is not a producer — the rule
 /// `collect_flags` already applies to the identical bundle in the quests stage,
 /// and the one the `DW0203` message itself states.
-const ALARM_FROM_DIALOGUE_RESPAWN: &str = r#"{
-  "dsl_version": "0.24.0",
+static ALARM_FROM_DIALOGUE_RESPAWN: LazyLock<String> = LazyLock::new(|| {
+    common::at_dsl_version(
+        r#"{
+  "dsl_version": "%dsl_version%",
   "campaign_id": "hello-world",
   "stage": "dialogue",
   "content": {
@@ -166,7 +170,9 @@ const ALARM_FROM_DIALOGUE_RESPAWN: &str = r#"{
       ] }
     ]
   }
-}"#;
+}"#,
+    )
+});
 
 // ---------------------------------------------------------------------------
 // the producer half
@@ -225,7 +231,7 @@ fn an_environment_trigger_is_the_precedent_the_payload_follows() {
 fn a_dialogue_respawn_bundle_is_seen_but_still_never_a_producer() {
     let c = parse_hw(
         &quests_doc("", EXIT_NEEDS_ALARM),
-        Some(ALARM_FROM_DIALOGUE_RESPAWN),
+        Some(ALARM_FROM_DIALOGUE_RESPAWN.as_str()),
     );
     let items = FullItemRegistry::v1_21_11();
     let entities = FullEntityRegistry::v1_21_11();
@@ -257,8 +263,10 @@ fn a_dialogue_respawn_bundle_is_seen_but_still_never_a_producer() {
 /// dialogue choice, and one mainline objective behind each produced flag. A real
 /// player takes exactly ONE of the two options, so the finale can never complete
 /// — `DW0201`, and nothing else.
-const BRANCHED_PAYLOAD_QUESTS: &str = r#"{
-  "dsl_version": "0.24.0",
+static BRANCHED_PAYLOAD_QUESTS: LazyLock<String> = LazyLock::new(|| {
+    common::at_dsl_version(
+        r#"{
+  "dsl_version": "%dsl_version%",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {
@@ -288,10 +296,14 @@ const BRANCHED_PAYLOAD_QUESTS: &str = r#"{
       }
     ]
   }
-}"#;
+}"#,
+    )
+});
 
-const BRANCHED_PAYLOAD_DIALOGUE: &str = r#"{
-  "dsl_version": "0.24.0",
+static BRANCHED_PAYLOAD_DIALOGUE: LazyLock<String> = LazyLock::new(|| {
+    common::at_dsl_version(
+        r#"{
+  "dsl_version": "%dsl_version%",
   "campaign_id": "hello-world",
   "stage": "dialogue",
   "content": {
@@ -310,7 +322,9 @@ const BRANCHED_PAYLOAD_DIALOGUE: &str = r#"{
       ] }
     ]
   }
-}"#;
+}"#,
+    )
+});
 
 /// A gate **inside a trap payload** puts its flag into the branch model.
 ///
@@ -328,7 +342,10 @@ const BRANCHED_PAYLOAD_DIALOGUE: &str = r#"{
 /// | both halves | `DW0201` alone: each objective IS completable, on its own branch; the finale needs both, and no branch has both |
 #[test]
 fn a_payload_gate_splits_the_branch_worlds() {
-    let c = parse_hw(BRANCHED_PAYLOAD_QUESTS, Some(BRANCHED_PAYLOAD_DIALOGUE));
+    let c = parse_hw(
+        BRANCHED_PAYLOAD_QUESTS.as_str(),
+        Some(BRANCHED_PAYLOAD_DIALOGUE.as_str()),
+    );
     assert_validates(&c);
     assert_eq!(
         codes(&c),
@@ -343,8 +360,10 @@ fn a_payload_gate_splits_the_branch_worlds() {
 
 /// A campaign carrying one `requires_flags` gate at each of the five effect
 /// roots, each naming a flag after its root.
-const FIVE_ROOT_QUESTS: &str = r#"{
-  "dsl_version": "0.24.0",
+static FIVE_ROOT_QUESTS: LazyLock<String> = LazyLock::new(|| {
+    common::at_dsl_version(
+        r#"{
+  "dsl_version": "%dsl_version%",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {
@@ -383,10 +402,14 @@ const FIVE_ROOT_QUESTS: &str = r#"{
       }
     ]
   }
-}"#;
+}"#,
+    )
+});
 
-const FIVE_ROOT_DIALOGUE: &str = r#"{
-  "dsl_version": "0.24.0",
+static FIVE_ROOT_DIALOGUE: LazyLock<String> = LazyLock::new(|| {
+    common::at_dsl_version(
+        r#"{
+  "dsl_version": "%dsl_version%",
   "campaign_id": "hello-world",
   "stage": "dialogue",
   "content": {
@@ -406,14 +429,16 @@ const FIVE_ROOT_DIALOGUE: &str = r#"{
       ] }
     ]
   }
-}"#;
+}"#,
+    )
+});
 
 /// The gate-flag inventory reaches every root emission does. Reads the roots off
 /// the inventory's own output, so a root dropped or an inventory re-hand-rolled
 /// is a diff here rather than a silent precision hole in the branch model.
 #[test]
 fn the_gate_flag_inventory_reaches_all_five_roots() {
-    let c = parse_hw(FIVE_ROOT_QUESTS, Some(FIVE_ROOT_DIALOGUE));
+    let c = parse_hw(FIVE_ROOT_QUESTS.as_str(), Some(FIVE_ROOT_DIALOGUE.as_str()));
     let seen: BTreeSet<String> = gate_flags(&c)
         .into_iter()
         .filter(|f| f.starts_with("flag/root-"))

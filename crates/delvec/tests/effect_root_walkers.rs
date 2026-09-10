@@ -65,6 +65,7 @@ use delvec::compiler::flow::gate_flags;
 use delvec::compiler::load::{LoadedCampaign, load_campaign_dir};
 use delvec::compiler::plan::Plan;
 use delvec::compiler::registry::{FullEntityRegistry, FullItemRegistry, PrefabRegistry};
+use delvewright_dsl::DSL_VERSION;
 use delvewright_dsl::{Campaign, EffectRootKind, EffectSite, QuestEffect, parse_campaign};
 
 /// The `souls-shortcut` fixture is the base for every row, because it is the only
@@ -206,8 +207,8 @@ fn probe_at(loaded: &LoadedCampaign, k: EffectRootKind, bundle_json: &str) -> Ca
     // Both stages are raised to the version the probe needs: `set-checkpoint`
     // (root 5) is v0.6 surface on the dialogue stage, `on_death` (root 7) is v0.10
     // on the quests stage. Raising a version never removes surface.
-    c.quests.dsl_version = "0.24.0".to_string();
-    c.dialogue.dsl_version = "0.24.0".to_string();
+    c.quests.dsl_version = DSL_VERSION.to_string();
+    c.dialogue.dsl_version = DSL_VERSION.to_string();
     match k {
         EffectRootKind::ObjectiveComplete => {
             let q = &mut c.quests.content.quests[0];

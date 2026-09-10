@@ -19,11 +19,14 @@
 mod common;
 
 use delvewright_dsl::{RawCampaign, check_campaign, parse_campaign};
+use std::sync::LazyLock;
 
 /// A v0.6 stage-5 quests doc: the keeper walks to the exit; arrival sets
 /// `flag/arrived` (+ narrates), and the follow-up objective is gated on it.
-const QUESTS_ARRIVE: &str = r#"{
-  "dsl_version": "0.24.0",
+static QUESTS_ARRIVE: LazyLock<String> = LazyLock::new(|| {
+    common::at_dsl_version(
+        r#"{
+  "dsl_version": "%dsl_version%",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {
@@ -50,7 +53,9 @@ const QUESTS_ARRIVE: &str = r#"{
       }
     ]
   }
-}"#;
+}"#,
+    )
+});
 
 fn campaign_with_quests(quests: &str) -> RawCampaign {
     RawCampaign {
@@ -74,7 +79,7 @@ fn campaign_with_quests(quests: &str) -> RawCampaign {
 /// consumer-validation walkers recurse into the new nesting site.
 #[test]
 fn move_npc_on_arrive_validates_clean_and_produces_flags() {
-    let diags = check_campaign(&campaign_with_quests(QUESTS_ARRIVE));
+    let diags = check_campaign(&campaign_with_quests(QUESTS_ARRIVE.as_str()));
     assert!(
         diags.is_empty(),
         "move-npc.on_arrive must validate clean (nested set-flag is a producer): {diags:#?}"
@@ -113,7 +118,8 @@ fn sequence_via_move_npc_on_arrive_inside_sequence_is_dw0329() {
 /// shares the same traversal, so a translated build localizes it too.
 #[test]
 fn move_npc_on_arrive_narrate_enters_l10n_inventory() {
-    let campaign = parse_campaign(&campaign_with_quests(QUESTS_ARRIVE)).expect("campaign parses");
+    let campaign =
+        parse_campaign(&campaign_with_quests(QUESTS_ARRIVE.as_str())).expect("campaign parses");
     let inv = delvewright_dsl::l10n_inventory(&campaign);
     let key = "fx.open-the-door.oc.talk.1.arrive.1.narrate";
     assert_eq!(

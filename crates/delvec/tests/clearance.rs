@@ -21,6 +21,7 @@ use delvec::compiler::commands::CommandTree;
 use delvec::compiler::emit::{self, BuildFailure};
 use delvec::compiler::plan::Plan;
 use delvec::compiler::registry::PrefabRegistry;
+use delvewright_dsl::DSL_VERSION;
 use delvewright_dsl::{Diagnostic, RawCampaign, Severity, parse_campaign};
 
 fn read_hw(name: &str) -> String {
@@ -37,7 +38,7 @@ fn npcs_doc(base_entity: &str) -> String {
 /// at a chosen place relative to a body.
 fn edits_doc(offset: [i32; 3], note: &str) -> String {
     serde_json::json!({
-        "dsl_version": "0.24.0",
+        "dsl_version": DSL_VERSION,
         "campaign_id": "hello-world",
         "stage": "world-edits",
         "content": { "batches": [ {

@@ -24,6 +24,7 @@
 //! The campaign here is the gallery's own committed site-plan overlay, so the
 //! fixture is a real site-plan campaign rather than a hand-built stand-in.
 
+use delvewright_dsl::DSL_VERSION;
 use delvewright_dsl::{RawCampaign, check_campaign};
 
 fn repo_root() -> std::path::PathBuf {
@@ -67,7 +68,7 @@ fn site_plan_campaign(world_edits: &str) -> RawCampaign {
 fn script(area: &str, edits: &str) -> String {
     format!(
         r#"{{
-  "dsl_version": "0.24.0",
+  "dsl_version": "{DSL_VERSION}",
   "campaign_id": "gallery",
   "stage": "world-edits",
   "content": {{

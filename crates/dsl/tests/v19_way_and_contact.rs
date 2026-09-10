@@ -24,6 +24,7 @@ mod common;
 
 use delvewright_dsl::{RawCampaign, check_campaign};
 use serde_json::{Value, json};
+use std::sync::LazyLock;
 
 /// The graph the tests perturb.
 ///
@@ -32,9 +33,11 @@ use serde_json::{Value, json};
 ///   the kit quantum lets a plan draw it.
 /// * The rest are ordinary size-classed places, so that the two vocabularies are
 ///   exercised side by side in one document rather than in two.
-const GRAPH: &str = r#"{
+static GRAPH: LazyLock<String> = LazyLock::new(|| {
+    common::at_dsl_version(
+        r#"{
   "campaign_id": "hello-world",
-  "dsl_version": "0.24.0",
+  "dsl_version": "%dsl_version%",
   "stage": "layout-graph",
   "content": {
     "nodes": [
@@ -61,11 +64,15 @@ const GRAPH: &str = r#"{
       { "quest": "quest/open-the-door", "objective": "obj/exit", "node": "node/hall" }
     ]
   }
-}"#;
+}"#,
+    )
+});
 
-const BRIEF: &str = r#"{
+static BRIEF: LazyLock<String> = LazyLock::new(|| {
+    common::at_dsl_version(
+        r#"{
   "campaign_id": "hello-world",
-  "dsl_version": "0.24.0",
+  "dsl_version": "%dsl_version%",
   "stage": "geometry-brief",
   "content": {
     "facts": [
@@ -73,7 +80,9 @@ const BRIEF: &str = r#"{
         "note": "The site is a hundred and twenty-eight blocks across." }
     ]
   }
-}"#;
+}"#,
+    )
+});
 
 /// The plan the tests perturb.
 ///
@@ -81,9 +90,11 @@ const BRIEF: &str = r#"{
 /// which is wider than the broadest standard opening (`opening.gateway`, 5) and
 /// therefore could not have been a portal. Every other seam is an ordinary
 /// portal, so both kinds are resolved, derived and measured in one plan.
-const PLAN: &str = r#"{
+static PLAN: LazyLock<String> = LazyLock::new(|| {
+    common::at_dsl_version(
+        r#"{
   "campaign_id": "hello-world",
-  "dsl_version": "0.24.0",
+  "dsl_version": "%dsl_version%",
   "stage": "site-plan",
   "content": {
     "region": { "min": [0, 56, 0], "extent": [128, 32, 128] },
@@ -110,7 +121,9 @@ const PLAN: &str = r#"{
       { "edge": "edge/court-hall", "face": "north", "contact": {} }
     ]
   }
-}"#;
+}"#,
+    )
+});
 
 // ---------------------------------------------------------------------------
 // Harness
@@ -158,7 +171,7 @@ fn campaign(graph: String, plan: String) -> RawCampaign {
 
 /// Validate the green campaign with the GRAPH perturbed by one edit.
 fn graph_with(patch: impl FnOnce(&mut Value)) -> Vec<delvewright_dsl::Diagnostic> {
-    let mut v: Value = serde_json::from_str(GRAPH).expect("the green graph parses");
+    let mut v: Value = serde_json::from_str(GRAPH.as_str()).expect("the green graph parses");
     patch(&mut v);
     check_campaign(&campaign(
         serde_json::to_string(&v).expect("re-serialize"),
@@ -168,7 +181,7 @@ fn graph_with(patch: impl FnOnce(&mut Value)) -> Vec<delvewright_dsl::Diagnostic
 
 /// Validate the green campaign with the PLAN perturbed by one edit.
 fn plan_with(patch: impl FnOnce(&mut Value)) -> Vec<delvewright_dsl::Diagnostic> {
-    let mut v: Value = serde_json::from_str(PLAN).expect("the green plan parses");
+    let mut v: Value = serde_json::from_str(PLAN.as_str()).expect("the green plan parses");
     patch(&mut v);
     check_campaign(&campaign(
         GRAPH.to_string(),
@@ -223,8 +236,8 @@ fn the_green_states_a_one_body_wide_route_and_a_front_and_validates() {
 
     // The binding this test claims, computed from the documents rather than
     // written down beside them.
-    let g: Value = serde_json::from_str(GRAPH).expect("parse");
-    let p: Value = serde_json::from_str(PLAN).expect("parse");
+    let g: Value = serde_json::from_str(GRAPH.as_str()).expect("parse");
+    let p: Value = serde_json::from_str(PLAN.as_str()).expect("parse");
     let ways = g["content"]["nodes"]
         .as_array()
         .expect("nodes")
@@ -382,9 +395,9 @@ fn a_square_box_can_never_be_a_way_at_any_class() {
         });
         let d = {
             // The box's node must declare the class under test.
-            let mut g: Value = serde_json::from_str(GRAPH).expect("parse");
+            let mut g: Value = serde_json::from_str(GRAPH.as_str()).expect("parse");
             node(&mut g, 1)["way_class"] = json!(class);
-            let mut p: Value = serde_json::from_str(PLAN).expect("parse");
+            let mut p: Value = serde_json::from_str(PLAN.as_str()).expect("parse");
             boxx(&mut p, 1)["extent"] = json!([side, side]);
             let _ = d;
             check_campaign(&campaign(
@@ -512,7 +525,7 @@ fn dw0876_refuses_a_contact_span_that_leaves_the_shared_face() {
 #[test]
 fn dw0876_refuses_a_contact_on_a_class_a_front_cannot_be() {
     for class in ["stair", "barred", "vision"] {
-        let mut g: Value = serde_json::from_str(GRAPH).expect("parse");
+        let mut g: Value = serde_json::from_str(GRAPH.as_str()).expect("parse");
         let e = &mut g["content"]["edges"][4];
         e["class"] = json!(class);
         match class {
@@ -556,12 +569,12 @@ fn dw0876_refuses_a_contact_on_a_class_a_front_cannot_be() {
 /// walk".
 #[test]
 fn a_drop_contact_is_legal() {
-    let mut g: Value = serde_json::from_str(GRAPH).expect("parse");
+    let mut g: Value = serde_json::from_str(GRAPH.as_str()).expect("parse");
     g["content"]["edges"][4] = json!({
         "id": "edge/court-hall", "class": "drop",
         "a": "node/court", "b": "node/hall", "falls": "a-to-b"
     });
-    let mut p: Value = serde_json::from_str(PLAN).expect("parse");
+    let mut p: Value = serde_json::from_str(PLAN.as_str()).expect("parse");
     // The court stands three blocks over the hall, so the fall is real and
     // inside `drop.max-designed-rise`. Raising it raises the SHARED FACE with
     // it — two boxes share only the y span they have in common — and the sill
@@ -718,7 +731,7 @@ fn a_contacts_width_is_the_plans_business_and_is_never_prescribed() {
 /// node's two fields rather than demanding one of them.
 #[test]
 fn perturbing_the_place_class_rule_to_the_vacuous_shape_goes_red() {
-    let g: Value = serde_json::from_str(GRAPH).expect("parse");
+    let g: Value = serde_json::from_str(GRAPH.as_str()).expect("parse");
     let vacuous: Vec<&Value> = g["content"]["nodes"]
         .as_array()
         .expect("nodes")
@@ -751,7 +764,7 @@ fn perturbing_the_contact_floor_to_a_constant_goes_red() {
         .expect("the table defines openings");
 
     // The green's contact spans the whole shared face of two 16-wide boxes.
-    let p: Value = serde_json::from_str(PLAN).expect("parse");
+    let p: Value = serde_json::from_str(PLAN.as_str()).expect("parse");
     let court = p["content"]["boxes"][5]["extent"][0]
         .as_u64()
         .expect("extent") as u32;
