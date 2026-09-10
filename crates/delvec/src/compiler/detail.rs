@@ -419,7 +419,21 @@ impl Hashes {
 // The walk record (spec-0049 §5.4, gated here)
 // ---------------------------------------------------------------------------
 
-/// What a walk concluded.
+/// What this record says happened.
+///
+/// **Two of these three describe a walk; the third says there was none.** The
+/// closed set used to hold only the first two, and both of them opened *"the
+/// whole was walked"* — so every legal record asserted a walk, and the states
+/// this pipeline actually produces before one has happened (a build stood up
+/// and taken down, a walk abandoned, a walk cut short) had no legal spelling.
+/// The author writing the file was left choosing which of two false sentences
+/// to sign, and the truth could only go into `findings[]`, which is free prose
+/// no gate reads. `Unwalked` is the value that lets the document state its own
+/// subject; the gate below then refuses on the FIELD rather than on prose.
+///
+/// Only [`Verdict::Passed`] admits detail work, and nothing here decides
+/// whether a body was in the world: that a human walked is this document's
+/// author's assertion, held by operating practice.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum Verdict {
@@ -427,6 +441,11 @@ pub enum Verdict {
     Passed,
     /// The whole was walked and something must change first.
     Findings,
+    /// **Nobody walked this whole.** The record exists to say so — a build
+    /// stood up and taken down, a walk abandoned, a walk cut short. It is
+    /// never written in place of a walk that happened, and it never becomes
+    /// `passed` by anything but a walk.
+    Unwalked,
 }
 
 /// One thing a walk found.
@@ -466,7 +485,8 @@ pub struct WalkRecord {
     pub blockout_sha256: String,
     /// The engine that built it — the revision, never a version string.
     pub engine_revision: String,
-    /// The verdict.
+    /// What this record says happened — and `unwalked` is one of the three,
+    /// so a record is never forced to assert a walk in order to exist.
     pub verdict: Verdict,
     /// What was found. Present and non-empty is compatible with `passed`: a
     /// walker may note something without it blocking detail.
@@ -535,9 +555,19 @@ and headroom, every seam's cells, crossing and rise, the whole's volumes and \
 region) and the ways a body moves by (every edge whole, the entry, the goal, \
 the critical path, the beats, the stations). Moving a box one block re-opens \
 the gate; a `dsl_version` bump, a reformat, a reworded note or a renamed \
-intent does not. `DW0841` refuses detail work — including `delvec \
-allocation` — when this file is missing, unparseable, stale in either hash, \
-or carries `verdict: \"findings\"`.";
+intent does not.
+
+`verdict` is one of THREE values and the third is the one to reach for when \
+no walk happened. `passed` — the whole was walked and is fit to detail. \
+`findings` — the whole was walked and something must change first. \
+`unwalked` — NOBODY WALKED IT: a build stood up and taken down, a walk \
+abandoned, a walk cut short. Write `unwalked` for every one of those. It is \
+the only value that does not assert a walk, and asserting one that did not \
+happen is the thing this document must never be made to do; `findings[]` is \
+free prose and no check reads it, so a truth put only there changes nothing. \
+`DW0841` refuses detail work — including `delvec allocation` — when this file \
+is missing, unparseable, stale in either hash, or carries any verdict but \
+`passed`, and it names which of those it is.";
 
 /// What the walk gate examined, with its denominator.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -757,11 +787,28 @@ fn walk_gate(c: &Campaign, record: Option<&str>, rows: usize) -> (Option<Diagnos
             return (d, binding);
         }
     }
+    // The refusal is on the FIELD, and the two non-passing values are not one
+    // fact. `findings` is a walk that happened and concluded something must
+    // change; `unwalked` is a record whose subject is that nobody walked. The
+    // remedies differ — answer the findings, against go and hold the walk — so
+    // the message does, while the code stays one: this is one class, *detail
+    // work has not been unlocked by a passed walk of this whole*, and a code
+    // per enum value would be a code per value rather than per class.
     if rec.verdict != Verdict::Passed {
+        // An empty `findings[]` means different things under the two values,
+        // and saying the `findings` sentence over an `unwalked` record would
+        // send its author looking for a defect nobody has seen.
         let list = if rec.findings.is_empty() {
-            "and names no findings, which is a record that says the walk did not pass and does \
-             not say why"
-                .to_string()
+            match rec.verdict {
+                Verdict::Unwalked => {
+                    "and names no findings, which is what a record of no walk has to report"
+                }
+                _ => {
+                    "and names no findings, which is a record that says the walk did not pass \
+                      and does not say why"
+                }
+            }
+            .to_string()
         } else {
             format!(
                 "and names {} finding(s): {}",
@@ -773,17 +820,31 @@ fn walk_gate(c: &Campaign, record: Option<&str>, rows: usize) -> (Option<Diagnos
                     .join("; ")
             )
         };
+        let body = match rec.verdict {
+            Verdict::Unwalked => format!(
+                "`walk-record.json` records `verdict: \"unwalked\"` {list}. **Nobody has walked \
+                 this whole**, and that is what this record is for: it states the absence rather \
+                 than dressing it as a verdict. Detail work does not begin on a whole nobody has \
+                 stood in — that is the ordering this pipeline exists to make structural, and it \
+                 holds here on the field rather than on prose no check reads. Stand the build up \
+                 and hold the walk, then re-record from what the walk concluded — `passed` if it \
+                 is fit to detail, `findings` if something must change first. Neither value is \
+                 written for a walk that did not happen."
+            ),
+            _ => format!(
+                "`walk-record.json` records `verdict: \"findings\"` {list}. Detail work does not \
+                 begin on a whole that has not passed its walk — that is the ordering this \
+                 pipeline exists to make structural. Answer the findings in the graph or the \
+                 plan, rebuild, walk again, and re-record with `verdict: \"passed\"`."
+            ),
+        };
         d = Some(Diagnostic::error(
             DW_UNWALKED,
             STAGE,
             "/content/details",
             format!(
-                "`walk-record.json` records `verdict: \"findings\"` {list}. Detail work does not \
-                 begin on a whole that has not passed its walk — that is the ordering this \
-                 pipeline exists to make structural. Answer the findings in the graph or the \
-                 plan, rebuild, walk again, and re-record with `verdict: \"passed\"`. Binding: \
-                 {n} `details[]` row(s) stood in front of, {c} of {d} freshness hash(es) \
-                 compared.",
+                "{body} Binding: {n} `details[]` row(s) stood in front of, {c} of {d} freshness \
+                 hash(es) compared.",
                 n = binding.rows,
                 c = binding.compared,
                 d = WalkBinding::KEYED_HALVES,

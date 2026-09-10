@@ -41,5 +41,9 @@
       "kind": "spawn"
     }
   ],
+  "sky": {
+    "daytime_ticks": 1000,
+    "time": "day"
+  },
   "version": "0.6.0"
 }

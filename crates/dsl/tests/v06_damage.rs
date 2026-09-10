@@ -11,7 +11,7 @@ use delvewright_dsl::{RawCampaign, check_campaign};
 /// A v0.6 quests document that damages the party (lethal, generic) on the exit
 /// beat — the "consequence" the verb exists for.
 const QUESTS_V06: &str = r#"{
-  "dsl_version": "0.23.0",
+  "dsl_version": "0.24.0",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {

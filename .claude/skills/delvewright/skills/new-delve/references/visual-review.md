@@ -31,6 +31,13 @@ render, and treat it as the primary evidence.** A scene that photographs well
 from outside and reads as a corridor of grey stone from the doorway is a
 finding, not a pass.
 
+**Read each frame against its own `expect` line and nothing else.** An arrival
+frame is aimed at the objective, so *the objective should be ahead in frame* is
+a claim you hold the picture to. Where the standing waypoint lands on the
+objective's own cell the sentence says so instead — *it is under the frame and
+not in it* — and a frame that does not show the objective there is correct;
+what you judge is the room it arrives in.
+
 ## Read every frame against the approved image
 
 **Read it with `campaigns/<id>/design/concept/` open beside it, and say per
@@ -47,15 +54,31 @@ is itself the finding: the design gate approved something the build does not
 contain.
 
 **Read the sky on the first frame, because it answers in one glance and it
-answers for the whole set.** `design.json` records the sky each approved image
-was drawn under, as the `time` and `weather` tokens `world.json` uses; read the
-frame against the row for the image it answers to. `DW0890` has already held
-those two sides equal at every `validate` since step 5, so a disagreement here
-is not the noon default — it is a row that states an hour the picture does not
-show, which is the one half of this no machine can check. It is a one-field edit
-and a rebuild, and it is cheap only if you catch it on the first frame instead
-of after reading the set: an hour that is wrong is wrong in every frame, and
-re-rendering the set costs what *What the set costs* says it costs.
+answers for the whole set.** Every scene carries a sun placed at the hour
+`world.json` declares — `render-plan.json` states it as `sky`, and `delvec
+scene` refuses a plan that does not, so no frame comes off a renderer's own
+default. `DW0890` has already held that hour equal to `design.json`'s rows at
+every `validate` since step 5. So a frame whose light disagrees with the row for
+the image it answers to is a row that states an hour the picture does not show —
+the one half of this no machine can check. It is a one-field edit and a rebuild,
+and it is cheap only if you catch it on the first frame instead of after reading
+the set: an hour that is wrong is wrong in every frame, and re-rendering the set
+costs what *What the set costs* says it costs.
+
+**The frame carries the hour and not the weather, and it carries the hour the
+delve STARTS at.** Chunky has no rain, so a `rain` or `thunder` row is judged on
+everything except its sky and no frame is evidence about it either way; and if
+your story moves the clock with `set-time`, every frame is still of the hour
+`world.json` declares, because that is what the world save was written at. Say
+both in the review rather than reading a clear noon render as a contradiction of
+a row that belongs to a later beat.
+
+**A delve declared at `night` or `midnight` renders dark, and that is the
+frame.** The sun is below the horizon at those hours, exactly as it is in the
+game. Declared-dark areas with a `night-vision` mitigation are the one thing the
+scene emitter makes legible, and it marks those frames as emulations; everything
+else you read as the player will see it. Never raise a budget, an exposure or an
+hour to make a picture come out.
 
 Two shapes to expect, because they are what the machine cannot say:
 
@@ -112,18 +135,33 @@ curl -LO https://chunkyupdate.lemaik.de/ChunkyLauncher.jar
 java -jar ChunkyLauncher.jar --update snapshot
 ```
 
-The launcher self-installs a core into `~/.chunky/lib`, and what
+The launcher self-installs a core into the settings directory **it** resolves —
+usually `.chunky` under your account's home, which is not necessarily what
+`$HOME` says, and which the paragraph below has you confirm — and what
 `--update snapshot` installs is **today's** snapshot, never the pinned one:
 `--update` takes a release channel, and the update site's `lib/` path serves the
 current core whatever name it is asked for, so no command installs the pin. A
 snapshot core is required either way — the stable line does not read 1.21.x
-worlds. `render-shots.sh` has already named the pinned core and said which cores
-this machine holds; if it said `MISMATCH` or `NONE installed`, every frame below
-comes off a renderer this project has not verified its scene format against, and
-you say so in the review rather than presenting them as pinned. Confirm the
-launcher runs: `java -jar ChunkyLauncher.jar --version` prints a launcher
-version, and `--update snapshot` ends in either an install or "No updates
-found".
+worlds. `render-shots.sh` has already named the pinned core, the directory it
+looked in and how it resolved it, and every core that directory holds. Read all
+four verdicts as different facts: `NONE installed` and `MISMATCH` both mean the
+frames come off a renderer this project has not verified its scene format
+against; **the pin being installed beside another core is not the same as the
+pin being the renderer**, because the launcher chooses its own and has no flag
+that names one. In every case but "the only core there", say in the review which
+core the frames came off.
+
+**Confirm the install by asking Chunky where it is looking, not by reading
+"No updates found".** That line means the launcher found nothing newer in the
+directory *it* resolved, which is not the same as an install landing where you
+expected — a run can print it with the directory you thought you were installing
+into not existing at all. `java -jar ChunkyLauncher.jar --help` ends with the
+line `The default scene directory is <dir>/scenes`, and that `<dir>` is Chunky's
+own answer for where it keeps everything, cores included. Check it against the
+`chunky home:` line `render-shots.sh` printed. If they differ, set
+`DELVEWRIGHT_CHUNKY_HOME` to Chunky's answer and run `render-shots.sh` again
+before reading a single verdict off it. `java -jar ChunkyLauncher.jar --version`
+prints the core version the launcher will actually run with.
 
 `curl -LO` drops the jar in the current directory, which is your working
 directory's root, and `java -jar ChunkyLauncher.jar` only resolves from there. `*.jar` is

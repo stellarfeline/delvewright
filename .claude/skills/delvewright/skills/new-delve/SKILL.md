@@ -188,7 +188,7 @@ Read it now and run from it. The table below is the order and the postconditions
 | step | what it establishes, and what has to be true after it |
 |---|---|
 | **I0 · mode** | `DELVEWRIGHT_MODE` is `dev` when the working directory carries **both** `crates/delvec/Cargo.toml` and `.claude/skills/delvewright/skills/new-delve/SKILL.md`, else `creator`. `DELVEWRIGHT_ENGINE` is the working directory in dev, `~/.delvewright/engine` otherwise. Dev: `campaigns/` there resolves to a directory, or **stop** |
-| **I1 · already here** | `git`; a Python ≥ 3.11 recorded as `DELVEWRIGHT_PYTHON` and used by every Python invocation on this page; the **skill root** recorded as `DELVEWRIGHT_SKILL` — every bundled path below is `"$DELVEWRIGHT_SKILL/…"`, and it is never the working directory; `java` ≥ 21, enumerated with `scripts/find-jdk.py` before halting, and exported; `docker info` exits 0. Not here: Rust and `git-lfs` |
+| **I1 · already here** | `git`; a Python ≥ 3.11 recorded as `DELVEWRIGHT_PYTHON` and used by every Python invocation on this page; the **skill root** recorded as `DELVEWRIGHT_SKILL` — every bundled path below is `"$DELVEWRIGHT_SKILL/…"`, and it is never the working directory; `java` ≥ 21, enumerated with `scripts/find-jdk.py` before halting, and exported; `docker info` exits 0, **and `docker compose version` exits 0** — Compose v2 is a separate per-user CLI plugin that `docker info` says nothing about, and every entry point of step 10 is built on it. Not here: Rust and `git-lfs` |
 | **I2 · engine tree** | `"$DELVEWRIGHT_SKILL/versions.toml"` is read, never restated. Creator: the clone at `~/.delvewright/engine` is `--detach`ed at `[engine].ref` and `rev-parse HEAD` equals it. Dev: HEAD is recorded and said out loud |
 | **I3a · `delvec`** | `"$DELVEWRIGHT_PYTHON" "$DELVEWRIGHT_SKILL/scripts/fetch-delvec.py" --into ~/.delvewright/bin` exits 0 having printed its target, archive, digest and version. Exit 3 or 4 → I3b. **Exit 5 is a refusal** — never the floor, never a retry. Exit 6: stop |
 | **I3b · the floor** | Only after exit 3 or 4, and in dev mode always. `cargo build --release -p delvec` **from inside** the engine tree, with `cargo --version` and `rustc --version` equal to the channel `rust-toolchain.toml` names. No `cargo`: hand over `rustup` and wait |
@@ -215,7 +215,8 @@ delvec --prefabs "$DELVEWRIGHT_PREFABS" grammar expand --program idiom-shape \
     --region 15x9x3 --seed 1 -o .out/probe
 delvec --prefabs "$DELVEWRIGHT_PREFABS" palette .out/probe/idiom-shape.nbt \
     -o .out/palette.json                 # the client jar
-docker info                              # the ladder and the play server
+docker info                              # the daemon: step 9's play server
+docker compose version                   # the plugin: all of step 10's ladder
 ```
 
 `delvec prefab`, `delvec schem` and `delvec harvest` are subcommands of the
@@ -351,7 +352,8 @@ first command.
 
 ## 13. Detail — site-plan campaigns only, and only after the walk
 
-Optional, and impossible before `walk-record.json` exists (`DW0841`).
+Optional, and impossible until `walk-record.json` records a **passed** walk
+(`DW0841`) — a record saying nobody walked is a legal record and refuses too.
 **Produces**: `detail-plan.json`, one place at a time. **Read**:
 `references/detail.md`; a piece the library does not have is
 `references/new-pieces.md`.

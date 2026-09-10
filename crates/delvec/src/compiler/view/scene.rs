@@ -43,6 +43,17 @@
 //! offsets above were reverse-engineered and confirmed by rendering
 //! nobodys-cave-island POV shots (worker session 2026-08-01).
 //!
+//! ## The sun is the campaign's declared hour ([`sun_at`])
+//!
+//! Every scene carries a sun derived from `render-plan.json`'s `sky` fact, and a
+//! plan that states no hour is refused ([`DW_INPUT`]) rather than emitted under
+//! Chunky's default. That default is a 60° midday sun, and it is what every
+//! review frame of every campaign used to come off: `world.json` declared the
+//! hour, `DW0890` held the approved design's rows equal to it at every
+//! `validate`, and nothing ever told the renderer. Measured on the first full
+//! drill — 55 of 59 emitted scenes carried no `sun` and no `sky` key at all, and
+//! a delve declaring `dusk` rendered noon blue.
+//!
 //! ## REVIEW POLICY — night-vision emulation for declared-dark shots
 //!
 //! A shot whose `lighting` stamp is `{"profile": "dark", "mitigation":
@@ -170,7 +181,26 @@ pub(crate) struct RenderPlan {
     /// `void`: no ambient sea, nothing to add under the frame.
     #[serde(default)]
     pub(crate) horizon: Option<Horizon>,
+    /// The hour the campaign declared. Optional **in the document type only**, so
+    /// a plan that omits it can be refused by name ([`plan_sky`]) instead of by
+    /// a serde message about a missing field — the fact a creator needs is which
+    /// engine wrote the plan, not which key is absent.
+    #[serde(default)]
+    pub(crate) sky: Option<Sky>,
     shots: Vec<Shot>,
+}
+
+/// The `sky` fact `render-plan.json` carries: the hour this delve is played at
+/// (`crate::compiler::render_plan`'s `sky_fact`).
+#[derive(Debug, Clone, Deserialize)]
+pub struct Sky {
+    /// The keyword the author wrote (`dusk`) — for messages, never for the sun.
+    #[allow(dead_code)]
+    pub time: String,
+    /// The vanilla `daytime` tick value that keyword sets. **This** is what the
+    /// sun is a function of, so a state vanilla does not name is worth as much
+    /// as one it does.
+    pub daytime_ticks: i64,
 }
 
 /// An inclusive world box. Public because [`Horizon`] carries one: a horizon
@@ -334,8 +364,9 @@ pub(crate) struct ChunkyScene {
     pub(crate) water_world_height_offset_enabled: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) water_world_clip_enabled: Option<bool>,
-    /// An explicitly placed sun (the panorama's key light). Absent on review
-    /// scenes, which keep Chunky's default sun.
+    /// The campaign's declared hour, as a sun ([`sun_at`]). Every scene this
+    /// crate emits carries one; the `Option` is what lets the type be built
+    /// before it is known, never a scene that ships without it.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) sun: Option<ChunkySun>,
     /// REVIEW POLICY (night-vision emulation) only: per-block material
@@ -396,6 +427,92 @@ pub(crate) struct MaterialOverride {
 pub struct ChunkySun {
     pub altitude: f64,
     pub azimuth: f64,
+}
+
+/// Round to 6 decimals, never emitting `-0.0` (it serializes differently from
+/// `0.0`). Enough precision for a sun, few enough digits that libm ulp
+/// differences between platforms cannot move the emitted bytes (ADR-0006).
+pub(crate) fn round6(v: f64) -> f64 {
+    let r = (v * 1e6).round() / 1e6;
+    if r == 0.0 { 0.0 } else { r }
+}
+
+/// **The sun of a Minecraft `daytime` tick value**, in Chunky's convention.
+///
+/// Two published facts meet here and neither is invented.
+///
+/// *Minecraft.* The sun and moon "appear to rotate around the player, appearing
+/// directly overhead at midday and midnight, respectively", and rise in the east
+/// — so the track is a great circle through the zenith in the east–west plane,
+/// and one angle fixes the whole position. minecraft.wiki (*Daylight cycle*,
+/// §Sky angle) publishes that angle for a `daytime` tick `t`, with 0° at noon:
+///
+/// ```text
+/// α = (1 − cos(π · mod₁((t − 6000)/24000)) + mod₄((t − 6000)/6000)) · 60°
+/// ```
+///
+/// Cross-checked against the game's own `DimensionType.timeOfDay`
+/// (`α = 360° · (2·d + (1 − cos πd)/2)/3`, `d = frac(t/24000 − 0.25)`), which is
+/// a different expression of the same curve: the two agree to six decimals at
+/// every one of the six hours [`crate::compiler::view::scene`] can be handed
+/// (`the_two_published_sun_angle_formulas_agree`). The curve is deliberately not
+/// linear in `t` — that is the term that makes vanilla's sunrise and sunset
+/// linger near the horizon — so a linear interpolation would be a third, wrong
+/// answer.
+///
+/// *Chunky.* The direction toward the sun is
+/// `(cos az · cos alt, sin alt, sin az · cos alt)`, verified against the pinned
+/// core's `Sun.initSun` bytecode; nothing clamps `altitude`, so a sun below the
+/// horizon is expressed as a negative one and the scene renders as the night it
+/// is.
+///
+/// Composing them: rotating the zenith by `α` toward the west gives a sun
+/// direction of `(−sin α, cos α, 0)`, hence `altitude = asin(cos α)` and an
+/// azimuth of exactly east or exactly west. At noon and midnight the sun is at
+/// the zenith or the nadir and the azimuth means nothing; east is emitted, so
+/// the bytes are still a function of the hour alone.
+pub fn sun_at(daytime_ticks: i64) -> ChunkySun {
+    let alpha = sky_angle_rad(daytime_ticks);
+    let altitude = alpha.cos().clamp(-1.0, 1.0).asin();
+    // sin α > 0 is the half of the day after noon: the sun has gone west.
+    let azimuth = if alpha.sin() > 0.0 {
+        std::f64::consts::PI
+    } else {
+        0.0
+    };
+    ChunkySun {
+        altitude: round6(altitude),
+        azimuth: round6(azimuth),
+    }
+}
+
+/// minecraft.wiki's sky angle for a `daytime` tick value, in radians, 0 at noon
+/// and growing westward. See [`sun_at`] for the citation and the cross-check.
+fn sky_angle_rad(daytime_ticks: i64) -> f64 {
+    let t = daytime_ticks as f64 - 6000.0;
+    let turn = (t / 24000.0).rem_euclid(1.0);
+    let quarters = (t / 6000.0).rem_euclid(4.0);
+    (1.0 - (std::f64::consts::PI * turn).cos() + quarters) * 60f64.to_radians()
+}
+
+/// The hour a plan states, or [`DW_INPUT`] naming what is missing.
+///
+/// **A scene is never emitted without one.** Chunky's default sun is a midday
+/// one, so a plan with no `sky` would render a night delve at noon and say
+/// nothing — the exact silence this key exists to end. The refusal is here, at
+/// the one door every scene goes through, rather than in the type, so it can say
+/// what to do about it.
+pub(crate) fn plan_sky(plan: &RenderPlan) -> Result<&Sky, Diagnostic> {
+    plan.sky.as_ref().ok_or_else(|| {
+        Diagnostic::error(
+            DW_INPUT,
+            "render-plan.json states no `sky`, so there is no hour to put a sun at. Chunky's own \
+             default is a midday sun, and emitting these scenes would hand back frames of a noon \
+             sky whatever hour `world.json` declares. Rebuild the delve with this engine — \
+             `delvec build` writes the key from the campaign's declared `time` — rather than \
+             rendering a plan an older one wrote",
+        )
+    })
 }
 
 #[derive(Debug, Serialize)]
@@ -555,6 +672,7 @@ pub fn scenes_from_plan(
     world_palette: &[String],
 ) -> Result<Vec<(String, Vec<u8>)>, Diagnostic> {
     let plan = parse_plan(plan_json)?;
+    let daytime_ticks = plan_sky(&plan)?.daytime_ticks;
 
     // The ground the layout stands in is loaded with it. On a `valley` the
     // landform is real blocks in the save, OUTSIDE the layout AABB — a chunk
@@ -615,7 +733,7 @@ pub fn scenes_from_plan(
             water_world_height: None,
             water_world_height_offset_enabled: None,
             water_world_clip_enabled: None,
-            sun: None,
+            sun: Some(sun_at(daytime_ticks)),
             materials,
             delvewright_review_policy: emulate.then_some(REVIEW_POLICY),
             world: WorldRef {
@@ -700,6 +818,7 @@ mod tests {
         // the sand because emission used a naive deg→rad. The verified mapping
         // (yaw+π, pitch−π/2) puts it level (pitch −π/2, upright) and facing +X.
         let plan = br#"{"campaign_id":"c","layout_aabb":{"min":[0,64,0],"max":[1,65,1]},
+          "sky":{"time":"noon","daytime_ticks":6000},
           "shots":[{"id":"pov/leg0/wp1","kind":"pov","camera":{"pos":[7.5,68.62,10.5],
           "yaw":0.0,"pitch":0.0,"look_at":[8.5,68.62,10.5]}}]}"#;
         let scenes = scenes_from_plan(plan, &SceneOptions::default(), &[]).unwrap();
@@ -715,6 +834,7 @@ mod tests {
     /// interior (never emulated), sharing one layout.
     const DARK_PLAN: &[u8] =
         br#"{"campaign_id":"cave","layout_aabb":{"min":[0,64,0],"max":[15,80,15]},
+      "sky":{"time":"midnight","daytime_ticks":18000},
       "shots":[
         {"id":"pov/leg0/wp0","kind":"pov",
          "lighting":{"profile":"dark","mitigation":"night-vision"},
@@ -844,6 +964,104 @@ mod tests {
 
     const OCEAN_FIXTURE: &[u8] =
         include_bytes!("../../../tests/fixtures/view/render-plan-ocean.json");
+
+    /// **The two published formulas for Minecraft's sky angle agree**, at every
+    /// hour the DSL can state — minecraft.wiki's (`sky_angle_rad`, which
+    /// [`sun_at`] uses) and the game's own `DimensionType.timeOfDay` curve,
+    /// written out here independently. A measurement that is a deliverable is
+    /// cross-checked by a second method sharing no configuration with the
+    /// first, and the sun's position is exactly that: it decides what every
+    /// review frame looks like.
+    #[test]
+    fn the_two_published_sun_angle_formulas_agree() {
+        fn time_of_day_curve(ticks: i64) -> f64 {
+            // DimensionType.timeOfDay: d = frac(t/24000 - 0.25);
+            // (d*2 + (0.5 - cos(d*pi)/2)) / 3, a full turn.
+            let d = (ticks as f64 / 24000.0 - 0.25).rem_euclid(1.0);
+            let e = 0.5 - (d * std::f64::consts::PI).cos() / 2.0;
+            (d * 2.0 + e) / 3.0 * std::f64::consts::TAU
+        }
+        let hours = [1000, 6000, 12000, 13000, 18000, 23000];
+        for t in hours {
+            let a = sky_angle_rad(t).rem_euclid(std::f64::consts::TAU);
+            let b = time_of_day_curve(t).rem_euclid(std::f64::consts::TAU);
+            assert!((a - b).abs() < 1e-9, "hour {t}: wiki {a} vs game {b}");
+        }
+        assert_eq!(hours.len(), 6, "every WorldTime the DSL states was checked");
+    }
+
+    /// The four facts a reader can check against the game without running it:
+    /// noon is overhead, midnight is straight down, the morning sun is in the
+    /// east and the evening sun in the west, and `dusk` is a low sun still above
+    /// the horizon rather than a set one.
+    #[test]
+    fn the_sun_stands_where_the_hour_says() {
+        let deg = |s: &ChunkySun| s.altitude.to_degrees();
+        // The emitted azimuth is rounded to six decimal radians (`round6`), so
+        // the comparisons are against the rounded values — this is the emitter's
+        // own precision, not slack in the rule.
+        let east = 0.0;
+        let west = round6(std::f64::consts::PI);
+        let tol = 1e-3; // degrees: what six decimal radians can resolve.
+
+        let noon = sun_at(6000);
+        assert!((deg(&noon) - 90.0).abs() < tol, "{noon:?}");
+        let midnight = sun_at(18000);
+        assert!((deg(&midnight) + 90.0).abs() < tol, "{midnight:?}");
+
+        let morning = sun_at(1000);
+        assert!(deg(&morning) > 0.0 && deg(&morning) < 45.0, "{morning:?}");
+        assert_eq!(morning.azimuth, east, "the morning sun is in the east");
+
+        let dusk = sun_at(12000);
+        assert!(
+            deg(&dusk) > 0.0 && deg(&dusk) < 20.0,
+            "dusk is a low sun still up: {dusk:?}"
+        );
+        assert_eq!(dusk.azimuth, west, "the evening sun is in the west");
+
+        // `night` and `dawn` are the same small angle below the horizon on
+        // opposite sides — the sun has just gone, or is about to come.
+        let night = sun_at(13000);
+        let dawn = sun_at(23000);
+        assert!(deg(&night) < 0.0 && deg(&dawn) < 0.0, "{night:?} {dawn:?}");
+        assert!((deg(&night) - deg(&dawn)).abs() < tol);
+        assert_eq!((night.azimuth, dawn.azimuth), (west, east));
+    }
+
+    /// The perturbation that proves the emitted bytes are bound to the declared
+    /// hour: change the hour, and the sun in every scene moves.
+    #[test]
+    fn changing_the_declared_hour_moves_the_emitted_sun() {
+        let at = |ticks: i64| {
+            let plan = format!(
+                r#"{{"campaign_id":"c","layout_aabb":{{"min":[0,64,0],"max":[1,65,1]}},
+                   "sky":{{"time":"x","daytime_ticks":{ticks}}},
+                   "shots":[{{"id":"seam/x/0","kind":"seam","camera":{{"pos":[0.5,66.0,0.5],
+                   "yaw":0.0,"pitch":0.0,"look_at":[4.5,66.0,0.5]}}}}]}}"#
+            );
+            let scenes = scenes_from_plan(plan.as_bytes(), &SceneOptions::default(), &[]).unwrap();
+            let v: serde_json::Value = serde_json::from_slice(&scenes[0].1).unwrap();
+            v["sun"].clone()
+        };
+        let dusk = at(12000);
+        let noon = at(6000);
+        assert!(!dusk.is_null(), "every scene carries a sun");
+        assert_ne!(dusk, noon, "the emitted sun follows the declared hour");
+    }
+
+    /// A plan with no hour is refused. Chunky's default sun is a midday one, so
+    /// emitting anyway would hand back a noon frame of a midnight delve and say
+    /// nothing — the exact silence the `sky` fact exists to end.
+    #[test]
+    fn a_plan_with_no_declared_hour_is_dw0721() {
+        let no_sky = br#"{"campaign_id":"c","layout_aabb":{"min":[0,64,0],"max":[1,65,1]},
+          "shots":[{"id":"seam/x/0","kind":"seam","camera":{"pos":[0.5,66.0,0.5],
+          "yaw":0.0,"pitch":0.0,"look_at":[4.5,66.0,0.5]}}]}"#;
+        let err = scenes_from_plan(no_sky, &SceneOptions::default(), &[]).unwrap_err();
+        assert_eq!(err.code, DW_INPUT, "expected DW0721: {err:?}");
+        assert!(err.message.contains("`sky`"), "{err:?}");
+    }
 
     #[test]
     fn ocean_horizon_scenes_stand_on_the_water_world_plane() {
