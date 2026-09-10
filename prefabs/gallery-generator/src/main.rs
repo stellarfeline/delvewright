@@ -2655,6 +2655,197 @@ fn write_yard(out: &Path) {
 }
 
 // ---------------------------------------------------------------------------
+// The BANK: a SITE — one box holding a building and the ground it stands on
+// ---------------------------------------------------------------------------
+
+/// The site piece's id.
+///
+/// # What a site is, and why the gallery owes one
+///
+/// Every other gallery piece is a *building*: it is the inside of something,
+/// and everything outside its box belongs to the horizon. A **site** is the
+/// other shape — one box holding the building together with its own ground, its
+/// bank running out to the box's own edge, and mass under that bank. It is what
+/// a whole-map zone exported by `delvec grammar expand` is, and until a
+/// one-area campaign could state its extent it had nowhere to stand: no base
+/// that builds terrain would take it.
+///
+/// Two things are only true of a site, and this piece is where the engine is
+/// asked both:
+///
+/// * **It is seated by its walk plane.** Its bank's top course has to be the
+///   ground outside it, or the party walks up to a cliff it cannot climb. A
+///   piece whose walk plane is its own floor course could not tell whether that
+///   was being done; this one carries three courses of mass under its bank, so
+///   the number moves it.
+/// * **Its outward faces are partly buried and partly seen, in one piece.**
+///   The courses under the bank stand in the valley's own ground; the parapet
+///   stands above it and the document answers for it. Both halves of `DW0885`
+///   bind here, exactly as they do on the quay — where the burying is done by
+///   water instead of by earth.
+const BANK_ID: &str = "gallery-bank";
+
+/// Extent: 24 × 12 × 24.
+///
+/// Wide enough that a body walks a real distance across the bank before it
+/// reaches the parapet, small enough that the valley around it builds in
+/// seconds.
+const BANK_SIZE: [i32; 3] = [24, 12, 24];
+
+/// The local y of the bank's top solid course — the ground a body stands on.
+///
+/// Three courses of mass sit under it (`0..=2`), and that mass is the half of
+/// the site a horizon has to bury. Seated on a `valley` the origin is
+/// `VALLEY_WALK_REF_Y - walk_y`, so this course lands exactly on the gap
+/// floor's own top course and the two grounds are one ground.
+const BANK_GRADE_Y: i32 = 3;
+
+/// How many courses of parapet stand above the bank, on the box's outer ring.
+const BANK_PARAPET: i32 = 3;
+
+/// The x range of the way in, cut through the parapet on the north face.
+const BANK_GATE_X: std::ops::RangeInclusive<i32> = 10..=13;
+
+/// A site: three courses of island mass, a bank across the whole footprint, and
+/// a parapet on the box's own edge with one way through it.
+///
+/// The parapet is what makes the piece answerable, for the quay's reason: a
+/// bank with nothing above its grade course would put every solid boundary cell
+/// at or below the ground outside, the valley would bury all of them, and the
+/// binding would prove nothing about `shown_faces`. What is wanted is both.
+fn build_bank() -> Structure {
+    let mut palette = Palette::new();
+    let mut blocks = Vec::new();
+    let [sx, sy, sz] = BANK_SIZE;
+    let parapet_top = BANK_GRADE_Y + BANK_PARAPET;
+    for x in 0..sx {
+        for y in 0..sy {
+            for z in 0..sz {
+                let ring = x == 0 || x == sx - 1 || z == 0 || z == sz - 1;
+                let gate = z == 0 && BANK_GATE_X.contains(&x);
+                let above_grade = y > BANK_GRADE_Y && y <= parapet_top;
+                // A lamp in the parapet, so the court is lit by something the
+                // piece carries rather than by the sky alone: `DW0210` measures
+                // under the DARKEST reachable sky, and a campaign is free to
+                // declare one this court would not survive on daylight.
+                let lamp = above_grade
+                    && y == BANK_GRADE_Y + 2
+                    && matches!(
+                        (x, z),
+                        (0, 0) | (0, 23) | (23, 0) | (23, 23) | (0, 11) | (23, 11) | (11, 23)
+                    );
+                let name = if y < BANK_GRADE_Y {
+                    "minecraft:stone"
+                } else if y == BANK_GRADE_Y {
+                    "minecraft:grass_block"
+                } else if lamp {
+                    "minecraft:sea_lantern"
+                } else if above_grade && ring && !gate {
+                    "minecraft:cobblestone"
+                } else {
+                    "minecraft:air"
+                };
+                blocks.push(BlockEntry {
+                    pos: [x, y, z],
+                    state: palette.idx(name, None),
+                });
+            }
+        }
+    }
+    Structure {
+        data_version: DATA_VERSION,
+        size: BANK_SIZE,
+        palette: palette.entries,
+        blocks,
+        entities: Vec::new(),
+    }
+}
+
+/// The site's document.
+///
+/// `shown_faces` names the four sides and nothing else, and the exactness is
+/// the demonstration. `down` is the island's underside, which stands in the
+/// valley's own ground; `up` is open sky over a court with no solid cell on the
+/// box's top plane, so there is no side there to show. `DW0885` refuses a
+/// declared side the world buried and a declared side of pure air alike, so
+/// padding this list out to six reds — which is what makes these four a bound
+/// declaration rather than a hatch.
+fn bank_metadata() -> serde_json::Value {
+    serde_json::json!({
+        "prefab_id": format!("prefab/{BANK_ID}"),
+        "structure": {
+            "file": format!("{BANK_ID}.nbt"),
+            "id": BANK_ID,
+            "size": BANK_SIZE,
+            "data_version": DATA_VERSION,
+            "generator": "prefabs/gallery-generator (gallery-prefab-gen)"
+        },
+        "anchors": {
+            "anchor/bank-arrival": {
+                "pos": [11, BANK_GRADE_Y + 1, 2],
+                "facing": "south",
+                "role": "entry",
+                "note": "just inside the way through the parapet — the cell a body arrives at"
+            },
+            "anchor/bank-court": {
+                "pos": [11, BANK_GRADE_Y + 1, 11],
+                "facing": "north",
+                "note": "the middle of the court, where the warden of the bank stands"
+            },
+            "anchor/bank-corner": {
+                "pos": [20, BANK_GRADE_Y + 1, 20],
+                "facing": "north",
+                "note": "the far corner of the bank, inside the parapet"
+            }
+        },
+        "shown_faces": ["east", "north", "south", "west"],
+        "lighting": {
+            "profile": "lit",
+            "measured_min_light": 15,
+            "measured": "2026-09-10",
+            "method": "derived: seven sea lanterns set in the parapet, over a court open to the sky"
+        },
+        "license": {
+            "source": "original",
+            "spdx": "GPL-3.0-or-later",
+            "note": "Original Delvewright project asset (pipeline-code license per prefabs/LICENSE-ASSETS.md). No third-party material ingested.",
+            "provenance": "Generated deterministically by prefabs/gallery-generator (ADR-0006)."
+        }
+    })
+}
+
+fn write_bank(out: &Path) {
+    let s = build_bank();
+    let cells = invariant_cells(&s);
+    invariants::assert_blocks_are_real(BANK_ID, &cells);
+    connections::assert_shape_is_stated(BANK_ID, &cells);
+
+    let nbt = fastnbt::to_bytes(&s).expect("structure serializes to NBT");
+    let mut gz = GzBuilder::new()
+        .mtime(0)
+        .write(Vec::new(), Compression::new(6));
+    gz.write_all(&nbt).expect("gzip write");
+    let framed = gz.finish().expect("gzip finish");
+    std::fs::write(out.join(format!("{BANK_ID}.nbt")), &framed).expect("write bank nbt");
+    let mut meta = bank_metadata();
+    declare_walk_y(BANK_ID, &s, &mut meta);
+    // The measured plane and the designed grade are one number or this piece is
+    // not the site it says it is: a body stands one course above the bank, and
+    // everything the seating rule derives is that number under the horizon's.
+    assert_eq!(
+        meta["walk_y"],
+        serde_json::json!(BANK_GRADE_Y + 1),
+        "{BANK_ID}: the measured walk plane must be the course above the bank"
+    );
+    document::write_preserving(&out.join(format!("{BANK_ID}.json")), &meta);
+    println!(
+        "{BANK_ID}: site piece written — {}x{}x{}, walk plane at local y={}, \
+         {BANK_GRADE_Y} course(s) of mass under the bank, {BANK_PARAPET} of parapet above it",
+        BANK_SIZE[0], BANK_SIZE[1], BANK_SIZE[2], meta["walk_y"],
+    );
+}
+
+// ---------------------------------------------------------------------------
 // The QUAY: the one gallery piece the party can walk OUTSIDE of, on a sea
 // ---------------------------------------------------------------------------
 
@@ -2841,6 +3032,7 @@ fn main() {
     write_shard(out);
     write_yard(out);
     write_quay(out);
+    write_bank(out);
     // The skins destination IS created: unlike the prefab directory it is not an
     // existing library the operator might mistype, it is a fixed subdirectory of
     // the campaign the caller just named, and it is gitignored build output.

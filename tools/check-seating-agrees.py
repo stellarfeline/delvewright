@@ -251,8 +251,10 @@ def judge(
         if NOT_AN_AREAS_BASE in raised:
             return (
                 "not-an-areas-base",
-                f"seatable; {NOT_AN_AREAS_BASE} — a base that builds terrain, which "
-                f"an `areas[]` campaign cannot reach, codes {sorted(raised)}",
+                f"seatable; {NOT_AN_AREAS_BASE} — a base that builds terrain, on a "
+                f"campaign that states no extent. This sweep's campaigns bind POOLS, and a "
+                f"pool states none; an `areas[]` campaign reaches this base by being one "
+                f"area bound to one prefab. Codes {sorted(raised)}",
             )
         return ("agree", f"seatable, analyze exit {code}, codes {sorted(raised)}")
 
@@ -404,8 +406,9 @@ def main() -> int:
 
     print(
         f"seating-agreement binding: {len(pools)} pool(s) x {len(bases)} base(s) = "
-        f"{cells} cell(s) judged, of which {site_plan_cells} are site-plan bases an "
-        f"`areas[]` campaign cannot reach ({NOT_AN_AREAS_BASE}); "
+        f"{cells} cell(s) judged, of which {site_plan_cells} are a base this sweep's "
+        f"POOL-bound campaigns cannot reach ({NOT_AN_AREAS_BASE}: a pool states no "
+        f"extent); "
         f"{perturbed_cells} perturbation cell(s) judged; "
         f"codes named by the command: {sorted(codes_seen) or 'none'}."
     )

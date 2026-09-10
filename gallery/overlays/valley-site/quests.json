@@ -1,0 +1,59 @@
+{
+  "campaign_id": "gallery",
+  "content": {
+    "quests": [
+      {
+        "cast": {
+          "npc/bank-warden": {
+            "at": "anchor/bank-court",
+            "dialogue": "dlg/bank-greeting",
+            "doing": "standing in the middle of the court"
+          }
+        },
+        "happening": {
+          "text": "the party takes on quest/walk-the-bank",
+          "verb": "learns"
+        },
+        "id": "quest/walk-the-bank",
+        "objectives": [
+          {
+            "happening": {
+              "text": "the party completes obj/ask-the-warden",
+              "verb": "learns"
+            },
+            "id": "obj/ask-the-warden",
+            "npc": "npc/bank-warden",
+            "type": "talk-to"
+          },
+          {
+            "after": [
+              "obj/ask-the-warden"
+            ],
+            "anchor": "anchor/bank-corner",
+            "happening": {
+              "text": "the party completes obj/far-corner",
+              "verb": "arrives"
+            },
+            "id": "obj/far-corner",
+            "radius": 2,
+            "type": "reach-anchor"
+          }
+        ],
+        "on_complete": [
+          {
+            "happening": {
+              "text": "the delve is complete",
+              "verb": "survives"
+            },
+            "type": "campaign-complete"
+          }
+        ],
+        "trigger": {
+          "type": "campaign-start"
+        }
+      }
+    ]
+  },
+  "dsl_version": "0.24.2",
+  "stage": "quests"
+}

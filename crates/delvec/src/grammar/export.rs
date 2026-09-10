@@ -520,12 +520,25 @@ pub fn export_prefab(
         // would be the default this field exists to refuse.
         walk_y: measured_walk_y(&expansion),
         waterline_y: None,
-        // The export declares no shown side (`DW0885`). A program says what a
-        // building IS; which of its sides a player is meant to look at is a
-        // fact about where it is placed, and the export has no placement. Absent
-        // is the strict answer — the world must bury what nobody claims — and it
-        // moves no exported byte for a program that already writes none.
-        shown_faces: Vec::new(),
+        // **The sides the program declares finished exterior surface**
+        // (`DW0885`), written through on every expansion — which is what makes
+        // it a declaration instead of a value the next `expand` erases.
+        //
+        // This reverses the reading that stood here, which was that the export
+        // declares no shown side because *which of its sides a player is meant
+        // to look at is a fact about where it is placed*. The premise that a
+        // program says what a building IS is right; the conclusion does not
+        // follow, because `shown_faces` does not name the sides a player looks
+        // at. [`crate::compiler::burial`] defines it as the sides that are
+        // finished exterior surface and calls it, in the same breath, a claim
+        // about the PIECE that changes what the piece is in every world. Which
+        // sides of a building those are is part of what the building is. See
+        // [`crate::grammar::ir::Program::shown_faces`], which is where a
+        // program says it.
+        //
+        // Empty is still the strict answer, and a program that declares nothing
+        // exports the bytes and the metadata it exported before.
+        shown_faces: program.shown_faces.clone(),
         spatial_contract: contract_metadata(&expansion),
         // The export makes no `footprint_class` claim (spec-0050 §5). A program
         // states a building; which size class of site-plan box that building is
@@ -661,12 +674,25 @@ pub fn export_zone(
         // would be the default this field exists to refuse.
         walk_y: measured_walk_y(&expansion),
         waterline_y: None,
-        // The export declares no shown side (`DW0885`). A program says what a
-        // building IS; which of its sides a player is meant to look at is a
-        // fact about where it is placed, and the export has no placement. Absent
-        // is the strict answer — the world must bury what nobody claims — and it
-        // moves no exported byte for a program that already writes none.
-        shown_faces: Vec::new(),
+        // **The sides the program declares finished exterior surface**
+        // (`DW0885`), written through on every expansion — which is what makes
+        // it a declaration instead of a value the next `expand` erases.
+        //
+        // This reverses the reading that stood here, which was that the export
+        // declares no shown side because *which of its sides a player is meant
+        // to look at is a fact about where it is placed*. The premise that a
+        // program says what a building IS is right; the conclusion does not
+        // follow, because `shown_faces` does not name the sides a player looks
+        // at. [`crate::compiler::burial`] defines it as the sides that are
+        // finished exterior surface and calls it, in the same breath, a claim
+        // about the PIECE that changes what the piece is in every world. Which
+        // sides of a building those are is part of what the building is. See
+        // [`crate::grammar::ir::Program::shown_faces`], which is where a
+        // program says it.
+        //
+        // Empty is still the strict answer, and a program that declares nothing
+        // exports the bytes and the metadata it exported before.
+        shown_faces: program.shown_faces.clone(),
         spatial_contract: contract_metadata(&expansion),
         // The export makes no `footprint_class` claim (spec-0050 §5). A program
         // states a building; which size class of site-plan box that building is
