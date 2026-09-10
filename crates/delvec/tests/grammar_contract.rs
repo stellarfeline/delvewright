@@ -27,7 +27,7 @@ use std::process::Command;
 use delvec::grammar::export::{export_prefab, export_zone};
 use delvec::grammar::ir::{
     Alternative, Bar, Contract, EXTERIOR, EdgeClass, Envelope, Mark, MarkAt, Node, Opens, Program,
-    ProgramError, Reorient, Rounding, Size, Split, Way,
+    ProgramError, Reorient, Size, Split, Way,
 };
 use delvec::grammar::library::{self, spatial_contract::spatial_contract};
 use delvec::grammar::version::{LATEST_PROGRAM_VERSION, WAY_SINCE};
@@ -1483,7 +1483,7 @@ fn broken_threshold(declared: bool) -> Program {
             body: Box::new(Node::Split(Split {
                 axis: Axis::Y,
                 sizes: vec![Size::abs(1), Size::abs(3), Size::rel(1)],
-                rounding: Rounding::Truncate,
+                rounding: None,
                 repeat: false,
                 orient: Reorient::KEEP,
                 children: vec![threshold, Node::Void, Node::fill("shell")],

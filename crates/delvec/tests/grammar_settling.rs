@@ -30,7 +30,7 @@
 use delvec::grammar::block::BlockState;
 use delvec::grammar::gates;
 use delvec::grammar::geom::Axis;
-use delvec::grammar::ir::{Material, Node, Program, Reorient, Rounding, Size, Split};
+use delvec::grammar::ir::{Material, Node, Program, Reorient, Size, Split};
 use delvec::grammar::{Box3, ExpandOptions, Expansion, expand};
 
 fn fill(state: &str) -> Node {
@@ -43,7 +43,7 @@ fn split(axis: Axis, sizes: Vec<i64>, children: Vec<Node>) -> Node {
     Node::Split(Split {
         axis,
         sizes: sizes.into_iter().map(Size::abs).collect(),
-        rounding: Rounding::Truncate,
+        rounding: None,
         repeat: false,
         orient: Reorient::KEEP,
         children,

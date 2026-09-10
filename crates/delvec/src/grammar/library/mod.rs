@@ -155,7 +155,7 @@ fn split(axis: Axis, sizes: Vec<Size>, children: Vec<Node>) -> Node {
     Node::Split(Split {
         axis,
         sizes,
-        rounding: Rounding::Truncate,
+        rounding: None,
         repeat: false,
         orient: Reorient::KEEP,
         children,
@@ -167,26 +167,24 @@ fn split_repeat(axis: Axis, sizes: Vec<Size>, children: Vec<Node>) -> Node {
     Node::Split(Split {
         axis,
         sizes,
-        rounding: Rounding::Truncate,
+        rounding: None,
         repeat: true,
         orient: Reorient::KEEP,
         children,
     })
 }
 
-/// A split whose relative pieces cover the axis **exactly**, the odd block
-/// going to the earliest share.
+/// A split whose odd block goes to the **earliest** share.
 ///
-/// [`split`] uses upstream's `Truncate`, which drops the remainder — fine for a
-/// crenellation rhythm, wrong for anything load-bearing: an uncovered piece is
-/// never written, and an unwritten cell is air. A floor with a one-block hole in
-/// it at the far end is exactly the silent defect the machine gates exist to
-/// stop, so a split that lays out ground says which it wants.
+/// Every split covers its axis exactly, so what this one names is not coverage
+/// but *which* share absorbs an uneven division: the near one, so a body laid
+/// out from its near end does not drift as the box grows. `idioms.rs` carries
+/// the other two choices, `split_centered` and `split_to_end`.
 fn split_exact(axis: Axis, sizes: Vec<Size>, children: Vec<Node>) -> Node {
     Node::Split(Split {
         axis,
         sizes,
-        rounding: Rounding::Start,
+        rounding: Some(Rounding::Start),
         repeat: false,
         orient: Reorient::KEEP,
         children,
@@ -198,7 +196,7 @@ fn split_oriented(axis: Axis, sizes: Vec<Size>, orient: Reorient, children: Vec<
     Node::Split(Split {
         axis,
         sizes,
-        rounding: Rounding::Truncate,
+        rounding: None,
         repeat: false,
         orient,
         children,

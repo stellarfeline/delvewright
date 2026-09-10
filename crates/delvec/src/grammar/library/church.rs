@@ -17,9 +17,10 @@
 //! (see `crate::grammar::split`). Here the narrow case is its own alternative.
 //!
 //! Smallest region that expands: the roof steps in 2 blocks of width per block
-//! of height, so height must follow width — Y ≥ 9, and Y ≳ X − 3 from about
-//! X = 15 up. 15 × 16 × 30 is comfortable; `tests/library.rs` holds these
-//! numbers to the code.
+//! of height, so height must follow width. Measured: 9 × 8, 15 × 12 and
+//! 21 × 16 are the shortest that expand at those widths, every gate green;
+//! 15 × 16 × 30 is comfortable. `tests/grammar_library.rs` holds these numbers
+//! to the code, from both sides.
 
 use crate::grammar::block::BlockState;
 use crate::grammar::geom::{Axis, Axis::X as WX, Axis::Y as WY, Axis::Z as WZ};

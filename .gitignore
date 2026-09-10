@@ -41,6 +41,12 @@ validation/gallery-src-*/
 # `validate` profile's bot writes. A per-run artifact, never committed.
 validation/run-out/
 
+# spec-0064's ladder builds its own subject and, under a perturbation, its own
+# scratch copy of the build context (`validation/reset-out/<project>` and
+# `<project>.scratch`). Per-run, replaced every run, never committed — and the
+# perturbation is made on the copy so it can never reach the tree.
+validation/reset-out/
+
 # spec-0005 server-jar cache (actions/cache in CI; primed locally). Never committed —
 # the Mojang jar is fetched by checksum, never redistributed (ADR-0010).
 validation/.jar-cache/

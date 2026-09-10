@@ -1693,7 +1693,15 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
     server off until `playtest-server.sh` appends its own), `rcon.password` and
     `management-server-secret` (both generated per boot). Operator transport,
     never world state; `management-server-enabled=false` on both, so the secret
-    is inert.
+    is inert. `enable-status` and `hide-online-players` join them, and only on
+    one path: with `DELVE_RESET_WHEN_EMPTY` set (spec-0064) the delve entrypoint
+    exports `ENABLE_STATUS=true` and `HIDE_ONLINE_PLAYERS=false`, because the
+    reset's whole event is the online player count read from a server-list ping,
+    and a host that hid its player list would turn every reading into a failed
+    ping, every failed ping into "one player", and the flag into a flag that does
+    nothing. Neither key enters the pinned set: they are operator transport, not
+    world state, which is the line this paragraph already draws — with the flag
+    unset the entrypoint sets neither and the host decides both, as today.
   - **Agree, and load-bearing**: `function-permission-level=2` (the level every
     datapack command in the pack runs at — a host that lowered it would break the
     whole bootstrap), `initial-enabled-packs=vanilla` (an enabled experimental
