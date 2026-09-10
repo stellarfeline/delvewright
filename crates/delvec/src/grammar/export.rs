@@ -792,8 +792,11 @@ pub fn export_zone(
 ///
 /// Deterministic (ADR-0006): a fold over `BTreeMap` floods with no clock, no RNG
 /// and no path in it, so the same program at the same seed over the same region
-/// writes the same document byte for byte. `an_expansion_is_byte_identical_twice`
-/// is the standing proof.
+/// writes the same document byte for byte.
+/// `exporting_twice_gives_byte_identical_nbt_and_metadata` and
+/// `exporting_a_tiled_zone_twice_gives_byte_identical_tiles_and_manifest` are the
+/// standing proofs, and they compare the metadata as well as the `.nbt`, so the
+/// measurement is inside what they hold.
 ///
 /// **A probe that bound to nothing writes no profile.** With no cell to stand in
 /// there is no floor to be dark and no measurement to state, and inventing one
