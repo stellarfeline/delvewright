@@ -690,12 +690,66 @@ fn dw0344_raising_the_low_floor_takes_the_piece_out_of_the_sea() {
 // DW0855 — both moves
 // ---------------------------------------------------------------------------
 
+/// Give a campaign a SECOND area, so it is the shape `DW0855`'s argument is
+/// about: two footprints on the compiler's fixed stride with void between them,
+/// whose union states no extent.
+///
+/// The second area binds a COPY of the piece under its own id, with every
+/// anchor name prefixed. Binding the same prefab twice is `DW0857` — one gate
+/// anchor provided by two areas — which would refuse the campaign for a reason
+/// that has nothing to do with the extent, and a fixture refused for the wrong
+/// reason proves nothing about the right one.
+fn two_areas(tag: &str, horizon: serde_json::Value, prefabs: &Path) -> PathBuf {
+    let src: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(prefabs.join("hello-room.json")).unwrap())
+            .unwrap();
+    let mut far = src.clone();
+    far["prefab_id"] = serde_json::json!("prefab/far-room");
+    far["structure"]["id"] = serde_json::json!("far-room");
+    far["structure"]["file"] = serde_json::json!("far-room.nbt");
+    let anchors: serde_json::Map<String, serde_json::Value> = src["anchors"]
+        .as_object()
+        .unwrap()
+        .iter()
+        .map(|(k, v)| (format!("far-{k}"), v.clone()))
+        .collect();
+    far["anchors"] = serde_json::Value::Object(anchors);
+    std::fs::write(
+        prefabs.join("far-room.json"),
+        serde_json::to_string_pretty(&far).unwrap(),
+    )
+    .unwrap();
+    std::fs::copy(prefabs.join("hello-room.nbt"), prefabs.join("far-room.nbt")).unwrap();
+
+    let camp = campaign(tag, Some(horizon));
+    let mut world: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(camp.join("world.json")).unwrap()).unwrap();
+    let areas = world["content"]["areas"].as_array_mut().unwrap();
+    let mut second = areas[0].clone();
+    second["id"] = serde_json::json!("area/far");
+    second["name"] = serde_json::json!("The Far Room");
+    second["prefab"] = serde_json::json!("prefab/far-room");
+    areas.push(second);
+    std::fs::write(
+        camp.join("world.json"),
+        serde_json::to_string_pretty(&world).unwrap(),
+    )
+    .unwrap();
+    camp
+}
+
 /// **`set `horizon` to `void` or `ocean`.`** The move `DW0855` names for a
 /// campaign that places `areas[]` and states no extent.
+///
+/// The fixture is two areas rather than one, and that is the refusal's own
+/// argument rather than a convenience: what makes a union meaningless is
+/// `AREA_SPACING`, so a campaign with one area bound to one `prefab` has stated
+/// an extent and is not this refusal at all — see
+/// [`dw0855_one_area_bound_to_one_prefab_states_the_map`].
 #[test]
 fn dw0855_setting_a_base_that_needs_no_map_builds() {
     let dir = common::ocean_prefabs_dir("remedy-valley", common::OceanRoom::Shore);
-    let valley = campaign("valley", Some(serde_json::json!({ "base": "valley" })));
+    let valley = two_areas("valley", serde_json::json!({ "base": "valley" }), &dir);
     let (code, before) = build("valley-red", &valley, &dir);
     assert_eq!(code, 1, "refused at validation:\n{before}");
     assert!(before.contains("DW0855"), "{before}");
@@ -705,7 +759,7 @@ fn dw0855_setting_a_base_that_needs_no_map_builds() {
     );
 
     for base in ["void", "ocean"] {
-        let camp = campaign(&format!("valley-to-{base}"), Some(serde_json::json!(base)));
+        let camp = two_areas(&format!("valley-to-{base}"), serde_json::json!(base), &dir);
         let (code, after) = build(&format!("valley-to-{base}-out"), &camp, &dir);
         assert_eq!(
             code, 0,
@@ -713,6 +767,49 @@ fn dw0855_setting_a_base_that_needs_no_map_builds() {
         );
         assert!(!after.contains("DW0855"), "{after}");
     }
+}
+
+/// **`Make the map ONE PIECE.`** The third move, and the one that did not exist:
+/// a single area bound to a single `prefab` states the map's extent with the
+/// piece's own declared region, so a base that builds terrain has something to
+/// ring — which is how a SITE, a building with its own ground inside one box,
+/// is placed at all.
+///
+/// The same campaign is asserted in both shapes, so the only thing between the
+/// refusal and the build is the second area — which is exactly what `DW0855`'s
+/// argument is about, and nothing wider.
+#[test]
+fn dw0855_one_area_bound_to_one_prefab_states_the_map() {
+    let dir = common::ocean_prefabs_dir("remedy-one-piece", common::OceanRoom::Shore);
+    let two = two_areas(
+        "one-piece-two",
+        serde_json::json!({ "base": "valley" }),
+        &dir,
+    );
+    let (code, refused) = build("one-piece-two-out", &two, &dir);
+    assert_eq!(code, 1, "two areas state no extent:\n{refused}");
+    assert!(refused.contains("DW0855"), "{refused}");
+    assert!(
+        refused.contains("ONE PIECE"),
+        "the message names the move this test takes:\n{refused}"
+    );
+
+    let one = campaign(
+        "one-piece-one",
+        Some(serde_json::json!({ "base": "valley" })),
+    );
+    let (code, built) = build("one-piece-one-out", &one, &dir);
+    assert_eq!(
+        code, 0,
+        "one area bound to one prefab states the map:\n{built}"
+    );
+    assert!(!built.contains("DW0855"), "{built}");
+    // The binding line names the authority, so a reader can see WHICH statement
+    // of extent the mountains were built around.
+    assert!(
+        built.contains("stated by the one placed piece's own region"),
+        "the surround says what it ringed:\n{built}"
+    );
 }
 
 /// **`Give the campaign a site plan.`** The other move `DW0855` names — and the

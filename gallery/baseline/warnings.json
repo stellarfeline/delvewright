@@ -986,6 +986,23 @@
       "stage": "quests"
     }
   ],
+  "valley-site.en": [
+    {
+      "code": "DW0822",
+      "pointer": "/content/critical_path",
+      "stage": "layout-graph"
+    },
+    {
+      "code": "DW0813",
+      "pointer": "3 of the 3 building metric(s) this run read are provisional — the metrics gym has not walked them",
+      "stage": "layout-graph:"
+    },
+    {
+      "code": "DW0781",
+      "pointer": "/areas",
+      "stage": "world"
+    }
+  ],
   "void-horizon.en": [
     {
       "code": "DW0527",

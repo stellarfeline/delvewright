@@ -1,0 +1,21 @@
+{
+  "campaign_id": "gallery",
+  "content": {
+    "finale": "quest/walk-the-bank",
+    "quests": [
+      {
+        "act": 1,
+        "area": "area/bank",
+        "depends_on": [],
+        "goal": "Ask the warden what stands outside the wall, then walk the bank to its far corner.",
+        "id": "quest/walk-the-bank",
+        "mandatory": true,
+        "npcs": [
+          "npc/bank-warden"
+        ]
+      }
+    ]
+  },
+  "dsl_version": "0.24.2",
+  "stage": "quest-plan"
+}

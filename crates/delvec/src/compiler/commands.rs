@@ -26,12 +26,30 @@
 //! covered by the DSL registry; the rest is mecha's job). This is enough to catch
 //! misspelled commands, wrong argument arity, and bogus subcommand paths.
 //!
-//! One value-level exception, added after it cost a whole tool: an
-//! **SNBT integer literal whose suffix cannot hold it**. `text_opacity:255b` is
-//! structurally perfect and unparseable — NBT bytes are signed, so the server
-//! answers "Failed to parse number: Value out of range" and drops the entire
-//! function. The check is cheap, needs no NBT grammar, and cannot mistake a
-//! string for a number because quoted spans are skipped; see [`snbt_range_error`].
+//! ## Value-level exceptions: bounds the HANDLER keeps, not the parser
+//!
+//! There is a class of refusal this tree can never express. Brigadier describes
+//! how a command **parses**; a bound the command's own handler checks *after* the
+//! parse has succeeded appears nowhere in it. So a line can be structurally
+//! perfect, pass this validator, and be refused by the running server — and
+//! because a refused command inside a function is not a parse failure, the rest of
+//! the function still runs and nothing anywhere reads the reply. Each such bound
+//! that has cost something is written down here, one function apiece:
+//!
+//! - **An SNBT integer literal whose suffix cannot hold it.** `text_opacity:255b`
+//!   is structurally perfect and unparseable — NBT bytes are signed, so the server
+//!   answers "Failed to parse number: Value out of range" and drops the entire
+//!   function. The check is cheap, needs no NBT grammar, and cannot mistake a
+//!   string for a number because quoted spans are skipped; see
+//!   [`snbt_range_error`].
+//! - **A `forceload` area over [`FORCELOAD_MAX_CHUNKS`].** `forceload add -76 -76
+//!   176 176` is a perfectly good `forceload add <column_pos> <column_pos>`, and
+//!   the pinned server answers `Too many chunks in the specified area (maximum
+//!   256, but specified 289)` and marks **nothing**. The world then boots with the
+//!   placement's chunks unloaded, `place template` no-ops for every piece outside
+//!   the chunks something else happens to load, and the delve never finishes
+//!   setting itself up. See [`forceload_area_error`] for the refusal and
+//!   [`forceload_add_lines`] for the emission side that cannot produce one.
 
 use std::collections::BTreeMap;
 
@@ -96,6 +114,12 @@ impl CommandTree {
             reason,
         })?;
         if let Some(reason) = snbt_range_error(body) {
+            return Err(CommandError {
+                line: line.to_string(),
+                reason,
+            });
+        }
+        if let Some(reason) = forceload_area_error(&tokens) {
             return Err(CommandError {
                 line: line.to_string(),
                 reason,
@@ -307,6 +331,143 @@ fn snbt_range_error(s: &str) -> Option<String> {
             }
         }
         i = j + usize::from(suffix.is_some());
+    }
+    None
+}
+
+/// The most chunks one `forceload` command may name, on the pinned server.
+///
+/// Read off the server itself rather than a wiki: `forceload add 992 992 1247
+/// 1247` (16 × 16) is answered `Marked 256 chunks …`, and one chunk more on
+/// either axis — including the 1 × 257 strip, so the bound is on the **area**
+/// and not on a side — is answered `Too many chunks in the specified area
+/// (maximum 256, but specified N)`. `forceload remove` over a rectangle is
+/// judged by the same handler and refuses identically; `forceload remove <x>
+/// <z>` names one chunk and can never reach it.
+pub const FORCELOAD_MAX_CHUNKS: i64 = 256;
+
+/// The longest side a split tile may have. 16 × 16 is exactly
+/// [`FORCELOAD_MAX_CHUNKS`], so a tile capped on both axes is always inside the
+/// ceiling however the two sides fall out.
+const FORCELOAD_TILE_CHUNKS: i64 = 16;
+
+/// The `forceload add` line(s) that mark every chunk touched by the world-block
+/// rectangle `(x1, z1)..(x2, z2)` — **the only way this compiler emits one.**
+///
+/// A single command cannot name more than [`FORCELOAD_MAX_CHUNKS`] chunks, and
+/// the span is not something a creator writes: it is derived, from a piece's own
+/// bounding box or from the ring a horizon grows around one. A 101 × 101 piece
+/// under a `valley` horizon derives `-76 -76 176 176` — 17 × 17 = 289 chunks —
+/// which the server refuses whole. Refusing at compile time instead would hand
+/// the creator a legal piece under a legal horizon and no act that clears it, so
+/// the span is **split** rather than refused, and the creator never has to know:
+/// vanilla caps what one command may name, never how many chunks a world may
+/// hold.
+///
+/// A rectangle already inside the ceiling emits exactly the line it always did,
+/// coordinates and all, so every campaign and every baseline that never reached
+/// the ceiling is byte-identical. Only what the server refuses changes shape.
+///
+/// The split is a grid: each axis is cut into `ceil(len / 16)` runs of as near
+/// equal length as they divide, so no tile exceeds 16 chunks on a side and none
+/// is a one-chunk sliver beside a full one. Tiles are emitted x-major, each
+/// named by the block coordinates of its own chunk range — the same chunk set the
+/// caller asked for, in `ceil(w/16) * ceil(h/16)` commands.
+pub fn forceload_add_lines(x1: i32, z1: i32, x2: i32, z2: i32) -> Vec<String> {
+    let (cx0, cx1) = chunk_bounds(x1, x2);
+    let (cz0, cz1) = chunk_bounds(z1, z2);
+    let w = i64::from(cx1 - cx0) + 1;
+    let h = i64::from(cz1 - cz0) + 1;
+    if w * h <= FORCELOAD_MAX_CHUNKS {
+        return vec![format!("forceload add {x1} {z1} {x2} {z2}")];
+    }
+    let mut out = Vec::new();
+    for (ax0, ax1) in chunk_runs(cx0, cx1) {
+        for (az0, az1) in chunk_runs(cz0, cz1) {
+            out.push(format!(
+                "forceload add {} {} {} {}",
+                ax0 * 16,
+                az0 * 16,
+                ax1 * 16 + 15,
+                az1 * 16 + 15
+            ));
+        }
+    }
+    out
+}
+
+/// The inclusive chunk range two world-block coordinates cover, either order.
+fn chunk_bounds(a: i32, b: i32) -> (i32, i32) {
+    let (lo, hi) = if a <= b { (a, b) } else { (b, a) };
+    (lo.div_euclid(16), hi.div_euclid(16))
+}
+
+/// Cut the inclusive chunk range `lo..=hi` into the fewest runs of at most
+/// [`FORCELOAD_TILE_CHUNKS`] chunks, as near equal in length as they divide. The
+/// remainder is spread over the leading runs, so the longest and the shortest run
+/// differ by at most one chunk and the result is a pure function of the range.
+fn chunk_runs(lo: i32, hi: i32) -> Vec<(i32, i32)> {
+    let len = i64::from(hi - lo) + 1;
+    // `len` is a chunk count and therefore >= 1, so this is a plain ceiling
+    // divide (signed `div_ceil` is not stable on the pinned toolchain).
+    let n = (len + FORCELOAD_TILE_CHUNKS - 1) / FORCELOAD_TILE_CHUNKS;
+    let base = len / n;
+    let extra = len % n;
+    let mut runs = Vec::with_capacity(n as usize);
+    let mut start = i64::from(lo);
+    for k in 0..n {
+        let this = base + i64::from(k < extra);
+        runs.push((start as i32, (start + this - 1) as i32));
+        start += this;
+    }
+    runs
+}
+
+/// A `forceload` whose rectangle covers more chunks than one command may name.
+///
+/// The tree cannot say this: `<column_pos>` accepts any pair of numbers, and the
+/// bound lives in the command's handler. So it is asked here, of every emitted
+/// line, from every emission site — the campaign compiler and the gallery
+/// admission pack alike. [`forceload_add_lines`] is what keeps the answer `None`;
+/// this is what makes a second emitter that forgets it impossible to ship.
+///
+/// Judged only when all four coordinates are plain integers. A relative or local
+/// coordinate (`~`, `^`) resolves against an execution position this compiler
+/// does not know, so it is left to the server exactly as the rest of this
+/// validator's value-blindness is; the compiler emits none.
+fn forceload_area_error(tokens: &[String]) -> Option<String> {
+    for i in 0..tokens.len() {
+        if tokens[i] != "forceload" {
+            continue;
+        }
+        if !matches!(
+            tokens.get(i + 1).map(String::as_str),
+            Some("add" | "remove")
+        ) {
+            continue;
+        }
+        // Four coordinates is `<from> <to>`, a rectangle. Two is `<from>` alone,
+        // one chunk, which can never reach the ceiling.
+        let Some(slots) = tokens.get(i + 2..i + 6) else {
+            continue;
+        };
+        let coords: Vec<i32> = slots.iter().filter_map(|t| t.parse::<i32>().ok()).collect();
+        if coords.len() != 4 {
+            continue;
+        }
+        let (cx0, cx1) = chunk_bounds(coords[0], coords[2]);
+        let (cz0, cz1) = chunk_bounds(coords[1], coords[3]);
+        let chunks = (i64::from(cx1 - cx0) + 1) * (i64::from(cz1 - cz0) + 1);
+        if chunks > FORCELOAD_MAX_CHUNKS {
+            let verb = &tokens[i + 1];
+            return Some(format!(
+                "`forceload {verb}` names {chunks} chunks ([{cx0}, {cz0}]..[{cx1}, {cz1}]) and one \
+                 command may name at most {FORCELOAD_MAX_CHUNKS} — 1.21.11 answers \"Too many \
+                 chunks in the specified area (maximum {FORCELOAD_MAX_CHUNKS}, but specified \
+                 {chunks})\", marks nothing at all, and runs the rest of the function anyway. \
+                 Emit the span through `commands::forceload_add_lines`, which splits it."
+            ));
+        }
     }
     None
 }
@@ -527,5 +688,172 @@ mod tests {
             tokenize("give @s minecraft:iron_sword[custom_name={\"text\":\"A B\"}] 1").unwrap();
         assert_eq!(toks.len(), 4);
         assert_eq!(toks[3], "1");
+    }
+
+    /// Chunks a `forceload` rectangle covers, the way the server counts them.
+    fn chunk_count(x1: i32, z1: i32, x2: i32, z2: i32) -> i64 {
+        let (cx0, cx1) = chunk_bounds(x1, x2);
+        let (cz0, cz1) = chunk_bounds(z1, z2);
+        (i64::from(cx1 - cx0) + 1) * (i64::from(cz1 - cz0) + 1)
+    }
+
+    /// Read the four coordinates back out of an emitted line.
+    fn coords_of(line: &str) -> (i32, i32, i32, i32) {
+        let t: Vec<i32> = line
+            .split_whitespace()
+            .skip(2)
+            .map(|s| s.parse().expect("emitted coordinate is an integer"))
+            .collect();
+        assert_eq!(t.len(), 4, "emitted a rectangle: {line}");
+        (t[0], t[1], t[2], t[3])
+    }
+
+    /// The bound the pinned server keeps, read off the server itself: `forceload
+    /// add 992 992 1247 1247` is answered `Marked 256 chunks …` and `forceload
+    /// add 4000 4000 4015 8111` — a 1 × 257 strip — is answered `Too many chunks
+    /// in the specified area (maximum 256, but specified 257)`. So the ceiling is
+    /// on the area, both verbs are judged by it, and 256 itself is legal.
+    #[test]
+    fn refuses_a_forceload_naming_more_chunks_than_one_command_may() {
+        let t = tree();
+        // 16 x 16, chunk-aligned: exactly the ceiling, and the server marks it.
+        assert_eq!(chunk_count(992, 992, 1247, 1247), FORCELOAD_MAX_CHUNKS);
+        assert!(t.validate_line("forceload add 992 992 1247 1247").is_ok());
+        for line in [
+            // The castle's own span, under a `valley` horizon: 17 x 17 = 289.
+            "forceload add -76 -76 176 176",
+            // 1 x 257 — the ceiling is on the AREA, so a strip reaches it too.
+            "forceload add 4000 4000 4015 8111",
+            // `remove` over a rectangle goes to the same handler.
+            "forceload remove -76 -76 176 176",
+            // …and reached through an `execute … run` tail, which the validator
+            // re-enters from the tree root.
+            "execute if score #init dw.sys matches 1 run forceload add -76 -76 176 176",
+        ] {
+            let err = t
+                .validate_line(line)
+                .expect_err("the server refuses this and marks nothing: {line}");
+            assert!(
+                err.reason.contains("Too many chunks in the specified area"),
+                "the refusal quotes what the server says: {}",
+                err.reason
+            );
+        }
+        // One chunk named by `<from>` alone, and a relative coordinate this
+        // compiler cannot resolve: neither is judged.
+        for line in ["forceload remove 58 58", "forceload add ~ ~ ~100 ~100"] {
+            assert!(t.validate_line(line).is_ok(), "should accept: {line}");
+        }
+    }
+
+    /// A span inside the ceiling emits the one line it always did, coordinates
+    /// untouched — so nothing that never reached the ceiling moves a byte.
+    #[test]
+    fn a_span_inside_the_ceiling_is_emitted_whole() {
+        assert_eq!(
+            forceload_add_lines(0, 0, 100, 100),
+            vec!["forceload add 0 0 100 100".to_string()]
+        );
+        assert_eq!(
+            forceload_add_lines(-2, -2, 2, 2),
+            vec!["forceload add -2 -2 2 2".to_string()]
+        );
+    }
+
+    /// The castle's span, split. Every tile is inside the ceiling, and together
+    /// they mark exactly the chunks the one refused command asked for.
+    #[test]
+    fn a_span_over_the_ceiling_is_split_into_lines_the_server_accepts() {
+        let t = tree();
+        let lines = forceload_add_lines(-76, -76, 176, 176);
+        assert_eq!(
+            lines,
+            vec![
+                "forceload add -80 -80 63 63".to_string(),
+                "forceload add -80 64 63 191".to_string(),
+                "forceload add 64 -80 191 63".to_string(),
+                "forceload add 64 64 191 191".to_string(),
+            ],
+            "17 x 17 chunks cut into 9|8 by 9|8 — no sliver beside a full tile"
+        );
+        let mut marked: std::collections::BTreeSet<(i32, i32)> = Default::default();
+        for line in &lines {
+            assert!(
+                t.validate_line(line).is_ok(),
+                "each tile is emittable: {line}"
+            );
+            let (x1, z1, x2, z2) = coords_of(line);
+            assert!(
+                chunk_count(x1, z1, x2, z2) <= FORCELOAD_MAX_CHUNKS,
+                "each tile is inside the ceiling: {line}"
+            );
+            let (cx0, cx1) = chunk_bounds(x1, x2);
+            let (cz0, cz1) = chunk_bounds(z1, z2);
+            for cx in cx0..=cx1 {
+                for cz in cz0..=cz1 {
+                    assert!(marked.insert((cx, cz)), "tiles do not overlap: {line}");
+                }
+            }
+        }
+        // The chunk set is the one the single command named: [-5,-5]..[11,11].
+        let want: std::collections::BTreeSet<(i32, i32)> = (-5..=11)
+            .flat_map(|cx| (-5..=11).map(move |cz| (cx, cz)))
+            .collect();
+        assert_eq!(marked, want, "289 chunks, exactly the span asked for");
+    }
+
+    /// Whatever the shape of the rectangle, the split covers it exactly and no
+    /// tile can be refused. Swept over sides that straddle every interesting
+    /// boundary — under the ceiling, on it, a strip, and far past it.
+    #[test]
+    fn every_split_covers_its_span_and_stays_inside_the_ceiling() {
+        let t = tree();
+        let sides = [1i32, 15, 16, 17, 255, 256, 257, 1000, 4095, 4096, 9999];
+        let mut swept = 0usize;
+        let mut split = 0usize;
+        for w in sides {
+            for h in sides {
+                // Anchored off a chunk boundary on purpose: a span that starts
+                // mid-chunk covers one more chunk than its width suggests, which
+                // is exactly how `1000 1000 1255 1255` reaches 289.
+                let (x1, z1) = (-7, 3);
+                let (x2, z2) = (x1 + w - 1, z1 + h - 1);
+                let lines = forceload_add_lines(x1, z1, x2, z2);
+                swept += 1;
+                if lines.len() > 1 {
+                    split += 1;
+                }
+                let mut marked: std::collections::BTreeSet<(i32, i32)> = Default::default();
+                for line in &lines {
+                    assert!(t.validate_line(line).is_ok(), "emittable: {line}");
+                    let (a, b, c, d) = coords_of(line);
+                    assert!(
+                        chunk_count(a, b, c, d) <= FORCELOAD_MAX_CHUNKS,
+                        "inside the ceiling: {line}"
+                    );
+                    let (cx0, cx1) = chunk_bounds(a, c);
+                    let (cz0, cz1) = chunk_bounds(b, d);
+                    for cx in cx0..=cx1 {
+                        for cz in cz0..=cz1 {
+                            marked.insert((cx, cz));
+                        }
+                    }
+                }
+                let (cx0, cx1) = chunk_bounds(x1, x2);
+                let (cz0, cz1) = chunk_bounds(z1, z2);
+                let want: std::collections::BTreeSet<(i32, i32)> = (cx0..=cx1)
+                    .flat_map(|cx| (cz0..=cz1).map(move |cz| (cx, cz)))
+                    .collect();
+                assert_eq!(
+                    marked, want,
+                    "{w} x {h} blocks: the span is covered exactly"
+                );
+            }
+        }
+        assert_eq!(swept, 121, "every pair of sides was swept");
+        assert!(
+            split > 0 && split < swept,
+            "the sweep reaches both sides of the ceiling ({split} split of {swept})"
+        );
     }
 }
