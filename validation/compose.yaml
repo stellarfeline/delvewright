@@ -102,6 +102,15 @@ services:
       # entrypoint seeds /data/ops.json itself with the deterministic offline
       # UUID, so the name never reaches the network.
       DELVE_OPS_OFFLINE: ${DELVEWRIGHT_BOT_USERNAME:-delve-bot}
+      # spec-0064: the seconds every reading of the online player count must be
+      # zero across before the world is removed and built again from the image.
+      # Compose's `VAR:` short form and no value, so an unset host variable omits
+      # the key entirely rather than passing an empty string — the bot ladder, the
+      # owner's play profile and CI boot exactly as they do today, and only a host
+      # that actually asks for the reset gets one. On the on-path EVERY boot
+      # resets, so a `docker restart` under a party ends that party's run: that is
+      # what the flag means, and there is no second entry that softens it.
+      DELVE_RESET_WHEN_EMPTY:
     volumes:
       # Name the itzg `/data` world volume so `docker compose down -v` actually
       # clears it. The itzg base declares an anonymous `VOLUME /data`; anonymous
