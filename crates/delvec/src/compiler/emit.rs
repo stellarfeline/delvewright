@@ -3101,11 +3101,15 @@ fn emit_functions(
     // therefore NOT done here: setup only seals + forceloads, and the tick
     // function retries `place_all` + `place_verify` (sentinel-block checks)
     // until every piece is confirmed, then runs `setup_finish` exactly once.
+    //
+    // The span goes out through `forceload_add_lines`, never a `format!` here: a
+    // piece's bbox is derived, not typed, and a horizon rings it with a surround
+    // wider still, so a legal piece reaches a span one command may not name. That
+    // helper splits it and the command validator refuses anything that skipped it.
     for piece in plan.placed_pieces() {
         let (min, max) = piece.bbox();
-        setup.push(format!(
-            "forceload add {} {} {} {}",
-            min[0], min[2], max[0], max[2]
+        setup.extend(crate::compiler::commands::forceload_add_lines(
+            min[0], min[2], max[0], max[2],
         ));
     }
     // Stage-7 edit writes may land outside the piece bboxes (a leaning canopy,
@@ -3114,9 +3118,8 @@ fn emit_functions(
     // chunks (the same pitfall the piece forceloads exist for). Empty for a
     // campaign without an edit script → setup byte-identical.
     for (min, max) in edit_bounds {
-        setup.push(format!(
-            "forceload add {} {} {} {}",
-            min[0], min[2], max[0], max[2]
+        setup.extend(crate::compiler::commands::forceload_add_lines(
+            min[0], min[2], max[0], max[2],
         ));
     }
     setup.push("scoreboard players set #placed dw.sys 0".to_string());
