@@ -2224,17 +2224,48 @@ Gates:
 
 ### `stair_flight` — the way up
 
-A walled shaft with a level landing at each end and a rising run of
-single-block treads between them. The vocabulary's only ascending piece, and
-the only one gated on being walkable in **both** directions — the exact
-negation of the gate `drop_shaft` and `dumbwaiter` owe.
+A walled shaft with a level landing at each end and a rising run of treads
+between them. The vocabulary's only ascending piece, and the only one gated on
+being walkable in **both** directions — the exact negation of the gate
+`drop_shaft` and `dumbwaiter` owe.
 
 | | |
 |---|---|
-| Controls | `head` (3), `tread` (2 — cells of run per block of rise), `landing_run` (3), `broken_step` (0 — a test knob); role `rock` |
+| Controls | `head` (3), `tread` (2 — cells of run per block of rise), `landing_run` (3), `broken_step` (0 — a test knob); roles `rock` and `step` |
 | Smallest region | `MIN_WIDTH` (3) × (`head` + 1 + `MIN_STEPS`) × (2·`landing_run` + `MIN_STEPS`·`tread`) — 3 × 7 × 12 at the defaults — and at least as long as it is wide |
 | Rise | `min(Y − head − 1, (Z − 2·landing_run) / tread)` treads; a box that cannot hold `MIN_STEPS` (3) is a refusal, never a doorstep |
 | Anchors | `anchor/stair-foot` / `anchor/stair-head` — the two landings' floor centres. `anchor/stair-step-<i>` — every tread, numbered **against** travel as everything here is, so `stair-step-1` is the topmost |
+
+**A climb is made of stairs.** Every course above the lowest is a *riser
+course*, and the one cell at its down-travel end — the cell a body steps up onto
+— is a stair block bound to the role `step`, not a cube. A body walking up meets
+an 8/16 tread and then a 16/16 one, twice per block of rise, which is what a
+stone stair looks like in the game and what a column of cubes does not. `tread`
+blocks of run per block of rise means `tread − 1` cubes and one stair per tread,
+so the default 2 lays stair-cube-stair-cube and `tread: 1` lays the classic
+diagonal run of nothing but stairs. The lowest course carries no stair: it is
+level with the foot landing, so its down-travel end is not a riser, and it is
+laid by its own rule (`base_run`) because "is there a level below me" is not a
+question the remaining box can answer.
+
+The stair faces **up-travel**, since a vanilla stair's tall half stands on the
+side its `facing` names — and it is written in the **scope's own axis names**
+(§4b `Paint::Local`), so one role works at every orientation and a rule that
+reorients its frame cannot lay its steps across its own run. That is the claim
+`the_flight_stands_up_in_a_turned_frame` makes good on, by turning the region
+onto the world `X` axis and requiring a different world facing out of the same
+local one.
+
+**No reachability verdict moved when the risers became stairs.**
+`blockshape::collision_class` reads any stair as a full cube — its own refusing
+direction, since a shape it has not measured out of the pin is never credited
+with being thinner than one — so a stair riser occupies the same cell, holds a
+body at the same height and offers the same step as the cube it replaced. The
+walk plane, the 66 standable cells and the both-ways gate are identical to the
+cube run's, cell for cell, and a test asserts that equality rather than
+describing it. The model is therefore conservative about this run in exactly one
+way, stated so it is not mistaken for agreement: it calls a jump what vanilla
+climbs as two auto-steps, and so demands the jump's three cells of headroom.
 
 **A climbing run needs no per-iteration index, and the entry that said it did
 was wrong about the IR.** `boulder_stair` records that "a repeated slice cannot
@@ -2274,6 +2305,14 @@ Gates (`tests/staging.rs`), each with its binding count:
    by the same code, whose lane spans exactly one height.
 3. **Every riser is one block and every tread is ground** — 8 treads, 7
    consecutive pairs, read in index order.
+3b. **Every riser is a stair block whose tall half stands up-travel** — 7
+   risers, each read off the anchor pair that names it, with the `half` and the
+   `shape` a straight run derives. Two controls: the lowest tread, level with
+   the foot landing, must carry **no** stair, and `boulder_stair` — flat by
+   construction, read by the same code in the same box — must hold none at all.
+   A third test rebinds `step` to the shell's own stone and requires the bytes
+   to move and the walk not to: 21 stair cells, 913 filled, 66 standable, the
+   same anchors and the same both-ways verdict in both directions.
 4. **It is a shaft** — both long faces solid, all 616 cells of them. Permanent
    teeth rather than a knob: the same reading over `tee_passage`, which
    deliberately opens one side face, must find its 2 open cells.
