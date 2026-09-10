@@ -1,6 +1,6 @@
 # spec-0064: The last player leaves, and the delve is built again
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Ground**: written against the engine at `dd46f01b` (`origin/main`), read
   only, and against the pinned delve base image
   `ghcr.io/stellarfeline/delvewright-base@sha256:3e7db2562b492dbf442568a327d361547628c98c04a7cb68218c8dde6abdd1de`
