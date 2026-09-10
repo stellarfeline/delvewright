@@ -1247,7 +1247,7 @@
       Object.keys(DATA.textures).length + " textures packed into a "
         + state.atlasSize + "×" + state.atlasSize + " atlas",
       DATA.special_bound + " block-entity texture id"
-        + (DATA.special_bound === 1 ? "" : "s") + " resolved against the jar",
+        + (DATA.special_bound === 1 ? "" : "s") + " resolved against the asset source",
       "Minecraft " + DATA.mc_version,
     ];
     els.fidelity.textContent = bind.join("  ·  ");

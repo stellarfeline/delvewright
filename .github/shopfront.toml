@@ -1,0 +1,36 @@
+# The shopfront's subject — the ONE place the building on the public page is named.
+#
+# `tools/shopfront.py` reads this and nothing else does; the deploy workflow
+# (`.github/workflows/pages.yml`), the landing page and the README's hero all
+# resolve the subject from here, so pointing the shopfront at a different
+# building is an edit to this file alone.
+#
+# Three forms:
+#
+#   grammar:<program>@<XxYxZ>   a program of this repository's own rule library
+#                               (`delvec grammar list`), expanded over a region
+#   gallery:<id>                a piece of the gallery campaign, or `gallery:`
+#                               for the whole set (`prefabs/gallery-generator`)
+#   content:<path>              a `.nbt`, a tile-set manifest, or a directory of
+#                               them under the pinned content checkout
+#                               (`versions.toml` `[content]`)
+#
+# `content:` is what a released campaign uses. The other two exist because the
+# shopfront must be buildable from this checkout alone, with no content pin, on
+# a machine that has cloned one repository.
+#
+# The hero image is regenerated when this changes, from the same subject:
+#
+#   delvec render piece <the subject's .nbt> --textures <a blockout pack> \
+#     --out <dir> --size 1200
+#   cp <dir>/<id>-ext-se.png docs/images/shopfront-hero.png
+#
+# It needs a GPU, so it is committed rather than built in CI, and its path never
+# moves.
+
+# A STAND-IN. The building the shopfront is meant to show is a campaign castle
+# that does not exist yet; until it does, this is the most building-shaped thing
+# this repository can produce on its own — the rule library's `castle` program,
+# expanded at the region its own judgement records.
+subject = "grammar:castle@41x14x25"
+title = "The rule library's castle"

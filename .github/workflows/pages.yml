@@ -1,0 +1,81 @@
+name: shopfront
+
+# The public page: a building this engine emitted, in a browser, with a camera
+# the visitor holds. Built by `tools/shopfront.py` from the subject named in
+# `.github/shopfront.toml` and deployed to GitHub Pages.
+#
+# NOT A GATE, and deliberately not one. It runs on `main` after a merge and on
+# demand; nothing here reports on a pull request, so no name from this file
+# belongs in `.github/required-status-checks.txt` (`tools/check-required-contexts.py`
+# reads `ci.yml` and only `ci.yml`). A shopfront that could block a merge would be
+# a marketing page holding the engine hostage.
+#
+# The content repo is checked out on every run even though today's subject does
+# not need it, so that pointing the shopfront at a released campaign stays an edit
+# to `.github/shopfront.toml` and to nothing else.
+#
+# `actions/deploy-pages` requires the deploying job to declare the `github-pages`
+# environment, and in this repository every environment-gated job proves its own
+# approval before it does anything (`tools/check-approval-guard.py`, and the
+# crates.io publish that walked through an unconfigured environment and is why
+# that rule exists). So this run is HELD until an approval for `github-pages` is
+# recorded against it. That costs a click per publish and it is not a workaround
+# for anything — publishing a public page is the act the environment names.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# `pages: write` + `id-token: write` are what `actions/deploy-pages` needs;
+# `actions: read` is what the approval guard needs to read this run's own
+# approval history. The job writes nothing back to the repository.
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+  actions: read
+
+# One deployment at a time, and never cancelled mid-flight: a cancelled deploy
+# leaves Pages serving whichever half arrived.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  shopfront:
+    name: build and publish the shopfront
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # First `run:` in the job, and nothing may precede it: an earlier step can
+      # write `$GITHUB_ENV` and point the guard at a different, approved run.
+      - name: the gate actually bound (a run nobody approved must not publish)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash tools/assert-run-approved.sh github-pages
+
+      - uses: ./.github/actions/checkout-content
+      - uses: Swatinem/rust-cache@v2
+
+      - name: build the creator binary
+        run: cargo build --release --bin delvec
+
+      # Every step of the page — materialising the subject, writing the resource
+      # pack, emitting the viewer page, writing the landing — is one tool, so the
+      # thing CI runs is the thing a creator runs. It refuses a page holding zero
+      # prefabs and a page too small to contain the renderer, so a deploy of an
+      # empty site is not reachable from here.
+      - name: build the shopfront
+        run: python3 tools/shopfront.py --out site
+
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+      - id: deploy
+        uses: actions/deploy-pages@v4

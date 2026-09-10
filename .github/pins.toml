@@ -408,8 +408,11 @@ why = "sha256 of the mcmeta recipe summary."
 # Third-party actions are held at their MAJOR tag, which the publisher advances.
 # That is a deliberate trade — patch fixes arrive without a PR, and the trust
 # boundary is the publisher rather than a digest. It is registered so the trade
-# is a visible count instead of an unexamined habit: eight refs, all first-party
-# GitHub or Docker, none reaching a repository this project builds.
+# is a visible count instead of an unexamined habit. The entries below ARE that
+# count — `check-pins.py` prints it on every run — and a literal here restating
+# them went stale unnoticed the last three times an action was added. All of them
+# are first-party GitHub or Docker, and none reaches a repository this project
+# builds.
 
 [[pin]]
 id = "action-checkout"
@@ -421,6 +424,7 @@ sites = [
     ".github/workflows/engine-release.yml",
     ".github/workflows/gpu-probe.yml",
     ".github/workflows/infra-images.yml",
+    ".github/workflows/pages.yml",
 ]
 policy = "floating"
 why = "GitHub's own checkout action, held at its major tag."
@@ -433,9 +437,31 @@ sites = [
     ".github/workflows/dsl-crate-publish.yml",
     ".github/workflows/engine-release.yml",
     ".github/workflows/gpu-probe.yml",
+    ".github/workflows/pages.yml",
 ]
 policy = "floating"
 why = "Cargo cache action, held at its major tag. Affects build time, not output."
+
+[[pin]]
+id = "action-configure-pages"
+value = "actions/configure-pages@v5"
+sites = [".github/workflows/pages.yml"]
+policy = "floating"
+why = "GitHub's own Pages configuration action, held at its major tag."
+
+[[pin]]
+id = "action-upload-pages-artifact"
+value = "actions/upload-pages-artifact@v3"
+sites = [".github/workflows/pages.yml"]
+policy = "floating"
+why = "GitHub's own Pages artifact packer, held at its major tag."
+
+[[pin]]
+id = "action-deploy-pages"
+value = "actions/deploy-pages@v4"
+sites = [".github/workflows/pages.yml"]
+policy = "floating"
+why = "GitHub's own Pages deployer, held at its major tag."
 
 [[pin]]
 id = "action-setup-node"

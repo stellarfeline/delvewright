@@ -1,5 +1,13 @@
 # Delvewright
 
+<a href="https://stellarfeline.github.io/delvewright/"><img src="docs/images/shopfront-hero.png" width="760" alt="A castle of towers and curtain walls drawn as plain grey blocks — the rule library's castle program, expanded by the engine." /></a>
+
+**[Walk this building in your browser →](https://stellarfeline.github.io/delvewright/)**
+No install and no client: the blocks the engine emitted, and a camera you drive.
+It is drawn in the engine's own flat colours rather than Minecraft's textures,
+which belong to Mojang and are not ours to serve. The building is the rule
+library's `castle` program, standing in until a campaign takes its place.
+
 *A factory that ships hand-crafted-feeling Minecraft dungeons — built by robots,
 proven by robots, enjoyed by humans.*
 

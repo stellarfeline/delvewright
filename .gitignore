@@ -148,3 +148,11 @@ validation/gallery-stageable/
 determinism-linux.txt
 determinism-macos.txt
 /out/
+# The shopfront's output: `tools/shopfront.py --out site` (what
+# `.github/workflows/pages.yml` runs, from the repository root) and the scratch
+# tree beside it that holds the expanded subject and the generated resource
+# pack. Both are functions of the tree and of `.github/shopfront.toml`, both are
+# rewritten on every run, and neither has ever been an input to anything — the
+# committed half of the shopfront is the subject file and the hero image.
+/site/
+/shopfront-work/
