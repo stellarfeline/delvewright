@@ -11,9 +11,13 @@
 // It runs inside the ladder's compose project on the harness image, which already
 // carries mineflayer at the pinned version:
 //
-//   docker compose -p <project> run -d --rm --no-deps \
-//     -v <repo>/validation/presence-bot.mjs:/presence.mjs:ro \
-//     --entrypoint node bot /presence.mjs
+//   docker compose -p <project> run -d --no-deps \
+//     -v <repo>/validation/presence-bot.mjs:/app/presence.mjs:ro \
+//     --entrypoint node bot /app/presence.mjs
+//
+// Inside `/app`, not at the root: node resolves a bare import by walking up from
+// the importing FILE, so a script mounted at `/` never sees `/app/node_modules`
+// and dies with ERR_MODULE_NOT_FOUND before it has connected to anything.
 //
 // Joined is announced on stdout, so the caller waits for the server's own answer
 // (`list` over rcon) rather than for a sleep. SIGTERM — `docker stop` — is a

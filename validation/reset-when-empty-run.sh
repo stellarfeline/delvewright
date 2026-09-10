@@ -141,8 +141,12 @@ else
   build_dir="$here/reset-out/$project"
   if [ -z "$delvec" ]; then
     say "force-building the instrument (an instrument is force-rebuilt before a comparison runs)"
-    ( cd "$repo" && cargo build --release -p delvec )
-    echo "    cargo exit status: $?"
+    cargo_rc=0
+    ( cd "$repo" && cargo build --release -p delvec ) || cargo_rc=$?
+    echo "    cargo exit status: $cargo_rc"
+    [ "$cargo_rc" -eq 0 ] || {
+      echo "reset-when-empty: the instrument did not build — a build failure is a gate failure, never a fallback" >&2
+      exit 1; }
     delvec="$repo/target/release/delvec"
   fi
   [ -x "$delvec" ] || { echo "reset-when-empty: '$delvec' is not executable" >&2; exit 2; }
@@ -191,13 +195,17 @@ cleanup() {
 trap cleanup EXIT
 
 # ------------------------------------------------------------------- primitives
-server_cid() { "${COMPOSE[@]}" ps -q server | head -n 1; }
+server_cid() { # capture, then take the first line — never `| head -1`, which
+  # SIGPIPEs its producer and, under pipefail, reads as a failure BECAUSE the
+  # match succeeded (tools/check-shell-pipe-shortcircuit.py binds this).
+  local out; out="$("${COMPOSE[@]}" ps -q server)"; printf '%s' "${out%%$'\n'*}"; }
 
 boot_server() { # boot_server <window|"">  — window empty means the flag is OFF
   if [ -n "$1" ]; then export DELVE_RESET_WHEN_EMPTY="$1"; else unset DELVE_RESET_WHEN_EMPTY || true; fi
   "${COMPOSE[@]}" up -d --build server >/dev/null
 }
 
+DW_PLACED_EPOCH=""
 wait_placed() { # wait_placed <cid> <timeout-s> — the datapack's own "geometry is in"
   local cid="$1" timeout="$2" waited=0 reply state
   while [ "$waited" -lt "$timeout" ]; do
@@ -209,7 +217,13 @@ wait_placed() { # wait_placed <cid> <timeout-s> — the datapack's own "geometry
     # Unjudged on purpose: until rcon is listening every reply here is a refusal,
     # and that is the state being polled for.
     reply="$(dw_rcon_probe "$cid" "scoreboard players get #placed dw.sys" || true)"
-    case "$reply" in *"has 1 [dw.sys]"*) return 0 ;; esac
+    case "$reply" in *"has 1 [dw.sys]"*)
+      # The CONTAINER's clock, because the other end of this interval is a docker
+      # log timestamp. Two clocks produced a dead time of "-0s", which is the
+      # measurement failing rather than a fast boot.
+      DW_PLACED_EPOCH="$(docker exec -i "$cid" date +%s | tr -d '[:space:]')"
+      return 0 ;;
+    esac
     sleep 2; waited=$((waited + 2))
   done
   echo "reset-when-empty: #placed dw.sys never reached 1 within ${timeout}s" >&2
@@ -232,15 +246,29 @@ LEVEL="$(world_name)"
 
 # The six readings of spec-0064 §3, one per line, `key<TAB>value`.
 fingerprint() {
-  local cid="$1" wpack ipack
-  wpack="$(docker exec -i "$cid" sh -c "cd /data/$LEVEL/datapacks 2>/dev/null && find . -type f | sort | xargs -r sha256sum | sha256sum | cut -c1-64" 2>/dev/null || echo MISSING)"
+  local cid="$1" wpack ipack packs
+  # The world's copy is a DIRECTORY inside `datapacks/`, named after the DATAPACKS
+  # entry it came from; the image's copy is that directory's root. Hashing the two
+  # from different depths compares the paths, not the bytes, and reports a
+  # correctly-copied pack as different. So: enumerate what is in there, count it,
+  # and hash from inside the pack.
+  packs="$(docker exec -i "$cid" sh -c "ls -1 /data/$LEVEL/datapacks 2>/dev/null | wc -l" | tr -d '[:space:]')"
+  wpack="$(docker exec -i "$cid" sh -c "cd /data/$LEVEL/datapacks/datapack 2>/dev/null && find . -type f | sort | xargs -r sha256sum | sha256sum | cut -c1-64" 2>/dev/null || echo MISSING)"
   ipack="$(docker exec -i "$cid" sh -c "cd /delve/datapack 2>/dev/null && find . -type f | sort | xargs -r sha256sum | sha256sum | cut -c1-64" 2>/dev/null || echo MISSING)"
   # The world's copy is compared to the image's copy, and the PAIR is the reading:
   # a hash that moved for both is a different campaign, not a session's work.
-  if [ "$wpack" = "$ipack" ]; then printf 'datapack-in-world\tequals-image\n'; else printf 'datapack-in-world\tDIFFERS(%s vs %s)\n' "$wpack" "$ipack"; fi
+  if [ "$wpack" = "$ipack" ] && [ "$wpack" != "MISSING" ]; then
+    printf 'datapack-in-world\t%s pack(s), sha256 %s equals the image copy\n' "$packs" "$(printf '%s' "$wpack" | cut -c1-12)"
+  else
+    printf 'datapack-in-world\t%s pack(s), DIFFERS (%s vs %s)\n' "$packs" "$wpack" "$ipack"
+  fi
   printf 'player-data-files\t%s\n' \
     "$(docker exec -i "$cid" sh -c "find /data/$LEVEL/playerdata -type f 2>/dev/null | wc -l" | tr -d '[:space:]')"
-  printf 'scoreboard-list\t%s\n' "$(dw_rcon "$cid" "scoreboard players list" || echo REFUSED)"
+  # Sorted, because the server answers from a SET and the order it happens to
+  # print in is not a fact about the world; an unsorted reading is an
+  # under-specified test waiting to red intermittently.
+  printf 'scoreboard-list\t%s\n' \
+    "$(dw_rcon "$cid" "scoreboard players list" | tr ',' '\n' | sed 's/^ *//; s/ *$//' | sort | tr '\n' ' ' || echo REFUSED)"
   printf 'storage-dw-cp\t%s\n' "$(dw_rcon_probe "$cid" "data get storage dw:cp pos" || true)"
   printf 'npc-entities\t%s\n' "$(dw_rcon_probe "$cid" "execute if entity @e[tag=dw_npc]" || true)"
   printf 'online\t%s\n' "$(list_count "$cid")"
@@ -251,16 +279,21 @@ data_manifest() { # every path under /data with its mtime and size
     'find /data -mindepth 1 \( -type f -o -type d \) -printf "%P\t%T@\t%s\n" 2>/dev/null | sort'
 }
 
+# The base image's autostop poll period. NOT set by the entrypoint — this is
+# upstream's default, restated here only so the waits below are arithmetic
+# rather than guesses.
+AUTOSTOP_PERIOD=10
 bot_cid=""
+bot_joined_at=0
 bot_join() { # bot_join <username> — and wait for the SERVER to say so
   local cid="$1" user="$2" waited=0 n
   bot_cid="$("${COMPOSE[@]}" run -d --no-deps -e PRESENCE_USERNAME="$user" \
-      -v "$here/presence-bot.mjs:/presence.mjs:ro" --entrypoint node bot /presence.mjs \
+      -v "$here/presence-bot.mjs:/app/presence.mjs:ro" --entrypoint node bot /app/presence.mjs \
       | tr -d '\r' | tail -n 1)"
   [ -n "$bot_cid" ] || { echo "reset-when-empty: the presence bot did not start" >&2; return 1; }
   while [ "$waited" -lt 120 ]; do
     n="$(list_count "$cid" || true)"
-    [ "${n:-0}" -ge 1 ] 2>/dev/null && return 0
+    if [ "${n:-0}" -ge 1 ] 2>/dev/null; then bot_joined_at=$(date +%s); return 0; fi
     sleep 2; waited=$((waited + 2))
   done
   echo "reset-when-empty: the presence bot never appeared in the server's own player list" >&2
@@ -297,6 +330,31 @@ print("" if hit is None else "%.3f" % hit)
 '
 }
 log_count() { docker logs "$1" 2>&1 | grep -c -- "$2" || true; }
+
+# Wait for the DAEMON to say something, never for a sleep to elapse. The daemon
+# reads every AUTOSTOP_PERIOD, so any assertion about its state machine taken at
+# the instant a player joins or leaves is taken before the reading that would
+# support it exists — which is how a run where everything worked reds.
+wait_log_increase() { # wait_log_increase <cid> <pattern> <before> <timeout-s>
+  local cid="$1" pat="$2" before="$3" timeout="$4" waited=0
+  while [ "$waited" -lt "$timeout" ]; do
+    [ "$(log_count "$cid" "$pat")" -gt "$before" ] && return 0
+    sleep 2; waited=$((waited + 2))
+  done
+  return 1
+}
+# Two full poll periods with the player in the world, so the daemon has TAKEN a
+# reading with them in it: `E` is then reached by arithmetic rather than by luck,
+# and a leave is an event the daemon can observe. A shorter presence is a coin
+# flip on the poll, which is an under-specified test, not a fast one.
+settle_in_world() {
+  local need=$((2 * AUTOSTOP_PERIOD + 5)) elapsed
+  while :; do
+    elapsed=$(( $(date +%s) - bot_joined_at ))
+    [ "$elapsed" -ge "$need" ] && break
+    sleep 2
+  done
+}
 
 # ==========================================================================
 say "preflight — the readings that need no session"
@@ -376,7 +434,10 @@ if [ "$perturbation" = "none" ]; then
   dw_rcon "$cid" "scoreboard players set #probe dw.sys 7" >/dev/null
   dw_rcon "$cid" "save-all flush" >/dev/null
   pid1_off="$(docker inspect -f '{{index .Config.Entrypoint 0}}' "$cid")"
-  pid1_cmd="$(docker exec -i "$cid" sh -c 'cat /proc/1/comm' | tr -d '[:space:]')"
+  # /proc/1/comm is truncated to 15 characters by the kernel, so `mc-server-runner`
+  # reads back as `mc-server-runne` and a comparison against the real name reds a
+  # boot that is correct. The command line is the whole name.
+  pid1_cmd="$(docker exec -i "$cid" sh -c "tr '\\0' ' ' < /proc/1/cmdline" | awk '{print $1}' | xargs -n1 basename)"
   autostop_lines="$(log_count "$cid" 'Autostop functionality enabled')"
   "${COMPOSE[@]}" stop -t 120 server >/dev/null
   "${COMPOSE[@]}" start server >/dev/null
@@ -457,23 +518,29 @@ if [ "$perturbation" = "flag-off" ]; then
   crit 9 DEBT "not reached: no reset happens on the off-path, so there is no dead time to measure"
 else
   say "criterion 3 — the event is the WINDOW, not the edge"
+  c3=""
+  settle_in_world
   stops_before="$(log_count "$cid" 'Stopping Java process')"
+  dones_before="$(log_count "$cid" 'Done (')"
+  disc_before="$(log_count "$cid" 'All clients disconnected')"
+  recon_before="$(log_count "$cid" 'Client reconnected')"
   bot_leave
   t_leave1=$(date +%s)
-  note "left at t0; coming back 30s later, inside the ${window}s window"
-  sleep 30
+  note "left at t0 — waiting for the daemon's own 'All clients disconnected' line"
+  wait_log_increase "$cid" 'All clients disconnected' "$disc_before" 60 \
+    || c3="$c3 daemon-never-saw-the-leave"
+  note "coming back 30s after the leave, inside the ${window}s window"
+  while [ $(( $(date +%s) - t_leave1 )) -lt 30 ]; do sleep 2; done
   bot_join "$cid" dw-visitor
-  reconnected="$(log_count "$cid" 'Client reconnected')"
-  note "waiting out the rest of the window with the player back in the world"
-  sleep $((window - 25))
+  wait_log_increase "$cid" 'Client reconnected' "$recon_before" 60 \
+    || c3="$c3 no-'Client reconnected'-line"
+  note "holding the player in the world until the whole window has passed"
+  while [ $(( $(date +%s) - t_leave1 )) -lt $((window + AUTOSTOP_PERIOD)) ]; do sleep 2; done
   stops_mid="$(log_count "$cid" 'Stopping Java process')"
-  c3=""
   [ "$stops_mid" = "$stops_before" ] || c3="$c3 stopped-inside-the-window"
-  [ "$reconnected" -ge 1 ] || c3="$c3 no-'Client reconnected'-line"
-  now=$(date +%s)
-  [ $((now - t_leave1)) -ge "$window" ] || c3="$c3 waited-only-$((now-t_leave1))s"
 
   note "the final leave: nobody comes back this time"
+  settle_in_world
   dw_rcon "$cid" "save-all flush" >/dev/null
   bot_leave
   t_leave2=$(date +%s)
@@ -502,18 +569,28 @@ print("%.0f" % ('"$t_stop_epoch"' - '"$t_leave2"'))')"
   pwe="$(docker exec -i "$cid" sh -c 'sed -n "/^pause-when-empty-seconds=/{s///;p;q;}" /data/server.properties' | tr -d '[:space:]')"
   [ -n "$pwe" ] && [ $((window - 20)) -ge "$pwe" ] || c3="$c3 last-three-readings-not-past-pause(pwe=$pwe)"
   if [ -z "$c3" ]; then
-    crit 3 PASS "no stop while the player came back inside the window ('Client reconnected' logged); after the final leave the server stopped at ${latency}s, in [${window}, ${ubound}]; pause-when-empty-seconds=$pwe, so the last three readings were taken from a paused server and it still answered them"
+    crit 3 PASS "the daemon logged 'All clients disconnected', then 'Client reconnected' when the player came back 30s in, and did NOT stop across the whole ${window}s; after the final leave it stopped at ${latency}s, in [${window}, ${ubound}]; pause-when-empty-seconds=$pwe, so the window's last three readings were taken from a PAUSED server and it still answered them"
   else
     crit 3 RED "the window:$c3 (latency=${latency}s)"
   fi
 
   say "the reset — waiting for the delve to be built again"
+  # The NEXT boot's own "Done (" first, and only then the datapack's signal. The
+  # daemon logs "Stopping Java process" BEFORE it signals, so for several seconds
+  # after that line the old server is still up and still answering `#placed
+  # dw.sys = 1` — a `wait_placed` here returns instantly, on the world that is
+  # about to be deleted, and every reading after it describes the played world
+  # during its own shutdown.
+  if ! wait_log_increase "$cid" 'Done (' "$dones_before" 900; then
+    echo "reset-when-empty: the delve never booted again after the stop" >&2
+    docker logs "$cid" 2>&1 | tail -40 >&2; exit 1
+  fi
   if ! wait_placed "$cid" 600; then
     echo "reset-when-empty: the delve did not come back after the reset" >&2; exit 1
   fi
   resets_observed=1
   t_done_epoch="$(log_epoch "$cid" last 'Done (')"
-  t_placed_epoch=$(date +%s)
+  t_placed_epoch="$DW_PLACED_EPOCH"
   dead_stop_to_listen="$(python3 -c '
 import sys; sys.stdout.reconfigure(newline="\n")
 print("%.0f" % ('"$t_done_epoch"' - '"$t_stop_epoch"'))')"
@@ -533,14 +610,14 @@ equal_readings=0; moved_readings=0; total_readings=0
 c4=""
 while IFS=$'\t' read -r key v1; do
   total_readings=$((total_readings + 1))
-  v2="$(printf '%s\n' "$FP2" | awk -F'\t' -v k="$key" '$1==k{ $1=""; sub(/^\t/,""); print; exit }')"
-  vp="$(printf '%s\n' "$FPP" | awk -F'\t' -v k="$key" '$1==k{ $1=""; sub(/^\t/,""); print; exit }')"
+  v2="$(printf '%s\n' "$FP2" | awk -F'\t' -v k="$key" '$1==k{ print substr($0, index($0,"\t")+1); exit }')"
+  vp="$(printf '%s\n' "$FPP" | awk -F'\t' -v k="$key" '$1==k{ print substr($0, index($0,"\t")+1); exit }')"
   if [ "$v1" = "$v2" ]; then equal_readings=$((equal_readings + 1)); else c4="$c4 $key(first!=post-reset)"; fi
   [ "$v1" = "$vp" ] || moved_readings=$((moved_readings + 1))
 done <<< "$FP1"
 for must in player-data-files scoreboard-list online; do
-  v1="$(printf '%s\n' "$FP1" | awk -F'\t' -v k="$must" '$1==k{ $1=""; sub(/^\t/,""); print; exit }')"
-  vp="$(printf '%s\n' "$FPP" | awk -F'\t' -v k="$must" '$1==k{ $1=""; sub(/^\t/,""); print; exit }')"
+  v1="$(printf '%s\n' "$FP1" | awk -F'\t' -v k="$must" '$1==k{ print substr($0, index($0,"\t")+1); exit }')"
+  vp="$(printf '%s\n' "$FPP" | awk -F'\t' -v k="$must" '$1==k{ print substr($0, index($0,"\t")+1); exit }')"
   [ "$v1" != "$vp" ] || c4="$c4 $must(session-did-not-move-it)"
 done
 if [ -z "$c4" ]; then
@@ -551,10 +628,19 @@ fi
 
 # ------------------------------------------------------------------ criterion 5
 say "criterion 5 — the keep list is closed"
-c5_out="$(DW_LEVEL="$LEVEL" python3 -c '
+# `usercache.json` is removed by the reset and then WRITTEN AGAIN, empty, by the
+# boot that follows — so "absent afterwards" is the wrong question about it. The
+# question the criterion is asking is whether the visitor is still in it, and that
+# is answered by reading the file rather than by looking for its absence.
+usercache_after="$(docker exec -i "$cid" sh -c 'cat /data/usercache.json 2>/dev/null || echo ABSENT')"
+usercache_clean=0
+case "$usercache_after" in *dw-visitor*) usercache_clean=0 ;; *) usercache_clean=1 ;; esac
+note "usercache.json after the reset: $usercache_after"
+c5_out="$(DW_LEVEL="$LEVEL" DW_USERCACHE_CLEAN="$usercache_clean" python3 -c '
 import os, sys
 sys.stdout.reconfigure(newline="\n")
 level = os.environ["DW_LEVEL"]
+usercache_clean = os.environ.get("DW_USERCACHE_CLEAN") == "1"
 def read(path):
     d = {}
     with open(path) as fh:
@@ -573,7 +659,7 @@ KEEP = ["ops.json", "whitelist.json", "banned-players.json", "banned-ips.json",
         "server.properties", "eula.txt", "logs", "libraries", "versions",
         "server.jar", ".skip-stop"]
 REMOVED_BY_NAME = ["usercache.json"]
-under_world = removed = kept = unaccounted = 0
+under_world = removed = rebuilt = kept = unaccounted = 0
 kept_hits = {k: 0 for k in KEEP}
 unacc = []
 for p in changed:
@@ -589,9 +675,14 @@ for p in changed:
         kept_hits[top if top in KEEP else p] += 1
         continue
     if top in REMOVED_BY_NAME:
-        # named as removed, but it is still here
-        unaccounted += 1
-        unacc.append(p + " (§4 says removed, and it survived)")
+        # §4 says it goes. It does go, and the boot then writes a fresh empty
+        # one — so what is checked is that the session is not in the file, read
+        # from the file itself, not that the path is missing.
+        if usercache_clean:
+            rebuilt += 1
+        else:
+            unaccounted += 1
+            unacc.append(p + " (§4 says removed, and the session is still in it)")
         continue
     unaccounted += 1
     unacc.append(p)
@@ -599,6 +690,7 @@ unbound = [k for k, v in kept_hits.items() if v == 0]
 print("CHANGED\t%d" % len(changed))
 print("UNDER_WORLD\t%d" % under_world)
 print("REMOVED\t%d" % removed)
+print("REBUILT\t%d" % rebuilt)
 print("KEPT\t%d" % kept)
 print("UNACCOUNTED\t%d" % unaccounted)
 print("UNBOUND\t%s" % ",".join(unbound))
@@ -608,6 +700,7 @@ for u in unacc[:20]:
 n_changed="$(printf '%s\n' "$c5_out" | awk -F'\t' '$1=="CHANGED"{print $2}')"
 n_world="$(printf '%s\n' "$c5_out" | awk -F'\t' '$1=="UNDER_WORLD"{print $2}')"
 n_removed="$(printf '%s\n' "$c5_out" | awk -F'\t' '$1=="REMOVED"{print $2}')"
+n_rebuilt="$(printf '%s\n' "$c5_out" | awk -F'\t' '$1=="REBUILT"{print $2}')"
 n_kept="$(printf '%s\n' "$c5_out" | awk -F'\t' '$1=="KEPT"{print $2}')"
 n_unacc="$(printf '%s\n' "$c5_out" | awk -F'\t' '$1=="UNACCOUNTED"{print $2}')"
 unbound="$(printf '%s\n' "$c5_out" | awk -F'\t' '$1=="UNBOUND"{print $2}')"
@@ -617,7 +710,7 @@ c5=""
 [ "$n_changed" -gt 0 ] || c5="$c5 nothing-changed-under-/data(the-session-did-not-happen)"
 [ "$n_unacc" = "0" ] || c5="$c5 unaccounted=$n_unacc"
 if [ -z "$c5" ]; then
-  crit 5 PASS "$n_changed changed paths under /data: $n_world under the world (removed wholesale), $n_removed removed, $n_kept kept by name, 0 unaccounted"
+  crit 5 PASS "$n_changed changed paths under /data: $n_world under the world (removed wholesale), $n_removed removed, $n_rebuilt removed and rewritten empty by the boot with no trace of the session, $n_kept kept by name, 0 unaccounted"
 else
   crit 5 RED "the keep list:$c5 ($n_changed changed, $n_world under the world, $n_removed removed, $n_kept kept)"
 fi
@@ -636,8 +729,24 @@ else
 fi
 
 # ------------------------------------------------------------------ criterion 10
+# Under a perturbation the ladder's own reds are the RESULT: the run passes only
+# if the criteria the perturbation was aimed at actually went red, and criterion
+# 10 IS that judgement.
+perturb_missed=""
+perturb_expect=()
 if [ "$perturbation" = "none" ]; then
   crit 10 DEBT "not reached in this run: the perturbation is its own invocation (--perturbation no-removal, then --perturbation flag-off)"
+else
+  perturb_expect=(4 5)
+  [ "$perturbation" = "flag-off" ] && perturb_expect=(4)
+  for i in "${perturb_expect[@]}"; do
+    [ "${CRIT_VERDICT[$i]}" = "RED" ] || perturb_missed="$perturb_missed $i"
+  done
+  if [ -z "$perturb_missed" ]; then
+    crit 10 PASS "'$perturbation' reddened criteria ${perturb_expect[*]} — the ladder is measuring something"
+  else
+    crit 10 RED "'$perturbation' did NOT red criteria$perturb_missed — the ladder is measuring NOTHING, and that is the finding"
+  fi
 fi
 
 # ==========================================================================
@@ -645,7 +754,7 @@ say "verdicts"
 reds=0
 for i in "${CRIT_IDS[@]}"; do
   printf '  %-2s  %-11s  %s\n' "$i" "${CRIT_VERDICT[$i]}" "${CRIT_NOTE[$i]}"
-  [ "${CRIT_VERDICT[$i]}" = "RED" ] && reds=$((reds + 1))
+  if [ "${CRIT_VERDICT[$i]}" = "RED" ]; then reds=$((reds + 1)); fi
 done
 
 : "${dead_stop_to_listen:=n/a}"; : "${dead_listen_to_placed:=n/a}"; : "${resets_observed:=0}"
@@ -654,7 +763,7 @@ echo
 echo "reset-when-empty binding: 1 session played, $resets_observed reset observed (stop->listening ${dead_stop_to_listen} s,"
 echo "listening->placed ${dead_listen_to_placed} s); $total_readings fingerprint readings compared, $equal_readings equal first-boot vs"
 echo "post-reset, $moved_readings moved by the session; $n_changed changed paths under /data enumerated:"
-echo "$n_world under the world (removed wholesale), $n_removed removed, $n_kept kept by name, $n_unacc unaccounted;"
+echo "$n_world under the world (removed wholesale), $n_removed removed, $n_rebuilt rebuilt empty, $n_kept kept by name, $n_unacc unaccounted;"
 echo "count cross-check ${mc_on}=${list_on} then ${mc_off}=${list_off}."
 echo
 
@@ -667,18 +776,9 @@ if [ "$perturbation" = "none" ]; then
   exit 1
 fi
 
-# Under a perturbation the ladder's own reds are the RESULT: the run passes only
-# if the criteria the perturbation was aimed at actually went red.
-say "perturbation '$perturbation' — the criteria it must red"
-expect=(4 5)
-[ "$perturbation" = "flag-off" ] && expect=(4)
-missed=""
-for i in "${expect[@]}"; do
-  [ "${CRIT_VERDICT[$i]}" = "RED" ] || missed="$missed $i"
-done
-if [ -z "$missed" ]; then
-  echo "reset-when-empty: the perturbation reddened criteria ${expect[*]} — the ladder is measuring something."
+if [ -z "$perturb_missed" ]; then
+  echo "reset-when-empty: perturbation '$perturbation' reddened criteria ${perturb_expect[*]} — the ladder is measuring something."
   exit 0
 fi
-echo "reset-when-empty: the perturbation did NOT red criteria$missed — the ladder is measuring NOTHING, and that is the finding." >&2
+echo "reset-when-empty: perturbation '$perturbation' did NOT red criteria$perturb_missed — the ladder is measuring NOTHING, and that is the finding." >&2
 exit 1
