@@ -162,13 +162,18 @@ def test_the_gate_is_the_only_thing_that_refuses_a_missing_world(tmp_path):
     end = next(i for i, l in enumerate(lines) if l.startswith("# Every arm this script runs"))
     assert start < end, "the gate no longer sits between its comment and the `delvec` runner"
     # The perturbed copy stands where the real script stands, in a tree carrying
-    # the two files it sources: it resolves its repo root from its own location,
+    # every file it sources: it resolves its repo root from its own location,
     # so a copy dropped anywhere else fails on a missing library rather than on
     # the gate, which would make this perturbation prove nothing.
     fixture = tmp_path / "repo"
     (fixture / "validation").mkdir(parents=True, exist_ok=True)
     (fixture / "tools" / "lib").mkdir(parents=True, exist_ok=True)
-    for rel in ("tools/lib/delvec-bin.sh", "tools/lib/versions.py", "versions.toml"):
+    for rel in (
+        "tools/lib/delvec-bin.sh",
+        "tools/lib/versions.py",
+        "tools/lib/chunky-home.sh",
+        "versions.toml",
+    ):
         shutil.copyfile(REPO / rel, fixture / rel)
     perturbed = fixture / "validation" / "render-shots-no-gate.sh"
     # The removed block also defines `$world_dir` and `$world_regions`, which the

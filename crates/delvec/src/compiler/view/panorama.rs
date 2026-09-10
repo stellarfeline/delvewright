@@ -15,9 +15,9 @@
 //! a release artifact, not a review frame. Folding it into `scene` would break
 //! the shot↔scene correspondence both commands rest on and push a release
 //! decision (bearing, sample budget) into the review path. It also carries
-//! render settings the review scenes must not have — an explicitly placed key
-//! light and a lower default sample target — and its bearing is a creator's
-//! choice at render time, which is a CLI flag, not a compiled constant.
+//! a render setting the review scenes must not have — a lower default sample
+//! target — and its bearing is a creator's choice at render time, which is a
+//! CLI flag, not a compiled constant.
 //!
 //! ## Framing
 //!
@@ -28,10 +28,20 @@
 //! [`MARGIN`] of breathing room. A narrow [`FOV_DEG`] keeps the perspective close
 //! to the oblique "model on a table" look and away from wide-angle distortion.
 //!
-//! The sun sits at [`SUN_ALTITUDE_DEG`], turned [`SUN_YAW_OFFSET_DEG`] off the
-//! camera's own bearing: behind the camera, so the slopes facing the viewer are
-//! the lit ones, but off-axis enough that the relief still casts shadows instead
-//! of flattening out.
+//! ## The sun is the campaign's hour, and the bearing is the creator's choice
+//!
+//! The sun is `scene::sun_at` of the plan's declared hour — the same one every
+//! review scene gets, because a release picture of a dusk delve that is lit like
+//! noon is the same defect as a review frame that is. It used to be a key light
+//! placed off the camera's own bearing at a fixed altitude, which flattered any
+//! massing from any side and told the truth about no campaign.
+//!
+//! So the bearing is now purely a choice of which side is in shot, and choosing
+//! it is the creator's job: at a given hour the sun stands east or west, and a
+//! bearing looking into it is a backlit frame. `--bearing` is a flag for exactly
+//! this reason. A delve declared at `night` or `midnight` renders dark, which is
+//! what a night delve looks like; nothing here brightens a scene to make a
+//! picture come out.
 //!
 //! Only the layout's own chunks are loaded (`scene::chunk_list`) and, on an
 //! ocean horizon, the surrounding sea is Chunky's ambient water plane
@@ -40,7 +50,7 @@
 
 use crate::compiler::view::diag::Diagnostic;
 use crate::compiler::view::scene::{
-    self, ChunkyCamera, ChunkyScene, ChunkySun, Orientation, WorldRef, Xyz, chunky_orientation,
+    self, ChunkyCamera, ChunkyScene, Orientation, WorldRef, Xyz, chunky_orientation,
 };
 
 /// Camera pitch, degrees below horizontal — the oblique "45°" of the brief.
@@ -57,14 +67,6 @@ pub const MARGIN: f64 = 1.12;
 /// Never place the camera closer than this to the layout centre, so a
 /// degenerate (single-block) AABB still yields a usable scene.
 const MIN_DISTANCE: f64 = 16.0;
-
-/// Sun altitude above the horizon, degrees. High enough to light the interiors
-/// of open courtyards, low enough that massing still reads through shadow.
-pub const SUN_ALTITUDE_DEG: f64 = 50.0;
-
-/// How far the sun's bearing is turned off the camera's own bearing, degrees.
-/// Zero would put the sun directly behind the camera and flatten every face.
-pub const SUN_YAW_OFFSET_DEG: f64 = 40.0;
 
 /// Default sample target for a final panorama (`--spp` overrides). The tiered
 /// doctrine: ~64 for a draft look, ~300 for release art.
@@ -212,21 +214,6 @@ pub fn frame(min: [i32; 3], max: [i32; 3], bearing: Bearing) -> PanoramaCamera {
     }
 }
 
-/// The key light for a panorama shot from `bearing`, in Chunky's sun convention
-/// (radians; azimuth 0 = +X, growing toward +Z — the opposite turn from the
-/// render-plan yaw, hence the negation).
-pub fn sun(bearing: Bearing) -> ChunkySun {
-    let h = bearing.toward_camera();
-    // Render-plan yaw of the direction from the layout toward the camera.
-    let camera_side_yaw = (-h[2]).atan2(h[0]).to_degrees();
-    let sun_yaw = camera_side_yaw + SUN_YAW_OFFSET_DEG;
-    let azimuth = (-sun_yaw).to_radians().rem_euclid(std::f64::consts::TAU);
-    ChunkySun {
-        altitude: round6(SUN_ALTITUDE_DEG.to_radians()),
-        azimuth: round6(azimuth),
-    }
-}
-
 /// Options for panorama emission.
 #[derive(Debug, Clone)]
 pub struct PanoramaOptions {
@@ -258,6 +245,7 @@ pub fn panorama_from_plan(
     opts: &PanoramaOptions,
 ) -> Result<(String, Vec<u8>), Diagnostic> {
     let plan = scene::parse_plan(plan_json)?;
+    let sky = scene::plan_sky(&plan)?;
     // The whole-map frame is of the WHOLE map, ground included. The layout AABB
     // is the pieces; on a `valley` those pieces sit in a landform several times
     // their size that the compiler built and the save contains, so a camera
@@ -295,9 +283,11 @@ pub fn panorama_from_plan(
         water_world_height: None,
         water_world_height_offset_enabled: None,
         water_world_clip_enabled: None,
-        sun: Some(sun(opts.bearing)),
-        // The panorama is an exterior daylight frame; the night-vision review
-        // emulation belongs to declared-dark POV shots and never applies here.
+        sun: Some(scene::sun_at(sky.daytime_ticks)),
+        // A panorama is an exterior frame of the whole map; the night-vision
+        // review emulation belongs to declared-dark POV shots and never applies
+        // here — including at an hour that renders it dark, which is a fact
+        // about the delve and not a legibility problem to emulate away.
         materials: None,
         delvewright_review_policy: None,
         world: WorldRef {
@@ -423,52 +413,39 @@ mod tests {
         assert!(d >= MIN_DISTANCE - 1e-6, "camera inside the block: {c:?}");
     }
 
-    #[test]
-    fn the_sun_lights_the_slopes_that_face_the_camera() {
-        for b in [Bearing::Se, Bearing::Sw, Bearing::Ne, Bearing::Nw] {
-            let s = sun(b);
-            assert!(
-                (s.altitude - SUN_ALTITUDE_DEG.to_radians()).abs() < 1e-6,
-                "{b:?}"
-            );
-            // Chunky: direction toward the sun.
-            let dir = [
-                s.azimuth.cos() * s.altitude.cos(),
-                s.altitude.sin(),
-                s.azimuth.sin() * s.altitude.cos(),
-            ];
-            assert!(dir[1] > 0.0, "sun below the horizon for {b:?}");
-            // It shares the camera's side of the layout (positive dot with the
-            // toward-camera horizontal), so camera-facing slopes are the lit
-            // ones — but off-axis, so the frame is not flat.
-            let h = b.toward_camera();
-            let along = (dir[0] * h[0] + dir[2] * h[2]) / (dir[0].hypot(dir[2]));
-            assert!(along > 0.0, "sun is behind the layout for {b:?}: {dir:?}");
-            let off_axis = along.acos().to_degrees();
-            // Tolerance is the emitted azimuth's own 6-decimal-radian rounding
-            // (round6), not slack in the rule.
-            assert!(
-                (off_axis - SUN_YAW_OFFSET_DEG).abs() < 1e-3,
-                "{b:?} sun {off_axis}° off the camera bearing"
-            );
-        }
-    }
-
     const MINI: &[u8] = include_bytes!("../../../tests/fixtures/view/render-plan-mini.json");
     const OCEAN: &[u8] = include_bytes!("../../../tests/fixtures/view/render-plan-ocean.json");
 
+    /// The panorama's sun is the campaign's hour and nothing else — the same
+    /// bytes `scene` writes for the same plan, whatever bearing the release is
+    /// shot from. The bearing used to move it, which made the picture flatter
+    /// and made it a picture of no particular time of day.
     #[test]
-    fn scene_loads_only_the_layouts_own_chunks() {
-        // The ocean fixture spans x 0..=31 (chunks 0..=1), z 0..=47 (0..=2).
-        let (name, bytes) = panorama_from_plan(OCEAN, &PanoramaOptions::default()).unwrap();
-        assert_eq!(name, "isle_panorama_se.json");
-        let v: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
-        let chunks: Vec<[i32; 2]> = serde_json::from_value(v["chunkList"].clone()).unwrap();
-        assert_eq!(
-            chunks,
-            vec![[0, 0], [0, 1], [0, 2], [1, 0], [1, 1], [1, 2]],
-            "layout chunks only — surrounding ocean chunks make a two-tone seam"
-        );
+    fn the_sun_is_the_declared_hour_and_the_bearing_never_moves_it() {
+        let expected = scene::sun_at(12000); // the mini fixture declares dusk
+        let mut seen = 0;
+        for b in [Bearing::Se, Bearing::Sw, Bearing::Ne, Bearing::Nw] {
+            let opts = PanoramaOptions {
+                bearing: b,
+                ..Default::default()
+            };
+            let (_, bytes) = panorama_from_plan(MINI, &opts).unwrap();
+            let v: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+            assert_eq!(v["sun"]["altitude"], serde_json::json!(expected.altitude));
+            assert_eq!(v["sun"]["azimuth"], serde_json::json!(expected.azimuth));
+            seen += 1;
+        }
+        assert_eq!(seen, 4, "every bearing was examined");
+    }
+
+    /// A plan with no hour is refused rather than rendered under Chunky's own
+    /// midday default — the panorama half of the rule `scene` enforces.
+    #[test]
+    fn a_panorama_of_a_plan_with_no_hour_is_refused() {
+        let no_sky = br#"{"campaign_id":"c","layout_aabb":{"min":[0,64,0],"max":[1,65,1]},
+          "shots":[]}"#;
+        let err = panorama_from_plan(no_sky, &PanoramaOptions::default()).unwrap_err();
+        assert_eq!(err.code, crate::compiler::view::diag::DW_INPUT, "{err:?}");
     }
 
     #[test]

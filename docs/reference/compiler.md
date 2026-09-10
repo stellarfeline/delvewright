@@ -2516,8 +2516,19 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   corner-thinned critical-path waypoint (the same `thin()` list the harness
   replays), camera at eye height (`1.62` above the standing cell), oriented along
   the walk toward the next waypoint and — at each leg's final waypoint — toward the
-  objective anchor it arrives at (approach-heading fallback when the anchor is
-  underfoot, so an arrival never degenerates to a straight-down floor shot). Each
+  objective anchor it arrives at. **The arrival aim is derived from the objective
+  and from nothing else** (`render_plan::arrival_aim`): an anchor 4+ blocks away
+  is framed directly; a nearer one is aimed at *along its own direction*, out to
+  4 blocks at the anchor's height, so the objective is centred and near with the
+  room behind it rather than dragging the pitch at the floor; an anchor inside
+  the eye's own column is underfoot, no aim shows it, and the camera keeps the
+  walked heading. That third case is the only one where the `expect` sentence
+  stops saying the objective is ahead — **a shot's `expect` is a claim the
+  emitter has to be able to keep** (`render_plan::Arrival` decides both together,
+  which is why it is not a bool). The aim used to be the walked heading extended
+  a fixed distance whenever the anchor was within two blocks, with the objective
+  never consulted and the claim made anyway: on a route that walks past an anchor
+  and turns, that points 180° away from it. Each
   shot carries `leg`, the served `objective`, `standing_cell`, a `camera` with the
   first-person `fov` (~70°), and an `expect` whose first entry is a one-sentence
   machine description composed from campaign data (area name + objective/anchor/NPC
@@ -2550,6 +2561,42 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   moved — that eye IS the player's — so a `pov` violation stays a build error
   against the derivation. The plan carries the proof's binding counts:
   `"camera_eye_proof": {"cameras": N, "pulled_in": M}`.
+- **`sky` fact** (`crate::render_plan::sky_fact`): **the hour this delve is
+  played at**, stated for the render layer exactly as `horizon` is —
+  `{"time": "dusk", "daytime_ticks": 12000}`, the keyword the author wrote plus
+  the vanilla `daytime` value it sets. Always present, because `world.json`'s
+  `time` is required. It is the **declared initial** hour — what the world save
+  is written at, and therefore what every frame is of; a campaign that moves the
+  clock with `set-time` reaches other hours at play (`DW0890` holds the design's
+  rows equal to that whole reachable set), and a still frame has one sun and is
+  not evidence about the beats after the cut. The renderer derives the sun from the **ticks** and never
+  from the keyword, so a state vanilla does not name is worth as much as one it
+  does; the **weather is deliberately not here**, because Chunky has no rain and
+  a key the renderer cannot act on is an unemitted declaration one level along.
+  Before this key, `world.json` declared the hour, `DW0890` held the approved
+  design's rows equal to it at every `validate`, step 12 told the creator to read
+  the sky off the first frame — and nothing told the renderer, so 55 of 59 scenes
+  of the first full drill carried no sun at all and a `dusk` delve rendered noon
+  blue.
+- **The Chunky sun** (`crate::view::scene::sun_at`, used by `delvec scene` **and**
+  `delvec panorama`): `altitude = asin(cos α)` and an azimuth of exactly east or
+  exactly west, where α is minecraft.wiki's published sky angle for the plan's
+  `daytime_ticks` (*Daylight cycle* §Sky angle, cross-checked in
+  `the_two_published_sun_angle_formulas_agree` against the game's own
+  `DimensionType.timeOfDay` curve — the two agree to 1e-9 at all six hours). The
+  sun rises in the east and stands overhead at noon, so one angle fixes the whole
+  position; the curve is not linear in ticks, which is the term that makes
+  vanilla's sunrise and sunset linger near the horizon. Chunky's direction toward
+  the sun is `(cos az·cos alt, sin alt, sin az·cos alt)` (pinned core's
+  `Sun.initSun`) and nothing clamps the altitude, so `night`/`midnight` emit a sun
+  below the horizon and those frames render dark — which is what a night delve
+  looks like. **A plan with no `sky` is `DW0721`**, in both `scene` and
+  `panorama`: Chunky's own default is a 60° midday sun, so emitting anyway would
+  hand back a noon frame of a midnight delve and say nothing. The panorama's sun
+  used to be a key light placed off the camera's bearing at a fixed 50°; the
+  bearing is now purely which side is in shot, and a bearing that looks into the
+  sun at the declared hour is a backlit frame the creator re-shoots from
+  elsewhere.
 - **`horizon` fact** (`crate::render_plan::horizon_fact`): the world-generator
   ambient the render layer cannot see. A `horizon: ocean` campaign (spec-0013)
   ships a world save holding only the chunks its layout occupies — the sea around

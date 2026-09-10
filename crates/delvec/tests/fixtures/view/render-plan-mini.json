@@ -59,5 +59,9 @@
       "kind": "interior"
     }
   ],
+  "sky": {
+    "daytime_ticks": 12000,
+    "time": "dusk"
+  },
   "version": "0.2.0"
 }
