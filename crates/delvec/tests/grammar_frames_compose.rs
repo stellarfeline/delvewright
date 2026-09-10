@@ -60,7 +60,7 @@ fn arm() -> Node {
                 weight: Expr::int(1),
             },
         ],
-        rounding: delvec::grammar::ir::Rounding::Truncate,
+        rounding: None,
         repeat: false,
         orient: Reorient::KEEP,
         children: vec![
@@ -103,7 +103,7 @@ fn hall(left_band: i64, right_band: i64, reflect_right: bool) -> Program {
                         weight: Expr::int(1),
                     },
                 ],
-                rounding: delvec::grammar::ir::Rounding::Truncate,
+                rounding: None,
                 repeat: false,
                 orient: Reorient::KEEP,
                 children: vec![
@@ -209,7 +209,7 @@ fn rebinding_a_name_to_the_value_it_already_has_changes_neither_blocks_nor_boxes
                         weight: Expr::int(1),
                     },
                 ],
-                rounding: delvec::grammar::ir::Rounding::Truncate,
+                rounding: None,
                 repeat: false,
                 orient: Reorient::KEEP,
                 children: vec![Node::call("arm"), Node::call("arm")],

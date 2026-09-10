@@ -195,12 +195,16 @@ surface this engine has — it would refuse a version the engine can honour — 
 that is what is checked, in the crate, rather than the ordering.
 
 **`split`** cuts one local axis into pieces: `absolute` pieces take a fixed block
-count, `relative` pieces share what is left. `rounding` (`truncate` — the
-default and upstream's only behaviour — `start`, `end`, `middle`) says where the
-indivisible remainder goes; `repeat` tiles the pattern across the axis and clamps
-the last piece; `orient` hands every child a new orientation. Children are
-matched to pieces in order, and cycled when `repeat` produced more pieces than
-children.
+count, `relative` pieces share what is left. **A pattern carrying at least one
+`relative` piece always covers its axis exactly**; `rounding` (`start`, `end`,
+`middle` — `middle` is the default) says only which share absorbs an indivisible
+remainder. There is no mode that discards one: an uncovered cell belongs to no
+child, so no rule can fill, light or seal it, and every gate reads it as outside
+the model rather than as a hole in it. `repeat` tiles the pattern across the axis
+and clamps the last piece; `orient` hands every child a new orientation. Children
+are matched to pieces in order, and cycled when `repeat` produced more pieces
+than children. A pattern of `absolute` pieces alone is the author's own
+arithmetic and covers whatever they wrote.
 
 **`reorient` / `orient`** name a child axis as `local_*`, `world_*`, `smallest`,
 `largest`, or `split_axis` (the axis being cut; splits only). Unnamed axes are
@@ -381,12 +385,13 @@ image under every frame and are never refused.
 
 ### Six things the surface above does not say
 
-1. **`rounding` other than `truncate` is legal on a split with exactly one
-   relative piece**, and at weight 1 it is inert: the remainder of dividing by
-   one is always zero, so `[abs, rel(1), abs]` covers the axis exactly under
-   `truncate` already. `RoundingWithoutRelative` refuses only a split with *no*
-   relative piece. Rounding starts to matter at weight ≥ 2 or with several
-   shares.
+1. **`rounding` on a split with exactly one relative piece is legal and
+   inert**, at any weight: one share takes the whole leftover, so there is no
+   remainder to place. `RoundingWithoutRelative` refuses only a split with *no*
+   relative piece — nowhere at all to put a remainder — and writing a
+   `rounding` on `[abs, rel, abs]` buys nothing, because that pattern already
+   covers its axis. Rounding starts to matter at **two or more shares**, where
+   the spare block has to be given to one of them.
 2. **`smallest` / `largest` break a tie toward the lowest world axis** — `X`,
    then `Y`, then `Z` — measured over the axes still unclaimed when the
    extremal spec is resolved. On a cube, `x: largest` names world `X`. Read as
@@ -720,12 +725,16 @@ gradient — a mix's weights cannot vary with position — so **the gradient is 
 split**: band the surface and give each band its own mix, air share climbing.
 More bands is a smoother gradient and nothing else.
 
-The bands are a rounded split, and at the documented region that is
-load-bearing: thirteen courses over three shares do not divide, so under the
-default `truncate` the pieces are 4, 4, 4 and the thirteenth course is **never
-written** — twenty-seven cells of daylight along the top of the wall, with
-`blocks-exist` and `non-empty` both perfectly green. `rounding` is owed by every
-surface, not only by floors.
+The bands are a split over three shares, and at the documented region the
+rounding is a real choice: thirteen courses over three shares do not divide, so
+one band is a course deeper than the other two and the mode says which. The
+idiom asks for `end`, so the spare course joins the most eroded band. Every mode
+covers the top course; what a mode cannot do is drop it. Upstream's truncating
+layout made the pieces 4, 4, 4 and never wrote the thirteenth course —
+twenty-seven cells of daylight along the top of the wall, with `blocks-exist`
+and `non-empty` both perfectly green, because a cell nobody claimed is a cell
+nobody examines. `graded_erosion_every_rounding_covers_the_top_course` is that
+hole's perturbation.
 
 ### 6. Surface detail
 
@@ -1195,7 +1204,7 @@ which exports once and reads back, not twice and compares.
 
 The interpreter has no silent degradation. `Program::validate` runs before any
 expansion (unknown rule/role/param, empty rule or split, child/piece mismatch on
-a non-repeating split, zero weights, a `rounding` other than `truncate` on a
+a non-repeating split, zero weights, a `rounding` on a
 split with no relative piece — nowhere to put the remainder — `split_axis` named
 outside a split, an `orientation` guard that is not a
 permutation — a guard nothing could ever match — a `mark` whose anchor stem
@@ -1689,7 +1698,7 @@ Ported from `yawgmoth/GDMC25` (BSD-3-Clause; see
 |---|---|---|
 | `temple` | `roof` (pitched/flat/capped/open), `column_height`, `column_size`; role `marble` | X ≥ `6 + 2*column_size`, Y ≥ `1 + column_height + roof height` (5 pitched / 3 flat / 1 capped / 0 open), Z ≥ 7 |
 | `castle` | `large_tower`, `small_tower`, `great_hall`, `wall_height`, `wall_width`, `tower_height`; role `stone`; declares `anchor/courtyard` | both horizontal extents ≥ `2*large_tower + 2`, Y ≥ `tower_height + 1` |
-| `church` | guards only; roles `wall`, `glass`, four `roof_*` stair facings, two door pairs | height must follow width (the roof steps in 2 per course): Y ≥ 9 and Y ≳ X − 3; 15 × 16 × 30 is comfortable |
+| `church` | guards only; roles `wall`, `glass`, four `roof_*` stair facings, two door pairs | height must follow width (the roof steps in 2 per course): the shortest that expand are 9 × 8, 15 × 12, 21 × 16; 15 × 16 × 30 is comfortable |
 
 Ports are faithful except where a module says otherwise; the three substantive
 divergences are recorded at their code: the temple's colonnade repeats to fit the

@@ -3702,10 +3702,11 @@ fn branch_chain() -> Program {
         Node::Split(Split {
             axis,
             sizes,
-            // `Rounding::Start`, not the default truncation: a truncated
-            // relative piece leaves the far end of the box unwritten, and an
-            // unwritten cell is air — a hole in the strip's own margin wall.
-            rounding: delvec::grammar::ir::Rounding::Start,
+            // `Rounding::Start` rather than the default: with two relative
+            // pieces the odd block has to be given to one of them, and giving
+            // it to the near one keeps the margin wall at the same offset for
+            // every width this strip is built at.
+            rounding: Some(delvec::grammar::ir::Rounding::Start),
             repeat: false,
             orient: Default::default(),
             children,
