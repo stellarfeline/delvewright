@@ -195,7 +195,9 @@ fn a_span_past_the_ceiling_forceloads_every_chunk_of_itself() {
     let prefabs = root.join("prefabs");
     common::copy_dir_all(&common::prefabs_dir(), &prefabs);
     write_wide_room(&prefabs, "wide-room");
-    common::declare_shown_faces(&prefabs, "wide-room");
+    // No `shown_faces`: the room is sealed, so the party's air never reaches its
+    // outside and `DW0885` never asks. A declaration here would be six claims
+    // binding zero, which is the shape this repository calls a finding.
 
     let campaign = common::campaign_bound_to(&root.join("campaign"), "wide-room");
     common::patch_file(&campaign.join("world.json"), |v| {
