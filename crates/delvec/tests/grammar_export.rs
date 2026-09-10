@@ -545,3 +545,132 @@ fn show_the_metadata() {
         print!("{}", export.metadata_json);
     }
 }
+
+// ---------------------------------------------------------------------------
+// `shown_faces` — the program's claim about its own outside (`DW0885`)
+// ---------------------------------------------------------------------------
+
+/// **The export writes the program's declaration, on every expansion.**
+///
+/// That last clause is the whole reason the field lives on the program. The
+/// export REWRITES the metadata file every run, so a `shown_faces` typed into
+/// the metadata by hand is erased by the next `delvec grammar expand` — and a
+/// value a tool erases is not a declaration. Written from the program it comes
+/// back every time, which this asserts by exporting twice.
+#[test]
+fn the_export_writes_the_program_s_shown_faces_every_time() {
+    for _ in 0..2 {
+        let export = export_prefab(
+            &castle(),
+            CASTLE_REGION,
+            &ExpandOptions::seeded(7),
+            "grammar-castle",
+        )
+        .unwrap();
+        assert_eq!(
+            export.metadata.shown_faces,
+            vec!["north", "south", "east", "west"],
+            "the exported document carries the program's own claim"
+        );
+        let json: serde_json::Value = serde_json::from_str(&export.metadata_json).unwrap();
+        assert_eq!(
+            json["shown_faces"],
+            serde_json::json!(["north", "south", "east", "west"])
+        );
+    }
+}
+
+/// A zone too big for one template carries the claim too: it is a fact about
+/// the BUILDING, so it belongs to the manifest and not to a tile.
+#[test]
+fn a_tiled_zone_carries_the_claim_on_its_manifest() {
+    let set = tiled(
+        &castle(),
+        TILED_REGION,
+        &ExpandOptions::seeded(7),
+        "grammar-keep",
+    );
+    assert_eq!(
+        set.metadata.shown_faces,
+        vec!["north", "south", "east", "west"]
+    );
+}
+
+/// **The corpus's declaration is held to the corpus's own bytes.**
+///
+/// `DW0885` refuses a declared side with no solid cell on it, and it does so at
+/// build time in somebody else's campaign. The library's own claim is checked
+/// here instead, where the program that makes it lives: every side the castle
+/// declares has masonry on that plane of its box.
+#[test]
+fn every_side_the_castle_declares_has_a_block_on_it() {
+    let export = export_prefab(
+        &castle(),
+        CASTLE_REGION,
+        &ExpandOptions::seeded(7),
+        "grammar-castle",
+    )
+    .unwrap();
+    let size = CASTLE_REGION.size;
+    let model = &export.expansion.model;
+    for side in &export.metadata.shown_faces {
+        let (axis, plane) = match side.as_str() {
+            "west" => (0usize, 0i32),
+            "east" => (0, size[0] as i32 - 1),
+            "down" => (1, 0),
+            "up" => (1, size[1] as i32 - 1),
+            "north" => (2, 0),
+            "south" => (2, size[2] as i32 - 1),
+            other => panic!("{other} is not a side"),
+        };
+        let mut solid = 0usize;
+        for a in 0..size[(axis + 1) % 3] as i32 {
+            for b in 0..size[(axis + 2) % 3] as i32 {
+                let mut c = [0i32; 3];
+                c[axis] = plane;
+                c[(axis + 1) % 3] = a;
+                c[(axis + 2) % 3] = b;
+                if model.get(c).is_some() {
+                    solid += 1;
+                }
+            }
+        }
+        assert!(
+            solid > 0,
+            "the castle declares {side} and put nothing on it"
+        );
+    }
+}
+
+/// A side that is not one of the six, and a side written twice, are both
+/// refused where they are written rather than at somebody's build.
+#[test]
+fn a_shown_face_that_is_not_a_side_is_refused() {
+    for faces in [vec!["nrth"], vec!["north", "north"], vec!["top"]] {
+        let mut p = castle();
+        p.shown_faces = faces.iter().map(|s| s.to_string()).collect();
+        let err = p.validate().expect_err("this list must be refused");
+        assert!(
+            format!("{err}").contains("`shown_faces`"),
+            "{faces:?}: {err}"
+        );
+    }
+}
+
+/// The version fence: a document that declares an older version may not write
+/// the field, and the refusal names the version that introduced it.
+#[test]
+fn shown_faces_is_fenced_by_the_document_s_version() {
+    let older = castle().at_version("1.8.0");
+    let err = older
+        .validate()
+        .expect_err("1.8.0 predates the shown_faces surface");
+    let text = format!("{err}");
+    assert!(text.contains("`shown_faces` list"), "{text}");
+    assert!(text.contains("1.9.0"), "{text}");
+    // And a program that declares none is unaffected at every version, which is
+    // what keeps every document written before this compiling to the same bytes.
+    let mut bare = castle().at_version("1.8.0");
+    bare.shown_faces.clear();
+    bare.validate().expect("an empty list writes nothing");
+}

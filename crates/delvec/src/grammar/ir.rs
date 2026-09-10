@@ -2119,10 +2119,11 @@ impl Program {
     /// than from a list written here, because a second list is a second answer
     /// waiting to disagree with the one `DW0885` reads.
     fn check_shown_faces(&self) -> Result<(), ProgramError> {
-        if self.shown_faces.is_empty() {
-            return Ok(());
-        }
-        if !has_shown_faces(&self.version) {
+        // The guard reads the FIELD as well as the version, which is what
+        // `tools/check-grammar-ir-compat.py` holds a ledger row to: a refusal
+        // that consulted only the version constant could stand for any field
+        // introduced at that number, and one ledger row owes one refusal.
+        if !self.shown_faces.is_empty() && !has_shown_faces(&self.version) {
             return Err(ProgramError::FencedConstruct {
                 construct: "a `shown_faces` list",
                 since: SHOWN_FACES_SINCE,

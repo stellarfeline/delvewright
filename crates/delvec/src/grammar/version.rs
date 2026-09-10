@@ -181,19 +181,19 @@ pub fn is_supported_version(version: &str) -> bool {
 /// fenced construct. A reserved version keeps its own ordinal so the ledger
 /// stays a contiguous sequence — the surface it names sits at that ordinal
 /// whether or not this crate implements it.
+///
+/// **Read off the ledger, never listed a second time.** It was a hand-kept
+/// `match`, and a hand-kept parallel list of the ledger is the failure the
+/// ledger exists to prevent: adding `1.9.0` to
+/// [`SUPPORTED_PROGRAM_VERSIONS`] and not to the `match` gave the new version
+/// ordinal `0`, which made it older than `1.1.0` and closed every fence to the
+/// newest document in the format. The ledger is the sequence, so a version's
+/// ordinal is its place in it.
 pub fn minor_ordinal(version: &str) -> u32 {
-    match version {
-        "1.0.0" => 0,
-        "1.1.0" => 1,
-        "1.2.0" => 2,
-        "1.3.0" => 3,
-        "1.4.0" => 4,
-        "1.5.0" => 5,
-        "1.6.0" => 6,
-        "1.7.0" => 7,
-        "1.8.0" => 8,
-        _ => 0,
-    }
+    SUPPORTED_PROGRAM_VERSIONS
+        .iter()
+        .position(|v| *v == version)
+        .unwrap_or(0) as u32
 }
 
 /// True if `version` may write a reflected frame.
@@ -257,6 +257,39 @@ mod tests {
         ("ANCHOR_ROLE_SINCE", ANCHOR_ROLE_SINCE, has_anchor_role),
         ("SHOWN_FACES_SINCE", SHOWN_FACES_SINCE, has_shown_faces),
     ];
+
+    /// **The ordinal IS the ledger's order**, asserted over the ledger rather
+    /// than against a second list of numbers.
+    ///
+    /// It was a hand-kept `match`, and the ledger and the match went out of step
+    /// the first time a version was added: `1.9.0` took ordinal `0`, which made
+    /// the format's newest document older than `1.1.0` and closed every fence
+    /// against it. This is the check that would have said so.
+    #[test]
+    fn a_version_s_ordinal_is_its_place_in_the_ledger() {
+        for (i, v) in SUPPORTED_PROGRAM_VERSIONS.iter().enumerate() {
+            assert_eq!(minor_ordinal(v), i as u32, "{v}");
+        }
+        // Strictly increasing, which is the property every fence predicate is
+        // written as a `>=` against.
+        for pair in SUPPORTED_PROGRAM_VERSIONS.windows(2) {
+            assert!(
+                minor_ordinal(pair[0]) < minor_ordinal(pair[1]),
+                "{} .. {}",
+                pair[0],
+                pair[1]
+            );
+        }
+        // And every fence this crate defines is open at the latest version: a
+        // ledger entry that closed one would be a document format that cannot
+        // write what it introduced.
+        for (name, _since, predicate) in FENCES {
+            assert!(
+                predicate(LATEST_PROGRAM_VERSION),
+                "{name} is closed at {LATEST_PROGRAM_VERSION}"
+            );
+        }
+    }
 
     #[test]
     fn the_latest_version_is_supported_and_is_the_newest_entry() {

@@ -1,0 +1,162 @@
+{
+  "campaign_id": "gallery",
+  "content": {
+    "dialogues": [
+      {
+        "nodes": [
+          {
+            "id": "dlg/bank-greeting",
+            "options": [
+              {
+                "label": "What is outside the wall?",
+                "next": "dlg/bank-outside"
+              },
+              {
+                "label": "Show me another hour.",
+                "next": "dlg/bank-hours"
+              },
+              {
+                "label": "And other weather.",
+                "next": "dlg/bank-weather"
+              },
+              {
+                "effects": [
+                  {
+                    "objective": "obj/ask-the-warden",
+                    "type": "complete-objective"
+                  }
+                ],
+                "label": "I will walk it, then."
+              }
+            ],
+            "text": "This ground is the whole of the map, and the wall around it is the edge of what was built."
+          },
+          {
+            "id": "dlg/bank-outside",
+            "options": [
+              {
+                "label": "Back.",
+                "next": "dlg/bank-greeting"
+              }
+            ],
+            "text": "Grass, for a while. Then the slope, and then rock you cannot climb. Walk out if you like — you will come back."
+          },
+          {
+            "id": "dlg/bank-hours",
+            "options": [
+              {
+                "effects": [
+                  {
+                    "time": "dawn",
+                    "type": "set-time"
+                  }
+                ],
+                "label": "First light.",
+                "next": "dlg/bank-hours"
+              },
+              {
+                "effects": [
+                  {
+                    "time": "day",
+                    "type": "set-time"
+                  }
+                ],
+                "label": "Morning.",
+                "next": "dlg/bank-hours"
+              },
+              {
+                "effects": [
+                  {
+                    "time": "noon",
+                    "type": "set-time"
+                  }
+                ],
+                "label": "The top of the day.",
+                "next": "dlg/bank-hours"
+              },
+              {
+                "effects": [
+                  {
+                    "time": "dusk",
+                    "type": "set-time"
+                  }
+                ],
+                "label": "The light going.",
+                "next": "dlg/bank-hours"
+              },
+              {
+                "effects": [
+                  {
+                    "time": "night",
+                    "type": "set-time"
+                  }
+                ],
+                "label": "After dark.",
+                "next": "dlg/bank-hours"
+              },
+              {
+                "effects": [
+                  {
+                    "time": "midnight",
+                    "type": "set-time"
+                  }
+                ],
+                "label": "The darkest hour.",
+                "next": "dlg/bank-hours"
+              },
+              {
+                "label": "Enough.",
+                "next": "dlg/bank-greeting"
+              }
+            ],
+            "text": "Name one. The mountains hold whatever light you ask for."
+          },
+          {
+            "id": "dlg/bank-weather",
+            "options": [
+              {
+                "effects": [
+                  {
+                    "type": "set-weather",
+                    "weather": "clear"
+                  }
+                ],
+                "label": "Clear.",
+                "next": "dlg/bank-weather"
+              },
+              {
+                "effects": [
+                  {
+                    "type": "set-weather",
+                    "weather": "rain"
+                  }
+                ],
+                "label": "Rain.",
+                "next": "dlg/bank-weather"
+              },
+              {
+                "effects": [
+                  {
+                    "type": "set-weather",
+                    "weather": "thunder"
+                  }
+                ],
+                "label": "Thunder.",
+                "next": "dlg/bank-weather"
+              },
+              {
+                "label": "Enough.",
+                "next": "dlg/bank-greeting"
+              }
+            ],
+            "text": "Ask, and it comes over the rim."
+          }
+        ],
+        "npc": "npc/bank-warden",
+        "root": "dlg/bank-greeting"
+      }
+    ]
+  },
+  "dsl_version": "0.24.1",
+  "stage": "dialogue"
+}

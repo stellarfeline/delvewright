@@ -1,0 +1,60 @@
+{
+  "campaign_id": "gallery",
+  "content": {
+    "beats": [
+      {
+        "node": "node/court",
+        "objective": "obj/ask-the-warden",
+        "quest": "quest/walk-the-bank"
+      },
+      {
+        "node": "node/far-corner",
+        "objective": "obj/far-corner",
+        "quest": "quest/walk-the-bank"
+      }
+    ],
+    "critical_path": [
+      "node/arrival",
+      "node/court",
+      "node/far-corner"
+    ],
+    "edges": [
+      {
+        "a": "node/arrival",
+        "b": "node/court",
+        "class": "walk",
+        "id": "edge/into-the-court"
+      },
+      {
+        "a": "node/court",
+        "b": "node/far-corner",
+        "class": "walk",
+        "id": "edge/across-the-bank"
+      }
+    ],
+    "entry": "node/arrival",
+    "goal": "node/far-corner",
+    "nodes": [
+      {
+        "id": "node/arrival",
+        "intent": "threshold",
+        "note": "the cell inside the way through the parapet, where the party arrives",
+        "size_class": "room"
+      },
+      {
+        "id": "node/court",
+        "intent": "hub",
+        "note": "the middle of the walled ground, where the warden stands",
+        "size_class": "hall"
+      },
+      {
+        "id": "node/far-corner",
+        "intent": "side-gallery",
+        "note": "the far corner of the bank, where the wall turns",
+        "size_class": "room"
+      }
+    ]
+  },
+  "dsl_version": "0.24.1",
+  "stage": "layout-graph"
+}

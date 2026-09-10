@@ -151,14 +151,34 @@ mod tests {
         assert_eq!(walk_ref_y(HorizonBase::Ocean), Some(SEA_LEVEL + 1));
     }
 
-    /// Only a base that seats a piece by its walk plane has a walk-plane datum,
-    /// and the question is answered for the whole enum rather than for the one
-    /// base that has one today.
+    /// **A base has a walk-plane datum exactly when it has ground of its own**,
+    /// answered for the whole enum rather than for the bases that have one
+    /// today: `ocean`'s sea and `valley`'s gap floor are both something outside
+    /// the piece that a body stands on or climbs out of, and `void` is by
+    /// definition the base that has nothing out there.
     #[test]
-    fn only_the_ocean_seats_by_a_walk_plane() {
+    fn a_base_seats_by_a_walk_plane_exactly_when_it_has_ground_of_its_own() {
         assert!(walk_ref_y(HorizonBase::Void).is_none());
-        assert!(walk_ref_y(HorizonBase::Valley).is_none());
+        assert_eq!(walk_ref_y(HorizonBase::Valley), Some(VALLEY_WALK_REF_Y));
         assert!(walk_ref_y(HorizonBase::Ocean).is_some());
+    }
+
+    /// The valley's datum is the same relationship the ocean's is, stated about
+    /// ground: a body standing on the gap floor has its feet one block above
+    /// its top solid course, so a piece seated by its own `walk_y` puts its
+    /// floor level with the floor outside it — no step up, no cliff down.
+    #[test]
+    fn the_valley_walk_plane_stands_on_the_gap_floor() {
+        assert_eq!(VALLEY_WALK_REF_Y, VALLEY_GAP_FLOOR_TOP_Y + 1);
+        assert_eq!(VALLEY_WALK_REF_Y, crate::compiler::plan::BASE_Y);
+        // The library's real numbers rather than an invented one: every pinned
+        // piece declares `walk_y` 1, 2 or 3, so seating on `BASE_Y` stood each
+        // of them that many courses proud of the ground it was meant to stand
+        // beside, and the derivation is what removes the step.
+        for walk_y in [1, 2, 3] {
+            let origin = VALLEY_WALK_REF_Y - walk_y;
+            assert_eq!(origin + walk_y, VALLEY_GAP_FLOOR_TOP_Y + 1);
+        }
     }
 
     /// The two numbers spec-0060 §3.2 states as worked examples, derived rather

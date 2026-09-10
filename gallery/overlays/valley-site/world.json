@@ -1,0 +1,33 @@
+{
+  "campaign_id": "gallery",
+  "content": {
+    "areas": [
+      {
+        "id": "area/bank",
+        "name": "The Bank",
+        "prefab": "prefab/gallery-bank"
+      }
+    ],
+    "boundary": {
+      "margin": 16,
+      "message": "The valley ends here."
+    },
+    "difficulty": "normal",
+    "horizon": {
+      "base": "valley",
+      "ratio": 2.5,
+      "rim_height": 48
+    },
+    "min_players": 1,
+    "outro": "The bank has been walked, end to end.",
+    "premise": "One site in a valley: a building, the ground it stands on, and the mountains that close the world.",
+    "seed": 20260910,
+    "target_minutes": 5,
+    "theme": "A walled bank of grass over stone, in a valley floor.",
+    "time": "day",
+    "title": "The Gallery",
+    "weather": "clear"
+  },
+  "dsl_version": "0.24.1",
+  "stage": "world"
+}

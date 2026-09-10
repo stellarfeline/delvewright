@@ -15,16 +15,22 @@ mod common;
 
 use delvewright_dsl::{DSL_VERSION, RawCampaign, check_campaign};
 
-/// A stage-1 world document at `version` whose `horizon` is the literal
-/// `horizon` JSON — one area placed by `areas[]`, so the campaign states no
-/// extent of its own unless a test gives it one.
+/// A stage-1 world document whose `horizon` is the literal `horizon` JSON.
+///
+/// **Two areas, and the count is load-bearing.** One area bound to one `prefab`
+/// IS a statement of extent — the map is that piece, and the piece's own
+/// declared region is the map's — so a one-area fixture would put the `DW0855`
+/// tests below on a campaign the refusal is not about. Two areas sit on the
+/// compiler's fixed stride with void between them, which is the shape the
+/// refusal's whole argument is written about.
 fn world(horizon: &str) -> String {
     format!(
         r#"{{
   "campaign_id": "hello-world",
   "content": {{
     "areas": [
-      {{ "id": "area/keep", "name": "The Keep", "prefab": "prefab/hello-room" }}
+      {{ "id": "area/keep", "name": "The Keep", "prefab": "prefab/hello-room" }},
+      {{ "id": "area/far", "name": "The Far Keep", "prefab": "prefab/hello-room" }}
     ],
     "boundary": {{ "margin": 16 }},
     "horizon": {horizon},
@@ -53,17 +59,46 @@ fn codes(horizon: &str) -> Vec<String> {
         .collect::<Vec<_>>()
 }
 
-/// **A surround needs a map to stand around, and `areas[]` is not one.**
+/// **A surround needs a map to stand around, and a union of strided areas is
+/// not one.**
 ///
-/// The union of whatever `areas[]` places looks like an extent and is not one —
+/// The union of whatever two areas place looks like an extent and is not one —
 /// it is an artifact of the compiler's fixed area stride, mostly the void
-/// between areas. Refused at validation rather than at the build, because it is
+/// between them. Refused at validation rather than at the build, because it is
 /// a fact about the documents: nothing has to be placed to know that nothing
 /// states an extent.
 #[test]
 fn a_terrain_base_without_a_declared_region_is_dw0855() {
     let c = codes(r#"{ "base": "valley" }"#);
     assert!(c.contains(&"DW0855".to_string()), "codes: {c:?}");
+}
+
+/// **The refusal is bound to its own argument.** Take the second area away and
+/// the campaign is one piece: the map IS that prefab, its declared region is
+/// the extent, and the same horizon is accepted — nothing about the campaign
+/// changing but the count the stride applies to.
+///
+/// This is the arm that stops `DW0855` reading as *`areas[]` may never carry a
+/// terrain base*, which is a step further than anything it argues and is what
+/// left a creator with no reachable remedy at all: its old advice was a site
+/// plan, and `DW0839` refuses one beside a non-empty `areas[]`.
+#[test]
+fn one_area_bound_to_one_prefab_states_the_map() {
+    let one = world(r#"{ "base": "valley" }"#).replace(
+        r#",
+      { "id": "area/far", "name": "The Far Keep", "prefab": "prefab/hello-room" }"#,
+        "",
+    );
+    assert!(
+        !one.contains("area/far"),
+        "the fixture edit must actually remove the second area"
+    );
+    let raw = delvewright_dsl::RawCampaign {
+        world: one,
+        ..common::valid_raw()
+    };
+    let c: Vec<String> = check_campaign(&raw).into_iter().map(|d| d.code).collect();
+    assert!(!c.contains(&"DW0855".to_string()), "codes: {c:?}");
 }
 
 /// The complement, and it is what keeps `DW0855` from being a refusal of the

@@ -1,0 +1,24 @@
+{
+  "campaign_id": "gallery",
+  "content": {
+    "npcs": [
+      {
+        "anchor": "anchor/bank-court",
+        "area": "area/bank",
+        "base_entity": "minecraft:villager",
+        "id": "npc/bank-warden",
+        "name": "The Warden of the Bank",
+        "persona": {
+          "archetype": "keeper of a walled ground",
+          "backstory": "He was set here when the wall went up, and has watched the valley close around it ever since.",
+          "demeanor": "Unhurried. Points rather than explains.",
+          "motivation": "See the bank walked corner to corner before anyone asks him about the mountains.",
+          "speech_style": "Short sentences. One thing at a time."
+        },
+        "role": "quest-giver"
+      }
+    ]
+  },
+  "dsl_version": "0.24.1",
+  "stage": "npcs"
+}

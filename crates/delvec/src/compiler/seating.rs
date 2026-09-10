@@ -1060,14 +1060,21 @@ pub fn check(
     (binding, diags)
 }
 
-/// What every `DW0886` message ends with: the base a campaign cannot reach from
-/// here, so that this refusal and `DW0855` read as one answer rather than two.
-const TAIL: &str = "The base that builds terrain, `valley`, is not on this list of moves for a \
-                    reason: it needs a statement of the whole map's extent, and a campaign that \
-                    places `areas[]` by hand states none — that is `DW0855`, and its move is a \
-                    site plan, which an `areas[]` campaign cannot also have (`DW0839`). So a \
-                    piece authored to be buried is seated in a site-plan campaign, never in this \
-                    one";
+/// What every `DW0886` message ends with: what it takes to reach the base that
+/// buries a piece, so that this refusal and `DW0855` read as one answer rather
+/// than two.
+///
+/// It used to end *a piece authored to be buried is seated in a site-plan
+/// campaign, never in this one*, which was true when a plan's `region` was the
+/// only statement of a map's extent and is not any more.
+const TAIL: &str = "The base that builds terrain, `valley`, is reachable from here on one \
+                    condition: it rings a DECLARED extent (`DW0855`), and an `areas[]` campaign \
+                    states one when it is ONE area bound to ONE `prefab` — the map is then that \
+                    piece and the piece's own declared region is the extent, which is how a site \
+                    (a building with its island, its moat and its banks in one box) is placed. A \
+                    campaign with two areas, or with one drawing from a pool, states none, and \
+                    its other road is a site plan — which an `areas[]` campaign cannot also have \
+                    (`DW0839`)";
 
 /// What a `DW0886` about a plan's own box ends with. The tail above names the
 /// road out of an `areas[]` campaign, which a site-plan campaign has already
@@ -1369,14 +1376,40 @@ mod tests {
             "{}",
             rs[0].short
         );
-        // The same set on a base that states its datum for the ORIGIN consults
-        // no piece at all, so there is nothing here to disagree about.
-        for base in [HorizonBase::Void, HorizonBase::Valley] {
-            assert_eq!(
-                set_walk_plane(base, "pool/island", &set),
-                SetPlane::NotDerived,
-                "{base:?} derives no origin from a walk plane"
-            );
+        // A `valley` derives an origin from the same number — its gap floor is
+        // a walk plane too — so the same set is refused there, and the message
+        // names that base's own datum rather than the sea's.
+        let SetPlane::Refused(vs) = set_walk_plane(HorizonBase::Valley, "pool/island", &set) else {
+            panic!("a valley derives one origin from a walk plane, so two refuse");
+        };
+        assert_eq!(vs[0].shape, Shape::WalkPlanesDisagree);
+        // `void` states its datum for the ORIGIN and consults no piece at all,
+        // so there is nothing there to disagree about.
+        assert_eq!(
+            set_walk_plane(HorizonBase::Void, "pool/island", &set),
+            SetPlane::NotDerived,
+            "void derives no origin from a walk plane"
+        );
+    }
+
+    /// **A refusal names the datum of the base it is about.** The clause was
+    /// written once, for the only base that had a walk plane, and said *one
+    /// block above the sea* — so a `valley` refusal described a world with no
+    /// sea in it. One phrase per base, and this is what holds them apart.
+    #[test]
+    fn a_walk_plane_refusal_names_its_own_base_s_datum() {
+        let silent = [("prefab/a".to_string(), None)];
+        for (base, want, forbid) in [
+            (HorizonBase::Ocean, "above the sea", "gap floor"),
+            (HorizonBase::Valley, "gap floor", "above the sea"),
+        ] {
+            let SetPlane::Refused(rs) = set_walk_plane(base, "pool/x", &silent) else {
+                panic!("{base:?} derives an origin from a walk plane, so a silent set refuses");
+            };
+            assert!(rs[0].full.contains(want), "{}", rs[0].full);
+            assert!(!rs[0].full.contains(forbid), "{}", rs[0].full);
+            let y = crate::compiler::horizon::walk_ref_y(base).expect("a walk-plane datum");
+            assert!(rs[0].full.contains(&format!("y={y}")), "{}", rs[0].full);
         }
     }
 

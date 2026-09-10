@@ -148,6 +148,7 @@ Program ─ expand(program, region, {seed, limits, orientation}) ─▶ VoxelMod
 | `include` | `[{program, prefix, rename_anchors}]` | other program **files** composed into this one (§5c); resolved by the loader before anything reads the program |
 | `rules` | name → `[alternative]` | each alternative is `{weight, when, body}` |
 | `contract` | `{entry, spaces, no_body, edges}` | the spatial contract (§2d); omitted by a program that makes no spatial claim |
+| `shown_faces` | `["north"\|"south"\|"east"\|"west"\|"up"\|"down"]` | which of this building's own six sides are finished exterior surface (§2f); written into the exported prefab's `shown_faces` on every expansion, and read there by `DW0885` |
 
 **Rule bodies** (`op`): `fill` (a role or an inline paint), `void` (air), `skip`
 (leave as-is), `call`, `split`, `reorient`, `bind`, `mark`, `claim`.
@@ -173,6 +174,7 @@ The ledger is every number the format has and the one surface each names
 | `1.6.0` | the contract's reach (spec-0041) — the `qualify` node, optional `rise` on `stair`/`drop` edges, `face` on exterior edges | reserved |
 | `1.7.0` | the contingent edge — `way` on a `walk`, `stair` or `drop`: the traversal is severed as built, and content opens it | yes |
 | `1.8.0` | what a mark is FOR — `role` on a `mark`, written through to the exported anchor's metadata | yes |
+| `1.9.0` | which of the building's own sides are finished exterior surface — the program-level `shown_faces`, written through to the exported prefab's `shown_faces` (`DW0885`) | yes |
 
 A number names exactly one surface, in every engine build that knows the number;
 otherwise two engines both call themselves `1.1.0`, disagree about what a
@@ -1137,6 +1139,7 @@ Two mechanisms answer it, and both are enforced by
 | `ir::Node.params` | `1.3.0` | `BIND_SINCE` |
 | `ir::Program.contract` | `1.2.0` | `CONTRACT_SINCE` |
 | `ir::Program.include` | `1.5.0` | `INCLUDE_SINCE` |
+| `ir::Program.shown_faces` | `1.9.0` | `SHOWN_FACES_SINCE` |
 | `ir::Program.palette` | `1.0.0` | — |
 | `ir::Program.params` | `1.0.0` | — |
 | `ir::Reorient.mirror` | `1.1.0` | `MIRROR_SINCE` |
@@ -1160,6 +1163,48 @@ reach an engine older than the fence itself, because that engine's refusal would
 have to be code it already carries. `1.1.0` is the first version any of this
 exists in, so the window it does not cover is the one before `1.0.0` was ever
 declared, and no `Program` has been checked in outside this repository.
+
+## 2f. `shown_faces` — which of the building's sides are finished surface
+
+A program-level list of side names, from the one vocabulary the engine spells a
+side with (`north`, `south`, `east`, `west`, `up`, `down`). It is written into
+the exported prefab's own `shown_faces`, on **every** expansion, and it is what
+`DW0885` reads when a campaign places the piece: an outward-facing solid boundary
+cell is buried by the world, or the piece declares that side.
+
+Absent — the default — means no side is, which is the strict answer: a program
+that expects to be buried writes nothing here, and what discharges its obligation
+is a horizon or a neighbour covering it.
+
+**Why the program and not the metadata file.** `delvec grammar expand` rewrites
+the metadata every run, so a value typed into `<id>.json` by hand survives until
+the next expansion and no longer, and a value a tool erases is not a declaration.
+It cannot be measured off the blocks either: the distinction `DW0885` exists for
+— a hull the player walks up to against the cut edge of a hillside — is invisible
+in the material, which is the reason `DW0888` keeps this key out of the
+byte-claim class. So it is said where the building is said.
+
+**It is the same claim as the placement's, not a different one.** The reading
+this replaced was that a program says what a building IS and which sides a player
+looks at is a fact about placement. `shown_faces` does not name the sides a
+player looks at; it names the sides that are finished exterior surface, and a
+curtain wall is that in every world the piece is put in. The engine treats it as
+a property of the piece throughout — `compiler::burial` says so in as many words,
+and the field lives in the prefab document, which every campaign that binds the
+piece shares.
+
+**What the engine holds it to.** A name that is not one of the six, or a side
+written twice, is refused at `Program::validate`; writing the field at all in a
+document declaring below `1.9.0` is `FencedConstruct`. Whether the declaration is
+TRUE of the blocks is `DW0885`'s second arm, at build time, over the piece's own
+template bytes: a declared side with no solid cell on it is refused exactly as an
+undeclared exposed one is. So padding the list out to six is a red, not a hatch.
+The corpus's own claim is held to the corpus's own bytes by
+`crates/delvec/tests/grammar_export.rs`.
+
+`library::castle` is the corpus's demonstration: four curtain walls, declared,
+with `up` and `down` deliberately absent — the plan does not fill its box to the
+ceiling, so the top plane is air, and the underside is what the ground covers.
 
 ## 3. Determinism (ADR-0006)
 
