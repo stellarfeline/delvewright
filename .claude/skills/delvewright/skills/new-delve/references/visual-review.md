@@ -79,6 +79,7 @@ game. Declared-dark areas with a `night-vision` mitigation are the one thing the
 scene emitter makes legible, and it marks those frames as emulations; everything
 else you read as the player will see it. Never raise a budget, an exposure or an
 hour to make a picture come out.
+
 Two shapes to expect, because they are what the machine cannot say:
 
 - **The area is a different place.** A shore drawn as a black rock headland
@@ -134,14 +135,16 @@ curl -LO https://chunkyupdate.lemaik.de/ChunkyLauncher.jar
 java -jar ChunkyLauncher.jar --update snapshot
 ```
 
-The launcher self-installs a core into `~/.chunky/lib`, and what
+The launcher self-installs a core into the settings directory **it** resolves —
+usually `.chunky` under your account's home, which is not necessarily what
+`$HOME` says, and which the paragraph below has you confirm — and what
 `--update snapshot` installs is **today's** snapshot, never the pinned one:
 `--update` takes a release channel, and the update site's `lib/` path serves the
 current core whatever name it is asked for, so no command installs the pin. A
 snapshot core is required either way — the stable line does not read 1.21.x
-worlds. `render-shots.sh` has already named the pinned core, the directory it looked in
-and how it resolved it, and every core that directory holds. Read all four
-verdicts as different facts: `NONE installed` and `MISMATCH` both mean the
+worlds. `render-shots.sh` has already named the pinned core, the directory it
+looked in and how it resolved it, and every core that directory holds. Read all
+four verdicts as different facts: `NONE installed` and `MISMATCH` both mean the
 frames come off a renderer this project has not verified its scene format
 against; **the pin being installed beside another core is not the same as the
 pin being the renderer**, because the launcher chooses its own and has no flag
