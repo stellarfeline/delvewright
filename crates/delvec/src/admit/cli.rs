@@ -159,14 +159,16 @@ pub enum PrefabCommand {
         #[command(subcommand)]
         cmd: CatalogCmd,
     },
-    /// Build a gallery browse world + datapack from converted candidate pieces.
+    /// Build a walkable browse world + datapack from prefabs.
     Gallery {
-        /// Directory of candidate `.nbt` (+ optional sibling metadata).
-        dir: PathBuf,
+        /// What to show: a directory of candidate `.nbt` (+ optional sibling
+        /// metadata), one piece's `.nbt`, or the `.json` manifest of a zone that
+        /// ships as a tile set — which is shown as one whole building.
+        path: PathBuf,
         /// Output directory.
         #[arg(short = 'o', long)]
         out: PathBuf,
-        /// Gallery id (default: the directory name).
+        /// Gallery id (default: the directory or file name).
         #[arg(long)]
         id: Option<String>,
         /// Grid columns.
