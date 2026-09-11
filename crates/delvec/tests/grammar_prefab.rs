@@ -101,12 +101,24 @@ fn a_grammar_temple_lands_in_the_prefab_library_and_loads() {
     assert!(anchors.is_empty());
     assert!(meta.connectors.is_empty());
 
-    // The lighting declaration survives the round trip as the honest one: this
-    // piece owes a measurement and says so, rather than claiming `lit`.
+    // The lighting block survives the round trip as a MEASUREMENT of these
+    // bytes, taken by the export that froze them, with the binding it was taken
+    // over written beside it. It used to be `unmeasured` here — the honest
+    // answer while the only measurement was a live server probe, and the one
+    // that made `delvec prefab lighting --write` and the next `expand` a pair of
+    // mutually-defeating actions.
     let lighting = meta.lighting.clone().expect("the export declares lighting");
-    assert_eq!(lighting.profile, LightingProfile::Unmeasured);
-    assert_eq!(lighting.measured_min_light, None);
-    assert_eq!(lighting.measured, None);
+    assert_ne!(lighting.profile, LightingProfile::Unmeasured);
+    assert!(lighting.measured_min_light.is_some());
+    assert!(
+        lighting
+            .method
+            .as_deref()
+            .unwrap_or_default()
+            .contains("min over"),
+        "the record states the binding the figure was taken over: {:?}",
+        lighting.method
+    );
 
     // ...and the structure the metadata points at is one the engine's own
     // decoder reads back cell for cell.

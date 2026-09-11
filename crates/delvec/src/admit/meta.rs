@@ -48,6 +48,18 @@ use crate::admit::light::LightProbe;
 /// (`DW0752`), because "unbound" is a finding about the piece and not a
 /// lighting profile.
 pub fn set_lighting_from_probe(doc: &mut PrefabMeta, p: &LightProbe) {
+    doc.lighting = Some(lighting_from_probe(p));
+}
+
+/// The `lighting` block a probe result becomes — the whole of the rule above,
+/// with no document in hand.
+///
+/// Extracted because there are two writers of it now and one rule: the admission
+/// command edits a document that already exists, and the grammar export builds
+/// one from nothing for the piece it is freezing. A second copy of the `method`
+/// sentence in the second writer would be two records of one measurement, and the
+/// one nobody re-reads is the one that goes wrong.
+pub fn lighting_from_probe(p: &LightProbe) -> Lighting {
     debug_assert!(
         !p.is_unbound(),
         "an unbound probe is a finding, not a profile"
@@ -83,7 +95,7 @@ pub fn set_lighting_from_probe(doc: &mut PrefabMeta, p: &LightProbe) {
         p.sky.why(),
         p.dark_threshold
     ));
-    doc.lighting = Some(match (p.profile, p.measured_min_light) {
+    match (p.profile, p.measured_min_light) {
         ("dark", Some(m)) => Lighting {
             profile: LightingProfile::Dark,
             measured_min_light: Some(m as i64),
@@ -105,5 +117,5 @@ pub fn set_lighting_from_probe(doc: &mut PrefabMeta, p: &LightProbe) {
             method,
             ..Lighting::unmeasured()
         },
-    });
+    }
 }

@@ -449,6 +449,21 @@ delvec render piece out/<id>.nbt   -o shots/ --size 640   # one structure templa
 delvec render piece out/<id>.json  -o shots/ --size 640   # a zone that shipped as a tile set
 ```
 
+**Two things are said about the piece before a single frame is planned, because
+neither is visible in a picture** (`DW0894` / `DW0895`, `compiler.md` §5). The
+first is a refusal: a piece **with floor in it** whose document declares
+`"profile": "unmeasured"`, or declares no `lighting` block, or has no document at
+all, is not drawn — the renderer lights every frame for the camera and not for
+the body, so a picture is the one medium darkness does not show in. An expansion
+measures its own light (§6), so this is a piece from somewhere else, or from an
+expansion older than that rule: re-expand it, or run `delvec prefab lighting
+<piece> --write` (§7) and render again. A measured `dark` is fine, not knowing is
+not; a piece with nowhere in it to stand is shown and counted, because there is
+no floor for a measurement to be about.
+The second is a report: how much of the piece's roofed floor no body can walk to,
+which pockets it forms, and — where the walk was turned back by the step rule —
+the cell to open. The same two run on `delvec viewer`.
+
 Which of the two the expand wrote is a fact about the region (§6); pass whichever
 file is there. The manifest reassembles the tiles first, so every camera below —
 the orbit shots and the eye shots alike — frames the whole zone and a body can
@@ -581,7 +596,11 @@ Each of these was established by running it, except the two marked otherwise:
 - **No jigsaw connectors.** The export emits none. A grammar prefab is usable as
   a single-`prefab` area as it stands; for a `prefab_pool` a socket is carved
   afterwards (§7).
-- **No light.** The export declares `unmeasured` and it means it. §7 probes.
+- **Light, measured.** The export runs the engine's own block+sky flood over the
+  bytes it just froze and writes the profile with the binding it was taken over.
+  A piece with nowhere in it to stand keeps `unmeasured`, which is the true
+  answer there. §7 is the same measurement through the other door, for a piece
+  that came from somewhere else.
 - **No axis limit.** A vanilla structure template holds 48 blocks per axis, and
   that cap is an internal packaging detail the toolchain absorbs: an expansion
   past it is written as a set of `≤48` tiles plus one manifest, cut

@@ -119,6 +119,32 @@ fn pack_for(dir: &Path, nbt: &Path, omit: &[&str]) -> PathBuf {
     root
 }
 
+/// A prefab document beside `nbt` carrying a MEASURED lighting profile and
+/// nothing else.
+///
+/// Every arm that shows a piece refuses one whose light nobody has measured
+/// (`DW0894`), so a fixture whose subject is something else has to say that much
+/// about itself. It declares no anchors on purpose: "no anchors" and "no
+/// document" were the same fixture before that rule existed, and they are two
+/// different claims.
+fn measured_sidecar(nbt: &Path) {
+    std::fs::write(
+        nbt.with_extension("json"),
+        serde_json::to_string_pretty(&serde_json::json!({
+            "prefab_id": "prefab/fixture",
+            "anchors": {},
+            "lighting": {
+                "profile": "lit",
+                "measured_min_light": 15,
+                "measured": "",
+                "method": "test fixture: declared, not probed",
+            },
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+}
+
 fn viewer(nbt: &Path, out: &Path, pack: &Path) -> std::process::Output {
     Command::new(BIN)
         .arg("viewer")
@@ -310,6 +336,7 @@ fn under_specified_prefab(dir: &Path) -> PathBuf {
     };
     let path = dir.join("under-specified.nbt");
     std::fs::write(&path, bytes).unwrap();
+    measured_sidecar(&path);
     path
 }
 
@@ -385,8 +412,8 @@ fn the_run_states_what_each_check_examined() {
     assert!(html.contains("special_bound"));
 }
 
-/// A prefab with no metadata sidecar has no anchors. It must still produce a
-/// page — and say that the binding was zero rather than pass quietly.
+/// A prefab whose document declares no anchors has none. It must still produce
+/// a page — and say that the binding was zero rather than pass quietly.
 #[test]
 fn a_prefab_with_no_anchors_still_renders_and_reports_zero_binding() {
     let Some(src) = prefab("keep-alcove.nbt") else {
@@ -394,10 +421,13 @@ fn a_prefab_with_no_anchors_still_renders_and_reports_zero_binding() {
         return;
     };
     let dir = tmp("no-anchors");
-    // Copy the `.nbt` WITHOUT its `.json`, which is how a prefab that declares
-    // nothing presents.
+    // Copy the `.nbt` and give it a document that declares a measured light and
+    // no anchors. Copying it with NO document at all is a different fixture and
+    // a different rule: that shape is `DW0894`, and the test below is the one
+    // that owns it.
     let bare = dir.join("bare.nbt");
     std::fs::copy(&src, &bare).unwrap();
+    measured_sidecar(&bare);
     let pack = pack_for(&dir, &bare, &[]);
     let out = dir.join("page.html");
 
@@ -526,7 +556,12 @@ fn a_tiled_zone_is_one_building_on_the_page() {
             "prefab_id": "prefab/zone",
             "structure_set": set,
             "anchors": {},
-            "lighting": { "profile": "unmeasured" },
+            "lighting": {
+                "profile": "lit",
+                "measured_min_light": 15,
+                "measured": "",
+                "method": "test fixture: declared, not probed",
+            },
         }))
         .unwrap(),
     )
@@ -760,4 +795,208 @@ fn ci_runs_every_javascript_test_beside_this_one() {
         found.len(),
         found.join(", ")
     );
+}
+
+// ---------------------------------------------------------------------------
+// `DW0894` / `DW0895` — what is said about a piece before anybody looks at it
+// ---------------------------------------------------------------------------
+
+/// **A piece nobody has measured the light of is not drawn.**
+///
+/// The defect: a building the grammar exported went in front of a person while
+/// its own document said `"profile": "unmeasured"` — the true thing the grammar
+/// can say, since it places blocks and not photons — and nothing between that
+/// and the eye refused it. It was 1498 walkable cells below light 3, 984 of them
+/// at light 0, and it was found by walking into a dark room.
+///
+/// Both shapes of not knowing are asserted here, because they have two remedies
+/// and the message says which: a document declaring `unmeasured`, and no
+/// document at all.
+#[test]
+fn a_piece_whose_light_nobody_measured_is_not_shown() {
+    let Some(src) = prefab("keep-alcove.nbt") else {
+        eprintln!("skip: no content symlink");
+        return;
+    };
+    let dir = tmp("unmeasured");
+    let pack = pack_for(&dir, &src, &[]);
+
+    let declared = dir.join("declared.nbt");
+    std::fs::copy(&src, &declared).unwrap();
+    std::fs::write(
+        declared.with_extension("json"),
+        r#"{ "prefab_id": "prefab/declared", "anchors": {}, "lighting": { "profile": "unmeasured" } }"#,
+    )
+    .unwrap();
+
+    let undocumented = dir.join("undocumented.nbt");
+    std::fs::copy(&src, &undocumented).unwrap();
+
+    for (nbt, probe) in [
+        (&declared, "declares `\"profile\": \"unmeasured\"`"),
+        (
+            &undocumented,
+            "no prefab document beside these bytes at all",
+        ),
+    ] {
+        let out = dir.join("page.html");
+        let _ = std::fs::remove_file(&out);
+        let r = viewer(nbt, &out, &pack);
+        let stderr = String::from_utf8_lossy(&r.stderr);
+        assert_eq!(r.status.code(), Some(2), "{stderr}");
+        assert!(stderr.contains("DW0894"), "{stderr}");
+        assert!(stderr.contains(probe), "the remedy is named: {stderr}");
+        assert!(
+            !out.exists(),
+            "no page is written for a piece nobody measured"
+        );
+    }
+}
+
+/// A **measured** `dark` piece is shown. The rule is that somebody measured it;
+/// whether `dark` should itself refuse is `DW0751`'s question, and a check that
+/// refused it here would be deciding one it was not asked.
+#[test]
+fn a_measured_dark_piece_is_still_drawn() {
+    let Some(src) = prefab("keep-alcove.nbt") else {
+        eprintln!("skip: no content symlink");
+        return;
+    };
+    let dir = tmp("measured-dark");
+    let pack = pack_for(&dir, &src, &[]);
+    let nbt = dir.join("crypt.nbt");
+    std::fs::copy(&src, &nbt).unwrap();
+    std::fs::write(
+        nbt.with_extension("json"),
+        r#"{ "prefab_id": "prefab/crypt", "anchors": {},
+             "lighting": { "profile": "dark", "measured_min_light": 0, "measured": "",
+                           "method": "test fixture: declared, not probed" } }"#,
+    )
+    .unwrap();
+    let out = dir.join("page.html");
+    let r = viewer(&nbt, &out, &pack);
+    let stderr = String::from_utf8_lossy(&r.stderr);
+    assert_eq!(r.status.code(), Some(0), "{stderr}");
+    assert!(!stderr.contains("DW0894"), "{stderr}");
+    assert!(
+        stderr.contains("light measurement: 1 of 1 piece(s)"),
+        "{stderr}"
+    );
+}
+
+/// Both bindings are stated on every run, a clean one included: a gate whose
+/// binding is not written down cannot be told from one that matched nothing.
+#[test]
+fn the_showing_gate_states_both_of_its_bindings() {
+    let Some(nbt) = prefab("keep-gate-room.nbt") else {
+        eprintln!("skip: no content symlink");
+        return;
+    };
+    let dir = tmp("showing-binding");
+    let pack = pack_for(&dir, &nbt, &[]);
+    let out = dir.join("page.html");
+    let r = viewer(&nbt, &out, &pack);
+    let stderr = String::from_utf8_lossy(&r.stderr);
+    assert_eq!(r.status.code(), Some(0), "{stderr}");
+    assert!(
+        stderr.contains("light measurement: 1 of 1 piece(s) about to be shown carry a measured"),
+        "{stderr}"
+    );
+    for probe in [
+        "enclosure: `keep-gate-room`",
+        "standable cell(s) reachable on foot from",
+        "refused step(s) at the edge of the walk",
+        "one course of headroom short",
+    ] {
+        assert!(stderr.contains(probe), "{probe} missing from: {stderr}");
+    }
+}
+
+/// **The GPU arms judge the piece before they look for a renderer.**
+///
+/// `delvec render piece` and `delvec render batch` resolve textures and
+/// initialise a GPU before they draw, and the showing gate used to sit after
+/// both — so on a machine with no client jar a creator was told *I could not
+/// find your textures*, which is true and useless, instead of *this piece was
+/// never measured*. The ordering is the whole value of the refusal: after the
+/// pack it costs a GPU init, and after the frames it costs a directory of PNGs
+/// the reviewer has to be told to ignore.
+///
+/// Asserted by pointing both arms at a deliberately absent texture path. No GPU
+/// and no client jar are needed to run this, which is the point: if the gate ever
+/// slides back behind `resolve_textures`, the exit code changes from `2`
+/// (`DW0894`) to `5` (renderer/textures) and this reddens.
+#[test]
+fn the_render_arms_refuse_an_unmeasured_piece_before_they_resolve_textures() {
+    let Some(src) = prefab("keep-alcove.nbt") else {
+        eprintln!("skip: no content symlink");
+        return;
+    };
+    let dir = tmp("render-order");
+    let nbt = dir.join("unmeasured.nbt");
+    std::fs::copy(&src, &nbt).unwrap();
+    // A whole document, because `batch` walks every `.json` in the directory to
+    // find the tile-set manifests: one with neither `structure` nor
+    // `structure_set` is refused as unreadable metadata before this gate is
+    // reached, which would make the assertion below pass for the wrong reason.
+    let size = delvec::compiler::view::nbt::parse_structure(&nbt)
+        .expect("the fixture parses")
+        .size;
+    std::fs::write(
+        nbt.with_extension("json"),
+        serde_json::to_string_pretty(&serde_json::json!({
+            "prefab_id": "prefab/unmeasured",
+            "anchors": {},
+            "structure": {
+                "file": "unmeasured.nbt",
+                "id": "unmeasured",
+                "size": size,
+                "data_version": 4671,
+            },
+            "lighting": { "profile": "unmeasured" },
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+    let absent = dir.join("no-such-client-jar");
+
+    for args in [
+        vec!["piece", nbt.to_str().unwrap()],
+        vec!["batch", dir.to_str().unwrap()],
+    ] {
+        let arm = args[0].to_string();
+        // **Every fallback closed, or this test only discriminates on a machine
+        // with no client jar.** `resolve_textures` tries `--textures`, then
+        // `$DELVEWRIGHT_CLIENT_JAR`, then `$HOME/.chunky/resources/minecraft.jar`
+        // — so on a developer's own machine it succeeds whatever `--textures`
+        // says, the run reaches the gate either way, and the assertion below
+        // passes for both orderings. Measured: with the gate deliberately moved
+        // behind `resolve_textures`, this test stayed green here and would have
+        // reddened only in CI. Pointing all three at the same absent path makes
+        // the ordering the only thing that decides the exit code, on every
+        // machine.
+        let r = Command::new(BIN)
+            .arg("render")
+            .arg("--textures")
+            .arg(&absent)
+            .args(&args)
+            .arg("-o")
+            .arg(dir.join("shots"))
+            .env("DELVEWRIGHT_CLIENT_JAR", &absent)
+            .env("HOME", &dir)
+            .output()
+            .unwrap();
+        let stderr = String::from_utf8_lossy(&r.stderr);
+        assert_eq!(
+            r.status.code(),
+            Some(2),
+            "`render {arm}` must refuse on the piece (exit 2), not on the missing \
+             textures (exit 5): {stderr}"
+        );
+        assert!(stderr.contains("DW0894"), "`render {arm}`: {stderr}");
+        assert!(
+            !stderr.contains("DW0723"),
+            "`render {arm}` looked for a renderer before judging the piece: {stderr}"
+        );
+    }
 }

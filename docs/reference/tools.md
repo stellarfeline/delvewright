@@ -709,6 +709,16 @@ delvec palette <nbt|dir>... -o <palette.json> [--biome minecraft:plains] [--text
                                              # the derived per-blockstate colour/shape table
 ```
 
+**Every arm that puts a piece in front of an eye — `viewer`, `render piece`,
+`render batch` — says two things about it first.** `DW0894` refuses a piece with
+floor in it whose light nobody has ever measured (`"profile": "unmeasured"`, no
+`lighting` block, or no document beside the bytes); `delvec grammar expand`
+measures what it produces, so the move for anything else is `delvec prefab
+lighting <piece> --write`. A measured `dark` is shown, and so is a piece with
+nowhere in them to stand. `DW0895` reports the roofed floor no
+body can walk to, the pockets it forms and the step the walk was refused at. Both
+are asked before the client jar is opened.
+
 Exit codes and the dark-shot review policy: [`compiler.md` §5](compiler.md).
 
 ### `piece` / `batch` — the per-prefab set · agent runs it, human reads it

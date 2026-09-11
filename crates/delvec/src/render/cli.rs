@@ -21,6 +21,7 @@ use std::process::ExitCode;
 use clap::{Args, Subcommand};
 
 use crate::compiler::view::cli::{fail, resolve_textures};
+use crate::compiler::view::showing;
 use crate::compiler::view::tileset;
 use crate::render::detect;
 use crate::render::diag::{DW_INPUT, DW_MISSING_TEXTURE, DW_OUTPUT, DW_RENDER, Diagnostic, exit};
@@ -106,6 +107,48 @@ fn parse_views(specs: &[String]) -> Result<Vec<View>, Diagnostic> {
         .collect()
 }
 
+/// **What is said about a piece before anybody is asked to look at it**
+/// ([`crate::compiler::view::showing`]) — the second and third of the three
+/// doors a prefab reaches an eye through, `delvec viewer` being the first.
+///
+/// # Why this is here and not inside `render_piece`
+///
+/// It is asked **before a texture is resolved and before a GPU is initialised**,
+/// and `render_piece` runs after both. A refusal owed to a reviewer is worth its
+/// whole value in arriving early: after the pack loads it costs a GPU init, and
+/// after the frames it costs twenty-eight PNGs the reviewer must be told to
+/// ignore. It is also the difference between a creator on a machine with no
+/// client jar being told *this piece was never measured* and being told *I could
+/// not find your textures* — the second answer is true and useless.
+///
+/// So the two arms call this, each before its own `resolve_textures`, and
+/// `render_piece` does not repeat it. Both call sites are named in
+/// [`RenderCommand`]: `Piece` judges the one path it was given, `Batch` judges
+/// every piece it resolved, before either asks for a renderer.
+fn judge_before_showing(input: &Path, json: bool) -> Result<(), (Diagnostic, u8)> {
+    let (piece, meta_path) = tileset::load_piece(input)
+        .map_err(|e| (Diagnostic::error(DW_INPUT, e.to_string()), exit::INPUT))?;
+    let meta = PrefabMeta::at_path(&meta_path)
+        .map_err(|e| (Diagnostic::error(DW_INPUT, e), exit::INPUT))?;
+    let id = input
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("prefab");
+    let enclosure = showing::survey(piece.structure());
+    if let Some(d) = enclosure.finding(id) {
+        d.print(json);
+    }
+    eprintln!("{}", enclosure.line(id));
+    // The light verdict's one escape is a COUNT off these same bytes, never a
+    // word in the document — see `showing::LightVerdict::of`.
+    let light = showing::LightVerdict::of([(id, meta.as_ref(), enclosure.standable)]);
+    eprintln!("{}", light.line());
+    match light.finding() {
+        Some(d) => Err((d, exit::INPUT)),
+        None => Ok(()),
+    }
+}
+
 fn run_piece(
     input: &Path,
     out: &Path,
@@ -117,6 +160,9 @@ fn run_piece(
         Ok(v) => v,
         Err(d) => return fail(d, json, exit::INPUT),
     };
+    if let Err((d, code)) = judge_before_showing(input, json) {
+        return fail(d, json, code);
+    }
     let textures = match resolve_textures(cli.textures.as_deref()) {
         Ok(t) => t,
         Err(d) => return fail(d, json, exit::RENDER),
@@ -211,6 +257,7 @@ fn render_piece(
     let st = piece.structure();
     let meta = PrefabMeta::at_path(&meta_path)
         .map_err(|e| (Diagnostic::error(DW_INPUT, e), exit::INPUT))?;
+
     let mut plan = shots::plan_piece(st, meta.as_ref(), views).map_err(|d| (d, exit::INPUT))?;
     for d in &plan.diagnostics {
         d.print(json);
@@ -383,14 +430,6 @@ fn run_batch(
         Ok(v) => v,
         Err(d) => return fail(d, json, exit::INPUT),
     };
-    let textures = match resolve_textures(cli.textures.as_deref()) {
-        Ok(t) => t,
-        Err(d) => return fail(d, json, exit::RENDER),
-    };
-    let pack = match gpu::load_pack(&textures) {
-        Ok(p) => p,
-        Err(e) => return fail(Diagnostic::error(DW_RENDER, e), json, exit::RENDER),
-    };
     let entries = match std::fs::read_dir(dir) {
         Ok(e) => e,
         Err(e) => {
@@ -439,6 +478,28 @@ fn run_batch(
         .collect();
     pieces.extend(manifests);
     pieces.sort();
+
+    // **Every piece is judged before a renderer exists** — see
+    // `judge_before_showing`. A batch is the arm that would otherwise spend a
+    // GPU init and a directory of PNGs per prefab before saying that one of
+    // them was never measured, and it is judged whole rather than piece by
+    // piece as it draws: a library with one unmeasured piece in it is a fact
+    // about the library, and finding it out after twelve prefabs have rendered
+    // leaves a half-written output tree behind.
+    for path in &pieces {
+        if let Err((d, code)) = judge_before_showing(path, json) {
+            return fail(d, json, code);
+        }
+    }
+
+    let textures = match resolve_textures(cli.textures.as_deref()) {
+        Ok(t) => t,
+        Err(d) => return fail(d, json, exit::RENDER),
+    };
+    let pack = match gpu::load_pack(&textures) {
+        Ok(p) => p,
+        Err(e) => return fail(Diagnostic::error(DW_RENDER, e), json, exit::RENDER),
+    };
 
     let mut total = 0usize;
     for path in &pieces {
