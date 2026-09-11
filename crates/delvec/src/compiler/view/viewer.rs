@@ -223,6 +223,19 @@ impl ViewerModel {
         &self.id
     }
 
+    /// The reassembled blocks this page will draw — what
+    /// [`crate::compiler::view::showing`] surveys before anybody is shown them.
+    pub fn structure(&self) -> &Structure {
+        &self.structure
+    }
+
+    /// The prefab document beside the bytes, when there is one. `None` is not
+    /// "declares nothing": it is *there is no document at all*, a different
+    /// claim with a different remedy, and `DW0894` says which.
+    pub fn meta(&self) -> Option<&PrefabMeta> {
+        self.meta.as_ref()
+    }
+
     /// How many anchors and sockets this prefab declares. A page whose models all
     /// report zero is a finding worth printing, not a silent success.
     pub fn anchor_count(&self) -> usize {

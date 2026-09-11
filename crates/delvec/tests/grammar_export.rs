@@ -3,8 +3,8 @@
 //! byte.
 
 use delvec::grammar::export::{
-    GENERATOR, LIGHTING_PROFILE, MAX_STRUCTURE_AXIS, ZoneExport, export_prefab, export_zone,
-    program_hash,
+    GENERATOR, MAX_STRUCTURE_AXIS, UNBOUND_LIGHTING_PROFILE, ZoneExport, export_prefab,
+    export_zone, program_hash,
 };
 use delvec::grammar::library::{castle, church, temple};
 use delvec::grammar::{Box3, ExpandOptions, Program};
@@ -149,7 +149,23 @@ fn the_manifest_describes_the_zone_and_not_a_tile() {
     assert_eq!(set_json["grid"], serde_json::json!([2, 1, 3]));
     assert_eq!(set_json["data_version"], 4671);
     assert_eq!(set_json["generator"], GENERATOR);
-    assert_eq!(json["lighting"]["profile"], LIGHTING_PROFILE);
+    // **The zone's light, measured over the whole zone** — a tiled zone is one
+    // building and light crosses a packaging plane like any other cell, so the
+    // figure is taken before the cut and there is one of it, not one per tile.
+    assert_ne!(
+        json["lighting"]["profile"], UNBOUND_LIGHTING_PROFILE,
+        "a keep with floor in it is measured at export, not left for a hand step: {}",
+        json["lighting"]
+    );
+    assert!(
+        json["lighting"]["measured_min_light"].is_number()
+            && json["lighting"]["method"]
+                .as_str()
+                .unwrap_or_default()
+                .contains("min over"),
+        "the measurement states the binding it was taken over: {}",
+        json["lighting"]
+    );
 
     // The provenance row regenerates the whole set at once, not a tile.
     assert_eq!(json["license"]["generated_by"]["seed"], 7);
@@ -443,11 +459,29 @@ fn the_metadata_declares_no_anchors_no_sockets_and_no_measurement() {
          are different claims, and a reader that cannot tell them apart is the whole reason \
          this document has one shape"
     );
-    assert_eq!(json["lighting"]["profile"], LIGHTING_PROFILE);
+    // **The piece's light, measured over the bytes this export just froze.** The
+    // export used to declare `unmeasured` for every piece, which made
+    // `delvec prefab lighting --write` and the next `expand` a pair of
+    // mutually-defeating actions: the command wrote the profile the expansion
+    // then reset. `an_expansion_measures_its_own_light_and_a_re_expansion_keeps_it`
+    // is the standing proof that the pair is closed.
+    assert_ne!(
+        json["lighting"]["profile"], UNBOUND_LIGHTING_PROFILE,
+        "a temple with floor in it is measured at export: {}",
+        json["lighting"]
+    );
     assert!(
-        json["lighting"].get("measured_min_light").is_none()
-            && json["lighting"].get("measured").is_none(),
-        "an unmeasured piece must not carry a fabricated measurement: {}",
+        json["lighting"]["measured_min_light"].is_number()
+            && json["lighting"]["measured"].is_string(),
+        "a measured profile carries its measurement — the type refuses one without: {}",
+        json["lighting"]
+    );
+    assert!(
+        json["lighting"]["method"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("NOT a live-server probe"),
+        "the record says what kind of measurement it is, and never claims to be the live one: {}",
         json["lighting"]
     );
 
@@ -544,4 +578,243 @@ fn show_the_metadata() {
         let export = export_prefab(&program, region, &ExpandOptions::seeded(7), id).unwrap();
         print!("{}", export.metadata_json);
     }
+}
+
+// ---------------------------------------------------------------------------
+// `shown_faces` — the program's claim about its own outside (`DW0885`)
+// ---------------------------------------------------------------------------
+
+/// **The export writes the program's declaration, on every expansion.**
+///
+/// That last clause is the whole reason the field lives on the program. The
+/// export REWRITES the metadata file every run, so a `shown_faces` typed into
+/// the metadata by hand is erased by the next `delvec grammar expand` — and a
+/// value a tool erases is not a declaration. Written from the program it comes
+/// back every time, which this asserts by exporting twice.
+#[test]
+fn the_export_writes_the_program_s_shown_faces_every_time() {
+    for _ in 0..2 {
+        let export = export_prefab(
+            &castle(),
+            CASTLE_REGION,
+            &ExpandOptions::seeded(7),
+            "grammar-castle",
+        )
+        .unwrap();
+        assert_eq!(
+            export.metadata.shown_faces,
+            vec!["north", "south", "east", "west"],
+            "the exported document carries the program's own claim"
+        );
+        let json: serde_json::Value = serde_json::from_str(&export.metadata_json).unwrap();
+        assert_eq!(
+            json["shown_faces"],
+            serde_json::json!(["north", "south", "east", "west"])
+        );
+    }
+}
+
+/// A zone too big for one template carries the claim too: it is a fact about
+/// the BUILDING, so it belongs to the manifest and not to a tile.
+#[test]
+fn a_tiled_zone_carries_the_claim_on_its_manifest() {
+    let set = tiled(
+        &castle(),
+        TILED_REGION,
+        &ExpandOptions::seeded(7),
+        "grammar-keep",
+    );
+    assert_eq!(
+        set.metadata.shown_faces,
+        vec!["north", "south", "east", "west"]
+    );
+}
+
+/// **The corpus's declaration is held to the corpus's own bytes.**
+///
+/// `DW0885` refuses a declared side with no solid cell on it, and it does so at
+/// build time in somebody else's campaign. The library's own claim is checked
+/// here instead, where the program that makes it lives: every side the castle
+/// declares has masonry on that plane of its box.
+#[test]
+fn every_side_the_castle_declares_has_a_block_on_it() {
+    let export = export_prefab(
+        &castle(),
+        CASTLE_REGION,
+        &ExpandOptions::seeded(7),
+        "grammar-castle",
+    )
+    .unwrap();
+    let size = CASTLE_REGION.size;
+    let model = &export.expansion.model;
+    for side in &export.metadata.shown_faces {
+        let (axis, plane) = match side.as_str() {
+            "west" => (0usize, 0i32),
+            "east" => (0, size[0] as i32 - 1),
+            "down" => (1, 0),
+            "up" => (1, size[1] as i32 - 1),
+            "north" => (2, 0),
+            "south" => (2, size[2] as i32 - 1),
+            other => panic!("{other} is not a side"),
+        };
+        let mut solid = 0usize;
+        for a in 0..size[(axis + 1) % 3] as i32 {
+            for b in 0..size[(axis + 2) % 3] as i32 {
+                let mut c = [0i32; 3];
+                c[axis] = plane;
+                c[(axis + 1) % 3] = a;
+                c[(axis + 2) % 3] = b;
+                if model.get(c).is_some() {
+                    solid += 1;
+                }
+            }
+        }
+        assert!(
+            solid > 0,
+            "the castle declares {side} and put nothing on it"
+        );
+    }
+}
+
+/// A side that is not one of the six, and a side written twice, are both
+/// refused where they are written rather than at somebody's build.
+#[test]
+fn a_shown_face_that_is_not_a_side_is_refused() {
+    for faces in [vec!["nrth"], vec!["north", "north"], vec!["top"]] {
+        let mut p = castle();
+        p.shown_faces = faces.iter().map(|s| s.to_string()).collect();
+        let err = p.validate().expect_err("this list must be refused");
+        assert!(
+            format!("{err}").contains("`shown_faces`"),
+            "{faces:?}: {err}"
+        );
+    }
+}
+
+/// The version fence: a document that declares an older version may not write
+/// the field, and the refusal names the version that introduced it.
+#[test]
+fn shown_faces_is_fenced_by_the_document_s_version() {
+    let older = castle().at_version("1.8.0");
+    let err = older
+        .validate()
+        .expect_err("1.8.0 predates the shown_faces surface");
+    let text = format!("{err}");
+    assert!(text.contains("`shown_faces` list"), "{text}");
+    assert!(text.contains("1.9.0"), "{text}");
+    // And a program that declares none is unaffected at every version, which is
+    // what keeps every document written before this compiling to the same bytes.
+    let mut bare = castle().at_version("1.8.0");
+    bare.shown_faces.clear();
+    bare.validate().expect("an empty list writes nothing");
+}
+
+// ---------------------------------------------------------------------------
+// The write-then-expand pair
+// ---------------------------------------------------------------------------
+
+/// **The test that found the defect, run against the repair.**
+///
+/// `DW0894` refuses to show a piece nobody has measured the light of. Its remedy
+/// used to be `delvec prefab lighting --write`, and an export rewrites the whole
+/// metadata document — so the next `delvec grammar expand` reset the field the
+/// command had just written. Two actions, each undoing the other, one
+/// prescribing what the other refuses: the pair defect this repository names,
+/// and it made `DW0894` a diagnostic that would refuse every generated zone
+/// unless a creator re-ran a measurement after every single expansion, with
+/// nothing telling them to.
+///
+/// The repair is not to preserve the field. A lighting profile is a MEASUREMENT
+/// of the bytes, and carrying one across an expansion that writes new bytes makes
+/// the document's own `method` line ("min over N floor cell(s) …") false about
+/// the piece it now sits beside. `shown_faces` took the preserve-and-write-through
+/// shape correctly because it is a DECLARATION — part of what the building is —
+/// and the discriminator between the two is exactly which kind of fact it is. So
+/// expansion measures its own light, and the hand step disappears rather than
+/// being protected.
+///
+/// Walked here end to end, through the real binary, in the order that found it:
+/// expand, `--write`, expand again, read back.
+#[test]
+fn an_expansion_measures_its_own_light_and_a_re_expansion_keeps_it() {
+    let bin = env!("CARGO_BIN_EXE_delvec");
+    let dir = std::env::temp_dir().join(format!("delve-pair-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let doc = dir.join("pairtest.json");
+
+    let expand = || {
+        let r = std::process::Command::new(bin)
+            .args(["grammar", "expand", "--program", "ambush-door"])
+            .args(["--region", "11x5x13", "--id", "pairtest", "-o"])
+            .arg(&dir)
+            .output()
+            .unwrap();
+        assert!(r.status.success(), "{r:?}");
+        let v: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&doc).unwrap()).unwrap();
+        v["lighting"].clone()
+    };
+
+    // 1. Straight out of the expansion, with no hand step at all — which is the
+    //    half that makes the pair impossible to re-enter, not merely survivable.
+    let fresh = expand();
+    assert_eq!(fresh["profile"], "dark", "{fresh}");
+    assert!(fresh["measured_min_light"].is_number(), "{fresh}");
+
+    // 2. The command still writes, and writes the same thing: one measurement,
+    //    one implementation, two doors onto it.
+    let w = std::process::Command::new(bin)
+        .args(["prefab", "lighting"])
+        .arg(dir.join("pairtest.nbt"))
+        .arg("--write")
+        .output()
+        .unwrap();
+    assert!(w.status.success(), "{w:?}");
+    let written: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&doc).unwrap()).unwrap();
+    assert_eq!(written["lighting"], fresh, "the two doors agree exactly");
+
+    // 3. And the expansion that used to erase it now re-derives it.
+    assert_eq!(
+        expand(),
+        fresh,
+        "the measurement survives the next expansion"
+    );
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// A program with **nowhere in it to stand** exports `unmeasured`, and that is
+/// the true answer rather than a missing one: with no player space there is no
+/// floor to be dark and no measurement to state. Five of the rule library's 36
+/// programs are that shape, and every one of them is a demonstration of an IR
+/// construct rather than a building.
+///
+/// Inventing a profile for such a piece would be the default the field exists to
+/// refuse — the same rule `walk_y` beside it already follows.
+#[test]
+fn a_program_with_no_player_space_exports_no_measurement() {
+    let bin = env!("CARGO_BIN_EXE_delvec");
+    let dir = std::env::temp_dir().join(format!("delve-nospace-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let r = std::process::Command::new(bin)
+        .args(["grammar", "expand", "--program", "idiom-mirror"])
+        .args([
+            "--region", "15x11x2", "--seed", "1", "--id", "nospace", "-o",
+        ])
+        .arg(&dir)
+        .output()
+        .unwrap();
+    assert!(r.status.success(), "{r:?}");
+    let v: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(dir.join("nospace.json")).unwrap()).unwrap();
+    assert_eq!(v["lighting"]["profile"], UNBOUND_LIGHTING_PROFILE, "{v}");
+    assert!(
+        v["lighting"].get("measured_min_light").is_none(),
+        "an unmeasured piece must not carry a fabricated measurement: {}",
+        v["lighting"]
+    );
+    let _ = std::fs::remove_dir_all(&dir);
 }

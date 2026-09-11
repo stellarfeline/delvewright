@@ -71,15 +71,49 @@ use crate::grammar::model::VoxelModel;
 /// What the `generator` breadcrumb of an exported structure says.
 pub const GENERATOR: &str = "crates/delvec/src/grammar";
 
-/// The lighting profile every grammar-exported prefab carries.
+/// The lighting profile a grammar export carries when the probe **binds to
+/// nothing** — a program that expanded to solid rock, to open air, or to a
+/// demonstration of an IR construct with nowhere in it to stand.
 ///
-/// A prefab's lighting profile is a **measurement**, taken by the live 1.21.11
-/// probe loop the hand-built pieces went through. Expansion cannot know it: the
-/// grammar places blocks, not photons. Declaring `lit` here would be a fabricated
-/// measurement, and declaring nothing would be indistinguishable from legacy
-/// metadata that predates the field — so the export declares `unmeasured`, which
-/// is the true statement, and admission to a campaign still runs the probe.
-pub const LIGHTING_PROFILE: &str = crate::schem::prefab::UNMEASURED;
+/// This is the only case left in which an export writes `unmeasured`, and it is
+/// the true statement there: with no player space there is no floor to measure
+/// and no measurement to state. Every other export carries the figure
+/// [`measured_lighting`] took over its own bytes.
+///
+/// **What used to stand here, and why it does not.** The export declared
+/// `unmeasured` for every piece, on the argument that a lighting profile is a
+/// measurement taken by the live 1.21.11 probe loop, that expansion cannot know
+/// it because the grammar places blocks and not photons, and that admission to a
+/// campaign still runs the probe. The first clause was overtaken and the third
+/// was never true of a piece that enters no campaign:
+///
+/// * the engine grew a **static** light measurement over a piece's own bytes
+///   ([`crate::admit::light::probe`], the compiler's block+sky flood), which is
+///   what `delvec prefab lighting` runs and what `DW0751` reports. Running it
+///   here is not a fabricated measurement — it is the same measurement, taken
+///   where the bytes are made. The `method` line says in full that it is a static
+///   estimate and not a live server probe, exactly as the command's does;
+/// * and the piece that most needed it is the piece admission never sees. The
+///   assembled-world survey (`DW0210`) quantifies over the areas of a campaign,
+///   so a zone exported to be looked at, reviewed and iterated on met no
+///   measurement at all.
+///
+/// **The pair this closes.** `DW0894` refuses to show a piece nobody measured and
+/// prescribes `delvec prefab lighting --write`; an export rewrites the whole
+/// document, so the next `expand` reset the field the command had just written.
+/// Measured on the tree this landed on: write, expand, read back, and `lighting`
+/// was `{"profile": "unmeasured"}` again. Two actions, each undoing the other,
+/// one prescribing what the other refuses — so the remedy moves to where the
+/// bytes are produced and the showing gate keeps only the check.
+///
+/// **Not the other repair.** Preserving an already-written profile across an
+/// expansion is the shape `shown_faces` correctly took, and light is not the same
+/// kind of fact. `shown_faces` is a **declaration** — part of what the building
+/// is — so it belongs in the program and is written through. A lighting profile
+/// is a **measurement of the bytes**, and carrying one onto bytes it was not
+/// taken over makes the document's own `method` line ("min over N floor cell(s)
+/// …") false about the piece it now sits beside.
+pub const UNBOUND_LIGHTING_PROFILE: &str = crate::schem::prefab::UNMEASURED;
 
 /// Vanilla caps a structure template at 48 blocks per axis.
 ///
@@ -502,7 +536,13 @@ pub fn export_prefab(
         // with no sockets and a piece whose metadata predates sockets are not
         // the same claim.
         connectors: Vec::new(),
-        lighting: Some(LightingMetadata::unmeasured()),
+        // **The piece's own light, measured** — read back out of the model the
+        // export just froze, exactly as `walk_y` below is, and for the same
+        // reason: a field that stands where a measurement belongs is a defect
+        // whether it is hand-written or defaulted. See
+        // [`UNBOUND_LIGHTING_PROFILE`] for what the export used to declare here,
+        // why it no longer does, and the write-then-expand pair that settled it.
+        lighting: Some(measured_lighting(&expansion)),
         license: Some(license_metadata(
             program,
             &hash,
@@ -520,12 +560,25 @@ pub fn export_prefab(
         // would be the default this field exists to refuse.
         walk_y: measured_walk_y(&expansion),
         waterline_y: None,
-        // The export declares no shown side (`DW0885`). A program says what a
-        // building IS; which of its sides a player is meant to look at is a
-        // fact about where it is placed, and the export has no placement. Absent
-        // is the strict answer — the world must bury what nobody claims — and it
-        // moves no exported byte for a program that already writes none.
-        shown_faces: Vec::new(),
+        // **The sides the program declares finished exterior surface**
+        // (`DW0885`), written through on every expansion — which is what makes
+        // it a declaration instead of a value the next `expand` erases.
+        //
+        // This reverses the reading that stood here, which was that the export
+        // declares no shown side because *which of its sides a player is meant
+        // to look at is a fact about where it is placed*. The premise that a
+        // program says what a building IS is right; the conclusion does not
+        // follow, because `shown_faces` does not name the sides a player looks
+        // at. [`crate::compiler::burial`] defines it as the sides that are
+        // finished exterior surface and calls it, in the same breath, a claim
+        // about the PIECE that changes what the piece is in every world. Which
+        // sides of a building those are is part of what the building is. See
+        // [`crate::grammar::ir::Program::shown_faces`], which is where a
+        // program says it.
+        //
+        // Empty is still the strict answer, and a program that declares nothing
+        // exports the bytes and the metadata it exported before.
+        shown_faces: program.shown_faces.clone(),
         spatial_contract: contract_metadata(&expansion),
         // The export makes no `footprint_class` claim (spec-0050 §5). A program
         // states a building; which size class of site-plan box that building is
@@ -643,7 +696,13 @@ pub fn export_zone(
         // Same claim, same key, same reason as the single-template export: an
         // empty list says "no sockets", an absent key says nothing at all.
         connectors: Vec::new(),
-        lighting: Some(LightingMetadata::unmeasured()),
+        // **The piece's own light, measured** — read back out of the model the
+        // export just froze, exactly as `walk_y` below is, and for the same
+        // reason: a field that stands where a measurement belongs is a defect
+        // whether it is hand-written or defaulted. See
+        // [`UNBOUND_LIGHTING_PROFILE`] for what the export used to declare here,
+        // why it no longer does, and the write-then-expand pair that settled it.
+        lighting: Some(measured_lighting(&expansion)),
         license: Some(license_metadata(
             program,
             &hash,
@@ -661,12 +720,25 @@ pub fn export_zone(
         // would be the default this field exists to refuse.
         walk_y: measured_walk_y(&expansion),
         waterline_y: None,
-        // The export declares no shown side (`DW0885`). A program says what a
-        // building IS; which of its sides a player is meant to look at is a
-        // fact about where it is placed, and the export has no placement. Absent
-        // is the strict answer — the world must bury what nobody claims — and it
-        // moves no exported byte for a program that already writes none.
-        shown_faces: Vec::new(),
+        // **The sides the program declares finished exterior surface**
+        // (`DW0885`), written through on every expansion — which is what makes
+        // it a declaration instead of a value the next `expand` erases.
+        //
+        // This reverses the reading that stood here, which was that the export
+        // declares no shown side because *which of its sides a player is meant
+        // to look at is a fact about where it is placed*. The premise that a
+        // program says what a building IS is right; the conclusion does not
+        // follow, because `shown_faces` does not name the sides a player looks
+        // at. [`crate::compiler::burial`] defines it as the sides that are
+        // finished exterior surface and calls it, in the same breath, a claim
+        // about the PIECE that changes what the piece is in every world. Which
+        // sides of a building those are is part of what the building is. See
+        // [`crate::grammar::ir::Program::shown_faces`], which is where a
+        // program says it.
+        //
+        // Empty is still the strict answer, and a program that declares nothing
+        // exports the bytes and the metadata it exported before.
+        shown_faces: program.shown_faces.clone(),
         spatial_contract: contract_metadata(&expansion),
         // The export makes no `footprint_class` claim (spec-0050 §5). A program
         // states a building; which size class of site-plan box that building is
@@ -708,6 +780,42 @@ pub fn export_zone(
 /// `None` for a model with no standable cell — a program that expanded to solid
 /// rock or to open air has no walk plane, and inventing one for it is the
 /// default this field exists to refuse.
+/// **The light in this piece, measured over the bytes the export just froze.**
+///
+/// The probe is [`crate::admit::light::probe`] — the compiler's own block+sky
+/// flood over the floor a body can walk to from a ground-level entrance — and the
+/// sky it is taken under is the piece's own claim
+/// ([`crate::admit::light::SkyClaim`], read off the spatial contract this same
+/// export writes). Nothing about the measurement is this module's: it is the
+/// figure `delvec prefab lighting` prints and `DW0751` grades, taken here so that
+/// no piece has to be measured by hand after every expansion.
+///
+/// Deterministic (ADR-0006): a fold over `BTreeMap` floods with no clock, no RNG
+/// and no path in it, so the same program at the same seed over the same region
+/// writes the same document byte for byte.
+/// `exporting_twice_gives_byte_identical_nbt_and_metadata` and
+/// `exporting_a_tiled_zone_twice_gives_byte_identical_tiles_and_manifest` are the
+/// standing proofs, and they compare the metadata as well as the `.nbt`, so the
+/// measurement is inside what they hold.
+///
+/// **A probe that bound to nothing writes no profile.** With no cell to stand in
+/// there is no floor to be dark and no measurement to state, and inventing one
+/// would be the default the field exists to refuse — the same rule `walk_y` below
+/// already follows, and the same one `DW0752` states for the command. The showing
+/// gate does not take the document's word for that: it asks the bytes.
+fn measured_lighting(expansion: &Expansion) -> LightingMetadata {
+    let sky = crate::admit::light::SkyClaim::of(contract_metadata(expansion).as_ref());
+    let probe = crate::admit::light::probe(
+        &expansion.model,
+        crate::admit::light::DEFAULT_DARK_THRESHOLD,
+        sky,
+    );
+    if probe.is_unbound() {
+        return LightingMetadata::unmeasured();
+    }
+    crate::admit::meta::lighting_from_probe(&probe)
+}
+
 fn measured_walk_y(expansion: &Expansion) -> Option<i32> {
     use crate::schem::nav::Voxels as _;
     let origin_y = expansion.model.origin()[1];

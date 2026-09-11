@@ -60,12 +60,20 @@ pub const SEA_LEVEL: i32 = crate::compiler::plan::SEA_LEVEL;
 /// The top solid block of a `valley`'s **gap floor** — the flat ground between
 /// the map's edge and the foot of the inner slopes.
 ///
-/// Pinned one block under [`crate::compiler::plan::BASE_Y`], which is the same
-/// relationship a grass plain would have: a `walk_y = 0` piece placed at
-/// `BASE_Y` stands exactly on this floor. That is why a valley relocates
-/// nothing — a campaign that swaps `void` for `valley` moves no piece, it only
-/// gains ground to stand beside.
+/// Pinned one block under [`crate::compiler::plan::BASE_Y`], which makes
+/// `BASE_Y` the y a body's feet occupy standing on it. The gap floor **is a
+/// walk plane**, and [`VALLEY_WALK_REF_Y`] is that same number under the name
+/// the seating rule reads it by.
 pub const VALLEY_GAP_FLOOR_TOP_Y: i32 = crate::compiler::plan::BASE_Y - 1;
+
+/// **The world y a `valley` world's walk plane stands at**: one block above the
+/// gap floor, which is [`crate::compiler::plan::BASE_Y`].
+///
+/// The relationship [`OCEAN_WALK_REF_Y`] states about a beach, stated about
+/// ground. A body standing on the valley's own floor has its feet here, so a
+/// piece seated on this base puts its own walk plane here — its floor is the
+/// floor outside it, and a party can walk from one onto the other.
+pub const VALLEY_WALK_REF_Y: i32 = VALLEY_GAP_FLOOR_TOP_Y + 1;
 
 /// **The world y an `ocean` world's walk plane stands at**: one block above the
 /// sea (spec-0060 §3.1).
@@ -80,21 +88,30 @@ pub const OCEAN_WALK_REF_Y: i32 = SEA_LEVEL + 1;
 
 /// **The walk-plane datum of a base**, where it has one.
 ///
-/// `Some` for a base that seats a piece by its walk plane — today `ocean`
-/// alone — and the number an area's origin is derived from:
+/// `Some` for a base that **has ground of its own outside the piece** — and the
+/// number an area's origin is then derived from:
 /// `origin.y = walk_ref_y - walk_y`.
 ///
-/// `None` for a base whose areas stand on a fixed origin datum. `void` and
-/// `valley` both keep [`crate::compiler::plan::BASE_Y`], and that is a decision
-/// rather than an omission: `void` declares nothing outside the placed
-/// geometry, so there is no outside relationship for a walk plane to be held
-/// against, and `valley`'s gap floor is pinned one block under `BASE_Y` so that
-/// a piece placed at that origin stands beside it. A campaign that swaps `void`
-/// for `valley` moves no piece, and neither does this.
+/// `ocean` and `valley` both have one: a sea to climb out of, and a gap floor
+/// to walk on. `None` is `void` alone, and that is a decision rather than an
+/// omission — `void` declares nothing outside the placed geometry, so there is
+/// no outside relationship for a walk plane to be held against, and its areas
+/// stand on the fixed [`crate::compiler::plan::BASE_Y`] datum.
+///
+/// **`valley`'s entry corrects a claim that bound to nothing.** The constant's
+/// note used to argue that a valley relocates nothing because *a `walk_y = 0`
+/// piece placed at `BASE_Y` stands exactly on this floor* — true, and true of
+/// no piece: the pinned library declares `walk_y` 1, 2 or 3 and never 0, so
+/// every piece a valley could seat stood one to three courses proud of the
+/// ground it was supposed to stand beside. For a site — a piece that brings its
+/// own island, moat and banks out to its own box edge — that difference is the
+/// whole thing: seated by its walk plane the bank runs into the gap floor, and
+/// seated on `BASE_Y` it is a cliff the party drops off and cannot climb back.
 pub fn walk_ref_y(base: HorizonBase) -> Option<i32> {
     match base {
         HorizonBase::Ocean => Some(OCEAN_WALK_REF_Y),
-        HorizonBase::Void | HorizonBase::Valley => None,
+        HorizonBase::Valley => Some(VALLEY_WALK_REF_Y),
+        HorizonBase::Void => None,
     }
 }
 
@@ -134,14 +151,34 @@ mod tests {
         assert_eq!(walk_ref_y(HorizonBase::Ocean), Some(SEA_LEVEL + 1));
     }
 
-    /// Only a base that seats a piece by its walk plane has a walk-plane datum,
-    /// and the question is answered for the whole enum rather than for the one
-    /// base that has one today.
+    /// **A base has a walk-plane datum exactly when it has ground of its own**,
+    /// answered for the whole enum rather than for the bases that have one
+    /// today: `ocean`'s sea and `valley`'s gap floor are both something outside
+    /// the piece that a body stands on or climbs out of, and `void` is by
+    /// definition the base that has nothing out there.
     #[test]
-    fn only_the_ocean_seats_by_a_walk_plane() {
+    fn a_base_seats_by_a_walk_plane_exactly_when_it_has_ground_of_its_own() {
         assert!(walk_ref_y(HorizonBase::Void).is_none());
-        assert!(walk_ref_y(HorizonBase::Valley).is_none());
+        assert_eq!(walk_ref_y(HorizonBase::Valley), Some(VALLEY_WALK_REF_Y));
         assert!(walk_ref_y(HorizonBase::Ocean).is_some());
+    }
+
+    /// The valley's datum is the same relationship the ocean's is, stated about
+    /// ground: a body standing on the gap floor has its feet one block above
+    /// its top solid course, so a piece seated by its own `walk_y` puts its
+    /// floor level with the floor outside it — no step up, no cliff down.
+    #[test]
+    fn the_valley_walk_plane_stands_on_the_gap_floor() {
+        assert_eq!(VALLEY_WALK_REF_Y, VALLEY_GAP_FLOOR_TOP_Y + 1);
+        assert_eq!(VALLEY_WALK_REF_Y, crate::compiler::plan::BASE_Y);
+        // The library's real numbers rather than an invented one: every pinned
+        // piece declares `walk_y` 1, 2 or 3, so seating on `BASE_Y` stood each
+        // of them that many courses proud of the ground it was meant to stand
+        // beside, and the derivation is what removes the step.
+        for walk_y in [1, 2, 3] {
+            let origin = VALLEY_WALK_REF_Y - walk_y;
+            assert_eq!(origin + walk_y, VALLEY_GAP_FLOOR_TOP_Y + 1);
+        }
     }
 
     /// The two numbers spec-0060 §3.2 states as worked examples, derived rather

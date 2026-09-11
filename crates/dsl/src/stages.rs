@@ -408,11 +408,13 @@ impl HorizonBase {
 ///
 /// The `valley` surround generator carries a second flora and a second surface
 /// palette (a cherry grove over `minecraft:cherry_grove`) and **this struct
-/// deliberately does not expose them yet.** Every engine surface owes a gallery
-/// element in the change that lands it, and the element a second flora needs is
-/// a second whole-map campaign — the surround only rings a map that DECLARES
-/// its extent (`DW0855`), so there is no two-file overlay that can write it.
-/// A surface whose element cannot land with it does not land. The shape is flat rather than
+/// does not expose them.** Every engine surface owes a gallery element in the
+/// change that lands it; the element a second flora needs is a valley overlay,
+/// and one is writable now that a one-area campaign's single prefab states an
+/// extent ([`crate::placement::Extent`], `DW0855`) — the reason recorded here
+/// was that no two-file overlay could ring a map, and that reason is spent.
+/// What is left is that nothing has written the element, and a surface lands
+/// with its element or it does not land. The shape is flat rather than
 /// per-base tagged, and a param foreign to the declared base is refused
 /// (`DW0853`) — so an `ocean` cannot quietly carry a `rim_height` that nothing
 /// reads.

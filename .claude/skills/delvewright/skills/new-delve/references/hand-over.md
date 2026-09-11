@@ -63,6 +63,19 @@ python3 "$DELVEWRIGHT_ENGINE/tools/check-storybook-version.py" --campaigns campa
 Green before you report. A stale marker waves a host on an old engine straight
 into a delve their engine cannot run.
 
+**The host line, for a server strangers join.** A delve does not clean itself, so a
+storybook whose reader will leave it running for people they do not know owes them
+one more line — with its consequence in the same breath, because that half is not
+guessable:
+
+```
+Add `-e DELVE_RESET_WHEN_EMPTY=90` and the world is thrown away and built again
+from the image once nobody has been online for 90 seconds, so the next arrival
+starts a delve nobody has touched — but then EVERY start resets, and restarting the
+container under a party ends that party's run. Leave it out and the world is kept.
+The floor is 60 seconds; below it the server refuses to start.
+```
+
 **Then report to the user** — this hand-over ends the run: the campaign
 summary, the playtime estimate, the validation results, what the walk found and
 what was done about it, anything still open, and the two commands they will
