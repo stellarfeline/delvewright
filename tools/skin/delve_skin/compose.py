@@ -291,12 +291,6 @@ def _build_leg(c: _Canvas, part: str, p: Dict[str, RGBA], w: Wardrobe,
     """Leg: skin, then the declared leg garment, then the declared footwear."""
     skin = p["skin"]
     c.fill_part(part, skin)
-    # DEFECT, kept only so this commit can prove it moved no existing sheet's
-    # bytes: `amount=0` makes `jitter` return before drawing, so this consumes
-    # no rng and is not the "guard" it claims to be -- what it does is repaint
-    # the whole torso FRONT flat, erasing the belt, the hem shadow and the
-    # V-neck `_build_torso` painted there. Removed in the commit after this one.
-    c.noise("torso", "front", p["tunic"], 0, rng)
     # A leg garment is cloth in its own colour: an exomis skirt over the upper
     # thigh, or trousers to the ankle.
     garment_span = w.leg_span()

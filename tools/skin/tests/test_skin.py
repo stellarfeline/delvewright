@@ -249,6 +249,27 @@ def test_trousers_get_a_cloth_knee_shadow_not_a_skin_one():
     assert _near(knee_cloth, TROUSER_SHADOW)
 
 
+def test_nothing_painted_after_the_torso_erases_it():
+    """The belt and the collar survive the parts composed after the torso.
+
+    The legs used to repaint the whole torso FRONT flat on their way past --
+    `noise(..., amount=0)` returns before drawing, so it consumed no rng and was
+    not the ordering guard it was written as; what it did was erase the belt,
+    the hem shadow, the cloth texture and the collar on every skin this tool has
+    ever made. It is a face carrying one colour where the opposite face carries
+    twenty, so that is what this asks.
+    """
+    entry = _entries(WARDROBE_FIXTURE)[0]
+    skin = _read_back(entry)
+    front = [_at(skin, "torso", "front", x, y) for x in range(8) for y in range(12)]
+    back = [_at(skin, "torso", "back", x, y) for x in range(8) for y in range(12)]
+    assert len(set(front)) > 1, "the torso front is flat -- something repainted it"
+    assert len(set(front)) >= len(set(back)) - 4, "the front lost most of its detail"
+    belt = (0x1B, 0x24, 0x1D)
+    assert any(_near(c, belt, tol=0) for c in front), "the belt is not on the front"
+    assert any(_near(c, GUIDE_SKIN, tol=0) for c in front), "no collar at the neck"
+
+
 def test_facial_hair_none_leaves_the_chin_clean():
     skin = _read_back(_dressed(facial_hair="none"))
     for y in range(0, 4):
