@@ -3006,6 +3006,17 @@ diagonal could be routed through a shut gate — or past the one the traversal p
 recorded the leg as using. A route with no level run of three or more cells comes
 back unchanged.
 
+**A killing volume needs no clause here, and that is a property rather than an
+oversight.** A smoothed body is off cell centre almost everywhere; solid geometry is
+covered anyway, because whole cells tile the plane and every overlapped column is
+asked. A lethal volume looks like the one question that could not be covered that way
+— except that `cell_can_meet_volume` never asked about a *centred* body: a walker's
+cell does not fix its position, so it already refuses every cell from which a body
+standing anywhere inside it could reach the volume, and `standable_fp` on each swept
+column inherits that reading whole. Restating the rule inside the swept test would be
+a private re-implementation of a general mechanism, so the reliance is pinned by a
+test instead (`the_swept_test_inherits_the_off_centre_reading_of_a_killing_volume`).
+
 `MovePlan::cells` / `ActorMovePlan::cells` keep the **full A\* route**, untouched.
 The traversal proof asks of them what move the body made — which cell it entered,
 which it stepped up onto, which use-gate it passed — and a thinned route would
