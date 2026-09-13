@@ -340,6 +340,13 @@ cp "$OUT_DIR/server/server.properties" "$STAGE/server.properties"
 printf 'enable-rcon=true\nrcon.password=%s\nrcon.port=25575\n' "$RCON_PW" >> "$STAGE/server.properties"
 CAMP_ID="$(basename "$CAMPAIGN")"
 cp -R "$OUT_DIR/datapack" "$STAGE/world/datapacks/$CAMP_ID"
+# The creator overlay too, when the build emitted one: it is what carries
+# `/trigger dw.note`, and the walk this server exists for is the walk whose
+# findings that trigger stamps. A server that serves the delve and not the
+# overlay tells the creator to mark a finding with a command that is not there.
+if [[ -d "$OUT_DIR/creator-datapack" ]]; then
+  cp -R "$OUT_DIR/creator-datapack" "$STAGE/world/datapacks/$CAMP_ID-creator"
+fi
 
 docker run -d --name "$NAME" -p 25565:25565 \
   -e EULA=TRUE -e TYPE=VANILLA -e VERSION="$MC_VERSION" \

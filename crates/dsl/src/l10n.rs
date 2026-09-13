@@ -19,6 +19,15 @@
 //! after `<prefix>/`, kebab preserved). Ids are unique within their namespace, so
 //! every key is unique.
 //!
+//! These are the keys **within one campaign** — what a sidecar answers, what
+//! `DW0180` counts, what `delvec l10n-inventory` hands a translator. What leaves
+//! the delve is each of them under that delve's own [pack namespace]
+//! (`delve.<campaign_id>.`, [`pack_key`]), because a client merges every applied
+//! resource pack into ONE language table and a campaign-relative key in there is
+//! a key some other delve answers. See [`pack_namespace`].
+//!
+//! [pack namespace]: pack_namespace
+//!
 //! | Key | Source string |
 //! |-----|---------------|
 //! | `world.title` | stage-1 `content.title` |
@@ -924,6 +933,55 @@ pub fn tag(key: &str, english: &str) -> String {
     format!("{TR_SIGIL}{key}{TR_SIGIL}{english}")
 }
 
+/// The root segment of the **pack key space** — the key space a delve writes into
+/// its resource pack and references from its text components. Distinct from every
+/// key space a delve authors in, and from the compiler's own
+/// [`chrome::RESERVED_PREFIX`](crate::chrome::RESERVED_PREFIX), so a key's first
+/// segment says which space it is in.
+pub const PACK_KEY_ROOT: &str = "delve";
+
+/// The prefix every key of one delve's pack key space carries:
+/// `delve.<campaign_id>.`.
+///
+/// # One delve, one vocabulary
+///
+/// A campaign's own key space (`world.title`, `npc.<n>.name`, …) is
+/// **campaign-relative**: it identifies a row inside one campaign's documents, and
+/// the l10n sidecar that answers it sits in that campaign's directory. Two
+/// campaigns naming the same row therefore write the same key, which is correct
+/// where those keys live and catastrophic where they end up.
+///
+/// Where they end up is a Minecraft client's **merged language table**, and that
+/// table is not per-delve. It is the union of every applied resource pack:
+/// `tools/playtest-server.sh` installs each delve's pack into the player's
+/// `resourcepacks/` directory as `<campaign_id>.zip`, where it stays enabled
+/// across servers and worlds, and a server-pushed pack merges on top of whatever
+/// is already applied. A `{"translate": …, "fallback": …}` component renders its
+/// `fallback` **only when the key is absent from that merged table**, so any delve
+/// whose pack is still applied answers for every other delve that asks the same
+/// key — one delve's completion toast reading another delve's title, in a language
+/// the delve it was playing does not ship.
+///
+/// So every key that leaves a delve — into a component, into a lang file — is
+/// namespaced by the campaign that owns it, and two delves' vocabularies are
+/// disjoint sets. The campaign id is the right grain: it is what the pack file is
+/// named after, so a rebuilt campaign replaces its own pack rather than joining it.
+///
+/// Campaign ids are kebab tokens ([`CampaignId::is_valid_syntax`]) and carry no
+/// `.`, so the namespace of one id can never be a prefix of another's key.
+pub fn pack_namespace(campaign_id: &str) -> String {
+    format!("{PACK_KEY_ROOT}.{campaign_id}.")
+}
+
+/// One key of `campaign_id`'s [pack key space](pack_namespace): the key as the
+/// campaign's own documents and sidecars know it, under that campaign's namespace.
+/// The single authority — the tagger, the chrome resolver and the lang-file writer
+/// all build their keys here, so what a component references and what the pack
+/// defines cannot drift.
+pub fn pack_key(campaign_id: &str, key: &str) -> String {
+    format!("{}{key}", pack_namespace(campaign_id))
+}
+
 /// Split a translation tag into `(key, english)`. `None` for an untagged string —
 /// a compiler-baked literal such as the default boundary message, which has no
 /// inventory key and is translated by neither v1 nor v2.
@@ -960,11 +1018,19 @@ pub fn has_tr_sigil(s: &str) -> bool {
 /// The campaign handed to the compiler is tagged **once**, before the plan is
 /// built; from there the tag is the compiler's only evidence that a string it is
 /// about to emit is player-visible and translatable.
+///
+/// **The tag carries the [pack key](pack_key), not the inventory key.** The
+/// returned inventory is the campaign's own key space, unchanged — that is what a
+/// sidecar answers and what `DW0180` counts — while what travels to emission, and
+/// so into every component and lang file, is `delve.<campaign_id>.<key>`. The two
+/// differ exactly where they are read: a sidecar is read inside one campaign's
+/// directory, a lang file inside a client's shared language table.
 pub fn tag_translatables(c: &mut Campaign) -> BTreeMap<String, String> {
+    let ns = pack_namespace(c.world.campaign_id.as_str());
     let mut inv = BTreeMap::new();
     each_string(c, &mut |key, value| {
         inv.insert(key.to_string(), value.clone());
-        *value = tag(key, value);
+        *value = tag(&format!("{ns}{key}"), value);
     });
     inv
 }
