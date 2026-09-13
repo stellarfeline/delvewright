@@ -3403,6 +3403,30 @@ impl<'a> Plan<'a> {
             .map(|q| q.area.as_str())
     }
 
+    /// **The cell a body is summoned onto** — the one resolution rule for a
+    /// [`delvewright_dsl::BodyRef`] of either class.
+    ///
+    /// A body that declares an area is resolved in that area's table first and
+    /// falls back to any placed piece; a body that declares none (an actor) is
+    /// resolved across every placed piece, exactly as an `open-gate` or
+    /// `move-actor` destination is. Which of the two applies is
+    /// [`delvewright_dsl::BodyRef::area`]'s answer, so the rule is stated once
+    /// instead of once per consumer.
+    ///
+    /// `None` when nothing provides the anchor. Every consumer skips such a
+    /// body rather than reporting against it — `DW0325`/`DW0345`/`DW0360` own
+    /// dangling references, and a geometry or occupancy finding for one would
+    /// send the author to the wrong line.
+    pub fn body_point(&self, body: delvewright_dsl::BodyRef<'_>) -> Option<[i32; 3]> {
+        let anchor = body.anchor().as_str();
+        match body.area() {
+            Some(area) => self
+                .point(area.as_str(), anchor)
+                .or_else(|| self.point_any(anchor)),
+            None => self.point_any(anchor),
+        }
+    }
+
     /// Resolve `(area, anchor)` to a point position, if it is a point anchor.
     pub fn point(&self, area_id: &str, anchor: &str) -> Option<[i32; 3]> {
         match self.anchors.get(&(area_id.to_string(), anchor.to_string())) {

@@ -829,6 +829,64 @@ impl<'a> BodyRef<'a> {
         }
     }
 
+    /// **The mark this body is placed on** — the anchor the engine summons it
+    /// at, for every class alike.
+    ///
+    /// A body's placement is a property of the body, not of the stage list that
+    /// happens to declare it: a mark is a cell, and a cell holds one body. The
+    /// rule that reads this ([`crate::compiler`]'s `DW0896`, via
+    /// [`body_sites`]) therefore quantifies over npcs and actors in one pass
+    /// rather than over `actors[]`, which is where the seven-men-one-anchor
+    /// muster came from.
+    pub fn anchor(self) -> &'a AnchorId {
+        match self {
+            BodyRef::Npc(n) => &n.anchor,
+            BodyRef::Actor(a) => &a.anchor,
+        }
+    }
+
+    /// The area whose anchor table resolves [`Self::anchor`] first, when this
+    /// class declares one.
+    ///
+    /// A stage-2 npc names its area and is resolved inside it; a stage-5 actor
+    /// names none and is resolved across every placed piece, exactly as an
+    /// `open-gate` / `move-actor` destination is. Stated here so the resolution
+    /// rule is one rule over both classes and not a per-call-site habit.
+    pub fn area(self) -> Option<&'a AreaId> {
+        match self {
+            BodyRef::Npc(n) => Some(&n.area),
+            BodyRef::Actor(_) => None,
+        }
+    }
+
+    /// Whether this body stands on its mark from **world init**, with no effect
+    /// having to fire.
+    ///
+    /// A stage-2 npc does unless it is `deferred`; a stage-5 actor never does —
+    /// a puppet exists only from the `spawn-actor` that summons it, which is why
+    /// an actor no `spawn-actor` names never exists at all (`DW0477` says so of
+    /// a billed elite).
+    pub fn at_world_init(self) -> bool {
+        match self {
+            BodyRef::Npc(n) => !n.deferred,
+            BodyRef::Actor(_) => false,
+        }
+    }
+
+    /// Whether a **player** can end this body's life.
+    ///
+    /// An npc body is emitted `Invulnerable:1b` unconditionally, so nothing a
+    /// player does removes it; an actor's puppet is `Invulnerable` unless it
+    /// declares [`Actor::vulnerable`]. A body a player can kill is one whose
+    /// lifetime the compiler cannot bound, which is the whole of what this
+    /// answers.
+    pub fn killable_by_players(self) -> bool {
+        match self {
+            BodyRef::Npc(_) => false,
+            BodyRef::Actor(a) => a.vulnerable,
+        }
+    }
+
     /// This body's traversal declaration, if it carries one.
     pub fn traversal(self) -> Option<&'a BodyTraversal> {
         match self {
@@ -1333,6 +1391,20 @@ impl DialogueEffect {
     pub fn spawn_npc(&self) -> Option<&NpcId> {
         match self {
             DialogueEffect::SpawnNpc { npc } => Some(npc),
+            _ => None,
+        }
+    }
+
+    /// **The body this dialogue effect puts into the world**, by id — the
+    /// dialogue half of [`QuestEffect::body_entry`].
+    ///
+    /// A body can enter the world from a conversation as well as from a quest
+    /// bundle, and a rule about what is standing where has to enumerate **every**
+    /// entry point or it is a gate with a door beside it. This enum carries no
+    /// exit at all: nothing a dialogue option does removes a body.
+    pub fn body_entry(&self) -> Option<&str> {
+        match self {
+            DialogueEffect::SpawnNpc { npc } => Some(npc.as_str()),
             _ => None,
         }
     }
@@ -6086,6 +6158,50 @@ impl QuestEffect {
     pub fn spawn_npc(&self) -> Option<&NpcId> {
         match &self.verb {
             Verb::SpawnNpc { npc, .. } => Some(npc),
+            _ => None,
+        }
+    }
+
+    /// **The body this effect puts into the world**, by id, for every body class
+    /// alike ([`BodyRef`]).
+    ///
+    /// `spawn-npc` and `spawn-actor` are the two, and they are answered in one
+    /// place so a rule about a body's lifetime quantifies over bodies rather
+    /// than over the verb that first needed it. A body's OTHER entry — standing
+    /// on its mark from world init — is not an effect at all and is
+    /// [`BodyRef::at_world_init`].
+    ///
+    /// `unleash-actor` is deliberately not an entry: it puts no new body on the
+    /// mark, it replaces the one already standing there (see [`Self::body_exit`]).
+    pub fn body_entry(&self) -> Option<&str> {
+        match &self.verb {
+            Verb::SpawnNpc { npc, .. } => Some(npc.as_str()),
+            Verb::SpawnActor { actor, .. } => Some(actor.as_str()),
+            _ => None,
+        }
+    }
+
+    /// **The body this effect takes out of the world**, by id, for every body
+    /// class alike.
+    ///
+    /// `despawn-npc` and `despawn-actor` remove the body outright.
+    /// `unleash-actor` is the third: it kills the staged puppet and stands a
+    /// real-AI twin in its place, and from that moment the compiler makes no
+    /// claim about where that body is or whether it is still alive — the twin
+    /// walks, fights and dies under vanilla AI. Answering all three here is what
+    /// keeps "can this body still be standing?" from being decided one verb at a
+    /// time.
+    ///
+    /// Deliberately NOT an exit: `move-npc` / `move-actor`. A walked body is
+    /// still in the world, and its declared mark is still the cell the engine
+    /// summoned it onto — a mark two live bodies share is shared whether or not
+    /// one of them has since walked off it.
+    pub fn body_exit(&self) -> Option<&str> {
+        match &self.verb {
+            Verb::DespawnNpc { npc, .. } => Some(npc.as_str()),
+            Verb::DespawnActor { actor, .. } | Verb::UnleashActor { actor, .. } => {
+                Some(actor.as_str())
+            }
             _ => None,
         }
     }

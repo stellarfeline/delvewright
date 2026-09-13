@@ -115,6 +115,18 @@
         },
         "tier": "ordinary",
         "vulnerable": true
+      },
+      {
+        "anchor": "anchor/usher",
+        "entity": "minecraft:villager",
+        "facing": "south",
+        "id": "actor/hall-usher"
+      },
+      {
+        "anchor": "anchor/page",
+        "entity": "minecraft:villager",
+        "facing": "south",
+        "id": "actor/hall-page"
       }
     ],
     "ambushes": [
@@ -859,6 +871,34 @@
                           }
                         ]
                       }
+                    }
+                  ]
+                },
+                {
+                  "at_ticks": 30,
+                  "effects": [
+                    {
+                      "actor": "actor/hall-usher",
+                      "happening": {
+                        "subject": "actor/hall-usher",
+                        "text": "An usher comes out onto the speaking row and stands there for the rest of the visit.",
+                        "verb": "arrives"
+                      },
+                      "type": "spawn-actor"
+                    }
+                  ]
+                },
+                {
+                  "at_ticks": 40,
+                  "effects": [
+                    {
+                      "actor": "actor/hall-page",
+                      "happening": {
+                        "subject": "actor/hall-page",
+                        "text": "A page follows the usher out and takes the mark beside him, not the one he is standing on.",
+                        "verb": "arrives"
+                      },
+                      "type": "spawn-actor"
                     }
                   ]
                 }

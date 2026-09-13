@@ -49,7 +49,7 @@ fn campaign() -> Campaign {
         doc["content"]["actors"] = json!([{
             "id": "actor/walker",
             "entity": "minecraft:villager",
-            "anchor": "anchor/keeper-stand"
+            "anchor": "spawn"
         }]);
         let effects = common::objective_effects(doc, 0, "obj/talk");
         effects.push(json!({

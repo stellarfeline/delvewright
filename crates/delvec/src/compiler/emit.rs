@@ -735,6 +735,21 @@ pub fn build_with_warnings(
     // summon, not a walk, so this needs no occupancy model. DW0325 if one dangles.
     crate::compiler::nav::check_actor_placement(plan)?;
 
+    // …and no two bodies that are in the world at the same time may be declared
+    // on the same cell (DW0896). Runs here, with the anchor-resolution seals and
+    // before any occupancy model, because it is arithmetic over resolved cells
+    // and over a declaration the author can read: seven actors on one anchor
+    // emitted seven identical `summon` lines and the build exited 0. Its binding
+    // line prints whether or not it found anything — a count only says something
+    // when the run that found nothing prints it too — and prints before the
+    // refusal, so a refused run still states what it examined.
+    let (one_mark, one_mark_verdict) = crate::compiler::cohabit::check_one_body_per_mark(plan);
+    eprintln!("{}", one_mark.line());
+    one_mark_verdict.map_err(|e| BuildFailure::Diagnostic {
+        code: e.code,
+        message: e.message,
+    })?;
+
     // No body may stand on the affordance the party has to click (DW0359). Runs
     // right after the anchor-resolution seals and before any occupancy model:
     // it is pure box arithmetic over resolved cells, and it is the proof that the

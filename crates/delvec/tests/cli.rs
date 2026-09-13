@@ -1625,7 +1625,7 @@ fn v06_actor_datapack_emits_the_mechanics() {
         ]);
         d["content"]["actors"] = serde_json::json!([
             { "id": "actor/giant", "entity": "minecraft:zombie", "name": "The Sleeper",
-              "anchor": "anchor/keeper-stand", "facing": "east" }
+              "anchor": "spawn", "facing": "east" }
         ]);
     });
     common::declare_story_dir(&camp);
