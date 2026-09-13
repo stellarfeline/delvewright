@@ -125,11 +125,23 @@ def test_slim_not_silently_distorted():
         compose_skin(e)
 
 
-# --- the bytes every fixture sheet composes are pinned ----------------------
+# --- the pixels every fixture sheet composes are pinned ---------------------
 
 
-def test_every_fixture_sheet_composes_its_golden_bytes():
+def test_every_fixture_sheet_composes_its_golden_pixels():
     """The anchor: a composer change that moves one pixel reds here by name.
+
+    The golden is compared as PIXELS, not as file bytes, because those are two
+    different questions and only one of them is about this tool. Composition is
+    deterministic and portable: the same cast entry yields the same 64x64 image
+    everywhere. PNG *serialisation* is not. Pillow hands the scanlines to
+    whatever zlib it is linked against, and deflate output differs between zlib
+    builds -- measured with the same Pillow 12.3.0 and numpy 2.5.3 on either
+    side, varying only zlib: macOS (1.2.12) and Linux (1.3.1) agree on every
+    pixel of both fixtures and disagree on the file at compress_level 1, 6 and 9
+    alike. Pinning file bytes therefore pins the zlib build of whoever last
+    regenerated and reds on every other machine while the composer is innocent,
+    which is exactly what it did.
 
     Regenerate deliberately, never to get green:
         python -m delve_skin build tests/fixtures/<name>.cast.json \
@@ -141,11 +153,27 @@ def test_every_fixture_sheet_composes_its_golden_bytes():
         for entry in _entries(sheet):
             golden = GOLDEN / f"{entry.texture_id}.png"
             assert golden.exists(), f"{sheet.name}:{entry.texture_id} has no golden"
-            assert compose_png_bytes(entry) == golden.read_bytes(), (
-                f"{sheet.name}:{entry.texture_id} no longer composes its golden bytes"
+            with Image.open(golden) as g:
+                want = g.convert("RGBA").tobytes()
+            got = compose_skin(entry).convert("RGBA").tobytes()
+            assert got == want, (
+                f"{sheet.name}:{entry.texture_id} no longer composes its golden pixels"
             )
             checked += 1
     assert checked == 2, f"expected 2 pinned entries, pinned {checked}"
+
+
+def test_the_png_file_is_byte_stable_within_one_build():
+    """The half of determinism that IS a property of the file, stated on its own.
+
+    Within one zlib build the same entry serialises to the same bytes, and an
+    intervening composition of a different entry does not move them. Across
+    builds only the pixels carry -- see the golden test.
+    """
+    first = compose_png_bytes(_entry())
+    other = compose_png_bytes(_entries(WARDROBE_FIXTURE)[0])
+    assert compose_png_bytes(_entry()) == first, "an intervening entry moved the bytes"
+    assert other != first
 
 
 def test_a_sheet_that_names_no_wardrobe_gets_the_default_one():

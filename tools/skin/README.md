@@ -97,9 +97,22 @@ what it composed before this block existed.
 
 ## Determinism (ADR-0006)
 
-Same cast entry → **byte-identical PNG**. All randomness flows through one
-seeded `numpy` generator; Python's salted builtin `hash` is never used. The
-double-build gate is covered in `tests/test_skin.py`.
+Same cast entry → **the same 64×64 image, on any machine**. All randomness flows
+through one seeded `numpy` generator; Python's salted builtin `hash` is never
+used. `tests/fixtures/golden/` pins the composed pixels of every fixture sheet.
+
+**The image is portable; the PNG file is not**, and that difference is not this
+tool's to close. Pillow hands the scanlines to whatever zlib it is linked
+against, and deflate output differs between zlib builds. Measured with the same
+Pillow 12.3.0 and numpy 2.5.3 on both sides, varying only zlib: macOS (1.2.12)
+and Linux (1.3.1) compose **identical pixels** and write **different files** at
+`compress_level` 1, 6 and 9 alike. Only `compress_level=0` agreed — 16516 bytes
+against 1902, so a portable serialisation exists at 8.7× the file size.
+
+This does not move a delve's bytes: the compiler bakes the PNG a creator
+**committed**, and never recomposes it. It does mean two machines regenerating
+one cast sheet produce one picture in two files, so compare **pixels**, not a
+file hash.
 
 ## Why not headless skinview3d for previews?
 
