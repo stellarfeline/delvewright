@@ -320,8 +320,12 @@ fn a_named_datum_announces_every_change_from_any_cause() {
         "the balance is a live score component, not a number baked at emit time:\n{show}"
     );
     assert!(
-        show.contains("\"translate\":\"state.embers.name\""),
-        "…and the name travels as a translatable component:\n{show}"
+        show.contains(&format!(
+            "\"translate\":\"{}\"",
+            delvewright_dsl::pack_key("hello-world", "state.embers.name")
+        )),
+        "…and the name travels as a translatable component, under this delve's own \
+         key namespace:\n{show}"
     );
     assert!(
         show.contains("scoreboard players operation @s dw.sh_embers = @s dw.s_embers"),
