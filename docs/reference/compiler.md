@@ -878,6 +878,18 @@ Its diagnostics and the battery that judges the result are `DW0821`/`DW0836`–`
 
 ### l10n sidecars (`l10n/<code>.json`)
 
+**Two key spaces, and the difference is where each is read.** Everything in this
+section is the **campaign's own** key space: `world.title`, `npc.<n>.name`, the
+keys a sidecar answers, the keys `DW0180` counts, the keys `delvec l10n-inventory`
+hands a translator. They are campaign-*relative*, because a sidecar is read inside
+one campaign's directory. What the compiler emits — every `{"translate": …}` a
+component carries and every row of every `assets/delvewright/lang/<mc>.json` — is
+each of those keys under that delve's **pack namespace**, `delve.<campaign_id>.`:
+`world.title` ships as `delve.doune-castle.world.title`. Chrome is namespaced the
+same way (`delve.doune-castle.delvewright.ui.class.title`) — the pack is where it
+lives too. `dsl::l10n::pack_key` is the one authority; nothing else builds the
+prefix. See [One delve, one vocabulary](#one-delve-one-vocabulary) for why.
+
 Envelope `{dsl_version,campaign_id,kind:"l10n",lang,content,source?}`; `content` =
 flat **stable key → translated string**, `source` = the same keys → the canonical
 English each row was translated **from**. Key inventory derived from stage docs
@@ -988,7 +1000,7 @@ prefab library; only an unparseable campaign fails (exit 1). See
 **translatable text component**
 
 ```json
-{"translate": "<l10n key>", "fallback": "<English source>"}
+{"translate": "delve.<campaign_id>.<l10n key>", "fallback": "<English source>"}
 ```
 
 and writes one `assets/delvewright/lang/<mc_code>.json` per declared language,
@@ -1001,9 +1013,9 @@ all, and the delve must still be playable in English.
 
 | Piece | Behaviour |
 |---|---|
-| Key set | The existing l10n inventory, unchanged. `each_string` stays the single authority over what is translatable — no second key scheme, no second inventory. |
-| Tagging | `dsl::l10n::tag_translatables` rewrites each inventoried string to `<U+E000><key><U+E000><English>` **once**, before `Plan::build`. From there the tag is the compiler's only evidence that a string is player-visible. Emitters lower it through `emit::tr` / `emit::snbt_component`; non-component consumers read it through `dsl::l10n::plain`. |
-| Lang files | Flat `{key: string}` in `BTreeMap` order (ADR-0006). `en_us.json` **is** the live inventory; each other file is its sidecar's `content`. The key sets must be equal — a hole fails the build (`DW0180`/`DW0181` at emit time), because a hole is a player reading a raw key. |
+| Key set | The existing l10n inventory, unchanged. `each_string` stays the single authority over what is translatable — no second key scheme, no second inventory. The **pack** key is that key under `delve.<campaign_id>.` (below). |
+| Tagging | `dsl::l10n::tag_translatables` rewrites each inventoried string to `<U+E000><pack key><U+E000><English>` **once**, before `Plan::build`. From there the tag is the compiler's only evidence that a string is player-visible. Emitters lower it through `emit::tr` / `emit::snbt_component`; non-component consumers read it through `dsl::l10n::plain`. The tag is where the delve's namespace is applied, so no emitter has to know about it and none can forget. |
+| Lang files | Flat `{key: string}` in `BTreeMap` order (ADR-0006). `en_us.json` **is** the live inventory, `delve.<campaign_id>.`-prefixed; each other file is its sidecar's `content`, likewise. The key sets must be equal — a hole fails the build (`DW0180`/`DW0181` at emit time), because a hole is a player reading a raw key. |
 | Language codes | `dsl::mclang::mc_lang_code` normalises (lowercase, `-`→`_`) and then **checks membership against the pinned client's own language set** — `CLIENT_LANGS`, 143 stems **derived** from Mojang's 1.21.11 asset index (`tools/derive-client-langs.py`; digests in the module header), never transcribed. The membership check is what makes normalisation safe: a bare rewrite alone would invent `de` from `de`, a filename no client asks for, and a lang file nobody loads is a language silently dropped. A bare language resolves to `<lang>_<lang>` if the client ships one, else to its sole file; ambiguous (`zh`, `sr`, `be`) and unknown codes are `DW0184`. Baked into the source — the compiler never reaches the network during a build (ADR-0006). |
 | `--lang <code>` | **Unchanged**, and still the single-language bake (spec-0029 §4): strings are swapped before emission, nothing carries a translate key, and the build ships **no** lang files — there is nothing for a client to select between. For local dev and one-language artifacts; the release path does not use it. |
 | Art titles | `emit_narrate` no longer `to_ascii_uppercase()`s an `art` string — a case transform is something a `{"translate": …}` component cannot express, since the client resolves the lang file after the compiler is gone. The `delve:art` font now carries a **second bitmap provider** over the same atlas addressed by the lowercase letters, so a lowercase letter renders through its uppercase bitmap: identical pixels, in every language. Cells with no lowercase form are `\u0000` (vanilla's unused-cell marker), so no char is claimed twice. |
@@ -1013,6 +1025,34 @@ all, and the delve must still be playable in English.
 No DSL change and no `dsl_version` bump: this is emission only. Every campaign's
 emitted bytes change (literals become components); released delves reproduce
 through their pinned engine (`versions.toml` + OCI), per the versioning discipline.
+
+#### One delve, one vocabulary
+
+**A delve's keys are its own, because the client's language table is not.** The
+key a component references and the key a lang file defines are
+`delve.<campaign_id>.<l10n key>`, and no other delve can produce it.
+
+The reason is where those keys are read. A Minecraft client merges every applied
+resource pack into **one** language table — per key, highest-priority pack wins,
+a server-pushed pack on top of every client-enabled one — and
+`TranslatableContents` reads a component's `fallback` **only when the key is
+absent from that table** (`Language.getOrDefault(key, fallback)`). Packs stay
+applied across worlds and servers: `tools/playtest-server.sh` installs each
+delve's pack into the player's own `resourcepacks/` directory as
+`<campaign_id>.zip`, where it remains enabled in `options.txt` until the player
+turns it off. So a key that named only its row inside one campaign — `world.title`
+— was a key any delve that had ever been played could answer for the delve being
+played now, and did: a finished tour toasted another campaign's title, in a
+language that delve does not ship. `fallback` cannot protect against this; it is
+reached only when nobody defines the key.
+
+| Piece | Behaviour |
+|---|---|
+| The rule | Every key that leaves the delve carries `delve.<campaign_id>.`. Campaign strings and compiler chrome alike — chrome rides the same pack, so a globally-keyed chrome row renders one delve's `Delve Complete` in another delve's language. |
+| One authority | `dsl::l10n::pack_key` / `pack_namespace`. Applied at exactly two places: `tag_translatables` (which is what every campaign string and, through `Chrome`, every chrome string travels on) and `emit::lang_assets` (which writes the pack). No emitter builds a key. |
+| Not the sidecar | An `l10n/<code>.json` keeps the campaign-relative key. It sits inside one campaign's directory, so it has nothing to collide with, and a namespaced sidecar would re-key every row on a rename for no gain. |
+| Grain | The campaign id — what the pack file is named after, so rebuilding a campaign replaces its own pack rather than joining it, and two builds of one campaign cannot both be applied. Ids are kebab tokens with no `.`, so one delve's namespace can never prefix another's key. |
+| Proof | `crates/delvec/tests/i18n_v2.rs`: two campaigns that differ only in id and text are built and their key sets compared — referenced and defined, both disjoint, and equal once the namespaces are stripped. Beside it, over one delve: every key it references is under its own namespace and is defined by its own pack, with no exemption list. |
 
 #### Compiler chrome — the strings the compiler writes itself
 
@@ -1036,8 +1076,8 @@ only what the compiler bakes when nothing is authored.
 
 | Piece | Behaviour |
 |---|---|
-| Key space | `delvewright.ui.<area>.<name>`. Collision-proof both ways by construction: the l10n key scheme derives a fixed set of kinds and can never produce `delvewright.`, and vanilla never defines it either. A sidecar that writes one anyway is `DW0186`. |
-| Delivery | Identical to an authored string: the chrome string enters emission as a translation tag, an emitter lowers it through `emit::tr`/`snbt_component`, and a site that fails to is `DW0185` — chrome inherits the whole invariant rather than getting a parallel path. |
+| Key space | `delvewright.ui.<area>.<name>` within the campaign's own space, emitted as `delve.<campaign_id>.delvewright.ui.<area>.<name>` like every other key. Collision-proof both ways by construction: the l10n key scheme derives a fixed set of kinds and can never produce `delvewright.`, and vanilla never defines it either. A sidecar that writes one anyway is `DW0186` — a sidecar holds campaign-relative keys, so the reserved prefix is unchanged there. |
+| Delivery | Identical to an authored string: the chrome string enters emission as a translation tag, an emitter lowers it through `emit::tr`/`snbt_component`, and a site that fails to is `DW0185` — chrome inherits the whole invariant rather than getting a parallel path. `Chrome::for_build(<campaign id>, <language>)` is what binds a chrome key to the delve; the plan-time default (`ChromeString::tagged()`, for a `sealed_hint` or a bonfire label the compiler bakes before the language is known) carries the bare key and is bound by `Chrome::rebind` at emission. A site that forgot to rebind would emit a key no pack defines, which `i18n_v2.rs` fails the tree for. |
 | Sentences, not fragments | Four chrome strings frame a value and are **one key with `%s`**, carried by the component's `with` (`"%s — complete."`, `"New objective: %s"`, `"Waiting for the party — %s / %s"`). A concatenation freezes English word order into every language; `translate`+`with` is vanilla's own primitive for it. A unit test requires each language's placeholder count to equal the English's. |
 | Lang files | Chrome is written into `en_us.json` and into each **declared** language's file — never into languages the delve does not already ship, or a French client on a Chinese-only campaign would read French chrome around English story. Partial-by-language reads as broken; uniform English does not. |
 | The honest fallback | A language the compiler has no chrome table for gets **no chrome rows at all**: the client resolves through `en_us.json` (or, for a player who declined the pack, the component's own `fallback`) and reads English. Absent, never English written into `fr_fr.json` under a translated name. |

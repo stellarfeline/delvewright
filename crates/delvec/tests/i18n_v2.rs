@@ -114,6 +114,15 @@ fn fallback_value(obj: &str) -> Option<&str> {
     Some(&rest[..end])
 }
 
+/// The key namespace the delve in `dir` emits under (`delve.<campaign_id>.`),
+/// read from the campaign's own `world.json` rather than written as a literal, so
+/// a test states the rule and not a copy of one fixture's id.
+fn pack_namespace(dir: &Path) -> String {
+    let doc: Value =
+        serde_json::from_str(&std::fs::read_to_string(dir.join("world.json")).unwrap()).unwrap();
+    delvewright_dsl::pack_namespace(doc["campaign_id"].as_str().expect("a campaign id"))
+}
+
 /// The l10n inventory of a campaign directory, derived fresh from its stage docs
 /// — never from a fixture, so AC2 compares the pack against the authority rather
 /// than against a copy of itself.
@@ -188,9 +197,19 @@ fn ac2_english_lang_file_is_the_live_inventory_plus_chrome() {
         chrome.len()
     );
     let prefix = delvewright_dsl::chrome::RESERVED_PREFIX;
+    // Every row of the file is under this delve's namespace; what the campaign and
+    // the compiler each own is the key UNDER it.
+    let ns = pack_namespace(&dir);
     let (campaign_half, chrome_half): (BTreeMap<_, _>, BTreeMap<_, _>) = en
         .iter()
-        .map(|(k, v)| (k.clone(), v.clone()))
+        .map(|(k, v)| {
+            (
+                k.strip_prefix(&ns)
+                    .unwrap_or_else(|| panic!("`{k}` is outside the delve's namespace `{ns}`"))
+                    .to_string(),
+                v.clone(),
+            )
+        })
         .partition(|(k, _)| !k.starts_with(prefix));
     assert_eq!(
         campaign_half, inv,
@@ -229,7 +248,13 @@ fn ac3_ac4_authored_strings_ship_only_as_translatable_components() {
         let out = tmp(&format!("i18n-ac34-{name}"));
         build(&dir, &out, &[]);
         let tree = read_tree(&out);
-        let inv = fresh_inventory(&dir);
+        // The inventory is the campaign's own key space; what a component carries
+        // is that key under the delve's namespace.
+        let ns = pack_namespace(&dir);
+        let inv: BTreeMap<String, String> = fresh_inventory(&dir)
+            .into_iter()
+            .map(|(k, v)| (format!("{ns}{k}"), v))
+            .collect();
         assert!(!inv.is_empty(), "{name}: empty inventory examined nothing");
 
         // Every `{"translate": k, "fallback": f}` the tree emits, JSON and SNBT.
@@ -389,6 +414,221 @@ fn ac6_double_build_is_byte_identical_lang_files_included() {
         ta.len(),
         langs.len()
     );
+}
+
+// ---------------------------------------------------------------------------
+// One delve, one vocabulary
+// ---------------------------------------------------------------------------
+
+/// Every `translate` key the built tree references, in both emitted forms: the
+/// JSON component (`"translate":"…"`, with or without the space a pretty-printed
+/// file carries) and the SNBT compound (`translate:"…"`) an NBT field holds.
+fn emitted_translate_keys(tree: &BTreeMap<String, Vec<u8>>) -> BTreeSet<String> {
+    let mut out = BTreeSet::new();
+    let mut take = |text: &str, open: &str| {
+        for (i, _) in text.match_indices(open) {
+            let rest = &text[i + open.len()..];
+            let rest = rest.trim_start();
+            let Some(rest) = rest.strip_prefix('"') else {
+                continue;
+            };
+            if let Some(end) = rest.find('"') {
+                out.insert(rest[..end].to_string());
+            }
+        }
+    };
+    for (path, bytes) in tree {
+        if path.ends_with(".nbt") || path.ends_with(".png") || path == "resourcepack.zip" {
+            continue;
+        }
+        let text = String::from_utf8_lossy(bytes);
+        take(&text, "\"translate\":");
+        take(&text, "translate:");
+    }
+    out
+}
+
+/// Every key the delve's resource pack DEFINES, across all its language files.
+fn defined_lang_keys(tree: &BTreeMap<String, Vec<u8>>) -> BTreeSet<String> {
+    match tree.get("resourcepack.zip") {
+        Some(pack) => lang_files(pack)
+            .values()
+            .flat_map(|m| m.keys().cloned())
+            .collect(),
+        None => BTreeSet::new(),
+    }
+}
+
+/// Copy `src` to a fresh directory, rewrite `campaign_id` in every document it
+/// holds, and give the world a different title. Two delves that differ in nothing
+/// else — the same rows, the same shapes, other text.
+fn campaign_named(src: &Path, id: &str, title: &str) -> std::path::PathBuf {
+    let dir = tmp(&format!("i18n-vocab-{id}"));
+    common::copy_dir_all(src, &dir);
+    let mut docs = 0usize;
+    let walk = |dir: &Path, docs: &mut usize| {
+        let mut stack = vec![dir.to_path_buf()];
+        while let Some(d) = stack.pop() {
+            for entry in std::fs::read_dir(&d).unwrap() {
+                let p = entry.unwrap().path();
+                if p.is_dir() {
+                    stack.push(p);
+                    continue;
+                }
+                if p.extension().is_none_or(|e| e != "json") {
+                    continue;
+                }
+                let mut doc: Value =
+                    serde_json::from_str(&std::fs::read_to_string(&p).unwrap()).unwrap();
+                if doc.get("campaign_id").is_none() {
+                    continue;
+                }
+                doc["campaign_id"] = serde_json::json!(id);
+                if doc["content"].get("title").is_some() {
+                    doc["content"]["title"] = serde_json::json!(title);
+                }
+                std::fs::write(&p, serde_json::to_string_pretty(&doc).unwrap()).unwrap();
+                *docs += 1;
+            }
+        }
+    };
+    walk(&dir, &mut docs);
+    assert!(docs >= 6, "a campaign is more than {docs} documents");
+    // The zh-cn sidecar translates `world.title`; its `source` row recorded the
+    // English it was made from, and that English just changed (`DW0187`).
+    let side = dir.join("l10n/zh-cn.json");
+    if side.exists() {
+        let mut doc: Value =
+            serde_json::from_str(&std::fs::read_to_string(&side).unwrap()).unwrap();
+        doc["source"]["world.title"] = serde_json::json!(title);
+        std::fs::write(&side, serde_json::to_string_pretty(&doc).unwrap()).unwrap();
+    }
+    dir
+}
+
+/// **The defect, as a property.** Two delves must not put the same translate key
+/// on different text.
+///
+/// A client merges every applied resource pack into ONE language table, and a
+/// `{"translate": …, "fallback": …}` component reads its `fallback` only when the
+/// key is missing from that table. So while any other delve's pack is applied —
+/// `tools/playtest-server.sh` installs each one into the player's own
+/// `resourcepacks/` directory, where it stays enabled across servers — a
+/// globally-keyed `world.title` is answered by whichever delve's pack is loaded,
+/// not by the delve being played. It was: a finished tour of Doune Castle toasted
+/// another campaign's title, in a language Doune does not ship.
+///
+/// Built, not asserted against a format string: two campaigns that differ only in
+/// their id and their text are compiled through the shipped path, and what is
+/// compared is every key their trees reference and every key their packs define.
+/// Strip the namespace and the two sets are EQUAL — which is both the defect and
+/// the perturbation this test would catch.
+#[test]
+fn two_delves_share_no_translate_key() {
+    let src = common::keep_trial_dir();
+    let a_dir = campaign_named(&src, "delve-alpha", "Alpha Keep: a trial");
+    let b_dir = campaign_named(&src, "delve-beta", "Beta Hold: another trial");
+    let (a_out, b_out) = (tmp("i18n-vocab-a-out"), tmp("i18n-vocab-b-out"));
+    build(&a_dir, &a_out, &[]);
+    build(&b_dir, &b_out, &[]);
+    let (ta, tb) = (read_tree(&a_out), read_tree(&b_out));
+
+    let (ka, kb) = (emitted_translate_keys(&ta), emitted_translate_keys(&tb));
+    let (la, lb) = (defined_lang_keys(&ta), defined_lang_keys(&tb));
+    assert!(!ka.is_empty() && !kb.is_empty(), "no keys examined");
+    assert!(!la.is_empty() && !lb.is_empty(), "no lang files examined");
+    println!(
+        "vocabulary binding: {} / {} keys referenced, {} / {} keys defined",
+        ka.len(),
+        kb.len(),
+        la.len(),
+        lb.len()
+    );
+
+    let shared: Vec<&String> = ka.intersection(&kb).collect();
+    assert!(
+        shared.is_empty(),
+        "two delves reference {} key(s) in common — each is a string one delve's \
+         applied pack answers for the other: {shared:#?}",
+        shared.len()
+    );
+    let shared_defs: Vec<&String> = la.intersection(&lb).collect();
+    assert!(
+        shared_defs.is_empty(),
+        "two delves DEFINE {} key(s) in common in their packs: {shared_defs:#?}",
+        shared_defs.len()
+    );
+
+    // The keys are the same rows — it is only the namespace that separates them.
+    // Without it these two campaigns would define `world.title` twice, over two
+    // different titles, which is the defect verbatim.
+    let strip = |keys: &BTreeSet<String>, ns: &str| -> BTreeSet<String> {
+        keys.iter()
+            .map(|k| {
+                k.strip_prefix(ns)
+                    .unwrap_or_else(|| panic!("`{k}` is outside the delve's namespace `{ns}`"))
+                    .to_string()
+            })
+            .collect()
+    };
+    let (na, nb) = (pack_namespace(&a_dir), pack_namespace(&b_dir));
+    assert_eq!(
+        strip(&la, &na),
+        strip(&lb, &nb),
+        "the two delves are the same rows under two namespaces"
+    );
+    let title = format!("{}world.title", na);
+    assert!(
+        la.contains(&title),
+        "the title's key is namespaced: {title}"
+    );
+    assert_ne!(
+        ta["manifest.json"], tb["manifest.json"],
+        "the two builds really are different delves"
+    );
+}
+
+/// The other half of the same property, over **one** delve: every key it
+/// references is its own, and every key it references that is not vanilla's is one
+/// its own pack defines. A key referenced but not defined is a key any other
+/// delve's pack can answer — which is how a chrome default that escaped
+/// `Chrome::rebind` would ship.
+#[test]
+fn every_key_a_delve_references_is_its_own() {
+    let dir = common::keep_trial_dir();
+    let out = tmp("i18n-vocab-own");
+    build(&dir, &out, &[]);
+    let tree = read_tree(&out);
+    let ns = pack_namespace(&dir);
+    let referenced = emitted_translate_keys(&tree);
+    let defined = defined_lang_keys(&tree);
+    assert!(!referenced.is_empty(), "no translate keys examined");
+
+    // No exemption list. The delve emits no vanilla `translate` key today, so
+    // there is nothing here for a defect to hide behind: a key outside the
+    // namespace is a finding, and a future emitter that has a reason to reference
+    // one says so by turning this red.
+    let mut foreign = Vec::new();
+    let mut own = 0usize;
+    for k in &referenced {
+        if k.starts_with(&ns) {
+            own += 1;
+            assert!(
+                defined.contains(k),
+                "`{k}` is referenced but not defined in this delve's pack — a client \
+                 renders whatever pack is applied, or the fallback"
+            );
+        } else {
+            foreign.push(k.clone());
+        }
+    }
+    assert!(
+        foreign.is_empty(),
+        "{} key(s) outside this delve's namespace `{ns}`: {foreign:#?}",
+        foreign.len()
+    );
+    assert!(own > 0, "zero keys examined is a failure, not a pass");
+    println!("own-vocabulary binding: {own} keys referenced and defined under `{ns}`");
 }
 
 /// spec-0029 §3 — the `fallback` rides the COMPONENT, not the pack. A player who
@@ -587,8 +827,10 @@ fn a_lang_bake_ships_no_language_carrier() {
 #[test]
 fn chrome_ships_as_components_not_literals() {
     let out = tmp("i18n-chrome");
-    build(&common::keep_trial_dir(), &out, &[]);
+    let dir = common::keep_trial_dir();
+    build(&dir, &out, &[]);
     let tree = read_tree(&out);
+    let ns = pack_namespace(&dir);
 
     let mut seen: BTreeSet<&str> = BTreeSet::new();
     let mut literals = Vec::new();
@@ -598,7 +840,10 @@ fn chrome_ships_as_components_not_literals() {
         }
         let text = String::from_utf8_lossy(bytes);
         for c in delvewright_dsl::chrome::ALL {
-            if text.contains(c.key) {
+            // Under the delve's own namespace — a bare chrome key in the tree is a
+            // key another delve's pack answers, so looking for the bare one would
+            // pass on exactly the shape this fix removes.
+            if text.contains(&format!("{ns}{}", c.key)) {
                 seen.insert(c.key);
             }
             // The English may appear ONLY as a `fallback`. Any other occurrence is
@@ -653,7 +898,9 @@ fn chrome_ships_as_components_not_literals() {
 #[test]
 fn framed_chrome_uses_placeholders_and_with_arguments() {
     let out = tmp("i18n-chrome-args");
-    build(&common::keep_trial_dir(), &out, &[]);
+    let dir = common::keep_trial_dir();
+    build(&dir, &out, &[]);
+    let ns = pack_namespace(&dir);
     let tree = read_tree(&out);
     let announce = tree
         .iter()
@@ -669,7 +916,7 @@ fn framed_chrome_uses_placeholders_and_with_arguments() {
 
     assert_eq!(
         comp["translate"],
-        delvewright_dsl::chrome::OBJECTIVE_NEW.key
+        format!("{ns}{}", delvewright_dsl::chrome::OBJECTIVE_NEW.key)
     );
     assert_eq!(comp["fallback"], "New objective: %s");
     let with = comp["with"].as_array().expect("the title rides in `with`");
@@ -677,7 +924,7 @@ fn framed_chrome_uses_placeholders_and_with_arguments() {
     assert!(
         with[0]["translate"]
             .as_str()
-            .is_some_and(|k| k.starts_with("obj.") && k.ends_with(".title")),
+            .is_some_and(|k| k.starts_with(&format!("{ns}obj.")) && k.ends_with(".title")),
         "the argument is the objective's own translatable title: {comp}"
     );
     // The prefix and the title are ONE component now, so the title's own style
@@ -692,14 +939,21 @@ fn framed_chrome_uses_placeholders_and_with_arguments() {
 #[test]
 fn chrome_rides_the_language_files_the_delve_ships() {
     let out = tmp("i18n-chrome-lang");
-    build(&common::keep_trial_dir(), &out, &[]);
+    let dir = common::keep_trial_dir();
+    build(&dir, &out, &[]);
     let langs = lang_files(read_tree(&out).get("resourcepack.zip").expect("pack"));
-    let prefix = delvewright_dsl::chrome::RESERVED_PREFIX;
+    // Chrome rows are `<delve namespace><reserved prefix><name>`: the delve's
+    // vocabulary first, then the segment that says the compiler owns the string.
+    // Compared against `chrome::*_entries` under the namespace stripped back off.
+    let ns = pack_namespace(&dir);
     let chrome_of = |file: &str| -> BTreeMap<String, String> {
         langs[file]
             .iter()
-            .filter(|(k, _)| k.starts_with(prefix))
-            .map(|(k, v)| (k.clone(), v.clone()))
+            .filter_map(|(k, v)| {
+                let bare = k.strip_prefix(&ns)?;
+                bare.starts_with(delvewright_dsl::chrome::RESERVED_PREFIX)
+                    .then(|| (bare.to_string(), v.clone()))
+            })
             .collect()
     };
     let en = chrome_of("assets/delvewright/lang/en_us.json");
