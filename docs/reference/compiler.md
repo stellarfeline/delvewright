@@ -2013,6 +2013,19 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   one direction that cannot soft-lock a delve, said out loud instead of decided in
   silence. The harness prints every ambiguity at load.
 
+  **`why` names only remedies the object can still take** (`combat::ambiguity_remedy`).
+  The two NPC-side moves — a different `base_entity`, or a `skin` — are both inert
+  once the colliding kind is `mannequin`: an NPC whose body is a mannequin got
+  there by declaring a `skin`, and its `base_entity` is not the body it wears, so
+  the message points at the other side of the collision instead (take the wave mob
+  or actor off `minecraft:mannequin`). Where the collision is on some other kind
+  and this campaign *also* fights mannequins, the `skin` move would trade one
+  collision for another and is not offered either. **Open, and not this census's
+  question:** the kind is the whole channel the bot has (entity tags are not
+  readable from the client), so a delve that bodies every character as a mannequin
+  cannot be separated by any quantifier over kinds — that belongs to how the
+  harness identifies a body, not to who is counted here.
+
   The harness **requires** the block and refuses a path without it. The only
   fallback available to it is a literal set of entity names living in the harness,
   which is right only for the campaigns whose author happened to pick those
