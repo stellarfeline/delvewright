@@ -55,6 +55,10 @@ def catalog_card(
             "style": entry.features.get("style", ""),
             "palette": _palette_tags(entry),
             "model": entry.model,
+            # What the character is WEARING is part of what the card describes:
+            # a reviewer picking a skin off the card should not have to open the
+            # PNG to learn whether it has long sleeves, trousers and boots.
+            "wardrobe": entry.wardrobe.as_tags(),
         },
         "model": entry.model,
         "hidden_layers": entry.hidden_layers,
