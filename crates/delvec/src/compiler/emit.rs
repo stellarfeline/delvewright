@@ -1866,7 +1866,14 @@ pub fn build_with_warnings(
         out.insert("resourcepack.zip".to_string(), zip);
         out.insert(
             "SKINS.md".to_string(),
-            pack_note(&sha1, skins, art, &plan.campaign.world.content.languages).into_bytes(),
+            pack_note(
+                &sha1,
+                skins,
+                plan.campaign.world.campaign_id.as_str(),
+                art,
+                &plan.campaign.world.content.languages,
+            )
+            .into_bytes(),
         );
         Some(sha1)
     };
@@ -2262,6 +2269,7 @@ fn is_verbatim_binary_output(path: &str) -> bool {
 fn pack_note(
     sha1: &str,
     skins: &BTreeMap<String, Vec<u8>>,
+    campaign_id: &str,
     art: bool,
     languages: &[String],
 ) -> String {
@@ -2277,11 +2285,18 @@ fn pack_note(
          - `RESOURCE_PACK_PROMPT` = a JSON text component (not a bare string)\n\n",
     ));
     if !skins.is_empty() {
-        s.push_str(
-            "Baked skins (`skins/<id>.png` → `assets/delvewright/textures/npc/<id>.png`):\n\n",
-        );
+        // The archive path carries this delve's own texture directory
+        // (`dsl::pack_texture_dir`): a client keeps every applied pack's textures in
+        // one merged space, so a face baked under a bare `keeper` is the face every
+        // other delve's `keeper` wears. The host is shown both names — the one the
+        // campaign authored and the one the pack ships.
+        let dir = delvewright_dsl::pack_texture_dir(campaign_id);
+        s.push_str("Baked skins (`skins/<id>.png` → the pack path beside it):\n\n");
         for id in skins.keys() {
-            s.push_str(&format!("- `{id}`\n"));
+            let authored = id.strip_prefix(&dir).unwrap_or(id);
+            s.push_str(&format!(
+                "- `{authored}` → `assets/delvewright/textures/npc/{id}.png`\n"
+            ));
         }
         s.push('\n');
     }

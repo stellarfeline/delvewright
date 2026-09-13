@@ -18,7 +18,7 @@
     },
     "mc_version": "1.21.11",
     "outputs": {
-      "SKINS.md": "3a2c8dd3a4f1c6203c06005fa31c51cdf1674e56205bf16180d4954a28d5df70",
+      "SKINS.md": "c3f94d352b787eb6b7867226190c68d4614dbeeec9e2fffb0cde255255c277d6",
       "creator-datapack/data/gallery/function/creator/emit.mcfunction": "643b4277ab79f0e152aa5abde227803cdacfcc57fae11fab233766780d640d91",
       "creator-datapack/data/gallery/function/creator/init.mcfunction": "7f81f1513ec83983d78d01842840c901c83487d3983da8f011b01da95b7eae6d",
       "creator-datapack/data/gallery/function/creator/rehearsal/aim.mcfunction": "5b00f8ca9b8eff0bbbae6a8e3192108dc2c80271e238ab4e4f5a3e093a6c919e",
@@ -223,7 +223,7 @@
       "datapack/data/gallery/function/seq_near_hall_oc_take_the_emeralds_0_0.mcfunction": "d880e6ee54c3a242a4e430b4dd01aa02a2ace0f34068610ad0f2557b93e6997e",
       "datapack/data/gallery/function/seq_near_hall_oc_take_the_emeralds_0_1.mcfunction": "171474b8bf36427b163da1aef08e62dc6fe8d299746dfc25f24d4d15eb82f2f9",
       "datapack/data/gallery/function/setup.mcfunction": "826fe7d845003e79126f63c193de652e281b7ead4d29861baf1b4f1fce7ddc92",
-      "datapack/data/gallery/function/setup_finish.mcfunction": "e84f4e15dc9bc50e7376f8a9900adc02928be233a7b469ead4ef1560ce9e5393",
+      "datapack/data/gallery/function/setup_finish.mcfunction": "4f8faaede0644116b1a6e2305d6a0aa923e6d7b73c7fa565c199737928e82643",
       "datapack/data/gallery/function/shop_open_0.mcfunction": "6c8558fe4278f93d5998638a2156a9579272dc62c05824df81b6e9083df460c9",
       "datapack/data/gallery/function/shop_pick_0_0.mcfunction": "5f35ad55346921ae9f7762d2facd4b83999bd136ecca92cb6154fe6f481af64e",
       "datapack/data/gallery/function/shop_pick_0_1.mcfunction": "bd5c24044fb7473e47958c5a4b37f484f8e06600d0aa2125c6e161641d47374e",
@@ -236,7 +236,7 @@
       "datapack/data/gallery/function/spawn_actor_hall_moth.mcfunction": "6c19680ba42ea9b28f18d3d2526cb841d9073912352b75d8e0dc297bd42b99a8",
       "datapack/data/gallery/function/spawn_actor_rafter_spider.mcfunction": "3eebba3d1b044f0924645478dd11d2095a1f0b3d575e4e51f2c86e4b1a6e030b",
       "datapack/data/gallery/function/spawn_actor_sergeant.mcfunction": "c1906a80fbbbfd6341a10625cd861a2073fed158b640511a4560fe1c41fc0460",
-      "datapack/data/gallery/function/spawn_actor_standard_bearer.mcfunction": "09e78c414b8da415b3316ddbce0444519ed54479bbe3262e2afe2034990169bf",
+      "datapack/data/gallery/function/spawn_actor_standard_bearer.mcfunction": "d304cc7d50b8258fa828ac8cf73bc5c468331eb176419de06f7d1da2e02c322f",
       "datapack/data/gallery/function/spawn_edge.mcfunction": "20e4a0eb84772fbd83c4fd4e36fb46b071e82791be9bc923451ac3eefe60c6b9",
       "datapack/data/gallery/function/spawn_lane.mcfunction": "0a9d279fc4e1795f645f942ddcb193f46ba30848b94ec80facef4430b890910c",
       "datapack/data/gallery/function/spawn_muster.mcfunction": "84773df18acdbab64317f0239c53df4985642001823fcf2e1f1db29159bdff37",
@@ -516,7 +516,7 @@
       "packtest-datapack/data/gallery/test/wave_kill_reward_muster.mcfunction": "28b061d6227ef949258649bb54e3efc12dfdf4111266600c135f02667b8f39f0",
       "packtest-datapack/pack.mcmeta": "549482756b33bacc8910abe034e55837ccb4df3029ce38065c59c9ce5754f76b",
       "render-plan.json": "8135419b22005d2af35983f4da69f856331a168a4075ccc720d27603a0b33c0f",
-      "resourcepack.zip": "5db371cb4bdf9b8e50131c3de744e1523be5c779aa2893a873c71d67f95ef831",
+      "resourcepack.zip": "231711cae02bfae001f85f7d3ab6e0ecb3bf9afde69eae9384fca04ec5d0f6ac",
       "server/README.md": "2a170d37045bc6fa04bd55a7c7b8202ad035a3e80825aee2190c597ebeaa25df",
       "server/eula-note.txt": "2490937c526ded0804802b6b9076c936f44260715afb64af26dd8f8cce02a7aa",
       "server/server.properties": "6ae89ea9ad5417b8435b624dcb48e5332077ad8471fb7c2b03219b52a7c0e249",
@@ -550,7 +550,7 @@
       "validation/watch-ledger.json": "479fcc1e0eeaa6ac065bc634c3ccdd0f63f9d4bf18b633b7db005e545f82d0f0",
       "validation/ways.json": "7a5f47e7e2a2a66ba527df3a155eb52cce06e559cdc846dfcdb00506d33f7f33"
     },
-    "resource_pack_sha1": "54bf9d764a1a4fe5243ebd41e11925eb1da175ea"
+    "resource_pack_sha1": "34f27768067c88ba9787189d281dab5db210a374"
   },
   "hard.en": {
     "campaign_id": "gallery",
@@ -571,7 +571,7 @@
     },
     "mc_version": "1.21.11",
     "outputs": {
-      "SKINS.md": "3a2c8dd3a4f1c6203c06005fa31c51cdf1674e56205bf16180d4954a28d5df70",
+      "SKINS.md": "c3f94d352b787eb6b7867226190c68d4614dbeeec9e2fffb0cde255255c277d6",
       "creator-datapack/data/gallery/function/creator/emit.mcfunction": "643b4277ab79f0e152aa5abde227803cdacfcc57fae11fab233766780d640d91",
       "creator-datapack/data/gallery/function/creator/init.mcfunction": "7f81f1513ec83983d78d01842840c901c83487d3983da8f011b01da95b7eae6d",
       "creator-datapack/data/gallery/function/creator/rehearsal/aim.mcfunction": "5b00f8ca9b8eff0bbbae6a8e3192108dc2c80271e238ab4e4f5a3e093a6c919e",
@@ -776,7 +776,7 @@
       "datapack/data/gallery/function/seq_near_hall_oc_take_the_emeralds_0_0.mcfunction": "d880e6ee54c3a242a4e430b4dd01aa02a2ace0f34068610ad0f2557b93e6997e",
       "datapack/data/gallery/function/seq_near_hall_oc_take_the_emeralds_0_1.mcfunction": "171474b8bf36427b163da1aef08e62dc6fe8d299746dfc25f24d4d15eb82f2f9",
       "datapack/data/gallery/function/setup.mcfunction": "8facac89238731c80966d5437fefbacae433afe2cadef96fcecf6a741b7a52ad",
-      "datapack/data/gallery/function/setup_finish.mcfunction": "e84f4e15dc9bc50e7376f8a9900adc02928be233a7b469ead4ef1560ce9e5393",
+      "datapack/data/gallery/function/setup_finish.mcfunction": "4f8faaede0644116b1a6e2305d6a0aa923e6d7b73c7fa565c199737928e82643",
       "datapack/data/gallery/function/shop_open_0.mcfunction": "6c8558fe4278f93d5998638a2156a9579272dc62c05824df81b6e9083df460c9",
       "datapack/data/gallery/function/shop_pick_0_0.mcfunction": "5f35ad55346921ae9f7762d2facd4b83999bd136ecca92cb6154fe6f481af64e",
       "datapack/data/gallery/function/shop_pick_0_1.mcfunction": "bd5c24044fb7473e47958c5a4b37f484f8e06600d0aa2125c6e161641d47374e",
@@ -789,7 +789,7 @@
       "datapack/data/gallery/function/spawn_actor_hall_moth.mcfunction": "6c19680ba42ea9b28f18d3d2526cb841d9073912352b75d8e0dc297bd42b99a8",
       "datapack/data/gallery/function/spawn_actor_rafter_spider.mcfunction": "3eebba3d1b044f0924645478dd11d2095a1f0b3d575e4e51f2c86e4b1a6e030b",
       "datapack/data/gallery/function/spawn_actor_sergeant.mcfunction": "c1906a80fbbbfd6341a10625cd861a2073fed158b640511a4560fe1c41fc0460",
-      "datapack/data/gallery/function/spawn_actor_standard_bearer.mcfunction": "09e78c414b8da415b3316ddbce0444519ed54479bbe3262e2afe2034990169bf",
+      "datapack/data/gallery/function/spawn_actor_standard_bearer.mcfunction": "d304cc7d50b8258fa828ac8cf73bc5c468331eb176419de06f7d1da2e02c322f",
       "datapack/data/gallery/function/spawn_edge.mcfunction": "20e4a0eb84772fbd83c4fd4e36fb46b071e82791be9bc923451ac3eefe60c6b9",
       "datapack/data/gallery/function/spawn_lane.mcfunction": "0a9d279fc4e1795f645f942ddcb193f46ba30848b94ec80facef4430b890910c",
       "datapack/data/gallery/function/spawn_muster.mcfunction": "84773df18acdbab64317f0239c53df4985642001823fcf2e1f1db29159bdff37",
@@ -1069,7 +1069,7 @@
       "packtest-datapack/data/gallery/test/wave_kill_reward_muster.mcfunction": "28b061d6227ef949258649bb54e3efc12dfdf4111266600c135f02667b8f39f0",
       "packtest-datapack/pack.mcmeta": "549482756b33bacc8910abe034e55837ccb4df3029ce38065c59c9ce5754f76b",
       "render-plan.json": "8135419b22005d2af35983f4da69f856331a168a4075ccc720d27603a0b33c0f",
-      "resourcepack.zip": "5db371cb4bdf9b8e50131c3de744e1523be5c779aa2893a873c71d67f95ef831",
+      "resourcepack.zip": "231711cae02bfae001f85f7d3ab6e0ecb3bf9afde69eae9384fca04ec5d0f6ac",
       "server/README.md": "b37b3f668e2456b0ab16f9f7af303ef7ca5f1d18ced01b89544ab767005ceb56",
       "server/eula-note.txt": "2490937c526ded0804802b6b9076c936f44260715afb64af26dd8f8cce02a7aa",
       "server/server.properties": "e9d55b5fbf08c6dec1251ed5d1e9b41a43fd42538744631457c0a417d15f95f8",
@@ -1103,7 +1103,7 @@
       "validation/watch-ledger.json": "479fcc1e0eeaa6ac065bc634c3ccdd0f63f9d4bf18b633b7db005e545f82d0f0",
       "validation/ways.json": "7a5f47e7e2a2a66ba527df3a155eb52cce06e559cdc846dfcdb00506d33f7f33"
     },
-    "resource_pack_sha1": "54bf9d764a1a4fe5243ebd41e11925eb1da175ea"
+    "resource_pack_sha1": "34f27768067c88ba9787189d281dab5db210a374"
   },
   "ocean-horizon.en": {
     "campaign_id": "gallery",
@@ -1124,7 +1124,7 @@
     },
     "mc_version": "1.21.11",
     "outputs": {
-      "SKINS.md": "531c8a0b8650851a5737281e7a71120f71e9f2f01c38622092d58e23653717a8",
+      "SKINS.md": "a65e3995f9afd446868edbeddac1eacb5cac7bc2420a681a55e08d8231c7cb5b",
       "creator-datapack/data/gallery/function/creator/emit.mcfunction": "643b4277ab79f0e152aa5abde227803cdacfcc57fae11fab233766780d640d91",
       "creator-datapack/data/gallery/function/creator/init.mcfunction": "7f81f1513ec83983d78d01842840c901c83487d3983da8f011b01da95b7eae6d",
       "creator-datapack/data/gallery/function/creator/rehearsal/aim.mcfunction": "5b00f8ca9b8eff0bbbae6a8e3192108dc2c80271e238ab4e4f5a3e093a6c919e",
@@ -1329,7 +1329,7 @@
       "datapack/data/gallery/function/seq_near_hall_oc_take_the_emeralds_0_0.mcfunction": "d880e6ee54c3a242a4e430b4dd01aa02a2ace0f34068610ad0f2557b93e6997e",
       "datapack/data/gallery/function/seq_near_hall_oc_take_the_emeralds_0_1.mcfunction": "e9f95e532a7e6e17d338df781512feffa88b858370d960960ba574857295def1",
       "datapack/data/gallery/function/setup.mcfunction": "9cfc4b5ddba3febe3f7ec15e0f61d9380b9cbc7db19e184c1ad2055ce187e37e",
-      "datapack/data/gallery/function/setup_finish.mcfunction": "0c9dec584801134fe8b716f1e50cf1c6166b1197485c91942f94a8df8f55b665",
+      "datapack/data/gallery/function/setup_finish.mcfunction": "9d0cda9fa402f2e2f3e11eb7ec5d02087315cadab5dd3e7a60a53eaac841bd59",
       "datapack/data/gallery/function/shop_open_0.mcfunction": "6c8558fe4278f93d5998638a2156a9579272dc62c05824df81b6e9083df460c9",
       "datapack/data/gallery/function/shop_pick_0_0.mcfunction": "5f35ad55346921ae9f7762d2facd4b83999bd136ecca92cb6154fe6f481af64e",
       "datapack/data/gallery/function/shop_pick_0_1.mcfunction": "bd5c24044fb7473e47958c5a4b37f484f8e06600d0aa2125c6e161641d47374e",
@@ -1342,7 +1342,7 @@
       "datapack/data/gallery/function/spawn_actor_hall_moth.mcfunction": "9dd79c2280fb650d0552604d2840df750d593c2088054b69b8b4cd0e3d6da3d7",
       "datapack/data/gallery/function/spawn_actor_rafter_spider.mcfunction": "406ee6d3acb50a7c23662b73ae0e526e5fe17d76e0c3db59ee7b697171f65bf3",
       "datapack/data/gallery/function/spawn_actor_sergeant.mcfunction": "34d8ed2178cc33653d64802094386bf66af3779b04fbacc12865d7f29d02360a",
-      "datapack/data/gallery/function/spawn_actor_standard_bearer.mcfunction": "dadac4f92a85a03f97f04e70cb781bb709671346e9e4a2ed6e87e8717699da95",
+      "datapack/data/gallery/function/spawn_actor_standard_bearer.mcfunction": "182a29d85a9871ea5efaea98e0911950a8502021150e922d1773e30b0787f2c3",
       "datapack/data/gallery/function/spawn_edge.mcfunction": "20c0084374b2d597562ef1b9699d5e1c1e6597ebbeca213c5a17f3e965a02f75",
       "datapack/data/gallery/function/spawn_lane.mcfunction": "404b7000c9b8f09b8ddf847f4856c348ac58a27b55a77b65895bc3a009b55802",
       "datapack/data/gallery/function/spawn_muster.mcfunction": "39584a18f322bb6ce0e0b9c9434244c8c175f3cf0326015a4269a975fe84cf2f",
@@ -1623,7 +1623,7 @@
       "packtest-datapack/data/gallery/test/wave_kill_reward_muster.mcfunction": "28b061d6227ef949258649bb54e3efc12dfdf4111266600c135f02667b8f39f0",
       "packtest-datapack/pack.mcmeta": "549482756b33bacc8910abe034e55837ccb4df3029ce38065c59c9ce5754f76b",
       "render-plan.json": "157673f7383e63e2535c44e834e8dd49b6c5f061c8ef082d7f62fcde498762b0",
-      "resourcepack.zip": "c5ee34a2b04ce46661fff86932fd5c0742aab8a3557bb075f774da3de1ec8a9f",
+      "resourcepack.zip": "0d073539b4c080f19ccc5444ae73c0da31281c51567bac69ee656fe0ccb6ec34",
       "server/README.md": "9d4727af37f574888ca3c22b23732ba132ed0bccef7b46a441d62c60661fe047",
       "server/eula-note.txt": "2490937c526ded0804802b6b9076c936f44260715afb64af26dd8f8cce02a7aa",
       "server/server.properties": "2ef540fa1c58c4f8c6fad3e078ee6ca869e38143845c8a11d92d49dad4af0831",
@@ -1657,7 +1657,7 @@
       "validation/watch-ledger.json": "bcbda7793d048f862002f73dbee5d838569600e1fe226336681de309c0b07df5",
       "validation/ways.json": "5543152fdde10ba41c96d647c908bf91d4291aada57137efa640f56249feb8f1"
     },
-    "resource_pack_sha1": "fb7426af6c77b51824eae800b7120e957348d085"
+    "resource_pack_sha1": "898e08ff2fd59d52e24c6404c7ea95d4e29e7d2f"
   },
   "primary.en": {
     "campaign_id": "gallery",
@@ -1678,7 +1678,7 @@
     },
     "mc_version": "1.21.11",
     "outputs": {
-      "SKINS.md": "3a2c8dd3a4f1c6203c06005fa31c51cdf1674e56205bf16180d4954a28d5df70",
+      "SKINS.md": "c3f94d352b787eb6b7867226190c68d4614dbeeec9e2fffb0cde255255c277d6",
       "creator-datapack/data/gallery/function/creator/emit.mcfunction": "643b4277ab79f0e152aa5abde227803cdacfcc57fae11fab233766780d640d91",
       "creator-datapack/data/gallery/function/creator/init.mcfunction": "7f81f1513ec83983d78d01842840c901c83487d3983da8f011b01da95b7eae6d",
       "creator-datapack/data/gallery/function/creator/rehearsal/aim.mcfunction": "5b00f8ca9b8eff0bbbae6a8e3192108dc2c80271e238ab4e4f5a3e093a6c919e",
@@ -1883,7 +1883,7 @@
       "datapack/data/gallery/function/seq_near_hall_oc_take_the_emeralds_0_0.mcfunction": "d880e6ee54c3a242a4e430b4dd01aa02a2ace0f34068610ad0f2557b93e6997e",
       "datapack/data/gallery/function/seq_near_hall_oc_take_the_emeralds_0_1.mcfunction": "171474b8bf36427b163da1aef08e62dc6fe8d299746dfc25f24d4d15eb82f2f9",
       "datapack/data/gallery/function/setup.mcfunction": "6a7c5ca9aa5551f27e9bd5d05e54243e6d3fe0e02a4843fedadf88ba60e8bdf0",
-      "datapack/data/gallery/function/setup_finish.mcfunction": "e84f4e15dc9bc50e7376f8a9900adc02928be233a7b469ead4ef1560ce9e5393",
+      "datapack/data/gallery/function/setup_finish.mcfunction": "4f8faaede0644116b1a6e2305d6a0aa923e6d7b73c7fa565c199737928e82643",
       "datapack/data/gallery/function/shop_open_0.mcfunction": "6c8558fe4278f93d5998638a2156a9579272dc62c05824df81b6e9083df460c9",
       "datapack/data/gallery/function/shop_pick_0_0.mcfunction": "5f35ad55346921ae9f7762d2facd4b83999bd136ecca92cb6154fe6f481af64e",
       "datapack/data/gallery/function/shop_pick_0_1.mcfunction": "bd5c24044fb7473e47958c5a4b37f484f8e06600d0aa2125c6e161641d47374e",
@@ -1896,7 +1896,7 @@
       "datapack/data/gallery/function/spawn_actor_hall_moth.mcfunction": "6c19680ba42ea9b28f18d3d2526cb841d9073912352b75d8e0dc297bd42b99a8",
       "datapack/data/gallery/function/spawn_actor_rafter_spider.mcfunction": "3eebba3d1b044f0924645478dd11d2095a1f0b3d575e4e51f2c86e4b1a6e030b",
       "datapack/data/gallery/function/spawn_actor_sergeant.mcfunction": "c1906a80fbbbfd6341a10625cd861a2073fed158b640511a4560fe1c41fc0460",
-      "datapack/data/gallery/function/spawn_actor_standard_bearer.mcfunction": "09e78c414b8da415b3316ddbce0444519ed54479bbe3262e2afe2034990169bf",
+      "datapack/data/gallery/function/spawn_actor_standard_bearer.mcfunction": "d304cc7d50b8258fa828ac8cf73bc5c468331eb176419de06f7d1da2e02c322f",
       "datapack/data/gallery/function/spawn_edge.mcfunction": "20e4a0eb84772fbd83c4fd4e36fb46b071e82791be9bc923451ac3eefe60c6b9",
       "datapack/data/gallery/function/spawn_lane.mcfunction": "0a9d279fc4e1795f645f942ddcb193f46ba30848b94ec80facef4430b890910c",
       "datapack/data/gallery/function/spawn_muster.mcfunction": "84773df18acdbab64317f0239c53df4985642001823fcf2e1f1db29159bdff37",
@@ -2176,7 +2176,7 @@
       "packtest-datapack/data/gallery/test/wave_kill_reward_muster.mcfunction": "28b061d6227ef949258649bb54e3efc12dfdf4111266600c135f02667b8f39f0",
       "packtest-datapack/pack.mcmeta": "549482756b33bacc8910abe034e55837ccb4df3029ce38065c59c9ce5754f76b",
       "render-plan.json": "8135419b22005d2af35983f4da69f856331a168a4075ccc720d27603a0b33c0f",
-      "resourcepack.zip": "5db371cb4bdf9b8e50131c3de744e1523be5c779aa2893a873c71d67f95ef831",
+      "resourcepack.zip": "231711cae02bfae001f85f7d3ab6e0ecb3bf9afde69eae9384fca04ec5d0f6ac",
       "server/README.md": "146fc6a4d386b4d4800b39260a7e8cd824f5ac1979e9d35fcd649858d3a980bd",
       "server/eula-note.txt": "2490937c526ded0804802b6b9076c936f44260715afb64af26dd8f8cce02a7aa",
       "server/server.properties": "83516c3c981c454b068b881cb9ae270e78e24fc209bc4b20937ba24ce4c06567",
@@ -2210,7 +2210,7 @@
       "validation/watch-ledger.json": "479fcc1e0eeaa6ac065bc634c3ccdd0f63f9d4bf18b633b7db005e545f82d0f0",
       "validation/ways.json": "7a5f47e7e2a2a66ba527df3a155eb52cce06e559cdc846dfcdb00506d33f7f33"
     },
-    "resource_pack_sha1": "54bf9d764a1a4fe5243ebd41e11925eb1da175ea"
+    "resource_pack_sha1": "34f27768067c88ba9787189d281dab5db210a374"
   },
   "primary.zh-cn": {
     "campaign_id": "gallery",
@@ -2232,7 +2232,7 @@
     "language": "zh-cn",
     "mc_version": "1.21.11",
     "outputs": {
-      "SKINS.md": "ec51590104e1d0319c09d0021f6d138b3bfc3eddbb8e50dc60f3dbaba6395076",
+      "SKINS.md": "ca785519a6740b9b4cc53a6cf859739e8c1c9612135251a72db8fb4cbf757401",
       "creator-datapack/data/gallery/function/creator/emit.mcfunction": "643b4277ab79f0e152aa5abde227803cdacfcc57fae11fab233766780d640d91",
       "creator-datapack/data/gallery/function/creator/init.mcfunction": "7f81f1513ec83983d78d01842840c901c83487d3983da8f011b01da95b7eae6d",
       "creator-datapack/data/gallery/function/creator/rehearsal/aim.mcfunction": "5b00f8ca9b8eff0bbbae6a8e3192108dc2c80271e238ab4e4f5a3e093a6c919e",
@@ -2437,7 +2437,7 @@
       "datapack/data/gallery/function/seq_near_hall_oc_take_the_emeralds_0_0.mcfunction": "4ac8c8a2bcd0bedea837c9a188d14e46e333ceb0890a5812efcc13ffff4304df",
       "datapack/data/gallery/function/seq_near_hall_oc_take_the_emeralds_0_1.mcfunction": "171474b8bf36427b163da1aef08e62dc6fe8d299746dfc25f24d4d15eb82f2f9",
       "datapack/data/gallery/function/setup.mcfunction": "6a7c5ca9aa5551f27e9bd5d05e54243e6d3fe0e02a4843fedadf88ba60e8bdf0",
-      "datapack/data/gallery/function/setup_finish.mcfunction": "122d256d062745064559751d22346dd343c4e3c06296eab980003e93b8e46aec",
+      "datapack/data/gallery/function/setup_finish.mcfunction": "4bc5240d29ba1fbc17987c9aa0dbbae0198906bd43ffe92b93b418102de14df6",
       "datapack/data/gallery/function/shop_open_0.mcfunction": "6c8558fe4278f93d5998638a2156a9579272dc62c05824df81b6e9083df460c9",
       "datapack/data/gallery/function/shop_pick_0_0.mcfunction": "5f35ad55346921ae9f7762d2facd4b83999bd136ecca92cb6154fe6f481af64e",
       "datapack/data/gallery/function/shop_pick_0_1.mcfunction": "bd5c24044fb7473e47958c5a4b37f484f8e06600d0aa2125c6e161641d47374e",
@@ -2450,7 +2450,7 @@
       "datapack/data/gallery/function/spawn_actor_hall_moth.mcfunction": "515963487bf4fad08bfb2f4abccf4fe856ec93d33a18546a7284b12f2d96402a",
       "datapack/data/gallery/function/spawn_actor_rafter_spider.mcfunction": "840e87cc499fc3a45c4e77a3d27feaab6bbd7540c2451ce0dbe8126d86dc0e18",
       "datapack/data/gallery/function/spawn_actor_sergeant.mcfunction": "d784db9b4b25274b5ab08b8863968b6d47e4c27deb6122890c185ef5b3c1f05d",
-      "datapack/data/gallery/function/spawn_actor_standard_bearer.mcfunction": "33b6927ef1f7dbd12e0688025befd8d99bb026129d4c2580290b5cab447f9948",
+      "datapack/data/gallery/function/spawn_actor_standard_bearer.mcfunction": "0057ada2d013ca1eaa8d9dd52f6417fce2a0b35d55166149c77841cbdf58d9ff",
       "datapack/data/gallery/function/spawn_edge.mcfunction": "20e4a0eb84772fbd83c4fd4e36fb46b071e82791be9bc923451ac3eefe60c6b9",
       "datapack/data/gallery/function/spawn_lane.mcfunction": "5c3898cb348e6f0d338ea49526562dcd7b22d6f285fbebc41c7280dc1be50aa2",
       "datapack/data/gallery/function/spawn_muster.mcfunction": "fe881f6fbfb723db2b078ffab27eb31a8eff032691ba39a2e38e1515ac67f460",
@@ -2730,7 +2730,7 @@
       "packtest-datapack/data/gallery/test/wave_kill_reward_muster.mcfunction": "b493d47a1cfd3439934f6e96fbbd94ab2b8654e12ee898bdeabbac63b72c28e6",
       "packtest-datapack/pack.mcmeta": "549482756b33bacc8910abe034e55837ccb4df3029ce38065c59c9ce5754f76b",
       "render-plan.json": "eee5a63a3f4c3e6847b17f5793518cf04ff14a28b7d9d431df7344c10f1fb0e4",
-      "resourcepack.zip": "2e430ab270ae826e883dcd472287d86c792b80291069f776a1e42e01867a68e7",
+      "resourcepack.zip": "af5a9306bc535c51486886322e0b66416fa291527ad8c54a3f87c4f9d7d1c3c7",
       "server/README.md": "146fc6a4d386b4d4800b39260a7e8cd824f5ac1979e9d35fcd649858d3a980bd",
       "server/eula-note.txt": "2490937c526ded0804802b6b9076c936f44260715afb64af26dd8f8cce02a7aa",
       "server/server.properties": "83516c3c981c454b068b881cb9ae270e78e24fc209bc4b20937ba24ce4c06567",
@@ -2764,7 +2764,7 @@
       "validation/watch-ledger.json": "479fcc1e0eeaa6ac065bc634c3ccdd0f63f9d4bf18b633b7db005e545f82d0f0",
       "validation/ways.json": "7a5f47e7e2a2a66ba527df3a155eb52cce06e559cdc846dfcdb00506d33f7f33"
     },
-    "resource_pack_sha1": "8fa9fce7e721dc837cb7a9a2093ea60b07559cd0"
+    "resource_pack_sha1": "c40cc24ebd4661fdef5743ff62a29a85f0e29cd9"
   },
   "site-plan.en": {
     "campaign_id": "gallery",
@@ -2787,7 +2787,7 @@
     },
     "mc_version": "1.21.11",
     "outputs": {
-      "SKINS.md": "45840f4050633752e290d143b1533cddcdd8fc956961954f3091ef173cceb6eb",
+      "SKINS.md": "0d563240c39d66c539ebc8cabd2a011f5b586d797dcaf2933293d93150ba9278",
       "creator-datapack/data/gallery/function/creator/emit.mcfunction": "f1e0cbc97bc11fd23f6656ad0f05549e58f5f0d43609a161072b78b0e119b94b",
       "creator-datapack/data/gallery/function/creator/init.mcfunction": "ffd7e5ff462ea1443c768922b963205a869354e662bb277c15002657b1096a96",
       "creator-datapack/data/gallery/function/creator/stamp.mcfunction": "0152a19a050943b73f9a60c52576d7318209ed80b579ad6e5c7866c04f3f62d5",
@@ -2867,7 +2867,7 @@
       "datapack/data/gallery/function/place_verify.mcfunction": "7ca8b23969e99694b4517a0cde7762065c0bf0da2878c8c0092d0882ccc86aed",
       "datapack/data/gallery/function/press_east_door_wrong_side.mcfunction": "0ef474456dd6d5c37be62eba969fb9c5a890751750cfae79592887ffbe6564cf",
       "datapack/data/gallery/function/setup.mcfunction": "4fa5091b66ef78107bca8876f718497110d22cb115cb6fdc7988d70d44ea7863",
-      "datapack/data/gallery/function/setup_finish.mcfunction": "23bfce70fe58639d82b0fe79d60fb5a54b6be43c63258a127c2562a4e59755a5",
+      "datapack/data/gallery/function/setup_finish.mcfunction": "9ee8da499391c40fa0848403c16031a6aa98b5f93348ff215d9d30e4af46056b",
       "datapack/data/gallery/function/shortcut_open_east_door.mcfunction": "d0363b396c2d8508714f10c28630b74a800121f794073b20f42848ac7dc6d058",
       "datapack/data/gallery/function/show_class.mcfunction": "7a9c18db7845fd67ba56eee3d0d152655b7ee8116c877cdbe792c2a390531d11",
       "datapack/data/gallery/function/show_curator_curator_root.mcfunction": "3cd7beb2295eb621d656d0a128cea4548f62c97ab585dacec1f4906f19e217ee",
@@ -3077,7 +3077,7 @@
       "packtest-datapack/data/gallery/test/wave_kill_reward_muster.mcfunction": "4be5cfedc5d6673e0bb0ad9db364712c34e7b5ef82d964f318bc110c1df9290c",
       "packtest-datapack/pack.mcmeta": "549482756b33bacc8910abe034e55837ccb4df3029ce38065c59c9ce5754f76b",
       "render-plan.json": "bd2e654bf53f8c2eacc1b78c4a273502cf83490bda36075158c7838faa67576f",
-      "resourcepack.zip": "3ab23661951689bf7b6a38e823b6df98b1ede3373ab1b7b30bffeac6f510974e",
+      "resourcepack.zip": "9506bb9d0f34965b8cc5e368f65d8db3b2db811cbd57ab575d5a3ee59ab204f4",
       "server/README.md": "146fc6a4d386b4d4800b39260a7e8cd824f5ac1979e9d35fcd649858d3a980bd",
       "server/eula-note.txt": "2490937c526ded0804802b6b9076c936f44260715afb64af26dd8f8cce02a7aa",
       "server/server.properties": "83516c3c981c454b068b881cb9ae270e78e24fc209bc4b20937ba24ce4c06567",
@@ -3098,7 +3098,7 @@
       "validation/watch-claims.json": "3c7df6303bead4d4a1e4b925c50e6608a72c5364a4b3feaf2b21b2bfb1a7e7c5",
       "validation/watch-ledger.json": "3d3fcbe9690a0e63abeef1aa5bd230942040e68625227f71177d04962bbc4568"
     },
-    "resource_pack_sha1": "c9dde8693a4dcf6ef003b87b4ca4577e958d1133"
+    "resource_pack_sha1": "91a4a890e95df8a8adbf4b5b1cea9fea2f4c50de"
   },
   "valley-site.en": {
     "campaign_id": "gallery",
@@ -3246,7 +3246,7 @@
     },
     "mc_version": "1.21.11",
     "outputs": {
-      "SKINS.md": "3a2c8dd3a4f1c6203c06005fa31c51cdf1674e56205bf16180d4954a28d5df70",
+      "SKINS.md": "c3f94d352b787eb6b7867226190c68d4614dbeeec9e2fffb0cde255255c277d6",
       "creator-datapack/data/gallery/function/creator/emit.mcfunction": "643b4277ab79f0e152aa5abde227803cdacfcc57fae11fab233766780d640d91",
       "creator-datapack/data/gallery/function/creator/init.mcfunction": "7f81f1513ec83983d78d01842840c901c83487d3983da8f011b01da95b7eae6d",
       "creator-datapack/data/gallery/function/creator/rehearsal/aim.mcfunction": "5b00f8ca9b8eff0bbbae6a8e3192108dc2c80271e238ab4e4f5a3e093a6c919e",
@@ -3451,7 +3451,7 @@
       "datapack/data/gallery/function/seq_near_hall_oc_take_the_emeralds_0_0.mcfunction": "d880e6ee54c3a242a4e430b4dd01aa02a2ace0f34068610ad0f2557b93e6997e",
       "datapack/data/gallery/function/seq_near_hall_oc_take_the_emeralds_0_1.mcfunction": "171474b8bf36427b163da1aef08e62dc6fe8d299746dfc25f24d4d15eb82f2f9",
       "datapack/data/gallery/function/setup.mcfunction": "6a7c5ca9aa5551f27e9bd5d05e54243e6d3fe0e02a4843fedadf88ba60e8bdf0",
-      "datapack/data/gallery/function/setup_finish.mcfunction": "e84f4e15dc9bc50e7376f8a9900adc02928be233a7b469ead4ef1560ce9e5393",
+      "datapack/data/gallery/function/setup_finish.mcfunction": "4f8faaede0644116b1a6e2305d6a0aa923e6d7b73c7fa565c199737928e82643",
       "datapack/data/gallery/function/shop_open_0.mcfunction": "6c8558fe4278f93d5998638a2156a9579272dc62c05824df81b6e9083df460c9",
       "datapack/data/gallery/function/shop_pick_0_0.mcfunction": "5f35ad55346921ae9f7762d2facd4b83999bd136ecca92cb6154fe6f481af64e",
       "datapack/data/gallery/function/shop_pick_0_1.mcfunction": "bd5c24044fb7473e47958c5a4b37f484f8e06600d0aa2125c6e161641d47374e",
@@ -3464,7 +3464,7 @@
       "datapack/data/gallery/function/spawn_actor_hall_moth.mcfunction": "6c19680ba42ea9b28f18d3d2526cb841d9073912352b75d8e0dc297bd42b99a8",
       "datapack/data/gallery/function/spawn_actor_rafter_spider.mcfunction": "3eebba3d1b044f0924645478dd11d2095a1f0b3d575e4e51f2c86e4b1a6e030b",
       "datapack/data/gallery/function/spawn_actor_sergeant.mcfunction": "c1906a80fbbbfd6341a10625cd861a2073fed158b640511a4560fe1c41fc0460",
-      "datapack/data/gallery/function/spawn_actor_standard_bearer.mcfunction": "09e78c414b8da415b3316ddbce0444519ed54479bbe3262e2afe2034990169bf",
+      "datapack/data/gallery/function/spawn_actor_standard_bearer.mcfunction": "d304cc7d50b8258fa828ac8cf73bc5c468331eb176419de06f7d1da2e02c322f",
       "datapack/data/gallery/function/spawn_edge.mcfunction": "20e4a0eb84772fbd83c4fd4e36fb46b071e82791be9bc923451ac3eefe60c6b9",
       "datapack/data/gallery/function/spawn_lane.mcfunction": "0a9d279fc4e1795f645f942ddcb193f46ba30848b94ec80facef4430b890910c",
       "datapack/data/gallery/function/spawn_muster.mcfunction": "84773df18acdbab64317f0239c53df4985642001823fcf2e1f1db29159bdff37",
@@ -3744,7 +3744,7 @@
       "packtest-datapack/data/gallery/test/wave_kill_reward_muster.mcfunction": "28b061d6227ef949258649bb54e3efc12dfdf4111266600c135f02667b8f39f0",
       "packtest-datapack/pack.mcmeta": "549482756b33bacc8910abe034e55837ccb4df3029ce38065c59c9ce5754f76b",
       "render-plan.json": "8135419b22005d2af35983f4da69f856331a168a4075ccc720d27603a0b33c0f",
-      "resourcepack.zip": "5db371cb4bdf9b8e50131c3de744e1523be5c779aa2893a873c71d67f95ef831",
+      "resourcepack.zip": "231711cae02bfae001f85f7d3ab6e0ecb3bf9afde69eae9384fca04ec5d0f6ac",
       "server/README.md": "146fc6a4d386b4d4800b39260a7e8cd824f5ac1979e9d35fcd649858d3a980bd",
       "server/eula-note.txt": "2490937c526ded0804802b6b9076c936f44260715afb64af26dd8f8cce02a7aa",
       "server/server.properties": "83516c3c981c454b068b881cb9ae270e78e24fc209bc4b20937ba24ce4c06567",
@@ -3778,6 +3778,6 @@
       "validation/watch-ledger.json": "479fcc1e0eeaa6ac065bc634c3ccdd0f63f9d4bf18b633b7db005e545f82d0f0",
       "validation/ways.json": "7a5f47e7e2a2a66ba527df3a155eb52cce06e559cdc846dfcdb00506d33f7f33"
     },
-    "resource_pack_sha1": "54bf9d764a1a4fe5243ebd41e11925eb1da175ea"
+    "resource_pack_sha1": "34f27768067c88ba9787189d281dab5db210a374"
   }
 }

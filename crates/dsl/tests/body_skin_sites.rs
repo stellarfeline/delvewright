@@ -25,11 +25,13 @@
 //! gives: the defect it catches is in the **compiler**, not in a campaign, so
 //! there is no campaign input for a build-time diagnostic to fire on.
 
+mod common;
+
 use std::collections::BTreeSet;
 
 use delvewright_dsl::BodyRef;
 use delvewright_dsl::envelope::Stage;
-use serde_json::Value;
+use serde_json::{Value, json};
 
 /// Every `$defs` object across every stage schema that declares a `skin`
 /// property, by its schema name.
@@ -157,4 +159,74 @@ fn every_skin_declaring_class_is_a_body_the_walk_covers() {
              check above is comparing against a class that does not exist"
         );
     }
+}
+
+/// A campaign carrying one skinned body of **every** [`BodyRef`] class: the
+/// hello-world npc wears one, and a stage-5 actor wears another. Built from the
+/// class list rather than from a memory of it — see the coverage assertion in
+/// [`body_skins_mut_is_the_same_walk`].
+fn one_skinned_body_per_class() -> delvewright_dsl::Campaign {
+    let npcs = common::patch_doc(&common::read_valid("npcs.json"), |d| {
+        d["content"]["npcs"][0]["skin"] = json!({ "texture_id": "keeper", "model": "wide" });
+    });
+    let quests = common::patch_doc(&common::read_valid("quests.json"), |d| {
+        d["content"]["actors"] = json!([
+            { "id": "actor/giant", "entity": "minecraft:zombie", "name": "The Sleeper",
+              "anchor": "anchor/exit", "facing": "east",
+              "skin": { "texture_id": "giant-idle", "model": "slim" } }
+        ]);
+    });
+    let raw = delvewright_dsl::RawCampaign {
+        npcs,
+        quests,
+        ..common::valid_raw()
+    };
+    delvewright_dsl::parse_campaign(&raw).expect("campaign parses")
+}
+
+/// **The mutable mirror walks the same bodies.** `body_skins_mut` is what stamps
+/// this delve's texture directory onto every face before emission
+/// (`dsl::namespace_skin_textures`), and a class it misses keeps a bare
+/// `texture_id` — which is the face every other delve's identically-named skin
+/// wears, baked and served and refused by nothing. So the mirror is pinned
+/// against `body_skin_sites`, the walk `DW0309` and the bake already share.
+///
+/// The fixture is required to carry every class in `BodyRef::ALL_CLASSES`, so a
+/// new body class does not merely go unasserted here: it turns this red until the
+/// fixture — and with it both walks — is extended.
+#[test]
+fn body_skins_mut_is_the_same_walk() {
+    let mut c = one_skinned_body_per_class();
+    let declared: Vec<String> = delvewright_dsl::body_skin_sites(&c)
+        .iter()
+        .map(|s| s.skin.texture_id.clone())
+        .collect();
+    let classes: BTreeSet<&str> = delvewright_dsl::body_skin_sites(&c)
+        .iter()
+        .map(|s| s.body.class())
+        .collect();
+    println!(
+        "mirror binding: {} skin declaration(s) over {} of {} body class(es) ({classes:?})",
+        declared.len(),
+        classes.len(),
+        BodyRef::ALL_CLASSES.len()
+    );
+    for class in BodyRef::ALL_CLASSES {
+        assert!(
+            classes.contains(class),
+            "the fixture declares no skinned `{class}`, so this pin says nothing about that \
+             class — give it one skinned body of every `BodyRef::ALL_CLASSES` member"
+        );
+    }
+
+    let mirrored: Vec<String> = delvewright_dsl::body_skins_mut(&mut c)
+        .into_iter()
+        .map(|k| k.texture_id.clone())
+        .collect();
+    assert_eq!(
+        mirrored, declared,
+        "`body_skins_mut` and `body_skin_sites` walk different bodies (or the same bodies in a \
+         different order): a declaration only the immutable walk sees is baked and refused but \
+         never namespaced, and ships under a name every other delve answers"
+    );
 }

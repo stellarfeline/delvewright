@@ -18,9 +18,13 @@ cast sheet ──▶ compose (skinpy-extended part/face addressing) ──▶ 64
 ```
 
 The compiler bakes the PNG from `campaigns/<id>/skins/<texture_id>.png` into the
-per-delve resource pack at `assets/delvewright/textures/npc/<texture_id>.png`
+per-delve resource pack at `assets/delvewright/textures/npc/<id>/<texture_id>.png`
 (`pack_format` 75 for 1.21.11); the mannequin profile resolves
-`delvewright:npc/<texture_id>` with an **always-explicit** `model`.
+`delvewright:npc/<id>/<texture_id>` with an **always-explicit** `model`. The
+delve's own directory is the compiler's — a client merges every applied pack's
+textures into one space, so two delves that both ship a `keeper` would otherwise
+wear each other's faces. Nothing here writes it: a cast sheet names the skin, the
+campaign names the file, and the delve that ships it decides where it lands.
 
 ## Usage
 

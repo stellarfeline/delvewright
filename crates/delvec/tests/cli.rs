@@ -2552,9 +2552,11 @@ fn a_missing_actor_skin_png_is_dw0309() {
 /// carries both textures and `SKINS.md` lists both.
 ///
 /// The positive direction of the same fact: an emitted
-/// `delvewright:npc/<texture_id>` is only true if the pack holds
-/// `assets/delvewright/textures/npc/<texture_id>.png`, and until this walk was
-/// over bodies exactly one of these two was in there.
+/// `delvewright:npc/<id>` is only true if the pack holds
+/// `assets/delvewright/textures/npc/<id>.png`, and until this walk was
+/// over bodies exactly one of these two was in there. `<id>` is the delve's own
+/// texture id (`dsl::pack_texture_id`), derived here rather than written out, so
+/// this test asserts the pairing and `skin_namespace.rs` asserts the namespace.
 #[test]
 fn every_declared_skin_is_baked_into_the_pack() {
     let camp = actor_skin_campaign("actor-skin-baked");
@@ -2594,12 +2596,19 @@ fn every_declared_skin_is_baked_into_the_pack() {
     // Binding, stated: 2 skin declarations of 2 body classes, and both must be in
     // the archive. A pass that found one of them is the defect this test exists
     // for, so both are asserted separately and named.
+    let campaign_id = {
+        let world: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(camp.join("world.json")).unwrap())
+                .unwrap();
+        world["campaign_id"].as_str().unwrap().to_string()
+    };
     for (class, id, payload) in [
         ("npc/keeper", "keeper", "NPC-SKIN-KEEPER-PAYLOAD"),
         ("actor/giant", "giant-idle", "ACTOR-SKIN-GIANT-PAYLOAD"),
     ] {
+        let baked = delvewright_dsl::pack_texture_id(&campaign_id, id);
         assert!(
-            text.contains(&format!("assets/delvewright/textures/npc/{id}.png")),
+            text.contains(&format!("assets/delvewright/textures/npc/{baked}.png")),
             "`{class}` declares `skin.texture_id` `{id}` and the pack has no entry for it — \
              its mannequin would ship pointing at a texture nothing serves"
         );

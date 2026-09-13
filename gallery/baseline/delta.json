@@ -1,29 +1,38 @@
 {
-  "added": [
-    "easy.en:packtest-datapack/data/gallery/test/v06_actor_equipment_minecraft_mannequin.mcfunction",
-    "easy.en:packtest-datapack/data/gallery/test/v06_actor_equipment_minecraft_zombie.mcfunction",
-    "hard.en:packtest-datapack/data/gallery/test/v06_actor_equipment_minecraft_mannequin.mcfunction",
-    "hard.en:packtest-datapack/data/gallery/test/v06_actor_equipment_minecraft_zombie.mcfunction",
-    "ocean-horizon.en:packtest-datapack/data/gallery/test/v06_actor_equipment_minecraft_mannequin.mcfunction",
-    "ocean-horizon.en:packtest-datapack/data/gallery/test/v06_actor_equipment_minecraft_zombie.mcfunction",
-    "primary.en:packtest-datapack/data/gallery/test/v06_actor_equipment_minecraft_mannequin.mcfunction",
-    "primary.en:packtest-datapack/data/gallery/test/v06_actor_equipment_minecraft_zombie.mcfunction",
-    "primary.zh-cn:packtest-datapack/data/gallery/test/v06_actor_equipment_minecraft_mannequin.mcfunction",
-    "primary.zh-cn:packtest-datapack/data/gallery/test/v06_actor_equipment_minecraft_zombie.mcfunction",
-    "void-horizon.en:packtest-datapack/data/gallery/test/v06_actor_equipment_minecraft_mannequin.mcfunction",
-    "void-horizon.en:packtest-datapack/data/gallery/test/v06_actor_equipment_minecraft_zombie.mcfunction"
+  "added": [],
+  "base_commit": "dca5833a637ce31ba38e988381d2d3604e564ac6",
+  "changed": [
+    "easy.en:SKINS.md",
+    "easy.en:datapack/data/gallery/function/setup_finish.mcfunction",
+    "easy.en:datapack/data/gallery/function/spawn_actor_standard_bearer.mcfunction",
+    "easy.en:resourcepack.zip",
+    "hard.en:SKINS.md",
+    "hard.en:datapack/data/gallery/function/setup_finish.mcfunction",
+    "hard.en:datapack/data/gallery/function/spawn_actor_standard_bearer.mcfunction",
+    "hard.en:resourcepack.zip",
+    "ocean-horizon.en:SKINS.md",
+    "ocean-horizon.en:datapack/data/gallery/function/setup_finish.mcfunction",
+    "ocean-horizon.en:datapack/data/gallery/function/spawn_actor_standard_bearer.mcfunction",
+    "ocean-horizon.en:resourcepack.zip",
+    "primary.en:SKINS.md",
+    "primary.en:datapack/data/gallery/function/setup_finish.mcfunction",
+    "primary.en:datapack/data/gallery/function/spawn_actor_standard_bearer.mcfunction",
+    "primary.en:resourcepack.zip",
+    "primary.zh-cn:SKINS.md",
+    "primary.zh-cn:datapack/data/gallery/function/setup_finish.mcfunction",
+    "primary.zh-cn:datapack/data/gallery/function/spawn_actor_standard_bearer.mcfunction",
+    "primary.zh-cn:resourcepack.zip",
+    "site-plan.en:SKINS.md",
+    "site-plan.en:datapack/data/gallery/function/setup_finish.mcfunction",
+    "site-plan.en:resourcepack.zip",
+    "void-horizon.en:SKINS.md",
+    "void-horizon.en:datapack/data/gallery/function/setup_finish.mcfunction",
+    "void-horizon.en:datapack/data/gallery/function/spawn_actor_standard_bearer.mcfunction",
+    "void-horizon.en:resourcepack.zip"
   ],
-  "base_commit": "3bb7ba0421aac56451b54b44d0bfa82366f8a47d",
-  "changed": [],
   "classes": {
-    "PackTest": 18
+    "datapack function": 13,
+    "other": 14
   },
-  "removed": [
-    "easy.en:packtest-datapack/data/gallery/test/v06_actor_equipment.mcfunction",
-    "hard.en:packtest-datapack/data/gallery/test/v06_actor_equipment.mcfunction",
-    "ocean-horizon.en:packtest-datapack/data/gallery/test/v06_actor_equipment.mcfunction",
-    "primary.en:packtest-datapack/data/gallery/test/v06_actor_equipment.mcfunction",
-    "primary.zh-cn:packtest-datapack/data/gallery/test/v06_actor_equipment.mcfunction",
-    "void-horizon.en:packtest-datapack/data/gallery/test/v06_actor_equipment.mcfunction"
-  ]
+  "removed": []
 }

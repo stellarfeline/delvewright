@@ -840,8 +840,8 @@ impl<'a> BodyRef<'a> {
     /// This body's skin declaration, if it carries one.
     ///
     /// A skinned body of **either** class ships as a `minecraft:mannequin`
-    /// whose `profile.texture` resolves to `delvewright:npc/<texture_id>`, so
-    /// either one owes the same `skins/<texture_id>.png` under the same refusal
+    /// whose `profile.texture` resolves to `delvewright:npc/<campaign_id>/<texture_id>`,
+    /// so either one owes the same `skins/<texture_id>.png` under the same refusal
     /// (`DW0309`). Answering it here is what stops the bake from being a
     /// property of one class.
     pub fn skin(self) -> Option<&'a NpcSkin> {
@@ -968,6 +968,38 @@ pub fn body_skin_sites(c: &crate::envelope::Campaign) -> Vec<BodySkinSite<'_>> {
         .collect()
 }
 
+/// The **mutable mirror** of [`body_skin_sites`]: every skin declaration in the
+/// campaign, in the identical order, exposed mutably so one pass can rewrite what
+/// every emitter will read ([`crate::l10n::namespace_skin_textures`]).
+///
+/// It carries no [`BodyRef`] and no pointer, because a rewrite needs neither and a
+/// borrow of the whole body would forbid the field it is there to change. What it
+/// does owe is the **same population**: a body class that declares a skin and is
+/// missing here would keep an un-namespaced texture and collide with every other
+/// delve, silently. `body_skin_sites_mut_is_the_same_walk`
+/// (`crates/dsl/tests/body_skin_sites.rs`) pins that over a campaign carrying one
+/// body of every class in [`BodyRef::ALL_CLASSES`] — the closed set the schema
+/// export is compared against in the same file, so a new body class turns that
+/// coverage red and both walks are visited together.
+pub fn body_skins_mut(c: &mut crate::envelope::Campaign) -> Vec<&mut NpcSkin> {
+    let mut out: Vec<&mut NpcSkin> = Vec::new();
+    out.extend(
+        c.npcs
+            .content
+            .npcs
+            .iter_mut()
+            .filter_map(|n| n.skin.as_mut()),
+    );
+    out.extend(
+        c.quests
+            .content
+            .actors
+            .iter_mut()
+            .filter_map(|a| a.skin.as_mut()),
+    );
+    out
+}
+
 // ---------------------------------------------------------------------------
 // Stage 2 — npcs
 // ---------------------------------------------------------------------------
@@ -1025,15 +1057,19 @@ pub struct Npc {
     pub traversal: Option<BodyTraversal>,
 }
 
-/// A mannequin NPC's player-model skin (DSL v0.4). The skin PNG ships in the
-/// per-delve resource pack at `assets/delvewright/textures/npc/<texture_id>.png`
-/// (sourced from the campaign dir's `skins/<texture_id>.png`); the mannequin's
-/// `profile.texture` resolves to `delvewright:npc/<texture_id>`.
+/// A mannequin NPC's player-model skin (DSL v0.4). The skin PNG is sourced from
+/// the campaign dir's `skins/<texture_id>.png` and ships in the per-delve resource
+/// pack at `assets/delvewright/textures/npc/<campaign_id>/<texture_id>.png`, which
+/// is what the mannequin's `profile.texture` resolves to. The delve's own
+/// directory is stamped on at emission ([`crate::l10n::namespace_skin_textures`])
+/// — a client merges every applied pack's textures into ONE space, so two delves
+/// that both cast a `keeper` would otherwise wear each other's faces. Nothing a
+/// creator writes or names on disk carries it.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct NpcSkin {
-    /// Skin id: the PNG basename under `skins/` and the resource-pack texture
-    /// path segment (a bare kebab token; validated by `DW0190`).
+    /// Skin id: the PNG basename under `skins/`, and the last segment of the
+    /// resource-pack texture path (a bare kebab token; validated by `DW0190`).
     pub texture_id: String,
     /// Player model. **Required** (spec-0009): an omitted model renders slim, so
     /// a wide skin on a slim model is distorted — the compiler always emits it.
