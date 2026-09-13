@@ -2745,11 +2745,9 @@ fn smooth_walk(world: &World, cells: &[[i32; 3]], fp: &Footprint, width: f64) ->
 /// [`resample`] for a body of the given hitbox — the footprint the leg was
 /// **routed** under, since the rendered motion is bounded by the volume the
 /// proof proved and a body the router never saw was never proved anything.
-fn resample_body(cells: &[[i32; 3]], speed: f64, width: f64) -> Vec<[f64; 3]> {
-    resample_body_exact(cells, speed, width).0
-}
-
-/// [`resample_body`], and the same samples **before** the 0.01-block rounding.
+///
+/// Returns the emitted samples and the same samples **before** the 0.01-block
+/// rounding, in that order.
 ///
 /// The emitted `tp` coordinates are rounded so they stay short and byte-stable.
 /// That rounding is invisible to a body walking a cardinal path — every step is
@@ -2761,11 +2759,7 @@ fn resample_body(cells: &[[i32; 3]], speed: f64, width: f64) -> Vec<[f64; 3]> {
 /// single tick — an emitted jitter far more visible than the right angles the
 /// straight line was cut to remove. The yaw is a property of the segment being
 /// walked, so it is taken from the exact samples; only the position is rounded.
-fn resample_body_exact(
-    cells: &[[i32; 3]],
-    speed: f64,
-    width: f64,
-) -> (Vec<[f64; 3]>, Vec<[f64; 3]>) {
+fn resample_body(cells: &[[i32; 3]], speed: f64, width: f64) -> (Vec<[f64; 3]>, Vec<[f64; 3]>) {
     let mut pts: Vec<[f64; 3]> = Vec::with_capacity(cells.len() * 3);
     for (i, c) in cells.iter().enumerate() {
         let p = cell_center(*c);
@@ -3096,8 +3090,7 @@ pub fn plan_moves(plan: &Plan, world: &World) -> Result<Vec<MovePlan>, Failure> 
         // width the NPC actually wears.
         let width = npc_render_width(plan, npc.as_str());
         let walked = smooth_walk(leg_world, &cells, &Footprint::player(), width);
-        let (waypoints, exact) =
-            resample_body_exact(&walked, speed.unwrap_or(DEFAULT_SPEED), width);
+        let (waypoints, exact) = resample_body(&walked, speed.unwrap_or(DEFAULT_SPEED), width);
         // Seed: the facing this body already has — the exit yaw of the previous
         // leg **on this branch** if this NPC has walked before, else the yaw its
         // summon gave it (the home anchor's declared facing,
@@ -3595,8 +3588,7 @@ pub fn plan_actor_moves(plan: &Plan, world: &World) -> Result<Vec<ActorMovePlan>
         // belongs to a walked body, not to the verb that first needed it. Swept at
         // the footprint THIS leg was routed under, which for an actor is its own.
         let walked = smooth_walk(leg_world, &cells, &fp, body_w);
-        let (waypoints, exact) =
-            resample_body_exact(&walked, speed.unwrap_or(DEFAULT_SPEED), body_w);
+        let (waypoints, exact) = resample_body(&walked, speed.unwrap_or(DEFAULT_SPEED), body_w);
         // Seed: the facing the puppet already has — the exit yaw of the previous
         // leg **on this branch**, else the actor's declared spawn `facing`
         // (`emit::actor_facing_yaw`).
@@ -10445,7 +10437,7 @@ mod tests {
 
     /// The full walked path for `cells`, as the emitter would teleport it.
     fn walked(cells: &[[i32; 3]]) -> Vec<[f64; 3]> {
-        resample_body(cells, DEFAULT_SPEED, PLAYER_WIDTH)
+        resample_body(cells, DEFAULT_SPEED, PLAYER_WIDTH).0
     }
 
     /// **Owner playtest (castle tour): a walk across open ground read as a machine
@@ -10460,7 +10452,9 @@ mod tests {
         let world = floored(20, 20, 65, &[]);
         let fp = Footprint::player();
         let (start, goal) = ([1, 65, 1], [15, 65, 9]);
-        let route = world.find_path(start, goal).expect("an open plaza connects");
+        let route = world
+            .find_path(start, goal)
+            .expect("an open plaza connects");
         // Without this the test could pass on a route that was already a line.
         assert!(
             route.len() > 2,
@@ -10470,8 +10464,8 @@ mod tests {
         assert_eq!(line, vec![start, goal]);
         // The shorter route is also the one the body is teleported along, and no
         // waypoint on it puts any part of the body inside a block.
-        let before = resample_body(&route, DEFAULT_SPEED, PLAYER_WIDTH);
-        let after = resample_body(&line, DEFAULT_SPEED, PLAYER_WIDTH);
+        let before = resample_body(&route, DEFAULT_SPEED, PLAYER_WIDTH).0;
+        let after = resample_body(&line, DEFAULT_SPEED, PLAYER_WIDTH).0;
         assert!(
             after.len() < before.len(),
             "smoothed route is not shorter: {} vs {}",
@@ -10495,9 +10489,11 @@ mod tests {
         let world = floored(20, 20, 65, &[]);
         let fp = Footprint::player();
         let (start, goal) = ([1, 65, 1], [15, 65, 9]);
-        let route = world.find_path(start, goal).expect("an open plaza connects");
+        let route = world
+            .find_path(start, goal)
+            .expect("an open plaza connects");
         let line = smooth_walk(&world, &route, &fp, PLAYER_WIDTH);
-        let (rounded, exact) = resample_body_exact(&line, DEFAULT_SPEED, PLAYER_WIDTH);
+        let (rounded, exact) = resample_body(&line, DEFAULT_SPEED, PLAYER_WIDTH);
         let yaws = yaws_along(&exact, 0);
         assert!(yaws.len() > 50, "fixture too short to show a twitch");
         let distinct: BTreeSet<i32> = yaws.iter().copied().collect();
@@ -10550,7 +10546,7 @@ mod tests {
                 pair[1]
             );
         }
-        for p in resample_body(&line, DEFAULT_SPEED, PLAYER_WIDTH) {
+        for p in resample_body(&line, DEFAULT_SPEED, PLAYER_WIDTH).0 {
             assert!(!aabb_clips(&world, p, PLAYER_WIDTH), "clips at {p:?}");
         }
     }
@@ -10589,7 +10585,7 @@ mod tests {
                 assert_eq!(d, 1, "a height change must stay a one-cell step: {w:?}");
             }
         }
-        for p in resample_body(&line, DEFAULT_SPEED, PLAYER_WIDTH) {
+        for p in resample_body(&line, DEFAULT_SPEED, PLAYER_WIDTH).0 {
             assert!(!aabb_clips(&world, p, PLAYER_WIDTH), "clips at {p:?}");
         }
     }
@@ -10791,7 +10787,7 @@ mod tests {
                     cases += 1;
                     let src = [0, y as i32, 0];
                     let dst = [1, (y + rise) as i32, 0];
-                    let pts = resample_body(&[src, dst], DEFAULT_SPEED, width);
+                    let pts = resample_body(&[src, dst], DEFAULT_SPEED, width).0;
                     // (1) The SHAPE: no leg of the emitted polyline changes height
                     // without advancing. This is where the old L's defect lived —
                     // its first leg had a horizontal length of exactly zero.
@@ -11480,8 +11476,8 @@ mod tests {
     #[test]
     fn resample_honors_speed_and_lands_exactly_on_target() {
         let cells = [[0, 65, 0], [10, 65, 0]];
-        let slow = resample_body(&cells, 0.15, PLAYER_WIDTH);
-        let fast = resample_body(&cells, 1.0, PLAYER_WIDTH);
+        let slow = resample_body(&cells, 0.15, PLAYER_WIDTH).0;
+        let fast = resample_body(&cells, 1.0, PLAYER_WIDTH).0;
         // Slower speed → more per-tick waypoints for the same distance.
         assert!(slow.len() > fast.len());
         // Endpoints are the CENTRES of the start/goal cells, not their corners:
