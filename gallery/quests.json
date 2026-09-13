@@ -86,7 +86,26 @@
       },
       {
         "anchor": "anchor/march",
+        "attributes": {
+          "follow_range": 10.0,
+          "max_health": 24.0,
+          "movement_speed": 0.23
+        },
         "entity": "minecraft:husk",
+        "equipment": {
+          "chest": {
+            "enchantments": {
+              "minecraft:protection": 1
+            },
+            "item": "minecraft:chainmail_chestplate"
+          },
+          "head": {
+            "item": "minecraft:chainmail_helmet"
+          },
+          "main_hand": {
+            "item": "minecraft:white_banner"
+          }
+        },
         "facing": "south",
         "id": "actor/standard-bearer",
         "name": "The Standard Bearer",
@@ -95,7 +114,19 @@
           "texture_id": "bearer"
         },
         "tier": "ordinary",
-        "vulnerable": false
+        "vulnerable": true
+      },
+      {
+        "anchor": "anchor/usher",
+        "entity": "minecraft:villager",
+        "facing": "south",
+        "id": "actor/hall-usher"
+      },
+      {
+        "anchor": "anchor/page",
+        "entity": "minecraft:villager",
+        "facing": "south",
+        "id": "actor/hall-page"
       }
     ],
     "ambushes": [
@@ -840,6 +871,34 @@
                           }
                         ]
                       }
+                    }
+                  ]
+                },
+                {
+                  "at_ticks": 30,
+                  "effects": [
+                    {
+                      "actor": "actor/hall-usher",
+                      "happening": {
+                        "subject": "actor/hall-usher",
+                        "text": "An usher comes out onto the speaking row and stands there for the rest of the visit.",
+                        "verb": "arrives"
+                      },
+                      "type": "spawn-actor"
+                    }
+                  ]
+                },
+                {
+                  "at_ticks": 40,
+                  "effects": [
+                    {
+                      "actor": "actor/hall-page",
+                      "happening": {
+                        "subject": "actor/hall-page",
+                        "text": "A page follows the usher out and takes the mark beside him, not the one he is standing on.",
+                        "verb": "arrives"
+                      },
+                      "type": "spawn-actor"
                     }
                   ]
                 }

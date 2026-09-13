@@ -26,6 +26,11 @@
 //! resource pack into ONE language table and a campaign-relative key in there is
 //! a key some other delve answers. See [`pack_namespace`].
 //!
+//! A delve's pack writes into a second client-global space with the same property
+//! — the texture space its baked skins land in — so that namespace lives here too
+//! ([`pack_texture_id`], [`namespace_skin_textures`]), beside the one it argues
+//! from. What leaves a delve is namespaced in one place or in none.
+//!
 //! [pack namespace]: pack_namespace
 //!
 //! | Key | Source string |
@@ -980,6 +985,80 @@ pub fn pack_namespace(campaign_id: &str) -> String {
 /// defines cannot drift.
 pub fn pack_key(campaign_id: &str, key: &str) -> String {
     format!("{}{key}", pack_namespace(campaign_id))
+}
+
+/// The directory one delve's baked skin textures occupy inside the pack's shared
+/// asset namespace: `<campaign_id>/`.
+///
+/// # The same defect, in the other space a pack writes into
+///
+/// A lang key and a texture id are the same kind of thing: a name a delve writes
+/// into a space the CLIENT owns. Enabled resource packs merge per path and stay
+/// enabled across servers and worlds, so `assets/delvewright/textures/npc/keeper.png`
+/// is `keeper`'s face in every delve applying a pack — two delves that both cast a
+/// `keeper` render each other's faces, exactly as two delves that both name
+/// `world.title` read each other's titles. The grain is the campaign id for the
+/// same reason [`pack_namespace`] gives: the pack file is named after it, so a
+/// rebuilt campaign replaces its own textures rather than joining them.
+///
+/// # Why this is not [`pack_key`]'s dotted prefix
+///
+/// A texture id is not a key, it is a **resource-location path**, and a path's
+/// namespace separator is `/`. Vanilla's own assets nest by directory
+/// (`textures/entity/villager/…`); a `.` inside a final path segment is legal by
+/// the grammar but has no vanilla precedent, and this engine does not invent
+/// notation where established practice answers. Same grain, same reasoning, the
+/// separator the space uses.
+///
+/// Campaign ids are kebab tokens ([`CampaignId::is_valid_syntax`]) and so carry no
+/// `/`, so one delve's directory can never be a prefix of another's texture id.
+pub fn pack_texture_dir(campaign_id: &str) -> String {
+    format!("{campaign_id}/")
+}
+
+/// One texture id of `campaign_id`'s [texture space](pack_texture_dir): the id as
+/// the campaign's own documents know it (`skins/<texture_id>.png`, `DW0190`,
+/// `DW0309`), under that campaign's directory. The single authority — the
+/// mannequin's `profile.texture` and the pack's archive path are both built from
+/// it, so what a summon points at and what the pack ships cannot drift.
+pub fn pack_texture_id(campaign_id: &str, texture_id: &str) -> String {
+    format!("{}{texture_id}", pack_texture_dir(campaign_id))
+}
+
+/// Rewrite every skin declaration in `c` to carry its
+/// [pack texture id](pack_texture_id), returning `pack id → authored id` — the
+/// map a caller needs to find `skins/<authored id>.png` on disk.
+///
+/// **The funnel, and the reason this is a rewrite rather than a rule emitters
+/// follow.** A body's texture reaches emission exactly one way: an emitter reads
+/// `skin.texture_id` off the body it is summoning. Applying the namespace at those
+/// emit sites is a rule each of them has to remember — the shape that let an
+/// actor's skin be emitted but never baked. Applying it here, at the one walk over
+/// every body that declares a skin ([`crate::stages::body_skins_mut`], the mutable
+/// mirror of [`crate::stages::body_skin_sites`]), leaves no un-namespaced id in the
+/// campaign for a new emit site to find: a summon written tomorrow is namespaced
+/// because there is nothing else to read. Same shape as [`tag_translatables`],
+/// which is why it sits beside it.
+///
+/// **The creator's key space does not move.** `texture_id` is what a creator
+/// writes in `npcs.json`/`quests.json` and names `skins/<texture_id>.png` after,
+/// and `DW0190` (malformed or duplicate id) and `DW0309` (missing PNG) both read it
+/// as authored — every one of them runs on the campaign *before* this rewrite, and
+/// `validate`/`analyze`, which never emit, never reach it at all.
+///
+/// Two bodies may name one texture (a character and the puppet that plays it), so
+/// the returned map is keyed by pack id and is smaller than the walk.
+pub fn namespace_skin_textures(c: &mut Campaign) -> BTreeMap<String, String> {
+    let dir = pack_texture_dir(c.world.campaign_id.as_str());
+    let mut sources = BTreeMap::new();
+    for skin in crate::stages::body_skins_mut(c) {
+        let packed = format!("{dir}{}", skin.texture_id);
+        sources.insert(
+            packed.clone(),
+            std::mem::replace(&mut skin.texture_id, packed),
+        );
+    }
+    sources
 }
 
 /// Split a translation tag into `(key, english)`. `None` for an untagged string —

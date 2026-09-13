@@ -80,7 +80,7 @@ fn quests_with_actor(entity: &str) -> String {
         "content": {
             "actors": [
                 { "id": "actor/subject", "entity": entity, "name": "Subject",
-                  "anchor": "anchor/keeper-stand" }
+                  "anchor": "spawn" }
             ],
             "quests": [ {
                 "id": "quest/open-the-door",

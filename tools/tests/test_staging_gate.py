@@ -876,6 +876,93 @@ def test_a_dsl_probe_may_not_name_a_document_this_gate_cannot_read(gate, tmp_pat
 
 
 # ---------------------------------------------------------------------------
+# `any_of` — a disjunction of PREDICATES
+#
+# A general form can name a population the DSL spells more than one way, and a
+# predicate language that can only AND forces such a row to quantify over a
+# wider class than its own general form is about. Each clause is driven both
+# ways, plus the two shapes that would make the disjunction a way around a
+# rule: an empty arm list, and an arm that is not identity-shaped.
+# ---------------------------------------------------------------------------
+
+
+ANY_OF = {"any_of": [{"eq": {"type": "kill"}}, {"prefix": {"id": "ambush/"}}]}
+
+
+def test_any_of_matches_a_node_that_satisfies_one_arm(gate):
+    assert gate._matches({"type": "kill"}, ANY_OF) is True
+    assert gate._matches({"id": "ambush/west-bay"}, ANY_OF) is True
+
+
+def test_any_of_refuses_a_node_that_satisfies_none(gate):
+    """The narrowing direction: a staged puppet is in neither arm."""
+    assert gate._matches({"type": "spawn-actor", "actor": "actor/a"}, ANY_OF) is False
+    assert gate._matches({"id": "actor/captain"}, ANY_OF) is False
+
+
+def test_an_arm_list_is_anded_with_the_rest_of_the_clauses(gate):
+    """`any_of` narrows; it never widens what the other clauses already said."""
+    pred = dict(ANY_OF, has=["id"])
+    assert gate._matches({"type": "kill", "id": "obj/a"}, pred) is True
+    assert gate._matches({"type": "kill"}, pred) is False
+
+
+def test_an_empty_arm_list_names_nothing_rather_than_everything(gate):
+    """The failure mode a disjunction invites: `{}` matches every node, so an
+    empty `any_of` must be the opposite of an absent one."""
+    assert gate._matches({"type": "kill"}, {"any_of": []}) is False
+    assert gate.describe({"any_of": []}) == "[nothing]"
+
+
+def test_a_disjunction_inherits_the_identity_shape_of_its_arms(gate):
+    """`probe_is_self_measuring`'s rule, driven through the new clause: a zero
+    answers the precondition question by itself only where every arm counts the
+    object class ITSELF. One declaration-shaped arm withdraws the claim, and so
+    does an arm list that selects nothing."""
+    dsl = {"kind": "dsl", "files": ["quests.json"]}
+    assert gate.probe_is_self_measuring(dict(dsl, match=ANY_OF), None) is True
+    withdrawn = {"any_of": [{"eq": {"type": "kill"}}, {"has": ["tier"]}]}
+    assert gate.probe_is_self_measuring(dict(dsl, match=withdrawn), None) is False
+    assert gate.probe_is_self_measuring(dict(dsl, match={"any_of": []}), None) is False
+
+
+def test_describe_names_the_disjunction_in_the_report(gate):
+    """A binding count is only a fact about the campaign if the report says
+    which class was counted."""
+    assert gate.describe(ANY_OF) == "[one of [type=kill], [id~ambush/*]]"
+
+
+def test_a_predicate_clause_this_matcher_ignores_is_refused_at_load(gate, tmp_path):
+    """An unrecognised key restricts NOTHING — `_matches` skips it — so a
+    misspelled clause counts every node in the document while describing itself
+    as something narrower: the widest population under the narrowest
+    description. Refused at load, for every campaign, before any verdict; and
+    refused inside an arm, which is the place a reader is least likely to
+    look."""
+    def ledger(match):
+        return {
+            "findings": [
+                {
+                    "id": "x",
+                    "finding": "f",
+                    "carrier": {"kind": "dw", "code": LIVE_CODE},
+                    "binding": {"kind": "dsl", "files": ["quests.json"], "match": match},
+                }
+            ]
+        }
+
+    ok = tmp_path / "ok.json"
+    ok.write_text(json.dumps(ledger(ANY_OF)))
+    assert gate.load_ledger(ok)["findings"], "every clause here is implemented"
+
+    for match in ({"pfefix": {"id": "actor/"}}, {"any_of": [{"eq_": {"type": "kill"}}]}):
+        bad = tmp_path / "bad.json"
+        bad.write_text(json.dumps(ledger(match)))
+        with pytest.raises(ValueError, match="does not implement"):
+            gate.load_ledger(bad)
+
+
+# ---------------------------------------------------------------------------
 # The LIVE ledger's preconditions, driven over synthetic campaigns
 #
 # The tests above prove the mechanism. These prove the DATA: each
@@ -1091,6 +1178,126 @@ def test_the_live_prompt_precondition_binds_on_a_completable_objective(gate, tmp
     r = adjudicate_on(gate, anomalous, build, row)
     assert r["verdict"] == "UNBOUND"
     assert r["precondition"] == 1
+
+
+def quests_content(tmp_path, where, content):
+    d = tmp_path / where
+    d.mkdir(parents=True, exist_ok=True)
+    (d / "quests.json").write_text(
+        json.dumps({"dsl_version": FIXTURE_DSL_VERSION, "stage": 5, "content": content})
+    )
+    return d
+
+
+# A ceremonial guard: bodies the campaign stages, walks and removes. Every one
+# of them is a `spawn-actor` effect under an `actor/` id, and not one of them is
+# a fight — `combat::hostile_actors`' rule is unleash or nothing.
+CEREMONY = {
+    "actors": [{"id": "actor/captain", "entity": "minecraft:mannequin", "anchor": "anchor/gate"}],
+    "quests": [
+        {
+            "id": "quest/tour",
+            "on_complete": [
+                {"type": "spawn-actor", "actor": "actor/captain"},
+                {"type": "move-actor", "actor": "actor/captain", "to": "anchor/yard"},
+                {"type": "despawn-actor", "actor": "actor/captain", "style": "vanish"},
+            ],
+        }
+    ],
+}
+
+
+def test_the_live_combat_preconditions_do_not_count_a_ceremony_as_a_fight(gate, tmp_path):
+    """`bell-04` and `bell-05` probe `combat-plan.json`, which `emit.rs` writes
+    only where `combat::mandatory_fights` is non-empty, an actor declares a
+    tier, or a hostile actor goes untiered. Their preconditions used to count
+    every `spawn-wave`/`spawn-actor` effect and every `actor/` id — populations
+    neither general form names — so a guided tour whose only bodies are seven
+    invulnerable puppets that walk out and are removed was adjudicated as a
+    campaign owing a combat plan, and refused.
+
+    The narrowed classes are the ones the rows say in their own words: for
+    `bell-05`, *a wave the party must kill OR a hostile it turns loose on
+    them*; for `bell-04`, what `combat::floor_ledger` holds — anything billed
+    `elite`/`boss`, or a body turned loose. Driven both ways, and through the
+    verdicts: outside the class the row reads INAPPLICABLE, inside it the
+    unemitted ledger is still MISSING-CHECK.
+    """
+    rows = live_rows(gate, {"bell-04", "bell-05"})
+    build = make_build(tmp_path)
+
+    ceremony = quests_content(tmp_path, "ceremony", CEREMONY)
+    unleashed = json.loads(json.dumps(CEREMONY))
+    unleashed["quests"][0]["on_complete"].append(
+        {"type": "unleash-actor", "actor": "actor/captain"}
+    )
+    fight = quests_content(tmp_path, "fight", unleashed)
+    ambushed = json.loads(json.dumps(CEREMONY))
+    ambushed["ambushes"] = [{"id": "ambush/gate", "at": "anchor/gate", "actors": ["actor/captain"]}]
+    ambush = quests_content(tmp_path, "ambush", ambushed)
+    killed = json.loads(json.dumps(CEREMONY))
+    killed["quests"][0]["objectives"] = [{"id": "obj/k", "type": "kill", "wave": "wave/a"}]
+    wave = quests_content(tmp_path, "wave", killed)
+    billed = json.loads(json.dumps(CEREMONY))
+    billed["actors"][0]["tier"] = "elite"
+    elite = quests_content(tmp_path, "elite", billed)
+
+    counts = {
+        rid: {
+            w: gate.probe(rows[rid]["applies_when"], gate.Subject(d, build))[0]
+            for w, d in (
+                ("ceremony", ceremony),
+                ("unleash", fight),
+                ("ambush", ambush),
+                ("kill", wave),
+                ("elite", elite),
+            )
+        }
+        for rid in ("bell-04", "bell-05")
+    }
+    # `bell-04`'s class is the floor-gate ledger: billed, or turned loose. A
+    # `kill` objective alone bills nothing, and an all-`ordinary` delve is the
+    # state `FLOOR_GATE_UNBOUND_REASON` exists to say is legitimate.
+    assert counts["bell-04"] == {
+        "ceremony": 0,
+        "unleash": 1,
+        "ambush": 1,
+        "kill": 0,
+        "elite": 1,
+    }, counts
+    # `bell-05`'s class is mandatory combat: a wave the party must kill, or a
+    # hostile turned loose. A body billed `elite` that nothing unleashes is
+    # scenery with a price tag on it, not a fight.
+    assert counts["bell-05"] == {
+        "ceremony": 0,
+        "unleash": 1,
+        "ambush": 1,
+        "kill": 1,
+        "elite": 0,
+    }, counts
+
+    # And the verdicts follow, on a build that emitted no combat plan — which
+    # is the correct emission for the ceremony and a lost ledger for the rest.
+    for rid, inside in (("bell-04", (fight, ambush, elite)), ("bell-05", (fight, ambush, wave))):
+        assert (
+            gate.adjudicate(rows[rid], gate.Engine(), gate.Subject(ceremony, build))["verdict"]
+            == "INAPPLICABLE"
+        ), rid
+        for camp in inside:
+            r = gate.adjudicate(rows[rid], gate.Engine(), gate.Subject(camp, build))
+            assert r["verdict"] == "MISSING-CHECK", (rid, camp.name, r)
+            assert "emitted no ledger" in r["detail"]
+
+    # The check binds where the build does emit the ledger.
+    emitted = make_build(
+        tmp_path / "emitted",
+        validation={
+            "combat-plan.json": {"fights": {"total": 1}, "floor_gate": {"examined": 1}},
+        },
+    )
+    for rid, camp in (("bell-04", elite), ("bell-05", fight)):
+        r = gate.adjudicate(rows[rid], gate.Engine(), gate.Subject(camp, emitted))
+        assert (r["verdict"], r["binding"]) == ("BOUND", 1), (rid, r)
 
 
 def test_every_live_precondition_can_measure_non_zero(gate):

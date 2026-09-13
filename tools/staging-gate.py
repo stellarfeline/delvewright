@@ -514,6 +514,15 @@ def _iter_nodes(node):
             yield from _iter_nodes(v)
 
 
+# Every clause a `dsl` predicate may carry. Enumerated because an unrecognised
+# key is SILENTLY TRUE here — `{"pfefix": {...}}` matches every node in the
+# document, which is the widest possible population wearing the narrowest
+# possible spelling. `load_ledger` refuses a key outside this set, so a typo is
+# a loud ledger defect on every campaign rather than a probe that quietly
+# stopped selecting anything.
+PREDICATE_CLAUSES = ("eq", "in", "prefix", "has", "has_any", "any_of")
+
+
 def _matches(node: dict, pred: dict) -> bool:
     for field, want in (pred.get("eq") or {}).items():
         if node.get(field) != want:
@@ -528,8 +537,43 @@ def _matches(node: dict, pred: dict) -> bool:
     for field in pred.get("has") or []:
         if field not in node:
             return False
-    any_of = pred.get("has_any") or []
-    if any_of and not any(f in node for f in any_of):
+    any_field = pred.get("has_any") or []
+    if any_field and not any(f in node for f in any_field):
+        return False
+    # A DISJUNCTION OF PREDICATES, which is a different question from
+    # `has_any`'s disjunction of field names. It exists because a general form
+    # can name a population the DSL spells in more than one way, and a language
+    # that can only AND forces such a row to quantify over a wider class than
+    # its own general form is about — the shape this clause was added to
+    # repair. `bell-05`'s general form says *a wave the party must kill OR a
+    # hostile it turns loose on them*, and the compiler reads a `kill`
+    # objective, an `unleash-actor` effect and an `ambushes[]` entry (sugar
+    # that expands to the second) as members of one class; a checker reads a
+    # document the way its consumer reads it, so the predicate has to be able
+    # to say so. Every arm is ANDed with the rest of the clauses, and an EMPTY
+    # arm list names nothing rather than everything.
+    alts = pred.get("any_of")
+    if alts is not None and not any(_matches(node, alt) for alt in alts):
+        return False
+    return True
+
+
+def _identity_shaped(pred: dict) -> bool:
+    """Does this predicate select its objects by IDENTITY — `eq`/`in`/`prefix`
+    — rather than by a DECLARATION carried on objects that exist anyway?
+
+    The distinction is `probe_is_self_measuring`'s, and it is stated once here
+    so the disjunction cannot become a way around it: a disjunction is identity
+    shaped only when every arm is, and an arm list that is empty selects
+    nothing at all, which is a probe that has gone quiet rather than a class
+    that measured zero.
+    """
+    if not pred:
+        return False
+    if pred.get("has") or pred.get("has_any"):
+        return False
+    alts = pred.get("any_of")
+    if alts is not None and (not alts or not all(_identity_shaped(a) for a in alts)):
         return False
     return True
 
@@ -548,6 +592,9 @@ def describe(pred: dict) -> str:
         bits.append(f"{field}:declared")
     if pred.get("has_any"):
         bits.append("any of " + "/".join(pred["has_any"]))
+    alts = pred.get("any_of")
+    if alts is not None:
+        bits.append("one of " + ", ".join(describe(a) for a in alts) if alts else "nothing")
     return "[" + ", ".join(bits) + "]" if bits else "[any node]"
 
 
@@ -744,9 +791,12 @@ def probe_is_self_measuring(binding: dict, subj: Subject) -> bool:
     precondition probe could still have found.
 
     - A `dsl` predicate selecting objects purely by IDENTITY — `eq`/`in`/
-      `prefix`, nothing else — counts the object class itself, so its zero is
-      the class measuring zero across the declared design. Nothing is left
-      behind it to find.
+      `prefix`, nothing else, or an `any_of` every arm of which is one of those
+      — counts the object class itself, so its zero is the class measuring zero
+      across the declared design. Nothing is left behind it to find.
+      `_identity_shaped` is that rule, stated once: a disjunction inherits the
+      shape of its arms, and an empty arm list is a probe that selects nothing
+      rather than a class that measured zero.
     - A `campaign` glob with no `contains` counts files in the campaign
       SOURCE — the tree the author writes — and for such a class the file IS
       the object. No stage document declares that a campaign has a storybook,
@@ -790,10 +840,7 @@ def probe_is_self_measuring(binding: dict, subj: Subject) -> bool:
     """
     kind = binding.get("kind")
     if kind == "dsl":
-        m = binding.get("match") or {}
-        if not m:
-            return False
-        return not (m.get("has") or m.get("has_any"))
+        return _identity_shaped(binding.get("match") or {})
     if kind == "campaign" and not binding.get("contains"):
         return all(p.is_file() for p in glob_paths(subj.campaign, binding["glob"]))
     return False
@@ -1115,6 +1162,17 @@ def adjudicate(row: dict, eng: Engine, subj: Subject) -> dict:
 # ---------------------------------------------------------------------------
 
 
+def _unknown_clauses(pred: dict):
+    """Every predicate clause in `pred` (arms included) this matcher ignores."""
+    if not isinstance(pred, dict):
+        return
+    for k in pred:
+        if k not in PREDICATE_CLAUSES:
+            yield k
+    for alt in pred.get("any_of") or []:
+        yield from _unknown_clauses(alt)
+
+
 def load_ledger(path: pathlib.Path) -> dict:
     doc = json.loads(path.read_text(encoding="utf-8"))
     rows = doc.get("findings")
@@ -1145,6 +1203,20 @@ def load_ledger(path: pathlib.Path) -> dict:
             b = r.get(key)
             if not isinstance(b, dict) or b.get("kind") != "dsl":
                 continue
+            # Every clause of the predicate is one this matcher implements.
+            # `_matches` ignores a key it does not know, so a misspelled clause
+            # imposes no restriction at all and the probe silently counts every
+            # node in the document — the widest population, reported under the
+            # narrowest description. Refused at load, for every campaign,
+            # before any verdict is reached.
+            for bad in _unknown_clauses(b.get("match") or {}):
+                raise ValueError(
+                    f"{path}: row `{r['id']}` `{key}` uses predicate clause "
+                    f"`{bad}`, which this matcher does not implement — an "
+                    "unrecognised clause restricts nothing, so the probe would "
+                    "count every node in the document while describing itself "
+                    f"as something narrower (known clauses: {', '.join(PREDICATE_CLAUSES)})"
+                )
             for f in b.get("files") or []:
                 if f not in Subject.STAGE_FILES:
                     raise ValueError(

@@ -183,7 +183,7 @@ fn actor_quests(extra: &str) -> String {
     ],
     "actors": [
       {{ "id": "actor/giant", "entity": "minecraft:vindicator", "name": "The Sleeper",
-         "anchor": "anchor/keeper-stand"{extra} }}
+         "anchor": "spawn"{extra} }}
     ]
   }}
 }}"#

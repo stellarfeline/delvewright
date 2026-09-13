@@ -64,7 +64,10 @@ def catalog_card(
         "hidden_layers": entry.hidden_layers,
         "quality": entry.features.get("quality", 4),
         "texture_path": f"skins/{entry.texture_id}.png",
-        "resource_pack_path": f"assets/delvewright/textures/npc/{entry.texture_id}.png",
+        # No `resource_pack_path`: where the PNG lands in a pack is
+        # `assets/delvewright/textures/npc/<campaign_id>/<texture_id>.png`, and the
+        # campaign id is not a fact a cast sheet has. A card states what this tool
+        # knows — the file it wrote and what is in it.
         "previews": [f"previews/{n}" for n in preview_names],
         "provenance": provenance(entry, png_bytes),
     }

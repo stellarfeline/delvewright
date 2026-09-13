@@ -735,6 +735,21 @@ pub fn build_with_warnings(
     // summon, not a walk, so this needs no occupancy model. DW0325 if one dangles.
     crate::compiler::nav::check_actor_placement(plan)?;
 
+    // …and no two bodies that are in the world at the same time may be declared
+    // on the same cell (DW0896). Runs here, with the anchor-resolution seals and
+    // before any occupancy model, because it is arithmetic over resolved cells
+    // and over a declaration the author can read: seven actors on one anchor
+    // emitted seven identical `summon` lines and the build exited 0. Its binding
+    // line prints whether or not it found anything — a count only says something
+    // when the run that found nothing prints it too — and prints before the
+    // refusal, so a refused run still states what it examined.
+    let (one_mark, one_mark_verdict) = crate::compiler::cohabit::check_one_body_per_mark(plan);
+    eprintln!("{}", one_mark.line());
+    one_mark_verdict.map_err(|e| BuildFailure::Diagnostic {
+        code: e.code,
+        message: e.message,
+    })?;
+
     // No body may stand on the affordance the party has to click (DW0359). Runs
     // right after the anchor-resolution seals and before any occupancy model:
     // it is pure box arithmetic over resolved cells, and it is the proof that the
@@ -1866,7 +1881,14 @@ pub fn build_with_warnings(
         out.insert("resourcepack.zip".to_string(), zip);
         out.insert(
             "SKINS.md".to_string(),
-            pack_note(&sha1, skins, art, &plan.campaign.world.content.languages).into_bytes(),
+            pack_note(
+                &sha1,
+                skins,
+                plan.campaign.world.campaign_id.as_str(),
+                art,
+                &plan.campaign.world.content.languages,
+            )
+            .into_bytes(),
         );
         Some(sha1)
     };
@@ -2262,6 +2284,7 @@ fn is_verbatim_binary_output(path: &str) -> bool {
 fn pack_note(
     sha1: &str,
     skins: &BTreeMap<String, Vec<u8>>,
+    campaign_id: &str,
     art: bool,
     languages: &[String],
 ) -> String {
@@ -2277,11 +2300,18 @@ fn pack_note(
          - `RESOURCE_PACK_PROMPT` = a JSON text component (not a bare string)\n\n",
     ));
     if !skins.is_empty() {
-        s.push_str(
-            "Baked skins (`skins/<id>.png` → `assets/delvewright/textures/npc/<id>.png`):\n\n",
-        );
+        // The archive path carries this delve's own texture directory
+        // (`dsl::pack_texture_dir`): a client keeps every applied pack's textures in
+        // one merged space, so a face baked under a bare `keeper` is the face every
+        // other delve's `keeper` wears. The host is shown both names — the one the
+        // campaign authored and the one the pack ships.
+        let dir = delvewright_dsl::pack_texture_dir(campaign_id);
+        s.push_str("Baked skins (`skins/<id>.png` → the pack path beside it):\n\n");
         for id in skins.keys() {
-            s.push_str(&format!("- `{id}`\n"));
+            let authored = id.strip_prefix(&dir).unwrap_or(id);
+            s.push_str(&format!(
+                "- `{authored}` → `assets/delvewright/textures/npc/{id}.png`\n"
+            ));
         }
         s.push('\n');
     }
@@ -9597,25 +9627,46 @@ fn actor_facing_yaw(a: &delvewright_dsl::Actor) -> i32 {
 /// touching a real-AI twin). `Invulnerable` unless `vulnerable`; a vulnerable puppet
 /// stays knockback-immune (`knockback_resistance` 1.0) — the tower-defense creep. A
 /// `skin` re-dresses it as a `minecraft:mannequin`, exactly as a stage-2 NPC.
+///
+/// **An actor is a body, and a `skin` is a costume.** What the two branches
+/// differ over is only what the costume forces: the entity id, the field the
+/// label rides (a mannequin's `description`, a mob's `CustomName`), and how a
+/// scripted body is held still (`immovable` against
+/// `NoAI`/`NoGravity`/`PersistenceRequired`). Everything the author declared
+/// about the *body* — `vulnerable`, `attributes`, `equipment` — is computed once,
+/// above the branch, and spliced into both, so a property cannot be carried by
+/// one dress and lost by the other. The loot half is not the compiler's choice:
+/// see [`body_carries_loot_nbt`].
 fn actor_puppet_summon(ns: &str, a: &delvewright_dsl::Actor, pos: [i32; 3], yaw: i32) -> String {
     let safe = plan::safe_local(a.id.as_str());
-    // v0.9: a declared quest-item drop points the field the puppet
-    // has always carried at a table the compiler emits. `unleash` and
-    // `despawn-actor` strip it again ([`strip_drops_line`]) — only a player's
-    // kill yields it.
-    let loot = death_loot_table(
-        ns,
-        has_item_drop(&a.drops).then(|| drop_loot_path("actor", a.id.as_str())),
-    );
     let p = ent_xyz(pos);
     let tags = format!("Tags:[\"dw_actor\",\"dw_actor_{safe}\",\"dw_pup_{safe}\"]");
+    // The body that actually ships — the ONE authority both the router and the
+    // emitter ask, so "which entity is this puppet" is answered in one place.
+    let body = crate::compiler::nav::actor_body_entity(a);
+    let inv = if a.vulnerable { 0 } else { 1 };
+    // Compiler-owned knockback-immunity first (a `vulnerable` puppet is a
+    // damageable creep, never a shovable one), then whatever the author
+    // declared — so a puppet with no `attributes` renders exactly the
+    // pre-`attributes` string and every earlier campaign stays byte-identical.
+    let mut entries: Vec<String> = Vec::new();
+    if a.vulnerable {
+        entries.push("{id:\"minecraft:knockback_resistance\",base:1.0}".to_string());
+    }
+    entries.extend(attribute_entries(a.attributes.as_ref()));
+    let attrs = wrap_attribute_entries(entries);
+    // spec-0021: actor gear rides on BOTH the puppet and the twin, so the
+    // dormant elite the party circles is visibly the thing that stands up.
+    let equip = actor_equipment(a, &body)
+        .map(|e| format!(",{e}"))
+        .unwrap_or_default();
     if let Some(skin) = &a.skin {
         let desc = a
             .name
             .as_deref()
             .unwrap_or_else(|| a.id.as_str().rsplit('/').next().unwrap_or("actor"));
         format!(
-            "summon minecraft:mannequin {} {} {} {{profile:{{texture:\"delvewright:npc/{}\",model:\"{}\"}},immovable:1b,pose:\"standing\",Invulnerable:1b,Silent:1b,Rotation:[{yaw}f,0f],description:{},{tags}}}",
+            "summon {body} {} {} {} {{profile:{{texture:\"delvewright:npc/{}\",model:\"{}\"}},immovable:1b,pose:\"standing\",Invulnerable:{inv}b,Silent:1b,Rotation:[{yaw}f,0f],description:{},{tags}{attrs}{equip}}}",
             p[0],
             p[1],
             p[2],
@@ -9624,33 +9675,47 @@ fn actor_puppet_summon(ns: &str, a: &delvewright_dsl::Actor, pos: [i32; 3], yaw:
             snbt_text_component(desc)
         )
     } else {
-        let inv = if a.vulnerable { 0 } else { 1 };
         let name = a
             .name
             .as_deref()
             .map(|n| format!(",CustomName:{},CustomNameVisible:1b", snbt_component(n)))
             .unwrap_or_default();
-        // Compiler-owned knockback-immunity first (a `vulnerable` puppet is a
-        // damageable creep, never a shovable one), then whatever the author
-        // declared — so a puppet with no `attributes` renders exactly the
-        // pre-`attributes` string and every earlier campaign stays byte-identical.
-        let mut entries: Vec<String> = Vec::new();
-        if a.vulnerable {
-            entries.push("{id:\"minecraft:knockback_resistance\",base:1.0}".to_string());
-        }
-        entries.extend(attribute_entries(a.attributes.as_ref()));
-        let attrs = wrap_attribute_entries(entries);
-        let pose = mannequin_pose_nbt(&a.entity);
-        // spec-0021: actor gear rides on BOTH the puppet and the twin, so the
-        // dormant elite the party circles is visibly the thing that stands up.
-        let equip = actor_equipment(a)
-            .map(|e| format!(",{e}"))
-            .unwrap_or_default();
+        let pose = mannequin_pose_nbt(&body);
+        // v0.9: a declared quest-item drop points the field the puppet
+        // has always carried at a table the compiler emits. `unleash` and
+        // `despawn-actor` strip it again ([`strip_drops_line`]) — only a player's
+        // kill yields it.
+        let loot = death_loot_table(
+            ns,
+            has_item_drop(&a.drops).then(|| drop_loot_path("actor", a.id.as_str())),
+        );
         format!(
-            "summon {} {} {} {} {{NoAI:1b,Silent:1b,PersistenceRequired:1b,NoGravity:1b{pose},Invulnerable:{inv}b,DeathLootTable:\"{loot}\",Rotation:[{yaw}f,0f],{tags}{name}{attrs}{equip}}}",
-            a.entity, p[0], p[1], p[2]
+            "summon {body} {} {} {} {{NoAI:1b,Silent:1b,PersistenceRequired:1b,NoGravity:1b{pose},Invulnerable:{inv}b,DeathLootTable:\"{loot}\",Rotation:[{yaw}f,0f],{tags}{name}{attrs}{equip}}}",
+            p[0], p[1], p[2]
         )
     }
+}
+
+/// Whether a body of this entity kind carries the `Mob`-only loot NBT the
+/// compiler writes for a declared `drops` — `DeathLootTable` and `drop_chances`.
+///
+/// `minecraft:mannequin` is a `LivingEntity` and not a `Mob`, so neither field is
+/// part of its save data: vanilla accepts them in the `/summon` compound, reads
+/// them with nothing, and persists nothing. Live A/B on the pinned 1.21.11
+/// server — a mannequin summoned with `DeathLootTable:"minecraft:empty"`,
+/// `drop_chances:{…}`, `equipment:{…}` and `attributes:[…]` reads back
+/// `equipment` verbatim and `attributes` merged over its defaults
+/// (`max_health` 40 ⇒ `Health: 40.0f`), and answers `Found no elements matching`
+/// for `DeathLootTable` and for `drop_chances`. Damaged to death wearing that
+/// gear it drops **nothing**, so the no-grind invariant the `drop_chances` zeros
+/// exist to hold is held by the body itself rather than by a field it ignores.
+///
+/// So a skinned actor's `drops` reaches the player through the unleashed twin —
+/// a real `Mob` — and not through the caged mannequin. That is a vanilla limit,
+/// not an emission choice, and emitting the two fields anyway would be a
+/// statement the world does not carry.
+fn body_carries_loot_nbt(entity: &str) -> bool {
+    entity.strip_prefix("minecraft:").unwrap_or(entity) != "mannequin"
 }
 
 /// The `pose` NBT field a `minecraft:mannequin` needs, or `""` for any other
@@ -9728,10 +9793,6 @@ fn spawn_finalize_nbt(entity: &str) -> &'static str {
 /// in the meadow indefinitely while the unleashed one burrowed away.
 fn actor_twin_summon(ns: &str, a: &delvewright_dsl::Actor, at: &str) -> String {
     let safe = plan::safe_local(a.id.as_str());
-    let loot = death_loot_table(
-        ns,
-        has_item_drop(&a.drops).then(|| drop_loot_path("actor", a.id.as_str())),
-    );
     let name = a
         .name
         .as_deref()
@@ -9741,7 +9802,7 @@ fn actor_twin_summon(ns: &str, a: &delvewright_dsl::Actor, at: &str) -> String {
     let finalize = spawn_finalize_nbt(&a.entity);
     // The twin inherits the puppet's gear: unleashing swaps the body, not the
     // costume. Drop chances stay 0 — killing the elite must never drop its kit.
-    let equip = actor_equipment(a)
+    let equip = actor_equipment(a, &a.entity)
         .map(|e| format!(",{e}"))
         .unwrap_or_default();
     // The twin inherits the puppet's tuning too: the whole point of an elite's
@@ -9749,14 +9810,30 @@ fn actor_twin_summon(ns: &str, a: &delvewright_dsl::Actor, at: &str) -> String {
     // body. Knockback-immunity deliberately does NOT ride along — that is the
     // caged creep's property, not the freed elite's.
     let attrs = attributes_snbt(a.attributes.as_ref());
+    // The twin's body is `entity` as written, so an author who spelled
+    // `minecraft:mannequin` there gets a twin with no reader for a death loot
+    // table — the same vanilla limit the puppet branch states.
+    let loot = if body_carries_loot_nbt(&a.entity) {
+        let path = death_loot_table(
+            ns,
+            has_item_drop(&a.drops).then(|| drop_loot_path("actor", a.id.as_str())),
+        );
+        format!(",DeathLootTable:\"{path}\"")
+    } else {
+        String::new()
+    };
     format!(
-        "summon {} {at} {{PersistenceRequired:1b{pose},DeathLootTable:\"{loot}\",Tags:[\"dw_actor\",\"dw_actor_{safe}\"]{name}{finalize}{attrs}{equip}}}",
+        "summon {} {at} {{PersistenceRequired:1b{pose}{loot},Tags:[\"dw_actor\",\"dw_actor_{safe}\"]{name}{finalize}{attrs}{equip}}}",
         a.entity
     )
 }
 
 /// The `equipment`/`drop_chances` SNBT fragment for an actor (no leading comma),
-/// or `None` when the actor declares no gear.
+/// or `None` when the actor declares no gear. `body` is the entity id the gear is
+/// being hung on — the puppet's ([`crate::compiler::nav::actor_body_entity`], a mannequin when the
+/// actor declares a `skin`) or the twin's (`actor.entity`) — because
+/// `drop_chances` is `Mob` save data and a mannequin is not a `Mob`
+/// ([`body_carries_loot_nbt`]).
 ///
 /// Deliberately NOT the wave path's [`wave_equipment`]: that function falls back
 /// to the armed-mob default table, which would silently arm every actor whose
@@ -9764,7 +9841,7 @@ fn actor_twin_summon(ns: &str, a: &delvewright_dsl::Actor, at: &str) -> String {
 /// every campaign authored before this field existed. An actor is a directed
 /// set piece — it wears exactly what the author declared, and nothing when they
 /// declared nothing.
-fn actor_equipment(a: &delvewright_dsl::Actor) -> Option<String> {
+fn actor_equipment(a: &delvewright_dsl::Actor, body: &str) -> Option<String> {
     let eq = a.equipment.as_ref()?;
     let declared = declared_drop_slots(&a.drops);
     let mut items: Vec<String> = Vec::new();
@@ -9787,6 +9864,11 @@ fn actor_equipment(a: &delvewright_dsl::Actor) -> Option<String> {
     }
     if items.is_empty() {
         return None;
+    }
+    if !body_carries_loot_nbt(body) {
+        // A mannequin wears the gear and drops none of it, whatever is written
+        // into a field it has no reader for.
+        return Some(format!("equipment:{{{}}}", items.join(",")));
     }
     Some(format!(
         "equipment:{{{}}},drop_chances:{{{}}}",
@@ -14903,19 +14985,51 @@ fn emit_loot_packtest(plan: &Plan, out: &mut BuildOutput) {
 /// puppet and summons a fresh entity, so gear that rode only on the puppet would
 /// vanish the instant the elite came alive — a regression invisible to any
 /// compile-time check. Emitted only for a campaign with an equipped actor.
+///
+/// **A skinned body is not excluded, and excluding it was the defect.** The
+/// filter used to demand `skin.is_none()`, which was true of the engine it was
+/// written against — the skin branch of the puppet summon dropped `equipment`
+/// outright, so a skinned actor had no gear for this to find. That is fixed, and
+/// the exclusion then read exactly backwards: it refused to look at the one case
+/// that had ever been broken, and it was an opt-out the defect itself could
+/// supply. It was measured doing so — a campaign whose every actor is skinned
+/// emitted no actor-equipment test at all and its proof set shrank by one with
+/// nothing saying why. The body a campaign dresses is now irrelevant to whether
+/// its gear is proved.
 fn emit_actor_equipment_packtest(plan: &Plan, out: &mut BuildOutput) {
-    let ns = &plan.namespace;
-    let title = artifact_title(plan.campaign);
-    let Some(a) = plan
+    // One test per BODY KIND among the equipped actors, taking the first actor
+    // of each kind. What is under test is whether the body a campaign dresses
+    // changes whether its gear survives, so the kinds are the population and a
+    // second guard in the same livery would add a run and prove nothing. A
+    // campaign that dresses both a plain entity and a mannequin gets both.
+    let mut seen: Vec<String> = Vec::new();
+    for a in plan
         .campaign
         .quests
         .content
         .actors
         .iter()
-        .find(|a| a.equipment.is_some() && a.skin.is_none())
-    else {
-        return;
-    };
+        .filter(|a| a.equipment.is_some())
+    {
+        let body = crate::compiler::nav::actor_body_entity(a);
+        if seen.contains(&body) {
+            continue;
+        }
+        seen.push(body.clone());
+        emit_one_actor_equipment_packtest(plan, a, &body, out);
+    }
+}
+
+/// One body kind's gear test. Split out so the population above is a plain loop
+/// over the kinds rather than a loop with a body inlined in it.
+fn emit_one_actor_equipment_packtest(
+    plan: &Plan,
+    a: &delvewright_dsl::Actor,
+    body: &str,
+    out: &mut BuildOutput,
+) {
+    let ns = &plan.namespace;
+    let title = artifact_title(plan.campaign);
     // The slot the assertion reads: prefer a hand, else the first armour piece.
     let eq = a.equipment.as_ref().expect("filtered on Some");
     let probe: Option<(&str, &EquipItem)> = [
@@ -14933,7 +15047,7 @@ fn emit_actor_equipment_packtest(plan: &Plan, out: &mut BuildOutput) {
     };
     let safe = plan::safe_local(a.id.as_str());
     let mut b = packtest_header(&format!(
-        "{title}: actor `{}` keeps its gear across unleash (spec-0021)",
+        "{title}: actor `{}`, a {body}, keeps its gear across unleash (spec-0021)",
         a.id
     ));
     b.push(format!("function {ns}:setup"));
@@ -14953,8 +15067,13 @@ fn emit_actor_equipment_packtest(plan: &Plan, out: &mut BuildOutput) {
     ));
     b.push("assert score #aeqt dw.sys matches 1".to_string());
     b.push(format!("kill @e[tag=dw_actor_{safe}]"));
+    // The body is in the name, so a campaign that dresses two kinds gets two
+    // files rather than one overwriting the other. The namespace colon is
+    // replaced rather than dropped: two ids differing only in namespace are two
+    // kinds, and a resource location's path does not admit a colon.
+    let body_local = body.replace([':', '-', '/', '.'], "_");
     out.insert(
-        format!("packtest-datapack/data/{ns}/test/v06_actor_equipment.mcfunction"),
+        format!("packtest-datapack/data/{ns}/test/v06_actor_equipment_{body_local}.mcfunction"),
         lines(&b).into_bytes(),
     );
 }
@@ -21264,6 +21383,70 @@ mod tests {
         assert!(s.contains("dw_pup_keeper"));
     }
 
+    /// A `skin` is a costume, not a lobotomy: a skinned actor is the same body
+    /// with a different dress, so everything the author declared about the body
+    /// rides it. Before this, the mannequin branch carried none of `vulnerable`,
+    /// `attributes` or `equipment` — an actor that ships armed and tunable
+    /// shipped naked and vanilla the moment it was given a face.
+    #[test]
+    fn a_skinned_puppet_keeps_everything_declared_about_its_body() {
+        let mut a = mk_actor("actor/keeper", "minecraft:zombie", true);
+        a.skin = Some(delvewright_dsl::NpcSkin {
+            texture_id: "guard".to_string(),
+            model: delvewright_dsl::SkinModel::Wide,
+        });
+        a.equipment = Some(delvewright_dsl::MobEquipment {
+            head: Some(EquipItem::Plain("minecraft:netherite_helmet".to_string())),
+            chest: Some(EquipItem::Plain(
+                "minecraft:netherite_chestplate".to_string(),
+            )),
+            legs: None,
+            feet: None,
+            main_hand: Some(EquipItem::Plain("minecraft:netherite_sword".to_string())),
+            off_hand: None,
+        });
+        a.attributes = Some(delvewright_dsl::MobAttributes {
+            max_health: Some(40.0),
+            attack_damage: Some(9.0),
+            movement_speed: None,
+            follow_range: None,
+        });
+        let s = actor_puppet_summon("dw", &a, [1, 2, 3], 180);
+
+        assert!(
+            s.contains("Invulnerable:0b"),
+            "a `vulnerable` skinned puppet takes damage like any other body: {s}"
+        );
+        assert!(
+            s.contains("{id:\"minecraft:knockback_resistance\",base:1.0}"),
+            "a vulnerable puppet stays knockback-immune whatever it is wearing: {s}"
+        );
+        assert!(
+            s.contains("{id:\"minecraft:max_health\",base:40.0}")
+                && s.contains("{id:\"minecraft:attack_damage\",base:9.0}"),
+            "declared `attributes` must reach the mannequin — vanilla merges them \
+             over its defaults (live-probed: `max_health` 40 ⇒ `Health: 40.0f`): {s}"
+        );
+        assert!(
+            s.contains("mainhand:{id:\"minecraft:netherite_sword\"")
+                && s.contains("head:{id:\"minecraft:netherite_helmet\"")
+                && s.contains("chest:{id:\"minecraft:netherite_chestplate\",count:1}"),
+            "declared `equipment` must reach the mannequin, which wears and renders \
+             it: {s}"
+        );
+
+        // The loot half is a vanilla limit and is stated as one: a mannequin is a
+        // `LivingEntity`, not a `Mob`, so neither `DeathLootTable` nor
+        // `drop_chances` is part of its save data (both read back
+        // `Found no elements matching` on the pinned server) and a killed one
+        // drops nothing at all. Writing them here would be a claim the world does
+        // not carry — see [`body_carries_loot_nbt`].
+        assert!(
+            !s.contains("DeathLootTable") && !s.contains("drop_chances"),
+            "a mannequin body carries no Mob loot NBT: {s}"
+        );
+    }
+
     #[test]
     fn twin_summon_has_ai_and_no_puppet_marker() {
         let a = mk_actor("actor/giant", "minecraft:warden", false);
@@ -21567,7 +21750,7 @@ mod loot_emit_tests {
     #[test]
     fn an_unequipped_actor_is_byte_identical() {
         let a = actor_with(None);
-        assert_eq!(actor_equipment(&a), None);
+        assert_eq!(actor_equipment(&a, &a.entity), None);
         let puppet = actor_puppet_summon("dw", &a, [1, 2, 3], 0);
         assert!(!puppet.contains("equipment:"), "{puppet}");
         assert!(!actor_twin_summon("dw", &a, "~ ~ ~").contains("equipment:"));

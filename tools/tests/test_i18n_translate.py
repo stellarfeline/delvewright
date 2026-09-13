@@ -7,7 +7,9 @@ sidecar we write.
 """
 
 import importlib.util
+import io
 import json
+import subprocess
 import sys
 import urllib.error
 from pathlib import Path
@@ -62,6 +64,15 @@ INVENTORY_DOC = {
 
 def inventory():
     return t.parse_inventory(json.loads(json.dumps(INVENTORY_DOC)))
+
+
+#: A step whose reply is free text — the critique's shape, reduced to what the
+#: transport tests need.
+PROSE_STEP = t.Step(
+    name="reflect",
+    messages=[{"role": "user", "content": "Write your critique."}],
+    json_object=False,
+)
 
 
 def write_config(path: Path, body: str) -> Path:
@@ -187,7 +198,7 @@ def test_batches_preserve_order_and_size():
 def test_messages_carry_persona_glossary_and_keys():
     inv = inventory()
     batch = [e for e in inv.entries if e.speaker == "keeper" and e.existing is None]
-    msgs = t.build_messages(inv, batch, "zh-cn")
+    msgs = t.translate_step(inv, batch, "zh-cn").messages
     system, user = msgs[0]["content"], msgs[1]["content"]
     assert msgs[0]["role"] == "system" and msgs[1]["role"] == "user"
     assert "zh-cn" in system
@@ -199,7 +210,7 @@ def test_messages_carry_persona_glossary_and_keys():
 
 
 def test_system_prompt_states_the_player_reply_rule():
-    msgs = t.build_messages(inventory(), inventory().entries[:1], "zh-cn")
+    msgs = t.translate_step(inventory(), inventory().entries[:1], "zh-cn").messages
     assert ".opt." in msgs[0]["content"]
     assert "JSON" in msgs[0]["content"]
 
@@ -216,16 +227,16 @@ def test_translationese_guidance_is_language_scoped():
 
 
 def test_zh_system_prompt_carries_the_translationese_checklist():
-    system = t.build_messages(inventory(), inventory().entries[:1], "zh-cn")[0]["content"]
+    system = t.translate_step(inventory(), inventory().entries[:1], "zh-cn").messages[0]["content"]
     for rule in ("的的不休", "名词化", "信达雅"):
         assert rule in system
-    assert "的的不休" not in t.build_messages(inventory(), inventory().entries[:1], "ja")[0]["content"]
+    assert "的的不休" not in t.translate_step(inventory(), inventory().entries[:1], "ja").messages[0]["content"]
 
 
 def test_reflection_prompt_names_all_four_critique_axes():
     inv = inventory()
     batch = inv.pending()
-    msgs = t.build_reflection_messages(inv, batch, "zh-cn", {"dlg.keeper.greet.text": "你来了。"})
+    msgs = t.critique_step(inv, batch, "zh-cn", {"dlg.keeper.greet.text": "你来了。"}).messages
     system, user = msgs[0]["content"], msgs[1]["content"]
     for axis in ("ACCURACY", "FLUENCY", "STYLE / REGISTER", "TERMINOLOGY"):
         assert axis in system
@@ -242,26 +253,30 @@ def test_option_label_button_budget_reaches_both_prompts():
     the translate step AND checked in the critique step."""
     inv = inventory()
     batch = inv.pending()
-    translate = t.build_messages(inv, batch, "zh-cn")[0]["content"]
-    critique = t.build_reflection_messages(inv, batch, "zh-cn", {})[0]["content"]
+    translate = t.translate_step(inv, batch, "zh-cn").messages[0]["content"]
+    critique = t.critique_step(inv, batch, "zh-cn", {}).messages[0]["content"]
     for prompt in (translate, critique):
         assert "12 Han" in prompt and "20 Latin" in prompt
         assert "scroll" in prompt.lower()
 
 
 def test_reflection_step_does_not_ask_for_json():
-    system = t.build_reflection_messages(inventory(), inventory().pending(), "zh-cn", {})[0][
-        "content"
-    ]
+    step = t.critique_step(inventory(), inventory().pending(), "zh-cn", {})
+    system = step.messages[0]["content"]
     assert "only diagnoses" in system
     assert "corrected translation" in system
+    # The prompt asking for prose and the request asking for a JSON object is the
+    # pairing a provider rejects, and asserting only the prompt text is what let
+    # `--reflect` ship unrunnable: the reply shape is asserted here too.
+    assert step.json_object is False
+    assert not step.mentions_json(), "a prose step must not even mention json"
 
 
 def test_improvement_prompt_carries_critique_draft_and_anti_churn_rule():
     inv = inventory()
     batch = inv.pending()
     draft = {e.key: "草稿:" + e.en for e in batch}
-    msgs = t.build_improvement_messages(inv, batch, "zh-cn", draft, "  line 3 is too literal  ")
+    msgs = t.revise_step(inv, batch, "zh-cn", draft, "  line 3 is too literal  ").messages
     system, user = msgs[0]["content"], msgs[1]["content"]
     assert "BYTE-IDENTICAL" in system, "a reflection pass must not churn good lines"
     assert "ONE JSON object" in system
@@ -347,16 +362,100 @@ def test_reflect_run_that_drops_a_key_fails_instead_of_writing_a_hole(tmp_path, 
 def test_request_shape_and_key_placement(tmp_path):
     write_config(tmp_path / t.CONFIG_FILE, CONFIG)
     cfg = t.load_config(root=tmp_path)
-    msgs = t.build_messages(inventory(), inventory().entries[:2], "zh-cn")
-    url, body, headers = t.build_request(cfg, msgs, "secret-value")
+    step = t.translate_step(inventory(), inventory().entries[:2], "zh-cn")
+    url, body, headers = t.build_request(cfg, step, "secret-value")
 
     assert url == "https://api.example-provider.test/v1/chat/completions"
     assert body["model"] == "test-model"
     assert body["temperature"] == pytest.approx(0.2)
     assert body["stream"] is False
-    assert body["messages"] == list(msgs)
+    assert body["messages"] == list(step.messages)
     assert headers["Authorization"] == "Bearer secret-value"
     assert "secret-value" not in json.dumps(body), "the key belongs in the header only"
+
+
+def three_steps():
+    """The three steps of one `--reflect` batch, in order."""
+    inv = inventory()
+    batch = inv.pending()
+    draft = {e.key: "草稿" for e in batch}
+    return [
+        t.translate_step(inv, batch, "zh-cn"),
+        t.critique_step(inv, batch, "zh-cn", draft),
+        t.revise_step(inv, batch, "zh-cn", draft, "line 1 is too literal"),
+    ]
+
+
+def test_response_format_is_per_step_not_per_request(tmp_path):
+    """`--reflect` could never run: `response_format: json_object` was set once
+    for all three steps, and the critique prompt deliberately never says `json`.
+    OpenAI and DeepSeek both answer that pairing with `HTTP 400 "Prompt must
+    contain the word 'json' in some form"`, so the run died on batch 1 before it
+    had written a translation. Two of the three steps want a JSON object back and
+    one wants prose, so the shape belongs to the step."""
+    cfg = config(tmp_path)
+    translate, critique, revise = three_steps()
+    assert [s.name for s in (translate, critique, revise)] == [
+        "translate",
+        "reflect",
+        "improve",
+    ]
+    for step in (translate, revise):
+        body = t.build_request(cfg, step, "secret-value")[1]
+        assert body["response_format"] == {"type": "json_object"}, step.name
+        assert step.mentions_json(), f"`{step.name}` asks for JSON and says so"
+    body = t.build_request(cfg, critique, "secret-value")[1]
+    assert "response_format" not in body, (
+        "the critique asks for free text; sending json_object is the HTTP 400"
+    )
+
+
+def test_a_json_object_step_whose_prompt_never_says_json_is_refused(tmp_path):
+    """The check that makes the flag and the prompt one thing rather than two
+    settings: a mismatch is refused here, locally, instead of being discovered
+    as a provider's 400 halfway through a paid run."""
+    cfg = config(tmp_path)
+    bad = t.Step(
+        name="critique-as-json",
+        messages=[{"role": "system", "content": "Write your critique."}],
+        json_object=True,
+    )
+    with pytest.raises(t.TranslateError, match="json"):
+        t.build_request(cfg, bad, "secret-value")
+
+
+def test_a_provider_rejection_carries_the_providers_own_reason(tmp_path):
+    """A bare `HTTP 400` is what kept this defect unread: the sentence naming the
+    cause was in the response body and nothing printed it."""
+    cfg = config(tmp_path)
+    body = (
+        b'{"error":{"message":"Prompt must contain the word \'json\' in some form to use '
+        b'\'response_format\' of type \'json_object\'.","type":"invalid_request_error"}}'
+    )
+
+    def poster(url, req, headers, timeout):
+        raise urllib.error.HTTPError(url, 400, "Bad Request", {}, io.BytesIO(body))
+
+    with pytest.raises(t.TranslateError) as exc:
+        t.chat_once(cfg, PROSE_STEP, "secret-value", poster=poster, sleep=lambda _: None)
+    assert "HTTP 400" in str(exc.value)
+    assert "must contain the word" in str(exc.value)
+    assert "`reflect`" in str(exc.value), "which step was refused"
+    assert "secret-value" not in str(exc.value)
+
+
+def test_a_key_echoed_back_by_a_provider_is_redacted(tmp_path):
+    cfg = config(tmp_path)
+
+    def poster(url, req, headers, timeout):
+        raise urllib.error.HTTPError(
+            url, 401, "Unauthorized", {}, io.BytesIO(b'{"error":"key secret-value is revoked"}')
+        )
+
+    with pytest.raises(t.TranslateError) as exc:
+        t.chat_once(cfg, PROSE_STEP, "secret-value", poster=poster, sleep=lambda _: None)
+    assert "secret-value" not in str(exc.value)
+    assert "<redacted>" in str(exc.value)
 
 
 # -------------------------------------------------------------------- reply --
@@ -398,7 +497,7 @@ def test_chat_retries_transient_failures(tmp_path):
             raise urllib.error.URLError("connection reset")
         return {"choices": [{"message": {"content": '{"k": "v"}'}}]}
 
-    out = t.chat_once(cfg, [], "secret-value", poster=poster, sleep=lambda _: None)
+    out = t.chat_once(cfg, PROSE_STEP, "secret-value", poster=poster, sleep=lambda _: None)
     assert out == '{"k": "v"}'
     assert len(calls) == 2
 
@@ -412,7 +511,7 @@ def test_auth_failure_fails_fast_without_leaking_the_key(tmp_path):
         raise urllib.error.HTTPError(url, 401, "Unauthorized", {}, None)
 
     with pytest.raises(t.TranslateError) as exc:
-        t.chat_once(cfg, [], "secret-value", poster=poster, sleep=lambda _: None)
+        t.chat_once(cfg, PROSE_STEP, "secret-value", poster=poster, sleep=lambda _: None)
     assert len(calls) == 1, "a bad key must not be retried"
     assert "secret-value" not in str(exc.value)
 
@@ -429,16 +528,27 @@ def test_merge_keeps_existing_applies_new_and_cannot_produce_orphans():
     assert set(merged) <= {e.key for e in inv.entries}
 
 
-def test_sidecar_envelope_is_sorted_and_preserves_dsl_version(tmp_path):
+#: A `delvec` that exits 0 and touches nothing. Canonical form is the compiler's
+#: to decide and is proven against the real binary over a real written file in
+#: `crates/delvec/tests/i18n_sidecar.rs`; what these tests own is the document
+#: the writer hands it and the fact that it hands it over at all.
+INERT_DELVEC = ["true"]
+
+
+def test_sidecar_envelope_carries_the_campaign_and_the_inventory_version(tmp_path):
     inv = inventory()
     path = t.sidecar_path(tmp_path, "zh-cn")
     path.parent.mkdir()
     path.write_text(json.dumps({"dsl_version": "0.3.0", "content": {}}), "utf-8")
 
-    t.write_sidecar(path, inv, {"b.key": "乙", "a.key": "甲"})
+    t.write_sidecar(path, inv, {"b.key": "乙", "a.key": "甲"}, INERT_DELVEC)
     raw = path.read_text("utf-8")
     doc = json.loads(raw)
-    assert doc["dsl_version"] == "0.3.0", "an existing sidecar keeps its version claim"
+    assert doc["dsl_version"] == "0.6.0", (
+        "an old version claim is not carried forward: `delvec fmt` stamps the version "
+        "this engine implements (ADR-0024), so preserving one wrote a document the "
+        "formatter refuses"
+    )
     assert doc["campaign_id"] == "keep-trial"
     assert doc["kind"] == "l10n"
     assert doc["lang"] == "zh-cn"
@@ -449,8 +559,39 @@ def test_sidecar_envelope_is_sorted_and_preserves_dsl_version(tmp_path):
 
 def test_fresh_sidecar_takes_the_campaign_dsl_version(tmp_path):
     path = t.sidecar_path(tmp_path, "zh-cn")
-    t.write_sidecar(path, inventory(), {"a.key": "甲"})
+    t.write_sidecar(path, inventory(), {"a.key": "甲"}, INERT_DELVEC)
     assert json.loads(path.read_text("utf-8"))["dsl_version"] == "0.6.0"
+
+
+def test_the_written_sidecar_is_handed_to_the_formatter(tmp_path, monkeypatch):
+    """One authority for canonical form: the file the tool writes goes through
+    `delvec fmt`, never through a second layout implementation living here."""
+    path = t.sidecar_path(tmp_path, "zh-cn")
+    seen = []
+
+    def fake_run(args, delvec):
+        seen.append(list(delvec) + list(args))
+        return subprocess.CompletedProcess(list(args), 0, "", "")
+
+    monkeypatch.setattr(t, "run_delvec", fake_run)
+    t.write_sidecar(path, inventory(), {"a.key": "甲"}, ["delvec"])
+    assert seen == [["delvec", "fmt", str(path)]]
+
+
+def test_a_formatter_refusal_fails_the_write(tmp_path, monkeypatch):
+    """A sidecar the formatter will not accept fails the run rather than being
+    written and forgotten: `DW0773` is an error tier, and non-canonical sidecars
+    shipped for exactly as long as nobody was told."""
+    path = t.sidecar_path(tmp_path, "zh-cn")
+
+    def fake_run(args, delvec):
+        return subprocess.CompletedProcess(
+            list(args), 1, "DW0773 [error] fmt: not in canonical form\n", ""
+        )
+
+    monkeypatch.setattr(t, "run_delvec", fake_run)
+    with pytest.raises(t.TranslateError, match="DW0773"):
+        t.write_sidecar(path, inventory(), {"a.key": "甲"}, ["delvec"])
 
 
 # --------------------------------------------------------------------- main --
@@ -528,11 +669,11 @@ def test_full_run_writes_only_missing_keys_then_validates(tmp_path, monkeypatch,
     monkeypatch.setattr(t, "post_json", poster)
     validated = []
 
-    def fake_validate(args, delvec):
+    def fake_delvec(args, delvec):
         validated.append(list(args))
-        return __import__("subprocess").CompletedProcess(args, 0, "", "")
+        return subprocess.CompletedProcess(list(args), 0, "", "")
 
-    monkeypatch.setattr(t, "run_delvec", fake_validate)
+    monkeypatch.setattr(t, "run_delvec", fake_delvec)
 
     rc = t.main(
         [str(tmp_path), "--lang", "zh-cn", "--config", str(cfg_path), "--batch-size", "2"]
@@ -542,7 +683,10 @@ def test_full_run_writes_only_missing_keys_then_validates(tmp_path, monkeypatch,
         ["dlg.keeper.greet.text", "dlg.keeper.greet.opt.0.label"],
         ["quest.greet.goal"],
     ], "only untranslated keys are sent, in inventory order, batched"
-    assert validated and validated[0][0] == "validate"
+    assert [a[0] for a in validated] == ["fmt", "validate"], (
+        "a run formats what it wrote before it validates it — a sidecar that is not "
+        "canonical is a `DW0773` waiting in CI"
+    )
 
     content = json.loads(t.sidecar_path(tmp_path, "zh-cn").read_text("utf-8"))["content"]
     assert content["npc.keeper.name"] == "守关人", "existing translation untouched"
@@ -656,7 +800,9 @@ def test_write_sidecar_records_what_each_row_was_translated_from(tmp_path):
         ],
     )
     path = tmp_path / "l10n" / "zh-cn.json"
-    t.write_sidecar(path, inv, {"world.title": "\u8981\u585e\u7684\u8bd5\u70bc"})
+    t.write_sidecar(
+        path, inv, {"world.title": "\u8981\u585e\u7684\u8bd5\u70bc"}, INERT_DELVEC
+    )
     doc = json.loads(path.read_text("utf-8"))
 
     # Exactly the rows `content` carries — a row with no translation records no
@@ -691,7 +837,7 @@ def test_rerunning_over_an_old_sidecar_adopts_provenance_without_retranslating(t
         ),
         "utf-8",
     )
-    t.write_sidecar(path, inv, t.merge_content(inv, {}))
+    t.write_sidecar(path, inv, t.merge_content(inv, {}), INERT_DELVEC)
     doc = json.loads(path.read_text("utf-8"))
     assert doc["content"] == {"world.title": "\u8981\u585e"}, "no retranslation"
     assert doc["source"] == {"world.title": "Trial of the Keep"}, "provenance adopted"

@@ -829,6 +829,64 @@ impl<'a> BodyRef<'a> {
         }
     }
 
+    /// **The mark this body is placed on** — the anchor the engine summons it
+    /// at, for every class alike.
+    ///
+    /// A body's placement is a property of the body, not of the stage list that
+    /// happens to declare it: a mark is a cell, and a cell holds one body. The
+    /// rule that reads this ([`crate::compiler`]'s `DW0896`, via
+    /// [`body_sites`]) therefore quantifies over npcs and actors in one pass
+    /// rather than over `actors[]`, which is where the seven-men-one-anchor
+    /// muster came from.
+    pub fn anchor(self) -> &'a AnchorId {
+        match self {
+            BodyRef::Npc(n) => &n.anchor,
+            BodyRef::Actor(a) => &a.anchor,
+        }
+    }
+
+    /// The area whose anchor table resolves [`Self::anchor`] first, when this
+    /// class declares one.
+    ///
+    /// A stage-2 npc names its area and is resolved inside it; a stage-5 actor
+    /// names none and is resolved across every placed piece, exactly as an
+    /// `open-gate` / `move-actor` destination is. Stated here so the resolution
+    /// rule is one rule over both classes and not a per-call-site habit.
+    pub fn area(self) -> Option<&'a AreaId> {
+        match self {
+            BodyRef::Npc(n) => Some(&n.area),
+            BodyRef::Actor(_) => None,
+        }
+    }
+
+    /// Whether this body stands on its mark from **world init**, with no effect
+    /// having to fire.
+    ///
+    /// A stage-2 npc does unless it is `deferred`; a stage-5 actor never does —
+    /// a puppet exists only from the `spawn-actor` that summons it, which is why
+    /// an actor no `spawn-actor` names never exists at all (`DW0477` says so of
+    /// a billed elite).
+    pub fn at_world_init(self) -> bool {
+        match self {
+            BodyRef::Npc(n) => !n.deferred,
+            BodyRef::Actor(_) => false,
+        }
+    }
+
+    /// Whether a **player** can end this body's life.
+    ///
+    /// An npc body is emitted `Invulnerable:1b` unconditionally, so nothing a
+    /// player does removes it; an actor's puppet is `Invulnerable` unless it
+    /// declares [`Actor::vulnerable`]. A body a player can kill is one whose
+    /// lifetime the compiler cannot bound, which is the whole of what this
+    /// answers.
+    pub fn killable_by_players(self) -> bool {
+        match self {
+            BodyRef::Npc(_) => false,
+            BodyRef::Actor(a) => a.vulnerable,
+        }
+    }
+
     /// This body's traversal declaration, if it carries one.
     pub fn traversal(self) -> Option<&'a BodyTraversal> {
         match self {
@@ -840,8 +898,8 @@ impl<'a> BodyRef<'a> {
     /// This body's skin declaration, if it carries one.
     ///
     /// A skinned body of **either** class ships as a `minecraft:mannequin`
-    /// whose `profile.texture` resolves to `delvewright:npc/<texture_id>`, so
-    /// either one owes the same `skins/<texture_id>.png` under the same refusal
+    /// whose `profile.texture` resolves to `delvewright:npc/<campaign_id>/<texture_id>`,
+    /// so either one owes the same `skins/<texture_id>.png` under the same refusal
     /// (`DW0309`). Answering it here is what stops the bake from being a
     /// property of one class.
     pub fn skin(self) -> Option<&'a NpcSkin> {
@@ -968,6 +1026,38 @@ pub fn body_skin_sites(c: &crate::envelope::Campaign) -> Vec<BodySkinSite<'_>> {
         .collect()
 }
 
+/// The **mutable mirror** of [`body_skin_sites`]: every skin declaration in the
+/// campaign, in the identical order, exposed mutably so one pass can rewrite what
+/// every emitter will read ([`crate::l10n::namespace_skin_textures`]).
+///
+/// It carries no [`BodyRef`] and no pointer, because a rewrite needs neither and a
+/// borrow of the whole body would forbid the field it is there to change. What it
+/// does owe is the **same population**: a body class that declares a skin and is
+/// missing here would keep an un-namespaced texture and collide with every other
+/// delve, silently. `body_skin_sites_mut_is_the_same_walk`
+/// (`crates/dsl/tests/body_skin_sites.rs`) pins that over a campaign carrying one
+/// body of every class in [`BodyRef::ALL_CLASSES`] — the closed set the schema
+/// export is compared against in the same file, so a new body class turns that
+/// coverage red and both walks are visited together.
+pub fn body_skins_mut(c: &mut crate::envelope::Campaign) -> Vec<&mut NpcSkin> {
+    let mut out: Vec<&mut NpcSkin> = Vec::new();
+    out.extend(
+        c.npcs
+            .content
+            .npcs
+            .iter_mut()
+            .filter_map(|n| n.skin.as_mut()),
+    );
+    out.extend(
+        c.quests
+            .content
+            .actors
+            .iter_mut()
+            .filter_map(|a| a.skin.as_mut()),
+    );
+    out
+}
+
 // ---------------------------------------------------------------------------
 // Stage 2 — npcs
 // ---------------------------------------------------------------------------
@@ -1025,15 +1115,19 @@ pub struct Npc {
     pub traversal: Option<BodyTraversal>,
 }
 
-/// A mannequin NPC's player-model skin (DSL v0.4). The skin PNG ships in the
-/// per-delve resource pack at `assets/delvewright/textures/npc/<texture_id>.png`
-/// (sourced from the campaign dir's `skins/<texture_id>.png`); the mannequin's
-/// `profile.texture` resolves to `delvewright:npc/<texture_id>`.
+/// A mannequin NPC's player-model skin (DSL v0.4). The skin PNG is sourced from
+/// the campaign dir's `skins/<texture_id>.png` and ships in the per-delve resource
+/// pack at `assets/delvewright/textures/npc/<campaign_id>/<texture_id>.png`, which
+/// is what the mannequin's `profile.texture` resolves to. The delve's own
+/// directory is stamped on at emission ([`crate::l10n::namespace_skin_textures`])
+/// — a client merges every applied pack's textures into ONE space, so two delves
+/// that both cast a `keeper` would otherwise wear each other's faces. Nothing a
+/// creator writes or names on disk carries it.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct NpcSkin {
-    /// Skin id: the PNG basename under `skins/` and the resource-pack texture
-    /// path segment (a bare kebab token; validated by `DW0190`).
+    /// Skin id: the PNG basename under `skins/`, and the last segment of the
+    /// resource-pack texture path (a bare kebab token; validated by `DW0190`).
     pub texture_id: String,
     /// Player model. **Required** (spec-0009): an omitted model renders slim, so
     /// a wide skin on a slim model is distorted — the compiler always emits it.
@@ -1333,6 +1427,20 @@ impl DialogueEffect {
     pub fn spawn_npc(&self) -> Option<&NpcId> {
         match self {
             DialogueEffect::SpawnNpc { npc } => Some(npc),
+            _ => None,
+        }
+    }
+
+    /// **The body this dialogue effect puts into the world**, by id — the
+    /// dialogue half of [`QuestEffect::body_entry`].
+    ///
+    /// A body can enter the world from a conversation as well as from a quest
+    /// bundle, and a rule about what is standing where has to enumerate **every**
+    /// entry point or it is a gate with a door beside it. This enum carries no
+    /// exit at all: nothing a dialogue option does removes a body.
+    pub fn body_entry(&self) -> Option<&str> {
+        match self {
+            DialogueEffect::SpawnNpc { npc } => Some(npc.as_str()),
             _ => None,
         }
     }
@@ -6086,6 +6194,50 @@ impl QuestEffect {
     pub fn spawn_npc(&self) -> Option<&NpcId> {
         match &self.verb {
             Verb::SpawnNpc { npc, .. } => Some(npc),
+            _ => None,
+        }
+    }
+
+    /// **The body this effect puts into the world**, by id, for every body class
+    /// alike ([`BodyRef`]).
+    ///
+    /// `spawn-npc` and `spawn-actor` are the two, and they are answered in one
+    /// place so a rule about a body's lifetime quantifies over bodies rather
+    /// than over the verb that first needed it. A body's OTHER entry — standing
+    /// on its mark from world init — is not an effect at all and is
+    /// [`BodyRef::at_world_init`].
+    ///
+    /// `unleash-actor` is deliberately not an entry: it puts no new body on the
+    /// mark, it replaces the one already standing there (see [`Self::body_exit`]).
+    pub fn body_entry(&self) -> Option<&str> {
+        match &self.verb {
+            Verb::SpawnNpc { npc, .. } => Some(npc.as_str()),
+            Verb::SpawnActor { actor, .. } => Some(actor.as_str()),
+            _ => None,
+        }
+    }
+
+    /// **The body this effect takes out of the world**, by id, for every body
+    /// class alike.
+    ///
+    /// `despawn-npc` and `despawn-actor` remove the body outright.
+    /// `unleash-actor` is the third: it kills the staged puppet and stands a
+    /// real-AI twin in its place, and from that moment the compiler makes no
+    /// claim about where that body is or whether it is still alive — the twin
+    /// walks, fights and dies under vanilla AI. Answering all three here is what
+    /// keeps "can this body still be standing?" from being decided one verb at a
+    /// time.
+    ///
+    /// Deliberately NOT an exit: `move-npc` / `move-actor`. A walked body is
+    /// still in the world, and its declared mark is still the cell the engine
+    /// summoned it onto — a mark two live bodies share is shared whether or not
+    /// one of them has since walked off it.
+    pub fn body_exit(&self) -> Option<&str> {
+        match &self.verb {
+            Verb::DespawnNpc { npc, .. } => Some(npc.as_str()),
+            Verb::DespawnActor { actor, .. } | Verb::UnleashActor { actor, .. } => {
+                Some(actor.as_str())
+            }
             _ => None,
         }
     }

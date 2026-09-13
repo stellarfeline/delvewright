@@ -1594,22 +1594,64 @@ pub fn non_combatants(c: &Campaign) -> NonCombatants {
         ambiguous: ambiguous
             .into_iter()
             .map(|(kind, npcs)| {
+                let who = npcs.iter().copied().collect::<Vec<_>>().join(", ");
                 (
                     kind.to_string(),
                     format!(
-                        "{} is also a wave mob or an actor in this campaign, so it cannot be \
+                        "{kind} is also a wave mob or an actor in this campaign, so it cannot be \
                          excluded from targeting without making that fight unwinnable. The bot \
-                         may therefore swing at {} — move the NPC onto a `base_entity` nothing \
-                         fights, or give it a `skin` (which embodies it as a \
-                         `minecraft:mannequin`).",
-                        kind,
-                        npcs.iter().copied().collect::<Vec<_>>().join(", ")
+                         may therefore swing at {who} — {}",
+                        ambiguity_remedy(kind, fightable.contains("mannequin"))
                     ),
                 )
             })
             .collect(),
         examined,
     }
+}
+
+/// The moves actually open to an author whose NPC body collides with `kind` —
+/// the second half of the remedy sentence in [`non_combatants`].
+///
+/// **A gate that names a remedy owes a check that the remedy is reachable**
+/// (CLAUDE.md, *Pairs*). Both NPC-side moves are inert once the colliding kind is
+/// `mannequin`: an NPC whose body is a mannequin got there by declaring a `skin`,
+/// so "give it a `skin`" is advice it has already taken, and its `base_entity` is
+/// not the body it wears, so moving that changes nothing either. The only move
+/// left is on the other side of the collision — and saying so is the difference
+/// between a report an author can act on and one that sends them in a circle.
+/// This is the shape the owner's standing rule walks straight into: move every
+/// character onto `minecraft:mannequin` and every skinned NPC falls out of the
+/// do-not-attack list at once.
+///
+/// The narrower question this does **not** answer is how the harness should
+/// identify its targets when every body in a delve is one kind. `client_name` is
+/// the whole channel the bot has (entity tags are not readable from the client),
+/// so a census by kind cannot separate two mannequins however it is quantified.
+/// That belongs to the body-classification channel, not to this census.
+fn ambiguity_remedy(kind: &str, mannequin_is_fightable: bool) -> String {
+    if kind == "mannequin" {
+        return "every NPC listed already wears a `skin`, which is what embodies it as a \
+                `minecraft:mannequin`, so no change to the NPC can move it off this kind — \
+                the move is on the other side of the collision: take the wave mob or actor \
+                that declares `minecraft:mannequin` onto an entity the cast does not wear."
+            .to_string();
+    }
+    if mannequin_is_fightable {
+        // The skin move would carry the body from one collision straight into
+        // another, so it is not offered: this campaign fights mannequins too.
+        return format!(
+            "move the NPC onto a `base_entity` nothing fights. A `skin` is NOT a way out \
+             here — this campaign also fights `minecraft:mannequin`, so embodying the NPC \
+             as one would trade the collision on `{kind}` for the same collision on \
+             `mannequin`."
+        );
+    }
+    format!(
+        "move the NPC onto a `base_entity` nothing fights, or give it a `skin` (which \
+         embodies it as a `minecraft:mannequin`, a kind nothing in this campaign fights). \
+         Either move takes its body off `{kind}`."
+    )
 }
 
 /// The `non_combatants` block of `critical-path.json`.

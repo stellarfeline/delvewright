@@ -300,41 +300,33 @@ pub fn has_bodies(plan: &Plan) -> bool {
 /// A body whose anchor does not resolve is skipped — `DW0325`/`DW0345`/`DW0360`
 /// own dangling references, and reporting a geometry defect for one would send
 /// the author to the wrong line.
+///
+/// The standing half walks [`delvewright_dsl::body_sites`] and resolves through
+/// [`Plan::body_point`], so *which* bodies stand somewhere and *which cell* each
+/// stands in are answered where every other body rule asks them. Two hand-rolled
+/// loops over the two stage lists is the shape that let an actor's skin be
+/// emitted and never baked.
 fn volumes(plan: &Plan, moves: &[MovePlan], actor_moves: &[ActorMovePlan]) -> Vec<Volume> {
-    let c = plan.campaign;
     let mut out = Vec::new();
-    for (i, n) in c.npcs.content.npcs.iter().enumerate() {
-        let Some(pos) = plan
-            .point(n.area.as_str(), n.anchor.as_str())
-            .or_else(|| plan.point_any(n.anchor.as_str()))
-        else {
+    for s in delvewright_dsl::body_sites(plan.campaign) {
+        let Some(pos) = plan.body_point(s.body) else {
             continue;
         };
         out.push(Volume {
-            id: n.id.as_str().to_string(),
-            entity: crate::compiler::nav::npc_body_entity(n),
-            pos: cell_feet(pos),
-            path: format!("/content/npcs/{i}"),
-            stage: "npcs",
-            at: Where::Anchor {
-                kind: "npc",
-                anchor: n.anchor.as_str().to_string(),
+            id: s.body.id().to_string(),
+            entity: match s.body {
+                delvewright_dsl::BodyRef::Npc(n) => crate::compiler::nav::npc_body_entity(n),
+                delvewright_dsl::BodyRef::Actor(a) => crate::compiler::nav::actor_body_entity(a),
             },
-        });
-    }
-    for (i, a) in c.quests.content.actors.iter().enumerate() {
-        let Some(pos) = plan.point_any(a.anchor.as_str()) else {
-            continue;
-        };
-        out.push(Volume {
-            id: a.id.as_str().to_string(),
-            entity: crate::compiler::nav::actor_body_entity(a),
             pos: cell_feet(pos),
-            path: format!("/content/actors/{i}"),
-            stage: "quests",
+            path: s.path.clone(),
+            stage: s.body.stage(),
             at: Where::Anchor {
-                kind: "actor",
-                anchor: a.anchor.as_str().to_string(),
+                kind: match s.body {
+                    delvewright_dsl::BodyRef::Npc(_) => "npc",
+                    delvewright_dsl::BodyRef::Actor(_) => "actor",
+                },
+                anchor: s.body.anchor().as_str().to_string(),
             },
         });
     }
