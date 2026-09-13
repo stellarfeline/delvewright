@@ -1545,8 +1545,11 @@ pub fn build_with_warnings(
     // spec-0029 addendum: the compiler's own on-screen strings. The default
     // multi-language build leaves them tagged with their `delvewright.ui.…` key
     // (the pack's lang files carry every language); a `--lang` bake, which ships no
-    // lang files, puts the baked language's text on the component instead.
-    let chrome = delvewright_dsl::Chrome::for_build(language);
+    // lang files, puts the baked language's text on the component instead. The
+    // campaign id is what namespaces those keys into this delve's own vocabulary,
+    // so a pack another delve left applied cannot answer them.
+    let chrome =
+        delvewright_dsl::Chrome::for_build(plan.campaign.world.campaign_id.as_str(), language);
 
     let functions = emit_functions(
         plan,
@@ -2095,9 +2098,21 @@ fn lang_assets(
     // construction — chrome lives under the reserved `delvewright.` prefix, which
     // the l10n key scheme cannot produce and `DW0186` forbids a sidecar from
     // writing — so the merge can never shadow a campaign string.
+    //
+    // Every key of both halves is written under this delve's own namespace
+    // (`dsl::l10n::pack_key`), which is what a component references: the client
+    // merges every applied pack into ONE language table, so a key that named only
+    // its row (`world.title`) is a key any other delve's pack can answer, and did
+    // — a completion toast rendering another campaign's title, in a language this
+    // delve does not ship. The namespace is applied here, at the one place the
+    // pack's keys are written, over both halves at once.
+    let ns = delvewright_dsl::pack_namespace(c.world.campaign_id.as_str());
     let mut put = |mc: &str, map: &BTreeMap<String, String>, chrome: BTreeMap<String, String>| {
-        let mut merged = map.clone();
-        merged.extend(chrome);
+        let merged: BTreeMap<String, String> = map
+            .iter()
+            .chain(chrome.iter())
+            .map(|(k, v)| (format!("{ns}{k}"), v.clone()))
+            .collect();
         let mut bytes = serde_json::to_vec_pretty(&merged).expect("lang map serializes");
         bytes.push(b'\n');
         out.insert(format!("assets/delvewright/lang/{mc}.json"), bytes);

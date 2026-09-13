@@ -110,7 +110,15 @@ impl ChromeString {
         tag(self.key, text)
     }
 
-    /// This string as a translation tag over its canonical English.
+    /// This string as a translation tag over its canonical English, under the
+    /// **bare** chrome key.
+    ///
+    /// The plan-time form, for a default the compiler bakes before it knows the
+    /// build's language or the delve's key namespace. It is not emittable as it
+    /// stands: [`Chrome::rebind`] is what turns it into the delve's own pack key,
+    /// and `crates/delvec/tests/i18n_v2.rs` fails the build of any tree that emits
+    /// a bare key, so a site that forgets to rebind is a red rather than a string
+    /// another delve's pack can answer.
     pub fn tagged(&self) -> String {
         self.tagged_as(self.en)
     }
@@ -857,20 +865,34 @@ pub const RESERVED_PREFIX: &str = "delvewright.";
 ///   language when it has one, its English otherwise. The `translate` key still
 ///   rides along, harmlessly, and keeps `%s` substitution working — vanilla formats
 ///   the fallback with the same `with` arguments.
+///
+/// It also carries **which delve's key space** those components reference. Chrome
+/// is engine-owned, but a lang file is not: the client merges every applied pack
+/// into one language table, so a globally-keyed chrome row from a delve that
+/// declares Chinese answers for a delve that ships English only, and the player
+/// reads Chinese chrome wrapped around an English story. Chrome keys are therefore
+/// namespaced exactly like campaign keys ([`crate::l10n::pack_key`]) — one delve,
+/// one vocabulary, chrome included — and `delvewright.` stays the segment that
+/// separates the compiler's strings from the campaign's *within* that namespace.
 #[derive(Clone, Debug, Default)]
 pub struct Chrome {
     /// The bake's Minecraft language stem, or `None` for the multi-language build.
     baked: Option<&'static Table>,
+    /// The delve's [pack namespace](crate::l10n::pack_namespace), prefixed onto
+    /// every key this resolver hands an emitter. Empty only for [`Self::default`],
+    /// which no emitting consumer may use (see the type's doc).
+    ns: String,
 }
 
 impl Chrome {
-    /// Resolve chrome for a build. `language` is `None` for the default
-    /// multi-language build and `Some(declared code)` for a `--lang` bake.
-    pub fn for_build(language: Option<&str>) -> Self {
+    /// Resolve chrome for a build of `campaign_id`. `language` is `None` for the
+    /// default multi-language build and `Some(declared code)` for a `--lang` bake.
+    pub fn for_build(campaign_id: &str, language: Option<&str>) -> Self {
         Self {
             baked: language
                 .and_then(crate::mclang::mc_lang_code)
                 .and_then(table),
+            ns: crate::l10n::pack_namespace(campaign_id),
         }
     }
 
@@ -882,16 +904,20 @@ impl Chrome {
         }
     }
 
-    /// One chrome string, as the tagged form an emitter lowers into a component.
+    /// One chrome string, as the tagged form an emitter lowers into a component:
+    /// this delve's pack key over this build's rendition.
     pub fn get(&self, c: ChromeString) -> String {
-        c.tagged_as(self.text(c))
+        tag(&format!("{}{}", self.ns, c.key), self.text(c))
     }
 
     /// Re-resolve a string that may already carry a chrome tag, for the chrome
-    /// defaults the compiler bakes into its **plan** before the build language is
-    /// known (a `close-gate`'s `sealed_hint`, a bonfire's three dialog strings).
-    /// An authored string — which carries a campaign l10n key — passes through
-    /// untouched, as does any untagged literal.
+    /// defaults the compiler bakes into its **plan** before the build language —
+    /// or the delve's namespace — is known (a `close-gate`'s `sealed_hint`, a
+    /// bonfire's three dialog strings). A plan-time default carries the bare
+    /// chrome key, which is what this looks up; an authored string — which carries
+    /// a campaign pack key — passes through untouched, as does any untagged
+    /// literal, and so does a chrome tag already bound (its key is namespaced, so
+    /// it matches no bare chrome key and rebinding is idempotent).
     pub fn rebind(&self, s: &str) -> String {
         let Some((key, _)) = crate::l10n::untag(s) else {
             return s.to_string();
@@ -999,32 +1025,61 @@ mod tests {
     }
 
     /// The multi-language build puts English on the component (the pack carries the
-    /// rest); a bake puts the baked language on it, falling back to English.
+    /// rest); a bake puts the baked language on it, falling back to English. Every
+    /// key a resolver hands out is the delve's, never the bare chrome key.
     #[test]
     fn build_carries_english_and_bake_carries_its_language() {
-        let multi = Chrome::for_build(None);
-        assert_eq!(multi.get(CLASS_TITLE), CLASS_TITLE.tagged());
-        assert_eq!(multi.rebind(&CLASS_TITLE.tagged()), CLASS_TITLE.tagged());
+        let key = crate::l10n::pack_key("doune-castle", CLASS_TITLE.key);
 
-        let zh = Chrome::for_build(Some("zh-cn"));
-        assert_eq!(zh.get(CLASS_TITLE), tag(CLASS_TITLE.key, "选择你的职业"));
+        let multi = Chrome::for_build("doune-castle", None);
+        assert_eq!(multi.get(CLASS_TITLE), tag(&key, CLASS_TITLE.en));
         assert_eq!(
-            zh.rebind(&CLASS_TITLE.tagged()),
-            tag(CLASS_TITLE.key, "选择你的职业")
+            multi.rebind(&CLASS_TITLE.tagged()),
+            tag(&key, CLASS_TITLE.en)
         );
 
-        let klingon = Chrome::for_build(Some("tlh-aa"));
-        assert_eq!(klingon.get(CLASS_TITLE), CLASS_TITLE.tagged());
+        let zh = Chrome::for_build("doune-castle", Some("zh-cn"));
+        assert_eq!(zh.get(CLASS_TITLE), tag(&key, "选择你的职业"));
+        assert_eq!(zh.rebind(&CLASS_TITLE.tagged()), tag(&key, "选择你的职业"));
+
+        let klingon = Chrome::for_build("doune-castle", Some("tlh-aa"));
+        assert_eq!(klingon.get(CLASS_TITLE), tag(&key, CLASS_TITLE.en));
+    }
+
+    /// **One delve, one vocabulary, chrome included.** Two delves resolve the same
+    /// chrome string to two keys, so a lang file one of them left applied in the
+    /// client answers for nothing the other asks — the engine's own strings are in
+    /// the pack too, and a globally-keyed one renders a delve's chrome in a
+    /// language that delve does not ship.
+    #[test]
+    fn two_delves_share_no_chrome_key() {
+        let a = Chrome::for_build("doune-castle", None);
+        let b = Chrome::for_build("nobodys-cave-island", Some("zh-cn"));
+        let mut n = 0;
+        for c in ALL {
+            let (ta, tb) = (a.get(*c), b.get(*c));
+            let (ka, _) = crate::l10n::untag(&ta).expect("chrome is tagged");
+            let (kb, _) = crate::l10n::untag(&tb).expect("chrome is tagged");
+            assert_ne!(ka, kb, "`{}` is one key for two delves", c.key);
+            n += 1;
+        }
+        assert_eq!(n, ALL.len(), "every chrome string compared");
     }
 
     /// `rebind` only ever resolves chrome keys: an authored string that reaches it
-    /// (a bonfire label the campaign really wrote) passes through unchanged.
+    /// (a bonfire label the campaign really wrote) passes through unchanged, and so
+    /// does a chrome tag already bound to a delve — rebinding is idempotent.
     #[test]
     fn rebind_leaves_authored_strings_alone() {
-        let zh = Chrome::for_build(Some("zh-cn"));
+        let zh = Chrome::for_build("demo", Some("zh-cn"));
         assert_eq!(zh.rebind("Shrine fire"), "Shrine fire");
-        let authored = tag("fx.q.done.0.rest_prompt", "Shrine fire");
+        let authored = tag(
+            &crate::l10n::pack_key("demo", "fx.q.done.0.rest_prompt"),
+            "Shrine fire",
+        );
         assert_eq!(zh.rebind(&authored), authored);
+        let bound = zh.get(CLASS_TITLE);
+        assert_eq!(zh.rebind(&bound), bound);
     }
 
     /// `DW0186`: a sidecar cannot define a chrome key.
