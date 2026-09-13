@@ -2521,6 +2521,151 @@
       "note": "Reported by the round that turned the walk-plane requirement on for every base, which found that turning it on made no difference on `valley` because nothing legal reaches it. The round was told to report rather than to widen the rule or to add a probe that hides the gap behind another refusal, and did. Closed by making `compiler::seating::check` read the site plan's own resolver and ask each placed box the same question a prefab is asked, through one predicate (`seating::feet_under_the_sea`), and by giving the binding line a numerator and a denominator per placement model. Reproduced before the change and after, on the gallery's site-plan overlay with nothing altered but `horizon: ocean`: `delvec analyze` exited 0 with `0 of 0 area(s)` while `node/undercroft` stood at y=60, two courses under the sea plane at y=62, and the build then refused it at DW0344 after the assembly; after, `analyze` exits 1 at DW0886 naming the place, and the line reads `site plan: 7 of 7 box(es) judged against this base`. The binding counts the plan's boxes — the objects the new arm quantifies over — and its precondition is whether the campaign declares a site plan at all, both measured over the campaign source. On the gallery: 7 boxes on the site-plan point, 0 boxes and 0 preconditions on the primary and on both horizon overlays, which place with `areas[]` and are gal-02's subject.",
       "round": null,
       "triage": "capability"
+    },
+    {
+      "binding": {
+        "files": [
+          "quests.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "in": {
+            "type": [
+              "move-npc",
+              "move-actor"
+            ]
+          }
+        }
+      },
+      "campaign": "doune-castle-tour",
+      "carrier": null,
+      "finding": "a guide's proved route climbed onto a laid dining table and down the other side: every cell of the table top is standable under the nav model's own rule — solid support below, feet and head clear — so the route proof took it, the build exited 0 and nothing named it",
+      "general_form": "the nav model can be told that a cell is a place a body would not walk, which is a different fact from a cell a body cannot walk, and it is asked at `nav::World::standable_fp` — the one predicate every route proof, snap, flood and export funnels through, and already the site of the only semantic exclusion the model has, the lethal volume. The declaration belongs to the object that owns the blocks: a piece declares which volumes of its own bytes are furniture rather than floor, beside `anchors`, `walk_y`, `lighting` and `shown_faces`, and is cross-checked against those bytes by the byte-claim rule (DW0888) exactly as they are, so a declaration that names no furniture is refused rather than believed. A campaign-authored volume takes the shape `lethal_volumes[]` already has, for furniture the campaign rather than the piece puts down. The check quantifies over every cell of every route this build proves and every waypoint it exports, and refuses where one stands inside such a volume — not over the standable set at large, which is the whole castle floor.",
+      "id": "doune-01",
+      "note": "Reproduced by building the campaign revision the repair was made on top of (content `bf6240f`, the parent of `b9d3cef`) with the engine at `20ae43a0`: exit 0, one advisory (DW0781, about piece mating), nothing about the route. Its `validation/critical-path-waypoints.json` carries 9 legs and 196 waypoints, of which 2 — one on each of two legs, both at world cell (76, 78, 40) — stand on a block the castle piece writes as `minecraft:oak_slab[type=bottom]` at (76, 77, 40), itself carried on a `minecraft:oak_fence` leg at (76, 76, 40): the roles the design program names `hall/table_top` and `hall/table_leg`. Both legs step up onto the table from (75, 77, 40) and down off it to (77, 77, 40). The same measurement on the campaign as it now stands (`f02c47d`) reads 9 legs, 191 waypoints, 0 standing on furniture — so the repair moved the route and neither build could tell the difference. Block cells read from the piece's own structure templates (`prefabs/doune-castle.x*y*z*.nbt`, 698880 cells) and placed at the world offset (0, 60, 0), which is fixed by `anchor/stop-gate`: piece-local (77, 8, 40) against the emitted summon at 77.5 68.0 40.5. The binding counts the routed walks a campaign declares, the objects whose proof the check would judge: 15 of the 157 nodes `quests.json` holds, being 8 `move-npc` and 7 `move-actor`. 63 table-top cells of this shape stand in the castle in all.",
+      "round": 1,
+      "triage": "capability"
+    },
+    {
+      "binding": {
+        "files": [
+          "quests.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "prefix": {
+            "id": "actor/"
+          }
+        }
+      },
+      "campaign": "doune-castle-tour",
+      "carrier": null,
+      "finding": "a placed actor takes its position from an anchor and from nothing else, so a scene that wants several bodies standing in a rank has to spend one anchor per body",
+      "general_form": "a body the compiler stages declares its position as an anchor plus an integer block offset, the same declaration a camera station and a camera subject already carry, so the offset belongs to the class of things that have a body and a position rather than to the one verb that first wanted it — which is the same quantifier `body_sites` already walks for traversal and for skins",
+      "id": "doune-02",
+      "note": "Reproduced on the campaign as it stands (`f02c47d`) against the engine at `20ae43a0`: writing `\"offset\": [1, 0, 0]` on an actor is refused at DW0100 — `unknown field `offset`, expected one of `id`, `entity`, `name`, `skin`, `anchor`, `facing`, `vulnerable`, `equipment`, `attributes`, `tier`, `drops`, `traversal``. The field exists in the DSL only on `CameraStation` and on all three `CameraSubject` variants, never on a body. The binding counts the actors this campaign declares: 7 of the 157 nodes `quests.json` holds, one anchor between them.",
+      "round": 1,
+      "triage": "capability"
+    },
+    {
+      "binding": {
+        "files": [
+          "quests.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "prefix": {
+            "id": "actor/"
+          }
+        }
+      },
+      "campaign": "doune-castle-tour",
+      "carrier": null,
+      "finding": "seven actors declared on one anchor are summoned at one cell with no refusal and no warning; on the ground they are told apart only by the different walk speeds the author gave each of them afterwards",
+      "general_form": "no two staged bodies are emitted standing in the same cell: the compiler resolves every staged body's spawn cell and refuses a second body on a cell another already occupies, quantified over every body the campaign stages, the stage-2 npcs and the stage-5 actors alike",
+      "id": "doune-03",
+      "note": "Reproduced on the campaign as it stands (`f02c47d`) against the engine at `20ae43a0`: all 7 actors declare `anchor/stop-gate`, the build exits 0 with one advisory (DW0781, about piece mating), and the built tree emits `summon minecraft:vindicator 77.5 68.0 40.5` seven times — one distinct coordinate triple for seven bodies, counted over every `.mcfunction` the build writes. The staggered speeds in the seven `move-actor` effects (0.24 down to 0.18) are what separates them once they move. The binding counts the actors this campaign declares: 7 of the 157 nodes `quests.json` holds. The stage-2 npc class carries the same defect and this campaign declares one npc, so it cannot show it.",
+      "round": 1,
+      "triage": "capability"
+    },
+    {
+      "applies_when": {
+        "files": [
+          "quests.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "prefix": {
+            "id": "actor/"
+          }
+        }
+      },
+      "binding": {
+        "files": [
+          "quests.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "has": [
+            "equipment"
+          ]
+        }
+      },
+      "campaign": "doune-castle-tour",
+      "carrier": null,
+      "finding": "the equipment block a body wears names six slots and the pinned game has eight, so no campaign can bard a horse or saddle one",
+      "general_form": "the equipment block names every equipment slot the pinned game itself declares, derived from the `minecraft:equippable` `slot` of the pinned item registry rather than from a list kept by hand, so a slot the game gains cannot be one the DSL silently lacks",
+      "id": "doune-04",
+      "note": "Reproduced from two sides. The game's: the `minecraft:equippable` component of the pinned 1.21.11 item registry — the same `item_components/data.min.json` of the mcmeta summary `crates/delvec/data/PROVENANCE.md` names, re-fetched and checked against the SHA-256 that file records (`51b191e13f86813ca02f1498942e5bc235947edb71eb8105a78401670b3665c4`) — declares 8 slots over 84 equippable items: `head` 16, `chest` 8, `legs` 7, `feet` 7, `offhand` 1, `body` 44, `saddle` 1. `minecraft:iron_horse_armor` is `slot: body`; `minecraft:saddle` is `slot: saddle`. The engine's: writing either name into an actor's equipment is refused at DW0100 — `unknown field `body`/`saddle`, expected one of `head`, `chest`, `legs`, `feet`, `main_hand`, `off_hand`` — and `MobEquipment::slots()` returns a fixed array of 6. `main_hand`/`off_hand` are the DSL spellings of the game's `mainhand`/`offhand`, so the two missing names are the whole of the gap. The binding counts the equipment declarations this campaign makes, 7 of the 157 nodes `quests.json` holds, one per actor; the precondition counts the bodies that could carry one, also 7.",
+      "round": 1,
+      "triage": "capability"
+    },
+    {
+      "binding": {
+        "files": [
+          "quests.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "eq": {
+            "type": "play-sound"
+          }
+        }
+      },
+      "campaign": "doune-castle-tour",
+      "carrier": null,
+      "finding": "a firework is a vanilla primitive with no DSL surface: no verb in the stage-5 effect vocabulary fires one, so a scene that wants fireworks cannot have them",
+      "general_form": "the effect vocabulary carries a verb that fires a firework at a declared point, taking the same anchor-and-offset the other one-shot point effects take, with its emitted command checked against the pinned command tree by the emitter like every other command",
+      "id": "doune-05",
+      "note": "Reproduced on the campaign as it stands (`f02c47d`) against the engine at `20ae43a0`: `delvec schema --stage all` exports 522013 bytes carrying the word `firework` 0 times, and writing `{\"type\": \"firework\"}` into an effect list is refused at DW0100 as `unknown variant `firework``, the message enumerating the 37 verbs the vocabulary does hold. `minecraft:firework_rocket` and `minecraft:firework_star` are both in the pinned 1.21.11 item registry and `minecraft:firework_rocket` in the pinned entity registry, so the primitive is there to reach. The binding counts the nearest existing member of the class such a verb would join — a one-shot effect fired at a declared point — being the 3 `play-sound` effects of the 157 nodes `quests.json` holds; the firework class itself measures 0 by construction, because the surface that would let a campaign declare one does not exist.",
+      "round": 1,
+      "triage": "capability"
+    },
+    {
+      "applies_when": {
+        "glob": "skins/*.png",
+        "kind": "campaign"
+      },
+      "binding": {
+        "files": [
+          "npcs.json",
+          "quests.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "has": [
+            "texture_id"
+          ]
+        }
+      },
+      "campaign": "doune-castle-tour",
+      "carrier": null,
+      "finding": "a skin texture id is a client-global name: the resource pack writes `assets/delvewright/textures/npc/<texture_id>.png` under one namespace every delve shares, so two delves that both name a skin alike render each other's faces",
+      "general_form": "every asset a delve ships in the resource pack is keyed by the delve, as every translate key that leaves a delve now is, so one delve's pack cannot answer for another's; the check quantifies over every path the emitted pack holds and every reference the datapack makes into it",
+      "id": "doune-06",
+      "note": "Reproduced by building two delves that differ in campaign id and in skin bytes and agree in texture id, with the engine at `20ae43a0`: both exit 0, and both packs hold exactly `assets/delvewright/textures/npc/keeper.png` — 2195 bytes in one, 4898 in the other — beside a `pack.mcmeta` whose description is the same string in both. Both datapacks summon `profile:{texture:\"delvewright:npc/keeper\"}`. Nothing in either pack names the delve it came from. The path merging matters because the pack stays applied: `tools/playtest-server.sh` copies `resourcepack.zip` into the player's own `resourcepacks` directory as `<campaign_id>.zip`, where the client keeps it enabled across servers and worlds, and the client merges every applied pack per path. The sites that build the name are `compiler::resourcepack` (the pack writer), two summon sites and the pack note in `compiler::emit`, and the `NpcSkin` documentation in `dsl::stages`; all six were found by reading. The change that gave every translate key a `delve.<campaign_id>.` prefix left this one open on purpose and does not touch a texture path. The binding counts the skin declarations this campaign makes, 1 of the 5 nodes `npcs.json` holds and 157 `quests.json` holds; the precondition counts the skin files the campaign source ships, also 1.",
+      "round": 1,
+      "triage": "capability"
     }
   ],
   "ledger_version": "2026-08-11"
