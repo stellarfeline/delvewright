@@ -112,6 +112,7 @@ holding them at once.
 | `a-fight-nobody-points-at` | `DW0863` | `validate` | requiring a fight and saying nothing about where it happens |
 | `two-presses-on-one-cell` | `DW0878` | `build` | hanging an `interact` objective and a click trigger on one anchor |
 | `a-gate-the-path-already-cleared` | `DW0879` | `validate` | clearing a counter between the beat that fills it and the gate that reads it |
+| `two-bodies-on-one-mark` | `DW0896` | `build` | taking the page's mark away and giving it the usher's, while the usher is still standing on it |
 
 **A probe is the primary plus one declared edit.** It carries no copy of any
 document the primary already holds; what it perturbs is written out in its own
