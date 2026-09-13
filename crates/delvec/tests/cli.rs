@@ -1200,7 +1200,9 @@ fn walked_move_npc_tps_carry_the_segment_bearing() {
         // the rounding, not picked.
         let slack = 1.0 + (0.01f64 / d).atan().to_degrees();
         let bearing = ((((-dx).atan2(dz).to_degrees().round() as i32) % 360) + 360) % 360;
-        let off = (yaw - bearing).rem_euclid(360).min((bearing - yaw).rem_euclid(360));
+        let off = (yaw - bearing)
+            .rem_euclid(360)
+            .min((bearing - yaw).rem_euclid(360));
         assert!(
             f64::from(off) <= slack,
             "ticks {a}..{b} hold yaw {yaw} but their own motion over {d:.2} blocks bears \
