@@ -2314,6 +2314,89 @@ impl World {
         out
     }
 
+    /// Whether a body may walk the **straight horizontal segment** between the
+    /// centres of two standing cells — the question [`smooth_walk`] asks to decide
+    /// that the cells between them are not worth walking around.
+    ///
+    /// A* is four-connected, so every route it returns is a staircase of
+    /// axis-aligned segments. Over a long open courtyard that reads as a machine
+    /// tracing a grid rather than a person crossing a yard, and the repair is to
+    /// drop the intermediate cells wherever the straight line between two of them
+    /// is walkable in its own right. This is that test, and it is deliberately the
+    /// SAME rule the route was proven under rather than a second, looser one:
+    /// [`World::standable_fp`] per column, so the lethal-volume question
+    /// ([`World::meets_lethal_fp`]) and the floor/headroom question are asked here
+    /// exactly as A* asked them.
+    ///
+    /// What it demands, and each clause is a class of geometry the diagonal would
+    /// otherwise cut through:
+    ///
+    /// * **Level, and only level.** Both endpoints stand at the same cell `y` AND
+    ///   the same true feet height ([`World::feet_16_fp`]), and so does every
+    ///   column swept between them. A step, a slab lip, a stair's edge or a drop
+    ///   therefore ENDS a smoothed run and is rendered by the cardinal step shape
+    ///   [`step_vertices`] was written for. Nothing about a rise is smoothed,
+    ///   because nothing about a rise is a straight horizontal line.
+    /// * **Every swept column, not every column the line passes through.** The
+    ///   body is an AABB `width` across, not a point: off a cell centre it
+    ///   straddles up to four columns, and a diagonal is off the centre almost
+    ///   everywhere. The swept set is the Minkowski sum of the segment with that
+    ///   box, computed exactly ([`segment_meets_cell_16`]) rather than sampled — a
+    ///   sample grid can step over the sliver of a doorway jamb, and the corner of
+    ///   a doorway is the exact place this must not be wrong.
+    /// * **No use-gate column.** A closed fence gate is deliberately not
+    ///   *occupied* ([`World::is_occupied`]) — the player opens it with a click —
+    ///   so it is standable, and without this clause a diagonal could be routed
+    ///   through a shut gate, or past the one the traversal proof recorded this
+    ///   leg as using.
+    ///
+    /// **The width is the body that SHIPS, never the footprint that routed**, for
+    /// the reason [`step_fold`] states: `move-npc` plans on the player footprint
+    /// whatever the NPC wears, and a 0.9-wide body given the player's 0.6 would
+    /// sweep a corridor narrower than itself.
+    ///
+    /// Determinism (ADR-0006): integer arithmetic throughout, in the same
+    /// sixteenths [`World::feet_16_fp`] measures in. No float comparison decides
+    /// whether a body may take a path.
+    fn segment_walkable_fp(&self, a: [i32; 3], b: [i32; 3], fp: &Footprint, width: f64) -> bool {
+        if a[1] != b[1] {
+            return false;
+        }
+        let floor = self.feet_16_fp(a, fp);
+        if self.feet_16_fp(b, fp) != floor {
+            return false;
+        }
+        // Half the rendered hitbox, in sixteenths, rounded OUTWARD: a body swept
+        // as slightly wider than it is refuses a diagonal it could have taken,
+        // which is the safe direction; one swept as narrower clips.
+        let half_16 = (width * (FULL_16 as f64) / 2.0).ceil() as i64;
+        let centre = |c: [i32; 3]| {
+            [
+                c[0] as i64 * FULL_16 + FULL_16 / 2,
+                c[2] as i64 * FULL_16 + FULL_16 / 2,
+            ]
+        };
+        let (p0, p1) = (centre(a), centre(b));
+        // Candidate columns: the segment's own span grown by the half-width. The
+        // exact test below then culls the corners of that box.
+        let pad = (half_16 / FULL_16) as i32 + 1;
+        for cx in (a[0].min(b[0]) - pad)..=(a[0].max(b[0]) + pad) {
+            for cz in (a[2].min(b[2]) - pad)..=(a[2].max(b[2]) + pad) {
+                if !segment_meets_cell_16(p0, p1, [cx as i64, cz as i64], half_16) {
+                    continue;
+                }
+                let col = [cx, a[1], cz];
+                if self.is_use_gate(col)
+                    || !self.standable_fp(col, fp)
+                    || self.feet_16_fp(col, fp) != floor
+                {
+                    return false;
+                }
+            }
+        }
+        true
+    }
+
     /// A* over standable cells from `start` to `goal`, returning the cell path
     /// (inclusive of both ends) or `None` if unreachable. Deterministic: the
     /// frontier is ordered by `(f, g, cell)` and neighbours expand in a fixed
@@ -2555,10 +2638,128 @@ fn step_vertices(a: [f64; 3], b: [f64; 3], width: f64) -> Vec<[f64; 3]> {
     }
 }
 
+/// Whether the segment `p0`→`p1` comes within `half_16` of the unit column
+/// `[cx, cz]` — i.e. whether a box `2 * half_16` across, carried along that
+/// segment, ever overlaps that column. All coordinates are in sixteenths of a
+/// block.
+///
+/// This is the separating-axis test for a segment against an axis-aligned box,
+/// which for a 2-D segment is complete on exactly three axes: the box's two, and
+/// the segment's own normal (its direction axis cannot separate, since the box's
+/// two axes already bound the segment's extent along it). The box tested is the
+/// column grown by `half_16` on every side, which is the standard Minkowski
+/// restatement of "a box of that half-width, swept, touches this column".
+///
+/// The intervals are **closed**, so a body whose hitbox exactly grazes a column
+/// counts as entering it. That is the conservative direction: it can only refuse
+/// a diagonal, never admit one.
+///
+/// Integer throughout (ADR-0006). The products are bounded by segment length
+/// times world coordinate, both in sixteenths — nowhere near `i64`.
+fn segment_meets_cell_16(p0: [i64; 2], p1: [i64; 2], cell: [i64; 2], half_16: i64) -> bool {
+    let min = [cell[0] * FULL_16 - half_16, cell[1] * FULL_16 - half_16];
+    let max = [
+        (cell[0] + 1) * FULL_16 + half_16,
+        (cell[1] + 1) * FULL_16 + half_16,
+    ];
+    // The box's own two axes.
+    for k in 0..2 {
+        if p0[k].max(p1[k]) < min[k] || p0[k].min(p1[k]) > max[k] {
+            return false;
+        }
+    }
+    // The segment's normal. Both endpoints project onto it identically (the
+    // normal is perpendicular to the segment), so the segment is a point here and
+    // the box is an interval.
+    let n = [-(p1[1] - p0[1]), p1[0] - p0[0]];
+    let s = n[0] * p0[0] + n[1] * p0[1];
+    let corners = [
+        n[0] * min[0] + n[1] * min[1],
+        n[0] * min[0] + n[1] * max[1],
+        n[0] * max[0] + n[1] * min[1],
+        n[0] * max[0] + n[1] * max[1],
+    ];
+    let lo = corners.iter().copied().min().unwrap();
+    let hi = corners.iter().copied().max().unwrap();
+    s >= lo && s <= hi
+}
+
+/// String-pull an A* cell route into the polyline a body actually walks: wherever
+/// the straight segment between two cells of the route is walkable in its own
+/// right ([`World::segment_walkable_fp`]), the cells between them are dropped.
+///
+/// **The defect this exists for (owner playtest, castle-tour staging).** A walk is
+/// planned by A* over a four-connected grid, so every route is a staircase of
+/// axis-aligned segments. At room scale the staircase is invisible; crossing a
+/// courtyard or a wall-walk it is a body zig-zagging along gridlines, which reads
+/// as a machine tracing a floor plan rather than a person walking across a yard.
+///
+/// **What is smoothed, and what is deliberately not.** A run is merged only while
+/// it stays level and unobstructed for the body's real width — every clause is in
+/// [`World::segment_walkable_fp`], which is the same standability rule A* itself
+/// stepped with, so a smoothed segment is proven by the model that proved the
+/// route rather than by a second, looser one. Every rise, drop, slab lip, stair
+/// edge and use-gate therefore ENDS a run and survives into the walked polyline as
+/// its own vertex, where [`resample_body`]'s cardinal step shape renders it
+/// exactly as before. **A route with no level run of three or more cells comes back
+/// unchanged**, which is why a short indoor walk emits the bytes it always did.
+///
+/// The scan is the classic greedy string-pull: from each kept vertex, extend while
+/// the straight line still clears, stop at the first cell it does not, keep that
+/// one and start again. Stopping at the first failure rather than hunting further
+/// along the route is what makes it O(route × run) instead of quadratic, and it
+/// cannot skip a corner — a corner is exactly where the line stops clearing.
+///
+/// Determinism (ADR-0006): a pure function of the route and the world, with a
+/// fixed scan order and integer-only tests.
+///
+/// **The route itself is not touched.** [`MovePlan::cells`] keeps the full A* cell
+/// path, because the traversal proof ([`crate::compiler::traversal`]) asks of it
+/// what move the body made — which cell it entered, which it stepped up onto, and
+/// which use-gate it passed — and a thinned route would silently stop binding
+/// those rules. This is the polyline the body is RENDERED along; the proof keeps
+/// the cells.
+fn smooth_walk(world: &World, cells: &[[i32; 3]], fp: &Footprint, width: f64) -> Vec<[i32; 3]> {
+    if cells.len() < 3 {
+        return cells.to_vec();
+    }
+    let mut out = vec![cells[0]];
+    let mut i = 0;
+    while i + 1 < cells.len() {
+        // The furthest cell the straight line from `cells[i]` still reaches.
+        // Never less than `i + 1`, so the scan always advances and the walked
+        // polyline is never longer than the route.
+        let mut far = i + 1;
+        for j in (i + 2)..cells.len() {
+            if !world.segment_walkable_fp(cells[i], cells[j], fp, width) {
+                break;
+            }
+            far = j;
+        }
+        out.push(cells[far]);
+        i = far;
+    }
+    out
+}
+
 /// [`resample`] for a body of the given hitbox — the footprint the leg was
 /// **routed** under, since the rendered motion is bounded by the volume the
 /// proof proved and a body the router never saw was never proved anything.
-fn resample_body(cells: &[[i32; 3]], speed: f64, width: f64) -> Vec<[f64; 3]> {
+///
+/// Returns the emitted samples and the same samples **before** the 0.01-block
+/// rounding, in that order.
+///
+/// The emitted `tp` coordinates are rounded so they stay short and byte-stable.
+/// That rounding is invisible to a body walking a cardinal path — every step is
+/// axis-aligned, so the bearing between two rounded samples is the same cardinal
+/// bearing as between two exact ones. It is NOT invisible to a body walking a
+/// diagonal: at 0.15 blocks a tick, a ±0.005 wobble on each component is up to a
+/// couple of degrees of noise, so [`yaws_along`] reading the rounded samples
+/// gives a body crossing a courtyard in a straight line a yaw that twitches every
+/// single tick — an emitted jitter far more visible than the right angles the
+/// straight line was cut to remove. The yaw is a property of the segment being
+/// walked, so it is taken from the exact samples; only the position is rounded.
+fn resample_body(cells: &[[i32; 3]], speed: f64, width: f64) -> (Vec<[f64; 3]>, Vec<[f64; 3]>) {
     let mut pts: Vec<[f64; 3]> = Vec::with_capacity(cells.len() * 3);
     for (i, c) in cells.iter().enumerate() {
         let p = cell_center(*c);
@@ -2568,7 +2769,7 @@ fn resample_body(cells: &[[i32; 3]], speed: f64, width: f64) -> Vec<[f64; 3]> {
         pts.push(p);
     }
     if pts.len() == 1 {
-        return vec![pts[0]];
+        return (vec![pts[0]], vec![pts[0]]);
     }
     // Cumulative arc length at each vertex.
     let mut cum = vec![0.0f64];
@@ -2583,15 +2784,18 @@ fn resample_body(cells: &[[i32; 3]], speed: f64, width: f64) -> Vec<[f64; 3]> {
     let speed = if speed > 0.0 { speed } else { DEFAULT_SPEED };
     let ticks = ((total / speed).ceil() as i64).max(1) as usize;
     let mut out = Vec::with_capacity(ticks + 1);
+    let mut exact = Vec::with_capacity(ticks + 1);
     for t in 0..=ticks {
         let d = total * (t as f64) / (ticks as f64);
         let p = point_at(&pts, &cum, d);
+        exact.push(p);
         // Round to 0.01 block — far finer than needed at 0.15 blk/tick, and keeps
         // the emitted per-tick `tp` coordinates short and stable.
         out.push([round2(p[0]), round2(p[1]), round2(p[2])]);
     }
     *out.last_mut().unwrap() = *pts.last().unwrap();
-    out
+    *exact.last_mut().unwrap() = *pts.last().unwrap();
+    (out, exact)
 }
 
 fn round2(x: f64) -> f64 {
@@ -2880,17 +3084,21 @@ pub fn plan_moves(plan: &Plan, world: &World) -> Result<Vec<MovePlan>, Failure> 
         };
         planned.insert(key.clone(), cells.clone());
         planned_origin.insert(key.clone(), (start, gate.clone()));
-        let waypoints = resample_body(
-            &cells,
-            speed.unwrap_or(DEFAULT_SPEED),
-            npc_render_width(plan, npc.as_str()),
-        );
+        // The body walks the string-pulled polyline, not the four-connected
+        // staircase A* returned — `cells` keeps the route for the proofs that read
+        // it. Routed on the player footprint (this is `find_path`), swept at the
+        // width the NPC actually wears.
+        let width = npc_render_width(plan, npc.as_str());
+        let walked = smooth_walk(leg_world, &cells, &Footprint::player(), width);
+        let (waypoints, exact) = resample_body(&walked, speed.unwrap_or(DEFAULT_SPEED), width);
         // Seed: the facing this body already has — the exit yaw of the previous
         // leg **on this branch** if this NPC has walked before, else the yaw its
         // summon gave it (the home anchor's declared facing,
         // `emit::npc_summon_commands`).
         let seed = seed_yaw.unwrap_or_else(|| npc_spawn_yaw(plan, npc.as_str()));
-        let mut yaws = yaws_along(&waypoints, seed);
+        // Yawed off the EXACT samples: the rounding that keeps the emitted
+        // coordinates short would otherwise twitch a diagonal's bearing every tick.
+        let mut yaws = yaws_along(&exact, seed);
         if let Some(last) = yaws.last_mut() {
             *last = arrival_yaw(plan, npc.as_str(), to_anchor.as_str(), *last);
         }
@@ -3376,14 +3584,18 @@ pub fn plan_actor_moves(plan: &Plan, world: &World) -> Result<Vec<ActorMovePlan>
         // hop shape uses the SAME hitbox this leg was routed under, never the
         // entity's true size.
         let (body_w, _) = entity_dims(&actor_body_entity(a));
-        let waypoints = resample_body(&cells, speed.unwrap_or(DEFAULT_SPEED), body_w);
+        // A puppet crosses open ground the same way a villager does — smoothing
+        // belongs to a walked body, not to the verb that first needed it. Swept at
+        // the footprint THIS leg was routed under, which for an actor is its own.
+        let walked = smooth_walk(leg_world, &cells, &fp, body_w);
+        let (waypoints, exact) = resample_body(&walked, speed.unwrap_or(DEFAULT_SPEED), body_w);
         // Seed: the facing the puppet already has — the exit yaw of the previous
         // leg **on this branch**, else the actor's declared spawn `facing`
         // (`emit::actor_facing_yaw`).
         let seed = prior
             .and_then(|s| s.yaw)
             .unwrap_or_else(|| crate::compiler::emit::facing_yaw(a.facing.map(|f| f.token())));
-        let yaws = yaws_along(&waypoints, seed);
+        let yaws = yaws_along(&exact, seed);
         let end_yaw = yaws.last().copied().unwrap_or(seed);
         record_staging(&mut history, actor.as_str(), gate, target, Some(end_yaw));
         planned_end_yaw.insert(key, end_yaw);
@@ -10225,7 +10437,193 @@ mod tests {
 
     /// The full walked path for `cells`, as the emitter would teleport it.
     fn walked(cells: &[[i32; 3]]) -> Vec<[f64; 3]> {
-        resample_body(cells, DEFAULT_SPEED, PLAYER_WIDTH)
+        resample_body(cells, DEFAULT_SPEED, PLAYER_WIDTH).0
+    }
+
+    /// **Owner playtest (castle tour): a walk across open ground read as a machine
+    /// tracing gridlines rather than a person crossing a yard.**
+    ///
+    /// A* is four-connected, so the route it proves across an open plaza is a
+    /// staircase. String-pulling drops every cell between the endpoints, because
+    /// the straight line between them is walkable in its own right — so the body
+    /// crosses on the line a person would take, yawing once and holding.
+    #[test]
+    fn a_straight_open_run_smooths_to_its_two_endpoints() {
+        let world = floored(20, 20, 65, &[]);
+        let fp = Footprint::player();
+        let (start, goal) = ([1, 65, 1], [15, 65, 9]);
+        let route = world
+            .find_path(start, goal)
+            .expect("an open plaza connects");
+        // Without this the test could pass on a route that was already a line.
+        assert!(
+            route.len() > 2,
+            "fixture is vacuous — A* returned no staircase to pull: {route:?}"
+        );
+        let line = smooth_walk(&world, &route, &fp, PLAYER_WIDTH);
+        assert_eq!(line, vec![start, goal]);
+        // The shorter route is also the one the body is teleported along, and no
+        // waypoint on it puts any part of the body inside a block.
+        let before = resample_body(&route, DEFAULT_SPEED, PLAYER_WIDTH).0;
+        let after = resample_body(&line, DEFAULT_SPEED, PLAYER_WIDTH).0;
+        assert!(
+            after.len() < before.len(),
+            "smoothed route is not shorter: {} vs {}",
+            after.len(),
+            before.len()
+        );
+        for p in after {
+            assert!(!aabb_clips(&world, p, PLAYER_WIDTH), "clips at {p:?}");
+        }
+    }
+
+    /// A straight run yaws **once and holds** — which is half the point of walking
+    /// it straight, and the half the 0.01-block coordinate rounding silently took
+    /// away: on a diagonal, two rounded samples 0.15 apart differ in bearing by a
+    /// degree or two, so a body crossing a courtyard in a perfectly straight line
+    /// twitched its head every tick. The yaw belongs to the segment being walked,
+    /// so it is read off the exact samples and the emitted position off the
+    /// rounded ones.
+    #[test]
+    fn a_straight_diagonal_run_yaws_once_and_holds() {
+        let world = floored(20, 20, 65, &[]);
+        let fp = Footprint::player();
+        let (start, goal) = ([1, 65, 1], [15, 65, 9]);
+        let route = world
+            .find_path(start, goal)
+            .expect("an open plaza connects");
+        let line = smooth_walk(&world, &route, &fp, PLAYER_WIDTH);
+        let (rounded, exact) = resample_body(&line, DEFAULT_SPEED, PLAYER_WIDTH);
+        let yaws = yaws_along(&exact, 0);
+        assert!(yaws.len() > 50, "fixture too short to show a twitch");
+        let distinct: BTreeSet<i32> = yaws.iter().copied().collect();
+        assert_eq!(
+            distinct.len(),
+            1,
+            "a straight run must hold one bearing, got {distinct:?}"
+        );
+        // And the defect this guards is real: the same yaw taken off the rounded
+        // samples is not one bearing but many.
+        let from_rounded: BTreeSet<i32> = yaws_along(&rounded, 0).into_iter().collect();
+        assert!(
+            from_rounded.len() > 1,
+            "rounding no longer perturbs the bearing — this test now proves nothing"
+        );
+    }
+
+    /// A wall between the endpoints is never smoothed through. The run stops at the
+    /// corner it has to turn, every kept segment is walkable on its own — the
+    /// invariant the whole pass rests on — and the body the emitter teleports stays
+    /// out of the geometry.
+    #[test]
+    fn a_walk_around_a_wall_is_not_smoothed_through_it() {
+        // A wall at x = 5 closing z = 0..=7 of an 11x11 room: the only way across is
+        // round its end at z >= 8.
+        let mut wall = Vec::new();
+        for z in 0..8 {
+            for dy in 0..2 {
+                wall.push([5, 65 + dy, z]);
+            }
+        }
+        let world = floored(11, 11, 65, &wall);
+        let fp = Footprint::player();
+        let (start, goal) = ([1, 65, 1], [9, 65, 1]);
+        let route = world
+            .find_path(start, goal)
+            .expect("the wall has an end to round");
+        let line = smooth_walk(&world, &route, &fp, PLAYER_WIDTH);
+        // The straight line between the endpoints crosses the wall, and the swept
+        // test is what refuses it.
+        assert!(!world.segment_walkable_fp(start, goal, &fp, PLAYER_WIDTH));
+        assert!(line.len() > 2, "the wall was smoothed away: {line:?}");
+        // Every kept segment clears on its own — nothing was merged across geometry.
+        // The fixture is level throughout, so this holds with no exemption.
+        for pair in line.windows(2) {
+            assert!(
+                world.segment_walkable_fp(pair[0], pair[1], &fp, PLAYER_WIDTH),
+                "kept an unwalkable segment {:?} -> {:?}",
+                pair[0],
+                pair[1]
+            );
+        }
+        for p in resample_body(&line, DEFAULT_SPEED, PLAYER_WIDTH).0 {
+            assert!(!aabb_clips(&world, p, PLAYER_WIDTH), "clips at {p:?}");
+        }
+    }
+
+    /// **Why the swept test carries no killing-volume clause of its own, and the
+    /// property that makes that safe.**
+    ///
+    /// A smoothed body is off cell centre almost everywhere. Solid geometry is
+    /// covered regardless, because whole cells tile the plane and the swept test
+    /// asks `standable_fp` of every column the body overlaps. A lethal volume looks
+    /// at first like the one question that could not be covered that way — except
+    /// that `cell_can_meet_volume` never asked about a centred body: a walker's
+    /// cell does not fix its position, so the predicate already refuses every cell
+    /// from which a body standing ANYWHERE inside it could reach the volume, and
+    /// the swept test inherits that reading whole.
+    ///
+    /// This pins it, because a second rule restating that privately would be the
+    /// defect rather than the safety: narrow `cell_can_meet_volume` to the centred
+    /// body and this reds — which is exactly when a diagonal could be smoothed past
+    /// something that kills.
+    #[test]
+    fn the_swept_test_inherits_the_off_centre_reading_of_a_killing_volume() {
+        let world = floored_with_lethal(20, 20, 65, ([8, 65, 4], [8, 66, 4]));
+        let fp = Footprint::player();
+        // The volume's own column and BOTH its neighbours are already refused —
+        // half a body width reaches one cell either way.
+        for cx in 7..=9 {
+            assert!(
+                !world.standable_fp([cx, 65, 4], &fp),
+                "column {cx} is within a body's reach of the volume and must be kept out"
+            );
+        }
+        assert!(world.standable_fp([6, 65, 4], &fp));
+        // So a straight run whose sweep crosses that kept-out ground is refused by
+        // the standability clause alone.
+        assert!(!world.segment_walkable_fp([7, 65, 1], [7, 65, 8], &fp, PLAYER_WIDTH));
+        // ...and one clear of the volume is taken.
+        assert!(world.segment_walkable_fp([2, 65, 1], [2, 65, 8], &fp, PLAYER_WIDTH));
+    }
+
+    /// The stated limit, bound: smoothing is level-only, so a height change cuts the
+    /// run and survives as its own one-cell step. That is what keeps [`step_vertices`]
+    /// rendering every rise the way it always did, and what stops a diagonal sliding
+    /// a body over a stair's edge.
+    #[test]
+    fn a_step_ends_a_smoothed_run() {
+        // A 12x3 floor whose far half stands one block higher: a single step at x = 6,
+        // under a ceiling high enough that the step is a legal jump.
+        let mut solid = BTreeSet::new();
+        for x in 0..12 {
+            for z in 0..3 {
+                let top = if x < 6 { 64 } else { 65 };
+                for y in 60..=top {
+                    solid.insert([x, y, z]);
+                }
+                solid.insert([x, 70, z]);
+            }
+        }
+        let world = World::from_solid_cells(solid);
+        let fp = Footprint::player();
+        let route = world
+            .find_path([0, 65, 1], [11, 66, 1])
+            .expect("one step up connects the halves");
+        let line = smooth_walk(&world, &route, &fp, PLAYER_WIDTH);
+        assert!(
+            line.windows(2).any(|w| w[0][1] != w[1][1]),
+            "the step vanished into a diagonal: {line:?}"
+        );
+        for w in line.windows(2) {
+            if w[0][1] != w[1][1] {
+                let d = (w[0][0] - w[1][0]).abs() + (w[0][2] - w[1][2]).abs();
+                assert_eq!(d, 1, "a height change must stay a one-cell step: {w:?}");
+            }
+        }
+        for p in resample_body(&line, DEFAULT_SPEED, PLAYER_WIDTH).0 {
+            assert!(!aabb_clips(&world, p, PLAYER_WIDTH), "clips at {p:?}");
+        }
     }
 
     /// **Regression (owner, island QA): "the NPC visibly passes through blocks".**
@@ -10425,7 +10823,7 @@ mod tests {
                     cases += 1;
                     let src = [0, y as i32, 0];
                     let dst = [1, (y + rise) as i32, 0];
-                    let pts = resample_body(&[src, dst], DEFAULT_SPEED, width);
+                    let pts = resample_body(&[src, dst], DEFAULT_SPEED, width).0;
                     // (1) The SHAPE: no leg of the emitted polyline changes height
                     // without advancing. This is where the old L's defect lived —
                     // its first leg had a horizontal length of exactly zero.
@@ -11114,8 +11512,8 @@ mod tests {
     #[test]
     fn resample_honors_speed_and_lands_exactly_on_target() {
         let cells = [[0, 65, 0], [10, 65, 0]];
-        let slow = resample_body(&cells, 0.15, PLAYER_WIDTH);
-        let fast = resample_body(&cells, 1.0, PLAYER_WIDTH);
+        let slow = resample_body(&cells, 0.15, PLAYER_WIDTH).0;
+        let fast = resample_body(&cells, 1.0, PLAYER_WIDTH).0;
         // Slower speed → more per-tick waypoints for the same distance.
         assert!(slow.len() > fast.len());
         // Endpoints are the CENTRES of the start/goal cells, not their corners:

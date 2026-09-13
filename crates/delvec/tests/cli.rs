@@ -1100,9 +1100,20 @@ fn v04_showcase_double_build_is_byte_identical() {
 /// Every per-tick `tp` of a walked `move-npc` carries the **bearing of the segment
 /// it is about to walk**, so the body faces where it is going instead of gliding
 /// backwards on a stale yaw (owner playtest, island round 13). Asserted against the
-/// real emitted driver: each line's yaw is recomputed from that waypoint's own
-/// delta, and the walk must contain a mid-path direction change — a corner turns on
-/// the tick it is taken, with no smoothing.
+/// real emitted driver.
+///
+/// **Measured per RUN of one held bearing, not per tick, and that is forced by the
+/// emission rather than chosen.** Two things moved under this test. The walked path
+/// is string-pulled, so a leg across open ground is now one straight diagonal rather
+/// than a staircase of cardinal steps; and the yaw is read off the unrounded samples
+/// while the position is rounded to 0.01 of a block, because reading it off the
+/// rounded ones made a perfectly straight run twitch its bearing on nearly every
+/// tick. A single tick's rounded delta therefore no longer fixes that tick's true
+/// bearing — over a 0.15-block step, 0.005 of rounding on a component is degrees of
+/// direction. Over a whole run it does, and the tolerance below is **derived** from
+/// the rounding and the run's own length, tightening as the baseline grows. A stale
+/// or absent yaw — what this test exists to catch — is tens of degrees out and fails
+/// at any length.
 #[test]
 fn walked_move_npc_tps_carry_the_segment_bearing() {
     let dir = common::compiler_fixtures_dir().join("v04-showcase");
@@ -1150,53 +1161,83 @@ fn walked_move_npc_tps_carry_the_segment_bearing() {
     }
     assert!(wp.len() > 20, "expected a many-tick walked path");
 
-    // The bearing of waypoint i is the bearing of the segment i -> i+1 (MC yaw:
-    // 0 = +z south, atan2(-dx, dz)); a segment with no horizontal motion inherits
-    // the previous bearing.
-    //
-    // The ARRIVAL waypoint is the deliberate exception: a body that walked away
-    // from the party would otherwise stand with its back to them, so the last
-    // tick carries the destination anchor's resolved facing, or the reverse of
-    // the last leg where the anchor declares none (`nav::arrival_yaw`). What it
-    // turns TO is asserted in `nav`'s own unit test, over both branches; what
-    // this test pins is that the emitted driver turns it at all, and that every
-    // other tick still bears its own movement.
-    let mut expect = 0i32;
-    let mut seeded = false;
-    let last = wp.len() - 1;
-    for (i, w) in wp.iter().enumerate() {
+    for w in &wp {
         assert_eq!(w.4, 0, "a level walk is emitted with pitch 0");
-        if i + 1 < wp.len() {
-            let (dx, dz) = (wp[i + 1].0 - w.0, wp[i + 1].2 - w.2);
-            if dx.abs() >= 1e-6 || dz.abs() >= 1e-6 {
-                expect = (((-dx).atan2(dz).to_degrees().round() as i32 % 360) + 360) % 360;
-                seeded = true;
-            }
+    }
+
+    // Maximal runs of one held bearing. The yaw at tick i is the bearing of the
+    // motion from i to i+1, so run `a..=b` is the motion from `wp[a]` to `wp[b+1]`.
+    let mut runs: Vec<(usize, usize)> = Vec::new();
+    let mut start = 0usize;
+    for i in 1..=wp.len() {
+        if i == wp.len() || wp[i].3 != wp[start].3 {
+            runs.push((start, i - 1));
+            start = i;
         }
-        if seeded && i < last {
-            assert_eq!(
-                w.3, expect,
-                "tick {i} tp faces {} but its own movement bears {expect}",
-                w.3
+    }
+    // A corner turns: this route is not a straight line, so the driver must show
+    // more than one bearing.
+    assert!(
+        runs.len() > 1,
+        "expected a direction change mid-walk, saw only yaw {}",
+        wp[0].3
+    );
+
+    for &(a, b) in &runs {
+        let yaw = wp[a].3;
+        let e = if b + 1 < wp.len() { b + 1 } else { b };
+        let (dx, dz) = (wp[e].0 - wp[a].0, wp[e].2 - wp[a].2);
+        let d = (dx * dx + dz * dz).sqrt();
+        if d < 1e-9 {
+            // The one motionless run is the arrival tick, whose yaw is the
+            // destination anchor's rule rather than a bearing — checked below.
+            assert_eq!(b, wp.len() - 1, "a motionless run mid-walk at tick {a}");
+            continue;
+        }
+        // Each endpoint is rounded by up to 0.005 per component, so the emitted
+        // coordinates fix this run's direction only to within `atan(0.01 / d)`;
+        // the emitted yaw is itself a whole degree. Both terms are derived from
+        // the rounding, not picked.
+        let slack = 1.0 + (0.01f64 / d).atan().to_degrees();
+        let bearing = ((((-dx).atan2(dz).to_degrees().round() as i32) % 360) + 360) % 360;
+        let off = (yaw - bearing)
+            .rem_euclid(360)
+            .min((bearing - yaw).rem_euclid(360));
+        assert!(
+            f64::from(off) <= slack,
+            "ticks {a}..{b} hold yaw {yaw} but their own motion over {d:.2} blocks bears \
+             {bearing} — {off} deg out, against {slack:.2} deg of coordinate rounding"
+        );
+        // A held bearing must mean a straight run: every emitted point on it stays
+        // on the chord, to within what the same rounding can move it.
+        for w in &wp[a..=e] {
+            let cross = ((w.0 - wp[a].0) * dz - (w.2 - wp[a].2) * dx).abs() / d;
+            assert!(
+                cross <= 0.03,
+                "ticks {a}..{b} hold one yaw but bow {cross:.3} blocks off the straight line"
             );
         }
     }
-    assert!(
-        seeded,
-        "a walked path with no horizontal motion proves nothing here"
-    );
+
+    // The arrival tick is deliberately NOT a tangent: it carries the destination
+    // anchor's declared facing, or the reverse of the last leg (`nav::arrival_yaw`).
+    // This fixture's anchor declares one, so the final yaw differs from the bearing
+    // the body arrived on — which is what keeps the exemption above from being
+    // vacuous: delete the arrival rule and this line reds.
     assert_ne!(
-        wp[last].3, expect,
-        "the arrival tick still faces the way it was walking ({expect}): a guide who \
-         walks to the next stop must turn, not arrive with her back to the party"
+        wp[wp.len() - 1].3,
+        wp[wp.len() - 2].3,
+        "the arrival tick still carries the path tangent — `nav::arrival_yaw` did not fire"
     );
 
-    // A corner turns: this route is not a straight line, so the driver must show
-    // more than one bearing.
-    let distinct: std::collections::BTreeSet<i32> = wp.iter().map(|w| w.3).collect();
+    // The point of string-pulling: a long open leg is ONE held bearing, not a
+    // staircase of them, and not a bearing that twitches every tick.
+    let longest = runs.iter().map(|&(a, b)| b - a + 1).max().unwrap();
     assert!(
-        distinct.len() > 1,
-        "expected a direction change mid-walk, saw only yaw {distinct:?}"
+        longest >= 50,
+        "expected one long straight run across the open ground, but the longest held \
+         bearing is only {longest} tick(s) — the walked path is not being straightened, \
+         or its yaw is being read off the rounded coordinates"
     );
 }
 
