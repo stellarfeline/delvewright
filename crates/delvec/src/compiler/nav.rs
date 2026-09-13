@@ -10551,6 +10551,42 @@ mod tests {
         }
     }
 
+    /// **Why the swept test carries no killing-volume clause of its own, and the
+    /// property that makes that safe.**
+    ///
+    /// A smoothed body is off cell centre almost everywhere. Solid geometry is
+    /// covered regardless, because whole cells tile the plane and the swept test
+    /// asks `standable_fp` of every column the body overlaps. A lethal volume looks
+    /// at first like the one question that could not be covered that way — except
+    /// that `cell_can_meet_volume` never asked about a centred body: a walker's
+    /// cell does not fix its position, so the predicate already refuses every cell
+    /// from which a body standing ANYWHERE inside it could reach the volume, and
+    /// the swept test inherits that reading whole.
+    ///
+    /// This pins it, because a second rule restating that privately would be the
+    /// defect rather than the safety: narrow `cell_can_meet_volume` to the centred
+    /// body and this reds — which is exactly when a diagonal could be smoothed past
+    /// something that kills.
+    #[test]
+    fn the_swept_test_inherits_the_off_centre_reading_of_a_killing_volume() {
+        let world = floored_with_lethal(20, 20, 65, ([8, 65, 4], [8, 66, 4]));
+        let fp = Footprint::player();
+        // The volume's own column and BOTH its neighbours are already refused —
+        // half a body width reaches one cell either way.
+        for cx in 7..=9 {
+            assert!(
+                !world.standable_fp([cx, 65, 4], &fp),
+                "column {cx} is within a body's reach of the volume and must be kept out"
+            );
+        }
+        assert!(world.standable_fp([6, 65, 4], &fp));
+        // So a straight run whose sweep crosses that kept-out ground is refused by
+        // the standability clause alone.
+        assert!(!world.segment_walkable_fp([7, 65, 1], [7, 65, 8], &fp, PLAYER_WIDTH));
+        // ...and one clear of the volume is taken.
+        assert!(world.segment_walkable_fp([2, 65, 1], [2, 65, 8], &fp, PLAYER_WIDTH));
+    }
+
     /// The stated limit, bound: smoothing is level-only, so a height change cuts the
     /// run and survives as its own one-cell step. That is what keeps [`step_vertices`]
     /// rendering every rise the way it always did, and what stops a diagonal sliding
