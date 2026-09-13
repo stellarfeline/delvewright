@@ -1152,9 +1152,18 @@ fn walked_move_npc_tps_carry_the_segment_bearing() {
 
     // The bearing of waypoint i is the bearing of the segment i -> i+1 (MC yaw:
     // 0 = +z south, atan2(-dx, dz)); a segment with no horizontal motion inherits
-    // the previous bearing. The final waypoint keeps the last leg's facing.
+    // the previous bearing.
+    //
+    // The ARRIVAL waypoint is the deliberate exception: a body that walked away
+    // from the party would otherwise stand with its back to them, so the last
+    // tick carries the destination anchor's resolved facing, or the reverse of
+    // the last leg where the anchor declares none (`nav::arrival_yaw`). What it
+    // turns TO is asserted in `nav`'s own unit test, over both branches; what
+    // this test pins is that the emitted driver turns it at all, and that every
+    // other tick still bears its own movement.
     let mut expect = 0i32;
     let mut seeded = false;
+    let last = wp.len() - 1;
     for (i, w) in wp.iter().enumerate() {
         assert_eq!(w.4, 0, "a level walk is emitted with pitch 0");
         if i + 1 < wp.len() {
@@ -1164,7 +1173,7 @@ fn walked_move_npc_tps_carry_the_segment_bearing() {
                 seeded = true;
             }
         }
-        if seeded {
+        if seeded && i < last {
             assert_eq!(
                 w.3, expect,
                 "tick {i} tp faces {} but its own movement bears {expect}",
@@ -1172,6 +1181,15 @@ fn walked_move_npc_tps_carry_the_segment_bearing() {
             );
         }
     }
+    assert!(
+        seeded,
+        "a walked path with no horizontal motion proves nothing here"
+    );
+    assert_ne!(
+        wp[last].3, expect,
+        "the arrival tick still faces the way it was walking ({expect}): a guide who \
+         walks to the next stop must turn, not arrive with her back to the party"
+    );
 
     // A corner turns: this route is not a straight line, so the driver must show
     // more than one bearing.
