@@ -2568,27 +2568,6 @@
       "triage": "capability"
     },
     {
-      "binding": {
-        "files": [
-          "quests.json"
-        ],
-        "kind": "dsl",
-        "match": {
-          "prefix": {
-            "id": "actor/"
-          }
-        }
-      },
-      "campaign": "doune-castle-tour",
-      "carrier": null,
-      "finding": "seven actors declared on one anchor are summoned at one cell with no refusal and no warning; on the ground they are told apart only by the different walk speeds the author gave each of them afterwards",
-      "general_form": "no two staged bodies are emitted standing in the same cell: the compiler resolves every staged body's spawn cell and refuses a second body on a cell another already occupies, quantified over every body the campaign stages, the stage-2 npcs and the stage-5 actors alike",
-      "id": "doune-03",
-      "note": "Reproduced on the campaign as it stands (`f02c47d`) against the engine at `20ae43a0`: all 7 actors declare `anchor/stop-gate`, the build exits 0 with one advisory (DW0781, about piece mating), and the built tree emits `summon minecraft:vindicator 77.5 68.0 40.5` seven times — one distinct coordinate triple for seven bodies, counted over every `.mcfunction` the build writes. The staggered speeds in the seven `move-actor` effects (0.24 down to 0.18) are what separates them once they move. The binding counts the actors this campaign declares: 7 of the 157 nodes `quests.json` holds. The stage-2 npc class carries the same defect and this campaign declares one npc, so it cannot show it.",
-      "round": 1,
-      "triage": "capability"
-    },
-    {
       "applies_when": {
         "files": [
           "quests.json"
@@ -2638,32 +2617,6 @@
       "general_form": "the effect vocabulary carries a verb that fires a firework at a declared point, taking the same anchor-and-offset the other one-shot point effects take, with its emitted command checked against the pinned command tree by the emitter like every other command",
       "id": "doune-05",
       "note": "Reproduced on the campaign as it stands (`f02c47d`) against the engine at `20ae43a0`: `delvec schema --stage all` exports 522013 bytes carrying the word `firework` 0 times, and writing `{\"type\": \"firework\"}` into an effect list is refused at DW0100 as `unknown variant `firework``, the message enumerating the 37 verbs the vocabulary does hold. `minecraft:firework_rocket` and `minecraft:firework_star` are both in the pinned 1.21.11 item registry and `minecraft:firework_rocket` in the pinned entity registry, so the primitive is there to reach. The binding counts the nearest existing member of the class such a verb would join — a one-shot effect fired at a declared point — being the 3 `play-sound` effects of the 157 nodes `quests.json` holds; the firework class itself measures 0 by construction, because the surface that would let a campaign declare one does not exist.",
-      "round": 1,
-      "triage": "capability"
-    },
-    {
-      "applies_when": {
-        "glob": "skins/*.png",
-        "kind": "campaign"
-      },
-      "binding": {
-        "files": [
-          "npcs.json",
-          "quests.json"
-        ],
-        "kind": "dsl",
-        "match": {
-          "has": [
-            "texture_id"
-          ]
-        }
-      },
-      "campaign": "doune-castle-tour",
-      "carrier": null,
-      "finding": "a skin texture id is a client-global name: the resource pack writes `assets/delvewright/textures/npc/<texture_id>.png` under one namespace every delve shares, so two delves that both name a skin alike render each other's faces",
-      "general_form": "every asset a delve ships in the resource pack is keyed by the delve, as every translate key that leaves a delve now is, so one delve's pack cannot answer for another's; the check quantifies over every path the emitted pack holds and every reference the datapack makes into it",
-      "id": "doune-06",
-      "note": "Reproduced by building two delves that differ in campaign id and in skin bytes and agree in texture id, with the engine at `20ae43a0`: both exit 0, and both packs hold exactly `assets/delvewright/textures/npc/keeper.png` — 2195 bytes in one, 4898 in the other — beside a `pack.mcmeta` whose description is the same string in both. Both datapacks summon `profile:{texture:\"delvewright:npc/keeper\"}`. Nothing in either pack names the delve it came from. The path merging matters because the pack stays applied: `tools/playtest-server.sh` copies `resourcepack.zip` into the player's own `resourcepacks` directory as `<campaign_id>.zip`, where the client keeps it enabled across servers and worlds, and the client merges every applied pack per path. The sites that build the name are `compiler::resourcepack` (the pack writer), two summon sites and the pack note in `compiler::emit`, and the `NpcSkin` documentation in `dsl::stages`; all six were found by reading. The change that gave every translate key a `delve.<campaign_id>.` prefix left this one open on purpose and does not touch a texture path. The binding counts the skin declarations this campaign makes, 1 of the 5 nodes `npcs.json` holds and 157 `quests.json` holds; the precondition counts the skin files the campaign source ships, also 1.",
       "round": 1,
       "triage": "capability"
     }
