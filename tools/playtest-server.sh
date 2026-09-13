@@ -1,19 +1,63 @@
 #!/usr/bin/env bash
-# playtest-server.sh — build a campaign and serve it locally for the owner's
-# playtest (Multiplayer -> Direct Connect localhost:25565), or tear it down.
+# playtest-server.sh — build a thing and serve it locally for the owner to walk
+# (Multiplayer -> Direct Connect localhost:25565), or tear it down.
 #
-#   tools/playtest-server.sh up <campaign-dir> [--lang LANG] [--prefabs DIR]
+#   tools/playtest-server.sh up <path> [--lang LANG] [--prefabs DIR]
 #                                [--delvec BIN] [--name NAME] [--out DIR]
 #                                [--stage-anyway "REASON" --acknowledge-red N]
 #   tools/playtest-server.sh down [--name NAME]
 #   tools/playtest-server.sh status
 #
-# `up` BUILDS, then runs the staging gate against that exact tree, and only then
-# starts a container: no build reaches the owner while a past finding's general
-# form is not a live, binding check on it (playtest-methodology.md rule 7). A
-# refusal exits non-zero and prints the red list. `--stage-anyway "<reason>"
-# --acknowledge-red <N>` overrides deliberately — it prints every class being
-# overridden and stamps the reason into the build's admission token.
+# ## One command, one path, two kinds of thing
+#
+# This engine makes two kinds of artifact a person might want to stand inside: a
+# CAMPAIGN, and a PREFAB — a building that exists before any campaign places it,
+# and which for a zone past the 48-per-axis template cap ships as several `.nbt`
+# tiles plus a manifest. There was a one-command path to the first and none at
+# all to the second, so the answer to "can I walk it" depended on which kind the
+# creator happened to be holding. It should not: they type one thing.
+#
+# So `up` takes whichever it is handed, and says which it read:
+#
+#   a directory holding `world.json`   -> a campaign. Built and gated exactly as
+#                                         before, byte for byte.
+#   a `.nbt`, a `.json` tile-set manifest, or a directory of `.nbt`
+#                                      -> a prefab. Built into a browse world by
+#                                         `delvec prefab gallery` and served.
+#
+# Neither shape is guessed at: a directory that is neither is refused with both
+# shapes named, rather than being built as whichever branch happened to run.
+#
+# `up` on a CAMPAIGN builds, then runs the staging gate against that exact tree,
+# and only then starts a container: no build reaches the owner while a past
+# finding's general form is not a live, binding check on it
+# (playtest-methodology.md rule 7). A refusal exits non-zero and prints the red
+# list. `--stage-anyway "<reason>" --acknowledge-red <N>` overrides deliberately
+# — it prints every class being overridden and stamps the reason into the
+# build's admission token.
+#
+# ## What the prefab path does about the staging gate, and why that is honest
+#
+# It does not run it, and it says so in those words on every run rather than
+# passing silently. The gate judges a CAMPAIGN against the findings ledger —
+# `--campaign <dir>` is required, and every row it reads is a claim about a
+# delve's content. A browse world has no campaign to judge: no quests, no NPCs,
+# no player progression, and nothing that ships. Running the gate with an
+# invented campaign argument, or with the rows it could not evaluate scored as
+# passes, would be a green that binds to nothing — which is the exact shape
+# CLAUDE.md forbids, and worse than no gate because it reads as one.
+#
+# What the prefab path is admitted by instead is stated, not implied, and it is a
+# real check rather than a courtesy: `delvec prefab gallery` validates every
+# `.mcfunction` line it emits against the pinned 1.21.11 command tree BEFORE it
+# writes anything, refuses a lone tile of a tiled zone (`DW0739`), and refuses a
+# manifest that does not tile its own zone. Then this script reads what the
+# server says back — the pack's objectives, and one label entity per exhibit —
+# so a datapack the server dropped at load cannot come up looking ready.
+#
+# The gate is never weakened, skipped or made optional on the campaign path to
+# make this convenient. A campaign still gets the gate; a prefab was never in its
+# scope.
 #
 # `--delvec BIN` names an engine outright. WITHOUT it, this script uses the
 # `delvec` already on `PATH` when that binary IS this engine — its `--version`
@@ -226,8 +270,57 @@ if [ "$cmd" = "down" ]; then
 fi
 
 # ---- up ---------------------------------------------------------------------
-[ -n "$CAMPAIGN" ] || die "up needs a campaign dir"
-[ -d "$CAMPAIGN" ] || die "no such campaign dir: $CAMPAIGN"
+[ -n "$CAMPAIGN" ] || die "up needs a path: a campaign directory, or a prefab (a .nbt, a .json tile-set manifest, or a directory of .nbt)"
+[ -e "$CAMPAIGN" ] || die "no such path: $CAMPAIGN"
+
+# ---- which kind of thing is this? --------------------------------------------
+#
+# Read from the path, never asked for as a flag: a creator holding a castle
+# should not have to know that this engine calls it a prefab rather than a
+# campaign, and a flag they can get wrong is a flag they will get wrong.
+#
+# The marker for a campaign is `world.json` — the first document
+# `compiler::load::load_campaign_dir` reads, and the one whose absence it already
+# reports as a mistyped path. It is asked FIRST, so a campaign directory that
+# also happens to hold a stray `.nbt` is still a campaign, and today's behaviour
+# on every campaign is untouched.
+#
+# There is no third branch that guesses. A directory holding neither marker is
+# refused with both shapes named, because "build it as whichever branch ran" is
+# how a tool answers confidently about the wrong artifact.
+SUBJECT_KIND=""
+case "$CAMPAIGN" in
+  *.nbt|*.json) [ -f "$CAMPAIGN" ] || die "not a file: $CAMPAIGN"; SUBJECT_KIND="prefab";;
+  *)
+    [ -d "$CAMPAIGN" ] || die "not a directory, and not a .nbt or .json prefab: $CAMPAIGN"
+    if [ -f "$CAMPAIGN/world.json" ]; then
+      SUBJECT_KIND="campaign"
+    else
+      # `find -maxdepth 1` rather than a glob, so a directory of 10 000 tiles
+      # cannot overflow the argument list, and an unmatched glob cannot read as
+      # a filename.
+      FIRST_NBT="$(find "$CAMPAIGN" -maxdepth 1 -name '*.nbt' -print -quit 2>/dev/null || true)"
+      [ -n "$FIRST_NBT" ] || die "$CAMPAIGN is neither a campaign nor a prefab:
+  a campaign directory holds world.json (delvec build reads it first)
+  a prefab is a .nbt, a .json tile-set manifest, or a directory holding .nbt
+  this directory holds neither, and this script will not guess which you meant"
+      SUBJECT_KIND="prefab"
+    fi
+    ;;
+esac
+
+# Flags that belong to one branch are REFUSED on the other rather than ignored.
+# A flag silently dropped is a creator who believes it took effect — and
+# `--prefabs` in particular reads as though it would point this at a prefab,
+# which is the mistake this whole change exists to make impossible to make
+# quietly.
+if [ "$SUBJECT_KIND" = "prefab" ]; then
+  [ -z "$LANG_ARG" ] || die "--lang is a campaign's translation, and $CAMPAIGN is a prefab"
+  [ -z "$PREFABS_ARG" ] || die "--prefabs names the library a CAMPAIGN builds from; $CAMPAIGN is already the prefab to show — pass it as the path"
+  [ -z "$STAGE_ANYWAY" ] || die "--stage-anyway overrides the staging gate, which judges a campaign; $CAMPAIGN is a prefab and the gate does not run on it (see this script's header)"
+  [ -z "$ACK_RED" ] || die "--acknowledge-red belongs to --stage-anyway, which does not apply to a prefab"
+fi
+echo "subject: $CAMPAIGN  ->  $SUBJECT_KIND"
 # Capture, then test — never `cmd | grep -q`. Under `set -o pipefail` grep exits at
 # the first match, `docker ps` dies of SIGPIPE (141), and pipefail promotes that to
 # the pipeline: the guard silently fails to fire *because* it matched. CI keeps this
@@ -294,41 +387,61 @@ if [ -z "$OUT_DIR" ]; then
   session_record build-dir "$OUT_DIR"
 fi
 
-BUILD_ARGS=(build "$CAMPAIGN" --out "$OUT_DIR")
-[ -n "$LANG_ARG" ]    && BUILD_ARGS+=(--lang "$LANG_ARG")
-[ -n "$PREFABS_ARG" ] && BUILD_ARGS+=(--prefabs "$PREFABS_ARG")
-echo "delvec ${BUILD_ARGS[*]}"
-"$DELVEC" "${BUILD_ARGS[@]}" || die "build failed — fix the campaign before serving it"
+if [ "$SUBJECT_KIND" = "campaign" ]; then
+  BUILD_ARGS=(build "$CAMPAIGN" --out "$OUT_DIR")
+  [ -n "$LANG_ARG" ]    && BUILD_ARGS+=(--lang "$LANG_ARG")
+  [ -n "$PREFABS_ARG" ] && BUILD_ARGS+=(--prefabs "$PREFABS_ARG")
+  echo "delvec ${BUILD_ARGS[*]}"
+  "$DELVEC" "${BUILD_ARGS[@]}" || die "build failed — fix the campaign before serving it"
 
-# ---- the staging gate --------------------------------------------------------
-# A build compiling is not a build she should see. Every past finding's general
-# form must be a live, binding check ON THIS TREE (playtest-methodology.md rule
-# 7). This runs BETWEEN the build and the container, so a refusal costs a
-# container that never started rather than an hour of hers.
-#
-# It is an invocation, not a doc line, on purpose: the gate shipped with nothing
-# calling it, which is the UNRUN shape — a correct gate whose obligation to run
-# lived in prose. `validation/owner-play.yaml` requires the same admission for
-# the other 25565 binder.
-#
-# The report goes BESIDE the build tree, never into it. It names every ledger
-# row, so it prints the strings the ledger's own probes search that tree for —
-# and a run after it landed counted it, added a row, and moved the red count
-# between the run that prints N and the run handed `--acknowledge-red N`. The
-# gate refuses a `--report` inside `--build` outright now; this directory is
-# where the report the refusal asks for goes, and `down` prints its path.
-GATE_DIR="${OUT_DIR%/}.gate"
-mkdir -p "$GATE_DIR"
-GATE_REPORT="$GATE_DIR/staging-gate.md"
-GATE_ARGS=(--campaign "$CAMPAIGN" --build "$OUT_DIR" --report "$GATE_REPORT")
-if [ -n "$STAGE_ANYWAY" ]; then
-  [ -n "$ACK_RED" ] || die "--stage-anyway needs --acknowledge-red <N> (the gate prints N)"
-  GATE_ARGS+=(--stage-anyway "$STAGE_ANYWAY" --acknowledge-red "$ACK_RED")
+  # ---- the staging gate ------------------------------------------------------
+  # A build compiling is not a build she should see. Every past finding's general
+  # form must be a live, binding check ON THIS TREE (playtest-methodology.md rule
+  # 7). This runs BETWEEN the build and the container, so a refusal costs a
+  # container that never started rather than an hour of hers.
+  #
+  # It is an invocation, not a doc line, on purpose: the gate shipped with nothing
+  # calling it, which is the UNRUN shape — a correct gate whose obligation to run
+  # lived in prose. `validation/owner-play.yaml` requires the same admission for
+  # the other 25565 binder.
+  #
+  # The report goes BESIDE the build tree, never into it. It names every ledger
+  # row, so it prints the strings the ledger's own probes search that tree for —
+  # and a run after it landed counted it, added a row, and moved the red count
+  # between the run that prints N and the run handed `--acknowledge-red N`. The
+  # gate refuses a `--report` inside `--build` outright now; this directory is
+  # where the report the refusal asks for goes, and `down` prints its path.
+  GATE_DIR="${OUT_DIR%/}.gate"
+  mkdir -p "$GATE_DIR"
+  GATE_REPORT="$GATE_DIR/staging-gate.md"
+  GATE_ARGS=(--campaign "$CAMPAIGN" --build "$OUT_DIR" --report "$GATE_REPORT")
+  if [ -n "$STAGE_ANYWAY" ]; then
+    [ -n "$ACK_RED" ] || die "--stage-anyway needs --acknowledge-red <N> (the gate prints N)"
+    GATE_ARGS+=(--stage-anyway "$STAGE_ANYWAY" --acknowledge-red "$ACK_RED")
+  fi
+  echo "staging gate: $CAMPAIGN"
+  echo "staging gate report: $GATE_REPORT"
+  python3 "$REPO_ROOT/tools/staging-gate.py" "${GATE_ARGS[@]}" || die \
+    "staging gate REFUSED this build — not serving it (full table: $GATE_REPORT)"
+else
+  # ---- a prefab: the browse world --------------------------------------------
+  # `prefab gallery` writes the same two things `build` writes — `datapack/` and
+  # `server/server.properties` — so everything below this point is shared, and
+  # there is no second staging path to keep in step with the first.
+  GALLERY_ARGS=(prefab gallery "$CAMPAIGN" --out "$OUT_DIR")
+  echo "delvec ${GALLERY_ARGS[*]}"
+  "$DELVEC" "${GALLERY_ARGS[@]}" || die "could not build a browse world from $CAMPAIGN"
+
+  # Said out loud on every run, because a gate that does not run and is not
+  # mentioned is indistinguishable from one that ran green. The reasoning is in
+  # this script's header; this is the one-line form the operator sees.
+  echo "staging gate: NOT RUN — it judges a campaign against the findings ledger,"
+  echo "  and a browse world has no campaign to judge. This build is admitted by"
+  echo "  what gallery emission already refused: every emitted line validated"
+  echo "  against the pinned $MC_VERSION command tree, a lone tile of a tiled zone"
+  echo "  refused (DW0739), and a manifest that does not tile its own zone refused."
+  echo "  It is a building to look at, not a delve, and it ships to nobody."
 fi
-echo "staging gate: $CAMPAIGN"
-echo "staging gate report: $GATE_REPORT"
-python3 "$REPO_ROOT/tools/staging-gate.py" "${GATE_ARGS[@]}" || die \
-  "staging gate REFUSED this build — not serving it (full table: $GATE_REPORT)"
 
 STAGE="$(mktemp -d "${TMPDIR:-/tmp}/dw-playtest-data.XXXXXX")"
 # Recorded before anything is copied into it, and before the container that will
@@ -338,7 +451,12 @@ session_record stage-dir "$STAGE"
 mkdir -p "$STAGE/world/datapacks"
 cp "$OUT_DIR/server/server.properties" "$STAGE/server.properties"
 printf 'enable-rcon=true\nrcon.password=%s\nrcon.port=25575\n' "$RCON_PW" >> "$STAGE/server.properties"
+# The datapack's directory name. A campaign is a directory, so its basename is
+# already a name; a prefab may arrive as `the-castle.json`, whose basename would
+# put a `.json` in a datapack directory name. Strip the extension and nothing
+# else, so a campaign's id is byte-identical to what it always was.
 CAMP_ID="$(basename "$CAMPAIGN")"
+if [ "$SUBJECT_KIND" = "prefab" ]; then CAMP_ID="${CAMP_ID%.*}"; fi
 cp -R "$OUT_DIR/datapack" "$STAGE/world/datapacks/$CAMP_ID"
 
 docker run -d --name "$NAME" -p 25565:25565 \
@@ -355,12 +473,46 @@ for _ in $(seq 1 60); do
 done
 [ "$READY" = 1 ] || die "server did not come up — docker logs $NAME"
 
-# rcon verification: campaign objectives present, at least one campaign NPC,
-# sidebar cleared. Any failure here means the datapack did not actually load.
+# rcon verification. Every command's response is READ (CLAUDE.md) — a world that
+# booted is not a world that loaded its pack, and the difference is invisible
+# from the outside: a single unparseable line drops a whole function and the
+# server comes up empty and cheerful.
+#
+# What is asked differs by kind because what each kind CLAIMS differs. Both
+# assertions are of the same strength: the pack's own objectives exist, and the
+# thing the pack was supposed to put in the world is in it.
 OBJECTIVES="$(rcon "scoreboard objectives list")"
-[[ $OBJECTIVES == *"dw."* ]] || die "no dw.* objectives — datapack not loaded"
-NPC_PROBE="$(rcon "execute if entity @e[tag=dw_npc]")"
-[[ $NPC_PROBE == *"Test passed"* ]] || die "no dw_npc entities found"
+if [ "$SUBJECT_KIND" = "campaign" ]; then
+  # campaign objectives present, at least one campaign NPC, sidebar cleared.
+  [[ $OBJECTIVES == *"dw."* ]] || die "no dw.* objectives — datapack not loaded"
+  NPC_PROBE="$(rcon "execute if entity @e[tag=dw_npc]")"
+  [[ $NPC_PROBE == *"Test passed"* ]] || die "no dw_npc entities found"
+else
+  # `admit.sys` is created by `admit:load`, so its absence is a pack the server
+  # dropped rather than a world that is merely slow.
+  [[ $OBJECTIVES == *"admit.sys"* ]] || die "no admit.sys objective — the gallery datapack did not load (docker logs $NAME)"
+  # One label per exhibit, COUNTED against the layout the same build wrote.
+  # `execute if entity` answers only pass/fail, and a pass over one label of nine
+  # exhibits is the vacuity this project keeps paying for — so the count is
+  # summed into a scoreboard and read back, and it must EQUAL the denominator.
+  EXPECTED_EXHIBITS="$(python3 -c 'import json,sys; sys.stdout.reconfigure(newline="\n"); print(len(json.load(open(sys.argv[1]))["areas"]))' "$OUT_DIR/gallery-layout.json")"
+  # `admit:finish` summons the labels at tick 6 and `admit:place` runs at tick 3,
+  # so a label existing proves the placement function was reached. The forceloaded
+  # chunks take a few ticks to arrive, so this waits rather than asking once.
+  LABELS=0
+  for _ in $(seq 1 30); do
+    rcon "scoreboard players set #dwlabels admit.sys 0" >/dev/null
+    rcon "execute as @e[tag=admit_label] run scoreboard players add #dwlabels admit.sys 1" >/dev/null
+    LABEL_READ="$(rcon "scoreboard players get #dwlabels admit.sys")"
+    LABELS="$(printf '%s' "$LABEL_READ" | awk '{for(i=1;i<=NF;i++) if ($i ~ /^[0-9]+$/) {print $i; exit}}')"
+    LABELS="${LABELS:-0}"
+    [ "$LABELS" -ge "$EXPECTED_EXHIBITS" ] && break
+    sleep 2
+  done
+  [ "$LABELS" = "$EXPECTED_EXHIBITS" ] || die \
+    "the browse world has $LABELS labelled exhibit(s) where the layout declares $EXPECTED_EXHIBITS — the datapack did not finish placing (docker logs $NAME)"
+  echo "browse world binding: $LABELS of $EXPECTED_EXHIBITS exhibit(s) placed and labelled"
+fi
 rcon_raw "scoreboard objectives setdisplay sidebar" >/dev/null || true
 
 PACK_NOTE="no resource pack in this build"
@@ -376,5 +528,8 @@ fi
 UP_OK=1   # the session exists; the 25565 mutex stays held until `down`
 echo
 echo "READY — Multiplayer -> Direct Connect: localhost:25565"
+if [ "$SUBJECT_KIND" = "prefab" ]; then
+  echo "creative, flight on; you spawn on a stone platform beside the building"
+fi
 echo "$PACK_NOTE"
 echo "teardown: tools/playtest-server.sh down --name $NAME  (also frees the 25565 mutex)"

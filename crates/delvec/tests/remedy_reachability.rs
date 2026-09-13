@@ -1672,3 +1672,148 @@ fn dw0881_moving_the_anchor_answers_where_no_radius_can() {
     delvec::compiler::reach::judge_reach_completion(&plan, &world, &BTreeMap::new(), Some(entry))
         .expect("and DW0850 has nothing to say about the moved anchor");
 }
+
+/// **`DW0739`: use the whole zone — pass `<base>.json`**, taken at the door that
+/// printed it.
+///
+/// This is the pair defect in its plainest form, and it shipped: `delvec prefab
+/// gallery <dir>` refused every tile of a tiled zone and told the reader to pass
+/// the manifest instead, and the same command could not open a manifest at all
+/// — `DW0732 cannot read …: Not a directory`. The refusal was correct, the
+/// remedy sentence was correct, and between them there was no capability. The
+/// castle a creator wanted to walk was unreachable by any command in this engine.
+///
+/// So the row is the whole pair, in one test, at one command: the refusal, the
+/// single edit the message prescribes, and the assertion that the edit reaches a
+/// **different verdict** — a browse world holding the whole zone, every tile
+/// placed at the offset its manifest declares.
+///
+/// The refusal is not weakened to get here. The first half of this row is the
+/// same red it always was, asserted before the move is taken, and
+/// `prefab_fragment_doors.rs` holds it at every other door: showing a whole zone
+/// and showing one slice of it are different inputs, and the difference is the
+/// manifest.
+#[test]
+fn dw0739_passing_the_manifest_shows_the_whole_zone_at_the_door_that_asked_for_it() {
+    let dir = tmp("fragment-zone");
+    let room = delvec::admit::fixtures::clean_room();
+    let depth = room.size[2];
+    let grid = 3;
+    let parts: Vec<serde_json::Value> = (0..grid)
+        .map(|i| {
+            let file = format!("zone.x0y0z{i}.nbt");
+            std::fs::write(
+                dir.join(&file),
+                delvec::admit::fixtures::clean_room().write(),
+            )
+            .unwrap();
+            serde_json::json!({
+                "file": file,
+                "id": format!("zone.x0y0z{i}"),
+                "grid_index": [0, 0, i],
+                "offset": [0, 0, i * depth],
+                "size": room.size,
+            })
+        })
+        .collect();
+    let manifest = dir.join("zone.json");
+    std::fs::write(
+        &manifest,
+        serde_json::json!({
+            "prefab_id": "prefab/zone",
+            "structure_set": {
+                "base": "zone",
+                "size": [room.size[0], room.size[1], depth * grid],
+                "part_max": 48,
+                "grid": [1, 1, grid],
+                "data_version": room.data_version,
+                "generator": "crates/delvec/src/grammar",
+                "parts": parts,
+            },
+            "connectors": [],
+            "lighting": { "profile": "unmeasured" },
+        })
+        .to_string(),
+    )
+    .unwrap();
+
+    // The refusal, at the door a creator points at without being told: the
+    // directory the tiles are sitting in.
+    let out = tmp("fragment-zone-out");
+    let refused = delvec(&[
+        "prefab",
+        "gallery",
+        dir.to_str().unwrap(),
+        "-o",
+        out.join("by-dir").to_str().unwrap(),
+    ]);
+    let text = log(&refused);
+    assert_eq!(refused.status.code(), Some(2), "{text}");
+    assert!(text.contains("DW0739"), "{text}");
+    assert!(
+        text.contains("Use the whole zone: pass"),
+        "the message prescribes the move:\n{text}"
+    );
+    assert!(
+        text.contains("zone.json"),
+        "and names the document to pass:\n{text}"
+    );
+
+    // The move, taken at the same command, typed exactly as the message spells
+    // it. Nothing else changes — not a flag, not the tiles, not the directory.
+    let taken = out.join("by-manifest");
+    let accepted = delvec(&[
+        "prefab",
+        "gallery",
+        manifest.to_str().unwrap(),
+        "-o",
+        taken.to_str().unwrap(),
+    ]);
+    let text = log(&accepted);
+    assert_eq!(
+        accepted.status.code(),
+        Some(0),
+        "the move reaches a different verdict:\n{text}"
+    );
+    assert!(!text.contains("DW0739"), "{text}");
+
+    // ...and the different verdict is a WHOLE ZONE, not merely a zero exit. One
+    // exhibit, every tile placed, each at the offset the manifest declares —
+    // which is the thing the refusal said the creator would get.
+    let place =
+        std::fs::read_to_string(taken.join("datapack/data/admit/function/place.mcfunction"))
+            .expect("the browse world places something");
+    let placed: Vec<&str> = place.lines().filter(|l| !l.trim().is_empty()).collect();
+    assert_eq!(
+        placed.len(),
+        grid as usize,
+        "every tile of the zone is placed, not one of them:\n{place}"
+    );
+    for i in 0..grid {
+        let want = format!("place template admit:zone.x0y0z{i} 0 64 {}", i * depth);
+        assert!(
+            placed.contains(&want.as_str()),
+            "tile {i} is placed at the offset its manifest declares (`{want}`):\n{place}"
+        );
+    }
+    let layout: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(taken.join("gallery-layout.json")).unwrap())
+            .unwrap();
+    let areas = layout["areas"].as_array().unwrap();
+    assert_eq!(
+        areas.len(),
+        1,
+        "the zone is ONE thing to walk around, not {} plinths: {layout}",
+        areas.len()
+    );
+    assert_eq!(
+        areas[0]["size"],
+        serde_json::json!([room.size[0], room.size[1], depth * grid]),
+        "and it is the whole volume the manifest declares: {layout}"
+    );
+    eprintln!(
+        "DW0739 remedy binding: 1 refusal at `prefab gallery <dir>`, its move taken at \
+         `prefab gallery <manifest>`, {} of {grid} tile(s) placed as 1 exhibit",
+        placed.len()
+    );
+}
