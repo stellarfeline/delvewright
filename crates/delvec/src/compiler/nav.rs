@@ -3099,9 +3099,10 @@ pub fn plan_moves(plan: &Plan, world: &World) -> Result<Vec<MovePlan>, Failure> 
         // Yawed off the EXACT samples: the rounding that keeps the emitted
         // coordinates short would otherwise twitch a diagonal's bearing every tick.
         let mut yaws = yaws_along(&exact, seed);
-        if let Some(last) = yaws.last_mut() {
-            *last = arrival_yaw(plan, npc.as_str(), to_anchor.as_str(), *last);
-        }
+        apply_arrival_yaw(
+            &mut yaws,
+            anchor_facing_yaw(plan, npc.as_str(), to_anchor.as_str()),
+        );
         let end_yaw = yaws.last().copied().unwrap_or(seed);
         record_staging(&mut history, npc.as_str(), gate, target, Some(end_yaw));
         planned_end_yaw.insert(key, end_yaw);
@@ -3130,22 +3131,50 @@ fn anchor_facing_yaw(plan: &Plan, npc_id: &str, anchor_id: &str) -> Option<i32> 
     }
 }
 
-/// The yaw a walked body ends its move in.
+/// The declared facing of an anchor an **actor** walks to, as a yaw — the
+/// counterpart of [`anchor_facing_yaw`], resolved the way an actor's anchors are
+/// resolved everywhere else in this module: globally, first match, because an
+/// actor carries no area. It mirrors [`actor_anchor_pos`]'s scan exactly, so the
+/// facing and the position can never be read off two different anchors.
+fn actor_anchor_facing_yaw(plan: &Plan, anchor: &str) -> Option<i32> {
+    for ((_, name), resolved) in &plan.anchors {
+        if name == anchor {
+            return match resolved {
+                ResolvedAnchor::Point { facing, .. } => facing
+                    .as_deref()
+                    .map(|f| crate::compiler::emit::facing_yaw(Some(f))),
+                ResolvedAnchor::Gate { .. } => None,
+            };
+        }
+    }
+    None
+}
+
+/// Give a walked body its arrival turn: rewrite the LAST entry of `yaws`, which
+/// [`yaws_along`] left carrying the bearing of the final step.
 ///
-/// The path's own tangent is the WRONG answer at the end of a walk: a body that
+/// **The rule belongs to the walked body, not to the verb that first needed it.**
+/// The path's own tangent is the WRONG answer at the end of any walk: a body that
 /// walked away from the party arrives with its back to them, which is what a
-/// guide leading a tour must never do. So the arrival yaw is the destination
+/// guide leading a tour must never do — and a `move-actor` puppet is as much a
+/// body as a `move-npc` villager is. So the arrival yaw is the destination
 /// anchor's **declared facing** when the piece declares one — the anchor is
 /// where the piece says a body at that spot looks — and otherwise the reverse of
 /// the last leg, which turns the body back the way it came, where whoever
 /// followed it is standing.
-fn arrival_yaw(plan: &Plan, npc_id: &str, to_anchor: &str, walk_yaw: i32) -> i32 {
-    arrival_yaw_of(anchor_facing_yaw(plan, npc_id, to_anchor), walk_yaw)
+///
+/// `declared` is handed in rather than looked up here, because only the caller
+/// knows the scope its mover's anchors resolve in: an NPC's are its own area's
+/// ([`anchor_facing_yaw`]), an actor's are global ([`actor_anchor_facing_yaw`]).
+fn apply_arrival_yaw(yaws: &mut [i32], declared: Option<i32>) {
+    if let Some(last) = yaws.last_mut() {
+        *last = arrival_yaw_of(declared, *last);
+    }
 }
 
-/// The arithmetic half of [`arrival_yaw`], so both branches are testable without
-/// a whole `Plan`: a declared facing wins, and an undeclared one turns the body
-/// through 180 degrees to face back down the path it just walked.
+/// The arithmetic half of [`apply_arrival_yaw`], so both branches are testable
+/// without a whole `Plan`: a declared facing wins, and an undeclared one turns
+/// the body through 180 degrees to face back down the path it just walked.
 fn arrival_yaw_of(declared: Option<i32>, walk_yaw: i32) -> i32 {
     declared.unwrap_or_else(|| (walk_yaw + 180).rem_euclid(360))
 }
@@ -3595,7 +3624,11 @@ pub fn plan_actor_moves(plan: &Plan, world: &World) -> Result<Vec<ActorMovePlan>
         let seed = prior
             .and_then(|s| s.yaw)
             .unwrap_or_else(|| crate::compiler::emit::facing_yaw(a.facing.map(|f| f.token())));
-        let yaws = yaws_along(&exact, seed);
+        let mut yaws = yaws_along(&exact, seed);
+        // A puppet takes its arrival turn for the same reason a villager does —
+        // it is a walked body, and the verb it was moved by is not what decides
+        // which way it ends up looking.
+        apply_arrival_yaw(&mut yaws, actor_anchor_facing_yaw(plan, to_anchor.as_str()));
         let end_yaw = yaws.last().copied().unwrap_or(seed);
         record_staging(&mut history, actor.as_str(), gate, target, Some(end_yaw));
         planned_end_yaw.insert(key, end_yaw);
