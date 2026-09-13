@@ -86,7 +86,26 @@
       },
       {
         "anchor": "anchor/march",
+        "attributes": {
+          "follow_range": 10.0,
+          "max_health": 24.0,
+          "movement_speed": 0.23
+        },
         "entity": "minecraft:husk",
+        "equipment": {
+          "chest": {
+            "enchantments": {
+              "minecraft:protection": 1
+            },
+            "item": "minecraft:chainmail_chestplate"
+          },
+          "head": {
+            "item": "minecraft:chainmail_helmet"
+          },
+          "main_hand": {
+            "item": "minecraft:white_banner"
+          }
+        },
         "facing": "south",
         "id": "actor/standard-bearer",
         "name": "The Standard Bearer",
@@ -95,7 +114,7 @@
           "texture_id": "bearer"
         },
         "tier": "ordinary",
-        "vulnerable": false
+        "vulnerable": true
       }
     ],
     "ambushes": [

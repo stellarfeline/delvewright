@@ -613,7 +613,7 @@ execute if score #at_walker_exit dw.sys matches 23 run tp @e[tag=dw_pup_walker] 
 execute if score #at_walker_exit dw.sys matches 24 run tp @e[tag=dw_pup_walker] 5.5 65.0 8.06 0 0
 execute if score #at_walker_exit dw.sys matches 25 run tp @e[tag=dw_pup_walker] 5.5 65.0 8.2 0 0
 execute if score #at_walker_exit dw.sys matches 26 run tp @e[tag=dw_pup_walker] 5.5 65.0 8.35 0 0
-execute if score #at_walker_exit dw.sys matches 27 run tp @e[tag=dw_pup_walker] 5.5 65.0 8.5 0 0
+execute if score #at_walker_exit dw.sys matches 27 run tp @e[tag=dw_pup_walker] 5.5 65.0 8.5 180 0
 scoreboard players add #at_walker_exit dw.sys 1
 execute if score #at_walker_exit dw.sys matches 28.. run scoreboard players set #arun_walker_exit dw.sys 0
 execute unless score #at_walker_exit dw.sys matches 28.. run schedule function hello-world:ma_tick_walker_exit 1t
