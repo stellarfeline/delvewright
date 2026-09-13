@@ -48,10 +48,52 @@ python -m delve_skin catalog cast.json --out-dir out/catalog
 |---|---|---|
 | `texture_id` | yes | kebab id; PNG basename and resource-pack texture segment |
 | `model` | **yes** | `wide` or `slim`. **Never omit** — an omitted model renders slim, distorting a wide skin (spec-0009). |
-| `palette` | yes | `#rrggbb` colours: `skin`, `hair`, `beard`, `tunic`, `belt`, `sandal`, `eye`, … (missing keys derive a shade) |
+| `palette` | yes | `#rrggbb` colours — see below (a missing key derives a shade) |
+| `wardrobe` | no | how the character is dressed — see below (an absent block dresses them in the defaults) |
 | `seed` | no | integer; defaults to a stable SHA-256 of `texture_id` |
 | `style_brief` | no | prose description → catalog card `description` |
 | `role`, `features`, `hidden_layers` | no | catalog tags / passthrough metadata |
+
+An unknown entry field, palette key, wardrobe key or wardrobe value is **refused
+by name**: a misspelled `wardrobe` would otherwise compose the default costume
+and say nothing. `python -m delve_skin <cmd> --help` prints the whole surface,
+enumerated from the constants the parser validates against.
+
+### Palette
+
+| key | paints |
+|---|---|
+| `skin`, `skin_shadow` | the body; `skin_shadow` is the hand, the knee and the brow |
+| `hair` | the hair cap, fringe and back of the head |
+| `beard`, `beard_grey` | facial hair; `features.greying` streaks it with `beard_grey` |
+| `tunic`, `tunic_shadow` | the torso garment — tunic, jacket, coat, robe — and its sleeves |
+| `belt` | a 2 px band low on the waist |
+| `legwear`, `legwear_shadow` | the leg garment, and its knee shadow. Defaults to `tunic` / `tunic_shadow`, so a skirt cut from the same cloth needs no colour of its own |
+| `sandal` | the footwear, whatever kind it is |
+| `eye` | the two eye pixels |
+
+### Wardrobe
+
+What the character wears is **declared**, never inferred from the palette. Every
+key is optional; the defaults are a short-sleeved belted tunic over bare legs,
+sandals and a full beard — so a sheet that names no `wardrobe` composes exactly
+what it composed before this block existed.
+
+| key | values | reaches |
+|---|---|---|
+| `sleeves` | `bare`, `short` (default), `long` | `bare` leaves the arm bare to the shoulder; `short` is a 5 px sleeve on the upper arm; `long` reaches the wrist, leaving the hand |
+| `legs` | `bare`, `short` (default), `full` | `bare` is a bare leg; `short` is a 2 px skirt over the upper thigh; `full` is trousers to the ankle |
+| `footwear` | `none`, `sandal` (default), `shoe`, `boot`, `tall_boot` | 0, 2, 3, 6 and 9 px up a 12 px leg — barefoot, sandal, shoe, mid-calf boot, knee boot |
+| `facial_hair` | `none`, `moustache`, `beard` (default) | `moustache` is the single row under the nose; `beard` adds the chin, the jaw and the chin underside |
+
+```json
+{
+  "texture_id": "modern-guide",
+  "model": "wide",
+  "palette": { "tunic": "#2f4436", "legwear": "#3b3f46", "sandal": "#33251a" },
+  "wardrobe": { "sleeves": "long", "legs": "full", "footwear": "boot", "facial_hair": "none" }
+}
+```
 
 ## Determinism (ADR-0006)
 
@@ -74,10 +116,20 @@ prefab renderer, cannot render player models — do not use it here.)
 
 - **`slim` geometry** is validated and emitted as metadata but not yet composed:
   the wide-only `skinpy-extended` layout would distort it. A `slim` entry raises
-  rather than silently emit a distorted texture. Both `nobodys-cave` sailors are
-  `wide`.
+  rather than silently emit a distorted texture.
 - Only the **base layer** is authored (no hat/jacket overlay); `skinpy-extended`
-  addresses the base layer only.
+  addresses the base layer only. So **nothing can stand proud of the body**: an
+  open coat, a hood, a hat with a brim, a cloak, a beard that juts and hair with
+  volume all need the overlay layer or model geometry, and are refused rather
+  than approximated into a paint job that reads as none of them.
+- **A limb is 4 px around and a torso 8 px.** A lapel, a cuff, a buckle or a seam
+  narrower than a pixel does not exist, and a belt is the finest horizontal band
+  there is at 2 px on a 12 px torso.
+- **A garment cannot cross a body part.** Arms, legs and torso are separate
+  boxes: a sleeve length and a torso hem are independent, there is no shoulder
+  seam to align, and no skirt hangs past the hips.
+- Sleeves take the **torso garment's** colour. A jacket with contrasting sleeves
+  would need a palette key of its own, and has none.
 
 ## Attribution
 

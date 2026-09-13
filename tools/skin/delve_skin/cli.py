@@ -8,7 +8,9 @@ Usage:
                                --preview-dir DIR [--id ID]
 
 A CAST file is ``{"campaign": "...", "skins": [ <entry>, ... ]}`` or a bare list
-of entries. Each entry: texture_id, model (wide|slim, REQUIRED), palette, ...
+of entries. ``--help`` on any subcommand prints the whole entry surface: which
+fields an entry may carry, which colours a palette may name, and what a wardrobe
+may say about how the character is dressed.
 """
 
 from __future__ import annotations
@@ -20,8 +22,63 @@ from pathlib import Path
 from typing import List
 
 from delve_skin.catalog import catalog_card, dumps
-from delve_skin.compose import CastEntry, compose_png_bytes, compose_skin
+from delve_skin.compose import (
+    ENTRY_KEYS,
+    PALETTE_KEYS,
+    CastEntry,
+    compose_png_bytes,
+    compose_skin,
+)
 from delve_skin.preview import DEFAULT_SCALE, render_previews
+from delve_skin.wardrobe import FACIAL_HAIR, FOOTWEAR, LEGS, SLEEVES, Wardrobe
+
+
+def _span_help(span) -> str:
+    """Describe an axis position by the rows it paints on a 12-px limb."""
+    if span is None:
+        return "nothing"
+    y0, y1 = span
+    return f"rows {y0}-{y1} ({y1 - y0 + 1} px)"
+
+
+def _entry_surface_help() -> str:
+    """The cast-entry surface, derived from the code that enforces it.
+
+    Enumerated from the same constants ``CastEntry.from_dict`` and ``Wardrobe``
+    validate against, so ``--help`` cannot drift from what the tool accepts.
+    """
+    d = Wardrobe()
+    lines = [
+        "cast-entry fields:",
+        "  " + ", ".join(ENTRY_KEYS),
+        "",
+        "palette colours (#rrggbb; a missing one is derived from its neighbours):",
+        "  " + ", ".join(PALETTE_KEYS),
+        "",
+        "wardrobe -- how the character is dressed. Every key is optional; the",
+        "defaults below are a short-sleeved belted tunic over bare legs, sandals",
+        "and a full beard:",
+        f"  sleeves     (default {d.sleeves!r}) -- "
+        + "; ".join(f"{k}: {_span_help(v)}" for k, v in SLEEVES.items())
+        + ". Painted in 'tunic'.",
+        f"  legs        (default {d.legs!r}) -- "
+        + "; ".join(f"{k}: {_span_help(v)}" for k, v in LEGS.items())
+        + ". Painted in 'legwear', which defaults to 'tunic'.",
+        f"  footwear    (default {d.footwear!r}) -- "
+        + "; ".join(f"{k}: {_span_help(v)}" for k, v in FOOTWEAR.items())
+        + ". Painted in 'sandal'.",
+        f"  facial_hair (default {d.facial_hair!r}) -- "
+        + ", ".join(FACIAL_HAIR)
+        + ". Painted in 'beard'; 'features.greying' streaks it with 'beard_grey'.",
+        "",
+        "An unknown field, palette colour, wardrobe key or wardrobe value is",
+        "refused by name: a misspelling would otherwise compose the default",
+        "costume and say nothing.",
+        "",
+        "The base layer is all there is: nothing can stand proud of the body, so",
+        "an open coat, a brim, a hood or hair with volume have nowhere to go.",
+    ]
+    return "\n".join(lines)
 
 
 def _load_entries(path: Path, only_id: str | None) -> List[CastEntry]:
@@ -88,10 +145,19 @@ def cmd_all(args) -> int:
 
 
 def main(argv: List[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(prog="delve_skin", description=__doc__)
+    parser = argparse.ArgumentParser(
+        prog="delve_skin",
+        description=__doc__,
+        epilog=_entry_surface_help(),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
     sub = parser.add_subparsers(dest="cmd", required=True)
 
     def add_common(sp):
+        # The entry surface is what a creator is about to write, so it is on
+        # every subcommand's --help, not only on the bare one.
+        sp.epilog = _entry_surface_help()
+        sp.formatter_class = argparse.RawDescriptionHelpFormatter
         sp.add_argument("cast", help="path to a cast-sheet JSON file")
         sp.add_argument("--id", default=None, help="only this texture_id")
 
