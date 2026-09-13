@@ -30,7 +30,16 @@ from delve_skin.compose import (
     compose_skin,
 )
 from delve_skin.preview import DEFAULT_SCALE, render_previews
-from delve_skin.wardrobe import FACIAL_HAIR, FOOTWEAR, LEGS, SLEEVES, Wardrobe
+from delve_skin.wardrobe import (
+    COLLAR,
+    FACIAL_HAIR,
+    FOOTWEAR,
+    GREYING,
+    HAIR,
+    LEGS,
+    SLEEVES,
+    Wardrobe,
+)
 
 
 def _span_help(span) -> str:
@@ -39,6 +48,14 @@ def _span_help(span) -> str:
         return "nothing"
     y0, y1 = span
     return f"rows {y0}-{y1} ({y1 - y0 + 1} px)"
+
+
+def _hair_help(span) -> str:
+    """How far down the 8-px side of the head a hair length comes."""
+    if span is None:
+        return "no hair"
+    y0, y1 = span
+    return f"side rows {y0}-{y1}"
 
 
 def _entry_surface_help() -> str:
@@ -56,8 +73,8 @@ def _entry_surface_help() -> str:
         "  " + ", ".join(PALETTE_KEYS),
         "",
         "wardrobe -- how the character is dressed. Every key is optional; the",
-        "defaults below are a short-sleeved belted tunic over bare legs, sandals",
-        "and a full beard:",
+        "defaults below are a short-sleeved belted tunic open at the throat over",
+        "bare legs, sandals, a short back and sides and a full beard:",
         f"  sleeves     (default {d.sleeves!r}) -- "
         + "; ".join(f"{k}: {_span_help(v)}" for k, v in SLEEVES.items())
         + ". Painted in 'tunic'.",
@@ -67,9 +84,23 @@ def _entry_surface_help() -> str:
         f"  footwear    (default {d.footwear!r}) -- "
         + "; ".join(f"{k}: {_span_help(v)}" for k, v in FOOTWEAR.items())
         + ". Painted in 'sandal'.",
+        f"  hair        (default {d.hair!r}) -- "
+        + "; ".join(f"{k}: {_hair_help(v)}" for k, v in HAIR.items())
+        + ". The crown, the back of the head and the brow fringe come with every"
+        + " length; hair past the ear also frames the face and falls to a cut"
+        + " line in 'hair_shadow'. Painted in 'hair'.",
         f"  facial_hair (default {d.facial_hair!r}) -- "
         + ", ".join(FACIAL_HAIR)
-        + ". Painted in 'beard'; 'features.greying' streaks it with 'beard_grey'.",
+        + ". Painted in 'beard'.",
+        f"  collar      (default {d.collar!r}) -- "
+        + ", ".join(COLLAR)
+        + ". 'open' leaves the V of bare skin a tunic has at the throat;"
+        + " 'closed' is a jacket that fastens.",
+        f"  greying     (default {d.greying!r}) -- "
+        + ", ".join(GREYING)
+        + ". Streaks 'hair_grey' / 'beard_grey' through whichever it names."
+        + " 'features.greying' is the older spelling of 'beard', and a sheet"
+        + " carrying both is refused.",
         "",
         "An unknown field, palette colour, wardrobe key or wardrobe value is",
         "refused by name: a misspelling would otherwise compose the default",

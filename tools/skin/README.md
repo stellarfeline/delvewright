@@ -64,8 +64,10 @@ enumerated from the constants the parser validates against.
 | key | paints |
 |---|---|
 | `skin`, `skin_shadow` | the body; `skin_shadow` is the hand, the knee and the brow |
-| `hair` | the hair cap, fringe and back of the head |
-| `beard`, `beard_grey` | facial hair; `features.greying` streaks it with `beard_grey` |
+| `hair` | the crown, the back of the head, the fringe and however far down the sides the `hair` axis says |
+| `hair_shadow` | the cut line at the lower edge of hair long enough to show one |
+| `hair_grey` | the grey coming into the hair, when `greying` names it |
+| `beard`, `beard_grey` | facial hair, and the grey coming into it |
 | `tunic`, `tunic_shadow` | the torso garment — tunic, jacket, coat, robe — and its sleeves |
 | `belt` | a 2 px band low on the waist |
 | `legwear`, `legwear_shadow` | the leg garment, and its knee shadow. Defaults to `tunic` / `tunic_shadow`, so a skirt cut from the same cloth needs no colour of its own |
@@ -74,24 +76,34 @@ enumerated from the constants the parser validates against.
 
 ### Wardrobe
 
-What the character wears is **declared**, never inferred from the palette. Every
-key is optional; the defaults are a short-sleeved belted tunic over bare legs,
-sandals and a full beard — so a sheet that names no `wardrobe` composes exactly
-what it composed before this block existed.
+What the character wears and how they are groomed is **declared**, never inferred
+from the palette. Every key is optional; the defaults are a short-sleeved belted
+tunic open at the throat over bare legs, sandals, a short back and sides and a
+full beard — so a sheet that names no `wardrobe` composes exactly what it
+composed before this block existed.
 
 | key | values | reaches |
 |---|---|---|
 | `sleeves` | `bare`, `short` (default), `long` | `bare` leaves the arm bare to the shoulder; `short` is a 5 px sleeve on the upper arm; `long` reaches the wrist, leaving the hand |
 | `legs` | `bare`, `short` (default), `full` | `bare` is a bare leg; `short` is a 2 px skirt over the upper thigh; `full` is trousers to the ankle |
 | `footwear` | `none`, `sandal` (default), `shoe`, `boot`, `tall_boot` | 0, 2, 3, 6 and 9 px up a 12 px leg — barefoot, sandal, shoe, mid-calf boot, knee boot |
+| `hair` | `bald`, `crop`, `short` (default), `jaw`, `long` | how far hair comes down the 8 px sides of the head: none, 2, 3, 6 and 8 rows. The crown, the back of the head and the brow fringe come with every length. Past the ear it also **frames the face** down its outer columns and takes a cut line in `hair_shadow`; `long` falls across the top of the torso back as well |
 | `facial_hair` | `none`, `moustache`, `beard` (default) | `moustache` is the single row under the nose; `beard` adds the chin, the jaw and the chin underside |
+| `collar` | `open` (default), `closed` | `open` leaves the V of bare skin a tunic or an unbuttoned shirt has at the throat; `closed` takes it away, which is the only way to get a jacket that fastens — the V is painted from `skin` itself, so no palette key can reach it |
+| `greying` | `none` (default), `hair`, `beard`, `both` | streaks `hair_grey` / `beard_grey` through whatever it names. `features.greying` is the older spelling of `beard` and still means exactly that; a sheet carrying **both** is refused rather than resolved by a precedence rule |
 
 ```json
 {
-  "texture_id": "modern-guide",
+  "texture_id": "castle-steward",
   "model": "wide",
-  "palette": { "tunic": "#2f4436", "legwear": "#3b3f46", "sandal": "#33251a" },
-  "wardrobe": { "sleeves": "long", "legs": "full", "footwear": "boot", "facial_hair": "none" }
+  "palette": {
+    "tunic": "#39495e", "legwear": "#3a3b41", "sandal": "#2c2521",
+    "hair": "#7d7669", "hair_grey": "#a9a29a", "hair_shadow": "#564f42"
+  },
+  "wardrobe": {
+    "sleeves": "long", "legs": "full", "footwear": "shoe",
+    "hair": "jaw", "facial_hair": "none", "collar": "closed", "greying": "hair"
+  }
 }
 ```
 
@@ -135,6 +147,15 @@ prefab renderer, cannot render player models — do not use it here.)
   open coat, a hood, a hat with a brim, a cloak, a beard that juts and hair with
   volume all need the overlay layer or model geometry, and are refused rather
   than approximated into a paint job that reads as none of them.
+- **Hair is paint on the skull.** A bun, a braid, a ponytail, a fringe that
+  falls, a parting and any silhouette that is not the cube do not exist. `long`
+  is hair-coloured paint down the sides of the head and across the top of the
+  torso back: it reads at playing distance, and it is not the same thing as hair.
+- **A figure cannot be made to read as a woman.** The three things that do it on
+  a player model are the `slim` arm geometry (unsupported here), a hair
+  silhouette off the cube (the overlay layer), and face detail finer than the
+  8×8 the head gives. What is left is hair length, which on a cube is
+  androgynous. Write the character so the writing carries it.
 - **A limb is 4 px around and a torso 8 px.** A lapel, a cuff, a buckle or a seam
   narrower than a pixel does not exist, and a belt is the finest horizontal band
   there is at 2 px on a 12 px torso.

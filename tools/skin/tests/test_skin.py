@@ -29,9 +29,13 @@ from delve_skin.compose import (  # noqa: E402
 )
 from delve_skin.preview import PREVIEW_ANGLES, render_previews  # noqa: E402
 from delve_skin.wardrobe import (  # noqa: E402
+    COLLAR,
     FACIAL_HAIR,
     FOOTWEAR,
+    GREYING,
+    HAIR,
     LEGS,
+    SHOULDER_HAIR,
     SLEEVES,
     Wardrobe,
 )
@@ -39,6 +43,7 @@ from delve_skin.wardrobe import (  # noqa: E402
 FIXTURES = Path(__file__).parent / "fixtures"
 FIXTURE = FIXTURES / "sample.cast.json"
 WARDROBE_FIXTURE = FIXTURES / "wardrobe.cast.json"
+HAIR_FIXTURE = FIXTURES / "hair.cast.json"
 GOLDEN = FIXTURES / "golden"
 
 #: Every cast sheet in `fixtures/`, derived rather than listed, so a sheet added
@@ -160,7 +165,7 @@ def test_every_fixture_sheet_composes_its_golden_pixels():
                 f"{sheet.name}:{entry.texture_id} no longer composes its golden pixels"
             )
             checked += 1
-    assert checked == 2, f"expected 2 pinned entries, pinned {checked}"
+    assert checked == 3, f"expected 3 pinned entries, pinned {checked}"
 
 
 def test_the_png_file_is_byte_stable_within_one_build():
@@ -319,6 +324,166 @@ def test_facial_hair_beard_covers_chin_jaw_and_underside():
     assert _near(_at(skin, "head", "down", 3, 3), GUIDE_HAIR, tol=9), "no underside"
 
 
+# --- the head: hair length, the face it frames, the collar, the grey --------
+
+STEWARD_HAIR = (0x7D, 0x76, 0x69)
+STEWARD_GREY = (0xA9, 0xA2, 0x9A)
+STEWARD_CUT = (0x56, 0x4F, 0x42)
+STEWARD_SKIN = (0xD0, 0xA1, 0x7C)
+STEWARD_JACKET = (0x39, 0x49, 0x5E)
+
+
+def _steward(**wardrobe) -> CastEntry:
+    """The hair fixture, re-styled. Its palette names hair, its grey and its cut."""
+    row = dict(json.loads(HAIR_FIXTURE.read_text(encoding="utf-8"))["skins"][0])
+    row["wardrobe"] = {**row["wardrobe"], **wardrobe}
+    return CastEntry.from_dict(row)
+
+
+@pytest.mark.parametrize("side", ["left", "right"])
+def test_every_hair_length_reaches_the_row_it_names(side):
+    """Each named length, read back on the side of the head it comes down."""
+    for name, span in HAIR.items():
+        skin = _read_back(_steward(hair=name, greying="none"))
+        if span is None:
+            for y in range(0, 8):
+                assert not _near(_at(skin, "head", side, 3, y), STEWARD_HAIR, tol=12), (
+                    f"bald, but hair at y={y}"
+                )
+            continue
+        y0, y1 = span
+        # A length long enough to show an edge spends its bottom row on the cut
+        # line, so the hair proper starts one above it.
+        probe = y0 + 1 if Wardrobe(hair=name).hair_has_a_cut_line() else y0
+        assert _near(_at(skin, "head", side, 3, probe), STEWARD_HAIR, tol=14), (
+            f"{name} does not reach y={probe}"
+        )
+        assert _near(_at(skin, "head", side, 3, y1), STEWARD_HAIR, tol=14), (
+            f"{name} does not reach its own top row y={y1}"
+        )
+        if y0 > 0:
+            assert _near(_at(skin, "head", side, 3, y0 - 1), STEWARD_SKIN), (
+                f"{name} hangs below y={y0}"
+            )
+
+
+def test_a_bald_head_carries_no_hair_anywhere():
+    skin = _read_back(_steward(hair="bald", greying="none"))
+    for face in ("up", "back", "front", "left", "right"):
+        for x in range(8):
+            for y in range(8):
+                assert not _near(_at(skin, "head", face, x, y), STEWARD_HAIR, tol=10), (
+                    f"hair on a bald head at {face} ({x},{y})"
+                )
+
+
+def test_hair_past_the_ear_frames_the_face_and_shorter_hair_does_not():
+    """The four rows of blank skin a clean-shaven head used to show."""
+    framed = _read_back(_steward(hair="jaw", greying="none"))
+    for y in (2, 4, 7):
+        for x in (0, 7):
+            assert _near(_at(framed, "head", "front", x, y), STEWARD_HAIR, tol=14), (
+                f"no frame at front ({x},{y})"
+            )
+    # The face itself is still a face: skin between the frames.
+    assert _near(_at(framed, "head", "front", 3, 2), STEWARD_SKIN)
+    cropped = _read_back(_steward(hair="short", greying="none"))
+    assert _near(_at(cropped, "head", "front", 0, 2), STEWARD_SKIN), "short hair frames"
+
+
+def test_hair_long_enough_to_show_an_edge_gets_a_cut_line():
+    for name in ("jaw", "long"):
+        skin = _read_back(_steward(hair=name, greying="none"))
+        y0 = HAIR[name][0]
+        assert _near(_at(skin, "head", "left", 3, y0), STEWARD_CUT), f"{name}: no cut line"
+    for name in ("crop", "short"):
+        skin = _read_back(_steward(hair=name, greying="none"))
+        y0 = HAIR[name][0]
+        assert not _near(_at(skin, "head", "left", 3, y0), STEWARD_CUT), (
+            f"{name}: a cut line where there is no edge to read"
+        )
+
+
+def test_long_hair_falls_onto_the_shoulders_and_shorter_hair_does_not():
+    """The one place hair goes that is not the head."""
+    sy0, sy1 = SHOULDER_HAIR
+    long_ = _read_back(_steward(hair="long", greying="none"))
+    assert _near(_at(long_, "torso", "back", 4, sy1), STEWARD_HAIR, tol=14)
+    assert _near(_at(long_, "torso", "back", 4, sy0), STEWARD_CUT)
+    assert _near(_at(long_, "torso", "back", 4, sy0 - 1), STEWARD_JACKET, tol=12), (
+        "hair below the shoulder rows"
+    )
+    jaw = _read_back(_steward(hair="jaw", greying="none"))
+    assert not _near(_at(jaw, "torso", "back", 4, sy1), STEWARD_HAIR, tol=12)
+
+
+def test_a_closed_collar_puts_cloth_at_the_throat_and_an_open_one_skin():
+    """No palette key could ever have done this: the V is painted from `skin`."""
+    closed = _read_back(_steward(collar="closed"))
+    open_ = _read_back(_steward(collar="open"))
+    for x, y in ((3, 11), (4, 11), (3, 10), (4, 10), (4, 9)):
+        assert _near(_at(open_, "torso", "front", x, y), STEWARD_SKIN), (
+            f"open collar has no skin at ({x},{y})"
+        )
+        assert not _near(_at(closed, "torso", "front", x, y), STEWARD_SKIN), (
+            f"closed collar still bare at ({x},{y})"
+        )
+        assert _near(_at(closed, "torso", "front", x, y), STEWARD_JACKET, tol=12)
+
+
+def _grey_count(skin: Skin, part: str, face: str, x1: int, y1: int) -> int:
+    return sum(
+        1
+        for x in range(x1)
+        for y in range(y1)
+        if _near(_at(skin, part, face, x, y), STEWARD_GREY, tol=6)
+    )
+
+
+def test_greying_reaches_the_hair_and_only_when_it_is_asked_to():
+    """The gap that gave a twenty-year veteran brown hair."""
+    none = _read_back(_steward(greying="none"))
+    hair = _read_back(_steward(greying="hair"))
+    beard_only = _read_back(_steward(greying="beard", facial_hair="beard"))
+    assert _grey_count(none, "head", "up", 8, 8) == 0, "grey with nothing greying"
+    assert _grey_count(hair, "head", "up", 8, 8) > 2, "greying=hair left the crown alone"
+    assert _grey_count(beard_only, "head", "up", 8, 8) == 0, (
+        "greying=beard reached the hair"
+    )
+
+
+def test_greying_both_reaches_hair_and_beard_at_once():
+    both = _read_back(_steward(greying="both", facial_hair="beard"))
+    assert _grey_count(both, "head", "up", 8, 8) > 2, "the crown is not greying"
+    chin = [_at(both, "head", "front", x, y) for x in range(1, 7) for y in range(0, 3)]
+    # The beard greys against `beard_grey`, which this palette derives from hair.
+    assert len({c for c in chin}) > 1, "the beard is one flat colour"
+
+
+def test_the_older_spelling_of_greying_still_means_the_beard():
+    """No sheet written before this axis existed changes."""
+    e = CastEntry.from_dict(
+        {"texture_id": "x", "model": "wide", "features": {"greying": True}}
+    )
+    assert e.wardrobe.greying == "beard"
+    assert e.wardrobe.greys_beard() and not e.wardrobe.greys_hair()
+    plain = CastEntry.from_dict({"texture_id": "x", "model": "wide"})
+    assert plain.wardrobe.greying == "none"
+
+
+def test_saying_what_is_greying_twice_is_refused():
+    """Two ways to say one thing, and the one that errors is the one to have."""
+    with pytest.raises(ValueError, match="both set what is going grey"):
+        CastEntry.from_dict(
+            {
+                "texture_id": "x",
+                "model": "wide",
+                "features": {"greying": True},
+                "wardrobe": {"greying": "hair"},
+            }
+        )
+
+
 # --- mistakes are refused where they are written ----------------------------
 
 
@@ -365,24 +530,27 @@ def test_help_names_every_axis_value_and_every_key():
         assert key in help_text, f"--help does not name entry field {key!r}"
     for key in PALETTE_KEYS:
         assert key in help_text, f"--help does not name palette key {key!r}"
-    for axis in (SLEEVES, LEGS, FOOTWEAR):
+    for axis in (SLEEVES, LEGS, FOOTWEAR, HAIR):
         for value in axis:
             assert value in help_text, f"--help does not name wardrobe value {value!r}"
-    for value in FACIAL_HAIR:
-        assert value in help_text, f"--help does not name facial_hair {value!r}"
+    for group in (FACIAL_HAIR, COLLAR, GREYING):
+        for value in group:
+            assert value in help_text, f"--help does not name wardrobe value {value!r}"
 
 
 def test_readme_documents_every_axis_value_and_palette_key():
     readme = (Path(__file__).resolve().parents[1] / "README.md").read_text(
         encoding="utf-8"
     )
-    for name, axis in (("sleeves", SLEEVES), ("legs", LEGS), ("footwear", FOOTWEAR)):
+    axes = (
+        ("sleeves", SLEEVES), ("legs", LEGS), ("footwear", FOOTWEAR),
+        ("hair", HAIR), ("facial_hair", FACIAL_HAIR), ("collar", COLLAR),
+        ("greying", GREYING),
+    )
+    for name, axis in axes:
         assert f"`{name}`" in readme, f"README does not document wardrobe.{name}"
         for value in axis:
             assert f"`{value}`" in readme, f"README does not document {name}={value!r}"
-    assert "`facial_hair`" in readme
-    for value in FACIAL_HAIR:
-        assert f"`{value}`" in readme, f"README does not document facial_hair={value!r}"
     for key in PALETTE_KEYS:
         assert f"`{key}`" in readme, f"README does not document palette key {key!r}"
 
@@ -393,7 +561,10 @@ def test_catalog_card_records_the_wardrobe():
         "sleeves": "long",
         "legs": "full",
         "footwear": "boot",
+        "hair": "short",
         "facial_hair": "none",
+        "collar": "open",
+        "greying": "none",
     }
 
 
@@ -402,5 +573,8 @@ def test_the_wardrobe_fixture_is_a_costume_the_old_composer_could_not_make():
     w = _entries(WARDROBE_FIXTURE)[0].wardrobe
     default = Wardrobe()
     for axis in ("sleeves", "legs", "footwear", "facial_hair"):
+        assert getattr(w, axis) != getattr(default, axis), f"{axis} is still the default"
+    w = _entries(HAIR_FIXTURE)[0].wardrobe
+    for axis in ("hair", "collar", "greying"):
         assert getattr(w, axis) != getattr(default, axis), f"{axis} is still the default"
     assert isinstance(compose_skin(_entries(WARDROBE_FIXTURE)[0]), Image.Image)

@@ -31,7 +31,7 @@ from PIL import Image
 from skinpy import Skin
 
 from delve_skin.palette import RGBA, jitter, parse_hex, rng_for, seed_from_id, shade
-from delve_skin.wardrobe import Span, Wardrobe
+from delve_skin.wardrobe import SHOULDER_HAIR, Span, Wardrobe
 
 FACE_IDS = ("front", "back", "left", "right", "up", "down")
 
@@ -44,9 +44,9 @@ SIDE_FACES = ("front", "back", "left", "right")
 # is NOT here is refused at the entry: a misspelled colour would otherwise be
 # dropped in silence and the character dressed in a default nobody asked for.
 PALETTE_KEYS = (
-    "skin", "skin_shadow", "hair", "beard", "beard_grey",
-    "tunic", "tunic_shadow", "belt", "legwear", "legwear_shadow",
-    "sandal", "eye",
+    "skin", "skin_shadow", "hair", "hair_shadow", "hair_grey",
+    "beard", "beard_grey", "tunic", "tunic_shadow", "belt",
+    "legwear", "legwear_shadow", "sandal", "eye",
 )
 
 #: Fields a cast-sheet entry may carry, for the same reason: a misspelled
@@ -104,7 +104,9 @@ class CastEntry:
             texture_id=texture_id,
             model=d["model"],
             palette=palette,
-            wardrobe=Wardrobe.from_dict(d.get("wardrobe"), texture_id),
+            wardrobe=Wardrobe.from_dict(
+                d.get("wardrobe"), texture_id, d.get("features")
+            ),
             style_brief=d.get("style_brief", ""),
             role=d.get("role", ""),
             hidden_layers=list(d.get("hidden_layers", [])),
@@ -124,6 +126,10 @@ def _resolve_palette(raw: Dict[str, str]) -> Dict[str, RGBA]:
     p.setdefault("skin", (179, 118, 63, 255))
     p.setdefault("skin_shadow", shade(p["skin"], -34))
     p.setdefault("hair", (58, 47, 42, 255))
+    # The cut line down the side of a long head of hair, and the grey coming
+    # into it -- the two roles ``tunic_shadow`` and ``beard_grey`` already have.
+    p.setdefault("hair_shadow", shade(p["hair"], -30))
+    p.setdefault("hair_grey", shade(p["hair"], 70))
     p.setdefault("beard", p["hair"])
     p.setdefault("beard_grey", shade(p["beard"], 70))
     p.setdefault("tunic", (150, 90, 60, 255))
@@ -210,6 +216,34 @@ class _Canvas:
             self.rows(part, face, y0, y1, color)
             self.noise(part, face, color, amount, rng, only_color=color)
 
+    def columns(self, part: str, face: str, x0: int, x1: int, y0: int, y1: int,
+                color: RGBA) -> None:
+        """Fill a rectangle. Hair framing a face is a column, not a band."""
+        f = self.face(part, face)
+        w, h = f.shape
+        for x in range(max(0, x0), min(w - 1, x1) + 1):
+            for y in range(max(0, y0), min(h - 1, y1) + 1):
+                f.set_color(x, y, color)
+
+    def streak(self, part: str, face: str, span: Span, color: RGBA,
+               rng: np.random.Generator, one_in: int = 7,
+               xs: tuple[int, int] | None = None, amount: int = 4) -> None:
+        """Scatter ``color`` through a region -- going grey, at any length.
+
+        Addressed by REGION rather than by colour, because the hair it streaks
+        has already been jittered and no longer equals any palette entry. The
+        odds match the beard's, so a head and a beard going grey together look
+        like one person.
+        """
+        f = self.face(part, face)
+        w, h = f.shape
+        y0, y1 = (0, h - 1) if span is None else span
+        x0, x1 = (0, w - 1) if xs is None else xs
+        for x in range(max(0, x0), min(w - 1, x1) + 1):
+            for y in range(max(0, y0), min(h - 1, y1) + 1):
+                if rng.integers(0, one_in) == 0:
+                    f.set_color(x, y, jitter(rng, color, amount))
+
 
 def _build_head(c: _Canvas, p: Dict[str, RGBA], w: Wardrobe, feat: dict,
                 rng: np.random.Generator) -> None:
@@ -220,19 +254,57 @@ def _build_head(c: _Canvas, p: Dict[str, RGBA], w: Wardrobe, feat: dict,
     c.noise("head", "right", skin, 6, rng)
 
     hair, beard, grey = p["hair"], p["beard"], p["beard_grey"]
-    greying = bool(feat.get("greying", False))
+    hair_sh, hair_grey = p["hair_shadow"], p["hair_grey"]
+    hair_span = w.hair_span()
+    framed = w.hair_has_a_cut_line()
 
-    # Hair cap: full top, back, upper sides, and a fringe on the forehead.
-    c.fill("head", "up", hair)
-    c.fill("head", "back", hair)
-    c.rows("head", "left", 5, 7, hair)
-    c.rows("head", "right", 5, 7, hair)
-    c.rows("head", "front", 7, 7, hair)  # fringe row across the brow-top
-    c.noise("head", "up", hair, 8, rng)
-    c.noise("head", "back", hair, 8, rng)
+    # Hair: the crown, the back of the head and a fringe across the brow come
+    # with any length; how far it comes down the SIDES is the axis. It is paint
+    # on the skull -- there is no volume, and no silhouette but the cube.
+    if hair_span is None:
+        # A bald head keeps its skin, textured like the rest of the face.
+        c.noise("head", "up", skin, 6, rng)
+        c.noise("head", "back", skin, 6, rng)
+    else:
+        hy0, hy1 = hair_span
+        c.fill("head", "up", hair)
+        c.fill("head", "back", hair)
+        c.rows("head", "left", hy0, hy1, hair)
+        c.rows("head", "right", hy0, hy1, hair)
+        c.rows("head", "front", 7, 7, hair)  # fringe row across the brow-top
+        c.noise("head", "up", hair, 8, rng)
+        c.noise("head", "back", hair, 8, rng)
+        if framed:
+            # Hair this long is a flat field on the side of the head; its lower
+            # edge is what makes it read as a cut rather than as a helmet. And
+            # it comes round the FRONT, down the outer column either side: that
+            # frame is most of what separates a face with hair round it from the
+            # short-back-and-sides every clean-shaven head used to be.
+            c.rows("head", "left", hy0, hy0, hair_sh)
+            c.rows("head", "right", hy0, hy0, hair_sh)
+            c.columns("head", "front", 0, 0, hy0, 7, hair)
+            c.columns("head", "front", 7, 7, hy0, 7, hair)
+        if w.hair_reaches_the_shoulders():
+            sy0, sy1 = SHOULDER_HAIR
+            c.rows("torso", "back", sy0, sy1, hair)
+            c.rows("torso", "back", sy0, sy0, hair_sh)
+        if w.greys_hair():
+            c.streak("head", "up", None, hair_grey, rng)
+            c.streak("head", "back", None, hair_grey, rng)
+            c.streak("head", "left", (hy0, hy1), hair_grey, rng)
+            c.streak("head", "right", (hy0, hy1), hair_grey, rng)
+            c.streak("head", "front", (7, 7), hair_grey, rng)
+            if framed:
+                c.streak("head", "front", (hy0, 6), hair_grey, rng, xs=(0, 0))
+                c.streak("head", "front", (hy0, 6), hair_grey, rng, xs=(7, 7))
+            if w.hair_reaches_the_shoulders():
+                c.streak("torso", "back", SHOULDER_HAIR, hair_grey, rng)
 
-    # Brow shadow just under the fringe.
-    c.rows("head", "front", 6, 6, sh)
+    # Brow shadow just under the fringe, spanning whatever the hair leaves --
+    # a face with hair down its outer columns has the shadow between them.
+    bx0, bx1 = (1, 6) if framed else (0, 7)
+    for bx in range(bx0, bx1 + 1):
+        c.px("head", "front", bx, 6, sh)
 
     # Eyes at y=5: sockets + a faint highlight pixel to the outer side.
     eye = p["eye"]
@@ -244,8 +316,10 @@ def _build_head(c: _Canvas, p: Dict[str, RGBA], w: Wardrobe, feat: dict,
     c.px("head", "front", 3, 4, sh)
     c.px("head", "front", 4, 4, sh)
 
+    greys_beard = w.greys_beard()
+
     def beardcol(x: int, y: int) -> RGBA:
-        if greying and (rng.integers(0, 5) == 0 or y == 0):
+        if greys_beard and (rng.integers(0, 5) == 0 or y == 0):
             return grey
         return beard
 
@@ -310,7 +384,7 @@ def _build_leg(c: _Canvas, part: str, p: Dict[str, RGBA], w: Wardrobe,
         c.fill(part, "down", p["sandal"])  # sole
 
 
-def _build_torso(c: _Canvas, p: Dict[str, RGBA],
+def _build_torso(c: _Canvas, p: Dict[str, RGBA], w: Wardrobe,
                  rng: np.random.Generator) -> None:
     tunic, tsh, belt = p["tunic"], p["tunic_shadow"], p["belt"]
     c.fill_part("torso", tunic)
@@ -324,13 +398,17 @@ def _build_torso(c: _Canvas, p: Dict[str, RGBA],
     c.band("torso", (1, 2), belt)
     # hem shadow at the very bottom
     c.band("torso", (0, 0), tsh)
-    # V-neck: bare skin triangle at the collar
-    skin = p["skin"]
-    c.px("torso", "front", 3, 11, skin)
-    c.px("torso", "front", 4, 11, skin)
-    c.px("torso", "front", 3, 10, skin)
-    c.px("torso", "front", 4, 10, skin)
-    c.px("torso", "front", 4, 9, skin)
+    # An OPEN collar is the V of bare skin a tunic or an unbuttoned shirt has
+    # at the throat. A CLOSED one paints nothing and the garment reaches the
+    # neck, which is what a weatherproof jacket or a habit needs -- and what no
+    # palette key could ever have given, the V being painted from ``skin``.
+    if w.collar == "open":
+        skin = p["skin"]
+        c.px("torso", "front", 3, 11, skin)
+        c.px("torso", "front", 4, 11, skin)
+        c.px("torso", "front", 3, 10, skin)
+        c.px("torso", "front", 4, 10, skin)
+        c.px("torso", "front", 4, 9, skin)
 
 
 def compose_skin(entry: CastEntry) -> Image.Image:
@@ -346,7 +424,7 @@ def compose_skin(entry: CastEntry) -> Image.Image:
     rng = rng_for(entry.resolved_seed())
     c = _Canvas()
     # Order matters for deterministic rng consumption; keep it stable.
-    _build_torso(c, p, rng)
+    _build_torso(c, p, w, rng)
     _build_arm(c, "left_arm", p, w, rng)
     _build_arm(c, "right_arm", p, w, rng)
     _build_leg(c, "left_leg", p, w, rng)
