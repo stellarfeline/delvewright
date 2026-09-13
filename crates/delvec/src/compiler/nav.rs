@@ -2890,7 +2890,10 @@ pub fn plan_moves(plan: &Plan, world: &World) -> Result<Vec<MovePlan>, Failure> 
         // summon gave it (the home anchor's declared facing,
         // `emit::npc_summon_commands`).
         let seed = seed_yaw.unwrap_or_else(|| npc_spawn_yaw(plan, npc.as_str()));
-        let yaws = yaws_along(&waypoints, seed);
+        let mut yaws = yaws_along(&waypoints, seed);
+        if let Some(last) = yaws.last_mut() {
+            *last = arrival_yaw(plan, npc.as_str(), to_anchor.as_str(), *last);
+        }
         let end_yaw = yaws.last().copied().unwrap_or(seed);
         record_staging(&mut history, npc.as_str(), gate, target, Some(end_yaw));
         planned_end_yaw.insert(key, end_yaw);
@@ -2905,6 +2908,38 @@ pub fn plan_moves(plan: &Plan, world: &World) -> Result<Vec<MovePlan>, Failure> 
         });
     }
     Ok(out)
+}
+
+/// The declared facing of one anchor in an NPC's own area, as a yaw — `None`
+/// when that anchor declares none.
+fn anchor_facing_yaw(plan: &Plan, npc_id: &str, anchor_id: &str) -> Option<i32> {
+    let area = plan.npc_area(npc_id)?;
+    match plan.anchors.get(&(area.to_string(), anchor_id.to_string())) {
+        Some(ResolvedAnchor::Point { facing, .. }) => facing
+            .as_deref()
+            .map(|f| crate::compiler::emit::facing_yaw(Some(f))),
+        _ => None,
+    }
+}
+
+/// The yaw a walked body ends its move in.
+///
+/// The path's own tangent is the WRONG answer at the end of a walk: a body that
+/// walked away from the party arrives with its back to them, which is what a
+/// guide leading a tour must never do. So the arrival yaw is the destination
+/// anchor's **declared facing** when the piece declares one — the anchor is
+/// where the piece says a body at that spot looks — and otherwise the reverse of
+/// the last leg, which turns the body back the way it came, where whoever
+/// followed it is standing.
+fn arrival_yaw(plan: &Plan, npc_id: &str, to_anchor: &str, walk_yaw: i32) -> i32 {
+    arrival_yaw_of(anchor_facing_yaw(plan, npc_id, to_anchor), walk_yaw)
+}
+
+/// The arithmetic half of [`arrival_yaw`], so both branches are testable without
+/// a whole `Plan`: a declared facing wins, and an undeclared one turns the body
+/// through 180 degrees to face back down the path it just walked.
+fn arrival_yaw_of(declared: Option<i32>, walk_yaw: i32) -> i32 {
+    declared.unwrap_or_else(|| (walk_yaw + 180).rem_euclid(360))
 }
 
 /// The yaw an NPC's summon gives it: its home anchor's declared `facing`, exactly
@@ -11894,9 +11929,26 @@ mod tests {
         assert_eq!(yaws_along(&wps, 0), vec![270, 270, 270]);
     }
 
+    /// A walk does not end facing the way it was going. The destination anchor's
+    /// declared facing wins, and an anchor that declares none turns the body back
+    /// the way it came — where whoever followed it is standing.
+    #[test]
+    fn a_walk_ends_facing_back_down_the_path_it_walked() {
+        // walked north (180): arrive facing south (0), back toward the follower
+        assert_eq!(arrival_yaw_of(None, 180), 0);
+        // walked south (0): arrive facing north (180)
+        assert_eq!(arrival_yaw_of(None, 0), 180);
+        // walked east (270): arrive facing west (90)
+        assert_eq!(arrival_yaw_of(None, 270), 90);
+        // and a declared facing is the piece's word on where a body there looks
+        assert_eq!(arrival_yaw_of(Some(270), 180), 270);
+        assert_eq!(arrival_yaw_of(Some(0), 0), 0);
+    }
+
     /// The corner turns on the tick it is taken: each waypoint carries the exact
     /// bearing of the segment it is about to walk, with no smoothing between the
-    /// two legs, and the arrival waypoint keeps the last leg's facing.
+    /// two legs. What the ARRIVAL waypoint carries is `arrival_yaw`'s business,
+    /// and is asserted above.
     #[test]
     fn yaw_turns_at_a_direction_change() {
         // +x for two steps (east, 270), then +z for two (south, 0).
