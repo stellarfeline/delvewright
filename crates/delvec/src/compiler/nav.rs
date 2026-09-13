@@ -2746,6 +2746,26 @@ fn smooth_walk(world: &World, cells: &[[i32; 3]], fp: &Footprint, width: f64) ->
 /// **routed** under, since the rendered motion is bounded by the volume the
 /// proof proved and a body the router never saw was never proved anything.
 fn resample_body(cells: &[[i32; 3]], speed: f64, width: f64) -> Vec<[f64; 3]> {
+    resample_body_exact(cells, speed, width).0
+}
+
+/// [`resample_body`], and the same samples **before** the 0.01-block rounding.
+///
+/// The emitted `tp` coordinates are rounded so they stay short and byte-stable.
+/// That rounding is invisible to a body walking a cardinal path — every step is
+/// axis-aligned, so the bearing between two rounded samples is the same cardinal
+/// bearing as between two exact ones. It is NOT invisible to a body walking a
+/// diagonal: at 0.15 blocks a tick, a ±0.005 wobble on each component is up to a
+/// couple of degrees of noise, so [`yaws_along`] reading the rounded samples
+/// gives a body crossing a courtyard in a straight line a yaw that twitches every
+/// single tick — an emitted jitter far more visible than the right angles the
+/// straight line was cut to remove. The yaw is a property of the segment being
+/// walked, so it is taken from the exact samples; only the position is rounded.
+fn resample_body_exact(
+    cells: &[[i32; 3]],
+    speed: f64,
+    width: f64,
+) -> (Vec<[f64; 3]>, Vec<[f64; 3]>) {
     let mut pts: Vec<[f64; 3]> = Vec::with_capacity(cells.len() * 3);
     for (i, c) in cells.iter().enumerate() {
         let p = cell_center(*c);
@@ -2755,7 +2775,7 @@ fn resample_body(cells: &[[i32; 3]], speed: f64, width: f64) -> Vec<[f64; 3]> {
         pts.push(p);
     }
     if pts.len() == 1 {
-        return vec![pts[0]];
+        return (vec![pts[0]], vec![pts[0]]);
     }
     // Cumulative arc length at each vertex.
     let mut cum = vec![0.0f64];
@@ -2770,15 +2790,18 @@ fn resample_body(cells: &[[i32; 3]], speed: f64, width: f64) -> Vec<[f64; 3]> {
     let speed = if speed > 0.0 { speed } else { DEFAULT_SPEED };
     let ticks = ((total / speed).ceil() as i64).max(1) as usize;
     let mut out = Vec::with_capacity(ticks + 1);
+    let mut exact = Vec::with_capacity(ticks + 1);
     for t in 0..=ticks {
         let d = total * (t as f64) / (ticks as f64);
         let p = point_at(&pts, &cum, d);
+        exact.push(p);
         // Round to 0.01 block — far finer than needed at 0.15 blk/tick, and keeps
         // the emitted per-tick `tp` coordinates short and stable.
         out.push([round2(p[0]), round2(p[1]), round2(p[2])]);
     }
     *out.last_mut().unwrap() = *pts.last().unwrap();
-    out
+    *exact.last_mut().unwrap() = *pts.last().unwrap();
+    (out, exact)
 }
 
 fn round2(x: f64) -> f64 {
@@ -3073,13 +3096,16 @@ pub fn plan_moves(plan: &Plan, world: &World) -> Result<Vec<MovePlan>, Failure> 
         // width the NPC actually wears.
         let width = npc_render_width(plan, npc.as_str());
         let walked = smooth_walk(leg_world, &cells, &Footprint::player(), width);
-        let waypoints = resample_body(&walked, speed.unwrap_or(DEFAULT_SPEED), width);
+        let (waypoints, exact) =
+            resample_body_exact(&walked, speed.unwrap_or(DEFAULT_SPEED), width);
         // Seed: the facing this body already has — the exit yaw of the previous
         // leg **on this branch** if this NPC has walked before, else the yaw its
         // summon gave it (the home anchor's declared facing,
         // `emit::npc_summon_commands`).
         let seed = seed_yaw.unwrap_or_else(|| npc_spawn_yaw(plan, npc.as_str()));
-        let mut yaws = yaws_along(&waypoints, seed);
+        // Yawed off the EXACT samples: the rounding that keeps the emitted
+        // coordinates short would otherwise twitch a diagonal's bearing every tick.
+        let mut yaws = yaws_along(&exact, seed);
         if let Some(last) = yaws.last_mut() {
             *last = arrival_yaw(plan, npc.as_str(), to_anchor.as_str(), *last);
         }
@@ -3569,14 +3595,15 @@ pub fn plan_actor_moves(plan: &Plan, world: &World) -> Result<Vec<ActorMovePlan>
         // belongs to a walked body, not to the verb that first needed it. Swept at
         // the footprint THIS leg was routed under, which for an actor is its own.
         let walked = smooth_walk(leg_world, &cells, &fp, body_w);
-        let waypoints = resample_body(&walked, speed.unwrap_or(DEFAULT_SPEED), body_w);
+        let (waypoints, exact) =
+            resample_body_exact(&walked, speed.unwrap_or(DEFAULT_SPEED), body_w);
         // Seed: the facing the puppet already has — the exit yaw of the previous
         // leg **on this branch**, else the actor's declared spawn `facing`
         // (`emit::actor_facing_yaw`).
         let seed = prior
             .and_then(|s| s.yaw)
             .unwrap_or_else(|| crate::compiler::emit::facing_yaw(a.facing.map(|f| f.token())));
-        let yaws = yaws_along(&waypoints, seed);
+        let yaws = yaws_along(&exact, seed);
         let end_yaw = yaws.last().copied().unwrap_or(seed);
         record_staging(&mut history, actor.as_str(), gate, target, Some(end_yaw));
         planned_end_yaw.insert(key, end_yaw);
@@ -10454,6 +10481,38 @@ mod tests {
         for p in after {
             assert!(!aabb_clips(&world, p, PLAYER_WIDTH), "clips at {p:?}");
         }
+    }
+
+    /// A straight run yaws **once and holds** — which is half the point of walking
+    /// it straight, and the half the 0.01-block coordinate rounding silently took
+    /// away: on a diagonal, two rounded samples 0.15 apart differ in bearing by a
+    /// degree or two, so a body crossing a courtyard in a perfectly straight line
+    /// twitched its head every tick. The yaw belongs to the segment being walked,
+    /// so it is read off the exact samples and the emitted position off the
+    /// rounded ones.
+    #[test]
+    fn a_straight_diagonal_run_yaws_once_and_holds() {
+        let world = floored(20, 20, 65, &[]);
+        let fp = Footprint::player();
+        let (start, goal) = ([1, 65, 1], [15, 65, 9]);
+        let route = world.find_path(start, goal).expect("an open plaza connects");
+        let line = smooth_walk(&world, &route, &fp, PLAYER_WIDTH);
+        let (rounded, exact) = resample_body_exact(&line, DEFAULT_SPEED, PLAYER_WIDTH);
+        let yaws = yaws_along(&exact, 0);
+        assert!(yaws.len() > 50, "fixture too short to show a twitch");
+        let distinct: BTreeSet<i32> = yaws.iter().copied().collect();
+        assert_eq!(
+            distinct.len(),
+            1,
+            "a straight run must hold one bearing, got {distinct:?}"
+        );
+        // And the defect this guards is real: the same yaw taken off the rounded
+        // samples is not one bearing but many.
+        let from_rounded: BTreeSet<i32> = yaws_along(&rounded, 0).into_iter().collect();
+        assert!(
+            from_rounded.len() > 1,
+            "rounding no longer perturbs the bearing — this test now proves nothing"
+        );
     }
 
     /// A wall between the endpoints is never smoothed through. The run stops at the
