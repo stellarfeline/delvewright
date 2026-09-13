@@ -1181,7 +1181,10 @@ fn walked_move_npc_tps_carry_the_segment_bearing() {
             );
         }
     }
-    assert!(seeded, "a walked path with no horizontal motion proves nothing here");
+    assert!(
+        seeded,
+        "a walked path with no horizontal motion proves nothing here"
+    );
     assert_ne!(
         wp[last].3, expect,
         "the arrival tick still faces the way it was walking ({expect}): a guide who \
