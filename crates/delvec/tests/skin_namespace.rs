@@ -161,10 +161,23 @@ fn summoned_texture_refs(out: &Path) -> BTreeSet<String> {
 /// The texture directory the delve in `dir` writes into, read from the campaign's
 /// own `world.json` rather than written as a literal — the test states the rule,
 /// not a copy of one fixture's id.
+///
+/// **It must NAME the delve.** Asking the authority is what keeps the assertions
+/// honest about the rule, and it is also what would let an empty namespace make a
+/// "every texture is under this delve's directory" assertion true of every texture
+/// there is. So the answer is checked here, once, for the property the whole file
+/// rests on: a directory that does not carry the campaign id separates nothing.
 fn texture_dir(dir: &Path) -> String {
     let doc: Value =
         serde_json::from_str(&std::fs::read_to_string(dir.join("world.json")).unwrap()).unwrap();
-    delvewright_dsl::pack_texture_dir(doc["campaign_id"].as_str().expect("a campaign id"))
+    let id = doc["campaign_id"].as_str().expect("a campaign id");
+    let out = delvewright_dsl::pack_texture_dir(id);
+    assert!(
+        out.contains(id) && out.ends_with('/'),
+        "`pack_texture_dir({id})` = `{out}`, which does not name the delve — every texture would \
+         land in a directory every other delve also writes into"
+    );
+    out
 }
 
 /// **The defect, as a property.** Two delves that cast the same-named characters
