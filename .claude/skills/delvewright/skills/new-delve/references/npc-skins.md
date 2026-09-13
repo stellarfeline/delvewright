@@ -1,10 +1,15 @@
 # NPC skins — the face toolchain
 
 
-Skip unless the design calls for a custom skin. The skin toolchain is a Python
-package with dependencies, and `python3 --version` answering is not the same as
-the package being importable — a missing skin is a build error, not a silent
-skip. Make it a venv here so step 5 does not stop on it:
+**Every named character gets a face**, so this page is the ordinary path and not
+an exception: the default body is a player model wearing that character's own
+skin, and a re-dressed villager is what you use when the character IS a
+villager. Skip this page only for a cast that is genuinely villagers.
+
+The skin toolchain is a Python package with dependencies, and `python3
+--version` answering is not the same as the package being importable — a missing
+skin is a build error, not a silent skip. Make it a venv here so step 5 does not
+stop on it:
 
 ```sh
 python3 -m venv .venv-skin
