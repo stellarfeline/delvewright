@@ -1840,6 +1840,12 @@ fn run_build(
     if is_english {
         delvewright_dsl::tag_translatables(&mut campaign);
     }
+    // A baked skin lands in the client's texture space, which is shared exactly as
+    // the language table is: every body's texture is rewritten to this delve's own
+    // id here, once, so no emitter and no bake can ship a face under a name another
+    // delve answers. Unconditional — a `--lang` build ships the same pack. The map
+    // back to the authored id is what finds the PNG on disk below.
+    let skin_sources = delvewright_dsl::namespace_skin_textures(&mut campaign);
 
     // The one caller of `Plan::build_with` outside a test, and the ordinary arm
     // is still `Plan::build` — the constructor that passes `Perturb::none()` as
@@ -1877,7 +1883,7 @@ fn run_build(
         Err(code) => return ExitCode::from(code),
     };
 
-    let skins = match read_skins(campaign_dir, &campaign, json) {
+    let skins = match read_skins(campaign_dir, &campaign, &skin_sources, json) {
         Ok(s) => s,
         Err(code) => return ExitCode::from(code),
     };
@@ -2048,9 +2054,17 @@ fn resolve_build_kind<'a>(
 ///
 /// One texture is read once however many bodies name it — a character and the
 /// puppet that plays it are one face.
+///
+/// **Keyed by the pack texture id, read from the authored one.** The campaign
+/// reaching here has been through `dsl::namespace_skin_textures`, so every body's
+/// `texture_id` is this delve's own id (`<campaign_id>/<authored>`) and `sources`
+/// is the map back to what the creator wrote — which is what `skins/<id>.png` is
+/// named after. The returned map is keyed the way the pack must write it, so the
+/// archive path and the texture the summon points at are one id.
 fn read_skins(
     campaign_dir: &Path,
     campaign: &delvewright_dsl::Campaign,
+    sources: &BTreeMap<String, String>,
     json: bool,
 ) -> Result<BTreeMap<String, Vec<u8>>, u8> {
     let mut skins: BTreeMap<String, Vec<u8>> = BTreeMap::new();
@@ -2058,9 +2072,14 @@ fn read_skins(
         if skins.contains_key(&site.skin.texture_id) {
             continue;
         }
-        let path = campaign_dir
-            .join("skins")
-            .join(format!("{}.png", site.skin.texture_id));
+        // Total by construction: both callers rewrite before they read. The
+        // identity fallback is what an un-namespaced campaign would mean, not a
+        // repair of one.
+        let authored = sources
+            .get(&site.skin.texture_id)
+            .map(String::as_str)
+            .unwrap_or(site.skin.texture_id.as_str());
+        let path = campaign_dir.join("skins").join(format!("{authored}.png"));
         match std::fs::read(&path) {
             Ok(bytes) => {
                 skins.insert(site.skin.texture_id.clone(), bytes);
@@ -2069,12 +2088,12 @@ fn read_skins(
                 print_build_error(
                     DW_SKIN_PNG_MISSING,
                     &format!(
-                        "cannot read skin PNG `{}`: {e} — `{}` declares this `skin.texture_id` \
-                         at `{}` `{}`, but the campaign has no matching \
+                        "cannot read skin PNG `{}`: {e} — `{}` declares `skin.texture_id` \
+                         `{authored}` at `{}` `{}`, but the campaign has no matching \
                          `skins/<texture_id>.png`. A body that declares a skin ships as a \
-                         mannequin pointing at `delvewright:npc/{}`, and the resource pack is \
-                         where that texture comes from. Add the PNG at that path, or remove \
-                         the `skin`",
+                         mannequin pointing at `delvewright:npc/{}` — this delve's own texture \
+                         id — and the resource pack is where that texture comes from. Add the \
+                         PNG at that path, or remove the `skin`",
                         path.display(),
                         site.body.id(),
                         site.body.stage(),
@@ -2206,13 +2225,16 @@ fn run_edit(
     }
     let augmented_script = loaded.raw.world_edits.clone();
 
-    let v = match validate_loaded(loaded, prefabs_dir, json) {
+    let mut v = match validate_loaded(loaded, prefabs_dir, json) {
         Ok(v) => v,
         Err(code) => return ExitCode::from(code),
     };
     if has_error(&v.diags) {
         return ExitCode::from(1);
     }
+    // `edit` proves exactly what `build` proves, so it emits the same bodies: each
+    // skin carries this delve's own texture id here too, before anything reads one.
+    let skin_sources = delvewright_dsl::namespace_skin_textures(&mut v.campaign);
     let plan = match Plan::build(&v.campaign, &v.prefabs)
         .map(|p| p.with_design_files(v.loaded.design_files.clone()))
     {
@@ -2328,7 +2350,7 @@ fn run_edit(
         return ExitCode::from(2);
     }
     let tree = CommandTree::v1_21_11();
-    let skins = match read_skins(campaign_dir, &v.campaign, json) {
+    let skins = match read_skins(campaign_dir, &v.campaign, &skin_sources, json) {
         Ok(s) => s,
         Err(code) => return ExitCode::from(code),
     };

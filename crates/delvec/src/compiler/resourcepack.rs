@@ -6,6 +6,13 @@
 //! 1.21.11) plus `assets/delvewright/textures/npc/<id>.png` for each skin. The
 //! mannequin's `profile.texture` resolves to `delvewright:npc/<id>`.
 //!
+//! `<id>` is the delve's own texture id — `<campaign_id>/<texture_id>`,
+//! `dsl::pack_texture_id`, stamped onto every body before emission — not the
+//! `texture_id` the campaign authored. A client merges the textures of every
+//! applied pack into one space and keeps packs enabled across servers, so a face
+//! baked under a bare `keeper` is the face every other delve's `keeper` wears.
+//! This module is handed ids that already carry it and writes what it is given.
+//!
 //! The zip is **byte-deterministic** (ADR-0006): entries are sorted, timestamps
 //! are pinned to zero, and the STORE method is used (no compressor state). Its
 //! SHA-1 is what a client verifies against the itzg `RESOURCE_PACK_SHA1` env, so
