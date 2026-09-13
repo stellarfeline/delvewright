@@ -20,10 +20,13 @@ languages are delivered as sidecars.
    ```
 
    `--reflect` is the three-step translate → critique → revise pass and is where
-   translationese actually dies — always pass it. It writes and validates the
-   sidecar for you; then go to 4 below. Otherwise translate yourself, 3 and 4
-   below.
+   translationese actually dies — always pass it. It writes the sidecar in
+   canonical form (it runs `delvec fmt` on it) and validates it for you; then go
+   to 4 below. Otherwise translate yourself, 3 and 4 below.
    Generation-time only either way — a shipped delve never calls a model.
+   If the run dies `HTTP 400` before any batch, read the provider's sentence in
+   the error: a `model` id that the endpoint has retired is the usual one, and
+   `curl -H "Authorization: Bearer $KEY" <base_url>/models` lists what it offers.
 3. Yourself: `delvec --prefabs "$DELVEWRIGHT_PREFABS" l10n-inventory <campaign-dir> --lang <code>` gives the exact
    key inventory as JSON (key, English, speaking NPC, existing translation).
    **Translate FROM the finished English** — never author a language natively —
@@ -45,7 +48,9 @@ languages are delivered as sidecars.
    the release path does not use it. `critical-path.json` is language-neutral
    either way, so the ladder is unchanged.
 
-Then re-run step 6, `delvec fmt` — it covers the sidecars too.
+Then re-run step 6, `delvec fmt` — it covers the sidecars too. A sidecar
+`i18n-translate.py` wrote is already canonical; one you wrote by hand in 3 is not
+until this runs.
 
 **`fx.` keys are POSITION-derived** (`fx.<quest>.oc.<obj>.<index>…`). Inserting
 an effect into a list SHIFTS every sibling's key and silently re-attaches old

@@ -13,14 +13,16 @@ Pipeline:
    canonical English, the NPC whose dialogue tree it belongs to, and whatever the
    current sidecar already translates.
 2. Batch the untranslated rows into persona-aware chat-completions requests
-   (temperature low, JSON-object replies, a glossary of already-translated proper
-   nouns for cross-batch consistency).
+   (temperature low, a glossary of already-translated proper nouns for
+   cross-batch consistency). Each request is a `Step` carrying the reply shape
+   its own prompt asks for — JSON object, or free text.
 3. With `--reflect`, run each batch as three steps — translate, criticise the
    draft on accuracy / fluency / style-register / terminology (plus the target
    language's translationese checklist), then revise with the critique in hand,
    returning already-good lines byte-identical.
-4. Merge, write the sidecar (keys sorted; exactly the inventory, so no orphans),
-   then run `delvec validate` and report coverage.
+4. Merge, write the sidecar (exactly the inventory, so no orphans) and hand it to
+   `delvec fmt` for canonical form, then run `delvec validate` and report
+   coverage.
 
 Idempotent: a re-run translates only the keys the sidecar is missing (`--force`
 retranslates everything). `--dry-run` prints the exact prompts and key lists and
@@ -411,8 +413,39 @@ def _system(prompt: str, lang: str) -> dict[str, str]:
     }
 
 
-def build_messages(inv: Inventory, batch: Sequence[Entry], lang: str) -> list[dict[str, str]]:
-    """Step 1 — translate. Rules, campaign/persona context, keys."""
+#: The token a provider looks for before it will honour `json_object`.
+JSON_TOKEN = "json"
+
+
+@dataclass(frozen=True)
+class Step:
+    """One chat-completions call: its messages **and the reply shape its own
+    prompt asks for**.
+
+    The reply shape travels with the prompt because it is a property of the
+    prompt, not of the transport. Setting `response_format` once in the request
+    builder made it one rule for three steps, and the three steps do not share
+    one: translate and revise ask for a JSON object, the critique asks for prose.
+    A provider enforces the agreement — OpenAI and DeepSeek both refuse
+    `response_format: json_object` with `HTTP 400 "Prompt must contain the word
+    'json' in some form"` when the prompt never asks for JSON — so the critique
+    step could never be sent at all, and `--reflect` died on batch 1 before it
+    had written a line.
+    """
+
+    #: Printed in progress and error lines: `translate`, `reflect`, `improve`.
+    name: str
+    messages: list[dict[str, str]]
+    #: Whether to send `response_format: {"type": "json_object"}`.
+    json_object: bool
+
+    def mentions_json(self) -> bool:
+        """Whether any message asks for JSON, which is what a provider checks."""
+        return any(JSON_TOKEN in m.get("content", "").lower() for m in self.messages)
+
+
+def translate_step(inv: Inventory, batch: Sequence[Entry], lang: str) -> Step:
+    """Step 1 — translate. Rules, campaign/persona context, keys. JSON object."""
     user = (
         "Context:\n"
         + json.dumps(_context(inv, batch, lang), ensure_ascii=False, indent=2, sort_keys=True)
@@ -421,13 +454,19 @@ def build_messages(inv: Inventory, batch: Sequence[Entry], lang: str) -> list[di
         + " and reply with the JSON object of key -> translation:\n"
         + json.dumps(_items(batch), ensure_ascii=False, indent=2)
     )
-    return [_system(SYSTEM_PROMPT, lang), {"role": "user", "content": user}]
+    return Step(
+        name="translate",
+        messages=[_system(SYSTEM_PROMPT, lang), {"role": "user", "content": user}],
+        json_object=True,
+    )
 
 
-def build_reflection_messages(
+def critique_step(
     inv: Inventory, batch: Sequence[Entry], lang: str, draft: dict[str, str]
-) -> list[dict[str, str]]:
-    """Step 2 — critique the draft. Free-text reply, not JSON."""
+) -> Step:
+    """Step 2 — critique the draft. Free text, deliberately: making the model
+    *write the defect down* is what stops step 3 being a second roll of the dice.
+    So this step asks for no JSON and must not send `response_format`."""
     rows = _draft_rows(batch, draft)
     user = (
         "Context:\n"
@@ -436,16 +475,20 @@ def build_reflection_messages(
         + json.dumps(rows, ensure_ascii=False, indent=2)
         + "\n\nWrite your critique."
     )
-    return [_system(REFLECTION_PROMPT, lang), {"role": "user", "content": user}]
+    return Step(
+        name="reflect",
+        messages=[_system(REFLECTION_PROMPT, lang), {"role": "user", "content": user}],
+        json_object=False,
+    )
 
 
-def build_improvement_messages(
+def revise_step(
     inv: Inventory,
     batch: Sequence[Entry],
     lang: str,
     draft: dict[str, str],
     critique: str,
-) -> list[dict[str, str]]:
+) -> Step:
     """Step 3 — apply the critique and emit the final JSON object."""
     rows = _draft_rows(batch, draft)
     user = (
@@ -458,23 +501,42 @@ def build_improvement_messages(
         + "\n\nReply with the JSON object of key -> final translation:\n"
         + json.dumps([r["key"] for r in rows], ensure_ascii=False)
     )
-    return [_system(IMPROVEMENT_PROMPT, lang), {"role": "user", "content": user}]
+    return Step(
+        name="improve",
+        messages=[_system(IMPROVEMENT_PROMPT, lang), {"role": "user", "content": user}],
+        json_object=True,
+    )
 
 
 def build_request(
-    cfg: I18nConfig, messages: Sequence[dict[str, str]], api_key: str
+    cfg: I18nConfig, step: Step, api_key: str
 ) -> tuple[str, dict[str, Any], dict[str, str]]:
     """`(url, body, headers)` for one chat-completions call. The key only ever
-    appears in the returned `Authorization` header — never in the body or a log."""
+    appears in the returned `Authorization` header — never in the body or a log.
+
+    Refuses before the network when a step asks for `json_object` and its own
+    prompt never says `json`: that pairing is the provider's documented `HTTP
+    400`, and a tool that can tell locally should not spend a request finding
+    out. The check is the one that makes [`Step.json_object`] and the prompt text
+    a pair rather than two independent settings.
+    """
     body: dict[str, Any] = {
         "model": cfg.model,
-        "messages": list(messages),
+        "messages": list(step.messages),
         "temperature": cfg.temperature,
-        # Supported by OpenAI, DeepSeek and Moonshot/Kimi; harmless elsewhere, and
-        # `parse_translations` still tolerates a fenced reply.
-        "response_format": {"type": "json_object"},
         "stream": False,
     }
+    if step.json_object:
+        if not step.mentions_json():
+            raise TranslateError(
+                f"step `{step.name}` asks for response_format=json_object but no message "
+                f"says `{JSON_TOKEN}` — OpenAI and DeepSeek both reject that pairing with "
+                "HTTP 400. Either say so in the prompt, or set json_object=False for a "
+                "prose step."
+            )
+        # Supported by OpenAI, DeepSeek and Moonshot/Kimi; `parse_translations`
+        # still tolerates a fenced reply from a provider that ignores it.
+        body["response_format"] = {"type": "json_object"}
     headers = {
         "Content-Type": "application/json",
         "Authorization": f"Bearer {api_key}",
@@ -525,31 +587,64 @@ def post_json(
         return json.loads(resp.read().decode("utf-8"))
 
 
+#: How much of a provider's error body reaches the diagnostic. Enough for the
+#: sentence a provider writes ("Prompt must contain the word 'json' …"), short
+#: enough that a stack of retries stays readable.
+ERROR_BODY_CHARS = 400
+
+
+def provider_reason(exc: urllib.error.HTTPError, api_key: str) -> str:
+    """The provider's own explanation of a rejection, key-redacted.
+
+    A bare `HTTP 400` says a request was refused and nothing about why, which is
+    how `--reflect` came to fail for months with the reason sitting unread in the
+    response body. The key can only be in the body if the provider echoed it,
+    which no provider here does — it is redacted anyway, because the rule is that
+    the key never reaches a log, not that it probably will not.
+    """
+    try:
+        raw = exc.read().decode("utf-8", "replace")
+    except Exception:  # noqa: BLE001 — a body we cannot read is simply absent
+        return ""
+    text = " ".join(raw.split())
+    if api_key:
+        text = text.replace(api_key, "<redacted>")
+    if not text:
+        return ""
+    if len(text) > ERROR_BODY_CHARS:
+        text = text[:ERROR_BODY_CHARS] + "…"
+    return f": {text}"
+
+
 def chat_once(
     cfg: I18nConfig,
-    messages: Sequence[dict[str, str]],
+    step: Step,
     api_key: str,
     poster: Poster | None = None,
     sleep: Callable[[float], None] = time.sleep,
 ) -> str:
     """One chat completion, retried on transport errors. Returns the reply text.
 
-    Errors are re-raised with the endpoint and status only — never the request
-    headers, so the key cannot reach a log through an exception.
+    Errors are re-raised with the endpoint, the step, the status and the
+    provider's own key-redacted explanation — never the request headers, so the
+    key cannot reach a log through an exception.
 
     `poster` is resolved at call time (not bound as a default) so a test that
     replaces the module's `post_json` truly intercepts every request — a default
     argument would have captured the real one at import and gone to the network.
     """
     poster = poster or post_json
-    url, body, headers = build_request(cfg, messages, api_key)
+    url, body, headers = build_request(cfg, step, api_key)
     last: Exception | None = None
     for attempt in range(cfg.max_retries):
         try:
             resp = poster(url, body, headers, cfg.timeout_seconds)
             return resp["choices"][0]["message"]["content"]
         except urllib.error.HTTPError as exc:
-            last = TranslateError(f"{cfg.endpoint} returned HTTP {exc.code}")
+            last = TranslateError(
+                f"{cfg.endpoint} returned HTTP {exc.code} on step `{step.name}`"
+                f"{provider_reason(exc, api_key)}"
+            )
             if exc.code in (400, 401, 403, 404, 422):
                 raise last from None  # not transient: bad key/model/url
         except (urllib.error.URLError, TimeoutError, OSError) as exc:
@@ -580,9 +675,22 @@ def sidecar_path(campaign_dir: Path, lang: str) -> Path:
     return campaign_dir / "l10n" / f"{lang}.json"
 
 
-def write_sidecar(path: Path, inv: Inventory, content: dict[str, str]) -> None:
-    """Write `l10n/<code>.json`. An existing sidecar's `dsl_version` is preserved
-    (it is a supported-version claim about the sidecar, not about this run).
+def write_sidecar(
+    path: Path, inv: Inventory, content: dict[str, str], delvec: Sequence[str]
+) -> None:
+    """Write `l10n/<code>.json` **in canonical form**, by handing the finished
+    file to `delvec fmt`.
+
+    Canonical form is defined by one authority — `crates/dsl/src/fmt.rs` — and
+    this tool is not a second one. It used to write the envelope in the order the
+    dict was built and to carry an existing sidecar's `dsl_version` forward, and
+    both disagree with the formatter: canonical order sorts every object's keys,
+    and `delvec fmt` stamps the `dsl_version` this engine implements (ADR-0024).
+    Every sidecar this tool had ever written was therefore refused by
+    `delvec fmt --check` with `DW0773`, an error tier, until somebody noticed and
+    ran the formatter by hand. Running it here is what closes that: the bytes on
+    disk are the formatter's own output, so the writer cannot drift from the
+    check again — including when the canonical form changes.
 
     `source` records the canonical English each translated row was made from, which
     is what lets the compiler DETECT a stale translation (`DW0187`) instead of
@@ -593,14 +701,8 @@ def write_sidecar(path: Path, inv: Inventory, content: dict[str, str]) -> None:
     Re-running the tool over a sidecar that predates `source` therefore adopts the
     guard with no retranslation: every row it already had is recorded against the
     English the inventory holds today (`DW0188` counts the rows still unguarded)."""
-    dsl_version = inv.dsl_version
-    if path.is_file():
-        try:
-            dsl_version = json.loads(path.read_text("utf-8")).get("dsl_version", dsl_version)
-        except (json.JSONDecodeError, OSError):
-            pass
     doc = {
-        "dsl_version": dsl_version,
+        "dsl_version": inv.dsl_version,
         "campaign_id": inv.campaign_id,
         "kind": "l10n",
         "lang": inv.lang,
@@ -609,6 +711,12 @@ def write_sidecar(path: Path, inv: Inventory, content: dict[str, str]) -> None:
     }
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(doc, ensure_ascii=False, indent=2) + "\n", "utf-8")
+    proc = run_delvec(["fmt", str(path)], delvec)
+    if proc.returncode != 0:
+        raise TranslateError(
+            f"`delvec fmt {path}` failed (exit {proc.returncode}) — the sidecar was written "
+            f"but is not in canonical form:\n{proc.stdout}{proc.stderr}"
+        )
 
 
 # ------------------------------------------------------------------------ cli --
@@ -639,10 +747,10 @@ def fetch_inventory(campaign_dir: Path, lang: str, delvec: Sequence[str]) -> Inv
 
 def _iter_batches(
     inv: Inventory, pending: Sequence[Entry], cfg: I18nConfig, lang: str
-) -> Iterable[tuple[int, list[Entry], list[dict[str, str]]]]:
+) -> Iterable[tuple[int, list[Entry], Step]]:
     chunks = batches(pending, cfg.batch_size)
     for i, chunk in enumerate(chunks, start=1):
-        yield i, chunk, build_messages(inv, chunk, lang)
+        yield i, chunk, translate_step(inv, chunk, lang)
 
 
 def require_keys(got: dict[str, str], chunk: Sequence[Entry], label: str) -> dict[str, str]:
@@ -674,20 +782,19 @@ def translate_batch(
     3. revise with the critique in hand — returning unrevised lines unchanged.
 
     Step 2's reply is free text on purpose: forcing the model to *write the
-    defect down* is what makes step 3 more than a second roll of the dice.
+    defect down* is what makes step 3 more than a second roll of the dice. That
+    is why the reply shape is per step — see [`Step`].
     """
     draft = require_keys(
-        parse_translations(chat_once(cfg, build_messages(inv, chunk, lang), api_key)),
+        parse_translations(chat_once(cfg, translate_step(inv, chunk, lang), api_key)),
         chunk,
         label,
     )
     if not reflect:
         return draft
-    critique = chat_once(cfg, build_reflection_messages(inv, chunk, lang, draft), api_key)
+    critique = chat_once(cfg, critique_step(inv, chunk, lang, draft), api_key)
     final = parse_translations(
-        chat_once(
-            cfg, build_improvement_messages(inv, chunk, lang, draft, critique), api_key
-        )
+        chat_once(cfg, revise_step(inv, chunk, lang, draft, critique), api_key)
     )
     return require_keys(final, chunk, f"{label} (improve)")
 
@@ -770,32 +877,30 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
 
     if args.dry_run:
-        for i, chunk, messages in _iter_batches(inv, pending, cfg, args.lang):
+        for i, chunk, first in _iter_batches(inv, pending, cfg, args.lang):
             print(f"\n===== batch {i} ({len(chunk)} keys) -> {cfg.endpoint} model={cfg.model} "
                   f"temperature={cfg.temperature} reflect={reflect} =====")
-            for m in messages:
-                print(f"--- {m['role']} ---\n{m['content']}")
+            steps = [first]
             if reflect:
                 sample = {e.key: "<step-1 draft, filled at call time>" for e in chunk}
-                for step, msgs in (
-                    ("reflect", build_reflection_messages(inv, chunk, args.lang, sample)),
-                    (
-                        "improve",
-                        build_improvement_messages(
-                            inv, chunk, args.lang, sample, "<step-2 critique, filled at call time>"
-                        ),
-                    ),
-                ):
-                    print(f"\n----- batch {i} step: {step} -----")
-                    for m in msgs:
-                        print(f"--- {m['role']} ---\n{m['content']}")
+                steps.append(critique_step(inv, chunk, args.lang, sample))
+                steps.append(
+                    revise_step(
+                        inv, chunk, args.lang, sample, "<step-2 critique, filled at call time>"
+                    )
+                )
+            for step in steps:
+                shape = "json_object" if step.json_object else "free text"
+                print(f"\n----- batch {i} step: {step.name} (reply: {shape}) -----")
+                for m in step.messages:
+                    print(f"--- {m['role']} ---\n{m['content']}")
         print(f"\ndry run: no request sent (key would come from ${cfg.api_key_env})")
         return 0
 
     translated: dict[str, str] = {}
     assert api_key is not None
     steps = "translate -> reflect -> improve" if reflect else "translate"
-    for i, chunk, _messages in _iter_batches(inv, pending, cfg, args.lang):
+    for i, chunk, _first in _iter_batches(inv, pending, cfg, args.lang):
         print(f"batch {i}: {len(chunk)} keys -> {cfg.model} ({steps}) ...", flush=True)
         try:
             got = translate_batch(
@@ -807,7 +912,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         translated.update(got)
 
     path = sidecar_path(args.campaign_dir, args.lang)
-    write_sidecar(path, inv, merge_content(inv, translated))
+    try:
+        write_sidecar(path, inv, merge_content(inv, translated), delvec)
+    except TranslateError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
     print(f"wrote {path} ({len(inv.entries)} keys, {len(translated)} newly translated)")
 
     if args.no_validate:
