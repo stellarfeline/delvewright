@@ -1,47 +1,29 @@
 {
-  "added": [],
-  "base_commit": "bd755133f76e173ed7004ab5a82958b0f5b949e1",
-  "changed": [
-    "easy.en:datapack/data/gallery/function/ma_tick_rafter_spider_pocket.mcfunction",
-    "easy.en:datapack/data/gallery/function/ma_tick_standard_bearer_vantage_be838ec426d9fc27b.mcfunction",
-    "easy.en:datapack/data/gallery/function/spawn_actor_standard_bearer.mcfunction",
-    "easy.en:datapack/data/gallery/function/unleash_standard_bearer.mcfunction",
-    "easy.en:validation/combat-plan.json",
-    "easy.en:validation/respawn-safety.json",
-    "hard.en:datapack/data/gallery/function/ma_tick_rafter_spider_pocket.mcfunction",
-    "hard.en:datapack/data/gallery/function/ma_tick_standard_bearer_vantage_be838ec426d9fc27b.mcfunction",
-    "hard.en:datapack/data/gallery/function/spawn_actor_standard_bearer.mcfunction",
-    "hard.en:datapack/data/gallery/function/unleash_standard_bearer.mcfunction",
-    "hard.en:validation/combat-plan.json",
-    "hard.en:validation/respawn-safety.json",
-    "ocean-horizon.en:datapack/data/gallery/function/ma_tick_rafter_spider_pocket.mcfunction",
-    "ocean-horizon.en:datapack/data/gallery/function/ma_tick_standard_bearer_vantage_be838ec426d9fc27b.mcfunction",
-    "ocean-horizon.en:datapack/data/gallery/function/spawn_actor_standard_bearer.mcfunction",
-    "ocean-horizon.en:datapack/data/gallery/function/unleash_standard_bearer.mcfunction",
-    "ocean-horizon.en:validation/combat-plan.json",
-    "ocean-horizon.en:validation/respawn-safety.json",
-    "primary.en:datapack/data/gallery/function/ma_tick_rafter_spider_pocket.mcfunction",
-    "primary.en:datapack/data/gallery/function/ma_tick_standard_bearer_vantage_be838ec426d9fc27b.mcfunction",
-    "primary.en:datapack/data/gallery/function/spawn_actor_standard_bearer.mcfunction",
-    "primary.en:datapack/data/gallery/function/unleash_standard_bearer.mcfunction",
-    "primary.en:validation/combat-plan.json",
-    "primary.en:validation/respawn-safety.json",
-    "primary.zh-cn:datapack/data/gallery/function/ma_tick_rafter_spider_pocket.mcfunction",
-    "primary.zh-cn:datapack/data/gallery/function/ma_tick_standard_bearer_vantage_be838ec426d9fc27b.mcfunction",
-    "primary.zh-cn:datapack/data/gallery/function/spawn_actor_standard_bearer.mcfunction",
-    "primary.zh-cn:datapack/data/gallery/function/unleash_standard_bearer.mcfunction",
-    "primary.zh-cn:validation/combat-plan.json",
-    "primary.zh-cn:validation/respawn-safety.json",
-    "void-horizon.en:datapack/data/gallery/function/ma_tick_rafter_spider_pocket.mcfunction",
-    "void-horizon.en:datapack/data/gallery/function/ma_tick_standard_bearer_vantage_be838ec426d9fc27b.mcfunction",
-    "void-horizon.en:datapack/data/gallery/function/spawn_actor_standard_bearer.mcfunction",
-    "void-horizon.en:datapack/data/gallery/function/unleash_standard_bearer.mcfunction",
-    "void-horizon.en:validation/combat-plan.json",
-    "void-horizon.en:validation/respawn-safety.json"
+  "added": [
+    "easy.en:packtest-datapack/data/gallery/test/v06_actor_equipment_minecraft_mannequin.mcfunction",
+    "easy.en:packtest-datapack/data/gallery/test/v06_actor_equipment_minecraft_zombie.mcfunction",
+    "hard.en:packtest-datapack/data/gallery/test/v06_actor_equipment_minecraft_mannequin.mcfunction",
+    "hard.en:packtest-datapack/data/gallery/test/v06_actor_equipment_minecraft_zombie.mcfunction",
+    "ocean-horizon.en:packtest-datapack/data/gallery/test/v06_actor_equipment_minecraft_mannequin.mcfunction",
+    "ocean-horizon.en:packtest-datapack/data/gallery/test/v06_actor_equipment_minecraft_zombie.mcfunction",
+    "primary.en:packtest-datapack/data/gallery/test/v06_actor_equipment_minecraft_mannequin.mcfunction",
+    "primary.en:packtest-datapack/data/gallery/test/v06_actor_equipment_minecraft_zombie.mcfunction",
+    "primary.zh-cn:packtest-datapack/data/gallery/test/v06_actor_equipment_minecraft_mannequin.mcfunction",
+    "primary.zh-cn:packtest-datapack/data/gallery/test/v06_actor_equipment_minecraft_zombie.mcfunction",
+    "void-horizon.en:packtest-datapack/data/gallery/test/v06_actor_equipment_minecraft_mannequin.mcfunction",
+    "void-horizon.en:packtest-datapack/data/gallery/test/v06_actor_equipment_minecraft_zombie.mcfunction"
   ],
+  "base_commit": "3bb7ba0421aac56451b54b44d0bfa82366f8a47d",
+  "changed": [],
   "classes": {
-    "datapack function": 24,
-    "validation ledger": 12
+    "PackTest": 18
   },
-  "removed": []
+  "removed": [
+    "easy.en:packtest-datapack/data/gallery/test/v06_actor_equipment.mcfunction",
+    "hard.en:packtest-datapack/data/gallery/test/v06_actor_equipment.mcfunction",
+    "ocean-horizon.en:packtest-datapack/data/gallery/test/v06_actor_equipment.mcfunction",
+    "primary.en:packtest-datapack/data/gallery/test/v06_actor_equipment.mcfunction",
+    "primary.zh-cn:packtest-datapack/data/gallery/test/v06_actor_equipment.mcfunction",
+    "void-horizon.en:packtest-datapack/data/gallery/test/v06_actor_equipment.mcfunction"
+  ]
 }

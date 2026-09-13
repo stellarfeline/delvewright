@@ -14955,19 +14955,51 @@ fn emit_loot_packtest(plan: &Plan, out: &mut BuildOutput) {
 /// puppet and summons a fresh entity, so gear that rode only on the puppet would
 /// vanish the instant the elite came alive — a regression invisible to any
 /// compile-time check. Emitted only for a campaign with an equipped actor.
+///
+/// **A skinned body is not excluded, and excluding it was the defect.** The
+/// filter used to demand `skin.is_none()`, which was true of the engine it was
+/// written against — the skin branch of the puppet summon dropped `equipment`
+/// outright, so a skinned actor had no gear for this to find. That is fixed, and
+/// the exclusion then read exactly backwards: it refused to look at the one case
+/// that had ever been broken, and it was an opt-out the defect itself could
+/// supply. It was measured doing so — a campaign whose every actor is skinned
+/// emitted no actor-equipment test at all and its proof set shrank by one with
+/// nothing saying why. The body a campaign dresses is now irrelevant to whether
+/// its gear is proved.
 fn emit_actor_equipment_packtest(plan: &Plan, out: &mut BuildOutput) {
-    let ns = &plan.namespace;
-    let title = artifact_title(plan.campaign);
-    let Some(a) = plan
+    // One test per BODY KIND among the equipped actors, taking the first actor
+    // of each kind. What is under test is whether the body a campaign dresses
+    // changes whether its gear survives, so the kinds are the population and a
+    // second guard in the same livery would add a run and prove nothing. A
+    // campaign that dresses both a plain entity and a mannequin gets both.
+    let mut seen: Vec<String> = Vec::new();
+    for a in plan
         .campaign
         .quests
         .content
         .actors
         .iter()
-        .find(|a| a.equipment.is_some() && a.skin.is_none())
-    else {
-        return;
-    };
+        .filter(|a| a.equipment.is_some())
+    {
+        let body = crate::compiler::nav::actor_body_entity(a);
+        if seen.contains(&body) {
+            continue;
+        }
+        seen.push(body.clone());
+        emit_one_actor_equipment_packtest(plan, a, &body, out);
+    }
+}
+
+/// One body kind's gear test. Split out so the population above is a plain loop
+/// over the kinds rather than a loop with a body inlined in it.
+fn emit_one_actor_equipment_packtest(
+    plan: &Plan,
+    a: &delvewright_dsl::Actor,
+    body: &str,
+    out: &mut BuildOutput,
+) {
+    let ns = &plan.namespace;
+    let title = artifact_title(plan.campaign);
     // The slot the assertion reads: prefer a hand, else the first armour piece.
     let eq = a.equipment.as_ref().expect("filtered on Some");
     let probe: Option<(&str, &EquipItem)> = [
@@ -14985,7 +15017,7 @@ fn emit_actor_equipment_packtest(plan: &Plan, out: &mut BuildOutput) {
     };
     let safe = plan::safe_local(a.id.as_str());
     let mut b = packtest_header(&format!(
-        "{title}: actor `{}` keeps its gear across unleash (spec-0021)",
+        "{title}: actor `{}`, a {body}, keeps its gear across unleash (spec-0021)",
         a.id
     ));
     b.push(format!("function {ns}:setup"));
@@ -15005,8 +15037,13 @@ fn emit_actor_equipment_packtest(plan: &Plan, out: &mut BuildOutput) {
     ));
     b.push("assert score #aeqt dw.sys matches 1".to_string());
     b.push(format!("kill @e[tag=dw_actor_{safe}]"));
+    // The body is in the name, so a campaign that dresses two kinds gets two
+    // files rather than one overwriting the other. The namespace colon is
+    // replaced rather than dropped: two ids differing only in namespace are two
+    // kinds, and a resource location's path does not admit a colon.
+    let body_local = body.replace([':', '-', '/', '.'], "_");
     out.insert(
-        format!("packtest-datapack/data/{ns}/test/v06_actor_equipment.mcfunction"),
+        format!("packtest-datapack/data/{ns}/test/v06_actor_equipment_{body_local}.mcfunction"),
         lines(&b).into_bytes(),
     );
 }
