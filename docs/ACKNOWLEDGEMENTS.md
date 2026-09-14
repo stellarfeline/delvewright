@@ -234,5 +234,11 @@ ported, and nothing below is licensed for porting.
 
 Minecraft is a trademark of Mojang Synergies AB. Delvewright is an independent
 project, not affiliated with or endorsed by Mojang or Microsoft. Tooling reads
-the player's own locally-installed client jar for textures/registries; no Mojang
-assets are redistributed.
+the player's own locally-installed client jar for textures/registries; no texture,
+registry or other game file is redistributed.
+
+The renders under [`docs/media/`](media/doune/README.md) are screenshots of
+original content built by the engine, showing Minecraft's textures. Mojang's
+[usage guidelines](https://www.minecraft.net/en-us/usage-guidelines) count
+screenshots among its assets and allow them to be created, used and shared; they
+are shared on those terms.
