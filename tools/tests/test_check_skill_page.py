@@ -549,6 +549,148 @@ def test_an_untouched_plugin_owes_no_bump(mod, tmp_path):
     assert rep.findings == [], rep.findings
 
 
+# ------------------------------------ rule 17, a DW code the pinned engine declares --
+
+
+def test_a_dw_code_the_pinned_engine_does_not_declare_reds(mod, tree, engine):
+    """The shape a page written against a newer engine than it pins has: it names
+    a diagnostic the installed engine cannot print. The code is checked absent
+    from the materialised engine first, so the red is about the pin."""
+    engine_root, _rev = engine
+    source = "\n".join(
+        rs.read_text(encoding="utf-8") for rs in (engine_root / "crates").rglob("*.rs")
+    )
+    code = next(f"DW{n:04d}" for n in range(9999, 0, -1) if f"DW{n:04d}" not in source)
+    path = tree / "references" / "when-red.md"
+    path.write_text(
+        path.read_text(encoding="utf-8") + f"\nA refusal carries `{code}`.\n",
+        encoding="utf-8",
+    )
+    assert has(run(mod, engine), f"`{code}`, and the engine at")
+
+
+def test_a_dw_code_only_a_comment_mentions_is_not_declared(mod):
+    """Declared means a diagnostic constant, read by `check-dw-codes.py`'s own
+    rule over comment-stripped source — never a mention."""
+    dw = mod.dw_codes_module()
+    src = '// pub const OLD: DwCode = DwCode::new("DW0001", ExitTier::Build);\n'
+    assert dw.CONST_RE.findall(dw.strip_comments(src)) == []
+    src = 'pub const NEW: DwCode = DwCode::new("DW0002", ExitTier::Build);\n'
+    assert dw.CONST_RE.findall(dw.strip_comments(src)) == [("NEW", "DW0002")]
+
+
+# ------------------------------- rule 18, the names the page gives, asked of the release --
+#
+# The release binary is not reachable offline, so its answers are handed in by a
+# runner. The SCHEMA below is a stand-in shaped like `delvec schema`'s output, and
+# the subject is the real page: what these tests prove is the reading of the page
+# and the resolution against a schema, not what any release exports — the online
+# run asks the release itself.
+
+WALK_TWO = {
+    "$defs": {
+        "Verdict": {
+            "oneOf": [
+                {"const": "passed", "type": "string"},
+                {"const": "findings", "type": "string"},
+            ]
+        }
+    },
+    "properties": {
+        "verdict": {"$ref": "#/$defs/Verdict"},
+        "areas": {"type": "array"},
+        "findings": {"type": "array"},
+    },
+}
+HELP = (
+    "      --stage <STAGE>      Which document. `walk-record` for the walk record; "
+    "`<prefab-id>.json` is not a stage; or `all` for every stage document\n"
+)
+
+
+def fake_release(walk_record: dict):
+    def delvec(argv):
+        if argv == ["schema", "--stage", "all"]:
+            return 0, json.dumps({"world": {"properties": {"time": {"enum": ["dusk"]}}}})
+        if argv == ["schema", "--help"]:
+            return 0, HELP
+        if argv == ["schema", "--stage", "walk-record"]:
+            return 0, json.dumps(walk_record)
+        return 2, ""
+
+    return delvec
+
+
+def release_rep(mod, walk_record, binary=None):
+    rep = mod.Report()
+    if binary is None:
+        binary = b" ".join(c.encode() for c in mod.page_dw_codes())
+    mod.release_binary_rule(rep, fake_release(walk_record), binary, "v0.0.0")
+    return rep
+
+
+def test_a_variant_the_release_does_not_admit_reds(mod, tree):
+    """The measured case: the page teaches `verdict: "unwalked"` and a walk record
+    of two verdicts refuses it as an unknown variant."""
+    rep = release_rep(mod, WALK_TWO)
+    assert has(rep, "gives `verdict` the value 'unwalked'"), rep.findings
+
+
+def test_the_same_page_holds_against_a_release_that_admits_it(mod, tree):
+    walk = json.loads(json.dumps(WALK_TWO))
+    walk["$defs"]["Verdict"]["oneOf"].append({"const": "unwalked", "type": "string"})
+    rep = release_rep(mod, walk)
+    assert not has(rep, "gives `verdict`"), rep.findings
+    bound, of = {what: (b, n) for what, b, n in rep.bindings}[
+        "closed-set value(s) the release's schemas admit"
+    ]
+    assert of >= 1 and bound == of, rep.bindings
+
+
+def test_a_field_the_release_does_not_carry_reds(mod, tree):
+    """A document fragment whose keys are mostly the release's, naming one that
+    is not. The stage is found through the binary's help, not a list here."""
+    path = tree / "references" / "walk.md"
+    path.write_text(
+        path.read_text(encoding="utf-8")
+        + '\n`{"verdict": "passed", "areas": [], "walked_by": "a"}`\n',
+        encoding="utf-8",
+    )
+    assert has(release_rep(mod, WALK_TWO), "names the field `walked_by`")
+
+
+def test_a_fragment_of_mostly_unknown_keys_is_not_read_as_a_document(mod, tree):
+    """A text component, a skin palette or a renderer option is not a document,
+    and the object decides that: most of its keys are no field at all."""
+    path = tree / "references" / "walk.md"
+    path.write_text(
+        path.read_text(encoding="utf-8")
+        + '\n`{"translate": "k", "fallback": "x", "verdict": "passed"}`\n',
+        encoding="utf-8",
+    )
+    rep = release_rep(mod, WALK_TWO)
+    assert not has(rep, "names the field `translate`"), rep.findings
+
+
+def test_a_value_given_to_a_field_some_document_leaves_open_is_not_judged(mod, tree):
+    """A name one document closes and another leaves open resolves to a
+    candidate, not a match — so the value is not refused on the closed one."""
+    walk = json.loads(json.dumps(WALK_TWO))
+    walk["properties"]["nested"] = {"properties": {"verdict": {"type": "string"}}}
+    rep = release_rep(mod, walk)
+    assert not has(rep, "gives `verdict`"), rep.findings
+
+
+def test_a_dw_code_the_release_binary_does_not_spell_reds(mod, tree):
+    """The second method for rule 17, sharing nothing with it: the bytes of the
+    checksum-verified binary rather than the source at the tag."""
+    codes = sorted(mod.page_dw_codes())
+    assert codes, "the page names no DW code, so this rule binds to nothing"
+    binary = b" ".join(c.encode() for c in codes[1:])
+    rep = release_rep(mod, WALK_TWO, binary)
+    assert has(rep, f"name `{codes[0]}`, and the v0.0.0 binary"), rep.findings
+
+
 # --------------------------------------------------------------- the gate refuses --
 
 
