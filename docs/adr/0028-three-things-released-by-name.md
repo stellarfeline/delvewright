@@ -228,11 +228,10 @@ waits until every context in `.github/required-status-checks.txt` has
 SUCCEEDED on that commit (`tools/wait-required-checks.py` — a skipped check is
 refused, which is why `ci.yml`'s two pull-request-only jobs also run on
 `workflow_dispatch`); then archives, checksums and writes the notes. Its
-`publish` job declares the `plugin-release` environment (no secret, the owner as
-required reviewer; `tools/assert-run-approved.sh plugin-release` first),
-fast-forwards `main` to the release commit — refused, with "re-dispatch", when
-`main` moved — then tags it, creates the Release and deletes the branch. Moving
-`main` is inside the gated job because it is the delivery. No credential is
+`publish` job fast-forwards `main` to the release commit — refused, with
+"re-dispatch", when `main` moved — then tags it, creates the Release and deletes
+the branch. It holds for no approval: the dispatch is the approval, and the
+plugin release publishes no registry version. No credential is
 added and branch protection is unchanged: the commit reaches the protected
 `main` as a direct push of a commit whose required checks passed. That GitHub
 accepts check runs from a dispatched run for that push is proven by the first
@@ -386,12 +385,10 @@ back from the API.
   `docs/reference/skill-workflow.md` says a newer page arrives when the plugin
   release moves the version on `main` (PR A); spec-0063 §8 and its criterion 4
   (PR B); `ACKNOWLEDGEMENTS.md` gains nothing (no library is adopted).
-- **What the owner is committed to** the first time each can bind: a second
-  GitHub environment (`plugin-release`) whose reviewer rule must be saved and
-  whose binding is proved by `assert-run-approved.sh` the way the first one's
-  is; a tag ruleset (§9) under which nobody, the owner included, can move or
-  delete a release tag; one approval per release of each line, the plugin's
-  approval also being the moment its update reaches every creator; and the
+- **What the owner is committed to** the first time each can bind: a tag ruleset (§9) under which nobody, the owner included, can move or
+  delete a release tag; one approval per release of `delvec` and of the format crate, and
+  for the plugin none beyond the dispatch, which is also the moment its update
+  reaches every creator; and the
   knowledge that the versions delivered before a line's first Release have none.
 - ADR-0026's revisit trigger "a third platform joins the release" does not
   fire: no line gains a platform; one line (the format crate) gains a second

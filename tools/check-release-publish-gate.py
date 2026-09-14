@@ -25,6 +25,14 @@ executable form: a publishing act may appear only inside a job that declares
 `gh release create` without `--draft`, is an ordinary red on the pull request
 that writes it rather than a discovery made during a release.
 
+ONE CLASS NEEDS NO ENVIRONMENT: a workflow whose only trigger is
+`workflow_dispatch` and in which no job holds a registry act. A human starting
+it by hand is the approval, and what it publishes — a tag and a GitHub Release —
+is not the registry's one-way door. Its release verbs are counted apart and owe
+no draft readback. The class is decided by the whole file: one registry act
+anywhere in it puts every act in it back behind the gate, so the two shelves of
+`engine-release.yml` still publish on one approval or not at all.
+
 WHAT COUNTS AS A PUBLISHING ACT, and why each is one
 
   registry-token      `CARGO_REGISTRY_TOKEN`, in an env key or a `secrets.`
@@ -136,6 +144,21 @@ PUBLISH_SCRIPT = re.compile(r"crates-io-publish\.sh\b[^\n]*?(?:^|\s)--publish\b"
 # not looked at what it is writing to.
 DRAFT_READBACK = re.compile(r"\bisDraft\b")
 
+REGISTRY_KINDS = frozenset({"registry-token", "cargo-publish"})
+
+
+def dispatch_only(doc: Any) -> bool:
+    """The workflow starts only when a human dispatches it: `workflow_dispatch`
+    is its one trigger, with no push, tag, schedule or call beside it."""
+    on = (doc or {}).get("on")
+    if isinstance(on, str):
+        return on == "workflow_dispatch"
+    if isinstance(on, list):
+        return on == ["workflow_dispatch"]
+    if isinstance(on, dict):
+        return list(on) == ["workflow_dispatch"]
+    return False
+
 
 def acts_on_line(line: str, *, release_verbs_only: bool = False) -> list[tuple[str, str]]:
     """Every publishing act this one logical line performs, as (kind, why)."""
@@ -212,7 +235,7 @@ def scalars(node: Any) -> Iterator[str]:
 # --------------------------------------------------------------------------
 def check_workflows(directory: pathlib.Path) -> tuple[list[str], dict[str, int]]:
     findings: list[str] = []
-    counts = {"files": 0, "jobs": 0, "gated": 0, "acts": 0, "acts_gated": 0, "readbacks": 0}
+    counts = {"files": 0, "jobs": 0, "gated": 0, "acts": 0, "acts_gated": 0, "acts_dispatched": 0, "readbacks": 0}
 
     files = sorted(p for p in directory.iterdir() if p.is_file() and p.suffix in (".yml", ".yaml"))
     counts["files"] = len(files)
@@ -239,6 +262,18 @@ def check_workflows(directory: pathlib.Path) -> tuple[list[str], dict[str, int]]
             )
             continue
 
+        # A workflow only a human dispatch starts, and that never touches the
+        # registry, is approved by that dispatch: its release verbs need no
+        # environment. A registry act anywhere in the file keeps every act in it
+        # behind the gate, so one approval still publishes both shelves or neither.
+        dispatched = dispatch_only(doc) and not any(
+            kind in REGISTRY_KINDS
+            for job in jobs.values()
+            if isinstance(job, dict)
+            for line in logical_lines("\n".join(scalars(job)))
+            for kind, _ in acts_on_line(line)
+        )
+
         for job_id, job in jobs.items():
             if not isinstance(job, dict):
                 continue
@@ -258,6 +293,9 @@ def check_workflows(directory: pathlib.Path) -> tuple[list[str], dict[str, int]]
             counts["acts"] += len(job_acts)
             if gated:
                 counts["acts_gated"] += len(job_acts)
+                continue
+            if dispatched:
+                counts["acts_dispatched"] += len(job_acts)
                 continue
 
             for kind, why in job_acts:
@@ -377,7 +415,8 @@ def main(argv: list[str] | None = None) -> int:
     binding = (
         f"{counts['files']} workflow(s), {counts['jobs']} job(s), {counts['gated']} "
         f"environment-gated; {counts['acts']} publishing act(s), {counts['acts_gated']} of them "
-        f"inside a gated job; {counts['readbacks']} ungated release-writer(s) proving the release "
+        f"inside a gated job, {counts['acts_dispatched']} release verb(s) in a dispatch-only "
+        f"workflow with no registry act; {counts['readbacks']} ungated release-writer(s) proving the release "
         f"is a draft; {script_counts['files']} script(s)/composite action(s) scanned, "
         f"{script_counts['acts']} release verb(s) found there"
     )
@@ -422,7 +461,8 @@ def main(argv: list[str] | None = None) -> int:
 
     print(
         f"check-release-publish-gate: OK — {binding}; every publishing act is inside a job that "
-        f"declares an environment, so one approval publishes both shelves or neither"
+        f"declares an environment, or in a workflow only a human dispatch starts that never "
+        f"touches the registry"
     )
     return 0
 

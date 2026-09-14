@@ -46,7 +46,7 @@ run and the guard would report a binding count of 1 about something else
 entirely. Nothing before it can run, so nothing before it can redirect it.
 
 VACUITY: a run that scans workflows and finds no environment-gated job exits
-non-zero. There are three of them in this repository, so a zero is the discovery
+non-zero. There are two of them in this repository, so a zero is the discovery
 rule having broken — a glob that matched nothing, a parser that lost the `jobs`
 key — and reporting that as a clean tree is the exact shape this project refuses
 (CLAUDE.md, *Vacuity*). The population is enumerated from the directory, both

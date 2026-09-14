@@ -21,7 +21,7 @@ A newer page reaches a creator when `plugin.json` `version` moves on `main` — 
 marketplace serves the default branch, and an unchanged version is not an update.
 Only `.github/workflows/plugin-release.yml`, dispatched by a human, moves it: it
 commits the bump, waits for every required check on that commit, fast-forwards
-`main` under the `plugin-release` approval, and tags and publishes
+`main`, and tags and publishes
 `delvewright--v<version>`. A pull request that edits the page leaves the version
 alone (`tools/check-skill-page.py` refuses one that moves it), and the edit reaches
 creators at the next release.

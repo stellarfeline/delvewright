@@ -13,14 +13,13 @@ name: plugin release (delvewright)
 #                           context in `.github/required-status-checks.txt`
 #                           SUCCEEDED on that commit (`tools/wait-required-checks.py`
 #                           — a skip is a refusal); archive, checksum, notes.
-#   publish  (`plugin-release` approval)  fast-forward `main` to that commit —
-#                           refused if `main` moved, re-dispatch — then tag it,
-#                           create the Release (`--latest=false`, §8) and delete
-#                           the branch. Moving `main` IS the delivery, so it waits
-#                           for the approval like the tag and the Release do.
+#   publish  (no approval)  fast-forward `main` to that commit — refused if
+#                           `main` moved, re-dispatch — then tag it, create the
+#                           Release (`--latest=false`, §8) and delete the branch.
 #
-# `publish` declares `plugin-release` (no secret, the owner as required reviewer);
-# its first `run:` step is `tools/assert-run-approved.sh plugin-release`.
+# The dispatch is the approval: nothing starts this but a human, and it publishes
+# a tag and a GitHub Release, never to a registry. `tools/check-release-publish-gate.py`
+# keys that on the file: dispatch-only, and no registry act in any job.
 
 on:
   workflow_dispatch:
@@ -137,22 +136,16 @@ jobs:
           retention-days: 7
 
   publish:
-    name: deliver and publish the plugin release (owner approval)
+    name: deliver and publish the plugin release
     needs: prepare
     runs-on: ubuntu-latest
-    environment: plugin-release
     permissions:
       contents: write
-      actions: read
     steps:
       - uses: actions/checkout@v4
         with:
           ref: main
           fetch-depth: 0
-      - name: the gate actually bound (a run nobody approved must not publish)
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: bash tools/assert-run-approved.sh plugin-release
       - uses: actions/download-artifact@v4
         with:
           name: plugin-release

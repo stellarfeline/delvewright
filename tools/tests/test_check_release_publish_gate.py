@@ -129,6 +129,50 @@ def test_the_clean_fixtures_ungated_writer_is_counted_as_proving_it(gate, tree):
 
 
 # --------------------------------------------------------------------------
+# the dispatch is the approval — only when nothing in the file touches the registry
+# --------------------------------------------------------------------------
+def _planted(tmp_path, old: str, new: str) -> pathlib.Path:
+    directory = tmp_path / "workflows"
+    directory.mkdir(exist_ok=True)
+    shutil.copy(FIXTURES / "clean.yml", directory / "clean.yml")
+    text = (FIXTURES / "dispatched-release.yml").read_text(encoding="utf-8")
+    assert text.count(old) == 1
+    (directory / "dispatched-release.yml").write_text(text.replace(old, new), encoding="utf-8")
+    return directory
+
+
+def test_a_dispatch_only_release_with_no_registry_act_needs_no_environment(gate, tree):
+    code, output = run(gate, tree("clean.yml", "dispatched-release.yml"))
+    assert code == 0, output
+    assert "1 release verb(s) in a dispatch-only workflow with no registry act" in output
+
+
+def test_a_registry_act_puts_the_dispatched_release_back_behind_the_gate(gate, tmp_path):
+    directory = _planted(
+        tmp_path,
+        '--title "fixture $TAG"\n',
+        '--title "fixture $TAG"\n          cargo publish -p delvec\n',
+    )
+    code, output = run(gate, directory)
+    assert code == 1, output
+    assert "release-create" in output
+    assert "cargo-publish" in output
+    assert "0 release verb(s) in a dispatch-only workflow" in output
+
+
+def test_a_second_trigger_puts_the_dispatched_release_back_behind_the_gate(gate, tmp_path):
+    directory = _planted(
+        tmp_path,
+        "on:\n  workflow_dispatch:\n",
+        'on:\n  push:\n    tags: ["x"]\n  workflow_dispatch:\n',
+    )
+    code, output = run(gate, directory)
+    assert code == 1, output
+    assert "release-create" in output
+    assert "declares no `environment:`" in output
+
+
+# --------------------------------------------------------------------------
 # vacuity: a scan that binds to nothing is not a pass
 # --------------------------------------------------------------------------
 def test_a_gate_with_no_publishing_act_is_refused(gate, tree):
@@ -235,7 +279,7 @@ def test_the_live_population_is_not_empty(gate):
     assert counts["jobs"] > 0
     assert counts["gated"] > 0
     assert counts["acts"] > 0
-    assert counts["acts"] == counts["acts_gated"], findings
+    assert counts["acts"] == counts["acts_gated"] + counts["acts_dispatched"], findings
 
 
 def test_population_b_excludes_the_workflows_and_is_not_empty(gate):
