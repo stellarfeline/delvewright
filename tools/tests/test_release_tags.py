@@ -119,24 +119,22 @@ def test_the_cli_refuses_a_bare_v_tag_with_exit_1():
 # ------------------------------------------------------------- the triggers --
 @pytest.mark.parametrize("line,path", sorted(RELEASE_WORKFLOWS.items()))
 def test_a_release_starts_only_by_dispatch(line, path):
-    """No push, tag or merge starts a release: `on` is `workflow_dispatch` alone,
-    and its one input is the `main` commit to release from."""
+    """No push, tag or merge starts a release: `on` is `workflow_dispatch` alone.
+    The engine and the format crate take the `main` commit whose version they
+    release; the plugin takes the version it moves `main` to (§5)."""
     doc = load(path.read_text(encoding="utf-8"))
     on = doc["on"]
     assert isinstance(on, dict) and sorted(on) == ["workflow_dispatch"], f"{path.name} starts on {sorted(on)}"
     inputs = on["workflow_dispatch"]["inputs"]
-    assert "commit" in inputs and inputs["commit"].get("default") == "main", inputs
+    if line == "delvewright":
+        assert sorted(inputs) == ["version"], inputs
+    else:
+        assert sorted(inputs) == ["commit"] and inputs["commit"].get("default") == "main", inputs
 
 
 @pytest.mark.parametrize("line,path", sorted(RELEASE_WORKFLOWS.items()))
 def test_each_release_derives_its_tag_through_the_grammar(line, path):
-    runs = _runs(path)
-    if line == "delvewright":
-        # The plugin's identity is the §3 checker, which derives the tag through
-        # the same grammar.
-        assert "tools/check-plugin-release-identity.py" in runs
-    else:
-        assert f"tools/lib/release_tags.py tag {line} " in runs, f"{path.name} does not derive its tag"
+    assert f"tools/lib/release_tags.py tag {line} " in _runs(path), f"{path.name} does not derive its tag"
 
 
 def test_no_workflow_starts_on_a_tag_push():

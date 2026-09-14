@@ -51,8 +51,9 @@ WHAT IS CHECKED, AND THE PERTURBATION THAT REDS EACH
    10  every heading of the page at the revision the split moved from is a
        heading of exactly one file.            RED: a section dropped or doubled
    11  `plugin.json` parses; `name` is kebab-case; `version` is semver; a diff
-       against the base that touches the plugin root moves `version`.
-                                               RED: a page edit with no bump
+       against the base does not move `version`, unless it is the plugin
+       release workflow's own commit (ADR-0028 §5).
+                                               RED: a pull request that bumps it
    12  `marketplace.json` carries `name`, `owner.name`, and one plugin whose
        `source` resolves to a directory carrying a `plugin.json` of that name.
                                                RED: a moved directory
@@ -1427,63 +1428,82 @@ def manifest_rules(rep: Report, base: str | None) -> None:
             )
     rep.bind("marketplace plugin entr(y/ies)", len(entries) if isinstance(entries, list) else 0, 1)
 
-    version_bump_rule(rep, base, version)
+    version_move_rule(rep, base, version)
 
 
-def version_bump_rule(
+def version_move_rule(
     rep: Report,
     base: str | None,
     version: object,
     repo: pathlib.Path | None = None,
     plugin_root: pathlib.Path | None = None,
+    event: str | None = None,
+    ref: str | None = None,
 ) -> None:
-    """The version moves with the plugin.
+    """Only the plugin release moves the plugin's version (ADR-0028 §5).
 
-    A FUNCTION rather than the tail of `manifest_rules`, because this is the one
-    rule on the page whose subject is a git history: it cannot be exercised by
-    perturbing a copy of the plugin the way every other rule is, so the only way
-    a test can reach it is to hand it a repository of its own. `repo` and
-    `plugin_root` default to this tree's, so the caller in `manifest_rules` says
-    nothing it did not say before.
+    The marketplace delivers whatever `plugin.json` `version` `main` carries, and
+    a version that moves is an update every creator receives — so the release is
+    the one act that moves it, and an ordinary change never does. A page edit
+    under an unchanged version is fine: it reaches creators at the next release.
+
+    THE RELEASE COMMIT is recognised by what `plugin-release.yml` alone controls:
+    this run is a `workflow_dispatch` on `refs/heads/release/plugin-<version>`
+    (`GITHUB_EVENT_NAME`, `GITHUB_REF`, which a pull request's run cannot set),
+    and against the base the plugin root differs only in `plugin.json`, whose
+    object differs only in `version`.
+
+    A FUNCTION rather than the tail of `manifest_rules`, because its subject is a
+    git history: a test reaches it by handing it a repository of its own.
     """
     if base is None:
-        print("  --   version-bump rule: not run (no --base given)")
+        print("  --   version rule: not run (no --base given)")
         return
     repo = REPO if repo is None else repo
     plugin_root = PLUGIN_ROOT if plugin_root is None else plugin_root
+    event = os.environ.get("GITHUB_EVENT_NAME", "") if event is None else event
+    ref = os.environ.get("GITHUB_REF", "") if ref is None else ref
     plugin_rel = str(plugin_root.relative_to(repo))
+    manifest_rel = f"{plugin_rel}/.claude-plugin/plugin.json"
+    show = subprocess.run(
+        ["git", "-C", str(repo), "show", f"{base}:{manifest_rel}"], capture_output=True, text=True
+    )
+    if show.returncode != 0:
+        print(f"  ok   {base} carries no plugin manifest — this is the first publish")
+        return
+    base_doc = json.loads(show.stdout)
+    was = base_doc.get("version")
+    if was == version:
+        print(f"  ok   plugin.json version is {version!r} on both sides — an ordinary change moves no version")
+        return
     diff = subprocess.run(
         ["git", "-C", str(repo), "diff", "--name-only", base, "--", plugin_rel],
         capture_output=True,
         text=True,
     )
     if diff.returncode != 0:
-        rep.find(
-            f"could not diff the plugin root against {base}: {diff.stderr.strip()}. "
-            f"The version-bump rule is what makes 'a creator gets an update' and "
-            f"'the page changed' one event, so it is not skipped quietly."
-        )
+        rep.find(f"could not diff the plugin root against {base}: {diff.stderr.strip()}")
         return
     touched = [line for line in diff.stdout.split("\n") if line.strip()]
-    print(f"-- plugin root: {len(touched)} file(s) differ from {base}")
-    if not touched:
-        return
-    show = subprocess.run(
-        ["git", "-C", str(repo), "show", f"{base}:{plugin_rel}/.claude-plugin/plugin.json"],
-        capture_output=True,
-        text=True,
-    )
-    if show.returncode != 0:
-        print(f"  ok   {base} carries no plugin manifest — this is the first publish")
-        return
-    was = json.loads(show.stdout).get("version")
-    if was == version:
+    tree_doc = json.loads((plugin_root / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8"))
+    why = []
+    if event != "workflow_dispatch":
+        why.append(f"the run is a {event or 'local'!r} event, not the release's workflow_dispatch")
+    if ref != f"refs/heads/release/plugin-{version}":
+        why.append(f"the ref is {ref or '(none)'!r}, not refs/heads/release/plugin-{version}")
+    if touched != [manifest_rel]:
+        why.append(f"{len(touched)} file(s) under the plugin root differ from {base}, not plugin.json alone")
+    if {k: v for k, v in tree_doc.items() if k != "version"} != {k: v for k, v in base_doc.items() if k != "version"}:
+        why.append("plugin.json differs in more than `version`")
+    if why:
         rep.find(
-            f"{len(touched)} file(s) under the plugin root differ from {base} and "
-            f"`plugin.json` `version` is {version!r} on both sides. A declared "
-            f"version pins: creators receive an update only when it moves, so a "
-            f"page edit with no bump is a page nobody will ever be served."
+            f"`plugin.json` `version` moves from {was!r} to {version!r} against {base}. Only the plugin "
+            f"release workflow (`.github/workflows/plugin-release.yml`) moves it, because the marketplace "
+            f"delivers the version `main` carries; leave it at {was!r} and dispatch a release instead. "
+            f"This is not that workflow's commit: {'; '.join(why)}."
         )
+        return
+    print(f"  ok   {version!r} is moved by the plugin release's own commit (release/plugin-{version}, plugin.json version only)")
 
 
 # ------------------------------------------------------------------ online --
@@ -1653,7 +1673,7 @@ def main(argv: list[str] | None = None) -> int:
         "--base",
         default=None,
         help=(
-            "the revision the plugin root is diffed against for the version-bump "
+            "the revision the plugin root is diffed against for the version "
             "rule (e.g. origin/main). Omitted, that one rule does not run and says so."
         ),
     )

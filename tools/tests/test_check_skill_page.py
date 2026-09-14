@@ -479,7 +479,7 @@ def test_a_command_named_only_in_inline_PROSE_inside_init_does_not_prove_it(
     assert not any("--profile play" in p for p in proofs), sorted(proofs)
 
 
-# ------------------------------------------- the version moves with the plugin --
+# ------------------------------------------- only the release moves the version --
 
 
 def _plugin_repo(tmp_path: pathlib.Path, mod, version: str) -> pathlib.Path:
@@ -507,46 +507,69 @@ def _plugin_repo(tmp_path: pathlib.Path, mod, version: str) -> pathlib.Path:
     return repo
 
 
-def test_a_page_edit_with_no_version_bump_reds(mod, tmp_path):
-    """**The rule all three sides of a merge lean on.** Every branch that edits
-    the page sets the same new number, and the identical edit merges clean — so
-    the only thing standing between "three branches bumped it" and "nobody
-    bumped it" is this rule, and until now nothing exercised it."""
-    repo = _plugin_repo(tmp_path, mod, "1.2.0")
-    plugin = repo / ".claude" / "skills" / "delvewright"
-    (plugin / "page.md").write_text("the page, edited\n", encoding="utf-8")
-
-    rep = mod.Report()
-    mod.version_bump_rule(rep, "HEAD", "1.2.0", repo=repo, plugin_root=plugin)
-    assert any("differ from HEAD" in f and "'1.2.0' on both sides" in f for f in rep.findings), (
-        rep.findings
+def _bump(plugin: pathlib.Path, version: str, **extra) -> None:
+    (plugin / ".claude-plugin" / "plugin.json").write_text(
+        json.dumps({"name": "delvewright", "version": version, **extra}) + "\n", encoding="utf-8"
     )
 
 
-def test_the_same_edit_under_a_moved_version_holds(mod, tmp_path):
-    """The perturbation only the bump can survive — without it the test above
-    would pass on a rule that reds at every edit."""
+RELEASE = {"event": "workflow_dispatch", "ref": "refs/heads/release/plugin-1.2.0"}
+
+
+def test_a_pull_request_that_bumps_the_version_reds(mod, tmp_path):
+    """The perturbation: an ordinary change moving `plugin.json` `version`."""
     repo = _plugin_repo(tmp_path, mod, "1.1.0")
     plugin = repo / ".claude" / "skills" / "delvewright"
-    (plugin / "page.md").write_text("the page, edited\n", encoding="utf-8")
-    (plugin / ".claude-plugin" / "plugin.json").write_text(
-        json.dumps({"name": "delvewright", "version": "1.2.0"}) + "\n", encoding="utf-8"
-    )
-
+    _bump(plugin, "1.2.0")
     rep = mod.Report()
-    mod.version_bump_rule(rep, "HEAD", "1.2.0", repo=repo, plugin_root=plugin)
-    assert rep.findings == [], rep.findings
+    mod.version_move_rule(rep, "HEAD", "1.2.0", repo=repo, plugin_root=plugin, event="pull_request", ref="refs/pull/1/merge")
+    assert any("moves from '1.1.0' to '1.2.0'" in f and "pull_request" in f for f in rep.findings), rep.findings
 
 
-def test_an_untouched_plugin_owes_no_bump(mod, tmp_path):
-    """And the rule binds to the EDIT, not to the number: a tree that changed
-    nothing under the plugin root is not asked to publish an update."""
+def test_a_page_edit_with_no_bump_holds(mod, tmp_path):
     repo = _plugin_repo(tmp_path, mod, "1.2.0")
     plugin = repo / ".claude" / "skills" / "delvewright"
-
+    (plugin / "page.md").write_text("the page, edited\n", encoding="utf-8")
     rep = mod.Report()
-    mod.version_bump_rule(rep, "HEAD", "1.2.0", repo=repo, plugin_root=plugin)
+    mod.version_move_rule(rep, "HEAD", "1.2.0", repo=repo, plugin_root=plugin, event="pull_request", ref="refs/pull/1/merge")
     assert rep.findings == [], rep.findings
+
+
+def test_the_release_commit_holds(mod, tmp_path):
+    repo = _plugin_repo(tmp_path, mod, "1.1.0")
+    plugin = repo / ".claude" / "skills" / "delvewright"
+    _bump(plugin, "1.2.0")
+    rep = mod.Report()
+    mod.version_move_rule(rep, "HEAD", "1.2.0", repo=repo, plugin_root=plugin, **RELEASE)
+    assert rep.findings == [], rep.findings
+
+
+def test_a_release_branch_that_also_edits_the_page_reds(mod, tmp_path):
+    repo = _plugin_repo(tmp_path, mod, "1.1.0")
+    plugin = repo / ".claude" / "skills" / "delvewright"
+    _bump(plugin, "1.2.0")
+    (plugin / "page.md").write_text("the page, edited\n", encoding="utf-8")
+    rep = mod.Report()
+    mod.version_move_rule(rep, "HEAD", "1.2.0", repo=repo, plugin_root=plugin, **RELEASE)
+    assert any("2 file(s) under the plugin root" in f for f in rep.findings), rep.findings
+
+
+def test_a_release_commit_that_changes_another_manifest_field_reds(mod, tmp_path):
+    repo = _plugin_repo(tmp_path, mod, "1.1.0")
+    plugin = repo / ".claude" / "skills" / "delvewright"
+    _bump(plugin, "1.2.0", description="changed")
+    rep = mod.Report()
+    mod.version_move_rule(rep, "HEAD", "1.2.0", repo=repo, plugin_root=plugin, **RELEASE)
+    assert any("more than `version`" in f for f in rep.findings), rep.findings
+
+
+def test_a_dispatch_on_another_branch_reds(mod, tmp_path):
+    repo = _plugin_repo(tmp_path, mod, "1.1.0")
+    plugin = repo / ".claude" / "skills" / "delvewright"
+    _bump(plugin, "1.2.0")
+    rep = mod.Report()
+    mod.version_move_rule(rep, "HEAD", "1.2.0", repo=repo, plugin_root=plugin, event="workflow_dispatch", ref="refs/heads/main")
+    assert any("not refs/heads/release/plugin-1.2.0" in f for f in rep.findings), rep.findings
 
 
 # --------------------------------------------------------------- the gate refuses --

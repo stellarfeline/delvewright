@@ -10,10 +10,17 @@ name: CI (tiers 1 + 2)
 # on one tree, and the pair race the `concurrency` cancel. This used to cite
 # metered Actions minutes; the repo is PUBLIC, where standard runners are free,
 # so that premise was false and the reason above is the one that holds.
+#
+# `workflow_dispatch` is the plugin release's (ADR-0028 §5): `plugin-release.yml`
+# commits the version bump on `release/plugin-<version>` and dispatches this
+# workflow there, because a push made with a job token starts no run, and `main`
+# accepts that commit only once it carries every required check. The PR-only
+# jobs run on that dispatch too, so no required check passes by being skipped.
 on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -511,8 +518,9 @@ jobs:
     name: mecha cross-check (PR only)
     # ADR-0011: mecha independently re-validates every emitted .mcfunction
     # against the 1.21.11 command tree. Disagreement with our vendored-tree
-    # validator fails CI and is a bug in one of them. PR-only (metered minutes).
-    if: github.event_name == 'pull_request'
+    # validator fails CI and is a bug in one of them. PR-only, plus the plugin
+    # release's dispatch (see `on:`), where a skipped required check judges nothing.
+    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -1272,10 +1280,10 @@ jobs:
   # ------------------------------------------------------------------ tier 2 --
   # spec-0004 tier 2 (every PR): build the delve, prove it loads with zero errors
   # on the pinned vanilla server, and run the generated PackTest suite headless.
-  # PR-only (metered minutes); target < 10 min.
+  # PR-only, plus the plugin release's dispatch (see `on:`); target < 10 min.
   tier2-validation:
     name: tier 2 (datapack load + PackTest)
-    if: github.event_name == 'pull_request'
+    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     env:
       # Accepting Mojang's EULA (https://aka.ms/MinecraftEULA) is the standing

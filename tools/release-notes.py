@@ -15,8 +15,7 @@ statement of a number `versions.toml` already holds.
   delvewright      the engine release the page pins and its `ref`, the
                    `requires_delvec` window, the `dsl_version` that pinned engine
                    speaks (read from the engine tree AT the pin), and the plugin
-                   root's tree hash — the value `tools/check-plugin-release-identity.py`
-                   proved every `main` commit carrying this version shares
+                   root's tree hash at the release commit
 
 The generated changelog GitHub appends below this opening is asked for by the
 workflow, between consecutive tags of the same line (`tools/lib/release_tags.py
@@ -128,8 +127,8 @@ def notes(line: str, repo: pathlib.Path, rev: str) -> str:
         return (
             f"**`delvewright` {manifest['version']}** — the Delvewright Claude Code plugin (`/delvewright:new-delve`), "
             f"one of the three things this repository releases (the others are the `delvec` binary and the "
-            f"`delvewright-dsl` format crate). A creator receives it from the marketplace when this version "
-            f"reaches `main`; this Release records that delivery.\n\n"
+            f"`delvewright-dsl` format crate). This release moved `main` to this version, which is when the "
+            f"marketplace delivers it to creators.\n\n"
             f"- the page is proven on engine release `{pin['release']}` (`{pin['ref']}`)\n"
             f"- it accepts `delvec` `{window}`\n"
             f"- that engine speaks `dsl_version` **{pinned['dsl_crate_version']}**\n"
