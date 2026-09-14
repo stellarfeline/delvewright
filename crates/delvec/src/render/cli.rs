@@ -193,6 +193,7 @@ struct PieceResult {
     manifest: PathBuf,
     binding: shots::AnchorBinding,
     views: shots::ViewBinding,
+    sight: shots::SightBinding,
 }
 
 impl PieceResult {
@@ -214,6 +215,7 @@ impl PieceResult {
                         contains no interior view",
             );
         }
+        s.push_str(&format!("; {}", sight_line(&self.sight)));
         if self.views.declared > 0 {
             s.push_str(&format!(
                 "; {} declared view(s), {} planned",
@@ -222,6 +224,31 @@ impl PieceResult {
         }
         s
     }
+}
+
+/// The blindness binding (`DW0893`), always stated with its zeroes.
+fn sight_line(s: &shots::SightBinding) -> String {
+    let mut line = format!(
+        "sight: {} eye-level frame(s) measured ({} eye, {} room, {} standing view), blind — more \
+         than half the frame a surface within {} blocks — {} eye, {} room, {} standing view; room \
+         cameras stood 0..{} block(s) back along their facing",
+        s.eye_frames + s.room_frames + s.view_frames,
+        s.eye_frames,
+        s.room_frames,
+        s.view_frames,
+        crate::compiler::view::sight::ARM_REACH_BLOCKS,
+        s.blind_eye.len(),
+        s.blind_room.len(),
+        s.blind_view.len(),
+        s.max_back,
+    );
+    if !s.no_stand.is_empty() {
+        line.push_str(&format!(
+            "; NO room camera for {} (nowhere to stand on the anchor)",
+            s.no_stand.join(", ")
+        ));
+    }
+    line
 }
 
 /// Render every planned shot for one prefab into `out`, and write the shot
@@ -328,6 +355,7 @@ fn render_piece(
         manifest,
         binding: plan.binding,
         views: plan.views,
+        sight: plan.sight,
     })
 }
 
@@ -375,9 +403,31 @@ fn shot_manifest(
                     "supported": e.supported,
                 });
             }
+            if let Some(r) = &s.room {
+                v["room"] = serde_json::json!({
+                    "anchor": r.anchor,
+                    "anchor_cell": r.anchor_cell,
+                    "facing": r.facing.as_str(),
+                    "start_cell": r.stand.start,
+                    "standing_cell": r.stand.cell,
+                    "camera": crate::compiler::view::sight::eye_of(r.stand.cell)
+                        .map(|c| (c * 1000.0).round() / 1000.0),
+                    "blocks_back": r.stand.back,
+                    "stopped": r.stand.stop.tag(),
+                });
+            }
+            if let Some(g) = &s.sight {
+                v["sight"] = serde_json::json!({
+                    "rays": g.rays,
+                    "near_surface_rays": g.near,
+                    "near_surface_percent": g.percent(),
+                    "blind": g.is_blind(),
+                });
+            }
             if let Some(w) = &s.view {
                 v["view"] = serde_json::json!({
                     "spec": w.spec,
+                    "stand": w.stand.as_ref().map(|t| t.anchor.clone()),
                     "face": w.face.map(|f| f.as_str()),
                     "subject": w.subject.tag(),
                     "aim": match s.framing {
@@ -405,6 +455,18 @@ fn shot_manifest(
         "views": {
             "declared": plan.views.declared,
             "planned": plan.views.planned,
+        },
+        "sight": {
+            "reach_blocks": crate::compiler::view::sight::ARM_REACH_BLOCKS,
+            "samples_per_side": crate::compiler::view::sight::SIGHT_SAMPLES,
+            "eye_frames": plan.sight.eye_frames,
+            "room_frames": plan.sight.room_frames,
+            "blind_eye": plan.sight.blind_eye,
+            "blind_room": plan.sight.blind_room,
+            "view_frames": plan.sight.view_frames,
+            "blind_view": plan.sight.blind_view,
+            "no_room_camera": plan.sight.no_stand,
+            "max_blocks_back": plan.sight.max_back,
         },
         "diagnostics": plan.diagnostics,
         "shots": entries,

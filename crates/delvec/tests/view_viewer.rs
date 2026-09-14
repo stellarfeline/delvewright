@@ -912,6 +912,66 @@ fn the_showing_gate_states_both_of_its_bindings() {
     }
 }
 
+/// **A point of view pressed against a wall is said, and the room beside it is
+/// offered** (`DW0893`, `compiler::view::sight`).
+///
+/// One real piece, one anchor, two facings and nothing else moved: facing the
+/// piece's open side the keeper's point of view is not blind; turned to face the
+/// side wall two and a half blocks off, it is — a report, exit 0 — and the page
+/// carries the room camera for the same anchor either way.
+#[test]
+fn a_blind_point_of_view_is_reported_and_the_page_offers_the_room() {
+    let Some(src) = prefab("keep-gate-room.nbt") else {
+        eprintln!("skip: no content symlink");
+        return;
+    };
+    let dir = tmp("blind-pov");
+    let pack = pack_for(&dir, &src, &[]);
+    let doc: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(src.with_extension("json")).unwrap()).unwrap();
+    assert_eq!(
+        doc["anchors"]["anchor/keeper-stand"]["facing"], "north",
+        "the fixture this test perturbs moved"
+    );
+    for (facing, blind) in [("north", false), ("west", true)] {
+        let nbt = dir.join(format!("keeper-{facing}.nbt"));
+        std::fs::copy(&src, &nbt).unwrap();
+        let mut d = doc.clone();
+        d["anchors"]["anchor/keeper-stand"]["facing"] = serde_json::json!(facing);
+        std::fs::write(
+            nbt.with_extension("json"),
+            serde_json::to_vec_pretty(&d).unwrap(),
+        )
+        .unwrap();
+        let out = dir.join(format!("page-{facing}.html"));
+        let r = viewer(&nbt, &out, &pack);
+        let stderr = String::from_utf8_lossy(&r.stderr);
+        assert_eq!(
+            r.status.code(),
+            Some(0),
+            "a report, never a refusal: {stderr}"
+        );
+        assert_eq!(
+            stderr.contains("DW0893"),
+            blind,
+            "facing {facing}: {stderr}"
+        );
+        let line = format!(
+            "sight: `keeper-{facing}` — 1 of 2 anchor(s) declare a position and a horizontal \
+             facing; blind (more than half the frame a surface within 4.5 blocks): {} of 1 \
+             point-of-view frame(s)",
+            u8::from(blind)
+        );
+        assert!(stderr.contains(&line), "facing {facing}: {stderr}");
+        let html = std::fs::read_to_string(&out).unwrap();
+        assert_eq!(html.contains("\"blind\":true"), blind, "facing {facing}");
+        assert!(
+            html.contains("\"room\":{\"eye\":"),
+            "facing {facing}: no room camera"
+        );
+    }
+}
+
 /// **The GPU arms judge the piece before they look for a renderer.**
 ///
 /// `delvec render piece` and `delvec render batch` resolve textures and

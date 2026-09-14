@@ -420,6 +420,23 @@ fn main() -> ExitCode {
             layout,
             out,
         } => run_calibrate(report, layout, out, cli.json),
+        Command::View(delvec::compiler::view::cli::ViewCommand::Cameras {
+            build_dir,
+            campaign,
+            out,
+            only,
+            bracket,
+            preview: true,
+            ..
+        }) => run_cameras_preview(
+            build_dir,
+            campaign,
+            &cli.prefabs,
+            out,
+            only,
+            bracket.as_ref(),
+            cli.json,
+        ),
         Command::View(cmd) => cmd.run(cli.json),
         Command::Grammar(args) => delvec::grammar::cli::run(args.clone()),
         Command::Prefab(args) => delvec::admit::cli::run(args.clone(), &cli.prefabs, cli.json),
@@ -1263,6 +1280,134 @@ fn run_snapshot(
             outside.len()
         );
     }
+    ExitCode::SUCCESS
+}
+
+/// `delvec cameras --preview`: every stated camera of `design/cameras.json` (and
+/// its bracket candidates) drawn by the snapshot rasteriser over the assembled
+/// world — the same world, the same Minecraft camera convention, flat-lit and in
+/// seconds — so a camera is placed before the path tracer is asked about light.
+/// The record is read by the one reader (`compiler::view::camera`); nothing here
+/// restates where a camera is.
+fn run_cameras_preview(
+    build_dir: &Path,
+    campaign_dir: &Path,
+    prefabs_dir: &Path,
+    out: &Path,
+    only: &[String],
+    bracket: Option<&delvec::compiler::view::camera::Bracket>,
+    json: bool,
+) -> ExitCode {
+    use delvec::compiler::snapshot;
+    use delvec::compiler::view::camera;
+
+    use delvec::compiler::view::diag::{DW_INPUT, Diagnostic};
+    let read = |path: PathBuf| {
+        std::fs::read(&path)
+            .map_err(|e| Diagnostic::error(DW_INPUT, format!("read {}: {e}", path.display())))
+    };
+    let selected = read(build_dir.join("render-plan.json")).and_then(|plan| {
+        let id = camera::plan_campaign_id(&plan)?;
+        let sheet =
+            read(campaign_dir.join(camera::CAMERAS_FILE)).and_then(|b| camera::parse_sheet(&b))?;
+        let rows =
+            read(campaign_dir.join("design.json")).and_then(|b| camera::reference_names(&b))?;
+        camera::bind_answers(&sheet, &rows)?;
+        let cams = camera::selected(&id, &sheet, only, bracket)?;
+        Ok((id, cams))
+    });
+    let (campaign_id, cameras) = match selected {
+        Ok(v) => v,
+        Err(d) => return delvec::compiler::view::cli::fail(d, json, 2),
+    };
+
+    let (campaign, prefabs) = match load_for_view(campaign_dir, prefabs_dir, json) {
+        Ok(v) => v,
+        Err(code) => return ExitCode::from(code),
+    };
+    let plan = match Plan::build(&campaign, &prefabs) {
+        Ok(p) => p,
+        Err(e) => {
+            print_diags(&e.warnings, json);
+            print_build_error(e.failure.code, &e.failure.message, json);
+            return ExitCode::from(3);
+        }
+    };
+    let structures = match read_structures(&plan, &prefabs, prefabs_dir, json) {
+        Ok(s) => s,
+        Err(code) => return ExitCode::from(code),
+    };
+    let assembled = match edited_assembled(&plan, &prefabs, &structures, json) {
+        Ok(a) => a,
+        Err(code) => return ExitCode::from(code),
+    };
+    let grid = snapshot::VoxelGrid::build(&assembled.blocks);
+    if let Err(e) = std::fs::create_dir_all(out) {
+        eprintln!("internal error: mkdir {}: {e}", out.display());
+        return ExitCode::from(EXIT_INTERNAL);
+    }
+    let mut obstructed = 0usize;
+    for cam in &cameras {
+        if let Some(cell) = camera::lens_obstruction(cam.pos, |c| grid.solid(c)) {
+            obstructed += 1;
+            eprintln!(
+                "camera `{}`: the lens at {:?} is inside or within {} block of `{}` at {cell:?}. A \
+                 pinhole camera has no near plane, so the frame shows that block's inside faces or a \
+                 sliver of it across a corner: move the camera",
+                cam.name,
+                cam.pos,
+                camera::LENS_CLEARANCE,
+                grid.name(grid.at(cell))
+            );
+        }
+        let frame = snapshot::render_frame(
+            &grid,
+            &snapshot::Camera {
+                pos: cam.pos,
+                yaw: cam.yaw,
+                pitch: cam.pitch,
+                fov: cam.fov,
+            },
+            &snapshot::FrameOpts {
+                width: (cam.width / camera::PREVIEW_DIVISOR).max(1),
+                height: (cam.height / camera::PREVIEW_DIVISOR).max(1),
+                sea_level: sea_level_of(&campaign),
+                labels: false,
+            },
+        );
+        let png = delvec::compiler::png::encode_rgba(
+            frame.canvas.width,
+            frame.canvas.height,
+            &frame.canvas.rgba,
+        );
+        let path = out.join(camera::preview_file(&campaign_id, &cam.name));
+        if let Err(e) = write_file(&path, &png) {
+            eprintln!("internal error: cannot write {}: {e}", path.display());
+            return ExitCode::from(EXIT_INTERNAL);
+        }
+    }
+    if bracket.is_some() {
+        let path = out.join(camera::CANDIDATES_FILE);
+        let written = camera::candidates_bytes(&campaign_id, &cameras)
+            .map_err(|d| d.message)
+            .and_then(|b| write_file(&path, &b).map_err(|e| e.to_string()));
+        if let Err(msg) = written {
+            eprintln!("internal error: cannot write {}: {msg}", path.display());
+            return ExitCode::from(EXIT_INTERNAL);
+        }
+    }
+    eprintln!(
+        "previewed {} camera frame(s) -> {} (flat-lit CPU drafts for placing a camera; the \
+         light is judged in the Chunky scene `delvec cameras` emits without --preview)",
+        cameras.len(),
+        out.display()
+    );
+    eprintln!(
+        "lens: {} of {} camera(s) clear of every block by {} block, {obstructed} flagged",
+        cameras.len() - obstructed,
+        cameras.len(),
+        camera::LENS_CLEARANCE
+    );
     ExitCode::SUCCESS
 }
 

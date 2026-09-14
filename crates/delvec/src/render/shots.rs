@@ -27,12 +27,23 @@
 //! resolution is reported per shot and raises `DW0727`; it is never applied
 //! silently.
 //!
+//! **Room** cameras (`room-<anchor>`) are eye cameras too, with the same facing
+//! and the same field of view, standing **back along the facing** at the far side
+//! of the space the anchor stands in ([`crate::compiler::view::sight::stand_back`]).
+//! The eye shot answers *what does a body on the anchor see*; the room shot
+//! answers *what is the room the anchor is in*, which the eye shot answers only
+//! when the anchor happens to face into it. Both frames are measured for
+//! blindness (`DW0893`) off the piece's bytes, and the manifest says how far the
+//! room camera stood back and why it stopped.
+//!
 //! **Views** ([`crate::render::view`]) are the same shots, stated by the author instead
 //! of derived: a bearing and a subject box arrive as input, and the planner
 //! appends them to this plan. They are not a third camera kind and not a second
 //! planner — the fixed set simply contains no square-on elevation, and an author
 //! who needs one says so.
 
+use crate::compiler::view::showing::Cells;
+use crate::compiler::view::sight::{self, Sight, Stand};
 use crate::render::detect::Featureless;
 use crate::render::diag::{DW_ANCHOR_EYE, DW_INPUT, Diagnostic};
 use crate::render::meta::PrefabMeta;
@@ -85,14 +96,27 @@ pub struct EyeCamera {
     pub clearance: Clearance,
 }
 
+/// The camera a `room-<anchor>` shot stands at.
+#[derive(Debug, Clone, PartialEq)]
+pub struct RoomCamera {
+    /// The anchor this shot serves (full name).
+    pub anchor: String,
+    /// The anchor's declared cell.
+    pub anchor_cell: [i32; 3],
+    /// The anchor's declared facing — the direction the camera looks, unchanged.
+    pub facing: Facing,
+    /// Where the body stands, how far back, and why it went no further.
+    pub stand: Stand,
+}
+
 /// One planned per-piece shot.
 #[derive(Debug, Clone, PartialEq)]
 pub struct PieceShot {
     /// Output file stem (e.g. `ext-ne`, `top`, `door-0`, `around-gate`,
-    /// `eye-gate`).
+    /// `eye-gate`, `room-gate`).
     pub name: String,
     /// Machine tag for the shot manifest: `exterior`, `plan`, `doorway`,
-    /// `surroundings`, `eye`, `view`.
+    /// `surroundings`, `eye`, `room`, `view`.
     pub kind: &'static str,
     /// Orbit yaw / pitch (degrees), Nucleation `CameraConfig` convention:
     /// `dir = -[cos(pitch)·sin(yaw), sin(pitch), cos(pitch)·cos(yaw)]`.
@@ -106,8 +130,13 @@ pub struct PieceShot {
     /// camera can see a roofed interior. Never set on an eye shot: the camera is
     /// already inside, and a body sees its own ceiling.
     pub cutaway: bool,
-    /// Present exactly when `framing` is [`Framing::Eye`].
+    /// Present exactly when this is an `eye` shot.
     pub eye: Option<EyeCamera>,
+    /// Present exactly when this is a `room` shot.
+    pub room: Option<RoomCamera>,
+    /// What an eye-level frame's sampled rays met (`DW0893`) — present exactly
+    /// on the `eye` and `room` shots.
+    pub sight: Option<Sight>,
     /// Present exactly when the author declared this shot ([`crate::render::view`]) —
     /// what they asked for, so the frame can be re-asked for verbatim.
     pub view: Option<View>,
@@ -126,6 +155,30 @@ pub struct AnchorBinding {
     pub eye_shots: usize,
     /// Eligible anchors with no body cell within reach, by name.
     pub unplaceable: Vec<String>,
+}
+
+/// What the blindness measurement (`DW0893`) bound to, stated on every run with
+/// its zeroes: a sight check that does not say how many frames it measured
+/// cannot be told from one that measured none.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct SightBinding {
+    /// `eye` frames measured.
+    pub eye_frames: usize,
+    /// `room` frames measured.
+    pub room_frames: usize,
+    /// Standing `view` frames measured.
+    pub view_frames: usize,
+    /// Blind `eye` frames, by shot name.
+    pub blind_eye: Vec<String>,
+    /// Blind `room` frames, by shot name.
+    pub blind_room: Vec<String>,
+    /// Blind standing `view` frames, by shot name.
+    pub blind_view: Vec<String>,
+    /// Eye-eligible anchors with no cell within one course to stand a room
+    /// camera on, by name.
+    pub no_stand: Vec<String>,
+    /// The furthest any room camera stood back, in blocks.
+    pub max_back: u32,
 }
 
 /// How many author-declared views the run actually planned. Stated on every run
@@ -147,6 +200,7 @@ pub struct PiecePlan {
     pub diagnostics: Vec<Diagnostic>,
     pub binding: AnchorBinding,
     pub views: ViewBinding,
+    pub sight: SightBinding,
 }
 
 fn centre_of(pos: [i32; 3]) -> [f32; 3] {
@@ -183,6 +237,8 @@ fn orbit(
         framing: Framing::Orbit { zoom, target },
         cutaway,
         eye: None,
+        room: None,
+        sight: None,
         view: None,
     }
 }
@@ -214,6 +270,12 @@ pub fn plan_piece(
                 ),
             ));
         }
+        if let Some(standing) = &v.stand {
+            let shot = plan_standing_view(st, meta, v, standing, &mut plan)?;
+            plan.shots.push(shot);
+            plan.views.planned += 1;
+            continue;
+        }
         let (fmin, fmax) = v
             .framed_box(st, meta)
             .map_err(|e| Diagnostic::error(DW_INPUT, e))?;
@@ -233,11 +295,101 @@ pub fn plan_piece(
             },
             cutaway: v.cutaway,
             eye: None,
+            room: None,
+            sight: None,
             view: Some(v.clone()),
         });
         plan.views.planned += 1;
     }
     Ok(plan)
+}
+
+/// A `stand=` view: a body in the anchor's space, backed off along `look` (or
+/// the anchor's facing) to the far side of it, measured like every eye-level
+/// frame. Anything that cannot be resolved stops the run, as for any view.
+fn plan_standing_view(
+    st: &Structure,
+    meta: Option<&PrefabMeta>,
+    v: &View,
+    standing: &crate::render::view::Standing,
+    plan: &mut PiecePlan,
+) -> Result<PieceShot, Diagnostic> {
+    let name = &standing.anchor;
+    let refuse = |why: String| {
+        Diagnostic::error(
+            DW_INPUT,
+            format!("view `{}` stands at `{name}`, {why}", v.spec),
+        )
+    };
+    let meta = meta.ok_or_else(|| {
+        refuse("but this piece has no metadata file, so it declares no anchors".to_string())
+    })?;
+    let a = meta.anchors.get(name).ok_or_else(|| {
+        let declared: Vec<&str> = meta.anchors.keys().map(String::as_str).collect();
+        refuse(format!(
+            "which this piece does not declare. Declared anchors: {}",
+            if declared.is_empty() {
+                "none".to_string()
+            } else {
+                declared.join(", ")
+            }
+        ))
+    })?;
+    let cell = a
+        .pos
+        .ok_or_else(|| refuse("which declares no position for a body to stand at".to_string()))?;
+    let facing = match standing.look {
+        Some(l) => l,
+        None => a.facing.as_deref().and_then(Facing::parse).ok_or_else(|| {
+            refuse("which declares no cardinal facing, and the view states no `look=`".to_string())
+        })?,
+    };
+    let grid = sight::grid_of(st);
+    let cells = Cells::of(st);
+    let step = facing.unit();
+    let stand = sight::stand_back(&cells, &grid, cell, step).ok_or_else(|| {
+        refuse(format!(
+            "and no cell within one course of {cell:?} holds a standing body — there is \
+             nowhere to stand"
+        ))
+    })?;
+    let mut cam = sight::level_camera(stand.eye(), step);
+    cam.pitch = f64::from(v.pitch_deg);
+    cam.fov = f64::from(v.fov_deg);
+    let seen = Sight::measure(&grid, &cam);
+    plan.sight.view_frames += 1;
+    if seen.is_blind() {
+        plan.sight.blind_view.push(v.name.clone());
+        plan.diagnostics.push(sight::blind_diagnostic(
+            &v.name,
+            name,
+            facing.as_str(),
+            stand.cell,
+            &seen,
+            Some((v.name.as_str(), &stand, &seen)),
+        ));
+    }
+    let eye = stand.eye();
+    Ok(PieceShot {
+        name: v.name.clone(),
+        kind: "view",
+        yaw_deg: facing.view_yaw_deg(),
+        pitch_deg: v.pitch_deg,
+        fov_deg: v.fov_deg,
+        framing: Framing::Eye {
+            pos: [eye[0] as f32, eye[1] as f32, eye[2] as f32],
+        },
+        cutaway: false,
+        eye: None,
+        room: Some(RoomCamera {
+            anchor: name.clone(),
+            anchor_cell: cell,
+            facing,
+            stand,
+        }),
+        sight: Some(seen),
+        view: Some(v.clone()),
+    })
 }
 
 /// The Nucleation `zoom` that stands a view's camera at the distance which fits
@@ -286,6 +438,7 @@ fn plan_fixed_set(st: &Structure, meta: Option<&PrefabMeta>) -> PiecePlan {
     let mut shots = Vec::new();
     let mut diagnostics = Vec::new();
     let mut binding = AnchorBinding::default();
+    let mut sights = SightBinding::default();
 
     // 4 exterior corner-isometric.
     for (name, yaw) in [
@@ -314,6 +467,7 @@ fn plan_fixed_set(st: &Structure, meta: Option<&PrefabMeta>) -> PiecePlan {
             diagnostics,
             binding,
             views: ViewBinding::default(),
+            sight: sights,
         };
     };
 
@@ -344,6 +498,8 @@ fn plan_fixed_set(st: &Structure, meta: Option<&PrefabMeta>) -> PiecePlan {
     // Per-anchor shots (sorted by name for determinism): the orbit that shows
     // where the anchor sits, then the eye that shows what it looks at.
     let occ = Occupancy::new(st);
+    let grid = sight::grid_of(st);
+    let cells = Cells::of(st);
     for (name, a) in &meta.anchors {
         binding.declared += 1;
         let stem = anchor_stem(name);
@@ -398,8 +554,33 @@ fn plan_fixed_set(st: &Structure, meta: Option<&PrefabMeta>) -> PiecePlan {
             diagnostics.push(d);
         }
         binding.eye_shots += 1;
+        let step = facing.unit();
+        let eye_name = format!("eye-{stem}");
+        let eye_sight = Sight::measure(
+            &grid,
+            &sight::level_camera(sight::eye_of(standing.cell), step),
+        );
+        // The room camera: the same facing, stood back to the far side of the
+        // space the anchor is in. Measured before either frame is reported, so
+        // a blind eye frame can name the picture to open instead.
+        let room = sight::stand_back(&cells, &grid, cell, step).map(|stand| {
+            let rs = Sight::measure(&grid, &sight::level_camera(stand.eye(), step));
+            (format!("room-{stem}"), stand, rs)
+        });
+        sights.eye_frames += 1;
+        if eye_sight.is_blind() {
+            sights.blind_eye.push(eye_name.clone());
+            diagnostics.push(sight::blind_diagnostic(
+                &eye_name,
+                name,
+                facing.as_str(),
+                standing.cell,
+                &eye_sight,
+                room.as_ref().map(|(n, st, rs)| (n.as_str(), st, rs)),
+            ));
+        }
         shots.push(PieceShot {
-            name: format!("eye-{stem}"),
+            name: eye_name,
             kind: "eye",
             yaw_deg: facing.view_yaw_deg(),
             pitch_deg: 0.0,
@@ -409,6 +590,8 @@ fn plan_fixed_set(st: &Structure, meta: Option<&PrefabMeta>) -> PiecePlan {
             },
             cutaway: false,
             view: None,
+            room: None,
+            sight: Some(eye_sight),
             eye: Some(EyeCamera {
                 anchor: name.clone(),
                 anchor_cell: cell,
@@ -419,6 +602,44 @@ fn plan_fixed_set(st: &Structure, meta: Option<&PrefabMeta>) -> PiecePlan {
                 supported: standing.supported,
                 clearance: occ.forward_clearance(standing.cell, facing),
             }),
+        });
+        let Some((room_name, stand, room_sight)) = room else {
+            sights.no_stand.push(name.clone());
+            continue;
+        };
+        sights.room_frames += 1;
+        sights.max_back = sights.max_back.max(stand.back);
+        if room_sight.is_blind() {
+            sights.blind_room.push(room_name.clone());
+            diagnostics.push(sight::blind_diagnostic(
+                &room_name,
+                name,
+                facing.as_str(),
+                stand.cell,
+                &room_sight,
+                Some((room_name.as_str(), &stand, &room_sight)),
+            ));
+        }
+        let eye = sight::eye_of(stand.cell);
+        shots.push(PieceShot {
+            name: room_name,
+            kind: "room",
+            yaw_deg: facing.view_yaw_deg(),
+            pitch_deg: 0.0,
+            fov_deg: PLAYER_FOV_DEG,
+            framing: Framing::Eye {
+                pos: [eye[0] as f32, eye[1] as f32, eye[2] as f32],
+            },
+            cutaway: false,
+            eye: None,
+            room: Some(RoomCamera {
+                anchor: name.clone(),
+                anchor_cell: cell,
+                facing,
+                stand,
+            }),
+            sight: Some(room_sight),
+            view: None,
         });
     }
 
@@ -439,6 +660,7 @@ fn plan_fixed_set(st: &Structure, meta: Option<&PrefabMeta>) -> PiecePlan {
         diagnostics,
         binding,
         views: ViewBinding::default(),
+        sight: sights,
     }
 }
 
@@ -452,52 +674,64 @@ fn plan_fixed_set(st: &Structure, meta: Option<&PrefabMeta>) -> PiecePlan {
 /// only what the reviewer should do about it, which is what this message says.
 pub fn empty_frame_diagnostic(stem: &str, shot: &PieceShot, f: &Featureless) -> Diagnostic {
     let (name, distinct) = (&shot.name, f.distinct);
-    let message = match (&shot.eye, &shot.view) {
-        (Some(e), _) => {
-            // Two causes, two different things for the reader to do — the piece
-            // is either aimed at nothing, or aimed out of itself, and only the
-            // first is a defect.
-            let cause = match &e.clearance {
-                crate::render::occupancy::Clearance::LeavesThePiece { open } => format!(
-                    "The view runs {open} open cell(s) and then leaves the template. If this \
+    let message = if let Some(r) = &shot.room {
+        format!(
+            "{stem}/{name}: the room shot for `{}` is an EMPTY frame ({distinct} distinct \
+             colour(s)) — a body standing {} block(s) back along {} at {:?} sees nothing but flat \
+             background: the space behind the anchor opens onto nothing in the template",
+            r.anchor,
+            r.stand.back,
+            r.facing.as_str(),
+            r.stand.cell,
+        )
+    } else {
+        match (&shot.eye, &shot.view) {
+            (Some(e), _) => {
+                // Two causes, two different things for the reader to do — the piece
+                // is either aimed at nothing, or aimed out of itself, and only the
+                // first is a defect.
+                let cause = match &e.clearance {
+                    crate::render::occupancy::Clearance::LeavesThePiece { open } => format!(
+                        "The view runs {open} open cell(s) and then leaves the template. If this \
                      anchor is meant to face outward (an approach, a threshold), what it is about \
                      lives in the assembled world, and its real view is the campaign's own \
                      player-POV shot, not a per-piece render. Otherwise the piece is missing the \
                      thing the anchor names"
-                ),
-                crate::render::occupancy::Clearance::Blocked { open, state } => format!(
-                    "The view runs {open} open cell(s) and then meets `{state}`, whose face fills \
+                    ),
+                    crate::render::occupancy::Clearance::Blocked { open, state } => format!(
+                        "The view runs {open} open cell(s) and then meets `{state}`, whose face fills \
                      the frame — the anchor is pressed against a surface"
-                ),
-            };
-            format!(
-                "{stem}/{name}: the eye shot for `{}` is an EMPTY frame ({distinct} distinct \
+                    ),
+                };
+                format!(
+                    "{stem}/{name}: the eye shot for `{}` is an EMPTY frame ({distinct} distinct \
                  colour(s)) — a body standing at {:?} and looking {} sees nothing but flat \
                  background. {cause}. Whatever the cause, no image in this set shows what that \
                  anchor is about; the fix is the anchor or the geometry, never the camera",
-                e.anchor,
-                e.cell,
-                e.facing.as_str(),
-            )
-        }
-        (None, Some(v)) => format!(
-            "{stem}/{name}: the declared view `{}` is an EMPTY frame ({distinct} distinct \
+                    e.anchor,
+                    e.cell,
+                    e.facing.as_str(),
+                )
+            }
+            (None, Some(v)) => format!(
+                "{stem}/{name}: the declared view `{}` is an EMPTY frame ({distinct} distinct \
              colour(s)) — a camera aimed at {} on bearing yaw {} pitch {} at zoom {} sees nothing \
              but flat background. A zoom past the fit distance puts the camera inside the model, \
              and a cutaway can strip the only layer there was. The picture this view was asked \
              for is NOT in this set; re-aim the view — never read the blank frame as the answer",
-            v.spec,
-            v.subject.tag(),
-            v.yaw_deg,
-            v.pitch_deg,
-            v.zoom
-        ),
-        (None, None) => format!(
-            "{stem}/{name}: the `{}` shot is an EMPTY frame ({distinct} distinct colour(s)). This \
+                v.spec,
+                v.subject.tag(),
+                v.yaw_deg,
+                v.pitch_deg,
+                v.zoom
+            ),
+            (None, None) => format!(
+                "{stem}/{name}: the `{}` shot is an EMPTY frame ({distinct} distinct colour(s)). This \
              camera is fitted to the model, so an empty frame means there was nothing to fit — on \
              a cutaway shot, that the stripped layer was the only one the piece had",
-            shot.kind
-        ),
+                shot.kind
+            ),
+        }
     };
     Diagnostic::warning(DW_ANCHOR_EYE, message)
 }
@@ -801,6 +1035,99 @@ mod tests {
         let a = plan_piece(&st, Some(&meta), &[]).unwrap();
         let b = plan_piece(&st, Some(&meta), &[]).unwrap();
         assert_eq!(a, b);
+    }
+
+    // ---- room shots and blind frames (`DW0893`) ---------------------------
+
+    fn one_anchor(facing: &str) -> PrefabMeta {
+        serde_json::from_slice(
+            format!(r#"{{"anchors": {{"anchor/k": {{ "pos": [3,1,1], "facing": "{facing}" }}}}}}"#)
+                .as_bytes(),
+        )
+        .unwrap()
+    }
+
+    /// **The defect this surface exists for.** An anchor pressed against the
+    /// wall it faces: its eye frame is a wall, which is reported as `DW0893`
+    /// naming the room shot — the same facing, stood back to the far wall — and
+    /// that frame is not blind.
+    #[test]
+    fn a_blind_eye_frame_is_reported_and_the_room_shot_stands_back_along_the_facing() {
+        let st = shell([7, 5, 21]);
+        let plan = plan_piece(&st, Some(&one_anchor("north")), &[]).unwrap();
+        let eye = plan.shots.iter().find(|s| s.name == "eye-k").unwrap();
+        let room = plan.shots.iter().find(|s| s.name == "room-k").unwrap();
+        assert!(eye.sight.unwrap().is_blind(), "{:?}", eye.sight);
+        assert_eq!(room.kind, "room");
+        assert_eq!(room.yaw_deg, eye.yaw_deg, "the facing is never overridden");
+        assert_eq!(room.pitch_deg, 0.0);
+        assert_eq!(room.fov_deg, PLAYER_FOV_DEG);
+        assert!(!room.cutaway);
+        let r = room.room.as_ref().unwrap();
+        assert_eq!(r.stand.start, [3, 1, 1]);
+        assert_eq!(r.stand.cell, [3, 1, 19], "the far wall behind the anchor");
+        assert_eq!(r.stand.back, 18);
+        assert!(!room.sight.unwrap().is_blind(), "{:?}", room.sight);
+        let d: Vec<&Diagnostic> = plan
+            .diagnostics
+            .iter()
+            .filter(|d| d.code == "DW0893")
+            .collect();
+        assert_eq!(d.len(), 1, "{:?}", plan.diagnostics);
+        assert!(!d[0].is_error(), "a report, never a refusal");
+        assert!(d[0].message.contains("`room-k`"), "{}", d[0].message);
+        assert_eq!(plan.sight.eye_frames, 1);
+        assert_eq!(plan.sight.room_frames, 1);
+        assert_eq!(plan.sight.blind_eye, ["eye-k"]);
+        assert!(plan.sight.blind_room.is_empty());
+        assert_eq!(plan.sight.max_back, 18);
+    }
+
+    /// The perturbation only the blindness check reads: the same body on the
+    /// same cell, turned to face the room, is not blind and raises nothing.
+    #[test]
+    fn the_same_anchor_facing_into_the_room_is_not_blind() {
+        let st = shell([7, 5, 21]);
+        let plan = plan_piece(&st, Some(&one_anchor("south")), &[]).unwrap();
+        let eye = plan.shots.iter().find(|s| s.name == "eye-k").unwrap();
+        assert!(!eye.sight.unwrap().is_blind(), "{:?}", eye.sight);
+        assert!(plan.diagnostics.iter().all(|d| d.code != "DW0893"));
+        assert!(plan.sight.blind_eye.is_empty());
+        assert_eq!(plan.sight.eye_frames, 1);
+    }
+
+    /// A standing view looks the way the author says, from the far side of the
+    /// anchor's space, and a view that cannot be stood is refused before a frame.
+    #[test]
+    fn a_standing_view_looks_where_it_is_told_from_the_far_side() {
+        let st = shell([7, 5, 21]);
+        let meta = one_anchor("north");
+        let v = View::parse("stand=anchor/k,look=south").unwrap();
+        let plan = plan_piece(&st, Some(&meta), std::slice::from_ref(&v)).unwrap();
+        let shot = plan.shots.last().unwrap();
+        assert_eq!(shot.kind, "view");
+        assert_eq!(shot.yaw_deg, Facing::South.view_yaw_deg());
+        assert!(matches!(shot.framing, Framing::Eye { .. }));
+        let r = shot.room.as_ref().unwrap();
+        assert_eq!(r.facing, Facing::South);
+        assert_eq!(r.stand.cell, [3, 1, 1], "backing north stops at the wall");
+        assert_eq!(plan.sight.view_frames, 1);
+        assert_eq!(plan.views.planned, 1);
+
+        for (spec, needle) in [
+            ("stand=anchor/nope", "does not declare"),
+            ("name=x,stand=anchor/k,look=east", "nowhere to stand"),
+        ] {
+            let mut meta = meta.clone();
+            if spec.contains("look=east") {
+                // An anchor inside the wall has no body cell within one course.
+                meta.anchors.get_mut("anchor/k").unwrap().pos = Some([0, 2, 5]);
+            }
+            let v = View::parse(spec).unwrap();
+            let e = plan_piece(&st, Some(&meta), std::slice::from_ref(&v)).unwrap_err();
+            assert_eq!(e.code, DW_INPUT);
+            assert!(e.message.contains(needle), "{}", e.message);
+        }
     }
 
     // ---- author-declared views -------------------------------------------

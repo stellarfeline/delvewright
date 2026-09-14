@@ -452,3 +452,120 @@ fn json_mode_reports_the_written_paths() {
     );
     assert!(v["in_frame"].is_number() && v["out_of_frame"].is_number());
 }
+
+/// `delvec cameras --preview` draws a stated camera with the same rasteriser and
+/// the same Minecraft camera convention as `snapshot --camera`: the preview of a
+/// record camera is byte-for-byte the snapshot of the same numbers at half the
+/// stated frame. The two commands read the camera by different routes — the
+/// record's one reader, and `--camera`'s own parse — so agreement is the
+/// statement that a camera placed by either means one frame.
+#[test]
+fn a_camera_preview_is_the_snapshot_of_the_same_camera() {
+    let dir = tmp("camera-preview");
+    let campaign = dir.join("keep-vertical");
+    std::fs::create_dir_all(&campaign).unwrap();
+    let src = common::keep_vertical_dir();
+    for entry in std::fs::read_dir(&src).unwrap() {
+        let p = entry.unwrap().path();
+        if p.is_file() {
+            std::fs::copy(&p, campaign.join(p.file_name().unwrap())).unwrap();
+        }
+    }
+    std::fs::create_dir_all(campaign.join("design/concept")).unwrap();
+    std::fs::write(
+        campaign.join("design/concept/keep.png"),
+        b"an approved picture",
+    )
+    .unwrap();
+    std::fs::write(
+        campaign.join("design.json"),
+        format!(
+            r#"{{"campaign_id":"keep-vertical","content":{{"references":[
+            {{"name":"concept/keep","shows":"the keep","time":"noon","weather":"clear"}}]}},
+            "dsl_version":"{}","stage":"design"}}"#,
+            delvewright_dsl::DSL_VERSION
+        ),
+    )
+    .unwrap();
+    let camera = serde_json::json!({
+        "answers": "concept/keep", "exposure": 1.0, "fov": 60.0, "height": 216,
+        "name": "keep", "pitch": 20.0, "pos": [-6.5, 74.0, -8.0], "spp": 16,
+        "width": 384, "yaw": -35.0
+    });
+    std::fs::write(
+        campaign.join("design/cameras.json"),
+        serde_json::to_vec_pretty(
+            &serde_json::json!({"campaign_id": "keep-vertical", "cameras": [camera]}),
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    let build = dir.join("build");
+    std::fs::create_dir_all(&build).unwrap();
+    std::fs::write(
+        build.join("render-plan.json"),
+        br#"{"campaign_id":"keep-vertical","layout_aabb":{"min":[0,64,0],"max":[1,65,1]},
+            "sky":{"time":"noon","daytime_ticks":6000},"shots":[]}"#,
+    )
+    .unwrap();
+    let pf = common::prefabs_dir();
+    let previews = dir.join("previews");
+    let out = Command::new(BIN)
+        .arg("--prefabs")
+        .arg(&pf)
+        .arg("cameras")
+        .arg(&build)
+        .arg("--campaign")
+        .arg(&campaign)
+        .arg("-o")
+        .arg(&previews)
+        .arg("--preview")
+        .output()
+        .unwrap();
+    assert_eq!(code(&out), 0, "{out:?}");
+    let preview = std::fs::read(previews.join("keep-vertical_camera_keep_preview.png")).unwrap();
+
+    let snapshot = dir.join("snapshot.png");
+    let out = delvec(&[
+        "snapshot",
+        &campaign.to_string_lossy(),
+        "--prefabs",
+        &pf.to_string_lossy(),
+        "-o",
+        &snapshot.to_string_lossy(),
+        "--camera=-6.5,74,-8,-35,20,60",
+        "--width",
+        "192",
+        "--height",
+        "108",
+    ]);
+    assert_eq!(code(&out), 0, "{out:?}");
+    assert_eq!(
+        preview,
+        std::fs::read(&snapshot).unwrap(),
+        "the preview of a record camera is not the snapshot of the same numbers"
+    );
+    // Perturb the record: the preview moves.
+    let moved = std::fs::read_to_string(campaign.join("design/cameras.json"))
+        .unwrap()
+        .replace("-35.0", "-25.0");
+    std::fs::write(campaign.join("design/cameras.json"), moved).unwrap();
+    let out = Command::new(BIN)
+        .arg("--prefabs")
+        .arg(&pf)
+        .arg("cameras")
+        .arg(&build)
+        .arg("--campaign")
+        .arg(&campaign)
+        .arg("-o")
+        .arg(&previews)
+        .arg("--preview")
+        .output()
+        .unwrap();
+    assert_eq!(code(&out), 0, "{out:?}");
+    assert_ne!(
+        preview,
+        std::fs::read(previews.join("keep-vertical_camera_keep_preview.png")).unwrap(),
+        "a changed yaw did not move the preview"
+    );
+}

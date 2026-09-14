@@ -60,7 +60,7 @@ one with `--prefabs <dir>`.
 | `viewer` | One self-contained HTML page per room or zone: a camera you drive, drawn from the game's own block models and textures. |
 | `palette` | The per-blockstate colour and shape table a room is built from, as JSON. |
 | `scene` | Chunky scene descriptions for every planned shot of a build. |
-| `panorama` | One 45° oblique scene framing the whole map. |
+| `panorama` | One oblique exterior scene framed on the placed areas — the storybook shot. |
 | `contact-sheet` | Many candidate renders laid out on one page to choose from. |
 | `index` | The shot list as (image, expectation) pairs, for review. |
 | `grammar` | Prefab authoring from a rule program: `list`, `show`, `check`, `expand`, `coverage`, `audit`. |

@@ -503,6 +503,17 @@
       if (a.socket) yaw += Math.PI;
       state.yaw = yaw;
       state.pitch = 0;
+    } else if (id.startsWith("room:")) {
+      const name = id.slice(5);
+      const a = model.anchors.find((x) => x.name === name);
+      if (!a || !a.room) return;
+      state.mode = "walk";
+      // The same facing as the anchor's own point of view, from the far side of
+      // the space it stands in — where the engine stood the room camera
+      // (`compiler::view::sight`), so the page and `render piece` agree.
+      state.eye = a.room.eye.slice();
+      state.yaw = FACING_YAW[a.facing];
+      state.pitch = 0;
     }
     syncPresetButtons();
     updateReadout();
@@ -1142,10 +1153,21 @@
       const b = document.createElement("button");
       b.type = "button";
       const where = a.pos ? a.pos.join(",") : (a.from ? a.from.join(",") + " → " + a.to.join(",") : "?");
-      b.textContent = a.name + "  " + where + (a.facing ? "  " + a.facing : "");
+      b.textContent = a.name + "  " + where + (a.facing ? "  " + a.facing : "")
+        + (a.blind ? "  · blind" : "");
+      if (a.blind) b.title = "More than half of this point of view is a surface within arm's reach";
       if (a.pos) b.addEventListener("click", () => { applyPreset("pov:" + a.name); invalidate(); });
       else b.disabled = true;
       li.appendChild(b);
+      if (a.room) {
+        const r = document.createElement("button");
+        r.type = "button";
+        r.className = "room";
+        r.textContent = "room";
+        r.title = "The same facing, " + a.room.back + " block(s) back, at the far side of the space";
+        r.addEventListener("click", () => { applyPreset("room:" + a.name); invalidate(); });
+        li.appendChild(r);
+      }
       els.anchorList.appendChild(li);
     }
   }
@@ -1393,7 +1415,8 @@
 
     const want = hash.preset;
     const known = want && (want === "ground" || want === "exterior" || want === "plan"
-      || (want.startsWith("pov:") && m.anchors.some((a) => a.name === want.slice(4) && a.pos)));
+      || (want.startsWith("pov:") && m.anchors.some((a) => a.name === want.slice(4) && a.pos))
+      || (want.startsWith("room:") && m.anchors.some((a) => a.name === want.slice(5) && a.room)));
     applyPreset(known ? want : defaultPreset(m));
     invalidate();
   }

@@ -23,11 +23,12 @@ use clap::Subcommand;
 
 use crate::compiler::view::assets::Assets;
 use crate::compiler::view::blockcolor::Deriver;
+use crate::compiler::view::camera::{self, Bracket, EmitOptions};
 use crate::compiler::view::diag::{
     DW_BINDING, DW_INPUT, DW_OUTPUT, DW_RANK_ORDER, DW_RENDER, DW_UNDERSPECIFIED_STATE,
     DW_UNRESOLVED_BLOCK, DW_VIEWER_RESOURCES, Diagnostic, exit,
 };
-use crate::compiler::view::panorama::{self, Bearing, PanoramaOptions};
+use crate::compiler::view::panorama::{self, Bearing, PanoramaOptions, Subject};
 use crate::compiler::view::scene::{self, SceneOptions};
 use crate::compiler::view::sheet::{self, ScoreSet, SheetOptions};
 use crate::compiler::view::{cache, index, nbt, showing, viewer};
@@ -57,33 +58,105 @@ pub enum ViewCommand {
         /// Output directory for the scene JSONs.
         #[arg(short, long)]
         out: PathBuf,
-        /// Path Chunky should load the delve world from (documented; default `world`).
-        #[arg(long, default_value = "world")]
-        world: String,
+        /// The world save the scenes load (default `<build-dir>/world`, where
+        /// `validation/world-save.sh` writes it). Refused unless it holds
+        /// `level.dat` and a region file; written into the scenes as an absolute
+        /// path.
+        #[arg(long)]
+        world: Option<PathBuf>,
         /// Rendered frame dimension (square), in pixels.
         #[arg(long, default_value_t = DEFAULT_SIZE)]
         size: u32,
     },
-    /// Emit the whole-map 45° oblique panorama scene (the release illustration)
-    /// from a build output's `render-plan.json`.
+    /// Emit a Chunky scene per showcase camera a campaign states in
+    /// `design/cameras.json` — a camera on the assembled world, estimated from the
+    /// approved image it answers or placed by hand — against a build's
+    /// `render-plan.json`.
+    Cameras {
+        /// A `delvec build` output directory (containing `render-plan.json`).
+        build_dir: PathBuf,
+        /// The campaign directory: its `design/cameras.json` is read, and every
+        /// camera's `answers` is held to its `design.json`.
+        #[arg(long)]
+        campaign: PathBuf,
+        /// Output directory for the scene JSONs.
+        #[arg(short, long)]
+        out: PathBuf,
+        /// The world save the scenes load (default `<build-dir>/world`, where
+        /// `validation/world-save.sh` writes it). Refused unless it holds
+        /// `level.dat` and a region file; written into the scenes as an absolute
+        /// path.
+        #[arg(long)]
+        world: Option<PathBuf>,
+        /// Only this camera, by name (repeatable).
+        #[arg(long)]
+        only: Vec<String>,
+        /// Emit, beside each camera, the camera moved each way by each step —
+        /// `yaw=8,pitch=4,fov=10,dolly=6,rise=3`, any subset — and write every
+        /// candidate to `candidates.json` in the output directory, in the record
+        /// format.
+        #[arg(long, value_parser = Bracket::parse)]
+        bracket: Option<Bracket>,
+        /// Emit each frame at a quarter of its width and height and 16 samples,
+        /// under its own `_draft` scene name: for judging what is in frame.
+        #[arg(long, conflicts_with = "preview")]
+        draft: bool,
+        /// Write no scene: draw each camera (and candidate) on the CPU, flat-lit,
+        /// at half its width and height, as `<stem>_preview.png` — seconds per
+        /// frame, for placing a camera before a path tracer is asked about light.
+        /// Reads the campaign and `--prefabs` to assemble the world.
+        #[arg(long, conflicts_with = "world")]
+        preview: bool,
+    },
+    /// Emit an oblique exterior scene of the delve's built place — the storybook
+    /// shot — from a build output's `render-plan.json`. The camera frames the
+    /// subject (the placed areas unless `--subject` names anchors); the ground a
+    /// horizon built around them is loaded, not framed.
     Panorama {
         /// A `delvec build` output directory (containing `render-plan.json`).
         build_dir: PathBuf,
         /// Output directory for the scene JSON.
         #[arg(short, long)]
         out: PathBuf,
-        /// Path Chunky should load the delve world from (documented; default `world`).
-        #[arg(long, default_value = "world")]
-        world: String,
-        /// Which corner of the layout the camera stands over.
+        /// The world save the scene loads (default `<build-dir>/world`, where
+        /// `validation/world-save.sh` writes it). Refused unless it holds
+        /// `level.dat` and a region file; written into the scene as an absolute
+        /// path.
+        #[arg(long)]
+        world: Option<PathBuf>,
+        /// Which side the camera stands on: a corner (se, sw, ne, nw) looks along
+        /// the diagonal, a face (n, e, s, w) looks square at that side.
         #[arg(long, value_enum, default_value_t = Bearing::Se)]
         bearing: Bearing,
+        /// Degrees the camera looks down: 45 is the oblique over the whole place,
+        /// lower shows its walls in elevation, higher approaches a plan.
+        #[arg(long, default_value_t = panorama::DEFAULT_PITCH_DEG,
+              value_parser = clap::value_parser!(u8).range(
+                  i64::from(*panorama::PITCH_RANGE.start())..=i64::from(*panorama::PITCH_RANGE.end())))]
+        pitch: u8,
+        /// Vertical field of view, degrees: a narrower frame stands further back,
+        /// which is how a building is shown without wide-angle distortion.
+        #[arg(long, default_value_t = panorama::FOV_DEG as u8,
+              value_parser = clap::value_parser!(u8).range(
+                  i64::from(*panorama::FOV_RANGE.start())..=i64::from(*panorama::FOV_RANGE.end())))]
+        fov: u8,
+        /// What the camera is fitted to: `layout` (the placed areas), or the
+        /// building named by the anchors that stand in it —
+        /// `anchor/stop-gate,anchor/stop-kitchen` — whose horizontal span is framed
+        /// at the layout's full height.
+        #[arg(long, default_value = "layout", value_parser = Subject::parse)]
+        subject: Subject,
         /// Path-tracing sample target: ~64 for a draft, ~300 for release art.
         #[arg(long, default_value_t = panorama::DEFAULT_SPP)]
         spp: u32,
-        /// Rendered frame dimension (square), in pixels.
-        #[arg(long, default_value_t = DEFAULT_SIZE)]
-        size: u32,
+        /// Frame width, in pixels.
+        #[arg(long, default_value_t = panorama::DEFAULT_WIDTH,
+              value_parser = clap::value_parser!(u32).range(1..))]
+        width: u32,
+        /// Frame height, in pixels.
+        #[arg(long, default_value_t = panorama::DEFAULT_HEIGHT,
+              value_parser = clap::value_parser!(u32).range(1..))]
+        height: u32,
     },
     /// Lay candidate renders out as ONE contact sheet for the owner to curate
     /// massing from (spec-0027 §3). With `--scores`, the similarity score
@@ -180,30 +253,69 @@ impl ViewCommand {
             } => run_scene(
                 build_dir,
                 out,
-                world,
+                world.as_deref(),
                 &ViewOpts {
                     json,
                     textures: None,
                     size: *size,
                 },
             ),
+            ViewCommand::Cameras {
+                build_dir,
+                campaign,
+                out,
+                world,
+                only,
+                bracket,
+                draft,
+                preview,
+            } if !*preview => run_cameras(
+                build_dir,
+                campaign,
+                out,
+                world.as_deref(),
+                json,
+                EmitOptions {
+                    world_path: String::new(),
+                    only: only.clone(),
+                    bracket: *bracket,
+                    draft: *draft,
+                },
+            ),
+            ViewCommand::Cameras { .. } => fail(
+                Diagnostic::error(
+                    DW_INPUT,
+                    "`delvec cameras --preview` assembles the world, and is run by the `delvec` \
+                     binary rather than this arm",
+                ),
+                json,
+                exit::INPUT,
+            ),
             ViewCommand::Panorama {
                 build_dir,
                 out,
                 world,
                 bearing,
+                pitch,
+                fov,
+                subject,
                 spp,
-                size,
+                width,
+                height,
             } => run_panorama(
                 build_dir,
                 out,
-                world,
-                *bearing,
-                *spp,
-                &ViewOpts {
-                    json,
-                    textures: None,
-                    size: *size,
+                world.as_deref(),
+                json,
+                PanoramaOptions {
+                    world_path: String::new(),
+                    width: *width,
+                    height: *height,
+                    spp_target: *spp,
+                    bearing: *bearing,
+                    pitch_deg: *pitch,
+                    fov_deg: *fov,
+                    subject: subject.clone(),
                 },
             ),
             ViewCommand::ContactSheet {
@@ -338,7 +450,7 @@ fn structure_palette(build_dir: &Path) -> Result<Vec<String>, Diagnostic> {
     Ok(palette.into_iter().collect())
 }
 
-fn run_scene(build_dir: &Path, out: &Path, world: &str, vopts: &ViewOpts) -> ExitCode {
+fn run_scene(build_dir: &Path, out: &Path, world: Option<&Path>, vopts: &ViewOpts) -> ExitCode {
     let plan_path = build_dir.join("render-plan.json");
     let bytes = match std::fs::read(&plan_path) {
         Ok(b) => b,
@@ -350,8 +462,12 @@ fn run_scene(build_dir: &Path, out: &Path, world: &str, vopts: &ViewOpts) -> Exi
             );
         }
     };
+    let world_path = match resolve_world(build_dir, world) {
+        Ok(w) => w,
+        Err(d) => return fail(d, vopts.json, exit::INPUT),
+    };
     let opts = SceneOptions {
-        world_path: world.to_string(),
+        world_path,
         width: vopts.size,
         height: vopts.size,
         spp_target: 500,
@@ -409,10 +525,9 @@ fn write_scenes(out: &Path, scenes: &[(String, Vec<u8>)]) -> Result<usize, (Diag
 fn run_panorama(
     build_dir: &Path,
     out: &Path,
-    world: &str,
-    bearing: Bearing,
-    spp: u32,
-    vopts: &ViewOpts,
+    world: Option<&Path>,
+    json: bool,
+    mut opts: PanoramaOptions,
 ) -> ExitCode {
     let plan_path = build_dir.join("render-plan.json");
     let bytes = match std::fs::read(&plan_path) {
@@ -420,36 +535,209 @@ fn run_panorama(
         Err(e) => {
             return fail(
                 Diagnostic::error(DW_INPUT, format!("read {}: {e}", plan_path.display())),
-                vopts.json,
+                json,
                 exit::INPUT,
             );
         }
     };
-    let opts = PanoramaOptions {
-        world_path: world.to_string(),
-        width: vopts.size,
-        height: vopts.size,
-        spp_target: spp,
-        bearing,
+    opts.world_path = match resolve_world(build_dir, world) {
+        Ok(w) => w,
+        Err(d) => return fail(d, json, exit::INPUT),
     };
-    let scene = match panorama::panorama_from_plan(&bytes, &opts) {
+    // An anchor subject is resolved against the anchors this build placed; the
+    // default subject reads nothing but the plan.
+    let anchors = match &opts.subject {
+        Subject::Layout => Vec::new(),
+        Subject::Anchors(_) => {
+            let path = build_dir.join("creator-datapack").join("layout.json");
+            match std::fs::read(&path)
+                .map_err(|e| Diagnostic::error(DW_INPUT, format!("read {}: {e}", path.display())))
+                .and_then(|b| panorama::resolved_anchors(&b))
+            {
+                Ok(a) => a,
+                Err(d) => return fail(d, json, exit::INPUT),
+            }
+        }
+    };
+    let pano = match panorama::panorama_from_plan(&bytes, &anchors, &opts) {
         Ok(s) => s,
-        Err(d) => return fail(d, vopts.json, exit::INPUT),
+        Err(d) => return fail(d, json, exit::INPUT),
     };
-    let name = scene.0.clone();
+    let scene = (pano.file_name.clone(), pano.bytes.clone());
     let purged = match write_scenes(out, std::slice::from_ref(&scene)) {
         Ok(n) => n,
-        Err((d, code)) => return fail(d, vopts.json, code),
+        Err((d, code)) => return fail(d, json, code),
     };
+    let (smin, smax) = pano.subject;
     eprintln!(
-        "emitted panorama {} -> {} ({purged} stale cache file(s) purged; {} spp, render with {}; \
+        "emitted panorama {} -> {} ({purged} stale cache file(s) purged; {}x{}, {} spp, render with {}; \
          see README)",
-        name,
+        pano.file_name,
         out.display(),
-        spp,
+        opts.width,
+        opts.height,
+        opts.spp_target,
         scene::CHUNKY_CORE
     );
+    eprintln!(
+        "subject: {}, box {smin:?}..{smax:?} — covers {:.0}% of the frame \
+         ({:.0}% of its width x {:.0}% of its height) from bearing {} at {} degrees, fov {}. \
+         That share is a floor, never the verdict: look at the frame",
+        match &opts.subject {
+            Subject::Layout => "the placed areas".to_string(),
+            Subject::Anchors(names) => format!("the building {} anchor(s) stand in", names.len()),
+        },
+        pano.span.fill() * 100.0,
+        pano.span.width * 100.0,
+        pano.span.height * 100.0,
+        opts.bearing.name(),
+        opts.pitch_deg,
+        opts.fov_deg
+    );
+    // The solved camera, in the record format: the frame is kept or refined by
+    // copying this into `design/cameras.json` and naming the image it answers.
+    match serde_json::to_string(&pano.record) {
+        Ok(line) => eprintln!(
+            "camera record (set `answers`, then keep or refine it in {}): {line}",
+            camera::CAMERAS_FILE
+        ),
+        Err(e) => {
+            return fail(
+                Diagnostic::error(DW_OUTPUT, format!("serialize the camera record: {e}")),
+                json,
+                exit::OUTPUT,
+            );
+        }
+    }
     ExitCode::SUCCESS
+}
+
+fn run_cameras(
+    build_dir: &Path,
+    campaign: &Path,
+    out: &Path,
+    world: Option<&Path>,
+    json: bool,
+    mut opts: EmitOptions,
+) -> ExitCode {
+    let read = |path: PathBuf| {
+        std::fs::read(&path)
+            .map_err(|e| Diagnostic::error(DW_INPUT, format!("read {}: {e}", path.display())))
+    };
+    let plan = match read(build_dir.join("render-plan.json")) {
+        Ok(b) => b,
+        Err(d) => return fail(d, json, exit::INPUT),
+    };
+    let sheet =
+        match read(campaign.join(camera::CAMERAS_FILE)).and_then(|b| camera::parse_sheet(&b)) {
+            Ok(s) => s,
+            Err(d) => return fail(d, json, exit::INPUT),
+        };
+    let rows = match read(campaign.join("design.json")).and_then(|b| camera::reference_names(&b)) {
+        Ok(r) => r,
+        Err(d) => return fail(d, json, exit::INPUT),
+    };
+    let unanswered = match camera::bind_answers(&sheet, &rows) {
+        Ok(u) => u,
+        Err(d) => return fail(d, json, exit::INPUT),
+    };
+    opts.world_path = match resolve_world(build_dir, world) {
+        Ok(w) => w,
+        Err(d) => return fail(d, json, exit::INPUT),
+    };
+    let emission = match camera::emit(&plan, &sheet, &opts) {
+        Ok(e) => e,
+        Err(d) => return fail(d, json, exit::INPUT),
+    };
+    let purged = match write_scenes(out, &emission.scenes) {
+        Ok(n) => n,
+        Err((d, code)) => return fail(d, json, code),
+    };
+    if opts.bracket.is_some() {
+        let path = out.join(camera::CANDIDATES_FILE);
+        let written =
+            camera::candidates_bytes(&sheet.campaign_id, &emission.cameras).and_then(|b| {
+                std::fs::write(&path, b).map_err(|e| {
+                    Diagnostic::error(DW_OUTPUT, format!("write {}: {e}", path.display()))
+                })
+            });
+        if let Err(d) = written {
+            return fail(d, json, exit::OUTPUT);
+        }
+    }
+    let stated = if opts.only.is_empty() {
+        sheet.cameras.len()
+    } else {
+        opts.only.len()
+    };
+    eprintln!(
+        "emitted {} Chunky scene(s) for {stated} of {} stated camera(s) -> {} ({purged} stale cache \
+         file(s) purged; {}render with {}){}",
+        emission.scenes.len(),
+        sheet.cameras.len(),
+        out.display(),
+        if opts.draft { "drafts, " } else { "" },
+        scene::CHUNKY_CORE,
+        if opts.bracket.is_some() {
+            format!(
+                "; every candidate is in {}",
+                out.join(camera::CANDIDATES_FILE).display()
+            )
+        } else {
+            String::new()
+        }
+    );
+    eprintln!(
+        "answers: {} of {} approved image(s) in design.json have a camera{}",
+        rows.len() - unanswered.len(),
+        rows.len(),
+        if unanswered.is_empty() {
+            String::new()
+        } else {
+            format!("; none answers {}", unanswered.join(", "))
+        }
+    );
+    ExitCode::SUCCESS
+}
+
+/// The world save a scene names, as the absolute path Chunky will be handed.
+///
+/// Chunky resolves a scene's world path against the RENDERING process's working
+/// directory, and renders a world it cannot find as an empty frame at exit 0 with
+/// the reason inside a Java stack trace. `delvec build` writes no world — the
+/// datapack stamps the geometry during a server boot, and
+/// `validation/world-save.sh` copies that save to `<build-dir>/world`. So the
+/// default is that directory, the path is made absolute here, and a directory
+/// without `level.dat` and at least one region file is refused before a scene is
+/// written.
+fn resolve_world(build_dir: &Path, world: Option<&Path>) -> Result<String, Diagnostic> {
+    let dir = world.map_or_else(|| build_dir.join("world"), Path::to_path_buf);
+    let level = dir.join("level.dat").is_file();
+    let regions = std::fs::read_dir(dir.join("region"))
+        .map(|rd| {
+            rd.filter_map(Result::ok)
+                .filter(|e| e.path().extension().is_some_and(|x| x == "mca"))
+                .count()
+        })
+        .unwrap_or(0);
+    if !level || regions == 0 {
+        return Err(Diagnostic::error(
+            DW_INPUT,
+            format!(
+                "{} holds no world save (level.dat: {}, region files: {regions}). A scene names \
+                 the world Chunky loads, `delvec build` writes none, and Chunky renders a \
+                 missing world as an empty frame at exit 0. Boot the build once to write it: \
+                 `EULA=TRUE \"$DELVEWRIGHT_ENGINE/validation/world-save.sh\" {} --project dw-<id>` \
+                 writes `<build-dir>/world`, the default; `--world` names a save elsewhere",
+                dir.display(),
+                if level { "present" } else { "MISSING" },
+                build_dir.display(),
+            ),
+        ));
+    }
+    let abs = std::path::absolute(&dir)
+        .map_err(|e| Diagnostic::error(DW_INPUT, format!("resolve {}: {e}", dir.display())))?;
+    Ok(abs.display().to_string())
 }
 
 fn run_index(build_dir: &Path, out: &Path, vopts: &ViewOpts) -> ExitCode {
@@ -783,6 +1071,27 @@ fn run_viewer(inputs: &[PathBuf], out: &Path, title: Option<&str>, vopts: &ViewO
             d.print(vopts.json);
         }
         eprintln!("{}", enclosure.line(model.id()));
+    }
+    // What each anchor's point of view shows (`DW0893`), measured off the same
+    // bytes before the page exists: a preset pressed against a wall is said
+    // here, beside the room camera the page offers for the same anchor.
+    for model in &models {
+        let frames = crate::compiler::view::sight::anchor_frames(model.structure(), model.meta());
+        for d in crate::compiler::view::sight::frames_findings(
+            &frames,
+            |a| format!("{} point of view `pov:{a}`", model.id()),
+            |a| format!("{} room view `room:{a}`", model.id()),
+        ) {
+            d.print(vopts.json);
+        }
+        eprintln!(
+            "{}",
+            crate::compiler::view::sight::frames_line(
+                model.id(),
+                model.meta().map_or(0, |m| m.anchors.len()),
+                &frames
+            )
+        );
     }
     // The light verdict's one escape is a COUNT off these same bytes, never a
     // word in the document — see `LightVerdict::of`.

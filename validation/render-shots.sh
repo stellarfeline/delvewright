@@ -142,8 +142,8 @@ render() { "$delvec_bin" "$@"; }
 
 mkdir -p "$out_dir/scenes"
 render scene "$build_dir" -o "$out_dir/scenes" --world "$world_dir"
-# The whole-map release panorama lands in the same scene dir (every content
-# release ships one; the reviewer gets it for free).
+# The default exterior panorama of the built place lands in the same scene dir
+# (every content release ships one; the reviewer gets it for free).
 render panorama "$build_dir" -o "$out_dir/scenes" --world "$world_dir"
 render index "$build_dir" -o "$out_dir/shot-index.json"
 

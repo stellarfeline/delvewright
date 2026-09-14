@@ -73,14 +73,16 @@ pub const DW_ENCLOSED_UNREACHED: &str = "DW0895";
 /// The renderer's parsed structure, answering [`Voxels`].
 ///
 /// Cells the template does not mention are air: a vanilla structure template is
-/// sparse, and absent means nothing is there.
-struct Cells<'a> {
+/// sparse, and absent means nothing is there. Shared with
+/// [`crate::compiler::view::sight`], which stands a room camera by the same rule.
+pub struct Cells<'a> {
     size: [i32; 3],
     names: Vec<&'a str>,
 }
 
 impl<'a> Cells<'a> {
-    fn of(st: &'a Structure) -> Cells<'a> {
+    /// Index a parsed structure.
+    pub fn of(st: &'a Structure) -> Cells<'a> {
         let [sx, sy, sz] = st.size;
         let n = (sx.max(0) as usize) * (sy.max(0) as usize) * (sz.max(0) as usize);
         let mut names: Vec<&str> = vec!["minecraft:air"; n];
