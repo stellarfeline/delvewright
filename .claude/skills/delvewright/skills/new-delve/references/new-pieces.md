@@ -349,6 +349,22 @@ this needs are subcommands of the one binary Init I3 installed.
    metadata to write into, and the fix is to create it, never to let the tool
    invent a `spdx: UNKNOWN` one.
 
+## A body has to be able to walk up it
+
+**A step of one whole block is a jump, not a stair.** Vanilla walks a body up
+0.6 of a block; a full course has to be jumped, every tread, all the way up. A
+staircase built from whole blocks passes every gate the expansion runs — it is
+solid, it is reachable, the nav model allows the jump — and it is wrong the
+moment anybody plays it. Build every flight from **stair blocks**:
+
+- the walked lane is `minecraft:<stone>_stairs[facing=<the way it climbs>,half=bottom,shape=straight,waterlogged=false]`, one tread per course, and `facing` is the direction you **ascend** — a vanilla stair's full-height half sits on its `facing` side;
+- a wide flight keeps its **outermost columns as whole masonry**, because a body can step onto a wide flight from the side, and a stair carrying a route that crosses it rather than climbs it is a stair facing the wrong way;
+- a flight that is joined from the side at its foot gets a **landing** there — the first tread or two as whole blocks — for the same reason.
+
+`DW0430` refuses a stair whose facing disagrees with the climb its route makes,
+at build time, naming every cell. It cannot see the other half of this rule: a
+flight of whole blocks faces nothing, so nothing refuses it. That one is yours.
+
 ## What the grammar cannot express
 
 **What the grammar cannot express — escalate, do not work around**: block

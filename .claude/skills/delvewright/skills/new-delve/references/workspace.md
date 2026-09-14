@@ -200,6 +200,19 @@ clear daytime one — so declaring `night` is a design decision that also switch
 that gate off, which is why *Reference: authoring pitfalls* forbids reaching for
 the hour to save a mob.
 
+## Languages — ask, do not assume
+
+**Ask the user which languages the delve ships in, here, before any prose is
+written.** One line is enough: *"English only, or shall it also ship in <the
+language they are writing to you in>?"* Their answer goes in `world.json`'s
+`languages`, and the localization stage at step 5 delivers the sidecars.
+
+Ask even when the brief says nothing about language, and especially when the
+brief arrives in a language other than English: a creator writing to you in
+Chinese has not thereby asked for a Chinese delve, and has not thereby declined
+one. Guessing either way is how a delve ships in a language its author did not
+choose — or ships without one they assumed.
+
 ## The optional fields that commit something
 
 **Some of `world.json`'s optional fields commit something you are not writing
