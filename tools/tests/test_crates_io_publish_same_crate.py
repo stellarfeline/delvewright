@@ -8,8 +8,8 @@ at). That is the normal state of a re-run from a later `main` commit — which
 Release is missing though the registry already serves the version (ADR-0028 §6).
 
 MEASURED before the fix, against the real registry: a local run of that
-workflow's publish step on a `main` commit later than the one 0.25.0 was
-uploaded from printed `skip … (already published, same crate)`, uploaded
+workflow's publish step on a `main` commit later than the one the current
+format version was uploaded from printed `skip … (already published, same crate)`, uploaded
 nothing, then polled the post-condition — index sha256 == OUR sha256 — for 180
 seconds and failed `only 0/1 visible`. The index keeps the tarball the earlier
 commit uploaded, so that post-condition could never hold. The post-condition now

@@ -1,8 +1,8 @@
 # ADR-0028: Three things, each released by its name and its version — `delvec`, `delvewright-dsl` and the `delvewright` plugin
 
-- **Status**: Proposed
+- **Status**: Accepted — implemented; §2, §4, §6, §9 and *Consequences* amended to what was built
 - **Date**: 2026-09-13
-- **Source**: the ruling that the engine repository publishes three
+- **Source**: the rule that the engine repository publishes three
   independently versioned things — the `delvec` binary, the `delvewright-dsl`
   crate and the `delvewright` Claude Code plugin — each as a GitHub Release
   whose tag is the thing's name plus its version, each published by CI, and
@@ -37,7 +37,7 @@ the brief that commissioned this record):
 | thing | its number lives in | how it reaches a consumer | its release today |
 |---|---|---|---|
 | `delvec` | `versions.toml [engine].version` = `1.5.0` | the archive on the GitHub Release (`fetch-delvec.py`), or `cargo install delvec` | `.github/workflows/engine-release.yml`, on a pushed tag matching `v[0-9]+.[0-9]+.[0-9]+`, with a `workflow_dispatch` arm that takes an existing `v<semver>` tag; six releases `v1.0.0`…`v1.5.0`; crates.io holds `delvec` 1.1.0, 1.3.0, 1.4.0, 1.5.0 |
-| `delvewright-dsl` | `versions.toml [engine].dsl_crate_version` = `0.25.0` | crates.io, resolved by `delvec`'s `=` requirement | `.github/workflows/dsl-crate-publish.yml`, on a push to `main` that moves the number; no tag, no GitHub Release; crates.io holds 0.25.0 as its newest |
+| `delvewright-dsl` | `versions.toml [engine].dsl_crate_version` | crates.io, resolved by `delvec`'s `=` requirement | `.github/workflows/dsl-crate-publish.yml`, on a push to `main` that moves the number; no tag, no GitHub Release; crates.io held the tree's number as its newest |
 | the `delvewright` plugin | `.claude/skills/delvewright/.claude-plugin/plugin.json` `version` = `1.4.2` (`1.4.3` on `main` at `93c9802e`, merged after this tree was cut) | `/plugin marketplace add stellarfeline/delvewright` then `/plugin install delvewright@delvewright`; the marketplace is `.claude-plugin/marketplace.json` at the root, one entry, `"source": "./.claude/skills/delvewright"` | none: no tag, no Release, no workflow |
 
 The remote carries seven tags: `v1.0.0`, `v1.1.0`, `v1.2.0`, `v1.3.0`,
@@ -159,9 +159,9 @@ Release's notes says which of the three it is.
 |---|---|---|---|
 | starts on | a pushed `delvec--v*` tag; dispatch re-fills a draft (as today) | a push to `main` that moves `[engine].dsl_crate_version` (as today); dispatch is the remedy arm (as today) | a pushed `delvewright--v*` tag; dispatch writes the tag (§4) |
 | who writes the tag | a human, the release act | the publishing job, after the registry upload (§6) | a human after the first; the manual arm for the first and as the remedy |
-| identity, refused before anything builds | tag == `delvec--v` + `[engine].version` at the tagged commit; ancestor of `main` (as today) | the tag the job will write does not exist yet; the commit is on `main` | tag == `delvewright--v` + `plugin.json` `version` at the tagged commit; ancestor of `main`; §3's tree-identity over every `main` commit carrying that version |
-| assets | one archive per `[engine].targets` plus `SHA256SUMS` (as today; the archive grammar `delvec-v<version>-<target>.tar.gz` is unchanged) | `delvewright-dsl-<version>.crate` — the tarball `cargo package` produced and the registry received, byte-identical, which `tools/crates-io-publish.sh` already hashes — plus `SHA256SUMS` | `delvewright-plugin-<version>.zip`, `git archive --format=zip <tag>:.claude/skills/delvewright` (reproducible by anyone from the tag), plus `SHA256SUMS` |
-| notes | generated from the previous `delvec--v*` tag, prefixed with the `dsl_version` the binary speaks and the crates.io link, read from the tree | generated from the previous `delvewright-dsl--v*` tag, prefixed with the crates.io link | generated from the previous `delvewright--v*` tag, prefixed with the engine release the page pins and its `ref`, the `requires_delvec` window, the `dsl_version` that engine speaks, and the plugin root's tree hash — every value read from the tree at the tag, none typed |
+| identity, refused before anything builds | tag == `delvec--v` + `[engine].version` at the tagged commit, under the strict grammar (`tools/lib/release_tags.py`); ancestor of `main` (as before) | the commit is on `main`; a tag already written must name a `main` commit stating the version, and is never moved | tag == `delvewright--v` + `plugin.json` `version` at the tagged commit; the commit is itself a first-parent `main` commit carrying that version; §3's tree-identity over every such commit (`tools/check-plugin-release-identity.py`); no Release already exists at the tag |
+| assets | one archive per `[engine].targets` plus `SHA256SUMS` (as before; the archive grammar `delvec-v<version>-<target>.tar.gz` is unchanged) | `delvewright-dsl-<version>.crate` — the registry's own tarball, downloaded and refused unless it hashes to the index sha256 (a local re-packaging from any later commit differs in `.cargo_vcs_info.json`) — plus `SHA256SUMS` | `delvewright-plugin-<version>.zip`, `git archive --format=zip --mtime=<the commit's committer time> <commit>:.claude/skills/delvewright`, plus `SHA256SUMS`; `--mtime` is what makes it reproducible from the tag, because git stamps the current time on every entry when archiving a tree (measured: two archives of the same tree three seconds apart hashed differently; with `--mtime`, runs a minute apart hashed identically) |
+| notes | generated from the previous `delvec--v*` tag (for the first, the newest legacy `v<semver>` release), prefixed with the `dsl_version` the binary speaks and the crates.io link, read from the tree | generated from the previous `delvewright-dsl--v*` tag, prefixed with the crates.io link | generated from the previous `delvewright--v*` tag, prefixed with the engine release the page pins and its `ref`, the `requires_delvec` window, the `dsl_version` that engine speaks, and the plugin root's tree hash — every value read from the tree at the tag, none typed |
 | the two platforms | crates.io then the undraft, one approval (ADR-0026) | crates.io then the tag and Release, one approval (§6) | the Release, one approval (§5) |
 | Latest | yes: `make_latest=true` | no: `--latest=false` | no: `--latest=false` |
 
@@ -204,15 +204,21 @@ which stays there through `marketplace update`.
 
 The plugin workflow's `workflow_dispatch` takes one input, a commit on `main`
 (default: `main`'s tip), and performs, in order: read `plugin.json` `version`
-at that commit; refuse if `delvewright--v<version>` already exists; run §3's
-identity and tree-identity; create the annotated tag at that commit through
-the API (the job's `contents: write`), which is the one act the tag-push path
-does by hand; then continue exactly as the tag-push path does — archive,
-checksums, notes, the environment-gated publish. The first release is this arm
-run against the commit `main` carries when the workflow lands; nothing before
-it is tagged retroactively, so `1.4.2` and every earlier plugin version are
-delivered history with no release, and the census of plugin releases starts
-at the first tag.
+at that commit and derive the tag; run §3's identity and tree-identity; refuse
+if a Release already exists at the tag (published, or a draft nothing in the
+workflow created); prove the page's engine shelf (§3); archive, checksum and
+write the notes; then, in the environment-gated job and after the approval,
+create the annotated tag at that commit through the API (the job's
+`contents: write`), which is the one act the tag-push path does by hand, and
+the Release. The tag is written after the approval rather than before the
+archive, so a run nobody approves leaves no tag behind. A tag that already
+exists without a Release — a run that died between the two writes — is
+accepted when it names the commit the run judged, so re-running either entry
+point completes the release; a tag written with the job's own token starts no
+second run. The first release is this arm run against the commit `main` carries
+when the workflow lands; nothing before it is tagged retroactively, so every
+earlier plugin version is delivered history with no release, and the census of
+plugin releases starts at the first tag.
 
 ### 5. Tag-driven releases after the first, and the version that must not go unreleased
 
@@ -225,7 +231,10 @@ has the shape of: **on a pull request that moves `plugin.json` `version` from
 X to Y, X has a published `delvewright--vX` Release**, or the pull request
 reds and names the remedy (push the tag, or run the arm). The subject is the
 outgoing number, for the reason that file gives: it is the moment X is
-finished and the last moment anyone will ask about it.
+finished and the last moment anyone will ask about it. It is
+`tools/check-plugin-version-released.py`, a step of the existing required job
+`dsl crate version (crates.io)`; a Release counts only when it is published,
+carries the zip and `SHA256SUMS`, and its tag resolves to a commit stating X.
 
 The publish step of the plugin release runs in a job that declares an
 environment of its own, `plugin-release`, holding no secret, with the owner as
@@ -244,22 +253,40 @@ this job has no use for one.
 the moment a document declares it, so the crate does not wait for a human
 tag). What changes is that the gated `publish` job of `dsl-crate-publish.yml`,
 after `tools/crates-io-publish.sh --publish --only delvewright-dsl` returns
-with the index serving the bytes, creates `delvewright-dsl--v<version>` at the
-commit it ran from and the Release with the `.crate` and `SHA256SUMS`,
-`--latest=false`. The irreversible act is first and the residual window is
-one call wide, the same argument as ADR-0026 §3; a re-run finds the version on
-the registry, skips it, and writes the tag and Release if they are missing.
-This is ADR-0026 §4's third option — "a tag and an assetless release per format
-bump" — taken, with the shelf not empty: the asset is the tarball the registry
-holds, and the checksum beside it is what lets anyone prove the two are one.
+with the index serving the bytes, downloads the registry's own `.crate`
+(checked against the index sha256), creates `delvewright-dsl--v<version>` at
+the `main` commit the run judged (or confirms an existing tag names a `main`
+commit stating the version), and creates the Release with the `.crate` and
+`SHA256SUMS`, `--latest=false`, reading both back. The irreversible act is first
+and the residual window is the two writes after it, the same argument as
+ADR-0026 §3. The approval is asked for when the registry OR the Release lacks
+the version, so a re-run — or the manual arm on a later `main` commit carrying
+the version — finds it on the registry, skips the upload, and writes whichever
+of the tag and Release is missing. That path exposed a latent defect in
+`tools/crates-io-publish.sh`: after a same-crate skip its post-condition waited
+for the index to serve OUR sha256, which a later commit's packaging never has;
+it now waits for the sha256 its plan decided. This is ADR-0026 §4's third
+option — "a tag and an assetless release per format bump" — taken, with the
+shelf not empty: the asset is the tarball the registry holds, and the checksum
+beside it is what lets anyone prove the two are one.
+
+The record is kept complete the same way as the plugin's (§5):
+`tools/check-dsl-version-published.py` now also refuses a change that moves the
+dsl version away from X unless `delvewright-dsl--vX` is a published Release
+carrying the `.crate` and a `SHA256SUMS` whose line is the index sha256, on a
+tag naming a commit stating X. This is what reds a publish whose tag-and-Release
+step was skipped. The versions published before this workflow wrote Releases
+have none; the first dsl bump after it lands therefore waits on the manual arm
+releasing the current number.
 
 With that, the engine release's treatment of the format crate changes from
 "no-op re-check, or supply it if the hook never ran" to **refuse**: the
 `delvec` release runs `tools/crates-io-publish.sh --publish --only delvec`
-after a preflight that the registry already serves `[engine].dsl_crate_version`
-byte-identically, and if it does not, the remedy it names is the format
-crate's own release (its dispatch arm). No path remains by which a
-`delvewright-dsl` version reaches crates.io without its tag and Release.
+after a preflight (in `crates-preflight`, before any approval) that the
+registry already serves `[engine].dsl_crate_version` as the same crate, and if
+it does not, the remedy it names is the format crate's own workflow (its
+dispatch arm). No path remains by which a `delvewright-dsl` version reaches
+crates.io without its tag and Release being owed and checked.
 
 ### 7. The six existing tags stay as they are, and nothing else is ever tagged `v<semver>`
 
@@ -290,53 +317,110 @@ repository resolves anything through `releases/latest`, and none may start to.
 
 ### 9. Immutability by ruleset
 
-ADR-0017 §5 made a filled release immutable "in practice". A tag ruleset on
-`refs/tags/*--v*` and on the six `v*` tags — forbidding update and deletion,
-restricting creation to the repository's owner — makes it so by construction,
-in the way the branch ruleset already protects `refs/heads/feature/**`. It is
-a GitHub setting outside the tree, so it is proposed here and written by the
-planner from the read-back state, proved by attempting the forbidden act.
+ADR-0017 §5 made a filled release immutable "in practice". A tag ruleset makes
+it so by construction, in the way the branch ruleset already protects
+`refs/heads/feature/**`: target `tag`, include `refs/tags/*--v*` and
+`refs/tags/v*`, rules `deletion` and `update`, an EMPTY bypass list, enforcement
+`active`. Nobody updates or deletes a release tag, the repository owner
+included.
+
+Creation is NOT restricted, which departs from this section as proposed
+("restricting creation to the repository's owner"). Two of the three release
+workflows create their tag with the job's own token (§4, §6), and a `creation`
+rule admits only its bypass list; GitHub's documented bypass actors are
+repository roles, teams, GitHub Apps and Dependabot, and GitHub Actions is not
+one of them (cited, not measured here: a public report quotes the rulesets API
+refusing the Actions integration as a bypass actor). Restricting creation would
+therefore stop §4 and §6 at their tag write, or need a second credential this
+repository does not hold. What judges a created tag is the release workflow it
+starts or that writes it: the grammar, the version at the commit, ancestry of
+`main`, and for the plugin the tree-identity. Creating a tag requires write
+access, which in this repository is the owner and the workflows' tokens.
+
+It is a GitHub setting outside the tree, written by the planner from the
+read-back state and proved in both directions: a probe tag under the pattern
+is created (creation not blocked), then its deletion and its force-update are
+refused, over both `git push` and the REST API; the probe is removed by
+disabling the ruleset, deleting the probe and re-enabling it as the next act,
+with the enforcement read back. The token direction is proved by the first
+workflow run that writes a tag (§4 or §6): its tag step reads the written tag
+back from the API.
 
 ## Consequences
 
-- **Checks that change**: `engine-release.yml`'s trigger, identity message,
-  dispatch input and Release title; `dsl-crate-publish.yml` gains the tag and
-  Release steps in its gated job; a new `plugin-release.yml` with the two
-  entry points of §4–§5; `tools/check-pins.py` (both repositories) matches
-  `<thing>--v<semver>` for the thing the registry entry names, and the
+- **The order the implementation lands in**, made structural. A tag-triggered
+  run executes the workflow file at the tagged commit, and `engine-release.yml`
+  refuses a tagged commit that is not an ancestor of `main`, so the first
+  `delvec--v*` release cannot be published from an unmerged commit; and a pin
+  checker that accepts only `delvec--v*` cannot land while the page still pins
+  `v1.4.0` (the page's pin on `main`), because the required `content pin` job
+  runs it online. No checker accepts both grammars (§7), so the work lands in
+  two pull requests with a published release between them:
+  1. **PR A** (the planner merges): the three workflows, the tag writer, the
+     outgoing plugin-version gate and the dsl gate's Release half, the
+     `crates-io-publish.sh` post-condition fix, fixtures, docs, this record.
+     Nothing under the plugin root and no pin checker changes; the page stays
+     on `v1.4.0`. Green on its own.
+  2. The planner creates the `plugin-release` environment (owner as required
+     reviewer, no secret) and the tag ruleset of §9, each proved.
+  3. The planner runs `plugin-release.yml`'s manual arm on the `main` commit
+     carrying the current plugin version; the owner approves. From PR A's merge
+     until this Release exists, every pull request that moves the plugin
+     version reds in `dsl crate version (crates.io)`, so this comes before any
+     plugin bump merges. Likewise the planner runs `dsl-crate-publish.yml`'s
+     manual arm on `main` before any dsl bump merges; the owner approves
+     `crates-io` (the upload is skipped, the tag and Release are written).
+  4. A release commit on `main` moves `[engine].version` to `1.6.0` (release
+     plumbing only).
+  5. A human pushes `delvec--v1.6.0` at that commit; `engine-release.yml` runs
+     from it; the owner approves `crates-io`.
+  6. **PR B** (a fresh branch): `tools/check-pins.py`, the `release` policy text
+     in `.github/pins.toml`, `tools/check-skill-page.py` and `fetch-delvec.py`
+     read `delvec--v<semver>`; spec-0063 §8 and its criterion 4 are re-stated
+     against the grammar; the page re-pins to `delvec--v1.6.0` and its commit;
+     the plugin version moves. Its `content pin` job is red until step 5's
+     Release carries its shelf, and its plugin gate is red until step 3's
+     Release exists.
+  7. The plugin release for PR B's version: a pushed `delvewright--v*` tag or
+     the manual arm; the owner approves.
+  8. The content repository's pull request re-pins `engine-release` to
+     `delvec--v1.6.0` and changes its checker and policy text in the same
+     change; red until step 5.
+- **Checks that change in PR A**: `engine-release.yml`'s trigger, strict
+  identity, dispatch input, Release title, notes, the format-crate preflight,
+  `--only delvec`, and an explicit `--latest`; `dsl-crate-publish.yml`'s `plan`
+  (on-`main` refusal, the Release state in the approval decision) and gated
+  job (the registry `.crate`, the tag, the Release, the read-back); the new
+  `plugin-release.yml`; `tools/check-plugin-version-released.py` (new, a step
+  of `dsl crate version (crates.io)`); `tools/check-dsl-version-published.py`
+  (the Release half); `tools/crates-io-publish.sh`'s post-condition; the
+  release-publish-gate fixtures' trigger line; `.github/pins.toml` registers
+  `plugin-release.yml` as a site of the three actions it uses. Every one states
+  its binding count. No required status context is added or renamed.
+- **Checks that change in PR B**: `tools/check-pins.py` (both repositories)
+  matches `<thing>--v<semver>` for the thing the registry entry names, and the
   `release` policy's text in both `.github/pins.toml` files says so;
   `tools/check-skill-page.py` derives the version from a `delvec--v` pin once
   and the archive name from the version, offline and `--online`;
-  `fetch-delvec.py` does the same derivation; a new outgoing-plugin-version
-  gate in `ci.yml` (§5) beside `check-dsl-version-published.py`; the
-  release-publish-gate fixtures carry the new trigger. Every one states its
-  binding count.
+  `fetch-delvec.py` does the same derivation.
 - **Checks that do not change**: `tools/check-release-publish-gate.py` and
   `tools/check-approval-guard.py` (the plugin job is one more environment-gated
   job under a rule stated by object class); `tools/build-release-binaries.sh`
   and the archive grammar; the content repository's `release.yml`, which checks
   the engine out by commit and never by tag.
-- **The docs**: `docs/reference/tools.md` rows for the three checkers and the
-  fetch script; `docs/reference/skill-workflow.md`'s account of how a newer
-  page arrives gains one sentence — it arrives when the version moves on
-  `main`, and the release is the record of it; spec-0063 §8 and its criterion
-  4 name the pin's shape as `v<semver>` and are re-stated by the implementing
-  pull request against this grammar; `ACKNOWLEDGEMENTS.md` gains nothing (no
-  library is adopted).
-- **The order the implementation lands in**, made structural rather than
-  narrated: the engine release under the new grammar must exist before the
-  page can pin it, so the implementing pull request lands the three
-  workflows and checkers with the page still pinned to `v1.5.0` under a
-  checker that accepts only `delvec--v` — which reds — and is not mergeable
-  until `delvec--v1.6.0` is published from a tree that carries this record;
-  the re-pin and the plugin's version bump ride the same pull request; the
-  first plugin release (§4) follows its merge; the content repository's re-pin
-  is a separate pull request there, blocked on the same engine release.
+- **The docs**: `docs/reference/tools.md` rows for every new and changed tool
+  (PR A) and for the pin checkers and the fetch script (PR B);
+  `docs/reference/skill-workflow.md`'s account of how a newer page arrives gains
+  one sentence — it arrives when the version moves on `main`, and the release is
+  the record of it (PR A); spec-0063 §8 and its criterion 4 (PR B);
+  `ACKNOWLEDGEMENTS.md` gains nothing (no library is adopted).
 - **What the owner is committed to** the first time each can bind: a second
   GitHub environment (`plugin-release`) whose reviewer rule must be saved and
   whose binding is proved by `assert-run-approved.sh` the way the first one's
-  is; a tag ruleset (§9); one approval click per plugin release; and the
-  knowledge that `1.4.2` and earlier plugin versions have no release.
+  is; a tag ruleset (§9) under which nobody, the owner included, can move or
+  delete a release tag; one approval click per plugin release and one per
+  format-crate Release; and the knowledge that the plugin versions and format
+  versions delivered before their first Release have none.
 - ADR-0026's revisit trigger "a third platform joins the release" does not
   fire: no line gains a platform; one line (the format crate) gains a second
   outlet under the approval it already had, which is §1 of that record applied

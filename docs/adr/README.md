@@ -32,7 +32,7 @@ edit. Template at the bottom.
 | [0025](0025-one-package.md) | One package — `delvec` is the engine, `delvewright-dsl` is the format, and nothing else is published | Accepted |
 | [0026](0026-one-approval-two-platforms.md) | One approval authorises both platforms — an engine release reaches crates.io and the GitHub Release together, or neither | Accepted; §4's open question closed by ADR-0028 |
 | [0027](0027-the-content-repository-is-optional-and-the-rig-is-reached-not-carried.md) | The content repository is an optional clone, and the plugin reaches the engine tree instead of carrying pieces of it | Proposed |
-| [0028](0028-three-things-released-by-name.md) | Three things, each released by its name and its version: `<name>--v<semver>` tags for `delvec`, `delvewright-dsl` and the `delvewright` plugin | Proposed |
+| [0028](0028-three-things-released-by-name.md) | Three things, each released by its name and its version: `<name>--v<semver>` tags for `delvec`, `delvewright-dsl` and the `delvewright` plugin | Accepted |
 
 ## Template
 
