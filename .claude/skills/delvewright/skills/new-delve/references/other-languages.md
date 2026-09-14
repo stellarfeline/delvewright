@@ -1,7 +1,8 @@
 # Reference: other languages
 
-Needed only when the brief asks for one — or when the brief arrives in a
-non-English language **and asks for localized in-game text** (中文文本 etc.). It is
+Needed when the user asked for one — which step 1 asks them, so this page is
+reached with an answer in hand rather than a guess. A brief that arrives in
+another language is a reason to ask, never an answer by itself. It is
 a **final document stage after `dialogue`**, once the English campaign is
 complete. Everything in the campaign documents stays English, always; other
 languages are delivered as sidecars.

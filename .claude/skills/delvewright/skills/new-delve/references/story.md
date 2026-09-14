@@ -27,6 +27,18 @@ and looping against them is the one way to spend an afternoon here.
 
 - **NPCs**: personas per the schema — `archetype`, `speech_style` and
   `motivation` are required, and step 5 honours them in every line.
+  - **A character gets a face.** The default body is a **player model wearing
+    that character's own skin** (`skin` on the NPC, the toolchain in *Reference:
+    NPC skins*), not a re-dressed villager. A villager is what you reach for when
+    the fiction is a villager; anybody else in a delve — a guide, a keeper, a
+    duke — reads as a placeholder in one. Budget the skin with the cast, not
+    after it.
+  - **An NPC faces the way the party arrives.** An anchor's `facing` is where a
+    body standing on it looks, and the party comes from the road, the door, the
+    stair head — not from whatever is prettiest in the room. A greeter with their
+    back turned is the commonest first-draft defect there is. The engine holds
+    the other half: a walked body arrives facing its destination anchor's
+    declared facing, or, where none is declared, back down the path it walked.
 - **Classes**: pre-provided gear, no grind. If the campaign places a bonfire,
   **every class kit must declare a flask** (`DW0476`) — see *Reference:
   authoring pitfalls*.
