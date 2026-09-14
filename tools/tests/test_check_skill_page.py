@@ -522,7 +522,7 @@ def test_a_pull_request_that_bumps_the_version_reds(mod, tmp_path):
     plugin = repo / ".claude" / "skills" / "delvewright"
     _bump(plugin, "1.2.0")
     rep = mod.Report()
-    mod.version_move_rule(rep, "HEAD", "1.2.0", repo=repo, plugin_root=plugin, event="pull_request", ref="refs/pull/1/merge")
+    mod.version_move_rule(rep, "HEAD", "1.2.0", repo=repo, plugin_root=plugin, event="pull_request", ref="refs/heads/topic")
     assert any("moves from '1.1.0' to '1.2.0'" in f and "pull_request" in f for f in rep.findings), rep.findings
 
 
@@ -531,7 +531,7 @@ def test_a_page_edit_with_no_bump_holds(mod, tmp_path):
     plugin = repo / ".claude" / "skills" / "delvewright"
     (plugin / "page.md").write_text("the page, edited\n", encoding="utf-8")
     rep = mod.Report()
-    mod.version_move_rule(rep, "HEAD", "1.2.0", repo=repo, plugin_root=plugin, event="pull_request", ref="refs/pull/1/merge")
+    mod.version_move_rule(rep, "HEAD", "1.2.0", repo=repo, plugin_root=plugin, event="pull_request", ref="refs/heads/topic")
     assert rep.findings == [], rep.findings
 
 

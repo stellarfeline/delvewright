@@ -431,7 +431,7 @@ jobs:
           if [ -n "$list" ]; then
             echo "::error::delvewright-dsl $dsl is not on crates.io, and delvec pins it with '='."
             echo "::error::This release never publishes the format crate. Publish it first through its own"
-            echo "::error::workflow, .github/workflows/dsl-crate-publish.yml (its manual arm on a main commit"
+            echo "::error::workflow, .github/workflows/dsl-crate-publish.yml (dispatched on a main commit"
             echo "::error::carrying $dsl), which also writes delvewright-dsl--v$dsl and its Release; then re-run this."
             exit 1
           fi
@@ -481,7 +481,7 @@ jobs:
     #
     # That last sentence is a claim about GitHub settings this file cannot see.
     # An environment can exist, hold the token, and carry `protection_rules: []`
-    # — nothing pauses, and a tag push publishes unreviewed while every comment
+    # — nothing pauses, and a dispatch publishes unreviewed while every comment
     # here still reads correct. Only the half the workflow itself decides — that
     # the token is reachable from exactly one job — holds by construction. A
     # comment cannot make a gate bind; the step below checks.

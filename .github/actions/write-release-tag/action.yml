@@ -2,10 +2,9 @@ name: Write a release tag
 description: >
   Creates the annotated tag `<name>--v<version>` at a commit through the API, as
   the calling job's token, or confirms it already names that commit — one
-  statement of the act for the two workflows that write their own tag
-  (`dsl-crate-publish.yml`'s gated publish, ADR-0028 §6, and `plugin-release.yml`'s
-  gated publish, §4). `engine-release.yml` writes none: its tag is pushed by a
-  human.
+  statement of the act for the three release workflows' gated jobs
+  (`engine-release.yml`, `dsl-crate-publish.yml`, `plugin-release.yml`;
+  ADR-0028 §4). No human pushes a release tag.
 
   Called only from an environment-gated job, after
   `tools/assert-run-approved.sh`, with `contents: write`. A tag this action finds
@@ -13,9 +12,8 @@ description: >
   commit for good. The tag is read back from the API after it is written, and
   the step fails unless it resolves to the commit it was asked for.
 
-  A tag created with a workflow's own token starts no workflow run, so the
-  plugin's manual arm writing `delvewright--v*` does not also start the tag-push
-  path.
+  A tag created with a workflow's own token starts no workflow run, and no
+  workflow starts on a tag push in any case.
 
 inputs:
   tag:
