@@ -147,14 +147,13 @@ def file_at(repo: str, path: str, ref: str) -> bytes | None:
 
 
 def download(url: str) -> bytes:
-    """An asset's bytes from its API url (`Accept: application/octet-stream`)."""
-    req = urllib.request.Request(
-        url,
-        headers={"Accept": "application/octet-stream", "User-Agent": "delvewright/github_releases"},
-    )
-    token = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN")
-    if token:
-        req.add_header("Authorization", f"Bearer {token}")
+    """A public asset's bytes from its `browser_download_url`.
+
+    Unauthenticated on purpose: the download redirects to a signed storage URL,
+    and a bearer token carried across that redirect is a second credential the
+    storage host refuses.
+    """
+    req = urllib.request.Request(url, headers={"User-Agent": "delvewright/github_releases"})
     try:
         with urllib.request.urlopen(req, timeout=TIMEOUT_SECONDS) as fh:  # noqa: S310
             return fh.read()

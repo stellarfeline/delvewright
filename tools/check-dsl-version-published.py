@@ -56,8 +56,28 @@ pull request that carried it. That is the only merge path this repository has
 (CLAUDE.md: PR-based flow even solo); a commit pushed straight to `main` is
 outside what this can see, and the next bump's pull request is where it surfaces.
 
+AND ITS RELEASE, WHICH THE SAME JOB WRITES (ADR-0028 §6)
+
+The gated job that uploads the crate then writes `delvewright-dsl--v<X>` at the
+commit it ran from and a Release carrying the registry's own `.crate` and a
+`SHA256SUMS`. A run whose tag or Release step was skipped, failed or removed
+leaves a number on the registry with no record beside it, and that is the same
+silence one step later. So a retired version counts only when, besides being on
+crates.io:
+
+- a PUBLISHED Release exists at `delvewright-dsl--v<X>`;
+- it carries `delvewright-dsl-<X>.crate` and `SHA256SUMS`, and the `SHA256SUMS`
+  line for the `.crate` is the sha256 the crates.io index records — the Release
+  claims the bytes the registry serves, not some other packaging;
+- the tag resolves to a commit whose `versions.toml` states `<X>`.
+
+The remedy for a version on the registry with no Release is the same workflow:
+its manual arm on a `main` commit carrying `<X>` finds the version on the
+registry, skips the upload, and writes the tag and the Release.
+
 Usage:
   python3 tools/check-dsl-version-published.py [--base origin/main] [--repo DIR]
+      [--github-repo OWNER/NAME]
 
 Exit 0 clean, 1 with the finding, 2 when the comparison could not be made.
 """
@@ -65,6 +85,7 @@ Exit 0 clean, 1 with the finding, 2 when the comparison could not be made.
 from __future__ import annotations
 
 import argparse
+import os
 import pathlib
 import subprocess
 import sys
@@ -73,12 +94,15 @@ import tomllib
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent / "lib"))
 
 import crates_index  # noqa: E402
+import github_releases  # noqa: E402
+import release_tags  # noqa: E402
 from gitbase import BaseUnresolved, resolve_base  # noqa: E402
 
 TOOL = "check-dsl-version-published"
 REPO = pathlib.Path(__file__).resolve().parent.parent
 CRATE = "delvewright-dsl"
 WORKFLOW = ".github/workflows/dsl-crate-publish.yml"
+DEFAULT_GITHUB_REPO = "stellarfeline/delvewright"
 
 
 class Unjudgeable(Exception):
@@ -152,6 +176,7 @@ def _judge(argv: list[str] | None) -> int:
     )
     parser.add_argument("--base", default="origin/main", help="the revision this change moves from")
     parser.add_argument("--repo", type=pathlib.Path, default=REPO)
+    parser.add_argument("--github-repo", default=os.environ.get("GITHUB_REPOSITORY") or DEFAULT_GITHUB_REPO)
     args = parser.parse_args(argv)
 
     repo: pathlib.Path = args.repo
@@ -192,10 +217,10 @@ def _judge(argv: list[str] | None) -> int:
     cksum = crates_index.cksum(CRATE, base_version)
     if cksum:
         print(
-            f"{TOOL}: OK — {read}; 1 of 1 retired version(s) on crates.io "
-            f"({CRATE} {base_version}, sha256 {cksum})"
+            f"  ok   1 of 1 retired version(s) on crates.io ({CRATE} {base_version}, sha256 {cksum})",
+            flush=True,
         )
-        return 0
+        return _judge_release(args.github_repo, read, base_version, tree_version, cksum)
 
     served = crates_index.versions(CRATE)
     print(
@@ -214,6 +239,66 @@ def _judge(argv: list[str] | None) -> int:
         f"that carries {base_version} and approve it. The upload is idempotent by content, so a "
         f"re-run is safe. If {base_version} is one this project has decided will never be "
         f"published, that decision belongs in the record before this merge, not after it.",
+        file=sys.stderr,
+    )
+    return 1
+
+
+def release_problems(github_repo: str, version: str, cksum: str) -> list[str]:
+    """Why `delvewright-dsl--v<version>` is not the Release of the registry's bytes; empty when it is."""
+    tag = release_tags.tag_for(CRATE, version)
+    rel = github_releases.published(github_repo, tag)
+    if rel is None:
+        return [f"{github_repo} has no published Release at {tag} (it is {github_releases.state(github_repo, tag)})"]
+    problems: list[str] = []
+    crate_file = f"{CRATE}-{version}.crate"
+    assets = {a.get("name"): a for a in rel.get("assets", []) if isinstance(a, dict)}
+    missing = [n for n in (crate_file, "SHA256SUMS") if n not in assets]
+    if missing:
+        problems.append(f"Release {tag} lacks {len(missing)} of 2 asset(s): {', '.join(missing)}")
+    if "SHA256SUMS" in assets:
+        sums = github_releases.download(str(assets["SHA256SUMS"].get("browser_download_url"))).decode("utf-8", "replace")
+        claimed = [line.split()[0] for line in sums.splitlines() if line.split()[1:] == [crate_file]]
+        if claimed != [cksum]:
+            problems.append(
+                f"Release {tag}'s SHA256SUMS states {claimed or 'no line'} for {crate_file}, and the "
+                f"crates.io index records {cksum}"
+            )
+    commit = github_releases.tag_commit(github_repo, tag)
+    if commit is None:
+        problems.append(f"tag {tag} does not resolve to a commit on {github_repo}")
+    else:
+        raw = github_releases.file_at(github_repo, "versions.toml", commit)
+        at = _dsl_version(raw, f"{github_repo}@{commit[:8]}:versions.toml") if raw is not None else None
+        if at != version:
+            problems.append(f"tag {tag} is {commit[:8]}, whose versions.toml states {at}, not {version}")
+    return problems
+
+
+def _judge_release(github_repo: str, read: str, base_version: str, tree_version: str, cksum: str) -> int:
+    ok, message = github_releases.bind_test()
+    if not ok:
+        print(f"{TOOL}: FAIL — {message}", file=sys.stderr)
+        return 2
+    print(f"  bind test: {message}", flush=True)
+    tag = release_tags.tag_for(CRATE, base_version)
+    try:
+        problems = release_problems(github_repo, base_version, cksum)
+    except github_releases.Unreadable as exc:
+        print(f"{TOOL}: FAIL — the Release lookup could not be read: {exc}", file=sys.stderr)
+        return 2
+    if not problems:
+        print(f"{TOOL}: OK — {read}; 1 of 1 retired version(s) on crates.io and released ({tag})")
+        return 0
+    print(
+        f"{TOOL}: 1 finding — {read}; 1 of 1 retired version(s) on crates.io, 0 of 1 released\n\n"
+        + "".join(f"  - {p}\n" for p in problems)
+        + f"\n  {CRATE} {base_version} reached crates.io, and the record the publishing job writes beside "
+        f"it — the tag {tag} and its Release with the registry's .crate — is not there. After this merge "
+        f"nothing asks about {base_version} again.\n"
+        f"  Run `{WORKFLOW}`'s manual arm on a `main` commit that carries {base_version} and approve it: the "
+        f"registry step finds {base_version} already served and skips the upload, then the same job writes "
+        f"the tag and the Release.",
         file=sys.stderr,
     )
     return 1

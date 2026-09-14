@@ -41,6 +41,8 @@ from pathlib import Path
 
 import pytest
 
+from _fake_github import World, serve
+
 REPO = Path(__file__).resolve().parents[2]
 CHECKER = REPO / "tools" / "check-dsl-version-published.py"
 
@@ -83,17 +85,23 @@ def _repo_with_bump(root: Path, base_version: str, tree_version: str) -> Path:
     return repo
 
 
-def _run(repo: Path, index: str, *extra: str) -> subprocess.CompletedProcess[str]:
+def _run(repo: Path, index: str, *extra: str, github: str = "http://127.0.0.1:9") -> subprocess.CompletedProcess[str]:
     # `no_proxy` is not tidiness: a proxy configured in the developer's
     # environment would send the loopback fixture index somewhere else, and the
     # answer that comes back — "not published" — is the one this suite is trying
     # to tell apart from the real thing.
+    #
+    # `DW_GITHUB_API` always points at loopback: a test that serves no GitHub
+    # world gets a closed port, an unreadable answer (exit 2), never the real API.
     env = {
         **os.environ,
         "DW_CRATES_INDEX": index,
+        "DW_GITHUB_API": github,
         "no_proxy": "*",
         "NO_PROXY": "*",
     }
+    for key in ("GH_TOKEN", "GITHUB_TOKEN", "GITHUB_REPOSITORY"):
+        env.pop(key, None)
     return subprocess.run(
         ["python3", str(CHECKER), "--repo", str(repo), *extra],
         capture_output=True,
@@ -169,12 +177,88 @@ def test_red_when_the_retired_version_was_never_published(tmp_path, index_with):
     assert ".github/workflows/dsl-crate-publish.yml" in result.stderr
 
 
-def test_green_when_the_retired_version_is_published(tmp_path, index_with):
-    """The same bump, differing only in the one index row: 0.21.2 is served."""
+def test_green_when_the_retired_version_is_published(tmp_path, index_with, github):
+    """The same bump, differing only in the one index row: 0.21.2 is served,
+    and so is the Release its publishing job writes."""
     repo = _repo_with_bump(tmp_path, "0.21.2", "0.22.0")
-    result = _run(repo, index_with(["0.21.0", "0.21.1", "0.21.2"]))
+    world = World()
+    _released(world, repo, "0.21.2", CKSUM_0_21_2)
+    result = _run(repo, index_with(["0.21.0", "0.21.1", "0.21.2"]), github=github(world))
     assert result.returncode == 0, result.stdout + result.stderr
-    assert "1 of 1 retired version(s) on crates.io" in result.stdout
+    assert "1 of 1 retired version(s) on crates.io and released (delvewright-dsl--v0.21.2)" in result.stdout
+
+
+# --------------------------------------------------------------------------
+# ADR-0028 §6: the publishing job also writes the tag and the Release
+# --------------------------------------------------------------------------
+# The index above serves version i at cksum `f"{i + 1:064d}"`; 0.21.2 is third.
+CKSUM_0_21_2 = f"{3:064d}"
+
+
+def _released(world: World, repo: Path, version: str, cksum: str, *, sums_cksum=None, draft=False) -> None:
+    tag = f"delvewright-dsl--v{version}"
+    crate = f"delvewright-dsl-{version}.crate"
+    commit = subprocess.run(
+        ["git", "-C", str(repo), "rev-parse", "origin/main"], check=True, capture_output=True, text=True
+    ).stdout.strip()
+    world.releases[tag] = {
+        "draft": draft,
+        "assets": {crate: b"crate", "SHA256SUMS": f"{sums_cksum or cksum}  {crate}\n".encode()},
+    }
+    world.tags[tag] = commit
+    world.files[("versions.toml", commit)] = _versions_toml(version).encode()
+
+
+@pytest.fixture
+def github():
+    stops = []
+
+    def start(world: World) -> str:
+        url, stop = serve(world)
+        stops.append(stop)
+        return url
+
+    yield start
+    for stop in stops:
+        stop()
+
+
+def test_red_when_the_publish_left_no_release(tmp_path, index_with, github):
+    """On crates.io, and the tag-and-Release step never ran: the perturbation of
+    a publish job whose tag step was skipped."""
+    repo = _repo_with_bump(tmp_path, "0.21.2", "0.22.0")
+    result = _run(repo, index_with(["0.21.0", "0.21.1", "0.21.2"]), github=github(World()))
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert "1 of 1 retired version(s) on crates.io, 0 of 1 released" in result.stderr
+    assert "no published Release at delvewright-dsl--v0.21.2 (it is absent)" in result.stderr
+    assert "manual arm" in result.stderr
+
+
+def test_red_when_the_release_claims_other_bytes(tmp_path, index_with, github):
+    repo = _repo_with_bump(tmp_path, "0.21.2", "0.22.0")
+    world = World()
+    _released(world, repo, "0.21.2", CKSUM_0_21_2, sums_cksum="f" * 64)
+    result = _run(repo, index_with(["0.21.0", "0.21.1", "0.21.2"]), github=github(world))
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert "the crates.io index records " + CKSUM_0_21_2 in result.stderr
+
+
+def test_red_when_the_release_is_a_draft(tmp_path, index_with, github):
+    repo = _repo_with_bump(tmp_path, "0.21.2", "0.22.0")
+    world = World()
+    _released(world, repo, "0.21.2", CKSUM_0_21_2, draft=True)
+    result = _run(repo, index_with(["0.21.0", "0.21.1", "0.21.2"]), github=github(world))
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert "(it is draft)" in result.stderr
+
+
+def test_exit_2_when_the_release_lookup_is_unbound(tmp_path, index_with, github):
+    repo = _repo_with_bump(tmp_path, "0.21.2", "0.22.0")
+    world = World(bind=False)
+    _released(world, repo, "0.21.2", CKSUM_0_21_2)
+    result = _run(repo, index_with(["0.21.0", "0.21.1", "0.21.2"]), github=github(world))
+    assert result.returncode == 2, result.stdout + result.stderr
+    assert "v1.5.0" in result.stderr
 
 
 # --------------------------------------------------------------------------
