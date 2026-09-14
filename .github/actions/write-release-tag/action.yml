@@ -1,0 +1,63 @@
+name: Write a release tag
+description: >
+  Creates the annotated tag `<name>--v<version>` at a commit through the API, as
+  the calling job's token, or confirms it already names that commit — one
+  statement of the act for the three release workflows' gated jobs
+  (`engine-release.yml`, `dsl-crate-publish.yml`, `plugin-release.yml`;
+  ADR-0028 §4). No human pushes a release tag.
+
+  Called only from an environment-gated job, after
+  `tools/assert-run-approved.sh`, with `contents: write`. A tag this action finds
+  at a DIFFERENT commit is a refusal, never a move: a release tag names one
+  commit for good. The tag is read back from the API after it is written, and
+  the step fails unless it resolves to the commit it was asked for.
+
+  A tag created with a workflow's own token starts no workflow run, and no
+  workflow starts on a tag push in any case.
+
+inputs:
+  tag:
+    description: "the release tag, already judged by tools/lib/release_tags.py"
+    required: true
+  commit:
+    description: "the full commit sha the tag names"
+    required: true
+  message:
+    description: "the annotated tag's message"
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: the tag names the commit, written once
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+        TAG: ${{ inputs.tag }}
+        COMMIT: ${{ inputs.commit }}
+        MESSAGE: ${{ inputs.message }}
+      run: |
+        set -euo pipefail
+        python3 tools/lib/release_tags.py parse "$TAG"
+        rc=0
+        have="$(python3 tools/lib/github_releases.py tag-commit "$GITHUB_REPOSITORY" "$TAG")" || rc=$?
+        if [ "$rc" -ne 0 ]; then
+          echo "::error::could not read whether tag $TAG exists; an unreadable state is not an absent tag."
+          exit 1
+        fi
+        if [ -n "$have" ]; then
+          if [ "$have" != "$COMMIT" ]; then
+            echo "::error::tag $TAG already exists at $have, not at $COMMIT. A release tag is never moved."
+            exit 1
+          fi
+          echo "tag $TAG already names $COMMIT — nothing to write (1 of 1 tag present)"
+          exit 0
+        fi
+        obj="$(gh api "repos/$GITHUB_REPOSITORY/git/tags" -f tag="$TAG" -f message="$MESSAGE" -f object="$COMMIT" -f type=commit --jq .sha)"
+        gh api "repos/$GITHUB_REPOSITORY/git/refs" -f ref="refs/tags/$TAG" -f sha="$obj" --jq .ref
+        have="$(python3 tools/lib/github_releases.py tag-commit "$GITHUB_REPOSITORY" "$TAG")"
+        if [ "$have" != "$COMMIT" ]; then
+          echo "::error::wrote tag $TAG, and the API resolves it to '${have:-nothing}', not $COMMIT."
+          exit 1
+        fi
+        echo "wrote tag $TAG at $COMMIT (annotated tag object $obj) — read back, 1 of 1 tag present"

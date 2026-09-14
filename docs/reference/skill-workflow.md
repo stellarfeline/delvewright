@@ -17,6 +17,14 @@ would be a second authority for a file sitting on the same disk. A creator
 clones nothing to get it — `/plugin marketplace add` and `/plugin install` put
 it in Claude Code's own cache. `tools/check-skill-page.py` is the one gate over
 it, in this repository, judging it against the engine at `[engine].ref`.
+A newer page reaches a creator when `plugin.json` `version` moves on `main` — the
+marketplace serves the default branch, and an unchanged version is not an update.
+Only `.github/workflows/plugin-release.yml`, dispatched by a human, moves it: it
+commits the bump, waits for every required check on that commit, fast-forwards
+`main` under the `plugin-release` approval, and tags and publishes
+`delvewright--v<version>`. A pull request that edits the page leaves the version
+alone (`tools/check-skill-page.py` refuses one that moves it), and the edit reaches
+creators at the next release.
 
 This file stays beside it rather than in it: it is about how an agent driving
 the page splits the work, which is engine-side planner material and is

@@ -1,0 +1,204 @@
+name: plugin release (delvewright)
+
+# The `delvewright` Claude Code plugin, released as `delvewright--v<version>`
+# (ADR-0028 §1, §5). The marketplace delivers whatever `plugin.json` `version`
+# `main` carries, so THIS WORKFLOW IS THE ONLY THING THAT MOVES THAT VERSION: an
+# ordinary pull request may not (`tools/check-skill-page.py`, rule 11).
+#
+# A human dispatches it with the new version. It never starts on a push or merge.
+#
+#   prepare  (no approval)  commit the bump on `release/plugin-<version>`, cut
+#                           from `main`'s tip; dispatch `ci.yml` there (a push
+#                           made with a job token starts no run); wait until every
+#                           context in `.github/required-status-checks.txt`
+#                           SUCCEEDED on that commit (`tools/wait-required-checks.py`
+#                           — a skip is a refusal); archive, checksum, notes.
+#   publish  (`plugin-release` approval)  fast-forward `main` to that commit —
+#                           refused if `main` moved, re-dispatch — then tag it,
+#                           create the Release (`--latest=false`, §8) and delete
+#                           the branch. Moving `main` IS the delivery, so it waits
+#                           for the approval like the tag and the Release do.
+#
+# `publish` declares `plugin-release` (no secret, the owner as required reviewer);
+# its first `run:` step is `tools/assert-run-approved.sh plugin-release`.
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "The plugin version to release (strict semver, greater than the version on main)"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: plugin-release-${{ github.event.inputs.version }}
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    name: the version bump, proven by CI
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: write
+      checks: read
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+      tag: ${{ steps.v.outputs.tag }}
+      base: ${{ steps.v.outputs.base }}
+      previous: ${{ steps.v.outputs.previous }}
+      sha: ${{ steps.bump.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: the version moves main's forward, and is not released
+        id: v
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ github.event.inputs.version }}
+        run: |
+          set -euo pipefail
+          tag="$(python3 tools/lib/release_tags.py tag delvewright "$VERSION")"
+          was="$(python3 -c 'import json,sys;sys.stdout.reconfigure(newline="\n");print(json.load(open(".claude/skills/delvewright/.claude-plugin/plugin.json"))["version"])')"
+          if ! python3 -c 'import sys;sys.path.insert(0,"tools/lib");import release_tags as r;sys.exit(r.version_key(sys.argv[2]) <= r.version_key(sys.argv[1]))' "$was" "$VERSION"; then
+            echo "::error::$VERSION is not greater than $was, the version main carries."
+            exit 1
+          fi
+          at="$(python3 tools/lib/github_releases.py tag-commit "$GITHUB_REPOSITORY" "$tag")"
+          if [ -n "$at" ]; then
+            echo "::error::$tag already exists at $at."
+            exit 1
+          fi
+          if git ls-remote --exit-code --heads origin "release/plugin-$VERSION" > /dev/null; then
+            echo "::error::release/plugin-$VERSION exists from an earlier run; delete it and re-dispatch."
+            exit 1
+          fi
+          {
+            echo "version=$VERSION"
+            echo "tag=$tag"
+            echo "base=$(git rev-parse HEAD)"
+            echo "previous=$(python3 tools/lib/release_tags.py previous "$tag")"
+          } >> "$GITHUB_OUTPUT"
+          echo "ok: delvewright $was -> $VERSION on main $(git rev-parse --short HEAD)"
+      - name: the bump, alone, on release/plugin-<version>
+        id: bump
+        env:
+          VERSION: ${{ github.event.inputs.version }}
+        run: |
+          set -euo pipefail
+          python3 - "$VERSION" <<'PY'
+          import json, pathlib, re, sys
+          p = pathlib.Path(".claude/skills/delvewright/.claude-plugin/plugin.json")
+          text = p.read_text(encoding="utf-8")
+          new, n = re.subn(r'("version":\s*")[^"]*(")', lambda m: m.group(1) + sys.argv[1] + m.group(2), text)
+          assert n == 1, f"plugin.json carries {n} version field(s), not 1"
+          p.write_text(new, encoding="utf-8")
+          assert json.loads(new)["version"] == sys.argv[1]
+          PY
+          git diff --numstat
+          [ "$(git diff --numstat)" = "$(printf '1\t1\t.claude/skills/delvewright/.claude-plugin/plugin.json')" ]
+          git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+            commit -q -a -m "chore(plugin): release delvewright $VERSION"
+          git push origin "HEAD:refs/heads/release/plugin-$VERSION"
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+      - name: CI runs on that commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ github.event.inputs.version }}
+        run: gh workflow run ci.yml --ref "release/plugin-$VERSION"
+      - name: every required check succeeds on it
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ steps.bump.outputs.sha }}
+        run: python3 tools/wait-required-checks.py --sha "$SHA"
+      - name: archive, checksums and notes
+        env:
+          VERSION: ${{ github.event.inputs.version }}
+          SHA: ${{ steps.bump.outputs.sha }}
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          # A tree archive stamps the current time on every entry; the commit's
+          # own time makes the zip a function of the tag.
+          git archive --format=zip --mtime="$(git log -1 --format=%cI "$SHA")" \
+            --output "dist/delvewright-plugin-$VERSION.zip" "$SHA:.claude/skills/delvewright"
+          (cd dist && sha256sum "delvewright-plugin-$VERSION.zip" > SHA256SUMS && cat SHA256SUMS)
+          python3 tools/release-notes.py delvewright --commit "$SHA" > dist/notes.md
+      - uses: actions/upload-artifact@v4
+        with:
+          name: plugin-release
+          path: dist/
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    name: deliver and publish the plugin release (owner approval)
+    needs: prepare
+    runs-on: ubuntu-latest
+    environment: plugin-release
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: the gate actually bound (a run nobody approved must not publish)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash tools/assert-run-approved.sh plugin-release
+      - uses: actions/download-artifact@v4
+        with:
+          name: plugin-release
+          path: dist
+      - name: the archive is the bytes that were checksummed
+        run: cd dist && sha256sum -c SHA256SUMS
+      - name: main fast-forwards to the release commit
+        env:
+          BASE: ${{ needs.prepare.outputs.base }}
+          SHA: ${{ needs.prepare.outputs.sha }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          set -euo pipefail
+          git fetch -q origin main "release/plugin-$VERSION"
+          now="$(git rev-parse origin/main)"
+          if [ "$now" != "$BASE" ]; then
+            echo "::error::main moved from $BASE to $now while this release waited; delete release/plugin-$VERSION and re-dispatch."
+            exit 1
+          fi
+          git push origin "$SHA:refs/heads/main"
+          echo "main is $SHA"
+      - uses: ./.github/actions/write-release-tag
+        with:
+          tag: ${{ needs.prepare.outputs.tag }}
+          commit: ${{ needs.prepare.outputs.sha }}
+          message: "delvewright ${{ needs.prepare.outputs.version }}"
+      - name: the Release, never Latest
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.prepare.outputs.tag }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+          PREVIOUS: ${{ needs.prepare.outputs.previous }}
+        run: |
+          set -euo pipefail
+          title="$(python3 tools/lib/release_tags.py title "$TAG")"
+          set -- "dist/delvewright-plugin-$VERSION.zip" dist/SHA256SUMS --verify-tag --title "$title" --notes-file dist/notes.md --latest=false
+          if [ -n "$PREVIOUS" ]; then
+            gh release create "$TAG" "$@" --generate-notes --notes-start-tag "$PREVIOUS"
+          else
+            gh release create "$TAG" "$@"
+          fi
+          state="$(python3 tools/lib/github_releases.py state "$GITHUB_REPOSITORY" "$TAG")"
+          n="$(python3 tools/lib/github_releases.py assets "$GITHUB_REPOSITORY" "$TAG" | grep -cxF -e "delvewright-plugin-$VERSION.zip" -e SHA256SUMS || true)"
+          echo "Release $TAG: $state; $n of 2 asset(s)"
+          [ "$state" = "published" ] && [ "$n" -eq 2 ]
+      - name: the release branch is deleted
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: git push origin --delete "release/plugin-$VERSION"

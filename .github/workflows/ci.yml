@@ -10,10 +10,17 @@ name: CI (tiers 1 + 2)
 # on one tree, and the pair race the `concurrency` cancel. This used to cite
 # metered Actions minutes; the repo is PUBLIC, where standard runners are free,
 # so that premise was false and the reason above is the one that holds.
+#
+# `workflow_dispatch` is the plugin release's (ADR-0028 §5): `plugin-release.yml`
+# commits the version bump on `release/plugin-<version>` and dispatches this
+# workflow there, because a push made with a job token starts no run, and `main`
+# accepts that commit only once it carries every required check. The PR-only
+# jobs run on that dispatch too, so no required check passes by being skipped.
 on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -89,39 +96,27 @@ jobs:
           npx --yes "@anthropic-ai/claude-code@$CLAUDE_CODE" plugin validate \
             --strict .claude-plugin/marketplace.json
 
-  # The DSL crate's version IS the `dsl_version`, and it goes to crates.io off
-  # `main` rather than off a release tag (.github/workflows/dsl-crate-publish.yml).
-  # That makes "the number moved when the bytes moved" a property of every pull
-  # request, not of release day: a crates.io version is permanent, so a change to
-  # `crates/dsl` under a number the registry already serves is unpublishable
-  # forever and would be discovered by the hook, after the merge, with the fix
-  # being a second pull request.
+  # The DSL crate's version IS the `dsl_version`, and it reaches crates.io when a
+  # human dispatches its release (.github/workflows/dsl-crate-publish.yml). A
+  # crates.io version is permanent, so a change to `crates/dsl` under a number the
+  # registry already serves is unpublishable forever; "the number moved when the
+  # bytes moved" is therefore a property of every pull request, not of release
+  # day, where it would be discovered with the fix being a second pull request.
+  # This judges the tree alone and never waits on a release: a number crates.io
+  # does not hold yet is fine, whenever its release happens.
   #
-  # This asks the registry the same question the hook and the release path ask,
-  # through the same script and the same checksum comparison — absent -> fine,
-  # present with our exact bytes -> fine, present with DIFFERENT bytes -> refused,
-  # naming every place the number is written. `--only` makes it package the one
-  # crate it is judging, so this costs one small `cargo package` rather than the
-  # whole shelf.
+  # This asks the registry the same question the release path asks, through the
+  # same script and the same checksum comparison — absent -> fine, present with
+  # our exact bytes or as the same crate -> fine, present as a DIFFERENT crate ->
+  # refused, naming every place the number is written. `--only` makes it package
+  # the one crate it is judging, so this costs one small `cargo package` rather
+  # than the whole shelf.
   #
   # A JOB, not a step of `rust`: this one reaches the crates.io index over the
   # network, and a registry outage should name itself rather than redden the
   # tree's fmt/clippy/test verdict. Its name is a required status context —
   # `.github/required-status-checks.txt`, held in lockstep by
   # `tools/check-required-contexts.py`.
-  #
-  # THE SECOND HALF OF THE SAME NUMBER'S STORY, and a STEP rather than a job for
-  # the reason above — every job name is a required status context. `--plan` asks
-  # whether the number the tree NAMES may still be published; it says nothing
-  # about the numbers the tree has already walked past. That silence had a cost:
-  # `dsl-crate-publish.yml`'s runs shared one concurrency group, a run parked on
-  # the `crates-io` approval held the single pending slot GitHub keeps per group,
-  # and 21 successors were cancelled with zero jobs — `0.21.2` was bumped on
-  # `main` inside that window, never reached crates.io, and was replaced by
-  # `0.23.0` with nothing anywhere going red. `tools/check-dsl-version-published.py`
-  # refuses the replacement instead: the number a change moves AWAY from must be
-  # on the registry. Its own header says why the subject is the retired number
-  # and not the current one.
   dsl-crate-version:
     name: dsl crate version (crates.io)
     runs-on: ubuntu-latest
@@ -131,15 +126,6 @@ jobs:
         with: { key: "dsl-crate-version" }
       - name: the dsl crate's number has moved if its bytes have
         run: bash tools/crates-io-publish.sh --plan --only delvewright-dsl
-      # `--depth=1` is right HERE and nowhere a developer runs it: `actions/checkout`
-      # above leaves this checkout shallow already, so there is one commit to
-      # fetch and no full history to truncate. The gate reads one blob out of the
-      # base — its `versions.toml` — so one commit is all it needs.
-      # `tools/lib/gitbase.py` prints the other form to whoever runs it locally.
-      - name: fetch origin/main for the retired-version gate
-        run: git fetch --no-tags --depth=1 origin main:refs/remotes/origin/main
-      - name: the number this change moves away from is on crates.io
-        run: python3 tools/check-dsl-version-published.py
 
   rust:
     name: rust (fmt, clippy, test)
@@ -532,8 +518,9 @@ jobs:
     name: mecha cross-check (PR only)
     # ADR-0011: mecha independently re-validates every emitted .mcfunction
     # against the 1.21.11 command tree. Disagreement with our vendored-tree
-    # validator fails CI and is a bug in one of them. PR-only (metered minutes).
-    if: github.event_name == 'pull_request'
+    # validator fails CI and is a bug in one of them. PR-only, plus the plugin
+    # release's dispatch (see `on:`), where a skipped required check judges nothing.
+    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -1082,7 +1069,22 @@ jobs:
       # one archive per target the engine declares at that revision plus a
       # `SHA256SUMS`. A partial shelf means Init I3a falls to the source build
       # on exactly the platforms nobody tested.
+      #
+      # `gh()` in the tool already reaches for `GH_TOKEN`/`GITHUB_TOKEN` and does
+      # nothing with either when absent, which is what this step was doing on
+      # every prior run: the anonymous REST budget is 60 requests per hour PER
+      # RUNNER IP, shared with every other tenant of that IP, so this reds
+      # whenever a stranger on the same address got there first — a revision this
+      # job never touched failing it. `github.token` is this job's own
+      # least-privileged credential (`permissions: contents: read` at the
+      # workflow root, unchanged — a GET on a tag or a release's asset list
+      # needs no more), and Actions' own `GITHUB_TOKEN` budget for it is 1,000
+      # requests per hour per repository. Three calls a run, nowhere near either
+      # budget on its own; the finding was one IP-mate away every time, and the
+      # fix is the credential the job already holds, not more of it.
       - name: the plugin's shelf carries every target
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: python3 tools/check-skill-page.py --online --base origin/main
       # A campaign's ZONE PROGRAMS are the grammar IR a zone's prefab is
       # expanded from; they live under `design/programs/`, and a campaign that
@@ -1278,10 +1280,10 @@ jobs:
   # ------------------------------------------------------------------ tier 2 --
   # spec-0004 tier 2 (every PR): build the delve, prove it loads with zero errors
   # on the pinned vanilla server, and run the generated PackTest suite headless.
-  # PR-only (metered minutes); target < 10 min.
+  # PR-only, plus the plugin release's dispatch (see `on:`); target < 10 min.
   tier2-validation:
     name: tier 2 (datapack load + PackTest)
-    if: github.event_name == 'pull_request'
+    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     env:
       # Accepting Mojang's EULA (https://aka.ms/MinecraftEULA) is the standing
