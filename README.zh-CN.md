@@ -46,9 +46,9 @@ flowchart TD
 - **静态分析。** 在 `delvec build` 内部、写出任何字节之前：每份文档都按其 schema 校验，每条任务与对话路径都被走一遍，失败即拒绝，并给出具名的 `DW` 代码。Doune：构建以 0 退出，走过了 2 条状态路径、共 18 步，检查了 9 个目标，有一条提示——`DW0781`，拼接检查无可判定，因为整座城堡是一个 piece。
 - **每条命令都被检查。** 每一行生成的 `.mcfunction` 都在同一次构建中按固定版本 1.21.11 的命令树解析。它不打印计数。
 - **PackTest。** 在真实服务器上测试 datapack 的各项机制：`63 GAME TESTS COMPLETE IN 8.994 s` —— `All 63 required tests passed :)`。
-- **机器人通关。** 一个 mineflayer 机器人加入发布的服务器，把关键路径玩到结束：`critical path 'doune-castle-tour' PASSED (11 steps, 2 advisory finding(s))`。这两条提示说明没有战斗、也没有死亡可供测试。在向导的 9 次对话中，有 8 次机器人还打印了它无法确认自己点击的是哪个实体（`acquisition unproven`）。
+- **机器人通关。** 一个 mineflayer 机器人加入发布的服务器，把关键路径玩到结束：`critical path 'doune-castle-tour' PASSED (11 steps, 2 advisory finding(s))`。这两条提示说明没有战斗、也没有死亡可供测试。
 - **服务器日志。** `shipped server log is error-free.`
-- **确定性。** 同样的文档、同样的种子，输出逐字节相同。发布的镜像带有其 datapack 摘要作为标签，`datapack-sha256=dba45276efbaabea53ee261489921ead3925d2b3363cf0155ed0a8548b5666e0`，任何重新构建的人都可以比对。这个 campaign 的[生成记录](https://github.com/stellarfeline/delvewright-campaigns/blob/release/doune-castle-tour/v1.0.0/campaigns/doune-castle-tour/GENERATION.md)记载：在它编写时所用的引擎修订（`d1a83dbe`）上，两次构建的结果逐字节相同。对本仓库的每个 pull request，CI 都会在 Linux 和 macOS 上构建一个生成的 campaign，只要有一个字节不同就拒绝。
+- **确定性。** 同样的文档、同样的种子，输出逐字节相同。发布的镜像带有其 datapack 摘要作为标签，`datapack-sha256=dba45276efbaabea53ee261489921ead3925d2b3363cf0155ed0a8548b5666e0`，任何重新构建的人都可以比对。对本仓库的每个 pull request，CI 都会在 Linux 和 macOS 上构建一个生成的 campaign，只要有一个字节不同就拒绝。
 
 每一级证明了什么、没有证明什么：[每道关卡实际证明了什么](docs/reference/skill-workflow.md#4-what-each-gate-actually-proves)。
 
