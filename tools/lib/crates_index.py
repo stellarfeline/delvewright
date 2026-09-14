@@ -43,6 +43,7 @@ Stdlib only. Exit codes for the CLI: 0 answered, 1 the bind test failed, 2 usage
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import sys
@@ -50,6 +51,7 @@ import urllib.error
 import urllib.request
 
 REAL_INDEX = "https://index.crates.io"
+REAL_STATIC = "https://static.crates.io/crates"
 
 # The version whose presence proves the lookup works. Not a connectivity check:
 # what it binds is the whole chain — URL scheme, fetch, JSON shape — against a
@@ -137,6 +139,37 @@ def versions(name: str) -> list[str]:
     return out
 
 
+def static_base() -> str:
+    """The download base for `.crate` files, and a loud line when it is not crates.io."""
+    base = os.environ.get("DW_CRATES_STATIC") or REAL_STATIC
+    if base != REAL_STATIC:
+        print(f"crates_index: DW_CRATES_STATIC={base} — NOT the real crates.io downloads", file=sys.stderr)
+    return base.rstrip("/")
+
+
+def download(name: str, version: str) -> tuple[bytes, str]:
+    """The registry's own `.crate` for `name` at `version`, and its sha256.
+
+    Refuses (`ValueError`) unless the index records the version and the bytes
+    hash to the sha256 the index records: a truncated download, a wrong cache or
+    a different host must never be taken for the tarball the registry received.
+    Run [`bind_test`] before believing an "absent".
+    """
+    expected = cksum(name, version)
+    if not expected:
+        raise ValueError(f"the index records no {name} {version}")
+    url = f"{static_base()}/{name}/{name}-{version}.crate"
+    try:
+        with urllib.request.urlopen(url, timeout=TIMEOUT_SECONDS) as response:  # noqa: S310
+            body = response.read()
+    except (urllib.error.URLError, OSError, TimeoutError) as exc:
+        raise ValueError(f"{url} -> {exc}") from exc
+    got = hashlib.sha256(body).hexdigest()
+    if got != expected:
+        raise ValueError(f"{url} hashes {got}, and the index records {expected} for {name} {version}")
+    return body, got
+
+
 def bind_test() -> tuple[bool, str]:
     """Did the lookup resolve a version that certainly exists? `(ok, message)`."""
     got = cksum(BIND_CRATE, BIND_VERSION)
@@ -156,6 +189,9 @@ USAGE = """usage: crates_index.py <command> [args]
   cksum <crate> <version>     the registry's sha256, or nothing when absent
   versions <crate>            every version the index serves, one per line
   bind-test                   refuse (exit 1) unless a known version resolves
+  download <crate> <version> <dest>
+                              write the registry's .crate to <dest>, refused (exit 1)
+                              unless its sha256 is the one the index records
 """
 
 
@@ -176,6 +212,20 @@ def main(argv: list[str]) -> int:
     if command == "versions" and len(rest) == 1:
         for vers in versions(rest[0]):
             print(vers)
+        return 0
+    if command == "download" and len(rest) == 3:
+        ok, message = bind_test()
+        if not ok:
+            print(f"crates_index: {message}", file=sys.stderr)
+            return 1
+        try:
+            body, digest = download(rest[0], rest[1])
+        except ValueError as exc:
+            print(f"crates_index: REFUSED — {exc}", file=sys.stderr)
+            return 1
+        with open(rest[2], "wb") as fh:
+            fh.write(body)
+        print(f"  ok   {rest[0]} {rest[1]}: {len(body)} byte(s), sha256 {digest} == the index's")
         return 0
     if command == "bind-test" and not rest:
         ok, message = bind_test()
