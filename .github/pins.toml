@@ -181,7 +181,7 @@ enforced separately by validation/check-versions.sh and
 
 [[pin]]
 id = "skill-page-engine"
-value = "d8d87ef60583a4643fab28e07aee18f73d93fa84"
+value = "70eea6296cfab2440054f95670729081c3d4bca1"
 sites = [".claude/skills/delvewright/skills/new-delve/versions.toml"]
 repo = "stellarfeline/delvewright"
 policy = "release"
