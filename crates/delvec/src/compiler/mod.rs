@@ -21,6 +21,7 @@
 //! - [`cast`]: the NPC scene ledger (`DW0460`–`DW0467`).
 //! - [`claims`]: a prefab document says nothing its own bytes deny — every byte-asserting key of the document, one rule (`DW0888`).
 //! - [`clearance`]: the body-vs-block proof — no body occupies the same space as block geometry (`DW0450`/`DW0451`).
+//! - [`cohabit`]: one mark, one body — two bodies whose lifetimes overlap may not be declared on one cell (`DW0896`).
 //! - [`combat`]: compile-time combat winnability — the arithmetic half of the combat proofs.
 //! - [`commands`]: the vendored 1.21.11 Brigadier command-tree validator.
 //! - [`continuity`]: the NPC location-continuity lint (`DW0351`).
@@ -91,6 +92,7 @@ pub mod camera;
 pub mod cast;
 pub mod claims;
 pub mod clearance;
+pub mod cohabit;
 pub mod combat;
 pub mod commands;
 pub mod continuity;

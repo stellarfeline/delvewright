@@ -207,22 +207,31 @@ fn the_rest_dialog_offers_exactly_two_options() {
     // translate key carrying the canonical English as its fallback, so a Chinese
     // client reads them in Chinese instead of the English a bare literal froze in.
     // An AUTHORED label would carry the campaign's own `fx.….rest_label` key.
+    // Every key is under THIS delve's namespace, chrome included: a client merges
+    // every applied pack into one language table.
     use delvewright_dsl::chrome;
-    assert_eq!(dialog["title"]["translate"], chrome::BONFIRE_TITLE.key);
+    let key = |c: chrome::ChromeString| delvewright_dsl::pack_key(NS, c.key);
+    assert_eq!(dialog["title"]["translate"], key(chrome::BONFIRE_TITLE));
     assert_eq!(dialog["title"]["fallback"], "Bonfire");
     let actions = dialog["actions"].as_array().expect("actions is a list");
     assert_eq!(actions.len(), 2, "exactly two options: {dialog:#?}");
-    assert_eq!(actions[0]["label"]["translate"], chrome::BONFIRE_REST.key);
+    assert_eq!(actions[0]["label"]["translate"], key(chrome::BONFIRE_REST));
     assert_eq!(actions[0]["label"]["fallback"], "Rest and save");
     assert_eq!(actions[0]["action"]["command"], "/trigger dw.rest set 2");
-    assert_eq!(actions[1]["label"]["translate"], chrome::BONFIRE_SAVE.key);
+    assert_eq!(actions[1]["label"]["translate"], key(chrome::BONFIRE_SAVE));
     assert_eq!(actions[1]["label"]["fallback"], "Save only");
     assert_eq!(actions[1]["action"]["command"], "/trigger dw.rest set 1");
     // Both labels are captions, not sentences (the fixed-width button rule) —
     // in EVERY language the compiler ships them in, since any of them can be what
     // the player actually reads.
     for a in actions {
-        let key = a["label"]["translate"].as_str().unwrap();
+        // `lang_entries` is keyed by the BARE chrome key; the component carries the
+        // delve's. Strip the namespace rather than miss every lookup and measure
+        // the fallback twice — the width gate must really read the translation.
+        let emitted = a["label"]["translate"].as_str().unwrap();
+        let key = emitted
+            .strip_prefix(&delvewright_dsl::pack_namespace(NS))
+            .expect("a chrome label is emitted under this delve's namespace");
         for (code, _) in [("en_us", ()), ("zh_cn", ())] {
             let entries = chrome::lang_entries(code);
             let label = entries

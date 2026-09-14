@@ -21,7 +21,7 @@ exclude = ["prefabs"]
 # refuses a `v*` tag whose name disagrees with it. `delvewright-dsl` is
 # deliberately on its own line (see crates/dsl/Cargo.toml).
 [workspace.package]
-version = "1.4.0"
+version = "1.5.0"
 edition = "2024"
 # The toolchain this repo actually builds and tests on (rust-toolchain.toml).
 # Asserted equal to that pin by check-versions.sh: a `rust-version` looser than
@@ -40,7 +40,7 @@ repository = "https://github.com/stellarfeline/delvewright"
 # and no other. The number is the format's own (`dsl_version`), bound to
 # `[engine] dsl_crate_req` in versions.toml by check-versions.sh.
 [workspace.dependencies]
-delvewright-dsl = { path = "crates/dsl", version = "=0.24.2" }
+delvewright-dsl = { path = "crates/dsl", version = "=0.25.0" }
 
 # An unoptimized `delvec` is unusable on a real campaign, and nothing used to say
 # so: `cargo build` hands you `target/debug/delvec`, and on `nobodys-cave-island`

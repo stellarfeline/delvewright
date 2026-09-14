@@ -1199,6 +1199,66 @@ fn an_npc_bodied_as_a_wave_mob_is_named_ambiguous_not_excluded() {
     assert!(why.contains("unwinnable"), "{why}");
 }
 
+/// **The remedy an ambiguity names has to be one the object can still take.**
+/// souls-bonfire's keeper already declares a `skin`, so its body is already a
+/// `minecraft:mannequin`; put a mannequin on the fightable side and the census
+/// used to answer with "give it a `skin`" — advice that NPC had taken before the
+/// collision existed, and the only NPC-side advice it printed. Neither NPC-side
+/// move is open here (its `base_entity` is not the body it wears either), so the
+/// remedy has to point at the other side of the collision.
+///
+/// This is the shape a delve walks into the moment every character is bodied as a
+/// mannequin.
+#[test]
+fn an_ambiguity_on_the_mannequin_body_names_a_remedy_the_npc_can_take() {
+    let tmp = TempCampaign::new();
+    campaign_with(tmp.path(), |quests, _| {
+        // The fightable side becomes a mannequin, so every skinned NPC in the
+        // campaign now collides with it.
+        quests["content"]["waves"][0]["mobs"][0]["entity"] =
+            serde_json::json!("minecraft:mannequin");
+    });
+    let (out, _) = build(tmp.path()).expect("the mutated campaign builds");
+    let (path, _) = path_and_plan(&out);
+    let nc = &path["non_combatants"];
+    let amb = nc["ambiguous"].as_array().expect("an array");
+    assert_eq!(amb.len(), 1, "the keeper's mannequin body collides: {nc}");
+    assert_eq!(amb[0]["kind"], "mannequin");
+    let why = amb[0]["why"].as_str().unwrap();
+    assert!(why.contains("npc/keeper"), "{why}");
+    assert!(
+        !why.contains("give it a `skin`"),
+        "the remedy tells an NPC that already wears a `skin` to put one on — a move it \
+         cannot take, and the only NPC-side one offered: {why}"
+    );
+    assert!(
+        why.contains("the move is on the other side of the collision"),
+        "an unreachable remedy must be replaced by the reachable one, not merely \
+         dropped: {why}"
+    );
+}
+
+/// The sibling case, so the repair above is a narrowing and not a blanket
+/// deletion: on a collision the NPC *can* move off, both NPC-side moves are still
+/// offered — and the `skin` one is offered because nothing here fights a mannequin.
+#[test]
+fn an_ambiguity_the_npc_can_move_off_still_offers_both_moves() {
+    let tmp = TempCampaign::new();
+    campaign_with(tmp.path(), |_, _| {});
+    with_npcs(tmp.path(), |npcs| {
+        let npc = &mut npcs["content"]["npcs"][0];
+        npc.as_object_mut().unwrap().remove("skin");
+        npc["base_entity"] = serde_json::json!("minecraft:zombie");
+    });
+    let (out, _) = build(tmp.path()).expect("the mutated campaign builds");
+    let (path, _) = path_and_plan(&out);
+    let why = path["non_combatants"]["ambiguous"][0]["why"]
+        .as_str()
+        .unwrap();
+    assert!(why.contains("give it a `skin`"), "{why}");
+    assert!(why.contains("`base_entity`"), "{why}");
+}
+
 #[test]
 fn a_campaign_with_no_npcs_states_its_own_zero() {
     // playtest-methodology rule 1: an empty `kinds` list has two readings — "no

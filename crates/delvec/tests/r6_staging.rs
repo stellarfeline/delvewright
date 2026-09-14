@@ -318,7 +318,7 @@ fn chained_moves_plan_from_last_staged_location() {
     let quests = QUESTS_V06
         .replacen(
             r#""quests": ["#,
-            r#""actors": [ { "id": "actor/walker", "entity": "minecraft:villager", "anchor": "anchor/keeper-stand" } ],
+            r#""actors": [ { "id": "actor/walker", "entity": "minecraft:villager", "anchor": "spawn" } ],
     "quests": ["#,
             1,
         )

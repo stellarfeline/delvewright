@@ -72,7 +72,8 @@ pub use l10n::{
     ArtNarrate, CANONICAL_LANG, L10nDoc, L10nKind, MARKER_SIGIL, OptionLabel, ScreenNarrate,
     SoundRef, TR_SIGIL, art_narrates, bonfire_option_labels, declared_mc_codes,
     dialogue_option_labels, each_string, has_tr_sigil, inventory as l10n_inventory, key_speaker,
-    local_id, localize, on_screen_narrates, plain as l10n_plain, play_sound_actor_refs, sound_refs,
+    local_id, localize, namespace_skin_textures, on_screen_narrates, pack_key, pack_namespace,
+    pack_texture_dir, pack_texture_id, plain as l10n_plain, play_sound_actor_refs, sound_refs,
     tag_translatables, untag as l10n_untag, validate_l10n, validate_l10n_provenance,
     validate_marker_channel, validate_tr_sigil,
 };
@@ -117,7 +118,7 @@ pub use stages::{
 };
 pub use stages::{
     BodyRef, BodySite, BodySkinSite, BodyTraversalSite, body_sites, body_skin_sites,
-    body_traversal_sites, for_each_campaign_effect,
+    body_skins_mut, body_traversal_sites, for_each_campaign_effect,
 };
 pub use stages::{
     EditBatch, EditFrame, FragmentRotation, MorphOp, PaletteBlock, PaletteRecipe, RegionShape,

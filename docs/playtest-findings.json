@@ -5,7 +5,8 @@
     "One row per finding. `finding` is impersonal English (CLAUDE.md Conventions: no verbatim personal speech in repo artifacts).",
     "`carrier` names the CHECK that carries the finding's general form; `binding` is how many objects of the class that check quantifies over exist on the campaign being staged.",
     "`carrier: null` is a red unless `disposition` + a substantive `justification` declare why no machine form is possible (playtest-methodology.md rule 2's one escape).",
-    "A row whose `binding` selects its object class by IDENTITY (`eq`/`in`/`prefix` only) declares its own applicability by shape: the gate measures the precondition off that binding (`staging-gate.py::probe_is_self_measuring`) and `load_ledger` refuses an `applies_when` that would restate it. Only a declaration-shaped binding (`has`/`has_any`, a `contains` glob, an `artifact` or `out` probe) owes one.",
+    "A row whose `binding` selects its object class by IDENTITY (`eq`/`in`/`prefix`, or an `any_of` every arm of which is one of those) declares its own applicability by shape: the gate measures the precondition off that binding (`staging-gate.py::probe_is_self_measuring`) and `load_ledger` refuses an `applies_when` that would restate it. Only a declaration-shaped binding (`has`/`has_any`, a `contains` glob, an `artifact` or `out` probe) owes one.",
+    "`any_of` is a disjunction of predicates, for a class the DSL spells more than one way (`bell-04`, `bell-05`); `has_any` is a disjunction of field names, which is a different question. A clause this matcher does not implement is refused at load: an unrecognised key restricts nothing, so the probe would count every node while describing itself as something narrower.",
     "APPEND, never rewrite. A row is removed only when the finding is shown never to have been a finding.",
     "Sources this ledger was reconstructed from are listed in docs/reference/playtest-methodology.md, rule 7, including what could NOT be recovered."
   ],
@@ -1816,12 +1817,26 @@
         ],
         "kind": "dsl",
         "match": {
-          "in": {
-            "type": [
-              "spawn-wave",
-              "spawn-actor"
-            ]
-          }
+          "any_of": [
+            {
+              "in": {
+                "tier": [
+                  "elite",
+                  "boss"
+                ]
+              }
+            },
+            {
+              "eq": {
+                "type": "unleash-actor"
+              }
+            },
+            {
+              "prefix": {
+                "id": "ambush/"
+              }
+            }
+          ]
         }
       },
       "binding": {
@@ -1837,7 +1852,7 @@
       "finding": "an encounter billed as an elite was trivially weak, and the compiler had no way to express its durability at all",
       "general_form": "a billed encounter's declared effective HP is bounded against the best kit the party can field, and anything billed elite or boss that the floor gate cannot measure is reported",
       "id": "bell-04",
-      "note": "applies_when added 2026-08-21: the floor gate examines staged fights, declared by spawn-wave/spawn-actor. Fights declared with combat-plan.json unemitted = MISSING-CHECK (the ledger went missing); none declared = the class measures zero.",
+      "note": "This is a NARROWING OF A PRECONDITION, declared as one. The probe counted every `spawn-wave`/`spawn-actor` effect — a population this general form does not name — so a ceremonial muster of invulnerable puppets that no floor gate could ever examine was adjudicated as a fight whose build owed a combat plan. The precondition is now exactly what `floor_gate.examined` counts, read off the author's own document: an encounter billed `elite`/`boss` (`waves[].tier` or `actors[].tier`, the two fields `EncounterTier::has_floor_expectation` selects), or a body the campaign turns loose on the party (an `unleash-actor` effect, or an `ambushes[]` entry, which is the sugar `Ambush::to_trigger` expands into one — a checker reads a document the way its consumer reads it). The narrowed class is a superset of `combat::floor_ledger`'s four groups, so a build that stopped emitting the ledger over declared objects still reds MISSING-CHECK. Binding count with the gate's own probe: 0 of the narrowed class on doune-castle-tour (7 of the old one), 6 on nobodys-cave-island, 6 on the gallery primary.",
       "round": 2,
       "triage": "capability"
     },
@@ -1848,9 +1863,23 @@
         ],
         "kind": "dsl",
         "match": {
-          "prefix": {
-            "id": "actor/"
-          }
+          "any_of": [
+            {
+              "eq": {
+                "type": "kill"
+              }
+            },
+            {
+              "eq": {
+                "type": "unleash-actor"
+              }
+            },
+            {
+              "prefix": {
+                "id": "ambush/"
+              }
+            }
+          ]
         }
       },
       "binding": {
@@ -1866,7 +1895,7 @@
       "finding": "an encounter killed a full-health player in two hits",
       "general_form": "a campaign with mandatory combat — a wave the party must kill OR a hostile it turns loose on them — is held to the whole spec-0023 winnability pass, sustain included; and no unavoidable scripted hit on that path one-shots a full-health player (DW0473)",
       "id": "bell-05",
-      "note": "carrier + binding corrected 2026-08-11 (staging-gate UNBOUND audit), and the engine fixed with them. The row named DW0473 while probing combat-plan.json:encounters, which quantify over DIFFERENT collections — DW0473 walks unconditional `damage-players` bundles, `encounters` is `kill`-a-wave steps. Worse, the whole spec-0023 pass (DW0470-DW0475) was gated on `has_encounters`, the VERB, so a delve whose combat is entirely actors ran none of it: nobodys-cave-island unleashes three wardens, bills one elite, ships zero `kill` objectives, and reported `encounters: 0` for twenty-two owner rounds with nothing saying that was a coverage fact rather than a content fact. `combat::mandatory_fights` is now the object class — every fight of either shape — the pass is gated on it, DW0474 quantifies over it, and combat-plan.json publishes it as `fights`. Island binding 0 -> 3.",
+      "note": "carrier + binding corrected 2026-08-11 (staging-gate UNBOUND audit), and the engine fixed with them. The row named DW0473 while probing combat-plan.json:encounters, which quantify over DIFFERENT collections — DW0473 walks unconditional `damage-players` bundles, `encounters` is `kill`-a-wave steps. Worse, the whole spec-0023 pass (DW0470-DW0475) was gated on `has_encounters`, the VERB, so a delve whose combat is entirely actors ran none of it: nobodys-cave-island unleashes three wardens, bills one elite, ships zero `kill` objectives, and reported `encounters: 0` for twenty-two owner rounds with nothing saying that was a coverage fact rather than a content fact. `combat::mandatory_fights` is now the object class — every fight of either shape — the pass is gated on it, DW0474 quantifies over it, and combat-plan.json publishes it as `fights`. Island binding 0 -> 3. The precondition has since had a NARROWING OF A PRECONDITION, declared as one: it counted every id under `actor/`, so a campaign that stages a body — a herald, a ferryman, a guard of honour — was adjudicated as a campaign with mandatory combat, and a guided tour of a castle was refused for shipping no combat plan. It now counts what this general form names in its own words, a wave the party must kill OR a hostile it turns loose on them: a `kill` objective, an `unleash-actor` effect, or an `ambushes[]` entry, the sugar `Ambush::to_trigger` expands into the second. A staged puppet is neither, which is `combat::hostile_actors`'s own rule — unleash or nothing. Binding count with the gate's own probe: 0 of the narrowed class on doune-castle-tour (7 of the old one), 5 on nobodys-cave-island, 3 on the gallery primary.",
       "round": 2,
       "triage": "capability"
     },

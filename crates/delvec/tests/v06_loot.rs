@@ -262,7 +262,11 @@ fn an_equipped_actor_emits_gear_and_its_packtest() {
         );
     }
 
-    let pt = f("packtest-datapack/data/hello-world/test/v06_actor_equipment.mcfunction");
+    // One test per BODY KIND among the equipped actors; this fixture dresses one
+    // `minecraft:wither_skeleton`, so the name carries that body.
+    let pt = f(
+        "packtest-datapack/data/hello-world/test/v06_actor_equipment_minecraft_wither_skeleton.mcfunction",
+    );
     assert!(
         pt.contains("function hello-world:spawn_actor_elite"),
         "{pt}"
@@ -278,6 +282,56 @@ fn an_equipped_actor_emits_gear_and_its_packtest() {
         2,
         "two assertions:\n{pt}"
     );
+}
+
+/// The gear test is emitted **per body kind**, and a campaign that dresses two
+/// kinds gets two of them.
+///
+/// This is the defect's own shape. The filter used to read `equipment.is_some()
+/// && skin.is_none()`, and before that exclusion was dropped it also took only
+/// the FIRST equipped actor — so a campaign could dress a second kind and prove
+/// nothing about it, and a campaign whose every actor was skinned emitted no gear
+/// test at all. Both halves are asserted here: two kinds give two files, the
+/// body is in each name, and each names its own actor.
+#[test]
+fn two_body_kinds_give_two_gear_packtests() {
+    const ACTORS: &str = r#"{
+      "id": "actor/elite",
+      "entity": "minecraft:wither_skeleton",
+      "anchor": "anchor/keeper-stand",
+      "equipment": { "main_hand": { "item": "minecraft:netherite_sword" } }
+    },
+    {
+      "id": "actor/second-elite",
+      "entity": "minecraft:zombie",
+      "anchor": "anchor/keeper-stand",
+      "skin": { "texture_id": "keeper", "model": "wide" },
+      "equipment": { "main_hand": { "item": "minecraft:iron_sword" } }
+    }"#;
+    let out = try_build_doc(&quests_doc_with("", ACTORS)).expect("builds");
+    let tests: Vec<&String> = out
+        .keys()
+        .filter(|k| k.contains("v06_actor_equipment"))
+        .collect();
+    assert_eq!(
+        tests.len(),
+        2,
+        "one gear test per body kind, so two kinds give two: {tests:#?}"
+    );
+    let ws = "packtest-datapack/data/hello-world/test/\
+              v06_actor_equipment_minecraft_wither_skeleton.mcfunction"
+        .replace(' ', "");
+    // The SECOND actor declares a skin, so the body it ships as is a mannequin
+    // and not the `minecraft:zombie` it names — which is the whole point: the
+    // name carries the body a campaign DRESSES, not the one it typed.
+    let mq = "packtest-datapack/data/hello-world/test/\
+              v06_actor_equipment_minecraft_mannequin.mcfunction"
+        .replace(' ', "");
+    let body = |k: &str| {
+        String::from_utf8(out.get(k).unwrap_or_else(|| panic!("{k} emitted")).clone()).unwrap()
+    };
+    assert!(body(&ws).contains("function hello-world:spawn_actor_elite"));
+    assert!(body(&mq).contains("function hello-world:spawn_actor_second_elite"));
 }
 
 /// No equipped actor -> no equipment PackTest (byte-identity for old campaigns).
