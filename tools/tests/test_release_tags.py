@@ -126,15 +126,15 @@ def test_previous_stays_on_its_own_line():
         "v1.4.0", "v1.5.0", "archive/bell-engine-r1",
         "delvec--v1.6.0", "delvec--v1.10.0",
         "delvewright--v1.4.3", "delvewright--v1.4.5",
-        "delvewright-dsl--v0.25.0", "delvewright-dsl--v0.26.0",
+        "delvewright-dsl--v0.24.0", "delvewright-dsl--v0.26.0",
     ]
     assert release_tags.previous("delvec--v1.6.0", tags) == "v1.5.0"
     assert release_tags.previous("delvec--v1.11.0", tags) == "delvec--v1.10.0"
     assert release_tags.previous("delvec--v1.7.0", tags) == "delvec--v1.6.0"
     assert release_tags.previous("delvewright--v1.4.5", tags) == "delvewright--v1.4.3"
     assert release_tags.previous("delvewright--v1.4.3", tags) is None
-    assert release_tags.previous("delvewright-dsl--v0.26.0", tags) == "delvewright-dsl--v0.25.0"
-    assert release_tags.previous("delvewright-dsl--v0.25.0", tags) is None
+    assert release_tags.previous("delvewright-dsl--v0.26.0", tags) == "delvewright-dsl--v0.24.0"
+    assert release_tags.previous("delvewright-dsl--v0.24.0", tags) is None
 
 
 def test_the_cli_refuses_a_bare_v_tag_with_exit_1():
