@@ -1082,7 +1082,22 @@ jobs:
       # one archive per target the engine declares at that revision plus a
       # `SHA256SUMS`. A partial shelf means Init I3a falls to the source build
       # on exactly the platforms nobody tested.
+      #
+      # `gh()` in the tool already reaches for `GH_TOKEN`/`GITHUB_TOKEN` and does
+      # nothing with either when absent, which is what this step was doing on
+      # every prior run: the anonymous REST budget is 60 requests per hour PER
+      # RUNNER IP, shared with every other tenant of that IP, so this reds
+      # whenever a stranger on the same address got there first — a revision this
+      # job never touched failing it. `github.token` is this job's own
+      # least-privileged credential (`permissions: contents: read` at the
+      # workflow root, unchanged — a GET on a tag or a release's asset list
+      # needs no more), and Actions' own `GITHUB_TOKEN` budget for it is 1,000
+      # requests per hour per repository. Three calls a run, nowhere near either
+      # budget on its own; the finding was one IP-mate away every time, and the
+      # fix is the credential the job already holds, not more of it.
       - name: the plugin's shelf carries every target
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: python3 tools/check-skill-page.py --online --base origin/main
       # A campaign's ZONE PROGRAMS are the grammar IR a zone's prefab is
       # expanded from; they live under `design/programs/`, and a campaign that

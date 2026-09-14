@@ -1493,6 +1493,20 @@ class NotFound(Exception):
     pass
 
 
+def _print_budget(path: str, headers, authenticated: bool) -> None:
+    # The 403 this rule was written against ("rate limit exceeded") named no
+    # cause: an anonymous request and a spent authenticated one raise the
+    # identical exception, and only the response's OWN headers say which
+    # budget was in play. Printed on every call, success or failure, so a
+    # silent fallback to the anonymous budget (60/hour, shared with every
+    # other tenant of the runner's IP) is a line in THIS run's log, never a
+    # story told after the fact. `authenticated` is a bool the gate derived
+    # from whether it attached a header, never the credential itself.
+    limit = headers.get("X-RateLimit-Limit", "?")
+    remaining = headers.get("X-RateLimit-Remaining", "?")
+    print(f"  gh {path}: authenticated={authenticated} ratelimit {remaining}/{limit}")
+
+
 def gh(path: str) -> object:
     req = urllib.request.Request(
         f"{API}/{path}",
@@ -1507,10 +1521,12 @@ def gh(path: str) -> object:
         req.add_header("Authorization", f"Bearer {token}")
     try:
         with urllib.request.urlopen(req, timeout=30) as fh:
+            _print_budget(path, fh.headers, authenticated=bool(token))
             return json.load(fh)
     except urllib.error.HTTPError as exc:
         if exc.code == 404:
             raise NotFound(path) from exc
+        _print_budget(path, exc.headers, authenticated=bool(token))
         raise
 
 
