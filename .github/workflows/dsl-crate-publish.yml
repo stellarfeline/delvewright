@@ -5,8 +5,20 @@ name: dsl crate publish (main)
 # says so, and `validation/check-versions.sh` holds the four statements of it
 # equal). A number that names a format has to be resolvable the moment a document
 # declares it, and the engine's own release line moves on a different clock, so
-# this crate does not wait for a `v*` tag: it goes to crates.io when its number
+# this crate does not wait for a human's tag: it goes to crates.io when its number
 # moves on `main`, and this workflow is the only thing that moves it.
+#
+# AND IT WRITES ITS OWN RELEASE (ADR-0028 §6)
+#
+# The gated job, after the registry serves the bytes, writes the tag
+# `delvewright-dsl--v<version>` at the `main` commit the run judged and a GitHub
+# Release carrying the registry's own `.crate` (downloaded and checked against
+# the index sha256) and a `SHA256SUMS`, marked NOT Latest (the one Latest is
+# `delvec`'s, ADR-0028 §8). The irreversible act is first and the residual window
+# is the tag and Release calls after it; a re-run finds the version on the
+# registry, skips the upload, and writes whichever of the tag and Release is
+# missing — which is why `plan` asks for the approval when EITHER the registry or
+# the Release is missing. `engine-release.yml` never supplies this crate.
 #
 # NOTHING HERE IS DONE BY HAND, in the sense `engine-release.yml`'s header means
 # it: no human runs `cargo publish` and no human decides which version goes up.
@@ -70,9 +82,10 @@ name: dsl crate publish (main)
 # Neither half proves the publish HAPPENED. A run can still be left unapproved
 # forever, and this file cannot see that. `tools/check-dsl-version-published.py`
 # is the half that can: on every pull request it refuses a change that moves the
-# dsl crate's number away from a number crates.io does not hold, so a bump whose
-# publish never ran is a red on the next bump instead of a number no stranger can
-# resolve.
+# dsl crate's number away from a number crates.io does not hold, or one whose
+# `delvewright-dsl--v<version>` Release is missing, so a bump whose publish — or
+# whose tag-and-Release step — never ran is a red on the next bump instead of a
+# silence.
 
 on:
   push:
@@ -108,10 +121,18 @@ jobs:
     name: does the dsl crate's number move
     runs-on: ubuntu-latest
     outputs:
-      publish: ${{ steps.plan.outputs.publish }}
+      publish: ${{ steps.release.outputs.publish }}
       version: ${{ steps.plan.outputs.version }}
+      tag: ${{ steps.release.outputs.tag }}
+      commit: ${{ steps.release.outputs.commit }}
+      previous: ${{ steps.release.outputs.previous }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          # A tag is written at this commit, so it must be shown to be on `main`,
+          # and the previous tag of this line is read for the notes: both need
+          # the history and the tags.
+          fetch-depth: 0
       - uses: Swatinem/rust-cache@v2
         with: { key: "dsl-crate-publish" }
       # versions.toml is the single source of truth (spec-0005), and the version
@@ -120,6 +141,18 @@ jobs:
       # answer.
       - name: consumers agree with versions.toml
         run: bash validation/check-versions.sh
+      # The manual arm takes any ref; a Release tag may only name what `main`
+      # delivered (ADR-0008, ADR-0028 §2). Refused before the registry is asked.
+      - name: the commit is on main
+        run: |
+          set -euo pipefail
+          if git merge-base --is-ancestor HEAD origin/main; then
+            echo "ok: $(git rev-parse --short HEAD) is an ancestor of origin/main"
+          else
+            echo "::error::$(git rev-parse --short HEAD) is not an ancestor of origin/main."
+            echo "::error::The format crate is published, tagged and released only from main."
+            exit 1
+          fi
       - name: ask the registry what it already holds
         id: plan
         run: |
@@ -137,10 +170,54 @@ jobs:
           version="$(python3 -c 'import sys,tomllib;sys.stdout.reconfigure(newline="\n");print(tomllib.load(open("versions.toml","rb"))["engine"]["dsl_crate_version"])')"
           echo "version=$version" >> "$GITHUB_OUTPUT"
           if [ -z "$list" ]; then
-            echo "delvewright-dsl $version is already on crates.io, byte-identical — nothing to publish."
+            echo "delvewright-dsl $version is already on crates.io as the same crate."
+            echo "registry=served" >> "$GITHUB_OUTPUT"
+          else
+            echo "delvewright-dsl $version is not on crates.io."
+            echo "registry=absent" >> "$GITHUB_OUTPUT"
+          fi
+      # The other half of what the gated job writes: the tag and the Release. The
+      # approval is asked for when the registry OR the Release lacks this
+      # version, so a run that uploaded the crate and died before the Release is
+      # completed by a re-run, and a version already fully released asks nothing.
+      - name: ask GitHub whether the tag and Release already exist
+        id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.plan.outputs.version }}
+          REGISTRY: ${{ steps.plan.outputs.registry }}
+        run: |
+          set -euo pipefail
+          tag="$(python3 tools/lib/release_tags.py tag delvewright-dsl "$VERSION")"
+          rc=0
+          state="$(python3 tools/lib/github_releases.py state "$GITHUB_REPOSITORY" "$tag")" || rc=$?
+          [ "$rc" -eq 0 ] || { echo "::error::could not read the state of Release $tag"; exit 1; }
+          rc=0
+          at="$(python3 tools/lib/github_releases.py tag-commit "$GITHUB_REPOSITORY" "$tag")" || rc=$?
+          [ "$rc" -eq 0 ] || { echo "::error::could not read whether tag $tag exists"; exit 1; }
+          commit="$(git rev-parse HEAD)"
+          if [ -n "$at" ]; then
+            # A tag already written names the commit the Release hangs on, and it
+            # must be a `main` commit stating this version; it is never moved.
+            stated="$(git show "$at:versions.toml" | python3 -c 'import sys,tomllib;sys.stdout.reconfigure(newline="\n");print(tomllib.loads(sys.stdin.read())["engine"]["dsl_crate_version"])')"
+            if [ "$stated" != "$VERSION" ] || ! git merge-base --is-ancestor "$at" origin/main; then
+              echo "::error::tag $tag exists at $at, which states dsl_crate_version '$stated' or is not on main."
+              exit 1
+            fi
+            commit="$at"
+          fi
+          previous="$(python3 tools/lib/release_tags.py previous "$tag")"
+          {
+            echo "tag=$tag"
+            echo "commit=$commit"
+            echo "previous=$previous"
+          } >> "$GITHUB_OUTPUT"
+          echo "registry: $REGISTRY; Release $tag: $state; tag at: ${at:-(not written)}; previous: ${previous:-(none)}"
+          if [ "$REGISTRY" = "served" ] && [ "$state" = "published" ]; then
+            echo "delvewright-dsl $VERSION is on crates.io and released as $tag — nothing to publish."
             echo "publish=false" >> "$GITHUB_OUTPUT"
           else
-            echo "delvewright-dsl $version is not on crates.io; asking for the publish approval."
+            echo "asking for the publish approval: registry $REGISTRY, Release $state."
             echo "publish=true" >> "$GITHUB_OUTPUT"
           fi
 
@@ -152,14 +229,20 @@ jobs:
     # THE gate. `crates-io` holds CARGO_REGISTRY_TOKEN and carries a required
     # reviewer, so the run pauses here. Read back from the API rather than
     # assumed: the environment has no deployment branch policy, so `main`
-    # reaches it exactly as a `v*` tag does.
+    # reaches it exactly as a release tag does.
     environment: crates-io
     permissions:
-      contents: read
+      # The tag and the Release are written here, under the same approval as the
+      # upload (ADR-0028 §6).
+      contents: write
       # Lets the first step read this run's own approval history.
       actions: read
     steps:
       - uses: actions/checkout@v4
+        with:
+          # The notes are read from the tagged commit, which may be an earlier
+          # `main` commit than this run's when the tag was written by a run before.
+          fetch-depth: 0
       # FIRST, before anything that touches the outside world. An environment can
       # exist, hold the token and protect nothing; this reads the CONSEQUENCE —
       # whether this run was actually held for a human — instead of the setting.
@@ -176,3 +259,72 @@ jobs:
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
         run: bash tools/crates-io-publish.sh --publish --only delvewright-dsl
+      # The asset is the registry's OWN tarball — the bytes crates.io received and
+      # serves — downloaded and refused unless it hashes to the index sha256, not a
+      # local re-packaging (whose `.cargo_vcs_info.json` names this commit).
+      - name: the registry's .crate and its checksum
+        env:
+          VERSION: ${{ needs.plan.outputs.version }}
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          python3 tools/lib/crates_index.py download delvewright-dsl "$VERSION" "dist/delvewright-dsl-$VERSION.crate"
+          (cd dist && sha256sum "delvewright-dsl-$VERSION.crate" > SHA256SUMS && cat SHA256SUMS)
+      - uses: ./.github/actions/write-release-tag
+        with:
+          tag: ${{ needs.plan.outputs.tag }}
+          commit: ${{ needs.plan.outputs.commit }}
+          message: "delvewright-dsl ${{ needs.plan.outputs.version }}, as crates.io serves it"
+      - name: the Release, written once and never Latest
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.plan.outputs.tag }}
+          VERSION: ${{ needs.plan.outputs.version }}
+          COMMIT: ${{ needs.plan.outputs.commit }}
+          PREVIOUS: ${{ needs.plan.outputs.previous }}
+        run: |
+          set -euo pipefail
+          rc=0
+          state="$(python3 tools/lib/github_releases.py state "$GITHUB_REPOSITORY" "$TAG")" || rc=$?
+          [ "$rc" -eq 0 ] || { echo "::error::could not read the state of Release $TAG"; exit 1; }
+          python3 tools/release-notes.py delvewright-dsl --commit "$COMMIT" > notes.md
+          title="$(python3 tools/lib/release_tags.py title "$TAG")"
+          crate="dist/delvewright-dsl-$VERSION.crate"
+          case "$state" in
+            absent)
+              if [ -n "$PREVIOUS" ]; then
+                gh release create "$TAG" "$crate" dist/SHA256SUMS --verify-tag --title "$title" --notes-file notes.md --generate-notes --notes-start-tag "$PREVIOUS" --latest=false
+              else
+                gh release create "$TAG" "$crate" dist/SHA256SUMS --verify-tag --title "$title" --notes-file notes.md --latest=false
+              fi
+              ;;
+            draft)
+              gh release upload "$TAG" "$crate" dist/SHA256SUMS --clobber
+              gh release edit "$TAG" --draft=false --latest=false
+              ;;
+            published)
+              echo "Release $TAG is already published; reading it back."
+              ;;
+            *)
+              echo "::error::unexpected Release state '$state' for $TAG"
+              exit 1
+              ;;
+          esac
+      - name: the Release holds the registry's bytes, read back
+        env:
+          TAG: ${{ needs.plan.outputs.tag }}
+          VERSION: ${{ needs.plan.outputs.version }}
+        run: |
+          set -euo pipefail
+          state="$(python3 tools/lib/github_releases.py state "$GITHUB_REPOSITORY" "$TAG")"
+          python3 tools/lib/github_releases.py assets "$GITHUB_REPOSITORY" "$TAG" > have.txt
+          cat have.txt
+          n=0
+          for want in "delvewright-dsl-$VERSION.crate" SHA256SUMS; do
+            if grep -qxF "$want" have.txt; then n=$((n + 1)); fi
+          done
+          echo "Release $TAG: $state; $n of 2 asset(s) present"
+          if [ "$state" != "published" ] || [ "$n" -ne 2 ]; then
+            echo "::error::Release $TAG is not a published Release holding the .crate and SHA256SUMS."
+            exit 1
+          fi

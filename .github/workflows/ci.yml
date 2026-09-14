@@ -138,8 +138,24 @@ jobs:
       # `tools/lib/gitbase.py` prints the other form to whoever runs it locally.
       - name: fetch origin/main for the retired-version gate
         run: git fetch --no-tags --depth=1 origin main:refs/remotes/origin/main
-      - name: the number this change moves away from is on crates.io
+      # Also the Release its publishing job writes (`delvewright-dsl--v<X>`,
+      # ADR-0028 §6). The GitHub API is read with this run's token, which only
+      # raises the rate limit — every object it reads is public.
+      - name: the number this change moves away from is on crates.io, and released
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: python3 tools/check-dsl-version-published.py
+      # THE SAME SHAPE FOR THE PLUGIN (ADR-0028 §5), a STEP of this job because
+      # every job name is a required status context and this job already asks the
+      # outgoing-version question over the network. A pull request moving
+      # `plugin.json` `version` from X to Y reds until `delvewright--vX` is a
+      # published Release: the marketplace delivered X the moment it reached
+      # `main`, and the Release is the record of that delivery. It reads the same
+      # `origin/main` commit fetched above.
+      - name: the plugin version this change moves away from is released
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 tools/check-plugin-version-released.py
 
   rust:
     name: rust (fmt, clippy, test)

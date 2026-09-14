@@ -137,6 +137,7 @@ def identity(name: str, tag: str, version: str) -> str:
 USAGE = """usage: release_tags.py <command> [args]
 
   identity <name> <tag> <version>   refuse (exit 1) unless <tag> == <name>--v<version>, strictly
+  parse <tag>                       print "<name> <version>", refused (exit 1) outside the grammar
   tag <name> <version>              print <name>--v<version>
   title <tag>                       print the Release title
   previous <tag> [--repo DIR]       print the newest older tag of the same line (git tag -l), or nothing
@@ -153,6 +154,10 @@ def main(argv: list[str]) -> int:
         if command == "identity" and len(rest) == 3:
             tag = identity(rest[0], rest[1], rest[2])
             print(f"ok: {tag} is in the grammar and names {rest[0]} {rest[2]} (1 of 1 tag judged)")
+            return 0
+        if command == "parse" and len(rest) == 1:
+            name, version = parse(rest[0])
+            print(f"{name} {version}")
             return 0
         if command == "tag" and len(rest) == 2:
             print(tag_for(rest[0], rest[1]))

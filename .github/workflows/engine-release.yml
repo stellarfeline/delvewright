@@ -7,21 +7,29 @@ name: engine release (delvec)
 #      target in `versions.toml [engine].targets`. Release `v1.0.0` existed with
 #      ZERO assets, so the engine pin ADR-0016 requires and the skill's
 #      `requires.delvec` window were promises against an empty shelf.
-#   2. crates.io — `delvewright-dsl`, then `delvec` (`versions.toml
-#      [engine].crates`, ADR-0025), so `cargo install delvec`
-#      installs the same creator the archive carries.
+#   2. crates.io — `delvec` (`versions.toml [engine].crate`, ADR-0025), so
+#      `cargo install delvec` installs the same creator the archive carries.
+#
+# THE TAG: `delvec--v<version>` (ADR-0028 §1)
+#
+# One of three things this repository releases by name and version; the other
+# two are `dsl-crate-publish.yml` (`delvewright-dsl--v*`) and `plugin-release.yml`
+# (`delvewright--v*`). The trigger below matches only this line's tags, and
+# `identity` holds the tag to the strict grammar (`tools/lib/release_tags.py`).
+# The six pre-grammar `v1.0.0`…`v1.5.0` releases stay as published history; no
+# run can be started against one again. This Release is the repository's one
+# Latest, set explicitly at the undraft (ADR-0028 §8).
 #
 # WHO PUBLISHES `delvewright-dsl`
 #
-# Not this workflow. That crate's version is the `dsl_version`, so it moves on a
-# clock of its own and is uploaded by `.github/workflows/dsl-crate-publish.yml`
-# the moment its number moves on `main` — one authority, and it is that one.
-# The DSL crate stays in the set below as a NO-OP RE-CHECK: `delvec` declares
-# `=<dsl version>`, so the release must not proceed if the registry does not
-# already hold exactly those bytes, and the checksum comparison can only confirm
-# it (skip), refuse it (different bytes under that version), or — if the hook
-# never ran — supply it. It can never publish a DIFFERENT dsl than the one the
-# hook decided on, because the number it reads is the same `versions.toml` value.
+# Not this workflow, and it never supplies it. That crate's version is the
+# `dsl_version`, so it moves on a clock of its own and is uploaded — with its own
+# tag and Release — by `.github/workflows/dsl-crate-publish.yml` (ADR-0028 §6).
+# `delvec` declares `=<dsl version>`, so `crates-preflight` REFUSES, before any
+# approval is asked, when the registry does not already serve that version as
+# the same crate, and names the format crate's own workflow as the remedy; the
+# gated job uploads `delvec` alone (`--only delvec`), so no path through this
+# workflow can put a `delvewright-dsl` version on crates.io.
 #
 # NOTHING HERE MAY BE DONE BY HAND. A human `cargo publish` or a hand-uploaded
 # asset is the failure mode being closed, not a fallback.
@@ -39,7 +47,7 @@ name: engine release (delvec)
 #      approval before that job starts. No workflow edit, no fork PR and no
 #      mis-pushed tag reaches the registry without that click.
 #   2. `identity` refuses to let anything run unless the tag NAME equals
-#      `v<[engine].version>` from the tagged tree, so a tag pushed by mistake
+#      `delvec--v<[engine].version>` from the tagged tree, so a tag pushed by mistake
 #      cannot publish "whatever the tree happens to say".
 #   3. `identity` also refuses a tag that is not an ancestor of `main`. The
 #      approval prompt shows a ref, not a diff; this is what makes the thing being
@@ -82,7 +90,7 @@ name: engine release (delvec)
 # and no later act could take that back. The residual window is between a
 # successful upload and a successful undraft: it is one API call wide, it is
 # retried in-job, and if every attempt fails the step prints what is on the
-# registry and names the one remaining act (`gh release edit <tag> --draft=false`),
+# registry and names the one remaining act (`gh release edit <tag> --draft=false --latest`),
 # which re-running this workflow also performs — the registry step then finds the
 # version already there, byte-identical, and skips it.
 #
@@ -97,13 +105,16 @@ name: engine release (delvec)
 
 on:
   push:
-    # `v<semver>` only. `rc-*` belongs to release.yml (tier 3), and a tag shaped
-    # any other way does not start this workflow at all.
-    tags: ["v[0-9]+.[0-9]+.[0-9]+"]
+    # `delvec--v<semver>` only (ADR-0028 §1). The filter says "the name and three
+    # dotted digit runs"; `identity` refuses anything the strict grammar does not
+    # read (a leading zero, a suffix). A tag shaped any other way — a bare
+    # `v<semver>`, another line's tag — does not start this workflow at all
+    # (`tools/tests/test_release_tags.py` evaluates this filter).
+    tags: ["delvec--v[0-9]+.[0-9]+.[0-9]+"]
   workflow_dispatch:
     inputs:
       tag:
-        description: "Existing v<semver> tag to build from (re-fills the shelf while its release is still a draft; re-runs are safe)"
+        description: "Existing delvec--v<semver> tag to build from (re-fills the shelf while its release is still a draft; re-runs are safe)"
         required: true
         type: string
 
@@ -123,6 +134,7 @@ jobs:
       tag: ${{ steps.id.outputs.tag }}
       version: ${{ steps.id.outputs.version }}
       targets: ${{ steps.id.outputs.targets }}
+      previous: ${{ steps.previous.outputs.previous }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -148,13 +160,19 @@ jobs:
           TARGETS="$(python3 -c 'import json,sys,tomllib;sys.stdout.reconfigure(newline="\n");print(json.dumps(tomllib.load(open("versions.toml","rb"))["engine"]["targets"]))')"
           echo "targets=$TARGETS"  >> "$GITHUB_OUTPUT"
           echo "shelf: $TARGETS"
-          if [ "$TAG" != "v$VERSION" ]; then
-            echo "::error::tag '$TAG' does not name engine version '$VERSION' (versions.toml [engine].version)."
+          # The grammar and the comparison are one statement, in
+          # tools/lib/release_tags.py: the tag must be `delvec--v<version>` with
+          # a strict semver, so a bare `v<semver>` (dispatched by hand) and a
+          # `delvec--v01.6.0` the trigger filter let through both stop here.
+          rc=0
+          python3 tools/lib/release_tags.py identity delvec "$TAG" "$VERSION" || rc=$?
+          if [ "$rc" -ne 0 ]; then
+            echo "::error::tag '$TAG' is not delvec--v$VERSION (versions.toml [engine].version)."
             echo "::error::ADR-0016 requires the binary's version, the git tag, the crates.io version and the"
-            echo "::error::skill's window to be one number. Re-tag, or bump [engine].version and re-run CI."
+            echo "::error::skill's window to be one number, and ADR-0028 §1 names the tag delvec--v<version>."
+            echo "::error::Re-tag, or bump [engine].version and re-run CI."
             exit 1
           fi
-          echo "ok: $TAG == v$VERSION"
       - name: the tagged commit is on main
         run: |
           set -euo pipefail
@@ -165,6 +183,18 @@ jobs:
             echo "::error::Releases publish reviewed, CI-green history only (ADR-0008)."
             exit 1
           fi
+      # The generated changelog runs between consecutive releases OF THIS LINE
+      # (ADR-0028 §2): the repository's last two tags may be a plugin release and
+      # a format release. Read here because this checkout carries every tag.
+      - name: the previous delvec release, for the notes
+        id: previous
+        env:
+          TAG: ${{ github.event.inputs.tag || github.ref_name }}
+        run: |
+          set -euo pipefail
+          prev="$(python3 tools/lib/release_tags.py previous "$TAG")"
+          echo "previous=$prev" >> "$GITHUB_OUTPUT"
+          echo "previous delvec release: ${prev:-(none)}"
 
   # ---- the shelf: one archive per target ------------------------------------
   binaries:
@@ -276,6 +306,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ needs.identity.outputs.tag }}
+          PREVIOUS: ${{ needs.identity.outputs.previous }}
         run: |
           set -euo pipefail
           # `gh release view` finds a draft by tag name (it falls back to listing
@@ -288,8 +319,17 @@ jobs:
           gh release view "$TAG" --json isDraft --jq .isDraft > state.txt 2> state.err || rc=$?
           if [ "$rc" -ne 0 ]; then
             if grep -qiE 'release not found|HTTP 404' state.err; then
-              gh release create "$TAG" --draft --title "delvec $TAG" --generate-notes
-              echo "created release $TAG as a DRAFT — nothing is public until the gated job undrafts it"
+              # The notes open with what the tagged tree says (the dsl_version the
+              # binary speaks, the crates.io page), and the changelog GitHub
+              # generates below it starts at the previous release OF THIS LINE.
+              python3 tools/release-notes.py delvec --commit HEAD > notes.md
+              title="$(python3 tools/lib/release_tags.py title "$TAG")"
+              if [ -n "$PREVIOUS" ]; then
+                gh release create "$TAG" --draft --title "$title" --notes-file notes.md --generate-notes --notes-start-tag "$PREVIOUS"
+              else
+                gh release create "$TAG" --draft --title "$title" --notes-file notes.md
+              fi
+              echo "created release $TAG ($title) as a DRAFT — nothing is public until the gated job undrafts it"
             else
               cat state.err
               echo "::error::could not read whether release $TAG exists or is a draft."
@@ -361,6 +401,29 @@ jobs:
       - uses: actions/checkout@v4
         with: { ref: "${{ needs.identity.outputs.tag }}" }
       - uses: Swatinem/rust-cache@v2
+      # FIRST: the format crate `delvec` pins with `=` is already served, as the
+      # same crate this tree packages. This release never uploads it (ADR-0028
+      # §6) — the format crate's own workflow publishes it together with its tag
+      # and Release — so an absent version is a refusal here, before any
+      # approval is asked, naming that workflow. First in the job because its
+      # `--only` packaging prunes the verify directory the full gate below writes.
+      - name: the format crate is already on crates.io (this release never supplies it)
+        run: |
+          set -euo pipefail
+          rc=0
+          bash tools/crates-io-publish.sh --plan --only delvewright-dsl > dsl-plan.txt 2>&1 || rc=$?
+          cat dsl-plan.txt
+          [ "$rc" -eq 0 ] || exit "$rc"
+          list="$(sed -n 's/^crates-io-publish: TO_PUBLISH=//p' dsl-plan.txt)"
+          dsl="$(python3 -c 'import sys,tomllib;sys.stdout.reconfigure(newline="\n");print(tomllib.load(open("versions.toml","rb"))["engine"]["dsl_crate_version"])')"
+          if [ -n "$list" ]; then
+            echo "::error::delvewright-dsl $dsl is not on crates.io, and delvec pins it with '='."
+            echo "::error::This release never publishes the format crate. Publish it first through its own"
+            echo "::error::workflow, .github/workflows/dsl-crate-publish.yml (its manual arm on a main commit"
+            echo "::error::carrying $dsl), which also writes delvewright-dsl--v$dsl and its Release; then re-run this."
+            exit 1
+          fi
+          echo "ok: delvewright-dsl $dsl is served by crates.io as the same crate — 1 of 1 pinned dependency present"
       # The same gate CI runs on every push, re-run here against the exact tagged
       # tree the upload will come from.
       - name: the packaged tarballs are publishable
@@ -382,10 +445,10 @@ jobs:
       # a task id, a pull-request number, a dated attribution.
       - name: the tagged tree carries no identifier a reader cannot resolve
         run: python3 tools/check-unsanctioned-identifiers.py
-      # Prints, for the human about to approve `publish`, exactly which
-      # crate versions would be uploaded and which are already on the registry.
+      # Prints, for the human about to approve `publish`, exactly what the gated
+      # job will upload: `delvec` alone, the same `--only` selection it runs.
       - name: the publish plan
-        run: bash tools/crates-io-publish.sh --plan
+        run: bash tools/crates-io-publish.sh --plan --only delvec
 
   # ---- the one-way door, and the only job that publishes anything -----------
   publish:
@@ -434,22 +497,25 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: bash tools/assert-run-approved.sh crates-io
       - uses: Swatinem/rust-cache@v2
-      # Re-package inside this job: `crates-io-publish.sh` hashes
-      # `package-verify/package/*.crate` (plus the sha256 this step writes
-      # beside each — tools/lib/package-verify.sh), and it must hash tarballs
-      # built here from the tagged tree, not artifacts handed over from
-      # another job.
-      - name: package (and re-prove publishability) from the tagged tree
+      # Re-prove publishability inside this job, from the tagged tree, not from
+      # artifacts handed over from another job.
+      - name: re-prove publishability from the tagged tree
         run: bash tools/check-publishable.sh
       # FIRST of the two publishes, because it is the one that cannot be undone.
       # If this fails, the release is still a draft and nothing has been published
       # anywhere — which is the state one approval is supposed to produce.
+      #
+      # `--only delvec`: this release uploads the engine crate and nothing else
+      # (ADR-0028 §6). `--only` packages `delvec` itself in this process from the
+      # tagged tree and compares those bytes with the registry; its packaging
+      # resolves the `=`-pinned format crate from crates.io, which
+      # `crates-preflight` already proved is served.
       - name: publish to crates.io (irreversible; first for that reason)
         env:
           # Read by cargo directly out of the environment. No `cargo login`, no
           # credential written to disk.
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-        run: bash tools/crates-io-publish.sh --publish
+        run: bash tools/crates-io-publish.sh --publish --only delvec
       # SECOND: one cheap, idempotent API call, under the same approval. This is
       # where the GitHub Release stops being a draft and becomes public.
       - name: publish the release (undraft, retried)
@@ -463,10 +529,14 @@ jobs:
           # release is still a draft. It is retried rather than left to a human,
           # and the state is READ BACK each time — `gh` exiting 0 is not evidence
           # the release is public.
+          #
+          # `--latest`: this repository's one Latest is the `delvec` release, set
+          # explicitly rather than left to GitHub's date ordering, which would
+          # hand it to whichever of the three lines was released last (ADR-0028 §8).
           attempt=1
           while [ "$attempt" -le 5 ]; do
             rc=0
-            gh release edit "$TAG" --draft=false || rc=$?
+            gh release edit "$TAG" --draft=false --latest || rc=$?
             if [ "$rc" -eq 0 ]; then
               is_draft="$(gh release view "$TAG" --json isDraft --jq .isDraft)"
               if [ "$is_draft" = "false" ]; then
@@ -485,7 +555,7 @@ jobs:
           echo "::error::The registry half is done and cannot be undone; the release half is not."
           echo "::error::This is the one window this design leaves open, and it is one call wide."
           echo "::error::The single remaining act, which needs no new approval and is safe to repeat:"
-          echo "::error::    gh release edit $TAG --draft=false -R $GITHUB_REPOSITORY"
+          echo "::error::    gh release edit $TAG --draft=false --latest -R $GITHUB_REPOSITORY"
           echo "::error::Re-running this workflow does the same thing: the registry step finds every"
           echo "::error::version already on crates.io with identical bytes and skips it, then this step"
           echo "::error::undrafts. Do NOT re-tag and do NOT bump the version."

@@ -1,0 +1,280 @@
+name: plugin release (delvewright)
+
+# The `delvewright` Claude Code plugin, released by its name and version:
+# `delvewright--v<version>` (ADR-0028 §1). One of three release workflows; the
+# others are `engine-release.yml` (`delvec--v*`) and `dsl-crate-publish.yml`
+# (`delvewright-dsl--v*`).
+#
+# WHAT THIS RELEASE IS
+#
+# A creator receives the plugin from the marketplace at `main`, and delivery
+# happens when `plugin.json` `version` moves there — a tag decides nothing for a
+# default-branch subscriber (ADR-0028, *Context*, measured with Claude Code
+# 2.1.270). So this Release RECORDS a delivery. It is worth having only because
+# it proves what it records is what was delivered:
+#
+#   - `identity`: `tools/check-plugin-release-identity.py` — the commit carries the
+#     version the tag names, is a first-parent `main` commit, and every
+#     first-parent commit carrying that version shares ONE plugin-root tree, so
+#     the archive is the bytes every creator holding the version has (§3);
+#   - `page`: `tools/check-skill-page.py --online` at that commit — the engine
+#     release the page pins exists, resolves to the pinned revision, and its
+#     shelf carries every target plus `SHA256SUMS` (§3);
+#   - `package`: `git archive` of the plugin root at that commit, with the
+#     commit's own time as every entry's mtime, so anyone reproduces the zip from
+#     the tag; `SHA256SUMS`; the notes read from the tree.
+#
+# TWO ENTRY POINTS, ONE PATH (§4, §5)
+#
+#   push of `delvewright--v<version>`  a human names the commit by tagging it.
+#   workflow_dispatch (`commit`)       the manual arm: the first release, and the
+#                                      remedy. It derives the tag from the
+#                                      commit's version, and the gated job writes
+#                                      the tag through the API just before the
+#                                      Release. A tag written with the job's own
+#                                      token starts no second run.
+#
+# Both refuse a version whose Release is already published. A tag that already
+# exists without a Release (a run that died between the two writes) is accepted
+# when it names a commit `identity` accepts, so re-running either path completes
+# the release.
+#
+# THE ONE APPROVAL
+#
+# `publish` is the only job that writes anything outside the runner — the tag and
+# the Release — and it declares the `plugin-release` environment, which holds no
+# secret and carries the owner as required reviewer. Its first `run:` step is
+# `tools/assert-run-approved.sh plugin-release` (`tools/check-approval-guard.py`),
+# and every publishing verb sits in it (`tools/check-release-publish-gate.py`).
+# Not `crates-io`: a job declaring that environment can read the registry token,
+# and this one has no use for it. The Release is created with `--latest=false`:
+# the repository's one Latest is `delvec`'s (§8).
+#
+# The outgoing-version gate in `ci.yml` (`tools/check-plugin-version-released.py`)
+# is what keeps this record complete: a pull request moving the plugin from X to
+# Y reds until `delvewright--vX` is published.
+
+on:
+  push:
+    # `delvewright--v<semver>` only. The literal `delvewright--v` does not match
+    # `delvewright-dsl--v*`, a bare `v<semver>` or `delvec--v*`
+    # (`tools/tests/test_release_tags.py` evaluates this filter).
+    tags: ["delvewright--v[0-9]+.[0-9]+.[0-9]+"]
+  workflow_dispatch:
+    inputs:
+      commit:
+        description: "A first-parent main commit to release the plugin version it carries (the tag is derived and written)"
+        required: true
+        default: main
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  # Never cancel a release in flight, and never let a run parked on the approval
+  # stand in front of a different ref's run.
+  group: plugin-release-${{ github.event.inputs.commit || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  identity:
+    name: release identity (the plugin main delivered)
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.id.outputs.tag }}
+      version: ${{ steps.id.outputs.version }}
+      commit: ${{ steps.id.outputs.commit }}
+      tree: ${{ steps.id.outputs.tree }}
+      previous: ${{ steps.previous.outputs.previous }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.commit || github.ref_name }}
+          # First-parent history of `origin/main` and every tag are what the
+          # identity and the previous-release lookup read.
+          fetch-depth: 0
+      - name: the commit carries the version, main served it, and one tree stands for it
+        id: id
+        env:
+          EVENT: ${{ github.event_name }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT" = "push" ]; then
+            python3 tools/check-plugin-release-identity.py --commit HEAD --tag "$TAG" --github-output "$GITHUB_OUTPUT"
+          else
+            python3 tools/check-plugin-release-identity.py --commit HEAD --github-output "$GITHUB_OUTPUT"
+          fi
+      - name: the version is not already released, and an existing tag names this commit's tree
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.id.outputs.tag }}
+          COMMIT: ${{ steps.id.outputs.commit }}
+        run: |
+          set -euo pipefail
+          rc=0
+          state="$(python3 tools/lib/github_releases.py state "$GITHUB_REPOSITORY" "$TAG")" || rc=$?
+          [ "$rc" -eq 0 ] || { echo "::error::could not read the state of Release $TAG"; exit 1; }
+          echo "Release $TAG: $state"
+          if [ "$state" != "absent" ]; then
+            echo "::error::Release $TAG is already $state. A released version is never re-released; a draft"
+            echo "::error::nobody here created is not filled by this workflow — delete it by hand and re-run."
+            exit 1
+          fi
+          rc=0
+          at="$(python3 tools/lib/github_releases.py tag-commit "$GITHUB_REPOSITORY" "$TAG")" || rc=$?
+          [ "$rc" -eq 0 ] || { echo "::error::could not read whether tag $TAG exists"; exit 1; }
+          if [ -n "$at" ] && [ "$at" != "$COMMIT" ]; then
+            # The tag exists (a human pushed it, or a run died after writing it):
+            # it must itself be a commit identity accepts, and the Release hangs on it.
+            echo "::error::tag $TAG exists at $at, and this run judged $COMMIT. Run the arm on $at, or push nothing."
+            exit 1
+          fi
+          if [ -n "$at" ]; then
+            echo "ok: $TAG has no Release; the tag exists at $at, the commit judged"
+          else
+            echo "ok: $TAG has no Release; the tag is not written yet (the gated job writes it)"
+          fi
+      - name: the previous plugin release, for the notes
+        id: previous
+        env:
+          TAG: ${{ steps.id.outputs.tag }}
+        run: |
+          set -euo pipefail
+          prev="$(python3 tools/lib/release_tags.py previous "$TAG")"
+          echo "previous=$prev" >> "$GITHUB_OUTPUT"
+          echo "previous plugin release: ${prev:-(none — this is the first release of the line)}"
+
+  page:
+    name: the page's engine shelf is whole (check-skill-page --online)
+    needs: identity
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { ref: "${{ needs.identity.outputs.commit }}" }
+      # The two objects the gate reads that a shallow checkout lacks. Its own job,
+      # because the action shallows `origin/main`, which `identity` reads in full.
+      - uses: ./.github/actions/skill-page-objects
+      - name: the pinned engine release exists at the pinned revision with every archive
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 tools/check-skill-page.py --online
+
+  package:
+    name: archive, checksum and notes
+    needs: identity
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.identity.outputs.commit }}
+          # The notes read the engine tree at the page's pinned revision.
+          fetch-depth: 0
+      - name: the plugin root, archived reproducibly
+        env:
+          VERSION: ${{ needs.identity.outputs.version }}
+          COMMIT: ${{ needs.identity.outputs.commit }}
+          TREE: ${{ needs.identity.outputs.tree }}
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          got="$(git rev-parse "$COMMIT:.claude/skills/delvewright")"
+          if [ "$got" != "$TREE" ]; then
+            echo "::error::the plugin root at $COMMIT is $got, and identity proved $TREE."
+            exit 1
+          fi
+          # `<commit>:<path>` is a TREE, for which git archive stamps the current
+          # time on every entry; `--mtime` pins it to the commit's own time, so the
+          # zip is a function of the tag.
+          when="$(git log -1 --format=%cI "$COMMIT")"
+          git archive --format=zip --mtime="$when" --output "dist/delvewright-plugin-$VERSION.zip" "$COMMIT:.claude/skills/delvewright"
+          (cd dist && sha256sum "delvewright-plugin-$VERSION.zip" > SHA256SUMS && cat SHA256SUMS)
+          n="$(unzip -Z1 "dist/delvewright-plugin-$VERSION.zip" | grep -vc '/$' || true)"
+          want="$(git ls-tree -r --name-only "$COMMIT:.claude/skills/delvewright" | wc -l | tr -d ' ')"
+          echo "archive: $n file(s), plugin root: $want file(s)"
+          if [ "$n" -ne "$want" ] || [ "$want" -eq 0 ]; then
+            echo "::error::the archive holds $n of $want file(s) under the plugin root."
+            exit 1
+          fi
+      - name: the notes, read from the tree
+        env:
+          COMMIT: ${{ needs.identity.outputs.commit }}
+        run: |
+          set -euo pipefail
+          python3 tools/release-notes.py delvewright --commit "$COMMIT" > dist/notes.md
+          cat dist/notes.md
+      - uses: actions/upload-artifact@v4
+        with:
+          name: plugin-release
+          path: dist/
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    name: publish the plugin release (owner approval)
+    needs: [identity, page, package]
+    runs-on: ubuntu-latest
+    # THE gate: `plugin-release` carries a required reviewer and holds no secret.
+    # The step below reads the consequence of that setting rather than trusting it.
+    environment: plugin-release
+    permissions:
+      # The tag (manual arm) and the Release are written here and nowhere else.
+      contents: write
+      # Lets the first step read this run's own approval history.
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+        with: { ref: "${{ needs.identity.outputs.commit }}" }
+      - name: the gate actually bound (a run nobody approved must not publish)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash tools/assert-run-approved.sh plugin-release
+      - uses: actions/download-artifact@v4
+        with:
+          name: plugin-release
+          path: dist
+      - name: the archive is the bytes that were checksummed
+        run: |
+          set -euo pipefail
+          (cd dist && sha256sum -c SHA256SUMS)
+      - uses: ./.github/actions/write-release-tag
+        with:
+          tag: ${{ needs.identity.outputs.tag }}
+          commit: ${{ needs.identity.outputs.commit }}
+          message: "delvewright ${{ needs.identity.outputs.version }}, the plugin main delivered (plugin root ${{ needs.identity.outputs.tree }})"
+      - name: the Release, never Latest
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.identity.outputs.tag }}
+          VERSION: ${{ needs.identity.outputs.version }}
+          PREVIOUS: ${{ needs.identity.outputs.previous }}
+        run: |
+          set -euo pipefail
+          title="$(python3 tools/lib/release_tags.py title "$TAG")"
+          zip="dist/delvewright-plugin-$VERSION.zip"
+          if [ -n "$PREVIOUS" ]; then
+            gh release create "$TAG" "$zip" dist/SHA256SUMS --verify-tag --title "$title" --notes-file dist/notes.md --generate-notes --notes-start-tag "$PREVIOUS" --latest=false
+          else
+            gh release create "$TAG" "$zip" dist/SHA256SUMS --verify-tag --title "$title" --notes-file dist/notes.md --latest=false
+          fi
+      - name: the Release is published with both assets, read back
+        env:
+          TAG: ${{ needs.identity.outputs.tag }}
+          VERSION: ${{ needs.identity.outputs.version }}
+          COMMIT: ${{ needs.identity.outputs.commit }}
+        run: |
+          set -euo pipefail
+          state="$(python3 tools/lib/github_releases.py state "$GITHUB_REPOSITORY" "$TAG")"
+          at="$(python3 tools/lib/github_releases.py tag-commit "$GITHUB_REPOSITORY" "$TAG")"
+          python3 tools/lib/github_releases.py assets "$GITHUB_REPOSITORY" "$TAG" > have.txt
+          cat have.txt
+          n=0
+          for want in "delvewright-plugin-$VERSION.zip" SHA256SUMS; do
+            if grep -qxF "$want" have.txt; then n=$((n + 1)); fi
+          done
+          echo "Release $TAG: $state at ${at:-nothing}; $n of 2 asset(s) present"
+          if [ "$state" != "published" ] || [ "$n" -ne 2 ] || [ "$at" != "$COMMIT" ]; then
+            echo "::error::Release $TAG is not a published Release at $COMMIT holding the zip and SHA256SUMS."
+            exit 1
+          fi
