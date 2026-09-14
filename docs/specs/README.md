@@ -72,3 +72,4 @@ machine-checkable assertions — each criterion maps to a CI check.
 | [spec-0062](spec-0062-danger-is-visible-or-the-engine-refuses-it.md) | Danger is visible, or the engine refuses it — a killing volume that reaches floor the player reads as safe is refused, and a flush hazard declares the block that shows it | Proposed |
 | [spec-0063](spec-0063-the-front-end-as-a-product.md) | The front end as a product — one plugin, a page that is a spine, an exact Init, an optional library | Proposed |
 | [spec-0064](spec-0064-the-last-player-leaves.md) | The last player leaves, and the delve is built again — an optional container flag that returns a running delve to its built state once the online count has read zero for a whole window | Accepted |
+| [spec-0068](spec-0068-a-firework-is-an-effect.md) | A firework is an effect — one verb at a mark, the burst height fixed by the emitter, refused under a roof or beside a posted body | Proposed |
