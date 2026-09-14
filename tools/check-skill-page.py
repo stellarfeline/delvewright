@@ -76,6 +76,10 @@ WHAT IS CHECKED, AND THE PERTURBATION THAT REDS EACH
        every DW code the page names is in the binary's bytes.
                                                RED: `verdict: "unwalked"` against
                                                     a walk record of two verdicts
+   19  the pin check runs on every run: the run shape's `Init` entry names
+       I1b, and `scripts/check-toolchain.py` is invoked in a fence of Init's
+       I1b section and in the I8 checklist.    RED: `Init  build the toolchain,
+                                                    once per machine`
 
 RULES 17 AND 18, AND WHAT THEY CANNOT SEE
 
@@ -1043,6 +1047,7 @@ def check(rep: Report, engine: pathlib.Path, rev: str, release: str, base: str |
     placeholder_rule(rep)
     refimg_rule(rep, engine)
     init_proves_rule(rep)
+    pin_check_rule(rep)
 
     # -- 17. every DW code the page names, the pin declares ------------------
     dw_code_rule(rep, engine, rev)
@@ -1324,6 +1329,58 @@ def init_proves_rule(rep: Report) -> None:
                 )
     rep.bind("acquired-program invocation(s) proven by Init", ok, invocations_seen)
     rep.bind("acquired program(s) proven at Init", len(proven), len(ACQUIRED))
+
+
+PIN_CHECK = "scripts/check-toolchain.py"
+
+
+def pin_check_rule(rep: Report) -> None:
+    """Rule 19: the per-run pin check is where a run starts, and where Init ends.
+
+    A machine that has run Init before carries whatever toolchain the last run
+    left, and the page may pin a newer engine. The comparison only protects a
+    run that makes it, so the three places a run is told to make it are held:
+    the run shape a reader follows, the I1b section that carries the command,
+    and the checklist Init is finished by. A line naming the script in prose is
+    not an invocation, so (b) and (c) read fenced lines only.
+    """
+    page = SKILL.read_text(encoding="utf-8")
+    init = (SKILL_ROOT / "references" / "init.md").read_text(encoding="utf-8")
+    sites = 0
+
+    shape = [body for heading, body in sections(page) if heading == "The shape of the run"]
+    entry = [
+        line
+        for body in shape
+        for line in fenced_lines(body)
+        if line.split()[:1] == ["Init"]
+    ]
+    if len(entry) == 1 and "I1b" in entry[0]:
+        sites += 1
+    else:
+        rep.find(
+            f"the run shape's `Init` entry does not name I1b (found {entry!r}). A "
+            f"machine that ran Init before keeps its old engine unless every run "
+            f"starts with the pin check, and the run shape is what a reader follows."
+        )
+
+    i1b = [body for heading, body in sections(init) if heading.startswith("I1b ")]
+    if any(PIN_CHECK in line for body in i1b for line in fenced_lines(body)):
+        sites += 1
+    else:
+        rep.find(
+            f"`references/init.md` has no I1b section whose fence runs `{PIN_CHECK}`."
+        )
+
+    i8 = [body for heading, body in sections(page) if heading.startswith("I8 ")]
+    if any(PIN_CHECK in line for body in i8 for line in fenced_lines(body)):
+        sites += 1
+    else:
+        rep.find(
+            f"the I8 checklist does not run `{PIN_CHECK}`, so Init can finish with "
+            f"`delvec --version` answering a number that is not the pin's."
+        )
+    rep.bind("pin-check site(s) — run shape, I1b, I8", sites, 3)
 
 
 def dw_codes_module():

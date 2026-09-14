@@ -110,8 +110,10 @@ Everything below happens in this order, and the order is not a suggestion — ea
 step needs something the step before it produced.
 
 ```
-Init            build the toolchain, once per machine        ── §Init
-                STOP at Init I5 — the client jar is the user's
+Init            every run: I0 · I1 · I1b, the pin check      ── §Init
+                I1b exits 0 before any document is read or any
+                subcommand is run; the rest of Init is run where
+                I1b names it. STOP at Init I5 — the jar is the user's
   ↓
 Decide          areas[] or a site plan — one campaign, one    ── §Which placement model
   ↓
@@ -172,15 +174,19 @@ They hold at every step by their nature, and nothing below repeats them.
 
 ## Init — build the toolchain before you author anything
 
-Run all of it before writing a line of a campaign document. **If any step here
-cannot be completed, say so and stop**: authoring against a half-built toolchain
+**Every run starts here, and a run on a machine that has run Init before is no
+exception.** I0, I1 and **I1b** run first on every run; I1b compares the binary,
+the engine tree and `env.sh` with this page's own `versions.toml`, and **no
+campaign document is read and no `delvec` subcommand is run until it exits 0**.
+What else in Init a run owes is what I1b's row says. **If any step here cannot
+be completed, say so and stop**: authoring against a half-built toolchain
 produces a campaign whose visual half was never reviewed, and nothing downstream
 reports that.
 
 The toolchain lives in **`~/.delvewright/`** — `engine/` the checkout, `bin/`
 the unpacked archive, `env.sh` the environment every later command sources, and
 `campaigns/` if the shipped library is ever taken. One directory, created by the
-first run, the same in both modes.
+first run, the same in both modes, and held to the pin by I1b on every run.
 
 **The commands, and the meaning of every failure, are `references/init.md`.**
 Read it now and run from it. The table below is the order and the postconditions.
@@ -189,11 +195,12 @@ Read it now and run from it. The table below is the order and the postconditions
 |---|---|
 | **I0 · mode** | `DELVEWRIGHT_MODE` is `dev` when the working directory carries **both** `crates/delvec/Cargo.toml` and `.claude/skills/delvewright/skills/new-delve/SKILL.md`, else `creator`. `DELVEWRIGHT_ENGINE` is the working directory in dev, `~/.delvewright/engine` otherwise. Dev: `campaigns/` there resolves to a directory, or **stop** |
 | **I1 · already here** | `git`; a Python ≥ 3.11 recorded as `DELVEWRIGHT_PYTHON` and used by every Python invocation on this page; the **skill root** recorded as `DELVEWRIGHT_SKILL` — every bundled path below is `"$DELVEWRIGHT_SKILL/…"`, and it is never the working directory; `java` ≥ 21, enumerated with `scripts/find-jdk.py` before halting, and exported; `docker info` exits 0, **and `docker compose version` exits 0** — Compose v2 is a separate per-user CLI plugin that `docker info` says nothing about, and every entry point of step 10 is built on it. Not here: Rust and `git-lfs` |
+| **I1b · the pin, every run** | `"$DELVEWRIGHT_PYTHON" "$DELVEWRIGHT_SKILL/scripts/check-toolchain.py" --mode "$DELVEWRIGHT_MODE" --engine "$DELVEWRIGHT_ENGINE"`, with **this run's** I0 and I1 values and never `env.sh`'s, exits 0: `delvec --version` through `env.sh` equals `[engine].release` (dev: the checkout's `[engine].version`), the creator engine tree's `rev-parse HEAD` equals `[engine].ref`, and `env.sh`'s `DELVEWRIGHT_SKILL`, `DELVEWRIGHT_MODE` and `DELVEWRIGHT_ENGINE` are this run's. **Exit 3 is a refusal**: run the steps it prints, in order, then I1b again. Exit 4: no toolchain, all of I2–I8. Exit 2: stop. After 0: I2–I4 are skipped and nothing is downloaded; I5 only if the jar is not at its path; I6 on every run; I7 and I8 after a repair or a first run |
 | **I2 · engine tree** | `"$DELVEWRIGHT_SKILL/versions.toml"` is read, never restated. Creator: the clone at `~/.delvewright/engine` is `--detach`ed at `[engine].ref` and `rev-parse HEAD` equals it. Dev: HEAD is recorded and said out loud |
 | **I3a · `delvec`** | `"$DELVEWRIGHT_PYTHON" "$DELVEWRIGHT_SKILL/scripts/fetch-delvec.py" --into ~/.delvewright/bin` exits 0 having printed its target, archive, digest and version. Exit 3 or 4 → I3b. **Exit 5 is a refusal** — never the floor, never a retry. Exit 6: stop |
 | **I3b · the floor** | Only after exit 3 or 4, and in dev mode always. `cargo build --release -p delvec` **from inside** the engine tree, with `cargo --version` and `rustc --version` equal to the channel `rust-toolchain.toml` names. No `cargo`: hand over `rustup` and wait |
-| **I3c · the binary** | `delvec --version` answers. **Write down the `dsl` number** — step 1 needs it on every document. The GPU arms are **not** asked here: they draw with the client jar I5 fetches, so a gate run now refuses on every clean machine there is, for a reason this page created |
-| **I4 · environment** | `~/.delvewright/env.sh` carries `JAVA_HOME`, `DELVEWRIGHT_MODE`, `DELVEWRIGHT_ENGINE`, `DELVEWRIGHT_PYTHON`, `DELVEWRIGHT_SKILL`, `DELVEWRIGHT_PREFABS` and `PATH`. Every later command runs as `. ~/.delvewright/env.sh && <command>` |
+| **I3c · the binary** | `delvec --version` answers **the number I1b holds it to**. **Write down the `dsl` number** — step 1 needs it on every document. The GPU arms are **not** asked here: they draw with the client jar I5 fetches, so a gate run now refuses on every clean machine there is, for a reason this page created |
+| **I4 · environment** | `~/.delvewright/env.sh` carries `JAVA_HOME`, `DELVEWRIGHT_MODE`, `DELVEWRIGHT_ENGINE`, `DELVEWRIGHT_PYTHON`, `DELVEWRIGHT_SKILL`, `DELVEWRIGHT_PREFABS` and `PATH`, this run's values in the lines I4 owns and every other line kept. Every later command runs as `. ~/.delvewright/env.sh && <command>` |
 | **I5 · client jar** | **STOP — the user's choice.** Download by default, or a copy from a directory they name. Either way the jar lands at `~/.chunky/resources/minecraft.jar` and you have looked at it there. That it *reads* is I8's line |
 | **I6 · the library** | `DELVEWRIGHT_PREFABS` names a prefabs directory and you have said which of the four cases produced it. **Nothing is cloned here** — step 2 takes the shipped library, if the campaign wants one |
 | **I7 · named, not installed** | Chunky's source answers (a non-zero is said out loud, not a stop). On the drawing path only: `refimg.py --dry-run` exits 0. The skin toolchain is not mentioned |
@@ -206,9 +213,11 @@ environment was lost is indistinguishable from a missing tool:
 
 ```sh
 mkdir -p .out
+"$DELVEWRIGHT_PYTHON" "$DELVEWRIGHT_SKILL/scripts/check-toolchain.py" \
+    --mode "$DELVEWRIGHT_MODE" --engine "$DELVEWRIGHT_ENGINE"   # I1b: exit 0
 java -version                            # 21 or newer
 echo "$DELVEWRIGHT_ENGINE"               # the engine checkout, non-empty
-delvec --version                         # the compiler, and the dsl number
+delvec --version                         # EQUAL to the pin's number, and the dsl number
 delvec grammar list                      # the rule library, through the one binary
 delvec --prefabs "$DELVEWRIGHT_PREFABS" render fidelity-gate
 delvec --prefabs "$DELVEWRIGHT_PREFABS" grammar expand --program idiom-shape \
@@ -370,7 +379,7 @@ third-party marketplace, so a newer `/new-delve` arrives when the user runs
 nowhere earlier. Record in `GENERATION.md` the plugin version this run used, the
 engine release, the `dsl` number, and — if the shipped library was taken — its
 revision. A later round opened under a different plugin version says so before it
-does anything else.
+does anything else; I1b is what holds its toolchain to that version's pin.
 
 ## Where each reference lives
 
@@ -404,6 +413,7 @@ reference means the file listed here.
 | `references/when-red.md` | the symptoms most likely to stop you | any red |
 | `references/tools-by-symptom.md` | the tool inventory, by the symptom that wants it | any step |
 | `references/pitfalls.md` | difficulty, combat, bonfires, waves, staging | steps 3, 5 |
+| `scripts/check-toolchain.py` | run at I1b on every run, and at I8: the toolchain on disk against the pin | I1b, I8 |
 | `scripts/fetch-delvec.py` | run at I3a: the archive, verified and unpacked | I3a |
 | `scripts/find-jdk.py` | run at I1: the newest JDK 21+ already on this machine | I1 |
 | `scripts/fetch-client-jar.py` | run at I5, on the download path | I5 |

@@ -469,6 +469,42 @@ def test_the_rule_reaches_the_reference_that_actually_runs_the_ladder(mod, tree,
     assert has(rep, "references/walk.md invokes `docker compose`"), rep.findings
 
 
+# ------------------------------------------------ rule 19, the pin check every run --
+
+
+def test_a_run_shape_that_builds_the_toolchain_once_per_machine_reds(mod, tree, engine):
+    """The shape the page had while an updated plugin kept running its old engine."""
+    page = tree / "SKILL.md"
+    text = page.read_text(encoding="utf-8")
+    start = text.index("\nInit            ") + 1
+    end = text.index("\n", start)
+    page.write_text(
+        text[:start] + "Init            build the toolchain, once per machine" + text[end:],
+        encoding="utf-8",
+    )
+    assert has(run(mod, engine), "the run shape's `Init` entry does not name I1b")
+
+
+def test_an_i8_checklist_without_the_pin_check_reds(mod, tree, engine):
+    page = tree / "SKILL.md"
+    text = page.read_text(encoding="utf-8")
+    fence_line = '"$DELVEWRIGHT_PYTHON" "$DELVEWRIGHT_SKILL/scripts/check-toolchain.py" \\\n'
+    assert text.count(fence_line) == 1
+    page.write_text(text.replace(fence_line, "# "), encoding="utf-8")
+    assert has(run(mod, engine), "the I8 checklist does not run")
+
+
+def test_the_pin_check_named_only_in_prose_under_i1b_does_not_count(mod, tree, engine):
+    """An inline mention is not an invocation: the fence has to carry it."""
+    init = tree / "references" / "init.md"
+    text = init.read_text(encoding="utf-8")
+    section = text.split("\n## I1b ")[1].split("\n## ")[0]
+    fence = section[section.index("```sh"): section.index("```", section.index("```sh") + 5) + 3]
+    assert "check-toolchain.py" in fence
+    init.write_text(text.replace(fence, "Run `scripts/check-toolchain.py`."), encoding="utf-8")
+    assert has(run(mod, engine), "has no I1b section whose fence runs")
+
+
 def test_a_command_named_only_in_inline_PROSE_inside_init_does_not_prove_it(
     mod, tree, engine
 ):

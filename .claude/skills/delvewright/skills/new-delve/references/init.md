@@ -5,12 +5,15 @@ Init is finished by. This file carries the commands and the meaning of every
 way each one fails. Read it while running Init and at no other time.
 
 Every command below runs through the environment file I4 writes, once I4 has
-written it: `. ~/.delvewright/env.sh && <the command>`.
+written it: `. ~/.delvewright/env.sh && <the command>`. **I0, I1 and I1b are the
+exception**: they run on every run, before `env.sh` is sourced, because I1b is
+the step that decides whether `env.sh` still describes this run.
 
 ## Contents
 
 - [I0 — the mode](#i0--the-mode)
 - [I1 — what has to be on the machine already](#i1--what-has-to-be-on-the-machine-already)
+- [I1b — the pin, checked on every run](#i1b--the-pin-checked-on-every-run)
 - [I2 — the engine tree](#i2--the-engine-tree)
 - [I3a — `delvec` from the release shelf](#i3a--delvec-from-the-release-shelf)
 - [I3b — `delvec` from source, the floor](#i3b--delvec-from-source-the-floor)
@@ -182,6 +185,46 @@ two of its own guards failing first and unhelpfully, `ladder-images` refusing to
 judge on an empty answer and `fresh-volumes` reporting the image class NOT
 JUDGED. None of those three lines names Compose.
 
+## I1b — the pin, checked on every run
+
+**A machine that has run Init before still runs this, first.** The toolchain in
+`~/.delvewright/` is whatever the last run left there, and the page you are
+reading may pin a different engine than that run's page did. Nothing on disk
+says so by itself: an older `delvec` refuses a newer page's documents with
+`unknown variant` and codes it has never heard of, and none of those name a
+version.
+
+```sh
+"$DELVEWRIGHT_PYTHON" "$DELVEWRIGHT_SKILL/scripts/check-toolchain.py" \
+    --mode "$DELVEWRIGHT_MODE" --engine "$DELVEWRIGHT_ENGINE"
+```
+
+**Every value on that line is this run's**: `DELVEWRIGHT_MODE` and
+`DELVEWRIGHT_ENGINE` from I0 as it ran just now, `DELVEWRIGHT_PYTHON` and
+`DELVEWRIGHT_SKILL` from I1 as it ran just now. **Never source `env.sh` for
+it.** `env.sh`'s `DELVEWRIGHT_SKILL` names the skill root that wrote the file,
+and the script there would hold that root's pin against its own toolchain and
+agree.
+
+It reads the pin beside it and prints one line per comparison, with what it
+found and what the pin wants:
+
+| compared | against |
+|---|---|
+| `delvec --version`, resolved through `env.sh`'s `PATH` — the binary every later command runs | creator: `[engine].release`; dev: `"$DELVEWRIGHT_ENGINE/versions.toml"`'s `[engine].version`, the number I3b holds a dev binary to |
+| `git -C "$DELVEWRIGHT_ENGINE" rev-parse HEAD` | creator: `[engine].ref`. Dev: printed, not compared — the checkout is the engine under work |
+| `env.sh`'s `DELVEWRIGHT_SKILL`, `DELVEWRIGHT_MODE`, `DELVEWRIGHT_ENGINE`, read by sourcing it | the skill root the script lives in, and this run's I0 |
+
+| exit | what it means | what to do |
+|---|---|---|
+| `0` | the toolchain on disk is the one this page pins | skip I2, I3 and I4 — nothing is cloned or downloaded. I5 only when `~/.chunky/resources/minecraft.jar` is not there. I6 on every run: the working directory decides it. I7 and I8 only when this run repaired something |
+| `3` a comparison disagrees | **a refusal.** The run may not go past it | run the steps its last line names, in that order — I3a's own table still applies and may send you to I3b — then this command again. **No campaign document is read and no `delvec` subcommand is run until it exits 0.** Then I6, I7 and I8 |
+| `4` no `env.sh` | this machine has never finished I4 | all of Init from I2 through I8, in order. I8 runs this command again |
+| `2` unusable | the pin, the checkout's `versions.toml` in dev mode, or `env.sh` cannot be read | **stop**, and say what it printed |
+
+Say the versions it found out loud whenever it does not exit 0: the user reads
+which engine the machine had and which the page wants.
+
 ## I2 — the engine tree
 
 The engine checkout is **not** the compiler. Several steps run a Python tool, a
@@ -301,8 +344,11 @@ anything else is a stale binary, and the repair is a rebuild.
 delvec --version               # delvec <x.y.z>, dsl <a.b.c>, mc 1.21.11
 ```
 
-**Write down the `dsl` number** — step 1 needs it on every document. A binary
-that does not answer this at all is a broken install: go back to I3a's table.
+**`<x.y.z>` is the pin's number, not merely a number**: `[engine].release`
+without its `v`, or in dev mode the checkout's `[engine].version`. **Write down
+the `dsl` number** — step 1 needs it on every document. A binary that does not
+answer this at all is a broken install: go back to I3a's table. One answering
+another number is I1b's exit 3.
 
 **The GPU arms are not proved here, and the reason is worth reading once.**
 `delvec render` draws with **Minecraft's own textures**, and the client jar that
@@ -339,23 +385,31 @@ DW_PROBE=1` and then, as a *separate* command, `echo $DW_PROBE`. An empty answer
 means every command you issue gets a fresh shell — the normal case for an agent
 — and every `export` above is lost each time.
 
-The environment goes in one file, written once, outside every campaign:
+The environment goes in one file, outside every campaign. I4 owns six of its
+lines and writes them with this run's values; **every other line is kept**, so
+running I4 again — which is how I1b's exit 3 repairs `env.sh` — never loses the
+library I6 named or a provider key I7 put there:
 
 ```sh
 mkdir -p ~/.delvewright
-cat > ~/.delvewright/env.sh <<EOF
+E="$HOME/.delvewright/env.sh"
+touch "$E"
+{
+  grep -Ev '^export (JAVA_HOME|DELVEWRIGHT_MODE|DELVEWRIGHT_ENGINE|DELVEWRIGHT_PYTHON|DELVEWRIGHT_SKILL|PATH)=' "$E"
+  grep -q '^export DELVEWRIGHT_PREFABS=' "$E" || echo 'export DELVEWRIGHT_PREFABS=""'
+  cat <<EOF
 export JAVA_HOME="$JAVA_HOME"
 export DELVEWRIGHT_MODE="$DELVEWRIGHT_MODE"
 export DELVEWRIGHT_ENGINE="$DELVEWRIGHT_ENGINE"
 export DELVEWRIGHT_PYTHON="$DELVEWRIGHT_PYTHON"
 export DELVEWRIGHT_SKILL="$DELVEWRIGHT_SKILL"
-export DELVEWRIGHT_PREFABS="$DELVEWRIGHT_PREFABS"
 export PATH="\$JAVA_HOME/bin:<the bin or target/release directory>:\$PATH"
 EOF
+} > "$E.next" && mv "$E.next" "$E"
 ```
 
-`DELVEWRIGHT_PREFABS` is written again by I6; write the line now and fill it
-there. Every command on this page then runs as `. ~/.delvewright/env.sh && <the
+`DELVEWRIGHT_PREFABS` is written by I6; the first I4 leaves the line empty for
+it. Every command on this page then runs as `. ~/.delvewright/env.sh && <the
 command>`, and that is the form to use consistently.
 
 **Do not reach for the shorter-looking remedy of calling `delvec` by absolute
@@ -636,7 +690,8 @@ consistent.)
 |---|---|
 | `java -version` | `JAVA_HOME` never reached `env.sh`, or the JDK I1 chose is not the one on `PATH`. Re-read I1; do not install anything |
 | `echo "$DELVEWRIGHT_ENGINE"` | empty means `env.sh` was not sourced, or I4 wrote it before I2 set the value |
-| `delvec --version` | the binary on `PATH` is not the one I3a unpacked or I3b built. Check the `PATH` line `env.sh` carries |
+| the I1b line | anything but exit 0 means the toolchain is not the pin's: take I1b's table, not this one |
+| `delvec --version` | no answer: the binary on `PATH` is not the one I3a unpacked or I3b built — check the `PATH` line `env.sh` carries. **An answer whose number is not the pin's is the same failure**, and I1b's line above has already said which step repairs it |
 | `delvec grammar list` | the binary answers about itself but its compiled-in corpus does not load: a broken archive. Re-run I3a; a second failure is a refusal, not a retry |
 | `delvec render fidelity-gate` | **this is the GPU-arms proof, and by here it means what it says.** `DW0723 no textures found` means I5 did not land the jar — go back to I5, this is not a verdict on the machine. Any other `DW0723` (`gpu init: …`) is the GPU arms failing on this hardware: **stop**, because the visual half of the run cannot be reviewed and nothing downstream would say so. `DW0720` at exit 4 is a third thing again — the fixture rendered and a block came out untextured, which is a jar that is not 1.21.11 |
 | `grammar expand` then `palette` | the texture ladder. A `DW0723` here says the same thing it says on the line above; a `DW0722` says `.out/` is missing |
