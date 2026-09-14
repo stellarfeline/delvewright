@@ -24,20 +24,15 @@ name: plugin release (delvewright)
 #     commit's own time as every entry's mtime, so anyone reproduces the zip from
 #     the tag; `SHA256SUMS`; the notes read from the tree.
 #
-# TWO ENTRY POINTS, ONE PATH (§4, §5)
+# A RELEASE IS A HUMAN DISPATCHING THIS WORKFLOW (§4)
 #
-#   push of `delvewright--v<version>`  a human names the commit by tagging it.
-#   workflow_dispatch (`commit`)       the manual arm: the first release, and the
-#                                      remedy. It derives the tag from the
-#                                      commit's version, and the gated job writes
-#                                      the tag through the API just before the
-#                                      Release. A tag written with the job's own
-#                                      token starts no second run.
-#
-# Both refuse a version whose Release is already published. A tag that already
-# exists without a Release (a run that died between the two writes) is accepted
-# when it names a commit `identity` accepts, so re-running either path completes
-# the release.
+# Merging and releasing are unrelated: nothing pushed or merged starts this
+# workflow. A human dispatches it with a commit on `main`; it derives the tag from
+# the commit's version, and the gated job writes the tag through the API just
+# before the Release. It refuses a version whose Release already exists. A tag
+# that already exists without a Release (a run that died between the two writes)
+# is accepted when it names the commit `identity` judged, so re-running
+# completes the release.
 #
 # THE ONE APPROVAL
 #
@@ -49,17 +44,9 @@ name: plugin release (delvewright)
 # Not `crates-io`: a job declaring that environment can read the registry token,
 # and this one has no use for it. The Release is created with `--latest=false`:
 # the repository's one Latest is `delvec`'s (§8).
-#
-# The outgoing-version gate in `ci.yml` (`tools/check-plugin-version-released.py`)
-# is what keeps this record complete: a pull request moving the plugin from X to
-# Y reds until `delvewright--vX` is published.
 
 on:
-  push:
-    # `delvewright--v<semver>` only. The literal `delvewright--v` does not match
-    # `delvewright-dsl--v*`, a bare `v<semver>` or `delvec--v*`
-    # (`tools/tests/test_release_tags.py` evaluates this filter).
-    tags: ["delvewright--v[0-9]+.[0-9]+.[0-9]+"]
+  # The only entry point. No push, tag or merge starts a release.
   workflow_dispatch:
     inputs:
       commit:
@@ -74,7 +61,7 @@ permissions:
 concurrency:
   # Never cancel a release in flight, and never let a run parked on the approval
   # stand in front of a different ref's run.
-  group: plugin-release-${{ github.event.inputs.commit || github.ref_name }}
+  group: plugin-release-${{ github.event.inputs.commit }}
   cancel-in-progress: false
 
 jobs:
@@ -90,22 +77,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.inputs.commit || github.ref_name }}
+          ref: ${{ github.event.inputs.commit }}
           # First-parent history of `origin/main` and every tag are what the
           # identity and the previous-release lookup read.
           fetch-depth: 0
       - name: the commit carries the version, main served it, and one tree stands for it
         id: id
-        env:
-          EVENT: ${{ github.event_name }}
-          TAG: ${{ github.ref_name }}
-        run: |
-          set -euo pipefail
-          if [ "$EVENT" = "push" ]; then
-            python3 tools/check-plugin-release-identity.py --commit HEAD --tag "$TAG" --github-output "$GITHUB_OUTPUT"
-          else
-            python3 tools/check-plugin-release-identity.py --commit HEAD --github-output "$GITHUB_OUTPUT"
-          fi
+        run: python3 tools/check-plugin-release-identity.py --commit HEAD --github-output "$GITHUB_OUTPUT"
       - name: the version is not already released, and an existing tag names this commit's tree
         env:
           GH_TOKEN: ${{ github.token }}
@@ -126,9 +104,9 @@ jobs:
           at="$(python3 tools/lib/github_releases.py tag-commit "$GITHUB_REPOSITORY" "$TAG")" || rc=$?
           [ "$rc" -eq 0 ] || { echo "::error::could not read whether tag $TAG exists"; exit 1; }
           if [ -n "$at" ] && [ "$at" != "$COMMIT" ]; then
-            # The tag exists (a human pushed it, or a run died after writing it):
-            # it must itself be a commit identity accepts, and the Release hangs on it.
-            echo "::error::tag $TAG exists at $at, and this run judged $COMMIT. Run the arm on $at, or push nothing."
+            # The tag exists (a run died after writing it): the Release hangs on
+            # the commit it names, and a run judging another commit is refused.
+            echo "::error::tag $TAG exists at $at, and this run judged $COMMIT. Dispatch on $at instead."
             exit 1
           fi
           if [ -n "$at" ]; then

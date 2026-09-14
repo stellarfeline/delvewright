@@ -179,9 +179,9 @@ POLL_INTERVAL=5    # seconds
 
 # THE INDEX LOOKUP IS NOT WRITTEN HERE. `tools/lib/crates_index.py` owns the
 # sparse-index path scheme, the fetch, the JSON-lines scan and the bind test,
-# because a second caller now asks the same question of the same registry
-# (`tools/check-dsl-version-published.py`: is the number this change moves away
-# from on crates.io?) and a private copy of a format reader is the shape
+# because other callers ask the same registry the same question
+# (`dsl-crate-publish.yml` attaching the registry's own `.crate` to its Release)
+# and a private copy of a format reader is the shape
 # `tools/lib/versions.py` and `tools/lib/checksum.sh` were each extracted after.
 # Shell reaches it the way it reaches a pin — one subcommand, one line of output.
 index_cksum() { # <crate-name> <version>

@@ -2,12 +2,11 @@
 
 ## Who reads it
 
-- `tools/check-plugin-version-released.py` and `tools/check-dsl-version-published.py`
-  (CI, on a pull request): the version this change moves away from has its
-  published Release (ADR-0028 §5, §6).
-- `.github/workflows/dsl-crate-publish.yml` and `.github/workflows/plugin-release.yml`
-  (release runs): whether the Release they are about to write already exists,
-  and the read-back after writing it.
+- the three release workflows (`engine-release.yml`, `dsl-crate-publish.yml`,
+  `plugin-release.yml`) and `.github/actions/write-release-tag`: whether the tag
+  or Release they are about to write already exists, and the read-back after
+  writing it. Nothing on a pull request reads it: merging and releasing are
+  unrelated (ADR-0028 §4).
 
 ## ABSENT AND UNREACHABLE LOOK THE SAME, WHICH IS WHY THE BIND TEST EXISTS
 

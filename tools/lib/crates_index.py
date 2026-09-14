@@ -5,12 +5,11 @@
 `tools/crates-io-publish.sh` had the whole of it inline: the sparse-index path
 scheme, the fetch, the JSON-lines scan for one version's `cksum`, and the bind
 test that refuses to believe any of it until a version everyone knows exists
-resolves. A second caller then needed exactly the same question answered —
-`tools/check-dsl-version-published.py` asks whether the number a change moves
-AWAY from is on the registry — and a private copy of a format reader is the shape
-this repository has already paid for twice (`tools/lib/versions.py` on TOML,
-`tools/lib/checksum.sh` on sha256). So the reading lives here and both callers
-come through it.
+resolves. A second caller needs the same registry — `dsl-crate-publish.yml`
+downloads the registry's own `.crate` for its Release — and a private copy of a
+format reader is the shape this repository has already paid for twice
+(`tools/lib/versions.py` on TOML, `tools/lib/checksum.sh` on sha256). So the
+reading lives here and every caller comes through it.
 
 Shell reads it the same way it reads a pin (`tools/lib/versions.py`'s own door):
 
