@@ -150,7 +150,7 @@ fn build_concurrent_moves() -> BuildOutput {
                 "at_ticks": (i - 1) * 20,
                 "effects": [
                     { "type": "move-actor", "actor": format!("actor/a{i}"),
-                      "to_anchor": MOVER_GOAL }
+                      "to": { "anchor": MOVER_GOAL } }
                 ]
             })
         })
@@ -455,7 +455,7 @@ fn build_four_moves_with_vanish() -> BuildOutput {
         common::objective_effects(d, 0, "obj/talk").extend([
             serde_json::json!({ "type": "spawn-actor", "actor": "actor/a1" }),
             serde_json::json!({
-                "type": "move-actor", "actor": "actor/a1", "to_anchor": "anchor/exit",
+                "type": "move-actor", "actor": "actor/a1", "to": { "anchor": "anchor/exit" },
                 "on_arrive": [
                     { "type": "despawn-actor", "actor": "actor/a1", "style": "vanish" }
                 ]

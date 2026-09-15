@@ -820,8 +820,8 @@ impl<'a> BodyRef<'a> {
     }
 
     /// The entity id written on the body. **Not necessarily the body that
-    /// ships**: a `skin` re-dresses it as a `minecraft:mannequin`, which is the
-    /// compiler's rule (`nav::npc_body_entity`) and stays there.
+    /// ships**: a `skin` re-dresses it as a `minecraft:mannequin` — see
+    /// [`Self::worn_entity`].
     pub fn declared_entity(self) -> &'a str {
         match self {
             BodyRef::Npc(n) => n.base_entity.as_str(),
@@ -829,8 +829,20 @@ impl<'a> BodyRef<'a> {
         }
     }
 
-    /// **The mark this body is placed on** — the anchor the engine summons it
-    /// at, for every class alike.
+    /// **The entity id the body ships as**: `minecraft:mannequin` when it
+    /// declares a `skin`, else the declared entity. The one authority for that
+    /// rule — the compiler's geometric proofs (`nav::npc_body_entity`,
+    /// `nav::actor_body_entity`) and the equipment fit rule (`DW0898`) all read
+    /// it.
+    pub fn worn_entity(self) -> &'a str {
+        match self.skin() {
+            Some(_) => "minecraft:mannequin",
+            None => self.declared_entity(),
+        }
+    }
+
+    /// **The mark this body is placed on** — the anchor and offset the engine
+    /// summons it at, for every class alike (spec-0066).
     ///
     /// A body's placement is a property of the body, not of the stage list that
     /// happens to declare it: a mark is a cell, and a cell holds one body. The
@@ -838,14 +850,18 @@ impl<'a> BodyRef<'a> {
     /// [`body_sites`]) therefore quantifies over npcs and actors in one pass
     /// rather than over `actors[]`, which is where the seven-men-one-anchor
     /// muster came from.
-    pub fn anchor(self) -> &'a AnchorId {
-        match self {
-            BodyRef::Npc(n) => &n.anchor,
-            BodyRef::Actor(a) => &a.anchor,
+    pub fn mark(self) -> Mark {
+        let (anchor, offset) = match self {
+            BodyRef::Npc(n) => (&n.anchor, n.offset),
+            BodyRef::Actor(a) => (&a.anchor, a.offset),
+        };
+        Mark {
+            anchor: anchor.clone(),
+            offset,
         }
     }
 
-    /// The area whose anchor table resolves [`Self::anchor`] first, when this
+    /// The area whose anchor table resolves [`Self::mark`]'s anchor first, when this
     /// class declares one.
     ///
     /// A stage-2 npc names its area and is resolved inside it; a stage-5 actor
@@ -1087,6 +1103,10 @@ pub struct Npc {
     pub area: AreaId,
     /// The prefab anchor this NPC stands on.
     pub anchor: AnchorId,
+    /// Integer `[x, y, z]` block offset from `anchor` (spec-0066, default
+    /// `[0, 0, 0]`): the NPC stands at the [`Mark`] the two fields spell.
+    #[serde(default, skip_serializing_if = "is_zero3")]
+    pub offset: [i32; 3],
     /// The vanilla entity to re-dress, e.g. `minecraft:villager`.
     pub base_entity: String,
     /// The structured persona (character contract for stage 6).
@@ -3135,20 +3155,27 @@ pub struct MobEquipment {
     /// Off-hand slot.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub off_hand: Option<EquipItem>,
+    /// Body slot: horse armour, wolf armour, a llama's carpet, a nautilus's
+    /// armour, a happy ghast's harness (spec-0067). Shown only on a body whose
+    /// entity type draws it (`DW0898`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub body: Option<EquipItem>,
+    /// Saddle slot (spec-0067). Shown only on a body whose entity type draws a
+    /// saddle (`DW0898`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub saddle: Option<EquipItem>,
 }
 
 impl MobEquipment {
-    /// Every slot as `(dsl_field_name, piece)`, in the fixed schema order —
+    /// Every slot as `(dsl_field_name, piece)`, in [`EquipSlot::ALL`]'s order —
     /// the single iteration source for validation paths and emission.
-    pub fn slots(&self) -> [(&'static str, Option<&EquipItem>); 6] {
-        [
-            ("head", self.head.as_ref()),
-            ("chest", self.chest.as_ref()),
-            ("legs", self.legs.as_ref()),
-            ("feet", self.feet.as_ref()),
-            ("main_hand", self.main_hand.as_ref()),
-            ("off_hand", self.off_hand.as_ref()),
-        ]
+    pub fn slots(&self) -> [(&'static str, Option<&EquipItem>); EquipSlot::ALL.len()] {
+        EquipSlot::ALL.map(|s| (s.field(), self.filled(s)))
+    }
+
+    /// Every slot as `(slot, piece)`, in [`EquipSlot::ALL`]'s order.
+    pub fn pieces(&self) -> [(EquipSlot, Option<&EquipItem>); EquipSlot::ALL.len()] {
+        EquipSlot::ALL.map(|s| (s, self.filled(s)))
     }
 
     /// The piece this equipment declaration puts in `slot`, if any. The single
@@ -3162,13 +3189,24 @@ impl MobEquipment {
             EquipSlot::Feet => self.feet.as_ref(),
             EquipSlot::MainHand => self.main_hand.as_ref(),
             EquipSlot::OffHand => self.off_hand.as_ref(),
+            EquipSlot::Body => self.body.as_ref(),
+            EquipSlot::Saddle => self.saddle.as_ref(),
         }
     }
 }
 
 /// One vanilla equipment slot, named exactly as the [`MobEquipment`] field that
-/// fills it (DSL v0.9). The DSL name and the summon-NBT key differ
-/// (`main_hand` vs `mainhand`), so both live here and nowhere else.
+/// fills it. The DSL name and the summon-NBT key differ (`main_hand` vs
+/// `mainhand`), so both live here and nowhere else.
+///
+/// **The set is the pinned game's equipment-slot set** (spec-0067 §2), a
+/// [`crate::metrics::Provenance::VanillaRule`]: the eight values the
+/// `minecraft:equippable` component's `slot` field takes, per the Minecraft
+/// Wiki page *Data component format/equippable* for Java 1.21.11, which are the
+/// serialised names of the client's `EquipmentSlot` enum. The pinned item data
+/// is the cross-check, not the source: every `slot` value an item declares is
+/// asserted to be one of these, and no item declares `mainhand`, because a hand
+/// takes anything.
 #[derive(
     Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, JsonSchema,
 )]
@@ -3186,9 +3224,28 @@ pub enum EquipSlot {
     MainHand,
     /// Off-hand slot.
     OffHand,
+    /// Body slot (horse armour, wolf armour, carpet, harness).
+    Body,
+    /// Saddle slot.
+    Saddle,
 }
 
 impl EquipSlot {
+    /// Every slot, in emission order: the two hands, the four armour slots,
+    /// then `body` and `saddle`. The one enumeration every slot list derives
+    /// from — `MobEquipment::slots()`, the summon `equipment` / `drop_chances`
+    /// compounds and the drop-strip line.
+    pub const ALL: [EquipSlot; 8] = [
+        EquipSlot::MainHand,
+        EquipSlot::OffHand,
+        EquipSlot::Head,
+        EquipSlot::Chest,
+        EquipSlot::Legs,
+        EquipSlot::Feet,
+        EquipSlot::Body,
+        EquipSlot::Saddle,
+    ];
+
     /// The DSL field name (`main_hand`), for diagnostics and JSON pointers.
     pub fn field(self) -> &'static str {
         match self {
@@ -3198,10 +3255,13 @@ impl EquipSlot {
             EquipSlot::Feet => "feet",
             EquipSlot::MainHand => "main_hand",
             EquipSlot::OffHand => "off_hand",
+            EquipSlot::Body => "body",
+            EquipSlot::Saddle => "saddle",
         }
     }
 
-    /// The 1.21.11 `equipment` / `drop_chances` NBT key (`mainhand`).
+    /// The 1.21.11 `equipment` / `drop_chances` NBT key (`mainhand`) — also the
+    /// game's own name for the slot, as an `equippable` component spells it.
     pub fn nbt(self) -> &'static str {
         match self {
             EquipSlot::Head => "head",
@@ -3210,7 +3270,20 @@ impl EquipSlot {
             EquipSlot::Feet => "feet",
             EquipSlot::MainHand => "mainhand",
             EquipSlot::OffHand => "offhand",
+            EquipSlot::Body => "body",
+            EquipSlot::Saddle => "saddle",
         }
+    }
+
+    /// The slot the game names `name` (`mainhand`), if it is one.
+    pub fn from_nbt(name: &str) -> Option<EquipSlot> {
+        EquipSlot::ALL.into_iter().find(|s| s.nbt() == name)
+    }
+
+    /// Whether this is a hand: a hand takes any item, so an item's own declared
+    /// slot never contradicts it.
+    pub fn is_hand(self) -> bool {
+        matches!(self, EquipSlot::MainHand | EquipSlot::OffHand)
     }
 }
 
@@ -3507,7 +3580,8 @@ impl CastAbsence {
     }
 }
 
-/// Where a cast entry puts an NPC: a prefab anchor, or a declared absence.
+/// Where a cast entry puts an NPC: a prefab anchor, a mark, or a declared
+/// absence.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(untagged)]
 pub enum CastPlace {
@@ -3517,13 +3591,28 @@ pub enum CastPlace {
     /// position the effect history actually produces (`DW0461`): declaring an
     /// anchor does not teleport anybody.
     Anchor(AnchorId),
+    /// The mark the NPC stands on for this quest's duration (spec-0066): the
+    /// spelling for a body that stands at an offset from its anchor. `DW0461`
+    /// compares anchor and offset both.
+    Mark(Mark),
 }
 
 impl CastPlace {
-    /// The anchor this place names, if it is an anchor.
+    /// The anchor this place names, if it names one.
     pub fn anchor(&self) -> Option<&AnchorId> {
         match self {
             CastPlace::Anchor(a) => Some(a),
+            CastPlace::Mark(m) => Some(&m.anchor),
+            CastPlace::Absent(_) => None,
+        }
+    }
+
+    /// The mark this place names, if it names one: a bare anchor is the mark at
+    /// a zero offset.
+    pub fn mark(&self) -> Option<Mark> {
+        match self {
+            CastPlace::Anchor(a) => Some(Mark::at(a.clone())),
+            CastPlace::Mark(m) => Some(m.clone()),
             CastPlace::Absent(_) => None,
         }
     }
@@ -3532,15 +3621,16 @@ impl CastPlace {
     pub fn absence(&self) -> Option<CastAbsence> {
         match self {
             CastPlace::Absent(a) => Some(*a),
-            CastPlace::Anchor(_) => None,
+            CastPlace::Anchor(_) | CastPlace::Mark(_) => None,
         }
     }
 
     /// The authored token, for diagnostics.
-    pub fn token(&self) -> &str {
+    pub fn token(&self) -> String {
         match self {
-            CastPlace::Absent(a) => a.token(),
-            CastPlace::Anchor(a) => a.as_str(),
+            CastPlace::Absent(a) => a.token().to_string(),
+            CastPlace::Anchor(a) => a.as_str().to_string(),
+            CastPlace::Mark(m) => m.display(),
         }
     }
 }
@@ -3997,6 +4087,11 @@ pub struct Actor {
     /// The anchor the puppet is summoned on (resolved across areas, like an
     /// `open-gate` / `move-npc` destination).
     pub anchor: AnchorId,
+    /// Integer `[x, y, z]` block offset from `anchor` (spec-0066, default
+    /// `[0, 0, 0]`): the puppet stands at the [`Mark`] the two fields spell, so
+    /// a rank of bodies is one anchor and an offset apiece.
+    #[serde(default, skip_serializing_if = "is_zero3")]
+    pub offset: [i32; 3],
     /// Initial facing (default `south`). The puppet spawns yawed this way.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub facing: Option<Facing>,
@@ -4603,8 +4698,8 @@ pub enum Verb {
     MoveNpc {
         /// The NPC (stage-2 ref) to move.
         npc: NpcId,
-        /// The destination anchor.
-        to_anchor: AnchorId,
+        /// The destination mark: an anchor and an optional offset (spec-0066).
+        to: Mark,
         /// Optional travel speed in blocks/tick (defaults to ~0.15).
         #[serde(default, skip_serializing_if = "Option::is_none")]
         speed: Option<f64>,
@@ -4649,14 +4744,14 @@ pub enum Verb {
         /// Single-shot form (DSL v0.4): ordered camera waypoints (straight-line
         /// lerp between them).
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
-        path: Vec<CameraWaypoint>,
+        path: Vec<Mark>,
         /// Single-shot form (DSL v0.4): shot duration in seconds.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         seconds: Option<u32>,
         /// Single-shot form (DSL v0.6): the subject the camera keeps framed.
         /// Absent = face along the direction of travel.
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        look_at: Option<CameraTarget>,
+        look_at: Option<Mark>,
     },
     /// Cuts the dimension-global world time to a new state (DSL v0.5, spec-0010).
     /// Instantaneous (vanilla has no gradual transition); the state persists
@@ -4821,8 +4916,8 @@ pub enum Verb {
     MoveActor {
         /// The actor (stage-5 `actors` ref) to move.
         actor: ActorId,
-        /// The destination anchor.
-        to_anchor: AnchorId,
+        /// The destination mark: an anchor and an optional offset (spec-0066).
+        to: Mark,
         /// Optional travel speed in blocks/tick (defaults to ~0.15).
         #[serde(default, skip_serializing_if = "Option::is_none")]
         speed: Option<f64>,
@@ -5029,9 +5124,10 @@ pub enum Verb {
         /// gate-region anchor's cells, so a volume described that way would
         /// delete the geometry it names.
         from: StealthZone,
-        /// The destination anchor. Resolved to a literal cell at build time, so
-        /// the emitted `tp` carries absolute coordinates and no runtime search.
-        to: AnchorId,
+        /// The destination mark (spec-0066). Resolved to a literal cell at build
+        /// time, so the emitted `tp` carries absolute coordinates and no runtime
+        /// search.
+        to: Mark,
     },
 }
 
@@ -5080,6 +5176,10 @@ pub enum SoundAt {
     Anchor {
         /// The anchor the sound plays from.
         anchor: AnchorId,
+        /// Integer `[x, y, z]` block offset from `anchor` (spec-0066, default
+        /// `[0, 0, 0]`): the sound plays at the [`Mark`] the two fields spell.
+        #[serde(default, skip_serializing_if = "is_zero3")]
+        offset: [i32; 3],
     },
     /// Play the sound at each player's own position (the default).
     Players,
@@ -5525,16 +5625,72 @@ impl NarrateStyle {
     }
 }
 
-/// One camera waypoint of a [`Verb::Cutscene`] (DSL v0.4): an anchor plus
-/// an integer block offset from it, giving the camera's world position.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+/// **A mark** (spec-0066): an anchor and an integer block offset from it, the
+/// one declaration of a point the campaign places relative to a piece.
+///
+/// Its cell is the anchor's resolved cell plus `offset`, in world axes after
+/// the piece's placement. It is what a body stands on ([`Npc::offset`],
+/// [`Actor::offset`]), where a walk ends ([`Verb::MoveNpc`], [`Verb::MoveActor`],
+/// [`Verb::Teleport`]), where the cast ledger says a body is
+/// ([`CastPlace::Mark`]), where a sound plays ([`SoundAt::Anchor`]), and every
+/// camera position in a shot: a dolly waypoint (`path`), an aim target
+/// (`look_at`) and an anchor subject (`subject`). The roles are fields; the
+/// type is one.
+///
+/// A mark's cell lies inside the placed piece its anchor belongs to (`DW0897`):
+/// an offset says *where beside this place*, never *which place*.
+#[derive(
+    Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, JsonSchema,
+)]
 #[serde(deny_unknown_fields)]
-pub struct CameraWaypoint {
-    /// The anchor the waypoint is relative to.
+pub struct Mark {
+    /// The anchor the mark is relative to.
     pub anchor: AnchorId,
     /// Integer `[x, y, z]` block offset from the anchor (default `[0, 0, 0]`).
     #[serde(default, skip_serializing_if = "is_zero3")]
     pub offset: [i32; 3],
+}
+
+impl Mark {
+    /// A mark at `anchor` with no offset.
+    pub fn at(anchor: AnchorId) -> Self {
+        Mark {
+            anchor,
+            offset: [0, 0, 0],
+        }
+    }
+
+    /// Whether the offset is non-zero.
+    pub fn is_offset(&self) -> bool {
+        !is_zero3(&self.offset)
+    }
+
+    /// The mark's cell, given the cell its anchor resolved to.
+    pub fn cell(&self, anchor_cell: [i32; 3]) -> [i32; 3] {
+        offset_cell(anchor_cell, self.offset)
+    }
+
+    /// The mark as a diagnostic spells it: the anchor alone at a zero offset,
+    /// else `anchor + [x, y, z]`.
+    pub fn display(&self) -> String {
+        if self.is_offset() {
+            format!(
+                "{} + [{}, {}, {}]",
+                self.anchor, self.offset[0], self.offset[1], self.offset[2]
+            )
+        } else {
+            self.anchor.as_str().to_string()
+        }
+    }
+}
+
+/// `cell + offset`, componentwise: the one arithmetic a [`Mark`] adds.
+pub fn offset_cell(cell: [i32; 3], offset: [i32; 3]) -> [i32; 3] {
+    [
+        cell[0] + offset[0],
+        cell[1] + offset[1],
+        cell[2] + offset[2],
+    ]
 }
 
 /// One shot of a [`Verb::Cutscene`] (DSL v0.6): a camera dolly with its
@@ -5549,7 +5705,7 @@ pub struct CameraShot {
     /// path is a static shot. Required without `shot_style`; with one, optional —
     /// an explicit `path` always overrides the style's expanded dolly.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub path: Vec<CameraWaypoint>,
+    pub path: Vec<Mark>,
     /// This shot's duration in seconds. Required without `shot_style`; with one,
     /// optional — the style's default duration applies (see
     /// [`ShotStyle::default_seconds`]), and an explicit value always overrides.
@@ -5560,7 +5716,7 @@ pub struct CameraShot {
     /// aim at its `subject`). An explicit `look_at` always overrides a style's
     /// aim.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub look_at: Option<CameraTarget>,
+    pub look_at: Option<Mark>,
     /// Shot-style preset (DSL v0.6, spec-0015 shot-grammar library): the
     /// compiler expands the style deterministically into a camera dolly +
     /// per-keyframe aim from the `subject`'s resolved geometry. Requires
@@ -5688,24 +5844,13 @@ impl ShotStyle {
 #[serde(untagged)]
 pub enum CameraSubject {
     /// A fixed world point: prefab anchor + offset.
-    Anchor(AnchorSubject),
+    Anchor(Mark),
     /// A stage-2 NPC — moving if a `move-npc` for it runs in the same effect
     /// group / sequence, else static at its declared (or spawn) anchor.
     Npc(NpcSubject),
     /// A stage-5 actor — moving if a `move-actor` for it runs in the same
     /// effect group / sequence, else static at its declared anchor.
     Actor(ActorSubject),
-}
-
-/// A [`CameraSubject::Anchor`] payload: a fixed world point.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct AnchorSubject {
-    /// The anchor the subject sits at.
-    pub anchor: AnchorId,
-    /// Integer `[x, y, z]` block offset (default `[0, 0, 0]`).
-    #[serde(default, skip_serializing_if = "is_zero3")]
-    pub offset: [i32; 3],
 }
 
 /// A [`CameraSubject::Npc`] payload: a stage-2 NPC.
@@ -5798,20 +5943,6 @@ impl CameraShot {
             .or(self.shot_style.map(ShotStyle::default_seconds))
             .unwrap_or(1)
     }
-}
-
-/// The subject a [`Verb::Cutscene`] camera keeps framed (DSL v0.6): an
-/// anchor plus an integer block offset from it, giving the world point every
-/// dolly camera is aimed at. Same shape as a [`CameraWaypoint`] — a waypoint says
-/// where the camera *is*, a target says what it *looks at*.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct CameraTarget {
-    /// The anchor the look target is relative to.
-    pub anchor: AnchorId,
-    /// Integer `[x, y, z]` block offset from the anchor (default `[0, 0, 0]`).
-    #[serde(default, skip_serializing_if = "is_zero3")]
-    pub offset: [i32; 3],
 }
 
 /// serde `skip_serializing_if` helper: skip a `[0, 0, 0]` offset.
@@ -5954,10 +6085,10 @@ impl QuestEffect {
         }
     }
 
-    /// `(npc, to_anchor)` if this is a v0.4 `move-npc` effect.
-    pub fn move_npc(&self) -> Option<(&NpcId, &AnchorId)> {
+    /// `(npc, to)` if this is a v0.4 `move-npc` effect.
+    pub fn move_npc(&self) -> Option<(&NpcId, &Mark)> {
         match &self.verb {
-            Verb::MoveNpc { npc, to_anchor, .. } => Some((npc, to_anchor)),
+            Verb::MoveNpc { npc, to, .. } => Some((npc, to)),
             _ => None,
         }
     }
@@ -6437,7 +6568,7 @@ impl QuestEffect {
     /// authority on the anchor-bearing effect surface, the referential sibling of
     /// [`Self::nested_effect_lists`]. Each entry is `(json_path_suffix, anchor)`,
     /// where the suffix is appended to the effect's own JSON pointer
-    /// (`anchor`, `to_anchor`, `in/anchor`, `zones/<i>/anchor`, `at/anchor`,
+    /// (`anchor`, `to/anchor`, `in/anchor`, `zones/<i>/anchor`, `at/anchor`,
     /// `shots/<i>/path/<j>/anchor`, …).
     ///
     /// Not recursive: pair it with [`Self::visit_deep`] to sweep a whole effect
@@ -6520,8 +6651,12 @@ impl QuestEffect {
             Verb::SetBlock { anchor, .. } => {
                 vec![("anchor".to_string(), anchor, None)]
             }
-            Verb::MoveNpc { to_anchor, .. } | Verb::MoveActor { to_anchor, .. } => {
-                vec![("to_anchor".to_string(), to_anchor, Some(StationKind::Point))]
+            Verb::MoveNpc { to, .. } | Verb::MoveActor { to, .. } => {
+                vec![(
+                    "to/anchor".to_string(),
+                    &to.anchor,
+                    Some(StationKind::Point),
+                )]
             }
             // The `in` filter is one capability on three verbs, so it registers
             // once: `damage-players` (v0.6) and the v0.10 status-effect pair.
@@ -6540,7 +6675,11 @@ impl QuestEffect {
             // zero-cell volume or a dropped command.
             Verb::Teleport { from, to, .. } => vec![
                 ("from/anchor".to_string(), &from.anchor, None),
-                ("to".to_string(), to, Some(StationKind::Point)),
+                (
+                    "to/anchor".to_string(),
+                    &to.anchor,
+                    Some(StationKind::Point),
+                ),
             ],
             Verb::BeginStealth { zones, .. } => zones
                 .iter()
@@ -6548,7 +6687,7 @@ impl QuestEffect {
                 .map(|(i, z)| (format!("zones/{i}/anchor"), &z.anchor, None))
                 .collect(),
             Verb::PlaySound {
-                at: Some(SoundAt::Anchor { anchor }),
+                at: Some(SoundAt::Anchor { anchor, .. }),
                 ..
             } => vec![("at/anchor".to_string(), anchor, None)],
             // spec-0022 trap-payload verbs. Both anchors of a `volley` are
@@ -6607,7 +6746,7 @@ impl QuestEffect {
 
     /// The `cutscene` camera subject if this is a single-shot `cutscene` carrying
     /// the v0.6 `look_at` field.
-    pub fn cutscene_look_at(&self) -> Option<&CameraTarget> {
+    pub fn cutscene_look_at(&self) -> Option<&Mark> {
         match &self.verb {
             Verb::Cutscene { look_at, .. } => look_at.as_ref(),
             _ => None,
@@ -6824,8 +6963,8 @@ impl QuestEffect {
     }
 
     /// `(from, to)` if this is a `teleport` (DSL v0.10): the source volume and
-    /// the destination anchor.
-    pub fn teleport(&self) -> Option<(&StealthZone, &AnchorId)> {
+    /// the destination mark.
+    pub fn teleport(&self) -> Option<(&StealthZone, &Mark)> {
         match &self.verb {
             Verb::Teleport { from, to, .. } => Some((from, to)),
             _ => None,

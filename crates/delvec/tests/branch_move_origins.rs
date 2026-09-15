@@ -64,14 +64,14 @@ static QUESTS_BRANCHED: LazyLock<String> = LazyLock::new(|| {
         "on_objective_complete": {
           "obj/talk": [
             { "type": "open-gate", "anchor": "anchor/door" },
-            { "type": "move-npc", "npc": "npc/keeper", "to_anchor": "anchor/exit" },
+            { "type": "move-npc", "npc": "npc/keeper", "to": { "anchor": "anchor/exit" } },
             { "type": "move-npc",
-              "when": { "requires_flags": ["flag/flee"] }, "npc": "npc/keeper", "to_anchor": "anchor/keeper-stand" }
+              "when": { "requires_flags": ["flag/flee"] }, "npc": "npc/keeper", "to": { "anchor": "anchor/keeper-stand" } }
           ]
         },
         "on_complete": [
           { "type": "move-npc",
-            "when": { "requires_flags": ["flag/wait"] }, "npc": "npc/keeper", "to_anchor": "anchor/door" },
+            "when": { "requires_flags": ["flag/wait"] }, "npc": "npc/keeper", "to": { "anchor": "anchor/door" } },
           { "type": "campaign-complete" }
         ]
       }
@@ -108,10 +108,10 @@ static QUESTS_SHARED_MARK: LazyLock<String> = LazyLock::new(|| {
           "obj/talk": [
             { "type": "open-gate", "anchor": "anchor/door" },
             { "type": "move-npc",
-              "when": { "requires_flags": ["flag/flee"] }, "npc": "npc/keeper", "to_anchor": "anchor/door" },
+              "when": { "requires_flags": ["flag/flee"] }, "npc": "npc/keeper", "to": { "anchor": "anchor/door" } },
             { "type": "move-npc",
-              "when": { "requires_flags": ["flag/flee"] }, "npc": "npc/keeper", "to_anchor": "anchor/exit" },
-            { "type": "move-npc", "npc": "npc/keeper", "to_anchor": "anchor/exit" }
+              "when": { "requires_flags": ["flag/flee"] }, "npc": "npc/keeper", "to": { "anchor": "anchor/exit" } },
+            { "type": "move-npc", "npc": "npc/keeper", "to": { "anchor": "anchor/exit" } }
           ]
         },
         "on_complete": [ { "type": "campaign-complete" } ]
@@ -142,7 +142,7 @@ static QUESTS_UNGATED: LazyLock<String> = LazyLock::new(|| {
         "on_objective_complete": {
           "obj/talk": [
             { "type": "open-gate", "anchor": "anchor/door" },
-            { "type": "move-npc", "npc": "npc/keeper", "to_anchor": "anchor/exit" }
+            { "type": "move-npc", "npc": "npc/keeper", "to": { "anchor": "anchor/exit" } }
           ]
         },
         "on_complete": [ { "type": "campaign-complete" } ]
@@ -394,9 +394,9 @@ fn two_origins_on_one_branch_is_dw0488() {
         "on_objective_complete": {
           "obj/talk": [
             { "type": "open-gate", "anchor": "anchor/door" },
-            { "type": "move-npc", "npc": "npc/keeper", "to_anchor": "anchor/exit" },
-            { "type": "move-npc", "npc": "npc/keeper", "to_anchor": "anchor/door" },
-            { "type": "move-npc", "npc": "npc/keeper", "to_anchor": "anchor/exit" }
+            { "type": "move-npc", "npc": "npc/keeper", "to": { "anchor": "anchor/exit" } },
+            { "type": "move-npc", "npc": "npc/keeper", "to": { "anchor": "anchor/door" } },
+            { "type": "move-npc", "npc": "npc/keeper", "to": { "anchor": "anchor/exit" } }
           ]
         },
         "on_complete": [ { "type": "campaign-complete" } ]

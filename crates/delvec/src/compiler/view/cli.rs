@@ -108,6 +108,47 @@ pub enum ViewCommand {
         #[arg(long, conflicts_with = "world")]
         preview: bool,
     },
+    /// Write one row of `design/cameras.json` — the record's one writer: a pose a
+    /// person captured in the game (`--report` + `--slot`, written as `hand`),
+    /// an estimate picked from a record-format file (`--candidates` + `--pick`,
+    /// written as `estimated`), or `--delete`. An estimate is never written
+    /// over a hand camera.
+    PlaceCamera {
+        /// The campaign directory whose `design/cameras.json` is written; every
+        /// camera's `answers` is held to its `design.json`.
+        campaign: PathBuf,
+        /// The row: a camera name (lowercase letters, digits, `.`, `+`, `-`).
+        #[arg(long)]
+        name: String,
+        /// The `design.json` row the camera answers. Required for a new hand
+        /// row; for an existing row it must be the row's own.
+        #[arg(long)]
+        answers: Option<String>,
+        /// A `camera-report.json` from `delvec harvest`: the row becomes the
+        /// pose stamped on `--slot`, as `hand`.
+        #[arg(long, requires_all = ["slot", "fov"],
+              conflicts_with_all = ["candidates", "delete"])]
+        report: Option<PathBuf>,
+        /// The `dw.cam` slot whose pose is written.
+        #[arg(long, requires = "report")]
+        slot: Option<u32>,
+        /// The vertical field of view the person framed with: their client's
+        /// FOV setting, asked of them (the server never receives it).
+        #[arg(long, requires = "report")]
+        fov: Option<f64>,
+        /// A record-format file (`candidates.json` from `delvec cameras
+        /// --bracket`): the row becomes the camera named `--pick`, as
+        /// `estimated`.
+        #[arg(long, requires = "pick", conflicts_with = "delete")]
+        candidates: Option<PathBuf>,
+        /// The camera in `--candidates` to write.
+        #[arg(long, requires = "candidates")]
+        pick: Option<String>,
+        /// Remove the row. A hand camera is deleted only when the person who
+        /// placed it asks.
+        #[arg(long)]
+        delete: bool,
+    },
     /// Emit an oblique exterior scene of the delve's built place — the storybook
     /// shot — from a build output's `render-plan.json`. The camera frames the
     /// subject (the placed areas unless `--subject` names anchors); the ground a
@@ -281,6 +322,27 @@ impl ViewCommand {
                     bracket: *bracket,
                     draft: *draft,
                 },
+            ),
+            ViewCommand::PlaceCamera {
+                campaign,
+                name,
+                answers,
+                report,
+                slot,
+                fov,
+                candidates,
+                pick,
+                delete,
+            } => run_place_camera(
+                campaign,
+                name,
+                answers.as_deref(),
+                PlaceFrom {
+                    report: report.as_deref().zip(*slot).zip(*fov),
+                    candidates: candidates.as_deref().zip(pick.as_deref()),
+                    delete: *delete,
+                },
+                json,
             ),
             ViewCommand::Cameras { .. } => fail(
                 Diagnostic::error(
@@ -609,6 +671,199 @@ fn run_panorama(
             );
         }
     }
+    ExitCode::SUCCESS
+}
+
+/// Where `place-camera` takes its row from; clap holds the three exclusive.
+struct PlaceFrom<'a> {
+    report: Option<((&'a Path, u32), f64)>,
+    candidates: Option<(&'a Path, &'a str)>,
+    delete: bool,
+}
+
+fn run_place_camera(
+    campaign: &Path,
+    name: &str,
+    answers: Option<&str>,
+    from: PlaceFrom<'_>,
+    json: bool,
+) -> ExitCode {
+    let read = |path: &Path| {
+        std::fs::read(path)
+            .map_err(|e| Diagnostic::error(DW_INPUT, format!("read {}: {e}", path.display())))
+    };
+    let record_path = campaign.join(camera::CAMERAS_FILE);
+    let sheet = match std::fs::read(&record_path) {
+        Ok(b) => match camera::parse_sheet(&b) {
+            Ok(s) => Some(s),
+            Err(d) => return fail(d, json, exit::INPUT),
+        },
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
+        Err(e) => {
+            return fail(
+                Diagnostic::error(DW_INPUT, format!("read {}: {e}", record_path.display())),
+                json,
+                exit::INPUT,
+            );
+        }
+    };
+    let write = |bytes: Option<Vec<u8>>| -> Result<(), Diagnostic> {
+        let out = |e: std::io::Error| {
+            Diagnostic::error(DW_OUTPUT, format!("write {}: {e}", record_path.display()))
+        };
+        match bytes {
+            Some(b) => {
+                if let Some(dir) = record_path.parent() {
+                    std::fs::create_dir_all(dir).map_err(out)?;
+                }
+                std::fs::write(&record_path, b).map_err(out)
+            }
+            None => std::fs::remove_file(&record_path).map_err(out),
+        }
+    };
+
+    if from.delete {
+        let Some(sheet) = sheet else {
+            return fail(
+                Diagnostic::error(
+                    DW_INPUT,
+                    format!(
+                        "{} is not there, so it has no camera `{name}`",
+                        record_path.display()
+                    ),
+                ),
+                json,
+                exit::INPUT,
+            );
+        };
+        let left = match camera::delete(sheet, name) {
+            Ok(l) => l,
+            Err(d) => return fail(d, json, exit::INPUT),
+        };
+        let bytes = match left.as_ref().map(camera::sheet_bytes).transpose() {
+            Ok(b) => b,
+            Err(d) => return fail(d, json, exit::OUTPUT),
+        };
+        let remaining = left.as_ref().map_or(0, |s| s.cameras.len());
+        if let Err(d) = write(bytes) {
+            return fail(d, json, exit::OUTPUT);
+        }
+        eprintln!(
+            "deleted camera `{name}` from {} ({remaining} camera(s) left)",
+            record_path.display()
+        );
+        return ExitCode::SUCCESS;
+    }
+
+    let placed = (|| -> Result<(String, camera::Placement, String), Diagnostic> {
+        if let Some(((report_path, slot), fov)) = from.report {
+            let report: crate::orchestrator::camera::CameraReport =
+                serde_json::from_slice(&read(report_path)?).map_err(|e| {
+                    Diagnostic::error(
+                        DW_INPUT,
+                        format!(
+                            "parse {}: {e}. It is written by `delvec harvest`",
+                            report_path.display()
+                        ),
+                    )
+                })?;
+            let Some(cam) = report.cameras.iter().find(|c| c.slot == slot) else {
+                let slots: Vec<String> =
+                    report.cameras.iter().map(|c| c.slot.to_string()).collect();
+                return Err(Diagnostic::error(
+                    DW_INPUT,
+                    format!(
+                        "{} holds no pose on slot {slot}. Slots stamped: {}",
+                        report_path.display(),
+                        if slots.is_empty() {
+                            "none".to_string()
+                        } else {
+                            slots.join(", ")
+                        }
+                    ),
+                ));
+            };
+            let said = format!(
+                "the pose stamped on slot {slot} at {} ({} stamp(s), eye in {})",
+                cam.at, cam.stamps, cam.eye_in
+            );
+            Ok((
+                report.campaign_id.clone(),
+                camera::Placement::Hand {
+                    pos: cam.eye,
+                    yaw: cam.yaw,
+                    pitch: cam.pitch,
+                    fov,
+                },
+                said,
+            ))
+        } else if let Some((path, pick)) = from.candidates {
+            let file = camera::parse_sheet(&read(path)?)?;
+            let Some(cam) = file.cameras.iter().find(|c| c.name == pick) else {
+                let names: Vec<&str> = file.cameras.iter().map(|c| c.name.as_str()).collect();
+                return Err(Diagnostic::error(
+                    DW_INPUT,
+                    format!(
+                        "{} has no camera `{pick}`. Cameras: {}",
+                        path.display(),
+                        names.join(", ")
+                    ),
+                ));
+            };
+            Ok((
+                file.campaign_id.clone(),
+                camera::Placement::Estimate(cam.clone()),
+                format!("the estimate `{pick}` from {}", path.display()),
+            ))
+        } else {
+            Err(Diagnostic::error(
+                DW_INPUT,
+                "place-camera writes a row from `--report` + `--slot` + `--fov`, from \
+                 `--candidates` + `--pick`, or deletes it with `--delete`",
+            ))
+        }
+    })();
+    let (campaign_id, placement, said) = match placed {
+        Ok(p) => p,
+        Err(d) => return fail(d, json, exit::INPUT),
+    };
+    let (written, how) = match camera::place(sheet, &campaign_id, name, answers, placement) {
+        Ok(w) => w,
+        Err(d) => return fail(d, json, exit::INPUT),
+    };
+    let rows = match read(&campaign.join("design.json")).and_then(|b| camera::reference_names(&b)) {
+        Ok(r) => r,
+        Err(d) => return fail(d, json, exit::INPUT),
+    };
+    if let Err(d) = camera::bind_answers(&written, &rows) {
+        return fail(d, json, exit::INPUT);
+    }
+    let bytes = match camera::sheet_bytes(&written) {
+        Ok(b) => b,
+        Err(d) => return fail(d, json, exit::OUTPUT),
+    };
+    if let Err(d) = write(Some(bytes)) {
+        return fail(d, json, exit::OUTPUT);
+    }
+    let row = written
+        .cameras
+        .iter()
+        .find(|c| c.name == name)
+        .expect("the placed row is in the record");
+    eprintln!(
+        "{} camera `{name}` ({}) in {} from {said}: pos {:?} yaw {} pitch {} fov {}, answers `{}`",
+        match how {
+            camera::Placed::Added => "added",
+            camera::Placed::Replaced => "replaced",
+        },
+        row.source.as_str(),
+        record_path.display(),
+        row.pos,
+        row.yaw,
+        row.pitch,
+        row.fov,
+        row.answers
+    );
     ExitCode::SUCCESS
 }
 

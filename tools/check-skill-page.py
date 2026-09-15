@@ -81,6 +81,13 @@ WHAT IS CHECKED, AND THE PERTURBATION THAT REDS EACH
        I1b, and `scripts/check-toolchain.py` is invoked in a fence of Init's
        I1b section and in the I8 checklist.    RED: `Init  build the toolchain,
                                                     once per machine`
+   20  every `dw.*` trigger a page file names in code is a trigger objective the
+       creator overlay at `ref` registers; every `creator-datapack/` path is a
+       path the engine at `ref` writes; every `docker logs <name>` is a
+       container a script or compose file at `ref` names; every `--profile <p>`
+       is a profile `validation/compose.yaml` at `ref` declares.
+                                               RED: a renamed trigger; a moved
+                                                    layout manifest
 
 RULES 17 AND 18, AND WHAT THEY CANNOT SEE
 
@@ -167,7 +174,8 @@ ENGINE_PATHS = (
     "crates",
     "docs/reference/grammar.md",
     "versions.toml",
-    "tools/refimg.py",
+    "tools",
+    "validation",
 )
 
 STAGE_ARM_RE = re.compile(r'Stage::\w+\s*=>\s*"([a-z][a-z0-9-]*)"')
@@ -1053,6 +1061,9 @@ def check(rep: Report, engine: pathlib.Path, rev: str, release: str, base: str |
     # -- 17. every DW code the page names, the pin declares ------------------
     dw_code_rule(rep, engine, rev)
 
+    # -- 20. every in-game and log name the page gives, the pin has ----------
+    playtest_names_rule(rep, engine, rev)
+
     # -- 10. the split dropped nothing ---------------------------------------
     heading_rule(rep)
 
@@ -1439,6 +1450,126 @@ def dw_code_rule(rep: Report, engine: pathlib.Path, rev: str) -> None:
         len(named),
     )
     print(f"  ok   {len(declared)} DW code(s) declared by the engine at {rev[:8]}")
+
+
+# ------------------------------------------ rule 20, the names a playtest uses --
+
+PAGE_TRIGGER_RE = re.compile(r"(?<![\w.])(dw\.[a-z]+)(?![\w.])")
+PAGE_OVERLAY_PATH_RE = re.compile(r"(creator-datapack/[A-Za-z0-9_./-]*[A-Za-z0-9_])")
+PAGE_LOGS_RE = re.compile(r"docker logs\s+(?:-[-\w]+\s+)*([A-Za-z0-9_.-]+)")
+PAGE_PROFILE_RE = re.compile(r"--profile\s+([A-Za-z0-9_.-]+)")
+RUST_STR_CONST_RE = re.compile(r"const\s+([A-Z][A-Z0-9_]*)\s*:\s*&str\s*=\s*\"([^\"]*)\"\s*;")
+RUST_ARR_CONST_RE = re.compile(
+    r"const\s+([A-Z][A-Z0-9_]*)\s*:\s*\[&str;\s*\d+\]\s*=\s*\[([^\]]*)\]\s*;"
+)
+TRIGGER_ADD_RE = re.compile(r"objectives add \{?([A-Za-z0-9_.]+)\}? trigger")
+
+
+def overlay_triggers(creator_rs: str) -> set[str]:
+    """The trigger objectives the creator overlay registers, read off its source.
+
+    The server's own reading is `scoreboard objectives add <name> trigger`, so
+    that is the line this reads: every statement that emits it, with the
+    objective resolved the way the emitter resolves it — a literal, a `&str`
+    constant, or the elements of the constant array (or bracketed list of
+    constants) the statement iterates. A statement whose objective resolves to
+    nothing is a shape this reader does not know, and says so.
+    """
+    code = dw_codes_module().strip_comments(creator_rs)
+    strs = dict(RUST_STR_CONST_RE.findall(code))
+    arrays = {
+        name: re.findall(r"\"([^\"]*)\"", body) for name, body in RUST_ARR_CONST_RE.findall(code)
+    }
+    found: set[str] = set()
+    for statement in code.split(";"):
+        for token in TRIGGER_ADD_RE.findall(statement):
+            names: list[str] = []
+            if token.startswith("dw."):
+                names = [token]
+            elif token in strs:
+                names = [strs[token]]
+            else:
+                for ident in re.findall(r"\b([A-Z][A-Z0-9_]+)\b", statement):
+                    names.extend(arrays.get(ident, []))
+                    if ident in strs:
+                        names.append(strs[ident])
+            if not names:
+                raise Unusable(
+                    f"a `scoreboard objectives add {{{token}}} trigger` statement in "
+                    f"creator.rs resolves to no objective name; the emitter's shape "
+                    f"has moved past what rule 20 reads."
+                )
+            found.update(n for n in names if n.startswith("dw."))
+    return found
+
+
+def compose_profiles(compose_yaml: str) -> set[str]:
+    """Every profile a compose file declares (`profiles: ["a", "b"]`)."""
+    out: set[str] = set()
+    for body in re.findall(r"^\s*profiles:\s*\[([^\]]*)\]", compose_yaml, re.M):
+        out.update(re.findall(r"[\"']([^\"']+)[\"']", body))
+    return out
+
+
+def container_names(engine: pathlib.Path) -> set[str]:
+    """Every container name the engine's scripts and compose files give a server."""
+    out: set[str] = set()
+    for path in sorted((engine / "validation").glob("*.yaml")):
+        out.update(re.findall(r"^\s*container_name:\s*([A-Za-z0-9_.-]+)", path.read_text(encoding="utf-8"), re.M))
+    for path in sorted((engine / "tools").glob("*.sh")) + sorted((engine / "validation").glob("*.sh")):
+        text = path.read_text(encoding="utf-8")
+        out.update(re.findall(r'^NAME="([A-Za-z0-9_.-]+)"', text, re.M))
+    return out
+
+
+def playtest_names_rule(rep: Report, engine: pathlib.Path, rev: str) -> None:
+    """Rule 20: the names a creator types into a playtest, held to the pin.
+
+    A trigger, a layout manifest path, a container a log is read from and a
+    compose profile are not `delvec` names, so rule 4 cannot see them; each is
+    read off the file at `ref` that makes it true — the overlay emitter, the
+    engine source, the scripts and compose files.
+    """
+    creator_rs = engine / "crates" / "delvec" / "src" / "compiler" / "creator.rs"
+    compose = engine / "validation" / "compose.yaml"
+    for path in (creator_rs, compose):
+        if not path.is_file():
+            raise Unusable(f"{path.relative_to(engine)} is not at {rev[:8]}; rule 20 reads it.")
+    triggers = overlay_triggers(creator_rs.read_text(encoding="utf-8"))
+    if not triggers:
+        raise Unusable(f"read 0 trigger objectives from creator.rs at {rev[:8]}.")
+    source = "\n".join(
+        rs.read_text(encoding="utf-8") for rs in sorted((engine / "crates" / "delvec" / "src").rglob("*.rs"))
+    )
+    profiles = compose_profiles(compose.read_text(encoding="utf-8"))
+    containers = container_names(engine)
+    named = 0
+    bound = 0
+    for path in page_files():
+        text = path.read_text(encoding="utf-8")
+        for span, _fenced in code_spans(text):
+            checks: list[tuple[str, bool, str]] = []
+            for t in PAGE_TRIGGER_RE.findall(span):
+                checks.append((f"trigger `{t}`", t in triggers, f"the overlay registers {', '.join(sorted(triggers))}"))
+            for pth in PAGE_OVERLAY_PATH_RE.findall(span):
+                checks.append((f"path `{pth}`", f'"{pth}"' in source, "no engine source writes that path"))
+            for name in PAGE_LOGS_RE.findall(span):
+                checks.append((f"container `{name}`", name in containers, f"the scripts name {', '.join(sorted(containers)) or 'none'}"))
+            for prof in PAGE_PROFILE_RE.findall(span):
+                checks.append((f"profile `{prof}`", prof in profiles, f"compose declares {', '.join(sorted(profiles))}"))
+            for what, ok, known in checks:
+                named += 1
+                if ok:
+                    bound += 1
+                else:
+                    rep.find(
+                        f"{rel(path)} names {what}, and the engine at {rev[:8]} has no "
+                        f"such thing ({known}). A creator types it into a game or a "
+                        f"shell and nothing happens. Re-pin to a release that has it, "
+                        f"or fix the page."
+                    )
+    rep.bind("trigger, overlay path, container and profile name(s) the pin has", bound, named)
+    print(f"  ok   {len(triggers)} overlay trigger(s) registered by the engine at {rev[:8]}")
 
 
 # -------------------------------------------------- rule 18, the release asked --

@@ -260,12 +260,6 @@ STRUCTURAL_TWINS = {
         "No capability is stranded: `Horizon::resolved` is the single crossing "
         "between them and every consumer reads the resolved side."
     ),
-    ("AnchorSubject", "CameraTarget", "CameraWaypoint"): (
-        "ACCEPTED. Three camera-geometry types that coincidentally share "
-        "`{anchor, offset}`: a dolly waypoint, an aim target and its subject are "
-        "different roles in the same shot and are kept distinct on purpose. No "
-        "capability is stranded — nothing wants a 'generic anchor+offset'."
-    ),
 }
 
 # A field on this share or more of a tagged enum's variants is a cross-cutting

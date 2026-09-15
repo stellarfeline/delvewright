@@ -5,7 +5,10 @@
 # `dw.mark`, then a single `dw.done`), harvest the captured server log into
 # `rehearsal-report.json`, and assert the report carries the ADJUSTED values —
 # not the compiled defaults — and that `delvec calibrate` turns them back into
-# an `anchor + offset` DSL patch.
+# an `anchor + offset` DSL patch. The same session places showcase cameras by
+# hand (spec-0069): `dw.cam` standing, sneaking and out of the body after
+# `dw.free`, harvested by the same pass into `camera-report.json` and held to
+# the pose the bot reported, and `dw.free` returning the body where it was.
 #
 #   EULA=TRUE validation/rehearsal-flow.sh
 #
@@ -50,6 +53,7 @@ CAMPAIGN="crates/dsl/fixtures/valid/cutscene-shots"
 OUT="validation/delve-output"
 LOG="validation/rehearsal.log"
 REPORT="validation/rehearsal-report.json"
+CAMERAS="validation/camera-report.json"
 PATCH="validation/shot-patch.json"
 BOT_OUT="validation/rehearsal-bot.out"
 
@@ -116,7 +120,7 @@ docker logs "$CID" > "$LOG" 2>&1
 echo "==> harvesting the log into $REPORT"
 cargo run -q -p delvec --bin delvec -- harvest \
   "$LOG" "$OUT/creator-datapack/layout.json" \
-  -o validation/playtest-report.json --rehearsal-out "$REPORT"
+  -o validation/playtest-report.json --rehearsal-out "$REPORT" --camera-out "$CAMERAS"
 
 echo "----- rehearsal-report.json -----"
 cat "$REPORT"
@@ -151,6 +155,46 @@ two = shots[2]
 assert two["seconds"] == 4 and two["path"] == [[5, 67, 5]] and two["look_at"] is None, \
     f"an untouched shot drifted: {two}"
 print("report matches the adjusted values")
+PY
+
+echo "----- camera-report.json -----"
+cat "$CAMERAS"
+echo "------------------------------"
+
+echo "==> asserting the camera report is the pose the bot held (spec-0069)"
+grep -qF '[DelveCamera] ' "$LOG" || { echo "::error:: no [DelveCamera] stamp in server log"; exit 1; }
+python3 - "$CAMERAS" "$BOT_OUT" <<'PY'
+import json, re, sys
+sys.stdout.reconfigure(newline="\n")  # CRLF-proof: tools/check-python-shell-newlines.py
+report, bot_out = sys.argv[1], open(sys.argv[2]).read()
+cams = {c["slot"]: c for c in json.load(open(report))["cameras"]}
+poses = {}
+for m in re.finditer(r"CAMERA_POSE slot=(\d+) eye=([-0-9.e]+),([-0-9.e]+),([-0-9.e]+) yaw=([-0-9.e]+) pitch=([-0-9.e]+)", bot_out):
+    poses[int(m.group(1))] = [float(v) for v in m.groups()[1:]]
+assert set(poses) == {1, 2, 3}, f"the bot reported poses for slots {sorted(poses)}"
+assert set(cams) == {1, 2, 3}, f"the report holds slots {sorted(cams)}"
+def angle(a, b):
+    return abs((a - b + 180.0) % 360.0 - 180.0)
+for slot, (x, y, z, yaw, pitch) in sorted(poses.items()):
+    c = cams[slot]
+    for got, want, axis in zip(c["eye"], (x, y, z), "xyz"):
+        assert abs(got - want) <= 0.001 + 1e-9, f"slot {slot} eye {axis}: report {got} vs bot {want}"
+    assert angle(c["yaw"], yaw) <= 0.01 + 1e-6, f"slot {slot} yaw: report {c['yaw']} vs bot {yaw}"
+    assert abs(c["pitch"] - pitch) <= 0.01 + 1e-6, f"slot {slot} pitch: report {c['pitch']} vs bot {pitch}"
+    assert c["stamps"] == 1, f"slot {slot} stamped {c['stamps']} times"
+print("camera report matches the bot's poses: standing, sneaking, and out of the body")
+m = re.search(r"FREE_MODE=(\w+)", bot_out)
+assert m and m.group(1) == "spectator", f"dw.free did not enter spectator: {m and m.group(1)}"
+m = re.search(r"FREE_RETURN mode=(\w+) before=(\S+) after=(\S+)", bot_out)
+assert m, "the bot did not report its return"
+assert m.group(1) == "adventure", f"dw.free did not restore adventure: {m.group(1)}"
+before = [float(v) for v in m.group(2).split(",")]
+after = [float(v) for v in m.group(3).split(",")]
+for i, axis in enumerate("xyz"):
+    assert abs(before[i] - after[i]) <= 0.001, f"dw.free returned {axis} {after[i]}, left from {before[i]}"
+assert angle(before[3], after[3]) <= 0.01 and abs(before[4] - after[4]) <= 0.01, \
+    f"dw.free returned rotation {after[3:]}, left from {before[3:]}"
+print("dw.free returned the body to the place and rotation it left, in adventure")
 PY
 
 echo "==> converting the harvest back into a DSL patch"

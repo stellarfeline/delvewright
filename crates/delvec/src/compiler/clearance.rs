@@ -326,7 +326,7 @@ fn volumes(plan: &Plan, moves: &[MovePlan], actor_moves: &[ActorMovePlan]) -> Ve
                     delvewright_dsl::BodyRef::Npc(_) => "npc",
                     delvewright_dsl::BodyRef::Actor(_) => "actor",
                 },
-                anchor: s.body.anchor().as_str().to_string(),
+                anchor: s.body.mark().display(),
             },
         });
     }
@@ -343,7 +343,7 @@ fn volumes(plan: &Plan, moves: &[MovePlan], actor_moves: &[ActorMovePlan]) -> Ve
                 stage: "npcs",
                 at: Where::Leg {
                     verb: "move-npc",
-                    to_anchor: m.to_anchor.clone(),
+                    to_anchor: m.to.display(),
                     tick: t,
                     ticks: m.ticks(),
                 },
@@ -363,7 +363,7 @@ fn volumes(plan: &Plan, moves: &[MovePlan], actor_moves: &[ActorMovePlan]) -> Ve
                 stage: "quests",
                 at: Where::Leg {
                     verb: "move-actor",
-                    to_anchor: m.to_anchor.clone(),
+                    to_anchor: m.to.display(),
                     tick: t,
                     ticks: m.ticks(),
                 },

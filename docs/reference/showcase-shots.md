@@ -33,11 +33,12 @@ A showcase picture shows **one built thing, close, from the side that says what 
 
 ## 4. How a camera is found
 
-1. **Estimate from the approved image**: which side, how high, how close, how wide, what is the point of interest. Write it into `design/cameras.json`.
+1. **Estimate from the approved image**: which side, how high, how close, how wide, what is the point of interest. Write it into `design/cameras.json` as `source: estimated`.
 2. **Place it with `--preview`** — the assembled world flat-lit in seconds, the same camera convention as `snapshot --camera` — until the camera is in the room and the point of interest is in frame.
-3. **Bracket it**: `--bracket yaw=,pitch=,fov=,dolly=,truck=,rise=` emits the camera moved one thing at a time; `delvec contact-sheet` lays the candidates on one page beside the approved image. Pick by looking; copy the pick from `candidates.json` verbatim.
+3. **Bracket it**: `--bracket yaw=,pitch=,fov=,dolly=,truck=,rise=` emits the camera moved one thing at a time; `delvec contact-sheet` lays the candidates on one page beside the approved image. Pick by looking; write the pick with `delvec place-camera <campaign> --name <row> --candidates candidates.json --pick <candidate>`.
 4. **Draft it in Chunky** (`--draft`, quarter size, 128 spp) to judge light and exposure, then render the stated frame.
 5. **Look at the final frame** against §2 or §3 and write down what is in it, what is not, and why it beat the others. A frame the author would not put on a front page is not handed over. **[authored]**
+6. **When no estimate is the picture, the person places the camera.** They stand in the running game where the shot should be taken and fire `/trigger dw.cam`; `delvec place-camera --report` writes exactly that pose as `source: hand`, and it is final until they delete it — no estimate replaces it. The loop is [`tools.md`](tools.md) §4a. **[authored]**
 
 ## 5. What is not researched here
 

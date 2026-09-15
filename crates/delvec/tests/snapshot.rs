@@ -489,7 +489,7 @@ fn a_camera_preview_is_the_snapshot_of_the_same_camera() {
     .unwrap();
     let camera = serde_json::json!({
         "answers": "concept/keep", "exposure": 1.0, "fov": 60.0, "height": 216,
-        "name": "keep", "pitch": 20.0, "pos": [-6.5, 74.0, -8.0], "spp": 16,
+        "name": "keep", "pitch": 20.0, "pos": [-6.5, 74.0, -8.0], "source": "estimated", "spp": 16,
         "width": 384, "yaw": -35.0
     });
     std::fs::write(

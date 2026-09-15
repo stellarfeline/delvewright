@@ -277,10 +277,18 @@ fn an_equipped_actor_emits_gear_and_its_packtest() {
         pt.contains("tag=dw_pup_elite") && pt.contains("tag=!dw_pup_elite"),
         "the packtest must probe the puppet AND the twin:\n{pt}"
     );
+    // Every filled slot is asserted on each body: two slots, two bodies.
+    for slot in ["mainhand", "head"] {
+        assert!(
+            pt.contains(&format!("tag=dw_pup_elite,limit=1] equipment.{slot}{{"))
+                && pt.contains(&format!("tag=!dw_pup_elite,limit=1] equipment.{slot}{{")),
+            "`{slot}` asserted on the puppet and the twin:\n{pt}"
+        );
+    }
     assert_eq!(
         pt.matches("assert score").count(),
-        2,
-        "two assertions:\n{pt}"
+        4,
+        "one assertion per filled slot per body:\n{pt}"
     );
 }
 

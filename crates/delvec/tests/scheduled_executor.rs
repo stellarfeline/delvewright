@@ -237,7 +237,7 @@ static SCHEDULED_QUESTS: LazyLock<String> = LazyLock::new(|| {
         "on_objective_complete": {
           "obj/talk": [
             { "type": "open-gate", "anchor": "anchor/door" },
-            { "type": "move-npc", "npc": "npc/keeper", "to_anchor": "anchor/exit",
+            { "type": "move-npc", "npc": "npc/keeper", "to": { "anchor": "anchor/exit" },
               "on_arrive": [
                 { "type": "set-flag", "flag": "flag/arrived" },
                 { "type": "narrate", "text": "The keeper takes his post." },

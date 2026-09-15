@@ -114,7 +114,7 @@ fn typod_anchor_nested_in_a_sequence_is_dw0142() {
 fn typod_anchor_two_levels_down_is_dw0142() {
     let effects = r#"{ "type": "sequence", "steps": [
         { "at_ticks": 0, "effects": [
-            { "type": "move-npc", "npc": "npc/keeper", "to_anchor": "anchor/exit",
+            { "type": "move-npc", "npc": "npc/keeper", "to": { "anchor": "anchor/exit" },
               "on_arrive": [
                 { "type": "set-block", "anchor": "anchor/nowhere",
                   "block": "minecraft:air" } ] } ] } ] }"#;

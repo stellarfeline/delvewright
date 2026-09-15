@@ -715,6 +715,9 @@ fn validate_loaded(
             // of the refusal. So they are collected here and emitted after
             // `print_diags`, under a heading, unchanged.
             let mut examined: Vec<String> = Vec::new();
+            // spec-0067: what the equipment fit rule (`DW0898`, raised inside
+            // `validate_campaign_with` above) examined, zeroes included.
+            examined.push(delvewright_dsl::EquipmentBinding::of(&campaign, &items).line());
             // Prefab-library load failures (DW0346): a metadata file that did
             // not parse (e.g. newer schema than this delvec) is a first-class
             // validation diagnostic, never a silent skip that resurfaces later

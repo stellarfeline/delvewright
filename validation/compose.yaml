@@ -303,7 +303,9 @@ services:
       # (-Dpacktest.auto) are baked into the toolserver image; only the world
       # settings + datapack mounts (which mirror the shipped delve) live here.
       # itzg copies these directories into the world's datapacks folder on boot.
-      DATAPACKS: "/packs/datapack,/packs/packtest-datapack"
+      # The creator overlay rides along: the suite proves its hand-camera
+      # triggers (spec-0069), and the overlay never reaches the shipped image.
+      DATAPACKS: "/packs/datapack,/packs/packtest-datapack,/packs/creator-datapack"
       # World settings: the campaign-varying ones (difficulty, seed, level-type,
       # generator-settings) are DERIVED from the build's server/server.properties by
       # the entrypoint below — the same script the shipped delve image bakes — so
@@ -345,6 +347,7 @@ services:
       - packtest-data:/data
       - ${DELVE_OUTPUT:-./delve-output}/datapack:/packs/datapack:ro
       - ${DELVE_OUTPUT:-./delve-output}/packtest-datapack:/packs/packtest-datapack:ro
+      - ${DELVE_OUTPUT:-./delve-output}/creator-datapack:/packs/creator-datapack:ro
       # The compiler's world declaration + the shared derivation script (read-only).
       - ${DELVE_OUTPUT:-./delve-output}/server:/packs/server:ro
       - ./world-settings-entrypoint.sh:/packs/world-settings-entrypoint.sh:ro

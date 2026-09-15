@@ -77,6 +77,19 @@ def chunky_core(path: pathlib.Path | None = None) -> str:
     return pin("render", "chunky_core", path)
 
 
+def chunky_core_content_sha256(path: pathlib.Path | None = None) -> str:
+    """`[render] chunky_core_content_sha256` — what the pinned core jar CONTAINS,
+    by the digest `tools/lib/chunky_core.py` defines. The name alone is not an
+    identity: the update site serves today's core under any name."""
+    return pin("render", "chunky_core_content_sha256", path)
+
+
+def chunky_revision(path: pathlib.Path | None = None) -> str:
+    """`[render] chunky_revision` — the Chunky source revision the pinned core is
+    built from, by `validation/chunky-install.sh`."""
+    return pin("render", "chunky_revision", path)
+
+
 def _main(argv: list[str]) -> int:
     """`python3 tools/lib/versions.py <section>.<key>` — the shell's reader.
 

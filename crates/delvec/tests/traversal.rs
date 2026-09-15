@@ -59,7 +59,7 @@ static QUESTS_WALK: LazyLock<String> = LazyLock::new(|| {
         "on_objective_complete": {
           "obj/talk": [
             { "type": "open-gate", "anchor": "anchor/door" },
-            { "type": "move-npc", "npc": "npc/keeper", "to_anchor": "anchor/exit" }
+            { "type": "move-npc", "npc": "npc/keeper", "to": { "anchor": "anchor/exit" } }
           ]
         },
         "on_complete": [ { "type": "campaign-complete" } ]
@@ -94,7 +94,7 @@ fn quests_with_actor(entity: &str) -> String {
                     { "type": "open-gate", "anchor": "anchor/door" },
                     { "type": "spawn-actor", "actor": "actor/subject" },
                     { "type": "move-actor", "actor": "actor/subject",
-                      "to_anchor": "anchor/exit" }
+                      "to": { "anchor": "anchor/exit" } }
                 ] },
                 "on_complete": [ { "type": "campaign-complete" } ]
             } ]

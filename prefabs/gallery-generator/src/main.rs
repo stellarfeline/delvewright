@@ -243,24 +243,16 @@ const ANCHORS: &[Anchor] = &[
         pos: [13, 1, 5],
         facing: Some("south"),
         trigger_block: None,
-        note: "a standing mark for a body a spawn puts down and NOTHING takes \
-               away. `DW0896` refuses two co-existing bodies on one cell, and it \
-               can only judge an entry against a body whose lifetime it can \
-               bound — every other actor in this hall is `vulnerable` or is \
-               despawned, so without this mark the live half of that rule binds \
-               to the world-init npcs alone and its timeline arm binds to nothing",
-        role: None,
-    },
-    Anchor {
-        name: "anchor/page",
-        pos: [17, 1, 5],
-        facing: Some("south"),
-        trigger_block: None,
-        note: "the second body of that pair, on its OWN cell — the pass side of \
-               `DW0896`. Two bodies enter the hall one after the other, from two \
-               steps of one `sequence`, and the rule compares them because both \
-               are alive at once. One anchor is one cell, so a rank of bodies \
-               needs a mark apiece: that is what this mark is",
+        note: "a standing place for two bodies a spawn puts down and NOTHING \
+               takes away: the usher on the anchor and the page at an offset \
+               from it, four cells east along the speaking row. `DW0896` refuses \
+               two co-existing bodies on one cell and judges an entry only \
+               against a body whose lifetime it can bound — every other actor \
+               in this hall is `vulnerable` or is despawned, so without this \
+               place the live half of that rule binds to the world-init npcs \
+               alone. One anchor and an offset apiece is how a rank of bodies \
+               is placed (spec-0066): the campaign spends one anchor on it, and \
+               `DW0897` holds each offset inside this piece",
         role: None,
     },
     Anchor {
@@ -582,6 +574,50 @@ const WAY_NAME: &str = "broken-flight";
 /// the box the tread courses are carved out of.
 const FLIGHT_VIA: (i32, i32, i32, i32, i32, i32) = (FLIGHT.0, FLIGHT.1, 1, 3, FLIGHT.2, FLIGHT.3);
 
+/// **The high table** — a laid dining table across the standard-bearer's walk
+/// from `anchor/march` to `anchor/vantage` (spec-0065 §7).
+///
+/// Built the way the released castle's hall table is built, because that table
+/// is the finding: a row of `oak_fence` legs under an `oak_slab[type=bottom]`
+/// top, with a `spruce_slab[type=bottom]` bench on its near side. Every cell of
+/// the top is standable under the walk model's own rule, and bench-then-top is a
+/// half-block step and a one-block jump, so a body routed from the march to the
+/// vantage takes three cells over the table where the way round is eleven — long
+/// enough that the router's elevation cost (a block of rise or fall is two of
+/// walking) still prefers the climb. The piece declares it furniture, and the
+/// walk goes round.
+///
+/// `(x0, x1, z)` inclusive: the legs stand at `y = 1`, the top at `y = 2`.
+const TABLE: (i32, i32, i32) = (12, 18, 26);
+
+/// The bench on the table's near (south) side: `(x0, x1, z)`, at `y = 1`. The
+/// far side has none — the back wall's levers and the reliquary stand there.
+const BENCH: (i32, i32, i32) = (12, 18, 25);
+
+/// The table's leg, top and bench blocks, each written once.
+const TABLE_LEG: &str = "minecraft:oak_fence";
+const TABLE_TOP: &str = "minecraft:oak_slab";
+const BENCH_BLOCK: &str = "minecraft:spruce_slab";
+
+/// A named place declared as furniture: the region is the furniture's own
+/// blocks (spec-0065 §3), and the anchor carries `role: furniture`.
+struct FurnitureAnchor {
+    name: &'static str,
+    from: [i32; 3],
+    to: [i32; 3],
+    note: &'static str,
+}
+
+/// The furniture inventory. One table, so the element answers one question: a
+/// body walked past a table goes round it.
+const FURNITURE_ANCHORS: &[FurnitureAnchor] = &[FurnitureAnchor {
+    name: "anchor/high-table",
+    from: [TABLE.0, 1, TABLE.2],
+    to: [TABLE.1, 2, TABLE.2],
+    note: "the laid table across the standard-bearer's walk to the vantage: legs and \
+           top are furniture, so the bearer walks round it rather than over it",
+}];
+
 /// The gate inventory. Every opening is a real hole in the divider, so an
 /// unopened gate really does stop a body and `DW0311` has something to prove.
 const GATE_ANCHORS: &[GateAnchor] = &[
@@ -785,6 +821,17 @@ fn block_at(
     {
         return ("minecraft:stone", None);
     }
+    // The high table and its bench (spec-0065 §7).
+    if (TABLE.0..=TABLE.1).contains(&x) && z == TABLE.2 {
+        match y {
+            1 => return (TABLE_LEG, None),
+            2 => return (TABLE_TOP, Some(&[("type", "bottom")])),
+            _ => {}
+        }
+    }
+    if (BENCH.0..=BENCH.1).contains(&x) && z == BENCH.2 && y == 1 {
+        return (BENCH_BLOCK, Some(&[("type", "bottom")]));
+    }
     let (cx0, cx1, cy, cz0, cz1) = CANOPY;
     if y == cy && (cx0..=cx1).contains(&x) && (cz0..=cz1).contains(&z) {
         return ("minecraft:stone", None);
@@ -822,6 +869,9 @@ fn build() -> Structure {
             Some(&[("facing", "north"), ("type", "single")][..]),
         ),
         (BURNING_BLOCK, None),
+        (TABLE_LEG, None),
+        (TABLE_TOP, Some(&[("type", "bottom")][..])),
+        (BENCH_BLOCK, Some(&[("type", "bottom")][..])),
     ] {
         palette.idx(name, props);
     }
@@ -958,22 +1008,53 @@ fn assert_anchors_are_standable(s: &Structure) {
             }
         }
     }
+    // Furniture is declared over the blocks it names, never over air: every cell
+    // of the region is a leg or the top, and at least one of them is a top a
+    // body could otherwise stand on (`DW0888`'s furniture key, asked here first).
+    for f in FURNITURE_ANCHORS {
+        let mut tops = 0usize;
+        for x in f.from[0]..=f.to[0] {
+            for y in f.from[1]..=f.to[1] {
+                for z in f.from[2]..=f.to[2] {
+                    let found = at([x, y, z]);
+                    assert!(
+                        found == TABLE_LEG || found == TABLE_TOP,
+                        "{ID}: furniture `{}` claims {:?}, which holds `{found}` — not the \
+                         table's own blocks",
+                        f.name,
+                        [x, y, z]
+                    );
+                    if found == TABLE_TOP && at([x, y + 1, z]) == "minecraft:air" {
+                        tops += 1;
+                    }
+                }
+            }
+        }
+        assert!(
+            tops > 0,
+            "{ID}: furniture `{}` has no top a body could stand on, so declaring it \
+             withholds nothing",
+            f.name
+        );
+    }
     // A metadata that declares nothing is the vacuous case: the assertions above
     // are all universally quantified and pass over an empty inventory.
     assert!(
         !ANCHORS.is_empty()
             && !GATE_ANCHORS.is_empty()
             && !CONTAINERS.is_empty()
-            && !SOLID_ANCHORS.is_empty(),
+            && !SOLID_ANCHORS.is_empty()
+            && !FURNITURE_ANCHORS.is_empty(),
         "{ID}: the anchor inventory is empty, so nothing above examined anything"
     );
     println!(
         "{ID}: anchor inventory bound — {} point anchor(s), {} container(s), \
-         {} solid anchor(s), {} gate anchor(s) checked against the blocks",
+         {} solid anchor(s), {} gate anchor(s), {} furniture anchor(s) checked against the blocks",
         ANCHORS.len(),
         CONTAINERS.len(),
         SOLID_ANCHORS.len(),
-        GATE_ANCHORS.len()
+        GATE_ANCHORS.len(),
+        FURNITURE_ANCHORS.len()
     );
 }
 
@@ -1475,6 +1556,13 @@ fn metadata() -> serde_json::Value {
         m.insert("block".into(), json!("minecraft:iron_bars"));
         m.insert("note".into(), json!(g.note));
         anchors.insert(g.name.into(), Value::Object(m));
+    }
+    for f in FURNITURE_ANCHORS {
+        let mut m = Map::new();
+        m.insert("region".into(), json!({ "from": f.from, "to": f.to }));
+        m.insert("role".into(), json!("furniture"));
+        m.insert("note".into(), json!(f.note));
+        anchors.insert(f.name.into(), Value::Object(m));
     }
     json!({
         "prefab_id": format!("prefab/{ID}"),

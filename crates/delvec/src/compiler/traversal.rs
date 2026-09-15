@@ -513,7 +513,7 @@ struct Leg<'a> {
     /// The moving body's declared id.
     id: &'a str,
     /// The destination anchor id.
-    to_anchor: &'a str,
+    to_anchor: String,
     /// The A* cell route, start to target inclusive.
     cells: &'a [[i32; 3]],
     /// The entity whose body (and capabilities) the puppet wears.
@@ -551,7 +551,7 @@ fn legs<'a>(
         out.push(Leg {
             verb: "move-npc",
             id: &m.npc,
-            to_anchor: &m.to_anchor,
+            to_anchor: m.to.display(),
             cells: &m.cells,
             entity: crate::compiler::nav::npc_body_entity(n),
             declared: n.traversal.map(|t| t.locomotion),
@@ -574,7 +574,7 @@ fn legs<'a>(
         out.push(Leg {
             verb: "move-actor",
             id: &m.actor,
-            to_anchor: &m.to_anchor,
+            to_anchor: m.to.display(),
             cells: &m.cells,
             entity: crate::compiler::nav::actor_body_entity(a),
             declared: a.traversal.map(|t| t.locomotion),
@@ -911,7 +911,7 @@ fn surmount_advisory(
 ) -> Diagnostic {
     let body = describe(leg);
     let verb = leg.verb;
-    let to = leg.to_anchor;
+    let to = &leg.to_anchor;
     let text = format!(
         "{body} walks its `{verb}` leg to `{to}` OVER a barrier line: from {from:?} it steps up onto the \
          full-cube block at {support:?} and comes back down on the far side, and {support:?} \

@@ -631,6 +631,7 @@ pub fn panorama_from_plan(
             name: shot.replace('_', "-"),
             pitch: cam.pitch_deg,
             pos: cam.pos,
+            source: camera::Source::Estimated,
             spp: opts.spp_target,
             width: opts.width,
             yaw: scene::round6(camera::minecraft_yaw(cam.yaw_deg)),

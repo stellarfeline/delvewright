@@ -46,6 +46,7 @@
 //! - [`light`]: the assembled-world lighting model and the deterministic relight pass (`DW0210`/`DW0211`).
 //! - [`load`]: read a campaign directory into the DSL's `RawCampaign`, keeping the raw bytes for input hashing.
 //! - [`loot`]: container-fill proofs over the assembled world (`DW0431`/`DW0438`).
+//! - [`mark`]: a mark stays in the room its anchor names — an offset that leaves its anchor's piece is refused (`DW0897`).
 //! - [`massing`]: the L2 massing verbs — declarative control of a pool area's solved jigsaw layout.
 //! - [`nav`]: compile-time navigation over the solved voxel grid.
 //! - [`plan`]: resolve a validated campaign into the placement + naming model emission reads.
@@ -117,6 +118,7 @@ pub mod lethal;
 pub mod light;
 pub mod load;
 pub mod loot;
+pub mod mark;
 pub mod massing;
 pub mod nav;
 pub mod plan;

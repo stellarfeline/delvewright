@@ -81,6 +81,11 @@
         "facing": "north",
         "id": "actor/sergeant",
         "name": "The Sergeant",
+        "offset": [
+          1,
+          0,
+          0
+        ],
         "tier": "elite",
         "vulnerable": true
       },
@@ -123,10 +128,34 @@
         "id": "actor/hall-usher"
       },
       {
-        "anchor": "anchor/page",
+        "anchor": "anchor/usher",
         "entity": "minecraft:villager",
         "facing": "south",
-        "id": "actor/hall-page"
+        "id": "actor/hall-page",
+        "offset": [
+          4,
+          0,
+          0
+        ]
+      },
+      {
+        "anchor": "anchor/annex-threshold",
+        "drops": [
+          {
+            "slot": "body"
+          },
+          {
+            "slot": "saddle"
+          }
+        ],
+        "entity": "minecraft:horse",
+        "equipment": {
+          "body": "minecraft:iron_horse_armor",
+          "saddle": "minecraft:saddle"
+        },
+        "facing": "north",
+        "id": "actor/destrier",
+        "tier": "elite"
       }
     ],
     "ambushes": [
@@ -283,7 +312,14 @@
               ]
             },
             {
-              "at": "anchor/muster",
+              "at": {
+                "anchor": "anchor/muster",
+                "offset": [
+                  1,
+                  0,
+                  0
+                ]
+              },
               "dialogue": {
                 "barks": [
                   "Form up."
@@ -716,7 +752,9 @@
                 }
               ],
               "speed": 1.0,
-              "to_anchor": "anchor/pedestal",
+              "to": {
+                "anchor": "anchor/pedestal"
+              },
               "type": "move-npc",
               "when": {
                 "requires_state": [
@@ -794,7 +832,9 @@
               },
               "npc": "npc/warden",
               "speed": 1.0,
-              "to_anchor": "anchor/pocket",
+              "to": {
+                "anchor": "anchor/pocket"
+              },
               "type": "move-npc"
             }
           ],
@@ -852,7 +892,12 @@
                     {
                       "at": {
                         "anchor": "anchor/pedestal",
-                        "at": "anchor"
+                        "at": "anchor",
+                        "offset": [
+                          0,
+                          1,
+                          0
+                        ]
                       },
                       "sound": "minecraft:block.chest.close",
                       "type": "play-sound",
@@ -901,6 +946,20 @@
                       "type": "spawn-actor"
                     }
                   ]
+                },
+                {
+                  "at_ticks": 50,
+                  "effects": [
+                    {
+                      "actor": "actor/destrier",
+                      "happening": {
+                        "subject": "actor/destrier",
+                        "text": "A barded, saddled horse is led to the mouth of the annex and left standing there.",
+                        "verb": "arrives"
+                      },
+                      "type": "spawn-actor"
+                    }
+                  ]
                 }
               ],
               "type": "sequence",
@@ -930,7 +989,14 @@
           },
           "npc/marshal": [
             {
-              "at": "anchor/muster",
+              "at": {
+                "anchor": "anchor/muster",
+                "offset": [
+                  1,
+                  0,
+                  0
+                ]
+              },
               "dialogue": "dlg/marshal-read",
               "doing": "calling the muster to a party that read the label",
               "forbids_flags": [
@@ -948,7 +1014,14 @@
               ]
             },
             {
-              "at": "anchor/muster",
+              "at": {
+                "anchor": "anchor/muster",
+                "offset": [
+                  1,
+                  0,
+                  0
+                ]
+              },
               "dialogue": "dlg/marshal-skipped",
               "doing": "calling the muster to a party that walked straight past",
               "requires_flags": [
@@ -1239,7 +1312,14 @@
                 }
               ],
               "speed": 1.2,
-              "to_anchor": "anchor/vantage",
+              "to": {
+                "anchor": "anchor/vantage",
+                "offset": [
+                  2,
+                  0,
+                  0
+                ]
+              },
               "type": "move-actor",
               "when": {
                 "forbids_flags": [
@@ -1505,7 +1585,14 @@
                   1
                 ]
               },
-              "to": "anchor/vantage",
+              "to": {
+                "anchor": "anchor/vantage",
+                "offset": [
+                  -1,
+                  0,
+                  0
+                ]
+              },
               "type": "teleport",
               "when": {
                 "forbids_flags": [
@@ -1581,7 +1668,12 @@
                   ]
                 },
                 {
-                  "anchor": "anchor/vantage"
+                  "anchor": "anchor/vantage",
+                  "offset": [
+                    0,
+                    2,
+                    0
+                  ]
                 }
               ],
               "seconds": 4,
@@ -1625,7 +1717,12 @@
                       ]
                     },
                     {
-                      "anchor": "anchor/vantage"
+                      "anchor": "anchor/vantage",
+                      "offset": [
+                        0,
+                        2,
+                        0
+                      ]
                     }
                   ],
                   "seconds": 3,
@@ -1928,7 +2025,9 @@
                 "verb": "arrives"
               },
               "speed": 1.0,
-              "to_anchor": "anchor/pocket",
+              "to": {
+                "anchor": "anchor/pocket"
+              },
               "type": "move-actor"
             },
             {
@@ -2107,7 +2206,9 @@
               },
               "npc": "npc/marshal",
               "speed": 1.0,
-              "to_anchor": "anchor/pocket",
+              "to": {
+                "anchor": "anchor/pocket"
+              },
               "type": "move-npc",
               "when": {
                 "forbids_flags": [
@@ -2186,7 +2287,14 @@
           },
           "npc/marshal": [
             {
-              "at": "anchor/muster",
+              "at": {
+                "anchor": "anchor/muster",
+                "offset": [
+                  1,
+                  0,
+                  0
+                ]
+              },
               "dialogue": "dlg/marshal-root",
               "doing": "forming up beyond the wall, indifferent to the cellar",
               "requires_flags": [
@@ -2194,7 +2302,14 @@
               ]
             },
             {
-              "at": "anchor/muster",
+              "at": {
+                "anchor": "anchor/muster",
+                "offset": [
+                  1,
+                  0,
+                  0
+                ]
+              },
               "dialogue": "dlg/marshal-root",
               "doing": "forming up beyond the wall, having walked straight past the label",
               "requires_flags": [
@@ -2891,6 +3006,6 @@
       }
     ]
   },
-  "dsl_version": "0.25.0",
+  "dsl_version": "0.28.0",
   "stage": "quests"
 }

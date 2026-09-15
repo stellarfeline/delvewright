@@ -41,6 +41,28 @@ pub struct FullItemRegistry {
     /// Mojang's own data, regenerated per MC pin by
     /// `tools/extract-item-stack-sizes.py` — never a hand-maintained table.
     stack_sizes: BTreeMap<String, u32>,
+    /// Item id → its `minecraft:equippable` facts (spec-0067), for the 84 items
+    /// that carry the component. Regenerated per MC pin by
+    /// `tools/extract-item-equippable.py`.
+    equippable: BTreeMap<String, delvewright_dsl::Equippable>,
+}
+
+/// The vendored `item-equippable-1.21.11.json` document.
+#[derive(Debug, Clone, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ItemEquippableTable {
+    /// Equipment asset id → the layer types its asset declares.
+    pub asset_layers: BTreeMap<String, Vec<String>>,
+    /// Item id → its `equippable` facts.
+    pub items: BTreeMap<String, delvewright_dsl::Equippable>,
+}
+
+impl ItemEquippableTable {
+    /// Load the vendored 1.21.11 table (embedded at compile time).
+    pub fn v1_21_11() -> Self {
+        serde_json::from_str(include_str!("../../data/item-equippable-1.21.11.json"))
+            .expect("vendored item equippable table is valid JSON of its own shape")
+    }
 }
 
 impl FullItemRegistry {
@@ -55,6 +77,7 @@ impl FullItemRegistry {
         Self {
             ids: ids.into_iter().collect(),
             stack_sizes,
+            equippable: ItemEquippableTable::v1_21_11().items,
         }
     }
 
@@ -82,6 +105,16 @@ impl ItemRegistry for FullItemRegistry {
     fn max_stack_size(&self, item_id: &str) -> Option<u32> {
         self.canonical(item_id)
             .and_then(|id| self.stack_sizes.get(&id).copied())
+    }
+
+    fn equippable(&self, item_id: &str) -> delvewright_dsl::EquippableFact<'_> {
+        match self.canonical(item_id) {
+            None => delvewright_dsl::EquippableFact::Unknown,
+            Some(id) => match self.equippable.get(&id) {
+                Some(e) => delvewright_dsl::EquippableFact::Equippable(e),
+                None => delvewright_dsl::EquippableFact::Plain,
+            },
+        }
     }
 }
 

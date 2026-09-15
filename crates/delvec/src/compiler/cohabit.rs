@@ -81,9 +81,9 @@
 //! mount, no rider and no stacked body, so nothing an author can write wants
 //! this. An opt-out would therefore have to be secured by the author's say-so,
 //! which is exactly the property a mistake also supplies — the anti-pattern
-//! CLAUDE.md names in those words. The remedy is a second mark, and a campaign
-//! that wants two bodies side by side needs two anchors anyway, since one anchor
-//! is one cell.
+//! CLAUDE.md names in those words. The remedy is a second mark: an offset from
+//! the same anchor (spec-0066), so a rank of bodies is one anchor and a cell
+//! apiece.
 //!
 //! ## What this deliberately does not catch
 //!
@@ -111,7 +111,8 @@ use crate::compiler::plan::Plan;
 /// `DW0896`: **two bodies whose lifetimes overlap are declared on one cell.**
 ///
 /// Error tier, with no authorable exemption. A mark is a cell and a cell holds
-/// one body; the repair is a second anchor, and it is always available.
+/// one body; the repair is a second mark — an offset from the same anchor — and
+/// it is always available (spec-0066).
 pub const DW_ONE_MARK_TWO_BODIES: DwCode = DwCode::new("DW0896", ExitTier::Build);
 
 /// One body, as this proof reads it: who it is, where it was declared, and the
@@ -138,7 +139,7 @@ impl Placed<'_> {
             self.body.id(),
             self.body.stage(),
             self.path,
-            self.body.anchor().as_str(),
+            self.body.mark().display(),
         )
     }
 }
@@ -396,9 +397,10 @@ fn message(x: &Placed<'_>, y: &Placed<'_>, rest: &[String]) -> String {
         "{} and {} are both declared on world cell [{cx}, {cy}, {cz}], and both are in the \
          world at the same time. A mark is one cell and one cell holds one body: the delve \
          would summon both of them onto the same coordinate, where they stand inside each \
-         other. Give each body its own anchor — one anchor is one cell, so a rank of bodies \
-         needs a mark apiece — or make the campaign prove they take turns, by removing the \
-         first with a `despawn-npc` / `despawn-actor` before the second is summoned. Bodies \
+         other. Give each body its own mark — an offset apiece from one anchor (`\"offset\": \
+         [x, y, z]` beside `anchor`), so a rank of bodies is one anchor and a cell apiece — or \
+         make the campaign prove they take turns, by removing the first with a `despawn-npc` / \
+         `despawn-actor` before the second is summoned. Bodies \
          that take turns on one mark are the supported handoff and are not refused; what is \
          refused is two live bodies with one place to stand. Nothing else keeps them apart: a \
          `move-actor` walking one of them off the mark separates them only by however fast it \

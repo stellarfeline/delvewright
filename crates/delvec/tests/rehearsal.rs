@@ -373,11 +373,17 @@ fn a_cutscene_less_campaign_emits_no_rehearsal_artifacts() {
         );
     }
     let init = overlay(&out, "init");
-    assert_eq!(
-        init.trim(),
-        "scoreboard objectives add dw.note trigger",
-        "the overlay init is unchanged for a cutscene-less campaign"
+    assert!(
+        !init.contains("dw.mark") && !init.contains("dw.rh"),
+        "a cutscene-less campaign registers no calibration trigger:\n{init}"
     );
+    // The hand camera is not a cutscene's: every overlay carries it (spec-0069).
+    for t in ["dw.note", "dw.cam", "dw.free"] {
+        assert!(
+            init.contains(&format!("scoreboard objectives add {t} trigger")),
+            "{t}:\n{init}"
+        );
+    }
     assert!(layout(&out)["shots"].as_array().unwrap().is_empty());
 }
 
@@ -391,7 +397,19 @@ fn rehearsal_overlay_absent_from_the_shipped_datapack() {
             continue;
         }
         let body = std::str::from_utf8(bytes).unwrap_or("");
-        for marker in ["dw:rehearsal", "DelveShot", "dw.mark", "dw.aim", "dw.done"] {
+        for marker in [
+            "dw:rehearsal",
+            "DelveShot",
+            "dw.mark",
+            "dw.aim",
+            "dw.done",
+            "DelveCamera",
+            "dw.cam ",
+            "dw.cam=",
+            "creator/camera",
+            "dw.free",
+            "dw_free",
+        ] {
             assert!(
                 !body.contains(marker) && !path.contains("rehearsal"),
                 "rehearsal artifact `{marker}` leaked into the shipped datapack at {path}"
@@ -507,4 +525,153 @@ fn the_tick_never_resets_a_trigger_it_arms() {
         overlay(&out, "rehearsal/mark").contains("scoreboard players reset @s dw.mark"),
         "a handler clears the trigger it consumed"
     );
+    // The hand camera's two triggers are armed by the same tick under the same
+    // rule, in a campaign with a cutscene and in one without.
+    let (_, bare) = build(r#"{ "type": "set-flag", "flag": "flag/seen" }"#);
+    for out in [&out, &bare] {
+        let tick = overlay(out, "tick");
+        for (trigger, handler) in [("dw.cam", "camera/cam"), ("dw.free", "camera/free")] {
+            assert!(
+                tick.contains(&format!("scoreboard players enable @a {trigger}\n")),
+                "{trigger} is armed:\n{tick}"
+            );
+            assert!(
+                overlay(out, handler).contains(&format!("scoreboard players reset @s {trigger}")),
+                "{handler} clears {trigger}"
+            );
+        }
+    }
+}
+
+/// **`dw.cam` stamps the eye, not the feet, in fixed point** (spec-0069). The eye
+/// is read off a marker summoned at `anchored eyes positioned ^ ^ ^` in
+/// milli-blocks, the rotation off the player's own `Rotation` in centi-degrees,
+/// and the stamp substitutes integers only.
+#[test]
+fn the_camera_stamp_is_the_eye_in_fixed_point() {
+    let (_, out) = build(r#"{ "type": "set-flag", "flag": "flag/seen" }"#);
+    let cam = overlay(&out, "camera/cam");
+    assert!(
+        cam.contains(
+            "execute anchored eyes positioned ^ ^ ^ run summon minecraft:marker ~ ~ ~ {Tags:[\"dw_cam_probe\"]}"
+        ),
+        "{cam}"
+    );
+    for (i, axis) in ["x", "y", "z"].iter().enumerate() {
+        assert!(
+            cam.contains(&format!(
+                "execute store result storage {NS}:camera {axis} int 1 run data get entity \
+                 @e[type=minecraft:marker,tag=dw_cam_probe,limit=1] Pos[{i}] 1000"
+            )),
+            "{axis}:\n{cam}"
+        );
+    }
+    for (i, key) in ["yaw", "pitch"].iter().enumerate() {
+        assert!(
+            cam.contains(&format!(
+                "execute store result storage {NS}:camera {key} int 1 run data get entity @s Rotation[{i}] 100"
+            )),
+            "{key}:\n{cam}"
+        );
+    }
+    assert_eq!(
+        overlay(&out, "camera/stamp").trim(),
+        "$say [DelveCamera] slot=$(slot) eye=$(x),$(y),$(z) yaw=$(yaw) pitch=$(pitch) in=$(in)"
+    );
+    // The stamp's own shape is what the harvester parses: one line through the
+    // real parser yields the pose divided back out.
+    let line = "[06:13:02] [Server thread/INFO]: [Not Secure] [delve-creator] [DelveCamera] \
+                slot=3 eye=10500,65620,-2250 yaw=3000 pitch=-1500 in=block";
+    let r = delvec::orchestrator::camera::harvest_cameras(line, NS);
+    assert_eq!(r.cameras.len(), 1);
+    assert_eq!(r.cameras[0].eye, [10.5, 65.62, -2.25]);
+    assert_eq!((r.cameras[0].yaw, r.cameras[0].pitch), (30.0, -15.0));
+
+    // dw.free keeps the place on a marker, force-loads only a chunk nothing else
+    // forces, and restores the game mode it read.
+    let leave = overlay(&out, "camera/free_leave");
+    assert!(
+        leave.contains("data get entity @s playerGameType"),
+        "{leave}"
+    );
+    assert!(
+        leave.contains("execute store success score #forced dw.cm run forceload query ~ ~"),
+        "{leave}"
+    );
+    assert!(leave.ends_with("gamemode spectator @s\n"), "{leave}");
+    let back = overlay(&out, "camera/free_back");
+    for mode in ["survival", "creative", "adventure", "spectator"] {
+        assert!(
+            back.contains(&format!("run gamemode {mode} @s")),
+            "{mode}:\n{back}"
+        );
+    }
+    assert!(
+        back.contains("tp @s @e[type=minecraft:marker,tag=dw_free_this,limit=1]"),
+        "{back}"
+    );
+}
+
+/// **A roster is one chat message per shot, and reads back as built.** A chat
+/// message holds at most 256 characters and a parse failure drops the whole
+/// function at load, so a campaign with many shots once shipped a roster the
+/// server refused (`Chat message was too long (707 > maximum 256 characters)`).
+/// A sixteen-shot cutscene — a roster far over the bound as one line — emits
+/// lines of at most 256 characters the command tree accepts, and the log those
+/// lines write harvests back to exactly the roster `layout.json` states.
+#[test]
+fn a_long_roster_stamps_one_short_line_per_shot_and_harvests_back() {
+    let shots: Vec<String> = (0..16)
+        .map(|k| {
+            format!(
+                r#"{{ "path": [ {{ "anchor": "anchor/exit", "offset": [0, 2, {}] }} ], "seconds": 2 }}"#,
+                k % 3
+            )
+        })
+        .collect();
+    let cutscene = format!(
+        r#"{{ "type": "cutscene", "shots": [ {} ] }}"#,
+        shots.join(", ")
+    );
+    let (_, out) = build(&cutscene);
+    let roster = overlay(&out, "rehearsal/roster");
+    let says: Vec<&str> = roster
+        .lines()
+        .filter_map(|l| l.strip_prefix("say "))
+        .collect();
+    assert_eq!(says.len(), 17, "a count and one line per shot:\n{roster}");
+    let one_line: usize = says.iter().map(|s| s.chars().count() + 1).sum();
+    assert!(
+        one_line > 256,
+        "the roster as one message would be {one_line} characters"
+    );
+    let tree = CommandTree::v1_21_11();
+    for say in &says {
+        assert!(say.chars().count() <= 256, "{say}");
+    }
+    assert!(tree.validate_function(&roster).is_empty(), "{roster}");
+    // The same roster as ONE message is what the command tree refuses.
+    let joined = format!("say {}", says.join(" "));
+    let err = tree.validate_line(&joined).unwrap_err();
+    assert!(err.reason.contains("chat message"), "{err:?}");
+
+    let log: String = says
+        .iter()
+        .map(|s| format!("[06:12:44] [Server thread/INFO]: [Not Secure] [delve-creator] {s}\n"))
+        .collect();
+    let harvested = delvec::orchestrator::rehearsal::harvest_roster(&log);
+    let built: Vec<(u32, String, u32)> = layout(&out)["shots"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|s| {
+            (
+                s["shot"].as_u64().unwrap() as u32,
+                s["pointer"].as_str().unwrap().to_string(),
+                s["shot_index"].as_u64().unwrap() as u32,
+            )
+        })
+        .collect();
+    assert_eq!(built.len(), 16);
+    assert_eq!(harvested, built);
 }

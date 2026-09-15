@@ -118,12 +118,37 @@ pub struct Camera {
     pub pitch: f64,
     /// The lens, world blocks.
     pub pos: [f64; 3],
+    /// Who placed the camera: an estimate, or a person standing in the game.
+    pub source: Source,
     /// Path-tracing sample target.
     pub spp: u32,
     /// Frame width, pixels.
     pub width: u32,
     /// Minecraft yaw, degrees: 0 south, 90 west, 180 north, 270 east.
     pub yaw: f64,
+}
+
+/// Who placed a camera. A hand camera is final: no estimate is written over it
+/// ([`place`]), and only deleting its row frees the name.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Source {
+    /// Derived by a tool or an agent: a panorama fit, a bracket candidate, a
+    /// camera estimated from an approved image.
+    Estimated,
+    /// Captured in the running game where a person stood and looked
+    /// (`/trigger dw.cam`, harvested by `delvec harvest`).
+    Hand,
+}
+
+impl Source {
+    /// The record's own spelling.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Source::Estimated => "estimated",
+            Source::Hand => "hand",
+        }
+    }
 }
 
 /// Minecraft yaw → the render plan's yaw (`atan2(-dz, dx)`: 0 east, 90 north),
@@ -372,6 +397,8 @@ impl Bracket {
                 let mut c = cam.clone();
                 apply(&mut c);
                 c.name = format!("{}.{key}{tag}{}", cam.name, fmt(step));
+                // A moved camera is not where anybody stood.
+                c.source = Source::Estimated;
                 if c.check().is_ok() {
                     out.push(c);
                 }
@@ -666,6 +693,309 @@ pub fn emit(
     Ok(out)
 }
 
+/// What a row of the record is written from.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Placement {
+    /// A camera a tool estimated, taken verbatim from a record-format file
+    /// (`candidates.json`): pose, lens, exposure and frame. Written as
+    /// `estimated`.
+    Estimate(Camera),
+    /// A pose a person captured in the running game (`camera-report.json`),
+    /// with the field of view they stated. Written as `hand`; the row's frame
+    /// and exposure are kept.
+    Hand {
+        pos: [f64; 3],
+        yaw: f64,
+        pitch: f64,
+        fov: f64,
+    },
+}
+
+/// What [`place`] did to the record.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Placed {
+    /// A new row was appended.
+    Added,
+    /// An existing row's camera was replaced.
+    Replaced,
+}
+
+/// Write one row of the record: the one writer of `design/cameras.json`.
+///
+/// - A row placed by hand is **final**: an estimate written over it is refused,
+///   naming the row. Only deleting the row ([`delete`]) frees its name; a new
+///   hand pose replaces it.
+/// - A row answers one approved image. `answers` names it for a new row (an
+///   estimate may carry its own), and must equal the row's when given for an
+///   existing one: aiming a camera at another picture is a new row.
+/// - A new hand row takes the showcase frame defaults (`panorama`'s: 1600×900,
+///   300 spp) and exposure 1.0; a replaced hand row keeps the row's frame and
+///   exposure, because a person placed the pose, not the exposure.
+///
+/// `sheet` is the record as it stands (`None` when the campaign has none yet),
+/// `campaign_id` the campaign the placement belongs to.
+pub fn place(
+    sheet: Option<CameraSheet>,
+    campaign_id: &str,
+    name: &str,
+    answers: Option<&str>,
+    placement: Placement,
+) -> Result<(CameraSheet, Placed), Diagnostic> {
+    let refuse = |why: String| Diagnostic::error(DW_INPUT, format!("{CAMERAS_FILE}: {why}"));
+    let mut sheet = sheet.unwrap_or_else(|| CameraSheet {
+        campaign_id: campaign_id.to_string(),
+        cameras: Vec::new(),
+    });
+    if sheet.campaign_id != campaign_id {
+        return Err(refuse(format!(
+            "the record is for `{}` and this camera was placed in `{campaign_id}`: a position \
+             means something only in the world it was placed in",
+            sheet.campaign_id
+        )));
+    }
+    let existing = sheet.cameras.iter().position(|c| c.name == name);
+    let row = match (existing, &placement) {
+        (Some(i), _) => {
+            let old = &sheet.cameras[i];
+            if old.source == Source::Hand && matches!(placement, Placement::Estimate(_)) {
+                return Err(refuse(format!(
+                    "camera `{name}` was placed by hand, and an estimate is never written over a \
+                     hand camera. Delete the row (`delvec place-camera … --name {name} --delete`) \
+                     only when the person who placed it asks"
+                )));
+            }
+            if let Some(a) = answers
+                && a != old.answers
+            {
+                return Err(refuse(format!(
+                    "camera `{name}` answers `{}`, not `{a}`: a camera is an answer to one \
+                     picture, so aiming at another picture is a new row with its own name",
+                    old.answers
+                )));
+            }
+            match placement {
+                Placement::Estimate(est) => Camera {
+                    answers: old.answers.clone(),
+                    name: name.to_string(),
+                    source: Source::Estimated,
+                    ..est
+                },
+                Placement::Hand {
+                    pos,
+                    yaw,
+                    pitch,
+                    fov,
+                } => Camera {
+                    fov,
+                    pitch,
+                    pos,
+                    source: Source::Hand,
+                    yaw,
+                    ..old.clone()
+                },
+            }
+        }
+        (None, Placement::Estimate(est)) => {
+            let answers = answers.unwrap_or(&est.answers).to_string();
+            Camera {
+                answers,
+                name: name.to_string(),
+                source: Source::Estimated,
+                ..est.clone()
+            }
+        }
+        (
+            None,
+            Placement::Hand {
+                pos,
+                yaw,
+                pitch,
+                fov,
+            },
+        ) => {
+            let Some(answers) = answers else {
+                return Err(refuse(format!(
+                    "camera `{name}` is a new row, so it needs `--answers <design.json row>`: every \
+                     showcase camera is judged against an approved image"
+                )));
+            };
+            Camera {
+                answers: answers.to_string(),
+                exposure: 1.0,
+                fov: *fov,
+                height: crate::compiler::view::panorama::DEFAULT_HEIGHT,
+                name: name.to_string(),
+                pitch: *pitch,
+                pos: *pos,
+                source: Source::Hand,
+                spp: crate::compiler::view::panorama::DEFAULT_SPP,
+                width: crate::compiler::view::panorama::DEFAULT_WIDTH,
+                yaw: *yaw,
+            }
+        }
+    };
+    row.check()
+        .map_err(|why| refuse(format!("camera `{name}`: {why}")))?;
+    let placed = match existing {
+        Some(i) => {
+            sheet.cameras[i] = row;
+            Placed::Replaced
+        }
+        None => {
+            sheet.cameras.push(row);
+            Placed::Added
+        }
+    };
+    Ok((sheet, placed))
+}
+
+/// Delete one row of the record. The empty record that deleting the last row
+/// leaves is `None`: the file is removed rather than written as a record that
+/// states no camera.
+pub fn delete(mut sheet: CameraSheet, name: &str) -> Result<Option<CameraSheet>, Diagnostic> {
+    let Some(i) = sheet.cameras.iter().position(|c| c.name == name) else {
+        let names: Vec<&str> = sheet.cameras.iter().map(|c| c.name.as_str()).collect();
+        return Err(Diagnostic::error(
+            DW_INPUT,
+            format!(
+                "{CAMERAS_FILE} has no camera `{name}`. Cameras: {}",
+                names.join(", ")
+            ),
+        ));
+    };
+    sheet.cameras.remove(i);
+    Ok((!sheet.cameras.is_empty()).then_some(sheet))
+}
+
+/// The record's bytes as every tool writes them: canonical key order (every
+/// map sorted, which is the order `delvec fmt` holds campaign JSON to), pretty,
+/// with a trailing newline.
+pub fn sheet_bytes(sheet: &CameraSheet) -> Result<Vec<u8>, Diagnostic> {
+    let value = serde_json::to_value(sheet)
+        .map_err(|e| Diagnostic::error(DW_INPUT, format!("serialize {CAMERAS_FILE}: {e}")))?;
+    let mut bytes = serde_json::to_vec_pretty(&value)
+        .map_err(|e| Diagnostic::error(DW_INPUT, format!("serialize {CAMERAS_FILE}: {e}")))?;
+    bytes.push(b'\n');
+    Ok(bytes)
+}
+
+/// The lowest world Y a block can occupy on the pinned overworld.
+pub const WORLD_MIN_Y: f64 = -64.0;
+/// One above the highest world Y a block can occupy on the pinned overworld.
+pub const WORLD_MAX_Y: f64 = 320.0;
+
+/// Why a showcase camera does not photograph the scene.
+#[derive(Debug, Clone, PartialEq)]
+pub enum ShowcaseRefusal {
+    /// The record itself is refused (`DW0721`).
+    Record(Diagnostic),
+    /// A camera's eye cell holds a block, or its frame holds none of the loaded
+    /// world (`DW0724`).
+    Camera(String),
+}
+
+/// **Every showcase camera photographs the scene** — the build's proof over
+/// `design/cameras.json`, asked of the final assembled world and of the plan
+/// the scenes are emitted from. Returns how many cameras it examined.
+///
+/// Two shapes of one rule:
+///
+/// 1. **The eye is not inside a block**: `occupied(cell)` of the lens's own cell
+///    is false. A camera is never moved to make this hold — a hand camera is
+///    where the person stood, an estimate is where the agent put it — so a
+///    violation is a refusal naming the row.
+/// 2. **The frame holds the loaded world**: the lens lies within the world's
+///    build height, and the ray along its view meets the box the scene's chunk
+///    list is cut from ([`scene::loaded_extent`], widened to whole blocks). A
+///    camera looking away from everything the scene loads renders an empty sky
+///    at exit 0.
+///
+/// A record for another campaign is refused as `delvec cameras` refuses it.
+pub(crate) fn prove_showcase(
+    record: &[u8],
+    plan: &RenderPlan,
+    occupied: impl Fn([i32; 3]) -> bool,
+) -> Result<usize, ShowcaseRefusal> {
+    let sheet = parse_sheet(record).map_err(ShowcaseRefusal::Record)?;
+    selected(&plan.campaign_id, &sheet, &[], None).map_err(ShowcaseRefusal::Record)?;
+    let (lmin, lmax) = scene::loaded_extent(&plan.layout_aabb, plan.horizon);
+    let lo = [f64::from(lmin[0]), f64::from(lmin[1]), f64::from(lmin[2])];
+    let hi = [
+        f64::from(lmax[0]) + 1.0,
+        f64::from(lmax[1]) + 1.0,
+        f64::from(lmax[2]) + 1.0,
+    ];
+    for cam in &sheet.cameras {
+        let who = match cam.source {
+            Source::Hand => format!("showcase camera `{}` (placed by hand)", cam.name),
+            Source::Estimated => format!("showcase camera `{}` (estimated)", cam.name),
+        };
+        let remedy = match cam.source {
+            Source::Hand => {
+                "The geometry is what the picture is of, so it is never moved: stand somewhere \
+                 else and fire `/trigger dw.cam` again, then write the row with `delvec \
+                 place-camera`"
+            }
+            Source::Estimated => {
+                "The geometry is what the picture is of, so it is never moved: move the camera \
+                 (`delvec cameras --preview` draws it and names the block beside the lens)"
+            }
+        };
+        let cell = [
+            cam.pos[0].floor() as i32,
+            cam.pos[1].floor() as i32,
+            cam.pos[2].floor() as i32,
+        ];
+        if occupied(cell) {
+            return Err(ShowcaseRefusal::Camera(format!(
+                "{CAMERAS_FILE}: {who}: the eye cell {cell:?} is occupied (a solid block or water) \
+                 in the assembled world, so the frame would render the inside of a block. {remedy}"
+            )));
+        }
+        if !(WORLD_MIN_Y..WORLD_MAX_Y).contains(&cam.pos[1]) {
+            return Err(ShowcaseRefusal::Camera(format!(
+                "{CAMERAS_FILE}: {who}: the lens at y {} is outside the world's build height \
+                 {WORLD_MIN_Y}..{WORLD_MAX_Y}. {remedy}",
+                cam.pos[1]
+            )));
+        }
+        let (y, p) = (cam.yaw.to_radians(), cam.pitch.to_radians());
+        let dir = [-y.sin() * p.cos(), -p.sin(), y.cos() * p.cos()];
+        if !ray_meets_box(cam.pos, dir, lo, hi) {
+            return Err(ShowcaseRefusal::Camera(format!(
+                "{CAMERAS_FILE}: {who}: looking along yaw {} pitch {} from {:?}, the view meets \
+                 nothing the scene loads — the framed extent is {lmin:?}..{lmax:?} — so the frame \
+                 would be empty sky. {remedy}",
+                cam.yaw, cam.pitch, cam.pos
+            )));
+        }
+    }
+    Ok(sheet.cameras.len())
+}
+
+/// Does the ray from `origin` along `dir` (t ≥ 0) meet the box `lo..hi`?
+fn ray_meets_box(origin: [f64; 3], dir: [f64; 3], lo: [f64; 3], hi: [f64; 3]) -> bool {
+    let (mut t0, mut t1) = (0.0f64, f64::INFINITY);
+    for a in 0..3 {
+        if dir[a].abs() < 1e-12 {
+            if origin[a] < lo[a] || origin[a] > hi[a] {
+                return false;
+            }
+            continue;
+        }
+        let (mut near, mut far) = ((lo[a] - origin[a]) / dir[a], (hi[a] - origin[a]) / dir[a]);
+        if near > far {
+            std::mem::swap(&mut near, &mut far);
+        }
+        t0 = t0.max(near);
+        t1 = t1.min(far);
+        if t0 > t1 {
+            return false;
+        }
+    }
+    true
+}
+
 /// The candidates file: the record format, holding every emitted camera.
 pub fn candidates_bytes(campaign_id: &str, cameras: &[Camera]) -> Result<Vec<u8>, Diagnostic> {
     let sheet = CameraSheet {
@@ -694,6 +1024,7 @@ mod tests {
             name: name.to_string(),
             pitch: 10.0,
             pos: [10.5, 70.0, -4.25],
+            source: Source::Estimated,
             spp: 300,
             width: 1600,
             yaw: 30.0,
@@ -889,7 +1220,7 @@ mod tests {
     fn the_record_refuses_what_is_not_a_camera() {
         let ok = serde_json::to_value(sheet("c", vec![cam("a")])).unwrap();
         assert!(parse_sheet(ok.to_string().as_bytes()).is_ok());
-        let edits: [(&str, serde_json::Value); 11] = [
+        let edits: [(&str, serde_json::Value); 12] = [
             ("/cameras/0/exposure", 0.0.into()),
             ("/cameras/0/name", "Hero".into()),
             ("/cameras/0/answers", "".into()),
@@ -900,6 +1231,7 @@ mod tests {
             ("/cameras/0/spp", 0.into()),
             ("/cameras/0/pos", serde_json::json!([1.0, 2.0])),
             ("/cameras/0/lens", 35.into()),
+            ("/cameras/0/source", "guessed".into()),
             ("/cameras", serde_json::json!([])),
         ];
         for (path, value) in edits {
@@ -1042,6 +1374,186 @@ mod tests {
         )
         .unwrap_err();
         assert_eq!(err.code, DW_INPUT);
+    }
+
+    fn hand(pos: [f64; 3]) -> Placement {
+        Placement::Hand {
+            pos,
+            yaw: -45.75,
+            pitch: 12.1,
+            fov: 70.0,
+        }
+    }
+
+    /// **A hand camera is final.** An estimate over a `hand` row is refused
+    /// naming the row; once the row is deleted the same write succeeds; a new
+    /// hand pose replaces a hand row and keeps its frame and exposure.
+    #[test]
+    fn an_estimate_is_never_written_over_a_hand_camera() {
+        let (sheet, placed) = place(
+            None,
+            "isle",
+            "hero",
+            Some("concept/quay"),
+            hand([1.5, 70.62, -3.0]),
+        )
+        .unwrap();
+        assert_eq!(placed, Placed::Added);
+        let row = &sheet.cameras[0];
+        assert_eq!(row.source, Source::Hand);
+        assert_eq!(
+            (row.pos, row.yaw, row.pitch, row.fov),
+            ([1.5, 70.62, -3.0], -45.75, 12.1, 70.0)
+        );
+        assert_eq!(
+            (row.width, row.height, row.spp, row.exposure),
+            (1600, 900, 300, 1.0)
+        );
+
+        let estimate = Placement::Estimate(cam("hero.yaw+8"));
+        let err = place(Some(sheet.clone()), "isle", "hero", None, estimate.clone()).unwrap_err();
+        assert_eq!(err.code, DW_INPUT);
+        assert!(err.message.contains("`hero` was placed by hand"), "{err:?}");
+
+        // She re-fires `dw.cam`: the hand pose replaces the hand pose, and the
+        // exposure the agent set for the room stays.
+        let mut exposed = sheet.clone();
+        exposed.cameras[0].exposure = 8.0;
+        let (again, placed) =
+            place(Some(exposed), "isle", "hero", None, hand([2.5, 71.0, -3.0])).unwrap();
+        assert_eq!(placed, Placed::Replaced);
+        assert_eq!(again.cameras[0].pos, [2.5, 71.0, -3.0]);
+        assert_eq!(again.cameras[0].exposure, 8.0);
+
+        // Deleted, the name is free, and the same estimate is written.
+        assert_eq!(delete(sheet.clone(), "hero").unwrap(), None);
+        let mut two = sheet.clone();
+        two.cameras.push(cam("other"));
+        let left = delete(two, "hero").unwrap().unwrap();
+        let (written, placed) =
+            place(Some(left), "isle", "hero", Some("concept/quay"), estimate).unwrap();
+        assert_eq!(placed, Placed::Added);
+        let row = written.cameras.iter().find(|c| c.name == "hero").unwrap();
+        assert_eq!(row.source, Source::Estimated);
+        assert_eq!(row.yaw, cam("x").yaw);
+        assert!(delete(written, "nobody").is_err());
+    }
+
+    #[test]
+    fn a_placement_answers_one_picture_in_one_world() {
+        let err = place(None, "isle", "hero", None, hand([0.5, 70.0, 0.5])).unwrap_err();
+        assert!(err.message.contains("--answers"), "{err:?}");
+        let (sheet, _) = place(
+            None,
+            "isle",
+            "hero",
+            Some("concept/quay"),
+            hand([0.5, 70.0, 0.5]),
+        )
+        .unwrap();
+        let err = place(
+            Some(sheet.clone()),
+            "isle",
+            "hero",
+            Some("concept/hall"),
+            hand([0.5, 70.0, 0.5]),
+        )
+        .unwrap_err();
+        assert!(err.message.contains("new row"), "{err:?}");
+        let err = place(
+            Some(sheet.clone()),
+            "mini",
+            "hero",
+            None,
+            hand([0.5, 70.0, 0.5]),
+        )
+        .unwrap_err();
+        assert!(err.message.contains("`isle`"), "{err:?}");
+        let bad = Placement::Hand {
+            pos: [0.5, 70.0, 0.5],
+            yaw: 0.0,
+            pitch: 0.0,
+            fov: 0.0,
+        };
+        assert!(place(Some(sheet), "isle", "hero", None, bad).is_err());
+    }
+
+    /// The record a tool writes reads back as itself, in canonical key order.
+    #[test]
+    fn a_written_record_is_canonical_and_reads_back() {
+        let (sheet, _) = place(
+            None,
+            "isle",
+            "hero",
+            Some("concept/quay"),
+            hand([0.5, 70.0, 0.5]),
+        )
+        .unwrap();
+        let bytes = sheet_bytes(&sheet).unwrap();
+        let text = String::from_utf8(bytes.clone()).unwrap();
+        assert!(text.find("\"cameras\"").unwrap() < text.find("\"campaign_id\"").unwrap());
+        assert!(text.contains("\"source\": \"hand\""));
+        assert_eq!(parse_sheet(&bytes).unwrap(), sheet);
+    }
+
+    /// Both shapes of the showcase proof, on the ocean fixture plan.
+    #[test]
+    fn a_showcase_camera_photographs_the_scene() {
+        let plan = scene::parse_plan(OCEAN).unwrap();
+        let (lmin, lmax) = scene::loaded_extent(&plan.layout_aabb, plan.horizon);
+        let mid = [
+            f64::from(lmin[0] + lmax[0]) / 2.0,
+            f64::from(lmax[1]) + 20.0,
+            f64::from(lmin[2] + lmax[2]) / 2.0,
+        ];
+        let record = |c: Camera| serde_json::to_vec(&sheet("isle", vec![c])).unwrap();
+        let nothing = |_: [i32; 3]| false;
+        // Above the middle of the layout, looking down: clear eye, full frame.
+        let mut down = cam("down");
+        down.pos = mid;
+        down.pitch = 60.0;
+        assert_eq!(prove_showcase(&record(down.clone()), &plan, nothing), Ok(1));
+        // The same camera with a block at its eye.
+        let cell = [
+            mid[0].floor() as i32,
+            mid[1].floor() as i32,
+            mid[2].floor() as i32,
+        ];
+        for source in [Source::Hand, Source::Estimated] {
+            let mut c = down.clone();
+            c.source = source;
+            let Err(ShowcaseRefusal::Camera(why)) =
+                prove_showcase(&record(c), &plan, |x| x == cell)
+            else {
+                panic!("{source:?}: an occupied eye is refused");
+            };
+            assert!(why.contains("`down`") && why.contains("occupied"), "{why}");
+            assert_eq!(why.contains("dw.cam"), source == Source::Hand, "{why}");
+        }
+        // Looking straight up from above the layout: empty sky.
+        let mut up = down.clone();
+        up.pitch = -60.0;
+        let Err(ShowcaseRefusal::Camera(why)) = prove_showcase(&record(up), &plan, nothing) else {
+            panic!("a frame of empty sky is refused");
+        };
+        assert!(why.contains("framed extent"), "{why}");
+        // Above the build height.
+        let mut high = down;
+        high.pos[1] = 400.0;
+        assert!(matches!(
+            prove_showcase(&record(high), &plan, nothing),
+            Err(ShowcaseRefusal::Camera(_))
+        ));
+        // A record for another world, and a record that is not one.
+        let other = serde_json::to_vec(&sheet("mini", vec![cam("a")])).unwrap();
+        assert!(matches!(
+            prove_showcase(&other, &plan, nothing),
+            Err(ShowcaseRefusal::Record(_))
+        ));
+        assert!(matches!(
+            prove_showcase(b"{}", &plan, nothing),
+            Err(ShowcaseRefusal::Record(_))
+        ));
     }
 
     #[test]

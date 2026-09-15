@@ -777,6 +777,73 @@ def test_a_zero_binding_does_not_swallow_the_findings(mod, capsys, monkeypatch):
     assert "a binding of zero on: thing(s) nothing bound to" in err
 
 
+# ------------------------------------------ rule 20, the names a playtest uses --
+
+
+def test_a_trigger_the_overlay_does_not_register_reds(mod, tree, engine):
+    edit(
+        tree / "references" / "tools-by-symptom.md",
+        "`/trigger dw.note`",
+        "`/trigger dw.notes`",
+    )
+    assert has(run(mod, engine), "names trigger `dw.notes`")
+
+
+def test_a_moved_layout_manifest_reds(mod, tree, engine):
+    edit(
+        tree / "references" / "tools-by-symptom.md",
+        "<out>/creator-datapack/layout.json",
+        "<out>/creator-datapack/manifest.json",
+    )
+    assert has(run(mod, engine), "names path `creator-datapack/manifest.json`")
+
+
+def test_a_profile_compose_does_not_declare_reds(mod, tree, engine):
+    edit(
+        tree / "references" / "walk.md",
+        "--profile play up",
+        "--profile plays up",
+    )
+    assert has(run(mod, engine), "names profile `plays`")
+
+
+def test_a_log_read_from_a_container_nobody_names_reds(mod, tree, engine):
+    edit(
+        tree / "references" / "tools-by-symptom.md",
+        "then `delvec harvest` → `playtest-report.json`",
+        "then `docker logs dw-playtests > server.log` and `delvec harvest` → `playtest-report.json`",
+    )
+    assert has(run(mod, engine), "names container `dw-playtests`")
+
+
+def test_the_overlay_triggers_are_read_the_way_the_emitter_resolves_them(mod):
+    source = """
+const NOTE: &str = "dw.note";
+const CALIBRATION: [&str; 2] = ["dw.mark", "dw.done"];
+const CAM: &str = "dw.cam";
+const FREE: &str = "dw.free";
+const SCRATCH: &str = "dw.rh";
+fn init() {
+    let a = vec![format!("scoreboard objectives add {NOTE} trigger")];
+    let b: Vec<String> = CALIBRATION.iter().map(|t| format!("scoreboard objectives add {t} trigger")).collect();
+    let c: Vec<String> = [CAM, FREE].iter().map(|t| format!("scoreboard objectives add {t} trigger")).collect();
+    let d = format!("scoreboard objectives add dw.seen trigger");
+    let e = format!("scoreboard objectives add {SCRATCH} dummy");
+    // scoreboard objectives add dw.commented trigger
+}
+"""
+    assert mod.overlay_triggers(source) == {
+        "dw.note",
+        "dw.mark",
+        "dw.done",
+        "dw.cam",
+        "dw.free",
+        "dw.seen",
+    }
+    with pytest.raises(mod.Unusable):
+        mod.overlay_triggers('let x = format!("scoreboard objectives add {name} trigger");')
+
+
 def test_the_cli_exits_zero_on_the_committed_tree():
     proc = subprocess.run(
         ["python3", str(GATE)], capture_output=True, text=True, cwd=str(REPO)

@@ -31,6 +31,7 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
+pub mod camera;
 pub mod cli;
 pub mod rehearsal;
 
@@ -56,6 +57,20 @@ pub struct Layout {
     /// Objectives, carrying the `objective → quest` binding.
     #[serde(default)]
     pub objectives: Vec<ObjectiveEntry>,
+    /// The rehearsal shot roster the overlay was built with (spec-0019).
+    #[serde(default)]
+    pub shots: Vec<ShotEntry>,
+}
+
+/// One rehearsable shot's layout entry.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct ShotEntry {
+    /// 1-based shot id.
+    pub shot: u32,
+    /// JSON pointer to the `cutscene` effect.
+    pub pointer: String,
+    /// The shot's 0-based index within that effect.
+    pub shot_index: u32,
 }
 
 /// One area's layout entry.
@@ -261,13 +276,20 @@ fn parse_chat(msg: &str) -> Option<String> {
 
 /// Parse a whole server log into stamps and creator chats.
 fn scan(log: &str) -> (Vec<Stamp>, Vec<Chat>) {
-    let mut stamps = Vec::new();
+    let mut stamps: Vec<Stamp> = Vec::new();
     let mut chats = Vec::new();
     for line in log.lines() {
         let (secs, Some(msg)) = split_log_line(line) else {
             continue;
         };
-        if msg.contains("[DelveNote] ") {
+        if let Some(at) = msg.find("[DelveNoteQuests] ") {
+            // A continuation of the stamp before it: the objectives that did not
+            // fit its line (a chat message holds 256 characters).
+            if let Some(last) = stamps.last_mut() {
+                let more = parse_quests(msg[at + "[DelveNoteQuests] ".len()..].trim());
+                last.quests.extend(more);
+            }
+        } else if msg.contains("[DelveNote] ") {
             let at = timestamp_string(line);
             if let Some(stamp) = parse_stamp(at, secs, msg) {
                 stamps.push(stamp);
@@ -545,6 +567,22 @@ mod tests {
     // note-bot flow, 2026-07-30): offline chat is `[Not Secure] <name> …` and the
     // `say`-emitted stamp is `[Not Secure] [name] [DelveNote] …`. Locks in the
     // real-world prefix handling.
+    /// A stamp whose objectives did not fit one chat message continues on the
+    /// `[DelveNoteQuests]` lines after it, and the note carries all of them.
+    #[test]
+    fn a_stamp_continued_on_later_lines_carries_every_objective() {
+        let log = "\
+[09:00:04] [Server thread/INFO]: [Not Secure] [c] [DelveNote] pos=[1,2,3] area=area/keep nearest_npc=none quests=obj/talk:1
+[09:00:04] [Server thread/INFO]: [Not Secure] [c] [DelveNoteQuests] obj/exit:1
+[09:00:05] [Server thread/INFO]: <c> both done
+";
+        let r = harvest(log, &layout());
+        assert_eq!(r.notes.len(), 1);
+        let done: Vec<String> = r.notes[0].quest_state.values().flatten().cloned().collect();
+        assert_eq!(done, vec!["obj/talk".to_string(), "obj/exit".to_string()]);
+        assert_eq!(r.notes[0].text, "both done");
+    }
+
     #[test]
     fn parses_real_offline_server_log_lines() {
         let log = "\

@@ -1,0 +1,13 @@
+{
+  "code": "DW0898",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "add",
+      "path": "/content/actors/6/equipment/chest",
+      "value": "minecraft:iron_chestplate"
+    }
+  ],
+  "units": [],
+  "why": "The destrier at the mouth of the annex wears its iron horse armour in `body` and its saddle in `saddle`, which is where a horse is dressed. This edit also puts an iron chestplate in its `chest`. The pinned server stores the piece — every living entity stores all eight slots, and the summon's `equipment` compound is read whole — and the pinned client never draws it, because the horse's renderer carries a body layer and a saddle layer and no humanoid armour layer. The build would exit with a chestplate on a horse that nobody can see. It declares no unit: `MobEquipment.chest` is bound by the sergeant in the primary, and what the engine refuses is a piece in a slot this body does not draw, which it names by listing the two slots a horse does draw. Taking the edit away leaves the horse dressed in the two slots it shows, and the primary's equipment binding line counts it."
+}

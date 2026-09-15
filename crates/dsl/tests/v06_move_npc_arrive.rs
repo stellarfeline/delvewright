@@ -42,7 +42,7 @@ static QUESTS_ARRIVE: LazyLock<String> = LazyLock::new(|| {
         "on_objective_complete": {
           "obj/talk": [
             { "type": "open-gate", "anchor": "anchor/door" },
-            { "type": "move-npc", "npc": "npc/keeper", "to_anchor": "anchor/exit",
+            { "type": "move-npc", "npc": "npc/keeper", "to": { "anchor": "anchor/exit" },
               "on_arrive": [
                 { "type": "set-flag", "flag": "flag/arrived" },
                 { "type": "narrate", "text": "The keeper beckons from the doorway." }
@@ -97,8 +97,8 @@ fn sequence_via_move_npc_on_arrive_inside_sequence_is_dw0329() {
     // Wrap the move-npc itself in a sequence step: outer sequence -> move-npc
     // .on_arrive -> inner sequence.
     let quests = quests.replace(
-        r#"{ "type": "move-npc", "npc": "npc/keeper", "to_anchor": "anchor/exit","#,
-        r#"{ "type": "sequence", "steps": [ { "at_ticks": 0, "effects": [ { "type": "move-npc", "npc": "npc/keeper", "to_anchor": "anchor/exit","#,
+        r#"{ "type": "move-npc", "npc": "npc/keeper", "to": { "anchor": "anchor/exit" },"#,
+        r#"{ "type": "sequence", "steps": [ { "at_ticks": 0, "effects": [ { "type": "move-npc", "npc": "npc/keeper", "to": { "anchor": "anchor/exit" },"#,
     );
     let quests = quests.replace(
         r#"{ "type": "narrate", "text": "The keeper beckons from the doorway." }

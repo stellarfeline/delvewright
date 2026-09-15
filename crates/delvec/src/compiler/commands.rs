@@ -50,6 +50,19 @@
 //!   the chunks something else happens to load, and the delve never finishes
 //!   setting itself up. See [`forceload_area_error`] for the refusal and
 //!   [`forceload_add_lines`] for the emission side that cannot produce one.
+//!
+//! ## One parser bound the tree does carry by name: a chat message's length
+//!
+//! A `minecraft:message` argument (`say`, `me`, `msg`, `teammsg`) is parsed by
+//! `MessageArgument`, which refuses a message over [`MESSAGE_MAX_CHARS`]
+//! characters — and a parse failure drops the WHOLE function at load: `Failed to
+//! load function …: Chat message was too long (707 > maximum 256 characters)`.
+//! The tree names the parser and not the bound, so the walk applies it: a
+//! message argument whose text is longer does not match, and the line is refused
+//! naming the length. A macro line is judged on its literal text with every
+//! `$(name)` counted as nothing — a floor, since the substituted values only add
+//! to it; a line over the floor fails on every server, and a line under it can
+//! still grow past the bound at run time.
 
 use std::collections::BTreeMap;
 
@@ -125,8 +138,16 @@ impl CommandTree {
                 reason,
             });
         }
-        if self.matches(&self.root, &tokens, 0) {
+        let mut too_long = None;
+        if self.matches(&self.root, &tokens, 0, &mut too_long) {
             Ok(())
+        } else if let Some(chars) = too_long {
+            Err(format!(
+                "a chat message of {chars} characters: the 1.21.11 message argument takes at \
+                 most {MESSAGE_MAX_CHARS}, and the server refuses to load the whole function \
+                 (\"Chat message was too long ({chars} > maximum {MESSAGE_MAX_CHARS} \
+                 characters)\"). Stamp one message per entry"
+            ))
         } else {
             Err(format!(
                 "does not match the 1.21.11 command tree (root `{}`)",
@@ -150,7 +171,13 @@ impl CommandTree {
     /// literal first, then each argument branch (order-independent), succeeding
     /// on any complete parse. Handles ambiguity like `teleport @s 5 65 2`
     /// (targets+location) vs `teleport <destination>`.
-    fn matches(&self, node: &Node, tokens: &[String], i: usize) -> bool {
+    fn matches(
+        &self,
+        node: &Node,
+        tokens: &[String],
+        i: usize,
+        too_long: &mut Option<usize>,
+    ) -> bool {
         if i >= tokens.len() {
             return node.executable;
         }
@@ -159,7 +186,7 @@ impl CommandTree {
         // 1) exact literal.
         if let Some(child) = kids.get(tok)
             && child.node_type == "literal"
-            && self.matches(child, tokens, i + 1)
+            && self.matches(child, tokens, i + 1, too_long)
         {
             return true;
         }
@@ -178,13 +205,22 @@ impl CommandTree {
             }
             match arity(child) {
                 Arity::Greedy => {
+                    // A chat message longer than the parser takes is a parse
+                    // failure (see the module docs).
+                    if child.parser.as_deref() == Some("minecraft:message") {
+                        let chars = message_chars(&tokens[i..]);
+                        if chars > MESSAGE_MAX_CHARS {
+                            *too_long = Some(chars);
+                            continue;
+                        }
+                    }
                     // Consumes the rest of the line.
                     if child.executable {
                         return true;
                     }
                 }
                 Arity::Fixed(n) => {
-                    if i + n <= tokens.len() && self.matches(child, tokens, i + n) {
+                    if i + n <= tokens.len() && self.matches(child, tokens, i + n, too_long) {
                         return true;
                     }
                 }
@@ -345,6 +381,32 @@ fn snbt_range_error(s: &str) -> Option<String> {
 /// judged by the same handler and refuses identically; `forceload remove <x>
 /// <z>` names one chunk and can never reach it.
 pub const FORCELOAD_MAX_CHUNKS: i64 = 256;
+
+/// The longest text the 1.21.11 `minecraft:message` argument parses, in UTF-16
+/// code units (Java's `String.length()`), from its own refusal: "Chat message was
+/// too long (707 > maximum 256 characters)".
+pub const MESSAGE_MAX_CHARS: usize = 256;
+
+/// A message argument's length as the server counts it: the tokens rejoined by
+/// the single spaces the emitter writes, in UTF-16 code units, with every macro
+/// placeholder `$(name)` counted as nothing.
+fn message_chars(tokens: &[String]) -> usize {
+    let text = tokens.join(" ");
+    let mut literal = String::with_capacity(text.len());
+    let mut rest = text.as_str();
+    while let Some(start) = rest.find("$(") {
+        literal.push_str(&rest[..start]);
+        match rest[start..].find(')') {
+            Some(end) => rest = &rest[start + end + 1..],
+            None => {
+                rest = &rest[start..];
+                break;
+            }
+        }
+    }
+    literal.push_str(rest);
+    literal.encode_utf16().count()
+}
 
 /// The longest side a split tile may have. 16 × 16 is exactly
 /// [`FORCELOAD_MAX_CHUNKS`], so a tile capped on both axes is always inside the
@@ -680,6 +742,34 @@ mod tests {
         ] {
             assert!(t.validate_line(line).is_ok(), "should accept: {line}");
         }
+    }
+
+    /// A chat message over the parser's bound is refused, naming its length; one
+    /// at the bound, and a macro line whose placeholders would take it past the
+    /// bound only once substituted, are accepted.
+    #[test]
+    fn a_chat_message_over_256_characters_is_refused() {
+        let tree = CommandTree::v1_21_11();
+        let at = format!("say {}", "x".repeat(MESSAGE_MAX_CHARS));
+        assert!(tree.validate_line(&at).is_ok());
+        let over = format!("say {}", "x".repeat(MESSAGE_MAX_CHARS + 1));
+        let err = tree.validate_line(&over).unwrap_err();
+        assert!(err.reason.contains("257 characters"), "{err:?}");
+        let nested = format!("execute as @a run say {}", "y ".repeat(200));
+        assert!(tree.validate_line(&nested).is_err());
+        let wide = format!("say {}", "é".repeat(MESSAGE_MAX_CHARS));
+        assert!(
+            tree.validate_line(&wide).is_ok(),
+            "counted in characters, not bytes"
+        );
+        let mac = format!("$say [Stamp] {}", "v=$(value) ".repeat(40));
+        assert!(
+            tree.validate_line(&mac).is_ok(),
+            "{}",
+            message_chars(std::slice::from_ref(&mac))
+        );
+        let mac_over = format!("$say {} $(tail)", "z".repeat(MESSAGE_MAX_CHARS + 1));
+        assert!(tree.validate_line(&mac_over).is_err());
     }
 
     #[test]

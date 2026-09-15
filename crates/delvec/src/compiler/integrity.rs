@@ -41,7 +41,11 @@
 //!   — a shipped call into `packtest-datapack/` or `creator-datapack/` resolves
 //!   in CI and dangles in the player's world, which is the same bug wearing a
 //!   different hat. The two overlays load *beside* the shipped pack, so their
-//!   own functions may call either their own tier or the shipped one.
+//!   own functions may call either their own tier or the shipped one. The
+//!   PackTest server also loads the creator overlay (its suite proves the hand
+//!   camera, spec-0069), so a PackTest body may call a creator function; a
+//!   creator function never calls into the PackTest suite, which a playtest
+//!   server does not load.
 
 use crate::compiler::failure::Failure;
 use delvewright_dsl::{DwCode, ExitTier};
@@ -85,7 +89,9 @@ impl Tier {
 
     /// Whether a caller in `self` may resolve a call against a callee in `other`.
     fn may_call(self, other: Tier) -> bool {
-        self == other || other == Tier::Shipped
+        self == other
+            || other == Tier::Shipped
+            || (self == Tier::PackTest && other == Tier::Creator)
     }
 }
 
@@ -315,6 +321,35 @@ mod tests {
             ),
         ]);
         let e = check_functions("isle", &m).expect_err("a test body is not a function");
+        assert_eq!(e.code, "DW0497");
+    }
+
+    /// The PackTest server loads the creator overlay, and a playtest server does
+    /// not load the suite: the call resolves one way only.
+    #[test]
+    fn the_suite_may_call_the_overlay_and_not_the_other_way() {
+        let m = tree(&[
+            (
+                "packtest-datapack/data/isle/test/camera.mcfunction",
+                "execute at @s run function isle:creator/camera/cam\n",
+            ),
+            (
+                "creator-datapack/data/isle/function/creator/camera/cam.mcfunction",
+                "say stamp\n",
+            ),
+        ]);
+        assert!(check_functions("isle", &m).is_ok());
+        let m = tree(&[
+            (
+                "creator-datapack/data/isle/function/creator/tick.mcfunction",
+                "function isle:pt_drive\n",
+            ),
+            (
+                "packtest-datapack/data/isle/function/pt_drive.mcfunction",
+                "say drive\n",
+            ),
+        ]);
+        let e = check_functions("isle", &m).expect_err("the overlay cannot reach the suite");
         assert_eq!(e.code, "DW0497");
     }
 

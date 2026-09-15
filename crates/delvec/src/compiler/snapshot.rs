@@ -979,7 +979,10 @@ pub fn collect_targets(plan: &Plan) -> Vec<Target> {
     // NPC posts: where a mannequin stands.
     for npc in &c.npcs.content.npcs {
         let area = plan.npc_area(npc.id.as_str()).unwrap_or("").to_string();
-        if let Some(pos) = plan.point(&area, npc.anchor.as_str()) {
+        if let Some(pos) = plan
+            .point(&area, npc.anchor.as_str())
+            .map(|p| delvewright_dsl::offset_cell(p, npc.offset))
+        {
             out.push(Target::point(
                 npc.id.as_str().to_string(),
                 "npc-post",
@@ -996,7 +999,7 @@ pub fn collect_targets(plan: &Plan) -> Vec<Target> {
                 actor.id.as_str().to_string(),
                 "actor-post",
                 area,
-                pos,
+                delvewright_dsl::offset_cell(pos, actor.offset),
             ));
         }
     }

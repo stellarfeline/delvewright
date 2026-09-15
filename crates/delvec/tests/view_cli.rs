@@ -369,7 +369,7 @@ fn camera_campaign(dir: &Path, cameras: serde_json::Value) {
 fn a_camera(name: &str, answers: &str) -> serde_json::Value {
     serde_json::json!({
         "answers": answers, "exposure": 2.0, "fov": 55.0, "height": 450, "name": name,
-        "pitch": 12.0, "pos": [9.5, 72.0, -6.0], "spp": 64, "width": 800, "yaw": 20.0
+        "pitch": 12.0, "pos": [9.5, 72.0, -6.0], "source": "estimated", "spp": 64, "width": 800, "yaw": 20.0
     })
 }
 

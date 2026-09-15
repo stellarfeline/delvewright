@@ -295,8 +295,9 @@ EULA=TRUE CREATOR_NAME=<your-mc-name> \
 ```
 
 Join at `localhost:25565` (`owner-play.yaml` is what publishes it). While playing, aim at something wrong and run
-`/trigger dw.note` — the overlay stamps one machine-readable line into the server
-log (`[DelveNote] pos=[x,y,z] area=… quests=… nearest_npc=…`) — then type your note
+`/trigger dw.note` — the overlay stamps a machine-readable line into the server
+log (`[DelveNote] pos=[x,y,z] area=… nearest_npc=… quests=…`, followed by
+`[DelveNoteQuests] …` lines for the objectives one chat message cannot hold) — then type your note
 as a normal chat message. `CREATOR_NAME` ops you so you can `/tp` and inspect; leave
 it unset to skip opping (the note trigger works either way). It must be a
 **resolvable** Minecraft name — itzg looks the op up online, so a fake offline name
@@ -375,10 +376,12 @@ runs this script; wiring it into `ci.yml`'s `tier 2` job as a step (never a new 
   (`delvec scene` + `index`) for visual review, including the first-person
   player-POV shots. It refuses a tree with no `world/`, naming `world-save.sh`.
   Its engine comes from `tools/lib/delvec-bin.sh` — a `delvec` on `PATH` only
-  when it is this engine — and it ends by naming the pinned Chunky core
-  (`versions.toml [render].chunky_core`) beside every core actually installed,
-  because `--update snapshot` cannot install the pin (`docs/reference/tools.md`
-  §4a).
+  when it is this engine — and it ends by saying whether the Chunky home holds
+  the pinned core (`versions.toml [render]`), by the rule `chunky.sh` refuses by.
+- **Chunky**: `validation/chunky-install.sh --java-home <JDK 17>` builds the
+  pinned core from source and installs it; `validation/chunky.sh <Chunky args>`
+  renders with it and refuses a home that does not hold it
+  (`docs/reference/tools.md` §4a).
 
 ## Harness
 

@@ -3341,10 +3341,10 @@ fn v06_checks(
                     ),
                 ));
             }
-            if let Verb::MoveActor { to_anchor, .. } = &e.verb
+            if let Verb::MoveActor { to, .. } = &e.verb
                 && let Some(f) = station_kind_diag(
                     &providers,
-                    to_anchor.as_str(),
+                    to.anchor.as_str(),
                     crate::layout::StationKind::Point,
                     "a `move-actor` destination",
                     "quests",
@@ -3352,16 +3352,17 @@ fn v06_checks(
                 )
             {
                 d.push(f);
-            } else if let Verb::MoveActor { to_anchor, .. } = &e.verb
-                && !providers.resolvable(to_anchor.as_str())
+            } else if let Verb::MoveActor { to, .. } = &e.verb
+                && !providers.resolvable(to.anchor.as_str())
             {
                 d.push(Diagnostic::error(
                     codes::ANCHOR_UNRESOLVED,
                     "quests",
                     path.clone(),
                     format!(
-                        "move-actor destination anchor `{to_anchor}` is not provided by any \
+                        "move-actor destination anchor `{}` is not provided by any \
                          area's prefab — {}",
+                        to.anchor,
                         providers.anchor_remedy("use an anchor a prefab exposes"),
                     ),
                 ));
@@ -3400,6 +3401,10 @@ fn v06_checks(
             d,
         );
     }
+
+    // spec-0067: every piece is put where the pinned game shows it on the body
+    // that wears it (`DW0898`).
+    crate::equipment::fit_checks(c, items, d);
 
     // Declared drops — the subset an elite/boss leaves behind.
     check_drops(c, quests, items, d);
@@ -4753,7 +4758,12 @@ fn v04_checks(
         }
         if matches!(t.on, TriggerOn::Use)
             && let Some(at) = t.at_anchor()
-            && let Some(npc) = c.npcs.content.npcs.iter().find(|n| n.anchor.as_str() == at)
+            && let Some(npc) = c
+                .npcs
+                .content
+                .npcs
+                .iter()
+                .find(|n| n.anchor.as_str() == at && n.offset == [0, 0, 0])
         {
             d.push(Diagnostic::error(
                 codes::USE_TRIGGER_ON_NPC,

@@ -296,6 +296,51 @@ not third-party reconstructions.
   **Reproduce it**: `python3 tools/extract-entity-tags.py
   <data/tag/entity_type/data.min.json> crates/dsl/data/entity-tags-1.21.11.json`.
 
+- **`item-equippable-1.21.11.json`** — every item that carries the
+  `minecraft:equippable` default component (84), from `item_components/data.min.json`
+  above, with its declared `slot`, its `asset_id`, its `allowed_entities` (always a
+  list) and its derived **kind** — `armour` (an asset and a `head`/`chest`/`legs`/`feet`
+  slot), `wings` (an asset with a `wings` layer), `animal` (an asset with a `*_body`
+  or `*_saddle` layer) or `item` (no asset) — plus `asset_layers`, every equipment
+  asset's layer types. Counts: slots `body` 44, `head` 16, `chest` 8, `feet` 7,
+  `legs` 7, `saddle` 1, `offhand` 1; 45 with an allowed list; kinds 29 / 1 / 45 / 9;
+  44 assets, 18 layer types, 15 of them a body or saddle layer. Feeds `DW0898`
+  (a piece where the body shows it, spec-0067) through `ItemRegistry::equippable`.
+  The asset half is a second source: **the pinned client's equipment assets**,
+  `misode/mcmeta` tag `1.21.11-assets` @ commit
+  `c5b876288e0df01b5cd5798434b066ab97eff88c`, the 44 files under
+  `assets/minecraft/equipment/`, whose sorted `sha256sum` listing (`<hex>  <name>`
+  per line) hashes to `150b585538e2295db9daee16e3fce4c23ac5bcdddc85358208b8e7adadbf78bb`.
+  **Reproduce it**: `python3 tools/extract-item-equippable.py
+  <item_components/data.min.json> <assets/minecraft/equipment dir>
+  crates/delvec/data/item-equippable-1.21.11.json`. The script pins both digests and
+  every count above, refuses a mismatch by exit status 1, and writes the same bytes
+  on every run.
+
+- **`entity-slots-1.21.11.json`** (in `crates/dsl/data/`) — **the body table**: one
+  row per living entity type of the pinned registry (92 of the 157), each naming the
+  client renderer class registered for it, and per slot the piece kinds its
+  equipment layers draw, the body/saddle layer type, and the state a conditional
+  hand is drawn in. **Authored, not extracted**: no data file the game ships says
+  which entity types carry `HumanoidArmorLayer`, `CustomHeadLayer`, `WingsLayer` or a
+  hand layer — that is client code. It is read from the pinned 1.21.11 client's
+  `net.minecraft.client.renderer.entity` package under Mojang's published mappings
+  (`EntityRenderers` for the registration, each renderer's class chain for its
+  `addLayer` calls; `SharedConstants.WORLD_VERSION` 4671). The copy read is the GitHub
+  mirror `rrrRex1024/minecraft-1-21-11-source` @ `fb136698`, an unlicensed
+  redistribution read for facts and adopted from in nothing (ADR-0013); the
+  reproducible instrument is the pinned client jar under the official mappings. A
+  second reading by script over the same classes' `addLayer` calls agrees on every
+  per-slot count; the one row it cannot reach by class chain is the ender dragon,
+  whose renderer is not a `LivingEntityRenderer` and whose row draws nothing. Held
+  every day by `crates/delvec/tests/equipment_tables.rs` to the entity-type tags
+  (the saddle rows equal `#minecraft:can_equip_saddle`), to the item table (the body
+  rows are the body items' allowed lists plus `minecraft:skeleton_horse`) and to the
+  equipment assets (the 15 body/saddle layer types). Nothing in the tree renders an
+  entity, so visibility itself is confirmed once by eye on the demo level. Re-read
+  from the client when ADR-0009 moves the pin. Feeds `DW0898` and `DW0496`'s
+  prescription.
+
 ### What vanilla data does NOT provide (and what the compiler does about it)
 
 Mojang publishes no per-entity default attributes — mob base `max_health` and
