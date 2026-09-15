@@ -39,43 +39,24 @@
 # scene that resolves from any CWD. The world save itself is server-written and
 # NOT byte-reproducible (see `world-save.sh`); nothing hashes either.
 #
-# ## THE RENDERER IS NAMED, AND SO IS THE ONE THAT IS ACTUALLY INSTALLED
+# ## THE RENDERER IS NAMED, AND WHETHER IT IS INSTALLED IS SAID
 #
 # These scenes are written for ONE Chunky core — `versions.toml [render]
 # chunky_core` — and the camera basis, the water-surface offset and the
 # night-vision emulation were all reverse-engineered against that core's
-# bytecode. The install line every page prints, `java -jar ChunkyLauncher.jar
-# --update snapshot`, installs whatever the snapshot CHANNEL is serving today,
-# which on the third end-to-end drill was four builds newer than the pin. Nothing
-# compared the two, in either direction.
-#
-# The pinned core cannot be asked for by name, and that was established against
-# the launcher rather than recalled (see `docs/reference/tools.md` §4a for the
-# evidence): `--update` takes a release CHANNEL, every channel resolves to
-# `snapshot.json` / `latest.json` which name only the newest build, and
-# `<updateSite>/lib/<name>.jar` ignores the name it is given — asking it for the
-# pinned `…474.g156e2bb.jar` returns the current jar, `content-disposition`
-# naming `…478.g527cb4a.jar`, whose MD5 the launcher's own integrity check would
-# then reject against a version record naming the pin.
-#
-# So this script REPORTS rather than refuses, and it reports at the end where it
-# is read: it names the pin and every core actually installed, and says plainly
-# when the frames will not come off the pinned renderer. A refusal here would be
-# a wall with no remedy behind it — there is no command that installs the pin —
-# and a gate that names an unreachable remedy is worse than a stated fact.
+# bytecode. `validation/chunky-install.sh` installs exactly that core, built from
+# source at the pinned revision, and `validation/chunky.sh` renders with it and
+# refuses by name when the Chunky home does not hold it. This script renders
+# nothing, so it does not refuse: it ends by saying whether the home holds the
+# pin, through the same rule the render step applies (`tools/lib/chunky_core.py`),
+# so a creator reads the answer before the first render rather than at it.
 #
 # WHERE it looks is resolved the way Chunky resolves it — from the JVM's
 # `user.home` and not from the shell's `$HOME`, which are different values on a
 # machine where `$HOME` has been moved. `tools/lib/chunky-home.sh` is that rule
 # and states the measurement; `DELVEWRIGHT_CHUNKY_HOME` names the directory
-# outright for a machine that keeps Chunky elsewhere.
-#
-# One more thing the comparison can say and could not before: the pin being
-# INSTALLED is not the same as the pin being the renderer. The launcher picks its
-# own core and has no flag that names one — measured on the drill machine, where
-# it selected `…478.g527cb4a` with the pinned `…474.g156e2bb` sitting beside it
-# in the same directory. So a lib holding the pin AND something else gets its own
-# verdict rather than "render with it", which is a claim this check cannot keep.
+# outright for a machine that keeps Chunky elsewhere, and `chunky.sh` hands the
+# same directory to Chunky as `-Dchunky.home`.
 #
 # Usage: validation/render-shots.sh <build-dir> [out-dir] [--delvec BIN]
 #   <build-dir>  a `delvec build` output directory (containing render-plan.json)
@@ -91,7 +72,7 @@ delvec_arg=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --delvec) delvec_arg="$2"; shift 2;;
-    -h|--help) sed -n '2,83p' "$0"; exit 0;;
+    -h|--help) sed -n '2,64p' "$0"; exit 0;;
     -*) echo "render-shots: unknown argument \`$1\`" >&2; exit 2;;
     *)
       if [ -z "$build_dir" ]; then build_dir="$1"
@@ -154,9 +135,8 @@ echo "review: hand each shot-index.json entry's (image, expect) pair to the visi
 
 # ---- which renderer will actually read these scenes --------------------------
 # The pin has ONE home and is read from it (tools/lib/versions.py); this script
-# restates no revision. What it adds is the second half of the comparison — the
-# cores the machine actually holds — because until now nothing anywhere put the
-# two numbers in the same sentence.
+# restates no revision, and it judges the Chunky home by the rule the render step
+# itself applies (tools/lib/chunky_core.py) rather than by a second reading.
 chunky_pin="$(python3 "$repo/tools/lib/versions.py" render.chunky_core)" || {
   echo "render-shots: cannot read \`[render].chunky_core\` from versions.toml — the renderer cannot be named" >&2
   exit 1
@@ -164,40 +144,8 @@ chunky_pin="$(python3 "$repo/tools/lib/versions.py" render.chunky_core)" || {
 # shellcheck source=tools/lib/chunky-home.sh
 . "$repo/tools/lib/chunky-home.sh"
 dw_resolve_chunky_home
-chunky_home="$DW_CHUNKY_HOME"
-installed_cores=""
-if [ -d "$chunky_home/lib" ]; then
-  installed_cores="$(find "$chunky_home/lib" -maxdepth 1 -type f -name 'chunky-core-*.jar' \
-    -exec basename {} .jar \; | LC_ALL=C sort | tr '\n' ' ')"
-  installed_cores="${installed_cores% }"
-fi
-echo "chunky home: $chunky_home (from $DW_CHUNKY_HOME_SOURCE)"
-echo "  A portable install — a readable chunky.json in the directory you launch from, or beside the"
-echo "  launcher jar — takes precedence inside Chunky and is not visible from here; set"
-echo "  DELVEWRIGHT_CHUNKY_HOME if that is your machine."
-
-# `grep -v` exits 1 when it selects nothing — which here means "the pin is the
-# only core", the ordinary good case — so its status is not the script's.
-other_cores="$(printf '%s\n' $installed_cores | grep -v -x -F "$chunky_pin" | tr '\n' ' ' || true)"
-other_cores="${other_cores% }"
-
-if [ -z "$installed_cores" ]; then
-  echo "chunky core: NONE installed under $chunky_home/lib. These scenes were emitted for the pinned core $chunky_pin." >&2
-  echo "  \`java -jar ChunkyLauncher.jar --update snapshot\` installs the CURRENT snapshot, which is not the pin and cannot be made to be:" >&2
-  echo "  the launcher's --update takes a release channel, and the update site's lib/ path serves today's core whatever name it is asked for." >&2
-  echo "  Render anyway if you must, and read every frame as coming off an unpinned renderer." >&2
-elif case " $installed_cores " in *" $chunky_pin "*) true;; *) false;; esac; then
-  if [ -z "$other_cores" ]; then
-    echo "chunky core: pinned $chunky_pin is installed at $chunky_home/lib, and it is the only core there — render with it."
-  else
-    echo "chunky core: pinned $chunky_pin is installed at $chunky_home/lib, but it is NOT the only core there: $other_cores" >&2
-    echo "  The launcher chooses its own core and has no flag that names one, so the pin being present does not make it the renderer" >&2
-    echo "  (measured: with the pin and a newer core installed together, it selected the newer). \`java -jar ChunkyLauncher.jar --version\`" >&2
-    echo "  prints the one it will use — read it, and say in the review which core the frames came off." >&2
-  fi
-else
-  echo "chunky core: MISMATCH — these scenes were emitted for $chunky_pin, and $chunky_home/lib holds only: $installed_cores" >&2
-  echo "  Every frame you are about to judge will come off a core this project has not verified its scene format against." >&2
-  echo "  There is no command that installs the pin: --update takes a release channel and the update site's lib/ path" >&2
-  echo "  serves today's core whatever name it is asked for, so this is reported and not refused. Say so in the review." >&2
+echo "chunky home: $DW_CHUNKY_HOME (from $DW_CHUNKY_HOME_SOURCE)"
+if ! python3 "$repo/tools/lib/chunky_core.py" verify --home "$DW_CHUNKY_HOME"; then
+  echo "  These scenes were emitted for $chunky_pin, and validation/chunky.sh refuses to render them until it is" >&2
+  echo "  installed: run validation/chunky-install.sh first." >&2
 fi

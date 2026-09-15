@@ -12,7 +12,7 @@ locations. A localized `README.<code>.md` per declared language.
 Storybook art is Chunky — the install from step 12 — in two passes. Draft with
 `delvec snapshot` — fast, disposable, for judging *layout*: is the right thing in
 frame, from the right side, at the right distance. Then produce the shipped
-image with Chunky from
+image with `$DELVEWRIGHT_ENGINE/validation/chunky.sh` from
 `$DELVEWRIGHT_ENGINE/validation/render-shots.sh`'s scene set, plus `delvec --prefabs "$DELVEWRIGHT_PREFABS" panorama <build-dir> -o
 <dir>` for the whole-map hero shot every release owes (`--bearing` picks the
 corner). Never hand-edit a scene JSON: if the frame you want is not emittable,

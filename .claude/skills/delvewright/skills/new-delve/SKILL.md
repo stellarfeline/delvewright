@@ -203,7 +203,7 @@ Read it now and run from it. The table below is the order and the postconditions
 | **I4 · environment** | `~/.delvewright/env.sh` carries `JAVA_HOME`, `DELVEWRIGHT_MODE`, `DELVEWRIGHT_ENGINE`, `DELVEWRIGHT_PYTHON`, `DELVEWRIGHT_SKILL`, `DELVEWRIGHT_PREFABS` and `PATH`, this run's values in the lines I4 owns and every other line kept. Every later command runs as `. ~/.delvewright/env.sh && <command>` |
 | **I5 · client jar** | **STOP — the user's choice.** Download by default, or a copy from a directory they name. Either way the jar lands at `~/.chunky/resources/minecraft.jar` and you have looked at it there. That it *reads* is I8's line |
 | **I6 · the library** | `DELVEWRIGHT_PREFABS` names a prefabs directory and you have said which of the four cases produced it. **Nothing is cloned here** — step 2 takes the shipped library, if the campaign wants one |
-| **I7 · named, not installed** | Chunky's source answers (a non-zero is said out loud, not a stop). On the drawing path only: `refimg.py --dry-run` exits 0. The skin toolchain is not mentioned |
+| **I7 · named, not installed** | Chunky's source answers and a JDK 17 is found for its build (a miss is said out loud, not a stop). On the drawing path only: `refimg.py --dry-run` exits 0. The skin toolchain is not mentioned |
 | **I8 · finished when** | Every line of the checklist below answers, through `env.sh`. This is the one place the toolchain is exercised end to end, because three of those lines need the jar, the binary and the library at once |
 
 ### I8 — Init is finished when every one of these answers

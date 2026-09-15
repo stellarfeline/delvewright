@@ -325,13 +325,23 @@ nucleation_license = "MIT"
 # OFFICIAL renderer for review frames, storybook art and the release panorama
 # invoked as a separate program, never linked.
 # 1.21.x needs a snapshot core (stable stops at 1.20.4); this is the snapshot the
-# spike verified. `java -jar ChunkyLauncher.jar --update snapshot` self-installs
-# it into ~/.chunky/lib.
-# Consumed by: crates/delvec/src/compiler (scene emission targets this scene format) +
-# README + docs/reference/tools.md §4a.
+# spike verified. The launcher's `--update` installs a CHANNEL's newest build and
+# cannot be asked for this one, so `validation/chunky-install.sh` builds it from
+# `chunky_source` at `chunky_revision` with Chunky's own Gradle build, under the
+# JDK its toolchain declares at that revision (`chunky_build_java`), and installs
+# it only when the jar answers `chunky_core_content_sha256` — the digest over the
+# jar's entries that `tools/lib/chunky_core.py` defines. Measured when recorded:
+# the launcher-installed core (md5 975D8F95B017CEE750B851F5C39AA51A) and a source
+# build at this revision answer the same digest, and the next snapshot does not.
+# `validation/chunky.sh` renders with that core and nothing else.
+# Consumed by: crates/delvec/src/compiler (scene emission targets this scene format),
+# validation/chunky-install.sh, validation/chunky.sh, validation/render-shots.sh
+# (through tools/lib/versions.py) + docs/reference/tools.md §4a.
 chunky_core = "chunky-core-2.5.0-SNAPSHOT.474.g156e2bb"
-chunky_update_url = "https://chunkyupdate.lemaik.de"
-chunky_launcher_url = "https://chunkyupdate.lemaik.de/ChunkyLauncher.jar"
+chunky_source = "https://github.com/chunky-dev/chunky.git"
+chunky_revision = "156e2bba2526fe4cf218243704b6f3e6d0281d1a"
+chunky_build_java = "17"
+chunky_core_content_sha256 = "6710920a30882d3e8a32121c8d97ce940a9f35539137ef91fff0e70256a809fc"
 chunky_license = "GPL-3.0"
 
 # deepslate (MIT) — the rendering core of the prefab review page

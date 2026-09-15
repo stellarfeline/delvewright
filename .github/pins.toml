@@ -331,6 +331,30 @@ itself. It pins BYTES rather than a version string, so a hand-edited bundle is a
 red (versions.toml [render]).
 """
 
+[[pin]]
+id = "chunky-revision"
+value = "156e2bba2526fe4cf218243704b6f3e6d0281d1a"
+sites = ["versions.toml"]
+policy = "immutable"
+why = """
+The chunky-dev/chunky commit `validation/chunky-install.sh` builds the pinned
+Chunky core from (versions.toml [render]). A third-party commit names fixed
+source; `validation/check-versions.sh` holds it to the `.g<sha7>` the core's name
+carries.
+"""
+
+[[pin]]
+id = "chunky-core-content"
+value = "6710920a30882d3e8a32121c8d97ce940a9f35539137ef91fff0e70256a809fc"
+sites = ["versions.toml"]
+policy = "immutable"
+why = """
+The content digest of the pinned Chunky core jar, by the rule in
+`tools/lib/chunky_core.py` (versions.toml [render]). It pins what the jar
+contains rather than its name or its zip bytes: the installer installs nothing
+that does not answer it, and `validation/chunky.sh` renders with nothing else.
+"""
+
 # --- misode/mcmeta data dumps, from which generated tables are extracted ------
 # Each names one retrieval of one file at the pinned Minecraft version. The
 # extractor refuses bytes that do not match, so these are what make a

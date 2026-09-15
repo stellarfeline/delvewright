@@ -211,6 +211,16 @@ else
   fail "render.chunky_core '$CHUNKY_CORE' is not a chunky-core snapshot build"
 fi
 
+# The core's name carries the revision it was built from (`.g<sha7>`), and the
+# installer builds `chunky_revision`: the two are one revision or the install
+# builds a core the name does not describe.
+CHUNKY_REVISION="$(python3 "$ROOT/tools/lib/versions.py" render.chunky_revision 2>/dev/null || true)"
+if [[ $CHUNKY_CORE =~ \.g([0-9a-f]{7})$ ]] && [[ $CHUNKY_REVISION == "${BASH_REMATCH[1]}"* ]]; then
+  pass "render.chunky_revision is the revision render.chunky_core names ($CHUNKY_REVISION)"
+else
+  fail "render.chunky_revision '$CHUNKY_REVISION' is not the revision render.chunky_core '$CHUNKY_CORE' names"
+fi
+
 # The emitter states the same revision in Rust — `delvec scene` prints it on
 # every run, and the camera basis it implements was read off that core's
 # bytecode. A binary carries no versions.toml, so the constant cannot read the
