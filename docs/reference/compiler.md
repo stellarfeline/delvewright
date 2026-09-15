@@ -551,7 +551,9 @@ walked*, so with only those two every legal record asserted a walk, and the
 states this pipeline actually produces before one has happened had no legal
 spelling; the truth could go only into `findings[]`, which is free prose no check
 reads. `DW0841` refuses on the FIELD and names which value it read, so `unwalked`
-is refused as an absence rather than as a walk that found something. Only
+is refused as an absence rather than as a walk that found something. A record
+that does not parse is told the whole set, read off `Verdict`'s own schema
+(`Verdict::tokens`), never off a literal. Only
 `passed` admits detail work, and nothing here decides whether a body was in the
 world.
 
