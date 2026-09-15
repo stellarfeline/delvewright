@@ -554,12 +554,52 @@ fn covered(
         // business, and the seam between the two is `DW0780`'s.
         return true;
     }
+    ambient_buries(ambient, c)
+}
+
+/// **Does the horizon itself put something in this cell?** The ambient's arm of
+/// [`covered`], spelled once so the check that asks the same question before
+/// anything is placed (`compiler::seating`, `DW0886`) cannot drift from the one
+/// asked of the assembled world.
+#[must_use]
+pub fn ambient_buries(ambient: &Ambient, c: [i32; 3]) -> bool {
     match ambient {
         // The generator's own columns. Water and sea floor alike bury a face —
         // a wall under the sea is a wall in the sea, not a wall in the sky.
         Ambient::Ocean(sea) => c[1] <= sea.level,
         Ambient::Void => false,
     }
+}
+
+/// **Which sides of the box `min..=max` the given solid cells stand on**, each
+/// with the highest y of the cells in front of them.
+///
+/// The one reading of "a side the piece puts a block on", shared by the placed
+/// check ([`own_solid_sides`]) and the unplaced one (`compiler::seating`). The y
+/// is the outward neighbour's, which is the cell [`ambient_buries`] is asked
+/// about: the side is buried by a horizon that fills every column up to a plane
+/// exactly when this y is at or below it.
+pub fn solid_sides(
+    cells: impl IntoIterator<Item = [i32; 3]>,
+    min: [i32; 3],
+    max: [i32; 3],
+) -> BTreeMap<[i32; 3], i32> {
+    let mut sides: BTreeMap<[i32; 3], i32> = BTreeMap::new();
+    for cell in cells {
+        for axis in 0..3 {
+            for (bound, sign) in [(min[axis], -1), (max[axis], 1)] {
+                if cell[axis] != bound {
+                    continue;
+                }
+                let mut d = [0i32; 3];
+                d[axis] = sign;
+                let out_y = cell[1] + d[1];
+                let top = sides.entry(d).or_insert(out_y);
+                *top = (*top).max(out_y);
+            }
+        }
+    }
+    sides
 }
 
 /// **Which of a placed piece's six sides its own templates put a block on.**
@@ -573,7 +613,7 @@ fn own_solid_sides(
     min: [i32; 3],
     max: [i32; 3],
 ) -> BTreeSet<[i32; 3]> {
-    let mut sides = BTreeSet::new();
+    let mut cells: Vec<[i32; 3]> = Vec::new();
     for template in &placement.templates {
         let Some(bytes) = structures.get(&template.structure_file) else {
             continue;
@@ -583,26 +623,14 @@ fn own_solid_sides(
                 continue;
             }
             let t = placement.rotation.transform(local);
-            let cell = [
+            cells.push([
                 template.pos[0] + t[0],
                 template.pos[1] + t[1],
                 template.pos[2] + t[2],
-            ];
-            for axis in 0..3 {
-                if cell[axis] == min[axis] {
-                    let mut d = [0i32; 3];
-                    d[axis] = -1;
-                    sides.insert(d);
-                }
-                if cell[axis] == max[axis] {
-                    let mut d = [0i32; 3];
-                    d[axis] = 1;
-                    sides.insert(d);
-                }
-            }
+            ]);
         }
     }
-    sides
+    solid_sides(cells, min, max).into_keys().collect()
 }
 
 /// The air the party can be in, and whether the flood was cut off by [`SKIN`].

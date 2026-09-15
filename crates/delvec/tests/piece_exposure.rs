@@ -248,3 +248,86 @@ fn a_shown_face_that_is_not_a_side_is_dw0885() {
         "names the vocabulary: {message}"
     );
 }
+
+/// `compiler::seating::check` over the same library [`build_declaring`] builds
+/// from: the validation-tier answer to the question `DW0885` asks at build.
+fn seat_declaring(tag: &str, nbt: &[u8], shown: Option<&[&str]>) -> Vec<(String, String)> {
+    let dir = common::shown_prefabs_dir(tag);
+    std::fs::write(dir.join("hello-room.nbt"), nbt).unwrap();
+    set_shown(&dir, shown);
+    let prefabs = PrefabRegistry::load_dir(&dir).unwrap();
+    let (_, diags) = delvec::compiler::seating::check(&hello_world(), &prefabs, &dir);
+    diags
+        .into_iter()
+        .filter(|d| d.code == "DW0886")
+        .map(|d| (d.code.to_string(), d.message))
+        .collect()
+}
+
+/// **The seating answer is the build answer**, on one geometry, five ways.
+///
+/// `delvec prefab seating` and a campaign's validation promise that a library
+/// they seat is not then refused by the build for a reason they could have
+/// known. The build's reason here is `DW0885`, and both of its arms are facts
+/// about a library: whether the party can get outside a piece, which sides its
+/// bytes put blocks on, and what its document declares. So each world below is
+/// asked twice — at validation (`DW0886`) and at build (`DW0885`) — and the two
+/// answers must be the same answer: refused by both, or refused by neither.
+#[test]
+fn the_seating_answer_is_the_exposure_answer() {
+    let sealed = common::box_nbt([11, 6, 11], false);
+    let open = common::box_nbt([11, 6, 11], true);
+    type Case<'a> = (&'a str, &'a [u8], Option<&'a [&'a str]>, bool);
+    let cases: [Case; 5] = [
+        ("pair-sealed", &sealed, None, false),
+        ("pair-open-silent", &open, None, true),
+        (
+            "pair-open-declared",
+            &open,
+            Some(&["down", "east", "north", "south", "up"]),
+            false,
+        ),
+        (
+            "pair-empty-side",
+            &open,
+            Some(&["down", "east", "north", "south", "up", "west"]),
+            true,
+        ),
+        ("pair-bad-side", &sealed, Some(&["top"]), true),
+    ];
+    for (tag, nbt, shown, refused) in cases {
+        let seated = seat_declaring(tag, nbt, shown);
+        let built = build_declaring(tag, nbt, shown);
+        let build_refused = matches!(
+            &built,
+            Err(BuildFailure::Diagnostic { code, .. }) if "DW0885" == code
+        );
+        assert_eq!(
+            !seated.is_empty(),
+            refused,
+            "{tag}: seating said {seated:?}"
+        );
+        assert_eq!(
+            build_refused,
+            refused,
+            "{tag}: the build said {:?}",
+            built.as_ref().err()
+        );
+    }
+
+    // And what the refusal names is what the build needs: the sides seating
+    // lists for the silent open room are exactly the five a declaration must
+    // cover for the build to pass (the case above), and it names the way out.
+    let silent = seat_declaring("pair-open-silent-message", &open, None);
+    assert_eq!(silent.len(), 1, "{silent:?}");
+    let message = &silent[0].1;
+    for side in ["`down`", "`east`", "`north`", "`south`", "`up`"] {
+        assert!(message.contains(side), "names {side}: {message}");
+    }
+    assert!(
+        !message.contains("`west`"),
+        "names no empty side: {message}"
+    );
+    assert!(message.contains("DECLARE the sides shown"), "{message}");
+    assert!(message.contains("SEAL the way out"), "{message}");
+}
