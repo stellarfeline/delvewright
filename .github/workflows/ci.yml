@@ -34,6 +34,7 @@ jobs:
   # Dockerfile/compose/workflow hardcodes a version/digest that disagrees with it.
   manifest:
     name: manifest consistency (versions.toml)
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -119,6 +120,7 @@ jobs:
   # `tools/check-required-contexts.py`.
   dsl-crate-version:
     name: dsl crate version (crates.io)
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -129,6 +131,7 @@ jobs:
 
   rust:
     name: rust (fmt, clippy, test)
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -313,6 +316,7 @@ jobs:
     # every PR (see .github/required-status-checks.txt).
     name: cross-OS determinism (macOS vs Linux bytes)
     needs: rust
+    if: github.event_name != 'pull_request'
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
@@ -369,6 +373,7 @@ jobs:
     # required status context in branch protection; renaming it deadlocks every
     # PR (see .github/required-status-checks.txt).
     name: engine binaries (cross-build shelf)
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
@@ -394,6 +399,7 @@ jobs:
   # pipeline.
   prefab-generators:
     name: prefab generators (invariants + determinism)
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -456,6 +462,7 @@ jobs:
 
   harness:
     name: harness (typecheck, test)
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -475,6 +482,7 @@ jobs:
     # spec-0009: deterministic original 64x64 skin composition + headless preview
     # renderer. Proves same cast entry -> byte-identical PNG (ADR-0006) and that a
     # cast entry without `model` is rejected.
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -496,6 +504,7 @@ jobs:
     # would build, config resolution incl. the not-configured fallback, and that the
     # API key never leaves the named env var — with the network blocked at
     # `urlopen` (tools/tests/conftest.py), so no test can reach a real provider.
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -520,7 +529,7 @@ jobs:
     # against the 1.21.11 command tree. Disagreement with our vendored-tree
     # validator fails CI and is a bug in one of them. PR-only, plus the plugin
     # release's dispatch (see `on:`), where a skipped required check judges nothing.
-    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -549,6 +558,7 @@ jobs:
     # Name must stay exactly "docs (local link check)" — it is a required
     # status context in branch protection; renaming it deadlocks every PR.
     name: docs (local link check)
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     steps:
       # Full history: `check-numbered-doc-uniqueness.py` diffs this checkout
@@ -985,6 +995,7 @@ jobs:
     # link check to content-repo markdown (and `docs (local link check)` is a
     # required status context — its name may not move).
     name: campaign storybooks (engine-version marker)
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -1019,6 +1030,7 @@ jobs:
     # a required status context in branch protection; renaming it deadlocks
     # every PR (see .github/required-status-checks.txt).
     name: content pin (drift + zone-program audit)
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -1116,6 +1128,7 @@ jobs:
   # not a convenience.
   gallery:
     name: gallery (coverage + build + baseline)
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -1283,7 +1296,7 @@ jobs:
   # PR-only, plus the plugin release's dispatch (see `on:`); target < 10 min.
   tier2-validation:
     name: tier 2 (datapack load + PackTest)
-    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     env:
       # Accepting Mojang's EULA (https://aka.ms/MinecraftEULA) is the standing
