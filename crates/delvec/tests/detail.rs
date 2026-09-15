@@ -741,6 +741,62 @@ fn dw0841_refuses_a_record_that_names_no_layout_graph() {
     );
 }
 
+/// **A record that does not parse is told every verdict the type admits.**
+///
+/// The set is enumerated by an exhaustive match over the type here, so a
+/// variant added to [`detail::Verdict`] fails to compile this test until it is
+/// listed — and the refusal must then name it, because the message reads the
+/// set off the type rather than off a literal.
+#[test]
+fn dw0841_parse_refusal_names_every_verdict_the_type_admits() {
+    use detail::Verdict;
+    fn every(v: Verdict) -> Verdict {
+        match v {
+            Verdict::Passed | Verdict::Findings | Verdict::Unwalked => v,
+        }
+    }
+    let all: Vec<String> = [Verdict::Passed, Verdict::Findings, Verdict::Unwalked]
+        .into_iter()
+        .map(|v| {
+            serde_json::to_value(every(v))
+                .expect("a verdict serializes")
+                .as_str()
+                .expect("as a string")
+                .to_string()
+        })
+        .collect();
+    assert_eq!(Verdict::tokens(), all, "the tokens are the type's own");
+
+    let tmp = tempdir("dw0841-bad-verdict");
+    let d = detailed(&tmp, &["node/exit"]);
+    common::patch_file(&d.campaign.join("walk-record.json"), |v| {
+        v["verdict"] = serde_json::json!("walked-ish");
+    });
+    let (diags, binding) = check_at(&d);
+    let e = errors(&diags);
+    assert_eq!(e.len(), 1, "{:?}", codes(&diags));
+    assert_eq!(e[0].code, "DW0841");
+    assert!(
+        e[0].message.contains("is not a walk record"),
+        "the parse refusal: {}",
+        e[0].message
+    );
+    // Read past the parser's own error, which quotes serde's variant list:
+    // the engine's hint is the half this test holds to the type.
+    let hint = e[0]
+        .message
+        .split_once("Its form is fixed")
+        .map(|(_, h)| h)
+        .expect("the refusal states the form");
+    for t in &all {
+        assert!(
+            hint.contains(&format!("`{t}`")),
+            "the form the refusal states names `{t}`: {hint}"
+        );
+    }
+    assert_eq!(binding.compared, 0);
+}
+
 #[test]
 fn dw0841_refuses_a_record_whose_verdict_is_findings() {
     let tmp = tempdir("dw0841-findings");
