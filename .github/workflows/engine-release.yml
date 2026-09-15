@@ -67,7 +67,7 @@ name: engine release (delvec)
 #
 # The one thing the environment gate does NOT cover is CORRECTNESS — it gates
 # access to a token, not the contents of an upload. That is what 2, 3, 4 and
-# `tools/crates-io-publish.sh`'s checksum comparison are for.
+# `tools/ci/crates-io-publish.sh`'s checksum comparison are for.
 #
 # ONE APPROVAL PUBLISHES BOTH SHELVES, OR NEITHER
 #
@@ -108,7 +108,7 @@ name: engine release (delvec)
 # `shelf` prints the draft state and writes it into the run summary, and
 # `publish` stands at "Waiting for review" for as long as it is never approved.
 #
-# `tools/check-release-publish-gate.py` is what keeps the claim true rather than
+# `tools/ci/check-release-publish-gate.py` is what keeps the claim true rather than
 # merely written here: it refuses any release-publishing verb, or any reference to
 # the registry credential, in a job that does not declare an environment.
 
@@ -222,7 +222,7 @@ jobs:
           # Linux target builds NATIVELY on a runner of its own architecture —
           # no cross-linker, no cross C compiler, and `nucleation`'s build
           # script runs on the host it targets. The runner's glibc is the
-          # binary's floor, which `tools/build-release-binaries.sh` measures
+          # binary's floor, which `tools/ci/build-release-binaries.sh` measures
           # off the ELF and prints; the oldest LTS image GitHub hosts is chosen
           # so that floor is as low as a hosted runner can make it.
           - { target: x86_64-unknown-linux-gnu,   runner: ubuntu-22.04 }
@@ -253,7 +253,7 @@ jobs:
       # git-bash on the Windows runner, so one script serves all three OSes.
       - name: build + archive + checksum
         shell: bash
-        run: bash tools/build-release-binaries.sh --target ${{ matrix.target }}
+        run: bash tools/ci/build-release-binaries.sh --target ${{ matrix.target }}
       - uses: actions/upload-artifact@v4
         with:
           name: shelf-${{ matrix.target }}
@@ -334,7 +334,7 @@ jobs:
               # The notes open with what the released tree says (the dsl_version the
               # binary speaks, the crates.io page), and the changelog GitHub
               # generates below it starts at the previous release OF THIS LINE.
-              python3 tools/release-notes.py delvec --commit HEAD > notes.md
+              python3 tools/ci/release-notes.py delvec --commit HEAD > notes.md
               title="$(python3 tools/lib/release_tags.py title "$TAG")"
               if [ -n "$PREVIOUS" ]; then
                 gh release create "$TAG" --draft --target "$COMMIT" --title "$title" --notes-file notes.md --generate-notes --notes-start-tag "$PREVIOUS"
@@ -423,7 +423,7 @@ jobs:
         run: |
           set -euo pipefail
           rc=0
-          bash tools/crates-io-publish.sh --plan --only delvewright-dsl > dsl-plan.txt 2>&1 || rc=$?
+          bash tools/ci/crates-io-publish.sh --plan --only delvewright-dsl > dsl-plan.txt 2>&1 || rc=$?
           cat dsl-plan.txt
           [ "$rc" -eq 0 ] || exit "$rc"
           list="$(sed -n 's/^crates-io-publish: TO_PUBLISH=//p' dsl-plan.txt)"
@@ -439,7 +439,7 @@ jobs:
       # The same gate CI runs on every push, re-run here against the exact tagged
       # tree the upload will come from.
       - name: the packaged tarballs are publishable
-        run: bash tools/check-publishable.sh
+        run: bash tools/ci/check-publishable.sh
       # The other half of what the upload carries: the front pages. This job is a
       # `needs:` of `publish`, so it is the LAST place those pages can
       # be judged before the one-way door — and the released tree is not
@@ -449,18 +449,18 @@ jobs:
       # derived from the manifests: every crate under `crates/` publishes one.
       - name: the front pages carry no internal reference and no stale version
         run: |
-          python3 tools/check-crates-io-readmes.py
-          python3 tools/check-reference-versions.py
+          python3 tools/ci/check-crates-io-readmes.py
+          python3 tools/ci/check-reference-versions.py
       # The same enumeration one layer out. The gate above judges the two pages
       # a stranger lands on; this judges the whole released tree, which `ci.yml`
       # has not necessarily seen, for the identifiers a reader cannot resolve —
       # a task id, a pull-request number, a dated attribution.
       - name: the released tree carries no identifier a reader cannot resolve
-        run: python3 tools/check-unsanctioned-identifiers.py
+        run: python3 tools/ci/check-unsanctioned-identifiers.py
       # Prints, for the human about to approve `publish`, exactly what the gated
       # job will upload: `delvec` alone, the same `--only` selection it runs.
       - name: the publish plan
-        run: bash tools/crates-io-publish.sh --plan --only delvec
+        run: bash tools/ci/crates-io-publish.sh --plan --only delvec
 
   # ---- the one-way door, and the only job that publishes anything -----------
   publish:
@@ -507,12 +507,12 @@ jobs:
       - name: the gate actually bound (a run nobody approved must not publish)
         env:
           GH_TOKEN: ${{ github.token }}
-        run: bash tools/assert-run-approved.sh crates-io
+        run: bash tools/ci/assert-run-approved.sh crates-io
       - uses: Swatinem/rust-cache@v2
       # Re-prove publishability inside this job, from the released tree, not from
       # artifacts handed over from another job.
       - name: re-prove publishability from the released tree
-        run: bash tools/check-publishable.sh
+        run: bash tools/ci/check-publishable.sh
       # FIRST of the two publishes, because it is the one that cannot be undone.
       # If this fails, the release is still a draft and nothing has been published
       # anywhere — which is the state one approval is supposed to produce.
@@ -527,7 +527,7 @@ jobs:
           # Read by cargo directly out of the environment. No `cargo login`, no
           # credential written to disk.
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-        run: bash tools/crates-io-publish.sh --publish --only delvec
+        run: bash tools/ci/crates-io-publish.sh --publish --only delvec
       # The tag, at the commit `identity` judged, written only now: after the
       # approval and after the irreversible upload, so a run nobody approved, or
       # whose upload failed, leaves no tag. A re-run finds it already there.

@@ -164,7 +164,7 @@ impl WatchBinding {
     /// travels with the build instead of living only in a stderr string.
     ///
     /// The `examined` key is deliberately spelled the way the gallery coverage
-    /// gate already looks for (`tools/check-gallery-coverage.py` reds on a zero
+    /// gate already looks for (`tools/ci/check-gallery-coverage.py` reds on a zero
     /// `examined` in any `validation/*.json`). That binds this ledger to an
     /// invocation that already exists rather than adding a gate that would have
     /// to be remembered — a doc line is not an invocation.
@@ -517,7 +517,7 @@ impl ClaimBinding {
     /// Render for `validation/watch-claims.json`.
     ///
     /// Its own file rather than a section of the watch ledger, and the reason is
-    /// the whole point: `tools/check-gallery-coverage.py` reds on a top-level
+    /// the whole point: `tools/ci/check-gallery-coverage.py` reds on a top-level
     /// `examined: 0` in any `validation/*.json`, and it reads TOP-LEVEL keys
     /// only. Nested beside the `DW0810` numbers this count would have been
     /// written, committed, diffed — and never once judged, which is the UNRUN

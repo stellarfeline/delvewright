@@ -1,6 +1,6 @@
 """The baseline's two arms are one rule, and no tree is refused by both.
 
-`tools/gallery-baseline.py` verifies and it regenerates, and the verify arm's
+`tools/ci/gallery-baseline.py` verifies and it regenerates, and the verify arm's
 only remedy is the regenerate arm. So the two are a PAIR (CLAUDE.md: when one
 gate's prescription is another gate's refusal, the defect belongs to the pair),
 and the property that has to hold is not about either half: **for every tree,
@@ -44,7 +44,7 @@ REPO = pathlib.Path(__file__).resolve().parents[2]
 
 
 def _load():
-    path = REPO / "tools" / "gallery-baseline.py"
+    path = REPO / "tools" / "ci" / "gallery-baseline.py"
     spec = importlib.util.spec_from_file_location("gallery_baseline_pair", path)
     mod = importlib.util.module_from_spec(spec)
     assert spec.loader is not None

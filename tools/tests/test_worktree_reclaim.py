@@ -1,4 +1,4 @@
-"""`tools/worktree-reclaim.py` — every verdict, driven in both directions.
+"""`tools/planner/worktree-reclaim.py` — every verdict, driven in both directions.
 
 A tool that deletes worktrees is only as good as its refusals, and a refusal is
 the half that is easy to write and never exercise. So every KEEP below is
@@ -51,7 +51,7 @@ import time
 
 import pytest
 
-TOOL = pathlib.Path(__file__).resolve().parents[1] / "worktree-reclaim.py"
+TOOL = pathlib.Path(__file__).resolve().parents[1] / "planner" / "worktree-reclaim.py"
 
 
 def git(cwd, *args):
@@ -493,7 +493,7 @@ def test_the_sweep_never_releases_a_lease_even_over_a_merged_branch(fx, tmp_path
 # ---------------------------------------------------------------------------
 # what ENDS a lease
 #
-# Before this, nothing did. `tools/worktree-new.sh` claims every tree it makes
+# Before this, nothing did. `tools/planner/worktree-new.sh` claims every tree it makes
 # and prints "release it at the merge"; nothing invoked `--release`, so the
 # sentence WAS the mechanism — the UNRUN vacuity mode. `--after-merge`, the entry
 # point that exists to run in the same breath as a merge, was itself blocked by
@@ -1219,7 +1219,7 @@ def test_one_target_directory_is_counted_once_however_many_roots_reach_it(fx, tm
 
 
 def test_the_main_checkout_is_never_stripped_because_it_is_the_clone_donor(fx, tmp_path):
-    """`tools/worktree-new.sh` clones a new worktree's `target/` from the main
+    """`tools/planner/worktree-new.sh` clones a new worktree's `target/` from the main
     checkout. Deleting it frees none of the blocks a clone shares with it and
     makes the next dispatch pay for a cold compile."""
     t = make_target(fx.repo)
@@ -1270,7 +1270,7 @@ def test_harness_branches_contained_in_main_are_reported(fx, tmp_path):
 # second alone would pass over a call nobody reaches.
 # ---------------------------------------------------------------------------
 
-HOOK = pathlib.Path(__file__).resolve().parents[1] / "planner-state.sh"
+HOOK = pathlib.Path(__file__).resolve().parents[1] / "planner" / "planner-state.sh"
 
 
 def test_the_hook_script_still_carries_the_invocation():
@@ -1323,7 +1323,7 @@ def test_the_hook_refuses_by_name_when_the_tool_is_absent(fx, tmp_path):
     a silent no-op here is the UNRUN vacuity mode wearing the fix's clothes."""
     tools = fx.repo / "tools"
     tools.mkdir()
-    src = pathlib.Path(__file__).resolve().parents[1] / "planner-state.sh"
+    src = pathlib.Path(__file__).resolve().parents[1] / "planner" / "planner-state.sh"
     dst = tools / "planner-state.sh"
     dst.write_text(src.read_text(encoding="utf-8"), encoding="utf-8")
     dst.chmod(0o755)

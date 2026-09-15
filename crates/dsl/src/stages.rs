@@ -4625,7 +4625,7 @@ pub enum Verb {
         /// `in` filter, `collapse`'s `region_anchor`, a `volley` kill zone and a
         /// `lethal_volumes[]` region, and resolved through the single
         /// `Plan::zone_box`. A private twin with the same two fields would be
-        /// `tools/check-capability-ownership.py` check C by construction.
+        /// `tools/ci/check-capability-ownership.py` check C by construction.
         ///
         /// An anchor-centred box rather than a prefab `region` anchor for the
         /// reason `collapse` states: the assembled model deletes every gate-region
@@ -5280,7 +5280,7 @@ pub struct LethalVolume {
     /// two fields. `StealthZone` is already the engine's anchor-centred box object
     /// class — `damage-players`'s `in` filter reuses it, and the compiler resolves
     /// every one of them through the single `Plan::zone_box`. A private twin here
-    /// would be `tools/check-capability-ownership.py` check C by construction, and
+    /// would be `tools/ci/check-capability-ownership.py` check C by construction, and
     /// would fork the resolution the very next time a box grew a capability.
     pub region: StealthZone,
     /// What this volume says when it kills — a player-visible line, inventoried
@@ -7458,7 +7458,7 @@ impl EffectSite {
     /// static model can order, and inventing a quest for one would be exactly the
     /// over-attribution the completability model must not make. Asking the question
     /// of every variant and getting an honest `None` is the lift;
-    /// `tools/check-capability-ownership.py` check D asked for it while the field
+    /// `tools/ci/check-capability-ownership.py` check D asked for it while the field
     /// was still cross-cutting, and spec-0032's eighth site took it below that
     /// threshold, so the reasoning lives here now rather than in an exemption.
     pub fn quest(&self) -> Option<&str> {

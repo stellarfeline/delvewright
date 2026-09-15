@@ -19,7 +19,7 @@
 //! - **The item facts** ([`Equippable`]), injected through
 //!   [`crate::registry::ItemRegistry::equippable`]: the compiler vendors them as
 //!   `crates/delvec/data/item-equippable-1.21.11.json`
-//!   (`tools/extract-item-equippable.py`).
+//!   (`tools/maintenance/extract-item-equippable.py`).
 
 use std::collections::{BTreeMap, BTreeSet};
 

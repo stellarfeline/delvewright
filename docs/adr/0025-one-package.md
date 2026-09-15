@@ -87,11 +87,11 @@ forbids here: a feature arriving as a crate.
 
 - The six library READMEs go with their crates; the two gates that derive the
   crates.io page set from the manifests find two pages.
-- `tools/check-publishable.sh` packages two crates and rebuilds `delvec` from
-  the two tarballs alone; `tools/crates-io-publish.sh` uploads
+- `tools/ci/check-publishable.sh` packages two crates and rebuilds `delvec` from
+  the two tarballs alone; `tools/ci/crates-io-publish.sh` uploads
   `delvewright-dsl`, then `delvec`; `.github/workflows/engine-release.yml`
   publishes in that order. `[workspace.dependencies]` holds one entry.
-- `tools/check-dw-codes.py` resolves a diagnostic constant per module, through
+- `tools/ci/check-dw-codes.py` resolves a diagnostic constant per module, through
   `pub use` re-exports, because one crate now holds every diagnostic module and
   a name-keyed table would let one constant shadow another.
 - The prefab generator workspaces still source-include the engine's

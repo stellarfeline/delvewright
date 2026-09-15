@@ -753,7 +753,7 @@ pub enum MarkIndex {
 /// compiles and then refuses every well-formed mark. An unknown field on a mark
 /// is therefore dropped rather than refused, and a future optional field here
 /// would be silently droppable by an engine that predates it. What holds the line
-/// instead is the version ledger of `grammar.md` §2e, which `tools/check-grammar-ir-compat.py`
+/// instead is the version ledger of `grammar.md` §2e, which `tools/ci/check-grammar-ir-compat.py`
 /// enforces in both directions.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Mark {
@@ -2133,7 +2133,7 @@ impl Program {
     /// waiting to disagree with the one `DW0885` reads.
     fn check_shown_faces(&self) -> Result<(), ProgramError> {
         // The guard reads the FIELD as well as the version, which is what
-        // `tools/check-grammar-ir-compat.py` holds a ledger row to: a refusal
+        // `tools/ci/check-grammar-ir-compat.py` holds a ledger row to: a refusal
         // that consulted only the version constant could stand for any field
         // introduced at that number, and one ledger row owes one refusal.
         if !self.shown_faces.is_empty() && !has_shown_faces(&self.version) {

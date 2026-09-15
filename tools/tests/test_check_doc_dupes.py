@@ -1,4 +1,4 @@
-"""The documentation merge-artifact gate (`tools/check-doc-dupes.py`).
+"""The documentation merge-artifact gate (`tools/ci/check-doc-dupes.py`).
 
 The defect this pins, from the field: the stage-5 DSL
 table of `docs/reference/compiler.md` carried `shortcuts[]` twice and
@@ -26,7 +26,7 @@ import pathlib
 
 import pytest
 
-SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "check-doc-dupes.py"
+SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "ci" / "check-doc-dupes.py"
 
 
 @pytest.fixture

@@ -1,4 +1,4 @@
-r"""Guards for `tools/check-pins.py`.
+r"""Guards for `tools/ci/check-pins.py`.
 
 The defect it exists to prevent, from the round that paid for it: a content-repo
 workflow built its judge from a pinned pipeline commit; the pin sat while the
@@ -77,7 +77,7 @@ from pathlib import Path
 import pytest
 
 REPO = Path(__file__).resolve().parents[2]
-CHECKER = REPO / "tools" / "check-pins.py"
+CHECKER = REPO / "tools" / "ci" / "check-pins.py"
 
 # Assembled rather than written out, and the reason is the checker itself: it
 # discovers pins by SHAPE across every tracked file that can execute, and this
@@ -319,7 +319,7 @@ why = "the judge"
         f"name: audit\nenv:\n  E: {REV}\njobs:\n  a:\n    steps:\n"
         f"      - uses: {ACTION}\n"
         f"        with:\n          image: {DIGEST}\n"
-        f"      - run: python3 tools/check-pins.py --online engine\n"
+        f"      - run: python3 tools/ci/check-pins.py --online engine\n"
         f"      - run: cargo build -p delvec --release\n",
         encoding="utf-8",
     )
@@ -418,7 +418,7 @@ why = "judged the interval ending here; the admission rules it enforces did not 
         f"name: audit\nenv:\n  E: {REV}\njobs:\n  a:\n    steps:\n"
         f"      - uses: {ACTION}\n"
         f"        with:\n          image: {DIGEST}\n"
-        f"      - run: python3 tools/check-pins.py --online engine\n"
+        f"      - run: python3 tools/ci/check-pins.py --online engine\n"
         f"      - run: cargo build -p delvec --release\n",
         encoding="utf-8",
     )
@@ -435,7 +435,7 @@ def test_held_policy_prints_drift_as_information_not_a_finding(
     value = shas[0]
     (repo / ".github" / "workflows" / "judge.yml").write_text(
         "name: judge\njobs:\n  a:\n    steps:\n"
-        "      - run: python3 tools/check-pins.py --online judge\n"
+        "      - run: python3 tools/ci/check-pins.py --online judge\n"
         f"      - run: git checkout {value}\n",
         encoding="utf-8",
     )
@@ -465,7 +465,7 @@ def test_held_policy_missing_why_is_a_finding(
     value = shas[0]
     (repo / ".github" / "workflows" / "judge.yml").write_text(
         "name: judge\njobs:\n  a:\n    steps:\n"
-        "      - run: python3 tools/check-pins.py --online judge\n"
+        "      - run: python3 tools/ci/check-pins.py --online judge\n"
         f"      - run: git checkout {value}\n",
         encoding="utf-8",
     )
@@ -497,7 +497,7 @@ def test_held_policy_workflow_literal_that_differs_from_the_value_is_a_finding(
     value, other = shas[0], shas[1]
     (repo / ".github" / "workflows" / "judge.yml").write_text(
         "name: judge\njobs:\n  a:\n    steps:\n"
-        "      - run: python3 tools/check-pins.py --online judge\n"
+        "      - run: python3 tools/ci/check-pins.py --online judge\n"
         f"      - run: git checkout {other}\n",
         encoding="utf-8",
     )
@@ -551,7 +551,7 @@ def test_track_still_reds_when_upstream_changed_its_watched_sources(
 
     (repo / ".github" / "workflows" / "judge.yml").write_text(
         "name: judge\njobs:\n  a:\n    steps:\n"
-        "      - run: python3 tools/check-pins.py --online engine\n"
+        "      - run: python3 tools/ci/check-pins.py --online engine\n"
         "      - run: cargo build -p foo --release\n",
         encoding="utf-8",
     )

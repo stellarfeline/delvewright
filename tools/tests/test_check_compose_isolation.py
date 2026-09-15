@@ -1,4 +1,4 @@
-"""The compose-isolation gate (`tools/check-compose-isolation.py`).
+"""The compose-isolation gate (`tools/ci/check-compose-isolation.py`).
 
 The defect class this pins, twice from the field before the pins were removed
 entirely: `validation/compose.yaml` names a container or publishes a host
@@ -26,7 +26,7 @@ import pathlib
 
 import pytest
 
-SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "check-compose-isolation.py"
+SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "ci" / "check-compose-isolation.py"
 
 CLEAN_COMPOSE = """\
 services:

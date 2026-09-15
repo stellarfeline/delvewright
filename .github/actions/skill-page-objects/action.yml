@@ -1,6 +1,6 @@
 name: Fetch what the skill-page gate reads
 description: >
-  `tools/check-skill-page.py` judges the creator plugin against two objects that
+  `tools/ci/check-skill-page.py` judges the creator plugin against two objects that
   a shallow `actions/checkout` does not carry: the ENGINE at
   `[engine].ref`, materialised with `git archive`, and the PRE-SPLIT PAGE's blob,
   from which the heading census is re-derived. It also diffs the plugin root
@@ -31,10 +31,10 @@ runs:
       run: |
         python3 - <<'PY' >> "$GITHUB_OUTPUT"
         import json, sys, tomllib
-        sys.stdout.reconfigure(newline="\n")  # tools/check-python-shell-newlines.py
+        sys.stdout.reconfigure(newline="\n")  # tools/ci/check-python-shell-newlines.py
         pin = ".claude/skills/delvewright/skills/new-delve/versions.toml"
         print(f"ref={tomllib.load(open(pin, 'rb'))['engine']['ref']}")
-        census = json.load(open("tools/data/skill-page-headings.json"))
+        census = json.load(open("tools/ci/data/skill-page-headings.json"))
         print(f"blob={census['source']['blob']}")
         PY
         echo "skill-page objects: $(grep -E '^(ref|blob)=' "$GITHUB_OUTPUT" | tr '\n' ' ')"

@@ -29,7 +29,7 @@ this needs are subcommands of the one binary Init I3 installed.
    **Screen** the shelf by constraints rather than by a guessed hex:
 
    ```sh
-   python3 "$DELVEWRIGHT_ENGINE/tools/block-appearance.py" --screen --where full_cube --where 'L>=0.75' \
+   python3 "$DELVEWRIGHT_ENGINE/tools/creator/block-appearance.py" --screen --where full_cube --where 'L>=0.75' \
        --where 'C_mean<0.02' --where 'texture_range<=0.30'
    ```
 

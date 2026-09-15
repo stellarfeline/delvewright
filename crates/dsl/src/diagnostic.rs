@@ -390,7 +390,7 @@ pub mod codes {
     /// one says nothing at all about the finale being reachable — in the fixture
     /// that raises it the finale completes perfectly well and a side trip hangs
     /// off the plan. Both are `DwCode`, so nothing but the name distinguishes
-    /// them at a call site, and `tools/check-dw-codes.py` credits a bare
+    /// them at a call site, and `tools/ci/check-dw-codes.py` credits a bare
     /// constant name mentioned in a crate's tests to **that crate's** code — so
     /// one shared name would buy coverage for whichever rule the file happens to
     /// sit next to.
@@ -1079,7 +1079,7 @@ mod tests {
     #[test]
     fn a_code_carries_the_tier_it_declares_not_the_one_its_number_spells() {
         // `let`, not `const`: a `const NAME: DwCode = …` here would be a SECOND
-        // diagnostic constant declaring a live code, and `tools/check-dw-codes.py`
+        // diagnostic constant declaring a live code, and `tools/ci/check-dw-codes.py`
         // reads every `crates/**/*.rs` — it refuses one code declared twice, and
         // it is right to. Measured: this test written with `const` reds that gate
         // on all three codes.

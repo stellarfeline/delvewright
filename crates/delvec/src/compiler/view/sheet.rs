@@ -22,7 +22,7 @@
 //! # Two images, two stages, two producers
 //!
 //! A **reference image** is concept art drawn by an image model at the
-//! design-alignment gate (`tools/refimg.py`), before any prefab exists. A
+//! design-alignment gate (`tools/creator/refimg.py`), before any prefab exists. A
 //! **render** is a candidate prefab imaged by `delvec render`, later, here. This
 //! module consumes renders and, optionally, a score file measuring them against
 //! a reference. It never draws either one.
@@ -182,7 +182,7 @@ fn file_name(p: &Path) -> String {
 // Scores
 // ---------------------------------------------------------------------------
 
-/// The score file written by `tools/refscore.py` — one number per candidate,
+/// The score file written by `tools/creator/refscore.py` — one number per candidate,
 /// measured against a reference image (or a reference prompt, for a
 /// text-conditioned metric).
 #[derive(Debug, Clone)]
@@ -767,7 +767,7 @@ fn header_lines(
         None => {
             out.push((format!("{n} candidates - no score file - id order"), FG));
             out.push((
-                "run tools/refscore.py to order this page by similarity to a reference".to_string(),
+                "run tools/creator/refscore.py to order this page by similarity to a reference".to_string(),
                 DIM,
             ));
             out.push((RULING.to_string(), DIM));

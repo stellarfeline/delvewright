@@ -5,7 +5,7 @@
   ADR-0023 and ADR-0024 (`e2f251c6`) and finalised against what was built.
   Amends spec-0049 §4.1 (the site-plan document); the departure is recorded
   in spec-0049 §9 the way §4.4's is. Every count below was measured with
-  `tools/site-plan-scalars.py`, committed beside this spec, on the gallery's
+  `tools/maintenance/site-plan-scalars.py`, committed beside this spec, on the gallery's
   site-plan point (`gallery/overlays/site-plan/`). The 24-place plan the
   finding was first measured on no longer exists in any tree, so its numbers
   (236 typed scalars, 117 of them procedural) are quoted from the finding and
@@ -126,7 +126,7 @@ the document.
 
 ## 4. Every scalar of the plan, classified
 
-The instrument is `tools/site-plan-scalars.py`: a scalar is a JSON number or
+The instrument is `tools/maintenance/site-plan-scalars.py`: a scalar is a JSON number or
 one of the plan's enum-valued strings (`face`, `cmp`, `axis`, `of`, `role`,
 `fixture`, a ceiling's `"open"`); ids, references and notes are not scalars.
 The class is a property of the field, stated once in the tool.
@@ -147,7 +147,7 @@ The class is a property of the field, stated once in the tool.
 | `sightlines[].from/to[]`, `views[].eye/look_at[]` | creative | world coordinates, still (§10) |
 | `lighting.*` | creative | the fixture and its level |
 
-**Counts** (gallery site-plan point, `python3 tools/site-plan-scalars.py
+**Counts** (gallery site-plan point, `python3 tools/maintenance/site-plan-scalars.py
 --form old gallery/overlays/site-plan/site-plan.json` at `66906e39`, then
 `--form new` on the same plan rewritten to this form): **144 typed → 137
 typed; procedural 38 → 0.** The 7 boxes lose 12 of 14 `min` scalars (the entry
@@ -299,11 +299,11 @@ Machine-checkable; each names its instrument.
    `seams[].at` / `seams[].meets` as the offset form (integer or
    `[integer, integer]`), with no sill component; a `seams[].at` of three
    numbers is `DW0100`.
-2. `python3 tools/site-plan-scalars.py --form new
+2. `python3 tools/maintenance/site-plan-scalars.py --form new
    gallery/overlays/site-plan/site-plan.json` reports **procedural 0** and
    **typed 137**; the tool refuses a new-form plan that types a procedural
    scalar and refuses a field it does not classify.
-3. `python3 tools/gallery-baseline.py` (the verify arm) is green over the
+3. `python3 tools/ci/gallery-baseline.py` (the verify arm) is green over the
    adopted gallery, and the site-plan point's blockout sha256 is unchanged;
    the only emitted paths that move are the ones carrying the version
    string, enumerated in the baseline's commit.
@@ -311,7 +311,7 @@ Machine-checkable; each names its instrument.
    (spec-0049 §13.4, unchanged), and a test reverses `seams[]` in a plan with
    a loop and asserts every packed corner is unchanged.
 5. `DW0883` has a test asserting each shape (an unpinned component; a pin the
-   packing contradicts) and a committed gallery probe; `tools/check-dw-codes.py`
+   packing contradicts) and a committed gallery probe; `tools/ci/check-dw-codes.py`
    is green with zero new allowlist entries. The three new `DW0828` shapes
    each have a red test (`crates/dsl/tests/v14_site_plan.rs`).
 6. Regeneration: a test widens one box by one quantum and asserts every new
@@ -319,10 +319,10 @@ Machine-checkable; each names its instrument.
    asserted as exactly one `DW0824` at the sightline; the region case is its
    own test naming the box that left and how it was placed.
 7. `delvec fmt` rewrites `dsl_version` to `0.20.0` on every envelope it
-   formats; `tools/check-json-canonical.py` is green over the tree.
+   formats; `tools/ci/check-json-canonical.py` is green over the tree.
 8. `docs/reference/compiler.md` carries the amended site-plan surface table,
    the `DW0883` row, the amended `DW0828` row and the packing rule stated as
-   §3 states it; `tools/check-doc-dupes.py`, `tools/check-diagnostic-messages.py`
+   §3 states it; `tools/ci/check-doc-dupes.py`, `tools/ci/check-diagnostic-messages.py`
    and the docs job are green.
 9. The gym generator emits the relational form and `cargo test -p delvec
    --test gym` is green.

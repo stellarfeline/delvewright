@@ -11,7 +11,7 @@
   sandstone-family).
 - **Depends on**: spec-0027 §4 (palette-role budget, 60/30/10 per material
   family — approved, **not built**, and it does not define "material family").
-- **Builds on**: `tools/block-appearance.py`, `delvec render contact-sheet`.
+- **Builds on**: `tools/creator/block-appearance.py`, `delvec render contact-sheet`.
 
 ## 1. The problem, stated precisely
 
@@ -88,13 +88,13 @@ jar (`versions.toml [render]`, resolved as `delvec render` resolves it).
 | **form** — full cube / slab / stair / wall / fence / door / trapdoor / button / pressure plate / sign / pane | vanilla block tags (`#slabs`, `#stairs`, `#walls`, `#fences`, `#doors`, `#trapdoors`, `#buttons`, `#pressure_plates`, `#signs`, …) + blockstate property signature from `blocks-1.21.11.json` | 204 block tags exist in 1.21.11; the form tags are complete for their families |
 | **family** — material derivation group | connected components of the recipe graph: `stonecutting` ∪ `smelting` ∪ crafting recipes with exactly one block-valued ingredient | 1166 blocks → **806 families, 126 multi-member covering 486 blocks**, largest 20 (deepslate), no runaway merge. Probes: sandstone → 11 (sand, cut/smooth/chiseled, slabs, stairs, wall); diorite → 7; deepslate → 20; **calcite → 1**; `dried_kelp_block` → 1 |
 | **gravity** | the set `delvec prefab`/`DW0313` already owns (`sand`, `gravel`, `concrete_powder`, anvils, `dragon_egg`) | in-repo, reuse — do not re-derive |
-| **technical / never-a-material** | `TECHNICAL` in `tools/block-appearance.py` | in-repo, reuse |
-| **biome-tinted** | `TINTED_*` in `tools/block-appearance.py` | in-repo, reuse |
+| **technical / never-a-material** | `TECHNICAL` in `tools/creator/block-appearance.py` | in-repo, reuse |
+| **biome-tinted** | `TINTED_*` in `tools/creator/block-appearance.py` | in-repo, reuse |
 
 ### 3.2 Appearance — needs the client jar
 
 Per block default state, from the alpha-covered pixels of every texture its model
-references (existing resolution path in `tools/block-appearance.py`), converted to
+references (existing resolution path in `tools/creator/block-appearance.py`), converted to
 **Oklab**:
 
 `L` (lightness) · `C_mean` (mean per-pixel chroma) · `C_p90`, `C_max` (the
@@ -186,7 +186,7 @@ A deterministic derivation, split by what it needs:
   reconstruct any texture, and MIT precedent exists) is **§7's open question for
   the owner**, not decided here.
 
-Surface: this belongs to `tools/block-appearance.py`, which already owns "what a
+Surface: this belongs to `tools/creator/block-appearance.py`, which already owns "what a
 block actually looks like, measured from the pinned jar". It grows facets, Oklab
 statistics, a `--screen` filter and a `--sheet` output. **It does not become a
 second tool** — a sibling tool would be the second-bespoke-surface defect, and
@@ -331,7 +331,7 @@ chooses. It does not choose.
 
 ## 8. Acceptance criteria
 
-1. `tools/block-appearance.py --json` emits, for every block it resolves,
+1. `tools/creator/block-appearance.py --json` emits, for every block it resolves,
    Oklab `L`, `C_mean`, `C_p90`, `C_max`, `hue`, `L_p05`, `L_p95`, `L_sd`,
    plus `family`, `form` and the reused `gravity` / `technical` / `tinted` flags.
    A test asserts the exact values for `sandstone`, `calcite`, `polished_diorite`,
@@ -359,9 +359,9 @@ chooses. It does not choose.
    directory.
 7. Every DW diagnostic introduced by the mix report is covered by a test
    asserting its code and is listed in `docs/reference/compiler.md`
-   (`tools/check-dw-codes.py`).
+   (`tools/ci/check-dw-codes.py`).
 8. `docs/reference/tools.md` and every skill whose palette step this changes are
    updated in the same PR; `docs/demo-levels.md` gains the mechanic's row.
 9. No existing check, test or threshold is weakened, and
-   `tools/block-appearance.py`'s current `--id` / `--near` / `--list` behaviour
+   `tools/creator/block-appearance.py`'s current `--id` / `--near` / `--list` behaviour
    is preserved.

@@ -154,7 +154,7 @@ impl Placement {
     /// every enclosed box, and a prefab campaign carries one per `areas[]`
     /// entry. The prose around it — which fixture, what `min_light` is for, what
     /// not to do about it — is the same either way and stays where it is
-    /// written, which is also where `tools/check-diagnostic-messages.py` reads
+    /// written, which is also where `tools/ci/check-diagnostic-messages.py` reads
     /// it.
     ///
     /// `NoMap` answers with the `areas[]` field: such a campaign has no area for

@@ -108,7 +108,7 @@ jobs:
           # refused (the version is on crates.io with different bytes) must red
           # here, not be parsed for a verdict it never reached.
           rc=0
-          bash tools/crates-io-publish.sh --plan --only delvewright-dsl > plan.txt 2>&1 || rc=$?
+          bash tools/ci/crates-io-publish.sh --plan --only delvewright-dsl > plan.txt 2>&1 || rc=$?
           cat plan.txt
           [ "$rc" -eq 0 ] || exit "$rc"
           # The script's one machine-readable line. Reading it is what keeps the
@@ -198,7 +198,7 @@ jobs:
       - name: the gate actually bound (a run nobody approved must not publish)
         env:
           GH_TOKEN: ${{ github.token }}
-        run: bash tools/assert-run-approved.sh crates-io
+        run: bash tools/ci/assert-run-approved.sh crates-io
       - uses: Swatinem/rust-cache@v2
         with: { key: "dsl-crate-publish" }
       # Packages the crate itself, compares its sha256 with the registry's,
@@ -207,7 +207,7 @@ jobs:
       - name: publish
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-        run: bash tools/crates-io-publish.sh --publish --only delvewright-dsl
+        run: bash tools/ci/crates-io-publish.sh --publish --only delvewright-dsl
       # The asset is the registry's OWN tarball — the bytes crates.io received and
       # serves — downloaded and refused unless it hashes to the index sha256, not a
       # local re-packaging (whose `.cargo_vcs_info.json` names this commit).
@@ -236,7 +236,7 @@ jobs:
           rc=0
           state="$(python3 tools/lib/github_releases.py state "$GITHUB_REPOSITORY" "$TAG")" || rc=$?
           [ "$rc" -eq 0 ] || { echo "::error::could not read the state of Release $TAG"; exit 1; }
-          python3 tools/release-notes.py delvewright-dsl --commit "$COMMIT" > notes.md
+          python3 tools/ci/release-notes.py delvewright-dsl --commit "$COMMIT" > notes.md
           title="$(python3 tools/lib/release_tags.py title "$TAG")"
           crate="dist/delvewright-dsl-$VERSION.crate"
           case "$state" in

@@ -374,7 +374,7 @@ tree cannot yet satisfy a criterion the verdict is recorded as a debt.
    `dsl::validate` (document arm), with one test per shape — caught floor that
    shows nothing; a declared signal the bytes do not hold, both with and
    without caught cells; a `shown_by` naming a block vanilla does not hurt —
-   and zero new allowlist entries in `tools/check-dw-codes.py`. *Tree: debt —
+   and zero new allowlist entries in `tools/ci/check-dw-codes.py`. *Tree: debt —
    the code is on none of 75 refs.*
 2. **The hurting-block set.** One function in `crates/dsl` answers whether a
    block id damages a body in 1.21.11, with `VanillaRule` provenance citing
@@ -412,7 +412,7 @@ tree cannot yet satisfy a criterion the verdict is recorded as a debt.
 8. **Remedies reachable.** `remedy_reachability.rs` holds a row for every
    move `DW0891`, `DW0850` and `DW0881` name; every row's terminal is exit 0 or
    a named successor with its own row, and no code is met twice on a chain;
-   `tools/check-dw-codes.py`'s move subject widens from bases and documents to
+   `tools/ci/check-dw-codes.py`'s move subject widens from bases and documents to
    a backticked field or a named object, prints the count it binds, and every
    code it newly binds without a row is a red — the number newly bound is to
    be verified, and a row that cannot land is a ledger row per code, never an
@@ -432,7 +432,7 @@ tree cannot yet satisfy a criterion the verdict is recorded as a debt.
     completes from its rim at the `r_min` the engine names, and its radius
     perturbed to `r_min − 1` is `DW0850` naming `r_min`;
     `a-reach-that-completes-from-the-floor-below` is unchanged and green;
-    `tools/check-gallery-coverage.py` reports 0 units in neither state.
+    `tools/ci/check-gallery-coverage.py` reports 0 units in neither state.
     *Tree: debt — both pits are volumes over the hall's stone floor (`[2, 1, 3]`
     and `[20, 1, 2]`, extent `[1, 2, 1]`), each with about twenty walked cells
     in its keep-out at the walk plane, a number the implementing round measures;

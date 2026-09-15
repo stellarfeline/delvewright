@@ -14,8 +14,8 @@ user's decision and this script is only the download arm of it.
 
 WHAT IS NOT A CONSTANT HERE
 
-The manifest URL is the one `tools/check-patrol-types.py` and
-`tools/derive-client-langs.py` already carry in the engine, and the version is
+The manifest URL is the one `tools/maintenance/check-patrol-types.py` and
+`tools/maintenance/derive-client-langs.py` already carry in the engine, and the version is
 the engine's own `[minecraft]` pin — read from the checkout, never restated.
 Point the same walk at `downloads.server` instead and it reproduces that same
 file's committed `server_jar_url` and `server_jar_sha1` exactly, which is how a

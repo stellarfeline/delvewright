@@ -78,7 +78,7 @@ not third-party reconstructions.
   `bubble_column`) and **492 false accepts** (items that are not blocks —
   `minecraft:diamond` passes as a block id). Widening `DW0193` onto this file is
   a `dsl_version`-scale change and is deliberately NOT done here.
-  **Reproduce it**: `python3 tools/extract-block-registry.py
+  **Reproduce it**: `python3 tools/maintenance/extract-block-registry.py
   <blocks/data.min.json> crates/dsl/data/blocks-1.21.11.json`. The script
   pins and checks the source SHA-256 and the block count.
 
@@ -95,7 +95,7 @@ not third-party reconstructions.
   capability belongs to the object class).
   Like the font metrics below, the client jar is EULA-bound and never
   committed; what is committed is the derived table of property names.
-  **Reproduce it**: `python3 tools/extract-shape-properties.py
+  **Reproduce it**: `python3 tools/maintenance/extract-shape-properties.py
   <minecraft-1.21.11-client.jar> crates/dsl/data/blockstate-shape-props-1.21.11.json`.
   The script pins the jar's `version.json` to `1.21.11` / DataVersion 4671 and
   cross-checks every derived property against `blocks-1.21.11.json` — a
@@ -122,7 +122,7 @@ not third-party reconstructions.
   WHICH properties the model is assembled from: this says what each of them means
   when it is not written. Consumed by `delvec::schem::blocks`
   (`default_state` / `unwritten`) and through it by the prefab review page.
-  **Reproduce it**: `python3 tools/extract-block-defaults.py
+  **Reproduce it**: `python3 tools/maintenance/extract-block-defaults.py
   <blocks/data.min.json> crates/dsl/data/block-defaults-1.21.11.json`. The
   script pins and checks the source SHA-256 and the block count, and refuses a
   default that is not one of its own property's legal values.
@@ -159,7 +159,7 @@ not third-party reconstructions.
   Consumed by `delvewright_dsl::blocks::BlockRegistry::loaded_id_at`, and through
   it by `delvec prefab audit`'s allowlist (`DW0730`) and pre-pin warning
   (`DW0734`).
-  **Reproduce it**: `python3 tools/extract-block-renames.py
+  **Reproduce it**: `python3 tools/maintenance/extract-block-renames.py
   crates/dsl/data/block-renames-1.21.11.json`. The script reads the same mcmeta
   mirror as the tables above, one `<version>-summary` branch per release; it
   refuses to run unless the newest release at or below DataVersion 4671 is the
@@ -182,7 +182,7 @@ not third-party reconstructions.
   and sorted (same transform as the item/entity registries). 1838 sound events.
   Validates v0.6 `play-sound` / v0.4 `narrate.sound` ids (`DW0326`, spec-0014).
   **Reproduce it** (not a one-off — CLAUDE.md debug doctrine "automate the pitfall
-  out of existence"): `python3 tools/extract-sound-registry.py <registries/data.min.json>
+  out of existence"): `python3 tools/maintenance/extract-sound-registry.py <registries/data.min.json>
   crates/delvec/data/sounds-1.21.11.json`. The script pins and checks the source
   SHA-256 and applies the transform `sorted(set("minecraft:"+i for i in sound_event))`,
   `json.dumps(indent=2, sort_keys=True)`.
@@ -195,7 +195,7 @@ not third-party reconstructions.
   (`DW0436`): `item replace block … container.<n> with <item> <count>` fails
   **silently** above the cap (rabbit stew caps at 1), the same silent-failure class
   `DW0431` exists for.
-  **Reproduce it**: `python3 tools/extract-item-stack-sizes.py
+  **Reproduce it**: `python3 tools/maintenance/extract-item-stack-sizes.py
   <item_components/data.min.json> crates/delvec/data/item-stack-sizes-1.21.11.json`.
   The script pins and checks the source SHA-256, and refuses to default a missing
   component rather than silently assuming 64.
@@ -210,7 +210,7 @@ not third-party reconstructions.
   the same as dealing no damage — a bow's damage is projectile code and appears in no
   vanilla data at all, which is exactly why `combat.rs` treats a projectile kit as
   "TTK not provable" instead of "TTK infinite".
-  **Reproduce it**: `python3 tools/extract-item-combat-stats.py
+  **Reproduce it**: `python3 tools/maintenance/extract-item-combat-stats.py
   <item_components/data.min.json> crates/delvec/data/item-combat-1.21.11.json`.
   The script refuses any non-`add_value` operation rather than mis-summing it.
 
@@ -224,14 +224,14 @@ not third-party reconstructions.
   scripted hits are *not* halved by the `min(dmg/2+1, dmg)` formula. Only
   `minecraft:explosion` (`always`) scales. Deriving the arithmetic from the
   difficulty formula alone would have been wrong by 2× in the lenient direction.
-  **Reproduce it**: `python3 tools/extract-damage-types.py <damage_type/data.min.json>
+  **Reproduce it**: `python3 tools/maintenance/extract-damage-types.py <damage_type/data.min.json>
   <tag/damage_type/data.min.json> crates/delvec/data/damage-types-1.21.11.json`.
 
 - **`block-classification-1.21.11.json`** — every block's **form** (its shape
   class) and material **family**, derived from vanilla's own block tags and
   recipe graph in the same summary. 1166 blocks → **788 families**, 128
   multi-member covering 506 blocks, largest **20** (deepslate). Consumed by
-  `tools/block-appearance.py`'s screen and mix report (spec-0035), and by
+  `tools/creator/block-appearance.py`'s screen and mix report (spec-0035), and by
   `prefabs/invariants/src/connections.rs`, whose `fence` / `pane` / `wall` connection classes
   are this table's `form` rather than a name-matched list of its own.
   **Why it exists**: palette selection needed to answer "what shape is this" and
@@ -258,7 +258,7 @@ not third-party reconstructions.
   together welds everything downstream of them, and it breaks spec-0035's own
   45-member runaway guard. The purely-derived table is what ships;
   `--family-tags` and `--loose` reproduce both measurements.
-  **Reproduce it**: `python3 tools/extract-block-classification.py
+  **Reproduce it**: `python3 tools/maintenance/extract-block-classification.py
   <tag/block/data.min.json> <recipe/data.min.json>
   crates/delvec/data/block-classification-1.21.11.json`. The script pins and
   checks both source SHA-256s and the block count, and picks each family's
@@ -278,7 +278,7 @@ not third-party reconstructions.
   from the declaration alone and is therefore a validation-tier rule, and before
   it read the tag it answered from a five-species array the pinned game
   disagreed with. Choosing `#minecraft:raiders` for that question is itself a
-  claim about the game, and `tools/check-patrol-types.py` is what falsifies it:
+  claim about the game, and `tools/maintenance/check-patrol-types.py` is what falsifies it:
   it re-derives the set three ways from the pinned server jar — the tag, the
   entity types whose class is a `PatrollingMonster`, and the entity types whose
   class is a `Raider` — and requires all three to name the same species. It also
@@ -293,7 +293,7 @@ not third-party reconstructions.
   immunity is a hardcoded entity-type property that appears in no vanilla data
   branch — so `daylight.rs` carries that one exclusion explicitly, cited, rather
   than pretending the tag alone is the whole rule.
-  **Reproduce it**: `python3 tools/extract-entity-tags.py
+  **Reproduce it**: `python3 tools/maintenance/extract-entity-tags.py
   <data/tag/entity_type/data.min.json> crates/dsl/data/entity-tags-1.21.11.json`.
 
 - **`item-equippable-1.21.11.json`** — every item that carries the
@@ -311,7 +311,7 @@ not third-party reconstructions.
   `c5b876288e0df01b5cd5798434b066ab97eff88c`, the 44 files under
   `assets/minecraft/equipment/`, whose sorted `sha256sum` listing (`<hex>  <name>`
   per line) hashes to `150b585538e2295db9daee16e3fce4c23ac5bcdddc85358208b8e7adadbf78bb`.
-  **Reproduce it**: `python3 tools/extract-item-equippable.py
+  **Reproduce it**: `python3 tools/maintenance/extract-item-equippable.py
   <item_components/data.min.json> <assets/minecraft/equipment dir>
   crates/delvec/data/item-equippable-1.21.11.json`. The script pins both digests and
   every count above, refuses a mismatch by exit status 1, and writes the same bytes
@@ -361,7 +361,7 @@ the measurement is reproducible instead of vendored.
 **Reproduce it** (debug doctrine — "automate the pitfall out of existence"):
 
 ```sh
-python3 tools/extract-font-metrics.py <minecraft-1.21.11-client.jar>
+python3 tools/maintenance/extract-font-metrics.py <minecraft-1.21.11-client.jar>
 ```
 
 Stdlib-only (its own PNG decoder — the sheets are 1-bit indexed + `tRNS`). Prints a

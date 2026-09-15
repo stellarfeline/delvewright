@@ -746,7 +746,7 @@ the box in hand: `[rel 3, abs 1, abs 1, rel 2]` down `Y` is mass, the crust
 course that is the top of the mass, the litter course standing on the crust, and
 the air above. Scatter members are deliberately not full cubes
 (`moss_carpet`, `short_grass`, `brown_mushroom`) —
-`tools/block-appearance.py --full-cube-only` is for the structural roles, and a
+`tools/creator/block-appearance.py --full-cube-only` is for the structural roles, and a
 litter layer is exactly where the rest belong. The same move on a different axis
 is a wall's inner face; with a light-emitting member it is idiom 9.
 
@@ -1113,7 +1113,7 @@ struct field has no such property: it rides through every walk untouched in both
 directions, so an engine that predates the field deserialises the document with
 the field's default, expands, passes every gate, and writes different geometry.
 Two mechanisms answer it, and both are enforced by
-`tools/check-grammar-ir-compat.py` in CI:
+`tools/ci/check-grammar-ir-compat.py` in CI:
 
 1. Every IR object type is a **closed schema** (`deny_unknown_fields`), so an
    engine meeting a document from a newer engine refuses it by name. The
@@ -3312,7 +3312,7 @@ The §4 craft diagnostics, jigsaw connector emission, and the JSON schema stage 
 front of the IR. Later phases of spec-0027.
 
 The §4 palette budget's **measurement** does exist, out of the compiler:
-`python3 tools/block-appearance.py --program <p.json>` reads every `palette` role
+`python3 tools/creator/block-appearance.py --program <p.json>` reads every `palette` role
 and every inline `fill` material of a program — in either frame, since a
 `{"local": …}` paint is the same states and the frame moves no block and changes
 no colour — and reports each mix's `chroma_mass`, `chromatic_area`, **named**
@@ -3327,7 +3327,7 @@ whole-zone today: scoping it to player-reachable mass is the risk §5 records.
 
 The **contact sheet** is built: `delvec contact-sheet` lays a directory of
 candidate renders out as one page, optionally ordered by a similarity score
-against a reference image (`tools/refscore.py`, spec-0028 §3 — the score RANKS
+against a reference image (`tools/creator/refscore.py`, spec-0028 §3 — the score RANKS
 the page and never gates it). What is still missing between the expander and
 that page is the automatic part: nothing yet drives "expand N seed-varied
 candidates → `batch`-render them → sheet", so the sweep is assembled by hand

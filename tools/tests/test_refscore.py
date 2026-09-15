@@ -1,4 +1,4 @@
-"""Unit tests for tools/refscore.py (contact-sheet similarity scoring).
+"""Unit tests for tools/creator/refscore.py (contact-sheet similarity scoring).
 
 Two things are proven here, and the second is the one that matters.
 
@@ -24,7 +24,7 @@ from pathlib import Path
 
 import pytest
 
-TOOL = Path(__file__).resolve().parents[1] / "refscore.py"
+TOOL = Path(__file__).resolve().parents[1] / "creator" / "refscore.py"
 
 
 def _load():

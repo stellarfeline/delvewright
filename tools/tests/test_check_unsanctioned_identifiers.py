@@ -1,4 +1,4 @@
-r"""Guards for `tools/check-unsanctioned-identifiers.py`.
+r"""Guards for `tools/ci/check-unsanctioned-identifiers.py`.
 
 The shape it exists to prevent is not a single bad line — it is REFILL. A sweep
 took the repository from 1,751 unresolvable citations to a floor, and the count
@@ -41,7 +41,7 @@ from pathlib import Path
 import pytest
 
 REPO = Path(__file__).resolve().parents[2]
-CHECKER = REPO / "tools" / "check-unsanctioned-identifiers.py"
+CHECKER = REPO / "tools" / "ci" / "check-unsanctioned-identifiers.py"
 
 
 def load(path: Path):
@@ -79,7 +79,7 @@ class Tree:
 
     def checker(self, floor: dict[str, int] | None = None,
                 allowed: dict[str, str] | None = None):
-        dst = self.root / "tools" / "check-unsanctioned-identifiers.py"
+        dst = self.root / "tools" / "ci" / "check-unsanctioned-identifiers.py"
         shutil.copy(CHECKER, dst)
         self._git("add", "-A")
         self._git("commit", "-qm", "checker", "--allow-empty")

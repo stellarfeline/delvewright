@@ -8,7 +8,7 @@
 # This lock means "someone is using the owner's client address, localhost:25565".
 # Nothing else. The only things that may take it are the two sanctioned 25565
 # binders — `docker compose … -f validation/owner-play.yaml` and
-# `tools/playtest-server.sh` — and a human at the keyboard behind either of them.
+# `tools/creator/playtest-server.sh` — and a human at the keyboard behind either of them.
 #
 # ## What this lock is NOT
 #
@@ -22,7 +22,7 @@
 #
 # The fix is isolation by construction, not a better lock. `compose.yaml` now
 # pins no container name and publishes no port (CI gate:
-# `tools/check-compose-isolation.py`), so a worker ladder is fully described by
+# `tools/ci/check-compose-isolation.py`), so a worker ladder is fully described by
 # its compose project: `validation/packtest-run.sh --project dw-<id>`,
 # `validation/bot-run.sh --project dw-<id>`, teardown via
 # `validation/fresh-volumes.sh --project dw-<id>`. Two of them on one host are
@@ -66,7 +66,7 @@ dw_mutex_holder() {
 
 # True while any container publishes host 25565 — i.e. an owner-facing session is
 # actually up. Name-independent on purpose: `owner-play.yaml` and
-# `tools/playtest-server.sh` use different container names, and what matters is
+# `tools/creator/playtest-server.sh` use different container names, and what matters is
 # the PORT, not who bound it.
 # Capture, then test — a `| grep -q` here is a coin flip: grep exits at the first
 # match, `docker ps` dies of SIGPIPE, and the caller's `pipefail` turns the match
@@ -150,7 +150,7 @@ dw_mutex_release() {
 # owner-play-session is additionally guarded: it is refused while ANY container
 # still publishes host 25565 — the name is sacred because a HUMAN may be behind
 # it, so the end of their session must be verifiable, not assumed. The PORT is
-# the resource, never a container name — `tools/playtest-server.sh` binds it
+# the resource, never a container name — `tools/creator/playtest-server.sh` binds it
 # under a name of its own.
 dw_mutex_release_named() {
   local name="${1:?dw_mutex_release_named needs the holder name to release}"

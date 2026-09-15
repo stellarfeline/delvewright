@@ -268,7 +268,7 @@ gate and `docs/reference/compiler.md` stay authoritative (spec-0013 precedent).
    PackTest proves no non-scripted mob on sampled backdrop surfaces.
 10. CI records shipped image size delta and first-boot time per horizon and
     backdrop fixture (informational — no thresholds).
-11. `docs/reference/compiler.md` DW rows + `tools/check-dw-codes.py` green in
+11. `docs/reference/compiler.md` DW rows + `tools/ci/check-dw-codes.py` green in
     the same PR as each landing.
 
 ## Non-goals

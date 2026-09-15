@@ -1,6 +1,6 @@
 r"""Guard: main is fast-forwarded to a release commit only when every required check SUCCEEDED on it.
 
-`tools/wait-required-checks.py` with the GitHub read injected. The required set
+`tools/ci/wait-required-checks.py` with the GitHub read injected. The required set
 is the real `.github/required-status-checks.txt`, so a context added there is
 waited for without an edit here.
 """
@@ -11,7 +11,7 @@ import importlib.util
 import pathlib
 
 REPO = pathlib.Path(__file__).resolve().parents[2]
-spec = importlib.util.spec_from_file_location("wait_required_checks", REPO / "tools" / "wait-required-checks.py")
+spec = importlib.util.spec_from_file_location("wait_required_checks", REPO / "tools" / "ci" / "wait-required-checks.py")
 mod = importlib.util.module_from_spec(spec)
 assert spec.loader is not None
 spec.loader.exec_module(mod)

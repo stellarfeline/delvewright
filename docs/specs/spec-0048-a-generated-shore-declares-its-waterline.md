@@ -201,7 +201,7 @@ without inventing an addressing scheme no other consumer needs.
 ## 5. Order of work
 
 1. Fence: version reservation (number handed by the planner at dispatch) and
-   the field's row in the `tools/check-grammar-ir-compat.py` ledger.
+   the field's row in the `tools/ci/check-grammar-ir-compat.py` ledger.
 2. `Program::waterline` + validation (no-dims rule, fence refusal).
 3. Export: evaluate, verify against `settle::fluid_bodies`, write at both
    sites; the refusal's DW code (handed at dispatch), its catalog row, and

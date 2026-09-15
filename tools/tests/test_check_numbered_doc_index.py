@@ -1,4 +1,4 @@
-"""Guards for `tools/check-numbered-doc-index.py`.
+"""Guards for `tools/ci/check-numbered-doc-index.py`.
 
 The defect is a COPY that nothing compares against its source. Seven of
 thirty-seven spec rows disagreed with the spec file they point at, seven spec
@@ -26,7 +26,7 @@ from pathlib import Path
 import pytest
 
 REPO = Path(__file__).resolve().parents[2]
-CHECKER = REPO / "tools" / "check-numbered-doc-index.py"
+CHECKER = REPO / "tools" / "ci" / "check-numbered-doc-index.py"
 
 
 def load():

@@ -14,7 +14,7 @@ node_modules/
 *.log
 .claude/worktrees/
 
-# tools/check-publishable.sh + tools/crates-io-publish.sh --only's own
+# tools/ci/check-publishable.sh + tools/ci/crates-io-publish.sh --only's own
 # `cargo package` CARGO_TARGET_DIR — deliberately NOT under target/, which
 # Swatinem/rust-cache walks on every save/restore for the calling CI job
 # (tools/lib/package-verify.sh: run 34066557967's ENOENT annotations came from
@@ -29,7 +29,7 @@ package-verify/
 validation/delve-output*/
 
 # One point of the gallery domain, materialised into a campaign directory by
-# `tools/gallery-build.py` so that the tree the bot walks can be rebuilt on
+# `tools/ci/gallery-build.py` so that the tree the bot walks can be rebuilt on
 # demand instead of existing only inside a temp dir. Copied out of `gallery/`
 # on every run — the SOURCE is `gallery/`, and a committed copy of it would be
 # a second gallery, which spec-0039 §2 refuses. Its build tree is covered by
@@ -89,7 +89,7 @@ delvewright.local.toml*
 # repo goes public).
 docs/notes/private/
 
-# Release-shelf build output (tools/build-release-binaries.sh).
+# Release-shelf build output (tools/ci/build-release-binaries.sh).
 dist/
 
 # Reference-image drafts. The engine repo holds no reference images: an APPROVED
@@ -99,8 +99,8 @@ dist/
 
 # Contact sheets + their score files, same rule: candidate renders laid out for
 # the owner to curate massing from (`delvec contact-sheet`,
-# `tools/refscore.py`), and the palette swatch sheets under `.sheets/palette/`
-# (`tools/block-appearance.py --sheet`), which are tiled Mojang texture pixels.
+# `tools/creator/refscore.py`), and the palette swatch sheets under `.sheets/palette/`
+# (`tools/creator/block-appearance.py --sheet`), which are tiled Mojang texture pixels.
 # Generation-time working material — never shipped, never in the content repo, so
 # nothing on a sheet can carry licensing into a delve (ADR-0013) or move its
 # bytes (ADR-0006). The tool refuses to write a sheet anywhere else in the repo.
@@ -144,7 +144,7 @@ gallery-coverage.md
 # never red on it.
 gallery-frames/
 whole-map-render/
-# `tools/check-gallery-stageable.py`'s work directory: one campaign and one
+# `tools/ci/check-gallery-stageable.py`'s work directory: one campaign and one
 # build tree per point of the gallery domain, plus the staging gate's reports
 # and the admission tokens it mints for them. Deliberately NOT inside a build
 # tree — a token where a staging path would find one is how the gallery would

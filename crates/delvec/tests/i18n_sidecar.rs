@@ -1,4 +1,4 @@
-//! What `tools/i18n-translate.py` writes is in canonical form.
+//! What `tools/creator/i18n-translate.py` writes is in canonical form.
 //!
 //! `delvec fmt --check` refused **every** sidecar that tool had ever produced —
 //! `DW0773`, an error tier — because the writer laid the envelope out in the

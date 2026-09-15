@@ -1,4 +1,4 @@
-"""`tools/playtest-server.sh` reclaims every class a session holds.
+"""`tools/creator/playtest-server.sh` reclaims every class a session holds.
 
 The defect: `up` staged the world into `$TMPDIR/dw-playtest-data.XXXXXX` and the
 build into `$TMPDIR/dw-playtest-out.XXXXXX`, and `down` removed the container and
@@ -26,7 +26,7 @@ import subprocess
 import pytest
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
-SCRIPT = ROOT / "tools" / "playtest-server.sh"
+SCRIPT = ROOT / "tools" / "creator" / "playtest-server.sh"
 NAME = "dw-test-session"
 
 # The size on a named line, e.g. `staged world reclaimed: /x/y (116.4 MiB)`.

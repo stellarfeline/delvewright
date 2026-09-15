@@ -63,7 +63,7 @@ image of the built map; there is not one.
   `campaigns/<id>/design/concept/` and already approved, with `design/README.md`
   naming the approved set. The gate is: present the design
   beside them and confirm the design still is what they show.
-- On path B, `$DELVEWRIGHT_ENGINE/tools/refimg.py` draws them; prompt iteration is the work, and a
+- On path B, `$DELVEWRIGHT_ENGINE/tools/creator/refimg.py` draws them; prompt iteration is the work, and a
   subject needing more than one view is drawn as a **sequence of single
   full-frame views**, never one canvas cut into panels — the form is in
   *Reference: drawing the map's reference*.
@@ -122,7 +122,7 @@ Commit them with the campaign. Everything under `design/` is tracked with
 git-lfs (`.gitattributes`), so an approved image commits as a small pointer and
 its bytes travel out of band — `git lfs install` in that clone is all this
 needs, and it is why carrying a campaign's whole design set in the repository
-does not make the next person's clone of it a several-hundred-megabyte download. `$DELVEWRIGHT_ENGINE/tools/refimg.py` writes to a gitignored working
+does not make the next person's clone of it a several-hundred-megabyte download. `$DELVEWRIGHT_ENGINE/tools/creator/refimg.py` writes to a gitignored working
 directory, which is right for a draft and wrong for an approved one — **an
 approval that lives only in a published page is bound to nothing.** The sidecar
 travels with the image because it is what makes the image re-issuable with one
@@ -145,7 +145,7 @@ From step 5 on, `DW0890` holds the record and the directory to each other in bot
 directions — a row naming no file, an approved file with no row, a stem two files
 answer to — and holds the skies the rows state to the skies the world can reach.
 A campaign that ships no `design.json` has approved no design: validation
-measures that as a zero and says so without refusing, and `"$DELVEWRIGHT_ENGINE/tools/staging-gate.py"`
+measures that as a zero and says so without refusing, and `"$DELVEWRIGHT_ENGINE/tools/creator/staging-gate.py"`
 is where the zero is a red, so a build nobody can stage is what an unwritten
 record costs.
 
@@ -164,7 +164,7 @@ Two tools help when a still image cannot answer the question:
   every anchor, and a cutaway that takes the roof off. Every block is drawn from
   the pinned version's own models and textures, so a wall is a wall.
 - `delvec --prefabs "$DELVEWRIGHT_PREFABS" contact-sheet <renders> -o <png>` — when candidate prefabs exist and
-  someone is choosing between them, all of them on one page. `$DELVEWRIGHT_ENGINE/tools/refscore.py`
+  someone is choosing between them, all of them on one page. `$DELVEWRIGHT_ENGINE/tools/creator/refscore.py`
   can order the page by similarity to this gate's reference image; the score
   only **orders** the page, it never removes a candidate.
 

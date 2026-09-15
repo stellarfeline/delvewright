@@ -1,4 +1,4 @@
-"""Guards for `tools/tree-digest.py` — the instrument of the cross-OS ADR-0006 gate.
+"""Guards for `tools/ci/tree-digest.py` — the instrument of the cross-OS ADR-0006 gate.
 
 The gate this feeds compares two hosts. What makes such a comparison worthless
 is not a wrong hash: it is a comparison that CANNOT disagree — because the
@@ -14,7 +14,7 @@ import sys
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent.parent
-TOOL = REPO / "tools" / "tree-digest.py"
+TOOL = REPO / "tools" / "ci" / "tree-digest.py"
 
 
 def run(*args: str) -> subprocess.CompletedProcess:
@@ -120,14 +120,14 @@ def test_a_manifest_this_tool_did_not_write_is_refused(tmp_path):
 def test_the_subject_script_and_the_job_name_the_same_thing():
     """The comparison is only about determinism if both hosts ran one subject.
 
-    Binding: the two `tools/determinism-subject.sh` invocations in `ci.yml` — one
+    Binding: the two `tools/ci/determinism-subject.sh` invocations in `ci.yml` — one
     in `rust (fmt, clippy, test)`, one in the macOS job — and the required
     context that names the second.
     """
     ci = (REPO / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
     # INVOCATIONS, not mentions: a comment naming the script is not a caller,
     # and counting mentions would make a prose edit move a binding count.
-    invocations = ci.count("bash tools/determinism-subject.sh")
+    invocations = ci.count("bash tools/ci/determinism-subject.sh")
     assert invocations == 2, (
         f"the two hosts must build the SAME subject and {invocations} site(s) "
         "invoke it; a second statement of the subject in the workflow is how "

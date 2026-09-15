@@ -18,6 +18,6 @@ jobs:
       - name: the gate actually bound
         env:
           GH_TOKEN: ${{ github.token }}
-        run: bash tools/assert-run-approved.sh crates-io
+        run: bash tools/ci/assert-run-approved.sh crates-io
       - name: send it, somehow
         run: bash tools/upload-everything.sh

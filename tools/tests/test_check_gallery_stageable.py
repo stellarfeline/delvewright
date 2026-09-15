@@ -3,7 +3,7 @@
 Three failure modes are pinned here, and they are different in kind.
 
 **UNRUN.** A gate nothing invokes is a documented command. That is the shape this
-step exists to remove from `tools/staging-gate.py`, so a step that stopped
+step exists to remove from `tools/creator/staging-gate.py`, so a step that stopped
 invoking `check-gallery-stageable.py` would put it straight back.
 
 **Unbound.** The domain is enumerated from `gallery/baseline/manifests.json`
@@ -35,8 +35,8 @@ def _load(name: str, filename: str):
     return module
 
 
-cgs = _load("check_gallery_stageable", "check-gallery-stageable.py")
-staging_gate = _load("staging_gate", "staging-gate.py")
+cgs = _load("check_gallery_stageable", "ci/check-gallery-stageable.py")
+staging_gate = _load("staging_gate", "creator/staging-gate.py")
 
 
 # ------------------------------------------------------------------------ UNRUN
@@ -48,10 +48,10 @@ def test_ci_runs_the_check():
     invocations = [
         line
         for line in ci.splitlines()
-        if "tools/check-gallery-stageable.py" in line and not line.strip().startswith("#")
+        if "tools/ci/check-gallery-stageable.py" in line and not line.strip().startswith("#")
     ]
     assert invocations, (
-        "no CI step runs `tools/check-gallery-stageable.py`. The staging gate is then bound to "
+        "no CI step runs `tools/ci/check-gallery-stageable.py`. The staging gate is then bound to "
         "the staging event alone again, which is where it started"
     )
 
@@ -111,7 +111,7 @@ def test_which_verdicts_refuse_is_the_gates_own_answer():
 
 def test_the_override_is_never_reachable_from_here():
     """`--stage-anyway` is the one flag that must never become how a gate is run."""
-    text = (TOOLS / "check-gallery-stageable.py").read_text()
+    text = (TOOLS / "ci" / "check-gallery-stageable.py").read_text()
     for flag in ("--stage-anyway", "--acknowledge-red"):
         assert flag not in text, (
             f"this step can pass `{flag}` to the staging gate. An override reachable from a "

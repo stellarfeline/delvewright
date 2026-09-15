@@ -55,7 +55,7 @@ cache and copies the plugin out, and their own filesystem gets no working tree.
 | prefab library (`campaigns/prefabs`) | 95,355 B | 479,232 B, 74 files | the content repo — **OPTIONAL** (ADR-0027 §1): taken at step 2 by a campaign that seats shipped pieces, and by no other |
 
 ```
-bash tools/build-release-binaries.sh --target aarch64-apple-darwin
+bash tools/ci/build-release-binaries.sh --target aarch64-apple-darwin
 ls -l dist/delvec-v1.1.0-aarch64-apple-darwin.tar.gz        → 9,256,047 B
 ls -l target/aarch64-apple-darwin/release/delvec             → 24,489,840 B
 wc -c < target/aarch64-apple-darwin/release/delvec           → 24,489,840 (second reader, same answer)
@@ -78,7 +78,7 @@ that guarantees every capability on every machine (§2 there). This is the 2.1 G
 - **Python 3 + a `delve_skin` venv** — only when a campaign declares custom NPC
   skins (ADR-0018 §3; a missing skin is `DW0309`, deliberately not a silent
   skip). 94 MB.
-- **`tools/i18n-translate.py`** — only for a campaign declaring non-English
+- **`tools/creator/i18n-translate.py`** — only for a campaign declaring non-English
   languages. Python stdlib only.
 - **The 1.21.11 client jar** (31,152,600 B, `ls -l ~/.chunky/resources/minecraft.jar`)
   — for every render arm, CPU or GPU: the textures come from the creator's own
@@ -115,7 +115,7 @@ du -sk ~/.rustup/toolchains/1.97.1-aarch64-apple-darwin/lib/rustlib/*/
 ```
 
 A creator who builds from source needs only the host's `rust-std`; the four
-other targets are what `tools/build-release-binaries.sh --check-only` adds to
+other targets are what `tools/ci/build-release-binaries.sh --check-only` adds to
 cross-check the shelf.
 
 ### It is NOT the OCI image, and here is the ruling-out
@@ -207,7 +207,7 @@ download with no data directory to lose (ADR-0006 reproducibility).
 ### 4.4 The two install paths hand out different bytes
 
 `-C strip=symbols` lives at the shelf **call site**
-(`tools/build-release-binaries.sh`), not in `[profile.release]`, so the archive
+(`tools/ci/build-release-binaries.sh`), not in `[profile.release]`, so the archive
 is stripped and a `cargo install` / `cargo build --release` binary is not:
 
 ```
@@ -246,7 +246,7 @@ shasum -a 256 -c SHA256SUMS
 tar -xzf delvec-v<version>-<target>.tar.gz && ls -l delvec
 
 # one target, locally, exactly as CI builds it
-bash tools/build-release-binaries.sh --target <triple>
+bash tools/ci/build-release-binaries.sh --target <triple>
 ls -l dist/delvec-v<version>-<triple>.tar.gz target/<triple>/release/delvec
 
 # the unstripped path

@@ -1,4 +1,4 @@
-"""The storybook version gate (`tools/check-storybook-version.py`).
+"""The storybook version gate (`tools/creator/check-storybook-version.py`).
 
 The drift this pins: a campaign's storybook is what a server host reads before running the delve, and the one internal fact it is
 allowed to carry — which engine the delve needs — is a hand-typed number. Hand-
@@ -24,7 +24,7 @@ import pathlib
 
 import pytest
 
-SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "check-storybook-version.py"
+SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "creator" / "check-storybook-version.py"
 
 ENGINE_DELVEC = "0.1.0"
 ENGINE_MC = "1.21.11"

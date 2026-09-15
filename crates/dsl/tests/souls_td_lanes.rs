@@ -237,7 +237,7 @@ fn every_member_of_the_raiders_tag_is_accepted_on_a_lane() {
 /// It is not a guess about vanilla. In the pinned 1.21.11 server jar the
 /// illusioner's class is a `PatrollingMonster`, whose `registerGoals` adds the
 /// `LongDistancePatrolGoal` every one of its subclasses inherits, and the three
-/// patrol NBT keys are string constants of that one class. `tools/check-patrol-types.py`
+/// patrol NBT keys are string constants of that one class. `tools/maintenance/check-patrol-types.py`
 /// re-derives all of that from the pinned jar.
 #[test]
 fn an_illusioner_may_march_a_lane() {

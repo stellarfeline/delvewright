@@ -262,7 +262,7 @@ impl PaintFrameKind {
 /// **Constructs exempt from the required set**, each with the reason it is
 /// exempt.
 ///
-/// The required set is *every* construct — the shape `tools/check-dw-codes.py`
+/// The required set is *every* construct — the shape `tools/ci/check-dw-codes.py`
 /// uses, and for its reason: a required set that is a chosen subset can be made
 /// green by shrinking it, which is the one move the debug doctrine forbids. An
 /// exemption is therefore a named, reasoned entry here and nowhere else.

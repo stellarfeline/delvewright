@@ -14,7 +14,7 @@
 //! **different verdict**. A case that reddens the same way after the move is a
 //! message sending its reader nowhere.
 //!
-//! `tools/check-dw-codes.py` holds the other direction: a diagnostic whose
+//! `tools/ci/check-dw-codes.py` holds the other direction: a diagnostic whose
 //! message names a base or a document as a move owes a row here, so a code added
 //! later cannot prescribe a remedy nobody ever took.
 //!
@@ -825,7 +825,7 @@ fn dw0855_a_site_plan_campaign_on_a_terrain_base_validates() {
     let camp = tmp("site-plan");
     let gallery = common::repo_root().join("gallery");
     // The primary, then the overlay laid over it — the same materialisation
-    // `tools/gallery_domain.py` performs for a build point.
+    // `tools/ci/gallery_domain.py` performs for a build point.
     for src in [gallery.clone(), gallery.join("overlays/site-plan")] {
         for entry in std::fs::read_dir(&src).unwrap() {
             let path = entry.unwrap().path();

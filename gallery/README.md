@@ -128,7 +128,7 @@ form — so `peaceful-difficulty` is three lines:
 ```
 
 The edits are `add`, `remove` and `replace`, applied in order by
-`tools/gallery_domain.py` while it materialises the point. Everything the probe
+`tools/ci/gallery_domain.py` while it materialises the point. Everything the probe
 does not name comes from the primary on every run, which is what makes a probe
 unable to drift from the campaign it perturbs. An edit whose pointer the primary
 no longer has is a red naming the probe and the pointer, rather than a probe
@@ -152,7 +152,7 @@ it over the primary first, exactly as the coverage gate does, and then run any o
 them yourself:
 
 ```
-python3 -c "import sys, pathlib; sys.path.insert(0, 'tools'); import gallery_domain; \
+python3 -c "import sys, pathlib; sys.path.insert(0, 'tools/ci'); import gallery_domain; \
   gallery_domain.materialise(pathlib.Path('probe-src'), pathlib.Path('gallery/probes/peaceful-difficulty'))"
 target/release/delvec validate probe-src --prefabs gallery-prefabs
 ```
@@ -182,11 +182,11 @@ target/release/delvec build gallery -o gallery-out --prefabs gallery-prefabs
 Then the three gates:
 
 ```
-python3 tools/check-gallery-coverage.py --prefabs gallery-prefabs \
+python3 tools/ci/check-gallery-coverage.py --prefabs gallery-prefabs \
   --build-out gallery-out --index gallery-coverage.md
-python3 tools/check-gallery-render.py --prefabs gallery-prefabs \
+python3 tools/ci/check-gallery-render.py --prefabs gallery-prefabs \
   --build-out gallery-out --frames gallery-frames
-python3 tools/gallery-baseline.py --prefabs gallery-prefabs
+python3 tools/ci/gallery-baseline.py --prefabs gallery-prefabs
 ```
 
 `gallery-coverage.md` is the map from every declared surface to the place the
@@ -538,7 +538,7 @@ to anchor where the real question is hitbox to box.
 
 ## Why the job gates
 
-The gallery job is a required status check. `tools/check-required-contexts.py`
+The gallery job is a required status check. `tools/ci/check-required-contexts.py`
 holds the manifest and `ci.yml` in lockstep, and it reads the coverage count out
 of `gallery/baseline/header.json` and the render findings out of
 `gallery/render-plan.json` — both committed by the tools that measure them, so

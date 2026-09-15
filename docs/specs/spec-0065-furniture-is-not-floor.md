@@ -387,13 +387,13 @@ criterion the verdict is recorded as a debt.
     described, and the two skill pages of §7 — in the pull request that lands
     the code. *Tree: debt.*
 12. **The ledger row for §8.1** exists in `docs/playtest-findings.json` with a
-    non-zero binding computed by `tools/staging-gate.py`'s `probe()` over the
+    non-zero binding computed by `tools/creator/staging-gate.py`'s `probe()` over the
     edit verbs that write blocks, or the round records that the binding is zero
     because no campaign lays furniture. *Tree: not yet due.* *Implementation:
     recorded debt — `probe()` over `set-block` / `fill-region` in the gallery
     primary's `quests.json` measures a binding of 2, and the row cannot land
     yet: with no general-form carrier it is `NO-GENERAL-FORM` at
-    `tools/staging-gate.py` (exit 1), and `tools/check-gallery-stageable.py`
+    `tools/creator/staging-gate.py` (exit 1), and `tools/ci/check-gallery-stageable.py`
     refuses a gallery point carrying a capability-gap row with no general-form
     carrier. No row is added.*
 13. A demo-level row is queued when the code lands. *Tree: not yet due.*

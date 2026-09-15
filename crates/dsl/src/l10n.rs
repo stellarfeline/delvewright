@@ -958,7 +958,7 @@ pub const PACK_KEY_ROOT: &str = "delve";
 ///
 /// Where they end up is a Minecraft client's **merged language table**, and that
 /// table is not per-delve. It is the union of every applied resource pack:
-/// `tools/playtest-server.sh` installs each delve's pack into the player's
+/// `tools/creator/playtest-server.sh` installs each delve's pack into the player's
 /// `resourcepacks/` directory as `<campaign_id>.zip`, where it stays enabled
 /// across servers and worlds, and a server-pushed pack merges on top of whatever
 /// is already applied. A `{"translate": …, "fallback": …}` component renders its
@@ -1224,7 +1224,7 @@ pub fn validate_l10n_provenance(
                         "`{key}` was translated from {was:?} but now reads {now:?} — the \
                          translation in `content` still renders the old line and would ship \
                          attached to the new one. Re-translate `{key}` and update its `source` \
-                         (`tools/i18n-translate.py <campaign> --lang {lang}` does both). If a \
+                         (`tools/creator/i18n-translate.py <campaign> --lang {lang}` does both). If a \
                          RENAME surprised you here: an entity display name's key belongs to the \
                          first body declaring that text, so renaming one body can hand its key \
                          to another"
@@ -1259,7 +1259,7 @@ pub fn validate_l10n_provenance(
                     "{unguarded} of {total} translated rows record no `source`, so nothing can \
                      tell whether they still translate the English they render — an edited line \
                      leaves its translation present, applied and wrong, and no key moves. Run \
-                     `tools/i18n-translate.py <campaign> --lang {lang}` to record provenance for \
+                     `tools/creator/i18n-translate.py <campaign> --lang {lang}` to record provenance for \
                      the rows it already has. This warning is the one-version deprecation \
                      window; `source` becomes required after it"
                 ),

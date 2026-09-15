@@ -435,7 +435,7 @@ fn a_malformed_score_file_is_refused_before_any_page_is_drawn() {
 // The whole loop, with the stub model — spec-0028 §5 AC2
 // ---------------------------------------------------------------------------
 
-/// sheet → `tools/refscore.py --backend stub` → ranked sheet, offline, no key,
+/// sheet → `tools/creator/refscore.py --backend stub` → ranked sheet, offline, no key,
 /// no model, no network.
 ///
 /// This is also the gate that keeps the two halves speaking the same language:
@@ -450,7 +450,7 @@ fn the_stub_loop_scores_and_reorders_the_page_offline() {
         .unwrap()
         .parent()
         .unwrap();
-    let refscore = repo.join("tools/refscore.py");
+    let refscore = repo.join("tools/creator/refscore.py");
     assert!(refscore.exists(), "{} is missing", refscore.display());
 
     let dir = tmp("stub-loop");
@@ -565,7 +565,7 @@ fn the_scorer_dry_run_writes_nothing() {
     );
     let out = dir.join("nothing.json");
     let py = Command::new("python3")
-        .arg(repo.join("tools/refscore.py"))
+        .arg(repo.join("tools/creator/refscore.py"))
         .args(["--sheet", dir.join("sheet.json").to_str().unwrap()])
         .args(["--reference", reference.to_str().unwrap()])
         .args(["--backend", "stub", "--dry-run"])

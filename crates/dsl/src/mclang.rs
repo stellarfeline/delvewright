@@ -24,7 +24,7 @@
 //!                   the asset index, and so is added explicitly)
 //! ```
 //!
-//! Re-derive with `tools/derive-client-langs.py`, which prints the table and the
+//! Re-derive with `tools/maintenance/derive-client-langs.py`, which prints the table and the
 //! digests it read. The table is **baked into the source on purpose**: the compiler
 //! must never reach the network during a build (ADR-0006 determinism), exactly as
 //! the server jar's provenance is recorded rather than fetched.

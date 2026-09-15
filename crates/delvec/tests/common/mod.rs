@@ -1119,7 +1119,7 @@ fn read3(v: &serde_json::Value) -> [i64; 3] {
 ///
 /// Shared rather than copied. It lived in `tests/boundary_assembled.rs` and was
 /// copied verbatim into a second file, which
-/// `tools/check-structure-emitters.py` caught in the only way it can: the copy
+/// `tools/ci/check-structure-emitters.py` caught in the only way it can: the copy
 /// was a new site naming `fastnbt::to_bytes` that judged no palette, and the
 /// repair the tool offers first is an exemption. Two fixtures framing the same
 /// box would have been two entries on an exclusion list, which is exactly the

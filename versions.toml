@@ -121,8 +121,8 @@ mineflayer = "4.37.1"
 # Consumed by: validation/check-versions.sh (every assertion below),
 # .github/workflows/engine-release.yml (tag gate + build matrix),
 # .github/workflows/ci.yml (the cross-build shelf job),
-# tools/build-release-binaries.sh + tools/check-publishable.sh +
-# tools/crates-io-publish.sh (which hold NO copy of any value here — they read
+# tools/ci/build-release-binaries.sh + tools/ci/check-publishable.sh +
+# tools/ci/crates-io-publish.sh (which hold NO copy of any value here — they read
 # this file, the way validation/server-bootstrap-cache.sh does).
 #
 # The number lives in the root Cargo.toml's `[workspace.package] version`, which
@@ -142,8 +142,8 @@ crate = "delvec"
 # feature adds a module or a subcommand, never a crate. The two entries restate
 # `dsl_crate` and `crate` in publish order; validation/check-versions.sh holds
 # the three equal, and equal to the workspace's members, both ways.
-# Consumed by: validation/check-versions.sh, tools/check-publishable.sh,
-# tools/crates-io-publish.sh, .github/workflows/engine-release.yml.
+# Consumed by: validation/check-versions.sh, tools/ci/check-publishable.sh,
+# tools/ci/crates-io-publish.sh, .github/workflows/engine-release.yml.
 crates = [
     "delvewright-dsl",
     "delvec",
@@ -295,7 +295,7 @@ repo = "stellarfeline/delvewright-campaigns"
 #
 # WHAT CARRIES EACH CLAIM. `validation/check-versions.sh` holds this `sha` equal
 # to `content_sha` in `.github/content-zone-corpus.json`, and
-# `tools/check-pins.py` holds it equal to the `content-repo` entry in
+# `tools/ci/check-pins.py` holds it equal to the `content-repo` entry in
 # `.github/pins.toml`. `crates/delvec/tests/grammar_campaign_zones.rs` checks
 # the restated inventory against the checkout and prints what it bound.
 # `crates/delvec/tests/registry_load.rs` reads every document at the pin and
@@ -354,9 +354,9 @@ chunky_license = "GPL-3.0"
 # The SHA-256 is of the committed bundle, so this pin binds to the BYTES rather
 # than to a version string: a hand-edited bundle, or one rebuilt at a different
 # version without updating this file, is a red. Rebuild with
-# `tools/build-deepslate-bundle.sh` (which pins the same versions) and update the
+# `tools/maintenance/build-deepslate-bundle.sh` (which pins the same versions) and update the
 # digest in the same commit.
-# Consumed by: tools/build-deepslate-bundle.sh + crates/delvec/src/compiler/view/viewer/.
+# Consumed by: tools/maintenance/build-deepslate-bundle.sh + crates/delvec/src/compiler/view/viewer/.
 deepslate_version = "0.26.0"
 deepslate_license = "MIT"
 deepslate_bundle = "crates/delvec/src/compiler/view/viewer/deepslate.bundle.js"
@@ -382,8 +382,8 @@ textures = "minecraft-client-1.21.11.jar"
 # has a lockfile, so what this selects is the runtime, not the dependency set.
 # Consumed by: .github/workflows/ci.yml.
 node_version = "24"
-# The interpreter for the two Python tool suites (`tools/skin`, `tools/tests`),
-# and for every inline python `tools/build-release-binaries.sh` runs to read
+# The interpreter for the two Python tool suites (`tools/creator/skin`, `tools/tests`),
+# and for every inline python `tools/ci/build-release-binaries.sh` runs to read
 # `versions.toml` (stdlib `tomllib`, floor >= 3.11) — the shelf's build step
 # needs the same floor the tool suites do, for the same reason.
 # A MINOR line, resolved by actions/setup-python to its newest patch.
@@ -417,7 +417,7 @@ beet_version = "0.116.0"
 pytest_version = "9.1.1"
 
 # The two READINGS OF THE PLUGIN BY THE FORMAT'S OWN IMPLEMENTATIONS
-# (spec-0063 §8). `tools/check-skill-page.py` is this project's judgement of the
+# (spec-0063 §8). `tools/ci/check-skill-page.py` is this project's judgement of the
 # page; these two are the standard's, and neither can stand in for the other —
 # ours knows about the pin, the engine and the split, and theirs knows what the
 # loader will actually accept.
@@ -433,11 +433,11 @@ claude_code_version = "2.1.265"
 
 [skin]
 # skinpy-extended (MIT, ADR-0013 allowlist), the part/face-addressable composer
-# and isometric preview renderer `tools/skin` is built on (spec-0009). Pinned
+# and isometric preview renderer `tools/creator/skin` is built on (spec-0009). Pinned
 # exactly because the suite asserts byte-identical PNGs (ADR-0006): a different
 # library version is a different picture under the same declared version.
-# Consumed by: tools/skin/requirements.txt, tools/skin/pyproject.toml, and
-# tools/skin/delve_skin/catalog.py, which stamps it into every emitted
+# Consumed by: tools/creator/skin/requirements.txt, tools/creator/skin/pyproject.toml, and
+# tools/creator/skin/delve_skin/catalog.py, which stamps it into every emitted
 # provenance record — the fourth statement of one value, and the one that would
 # have gone on claiming the old version in shipped metadata.
 skinpy_extended = "1.0.1"

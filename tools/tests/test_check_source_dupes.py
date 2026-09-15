@@ -1,4 +1,4 @@
-"""The source merge-artifact gate (`tools/check-source-dupes.py`).
+"""The source merge-artifact gate (`tools/ci/check-source-dupes.py`).
 
 The defect this pins, from the field: `crates/delvec/src/compiler/plan.rs` invoked the
 face-mating pass twice, as two verbatim copies of one labelled block — header
@@ -17,7 +17,7 @@ import pathlib
 
 import pytest
 
-SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "check-source-dupes.py"
+SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "ci" / "check-source-dupes.py"
 
 
 @pytest.fixture

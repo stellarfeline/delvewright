@@ -7,7 +7,7 @@ the two previous vessels both failed the "never lost" requirement: a spec is
 too heavy to open per idea (and opening one guarantees nothing about
 scheduling), and the planner's memory does not survive sessions.
 
-**The binding that makes loss impossible:** `tools/planner-state.sh` prints
+**The binding that makes loss impossible:** `tools/planner/planner-state.sh` prints
 every row still in `captured` or `elaborating`, with its age, on the state
 page — twice a day in a long session and after every compaction. A row can
 only leave that list by graduating (`spec'd` / `queued`) or by an explicit

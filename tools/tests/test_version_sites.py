@@ -1,6 +1,6 @@
 r"""Guard: the refusal's site list names places this tree actually has.
 
-`tools/crates-io-publish.sh` refuses a version that is on crates.io with
+`tools/ci/crates-io-publish.sh` refuses a version that is on crates.io with
 different bytes, and everything useful about that refusal is the list it prints
 next — where to move the number to. That list was a literal beside the `echo`s
 and nothing read it, so it rotted in three places at once, all three measured
@@ -166,7 +166,7 @@ def test_the_engine_advice_does_not_name_the_dependency_table() -> None:
 
 def test_the_script_refuses_to_plan_behind_advice_it_cannot_resolve() -> None:
     """The check is bound to the SCRIPT, not only to the failure path it decorates."""
-    src = (REPO / "tools/crates-io-publish.sh").read_text(encoding="utf-8")
+    src = (REPO / "tools/ci/crates-io-publish.sh").read_text(encoding="utf-8")
     assert "version_sites verify" in src
     assert "refusing to plan behind advice" in src
     # It runs before the plan, beside the index bind test — not inside the `FAIL`

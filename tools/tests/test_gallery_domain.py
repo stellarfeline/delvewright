@@ -30,7 +30,7 @@ TOOLS = pathlib.Path(__file__).resolve().parents[1]
 REPO = TOOLS.parent
 GALLERY = REPO / "gallery"
 
-spec = importlib.util.spec_from_file_location("gallery_domain", TOOLS / "gallery_domain.py")
+spec = importlib.util.spec_from_file_location("gallery_domain", TOOLS / "ci" / "gallery_domain.py")
 gallery_domain = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(gallery_domain)
 
@@ -44,7 +44,10 @@ def test_only_one_tool_defines_materialise():
     Stated with its DENOMINATOR: an exclusion that quietly shrinks the population
     keeps every count truthful while the gate stops covering the tree.
     """
-    scripts = sorted(p for p in TOOLS.glob("*.py"))
+    # The denominator is every python tool in every home the tree gives a reader,
+    # enumerated from the directories rather than named one by one.
+    homes = ("creator", "ci", "planner", "maintenance", "lib")
+    scripts = sorted(p for h in homes for p in (TOOLS / h).glob("*.py"))
     assert scripts, "no python tools found — this gate examined nothing"
     # Keyed to the OBJECT — a tool that copies the gallery tree — rather than to
     # the word `materialise`. `gallery-baseline.py` and `check-gallery-coverage.py`
@@ -63,12 +66,12 @@ def test_only_one_tool_defines_materialise():
         "else — two answers is how one round took the validate-only one and had to work "
         "the difference out of the repository by hand."
     )
-    assert re.search(r"^def materialise\(", (TOOLS / "gallery_domain.py").read_text(), re.M), (
+    assert re.search(r"^def materialise\(", (TOOLS / "ci" / "gallery_domain.py").read_text(), re.M), (
         "the one authority no longer defines `materialise`"
     )
 
 
-@pytest.mark.parametrize("caller", ["gallery-baseline.py", "check-gallery-coverage.py"])
+@pytest.mark.parametrize("caller", ["ci/gallery-baseline.py", "ci/check-gallery-coverage.py"])
 def test_both_callers_reach_the_authority(caller):
     text = (TOOLS / caller).read_text()
     assert "gallery_domain" in text, (
@@ -146,10 +149,10 @@ def test_ci_runs_the_rebuild():
     """A committed act nothing invokes is a documented command, not a guarantee."""
     ci = (REPO / ".github" / "workflows" / "ci.yml").read_text()
     invocations = [
-        line for line in ci.splitlines() if "tools/gallery-build.py" in line and not line.strip().startswith("#")
+        line for line in ci.splitlines() if "tools/ci/gallery-build.py" in line and not line.strip().startswith("#")
     ]
     assert invocations, (
-        "no CI step runs `tools/gallery-build.py`. The rebuild it promises is then exactly "
+        "no CI step runs `tools/ci/gallery-build.py`. The rebuild it promises is then exactly "
         "as good as whoever remembers to type it, which is the UNRUN shape CLAUDE.md names"
     )
     assert any("--point site-plan" in line for line in ci.splitlines()), (
@@ -160,7 +163,7 @@ def test_ci_runs_the_rebuild():
 
 def test_the_rebuild_is_measured_against_the_baseline():
     """Exit 0 is not reproduction. The manifest comparison is what makes it one."""
-    text = (TOOLS / "gallery-build.py").read_text()
+    text = (TOOLS / "ci" / "gallery-build.py").read_text()
     assert "manifests.json" in text, (
         "`gallery-build.py` no longer compares its build to the committed baseline, so it "
         "asserts that a tree compiles and not that it is the tree the baseline measured"
@@ -172,7 +175,7 @@ def test_the_rebuild_is_measured_against_the_baseline():
 
 # --------------------------------------------------- the refusal carries evidence
 
-gb_spec = importlib.util.spec_from_file_location("gallery_build", TOOLS / "gallery-build.py")
+gb_spec = importlib.util.spec_from_file_location("gallery_build", TOOLS / "ci" / "gallery-build.py")
 gallery_build = importlib.util.module_from_spec(gb_spec)
 gb_spec.loader.exec_module(gallery_build)
 

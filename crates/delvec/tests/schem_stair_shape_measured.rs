@@ -120,7 +120,7 @@ fn every_measured_cell_agrees_with_the_derivation() {
 /// `BlockRegistry::is_stairs` reads the pinned block registry: the block whose
 /// `shape` property takes vanilla's five stair values. The pinned block
 /// classification derives the same set from a different artifact — Mojang's own
-/// `#stairs` block tag (`tools/extract-block-classification.py`). Deriving it
+/// `#stairs` block tag (`tools/maintenance/extract-block-classification.py`). Deriving it
 /// rather than listing it is what keeps a version that adds a stair from going
 /// silently unjudged; deriving it TWICE is what keeps the derivation honest, as
 /// a predicate that quietly matched 57 of 58 blocks would be invisible.

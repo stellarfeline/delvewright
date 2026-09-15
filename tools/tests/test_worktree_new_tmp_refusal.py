@@ -1,4 +1,4 @@
-"""`tools/worktree-new.sh` refuses a `--path` under a session-scoped tmp root.
+"""`tools/planner/worktree-new.sh` refuses a `--path` under a session-scoped tmp root.
 
 A worktree is where a dispatched worker keeps everything it has not pushed
 yet, sometimes for hours. A `--path` under `/tmp`, its macOS alias
@@ -46,7 +46,7 @@ import tempfile
 
 import pytest
 
-TOOL = pathlib.Path(__file__).resolve().parents[1] / "worktree-new.sh"
+TOOL = pathlib.Path(__file__).resolve().parents[1] / "planner" / "worktree-new.sh"
 
 
 @pytest.fixture
@@ -59,7 +59,7 @@ def tool_copy(tmp_path):
     """
     root = tmp_path / "toolcopy"
     (root / "tools").mkdir(parents=True)
-    copy = root / "tools" / "worktree-new.sh"
+    copy = root / "tools" / "planner" / "worktree-new.sh"
     copy.write_bytes(TOOL.read_bytes())
     copy.chmod(0o755)
     return copy

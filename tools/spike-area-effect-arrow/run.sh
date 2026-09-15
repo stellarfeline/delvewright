@@ -19,7 +19,7 @@
 # PORTS. This rig publishes an EPHEMERAL loopback port (Docker picks the
 # number), never 25565. 25565 is the owner's client address and the only
 # genuinely shared resource on the host (validation/README.md,
-# tools/check-compose-isolation.py); `validation/mutex.sh` guards exactly that
+# tools/ci/check-compose-isolation.py); `validation/mutex.sh` guards exactly that
 # port and a worker rig must not take it.
 #
 # ENCHANTMENTS ARE A DYNAMIC REGISTRY. `/reload` does NOT pick up a new or
@@ -87,7 +87,7 @@ wait_ready() {
 read_port() {
   # Capture, then split in the shell. `docker port … | head -1` would put an
   # early-exit consumer on the right of a pipe under `set -o pipefail`
-  # (tools/check-shell-pipe-shortcircuit.py).
+  # (tools/ci/check-shell-pipe-shortcircuit.py).
   local map line
   map="$(docker port "${CONTAINER}" 25565)"
   line="${map%%$'\n'*}"

@@ -57,7 +57,7 @@ above names: Multiplayer → Direct Connect → `localhost:25565`.
 from a version. Then prove it:
 
 ```sh
-python3 "$DELVEWRIGHT_ENGINE/tools/check-storybook-version.py" --campaigns campaigns
+python3 "$DELVEWRIGHT_ENGINE/tools/creator/check-storybook-version.py" --campaigns campaigns
 ```
 
 Green before you report. A stale marker waves a host on an old engine straight
@@ -84,7 +84,7 @@ actually use.
 ```sh
 
 # play — one command: build, gate, serve, and print the connect line
-"$DELVEWRIGHT_ENGINE/tools/playtest-server.sh" up campaigns/<id> \
+"$DELVEWRIGHT_ENGINE/tools/creator/playtest-server.sh" up campaigns/<id> \
     --prefabs "$DELVEWRIGHT_PREFABS" --delvec "$(command -v delvec)" --out "$PWD/.out/delve"
 
 # playtest, with in-game notes

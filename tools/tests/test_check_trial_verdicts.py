@@ -1,4 +1,4 @@
-"""The instrument-bound verdict gate (`tools/check-trial-verdicts.py`).
+"""The instrument-bound verdict gate (`tools/ci/check-trial-verdicts.py`).
 
 The defect this pins: trial 0001 answered R1 `partial` for run 1 and, three
 paragraphs below the verdict, said the renderer had no camera an author could aim
@@ -19,7 +19,7 @@ import pathlib
 
 import pytest
 
-SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "check-trial-verdicts.py"
+SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "ci" / "check-trial-verdicts.py"
 
 
 @pytest.fixture

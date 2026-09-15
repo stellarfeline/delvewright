@@ -41,7 +41,7 @@ Toolchain: rustup `1.97.1` (the repo's pinned channel), targets
 ## Q3 first — is static musl actually what the shelf builds?
 
 Yes. `versions.toml [engine].targets` lists `x86_64-unknown-linux-musl` and
-`aarch64-unknown-linux-musl`, and `tools/build-release-binaries.sh` asserts
+`aarch64-unknown-linux-musl`, and `tools/ci/build-release-binaries.sh` asserts
 every musl artifact carries **no `PT_INTERP`**. Reproduced on the probe
 binaries below with that script's own ELF reader:
 
@@ -175,7 +175,7 @@ exit=101
 
 This contradicts the standing premise recorded beside the target list —
 "`delvec`'s whole dependency set is pure Rust … so a static binary has no glibc
-floor" — and the reason `tools/build-release-binaries.sh` uses `rust-lld`:
+floor" — and the reason `tools/ci/build-release-binaries.sh` uses `rust-lld`:
 "no apt step on the runner and NOTHING on a macOS workstation". `cargo check`
 runs build scripts, so the `engine binaries (cross-build shelf)` gate is
 exactly where this lands: it would go red on both musl targets the moment

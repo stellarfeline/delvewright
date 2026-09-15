@@ -16,7 +16,7 @@
 #
 # PORTS. This rig publishes an EPHEMERAL loopback port (Docker picks the number),
 # never 25565. 25565 is the owner's client address and the only genuinely shared
-# resource on the host (validation/README.md, tools/check-compose-isolation.py);
+# resource on the host (validation/README.md, tools/ci/check-compose-isolation.py);
 # `validation/mutex.sh` guards exactly that port and a worker rig must not take
 # it. Two copies of this spike can therefore run side by side — pass a distinct
 # SPIKE_CONTAINER if you want that.
@@ -63,7 +63,7 @@ docker run -d --name "${CONTAINER}" \
 # Capture, then split in the shell. `docker port … | head -1` would put an
 # early-exit consumer on the right of a pipe under `set -o pipefail`: head stops
 # reading, docker dies of SIGPIPE (141), and the pipeline reports failure
-# *because* the port was found (tools/check-shell-pipe-shortcircuit.py).
+# *because* the port was found (tools/ci/check-shell-pipe-shortcircuit.py).
 PORT_MAP="$(docker port "${CONTAINER}" 25565)"
 PORT_LINE="${PORT_MAP%%$'\n'*}"   # first mapping only (v4 and v6 are both listed)
 PORT="${PORT_LINE##*:}"           # everything after the last colon

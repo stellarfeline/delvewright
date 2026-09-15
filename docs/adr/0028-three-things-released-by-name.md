@@ -62,14 +62,14 @@ touch:
 |---|---|---|
 | `.github/workflows/engine-release.yml` | trigger `tags: ["v[0-9]+.[0-9]+.[0-9]+"]`; `identity` refuses `TAG != v$VERSION`; the dispatch input names "an existing `v<semver>` tag"; the Release is titled `delvec $TAG` | trigger and identity move to `delvec--v`; the dispatch input follows |
 | `.github/pins.toml` | the `release` policy is defined as "a commit a `v<semver>` tag points at" (three statements of it) | the policy names the thing whose tag must point at the commit |
-| `tools/check-pins.py` (engine; the content copy is the same code) | `re.fullmatch(r"v\d+\.\d+\.\d+", tag)` over `git tag --points-at <pin>` | matches `<thing>--v<semver>` for the thing the entry names |
-| `tools/check-skill-page.py` | `RELEASE_RE = ^v\d+\.\d+\.\d+$`; `ARCHIVE = "delvec-{release}-{target}.tar.gz"` built from the pin literal; `release.lstrip("v")` compared with the engine's number; `--online` resolves `git/ref/tags/{release}` and `releases/tags/{release}` | the pin names a `delvec--v` tag; the version is derived from it once; the archive name is derived from the version |
+| `tools/ci/check-pins.py` (engine; the content copy is the same code) | `re.fullmatch(r"v\d+\.\d+\.\d+", tag)` over `git tag --points-at <pin>` | matches `<thing>--v<semver>` for the thing the entry names |
+| `tools/ci/check-skill-page.py` | `RELEASE_RE = ^v\d+\.\d+\.\d+$`; `ARCHIVE = "delvec-{release}-{target}.tar.gz"` built from the pin literal; `release.lstrip("v")` compared with the engine's number; `--online` resolves `git/ref/tags/{release}` and `releases/tags/{release}` | the pin names a `delvec--v` tag; the version is derived from it once; the archive name is derived from the version |
 | `.claude/skills/delvewright/skills/new-delve/scripts/fetch-delvec.py` | `DOWNLOAD = …/releases/download/{release}`; `ARCHIVE = "delvec-{release}-{target}.tar.gz"`; `release.lstrip("v")` | same derivation as the gate that judges it, stated once in each |
 | `.claude/skills/delvewright/skills/new-delve/versions.toml` | `release = "v1.4.0"` (the brief's observation holds: the page pins `v1.4.0` → `d8d87ef6` while `v1.5.0` → `70eea629` is published; under the `release` policy that drift is not a finding) | re-pinned to the first `delvec--v` release, in the pull request that walks the page against it |
 | `tools/tests/test_fetch_delvec.py`, `tools/tests/fixtures/skill-page/SHA256SUMS-v1.4.0`, `tools/tests/fixtures/skill-page/README.md` | fixtures naming `v1.4.0` archives | follow their tools |
-| `tools/tests/fixtures/release-publish-gate/*.yml` (5 files) | copies of the old trigger line; `tools/check-release-publish-gate.py` reads jobs, not `on:`, so these bind nothing | rewritten with the new trigger so a fixture is not a stale copy of a workflow |
-| content `.github/pins.toml` (`engine-release`, policy `release`, value `70eea629`) and content `tools/check-pins.py` | the same policy text and the same regex | the same change, in the content repository, when it next re-pins |
-| `tools/build-release-binaries.sh` | names archives `delvec-v$VERSION-$t.tar.gz` from `[engine].version`, never from the tag | unchanged: the archive grammar stays `delvec-v<version>-<target>.tar.gz` |
+| `tools/tests/fixtures/release-publish-gate/*.yml` (5 files) | copies of the old trigger line; `tools/ci/check-release-publish-gate.py` reads jobs, not `on:`, so these bind nothing | rewritten with the new trigger so a fixture is not a stale copy of a workflow |
+| content `.github/pins.toml` (`engine-release`, policy `release`, value `70eea629`) and content `tools/ci/check-pins.py` | the same policy text and the same regex | the same change, in the content repository, when it next re-pins |
+| `tools/ci/build-release-binaries.sh` | names archives `delvec-v$VERSION-$t.tar.gz` from `[engine].version`, never from the tag | unchanged: the archive grammar stays `delvec-v<version>-<target>.tar.gz` |
 
 Two stale statements found on the way, recorded here because a census is where
 they surface: `engine-release.yml` line 100 says "`rc-*` belongs to
@@ -181,7 +181,7 @@ moves the version again; the Release does not describe those later bytes, and
 nothing pretends it does.
 
 Before `main` moves, the release commit carries every required status check,
-`tools/check-skill-page.py --online` among them: the pinned `delvec--v*` tag
+`tools/ci/check-skill-page.py --online` among them: the pinned `delvec--v*` tag
 exists, resolves to `[engine].ref`, and its Release carries an archive per
 target at that revision plus `SHA256SUMS`. A plugin release whose engine shelf
 is partial is therefore refused, because that is the state in which Init falls
@@ -225,7 +225,7 @@ release branch; commits the change of `plugin.json` `version` alone on
 `release/plugin-<version>`, cut from `main`'s tip; dispatches `ci.yml` on that
 branch with the job token (a push made with a job token starts no run); and
 waits until every context in `.github/required-status-checks.txt` has
-SUCCEEDED on that commit (`tools/wait-required-checks.py` — a skipped check is
+SUCCEEDED on that commit (`tools/ci/wait-required-checks.py` — a skipped check is
 refused, which is why `ci.yml`'s two pull-request-only jobs also run on
 `workflow_dispatch`); then archives, checksums and writes the notes. Its
 `publish` job fast-forwards `main` to the release commit — refused, with
@@ -238,7 +238,7 @@ accepts check runs from a dispatched run for that push is proven by the first
 real plugin release.
 
 An ordinary pull request does not move `plugin.json` `version`:
-`tools/check-skill-page.py` (rule 11, in the required jobs that already run it)
+`tools/ci/check-skill-page.py` (rule 11, in the required jobs that already run it)
 refuses a diff against the base that moves it, unless the run is a
 `workflow_dispatch` on `refs/heads/release/plugin-<version>` and the plugin root
 differs only in `plugin.json`, only in `version` — properties the release
@@ -252,7 +252,7 @@ token and this job has no use for one.
 `delvewright-dsl`'s version is the `dsl_version`, and ordinary pull requests
 keep moving it with the surface they change, as before. `dsl-crate-publish.yml`
 takes a commit on `main`, reads `[engine].dsl_crate_version` there, and its gated
-`publish` job, after `tools/crates-io-publish.sh --publish --only delvewright-dsl`
+`publish` job, after `tools/ci/crates-io-publish.sh --publish --only delvewright-dsl`
 returns with the index serving the bytes, downloads the registry's own `.crate`
 (checked against the index sha256), creates `delvewright-dsl--v<version>` at
 that commit (or confirms an existing tag names a `main` commit stating the
@@ -262,7 +262,7 @@ residual window is the two writes after it, the same argument as ADR-0026 §3.
 `plan` asks for the approval when the registry OR the Release lacks the version,
 so a dispatch on a later `main` commit carrying the version finds it on the
 registry, skips the upload, and writes whichever of the tag and Release is
-missing. That path exposed a latent defect in `tools/crates-io-publish.sh`:
+missing. That path exposed a latent defect in `tools/ci/crates-io-publish.sh`:
 after a same-crate skip its post-condition waited for the index to serve OUR
 sha256, which a later commit's packaging never has; it now waits for the sha256
 its plan decided. This is ADR-0026 §4's third option — "a tag and an assetless
@@ -270,7 +270,7 @@ release per format bump" — taken, with the shelf not empty.
 
 The engine release's treatment of the format crate changes from "no-op
 re-check, or supply it if the hook never ran" to **refuse**: the `delvec`
-release runs `tools/crates-io-publish.sh --publish --only delvec` after a
+release runs `tools/ci/crates-io-publish.sh --publish --only delvec` after a
 preflight (in `crates-preflight`, before any approval) that the registry already
 serves `[engine].dsl_crate_version` as the same crate, and if it does not, the
 remedy it names is the format crate's release. The pull-request check that
@@ -346,9 +346,9 @@ back from the API.
      reviewer, no secret) and the tag ruleset of §9, each proved.
   3. Releases are dispatched whenever the owner decides — each of the three
      independently, none owed by any merge.
-  4. **PR B** follows the first `delvec--v*` release: `tools/check-pins.py`,
+  4. **PR B** follows the first `delvec--v*` release: `tools/ci/check-pins.py`,
      the `release` policy text in `.github/pins.toml`,
-     `tools/check-skill-page.py` and `fetch-delvec.py` read `delvec--v<semver>`;
+     `tools/ci/check-skill-page.py` and `fetch-delvec.py` read `delvec--v<semver>`;
      spec-0063 §8 and its criterion 4 are re-stated; the page re-pins to that
      release. Its `content pin` job is red until that Release carries its shelf,
      because a pin checker that accepts only `delvec--v*` cannot land while the
@@ -359,9 +359,9 @@ back from the API.
   and `--only delvec`; the format crate's tag and Release; the plugin's bump,
   dispatched CI, wait, fast-forward); `ci.yml` gains `workflow_dispatch`, and
   its two pull-request-only jobs also run on it, with no job renamed;
-  `tools/wait-required-checks.py` (new); `tools/check-skill-page.py` rule 11
+  `tools/ci/wait-required-checks.py` (new); `tools/ci/check-skill-page.py` rule 11
   (an ordinary change does not move the plugin's version, replacing "a page
-  edit moves it"); `tools/crates-io-publish.sh`'s post-condition;
+  edit moves it"); `tools/ci/crates-io-publish.sh`'s post-condition;
   `tools/tests/test_release_tags.py`; the release-publish-gate fixtures'
   trigger line; `.github/pins.toml` registers `plugin-release.yml` as a site of
   the actions it uses; `tools/tests/test_gallery_not_shippable.py` counts the
@@ -369,15 +369,15 @@ back from the API.
   `tools/check-dsl-version-published.py`, which made a pull request moving the
   dsl number wait on the previous number reaching crates.io — a merge waiting
   on a release. No required status context is added or renamed.
-- **Checks that change in PR B**: `tools/check-pins.py` (both repositories)
+- **Checks that change in PR B**: `tools/ci/check-pins.py` (both repositories)
   matches `<thing>--v<semver>` for the thing the registry entry names, and the
   `release` policy's text in both `.github/pins.toml` files says so;
-  `tools/check-skill-page.py` derives the version from a `delvec--v` pin once
+  `tools/ci/check-skill-page.py` derives the version from a `delvec--v` pin once
   and the archive name from the version, offline and `--online`;
   `fetch-delvec.py` does the same derivation.
-- **Checks that do not change**: `tools/check-release-publish-gate.py` and
-  `tools/check-approval-guard.py` (the plugin job is one more environment-gated
-  job under a rule stated by object class); `tools/build-release-binaries.sh`
+- **Checks that do not change**: `tools/ci/check-release-publish-gate.py` and
+  `tools/ci/check-approval-guard.py` (the plugin job is one more environment-gated
+  job under a rule stated by object class); `tools/ci/build-release-binaries.sh`
   and the archive grammar; the content repository's `release.yml`, which checks
   the engine out by commit and never by tag.
 - **The docs**: `docs/reference/tools.md` rows for every new, changed and removed

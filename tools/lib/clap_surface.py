@@ -8,7 +8,7 @@ mirror of a parse rule is the defect this project names rather than a saving:
     surface (it vendors this file byte-for-byte, under the `engine-authoring`
     pin, so "one parser" stays true across the repository boundary rather than
     being an intention);
-  - `tools/build-release-binaries.sh` holds the BUILT binary's `--help` against
+  - `tools/ci/build-release-binaries.sh` holds the BUILT binary's `--help` against
     the same surface, so a release artifact cannot promise a command its bytes
     do not carry;
   - and either could be extended without the other growing a second copy.

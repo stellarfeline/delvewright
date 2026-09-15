@@ -40,7 +40,7 @@ cp <main-checkout>/delvewright.local.toml .
 ```
 
 **Exactly two tools read it**, both Python, and only for their own section:
-`tools/i18n-translate.py` (`[i18n]`) and `tools/refimg.py` (`[refimg]`). No
+`tools/creator/i18n-translate.py` (`[i18n]`) and `tools/creator/refimg.py` (`[refimg]`). No
 shell script, no compose file and no Rust crate reads it — grep the tree before
 believing otherwise.
 

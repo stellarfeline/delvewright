@@ -7,7 +7,7 @@ is the only thing that interprets it. Two callers:
 
 * the `changes` job in `ci.yml` runs `python3 tools/lib/ci_reach.py groups`,
   which writes one `<group>=true|false` line per group for `$GITHUB_OUTPUT`;
-* `tools/check-ci-reach.py` imports `load_table` and `glob_regex` to hold the
+* `tools/ci/check-ci-reach.py` imports `load_table` and `glob_regex` to hold the
   table to the jobs.
 
 THE RULE

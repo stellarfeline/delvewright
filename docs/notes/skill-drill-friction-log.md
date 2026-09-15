@@ -86,7 +86,7 @@ clone**, which is the state the drill is actually run from. I did not measure co
 - **What happened**: `python3 --version` → 3.14.7. Box ticked. But
   `python3 -c "import delve_skin"` → `ModuleNotFoundError`, and line 1088 later
   demands `python -m delve_skin all <cast.json> … **in its own venv**` with no
-  instructions anywhere for creating that venv (`tools/skin/requirements.txt` and
+  instructions anywhere for creating that venv (`tools/creator/skin/requirements.txt` and
   `pyproject.toml` exist; the page never mentions either).
 - **A person concludes**: Init 4 is satisfied, because "Python 3" is satisfied. They
   discover at the skin step that it is not, which is precisely the failure mode
@@ -94,7 +94,7 @@ clone**, which is the state the drill is actually run from. I did not measure co
   ("confirm it answers here rather than discovering at stage 3…").
 - **Would have unstuck them**: give step 4 a confirmation command like every other
   step has — `python3 -m venv .venv-skin && .venv-skin/bin/pip install -r
-  tools/skin/requirements.txt && .venv-skin/bin/python -m delve_skin --help`.
+  tools/creator/skin/requirements.txt && .venv-skin/bin/python -m delve_skin --help`.
 - **Severity**: costs an hour, at the moment an NPC needs a skin.
 - Related, and reported honestly as NOT a finding for this drill: Init says nothing
   about `pytest`, but no step of this skill invokes `pytest`, so a person walking
@@ -119,7 +119,7 @@ clone**, which is the state the drill is actually run from. I did not measure co
 - **Severity**: mild here; see F11 for where it lands.
 
 ## F5 — Init step 6 is a genuine hard stop, and its diagnostic is exemplary
-- **Page said**: confirm `python3 tools/refimg.py --prompt "smoke test" --dry-run`;
+- **Page said**: confirm `python3 tools/creator/refimg.py --prompt "smoke test" --dry-run`;
   "Absent config exits 2 saying what to add".
 - **What happened**, exactly as promised:
   ```
@@ -497,7 +497,7 @@ Recorded because a friction log that only lists breakage is not a measurement.
 
 ## F19 — the last gate before play refuses a first campaign, 61 items deep
 - **Page said** (Playtest rounds, rule 5): run
-  `python3 tools/staging-gate.py --campaign <dir> --build <out> --report round-N-gate.md`
+  `python3 tools/creator/staging-gate.py --campaign <dir> --build <out> --report round-N-gate.md`
   … "**A red is not permission to stop**".
 - **What happened**:
   ```
@@ -656,7 +656,7 @@ bot cannot walk out of the spawn room.
 - That a fresh clone lacks `delve-grammar`/`delve-admit` at the moment the prefab
   procedure asks for them. My `target/` was donor-populated before I started.
 - Any build TIME. Every figure here is warm and understates a fresh clone.
-- Anything about gate 4b, `tools/refimg.py` beyond its refusal, the map pipeline
+- Anything about gate 4b, `tools/creator/refimg.py` beyond its refusal, the map pipeline
   (`geometry-brief`/`layout-graph`/`site-plan`/`detail-plan`), `delve-grammar`,
   `delve-admit`, the skin toolchain, localization, branch chronicles, or
   `delvec metrics --gym`. **This walk took the `areas[]` branch only.** The

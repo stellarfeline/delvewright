@@ -157,7 +157,7 @@ project_networks() {
 
 # The one hard seal left on a shared host: whatever the project label says, a
 # container publishing host 25565 is an OWNER-FACING session (owner-play.yaml or
-# tools/playtest-server.sh) and a human may be inside it. Refuse rather than
+# tools/creator/playtest-server.sh) and a human may be inside it. Refuse rather than
 # reason about how it got that label. This can only ever fire on a mis-typed
 # project name — a worker stack publishes no port at all (validation/compose.yaml).
 owner_port_containers() {

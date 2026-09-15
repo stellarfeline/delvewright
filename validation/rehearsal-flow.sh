@@ -80,7 +80,7 @@ STARTED=0
 for _ in $(seq 1 90); do
   # Capture, then test. `docker logs | grep -q` exits at the first match and
   # SIGPIPEs `docker logs`; under pipefail that reads as NO MATCH, so a server
-  # that started is reported as never started (tools/check-shell-pipe-shortcircuit.py).
+  # that started is reported as never started (tools/ci/check-shell-pipe-shortcircuit.py).
   BOOT_LOG="$(docker logs "$CID" 2>&1 || true)"
   if [[ $BOOT_LOG == *"Done ("[0-9]* ]]; then STARTED=1; break; fi
   if [ "$(docker inspect -f '{{.State.Status}}' "$CID" 2>/dev/null)" = "exited" ]; then break; fi
@@ -139,7 +139,7 @@ assert "$REPORT" '"pointer": "/content/quests/0/on_complete/0"' "shot 1 DSL poin
 #   path 3,67,8;7,67,8 --dw.mark--> exactly one waypoint, the bot's own eye cell
 python3 - "$REPORT" "$MARKED" <<'PY'
 import json, sys
-sys.stdout.reconfigure(newline="\n")  # CRLF-proof: tools/check-python-shell-newlines.py
+sys.stdout.reconfigure(newline="\n")  # CRLF-proof: tools/ci/check-python-shell-newlines.py
 report, marked = sys.argv[1], [int(v) for v in sys.argv[2].split(",")]
 shots = {s["shot"]: s for s in json.load(open(report))["shots"]}
 assert set(shots) == {1, 2}, f"expected both shots stamped, got {sorted(shots)}"
@@ -165,7 +165,7 @@ echo "==> asserting the camera report is the pose the bot held (spec-0069)"
 grep -qF '[DelveCamera] ' "$LOG" || { echo "::error:: no [DelveCamera] stamp in server log"; exit 1; }
 python3 - "$CAMERAS" "$BOT_OUT" <<'PY'
 import json, re, sys
-sys.stdout.reconfigure(newline="\n")  # CRLF-proof: tools/check-python-shell-newlines.py
+sys.stdout.reconfigure(newline="\n")  # CRLF-proof: tools/ci/check-python-shell-newlines.py
 report, bot_out = sys.argv[1], open(sys.argv[2]).read()
 cams = {c["slot"]: c for c in json.load(open(report))["cameras"]}
 poses = {}
@@ -207,7 +207,7 @@ echo "---------------------------"
 
 python3 - "$PATCH" "$OUT/creator-datapack/layout.json" "$MARKED" <<'PY'
 import json, sys
-sys.stdout.reconfigure(newline="\n")  # CRLF-proof: tools/check-python-shell-newlines.py
+sys.stdout.reconfigure(newline="\n")  # CRLF-proof: tools/ci/check-python-shell-newlines.py
 patch, layout, marked = sys.argv[1], sys.argv[2], [int(v) for v in sys.argv[3].split(",")]
 p = json.load(open(patch))
 assert not p["unsnappable"], f"every proposal must snap in a one-room fixture: {p['unsnappable']}"

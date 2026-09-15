@@ -20,9 +20,9 @@ COMPOSE="$ROOT/validation/compose.yaml"
 HARNESS_PKG="$ROOT/harness/package.json"
 CI_WF="$ROOT/.github/workflows/ci.yml"
 ENGINE_RELEASE_WF="$ROOT/.github/workflows/engine-release.yml"
-SKIN_REQ="$ROOT/tools/skin/requirements.txt"
-SKIN_PYPROJECT="$ROOT/tools/skin/pyproject.toml"
-SKIN_CATALOG="$ROOT/tools/skin/delve_skin/catalog.py"
+SKIN_REQ="$ROOT/tools/creator/skin/requirements.txt"
+SKIN_PYPROJECT="$ROOT/tools/creator/skin/pyproject.toml"
+SKIN_CATALOG="$ROOT/tools/creator/skin/delve_skin/catalog.py"
 DELVEC_CARGO="$ROOT/crates/delvec/Cargo.toml"
 BOOTSTRAP_SH="$ROOT/validation/server-bootstrap-cache.sh"
 
@@ -31,7 +31,7 @@ BOOTSTRAP_SH="$ROOT/validation/server-bootstrap-cache.sh"
 # --- pull every value we assert on out of the manifest in one shot --------------
 eval "$(python3 - "$MANIFEST" <<'PY'
 import sys, tomllib
-sys.stdout.reconfigure(newline="\n")  # CRLF-proof: tools/check-python-shell-newlines.py
+sys.stdout.reconfigure(newline="\n")  # CRLF-proof: tools/ci/check-python-shell-newlines.py
 d = tomllib.load(open(sys.argv[1], "rb"))
 def emit(k, v): print(f'{k}={v!r}'.replace("'", '"'))
 emit("MC_VERSION",        d["minecraft"]["version"])
@@ -125,7 +125,7 @@ echo "== Content repo pin (spec-0007 [content]) =="
 # rather than at checkout/build time.
 # Shape tests use bash's own `=~`, never `printf | grep -q`: grep exits at the
 # match and SIGPIPEs printf, which `pipefail` reads as NO MATCH — a well-formed
-# pin would fail its own guard (tools/check-shell-pipe-shortcircuit.py).
+# pin would fail its own guard (tools/ci/check-shell-pipe-shortcircuit.py).
 if [[ $CONTENT_REPO =~ ^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$ ]]; then
   pass "content.repo is a valid owner/name ($CONTENT_REPO)"
 else
@@ -149,7 +149,7 @@ ZONE_CORPUS="$ROOT/.github/content-zone-corpus.json"
 if [ -f "$ZONE_CORPUS" ]; then
   # `sys.stdout.reconfigure(newline="\n")` before the print, or a Windows runner
   # would append a `\r` that survives command substitution and makes the SHA
-  # compare unequal to itself (tools/check-python-shell-newlines.py).
+  # compare unequal to itself (tools/ci/check-python-shell-newlines.py).
   corpus_sha="$(python3 -c 'import json,sys; sys.stdout.reconfigure(newline="\n"); print(json.load(open(sys.argv[1]))["content_sha"])' "$ZONE_CORPUS")"
   if [ "$corpus_sha" = "$CONTENT_SHA" ]; then
     pass "content.sha -> .github/content-zone-corpus.json ($CONTENT_SHA)"
@@ -178,20 +178,20 @@ fi
 # inline, and a hand-edited or silently-rebuilt bundle would ship a different
 # renderer under the same declared version. Every consumer of the three npm pins
 # is the build script, and the fourth check is the digest of what it produced.
-DEEPSLATE_BUILDER="$ROOT/tools/build-deepslate-bundle.sh"
+DEEPSLATE_BUILDER="$ROOT/tools/maintenance/build-deepslate-bundle.sh"
 if [ -f "$DEEPSLATE_BUILDER" ]; then
-  want_in "deepslate version -> tools/build-deepslate-bundle.sh" "\"$DEEPSLATE_VERSION\"" "$DEEPSLATE_BUILDER"
-  want_in "gl-matrix version -> tools/build-deepslate-bundle.sh" "\"$GL_MATRIX_VERSION\"" "$DEEPSLATE_BUILDER"
-  want_in "esbuild version -> tools/build-deepslate-bundle.sh"   "\"$ESBUILD_VERSION\"" "$DEEPSLATE_BUILDER"
+  want_in "deepslate version -> tools/maintenance/build-deepslate-bundle.sh" "\"$DEEPSLATE_VERSION\"" "$DEEPSLATE_BUILDER"
+  want_in "gl-matrix version -> tools/maintenance/build-deepslate-bundle.sh" "\"$GL_MATRIX_VERSION\"" "$DEEPSLATE_BUILDER"
+  want_in "esbuild version -> tools/maintenance/build-deepslate-bundle.sh"   "\"$ESBUILD_VERSION\"" "$DEEPSLATE_BUILDER"
 else
-  fail "tools/build-deepslate-bundle.sh missing (cannot verify the bundled renderer pins)"
+  fail "tools/maintenance/build-deepslate-bundle.sh missing (cannot verify the bundled renderer pins)"
 fi
 if [ -f "$ROOT/$DEEPSLATE_BUNDLE" ]; then
   got="$(shasum -a 256 < "$ROOT/$DEEPSLATE_BUNDLE" | cut -d' ' -f1)"
   if [ "$got" = "$DEEPSLATE_SHA256" ]; then
     pass "deepslate bundle digest matches the manifest ($DEEPSLATE_SHA256)"
   else
-    fail "deepslate bundle digest is $got but the manifest pins $DEEPSLATE_SHA256 — rebuild with tools/build-deepslate-bundle.sh and update versions.toml in the same commit"
+    fail "deepslate bundle digest is $got but the manifest pins $DEEPSLATE_SHA256 — rebuild with tools/maintenance/build-deepslate-bundle.sh and update versions.toml in the same commit"
   fi
   # The local patch, asserted on the shipped bytes. Unpatched, every banner and
   # shield in every page renders as the missing-texture checker and says nothing.
@@ -260,7 +260,7 @@ echo "== Engine release line ([engine], ADR-0016 / ADR-0017 / ADR-0023) =="
 eng_report_file="$(mktemp)"
 python3 - "$MANIFEST" "$ROOT" > "$eng_report_file" <<'PY'
 import sys, tomllib
-sys.stdout.reconfigure(newline="\n")  # CRLF-proof: tools/check-python-shell-newlines.py
+sys.stdout.reconfigure(newline="\n")  # CRLF-proof: tools/ci/check-python-shell-newlines.py
 from pathlib import Path
 
 manifest, root = Path(sys.argv[1]), Path(sys.argv[2])
@@ -431,13 +431,13 @@ non_gnu = sorted(t for t in declared if "linux" in t and not t.endswith("-linux-
 # 8. The build script must hold no COPY of the shelf — the way a consumer cannot
 #    drift from the manifest is to carry nothing (same rule as the server-jar
 #    bootstrap below).
-script = (root / "tools/build-release-binaries.sh").read_text(encoding="utf-8")
+script = (root / "tools/ci/build-release-binaries.sh").read_text(encoding="utf-8")
 code = "\n".join(l for l in script.splitlines() if not l.lstrip().startswith("#"))
 hard = sorted(t for t in declared if t in code)
 (ok if not hard else bad)(
-    "tools/build-release-binaries.sh hardcodes no target triple"
+    "tools/ci/build-release-binaries.sh hardcodes no target triple"
     if not hard else
-    f"tools/build-release-binaries.sh hardcodes {hard} — read them from versions.toml")
+    f"tools/ci/build-release-binaries.sh hardcodes {hard} — read them from versions.toml")
 
 # 9. The release's per-Linux-target runner IMAGE and the standing CI gate that
 #    stands in for it must name the same one (release run 34069406209, v1.2.0:
@@ -538,7 +538,7 @@ fi
 # install inside a required job, where the message would name pip and not the pin.
 floor_report="$(python3 - "$PYTHON_MECHA_VERSION" "$MECHA_REQUIRES_PYTHON" "$BEET_VERSION" "$MECHA_REQUIRES_BEET" <<'FLOORS'
 import sys
-sys.stdout.reconfigure(newline="\n")  # CRLF-proof: tools/check-python-shell-newlines.py
+sys.stdout.reconfigure(newline="\n")  # CRLF-proof: tools/ci/check-python-shell-newlines.py
 
 
 def parts(v):
@@ -569,9 +569,9 @@ echo "== Skin toolchain ([skin], spec-0009) =="
 # Four statements of one library version, and the fourth is the one that matters
 # most: catalog.py stamps it into every emitted provenance record, so a bump that
 # missed it would ship metadata naming a library that did not draw the picture.
-all_stated "skinpy -> tools/skin/requirements.txt" 'skinpy-extended==[0-9A-Za-z.*+!-]*' "skinpy-extended==$SKINPY_EXTENDED" 1 "$SKIN_REQ"
-all_stated "skinpy -> tools/skin/pyproject.toml"   'skinpy-extended==[0-9A-Za-z.*+!-]*' "skinpy-extended==$SKINPY_EXTENDED" 1 "$SKIN_PYPROJECT"
-all_stated "skinpy -> tools/skin/delve_skin/catalog.py" '"version": "[^"]*", "license"' "\"version\": \"$SKINPY_EXTENDED\", \"license\"" 1 "$SKIN_CATALOG"
+all_stated "skinpy -> tools/creator/skin/requirements.txt" 'skinpy-extended==[0-9A-Za-z.*+!-]*' "skinpy-extended==$SKINPY_EXTENDED" 1 "$SKIN_REQ"
+all_stated "skinpy -> tools/creator/skin/pyproject.toml"   'skinpy-extended==[0-9A-Za-z.*+!-]*' "skinpy-extended==$SKINPY_EXTENDED" 1 "$SKIN_PYPROJECT"
+all_stated "skinpy -> tools/creator/skin/delve_skin/catalog.py" '"version": "[^"]*", "license"' "\"version\": \"$SKINPY_EXTENDED\", \"license\"" 1 "$SKIN_CATALOG"
 
 echo "== Server-jar bootstrap =="
 # `server_jar_url` / `server_jar_sha256` stopped being provenance-only on 2026-08-05:

@@ -1,4 +1,4 @@
-"""The staging gate (`tools/staging-gate.py`).
+"""The staging gate (`tools/creator/staging-gate.py`).
 
 A gate nobody has falsified is decoration, and this one is specifically the kind
 that could be: it is easy to write a coverage checker that only ever says yes.
@@ -22,7 +22,7 @@ import sys
 
 import pytest
 
-SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "staging-gate.py"
+SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "creator" / "staging-gate.py"
 
 
 @pytest.fixture(scope="module")
@@ -40,7 +40,7 @@ LIVE_CODE = "DW0100"
 
 
 # The staging gate RECORDS a campaign's declared `dsl_version` in its report and
-# compares it to nothing (`stage_versions` in tools/staging-gate.py). Every
+# compares it to nothing (`stage_versions` in tools/creator/staging-gate.py). Every
 # fixture here therefore names a number chosen for the test rather than the
 # engine's, which is what the other literals in this file already do — a
 # `dsl_version` bump edits the engine and never this file.
@@ -1451,7 +1451,7 @@ def test_the_live_ledger_parses_and_every_row_is_well_formed(gate):
 #
 # The gate shipped invoked by nothing but these tests — the UNRUN shape. What
 # closes it is not a doc line but an artifact the owner-facing paths REQUIRE:
-# `tools/playtest-server.sh` runs the gate itself, and
+# `tools/creator/playtest-server.sh` runs the gate itself, and
 # `validation/owner-play.yaml` runs `validation/staging-admission.sh` as a
 # service both 25565 binders `depends_on`. These drive the real verifier
 # script, so a change to the token format reds here instead of silently
@@ -1614,7 +1614,7 @@ def test_the_owner_facing_paths_actually_invoke_the_gate(gate):
     line is not an invocation. If either owner-facing path stops requiring
     admission, that is this test, not a review someone has to remember."""
     root = pathlib.Path(__file__).resolve().parents[2]
-    server = (root / "tools" / "playtest-server.sh").read_text()
+    server = (root / "tools" / "creator" / "playtest-server.sh").read_text()
     assert "staging-gate.py" in server, "playtest-server.sh no longer runs the gate"
     # and it must run BEFORE the container exists, or a refusal costs a session
     assert server.index("staging-gate.py") < server.index("docker run"), \
@@ -2206,7 +2206,7 @@ def test_the_staging_surface_writes_its_report_outside_the_tree(gate):
     """The invocation, not a doc line. `playtest-server.sh` is the caller that
     put the report inside the tree; if it goes back, this reds."""
     root = pathlib.Path(__file__).resolve().parents[2]
-    server = (root / "tools" / "playtest-server.sh").read_text()
+    server = (root / "tools" / "creator" / "playtest-server.sh").read_text()
     assert '--report "$GATE_REPORT"' in server
     assert 'GATE_DIR="${OUT_DIR%/}.gate"' in server
     assert '"$OUT_DIR/staging-gate.md"' not in server, (
