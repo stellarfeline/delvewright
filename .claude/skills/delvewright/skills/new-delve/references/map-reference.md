@@ -98,8 +98,9 @@ python3 "$DELVEWRIGHT_ENGINE/tools/refimg.py" --prompt-file .refimg/v2-prompt.tx
 ```
 
 The anchor is the same in every later call, and that is where the "anchored on
-view 1" claim is checked — the `chain_from` (or the style reference) recorded in
-the sidecars, not a sentence in a report. An anchor or a frame the configured
+view 1" claim is checked — `request.chain_from` (or, for a style reference,
+`request.reference_images`) in each view's `<stem>.json` sidecar, not a sentence
+in a report. An anchor or a frame the configured
 provider cannot honour is **refused, never dropped**: the call stops and names
 the provider, the missing capability and the flag to use instead, rather than
 returning a correctly-framed picture with no anchor in it. Run the first call of
