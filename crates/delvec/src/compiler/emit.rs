@@ -1230,6 +1230,17 @@ pub fn build_with_warnings(
                 // or walls — the water-flow / post-nav-mutation divergence class —
                 // failing the build loudly (DW0314) instead of stranding the bot.
                 crate::compiler::nav::verify_exported_routes(&world, &routes)?;
+                // spec-0065 §4.3: what the furniture exclusion bound, over the
+                // same world and the same legs the proofs above walked. Printed
+                // on every build that walks, zeroes included.
+                let furniture =
+                    crate::compiler::nav::furniture_binding(plan, &world, &routes, &m, &am);
+                eprintln!("{}", furniture.line());
+                put_json(
+                    &mut out,
+                    "validation/furniture-gate.json",
+                    &furniture.to_json(),
+                );
                 // `DW0850`: the volume that completes a `reach` and the footing
                 // a body can reach it from are the same place. Bound HERE, to
                 // the same build event and the same final world the waypoint

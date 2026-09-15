@@ -859,6 +859,12 @@ pub fn built_volume(plan: &Plan) -> Vec<BuiltPiece> {
 /// the box being inclusive world-space corners.
 type LethalRegion = (String, ([i32; 3], [i32; 3]));
 
+/// One placed furniture region as the navigation model carries it — the plan's
+/// own type, `(anchor name, inclusive world box)` (spec-0065). Same shape as
+/// [`LethalRegion`] for the same reason: a proof that refuses over it has to be
+/// able to name the anchor.
+use crate::compiler::plan::FurnitureRegion;
+
 /// One placed piece as the built volume carries it: `(prefab id, box)`, the box
 /// being inclusive world-space corners. Same shape as [`LethalRegion`] and for
 /// the same reason — a proof that refuses over a region has to be able to NAME
@@ -896,6 +902,20 @@ pub struct World {
     /// difference between `DW0510` and a `DW0311` that sends the author to fix a
     /// prefab that was never wrong.
     lethal_regions: Vec<LethalRegion>,
+    /// Cells inside a declared **furniture** region (spec-0065): the blocks of a
+    /// laid table, an altar, a counter, as the piece that built them declared.
+    ///
+    /// Not impassable and not removed from `solid` — a table is geometry, and a
+    /// body beside it stands on the floor. What these cells withhold is the cell
+    /// ABOVE each solid one: [`World::standable_fp`] refuses a body whose support
+    /// is a solid furniture cell, so no route, snap, flood, seat or export stands
+    /// a body on a table. Empty for every campaign whose pieces declare none,
+    /// which keeps every proof byte-identical.
+    furniture: BTreeSet<[i32; 3]>,
+    /// The regions behind `furniture`, as `(anchor, box)`, in the plan's order
+    /// ([`Plan::furniture`]). Carried so a route that exists only over a table
+    /// names the table (`DW0510`).
+    furniture_regions: Vec<FurnitureRegion>,
     /// Cells another proof has FORCED solid as its own premise — a `collapse`'s
     /// settled debris, an ambush's occupied cells, a timed gate's shut span, an
     /// aggro sphere ([`World::with_sealed`]).
@@ -1039,6 +1059,7 @@ pub struct Premises {
     base: &'static str,
     built: Vec<BuiltPiece>,
     lethal_regions: Vec<LethalRegion>,
+    furniture_regions: Vec<FurnitureRegion>,
     world_load_seals: Vec<crate::compiler::assembled::GateSeal>,
     clocked_gates: BTreeSet<([i32; 3], [i32; 3])>,
     transit_teleports: Vec<([i32; 3], [i32; 3])>,
@@ -1069,6 +1090,7 @@ impl Premises {
                 .iter()
                 .map(|v| (v.id.clone(), v.region))
                 .collect(),
+            furniture_regions: plan.furniture.clone(),
             world_load_seals: seals,
             clocked_gates: plan.timed_gates.iter().map(|g| g.gate_region).collect(),
             transit_teleports: plan.transit_teleports.clone(),
@@ -1107,6 +1129,7 @@ impl Premises {
             base: "void",
             built: Vec::new(),
             lethal_regions: Vec::new(),
+            furniture_regions: Vec::new(),
             world_load_seals: Vec::new(),
             clocked_gates: BTreeSet::new(),
             transit_teleports: Vec::new(),
@@ -1199,15 +1222,44 @@ impl World {
         !self.world_load_seals.is_empty()
     }
 
-    /// A copy of this world with **no** lethal volumes — the counterfactual the
-    /// `DW0510` diagnostic is derived from.
+    /// A copy of this world with **every semantic exclusion lifted** — no lethal
+    /// volume and no furniture region: the counterfactual `DW0510` is derived
+    /// from, and the population `DW0891` is measured over (spec-0062 §2,
+    /// spec-0065 §4.2).
     ///
     /// A route that fails on the real world and succeeds on this one failed
-    /// *because of* a lethal volume, and the cells it would have walked name which
-    /// volumes. Without the counterfactual the author gets "no collision-free
-    /// path" over geometry that looks perfectly open — the reachability report
-    /// that sends someone to fix the prefab.
-    pub fn without_lethal(&self) -> World {
+    /// *because of* an exclusion, and the cells it would have walked name which
+    /// volume or which table. Without the counterfactual the author gets "no
+    /// collision-free path" over geometry that looks perfectly open — the
+    /// reachability report that sends someone to fix the prefab.
+    ///
+    /// One function for both kinds, on purpose: a check that must not be
+    /// improved by an exclusion reads this, and a second counterfactual lifting
+    /// only one kind would be the hatch a furniture declaration over caught floor
+    /// walks through.
+    pub fn without_exclusions(&self) -> World {
+        let mut w = self.clone_world();
+        w.lethal = BTreeSet::new();
+        w.lethal_regions = Vec::new();
+        w.furniture = BTreeSet::new();
+        w.furniture_regions = Vec::new();
+        w
+    }
+
+    /// A copy of this world with its **furniture** lifted and every other
+    /// premise kept — the counterfactual a walked `move-npc` / `move-actor` leg
+    /// is asked over when it cannot route (`DW0510`'s furniture shape). Those
+    /// legs carry no lethal counterfactual, so lifting lethality there too would
+    /// report a route through a kill box as a table's fault.
+    pub fn without_furniture(&self) -> World {
+        let mut w = self.clone_world();
+        w.furniture = BTreeSet::new();
+        w.furniture_regions = Vec::new();
+        w
+    }
+
+    /// A field-for-field copy, for the counterfactuals that change one premise.
+    fn clone_world(&self) -> World {
         World {
             solid: self.solid.clone(),
             tall: self.tall.clone(),
@@ -1216,8 +1268,10 @@ impl World {
             partial: self.partial.clone(),
             waterloggable: self.waterloggable.clone(),
             objective_cells: self.objective_cells.clone(),
-            lethal: BTreeSet::new(),
-            lethal_regions: Vec::new(),
+            lethal: self.lethal.clone(),
+            lethal_regions: self.lethal_regions.clone(),
+            furniture: self.furniture.clone(),
+            furniture_regions: self.furniture_regions.clone(),
             pinned: self.pinned.clone(),
             world_load_seals: self.world_load_seals.clone(),
             clocked_gates: self.clocked_gates.clone(),
@@ -1228,6 +1282,81 @@ impl World {
             base: self.base,
             built: self.built.clone(),
         }
+    }
+
+    /// Whether this world carries any furniture region at all. Call sites skip
+    /// the furniture counterfactual entirely when it does not.
+    pub fn has_furniture(&self) -> bool {
+        !self.furniture_regions.is_empty()
+    }
+
+    /// Whether a body standing in `c` would rest on a **solid furniture cell** —
+    /// the one term [`World::standable_fp`] adds for spec-0065, asked per
+    /// column of the footprint. Membership of the support cell, never a reach:
+    /// a body beside a table, feet on the floor, is untouched.
+    fn on_furniture_fp(&self, c: [i32; 3], fp: &Footprint) -> bool {
+        if self.furniture.is_empty() {
+            return false;
+        }
+        fp.cols.iter().any(|&[dx, dz]| {
+            let support = [c[0] + dx, c[1] - 1, c[2] + dz];
+            self.furniture.contains(&support) && self.is_solid(support)
+        })
+    }
+
+    /// The furniture anchors a body standing in any of `cells` would rest on, in
+    /// the plan's order, deduplicated — who to blame for a route that exists
+    /// only when the furniture is lifted. Asked for the player's single column,
+    /// which is what every blamed route here was routed for.
+    fn furniture_over(&self, cells: &[[i32; 3]]) -> Vec<&str> {
+        self.furniture_over_fp(cells, &Footprint::player())
+    }
+
+    /// [`World::furniture_over`] for a body of footprint `fp`.
+    fn furniture_over_fp(&self, cells: &[[i32; 3]], fp: &Footprint) -> Vec<&str> {
+        let mut out: Vec<&str> = Vec::new();
+        for (id, (lo, hi)) in &self.furniture_regions {
+            let hit = cells.iter().any(|c| {
+                fp.cols.iter().any(|&[dx, dz]| {
+                    let s = [c[0] + dx, c[1] - 1, c[2] + dz];
+                    (0..3).all(|i| lo[i] <= s[i] && s[i] <= hi[i]) && self.is_solid(s)
+                })
+            });
+            if hit && !out.contains(&id.as_str()) {
+                out.push(id.as_str());
+            }
+        }
+        out
+    }
+
+    /// **The furniture binding** (spec-0065 §4.3): regions, their solid cells,
+    /// and how many cells a player could stand in on the bare geometry that the
+    /// exclusion withholds. `(F, S, W)`.
+    pub fn furniture_census(&self) -> (usize, usize, usize) {
+        let solid: Vec<[i32; 3]> = self
+            .furniture
+            .iter()
+            .copied()
+            .filter(|c| self.is_solid(*c))
+            .collect();
+        let open = self.without_furniture();
+        let fp = Footprint::player();
+        let withheld = solid
+            .iter()
+            .map(|s| [s[0], s[1] + 1, s[2]])
+            .filter(|c| open.standable_fp(*c, &fp) && !self.standable_fp(*c, &fp))
+            .count();
+        (self.furniture_regions.len(), solid.len(), withheld)
+    }
+
+    /// How many of `cells` a body of footprint `fp` would stand on furniture in —
+    /// the `0 standing on furniture` the binding line states, computed rather
+    /// than typed.
+    pub fn cells_on_furniture(&self, cells: &[[i32; 3]], fp: &Footprint) -> usize {
+        cells
+            .iter()
+            .filter(|c| self.on_furniture_fp(**c, fp))
+            .count()
     }
 
     /// Whether this world carries any lethal-volume cell at all. Call sites skip
@@ -1317,6 +1446,12 @@ impl World {
                 .flat_map(|(_, (lo, hi))| crate::compiler::assembled::region_cells(*lo, *hi))
                 .collect(),
             lethal_regions: premises.lethal_regions,
+            furniture: premises
+                .furniture_regions
+                .iter()
+                .flat_map(|(_, (lo, hi))| crate::compiler::assembled::region_cells(*lo, *hi))
+                .collect(),
+            furniture_regions: premises.furniture_regions,
             pinned: BTreeSet::new(),
             world_load_seals: premises.world_load_seals,
             clocked_gates: premises.clocked_gates,
@@ -1437,6 +1572,8 @@ impl World {
             objective_cells: self.objective_cells.clone(),
             lethal: self.lethal.clone(),
             lethal_regions: self.lethal_regions.clone(),
+            furniture: self.furniture.clone(),
+            furniture_regions: self.furniture_regions.clone(),
             pinned,
             world_load_seals: self.world_load_seals.clone(),
             clocked_gates: self.clocked_gates.clone(),
@@ -1477,6 +1614,8 @@ impl World {
             objective_cells: self.objective_cells.clone(),
             lethal: self.lethal.clone(),
             lethal_regions: self.lethal_regions.clone(),
+            furniture: self.furniture.clone(),
+            furniture_regions: self.furniture_regions.clone(),
             pinned: self.pinned.clone(),
             world_load_seals: self.world_load_seals.clone(),
             clocked_gates: self.clocked_gates.clone(),
@@ -1525,6 +1664,8 @@ impl World {
             objective_cells: self.objective_cells.clone(),
             lethal: self.lethal.clone(),
             lethal_regions: self.lethal_regions.clone(),
+            furniture: self.furniture.clone(),
+            furniture_regions: self.furniture_regions.clone(),
             pinned: self.pinned.clone(),
             world_load_seals: self.world_load_seals.clone(),
             clocked_gates: self.clocked_gates.clone(),
@@ -1576,6 +1717,8 @@ impl World {
             objective_cells: self.objective_cells.clone(),
             lethal: self.lethal.clone(),
             lethal_regions: self.lethal_regions.clone(),
+            furniture: self.furniture.clone(),
+            furniture_regions: self.furniture_regions.clone(),
             pinned: self.pinned.clone(),
             world_load_seals: self.world_load_seals.clone(),
             clocked_gates: self.clocked_gates.clone(),
@@ -1651,6 +1794,8 @@ impl World {
             objective_cells: self.objective_cells.clone(),
             lethal: self.lethal.clone(),
             lethal_regions: self.lethal_regions.clone(),
+            furniture: self.furniture.clone(),
+            furniture_regions: self.furniture_regions.clone(),
             pinned: self.pinned.clone(),
             world_load_seals: self.world_load_seals.clone(),
             clocked_gates: self.clocked_gates.clone(),
@@ -1720,6 +1865,8 @@ impl World {
             objective_cells: self.objective_cells.clone(),
             lethal: self.lethal.clone(),
             lethal_regions: self.lethal_regions.clone(),
+            furniture: self.furniture.clone(),
+            furniture_regions: self.furniture_regions.clone(),
             pinned: self.pinned.clone(),
             world_load_seals: self.world_load_seals.clone(),
             clocked_gates: self.clocked_gates.clone(),
@@ -2169,6 +2316,12 @@ impl World {
     /// this model funnels through, rather than at any of them.
     fn standable_fp(&self, c: [i32; 3], fp: &Footprint) -> bool {
         if self.meets_lethal_fp(c, fp) {
+            return false;
+        }
+        // spec-0065: a body may not be PROVEN to stand on furniture. Asked beside
+        // the lethal clause, in the same predicate, so every route, snap, flood,
+        // seat and export inherits it and none of them restates it.
+        if self.on_furniture_fp(c, fp) {
             return false;
         }
         fp.cols.iter().all(|&[dx, dz]| {
@@ -3066,6 +3219,16 @@ pub fn plan_moves(plan: &Plan, world: &World) -> Result<Vec<MovePlan>, Failure> 
                     &seal,
                 ));
             }
+            None if leg_world.has_furniture()
+                && let Some(over) = leg_world.without_furniture().find_path(start, target) =>
+            {
+                return Err(furniture_route_failure(
+                    &format!("move-npc `{}`", npc.as_str()),
+                    &format!("{start:?}"),
+                    &format!("`{}` (floor {target:?})", to_anchor.as_str()),
+                    &leg_world.furniture_over(&over),
+                ));
+            }
             None => {
                 return Err(Failure {
                     code: DW_MOVE_UNROUTABLE,
@@ -3589,6 +3752,18 @@ pub fn plan_actor_moves(plan: &Plan, world: &World) -> Result<Vec<ActorMovePlan>
                     &seal,
                 ));
             }
+            None if leg_world.has_furniture()
+                && let Some(over) = leg_world
+                    .without_furniture()
+                    .find_path_fp(start, target, &fp) =>
+            {
+                return Err(furniture_route_failure(
+                    &format!("move-actor `{}`", actor.as_str()),
+                    &format!("{start:?}"),
+                    &format!("`{}` (floor {target:?})", to_anchor.as_str()),
+                    &leg_world.furniture_over_fp(&over, &fp),
+                ));
+            }
             None => {
                 let blocked = first_blocked_fp(leg_world, start, target, &fp);
                 return Err(Failure {
@@ -3961,6 +4136,92 @@ struct VisitedPos {
     /// The originating `critical_path` step index (v0.6): lets the checkpoint /
     /// stealth proofs select the positions at or after a firing step.
     src_step: usize,
+}
+
+/// **What the furniture exclusion bound on one build** (spec-0065 §4.3).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct FurnitureBinding {
+    /// Furniture regions placed in the world.
+    pub regions: usize,
+    /// Solid cells those regions hold.
+    pub solid: usize,
+    /// Cells a player could stand in on the bare geometry that the exclusion
+    /// withholds from walking — the count that says the declarations bit.
+    pub withheld: usize,
+    /// Walked legs proved: exported critical-path legs, `move-npc` legs and
+    /// `move-actor` legs.
+    pub legs: usize,
+    /// Cells of those legs a body stands on furniture in, computed over every
+    /// leg's own cells for the footprint it was routed under.
+    pub on_furniture: usize,
+    /// The furniture anchors placed, in the plan's order, one per placement.
+    pub anchors: Vec<String>,
+}
+
+impl FurnitureBinding {
+    /// The line every build prints, zeroes included, so a campaign whose pieces
+    /// declare no furniture reads as checked rather than unbound.
+    pub fn line(&self) -> String {
+        format!(
+            "furniture binding: {} region(s) over {} solid cell(s), {} standable cell(s) \
+             withheld from walking; {} leg(s) proved, {} standing on furniture.",
+            self.regions, self.solid, self.withheld, self.legs, self.on_furniture
+        )
+    }
+
+    /// `validation/furniture-gate.json`: the same counts, for a gate that reads
+    /// the build rather than its stderr. `examined` is the region count, so a
+    /// reader that reds a zero binding reds a build whose campaign declares
+    /// furniture and whose pieces placed none.
+    pub fn to_json(&self) -> serde_json::Value {
+        serde_json::json!({
+            "anchors": self.anchors,
+            "examined": self.regions,
+            "legs": self.legs,
+            "on_furniture": self.on_furniture,
+            "solid_cells": self.solid,
+            "spec": "spec-0065",
+            "withheld": self.withheld,
+        })
+    }
+}
+
+/// Measure [`FurnitureBinding`] over the world a build proved its walks in and
+/// the legs it proved there.
+pub fn furniture_binding(
+    plan: &Plan,
+    world: &World,
+    routes: &[LegRoute],
+    moves: &[MovePlan],
+    actor_moves: &[ActorMovePlan],
+) -> FurnitureBinding {
+    let (regions, solid, withheld) = world.furniture_census();
+    let player = Footprint::player();
+    let mut on_furniture = 0;
+    for r in routes {
+        on_furniture += world.cells_on_furniture(&r.cells, &player);
+    }
+    for m in moves {
+        on_furniture += world.cells_on_furniture(&m.cells, &player);
+    }
+    for m in actor_moves {
+        let fp = actor_of(plan, &m.actor)
+            .map(|a| entity_footprint(&a.entity))
+            .unwrap_or_else(Footprint::player);
+        on_furniture += world.cells_on_furniture(&m.cells, &fp);
+    }
+    FurnitureBinding {
+        regions,
+        solid,
+        withheld,
+        legs: routes.len() + moves.len() + actor_moves.len(),
+        on_furniture,
+        anchors: plan
+            .furniture
+            .iter()
+            .map(|(name, _)| name.clone())
+            .collect(),
+    }
 }
 
 /// How many critical-path **legs** the completability proof routes — consecutive
@@ -4633,6 +4894,26 @@ fn names_of(ids: &[&str]) -> String {
         .join(", ")
 }
 
+/// `DW0510`'s **furniture shape** (spec-0065 §4.3): a walked route exists only
+/// when the declared furniture is lifted, so the only way from `from` to `to`
+/// climbs over it. One code with the lethal shape, because it is one rule — a
+/// route may not depend on a cell a body may not be proven to stand in — and
+/// the message names the kind.
+fn furniture_route_failure(walker: &str, from: &str, to: &str, tables: &[&str]) -> Failure {
+    Failure {
+        code: DW_LETHAL_ON_CRITICAL_PATH,
+        message: format!(
+            "{walker}: the only route from {from} to {to} runs OVER furniture {names} — the \
+             piece that built it declares it a place a body stands beside and never on, and a \
+             route that climbs a table is one nobody reads as a way. The geometry is walkable; \
+             the declaration is what closes it. Move the mark so the walk has somewhere else to \
+             go, open a way round the furniture, or move the furniture in the piece; do NOT \
+             delete the declaration to silence the proof.",
+            names = names_of(tables),
+        ),
+    }
+}
+
 /// Render a blamed-region list for a `DW0544` message. A runtime region write has
 /// no author-given id — `fill-region` names a box, not itself — so the box IS the
 /// name, and it identifies the effect uniquely. The empty case is the same honest
@@ -4705,8 +4986,8 @@ fn route_visited(
         // and saying which volume is a different fix from every other answer
         // this function gives.
         let open_owned;
-        let open: Option<&World> = if leg_world.has_lethal() {
-            open_owned = leg_world.without_lethal();
+        let open: Option<&World> = if leg_world.has_lethal() || leg_world.has_furniture() {
+            open_owned = leg_world.without_exclusions();
             Some(&open_owned)
         } else {
             None
@@ -4736,7 +5017,23 @@ fn route_visited(
         let lethal_snap_err = |at: [i32; 3], talk_to: bool| -> Option<Failure> {
             let open = open?;
             let cell = open.snap_endpoint(at, talk_to)?;
-            let names = names_of(&leg_world.lethal_volumes_over(&[cell]));
+            let volumes = leg_world.lethal_volumes_over(&[cell]);
+            let tables = leg_world.furniture_over(&[cell]);
+            if volumes.is_empty() && !tables.is_empty() {
+                return Some(Failure {
+                    code: DW_LETHAL_ON_CRITICAL_PATH,
+                    message: format!(
+                        "critical path: the only footing within {SNAP_RADIUS} blocks of visited \
+                         anchor {at:?} is ON furniture {names} — the piece that built it \
+                         declares it a place a body stands beside and never on, so the party \
+                         cannot be proven to stand where this objective is. Move the objective \
+                         to the floor beside it, or move the furniture in the piece; do NOT \
+                         delete the declaration to silence the proof.",
+                        names = names_of(&tables),
+                    ),
+                });
+            }
+            let names = names_of(&volumes);
             Some(Failure {
                 code: DW_LETHAL_ON_CRITICAL_PATH,
                 message: format!(
@@ -4885,7 +5182,17 @@ fn route_visited(
                 )
                 && let Some(cells) = open.find_path(s2, g2)
             {
-                let names = names_of(&leg_world.lethal_volumes_over(&cells));
+                let volumes = leg_world.lethal_volumes_over(&cells);
+                let tables = leg_world.furniture_over(&cells);
+                if volumes.is_empty() && !tables.is_empty() {
+                    return Err(furniture_route_failure(
+                        "critical path",
+                        &format!("{from:?} (floor {start:?})"),
+                        &format!("{to:?} (floor {goal:?})"),
+                        &tables,
+                    ));
+                }
+                let names = names_of(&volumes);
                 return Err(Failure {
                     code: DW_LETHAL_ON_CRITICAL_PATH,
                     message: format!(
@@ -9036,12 +9343,94 @@ mod tests {
                 base: "void",
                 built: Vec::new(),
                 lethal_regions: vec![("lethal/the-pit".to_string(), region)],
+                furniture_regions: Vec::new(),
                 world_load_seals: Vec::new(),
                 clocked_gates: BTreeSet::new(),
                 transit_teleports: Vec::new(),
                 objective_cells: Vec::new(),
             },
         )
+    }
+
+    /// A floor at `y - 1` over `[0,w) × [0,d)` with open air to `y + 3`, `solid`
+    /// extra cells, and one declared furniture region when `region` is `Some`.
+    fn floored_with_furniture(
+        w: i32,
+        d: i32,
+        y: i32,
+        extra: &[[i32; 3]],
+        region: Option<([i32; 3], [i32; 3])>,
+    ) -> World {
+        let mut solid = BTreeSet::new();
+        for x in 0..w {
+            for z in 0..d {
+                solid.insert([x, y - 1, z]);
+            }
+        }
+        solid.extend(extra.iter().copied());
+        World::from_occupancy(
+            crate::compiler::assembled::Occupancy {
+                solid,
+                tall: BTreeSet::new(),
+                use_gates: BTreeSet::new(),
+                flooded: BTreeSet::new(),
+                partial: BTreeMap::new(),
+                waterloggable: BTreeSet::new(),
+            },
+            Premises {
+                ambient: Ambient::Void,
+                base: "void",
+                built: Vec::new(),
+                lethal_regions: Vec::new(),
+                furniture_regions: region
+                    .map(|r| vec![("anchor/table".to_string(), r)])
+                    .unwrap_or_default(),
+                world_load_seals: Vec::new(),
+                clocked_gates: BTreeSet::new(),
+                transit_teleports: Vec::new(),
+                objective_cells: Vec::new(),
+            },
+        )
+    }
+
+    /// **A body may not be proven to stand ON furniture** (spec-0065 §4.1, §9.3).
+    ///
+    /// One solid block inside a furniture region, an air cell inside the same
+    /// region beside it, and the floor around both. Over the solid cell: refused.
+    /// Beside it, feet on the floor: untouched. With its feet in the region's
+    /// air cell and the floor under it: untouched, because the rule is the
+    /// support cell's membership, not the body's. The same world with the region
+    /// removed: all three stand.
+    #[test]
+    fn a_body_may_not_stand_on_a_solid_furniture_cell() {
+        let top = [3, 65, 3];
+        let region = ([3, 65, 3], [4, 65, 3]);
+        let on = [3, 66, 3];
+        let beside = [2, 65, 3];
+        let over_air = [4, 65, 3];
+        let fp = Footprint::player();
+        let w = floored_with_furniture(8, 8, 65, &[top], Some(region));
+        assert!(!w.standable_fp(on, &fp), "the table top is withheld");
+        assert!(w.standable_fp(beside, &fp), "the floor beside it is not");
+        assert!(
+            w.standable_fp(over_air, &fp),
+            "an air cell of the region withholds nothing"
+        );
+        assert_eq!(w.furniture_census(), (1, 1, 1));
+        assert_eq!(w.furniture_over(&[on]), vec!["anchor/table"]);
+        assert!(w.furniture_over(&[beside, over_air]).is_empty());
+
+        let bare = floored_with_furniture(8, 8, 65, &[top], None);
+        for c in [on, beside, over_air] {
+            assert!(
+                bare.standable_fp(c, &fp),
+                "{c:?} stands with no declaration"
+            );
+        }
+        assert_eq!(bare.furniture_census(), (0, 0, 0));
+        // …and the counterfactuals lift it.
+        assert!(w.without_exclusions().standable_fp(on, &fp));
+        assert!(w.without_furniture().standable_fp(on, &fp));
     }
 
     /// **A body may not stand on the cell beside a killing volume's face.**
