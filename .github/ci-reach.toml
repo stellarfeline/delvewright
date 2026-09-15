@@ -1,0 +1,149 @@
+# What each CI job reads — the table `ci.yml`'s `changes` job filters by.
+#
+# On `pull_request`, a job runs only when the change touches a path its group
+# lists here; on `push` and `workflow_dispatch` every job runs. The table is
+# interpreted by `tools/lib/ci_reach.py` alone, and `tools/check-ci-reach.py`
+# holds it to `ci.yml`: every job but `changes` reads a group through its `if`,
+# every group is read by a job, every glob matches a tracked file, and every
+# `if` also runs on the non-pull-request events.
+#
+# A glob is an input when a step of a job reading the group reads a file it
+# matches — directly, through a script it runs, or through a script, test or
+# build that script reaches. When in doubt a path is an input: a job that runs
+# too often costs minutes, a job skipped wrongly lets a defect merge.
+#
+# `**` is any number of whole path segments, `*` is within one segment.
+
+[all]
+inputs = [
+  { glob = ".github/**", why = "the workflow itself, the composite actions every checkout job uses, the pin registry, the required-context list, the zone-audit exclusions and corpus, and this table" },
+  { glob = "versions.toml", why = "every job's pins: the content repository and sha `checkout-content` reads, toolchain and instrument versions, the engine targets" },
+  { glob = "Cargo.lock", why = "every `cargo … --locked` and the version-site sweep" },
+  { glob = "rust-toolchain.toml", why = "the compiler every cargo invocation resolves" },
+  { glob = ".gitattributes", why = "how every checkout materialises files (LFS, line endings)" },
+  { glob = ".gitignore", why = "what `git status` calls dirty, which the engine's revision stamp reads" },
+  { glob = "tools/lib/ci_reach.py", why = "the filter that decides every other group" },
+]
+
+[[group]]
+name = "manifest"
+inputs = [
+  { glob = "**", why = "`tools/check-pins.py` scans every tracked file (`git ls-files`) for a fetch verb; `validation/check-versions.sh` reads Dockerfiles, compose, workflows, crate manifests, harness and skin manifests" },
+]
+
+[[group]]
+name = "dsl-crate-version"
+inputs = [
+  { glob = "**", why = "`tools/crates-io-publish.sh --plan` runs `tools/lib/version_sites.py verify`, which sweeps every tracked file for a `dsl_version` carrier; it packages `crates/dsl`" },
+]
+
+[[group]]
+name = "rust"
+inputs = [
+  { glob = "crates/**", why = "clippy and `cargo test --workspace`, the viewer's node tests, `check-publishable.sh`, `check-crates-io-readmes.py`, the grammar coverage table, the Linux determinism digest" },
+  { glob = "Cargo.toml", why = "the root workspace manifest and `[workspace.package]` version" },
+  { glob = "**/Cargo.toml", why = "`tools/fmt-workspaces.sh --check` derives every workspace from `git ls-files`" },
+  { glob = "**/*.rs", why = "`tools/fmt-workspaces.sh --check` formats every workspace's sources" },
+  { glob = "prefabs/**", why = "the prefab workspace is swept by `fmt-workspaces.sh`; `tools/lib/publishable.py` cross-checks the excluded nested workspace" },
+  { glob = "gallery/**", why = "crate tests read the gallery (`detail.rs`, `remedy_reachability.rs`, `site_plan_edit_script.rs`, `prefab_*` tests)" },
+  { glob = "tools/**", why = "the scripts this job runs (`fmt-workspaces.sh`, `check-json-canonical.py`, `check-publishable.sh`, `check-crates-io-readmes.py`, `determinism-subject.sh`, `tree-digest.py`, `tools/lib/*`) and files crate tests read (`tools/refscore.py`, `tools/tests/fixtures/i18n-sidecar`, `tools/spike-block-settling/observations.json`)" },
+  { glob = "**/*.json", why = "`tools/check-json-canonical.py` judges every tracked JSON document" },
+]
+
+[[group]]
+name = "engine-shelf"
+inputs = [
+  { glob = "crates/**", why = "`cargo check` of `delvec` for every shelf target" },
+  { glob = "Cargo.toml", why = "the workspace manifest the shelf build resolves" },
+  { glob = "tools/build-release-binaries.sh", why = "the script this job runs" },
+  { glob = "tools/lib/**", why = "shared helpers the release scripts source" },
+  { glob = "LICENSE", why = "`build-release-binaries.sh` stages it into every archive" },
+]
+
+[[group]]
+name = "prefab-generators"
+inputs = [
+  { glob = "prefabs/**", why = "the generator workspace: clippy, tests, and every generator run twice" },
+  { glob = "crates/dsl/**", why = "`prefabs/Cargo.toml` depends on `delvewright-dsl` by path" },
+  { glob = "crates/delvec/data/**", why = "`prefabs/invariants/src/connections.rs` includes `block-classification-1.21.11.json`" },
+  { glob = "Cargo.toml", why = "the root manifest a path dependency inherits workspace keys from" },
+  { glob = "tools/check-generator-preservation.py", why = "the script this job runs" },
+]
+
+[[group]]
+name = "harness"
+inputs = [
+  { glob = "harness/**", why = "`npm ci`, `tsc --noEmit` and `node --test` inside `harness/`" },
+]
+
+[[group]]
+name = "skin-tool"
+inputs = [
+  { glob = "tools/skin/**", why = "`pip install -r requirements.txt` and `pytest` inside `tools/skin/`" },
+]
+
+[[group]]
+name = "i18n-tool"
+inputs = [
+  { glob = "**", why = "`pytest tools/tests` reads the live tree: every tracked `*.md` (`test_mdtable.py`), every tracked JSON (`test_check_json_canonical.py`), every shell and workflow file (`test_check_shell_bash32.py`), the plugin and the engine at its pin (`test_check_skill_page.py`), crate data, prefabs and the gallery" },
+]
+
+[[group]]
+name = "mecha-crosscheck"
+inputs = [
+  { glob = "crates/**", why = "builds `delvec` and `crates/dsl/fixtures/valid/hello-world`, then mecha validates the emitted mcfunction" },
+  { glob = "Cargo.toml", why = "the workspace manifest the build resolves" },
+]
+
+[[group]]
+name = "docs"
+inputs = [
+  { glob = "**", why = "lychee over every `*.md`; `check-unsanctioned-identifiers.py`, `version_sites.py verify` and `check-doc-dupes.py` sweep the tree; `check-dw-codes.py` and `check-diagnostic-messages.py` read `crates/**`" },
+]
+
+[[group]]
+name = "storybook-version"
+inputs = [
+  { glob = "tools/check-storybook-version.py", why = "the script this job runs" },
+  { glob = "tools/lib/**", why = "`versions.py`, which the script imports" },
+  { glob = "Cargo.toml", why = "the compiler's release version, read from `[workspace.package]`" },
+]
+
+[[group]]
+name = "content-pin"
+inputs = [
+  { glob = "crates/**", why = "`delvec grammar audit` builds and runs the engine; the pin's `judged_by` includes `crates/delvec/Cargo.toml`" },
+  { glob = "Cargo.toml", why = "the workspace manifest the build resolves" },
+  { glob = ".claude/**", why = "`check-skill-page.py --online` judges the plugin tree" },
+  { glob = ".claude-plugin/**", why = "`check-skill-page.py` reads the marketplace manifest" },
+  { glob = "tools/**", why = "`check-pins.py`, `check-skill-page.py` and the modules it loads (`check-stated-counts.py`, `check-dw-codes.py`), `tools/data/skill-page-headings.json`, `tools/lib/*`, and the `extract-*.py` pins are judged by" },
+  { glob = "validation/**", why = "pins judged by `validation/check-versions.sh`, `validation/Dockerfile.toolserver` and `validation/compose.yaml`" },
+  { glob = "docs/reference/**", why = "the documents `check-stated-counts.py` and `check-dw-codes.py` read when `check-skill-page.py` loads them" },
+]
+
+[[group]]
+name = "gallery"
+inputs = [
+  { glob = "crates/**", why = "builds `delvec`, then analyze, build, coverage, render, seating, whole-map, baseline and stageable run it" },
+  { glob = "Cargo.toml", why = "the workspace manifest the build resolves" },
+  { glob = "prefabs/**", why = "`prefabs/gallery-generator` generates the gallery's piece and skins" },
+  { glob = "gallery/**", why = "the gallery campaign, its design, skins, render plan and committed baseline" },
+  { glob = "tools/**", why = "the gallery gates (`check-gallery-*.py`, `check-seating-agrees.py`, `check-whole-map-render.py`, `gallery-baseline.py`, `gallery-build.py`, `gallery_domain.py`, `gallery_units.py`, `staging-gate.py`, `check-dw-codes.py`, `tools/lib/*`) and the carrier scripts `staging-gate.py` resolves under `tools/`" },
+  { glob = "harness/**", why = "`staging-gate.py` reads harness carriers" },
+  { glob = "packtest/**", why = "`staging-gate.py` resolves packtest carriers" },
+  { glob = "validation/**", why = "`gallery-build.py` and `check-gallery-stageable.py` work under `validation/`" },
+  { glob = "docs/playtest-findings.json", why = "the findings ledger `staging-gate.py` reads" },
+  { glob = "docs/reference/compiler.md", why = "`check-dw-codes.py`, which `staging-gate.py` loads, reads the DW catalogue" },
+]
+
+[[group]]
+name = "tier2-validation"
+inputs = [
+  { glob = "crates/**", why = "builds `delvec` and the fixtures under `crates/` that every PackTest pass boots" },
+  { glob = "Cargo.toml", why = "the workspace manifest the build resolves" },
+  { glob = "prefabs/**", why = "`prefabs/gallery-generator` generates the gallery pass's piece" },
+  { glob = "gallery/**", why = "the gallery PackTest pass builds the gallery" },
+  { glob = "validation/**", why = "`server-bootstrap-cache.sh`, `Dockerfile.delve`, `compose.yaml`, `packtest-run.sh`, `packtest-matrix.py`, the world-settings entrypoint" },
+  { glob = "harness/**", why = "`validation/compose.yaml` builds its bot service from `../harness`" },
+  { glob = "packtest/**", why = "the PackTest template directory" },
+]

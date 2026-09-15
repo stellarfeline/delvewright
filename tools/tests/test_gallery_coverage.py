@@ -447,6 +447,25 @@ def test_a_zero_compiler_binding_reds_rather_than_being_printed(tmp_path):
     assert "return 1" in body, "a zero binding must fail the run"
 
 
+def test_a_furniture_exclusion_that_withholds_nothing_is_a_zero_binding(tmp_path):
+    """spec-0065 §9.8, on the gallery: a placed table (`examined` ≥ 1) that
+    withholds no standable cell from walking is a zero binding, named as such —
+    as is a gallery build that placed no furniture at all."""
+    mod = _load_checker()
+    out = tmp_path / "build"
+    (out / "validation").mkdir(parents=True)
+    ledger = out / "validation" / "furniture-gate.json"
+    ledger.write_text(json.dumps({"examined": 1, "withheld": 7}))
+    assert mod.read_build_ledgers(out)[1] == []
+    ledger.write_text(json.dumps({"examined": 1, "withheld": 0}))
+    assert mod.read_build_ledgers(out)[1] == ["furniture-gate.json: `withheld` is 0"]
+    ledger.write_text(json.dumps({"examined": 0, "withheld": 0}))
+    assert mod.read_build_ledgers(out)[1] == [
+        "furniture-gate.json: `examined` is 0",
+        "furniture-gate.json: `withheld` is 0",
+    ]
+
+
 def test_the_patch_declaration_is_refused_every_way_of_being_unreadable():
     """Shape, driven directly. Whether an edit APPLIES is `gallery_domain`'s half.
 

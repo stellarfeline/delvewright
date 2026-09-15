@@ -72,3 +72,4 @@ machine-checkable assertions — each criterion maps to a CI check.
 | [spec-0062](spec-0062-danger-is-visible-or-the-engine-refuses-it.md) | Danger is visible, or the engine refuses it — a killing volume that reaches floor the player reads as safe is refused, and a flush hazard declares the block that shows it | Proposed |
 | [spec-0063](spec-0063-the-front-end-as-a-product.md) | The front end as a product — one plugin, a page that is a spine, an exact Init, an optional library | Proposed |
 | [spec-0064](spec-0064-the-last-player-leaves.md) | The last player leaves, and the delve is built again — an optional container flag that returns a running delve to its built state once the online count has read zero for a whole window | Accepted |
+| [spec-0065](spec-0065-furniture-is-not-floor.md) | Furniture is not floor — a piece declares its furniture as a named place, and the walk model never proves a body onto it | Accepted |

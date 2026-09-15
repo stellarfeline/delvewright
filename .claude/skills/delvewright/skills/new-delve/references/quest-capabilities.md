@@ -355,6 +355,11 @@ this section is what they are *for* and the traps in each.
   hold a body to it; and no declaration touches the error tier — a declared
   climber still cannot walk through a closed fence gate (`DW0452`). Declare it on
   the body, never on the beat.
+- **A body is posted where it is declared, and never walked onto furniture.**
+  An NPC or actor anchored on a table stands on the table. A `move-npc` or
+  `move-actor` routes round anything the piece declares as furniture, and a
+  destination on it ends on the floor beside it. A walk whose only way is over
+  the table is refused naming it (`DW0510`): move the mark or open a way round.
 - **A status effect is a verb — and it ends by expiring, never by being
   cleared.** `give-effect {effect, seconds, amplifier?, hide_particles?, in?}`
   grants any pinned-1.21.11 status effect; `in {anchor, extent}` narrows it to
