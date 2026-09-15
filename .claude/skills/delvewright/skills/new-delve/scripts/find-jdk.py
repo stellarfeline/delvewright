@@ -1,6 +1,11 @@
 #!/usr/bin/env python3
 """Print the newest JDK 21+ already on this machine, or exit 1 having found none.
 
+`--major N` asks for a JDK of exactly that major instead: the pinned Chunky core
+is built at step 12 under the JDK its own build declares
+(`versions.toml [render] chunky_build_java`), and a newer one cannot run that
+build.
+
 WHY THIS IS A SCRIPT
 
 A machine whose default `java` answers below 21 very often HAS a 21 sitting
@@ -24,7 +29,7 @@ Prints `<major> <java home>` on the newest qualifying JDK and nothing else, so
 the caller can read it with one split. Exit 1 and no output means there is none,
 which is the caller's cue to halt and hand the install to the user.
 
-    python3 scripts/find-jdk.py [--minimum 21]
+    python3 scripts/find-jdk.py [--minimum 21 | --major N]
 """
 
 from __future__ import annotations
@@ -130,11 +135,12 @@ def candidates() -> list[pathlib.Path]:
     return unique
 
 
-def best(minimum: int) -> tuple[int, pathlib.Path] | None:
+def best(minimum: int, exact: int | None = None) -> tuple[int, pathlib.Path] | None:
     found = [
         (major, home)
         for home in candidates()
-        if (major := java_major(home)) is not None and major >= minimum
+        if (major := java_major(home)) is not None
+        and (major == exact if exact is not None else major >= minimum)
     ]
     return max(found, key=lambda pair: (pair[0], str(pair[1]))) if found else None
 
@@ -150,11 +156,18 @@ def main(argv: list[str] | None = None) -> int:
             "rather than a constant so a guard can drive the refusal arm."
         ),
     )
+    ap.add_argument(
+        "--major",
+        type=int,
+        default=None,
+        help="exactly this major, rather than the newest at or above --minimum",
+    )
     args = ap.parse_args(argv)
-    hit = best(args.minimum)
+    hit = best(args.minimum, args.major)
     if hit is None:
+        wanted = f"{args.major}" if args.major is not None else f"{args.minimum}+"
         print(
-            f"find-jdk: no JDK {args.minimum}+ on this machine. Installing one is "
+            f"find-jdk: no JDK {wanted} on this machine. Installing one is "
             f"the user's action; hand it over and stop.",
             file=sys.stderr,
         )
