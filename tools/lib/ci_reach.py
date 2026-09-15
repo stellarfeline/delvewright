@@ -163,6 +163,13 @@ def decide(table: Table, event: str, changed: list[str] | None) -> dict[str, str
     return {g: first_match(inputs, changed) for g, inputs in table.groups.items()}
 
 
+def rev_parse(rev: str, repo: pathlib.Path = REPO) -> str:
+    r = subprocess.run(["git", "-C", str(repo), "rev-parse", "--verify", f"{rev}^{{commit}}"], capture_output=True, text=True)
+    if r.returncode != 0:
+        raise TableError(f"`{rev}` does not name a commit here: {r.stderr.strip()}")
+    return r.stdout.strip()
+
+
 def changed_paths(base: str, head: str, repo: pathlib.Path = REPO) -> list[str]:
     r = subprocess.run(
         ["git", "-C", str(repo), "diff", "--name-only", "--no-renames", "-z", base, head],
@@ -193,7 +200,8 @@ def main(argv: list[str] | None = None) -> int:
             if not args.base or not args.head:
                 print("ci-reach: a pull_request needs --base and --head", file=sys.stderr)
                 return 2
-            changed = changed_paths(args.base, args.head)
+            base, head = rev_parse(args.base), rev_parse(args.head)
+            changed = changed_paths(base, head)
     except TableError as exc:
         print(f"ci-reach: FATAL — {exc}", file=sys.stderr)
         return 2
@@ -204,7 +212,7 @@ def main(argv: list[str] | None = None) -> int:
     if changed is None:
         lines.append(f"event `{args.event}`: every group runs, no diff computed.")
     else:
-        lines.append(f"pull_request {args.base}..{args.head}: {len(changed)} changed path(s).")
+        lines.append(f"pull_request {base}..{head}: {len(changed)} changed path(s).")
     lines.append(f"{len(on)} of {len(verdict)} group(s) on.")
     for grp, why in verdict.items():
         lines.append(f"- `{grp}`: " + (f"runs — {why}" if why else "skipped — no changed path is an input"))
