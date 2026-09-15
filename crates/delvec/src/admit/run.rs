@@ -1102,6 +1102,21 @@ fn run_anchor(nbt: &Path, name: &str, args: AnchorArgs, json: bool) -> ExitCode 
             role,
         },
     );
+    // Furniture names blocks, never a point (spec-0065 §3.2). Refused where it is
+    // typed rather than written through to be `DW0888` at the next audit.
+    if let Some(a) = meta.anchors.get(name)
+        && a.role == Some(AnchorRole::Furniture)
+        && a.region.is_none()
+    {
+        return input_err(
+            &format!(
+                "--role furniture: anchor `{name}` has no region — furniture is the blocks a body \
+                 stands beside and never on, so give it `--region x1,y1,z1:x2,y2,z2` over the \
+                 furniture's own blocks"
+            ),
+            json,
+        );
+    }
     if let Err(e) = write_meta(nbt, &meta) {
         return output_err(&format!("cannot write metadata: {e}"), json);
     }

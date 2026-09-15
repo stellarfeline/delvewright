@@ -14,8 +14,22 @@ name: CI (tiers 1 + 2)
 # `workflow_dispatch` is the plugin release's (ADR-0028 §5): `plugin-release.yml`
 # commits the version bump on `release/plugin-<version>` and dispatches this
 # workflow there, because a push made with a job token starts no run, and `main`
-# accepts that commit only once it carries every required check. The PR-only
-# jobs run on that dispatch too, so no required check passes by being skipped.
+# accepts that commit only once it carries every required check.
+#
+# WHAT RUNS. On `pull_request` a job runs only when the change reaches it: the
+# `changes` job diffs the merge preview against the pull request's base and
+# turns on the groups whose inputs the diff touches, and every other job reads
+# its group through its `if`. The table of what each job reads — every path,
+# with the reader that reads it — is `.github/ci-reach.toml`, interpreted only by
+# `tools/lib/ci_reach.py`. On `push` and `workflow_dispatch` every job runs, so
+# `tools/wait-required-checks.py`, which refuses a skipped required check, sees
+# the whole set on the release's commit. `tools/check-ci-reach.py` (a step of
+# `docs`) refuses a job with no group, a group no job reads, a glob that matches
+# no tracked file, and an `if` that does not run on every non-pull-request event.
+#
+# A skipped job reports `skipped`, which branch protection accepts as a required
+# check. So `changes` is itself required: if it fails, every job that needs it is
+# skipped, and its own red is what keeps that pull request from merging.
 on:
   push:
     branches: [main]
@@ -30,10 +44,57 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # The one filter. It needs no other job and has no `if`, because every job
+  # needs it on every event. On a pull request the checkout is the merge
+  # preview, and the diff is taken against the base sha the event names, fetched
+  # by that sha — two trees, so no history is needed.
+  changes:
+    name: changes (which jobs a pull request reaches)
+    runs-on: ubuntu-latest
+    outputs:
+      manifest: ${{ steps.reach.outputs.manifest }}
+      dsl-crate-version: ${{ steps.reach.outputs.dsl-crate-version }}
+      rust: ${{ steps.reach.outputs.rust }}
+      engine-shelf: ${{ steps.reach.outputs.engine-shelf }}
+      prefab-generators: ${{ steps.reach.outputs.prefab-generators }}
+      harness: ${{ steps.reach.outputs.harness }}
+      skin-tool: ${{ steps.reach.outputs.skin-tool }}
+      i18n-tool: ${{ steps.reach.outputs.i18n-tool }}
+      mecha-crosscheck: ${{ steps.reach.outputs.mecha-crosscheck }}
+      docs: ${{ steps.reach.outputs.docs }}
+      storybook-version: ${{ steps.reach.outputs.storybook-version }}
+      content-pin: ${{ steps.reach.outputs.content-pin }}
+      gallery: ${{ steps.reach.outputs.gallery }}
+      tier2-validation: ${{ steps.reach.outputs.tier2-validation }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: fetch the pull request's base
+        if: github.event_name == 'pull_request'
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+        run: git fetch --no-tags --depth=1 origin "$BASE"
+      - name: the groups this change reaches
+        id: reach
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT" = "pull_request" ]; then
+            python3 tools/lib/ci_reach.py groups --event "$EVENT" \
+              --base "$BASE" --head HEAD --summary "$GITHUB_STEP_SUMMARY" > reach.out
+          else
+            python3 tools/lib/ci_reach.py groups --event "$EVENT" \
+              --summary "$GITHUB_STEP_SUMMARY" > reach.out
+          fi
+          cat reach.out >> "$GITHUB_OUTPUT"
+
   # spec-0005 tier 1: versions.toml is the single source of truth. Fails if any
   # Dockerfile/compose/workflow hardcodes a version/digest that disagrees with it.
   manifest:
     name: manifest consistency (versions.toml)
+    needs: changes
+    if: github.event_name != 'pull_request' || needs.changes.outputs.manifest == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -119,6 +180,8 @@ jobs:
   # `tools/check-required-contexts.py`.
   dsl-crate-version:
     name: dsl crate version (crates.io)
+    needs: changes
+    if: github.event_name != 'pull_request' || needs.changes.outputs.dsl-crate-version == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -129,6 +192,8 @@ jobs:
 
   rust:
     name: rust (fmt, clippy, test)
+    needs: changes
+    if: github.event_name != 'pull_request' || needs.changes.outputs.rust == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -302,7 +367,8 @@ jobs:
   # `needs: rust` because the Linux digest is that job's artifact. When `rust`
   # reds this job is skipped, which is not a hole: the pull request is already
   # red on `rust`, and there is no state in which this is the only thing between
-  # a divergence and `main`.
+  # a divergence and `main`. It reads `rust`'s group for the same reason: it can
+  # only run when `rust` does, and everything it reads `rust` reads too.
   #
   # macOS is the expensive runner, so it does exactly one thing: build `delvec`
   # and nothing else in the workspace, then build one small campaign that needs
@@ -312,7 +378,8 @@ jobs:
     # is a required status context in branch protection; renaming it deadlocks
     # every PR (see .github/required-status-checks.txt).
     name: cross-OS determinism (macOS vs Linux bytes)
-    needs: rust
+    needs: [changes, rust]
+    if: github.event_name != 'pull_request' || needs.changes.outputs.rust == 'true'
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
@@ -369,6 +436,8 @@ jobs:
     # required status context in branch protection; renaming it deadlocks every
     # PR (see .github/required-status-checks.txt).
     name: engine binaries (cross-build shelf)
+    needs: changes
+    if: github.event_name != 'pull_request' || needs.changes.outputs.engine-shelf == 'true'
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
@@ -394,6 +463,8 @@ jobs:
   # pipeline.
   prefab-generators:
     name: prefab generators (invariants + determinism)
+    needs: changes
+    if: github.event_name != 'pull_request' || needs.changes.outputs.prefab-generators == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -456,6 +527,8 @@ jobs:
 
   harness:
     name: harness (typecheck, test)
+    needs: changes
+    if: github.event_name != 'pull_request' || needs.changes.outputs.harness == 'true'
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -475,6 +548,8 @@ jobs:
     # spec-0009: deterministic original 64x64 skin composition + headless preview
     # renderer. Proves same cast entry -> byte-identical PNG (ADR-0006) and that a
     # cast entry without `model` is rejected.
+    needs: changes
+    if: github.event_name != 'pull_request' || needs.changes.outputs.skin-tool == 'true'
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -496,6 +571,8 @@ jobs:
     # would build, config resolution incl. the not-configured fallback, and that the
     # API key never leaves the named env var — with the network blocked at
     # `urlopen` (tools/tests/conftest.py), so no test can reach a real provider.
+    needs: changes
+    if: github.event_name != 'pull_request' || needs.changes.outputs.i18n-tool == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -515,12 +592,12 @@ jobs:
       - run: python -m pytest -q tools/tests
 
   mecha-crosscheck:
-    name: mecha cross-check (PR only)
+    name: mecha cross-check (emitted mcfunction)
     # ADR-0011: mecha independently re-validates every emitted .mcfunction
     # against the 1.21.11 command tree. Disagreement with our vendored-tree
-    # validator fails CI and is a bug in one of them. PR-only, plus the plugin
-    # release's dispatch (see `on:`), where a skipped required check judges nothing.
-    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
+    # validator fails CI and is a bug in one of them.
+    needs: changes
+    if: github.event_name != 'pull_request' || needs.changes.outputs.mecha-crosscheck == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -549,6 +626,8 @@ jobs:
     # Name must stay exactly "docs (local link check)" — it is a required
     # status context in branch protection; renaming it deadlocks every PR.
     name: docs (local link check)
+    needs: changes
+    if: github.event_name != 'pull_request' || needs.changes.outputs.docs == 'true'
     runs-on: ubuntu-latest
     steps:
       # Full history: `check-numbered-doc-uniqueness.py` diffs this checkout
@@ -895,6 +974,15 @@ jobs:
       # quietly stops running. Deterministic, offline, stdlib-only python3.
       - name: required status checks and ci.yml job names agree
         run: python3 tools/check-required-contexts.py
+      # A job skipped on a pull request never ran on that tree, so what decides
+      # the skip is a gate's business, not a convention's: `.github/ci-reach.toml`
+      # is held to the jobs here. Refuses a job with no group, a group no job
+      # reads, a glob matching no tracked file, an `if` that is not true on every
+      # event but `pull_request`, and an `[all]` set that does not reach the
+      # workflow and the filter. States its binding counts; refuses a zero.
+      # Deterministic, offline, stdlib-only python3.
+      - name: every job reads the group of paths it reads, and runs on every push
+        run: python3 tools/check-ci-reach.py
       # The same class one door further out, on the one path that can never be
       # undone. `crates-io` holds CARGO_REGISTRY_TOKEN and is supposed to hold a
       # run until a reviewer approves it; it carried `protection_rules: []`, so a
@@ -985,6 +1073,8 @@ jobs:
     # link check to content-repo markdown (and `docs (local link check)` is a
     # required status context — its name may not move).
     name: campaign storybooks (engine-version marker)
+    needs: changes
+    if: github.event_name != 'pull_request' || needs.changes.outputs.storybook-version == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -1019,6 +1109,8 @@ jobs:
     # a required status context in branch protection; renaming it deadlocks
     # every PR (see .github/required-status-checks.txt).
     name: content pin (drift + zone-program audit)
+    needs: changes
+    if: github.event_name != 'pull_request' || needs.changes.outputs.content-pin == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -1116,6 +1208,8 @@ jobs:
   # not a convenience.
   gallery:
     name: gallery (coverage + build + baseline)
+    needs: changes
+    if: github.event_name != 'pull_request' || needs.changes.outputs.gallery == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -1280,10 +1374,11 @@ jobs:
   # ------------------------------------------------------------------ tier 2 --
   # spec-0004 tier 2 (every PR): build the delve, prove it loads with zero errors
   # on the pinned vanilla server, and run the generated PackTest suite headless.
-  # PR-only, plus the plugin release's dispatch (see `on:`); target < 10 min.
+  # Target < 10 min.
   tier2-validation:
     name: tier 2 (datapack load + PackTest)
-    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
+    needs: changes
+    if: github.event_name != 'pull_request' || needs.changes.outputs.tier2-validation == 'true'
     runs-on: ubuntu-latest
     env:
       # Accepting Mojang's EULA (https://aka.ms/MinecraftEULA) is the standing

@@ -252,15 +252,64 @@ GENERATED_JSON_ROOTS: dict[str, str] = {
     "gallery/baseline/": "python3 tools/gallery-baseline.py --delvec <bin> --prefabs <dir> --write",
 }
 
-# Deliberate counter-examples: a file that states this exact number where the
-# number IS the subject, so a bump must NOT move it. EMPTY ON PURPOSE, and the
-# empty state is the design — the type specimen,
-# `crates/dsl/fixtures/invalid/DW0102-bad-dsl-version.json`, states `9.9.9`
-# precisely so that it is not this number and never has to move. An entry here
-# is a claim that needs a reason written beside it; a stale one (naming a file
-# that no longer states the number) is reported rather than left to rot into a
-# licence to hardcode.
-COUNTEREXAMPLES: dict[str, str] = {}
+# Deliberate counter-examples: a STATEMENT, inside a named file, that spells this
+# exact number where the number is some other subject's, so a bump must NOT move
+# it. The type specimen, `crates/dsl/fixtures/invalid/DW0102-bad-dsl-version.json`,
+# states `9.9.9` precisely so that it never has to be listed here; an entry is for
+# the case a fixture cannot choose — another project's own release number that
+# happens to equal this one, or a worked example written before the number was
+# reached.
+#
+# An entry names each statement, with `{v}` standing for the number, and a
+# reason. Only the occurrences those statements account for are excused: a file
+# that ALSO states the number anywhere else is still classified on the rest, so
+# an entry is never a licence for the whole file. A statement the file no longer
+# contains is reported, which is how an entry keyed to a number is retired when
+# the number moves on.
+COUNTEREXAMPLES: dict[str, dict[str, object]] = {
+    "versions.toml": {
+        "statements": ['deepslate_version = "{v}"'],
+        "reason": "the vendored viewer library's own release number (ADR-0021), which equals this one by coincidence",
+    },
+    "tools/build-deepslate-bundle.sh": {
+        "statements": ["deepslate {v} asks", 'DEEPSLATE_VERSION="{v}"'],
+        "reason": "the vendored viewer library's own release number (ADR-0021), which equals this one by coincidence",
+    },
+    "crates/delvec/src/compiler/view/viewer.rs": {
+        "statements": ["deepslate {v} asks"],
+        "reason": "the vendored viewer library's own release number (ADR-0021), which equals this one by coincidence",
+    },
+    "docs/ACKNOWLEDGEMENTS.md": {
+        "statements": ["`deepslate` {v}"],
+        "reason": "the vendored viewer library's own release number, recorded with its licence",
+    },
+    "docs/adr/0021-creator-toolchain-rederived.md": {
+        "statements": ["npm {v} published"],
+        "reason": "an Accepted ADR citing the viewer library's release; an Accepted decision is never edited",
+    },
+    "docs/adr/0028-three-things-released-by-name.md": {
+        "statements": ["`delvewright-dsl--v{v}`", "`delvewright-dsl {v}`"],
+        "reason": "an Accepted ADR's worked example of a tag's shape; an Accepted decision is never edited",
+    },
+    "tools/lib/release_tags.py": {
+        "statements": ["delvewright-dsl--v{v}  the format crate"],
+        "reason": "a worked example of the tag shape this module parses, not the crate's number",
+    },
+    "tools/tests/test_release_tags.py": {
+        "statements": ['("delvewright-dsl--v{v}", "delvewright-dsl", "{v}")', '"delvewright-dsl--v{v}",\n', 'previous("delvewright-dsl--v{v}", tags)'],
+        "reason": "test vectors for the tag parser, which are examples of the shape and not the crate's number",
+    },
+}
+
+def files_named() -> list[str]:
+    """Every file this module names — each row's, and each counter-example's.
+
+    One derivation for the trees a test builds to run `verify` in: a tree missing
+    a row's file fails the row, and a tree missing an allowlisted file reports the
+    entry stale, so both halves travel together or the fixture manufactures a red.
+    """
+    return sorted({str(r["path"]) for rows in ROWS.values() for r in rows} | set(COUNTEREXAMPLES))
+
 
 def _declared(root: Path) -> dict[str, str]:
     """The two numbers, each read from its own AUTHORITY row.
@@ -396,6 +445,21 @@ def _dsl_version_values(node: object, version: str) -> int:
 def _classify(root: Path, rel: str, text: str, version: str, by_path: dict[str, list[dict]]):
     """`(shape, how a bump reaches it)` for a carrier, or `None` if it is a finding."""
     occurrences = text.count(version)
+    entry = COUNTEREXAMPLES.get(rel)
+    if entry is not None:
+        excused = 0
+        for statement in entry["statements"]:  # type: ignore[union-attr]
+            spelled = str(statement).replace("{v}", version)
+            found = text.count(spelled)
+            if found == 0:
+                return None, (
+                    f"COUNTEREXAMPLES names the statement {spelled!r}, which this file no "
+                    "longer contains — the entry measures nothing; remove it"
+                )
+            excused += found * spelled.count(version)
+        occurrences -= excused
+        if occurrences == 0:
+            return "counter-example", str(entry["reason"])
 
     rows = by_path.get(rel)
     if rows:
@@ -435,9 +499,6 @@ def _classify(root: Path, rel: str, text: str, version: str, by_path: dict[str, 
             "`dsl_version` value. A document may declare the surface it was written "
             "against; a number sitting anywhere else in it was typed by a person"
         )
-
-    if rel in COUNTEREXAMPLES:
-        return "counter-example", COUNTEREXAMPLES[rel]
 
     return None, (
         "states the number and is none of the three legitimate shapes: it does not "

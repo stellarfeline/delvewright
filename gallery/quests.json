@@ -1581,7 +1581,12 @@
                   ]
                 },
                 {
-                  "anchor": "anchor/vantage"
+                  "anchor": "anchor/vantage",
+                  "offset": [
+                    0,
+                    2,
+                    0
+                  ]
                 }
               ],
               "seconds": 4,
@@ -1625,7 +1630,12 @@
                       ]
                     },
                     {
-                      "anchor": "anchor/vantage"
+                      "anchor": "anchor/vantage",
+                      "offset": [
+                        0,
+                        2,
+                        0
+                      ]
                     }
                   ],
                   "seconds": 3,
@@ -2891,6 +2901,6 @@
       }
     ]
   },
-  "dsl_version": "0.25.0",
+  "dsl_version": "0.26.0",
   "stage": "quests"
 }

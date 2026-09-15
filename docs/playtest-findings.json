@@ -2550,6 +2550,33 @@
       "note": "Reported by the round that turned the walk-plane requirement on for every base, which found that turning it on made no difference on `valley` because nothing legal reaches it. The round was told to report rather than to widen the rule or to add a probe that hides the gap behind another refusal, and did. Closed by making `compiler::seating::check` read the site plan's own resolver and ask each placed box the same question a prefab is asked, through one predicate (`seating::feet_under_the_sea`), and by giving the binding line a numerator and a denominator per placement model. Reproduced before the change and after, on the gallery's site-plan overlay with nothing altered but `horizon: ocean`: `delvec analyze` exited 0 with `0 of 0 area(s)` while `node/undercroft` stood at y=60, two courses under the sea plane at y=62, and the build then refused it at DW0344 after the assembly; after, `analyze` exits 1 at DW0886 naming the place, and the line reads `site plan: 7 of 7 box(es) judged against this base`. The binding counts the plan's boxes — the objects the new arm quantifies over — and its precondition is whether the campaign declares a site plan at all, both measured over the campaign source. On the gallery: 7 boxes on the site-plan point, 0 boxes and 0 preconditions on the primary and on both horizon overlays, which place with `areas[]` and are gal-02's subject.",
       "round": null,
       "triage": "capability"
+    },
+    {
+      "binding": {
+        "files": [
+          "quests.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "in": {
+            "type": [
+              "move-npc",
+              "move-actor"
+            ]
+          }
+        }
+      },
+      "campaign": "doune-castle-tour",
+      "carrier": {
+        "code": "DW0510",
+        "kind": "dw"
+      },
+      "finding": "a guide's proved route climbed onto a laid dining table and down the other side: every cell of the table top is standable under the nav model's own rule — solid support below, feet and head clear — so the route proof took it, the build exited 0 and nothing named it",
+      "general_form": "the walk model can be told that a cell is a place a body would not walk, which is a different fact from a cell a body cannot walk, and it is asked at `nav::World::standable_fp` — the one predicate every route proof, snap, flood, seat and waypoint export funnels through, beside the lethal clause already there. The declaration belongs to the object that owns the blocks, and the piece document already has that object class: an anchor with `role: furniture` and a `region` over the furniture's own blocks, a named place a campaign can still address. It is a claim about the bytes, held by the byte-claim rule (`DW0888`, key `anchors.*.furniture`): a declaration with no region, over no solid block, or withholding no standable cell is refused rather than believed. A body standing with its support on a solid cell of a placed furniture region may not be proven to stand there, so no walk climbs a table; a route whose only way is over one is refused at `DW0510` naming the anchor, for a critical-path leg and for a walked `move-npc` or `move-actor` leg alike. A body posted there still stands there, and `DW0891` measures its population with every exclusion lifted, so the declaration cannot hide caught floor. Furniture a campaign lays itself, through `world-edits.json` or a runtime `set-block` / `fill-region`, owes the same claim on the surface that laid it (spec-0065 §8.1) and is not this row.",
+      "id": "doune-01",
+      "note": "Carried from the castle round's ledger row and closed by spec-0065 on the tree that implements it. The general form above is spec-0065 §2's: an anchor role, no campaign-authored volume, and the exclusion inside the walk predicate. The check is `DW0510`'s furniture shape, asserted by `crates/delvec/tests/furniture.rs` (a route over a wall-to-wall table refused naming `anchor/high-table`, and the same walks for `move-npc` and `move-actor`; the same room routes with the declaration removed). Bound on the gallery, whose hall lays a seven-long `oak_fence`/`oak_slab[type=bottom]` table with a `spruce_slab` bench across `actor/standard-bearer`'s walk from `anchor/march` to `anchor/vantage` and declares it: `furniture binding: 1 region(s) over 7 solid cell(s), 7 standable cell(s) withheld from walking; 14 leg(s) proved, 0 standing on furniture` (gallery primary, `--prefabs` generated from `prefabs/gallery-generator` at this branch). Perturbed by deleting the anchor from the generated document with the blocks kept: the build still exits 0, the withheld count falls to 0, and `ma_tick_standard_bearer_vantage_*.mcfunction` changes from an eleven-sample walk round the table to a seven-sample walk that rises from y 67.0 to 69.0 over it — the released castle's instance, reproduced in the gallery. The binding, computed by `tools/staging-gate.py`'s own `probe()`, counts the routed walks a campaign declares: 5 on the gallery primary; 16 on the released castle as the castle round measured it.",
+      "round": 1,
+      "triage": "capability"
     }
   ],
   "ledger_version": "2026-08-11"

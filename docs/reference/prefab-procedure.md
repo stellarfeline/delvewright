@@ -872,7 +872,7 @@ reviewed without the campaign that binds them in hand.
 by whoever wrote the document, never by the reader.
 
 `role` is **what the anchor is for**, from a closed vocabulary the compiler owns,
-and a term it does not know is refused by name (`DW0346`). There is one term:
+and a term it does not know is refused by name (`DW0346`). There are two terms:
 
 - `entry` — the cell a body arrives at when it enters the area this piece is
   placed in. A campaign addresses every other anchor by name; this is the one the
@@ -880,6 +880,18 @@ and a term it does not know is refused by name (`DW0346`). There is one term:
   party arrives in declares it**, one anchor per area (`DW0804` refuses a second),
   and in a `prefab_pool` that is the piece the layout is seeded from. A world
   where nothing declares it is `DW0345`.
+- `furniture` — blocks a body stands beside and is never walked onto: a laid
+  table, an altar, a counter, a bed (spec-0065). The anchor carries a `region`
+  over the furniture's **own blocks** — the legs and the top, not the air above
+  them — and no `pos` is needed; it is still a named place a campaign can address
+  (a `set-block` on it, a camera framing it), resolving to its region's `from`
+  cell when a point is asked of it. No route, walked leg, snap, flood, wave seat or
+  exported waypoint stands a body on a solid cell of it; a body *posted* there
+  stands there. As many per piece as it has furniture. `DW0888` refuses the role
+  with no region, a region holding no solid block, and a region no standable cell
+  of the piece rests on. A generator writes the anchor beside the blocks it lays;
+  a hand-built piece takes `delvec prefab anchor --role furniture --region
+  x1,y1,z1:x2,y2,z2`.
 
 An anchor's **name** says nothing about this. Renaming an anchor makes it no more
 the entry than leaving it alone does — a generated zone could not spell a reserved

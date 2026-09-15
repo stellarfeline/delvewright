@@ -347,10 +347,27 @@ pub fn face_support(name: &str, props: &BTreeMap<String, String>, face: &str) ->
     if class(name).is_some() {
         return Some(false);
     }
-    if forms().get(name).map(String::as_str) == Some("stair") {
-        return stair_face_support(props, face);
+    match forms().get(name).map(String::as_str) {
+        Some("stair") => return stair_face_support(props, face),
+        Some("slab") => return slab_face_support(props, face),
+        _ => {}
     }
     None
+}
+
+/// A slab's sturdy faces, from its own `type`.
+///
+/// Vanilla's slab shapes are the lower half (`bottom`), the upper half (`top`)
+/// and the whole cell (`double`). A half slab's four sides are half a face, so
+/// nothing joins them sideways; its one full face is the side of the cell it
+/// fills. A `type` this rule does not know is refused, never guessed.
+fn slab_face_support(props: &BTreeMap<String, String>, face: &str) -> Option<bool> {
+    match props.get("type")?.as_str() {
+        "double" => Some(true),
+        "bottom" => Some(face == "down"),
+        "top" => Some(face == "up"),
+        _ => None,
+    }
 }
 
 /// A stair's sturdy faces, from its own state.
@@ -937,6 +954,26 @@ mod tests {
         assert_eq!(FULL_CUBES.len(), 25);
         assert_eq!(NO_FULL_FACE.len(), 14);
         assert!(FULL_CUBES.iter().all(|n| !NO_FULL_FACE.contains(n)));
+    }
+
+    /// A half slab presents a full face only on the side of the cell it fills,
+    /// so a fence beside a bench stops at it; a double slab is a full cube.
+    #[test]
+    fn a_slab_is_full_only_where_it_fills_its_cell() {
+        let props = |t: &str| BTreeMap::from([("type".to_string(), t.to_string())]);
+        let slab = "minecraft:spruce_slab";
+        for face in ["north", "south", "east", "west", "up"] {
+            assert_eq!(
+                face_support(slab, &props("bottom"), face),
+                Some(false),
+                "{face}"
+            );
+        }
+        assert_eq!(face_support(slab, &props("bottom"), "down"), Some(true));
+        assert_eq!(face_support(slab, &props("top"), "up"), Some(true));
+        assert_eq!(face_support(slab, &props("top"), "north"), Some(false));
+        assert_eq!(face_support(slab, &props("double"), "west"), Some(true));
+        assert_eq!(face_support(slab, &BTreeMap::new(), "west"), None);
     }
 
     /// The portcullis: a run of bars between two stone jambs is a grid, not a
