@@ -225,5 +225,5 @@ releases/images with their own license.
 ---
 
 *Built by a planning agent and a small crew of worker agents, under the supervision
-of one (1) human who would rather be playing the dungeon than debugging it. That's
+of one (1) human who would rather be playing the dungeon than debugging it. That is
 the whole point.*
