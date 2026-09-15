@@ -298,10 +298,16 @@ fn population_roots(plan: &Plan, entry: Option<[i32; 3]>) -> Vec<[i32; 3]> {
 /// The walk model already refuses the keep-out, so a population taken from the
 /// lethal-APPLIED world can never contain a caught cell: over that world this
 /// check is green for every volume ever written, while binding to nothing. It
-/// therefore reads the counterfactual [`crate::compiler::nav::World::without_lethal`] —
+/// therefore reads the counterfactual [`crate::compiler::nav::World::without_exclusions`] —
 /// the identical world `DW0510` is already derived from — and
 /// `the_population_is_the_lethality_free_one` perturbs it back to the vacuous
 /// shape and asserts the zero (spec-0062 §10.4).
+///
+/// It lifts **every** semantic exclusion, furniture included (spec-0065 §4.2).
+/// A furniture declaration withholds cells from walking; were the population
+/// taken with it applied, marking the stone round a pit as furniture would make
+/// the pit's caught floor vanish from `P` and this check go green. The table a
+/// keep-out catches is caught floor, because the body that climbs it dies.
 ///
 /// # What it does NOT do
 ///
@@ -325,7 +331,7 @@ pub fn check_danger_is_visible(
     }
     let body = delvewright_dsl::metrics::Body::PLAYER;
     // The counterfactual, not the world the router walks. See the note above.
-    let open = world.without_lethal();
+    let open = world.without_exclusions();
     let population = open.reachable_walkable(&population_roots(plan, entry));
     binding.population = population.len();
 

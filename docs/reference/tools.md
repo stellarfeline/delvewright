@@ -447,13 +447,16 @@ delvec prefab socket <nbt> --pos x,y,z --facing north|south|east|west
 delvec prefab anchor <nbt> --name anchor/<id>
                          [--pos x,y,z] [--facing <kw>]
                          [--region x1,y1,z1:x2,y2,z2] [--block <id>]
-                         [--role entry | --no-role]
+                         [--role entry|furniture | --no-role]
     # --role is what the place is FOR: the engine's closed vocabulary, refused
     # by name where it is typed when it is not a term. `--role entry` is how a
     # hand-built or ingested piece declares the campaign's start (without it,
-    # DW0345 — no anchor NAME supplies one); `--no-role` takes a role off, which
-    # is the remedy DW0804 prescribes. Omitted, an existing role is kept: moving
-    # a cell is not a statement that the piece stopped being the way in
+    # DW0345 — no anchor NAME supplies one); `--role furniture --region ...`
+    # declares the piece's furniture blocks, which no walk stands a body on
+    # (spec-0065), and is refused at exit 2 without a region; `--no-role` takes
+    # a role off, which is the remedy DW0804 prescribes. Omitted, an existing
+    # role is kept: moving a cell is not a statement that the piece stopped
+    # being the way in
 delvec prefab lighting <nbt|manifest.json> [--write] [--dark-threshold 3]
 delvec prefab planes <nbt|manifest.json> [--write]
     # The piece's OWN walk plane (`walk_y`) and, where it authors water, its own
@@ -587,6 +590,13 @@ no player space to grade, and a pitch-dark crypt is exactly the piece that would
 otherwise pass by having nothing to measure. `--write` refuses (`DW0753`) when
 there is no metadata to write into, rather than manufacturing a skeleton that
 claims `spdx: UNKNOWN` about an asset whose licence it has not established.
+
+`audit` also holds every declaration the document makes about its own bytes to
+those bytes (`DW0888`) and prints `byte-claim binding:` on every run — documents
+read, `.nbt` opened, and examined/denied per key of the class, zeroes included:
+`structure.data_version`, `walk_y`, `anchors.*.pos`, `anchors.*.region`,
+`anchors.*.dispenser`, `anchors.*.trigger_block`, `anchors.*.furniture`,
+`connectors[].opening`, `connectors[].socket` and `jigsaw-declared`.
 
 `audit` states what its **second door** did, on every run and in every case,
 and the report carries it as `contract.state` beside the door's binding counts:
