@@ -69,7 +69,7 @@ without it.
 |---|---|---|
 | `git` | I2 clones the engine tree, in creator mode | `git --version` |
 | **Python 3.11+** | `tomllib` is stdlib from 3.11, and I3a's selector reads the pin with it. The three scripts in the skill root are stdlib Python | see below |
-| **Java 21+** | **the pinned game's own requirement** — 1.21.11 declares `javaVersion.majorVersion: 21` in Mojang's version manifest, and every jar-reading checker runs under it. Chunky is not where this number comes from: its launcher and `--update snapshot` both run under 17 | `java -version` |
+| **Java 21+** | **the pinned game's own requirement** — 1.21.11 declares `javaVersion.majorVersion: 21` in Mojang's version manifest, and every jar-reading checker runs under it. Chunky is not where this number comes from: its core runs under it, and its build at step 12 wants a JDK 17 of its own | `java -version` |
 | Docker | the play server at step 9, which drives `docker run` directly | `docker info` |
 | **Compose v2** | **a second install, and the whole of step 10 needs it** — every ladder entry point builds a `docker compose -p …` command line | `docker compose version` |
 
@@ -520,16 +520,18 @@ still owed, not four hours later.
 **Chunky.** It renders every frame that has to *look* like Minecraft — the
 player-POV review shots, the storybook art, the whole-map panorama. It is a
 separate program: `delvec` writes the scene, Chunky renders it. Step 12 installs
-it, at the moment the first frame is wanted, and step 14 reuses that install.
+it, at the moment the first frame is wanted, by building the pinned core from
+Chunky's source, and step 14 reuses that install.
 
 ```sh
-curl -sSfIL "$("$DELVEWRIGHT_PYTHON" -c 'import tomllib,sys;print(tomllib.load(open(sys.argv[1],"rb"))["render"]["chunky_launcher_url"])' "$DELVEWRIGHT_ENGINE/versions.toml")" -o /dev/null
+git ls-remote --exit-code "$("$DELVEWRIGHT_PYTHON" "$DELVEWRIGHT_ENGINE/tools/lib/versions.py" render.chunky_source)" HEAD >/dev/null
 ```
 
-Exit 0 means step 12 will be able to fetch it. **A non-zero is not a stop** — it
-blocks no authoring step — but say it out loud here, because it *is* a stop at
-step 12. Chunky needs no Java 21: its launcher and its `--update snapshot` both
-run under 17. The 21 in I1 is the pinned game's own number.
+Exit 0 means step 12 will be able to fetch the source. **A non-zero is not a
+stop** — it blocks no authoring step — but say it out loud here, because it *is*
+a stop at step 12. Step 12 also needs a JDK 17, which Chunky's own build runs
+under: say now whether `scripts/find-jdk.py --major 17` finds one. The 21 in I1 is
+the pinned game's own number.
 
 **Reference images, and only on the drawing path.** The design gate at step 4 is
 confirmed on pictures of the design, and there are two ways to have them.
@@ -695,7 +697,7 @@ consistent.)
 | `delvec grammar list` | the binary answers about itself but its compiled-in corpus does not load: a broken archive. Re-run I3a; a second failure is a refusal, not a retry |
 | `delvec render fidelity-gate` | **this is the GPU-arms proof, and by here it means what it says.** `DW0723 no textures found` means I5 did not land the jar — go back to I5, this is not a verdict on the machine. Any other `DW0723` (`gpu init: …`) is the GPU arms failing on this hardware: **stop**, because the visual half of the run cannot be reviewed and nothing downstream would say so. `DW0720` at exit 4 is a third thing again — the fixture rendered and a block came out untextured, which is a jar that is not 1.21.11 |
 | `grammar expand` then `palette` | the texture ladder. A `DW0723` here says the same thing it says on the line above; a `DW0722` says `.out/` is missing |
-| the Chunky probe | not a stop — said out loud at I7, and a stop at step 12 |
+| the Chunky probe | not a stop — said out loud at I7, and a stop at step 12, as is a missing JDK 17 |
 | `docker info` | steps 9 and 10 cannot run. Halt |
 | `docker compose version` | the daemon is fine and the **Compose plugin** is not installed for this user — `docker info` above already passed and says nothing about it. Step 10 cannot run: halt for it. `docker: unknown command: docker compose` is the whole message you get |
 
