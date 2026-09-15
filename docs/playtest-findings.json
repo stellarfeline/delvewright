@@ -90,7 +90,13 @@
         "match": {
           "has": [
             "requires_flags"
-          ]
+          ],
+          "in": {
+            "type": [
+              "collect",
+              "interact"
+            ]
+          }
         }
       },
       "binding": {
@@ -105,7 +111,7 @@
       "finding": "objectives had no lifecycle feedback: nothing on screen said an objective had activated, completed, or that the delve had ended",
       "general_form": "every objective emits activation/completion presentation (title + hint + sound)",
       "id": "hv-04",
-      "note": "applies_when added 2026-08-21: the verb_flag_gate template is emitted for flag-gated objectives (`requires_flags`). Flag-gated objectives declared with no emitted template = UNBOUND; none declared = the class measures zero.",
+      "note": "The precondition counts what the emission binds: `compiler::emit` writes the `verb_flag_gate` template for the first `collect` or `interact` objective carrying `requires_flags`, and for nothing else. An objective of either kind declaring the field with no emitted template is UNBOUND; none declared is the class measuring zero. A `requires_flags` elsewhere in quests.json is not a member of this class: an effect guard (`on_complete[].when`) and a `talk-to`, `reach-anchor` or `kill` objective are never given the template, so counting them made a branching campaign with guarded endings and no such objective UNBOUND with no authoring act that clears it — removing the guards is refused by DW0482 and DW0484. Measured on a copy of slatefall-quarry before the correction: 2 objects counted, both effect guards, 0 objectives carrying the field, REFUSED 1 of 100 on this row alone. Residual, in the safe direction: the predicate has no emptiness term, so an objective written with `requires_flags: []` counts though the emission does not bind it; the gallery carries two such beside one it binds, so its precondition reads 3 while it is BOUND, and a campaign whose only members are empty lists reads UNBOUND.",
       "round": 1,
       "triage": "capability"
     },
