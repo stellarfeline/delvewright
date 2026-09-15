@@ -462,7 +462,6 @@ jobs:
 
   harness:
     name: harness (typecheck, test)
-    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     defaults:
       run:
