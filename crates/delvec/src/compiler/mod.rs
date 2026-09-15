@@ -108,6 +108,7 @@ pub mod edit;
 pub mod emit;
 pub mod faces;
 pub mod failure;
+pub mod firework;
 pub mod flow;
 pub mod gates;
 pub mod guarantee;
