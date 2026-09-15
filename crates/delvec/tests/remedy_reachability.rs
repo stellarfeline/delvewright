@@ -330,6 +330,15 @@ fn dw0886_choosing_the_ocean_holds_the_water_a_void_world_would_lose() {
             s["size"] = serde_json::json!(size);
             s
         });
+        // The opening that lets the water out lets the party's air out too, so
+        // on an ocean the room's walls and roof stand where a party can see
+        // them (`DW0886`'s exposure question). This test is about the water:
+        // the room declares the sides the sea leaves in view, so the one
+        // variable between the two builds below is the horizon.
+        m.insert(
+            "shown_faces".into(),
+            serde_json::json!(["east", "north", "south", "up", "west"]),
+        );
     });
 
     let void = campaign("runoff-void", None);

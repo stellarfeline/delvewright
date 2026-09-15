@@ -254,6 +254,25 @@ impl PieceFacts {
     /// Read one piece: its declarations from `meta`, its measurements from the
     /// `.nbt` files beside it in `dir`.
     pub fn read(meta: &PrefabMeta, dir: &Path) -> Result<PieceFacts, String> {
+        // A template whose own extent is not the one its document declares is
+        // two exports of one piece, and `DW0803` is the one answer to that: the
+        // move is to re-export. Measuring the blocks anyway would judge a shape
+        // the piece does not have and send an author to the wrong document, so
+        // such a piece is unreadable here and is left to the rule that owns it.
+        for t in meta.templates() {
+            let Ok(raw) = std::fs::read(dir.join(t.file)) else {
+                continue;
+            };
+            if let Some(actual) = crate::compiler::assembled::structure_size(&raw)
+                && actual != t.size
+            {
+                return Err(format!(
+                    "`{}` is {actual:?} in its own `.nbt` and {:?} in the document — two exports \
+                     of one piece (DW0803)",
+                    t.file, t.size
+                ));
+            }
+        }
         let (grid, bytes) = crate::admit::settling::piece_bytes(meta, dir)?;
         Ok(PieceFacts::measure(meta, &grid, &bytes))
     }
