@@ -59,7 +59,7 @@ with its own schema:
 
 ```json
 {
-  "dsl_version": "0.22.0",
+  "dsl_version": "<the dsl number delvec --version printed>",
   "campaign_id": "the-weighbridge",
   "stage": "world",
   "content": { }
@@ -68,15 +68,14 @@ with its own schema:
 
 `stage` is the document's own name — `world`, `npcs`, `classes`, `quest-plan`,
 `quests`, `dialogue`, `world-edits`, `geometry-brief`, `layout-graph`,
-`site-plan`, `detail-plan`. `content` is everything else.
+`site-plan`, `detail-plan`, `design`. `content` is everything else.
 
-**What number goes in `dsl_version`: the one `delvec --version` printed after
-`dsl`.** A new campaign writes the engine's current number on every document.
-The per-feature minimums this page states elsewhere ("needs `dsl_version`
-0.10.0 on the quests stage") are the *floor* a surface became available at —
-they exist so an old campaign keeps compiling unchanged, and a new campaign is
-already above all of them. Write the current number and none of those sentences
-applies to you.
+**What number goes in `dsl_version`: exactly the one `delvec --version` printed
+after `dsl`, on every document, the `l10n/` sidecars included.** The engine
+accepts that one number and no other: a document carrying any other — older or
+newer — is refused at the envelope with `DW0102`, which names the number to
+write. There is no floor and no range, so never copy a number from an example
+or an older campaign.
 
 ## Getting a document's shape
 

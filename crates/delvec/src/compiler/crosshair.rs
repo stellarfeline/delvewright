@@ -167,9 +167,9 @@ struct Target<'a> {
     width: f64,
     /// The body's height, in blocks.
     height: f64,
-    /// The cast anchor this placement declares.
-    anchor: &'a str,
-    /// The resolved anchor cell (feet).
+    /// The cast mark this placement declares, as a diagnostic spells it.
+    anchor: String,
+    /// The resolved mark cell (feet).
     cell: [i32; 3],
     /// Whether right-click opens a consequential dialogue root (the error tier).
     root: Option<&'a str>,
@@ -246,12 +246,13 @@ fn scene<'a>(plan: &Plan<'a>, quest: &'a delvewright_dsl::Quest) -> Vec<Target<'
             continue;
         };
         for p in entry.placements() {
-            let Some(anchor) = p.at.anchor() else {
+            let Some(mark) = p.at.mark() else {
                 continue; // `offstage` / `dead`: no body to click.
             };
             let Some(cell) = plan
-                .point(npc.area.as_str(), anchor.as_str())
-                .or_else(|| plan.point_any(anchor.as_str()))
+                .point(npc.area.as_str(), mark.anchor.as_str())
+                .or_else(|| plan.point_any(mark.anchor.as_str()))
+                .map(|p| mark.cell(p))
             else {
                 continue;
             };
@@ -262,7 +263,7 @@ fn scene<'a>(plan: &Plan<'a>, quest: &'a delvewright_dsl::Quest) -> Vec<Target<'
                 entity,
                 width,
                 height,
-                anchor: anchor.as_str(),
+                anchor: mark.display(),
                 cell,
                 root: root_of(p),
                 requires: p.requires_flags.iter().map(|f| f.as_str()).collect(),
@@ -435,7 +436,7 @@ mod tests {
             entity: "minecraft:mannequin".into(),
             width: 0.6,
             height: 1.8,
-            anchor: "anchor/mouth",
+            anchor: "anchor/mouth".to_string(),
             cell,
             root,
             requires: BTreeSet::new(),

@@ -132,7 +132,7 @@ fn build_actor_hello_world() -> BuildOutput {
         common::objective_effects(d, 0, "obj/talk").extend([
             serde_json::json!({ "type": "spawn-actor", "actor": "actor/giant" }),
             serde_json::json!({
-                "type": "move-actor", "actor": "actor/giant", "to_anchor": "anchor/exit",
+                "type": "move-actor", "actor": "actor/giant", "to": { "anchor": "anchor/exit" },
                 "on_arrive": [
                     { "type": "despawn-actor", "actor": "actor/giant", "style": "vanish" }
                 ]
@@ -171,7 +171,7 @@ fn build_handoff_hello_world() -> BuildOutput {
         common::objective_effects(d, 0, "obj/talk").extend([
             serde_json::json!({ "type": "spawn-actor", "actor": "actor/giant" }),
             serde_json::json!({
-                "type": "move-actor", "actor": "actor/giant", "to_anchor": "anchor/exit",
+                "type": "move-actor", "actor": "actor/giant", "to": { "anchor": "anchor/exit" },
                 "on_arrive": [
                     { "type": "despawn-actor", "actor": "actor/giant", "style": "vanish" },
                     { "type": "spawn-npc", "npc": "npc/keeper" }

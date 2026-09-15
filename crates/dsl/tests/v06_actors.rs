@@ -34,7 +34,7 @@ static QUESTS_V06: LazyLock<String> = LazyLock::new(|| {
           "obj/talk": [
             { "type": "open-gate", "anchor": "anchor/door" },
             { "type": "spawn-actor", "actor": "actor/giant" },
-            { "type": "move-actor", "actor": "actor/giant", "to_anchor": "anchor/exit",
+            { "type": "move-actor", "actor": "actor/giant", "to": { "anchor": "anchor/exit" },
               "on_arrive": [ { "type": "despawn-actor", "actor": "actor/giant", "style": "vanish" } ] },
             { "type": "sequence", "steps": [
               { "at_ticks": 0, "effects": [ { "type": "unleash-actor", "actor": "actor/giant" } ] },

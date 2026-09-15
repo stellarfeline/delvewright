@@ -213,7 +213,7 @@ fn follow_style_with_sibling_move_is_clean() {
     let d = diags(
         r#"{ "type": "cutscene", "shots": [ { "shot_style": "side-track",
              "subject": { "npc": "npc/keeper" } } ] },
-           { "type": "move-npc", "npc": "npc/keeper", "to_anchor": "anchor/exit" }"#,
+           { "type": "move-npc", "npc": "npc/keeper", "to": { "anchor": "anchor/exit" } }"#,
     );
     assert!(
         !d.iter().any(|x| x.code == "DW0349"),
@@ -247,7 +247,7 @@ fn pre_style_shot_debug_rendering_is_stable() {
     .unwrap();
     assert_eq!(
         format!("{shot:?}"),
-        "CameraShot { path: [CameraWaypoint { anchor: AnchorId(\"anchor/exit\"), \
+        "CameraShot { path: [Mark { anchor: AnchorId(\"anchor/exit\"), \
          offset: [0, 2, 0] }], seconds: 4, look_at: None }"
     );
 }

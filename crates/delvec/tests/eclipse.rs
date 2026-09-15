@@ -208,7 +208,7 @@ fn a_body_the_campaign_moves_is_out_of_scope() {
         r#""obj/talk": [ { "type": "open-gate", "anchor": "anchor/door" } ]"#,
         r#""obj/talk": [
             { "type": "open-gate", "anchor": "anchor/door" },
-            { "type": "move-npc", "npc": "npc/keeper", "to_anchor": "anchor/exit" }
+            { "type": "move-npc", "npc": "npc/keeper", "to": { "anchor": "anchor/exit" } }
           ]"#,
     );
     assert!(quests.contains("move-npc"), "fixture patch applied");

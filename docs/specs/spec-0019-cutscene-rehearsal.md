@@ -62,11 +62,12 @@ approves in rehearsal is what the player sees shipped.
   beat containing an effect with no sound inverse (e.g. `give-item` into a
   player inventory) restores state around it and `say`-stamps what it could
   not undo.
-- **`/trigger dw.free set 1`** — detach from the dolly for the next replay:
-  the performance runs, the creator flies freely and watches from outside
-  (the vantage that catches a wrong-side entrance). Default (0) rides the
-  dolly — same interpolation and easing as shipped, per the equivalence
-  test. On beat end the creator is restored to prior position and gamemode.
+- **`/trigger dw.free`** — leave the body, and on the next fire come back to
+  it: spectator in between, then the prior position, rotation and gamemode
+  (spec-0069 §6). A replay consumes this toggle: with the creator out of their
+  body the performance runs and they watch from outside (the vantage that
+  catches a wrong-side entrance); in their body they ride the dolly — same
+  interpolation and easing as shipped, per the equivalence test.
 
 ## 3. Calibration — adjust the proposal live
 

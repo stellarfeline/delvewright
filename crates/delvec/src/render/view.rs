@@ -38,6 +38,18 @@
 //! their own fiction by naming their own box. When a scope can name a box of its
 //! own, that box becomes another [`Subject`] variant and every other field here
 //! is unchanged.
+//!
+//! # A view from inside
+//!
+//! `stand=<anchor>` makes the camera a body instead: it stands in the space that
+//! anchor stands in, backed off to the far side of it
+//! ([`crate::compiler::view::sight::stand_back`]), and looks `look=<cardinal>` —
+//! by default the anchor's own facing, which is what the planned `room-<anchor>`
+//! shot already takes. It is the one way to photograph a room along a direction
+//! its anchor does not face, without restating the anchor: a guide who faces a
+//! kitchen's hatches still stands in a kitchen whose fireplace is on the north
+//! wall. An orbit key (`face`, `yaw`, `of`, `zoom`, `cutaway`) on a standing view
+//! is refused, because it describes a different camera.
 
 use crate::render::meta::PrefabMeta;
 use crate::render::nbt::Structure;
@@ -210,6 +222,16 @@ pub fn midpoint(lo: [f32; 3], hi: [f32; 3]) -> [f32; 3] {
 /// elevation is directly comparable with the planned exterior shots.
 pub const DEFAULT_VIEW_FOV_DEG: f32 = crate::render::shots::ORBIT_FOV_DEG;
 
+/// A standing view's body: the anchor whose space it stands in, and the direction
+/// it looks when the author states one.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Standing {
+    /// The anchor, by its full metadata name.
+    pub anchor: String,
+    /// The direction the body looks; `None` takes the anchor's own facing.
+    pub look: Option<Facing>,
+}
+
 /// One author-declared camera.
 #[derive(Debug, Clone, PartialEq)]
 pub struct View {
@@ -232,6 +254,10 @@ pub struct View {
     pub subject: Subject,
     /// Strip the top Y layer before meshing.
     pub cutaway: bool,
+    /// Present when the view is a body standing inside the piece (`stand=`)
+    /// rather than an orbit camera; `face`, `subject`, `zoom` and `cutaway` are
+    /// then unused.
+    pub stand: Option<Standing>,
 }
 
 impl View {
@@ -273,7 +299,7 @@ impl View {
 
 /// Every key a view spec accepts, in the order the help prints them.
 const KEYS: &[&str] = &[
-    "name", "face", "yaw", "pitch", "fov", "zoom", "of", "cutaway",
+    "name", "face", "yaw", "pitch", "fov", "zoom", "of", "cutaway", "stand", "look",
 ];
 
 /// A view name must be a plain lowercase filename fragment: it becomes a file
@@ -316,6 +342,16 @@ impl View {
     /// Exactly one of `face` / `yaw` is required: a camera with no bearing is not
     /// a camera. Everything else defaults to the elevation case — pitch 0, the
     /// orbit lens, the fit distance, no cutaway, the whole model as subject.
+    ///
+    /// A standing view instead:
+    ///
+    /// ```text
+    /// stand=anchor/kitchen                   the kitchen, along its anchor's facing
+    /// stand=anchor/kitchen,look=north        …looking north, from the south end
+    /// ```
+    ///
+    /// takes `name`, `look`, `pitch` and `fov` (default Minecraft's first-person
+    /// 70°), and refuses every orbit key.
     pub fn parse(spec: &str) -> Result<View, String> {
         let mut name: Option<String> = None;
         let mut face: Option<Face> = None;
@@ -325,6 +361,10 @@ impl View {
         let mut zoom = 1.0f32;
         let mut subject = Subject::Model;
         let mut cutaway = false;
+        let mut stand: Option<String> = None;
+        let mut look: Option<Facing> = None;
+        let mut fov_given = false;
+        let mut orbit_keys: Vec<&str> = Vec::new();
 
         for field in spec.split(',') {
             let field = field.trim();
@@ -340,7 +380,21 @@ impl View {
                     ));
                 }
             };
+            if matches!(key, "face" | "yaw" | "zoom" | "of" | "cutaway") {
+                orbit_keys.push(key);
+            }
             match key {
+                "stand" => {
+                    if value.is_empty() {
+                        return Err("view `stand=` names no anchor".to_string());
+                    }
+                    stand = Some(value.to_string());
+                }
+                "look" => {
+                    look = Some(Facing::parse(value).ok_or_else(|| {
+                        format!("view `look={value}`: a body looks north, south, east or west")
+                    })?);
+                }
                 "name" => {
                     check_name(value)?;
                     name = Some(value.to_string());
@@ -363,6 +417,7 @@ impl View {
                         ));
                     }
                     fov = v;
+                    fov_given = true;
                 }
                 "zoom" => {
                     let v = number("zoom", value)?;
@@ -394,6 +449,60 @@ impl View {
                     ));
                 }
             }
+        }
+
+        if let Some(anchor) = stand {
+            if !orbit_keys.is_empty() {
+                return Err(format!(
+                    "view `{spec}` stands a body at `{anchor}` and also states {} — those aim an \
+                     orbit camera from outside the piece. A standing view takes `look=`, `pitch=` \
+                     and `fov=`",
+                    orbit_keys
+                        .iter()
+                        .map(|k| format!("`{k}=`"))
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                ));
+            }
+            let name = match name {
+                Some(n) => n,
+                None => {
+                    let stem = anchor
+                        .rsplit('/')
+                        .next()
+                        .unwrap_or(&anchor)
+                        .to_ascii_lowercase()
+                        .replace(|c: char| !(c.is_ascii_alphanumeric() || c == '-'), "-");
+                    match look {
+                        Some(l) => format!("stand-{stem}-{}", l.as_str()),
+                        None => format!("stand-{stem}"),
+                    }
+                }
+            };
+            check_name(&name)?;
+            return Ok(View {
+                name,
+                spec: spec.to_string(),
+                face: None,
+                yaw_deg: look.map_or(0.0, Facing::view_yaw_deg),
+                pitch_deg: pitch.unwrap_or(0.0),
+                fov_deg: if fov_given {
+                    fov
+                } else {
+                    crate::render::shots::PLAYER_FOV_DEG
+                },
+                zoom: 1.0,
+                subject: Subject::Anchor(anchor.clone()),
+                cutaway: false,
+                stand: Some(Standing { anchor, look }),
+            });
+        }
+        if look.is_some() {
+            return Err(
+                "view states `look=` without `stand=` — `look` is the direction a standing body \
+                 looks; an orbit camera's bearing is `face=` or `yaw=`"
+                    .to_string(),
+            );
         }
 
         let (yaw_deg, default_pitch) = match (face, yaw) {
@@ -432,6 +541,7 @@ impl View {
             zoom,
             subject,
             cutaway,
+            stand: None,
         })
     }
 }
@@ -606,6 +716,37 @@ mod tests {
             .centre(&st, None)
             .unwrap_err();
         assert!(e.contains("no metadata file"), "{e}");
+    }
+
+    /// A standing view is a body, not an orbit: its defaults are the eye
+    /// camera's, and every key that aims an orbit camera is refused on it.
+    #[test]
+    fn a_standing_view_takes_a_body_and_refuses_orbit_keys() {
+        let v = View::parse("stand=anchor/altar").unwrap();
+        assert_eq!(v.name, "stand-altar");
+        assert_eq!(
+            v.stand,
+            Some(Standing {
+                anchor: "anchor/altar".into(),
+                look: None
+            })
+        );
+        assert_eq!(v.fov_deg, crate::render::shots::PLAYER_FOV_DEG);
+        assert_eq!(v.pitch_deg, 0.0);
+        let v = View::parse("stand=anchor/altar,look=east,fov=60,pitch=5").unwrap();
+        assert_eq!(v.name, "stand-altar-east");
+        assert_eq!(v.stand.as_ref().unwrap().look, Some(Facing::East));
+        assert_eq!((v.fov_deg, v.pitch_deg), (60.0, 5.0));
+        for (spec, needle) in [
+            ("stand=anchor/altar,face=north", "`face=`"),
+            ("stand=anchor/altar,yaw=10,zoom=2", "`yaw=`, `zoom=`"),
+            ("stand=anchor/altar,look=up", "a body looks"),
+            ("look=north,face=north", "without `stand=`"),
+            ("stand=", "names no anchor"),
+        ] {
+            let e = View::parse(spec).unwrap_err();
+            assert!(e.contains(needle), "spec `{spec}` gave `{e}`");
+        }
     }
 
     #[test]

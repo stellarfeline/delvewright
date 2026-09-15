@@ -184,6 +184,11 @@
       "code": "DW0477",
       "pointer": "/content/actors/2/tier",
       "stage": "quests"
+    },
+    {
+      "code": "DW0477",
+      "pointer": "/content/actors/6/tier",
+      "stage": "quests"
     }
   ],
   "hard.en": [
@@ -370,6 +375,11 @@
     {
       "code": "DW0477",
       "pointer": "/content/actors/2/tier",
+      "stage": "quests"
+    },
+    {
+      "code": "DW0477",
+      "pointer": "/content/actors/6/tier",
       "stage": "quests"
     }
   ],
@@ -558,6 +568,11 @@
       "code": "DW0477",
       "pointer": "/content/actors/2/tier",
       "stage": "quests"
+    },
+    {
+      "code": "DW0477",
+      "pointer": "/content/actors/6/tier",
+      "stage": "quests"
     }
   ],
   "primary.en": [
@@ -745,6 +760,11 @@
       "code": "DW0477",
       "pointer": "/content/actors/2/tier",
       "stage": "quests"
+    },
+    {
+      "code": "DW0477",
+      "pointer": "/content/actors/6/tier",
+      "stage": "quests"
     }
   ],
   "primary.zh-cn": [
@@ -931,6 +951,11 @@
     {
       "code": "DW0477",
       "pointer": "/content/actors/2/tier",
+      "stage": "quests"
+    },
+    {
+      "code": "DW0477",
+      "pointer": "/content/actors/6/tier",
       "stage": "quests"
     }
   ],
@@ -1187,6 +1212,11 @@
     {
       "code": "DW0477",
       "pointer": "/content/actors/2/tier",
+      "stage": "quests"
+    },
+    {
+      "code": "DW0477",
+      "pointer": "/content/actors/6/tier",
       "stage": "quests"
     }
   ]

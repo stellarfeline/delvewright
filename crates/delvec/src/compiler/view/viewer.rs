@@ -126,6 +126,25 @@ struct AnchorOut {
     /// points *out* of the piece, so its point of view looks the other way.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     socket: bool,
+    /// True when the point of view from this anchor's own cell is blind
+    /// (`DW0893`, [`crate::compiler::view::sight`]) — the page says so beside it.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    blind: bool,
+    /// The room camera for this anchor: the same facing, stood back to the far
+    /// side of the space it stands in.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    room: Option<RoomOut>,
+}
+
+/// Where the page's `room:` preset stands, as the engine resolved it.
+#[derive(Debug, Clone, Serialize)]
+struct RoomOut {
+    /// The camera point.
+    eye: [f64; 3],
+    /// Blocks back along the facing.
+    back: u32,
+    /// Why it went no further.
+    stopped: &'static str,
 }
 
 /// One prefab in the page.
@@ -510,7 +529,10 @@ fn build_model(
         runs,
         filled,
         tiles: m.tiles,
-        anchors: collect_anchors(m.meta.as_ref()),
+        anchors: collect_anchors(
+            m.meta.as_ref(),
+            &crate::compiler::view::sight::anchor_frames(st, m.meta.as_ref()),
+        ),
     })
 }
 
@@ -519,14 +541,26 @@ fn build_model(
 /// Degrades to an empty list when the prefab has no sidecar or declares none —
 /// the page then simply offers no per-anchor point of view, and says so, rather
 /// than inventing one.
-fn collect_anchors(meta: Option<&PrefabMeta>) -> Vec<AnchorOut> {
+fn collect_anchors(
+    meta: Option<&PrefabMeta>,
+    frames: &[crate::compiler::view::sight::AnchorFrames],
+) -> Vec<AnchorOut> {
     let Some(meta) = meta else {
         return Vec::new();
     };
     let mut out = Vec::new();
     // `anchors` is a BTreeMap, so this is already name-sorted.
     for (name, a) in &meta.anchors {
+        let measured = frames.iter().find(|f| &f.anchor == name);
         out.push(AnchorOut {
+            blind: measured.is_some_and(|f| f.pov.is_blind()),
+            room: measured
+                .and_then(|f| f.room.as_ref())
+                .map(|(stand, _)| RoomOut {
+                    eye: stand.eye().map(|c| (c * 1000.0).round() / 1000.0),
+                    back: stand.back,
+                    stopped: stand.stop.tag(),
+                }),
             name: name.clone(),
             pos: a.pos,
             facing: a.facing.clone(),
@@ -545,6 +579,8 @@ fn collect_anchors(meta: Option<&PrefabMeta>) -> Vec<AnchorOut> {
             to: None,
             role: None,
             socket: true,
+            blind: false,
+            room: None,
         });
     }
     out

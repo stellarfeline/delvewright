@@ -143,7 +143,7 @@ fn walk_after_close_gate_in_the_same_sequence_is_dw0410() {
     let body = r#"{ "type": "sequence", "steps": [
           { "at_ticks": 460, "effects": [ { "type": "close-gate", "anchor": "anchor/door", "sealed_hint": "Sealed." } ] },
           { "at_ticks": 700, "effects": [
-              { "type": "move-actor", "actor": "actor/ram", "to_anchor": "anchor/exit" } ] }
+              { "type": "move-actor", "actor": "actor/ram", "to": { "anchor": "anchor/exit" } } ] }
        ] },
        { "type": "campaign-complete" }"#;
     assert_validates(body);
@@ -160,7 +160,7 @@ fn walk_after_close_gate_in_the_same_sequence_is_dw0410() {
 #[test]
 fn walk_after_close_gate_in_the_same_effect_list_is_dw0410() {
     let body = r#"{ "type": "close-gate", "anchor": "anchor/door", "sealed_hint": "Sealed." },
-       { "type": "move-actor", "actor": "actor/ram", "to_anchor": "anchor/exit" },
+       { "type": "move-actor", "actor": "actor/ram", "to": { "anchor": "anchor/exit" } },
        { "type": "campaign-complete" }"#;
     assert_validates(body);
     assert_eq!(build_code(body).as_deref(), Some("DW0410"));
@@ -170,7 +170,7 @@ fn walk_after_close_gate_in_the_same_effect_list_is_dw0410() {
 #[test]
 fn move_npc_after_close_gate_is_dw0410() {
     let body = r#"{ "type": "close-gate", "anchor": "anchor/door", "sealed_hint": "Sealed." },
-       { "type": "move-npc", "npc": "npc/keeper", "to_anchor": "anchor/exit" },
+       { "type": "move-npc", "npc": "npc/keeper", "to": { "anchor": "anchor/exit" } },
        { "type": "campaign-complete" }"#;
     assert_validates(body);
     assert_eq!(build_code(body).as_deref(), Some("DW0410"));
@@ -182,7 +182,7 @@ fn move_npc_after_close_gate_is_dw0410() {
 fn dw0410_message_names_the_verb_mover_and_gate() {
     let c = parse_hw(&quests_doc(
         r#"{ "type": "close-gate", "anchor": "anchor/door", "sealed_hint": "Sealed." },
-           { "type": "move-actor", "actor": "actor/ram", "to_anchor": "anchor/exit" },
+           { "type": "move-actor", "actor": "actor/ram", "to": { "anchor": "anchor/exit" } },
            { "type": "campaign-complete" }"#,
     ));
     let prefabs = prefabs();
@@ -217,7 +217,7 @@ fn dw0410_message_names_the_verb_mover_and_gate() {
 fn walk_before_close_gate_builds_clean() {
     let body = r#"{ "type": "sequence", "steps": [
           { "at_ticks": 100, "effects": [
-              { "type": "move-actor", "actor": "actor/ram", "to_anchor": "anchor/exit" } ] },
+              { "type": "move-actor", "actor": "actor/ram", "to": { "anchor": "anchor/exit" } } ] },
           { "at_ticks": 700, "effects": [ { "type": "close-gate", "anchor": "anchor/door", "sealed_hint": "Sealed." } ] }
        ] },
        { "type": "campaign-complete" }"#;
@@ -233,7 +233,7 @@ fn sequence_order_follows_at_ticks_not_declaration_order() {
     let body = r#"{ "type": "sequence", "steps": [
           { "at_ticks": 700, "effects": [ { "type": "close-gate", "anchor": "anchor/door", "sealed_hint": "Sealed." } ] },
           { "at_ticks": 100, "effects": [
-              { "type": "move-actor", "actor": "actor/ram", "to_anchor": "anchor/exit" } ] }
+              { "type": "move-actor", "actor": "actor/ram", "to": { "anchor": "anchor/exit" } } ] }
        ] },
        { "type": "campaign-complete" }"#;
     assert_validates(body);
@@ -248,7 +248,7 @@ fn close_then_open_then_walk_builds_clean() {
           { "at_ticks": 0,   "effects": [ { "type": "close-gate", "anchor": "anchor/door", "sealed_hint": "Sealed." } ] },
           { "at_ticks": 200, "effects": [ { "type": "open-gate",  "anchor": "anchor/door" } ] },
           { "at_ticks": 700, "effects": [
-              { "type": "move-actor", "actor": "actor/ram", "to_anchor": "anchor/exit" } ] }
+              { "type": "move-actor", "actor": "actor/ram", "to": { "anchor": "anchor/exit" } } ] }
        ] },
        { "type": "campaign-complete" }"#;
     assert_validates(body);
@@ -261,7 +261,7 @@ fn close_then_open_then_walk_builds_clean() {
 #[test]
 fn conditional_close_gate_seals_nothing() {
     let body = r#"{ "type": "close-gate", "when": { "requires_flags": ["flag/sealed"] }, "anchor": "anchor/door", "sealed_hint": "Sealed." },
-       { "type": "move-actor", "actor": "actor/ram", "to_anchor": "anchor/exit" },
+       { "type": "move-actor", "actor": "actor/ram", "to": { "anchor": "anchor/exit" } },
        { "type": "campaign-complete" }"#;
     assert_validates(body);
     assert_eq!(build_code(body), None);
@@ -295,7 +295,7 @@ fn close_gate_in_another_bundle_does_not_seal_this_timeline() {
           "obj/talk": [ { "type": "close-gate", "anchor": "anchor/door", "sealed_hint": "Sealed." } ]
         },
         "on_complete": [
-          { "type": "move-actor", "actor": "actor/ram", "to_anchor": "anchor/exit" },
+          { "type": "move-actor", "actor": "actor/ram", "to": { "anchor": "anchor/exit" } },
           { "type": "campaign-complete" }
         ]
       }
@@ -351,7 +351,7 @@ fn seal_flags(c: &Campaign) -> Vec<(String, bool)> {
 fn state_is_as_of_the_effect_not_after_it() {
     let c = parse_hw(&quests_doc(
         r#"{ "type": "close-gate", "anchor": "anchor/door", "sealed_hint": "Sealed." },
-           { "type": "move-actor", "actor": "actor/ram", "to_anchor": "anchor/exit" },
+           { "type": "move-actor", "actor": "actor/ram", "to": { "anchor": "anchor/exit" } },
            { "type": "campaign-complete" }"#,
     ));
     let flags = seal_flags(&c);
@@ -370,7 +370,7 @@ fn walk_yields_every_effect_including_nested_ones() {
         r#"{ "type": "sequence", "steps": [
               { "at_ticks": 0, "effects": [ { "type": "close-gate", "anchor": "anchor/door", "sealed_hint": "Sealed." } ] },
               { "at_ticks": 40, "effects": [
-                  { "type": "move-actor", "actor": "actor/ram", "to_anchor": "anchor/exit" } ] }
+                  { "type": "move-actor", "actor": "actor/ram", "to": { "anchor": "anchor/exit" } } ] }
            ] },
            { "type": "campaign-complete" }"#,
     ));

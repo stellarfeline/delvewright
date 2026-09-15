@@ -93,6 +93,7 @@ missing=""
 for mount in \
   '${DELVE_OUTPUT:-./delve-output}/datapack:/packs/datapack:ro' \
   '${DELVE_OUTPUT:-./delve-output}/packtest-datapack:/packs/packtest-datapack:ro' \
+  '${DELVE_OUTPUT:-./delve-output}/creator-datapack:/packs/creator-datapack:ro' \
   '${DELVE_OUTPUT:-./delve-output}/server:/packs/server:ro' \
   '${DELVE_OUTPUT:-./delve-output}/critical-path.json:/delve/critical-path.json:ro' \
   '${DELVE_OUTPUT:-./delve-output}/validation:/delve/validation:ro' \

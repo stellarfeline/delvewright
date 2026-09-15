@@ -31,7 +31,7 @@ use delvewright_dsl::Verb;
 use std::cmp::Reverse;
 use std::collections::{BTreeMap, BTreeSet, BinaryHeap};
 
-use delvewright_dsl::{CameraWaypoint, Lethality, QuestEffect, TrapReset};
+use delvewright_dsl::{Lethality, Mark, QuestEffect, TrapReset};
 
 use crate::compiler::plan::{
     BodyScope, BodyStation, Plan, RegionEvent, RegionWrite, ResolvedAnchor, Step, TrapPlan,
@@ -313,7 +313,7 @@ pub const DW_GATE_TIMELINE: DwCode = DwCode::new("DW0410", ExitTier::Build);
 /// is the wrong cell for at least one of them and that occurrence opens with a
 /// teleport.
 ///
-/// `move-npc` / `move-actor` drivers are deduped by `(body, to_anchor)` — two
+/// `move-npc` / `move-actor` drivers are deduped by `(body, to)` — two
 /// beats that walk the same character to the same mark share one emitted
 /// function, and that function's waypoint polyline starts where the FIRST
 /// occurrence's branch leaves the body. That was a documented limitation for as
@@ -638,19 +638,13 @@ pub const BARRIER_HEIGHT: f64 = 1.5;
 /// proof about NPC bodies ([`crate::compiler::eclipse`], [`crate::compiler::clearance`]) must model
 /// what ships, not what is declared. One helper, so the two cannot drift.
 pub fn npc_body_entity(n: &delvewright_dsl::Npc) -> String {
-    match &n.skin {
-        Some(_) => "minecraft:mannequin".to_string(),
-        None => n.base_entity.clone(),
-    }
+    delvewright_dsl::BodyRef::Npc(n).worn_entity().to_string()
 }
 
 /// The entity id whose body a stage-5 actor wears — the actor's counterpart of
 /// [`npc_body_entity`], same mannequin rule.
 pub fn actor_body_entity(a: &delvewright_dsl::Actor) -> String {
-    match &a.skin {
-        Some(_) => "minecraft:mannequin".to_string(),
-        None => a.entity.clone(),
-    }
+    delvewright_dsl::BodyRef::Actor(a).worn_entity().to_string()
 }
 
 /// The hitbox footprint for a vanilla entity id (spec-0014 per-entity dims table).
@@ -707,8 +701,8 @@ pub struct AnchorRoot {
 pub struct MovePlan {
     /// The moving NPC id (`npc/…`).
     pub npc: String,
-    /// The destination anchor id (`anchor/…`).
-    pub to_anchor: String,
+    /// The destination mark (spec-0066): anchor and offset.
+    pub to: delvewright_dsl::Mark,
     /// The integer target cell (feet), for the arrival assertion.
     pub target: [i32; 3],
     /// The A* **cell** path this leg walks, start to target inclusive — the route
@@ -859,6 +853,12 @@ pub fn built_volume(plan: &Plan) -> Vec<BuiltPiece> {
 /// the box being inclusive world-space corners.
 type LethalRegion = (String, ([i32; 3], [i32; 3]));
 
+/// One placed furniture region as the navigation model carries it — the plan's
+/// own type, `(anchor name, inclusive world box)` (spec-0065). Same shape as
+/// [`LethalRegion`] for the same reason: a proof that refuses over it has to be
+/// able to name the anchor.
+use crate::compiler::plan::FurnitureRegion;
+
 /// One placed piece as the built volume carries it: `(prefab id, box)`, the box
 /// being inclusive world-space corners. Same shape as [`LethalRegion`] and for
 /// the same reason — a proof that refuses over a region has to be able to NAME
@@ -896,6 +896,20 @@ pub struct World {
     /// difference between `DW0510` and a `DW0311` that sends the author to fix a
     /// prefab that was never wrong.
     lethal_regions: Vec<LethalRegion>,
+    /// Cells inside a declared **furniture** region (spec-0065): the blocks of a
+    /// laid table, an altar, a counter, as the piece that built them declared.
+    ///
+    /// Not impassable and not removed from `solid` — a table is geometry, and a
+    /// body beside it stands on the floor. What these cells withhold is the cell
+    /// ABOVE each solid one: [`World::standable_fp`] refuses a body whose support
+    /// is a solid furniture cell, so no route, snap, flood, seat or export stands
+    /// a body on a table. Empty for every campaign whose pieces declare none,
+    /// which keeps every proof byte-identical.
+    furniture: BTreeSet<[i32; 3]>,
+    /// The regions behind `furniture`, as `(anchor, box)`, in the plan's order
+    /// ([`Plan::furniture`]). Carried so a route that exists only over a table
+    /// names the table (`DW0510`).
+    furniture_regions: Vec<FurnitureRegion>,
     /// Cells another proof has FORCED solid as its own premise — a `collapse`'s
     /// settled debris, an ambush's occupied cells, a timed gate's shut span, an
     /// aggro sphere ([`World::with_sealed`]).
@@ -1039,6 +1053,7 @@ pub struct Premises {
     base: &'static str,
     built: Vec<BuiltPiece>,
     lethal_regions: Vec<LethalRegion>,
+    furniture_regions: Vec<FurnitureRegion>,
     world_load_seals: Vec<crate::compiler::assembled::GateSeal>,
     clocked_gates: BTreeSet<([i32; 3], [i32; 3])>,
     transit_teleports: Vec<([i32; 3], [i32; 3])>,
@@ -1069,6 +1084,7 @@ impl Premises {
                 .iter()
                 .map(|v| (v.id.clone(), v.region))
                 .collect(),
+            furniture_regions: plan.furniture.clone(),
             world_load_seals: seals,
             clocked_gates: plan.timed_gates.iter().map(|g| g.gate_region).collect(),
             transit_teleports: plan.transit_teleports.clone(),
@@ -1107,6 +1123,7 @@ impl Premises {
             base: "void",
             built: Vec::new(),
             lethal_regions: Vec::new(),
+            furniture_regions: Vec::new(),
             world_load_seals: Vec::new(),
             clocked_gates: BTreeSet::new(),
             transit_teleports: Vec::new(),
@@ -1199,15 +1216,44 @@ impl World {
         !self.world_load_seals.is_empty()
     }
 
-    /// A copy of this world with **no** lethal volumes — the counterfactual the
-    /// `DW0510` diagnostic is derived from.
+    /// A copy of this world with **every semantic exclusion lifted** — no lethal
+    /// volume and no furniture region: the counterfactual `DW0510` is derived
+    /// from, and the population `DW0891` is measured over (spec-0062 §2,
+    /// spec-0065 §4.2).
     ///
     /// A route that fails on the real world and succeeds on this one failed
-    /// *because of* a lethal volume, and the cells it would have walked name which
-    /// volumes. Without the counterfactual the author gets "no collision-free
-    /// path" over geometry that looks perfectly open — the reachability report
-    /// that sends someone to fix the prefab.
-    pub fn without_lethal(&self) -> World {
+    /// *because of* an exclusion, and the cells it would have walked name which
+    /// volume or which table. Without the counterfactual the author gets "no
+    /// collision-free path" over geometry that looks perfectly open — the
+    /// reachability report that sends someone to fix the prefab.
+    ///
+    /// One function for both kinds, on purpose: a check that must not be
+    /// improved by an exclusion reads this, and a second counterfactual lifting
+    /// only one kind would be the hatch a furniture declaration over caught floor
+    /// walks through.
+    pub fn without_exclusions(&self) -> World {
+        let mut w = self.clone_world();
+        w.lethal = BTreeSet::new();
+        w.lethal_regions = Vec::new();
+        w.furniture = BTreeSet::new();
+        w.furniture_regions = Vec::new();
+        w
+    }
+
+    /// A copy of this world with its **furniture** lifted and every other
+    /// premise kept — the counterfactual a walked `move-npc` / `move-actor` leg
+    /// is asked over when it cannot route (`DW0510`'s furniture shape). Those
+    /// legs carry no lethal counterfactual, so lifting lethality there too would
+    /// report a route through a kill box as a table's fault.
+    pub fn without_furniture(&self) -> World {
+        let mut w = self.clone_world();
+        w.furniture = BTreeSet::new();
+        w.furniture_regions = Vec::new();
+        w
+    }
+
+    /// A field-for-field copy, for the counterfactuals that change one premise.
+    fn clone_world(&self) -> World {
         World {
             solid: self.solid.clone(),
             tall: self.tall.clone(),
@@ -1216,8 +1262,10 @@ impl World {
             partial: self.partial.clone(),
             waterloggable: self.waterloggable.clone(),
             objective_cells: self.objective_cells.clone(),
-            lethal: BTreeSet::new(),
-            lethal_regions: Vec::new(),
+            lethal: self.lethal.clone(),
+            lethal_regions: self.lethal_regions.clone(),
+            furniture: self.furniture.clone(),
+            furniture_regions: self.furniture_regions.clone(),
             pinned: self.pinned.clone(),
             world_load_seals: self.world_load_seals.clone(),
             clocked_gates: self.clocked_gates.clone(),
@@ -1228,6 +1276,81 @@ impl World {
             base: self.base,
             built: self.built.clone(),
         }
+    }
+
+    /// Whether this world carries any furniture region at all. Call sites skip
+    /// the furniture counterfactual entirely when it does not.
+    pub fn has_furniture(&self) -> bool {
+        !self.furniture_regions.is_empty()
+    }
+
+    /// Whether a body standing in `c` would rest on a **solid furniture cell** —
+    /// the one term [`World::standable_fp`] adds for spec-0065, asked per
+    /// column of the footprint. Membership of the support cell, never a reach:
+    /// a body beside a table, feet on the floor, is untouched.
+    fn on_furniture_fp(&self, c: [i32; 3], fp: &Footprint) -> bool {
+        if self.furniture.is_empty() {
+            return false;
+        }
+        fp.cols.iter().any(|&[dx, dz]| {
+            let support = [c[0] + dx, c[1] - 1, c[2] + dz];
+            self.furniture.contains(&support) && self.is_solid(support)
+        })
+    }
+
+    /// The furniture anchors a body standing in any of `cells` would rest on, in
+    /// the plan's order, deduplicated — who to blame for a route that exists
+    /// only when the furniture is lifted. Asked for the player's single column,
+    /// which is what every blamed route here was routed for.
+    fn furniture_over(&self, cells: &[[i32; 3]]) -> Vec<&str> {
+        self.furniture_over_fp(cells, &Footprint::player())
+    }
+
+    /// [`World::furniture_over`] for a body of footprint `fp`.
+    fn furniture_over_fp(&self, cells: &[[i32; 3]], fp: &Footprint) -> Vec<&str> {
+        let mut out: Vec<&str> = Vec::new();
+        for (id, (lo, hi)) in &self.furniture_regions {
+            let hit = cells.iter().any(|c| {
+                fp.cols.iter().any(|&[dx, dz]| {
+                    let s = [c[0] + dx, c[1] - 1, c[2] + dz];
+                    (0..3).all(|i| lo[i] <= s[i] && s[i] <= hi[i]) && self.is_solid(s)
+                })
+            });
+            if hit && !out.contains(&id.as_str()) {
+                out.push(id.as_str());
+            }
+        }
+        out
+    }
+
+    /// **The furniture binding** (spec-0065 §4.3): regions, their solid cells,
+    /// and how many cells a player could stand in on the bare geometry that the
+    /// exclusion withholds. `(F, S, W)`.
+    pub fn furniture_census(&self) -> (usize, usize, usize) {
+        let solid: Vec<[i32; 3]> = self
+            .furniture
+            .iter()
+            .copied()
+            .filter(|c| self.is_solid(*c))
+            .collect();
+        let open = self.without_furniture();
+        let fp = Footprint::player();
+        let withheld = solid
+            .iter()
+            .map(|s| [s[0], s[1] + 1, s[2]])
+            .filter(|c| open.standable_fp(*c, &fp) && !self.standable_fp(*c, &fp))
+            .count();
+        (self.furniture_regions.len(), solid.len(), withheld)
+    }
+
+    /// How many of `cells` a body of footprint `fp` would stand on furniture in —
+    /// the `0 standing on furniture` the binding line states, computed rather
+    /// than typed.
+    pub fn cells_on_furniture(&self, cells: &[[i32; 3]], fp: &Footprint) -> usize {
+        cells
+            .iter()
+            .filter(|c| self.on_furniture_fp(**c, fp))
+            .count()
     }
 
     /// Whether this world carries any lethal-volume cell at all. Call sites skip
@@ -1317,6 +1440,12 @@ impl World {
                 .flat_map(|(_, (lo, hi))| crate::compiler::assembled::region_cells(*lo, *hi))
                 .collect(),
             lethal_regions: premises.lethal_regions,
+            furniture: premises
+                .furniture_regions
+                .iter()
+                .flat_map(|(_, (lo, hi))| crate::compiler::assembled::region_cells(*lo, *hi))
+                .collect(),
+            furniture_regions: premises.furniture_regions,
             pinned: BTreeSet::new(),
             world_load_seals: premises.world_load_seals,
             clocked_gates: premises.clocked_gates,
@@ -1437,6 +1566,8 @@ impl World {
             objective_cells: self.objective_cells.clone(),
             lethal: self.lethal.clone(),
             lethal_regions: self.lethal_regions.clone(),
+            furniture: self.furniture.clone(),
+            furniture_regions: self.furniture_regions.clone(),
             pinned,
             world_load_seals: self.world_load_seals.clone(),
             clocked_gates: self.clocked_gates.clone(),
@@ -1477,6 +1608,8 @@ impl World {
             objective_cells: self.objective_cells.clone(),
             lethal: self.lethal.clone(),
             lethal_regions: self.lethal_regions.clone(),
+            furniture: self.furniture.clone(),
+            furniture_regions: self.furniture_regions.clone(),
             pinned: self.pinned.clone(),
             world_load_seals: self.world_load_seals.clone(),
             clocked_gates: self.clocked_gates.clone(),
@@ -1525,6 +1658,8 @@ impl World {
             objective_cells: self.objective_cells.clone(),
             lethal: self.lethal.clone(),
             lethal_regions: self.lethal_regions.clone(),
+            furniture: self.furniture.clone(),
+            furniture_regions: self.furniture_regions.clone(),
             pinned: self.pinned.clone(),
             world_load_seals: self.world_load_seals.clone(),
             clocked_gates: self.clocked_gates.clone(),
@@ -1576,6 +1711,8 @@ impl World {
             objective_cells: self.objective_cells.clone(),
             lethal: self.lethal.clone(),
             lethal_regions: self.lethal_regions.clone(),
+            furniture: self.furniture.clone(),
+            furniture_regions: self.furniture_regions.clone(),
             pinned: self.pinned.clone(),
             world_load_seals: self.world_load_seals.clone(),
             clocked_gates: self.clocked_gates.clone(),
@@ -1651,6 +1788,8 @@ impl World {
             objective_cells: self.objective_cells.clone(),
             lethal: self.lethal.clone(),
             lethal_regions: self.lethal_regions.clone(),
+            furniture: self.furniture.clone(),
+            furniture_regions: self.furniture_regions.clone(),
             pinned: self.pinned.clone(),
             world_load_seals: self.world_load_seals.clone(),
             clocked_gates: self.clocked_gates.clone(),
@@ -1720,6 +1859,8 @@ impl World {
             objective_cells: self.objective_cells.clone(),
             lethal: self.lethal.clone(),
             lethal_regions: self.lethal_regions.clone(),
+            furniture: self.furniture.clone(),
+            furniture_regions: self.furniture_regions.clone(),
             pinned: self.pinned.clone(),
             world_load_seals: self.world_load_seals.clone(),
             clocked_gates: self.clocked_gates.clone(),
@@ -2171,6 +2312,12 @@ impl World {
         if self.meets_lethal_fp(c, fp) {
             return false;
         }
+        // spec-0065: a body may not be PROVEN to stand on furniture. Asked beside
+        // the lethal clause, in the same predicate, so every route, snap, flood,
+        // seat and export inherits it and none of them restates it.
+        if self.on_furniture_fp(c, fp) {
+            return false;
+        }
         fp.cols.iter().all(|&[dx, dz]| {
             let base = [c[0] + dx, c[1], c[2] + dz];
             self.is_solid([base[0], base[1] - 1, base[2]])
@@ -2192,7 +2339,7 @@ impl World {
 
     /// Footprint-aware nearest-standable snap (spec-0014), used by `move-actor`
     /// endpoint resolution so a wide/tall puppet snaps to a cell IT can stand on.
-    fn snap_standable_fp(&self, c: [i32; 3], radius: i32, fp: &Footprint) -> Option<[i32; 3]> {
+    pub fn snap_standable_fp(&self, c: [i32; 3], radius: i32, fp: &Footprint) -> Option<[i32; 3]> {
         if self.standable_fp(c, fp) {
             return Some(c);
         }
@@ -2840,6 +2987,7 @@ fn npc_start(plan: &Plan, npc_id: &str) -> Option<[i32; 3]> {
         .find(|n| n.id.as_str() == npc_id)?;
     let area = plan.npc_area(npc_id)?;
     plan.point(area, npc.anchor.as_str())
+        .map(|p| delvewright_dsl::offset_cell(p, npc.offset))
 }
 
 /// Resolve a `move-npc` destination through [`body_station`], the one
@@ -2888,20 +3036,20 @@ fn move_target(
             DW_MOVE_UNROUTABLE,
             format!(
                 "move-npc: destination anchor `{to_anchor}` for NPC `{npc_id}` did not resolve \
-                 to a world position — use a `to_anchor` that the NPC's area prefab provides"
+                 to a world position — use a `to.anchor` that the NPC's area prefab provides"
             ),
         )),
     }
 }
 
 /// Plan every `move-npc` in the campaign into a walked-path [`MovePlan`], deduped
-/// by `(npc, to_anchor)` in first-seen order. `DW0307` when a move is
+/// by `(npc, to)` in first-seen order. `DW0307` when a move is
 /// unroutable, `DW0859` when its destination names an anchor two areas answer
 /// to and neither the move's own quest nor the NPC's home settles it
 /// ([`move_target`]). Each NPC's successive moves **chain**: the first leg
 /// starts at the stage-2 anchor, every later leg at the previous leg's target
 /// (round-6; see
-/// [`plan_actor_moves`]). Two moves sharing `(npc, to_anchor)` still share one
+/// [`plan_actor_moves`]). Two moves sharing `(npc, to)` still share one
 /// content-keyed driver, planned from the first occurrence's origin (documented
 /// limitation of the content key).
 ///
@@ -2935,7 +3083,7 @@ pub fn plan_moves(plan: &Plan, world: &World) -> Result<Vec<MovePlan>, Failure> 
     // follows it in declaration order. See [`BranchGate`] for the defect this
     // fixes and why the rule is stated as implication rather than exclusion.
     let mut history: StagingHistory = StagingHistory::new();
-    // The cell route planned for each `(npc, to_anchor)` driver, so a deduped
+    // The cell route planned for each `(npc, to)` driver, so a deduped
     // repeat occurrence can be re-checked against its own timeline's seals.
     let mut planned: BTreeMap<(String, String, String), Vec<[i32; 3]>> = BTreeMap::new();
     // The yaw each planned driver ends on, so a deduped repeat chains the same
@@ -2948,13 +3096,7 @@ pub fn plan_moves(plan: &Plan, world: &World) -> Result<Vec<MovePlan>, Failure> 
         BTreeMap::new();
     let mut cache = SealCache::default();
     for (eff, seal, beat) in crate::compiler::timeline::walk_with_beat_area(plan) {
-        let Verb::MoveNpc {
-            npc,
-            to_anchor,
-            speed,
-            ..
-        } = &eff.verb
-        else {
+        let Verb::MoveNpc { npc, to, speed, .. } = &eff.verb else {
             continue;
         };
         let gate = BranchGate::of(eff);
@@ -2964,26 +3106,25 @@ pub fn plan_moves(plan: &Plan, world: &World) -> Result<Vec<MovePlan>, Failure> 
             Some(i) => &cache.worlds[i],
             None => world,
         };
-        let anchor_pos = move_target(plan, npc.as_str(), to_anchor.as_str(), beat)?;
+        // The destination is a mark (spec-0066): the anchor resolves through the
+        // one station authority, and the snap starts from the mark's cell.
+        let to_mark = to.display();
+        let anchor_pos = to.cell(move_target(plan, npc.as_str(), to.anchor.as_str(), beat)?);
         let target = leg_world
             .snap_standable(anchor_pos, SNAP_RADIUS)
             .ok_or_else(|| Failure {
                 code: DW_MOVE_UNROUTABLE,
                 message: format!(
-                    "move-npc: no standable floor cell near destination anchor `{}` {anchor_pos:?} \
-                 for NPC `{}` — the anchor is walled in or over void; place `{}` beside walkable \
+                    "move-npc: no standable floor cell near destination `{}` {anchor_pos:?} \
+                 for NPC `{}` — the mark is walled in or over void; place `{}` beside walkable \
                  floor the npc can stand on",
-                    to_anchor.as_str(),
+                    to_mark,
                     npc.as_str(),
-                    to_anchor.as_str(),
+                    to_mark,
                 ),
             })?;
         let gkey = gate.key();
-        let key = (
-            npc.as_str().to_string(),
-            to_anchor.as_str().to_string(),
-            gkey.clone(),
-        );
+        let key = (npc.as_str().to_string(), to_mark.clone(), gkey.clone());
         if !seen.insert(key.clone()) {
             // Deduped: shares the first occurrence's driver, so it walks the
             // already-planned path — which must still be clear under THIS
@@ -2996,7 +3137,7 @@ pub fn plan_moves(plan: &Plan, world: &World) -> Result<Vec<MovePlan>, Failure> 
                     return Err(gate_timeline_error(
                         "move-npc",
                         npc.as_str(),
-                        to_anchor.as_str(),
+                        to_mark.as_str(),
                         cells[0],
                         target,
                         &seal,
@@ -3014,7 +3155,7 @@ pub fn plan_moves(plan: &Plan, world: &World) -> Result<Vec<MovePlan>, Failure> 
                     return Err(shared_origin_error(
                         "move-npc",
                         npc.as_str(),
-                        to_anchor.as_str(),
+                        to_mark.as_str(),
                         *planned_from,
                         planned_gate,
                         here,
@@ -3060,10 +3201,20 @@ pub fn plan_moves(plan: &Plan, world: &World) -> Result<Vec<MovePlan>, Failure> 
                 return Err(gate_timeline_error(
                     "move-npc",
                     npc.as_str(),
-                    to_anchor.as_str(),
+                    to_mark.as_str(),
                     start,
                     target,
                     &seal,
+                ));
+            }
+            None if leg_world.has_furniture()
+                && let Some(over) = leg_world.without_furniture().find_path(start, target) =>
+            {
+                return Err(furniture_route_failure(
+                    &format!("move-npc `{}`", npc.as_str()),
+                    &format!("{start:?}"),
+                    &format!("`{to_mark}` (floor {target:?})"),
+                    &leg_world.furniture_over(&over),
                 ));
             }
             None => {
@@ -3077,7 +3228,7 @@ pub fn plan_moves(plan: &Plan, world: &World) -> Result<Vec<MovePlan>, Failure> 
                          destination), or split it into shorter reachable hops",
                         npc.as_str(),
                         plan_npc_anchor(plan, npc.as_str()),
-                        to_anchor.as_str(),
+                        to_mark.as_str(),
                     ),
                 });
             }
@@ -3101,14 +3252,14 @@ pub fn plan_moves(plan: &Plan, world: &World) -> Result<Vec<MovePlan>, Failure> 
         let mut yaws = yaws_along(&exact, seed);
         apply_arrival_yaw(
             &mut yaws,
-            anchor_facing_yaw(plan, npc.as_str(), to_anchor.as_str()),
+            anchor_facing_yaw(plan, npc.as_str(), to.anchor.as_str()),
         );
         let end_yaw = yaws.last().copied().unwrap_or(seed);
         record_staging(&mut history, npc.as_str(), gate, target, Some(end_yaw));
         planned_end_yaw.insert(key, end_yaw);
         out.push(MovePlan {
             npc: npc.as_str().to_string(),
-            to_anchor: to_anchor.as_str().to_string(),
+            to: to.clone(),
             target,
             cells,
             waypoints,
@@ -3211,8 +3362,8 @@ fn npc_spawn_yaw(plan: &Plan, npc_id: &str) -> i32 {
 pub struct ActorMovePlan {
     /// The moving actor id (`actor/…`).
     pub actor: String,
-    /// The destination anchor id (`anchor/…`).
-    pub to_anchor: String,
+    /// The destination mark (spec-0066): anchor and offset.
+    pub to: delvewright_dsl::Mark,
     /// The integer target cell (feet), for the arrival assertion.
     pub target: [i32; 3],
     /// The A* **cell** path this leg walks, start to target inclusive — see
@@ -3407,11 +3558,11 @@ fn gate_timeline_error(
 }
 
 /// Plan every `move-actor` into a walked-path [`ActorMovePlan`] over the actor's
-/// footprint, deduped by `(actor, to_anchor)` in first-seen order. `DW0325` when a
+/// footprint, deduped by `(actor, to)` in first-seen order. `DW0325` when a
 /// move is unroutable (names actor, leg, first blocked cell). Each actor's
 /// successive moves **chain** — first leg from the declared spawn anchor, every
 /// later leg from the previous leg's target (round-6 fix; see the loop comment).
-/// Two moves sharing `(actor, to_anchor)` still share one content-keyed driver,
+/// Two moves sharing `(actor, to)` still share one content-keyed driver,
 /// planned from the first occurrence's origin (documented limitation).
 ///
 /// Use-gate cells are walkable edges for a scripted puppet walk, exactly as for
@@ -3441,7 +3592,7 @@ pub fn plan_actor_moves(plan: &Plan, world: &World) -> Result<Vec<ActorMovePlan>
     // walked to the tide line from the GROUND branch's grave for the same reason
     // the island's Eurylochus walked from the beach.
     let mut history: StagingHistory = StagingHistory::new();
-    // The cell route planned for each `(actor, to_anchor)` driver, so a deduped
+    // The cell route planned for each `(actor, to)` driver, so a deduped
     // repeat occurrence can be re-checked against its own timeline's seals.
     let mut planned: BTreeMap<(String, String, String), Vec<[i32; 3]>> = BTreeMap::new();
     // The yaw each planned driver ends on, so a deduped repeat chains it forward.
@@ -3453,10 +3604,7 @@ pub fn plan_actor_moves(plan: &Plan, world: &World) -> Result<Vec<ActorMovePlan>
     let mut cache = SealCache::default();
     for (eff, seal) in crate::compiler::timeline::walk(plan) {
         let Verb::MoveActor {
-            actor,
-            to_anchor,
-            speed,
-            ..
+            actor, to, speed, ..
         } = &eff.verb
         else {
             continue;
@@ -3476,34 +3624,34 @@ pub fn plan_actor_moves(plan: &Plan, world: &World) -> Result<Vec<ActorMovePlan>
             ),
         })?;
         let fp = entity_footprint(&a.entity);
-        let dest = actor_anchor_pos(plan, to_anchor.as_str()).ok_or_else(|| Failure {
-            code: DW_ACTOR_UNROUTABLE,
-            message: format!(
-                "move-actor: destination anchor `{}` for actor `{}` did not resolve to a world \
-                 position — use a `to_anchor` some area's prefab provides",
-                to_anchor.as_str(),
-                actor.as_str()
-            ),
-        })?;
+        // The destination is a mark (spec-0066): the snap starts from its cell.
+        let to_mark = to.display();
+        let dest = actor_anchor_pos(plan, to.anchor.as_str())
+            .map(|p| to.cell(p))
+            .ok_or_else(|| Failure {
+                code: DW_ACTOR_UNROUTABLE,
+                message: format!(
+                    "move-actor: destination anchor `{}` for actor `{}` did not resolve to a \
+                     world position — use a `to.anchor` some area's prefab provides",
+                    to.anchor.as_str(),
+                    actor.as_str()
+                ),
+            })?;
         let target = leg_world
             .snap_standable_fp(dest, SNAP_RADIUS, &fp)
             .ok_or_else(|| Failure {
                 code: DW_ACTOR_UNROUTABLE,
                 message: format!(
-                    "move-actor: no cell the `{}` footprint can stand on near destination anchor \
-                     `{}` {dest:?} for actor `{}` — the anchor is walled in, too low a ceiling for \
+                    "move-actor: no cell the `{}` footprint can stand on near destination \
+                     `{}` {dest:?} for actor `{}` — the mark is walled in, too low a ceiling for \
                      this mob, or over void",
                     a.entity,
-                    to_anchor.as_str(),
+                    to_mark,
                     actor.as_str()
                 ),
             })?;
         let gkey = gate.key();
-        let key = (
-            actor.as_str().to_string(),
-            to_anchor.as_str().to_string(),
-            gkey.clone(),
-        );
+        let key = (actor.as_str().to_string(), to_mark.clone(), gkey.clone());
         if !seen.insert(key.clone()) {
             // Deduped: this occurrence shares the first occurrence's content-keyed
             // driver, so the path it walks is the one already planned. It still has
@@ -3518,7 +3666,7 @@ pub fn plan_actor_moves(plan: &Plan, world: &World) -> Result<Vec<ActorMovePlan>
                     return Err(gate_timeline_error(
                         "move-actor",
                         actor.as_str(),
-                        to_anchor.as_str(),
+                        to_mark.as_str(),
                         cells[0],
                         target,
                         &seal,
@@ -3535,7 +3683,7 @@ pub fn plan_actor_moves(plan: &Plan, world: &World) -> Result<Vec<ActorMovePlan>
                     return Err(shared_origin_error(
                         "move-actor",
                         actor.as_str(),
-                        to_anchor.as_str(),
+                        to_mark.as_str(),
                         *planned_from,
                         planned_gate,
                         here,
@@ -3558,8 +3706,9 @@ pub fn plan_actor_moves(plan: &Plan, world: &World) -> Result<Vec<ActorMovePlan>
         let start = match prior.map(|s| s.pos) {
             Some(pos) => pos,
             None => {
-                let start_anchor =
-                    actor_anchor_pos(plan, a.anchor.as_str()).ok_or_else(|| Failure {
+                let start_anchor = actor_anchor_pos(plan, a.anchor.as_str())
+                    .map(|p| delvewright_dsl::offset_cell(p, a.offset))
+                    .ok_or_else(|| Failure {
                         code: DW_ACTOR_UNROUTABLE,
                         message: format!(
                             "move-actor: actor `{}` spawn anchor `{}` did not resolve to a world \
@@ -3583,10 +3732,22 @@ pub fn plan_actor_moves(plan: &Plan, world: &World) -> Result<Vec<ActorMovePlan>
                 return Err(gate_timeline_error(
                     "move-actor",
                     actor.as_str(),
-                    to_anchor.as_str(),
+                    to_mark.as_str(),
                     start,
                     target,
                     &seal,
+                ));
+            }
+            None if leg_world.has_furniture()
+                && let Some(over) = leg_world
+                    .without_furniture()
+                    .find_path_fp(start, target, &fp) =>
+            {
+                return Err(furniture_route_failure(
+                    &format!("move-actor `{}`", actor.as_str()),
+                    &format!("{start:?}"),
+                    &format!("`{to_mark}` (floor {target:?})"),
+                    &leg_world.furniture_over_fp(&over, &fp),
                 ));
             }
             None => {
@@ -3602,7 +3763,7 @@ pub fn plan_actor_moves(plan: &Plan, world: &World) -> Result<Vec<ActorMovePlan>
                         actor.as_str(),
                         a.entity,
                         a.anchor.as_str(),
-                        to_anchor.as_str(),
+                        to_mark.as_str(),
                     ),
                 });
             }
@@ -3628,13 +3789,13 @@ pub fn plan_actor_moves(plan: &Plan, world: &World) -> Result<Vec<ActorMovePlan>
         // A puppet takes its arrival turn for the same reason a villager does —
         // it is a walked body, and the verb it was moved by is not what decides
         // which way it ends up looking.
-        apply_arrival_yaw(&mut yaws, actor_anchor_facing_yaw(plan, to_anchor.as_str()));
+        apply_arrival_yaw(&mut yaws, actor_anchor_facing_yaw(plan, to.anchor.as_str()));
         let end_yaw = yaws.last().copied().unwrap_or(seed);
         record_staging(&mut history, actor.as_str(), gate, target, Some(end_yaw));
         planned_end_yaw.insert(key, end_yaw);
         out.push(ActorMovePlan {
             actor: actor.as_str().to_string(),
-            to_anchor: to_anchor.as_str().to_string(),
+            to: to.clone(),
             target,
             cells,
             waypoints,
@@ -3680,7 +3841,7 @@ fn plan_npc_anchor(plan: &Plan, npc_id: &str) -> String {
 /// The camera dolly world points of a cutscene (anchor + offset, block centres) —
 /// the exact points the emitter lerps between. Shared with the emitter so the
 /// air-corridor check validates what actually ships.
-pub fn camera_points(plan: &Plan, path: &[CameraWaypoint]) -> Vec<[f64; 3]> {
+pub fn camera_points(plan: &Plan, path: &[Mark]) -> Vec<[f64; 3]> {
     path.iter()
         .map(|w| anchor_offset_point(plan, w.anchor.as_str(), w.offset))
         .collect()
@@ -3689,7 +3850,7 @@ pub fn camera_points(plan: &Plan, path: &[CameraWaypoint]) -> Vec<[f64; 3]> {
 /// The world point a cutscene's `look_at` subject resolves to (DSL v0.6) — the
 /// same anchor + offset block-centre convention as [`camera_points`], so a
 /// waypoint and a look target at the same anchor/offset name the same point.
-pub fn camera_look_point(plan: &Plan, target: &delvewright_dsl::CameraTarget) -> [f64; 3] {
+pub fn camera_look_point(plan: &Plan, target: &Mark) -> [f64; 3] {
     anchor_offset_point(plan, target.anchor.as_str(), target.offset)
 }
 
@@ -3961,6 +4122,92 @@ struct VisitedPos {
     /// The originating `critical_path` step index (v0.6): lets the checkpoint /
     /// stealth proofs select the positions at or after a firing step.
     src_step: usize,
+}
+
+/// **What the furniture exclusion bound on one build** (spec-0065 §4.3).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct FurnitureBinding {
+    /// Furniture regions placed in the world.
+    pub regions: usize,
+    /// Solid cells those regions hold.
+    pub solid: usize,
+    /// Cells a player could stand in on the bare geometry that the exclusion
+    /// withholds from walking — the count that says the declarations bit.
+    pub withheld: usize,
+    /// Walked legs proved: exported critical-path legs, `move-npc` legs and
+    /// `move-actor` legs.
+    pub legs: usize,
+    /// Cells of those legs a body stands on furniture in, computed over every
+    /// leg's own cells for the footprint it was routed under.
+    pub on_furniture: usize,
+    /// The furniture anchors placed, in the plan's order, one per placement.
+    pub anchors: Vec<String>,
+}
+
+impl FurnitureBinding {
+    /// The line every build prints, zeroes included, so a campaign whose pieces
+    /// declare no furniture reads as checked rather than unbound.
+    pub fn line(&self) -> String {
+        format!(
+            "furniture binding: {} region(s) over {} solid cell(s), {} standable cell(s) \
+             withheld from walking; {} leg(s) proved, {} standing on furniture.",
+            self.regions, self.solid, self.withheld, self.legs, self.on_furniture
+        )
+    }
+
+    /// `validation/furniture-gate.json`: the same counts, for a gate that reads
+    /// the build rather than its stderr. `examined` is the region count, so a
+    /// reader that reds a zero binding reds a build whose campaign declares
+    /// furniture and whose pieces placed none.
+    pub fn to_json(&self) -> serde_json::Value {
+        serde_json::json!({
+            "anchors": self.anchors,
+            "examined": self.regions,
+            "legs": self.legs,
+            "on_furniture": self.on_furniture,
+            "solid_cells": self.solid,
+            "spec": "spec-0065",
+            "withheld": self.withheld,
+        })
+    }
+}
+
+/// Measure [`FurnitureBinding`] over the world a build proved its walks in and
+/// the legs it proved there.
+pub fn furniture_binding(
+    plan: &Plan,
+    world: &World,
+    routes: &[LegRoute],
+    moves: &[MovePlan],
+    actor_moves: &[ActorMovePlan],
+) -> FurnitureBinding {
+    let (regions, solid, withheld) = world.furniture_census();
+    let player = Footprint::player();
+    let mut on_furniture = 0;
+    for r in routes {
+        on_furniture += world.cells_on_furniture(&r.cells, &player);
+    }
+    for m in moves {
+        on_furniture += world.cells_on_furniture(&m.cells, &player);
+    }
+    for m in actor_moves {
+        let fp = actor_of(plan, &m.actor)
+            .map(|a| entity_footprint(&a.entity))
+            .unwrap_or_else(Footprint::player);
+        on_furniture += world.cells_on_furniture(&m.cells, &fp);
+    }
+    FurnitureBinding {
+        regions,
+        solid,
+        withheld,
+        legs: routes.len() + moves.len() + actor_moves.len(),
+        on_furniture,
+        anchors: plan
+            .furniture
+            .iter()
+            .map(|(name, _)| name.clone())
+            .collect(),
+    }
 }
 
 /// How many critical-path **legs** the completability proof routes — consecutive
@@ -4633,6 +4880,26 @@ fn names_of(ids: &[&str]) -> String {
         .join(", ")
 }
 
+/// `DW0510`'s **furniture shape** (spec-0065 §4.3): a walked route exists only
+/// when the declared furniture is lifted, so the only way from `from` to `to`
+/// climbs over it. One code with the lethal shape, because it is one rule — a
+/// route may not depend on a cell a body may not be proven to stand in — and
+/// the message names the kind.
+fn furniture_route_failure(walker: &str, from: &str, to: &str, tables: &[&str]) -> Failure {
+    Failure {
+        code: DW_LETHAL_ON_CRITICAL_PATH,
+        message: format!(
+            "{walker}: the only route from {from} to {to} runs OVER furniture {names} — the \
+             piece that built it declares it a place a body stands beside and never on, and a \
+             route that climbs a table is one nobody reads as a way. The geometry is walkable; \
+             the declaration is what closes it. Move the mark so the walk has somewhere else to \
+             go, open a way round the furniture, or move the furniture in the piece; do NOT \
+             delete the declaration to silence the proof.",
+            names = names_of(tables),
+        ),
+    }
+}
+
 /// Render a blamed-region list for a `DW0544` message. A runtime region write has
 /// no author-given id — `fill-region` names a box, not itself — so the box IS the
 /// name, and it identifies the effect uniquely. The empty case is the same honest
@@ -4705,8 +4972,8 @@ fn route_visited(
         // and saying which volume is a different fix from every other answer
         // this function gives.
         let open_owned;
-        let open: Option<&World> = if leg_world.has_lethal() {
-            open_owned = leg_world.without_lethal();
+        let open: Option<&World> = if leg_world.has_lethal() || leg_world.has_furniture() {
+            open_owned = leg_world.without_exclusions();
             Some(&open_owned)
         } else {
             None
@@ -4736,7 +5003,23 @@ fn route_visited(
         let lethal_snap_err = |at: [i32; 3], talk_to: bool| -> Option<Failure> {
             let open = open?;
             let cell = open.snap_endpoint(at, talk_to)?;
-            let names = names_of(&leg_world.lethal_volumes_over(&[cell]));
+            let volumes = leg_world.lethal_volumes_over(&[cell]);
+            let tables = leg_world.furniture_over(&[cell]);
+            if volumes.is_empty() && !tables.is_empty() {
+                return Some(Failure {
+                    code: DW_LETHAL_ON_CRITICAL_PATH,
+                    message: format!(
+                        "critical path: the only footing within {SNAP_RADIUS} blocks of visited \
+                         anchor {at:?} is ON furniture {names} — the piece that built it \
+                         declares it a place a body stands beside and never on, so the party \
+                         cannot be proven to stand where this objective is. Move the objective \
+                         to the floor beside it, or move the furniture in the piece; do NOT \
+                         delete the declaration to silence the proof.",
+                        names = names_of(&tables),
+                    ),
+                });
+            }
+            let names = names_of(&volumes);
             Some(Failure {
                 code: DW_LETHAL_ON_CRITICAL_PATH,
                 message: format!(
@@ -4885,7 +5168,17 @@ fn route_visited(
                 )
                 && let Some(cells) = open.find_path(s2, g2)
             {
-                let names = names_of(&leg_world.lethal_volumes_over(&cells));
+                let volumes = leg_world.lethal_volumes_over(&cells);
+                let tables = leg_world.furniture_over(&cells);
+                if volumes.is_empty() && !tables.is_empty() {
+                    return Err(furniture_route_failure(
+                        "critical path",
+                        &format!("{from:?} (floor {start:?})"),
+                        &format!("{to:?} (floor {goal:?})"),
+                        &tables,
+                    ));
+                }
+                let names = names_of(&volumes);
                 return Err(Failure {
                     code: DW_LETHAL_ON_CRITICAL_PATH,
                     message: format!(
@@ -6286,7 +6579,7 @@ fn aggro_sources(
         if !actor_fights(c, a) {
             continue;
         }
-        let Some(pos) = crate::compiler::plan::point_any(&plan.anchors, a.anchor.as_str()) else {
+        let Some(pos) = plan.body_point(delvewright_dsl::BodyRef::Actor(a)) else {
             continue;
         };
         let (radius, radius_source) = match a.attributes.and_then(|at| at.follow_range) {
@@ -9036,12 +9329,94 @@ mod tests {
                 base: "void",
                 built: Vec::new(),
                 lethal_regions: vec![("lethal/the-pit".to_string(), region)],
+                furniture_regions: Vec::new(),
                 world_load_seals: Vec::new(),
                 clocked_gates: BTreeSet::new(),
                 transit_teleports: Vec::new(),
                 objective_cells: Vec::new(),
             },
         )
+    }
+
+    /// A floor at `y - 1` over `[0,w) × [0,d)` with open air to `y + 3`, `solid`
+    /// extra cells, and one declared furniture region when `region` is `Some`.
+    fn floored_with_furniture(
+        w: i32,
+        d: i32,
+        y: i32,
+        extra: &[[i32; 3]],
+        region: Option<([i32; 3], [i32; 3])>,
+    ) -> World {
+        let mut solid = BTreeSet::new();
+        for x in 0..w {
+            for z in 0..d {
+                solid.insert([x, y - 1, z]);
+            }
+        }
+        solid.extend(extra.iter().copied());
+        World::from_occupancy(
+            crate::compiler::assembled::Occupancy {
+                solid,
+                tall: BTreeSet::new(),
+                use_gates: BTreeSet::new(),
+                flooded: BTreeSet::new(),
+                partial: BTreeMap::new(),
+                waterloggable: BTreeSet::new(),
+            },
+            Premises {
+                ambient: Ambient::Void,
+                base: "void",
+                built: Vec::new(),
+                lethal_regions: Vec::new(),
+                furniture_regions: region
+                    .map(|r| vec![("anchor/table".to_string(), r)])
+                    .unwrap_or_default(),
+                world_load_seals: Vec::new(),
+                clocked_gates: BTreeSet::new(),
+                transit_teleports: Vec::new(),
+                objective_cells: Vec::new(),
+            },
+        )
+    }
+
+    /// **A body may not be proven to stand ON furniture** (spec-0065 §4.1, §9.3).
+    ///
+    /// One solid block inside a furniture region, an air cell inside the same
+    /// region beside it, and the floor around both. Over the solid cell: refused.
+    /// Beside it, feet on the floor: untouched. With its feet in the region's
+    /// air cell and the floor under it: untouched, because the rule is the
+    /// support cell's membership, not the body's. The same world with the region
+    /// removed: all three stand.
+    #[test]
+    fn a_body_may_not_stand_on_a_solid_furniture_cell() {
+        let top = [3, 65, 3];
+        let region = ([3, 65, 3], [4, 65, 3]);
+        let on = [3, 66, 3];
+        let beside = [2, 65, 3];
+        let over_air = [4, 65, 3];
+        let fp = Footprint::player();
+        let w = floored_with_furniture(8, 8, 65, &[top], Some(region));
+        assert!(!w.standable_fp(on, &fp), "the table top is withheld");
+        assert!(w.standable_fp(beside, &fp), "the floor beside it is not");
+        assert!(
+            w.standable_fp(over_air, &fp),
+            "an air cell of the region withholds nothing"
+        );
+        assert_eq!(w.furniture_census(), (1, 1, 1));
+        assert_eq!(w.furniture_over(&[on]), vec!["anchor/table"]);
+        assert!(w.furniture_over(&[beside, over_air]).is_empty());
+
+        let bare = floored_with_furniture(8, 8, 65, &[top], None);
+        for c in [on, beside, over_air] {
+            assert!(
+                bare.standable_fp(c, &fp),
+                "{c:?} stands with no declaration"
+            );
+        }
+        assert_eq!(bare.furniture_census(), (0, 0, 0));
+        // …and the counterfactuals lift it.
+        assert!(w.without_exclusions().standable_fp(on, &fp));
+        assert!(w.without_furniture().standable_fp(on, &fp));
     }
 
     /// **A body may not stand on the cell beside a killing volume's face.**

@@ -483,8 +483,8 @@ pub struct MoveCtx {
     pub is_actor: bool,
     /// The npc/actor id.
     pub id: String,
-    /// The move's destination anchor (disambiguates multiple moves).
-    pub to_anchor: String,
+    /// The move's destination mark (disambiguates multiple moves).
+    pub to: delvewright_dsl::Mark,
     /// Ticks between the move's start and the cutscene's start.
     pub delta: i32,
 }
@@ -776,12 +776,12 @@ fn resolve_subject(
         let track: Option<&[[f64; 3]]> = if is_actor {
             actor_moves
                 .iter()
-                .find(|p| p.actor == mv.id && p.to_anchor == mv.to_anchor)
+                .find(|p| p.actor == mv.id && p.to == mv.to)
                 .map(|p| p.waypoints.as_slice())
         } else {
             moves
                 .iter()
-                .find(|p| p.npc == mv.id && p.to_anchor == mv.to_anchor)
+                .find(|p| p.npc == mv.id && p.to == mv.to)
                 .map(|p| p.waypoints.as_slice())
         };
         if let Some(track) = track
@@ -795,15 +795,15 @@ fn resolve_subject(
             return SubjectGeom::Moving(window);
         }
     }
-    // Static: the entity's declared anchor.
-    let anchor = if is_actor {
+    // Static: the entity's declared mark (anchor plus offset, spec-0066).
+    let mark = if is_actor {
         plan.campaign
             .quests
             .content
             .actors
             .iter()
             .find(|a| a.id.as_str() == id)
-            .map(|a| a.anchor.as_str())
+            .map(|a| delvewright_dsl::BodyRef::Actor(a).mark())
     } else {
         plan.campaign
             .npcs
@@ -811,9 +811,12 @@ fn resolve_subject(
             .npcs
             .iter()
             .find(|n| n.id.as_str() == id)
-            .map(|n| n.anchor.as_str())
+            .map(|n| delvewright_dsl::BodyRef::Npc(n).mark())
     };
-    let base = crate::compiler::nav::anchor_offset_point(plan, anchor.unwrap_or(""), [0, 0, 0]);
+    let (anchor, offset) = mark
+        .map(|m| (m.anchor.as_str().to_string(), m.offset))
+        .unwrap_or_default();
+    let base = crate::compiler::nav::anchor_offset_point(plan, &anchor, offset);
     SubjectGeom::Static(add(base, lift))
 }
 
@@ -891,18 +894,16 @@ pub fn cutscene_units(
     fn list_moves(list: &[QuestEffect], delta: i32, out: &mut Vec<MoveCtx>) {
         for e in list {
             match &e.verb {
-                Verb::MoveNpc { npc, to_anchor, .. } => out.push(MoveCtx {
+                Verb::MoveNpc { npc, to, .. } => out.push(MoveCtx {
                     is_actor: false,
                     id: npc.to_string(),
-                    to_anchor: to_anchor.to_string(),
+                    to: to.clone(),
                     delta,
                 }),
-                Verb::MoveActor {
-                    actor, to_anchor, ..
-                } => out.push(MoveCtx {
+                Verb::MoveActor { actor, to, .. } => out.push(MoveCtx {
                     is_actor: true,
                     id: actor.to_string(),
-                    to_anchor: to_anchor.to_string(),
+                    to: to.clone(),
                     delta,
                 }),
                 _ => {}

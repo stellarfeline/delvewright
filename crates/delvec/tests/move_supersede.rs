@@ -4,7 +4,7 @@
 //! A move compiles to a self-scheduling per-tick driver (`mv_tick_<npc>_<to>` /
 //! `ma_tick_<actor>_<to>`) that teleports the body along a precomputed waypoint
 //! polyline. The re-entry latch (`#mrun_<bare>` / `#arun_<bare>`) is keyed per
-//! **(id, to_anchor, gate)** — it stops a walk from restarting itself, and nothing
+//! **(id, to, gate)** — it stops a walk from restarting itself, and nothing
 //! else. Firing a SECOND move for the SAME body while an earlier leg still runs
 //! therefore used to leave two drivers alive: both tp the same entity every tick, the
 //! interleave garbles the path, and the leg with more remaining ticks writes the last
@@ -66,7 +66,7 @@ static QUESTS_ONE_WALK: LazyLock<String> = LazyLock::new(|| {
         "on_objective_complete": {
           "obj/talk": [
             { "type": "open-gate", "anchor": "anchor/door" },
-            { "type": "move-npc", "npc": "npc/keeper", "to_anchor": "anchor/exit" }
+            { "type": "move-npc", "npc": "npc/keeper", "to": { "anchor": "anchor/exit" } }
           ]
         },
         "on_complete": [ { "type": "campaign-complete" } ]
@@ -82,9 +82,9 @@ static QUESTS_ONE_WALK: LazyLock<String> = LazyLock::new(|| {
 /// where the long leg outlives the short one and would win the tp race.
 fn quests_two_walks() -> String {
     QUESTS_ONE_WALK.replacen(
-        r#"{ "type": "move-npc", "npc": "npc/keeper", "to_anchor": "anchor/exit" }"#,
-        r#"{ "type": "move-npc", "npc": "npc/keeper", "to_anchor": "anchor/exit" },
-            { "type": "move-npc", "npc": "npc/keeper", "to_anchor": "anchor/door" }"#,
+        r#"{ "type": "move-npc", "npc": "npc/keeper", "to": { "anchor": "anchor/exit" } }"#,
+        r#"{ "type": "move-npc", "npc": "npc/keeper", "to": { "anchor": "anchor/exit" } },
+            { "type": "move-npc", "npc": "npc/keeper", "to": { "anchor": "anchor/door" } }"#,
         1,
     )
 }
@@ -113,7 +113,7 @@ static QUESTS_ONE_LEG: LazyLock<String> = LazyLock::new(|| {
           "obj/talk": [
             { "type": "open-gate", "anchor": "anchor/door" },
             { "type": "spawn-actor", "actor": "actor/walker" },
-            { "type": "move-actor", "actor": "actor/walker", "to_anchor": "anchor/exit" }
+            { "type": "move-actor", "actor": "actor/walker", "to": { "anchor": "anchor/exit" } }
           ]
         },
         "on_complete": [ { "type": "campaign-complete" } ]
@@ -130,9 +130,9 @@ static QUESTS_ONE_LEG: LazyLock<String> = LazyLock::new(|| {
 /// the tp race. No campaign authors this today, so the defect it exposes is latent.
 fn quests_two_legs() -> String {
     QUESTS_ONE_LEG.replacen(
-        r#"{ "type": "move-actor", "actor": "actor/walker", "to_anchor": "anchor/exit" }"#,
-        r#"{ "type": "move-actor", "actor": "actor/walker", "to_anchor": "anchor/exit" },
-            { "type": "move-actor", "actor": "actor/walker", "to_anchor": "anchor/door" }"#,
+        r#"{ "type": "move-actor", "actor": "actor/walker", "to": { "anchor": "anchor/exit" } }"#,
+        r#"{ "type": "move-actor", "actor": "actor/walker", "to": { "anchor": "anchor/exit" } },
+            { "type": "move-actor", "actor": "actor/walker", "to": { "anchor": "anchor/door" } }"#,
         1,
     )
 }

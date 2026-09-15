@@ -169,9 +169,19 @@ pub fn burns_in_daylight(entity: &str) -> bool {
         && crate::compiler::registry::entity_in_tag(entity, BURN_IN_DAYLIGHT_TAG)
 }
 
-/// Whether a helmet stops this entity type's burn (everything except a phantom).
+/// Whether a helmet stops this entity type's burn: everything except a phantom.
 fn helmet_helps(entity: &str) -> bool {
     !HELMET_PROOF.contains(&crate::compiler::registry::namespaced_entity(entity).as_str())
+}
+
+/// Whether `equipment.head` is a remedy this rule may prescribe for `entity`:
+/// a helmet stops its burn **and** its body draws a head slot. A gate that names
+/// a remedy owes a check that the remedy is reachable, and `DW0898` refuses a
+/// head piece on a body that shows none (a zombie horse, a zombie nautilus), so
+/// the prescription is read from the same body table that refusal reads.
+fn head_piece_is_a_remedy(entity: &str) -> bool {
+    helmet_helps(entity)
+        && delvewright_dsl::equipment::shows_slot(entity, delvewright_dsl::EquipSlot::Head)
 }
 
 /// Whether a `(time, weather)` state runs the sun-burn tick at a sky-open cell.
@@ -372,7 +382,7 @@ fn collect_staged(plan: &Plan, spawns: &BTreeMap<String, Vec<[i32; 3]>>) -> Vec<
         if !fightable_actor(c, a) {
             continue;
         }
-        let Some(pos) = plan.point_any(a.anchor.as_str()) else {
+        let Some(pos) = plan.body_point(delvewright_dsl::BodyRef::Actor(a)) else {
             continue;
         };
         out.push(Staged {
@@ -396,24 +406,25 @@ fn burn_message(body: &Staged, sunlit: [i32; 3]) -> String {
         entity,
         cells,
         radius,
-        helmeted,
+        ..
     } = body;
     let at = cells[0];
-    let head = if *helmeted {
-        format!(
-            "It already wears a helmet, and for `{entity}` that changes nothing: a phantom \
-             burns even when equipped with a helmet through commands (minecraft.wiki/w/Phantom). "
-        )
-    } else {
-        String::new()
-    };
-    let remedy = if helmet_helps(entity) {
+    let remedy = if head_piece_is_a_remedy(entity) {
         "Give this stack `equipment.head` (any head item — vanilla damages the helmet instead \
          of igniting the mob, and the compiler emits drop chance 0 so it can never be farmed), \
          or roof the ground the fight happens on."
+    } else if helmet_helps(entity) {
+        "Roof the ground the fight happens on, or stage this encounter somewhere the sky does \
+         not reach. `equipment.head` is NOT a fix for this species: its body draws no head \
+         slot, so a head piece is refused (`DW0898`)."
     } else {
         "Roof the ground the fight happens on, or stage this encounter somewhere the sky does \
          not reach. `equipment.head` is NOT a fix for this species."
+    };
+    let sanctioned = if head_piece_is_a_remedy(entity) {
+        "; the sanctioned fix is recorded on the `equipment.head` DSL field itself"
+    } else {
+        ""
     };
     format!(
         "{kind} `{owner}` stages `{entity}` at [{}, {}, {}], and vanilla burns that species in \
@@ -422,10 +433,9 @@ fn burn_message(body: &Staged, sunlit: [i32; 3]) -> String {
          [{}, {}, {}] — walkable ground inside this stack's own {radius}-block aggro radius. A \
          player retreating there is still its target, so the fight the party is meant to have \
          is decided by the sun instead: this is the Barrowmere gate yard, where two of three \
-         footmen died to sunlight in under twenty seconds with every proof green. {head}Fix the \
+         footmen died to sunlight in under twenty seconds with every proof green. Fix the \
          content: {remedy} Do NOT use `set-time` — the delve's hour is a pacing decision the \
-         author made, and moving it to save a mob spends a beat; the \
-         sanctioned fix is recorded on the `equipment.head` DSL field itself.",
+         author made, and moving it to save a mob spends a beat{sanctioned}.",
         at[0], at[1], at[2], sunlit[0], sunlit[1], sunlit[2],
     )
 }

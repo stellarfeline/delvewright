@@ -16,5 +16,5 @@
 
 [engine]
 repo = "stellarfeline/delvewright"
-release = "v1.4.0"
-ref = "d8d87ef60583a4643fab28e07aee18f73d93fa84"
+release = "v1.5.0"
+ref = "70eea6296cfab2440054f95670729081c3d4bca1"

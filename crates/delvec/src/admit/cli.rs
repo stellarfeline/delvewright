@@ -106,15 +106,17 @@ pub enum PrefabCommand {
         /// Facing keyword for a point anchor.
         #[arg(long)]
         facing: Option<String>,
-        /// Gate region `x1,y1,z1:x2,y2,z2`.
+        /// Region `x1,y1,z1:x2,y2,z2` — a gate's span, or furniture's own blocks.
         #[arg(long)]
         region: Option<String>,
         /// Block id (for gate anchors).
         #[arg(long)]
         block: Option<String>,
-        /// What the anchor is FOR, from the engine's closed vocabulary — today
-        /// `entry`, the cell a body arrives at when it enters the area this
-        /// piece is placed in. Omitted, an existing role is kept.
+        /// What the anchor is FOR, from the engine's closed vocabulary: `entry`,
+        /// the cell a body arrives at when it enters the area this piece is
+        /// placed in; or `furniture`, a `--region` of blocks a body stands beside
+        /// and is never walked onto (spec-0065). Omitted, an existing role is
+        /// kept.
         #[arg(long)]
         role: Option<String>,
         /// Declare that this anchor has NO role, removing one it carries — the

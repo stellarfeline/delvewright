@@ -484,7 +484,7 @@ fn side_track_rides_the_move_path() {
         r#"{ "type": "cutscene", "shots": [
              { "shot_style": "side-track", "dist": 1, "seconds": 2,
                "subject": { "npc": "npc/keeper" } } ] },
-           { "type": "move-npc", "npc": "npc/keeper", "to_anchor": "anchor/exit" }"#,
+           { "type": "move-npc", "npc": "npc/keeper", "to": { "anchor": "anchor/exit" } }"#,
     );
     let fr = frames(&tick_body(&out));
     assert!(

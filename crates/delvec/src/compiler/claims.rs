@@ -20,6 +20,7 @@
 //! | `anchors.*.pos` / `.region` | that cell, that range, is inside the piece |
 //! | `anchors.*.dispenser` | that cell holds the dispenser a trap loads |
 //! | `anchors.*.trigger_block` | that block, with that state, sits on the anchor |
+//! | `anchors.*.furniture` | that region is solid furniture a body could otherwise stand on |
 //! | `connectors[].local_pos` + `.opening` | the piece is open there, and a body fits |
 //! | `connectors[].facing`/`name`/`target`/`joint` | they are the jigsaw block's own |
 //!
@@ -38,8 +39,11 @@
 //! * `structure.generator`, `license.*` — provenance. `license.generated_by` IS
 //!   a claim about the bytes, and its instrument is a re-expansion rather than a
 //!   read: it belongs to determinism (ADR-0006), not here.
-//! * `anchors.*.facing`, `.role`, `.note` — a direction a body takes, a purpose,
-//!   a sentence. The bytes hold no orientation for an anchor to disagree with.
+//! * `anchors.*.facing`, `.note`, and `.role` other than `furniture` — a
+//!   direction a body takes, a purpose, a sentence. The bytes hold no
+//!   orientation for an anchor to disagree with. `role: furniture` is the
+//!   exception because it asserts something about the region's blocks: that
+//!   they are there, and that a body could stand on them (spec-0065 §5).
 //! * `anchors.*.block` — the fill a gate anchor is CLOSED with, which the
 //!   compiler writes when the gate shuts. A piece ships its gates open, so the
 //!   cells hold something else by construction: measured across the shipped
@@ -109,6 +113,9 @@ pub enum ClaimKey {
     AnchorDispenser,
     /// `anchors.*.trigger_block` — the block a trap triggers on.
     AnchorTrigger,
+    /// `anchors.*.furniture` — a `role: furniture` anchor's region is solid
+    /// blocks a body could otherwise stand on (spec-0065 §5).
+    AnchorFurniture,
     /// `connectors[].local_pos` + `opening` — the way through the wall.
     ConnectorOpening,
     /// `connectors[].facing`/`name`/`target`/`joint` — the jigsaw block's own
@@ -128,6 +135,7 @@ impl ClaimKey {
         ClaimKey::AnchorRegion,
         ClaimKey::AnchorDispenser,
         ClaimKey::AnchorTrigger,
+        ClaimKey::AnchorFurniture,
         ClaimKey::ConnectorOpening,
         ClaimKey::ConnectorSocket,
         ClaimKey::JigsawDeclared,
@@ -142,6 +150,7 @@ impl ClaimKey {
             ClaimKey::AnchorRegion => "anchors.*.region",
             ClaimKey::AnchorDispenser => "anchors.*.dispenser",
             ClaimKey::AnchorTrigger => "anchors.*.trigger_block",
+            ClaimKey::AnchorFurniture => "anchors.*.furniture",
             ClaimKey::ConnectorOpening => "connectors[].opening",
             ClaimKey::ConnectorSocket => "connectors[].socket",
             ClaimKey::JigsawDeclared => "jigsaw-declared",
@@ -510,6 +519,98 @@ pub fn check_piece(meta: &PrefabMeta, grid: &VoxelModel, facts: &ByteFacts) -> C
         }
     }
 
+    // --- furniture: a region of blocks a body stands beside and never on -----
+    //
+    // Three shapes, one key (spec-0065 §5). The region lying inside the piece is
+    // `AnchorRegion`'s question, asked above, and is not restated.
+    let standable = if meta
+        .anchors
+        .values()
+        .any(|a| a.role == Some(delvewright_dsl::prefab::AnchorRole::Furniture))
+    {
+        crate::schem::nav::standable_cells(grid)
+    } else {
+        Default::default()
+    };
+    for (name, anchor) in &meta.anchors {
+        if anchor.role != Some(delvewright_dsl::prefab::AnchorRole::Furniture) {
+            continue;
+        }
+        let Some(region) = &anchor.region else {
+            deny(
+                &mut v.binding,
+                ClaimKey::AnchorFurniture,
+                format!("anchor `{name}` declares `role: furniture` and no `region`"),
+                format!(
+                    "prefab `{id}` declares anchor `{name}` with `role: furniture` and no \
+                     `region`. Furniture is a set of blocks, never a point: the walk model \
+                     withholds the cells a body would stand in ON those blocks, and a \
+                     declaration with no region names no blocks, so it withholds nothing and \
+                     nothing is guessed from `pos`. The move: give the anchor the `region` of \
+                     the furniture's own blocks in `{file}.json` — the table's legs and top, \
+                     the altar's stone — or `delvec prefab anchor --role furniture --region`."
+                ),
+            );
+            continue;
+        };
+        let (lo, hi) = region_corners(region);
+        let within = |c: [i32; 3]| (0..3).all(|a| lo[a] <= c[a] && c[a] <= hi[a]);
+        let solid: Vec<[i32; 3]> = crate::schem::nav::positions(
+            lo,
+            [hi[0] - lo[0] + 1, hi[1] - lo[1] + 1, hi[2] - lo[2] + 1],
+        )
+        .filter(|c| crate::schem::nav::solid(grid, *c))
+        .collect();
+        if solid.is_empty() {
+            deny(
+                &mut v.binding,
+                ClaimKey::AnchorFurniture,
+                format!(
+                    "anchor `{name}` declares furniture over {lo:?}..{hi:?}, which holds no solid block"
+                ),
+                format!(
+                    "prefab `{id}` declares anchor `{name}` as furniture over local \
+                     {lo:?}..{hi:?}, and not one cell of that region holds a solid block — it is \
+                     furniture drawn over air. The region is the furniture's own blocks, not the \
+                     space above them, so a region drawn one course too high names nothing. The \
+                     move: draw the region in `{file}.json` over the blocks the piece really \
+                     laid, or delete the declaration if the furniture was taken out."
+                ),
+            );
+            continue;
+        }
+        let withheld = standable
+            .iter()
+            .filter(|c| {
+                let support = [c[0], c[1] - 1, c[2]];
+                within(support) && crate::schem::nav::solid(grid, support)
+            })
+            .count();
+        if withheld == 0 {
+            deny(
+                &mut v.binding,
+                ClaimKey::AnchorFurniture,
+                format!(
+                    "anchor `{name}` declares furniture over {lo:?}..{hi:?}, and no cell of the \
+                     piece stands a body on it"
+                ),
+                format!(
+                    "prefab `{id}` declares anchor `{name}` as furniture over local \
+                     {lo:?}..{hi:?}: {n} solid block(s), and not one cell of the piece stands a \
+                     body on any of them — a fence top, a block under a low ceiling, a column \
+                     already walled in. The declaration withholds nothing, so it changes no \
+                     verdict, and a declaration that changes no verdict is refused rather than \
+                     carried. The moves: (1) DRAW the region over the blocks a body really could \
+                     stand on — the table's top, not only its legs; (2) DELETE the declaration \
+                     if nothing here can be climbed.",
+                    n = solid.len(),
+                ),
+            );
+            continue;
+        }
+        v.binding.saw(ClaimKey::AnchorFurniture, false);
+    }
+
     // --- the sockets ---------------------------------------------------------
     //
     // **A socket is a way through, or it is a way this piece's own document says
@@ -519,9 +620,12 @@ pub fn check_piece(meta: &PrefabMeta, grid: &VoxelModel, facts: &ByteFacts) -> C
     // The exemption is the object's own declaration and nothing else, which is
     // what a drifted `local_pos` cannot supply: a connector moved onto random
     // rock is not inside a gate region, so it is still refused.
+    // A furniture region is blocks a body stands beside, never a doorway walled
+    // up for content to open, so it exempts no socket (spec-0065 §3).
     let gates: Vec<([i32; 3], [i32; 3])> = meta
         .anchors
         .values()
+        .filter(|a| a.role != Some(delvewright_dsl::prefab::AnchorRole::Furniture))
         .filter_map(|a| a.region.as_ref().map(region_corners))
         .collect();
     let shut = |cell: [i32; 3]| {

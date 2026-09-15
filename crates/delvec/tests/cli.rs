@@ -1254,7 +1254,7 @@ fn move_unroutable_exits_3_with_dw0307() {
     common::patch_file(&camp.join("quests.json"), |d| {
         d["dsl_version"] = serde_json::json!(DSL_VERSION);
         common::objective_effects(d, 1, "obj/arrive").push(serde_json::json!({
-            "type": "move-npc", "npc": "npc/keeper", "to_anchor": "anchor/objective"
+            "type": "move-npc", "npc": "npc/keeper", "to": { "anchor": "anchor/objective" }
         }));
     });
     common::declare_story_dir(&camp);
@@ -1290,7 +1290,7 @@ fn move_actor_unroutable_exits_3_with_dw0325() {
     common::patch_file(&camp.join("quests.json"), |d| {
         d["dsl_version"] = serde_json::json!(DSL_VERSION);
         common::objective_effects(d, 1, "obj/arrive").push(serde_json::json!({
-            "type": "move-actor", "actor": "actor/beast", "to_anchor": "anchor/objective"
+            "type": "move-actor", "actor": "actor/beast", "to": { "anchor": "anchor/objective" }
         }));
         d["content"]["actors"] = serde_json::json!([
             { "id": "actor/beast", "entity": "minecraft:zombie", "anchor": "anchor/keeper-stand" }
@@ -1608,7 +1608,7 @@ fn v06_actor_datapack_emits_the_mechanics() {
         common::objective_effects(d, 0, "obj/talk").extend([
             serde_json::json!({ "type": "spawn-actor", "actor": "actor/giant" }),
             serde_json::json!({
-                "type": "move-actor", "actor": "actor/giant", "to_anchor": "anchor/exit",
+                "type": "move-actor", "actor": "actor/giant", "to": { "anchor": "anchor/exit" },
                 "on_arrive": [
                     { "type": "despawn-actor", "actor": "actor/giant", "style": "vanish" }
                 ]

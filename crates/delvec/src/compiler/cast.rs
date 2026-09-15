@@ -227,8 +227,8 @@ pub fn selects(p: &CastPlacement, flags: &BTreeSet<String>) -> bool {
 /// known.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Station<'a> {
-    /// On stage at this anchor.
-    At(&'a str),
+    /// On stage at this mark: the anchor and the offset from it (spec-0066).
+    At(&'a str, [i32; 3]),
     /// Declared out of the world (`"offstage"` / `"dead"`).
     Absent(CastAbsence),
 }
@@ -267,10 +267,13 @@ pub fn station<'a>(
                 out = Some(Station::Absent(absence));
             } else if let Some(p) = entry.placements().into_iter().rfind(|p| selects(p, flags)) {
                 out = Some(match (p.at.anchor(), p.at.absence()) {
-                    (Some(a), _) => Station::At(a.as_str()),
+                    (Some(a), _) => Station::At(
+                        a.as_str(),
+                        p.at.mark().map(|m| m.offset).unwrap_or([0, 0, 0]),
+                    ),
                     (None, Some(absence)) => Station::Absent(absence),
-                    // `CastPlace` is an anchor or an absence; nothing else exists.
-                    (None, None) => unreachable!("a cast place is an anchor or an absence"),
+                    // `CastPlace` is a mark or an absence; nothing else exists.
+                    (None, None) => unreachable!("a cast place is a mark or an absence"),
                 });
             }
         }
@@ -1003,8 +1006,10 @@ fn check_placement_refs(
     }
 }
 
-/// `DW0461` — a declared anchor must equal where the effect history leaves the
-/// NPC when the quest opens.
+/// `DW0461` — a declared mark must equal where the effect history leaves the
+/// NPC when the quest opens: the anchor and the offset both (spec-0066), so a
+/// row naming the bare anchor for a body that stands at an offset from it is
+/// the mismatch this refuses.
 fn check_placement_position(
     p: &CastPlacement,
     path: &str,
@@ -1016,13 +1021,13 @@ fn check_placement_position(
     let Some(actual) = here.and_then(|m| m.get(npc)) else {
         return;
     };
-    match (&p.at.anchor(), actual) {
-        (Some(declared), NpcWhere::At(real)) if declared.as_str() != real.anchor => {
+    match (p.at.mark(), actual) {
+        (Some(declared), NpcWhere::At(real)) if declared != real.mark() => {
             diags.push(Diagnostic::error(
                 DW_CAST_PLACEMENT,
                 "quests",
                 path.to_string(),
-                placement_contradiction(qid, npc, declared.as_str(), &real.anchor),
+                placement_contradiction(qid, npc, &declared.display(), &real.mark().display()),
             ));
         }
         (Some(declared), NpcWhere::Offstage) => {
@@ -1034,7 +1039,7 @@ fn check_placement_position(
                     "quest `{qid}` declares npc `{npc}` at `{}`, but they are not in the world \
                      when this quest opens (never spawned, or despawned earlier). Bring them back \
                      with `spawn-npc`, or declare them `\"offstage\"`",
-                    declared.as_str()
+                    declared.display()
                 ),
             ));
         }
@@ -1049,7 +1054,7 @@ fn check_placement_position(
 /// ([`check_stations`]), which asks whether the two names denote the same cell
 /// of the same building. A second copy of this sentence is how one code starts
 /// saying two things.
-fn placement_contradiction(qid: &str, npc: &str, declared: &str, actual: &str) -> String {
+pub fn placement_contradiction(qid: &str, npc: &str, declared: &str, actual: &str) -> String {
     format!(
         "quest `{qid}` declares npc `{npc}` at `{declared}`, but the effect history leaves them \
          at `{actual}` when this quest opens — nothing walks them across. Declaring an anchor \

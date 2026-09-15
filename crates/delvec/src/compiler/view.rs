@@ -14,7 +14,11 @@
 //!   a reviewer drives.
 //! - [`scene`] — Chunky scene emission from the compiler's `render-plan.json`
 //!   (the free-camera path behind the first-person player-POV shots).
-//! - [`panorama`] — the whole-map 45° oblique release panorama.
+//! - [`panorama`] — the oblique exterior of the built place, the storybook shot,
+//!   solved for a subject.
+//! - [`camera`] — the showcase camera record (`design/cameras.json`): a stated
+//!   camera on the assembled world, estimated from an approved image or placed
+//!   by hand, and its Chunky scene — the one reader of that record.
 //! - [`sheet`] — the contact sheet: many candidate renders on one page, ordered
 //!   by a similarity score that RANKS and never gates.
 //! - [`index`] — shot index: (image ↔ expect) pairs for the vision reviewer.
@@ -25,6 +29,9 @@
 //!   look at it: somebody measured its light (`DW0894`), and how much of its
 //!   roofed floor no body can reach (`DW0895`). Bound at every arm that puts a
 //!   piece in front of an eye.
+//! - [`sight`] — whether an eye-level frame shows a room or a surface at arm's
+//!   length (`DW0893`), and where a body stands back along an anchor's facing so
+//!   the frame shows the room it stands in.
 //!
 //! and the pieces those rest on: [`assets`] (lazy read access to the client jar /
 //! resource pack), [`cache`] (Chunky's derived per-scene caches and their
@@ -46,6 +53,7 @@
 pub mod assets;
 pub mod blockcolor;
 pub mod cache;
+pub mod camera;
 pub mod cli;
 pub mod detect;
 pub mod diag;
@@ -57,5 +65,6 @@ pub mod panorama;
 pub mod scene;
 pub mod sheet;
 pub mod showing;
+pub mod sight;
 pub mod tileset;
 pub mod viewer;

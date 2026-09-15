@@ -57,7 +57,7 @@ fn quests_with_carrier(position: &str) -> String {
             r#"{{ "type": "sequence", "steps": [ {{ "at_ticks": 0, "effects": [ {give} ] }} ] }}"#
         ),
         "arrive" => format!(
-            r#"{{ "type": "move-npc", "npc": "npc/keeper", "to_anchor": "anchor/exit",
+            r#"{{ "type": "move-npc", "npc": "npc/keeper", "to": {{ "anchor": "anchor/exit" }},
                    "on_arrive": [ {give} ] }}"#
         ),
         "respawn" => format!(

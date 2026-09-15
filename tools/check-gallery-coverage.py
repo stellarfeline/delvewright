@@ -646,7 +646,10 @@ def read_build_ledgers(out: Path) -> tuple[dict, list[str]]:
             continue
         if doc.get("unbound") is True:
             zeroes.append(f"{f.name}: {doc.get('reason') or doc.get('unbound_reason') or 'unbound'}")
-        for k in ("examined", "bundles", "gates_examined", "pieces_examined"):
+        # `withheld` is `furniture-gate.json`'s (spec-0065 §4.3): the gallery
+        # lays a table across a walk, so a furniture exclusion that withholds no
+        # standable cell has stopped binding even while a region is still placed.
+        for k in ("examined", "bundles", "gates_examined", "pieces_examined", "withheld"):
             if doc.get(k) == 0:
                 zeroes.append(f"{f.name}: `{k}` is 0")
         for root in doc.get("unbound_roots") or []:

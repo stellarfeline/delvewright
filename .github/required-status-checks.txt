@@ -19,6 +19,13 @@
 # its reason. The list is empty on purpose: an advisory gate is one nobody has to
 # obey, which is how `tier 2` — datapack load plus the whole PackTest suite — sat
 # unenforced while it was believed to be blocking.
+#
+# A job skipped by its `if` reports `skipped`, and branch protection accepts a
+# skipped required check. On a pull request most jobs are skipped when the change
+# cannot reach them (`.github/ci-reach.toml`), and every job needs `changes`, so a
+# failed `changes` skips all of them. That is why `changes` is required too, and
+# why `tools/check-required-contexts.py` refuses it as advisory.
+changes (which jobs a pull request reaches)
 rust (fmt, clippy, test)
 engine binaries (cross-build shelf)
 harness (typecheck, test)
@@ -29,7 +36,7 @@ prefab generators (invariants + determinism)
 cross-OS determinism (macOS vs Linux bytes)
 skin toolchain (pytest)
 i18n translation tool (pytest)
-mecha cross-check (PR only)
+mecha cross-check (emitted mcfunction)
 campaign storybooks (engine-version marker)
 content pin (drift + zone-program audit)
 tier 2 (datapack load + PackTest)

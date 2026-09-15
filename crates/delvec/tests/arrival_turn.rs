@@ -60,19 +60,19 @@ fn campaign() -> Campaign {
         effects.push(json!({
             "type": "move-actor",
             "actor": "actor/walker",
-            "to_anchor": "anchor/exit",
+            "to": { "anchor": "anchor/exit" },
             "happening": { "verb": "arrives", "text": "the walker crosses to anchor/exit" }
         }));
         effects.push(json!({
             "type": "move-actor",
             "actor": "actor/walker",
-            "to_anchor": "anchor/keeper-stand",
+            "to": { "anchor": "anchor/keeper-stand" },
             "happening": { "verb": "arrives", "text": "the walker returns to anchor/keeper-stand" }
         }));
         effects.push(json!({
             "type": "move-npc",
             "npc": "npc/keeper",
-            "to_anchor": "anchor/exit",
+            "to": { "anchor": "anchor/exit" },
             "happening": { "verb": "arrives", "text": "the keeper crosses to anchor/exit" }
         }));
     });

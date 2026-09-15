@@ -218,15 +218,16 @@ def _scratch_clone(tmp_path: Path, check_src: str, publish_src: str) -> Path:
         if lib.is_file():
             shutil.copy(lib, tree / "tools" / "lib" / lib.name)
     shutil.copy(REPO / "versions.toml", tree / "versions.toml")
-    # …and every file the version-site rows name, for the same reason: those rows
-    # are resolved against the tree on every run of `crates-io-publish.sh`, so a
-    # clone without them is one the script correctly refuses to plan in. Derived
-    # from the rows themselves, so a row added later is carried without a second
-    # edit here.
+    # …and every file the version-site rows and allowlist name, for the same
+    # reason: those rows are resolved against the tree on every run of
+    # `crates-io-publish.sh`, and an allowlist entry naming an untracked file is
+    # stale, so a clone without them is one the script correctly refuses to plan
+    # in. Derived from the module itself, so an entry added later is carried
+    # without a second edit here.
     sys.path.insert(0, str(LIB))
     import version_sites
 
-    for rel in sorted({str(r["path"]) for rows in version_sites.ROWS.values() for r in rows}):
+    for rel in version_sites.files_named():
         dst = tree / rel
         dst.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy(REPO / rel, dst)

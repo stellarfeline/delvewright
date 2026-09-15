@@ -1006,6 +1006,14 @@ pub struct Plan<'a> {
     /// for every campaign that declares none — which is what keeps the navigation
     /// world, the emitted tick and the build outputs byte-identical.
     pub lethal_volumes: Vec<LethalVolumePlan>,
+    /// **Every placed furniture region** (spec-0065): `(anchor name, inclusive
+    /// world box)` for each anchor with `role: furniture` on each placed piece, in
+    /// area order, then placed-piece order, then anchor-name order — never hash
+    /// order (ADR-0006). A piece seated twice contributes its tables twice,
+    /// because both copies of the blocks are in the world. Empty for every
+    /// campaign whose pieces declare none, which keeps every walk proof and
+    /// output byte-identical.
+    pub furniture: Vec<FurnitureRegion>,
     /// Per-step stealth hint (DSL v0.4), aligned 1:1 with `critical_path`: `true`
     /// when the step's objective is `stealth`-marked → emitted as `sneak: true`.
     pub critical_path_sneak: Vec<bool>,
@@ -2112,6 +2120,11 @@ impl AnchorTable {
     /// the role index is written, so the refusal below cannot be bypassed by
     /// arriving through a different producer.
     fn record_role(&mut self, area: &str, name: &str, role: AnchorRole) -> Result<(), PlanError> {
+        // A role naming a kind of place (furniture) is held by as many anchors
+        // as the pieces declare; only a role naming THE place is indexed here.
+        if !role.one_per_area() {
+            return Ok(());
+        }
         let held = self
             .roles
             .entry((area.to_string(), role))
@@ -3056,6 +3069,9 @@ impl<'a> Plan<'a> {
         // ---- lethal volumes (spec-0031) ----
         let lethal_volumes = collect_lethal_volumes(campaign, &anchors);
 
+        // ---- furniture (spec-0065) ----
+        let furniture = collect_furniture(&areas, prefabs);
+
         // ---- `collect` container adoption (DSL v0.8) ----
         let collect_fills = collect_collect_fills(campaign, &anchors);
 
@@ -3203,6 +3219,7 @@ impl<'a> Plan<'a> {
             critical_path_cutscene: cp.cutscene_by_step,
             checkpoints,
             lethal_volumes,
+            furniture,
             stealth_beats,
             objective_steps,
             traps,
@@ -3404,7 +3421,8 @@ impl<'a> Plan<'a> {
     }
 
     /// **The cell a body is summoned onto** — the one resolution rule for a
-    /// [`delvewright_dsl::BodyRef`] of either class.
+    /// [`delvewright_dsl::BodyRef`] of either class: its mark's anchor, resolved,
+    /// plus the mark's offset (spec-0066).
     ///
     /// A body that declares an area is resolved in that area's table first and
     /// falls back to any placed piece; a body that declares none (an actor) is
@@ -3418,13 +3436,45 @@ impl<'a> Plan<'a> {
     /// dangling references, and a geometry or occupancy finding for one would
     /// send the author to the wrong line.
     pub fn body_point(&self, body: delvewright_dsl::BodyRef<'_>) -> Option<[i32; 3]> {
-        let anchor = body.anchor().as_str();
-        match body.area() {
-            Some(area) => self
-                .point(area.as_str(), anchor)
-                .or_else(|| self.point_any(anchor)),
-            None => self.point_any(anchor),
+        let mark = body.mark();
+        self.body_anchor_site(body)
+            .map(|(_, anchor_cell)| mark.cell(anchor_cell))
+    }
+
+    /// Where a body's mark's ANCHOR resolves — the area that answered and the
+    /// anchor's own cell, before the offset is added. The same rule as
+    /// [`Self::body_point`] (area-scoped for a body that declares an area, across
+    /// every placed piece for one that does not); the area is what `DW0897` asks
+    /// [`Self::piece_bounds`] about.
+    pub fn body_anchor_site(
+        &self,
+        body: delvewright_dsl::BodyRef<'_>,
+    ) -> Option<(String, [i32; 3])> {
+        let mark = body.mark();
+        let anchor = mark.anchor.as_str();
+        if let Some(area) = body.area()
+            && let Some(p) = self.point(area.as_str(), anchor)
+        {
+            return Some((area.as_str().to_string(), p));
         }
+        self.point_any_site(anchor)
+    }
+
+    /// [`Self::point_any`] with the area that answered: the first `(area, name)`
+    /// in the anchor table's order whose name is `anchor`.
+    pub fn point_any_site(&self, anchor: &str) -> Option<(String, [i32; 3])> {
+        self.anchors
+            .iter()
+            .find(|((_, n), _)| n == anchor)
+            .map(|((area, _), resolved)| {
+                (
+                    area.clone(),
+                    match resolved {
+                        ResolvedAnchor::Point { pos, .. } => *pos,
+                        ResolvedAnchor::Gate { from, .. } => *from,
+                    },
+                )
+            })
     }
 
     /// Resolve `(area, anchor)` to a point position, if it is a point anchor.
@@ -3939,8 +3989,8 @@ fn collect_effect_anchors(e: &QuestEffect, set: &mut BTreeSet<String>) {
     if let Some((a, _)) = e.set_block() {
         set.insert(a.as_str().to_string());
     }
-    if let Some((_, a)) = e.move_npc() {
-        set.insert(a.as_str().to_string());
+    if let Some((_, to)) = e.move_npc() {
+        set.insert(to.anchor.as_str().to_string());
     }
     // Every shot's waypoints, plus each shot's `look_at` subject — the camera is
     // aimed at that world point, so the area's assembly must provide its anchor.
@@ -3972,7 +4022,7 @@ fn resolve_piece_anchor(
         }
     } else {
         ResolvedAnchor::Point {
-            pos: solver::transform_point(placed, am.pos.unwrap_or([0, 0, 0])),
+            pos: solver::transform_point(placed, anchor_point(am)),
             facing: solver::transform_facing(placed, am.facing.as_deref()),
         }
     }
@@ -3994,6 +4044,9 @@ fn resolve_piece_anchor(
 fn local_gate(meta: &PrefabMeta, name: &str, am: &AnchorMeta) -> Option<GateAnchor> {
     match meta.gate_anchor(name) {
         Ok(gate) => gate,
+        // Furniture is never refused as a gate (the authority answers `None`), so
+        // this arm cannot reach one; the guard says so where a region is read.
+        Err(_) if am.role == Some(AnchorRole::Furniture) => None,
         Err(_) => am.region.as_ref().map(|r| GateAnchor {
             from: r.from,
             to: r.to,
@@ -4020,10 +4073,66 @@ fn resolve_anchor(
         }
     } else {
         ResolvedAnchor::Point {
-            pos: add(am.pos.unwrap_or([0, 0, 0])),
+            pos: add(anchor_point(am)),
             facing: am.facing.clone(),
         }
     }
+}
+
+/// One placed furniture region: `(anchor name, inclusive world box)` (spec-0065).
+pub type FurnitureRegion = (String, ([i32; 3], [i32; 3]));
+
+/// **Every furniture region the placed pieces declare**, in world space
+/// (spec-0065 §4.1).
+///
+/// Read off the placed pieces rather than off the anchor table, and that is the
+/// point: the table resolves a name first-wins, so a pool that seats one
+/// furnished piece twice would lose the second table — and the second table's
+/// blocks are in the world all the same. Detail pieces are placed pieces too, so
+/// they are reached by the same walk. Order: area, placed piece, anchor name
+/// (the prefab document's map is a `BTreeMap`).
+fn collect_furniture(areas: &[AreaPlacement], prefabs: &PrefabRegistry) -> Vec<FurnitureRegion> {
+    let mut out = Vec::new();
+    for area in areas {
+        for piece in &area.pieces {
+            let Some(meta) = prefabs.get(&piece.prefab_id) else {
+                continue;
+            };
+            for (name, am) in &meta.anchors {
+                if am.role != Some(AnchorRole::Furniture) {
+                    continue;
+                }
+                // The role with no region is `DW0888`'s first shape, refused by
+                // the byte-claim check; there is nothing here to exclude.
+                let Some(region) = &am.region else {
+                    continue;
+                };
+                let world = |local: [i32; 3]| {
+                    let t = piece.rotation.transform(local);
+                    [
+                        piece.pos[0] + t[0],
+                        piece.pos[1] + t[1],
+                        piece.pos[2] + t[2],
+                    ]
+                };
+                let (a, b) = (world(region.from), world(region.to));
+                let lo = [a[0].min(b[0]), a[1].min(b[1]), a[2].min(b[2])];
+                let hi = [a[0].max(b[0]), a[1].max(b[1]), a[2].max(b[2])];
+                out.push((name.clone(), (lo, hi)));
+            }
+        }
+    }
+    out
+}
+
+/// **The one cell a non-gate anchor names**, piece-local: its `pos`, or — for a
+/// named place declared as a region, such as furniture (spec-0065 §3.4) — the
+/// region's `from` corner, which is the cell every region anchor already
+/// resolves to when a point is asked of it ([`anchor_node`]).
+fn anchor_point(am: &AnchorMeta) -> [i32; 3] {
+    am.pos
+        .or_else(|| am.region.as_ref().map(|r| r.from))
+        .unwrap_or([0, 0, 0])
 }
 
 fn plan_npc(npc: &Npc, tree: &NpcDialogue) -> NpcPlan {
@@ -4272,7 +4381,7 @@ fn build_critical_path(
                         &begun,
                         flags_at.get(si).unwrap_or(&BTreeSet::new()),
                     ) {
-                        Some(crate::compiler::cast::Station::At(anchor)) => {
+                        Some(crate::compiler::cast::Station::At(anchor, ledger_offset)) => {
                             match body_station(
                                 anchors,
                                 BodyScope::Beat {
@@ -4284,7 +4393,12 @@ fn build_critical_path(
                                 station @ BodyStation::At { .. } => {
                                     let (a, pos) = station
                                         .place()
-                                        .map(|(a, p)| (a.to_string(), p))
+                                        .map(|(a, p)| {
+                                            (
+                                                a.to_string(),
+                                                delvewright_dsl::offset_cell(p, ledger_offset),
+                                            )
+                                        })
                                         .expect("an `At` station has a place");
                                     // `DW0461`, the place arm. This is the ONE
                                     // site in the compiler that reads a ledger
@@ -4311,18 +4425,37 @@ fn build_critical_path(
                                             staged.anchor.as_str(),
                                         )
                                         .place()
-                                        && (ha, hp) != (a.as_str(), pos)
+                                        && (ha, delvewright_dsl::offset_cell(hp, staged.offset))
+                                            != (a.as_str(), pos)
                                     {
-                                        return Err(PlanError::new(
-                                            crate::compiler::cast::DW_CAST_PLACEMENT,
+                                        let hp = delvewright_dsl::offset_cell(hp, staged.offset);
+                                        let ledger_mark = delvewright_dsl::Mark {
+                                            anchor: delvewright_dsl::AnchorId(anchor.to_string()),
+                                            offset: ledger_offset,
+                                        };
+                                        // Two different marks are the document
+                                        // arm's finding, in its words; two equal
+                                        // marks at two places are the split.
+                                        let message = if ledger_mark != staged.mark() {
+                                            crate::compiler::cast::placement_contradiction(
+                                                qid,
+                                                npc.as_str(),
+                                                &ledger_mark.display(),
+                                                &staged.mark().display(),
+                                            )
+                                        } else {
                                             crate::compiler::cast::station_split(
                                                 qid,
                                                 npc.as_str(),
-                                                anchor,
-                                                staged.anchor.as_str(),
+                                                &ledger_mark.display(),
+                                                &staged.mark().display(),
                                                 (a.as_str(), pos),
                                                 (ha, hp),
-                                            ),
+                                            )
+                                        };
+                                        return Err(PlanError::new(
+                                            crate::compiler::cast::DW_CAST_PLACEMENT,
+                                            message,
                                         ));
                                     }
                                     (a, pos)
@@ -4405,7 +4538,14 @@ fn build_critical_path(
                         // campaign. Keep the stage-2 anchor, byte for byte.
                         None => {
                             let anchor = decl.map(|nn| nn.anchor.as_str()).unwrap_or("");
-                            (home_area.to_string(), point_of(anchors, home_area, anchor)?)
+                            let offset = decl.map(|nn| nn.offset).unwrap_or([0, 0, 0]);
+                            (
+                                home_area.to_string(),
+                                delvewright_dsl::offset_cell(
+                                    point_of(anchors, home_area, anchor)?,
+                                    offset,
+                                ),
+                            )
                         }
                     };
                     steps.push(Step::TalkTo {
@@ -4981,7 +5121,10 @@ fn collect_ambushes(
             .actors
             .iter()
             .filter_map(|id| by_id.get(id.as_str()))
-            .filter_map(|a| point_any(anchors, a.anchor.as_str()))
+            .filter_map(|a| {
+                point_any(anchors, a.anchor.as_str())
+                    .map(|p| delvewright_dsl::offset_cell(p, a.offset))
+            })
             .collect();
         out.push(AmbushPlan {
             id: amb.id.as_str().to_string(),
@@ -6608,11 +6751,7 @@ fn anchor_node(
     gates: &BTreeMap<String, GateInfo>,
 ) -> Option<Node> {
     let (pi, am) = anchor_piece(pieces, registry, anchor_name)?;
-    let local = am
-        .pos
-        .or_else(|| am.region.as_ref().map(|r| r.from))
-        .unwrap_or([0, 0, 0]);
-    Some((pi, side_of(pi, local, gates)))
+    Some((pi, side_of(pi, anchor_point(am), gates)))
 }
 
 /// Every connector socket of every placed piece, in world space.

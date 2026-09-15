@@ -1001,6 +1001,78 @@ def test_the_live_item_gate_precondition_binds_on_an_interact_objective(gate, tm
     assert adjudicate_on(gate, carrying, build, row)["verdict"] == "UNBOUND"
 
 
+def test_the_live_flag_gate_precondition_counts_what_the_emission_binds(gate, tmp_path):
+    """`compiler::emit` writes `verb_flag_gate` for the first `collect` or
+    `interact` objective carrying `requires_flags`, and for nothing else. So
+    the class is those objectives: an effect guard (`on_complete[].when`) or a
+    flag-gated `talk-to` is never given the template, and counting it made a
+    branching campaign UNBOUND with no authoring act that clears it. Driven
+    both ways, then through the row's verdict in both directions."""
+    row = live_rows(gate, {"hv-04"})["hv-04"]
+    aw = row["applies_when"]
+    flag = ["flag/f"]
+
+    def quests(where, objectives, on_complete=None):
+        d = tmp_path / where
+        d.mkdir(parents=True, exist_ok=True)
+        quest = {"id": "quest/a", "objectives": objectives}
+        if on_complete is not None:
+            quest["on_complete"] = on_complete
+        (d / "quests.json").write_text(
+            json.dumps(
+                {
+                    "dsl_version": FIXTURE_DSL_VERSION,
+                    "stage": "quests",
+                    "content": {"quests": [quest]},
+                }
+            )
+        )
+        return d
+
+    guarded_endings = quests(
+        "guards",
+        [{"type": "talk-to"}, {"type": "reach-anchor"}],
+        on_complete=[
+            {"type": "campaign-complete", "when": {"requires_flags": flag}},
+            {"type": "campaign-complete", "when": {"requires_flags": ["flag/g"]}},
+        ],
+    )
+    gated_talk = quests("talk", [{"type": "talk-to", "requires_flags": flag}])
+    gated_interact = quests("interact", [{"type": "interact", "requires_flags": flag}])
+    gated_collect = quests("collect", [{"type": "collect", "requires_flags": flag}])
+    plain_interact = quests("plain", [{"type": "interact"}])
+
+    build = make_build(tmp_path / "none")
+    counts = {
+        name: gate.probe(aw, gate.Subject(d, build))[0]
+        for name, d in (
+            ("guards", guarded_endings),
+            ("talk", gated_talk),
+            ("interact", gated_interact),
+            ("collect", gated_collect),
+            ("plain", plain_interact),
+        )
+    }
+    assert counts == {"guards": 0, "talk": 0, "interact": 1, "collect": 1, "plain": 0}, counts
+
+    # The campaign the old quantifier refused: guarded endings, no objective
+    # the emission binds. Its zero is the class measuring zero, never a red.
+    r = adjudicate_on(gate, guarded_endings, build, row)
+    assert r["verdict"] not in gate.RED_VERDICTS, r
+
+    # And the check is not weakened: an objective the emission DOES bind, with
+    # no template in the build, is still refused ...
+    assert adjudicate_on(gate, gated_interact, build, row)["verdict"] == "UNBOUND"
+
+    # ... and the same campaign goes green once the template is there.
+    emitted = make_build(tmp_path / "emitted")
+    fn = emitted / "packtest-datapack" / "data" / "d" / "test" / "verb_flag_gate.mcfunction"
+    fn.parent.mkdir(parents=True)
+    fn.write_text("# test\n")
+    r = adjudicate_on(gate, gated_interact, emitted, row)
+    assert (r["verdict"], r["binding"]) == ("BOUND", 1), r
+
+
 def test_the_live_flask_precondition_binds_on_a_potion_bearing_kit_item(gate, tmp_path):
     """`DW0487` fires on a POTION-BEARING kit item, and the carriers are the
     four ids of `dsl::stages::POTION_BEARING_ITEMS` — in both the namespaced

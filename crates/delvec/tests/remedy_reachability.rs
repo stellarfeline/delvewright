@@ -1672,3 +1672,148 @@ fn dw0881_moving_the_anchor_answers_where_no_radius_can() {
     delvec::compiler::reach::judge_reach_completion(&plan, &world, &BTreeMap::new(), Some(entry))
         .expect("and DW0850 has nothing to say about the moved anchor");
 }
+
+// ---------------------------------------------------------------------------
+// DW0896 / DW0897 — a mark (spec-0066)
+// ---------------------------------------------------------------------------
+
+/// hello-world with seven actors on `anchor/exit`, at `offsets[i]`, all entered
+/// by one `sequence` and none of them ever removed — the muster's shape.
+fn muster(offsets: &[[i32; 3]; 7]) -> delvewright_dsl::Campaign {
+    let dir = common::hello_world_dir();
+    let read = |n: &str| std::fs::read_to_string(dir.join(n)).unwrap();
+    let mut quests: serde_json::Value = serde_json::from_str(&read("quests.json")).unwrap();
+    let actors: Vec<serde_json::Value> = offsets
+        .iter()
+        .enumerate()
+        .map(|(i, o)| {
+            serde_json::json!({
+                "id": format!("actor/rank-{i}"), "entity": "minecraft:villager",
+                "anchor": "anchor/exit", "offset": o
+            })
+        })
+        .collect();
+    quests["content"]["actors"] = serde_json::json!(actors);
+    let steps: Vec<serde_json::Value> = (0..7)
+        .map(|i| {
+            let id = format!("actor/rank-{i}");
+            serde_json::json!({ "at_ticks": i * 10, "effects": [
+                { "type": "spawn-actor", "actor": id,
+                  "happening": { "subject": id, "verb": "arrives", "text": "a man takes his place" } } ] })
+        })
+        .collect();
+    common::objective_effects(&mut quests, 0, "obj/talk")
+        .push(serde_json::json!({ "type": "sequence", "steps": steps }));
+    let raw = delvewright_dsl::RawCampaign {
+        world: read("world.json"),
+        npcs: read("npcs.json"),
+        classes: read("classes.json"),
+        quest_plan: read("quest-plan.json"),
+        quests: quests.to_string(),
+        dialogue: read("dialogue.json"),
+        world_edits: None,
+        geometry_brief: None,
+        layout_graph: None,
+        site_plan: None,
+        detail_plan: None,
+        design: None,
+    };
+    parse_campaign(&raw).expect("the muster campaign parses")
+}
+
+/// `DW0896`'s move: seven bodies on one anchor are refused; the same seven at an
+/// offset apiece from that anchor end green — and `DW0897`, the other rule a
+/// mark meets, is green over the same marks, so the move is a terminal and not
+/// a hop to the next refusal.
+#[test]
+fn dw0896_an_offset_apiece_from_one_anchor_ends_green() {
+    let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
+
+    // Red: seven bodies, one cell.
+    let one_cell = muster(&[[0, 0, 0]; 7]);
+    let plan = Plan::build(&one_cell, &prefabs).expect("plan builds");
+    let (_, verdict) = delvec::compiler::cohabit::check_one_body_per_mark(&plan);
+    let err = verdict.expect_err("seven live bodies on one cell are refused");
+    assert_eq!(err.code.to_string(), "DW0896", "{}", err.message);
+    assert!(
+        err.message.contains("an offset apiece from one anchor"),
+        "the message names the offset as the move:\n{}",
+        err.message
+    );
+
+    // The move: an offset apiece, one anchor, a rank along the south room.
+    let offsets = [
+        [-3, 0, 0],
+        [-2, 0, 0],
+        [-1, 0, 0],
+        [0, 0, 0],
+        [1, 0, 0],
+        [2, 0, 0],
+        [3, 0, 0],
+    ];
+    let rank = muster(&offsets);
+    let plan = Plan::build(&rank, &prefabs).expect("plan builds");
+    let (binding, verdict) = delvec::compiler::cohabit::check_one_body_per_mark(&plan);
+    assert!(
+        verdict.is_ok(),
+        "an offset apiece reaches a different verdict: {:?}",
+        verdict.err().map(|f| f.message)
+    );
+    assert_eq!(binding.cells, 8, "the keeper and seven cells: {binding:?}");
+    assert!(
+        binding.pairs > 0,
+        "the rule compared something: {binding:?}"
+    );
+    let (marks, verdict) = delvec::compiler::mark::check_marks_in_piece(&plan);
+    assert!(
+        verdict.is_ok(),
+        "and DW0897 has nothing to say about the rank: {:?}",
+        verdict.err().map(|f| f.message)
+    );
+    assert_eq!(marks.offset_bodies, 6, "binding: {marks:?}");
+}
+
+/// `DW0897`'s move: an offset that leaves the piece is refused; the same body at
+/// a shorter offset, inside the piece, ends green — and `DW0896` is green there.
+#[test]
+fn dw0897_shortening_the_offset_ends_green() {
+    let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
+    let mut far = [[0, 0, 0]; 7];
+    far[6] = [40, 0, 0];
+    far[0] = [-3, 0, 0];
+    far[1] = [-2, 0, 0];
+    far[2] = [-1, 0, 0];
+    far[4] = [1, 0, 0];
+    far[5] = [2, 0, 0];
+
+    let red = muster(&far);
+    let plan = Plan::build(&red, &prefabs).expect("plan builds");
+    let (binding, verdict) = delvec::compiler::mark::check_marks_in_piece(&plan);
+    let err = verdict.expect_err("an offset forty blocks east leaves the room");
+    assert_eq!(err.code.to_string(), "DW0897", "{}", err.message);
+    assert!(
+        err.message.contains("Shorten the offset"),
+        "the message names the offset as the move:\n{}",
+        err.message
+    );
+    assert_eq!(binding.refused, 1, "binding: {binding:?}");
+
+    // The move: the one offset, shortened to the cell the rank has free.
+    let mut near = far;
+    near[6] = [3, 0, 0];
+    let green = muster(&near);
+    let plan = Plan::build(&green, &prefabs).expect("plan builds");
+    let (binding, verdict) = delvec::compiler::mark::check_marks_in_piece(&plan);
+    assert!(
+        verdict.is_ok(),
+        "a shortened offset reaches a different verdict: {:?}",
+        verdict.err().map(|f| f.message)
+    );
+    assert_eq!(binding.refused, 0, "binding: {binding:?}");
+    assert!(
+        delvec::compiler::cohabit::check_one_body_per_mark(&plan)
+            .1
+            .is_ok(),
+        "and DW0896 is green over the shortened rank"
+    );
+}

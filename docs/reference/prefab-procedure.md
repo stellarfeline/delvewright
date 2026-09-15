@@ -529,6 +529,15 @@ so the anchor's object stays in the foreground, and says so (`DW0727`). An ancho
 with no body cell within three blocks gets **no** eye shot, and that is named too
 — per anchor and in the run's binding count.
 
+**Room cameras** (`room-<anchor>.png`) keep the anchor's facing and stand the body
+back along it to the far side of the space the anchor is in. An eye shot shows
+what a body on the anchor faces; the room shot shows the room. Judge whether the
+piece is the approved room from the room shots, and whether an anchor looks at
+what it is about from the eye shots. To see a room along a direction no anchor
+faces, `--view stand=<anchor>,look=<cardinal>` stands the same body looking that
+way. An eye-level frame that is mostly a surface within arm's reach is **blind**
+(`DW0893`, a report): the message names the room shot to open instead.
+
 **Views** are the cameras you aim, `--view` per camera, appended to the set under
 a name you choose. Neither planned camera is square-on at a face: the exteriors
 are corner three-quarters and the eye shots are inside the piece, so a building
@@ -570,7 +579,8 @@ Four shapes worth knowing when you read the set:
   that anchor is aimed at nothing in this piece.
 - Anchors are declared with a cardinal facing only, so an eye shot is level.
   A shot that is mostly near wall is telling you the anchor stands against one —
-  the manifest's clearance count says how far ahead the first block is.
+  `DW0893` says so when more than half the frame is within arm's reach, and the
+  manifest's `sight` block gives the fraction.
 - **An anchor close to a tall front photographs the doorway, not the front.**
   The camera is level with a 70° field, so it reaches roughly `0.7 × distance`
   above the eye: three blocks out, the frame stops about two blocks up, and a
@@ -862,7 +872,7 @@ reviewed without the campaign that binds them in hand.
 by whoever wrote the document, never by the reader.
 
 `role` is **what the anchor is for**, from a closed vocabulary the compiler owns,
-and a term it does not know is refused by name (`DW0346`). There is one term:
+and a term it does not know is refused by name (`DW0346`). There are two terms:
 
 - `entry` — the cell a body arrives at when it enters the area this piece is
   placed in. A campaign addresses every other anchor by name; this is the one the
@@ -870,6 +880,18 @@ and a term it does not know is refused by name (`DW0346`). There is one term:
   party arrives in declares it**, one anchor per area (`DW0804` refuses a second),
   and in a `prefab_pool` that is the piece the layout is seeded from. A world
   where nothing declares it is `DW0345`.
+- `furniture` — blocks a body stands beside and is never walked onto: a laid
+  table, an altar, a counter, a bed (spec-0065). The anchor carries a `region`
+  over the furniture's **own blocks** — the legs and the top, not the air above
+  them — and no `pos` is needed; it is still a named place a campaign can address
+  (a `set-block` on it, a camera framing it), resolving to its region's `from`
+  cell when a point is asked of it. No route, walked leg, snap, flood, wave seat or
+  exported waypoint stands a body on a solid cell of it; a body *posted* there
+  stands there. As many per piece as it has furniture. `DW0888` refuses the role
+  with no region, a region holding no solid block, and a region no standable cell
+  of the piece rests on. A generator writes the anchor beside the blocks it lays;
+  a hand-built piece takes `delvec prefab anchor --role furniture --region
+  x1,y1,z1:x2,y2,z2`.
 
 An anchor's **name** says nothing about this. Renaming an anchor makes it no more
 the entry than leaving it alone does — a generated zone could not spell a reserved

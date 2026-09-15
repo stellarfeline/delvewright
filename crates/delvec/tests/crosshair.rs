@@ -95,7 +95,7 @@ fn quests(scout_to: &str, cast_two: &str) -> String {
     {{ "id": "quest/one", "trigger": {{ "type": "campaign-start" }},
        "objectives": [ {{ "type": "talk-to", "id": "obj/talk", "npc": "npc/keeper" }} ],
        "on_complete": [ {{ "type": "open-gate", "anchor": "anchor/door" }},
-                        {{ "type": "move-npc", "npc": "npc/scout", "to_anchor": "{scout_to}" }} ],
+                        {{ "type": "move-npc", "npc": "npc/scout", "to": {{ "anchor": "{scout_to}" }} }} ],
        "cast": {{
          "npc/keeper": {{ "at": "anchor/keeper-stand", "doing": "barring the door", "dialogue": "dlg/greeting" }},
          "npc/scout":  {{ "at": "anchor/exit", "doing": "watching the road", "dialogue": {{ "barks": ["Nothing yet."] }} }}

@@ -205,7 +205,9 @@
                 "verb": "arrives"
               },
               "npc": "npc/keeper",
-              "to_anchor": "anchor/objective",
+              "to": {
+                "anchor": "anchor/objective"
+              },
               "type": "move-npc"
             },
             {
@@ -314,6 +316,6 @@
       }
     ]
   },
-  "dsl_version": "0.25.0",
+  "dsl_version": "0.28.0",
   "stage": "quests"
 }

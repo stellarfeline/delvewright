@@ -58,6 +58,9 @@ pub const DW_NPC_CONTINUITY: DwCode = DwCode::new("DW0351", ExitTier::Build);
 struct NpcState {
     /// The stage-2 declared anchor — where every `spawn-npc` places the body.
     declared_anchor: String,
+    /// The stage-2 declared offset from [`NpcState::declared_anchor`]
+    /// (spec-0066): the other half of the mark a `spawn-npc` places the body on.
+    declared_offset: [i32; 3],
     /// The stage-2 declared area — the scope [`NpcState::declared_anchor`] is an
     /// identity in, and the one a `spawn-npc` re-materializes into.
     home_area: String,
@@ -76,6 +79,9 @@ struct NpcState {
 pub struct Staged {
     /// The anchor name the effect history last set.
     pub anchor: String,
+    /// The offset from that anchor the effect history last set (spec-0066): the
+    /// body stands at the mark `anchor + offset`.
+    pub offset: [i32; 3],
     /// The area that name was set in: the NPC's own area at world init and for
     /// a `spawn-npc`, the beat's area for a `move-npc`.
     pub area: String,
@@ -98,15 +104,26 @@ pub enum NpcWhere {
     Indeterminate(&'static str),
 }
 
+impl Staged {
+    /// The mark the history left the body on.
+    pub fn mark(&self) -> delvewright_dsl::Mark {
+        delvewright_dsl::Mark {
+            anchor: delvewright_dsl::ids::AnchorId(self.anchor.clone()),
+            offset: self.offset,
+        }
+    }
+}
+
 impl std::fmt::Display for Staged {
     /// `anchor/x` in one area, `anchor/x` (in `area/y`) where the area is known.
     /// A refusal that prints only the name is the refusal that could not tell
     /// two buildings apart, so the area travels with it into every message.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.mark().display())?;
         if self.area.is_empty() {
-            return f.write_str(&self.anchor);
+            return Ok(());
         }
-        write!(f, "{}` in area `{}", self.anchor, self.area)
+        write!(f, "` in area `{}", self.area)
     }
 }
 
@@ -141,9 +158,11 @@ pub fn replay(c: &Campaign) -> Timeline {
             n.id.as_str().to_string(),
             NpcState {
                 declared_anchor: n.anchor.as_str().to_string(),
+                declared_offset: n.offset,
                 home_area: n.area.as_str().to_string(),
                 on_stage: (!n.deferred).then(|| Staged {
                     anchor: n.anchor.as_str().to_string(),
+                    offset: n.offset,
                     area: n.area.as_str().to_string(),
                 }),
                 last_staged: None,
@@ -272,16 +291,12 @@ fn walk_bundle(
                     );
                 }
             }
-            Verb::MoveActor {
-                to_anchor,
-                on_arrive,
-                ..
-            } => {
+            Verb::MoveActor { to, on_arrive, .. } => {
                 walk_bundle(
                     on_arrive,
                     &format!("{epath}/on_arrive"),
-                    Some(to_anchor.as_str()),
-                    Some(to_anchor.as_str()),
+                    Some(to.anchor.as_str()),
+                    Some(to.anchor.as_str()),
                     here_area,
                     excluded,
                     state,
@@ -289,25 +304,23 @@ fn walk_bundle(
                 );
             }
             Verb::MoveNpc {
-                npc,
-                to_anchor,
-                on_arrive,
-                ..
+                npc, to, on_arrive, ..
             } => {
                 if !excluded.contains_key(npc.as_str())
                     && let Some(st) = state.get_mut(npc.as_str())
                     && st.on_stage.is_some()
                 {
                     st.on_stage = Some(Staged {
-                        anchor: to_anchor.as_str().to_string(),
+                        anchor: to.anchor.as_str().to_string(),
+                        offset: to.offset,
                         area: here_area.to_string(),
                     });
                 }
                 walk_bundle(
                     on_arrive,
                     &format!("{epath}/on_arrive"),
-                    Some(to_anchor.as_str()),
-                    Some(to_anchor.as_str()),
+                    Some(to.anchor.as_str()),
+                    Some(to.anchor.as_str()),
                     here_area,
                     excluded,
                     state,
@@ -391,6 +404,7 @@ fn walk_bundle(
                 st.on_stage = Some(Staged {
                     area: st.home_area.clone(),
                     anchor,
+                    offset: st.declared_offset,
                 });
                 st.ever_staged = true;
             }

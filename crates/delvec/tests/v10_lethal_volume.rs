@@ -696,6 +696,14 @@ fn the_ci_fixture_validates_and_emits_its_template() {
 fn with_fixture<R>(
     f: impl FnOnce(&Plan, &delvec::compiler::nav::World, &BTreeMap<[i32; 3], String>) -> R,
 ) -> R {
+    with_fixture_in(&common::prefabs_dir(), f)
+}
+
+/// [`with_fixture`] over the prefab library at `library`.
+fn with_fixture_in<R>(
+    library: &std::path::Path,
+    f: impl FnOnce(&Plan, &delvec::compiler::nav::World, &BTreeMap<[i32; 3], String>) -> R,
+) -> R {
     let dir = common::repo_root().join("crates/delvec/tests/fixtures/lethal-volume");
     let raw = delvewright_dsl::RawCampaign {
         world: std::fs::read_to_string(dir.join("world.json")).unwrap(),
@@ -713,7 +721,7 @@ fn with_fixture<R>(
     };
     let mut c = parse_campaign(&raw).expect("the fixture parses");
     delvewright_dsl::tag_translatables(&mut c);
-    let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
+    let prefabs = PrefabRegistry::load_dir(library).unwrap();
     let plan = Plan::build(&c, &prefabs).expect("plan builds");
     let s = structures(&plan);
     // The EDITED world — the fixture's magma floor is laid by a batch, and a
@@ -748,7 +756,7 @@ fn with_fixture<R>(
 /// So the perturbation is the vacuous shape itself. The same judgement is taken
 /// twice over one fixture, once against each world, and the two numbers are the
 /// finding: **zero** caught cells over the lethal-applied world, **nine** over
-/// the counterfactual `World::without_lethal` the check really reads. Nine is
+/// the counterfactual `World::without_exclusions` the check really reads. Nine is
 /// the floor course the fixture lays in magma, cell for cell.
 #[test]
 fn the_population_is_the_lethality_free_one() {
@@ -770,7 +778,7 @@ fn the_population_is_the_lethality_free_one() {
         assert_eq!(bound.shown(), 9, "and every one of them shows: {bound:?}");
 
         // The same judgement over a world whose lethality has ALREADY been applied —
-        // the vacuous shape. `without_lethal` is idempotent, so handing the check a
+        // the vacuous shape. `without_exclusions` is idempotent, so handing the check a
         // world that already carries no volumes is not the perturbation; what is, is
         // taking the population from the world the ROUTER walks. Done here directly,
         // so the number this check would report if it read the wrong world is on the
@@ -795,6 +803,81 @@ fn the_population_is_the_lethality_free_one() {
          against {}",
             bound.population,
             applied.len()
+        );
+    });
+}
+
+/// **A furniture declaration cannot hide caught floor** (spec-0065 §4.2, §9.6).
+///
+/// The hatch this closes: the walk model withholds the cells a body would stand
+/// in on furniture, so a population taken with furniture applied would lose
+/// every cell over a "table" — and declaring the stone round a pit as furniture
+/// would make the pit's caught floor vanish. The perturbation is exactly that:
+/// the fixture's own caught cells, their floor declared furniture in a private
+/// copy of the piece's document. The walk model must bite (it withholds those
+/// cells) and `DW0891` must report the same caught count as without it.
+#[test]
+fn a_furniture_declaration_over_caught_floor_changes_no_caught_count() {
+    let (baseline, caught, supports, origin) = with_fixture(|plan, world, blocks| {
+        let entry = plan.campaign_start().map(|(_, pos)| pos);
+        let (bound, verdict) =
+            delvec::compiler::lethal::check_danger_is_visible(plan, world, blocks, entry);
+        assert!(verdict.is_ok(), "{:?}", verdict.err());
+        let supports: Vec<[i32; 3]> = bound
+            .volumes
+            .iter()
+            .flat_map(|v| v.caught.iter().map(|c| [c[0], c[1] - 1, c[2]]))
+            .collect();
+        let caught: Vec<[i32; 3]> = bound
+            .volumes
+            .iter()
+            .flat_map(|v| v.caught.clone())
+            .collect();
+        (
+            bound.caught(),
+            caught,
+            supports,
+            plan.areas[0].pieces[0].pos,
+        )
+    });
+    assert_eq!(baseline, 9, "the fixture catches its nine magma cells");
+    let lo = [0, 1, 2].map(|i| supports.iter().map(|c| c[i]).min().unwrap() - origin[i]);
+    let hi = [0, 1, 2].map(|i| supports.iter().map(|c| c[i]).max().unwrap() - origin[i]);
+
+    let library =
+        std::path::Path::new(env!("CARGO_TARGET_TMPDIR")).join("furniture-over-caught-floor");
+    let _ = std::fs::remove_dir_all(&library);
+    std::fs::create_dir_all(&library).unwrap();
+    std::fs::copy(
+        common::prefabs_dir().join("hello-room.nbt"),
+        library.join("hello-room.nbt"),
+    )
+    .unwrap();
+    let mut doc: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(common::prefabs_dir().join("hello-room.json")).unwrap(),
+    )
+    .unwrap();
+    doc["anchors"]["anchor/caught-floor"] = serde_json::json!({
+        "role": "furniture",
+        "region": { "from": lo, "to": hi },
+    });
+    std::fs::write(library.join("hello-room.json"), doc.to_string()).unwrap();
+
+    with_fixture_in(&library, |plan, world, blocks| {
+        assert_eq!(plan.furniture.len(), 1, "the declaration is placed");
+        let on = world.cells_on_furniture(&caught, &delvec::compiler::nav::Footprint::player());
+        assert_eq!(
+            on,
+            caught.len(),
+            "every caught cell stands on the declared floor, so the perturbation bites"
+        );
+        let entry = plan.campaign_start().map(|(_, pos)| pos);
+        let (bound, _) =
+            delvec::compiler::lethal::check_danger_is_visible(plan, world, blocks, entry);
+        assert_eq!(
+            bound.caught(),
+            baseline,
+            "DW0891 reads the world with every exclusion lifted: {bound:?}"
         );
     });
 }

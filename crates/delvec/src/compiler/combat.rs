@@ -670,7 +670,7 @@ pub fn actor_encounters(plan: &Plan) -> Vec<ActorEncounter> {
             name: a.name.clone(),
             tier,
             anchor: a.anchor.as_str().to_string(),
-            pos: plan.point_any(a.anchor.as_str()),
+            pos: plan.body_point(delvewright_dsl::BodyRef::Actor(a)),
             tag: format!("dw_actor_{}", safe_local(a.id.as_str())),
             vulnerable: a.vulnerable,
             attributes: a.attributes,

@@ -141,8 +141,8 @@ this needs are subcommands of the one binary Init I3 installed.
    `at: floor_center` takes the lowest **world** Y of the scope it sits on, so a
    mark wrapping a column that includes its own floor slab lands *in* the floor
    and reds `contract-anchors`; mark the void, or use `at: offset` with the
-   walkable Y. A `mark` may also carry `role` (`grammar.md` §2b, one term today:
-   `entry`) — that is how a grammar-authored piece declares the 2A entry point
+   walkable Y. A `mark` may also carry `role` (`grammar.md` §2b; a mark is a
+   point, so of the two terms it takes `entry`) — that is how a grammar-authored piece declares the 2A entry point
    without needing to write a name it structurally cannot write; one anchor per
    area may carry it (`DW0804`), and every other anchor still binds by name.
    For a hand-built or ingested piece, where no `mark` ever ran, the same role
@@ -364,6 +364,18 @@ moment anybody plays it. Build every flight from **stair blocks**:
 `DW0430` refuses a stair whose facing disagrees with the climb its route makes,
 at build time, naming every cell. It cannot see the other half of this rule: a
 flight of whole blocks faces nothing, so nothing refuses it. That one is yours.
+
+**A table is declared, not left to the walker.** A slab on a fence is floor to
+the walk model — a bench beside it is a half-block step and the top one jump
+more — so a guide routed across a hall climbs the dining table and down the
+other side unless the piece says the table is furniture. Declare every piece of
+furniture a body could stand on (a laid table, an altar, a counter, a bed) as an
+anchor with role `furniture` and a `region` over its own blocks — legs and top,
+not the air above: `delvec --prefabs "$DELVEWRIGHT_PREFABS" prefab anchor <nbt> --name anchor/<table> --region x1,y1,z1:x2,y2,z2 --role furniture`.
+No walk then stands a body on it; a body you POST there (a cat on the table)
+still stands there. A region over air, or over blocks nobody could stand on, is
+`DW0888`; a route whose only way is over the table is `DW0510`, naming it —
+move the mark or open a way round, never drop the declaration.
 
 ## What the grammar cannot express
 

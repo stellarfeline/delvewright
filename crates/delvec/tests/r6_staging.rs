@@ -49,7 +49,7 @@ static QUESTS_V06: LazyLock<String> = LazyLock::new(|| {
             { "type": "open-gate", "anchor": "anchor/door" },
             { "type": "narrate",
               "when": { "forbids_flags": ["flag/blocked"] }, "text": "The way is open." },
-            { "type": "move-npc", "npc": "npc/keeper", "to_anchor": "anchor/exit",
+            { "type": "move-npc", "npc": "npc/keeper", "to": { "anchor": "anchor/exit" },
               "on_arrive": [ { "type": "set-flag", "flag": "flag/arrived" } ] }
           ]
         },
@@ -326,8 +326,8 @@ fn chained_moves_plan_from_last_staged_location() {
             r#"{ "type": "open-gate", "anchor": "anchor/door" },"#,
             r#"{ "type": "open-gate", "anchor": "anchor/door" },
             { "type": "spawn-actor", "actor": "actor/walker" },
-            { "type": "move-actor", "actor": "actor/walker", "to_anchor": "anchor/exit" },
-            { "type": "move-actor", "actor": "actor/walker", "to_anchor": "anchor/keeper-stand" },"#,
+            { "type": "move-actor", "actor": "actor/walker", "to": { "anchor": "anchor/exit" } },
+            { "type": "move-actor", "actor": "actor/walker", "to": { "anchor": "anchor/keeper-stand" } },"#,
             1,
         );
     let raw = RawCampaign {
@@ -368,11 +368,11 @@ fn chained_moves_plan_from_last_staged_location() {
     // Same contract for chained move-npc legs (the shared-planner parity): the
     // keeper's second walk (exit → back to its stand) is a real walk too.
     let quests_npc = QUESTS_V06.replacen(
-        r#"{ "type": "move-npc", "npc": "npc/keeper", "to_anchor": "anchor/exit",
+        r#"{ "type": "move-npc", "npc": "npc/keeper", "to": { "anchor": "anchor/exit" },
               "on_arrive": [ { "type": "set-flag", "flag": "flag/arrived" } ] }"#,
-        r#"{ "type": "move-npc", "npc": "npc/keeper", "to_anchor": "anchor/exit",
+        r#"{ "type": "move-npc", "npc": "npc/keeper", "to": { "anchor": "anchor/exit" },
               "on_arrive": [ { "type": "set-flag", "flag": "flag/arrived" } ] },
-            { "type": "move-npc", "npc": "npc/keeper", "to_anchor": "anchor/keeper-stand" }"#,
+            { "type": "move-npc", "npc": "npc/keeper", "to": { "anchor": "anchor/keeper-stand" } }"#,
         1,
     );
     let raw = RawCampaign {

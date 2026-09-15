@@ -83,11 +83,17 @@ pub struct DesignImage {
 /// ordinary state of a campaign that has not reached its design step. It never
 /// means "I could not look": a `design/` that cannot be read is the loader's
 /// own error, named by path.
+///
+/// It also carries the bytes of `design/cameras.json`, the showcase camera
+/// record (`compiler::view::camera`), when the campaign has one: the build proves
+/// every camera in it against the assembled world (`DW0724`).
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct DesignFiles {
     /// Every image file under `design/concept/` and `design/reference/`, sorted
     /// by `file` (ADR-0006 — the order is the record's, never the filesystem's).
     pub images: Vec<DesignImage>,
+    /// `design/cameras.json`, byte for byte; `None` when it is not there.
+    pub cameras: Option<Vec<u8>>,
 }
 
 impl DesignFiles {
@@ -134,7 +140,18 @@ impl DesignFiles {
             }
         }
         images.sort();
-        Ok(DesignFiles { images })
+        let record = campaign_dir.join(crate::compiler::view::camera::CAMERAS_FILE);
+        let cameras = match std::fs::read(&record) {
+            Ok(b) => Some(b),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
+            Err(e) => {
+                return Err(std::io::Error::new(
+                    e.kind(),
+                    format!("{}: {e}", crate::compiler::view::camera::CAMERAS_FILE),
+                ));
+            }
+        };
+        Ok(DesignFiles { images, cameras })
     }
 
     /// Every file whose stem is `name`, in `file` order.

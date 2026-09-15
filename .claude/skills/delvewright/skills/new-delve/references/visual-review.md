@@ -127,55 +127,35 @@ identical pictures of nothing and every command in the recipe green.
 
 That writes **Chunky scenes, not images** — one per shot, plus the shot index.
 Turning them into pictures needs Chunky, and **this is the step that installs
-it**: Init named it and deliberately did not fetch it. Two commands, once per
-machine, and they need the network:
+it**: Init named it and deliberately did not fetch it. Every scene is written for
+one core, the pin in the engine's `versions.toml`, and the install builds exactly
+that core from Chunky's source at the pinned revision — once per machine, with
+the network, in about a minute. Chunky's own build runs under JDK 17 and no
+other, so find one first; none on the machine is a stop, and installing it is the
+user's action:
 
 ```sh
-curl -LO https://chunkyupdate.lemaik.de/ChunkyLauncher.jar
-java -jar ChunkyLauncher.jar --update snapshot
+JDK17="$("$DELVEWRIGHT_PYTHON" "$DELVEWRIGHT_SKILL/scripts/find-jdk.py" --major "$("$DELVEWRIGHT_PYTHON" "$DELVEWRIGHT_ENGINE/tools/lib/versions.py" render.chunky_build_java)" | cut -d' ' -f2-)"
+"$DELVEWRIGHT_ENGINE/validation/chunky-install.sh" --java-home "$JDK17"
 ```
 
-The launcher self-installs a core into the settings directory **it** resolves —
-usually `.chunky` under your account's home, which is not necessarily what
-`$HOME` says, and which the paragraph below has you confirm — and what
-`--update snapshot` installs is **today's** snapshot, never the pinned one:
-`--update` takes a release channel, and the update site's `lib/` path serves the
-current core whatever name it is asked for, so no command installs the pin. A
-snapshot core is required either way — the stable line does not read 1.21.x
-worlds. `render-shots.sh` has already named the pinned core, the directory it
-looked in and how it resolved it, and every core that directory holds. Read all
-four verdicts as different facts: `NONE installed` and `MISMATCH` both mean the
-frames come off a renderer this project has not verified its scene format
-against; **the pin being installed beside another core is not the same as the
-pin being the renderer**, because the launcher chooses its own and has no flag
-that names one. In every case but "the only core there", say in the review which
-core the frames came off.
-
-**Confirm the install by asking Chunky where it is looking, not by reading
-"No updates found".** That line means the launcher found nothing newer in the
-directory *it* resolved, which is not the same as an install landing where you
-expected — a run can print it with the directory you thought you were installing
-into not existing at all. `java -jar ChunkyLauncher.jar --help` ends with the
-line `The default scene directory is <dir>/scenes`, and that `<dir>` is Chunky's
-own answer for where it keeps everything, cores included. Check it against the
-`chunky home:` line `render-shots.sh` printed. If they differ, set
-`DELVEWRIGHT_CHUNKY_HOME` to Chunky's answer and run `render-shots.sh` again
-before reading a single verdict off it. `java -jar ChunkyLauncher.jar --version`
-prints the core version the launcher will actually run with.
-
-`curl -LO` drops the jar in the current directory, which is your working
-directory's root, and `java -jar ChunkyLauncher.jar` only resolves from there. `*.jar` is
-not ignored here, so put it somewhere outside the tree or under `.out/` and
-**write down the absolute path** — step 14 invokes it again, quite possibly in a
-later session, and this page prints the bare form for readability.
+It installs into the Chunky home Chunky itself reads — `.chunky` under your
+account's home, which is not necessarily what `$HOME` says — and it installs only
+a jar whose content is the pin's; it is a no-op on a machine that already holds
+it. `render-shots.sh` has already printed the `chunky home:` line and whether that
+home holds the pin. If Chunky lives elsewhere on this machine, set
+`DELVEWRIGHT_CHUNKY_HOME` to it before both commands.
 
 Chunky reads the client jar placed at Init I5; it needs no Java 21 of its
-own. Then, one process per scene, in parallel:
+own. Then render through the engine's entry point, **never the launcher**: it
+checks the home holds the pin, refuses by name when it does not, and names the
+core on its first line, which is the line that says what the frames came off.
+One process per scene, in parallel:
 
 ```sh
-java -jar ChunkyLauncher.jar -scene-dir "$DELVEWRIGHT_ENGINE/validation/delve-output/shots/scenes" \
+"$DELVEWRIGHT_ENGINE/validation/chunky.sh" -scene-dir "$DELVEWRIGHT_ENGINE/validation/delve-output/shots/scenes" \
     -render <scene-name> -f -threads <n>
-java -jar ChunkyLauncher.jar -scene-dir "$DELVEWRIGHT_ENGINE/validation/delve-output/shots/scenes" \
+"$DELVEWRIGHT_ENGINE/validation/chunky.sh" -scene-dir "$DELVEWRIGHT_ENGINE/validation/delve-output/shots/scenes" \
     -snapshot <scene-name> <out>.png
 ```
 

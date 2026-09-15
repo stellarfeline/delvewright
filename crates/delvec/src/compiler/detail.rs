@@ -448,6 +448,28 @@ pub enum Verdict {
     Unwalked,
 }
 
+impl Verdict {
+    /// **Every spelling this closed set admits**, read off the type's own
+    /// schema — the one `delvec schema --stage walk-record` exports — so a
+    /// message that lists the set cannot fall behind a variant added to it.
+    #[must_use]
+    pub fn tokens() -> Vec<String> {
+        let v = serde_json::to_value(schemars::schema_for!(Verdict))
+            .expect("the verdict schema serializes to JSON");
+        let from_one_of = v["oneOf"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(|b| b["const"].as_str());
+        let from_enum = v["enum"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(serde_json::Value::as_str);
+        from_one_of.chain(from_enum).map(str::to_string).collect()
+    }
+}
+
 /// One thing a walk found.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -711,10 +733,15 @@ fn walk_gate(c: &Campaign, record: Option<&str>, rows: usize) -> (Option<Diagnos
                 format!(
                     "`walk-record.json` is not a walk record: {e}. Its form is fixed — \
                      `site_plan_sha256`, `layout_graph_sha256`, `blockout_sha256`, \
-                     `engine_revision`, `verdict` (`passed` or `findings`), and `findings[]` of \
+                     `engine_revision`, `verdict` (one of {verdicts}), and `findings[]` of \
                      `{{subject, note}}`. A record that does not parse is a record nothing can be \
                      judged against, so it is a refusal rather than an absence. Binding: {n} \
                      `details[]` row(s) stood in front of, 1 record read.",
+                    verdicts = Verdict::tokens()
+                        .iter()
+                        .map(|t| format!("`{t}`"))
+                        .collect::<Vec<_>>()
+                        .join(", "),
                     n = binding.rows,
                 ),
             ));

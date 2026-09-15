@@ -337,7 +337,7 @@ const GATED_TRIGGER: &str = r#""triggers": [
 
 /// The producer, one level down, in a `move-npc`'s `on_arrive` reaction bundle —
 /// the exact shape `nobodys-cave-island` ships twice.
-const NESTED_PRODUCER: &str = r#", { "type": "move-npc", "npc": "npc/keeper", "to_anchor": "anchor/exit",
+const NESTED_PRODUCER: &str = r#", { "type": "move-npc", "npc": "npc/keeper", "to": { "anchor": "anchor/exit" },
              "on_arrive": [ { "type": "set-flag", "flag": "flag/posted" } ] }"#;
 
 /// The same producer at the top level — the control.

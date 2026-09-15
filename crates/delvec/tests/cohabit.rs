@@ -353,7 +353,7 @@ fn walking_the_first_body_off_its_mark_does_not_clear_it() {
         ]);
         let mut seq = muster_sequence("actor/captain", "actor/man-at-arms");
         seq["steps"][0]["effects"].as_array_mut().unwrap().push(
-            json!({ "type": "move-actor", "actor": "actor/captain", "to_anchor": "anchor/exit",
+            json!({ "type": "move-actor", "actor": "actor/captain", "to": { "anchor": "anchor/exit" },
                     "speed": 0.24, "happening": happening("actor/captain", "departs") }),
         );
         quests["content"]["quests"][0]["on_objective_complete"]["obj/talk"]
