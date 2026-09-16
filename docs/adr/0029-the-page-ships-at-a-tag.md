@@ -1,16 +1,20 @@
 # ADR-0029: The page ships at a tag — the marketplace serves the plugin from the engine release the page pins
 
-- **Status**: Draft — a direction check; finalised against what is built once
-  the effect is measured
+- **Status**: Accepted
 - **Date**: 2026-09-16
-- **Source**: the owner's ruling that the page and the engine a creator clones
-  move together, with no window in which a fresh `/new-delve` is broken.
+- **Source**: the rule that the page and the engine a creator clones move
+  together, with no window in which a fresh `/new-delve` is broken.
   Measured against the engine tree at
   `227e750446a058c70277198d1ee0afbec6bf3323`, the pinned tree
   `70eea6296cfab2440054f95670729081c3d4bca1`, the remote's tags, and the Claude
   Code documentation pages `plugin-marketplaces.md`, `plugins-reference.md`,
   `plugin-dependencies.md` and `errors.md` under `code.claude.com/docs/en/`,
-  read at the pages themselves; every quotation below is from those pages.
+  read at the pages themselves; every quotation below is from those pages. The
+  two behaviours the documentation does not state (§4) were measured on Claude
+  Code 2.1.265 — the version `versions.toml [ci].claude_code_version` pins and
+  `ci.yml` runs `plugin validate --strict` with — over a throwaway marketplace
+  served on local smart HTTP, and again against this repository at the one tag
+  that exists; every sentence attributed to the tool below is its own output.
 - **Refines**: ADR-0027 §2 (the plugin carries the page and its pin: the pin
   now names the release the page ships at), ADR-0028 §1 (the tag grammar,
   applied), §2 (the plugin Release's notes read the pin), §4 (a release is a
@@ -124,11 +128,10 @@ the developer reads is at worst ahead of what the creator holds, never
 incompatible with it, and it becomes the creator's page at the next pin move
 with no other step.
 
-**"It buys a staged delivery nobody asked for."** The owner has asked for it,
-in these words: the page and the engine a creator clones move together, with
-no window in which a fresh `/new-delve` is broken. A page that ships from one
-revision and clones another cannot promise that; a page that ships at the tag
-it pins can.
+**"It buys a staged delivery nobody asked for."** It is asked for, in these
+words: the page and the engine a creator clones move together, with no window
+in which a fresh `/new-delve` is broken. A page that ships from one revision and
+clones another cannot promise that; a page that ships at the tag it pins can.
 
 What §3 measured stands and is used here: a page edit under an unchanged
 `plugin.json` version reaches no creator who already holds that version, and
@@ -197,13 +200,60 @@ page was never anyone's.
 ### 4. The interval, and what a creator receives in it
 
 Between step 1's merge and step 2's tag write, the entry on `main` names a tag
-the remote does not have. A creator who runs `/plugin install` inside that
-interval is refused at the fetch of the ref: they receive no page, and so no
-page whose engine lacks what it names. That is the difference between this
-interval and the window the ruling closes: one refuses, the other broke. The
-refusal's exact words and the behaviour of `plugin update` inside the interval
-are the two silences named above, measured by the implementing pull request
-and written here at finalisation.
+the remote does not have. Both silences are measured, and both answers are
+refusals rather than breakage. That is the difference between this interval and
+the window the ruling closes: one refuses, the other broke.
+
+**A fresh install inside the interval.** `claude plugin marketplace add` still
+succeeds — the marketplace is the repository's default branch and the entry is
+only a catalog row — and then the install exits 1, printing:
+
+```
+Installing plugin "delvewright@delvewright"...✘ Failed to install plugin
+"delvewright@delvewright": Failed to clone repository for git-subdir source:
+Cloning into '<cache>/temp_subdir_<n>.clone'...
+fatal: Remote branch delvec--v1.6.0 not found in upstream origin
+```
+
+Nothing is installed: the plugin cache stays empty and `installed_plugins.json`
+is never written. Those are the real tag this record names and the real
+repository — the entry of §1 with `ref` set to `delvec--v1.6.0`, put to the
+pinned CLI. With `ref` set to `v1.5.0`, the one tag that exists today, the same
+entry installs: `✔ Successfully installed plugin`, `installed_plugins.json`
+recording `version 1.4.2` and `gitCommitSha
+70eea6296cfab2440054f95670729081c3d4bca1`, and the `versions.toml` in the
+delivered bytes is the one that commit carries. So the entry shape is proven by
+an install and not by a schema reading, and the refusal is the interval's and
+not the shape's.
+
+**An existing install inside the interval.** `claude plugin marketplace update`
+succeeds (`✔ Successfully updated marketplace`), and `claude plugin update`
+exits 1:
+
+```
+Checking for updates for plugin "dwprobe" at user scope…
+✘ Failed to update plugin "dwprobe": Failed to clone repository for git-subdir
+source: Cloning into '<cache>/temp_subdir_<n>.clone'...
+fatal: Remote branch dwprobe--v0.2.0 not found in upstream origin
+```
+
+The install is untouched — same `installPath`, same `version`, same
+`gitCommitSha`, same bytes on disk. A creator who already has the page keeps
+working through the interval; only a NEW install is refused, and a refusal is
+what they can act on.
+
+**And what happens when the release closes the interval**, measured on the same
+rig, so the sentences §5 rests on are not assumed. The tag written at a commit
+whose `plugin.json` states a higher version: `✔ Plugin "dwprobe" updated from
+0.2.0 to 0.3.0 for scope user. Restart to apply changes.` — `installPath` moves,
+`gitCommitSha` becomes the tagged commit, and the bytes on disk are that
+commit's. The entry's `ref` moved to a NEW tag at a NEW commit whose version is
+unchanged: `✔ dwprobe is already at the latest version (0.2.0).`, exit 0, and
+nothing moves. And the transition §5 describes — an existing RELATIVE-PATH
+install, the entry then becoming a `git-subdir` source at a tag carrying a
+higher version — moves on one `marketplace update` plus one `plugin update`:
+`✔ Plugin "dwt" updated from 1.0.0 to 1.1.0`, with the tagged commit's bytes on
+disk.
 
 The interval is a cost this record accepts and bounds. The merge of a
 pull request that names a tag is followed by the dispatch of the release on
@@ -295,14 +345,16 @@ record's defect.
 | `tools/tests/test_check_skill_page.py` | fixtures asserting "not a full 40-hex revision" and the `["engine"]["ref"]` extraction | follow the rules above |
 | `.github/actions/skill-page-objects/action.yml` | `git fetch --no-tags --quiet origin "$REF"` by sha | a tag is fetched as `refs/tags/<tag>:refs/tags/<tag>`; when the tag is unborn the engine is this tree |
 | `.github/pins.toml` | `skill-page-engine` `value` is the revision; the `release` policy's text says "a commit a `v<semver>` tag points at" in three places | the value is the tag name; the policy's text says a release tag of the thing the entry names, existing or this tree's own unborn one |
-| `tools/check-pins.py` | discovery finds a 40-hex literal in the site (`RE_REV`); `--online` `cat-file -e value^{commit}`, then `tag --points-at value` filtered by `v<semver>` | discovery also finds a release-tag literal, by the shared grammar; `--online` accepts the unborn state exactly when the value equals this tree's own tag; the filter is the `<thing>--v` grammar (ADR-0028 PR B) |
+| `tools/check-pins.py` | discovery finds a 40-hex literal in the site (`RE_REV`); `--online` `cat-file -e value^{commit}`, then `tag --points-at value` filtered by `v<semver>` | the entry moves to the registry's `bound_by` arm, with `check-skill-page.py` as the binder and `engine.ref` as the key, and `--online` judges a release tag: the tag exists and its commit's tree states the tag's version, or it is absent and equals this tree's own tag, through `release_tags.py`'s grammar. **Corrected at finalisation**: the draft said discovery would find the literal by that grammar. Measured against this tree's fetch sites, twelve distinct `<name>--v<semver>` literals stand in them and eleven are fixtures of `tools/tests/test_release_tags.py` and examples in `tools/lib/release_tags.py`'s own docstring, so a shape scan would report eleven pins nobody fetches. A tag name therefore carries no shape the scan can separate from data, which is the exact condition the `bound_by` arm exists for — and it is the stronger outcome, because the binder is what holds the pin and the marketplace entry to one name |
 | `.claude/skills/delvewright/skills/new-delve/scripts/fetch-delvec.py` | `DOWNLOAD` and `ARCHIVE` are formatted from `release`; `expected = release.lstrip("v")`; `engine_targets()` runs `git show <ref>:versions.toml` | URL from the tag, archive name `delvec-v<version>-<target>.tar.gz` from the tag's version (the archive grammar is unchanged, ADR-0028 §2); `git show` at a tag name once I2 has fetched it |
 | `.claude/skills/delvewright/skills/new-delve/scripts/check-toolchain.py` | compares `rev-parse HEAD` to `ref` as strings; `want = release.lstrip("v")` | compares to `rev-parse <ref>^{commit}`; the version from the tag |
 | `.claude/skills/delvewright/skills/new-delve/references/init.md` (I2) and `SKILL.md` (I1b, I2 rows) | `checkout --detach "$ENGINE_REF"` then `[ "$(rev-parse HEAD)" = "$ENGINE_REF" ]`; the rows name `[engine].release` | the fetch names the tag; the equality is against `rev-parse "$ENGINE_REF^{commit}"`; the rows name one key |
 | `tools/release-notes.py` (`delvewright` arm) | prints `pin['release']` and `pin['ref']`, and reads the engine table at `ref` | prints the one name; an unborn tag is printed as unborn, not raised, so a plugin release dispatched inside §4's interval still writes its notes |
 | `docs/reference/skill-workflow.md` | "A newer page reaches a creator when `plugin.json` `version` moves on `main` — the marketplace serves the default branch" | the marketplace serves the tag the entry names; a newer page reaches a creator when the entry moves to a tag carrying a higher version |
 | `docs/reference/tools.md` | the rows for `check-skill-page.py`, `check-pins.py`, `fetch-delvec.py`, `check-toolchain.py` | restated |
-| `docs/specs/spec-0063-the-front-end-as-a-product.md` §8 and its criteria | "`release` (`v<semver>`), `ref` (40-hex)"; the rule table's pin row; criterion 4 | restated to one name under the tag grammar; the loosening, if any rewrite reduces what a criterion asserts, is declared in those words |
+| `docs/specs/spec-0063-the-front-end-as-a-product.md` §8 and its criteria | "`release` (`v<semver>`), `ref` (40-hex)"; the rule table's pin row; criterion 4 | restated to one name under the tag grammar; criterion 4's rewrite IS a loosening and is declared in those words, with the narrower online assertion that replaces it in the unborn state |
+| `docs/reference/front-end-standard.md` §3a | `git-subdir` listed as taking `(url, path)` | the four documented fields, quoted, and the two silences this record's measurement closed — **found after the draft, and therefore this record's own defect**, named here rather than left to be discovered |
+| `tools/tests/test_fetch_delvec.py`, `tools/tests/test_check_toolchain.py`, `tools/tests/test_check_pins.py`, `tools/tests/test_release_tags.py` | fixtures building a pin from `release` + a 40-hex `ref`; no `release`-policy online test | tag-shaped pins, a real tag written into the rig's own engine checkout, the `release` policy's two arms perturbed, and the shipped copy of the grammar held to the module's answer — **found after the draft**, for the same reason as the row above: §7 named one test file where five hold these rules |
 
 Not moved: `plugin-release.yml` and rule 11 (the version still moves only in
 the plugin release); `engine-release.yml` (it already tags an existing `main`
@@ -322,20 +374,28 @@ repository, whose `engine-release` pin names a commit and is not this page's.
   dispatched on its merge commit as the next act. A plugin release precedes
   that dispatch (§5), so that the first tagged page is an update to every
   existing install.
-- **What the owner is committed to** the first time each can bind: one engine
-  release dispatched directly after the merge that names it, every time the
-  page's pin moves; one plugin release before any engine release whose page
-  must reach existing creators; and the interval of §4, in which a fresh
+- **What this record commits the project to**, the first time each can bind:
+  one engine release dispatched directly after the merge that names it, every
+  time the page's pin moves; one plugin release before any engine release whose
+  page must reach existing creators; and the interval of §4, in which a fresh
   install is refused rather than served.
 - **Costs accepted, named**: the second authority on `main` (ADR-0028 §3's
   reason two), bounded by the gate; the interval of §4; one name in two files,
   held equal by the gate; a plugin release that delivers nothing until an
   engine release follows it.
 - **Checks that change**: `tools/check-skill-page.py` rules 2, 3, 12, 13, 18
-  and 21 and their tests; `tools/check-pins.py` discovery and the `release`
-  policy; `.github/actions/skill-page-objects/action.yml`; the two creator-side
-  scripts; `tools/release-notes.py`. No required status context is added or
-  renamed.
+  and 21 and their tests; `tools/check-pins.py`'s `release` policy and the arm
+  the entry sits on; `.github/actions/skill-page-objects/action.yml`; the two
+  creator-side scripts; `tools/release-notes.py`. No required status context is
+  added or renamed.
+- **Rule 21 holds the pair whole**, one arm per tree, each with its own binding
+  count and the same denominator: 37 of 41 engine paths in the tree the page
+  ships from, and 37 of 41 in the tree the pin names. The arm is not merely
+  true: removing `validation/chunky.sh` from the tree the pin names reds the PIN
+  arm alone (32 of 37 present) and leaves the shipping arm at 33 of 37, and the
+  same holds for `validation/chunky-install.sh`. Put to the tree the OLD pin
+  named, `70eea629`, the new arm reds on exactly those two paths — the defect it
+  exists for, reproduced rather than described.
 - **Checks that do not change**: the `plugin validate --strict` step over
   `marketplace.json` in `ci.yml`'s `manifest consistency (versions.toml)` job;
   rule 11; the release workflows; the tag ruleset of
@@ -344,12 +404,15 @@ repository, whose `engine-release` pin names a commit and is not this page's.
   spec-0063 §8, the `why` of `skill-page-engine` in `.github/pins.toml`, and
   rule 21's preamble, in the same pull request. `ACKNOWLEDGEMENTS.md` gains
   nothing.
-- **The measurements this record owes at finalisation**: the refusal a fresh
-  install meets inside §4's interval, in its own words; what `plugin update`
-  does inside it; that `plugin update` moves an existing install when the
-  entry's `ref` moves to a tag carrying a higher `plugin.json` version, and
-  does not when the version is unchanged. Each on the pinned Claude Code, each
-  with its method named.
+- **The measurements this record owed at finalisation are in §4**, each in the
+  tool's own words and each on Claude Code 2.1.265: the refusal a fresh install
+  meets inside the interval; what `plugin update` does inside it; that
+  `plugin update` moves an existing install when the entry's `ref` moves to a
+  tag carrying a higher `plugin.json` version and does not when the version is
+  unchanged; and the relative-path-to-`git-subdir` transition §5 describes. None
+  contradicts a sentence of §4 or §5, so the last revisit trigger below did not
+  fire. Nothing was published to make them: a throwaway marketplace on local
+  smart HTTP, plus the real entry shape put to the real repository at `v1.5.0`.
 - ADR-0028's first revisit trigger has fired and is closed by this record; its
   other four stand.
 
@@ -369,5 +432,7 @@ repository, whose `engine-release` pin names a commit and is not this page's.
   without a literal: the second file of §2 is re-costed.
 - A second plugin joins the marketplace: §1's entry shape is applied per
   plugin, and whether each pins its own engine tag is decided then.
-- The measurement at finalisation contradicts a sentence of §4 or §5: the
-  sentence is corrected here before the implementation merges, never after.
+- The version this record's own pin names stops being the version the tree
+  states. The pin is `delvec--v1.6.0` and the engine version moves to `1.6.0`
+  in its own round; until that round lands, both gates red naming the
+  disagreement, which is the ordering made structural rather than a defect.

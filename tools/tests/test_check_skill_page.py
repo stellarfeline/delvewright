@@ -48,16 +48,17 @@ def tree(mod, tmp_path, monkeypatch):
     `REPO` stays the real repository: it is where the engine at `ref` and the
     pre-split blob are read from, and both are instruments rather than subjects.
     """
-    plugin = tmp_path / "plugin"
+    # ONE copy, laid out as the repository lays it out: the marketplace root is
+    # `tmp_path`, and the entry's `path` resolves from there to the plugin root
+    # this gate judges. A second copy under the marketplace would let the entry
+    # point at a directory nothing here reads, which is the class ADR-0029
+    # closes — so the fixture cannot contain the shape the rule forbids.
+    plugin = tmp_path / ".claude" / "skills" / "delvewright"
+    plugin.parent.mkdir(parents=True)
     shutil.copytree(mod.PLUGIN_ROOT, plugin)
     skill = plugin / "skills" / "new-delve"
-    market = tmp_path / "marketplace" / ".claude-plugin"
+    market = tmp_path / ".claude-plugin"
     market.mkdir(parents=True)
-    # The marketplace's `source` is resolved from ITS root, so the copy sits
-    # where the real layout puts it.
-    (tmp_path / "marketplace" / ".claude").mkdir(parents=True, exist_ok=True)
-    (tmp_path / "marketplace" / ".claude" / "skills").mkdir(exist_ok=True)
-    shutil.copytree(plugin, tmp_path / "marketplace" / ".claude" / "skills" / "delvewright")
     shutil.copy2(mod.MARKETPLACE, market / "marketplace.json")
 
     census = tmp_path / "skill-page-headings.json"
@@ -431,7 +432,7 @@ def test_an_entry_path_that_is_not_the_plugin_root_reds(mod, tree, engine):
     data = json.loads(path.read_text(encoding="utf-8"))
     data["plugins"][0]["source"]["path"] = ".claude/skills/moved-away"
     path.write_text(json.dumps(data, indent=2), encoding="utf-8")
-    assert has(run(mod, engine), "`source.path` is '.claude/skills/moved-away'")
+    assert has(run(mod, engine), "not to the plugin root")
 
 
 def test_a_marketplace_entry_declaring_its_own_version_reds(mod, tree, engine):

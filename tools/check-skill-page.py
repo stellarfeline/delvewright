@@ -2320,10 +2320,31 @@ def manifest_rules(rep: Report, base: str | None, pin_repo: str, ref: str) -> No
                 f"cannot pin at all."
             )
         else:
+            # `path` is judged by RESOLVING it, never by comparing spellings:
+            # the documentation says it is a "Subdirectory path within the repo",
+            # and the marketplace root is what it resolves against — the same
+            # reading Claude Code gives it. A spelling comparison would answer
+            # about where this file sits rather than about where the entry points.
+            spelt = source.get("path")
+            if not isinstance(spelt, str) or not spelt or spelt.startswith(("/", "./", "../")):
+                rep.find(
+                    f"the marketplace entry's `source.path` is {spelt!r}. The "
+                    f"documentation's `path` is a \"Subdirectory path within the "
+                    f"repo containing the plugin\" — a bare relative path, with no "
+                    f"leading `/` or `./`."
+                )
+            else:
+                target = (MARKETPLACE.parent.parent / spelt).resolve()
+                if target != PLUGIN_ROOT.resolve():
+                    rep.find(
+                        f"the marketplace entry's `source.path` is {spelt!r}, which "
+                        f"resolves to {target} and not to the plugin root "
+                        f"{PLUGIN_ROOT}. The entry delivers the plugin root and "
+                        f"nothing else."
+                    )
             fields = {
                 "source": "git-subdir",
                 "url": pin_repo,
-                "path": rel(PLUGIN_ROOT),
                 "ref": ref,
             }
             for key, want in fields.items():
@@ -2338,7 +2359,7 @@ def manifest_rules(rep: Report, base: str | None, pin_repo: str, ref: str) -> No
                             f"files is held equal here or it is two authorities "
                             f"(ADR-0029 §2)."
                             if key in ("ref", "url")
-                            else "The entry delivers the plugin root and nothing else."
+                            else "The source kind decides which fields are read at all."
                         )
                     )
             for key, why in (
@@ -2359,8 +2380,8 @@ def manifest_rules(rep: Report, base: str | None, pin_repo: str, ref: str) -> No
             manifest = PLUGIN_ROOT / ".claude-plugin" / "plugin.json"
             if not manifest.is_file():
                 rep.find(
-                    f"the marketplace entry's `path` names {rel(PLUGIN_ROOT)}, which "
-                    f"carries no `.claude-plugin/plugin.json`."
+                    f"the marketplace entry's `path` names the plugin root "
+                    f"{PLUGIN_ROOT}, which carries no `.claude-plugin/plugin.json`."
                 )
             elif json.loads(manifest.read_text(encoding="utf-8")).get("name") != name:
                 rep.find(

@@ -182,7 +182,7 @@ GRAMMAR_INPUTS = (
     "delvewright--v1.4.3",
     "delvewright-dsl--v0.26.0",
     "main",
-    "70eea6296cfab2440054f95670729081c3d4bca1",
+    "0" * 40,  # a 40-hex shape, not a revision: a real one here would be an unregistered pin
     "",
 )
 
