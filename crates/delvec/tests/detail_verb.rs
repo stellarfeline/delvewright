@@ -766,11 +766,7 @@ fn the_gym_is_detailed_by_one_command() {
     // answerable by a plain-walk program, and a gym that grows a place or moves
     // a seam class reds here instead of drifting.
     assert_eq!(allocations.len(), 18, "the gym's places");
-    assert_eq!(
-        places.len(),
-        14,
-        "the gym's plain-walk places: {places:?}"
-    );
+    assert_eq!(places.len(), 14, "the gym's plain-walk places: {places:?}");
 
     let out = delvec(&["--prefabs", ps, "detail", cs, "--all"]);
     assert_eq!(code(&out), 0, "{}", text(&out));
