@@ -251,6 +251,25 @@ def shadowed_documents(point: Path | None) -> list[str]:
     return out
 
 
+def probe_prefabs(prefabs: Path, dest: Path) -> int:
+    """A probe run's own copy of the prefab directory; returns the files copied.
+
+    `delvec detail` WRITES into the prefab directory it is handed, and a probe
+    carrying a program is put through that verb (spec-0058). A probe that is
+    not refused would then write its piece into the one directory every other
+    point builds from, and the next build would be measured against a piece
+    a probe made. So a probe detailing runs over a copy, made here because what
+    a build point sees — the campaign and the library beside it — is decided in
+    this module and nowhere else. `dest` is replaced, never merged, for the
+    reason `materialise` replaces.
+    """
+    dest = Path(dest)
+    _refuse_dangerous_dest(dest)
+    shutil.rmtree(dest, ignore_errors=True)
+    shutil.copytree(prefabs, dest)
+    return sum(1 for p in dest.rglob("*") if p.is_file())
+
+
 def overlays() -> list[str]:
     """The overlay names, derived from the directory — never a listed set.
 

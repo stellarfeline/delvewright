@@ -1682,6 +1682,151 @@ fn dw0881_moving_the_anchor_answers_where_no_radius_can() {
         .expect("and DW0850 has nothing to say about the moved anchor");
 }
 
+/// **`DW0739`: use the whole zone — pass `<base>.json`**, taken at the door that
+/// printed it.
+///
+/// This is the pair defect in its plainest form, and it shipped: `delvec prefab
+/// gallery <dir>` refused every tile of a tiled zone and told the reader to pass
+/// the manifest instead, and the same command could not open a manifest at all
+/// — `DW0732 cannot read …: Not a directory`. The refusal was correct, the
+/// remedy sentence was correct, and between them there was no capability. The
+/// castle a creator wanted to walk was unreachable by any command in this engine.
+///
+/// So the row is the whole pair, in one test, at one command: the refusal, the
+/// single edit the message prescribes, and the assertion that the edit reaches a
+/// **different verdict** — a browse world holding the whole zone, every tile
+/// placed at the offset its manifest declares.
+///
+/// The refusal is not weakened to get here. The first half of this row is the
+/// same red it always was, asserted before the move is taken, and
+/// `prefab_fragment_doors.rs` holds it at every other door: showing a whole zone
+/// and showing one slice of it are different inputs, and the difference is the
+/// manifest.
+#[test]
+fn dw0739_passing_the_manifest_shows_the_whole_zone_at_the_door_that_asked_for_it() {
+    let dir = tmp("fragment-zone");
+    let room = delvec::admit::fixtures::clean_room();
+    let depth = room.size[2];
+    let grid = 3;
+    let parts: Vec<serde_json::Value> = (0..grid)
+        .map(|i| {
+            let file = format!("zone.x0y0z{i}.nbt");
+            std::fs::write(
+                dir.join(&file),
+                delvec::admit::fixtures::clean_room().write(),
+            )
+            .unwrap();
+            serde_json::json!({
+                "file": file,
+                "id": format!("zone.x0y0z{i}"),
+                "grid_index": [0, 0, i],
+                "offset": [0, 0, i * depth],
+                "size": room.size,
+            })
+        })
+        .collect();
+    let manifest = dir.join("zone.json");
+    std::fs::write(
+        &manifest,
+        serde_json::json!({
+            "prefab_id": "prefab/zone",
+            "structure_set": {
+                "base": "zone",
+                "size": [room.size[0], room.size[1], depth * grid],
+                "part_max": 48,
+                "grid": [1, 1, grid],
+                "data_version": room.data_version,
+                "generator": "crates/delvec/src/grammar",
+                "parts": parts,
+            },
+            "connectors": [],
+            "lighting": { "profile": "unmeasured" },
+        })
+        .to_string(),
+    )
+    .unwrap();
+
+    // The refusal, at the door a creator points at without being told: the
+    // directory the tiles are sitting in.
+    let out = tmp("fragment-zone-out");
+    let refused = delvec(&[
+        "prefab",
+        "gallery",
+        dir.to_str().unwrap(),
+        "-o",
+        out.join("by-dir").to_str().unwrap(),
+    ]);
+    let text = log(&refused);
+    assert_eq!(refused.status.code(), Some(2), "{text}");
+    assert!(text.contains("DW0739"), "{text}");
+    assert!(
+        text.contains("Use the whole zone: pass"),
+        "the message prescribes the move:\n{text}"
+    );
+    assert!(
+        text.contains("zone.json"),
+        "and names the document to pass:\n{text}"
+    );
+
+    // The move, taken at the same command, typed exactly as the message spells
+    // it. Nothing else changes — not a flag, not the tiles, not the directory.
+    let taken = out.join("by-manifest");
+    let accepted = delvec(&[
+        "prefab",
+        "gallery",
+        manifest.to_str().unwrap(),
+        "-o",
+        taken.to_str().unwrap(),
+    ]);
+    let text = log(&accepted);
+    assert_eq!(
+        accepted.status.code(),
+        Some(0),
+        "the move reaches a different verdict:\n{text}"
+    );
+    assert!(!text.contains("DW0739"), "{text}");
+
+    // ...and the different verdict is a WHOLE ZONE, not merely a zero exit. One
+    // exhibit, every tile placed, each at the offset the manifest declares —
+    // which is the thing the refusal said the creator would get.
+    let place =
+        std::fs::read_to_string(taken.join("datapack/data/admit/function/place.mcfunction"))
+            .expect("the browse world places something");
+    let placed: Vec<&str> = place.lines().filter(|l| !l.trim().is_empty()).collect();
+    assert_eq!(
+        placed.len(),
+        grid as usize,
+        "every tile of the zone is placed, not one of them:\n{place}"
+    );
+    for i in 0..grid {
+        let want = format!("place template admit:zone.x0y0z{i} 0 64 {}", i * depth);
+        assert!(
+            placed.contains(&want.as_str()),
+            "tile {i} is placed at the offset its manifest declares (`{want}`):\n{place}"
+        );
+    }
+    let layout: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(taken.join("gallery-layout.json")).unwrap())
+            .unwrap();
+    let areas = layout["areas"].as_array().unwrap();
+    assert_eq!(
+        areas.len(),
+        1,
+        "the zone is ONE thing to walk around, not {} plinths: {layout}",
+        areas.len()
+    );
+    assert_eq!(
+        areas[0]["size"],
+        serde_json::json!([room.size[0], room.size[1], depth * grid]),
+        "and it is the whole volume the manifest declares: {layout}"
+    );
+    eprintln!(
+        "DW0739 remedy binding: 1 refusal at `prefab gallery <dir>`, its move taken at \
+         `prefab gallery <manifest>`, {} of {grid} tile(s) placed as 1 exhibit",
+        placed.len()
+    );
+}
+
 // ---------------------------------------------------------------------------
 // DW0896 / DW0897 — a mark (spec-0066)
 // ---------------------------------------------------------------------------
@@ -1824,5 +1969,146 @@ fn dw0897_shortening_the_offset_ends_green() {
             .1
             .is_ok(),
         "and DW0896 is green over the shortened rank"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// DW0900 — every approved image is answered
+// ---------------------------------------------------------------------------
+//
+// Three moves, all three taken here: write the camera, delete the picture and
+// its row, or delete the record and build. The third is the one a creator with
+// no built tree to preview against has to be able to take, and it is the one a
+// rule that refused the absent record would have closed.
+
+/// Write `design/cameras.json` answering `rows`, every camera at `pos`.
+fn design_cameras(camp: &Path, pos: [f64; 3], rows: &[(&str, &str)]) {
+    let cams: Vec<serde_json::Value> = rows
+        .iter()
+        .map(|(name, answers)| {
+            serde_json::json!({
+                "answers": answers, "exposure": 1.0, "fov": 70.0, "height": 90,
+                "name": name, "pitch": 10.0, "pos": pos, "source": "estimated",
+                "spp": 16, "width": 160, "yaw": 0.0
+            })
+        })
+        .collect();
+    std::fs::create_dir_all(camp.join("design")).unwrap();
+    std::fs::write(
+        camp.join("design/cameras.json"),
+        serde_json::to_vec_pretty(&serde_json::json!({
+            "campaign_id": "hello-world", "cameras": cams
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+}
+
+/// The eye of a plain hello-world build's first player-POV shot — a point that
+/// build proved clear, so a showcase camera there passes `DW0724` and the
+/// verdict this row reads is about `DW0900` and nothing else.
+fn proven_eye(tag: &str) -> [f64; 3] {
+    let camp = design_campaign(tag, "noon", &[], &[]);
+    let out = tmp(&format!("eye-out-{tag}"));
+    let r = delvec(&[
+        "build",
+        camp.to_str().unwrap(),
+        "-o",
+        out.to_str().unwrap(),
+        "--prefabs",
+        common::prefabs_dir().to_str().unwrap(),
+    ]);
+    assert_eq!(r.status.code(), Some(0), "{}", log(&r));
+    let plan: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(out.join("render-plan.json")).unwrap()).unwrap();
+    let pov = plan["shots"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|s| s["kind"] == "pov")
+        .expect("hello-world has a walked POV")
+        .clone();
+    serde_json::from_value(pov["camera"]["pos"].clone()).unwrap()
+}
+
+/// **`AUTHOR a camera for each`**, **`DELETE the picture and its row from
+/// `design.json``** and **`DELETE `design/cameras.json`, build`** — the three
+/// moves `DW0900`'s message names, each reaching a build.
+#[test]
+fn dw0900_writing_the_camera_deleting_the_picture_and_deleting_the_record_all_build() {
+    let dir = common::prefabs_dir();
+    let eye = proven_eye("answered-eye");
+    let two = [
+        ("concept/shore-far", "noon", "clear"),
+        ("concept/tower-far", "noon", "clear"),
+    ];
+
+    let red = design_campaign(
+        "answered-red",
+        "noon",
+        &["concept/shore-far.png", "concept/tower-far.png"],
+        &two,
+    );
+    design_cameras(&red, eye, &[("shore", "concept/shore-far")]);
+    let (code, before) = build("answered-red", &red, &dir);
+    assert_eq!(code, 3, "refused:\n{before}");
+    assert!(before.contains("DW0900"), "{before}");
+    assert!(
+        before.contains("(1) AUTHOR a camera for each"),
+        "the message names the move:\n{before}"
+    );
+    assert!(
+        before.contains("(2) DELETE the picture and its row from `design.json`"),
+        "and the second one:\n{before}"
+    );
+    assert!(
+        before.contains("(3) DELETE `design/cameras.json`, build"),
+        "and the third:\n{before}"
+    );
+
+    // Move one: write the missing camera.
+    let a = design_campaign(
+        "answered-camera",
+        "noon",
+        &["concept/shore-far.png", "concept/tower-far.png"],
+        &two,
+    );
+    design_cameras(
+        &a,
+        eye,
+        &[
+            ("shore", "concept/shore-far"),
+            ("tower", "concept/tower-far"),
+        ],
+    );
+    let (code, after) = build("answered-camera", &a, &dir);
+    assert_eq!(code, 0, "the second camera builds:\n{after}");
+    assert!(!after.contains("DW0900 [error]"), "{after}");
+
+    // Move two: delete the picture nobody drew a camera for, and its row.
+    let b = design_campaign(
+        "answered-delete-row",
+        "noon",
+        &["concept/shore-far.png"],
+        &two[..1],
+    );
+    design_cameras(&b, eye, &[("shore", "concept/shore-far")]);
+    let (code, after) = build("answered-delete-row", &b, &dir);
+    assert_eq!(code, 0, "deleting the picture and its row builds:\n{after}");
+    assert!(!after.contains("DW0900 [error]"), "{after}");
+
+    // Move three: delete the record, build, and write it against that build.
+    let c = design_campaign(
+        "answered-delete-record",
+        "noon",
+        &["concept/shore-far.png", "concept/tower-far.png"],
+        &two,
+    );
+    let (code, after) = build("answered-delete-record", &c, &dir);
+    assert_eq!(code, 0, "with no record at all the build runs:\n{after}");
+    assert!(!after.contains("DW0900 [error]"), "{after}");
+    assert!(
+        after.contains("showcase cameras: none (no design/cameras.json); 0 of 2"),
+        "and the zero is measured, not silent:\n{after}"
     );
 }

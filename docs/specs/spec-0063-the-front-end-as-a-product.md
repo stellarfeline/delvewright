@@ -417,15 +417,20 @@ names. The three fields the page carries today move as follows: `version`
 becomes `plugin.json`'s `version` — the plugin is the skill's packaging, and it
 is the version the runtime acts on; `requires.delvec` becomes
 `metadata.requires_delvec`; `verified_with` is **replaced by the pin** —
-`versions.toml [engine].release` beside the page is the one engine the page is
-proven on, held online to `ref` and held to the engine's version at `ref`, so
-the claim moves and is not weakened.
+`versions.toml [engine].ref` beside the page is the one engine release the page
+is proven on and ships at, held to the version the tree that tag names states,
+so the claim moves and is not weakened.
 
-**`versions.toml` beside the page**: `[engine] repo`, `release` (`v<semver>`),
-`ref` (40-hex). Registered in the engine's `.github/pins.toml` under the
-`release` policy — a commit a release tag points at, drift never a finding —
-and discovered by `tools/ci/check-pins.py`, which today matches `versions.toml`
-at the root only and gains this path.
+**`versions.toml` beside the page**: `[engine] repo` and `ref`, and `ref` is the
+engine release TAG in `tools/lib/release_tags.py`'s grammar (ADR-0029 §2). One
+name: the marketplace entry serves the plugin root out of the commit that tag
+points at, Init I2 detaches there and Init I3a downloads the shelf at it, so the
+archive name, the version the binary must answer and the tree the page is judged
+against are all derived rather than stated twice. Registered in the engine's
+`.github/pins.toml` under the `release` policy — a release tag of the thing the
+sites fetch, existing or this tree's own unborn one, drift never a finding — and
+held by `tools/ci/check-skill-page.py` as the registry's `bound_by`, because a tag
+name carries no shape the pin scan can separate from data.
 
 **`plugin.json` `version`** continues the frontmatter's line. It moves on every
 pull request that changes any file under the plugin root, which is what makes
@@ -445,8 +450,9 @@ it:
 | rule | reds when |
 |---|---|
 | frontmatter is exactly `name`, `description`, `metadata`; `name` equals the directory; `description` is 1–1024 characters; `metadata.requires_delvec` is a major window | a fourth field; `argument-hint`; a window whose ceiling is not the floor's next major |
-| the pin is shaped: `release` matches `v\d+\.\d+\.\d+`, `ref` is 40 lowercase hex; neither literal appears in `SKILL.md`, `references/` or `scripts/`; the page extracts `["engine"]["release"]` and `["engine"]["ref"]` | a branch name in `ref`; the release pasted into I3a; a page that clones without reading the file |
-| the release's number is inside `requires_delvec` and equals `[workspace.package] version` at `ref` | a re-pin past the window; a tag whose tree says another number |
+| the pin is one name: `ref` is a `delvec` release tag in `release_tags.py`'s grammar, and where this repository has no such tag it is the tag this tree's own release would create; `release` is gone; the literal appears in no page file; the page extracts `["engine"]["ref"]` | a branch name or a bare sha in `ref`; an unborn tag nobody is about to publish; the tag pasted into I3a; a page that clones without reading the file |
+| the tag's version is inside `requires_delvec` and equals `[workspace.package] version` at the tree the tag names | a re-pin past the window; a tag whose tree says another number |
+| the marketplace entry is a `git-subdir` source whose `url` is `[engine].repo`, `path` is the plugin root and `ref` equals `[engine].ref`, with no `sha` and no `version` | a relative-path `source`, which cannot pin; a `ref` the pin does not state; a `sha`, which the documentation makes the effective pin |
 | every `delvec` subcommand and long flag in `SKILL.md` and `references/` exists in the clap surface at `ref`; zero references found is a red | a renamed subcommand; a dropped flag |
 | every `Stage::name` at `ref` is named as a whole token; every `WorldContent` field is named in a code span; every stated idiom-index count equals the table at `ref` | a new stage document; a world field the page never lists |
 | `SKILL.md` body is at most 500 lines, fences tracked | a body of 501 |
@@ -548,15 +554,25 @@ written. Where the tree cannot yet satisfy a criterion the verdict is a debt.
    containing the pinned release's number. *Tree: debt — at `ee25912f` the
    frontmatter carries `version`, `requires` and `verified_with` (measured:
    lines 4–7).*
-4. **The pin.** `skills/new-delve/versions.toml` carries `[engine].release`
-   and `[engine].ref`; `--online` resolves the tag to `ref` and finds an archive
-   per `[engine].targets` at `ref` plus `SHA256SUMS`; `.github/pins.toml`
-   registers it under `release`; `check-pins.py` discovers the path. *Tree:
-   debt for the file and the registry; the shelf half holds today for the
-   content pin's pair — `v1.4.0` → `d8d87ef6`, five archives, one `SHA256SUMS`
-   (measured through the releases API and the tag object).*
-5. **No literal.** Neither `release` nor `ref` appears in `SKILL.md`,
-   `references/` or `scripts/`; the page extracts both keys. *Tree: debt — the
+4. **The pin.** `skills/new-delve/versions.toml` carries `[engine].repo` and
+   `[engine].ref`, and `ref` is the engine release tag the marketplace entry
+   serves the page from; `--online` has two states decided by the object — the
+   tag exists and its Release carries an archive per `[engine].targets` at the
+   tree it names plus `SHA256SUMS`, or it does not and it is this tree's own
+   unborn tag, in which case there is no shelf yet to ask about;
+   `.github/pins.toml` registers it under `release`, on the `bound_by` arm, and
+   `check-pins.py` verifies the binder. **Loosening, declared in those words**:
+   this criterion used to demand the shelf unconditionally, and in the unborn
+   state it no longer does — the release that writes the tag is what fills the
+   shelf, so there is nothing to ask. What replaces it in that state is a
+   narrower assertion that is still made online: the remote confirms it does not
+   carry the tag, so a tag that has appeared since flips the gate back to the
+   demanding arm rather than leaving it silent. *Tree: debt for the file and the
+   registry; the shelf half holds today for the content pin's pair — `v1.4.0` →
+   `d8d87ef6`, five archives, one `SHA256SUMS` (measured through the releases
+   API and the tag object).*
+5. **No literal.** `ref` appears in no file of `SKILL.md`, `references/` or
+   `scripts/`; the page extracts the key. *Tree: debt — the
    page at `ee25912f` extracts them from a manifest that will not exist beside
    it; the content gate's same rule is green there (its CI), which is the shape
    this criterion keeps.*

@@ -27,8 +27,10 @@ SCRIPT = SKILL / "scripts" / "check-toolchain.py"
 INIT = SKILL / "references" / "init.md"
 
 # An invented engine: the numbers are the rig's own, so no pin this repository
-# holds can move a test here.
-RELEASE = "v9.8.7"
+# holds can move a test here. The pin names a release TAG (ADR-0029 §1), and the
+# rig writes that tag into its own engine checkout, because the check resolves it
+# there rather than comparing two strings.
+TAG = "delvec--v9.8.7"
 OTHER = "delvec 9.8.6, dsl 0.0.0, mc 1.21.11"
 ANSWER = "delvec 9.8.7, dsl 0.0.0, mc 1.21.11"
 
@@ -76,18 +78,25 @@ class Machine:
         self.engine.mkdir(parents=True)
         _git("init", "-q", cwd=self.engine)
         self.ref = _commit(self.engine, '[engine]\nversion = "9.8.7"\n')
-        self.pin(RELEASE, self.ref)
+        self.pin(TAG, self.ref)
         _delvec(self.bindir, ANSWER)
         self.write_env(
             mode="creator", engine=self.engine, skill=self.skill, bindir=self.bindir
         )
 
-    def pin(self, release: str, ref: str) -> None:
+    def pin(self, tag: str, commit: str | None = None) -> None:
+        """Write the pin, and where a commit is given, put that tag on it.
+
+        One name: the version the binary must answer and the commit the tree must
+        stand at are both derived from it, so a test moves one thing by moving
+        one name.
+        """
         (self.skill / "versions.toml").write_text(
-            f'[engine]\nrepo = "stellarfeline/delvewright"\n'
-            f'release = "{release}"\nref = "{ref}"\n',
+            f'[engine]\nrepo = "stellarfeline/delvewright"\nref = "{tag}"\n',
             encoding="utf-8",
         )
+        if commit is not None:
+            _git("tag", "-f", tag, commit, cwd=self.engine)
 
     def write_env(self, **values: object) -> None:
         self.env.write_text(
@@ -147,7 +156,7 @@ def test_a_machine_at_the_pin_agrees_on_every_comparison(machine):
 
 def test_a_moved_pin_release_is_refused_and_names_the_download(machine):
     """The plugin update: the page pins a newer engine than the binary on disk."""
-    machine.pin("v9.8.8", machine.ref)  # the release moves, the tree does not
+    machine.pin("delvec--v9.8.8", machine.ref)  # the release moves, the tree does not
     proc = machine.check()
     assert proc.returncode == 3, proc.stdout
     assert "found delvec 9.8.7, dsl 0.0.0, mc 1.21.11, want delvec 9.8.8" in proc.stdout
@@ -164,11 +173,11 @@ def test_a_binary_answering_another_number_is_refused(machine):
 def test_a_tree_at_another_revision_is_refused_and_names_I2(machine):
     old = machine.ref
     new = _commit(machine.engine, '[engine]\nversion = "9.8.7"\n# moved\n')
-    machine.pin(RELEASE, new)
+    machine.pin(TAG, new)
     _git("checkout", "-q", "--detach", old, cwd=machine.engine)
     proc = machine.check()
     assert proc.returncode == 3
-    assert f"found {old}, want {new}" in proc.stdout
+    assert f"found {old}, want {TAG} ({new})" in proc.stdout
     assert _refused_steps(proc.stdout) == ["I2"]
 
 
@@ -235,7 +244,7 @@ def test_an_env_sh_that_does_not_source_is_unusable(machine):
 def test_dev_mode_holds_the_binary_to_the_checkouts_own_number(machine):
     """I3b's rule, unchanged: the checkout's `[engine].version`, never the pin's release."""
     dev = machine.engine
-    machine.pin("v1.0.0", "0" * 40)  # a pin that disagrees with everything in dev
+    machine.pin("delvec--v1.0.0")  # a pin that disagrees with everything in dev
     skill_in_checkout = machine.skill
     machine.write_env(mode="dev", engine=dev, skill=skill_in_checkout, bindir=machine.bindir)
     proc = machine.check(mode="dev", engine=dev)

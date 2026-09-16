@@ -1939,6 +1939,66 @@ def test_a_build_that_wrote_no_design_record_is_missing_check(gate, tmp_path):
     assert r["verdict"] == "MISSING-CHECK", r
 
 
+# ---------------------------------------------------------------------------
+# `drill3-03`: a build the owner walks answers every approved picture with a
+# view of the built world, or is not staged (spec-0070)
+# ---------------------------------------------------------------------------
+#
+# The same shape one key over. It is the ledger's `answered`, and the state it
+# exists to refuse is the one the BUILD cannot: a campaign with approved
+# pictures and no `design/cameras.json` at all, which builds green because the
+# first build of every campaign is the build its cameras are written against.
+
+ANSWERED_ROW = {
+    "id": "drill3-03-like",
+    "finding": "no rendered view of the built world answered any approved picture",
+    "carrier": {"kind": "dw", "code": "DW0900"},
+    "binding": {"kind": "artifact", "file": "design-record.json", "path": "answered"},
+    "applies_when": {"kind": "campaign", "glob": "world.json"},
+}
+
+
+def answered_subject(gate, tmp_path, *, references, answered, key=True):
+    """A campaign whose build ledger records `references` rows and `answered`
+    of them with a camera. `key=False` writes the ledger WITHOUT `answered` —
+    an older build, or an engine that stopped counting, which is *I could not
+    look* and never a zero."""
+    camp = make_campaign(tmp_path, objectives=[{"type": "interact"}])
+    (camp / "world.json").write_text(json.dumps({"content": {"time": "night"}}))
+    build = make_build(tmp_path)
+    doc = {"references": references, "image_files": references, "cameras": answered}
+    if key:
+        doc["answered"] = answered
+    (build / "validation" / "design-record.json").write_text(json.dumps(doc))
+    return gate.Subject(camp, build)
+
+
+def test_approved_pictures_with_no_camera_are_refused_at_staging(gate, tmp_path):
+    """Six approved pictures, no camera record: the build was green and the
+    walk is refused. This is the half of the rule the build deliberately does
+    not hold."""
+    subj = answered_subject(gate, tmp_path, references=6, answered=0)
+    r = gate.adjudicate(ANSWERED_ROW, gate.Engine(), subj)
+    assert r["verdict"] == "UNBOUND", r
+    assert r["binding"] == 0
+    assert r["precondition"] == 1, "every campaign is a member of the class"
+
+
+def test_every_approved_picture_answered_binds_the_row(gate, tmp_path):
+    subj = answered_subject(gate, tmp_path, references=6, answered=6)
+    r = gate.adjudicate(ANSWERED_ROW, gate.Engine(), subj)
+    assert r["verdict"] == "BOUND", r
+    assert r["binding"] == 6
+
+
+def test_a_ledger_with_no_answered_key_is_missing_check(gate, tmp_path):
+    """An engine that stopped writing the count is format rot, not a campaign
+    that answered nothing."""
+    subj = answered_subject(gate, tmp_path, references=6, answered=6, key=False)
+    r = gate.adjudicate(ANSWERED_ROW, gate.Engine(), subj)
+    assert r["verdict"] == "MISSING-CHECK", r
+
+
 def test_the_design_record_is_a_stage_document_the_gate_holds(gate):
     """Without this the gate has no parsed copy of a document the compiler
     reads, and a campaign carrying one reds `MISSING-CHECK` as format rot."""

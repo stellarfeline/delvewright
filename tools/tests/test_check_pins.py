@@ -87,6 +87,18 @@ CHECKER = REPO / "tools" / "ci" / "check-pins.py"
 # test data, which is the kind of exemption that later covers a real pin.
 DIGEST = "sha256:" + "ab12" * 16
 ACTION = "example/fetch" + "er@v4"  # `uses: <this>` here would be a pin too
+
+
+# Every `git` this file runs goes through here. The committer it needs is the
+# suite's, from `conftest.py`'s autouse `git_identity` — not a copy in this
+# file, which is what left the seventh caller without one.
+def git(*args: str, check: bool = True) -> subprocess.CompletedProcess:
+    return subprocess.run(
+        ["git", *args],
+        check=check,
+        capture_output=True,
+        text=True,
+    )
 REV = "0123456789abcdef" * 2 + "01234567"
 
 
@@ -111,14 +123,14 @@ def repo(tmp_path: Path) -> Path:
         f"        with:\n          image: {DIGEST}\n",
         encoding="utf-8",
     )
-    subprocess.run(["git", "-C", str(tmp_path), "init", "-q"], check=True)
-    subprocess.run(["git", "-C", str(tmp_path), "add", "-A"], check=True)
+    git("-C", str(tmp_path), "init", "-q")
+    git("-C", str(tmp_path), "add", "-A")
     return tmp_path
 
 
 def write_registry(repo: Path, body: str) -> None:
     (repo / ".github" / "pins.toml").write_text(body, encoding="utf-8")
-    subprocess.run(["git", "-C", str(repo), "add", "-A"], check=True)
+    git("-C", str(repo), "add", "-A")
 
 
 def add_file(repo: Path, rel: str, body: str) -> None:
@@ -126,7 +138,7 @@ def add_file(repo: Path, rel: str, body: str) -> None:
     path = repo / rel
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(body, encoding="utf-8")
-    subprocess.run(["git", "-C", str(repo), "add", "-A"], check=True)
+    git("-C", str(repo), "add", "-A")
 
 
 COMPLETE = f"""
@@ -180,8 +192,8 @@ def test_zero_binding_is_a_finding_not_a_pass(tmp_path: Path) -> None:
     (tmp_path / ".github").mkdir()
     (tmp_path / ".github" / "pins.toml").write_text("", encoding="utf-8")
     (tmp_path / "README.md").write_text("no pins here\n", encoding="utf-8")
-    subprocess.run(["git", "-C", str(tmp_path), "init", "-q"], check=True)
-    subprocess.run(["git", "-C", str(tmp_path), "add", "-A"], check=True)
+    git("-C", str(tmp_path), "init", "-q")
+    git("-C", str(tmp_path), "add", "-A")
     r = run(tmp_path)
     assert r.returncode == 1
     assert "binding of zero" in r.stderr
@@ -246,7 +258,7 @@ why = "a commit names exact bytes"
         f"        with:\n          image: {DIGEST}\n",
         encoding="utf-8",
     )
-    subprocess.run(["git", "-C", str(repo), "add", "-A"], check=True)
+    git("-C", str(repo), "add", "-A")
     r = run(repo)
     assert r.returncode == 1
     assert "not exempt by being called immutable" in r.stderr
@@ -269,7 +281,7 @@ why = "the judge"
         f"        with:\n          image: {DIGEST}\n",
         encoding="utf-8",
     )
-    subprocess.run(["git", "-C", str(repo), "add", "-A"], check=True)
+    git("-C", str(repo), "add", "-A")
     r = run(repo)
     assert r.returncode == 1
     assert "must carry `reviewed`" in r.stderr
@@ -295,7 +307,7 @@ why = "the judge"
         f"        with:\n          image: {DIGEST}\n",
         encoding="utf-8",
     )
-    subprocess.run(["git", "-C", str(repo), "add", "-A"], check=True)
+    git("-C", str(repo), "add", "-A")
     r = run(repo)
     assert r.returncode == 1
     assert "declared and never runs" in r.stderr
@@ -323,7 +335,7 @@ why = "the judge"
         f"      - run: cargo build -p delvec --release\n",
         encoding="utf-8",
     )
-    subprocess.run(["git", "-C", str(repo), "add", "-A"], check=True)
+    git("-C", str(repo), "add", "-A")
     r = run(repo)
     assert r.returncode == 1
     assert "`builds` does not name it" in r.stderr
@@ -347,25 +359,13 @@ def make_upstream_repo(
 ) -> tuple[Path, list[str]]:
     """A minimal real git history: `n` commits, oldest first, no remote."""
     upstream = tmp_path_factory.mktemp(name)
-    subprocess.run(["git", "-C", str(upstream), "init", "-q"], check=True)
-    subprocess.run(
-        ["git", "-C", str(upstream), "config", "user.email", "t@example.com"],
-        check=True,
-    )
-    subprocess.run(["git", "-C", str(upstream), "config", "user.name", "t"], check=True)
+    git("-C", str(upstream), "init", "-q")
     shas = []
     for i in range(n):
         (upstream / f"f{i}.txt").write_text(str(i), encoding="utf-8")
-        subprocess.run(["git", "-C", str(upstream), "add", "-A"], check=True)
-        subprocess.run(["git", "-C", str(upstream), "commit", "-q", "-m", f"c{i}"], check=True)
-        shas.append(
-            subprocess.run(
-                ["git", "-C", str(upstream), "rev-parse", "HEAD"],
-                capture_output=True,
-                text=True,
-                check=True,
-            ).stdout.strip()
-        )
+        git("-C", str(upstream), "add", "-A")
+        git("-C", str(upstream), "commit", "-q", "-m", f"c{i}")
+        shas.append(git("-C", str(upstream), "rev-parse", "HEAD").stdout.strip())
     return upstream, shas
 
 
@@ -386,7 +386,7 @@ why = "the judge"
         f"        with:\n          image: {DIGEST}\n",
         encoding="utf-8",
     )
-    subprocess.run(["git", "-C", str(repo), "add", "-A"], check=True)
+    git("-C", str(repo), "add", "-A")
     r = run(repo)
     assert r.returncode == 1
     assert "must carry `reviewed`" in r.stderr
@@ -422,7 +422,7 @@ why = "judged the interval ending here; the admission rules it enforces did not 
         f"      - run: cargo build -p delvec --release\n",
         encoding="utf-8",
     )
-    subprocess.run(["git", "-C", str(repo), "add", "-A"], check=True)
+    git("-C", str(repo), "add", "-A")
     r = run(repo)
     assert r.returncode == 0, r.stderr
 
@@ -439,7 +439,7 @@ def test_held_policy_prints_drift_as_information_not_a_finding(
         f"      - run: git checkout {value}\n",
         encoding="utf-8",
     )
-    subprocess.run(["git", "-C", str(repo), "add", "-A"], check=True)
+    git("-C", str(repo), "add", "-A")
     write_registry(repo, COMPLETE + f"""
 [[pin]]
 id = "judge"
@@ -469,7 +469,7 @@ def test_held_policy_missing_why_is_a_finding(
         f"      - run: git checkout {value}\n",
         encoding="utf-8",
     )
-    subprocess.run(["git", "-C", str(repo), "add", "-A"], check=True)
+    git("-C", str(repo), "add", "-A")
     write_registry(repo, COMPLETE + f"""
 [[pin]]
 id = "judge"
@@ -501,7 +501,7 @@ def test_held_policy_workflow_literal_that_differs_from_the_value_is_a_finding(
         f"      - run: git checkout {other}\n",
         encoding="utf-8",
     )
-    subprocess.run(["git", "-C", str(repo), "add", "-A"], check=True)
+    git("-C", str(repo), "add", "-A")
     write_registry(repo, COMPLETE + f"""
 [[pin]]
 id = "judge"
@@ -529,25 +529,17 @@ def test_track_still_reds_when_upstream_changed_its_watched_sources(
     reds under `track`, unchanged.
     """
     upstream = tmp_path_factory.mktemp("upstream-track")
-    subprocess.run(["git", "-C", str(upstream), "init", "-q"], check=True)
-    subprocess.run(
-        ["git", "-C", str(upstream), "config", "user.email", "t@example.com"],
-        check=True,
-    )
-    subprocess.run(["git", "-C", str(upstream), "config", "user.name", "t"], check=True)
+    git("-C", str(upstream), "init", "-q")
     foo = upstream / "crates" / "foo"
     (foo / "src").mkdir(parents=True)
     (foo / "Cargo.toml").write_text('[package]\nname = "foo"\nversion = "0.1.0"\n', encoding="utf-8")
     (foo / "src" / "lib.rs").write_text("// v1\n", encoding="utf-8")
-    subprocess.run(["git", "-C", str(upstream), "add", "-A"], check=True)
-    subprocess.run(["git", "-C", str(upstream), "commit", "-q", "-m", "c0"], check=True)
-    value = subprocess.run(
-        ["git", "-C", str(upstream), "rev-parse", "HEAD"],
-        capture_output=True, text=True, check=True,
-    ).stdout.strip()
+    git("-C", str(upstream), "add", "-A")
+    git("-C", str(upstream), "commit", "-q", "-m", "c0")
+    value = git("-C", str(upstream), "rev-parse", "HEAD").stdout.strip()
     (foo / "src" / "lib.rs").write_text("// v2\n", encoding="utf-8")
-    subprocess.run(["git", "-C", str(upstream), "add", "-A"], check=True)
-    subprocess.run(["git", "-C", str(upstream), "commit", "-q", "-m", "c1: touch foo"], check=True)
+    git("-C", str(upstream), "add", "-A")
+    git("-C", str(upstream), "commit", "-q", "-m", "c1: touch foo")
 
     (repo / ".github" / "workflows" / "judge.yml").write_text(
         "name: judge\njobs:\n  a:\n    steps:\n"
@@ -555,7 +547,7 @@ def test_track_still_reds_when_upstream_changed_its_watched_sources(
         "      - run: cargo build -p foo --release\n",
         encoding="utf-8",
     )
-    subprocess.run(["git", "-C", str(repo), "add", "-A"], check=True)
+    git("-C", str(repo), "add", "-A")
     write_registry(repo, COMPLETE + f"""
 [[pin]]
 id = "engine"
@@ -965,8 +957,8 @@ def test_an_enumeration_that_applies_no_verb_is_a_finding(tmp_path: Path) -> Non
         encoding="utf-8",
     )
     (tmp_path / "repo" / "README.md").write_text("prose\n", encoding="utf-8")
-    subprocess.run(["git", "-C", str(tmp_path / "repo"), "init", "-q"], check=True)
-    subprocess.run(["git", "-C", str(tmp_path / "repo"), "add", "-A"], check=True)
+    git("-C", str(tmp_path / "repo"), "init", "-q")
+    git("-C", str(tmp_path / "repo"), "add", "-A")
     registry = tmp_path / "pins.toml"
     registry.write_text(
         f'[[pin]]\nid = "fetcher"\nvalue = "{ACTION}"\n'
@@ -1466,3 +1458,103 @@ why = "the same bytes, held for a different reason, at its own site"
     assert "build/undeclared.yml" in r.stderr
     assert "no entry holding that value lists as a site" in r.stderr
     assert "image, twin" in r.stderr
+
+
+# ---------------------------------------------------------------------------
+# The `release` policy, whose value is a release TAG and whose object may not
+# exist yet (ADR-0029 §3). Two arms, and the OBJECT decides which — whether the
+# pinned repository carries the tag. The unborn arm is the one that could become
+# an escape hatch, so it is perturbed toward exactly that: a name nobody is
+# about to publish, and a line no tree states a version for in advance.
+# ---------------------------------------------------------------------------
+
+RELEASE_SITE = ".claude/skills/delvewright/skills/new-delve/versions.toml"
+RELEASE_BINDER = "tools/hold-the-page-pin.sh"
+
+
+def with_a_release_pin(repo: Path, tag: str, tree_version: str = "1.6.0") -> None:
+    """A `release` pin on this project's own history, with the binder it owes."""
+    add_file(repo, "versions.toml", f'[engine]\nversion = "{tree_version}"\n')
+    add_file(repo, RELEASE_SITE, f'[engine]\nrepo = "stellarfeline/delvewright"\nref = "{tag}"\n')
+    add_file(
+        repo,
+        RELEASE_BINDER,
+        "#!/usr/bin/env bash\n"
+        f"# holds engine.ref equal across {RELEASE_SITE} and .claude-plugin/marketplace.json\n",
+    )
+    add_file(
+        repo,
+        ".github/workflows/page.yml",
+        "name: page\njobs:\n  a:\n    steps:\n"
+        f"      - run: bash {RELEASE_BINDER}\n"
+        "      - run: python3 tools/check-pins.py --online --checkout skill-page-engine=.\n",
+    )
+    write_registry(
+        repo,
+        COMPLETE
+        + f"""
+[[pin]]
+id = "skill-page-engine"
+value = "{tag}"
+sites = ["{RELEASE_SITE}"]
+repo = "stellarfeline/delvewright"
+policy = "release"
+judged_by = ".github/workflows/page.yml"
+bound_by = "{RELEASE_BINDER}"
+bound_key = "engine.ref"
+why = "the one engine release the page ships at"
+""",
+    )
+    git("-C", str(repo), "commit", "-q", "-m", "release pin")
+
+
+def test_an_unborn_release_tag_that_is_this_trees_own_passes(repo: Path) -> None:
+    """The interval of ADR-0029 §3: the pin names the tag this tree's own release
+    will write at its merge commit, and the object does not exist yet."""
+    with_a_release_pin(repo, "delvec--v1.6.0", tree_version="1.6.0")
+    r = run(repo, "--online", "--checkout", f"skill-page-engine={repo}")
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert "is unborn and is this tree's own next delvec tag" in r.stdout
+
+
+def test_an_unborn_release_tag_that_is_not_this_trees_own_is_a_finding(repo: Path) -> None:
+    """The perturbation toward the hatch: any other absent name would make the
+    unborn arm a way to pin at nothing."""
+    with_a_release_pin(repo, "delvec--v9.9.9", tree_version="1.6.0")
+    r = run(repo, "--online", "--checkout", f"skill-page-engine={repo}")
+    assert r.returncode == 1
+    assert "this tree's own delvec tag is delvec--v1.6.0" in r.stderr
+
+
+def test_a_release_tag_that_exists_is_held_to_the_tree_it_names(repo: Path) -> None:
+    with_a_release_pin(repo, "delvec--v1.6.0", tree_version="1.6.0")
+    git("-C", str(repo), "tag", "delvec--v1.6.0")
+    r = run(repo, "--online", "--checkout", f"skill-page-engine={repo}")
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert "whose tree states delvec 1.6.0" in r.stdout
+
+
+def test_a_release_tag_whose_tree_states_another_version_is_a_finding(repo: Path) -> None:
+    """A hand-written tag is the shape this catches: the release workflow derives
+    the name from the tree, so a tag and its tree can only disagree by hand."""
+    with_a_release_pin(repo, "delvec--v1.6.0", tree_version="1.5.0")
+    git("-C", str(repo), "tag", "delvec--v1.6.0")
+    r = run(repo, "--online", "--checkout", f"skill-page-engine={repo}")
+    assert r.returncode == 1
+    assert "whose tree states delvec 1.5.0" in r.stderr
+
+
+def test_a_value_outside_the_tag_grammar_is_a_finding(repo: Path) -> None:
+    with_a_release_pin(repo, "v1.6.0", tree_version="1.6.0")
+    r = run(repo, "--online", "--checkout", f"skill-page-engine={repo}")
+    assert r.returncode == 1
+    assert "policy 'release' names a release tag" in r.stderr
+
+
+def test_an_unborn_tag_of_a_line_no_tree_states_in_advance_is_a_finding(repo: Path) -> None:
+    """`delvewright`'s version arrives as a release dispatch's input, so no tree
+    states it beforehand and there is no unborn tag a pin could be naming."""
+    with_a_release_pin(repo, "delvewright--v1.4.3", tree_version="1.6.0")
+    r = run(repo, "--online", "--checkout", f"skill-page-engine={repo}")
+    assert r.returncode == 1
+    assert "no tree states a delvewright version in advance" in r.stderr

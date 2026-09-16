@@ -33,6 +33,91 @@
       "spp": 768,
       "width": 1600,
       "yaw": 315.0
+    },
+    {
+      "answers": "concept/morning-quay",
+      "exposure": 1.0,
+      "fov": 46.0,
+      "height": 900,
+      "name": "quay-from-the-water",
+      "pitch": 4.0,
+      "pos": [
+        -16.5,
+        73.0,
+        -13.5
+      ],
+      "source": "estimated",
+      "spp": 300,
+      "width": 1600,
+      "yaw": 312.1
+    },
+    {
+      "answers": "concept/night-quay",
+      "exposure": 6.0,
+      "fov": 60.0,
+      "height": 900,
+      "name": "quay-after-dark",
+      "pitch": -1.9,
+      "pos": [
+        -8.5,
+        69.5,
+        -6.5
+      ],
+      "source": "estimated",
+      "spp": 300,
+      "width": 1600,
+      "yaw": 309.6
+    },
+    {
+      "answers": "concept/dusk-rampart",
+      "exposure": 1.0,
+      "fov": 42.0,
+      "height": 900,
+      "name": "rampart-against-the-sky",
+      "pitch": 2.7,
+      "pos": [
+        41.5,
+        75.2,
+        36.5
+      ],
+      "source": "estimated",
+      "spp": 300,
+      "width": 1600,
+      "yaw": 112.7
+    },
+    {
+      "answers": "concept/midnight-crypt",
+      "exposure": 8.0,
+      "fov": 62.0,
+      "height": 900,
+      "name": "crypt-stair",
+      "pitch": 15.8,
+      "pos": [
+        11.5,
+        70.5,
+        11.5
+      ],
+      "source": "estimated",
+      "spp": 300,
+      "width": 1600,
+      "yaw": 135.0
+    },
+    {
+      "answers": "concept/dawn-approach",
+      "exposure": 1.0,
+      "fov": 48.0,
+      "height": 900,
+      "name": "approach-at-first-light",
+      "pitch": 7.5,
+      "pos": [
+        278.5,
+        74.0,
+        30.5
+      ],
+      "source": "estimated",
+      "spp": 300,
+      "width": 1600,
+      "yaw": 137.7
     }
   ],
   "campaign_id": "gallery"

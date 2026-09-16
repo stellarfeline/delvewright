@@ -6,9 +6,17 @@ WHAT THIS IS, AND WHAT IT REPLACES
 The creator-facing front end is a Claude Code plugin in this repository
 (ADR-0014, ADR-0027, spec-0063): a page at
 `.claude/skills/delvewright/skills/new-delve/SKILL.md`, its bundled references
-and scripts, a `versions.toml` beside it naming the one engine it is proven on,
-a `plugin.json` above it, and a `marketplace.json` at the repository root. This
-one tool judges all of them.
+and scripts, `.claude/skills/delvewright/skills/new-delve/versions.toml` beside
+it naming the one engine release it is proven on and ships at, a `plugin.json`
+above it, and `.claude-plugin/marketplace.json` at the repository root. This one
+tool judges all of them.
+
+It is also the BINDER `.github/pins.toml` registers `skill-page-engine` under:
+the pin's key is `engine.ref`, the tag name stands in the two files above, and a
+tag name carries no shape the registry's scan can separate from data — measured,
+twelve `<name>--v<semver>` literals stand in this tree's fetch sites and eleven
+are test fixtures. So `check-pins.py` holds this tool to reading that key and
+naming both sites, and this tool holds the two copies equal (rule 12).
 
 It replaces the content repository's `check-skill-version.py` and
 `check-authoring-pin.py` — two gates over one artifact, in a repository the page
@@ -30,11 +38,16 @@ WHAT IS CHECKED, AND THE PERTURBATION THAT REDS EACH
        the directory; `description` is 1-1024 characters; `metadata.requires_delvec`
        is a major window.                     RED: a fourth field; `argument-hint`;
                                               a ceiling that is not the floor's next major
-    2  the pin is shaped, and neither literal appears in the page, a reference or
-       a script; the page extracts both keys.  RED: a branch name in `ref`; the
-                                              release pasted into I3a
-    3  the release's number is inside `requires_delvec` and equals
-       `[workspace.package] version` at `ref`. RED: a re-pin past the window
+    2  `[engine].ref` is a `delvec` release tag in `release_tags.py`'s grammar,
+       and — where this repository has no such tag — is the tag THIS tree's own
+       release would create; `[engine].release` is gone; the literal appears in
+       no page file; the page extracts the key.
+                                              RED: a branch name or a bare sha in
+                                              `ref`; a tag nobody is about to
+                                              publish; the tag pasted into I3a
+    3  the tag's version is inside `requires_delvec` and equals
+       `[workspace.package] version` at the tree the tag names.
+                                              RED: a re-pin past the window
     4  every `delvec` subcommand and long flag the page and its references name
        exists in the clap surface at `ref`.    RED: a renamed subcommand
     5  every `Stage::name` at `ref` is named as a whole token; every
@@ -55,10 +68,20 @@ WHAT IS CHECKED, AND THE PERTURBATION THAT REDS EACH
        release workflow's own commit (ADR-0028 §5).
                                                RED: a pull request that bumps it
    12  `marketplace.json` carries `name`, `owner.name`, and one plugin whose
-       `source` resolves to a directory carrying a `plugin.json` of that name.
-                                               RED: a moved directory
-   13  `--online`: the tag `release` resolves to `ref`; the release carries an
-       archive per target at `ref`, plus `SHA256SUMS`.  RED: a shelf missing a target
+       `source` is a `git-subdir` object whose `url` is `[engine].repo`, whose
+       `path` is the plugin root, and whose `ref` equals `[engine].ref`, with no
+       `sha` and no `version`; that path carries a `plugin.json` of that name.
+                                               RED: a moved directory; a `ref` the
+                                               pin does not state; a `sha`, which
+                                               the documentation makes the
+                                               effective pin
+   13  `--online`, two states, decided by the object. The tag exists: it is the
+       commit this checkout judged, and its Release carries an archive per target
+       at that tree plus `SHA256SUMS`. It does not: the remote still lacks it,
+       which is the state the offline half judged, and the shelf cannot be asked
+       because the release that writes the tag is what fills it.
+                                               RED: a shelf missing a target; a
+                                               tag that has appeared since
    14  no shipped file carries an unsubstituted template placeholder.
                                                RED: `@@TOC@@` at the top of a reference
    15  every `refimg.py` flag a page file names that SOME supported provider
@@ -70,7 +93,8 @@ WHAT IS CHECKED, AND THE PERTURBATION THAT REDS EACH
                                                     scripts, `docker info` in Init
    17  every DW code a page file names is declared by a diagnostic constant in
        the engine at `ref`.                    RED: a code the pin predates
-   18  `--online`: the pinned release's own `delvec`, fetched and checksum-verified
+   18  `--online`, and only where the tag exists: the pinned release's own
+       `delvec`, fetched and checksum-verified
        the way `scripts/fetch-delvec.py` fetches it, is asked for every schema it
        exports; every key a campaign-document fragment of the page names is a
        field of one, every value it gives a closed-set field is a member, and
@@ -88,6 +112,41 @@ WHAT IS CHECKED, AND THE PERTURBATION THAT REDS EACH
        is a profile `validation/compose.yaml` at `ref` declares.
                                                RED: a renamed trigger; a moved
                                                     layout manifest
+   21  every `$DELVEWRIGHT_ENGINE/<path>` a shipped file names is a path BOTH
+       the tree the page ships from and the tree the pin names carry, unless
+       `.gitignore` says it is build output.
+                                            RED: `tools/creator/refimg.py` on the page
+                                                 after the tool moved; a path
+                                                 the pinned release lacks
+
+RULE 21, AND THE PAIR IT NOW HOLDS WHOLE
+
+A creator holds two things: the PAGE, which a marketplace install takes from the
+plugin root at the tag the entry names, and the ENGINE, cloned at
+`[engine].ref`. Rule 21 has two arms, one per tree, each with its own binding
+count and its own denominator.
+
+The SHIPPING arm is the tracked tree this gate runs in — on a pull request its
+merge tree, which is the tree the release dispatched on that merge would tag.
+The PIN arm is the tree at `[engine].ref`, read with `git ls-tree` out of the
+object `resolve_ref` hands back: the tag's commit where this repository carries
+the tag, and THIS TREE's index while the tag is unborn, because the tag the pin
+names is the one this tree's own release will create (ADR-0029 §3).
+
+What that buys is the difference between a property being true and being held.
+`validation/chunky.sh` and `validation/chunky-install.sh` are the two paths that
+proved it: the page named them, the shipping tree carried them, and the tree at
+the old 40-hex `[engine].ref` did not, so a creator who followed the page to the
+Chunky step cloned an engine without them and no rule was red. Under this pin
+they are in both trees by construction — and by construction is not the same as
+by luck, so the property is tested by removing one of them from the tree and
+checking that the PIN arm reds, not only the shipping arm.
+
+The exclusion is build output and git judges it, never a list in this tool:
+`.gitignore` through `check-ignore`, each path put twice, bare and slashed. Two
+classes are counted and printed rather than judged: `.git`, a fixed one-entry
+list of what is real in a clone and never a tree entry, and a spelling carrying
+a placeholder segment (`validation/run-out/<id>/…`).
 
 RULES 17 AND 18, AND WHAT THEY CANNOT SEE
 
@@ -163,8 +222,21 @@ STATED_COUNTS = REPO / "tools" / "ci" / "check-stated-counts.py"
 DW_CODES = REPO / "tools" / "ci" / "check-dw-codes.py"
 
 API = "https://api.github.com"
-ARCHIVE = "delvec-{release}-{target}.tar.gz"
+# The archive grammar is the VERSION's, not the tag's (ADR-0028 §2, unchanged).
+ARCHIVE = "delvec-v{version}-{target}.tar.gz"
 CHECKSUMS = "SHA256SUMS"
+
+# The one key of the pin, and the `bound_key` `.github/pins.toml` registers
+# `skill-page-engine` under: `engine.ref`, in the manifest beside the page,
+# `.claude/skills/delvewright/skills/new-delve/versions.toml`. The marketplace
+# entry in `.claude-plugin/marketplace.json` carries the same name, because
+# Claude Code reads that file and reads nothing else; the pin is the authority
+# and the entry is its copy, and rule 12 holds them equal (ADR-0029 §2).
+PIN_KEY = ("engine", "ref")
+# The line of `tools/lib/release_tags.py`'s grammar the page's pin may name. The
+# page installs the creator binary and nothing else, so `delvewright-dsl` and
+# `delvewright` tags are refused here rather than merely unexpected.
+RELEASE_LINE = "delvec"
 
 # Paths inside the engine tree, materialised at `ref`. `tools/creator/refimg.py` is here
 # because rule 15 asks THAT tool, at the pinned revision, which flags each
@@ -181,8 +253,6 @@ ENGINE_PATHS = (
 STAGE_ARM_RE = re.compile(r'Stage::\w+\s*=>\s*"([a-z][a-z0-9-]*)"')
 SEMVER_RE = re.compile(r"^(\d+)\.(\d+)\.(\d+)$")
 WINDOW_RE = re.compile(r"^>=(?P<floor>\d+\.\d+\.\d+)\s+<(?P<ceiling>\d+\.\d+\.\d+)$")
-RELEASE_RE = re.compile(r"^v\d+\.\d+\.\d+$")
-REV_RE = re.compile(r"^[0-9a-f]{40}$")
 KEBAB_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 
 FENCE_RE = re.compile(r"^\s*```")
@@ -298,6 +368,33 @@ ACQUIRED_DEFERRED = {
     "git-lfs": "the shipped library, optional and taken at the step that wants it",
 }
 
+# --- rule 21: the engine paths a page names ----------------------------------
+#
+# The page addresses the engine checkout it told the creator to make, always by
+# the same variable: `"$DELVEWRIGHT_ENGINE/tools/creator/refimg.py"`. Rule 4 holds every
+# `delvec` subcommand to the engine and rule 20 holds every in-game name, but
+# nothing held the FILE PATHS, and they are the ones a repository reorganisation
+# moves. A pull request that moves `tools/` therefore left every such path on
+# the page dangling and stayed green, because no rule read them as paths.
+#
+# The terminators are the characters a path cannot contain in the spellings the
+# page uses — whitespace, a quote, a fence tick, a closing bracket, a comma, a
+# semicolon, and the `:` of `"$DELVEWRIGHT_ENGINE/target/release:$PATH"`. A
+# trailing `/` or sentence `.` is trimmed. Both spellings of the variable are
+# read — bare and braced — so a `${DELVEWRIGHT_ENGINE}/…` nobody has written yet
+# is not a blind spot the day somebody does.
+ENGINE_PATH_RE = re.compile(
+    r"\$(?:DELVEWRIGHT_ENGINE|\{DELVEWRIGHT_ENGINE\})(?P<path>/[^\s`\"'\)\]\},;:]*)?"
+)
+# One path segment as a filesystem carries it. `<id>` and `…` fail it, which is
+# how `validation/run-out/<id>/run-report.json` and the page's own
+# `"$DELVEWRIGHT_ENGINE/…"` are read as spellings rather than as paths.
+SEGMENT_RE = re.compile(r"^[.A-Za-z0-9][A-Za-z0-9._-]*$")
+# Paths that are real in a clone and are never tree entries. A fixed list in the
+# gate, one entry long: git's own directory, which Init reads to confirm the
+# clone stands at the pin. A defect cannot add itself here.
+NOT_TREE_ENTRIES = {".git"}
+
 # --- rules 17 and 18: the names a page gives the engine ----------------------
 #
 # A DW code as a page writes it. A key a fragment names, in the two spellings a
@@ -316,6 +413,7 @@ STAGE_TOKEN_RE = re.compile(r"`([a-z][a-z0-9-]*)`")
 
 sys.path.insert(0, str(REPO / "tools"))
 from lib.clap_surface import kebab, normalize, parse_cli  # noqa: E402
+from lib import release_tags  # noqa: E402  — the tag grammar, stated once (ADR-0028 §1)
 
 
 # ----------------------------------------------------------------- markdown --
@@ -431,7 +529,8 @@ class Unusable(Exception):
     """This gate cannot run. Exit 2 — it checked nothing, which is not a pass."""
 
 
-def read_pin() -> tuple[str, str, str]:
+def read_pin() -> tuple[str, str]:
+    """`(repo, ref)` from the manifest beside the page. One name, one key."""
     try:
         data = tomllib.loads(PIN.read_text(encoding="utf-8"))
     except (OSError, tomllib.TOMLDecodeError) as exc:
@@ -439,27 +538,87 @@ def read_pin() -> tuple[str, str, str]:
     engine = data.get("engine")
     if not isinstance(engine, dict):
         raise Unusable(f"{PIN} has no `[engine]` table")
+    if "release" in engine:
+        raise Unusable(
+            f"{rel(PIN)} still carries `[engine].release`. The tag in "
+            f"`[engine].{PIN_KEY[1]}` states the release and its version; a second "
+            f"key naming the same thing is two authorities for one decision "
+            f"(ADR-0029 §2). Delete it."
+        )
     out = []
-    for key in ("repo", "release", "ref"):
+    for key in ("repo", PIN_KEY[1]):
         value = engine.get(key)
         if not isinstance(value, str) or not value:
             raise Unusable(f"{PIN} has no `[engine].{key}`")
         out.append(value)
-    return out[0], out[1], out[2]
+    return out[0], out[1]
+
+
+def this_tree_tag() -> str:
+    """The `delvec` tag THIS tree's own release would create (ADR-0029 §3).
+
+    `engine-release.yml`'s `identity` derives the tag from `[engine].version` at
+    the commit it is dispatched on, so the tag a `main` commit will carry is a
+    function of the commit's own tree and a file inside that commit can name it
+    before the object exists. This is that derivation, through the same module
+    the workflow calls, never a second regex.
+    """
+    try:
+        version = tomllib.loads((REPO / "versions.toml").read_text(encoding="utf-8"))
+        version = version["engine"]["version"]
+    except (OSError, KeyError, tomllib.TOMLDecodeError) as exc:
+        raise Unusable(
+            f"this tree's versions.toml states no `[engine].version`, so the tag "
+            f"its own release would create cannot be derived: {exc}"
+        ) from exc
+    try:
+        return release_tags.tag_for(RELEASE_LINE, version)
+    except release_tags.Refused as exc:
+        raise Unusable(f"this tree's `[engine].version` is not a release version: {exc}") from exc
+
+
+def resolve_ref(ref: str) -> tuple[str, bool]:
+    """`(a git object this repo can archive, whether the tag exists here)`.
+
+    Two states, and the OBJECT decides which — whether this repository carries
+    the tag — never the caller. The tag exists: the engine is the commit it
+    points at, and that is the engine every creator installing this page
+    receives. It does not: the engine is THIS TREE, because the tag the pin
+    names is the one this tree's own release will create at its merge commit
+    (ADR-0029 §3). The index is what stands for "this tree" — it is what a
+    commit will carry and what rule 21 reads the shipping tree from — so a gate
+    run on a pull request judges the merge tree, which is the tree the release
+    would tag.
+    """
+    listed = subprocess.run(
+        ["git", "-C", str(REPO), "tag", "--list", ref], capture_output=True, text=True
+    )
+    if listed.returncode == 0 and listed.stdout.split():
+        return f"refs/tags/{ref}^{{commit}}", True
+    tree = subprocess.run(
+        ["git", "-C", str(REPO), "write-tree"], capture_output=True, text=True
+    )
+    if tree.returncode != 0:
+        raise Unusable(
+            f"{ref} is a tag this checkout does not carry, so the engine this "
+            f"gate judges against is this tree — and its index cannot be written "
+            f"as a tree: {tree.stderr.strip()}"
+        )
+    return tree.stdout.strip(), False
 
 
 def materialise(rev: str, into: pathlib.Path) -> pathlib.Path:
     """Extract the engine paths this gate reads, at `rev`, out of THIS repo."""
     check = subprocess.run(
-        ["git", "-C", str(REPO), "cat-file", "-e", f"{rev}^{{commit}}"],
+        ["git", "-C", str(REPO), "cat-file", "-e", rev],
         capture_output=True,
     )
     if check.returncode != 0:
         raise Unusable(
-            f"this checkout cannot serve {rev[:8]}, the engine revision "
-            f"`{rel(PIN)}` `[engine].ref` names. Fetch it "
+            f"this checkout cannot serve {rev}, the engine "
+            f"`{rel(PIN)}` `[engine].{PIN_KEY[1]}` names. Fetch it "
             f"(`git fetch origin {rev}`) — this is the same fetch a creator's "
-            f"Init performs, and a revision the remote will not serve fails for "
+            f"Init performs, and a ref the remote will not serve fails for "
             f"them too. Judging the page against some other engine instead is "
             f"the one thing this gate may not do."
         )
@@ -469,7 +628,7 @@ def materialise(rev: str, into: pathlib.Path) -> pathlib.Path:
     if proc.returncode != 0:
         raise Unusable(
             f"could not read {', '.join(ENGINE_PATHS)} from the engine at "
-            f"{rev[:8]}: {proc.stderr.decode('utf-8', 'replace').strip()}. A path "
+            f"{rev}: {proc.stderr.decode('utf-8', 'replace').strip()}. A path "
             f"this gate reads has moved; fix the path, do not drop the gate."
         )
     tar = subprocess.run(["tar", "-x", "-C", str(into)], input=proc.stdout, capture_output=True)
@@ -727,7 +886,14 @@ class Report:
         self.bindings.append((what, bound, of))
 
 
-def check(rep: Report, engine: pathlib.Path, rev: str, release: str, base: str | None) -> None:
+def check(
+    rep: Report,
+    engine: pathlib.Path,
+    rev: str,
+    ref: str,
+    tag_exists: bool,
+    base: str | None,
+) -> None:
     page = SKILL.read_text(encoding="utf-8")
     files = page_files()
     every = "\n".join(p.read_text(encoding="utf-8") for p in files)
@@ -772,20 +938,41 @@ def check(rep: Report, engine: pathlib.Path, rev: str, release: str, base: str |
             )
     rep.bind("frontmatter field(s)", len(order), len(expected))
 
-    # -- 2. the pin is shaped, and lives in one place ------------------------
-    repo, _release, _ref = read_pin()
-    if not RELEASE_RE.match(release):
+    # -- 2. the pin is one name in the grammar, and lives in one place -------
+    repo, _ref = read_pin()
+    number = None
+    try:
+        line, number = release_tags.parse(ref)
+        if line != RELEASE_LINE:
+            rep.find(
+                f"`[engine].{PIN_KEY[1]}` is {ref!r}, which is a {line} release tag. "
+                f"The page installs the creator binary, so the only line it may pin "
+                f"is {RELEASE_LINE}."
+            )
+    except release_tags.Refused as exc:
         rep.find(
-            f"`[engine].release` is {release!r}, not a `v<semver>` tag. The engine's "
-            f"release workflow starts on `v[0-9]+.[0-9]+.[0-9]+` and on nothing "
-            f"else, so a name shaped any other way names no shelf at all."
+            f"`[engine].{PIN_KEY[1]}` is {ref!r}, and {exc} The pin names the engine "
+            f"RELEASE the page ships at, so a name outside the grammar names no "
+            f"release and no tree (ADR-0029 §1)."
         )
-    if not REV_RE.match(rev):
-        rep.find(
-            f"`[engine].ref` is {rev!r}, not a full 40-hex revision. A branch, a tag "
-            f"or a short sha is a MOVING reference, and a creator fetching it gets "
-            f"whatever it meant on the day they ran."
-        )
+    if not tag_exists:
+        own = this_tree_tag()
+        if ref != own:
+            rep.find(
+                f"`[engine].{PIN_KEY[1]}` is {ref!r}, which this repository has no "
+                f"tag for, and the tag THIS tree's own release would create is "
+                f"{own!r} (`[engine].version` at the root). A pin may name a tag "
+                f"before the object exists only when it is the one the release "
+                f"dispatched on this pull request's merge commit will write "
+                f"(ADR-0029 §3); any other unborn name is a pin onto something "
+                f"nobody is about to publish."
+            )
+        else:
+            print(
+                f"  ok   {ref} is unborn and is this tree's own next tag — the "
+                f"engine judged below is this tree, which is the tree the release "
+                f"would tag (ADR-0029 §3)"
+            )
     literal_sites = 0
     for path in [SKILL] + bundled():
         try:
@@ -793,41 +980,47 @@ def check(rep: Report, engine: pathlib.Path, rev: str, release: str, base: str |
         except (UnicodeDecodeError, OSError):
             continue
         literal_sites += 1
-        for literal, key in ((release, "release"), (rev, "ref")):
-            if literal in text:
-                rep.find(
-                    f"{rel(path)} carries the `{key}` literal "
-                    f"{literal!r}. `versions.toml` beside the page is the single "
-                    f"copy and the page extracts it — a literal on a page goes "
-                    f"stale the first time the pin moves, and nothing reports it."
-                )
-    for key in ("release", "ref"):
-        if f'["engine"]["{key}"]' not in every and f"[engine].{key}" not in every:
+        if ref in text:
             rep.find(
-                f"no file of the page extracts `[engine].{key}` from the pin. A pin "
-                f"whose only reader is prose is a doc line: the page would clone "
-                f"the default branch and the creator would author against whatever "
-                f"it was that hour."
+                f"{rel(path)} carries the `{PIN_KEY[1]}` literal "
+                f"{ref!r}. `versions.toml` beside the page is the single "
+                f"copy and the page extracts it — a literal on a page goes "
+                f"stale the first time the pin moves, and nothing reports it."
             )
+    key = PIN_KEY[1]
+    if f'["engine"]["{key}"]' not in every and f"[engine].{key}" not in every:
+        rep.find(
+            f"no file of the page extracts `[engine].{key}` from the pin. A pin "
+            f"whose only reader is prose is a doc line: the page would clone "
+            f"the default branch and the creator would author against whatever "
+            f"it was that hour."
+        )
     rep.bind("page file(s) scanned for a pin literal", literal_sites, literal_sites)
 
-    # -- 3. the release is inside the window and is the engine's own number --
+    # -- 3. the tag's version is inside the window and is the tree's own -----
     version = engine_version(engine / "Cargo.toml")
-    number = release.lstrip("v")
-    if window_m is not None:
-        floor, ceiling = window_m.group("floor"), window_m.group("ceiling")
-        if not key_of(floor) <= key_of(number) < key_of(ceiling):
-            rep.find(
-                f"the pinned release {release} is OUTSIDE the declared window "
-                f"{window} — the page drives an engine it says it does not drive."
+    if number is not None:
+        if window_m is not None:
+            floor, ceiling = window_m.group("floor"), window_m.group("ceiling")
+            if not key_of(floor) <= key_of(number) < key_of(ceiling):
+                rep.find(
+                    f"the pinned release {ref} is OUTSIDE the declared window "
+                    f"{window} — the page drives an engine it says it does not drive."
+                )
+        if number != version:
+            where = (
+                f"the tree {ref} points at"
+                if tag_exists
+                else "this tree — the one that tag will name —"
             )
-    if number != version:
-        rep.find(
-            f"`[engine].release` is {release} and the engine at {rev[:8]} carries "
-            f"`[workspace.package] version = {version}`. The tag and the tree it "
-            f"points at disagree about which engine this is, so a creator who "
-            f"downloads and a developer who builds get two different compilers."
-        )
+            rep.find(
+                f"`[engine].{PIN_KEY[1]}` is {ref} and {where} carries "
+                f"`[workspace.package] version = {version}`. The tag and the tree "
+                f"disagree about which engine this is, so a creator who downloads "
+                f"and a developer who builds get two different compilers. "
+                f"`engine-release.yml` derives the tag from the tree, so this pin "
+                f"names a tag no release of this tree could ever create."
+            )
 
     # -- 4. every command the page names exists -----------------------------
     main_rs = engine / "crates" / "delvec" / "src" / "main.rs"
@@ -836,7 +1029,7 @@ def check(rep: Report, engine: pathlib.Path, rev: str, release: str, base: str |
     for path in (main_rs, envelope_rs, stages_rs):
         if not path.is_file():
             raise Unusable(
-                f"the engine at {rev[:8]} has no {path.relative_to(engine)}. A file "
+                f"the engine at {ref} has no {path.relative_to(engine)}. A file "
                 f"this gate reads has moved; fix the path, do not drop the gate."
             )
     crates_root = main_rs.parents[2]
@@ -848,7 +1041,7 @@ def check(rep: Report, engine: pathlib.Path, rev: str, release: str, base: str |
     subcommands, globals_ = parse_cli("\n".join(sources))
     if not subcommands:
         raise Unusable(
-            f"parsed 0 subcommands from crates/ at engine {rev[:8]}; the clap "
+            f"parsed 0 subcommands from crates/ at engine {ref}; the clap "
             f"`#[derive(Subcommand)] enum` shape this gate keys off has changed. "
             f"Fix the parser, do not drop the gate."
         )
@@ -877,7 +1070,7 @@ def check(rep: Report, engine: pathlib.Path, rev: str, release: str, base: str |
             if key not in by_norm:
                 rep.find(
                     f"the page drives `delvec {sub}`, which the CLI does not have.\n"
-                    f"      engine {rev[:8]} offers: {', '.join(sorted(subcommands))}"
+                    f"      engine {ref} offers: {', '.join(sorted(subcommands))}"
                 )
                 continue
             allowed |= flags_by_norm[key]
@@ -898,7 +1091,7 @@ def check(rep: Report, engine: pathlib.Path, rev: str, release: str, base: str |
     if not stages:
         raise Unusable(
             f"parsed 0 stage documents from crates/dsl/src/envelope.rs at "
-            f"{rev[:8]}; the `Stage::name` match-arm shape has changed."
+            f"{ref}; the `Stage::name` match-arm shape has changed."
         )
     unmentioned = [
         s for s in stages if not re.search(rf"(?<![\w-]){re.escape(s)}(?![\w-])", every)
@@ -908,14 +1101,14 @@ def check(rep: Report, engine: pathlib.Path, rev: str, release: str, base: str |
             f"the engine defines the campaign stage document `{s}.json` and the "
             f"page never mentions it. An authoring surface the page is silent about "
             f"is a surface no run will ever write.\n"
-            f"      engine {rev[:8]} `Stage::name` defines: {', '.join(stages)}"
+            f"      engine {ref} `Stage::name` defines: {', '.join(stages)}"
         )
     rep.bind("stage document(s) named", len(stages) - len(unmentioned), len(stages))
 
     world_fields = struct_fields(stages_rs, "WorldContent")
     if not world_fields:
         raise Unusable(
-            f"parsed 0 fields from `WorldContent` at {rev[:8]}; the struct this "
+            f"parsed 0 fields from `WorldContent` at {ref}; the struct this "
             f"gate keys off has moved or changed shape."
         )
     spans_text = "\n".join(
@@ -933,7 +1126,7 @@ def check(rep: Report, engine: pathlib.Path, rev: str, release: str, base: str |
             f"never names it in a code span. Step 1 is where a creator writes this "
             f"document field by field, so a field missing from that list is a field "
             f"no run will ever set — silently, at whatever the engine's default is.\n"
-            f"      engine {rev[:8]} `WorldContent` defines: "
+            f"      engine {ref} `WorldContent` defines: "
             f"{', '.join(n for n, _ in world_fields)}"
         )
     rep.bind(
@@ -945,7 +1138,7 @@ def check(rep: Report, engine: pathlib.Path, rev: str, release: str, base: str |
     try:
         want, evidence = techniques["compute"](engine)
     except LookupError as exc:
-        raise Unusable(f"the engine's idiom index did not parse at {rev[:8]}: {exc}")
+        raise Unusable(f"the engine's idiom index did not parse at {ref}: {exc}")
     count_refs = 0
     for path in files:
         text = counts.strip_code_fences(path.read_text(encoding="utf-8"))
@@ -956,7 +1149,7 @@ def check(rep: Report, engine: pathlib.Path, rev: str, release: str, base: str |
                 if got != want + offset:
                     rep.find(
                         f"{rel(path)} states {got} "
-                        f"{techniques['describe']}, and the engine at {rev[:8]} has "
+                        f"{techniques['describe']}, and the engine at {ref} has "
                         f"{want}.\n      {evidence}"
                     )
     rep.bind("stated idiom-index count(s)", count_refs, count_refs)
@@ -1059,16 +1252,19 @@ def check(rep: Report, engine: pathlib.Path, rev: str, release: str, base: str |
     pin_check_rule(rep)
 
     # -- 17. every DW code the page names, the pin declares ------------------
-    dw_code_rule(rep, engine, rev)
+    dw_code_rule(rep, engine, ref)
 
     # -- 20. every in-game and log name the page gives, the pin has ----------
-    playtest_names_rule(rep, engine, rev)
+    playtest_names_rule(rep, engine, ref)
+
+    # -- 21. every engine path the page names, the tree it ships from has ----
+    engine_paths_rule(rep, rev, ref, tag_exists)
 
     # -- 10. the split dropped nothing ---------------------------------------
     heading_rule(rep)
 
     # -- 11/12. the manifests ------------------------------------------------
-    manifest_rules(rep, base)
+    manifest_rules(rep, base, repo, ref)
 
 
 def key_of(version: str) -> tuple[int, int, int]:
@@ -1417,7 +1613,7 @@ def page_dw_codes() -> dict[str, list[str]]:
     return named
 
 
-def dw_code_rule(rep: Report, engine: pathlib.Path, rev: str) -> None:
+def dw_code_rule(rep: Report, engine: pathlib.Path, ref: str) -> None:
     """Rule 17: every DW code the plugin names is declared by the engine at `ref`.
 
     Declared, not mentioned: a code in a comment or a test string is not a rule
@@ -1431,7 +1627,7 @@ def dw_code_rule(rep: Report, engine: pathlib.Path, rev: str) -> None:
         declared |= {code for _name, code in dw.CONST_RE.findall(text)}
     if not declared:
         raise Unusable(
-            f"read 0 DW declarations from crates/ at {rev[:8]}; the diagnostic "
+            f"read 0 DW declarations from crates/ at {ref}; the diagnostic "
             f"constant shape `check-dw-codes.py` keys off has changed."
         )
     named = page_dw_codes()
@@ -1439,7 +1635,7 @@ def dw_code_rule(rep: Report, engine: pathlib.Path, rev: str) -> None:
         if code not in declared:
             rep.find(
                 f"{', '.join(where)} name{'s' if len(where) == 1 else ''} `{code}`, "
-                f"and the engine at {rev[:8]} declares no such diagnostic. The page "
+                f"and the engine at {ref} declares no such diagnostic. The page "
                 f"describes a rule the engine it installs does not have: a creator "
                 f"waits for a refusal that never comes, or reads a code they are "
                 f"never shown. Re-pin to a release that carries it, or fix the page."
@@ -1449,7 +1645,7 @@ def dw_code_rule(rep: Report, engine: pathlib.Path, rev: str) -> None:
         sum(1 for code in named if code in declared),
         len(named),
     )
-    print(f"  ok   {len(declared)} DW code(s) declared by the engine at {rev[:8]}")
+    print(f"  ok   {len(declared)} DW code(s) declared by the engine at {ref}")
 
 
 # ------------------------------------------ rule 20, the names a playtest uses --
@@ -1522,7 +1718,7 @@ def container_names(engine: pathlib.Path) -> set[str]:
     return out
 
 
-def playtest_names_rule(rep: Report, engine: pathlib.Path, rev: str) -> None:
+def playtest_names_rule(rep: Report, engine: pathlib.Path, ref: str) -> None:
     """Rule 20: the names a creator types into a playtest, held to the pin.
 
     A trigger, a layout manifest path, a container a log is read from and a
@@ -1534,10 +1730,10 @@ def playtest_names_rule(rep: Report, engine: pathlib.Path, rev: str) -> None:
     compose = engine / "validation" / "compose.yaml"
     for path in (creator_rs, compose):
         if not path.is_file():
-            raise Unusable(f"{path.relative_to(engine)} is not at {rev[:8]}; rule 20 reads it.")
+            raise Unusable(f"{path.relative_to(engine)} is not at {ref}; rule 20 reads it.")
     triggers = overlay_triggers(creator_rs.read_text(encoding="utf-8"))
     if not triggers:
-        raise Unusable(f"read 0 trigger objectives from creator.rs at {rev[:8]}.")
+        raise Unusable(f"read 0 trigger objectives from creator.rs at {ref}.")
     source = "\n".join(
         rs.read_text(encoding="utf-8") for rs in sorted((engine / "crates" / "delvec" / "src").rglob("*.rs"))
     )
@@ -1563,13 +1759,195 @@ def playtest_names_rule(rep: Report, engine: pathlib.Path, rev: str) -> None:
                     bound += 1
                 else:
                     rep.find(
-                        f"{rel(path)} names {what}, and the engine at {rev[:8]} has no "
+                        f"{rel(path)} names {what}, and the engine at {ref} has no "
                         f"such thing ({known}). A creator types it into a game or a "
                         f"shell and nothing happens. Re-pin to a release that has it, "
                         f"or fix the page."
                     )
     rep.bind("trigger, overlay path, container and profile name(s) the pin has", bound, named)
-    print(f"  ok   {len(triggers)} overlay trigger(s) registered by the engine at {rev[:8]}")
+    print(f"  ok   {len(triggers)} overlay trigger(s) registered by the engine at {ref}")
+
+
+# ------------------------------- rule 21, the page and the tree it ships from --
+
+
+def shipping_tree() -> set[str]:
+    """Every path the tree the page ships from carries, files and directories.
+
+    The INDEX, not the working directory. A creator receives the plugin out of
+    the repository — the marketplace clones it, `git archive` packs it for the
+    Release — and clones the engine the same way, so what a creator can reach is
+    exactly what git tracks. A working-directory `exists()` would answer `True`
+    on a developer's machine for build output no creator ever receives, and
+    `False` in CI for the same path: the one reading that is the same in both
+    places is the tracked set.
+    """
+    proc = subprocess.run(
+        ["git", "-C", str(REPO), "ls-files", "-z"], capture_output=True
+    )
+    if proc.returncode != 0:
+        raise Unusable(
+            "could not list the tracked tree: "
+            f"{proc.stderr.decode('utf-8', 'replace').strip()}"
+        )
+    out: set[str] = set()
+    for entry in proc.stdout.decode("utf-8").split("\0"):
+        if not entry:
+            continue
+        out.add(entry)
+        parent = pathlib.PurePosixPath(entry).parent
+        while str(parent) != ".":
+            out.add(str(parent))
+            parent = parent.parent
+    if not out:
+        raise Unusable(
+            "the tracked tree is empty — this gate would then hold the page to "
+            "nothing and call it a pass"
+        )
+    return out
+
+
+def produced(paths: list[str]) -> set[str]:
+    """The subset the tree's own `.gitignore` says is build output, git judging.
+
+    The discriminator is not a list in this gate and not a note beside the line:
+    it is `.gitignore` at the same revision, read by git itself. A tool that
+    moves cannot ignore its own old path on the way, which is what makes this an
+    exclusion the defect cannot supply.
+
+    Each path is asked twice, bare and with a trailing `/`. A pattern written
+    `validation/delve-output*/` matches only a DIRECTORY, and on a path that is
+    not on disk git cannot know which one it was handed: `check-ignore` answers
+    "not ignored" for the bare spelling and "ignored" for the slashed one. The
+    page names a path without saying which it is, so both readings are put and
+    either verdict of ignored is taken — a pattern a moved file could not match
+    under either spelling.
+    """
+    if not paths:
+        return set()
+    asked = [spelling for p in paths for spelling in (p, p + "/")]
+    proc = subprocess.run(
+        ["git", "-C", str(REPO), "check-ignore", "--no-index", "--stdin", "-z"],
+        input="\0".join(asked).encode("utf-8"),
+        capture_output=True,
+    )
+    # exit 0 = some ignored, 1 = none ignored, anything else = it did not judge.
+    if proc.returncode not in (0, 1):
+        raise Unusable(
+            "could not ask git which of the page's engine paths are ignored: "
+            f"{proc.stderr.decode('utf-8', 'replace').strip()}"
+        )
+    answered = {p.rstrip("/") for p in proc.stdout.decode("utf-8").split("\0") if p}
+    return {p for p in paths if p in answered}
+
+
+def engine_paths(files: list[pathlib.Path]) -> dict[str, list[str]]:
+    """Each `$DELVEWRIGHT_ENGINE/<path>` a shipped file names, to where it is named."""
+    out: dict[str, list[str]] = {}
+    for path in files:
+        try:
+            text = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            continue
+        for i, line in enumerate(text.split("\n"), 1):
+            for m in ENGINE_PATH_RE.finditer(line):
+                named = (m.group("path") or "").lstrip("/").rstrip("/.")
+                if not named:
+                    continue
+                out.setdefault(named, []).append(f"{rel(path)}:{i}")
+    return out
+
+
+def pinned_tree(rev: str) -> set[str]:
+    """Every path the tree at `rev` carries, files and directories.
+
+    The other arm's denominator. `git ls-tree -r --name-only` over the object
+    `resolve_ref` handed back, so the question is asked of the tree a creator's
+    Init really detaches at rather than of anything on this disk.
+    """
+    proc = subprocess.run(
+        ["git", "-C", str(REPO), "ls-tree", "-r", "-z", "--name-only", rev],
+        capture_output=True,
+    )
+    if proc.returncode != 0:
+        raise Unusable(
+            f"could not list the tree at {rev}: "
+            f"{proc.stderr.decode('utf-8', 'replace').strip()}"
+        )
+    out: set[str] = set()
+    for entry in proc.stdout.decode("utf-8").split("\0"):
+        if not entry:
+            continue
+        out.add(entry)
+        parent = pathlib.PurePosixPath(entry).parent
+        while str(parent) != ".":
+            out.add(str(parent))
+            parent = parent.parent
+    if not out:
+        raise Unusable(
+            f"the tree at {rev} is empty — this arm would then hold the page to "
+            f"nothing and call it a pass"
+        )
+    return out
+
+
+def engine_paths_rule(rep: Report, rev: str, ref: str, tag_exists: bool) -> None:
+    """Rule 21, both arms: the tree the page SHIPS FROM, and the tree it PINS.
+
+    A creator holds two things and rule 21 now holds both. The SHIPPING arm is
+    the tracked tree this gate runs in — on a pull request its merge tree, which
+    is the tree the release dispatched on that merge would tag. The PIN arm is
+    the tree at `[engine].ref`, which is the engine Init I2 detaches at. Under
+    ADR-0029 those two are one tree while the tag is unborn and one commit
+    afterwards, so the second arm is what holds the property rather than merely
+    observing it: remove a path from this tree and BOTH arms red, which is what
+    `validation/chunky.sh` and `validation/chunky-install.sh` could not make
+    happen while the pin named an older revision.
+    """
+    named = engine_paths(shipped())
+    unspelt = {
+        p: where
+        for p, where in named.items()
+        if not all(SEGMENT_RE.match(s) for s in p.split("/"))
+    }
+    not_entries = {p: where for p, where in named.items() if p in NOT_TREE_ENTRIES}
+    judged = sorted(set(named) - set(unspelt) - set(not_entries))
+    arms = (
+        ("the tree the page ships from", shipping_tree(), "this tree"),
+        (
+            f"the tree the pin names ({ref})",
+            pinned_tree(rev),
+            "the engine Init I2 detaches at"
+            + ("" if tag_exists else ", which is this tree while the tag is unborn"),
+        ),
+    )
+    for what, tracked, whose in arms:
+        missing = [p for p in judged if p not in tracked]
+        build_output = produced(missing)
+        for path in missing:
+            if path in build_output:
+                continue
+            rep.find(
+                f"`$DELVEWRIGHT_ENGINE/{path}` is named by "
+                f"{', '.join(named[path])}, and {what} does not carry it. The page "
+                f"and the engine reach a creator as ONE revision (ADR-0029 §1), so "
+                f"a path missing from {whose} is a path the creator following the "
+                f"page will not have: move the page to where the thing now lives, "
+                f"restore the thing, or move the pin to a release that carries it."
+            )
+        rep.bind(f"engine path(s) held to {what}", len(judged), len(named))
+        print(
+            f"  ok   {len(judged) - len(missing)} of {len(judged)} engine path(s) "
+            f"are in {what}; {len(build_output)} named as build output this "
+            f"tree's own .gitignore covers, git judging "
+            f"({', '.join(sorted(build_output)) or 'none'})"
+        )
+    print(
+        f"  ok   {len(not_entries)} path(s) never a tree entry "
+        f"({', '.join(sorted(not_entries)) or 'none'}); "
+        f"{len(unspelt)} written with a placeholder segment "
+        f"({', '.join(sorted(unspelt)) or 'none'})"
+    )
 
 
 # -------------------------------------------------- rule 18, the release asked --
@@ -1702,12 +2080,12 @@ def release_schemas(delvec) -> dict[str, dict]:
     return schemas
 
 
-def release_binary_rule(rep: Report, delvec, binary: bytes, release: str) -> None:
+def release_binary_rule(rep: Report, delvec, binary: bytes, ref: str) -> None:
     """Rule 18: the fields, variants and codes the page names, asked of the release."""
     schemas = release_schemas(delvec)
     fields = schema_fields(schemas)
     print(
-        f"  ok   {release} exports {len(schemas)} schema(s) carrying "
+        f"  ok   {ref} exports {len(schemas)} schema(s) carrying "
         f"{len(fields)} field name(s)"
     )
 
@@ -1728,7 +2106,7 @@ def release_binary_rule(rep: Report, delvec, binary: bytes, release: str) -> Non
             for key in sorted(names - known):
                 rep.find(
                     f"{rel(path)} names the field `{key}` in a document fragment, and "
-                    f"no schema {release} exports carries it:\n"
+                    f"no schema {ref} exports carries it:\n"
                     f"      {' '.join(fragment.split())[:160]}"
                 )
             for key, value in pairs:
@@ -1743,7 +2121,7 @@ def release_binary_rule(rep: Report, delvec, binary: bytes, release: str) -> Non
                     continue
                 admitted = sorted(set().union(*sets))
                 rep.find(
-                    f"{rel(path)} gives `{key}` the value {value!r}, and {release}'s "
+                    f"{rel(path)} gives `{key}` the value {value!r}, and {ref}'s "
                     f"schema admits only {', '.join(repr(v) for v in admitted)} there. "
                     f"A creator who writes what the page says is refused as an unknown "
                     f"variant by the engine the page installs."
@@ -1754,7 +2132,7 @@ def release_binary_rule(rep: Report, delvec, binary: bytes, release: str) -> Non
         count = sum(len(v) for v in unread.values())
         print(
             f"  --   {count} key(s) in fragment(s) read as no campaign document "
-            f"(most of their keys are no field of {release}):"
+            f"(most of their keys are no field of {ref}):"
         )
         for where, keys in sorted(unread.items()):
             print(f"         {where}: {', '.join(sorted(keys))}")
@@ -1764,7 +2142,7 @@ def release_binary_rule(rep: Report, delvec, binary: bytes, release: str) -> Non
     for code, where in sorted(named.items()):
         if code not in in_binary:
             rep.find(
-                f"{', '.join(where)} name `{code}`, and the {release} binary's bytes "
+                f"{', '.join(where)} name `{code}`, and the {ref} binary's bytes "
                 f"never spell it — the release cannot print a diagnostic it does not "
                 f"carry."
             )
@@ -1781,7 +2159,7 @@ def acquire_release(into: pathlib.Path) -> pathlib.Path:
     Imported rather than re-implemented, so the checksum this gate trusts is the
     one a creator's Init trusts, and a shelf that refuses a creator refuses here.
     The engine checkout it maps the host against is this repository, which
-    carries `ref` because `materialise` already required it.
+    carries the tag because `resolve_ref` already resolved it here.
     """
     script = SKILL_ROOT / "scripts" / "fetch-delvec.py"
     spec = importlib.util.spec_from_file_location("_fetch_delvec", script)
@@ -1894,7 +2272,7 @@ def heading_rule(rep: Report) -> None:
     rep.bind("pre-split heading(s) restated by spec-0063 §6", restated, len(rows))
 
 
-def manifest_rules(rep: Report, base: str | None) -> None:
+def manifest_rules(rep: Report, base: str | None, pin_repo: str, ref: str) -> None:
     try:
         plugin = json.loads(PLUGIN_JSON.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
@@ -1931,19 +2309,83 @@ def manifest_rules(rep: Report, base: str | None) -> None:
     else:
         entry = entries[0]
         source = entry.get("source")
-        if not isinstance(source, str):
-            rep.find("the marketplace entry has no relative-path `source`")
+        if not isinstance(source, dict):
+            rep.find(
+                f"the marketplace entry's `source` is {source!r}. It is a "
+                f"`git-subdir` object — the documented source that points \"to a "
+                f"plugin that lives inside a subdirectory of a git repository\" and "
+                f"takes a `ref` — because the bytes a creator receives have to be "
+                f"the plugin root at the engine release the page pins (ADR-0029 §1). "
+                f"A relative-path `source` is a string, carries no field, and so "
+                f"cannot pin at all."
+            )
         else:
-            target = (MARKETPLACE.parent.parent / source).resolve()
-            manifest = target / ".claude-plugin" / "plugin.json"
+            # `path` is judged by RESOLVING it, never by comparing spellings:
+            # the documentation says it is a "Subdirectory path within the repo",
+            # and the marketplace root is what it resolves against — the same
+            # reading Claude Code gives it. A spelling comparison would answer
+            # about where this file sits rather than about where the entry points.
+            spelt = source.get("path")
+            if not isinstance(spelt, str) or not spelt or spelt.startswith(("/", "./", "../")):
+                rep.find(
+                    f"the marketplace entry's `source.path` is {spelt!r}. The "
+                    f"documentation's `path` is a \"Subdirectory path within the "
+                    f"repo containing the plugin\" — a bare relative path, with no "
+                    f"leading `/` or `./`."
+                )
+            else:
+                target = (MARKETPLACE.parent.parent / spelt).resolve()
+                if target != PLUGIN_ROOT.resolve():
+                    rep.find(
+                        f"the marketplace entry's `source.path` is {spelt!r}, which "
+                        f"resolves to {target} and not to the plugin root "
+                        f"{PLUGIN_ROOT}. The entry delivers the plugin root and "
+                        f"nothing else."
+                    )
+            fields = {
+                "source": "git-subdir",
+                "url": pin_repo,
+                "ref": ref,
+            }
+            for key, want in fields.items():
+                got = source.get(key)
+                if got != want:
+                    rep.find(
+                        f"the marketplace entry's `source.{key}` is {got!r} and the "
+                        f"pin beside the page says {want!r}. "
+                        + (
+                            f"`versions.toml` `[engine].{PIN_KEY[1]}` is the "
+                            f"authority and this entry is its copy; one name in two "
+                            f"files is held equal here or it is two authorities "
+                            f"(ADR-0029 §2)."
+                            if key in ("ref", "url")
+                            else "The source kind decides which fields are read at all."
+                        )
+                    )
+            for key, why in (
+                (
+                    "sha",
+                    'the documentation says "When both `ref` and `sha` are set … the '
+                    "`sha` is the effective pin\", so a `sha` here would silently "
+                    "override the tag — and no commit can name its own sha anyway",
+                ),
+                (
+                    "version",
+                    "`plugin.json`'s wins where both are set, so the number is "
+                    "stated once or it is two authorities for one decision",
+                ),
+            ):
+                if key in source:
+                    rep.find(f"the marketplace entry's source declares `{key}`: {why}.")
+            manifest = PLUGIN_ROOT / ".claude-plugin" / "plugin.json"
             if not manifest.is_file():
                 rep.find(
-                    f"the marketplace entry's `source` {source!r} resolves to "
-                    f"{target}, which carries no `.claude-plugin/plugin.json`."
+                    f"the marketplace entry's `path` names the plugin root "
+                    f"{PLUGIN_ROOT}, which carries no `.claude-plugin/plugin.json`."
                 )
             elif json.loads(manifest.read_text(encoding="utf-8")).get("name") != name:
                 rep.find(
-                    f"the marketplace entry's `source` resolves to a plugin whose "
+                    f"the marketplace entry's `path` names a plugin root whose "
                     f"`name` is not {name!r}."
                 )
         if entry.get("name") != name:
@@ -2081,60 +2523,124 @@ def gh(path: str) -> object:
         raise
 
 
-def online(rep: Report, engine: pathlib.Path, repo: str, release: str, rev: str, fetch=gh) -> None:
+def online(
+    rep: Report,
+    engine: pathlib.Path,
+    repo: str,
+    ref: str,
+    version: str,
+    tag_exists: bool,
+    fetch=gh,
+) -> None:
+    """The two states of `--online`, decided by the object (ADR-0029 §6).
+
+    THE TAG DOES NOT EXIST. The offline half has already refused any name but
+    this tree's own next tag, so the one thing the remote can be asked is
+    whether that state is still true — and it is asked, because a tag that has
+    appeared since flips which state this run is in, and a gate that assumed
+    the old one would be judging a release that now exists against a tree that
+    is no longer the one it names. The shelf cannot be asked yet: the release
+    that fills it is what creates the tag.
+
+    THE TAG EXISTS. It points at a commit whose tree states the tag's version,
+    that commit is on `main`, its Release carries one archive per target that
+    tree declares plus `SHA256SUMS`, and its plugin root is the page that ships
+    — the last printed as information, because `main`'s tip is ahead of the tag
+    by construction between pin moves (ADR-0029 §3 step 3).
+    """
     try:
-        ref = fetch(f"repos/{repo}/git/ref/tags/{release}")
+        tag = fetch(f"repos/{repo}/git/ref/tags/{ref}")
     except NotFound:
-        rep.find(
-            f"{repo} has no tag {release}. `[engine].release` names a release that "
-            f"does not exist, so a creator following Init downloads nothing."
+        if tag_exists:
+            rep.find(
+                f"this checkout carries the tag {ref} and {repo} does not. The pin "
+                f"names a tag only this machine has, so what a creator installs is "
+                f"not what this gate judged."
+            )
+            rep.bind(f"release tag(s) of {repo} asked about", 0, 1)
+            return
+        print(
+            f"  ok   {repo} has no tag {ref}, which is the state the offline half "
+            f"judged: the pin names this tree's own next tag and the release "
+            f"dispatched on this pull request's merge commit writes it "
+            f"(ADR-0029 §3). The shelf is what that release fills, so there is "
+            f"nothing to ask it yet. Measured on the pinned Claude Code: a fresh "
+            f"`/plugin install` inside this interval is REFUSED at the fetch of "
+            f"the ref and receives no page."
         )
-        rep.bind("shelf archive(s) held to the pin", 0, 0)
+        rep.bind(f"unborn release tag(s) confirmed absent on {repo}", 1, 1)
         return
-    obj = ref["object"] if isinstance(ref, dict) else {}
+    if not tag_exists:
+        rep.find(
+            f"{repo} now carries the tag {ref}, and this checkout does not. The "
+            f"offline half judged the page against THIS tree on the argument that "
+            f"the tag was unborn; it is not any more, so fetch it "
+            f"(`git fetch origin refs/tags/{ref}:refs/tags/{ref}`) and re-run — "
+            f"the tree that tag names is what a creator now receives."
+        )
+        rep.bind(f"release tag(s) of {repo} asked about", 1, 1)
+        return
+    obj = tag["object"] if isinstance(tag, dict) else {}
     commit = obj.get("sha")
     if obj.get("type") == "tag":
         commit = fetch(f"repos/{repo}/git/tags/{commit}")["object"]["sha"]
-    if commit != rev:
+    local = subprocess.run(
+        ["git", "-C", str(REPO), "rev-parse", "--verify", f"refs/tags/{ref}^{{commit}}"],
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    if commit != local:
         rep.find(
-            f"{release} in {repo} is commit {commit}, and `[engine].ref` is {rev}. "
-            f"The archive on that release was built from {str(commit)[:8]}, so a "
-            f"creator who DOWNLOADS gets a different engine from a developer who "
-            f"BUILDS — while the page claims one engine."
+            f"{ref} in {repo} is commit {commit}, and this checkout's {ref} is "
+            f"{local}. The gate judged the page against a tree the remote's tag "
+            f"does not name, so a creator installs bytes nothing here read."
         )
     else:
-        print(f"  ok   {release} is {rev[:8]} — the pinned revision, released")
+        print(f"  ok   {ref} is {str(commit)[:8]} in {repo} — the tree judged above")
+    try:
+        branches = fetch(f"repos/{repo}/commits/{commit}/branches-where-head")
+    except NotFound:
+        branches = []
+    if isinstance(branches, list) and branches and not any(
+        b.get("name") == "main" for b in branches
+    ):
+        print(
+            f"  ---  {ref}'s commit is not the head of `main` ("
+            f"{', '.join(sorted(b.get('name', '?') for b in branches))}); `main` "
+            f"moves on after a release and this is information, not a finding"
+        )
+    rep.bind(f"release tag(s) of {repo} held to the tree they name", 1, 1)
 
     try:
         targets = tomllib.loads(
             (engine / "versions.toml").read_text(encoding="utf-8")
         )["engine"]["targets"]
     except (OSError, KeyError, tomllib.TOMLDecodeError) as exc:
-        raise Unusable(f"the engine at {rev[:8]} declares no `[engine].targets`: {exc}")
+        raise Unusable(f"the engine at {ref} declares no `[engine].targets`: {exc}")
     try:
-        rel = fetch(f"repos/{repo}/releases/tags/{release}")
+        rel = fetch(f"repos/{repo}/releases/tags/{ref}")
     except NotFound:
         rep.find(
-            f"{repo} has a tag {release} but no RELEASE at it, so there is no shelf "
+            f"{repo} has a tag {ref} but no RELEASE at it, so there is no shelf "
             f"to download from. The tag alone is not the artifact."
         )
         rep.bind("shelf archive(s) held to the pin", 0, len(targets))
         return
     assets = {a["name"] for a in rel.get("assets", [])}
     missing = [
-        ARCHIVE.format(release=release, target=t)
+        ARCHIVE.format(version=version, target=t)
         for t in targets
-        if ARCHIVE.format(release=release, target=t) not in assets
+        if ARCHIVE.format(version=version, target=t) not in assets
     ]
     if missing:
         rep.find(
-            f"release {release} is missing {len(missing)} of {len(targets)} shelf "
+            f"release {ref} is missing {len(missing)} of {len(targets)} shelf "
             f"archive(s): {', '.join(missing)}. A partial shelf means I3a falls to "
             f"the source build on exactly the platforms nobody tested."
         )
     if CHECKSUMS not in assets:
         rep.find(
-            f"release {release} carries no {CHECKSUMS}, so `fetch-delvec.py` has "
+            f"release {ref} carries no {CHECKSUMS}, so `fetch-delvec.py` has "
             f"nothing to verify the archive against and refuses every platform."
         )
     rep.bind("shelf archive(s) held to the pin", len(targets) - len(missing), len(targets))
@@ -2239,16 +2745,33 @@ def main(argv: list[str] | None = None) -> int:
     print(f"== check-skill-page — {rel(SKILL)} ==")
     rep = Report()
     try:
-        repo, release, rev = read_pin()
+        repo, ref = read_pin()
+        rev, tag_exists = resolve_ref(ref)
+        print(
+            f"== engine {ref} -> {rev[:8] if tag_exists else 'this tree (the tag is unborn)'} =="
+        )
         with tempfile.TemporaryDirectory(prefix="skill-page-engine-") as tmp:
             engine = materialise(rev, pathlib.Path(tmp))
-            check(rep, engine, rev, release, args.base)
+            check(rep, engine, rev, ref, tag_exists, args.base)
             if args.online:
                 print("== the release the page downloads ==")
-                online(rep, engine, repo, release, rev)
-                print("== the names the page gives the release, asked of the release ==")
-                binary = acquire_release(pathlib.Path(tmp) / "release-bin")
-                release_binary_rule(rep, runner(binary), binary.read_bytes(), release)
+                version = engine_version(engine / "Cargo.toml")
+                online(rep, engine, repo, ref, version, tag_exists)
+                if tag_exists:
+                    print("== the names the page gives the release, asked of the release ==")
+                    binary = acquire_release(pathlib.Path(tmp) / "release-bin")
+                    release_binary_rule(rep, runner(binary), binary.read_bytes(), ref)
+                else:
+                    # Not a skipped rule dressed as a pass: the object rule 18
+                    # asks does not exist yet, and the run says so where a reader
+                    # will see it. The release that creates the tag is what puts
+                    # a binary on the shelf for this rule to interrogate.
+                    print(
+                        f"== rule 18 is not asked: {ref} has no shelf yet, because "
+                        f"the release that writes the tag is what fills it. It runs "
+                        f"on every pin whose tag exists, which is every pin after "
+                        f"this pull request's own release (ADR-0029 §3). =="
+                    )
     except Unusable as exc:
         print(f"check-skill-page: FATAL — {exc}", file=sys.stderr)
         return 2
@@ -2272,7 +2795,7 @@ def main(argv: list[str] | None = None) -> int:
         )
     if rep.findings or zero:
         return 1
-    print(f"check-skill-page: ok — every rule held, against engine {rev}")
+    print(f"check-skill-page: ok — every rule held, against engine {ref} ({rev[:8]})")
     return 0
 
 

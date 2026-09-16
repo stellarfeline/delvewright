@@ -1,0 +1,13 @@
+{
+  "code": "DW0900",
+  "patch": [
+    {
+      "doc": "design/cameras.json",
+      "op": "replace",
+      "path": "/cameras/2/answers",
+      "value": "concept/noon-hall"
+    }
+  ],
+  "units": [],
+  "why": "The record's third camera is re-aimed from `concept/morning-quay`, the only picture it answers, onto `concept/noon-hall`, which two other cameras already answer. Nothing else moves: the camera count is seven either way, every lens stands where it stood, every camera still answers a row that exists, and `design.json` is untouched — so `DW0721` is green, `DW0724`'s showcase count is unchanged at seven, `DW0890` is green, and the record's own size is the same. The only number that moves is the answered count, six to five, and `DW0900` is the only rule that reads it. It declares no unit: the camera record is not a schema unit, and the perturbation is the one this rule exists to catch. The remedy the refusal names is to write a camera for the picture, never to re-aim one at a second — which is exactly the edit this probe makes."
+}

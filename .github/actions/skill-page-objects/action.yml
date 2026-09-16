@@ -1,10 +1,10 @@
 name: Fetch what the skill-page gate reads
 description: >
   `tools/ci/check-skill-page.py` judges the creator plugin against two objects that
-  a shallow `actions/checkout` does not carry: the ENGINE at
-  `[engine].ref`, materialised with `git archive`, and the PRE-SPLIT PAGE's blob,
-  from which the heading census is re-derived. It also diffs the plugin root
-  against `origin/main`, which a shallow checkout has no ref for.
+  a shallow `actions/checkout` does not carry: the ENGINE at the release tag
+  `[engine].ref` names, materialised with `git archive`, and the PRE-SPLIT PAGE's
+  blob, from which the heading census is re-derived. It also diffs the plugin
+  root against `origin/main`, which a shallow checkout has no ref for.
 
   The gate refuses rather than judging the page against whatever is on disk, so
   on a shallow clone every one of its rules errors — measured: 2 failed and 27
@@ -13,9 +13,17 @@ description: >
   because three jobs need it and a rule that lives inside one caller is a rule
   the next caller cannot reuse.
 
-  EVERY SHA IS READ AT RUN TIME, never written here. A revision pasted into a
-  workflow is the stale literal the pin exists to remove, and the gate's own
-  rule 2 reds on exactly that shape elsewhere.
+  EVERY NAME IS READ AT RUN TIME, never written here. A tag or a revision pasted
+  into a workflow is the stale literal the pin exists to remove, and the gate's
+  own rule 2 reds on exactly that shape elsewhere.
+
+  THE TAG MAY NOT EXIST YET, and that is a state rather than a failure
+  (ADR-0029 §3): the pull request that moves the pin names the tag its own merge
+  commit's release will write, so between that merge and that release the remote
+  has no such ref. The fetch below says which of the two states it found and
+  never hides either — where the tag is absent the engine the gate judges is THIS
+  TREE, which is the tree that release would tag, and the gate's rule 2 refuses
+  any absent name but that one.
 
   Targeted fetches, not `fetch-depth: 0`. `git fetch origin <sha>` serves a BLOB
   as well as a commit — measured against this remote — so the whole history is
@@ -39,14 +47,20 @@ runs:
         PY
         echo "skill-page objects: $(grep -E '^(ref|blob)=' "$GITHUB_OUTPUT" | tr '\n' ' ')"
 
-    # The engine the page is written against. By SHA, which is the same fetch a
-    # creator's Init performs — a revision the remote will not serve fails here
-    # in the same words it would fail for them.
-    - name: fetch the pinned engine revision, the way an Init fetches it
+    # The engine the page ships at. By TAG, explicitly into `refs/tags/`, which
+    # is the same fetch a creator's Init I2 performs — a tag the remote will not
+    # serve is reported here in the same words it would be reported for them.
+    - name: fetch the pinned engine release tag, the way an Init fetches it
       shell: bash
       env:
         REF: ${{ steps.objects.outputs.ref }}
-      run: git fetch --no-tags --quiet origin "$REF"
+      run: |
+        set -uo pipefail
+        if git fetch --no-tags --quiet origin "refs/tags/$REF:refs/tags/$REF"; then
+          echo "skill-page objects: $REF is $(git rev-parse "$REF^{commit}")"
+        else
+          echo "skill-page objects: origin has no $REF — the engine the gate judges is this tree, which is the tree the release dispatched on this merge commit would tag (ADR-0029 §3)"
+        fi
 
     # The page as it stood before the split. The census is a MEASUREMENT and the
     # gate re-derives it from these bytes rather than believing the committed

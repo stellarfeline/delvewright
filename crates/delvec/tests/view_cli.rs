@@ -382,9 +382,14 @@ fn cameras_emits_the_stated_cameras_and_their_candidates() {
     std::fs::write(build_dir.join("render-plan.json"), render_plan_mini()).unwrap();
     stub_world(&build_dir.join("world"));
     let campaign = build_dir.join("campaign");
+    // Every approved image is answered, or nothing is emitted (spec-0070): the
+    // emitting fixture answers both rows.
     camera_campaign(
         &campaign,
-        serde_json::json!([a_camera("gate", "concept/gate")]),
+        serde_json::json!([
+            a_camera("gate", "concept/gate"),
+            a_camera("hall", "concept/hall")
+        ]),
     );
     let out = build_dir.join("scenes");
 
@@ -408,8 +413,12 @@ fn cameras_emits_the_stated_cameras_and_their_candidates() {
     assert!(v["sun"]["altitude"].is_number(), "{v}");
     let stderr = String::from_utf8_lossy(&result.stderr);
     assert!(
-        stderr.contains("1 of 2 approved image(s)") && stderr.contains("concept/hall"),
+        stderr.contains("answers: 2 of 2 approved image(s)"),
         "{stderr}"
+    );
+    assert!(
+        !stderr.contains("none answers"),
+        "a complete record names nothing unanswered: {stderr}"
     );
 
     let bracketed = build_dir.join("bracketed");
@@ -438,7 +447,12 @@ fn cameras_emits_the_stated_cameras_and_their_candidates() {
             "gate.yaw+10",
             "gate.truck+2",
             "gate.yaw-10",
-            "gate.truck-2"
+            "gate.truck-2",
+            "hall",
+            "hall.yaw+10",
+            "hall.truck+2",
+            "hall.yaw-10",
+            "hall.truck-2"
         ]
     );
     for n in &names {
@@ -481,6 +495,48 @@ fn cameras_refuses_a_camera_that_answers_nothing() {
         assert!(
             String::from_utf8_lossy(&result.stderr).contains("DW0721"),
             "{tag}: {result:?}"
+        );
+        assert!(
+            !out.exists(),
+            "{tag}: a refused record wrote {}",
+            out.display()
+        );
+    }
+}
+
+/// **Scene emission is held while an approved image is unanswered**
+/// (`DW0900`, spec-0070 criterion 6): with one camera for two rows, `delvec
+/// cameras` exits 2 and writes no scene — with `--only` naming the one camera
+/// that IS answered too, because the record is what is judged and `--only`
+/// exempts nothing.
+#[test]
+fn cameras_refuses_a_record_that_leaves_an_approved_image_unanswered() {
+    let build_dir = tmp("cameras-unanswered");
+    std::fs::write(build_dir.join("render-plan.json"), render_plan_mini()).unwrap();
+    stub_world(&build_dir.join("world"));
+    let campaign = build_dir.join("campaign");
+    camera_campaign(
+        &campaign,
+        serde_json::json!([a_camera("gate", "concept/gate")]),
+    );
+    for (tag, extra) in [("all", vec![]), ("only", vec!["--only", "gate"])] {
+        let out = build_dir.join(format!("out-{tag}"));
+        let result = Command::new(BIN)
+            .args(["cameras"])
+            .arg(&build_dir)
+            .arg("--campaign")
+            .arg(&campaign)
+            .arg("-o")
+            .arg(&out)
+            .args(&extra)
+            .output()
+            .unwrap();
+        assert_eq!(result.status.code(), Some(2), "{tag}: {result:?}");
+        let stderr = String::from_utf8_lossy(&result.stderr);
+        assert!(stderr.contains("DW0900"), "{tag}: {stderr}");
+        assert!(
+            stderr.contains("`concept/hall`") && stderr.contains("the hall"),
+            "{tag}: the refusal names the row and what it shows: {stderr}"
         );
         assert!(
             !out.exists(),

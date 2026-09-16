@@ -66,6 +66,7 @@ machine-checkable assertions — each criterion maps to a CI check.
 | [spec-0054](spec-0054-a-light-figure-names-its-sky.md) | A light figure names its sky — the lighting record carries its measurement context, so a gate can re-judge it | Proposed |
 | [spec-0055](spec-0055-the-scope-belongs-to-the-object.md) | The scope belongs to the object — an anchor reference resolves where its object stands | Proposed |
 | [spec-0056](spec-0056-one-rule-for-what-a-body-can-pass-through.md) | One rule for what a body can pass through — the block-shape authority shared by walk and compiler | Proposed |
+| [spec-0058](spec-0058-one-verb-details-a-place-inside-the-allocation-the-whole-handed.md) | One verb details a place inside the allocation the whole handed — `delvec detail`, the `handed/` binding, and stage 6 as one command | Accepted |
 | [spec-0059](spec-0059-a-box-is-placed-by-its-seam.md) | A box is placed by its seam, and the grid is derived | Proposed |
 | [spec-0060](spec-0060-a-horizon-and-a-piece-set-are-a-pair.md) | A horizon and a piece set are a pair | Proposed |
 | [spec-0061](spec-0061-the-approved-hour-is-the-built-hour.md) | The approved hour is the built hour — the design record states the sky, and the world is held to it | Proposed |
@@ -77,3 +78,4 @@ machine-checkable assertions — each criterion maps to a CI check.
 | [spec-0067](spec-0067-every-slot-the-game-has.md) | Every slot the game has — the equipment block names the pinned game's eight slots, and a piece is refused where the game would not show it on that body | Accepted |
 | [spec-0068](spec-0068-a-firework-is-an-effect.md) | A firework is an effect — one verb at a mark, the burst height fixed by the emitter, refused under a roof or beside a posted body | Accepted |
 | [spec-0069](spec-0069-a-showcase-camera-placed-by-hand.md) | A showcase camera placed by hand — when no agent-chosen render camera satisfies, a person places it in the running game and exactly that camera reaches the Chunky render | Accepted |
+| [spec-0070](spec-0070-every-approved-image-is-answered.md) | Every approved image is answered — a build refuses a camera record that leaves an approved picture with no view of the built world, and the staging gate refuses a campaign with no camera record at all | Accepted |

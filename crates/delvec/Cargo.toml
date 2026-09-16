@@ -41,8 +41,9 @@ delvewright-dsl.workspace = true
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 clap = { version = "4", features = ["derive"] }
-# Datapack hashing (`manifest.json`, the emitted tree's SHA-256 index) and the
-# grammar back end's provenance row. MIT/Apache-2.0.
+# Datapack hashing (`manifest.json`, the emitted tree's SHA-256 index), the
+# grammar back end's provenance row, and the expansion seed `delvec detail`
+# derives from a place's node id (spec-0058 §2.4). MIT/Apache-2.0.
 sha2 = "0.10"
 
 # `walk-record.json` is the one document a campaign author writes by hand that

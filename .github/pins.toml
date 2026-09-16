@@ -13,10 +13,12 @@
 # apart.
 #
 # POLICIES
-#   release   — names a commit a v<semver> tag points at. Verified online against
-#               the tags of the repo it names. A released delve reproduces through
-#               its own pinned engine, so such a pin must never move and drift is
-#               not a finding.
+#   release   — names a release tag of the thing the site fetches: either a tag
+#               the repo it names already carries, or the tag THIS tree's own
+#               release would create, which a commit can name before the object
+#               exists (ADR-0029 §3). Verified online against that repo's tags.
+#               A released delve reproduces through its own pinned engine, so
+#               such a pin must never move and drift is not a finding.
 #   track     — names a commit of a repository this project builds. Must be an
 #               ancestor of that repo's default branch, must carry `reviewed`
 #               (the upstream revision it was last judged against), and must name
@@ -181,55 +183,86 @@ enforced separately by validation/check-versions.sh and
 
 [[pin]]
 id = "skill-page-engine"
-value = "70eea6296cfab2440054f95670729081c3d4bca1"
-sites = [".claude/skills/delvewright/skills/new-delve/versions.toml"]
+value = "delvec--v1.6.0"
+sites = [
+    ".claude-plugin/marketplace.json",
+    ".claude/skills/delvewright/skills/new-delve/versions.toml",
+]
 repo = "stellarfeline/delvewright"
 policy = "release"
 judged_by = ".github/workflows/ci.yml"
+bound_by = "tools/ci/check-skill-page.py"
+bound_key = "engine.ref"
 why = """
-The ONE engine the creator-facing page is written against and proven on
-(spec-0063 §8, ADR-0027 §2). It decides two acquisitions: `[engine].ref` is the
-revision Init I2 clones into `~/.delvewright/engine`, and `[engine].release` is
-the tag whose archive Init I3a downloads and checksum-verifies. They are the
-same engine arriving by ADR-0023's two channels, so they move together.
+The ONE engine release the creator-facing page is written against, proven on and
+SHIPS AT (spec-0063 §8, ADR-0027 §2, ADR-0029 §1). One name decides everything a
+creator receives: the marketplace entry serves the plugin root out of the commit
+this tag points at, Init I2 detaches the engine clone at that same commit, and
+Init I3a downloads the archive from the Release at this tag. The page and the
+engine are therefore one revision by construction rather than by comparison.
 
-WHY `release` AND NOT `track`. This value must be a commit a `v<semver>` tag
-points at, and that is not the vocabulary happening to fit — it is the property
-the pin needs. A creator who takes the archive gets whatever the shelf built,
-and a developer who falls to the source build gets whatever the tree compiles;
-holding the pin to a TAG is what makes those two the same engine. A revision
-with no release behind it has no shelf, so `fetch-delvec.py` would refuse every
-platform and every creator would silently take the floor.
+WHY `release` AND NOT `track`. The value must be a release tag of the thing the
+sites fetch, and that is the property the pin needs rather than vocabulary that
+happens to fit. A creator who takes the archive gets whatever the shelf built and
+a developer who falls to the source build gets whatever the tree compiles; naming
+a TAG is what makes those two the same engine. A revision with no release behind
+it has no shelf, so `fetch-delvec.py` would refuse every platform and every
+creator would silently take the floor.
+
+THE UNBORN STATE IS PART OF THE POLICY, not an exemption to it (ADR-0029 §3). The
+pull request that moves this pin writes the tag its own tree's release will
+create, the release is dispatched on its merge commit, and the release creates
+the tag there. So between that merge and that release the value names a tag the
+remote does not have, and `check-pins.py --online` accepts exactly that state and
+no other: the name has to equal `delvec--v<[engine].version>` at THIS tree. A
+value naming some other unborn tag, or a tag that exists at a commit whose tree
+states another version, is a red. Measured on the pinned Claude Code (2.1.265): a
+creator who runs `/plugin install` inside that interval is REFUSED at the fetch of
+the ref and receives no page at all, which is the difference between this interval
+and the window it closes.
 
 DRIFT PAST IT IS NOT A FINDING, for the same reason it is not one for
 `content-repo`: what a creator needs is the engine the page was WALKED against,
-not the newest one. Staleness here is established by walking `/new-delve` Init
-end to end against a candidate revision, which no job in this repository can
-perform — and saying so is the honest half.
+not the newest one. Staleness here is established by walking `/new-delve` Init end
+to end against a candidate release, which no job in this repository can perform —
+and saying so is the honest half.
+
+BOUND, BECAUSE A TAG NAME CARRIES NO SHAPE THE SCAN CAN SEPARATE FROM DATA.
+Measured over the fetch sites of this tree: twelve distinct `<name>--v<semver>`
+literals stand in them, and eleven are fixtures of `tools/tests/test_release_tags.py`
+and examples in `tools/lib/release_tags.py`'s own docstring. A shape scan would
+therefore report eleven pins nobody fetches, so this value is on the `bound_by`
+arm the registry keeps for exactly that case: `tools/ci/check-skill-page.py` reads
+`engine.ref` out of the manifest beside the page and holds the marketplace
+entry's `ref` equal to it, which is what makes two files stating one name
+checkable rather than conventional.
 
 WHAT ACTUALLY READS IT, because a pin whose only reader is prose is a doc line:
 
-  - `tools/ci/check-pins.py` (offline, required job): discovery finds the literal
-    in the site above and demands this entry; the entry keeping a value the site
-    no longer holds reds as a registry that drifted from its site.
-  - `tools/ci/check-pins.py --online` (same job): a `v<semver>` tag must point at
-    this commit, which a revision somebody merely stopped looking at cannot do.
-  - `tools/ci/check-skill-page.py` (offline, required job): the one reader that
-    uses the revision as an INSTRUMENT rather than judging the literal. It
-    materialises the engine at this value and holds the page's
-    `metadata.requires_delvec` window, every `delvec` subcommand and flag the
-    page and its references name, every campaign stage document the engine
-    defines, every `WorldContent` field, and every number the page states about
-    the idiom index, against that one engine. Move it to an engine whose CLI has
-    dropped a subcommand the page drives and the page reds — which is the point,
-    because that is exactly what a creator would hit at Init.
-  - `tools/ci/check-skill-page.py --online` (same job): the tag resolves to this
-    revision, and the release carries one archive per target the engine declares
-    at this revision plus a `SHA256SUMS`. A partial shelf means I3a falls to the
-    source build on exactly the platforms nobody tested.
+  - `tools/ci/check-pins.py` (offline, required job): the binder above is verified —
+    that it reads the key, that it names both sites, and that a workflow runs it —
+    and each site is then asserted to carry this value as a whole token.
+  - `tools/ci/check-pins.py --online` (same job): the tag exists in this repository
+    and its version is the version its commit's tree states, or it is this tree's
+    own unborn tag.
+  - `tools/ci/check-skill-page.py` (offline, required job): the one reader that uses
+    the tag as an INSTRUMENT rather than judging the literal. It materialises the
+    engine at the tag's commit — this tree, while the tag is unborn — and holds
+    the page's `metadata.requires_delvec` window, every `delvec` subcommand and
+    flag the page and its references name, every campaign stage document the
+    engine defines, every `WorldContent` field, every number the page states about
+    the idiom index, and every `$DELVEWRIGHT_ENGINE/<path>` the page names,
+    against that one engine. Move it to an engine whose CLI has dropped a
+    subcommand the page drives and the page reds — which is the point, because
+    that is exactly what a creator would hit at Init.
+  - `tools/ci/check-skill-page.py --online` (same job): the tag's commit is on `main`
+    and its tree states the tag's version, and the Release carries one archive per
+    target that tree declares plus a `SHA256SUMS`. A partial shelf means I3a falls
+    to the source build on exactly the platforms nobody tested.
   - `.claude/skills/delvewright/skills/new-delve/scripts/fetch-delvec.py`, on a
-    creator's own machine: it reads the value out of the site above and maps the
-    host against `[engine].targets` in the engine tree AT this revision.
+    creator's own machine: it reads the value out of the manifest beside the page,
+    builds the download URL and the archive name from it, and maps the host
+    against `[engine].targets` in the engine tree AT that tag.
 """
 
 # ---------------------------------------------------------------------------

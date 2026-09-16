@@ -158,3 +158,9 @@ validation/gallery-stageable/
 determinism-linux.txt
 determinism-macos.txt
 /out/
+# And the working tree that command builds its subject in: `--work` defaults to
+# `<repo root>/determinism-subject-work`, so the digest was ignored while the
+# ninety-five files it is a digest OF were not. A build output one documented
+# command writes into the repository root is ignored wherever the command puts
+# it by default, or the next run offers it to `git add -A`.
+/determinism-subject-work/
