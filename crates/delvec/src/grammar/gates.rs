@@ -1335,8 +1335,7 @@ mod tests {
     use crate::grammar::expand::{ExpandOptions, Expansion};
     use crate::grammar::geom::{Axis, Box3};
     use crate::grammar::ir::{
-        Alternative, CmpOp, Cond, DimRef, Expr, Material, Node, Program, Reorient, Rounding, Size,
-        Split,
+        Alternative, CmpOp, Cond, DimRef, Expr, Material, Node, Program, Reorient, Size, Split,
     };
     use crate::grammar::library;
 
@@ -1369,7 +1368,7 @@ mod tests {
         let void_floor_void = Node::Split(Split {
             axis: Axis::Y,
             sizes: vec![Size::abs(4), Size::abs(1), Size::rel(1)],
-            rounding: Rounding::Truncate,
+            rounding: None,
             repeat: false,
             orient: Reorient::KEEP,
             children: vec![Node::Void, Node::fill("stone"), Node::Void],
@@ -1386,7 +1385,7 @@ mod tests {
                 Node::Split(Split {
                     axis: Axis::Y,
                     sizes: vec![Size::abs(1), Size::abs(9), Size::abs(1), Size::rel(1)],
-                    rounding: Rounding::Truncate,
+                    rounding: None,
                     repeat: false,
                     orient: Reorient::KEEP,
                     children: vec![
@@ -1402,7 +1401,7 @@ mod tests {
                 Node::Split(Split {
                     axis: Axis::X,
                     sizes: vec![Size::abs(3), Size::rel(1)],
-                    rounding: Rounding::Truncate,
+                    rounding: None,
                     repeat: false,
                     orient: Reorient::KEEP,
                     children: vec![well, Node::call("storeys")],
@@ -1424,7 +1423,7 @@ mod tests {
                     Alternative::new(Node::Split(Split {
                         axis: Axis::Y,
                         sizes: vec![Size::abs(1), Size::rel(1)],
-                        rounding: Rounding::Truncate,
+                        rounding: None,
                         repeat: false,
                         orient: Reorient::KEEP,
                         children: vec![
@@ -1432,7 +1431,7 @@ mod tests {
                             Node::Split(Split {
                                 axis: Axis::Z,
                                 sizes: vec![Size::abs(1), Size::rel(1)],
-                                rounding: Rounding::Truncate,
+                                rounding: None,
                                 repeat: false,
                                 orient: Reorient::KEEP,
                                 children: vec![Node::Void, Node::call("stair")],
@@ -1744,7 +1743,7 @@ mod tests {
                 Node::Split(Split {
                     axis: Axis::X,
                     sizes: vec![Size::abs(1), Size::rel(1), Size::abs(1)],
-                    rounding: Rounding::Truncate,
+                    rounding: None,
                     repeat: false,
                     orient: Reorient::KEEP,
                     children: vec![
@@ -1759,7 +1758,7 @@ mod tests {
                 Node::Split(Split {
                     axis: Axis::Z,
                     sizes: vec![Size::abs(1), Size::rel(1), Size::abs(1)],
-                    rounding: Rounding::Truncate,
+                    rounding: None,
                     repeat: false,
                     orient: Reorient::KEEP,
                     children: vec![
@@ -1774,7 +1773,7 @@ mod tests {
                 Node::Split(Split {
                     axis: Axis::Y,
                     sizes: vec![Size::abs(1), Size::rel(1), Size::abs(1)],
-                    rounding: Rounding::Truncate,
+                    rounding: None,
                     repeat: false,
                     orient: Reorient::KEEP,
                     children: vec![Node::fill("stone"), Node::Void, Node::fill("stone")],

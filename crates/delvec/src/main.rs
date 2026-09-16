@@ -420,6 +420,23 @@ fn main() -> ExitCode {
             layout,
             out,
         } => run_calibrate(report, layout, out, cli.json),
+        Command::View(delvec::compiler::view::cli::ViewCommand::Cameras {
+            build_dir,
+            campaign,
+            out,
+            only,
+            bracket,
+            preview: true,
+            ..
+        }) => run_cameras_preview(
+            build_dir,
+            campaign,
+            &cli.prefabs,
+            out,
+            only,
+            bracket.as_ref(),
+            cli.json,
+        ),
         Command::View(cmd) => cmd.run(cli.json),
         Command::Grammar(args) => delvec::grammar::cli::run(args.clone()),
         Command::Prefab(args) => delvec::admit::cli::run(args.clone(), &cli.prefabs, cli.json),
@@ -698,6 +715,9 @@ fn validate_loaded(
             // of the refusal. So they are collected here and emitted after
             // `print_diags`, under a heading, unchanged.
             let mut examined: Vec<String> = Vec::new();
+            // spec-0067: what the equipment fit rule (`DW0898`, raised inside
+            // `validate_campaign_with` above) examined, zeroes included.
+            examined.push(delvewright_dsl::EquipmentBinding::of(&campaign, &items).line());
             // Prefab-library load failures (DW0346): a metadata file that did
             // not parse (e.g. newer schema than this delvec) is a first-class
             // validation diagnostic, never a silent skip that resurfaces later
@@ -1263,6 +1283,134 @@ fn run_snapshot(
             outside.len()
         );
     }
+    ExitCode::SUCCESS
+}
+
+/// `delvec cameras --preview`: every stated camera of `design/cameras.json` (and
+/// its bracket candidates) drawn by the snapshot rasteriser over the assembled
+/// world — the same world, the same Minecraft camera convention, flat-lit and in
+/// seconds — so a camera is placed before the path tracer is asked about light.
+/// The record is read by the one reader (`compiler::view::camera`); nothing here
+/// restates where a camera is.
+fn run_cameras_preview(
+    build_dir: &Path,
+    campaign_dir: &Path,
+    prefabs_dir: &Path,
+    out: &Path,
+    only: &[String],
+    bracket: Option<&delvec::compiler::view::camera::Bracket>,
+    json: bool,
+) -> ExitCode {
+    use delvec::compiler::snapshot;
+    use delvec::compiler::view::camera;
+
+    use delvec::compiler::view::diag::{DW_INPUT, Diagnostic};
+    let read = |path: PathBuf| {
+        std::fs::read(&path)
+            .map_err(|e| Diagnostic::error(DW_INPUT, format!("read {}: {e}", path.display())))
+    };
+    let selected = read(build_dir.join("render-plan.json")).and_then(|plan| {
+        let id = camera::plan_campaign_id(&plan)?;
+        let sheet =
+            read(campaign_dir.join(camera::CAMERAS_FILE)).and_then(|b| camera::parse_sheet(&b))?;
+        let rows =
+            read(campaign_dir.join("design.json")).and_then(|b| camera::reference_names(&b))?;
+        camera::bind_answers(&sheet, &rows)?;
+        let cams = camera::selected(&id, &sheet, only, bracket)?;
+        Ok((id, cams))
+    });
+    let (campaign_id, cameras) = match selected {
+        Ok(v) => v,
+        Err(d) => return delvec::compiler::view::cli::fail(d, json, 2),
+    };
+
+    let (campaign, prefabs) = match load_for_view(campaign_dir, prefabs_dir, json) {
+        Ok(v) => v,
+        Err(code) => return ExitCode::from(code),
+    };
+    let plan = match Plan::build(&campaign, &prefabs) {
+        Ok(p) => p,
+        Err(e) => {
+            print_diags(&e.warnings, json);
+            print_build_error(e.failure.code, &e.failure.message, json);
+            return ExitCode::from(3);
+        }
+    };
+    let structures = match read_structures(&plan, &prefabs, prefabs_dir, json) {
+        Ok(s) => s,
+        Err(code) => return ExitCode::from(code),
+    };
+    let assembled = match edited_assembled(&plan, &prefabs, &structures, json) {
+        Ok(a) => a,
+        Err(code) => return ExitCode::from(code),
+    };
+    let grid = snapshot::VoxelGrid::build(&assembled.blocks);
+    if let Err(e) = std::fs::create_dir_all(out) {
+        eprintln!("internal error: mkdir {}: {e}", out.display());
+        return ExitCode::from(EXIT_INTERNAL);
+    }
+    let mut obstructed = 0usize;
+    for cam in &cameras {
+        if let Some(cell) = camera::lens_obstruction(cam.pos, |c| grid.solid(c)) {
+            obstructed += 1;
+            eprintln!(
+                "camera `{}`: the lens at {:?} is inside or within {} block of `{}` at {cell:?}. A \
+                 pinhole camera has no near plane, so the frame shows that block's inside faces or a \
+                 sliver of it across a corner: move the camera",
+                cam.name,
+                cam.pos,
+                camera::LENS_CLEARANCE,
+                grid.name(grid.at(cell))
+            );
+        }
+        let frame = snapshot::render_frame(
+            &grid,
+            &snapshot::Camera {
+                pos: cam.pos,
+                yaw: cam.yaw,
+                pitch: cam.pitch,
+                fov: cam.fov,
+            },
+            &snapshot::FrameOpts {
+                width: (cam.width / camera::PREVIEW_DIVISOR).max(1),
+                height: (cam.height / camera::PREVIEW_DIVISOR).max(1),
+                sea_level: sea_level_of(&campaign),
+                labels: false,
+            },
+        );
+        let png = delvec::compiler::png::encode_rgba(
+            frame.canvas.width,
+            frame.canvas.height,
+            &frame.canvas.rgba,
+        );
+        let path = out.join(camera::preview_file(&campaign_id, &cam.name));
+        if let Err(e) = write_file(&path, &png) {
+            eprintln!("internal error: cannot write {}: {e}", path.display());
+            return ExitCode::from(EXIT_INTERNAL);
+        }
+    }
+    if bracket.is_some() {
+        let path = out.join(camera::CANDIDATES_FILE);
+        let written = camera::candidates_bytes(&campaign_id, &cameras)
+            .map_err(|d| d.message)
+            .and_then(|b| write_file(&path, &b).map_err(|e| e.to_string()));
+        if let Err(msg) = written {
+            eprintln!("internal error: cannot write {}: {msg}", path.display());
+            return ExitCode::from(EXIT_INTERNAL);
+        }
+    }
+    eprintln!(
+        "previewed {} camera frame(s) -> {} (flat-lit CPU drafts for placing a camera; the \
+         light is judged in the Chunky scene `delvec cameras` emits without --preview)",
+        cameras.len(),
+        out.display()
+    );
+    eprintln!(
+        "lens: {} of {} camera(s) clear of every block by {} block, {obstructed} flagged",
+        cameras.len() - obstructed,
+        cameras.len(),
+        camera::LENS_CLEARANCE
+    );
     ExitCode::SUCCESS
 }
 
@@ -1840,6 +1988,12 @@ fn run_build(
     if is_english {
         delvewright_dsl::tag_translatables(&mut campaign);
     }
+    // A baked skin lands in the client's texture space, which is shared exactly as
+    // the language table is: every body's texture is rewritten to this delve's own
+    // id here, once, so no emitter and no bake can ship a face under a name another
+    // delve answers. Unconditional — a `--lang` build ships the same pack. The map
+    // back to the authored id is what finds the PNG on disk below.
+    let skin_sources = delvewright_dsl::namespace_skin_textures(&mut campaign);
 
     // The one caller of `Plan::build_with` outside a test, and the ordinary arm
     // is still `Plan::build` — the constructor that passes `Perturb::none()` as
@@ -1877,7 +2031,7 @@ fn run_build(
         Err(code) => return ExitCode::from(code),
     };
 
-    let skins = match read_skins(campaign_dir, &campaign, json) {
+    let skins = match read_skins(campaign_dir, &campaign, &skin_sources, json) {
         Ok(s) => s,
         Err(code) => return ExitCode::from(code),
     };
@@ -2048,9 +2202,17 @@ fn resolve_build_kind<'a>(
 ///
 /// One texture is read once however many bodies name it — a character and the
 /// puppet that plays it are one face.
+///
+/// **Keyed by the pack texture id, read from the authored one.** The campaign
+/// reaching here has been through `dsl::namespace_skin_textures`, so every body's
+/// `texture_id` is this delve's own id (`<campaign_id>/<authored>`) and `sources`
+/// is the map back to what the creator wrote — which is what `skins/<id>.png` is
+/// named after. The returned map is keyed the way the pack must write it, so the
+/// archive path and the texture the summon points at are one id.
 fn read_skins(
     campaign_dir: &Path,
     campaign: &delvewright_dsl::Campaign,
+    sources: &BTreeMap<String, String>,
     json: bool,
 ) -> Result<BTreeMap<String, Vec<u8>>, u8> {
     let mut skins: BTreeMap<String, Vec<u8>> = BTreeMap::new();
@@ -2058,9 +2220,14 @@ fn read_skins(
         if skins.contains_key(&site.skin.texture_id) {
             continue;
         }
-        let path = campaign_dir
-            .join("skins")
-            .join(format!("{}.png", site.skin.texture_id));
+        // Total by construction: both callers rewrite before they read. The
+        // identity fallback is what an un-namespaced campaign would mean, not a
+        // repair of one.
+        let authored = sources
+            .get(&site.skin.texture_id)
+            .map(String::as_str)
+            .unwrap_or(site.skin.texture_id.as_str());
+        let path = campaign_dir.join("skins").join(format!("{authored}.png"));
         match std::fs::read(&path) {
             Ok(bytes) => {
                 skins.insert(site.skin.texture_id.clone(), bytes);
@@ -2069,12 +2236,12 @@ fn read_skins(
                 print_build_error(
                     DW_SKIN_PNG_MISSING,
                     &format!(
-                        "cannot read skin PNG `{}`: {e} — `{}` declares this `skin.texture_id` \
-                         at `{}` `{}`, but the campaign has no matching \
+                        "cannot read skin PNG `{}`: {e} — `{}` declares `skin.texture_id` \
+                         `{authored}` at `{}` `{}`, but the campaign has no matching \
                          `skins/<texture_id>.png`. A body that declares a skin ships as a \
-                         mannequin pointing at `delvewright:npc/{}`, and the resource pack is \
-                         where that texture comes from. Add the PNG at that path, or remove \
-                         the `skin`",
+                         mannequin pointing at `delvewright:npc/{}` — this delve's own texture \
+                         id — and the resource pack is where that texture comes from. Add the \
+                         PNG at that path, or remove the `skin`",
                         path.display(),
                         site.body.id(),
                         site.body.stage(),
@@ -2206,13 +2373,16 @@ fn run_edit(
     }
     let augmented_script = loaded.raw.world_edits.clone();
 
-    let v = match validate_loaded(loaded, prefabs_dir, json) {
+    let mut v = match validate_loaded(loaded, prefabs_dir, json) {
         Ok(v) => v,
         Err(code) => return ExitCode::from(code),
     };
     if has_error(&v.diags) {
         return ExitCode::from(1);
     }
+    // `edit` proves exactly what `build` proves, so it emits the same bodies: each
+    // skin carries this delve's own texture id here too, before anything reads one.
+    let skin_sources = delvewright_dsl::namespace_skin_textures(&mut v.campaign);
     let plan = match Plan::build(&v.campaign, &v.prefabs)
         .map(|p| p.with_design_files(v.loaded.design_files.clone()))
     {
@@ -2328,7 +2498,7 @@ fn run_edit(
         return ExitCode::from(2);
     }
     let tree = CommandTree::v1_21_11();
-    let skins = match read_skins(campaign_dir, &v.campaign, json) {
+    let skins = match read_skins(campaign_dir, &v.campaign, &skin_sources, json) {
         Ok(s) => s,
         Err(code) => return ExitCode::from(code),
     };

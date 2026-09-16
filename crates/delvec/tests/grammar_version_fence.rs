@@ -33,8 +33,24 @@ use delvec::grammar::ir::{Alternative, Cond, Node, Program, ProgramError, Reorie
 use delvec::grammar::library;
 use delvec::grammar::version::{
     BIND_SINCE, CONTRACT_SINCE, LATEST_PROGRAM_VERSION, LOCAL_FRAME_SINCE, MIRROR_SINCE,
-    SUPPORTED_PROGRAM_VERSIONS, has_mirror,
+    SHOWN_FACES_SINCE, SUPPORTED_PROGRAM_VERSIONS, has_mirror,
 };
+
+/// **The fences this sweep claims the corpus stands behind**, named once rather
+/// than twice.
+///
+/// It is a list of fences beside a ledger of fences, which is the shape that
+/// goes stale — and it did, the first time the corpus wrote a construct at a
+/// fence not on it. It failed loudly, by name, which is what a list beside a
+/// ledger owes. The obligation each entry carries is asserted below: a fence
+/// here with no library program behind it is a red.
+const CORPUS_FENCES: [&str; 5] = [
+    MIRROR_SINCE,
+    CONTRACT_SINCE,
+    BIND_SINCE,
+    LOCAL_FRAME_SINCE,
+    SHOWN_FACES_SINCE,
+];
 
 /// A one-rule program whose body carries the frame request it is given.
 fn with_body(body: Node) -> Program {
@@ -225,7 +241,7 @@ fn the_fence_binds_to_the_corpus_and_not_only_to_a_fixture() {
         match lowered.validate() {
             Err(ProgramError::FencedConstruct { since, .. }) => {
                 assert!(
-                    [MIRROR_SINCE, CONTRACT_SINCE, BIND_SINCE, LOCAL_FRAME_SINCE].contains(&since),
+                    CORPUS_FENCES.contains(&since),
                     "{id} was refused at a fence this sweep does not know: {since}"
                 );
                 *refused.entry(since).or_default() += 1;
@@ -239,7 +255,7 @@ fn the_fence_binds_to_the_corpus_and_not_only_to_a_fixture() {
          refused at 1.0.0 by fence: {refused:?}"
     );
     assert!(declared > 0, "the corpus sweep examined zero programs");
-    for fence in [MIRROR_SINCE, CONTRACT_SINCE, BIND_SINCE, LOCAL_FRAME_SINCE] {
+    for fence in CORPUS_FENCES {
         assert!(
             refused.get(fence).copied().unwrap_or(0) > 0,
             "binding count 0 for the fence at {fence}: ZERO library programs write its \

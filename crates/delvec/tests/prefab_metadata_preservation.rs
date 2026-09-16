@@ -247,7 +247,7 @@ fn every_metadata_writing_step_preserves_the_rest_of_the_document() {
         };
         for case in cases {
             let (nbt, json) = exported_piece(case);
-            let before = read_json(&json);
+            let mut before = read_json(&json);
             for path in AT_RISK {
                 let owned: Vec<String> = path.iter().map(|s| s.to_string()).collect();
                 assert!(
@@ -335,6 +335,24 @@ fn every_metadata_writing_step_preserves_the_rest_of_the_document() {
                     ]
                 }
                 "lighting" => {
+                    // **The fixture is un-measured first, on purpose.** The
+                    // expansion this document came from now measures its own
+                    // light, so `--write` writing the same figure back would
+                    // leave the document untouched and the `assert_ne!` below —
+                    // the guard that keeps the preservation check from being
+                    // vacuous — would fire on a step that did nothing wrong.
+                    // Blanking the block restores the state this verb exists for:
+                    // a document that does not carry the measurement yet, which
+                    // is every piece that came from somewhere other than an
+                    // expansion.
+                    let mut doc = read_json(&json);
+                    doc["lighting"] = serde_json::json!({ "profile": "unmeasured" });
+                    std::fs::write(
+                        &json,
+                        format!("{}\n", serde_json::to_string_pretty(&doc).unwrap()),
+                    )
+                    .unwrap();
+                    before = read_json(&json);
                     run(&["lighting", nbt_s, "--write"]);
                     vec![vec!["lighting"]]
                 }

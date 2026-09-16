@@ -1,6 +1,8 @@
 {
-  "added": [],
-  "base_commit": "dd46f01baefc3d6f5287ee1bc38fb4717fa704f5",
+  "added": [
+    "valley-site.en:validation/firework-gate.json"
+  ],
+  "base_commit": "9e101878b7aa23aebb0f92b6e5646c2f39209356",
   "changed": [
     "easy.en:creator-datapack/layout.json",
     "easy.en:critical-path.json",
@@ -62,6 +64,12 @@
     "site-plan.en:render-plan.json",
     "site-plan.en:validation/combat-plan.json",
     "site-plan.en:validation/critical-path-waypoints.json",
+    "valley-site.en:creator-datapack/layout.json",
+    "valley-site.en:critical-path.json",
+    "valley-site.en:datapack/data/gallery/function/complete_q_walk_the_bank.mcfunction",
+    "valley-site.en:render-plan.json",
+    "valley-site.en:validation/critical-path-waypoints.json",
+    "valley-site.en:validation/effect-roots.json",
     "void-horizon.en:creator-datapack/layout.json",
     "void-horizon.en:critical-path.json",
     "void-horizon.en:render-plan.json",
@@ -75,9 +83,10 @@
     "void-horizon.en:validation/death-plan.json"
   ],
   "classes": {
-    "creator overlay": 7,
-    "other": 14,
-    "validation ledger": 50
+    "creator overlay": 8,
+    "datapack function": 1,
+    "other": 16,
+    "validation ledger": 53
   },
   "removed": []
 }

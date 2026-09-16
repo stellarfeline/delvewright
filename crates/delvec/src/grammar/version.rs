@@ -70,7 +70,7 @@
 
 /// The latest program document version this crate implements — what
 /// [`Program::new`](crate::grammar::ir::Program::new) stamps on a program built today.
-pub const LATEST_PROGRAM_VERSION: &str = "1.8.0";
+pub const LATEST_PROGRAM_VERSION: &str = "1.9.0";
 
 /// Every program document version the format has, oldest first — the ledger.
 ///
@@ -95,8 +95,11 @@ pub const LATEST_PROGRAM_VERSION: &str = "1.8.0";
 /// * `1.8.0` — what a mark is FOR (spec-0046): `role` on a `mark`, written
 ///   through to the exported anchor's metadata, so a generated zone can declare
 ///   the cell a body arrives at without spelling a name its keys cannot take.
+/// * `1.9.0` — which of the building's own sides are finished exterior surface
+///   (`DW0885`): the program-level `shown_faces` list, written through to the
+///   exported prefab's own `shown_faces` on every expansion.
 pub const SUPPORTED_PROGRAM_VERSIONS: &[&str] = &[
-    "1.0.0", "1.1.0", "1.2.0", "1.3.0", "1.4.0", "1.5.0", "1.6.0", "1.7.0", "1.8.0",
+    "1.0.0", "1.1.0", "1.2.0", "1.3.0", "1.4.0", "1.5.0", "1.6.0", "1.7.0", "1.8.0", "1.9.0",
 ];
 
 /// Ledger entries whose surface a **sibling** change introduces: the version,
@@ -139,6 +142,11 @@ pub const WAY_SINCE: &str = "1.7.0";
 /// role the compiler resolves it by (spec-0046 §3).
 pub const ANCHOR_ROLE_SINCE: &str = "1.8.0";
 
+/// The version at which a program may declare **which of its own sides are
+/// finished exterior surface** — the list the export writes into the prefab's
+/// `shown_faces`, which `DW0885` reads (`crate::compiler::burial`).
+pub const SHOWN_FACES_SINCE: &str = "1.9.0";
+
 /// The fence constant that introduces `version`'s surface, when `version` is a
 /// ledger entry this crate does not implement; `None` otherwise.
 pub fn reserved_for(version: &str) -> Option<&'static str> {
@@ -173,19 +181,19 @@ pub fn is_supported_version(version: &str) -> bool {
 /// fenced construct. A reserved version keeps its own ordinal so the ledger
 /// stays a contiguous sequence — the surface it names sits at that ordinal
 /// whether or not this crate implements it.
+///
+/// **Read off the ledger, never listed a second time.** It was a hand-kept
+/// `match`, and a hand-kept parallel list of the ledger is the failure the
+/// ledger exists to prevent: adding `1.9.0` to
+/// [`SUPPORTED_PROGRAM_VERSIONS`] and not to the `match` gave the new version
+/// ordinal `0`, which made it older than `1.1.0` and closed every fence to the
+/// newest document in the format. The ledger is the sequence, so a version's
+/// ordinal is its place in it.
 pub fn minor_ordinal(version: &str) -> u32 {
-    match version {
-        "1.0.0" => 0,
-        "1.1.0" => 1,
-        "1.2.0" => 2,
-        "1.3.0" => 3,
-        "1.4.0" => 4,
-        "1.5.0" => 5,
-        "1.6.0" => 6,
-        "1.7.0" => 7,
-        "1.8.0" => 8,
-        _ => 0,
-    }
+    SUPPORTED_PROGRAM_VERSIONS
+        .iter()
+        .position(|v| *v == version)
+        .unwrap_or(0) as u32
 }
 
 /// True if `version` may write a reflected frame.
@@ -223,6 +231,12 @@ pub fn has_anchor_role(version: &str) -> bool {
     is_supported_version(version) && minor_ordinal(version) >= minor_ordinal(ANCHOR_ROLE_SINCE)
 }
 
+/// True if `version` may declare which of the building's sides are finished
+/// exterior surface.
+pub fn has_shown_faces(version: &str) -> bool {
+    is_supported_version(version) && minor_ordinal(version) >= minor_ordinal(SHOWN_FACES_SINCE)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -241,7 +255,41 @@ mod tests {
         ("INCLUDE_SINCE", INCLUDE_SINCE, has_include),
         ("WAY_SINCE", WAY_SINCE, has_way),
         ("ANCHOR_ROLE_SINCE", ANCHOR_ROLE_SINCE, has_anchor_role),
+        ("SHOWN_FACES_SINCE", SHOWN_FACES_SINCE, has_shown_faces),
     ];
+
+    /// **The ordinal IS the ledger's order**, asserted over the ledger rather
+    /// than against a second list of numbers.
+    ///
+    /// It was a hand-kept `match`, and the ledger and the match went out of step
+    /// the first time a version was added: `1.9.0` took ordinal `0`, which made
+    /// the format's newest document older than `1.1.0` and closed every fence
+    /// against it. This is the check that would have said so.
+    #[test]
+    fn a_version_s_ordinal_is_its_place_in_the_ledger() {
+        for (i, v) in SUPPORTED_PROGRAM_VERSIONS.iter().enumerate() {
+            assert_eq!(minor_ordinal(v), i as u32, "{v}");
+        }
+        // Strictly increasing, which is the property every fence predicate is
+        // written as a `>=` against.
+        for pair in SUPPORTED_PROGRAM_VERSIONS.windows(2) {
+            assert!(
+                minor_ordinal(pair[0]) < minor_ordinal(pair[1]),
+                "{} .. {}",
+                pair[0],
+                pair[1]
+            );
+        }
+        // And every fence this crate defines is open at the latest version: a
+        // ledger entry that closed one would be a document format that cannot
+        // write what it introduced.
+        for (name, _since, predicate) in FENCES {
+            assert!(
+                predicate(LATEST_PROGRAM_VERSION),
+                "{name} is closed at {LATEST_PROGRAM_VERSION}"
+            );
+        }
+    }
 
     #[test]
     fn the_latest_version_is_supported_and_is_the_newest_entry() {

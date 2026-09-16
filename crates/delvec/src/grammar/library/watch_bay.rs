@@ -178,10 +178,9 @@ pub fn watch_bay() -> Program {
                 alt_when(cmp(par("obstruct"), CmpOp::Le, int(0)), call("corridor")),
                 alt_when(
                     cmp(par("obstruct"), CmpOp::Ge, int(1)),
-                    // `split_exact`, not `split`: two relative pieces under
-                    // truncation would leave the far end of the approach with no
-                    // floor, and a hole in the floor is not the defect this knob
-                    // is meant to inject.
+                    // `split_exact`: the odd block joins the near run, so
+                    // the pillar this knob injects stands at or just past the
+                    // middle of the approach whatever its length.
                     split_exact(
                         Axis::Z,
                         vec![rel(1), abs(1), rel(1)],

@@ -11,7 +11,7 @@ use std::process::Command;
 
 use delvec::admit::structure::{PaletteEntry, Structure};
 use delvec::grammar::ir::{
-    EdgeClass, Mark, MarkAt, Node, Opens, Program, Reorient, Rounding, Size, Split, Way,
+    EdgeClass, Mark, MarkAt, Node, Opens, Program, Reorient, Size, Split, Way,
 };
 use delvec::grammar::library::spatial_contract::spatial_contract;
 use delvec::grammar::{Axis, Box3, ExpandOptions, export_prefab};
@@ -297,7 +297,7 @@ fn spatial_contract_as_a_laid_deck() -> Program {
             body: Box::new(Node::Split(Split {
                 axis: Axis::Y,
                 sizes: vec![Size::abs(1), Size::abs(3), Size::rel(1)],
-                rounding: Rounding::Truncate,
+                rounding: None,
                 repeat: false,
                 orient: Reorient::KEEP,
                 children: vec![

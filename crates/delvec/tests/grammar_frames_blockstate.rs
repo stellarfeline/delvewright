@@ -58,7 +58,7 @@ fn split(axis: Axis, sizes: Vec<Size>, children: Vec<Node>) -> Node {
     Node::Split(Split {
         axis,
         sizes,
-        rounding: Rounding::Start,
+        rounding: Some(Rounding::Start),
         repeat: false,
         orient: Reorient::KEEP,
         children,
@@ -431,7 +431,7 @@ fn claimed_pair(orient: Reorient) -> Program {
                 body: Box::new(Node::Split(Split {
                     axis: Axis::X,
                     sizes: vec![Size::abs(2), Size::rel(1)],
-                    rounding: Rounding::Start,
+                    rounding: Some(Rounding::Start),
                     repeat: false,
                     orient: Reorient::KEEP,
                     children: vec![

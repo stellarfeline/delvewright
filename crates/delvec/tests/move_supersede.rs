@@ -4,7 +4,7 @@
 //! A move compiles to a self-scheduling per-tick driver (`mv_tick_<npc>_<to>` /
 //! `ma_tick_<actor>_<to>`) that teleports the body along a precomputed waypoint
 //! polyline. The re-entry latch (`#mrun_<bare>` / `#arun_<bare>`) is keyed per
-//! **(id, to_anchor, gate)** — it stops a walk from restarting itself, and nothing
+//! **(id, to, gate)** — it stops a walk from restarting itself, and nothing
 //! else. Firing a SECOND move for the SAME body while an earlier leg still runs
 //! therefore used to leave two drivers alive: both tp the same entity every tick, the
 //! interleave garbles the path, and the leg with more remaining ticks writes the last
@@ -66,7 +66,7 @@ static QUESTS_ONE_WALK: LazyLock<String> = LazyLock::new(|| {
         "on_objective_complete": {
           "obj/talk": [
             { "type": "open-gate", "anchor": "anchor/door" },
-            { "type": "move-npc", "npc": "npc/keeper", "to_anchor": "anchor/exit" }
+            { "type": "move-npc", "npc": "npc/keeper", "to": { "anchor": "anchor/exit" } }
           ]
         },
         "on_complete": [ { "type": "campaign-complete" } ]
@@ -82,9 +82,9 @@ static QUESTS_ONE_WALK: LazyLock<String> = LazyLock::new(|| {
 /// where the long leg outlives the short one and would win the tp race.
 fn quests_two_walks() -> String {
     QUESTS_ONE_WALK.replacen(
-        r#"{ "type": "move-npc", "npc": "npc/keeper", "to_anchor": "anchor/exit" }"#,
-        r#"{ "type": "move-npc", "npc": "npc/keeper", "to_anchor": "anchor/exit" },
-            { "type": "move-npc", "npc": "npc/keeper", "to_anchor": "anchor/door" }"#,
+        r#"{ "type": "move-npc", "npc": "npc/keeper", "to": { "anchor": "anchor/exit" } }"#,
+        r#"{ "type": "move-npc", "npc": "npc/keeper", "to": { "anchor": "anchor/exit" } },
+            { "type": "move-npc", "npc": "npc/keeper", "to": { "anchor": "anchor/door" } }"#,
         1,
     )
 }
@@ -98,7 +98,7 @@ static QUESTS_ONE_LEG: LazyLock<String> = LazyLock::new(|| {
   "stage": "quests",
   "content": {
     "actors": [
-      { "id": "actor/walker", "entity": "minecraft:villager", "anchor": "anchor/keeper-stand" }
+      { "id": "actor/walker", "entity": "minecraft:villager", "anchor": "spawn" }
     ],
     "quests": [
       {
@@ -113,7 +113,7 @@ static QUESTS_ONE_LEG: LazyLock<String> = LazyLock::new(|| {
           "obj/talk": [
             { "type": "open-gate", "anchor": "anchor/door" },
             { "type": "spawn-actor", "actor": "actor/walker" },
-            { "type": "move-actor", "actor": "actor/walker", "to_anchor": "anchor/exit" }
+            { "type": "move-actor", "actor": "actor/walker", "to": { "anchor": "anchor/exit" } }
           ]
         },
         "on_complete": [ { "type": "campaign-complete" } ]
@@ -130,9 +130,9 @@ static QUESTS_ONE_LEG: LazyLock<String> = LazyLock::new(|| {
 /// the tp race. No campaign authors this today, so the defect it exposes is latent.
 fn quests_two_legs() -> String {
     QUESTS_ONE_LEG.replacen(
-        r#"{ "type": "move-actor", "actor": "actor/walker", "to_anchor": "anchor/exit" }"#,
-        r#"{ "type": "move-actor", "actor": "actor/walker", "to_anchor": "anchor/exit" },
-            { "type": "move-actor", "actor": "actor/walker", "to_anchor": "anchor/door" }"#,
+        r#"{ "type": "move-actor", "actor": "actor/walker", "to": { "anchor": "anchor/exit" } }"#,
+        r#"{ "type": "move-actor", "actor": "actor/walker", "to": { "anchor": "anchor/exit" } },
+            { "type": "move-actor", "actor": "actor/walker", "to": { "anchor": "anchor/door" } }"#,
         1,
     )
 }
@@ -586,37 +586,50 @@ fn a_single_leg_puppet_carries_no_supersession_machinery() {
 /// output must not move by a single byte (ADR-0006). A deliberate change to the walk
 /// planner re-blesses this golden; a change to the driver's scaffolding does not.
 const GOLDEN_ONE_LEG: &str = r#"== ma_tick_walker_exit
-execute if score #at_walker_exit dw.sys matches 0 run tp @e[tag=dw_pup_walker] 5.5 65.0 4.5 0 0
-execute if score #at_walker_exit dw.sys matches 1 run tp @e[tag=dw_pup_walker] 5.5 65.0 4.65 0 0
-execute if score #at_walker_exit dw.sys matches 2 run tp @e[tag=dw_pup_walker] 5.5 65.0 4.8 0 0
-execute if score #at_walker_exit dw.sys matches 3 run tp @e[tag=dw_pup_walker] 5.5 65.0 4.94 0 0
-execute if score #at_walker_exit dw.sys matches 4 run tp @e[tag=dw_pup_walker] 5.5 65.0 5.09 0 0
-execute if score #at_walker_exit dw.sys matches 5 run tp @e[tag=dw_pup_walker] 5.5 65.0 5.24 0 0
-execute if score #at_walker_exit dw.sys matches 6 run tp @e[tag=dw_pup_walker] 5.5 65.0 5.39 0 0
-execute if score #at_walker_exit dw.sys matches 7 run tp @e[tag=dw_pup_walker] 5.5 65.0 5.54 0 0
-execute if score #at_walker_exit dw.sys matches 8 run tp @e[tag=dw_pup_walker] 5.5 65.0 5.69 0 0
-execute if score #at_walker_exit dw.sys matches 9 run tp @e[tag=dw_pup_walker] 5.5 65.0 5.83 0 0
-execute if score #at_walker_exit dw.sys matches 10 run tp @e[tag=dw_pup_walker] 5.5 65.0 5.98 0 0
-execute if score #at_walker_exit dw.sys matches 11 run tp @e[tag=dw_pup_walker] 5.5 65.0 6.13 0 0
-execute if score #at_walker_exit dw.sys matches 12 run tp @e[tag=dw_pup_walker] 5.5 65.0 6.28 0 0
-execute if score #at_walker_exit dw.sys matches 13 run tp @e[tag=dw_pup_walker] 5.5 65.0 6.43 0 0
-execute if score #at_walker_exit dw.sys matches 14 run tp @e[tag=dw_pup_walker] 5.5 65.0 6.57 0 0
-execute if score #at_walker_exit dw.sys matches 15 run tp @e[tag=dw_pup_walker] 5.5 65.0 6.72 0 0
-execute if score #at_walker_exit dw.sys matches 16 run tp @e[tag=dw_pup_walker] 5.5 65.0 6.87 0 0
-execute if score #at_walker_exit dw.sys matches 17 run tp @e[tag=dw_pup_walker] 5.5 65.0 7.02 0 0
-execute if score #at_walker_exit dw.sys matches 18 run tp @e[tag=dw_pup_walker] 5.5 65.0 7.17 0 0
-execute if score #at_walker_exit dw.sys matches 19 run tp @e[tag=dw_pup_walker] 5.5 65.0 7.31 0 0
-execute if score #at_walker_exit dw.sys matches 20 run tp @e[tag=dw_pup_walker] 5.5 65.0 7.46 0 0
-execute if score #at_walker_exit dw.sys matches 21 run tp @e[tag=dw_pup_walker] 5.5 65.0 7.61 0 0
-execute if score #at_walker_exit dw.sys matches 22 run tp @e[tag=dw_pup_walker] 5.5 65.0 7.76 0 0
-execute if score #at_walker_exit dw.sys matches 23 run tp @e[tag=dw_pup_walker] 5.5 65.0 7.91 0 0
-execute if score #at_walker_exit dw.sys matches 24 run tp @e[tag=dw_pup_walker] 5.5 65.0 8.06 0 0
-execute if score #at_walker_exit dw.sys matches 25 run tp @e[tag=dw_pup_walker] 5.5 65.0 8.2 0 0
-execute if score #at_walker_exit dw.sys matches 26 run tp @e[tag=dw_pup_walker] 5.5 65.0 8.35 0 0
-execute if score #at_walker_exit dw.sys matches 27 run tp @e[tag=dw_pup_walker] 5.5 65.0 8.5 0 0
+execute if score #at_walker_exit dw.sys matches 0 run tp @e[tag=dw_pup_walker] 5.5 65.0 2.5 0 0
+execute if score #at_walker_exit dw.sys matches 1 run tp @e[tag=dw_pup_walker] 5.5 65.0 2.65 0 0
+execute if score #at_walker_exit dw.sys matches 2 run tp @e[tag=dw_pup_walker] 5.5 65.0 2.8 0 0
+execute if score #at_walker_exit dw.sys matches 3 run tp @e[tag=dw_pup_walker] 5.5 65.0 2.95 0 0
+execute if score #at_walker_exit dw.sys matches 4 run tp @e[tag=dw_pup_walker] 5.5 65.0 3.1 0 0
+execute if score #at_walker_exit dw.sys matches 5 run tp @e[tag=dw_pup_walker] 5.5 65.0 3.25 0 0
+execute if score #at_walker_exit dw.sys matches 6 run tp @e[tag=dw_pup_walker] 5.5 65.0 3.4 0 0
+execute if score #at_walker_exit dw.sys matches 7 run tp @e[tag=dw_pup_walker] 5.5 65.0 3.55 0 0
+execute if score #at_walker_exit dw.sys matches 8 run tp @e[tag=dw_pup_walker] 5.5 65.0 3.7 0 0
+execute if score #at_walker_exit dw.sys matches 9 run tp @e[tag=dw_pup_walker] 5.5 65.0 3.85 0 0
+execute if score #at_walker_exit dw.sys matches 10 run tp @e[tag=dw_pup_walker] 5.5 65.0 4.0 0 0
+execute if score #at_walker_exit dw.sys matches 11 run tp @e[tag=dw_pup_walker] 5.5 65.0 4.15 0 0
+execute if score #at_walker_exit dw.sys matches 12 run tp @e[tag=dw_pup_walker] 5.5 65.0 4.3 0 0
+execute if score #at_walker_exit dw.sys matches 13 run tp @e[tag=dw_pup_walker] 5.5 65.0 4.45 0 0
+execute if score #at_walker_exit dw.sys matches 14 run tp @e[tag=dw_pup_walker] 5.5 65.0 4.6 0 0
+execute if score #at_walker_exit dw.sys matches 15 run tp @e[tag=dw_pup_walker] 5.5 65.0 4.75 0 0
+execute if score #at_walker_exit dw.sys matches 16 run tp @e[tag=dw_pup_walker] 5.5 65.0 4.9 0 0
+execute if score #at_walker_exit dw.sys matches 17 run tp @e[tag=dw_pup_walker] 5.5 65.0 5.05 0 0
+execute if score #at_walker_exit dw.sys matches 18 run tp @e[tag=dw_pup_walker] 5.5 65.0 5.2 0 0
+execute if score #at_walker_exit dw.sys matches 19 run tp @e[tag=dw_pup_walker] 5.5 65.0 5.35 0 0
+execute if score #at_walker_exit dw.sys matches 20 run tp @e[tag=dw_pup_walker] 5.5 65.0 5.5 0 0
+execute if score #at_walker_exit dw.sys matches 21 run tp @e[tag=dw_pup_walker] 5.5 65.0 5.65 0 0
+execute if score #at_walker_exit dw.sys matches 22 run tp @e[tag=dw_pup_walker] 5.5 65.0 5.8 0 0
+execute if score #at_walker_exit dw.sys matches 23 run tp @e[tag=dw_pup_walker] 5.5 65.0 5.95 0 0
+execute if score #at_walker_exit dw.sys matches 24 run tp @e[tag=dw_pup_walker] 5.5 65.0 6.1 0 0
+execute if score #at_walker_exit dw.sys matches 25 run tp @e[tag=dw_pup_walker] 5.5 65.0 6.25 0 0
+execute if score #at_walker_exit dw.sys matches 26 run tp @e[tag=dw_pup_walker] 5.5 65.0 6.4 0 0
+execute if score #at_walker_exit dw.sys matches 27 run tp @e[tag=dw_pup_walker] 5.5 65.0 6.55 0 0
+execute if score #at_walker_exit dw.sys matches 28 run tp @e[tag=dw_pup_walker] 5.5 65.0 6.7 0 0
+execute if score #at_walker_exit dw.sys matches 29 run tp @e[tag=dw_pup_walker] 5.5 65.0 6.85 0 0
+execute if score #at_walker_exit dw.sys matches 30 run tp @e[tag=dw_pup_walker] 5.5 65.0 7.0 0 0
+execute if score #at_walker_exit dw.sys matches 31 run tp @e[tag=dw_pup_walker] 5.5 65.0 7.15 0 0
+execute if score #at_walker_exit dw.sys matches 32 run tp @e[tag=dw_pup_walker] 5.5 65.0 7.3 0 0
+execute if score #at_walker_exit dw.sys matches 33 run tp @e[tag=dw_pup_walker] 5.5 65.0 7.45 0 0
+execute if score #at_walker_exit dw.sys matches 34 run tp @e[tag=dw_pup_walker] 5.5 65.0 7.6 0 0
+execute if score #at_walker_exit dw.sys matches 35 run tp @e[tag=dw_pup_walker] 5.5 65.0 7.75 0 0
+execute if score #at_walker_exit dw.sys matches 36 run tp @e[tag=dw_pup_walker] 5.5 65.0 7.9 0 0
+execute if score #at_walker_exit dw.sys matches 37 run tp @e[tag=dw_pup_walker] 5.5 65.0 8.05 0 0
+execute if score #at_walker_exit dw.sys matches 38 run tp @e[tag=dw_pup_walker] 5.5 65.0 8.2 0 0
+execute if score #at_walker_exit dw.sys matches 39 run tp @e[tag=dw_pup_walker] 5.5 65.0 8.35 0 0
+execute if score #at_walker_exit dw.sys matches 40 run tp @e[tag=dw_pup_walker] 5.5 65.0 8.5 180 0
 scoreboard players add #at_walker_exit dw.sys 1
-execute if score #at_walker_exit dw.sys matches 28.. run scoreboard players set #arun_walker_exit dw.sys 0
-execute unless score #at_walker_exit dw.sys matches 28.. run schedule function hello-world:ma_tick_walker_exit 1t
+execute if score #at_walker_exit dw.sys matches 41.. run scoreboard players set #arun_walker_exit dw.sys 0
+execute unless score #at_walker_exit dw.sys matches 41.. run schedule function hello-world:ma_tick_walker_exit 1t
 == ma_walker_exit
 execute if score #arun_walker_exit dw.sys matches 1 run return fail
 scoreboard players set #arun_walker_exit dw.sys 1

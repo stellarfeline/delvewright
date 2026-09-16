@@ -20,8 +20,8 @@ edit. Template at the bottom.
 | [0013](0013-prefab-license-allowlist.md) | Expanded prefab license allowlist (+MIT/Apache/GPL) | Accepted |
 | [0014](0014-creator-distribution.md) | Creator distribution: plugin install, content repo as workdir | Accepted (M4; the working-directory bullet and the compose-rig clause refined by ADR-0027) |
 | [0015](0015-schema-promotion-policy.md) | Schema promotion: composition first; native only via second-campaign or machine-proof gate | Accepted; the version-fence idiom clause superseded by ADR-0024 |
-| [0016](0016-three-layer-versioning.md) | Three-layer versioning: format, engine, skill | Accepted; §Decision item 1 (old formats always compile) superseded by ADR-0024 |
-| [0017](0017-toolchain-distribution.md) | Toolchain distribution: `cargo install delvec`, release shelf, CI-only publishing | Accepted (§3 and the musl targets superseded by ADR-0023; install default superseded by ADR-0023; §4's mechanism half superseded by ADR-0026) |
+| [0016](0016-three-layer-versioning.md) | Three-layer versioning: format, engine, skill | Accepted; §Decision item 1 (old formats always compile) superseded by ADR-0024; item 2's tag shape and item 3's unreleased skill version superseded by ADR-0028 |
+| [0017](0017-toolchain-distribution.md) | Toolchain distribution: `cargo install delvec`, release shelf, CI-only publishing | Accepted (§3 and the musl targets superseded by ADR-0023; install default superseded by ADR-0023; §4's mechanism half superseded by ADR-0026; §4's tag shape superseded by ADR-0028) |
 | [0018](0018-creator-toolchain-and-the-ir-hatch.md) | Creator toolchain: cargo as a prerequisite, one authoring crate, the escape hatch at the grammar IR | Accepted (§2–§3 prerequisite posture superseded by ADR-0023) |
 | [0019](0019-java-edition-bedrock-shelved.md) | Java edition stays; a Bedrock backend is shelved | Accepted |
 | [0020](0020-map-design-pipeline.md) | The spatial contract — declared spaces and edges, checked against the emitted bytes | Superseded by ADR-0022 |
@@ -30,8 +30,9 @@ edit. Template at the bottom.
 | [0023](0023-creator-toolchain-as-decided.md) | The creator toolchain as decided: one `delvec` is the delve creator, archive-first acquisition, source-build floor, lazy-loaded externals | Accepted; §6 superseded by ADR-0025 |
 | [0024](0024-one-dsl-version.md) | One `dsl_version` — the engine accepts exactly the number it implements | Accepted |
 | [0025](0025-one-package.md) | One package — `delvec` is the engine, `delvewright-dsl` is the format, and nothing else is published | Accepted |
-| [0026](0026-one-approval-two-platforms.md) | One approval authorises both platforms — an engine release reaches crates.io and the GitHub Release together, or neither | Accepted |
+| [0026](0026-one-approval-two-platforms.md) | One approval authorises both platforms — an engine release reaches crates.io and the GitHub Release together, or neither | Accepted; §4's open question closed by ADR-0028 |
 | [0027](0027-the-content-repository-is-optional-and-the-rig-is-reached-not-carried.md) | The content repository is an optional clone, and the plugin reaches the engine tree instead of carrying pieces of it | Proposed |
+| [0028](0028-three-things-released-by-name.md) | Three things, each released by its name and its version: `<name>--v<semver>` tags for `delvec`, `delvewright-dsl` and the `delvewright` plugin | Accepted |
 
 ## Template
 

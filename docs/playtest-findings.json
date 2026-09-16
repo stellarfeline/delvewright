@@ -5,7 +5,8 @@
     "One row per finding. `finding` is impersonal English (CLAUDE.md Conventions: no verbatim personal speech in repo artifacts).",
     "`carrier` names the CHECK that carries the finding's general form; `binding` is how many objects of the class that check quantifies over exist on the campaign being staged.",
     "`carrier: null` is a red unless `disposition` + a substantive `justification` declare why no machine form is possible (playtest-methodology.md rule 2's one escape).",
-    "A row whose `binding` selects its object class by IDENTITY (`eq`/`in`/`prefix` only) declares its own applicability by shape: the gate measures the precondition off that binding (`staging-gate.py::probe_is_self_measuring`) and `load_ledger` refuses an `applies_when` that would restate it. Only a declaration-shaped binding (`has`/`has_any`, a `contains` glob, an `artifact` or `out` probe) owes one.",
+    "A row whose `binding` selects its object class by IDENTITY (`eq`/`in`/`prefix`, or an `any_of` every arm of which is one of those) declares its own applicability by shape: the gate measures the precondition off that binding (`staging-gate.py::probe_is_self_measuring`) and `load_ledger` refuses an `applies_when` that would restate it. Only a declaration-shaped binding (`has`/`has_any`, a `contains` glob, an `artifact` or `out` probe) owes one.",
+    "`any_of` is a disjunction of predicates, for a class the DSL spells more than one way (`bell-04`, `bell-05`); `has_any` is a disjunction of field names, which is a different question. A clause this matcher does not implement is refused at load: an unrecognised key restricts nothing, so the probe would count every node while describing itself as something narrower.",
     "APPEND, never rewrite. A row is removed only when the finding is shown never to have been a finding.",
     "Sources this ledger was reconstructed from are listed in docs/reference/playtest-methodology.md, rule 7, including what could NOT be recovered."
   ],
@@ -89,7 +90,13 @@
         "match": {
           "has": [
             "requires_flags"
-          ]
+          ],
+          "in": {
+            "type": [
+              "collect",
+              "interact"
+            ]
+          }
         }
       },
       "binding": {
@@ -104,7 +111,7 @@
       "finding": "objectives had no lifecycle feedback: nothing on screen said an objective had activated, completed, or that the delve had ended",
       "general_form": "every objective emits activation/completion presentation (title + hint + sound)",
       "id": "hv-04",
-      "note": "applies_when added 2026-08-21: the verb_flag_gate template is emitted for flag-gated objectives (`requires_flags`). Flag-gated objectives declared with no emitted template = UNBOUND; none declared = the class measures zero.",
+      "note": "The precondition counts what the emission binds: `compiler::emit` writes the `verb_flag_gate` template for the first `collect` or `interact` objective carrying `requires_flags`, and for nothing else. An objective of either kind declaring the field with no emitted template is UNBOUND; none declared is the class measuring zero. A `requires_flags` elsewhere in quests.json is not a member of this class: an effect guard (`on_complete[].when`) and a `talk-to`, `reach-anchor` or `kill` objective are never given the template, so counting them made a branching campaign with guarded endings and no such objective UNBOUND with no authoring act that clears it — removing the guards is refused by DW0482 and DW0484. Measured on a copy of slatefall-quarry before the correction: 2 objects counted, both effect guards, 0 objectives carrying the field, REFUSED 1 of 100 on this row alone. Residual, in the safe direction: the predicate has no emptiness term, so an objective written with `requires_flags: []` counts though the emission does not bind it; the gallery carries two such beside one it binds, so its precondition reads 3 while it is BOUND, and a campaign whose only members are empty lists reads UNBOUND.",
       "round": 1,
       "triage": "capability"
     },
@@ -1674,9 +1681,9 @@
         ],
         "kind": "dsl",
         "match": {
-          "prefix": {
-            "id": "area/"
-          }
+          "has": [
+            "pieces"
+          ]
         }
       },
       "binding": {
@@ -1698,7 +1705,7 @@
       "finding": "a pool draw seated the same anchor-bearing prefab twice, so anchor names stopped picking out one place in the world",
       "general_form": "a pool draw that seats one anchor-bearing prefab more than once is reported at the pool, not discovered one blocked placement at a time",
       "id": "isl-59",
-      "note": "applies_when added 2026-08-21: a pool draw exists only under areas[] placement; a site-plan campaign structurally has none (DW0839). Areas declared with no prefab_pool = UNBOUND; no area = the class measures zero.",
+      "note": "applies_when added 2026-08-21: a pool draw exists only under areas[] placement; a site-plan campaign structurally has none (DW0839). Areas declared with no prefab_pool = UNBOUND; no area = the class measures zero. `applies_when` narrowed from `an area` to `an area declaring a piece count`. The wider predicate said that any campaign declaring an `area/` could draw from a pool, and a campaign class now exists for which that is false: a horizon whose base BUILDS terrain rings a DECLARED extent, and an `areas[]` campaign states one only by being ONE area bound to ONE `prefab` (`DW0855`, `placement::Extent`). Such a campaign cannot reach a pool by any route — binding its one area to a pool is `DW0855` (`its one area draws from a pool`), adding a second area is `DW0855` (`2 areas rather than one`), and the only other declared extent is a site plan, which `DW0839` forbids beside a non-empty `areas[]`. Both were reproduced by planting them on the gallery's `valley-site` point rather than argued. This is the same correction this row already carries for site-plan campaigns and for the same reason: a quantifier that names a population an object cannot belong to is not a check weakened, it is a check made true. The marker is `pieces` because the predicate language has no negation and no cross-node term, so the horizon cannot be named from here; `DW0161` requires a piece count beside every `prefab_pool`, and every pool area in this repository declares one, so the narrowed population still holds every campaign that can carry the defect. Residual, stated rather than hidden: an area declaring a piece count and a single `prefab` is a draw of one and cannot seat a piece twice, yet it counts toward the precondition. No campaign is in that state — every one declaring `pieces` also declares a pool — so the row would read UNBOUND on a campaign that has yet to be written, which is the safe direction.",
       "round": "staging-2026-08-06",
       "triage": "capability"
     },
@@ -1816,12 +1823,26 @@
         ],
         "kind": "dsl",
         "match": {
-          "in": {
-            "type": [
-              "spawn-wave",
-              "spawn-actor"
-            ]
-          }
+          "any_of": [
+            {
+              "in": {
+                "tier": [
+                  "elite",
+                  "boss"
+                ]
+              }
+            },
+            {
+              "eq": {
+                "type": "unleash-actor"
+              }
+            },
+            {
+              "prefix": {
+                "id": "ambush/"
+              }
+            }
+          ]
         }
       },
       "binding": {
@@ -1837,7 +1858,7 @@
       "finding": "an encounter billed as an elite was trivially weak, and the compiler had no way to express its durability at all",
       "general_form": "a billed encounter's declared effective HP is bounded against the best kit the party can field, and anything billed elite or boss that the floor gate cannot measure is reported",
       "id": "bell-04",
-      "note": "applies_when added 2026-08-21: the floor gate examines staged fights, declared by spawn-wave/spawn-actor. Fights declared with combat-plan.json unemitted = MISSING-CHECK (the ledger went missing); none declared = the class measures zero.",
+      "note": "This is a NARROWING OF A PRECONDITION, declared as one. The probe counted every `spawn-wave`/`spawn-actor` effect — a population this general form does not name — so a ceremonial muster of invulnerable puppets that no floor gate could ever examine was adjudicated as a fight whose build owed a combat plan. The precondition is now exactly what `floor_gate.examined` counts, read off the author's own document: an encounter billed `elite`/`boss` (`waves[].tier` or `actors[].tier`, the two fields `EncounterTier::has_floor_expectation` selects), or a body the campaign turns loose on the party (an `unleash-actor` effect, or an `ambushes[]` entry, which is the sugar `Ambush::to_trigger` expands into one — a checker reads a document the way its consumer reads it). The narrowed class is a superset of `combat::floor_ledger`'s four groups, so a build that stopped emitting the ledger over declared objects still reds MISSING-CHECK. Binding count with the gate's own probe: 0 of the narrowed class on doune-castle-tour (7 of the old one), 6 on nobodys-cave-island, 6 on the gallery primary.",
       "round": 2,
       "triage": "capability"
     },
@@ -1848,9 +1869,23 @@
         ],
         "kind": "dsl",
         "match": {
-          "prefix": {
-            "id": "actor/"
-          }
+          "any_of": [
+            {
+              "eq": {
+                "type": "kill"
+              }
+            },
+            {
+              "eq": {
+                "type": "unleash-actor"
+              }
+            },
+            {
+              "prefix": {
+                "id": "ambush/"
+              }
+            }
+          ]
         }
       },
       "binding": {
@@ -1866,7 +1901,7 @@
       "finding": "an encounter killed a full-health player in two hits",
       "general_form": "a campaign with mandatory combat — a wave the party must kill OR a hostile it turns loose on them — is held to the whole spec-0023 winnability pass, sustain included; and no unavoidable scripted hit on that path one-shots a full-health player (DW0473)",
       "id": "bell-05",
-      "note": "carrier + binding corrected 2026-08-11 (staging-gate UNBOUND audit), and the engine fixed with them. The row named DW0473 while probing combat-plan.json:encounters, which quantify over DIFFERENT collections — DW0473 walks unconditional `damage-players` bundles, `encounters` is `kill`-a-wave steps. Worse, the whole spec-0023 pass (DW0470-DW0475) was gated on `has_encounters`, the VERB, so a delve whose combat is entirely actors ran none of it: nobodys-cave-island unleashes three wardens, bills one elite, ships zero `kill` objectives, and reported `encounters: 0` for twenty-two owner rounds with nothing saying that was a coverage fact rather than a content fact. `combat::mandatory_fights` is now the object class — every fight of either shape — the pass is gated on it, DW0474 quantifies over it, and combat-plan.json publishes it as `fights`. Island binding 0 -> 3.",
+      "note": "carrier + binding corrected 2026-08-11 (staging-gate UNBOUND audit), and the engine fixed with them. The row named DW0473 while probing combat-plan.json:encounters, which quantify over DIFFERENT collections — DW0473 walks unconditional `damage-players` bundles, `encounters` is `kill`-a-wave steps. Worse, the whole spec-0023 pass (DW0470-DW0475) was gated on `has_encounters`, the VERB, so a delve whose combat is entirely actors ran none of it: nobodys-cave-island unleashes three wardens, bills one elite, ships zero `kill` objectives, and reported `encounters: 0` for twenty-two owner rounds with nothing saying that was a coverage fact rather than a content fact. `combat::mandatory_fights` is now the object class — every fight of either shape — the pass is gated on it, DW0474 quantifies over it, and combat-plan.json publishes it as `fights`. Island binding 0 -> 3. The precondition has since had a NARROWING OF A PRECONDITION, declared as one: it counted every id under `actor/`, so a campaign that stages a body — a herald, a ferryman, a guard of honour — was adjudicated as a campaign with mandatory combat, and a guided tour of a castle was refused for shipping no combat plan. It now counts what this general form names in its own words, a wave the party must kill OR a hostile it turns loose on them: a `kill` objective, an `unleash-actor` effect, or an `ambushes[]` entry, the sugar `Ambush::to_trigger` expands into the second. A staged puppet is neither, which is `combat::hostile_actors`'s own rule — unleash or nothing. Binding count with the gate's own probe: 0 of the narrowed class on doune-castle-tour (7 of the old one), 5 on nobodys-cave-island, 3 on the gallery primary.",
       "round": 2,
       "triage": "capability"
     },
@@ -2381,7 +2416,7 @@
       "finding": "a campaign that seats the shipped cave, keep or island pools cannot be built on any horizon base the engine declares, because the three horizon diagnostics each name a remedy another one refuses: under `ocean` DW0344 refuses a piece whose box reaches the sea plane with no declared waterline and names `void`; under `void` DW0885 refuses an outward face standing in the air the party walks in and names `valley`; under `valley` DW0855 refuses a surround with no declared region and names a site plan, which DW0839 then refuses because the campaign already places with `areas[]`; and DW0344's own second remedy, raising the piece clear of the sea, is unreachable because the check reads the placement box minimum, which is the area origin whatever the piece's bytes hold",
       "general_form": "a horizon and a piece set are a pair, and the pairing is refused before any piece is placed (DW0886, validation tier), stating per pool which members can be seated on the declared base and why; every remedy a horizon diagnostic names is reachable from the state that names it, with a test that builds the campaign each move produces and asserts it reaches a different verdict; and a declared waterline is a claim about the piece's bytes that the engine reads (DW0887) rather than a field the placement arithmetic trusts",
       "id": "gal-02",
-      "note": "Reproduced before writing, on engine c2a90ac2 with a --release delvec, over the gallery primary campaign with one added `areas[]` element seating each pool and prefabs = the prefabs/gallery-generator output merged with campaigns/prefabs. Denominator: 4 pools of the 4 in campaigns/prefabs/pools.json against 3 bases of the 3 `delvec schema --stage world` exports, 12 of 12 cells built, 2 green (stone-keep and vertical-keep on `void`); cave-shore reds DW0885 on `void` and island reds DW0318 on `void` and DW0885 on `ocean`. The waterline half was measured twice by instruments sharing no configuration (a standalone NBT reader and `delvec palette`): 36 prefab documents, 5 declaring `waterline_y`, 2 of those 5 borne out by a water block at the declared plane. The binding probe was run with this gate's own `probe()` and is non-zero on every campaign that seats pieces through `areas[]` — 3 on the reproduction carrier, 2 on the gallery's ocean point, 2 on nobodys-cave-island, 1 on hollow-vigil, and a self-measuring 0 on the site-plan point, which places no area at all. The general form is spec-0060; DW0886 is allocated there and does not exist in this engine, so this row is MISSING-CHECK until it lands.",
+      "note": "Reproduced before writing, on engine c2a90ac2 with a --release delvec, over the gallery primary campaign with one added `areas[]` element seating each pool and prefabs = the prefabs/gallery-generator output merged with campaigns/prefabs. Denominator: 4 pools of the 4 in campaigns/prefabs/pools.json against 3 bases of the 3 `delvec schema --stage world` exports, 12 of 12 cells built, 2 green (stone-keep and vertical-keep on `void`); cave-shore reds DW0885 on `void` and island reds DW0318 on `void` and DW0885 on `ocean`. The waterline half was measured twice by instruments sharing no configuration (a standalone NBT reader and `delvec palette`): 36 prefab documents, 5 declaring `waterline_y`, 2 of those 5 borne out by a water block at the declared plane. The binding probe was run with this gate's own `probe()` and is non-zero on every campaign that seats pieces through `areas[]` — 3 on the reproduction carrier, 2 on the gallery's ocean point, 2 on nobodys-cave-island, 1 on hollow-vigil, and a self-measuring 0 on the site-plan point, which places no area at all. The general form is spec-0060, and DW0886 carries it. Its exposure case bound nothing until `compiler::seating::set_exposure`: on a copy of the-tidewatch (`horizon: ocean`, `pool/cave-shore`), `delvec prefab seating` printed `SEATABLE 13 of 13`, `analyze` exited 0 and `build` exited 3 with 16 × DW0885. DW0885's two arms are facts about a library — whether a member's own air reaches its box boundary with no socket there, which sides its bytes put blocks on, what its document declares — so DW0886 now asks them with the build's own predicates, and the same copy reads `REFUSED 0 of 13` and `analyze` exit 1 with 13 × DW0886; with the 78 named sides declared shown in a copy of the library, `analyze` and `build` both exit 0 with 16 of 16 declarations bound. `tools/check-seating-agrees.py` builds every seatable cell and every pool refused for its outside alone once declared.",
       "round": null,
       "triage": "capability"
     },
@@ -2414,9 +2449,9 @@
         ],
         "kind": "dsl",
         "match": {
-          "prefix": {
-            "id": "area/"
-          }
+          "has": [
+            "pieces"
+          ]
         }
       },
       "binding": {
@@ -2438,7 +2473,7 @@
       "finding": "an area that seats a pool seats a subset of its members, so an anchor declared on a member the layout did not seat does not exist in the built world; only the entry-role member's anchors are guaranteed, which on the shipped library is two anchors per area out of the ten distinct anchor names the cave and keep pieces declare, and the advisory that reports the ambiguity is emitted by the build, five authoring steps after the anchors have to be chosen and bound",
       "general_form": "the anchors an area can be authored against are stated by the engine at the step that chooses them: a name bound to a member the layout may not seat is refused or reported before the build, and the set an area guarantees is answerable from the campaign without building it",
       "id": "drill3-02",
-      "note": "Queued with no carrier on purpose. The page's half — stating the rule where the decision is made — is separate authoring work; this row is the engine's half, and the gate reds until the information is reachable at the step that needs it rather than only after placement. The count of distinct anchor names was carried into this row as eleven and is ten: `delvec prefab anchors` reports the cave and keep pools declaring ten names between them, of which two are guaranteed, and the union of the two sets is also ten.",
+      "note": "Queued with no carrier on purpose. The page's half — stating the rule where the decision is made — is separate authoring work; this row is the engine's half, and the gate reds until the information is reachable at the step that needs it rather than only after placement. The count of distinct anchor names was carried into this row as eleven and is ten: `delvec prefab anchors` reports the cave and keep pools declaring ten names between them, of which two are guaranteed, and the union of the two sets is also ten. `applies_when` narrowed from `an area` to `an area declaring a piece count`. The wider predicate said that any campaign declaring an `area/` could draw from a pool, and a campaign class now exists for which that is false: a horizon whose base BUILDS terrain rings a DECLARED extent, and an `areas[]` campaign states one only by being ONE area bound to ONE `prefab` (`DW0855`, `placement::Extent`). Such a campaign cannot reach a pool by any route — binding its one area to a pool is `DW0855` (`its one area draws from a pool`), adding a second area is `DW0855` (`2 areas rather than one`), and the only other declared extent is a site plan, which `DW0839` forbids beside a non-empty `areas[]`. Both were reproduced by planting them on the gallery's `valley-site` point rather than argued. This is the same correction this row already carries for site-plan campaigns and for the same reason: a quantifier that names a population an object cannot belong to is not a check weakened, it is a check made true. The marker is `pieces` because the predicate language has no negation and no cross-node term, so the horizon cannot be named from here; `DW0161` requires a piece count beside every `prefab_pool`, and every pool area in this repository declares one, so the narrowed population still holds every campaign that can carry the defect. Residual, stated rather than hidden: an area declaring a piece count and a single `prefab` is a draw of one and cannot seat a piece twice, yet it counts toward the precondition. No campaign is in that state — every one declaring `pieces` also declares a pool — so the row would read UNBOUND on a campaign that has yet to be written, which is the safe direction.",
       "round": "drill-3",
       "triage": "capability"
     },
@@ -2520,6 +2555,116 @@
       "id": "gal-03",
       "note": "Reported by the round that turned the walk-plane requirement on for every base, which found that turning it on made no difference on `valley` because nothing legal reaches it. The round was told to report rather than to widen the rule or to add a probe that hides the gap behind another refusal, and did. Closed by making `compiler::seating::check` read the site plan's own resolver and ask each placed box the same question a prefab is asked, through one predicate (`seating::feet_under_the_sea`), and by giving the binding line a numerator and a denominator per placement model. Reproduced before the change and after, on the gallery's site-plan overlay with nothing altered but `horizon: ocean`: `delvec analyze` exited 0 with `0 of 0 area(s)` while `node/undercroft` stood at y=60, two courses under the sea plane at y=62, and the build then refused it at DW0344 after the assembly; after, `analyze` exits 1 at DW0886 naming the place, and the line reads `site plan: 7 of 7 box(es) judged against this base`. The binding counts the plan's boxes — the objects the new arm quantifies over — and its precondition is whether the campaign declares a site plan at all, both measured over the campaign source. On the gallery: 7 boxes on the site-plan point, 0 boxes and 0 preconditions on the primary and on both horizon overlays, which place with `areas[]` and are gal-02's subject.",
       "round": null,
+      "triage": "capability"
+    },
+    {
+      "binding": {
+        "files": [
+          "quests.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "in": {
+            "type": [
+              "move-npc",
+              "move-actor"
+            ]
+          }
+        }
+      },
+      "campaign": "doune-castle-tour",
+      "carrier": {
+        "code": "DW0510",
+        "kind": "dw"
+      },
+      "finding": "a guide's proved route climbed onto a laid dining table and down the other side: every cell of the table top is standable under the nav model's own rule — solid support below, feet and head clear — so the route proof took it, the build exited 0 and nothing named it",
+      "general_form": "the walk model can be told that a cell is a place a body would not walk, which is a different fact from a cell a body cannot walk, and it is asked at `nav::World::standable_fp` — the one predicate every route proof, snap, flood, seat and waypoint export funnels through, beside the lethal clause already there. The declaration belongs to the object that owns the blocks, and the piece document already has that object class: an anchor with `role: furniture` and a `region` over the furniture's own blocks, a named place a campaign can still address. It is a claim about the bytes, held by the byte-claim rule (`DW0888`, key `anchors.*.furniture`): a declaration with no region, over no solid block, or withholding no standable cell is refused rather than believed. A body standing with its support on a solid cell of a placed furniture region may not be proven to stand there, so no walk climbs a table; a route whose only way is over one is refused at `DW0510` naming the anchor, for a critical-path leg and for a walked `move-npc` or `move-actor` leg alike. A body posted there still stands there, and `DW0891` measures its population with every exclusion lifted, so the declaration cannot hide caught floor. Furniture a campaign lays itself, through `world-edits.json` or a runtime `set-block` / `fill-region`, owes the same claim on the surface that laid it (spec-0065 §8.1) and is not this row.",
+      "id": "doune-01",
+      "note": "Carried from the castle round's ledger row and closed by spec-0065 on the tree that implements it. The general form above is spec-0065 §2's: an anchor role, no campaign-authored volume, and the exclusion inside the walk predicate. The check is `DW0510`'s furniture shape, asserted by `crates/delvec/tests/furniture.rs` (a route over a wall-to-wall table refused naming `anchor/high-table`, and the same walks for `move-npc` and `move-actor`; the same room routes with the declaration removed). Bound on the gallery, whose hall lays a seven-long `oak_fence`/`oak_slab[type=bottom]` table with a `spruce_slab` bench across `actor/standard-bearer`'s walk from `anchor/march` to `anchor/vantage` and declares it: `furniture binding: 1 region(s) over 7 solid cell(s), 7 standable cell(s) withheld from walking; 14 leg(s) proved, 0 standing on furniture` (gallery primary, `--prefabs` generated from `prefabs/gallery-generator` at this branch). Perturbed by deleting the anchor from the generated document with the blocks kept: the build still exits 0, the withheld count falls to 0, and `ma_tick_standard_bearer_vantage_*.mcfunction` changes from an eleven-sample walk round the table to a seven-sample walk that rises from y 67.0 to 69.0 over it — the released castle's instance, reproduced in the gallery. The binding, computed by `tools/staging-gate.py`'s own `probe()`, counts the routed walks a campaign declares: 5 on the gallery primary; 16 on the released castle as the castle round measured it.",
+      "round": 1,
+      "triage": "capability"
+    },
+    {
+      "binding": {
+        "files": [
+          "quests.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "prefix": {
+            "id": "actor/"
+          }
+        }
+      },
+      "campaign": "doune-castle-tour",
+      "carrier": {
+        "code": "DW0897",
+        "kind": "dw"
+      },
+      "finding": "a placed actor takes its position from an anchor and from nothing else, so a scene that wants several bodies standing in a rank has to spend one anchor per body",
+      "general_form": "a body the compiler stages declares its position as an anchor plus an integer block offset, the same declaration a camera station and a camera subject already carry, so the offset belongs to the class of things that have a body and a position rather than to the one verb that first wanted it — which is the same quantifier `body_sites` already walks for traversal and for skins",
+      "id": "doune-02",
+      "note": "Carried by spec-0066. A body declares its position as a mark — `anchor` plus an integer block `offset` — on `Npc` and `Actor` alike, the same `Mark` type a dolly waypoint, an aim target and an anchor subject are, and a `move-npc` / `move-actor` / `teleport` destination and a cast row take the same object; `Plan::body_point` adds the offset for every body `body_sites` walks. The carrier is `DW0897`, the rule that quantifies over every body mark, every destination and every cast row spelled as a mark, and refuses an offset that leaves the placed piece its anchor belongs to; its binding line prints on every build. Measured on the engine at this branch, against the released campaign at content `73182027db05e14d3a52a39e0c30fabd9025b9c0` (`quests.json` sha-256 `c86c22a25aeab486d759f8e45a5ae3927ccc39ffec942ce27a11471ace69d99f`), in a scratch copy restamped to this `dsl_version` with its destinations in the mark form: writing `\"offset\": [1, 0, 0]` on `actor/captain` validates with exit 0 against the prefabs at that revision. The binding, computed by `tools/staging-gate.py`'s own `probe()` over that `quests.json`, counts 7 actors, one anchor between them.",
+      "round": 1,
+      "triage": "capability"
+    },
+    {
+      "applies_when": {
+        "files": [
+          "quests.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "prefix": {
+            "id": "actor/"
+          }
+        }
+      },
+      "binding": {
+        "files": [
+          "quests.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "has": [
+            "equipment"
+          ]
+        }
+      },
+      "campaign": "doune-castle-tour",
+      "carrier": {
+        "kind": "invariant",
+        "test": "every_slot_the_item_data_declares_is_in_the_vocabulary"
+      },
+      "finding": "the equipment block a body wears names six slots and the pinned game has eight, so no campaign can bard a horse or saddle one",
+      "general_form": "the equipment block names every equipment slot the pinned game declares, held as the game's own eight-slot set (`EquipSlot::ALL`, the values the `minecraft:equippable` component's `slot` takes) and cross-checked against the pinned item registry: every `slot` value an item declares must be in the set, so a slot the game gains and an item uses reds the day the data is re-pinned, and `mainhand`, which no item declares, is in the set because the game names it; and a piece is refused where the pinned game would store it and never show it on the body that wears it (DW0898)",
+      "id": "doune-04",
+      "note": "Re-measured on the tree this row lands on: the engine at this branch's merge commit `f34a93be1588e1a297488a684e59c927cd1e4146`, against the released campaign at content `73182027db05e14d3a52a39e0c30fabd9025b9c0`. The game's side is unmoved: `crates/delvec/data/PROVENANCE.md` still pins `item_components/data.min.json` at sha-256 `51b191e13f86813ca02f1498942e5bc235947edb71eb8105a78401670b3665c4` — byte-identical across the merge (`git diff` over that file between this branch's pre-merge head and the merge commit is empty) — so the 8-slot/84-item registry fact the original reproduction read from it stands. The engine's side reproduces in the identical words: writing `body`/`saddle` into `actor/captain`'s equipment is refused at DW0100 — `unknown field `body`/`saddle`, expected one of `head`, `chest`, `legs`, `feet`, `main_hand`, `off_hand`` — and `MobEquipment::slots()` (`crates/dsl/src/stages.rs`) still returns the same fixed array of 6. The binding, computed by `tools/staging-gate.py`'s own `probe()`, still counts the equipment declarations this campaign makes: 7 of the 155 nodes `quests.json` now holds, one per actor; the precondition (bodies that could carry one) is also 7. Closed by spec-0067: `EquipSlot::ALL` carries the eight slots and every slot list derives from it; `crates/delvec/tests/equipment_tables.rs::every_slot_the_item_data_declares_is_in_the_vocabulary` reads `crates/delvec/data/item-equippable-1.21.11.json` (84 items over 7 slot values, extracted from the same item-components digest) and asserts each value is in the set. Measured with `tools/staging-gate.py` against the gallery primary built by a delvec force-built from the branch that carries the change: BOUND, binding 4 equipment declarations, among them a horse in `body` and `saddle`.",
+      "round": 1,
+      "triage": "capability"
+    },
+    {
+      "binding": {
+        "files": [
+          "quests.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "eq": {
+            "type": "firework"
+          }
+        }
+      },
+      "campaign": "doune-castle-tour",
+      "carrier": {
+        "kind": "invariant",
+        "test": "the_emitted_rocket_carries_the_component_the_page_names"
+      },
+      "finding": "a firework is a vanilla primitive with no DSL surface: no verb in the stage-5 effect vocabulary fires one, so a scene that wants fireworks cannot have them",
+      "general_form": "the effect vocabulary carries a verb that fires a firework at a declared point, taking the same anchor-and-offset the other one-shot point effects take, with its emitted command checked against the pinned command tree by the emitter like every other command",
+      "id": "doune-05",
+      "note": "Re-measured on the tree this row lands on, the engine at `83916f66b03354034465f22b8f996fc79bb34c1c`: `delvec schema --stage all` exports 534011 bytes carrying the word `firework` 20 times, and the effect union's `oneOf` now names 38 verbs, counted off the exported schema by `the_effect_union_names_thirty_eight_verbs` rather than read out of a message. The verb is `firework` at a `Mark` — the same anchor-and-offset `play-sound` takes since spec-0066 — carrying the game's five explosion shapes, colours as `#rrggbb` packed to the integers the `minecraft:fireworks` component reads, and a flight of 1, 2 or 3. One `summon minecraft:firework_rocket` is emitted per effect and is walked against the pinned 1.21.11 command tree by the emitter like every other line it writes, which is what the carrier test reaches: it reads the command off a real build, so the build that produced it had already passed the tree. The emitter writes the entity's `LifeTime` at the floor of the game's randomised range so the burst height is a stated number, and `DW0899` refuses a rocket whose column to that height is roofed or whose burst lies within five blocks of a place the campaign posts a body. The binding counts `firework` effects by identity, so a campaign that declares none is INAPPLICABLE rather than unbound; the released `doune-castle-tour` is never edited and declares none, and the class is exercised by the gallery's valley-site court, which fires one rocket of five stars under open sky.",
+      "round": 1,
       "triage": "capability"
     }
   ],

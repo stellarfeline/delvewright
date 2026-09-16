@@ -1,0 +1,39 @@
+{
+  "cameras": [
+    {
+      "answers": "concept/noon-hall",
+      "exposure": 1.0,
+      "fov": 50.0,
+      "height": 900,
+      "name": "hall-exterior",
+      "pitch": 10.0,
+      "pos": [
+        11.5,
+        67.0,
+        -2.5
+      ],
+      "source": "estimated",
+      "spp": 300,
+      "width": 1600,
+      "yaw": 0.0
+    },
+    {
+      "answers": "concept/noon-hall",
+      "exposure": 4.0,
+      "fov": 70.0,
+      "height": 900,
+      "name": "hall-from-its-corner",
+      "pitch": 5.0,
+      "pos": [
+        10.5,
+        65.62,
+        3.5
+      ],
+      "source": "hand",
+      "spp": 768,
+      "width": 1600,
+      "yaw": 0.0
+    }
+  ],
+  "campaign_id": "gallery"
+}

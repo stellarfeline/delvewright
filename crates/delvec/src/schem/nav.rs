@@ -47,7 +47,7 @@
 
 use std::collections::{BTreeSet, VecDeque};
 
-use delvewright_dsl::metrics::{FULL_16, step_allowed};
+use delvewright_dsl::metrics::{FULL_16, Rise, classify_rise_16, step_allowed};
 
 /// A box of cells, and the one thing a walk needs to know about each.
 ///
@@ -396,6 +396,93 @@ pub fn sheltered<V: Voxels + ?Sized>(v: &V, pos: [i32; 3]) -> bool {
     let [x, y, z] = pos;
     let top = v.maximum()[1];
     (y + 2..top).any(|above| solid(v, [x, above, z]))
+}
+
+// ---------------------------------------------------------------------------
+// Where the walk stopped, and why
+// ---------------------------------------------------------------------------
+
+/// **Why a step the walk tried was refused.**
+///
+/// [`reachable_from`] answers *which cells*; it never says which step it was
+/// turned back at, and "this cell is unreachable" is the answer an author can do
+/// least with. The step rule is [`delvewright_dsl::metrics::step_allowed`] and it
+/// has exactly two ways to say no, so a refusal is one of exactly two things —
+/// there is no third arm and no free-text reason.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StepRefusal {
+    /// **The rise is one a body could jump, and the takeoff has no room for its
+    /// head.** A standing body is two cells tall, so it already owns the cell it
+    /// stands in and the one above; a full-block rise makes it jump, and the
+    /// third cell — `head`, two courses over the TAKEOFF — has to be clear or it
+    /// bonks. The opening is therefore short by exactly one course, and `head` is
+    /// the cell to open.
+    ///
+    /// This is the class that is invisible at every scale below the whole
+    /// building: the flight itself is walkable, every render shows a stair with
+    /// a floor at the top of it, and the storey above is unreachable.
+    Headroom {
+        /// The cell two courses over the takeoff — one course of opening.
+        head: [i32; 3],
+    },
+    /// The rise itself is past the jump apex: no headroom opens this one, the
+    /// geometry has to come down or a step has to be built.
+    Rise {
+        /// The rise between the two standing surfaces, in sixteenths.
+        rise_16: i64,
+    },
+}
+
+/// One step at the edge of what a walk reached: a cell it stands on, a standable
+/// cell one move away that it never got to, and [`StepRefusal`] saying why.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RefusedStep {
+    /// The reached cell the body is standing on.
+    pub from: [i32; 3],
+    /// The standable cell one move away that the walk never entered.
+    pub to: [i32; 3],
+    /// Why the step was refused.
+    pub refusal: StepRefusal,
+}
+
+/// **Every step a walk was refused at the boundary of what it reached.**
+///
+/// `cells` is the standable set the walk ran over and `reached` its result. The
+/// frontier is every `(from, to)` with `from` reached, `to` standable and not
+/// reached, one move apart under [`connected`]'s neighbourhood — and the step
+/// rule refusing it. A `to` that several reached cells border appears once per
+/// bordering cell, because each is a different place to cut the opening.
+///
+/// Deterministic (ADR-0006): `reached` is a `BTreeSet`, the neighbour order is
+/// the walk's own fixed one, and nothing is sorted afterwards.
+pub fn refused_frontier<V: Voxels + ?Sized>(
+    v: &V,
+    cells: &BTreeSet<[i32; 3]>,
+    reached: &BTreeSet<[i32; 3]>,
+) -> Vec<RefusedStep> {
+    let mut out = Vec::new();
+    for &from in reached {
+        let [x, y, z] = from;
+        for (dx, dz) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
+            for dy in [0, 1, -1] {
+                let to = [x + dx, y + dy, z + dz];
+                if !cells.contains(&to) || reached.contains(&to) || can_step(v, from, to) {
+                    continue;
+                }
+                let rise_16 = feet_16(v, to) - feet_16(v, from);
+                let refusal = match classify_rise_16(rise_16) {
+                    // `can_step` said no, so a Walk rise cannot be here: the rule
+                    // admits every one of them unconditionally.
+                    Rise::Walk | Rise::Jump => StepRefusal::Headroom {
+                        head: [x, y + 2, z],
+                    },
+                    Rise::Beyond => StepRefusal::Rise { rise_16 },
+                };
+                out.push(RefusedStep { from, to, refusal });
+            }
+        }
+    }
+    out
 }
 
 #[cfg(test)]

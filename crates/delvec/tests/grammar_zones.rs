@@ -416,8 +416,11 @@ fn the_zone_fixtures_are_pinned() {
     // scope's own axis frame, resolved at fill time — so the zone that
     // includes it carries one more role than it did while the bar had to be
     // per-orientation inline states. Z1 is two legs, so it carries `crag` plus
-    // one `rock` per leg; the corpse prop is not a role on either.
-    for (want, ZoneFixture { program, .. }) in [1, 3, 13, 7, 7, 13, 9, 12].into_iter().zip(zones())
+    // one `rock` per leg; the corpse prop is not a role on either. The bell
+    // tower includes `stair_flight`, which binds `step` beside `rock` now that
+    // its risers are stair blocks, so it inherits one role more than the shell
+    // alone would give it.
+    for (want, ZoneFixture { program, .. }) in [1, 3, 13, 7, 7, 13, 9, 13].into_iter().zip(zones())
     {
         assert_eq!(
             program.palette.len(),
@@ -3702,10 +3705,11 @@ fn branch_chain() -> Program {
         Node::Split(Split {
             axis,
             sizes,
-            // `Rounding::Start`, not the default truncation: a truncated
-            // relative piece leaves the far end of the box unwritten, and an
-            // unwritten cell is air — a hole in the strip's own margin wall.
-            rounding: delvec::grammar::ir::Rounding::Start,
+            // `Rounding::Start` rather than the default: with two relative
+            // pieces the odd block has to be given to one of them, and giving
+            // it to the near one keeps the margin wall at the same offset for
+            // every width this strip is built at.
+            rounding: Some(delvec::grammar::ir::Rounding::Start),
             repeat: false,
             orient: Default::default(),
             children,

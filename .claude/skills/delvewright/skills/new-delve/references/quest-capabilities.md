@@ -51,6 +51,20 @@ this section is what they are *for* and the traps in each.
   anchor — **the compiler fills furniture, it never places it** (`DW0431`).
   Elites and set-piece actors take `equipment` in the same shape wave mobs use,
   enchantments included.
+- **`equipment` has the game's eight slots, and a body shows only some of
+  them.** `head`, `chest`, `legs`, `feet`, `main_hand`, `off_hand`, `body`
+  (horse armour, wolf armour, a llama's carpet, a nautilus's armour, a happy
+  ghast's harness) and `saddle`; each takes a bare item id or `{item,
+  enchantments}`. The server keeps whatever you write on any living body, but
+  the player sees a piece only where that body's model draws it, so a piece is
+  refused where the game would not show it on that body: a slot the
+  body does not draw (a chestplate on a horse, a sword in a creeper's hand, a
+  helmet on a villager, whose head takes a pumpkin or a skull but not armour),
+  an item in a slot other than its own (a helmet in `legs`; the hands take
+  anything), or an item the body may not wear (a saddle on a zombie, horse
+  armour on a skeleton horse). The refusal lists what the body does draw. A
+  held weapon wanted only for its damage is written as `attributes`, which apply
+  whether or not anything is drawn. `drops[].slot` takes the same eight names.
 - **A `collect` has three shapes, and which are available to you depends on the
   library.** Give the item an `item_name` ("Cheese", "Tide Ledger") in all
   three: it is what the player reads on the stack, it translates like every
@@ -139,9 +153,11 @@ this section is what they are *for* and the traps in each.
   field on an arbitrary effect: putting one on a quest-level `set-flag` is
   `DW0100`, and the refusal enumerates what that object does take.
 - **The `cast` block, first in every quest.** Every quest declares, for every
-  NPC live in it, `{at, doing, dialogue}`. `at` is an anchor, or `"offstage"` /
-  `"dead"`, which must match a real `despawn-npc` — declaring a position does
-  not move anybody (`DW0461`). `doing` is free prose and is the point: you
+  NPC live in it, `{at, doing, dialogue}`. `at` is an anchor, a mark
+  `{"anchor": …, "offset": [x, y, z]}` — the spelling for a body that stands at
+  an offset, which must spell the same offset the body stands at — or
+  `"offstage"` / `"dead"`, which must match a real `despawn-npc`. Declaring a
+  position does not move anybody (`DW0461`). `doing` is free prose and is the point: you
   cannot fill it without deciding the character's business in this beat, and the
   dialogue stage writes their lines against it. `dialogue` is a dialogue root
   id, `{"barks": [...]}`, `"unchanged"`, or `"none"`.
@@ -225,8 +241,29 @@ this section is what they are *for* and the traps in each.
   `on_death`, a shop offer, a shortcut's far-side unlock. To spell "the party
   walks up to this and the door opens", use an environment `trigger` — that one
   counts.
+- **A firework is one effect at a mark.** `firework {at {anchor, offset?},
+  flight?, explosions}` fires one rocket where the campaign says — over the gate
+  when the guard is drawn up, over the court when the bell is rung — beside the
+  `play-sound` that goes with it. `explosions` is one to seven bursts of
+  `{shape, colors, fade_colors?, trail?, twinkle?}`; `shape` is one of the
+  game's five (`small_ball`, `large_ball`, `star`, `creeper`, `burst`) and every
+  colour is a `#rrggbb` literal, the spelling a potion's `color` uses.
+  `flight` is 1, 2 or 3 — the three the game crafts — and decides how high the
+  rocket goes: the burst stands **8, 18 or 32 blocks over the mark**, a stated
+  number rather than a roll, because the compiler writes the rocket's lifetime
+  itself. So the mark needs that much sky: a rocket fired indoors bursts against
+  the ceiling and the build refuses it, naming the cell that stopped it. It is
+  also refused when the burst lands within five blocks of a place the campaign
+  posts a body — an NPC's stand, an actor's post, a checkpoint seat, a wave's
+  seat — because the burst hurts what it reaches. **Players are not posted, and
+  are not proved safe**: a party standing on a wall walk level with a burst over
+  the court takes up to 19 HP from a seven-star rocket, never a full body's
+  twenty, and that is a hazard they can see coming — judge it in playtest. A
+  display of many rockets is a `sequence` of `firework` effects, not one
+  overloaded rocket.
 - **A teleport selects a REGION, never a block.** `teleport {from {anchor,
-  extent}, to}` moves **everything** inside the box to the destination anchor —
+  extent}, to {anchor, offset?}}` moves **everything** inside the box to the
+  destination mark —
   players and entities alike, which is what makes a cargo platform the same
   mechanism as a passenger one. Nothing is exempt, so do not draw the volume
   over an affordance the engine anchors to a block (an interact objective, a
@@ -335,6 +372,17 @@ this section is what they are *for* and the traps in each.
 
 ## Bodies
 
+- **A body stands at a mark: an anchor plus an optional `offset`.** `"anchor":
+  "anchor/muster", "offset": [0, 0, -2]` on an NPC or an actor stands it two
+  blocks north of the anchor's cell. A rank of six men-at-arms is one anchor and
+  six offsets — never six anchors, and never six bodies on one anchor
+  (`DW0896`). A walk's destination takes the same object: `move-npc` /
+  `move-actor` write `"to": {"anchor": "anchor/rank", "offset": [0, 0, -6]}`, so
+  a rank is formed by walking as well as spawned in formation. Every offset stays
+  inside the piece its anchor belongs to, and the build refuses one that leaves
+  it, naming the cell it reaches and the box it left — an offset says where
+  beside a place, never which place; to stand a body in another room, name that
+  room's anchor.
 - **`base_entity` accepts any entity id, and NPCs are inert by construction.**
   Every NPC is summoned `NoAI,Invulnerable,Silent,NoGravity,PersistenceRequired`
   plus a separate interaction hitbox, and there is no registry validation on the
@@ -355,6 +403,36 @@ this section is what they are *for* and the traps in each.
   hold a body to it; and no declaration touches the error tier — a declared
   climber still cannot walk through a closed fence gate (`DW0452`). Declare it on
   the body, never on the beat.
+- **What a body can wear depends on what it is.** Dress it from this table;
+  anything else is refused.
+
+  | Body | Wears |
+  |---|---|
+  | zombie, husk, drowned, zombie villager, skeleton, stray, bogged, parched, wither skeleton, piglin, piglin brute, zombified piglin, player-shaped mannequin (any skinned body), armor stand | armour in `head`/`chest`/`legs`/`feet`, a pumpkin, skull or block in `head`, an elytra in `chest`, anything in both hands |
+  | giant | armour in the four armour slots, anything in both hands |
+  | evoker, illusioner, pillager, vindicator, copper golem | a pumpkin, skull or block in `head`; anything in both hands |
+  | villager, wandering trader | a pumpkin, skull or block in `head`; anything in `main_hand` |
+  | fox, dolphin, panda, witch | anything in `main_hand` |
+  | allay, vex | anything in both hands |
+  | horse, zombie horse, skeleton horse, nautilus, zombie nautilus | `body` and `saddle` |
+  | camel, camel husk, donkey, mule, pig, strider | `saddle` |
+  | wolf, llama, trader llama, happy ghast | `body` |
+  | every other living body — creeper, spider, warden, enderman, iron golem, ghast among them | nothing |
+
+  **Four bodies show their hand only while they fight or sit**: an evoker while
+  casting, an illusioner while casting or aggressive, a vindicator while
+  aggressive, a panda while sitting. A NoAI actor of those species shows its
+  hand after it is unleashed, not before. **A horse is dressed through `body`
+  and `saddle`**, and the item says which horse it fits: iron horse armour on a
+  horse or a zombie horse, never a skeleton horse. **A mount is posted, not
+  walked**: the router measures a horse, camel, donkey, mule, llama or strider as
+  a person-sized body, so stage a mounted set piece on its mark and do not route
+  it through doorways.
+- **A body is posted where it is declared, and never walked onto furniture.**
+  An NPC or actor anchored on a table stands on the table. A `move-npc` or
+  `move-actor` routes round anything the piece declares as furniture, and a
+  destination on it ends on the floor beside it. A walk whose only way is over
+  the table is refused naming it (`DW0510`): move the mark or open a way round.
 - **A status effect is a verb — and it ends by expiring, never by being
   cleared.** `give-effect {effect, seconds, amplifier?, hide_particles?, in?}`
   grants any pinned-1.21.11 status effect; `in {anchor, extent}` narrows it to

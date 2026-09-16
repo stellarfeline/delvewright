@@ -21,6 +21,7 @@
 //! - [`cast`]: the NPC scene ledger (`DW0460`–`DW0467`).
 //! - [`claims`]: a prefab document says nothing its own bytes deny — every byte-asserting key of the document, one rule (`DW0888`).
 //! - [`clearance`]: the body-vs-block proof — no body occupies the same space as block geometry (`DW0450`/`DW0451`).
+//! - [`cohabit`]: one mark, one body — two bodies whose lifetimes overlap may not be declared on one cell (`DW0896`).
 //! - [`combat`]: compile-time combat winnability — the arithmetic half of the combat proofs.
 //! - [`commands`]: the vendored 1.21.11 Brigadier command-tree validator.
 //! - [`continuity`]: the NPC location-continuity lint (`DW0351`).
@@ -35,6 +36,7 @@
 //! - [`emit`]: build the `<out>/` output tree (bytes), deterministically.
 //! - [`faces`]: does the piece next to this one answer the way out it declares?
 //! - [`failure`]: the one type a compiler pass fails with — a DW code and the message that goes with it.
+//! - [`firework`]: `DW0899` — a rocket bursts in open air, clear of every posted body (spec-0068).
 //! - [`flow`]: the branch-coherent flag/quest flow model and the critical-path extraction (`DW0204`).
 //! - [`gates`]: `close-gate` gate-block validation — the physical dual of `open-gate`.
 //! - [`guarantee`]: which anchors an area's binding guarantees, answered before anything is placed (`DW0889`).
@@ -45,6 +47,7 @@
 //! - [`light`]: the assembled-world lighting model and the deterministic relight pass (`DW0210`/`DW0211`).
 //! - [`load`]: read a campaign directory into the DSL's `RawCampaign`, keeping the raw bytes for input hashing.
 //! - [`loot`]: container-fill proofs over the assembled world (`DW0431`/`DW0438`).
+//! - [`mark`]: a mark stays in the room its anchor names — an offset that leaves its anchor's piece is refused (`DW0897`).
 //! - [`massing`]: the L2 massing verbs — declarative control of a pool area's solved jigsaw layout.
 //! - [`nav`]: compile-time navigation over the solved voxel grid.
 //! - [`plan`]: resolve a validated campaign into the placement + naming model emission reads.
@@ -91,6 +94,7 @@ pub mod camera;
 pub mod cast;
 pub mod claims;
 pub mod clearance;
+pub mod cohabit;
 pub mod combat;
 pub mod commands;
 pub mod continuity;
@@ -105,6 +109,7 @@ pub mod edit;
 pub mod emit;
 pub mod faces;
 pub mod failure;
+pub mod firework;
 pub mod flow;
 pub mod gates;
 pub mod guarantee;
@@ -115,6 +120,7 @@ pub mod lethal;
 pub mod light;
 pub mod load;
 pub mod loot;
+pub mod mark;
 pub mod massing;
 pub mod nav;
 pub mod plan;

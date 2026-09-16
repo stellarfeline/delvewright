@@ -1,0 +1,1342 @@
+{
+  "minecraft:allay": {
+    "renderer": "AllayRenderer",
+    "slots": {
+      "mainhand": {
+        "kinds": [
+          "animal",
+          "armour",
+          "item",
+          "wings"
+        ]
+      },
+      "offhand": {
+        "kinds": [
+          "animal",
+          "armour",
+          "item",
+          "wings"
+        ]
+      }
+    }
+  },
+  "minecraft:armadillo": {
+    "renderer": "ArmadilloRenderer",
+    "slots": {}
+  },
+  "minecraft:armor_stand": {
+    "renderer": "ArmorStandRenderer",
+    "slots": {
+      "chest": {
+        "kinds": [
+          "armour",
+          "wings"
+        ]
+      },
+      "feet": {
+        "kinds": [
+          "armour"
+        ]
+      },
+      "head": {
+        "kinds": [
+          "armour",
+          "item"
+        ]
+      },
+      "legs": {
+        "kinds": [
+          "armour"
+        ]
+      },
+      "mainhand": {
+        "kinds": [
+          "animal",
+          "armour",
+          "item",
+          "wings"
+        ]
+      },
+      "offhand": {
+        "kinds": [
+          "animal",
+          "armour",
+          "item",
+          "wings"
+        ]
+      }
+    }
+  },
+  "minecraft:axolotl": {
+    "renderer": "AxolotlRenderer",
+    "slots": {}
+  },
+  "minecraft:bat": {
+    "renderer": "BatRenderer",
+    "slots": {}
+  },
+  "minecraft:bee": {
+    "renderer": "BeeRenderer",
+    "slots": {}
+  },
+  "minecraft:blaze": {
+    "renderer": "BlazeRenderer",
+    "slots": {}
+  },
+  "minecraft:bogged": {
+    "renderer": "BoggedRenderer",
+    "slots": {
+      "chest": {
+        "kinds": [
+          "armour",
+          "wings"
+        ]
+      },
+      "feet": {
+        "kinds": [
+          "armour"
+        ]
+      },
+      "head": {
+        "kinds": [
+          "armour",
+          "item"
+        ]
+      },
+      "legs": {
+        "kinds": [
+          "armour"
+        ]
+      },
+      "mainhand": {
+        "kinds": [
+          "animal",
+          "armour",
+          "item",
+          "wings"
+        ]
+      },
+      "offhand": {
+        "kinds": [
+          "animal",
+          "armour",
+          "item",
+          "wings"
+        ]
+      }
+    }
+  },
+  "minecraft:breeze": {
+    "renderer": "BreezeRenderer",
+    "slots": {}
+  },
+  "minecraft:camel": {
+    "renderer": "CamelRenderer",
+    "slots": {
+      "saddle": {
+        "kinds": [
+          "animal"
+        ],
+        "layer": "camel_saddle"
+      }
+    }
+  },
+  "minecraft:camel_husk": {
+    "renderer": "CamelHuskRenderer",
+    "slots": {
+      "saddle": {
+        "kinds": [
+          "animal"
+        ],
+        "layer": "camel_husk_saddle"
+      }
+    }
+  },
+  "minecraft:cat": {
+    "renderer": "CatRenderer",
+    "slots": {}
+  },
+  "minecraft:cave_spider": {
+    "renderer": "CaveSpiderRenderer",
+    "slots": {}
+  },
+  "minecraft:chicken": {
+    "renderer": "ChickenRenderer",
+    "slots": {}
+  },
+  "minecraft:cod": {
+    "renderer": "CodRenderer",
+    "slots": {}
+  },
+  "minecraft:copper_golem": {
+    "renderer": "CopperGolemRenderer",
+    "slots": {
+      "head": {
+        "kinds": [
+          "item"
+        ]
+      },
+      "mainhand": {
+        "kinds": [
+          "animal",
+          "armour",
+          "item",
+          "wings"
+        ]
+      },
+      "offhand": {
+        "kinds": [
+          "animal",
+          "armour",
+          "item",
+          "wings"
+        ]
+      }
+    }
+  },
+  "minecraft:cow": {
+    "renderer": "CowRenderer",
+    "slots": {}
+  },
+  "minecraft:creaking": {
+    "renderer": "CreakingRenderer",
+    "slots": {}
+  },
+  "minecraft:creeper": {
+    "renderer": "CreeperRenderer",
+    "slots": {}
+  },
+  "minecraft:dolphin": {
+    "renderer": "DolphinRenderer",
+    "slots": {
+      "mainhand": {
+        "kinds": [
+          "animal",
+          "armour",
+          "item",
+          "wings"
+        ]
+      }
+    }
+  },
+  "minecraft:donkey": {
+    "renderer": "DonkeyRenderer",
+    "slots": {
+      "saddle": {
+        "kinds": [
+          "animal"
+        ],
+        "layer": "donkey_saddle"
+      }
+    }
+  },
+  "minecraft:drowned": {
+    "renderer": "DrownedRenderer",
+    "slots": {
+      "chest": {
+        "kinds": [
+          "armour",
+          "wings"
+        ]
+      },
+      "feet": {
+        "kinds": [
+          "armour"
+        ]
+      },
+      "head": {
+        "kinds": [
+          "armour",
+          "item"
+        ]
+      },
+      "legs": {
+        "kinds": [
+          "armour"
+        ]
+      },
+      "mainhand": {
+        "kinds": [
+          "animal",
+          "armour",
+          "item",
+          "wings"
+        ]
+      },
+      "offhand": {
+        "kinds": [
+          "animal",
+          "armour",
+          "item",
+          "wings"
+        ]
+      }
+    }
+  },
+  "minecraft:elder_guardian": {
+    "renderer": "ElderGuardianRenderer",
+    "slots": {}
+  },
+  "minecraft:ender_dragon": {
+    "renderer": "EnderDragonRenderer",
+    "slots": {}
+  },
+  "minecraft:enderman": {
+    "renderer": "EndermanRenderer",
+    "slots": {}
+  },
+  "minecraft:endermite": {
+    "renderer": "EndermiteRenderer",
+    "slots": {}
+  },
+  "minecraft:evoker": {
+    "renderer": "EvokerRenderer",
+    "slots": {
+      "head": {
+        "kinds": [
+          "item"
+        ]
+      },
+      "mainhand": {
+        "kinds": [
+          "animal",
+          "armour",
+          "item",
+          "wings"
+        ],
+        "when": "casting a spell"
+      },
+      "offhand": {
+        "kinds": [
+          "animal",
+          "armour",
+          "item",
+          "wings"
+        ],
+        "when": "casting a spell"
+      }
+    }
+  },
+  "minecraft:fox": {
+    "renderer": "FoxRenderer",
+    "slots": {
+      "mainhand": {
+        "kinds": [
+          "animal",
+          "armour",
+          "item",
+          "wings"
+        ]
+      }
+    }
+  },
+  "minecraft:frog": {
+    "renderer": "FrogRenderer",
+    "slots": {}
+  },
+  "minecraft:ghast": {
+    "renderer": "GhastRenderer",
+    "slots": {}
+  },
+  "minecraft:giant": {
+    "renderer": "GiantMobRenderer",
+    "slots": {
+      "chest": {
+        "kinds": [
+          "armour"
+        ]
+      },
+      "feet": {
+        "kinds": [
+          "armour"
+        ]
+      },
+      "head": {
+        "kinds": [
+          "armour"
+        ]
+      },
+      "legs": {
+        "kinds": [
+          "armour"
+        ]
+      },
+      "mainhand": {
+        "kinds": [
+          "animal",
+          "armour",
+          "item",
+          "wings"
+        ]
+      },
+      "offhand": {
+        "kinds": [
+          "animal",
+          "armour",
+          "item",
+          "wings"
+        ]
+      }
+    }
+  },
+  "minecraft:glow_squid": {
+    "renderer": "GlowSquidRenderer",
+    "slots": {}
+  },
+  "minecraft:goat": {
+    "renderer": "GoatRenderer",
+    "slots": {}
+  },
+  "minecraft:guardian": {
+    "renderer": "GuardianRenderer",
+    "slots": {}
+  },
+  "minecraft:happy_ghast": {
+    "renderer": "HappyGhastRenderer",
+    "slots": {
+      "body": {
+        "kinds": [
+          "animal"
+        ],
+        "layer": "happy_ghast_body"
+      }
+    }
+  },
+  "minecraft:hoglin": {
+    "renderer": "HoglinRenderer",
+    "slots": {}
+  },
+  "minecraft:horse": {
+    "renderer": "HorseRenderer",
+    "slots": {
+      "body": {
+        "kinds": [
+          "animal"
+        ],
+        "layer": "horse_body"
+      },
+      "saddle": {
+        "kinds": [
+          "animal"
+        ],
+        "layer": "horse_saddle"
+      }
+    }
+  },
+  "minecraft:husk": {
+    "renderer": "HuskRenderer",
+    "slots": {
+      "chest": {
+        "kinds": [
+          "armour",
+          "wings"
+        ]
+      },
+      "feet": {
+        "kinds": [
+          "armour"
+        ]
+      },
+      "head": {
+        "kinds": [
+          "armour",
+          "item"
+        ]
+      },
+      "legs": {
+        "kinds": [
+          "armour"
+        ]
+      },
+      "mainhand": {
+        "kinds": [
+          "animal",
+          "armour",
+          "item",
+          "wings"
+        ]
+      },
+      "offhand": {
+        "kinds": [
+          "animal",
+          "armour",
+          "item",
+          "wings"
+        ]
+      }
+    }
+  },
+  "minecraft:illusioner": {
+    "renderer": "IllusionerRenderer",
+    "slots": {
+      "head": {
+        "kinds": [
+          "item"
+        ]
+      },
+      "mainhand": {
+        "kinds": [
+          "animal",
+          "armour",
+          "item",
+          "wings"
+        ],
+        "when": "casting a spell or aggressive"
+      },
+      "offhand": {
+        "kinds": [
+          "animal",
+          "armour",
+          "item",
+          "wings"
+        ],
+        "when": "casting a spell or aggressive"
+      }
+    }
+  },
+  "minecraft:iron_golem": {
+    "renderer": "IronGolemRenderer",
+    "slots": {}
+  },
+  "minecraft:llama": {
+    "renderer": "LlamaRenderer",
+    "slots": {
+      "body": {
+        "kinds": [
+          "animal"
+        ],
+        "layer": "llama_body"
+      }
+    }
+  },
+  "minecraft:magma_cube": {
+    "renderer": "MagmaCubeRenderer",
+    "slots": {}
+  },
+  "minecraft:mannequin": {
+    "renderer": "AvatarRenderer",
+    "slots": {
+      "chest": {
+        "kinds": [
+          "armour",
+          "wings"
+        ]
+      },
+      "feet": {
+        "kinds": [
+          "armour"
+        ]
+      },
+      "head": {
+        "kinds": [
+          "armour",
+          "item"
+        ]
+      },
+      "legs": {
+        "kinds": [
+          "armour"
+        ]
+      },
+      "mainhand": {
+        "kinds": [
+          "animal",
+          "armour",
+          "item",
+          "wings"
+        ]
+      },
+      "offhand": {
+        "kinds": [
+          "animal",
+          "armour",
+          "item",
+          "wings"
+        ]
+      }
+    }
+  },
+  "minecraft:mooshroom": {
+    "renderer": "MushroomCowRenderer",
+    "slots": {}
+  },
+  "minecraft:mule": {
+    "renderer": "DonkeyRenderer",
+    "slots": {
+      "saddle": {
+        "kinds": [
+          "animal"
+        ],
+        "layer": "mule_saddle"
+      }
+    }
+  },
+  "minecraft:nautilus": {
+    "renderer": "NautilusRenderer",
+    "slots": {
+      "body": {
+        "kinds": [
+          "animal"
+        ],
+        "layer": "nautilus_body"
+      },
+      "saddle": {
+        "kinds": [
+          "animal"
+        ],
+        "layer": "nautilus_saddle"
+      }
+    }
+  },
+  "minecraft:ocelot": {
+    "renderer": "OcelotRenderer",
+    "slots": {}
+  },
+  "minecraft:panda": {
+    "renderer": "PandaRenderer",
+    "slots": {
+      "mainhand": {
+        "kinds": [
+          "animal",
+          "armour",
+          "item",
+          "wings"
+        ],
+        "when": "sitting and not scared"
+      }
+    }
+  },
+  "minecraft:parched": {
+    "renderer": "ParchedRenderer",
+    "slots": {
+      "chest": {
+        "kinds": [
+          "armour",
+          "wings"
+        ]
+      },
+      "feet": {
+        "kinds": [
+          "armour"
+        ]
+      },
+      "head": {
+        "kinds": [
+          "armour",
+          "item"
+        ]
+      },
+      "legs": {
+        "kinds": [
+          "armour"
+        ]
+      },
+      "mainhand": {
+        "kinds": [
+          "animal",
+          "armour",
+          "item",
+          "wings"
+        ]
+      },
+      "offhand": {
+        "kinds": [
+          "animal",
+          "armour",
+          "item",
+          "wings"
+        ]
+      }
+    }
+  },
+  "minecraft:parrot": {
+    "renderer": "ParrotRenderer",
+    "slots": {}
+  },
+  "minecraft:phantom": {
+    "renderer": "PhantomRenderer",
+    "slots": {}
+  },
+  "minecraft:pig": {
+    "renderer": "PigRenderer",
+    "slots": {
+      "saddle": {
+        "kinds": [
+          "animal"
+        ],
+        "layer": "pig_saddle"
+      }
+    }
+  },
+  "minecraft:piglin": {
+    "renderer": "PiglinRenderer",
+    "slots": {
+      "chest": {
+        "kinds": [
+          "armour",
+          "wings"
+        ]
+      },
+      "feet": {
+        "kinds": [
+          "armour"
+        ]
+      },
+      "head": {
+        "kinds": [
+          "armour",
+          "item"
+        ]
+      },
+      "legs": {
+        "kinds": [
+          "armour"
+        ]
+      },
+      "mainhand": {
+        "kinds": [
+          "animal",
+          "armour",
+          "item",
+          "wings"
+        ]
+      },
+      "offhand": {
+        "kinds": [
+          "animal",
+          "armour",
+          "item",
+          "wings"
+        ]
+      }
+    }
+  },
+  "minecraft:piglin_brute": {
+    "renderer": "PiglinRenderer",
+    "slots": {
+      "chest": {
+        "kinds": [
+          "armour",
+          "wings"
+        ]
+      },
+      "feet": {
+        "kinds": [
+          "armour"
+        ]
+      },
+      "head": {
+        "kinds": [
+          "armour",
+          "item"
+        ]
+      },
+      "legs": {
+        "kinds": [
+          "armour"
+        ]
+      },
+      "mainhand": {
+        "kinds": [
+          "animal",
+          "armour",
+          "item",
+          "wings"
+        ]
+      },
+      "offhand": {
+        "kinds": [
+          "animal",
+          "armour",
+          "item",
+          "wings"
+        ]
+      }
+    }
+  },
+  "minecraft:pillager": {
+    "renderer": "PillagerRenderer",
+    "slots": {
+      "head": {
+        "kinds": [
+          "item"
+        ]
+      },
+      "mainhand": {
+        "kinds": [
+          "animal",
+          "armour",
+          "item",
+          "wings"
+        ]
+      },
+      "offhand": {
+        "kinds": [
+          "animal",
+          "armour",
+          "item",
+          "wings"
+        ]
+      }
+    }
+  },
+  "minecraft:player": {
+    "renderer": "AvatarRenderer",
+    "slots": {
+      "chest": {
+        "kinds": [
+          "armour",
+          "wings"
+        ]
+      },
+      "feet": {
+        "kinds": [
+          "armour"
+        ]
+      },
+      "head": {
+        "kinds": [
+          "armour",
+          "item"
+        ]
+      },
+      "legs": {
+        "kinds": [
+          "armour"
+        ]
+      },
+      "mainhand": {
+        "kinds": [
+          "animal",
+          "armour",
+          "item",
+          "wings"
+        ]
+      },
+      "offhand": {
+        "kinds": [
+          "animal",
+          "armour",
+          "item",
+          "wings"
+        ]
+      }
+    }
+  },
+  "minecraft:polar_bear": {
+    "renderer": "PolarBearRenderer",
+    "slots": {}
+  },
+  "minecraft:pufferfish": {
+    "renderer": "PufferfishRenderer",
+    "slots": {}
+  },
+  "minecraft:rabbit": {
+    "renderer": "RabbitRenderer",
+    "slots": {}
+  },
+  "minecraft:ravager": {
+    "renderer": "RavagerRenderer",
+    "slots": {}
+  },
+  "minecraft:salmon": {
+    "renderer": "SalmonRenderer",
+    "slots": {}
+  },
+  "minecraft:sheep": {
+    "renderer": "SheepRenderer",
+    "slots": {}
+  },
+  "minecraft:shulker": {
+    "renderer": "ShulkerRenderer",
+    "slots": {}
+  },
+  "minecraft:silverfish": {
+    "renderer": "SilverfishRenderer",
+    "slots": {}
+  },
+  "minecraft:skeleton": {
+    "renderer": "SkeletonRenderer",
+    "slots": {
+      "chest": {
+        "kinds": [
+          "armour",
+          "wings"
+        ]
+      },
+      "feet": {
+        "kinds": [
+          "armour"
+        ]
+      },
+      "head": {
+        "kinds": [
+          "armour",
+          "item"
+        ]
+      },
+      "legs": {
+        "kinds": [
+          "armour"
+        ]
+      },
+      "mainhand": {
+        "kinds": [
+          "animal",
+          "armour",
+          "item",
+          "wings"
+        ]
+      },
+      "offhand": {
+        "kinds": [
+          "animal",
+          "armour",
+          "item",
+          "wings"
+        ]
+      }
+    }
+  },
+  "minecraft:skeleton_horse": {
+    "renderer": "UndeadHorseRenderer",
+    "slots": {
+      "body": {
+        "kinds": [
+          "animal"
+        ],
+        "layer": "horse_body"
+      },
+      "saddle": {
+        "kinds": [
+          "animal"
+        ],
+        "layer": "skeleton_horse_saddle"
+      }
+    }
+  },
+  "minecraft:slime": {
+    "renderer": "SlimeRenderer",
+    "slots": {}
+  },
+  "minecraft:sniffer": {
+    "renderer": "SnifferRenderer",
+    "slots": {}
+  },
+  "minecraft:snow_golem": {
+    "renderer": "SnowGolemRenderer",
+    "slots": {}
+  },
+  "minecraft:spider": {
+    "renderer": "SpiderRenderer",
+    "slots": {}
+  },
+  "minecraft:squid": {
+    "renderer": "SquidRenderer",
+    "slots": {}
+  },
+  "minecraft:stray": {
+    "renderer": "StrayRenderer",
+    "slots": {
+      "chest": {
+        "kinds": [
+          "armour",
+          "wings"
+        ]
+      },
+      "feet": {
+        "kinds": [
+          "armour"
+        ]
+      },
+      "head": {
+        "kinds": [
+          "armour",
+          "item"
+        ]
+      },
+      "legs": {
+        "kinds": [
+          "armour"
+        ]
+      },
+      "mainhand": {
+        "kinds": [
+          "animal",
+          "armour",
+          "item",
+          "wings"
+        ]
+      },
+      "offhand": {
+        "kinds": [
+          "animal",
+          "armour",
+          "item",
+          "wings"
+        ]
+      }
+    }
+  },
+  "minecraft:strider": {
+    "renderer": "StriderRenderer",
+    "slots": {
+      "saddle": {
+        "kinds": [
+          "animal"
+        ],
+        "layer": "strider_saddle"
+      }
+    }
+  },
+  "minecraft:tadpole": {
+    "renderer": "TadpoleRenderer",
+    "slots": {}
+  },
+  "minecraft:trader_llama": {
+    "renderer": "LlamaRenderer",
+    "slots": {
+      "body": {
+        "kinds": [
+          "animal"
+        ],
+        "layer": "llama_body"
+      }
+    }
+  },
+  "minecraft:tropical_fish": {
+    "renderer": "TropicalFishRenderer",
+    "slots": {}
+  },
+  "minecraft:turtle": {
+    "renderer": "TurtleRenderer",
+    "slots": {}
+  },
+  "minecraft:vex": {
+    "renderer": "VexRenderer",
+    "slots": {
+      "mainhand": {
+        "kinds": [
+          "animal",
+          "armour",
+          "item",
+          "wings"
+        ]
+      },
+      "offhand": {
+        "kinds": [
+          "animal",
+          "armour",
+          "item",
+          "wings"
+        ]
+      }
+    }
+  },
+  "minecraft:villager": {
+    "renderer": "VillagerRenderer",
+    "slots": {
+      "head": {
+        "kinds": [
+          "item"
+        ]
+      },
+      "mainhand": {
+        "kinds": [
+          "animal",
+          "armour",
+          "item",
+          "wings"
+        ]
+      }
+    }
+  },
+  "minecraft:vindicator": {
+    "renderer": "VindicatorRenderer",
+    "slots": {
+      "head": {
+        "kinds": [
+          "item"
+        ]
+      },
+      "mainhand": {
+        "kinds": [
+          "animal",
+          "armour",
+          "item",
+          "wings"
+        ],
+        "when": "aggressive"
+      },
+      "offhand": {
+        "kinds": [
+          "animal",
+          "armour",
+          "item",
+          "wings"
+        ],
+        "when": "aggressive"
+      }
+    }
+  },
+  "minecraft:wandering_trader": {
+    "renderer": "WanderingTraderRenderer",
+    "slots": {
+      "head": {
+        "kinds": [
+          "item"
+        ]
+      },
+      "mainhand": {
+        "kinds": [
+          "animal",
+          "armour",
+          "item",
+          "wings"
+        ]
+      }
+    }
+  },
+  "minecraft:warden": {
+    "renderer": "WardenRenderer",
+    "slots": {}
+  },
+  "minecraft:witch": {
+    "renderer": "WitchRenderer",
+    "slots": {
+      "mainhand": {
+        "kinds": [
+          "animal",
+          "armour",
+          "item",
+          "wings"
+        ]
+      }
+    }
+  },
+  "minecraft:wither": {
+    "renderer": "WitherBossRenderer",
+    "slots": {}
+  },
+  "minecraft:wither_skeleton": {
+    "renderer": "WitherSkeletonRenderer",
+    "slots": {
+      "chest": {
+        "kinds": [
+          "armour",
+          "wings"
+        ]
+      },
+      "feet": {
+        "kinds": [
+          "armour"
+        ]
+      },
+      "head": {
+        "kinds": [
+          "armour",
+          "item"
+        ]
+      },
+      "legs": {
+        "kinds": [
+          "armour"
+        ]
+      },
+      "mainhand": {
+        "kinds": [
+          "animal",
+          "armour",
+          "item",
+          "wings"
+        ]
+      },
+      "offhand": {
+        "kinds": [
+          "animal",
+          "armour",
+          "item",
+          "wings"
+        ]
+      }
+    }
+  },
+  "minecraft:wolf": {
+    "renderer": "WolfRenderer",
+    "slots": {
+      "body": {
+        "kinds": [
+          "animal"
+        ],
+        "layer": "wolf_body"
+      }
+    }
+  },
+  "minecraft:zoglin": {
+    "renderer": "ZoglinRenderer",
+    "slots": {}
+  },
+  "minecraft:zombie": {
+    "renderer": "ZombieRenderer",
+    "slots": {
+      "chest": {
+        "kinds": [
+          "armour",
+          "wings"
+        ]
+      },
+      "feet": {
+        "kinds": [
+          "armour"
+        ]
+      },
+      "head": {
+        "kinds": [
+          "armour",
+          "item"
+        ]
+      },
+      "legs": {
+        "kinds": [
+          "armour"
+        ]
+      },
+      "mainhand": {
+        "kinds": [
+          "animal",
+          "armour",
+          "item",
+          "wings"
+        ]
+      },
+      "offhand": {
+        "kinds": [
+          "animal",
+          "armour",
+          "item",
+          "wings"
+        ]
+      }
+    }
+  },
+  "minecraft:zombie_horse": {
+    "renderer": "UndeadHorseRenderer",
+    "slots": {
+      "body": {
+        "kinds": [
+          "animal"
+        ],
+        "layer": "horse_body"
+      },
+      "saddle": {
+        "kinds": [
+          "animal"
+        ],
+        "layer": "zombie_horse_saddle"
+      }
+    }
+  },
+  "minecraft:zombie_nautilus": {
+    "renderer": "ZombieNautilusRenderer",
+    "slots": {
+      "body": {
+        "kinds": [
+          "animal"
+        ],
+        "layer": "nautilus_body"
+      },
+      "saddle": {
+        "kinds": [
+          "animal"
+        ],
+        "layer": "nautilus_saddle"
+      }
+    }
+  },
+  "minecraft:zombie_villager": {
+    "renderer": "ZombieVillagerRenderer",
+    "slots": {
+      "chest": {
+        "kinds": [
+          "armour",
+          "wings"
+        ]
+      },
+      "feet": {
+        "kinds": [
+          "armour"
+        ]
+      },
+      "head": {
+        "kinds": [
+          "armour",
+          "item"
+        ]
+      },
+      "legs": {
+        "kinds": [
+          "armour"
+        ]
+      },
+      "mainhand": {
+        "kinds": [
+          "animal",
+          "armour",
+          "item",
+          "wings"
+        ]
+      },
+      "offhand": {
+        "kinds": [
+          "animal",
+          "armour",
+          "item",
+          "wings"
+        ]
+      }
+    }
+  },
+  "minecraft:zombified_piglin": {
+    "renderer": "ZombifiedPiglinRenderer",
+    "slots": {
+      "chest": {
+        "kinds": [
+          "armour",
+          "wings"
+        ]
+      },
+      "feet": {
+        "kinds": [
+          "armour"
+        ]
+      },
+      "head": {
+        "kinds": [
+          "armour",
+          "item"
+        ]
+      },
+      "legs": {
+        "kinds": [
+          "armour"
+        ]
+      },
+      "mainhand": {
+        "kinds": [
+          "animal",
+          "armour",
+          "item",
+          "wings"
+        ]
+      },
+      "offhand": {
+        "kinds": [
+          "animal",
+          "armour",
+          "item",
+          "wings"
+        ]
+      }
+    }
+  }
+}

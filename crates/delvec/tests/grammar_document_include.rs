@@ -14,7 +14,7 @@ use delvec::grammar::compose::{self, ComposeError, entry};
 use delvec::grammar::document::{self, DocumentError};
 use delvec::grammar::geom::Axis;
 use delvec::grammar::ir::{
-    Alternative, Expr, Include, Node, Program, ProgramError, Reorient, Rounding, Size, Split,
+    Alternative, Expr, Include, Node, Program, ProgramError, Reorient, Size, Split,
 };
 use delvec::grammar::library::{cliff_path, store_room, watch_bay};
 use delvec::grammar::version::{INCLUDE_SINCE, LOCAL_FRAME_SINCE};
@@ -45,7 +45,7 @@ fn split(axis: Axis, sizes: Vec<Size>, children: Vec<Node>) -> Node {
     Node::Split(Split {
         axis,
         sizes,
-        rounding: Rounding::Truncate,
+        rounding: None,
         repeat: false,
         orient: Reorient::KEEP,
         children,

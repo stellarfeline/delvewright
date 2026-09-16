@@ -51,8 +51,9 @@ WHAT IS CHECKED, AND THE PERTURBATION THAT REDS EACH
    10  every heading of the page at the revision the split moved from is a
        heading of exactly one file.            RED: a section dropped or doubled
    11  `plugin.json` parses; `name` is kebab-case; `version` is semver; a diff
-       against the base that touches the plugin root moves `version`.
-                                               RED: a page edit with no bump
+       against the base does not move `version`, unless it is the plugin
+       release workflow's own commit (ADR-0028 §5).
+                                               RED: a pull request that bumps it
    12  `marketplace.json` carries `name`, `owner.name`, and one plugin whose
        `source` resolves to a directory carrying a `plugin.json` of that name.
                                                RED: a moved directory
@@ -67,6 +68,47 @@ WHAT IS CHECKED, AND THE PERTURBATION THAT REDS EACH
    16  every acquired program a step after Init invokes is proven in Init.
                                                RED: `docker compose` in step 10's
                                                     scripts, `docker info` in Init
+   17  every DW code a page file names is declared by a diagnostic constant in
+       the engine at `ref`.                    RED: a code the pin predates
+   18  `--online`: the pinned release's own `delvec`, fetched and checksum-verified
+       the way `scripts/fetch-delvec.py` fetches it, is asked for every schema it
+       exports; every key a campaign-document fragment of the page names is a
+       field of one, every value it gives a closed-set field is a member, and
+       every DW code the page names is in the binary's bytes.
+                                               RED: `verdict: "unwalked"` against
+                                                    a walk record of two verdicts
+   19  the pin check runs on every run: the run shape's `Init` entry names
+       I1b, and `scripts/check-toolchain.py` is invoked in a fence of Init's
+       I1b section and in the I8 checklist.    RED: `Init  build the toolchain,
+                                                    once per machine`
+   20  every `dw.*` trigger a page file names in code is a trigger objective the
+       creator overlay at `ref` registers; every `creator-datapack/` path is a
+       path the engine at `ref` writes; every `docker logs <name>` is a
+       container a script or compose file at `ref` names; every `--profile <p>`
+       is a profile `validation/compose.yaml` at `ref` declares.
+                                               RED: a renamed trigger; a moved
+                                                    layout manifest
+
+RULES 17 AND 18, AND WHAT THEY CANNOT SEE
+
+A page names an engine in three vocabularies — commands, diagnostics and
+document fields — and until these two rules only the first was held to the pin,
+so a page written against a newer engine than it installs stayed green. Rule 17
+is offline because a DW code is declared in source by one shape the DW-code gate
+already reads (`check-dw-codes.py`'s `CONST_RE`, imported, not copied). Rule 18
+is online because a field's name and a variant's spelling are serde's, and the
+only faithful reading of serde is the binary's own `delvec schema`.
+
+A fragment — one inline span, or one whole fence — is read as a campaign
+document when MORE THAN HALF of the keys it names are fields of some schema the
+release exports; only then does an unknown key red. The object decides the kind:
+a Chunky option, a skin palette or a text component names keys no schema
+carries, and is printed as unread rather than refused. What that costs is
+stated: a fragment whose keys are mostly unknown to the pin is indistinguishable
+from a non-document, and a variant is checked only where EVERY field of that
+name is a closed set — a name one document leaves open is a candidate, not a
+match. A behaviour the page describes (a refusal, an emitted key of a build
+output) is not a name and neither rule sees it.
 
 RULE 10 AND THE ONE THING IT CANNOT ASSERT
 
@@ -100,6 +142,7 @@ import importlib.util
 import json
 import os
 import pathlib
+import platform
 import re
 import subprocess
 import sys
@@ -117,6 +160,7 @@ PLUGIN_JSON = PLUGIN_ROOT / ".claude-plugin" / "plugin.json"
 MARKETPLACE = REPO / ".claude-plugin" / "marketplace.json"
 CENSUS = REPO / "tools" / "data" / "skill-page-headings.json"
 STATED_COUNTS = REPO / "tools" / "check-stated-counts.py"
+DW_CODES = REPO / "tools" / "check-dw-codes.py"
 
 API = "https://api.github.com"
 ARCHIVE = "delvec-{release}-{target}.tar.gz"
@@ -130,7 +174,8 @@ ENGINE_PATHS = (
     "crates",
     "docs/reference/grammar.md",
     "versions.toml",
-    "tools/refimg.py",
+    "tools",
+    "validation",
 )
 
 STAGE_ARM_RE = re.compile(r'Stage::\w+\s*=>\s*"([a-z][a-z0-9-]*)"')
@@ -252,6 +297,22 @@ ACQUIRED_DEFERRED = {
     "rustc": "I3b — the source floor, entered only on I3a's exit 3 or 4",
     "git-lfs": "the shipped library, optional and taken at the step that wants it",
 }
+
+# --- rules 17 and 18: the names a page gives the engine ----------------------
+#
+# A DW code as a page writes it. A key a fragment names, in the two spellings a
+# page uses for a document field: JSON's (`"verdict": "passed"`) and the
+# shorthand with a quoted value (`verdict: "passed"`). A bare `key: word` is not
+# read: `sppTarget: 500` and `localhost:25565` are that shape, and neither is a
+# document.
+PAGE_DW_RE = re.compile(r"\bDW[0-9]{4}\b")
+JSON_KEY_RE = re.compile(r'"(?P<key>[a-z][a-z0-9_]*)"\s*:\s*(?:"(?P<value>[^"\n]*)")?')
+SHORT_KEY_RE = re.compile(r'(?<![\w"./:-])(?P<key>[a-z][a-z0-9_]*):\s*"(?P<value>[^"\n]*)"')
+# A value that stands for something the author fills in is not a variant.
+PLACEHOLDER_VALUE_RE = re.compile(r"[<…]|\.\.\.")
+# The `--stage` values `delvec schema --help` names in backticks; `all` is
+# asked first, and every kebab token it does not already key is asked alone.
+STAGE_TOKEN_RE = re.compile(r"`([a-z][a-z0-9-]*)`")
 
 sys.path.insert(0, str(REPO / "tools"))
 from lib.clap_surface import kebab, normalize, parse_cli  # noqa: E402
@@ -995,6 +1056,13 @@ def check(rep: Report, engine: pathlib.Path, rev: str, release: str, base: str |
     placeholder_rule(rep)
     refimg_rule(rep, engine)
     init_proves_rule(rep)
+    pin_check_rule(rep)
+
+    # -- 17. every DW code the page names, the pin declares ------------------
+    dw_code_rule(rep, engine, rev)
+
+    # -- 20. every in-game and log name the page gives, the pin has ----------
+    playtest_names_rule(rep, engine, rev)
 
     # -- 10. the split dropped nothing ---------------------------------------
     heading_rule(rep)
@@ -1275,6 +1343,470 @@ def init_proves_rule(rep: Report) -> None:
     rep.bind("acquired program(s) proven at Init", len(proven), len(ACQUIRED))
 
 
+PIN_CHECK = "scripts/check-toolchain.py"
+
+
+def pin_check_rule(rep: Report) -> None:
+    """Rule 19: the per-run pin check is where a run starts, and where Init ends.
+
+    A machine that has run Init before carries whatever toolchain the last run
+    left, and the page may pin a newer engine. The comparison only protects a
+    run that makes it, so the three places a run is told to make it are held:
+    the run shape a reader follows, the I1b section that carries the command,
+    and the checklist Init is finished by. A line naming the script in prose is
+    not an invocation, so (b) and (c) read fenced lines only.
+    """
+    page = SKILL.read_text(encoding="utf-8")
+    init = (SKILL_ROOT / "references" / "init.md").read_text(encoding="utf-8")
+    sites = 0
+
+    shape = [body for heading, body in sections(page) if heading == "The shape of the run"]
+    entry = [
+        line
+        for body in shape
+        for line in fenced_lines(body)
+        if line.split()[:1] == ["Init"]
+    ]
+    if len(entry) == 1 and "I1b" in entry[0]:
+        sites += 1
+    else:
+        rep.find(
+            f"the run shape's `Init` entry does not name I1b (found {entry!r}). A "
+            f"machine that ran Init before keeps its old engine unless every run "
+            f"starts with the pin check, and the run shape is what a reader follows."
+        )
+
+    i1b = [body for heading, body in sections(init) if heading.startswith("I1b ")]
+    if any(PIN_CHECK in line for body in i1b for line in fenced_lines(body)):
+        sites += 1
+    else:
+        rep.find(
+            f"`references/init.md` has no I1b section whose fence runs `{PIN_CHECK}`."
+        )
+
+    i8 = [body for heading, body in sections(page) if heading.startswith("I8 ")]
+    if any(PIN_CHECK in line for body in i8 for line in fenced_lines(body)):
+        sites += 1
+    else:
+        rep.find(
+            f"the I8 checklist does not run `{PIN_CHECK}`, so Init can finish with "
+            f"`delvec --version` answering a number that is not the pin's."
+        )
+    rep.bind("pin-check site(s) — run shape, I1b, I8", sites, 3)
+
+
+def dw_codes_module():
+    if not DW_CODES.is_file():
+        raise Unusable(f"{DW_CODES} is missing — the one reading of a DW declaration")
+    spec = importlib.util.spec_from_file_location("_dw_codes", DW_CODES)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def page_dw_codes() -> dict[str, list[str]]:
+    """DW code -> the shipped files that name it, in sorted order."""
+    named: dict[str, list[str]] = {}
+    for path in shipped():
+        try:
+            text = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            continue
+        for code in sorted(set(PAGE_DW_RE.findall(text))):
+            named.setdefault(code, []).append(rel(path))
+    return named
+
+
+def dw_code_rule(rep: Report, engine: pathlib.Path, rev: str) -> None:
+    """Rule 17: every DW code the plugin names is declared by the engine at `ref`.
+
+    Declared, not mentioned: a code in a comment or a test string is not a rule
+    the engine carries. The declaration shape is `check-dw-codes.py`'s own
+    `CONST_RE`, run over comment-stripped source by its own `strip_comments`.
+    """
+    dw = dw_codes_module()
+    declared: set[str] = set()
+    for rs in sorted((engine / "crates").rglob("*.rs")):
+        text = dw.strip_comments(rs.read_text(encoding="utf-8"))
+        declared |= {code for _name, code in dw.CONST_RE.findall(text)}
+    if not declared:
+        raise Unusable(
+            f"read 0 DW declarations from crates/ at {rev[:8]}; the diagnostic "
+            f"constant shape `check-dw-codes.py` keys off has changed."
+        )
+    named = page_dw_codes()
+    for code, where in sorted(named.items()):
+        if code not in declared:
+            rep.find(
+                f"{', '.join(where)} name{'s' if len(where) == 1 else ''} `{code}`, "
+                f"and the engine at {rev[:8]} declares no such diagnostic. The page "
+                f"describes a rule the engine it installs does not have: a creator "
+                f"waits for a refusal that never comes, or reads a code they are "
+                f"never shown. Re-pin to a release that carries it, or fix the page."
+            )
+    rep.bind(
+        "DW code(s) named that the pin declares",
+        sum(1 for code in named if code in declared),
+        len(named),
+    )
+    print(f"  ok   {len(declared)} DW code(s) declared by the engine at {rev[:8]}")
+
+
+# ------------------------------------------ rule 20, the names a playtest uses --
+
+PAGE_TRIGGER_RE = re.compile(r"(?<![\w.])(dw\.[a-z]+)(?![\w.])")
+PAGE_OVERLAY_PATH_RE = re.compile(r"(creator-datapack/[A-Za-z0-9_./-]*[A-Za-z0-9_])")
+PAGE_LOGS_RE = re.compile(r"docker logs\s+(?:-[-\w]+\s+)*([A-Za-z0-9_.-]+)")
+PAGE_PROFILE_RE = re.compile(r"--profile\s+([A-Za-z0-9_.-]+)")
+RUST_STR_CONST_RE = re.compile(r"const\s+([A-Z][A-Z0-9_]*)\s*:\s*&str\s*=\s*\"([^\"]*)\"\s*;")
+RUST_ARR_CONST_RE = re.compile(
+    r"const\s+([A-Z][A-Z0-9_]*)\s*:\s*\[&str;\s*\d+\]\s*=\s*\[([^\]]*)\]\s*;"
+)
+TRIGGER_ADD_RE = re.compile(r"objectives add \{?([A-Za-z0-9_.]+)\}? trigger")
+
+
+def overlay_triggers(creator_rs: str) -> set[str]:
+    """The trigger objectives the creator overlay registers, read off its source.
+
+    The server's own reading is `scoreboard objectives add <name> trigger`, so
+    that is the line this reads: every statement that emits it, with the
+    objective resolved the way the emitter resolves it — a literal, a `&str`
+    constant, or the elements of the constant array (or bracketed list of
+    constants) the statement iterates. A statement whose objective resolves to
+    nothing is a shape this reader does not know, and says so.
+    """
+    code = dw_codes_module().strip_comments(creator_rs)
+    strs = dict(RUST_STR_CONST_RE.findall(code))
+    arrays = {
+        name: re.findall(r"\"([^\"]*)\"", body) for name, body in RUST_ARR_CONST_RE.findall(code)
+    }
+    found: set[str] = set()
+    for statement in code.split(";"):
+        for token in TRIGGER_ADD_RE.findall(statement):
+            names: list[str] = []
+            if token.startswith("dw."):
+                names = [token]
+            elif token in strs:
+                names = [strs[token]]
+            else:
+                for ident in re.findall(r"\b([A-Z][A-Z0-9_]+)\b", statement):
+                    names.extend(arrays.get(ident, []))
+                    if ident in strs:
+                        names.append(strs[ident])
+            if not names:
+                raise Unusable(
+                    f"a `scoreboard objectives add {{{token}}} trigger` statement in "
+                    f"creator.rs resolves to no objective name; the emitter's shape "
+                    f"has moved past what rule 20 reads."
+                )
+            found.update(n for n in names if n.startswith("dw."))
+    return found
+
+
+def compose_profiles(compose_yaml: str) -> set[str]:
+    """Every profile a compose file declares (`profiles: ["a", "b"]`)."""
+    out: set[str] = set()
+    for body in re.findall(r"^\s*profiles:\s*\[([^\]]*)\]", compose_yaml, re.M):
+        out.update(re.findall(r"[\"']([^\"']+)[\"']", body))
+    return out
+
+
+def container_names(engine: pathlib.Path) -> set[str]:
+    """Every container name the engine's scripts and compose files give a server."""
+    out: set[str] = set()
+    for path in sorted((engine / "validation").glob("*.yaml")):
+        out.update(re.findall(r"^\s*container_name:\s*([A-Za-z0-9_.-]+)", path.read_text(encoding="utf-8"), re.M))
+    for path in sorted((engine / "tools").glob("*.sh")) + sorted((engine / "validation").glob("*.sh")):
+        text = path.read_text(encoding="utf-8")
+        out.update(re.findall(r'^NAME="([A-Za-z0-9_.-]+)"', text, re.M))
+    return out
+
+
+def playtest_names_rule(rep: Report, engine: pathlib.Path, rev: str) -> None:
+    """Rule 20: the names a creator types into a playtest, held to the pin.
+
+    A trigger, a layout manifest path, a container a log is read from and a
+    compose profile are not `delvec` names, so rule 4 cannot see them; each is
+    read off the file at `ref` that makes it true — the overlay emitter, the
+    engine source, the scripts and compose files.
+    """
+    creator_rs = engine / "crates" / "delvec" / "src" / "compiler" / "creator.rs"
+    compose = engine / "validation" / "compose.yaml"
+    for path in (creator_rs, compose):
+        if not path.is_file():
+            raise Unusable(f"{path.relative_to(engine)} is not at {rev[:8]}; rule 20 reads it.")
+    triggers = overlay_triggers(creator_rs.read_text(encoding="utf-8"))
+    if not triggers:
+        raise Unusable(f"read 0 trigger objectives from creator.rs at {rev[:8]}.")
+    source = "\n".join(
+        rs.read_text(encoding="utf-8") for rs in sorted((engine / "crates" / "delvec" / "src").rglob("*.rs"))
+    )
+    profiles = compose_profiles(compose.read_text(encoding="utf-8"))
+    containers = container_names(engine)
+    named = 0
+    bound = 0
+    for path in page_files():
+        text = path.read_text(encoding="utf-8")
+        for span, _fenced in code_spans(text):
+            checks: list[tuple[str, bool, str]] = []
+            for t in PAGE_TRIGGER_RE.findall(span):
+                checks.append((f"trigger `{t}`", t in triggers, f"the overlay registers {', '.join(sorted(triggers))}"))
+            for pth in PAGE_OVERLAY_PATH_RE.findall(span):
+                checks.append((f"path `{pth}`", f'"{pth}"' in source, "no engine source writes that path"))
+            for name in PAGE_LOGS_RE.findall(span):
+                checks.append((f"container `{name}`", name in containers, f"the scripts name {', '.join(sorted(containers)) or 'none'}"))
+            for prof in PAGE_PROFILE_RE.findall(span):
+                checks.append((f"profile `{prof}`", prof in profiles, f"compose declares {', '.join(sorted(profiles))}"))
+            for what, ok, known in checks:
+                named += 1
+                if ok:
+                    bound += 1
+                else:
+                    rep.find(
+                        f"{rel(path)} names {what}, and the engine at {rev[:8]} has no "
+                        f"such thing ({known}). A creator types it into a game or a "
+                        f"shell and nothing happens. Re-pin to a release that has it, "
+                        f"or fix the page."
+                    )
+    rep.bind("trigger, overlay path, container and profile name(s) the pin has", bound, named)
+    print(f"  ok   {len(triggers)} overlay trigger(s) registered by the engine at {rev[:8]}")
+
+
+# -------------------------------------------------- rule 18, the release asked --
+
+
+def fragments(markdown: str) -> list[str]:
+    """One inline code span, or one whole fence, per fragment.
+
+    A fence is one fragment rather than one per line because a document written
+    across lines is still one document, and its keys decide its kind together.
+    """
+    out: list[str] = []
+    prose: list[str] = []
+    block: list[str] | None = None
+    for line in markdown.split("\n"):
+        if FENCE_RE.match(line):
+            if block is None:
+                block = []
+            else:
+                out.append("\n".join(block))
+                block = None
+            continue
+        if block is not None:
+            block.append(line)
+        else:
+            prose.append(line)
+    if block is not None:
+        out.append("\n".join(block))
+    out.extend(INLINE_CODE_RE.findall("\n".join(prose)))
+    return out
+
+
+def fragment_keys(fragment: str) -> list[tuple[str, str | None]]:
+    """`(key, quoted value | None)` for every document-shaped key a fragment names."""
+    found = [(m.group("key"), m.group("value")) for m in JSON_KEY_RE.finditer(fragment)]
+    found += [(m.group("key"), m.group("value")) for m in SHORT_KEY_RE.finditer(fragment)]
+    return found
+
+
+def closed_set(node: object, root: dict, depth: int = 0) -> set[str] | None:
+    """The closed set of strings a schema node admits, or None when it is open.
+
+    `$ref` into the document's own `$defs`, `const`, a string `enum`, and a
+    `oneOf`/`anyOf` whose every non-null arm is itself closed. Anything else —
+    a pattern, a free string, an object, an array — is open, and a value given
+    to an open field is not a variant.
+    """
+    if depth > 32 or not isinstance(node, dict):
+        return None
+    ref = node.get("$ref")
+    if isinstance(ref, str):
+        name = ref.rsplit("/", 1)[-1]
+        return closed_set(root.get("$defs", {}).get(name), root, depth + 1)
+    if isinstance(node.get("const"), str):
+        return {node["const"]}
+    if isinstance(node.get("enum"), list):
+        values = [v for v in node["enum"] if v is not None]
+        return set(values) if values and all(isinstance(v, str) for v in values) else None
+    for key in ("oneOf", "anyOf"):
+        arms = node.get(key)
+        if isinstance(arms, list):
+            out: set[str] = set()
+            for arm in arms:
+                if isinstance(arm, dict) and arm.get("type") == "null":
+                    continue
+                sub = closed_set(arm, root, depth + 1)
+                if sub is None:
+                    return None
+                out |= sub
+            return out or None
+    arms = node.get("allOf")
+    if isinstance(arms, list) and len(arms) == 1:
+        return closed_set(arms[0], root, depth + 1)
+    return None
+
+
+def schema_fields(schemas: dict[str, dict]) -> dict[str, list[tuple[str, set[str] | None]]]:
+    """Field name -> `(document, closed set | None)` for every property of every schema."""
+    fields: dict[str, list[tuple[str, set[str] | None]]] = {}
+
+    def walk(node: object, root: dict, doc: str) -> None:
+        if isinstance(node, dict):
+            props = node.get("properties")
+            if isinstance(props, dict):
+                for name, sub in props.items():
+                    fields.setdefault(name, []).append((doc, closed_set(sub, root)))
+            for value in node.values():
+                walk(value, root, doc)
+        elif isinstance(node, list):
+            for value in node:
+                walk(value, root, doc)
+
+    for doc, schema in sorted(schemas.items()):
+        walk(schema, schema, doc)
+    return fields
+
+
+def release_schemas(delvec) -> dict[str, dict]:
+    """Every schema the release exports, asked of the release.
+
+    `delvec` is a runner: argv (without the program) -> `(exit, stdout)`. The
+    `--stage` values are read off the binary's own help rather than listed here,
+    so a document the release adds is asked without this file moving.
+    """
+    code, out = delvec(["schema", "--stage", "all"])
+    try:
+        every = json.loads(out) if code == 0 else None
+    except json.JSONDecodeError:
+        every = None
+    if not isinstance(every, dict) or not every:
+        raise Unusable(
+            f"the pinned `delvec schema --stage all` did not answer with a map of "
+            f"schemas (exit {code}); rule 18 has nothing to read."
+        )
+    schemas = dict(every)
+    code, help_text = delvec(["schema", "--help"])
+    stage_line = next(
+        (line for line in help_text.split("\n") if "--stage" in line and "`" in line), ""
+    )
+    for token in STAGE_TOKEN_RE.findall(stage_line):
+        if token == "all" or token in schemas:
+            continue
+        code, out = delvec(["schema", "--stage", token])
+        if code != 0:
+            raise Unusable(
+                f"the pinned `delvec schema --help` names `{token}` and "
+                f"`delvec schema --stage {token}` exits {code}."
+            )
+        schemas[token] = json.loads(out)
+    return schemas
+
+
+def release_binary_rule(rep: Report, delvec, binary: bytes, release: str) -> None:
+    """Rule 18: the fields, variants and codes the page names, asked of the release."""
+    schemas = release_schemas(delvec)
+    fields = schema_fields(schemas)
+    print(
+        f"  ok   {release} exports {len(schemas)} schema(s) carrying "
+        f"{len(fields)} field name(s)"
+    )
+
+    keys_read = keys_known = values_checked = values_ok = 0
+    unread: dict[str, set[str]] = {}
+    for path in page_files():
+        for fragment in fragments(path.read_text(encoding="utf-8")):
+            pairs = fragment_keys(fragment)
+            names = {key for key, _value in pairs}
+            if not names:
+                continue
+            known = {key for key in names if key in fields}
+            if 2 * len(known) <= len(names):
+                unread.setdefault(rel(path), set()).update(names - known)
+                continue
+            keys_read += len(names)
+            keys_known += len(known)
+            for key in sorted(names - known):
+                rep.find(
+                    f"{rel(path)} names the field `{key}` in a document fragment, and "
+                    f"no schema {release} exports carries it:\n"
+                    f"      {' '.join(fragment.split())[:160]}"
+                )
+            for key, value in pairs:
+                if key not in fields or value is None or PLACEHOLDER_VALUE_RE.search(value):
+                    continue
+                sets = [closed for _doc, closed in fields[key]]
+                if any(closed is None for closed in sets):
+                    continue
+                values_checked += 1
+                if any(value in closed for closed in sets):
+                    values_ok += 1
+                    continue
+                admitted = sorted(set().union(*sets))
+                rep.find(
+                    f"{rel(path)} gives `{key}` the value {value!r}, and {release}'s "
+                    f"schema admits only {', '.join(repr(v) for v in admitted)} there. "
+                    f"A creator who writes what the page says is refused as an unknown "
+                    f"variant by the engine the page installs."
+                )
+    rep.bind("document-fragment key(s) the release's schemas carry", keys_known, keys_read)
+    rep.bind("closed-set value(s) the release's schemas admit", values_ok, values_checked)
+    if unread:
+        count = sum(len(v) for v in unread.values())
+        print(
+            f"  --   {count} key(s) in fragment(s) read as no campaign document "
+            f"(most of their keys are no field of {release}):"
+        )
+        for where, keys in sorted(unread.items()):
+            print(f"         {where}: {', '.join(sorted(keys))}")
+
+    in_binary = {c.decode("ascii") for c in re.findall(rb"DW[0-9]{4}", binary)}
+    named = page_dw_codes()
+    for code, where in sorted(named.items()):
+        if code not in in_binary:
+            rep.find(
+                f"{', '.join(where)} name `{code}`, and the {release} binary's bytes "
+                f"never spell it — the release cannot print a diagnostic it does not "
+                f"carry."
+            )
+    rep.bind(
+        "DW code(s) named that the release binary carries",
+        sum(1 for code in named if code in in_binary),
+        len(named),
+    )
+
+
+def acquire_release(into: pathlib.Path) -> pathlib.Path:
+    """The pinned `delvec`, by `scripts/fetch-delvec.py`'s own `run`.
+
+    Imported rather than re-implemented, so the checksum this gate trusts is the
+    one a creator's Init trusts, and a shelf that refuses a creator refuses here.
+    The engine checkout it maps the host against is this repository, which
+    carries `ref` because `materialise` already required it.
+    """
+    script = SKILL_ROOT / "scripts" / "fetch-delvec.py"
+    spec = importlib.util.spec_from_file_location("_fetch_delvec", script)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    try:
+        module.run(PIN, REPO, into, platform.system(), platform.machine())
+    except module.Refusal as refusal:
+        raise Unusable(
+            f"`fetch-delvec.py` refused (exit {refusal.code}): {refusal}. Rule 18 "
+            f"asks the release itself and asks nothing else instead."
+        ) from refusal
+    found = [p for p in (into / "delvec", into / "delvec.exe") if p.is_file()]
+    if not found:
+        raise Unusable(f"`fetch-delvec.py` reported ok and {into} holds no `delvec`")
+    return found[0]
+
+
+def runner(binary: pathlib.Path):
+    def run(argv: list[str]) -> tuple[int, str]:
+        proc = subprocess.run([str(binary), *argv], capture_output=True, text=True)
+        return proc.returncode, proc.stdout
+    return run
+
+
 def heading_rule(rep: Report) -> None:
     try:
         census = json.loads(CENSUS.read_text(encoding="utf-8"))
@@ -1427,63 +1959,82 @@ def manifest_rules(rep: Report, base: str | None) -> None:
             )
     rep.bind("marketplace plugin entr(y/ies)", len(entries) if isinstance(entries, list) else 0, 1)
 
-    version_bump_rule(rep, base, version)
+    version_move_rule(rep, base, version)
 
 
-def version_bump_rule(
+def version_move_rule(
     rep: Report,
     base: str | None,
     version: object,
     repo: pathlib.Path | None = None,
     plugin_root: pathlib.Path | None = None,
+    event: str | None = None,
+    ref: str | None = None,
 ) -> None:
-    """The version moves with the plugin.
+    """Only the plugin release moves the plugin's version (ADR-0028 §5).
 
-    A FUNCTION rather than the tail of `manifest_rules`, because this is the one
-    rule on the page whose subject is a git history: it cannot be exercised by
-    perturbing a copy of the plugin the way every other rule is, so the only way
-    a test can reach it is to hand it a repository of its own. `repo` and
-    `plugin_root` default to this tree's, so the caller in `manifest_rules` says
-    nothing it did not say before.
+    The marketplace delivers whatever `plugin.json` `version` `main` carries, and
+    a version that moves is an update every creator receives — so the release is
+    the one act that moves it, and an ordinary change never does. A page edit
+    under an unchanged version is fine: it reaches creators at the next release.
+
+    THE RELEASE COMMIT is recognised by what `plugin-release.yml` alone controls:
+    this run is a `workflow_dispatch` on `refs/heads/release/plugin-<version>`
+    (`GITHUB_EVENT_NAME`, `GITHUB_REF`, which a pull request's run cannot set),
+    and against the base the plugin root differs only in `plugin.json`, whose
+    object differs only in `version`.
+
+    A FUNCTION rather than the tail of `manifest_rules`, because its subject is a
+    git history: a test reaches it by handing it a repository of its own.
     """
     if base is None:
-        print("  --   version-bump rule: not run (no --base given)")
+        print("  --   version rule: not run (no --base given)")
         return
     repo = REPO if repo is None else repo
     plugin_root = PLUGIN_ROOT if plugin_root is None else plugin_root
+    event = os.environ.get("GITHUB_EVENT_NAME", "") if event is None else event
+    ref = os.environ.get("GITHUB_REF", "") if ref is None else ref
     plugin_rel = str(plugin_root.relative_to(repo))
+    manifest_rel = f"{plugin_rel}/.claude-plugin/plugin.json"
+    show = subprocess.run(
+        ["git", "-C", str(repo), "show", f"{base}:{manifest_rel}"], capture_output=True, text=True
+    )
+    if show.returncode != 0:
+        print(f"  ok   {base} carries no plugin manifest — this is the first publish")
+        return
+    base_doc = json.loads(show.stdout)
+    was = base_doc.get("version")
+    if was == version:
+        print(f"  ok   plugin.json version is {version!r} on both sides — an ordinary change moves no version")
+        return
     diff = subprocess.run(
         ["git", "-C", str(repo), "diff", "--name-only", base, "--", plugin_rel],
         capture_output=True,
         text=True,
     )
     if diff.returncode != 0:
-        rep.find(
-            f"could not diff the plugin root against {base}: {diff.stderr.strip()}. "
-            f"The version-bump rule is what makes 'a creator gets an update' and "
-            f"'the page changed' one event, so it is not skipped quietly."
-        )
+        rep.find(f"could not diff the plugin root against {base}: {diff.stderr.strip()}")
         return
     touched = [line for line in diff.stdout.split("\n") if line.strip()]
-    print(f"-- plugin root: {len(touched)} file(s) differ from {base}")
-    if not touched:
-        return
-    show = subprocess.run(
-        ["git", "-C", str(repo), "show", f"{base}:{plugin_rel}/.claude-plugin/plugin.json"],
-        capture_output=True,
-        text=True,
-    )
-    if show.returncode != 0:
-        print(f"  ok   {base} carries no plugin manifest — this is the first publish")
-        return
-    was = json.loads(show.stdout).get("version")
-    if was == version:
+    tree_doc = json.loads((plugin_root / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8"))
+    why = []
+    if event != "workflow_dispatch":
+        why.append(f"the run is a {event or 'local'!r} event, not the release's workflow_dispatch")
+    if ref != f"refs/heads/release/plugin-{version}":
+        why.append(f"the ref is {ref or '(none)'!r}, not refs/heads/release/plugin-{version}")
+    if touched != [manifest_rel]:
+        why.append(f"{len(touched)} file(s) under the plugin root differ from {base}, not plugin.json alone")
+    if {k: v for k, v in tree_doc.items() if k != "version"} != {k: v for k, v in base_doc.items() if k != "version"}:
+        why.append("plugin.json differs in more than `version`")
+    if why:
         rep.find(
-            f"{len(touched)} file(s) under the plugin root differ from {base} and "
-            f"`plugin.json` `version` is {version!r} on both sides. A declared "
-            f"version pins: creators receive an update only when it moves, so a "
-            f"page edit with no bump is a page nobody will ever be served."
+            f"`plugin.json` `version` moves from {was!r} to {version!r} against {base}. Only the plugin "
+            f"release workflow (`.github/workflows/plugin-release.yml`) moves it, because the marketplace "
+            f"delivers the version `main` carries; leave it at {was!r} and dispatch a release instead. "
+            f"This is not that workflow's commit: {'; '.join(why)}."
         )
+        return
+    print(f"  ok   {version!r} is moved by the plugin release's own commit (release/plugin-{version}, plugin.json version only)")
 
 
 # ------------------------------------------------------------------ online --
@@ -1491,6 +2042,20 @@ def version_bump_rule(
 
 class NotFound(Exception):
     pass
+
+
+def _print_budget(path: str, headers, authenticated: bool) -> None:
+    # The 403 this rule was written against ("rate limit exceeded") named no
+    # cause: an anonymous request and a spent authenticated one raise the
+    # identical exception, and only the response's OWN headers say which
+    # budget was in play. Printed on every call, success or failure, so a
+    # silent fallback to the anonymous budget (60/hour, shared with every
+    # other tenant of the runner's IP) is a line in THIS run's log, never a
+    # story told after the fact. `authenticated` is a bool the gate derived
+    # from whether it attached a header, never the credential itself.
+    limit = headers.get("X-RateLimit-Limit", "?")
+    remaining = headers.get("X-RateLimit-Remaining", "?")
+    print(f"  gh {path}: authenticated={authenticated} ratelimit {remaining}/{limit}")
 
 
 def gh(path: str) -> object:
@@ -1507,10 +2072,12 @@ def gh(path: str) -> object:
         req.add_header("Authorization", f"Bearer {token}")
     try:
         with urllib.request.urlopen(req, timeout=30) as fh:
+            _print_budget(path, fh.headers, authenticated=bool(token))
             return json.load(fh)
     except urllib.error.HTTPError as exc:
         if exc.code == 404:
             raise NotFound(path) from exc
+        _print_budget(path, exc.headers, authenticated=bool(token))
         raise
 
 
@@ -1637,7 +2204,7 @@ def main(argv: list[str] | None = None) -> int:
         "--base",
         default=None,
         help=(
-            "the revision the plugin root is diffed against for the version-bump "
+            "the revision the plugin root is diffed against for the version "
             "rule (e.g. origin/main). Omitted, that one rule does not run and says so."
         ),
     )
@@ -1679,6 +2246,9 @@ def main(argv: list[str] | None = None) -> int:
             if args.online:
                 print("== the release the page downloads ==")
                 online(rep, engine, repo, release, rev)
+                print("== the names the page gives the release, asked of the release ==")
+                binary = acquire_release(pathlib.Path(tmp) / "release-bin")
+                release_binary_rule(rep, runner(binary), binary.read_bytes(), release)
     except Unusable as exc:
         print(f"check-skill-page: FATAL — {exc}", file=sys.stderr)
         return 2

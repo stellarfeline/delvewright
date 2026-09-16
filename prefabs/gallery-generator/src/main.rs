@@ -239,6 +239,23 @@ const ANCHORS: &[Anchor] = &[
         role: None,
     },
     Anchor {
+        name: "anchor/usher",
+        pos: [13, 1, 5],
+        facing: Some("south"),
+        trigger_block: None,
+        note: "a standing place for two bodies a spawn puts down and NOTHING \
+               takes away: the usher on the anchor and the page at an offset \
+               from it, four cells east along the speaking row. `DW0896` refuses \
+               two co-existing bodies on one cell and judges an entry only \
+               against a body whose lifetime it can bound — every other actor \
+               in this hall is `vulnerable` or is despawned, so without this \
+               place the live half of that rule binds to the world-init npcs \
+               alone. One anchor and an offset apiece is how a rank of bodies \
+               is placed (spec-0066): the campaign spends one anchor on it, and \
+               `DW0897` holds each offset inside this piece",
+        role: None,
+    },
+    Anchor {
         name: "anchor/pedestal",
         pos: [15, 1, 9],
         facing: Some("north"),
@@ -557,6 +574,50 @@ const WAY_NAME: &str = "broken-flight";
 /// the box the tread courses are carved out of.
 const FLIGHT_VIA: (i32, i32, i32, i32, i32, i32) = (FLIGHT.0, FLIGHT.1, 1, 3, FLIGHT.2, FLIGHT.3);
 
+/// **The high table** — a laid dining table across the standard-bearer's walk
+/// from `anchor/march` to `anchor/vantage` (spec-0065 §7).
+///
+/// Built the way the released castle's hall table is built, because that table
+/// is the finding: a row of `oak_fence` legs under an `oak_slab[type=bottom]`
+/// top, with a `spruce_slab[type=bottom]` bench on its near side. Every cell of
+/// the top is standable under the walk model's own rule, and bench-then-top is a
+/// half-block step and a one-block jump, so a body routed from the march to the
+/// vantage takes three cells over the table where the way round is eleven — long
+/// enough that the router's elevation cost (a block of rise or fall is two of
+/// walking) still prefers the climb. The piece declares it furniture, and the
+/// walk goes round.
+///
+/// `(x0, x1, z)` inclusive: the legs stand at `y = 1`, the top at `y = 2`.
+const TABLE: (i32, i32, i32) = (12, 18, 26);
+
+/// The bench on the table's near (south) side: `(x0, x1, z)`, at `y = 1`. The
+/// far side has none — the back wall's levers and the reliquary stand there.
+const BENCH: (i32, i32, i32) = (12, 18, 25);
+
+/// The table's leg, top and bench blocks, each written once.
+const TABLE_LEG: &str = "minecraft:oak_fence";
+const TABLE_TOP: &str = "minecraft:oak_slab";
+const BENCH_BLOCK: &str = "minecraft:spruce_slab";
+
+/// A named place declared as furniture: the region is the furniture's own
+/// blocks (spec-0065 §3), and the anchor carries `role: furniture`.
+struct FurnitureAnchor {
+    name: &'static str,
+    from: [i32; 3],
+    to: [i32; 3],
+    note: &'static str,
+}
+
+/// The furniture inventory. One table, so the element answers one question: a
+/// body walked past a table goes round it.
+const FURNITURE_ANCHORS: &[FurnitureAnchor] = &[FurnitureAnchor {
+    name: "anchor/high-table",
+    from: [TABLE.0, 1, TABLE.2],
+    to: [TABLE.1, 2, TABLE.2],
+    note: "the laid table across the standard-bearer's walk to the vantage: legs and \
+           top are furniture, so the bearer walks round it rather than over it",
+}];
+
 /// The gate inventory. Every opening is a real hole in the divider, so an
 /// unopened gate really does stop a body and `DW0311` has something to prove.
 const GATE_ANCHORS: &[GateAnchor] = &[
@@ -760,6 +821,17 @@ fn block_at(
     {
         return ("minecraft:stone", None);
     }
+    // The high table and its bench (spec-0065 §7).
+    if (TABLE.0..=TABLE.1).contains(&x) && z == TABLE.2 {
+        match y {
+            1 => return (TABLE_LEG, None),
+            2 => return (TABLE_TOP, Some(&[("type", "bottom")])),
+            _ => {}
+        }
+    }
+    if (BENCH.0..=BENCH.1).contains(&x) && z == BENCH.2 && y == 1 {
+        return (BENCH_BLOCK, Some(&[("type", "bottom")]));
+    }
     let (cx0, cx1, cy, cz0, cz1) = CANOPY;
     if y == cy && (cx0..=cx1).contains(&x) && (cz0..=cz1).contains(&z) {
         return ("minecraft:stone", None);
@@ -797,6 +869,9 @@ fn build() -> Structure {
             Some(&[("facing", "north"), ("type", "single")][..]),
         ),
         (BURNING_BLOCK, None),
+        (TABLE_LEG, None),
+        (TABLE_TOP, Some(&[("type", "bottom")][..])),
+        (BENCH_BLOCK, Some(&[("type", "bottom")][..])),
     ] {
         palette.idx(name, props);
     }
@@ -933,22 +1008,53 @@ fn assert_anchors_are_standable(s: &Structure) {
             }
         }
     }
+    // Furniture is declared over the blocks it names, never over air: every cell
+    // of the region is a leg or the top, and at least one of them is a top a
+    // body could otherwise stand on (`DW0888`'s furniture key, asked here first).
+    for f in FURNITURE_ANCHORS {
+        let mut tops = 0usize;
+        for x in f.from[0]..=f.to[0] {
+            for y in f.from[1]..=f.to[1] {
+                for z in f.from[2]..=f.to[2] {
+                    let found = at([x, y, z]);
+                    assert!(
+                        found == TABLE_LEG || found == TABLE_TOP,
+                        "{ID}: furniture `{}` claims {:?}, which holds `{found}` — not the \
+                         table's own blocks",
+                        f.name,
+                        [x, y, z]
+                    );
+                    if found == TABLE_TOP && at([x, y + 1, z]) == "minecraft:air" {
+                        tops += 1;
+                    }
+                }
+            }
+        }
+        assert!(
+            tops > 0,
+            "{ID}: furniture `{}` has no top a body could stand on, so declaring it \
+             withholds nothing",
+            f.name
+        );
+    }
     // A metadata that declares nothing is the vacuous case: the assertions above
     // are all universally quantified and pass over an empty inventory.
     assert!(
         !ANCHORS.is_empty()
             && !GATE_ANCHORS.is_empty()
             && !CONTAINERS.is_empty()
-            && !SOLID_ANCHORS.is_empty(),
+            && !SOLID_ANCHORS.is_empty()
+            && !FURNITURE_ANCHORS.is_empty(),
         "{ID}: the anchor inventory is empty, so nothing above examined anything"
     );
     println!(
         "{ID}: anchor inventory bound — {} point anchor(s), {} container(s), \
-         {} solid anchor(s), {} gate anchor(s) checked against the blocks",
+         {} solid anchor(s), {} gate anchor(s), {} furniture anchor(s) checked against the blocks",
         ANCHORS.len(),
         CONTAINERS.len(),
         SOLID_ANCHORS.len(),
-        GATE_ANCHORS.len()
+        GATE_ANCHORS.len(),
+        FURNITURE_ANCHORS.len()
     );
 }
 
@@ -1450,6 +1556,13 @@ fn metadata() -> serde_json::Value {
         m.insert("block".into(), json!("minecraft:iron_bars"));
         m.insert("note".into(), json!(g.note));
         anchors.insert(g.name.into(), Value::Object(m));
+    }
+    for f in FURNITURE_ANCHORS {
+        let mut m = Map::new();
+        m.insert("region".into(), json!({ "from": f.from, "to": f.to }));
+        m.insert("role".into(), json!("furniture"));
+        m.insert("note".into(), json!(f.note));
+        anchors.insert(f.name.into(), Value::Object(m));
     }
     json!({
         "prefab_id": format!("prefab/{ID}"),
@@ -2655,6 +2768,197 @@ fn write_yard(out: &Path) {
 }
 
 // ---------------------------------------------------------------------------
+// The BANK: a SITE — one box holding a building and the ground it stands on
+// ---------------------------------------------------------------------------
+
+/// The site piece's id.
+///
+/// # What a site is, and why the gallery owes one
+///
+/// Every other gallery piece is a *building*: it is the inside of something,
+/// and everything outside its box belongs to the horizon. A **site** is the
+/// other shape — one box holding the building together with its own ground, its
+/// bank running out to the box's own edge, and mass under that bank. It is what
+/// a whole-map zone exported by `delvec grammar expand` is, and until a
+/// one-area campaign could state its extent it had nowhere to stand: no base
+/// that builds terrain would take it.
+///
+/// Two things are only true of a site, and this piece is where the engine is
+/// asked both:
+///
+/// * **It is seated by its walk plane.** Its bank's top course has to be the
+///   ground outside it, or the party walks up to a cliff it cannot climb. A
+///   piece whose walk plane is its own floor course could not tell whether that
+///   was being done; this one carries three courses of mass under its bank, so
+///   the number moves it.
+/// * **Its outward faces are partly buried and partly seen, in one piece.**
+///   The courses under the bank stand in the valley's own ground; the parapet
+///   stands above it and the document answers for it. Both halves of `DW0885`
+///   bind here, exactly as they do on the quay — where the burying is done by
+///   water instead of by earth.
+const BANK_ID: &str = "gallery-bank";
+
+/// Extent: 24 × 12 × 24.
+///
+/// Wide enough that a body walks a real distance across the bank before it
+/// reaches the parapet, small enough that the valley around it builds in
+/// seconds.
+const BANK_SIZE: [i32; 3] = [24, 12, 24];
+
+/// The local y of the bank's top solid course — the ground a body stands on.
+///
+/// Three courses of mass sit under it (`0..=2`), and that mass is the half of
+/// the site a horizon has to bury. Seated on a `valley` the origin is
+/// `VALLEY_WALK_REF_Y - walk_y`, so this course lands exactly on the gap
+/// floor's own top course and the two grounds are one ground.
+const BANK_GRADE_Y: i32 = 3;
+
+/// How many courses of parapet stand above the bank, on the box's outer ring.
+const BANK_PARAPET: i32 = 3;
+
+/// The x range of the way in, cut through the parapet on the north face.
+const BANK_GATE_X: std::ops::RangeInclusive<i32> = 10..=13;
+
+/// A site: three courses of island mass, a bank across the whole footprint, and
+/// a parapet on the box's own edge with one way through it.
+///
+/// The parapet is what makes the piece answerable, for the quay's reason: a
+/// bank with nothing above its grade course would put every solid boundary cell
+/// at or below the ground outside, the valley would bury all of them, and the
+/// binding would prove nothing about `shown_faces`. What is wanted is both.
+fn build_bank() -> Structure {
+    let mut palette = Palette::new();
+    let mut blocks = Vec::new();
+    let [sx, sy, sz] = BANK_SIZE;
+    let parapet_top = BANK_GRADE_Y + BANK_PARAPET;
+    for x in 0..sx {
+        for y in 0..sy {
+            for z in 0..sz {
+                let ring = x == 0 || x == sx - 1 || z == 0 || z == sz - 1;
+                let gate = z == 0 && BANK_GATE_X.contains(&x);
+                let above_grade = y > BANK_GRADE_Y && y <= parapet_top;
+                // A lamp in the parapet, so the court is lit by something the
+                // piece carries rather than by the sky alone: `DW0210` measures
+                // under the DARKEST reachable sky, and a campaign is free to
+                // declare one this court would not survive on daylight.
+                let lamp = above_grade
+                    && y == BANK_GRADE_Y + 2
+                    && matches!(
+                        (x, z),
+                        (0, 0) | (0, 23) | (23, 0) | (23, 23) | (0, 11) | (23, 11) | (11, 23)
+                    );
+                let name = if y < BANK_GRADE_Y {
+                    "minecraft:stone"
+                } else if y == BANK_GRADE_Y {
+                    "minecraft:grass_block"
+                } else if lamp {
+                    "minecraft:sea_lantern"
+                } else if above_grade && ring && !gate {
+                    "minecraft:cobblestone"
+                } else {
+                    "minecraft:air"
+                };
+                blocks.push(BlockEntry {
+                    pos: [x, y, z],
+                    state: palette.idx(name, None),
+                });
+            }
+        }
+    }
+    Structure {
+        data_version: DATA_VERSION,
+        size: BANK_SIZE,
+        palette: palette.entries,
+        blocks,
+        entities: Vec::new(),
+    }
+}
+
+/// The site's document.
+///
+/// `shown_faces` names the four sides and nothing else, and the exactness is
+/// the demonstration. `down` is the island's underside, which stands in the
+/// valley's own ground; `up` is open sky over a court with no solid cell on the
+/// box's top plane, so there is no side there to show. `DW0885` refuses a
+/// declared side the world buried and a declared side of pure air alike, so
+/// padding this list out to six reds — which is what makes these four a bound
+/// declaration rather than a hatch.
+fn bank_metadata() -> serde_json::Value {
+    serde_json::json!({
+        "prefab_id": format!("prefab/{BANK_ID}"),
+        "structure": {
+            "file": format!("{BANK_ID}.nbt"),
+            "id": BANK_ID,
+            "size": BANK_SIZE,
+            "data_version": DATA_VERSION,
+            "generator": "prefabs/gallery-generator (gallery-prefab-gen)"
+        },
+        "anchors": {
+            "anchor/bank-arrival": {
+                "pos": [11, BANK_GRADE_Y + 1, 2],
+                "facing": "south",
+                "role": "entry",
+                "note": "just inside the way through the parapet — the cell a body arrives at"
+            },
+            "anchor/bank-court": {
+                "pos": [11, BANK_GRADE_Y + 1, 11],
+                "facing": "north",
+                "note": "the middle of the court, where the warden of the bank stands"
+            },
+            "anchor/bank-corner": {
+                "pos": [20, BANK_GRADE_Y + 1, 20],
+                "facing": "north",
+                "note": "the far corner of the bank, inside the parapet"
+            }
+        },
+        "shown_faces": ["east", "north", "south", "west"],
+        "lighting": {
+            "profile": "lit",
+            "measured_min_light": 15,
+            "measured": "2026-09-10",
+            "method": "derived: seven sea lanterns set in the parapet, over a court open to the sky"
+        },
+        "license": {
+            "source": "original",
+            "spdx": "GPL-3.0-or-later",
+            "note": "Original Delvewright project asset (pipeline-code license per prefabs/LICENSE-ASSETS.md). No third-party material ingested.",
+            "provenance": "Generated deterministically by prefabs/gallery-generator (ADR-0006)."
+        }
+    })
+}
+
+fn write_bank(out: &Path) {
+    let s = build_bank();
+    let cells = invariant_cells(&s);
+    invariants::assert_blocks_are_real(BANK_ID, &cells);
+    connections::assert_shape_is_stated(BANK_ID, &cells);
+
+    let nbt = fastnbt::to_bytes(&s).expect("structure serializes to NBT");
+    let mut gz = GzBuilder::new()
+        .mtime(0)
+        .write(Vec::new(), Compression::new(6));
+    gz.write_all(&nbt).expect("gzip write");
+    let framed = gz.finish().expect("gzip finish");
+    std::fs::write(out.join(format!("{BANK_ID}.nbt")), &framed).expect("write bank nbt");
+    let mut meta = bank_metadata();
+    declare_walk_y(BANK_ID, &s, &mut meta);
+    // The measured plane and the designed grade are one number or this piece is
+    // not the site it says it is: a body stands one course above the bank, and
+    // everything the seating rule derives is that number under the horizon's.
+    assert_eq!(
+        meta["walk_y"],
+        serde_json::json!(BANK_GRADE_Y + 1),
+        "{BANK_ID}: the measured walk plane must be the course above the bank"
+    );
+    document::write_preserving(&out.join(format!("{BANK_ID}.json")), &meta);
+    println!(
+        "{BANK_ID}: site piece written — {}x{}x{}, walk plane at local y={}, \
+         {BANK_GRADE_Y} course(s) of mass under the bank, {BANK_PARAPET} of parapet above it",
+        BANK_SIZE[0], BANK_SIZE[1], BANK_SIZE[2], meta["walk_y"],
+    );
+}
+
+// ---------------------------------------------------------------------------
 // The QUAY: the one gallery piece the party can walk OUTSIDE of, on a sea
 // ---------------------------------------------------------------------------
 
@@ -2841,6 +3145,7 @@ fn main() {
     write_shard(out);
     write_yard(out);
     write_quay(out);
+    write_bank(out);
     // The skins destination IS created: unlike the prefab directory it is not an
     // existing library the operator might mistype, it is a fixed subdirectory of
     // the campaign the caller just named, and it is gitignored build output.

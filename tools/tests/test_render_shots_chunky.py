@@ -1,37 +1,35 @@
-"""Guards for `validation/render-shots.sh` — the renderer is named, or the run says so.
+"""Guards for the pinned Chunky core: `validation/render-shots.sh` says whether it
+is installed, `validation/chunky.sh` renders with it or refuses by name, and
+`validation/chunky-install.sh` refuses a build JDK the pinned revision does not
+build under.
 
 Every emitted scene is written for ONE Chunky core, `versions.toml [render]
 chunky_core`: the camera basis, the water-surface offset and the night-vision
-emulation were all read off that core's bytecode. The install line every page
-prints — `java -jar ChunkyLauncher.jar --update snapshot` — installs whatever
-the snapshot CHANNEL serves today, which on the third end-to-end drill was
-`…478.g527cb4a` against a pin of `…474.g156e2bb`. Nothing compared them, so the
-frames that judged a delve came off an unpinned renderer and no artifact said so.
-
-The pinned core cannot be asked for by name — established against the launcher,
-not recalled: `--update` takes a release channel, every channel resolves to
-`snapshot.json`/`latest.json` which name only the newest build, and
-`<updateSite>/lib/<name>.jar` serves today's jar whatever name it is handed
-(asking for the pin returns `content-disposition: …478.g527cb4a.jar`). A refusal
-would therefore be a wall with no remedy behind it, so the script REPORTS, and
-what these tests hold is that it reports, in words, with both revisions in them.
+emulation were all read off that core's bytecode. The launcher's `--update
+snapshot` installs the snapshot CHANNEL's newest build — on the third end-to-end
+drill `…478.g527cb4a` against a pin of `…474.g156e2bb` — and the launcher renders
+with whichever core it chooses. So the pin is installed from source at the
+pinned revision, and a Chunky home holds it when the core jar answers the pinned
+CONTENT digest (`tools/lib/chunky_core.py`) and every library its version record
+names carries the recorded md5.
 
 The perturbation is the drill's own shape: a Chunky home holding a core that is
-not the pin. Nothing else in the ladder can catch it — a scene set over the wrong
-core is byte-identical to one over the right one, and only the pictures differ.
+not the pin, and a jar under the pin's name whose content is not the pin's.
+Nothing else in the ladder can catch either — a scene set over the wrong core is
+byte-identical to one over the right one, and only the pictures differ.
 
 And WHERE it looks is under test too. The check used to read the shell's `$HOME`
 while Chunky reads the JVM's `user.home`, which on macOS is the OS account's and
-not the environment's — so on the drill it printed `NONE installed` with the pin
-in the real directory the whole time, and the `MISMATCH` verdict it also names
-could never be reached on any machine where the two differ. The proof is a core
-planted in each directory in turn (`test_the_check_reads_the_directory_java_reads`).
+not the environment's. The proof is a core planted in each directory in turn
+(`test_a_moved_shell_home_does_not_move_where_the_check_looks`).
 """
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
+import zipfile
 import shutil
 import subprocess
 import sys
@@ -59,20 +57,52 @@ exit 3
 """
 
 
+def core_jar(path: Path, marker: bytes, comment: bytes = b"#built\n") -> Path:
+    """A jar shaped like a Chunky core: a manifest naming its main class, a class
+    file whose bytes are the content, and a `Version.properties` whose comment
+    line is the build's timestamp."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with zipfile.ZipFile(path, "w") as z:
+        z.writestr("META-INF/MANIFEST.MF", "Manifest-Version: 1.0\nMain-Class: se.llbit.chunky.main.Chunky\n")
+        z.writestr("se/llbit/chunky/main/Chunky.class", marker)
+        z.writestr("se/llbit/chunky/main/Version.properties", comment + b"version=pinned\n")
+    return path
+
+
+def digest_of(jar: Path) -> str:
+    r = subprocess.run(
+        [sys.executable, str(REPO / "tools" / "lib" / "chunky_core.py"), "digest", str(jar)],
+        capture_output=True,
+        text=True,
+    )
+    assert r.returncode == 0, r.stderr
+    return r.stdout.strip()
+
+
+PIN_BYTES = b"the pinned core"
+OTHER_BYTES = b"a newer snapshot"
+
+
+def pins_toml(core: str, digest: str) -> str:
+    return (
+        f'[engine]\nversion = "{ENGINE_PIN}"\n\n[render]\nchunky_core = "{core}"\n'
+        f'chunky_core_content_sha256 = "{digest}"\nchunky_source = "file:///nowhere"\n'
+        f'chunky_revision = "the-pinned-revision"\nchunky_build_java = "17"\n'
+    )
+
+
 def tree(tmp_path: Path) -> Path:
     root = tmp_path / "repo"
     (root / "tools" / "lib").mkdir(parents=True)
     (root / "validation").mkdir(parents=True)
-    for name in ("delvec-bin.sh", "versions.py", "chunky-home.sh"):
+    for name in ("delvec-bin.sh", "versions.py", "chunky-home.sh", "chunky_core.py"):
         (root / "tools" / "lib" / name).write_bytes(
             (REPO / "tools" / "lib" / name).read_bytes()
         )
-    (root / "validation" / "render-shots.sh").write_bytes(
-        (REPO / "validation" / "render-shots.sh").read_bytes()
-    )
-    (root / "versions.toml").write_text(
-        f'[engine]\nversion = "{ENGINE_PIN}"\n\n[render]\nchunky_core = "{CORE_PIN}"\n'
-    )
+    for name in ("render-shots.sh", "chunky.sh", "chunky-install.sh"):
+        (root / "validation" / name).write_bytes((REPO / "validation" / name).read_bytes())
+    pin_digest = digest_of(core_jar(tmp_path / "reference" / "pin.jar", PIN_BYTES))
+    (root / "versions.toml").write_text(pins_toml(CORE_PIN, pin_digest))
     return root
 
 
@@ -87,11 +117,37 @@ def build_dir(tmp_path: Path) -> Path:
     return b
 
 
-def chunky_home(tmp_path: Path, cores: list[str]) -> Path:
+def md5(path: Path) -> str:
+    return hashlib.md5(path.read_bytes()).hexdigest().upper()
+
+
+def chunky_home(
+    tmp_path: Path, cores: list[str], *, forged: bool = False, record: bool = True
+) -> Path:
+    """A Chunky home in Chunky's own layout: each core in `lib/` beside a library,
+    and a version record per core naming both with their md5. The pin's jar
+    carries the pin's content; `forged` puts another core's content under the
+    pin's name."""
     home = tmp_path / "chunky"
     (home / "lib").mkdir(parents=True)
+    (home / "versions").mkdir(parents=True)
+    dep = home / "lib" / "gson-2.9.0.jar"
+    dep.write_bytes(b"a library")
     for core in cores:
-        (home / "lib" / f"{core}.jar").write_bytes(b"\x00")
+        content = PIN_BYTES if core == CORE_PIN and not forged else OTHER_BYTES
+        jar = core_jar(home / "lib" / f"{core}.jar", content, comment=b"#another day\n")
+        if record:
+            (home / "versions" / f"{core}.json").write_text(
+                json.dumps(
+                    {
+                        "name": core,
+                        "libraries": [
+                            {"name": jar.name, "md5": md5(jar)},
+                            {"name": dep.name, "md5": md5(dep)},
+                        ],
+                    }
+                )
+            )
     return home
 
 
@@ -136,36 +192,6 @@ def run(
         capture_output=True,
         text=True,
     )
-
-
-def test_the_pinned_core_alone_is_reported_as_the_one_to_render_with(
-    tmp_path: Path,
-) -> None:
-    root = tree(tmp_path)
-    r = run(root, build_dir(tmp_path), chunky_home(tmp_path, [CORE_PIN]))
-
-    assert r.returncode == 0, r.stderr
-    assert f"chunky core: pinned {CORE_PIN} is installed" in r.stdout
-    assert "render with it" in r.stdout
-    assert "MISMATCH" not in r.stdout + r.stderr
-
-
-def test_the_pin_beside_another_core_does_not_claim_it_is_the_renderer(
-    tmp_path: Path,
-) -> None:
-    """The drill machine's real state, which the three-verdict check could not
-    describe: the pin IS installed and the launcher still selects the newer core
-    beside it. `render with it` is a claim this check cannot keep there, so that
-    lib gets its own verdict naming the other core."""
-    root = tree(tmp_path)
-    r = run(root, build_dir(tmp_path), chunky_home(tmp_path, [CORE_PIN, CORE_OTHER]))
-
-    assert r.returncode == 0, r.stderr
-    said = r.stdout + r.stderr
-    assert "NOT the only core there" in said
-    assert CORE_PIN in said and CORE_OTHER in said
-    assert "render with it" not in said
-    assert "MISMATCH" not in said, "the pin is present; this is not a mismatch"
 
 
 def resolve(env_extra: dict[str, str]) -> tuple[str, str]:
@@ -255,52 +281,78 @@ def test_an_unresolvable_home_says_so_instead_of_guessing_quietly(
     assert "UNVERIFIED" in source
 
 
-def test_a_core_that_is_not_the_pin_is_reported_with_both_revisions(
-    tmp_path: Path,
-) -> None:
-    """The drill's own machine: the pin says 474, `--update snapshot` gave 478."""
+def test_the_pinned_core_is_reported_as_installed(tmp_path: Path) -> None:
+    root = tree(tmp_path)
+    r = run(root, build_dir(tmp_path), chunky_home(tmp_path, [CORE_PIN]))
+
+    assert r.returncode == 0, r.stderr
+    assert f"chunky core: pinned {CORE_PIN} is installed" in r.stdout
+    assert "content digest verified" in r.stdout
+    assert "chunky-install.sh" not in r.stdout + r.stderr
+
+
+def test_the_pin_beside_another_core_is_still_the_pin(tmp_path: Path) -> None:
+    """The drill machine's real state: the pin and a newer core side by side.
+    `chunky.sh` names its classpath, so the other core does not decide the
+    renderer and the home holds the pin."""
+    root = tree(tmp_path)
+    r = run(root, build_dir(tmp_path), chunky_home(tmp_path, [CORE_PIN, CORE_OTHER]))
+
+    assert r.returncode == 0, r.stderr
+    assert "content digest verified" in r.stdout
+
+
+def test_a_core_that_is_not_the_pin_names_the_installer(tmp_path: Path) -> None:
+    """The drill's own machine: the pin says 474, `--update snapshot` gave 478.
+    Reported with both revisions and the command that installs the pin; the
+    shot set itself is still written, because this step renders nothing."""
     root = tree(tmp_path)
     r = run(root, build_dir(tmp_path), chunky_home(tmp_path, [CORE_OTHER]))
 
     assert r.returncode == 0, r.stderr
     said = r.stdout + r.stderr
-    assert "MISMATCH" in said
-    # Both revisions, named. A report that says only "mismatch" is a report the
-    # reader cannot act on or contradict.
-    assert CORE_PIN in said
+    assert f"the pinned core {CORE_PIN} is not installed" in said
     assert CORE_OTHER in said
-    assert "not refused" in said
+    assert "chunky-install.sh" in said
+    assert "refuses to render" in said
 
 
-def test_no_core_installed_says_the_update_line_does_not_install_the_pin(
-    tmp_path: Path,
-) -> None:
+def test_a_jar_under_the_pins_name_is_held_to_its_content(tmp_path: Path) -> None:
+    """A name is not an identity: the update site serves today's jar under any
+    name. The forged jar carries another core's classes under the pin's name."""
+    root = tree(tmp_path)
+    r = run(root, build_dir(tmp_path), chunky_home(tmp_path, [CORE_PIN], forged=True))
+
+    assert r.returncode == 0, r.stderr
+    said = r.stdout + r.stderr
+    assert "is named as the pin and is not it" in said
+    assert "content digest verified" not in said
+
+
+def test_no_core_installed_names_the_installer(tmp_path: Path) -> None:
     root = tree(tmp_path)
     r = run(root, build_dir(tmp_path), None)
 
     assert r.returncode == 0, r.stderr
     said = r.stdout + r.stderr
-    assert "chunky core: NONE installed" in said
-    assert CORE_PIN in said
-    assert "--update snapshot" in said
+    assert f"the pinned core {CORE_PIN} is not installed" in said
+    assert "chunky-install.sh" in said
 
 
 def test_the_pin_is_read_and_never_restated(tmp_path: Path) -> None:
-    """A pin has one home. The script names no revision of its own — proved by
-    moving the registry's value and reading what the script then says."""
+    """A pin has one home. The scripts name no revision of their own — proved by
+    moving the registry's value and reading what the report then says."""
     root = tree(tmp_path)
     moved = "chunky-core-2.5.0-SNAPSHOT.999.gdeadbee"
-    (root / "versions.toml").write_text(
-        f'[engine]\nversion = "{ENGINE_PIN}"\n\n[render]\nchunky_core = "{moved}"\n'
-    )
+    digest = (root / "versions.toml").read_text().split('chunky_core_content_sha256 = "')[1].split('"')[0]
+    (root / "versions.toml").write_text(pins_toml(moved, digest))
     r = run(root, build_dir(tmp_path), chunky_home(tmp_path, [CORE_PIN]))
 
     assert r.returncode == 0, r.stderr
     said = r.stdout + r.stderr
-    assert moved in said, "the script did not read the pin it was given"
-    assert "MISMATCH" in said
-    # And no revision literal of its own survives in the source.
-    assert CORE_PIN not in (REPO / "validation" / "render-shots.sh").read_text()
+    assert f"the pinned core {moved} is not installed" in said
+    for script in ("render-shots.sh", "chunky.sh", "chunky-install.sh"):
+        assert CORE_PIN not in (REPO / "validation" / script).read_text(), script
 
 
 def test_an_unreadable_pin_refuses_rather_than_reporting_nothing(tmp_path: Path) -> None:
@@ -310,3 +362,153 @@ def test_an_unreadable_pin_refuses_rather_than_reporting_nothing(tmp_path: Path)
 
     assert r.returncode == 1
     assert "[render].chunky_core" in r.stderr
+
+
+# ---------------------------------------------------------------------------
+# The step that renders
+# ---------------------------------------------------------------------------
+
+JAVA_STUB = """#!/usr/bin/env bash
+printf '%s\\n' "$@" > "$JAVA_ARGS_OUT"
+"""
+
+
+def render(root: Path, home: Path, *args: str) -> tuple[subprocess.CompletedProcess, Path]:
+    bindir = root.parent / "javabin"
+    bindir.mkdir(exist_ok=True)
+    java = bindir / "java"
+    java.write_text(JAVA_STUB)
+    java.chmod(0o755)
+    shim = root.parent / "shim"
+    shim.mkdir(exist_ok=True)
+    if not (shim / "python3").exists():
+        (shim / "python3").symlink_to(sys.executable)
+    out = root.parent / "java-args.txt"
+    env = dict(os.environ)
+    env["PATH"] = os.pathsep.join([str(bindir), str(shim), "/usr/bin", "/bin"])
+    env["DELVEWRIGHT_CHUNKY_HOME"] = str(home)
+    env["JAVA_ARGS_OUT"] = str(out)
+    r = subprocess.run(
+        ["bash", str(root / "validation" / "chunky.sh"), *args],
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    return r, out
+
+
+def test_chunky_sh_renders_with_the_pinned_classpath(tmp_path: Path) -> None:
+    root = tree(tmp_path)
+    home = chunky_home(tmp_path, [CORE_PIN, CORE_OTHER])
+    r, out = render(root, home, "-scene-dir", "s", "-render", "x")
+
+    assert r.returncode == 0, r.stderr
+    argv = out.read_text().splitlines()
+    assert argv[0] == f"-Dchunky.home={home}"
+    classpath = argv[argv.index("-cp") + 1].split(os.pathsep)
+    assert classpath == [str(home / "lib" / f"{CORE_PIN}.jar"), str(home / "lib" / "gson-2.9.0.jar")]
+    assert CORE_OTHER not in argv[argv.index("-cp") + 1]
+    assert argv[argv.index("-cp") + 2] == "se.llbit.chunky.main.Chunky"
+    assert argv[-4:] == ["-scene-dir", "s", "-render", "x"]
+    assert f"rendering with {CORE_PIN}" in r.stderr
+
+
+def test_chunky_sh_refuses_a_home_without_the_pin(tmp_path: Path) -> None:
+    root = tree(tmp_path)
+    r, out = render(root, chunky_home(tmp_path, [CORE_OTHER]), "-render", "x")
+
+    assert r.returncode == 2
+    assert not out.exists(), "java was started"
+    assert f"the pinned core {CORE_PIN} is not installed" in r.stderr
+    assert "chunky-install.sh" in r.stderr
+    assert "refusing to render" in r.stderr
+
+
+def test_chunky_sh_refuses_a_forged_pin(tmp_path: Path) -> None:
+    root = tree(tmp_path)
+    r, out = render(root, chunky_home(tmp_path, [CORE_PIN], forged=True), "-render", "x")
+
+    assert r.returncode == 2
+    assert not out.exists(), "java was started"
+    assert "is named as the pin and is not it" in r.stderr
+
+
+def test_chunky_sh_refuses_a_library_that_is_not_the_recorded_one(tmp_path: Path) -> None:
+    root = tree(tmp_path)
+    home = chunky_home(tmp_path, [CORE_PIN])
+    (home / "lib" / "gson-2.9.0.jar").write_bytes(b"something else")
+    r, out = render(root, home, "-render", "x")
+
+    assert r.returncode == 2
+    assert not out.exists(), "java was started"
+    assert "does not carry the md5" in r.stderr
+
+
+def test_chunky_sh_refuses_a_pin_with_no_version_record(tmp_path: Path) -> None:
+    root = tree(tmp_path)
+    r, out = render(root, chunky_home(tmp_path, [CORE_PIN], record=False), "-render", "x")
+
+    assert r.returncode == 2
+    assert not out.exists(), "java was started"
+    assert "names the libraries it runs with" in r.stderr
+
+
+# ---------------------------------------------------------------------------
+# The content digest and the installer's own refusals
+# ---------------------------------------------------------------------------
+
+
+def test_the_digest_is_over_content_not_over_the_zip(tmp_path: Path) -> None:
+    """Two builds of one revision differ in the zip's timestamps and in the
+    `Version.properties` comment; a different revision differs in a class."""
+    a = core_jar(tmp_path / "a.jar", PIN_BYTES, comment=b"#Sun Jul 26\n")
+    b = core_jar(tmp_path / "b.jar", PIN_BYTES, comment=b"#Mon Sep 14\n")
+    c = core_jar(tmp_path / "c.jar", OTHER_BYTES, comment=b"#Sun Jul 26\n")
+    assert a.read_bytes() != b.read_bytes()
+    assert digest_of(a) == digest_of(b)
+    assert digest_of(a) != digest_of(c)
+
+
+def install(root: Path, home: Path, java_home: Path | None) -> subprocess.CompletedProcess:
+    shim = root.parent / "shim"
+    shim.mkdir(exist_ok=True)
+    if not (shim / "python3").exists():
+        (shim / "python3").symlink_to(sys.executable)
+    env = dict(os.environ)
+    env["PATH"] = os.pathsep.join([str(shim), "/usr/bin", "/bin"])
+    env["DELVEWRIGHT_CHUNKY_HOME"] = str(home)
+    env.pop("JAVA_HOME", None)
+    args = ["bash", str(root / "validation" / "chunky-install.sh"), "--work", str(root.parent / "work")]
+    if java_home is not None:
+        args += ["--java-home", str(java_home)]
+    return subprocess.run(args, env=env, capture_output=True, text=True)
+
+
+def fake_jdk(tmp_path: Path, major: str) -> Path:
+    home = tmp_path / f"jdk-{major}"
+    (home / "bin").mkdir(parents=True)
+    java = home / "bin" / "java"
+    java.write_text(f'#!/usr/bin/env bash\necho \'openjdk version "{major}.0.1" 2026-01-01\' >&2\n')
+    java.chmod(0o755)
+    return home
+
+
+def test_the_installer_leaves_a_home_that_holds_the_pin_alone(tmp_path: Path) -> None:
+    root = tree(tmp_path)
+    r = install(root, chunky_home(tmp_path, [CORE_PIN]), None)
+
+    assert r.returncode == 0, r.stderr
+    assert "nothing to do" in r.stdout
+    assert not (root.parent / "work").exists()
+
+
+def test_the_installer_refuses_a_jdk_the_revision_does_not_build_under(tmp_path: Path) -> None:
+    root = tree(tmp_path)
+    home = chunky_home(tmp_path, [CORE_OTHER])
+    for java_home in (fake_jdk(tmp_path, "21"), None):
+        r = install(root, home, java_home)
+        assert r.returncode == 2, r.stderr
+        assert "builds under JDK 17" in r.stderr
+        assert "--java-home" in r.stderr
+        assert not (root.parent / "work").exists(), "a build started"
+    assert not (home / "lib" / f"{CORE_PIN}.jar").exists()

@@ -851,7 +851,7 @@ mod tests {
             happening: None,
             verb: Verb::MoveNpc {
                 npc: NpcId("npc/keeper".into()),
-                to_anchor: AnchorId("anchor/door".into()),
+                to: delvewright_dsl::Mark::at(AnchorId("anchor/door".into())),
                 speed: None,
                 on_arrive: inner,
             },

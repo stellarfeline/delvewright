@@ -19,7 +19,14 @@
 //!
 //! ```text
 //! [DelveNote] pos=[x,y,z] area=<area-id|none> quests=<obj-id:v,…> nearest_npc=<npc-id|none>
+//! [DelveNoteQuests] <obj-id:v,…>
 //! ```
+//!
+//! A chat message holds at most 256 characters (`commands::MESSAGE_MAX_CHARS`),
+//! and a campaign's objectives do not fit one: the `quests=` field carries the
+//! objectives that fit its line, and each `[DelveNoteQuests]` line after it — in
+//! the same function, so consecutive in the log — carries the next ones. The
+//! harvester appends a continuation line's objectives to the stamp before it.
 //!
 //! - **pos** — an **entity-NBT macro read** of the triggering player: the handler
 //!   reads `Pos[0..2]` off the player entity into `storage <ns>:note` as ints, then
@@ -50,6 +57,32 @@
 //! `creator-datapack/layout.json`: `area → prefab` and the flat objective states →
 //! per-quest `quest_state`. Layout data therefore lives in one place (the overlay's
 //! `layout.json`) and is the harvester's only campaign input.
+//!
+//! ## A showcase camera placed by hand (spec-0069)
+//!
+//! Two more triggers, in every overlay:
+//!
+//! - **`dw.free`** leaves the body and comes back to it. The first fire records
+//!   where the player stands, which way they look and their game mode on a
+//!   marker at that spot (its chunk force-loaded unless something already forces
+//!   it), and puts them in spectator; the second puts the game mode back,
+//!   teleports them to the marker and removes it (and the force-load it added).
+//!   A datapack function runs at the server's function permission level (2 by
+//!   default), which `gamemode` and `forceload` need, so a player nobody opped
+//!   can fly.
+//! - **`dw.cam set <n>`** (`/trigger dw.cam` is slot 1) stamps the player's eye
+//!   and rotation into the log as fixed-point integers:
+//!
+//! ```text
+//! [DelveCamera] slot=<n> eye=<x_mb>,<y_mb>,<z_mb> yaw=<centi-degrees> pitch=<centi-degrees> in=<air|block>
+//! ```
+//!
+//!   The eye is `execute anchored eyes positioned ^ ^ ^`, read off a one-command
+//!   marker in milli-blocks, so it is the eye in any pose — standing, sneaking,
+//!   spectating inside a wall. The rotation is the entity's own `Rotation` in
+//!   centi-degrees, the camera record's convention. `in` says whether the eye's
+//!   cell held anything but air; it refuses nothing. `delvec harvest` divides
+//!   the integers back out into `camera-report.json`.
 
 use serde_json::json;
 
@@ -129,6 +162,7 @@ fn emit_functions(plan: &Plan, inv: &Inventory) -> Vec<(String, String)> {
     let mut init = vec![format!(
         "scoreboard objectives add {NOTE_OBJECTIVE} trigger"
     )];
+    init.extend(camera_init());
     init.extend(rehearsal_init(ns, inv));
     fns.push(("init".to_string(), lines(&init)));
 
@@ -139,6 +173,7 @@ fn emit_functions(plan: &Plan, inv: &Inventory) -> Vec<(String, String)> {
             "execute as @a[scores={{{NOTE_OBJECTIVE}=1..}}] at @s run function {ns}:creator/stamp"
         ),
     ];
+    tick.extend(camera_tick(ns));
     tick.extend(rehearsal_tick(ns, inv));
     fns.push(("tick".to_string(), lines(&tick)));
 
@@ -190,23 +225,394 @@ fn emit_functions(plan: &Plan, inv: &Inventory) -> Vec<(String, String)> {
     stamp.push(format!("function {ns}:creator/emit with storage {storage}"));
     fns.push(("stamp".to_string(), lines(&stamp)));
 
-    // emit: the single macro line. `say` so it reaches the server stdout log
-    // (see module docs). Objective ids are baked into the text; only the live
-    // values are macro-substituted.
-    let quests: Vec<String> = objectives(plan)
+    // emit: the stamp and its continuation lines. `say` so they reach the server
+    // stdout log (see module docs). Objective ids are baked into the text; only
+    // the live values are macro-substituted.
+    let entries: Vec<String> = objectives(plan)
         .into_iter()
         .map(|(key, obj_id)| format!("{obj_id}:$({key})"))
         .collect();
-    let quests = quests.join(",");
-    let macro_line = format!(
-        "$say [DelveNote] pos=[$(x),$(y),$(z)] area=$(area) quests={quests} nearest_npc=$(npc)"
-    );
-    fns.push(("emit".to_string(), lines(&[macro_line])));
+    let longest = |ids: &mut dyn Iterator<Item = usize>| ids.max().unwrap_or(0).max(4);
+    let area_chars = longest(&mut plan.areas.iter().map(|a| a.area_id.chars().count()));
+    let npc_chars = longest(&mut plan.npcs.iter().map(|n| n.npc_id.chars().count()));
+    let head = "$say [DelveNote] pos=[$(x),$(y),$(z)] area=$(area) nearest_npc=$(npc) quests=";
+    // The line's longest substitution: three coordinates, the longest area and
+    // NPC id, and every objective value at an integer's full width.
+    let head_chars = substituted_chars(head) + 3 * INT_CHARS + area_chars + npc_chars;
+    fns.push((
+        "emit".to_string(),
+        lines(&chunk_stamp(head, head_chars, &entries)),
+    ));
 
+    fns.extend(camera_fns(ns));
     fns.extend(rehearsal_fns(ns, inv));
 
     fns.sort_by(|a, b| a.0.cmp(&b.0));
     fns
+}
+
+// ---------------------------------------------------------------------------
+// A showcase camera placed by hand (spec-0069)
+// ---------------------------------------------------------------------------
+
+/// The trigger that stamps the player's eye and rotation (`/trigger dw.cam set <slot>`).
+pub const CAMERA_TRIGGER: &str = "dw.cam";
+/// The trigger that leaves the body and comes back to it.
+pub const FREE_TRIGGER: &str = "dw.free";
+/// Scratch registers for both handlers.
+const CAM_OBJ: &str = "dw.cm";
+/// A player's free-flight id, and the id of the marker holding their place.
+const FREE_ID: &str = "dw.fid";
+/// The game mode the player left (`playerGameType`), on their marker.
+const FREE_MODE: &str = "dw.fmode";
+/// `1` on a marker whose chunk this overlay force-loaded, so only that is undone.
+const FREE_LOADED: &str = "dw.fload";
+/// Tag on a player who is out of their body.
+const FREE_TAG: &str = "dw_free";
+/// Tag on the marker holding a player's place.
+const FREE_HOME: &str = "dw_free_home";
+/// Tag on the one marker a handler is working with.
+const FREE_THIS: &str = "dw_free_this";
+/// Tag on the one-command eye probe.
+const CAM_PROBE: &str = "dw_cam_probe";
+/// `playerGameType` → the `gamemode` that restores it.
+const GAME_MODES: [(i32, &str); 4] = [
+    (0, "survival"),
+    (1, "creative"),
+    (2, "adventure"),
+    (3, "spectator"),
+];
+
+fn camera_storage(ns: &str) -> String {
+    format!("{ns}:camera")
+}
+
+/// `creator/init` additions: the two triggers and their scratch objectives.
+fn camera_init() -> Vec<String> {
+    let mut out: Vec<String> = [CAMERA_TRIGGER, FREE_TRIGGER]
+        .iter()
+        .map(|t| format!("scoreboard objectives add {t} trigger"))
+        .collect();
+    for obj in [CAM_OBJ, FREE_ID, FREE_MODE, FREE_LOADED] {
+        out.push(format!("scoreboard objectives add {obj} dummy"));
+    }
+    out
+}
+
+/// `creator/tick` additions: arm both triggers for everyone and dispatch a fired
+/// one. Never a reset here — see [`rehearsal_tick`] for why a tick that resets a
+/// trigger it enables disarms it.
+fn camera_tick(ns: &str) -> Vec<String> {
+    vec![
+        format!("scoreboard players enable @a {CAMERA_TRIGGER}"),
+        format!("scoreboard players enable @a {FREE_TRIGGER}"),
+        format!(
+            "execute as @a[scores={{{CAMERA_TRIGGER}=1..}}] at @s run function {ns}:creator/camera/cam"
+        ),
+        format!(
+            "execute as @a[scores={{{FREE_TRIGGER}=1..}}] at @s run function {ns}:creator/camera/free"
+        ),
+    ]
+}
+
+/// Every `creator/camera/*` function, as `(local-name, body)`.
+fn camera_fns(ns: &str) -> Vec<(String, String)> {
+    let storage = camera_storage(ns);
+    let probe = format!("@e[type=minecraft:marker,tag={CAM_PROBE},limit=1]");
+    let this = format!("@e[type=minecraft:marker,tag={FREE_THIS},limit=1]");
+    let f = |name: &str| format!("camera/{name}");
+    let mut fns: Vec<(String, String)> = Vec::new();
+
+    // --- dw.cam: runs `as <player> at <player>` -----------------------------
+    let mut cam = vec![
+        format!(
+            "execute store result storage {storage} slot int 1 run scoreboard players get @s {CAMERA_TRIGGER}"
+        ),
+        format!("scoreboard players reset @s {CAMERA_TRIGGER}"),
+        format!("kill @e[type=minecraft:marker,tag={CAM_PROBE}]"),
+        format!(
+            "execute anchored eyes positioned ^ ^ ^ run summon minecraft:marker ~ ~ ~ {{Tags:[\"{CAM_PROBE}\"]}}"
+        ),
+    ];
+    for (i, axis) in ["x", "y", "z"].iter().enumerate() {
+        cam.push(format!(
+            "execute store result storage {storage} {axis} int 1 run data get entity {probe} Pos[{i}] 1000"
+        ));
+    }
+    for (i, key) in ["yaw", "pitch"].iter().enumerate() {
+        cam.push(format!(
+            "execute store result storage {storage} {key} int 1 run data get entity @s Rotation[{i}] 100"
+        ));
+    }
+    cam.push(format!(
+        "data modify storage {storage} in set value \"air\""
+    ));
+    cam.push(format!(
+        "execute anchored eyes positioned ^ ^ ^ unless block ~ ~ ~ minecraft:air unless block ~ ~ ~ \
+         minecraft:cave_air unless block ~ ~ ~ minecraft:void_air run data modify storage {storage} in \
+         set value \"block\""
+    ));
+    cam.push(format!("kill @e[type=minecraft:marker,tag={CAM_PROBE}]"));
+    cam.push(format!(
+        "function {ns}:creator/camera/stamp with storage {storage}"
+    ));
+    fns.push((f("cam"), lines(&cam)));
+    fns.push((
+        f("stamp"),
+        lines(&[
+            "$say [DelveCamera] slot=$(slot) eye=$(x),$(y),$(z) yaw=$(yaw) pitch=$(pitch) in=$(in)"
+                .to_string(),
+        ]),
+    ));
+
+    // --- dw.free: runs `as <player> at <player>` ----------------------------
+    fns.push((
+        f("free"),
+        lines(&[
+            format!("scoreboard players reset @s {FREE_TRIGGER}"),
+            format!(
+                "execute unless score @s {FREE_ID} matches 1.. run function {ns}:creator/camera/free_id"
+            ),
+            format!("scoreboard players operation #fid {CAM_OBJ} = @s {FREE_ID}"),
+            format!("tag @e[type=minecraft:marker,tag={FREE_THIS}] remove {FREE_THIS}"),
+            // Every place marker carries its id from the summon on; seeding it
+            // here too keeps the comparison below a comparison between entries.
+            format!(
+                "scoreboard players add @e[type=minecraft:marker,tag={FREE_HOME}] {FREE_ID} 0"
+            ),
+            format!(
+                "execute as @e[type=minecraft:marker,tag={FREE_HOME}] if score @s {FREE_ID} = #fid {CAM_OBJ} run tag @s add {FREE_THIS}"
+            ),
+            // Read the state once, then branch: the two arms change what the
+            // test reads, so each is chosen before either runs.
+            format!("scoreboard players set #back {CAM_OBJ} 0"),
+            format!(
+                "execute if entity @s[tag={FREE_TAG}] if entity {this} run scoreboard players set #back {CAM_OBJ} 1"
+            ),
+            format!(
+                "execute if score #back {CAM_OBJ} matches 1 run function {ns}:creator/camera/free_back"
+            ),
+            format!(
+                "execute if score #back {CAM_OBJ} matches 0 run function {ns}:creator/camera/free_leave"
+            ),
+            format!("tag @e[type=minecraft:marker,tag={FREE_THIS}] remove {FREE_THIS}"),
+        ]),
+    ));
+    fns.push((
+        f("free_id"),
+        lines(&[
+            format!("scoreboard players add #next {CAM_OBJ} 1"),
+            format!("scoreboard players operation @s {FREE_ID} = #next {CAM_OBJ}"),
+        ]),
+    ));
+    // Leave: a stale place of this player's (a body that left twice without
+    // coming back) is dropped first, so one player holds one place.
+    let leave = vec![
+        format!(
+            "execute as {this} at @s if score @s {FREE_LOADED} matches 1 run forceload remove ~ ~"
+        ),
+        format!("kill @e[type=minecraft:marker,tag={FREE_THIS}]"),
+        format!("summon minecraft:marker ~ ~ ~ {{Tags:[\"{FREE_HOME}\",\"{FREE_THIS}\"]}}"),
+        format!("tp {this} ~ ~ ~ ~ ~"),
+        format!("scoreboard players operation {this} {FREE_ID} = #fid {CAM_OBJ}"),
+        format!(
+            "execute store result score {this} {FREE_MODE} run data get entity @s playerGameType"
+        ),
+        format!("execute store success score #forced {CAM_OBJ} run forceload query ~ ~"),
+        format!("scoreboard players set {this} {FREE_LOADED} 0"),
+        format!(
+            "execute if score #forced {CAM_OBJ} matches 0 run scoreboard players set {this} {FREE_LOADED} 1"
+        ),
+        format!("execute if score #forced {CAM_OBJ} matches 0 run forceload add ~ ~"),
+        format!("tag @s add {FREE_TAG}"),
+        "gamemode spectator @s".to_string(),
+    ];
+    fns.push((f("free_leave"), lines(&leave)));
+    let mut back = vec![format!(
+        "execute store result score #mode {CAM_OBJ} run scoreboard players get {this} {FREE_MODE}"
+    )];
+    for (value, mode) in GAME_MODES {
+        back.push(format!(
+            "execute if score #mode {CAM_OBJ} matches {value} run gamemode {mode} @s"
+        ));
+    }
+    back.extend([
+        format!("tp @s {this}"),
+        format!(
+            "execute as {this} at @s if score @s {FREE_LOADED} matches 1 run forceload remove ~ ~"
+        ),
+        format!("kill @e[type=minecraft:marker,tag={FREE_THIS}]"),
+        format!("tag @s remove {FREE_TAG}"),
+    ]);
+    fns.push((f("free_back"), lines(&back)));
+    fns
+}
+
+/// Standing eye height, milli-blocks — the metrics table's figure, the number a
+/// test holds the overlay's `anchored eyes` read to.
+const STANDING_EYE_MB: i32 = (delvewright_dsl::metrics::PLAYER_EYE_HEIGHT * 1000.0) as i32;
+
+/// The height the camera templates stand their dummy at: above anything a
+/// campaign builds and below the build limit, so the eye's cell is air unless
+/// the template puts a block there.
+const CAMERA_TEST_Y: i32 = 300;
+
+/// The PackTest templates that prove the hand camera on a server (spec-0069
+/// criteria 2 and 3), as `(path, body)`. They drive the overlay's own handlers,
+/// so the server that runs them loads `creator-datapack/` beside the suite.
+///
+/// `column` is a block column the campaign's own setup force-loads (the corner
+/// of its first area). The templates stand there rather than at the test's own
+/// position: PackTest places a batch millions of blocks out, where a position in
+/// milli-blocks overflows a score and every horizontal reading saturates to the
+/// same number — a comparison that could not fail.
+///
+/// Each settles its dummy in open air for two ticks — a player's pose is
+/// recomputed on its tick, and the eye height follows the pose — and then does
+/// everything it asserts inside one tick, so no sibling in the batch can move
+/// the dummy between the stamp and the reading it is held to.
+pub fn packtests(ns: &str, title: &str, column: [i32; 2]) -> Vec<(String, String)> {
+    let [cx, cz] = column;
+    let at = |dx: f64, y: i32, dz: f64| {
+        format!(
+            "{} {y} {}",
+            f64::from(cx) + 0.5 + dx,
+            f64::from(cz) + 0.5 + dz
+        )
+    };
+    let storage = camera_storage(ns);
+    let path = |name: &str| format!("packtest-datapack/data/{ns}/test/{name}.mcfunction");
+    let y = CAMERA_TEST_Y;
+    // The eye, read back off the stamp's storage, against the dummy's own
+    // position plus the eye height: within one milli-block on every axis.
+    let eye_within = |tag: &str, eye_mb: i32| -> Vec<String> {
+        let mut out = Vec::new();
+        for (i, axis) in ["x", "y", "z"].iter().enumerate() {
+            let (want, got) = (format!("#{tag}_w{axis}"), format!("#{tag}_g{axis}"));
+            out.push(format!(
+                "execute store result score {want} {CAM_OBJ} run data get entity @s Pos[{i}] 1000"
+            ));
+            if *axis == "y" {
+                out.push(format!("scoreboard players add {want} {CAM_OBJ} {eye_mb}"));
+            }
+            out.push(format!(
+                "execute store result score {got} {CAM_OBJ} run data get storage {storage} {axis}"
+            ));
+            out.push(format!(
+                "scoreboard players operation {got} {CAM_OBJ} -= {want} {CAM_OBJ}"
+            ));
+            out.push(format!("assert score {got} {CAM_OBJ} matches -1..1"));
+        }
+        out
+    };
+    // The slot, the rotation and the verdict the stamp substitutes, read off the
+    // storage its macro reads. PackTest's chat condition hears system messages
+    // only, and `say` is a chat message, so the log line itself is held by the
+    // live flow (`validation/rehearsal-flow.sh`).
+    let stamped = |tag: &str, snbt: &str| -> Vec<String> {
+        vec![
+            format!(
+                "execute store success score #{tag}_stamp {CAM_OBJ} if data storage {storage} {snbt}"
+            ),
+            format!("assert score #{tag}_stamp {CAM_OBJ} matches 1"),
+        ]
+    };
+    let fire = |slot: u32| -> Vec<String> {
+        vec![
+            format!("scoreboard players set @s {CAMERA_TRIGGER} {slot}"),
+            format!("execute at @s run function {ns}:creator/camera/cam"),
+        ]
+    };
+    let mut tests = Vec::new();
+
+    // --- standing, in open air ----------------------------------------------
+    let mut stand = vec![
+        format!(
+            "#> {title}: `/trigger dw.cam` stamps a standing player's eye and rotation (spec-0069)"
+        ),
+        "# @dummy".to_string(),
+        "# @timeout 100".to_string(),
+        String::new(),
+        "gamemode adventure @s".to_string(),
+        format!("tp @s {} 30 15", at(0.0, y, 0.0)),
+        "await delay 2t".to_string(),
+        "gamemode adventure @s".to_string(),
+        format!("tp @s {} 30 15", at(0.0, y, 0.0)),
+    ];
+    stand.extend(fire(1));
+    stand.extend(stamped("cst", "{slot:1,yaw:3000,pitch:1500,in:\"air\"}"));
+    stand.extend(eye_within("cst", STANDING_EYE_MB));
+    tests.push((path("creator_camera_standing"), lines(&stand)));
+
+    // --- spectating inside a solid block --------------------------------------
+    let eye_cell = y + 1;
+    let mut wall = vec![
+        format!(
+            "#> {title}: `/trigger dw.cam` stamps a spectator's eye inside a block, and refuses nothing (spec-0069)"
+        ),
+        "# @dummy".to_string(),
+        "# @timeout 100".to_string(),
+        String::new(),
+        "gamemode spectator @s".to_string(),
+        format!("tp @s {} -90 -30", at(0.0, y, 0.0)),
+        "await delay 2t".to_string(),
+        "gamemode spectator @s".to_string(),
+        format!("setblock {cx} {eye_cell} {cz} minecraft:stone"),
+        format!("tp @s {} -90 -30", at(0.0, y, 0.0)),
+    ];
+    wall.extend(fire(7));
+    wall.extend(stamped(
+        "cwl",
+        "{slot:7,yaw:-9000,pitch:-3000,in:\"block\"}",
+    ));
+    wall.extend(eye_within("cwl", STANDING_EYE_MB));
+    wall.push(format!("setblock {cx} {eye_cell} {cz} minecraft:air"));
+    wall.push("gamemode adventure @s".to_string());
+    tests.push((path("creator_camera_in_a_block"), lines(&wall)));
+
+    // --- dw.free: leave, fly, come back ---------------------------------------
+    let mut free = vec![
+        format!("#> {title}: `/trigger dw.free` leaves the body and returns to it (spec-0069)"),
+        "# @dummy".to_string(),
+        "# @timeout 100".to_string(),
+        String::new(),
+        "gamemode adventure @s".to_string(),
+        format!("tp @s {} 45 10", at(0.0, y, 0.0)),
+        format!("execute store result score #cfr_x {CAM_OBJ} run data get entity @s Pos[0] 1000"),
+        format!("execute store result score #cfr_y {CAM_OBJ} run data get entity @s Pos[1] 1000"),
+        format!("execute store result score #cfr_z {CAM_OBJ} run data get entity @s Pos[2] 1000"),
+        format!("scoreboard players set @s {FREE_TRIGGER} 1"),
+        format!("execute at @s run function {ns}:creator/camera/free"),
+        "assert entity @s[gamemode=spectator]".to_string(),
+        format!("tp @s {} 200 -40", at(6.0, y - 10, -5.0)),
+        format!("scoreboard players set @s {FREE_TRIGGER} 1"),
+        format!("execute at @s run function {ns}:creator/camera/free"),
+        "assert entity @s[gamemode=adventure]".to_string(),
+    ];
+    for (i, axis) in ["x", "y", "z"].iter().enumerate() {
+        free.push(format!(
+            "execute store result score #cfr_g{axis} {CAM_OBJ} run data get entity @s Pos[{i}] 1000"
+        ));
+        free.push(format!(
+            "scoreboard players operation #cfr_g{axis} {CAM_OBJ} -= #cfr_{axis} {CAM_OBJ}"
+        ));
+        free.push(format!("assert score #cfr_g{axis} {CAM_OBJ} matches 0"));
+    }
+    free.push(format!(
+        "execute store result score #cfr_yaw {CAM_OBJ} run data get entity @s Rotation[0] 100"
+    ));
+    free.push(format!("assert score #cfr_yaw {CAM_OBJ} matches 4500"));
+    // The place it kept is gone with the return.
+    free.push(format!(
+        "scoreboard players operation #cfr_fid {CAM_OBJ} = @s {FREE_ID}"
+    ));
+    free.push(format!("scoreboard players set #cfr_left {CAM_OBJ} 0"));
+    free.push(format!(
+        "execute as @e[type=minecraft:marker,tag={FREE_HOME}] if score @s {FREE_ID} = #cfr_fid {CAM_OBJ} run scoreboard players add #cfr_left {CAM_OBJ} 1"
+    ));
+    free.push(format!("assert score #cfr_left {CAM_OBJ} matches 0"));
+    tests.push((path("creator_free_returns"), lines(&free)));
+    tests
 }
 
 // ---------------------------------------------------------------------------
@@ -368,21 +774,22 @@ fn rehearsal_fns(ns: &str, inv: &Inventory) -> Vec<(String, String)> {
     ));
 
     // --- roster ------------------------------------------------------------
-    // One line, compile-time constant: which id names which shot. Without it the
-    // creator has no way to know what `dw.mark set 3` addresses.
-    let roster: String = inv
-        .shots
-        .iter()
-        .map(|s| format!("{}={}#{}", s.id, s.pointer, s.shot_index))
-        .collect::<Vec<_>>()
-        .join(" ");
-    fns.push((
-        f("roster"),
-        lines(&[
-            format!("tag @s add {RH_ROSTER}"),
-            format!("say [DelveShotRoster] shots={n} {roster}"),
-        ]),
-    ));
+    // Compile-time constant: which id names which shot. Without it the creator
+    // has no way to know what `dw.mark set 3` addresses. One `say` per shot,
+    // after a count: a chat message holds at most 256 characters, and a roster
+    // is as long as the campaign has shots (the command-tree check refuses a
+    // longer message, `commands::MESSAGE_MAX_CHARS`).
+    let mut roster = vec![
+        format!("tag @s add {RH_ROSTER}"),
+        format!("say [DelveShotRoster] shots={n}"),
+    ];
+    roster.extend(inv.shots.iter().map(|s| {
+        format!(
+            "say [DelveShotRoster] {}={}#{}",
+            s.id, s.pointer, s.shot_index
+        )
+    }));
+    fns.push((f("roster"), lines(&roster)));
 
     // --- dw.mark -----------------------------------------------------------
     fns.push((
@@ -720,18 +1127,18 @@ fn objectives(plan: &Plan) -> Vec<(String, String)> {
 /// for the layout manifest. Mirrors the main emitter's NPC placement.
 fn npc_pos(plan: &Plan, npc_id: &str) -> [i32; 3] {
     let area = plan.npc_area(npc_id).unwrap_or("");
-    let anchor = plan
+    let decl = plan
         .campaign
         .npcs
         .content
         .npcs
         .iter()
-        .find(|n| n.id.as_str() == npc_id)
-        .map(|n| n.anchor.as_str())
-        .unwrap_or("");
+        .find(|n| n.id.as_str() == npc_id);
+    let anchor = decl.map(|n| n.anchor.as_str()).unwrap_or("");
+    let offset = decl.map(|n| n.offset).unwrap_or([0, 0, 0]);
     match plan.anchors.get(&(area.to_string(), anchor.to_string())) {
-        Some(ResolvedAnchor::Point { pos, .. }) => *pos,
-        Some(ResolvedAnchor::Gate { from, .. }) => *from,
+        Some(ResolvedAnchor::Point { pos, .. }) => delvewright_dsl::offset_cell(*pos, offset),
+        Some(ResolvedAnchor::Gate { from, .. }) => delvewright_dsl::offset_cell(*from, offset),
         None => [0, plan::BASE_Y, 0],
     }
 }
@@ -823,6 +1230,58 @@ fn emit_layout(plan: &Plan, inv: &Inventory) -> serde_json::Value {
 
 // --- helpers (mirror emit.rs conventions) ---
 
+/// The widest text an `int` macro value substitutes to (`-2147483648`).
+const INT_CHARS: usize = 11;
+
+/// A macro line's text with every `$(name)` removed and its leading `$` and
+/// command dropped, in characters: what the message argument holds before any
+/// value is substituted.
+fn substituted_chars(line: &str) -> usize {
+    let body = line.strip_prefix("$say ").unwrap_or(line);
+    let mut n = 0;
+    let mut rest = body;
+    while let Some(start) = rest.find("$(") {
+        n += rest[..start].chars().count();
+        rest = match rest[start..].find(')') {
+            Some(end) => &rest[start + end + 1..],
+            None => "",
+        };
+    }
+    n + rest.chars().count()
+}
+
+/// `head` followed by as many `obj:$(key)` entries as keep the line inside a chat
+/// message at its longest substitution (every value at [`INT_CHARS`]), then one
+/// `[DelveNoteQuests]` line per further run of entries that fits.
+fn chunk_stamp(head: &str, head_chars: usize, entries: &[String]) -> Vec<String> {
+    use crate::compiler::commands::MESSAGE_MAX_CHARS;
+    let cont = "$say [DelveNoteQuests] ";
+    let entry_chars = |e: &str| substituted_chars(e) + INT_CHARS;
+    let mut out = Vec::new();
+    let (mut line, mut chars, mut first) = (head.to_string(), head_chars, true);
+    let mut empty = true;
+    for e in entries {
+        let add = entry_chars(e) + usize::from(!empty);
+        if chars + add > MESSAGE_MAX_CHARS && !empty {
+            out.push(line);
+            line = cont.to_string();
+            chars = substituted_chars(cont);
+            first = false;
+            empty = true;
+        }
+        if !empty {
+            line.push(',');
+        }
+        line.push_str(e);
+        chars += entry_chars(e) + usize::from(!empty);
+        empty = false;
+    }
+    if !empty || first {
+        out.push(line);
+    }
+    out
+}
+
 fn lines(v: &[String]) -> String {
     let mut s = v.join("\n");
     s.push('\n');
@@ -843,6 +1302,42 @@ mod tests {
     /// that gets it there is a truncating float cast — so the one thing worth
     /// pinning is that it truncates to the figure the overlay has always emitted
     /// rather than to the one below it.
+    /// However many objectives a campaign has, every stamp line stays inside a
+    /// chat message at its longest substitution, and every objective is on
+    /// exactly one line.
+    #[test]
+    fn a_note_stamp_splits_its_objectives_across_lines_that_fit() {
+        let head = "$say [DelveNote] pos=[$(x),$(y),$(z)] area=$(area) nearest_npc=$(npc) quests=";
+        let head_chars = substituted_chars(head) + 3 * INT_CHARS + 40 + 40;
+        let entries: Vec<String> = (0..60)
+            .map(|i| format!("obj/a-long-objective-name-{i}:$(o_a_long_objective_name_{i})"))
+            .collect();
+        let out = chunk_stamp(head, head_chars, &entries);
+        assert!(out.len() > 2, "{out:?}");
+        assert!(out[0].starts_with(head));
+        let mut seen = Vec::new();
+        for (i, line) in out.iter().enumerate() {
+            // Every placeholder at an integer's width, the area and NPC ids at
+            // the 40 characters stated above.
+            let placeholders = line.matches("$(").count();
+            let longest = if i == 0 {
+                substituted_chars(line) + INT_CHARS * (placeholders - 2) + 80
+            } else {
+                substituted_chars(line) + INT_CHARS * placeholders
+            };
+            assert!(longest <= 256, "line {i} reaches {longest}: {line}");
+            let fields = if i == 0 {
+                line.strip_prefix(head).unwrap()
+            } else {
+                line.strip_prefix("$say [DelveNoteQuests] ").unwrap()
+            };
+            seen.extend(fields.split(',').map(str::to_string));
+        }
+        assert_eq!(seen, entries);
+        // No objectives: one line, an empty field.
+        assert_eq!(chunk_stamp(head, head_chars, &[]), vec![head.to_string()]);
+    }
+
     #[test]
     fn the_eye_height_scales_into_milli_blocks_without_losing_a_unit() {
         assert_eq!(RH_EYE_MB, 1620);

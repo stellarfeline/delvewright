@@ -59,7 +59,7 @@ with its own schema:
 
 ```json
 {
-  "dsl_version": "0.22.0",
+  "dsl_version": "<the dsl number delvec --version printed>",
   "campaign_id": "the-weighbridge",
   "stage": "world",
   "content": { }
@@ -68,15 +68,14 @@ with its own schema:
 
 `stage` is the document's own name — `world`, `npcs`, `classes`, `quest-plan`,
 `quests`, `dialogue`, `world-edits`, `geometry-brief`, `layout-graph`,
-`site-plan`, `detail-plan`. `content` is everything else.
+`site-plan`, `detail-plan`, `design`. `content` is everything else.
 
-**What number goes in `dsl_version`: the one `delvec --version` printed after
-`dsl`.** A new campaign writes the engine's current number on every document.
-The per-feature minimums this page states elsewhere ("needs `dsl_version`
-0.10.0 on the quests stage") are the *floor* a surface became available at —
-they exist so an old campaign keeps compiling unchanged, and a new campaign is
-already above all of them. Write the current number and none of those sentences
-applies to you.
+**What number goes in `dsl_version`: exactly the one `delvec --version` printed
+after `dsl`, on every document, the `l10n/` sidecars included.** The engine
+accepts that one number and no other: a document carrying any other — older or
+newer — is refused at the envelope with `DW0102`, which names the number to
+write. There is no floor and no range, so never copy a number from an example
+or an older campaign.
 
 ## Getting a document's shape
 
@@ -200,6 +199,19 @@ clear daytime one — so declaring `night` is a design decision that also switch
 that gate off, which is why *Reference: authoring pitfalls* forbids reaching for
 the hour to save a mob.
 
+## Languages — ask, do not assume
+
+**Ask the user which languages the delve ships in, here, before any prose is
+written.** One line is enough: *"English only, or shall it also ship in <the
+language they are writing to you in>?"* Their answer goes in `world.json`'s
+`languages`, and the localization stage at step 5 delivers the sidecars.
+
+Ask even when the brief says nothing about language, and especially when the
+brief arrives in a language other than English: a creator writing to you in
+Chinese has not thereby asked for a Chinese delve, and has not thereby declined
+one. Guessing either way is how a delve ships in a language its author did not
+choose — or ships without one they assumed.
+
 ## The optional fields that commit something
 
 **Some of `world.json`'s optional fields commit something you are not writing
@@ -219,9 +231,33 @@ last player-visible sentence of the run, absent = the finale quest's `goal`.
   "for two players" is a brief that has asked for a mechanism, and the design
   gains one or the number comes down.
 - **`horizon`.** Absent = `void`, and that is the right answer unless the
-  surround is part of the design. `valley` rings the map in generated mountain;
-  both of those keep the area datum where every piece was authored for it.
-  **`ocean` is different and it is paired with a piece set**: it swaps in a
+  ground around the map is part of the design. `void` keeps the area datum where
+  every piece was authored for it and puts nothing outside them.
+- **`valley` rings the map in generated mountain, and it needs to know how big
+  the map is.** A surround rings a DECLARED extent, and a campaign states one in
+  exactly two ways: a site plan's `region`, or **one area bound to one
+  `prefab`** — the map is then that piece and the piece's own declared size is
+  the extent. Anything else is `DW0855`: two areas sit 256 blocks apart on the
+  compiler's stride and a pool's footprint is whatever the solver drew, so
+  neither is a statement of extent. The one-piece form is what a **site** is — a
+  zone that carries its own ground, its bank running out to the box's own edge,
+  and mass underneath — and it is the shape `delvec grammar expand` produces
+  when a program is the whole map. Two things follow for such a campaign:
+  - **The datum is derived, like the ocean's.** An area's origin is
+    `64 − walk_y`, so the piece's own walk plane lands on the valley's gap floor
+    and a body walks off the piece onto the ground without a step or a drop.
+    Every piece therefore owes `walk_y` here, as it does on `ocean` (`DW0886`).
+  - **What stands above that ground is the piece's to answer for.** The courses
+    under its bank are buried by the valley; anything proud of the floor on the
+    box's own boundary is `DW0885` unless the piece declares that side in
+    `shown_faces`. For a generated zone that declaration belongs to the grammar
+    program (`shown_faces`, program version `1.9.0`) — `expand` rewrites the
+    metadata every run, so a value typed into the `.json` by hand is gone at the
+    next expansion. Do not pad the list: a declared side with no solid cell on it
+    is refused too.
+  `valley` also obliges a `boundary`, for the reason below — its gap floor is
+  ground a body can walk on.
+- **`ocean` is different again and it is paired with a piece set**: it swaps in a
   superflat sea at y=62 and DROPS the area datum to y=60 so a piece meets the
   water at its own declared `waterline_y`. Only pieces carrying that field are
   authored for it, and the invariant that proves the meeting (`DW0344`) examines
@@ -251,10 +287,11 @@ last player-visible sentence of the run, absent = the finale quest's `goal`.
   sea in the fiction. Short of every member means the unlisted ones stand in the
   water with nothing checking them, which is exactly the silence `DW0344`
   reports about itself.
-- **`boundary`, which `ocean` obliges.** Absent = no boundary. It declares the
+- **`boundary`, which `ocean` and `valley` both oblige.** Absent = no boundary. It declares the
   playable region: the compiler derives one from the placed geometry plus a
   `margin` of blocks on every side (default 16, range `0..=64`), and a per-second
   clock returns anyone who leaves it to their last checkpoint, with an optional
-  `message` on the actionbar. **`horizon: ocean` with no `boundary` is
-  `DW0320`** — an infinite swimmable sea with no return rule — so those two are
-  written together or neither is written.
+  `message` on the actionbar. **`horizon: ocean` or `valley` with no `boundary` is
+  `DW0320`** — an infinite swimmable sea, or a walkable gap floor, with no return
+  rule — so those two are written together or neither is written. `void` is the
+  one base that cannot need it, because there is nothing out there to stand on.

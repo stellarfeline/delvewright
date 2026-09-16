@@ -29,6 +29,22 @@ use super::{
 /// `tower_height`. Palette roles: `stone`.
 pub fn castle() -> Program {
     Program::new("castle", "castle")
+        // **What this building's own sides ARE** (`DW0885`, program version
+        // 1.9.0). A curtain wall is finished exterior surface: masonry somebody
+        // is meant to walk up to and look at, in every world the piece is ever
+        // placed in — which is what makes the claim the program's to make and
+        // not the placement's.
+        //
+        // `up` is deliberately absent, and `down` with it. The plan builds walls
+        // and towers inside its box and does not fill it to the ceiling, so the
+        // box's top plane is air — and `DW0885` refuses a declared side with no
+        // solid cell on it exactly as it refuses an undeclared exposed one. The
+        // underside is the course a castle stands ON, and what answers for that
+        // is the ground the horizon puts there.
+        .showing("north")
+        .showing("south")
+        .showing("east")
+        .showing("west")
         .param("large_tower", 9)
         .param("small_tower", 5)
         .param("great_hall", 13)

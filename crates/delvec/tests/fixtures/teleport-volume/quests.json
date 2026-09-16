@@ -79,7 +79,9 @@
                           1
                         ]
                       },
-                      "to": "anchor/exit",
+                      "to": {
+                        "anchor": "anchor/exit"
+                      },
                       "type": "teleport"
                     }
                   ]
@@ -166,6 +168,6 @@
       }
     ]
   },
-  "dsl_version": "0.24.1",
+  "dsl_version": "0.29.0",
   "stage": "quests"
 }

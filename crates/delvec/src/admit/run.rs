@@ -202,7 +202,7 @@ fn run_seating(horizon: &str, dir: &Path, json: bool) -> ExitCode {
         ids.sort();
         ids.dedup();
         members_total += ids.len();
-        let mut seatable = 0usize;
+        let mut seatable_ids: std::collections::BTreeSet<&str> = std::collections::BTreeSet::new();
         let mut reasons: Vec<String> = Vec::new();
         let mut reason_json: Vec<serde_json::Value> = Vec::new();
         let record = |about: &str, r: &crate::compiler::seating::Reason| {
@@ -210,6 +210,7 @@ fn run_seating(horizon: &str, dir: &Path, json: bool) -> ExitCode {
                 "about": about,
                 "code": r.code.id(),
                 "shape": format!("{:?}", r.shape),
+                "sides": r.sides,
                 "short": r.short,
                 "detail": r.full,
             })
@@ -233,7 +234,7 @@ fn run_seating(horizon: &str, dir: &Path, json: bool) -> ExitCode {
                 why.push(w);
             }
             if why.is_empty() {
-                seatable += 1;
+                seatable_ids.insert(id.as_str());
                 continue;
             }
             for r in why {
@@ -251,20 +252,36 @@ fn run_seating(horizon: &str, dir: &Path, json: bool) -> ExitCode {
             .map(|id| (id.clone(), library.pieces.get(id).and_then(|f| f.walk_y)))
             .collect();
         let mut set_refused = false;
-        if let crate::compiler::seating::SetPlane::Refused(rs) =
-            crate::compiler::seating::set_walk_plane(base, pool, &declared)
+        let mut set_reasons = match crate::compiler::seating::set_walk_plane(base, pool, &declared)
         {
+            crate::compiler::seating::SetPlane::Refused(rs) => rs,
+            _ => Vec::new(),
+        };
+        // **And the question `DW0885` asks of the assembled world**, from the
+        // same facts and the same rule the campaign's own check reads.
+        let facts: Vec<&crate::compiler::seating::PieceFacts> =
+            ids.iter().filter_map(|id| library.pieces.get(id)).collect();
+        set_reasons.extend(crate::compiler::seating::set_exposure(base, pool, &facts));
+        if !set_reasons.is_empty() {
             set_refused = true;
-            for r in &rs {
-                reasons.push(format!(
-                    "  {:<28} {} ({})",
-                    "(the pool)",
-                    r.short,
-                    r.code.id()
-                ));
-                reason_json.push(record(pool, r));
+            for r in &set_reasons {
+                // A reason about one member names it; a reason about the set
+                // names the pool.
+                let about = if r.member == *pool {
+                    "(the pool)"
+                } else {
+                    r.member.strip_prefix("prefab/").unwrap_or(&r.member)
+                };
+                reasons.push(format!("  {about:<28} {} ({})", r.short, r.code.id()));
+                reason_json.push(record(&r.member, r));
+            }
+            // A member the set's own question names is not seatable, whatever
+            // it was on its own.
+            for r in &set_reasons {
+                seatable_ids.remove(r.member.as_str());
             }
         }
+        let seatable = seatable_ids.len();
         let verdict = if seatable == ids.len() && !ids.is_empty() && !set_refused {
             pools_seatable += 1;
             "SEATABLE"
@@ -1107,6 +1124,21 @@ fn run_anchor(nbt: &Path, name: &str, args: AnchorArgs, json: bool) -> ExitCode 
             role,
         },
     );
+    // Furniture names blocks, never a point (spec-0065 §3.2). Refused where it is
+    // typed rather than written through to be `DW0888` at the next audit.
+    if let Some(a) = meta.anchors.get(name)
+        && a.role == Some(AnchorRole::Furniture)
+        && a.region.is_none()
+    {
+        return input_err(
+            &format!(
+                "--role furniture: anchor `{name}` has no region — furniture is the blocks a body \
+                 stands beside and never on, so give it `--region x1,y1,z1:x2,y2,z2` over the \
+                 furniture's own blocks"
+            ),
+            json,
+        );
+    }
     if let Err(e) = write_meta(nbt, &meta) {
         return output_err(&format!("cannot write metadata: {e}"), json);
     }

@@ -331,6 +331,13 @@ pub fn load_campaign_dir(dir: &Path) -> std::io::Result<LoadedCampaign> {
     // no images; anything else about it that cannot be read is an error naming
     // the directory, the same rule `optional` carries for a document.
     let design_files = crate::compiler::design::DesignFiles::read(dir)?;
+    // The showcase camera record is a build input: the build proves its cameras.
+    if let Some(bytes) = &design_files.cameras {
+        inputs.insert(
+            crate::compiler::view::camera::CAMERAS_FILE.to_string(),
+            bytes.clone(),
+        );
+    }
     let l10n = load_l10n_dir(&dir.join("l10n"))?;
     // i18n v2 (spec-0029): every sidecar is a build input of **every** build, not
     // just of a `--lang` bake — the delve now ships each declared language's lang

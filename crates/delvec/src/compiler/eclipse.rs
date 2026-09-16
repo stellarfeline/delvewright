@@ -361,11 +361,7 @@ fn bodies(plan: &Plan) -> Vec<Body> {
         if walkers.contains(n.id.as_str()) {
             continue;
         }
-        let area = n.area.as_str();
-        let Some(pos) = plan
-            .point(area, n.anchor.as_str())
-            .or_else(|| plan.point_any(n.anchor.as_str()))
-        else {
+        let Some(pos) = plan.body_point(delvewright_dsl::BodyRef::Npc(n)) else {
             continue;
         };
         // A skinned NPC is summoned as `minecraft:mannequin` — the player model,
@@ -376,7 +372,7 @@ fn bodies(plan: &Plan) -> Vec<Body> {
             kind: "npc",
             id: n.id.as_str().to_string(),
             entity,
-            anchor: n.anchor.as_str().to_string(),
+            anchor: delvewright_dsl::BodyRef::Npc(n).mark().display(),
             pos,
             path: format!("/content/npcs/{i}"),
         });
@@ -385,7 +381,7 @@ fn bodies(plan: &Plan) -> Vec<Body> {
         if walkers.contains(a.id.as_str()) {
             continue;
         }
-        let Some(pos) = plan.point_any(a.anchor.as_str()) else {
+        let Some(pos) = plan.body_point(delvewright_dsl::BodyRef::Actor(a)) else {
             continue;
         };
         let entity = crate::compiler::nav::actor_body_entity(a);
@@ -393,7 +389,7 @@ fn bodies(plan: &Plan) -> Vec<Body> {
             kind: "actor",
             id: a.id.as_str().to_string(),
             entity,
-            anchor: a.anchor.as_str().to_string(),
+            anchor: delvewright_dsl::BodyRef::Actor(a).mark().display(),
             pos,
             path: format!("/content/actors/{i}"),
         });
@@ -580,7 +576,7 @@ fn npc_stands_at(plan: &Plan, anchor: &str) -> bool {
         .content
         .npcs
         .iter()
-        .any(|n| n.anchor.as_str() == anchor)
+        .any(|n| n.anchor.as_str() == anchor && n.offset == [0, 0, 0])
 }
 
 /// Prove no body eclipses an interaction affordance (`DW0359`).

@@ -9,6 +9,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+use crate::firework::FireworkExplosion;
 use crate::layout::StationKind;
 
 use crate::ids::{
@@ -408,11 +409,13 @@ impl HorizonBase {
 ///
 /// The `valley` surround generator carries a second flora and a second surface
 /// palette (a cherry grove over `minecraft:cherry_grove`) and **this struct
-/// deliberately does not expose them yet.** Every engine surface owes a gallery
-/// element in the change that lands it, and the element a second flora needs is
-/// a second whole-map campaign — the surround only rings a map that DECLARES
-/// its extent (`DW0855`), so there is no two-file overlay that can write it.
-/// A surface whose element cannot land with it does not land. The shape is flat rather than
+/// does not expose them.** Every engine surface owes a gallery element in the
+/// change that lands it; the element a second flora needs is a valley overlay,
+/// and one is writable now that a one-area campaign's single prefab states an
+/// extent ([`crate::placement::Extent`], `DW0855`) — the reason recorded here
+/// was that no two-file overlay could ring a map, and that reason is spent.
+/// What is left is that nothing has written the element, and a surface lands
+/// with its element or it does not land. The shape is flat rather than
 /// per-base tagged, and a param foreign to the declared base is refused
 /// (`DW0853`) — so an `ocean` cannot quietly carry a `rim_height` that nothing
 /// reads.
@@ -818,12 +821,86 @@ impl<'a> BodyRef<'a> {
     }
 
     /// The entity id written on the body. **Not necessarily the body that
-    /// ships**: a `skin` re-dresses it as a `minecraft:mannequin`, which is the
-    /// compiler's rule (`nav::npc_body_entity`) and stays there.
+    /// ships**: a `skin` re-dresses it as a `minecraft:mannequin` — see
+    /// [`Self::worn_entity`].
     pub fn declared_entity(self) -> &'a str {
         match self {
             BodyRef::Npc(n) => n.base_entity.as_str(),
             BodyRef::Actor(a) => a.entity.as_str(),
+        }
+    }
+
+    /// **The entity id the body ships as**: `minecraft:mannequin` when it
+    /// declares a `skin`, else the declared entity. The one authority for that
+    /// rule — the compiler's geometric proofs (`nav::npc_body_entity`,
+    /// `nav::actor_body_entity`) and the equipment fit rule (`DW0898`) all read
+    /// it.
+    pub fn worn_entity(self) -> &'a str {
+        match self.skin() {
+            Some(_) => "minecraft:mannequin",
+            None => self.declared_entity(),
+        }
+    }
+
+    /// **The mark this body is placed on** — the anchor and offset the engine
+    /// summons it at, for every class alike (spec-0066).
+    ///
+    /// A body's placement is a property of the body, not of the stage list that
+    /// happens to declare it: a mark is a cell, and a cell holds one body. The
+    /// rule that reads this ([`crate::compiler`]'s `DW0896`, via
+    /// [`body_sites`]) therefore quantifies over npcs and actors in one pass
+    /// rather than over `actors[]`, which is where the seven-men-one-anchor
+    /// muster came from.
+    pub fn mark(self) -> Mark {
+        let (anchor, offset) = match self {
+            BodyRef::Npc(n) => (&n.anchor, n.offset),
+            BodyRef::Actor(a) => (&a.anchor, a.offset),
+        };
+        Mark {
+            anchor: anchor.clone(),
+            offset,
+        }
+    }
+
+    /// The area whose anchor table resolves [`Self::mark`]'s anchor first, when this
+    /// class declares one.
+    ///
+    /// A stage-2 npc names its area and is resolved inside it; a stage-5 actor
+    /// names none and is resolved across every placed piece, exactly as an
+    /// `open-gate` / `move-actor` destination is. Stated here so the resolution
+    /// rule is one rule over both classes and not a per-call-site habit.
+    pub fn area(self) -> Option<&'a AreaId> {
+        match self {
+            BodyRef::Npc(n) => Some(&n.area),
+            BodyRef::Actor(_) => None,
+        }
+    }
+
+    /// Whether this body stands on its mark from **world init**, with no effect
+    /// having to fire.
+    ///
+    /// A stage-2 npc does unless it is `deferred`; a stage-5 actor never does —
+    /// a puppet exists only from the `spawn-actor` that summons it, which is why
+    /// an actor no `spawn-actor` names never exists at all (`DW0477` says so of
+    /// a billed elite).
+    pub fn at_world_init(self) -> bool {
+        match self {
+            BodyRef::Npc(n) => !n.deferred,
+            BodyRef::Actor(_) => false,
+        }
+    }
+
+    /// Whether a **player** can end this body's life.
+    ///
+    /// An npc body is emitted `Invulnerable:1b` unconditionally, so nothing a
+    /// player does removes it; an actor's puppet is `Invulnerable` unless it
+    /// declares [`Actor::vulnerable`]. A body a player can kill is one whose
+    /// lifetime the compiler cannot bound, which is the whole of what this
+    /// answers.
+    pub fn killable_by_players(self) -> bool {
+        match self {
+            BodyRef::Npc(_) => false,
+            BodyRef::Actor(a) => a.vulnerable,
         }
     }
 
@@ -838,8 +915,8 @@ impl<'a> BodyRef<'a> {
     /// This body's skin declaration, if it carries one.
     ///
     /// A skinned body of **either** class ships as a `minecraft:mannequin`
-    /// whose `profile.texture` resolves to `delvewright:npc/<texture_id>`, so
-    /// either one owes the same `skins/<texture_id>.png` under the same refusal
+    /// whose `profile.texture` resolves to `delvewright:npc/<campaign_id>/<texture_id>`,
+    /// so either one owes the same `skins/<texture_id>.png` under the same refusal
     /// (`DW0309`). Answering it here is what stops the bake from being a
     /// property of one class.
     pub fn skin(self) -> Option<&'a NpcSkin> {
@@ -966,6 +1043,38 @@ pub fn body_skin_sites(c: &crate::envelope::Campaign) -> Vec<BodySkinSite<'_>> {
         .collect()
 }
 
+/// The **mutable mirror** of [`body_skin_sites`]: every skin declaration in the
+/// campaign, in the identical order, exposed mutably so one pass can rewrite what
+/// every emitter will read ([`crate::l10n::namespace_skin_textures`]).
+///
+/// It carries no [`BodyRef`] and no pointer, because a rewrite needs neither and a
+/// borrow of the whole body would forbid the field it is there to change. What it
+/// does owe is the **same population**: a body class that declares a skin and is
+/// missing here would keep an un-namespaced texture and collide with every other
+/// delve, silently. `body_skin_sites_mut_is_the_same_walk`
+/// (`crates/dsl/tests/body_skin_sites.rs`) pins that over a campaign carrying one
+/// body of every class in [`BodyRef::ALL_CLASSES`] — the closed set the schema
+/// export is compared against in the same file, so a new body class turns that
+/// coverage red and both walks are visited together.
+pub fn body_skins_mut(c: &mut crate::envelope::Campaign) -> Vec<&mut NpcSkin> {
+    let mut out: Vec<&mut NpcSkin> = Vec::new();
+    out.extend(
+        c.npcs
+            .content
+            .npcs
+            .iter_mut()
+            .filter_map(|n| n.skin.as_mut()),
+    );
+    out.extend(
+        c.quests
+            .content
+            .actors
+            .iter_mut()
+            .filter_map(|a| a.skin.as_mut()),
+    );
+    out
+}
+
 // ---------------------------------------------------------------------------
 // Stage 2 — npcs
 // ---------------------------------------------------------------------------
@@ -995,6 +1104,10 @@ pub struct Npc {
     pub area: AreaId,
     /// The prefab anchor this NPC stands on.
     pub anchor: AnchorId,
+    /// Integer `[x, y, z]` block offset from `anchor` (spec-0066, default
+    /// `[0, 0, 0]`): the NPC stands at the [`Mark`] the two fields spell.
+    #[serde(default, skip_serializing_if = "is_zero3")]
+    pub offset: [i32; 3],
     /// The vanilla entity to re-dress, e.g. `minecraft:villager`.
     pub base_entity: String,
     /// The structured persona (character contract for stage 6).
@@ -1023,15 +1136,19 @@ pub struct Npc {
     pub traversal: Option<BodyTraversal>,
 }
 
-/// A mannequin NPC's player-model skin (DSL v0.4). The skin PNG ships in the
-/// per-delve resource pack at `assets/delvewright/textures/npc/<texture_id>.png`
-/// (sourced from the campaign dir's `skins/<texture_id>.png`); the mannequin's
-/// `profile.texture` resolves to `delvewright:npc/<texture_id>`.
+/// A mannequin NPC's player-model skin (DSL v0.4). The skin PNG is sourced from
+/// the campaign dir's `skins/<texture_id>.png` and ships in the per-delve resource
+/// pack at `assets/delvewright/textures/npc/<campaign_id>/<texture_id>.png`, which
+/// is what the mannequin's `profile.texture` resolves to. The delve's own
+/// directory is stamped on at emission ([`crate::l10n::namespace_skin_textures`])
+/// — a client merges every applied pack's textures into ONE space, so two delves
+/// that both cast a `keeper` would otherwise wear each other's faces. Nothing a
+/// creator writes or names on disk carries it.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct NpcSkin {
-    /// Skin id: the PNG basename under `skins/` and the resource-pack texture
-    /// path segment (a bare kebab token; validated by `DW0190`).
+    /// Skin id: the PNG basename under `skins/`, and the last segment of the
+    /// resource-pack texture path (a bare kebab token; validated by `DW0190`).
     pub texture_id: String,
     /// Player model. **Required** (spec-0009): an omitted model renders slim, so
     /// a wide skin on a slim model is distorted — the compiler always emits it.
@@ -1331,6 +1448,20 @@ impl DialogueEffect {
     pub fn spawn_npc(&self) -> Option<&NpcId> {
         match self {
             DialogueEffect::SpawnNpc { npc } => Some(npc),
+            _ => None,
+        }
+    }
+
+    /// **The body this dialogue effect puts into the world**, by id — the
+    /// dialogue half of [`QuestEffect::body_entry`].
+    ///
+    /// A body can enter the world from a conversation as well as from a quest
+    /// bundle, and a rule about what is standing where has to enumerate **every**
+    /// entry point or it is a gate with a door beside it. This enum carries no
+    /// exit at all: nothing a dialogue option does removes a body.
+    pub fn body_entry(&self) -> Option<&str> {
+        match self {
+            DialogueEffect::SpawnNpc { npc } => Some(npc.as_str()),
             _ => None,
         }
     }
@@ -3025,20 +3156,27 @@ pub struct MobEquipment {
     /// Off-hand slot.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub off_hand: Option<EquipItem>,
+    /// Body slot: horse armour, wolf armour, a llama's carpet, a nautilus's
+    /// armour, a happy ghast's harness (spec-0067). Shown only on a body whose
+    /// entity type draws it (`DW0898`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub body: Option<EquipItem>,
+    /// Saddle slot (spec-0067). Shown only on a body whose entity type draws a
+    /// saddle (`DW0898`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub saddle: Option<EquipItem>,
 }
 
 impl MobEquipment {
-    /// Every slot as `(dsl_field_name, piece)`, in the fixed schema order —
+    /// Every slot as `(dsl_field_name, piece)`, in [`EquipSlot::ALL`]'s order —
     /// the single iteration source for validation paths and emission.
-    pub fn slots(&self) -> [(&'static str, Option<&EquipItem>); 6] {
-        [
-            ("head", self.head.as_ref()),
-            ("chest", self.chest.as_ref()),
-            ("legs", self.legs.as_ref()),
-            ("feet", self.feet.as_ref()),
-            ("main_hand", self.main_hand.as_ref()),
-            ("off_hand", self.off_hand.as_ref()),
-        ]
+    pub fn slots(&self) -> [(&'static str, Option<&EquipItem>); EquipSlot::ALL.len()] {
+        EquipSlot::ALL.map(|s| (s.field(), self.filled(s)))
+    }
+
+    /// Every slot as `(slot, piece)`, in [`EquipSlot::ALL`]'s order.
+    pub fn pieces(&self) -> [(EquipSlot, Option<&EquipItem>); EquipSlot::ALL.len()] {
+        EquipSlot::ALL.map(|s| (s, self.filled(s)))
     }
 
     /// The piece this equipment declaration puts in `slot`, if any. The single
@@ -3052,13 +3190,24 @@ impl MobEquipment {
             EquipSlot::Feet => self.feet.as_ref(),
             EquipSlot::MainHand => self.main_hand.as_ref(),
             EquipSlot::OffHand => self.off_hand.as_ref(),
+            EquipSlot::Body => self.body.as_ref(),
+            EquipSlot::Saddle => self.saddle.as_ref(),
         }
     }
 }
 
 /// One vanilla equipment slot, named exactly as the [`MobEquipment`] field that
-/// fills it (DSL v0.9). The DSL name and the summon-NBT key differ
-/// (`main_hand` vs `mainhand`), so both live here and nowhere else.
+/// fills it. The DSL name and the summon-NBT key differ (`main_hand` vs
+/// `mainhand`), so both live here and nowhere else.
+///
+/// **The set is the pinned game's equipment-slot set** (spec-0067 §2), a
+/// [`crate::metrics::Provenance::VanillaRule`]: the eight values the
+/// `minecraft:equippable` component's `slot` field takes, per the Minecraft
+/// Wiki page *Data component format/equippable* for Java 1.21.11, which are the
+/// serialised names of the client's `EquipmentSlot` enum. The pinned item data
+/// is the cross-check, not the source: every `slot` value an item declares is
+/// asserted to be one of these, and no item declares `mainhand`, because a hand
+/// takes anything.
 #[derive(
     Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, JsonSchema,
 )]
@@ -3076,9 +3225,28 @@ pub enum EquipSlot {
     MainHand,
     /// Off-hand slot.
     OffHand,
+    /// Body slot (horse armour, wolf armour, carpet, harness).
+    Body,
+    /// Saddle slot.
+    Saddle,
 }
 
 impl EquipSlot {
+    /// Every slot, in emission order: the two hands, the four armour slots,
+    /// then `body` and `saddle`. The one enumeration every slot list derives
+    /// from — `MobEquipment::slots()`, the summon `equipment` / `drop_chances`
+    /// compounds and the drop-strip line.
+    pub const ALL: [EquipSlot; 8] = [
+        EquipSlot::MainHand,
+        EquipSlot::OffHand,
+        EquipSlot::Head,
+        EquipSlot::Chest,
+        EquipSlot::Legs,
+        EquipSlot::Feet,
+        EquipSlot::Body,
+        EquipSlot::Saddle,
+    ];
+
     /// The DSL field name (`main_hand`), for diagnostics and JSON pointers.
     pub fn field(self) -> &'static str {
         match self {
@@ -3088,10 +3256,13 @@ impl EquipSlot {
             EquipSlot::Feet => "feet",
             EquipSlot::MainHand => "main_hand",
             EquipSlot::OffHand => "off_hand",
+            EquipSlot::Body => "body",
+            EquipSlot::Saddle => "saddle",
         }
     }
 
-    /// The 1.21.11 `equipment` / `drop_chances` NBT key (`mainhand`).
+    /// The 1.21.11 `equipment` / `drop_chances` NBT key (`mainhand`) — also the
+    /// game's own name for the slot, as an `equippable` component spells it.
     pub fn nbt(self) -> &'static str {
         match self {
             EquipSlot::Head => "head",
@@ -3100,7 +3271,20 @@ impl EquipSlot {
             EquipSlot::Feet => "feet",
             EquipSlot::MainHand => "mainhand",
             EquipSlot::OffHand => "offhand",
+            EquipSlot::Body => "body",
+            EquipSlot::Saddle => "saddle",
         }
+    }
+
+    /// The slot the game names `name` (`mainhand`), if it is one.
+    pub fn from_nbt(name: &str) -> Option<EquipSlot> {
+        EquipSlot::ALL.into_iter().find(|s| s.nbt() == name)
+    }
+
+    /// Whether this is a hand: a hand takes any item, so an item's own declared
+    /// slot never contradicts it.
+    pub fn is_hand(self) -> bool {
+        matches!(self, EquipSlot::MainHand | EquipSlot::OffHand)
     }
 }
 
@@ -3397,7 +3581,8 @@ impl CastAbsence {
     }
 }
 
-/// Where a cast entry puts an NPC: a prefab anchor, or a declared absence.
+/// Where a cast entry puts an NPC: a prefab anchor, a mark, or a declared
+/// absence.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(untagged)]
 pub enum CastPlace {
@@ -3407,13 +3592,28 @@ pub enum CastPlace {
     /// position the effect history actually produces (`DW0461`): declaring an
     /// anchor does not teleport anybody.
     Anchor(AnchorId),
+    /// The mark the NPC stands on for this quest's duration (spec-0066): the
+    /// spelling for a body that stands at an offset from its anchor. `DW0461`
+    /// compares anchor and offset both.
+    Mark(Mark),
 }
 
 impl CastPlace {
-    /// The anchor this place names, if it is an anchor.
+    /// The anchor this place names, if it names one.
     pub fn anchor(&self) -> Option<&AnchorId> {
         match self {
             CastPlace::Anchor(a) => Some(a),
+            CastPlace::Mark(m) => Some(&m.anchor),
+            CastPlace::Absent(_) => None,
+        }
+    }
+
+    /// The mark this place names, if it names one: a bare anchor is the mark at
+    /// a zero offset.
+    pub fn mark(&self) -> Option<Mark> {
+        match self {
+            CastPlace::Anchor(a) => Some(Mark::at(a.clone())),
+            CastPlace::Mark(m) => Some(m.clone()),
             CastPlace::Absent(_) => None,
         }
     }
@@ -3422,15 +3622,16 @@ impl CastPlace {
     pub fn absence(&self) -> Option<CastAbsence> {
         match self {
             CastPlace::Absent(a) => Some(*a),
-            CastPlace::Anchor(_) => None,
+            CastPlace::Anchor(_) | CastPlace::Mark(_) => None,
         }
     }
 
     /// The authored token, for diagnostics.
-    pub fn token(&self) -> &str {
+    pub fn token(&self) -> String {
         match self {
-            CastPlace::Absent(a) => a.token(),
-            CastPlace::Anchor(a) => a.as_str(),
+            CastPlace::Absent(a) => a.token().to_string(),
+            CastPlace::Anchor(a) => a.as_str().to_string(),
+            CastPlace::Mark(m) => m.display(),
         }
     }
 }
@@ -3887,6 +4088,11 @@ pub struct Actor {
     /// The anchor the puppet is summoned on (resolved across areas, like an
     /// `open-gate` / `move-npc` destination).
     pub anchor: AnchorId,
+    /// Integer `[x, y, z]` block offset from `anchor` (spec-0066, default
+    /// `[0, 0, 0]`): the puppet stands at the [`Mark`] the two fields spell, so
+    /// a rank of bodies is one anchor and an offset apiece.
+    #[serde(default, skip_serializing_if = "is_zero3")]
+    pub offset: [i32; 3],
     /// Initial facing (default `south`). The puppet spawns yawed this way.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub facing: Option<Facing>,
@@ -4493,8 +4699,8 @@ pub enum Verb {
     MoveNpc {
         /// The NPC (stage-2 ref) to move.
         npc: NpcId,
-        /// The destination anchor.
-        to_anchor: AnchorId,
+        /// The destination mark: an anchor and an optional offset (spec-0066).
+        to: Mark,
         /// Optional travel speed in blocks/tick (defaults to ~0.15).
         #[serde(default, skip_serializing_if = "Option::is_none")]
         speed: Option<f64>,
@@ -4539,14 +4745,14 @@ pub enum Verb {
         /// Single-shot form (DSL v0.4): ordered camera waypoints (straight-line
         /// lerp between them).
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
-        path: Vec<CameraWaypoint>,
+        path: Vec<Mark>,
         /// Single-shot form (DSL v0.4): shot duration in seconds.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         seconds: Option<u32>,
         /// Single-shot form (DSL v0.6): the subject the camera keeps framed.
         /// Absent = face along the direction of travel.
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        look_at: Option<CameraTarget>,
+        look_at: Option<Mark>,
     },
     /// Cuts the dimension-global world time to a new state (DSL v0.5, spec-0010).
     /// Instantaneous (vanilla has no gradual transition); the state persists
@@ -4711,8 +4917,8 @@ pub enum Verb {
     MoveActor {
         /// The actor (stage-5 `actors` ref) to move.
         actor: ActorId,
-        /// The destination anchor.
-        to_anchor: AnchorId,
+        /// The destination mark: an anchor and an optional offset (spec-0066).
+        to: Mark,
         /// Optional travel speed in blocks/tick (defaults to ~0.15).
         #[serde(default, skip_serializing_if = "Option::is_none")]
         speed: Option<f64>,
@@ -4919,9 +5125,47 @@ pub enum Verb {
         /// gate-region anchor's cells, so a volume described that way would
         /// delete the geometry it names.
         from: StealthZone,
-        /// The destination anchor. Resolved to a literal cell at build time, so
-        /// the emitted `tp` carries absolute coordinates and no runtime search.
-        to: AnchorId,
+        /// The destination mark (spec-0066). Resolved to a literal cell at build
+        /// time, so the emitted `tp` carries absolute coordinates and no runtime
+        /// search.
+        to: Mark,
+    },
+    /// Fires a **firework rocket** from a mark (DSL v0.29, spec-0068).
+    ///
+    /// One effect at a point, the member of the same class as [`Verb::PlaySound`]
+    /// — a one-shot thing that happens where the campaign says, beside the sound
+    /// that goes with it. A display of many rockets is a [`Verb::Sequence`] of
+    /// these, not a verb with timing of its own.
+    ///
+    /// # The burst height is a stated number, not a roll
+    ///
+    /// The emitter writes the entity's `LifeTime`
+    /// ([`crate::firework::lifetime_ticks`]) rather than leaving it to the game,
+    /// which randomises it at launch: two runs of one datapack would otherwise
+    /// burst at two heights and nothing could be proven about where the burst is.
+    /// Fixed at the floor of the game's range, the burst stands
+    /// [`crate::firework::burst_height`] blocks over the mark.
+    ///
+    /// # A burst hurts, so the compiler asks where it is
+    ///
+    /// A build refuses a rocket whose column to that height is roofed, and one
+    /// whose burst lies within [`crate::firework::BLAST_RADIUS`] blocks of a
+    /// place the campaign posts a body (`DW0899`). Players are **not** posted:
+    /// a player standing level with a burst takes up to
+    /// [`crate::firework::worst_damage_hp`] HP, under a full body's twenty, and
+    /// that is a hazard a player can see coming.
+    Firework {
+        /// The mark the rocket is launched from — the cell's centre, at the
+        /// mark's own plane.
+        at: Mark,
+        /// Flight duration, 1–3 (the three the game crafts). Absent =
+        /// [`crate::firework::MIN_FLIGHT`].
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[schemars(range(min = 1, max = 3))]
+        flight: Option<u8>,
+        /// One to seven bursts, in the order the component carries them.
+        #[schemars(length(min = 1, max = 7))]
+        explosions: Vec<FireworkExplosion>,
     },
 }
 
@@ -4970,6 +5214,10 @@ pub enum SoundAt {
     Anchor {
         /// The anchor the sound plays from.
         anchor: AnchorId,
+        /// Integer `[x, y, z]` block offset from `anchor` (spec-0066, default
+        /// `[0, 0, 0]`): the sound plays at the [`Mark`] the two fields spell.
+        #[serde(default, skip_serializing_if = "is_zero3")]
+        offset: [i32; 3],
     },
     /// Play the sound at each player's own position (the default).
     Players,
@@ -5415,16 +5663,72 @@ impl NarrateStyle {
     }
 }
 
-/// One camera waypoint of a [`Verb::Cutscene`] (DSL v0.4): an anchor plus
-/// an integer block offset from it, giving the camera's world position.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+/// **A mark** (spec-0066): an anchor and an integer block offset from it, the
+/// one declaration of a point the campaign places relative to a piece.
+///
+/// Its cell is the anchor's resolved cell plus `offset`, in world axes after
+/// the piece's placement. It is what a body stands on ([`Npc::offset`],
+/// [`Actor::offset`]), where a walk ends ([`Verb::MoveNpc`], [`Verb::MoveActor`],
+/// [`Verb::Teleport`]), where the cast ledger says a body is
+/// ([`CastPlace::Mark`]), where a sound plays ([`SoundAt::Anchor`]), and every
+/// camera position in a shot: a dolly waypoint (`path`), an aim target
+/// (`look_at`) and an anchor subject (`subject`). The roles are fields; the
+/// type is one.
+///
+/// A mark's cell lies inside the placed piece its anchor belongs to (`DW0897`):
+/// an offset says *where beside this place*, never *which place*.
+#[derive(
+    Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, JsonSchema,
+)]
 #[serde(deny_unknown_fields)]
-pub struct CameraWaypoint {
-    /// The anchor the waypoint is relative to.
+pub struct Mark {
+    /// The anchor the mark is relative to.
     pub anchor: AnchorId,
     /// Integer `[x, y, z]` block offset from the anchor (default `[0, 0, 0]`).
     #[serde(default, skip_serializing_if = "is_zero3")]
     pub offset: [i32; 3],
+}
+
+impl Mark {
+    /// A mark at `anchor` with no offset.
+    pub fn at(anchor: AnchorId) -> Self {
+        Mark {
+            anchor,
+            offset: [0, 0, 0],
+        }
+    }
+
+    /// Whether the offset is non-zero.
+    pub fn is_offset(&self) -> bool {
+        !is_zero3(&self.offset)
+    }
+
+    /// The mark's cell, given the cell its anchor resolved to.
+    pub fn cell(&self, anchor_cell: [i32; 3]) -> [i32; 3] {
+        offset_cell(anchor_cell, self.offset)
+    }
+
+    /// The mark as a diagnostic spells it: the anchor alone at a zero offset,
+    /// else `anchor + [x, y, z]`.
+    pub fn display(&self) -> String {
+        if self.is_offset() {
+            format!(
+                "{} + [{}, {}, {}]",
+                self.anchor, self.offset[0], self.offset[1], self.offset[2]
+            )
+        } else {
+            self.anchor.as_str().to_string()
+        }
+    }
+}
+
+/// `cell + offset`, componentwise: the one arithmetic a [`Mark`] adds.
+pub fn offset_cell(cell: [i32; 3], offset: [i32; 3]) -> [i32; 3] {
+    [
+        cell[0] + offset[0],
+        cell[1] + offset[1],
+        cell[2] + offset[2],
+    ]
 }
 
 /// One shot of a [`Verb::Cutscene`] (DSL v0.6): a camera dolly with its
@@ -5439,7 +5743,7 @@ pub struct CameraShot {
     /// path is a static shot. Required without `shot_style`; with one, optional —
     /// an explicit `path` always overrides the style's expanded dolly.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub path: Vec<CameraWaypoint>,
+    pub path: Vec<Mark>,
     /// This shot's duration in seconds. Required without `shot_style`; with one,
     /// optional — the style's default duration applies (see
     /// [`ShotStyle::default_seconds`]), and an explicit value always overrides.
@@ -5450,7 +5754,7 @@ pub struct CameraShot {
     /// aim at its `subject`). An explicit `look_at` always overrides a style's
     /// aim.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub look_at: Option<CameraTarget>,
+    pub look_at: Option<Mark>,
     /// Shot-style preset (DSL v0.6, spec-0015 shot-grammar library): the
     /// compiler expands the style deterministically into a camera dolly +
     /// per-keyframe aim from the `subject`'s resolved geometry. Requires
@@ -5578,24 +5882,13 @@ impl ShotStyle {
 #[serde(untagged)]
 pub enum CameraSubject {
     /// A fixed world point: prefab anchor + offset.
-    Anchor(AnchorSubject),
+    Anchor(Mark),
     /// A stage-2 NPC — moving if a `move-npc` for it runs in the same effect
     /// group / sequence, else static at its declared (or spawn) anchor.
     Npc(NpcSubject),
     /// A stage-5 actor — moving if a `move-actor` for it runs in the same
     /// effect group / sequence, else static at its declared anchor.
     Actor(ActorSubject),
-}
-
-/// A [`CameraSubject::Anchor`] payload: a fixed world point.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct AnchorSubject {
-    /// The anchor the subject sits at.
-    pub anchor: AnchorId,
-    /// Integer `[x, y, z]` block offset (default `[0, 0, 0]`).
-    #[serde(default, skip_serializing_if = "is_zero3")]
-    pub offset: [i32; 3],
 }
 
 /// A [`CameraSubject::Npc`] payload: a stage-2 NPC.
@@ -5690,20 +5983,6 @@ impl CameraShot {
     }
 }
 
-/// The subject a [`Verb::Cutscene`] camera keeps framed (DSL v0.6): an
-/// anchor plus an integer block offset from it, giving the world point every
-/// dolly camera is aimed at. Same shape as a [`CameraWaypoint`] — a waypoint says
-/// where the camera *is*, a target says what it *looks at*.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct CameraTarget {
-    /// The anchor the look target is relative to.
-    pub anchor: AnchorId,
-    /// Integer `[x, y, z]` block offset from the anchor (default `[0, 0, 0]`).
-    #[serde(default, skip_serializing_if = "is_zero3")]
-    pub offset: [i32; 3],
-}
-
 /// serde `skip_serializing_if` helper: skip a `[0, 0, 0]` offset.
 fn is_zero3(v: &[i32; 3]) -> bool {
     *v == [0, 0, 0]
@@ -5751,6 +6030,7 @@ impl Verb {
             Verb::GiveEffect { .. } => "give-effect",
             Verb::ClearEffect { .. } => "clear-effect",
             Verb::Teleport { .. } => "teleport",
+            Verb::Firework { .. } => "firework",
         }
     }
 }
@@ -5844,10 +6124,10 @@ impl QuestEffect {
         }
     }
 
-    /// `(npc, to_anchor)` if this is a v0.4 `move-npc` effect.
-    pub fn move_npc(&self) -> Option<(&NpcId, &AnchorId)> {
+    /// `(npc, to)` if this is a v0.4 `move-npc` effect.
+    pub fn move_npc(&self) -> Option<(&NpcId, &Mark)> {
         match &self.verb {
-            Verb::MoveNpc { npc, to_anchor, .. } => Some((npc, to_anchor)),
+            Verb::MoveNpc { npc, to, .. } => Some((npc, to)),
             _ => None,
         }
     }
@@ -5900,6 +6180,8 @@ impl QuestEffect {
             | Verb::GiveEffect { .. }
             | Verb::ClearEffect { .. }
             | Verb::Teleport { .. }
+            // spec-0068's `firework` is v0.29.
+            | Verb::Firework { .. }
             | Verb::DropStake { .. } => None,
         }
     }
@@ -6084,6 +6366,50 @@ impl QuestEffect {
     pub fn spawn_npc(&self) -> Option<&NpcId> {
         match &self.verb {
             Verb::SpawnNpc { npc, .. } => Some(npc),
+            _ => None,
+        }
+    }
+
+    /// **The body this effect puts into the world**, by id, for every body class
+    /// alike ([`BodyRef`]).
+    ///
+    /// `spawn-npc` and `spawn-actor` are the two, and they are answered in one
+    /// place so a rule about a body's lifetime quantifies over bodies rather
+    /// than over the verb that first needed it. A body's OTHER entry — standing
+    /// on its mark from world init — is not an effect at all and is
+    /// [`BodyRef::at_world_init`].
+    ///
+    /// `unleash-actor` is deliberately not an entry: it puts no new body on the
+    /// mark, it replaces the one already standing there (see [`Self::body_exit`]).
+    pub fn body_entry(&self) -> Option<&str> {
+        match &self.verb {
+            Verb::SpawnNpc { npc, .. } => Some(npc.as_str()),
+            Verb::SpawnActor { actor, .. } => Some(actor.as_str()),
+            _ => None,
+        }
+    }
+
+    /// **The body this effect takes out of the world**, by id, for every body
+    /// class alike.
+    ///
+    /// `despawn-npc` and `despawn-actor` remove the body outright.
+    /// `unleash-actor` is the third: it kills the staged puppet and stands a
+    /// real-AI twin in its place, and from that moment the compiler makes no
+    /// claim about where that body is or whether it is still alive — the twin
+    /// walks, fights and dies under vanilla AI. Answering all three here is what
+    /// keeps "can this body still be standing?" from being decided one verb at a
+    /// time.
+    ///
+    /// Deliberately NOT an exit: `move-npc` / `move-actor`. A walked body is
+    /// still in the world, and its declared mark is still the cell the engine
+    /// summoned it onto — a mark two live bodies share is shared whether or not
+    /// one of them has since walked off it.
+    pub fn body_exit(&self) -> Option<&str> {
+        match &self.verb {
+            Verb::DespawnNpc { npc, .. } => Some(npc.as_str()),
+            Verb::DespawnActor { actor, .. } | Verb::UnleashActor { actor, .. } => {
+                Some(actor.as_str())
+            }
             _ => None,
         }
     }
@@ -6283,7 +6609,7 @@ impl QuestEffect {
     /// authority on the anchor-bearing effect surface, the referential sibling of
     /// [`Self::nested_effect_lists`]. Each entry is `(json_path_suffix, anchor)`,
     /// where the suffix is appended to the effect's own JSON pointer
-    /// (`anchor`, `to_anchor`, `in/anchor`, `zones/<i>/anchor`, `at/anchor`,
+    /// (`anchor`, `to/anchor`, `in/anchor`, `zones/<i>/anchor`, `at/anchor`,
     /// `shots/<i>/path/<j>/anchor`, …).
     ///
     /// Not recursive: pair it with [`Self::visit_deep`] to sweep a whole effect
@@ -6366,8 +6692,12 @@ impl QuestEffect {
             Verb::SetBlock { anchor, .. } => {
                 vec![("anchor".to_string(), anchor, None)]
             }
-            Verb::MoveNpc { to_anchor, .. } | Verb::MoveActor { to_anchor, .. } => {
-                vec![("to_anchor".to_string(), to_anchor, Some(StationKind::Point))]
+            Verb::MoveNpc { to, .. } | Verb::MoveActor { to, .. } => {
+                vec![(
+                    "to/anchor".to_string(),
+                    &to.anchor,
+                    Some(StationKind::Point),
+                )]
             }
             // The `in` filter is one capability on three verbs, so it registers
             // once: `damage-players` (v0.6) and the v0.10 status-effect pair.
@@ -6386,7 +6716,11 @@ impl QuestEffect {
             // zero-cell volume or a dropped command.
             Verb::Teleport { from, to, .. } => vec![
                 ("from/anchor".to_string(), &from.anchor, None),
-                ("to".to_string(), to, Some(StationKind::Point)),
+                (
+                    "to/anchor".to_string(),
+                    &to.anchor,
+                    Some(StationKind::Point),
+                ),
             ],
             Verb::BeginStealth { zones, .. } => zones
                 .iter()
@@ -6394,9 +6728,12 @@ impl QuestEffect {
                 .map(|(i, z)| (format!("zones/{i}/anchor"), &z.anchor, None))
                 .collect(),
             Verb::PlaySound {
-                at: Some(SoundAt::Anchor { anchor }),
+                at: Some(SoundAt::Anchor { anchor, .. }),
                 ..
             } => vec![("at/anchor".to_string(), anchor, None)],
+            // A firework is launched from a point and seats nothing, so it names
+            // a location in the same shape `play-sound` does.
+            Verb::Firework { at, .. } => vec![("at/anchor".to_string(), &at.anchor, None)],
             // spec-0022 trap-payload verbs. Both anchors of a `volley` are
             // load-bearing for the coverage proof, so both register here — a
             // typo'd `kill_zone` must be a dangling-reference error, never a
@@ -6453,7 +6790,7 @@ impl QuestEffect {
 
     /// The `cutscene` camera subject if this is a single-shot `cutscene` carrying
     /// the v0.6 `look_at` field.
-    pub fn cutscene_look_at(&self) -> Option<&CameraTarget> {
+    pub fn cutscene_look_at(&self) -> Option<&Mark> {
         match &self.verb {
             Verb::Cutscene { look_at, .. } => look_at.as_ref(),
             _ => None,
@@ -6670,8 +7007,8 @@ impl QuestEffect {
     }
 
     /// `(from, to)` if this is a `teleport` (DSL v0.10): the source volume and
-    /// the destination anchor.
-    pub fn teleport(&self) -> Option<(&StealthZone, &AnchorId)> {
+    /// the destination mark.
+    pub fn teleport(&self) -> Option<(&StealthZone, &Mark)> {
         match &self.verb {
             Verb::Teleport { from, to, .. } => Some((from, to)),
             _ => None,

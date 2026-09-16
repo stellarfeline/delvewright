@@ -179,9 +179,9 @@ POLL_INTERVAL=5    # seconds
 
 # THE INDEX LOOKUP IS NOT WRITTEN HERE. `tools/lib/crates_index.py` owns the
 # sparse-index path scheme, the fetch, the JSON-lines scan and the bind test,
-# because a second caller now asks the same question of the same registry
-# (`tools/check-dsl-version-published.py`: is the number this change moves away
-# from on crates.io?) and a private copy of a format reader is the shape
+# because other callers ask the same registry the same question
+# (`dsl-crate-publish.yml` attaching the registry's own `.crate` to its Release)
+# and a private copy of a format reader is the shape
 # `tools/lib/versions.py` and `tools/lib/checksum.sh` were each extracted after.
 # Shell reaches it the way it reaches a pin — one subcommand, one line of output.
 index_cksum() { # <crate-name> <version>
@@ -245,8 +245,16 @@ local_cksum() { # <crate-name> <version>
 # The registry's own `.crate`, fetched and CHECKED against the index sha256
 # before a byte of it is believed. A download that is truncated, cached wrong or
 # served from somewhere else must never be read as "the same crate".
+#
+# The download is `tools/lib/crates_index.py download`, the one reader of the
+# registry's files (which also refuses bytes that do not hash to the index's
+# sha256, and honours `DW_CRATES_STATIC` beside `DW_CRATES_INDEX` for a fixture);
+# the comparison below is kept as this script's own statement of the guarantee.
 fetch_registry_crate() { # <crate-name> <version> <expected-sha256> <dest-file>
-  curl -fsSL "https://static.crates.io/crates/$1/$1-$2.crate" -o "$4"
+  python3 "$ROOT/tools/lib/crates_index.py" download "$1" "$2" "$4" >&2 || {
+    echo "crates-io-publish: could not fetch the registry's own .crate for $1 $2. Refusing." >&2
+    exit 1
+  }
   local got
   got="$(dw_sha256_file "$4")"
   if [ "$got" != "$3" ]; then
@@ -405,6 +413,14 @@ fi
 
 TO_PUBLISH=()
 TO_PUBLISH_LINE=""
+# The sha256 the index must serve for each crate once this run is done, decided
+# here and read by the post-condition: our bytes for an upload or a byte-identical
+# skip, the REGISTRY's bytes for a same-crate skip. Comparing the index with our
+# own bytes after a same-crate skip is a post-condition that can never hold — the
+# index keeps the tarball the earlier commit uploaded — and it is exactly what a
+# re-run from a later `main` commit (the format crate's Release written after its
+# upload, ADR-0028 §6) reaches.
+EXPECT=()
 echo "== what crates.io already holds =="
 i=0
 while [ "$i" -lt "${#NAMES[@]}" ]; do
@@ -415,8 +431,10 @@ while [ "$i" -lt "${#NAMES[@]}" ]; do
     printf '  PUBLISH %s %s (absent from the index; our sha256 %s)\n' "$n" "$v" "$mine"
     TO_PUBLISH+=("$n")
     TO_PUBLISH_LINE="${TO_PUBLISH_LINE:+$TO_PUBLISH_LINE }$n"
+    EXPECT+=("$mine")
   elif [ "$remote" = "$mine" ]; then
     printf '  skip    %s %s (already published, byte-identical: %s)\n' "$n" "$v" "$mine"
+    EXPECT+=("$mine")
   else
     # The bytes differ, which on its own says nothing: `cargo package` stamps the
     # commit into the tarball. Ask the registry for its own copy and compare the
@@ -431,6 +449,7 @@ while [ "$i" -lt "${#NAMES[@]}" ]; do
     rm -f "$theirs"
     if [ "$same" -eq 0 ]; then
       printf '  skip    %s %s (already published, same crate)\n' "$n" "$v"
+      EXPECT+=("$remote")
     else
       printf '  FAIL    %s %s is on crates.io as a DIFFERENT crate\n' "$n" "$v"
       echo >&2
@@ -476,7 +495,7 @@ fi
 
 # ---------------------------------------------------------------- the upload
 if [ "${#TO_PUBLISH[@]}" -eq 0 ]; then
-  echo "== nothing to upload; the registry already holds every crate, byte-identical =="
+  echo "== nothing to upload; the registry already holds every crate, byte-identical or as the same crate =="
 else
   : "${CARGO_REGISTRY_TOKEN:?crates-io-publish: CARGO_REGISTRY_TOKEN is not set — this job must declare the crates-io environment}"
   args=()
@@ -491,18 +510,22 @@ fi
 
 # ------------------------------------------------- the post-condition, polled
 echo
-echo "== post-condition: every crate visible in the index with our checksums =="
+echo "== post-condition: every crate visible in the index with the checksum decided above =="
+if [ "${#EXPECT[@]}" -ne "${#NAMES[@]}" ]; then
+  echo "crates-io-publish: decided a checksum for ${#EXPECT[@]} of ${#NAMES[@]} crate(s); refusing to judge the rest." >&2
+  exit 2
+fi
 deadline=$((SECONDS + POLL_TIMEOUT))
 while :; do
   ok=0
   i=0
   while [ "$i" -lt "${#NAMES[@]}" ]; do
     n="${NAMES[$i]}"; v="${VERS[$i]}"
-    if [ "$(index_cksum "$n" "$v")" = "$(local_cksum "$n" "$v")" ]; then ok=$((ok + 1)); fi
+    if [ "$(index_cksum "$n" "$v")" = "${EXPECT[$i]}" ]; then ok=$((ok + 1)); fi
     i=$((i + 1))
   done
   if [ "$ok" -eq "${#NAMES[@]}" ]; then
-    echo "  ok   ${#NAMES[@]}/${#NAMES[@]} visible with matching sha256"
+    echo "  ok   ${#NAMES[@]}/${#NAMES[@]} visible with the expected sha256"
     break
   fi
   if [ "$SECONDS" -ge "$deadline" ]; then

@@ -1854,30 +1854,31 @@ impl<'a> Expander<'a> {
             });
         }
 
-        let pieces = make_split(extent, &sizes, split.rounding, split.repeat).map_err(|error| {
-            ExpandError::Split {
-                symbol: symbol.to_string(),
-                error,
-                axis: split.axis,
-                world_axis,
-                pattern: resolved
-                    .iter()
-                    .map(|(expr, absolute, value)| {
-                        let kind = if *absolute { "abs" } else { "rel" };
-                        // A literal already shows its own value; an expression
-                        // shows both the authored form and what it came to.
-                        if *expr == value.to_string() {
-                            format!("{kind} {value}")
-                        } else {
-                            format!("{kind} {expr} = {value}")
-                        }
-                    })
-                    .collect::<Vec<_>>()
-                    .join(", "),
-                scope: Box::new(state.at()),
-                path: Vec::new(),
-            }
-        })?;
+        let pieces =
+            make_split(extent, &sizes, split.rounding_mode(), split.repeat).map_err(|error| {
+                ExpandError::Split {
+                    symbol: symbol.to_string(),
+                    error,
+                    axis: split.axis,
+                    world_axis,
+                    pattern: resolved
+                        .iter()
+                        .map(|(expr, absolute, value)| {
+                            let kind = if *absolute { "abs" } else { "rel" };
+                            // A literal already shows its own value; an expression
+                            // shows both the authored form and what it came to.
+                            if *expr == value.to_string() {
+                                format!("{kind} {value}")
+                            } else {
+                                format!("{kind} {expr} = {value}")
+                            }
+                        })
+                        .collect::<Vec<_>>()
+                        .join(", "),
+                    scope: Box::new(state.at()),
+                    path: Vec::new(),
+                }
+            })?;
 
         // The child orientation is computed once, from the parent box, exactly
         // as upstream does (`assignment` is taken before the pieces are cut).

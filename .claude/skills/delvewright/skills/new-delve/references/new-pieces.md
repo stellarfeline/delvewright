@@ -141,8 +141,8 @@ this needs are subcommands of the one binary Init I3 installed.
    `at: floor_center` takes the lowest **world** Y of the scope it sits on, so a
    mark wrapping a column that includes its own floor slab lands *in* the floor
    and reds `contract-anchors`; mark the void, or use `at: offset` with the
-   walkable Y. A `mark` may also carry `role` (`grammar.md` §2b, one term today:
-   `entry`) — that is how a grammar-authored piece declares the 2A entry point
+   walkable Y. A `mark` may also carry `role` (`grammar.md` §2b; a mark is a
+   point, so of the two terms it takes `entry`) — that is how a grammar-authored piece declares the 2A entry point
    without needing to write a name it structurally cannot write; one anchor per
    area may carry it (`DW0804`), and every other anchor still binds by name.
    For a hand-built or ingested piece, where no `mark` ever ran, the same role
@@ -227,6 +227,17 @@ this needs are subcommands of the one binary Init I3 installed.
    ```sh
    delvec --prefabs "$DELVEWRIGHT_PREFABS" render piece out/<id>.nbt -o shots/
    ```
+
+   **The expand already measured this piece's light** and wrote the profile with
+   the binding it was taken over — you do not run a probe by hand after an
+   expansion. Read the `lighting` block: a `dark` piece renders, and it is telling
+   you the room needs a light where the delve reaches night. This step refuses
+   only a piece with floor in it that nobody measured (`DW0894`), which means it
+   came from somewhere other than an expansion; `delvec --prefabs
+   "$DELVEWRIGHT_PREFABS" prefab lighting <piece> --write` is the same
+   measurement through the other door. Read the `DW0895` line too: it reports the
+   roofed floor no body can walk to and the step the walk was refused at — a room
+   with a ceiling and no way in renders exactly like a room with a door.
 
    and compare against the scene description from 1 above. The gates prove it is
    buildable and walkable; they
@@ -337,6 +348,34 @@ this needs are subcommands of the one binary Init I3 installed.
    that has not been carved yet, so run `socket` first; `DW0753` means there is no
    metadata to write into, and the fix is to create it, never to let the tool
    invent a `spdx: UNKNOWN` one.
+
+## A body has to be able to walk up it
+
+**A step of one whole block is a jump, not a stair.** Vanilla walks a body up
+0.6 of a block; a full course has to be jumped, every tread, all the way up. A
+staircase built from whole blocks passes every gate the expansion runs — it is
+solid, it is reachable, the nav model allows the jump — and it is wrong the
+moment anybody plays it. Build every flight from **stair blocks**:
+
+- the walked lane is `minecraft:<stone>_stairs[facing=<the way it climbs>,half=bottom,shape=straight,waterlogged=false]`, one tread per course, and `facing` is the direction you **ascend** — a vanilla stair's full-height half sits on its `facing` side;
+- a wide flight keeps its **outermost columns as whole masonry**, because a body can step onto a wide flight from the side, and a stair carrying a route that crosses it rather than climbs it is a stair facing the wrong way;
+- a flight that is joined from the side at its foot gets a **landing** there — the first tread or two as whole blocks — for the same reason.
+
+`DW0430` refuses a stair whose facing disagrees with the climb its route makes,
+at build time, naming every cell. It cannot see the other half of this rule: a
+flight of whole blocks faces nothing, so nothing refuses it. That one is yours.
+
+**A table is declared, not left to the walker.** A slab on a fence is floor to
+the walk model — a bench beside it is a half-block step and the top one jump
+more — so a guide routed across a hall climbs the dining table and down the
+other side unless the piece says the table is furniture. Declare every piece of
+furniture a body could stand on (a laid table, an altar, a counter, a bed) as an
+anchor with role `furniture` and a `region` over its own blocks — legs and top,
+not the air above: `delvec --prefabs "$DELVEWRIGHT_PREFABS" prefab anchor <nbt> --name anchor/<table> --region x1,y1,z1:x2,y2,z2 --role furniture`.
+No walk then stands a body on it; a body you POST there (a cat on the table)
+still stands there. A region over air, or over blocks nobody could stand on, is
+`DW0888`; a route whose only way is over the table is `DW0510`, naming it —
+move the mark or open a way round, never drop the declaration.
 
 ## What the grammar cannot express
 

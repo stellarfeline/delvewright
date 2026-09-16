@@ -305,7 +305,7 @@ fn the_documented_minimum_regions_are_the_real_ones() {
 
     // church: no fixed minimum — the roof's height has to follow the nave's
     // width, because it steps in two blocks per course.
-    for (width, min_height) in [(9u32, 9u32), (15, 12), (21, 18)] {
+    for (width, min_height) in [(9u32, 8u32), (15, 12), (21, 16)] {
         let ok = Box3::at_origin([width, min_height, 30]);
         expand(&church(), ok, &ExpandOptions::seeded(1))
             .unwrap_or_else(|e| panic!("church {width}x{min_height}: {e}"));

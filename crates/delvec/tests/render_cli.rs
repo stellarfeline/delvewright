@@ -26,26 +26,52 @@ fn tmp(tag: &str) -> PathBuf {
     dir
 }
 
+/// A prefab from the content repo, or `None` on a checkout without the symlink.
+fn prefab(name: &str) -> Option<PathBuf> {
+    let p = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../campaigns/prefabs")
+        .join(name);
+    p.exists().then_some(p)
+}
+
 #[test]
 fn piece_without_textures_is_dw0723_exit5() {
     // No --textures, and an empty HOME so `~/.chunky/resources/minecraft.jar`
-    // cannot exist; DELVEWRIGHT_CLIENT_JAR is stripped too. Texture resolution
-    // fails before the (nonexistent) input .nbt is ever read.
+    // cannot exist; DELVEWRIGHT_CLIENT_JAR is stripped too.
+    //
+    // **The input is a real, measured library piece**, and it has to be. This
+    // test used to pass `nonexistent.nbt` on the reading that texture resolution
+    // happens before the input is ever opened. That order moved: the arm now
+    // judges the piece — measured light, and the roofed floor nothing can reach
+    // (`DW0894`/`DW0895`) — before it goes looking for a client jar, for the
+    // same reason the `--view` test below gives for parsing specs first. A
+    // creator who typed the wrong filename, or handed over a piece nobody
+    // measured, is owed that answer and not *I could not find your textures*.
+    // So the piece is one that passes both, and what is left for this test to
+    // assert is exactly what it always asserted: with no textures anywhere, the
+    // arm exits 5 on `DW0723`.
+    let Some(nbt) = prefab("keep-gate-room.nbt") else {
+        eprintln!("skip: no content symlink");
+        return;
+    };
     let empty_home = tmp("piece-no-textures-home");
     let out = tmp("piece-no-textures-out");
 
     let result = render()
         .args(["piece"])
-        .arg("nonexistent.nbt")
+        .arg(&nbt)
         .args(["--out"])
         .arg(&out)
         .env("HOME", &empty_home)
         .env_remove("DELVEWRIGHT_CLIENT_JAR")
         .output()
         .unwrap();
-    assert_eq!(result.status.code(), Some(5), "{result:?}");
     let stderr = String::from_utf8_lossy(&result.stderr);
+    assert_eq!(result.status.code(), Some(5), "{stderr}");
     assert!(stderr.contains("DW0723"), "expected DW0723: {stderr}");
+    // ...and it got past the piece, which is what makes the assertion above
+    // about textures rather than about the piece.
+    assert!(!stderr.contains("DW0894"), "{stderr}");
 }
 
 /// A malformed `--view` is a usage error, and it is worth nothing to discover it

@@ -25,8 +25,8 @@ use delvec::compiler::emit::{self, BuildOutput};
 use delvec::compiler::plan::Plan;
 use delvec::compiler::registry::PrefabRegistry;
 use delvec::grammar::ir::{
-    Contract, EXTERIOR, EdgeClass, Envelope, Mark, MarkAt, Node, Opens, Program, Reorient,
-    Rounding, Size, Split, Way,
+    Contract, EXTERIOR, EdgeClass, Envelope, Mark, MarkAt, Node, Opens, Program, Reorient, Size,
+    Split, Way,
 };
 use delvec::grammar::{Axis, BlockState, Box3, ExpandOptions, export_prefab};
 use delvewright_dsl::{Campaign, DSL_VERSION, RawCampaign, parse_campaign};
@@ -83,7 +83,7 @@ fn broken_flight(block: &str) -> Program {
         Node::Split(Split {
             axis,
             sizes,
-            rounding: Rounding::Truncate,
+            rounding: None,
             repeat: false,
             orient: Reorient::KEEP,
             children,

@@ -7,8 +7,8 @@ id is not an exception, it is a hole. This is what keeps it honest.
 
 **The enumeration is the point.** An existence check that only looks where
 somebody pointed is how the UNRUN shape survives review, so every surface in THIS
-repository that could put a campaign in front of a player is named here: the two
-image/binary publishers and the staging gate. When another appears, it belongs in
+repository that could put a campaign in front of a player is named here: the
+image publisher, the three release workflows and the staging gate. When another appears, it belongs in
 `SHIPPING_SURFACES` — and the last test in this file is what notices that the
 list stopped covering the tree.
 
@@ -30,8 +30,10 @@ GALLERY_ID = "gallery"
 # asserted not to name the gallery: these are workflows and scripts in three
 # languages, and a parser per language is a parser per language to keep correct.
 SHIPPING_SURFACES = [
+    ".github/workflows/dsl-crate-publish.yml",
     ".github/workflows/engine-release.yml",
     ".github/workflows/infra-images.yml",
+    ".github/workflows/plugin-release.yml",
     "tools/staging-gate.py",
 ]
 
@@ -41,7 +43,12 @@ SHIPPING_SURFACES = [
 # runner. Judging by "builds an image" instead would sweep the validation tier in
 # with the publish tier, and then the gallery's own CI job — which must name
 # `gallery/`, that being its entire purpose — would read as a release path.
-PUBLISH_MARKERS = ("docker/build-push-action", "push: true", "gh release upload")
+#
+# `gh release create` is a marker beside `gh release upload` because a release
+# created with files attaches them in the same command: the plugin's and the
+# format crate's Releases (ADR-0028) upload their assets that way, and a list of
+# markers that only knew the upload verb did not see the plugin workflow at all.
+PUBLISH_MARKERS = ("docker/build-push-action", "push: true", "gh release upload", "gh release create")
 
 
 def _read(rel: str) -> str:

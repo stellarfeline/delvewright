@@ -504,40 +504,57 @@ fn graded_erosion_each_band_is_more_ruined_than_the_one_below() {
     assert_eq!(shares.iter().map(|s| s.2).sum::<usize>(), 351);
 }
 
-/// **`rounding` is owed by every surface, not only by floors** — the measured
-/// red the reference now states.
+/// **A banded surface covers its top course under every rounding there is** —
+/// the mode chooses which band absorbs an uneven division, never whether one is
+/// lost.
 ///
-/// Thirteen courses over three shares do not divide. Under the default
-/// `truncate` the pieces are 4, 4, 4 and the thirteenth course is never written:
-/// twenty-seven cells of daylight along the top of the wall, and no gate reads
-/// it, because `non-empty` and `blocks-exist` are both perfectly happy.
+/// Thirteen courses over three shares do not divide. Upstream's truncating
+/// layout made the pieces 4, 4, 4 and never wrote the thirteenth course:
+/// twenty-seven cells of daylight along the top of the wall, and no gate read
+/// it, because `non-empty` and `blocks-exist` are both perfectly happy with a
+/// cell nobody claimed. This test is that hole's perturbation: it drives the
+/// band split through every mode the surface offers and demands the top course
+/// back from each of them.
 #[test]
-fn graded_erosion_a_truncating_band_split_leaves_a_course_unwritten() {
+fn graded_erosion_every_rounding_covers_the_top_course() {
     let case = &case_by_id("idiom-erosion-graded");
     let top = case.region[1] as i32 - 1;
+    let top_course = |model: &_| {
+        (0..case.region[0] as i32)
+            .flat_map(|x| (0..case.region[2] as i32).map(move |z| [x, top, z]))
+            .filter(|&c| !is_air(model, c))
+            .count()
+    };
 
     let covered = expand_case(case);
-    let written = (0..case.region[0] as i32)
-        .flat_map(|x| (0..case.region[2] as i32).map(move |z| [x, top, z]))
-        .filter(|&c| !is_air(&covered, c))
-        .count();
-    assert!(written > 0, "the rounded split covers the top course");
+    let written = top_course(&covered);
+    assert!(written > 0, "the idiom's own split covers the top course");
 
-    let mut truncating = idioms::graded_erosion();
-    set_rounding(&mut truncating, "face", Rounding::Truncate);
-    let short = run(&truncating, case.region, case.seed);
-    let left = (0..case.region[0] as i32)
-        .flat_map(|x| (0..case.region[2] as i32).map(move |z| [x, top, z]))
-        .filter(|&c| !is_air(&short, c))
-        .count();
+    // The top course belongs to a different band under each mode, and the
+    // bands differ in how much air their mix carries — so the counts differ.
+    // What may never happen is the count going to zero, which is what an
+    // uncovered course looks like and what the truncating layout produced.
+    let mut counts = Vec::new();
+    for mode in [Rounding::Start, Rounding::End, Rounding::Middle] {
+        let mut banded = idioms::graded_erosion();
+        set_rounding(&mut banded, "face", mode);
+        let laid = run(&banded, case.region, case.seed);
+        let stood = top_course(&laid);
+        assert!(
+            stood > 0,
+            "{mode:?} left the whole top course written by nobody"
+        );
+        let report = gates::judge(&laid, gates::Options::default());
+        assert!(report.is_pass(), "{mode:?}: {:#?}", report.gates);
+        counts.push(stood);
+    }
+    assert_eq!(counts.len(), 3, "binding: every rounding mode declared");
     assert_eq!(
-        left, 0,
-        "the truncating split must leave the top course air"
+        counts,
+        vec![17, 14, 17],
+        "measured: start / end / middle over the documented region"
     );
-
-    // ...and the report is green either way, which is the point of the warning.
-    let report = gates::judge(&short, gates::Options::default());
-    assert!(report.is_pass(), "{:#?}", report.gates);
+    assert_eq!(written, 14, "the idiom asks for `end`");
 }
 
 // ---------------------------------------------------------------------------
@@ -680,7 +697,7 @@ fn mirror_the_reflection_is_the_two_copies_it_replaces() {
                 Alternative::new(Node::Split(Split {
                     axis: Axis::Y,
                     sizes: vec![Size::abs(1), Size::rel(1)],
-                    rounding: Rounding::Start,
+                    rounding: Some(Rounding::Start),
                     repeat: false,
                     orient: Reorient::KEEP,
                     children: vec![Node::call("slot"), Node::call("upper_inset")],
@@ -699,7 +716,7 @@ fn mirror_the_reflection_is_the_two_copies_it_replaces() {
             Node::Split(Split {
                 axis: Axis::X,
                 sizes: vec![Size::abs(1), Size::rel(1), Size::abs(1)],
-                rounding: Rounding::Start,
+                rounding: Some(Rounding::Start),
                 repeat: false,
                 orient: Reorient::KEEP,
                 children: vec![
@@ -996,17 +1013,17 @@ fn negated_guard_holds_exactly_when_no_sub_guard_does() {
 // Four facts about the IR that `grammar.md` §2 now states
 // ---------------------------------------------------------------------------
 
-/// **`rounding` other than `truncate` is legal on a split with exactly one
-/// relative piece — and at weight 1 it changes nothing**, because the remainder
-/// of dividing by one is always zero.
+/// **`rounding` is legal on a split with exactly one relative piece — and at
+/// weight 1 it changes nothing**, because the remainder of dividing by one is
+/// always zero.
 ///
 /// Both halves matter to an author: the first because `RoundingWithoutRelative`
 /// refuses only a split with *no* relative piece, the second because reaching
-/// for `"rounding": "start"` on `[abs, rel, abs]` is a no-op and the coverage it
-/// looks like it is buying has to come from somewhere else.
+/// for `"rounding": "start"` on `[abs, rel, abs]` is a no-op — that pattern
+/// already covers its axis, as every pattern carrying a share now does.
 #[test]
 fn fact_rounding_on_one_relative_piece_is_legal_and_inert_at_weight_one() {
-    let one_share = |rounding: Rounding| -> Program {
+    let one_share = |rounding: Option<Rounding>| -> Program {
         Program::new("one_share", "band")
             .role("mass", BlockState::simple("stone_bricks"))
             .rule(
@@ -1021,22 +1038,21 @@ fn fact_rounding_on_one_relative_piece_is_legal_and_inert_at_weight_one() {
                 }),
             )
     };
-    one_share(Rounding::Start).validate().unwrap();
+    one_share(Some(Rounding::Start)).validate().unwrap();
     for size in [[8u32, 2, 2], [9, 2, 2], [10, 2, 2]] {
-        assert_eq!(
-            run(&one_share(Rounding::Start), size, 1)
-                .model
-                .canonical_bytes(),
-            run(&one_share(Rounding::Truncate), size, 1)
-                .model
-                .canonical_bytes(),
-            "one share of weight 1 always covers exactly, at {size:?}"
-        );
+        for mode in [Rounding::Start, Rounding::End, Rounding::Middle] {
+            assert_eq!(
+                run(&one_share(Some(mode)), size, 1).model.canonical_bytes(),
+                run(&one_share(None), size, 1).model.canonical_bytes(),
+                "one share of weight 1 always covers exactly: {mode:?} at {size:?}"
+            );
+        }
     }
 
-    // At weight 3 there is a remainder to place, and rounding is a real control.
-    let three_shares = |rounding: Rounding| -> Program {
-        Program::new("three_shares", "band")
+    // Raising the weight changes nothing either: one share takes the whole
+    // leftover whatever its weight, so there is still no remainder to place.
+    let one_heavy_share = |rounding: Option<Rounding>| -> Program {
+        Program::new("one_heavy_share", "band")
             .role("mass", BlockState::simple("stone_bricks"))
             .rule(
                 "band",
@@ -1050,24 +1066,52 @@ fn fact_rounding_on_one_relative_piece_is_legal_and_inert_at_weight_one() {
                 }),
             )
     };
-    let filled = |rounding: Rounding| {
-        run(&three_shares(rounding), [9, 1, 1], 1)
-            .model
-            .filled_cells()
+    for mode in [Rounding::Start, Rounding::End, Rounding::Middle] {
+        assert_eq!(
+            run(&one_heavy_share(Some(mode)), [9, 1, 1], 1)
+                .model
+                .canonical_bytes(),
+            run(&one_heavy_share(None), [9, 1, 1], 1)
+                .model
+                .canonical_bytes(),
+            "one share of weight 3 still has no remainder to place: {mode:?}"
+        );
+    }
+
+    // Rounding becomes a real control at TWO shares, where the spare block has
+    // to be given to one of them.
+    let two_shares = |rounding: Rounding| -> Program {
+        Program::new("two_shares", "band")
+            .role("mass", BlockState::simple("stone_bricks"))
+            .rule(
+                "band",
+                Node::Split(Split {
+                    axis: Axis::X,
+                    sizes: vec![Size::rel(1), Size::abs(1), Size::rel(1)],
+                    rounding: Some(rounding),
+                    repeat: false,
+                    orient: Reorient::KEEP,
+                    children: vec![Node::Void, Node::fill("mass"), Node::Void],
+                }),
+            )
     };
-    // Truncate: 8 leftover over weight 3 gives 2 per unit, so the pattern covers
-    // 6 + 1 of 9 and the last two columns are never written.
-    assert_eq!(filled(Rounding::Truncate), 1);
-    assert_eq!(filled(Rounding::Start), 1);
     assert_ne!(
-        run(&three_shares(Rounding::Start), [9, 1, 1], 1)
+        run(&two_shares(Rounding::Start), [10, 1, 1], 1)
             .model
             .canonical_bytes(),
-        run(&three_shares(Rounding::Truncate), [9, 1, 1], 1)
+        run(&two_shares(Rounding::End), [10, 1, 1], 1)
             .model
             .canonical_bytes(),
-        "at weight 3 the remainder has somewhere to go, so the split moves"
+        "with two shares the spare block moves the fixed piece"
     );
+    // ...and both cover the axis: the mass block is written either way.
+    for mode in [Rounding::Start, Rounding::End, Rounding::Middle] {
+        assert_eq!(
+            run(&two_shares(mode), [10, 1, 1], 1).model.filled_cells(),
+            1,
+            "{mode:?}"
+        );
+    }
 }
 
 /// **`smallest` and `largest` break a tie toward the lowest WORLD axis** — `X`,
@@ -1090,7 +1134,7 @@ fn fact_smallest_and_largest_break_a_tie_toward_the_lowest_world_axis() {
                     body: Box::new(Node::Split(Split {
                         axis: Axis::X,
                         sizes: vec![Size::abs(1), Size::rel(1)],
-                        rounding: Rounding::Truncate,
+                        rounding: None,
                         repeat: false,
                         orient: Reorient::KEEP,
                         children: vec![Node::Void, Node::fill("mass")],
@@ -1134,7 +1178,7 @@ fn fact_a_zero_length_relative_piece_is_a_silent_empty_child() {
                     axis: Axis::X,
                     // Two absolute cells and nothing left over for the share.
                     sizes: vec![Size::abs(1), Size::rel(1), Size::abs(1)],
-                    rounding: Rounding::Start,
+                    rounding: Some(Rounding::Start),
                     repeat: false,
                     orient: Reorient::KEEP,
                     children: vec![Node::fill("mass"), body, Node::fill("mass")],
@@ -1153,7 +1197,7 @@ fn fact_a_zero_length_relative_piece_is_a_silent_empty_child() {
         &squeezed(Node::Split(Split {
             axis: Axis::X,
             sizes: vec![Size::abs(1)],
-            rounding: Rounding::Truncate,
+            rounding: None,
             repeat: false,
             orient: Reorient::KEEP,
             children: vec![Node::fill("mass")],
@@ -1172,7 +1216,7 @@ fn fact_a_zero_length_relative_piece_is_a_silent_empty_child() {
             Node::Split(Split {
                 axis: Axis::X,
                 sizes: vec![Size::rel(0)],
-                rounding: Rounding::Truncate,
+                rounding: None,
                 repeat: false,
                 orient: Reorient::KEEP,
                 children: vec![Node::fill("mass")],
@@ -1285,7 +1329,7 @@ fn strip_otherwise(program: &mut Program, symbol: &str) {
 fn set_rounding(program: &mut Program, symbol: &str, rounding: Rounding) {
     let alts = program.rules.get_mut(symbol).expect("rule exists");
     match &mut alts[0].body {
-        Node::Split(split) => split.rounding = rounding,
+        Node::Split(split) => split.rounding = Some(rounding),
         other => panic!("{symbol} is not a bare split: {other:?}"),
     }
 }

@@ -181,7 +181,7 @@ enforced separately by validation/check-versions.sh and
 
 [[pin]]
 id = "skill-page-engine"
-value = "d8d87ef60583a4643fab28e07aee18f73d93fa84"
+value = "70eea6296cfab2440054f95670729081c3d4bca1"
 sites = [".claude/skills/delvewright/skills/new-delve/versions.toml"]
 repo = "stellarfeline/delvewright"
 policy = "release"
@@ -331,6 +331,30 @@ itself. It pins BYTES rather than a version string, so a hand-edited bundle is a
 red (versions.toml [render]).
 """
 
+[[pin]]
+id = "chunky-revision"
+value = "156e2bba2526fe4cf218243704b6f3e6d0281d1a"
+sites = ["versions.toml"]
+policy = "immutable"
+why = """
+The chunky-dev/chunky commit `validation/chunky-install.sh` builds the pinned
+Chunky core from (versions.toml [render]). A third-party commit names fixed
+source; `validation/check-versions.sh` holds it to the `.g<sha7>` the core's name
+carries.
+"""
+
+[[pin]]
+id = "chunky-core-content"
+value = "6710920a30882d3e8a32121c8d97ce940a9f35539137ef91fff0e70256a809fc"
+sites = ["versions.toml"]
+policy = "immutable"
+why = """
+The content digest of the pinned Chunky core jar, by the rule in
+`tools/lib/chunky_core.py` (versions.toml [render]). It pins what the jar
+contains rather than its name or its zip bytes: the installer installs nothing
+that does not answer it, and `validation/chunky.sh` renders with nothing else.
+"""
+
 # --- misode/mcmeta data dumps, from which generated tables are extracted ------
 # Each names one retrieval of one file at the pinned Minecraft version. The
 # extractor refuses bytes that do not match, so these are what make a
@@ -339,9 +363,13 @@ red (versions.toml [render]).
 [[pin]]
 id = "mcmeta-commit"
 value = "c976eb3b2cfcb9f205171527dec46b266afa3ac9"
-sites = ["tools/extract-block-defaults.py", "tools/extract-block-registry.py"]
+sites = [
+    "tools/extract-block-defaults.py",
+    "tools/extract-block-registry.py",
+    "tools/extract-item-equippable.py",
+]
 policy = "immutable"
-why = "The misode/mcmeta commit the pinned block summaries were retrieved from."
+why = "The misode/mcmeta commit the pinned block summaries and item components were retrieved from."
 
 [[pin]]
 id = "mcmeta-blocks"
@@ -355,10 +383,25 @@ id = "mcmeta-item-components"
 value = "51b191e13f86813ca02f1498942e5bc235947edb71eb8105a78401670b3665c4"
 sites = [
     "tools/extract-item-combat-stats.py",
+    "tools/extract-item-equippable.py",
     "tools/extract-item-stack-sizes.py",
 ]
 policy = "immutable"
 why = "sha256 of the mcmeta `item_components/data.min.json`."
+
+[[pin]]
+id = "mcmeta-assets-commit"
+value = "c5b876288e0df01b5cd5798434b066ab97eff88c"
+sites = ["tools/extract-item-equippable.py"]
+policy = "immutable"
+why = "The misode/mcmeta `1.21.11-assets` commit the pinned client's equipment assets were retrieved from."
+
+[[pin]]
+id = "mcmeta-equipment-assets"
+value = "150b585538e2295db9daee16e3fce4c23ac5bcdddc85358208b8e7adadbf78bb"
+sites = ["tools/extract-item-equippable.py"]
+policy = "immutable"
+why = "sha256 of the sorted `sha256sum` listing of the 44 files under the pinned `assets/minecraft/equipment/`."
 
 [[pin]]
 id = "mcmeta-damage-types"
@@ -421,6 +464,7 @@ sites = [
     ".github/workflows/engine-release.yml",
     ".github/workflows/gpu-probe.yml",
     ".github/workflows/infra-images.yml",
+    ".github/workflows/plugin-release.yml",
 ]
 policy = "floating"
 why = "GitHub's own checkout action, held at its major tag."
@@ -454,14 +498,22 @@ why = "GitHub's Python toolchain action, held at its major tag."
 [[pin]]
 id = "action-upload-artifact"
 value = "actions/upload-artifact@v4"
-sites = [".github/workflows/ci.yml", ".github/workflows/engine-release.yml"]
+sites = [
+    ".github/workflows/ci.yml",
+    ".github/workflows/engine-release.yml",
+    ".github/workflows/plugin-release.yml",
+]
 policy = "floating"
 why = "GitHub's artifact upload action, held at its major tag."
 
 [[pin]]
 id = "action-download-artifact"
 value = "actions/download-artifact@v4"
-sites = [".github/workflows/ci.yml", ".github/workflows/engine-release.yml"]
+sites = [
+    ".github/workflows/ci.yml",
+    ".github/workflows/engine-release.yml",
+    ".github/workflows/plugin-release.yml",
+]
 policy = "floating"
 why = "GitHub's artifact download action, held at its major tag."
 

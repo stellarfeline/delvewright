@@ -30,8 +30,8 @@ The full inventory — every binary, script and flag that exists today — is
   (look at the subject), `dw.faster`/`dw.slower set <s>`, then `/trigger dw.done`
   once; `delvec harvest` writes `rehearsal-report.json` and `delvec --prefabs "$DELVEWRIGHT_PREFABS" calibrate
   <report> --layout <out>/creator-datapack/layout.json` turns it into an
-  anchor+offset patch you apply and rebuild. Human-optional. (Beat replay —
-  `dw.beat` / `dw.shot` / `dw.free` — does not exist; do not promise it.)
+  anchor+offset patch you apply and rebuild. Human-optional. Beat replay does
+  not exist at this engine; do not promise it.
 - **A prefab library needing human taste, not machine checks**: `delvec prefab
   gallery` (browse world) → a reviewer walks it and leaves notes → `delvec prefab
   curate` / `curate-merge` fold them into the catalog cards. Human-optional.

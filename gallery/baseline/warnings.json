@@ -184,6 +184,11 @@
       "code": "DW0477",
       "pointer": "/content/actors/2/tier",
       "stage": "quests"
+    },
+    {
+      "code": "DW0477",
+      "pointer": "/content/actors/6/tier",
+      "stage": "quests"
     }
   ],
   "hard.en": [
@@ -370,6 +375,11 @@
     {
       "code": "DW0477",
       "pointer": "/content/actors/2/tier",
+      "stage": "quests"
+    },
+    {
+      "code": "DW0477",
+      "pointer": "/content/actors/6/tier",
       "stage": "quests"
     }
   ],
@@ -558,6 +568,11 @@
       "code": "DW0477",
       "pointer": "/content/actors/2/tier",
       "stage": "quests"
+    },
+    {
+      "code": "DW0477",
+      "pointer": "/content/actors/6/tier",
+      "stage": "quests"
     }
   ],
   "primary.en": [
@@ -744,6 +759,11 @@
     {
       "code": "DW0477",
       "pointer": "/content/actors/2/tier",
+      "stage": "quests"
+    },
+    {
+      "code": "DW0477",
+      "pointer": "/content/actors/6/tier",
       "stage": "quests"
     }
   ],
@@ -932,6 +952,11 @@
       "code": "DW0477",
       "pointer": "/content/actors/2/tier",
       "stage": "quests"
+    },
+    {
+      "code": "DW0477",
+      "pointer": "/content/actors/6/tier",
+      "stage": "quests"
     }
   ],
   "site-plan.en": [
@@ -984,6 +1009,23 @@
       "code": "DW0475",
       "pointer": "/content/waves",
       "stage": "quests"
+    }
+  ],
+  "valley-site.en": [
+    {
+      "code": "DW0822",
+      "pointer": "/content/critical_path",
+      "stage": "layout-graph"
+    },
+    {
+      "code": "DW0813",
+      "pointer": "3 of the 3 building metric(s) this run read are provisional — the metrics gym has not walked them",
+      "stage": "layout-graph:"
+    },
+    {
+      "code": "DW0781",
+      "pointer": "/areas",
+      "stage": "world"
     }
   ],
   "void-horizon.en": [
@@ -1170,6 +1212,11 @@
     {
       "code": "DW0477",
       "pointer": "/content/actors/2/tier",
+      "stage": "quests"
+    },
+    {
+      "code": "DW0477",
+      "pointer": "/content/actors/6/tier",
       "stage": "quests"
     }
   ]

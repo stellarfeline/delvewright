@@ -99,6 +99,38 @@ pub fn harvest_rehearsal(log: &str, campaign_id: &str) -> RehearsalReport {
     }
 }
 
+/// The shot roster a server log carries: every `[DelveShotRoster] <id>=<pointer>#<index>`
+/// line, one per shot, as `(id, pointer, index)` in id order. The overlay stamps
+/// it for every player who joins, so a log repeats it; a repeat collapses. The
+/// `shots=<n>` count line is not an entry.
+pub fn harvest_roster(log: &str) -> Vec<(u32, String, u32)> {
+    const ROSTER: &str = "[DelveShotRoster] ";
+    let mut by_id: BTreeMap<u32, (String, u32)> = BTreeMap::new();
+    for line in log.lines() {
+        let (_, Some(msg)) = split_log_line(line) else {
+            continue;
+        };
+        let Some(at) = msg.find(ROSTER) else {
+            continue;
+        };
+        let payload = msg[at + ROSTER.len()..].trim();
+        let Some((id, rest)) = payload.split_once('=') else {
+            continue;
+        };
+        let (Ok(id), Some((pointer, index))) = (id.parse::<u32>(), rest.rsplit_once('#')) else {
+            continue;
+        };
+        let Ok(index) = index.parse::<u32>() else {
+            continue;
+        };
+        by_id.insert(id, (pointer.to_string(), index));
+    }
+    by_id
+        .into_iter()
+        .map(|(id, (pointer, index))| (id, pointer, index))
+        .collect()
+}
+
 /// Serialize a report the way every Delvewright JSON artifact is written:
 /// canonical pretty JSON with a trailing newline.
 pub fn rehearsal_json(report: &RehearsalReport) -> String {
@@ -211,6 +243,25 @@ mod tests {
         assert_eq!(one.stamps, 1);
         // A travel-aimed shot reports no look target rather than a sentinel.
         assert_eq!(r.shots[1].look_at, None);
+    }
+
+    /// One roster line per shot, repeated for a second player, reads back as the
+    /// roster once; the count line is not an entry.
+    #[test]
+    fn the_roster_reads_back_one_entry_per_shot() {
+        let log = "\
+[06:12:44] [Server thread/INFO]: [Not Secure] [c] [DelveShotRoster] shots=2
+[06:12:44] [Server thread/INFO]: [Not Secure] [c] [DelveShotRoster] 1=/content/quests/0/on_complete/0#0
+[06:12:44] [Server thread/INFO]: [Not Secure] [c] [DelveShotRoster] 2=/content/quests/0/on_complete/0#1
+[06:13:10] [Server thread/INFO]: [Not Secure] [d] [DelveShotRoster] 1=/content/quests/0/on_complete/0#0
+";
+        assert_eq!(
+            harvest_roster(log),
+            vec![
+                (1, "/content/quests/0/on_complete/0".to_string(), 0),
+                (2, "/content/quests/0/on_complete/0".to_string(), 1),
+            ]
+        );
     }
 
     /// The roster line shares the `[DelveShot`-ish prefix space; it must not be

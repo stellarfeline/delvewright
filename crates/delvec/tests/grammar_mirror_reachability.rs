@@ -43,7 +43,7 @@ fn split(axis: Axis, sizes: Vec<Size>, children: Vec<Node>) -> Node {
     Node::Split(Split {
         axis,
         sizes,
-        rounding: Rounding::Start,
+        rounding: Some(Rounding::Start),
         repeat: false,
         orient: Reorient::KEEP,
         children,

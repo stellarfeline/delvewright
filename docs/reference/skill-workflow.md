@@ -17,6 +17,14 @@ would be a second authority for a file sitting on the same disk. A creator
 clones nothing to get it — `/plugin marketplace add` and `/plugin install` put
 it in Claude Code's own cache. `tools/check-skill-page.py` is the one gate over
 it, in this repository, judging it against the engine at `[engine].ref`.
+A newer page reaches a creator when `plugin.json` `version` moves on `main` — the
+marketplace serves the default branch, and an unchanged version is not an update.
+Only `.github/workflows/plugin-release.yml`, dispatched by a human, moves it: it
+commits the bump, waits for every required check on that commit, fast-forwards
+`main`, and tags and publishes
+`delvewright--v<version>`. A pull request that edits the page leaves the version
+alone (`tools/check-skill-page.py` refuses one that moves it), and the edit reaches
+creators at the next release.
 
 This file stays beside it rather than in it: it is about how an agent driving
 the page splits the work, which is engine-side planner material and is
@@ -327,15 +335,11 @@ because that is what the rewrite will consume. Not a proposal — an inventory.
    and it composes nothing.
 3. **Chunky is a separate process, not wired into CI** — storybook art is a
    two-pass manual flow (`delvec snapshot` to judge layout, Chunky for the
-   shipped frame). Its acquisition is now an `Init` step on the page
-   (`ChunkyLauncher.jar` + `--update snapshot`), because a review step whose
-   primary evidence needs a tool `Init` never established is a review step that
-   silently does not happen. What that line installs is **today's snapshot core,
-   never the pinned one** — the launcher's `--update` takes a release channel and
-   the update site serves the current jar whatever name it is asked for
-   (`docs/reference/tools.md` §4a) — so `validation/render-shots.sh` names the pin
-   beside the core actually installed at the end of every run, and a review over a
-   mismatch says so rather than reading as pinned.
+   shipped frame). The page installs it at step 12 with
+   `validation/chunky-install.sh`, which builds the pinned core from Chunky's
+   source at the pinned revision and installs it only when its content is the
+   pin's, and every render goes through `validation/chunky.sh`, which refuses a
+   Chunky home that does not hold the pin (`docs/reference/tools.md` §4a).
 4. **The ladder's project id is chosen by hand** (`dw-<campaign>-r<round>`).
    Required everywhere, defaulted nowhere — deliberately, since a shared default
    is what the mutex used to paper over.

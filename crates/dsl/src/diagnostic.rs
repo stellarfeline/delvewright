@@ -518,6 +518,12 @@ pub mod codes {
     /// declaration is refused rather than silently making rank-and-file gear
     /// lootable.
     pub const DROP_NOT_TIERED: DwCode = DwCode::new("DW0491", ExitTier::Build);
+    /// (spec-0067) An `equipment` piece is declared where the pinned game will
+    /// not show it on that body: the body's entity type draws no such piece in
+    /// that slot, the item declares a different slot, or the item's allowed
+    /// entities exclude the body. One code, three shapes in one message.
+    /// Validation-tier (exit 1).
+    pub const EQUIPMENT_UNSHOWN: DwCode = DwCode::new("DW0898", ExitTier::Build);
     /// A `collect` `dropped_by` is not backed by the wave it names:
     /// the wave declares no `{item}` drop of this objective's item, the count
     /// asks for more copies than the wave's mobs can yield, or the objective

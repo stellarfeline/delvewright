@@ -93,6 +93,7 @@
 //! this module's: they are the same question the grammar back end asks of an
 //! expansion, and the seventh private copy of them was here.
 
+use std::borrow::Cow;
 use std::collections::BTreeMap;
 
 use crate::compiler::light::{LightModel, effective_sky};
@@ -297,6 +298,38 @@ impl<'a> Zone<'a> {
     }
 }
 
+/// **A box of cells that can also say which block is in each one.**
+///
+/// [`Voxels`] answers what a BODY meets — passable, floor, how high the floor's
+/// top face is — and deliberately stops there, because "what counts as passable"
+/// is content and the walk is mechanism. The light model asks a different
+/// question of the same box: opacity and emission are properties of the block
+/// itself, read off its full blockstate (a `lantern[hanging=true]` and a
+/// waterlogged stair are not the block their bare id names). That fact cannot be
+/// recovered from three booleans, so the probe asks for it by name.
+///
+/// It is one method rather than a widening of [`Voxels`] because not every
+/// producer has it: a walk fixture made of a set of solid cells answers the body
+/// questions perfectly and has no blockstates at all.
+///
+/// The two producers that do are [`Zone`] — tiles reassembled from disk — and
+/// [`crate::grammar::model::VoxelModel`], an expansion the grammar has just
+/// built and has not yet frozen to bytes. Having both means the probe runs
+/// wherever a piece exists, which is what lets the export measure the piece it is
+/// producing instead of leaving a hand-typed remedy behind it.
+pub trait BlockCells: Voxels {
+    /// The full blockstate at `pos` — `minecraft:foo[a=b]` — or `None` outside
+    /// the box. Air spellings count: absent and `minecraft:air` are the same
+    /// thing to this model, and it is [`is_empty_to_light`] that decides so.
+    fn block_state(&self, pos: [i32; 3]) -> Option<Cow<'_, str>>;
+}
+
+impl BlockCells for Zone<'_> {
+    fn block_state(&self, pos: [i32; 3]) -> Option<Cow<'_, str>> {
+        self.name(pos).map(Cow::Borrowed)
+    }
+}
+
 impl Voxels for Zone<'_> {
     fn origin(&self) -> [i32; 3] {
         [0, 0, 0]
@@ -442,7 +475,7 @@ impl LightProbe {
 /// ([`SkyClaim::of`]), passed rather than defaulted: a caller that does not state
 /// it is a caller measuring a piece under a sky nobody asked about, which is the
 /// defect this argument exists to end.
-pub fn probe(zone: &Zone, dark_threshold: i32, sky: SkyClaim) -> LightProbe {
+pub fn probe<V: BlockCells + ?Sized>(zone: &V, dark_threshold: i32, sky: SkyClaim) -> LightProbe {
     let model = light_model(zone);
     let (sky_light, daylight) = (sky.night_sky(), sky.daylight_sky());
     let night_field = model.flood(sky_light as u8);
@@ -511,21 +544,29 @@ pub fn probe(zone: &Zone, dark_threshold: i32, sky: SkyClaim) -> LightProbe {
 ///
 /// Nothing is added below the piece: what is under a prefab is the ground it
 /// sits on, and no sky arrives from underneath.
-fn light_model(zone: &Zone) -> LightModel {
-    let [sx, sy, sz] = zone.size;
+fn light_model<V: BlockCells + ?Sized>(zone: &V) -> LightModel {
+    let origin = zone.origin();
+    let [sx, sy, sz] = zone.size();
     let mut blocks: BTreeMap<[i32; 3], String> = BTreeMap::new();
-    for x in 0..sx {
-        for y in 0..sy {
-            for z in 0..sz {
-                let name = zone.names[((x * sy + y) * sz + z) as usize];
-                // Absent means air to the model, so air is not worth storing.
-                if !is_empty_to_light(name) {
-                    blocks.insert([x, y, z], name.to_string());
-                }
-            }
+    for pos in nav::positions(origin, [sx, sy, sz]) {
+        let Some(name) = zone.block_state(pos) else {
+            continue;
+        };
+        // Absent means air to the model, so air is not worth storing.
+        if !is_empty_to_light(&name) {
+            blocks.insert(pos, name.into_owned());
         }
     }
-    LightModel::from_blocks_within(blocks, [-1, 0, -1], [sx, sy, sz])
+    // The ring is stated relative to the box's OWN origin. A zone read off disk
+    // starts at 0,0,0 and an expansion need not, and a ring written as a literal
+    // `-1` would seed the sky a region-width away from a model whose origin is
+    // anywhere else — daylight arriving nowhere near the openings it is supposed
+    // to enter through.
+    LightModel::from_blocks_within(
+        blocks,
+        [origin[0] - 1, origin[1], origin[2] - 1],
+        [origin[0] + sx, origin[1] + sy, origin[2] + sz],
+    )
 }
 
 /// **Is this cell empty to the LIGHT model?**

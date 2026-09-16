@@ -204,8 +204,8 @@ pub struct Sky {
 }
 
 /// An inclusive world box. Public because [`Horizon`] carries one: a horizon
-/// that BUILT ground has to say how far the ground reaches, and a whole-map
-/// frame is of the union of that and the layout.
+/// that BUILT ground has to say how far the ground reaches, and a scene loads
+/// the union of that and the layout.
 #[derive(Debug, Clone, Copy, PartialEq, Deserialize)]
 pub struct Aabb {
     pub min: [i32; 3],
@@ -231,8 +231,8 @@ pub enum Horizon {
     Ocean { sea_level: i32 },
     /// A landform the compiler BUILT and the world save therefore contains.
     /// Nothing ambient to add — but the ground is real geometry outside the
-    /// layout, so [`Horizon::extent`] is what keeps it in the chunk list and in
-    /// the panorama's subject.
+    /// layout, so [`Horizon::extent`] is what keeps it in the chunk list. It is
+    /// loaded, never framed: the panorama's subject is the layout alone.
     Valley {
         #[allow(dead_code)]
         gap_floor_y: i32,
@@ -256,10 +256,11 @@ impl Horizon {
 }
 
 /// The union of a layout AABB with whatever ground the horizon built under it —
-/// what a whole-map frame is actually of. One function because a chunk list and
-/// a camera solve owe the same answer, and two readings of "what is in this
-/// picture" is how a camera comes to frame a subject the renderer did not load.
-pub(crate) fn framed_extent(layout: &Aabb, horizon: Option<Horizon>) -> ([i32; 3], [i32; 3]) {
+/// what a scene loads (its chunk list and Y clip). One function because every
+/// scene owes the same answer; the camera is solved from the layout alone
+/// (`panorama`), so the ground is in the picture as the place's setting without
+/// being what the frame is fitted to.
+pub(crate) fn loaded_extent(layout: &Aabb, horizon: Option<Horizon>) -> ([i32; 3], [i32; 3]) {
     let (mut min, mut max) = (layout.min, layout.max);
     if let Some((hmin, hmax)) = horizon.and_then(Horizon::extent) {
         for a in 0..3 {
@@ -678,7 +679,7 @@ pub fn scenes_from_plan(
     // landform is real blocks in the save, OUTSIDE the layout AABB — a chunk
     // list keyed to the layout alone renders a delve floating in nothing while
     // the mountains sit unloaded on disk.
-    let (fmin, fmax) = framed_extent(&plan.layout_aabb, plan.horizon);
+    let (fmin, fmax) = loaded_extent(&plan.layout_aabb, plan.horizon);
     let chunks = chunk_list(fmin, fmax);
     let water = water_world(plan.horizon);
     // Y clip with a small margin around the layout so path traces are not culled.

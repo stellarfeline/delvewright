@@ -85,7 +85,7 @@ fn quests_doc(on_arrive: &str) -> String {
         "effects": [
           {{ "type": "spawn-actor", "actor": "actor/sleeper" }},
           {{ "type": "move-actor", "actor": "actor/sleeper",
-             "to_anchor": "anchor/keeper-stand",
+             "to": {{ "anchor": "anchor/keeper-stand" }},
              "on_arrive": [
                {{ "type": "close-gate", "anchor": "anchor/door" }},
                {on_arrive} ] }}

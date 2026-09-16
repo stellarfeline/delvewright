@@ -144,7 +144,7 @@ fn quests(teleport_extent: &str) -> String {
               {{ "at_ticks": 2, "effects": [
                 {{ "type": "teleport",
                    "from": {{ "anchor": "anchor/keeper-stand", "extent": {teleport_extent} }},
-                   "to": "anchor/exit" }} ] }}
+                   "to": {{ "anchor": "anchor/exit" }} }} ] }}
             ] }},
             {{ "type": "clear-effect", "effect": "minecraft:poison" }}
           ]

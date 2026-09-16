@@ -469,6 +469,42 @@ def test_the_rule_reaches_the_reference_that_actually_runs_the_ladder(mod, tree,
     assert has(rep, "references/walk.md invokes `docker compose`"), rep.findings
 
 
+# ------------------------------------------------ rule 19, the pin check every run --
+
+
+def test_a_run_shape_that_builds_the_toolchain_once_per_machine_reds(mod, tree, engine):
+    """The shape the page had while an updated plugin kept running its old engine."""
+    page = tree / "SKILL.md"
+    text = page.read_text(encoding="utf-8")
+    start = text.index("\nInit            ") + 1
+    end = text.index("\n", start)
+    page.write_text(
+        text[:start] + "Init            build the toolchain, once per machine" + text[end:],
+        encoding="utf-8",
+    )
+    assert has(run(mod, engine), "the run shape's `Init` entry does not name I1b")
+
+
+def test_an_i8_checklist_without_the_pin_check_reds(mod, tree, engine):
+    page = tree / "SKILL.md"
+    text = page.read_text(encoding="utf-8")
+    fence_line = '"$DELVEWRIGHT_PYTHON" "$DELVEWRIGHT_SKILL/scripts/check-toolchain.py" \\\n'
+    assert text.count(fence_line) == 1
+    page.write_text(text.replace(fence_line, "# "), encoding="utf-8")
+    assert has(run(mod, engine), "the I8 checklist does not run")
+
+
+def test_the_pin_check_named_only_in_prose_under_i1b_does_not_count(mod, tree, engine):
+    """An inline mention is not an invocation: the fence has to carry it."""
+    init = tree / "references" / "init.md"
+    text = init.read_text(encoding="utf-8")
+    section = text.split("\n## I1b ")[1].split("\n## ")[0]
+    fence = section[section.index("```sh"): section.index("```", section.index("```sh") + 5) + 3]
+    assert "check-toolchain.py" in fence
+    init.write_text(text.replace(fence, "Run `scripts/check-toolchain.py`."), encoding="utf-8")
+    assert has(run(mod, engine), "has no I1b section whose fence runs")
+
+
 def test_a_command_named_only_in_inline_PROSE_inside_init_does_not_prove_it(
     mod, tree, engine
 ):
@@ -479,7 +515,7 @@ def test_a_command_named_only_in_inline_PROSE_inside_init_does_not_prove_it(
     assert not any("--profile play" in p for p in proofs), sorted(proofs)
 
 
-# ------------------------------------------- the version moves with the plugin --
+# ------------------------------------------- only the release moves the version --
 
 
 def _plugin_repo(tmp_path: pathlib.Path, mod, version: str) -> pathlib.Path:
@@ -507,46 +543,211 @@ def _plugin_repo(tmp_path: pathlib.Path, mod, version: str) -> pathlib.Path:
     return repo
 
 
-def test_a_page_edit_with_no_version_bump_reds(mod, tmp_path):
-    """**The rule all three sides of a merge lean on.** Every branch that edits
-    the page sets the same new number, and the identical edit merges clean — so
-    the only thing standing between "three branches bumped it" and "nobody
-    bumped it" is this rule, and until now nothing exercised it."""
-    repo = _plugin_repo(tmp_path, mod, "1.2.0")
-    plugin = repo / ".claude" / "skills" / "delvewright"
-    (plugin / "page.md").write_text("the page, edited\n", encoding="utf-8")
-
-    rep = mod.Report()
-    mod.version_bump_rule(rep, "HEAD", "1.2.0", repo=repo, plugin_root=plugin)
-    assert any("differ from HEAD" in f and "'1.2.0' on both sides" in f for f in rep.findings), (
-        rep.findings
+def _bump(plugin: pathlib.Path, version: str, **extra) -> None:
+    (plugin / ".claude-plugin" / "plugin.json").write_text(
+        json.dumps({"name": "delvewright", "version": version, **extra}) + "\n", encoding="utf-8"
     )
 
 
-def test_the_same_edit_under_a_moved_version_holds(mod, tmp_path):
-    """The perturbation only the bump can survive — without it the test above
-    would pass on a rule that reds at every edit."""
+RELEASE = {"event": "workflow_dispatch", "ref": "refs/heads/release/plugin-1.2.0"}
+
+
+def test_a_pull_request_that_bumps_the_version_reds(mod, tmp_path):
+    """The perturbation: an ordinary change moving `plugin.json` `version`."""
     repo = _plugin_repo(tmp_path, mod, "1.1.0")
     plugin = repo / ".claude" / "skills" / "delvewright"
-    (plugin / "page.md").write_text("the page, edited\n", encoding="utf-8")
-    (plugin / ".claude-plugin" / "plugin.json").write_text(
-        json.dumps({"name": "delvewright", "version": "1.2.0"}) + "\n", encoding="utf-8"
-    )
-
+    _bump(plugin, "1.2.0")
     rep = mod.Report()
-    mod.version_bump_rule(rep, "HEAD", "1.2.0", repo=repo, plugin_root=plugin)
-    assert rep.findings == [], rep.findings
+    mod.version_move_rule(rep, "HEAD", "1.2.0", repo=repo, plugin_root=plugin, event="pull_request", ref="refs/heads/topic")
+    assert any("moves from '1.1.0' to '1.2.0'" in f and "pull_request" in f for f in rep.findings), rep.findings
 
 
-def test_an_untouched_plugin_owes_no_bump(mod, tmp_path):
-    """And the rule binds to the EDIT, not to the number: a tree that changed
-    nothing under the plugin root is not asked to publish an update."""
+def test_a_page_edit_with_no_bump_holds(mod, tmp_path):
     repo = _plugin_repo(tmp_path, mod, "1.2.0")
     plugin = repo / ".claude" / "skills" / "delvewright"
-
+    (plugin / "page.md").write_text("the page, edited\n", encoding="utf-8")
     rep = mod.Report()
-    mod.version_bump_rule(rep, "HEAD", "1.2.0", repo=repo, plugin_root=plugin)
+    mod.version_move_rule(rep, "HEAD", "1.2.0", repo=repo, plugin_root=plugin, event="pull_request", ref="refs/heads/topic")
     assert rep.findings == [], rep.findings
+
+
+def test_the_release_commit_holds(mod, tmp_path):
+    repo = _plugin_repo(tmp_path, mod, "1.1.0")
+    plugin = repo / ".claude" / "skills" / "delvewright"
+    _bump(plugin, "1.2.0")
+    rep = mod.Report()
+    mod.version_move_rule(rep, "HEAD", "1.2.0", repo=repo, plugin_root=plugin, **RELEASE)
+    assert rep.findings == [], rep.findings
+
+
+def test_a_release_branch_that_also_edits_the_page_reds(mod, tmp_path):
+    repo = _plugin_repo(tmp_path, mod, "1.1.0")
+    plugin = repo / ".claude" / "skills" / "delvewright"
+    _bump(plugin, "1.2.0")
+    (plugin / "page.md").write_text("the page, edited\n", encoding="utf-8")
+    rep = mod.Report()
+    mod.version_move_rule(rep, "HEAD", "1.2.0", repo=repo, plugin_root=plugin, **RELEASE)
+    assert any("2 file(s) under the plugin root" in f for f in rep.findings), rep.findings
+
+
+def test_a_release_commit_that_changes_another_manifest_field_reds(mod, tmp_path):
+    repo = _plugin_repo(tmp_path, mod, "1.1.0")
+    plugin = repo / ".claude" / "skills" / "delvewright"
+    _bump(plugin, "1.2.0", description="changed")
+    rep = mod.Report()
+    mod.version_move_rule(rep, "HEAD", "1.2.0", repo=repo, plugin_root=plugin, **RELEASE)
+    assert any("more than `version`" in f for f in rep.findings), rep.findings
+
+
+def test_a_dispatch_on_another_branch_reds(mod, tmp_path):
+    repo = _plugin_repo(tmp_path, mod, "1.1.0")
+    plugin = repo / ".claude" / "skills" / "delvewright"
+    _bump(plugin, "1.2.0")
+    rep = mod.Report()
+    mod.version_move_rule(rep, "HEAD", "1.2.0", repo=repo, plugin_root=plugin, event="workflow_dispatch", ref="refs/heads/main")
+    assert any("not refs/heads/release/plugin-1.2.0" in f for f in rep.findings), rep.findings
+
+
+# ------------------------------------ rule 17, a DW code the pinned engine declares --
+
+
+def test_a_dw_code_the_pinned_engine_does_not_declare_reds(mod, tree, engine):
+    """The shape a page written against a newer engine than it pins has: it names
+    a diagnostic the installed engine cannot print. The code is checked absent
+    from the materialised engine first, so the red is about the pin."""
+    engine_root, _rev = engine
+    source = "\n".join(
+        rs.read_text(encoding="utf-8") for rs in (engine_root / "crates").rglob("*.rs")
+    )
+    code = next(f"DW{n:04d}" for n in range(9999, 0, -1) if f"DW{n:04d}" not in source)
+    path = tree / "references" / "when-red.md"
+    path.write_text(
+        path.read_text(encoding="utf-8") + f"\nA refusal carries `{code}`.\n",
+        encoding="utf-8",
+    )
+    assert has(run(mod, engine), f"`{code}`, and the engine at")
+
+
+def test_a_dw_code_only_a_comment_mentions_is_not_declared(mod):
+    """Declared means a diagnostic constant, read by `check-dw-codes.py`'s own
+    rule over comment-stripped source — never a mention."""
+    dw = mod.dw_codes_module()
+    src = '// pub const OLD: DwCode = DwCode::new("DW0001", ExitTier::Build);\n'
+    assert dw.CONST_RE.findall(dw.strip_comments(src)) == []
+    src = 'pub const NEW: DwCode = DwCode::new("DW0002", ExitTier::Build);\n'
+    assert dw.CONST_RE.findall(dw.strip_comments(src)) == [("NEW", "DW0002")]
+
+
+# ------------------------------- rule 18, the names the page gives, asked of the release --
+#
+# The release binary is not reachable offline, so its answers are handed in by a
+# runner. The SCHEMA below is a stand-in shaped like `delvec schema`'s output, and
+# the subject is the real page: what these tests prove is the reading of the page
+# and the resolution against a schema, not what any release exports — the online
+# run asks the release itself.
+
+WALK_TWO = {
+    "$defs": {
+        "Verdict": {
+            "oneOf": [
+                {"const": "passed", "type": "string"},
+                {"const": "findings", "type": "string"},
+            ]
+        }
+    },
+    "properties": {
+        "verdict": {"$ref": "#/$defs/Verdict"},
+        "areas": {"type": "array"},
+        "findings": {"type": "array"},
+    },
+}
+HELP = (
+    "      --stage <STAGE>      Which document. `walk-record` for the walk record; "
+    "`<prefab-id>.json` is not a stage; or `all` for every stage document\n"
+)
+
+
+def fake_release(walk_record: dict):
+    def delvec(argv):
+        if argv == ["schema", "--stage", "all"]:
+            return 0, json.dumps({"world": {"properties": {"time": {"enum": ["dusk"]}}}})
+        if argv == ["schema", "--help"]:
+            return 0, HELP
+        if argv == ["schema", "--stage", "walk-record"]:
+            return 0, json.dumps(walk_record)
+        return 2, ""
+
+    return delvec
+
+
+def release_rep(mod, walk_record, binary=None):
+    rep = mod.Report()
+    if binary is None:
+        binary = b" ".join(c.encode() for c in mod.page_dw_codes())
+    mod.release_binary_rule(rep, fake_release(walk_record), binary, "v0.0.0")
+    return rep
+
+
+def test_a_variant_the_release_does_not_admit_reds(mod, tree):
+    """The measured case: the page teaches `verdict: "unwalked"` and a walk record
+    of two verdicts refuses it as an unknown variant."""
+    rep = release_rep(mod, WALK_TWO)
+    assert has(rep, "gives `verdict` the value 'unwalked'"), rep.findings
+
+
+def test_the_same_page_holds_against_a_release_that_admits_it(mod, tree):
+    walk = json.loads(json.dumps(WALK_TWO))
+    walk["$defs"]["Verdict"]["oneOf"].append({"const": "unwalked", "type": "string"})
+    rep = release_rep(mod, walk)
+    assert not has(rep, "gives `verdict`"), rep.findings
+    bound, of = {what: (b, n) for what, b, n in rep.bindings}[
+        "closed-set value(s) the release's schemas admit"
+    ]
+    assert of >= 1 and bound == of, rep.bindings
+
+
+def test_a_field_the_release_does_not_carry_reds(mod, tree):
+    """A document fragment whose keys are mostly the release's, naming one that
+    is not. The stage is found through the binary's help, not a list here."""
+    path = tree / "references" / "walk.md"
+    path.write_text(
+        path.read_text(encoding="utf-8")
+        + '\n`{"verdict": "passed", "areas": [], "walked_by": "a"}`\n',
+        encoding="utf-8",
+    )
+    assert has(release_rep(mod, WALK_TWO), "names the field `walked_by`")
+
+
+def test_a_fragment_of_mostly_unknown_keys_is_not_read_as_a_document(mod, tree):
+    """A text component, a skin palette or a renderer option is not a document,
+    and the object decides that: most of its keys are no field at all."""
+    path = tree / "references" / "walk.md"
+    path.write_text(
+        path.read_text(encoding="utf-8")
+        + '\n`{"translate": "k", "fallback": "x", "verdict": "passed"}`\n',
+        encoding="utf-8",
+    )
+    rep = release_rep(mod, WALK_TWO)
+    assert not has(rep, "names the field `translate`"), rep.findings
+
+
+def test_a_value_given_to_a_field_some_document_leaves_open_is_not_judged(mod, tree):
+    """A name one document closes and another leaves open resolves to a
+    candidate, not a match — so the value is not refused on the closed one."""
+    walk = json.loads(json.dumps(WALK_TWO))
+    walk["properties"]["nested"] = {"properties": {"verdict": {"type": "string"}}}
+    rep = release_rep(mod, walk)
+    assert not has(rep, "gives `verdict`"), rep.findings
+
+
+def test_a_dw_code_the_release_binary_does_not_spell_reds(mod, tree):
+    """The second method for rule 17, sharing nothing with it: the bytes of the
+    checksum-verified binary rather than the source at the tag."""
+    codes = sorted(mod.page_dw_codes())
+    assert codes, "the page names no DW code, so this rule binds to nothing"
+    binary = b" ".join(c.encode() for c in codes[1:])
+    rep = release_rep(mod, WALK_TWO, binary)
+    assert has(rep, f"name `{codes[0]}`, and the v0.0.0 binary"), rep.findings
 
 
 # --------------------------------------------------------------- the gate refuses --
@@ -574,6 +775,73 @@ def test_a_zero_binding_does_not_swallow_the_findings(mod, capsys, monkeypatch):
     err = capsys.readouterr().err
     assert "a finding the reader has to see" in err
     assert "a binding of zero on: thing(s) nothing bound to" in err
+
+
+# ------------------------------------------ rule 20, the names a playtest uses --
+
+
+def test_a_trigger_the_overlay_does_not_register_reds(mod, tree, engine):
+    edit(
+        tree / "references" / "tools-by-symptom.md",
+        "`/trigger dw.note`",
+        "`/trigger dw.notes`",
+    )
+    assert has(run(mod, engine), "names trigger `dw.notes`")
+
+
+def test_a_moved_layout_manifest_reds(mod, tree, engine):
+    edit(
+        tree / "references" / "tools-by-symptom.md",
+        "<out>/creator-datapack/layout.json",
+        "<out>/creator-datapack/manifest.json",
+    )
+    assert has(run(mod, engine), "names path `creator-datapack/manifest.json`")
+
+
+def test_a_profile_compose_does_not_declare_reds(mod, tree, engine):
+    edit(
+        tree / "references" / "walk.md",
+        "--profile play up",
+        "--profile plays up",
+    )
+    assert has(run(mod, engine), "names profile `plays`")
+
+
+def test_a_log_read_from_a_container_nobody_names_reds(mod, tree, engine):
+    edit(
+        tree / "references" / "tools-by-symptom.md",
+        "then `delvec harvest` → `playtest-report.json`",
+        "then `docker logs dw-playtests > server.log` and `delvec harvest` → `playtest-report.json`",
+    )
+    assert has(run(mod, engine), "names container `dw-playtests`")
+
+
+def test_the_overlay_triggers_are_read_the_way_the_emitter_resolves_them(mod):
+    source = """
+const NOTE: &str = "dw.note";
+const CALIBRATION: [&str; 2] = ["dw.mark", "dw.done"];
+const CAM: &str = "dw.cam";
+const FREE: &str = "dw.free";
+const SCRATCH: &str = "dw.rh";
+fn init() {
+    let a = vec![format!("scoreboard objectives add {NOTE} trigger")];
+    let b: Vec<String> = CALIBRATION.iter().map(|t| format!("scoreboard objectives add {t} trigger")).collect();
+    let c: Vec<String> = [CAM, FREE].iter().map(|t| format!("scoreboard objectives add {t} trigger")).collect();
+    let d = format!("scoreboard objectives add dw.seen trigger");
+    let e = format!("scoreboard objectives add {SCRATCH} dummy");
+    // scoreboard objectives add dw.commented trigger
+}
+"""
+    assert mod.overlay_triggers(source) == {
+        "dw.note",
+        "dw.mark",
+        "dw.done",
+        "dw.cam",
+        "dw.free",
+        "dw.seen",
+    }
+    with pytest.raises(mod.Unusable):
+        mod.overlay_triggers('let x = format!("scoreboard objectives add {name} trigger");')
 
 
 def test_the_cli_exits_zero_on_the_committed_tree():

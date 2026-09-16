@@ -43,12 +43,13 @@ order a player would:
 | `npcs.json` | four speaking parts — a quest-giver, a gatekeeper, a counter, a drill officer |
 | `classes.json` | two kits, one carrying a flask (what a bonfire rest refills) |
 | `quest-plan.json` | two quests and the branch point the fork opens |
-| `quests.json` | the bulk: objectives, effects, waves, actors, traps, triggers, a shop, a shortcut, a stake, a timed gate, two killing volumes |
+| `quests.json` | the bulk: objectives, effects, waves, actors (a barded and saddled horse among them), traps, triggers, a shop, a shortcut, a stake, a timed gate, two killing volumes |
 | `dialogue.json` | one tree per NPC; the Curator's carries the fork, and the Marshal's carries the two scenes it leads to — a pair of nodes no option leads to, reached only because the quest's `cast` ledger opens one of them per branch |
 | `world-edits.json` | four batches that dress the floor, lay the hearth, thin the vault and rough the lane |
 | `geometry-brief.json` | four numbers out of the hall's own brief, the kind a site plan is later held to |
 | `layout-graph.json` | the same hall stated as six places and twelve connections, before any coordinate — three barred doors through the wall because the hall really has three, a stair and a drop that close a loop, a sightline to the loft, and one place deliberately off the mandatory spine |
 | `overlays/site-plan/` | the same places given geometry, and then a whole map DERIVED from it: a region, a box each stating only its extent and plane, ONE pinned corner, a seam per connection stating which face of its `a` box it sits on and where along it (the compiler derives every other corner and every sill — spec-0059; `delvec validate` prints the corners), the rock and the sky the whole owns, and eight comparisons holding all of it to its own written brief. It carries its own world, cast, quest layer and translations, because a campaign has ONE placement authority and the primary's is `areas[]` — so at this point of the campaign nothing describes a block, and everything a body meets is derived: the floors it walks, the doors it is stopped by, the stair it climbs, the anchors the quests bind to |
+| `overlays/valley-site/` | a SITE placed: one area bound to one prefab on `horizon: valley`, which is the other way a campaign states how big its map is — the map IS that piece, so its declared region is the extent the surround rings. `gallery-bank` is what a site is: three courses of island mass, a bank of grass out to the box's own edge, a walled court on top. It is seated by its WALK PLANE, so the bank's top course is the valley's gap floor and a body walks off the piece onto ground the horizon built; and it carries both halves of `DW0885` at once, the courses under the bank buried by earth and the parapet above it answered by four `shown_faces`. It carries its own cast and quest layer, because its one area is not the primary's two |
 | `l10n/zh-cn.json` | the second language, so the sidecar surface is real rather than declared |
 | `render-plan.json` | the view set the gallery declares, so a shot that vanishes is a red |
 | `area/annex` (in `world.json`) | a three-tile chain assembled from `pool/gallery-annex` — what binds the piece verbs |
@@ -111,6 +112,9 @@ holding them at once.
 | `a-fight-nobody-points-at` | `DW0863` | `validate` | requiring a fight and saying nothing about where it happens |
 | `two-presses-on-one-cell` | `DW0878` | `build` | hanging an `interact` objective and a click trigger on one anchor |
 | `a-gate-the-path-already-cleared` | `DW0879` | `validate` | clearing a counter between the beat that fills it and the gate that reads it |
+| `two-bodies-on-one-mark` | `DW0896` | `build` | taking the page's offset away, so it is summoned onto the usher's own cell while the usher is still standing on it |
+| `an-offset-out-of-the-room` | `DW0897` | `build` | writing the page's offset from the usher as forty cells instead of four, past the hall's east wall |
+| `a-chestplate-on-a-horse` | `DW0898` | `validate` | putting a chestplate on the barded horse, which the server stores and the client never draws |
 
 **A probe is the primary plus one declared edit.** It carries no copy of any
 document the primary already holds; what it perturbs is written out in its own

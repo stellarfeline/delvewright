@@ -330,6 +330,15 @@ fn dw0886_choosing_the_ocean_holds_the_water_a_void_world_would_lose() {
             s["size"] = serde_json::json!(size);
             s
         });
+        // The opening that lets the water out lets the party's air out too, so
+        // on an ocean the room's walls and roof stand where a party can see
+        // them (`DW0886`'s exposure question). This test is about the water:
+        // the room declares the sides the sea leaves in view, so the one
+        // variable between the two builds below is the horizon.
+        m.insert(
+            "shown_faces".into(),
+            serde_json::json!(["east", "north", "south", "up", "west"]),
+        );
     });
 
     let void = campaign("runoff-void", None);
@@ -690,12 +699,66 @@ fn dw0344_raising_the_low_floor_takes_the_piece_out_of_the_sea() {
 // DW0855 — both moves
 // ---------------------------------------------------------------------------
 
+/// Give a campaign a SECOND area, so it is the shape `DW0855`'s argument is
+/// about: two footprints on the compiler's fixed stride with void between them,
+/// whose union states no extent.
+///
+/// The second area binds a COPY of the piece under its own id, with every
+/// anchor name prefixed. Binding the same prefab twice is `DW0857` — one gate
+/// anchor provided by two areas — which would refuse the campaign for a reason
+/// that has nothing to do with the extent, and a fixture refused for the wrong
+/// reason proves nothing about the right one.
+fn two_areas(tag: &str, horizon: serde_json::Value, prefabs: &Path) -> PathBuf {
+    let src: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(prefabs.join("hello-room.json")).unwrap())
+            .unwrap();
+    let mut far = src.clone();
+    far["prefab_id"] = serde_json::json!("prefab/far-room");
+    far["structure"]["id"] = serde_json::json!("far-room");
+    far["structure"]["file"] = serde_json::json!("far-room.nbt");
+    let anchors: serde_json::Map<String, serde_json::Value> = src["anchors"]
+        .as_object()
+        .unwrap()
+        .iter()
+        .map(|(k, v)| (format!("far-{k}"), v.clone()))
+        .collect();
+    far["anchors"] = serde_json::Value::Object(anchors);
+    std::fs::write(
+        prefabs.join("far-room.json"),
+        serde_json::to_string_pretty(&far).unwrap(),
+    )
+    .unwrap();
+    std::fs::copy(prefabs.join("hello-room.nbt"), prefabs.join("far-room.nbt")).unwrap();
+
+    let camp = campaign(tag, Some(horizon));
+    let mut world: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(camp.join("world.json")).unwrap()).unwrap();
+    let areas = world["content"]["areas"].as_array_mut().unwrap();
+    let mut second = areas[0].clone();
+    second["id"] = serde_json::json!("area/far");
+    second["name"] = serde_json::json!("The Far Room");
+    second["prefab"] = serde_json::json!("prefab/far-room");
+    areas.push(second);
+    std::fs::write(
+        camp.join("world.json"),
+        serde_json::to_string_pretty(&world).unwrap(),
+    )
+    .unwrap();
+    camp
+}
+
 /// **`set `horizon` to `void` or `ocean`.`** The move `DW0855` names for a
 /// campaign that places `areas[]` and states no extent.
+///
+/// The fixture is two areas rather than one, and that is the refusal's own
+/// argument rather than a convenience: what makes a union meaningless is
+/// `AREA_SPACING`, so a campaign with one area bound to one `prefab` has stated
+/// an extent and is not this refusal at all — see
+/// [`dw0855_one_area_bound_to_one_prefab_states_the_map`].
 #[test]
 fn dw0855_setting_a_base_that_needs_no_map_builds() {
     let dir = common::ocean_prefabs_dir("remedy-valley", common::OceanRoom::Shore);
-    let valley = campaign("valley", Some(serde_json::json!({ "base": "valley" })));
+    let valley = two_areas("valley", serde_json::json!({ "base": "valley" }), &dir);
     let (code, before) = build("valley-red", &valley, &dir);
     assert_eq!(code, 1, "refused at validation:\n{before}");
     assert!(before.contains("DW0855"), "{before}");
@@ -705,7 +768,7 @@ fn dw0855_setting_a_base_that_needs_no_map_builds() {
     );
 
     for base in ["void", "ocean"] {
-        let camp = campaign(&format!("valley-to-{base}"), Some(serde_json::json!(base)));
+        let camp = two_areas(&format!("valley-to-{base}"), serde_json::json!(base), &dir);
         let (code, after) = build(&format!("valley-to-{base}-out"), &camp, &dir);
         assert_eq!(
             code, 0,
@@ -713,6 +776,49 @@ fn dw0855_setting_a_base_that_needs_no_map_builds() {
         );
         assert!(!after.contains("DW0855"), "{after}");
     }
+}
+
+/// **`Make the map ONE PIECE.`** The third move, and the one that did not exist:
+/// a single area bound to a single `prefab` states the map's extent with the
+/// piece's own declared region, so a base that builds terrain has something to
+/// ring — which is how a SITE, a building with its own ground inside one box,
+/// is placed at all.
+///
+/// The same campaign is asserted in both shapes, so the only thing between the
+/// refusal and the build is the second area — which is exactly what `DW0855`'s
+/// argument is about, and nothing wider.
+#[test]
+fn dw0855_one_area_bound_to_one_prefab_states_the_map() {
+    let dir = common::ocean_prefabs_dir("remedy-one-piece", common::OceanRoom::Shore);
+    let two = two_areas(
+        "one-piece-two",
+        serde_json::json!({ "base": "valley" }),
+        &dir,
+    );
+    let (code, refused) = build("one-piece-two-out", &two, &dir);
+    assert_eq!(code, 1, "two areas state no extent:\n{refused}");
+    assert!(refused.contains("DW0855"), "{refused}");
+    assert!(
+        refused.contains("ONE PIECE"),
+        "the message names the move this test takes:\n{refused}"
+    );
+
+    let one = campaign(
+        "one-piece-one",
+        Some(serde_json::json!({ "base": "valley" })),
+    );
+    let (code, built) = build("one-piece-one-out", &one, &dir);
+    assert_eq!(
+        code, 0,
+        "one area bound to one prefab states the map:\n{built}"
+    );
+    assert!(!built.contains("DW0855"), "{built}");
+    // The binding line names the authority, so a reader can see WHICH statement
+    // of extent the mountains were built around.
+    assert!(
+        built.contains("stated by the one placed piece's own region"),
+        "the surround says what it ringed:\n{built}"
+    );
 }
 
 /// **`Give the campaign a site plan.`** The other move `DW0855` names — and the
@@ -1718,5 +1824,150 @@ fn dw0739_passing_the_manifest_shows_the_whole_zone_at_the_door_that_asked_for_i
         "DW0739 remedy binding: 1 refusal at `prefab gallery <dir>`, its move taken at \
          `prefab gallery <manifest>`, {} of {grid} tile(s) placed as 1 exhibit",
         placed.len()
+    );
+}
+
+// ---------------------------------------------------------------------------
+// DW0896 / DW0897 — a mark (spec-0066)
+// ---------------------------------------------------------------------------
+
+/// hello-world with seven actors on `anchor/exit`, at `offsets[i]`, all entered
+/// by one `sequence` and none of them ever removed — the muster's shape.
+fn muster(offsets: &[[i32; 3]; 7]) -> delvewright_dsl::Campaign {
+    let dir = common::hello_world_dir();
+    let read = |n: &str| std::fs::read_to_string(dir.join(n)).unwrap();
+    let mut quests: serde_json::Value = serde_json::from_str(&read("quests.json")).unwrap();
+    let actors: Vec<serde_json::Value> = offsets
+        .iter()
+        .enumerate()
+        .map(|(i, o)| {
+            serde_json::json!({
+                "id": format!("actor/rank-{i}"), "entity": "minecraft:villager",
+                "anchor": "anchor/exit", "offset": o
+            })
+        })
+        .collect();
+    quests["content"]["actors"] = serde_json::json!(actors);
+    let steps: Vec<serde_json::Value> = (0..7)
+        .map(|i| {
+            let id = format!("actor/rank-{i}");
+            serde_json::json!({ "at_ticks": i * 10, "effects": [
+                { "type": "spawn-actor", "actor": id,
+                  "happening": { "subject": id, "verb": "arrives", "text": "a man takes his place" } } ] })
+        })
+        .collect();
+    common::objective_effects(&mut quests, 0, "obj/talk")
+        .push(serde_json::json!({ "type": "sequence", "steps": steps }));
+    let raw = delvewright_dsl::RawCampaign {
+        world: read("world.json"),
+        npcs: read("npcs.json"),
+        classes: read("classes.json"),
+        quest_plan: read("quest-plan.json"),
+        quests: quests.to_string(),
+        dialogue: read("dialogue.json"),
+        world_edits: None,
+        geometry_brief: None,
+        layout_graph: None,
+        site_plan: None,
+        detail_plan: None,
+        design: None,
+    };
+    parse_campaign(&raw).expect("the muster campaign parses")
+}
+
+/// `DW0896`'s move: seven bodies on one anchor are refused; the same seven at an
+/// offset apiece from that anchor end green — and `DW0897`, the other rule a
+/// mark meets, is green over the same marks, so the move is a terminal and not
+/// a hop to the next refusal.
+#[test]
+fn dw0896_an_offset_apiece_from_one_anchor_ends_green() {
+    let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
+
+    // Red: seven bodies, one cell.
+    let one_cell = muster(&[[0, 0, 0]; 7]);
+    let plan = Plan::build(&one_cell, &prefabs).expect("plan builds");
+    let (_, verdict) = delvec::compiler::cohabit::check_one_body_per_mark(&plan);
+    let err = verdict.expect_err("seven live bodies on one cell are refused");
+    assert_eq!(err.code.to_string(), "DW0896", "{}", err.message);
+    assert!(
+        err.message.contains("an offset apiece from one anchor"),
+        "the message names the offset as the move:\n{}",
+        err.message
+    );
+
+    // The move: an offset apiece, one anchor, a rank along the south room.
+    let offsets = [
+        [-3, 0, 0],
+        [-2, 0, 0],
+        [-1, 0, 0],
+        [0, 0, 0],
+        [1, 0, 0],
+        [2, 0, 0],
+        [3, 0, 0],
+    ];
+    let rank = muster(&offsets);
+    let plan = Plan::build(&rank, &prefabs).expect("plan builds");
+    let (binding, verdict) = delvec::compiler::cohabit::check_one_body_per_mark(&plan);
+    assert!(
+        verdict.is_ok(),
+        "an offset apiece reaches a different verdict: {:?}",
+        verdict.err().map(|f| f.message)
+    );
+    assert_eq!(binding.cells, 8, "the keeper and seven cells: {binding:?}");
+    assert!(
+        binding.pairs > 0,
+        "the rule compared something: {binding:?}"
+    );
+    let (marks, verdict) = delvec::compiler::mark::check_marks_in_piece(&plan);
+    assert!(
+        verdict.is_ok(),
+        "and DW0897 has nothing to say about the rank: {:?}",
+        verdict.err().map(|f| f.message)
+    );
+    assert_eq!(marks.offset_bodies, 6, "binding: {marks:?}");
+}
+
+/// `DW0897`'s move: an offset that leaves the piece is refused; the same body at
+/// a shorter offset, inside the piece, ends green — and `DW0896` is green there.
+#[test]
+fn dw0897_shortening_the_offset_ends_green() {
+    let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
+    let mut far = [[0, 0, 0]; 7];
+    far[6] = [40, 0, 0];
+    far[0] = [-3, 0, 0];
+    far[1] = [-2, 0, 0];
+    far[2] = [-1, 0, 0];
+    far[4] = [1, 0, 0];
+    far[5] = [2, 0, 0];
+
+    let red = muster(&far);
+    let plan = Plan::build(&red, &prefabs).expect("plan builds");
+    let (binding, verdict) = delvec::compiler::mark::check_marks_in_piece(&plan);
+    let err = verdict.expect_err("an offset forty blocks east leaves the room");
+    assert_eq!(err.code.to_string(), "DW0897", "{}", err.message);
+    assert!(
+        err.message.contains("Shorten the offset"),
+        "the message names the offset as the move:\n{}",
+        err.message
+    );
+    assert_eq!(binding.refused, 1, "binding: {binding:?}");
+
+    // The move: the one offset, shortened to the cell the rank has free.
+    let mut near = far;
+    near[6] = [3, 0, 0];
+    let green = muster(&near);
+    let plan = Plan::build(&green, &prefabs).expect("plan builds");
+    let (binding, verdict) = delvec::compiler::mark::check_marks_in_piece(&plan);
+    assert!(
+        verdict.is_ok(),
+        "a shortened offset reaches a different verdict: {:?}",
+        verdict.err().map(|f| f.message)
+    );
+    assert_eq!(binding.refused, 0, "binding: {binding:?}");
+    assert!(
+        delvec::compiler::cohabit::check_one_body_per_mark(&plan)
+            .1
+            .is_ok(),
+        "and DW0896 is green over the shortened rank"
     );
 }

@@ -1,12 +1,12 @@
 {
   "coverage": {
-    "units_bound": 878,
+    "units_bound": 895,
     "units_refusal_proven": 4,
-    "units_total": 882,
+    "units_total": 899,
     "units_unaccounted": 0
   },
-  "delvec_version": "1.4.0",
-  "dsl_version": "0.24.1",
-  "gallery_source_sha256": "aa55e8abab6fb02f8d44ced4084104928c515ce517ed88c35a533ca09d7f0f31",
-  "generator_input_sha256": "72880f3d85eda17c7d14c77730d3bad96093286b7536dce0f095b62567572df7"
+  "delvec_version": "1.5.0",
+  "dsl_version": "0.29.0",
+  "gallery_source_sha256": "d4829bc5f12f0d42bcfa850d9cb2b6701b106f184eb2c9b86197a863d1d94db1",
+  "generator_input_sha256": "44673e978124dd45ea90ef1d35e7c50c5ecaf468c135cd3127b8e08e31f9d5a4"
 }

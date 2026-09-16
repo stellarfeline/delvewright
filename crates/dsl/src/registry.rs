@@ -30,6 +30,18 @@ pub trait ItemRegistry {
     fn max_stack_size(&self, _item_id: &str) -> Option<u32> {
         None
     }
+
+    /// The item's `minecraft:equippable` facts in the pinned MC version
+    /// (spec-0067), which the equipment fit rule (`DW0898`) reads.
+    ///
+    /// [`crate::equipment::EquippableFact::Unknown`] means "this registry does
+    /// not know", and the fit rule then judges nothing rather than guessing:
+    /// the small vendored DSL-side subset carries ids only, while the compiler
+    /// injects the full 1.21.11 table
+    /// (`crates/delvec/data/item-equippable-1.21.11.json`).
+    fn equippable(&self, _item_id: &str) -> crate::equipment::EquippableFact<'_> {
+        crate::equipment::EquippableFact::Unknown
+    }
 }
 
 /// Membership test for vanilla entity ids (`minecraft:zombie`, …), used to

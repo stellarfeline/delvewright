@@ -1,0 +1,36 @@
+{
+  "campaign": "_fixture",
+  "skins": [
+    {
+      "features": {
+        "greying": false,
+        "quality": 4,
+        "style": "present-day-guide"
+      },
+      "hidden_layers": [],
+      "model": "wide",
+      "palette": {
+        "belt": "#1b241d",
+        "eye": "#33473c",
+        "hair": "#5e4330",
+        "legwear": "#3b3f46",
+        "legwear_shadow": "#292c31",
+        "sandal": "#33251a",
+        "skin": "#c89a74",
+        "skin_shadow": "#9c7150",
+        "tunic": "#2f4436",
+        "tunic_shadow": "#1f3226"
+      },
+      "role": "quest-giver",
+      "seed": 50401,
+      "style_brief": "A present-day castle guide on the morning shift: a dark green weatherproof jacket with long sleeves and a webbing belt, charcoal walking trousers, scuffed brown boots to mid-calf, clean-shaven, hair cut short. Reads as staff, not costume.",
+      "texture_id": "modern-guide",
+      "wardrobe": {
+        "facial_hair": "none",
+        "footwear": "boot",
+        "legs": "full",
+        "sleeves": "long"
+      }
+    }
+  ]
+}

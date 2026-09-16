@@ -137,11 +137,9 @@ pub fn tee_passage() -> Program {
             ),
         )
         // --- the side wall, and its one doorway --------------------------------
-        // `split_exact`, not `split`: two relative pieces under truncation leave
-        // the far end of the wall unwritten, and an unwritten cell is air — a
-        // second opening in the one face whose solidity this rule exists to
-        // promise. The odd block goes to the earliest share, so the doorway sits
-        // at or just past the middle of the run, deterministically.
+        // `split_exact`: with two relative pieces the odd block has to be
+        // given to one of them. It goes to the earliest share, so the doorway
+        // sits at or just past the middle of the run, deterministically.
         .rule(
             "door_wall",
             split_exact(

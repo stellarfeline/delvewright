@@ -1,20 +1,50 @@
 //! The stair flight — the vocabulary's first route a body can walk **up**.
 //!
 //! **Original Delvewright content**, not a port: licence `original`. A walled
-//! shaft with a level landing at each end and a rising run of single-block
-//! treads between them, gated on being walkable in **both** directions — which
-//! is the exact negation of the gate [`super::drop_shaft`] and
-//! [`super::dumbwaiter`] owe.
+//! shaft with a level landing at each end and a rising run of treads between
+//! them, gated on being walkable in **both** directions — which is the exact
+//! negation of the gate [`super::drop_shaft`] and [`super::dumbwaiter`] owe.
 //!
 //! ```text
 //!  local Y      head landing (low Z)                 run                foot landing (high Z)
 //!  y0+n+1..     air ................................ air .............. air
 //!  y0+n         #### landing floor                   air               air
-//!  y0+2         ####                       ####|air                    air
-//!  y0+1         ####                       ########|air                #### foot floor
+//!  y0+2         ####                       ####S|air                   air
+//!  y0+1         ####                       #######S|air                #### foot floor
 //!  y0           ####                       ###############             ####
 //!                                          travel: local Z-max -> Z-min, climbing
+//!                                          S = the riser, a stair block
 //! ```
+//!
+//! # A climb is made of stairs
+//!
+//! Every course above the lowest one is a **riser course**, and the one cell at
+//! its down-travel end — the cell a body steps up onto — is a stair block, not
+//! a cube. That is the whole of what makes this read as a staircase rather than
+//! as a flight of kerbs: a body walking up meets an 8/16 tread and then a 16/16
+//! one, twice per block of rise, which is what a stone stair looks like in the
+//! game and what a column of cubes does not.
+//!
+//! The stair faces **up-travel**, because a vanilla stair's tall half stands on
+//! the side its `facing` names (its base model, `facing=east`, puts the upper
+//! step in `x` 8..16, the east half). Travel here climbs toward local `Z`-min,
+//! so the state is written `facing=north` — and it is written in the **scope's
+//! own axis names** ([`crate::grammar::ir::Paint::Local`]), because this rule
+//! reorients its frame and a world-frame `north` would land whichever way the
+//! region's proportions happened to turn it. One role, `step`, therefore works
+//! at every orientation, and a caller restyling the flight rebinds it the way
+//! it rebinds `rock`.
+//!
+//! `tread` blocks of run per block of rise means `tread - 1` cubes and one
+//! stair per tread, so the default 2 lays stair-cube-stair-cube and `tread: 1`
+//! lays the classic diagonal run of nothing but stairs.
+//!
+//! **The lowest course carries no stair.** It is level with the foot landing,
+//! so its down-travel end is not a riser at all, and a stair there would be a
+//! half-block dip in flat floor. That is why the lane's first course is its own
+//! rule (`base_run`) rather than an arm inside the recursion: the question
+//! "is there a level below me" is not one the remaining box can answer, and
+//! inventing an index to ask it would give up exactly what the recursion buys.
 //!
 //! # Is a climbing run expressible without a per-iteration index? Yes.
 //!
@@ -136,8 +166,10 @@ pub const MIN_STEPS: i64 = 3;
 /// one), `landing_run` (cells of level floor at each end), `broken_step` — a
 /// test knob, off by default, that raises the last tread by one extra course so
 /// the both-ways gate can be shown failing on a stair with exactly one
-/// unclimbable riser. Palette role: `rock` (the whole shell — walls, the mass
-/// under the run, both landings).
+/// unclimbable riser. Palette roles: `rock` (the whole shell — walls, the mass
+/// under the run, both landings) and `step` (the riser cell of every course
+/// above the lowest, written in the scope's own axis names so it faces
+/// up-travel however the region turns the frame).
 pub fn stair_flight() -> Program {
     Program::new("stair_flight", "stair_flight")
         .param("head", 3)
@@ -145,6 +177,23 @@ pub fn stair_flight() -> Program {
         .param("landing_run", 3)
         .param("broken_step", 0)
         .role("rock", BlockState::simple("stone"))
+        .role_local(
+            "step",
+            BlockState::with(
+                "stone_stairs",
+                [
+                    // Local `north` is local `Z`-min, which is up-travel; a
+                    // stair's tall half stands on the side its `facing` names.
+                    ("facing", "north"),
+                    ("half", "bottom"),
+                    // A straight run has no stair beside it across its own
+                    // facing axis, so `straight` is what vanilla derives here —
+                    // and the `stair-shape` gate re-derives it and says so.
+                    ("shape", "straight"),
+                    ("waterlogged", "false"),
+                ],
+            ),
+        )
         // --- frame -----------------------------------------------------------
         .rule(
             "stair_flight",
@@ -196,7 +245,7 @@ pub fn stair_flight() -> Program {
             split_exact(
                 Axis::Z,
                 vec![rel(1), absp("landing_run")],
-                vec![call("run"), call("foot_landing")],
+                vec![call("base_run"), call("foot_landing")],
             ),
         )
         .rule(
@@ -217,6 +266,20 @@ pub fn stair_flight() -> Program {
         // guard reads them, and the recursion stops when either runs out. This
         // is `store_room`'s state-machine trick aimed at `Y` instead of at a
         // barrel row — see the module note.
+        //
+        // The lane's LOWEST course is this shape with a plain floor, because it
+        // is level with the foot landing and its down-travel end is therefore
+        // not a riser. It needs no guard of its own: `flight_plan` has already
+        // refused every box that cannot hold `MIN_STEPS` treads, so a first
+        // course always exists and is always laid.
+        .rule(
+            "base_run",
+            split_exact(
+                Axis::Y,
+                vec![abs(1), rel(1)],
+                vec![fill("rock"), call("run_above")],
+            ),
+        )
         .rule_alts(
             "run",
             vec![
@@ -236,7 +299,7 @@ pub fn stair_flight() -> Program {
                     split_exact(
                         Axis::Y,
                         vec![abs(1), rel(1)],
-                        vec![fill("rock"), call("run_above")],
+                        vec![call("riser_course"), call("run_above")],
                     ),
                 ),
                 // Whatever is left when the climb stops: the high landing. Its
@@ -245,6 +308,20 @@ pub fn stair_flight() -> Program {
                 // its landing, it does not step up onto it.
                 alt_else(marked("stair-head", MarkAt::FloorCenter, void())),
             ],
+        )
+        // One course of a climbing level: mass under everything it still owns,
+        // and a **stair block** on the one cell at its down-travel end, which is
+        // the cell a body steps up onto. The split is exact and its last piece
+        // is the local `Z`-max one, so the stair lands on the riser and nowhere
+        // else; `run`'s own guard has already proved the course is at least
+        // `tread + landing_run` cells long, so the mass piece is never empty.
+        .rule(
+            "riser_course",
+            split_exact(
+                Axis::Z,
+                vec![rel(1), abs(1)],
+                vec![fill("rock"), fill("step")],
+            ),
         )
         // The air over one level: the tread at the approach end, the rest of the
         // climb beyond it. Two alternatives, exact complements of each other, so

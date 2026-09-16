@@ -147,36 +147,52 @@ fn walk_campaign_with_beat_area<'a>(
     crate::compiler::plan::for_each_effect_root(c, &mut |site, effs| {
         let beat = crate::compiler::plan::effect_root_area(c, &site.root);
         let mut root_out = Vec::new();
-        walk_list(effs, &GateState::new(), anchors, &mut root_out);
+        replay_list(
+            effs,
+            &GateState::new(),
+            &mut |e, s| apply(e, s, anchors),
+            &mut root_out,
+        );
         out.extend(root_out.into_iter().map(|(e, s)| (e, s, beat)));
     });
     out
 }
 
-/// Replay one ordered effect list, starting from `state_in`. Each effect is
-/// pushed with the state that holds when it fires, then its own gate verb is
-/// applied so it lands on the *following* siblings.
-fn walk_list<'a>(
+/// **Replay one ordered effect list**, starting from `state_in`, folding
+/// whatever state `fold` carries. Each effect is pushed with the state that
+/// holds when it fires, then its own verb is folded in so it lands on the
+/// *following* siblings.
+///
+/// Generic over the state because **the ordering is one rule and this is the one
+/// implementation of it**. What a timeline orders — a sequence by
+/// `(at_ticks, declaration index)`, an `on_arrive` inheriting its move's state
+/// and not leaking back out, a nested list never folding into its parent — is a
+/// property of the effect tree, not of the question being asked about it. The
+/// gate model ([`apply`], `DW0410`) and the body-lifetime model
+/// ([`crate::compiler::cohabit`], `DW0896`) are two questions over the same
+/// order; a second private copy of this walk is how the two would come to
+/// disagree about which effect happened first.
+pub(crate) fn replay_list<'a, S: Clone>(
     effs: &'a [QuestEffect],
-    state_in: &GateState,
-    anchors: &BTreeMap<(String, String), ResolvedAnchor>,
-    out: &mut Vec<(&'a QuestEffect, GateState)>,
+    state_in: &S,
+    fold: &mut dyn FnMut(&'a QuestEffect, &mut S),
+    out: &mut Vec<(&'a QuestEffect, S)>,
 ) {
     let mut state = state_in.clone();
     for e in effs {
         out.push((e, state.clone()));
-        walk_children(e, &state, anchors, out);
-        apply(e, &mut state, anchors);
+        replay_children(e, &state, fold, out);
+        fold(e, &mut state);
     }
 }
 
 /// Descend into an effect's nested timelines, in the canonical (declaration)
 /// order the pre-order requires.
-fn walk_children<'a>(
+fn replay_children<'a, S: Clone>(
     e: &'a QuestEffect,
-    state: &GateState,
-    anchors: &BTreeMap<(String, String), ResolvedAnchor>,
-    out: &mut Vec<(&'a QuestEffect, GateState)>,
+    state: &S,
+    fold: &mut dyn FnMut(&'a QuestEffect, &mut S),
+    out: &mut Vec<(&'a QuestEffect, S)>,
 ) {
     match &e.verb {
         Verb::Sequence { steps } => {
@@ -186,27 +202,33 @@ fn walk_children<'a>(
             // `at_ticks: 460` and the walk at `at_ticks: 700`, and only the tick
             // offsets say which came first. Ties break on declaration index,
             // matching the emitter (same-tick steps run in declared order).
+            //
+            // It is also the order the muster turns on: seven `spawn-actor`s at
+            // `at_ticks` 30, 70, 115 … are seven bodies entering one after
+            // another, and only these offsets say that the first is still
+            // standing when the second is summoned onto its mark.
             let mut order: Vec<usize> = (0..steps.len()).collect();
             order.sort_by_key(|&i| (steps[i].at_ticks, i));
-            let mut prefix: Vec<GateState> = vec![GateState::new(); steps.len()];
+            let mut prefix: Vec<S> = Vec::with_capacity(steps.len());
+            prefix.resize(steps.len(), state.clone());
             let mut acc = state.clone();
             for &i in &order {
                 prefix[i] = acc.clone();
                 for inner in &steps[i].effects {
-                    apply(inner, &mut acc, anchors);
+                    fold(inner, &mut acc);
                 }
             }
             // Emitted in DECLARATION order (the canonical pre-order), each with
             // the state its tick offset earned it.
             for (i, step) in steps.iter().enumerate() {
-                walk_list(&step.effects, &prefix[i], anchors, out);
+                replay_list(&step.effects, &prefix[i], fold, out);
             }
         }
         Verb::MoveActor { on_arrive, .. } | Verb::MoveNpc { on_arrive, .. } => {
             // Fires when the walk lands: inherits the state at the move, and its
-            // own gate effects stay inside (they are not ordered against the
+            // own effects stay inside (they are not ordered against the
             // enclosing bundle's later siblings).
-            walk_list(on_arrive, state, anchors, out);
+            replay_list(on_arrive, state, fold, out);
         }
         _ => {}
     }

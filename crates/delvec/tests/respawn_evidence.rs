@@ -313,7 +313,7 @@ fn a_flag_gated_reset_is_not_a_reset() {
                 "type": "move-npc",
                 "when": { "requires_flags": ["flag/cleared"] },
                 "npc": "npc/keeper",
-                "to_anchor": "anchor/door",
+                "to": { "anchor": "anchor/door" },
                 "on_arrive": [
                     {"type": "despawn-actor", "actor": "actor/warden", "style": "vanish"}
                 ]

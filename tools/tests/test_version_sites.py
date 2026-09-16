@@ -43,6 +43,7 @@ sys.path.insert(0, str(SITES.parent))
 import version_sites  # noqa: E402
 
 TOUCHED = sorted({str(r["path"]) for rows in version_sites.ROWS.values() for r in rows})
+SCRATCH_FILES = version_sites.files_named()
 
 
 def run(*args: str, root: Path) -> subprocess.CompletedProcess[str]:
@@ -61,7 +62,7 @@ def scratch(tmp_path: Path) -> Path:
     — the derivation is the point, and a fixture that faked the population would
     be testing a different checker from the one CI runs.
     """
-    for rel in TOUCHED:
+    for rel in SCRATCH_FILES:
         dst = tmp_path / rel
         dst.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(REPO / rel, dst)
@@ -254,7 +255,7 @@ def test_a_stale_allowlist_entry_is_reported(scratch: Path) -> None:
     r = subprocess.run(
         [sys.executable, "-c",
          "import sys; sys.path.insert(0, %r); import version_sites as m;"
-         "m.COUNTEREXAMPLES['docs/gone.md'] = 'a reason nobody can check';"
+         "m.COUNTEREXAMPLES['docs/gone.md'] = {'statements': ['gone {v}'], 'reason': 'a reason nobody can check'};"
          "raise SystemExit(m.verify(__import__('pathlib').Path(%r)))"
          % (str(SITES.parent), str(scratch))],
         capture_output=True, text=True,
@@ -272,3 +273,23 @@ def test_the_blast_radius_is_the_hand_edited_set() -> None:
     assert r.returncode == 0 and int(r.stdout.strip()) == len(hand)
     # The authority is one of them, and it is the crate manifest (ADR-0024).
     assert "crates/dsl/Cargo.toml" in hand
+
+
+def test_a_counter_example_excuses_its_statements_and_nothing_else(scratch: Path) -> None:
+    """An entry names statements, never a whole file: a second, unnamed mention reds.
+
+    The perturbation is the one a whole-file allowlist could not catch — the
+    number typed by a person into a file that already carries an excused
+    statement of another subject's version.
+    """
+    v = _dsl_version()
+    listed = [rel for rel in version_sites.COUNTEREXAMPLES if (scratch / rel).is_file()]
+    if not listed:
+        pytest.skip("this tree's number collides with no other subject, so nothing is allowlisted")
+    rel = sorted(listed)[0]
+    target = scratch / rel
+    target.write_text(target.read_text(encoding="utf-8") + f"\nthe format is {v}\n", encoding="utf-8")
+    subprocess.run(["git", "-C", str(scratch), "add", "-A"], check=True)
+    r = run("verify", root=scratch)
+    assert r.returncode == 1, r.stdout
+    assert rel in r.stderr

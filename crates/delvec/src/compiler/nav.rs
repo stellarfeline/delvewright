@@ -31,7 +31,7 @@ use delvewright_dsl::Verb;
 use std::cmp::Reverse;
 use std::collections::{BTreeMap, BTreeSet, BinaryHeap};
 
-use delvewright_dsl::{CameraWaypoint, Lethality, QuestEffect, TrapReset};
+use delvewright_dsl::{Lethality, Mark, QuestEffect, TrapReset};
 
 use crate::compiler::plan::{
     BodyScope, BodyStation, Plan, RegionEvent, RegionWrite, ResolvedAnchor, Step, TrapPlan,
@@ -313,7 +313,7 @@ pub const DW_GATE_TIMELINE: DwCode = DwCode::new("DW0410", ExitTier::Build);
 /// is the wrong cell for at least one of them and that occurrence opens with a
 /// teleport.
 ///
-/// `move-npc` / `move-actor` drivers are deduped by `(body, to_anchor)` — two
+/// `move-npc` / `move-actor` drivers are deduped by `(body, to)` — two
 /// beats that walk the same character to the same mark share one emitted
 /// function, and that function's waypoint polyline starts where the FIRST
 /// occurrence's branch leaves the body. That was a documented limitation for as
@@ -638,19 +638,13 @@ pub const BARRIER_HEIGHT: f64 = 1.5;
 /// proof about NPC bodies ([`crate::compiler::eclipse`], [`crate::compiler::clearance`]) must model
 /// what ships, not what is declared. One helper, so the two cannot drift.
 pub fn npc_body_entity(n: &delvewright_dsl::Npc) -> String {
-    match &n.skin {
-        Some(_) => "minecraft:mannequin".to_string(),
-        None => n.base_entity.clone(),
-    }
+    delvewright_dsl::BodyRef::Npc(n).worn_entity().to_string()
 }
 
 /// The entity id whose body a stage-5 actor wears — the actor's counterpart of
 /// [`npc_body_entity`], same mannequin rule.
 pub fn actor_body_entity(a: &delvewright_dsl::Actor) -> String {
-    match &a.skin {
-        Some(_) => "minecraft:mannequin".to_string(),
-        None => a.entity.clone(),
-    }
+    delvewright_dsl::BodyRef::Actor(a).worn_entity().to_string()
 }
 
 /// The hitbox footprint for a vanilla entity id (spec-0014 per-entity dims table).
@@ -707,8 +701,8 @@ pub struct AnchorRoot {
 pub struct MovePlan {
     /// The moving NPC id (`npc/…`).
     pub npc: String,
-    /// The destination anchor id (`anchor/…`).
-    pub to_anchor: String,
+    /// The destination mark (spec-0066): anchor and offset.
+    pub to: delvewright_dsl::Mark,
     /// The integer target cell (feet), for the arrival assertion.
     pub target: [i32; 3],
     /// The A* **cell** path this leg walks, start to target inclusive — the route
@@ -778,7 +772,16 @@ impl Ambient {
     /// that is [`built_volume`], a property of the assembled world under every
     /// horizon (see [`World::built`]).
     pub fn of_plan(plan: &Plan) -> Ambient {
-        match delvewright_dsl::horizon_base(&plan.campaign.world.content.horizon) {
+        Ambient::of_base(delvewright_dsl::horizon_base(
+            &plan.campaign.world.content.horizon,
+        ))
+    }
+
+    /// The ambient a horizon base declares — the same answer [`Ambient::of_plan`]
+    /// gives, asked of the base alone, so a check that runs before anything is
+    /// placed (`compiler::seating`) reads the one generator fact the build reads.
+    pub fn of_base(base: delvewright_dsl::HorizonBase) -> Ambient {
+        match base {
             delvewright_dsl::HorizonBase::Ocean => Ambient::Ocean(Sea {
                 level: crate::compiler::plan::SEA_LEVEL,
                 floor_top: crate::compiler::plan::SEA_FLOOR_TOP_Y,
@@ -859,6 +862,12 @@ pub fn built_volume(plan: &Plan) -> Vec<BuiltPiece> {
 /// the box being inclusive world-space corners.
 type LethalRegion = (String, ([i32; 3], [i32; 3]));
 
+/// One placed furniture region as the navigation model carries it — the plan's
+/// own type, `(anchor name, inclusive world box)` (spec-0065). Same shape as
+/// [`LethalRegion`] for the same reason: a proof that refuses over it has to be
+/// able to name the anchor.
+use crate::compiler::plan::FurnitureRegion;
+
 /// One placed piece as the built volume carries it: `(prefab id, box)`, the box
 /// being inclusive world-space corners. Same shape as [`LethalRegion`] and for
 /// the same reason — a proof that refuses over a region has to be able to NAME
@@ -896,6 +905,20 @@ pub struct World {
     /// difference between `DW0510` and a `DW0311` that sends the author to fix a
     /// prefab that was never wrong.
     lethal_regions: Vec<LethalRegion>,
+    /// Cells inside a declared **furniture** region (spec-0065): the blocks of a
+    /// laid table, an altar, a counter, as the piece that built them declared.
+    ///
+    /// Not impassable and not removed from `solid` — a table is geometry, and a
+    /// body beside it stands on the floor. What these cells withhold is the cell
+    /// ABOVE each solid one: [`World::standable_fp`] refuses a body whose support
+    /// is a solid furniture cell, so no route, snap, flood, seat or export stands
+    /// a body on a table. Empty for every campaign whose pieces declare none,
+    /// which keeps every proof byte-identical.
+    furniture: BTreeSet<[i32; 3]>,
+    /// The regions behind `furniture`, as `(anchor, box)`, in the plan's order
+    /// ([`Plan::furniture`]). Carried so a route that exists only over a table
+    /// names the table (`DW0510`).
+    furniture_regions: Vec<FurnitureRegion>,
     /// Cells another proof has FORCED solid as its own premise — a `collapse`'s
     /// settled debris, an ambush's occupied cells, a timed gate's shut span, an
     /// aggro sphere ([`World::with_sealed`]).
@@ -1039,6 +1062,7 @@ pub struct Premises {
     base: &'static str,
     built: Vec<BuiltPiece>,
     lethal_regions: Vec<LethalRegion>,
+    furniture_regions: Vec<FurnitureRegion>,
     world_load_seals: Vec<crate::compiler::assembled::GateSeal>,
     clocked_gates: BTreeSet<([i32; 3], [i32; 3])>,
     transit_teleports: Vec<([i32; 3], [i32; 3])>,
@@ -1069,6 +1093,7 @@ impl Premises {
                 .iter()
                 .map(|v| (v.id.clone(), v.region))
                 .collect(),
+            furniture_regions: plan.furniture.clone(),
             world_load_seals: seals,
             clocked_gates: plan.timed_gates.iter().map(|g| g.gate_region).collect(),
             transit_teleports: plan.transit_teleports.clone(),
@@ -1107,6 +1132,7 @@ impl Premises {
             base: "void",
             built: Vec::new(),
             lethal_regions: Vec::new(),
+            furniture_regions: Vec::new(),
             world_load_seals: Vec::new(),
             clocked_gates: BTreeSet::new(),
             transit_teleports: Vec::new(),
@@ -1199,15 +1225,44 @@ impl World {
         !self.world_load_seals.is_empty()
     }
 
-    /// A copy of this world with **no** lethal volumes — the counterfactual the
-    /// `DW0510` diagnostic is derived from.
+    /// A copy of this world with **every semantic exclusion lifted** — no lethal
+    /// volume and no furniture region: the counterfactual `DW0510` is derived
+    /// from, and the population `DW0891` is measured over (spec-0062 §2,
+    /// spec-0065 §4.2).
     ///
     /// A route that fails on the real world and succeeds on this one failed
-    /// *because of* a lethal volume, and the cells it would have walked name which
-    /// volumes. Without the counterfactual the author gets "no collision-free
-    /// path" over geometry that looks perfectly open — the reachability report
-    /// that sends someone to fix the prefab.
-    pub fn without_lethal(&self) -> World {
+    /// *because of* an exclusion, and the cells it would have walked name which
+    /// volume or which table. Without the counterfactual the author gets "no
+    /// collision-free path" over geometry that looks perfectly open — the
+    /// reachability report that sends someone to fix the prefab.
+    ///
+    /// One function for both kinds, on purpose: a check that must not be
+    /// improved by an exclusion reads this, and a second counterfactual lifting
+    /// only one kind would be the hatch a furniture declaration over caught floor
+    /// walks through.
+    pub fn without_exclusions(&self) -> World {
+        let mut w = self.clone_world();
+        w.lethal = BTreeSet::new();
+        w.lethal_regions = Vec::new();
+        w.furniture = BTreeSet::new();
+        w.furniture_regions = Vec::new();
+        w
+    }
+
+    /// A copy of this world with its **furniture** lifted and every other
+    /// premise kept — the counterfactual a walked `move-npc` / `move-actor` leg
+    /// is asked over when it cannot route (`DW0510`'s furniture shape). Those
+    /// legs carry no lethal counterfactual, so lifting lethality there too would
+    /// report a route through a kill box as a table's fault.
+    pub fn without_furniture(&self) -> World {
+        let mut w = self.clone_world();
+        w.furniture = BTreeSet::new();
+        w.furniture_regions = Vec::new();
+        w
+    }
+
+    /// A field-for-field copy, for the counterfactuals that change one premise.
+    fn clone_world(&self) -> World {
         World {
             solid: self.solid.clone(),
             tall: self.tall.clone(),
@@ -1216,8 +1271,10 @@ impl World {
             partial: self.partial.clone(),
             waterloggable: self.waterloggable.clone(),
             objective_cells: self.objective_cells.clone(),
-            lethal: BTreeSet::new(),
-            lethal_regions: Vec::new(),
+            lethal: self.lethal.clone(),
+            lethal_regions: self.lethal_regions.clone(),
+            furniture: self.furniture.clone(),
+            furniture_regions: self.furniture_regions.clone(),
             pinned: self.pinned.clone(),
             world_load_seals: self.world_load_seals.clone(),
             clocked_gates: self.clocked_gates.clone(),
@@ -1228,6 +1285,81 @@ impl World {
             base: self.base,
             built: self.built.clone(),
         }
+    }
+
+    /// Whether this world carries any furniture region at all. Call sites skip
+    /// the furniture counterfactual entirely when it does not.
+    pub fn has_furniture(&self) -> bool {
+        !self.furniture_regions.is_empty()
+    }
+
+    /// Whether a body standing in `c` would rest on a **solid furniture cell** —
+    /// the one term [`World::standable_fp`] adds for spec-0065, asked per
+    /// column of the footprint. Membership of the support cell, never a reach:
+    /// a body beside a table, feet on the floor, is untouched.
+    fn on_furniture_fp(&self, c: [i32; 3], fp: &Footprint) -> bool {
+        if self.furniture.is_empty() {
+            return false;
+        }
+        fp.cols.iter().any(|&[dx, dz]| {
+            let support = [c[0] + dx, c[1] - 1, c[2] + dz];
+            self.furniture.contains(&support) && self.is_solid(support)
+        })
+    }
+
+    /// The furniture anchors a body standing in any of `cells` would rest on, in
+    /// the plan's order, deduplicated — who to blame for a route that exists
+    /// only when the furniture is lifted. Asked for the player's single column,
+    /// which is what every blamed route here was routed for.
+    fn furniture_over(&self, cells: &[[i32; 3]]) -> Vec<&str> {
+        self.furniture_over_fp(cells, &Footprint::player())
+    }
+
+    /// [`World::furniture_over`] for a body of footprint `fp`.
+    fn furniture_over_fp(&self, cells: &[[i32; 3]], fp: &Footprint) -> Vec<&str> {
+        let mut out: Vec<&str> = Vec::new();
+        for (id, (lo, hi)) in &self.furniture_regions {
+            let hit = cells.iter().any(|c| {
+                fp.cols.iter().any(|&[dx, dz]| {
+                    let s = [c[0] + dx, c[1] - 1, c[2] + dz];
+                    (0..3).all(|i| lo[i] <= s[i] && s[i] <= hi[i]) && self.is_solid(s)
+                })
+            });
+            if hit && !out.contains(&id.as_str()) {
+                out.push(id.as_str());
+            }
+        }
+        out
+    }
+
+    /// **The furniture binding** (spec-0065 §4.3): regions, their solid cells,
+    /// and how many cells a player could stand in on the bare geometry that the
+    /// exclusion withholds. `(F, S, W)`.
+    pub fn furniture_census(&self) -> (usize, usize, usize) {
+        let solid: Vec<[i32; 3]> = self
+            .furniture
+            .iter()
+            .copied()
+            .filter(|c| self.is_solid(*c))
+            .collect();
+        let open = self.without_furniture();
+        let fp = Footprint::player();
+        let withheld = solid
+            .iter()
+            .map(|s| [s[0], s[1] + 1, s[2]])
+            .filter(|c| open.standable_fp(*c, &fp) && !self.standable_fp(*c, &fp))
+            .count();
+        (self.furniture_regions.len(), solid.len(), withheld)
+    }
+
+    /// How many of `cells` a body of footprint `fp` would stand on furniture in —
+    /// the `0 standing on furniture` the binding line states, computed rather
+    /// than typed.
+    pub fn cells_on_furniture(&self, cells: &[[i32; 3]], fp: &Footprint) -> usize {
+        cells
+            .iter()
+            .filter(|c| self.on_furniture_fp(**c, fp))
+            .count()
     }
 
     /// Whether this world carries any lethal-volume cell at all. Call sites skip
@@ -1317,6 +1449,12 @@ impl World {
                 .flat_map(|(_, (lo, hi))| crate::compiler::assembled::region_cells(*lo, *hi))
                 .collect(),
             lethal_regions: premises.lethal_regions,
+            furniture: premises
+                .furniture_regions
+                .iter()
+                .flat_map(|(_, (lo, hi))| crate::compiler::assembled::region_cells(*lo, *hi))
+                .collect(),
+            furniture_regions: premises.furniture_regions,
             pinned: BTreeSet::new(),
             world_load_seals: premises.world_load_seals,
             clocked_gates: premises.clocked_gates,
@@ -1437,6 +1575,8 @@ impl World {
             objective_cells: self.objective_cells.clone(),
             lethal: self.lethal.clone(),
             lethal_regions: self.lethal_regions.clone(),
+            furniture: self.furniture.clone(),
+            furniture_regions: self.furniture_regions.clone(),
             pinned,
             world_load_seals: self.world_load_seals.clone(),
             clocked_gates: self.clocked_gates.clone(),
@@ -1477,6 +1617,8 @@ impl World {
             objective_cells: self.objective_cells.clone(),
             lethal: self.lethal.clone(),
             lethal_regions: self.lethal_regions.clone(),
+            furniture: self.furniture.clone(),
+            furniture_regions: self.furniture_regions.clone(),
             pinned: self.pinned.clone(),
             world_load_seals: self.world_load_seals.clone(),
             clocked_gates: self.clocked_gates.clone(),
@@ -1525,6 +1667,8 @@ impl World {
             objective_cells: self.objective_cells.clone(),
             lethal: self.lethal.clone(),
             lethal_regions: self.lethal_regions.clone(),
+            furniture: self.furniture.clone(),
+            furniture_regions: self.furniture_regions.clone(),
             pinned: self.pinned.clone(),
             world_load_seals: self.world_load_seals.clone(),
             clocked_gates: self.clocked_gates.clone(),
@@ -1576,6 +1720,8 @@ impl World {
             objective_cells: self.objective_cells.clone(),
             lethal: self.lethal.clone(),
             lethal_regions: self.lethal_regions.clone(),
+            furniture: self.furniture.clone(),
+            furniture_regions: self.furniture_regions.clone(),
             pinned: self.pinned.clone(),
             world_load_seals: self.world_load_seals.clone(),
             clocked_gates: self.clocked_gates.clone(),
@@ -1651,6 +1797,8 @@ impl World {
             objective_cells: self.objective_cells.clone(),
             lethal: self.lethal.clone(),
             lethal_regions: self.lethal_regions.clone(),
+            furniture: self.furniture.clone(),
+            furniture_regions: self.furniture_regions.clone(),
             pinned: self.pinned.clone(),
             world_load_seals: self.world_load_seals.clone(),
             clocked_gates: self.clocked_gates.clone(),
@@ -1720,6 +1868,8 @@ impl World {
             objective_cells: self.objective_cells.clone(),
             lethal: self.lethal.clone(),
             lethal_regions: self.lethal_regions.clone(),
+            furniture: self.furniture.clone(),
+            furniture_regions: self.furniture_regions.clone(),
             pinned: self.pinned.clone(),
             world_load_seals: self.world_load_seals.clone(),
             clocked_gates: self.clocked_gates.clone(),
@@ -2171,6 +2321,12 @@ impl World {
         if self.meets_lethal_fp(c, fp) {
             return false;
         }
+        // spec-0065: a body may not be PROVEN to stand on furniture. Asked beside
+        // the lethal clause, in the same predicate, so every route, snap, flood,
+        // seat and export inherits it and none of them restates it.
+        if self.on_furniture_fp(c, fp) {
+            return false;
+        }
         fp.cols.iter().all(|&[dx, dz]| {
             let base = [c[0] + dx, c[1], c[2] + dz];
             self.is_solid([base[0], base[1] - 1, base[2]])
@@ -2192,7 +2348,7 @@ impl World {
 
     /// Footprint-aware nearest-standable snap (spec-0014), used by `move-actor`
     /// endpoint resolution so a wide/tall puppet snaps to a cell IT can stand on.
-    fn snap_standable_fp(&self, c: [i32; 3], radius: i32, fp: &Footprint) -> Option<[i32; 3]> {
+    pub fn snap_standable_fp(&self, c: [i32; 3], radius: i32, fp: &Footprint) -> Option<[i32; 3]> {
         if self.standable_fp(c, fp) {
             return Some(c);
         }
@@ -2312,6 +2468,89 @@ impl World {
             }
         }
         out
+    }
+
+    /// Whether a body may walk the **straight horizontal segment** between the
+    /// centres of two standing cells — the question [`smooth_walk`] asks to decide
+    /// that the cells between them are not worth walking around.
+    ///
+    /// A* is four-connected, so every route it returns is a staircase of
+    /// axis-aligned segments. Over a long open courtyard that reads as a machine
+    /// tracing a grid rather than a person crossing a yard, and the repair is to
+    /// drop the intermediate cells wherever the straight line between two of them
+    /// is walkable in its own right. This is that test, and it is deliberately the
+    /// SAME rule the route was proven under rather than a second, looser one:
+    /// [`World::standable_fp`] per column, so the lethal-volume question
+    /// ([`World::meets_lethal_fp`]) and the floor/headroom question are asked here
+    /// exactly as A* asked them.
+    ///
+    /// What it demands, and each clause is a class of geometry the diagonal would
+    /// otherwise cut through:
+    ///
+    /// * **Level, and only level.** Both endpoints stand at the same cell `y` AND
+    ///   the same true feet height ([`World::feet_16_fp`]), and so does every
+    ///   column swept between them. A step, a slab lip, a stair's edge or a drop
+    ///   therefore ENDS a smoothed run and is rendered by the cardinal step shape
+    ///   [`step_vertices`] was written for. Nothing about a rise is smoothed,
+    ///   because nothing about a rise is a straight horizontal line.
+    /// * **Every swept column, not every column the line passes through.** The
+    ///   body is an AABB `width` across, not a point: off a cell centre it
+    ///   straddles up to four columns, and a diagonal is off the centre almost
+    ///   everywhere. The swept set is the Minkowski sum of the segment with that
+    ///   box, computed exactly ([`segment_meets_cell_16`]) rather than sampled — a
+    ///   sample grid can step over the sliver of a doorway jamb, and the corner of
+    ///   a doorway is the exact place this must not be wrong.
+    /// * **No use-gate column.** A closed fence gate is deliberately not
+    ///   *occupied* ([`World::is_occupied`]) — the player opens it with a click —
+    ///   so it is standable, and without this clause a diagonal could be routed
+    ///   through a shut gate, or past the one the traversal proof recorded this
+    ///   leg as using.
+    ///
+    /// **The width is the body that SHIPS, never the footprint that routed**, for
+    /// the reason [`step_fold`] states: `move-npc` plans on the player footprint
+    /// whatever the NPC wears, and a 0.9-wide body given the player's 0.6 would
+    /// sweep a corridor narrower than itself.
+    ///
+    /// Determinism (ADR-0006): integer arithmetic throughout, in the same
+    /// sixteenths [`World::feet_16_fp`] measures in. No float comparison decides
+    /// whether a body may take a path.
+    fn segment_walkable_fp(&self, a: [i32; 3], b: [i32; 3], fp: &Footprint, width: f64) -> bool {
+        if a[1] != b[1] {
+            return false;
+        }
+        let floor = self.feet_16_fp(a, fp);
+        if self.feet_16_fp(b, fp) != floor {
+            return false;
+        }
+        // Half the rendered hitbox, in sixteenths, rounded OUTWARD: a body swept
+        // as slightly wider than it is refuses a diagonal it could have taken,
+        // which is the safe direction; one swept as narrower clips.
+        let half_16 = (width * (FULL_16 as f64) / 2.0).ceil() as i64;
+        let centre = |c: [i32; 3]| {
+            [
+                c[0] as i64 * FULL_16 + FULL_16 / 2,
+                c[2] as i64 * FULL_16 + FULL_16 / 2,
+            ]
+        };
+        let (p0, p1) = (centre(a), centre(b));
+        // Candidate columns: the segment's own span grown by the half-width. The
+        // exact test below then culls the corners of that box.
+        let pad = (half_16 / FULL_16) as i32 + 1;
+        for cx in (a[0].min(b[0]) - pad)..=(a[0].max(b[0]) + pad) {
+            for cz in (a[2].min(b[2]) - pad)..=(a[2].max(b[2]) + pad) {
+                if !segment_meets_cell_16(p0, p1, [cx as i64, cz as i64], half_16) {
+                    continue;
+                }
+                let col = [cx, a[1], cz];
+                if self.is_use_gate(col)
+                    || !self.standable_fp(col, fp)
+                    || self.feet_16_fp(col, fp) != floor
+                {
+                    return false;
+                }
+            }
+        }
+        true
     }
 
     /// A* over standable cells from `start` to `goal`, returning the cell path
@@ -2555,10 +2794,128 @@ fn step_vertices(a: [f64; 3], b: [f64; 3], width: f64) -> Vec<[f64; 3]> {
     }
 }
 
+/// Whether the segment `p0`→`p1` comes within `half_16` of the unit column
+/// `[cx, cz]` — i.e. whether a box `2 * half_16` across, carried along that
+/// segment, ever overlaps that column. All coordinates are in sixteenths of a
+/// block.
+///
+/// This is the separating-axis test for a segment against an axis-aligned box,
+/// which for a 2-D segment is complete on exactly three axes: the box's two, and
+/// the segment's own normal (its direction axis cannot separate, since the box's
+/// two axes already bound the segment's extent along it). The box tested is the
+/// column grown by `half_16` on every side, which is the standard Minkowski
+/// restatement of "a box of that half-width, swept, touches this column".
+///
+/// The intervals are **closed**, so a body whose hitbox exactly grazes a column
+/// counts as entering it. That is the conservative direction: it can only refuse
+/// a diagonal, never admit one.
+///
+/// Integer throughout (ADR-0006). The products are bounded by segment length
+/// times world coordinate, both in sixteenths — nowhere near `i64`.
+fn segment_meets_cell_16(p0: [i64; 2], p1: [i64; 2], cell: [i64; 2], half_16: i64) -> bool {
+    let min = [cell[0] * FULL_16 - half_16, cell[1] * FULL_16 - half_16];
+    let max = [
+        (cell[0] + 1) * FULL_16 + half_16,
+        (cell[1] + 1) * FULL_16 + half_16,
+    ];
+    // The box's own two axes.
+    for k in 0..2 {
+        if p0[k].max(p1[k]) < min[k] || p0[k].min(p1[k]) > max[k] {
+            return false;
+        }
+    }
+    // The segment's normal. Both endpoints project onto it identically (the
+    // normal is perpendicular to the segment), so the segment is a point here and
+    // the box is an interval.
+    let n = [-(p1[1] - p0[1]), p1[0] - p0[0]];
+    let s = n[0] * p0[0] + n[1] * p0[1];
+    let corners = [
+        n[0] * min[0] + n[1] * min[1],
+        n[0] * min[0] + n[1] * max[1],
+        n[0] * max[0] + n[1] * min[1],
+        n[0] * max[0] + n[1] * max[1],
+    ];
+    let lo = corners.iter().copied().min().unwrap();
+    let hi = corners.iter().copied().max().unwrap();
+    s >= lo && s <= hi
+}
+
+/// String-pull an A* cell route into the polyline a body actually walks: wherever
+/// the straight segment between two cells of the route is walkable in its own
+/// right ([`World::segment_walkable_fp`]), the cells between them are dropped.
+///
+/// **The defect this exists for (owner playtest, castle-tour staging).** A walk is
+/// planned by A* over a four-connected grid, so every route is a staircase of
+/// axis-aligned segments. At room scale the staircase is invisible; crossing a
+/// courtyard or a wall-walk it is a body zig-zagging along gridlines, which reads
+/// as a machine tracing a floor plan rather than a person walking across a yard.
+///
+/// **What is smoothed, and what is deliberately not.** A run is merged only while
+/// it stays level and unobstructed for the body's real width — every clause is in
+/// [`World::segment_walkable_fp`], which is the same standability rule A* itself
+/// stepped with, so a smoothed segment is proven by the model that proved the
+/// route rather than by a second, looser one. Every rise, drop, slab lip, stair
+/// edge and use-gate therefore ENDS a run and survives into the walked polyline as
+/// its own vertex, where [`resample_body`]'s cardinal step shape renders it
+/// exactly as before. **A route with no level run of three or more cells comes back
+/// unchanged**, which is why a short indoor walk emits the bytes it always did.
+///
+/// The scan is the classic greedy string-pull: from each kept vertex, extend while
+/// the straight line still clears, stop at the first cell it does not, keep that
+/// one and start again. Stopping at the first failure rather than hunting further
+/// along the route is what makes it O(route × run) instead of quadratic, and it
+/// cannot skip a corner — a corner is exactly where the line stops clearing.
+///
+/// Determinism (ADR-0006): a pure function of the route and the world, with a
+/// fixed scan order and integer-only tests.
+///
+/// **The route itself is not touched.** [`MovePlan::cells`] keeps the full A* cell
+/// path, because the traversal proof ([`crate::compiler::traversal`]) asks of it
+/// what move the body made — which cell it entered, which it stepped up onto, and
+/// which use-gate it passed — and a thinned route would silently stop binding
+/// those rules. This is the polyline the body is RENDERED along; the proof keeps
+/// the cells.
+fn smooth_walk(world: &World, cells: &[[i32; 3]], fp: &Footprint, width: f64) -> Vec<[i32; 3]> {
+    if cells.len() < 3 {
+        return cells.to_vec();
+    }
+    let mut out = vec![cells[0]];
+    let mut i = 0;
+    while i + 1 < cells.len() {
+        // The furthest cell the straight line from `cells[i]` still reaches.
+        // Never less than `i + 1`, so the scan always advances and the walked
+        // polyline is never longer than the route.
+        let mut far = i + 1;
+        for j in (i + 2)..cells.len() {
+            if !world.segment_walkable_fp(cells[i], cells[j], fp, width) {
+                break;
+            }
+            far = j;
+        }
+        out.push(cells[far]);
+        i = far;
+    }
+    out
+}
+
 /// [`resample`] for a body of the given hitbox — the footprint the leg was
 /// **routed** under, since the rendered motion is bounded by the volume the
 /// proof proved and a body the router never saw was never proved anything.
-fn resample_body(cells: &[[i32; 3]], speed: f64, width: f64) -> Vec<[f64; 3]> {
+///
+/// Returns the emitted samples and the same samples **before** the 0.01-block
+/// rounding, in that order.
+///
+/// The emitted `tp` coordinates are rounded so they stay short and byte-stable.
+/// That rounding is invisible to a body walking a cardinal path — every step is
+/// axis-aligned, so the bearing between two rounded samples is the same cardinal
+/// bearing as between two exact ones. It is NOT invisible to a body walking a
+/// diagonal: at 0.15 blocks a tick, a ±0.005 wobble on each component is up to a
+/// couple of degrees of noise, so [`yaws_along`] reading the rounded samples
+/// gives a body crossing a courtyard in a straight line a yaw that twitches every
+/// single tick — an emitted jitter far more visible than the right angles the
+/// straight line was cut to remove. The yaw is a property of the segment being
+/// walked, so it is taken from the exact samples; only the position is rounded.
+fn resample_body(cells: &[[i32; 3]], speed: f64, width: f64) -> (Vec<[f64; 3]>, Vec<[f64; 3]>) {
     let mut pts: Vec<[f64; 3]> = Vec::with_capacity(cells.len() * 3);
     for (i, c) in cells.iter().enumerate() {
         let p = cell_center(*c);
@@ -2568,7 +2925,7 @@ fn resample_body(cells: &[[i32; 3]], speed: f64, width: f64) -> Vec<[f64; 3]> {
         pts.push(p);
     }
     if pts.len() == 1 {
-        return vec![pts[0]];
+        return (vec![pts[0]], vec![pts[0]]);
     }
     // Cumulative arc length at each vertex.
     let mut cum = vec![0.0f64];
@@ -2583,15 +2940,18 @@ fn resample_body(cells: &[[i32; 3]], speed: f64, width: f64) -> Vec<[f64; 3]> {
     let speed = if speed > 0.0 { speed } else { DEFAULT_SPEED };
     let ticks = ((total / speed).ceil() as i64).max(1) as usize;
     let mut out = Vec::with_capacity(ticks + 1);
+    let mut exact = Vec::with_capacity(ticks + 1);
     for t in 0..=ticks {
         let d = total * (t as f64) / (ticks as f64);
         let p = point_at(&pts, &cum, d);
+        exact.push(p);
         // Round to 0.01 block — far finer than needed at 0.15 blk/tick, and keeps
         // the emitted per-tick `tp` coordinates short and stable.
         out.push([round2(p[0]), round2(p[1]), round2(p[2])]);
     }
     *out.last_mut().unwrap() = *pts.last().unwrap();
-    out
+    *exact.last_mut().unwrap() = *pts.last().unwrap();
+    (out, exact)
 }
 
 fn round2(x: f64) -> f64 {
@@ -2636,6 +2996,7 @@ fn npc_start(plan: &Plan, npc_id: &str) -> Option<[i32; 3]> {
         .find(|n| n.id.as_str() == npc_id)?;
     let area = plan.npc_area(npc_id)?;
     plan.point(area, npc.anchor.as_str())
+        .map(|p| delvewright_dsl::offset_cell(p, npc.offset))
 }
 
 /// Resolve a `move-npc` destination through [`body_station`], the one
@@ -2684,20 +3045,20 @@ fn move_target(
             DW_MOVE_UNROUTABLE,
             format!(
                 "move-npc: destination anchor `{to_anchor}` for NPC `{npc_id}` did not resolve \
-                 to a world position — use a `to_anchor` that the NPC's area prefab provides"
+                 to a world position — use a `to.anchor` that the NPC's area prefab provides"
             ),
         )),
     }
 }
 
 /// Plan every `move-npc` in the campaign into a walked-path [`MovePlan`], deduped
-/// by `(npc, to_anchor)` in first-seen order. `DW0307` when a move is
+/// by `(npc, to)` in first-seen order. `DW0307` when a move is
 /// unroutable, `DW0859` when its destination names an anchor two areas answer
 /// to and neither the move's own quest nor the NPC's home settles it
 /// ([`move_target`]). Each NPC's successive moves **chain**: the first leg
 /// starts at the stage-2 anchor, every later leg at the previous leg's target
 /// (round-6; see
-/// [`plan_actor_moves`]). Two moves sharing `(npc, to_anchor)` still share one
+/// [`plan_actor_moves`]). Two moves sharing `(npc, to)` still share one
 /// content-keyed driver, planned from the first occurrence's origin (documented
 /// limitation of the content key).
 ///
@@ -2731,7 +3092,7 @@ pub fn plan_moves(plan: &Plan, world: &World) -> Result<Vec<MovePlan>, Failure> 
     // follows it in declaration order. See [`BranchGate`] for the defect this
     // fixes and why the rule is stated as implication rather than exclusion.
     let mut history: StagingHistory = StagingHistory::new();
-    // The cell route planned for each `(npc, to_anchor)` driver, so a deduped
+    // The cell route planned for each `(npc, to)` driver, so a deduped
     // repeat occurrence can be re-checked against its own timeline's seals.
     let mut planned: BTreeMap<(String, String, String), Vec<[i32; 3]>> = BTreeMap::new();
     // The yaw each planned driver ends on, so a deduped repeat chains the same
@@ -2744,13 +3105,7 @@ pub fn plan_moves(plan: &Plan, world: &World) -> Result<Vec<MovePlan>, Failure> 
         BTreeMap::new();
     let mut cache = SealCache::default();
     for (eff, seal, beat) in crate::compiler::timeline::walk_with_beat_area(plan) {
-        let Verb::MoveNpc {
-            npc,
-            to_anchor,
-            speed,
-            ..
-        } = &eff.verb
-        else {
+        let Verb::MoveNpc { npc, to, speed, .. } = &eff.verb else {
             continue;
         };
         let gate = BranchGate::of(eff);
@@ -2760,26 +3115,25 @@ pub fn plan_moves(plan: &Plan, world: &World) -> Result<Vec<MovePlan>, Failure> 
             Some(i) => &cache.worlds[i],
             None => world,
         };
-        let anchor_pos = move_target(plan, npc.as_str(), to_anchor.as_str(), beat)?;
+        // The destination is a mark (spec-0066): the anchor resolves through the
+        // one station authority, and the snap starts from the mark's cell.
+        let to_mark = to.display();
+        let anchor_pos = to.cell(move_target(plan, npc.as_str(), to.anchor.as_str(), beat)?);
         let target = leg_world
             .snap_standable(anchor_pos, SNAP_RADIUS)
             .ok_or_else(|| Failure {
                 code: DW_MOVE_UNROUTABLE,
                 message: format!(
-                    "move-npc: no standable floor cell near destination anchor `{}` {anchor_pos:?} \
-                 for NPC `{}` — the anchor is walled in or over void; place `{}` beside walkable \
+                    "move-npc: no standable floor cell near destination `{}` {anchor_pos:?} \
+                 for NPC `{}` — the mark is walled in or over void; place `{}` beside walkable \
                  floor the npc can stand on",
-                    to_anchor.as_str(),
+                    to_mark,
                     npc.as_str(),
-                    to_anchor.as_str(),
+                    to_mark,
                 ),
             })?;
         let gkey = gate.key();
-        let key = (
-            npc.as_str().to_string(),
-            to_anchor.as_str().to_string(),
-            gkey.clone(),
-        );
+        let key = (npc.as_str().to_string(), to_mark.clone(), gkey.clone());
         if !seen.insert(key.clone()) {
             // Deduped: shares the first occurrence's driver, so it walks the
             // already-planned path — which must still be clear under THIS
@@ -2792,7 +3146,7 @@ pub fn plan_moves(plan: &Plan, world: &World) -> Result<Vec<MovePlan>, Failure> 
                     return Err(gate_timeline_error(
                         "move-npc",
                         npc.as_str(),
-                        to_anchor.as_str(),
+                        to_mark.as_str(),
                         cells[0],
                         target,
                         &seal,
@@ -2810,7 +3164,7 @@ pub fn plan_moves(plan: &Plan, world: &World) -> Result<Vec<MovePlan>, Failure> 
                     return Err(shared_origin_error(
                         "move-npc",
                         npc.as_str(),
-                        to_anchor.as_str(),
+                        to_mark.as_str(),
                         *planned_from,
                         planned_gate,
                         here,
@@ -2856,10 +3210,20 @@ pub fn plan_moves(plan: &Plan, world: &World) -> Result<Vec<MovePlan>, Failure> 
                 return Err(gate_timeline_error(
                     "move-npc",
                     npc.as_str(),
-                    to_anchor.as_str(),
+                    to_mark.as_str(),
                     start,
                     target,
                     &seal,
+                ));
+            }
+            None if leg_world.has_furniture()
+                && let Some(over) = leg_world.without_furniture().find_path(start, target) =>
+            {
+                return Err(furniture_route_failure(
+                    &format!("move-npc `{}`", npc.as_str()),
+                    &format!("{start:?}"),
+                    &format!("`{to_mark}` (floor {target:?})"),
+                    &leg_world.furniture_over(&over),
                 ));
             }
             None => {
@@ -2873,30 +3237,38 @@ pub fn plan_moves(plan: &Plan, world: &World) -> Result<Vec<MovePlan>, Failure> 
                          destination), or split it into shorter reachable hops",
                         npc.as_str(),
                         plan_npc_anchor(plan, npc.as_str()),
-                        to_anchor.as_str(),
+                        to_mark.as_str(),
                     ),
                 });
             }
         };
         planned.insert(key.clone(), cells.clone());
         planned_origin.insert(key.clone(), (start, gate.clone()));
-        let waypoints = resample_body(
-            &cells,
-            speed.unwrap_or(DEFAULT_SPEED),
-            npc_render_width(plan, npc.as_str()),
-        );
+        // The body walks the string-pulled polyline, not the four-connected
+        // staircase A* returned — `cells` keeps the route for the proofs that read
+        // it. Routed on the player footprint (this is `find_path`), swept at the
+        // width the NPC actually wears.
+        let width = npc_render_width(plan, npc.as_str());
+        let walked = smooth_walk(leg_world, &cells, &Footprint::player(), width);
+        let (waypoints, exact) = resample_body(&walked, speed.unwrap_or(DEFAULT_SPEED), width);
         // Seed: the facing this body already has — the exit yaw of the previous
         // leg **on this branch** if this NPC has walked before, else the yaw its
         // summon gave it (the home anchor's declared facing,
         // `emit::npc_summon_commands`).
         let seed = seed_yaw.unwrap_or_else(|| npc_spawn_yaw(plan, npc.as_str()));
-        let yaws = yaws_along(&waypoints, seed);
+        // Yawed off the EXACT samples: the rounding that keeps the emitted
+        // coordinates short would otherwise twitch a diagonal's bearing every tick.
+        let mut yaws = yaws_along(&exact, seed);
+        apply_arrival_yaw(
+            &mut yaws,
+            anchor_facing_yaw(plan, npc.as_str(), to.anchor.as_str()),
+        );
         let end_yaw = yaws.last().copied().unwrap_or(seed);
         record_staging(&mut history, npc.as_str(), gate, target, Some(end_yaw));
         planned_end_yaw.insert(key, end_yaw);
         out.push(MovePlan {
             npc: npc.as_str().to_string(),
-            to_anchor: to_anchor.as_str().to_string(),
+            to: to.clone(),
             target,
             cells,
             waypoints,
@@ -2905,6 +3277,66 @@ pub fn plan_moves(plan: &Plan, world: &World) -> Result<Vec<MovePlan>, Failure> 
         });
     }
     Ok(out)
+}
+
+/// The declared facing of one anchor in an NPC's own area, as a yaw — `None`
+/// when that anchor declares none.
+fn anchor_facing_yaw(plan: &Plan, npc_id: &str, anchor_id: &str) -> Option<i32> {
+    let area = plan.npc_area(npc_id)?;
+    match plan.anchors.get(&(area.to_string(), anchor_id.to_string())) {
+        Some(ResolvedAnchor::Point { facing, .. }) => facing
+            .as_deref()
+            .map(|f| crate::compiler::emit::facing_yaw(Some(f))),
+        _ => None,
+    }
+}
+
+/// The declared facing of an anchor an **actor** walks to, as a yaw — the
+/// counterpart of [`anchor_facing_yaw`], resolved the way an actor's anchors are
+/// resolved everywhere else in this module: globally, first match, because an
+/// actor carries no area. It mirrors [`actor_anchor_pos`]'s scan exactly, so the
+/// facing and the position can never be read off two different anchors.
+fn actor_anchor_facing_yaw(plan: &Plan, anchor: &str) -> Option<i32> {
+    for ((_, name), resolved) in &plan.anchors {
+        if name == anchor {
+            return match resolved {
+                ResolvedAnchor::Point { facing, .. } => facing
+                    .as_deref()
+                    .map(|f| crate::compiler::emit::facing_yaw(Some(f))),
+                ResolvedAnchor::Gate { .. } => None,
+            };
+        }
+    }
+    None
+}
+
+/// Give a walked body its arrival turn: rewrite the LAST entry of `yaws`, which
+/// [`yaws_along`] left carrying the bearing of the final step.
+///
+/// **The rule belongs to the walked body, not to the verb that first needed it.**
+/// The path's own tangent is the WRONG answer at the end of any walk: a body that
+/// walked away from the party arrives with its back to them, which is what a
+/// guide leading a tour must never do — and a `move-actor` puppet is as much a
+/// body as a `move-npc` villager is. So the arrival yaw is the destination
+/// anchor's **declared facing** when the piece declares one — the anchor is
+/// where the piece says a body at that spot looks — and otherwise the reverse of
+/// the last leg, which turns the body back the way it came, where whoever
+/// followed it is standing.
+///
+/// `declared` is handed in rather than looked up here, because only the caller
+/// knows the scope its mover's anchors resolve in: an NPC's are its own area's
+/// ([`anchor_facing_yaw`]), an actor's are global ([`actor_anchor_facing_yaw`]).
+fn apply_arrival_yaw(yaws: &mut [i32], declared: Option<i32>) {
+    if let Some(last) = yaws.last_mut() {
+        *last = arrival_yaw_of(declared, *last);
+    }
+}
+
+/// The arithmetic half of [`apply_arrival_yaw`], so both branches are testable
+/// without a whole `Plan`: a declared facing wins, and an undeclared one turns
+/// the body through 180 degrees to face back down the path it just walked.
+fn arrival_yaw_of(declared: Option<i32>, walk_yaw: i32) -> i32 {
+    declared.unwrap_or_else(|| (walk_yaw + 180).rem_euclid(360))
 }
 
 /// The yaw an NPC's summon gives it: its home anchor's declared `facing`, exactly
@@ -2939,8 +3371,8 @@ fn npc_spawn_yaw(plan: &Plan, npc_id: &str) -> i32 {
 pub struct ActorMovePlan {
     /// The moving actor id (`actor/…`).
     pub actor: String,
-    /// The destination anchor id (`anchor/…`).
-    pub to_anchor: String,
+    /// The destination mark (spec-0066): anchor and offset.
+    pub to: delvewright_dsl::Mark,
     /// The integer target cell (feet), for the arrival assertion.
     pub target: [i32; 3],
     /// The A* **cell** path this leg walks, start to target inclusive — see
@@ -3135,11 +3567,11 @@ fn gate_timeline_error(
 }
 
 /// Plan every `move-actor` into a walked-path [`ActorMovePlan`] over the actor's
-/// footprint, deduped by `(actor, to_anchor)` in first-seen order. `DW0325` when a
+/// footprint, deduped by `(actor, to)` in first-seen order. `DW0325` when a
 /// move is unroutable (names actor, leg, first blocked cell). Each actor's
 /// successive moves **chain** — first leg from the declared spawn anchor, every
 /// later leg from the previous leg's target (round-6 fix; see the loop comment).
-/// Two moves sharing `(actor, to_anchor)` still share one content-keyed driver,
+/// Two moves sharing `(actor, to)` still share one content-keyed driver,
 /// planned from the first occurrence's origin (documented limitation).
 ///
 /// Use-gate cells are walkable edges for a scripted puppet walk, exactly as for
@@ -3169,7 +3601,7 @@ pub fn plan_actor_moves(plan: &Plan, world: &World) -> Result<Vec<ActorMovePlan>
     // walked to the tide line from the GROUND branch's grave for the same reason
     // the island's Eurylochus walked from the beach.
     let mut history: StagingHistory = StagingHistory::new();
-    // The cell route planned for each `(actor, to_anchor)` driver, so a deduped
+    // The cell route planned for each `(actor, to)` driver, so a deduped
     // repeat occurrence can be re-checked against its own timeline's seals.
     let mut planned: BTreeMap<(String, String, String), Vec<[i32; 3]>> = BTreeMap::new();
     // The yaw each planned driver ends on, so a deduped repeat chains it forward.
@@ -3181,10 +3613,7 @@ pub fn plan_actor_moves(plan: &Plan, world: &World) -> Result<Vec<ActorMovePlan>
     let mut cache = SealCache::default();
     for (eff, seal) in crate::compiler::timeline::walk(plan) {
         let Verb::MoveActor {
-            actor,
-            to_anchor,
-            speed,
-            ..
+            actor, to, speed, ..
         } = &eff.verb
         else {
             continue;
@@ -3204,34 +3633,34 @@ pub fn plan_actor_moves(plan: &Plan, world: &World) -> Result<Vec<ActorMovePlan>
             ),
         })?;
         let fp = entity_footprint(&a.entity);
-        let dest = actor_anchor_pos(plan, to_anchor.as_str()).ok_or_else(|| Failure {
-            code: DW_ACTOR_UNROUTABLE,
-            message: format!(
-                "move-actor: destination anchor `{}` for actor `{}` did not resolve to a world \
-                 position — use a `to_anchor` some area's prefab provides",
-                to_anchor.as_str(),
-                actor.as_str()
-            ),
-        })?;
+        // The destination is a mark (spec-0066): the snap starts from its cell.
+        let to_mark = to.display();
+        let dest = actor_anchor_pos(plan, to.anchor.as_str())
+            .map(|p| to.cell(p))
+            .ok_or_else(|| Failure {
+                code: DW_ACTOR_UNROUTABLE,
+                message: format!(
+                    "move-actor: destination anchor `{}` for actor `{}` did not resolve to a \
+                     world position — use a `to.anchor` some area's prefab provides",
+                    to.anchor.as_str(),
+                    actor.as_str()
+                ),
+            })?;
         let target = leg_world
             .snap_standable_fp(dest, SNAP_RADIUS, &fp)
             .ok_or_else(|| Failure {
                 code: DW_ACTOR_UNROUTABLE,
                 message: format!(
-                    "move-actor: no cell the `{}` footprint can stand on near destination anchor \
-                     `{}` {dest:?} for actor `{}` — the anchor is walled in, too low a ceiling for \
+                    "move-actor: no cell the `{}` footprint can stand on near destination \
+                     `{}` {dest:?} for actor `{}` — the mark is walled in, too low a ceiling for \
                      this mob, or over void",
                     a.entity,
-                    to_anchor.as_str(),
+                    to_mark,
                     actor.as_str()
                 ),
             })?;
         let gkey = gate.key();
-        let key = (
-            actor.as_str().to_string(),
-            to_anchor.as_str().to_string(),
-            gkey.clone(),
-        );
+        let key = (actor.as_str().to_string(), to_mark.clone(), gkey.clone());
         if !seen.insert(key.clone()) {
             // Deduped: this occurrence shares the first occurrence's content-keyed
             // driver, so the path it walks is the one already planned. It still has
@@ -3246,7 +3675,7 @@ pub fn plan_actor_moves(plan: &Plan, world: &World) -> Result<Vec<ActorMovePlan>
                     return Err(gate_timeline_error(
                         "move-actor",
                         actor.as_str(),
-                        to_anchor.as_str(),
+                        to_mark.as_str(),
                         cells[0],
                         target,
                         &seal,
@@ -3263,7 +3692,7 @@ pub fn plan_actor_moves(plan: &Plan, world: &World) -> Result<Vec<ActorMovePlan>
                     return Err(shared_origin_error(
                         "move-actor",
                         actor.as_str(),
-                        to_anchor.as_str(),
+                        to_mark.as_str(),
                         *planned_from,
                         planned_gate,
                         here,
@@ -3286,8 +3715,9 @@ pub fn plan_actor_moves(plan: &Plan, world: &World) -> Result<Vec<ActorMovePlan>
         let start = match prior.map(|s| s.pos) {
             Some(pos) => pos,
             None => {
-                let start_anchor =
-                    actor_anchor_pos(plan, a.anchor.as_str()).ok_or_else(|| Failure {
+                let start_anchor = actor_anchor_pos(plan, a.anchor.as_str())
+                    .map(|p| delvewright_dsl::offset_cell(p, a.offset))
+                    .ok_or_else(|| Failure {
                         code: DW_ACTOR_UNROUTABLE,
                         message: format!(
                             "move-actor: actor `{}` spawn anchor `{}` did not resolve to a world \
@@ -3311,10 +3741,22 @@ pub fn plan_actor_moves(plan: &Plan, world: &World) -> Result<Vec<ActorMovePlan>
                 return Err(gate_timeline_error(
                     "move-actor",
                     actor.as_str(),
-                    to_anchor.as_str(),
+                    to_mark.as_str(),
                     start,
                     target,
                     &seal,
+                ));
+            }
+            None if leg_world.has_furniture()
+                && let Some(over) = leg_world
+                    .without_furniture()
+                    .find_path_fp(start, target, &fp) =>
+            {
+                return Err(furniture_route_failure(
+                    &format!("move-actor `{}`", actor.as_str()),
+                    &format!("{start:?}"),
+                    &format!("`{to_mark}` (floor {target:?})"),
+                    &leg_world.furniture_over_fp(&over, &fp),
                 ));
             }
             None => {
@@ -3330,7 +3772,7 @@ pub fn plan_actor_moves(plan: &Plan, world: &World) -> Result<Vec<ActorMovePlan>
                         actor.as_str(),
                         a.entity,
                         a.anchor.as_str(),
-                        to_anchor.as_str(),
+                        to_mark.as_str(),
                     ),
                 });
             }
@@ -3341,20 +3783,28 @@ pub fn plan_actor_moves(plan: &Plan, world: &World) -> Result<Vec<ActorMovePlan>
         // hop shape uses the SAME hitbox this leg was routed under, never the
         // entity's true size.
         let (body_w, _) = entity_dims(&actor_body_entity(a));
-        let waypoints = resample_body(&cells, speed.unwrap_or(DEFAULT_SPEED), body_w);
+        // A puppet crosses open ground the same way a villager does — smoothing
+        // belongs to a walked body, not to the verb that first needed it. Swept at
+        // the footprint THIS leg was routed under, which for an actor is its own.
+        let walked = smooth_walk(leg_world, &cells, &fp, body_w);
+        let (waypoints, exact) = resample_body(&walked, speed.unwrap_or(DEFAULT_SPEED), body_w);
         // Seed: the facing the puppet already has — the exit yaw of the previous
         // leg **on this branch**, else the actor's declared spawn `facing`
         // (`emit::actor_facing_yaw`).
         let seed = prior
             .and_then(|s| s.yaw)
             .unwrap_or_else(|| crate::compiler::emit::facing_yaw(a.facing.map(|f| f.token())));
-        let yaws = yaws_along(&waypoints, seed);
+        let mut yaws = yaws_along(&exact, seed);
+        // A puppet takes its arrival turn for the same reason a villager does —
+        // it is a walked body, and the verb it was moved by is not what decides
+        // which way it ends up looking.
+        apply_arrival_yaw(&mut yaws, actor_anchor_facing_yaw(plan, to.anchor.as_str()));
         let end_yaw = yaws.last().copied().unwrap_or(seed);
         record_staging(&mut history, actor.as_str(), gate, target, Some(end_yaw));
         planned_end_yaw.insert(key, end_yaw);
         out.push(ActorMovePlan {
             actor: actor.as_str().to_string(),
-            to_anchor: to_anchor.as_str().to_string(),
+            to: to.clone(),
             target,
             cells,
             waypoints,
@@ -3400,7 +3850,7 @@ fn plan_npc_anchor(plan: &Plan, npc_id: &str) -> String {
 /// The camera dolly world points of a cutscene (anchor + offset, block centres) —
 /// the exact points the emitter lerps between. Shared with the emitter so the
 /// air-corridor check validates what actually ships.
-pub fn camera_points(plan: &Plan, path: &[CameraWaypoint]) -> Vec<[f64; 3]> {
+pub fn camera_points(plan: &Plan, path: &[Mark]) -> Vec<[f64; 3]> {
     path.iter()
         .map(|w| anchor_offset_point(plan, w.anchor.as_str(), w.offset))
         .collect()
@@ -3409,7 +3859,7 @@ pub fn camera_points(plan: &Plan, path: &[CameraWaypoint]) -> Vec<[f64; 3]> {
 /// The world point a cutscene's `look_at` subject resolves to (DSL v0.6) — the
 /// same anchor + offset block-centre convention as [`camera_points`], so a
 /// waypoint and a look target at the same anchor/offset name the same point.
-pub fn camera_look_point(plan: &Plan, target: &delvewright_dsl::CameraTarget) -> [f64; 3] {
+pub fn camera_look_point(plan: &Plan, target: &Mark) -> [f64; 3] {
     anchor_offset_point(plan, target.anchor.as_str(), target.offset)
 }
 
@@ -3681,6 +4131,92 @@ struct VisitedPos {
     /// The originating `critical_path` step index (v0.6): lets the checkpoint /
     /// stealth proofs select the positions at or after a firing step.
     src_step: usize,
+}
+
+/// **What the furniture exclusion bound on one build** (spec-0065 §4.3).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct FurnitureBinding {
+    /// Furniture regions placed in the world.
+    pub regions: usize,
+    /// Solid cells those regions hold.
+    pub solid: usize,
+    /// Cells a player could stand in on the bare geometry that the exclusion
+    /// withholds from walking — the count that says the declarations bit.
+    pub withheld: usize,
+    /// Walked legs proved: exported critical-path legs, `move-npc` legs and
+    /// `move-actor` legs.
+    pub legs: usize,
+    /// Cells of those legs a body stands on furniture in, computed over every
+    /// leg's own cells for the footprint it was routed under.
+    pub on_furniture: usize,
+    /// The furniture anchors placed, in the plan's order, one per placement.
+    pub anchors: Vec<String>,
+}
+
+impl FurnitureBinding {
+    /// The line every build prints, zeroes included, so a campaign whose pieces
+    /// declare no furniture reads as checked rather than unbound.
+    pub fn line(&self) -> String {
+        format!(
+            "furniture binding: {} region(s) over {} solid cell(s), {} standable cell(s) \
+             withheld from walking; {} leg(s) proved, {} standing on furniture.",
+            self.regions, self.solid, self.withheld, self.legs, self.on_furniture
+        )
+    }
+
+    /// `validation/furniture-gate.json`: the same counts, for a gate that reads
+    /// the build rather than its stderr. `examined` is the region count, so a
+    /// reader that reds a zero binding reds a build whose campaign declares
+    /// furniture and whose pieces placed none.
+    pub fn to_json(&self) -> serde_json::Value {
+        serde_json::json!({
+            "anchors": self.anchors,
+            "examined": self.regions,
+            "legs": self.legs,
+            "on_furniture": self.on_furniture,
+            "solid_cells": self.solid,
+            "spec": "spec-0065",
+            "withheld": self.withheld,
+        })
+    }
+}
+
+/// Measure [`FurnitureBinding`] over the world a build proved its walks in and
+/// the legs it proved there.
+pub fn furniture_binding(
+    plan: &Plan,
+    world: &World,
+    routes: &[LegRoute],
+    moves: &[MovePlan],
+    actor_moves: &[ActorMovePlan],
+) -> FurnitureBinding {
+    let (regions, solid, withheld) = world.furniture_census();
+    let player = Footprint::player();
+    let mut on_furniture = 0;
+    for r in routes {
+        on_furniture += world.cells_on_furniture(&r.cells, &player);
+    }
+    for m in moves {
+        on_furniture += world.cells_on_furniture(&m.cells, &player);
+    }
+    for m in actor_moves {
+        let fp = actor_of(plan, &m.actor)
+            .map(|a| entity_footprint(&a.entity))
+            .unwrap_or_else(Footprint::player);
+        on_furniture += world.cells_on_furniture(&m.cells, &fp);
+    }
+    FurnitureBinding {
+        regions,
+        solid,
+        withheld,
+        legs: routes.len() + moves.len() + actor_moves.len(),
+        on_furniture,
+        anchors: plan
+            .furniture
+            .iter()
+            .map(|(name, _)| name.clone())
+            .collect(),
+    }
 }
 
 /// How many critical-path **legs** the completability proof routes — consecutive
@@ -4353,6 +4889,26 @@ fn names_of(ids: &[&str]) -> String {
         .join(", ")
 }
 
+/// `DW0510`'s **furniture shape** (spec-0065 §4.3): a walked route exists only
+/// when the declared furniture is lifted, so the only way from `from` to `to`
+/// climbs over it. One code with the lethal shape, because it is one rule — a
+/// route may not depend on a cell a body may not be proven to stand in — and
+/// the message names the kind.
+fn furniture_route_failure(walker: &str, from: &str, to: &str, tables: &[&str]) -> Failure {
+    Failure {
+        code: DW_LETHAL_ON_CRITICAL_PATH,
+        message: format!(
+            "{walker}: the only route from {from} to {to} runs OVER furniture {names} — the \
+             piece that built it declares it a place a body stands beside and never on, and a \
+             route that climbs a table is one nobody reads as a way. The geometry is walkable; \
+             the declaration is what closes it. Move the mark so the walk has somewhere else to \
+             go, open a way round the furniture, or move the furniture in the piece; do NOT \
+             delete the declaration to silence the proof.",
+            names = names_of(tables),
+        ),
+    }
+}
+
 /// Render a blamed-region list for a `DW0544` message. A runtime region write has
 /// no author-given id — `fill-region` names a box, not itself — so the box IS the
 /// name, and it identifies the effect uniquely. The empty case is the same honest
@@ -4425,8 +4981,8 @@ fn route_visited(
         // and saying which volume is a different fix from every other answer
         // this function gives.
         let open_owned;
-        let open: Option<&World> = if leg_world.has_lethal() {
-            open_owned = leg_world.without_lethal();
+        let open: Option<&World> = if leg_world.has_lethal() || leg_world.has_furniture() {
+            open_owned = leg_world.without_exclusions();
             Some(&open_owned)
         } else {
             None
@@ -4456,7 +5012,23 @@ fn route_visited(
         let lethal_snap_err = |at: [i32; 3], talk_to: bool| -> Option<Failure> {
             let open = open?;
             let cell = open.snap_endpoint(at, talk_to)?;
-            let names = names_of(&leg_world.lethal_volumes_over(&[cell]));
+            let volumes = leg_world.lethal_volumes_over(&[cell]);
+            let tables = leg_world.furniture_over(&[cell]);
+            if volumes.is_empty() && !tables.is_empty() {
+                return Some(Failure {
+                    code: DW_LETHAL_ON_CRITICAL_PATH,
+                    message: format!(
+                        "critical path: the only footing within {SNAP_RADIUS} blocks of visited \
+                         anchor {at:?} is ON furniture {names} — the piece that built it \
+                         declares it a place a body stands beside and never on, so the party \
+                         cannot be proven to stand where this objective is. Move the objective \
+                         to the floor beside it, or move the furniture in the piece; do NOT \
+                         delete the declaration to silence the proof.",
+                        names = names_of(&tables),
+                    ),
+                });
+            }
+            let names = names_of(&volumes);
             Some(Failure {
                 code: DW_LETHAL_ON_CRITICAL_PATH,
                 message: format!(
@@ -4605,7 +5177,17 @@ fn route_visited(
                 )
                 && let Some(cells) = open.find_path(s2, g2)
             {
-                let names = names_of(&leg_world.lethal_volumes_over(&cells));
+                let volumes = leg_world.lethal_volumes_over(&cells);
+                let tables = leg_world.furniture_over(&cells);
+                if volumes.is_empty() && !tables.is_empty() {
+                    return Err(furniture_route_failure(
+                        "critical path",
+                        &format!("{from:?} (floor {start:?})"),
+                        &format!("{to:?} (floor {goal:?})"),
+                        &tables,
+                    ));
+                }
+                let names = names_of(&volumes);
                 return Err(Failure {
                     code: DW_LETHAL_ON_CRITICAL_PATH,
                     message: format!(
@@ -6006,7 +6588,7 @@ fn aggro_sources(
         if !actor_fights(c, a) {
             continue;
         }
-        let Some(pos) = crate::compiler::plan::point_any(&plan.anchors, a.anchor.as_str()) else {
+        let Some(pos) = plan.body_point(delvewright_dsl::BodyRef::Actor(a)) else {
             continue;
         };
         let (radius, radius_source) = match a.attributes.and_then(|at| at.follow_range) {
@@ -8756,12 +9338,94 @@ mod tests {
                 base: "void",
                 built: Vec::new(),
                 lethal_regions: vec![("lethal/the-pit".to_string(), region)],
+                furniture_regions: Vec::new(),
                 world_load_seals: Vec::new(),
                 clocked_gates: BTreeSet::new(),
                 transit_teleports: Vec::new(),
                 objective_cells: Vec::new(),
             },
         )
+    }
+
+    /// A floor at `y - 1` over `[0,w) × [0,d)` with open air to `y + 3`, `solid`
+    /// extra cells, and one declared furniture region when `region` is `Some`.
+    fn floored_with_furniture(
+        w: i32,
+        d: i32,
+        y: i32,
+        extra: &[[i32; 3]],
+        region: Option<([i32; 3], [i32; 3])>,
+    ) -> World {
+        let mut solid = BTreeSet::new();
+        for x in 0..w {
+            for z in 0..d {
+                solid.insert([x, y - 1, z]);
+            }
+        }
+        solid.extend(extra.iter().copied());
+        World::from_occupancy(
+            crate::compiler::assembled::Occupancy {
+                solid,
+                tall: BTreeSet::new(),
+                use_gates: BTreeSet::new(),
+                flooded: BTreeSet::new(),
+                partial: BTreeMap::new(),
+                waterloggable: BTreeSet::new(),
+            },
+            Premises {
+                ambient: Ambient::Void,
+                base: "void",
+                built: Vec::new(),
+                lethal_regions: Vec::new(),
+                furniture_regions: region
+                    .map(|r| vec![("anchor/table".to_string(), r)])
+                    .unwrap_or_default(),
+                world_load_seals: Vec::new(),
+                clocked_gates: BTreeSet::new(),
+                transit_teleports: Vec::new(),
+                objective_cells: Vec::new(),
+            },
+        )
+    }
+
+    /// **A body may not be proven to stand ON furniture** (spec-0065 §4.1, §9.3).
+    ///
+    /// One solid block inside a furniture region, an air cell inside the same
+    /// region beside it, and the floor around both. Over the solid cell: refused.
+    /// Beside it, feet on the floor: untouched. With its feet in the region's
+    /// air cell and the floor under it: untouched, because the rule is the
+    /// support cell's membership, not the body's. The same world with the region
+    /// removed: all three stand.
+    #[test]
+    fn a_body_may_not_stand_on_a_solid_furniture_cell() {
+        let top = [3, 65, 3];
+        let region = ([3, 65, 3], [4, 65, 3]);
+        let on = [3, 66, 3];
+        let beside = [2, 65, 3];
+        let over_air = [4, 65, 3];
+        let fp = Footprint::player();
+        let w = floored_with_furniture(8, 8, 65, &[top], Some(region));
+        assert!(!w.standable_fp(on, &fp), "the table top is withheld");
+        assert!(w.standable_fp(beside, &fp), "the floor beside it is not");
+        assert!(
+            w.standable_fp(over_air, &fp),
+            "an air cell of the region withholds nothing"
+        );
+        assert_eq!(w.furniture_census(), (1, 1, 1));
+        assert_eq!(w.furniture_over(&[on]), vec!["anchor/table"]);
+        assert!(w.furniture_over(&[beside, over_air]).is_empty());
+
+        let bare = floored_with_furniture(8, 8, 65, &[top], None);
+        for c in [on, beside, over_air] {
+            assert!(
+                bare.standable_fp(c, &fp),
+                "{c:?} stands with no declaration"
+            );
+        }
+        assert_eq!(bare.furniture_census(), (0, 0, 0));
+        // …and the counterfactuals lift it.
+        assert!(w.without_exclusions().standable_fp(on, &fp));
+        assert!(w.without_furniture().standable_fp(on, &fp));
     }
 
     /// **A body may not stand on the cell beside a killing volume's face.**
@@ -10190,7 +10854,193 @@ mod tests {
 
     /// The full walked path for `cells`, as the emitter would teleport it.
     fn walked(cells: &[[i32; 3]]) -> Vec<[f64; 3]> {
-        resample_body(cells, DEFAULT_SPEED, PLAYER_WIDTH)
+        resample_body(cells, DEFAULT_SPEED, PLAYER_WIDTH).0
+    }
+
+    /// **Owner playtest (castle tour): a walk across open ground read as a machine
+    /// tracing gridlines rather than a person crossing a yard.**
+    ///
+    /// A* is four-connected, so the route it proves across an open plaza is a
+    /// staircase. String-pulling drops every cell between the endpoints, because
+    /// the straight line between them is walkable in its own right — so the body
+    /// crosses on the line a person would take, yawing once and holding.
+    #[test]
+    fn a_straight_open_run_smooths_to_its_two_endpoints() {
+        let world = floored(20, 20, 65, &[]);
+        let fp = Footprint::player();
+        let (start, goal) = ([1, 65, 1], [15, 65, 9]);
+        let route = world
+            .find_path(start, goal)
+            .expect("an open plaza connects");
+        // Without this the test could pass on a route that was already a line.
+        assert!(
+            route.len() > 2,
+            "fixture is vacuous — A* returned no staircase to pull: {route:?}"
+        );
+        let line = smooth_walk(&world, &route, &fp, PLAYER_WIDTH);
+        assert_eq!(line, vec![start, goal]);
+        // The shorter route is also the one the body is teleported along, and no
+        // waypoint on it puts any part of the body inside a block.
+        let before = resample_body(&route, DEFAULT_SPEED, PLAYER_WIDTH).0;
+        let after = resample_body(&line, DEFAULT_SPEED, PLAYER_WIDTH).0;
+        assert!(
+            after.len() < before.len(),
+            "smoothed route is not shorter: {} vs {}",
+            after.len(),
+            before.len()
+        );
+        for p in after {
+            assert!(!aabb_clips(&world, p, PLAYER_WIDTH), "clips at {p:?}");
+        }
+    }
+
+    /// A straight run yaws **once and holds** — which is half the point of walking
+    /// it straight, and the half the 0.01-block coordinate rounding silently took
+    /// away: on a diagonal, two rounded samples 0.15 apart differ in bearing by a
+    /// degree or two, so a body crossing a courtyard in a perfectly straight line
+    /// twitched its head every tick. The yaw belongs to the segment being walked,
+    /// so it is read off the exact samples and the emitted position off the
+    /// rounded ones.
+    #[test]
+    fn a_straight_diagonal_run_yaws_once_and_holds() {
+        let world = floored(20, 20, 65, &[]);
+        let fp = Footprint::player();
+        let (start, goal) = ([1, 65, 1], [15, 65, 9]);
+        let route = world
+            .find_path(start, goal)
+            .expect("an open plaza connects");
+        let line = smooth_walk(&world, &route, &fp, PLAYER_WIDTH);
+        let (rounded, exact) = resample_body(&line, DEFAULT_SPEED, PLAYER_WIDTH);
+        let yaws = yaws_along(&exact, 0);
+        assert!(yaws.len() > 50, "fixture too short to show a twitch");
+        let distinct: BTreeSet<i32> = yaws.iter().copied().collect();
+        assert_eq!(
+            distinct.len(),
+            1,
+            "a straight run must hold one bearing, got {distinct:?}"
+        );
+        // And the defect this guards is real: the same yaw taken off the rounded
+        // samples is not one bearing but many.
+        let from_rounded: BTreeSet<i32> = yaws_along(&rounded, 0).into_iter().collect();
+        assert!(
+            from_rounded.len() > 1,
+            "rounding no longer perturbs the bearing — this test now proves nothing"
+        );
+    }
+
+    /// A wall between the endpoints is never smoothed through. The run stops at the
+    /// corner it has to turn, every kept segment is walkable on its own — the
+    /// invariant the whole pass rests on — and the body the emitter teleports stays
+    /// out of the geometry.
+    #[test]
+    fn a_walk_around_a_wall_is_not_smoothed_through_it() {
+        // A wall at x = 5 closing z = 0..=7 of an 11x11 room: the only way across is
+        // round its end at z >= 8.
+        let mut wall = Vec::new();
+        for z in 0..8 {
+            for dy in 0..2 {
+                wall.push([5, 65 + dy, z]);
+            }
+        }
+        let world = floored(11, 11, 65, &wall);
+        let fp = Footprint::player();
+        let (start, goal) = ([1, 65, 1], [9, 65, 1]);
+        let route = world
+            .find_path(start, goal)
+            .expect("the wall has an end to round");
+        let line = smooth_walk(&world, &route, &fp, PLAYER_WIDTH);
+        // The straight line between the endpoints crosses the wall, and the swept
+        // test is what refuses it.
+        assert!(!world.segment_walkable_fp(start, goal, &fp, PLAYER_WIDTH));
+        assert!(line.len() > 2, "the wall was smoothed away: {line:?}");
+        // Every kept segment clears on its own — nothing was merged across geometry.
+        // The fixture is level throughout, so this holds with no exemption.
+        for pair in line.windows(2) {
+            assert!(
+                world.segment_walkable_fp(pair[0], pair[1], &fp, PLAYER_WIDTH),
+                "kept an unwalkable segment {:?} -> {:?}",
+                pair[0],
+                pair[1]
+            );
+        }
+        for p in resample_body(&line, DEFAULT_SPEED, PLAYER_WIDTH).0 {
+            assert!(!aabb_clips(&world, p, PLAYER_WIDTH), "clips at {p:?}");
+        }
+    }
+
+    /// **Why the swept test carries no killing-volume clause of its own, and the
+    /// property that makes that safe.**
+    ///
+    /// A smoothed body is off cell centre almost everywhere. Solid geometry is
+    /// covered regardless, because whole cells tile the plane and the swept test
+    /// asks `standable_fp` of every column the body overlaps. A lethal volume looks
+    /// at first like the one question that could not be covered that way — except
+    /// that `cell_can_meet_volume` never asked about a centred body: a walker's
+    /// cell does not fix its position, so the predicate already refuses every cell
+    /// from which a body standing ANYWHERE inside it could reach the volume, and
+    /// the swept test inherits that reading whole.
+    ///
+    /// This pins it, because a second rule restating that privately would be the
+    /// defect rather than the safety: narrow `cell_can_meet_volume` to the centred
+    /// body and this reds — which is exactly when a diagonal could be smoothed past
+    /// something that kills.
+    #[test]
+    fn the_swept_test_inherits_the_off_centre_reading_of_a_killing_volume() {
+        let world = floored_with_lethal(20, 20, 65, ([8, 65, 4], [8, 66, 4]));
+        let fp = Footprint::player();
+        // The volume's own column and BOTH its neighbours are already refused —
+        // half a body width reaches one cell either way.
+        for cx in 7..=9 {
+            assert!(
+                !world.standable_fp([cx, 65, 4], &fp),
+                "column {cx} is within a body's reach of the volume and must be kept out"
+            );
+        }
+        assert!(world.standable_fp([6, 65, 4], &fp));
+        // So a straight run whose sweep crosses that kept-out ground is refused by
+        // the standability clause alone.
+        assert!(!world.segment_walkable_fp([7, 65, 1], [7, 65, 8], &fp, PLAYER_WIDTH));
+        // ...and one clear of the volume is taken.
+        assert!(world.segment_walkable_fp([2, 65, 1], [2, 65, 8], &fp, PLAYER_WIDTH));
+    }
+
+    /// The stated limit, bound: smoothing is level-only, so a height change cuts the
+    /// run and survives as its own one-cell step. That is what keeps [`step_vertices`]
+    /// rendering every rise the way it always did, and what stops a diagonal sliding
+    /// a body over a stair's edge.
+    #[test]
+    fn a_step_ends_a_smoothed_run() {
+        // A 12x3 floor whose far half stands one block higher: a single step at x = 6,
+        // under a ceiling high enough that the step is a legal jump.
+        let mut solid = BTreeSet::new();
+        for x in 0..12 {
+            for z in 0..3 {
+                let top = if x < 6 { 64 } else { 65 };
+                for y in 60..=top {
+                    solid.insert([x, y, z]);
+                }
+                solid.insert([x, 70, z]);
+            }
+        }
+        let world = World::from_solid_cells(solid);
+        let fp = Footprint::player();
+        let route = world
+            .find_path([0, 65, 1], [11, 66, 1])
+            .expect("one step up connects the halves");
+        let line = smooth_walk(&world, &route, &fp, PLAYER_WIDTH);
+        assert!(
+            line.windows(2).any(|w| w[0][1] != w[1][1]),
+            "the step vanished into a diagonal: {line:?}"
+        );
+        for w in line.windows(2) {
+            if w[0][1] != w[1][1] {
+                let d = (w[0][0] - w[1][0]).abs() + (w[0][2] - w[1][2]).abs();
+                assert_eq!(d, 1, "a height change must stay a one-cell step: {w:?}");
+            }
+        }
+        for p in resample_body(&line, DEFAULT_SPEED, PLAYER_WIDTH).0 {
+            assert!(!aabb_clips(&world, p, PLAYER_WIDTH), "clips at {p:?}");
+        }
     }
 
     /// **Regression (owner, island QA): "the NPC visibly passes through blocks".**
@@ -10390,7 +11240,7 @@ mod tests {
                     cases += 1;
                     let src = [0, y as i32, 0];
                     let dst = [1, (y + rise) as i32, 0];
-                    let pts = resample_body(&[src, dst], DEFAULT_SPEED, width);
+                    let pts = resample_body(&[src, dst], DEFAULT_SPEED, width).0;
                     // (1) The SHAPE: no leg of the emitted polyline changes height
                     // without advancing. This is where the old L's defect lived —
                     // its first leg had a horizontal length of exactly zero.
@@ -11079,8 +11929,8 @@ mod tests {
     #[test]
     fn resample_honors_speed_and_lands_exactly_on_target() {
         let cells = [[0, 65, 0], [10, 65, 0]];
-        let slow = resample_body(&cells, 0.15, PLAYER_WIDTH);
-        let fast = resample_body(&cells, 1.0, PLAYER_WIDTH);
+        let slow = resample_body(&cells, 0.15, PLAYER_WIDTH).0;
+        let fast = resample_body(&cells, 1.0, PLAYER_WIDTH).0;
         // Slower speed → more per-tick waypoints for the same distance.
         assert!(slow.len() > fast.len());
         // Endpoints are the CENTRES of the start/goal cells, not their corners:
@@ -11894,9 +12744,26 @@ mod tests {
         assert_eq!(yaws_along(&wps, 0), vec![270, 270, 270]);
     }
 
+    /// A walk does not end facing the way it was going. The destination anchor's
+    /// declared facing wins, and an anchor that declares none turns the body back
+    /// the way it came — where whoever followed it is standing.
+    #[test]
+    fn a_walk_ends_facing_back_down_the_path_it_walked() {
+        // walked north (180): arrive facing south (0), back toward the follower
+        assert_eq!(arrival_yaw_of(None, 180), 0);
+        // walked south (0): arrive facing north (180)
+        assert_eq!(arrival_yaw_of(None, 0), 180);
+        // walked east (270): arrive facing west (90)
+        assert_eq!(arrival_yaw_of(None, 270), 90);
+        // and a declared facing is the piece's word on where a body there looks
+        assert_eq!(arrival_yaw_of(Some(270), 180), 270);
+        assert_eq!(arrival_yaw_of(Some(0), 0), 0);
+    }
+
     /// The corner turns on the tick it is taken: each waypoint carries the exact
     /// bearing of the segment it is about to walk, with no smoothing between the
-    /// two legs, and the arrival waypoint keeps the last leg's facing.
+    /// two legs. What the ARRIVAL waypoint carries is `arrival_yaw`'s business,
+    /// and is asserted above.
     #[test]
     fn yaw_turns_at_a_direction_change() {
         // +x for two steps (east, 270), then +z for two (south, 0).

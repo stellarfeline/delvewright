@@ -1,0 +1,727 @@
+{
+  "asset_layers": {
+    "minecraft:armadillo_scute": [
+      "wolf_body"
+    ],
+    "minecraft:black_carpet": [
+      "llama_body"
+    ],
+    "minecraft:black_harness": [
+      "happy_ghast_body"
+    ],
+    "minecraft:blue_carpet": [
+      "llama_body"
+    ],
+    "minecraft:blue_harness": [
+      "happy_ghast_body"
+    ],
+    "minecraft:brown_carpet": [
+      "llama_body"
+    ],
+    "minecraft:brown_harness": [
+      "happy_ghast_body"
+    ],
+    "minecraft:chainmail": [
+      "humanoid",
+      "humanoid_leggings"
+    ],
+    "minecraft:copper": [
+      "horse_body",
+      "humanoid",
+      "humanoid_leggings",
+      "nautilus_body"
+    ],
+    "minecraft:cyan_carpet": [
+      "llama_body"
+    ],
+    "minecraft:cyan_harness": [
+      "happy_ghast_body"
+    ],
+    "minecraft:diamond": [
+      "horse_body",
+      "humanoid",
+      "humanoid_leggings",
+      "nautilus_body"
+    ],
+    "minecraft:elytra": [
+      "wings"
+    ],
+    "minecraft:gold": [
+      "horse_body",
+      "humanoid",
+      "humanoid_leggings",
+      "nautilus_body"
+    ],
+    "minecraft:gray_carpet": [
+      "llama_body"
+    ],
+    "minecraft:gray_harness": [
+      "happy_ghast_body"
+    ],
+    "minecraft:green_carpet": [
+      "llama_body"
+    ],
+    "minecraft:green_harness": [
+      "happy_ghast_body"
+    ],
+    "minecraft:iron": [
+      "horse_body",
+      "humanoid",
+      "humanoid_leggings",
+      "nautilus_body"
+    ],
+    "minecraft:leather": [
+      "horse_body",
+      "humanoid",
+      "humanoid_leggings"
+    ],
+    "minecraft:light_blue_carpet": [
+      "llama_body"
+    ],
+    "minecraft:light_blue_harness": [
+      "happy_ghast_body"
+    ],
+    "minecraft:light_gray_carpet": [
+      "llama_body"
+    ],
+    "minecraft:light_gray_harness": [
+      "happy_ghast_body"
+    ],
+    "minecraft:lime_carpet": [
+      "llama_body"
+    ],
+    "minecraft:lime_harness": [
+      "happy_ghast_body"
+    ],
+    "minecraft:magenta_carpet": [
+      "llama_body"
+    ],
+    "minecraft:magenta_harness": [
+      "happy_ghast_body"
+    ],
+    "minecraft:netherite": [
+      "horse_body",
+      "humanoid",
+      "humanoid_leggings",
+      "nautilus_body"
+    ],
+    "minecraft:orange_carpet": [
+      "llama_body"
+    ],
+    "minecraft:orange_harness": [
+      "happy_ghast_body"
+    ],
+    "minecraft:pink_carpet": [
+      "llama_body"
+    ],
+    "minecraft:pink_harness": [
+      "happy_ghast_body"
+    ],
+    "minecraft:purple_carpet": [
+      "llama_body"
+    ],
+    "minecraft:purple_harness": [
+      "happy_ghast_body"
+    ],
+    "minecraft:red_carpet": [
+      "llama_body"
+    ],
+    "minecraft:red_harness": [
+      "happy_ghast_body"
+    ],
+    "minecraft:saddle": [
+      "camel_husk_saddle",
+      "camel_saddle",
+      "donkey_saddle",
+      "horse_saddle",
+      "mule_saddle",
+      "nautilus_saddle",
+      "pig_saddle",
+      "skeleton_horse_saddle",
+      "strider_saddle",
+      "zombie_horse_saddle"
+    ],
+    "minecraft:trader_llama": [
+      "llama_body"
+    ],
+    "minecraft:turtle_scute": [
+      "humanoid"
+    ],
+    "minecraft:white_carpet": [
+      "llama_body"
+    ],
+    "minecraft:white_harness": [
+      "happy_ghast_body"
+    ],
+    "minecraft:yellow_carpet": [
+      "llama_body"
+    ],
+    "minecraft:yellow_harness": [
+      "happy_ghast_body"
+    ]
+  },
+  "items": {
+    "minecraft:black_carpet": {
+      "allowed_entities": [
+        "minecraft:llama",
+        "minecraft:trader_llama"
+      ],
+      "asset_id": "minecraft:black_carpet",
+      "kind": "animal",
+      "slot": "body"
+    },
+    "minecraft:black_harness": {
+      "allowed_entities": [
+        "#minecraft:can_equip_harness"
+      ],
+      "asset_id": "minecraft:black_harness",
+      "kind": "animal",
+      "slot": "body"
+    },
+    "minecraft:blue_carpet": {
+      "allowed_entities": [
+        "minecraft:llama",
+        "minecraft:trader_llama"
+      ],
+      "asset_id": "minecraft:blue_carpet",
+      "kind": "animal",
+      "slot": "body"
+    },
+    "minecraft:blue_harness": {
+      "allowed_entities": [
+        "#minecraft:can_equip_harness"
+      ],
+      "asset_id": "minecraft:blue_harness",
+      "kind": "animal",
+      "slot": "body"
+    },
+    "minecraft:brown_carpet": {
+      "allowed_entities": [
+        "minecraft:llama",
+        "minecraft:trader_llama"
+      ],
+      "asset_id": "minecraft:brown_carpet",
+      "kind": "animal",
+      "slot": "body"
+    },
+    "minecraft:brown_harness": {
+      "allowed_entities": [
+        "#minecraft:can_equip_harness"
+      ],
+      "asset_id": "minecraft:brown_harness",
+      "kind": "animal",
+      "slot": "body"
+    },
+    "minecraft:carved_pumpkin": {
+      "kind": "item",
+      "slot": "head"
+    },
+    "minecraft:chainmail_boots": {
+      "asset_id": "minecraft:chainmail",
+      "kind": "armour",
+      "slot": "feet"
+    },
+    "minecraft:chainmail_chestplate": {
+      "asset_id": "minecraft:chainmail",
+      "kind": "armour",
+      "slot": "chest"
+    },
+    "minecraft:chainmail_helmet": {
+      "asset_id": "minecraft:chainmail",
+      "kind": "armour",
+      "slot": "head"
+    },
+    "minecraft:chainmail_leggings": {
+      "asset_id": "minecraft:chainmail",
+      "kind": "armour",
+      "slot": "legs"
+    },
+    "minecraft:copper_boots": {
+      "asset_id": "minecraft:copper",
+      "kind": "armour",
+      "slot": "feet"
+    },
+    "minecraft:copper_chestplate": {
+      "asset_id": "minecraft:copper",
+      "kind": "armour",
+      "slot": "chest"
+    },
+    "minecraft:copper_helmet": {
+      "asset_id": "minecraft:copper",
+      "kind": "armour",
+      "slot": "head"
+    },
+    "minecraft:copper_horse_armor": {
+      "allowed_entities": [
+        "#minecraft:can_wear_horse_armor"
+      ],
+      "asset_id": "minecraft:copper",
+      "kind": "animal",
+      "slot": "body"
+    },
+    "minecraft:copper_leggings": {
+      "asset_id": "minecraft:copper",
+      "kind": "armour",
+      "slot": "legs"
+    },
+    "minecraft:copper_nautilus_armor": {
+      "allowed_entities": [
+        "#minecraft:can_wear_nautilus_armor"
+      ],
+      "asset_id": "minecraft:copper",
+      "kind": "animal",
+      "slot": "body"
+    },
+    "minecraft:creeper_head": {
+      "kind": "item",
+      "slot": "head"
+    },
+    "minecraft:cyan_carpet": {
+      "allowed_entities": [
+        "minecraft:llama",
+        "minecraft:trader_llama"
+      ],
+      "asset_id": "minecraft:cyan_carpet",
+      "kind": "animal",
+      "slot": "body"
+    },
+    "minecraft:cyan_harness": {
+      "allowed_entities": [
+        "#minecraft:can_equip_harness"
+      ],
+      "asset_id": "minecraft:cyan_harness",
+      "kind": "animal",
+      "slot": "body"
+    },
+    "minecraft:diamond_boots": {
+      "asset_id": "minecraft:diamond",
+      "kind": "armour",
+      "slot": "feet"
+    },
+    "minecraft:diamond_chestplate": {
+      "asset_id": "minecraft:diamond",
+      "kind": "armour",
+      "slot": "chest"
+    },
+    "minecraft:diamond_helmet": {
+      "asset_id": "minecraft:diamond",
+      "kind": "armour",
+      "slot": "head"
+    },
+    "minecraft:diamond_horse_armor": {
+      "allowed_entities": [
+        "#minecraft:can_wear_horse_armor"
+      ],
+      "asset_id": "minecraft:diamond",
+      "kind": "animal",
+      "slot": "body"
+    },
+    "minecraft:diamond_leggings": {
+      "asset_id": "minecraft:diamond",
+      "kind": "armour",
+      "slot": "legs"
+    },
+    "minecraft:diamond_nautilus_armor": {
+      "allowed_entities": [
+        "#minecraft:can_wear_nautilus_armor"
+      ],
+      "asset_id": "minecraft:diamond",
+      "kind": "animal",
+      "slot": "body"
+    },
+    "minecraft:dragon_head": {
+      "kind": "item",
+      "slot": "head"
+    },
+    "minecraft:elytra": {
+      "asset_id": "minecraft:elytra",
+      "kind": "wings",
+      "slot": "chest"
+    },
+    "minecraft:golden_boots": {
+      "asset_id": "minecraft:gold",
+      "kind": "armour",
+      "slot": "feet"
+    },
+    "minecraft:golden_chestplate": {
+      "asset_id": "minecraft:gold",
+      "kind": "armour",
+      "slot": "chest"
+    },
+    "minecraft:golden_helmet": {
+      "asset_id": "minecraft:gold",
+      "kind": "armour",
+      "slot": "head"
+    },
+    "minecraft:golden_horse_armor": {
+      "allowed_entities": [
+        "#minecraft:can_wear_horse_armor"
+      ],
+      "asset_id": "minecraft:gold",
+      "kind": "animal",
+      "slot": "body"
+    },
+    "minecraft:golden_leggings": {
+      "asset_id": "minecraft:gold",
+      "kind": "armour",
+      "slot": "legs"
+    },
+    "minecraft:golden_nautilus_armor": {
+      "allowed_entities": [
+        "#minecraft:can_wear_nautilus_armor"
+      ],
+      "asset_id": "minecraft:gold",
+      "kind": "animal",
+      "slot": "body"
+    },
+    "minecraft:gray_carpet": {
+      "allowed_entities": [
+        "minecraft:llama",
+        "minecraft:trader_llama"
+      ],
+      "asset_id": "minecraft:gray_carpet",
+      "kind": "animal",
+      "slot": "body"
+    },
+    "minecraft:gray_harness": {
+      "allowed_entities": [
+        "#minecraft:can_equip_harness"
+      ],
+      "asset_id": "minecraft:gray_harness",
+      "kind": "animal",
+      "slot": "body"
+    },
+    "minecraft:green_carpet": {
+      "allowed_entities": [
+        "minecraft:llama",
+        "minecraft:trader_llama"
+      ],
+      "asset_id": "minecraft:green_carpet",
+      "kind": "animal",
+      "slot": "body"
+    },
+    "minecraft:green_harness": {
+      "allowed_entities": [
+        "#minecraft:can_equip_harness"
+      ],
+      "asset_id": "minecraft:green_harness",
+      "kind": "animal",
+      "slot": "body"
+    },
+    "minecraft:iron_boots": {
+      "asset_id": "minecraft:iron",
+      "kind": "armour",
+      "slot": "feet"
+    },
+    "minecraft:iron_chestplate": {
+      "asset_id": "minecraft:iron",
+      "kind": "armour",
+      "slot": "chest"
+    },
+    "minecraft:iron_helmet": {
+      "asset_id": "minecraft:iron",
+      "kind": "armour",
+      "slot": "head"
+    },
+    "minecraft:iron_horse_armor": {
+      "allowed_entities": [
+        "#minecraft:can_wear_horse_armor"
+      ],
+      "asset_id": "minecraft:iron",
+      "kind": "animal",
+      "slot": "body"
+    },
+    "minecraft:iron_leggings": {
+      "asset_id": "minecraft:iron",
+      "kind": "armour",
+      "slot": "legs"
+    },
+    "minecraft:iron_nautilus_armor": {
+      "allowed_entities": [
+        "#minecraft:can_wear_nautilus_armor"
+      ],
+      "asset_id": "minecraft:iron",
+      "kind": "animal",
+      "slot": "body"
+    },
+    "minecraft:leather_boots": {
+      "asset_id": "minecraft:leather",
+      "kind": "armour",
+      "slot": "feet"
+    },
+    "minecraft:leather_chestplate": {
+      "asset_id": "minecraft:leather",
+      "kind": "armour",
+      "slot": "chest"
+    },
+    "minecraft:leather_helmet": {
+      "asset_id": "minecraft:leather",
+      "kind": "armour",
+      "slot": "head"
+    },
+    "minecraft:leather_horse_armor": {
+      "allowed_entities": [
+        "#minecraft:can_wear_horse_armor"
+      ],
+      "asset_id": "minecraft:leather",
+      "kind": "animal",
+      "slot": "body"
+    },
+    "minecraft:leather_leggings": {
+      "asset_id": "minecraft:leather",
+      "kind": "armour",
+      "slot": "legs"
+    },
+    "minecraft:light_blue_carpet": {
+      "allowed_entities": [
+        "minecraft:llama",
+        "minecraft:trader_llama"
+      ],
+      "asset_id": "minecraft:light_blue_carpet",
+      "kind": "animal",
+      "slot": "body"
+    },
+    "minecraft:light_blue_harness": {
+      "allowed_entities": [
+        "#minecraft:can_equip_harness"
+      ],
+      "asset_id": "minecraft:light_blue_harness",
+      "kind": "animal",
+      "slot": "body"
+    },
+    "minecraft:light_gray_carpet": {
+      "allowed_entities": [
+        "minecraft:llama",
+        "minecraft:trader_llama"
+      ],
+      "asset_id": "minecraft:light_gray_carpet",
+      "kind": "animal",
+      "slot": "body"
+    },
+    "minecraft:light_gray_harness": {
+      "allowed_entities": [
+        "#minecraft:can_equip_harness"
+      ],
+      "asset_id": "minecraft:light_gray_harness",
+      "kind": "animal",
+      "slot": "body"
+    },
+    "minecraft:lime_carpet": {
+      "allowed_entities": [
+        "minecraft:llama",
+        "minecraft:trader_llama"
+      ],
+      "asset_id": "minecraft:lime_carpet",
+      "kind": "animal",
+      "slot": "body"
+    },
+    "minecraft:lime_harness": {
+      "allowed_entities": [
+        "#minecraft:can_equip_harness"
+      ],
+      "asset_id": "minecraft:lime_harness",
+      "kind": "animal",
+      "slot": "body"
+    },
+    "minecraft:magenta_carpet": {
+      "allowed_entities": [
+        "minecraft:llama",
+        "minecraft:trader_llama"
+      ],
+      "asset_id": "minecraft:magenta_carpet",
+      "kind": "animal",
+      "slot": "body"
+    },
+    "minecraft:magenta_harness": {
+      "allowed_entities": [
+        "#minecraft:can_equip_harness"
+      ],
+      "asset_id": "minecraft:magenta_harness",
+      "kind": "animal",
+      "slot": "body"
+    },
+    "minecraft:netherite_boots": {
+      "asset_id": "minecraft:netherite",
+      "kind": "armour",
+      "slot": "feet"
+    },
+    "minecraft:netherite_chestplate": {
+      "asset_id": "minecraft:netherite",
+      "kind": "armour",
+      "slot": "chest"
+    },
+    "minecraft:netherite_helmet": {
+      "asset_id": "minecraft:netherite",
+      "kind": "armour",
+      "slot": "head"
+    },
+    "minecraft:netherite_horse_armor": {
+      "allowed_entities": [
+        "#minecraft:can_wear_horse_armor"
+      ],
+      "asset_id": "minecraft:netherite",
+      "kind": "animal",
+      "slot": "body"
+    },
+    "minecraft:netherite_leggings": {
+      "asset_id": "minecraft:netherite",
+      "kind": "armour",
+      "slot": "legs"
+    },
+    "minecraft:netherite_nautilus_armor": {
+      "allowed_entities": [
+        "#minecraft:can_wear_nautilus_armor"
+      ],
+      "asset_id": "minecraft:netherite",
+      "kind": "animal",
+      "slot": "body"
+    },
+    "minecraft:orange_carpet": {
+      "allowed_entities": [
+        "minecraft:llama",
+        "minecraft:trader_llama"
+      ],
+      "asset_id": "minecraft:orange_carpet",
+      "kind": "animal",
+      "slot": "body"
+    },
+    "minecraft:orange_harness": {
+      "allowed_entities": [
+        "#minecraft:can_equip_harness"
+      ],
+      "asset_id": "minecraft:orange_harness",
+      "kind": "animal",
+      "slot": "body"
+    },
+    "minecraft:piglin_head": {
+      "kind": "item",
+      "slot": "head"
+    },
+    "minecraft:pink_carpet": {
+      "allowed_entities": [
+        "minecraft:llama",
+        "minecraft:trader_llama"
+      ],
+      "asset_id": "minecraft:pink_carpet",
+      "kind": "animal",
+      "slot": "body"
+    },
+    "minecraft:pink_harness": {
+      "allowed_entities": [
+        "#minecraft:can_equip_harness"
+      ],
+      "asset_id": "minecraft:pink_harness",
+      "kind": "animal",
+      "slot": "body"
+    },
+    "minecraft:player_head": {
+      "kind": "item",
+      "slot": "head"
+    },
+    "minecraft:purple_carpet": {
+      "allowed_entities": [
+        "minecraft:llama",
+        "minecraft:trader_llama"
+      ],
+      "asset_id": "minecraft:purple_carpet",
+      "kind": "animal",
+      "slot": "body"
+    },
+    "minecraft:purple_harness": {
+      "allowed_entities": [
+        "#minecraft:can_equip_harness"
+      ],
+      "asset_id": "minecraft:purple_harness",
+      "kind": "animal",
+      "slot": "body"
+    },
+    "minecraft:red_carpet": {
+      "allowed_entities": [
+        "minecraft:llama",
+        "minecraft:trader_llama"
+      ],
+      "asset_id": "minecraft:red_carpet",
+      "kind": "animal",
+      "slot": "body"
+    },
+    "minecraft:red_harness": {
+      "allowed_entities": [
+        "#minecraft:can_equip_harness"
+      ],
+      "asset_id": "minecraft:red_harness",
+      "kind": "animal",
+      "slot": "body"
+    },
+    "minecraft:saddle": {
+      "allowed_entities": [
+        "#minecraft:can_equip_saddle"
+      ],
+      "asset_id": "minecraft:saddle",
+      "kind": "animal",
+      "slot": "saddle"
+    },
+    "minecraft:shield": {
+      "kind": "item",
+      "slot": "offhand"
+    },
+    "minecraft:skeleton_skull": {
+      "kind": "item",
+      "slot": "head"
+    },
+    "minecraft:turtle_helmet": {
+      "asset_id": "minecraft:turtle_scute",
+      "kind": "armour",
+      "slot": "head"
+    },
+    "minecraft:white_carpet": {
+      "allowed_entities": [
+        "minecraft:llama",
+        "minecraft:trader_llama"
+      ],
+      "asset_id": "minecraft:white_carpet",
+      "kind": "animal",
+      "slot": "body"
+    },
+    "minecraft:white_harness": {
+      "allowed_entities": [
+        "#minecraft:can_equip_harness"
+      ],
+      "asset_id": "minecraft:white_harness",
+      "kind": "animal",
+      "slot": "body"
+    },
+    "minecraft:wither_skeleton_skull": {
+      "kind": "item",
+      "slot": "head"
+    },
+    "minecraft:wolf_armor": {
+      "allowed_entities": [
+        "minecraft:wolf"
+      ],
+      "asset_id": "minecraft:armadillo_scute",
+      "kind": "animal",
+      "slot": "body"
+    },
+    "minecraft:yellow_carpet": {
+      "allowed_entities": [
+        "minecraft:llama",
+        "minecraft:trader_llama"
+      ],
+      "asset_id": "minecraft:yellow_carpet",
+      "kind": "animal",
+      "slot": "body"
+    },
+    "minecraft:yellow_harness": {
+      "allowed_entities": [
+        "#minecraft:can_equip_harness"
+      ],
+      "asset_id": "minecraft:yellow_harness",
+      "kind": "animal",
+      "slot": "body"
+    },
+    "minecraft:zombie_head": {
+      "kind": "item",
+      "slot": "head"
+    }
+  }
+}

@@ -1,8 +1,8 @@
 //! Turning a size pattern into piece lengths.
 //!
 //! Ported from `make_split` in `SplitGrammar.py` (`yawgmoth/GDMC25`,
-//! BSD-3-Clause — see `LICENSE-GDMC25`), with three corrections that upstream's
-//! `print`-and-continue style left open. All three are stated as tests below:
+//! BSD-3-Clause — see `LICENSE-GDMC25`), with four corrections that upstream's
+//! `print`-and-continue style left open. All four are stated as tests below:
 //!
 //! 1. **Overflow is an error, not a warning.** Upstream prints "Split exceeded
 //!    size" and keeps going, emitting child boxes that stick out of their
@@ -14,6 +14,13 @@
 //!    clamp. Zero-volume boxes write nothing, so this cannot change any block.
 //! 3. **A repeating pattern that consumes nothing is an error**
 //!    ([`SplitError::ZeroStride`]) rather than an infinite loop.
+//! 4. **Relative pieces cover the axis exactly.** Upstream computed
+//!    `int(reltotal/relsizes)` and dropped what did not divide, so a pattern
+//!    like `[rel, abs 2, rel]` over five blocks laid out 1, 2, 1 and left the
+//!    fifth block written by nobody. No child owns that block, so no rule can
+//!    fill, light or seal it, and every gate reads it as a cell outside the
+//!    model rather than a hole in it. [`Rounding`] therefore only chooses where
+//!    the indivisible remainder lands; it can no longer be discarded.
 
 use crate::grammar::ir::Rounding;
 
@@ -41,9 +48,9 @@ pub enum SplitError {
 }
 
 /// Lay a size pattern over `extent` blocks, returning the piece lengths in
-/// order. The lengths always sum to at most `extent`; with `repeat` (or any
-/// rounding other than [`Rounding::Truncate`] on a pattern with relative
-/// pieces) they sum to exactly `extent`.
+/// order. With at least one relative piece — or with `repeat` — the lengths sum
+/// to exactly `extent`. A pattern of absolutes alone is the author's own
+/// arithmetic and sums to whatever they wrote, which may be less than `extent`.
 pub fn make_split(
     extent: u32,
     sizes: &[ResolvedSize],
@@ -117,7 +124,6 @@ fn resolve_pattern(
     // run of units; the rounding mode only chooses where that run starts. A
     // relative piece of weight w therefore grows by at most w.
     let run_start = match rounding {
-        Rounding::Truncate => weight_total, // past the end: nobody grows
         Rounding::Start => 0,
         Rounding::End => weight_total - remainder,
         Rounding::Middle => (weight_total - remainder) / 2,
@@ -152,7 +158,7 @@ mod tests {
     #[test]
     fn absolute_pieces_keep_their_length() {
         assert_eq!(
-            split(10, &[A(1), A(8), A(1)], Rounding::Truncate),
+            split(10, &[A(1), A(8), A(1)], Rounding::default()),
             [1, 8, 1]
         );
     }
@@ -161,26 +167,79 @@ mod tests {
     fn relative_pieces_share_the_leftover() {
         // The temple floorplan shape: two 1-block walls around an open middle.
         assert_eq!(
-            split(11, &[A(1), R(1), A(1)], Rounding::Truncate),
+            split(11, &[A(1), R(1), A(1)], Rounding::default()),
             [1, 9, 1]
         );
         assert_eq!(
-            split(12, &[R(1), R(2), R(1)], Rounding::Truncate),
+            split(12, &[R(1), R(2), R(1)], Rounding::default()),
             [3, 6, 3]
         );
     }
 
+    /// The window bay that seamed the castle: a fixed feature between two
+    /// shares, over an extent whose leftover is odd. Upstream laid out 1, 2, 1
+    /// and left the fifth block written by nobody — a one-block slot from the
+    /// floor to the string course, in a wall the courtyard looks straight at.
     #[test]
-    fn truncate_reproduces_upstream_and_may_leave_a_gap() {
-        // upstream: relperunit = int(7/2) = 3 -> pieces 3,1,3 over an extent of
-        // 8; the last block is simply not covered.
-        let pieces = split(8, &[R(1), A(1), R(1)], Rounding::Truncate);
-        assert_eq!(pieces, [3, 1, 3]);
-        assert_eq!(pieces.iter().sum::<u32>(), 7);
+    fn a_feature_between_two_shares_covers_the_wall_it_stands_in() {
+        for extent in [5u32, 7, 9, 11, 13] {
+            let pieces = split(extent, &[R(1), A(2), R(1)], Rounding::default());
+            assert_eq!(
+                pieces.iter().sum::<u32>(),
+                extent,
+                "[rel, abs 2, rel] over {extent}"
+            );
+            assert_eq!(pieces[1], 2, "the fixed piece keeps its length");
+        }
+        assert_eq!(
+            split(5, &[R(1), A(2), R(1)], Rounding::default()),
+            [2, 2, 1]
+        );
+        assert_eq!(
+            split(7, &[R(1), A(2), R(1)], Rounding::default()),
+            [3, 2, 2]
+        );
+    }
+
+    /// The invariant the seam was a counter-example to, over every mode and a
+    /// range of extents: a pattern carrying a relative piece has no remainder
+    /// left to lose.
+    #[test]
+    fn a_pattern_with_a_relative_piece_always_covers_its_extent() {
+        let patterns: [&[ResolvedSize]; 6] = [
+            &[R(1), A(2), R(1)],
+            &[R(1), A(1), R(1)],
+            &[A(1), R(1), A(1)],
+            &[R(1), R(1), R(1)],
+            &[R(3), R(1)],
+            &[A(2), R(2), A(1), R(1)],
+        ];
+        let mut checked = 0usize;
+        for pattern in patterns {
+            let absolute: u32 = pattern
+                .iter()
+                .map(|s| match s {
+                    A(n) => *n,
+                    R(_) => 0,
+                })
+                .sum();
+            for extent in absolute..=40 {
+                for mode in [Rounding::Start, Rounding::End, Rounding::Middle] {
+                    let pieces = split(extent, pattern, mode);
+                    assert_eq!(
+                        pieces.iter().sum::<u32>(),
+                        extent,
+                        "{pattern:?} over {extent} under {mode:?}"
+                    );
+                    checked += 1;
+                }
+            }
+        }
+        assert_eq!(checked, 714, "binding: patterns x extents x modes");
     }
 
     #[test]
-    fn the_other_rounding_modes_cover_exactly() {
+    fn the_rounding_modes_put_the_spare_block_in_different_places() {
         for (mode, want) in [(Rounding::Start, [4, 1, 3]), (Rounding::End, [3, 1, 4])] {
             let pieces = split(8, &[R(1), A(1), R(1)], mode);
             assert_eq!(pieces, want, "{mode:?}");
@@ -205,16 +264,16 @@ mod tests {
     fn repeat_tiles_the_pattern_and_clamps_the_tail() {
         // The castle crenellation: alternating block/gap across any wall run.
         assert_eq!(
-            make_split(5, &[A(1), A(1)], Rounding::Truncate, true).unwrap(),
+            make_split(5, &[A(1), A(1)], Rounding::default(), true).unwrap(),
             [1, 1, 1, 1, 1],
             "no zero-length tail after the clamp"
         );
         assert_eq!(
-            make_split(6, &[A(2), A(1)], Rounding::Truncate, true).unwrap(),
+            make_split(6, &[A(2), A(1)], Rounding::default(), true).unwrap(),
             [2, 1, 2, 1]
         );
         assert_eq!(
-            make_split(7, &[A(2), A(1)], Rounding::Truncate, true).unwrap(),
+            make_split(7, &[A(2), A(1)], Rounding::default(), true).unwrap(),
             [2, 1, 2, 1, 1],
             "the clamped piece is short, and the pass stops there"
         );
@@ -223,7 +282,7 @@ mod tests {
     #[test]
     fn overflow_is_an_error_not_a_box_outside_the_parent() {
         assert_eq!(
-            make_split(3, &[A(2), A(2)], Rounding::Truncate, false),
+            make_split(3, &[A(2), A(2)], Rounding::default(), false),
             Err(SplitError::Overflow {
                 absolute: 4,
                 extent: 3
@@ -234,16 +293,16 @@ mod tests {
     #[test]
     fn a_repeating_zero_length_pattern_is_refused() {
         assert_eq!(
-            make_split(9, &[A(0), A(0)], Rounding::Truncate, true),
+            make_split(9, &[A(0), A(0)], Rounding::default(), true),
             Err(SplitError::ZeroStride)
         );
     }
 
     #[test]
     fn degenerate_extents_are_legal() {
-        assert_eq!(split(0, &[R(1), R(1)], Rounding::Truncate), [0, 0]);
+        assert_eq!(split(0, &[R(1), R(1)], Rounding::default()), [0, 0]);
         assert_eq!(
-            make_split(0, &[A(1)], Rounding::Truncate, false),
+            make_split(0, &[A(1)], Rounding::default(), false),
             Err(SplitError::Overflow {
                 absolute: 1,
                 extent: 0

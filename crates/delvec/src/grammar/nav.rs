@@ -63,6 +63,26 @@ pub use crate::schem::nav::{components, connected, reachable_from};
 ///
 /// Outside the region counts as blocking: a body that has left the model has left
 /// the thing being proved.
+/// **Which block is in each cell** — the one question the light model asks of a
+/// box and [`Voxels`] deliberately does not answer
+/// ([`crate::admit::light::BlockCells`]).
+///
+/// An expansion holds full blockstates, so this hands over the whole string
+/// rather than the bare id: opacity and emission are properties of the state (a
+/// `lantern[hanging=true]`, a waterlogged stair), and a model given bare ids
+/// would measure a different building. Owned, because the state is rendered from
+/// the palette entry rather than stored as a string.
+///
+/// This is what lets `delvec grammar expand` measure the light of the piece it is
+/// producing, instead of writing `unmeasured` and leaving a hand-typed remedy the
+/// next expansion erases.
+impl crate::admit::light::BlockCells for VoxelModel {
+    fn block_state(&self, pos: [i32; 3]) -> Option<std::borrow::Cow<'_, str>> {
+        self.get(pos)
+            .map(|b| std::borrow::Cow::Owned(b.to_string()))
+    }
+}
+
 impl Voxels for VoxelModel {
     fn origin(&self) -> [i32; 3] {
         self.region().origin

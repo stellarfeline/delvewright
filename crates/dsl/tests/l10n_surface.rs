@@ -154,6 +154,8 @@ const SURFACE: &[(&str, &str, Kind)] = &[
         "speech_style",
         NotPlayerVisible("persona — see `archetype`"),
     ),
+    ("FireworkExplosion", "colors", Reference),
+    ("FireworkExplosion", "fade_colors", Reference),
     ("PlannedQuest", "goal", Inventoried),
     ("PotionContents", "color", Reference),
     ("PotionContents", "potion", Reference),

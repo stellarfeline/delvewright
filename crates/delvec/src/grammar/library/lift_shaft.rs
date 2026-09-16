@@ -244,10 +244,9 @@ pub fn lift_shaft() -> Program {
                 vec![call("door_row"), fill("rock")],
             ),
         )
-        // `split_exact`, not the truncating default: two relative jambs under
-        // truncation leave the far end of the face unwritten, and an unwritten
-        // cell is air — a second opening in the one plane this rule promises is
-        // solid but for its doorway.
+        // `split_exact`: the odd block joins the near jamb, so the doorway
+        // sits at or just past the middle of the face rather than moving with
+        // the face's width.
         .rule(
             "door_row",
             split_exact(

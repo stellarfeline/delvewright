@@ -120,7 +120,7 @@ fn deferred_spawn_with_no_staged_entrance_warns_dw0350() {
 fn deferred_spawn_covered_by_arrival_is_clean() {
     let quests = quests(
         r#"{ "type": "spawn-actor", "actor": "actor/stand-in" },
-            { "type": "move-actor", "actor": "actor/stand-in", "to_anchor": "anchor/keeper-stand",
+            { "type": "move-actor", "actor": "actor/stand-in", "to": { "anchor": "anchor/keeper-stand" },
               "on_arrive": [
                 { "type": "despawn-actor", "actor": "actor/stand-in", "style": "vanish" },
                 { "type": "spawn-npc", "npc": "npc/keeper" }
@@ -168,7 +168,7 @@ fn walk_then_despawn_in_scene_is_clean() {
     let c = parse(
         false,
         &quests(
-            r#"{ "type": "move-npc", "npc": "npc/keeper", "to_anchor": "anchor/exit" }"#,
+            r#"{ "type": "move-npc", "npc": "npc/keeper", "to": { "anchor": "anchor/exit" } }"#,
             r#"{ "type": "despawn-npc", "npc": "npc/keeper" },"#,
         ),
     );
@@ -185,7 +185,7 @@ fn respawn_away_from_last_staged_location_warns_dw0350() {
     let c = parse(
         false,
         &quests(
-            r#"{ "type": "move-npc", "npc": "npc/keeper", "to_anchor": "anchor/exit" }"#,
+            r#"{ "type": "move-npc", "npc": "npc/keeper", "to": { "anchor": "anchor/exit" } }"#,
             r#"{ "type": "despawn-npc", "npc": "npc/keeper" },
                { "type": "spawn-npc", "npc": "npc/keeper" },"#,
         ),

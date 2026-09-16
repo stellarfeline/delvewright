@@ -601,17 +601,39 @@ pub enum AnchorRole {
     /// first-join placement, inter-area transport, the POV planner's first
     /// frame and the trap-safety start set all resolve it.
     Entry,
+    /// **Blocks a body stands beside and never on** (spec-0065): a laid table,
+    /// an altar, a counter, a bed. The anchor's `region` is the furniture's own
+    /// blocks, and the walk model refuses to prove a body standing on a solid
+    /// cell of it — a route, a walked leg, a flood, a seat or an exported
+    /// waypoint. A body *posted* there by declaration still stands there.
+    ///
+    /// Many per area, unlike [`AnchorRole::Entry`]: a hall has one door the
+    /// party arrives by and as many tables as it was built with.
+    Furniture,
 }
 
 impl AnchorRole {
     /// Every term in the vocabulary, in declaration order — what a refusal
     /// lists, so the message cannot drift from the type.
-    pub const ALL: &'static [AnchorRole] = &[AnchorRole::Entry];
+    pub const ALL: &'static [AnchorRole] = &[AnchorRole::Entry, AnchorRole::Furniture];
 
     /// The term as it is written in a document.
     pub fn as_str(self) -> &'static str {
         match self {
             AnchorRole::Entry => "entry",
+            AnchorRole::Furniture => "furniture",
+        }
+    }
+
+    /// Whether an area may give this role to **at most one** anchor.
+    ///
+    /// A role that names the one place the compiler has to find (the entry) is
+    /// refused twice in one area; a role that names a kind of place (furniture)
+    /// is not.
+    pub fn one_per_area(self) -> bool {
+        match self {
+            AnchorRole::Entry => true,
+            AnchorRole::Furniture => false,
         }
     }
 
@@ -1269,6 +1291,12 @@ impl PrefabMeta {
         let Some(anchor) = self.anchors.get(name) else {
             return Ok(None);
         };
+        // A furniture anchor's `region` is the furniture's own blocks, never a
+        // span content fills and clears (spec-0065 §3). Read as a gate it would
+        // be voided out of the modelled world and walked straight through.
+        if anchor.role == Some(AnchorRole::Furniture) {
+            return Ok(None);
+        }
         let contract_bar = match anchor.resolves_to.as_deref().and_then(bar_name) {
             Some(region) => Some(self.contract_bar(name, region)?),
             None => None,

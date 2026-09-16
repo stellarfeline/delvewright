@@ -27,8 +27,8 @@ use crate::compiler::plan::{
 use crate::compiler::{DELVEC_VERSION, MC_VERSION, PACK_FORMAT};
 
 use delvewright_dsl::{
-    CompareOp, EquipItem, Gate, MobEquipment, Objective, QuestEffect, StateCompare, StateId,
-    StateScope, Trigger,
+    CompareOp, EquipItem, EquipSlot, Gate, MobEquipment, Objective, QuestEffect, StateCompare,
+    StateId, StateScope, Trigger,
 };
 use delvewright_dsl::{DwCode, ExitTier};
 
@@ -697,6 +697,11 @@ pub fn build_with_warnings(
     // the world block below. `None` for a campaign that declares no volume — no
     // ledger, no artifact, no byte moved for anybody who has not opted in.
     let mut lethal_gate: Option<crate::compiler::lethal::LethalGate> = None;
+    // The firework proofs' binding ledger (`compiler::firework`, spec-0068 §5),
+    // filled inside the world block below. `None` for a campaign that declares no
+    // firework — no ledger, no artifact, no byte moved for anybody who has not
+    // opted in; a ledger that exists and reports zero columns is a finding.
+    let mut firework_gate: Option<crate::compiler::firework::FireworkGate> = None;
     // The recovery stake's compile-time placement table (`compiler::stake`), and
     // the ledger of what its proofs looked at. `None` for a campaign that declares
     // no stake, which is the whole feature's byte-identity guarantee: no table, no
@@ -734,6 +739,32 @@ pub fn build_with_warnings(
     // Actor spawn anchors must resolve to a world position (spec-0014); a spawn is a
     // summon, not a walk, so this needs no occupancy model. DW0325 if one dangles.
     crate::compiler::nav::check_actor_placement(plan)?;
+
+    // …and no two bodies that are in the world at the same time may be declared
+    // on the same cell (DW0896). Runs here, with the anchor-resolution seals and
+    // before any occupancy model, because it is arithmetic over resolved cells
+    // and over a declaration the author can read: seven actors on one anchor
+    // emitted seven identical `summon` lines and the build exited 0. Its binding
+    // line prints whether or not it found anything — a count only says something
+    // when the run that found nothing prints it too — and prints before the
+    // refusal, so a refused run still states what it examined.
+    // Every mark a body is put on stays inside the piece its anchor belongs to
+    // (DW0897, spec-0066): an offset says where beside a place, never which
+    // place. Runs before the occupancy rules that read those cells, and prints
+    // its binding line on every run, zeroes included.
+    let (marks, marks_verdict) = crate::compiler::mark::check_marks_in_piece(plan);
+    eprintln!("{}", marks.line());
+    marks_verdict.map_err(|e| BuildFailure::Diagnostic {
+        code: e.code,
+        message: e.message,
+    })?;
+
+    let (one_mark, one_mark_verdict) = crate::compiler::cohabit::check_one_body_per_mark(plan);
+    eprintln!("{}", one_mark.line());
+    one_mark_verdict.map_err(|e| BuildFailure::Diagnostic {
+        code: e.code,
+        message: e.message,
+    })?;
 
     // No body may stand on the affordance the party has to click (DW0359). Runs
     // right after the anchor-resolution seals and before any occupancy model:
@@ -1052,6 +1083,33 @@ pub fn build_with_warnings(
             // reading of the plan alone can produce. Everything below is a
             // consumer of this answer; nothing it needs is computed below it.
             let (waves, rings) = plan_wave_spawns(plan, &world)?;
+
+            // **spec-0068: a firework bursts in open air, clear of every posted
+            // body** (`DW0899`). Asked here, immediately after the seating pass,
+            // because a wave's seats ARE posted places and the reach rule reads
+            // `DW0511`'s own enumeration — so the proof has to run where that
+            // enumeration is complete. It reads the plan, the assembled blocks
+            // and the seating, never a route, so nothing below it is lost by
+            // asking it first.
+            //
+            // The line is printed whether or not it found anything, and before
+            // the verdict is taken: a refusal owes its reader the same
+            // denominators a pass does.
+            {
+                let (binding, findings) =
+                    crate::compiler::firework::check(plan, &blocks, campaign_spawn(plan), &waves);
+                eprintln!("{}", binding.line());
+                firework_gate = Some(binding);
+                if let Some((first, rest)) = findings.split_first() {
+                    for extra in rest {
+                        eprintln!("{} [error] build: {}", extra.code, extra.message);
+                    }
+                    return Err(BuildFailure::Diagnostic {
+                        code: first.code,
+                        message: first.message.clone(),
+                    });
+                }
+            }
             let (moves, actor_moves) = if crate::compiler::nav::needs_world(plan) {
                 let m = crate::compiler::nav::plan_moves(plan, &world)?;
                 // move-actor (spec-0014): A* over the actor's footprint; DW0325 if
@@ -1215,6 +1273,17 @@ pub fn build_with_warnings(
                 // or walls — the water-flow / post-nav-mutation divergence class —
                 // failing the build loudly (DW0314) instead of stranding the bot.
                 crate::compiler::nav::verify_exported_routes(&world, &routes)?;
+                // spec-0065 §4.3: what the furniture exclusion bound, over the
+                // same world and the same legs the proofs above walked. Printed
+                // on every build that walks, zeroes included.
+                let furniture =
+                    crate::compiler::nav::furniture_binding(plan, &world, &routes, &m, &am);
+                eprintln!("{}", furniture.line());
+                put_json(
+                    &mut out,
+                    "validation/furniture-gate.json",
+                    &furniture.to_json(),
+                );
                 // `DW0850`: the volume that completes a `reach` and the footing
                 // a body can reach it from are the same place. Bound HERE, to
                 // the same build event and the same final world the waypoint
@@ -1545,8 +1614,11 @@ pub fn build_with_warnings(
     // spec-0029 addendum: the compiler's own on-screen strings. The default
     // multi-language build leaves them tagged with their `delvewright.ui.…` key
     // (the pack's lang files carry every language); a `--lang` bake, which ships no
-    // lang files, puts the baked language's text on the component instead.
-    let chrome = delvewright_dsl::Chrome::for_build(language);
+    // lang files, puts the baked language's text on the component instead. The
+    // campaign id is what namespaces those keys into this delve's own vocabulary,
+    // so a pack another delve left applied cannot answer them.
+    let chrome =
+        delvewright_dsl::Chrome::for_build(plan.campaign.world.campaign_id.as_str(), language);
 
     let functions = emit_functions(
         plan,
@@ -1863,7 +1935,14 @@ pub fn build_with_warnings(
         out.insert("resourcepack.zip".to_string(), zip);
         out.insert(
             "SKINS.md".to_string(),
-            pack_note(&sha1, skins, art, &plan.campaign.world.content.languages).into_bytes(),
+            pack_note(
+                &sha1,
+                skins,
+                plan.campaign.world.campaign_id.as_str(),
+                art,
+                &plan.campaign.world.content.languages,
+            )
+            .into_bytes(),
         );
         Some(sha1)
     };
@@ -1995,6 +2074,9 @@ pub fn build_with_warnings(
     if let Some(gate) = &lethal_gate {
         put_json(&mut out, "validation/lethal-gate.json", &gate.to_json());
     }
+    if let Some(gate) = firework_gate.as_ref().filter(|g| g.declared > 0) {
+        put_json(&mut out, "validation/firework-gate.json", &gate.to_json());
+    }
     // The recovery stake's binding ledger (`compiler::stake`, spec-0032 AC10): how
     // many stakes were declared, how many respawn seats and death regions the
     // placement table is keyed on, how many quest states its reachability was
@@ -2095,9 +2177,21 @@ fn lang_assets(
     // construction — chrome lives under the reserved `delvewright.` prefix, which
     // the l10n key scheme cannot produce and `DW0186` forbids a sidecar from
     // writing — so the merge can never shadow a campaign string.
+    //
+    // Every key of both halves is written under this delve's own namespace
+    // (`dsl::l10n::pack_key`), which is what a component references: the client
+    // merges every applied pack into ONE language table, so a key that named only
+    // its row (`world.title`) is a key any other delve's pack can answer, and did
+    // — a completion toast rendering another campaign's title, in a language this
+    // delve does not ship. The namespace is applied here, at the one place the
+    // pack's keys are written, over both halves at once.
+    let ns = delvewright_dsl::pack_namespace(c.world.campaign_id.as_str());
     let mut put = |mc: &str, map: &BTreeMap<String, String>, chrome: BTreeMap<String, String>| {
-        let mut merged = map.clone();
-        merged.extend(chrome);
+        let merged: BTreeMap<String, String> = map
+            .iter()
+            .chain(chrome.iter())
+            .map(|(k, v)| (format!("{ns}{k}"), v.clone()))
+            .collect();
         let mut bytes = serde_json::to_vec_pretty(&merged).expect("lang map serializes");
         bytes.push(b'\n');
         out.insert(format!("assets/delvewright/lang/{mc}.json"), bytes);
@@ -2247,6 +2341,7 @@ fn is_verbatim_binary_output(path: &str) -> bool {
 fn pack_note(
     sha1: &str,
     skins: &BTreeMap<String, Vec<u8>>,
+    campaign_id: &str,
     art: bool,
     languages: &[String],
 ) -> String {
@@ -2262,11 +2357,18 @@ fn pack_note(
          - `RESOURCE_PACK_PROMPT` = a JSON text component (not a bare string)\n\n",
     ));
     if !skins.is_empty() {
-        s.push_str(
-            "Baked skins (`skins/<id>.png` → `assets/delvewright/textures/npc/<id>.png`):\n\n",
-        );
+        // The archive path carries this delve's own texture directory
+        // (`dsl::pack_texture_dir`): a client keeps every applied pack's textures in
+        // one merged space, so a face baked under a bare `keeper` is the face every
+        // other delve's `keeper` wears. The host is shown both names — the one the
+        // campaign authored and the one the pack ships.
+        let dir = delvewright_dsl::pack_texture_dir(campaign_id);
+        s.push_str("Baked skins (`skins/<id>.png` → the pack path beside it):\n\n");
         for id in skins.keys() {
-            s.push_str(&format!("- `{id}`\n"));
+            let authored = id.strip_prefix(&dir).unwrap_or(id);
+            s.push_str(&format!(
+                "- `{authored}` → `assets/delvewright/textures/npc/{id}.png`\n"
+            ));
         }
         s.push('\n');
     }
@@ -2696,12 +2798,17 @@ fn has_item_drop(drops: &[delvewright_dsl::MobDrop]) -> bool {
 /// Two intended vanilla primitives, composed: `execute as … run data merge
 /// entity @s` (single-entity by construction, which is what `data merge`
 /// requires) writing drop chance 0 on every slot and an empty death loot table.
-/// Emitted only for an actor that declares drops, so every earlier campaign's
-/// removal is byte-identical.
+/// Emitted only for an actor that declares drops. One `drop_chances` key per
+/// slot of [`EquipSlot::ALL`], so a slot the DSL gains is stripped with no edit
+/// here.
 fn strip_drops_line(tag: &str) -> String {
+    let zeros: Vec<String> = EquipSlot::ALL
+        .iter()
+        .map(|s| format!("{}:{NO_DROP_CHANCE}", s.nbt()))
+        .collect();
     format!(
-        "execute as @e[tag={tag}] run data merge entity @s {{drop_chances:{{mainhand:{z},offhand:{z},head:{z},chest:{z},legs:{z},feet:{z}}},DeathLootTable:\"minecraft:empty\"}}",
-        z = NO_DROP_CHANCE
+        "execute as @e[tag={tag}] run data merge entity @s {{drop_chances:{{{}}},DeathLootTable:\"minecraft:empty\"}}",
+        zeros.join(",")
     )
 }
 
@@ -2714,8 +2821,8 @@ fn strip_drops_line(tag: &str) -> String {
 /// name carries drop chance 0: players must never farm wave gear (no-grind
 /// constitution); a named slot carries [`DECLARED_DROP_CHANCE`]. Component-era
 /// form only — see [`default_equipment`] for why legacy `ArmorItems`/
-/// `HandItems` are silently ignored by 1.21.11 `/summon`. Slot order is fixed
-/// (mainhand, offhand, head, chest, legs, feet) for ADR-0006 determinism.
+/// `HandItems` are silently ignored by 1.21.11 `/summon`. Slot order is
+/// [`EquipSlot::ALL`]'s, fixed for ADR-0006 determinism.
 fn wave_equipment(
     entity: &str,
     eq: Option<&MobEquipment>,
@@ -2728,42 +2835,20 @@ fn wave_equipment(
     };
     // The main-hand slot is the one place a DEFAULT (a bare id, no enchantments)
     // can stand in for an authored piece, so it carries an id plus an optional
-    // authored piece; the other five are authored or absent.
-    let slots: [(&str, Option<&str>, Option<&EquipItem>); 6] = [
-        ("mainhand", mainhand, eq.main_hand.as_ref()),
-        (
-            "offhand",
-            eq.off_hand.as_ref().map(EquipItem::item),
-            eq.off_hand.as_ref(),
-        ),
-        (
-            "head",
-            eq.head.as_ref().map(EquipItem::item),
-            eq.head.as_ref(),
-        ),
-        (
-            "chest",
-            eq.chest.as_ref().map(EquipItem::item),
-            eq.chest.as_ref(),
-        ),
-        (
-            "legs",
-            eq.legs.as_ref().map(EquipItem::item),
-            eq.legs.as_ref(),
-        ),
-        (
-            "feet",
-            eq.feet.as_ref().map(EquipItem::item),
-            eq.feet.as_ref(),
-        ),
-    ];
+    // authored piece; every other slot is authored or absent.
     let mut items: Vec<String> = Vec::new();
     let mut chances: Vec<String> = Vec::new();
-    for (slot, item, piece) in slots {
+    for (slot, piece) in eq.pieces() {
+        let item = if slot == EquipSlot::MainHand {
+            mainhand
+        } else {
+            piece.map(EquipItem::item)
+        };
         if let Some(it) = item {
+            let key = slot.nbt();
             let comps = piece.map(enchantment_components).unwrap_or_default();
-            items.push(format!("{slot}:{{id:\"{it}\",count:1{comps}}}"));
-            chances.push(format!("{slot}:{}", drop_chance_for(slot, &declared)));
+            items.push(format!("{key}:{{id:\"{it}\",count:1{comps}}}"));
+            chances.push(format!("{key}:{}", drop_chance_for(key, &declared)));
         }
     }
     if items.is_empty() {
@@ -3101,11 +3186,15 @@ fn emit_functions(
     // therefore NOT done here: setup only seals + forceloads, and the tick
     // function retries `place_all` + `place_verify` (sentinel-block checks)
     // until every piece is confirmed, then runs `setup_finish` exactly once.
+    //
+    // The span goes out through `forceload_add_lines`, never a `format!` here: a
+    // piece's bbox is derived, not typed, and a horizon rings it with a surround
+    // wider still, so a legal piece reaches a span one command may not name. That
+    // helper splits it and the command validator refuses anything that skipped it.
     for piece in plan.placed_pieces() {
         let (min, max) = piece.bbox();
-        setup.push(format!(
-            "forceload add {} {} {} {}",
-            min[0], min[2], max[0], max[2]
+        setup.extend(crate::compiler::commands::forceload_add_lines(
+            min[0], min[2], max[0], max[2],
         ));
     }
     // Stage-7 edit writes may land outside the piece bboxes (a leaning canopy,
@@ -3114,9 +3203,8 @@ fn emit_functions(
     // chunks (the same pitfall the piece forceloads exist for). Empty for a
     // campaign without an edit script → setup byte-identical.
     for (min, max) in edit_bounds {
-        setup.push(format!(
-            "forceload add {} {} {} {}",
-            min[0], min[2], max[0], max[2]
+        setup.extend(crate::compiler::commands::forceload_add_lines(
+            min[0], min[2], max[0], max[2],
         ));
     }
     setup.push("scoreboard players set #placed dw.sys 0".to_string());
@@ -5212,6 +5300,11 @@ fn assembles_world(plan: &Plan) -> bool {
     crate::compiler::nav::needs_world(plan)
         || !plan.campaign.quests.content.waves.is_empty()
         || crate::compiler::clearance::has_bodies(plan)
+        // spec-0068: a firework's roof proof is a question about blocks, so a
+        // campaign whose only reason to assemble the world is a rocket still
+        // assembles it — otherwise `DW0899` would be declared, compiled and
+        // never asked of exactly the campaign that needs it most.
+        || crate::compiler::firework::declares_one(plan)
 }
 
 /// Fail the build if any campaign effect — at **every effect root**, at **any
@@ -5876,14 +5969,10 @@ fn emit_quest_effect(plan: &Plan, eff: &QuestEffect, aud: Audience, body: &mut V
                 plan::safe_local(npc.as_str())
             ));
         }
-        Verb::MoveNpc { npc, to_anchor, .. } => {
+        Verb::MoveNpc { npc, to, .. } => {
             body.push(format!(
                 "function {ns}:{}",
-                movenpc_fn(
-                    npc.as_str(),
-                    to_anchor.as_str(),
-                    &crate::compiler::nav::gate_key(eff),
-                )
+                movenpc_fn(npc.as_str(), to, &crate::compiler::nav::gate_key(eff),)
             ));
         }
         Verb::Cutscene { .. } => {
@@ -5921,6 +6010,14 @@ fn emit_quest_effect(plan: &Plan, eff: &QuestEffect, aud: Audience, body: &mut V
             ..
         } => {
             emit_damage_players(plan, *amount, within.as_ref(), *damage_type, who, body);
+        }
+        // --- DSL v0.29 (spec-0068): a firework is an effect ---
+        Verb::Firework {
+            at,
+            flight,
+            explosions,
+        } => {
+            emit_firework(plan, at, *flight, explosions, body);
         }
         Verb::SetCheckpoint { anchor, on_respawn } => {
             emit_set_checkpoint(plan, anchor.as_str(), on_respawn, body);
@@ -5988,16 +6085,10 @@ fn emit_quest_effect(plan: &Plan, eff: &QuestEffect, aud: Audience, body: &mut V
                 .any(|a| a.id.as_str() == actor.as_str() && !a.drops.is_empty());
             emit_despawn_actor(actor.as_str(), *style, declares_drops, body);
         }
-        Verb::MoveActor {
-            actor, to_anchor, ..
-        } => {
+        Verb::MoveActor { actor, to, .. } => {
             body.push(format!(
                 "function {ns}:{}",
-                moveactor_fn(
-                    actor.as_str(),
-                    to_anchor.as_str(),
-                    &crate::compiler::nav::gate_key(eff),
-                )
+                moveactor_fn(actor.as_str(), to, &crate::compiler::nav::gate_key(eff),)
             ));
         }
         Verb::UnleashActor { actor, .. } => {
@@ -6178,8 +6269,11 @@ fn emit_play_sound(
         format!("minecraft:{sound}")
     };
     let pos = match at {
-        Some(SoundAt::Anchor { anchor }) => match anchor_point_any(plan, anchor.as_str()) {
-            Some(p) => Some(format!("{} {} {}", p[0], p[1], p[2])),
+        Some(SoundAt::Anchor { anchor, offset }) => match anchor_point_any(plan, anchor.as_str()) {
+            Some(p) => {
+                let p = delvewright_dsl::offset_cell(p, *offset);
+                Some(format!("{} {} {}", p[0], p[1], p[2]))
+            }
             None => return, // unresolved anchor (referential validation reports it)
         },
         Some(SoundAt::Actor { .. }) => return, // unsupported: DW0335 at validate-time
@@ -6206,6 +6300,82 @@ fn emit_play_sound(
         cmd = format!("execute as {who} at @s run {cmd}");
     }
     body.push(cmd);
+}
+
+/// Emit a `firework` effect (DSL v0.29, spec-0068): one `summon` of a
+/// `minecraft:firework_rocket` at the mark's cell centre, carrying the bursts as
+/// a `minecraft:fireworks` item component.
+///
+/// **`LifeTime` is written, never left to the game.** Unset, vanilla randomises
+/// it at launch, so two runs of one datapack would burst at two heights and
+/// `DW0899`'s proof would be about a number nobody chose. The emitter writes the
+/// floor of that range ([`delvewright_dsl::firework::lifetime_ticks`]), which is
+/// both deterministic (ADR-0006) and the conservative side of the height proof.
+///
+/// Every spelling in the line — the entity, the item field, the component and
+/// the five shape tokens — comes from [`delvewright_dsl::firework`], the one
+/// file the game facts are pinned in, so a re-pin moves this command without
+/// touching this function.
+///
+/// The audience selector is not consulted: a rocket is a body in the world, not
+/// something played at a listener, so every player present sees the same burst.
+/// An unresolved anchor emits nothing and is `DW0360` long before here.
+fn emit_firework(
+    plan: &Plan,
+    at: &delvewright_dsl::Mark,
+    flight: Option<u8>,
+    explosions: &[delvewright_dsl::FireworkExplosion],
+    body: &mut Vec<String>,
+) {
+    use delvewright_dsl::firework;
+    let Some(anchor) = anchor_point_any(plan, at.anchor.as_str()) else {
+        return; // unresolved anchor (`DW0360` owns it)
+    };
+    let cell = at.cell(anchor);
+    let v = ent_xyz(cell);
+    let flight = flight.unwrap_or(firework::MIN_FLIGHT);
+    // `[I;…]` packed integers, the form the component reads. Validation proved
+    // every literal well-formed (`DW0100`), so a colour that will not pack is a
+    // colour that never reached here.
+    let packed = |list: &[String]| -> String {
+        list.iter()
+            .filter_map(|c| delvewright_dsl::color::packed(c))
+            .map(|n| n.to_string())
+            .collect::<Vec<_>>()
+            .join(",")
+    };
+    let bursts: Vec<String> = explosions
+        .iter()
+        .map(|e| {
+            let mut f = vec![
+                format!("shape:\"{}\"", e.shape.token()),
+                format!("colors:[I;{}]", packed(&e.colors)),
+            ];
+            if !e.fade_colors.is_empty() {
+                f.push(format!("fade_colors:[I;{}]", packed(&e.fade_colors)));
+            }
+            if e.trail {
+                f.push("has_trail:1b".to_string());
+            }
+            if e.twinkle {
+                f.push("has_twinkle:1b".to_string());
+            }
+            format!("{{{}}}", f.join(","))
+        })
+        .collect();
+    body.push(format!(
+        "summon {entity} {x} {y} {z} {{LifeTime:{life},{item}:{{id:\"{item_id}\",count:1,\
+         components:{{\"{component}\":{{flight_duration:{flight}b,explosions:[{bursts}]}}}}}}}}",
+        entity = firework::ROCKET_ENTITY,
+        x = v[0],
+        y = v[1],
+        z = v[2],
+        life = firework::lifetime_ticks(flight),
+        item = firework::ITEM_FIELD,
+        item_id = firework::ROCKET_ITEM,
+        component = firework::FIREWORKS_COMPONENT,
+        bursts = bursts.join(","),
+    ));
 }
 
 /// Emit a `damage-players` effect (DSL v0.6). `who` is the audience selector
@@ -7494,9 +7664,10 @@ fn potion_contents_snbt(pc: &delvewright_dsl::PotionContents) -> String {
         parts.push(format!("custom_effects:[{}]", effects.join(",")));
     }
     if let Some(col) = &pc.color {
-        // `#rrggbb` → the packed int vanilla stores. Validation (`DW0486`)
-        // already proved the literal well-formed.
-        if let Ok(v) = u32::from_str_radix(col.trim_start_matches('#'), 16) {
+        // `#rrggbb` → the packed int vanilla stores, through the one colour rule
+        // (`dsl::color`) the validator and the firework emitter also read.
+        // Validation (`DW0486`) already proved the literal well-formed.
+        if let Some(v) = delvewright_dsl::color::packed(col) {
             parts.push(format!("custom_color:{v}"));
         }
     }
@@ -9013,11 +9184,15 @@ fn npc_summon_commands(
     // `(area, name)` lookup here is how the world-init summon and the plan came
     // to describe two buildings 256 blocks apart in one build.
     let station = plan::body_station(&plan.anchors, plan::BodyScope::Declared { area }, anchor);
+    let offset = dsl_npc.map(|n| n.offset).unwrap_or([0, 0, 0]);
     let (pos, facing) = match &station {
         plan::BodyStation::At {
             anchor: ResolvedAnchor::Point { pos, facing },
             ..
-        } => (*pos, facing.as_deref()),
+        } => (
+            delvewright_dsl::offset_cell(*pos, offset),
+            facing.as_deref(),
+        ),
         _ => ([0, plan::BASE_Y, 0], None),
     };
     let name = dsl_npc.map(|n| n.name.as_str()).unwrap_or("NPC");
@@ -9057,7 +9232,10 @@ fn npc_summon_commands(
     // The interaction hitbox also carries the tag of every left-click trigger
     // that watches this NPC — see `npc_hitbox_trigger_tags`.
     let mut tags = vec![npc.tag.clone()];
-    tags.extend(npc_hitbox_trigger_tags(c, anchor, &npc.npc_id));
+    // A `strike` at the anchor rides this hitbox only while the body stands on
+    // the anchor's own cell (spec-0066).
+    let stand_anchor = if offset == [0, 0, 0] { anchor } else { "" };
+    tags.extend(npc_hitbox_trigger_tags(c, stand_anchor, &npc.npc_id));
     let tag_list = tags
         .iter()
         .map(|t| format!("\"{t}\""))
@@ -9111,7 +9289,12 @@ fn first_strike_trigger_on_npc<'a>(
                 .npcs
                 .iter()
                 .find(|d| d.id.as_str() == n.npc_id);
-            let anchor = decl.map(|d| d.anchor.as_str()).unwrap_or("");
+            // A body at an offset does not stand on its anchor's cell, so a
+            // `strike` at that anchor is not on its hitbox (spec-0066).
+            let anchor = decl
+                .filter(|d| d.offset == [0, 0, 0])
+                .map(|d| d.anchor.as_str())
+                .unwrap_or("");
             if trigger_rides_npc(t, anchor, &n.npc_id) {
                 return Some((t, n.npc_id.clone(), n.tag.clone()));
             }
@@ -9146,12 +9329,9 @@ fn trigger_rides_npc(t: &delvewright_dsl::EnvTrigger, anchor: &str, npc_id: &str
 /// predicate says exist.
 fn npc_stands_at(plan: &Plan, anchor: &str) -> bool {
     plan.npcs.iter().any(|n| {
-        plan.campaign
-            .npcs
-            .content
-            .npcs
-            .iter()
-            .any(|d| d.id.as_str() == n.npc_id && d.anchor.as_str() == anchor)
+        plan.campaign.npcs.content.npcs.iter().any(|d| {
+            d.id.as_str() == n.npc_id && d.anchor.as_str() == anchor && d.offset == [0, 0, 0]
+        })
     })
 }
 
@@ -9253,11 +9433,31 @@ fn spawn_npc_fns(plan: &Plan) -> Vec<(String, String)> {
 
 /// The generated function name for a `move-npc` effect (content-derived key, so
 /// the start-caller and the generator agree without threading an index).
-fn movenpc_fn(npc: &str, to_anchor: &str, gate_key: &str) -> String {
+fn movenpc_fn(npc: &str, to: &delvewright_dsl::Mark, gate_key: &str) -> String {
+    format!("mv_{}_{}{gate_key}", plan::safe_local(npc), mark_key(to))
+}
+
+/// The function-name component a destination mark contributes: the anchor's
+/// local name, and for a non-zero offset `_o<x>_<y>_<z>` with a negative
+/// component spelled `m<n>` (spec-0066). A zero offset adds nothing, so a walk to
+/// a bare anchor keeps the name it has always had.
+fn mark_key(to: &delvewright_dsl::Mark) -> String {
+    let base = plan::safe_local(to.anchor.as_str());
+    if !to.is_offset() {
+        return base;
+    }
+    let c = |v: i32| {
+        if v < 0 {
+            format!("m{}", -i64::from(v))
+        } else {
+            v.to_string()
+        }
+    };
     format!(
-        "mv_{}_{}{gate_key}",
-        plan::safe_local(npc),
-        plan::safe_local(to_anchor)
+        "{base}_o{}_{}_{}",
+        c(to.offset[0]),
+        c(to.offset[1]),
+        c(to.offset[2])
     )
 }
 
@@ -9409,8 +9609,8 @@ fn push_effect_deep<'a>(e: &'a QuestEffect, out: &mut Vec<&'a QuestEffect>) {
 }
 
 /// The scoreboard-safe suffix shared by a move's driver functions/sentinels.
-fn movenpc_bare(npc: &str, to_anchor: &str, gate_key: &str) -> String {
-    movenpc_fn(npc, to_anchor, gate_key)
+fn movenpc_bare(npc: &str, to: &delvewright_dsl::Mark, gate_key: &str) -> String {
+    movenpc_fn(npc, to, gate_key)
         .strip_prefix("mv_")
         .unwrap_or("move")
         .to_string()
@@ -9437,7 +9637,7 @@ fn movenpc_bare(npc: &str, to_anchor: &str, gate_key: &str) -> String {
 ///
 /// # Supersession — one body, one live driver
 ///
-/// A driver's re-entry latch `#mrun_<bare>` is keyed per **(npc, to_anchor, gate)**:
+/// A driver's re-entry latch `#mrun_<bare>` is keyed per **(npc, to, gate)**:
 /// it stops a walk from restarting *itself* and knows nothing about the body's other
 /// walks. So a second `move-npc` fired at the same NPC while an earlier walk was
 /// still running used to leave **two** drivers alive, both teleporting the same
@@ -9474,26 +9674,21 @@ fn movenpc_fns(plan: &Plan, moves: &[crate::compiler::nav::MovePlan]) -> Vec<(St
         *legs.entry(m.npc.as_str()).or_insert(0) += 1;
     }
     for m in moves {
-        let start_name = movenpc_fn(&m.npc, &m.to_anchor, &m.gate_key);
-        let bare = movenpc_bare(&m.npc, &m.to_anchor, &m.gate_key);
+        let start_name = movenpc_fn(&m.npc, &m.to, &m.gate_key);
+        let bare = movenpc_bare(&m.npc, &m.to, &m.gate_key);
         let safe = plan::safe_local(&m.npc);
         let total = m.ticks();
         let supersedable = legs.get(m.npc.as_str()).copied().unwrap_or(0) > 1;
         // `#mown_<bare> < #mgen_<npc>` ⇔ a later walk for this body has started.
         let stale = format!("score #mown_{bare} dw.sys < #mgen_{safe} dw.sys");
-        // The on_arrive bundle for this (npc, to_anchor) — the first-seen effect,
+        // The on_arrive bundle for this (npc, to) — the first-seen effect,
         // matching the planner's dedup order (mirrors `actor_fns`).
         let on_arrive: &[QuestEffect] = all_campaign_effects(plan.campaign)
             .into_iter()
             .find_map(|e| match &e.verb {
                 Verb::MoveNpc {
-                    npc,
-                    to_anchor,
-                    on_arrive,
-                    ..
-                } if npc.as_str() == m.npc && to_anchor.as_str() == m.to_anchor => {
-                    Some(on_arrive.as_slice())
-                }
+                    npc, to, on_arrive, ..
+                } if npc.as_str() == m.npc && *to == m.to => Some(on_arrive.as_slice()),
                 _ => None,
             })
             .unwrap_or(&[]);
@@ -9579,25 +9774,46 @@ fn actor_facing_yaw(a: &delvewright_dsl::Actor) -> i32 {
 /// touching a real-AI twin). `Invulnerable` unless `vulnerable`; a vulnerable puppet
 /// stays knockback-immune (`knockback_resistance` 1.0) — the tower-defense creep. A
 /// `skin` re-dresses it as a `minecraft:mannequin`, exactly as a stage-2 NPC.
+///
+/// **An actor is a body, and a `skin` is a costume.** What the two branches
+/// differ over is only what the costume forces: the entity id, the field the
+/// label rides (a mannequin's `description`, a mob's `CustomName`), and how a
+/// scripted body is held still (`immovable` against
+/// `NoAI`/`NoGravity`/`PersistenceRequired`). Everything the author declared
+/// about the *body* — `vulnerable`, `attributes`, `equipment` — is computed once,
+/// above the branch, and spliced into both, so a property cannot be carried by
+/// one dress and lost by the other. The loot half is not the compiler's choice:
+/// see [`body_carries_loot_nbt`].
 fn actor_puppet_summon(ns: &str, a: &delvewright_dsl::Actor, pos: [i32; 3], yaw: i32) -> String {
     let safe = plan::safe_local(a.id.as_str());
-    // v0.9: a declared quest-item drop points the field the puppet
-    // has always carried at a table the compiler emits. `unleash` and
-    // `despawn-actor` strip it again ([`strip_drops_line`]) — only a player's
-    // kill yields it.
-    let loot = death_loot_table(
-        ns,
-        has_item_drop(&a.drops).then(|| drop_loot_path("actor", a.id.as_str())),
-    );
     let p = ent_xyz(pos);
     let tags = format!("Tags:[\"dw_actor\",\"dw_actor_{safe}\",\"dw_pup_{safe}\"]");
+    // The body that actually ships — the ONE authority both the router and the
+    // emitter ask, so "which entity is this puppet" is answered in one place.
+    let body = crate::compiler::nav::actor_body_entity(a);
+    let inv = if a.vulnerable { 0 } else { 1 };
+    // Compiler-owned knockback-immunity first (a `vulnerable` puppet is a
+    // damageable creep, never a shovable one), then whatever the author
+    // declared — so a puppet with no `attributes` renders exactly the
+    // pre-`attributes` string and every earlier campaign stays byte-identical.
+    let mut entries: Vec<String> = Vec::new();
+    if a.vulnerable {
+        entries.push("{id:\"minecraft:knockback_resistance\",base:1.0}".to_string());
+    }
+    entries.extend(attribute_entries(a.attributes.as_ref()));
+    let attrs = wrap_attribute_entries(entries);
+    // spec-0021: actor gear rides on BOTH the puppet and the twin, so the
+    // dormant elite the party circles is visibly the thing that stands up.
+    let equip = actor_equipment(a, &body)
+        .map(|e| format!(",{e}"))
+        .unwrap_or_default();
     if let Some(skin) = &a.skin {
         let desc = a
             .name
             .as_deref()
             .unwrap_or_else(|| a.id.as_str().rsplit('/').next().unwrap_or("actor"));
         format!(
-            "summon minecraft:mannequin {} {} {} {{profile:{{texture:\"delvewright:npc/{}\",model:\"{}\"}},immovable:1b,pose:\"standing\",Invulnerable:1b,Silent:1b,Rotation:[{yaw}f,0f],description:{},{tags}}}",
+            "summon {body} {} {} {} {{profile:{{texture:\"delvewright:npc/{}\",model:\"{}\"}},immovable:1b,pose:\"standing\",Invulnerable:{inv}b,Silent:1b,Rotation:[{yaw}f,0f],description:{},{tags}{attrs}{equip}}}",
             p[0],
             p[1],
             p[2],
@@ -9606,33 +9822,47 @@ fn actor_puppet_summon(ns: &str, a: &delvewright_dsl::Actor, pos: [i32; 3], yaw:
             snbt_text_component(desc)
         )
     } else {
-        let inv = if a.vulnerable { 0 } else { 1 };
         let name = a
             .name
             .as_deref()
             .map(|n| format!(",CustomName:{},CustomNameVisible:1b", snbt_component(n)))
             .unwrap_or_default();
-        // Compiler-owned knockback-immunity first (a `vulnerable` puppet is a
-        // damageable creep, never a shovable one), then whatever the author
-        // declared — so a puppet with no `attributes` renders exactly the
-        // pre-`attributes` string and every earlier campaign stays byte-identical.
-        let mut entries: Vec<String> = Vec::new();
-        if a.vulnerable {
-            entries.push("{id:\"minecraft:knockback_resistance\",base:1.0}".to_string());
-        }
-        entries.extend(attribute_entries(a.attributes.as_ref()));
-        let attrs = wrap_attribute_entries(entries);
-        let pose = mannequin_pose_nbt(&a.entity);
-        // spec-0021: actor gear rides on BOTH the puppet and the twin, so the
-        // dormant elite the party circles is visibly the thing that stands up.
-        let equip = actor_equipment(a)
-            .map(|e| format!(",{e}"))
-            .unwrap_or_default();
+        let pose = mannequin_pose_nbt(&body);
+        // v0.9: a declared quest-item drop points the field the puppet
+        // has always carried at a table the compiler emits. `unleash` and
+        // `despawn-actor` strip it again ([`strip_drops_line`]) — only a player's
+        // kill yields it.
+        let loot = death_loot_table(
+            ns,
+            has_item_drop(&a.drops).then(|| drop_loot_path("actor", a.id.as_str())),
+        );
         format!(
-            "summon {} {} {} {} {{NoAI:1b,Silent:1b,PersistenceRequired:1b,NoGravity:1b{pose},Invulnerable:{inv}b,DeathLootTable:\"{loot}\",Rotation:[{yaw}f,0f],{tags}{name}{attrs}{equip}}}",
-            a.entity, p[0], p[1], p[2]
+            "summon {body} {} {} {} {{NoAI:1b,Silent:1b,PersistenceRequired:1b,NoGravity:1b{pose},Invulnerable:{inv}b,DeathLootTable:\"{loot}\",Rotation:[{yaw}f,0f],{tags}{name}{attrs}{equip}}}",
+            p[0], p[1], p[2]
         )
     }
+}
+
+/// Whether a body of this entity kind carries the `Mob`-only loot NBT the
+/// compiler writes for a declared `drops` — `DeathLootTable` and `drop_chances`.
+///
+/// `minecraft:mannequin` is a `LivingEntity` and not a `Mob`, so neither field is
+/// part of its save data: vanilla accepts them in the `/summon` compound, reads
+/// them with nothing, and persists nothing. Live A/B on the pinned 1.21.11
+/// server — a mannequin summoned with `DeathLootTable:"minecraft:empty"`,
+/// `drop_chances:{…}`, `equipment:{…}` and `attributes:[…]` reads back
+/// `equipment` verbatim and `attributes` merged over its defaults
+/// (`max_health` 40 ⇒ `Health: 40.0f`), and answers `Found no elements matching`
+/// for `DeathLootTable` and for `drop_chances`. Damaged to death wearing that
+/// gear it drops **nothing**, so the no-grind invariant the `drop_chances` zeros
+/// exist to hold is held by the body itself rather than by a field it ignores.
+///
+/// So a skinned actor's `drops` reaches the player through the unleashed twin —
+/// a real `Mob` — and not through the caged mannequin. That is a vanilla limit,
+/// not an emission choice, and emitting the two fields anyway would be a
+/// statement the world does not carry.
+fn body_carries_loot_nbt(entity: &str) -> bool {
+    entity.strip_prefix("minecraft:").unwrap_or(entity) != "mannequin"
 }
 
 /// The `pose` NBT field a `minecraft:mannequin` needs, or `""` for any other
@@ -9710,10 +9940,6 @@ fn spawn_finalize_nbt(entity: &str) -> &'static str {
 /// in the meadow indefinitely while the unleashed one burrowed away.
 fn actor_twin_summon(ns: &str, a: &delvewright_dsl::Actor, at: &str) -> String {
     let safe = plan::safe_local(a.id.as_str());
-    let loot = death_loot_table(
-        ns,
-        has_item_drop(&a.drops).then(|| drop_loot_path("actor", a.id.as_str())),
-    );
     let name = a
         .name
         .as_deref()
@@ -9723,7 +9949,7 @@ fn actor_twin_summon(ns: &str, a: &delvewright_dsl::Actor, at: &str) -> String {
     let finalize = spawn_finalize_nbt(&a.entity);
     // The twin inherits the puppet's gear: unleashing swaps the body, not the
     // costume. Drop chances stay 0 — killing the elite must never drop its kit.
-    let equip = actor_equipment(a)
+    let equip = actor_equipment(a, &a.entity)
         .map(|e| format!(",{e}"))
         .unwrap_or_default();
     // The twin inherits the puppet's tuning too: the whole point of an elite's
@@ -9731,14 +9957,30 @@ fn actor_twin_summon(ns: &str, a: &delvewright_dsl::Actor, at: &str) -> String {
     // body. Knockback-immunity deliberately does NOT ride along — that is the
     // caged creep's property, not the freed elite's.
     let attrs = attributes_snbt(a.attributes.as_ref());
+    // The twin's body is `entity` as written, so an author who spelled
+    // `minecraft:mannequin` there gets a twin with no reader for a death loot
+    // table — the same vanilla limit the puppet branch states.
+    let loot = if body_carries_loot_nbt(&a.entity) {
+        let path = death_loot_table(
+            ns,
+            has_item_drop(&a.drops).then(|| drop_loot_path("actor", a.id.as_str())),
+        );
+        format!(",DeathLootTable:\"{path}\"")
+    } else {
+        String::new()
+    };
     format!(
-        "summon {} {at} {{PersistenceRequired:1b{pose},DeathLootTable:\"{loot}\",Tags:[\"dw_actor\",\"dw_actor_{safe}\"]{name}{finalize}{attrs}{equip}}}",
+        "summon {} {at} {{PersistenceRequired:1b{pose}{loot},Tags:[\"dw_actor\",\"dw_actor_{safe}\"]{name}{finalize}{attrs}{equip}}}",
         a.entity
     )
 }
 
 /// The `equipment`/`drop_chances` SNBT fragment for an actor (no leading comma),
-/// or `None` when the actor declares no gear.
+/// or `None` when the actor declares no gear. `body` is the entity id the gear is
+/// being hung on — the puppet's ([`crate::compiler::nav::actor_body_entity`], a mannequin when the
+/// actor declares a `skin`) or the twin's (`actor.entity`) — because
+/// `drop_chances` is `Mob` save data and a mannequin is not a `Mob`
+/// ([`body_carries_loot_nbt`]).
 ///
 /// Deliberately NOT the wave path's [`wave_equipment`]: that function falls back
 /// to the armed-mob default table, which would silently arm every actor whose
@@ -9746,29 +9988,28 @@ fn actor_twin_summon(ns: &str, a: &delvewright_dsl::Actor, at: &str) -> String {
 /// every campaign authored before this field existed. An actor is a directed
 /// set piece — it wears exactly what the author declared, and nothing when they
 /// declared nothing.
-fn actor_equipment(a: &delvewright_dsl::Actor) -> Option<String> {
+fn actor_equipment(a: &delvewright_dsl::Actor, body: &str) -> Option<String> {
     let eq = a.equipment.as_ref()?;
     let declared = declared_drop_slots(&a.drops);
     let mut items: Vec<String> = Vec::new();
     let mut chances: Vec<String> = Vec::new();
-    // Fixed emission order, matching the wave path (ADR-0006 determinism).
-    let slots: [(&str, Option<&EquipItem>); 6] = [
-        ("mainhand", eq.main_hand.as_ref()),
-        ("offhand", eq.off_hand.as_ref()),
-        ("head", eq.head.as_ref()),
-        ("chest", eq.chest.as_ref()),
-        ("legs", eq.legs.as_ref()),
-        ("feet", eq.feet.as_ref()),
-    ];
-    for (slot, piece) in slots {
+    // Fixed emission order, [`EquipSlot::ALL`]'s, matching the wave path
+    // (ADR-0006 determinism).
+    for (slot, piece) in eq.pieces() {
         if let Some(p) = piece {
+            let key = slot.nbt();
             let comps = enchantment_components(p);
-            items.push(format!("{slot}:{{id:\"{}\",count:1{comps}}}", p.item()));
-            chances.push(format!("{slot}:{}", drop_chance_for(slot, &declared)));
+            items.push(format!("{key}:{{id:\"{}\",count:1{comps}}}", p.item()));
+            chances.push(format!("{key}:{}", drop_chance_for(key, &declared)));
         }
     }
     if items.is_empty() {
         return None;
+    }
+    if !body_carries_loot_nbt(body) {
+        // A mannequin wears the gear and drops none of it, whatever is written
+        // into a field it has no reader for.
+        return Some(format!("equipment:{{{}}}", items.join(",")));
     }
     Some(format!(
         "equipment:{{{}}},drop_chances:{{{}}}",
@@ -9882,17 +10123,13 @@ fn aggro_lock_lines(entity: &str, safe: &str) -> Vec<String> {
 }
 
 /// The generated start-function name for a `move-actor` (content key).
-fn moveactor_fn(actor: &str, to_anchor: &str, gate_key: &str) -> String {
-    format!(
-        "ma_{}_{}{gate_key}",
-        plan::safe_local(actor),
-        plan::safe_local(to_anchor)
-    )
+fn moveactor_fn(actor: &str, to: &delvewright_dsl::Mark, gate_key: &str) -> String {
+    format!("ma_{}_{}{gate_key}", plan::safe_local(actor), mark_key(to))
 }
 
 /// The scoreboard-safe suffix shared by a move-actor's driver functions/sentinels.
-fn moveactor_bare(actor: &str, to_anchor: &str, gate_key: &str) -> String {
-    moveactor_fn(actor, to_anchor, gate_key)
+fn moveactor_bare(actor: &str, to: &delvewright_dsl::Mark, gate_key: &str) -> String {
+    moveactor_fn(actor, to, gate_key)
         .strip_prefix("ma_")
         .unwrap_or("move")
         .to_string()
@@ -10029,7 +10266,7 @@ fn teleport_fn(eff: &QuestEffect) -> String {
 fn teleport_command(plan: &Plan, eff: &QuestEffect) -> Option<String> {
     let (from, to) = eff.teleport()?;
     let (lo, hi) = plan.zone_box(from)?;
-    let d = ent_xyz(anchor_point_any(plan, to.as_str())?);
+    let d = ent_xyz(to.cell(anchor_point_any(plan, to.anchor.as_str())?));
     Some(format!(
         "tp @e[{}] {} {} {}",
         entity_box_selector(lo, hi),
@@ -10068,7 +10305,7 @@ fn teleport_fns(plan: &Plan) -> Vec<(String, String)> {
 /// # Supersession — one puppet, one live leg driver
 ///
 /// A `move-actor` driver carries the identical defect `move-npc` had: its
-/// re-entry latch `#arun_<bare>` is keyed per **(actor, to_anchor, gate)**, so it only
+/// re-entry latch `#arun_<bare>` is keyed per **(actor, to, gate)**, so it only
 /// ever stopped a leg from restarting *itself*. Two overlapping legs on ONE puppet left
 /// two live drivers both `tp`-ing the same body every tick; they fought, and the longer
 /// leg — outliving the shorter — wrote the final position, parking the puppet at the
@@ -10094,7 +10331,7 @@ fn actor_fns(
     let mut out = Vec::new();
     for a in &plan.campaign.quests.content.actors {
         let safe = plan::safe_local(a.id.as_str());
-        let Some(pos) = anchor_point_any(plan, a.anchor.as_str()) else {
+        let Some(pos) = plan.body_point(delvewright_dsl::BodyRef::Actor(a)) else {
             continue; // resolution guaranteed by check_actor_placement (DW0325)
         };
         let yaw = actor_facing_yaw(a);
@@ -10164,24 +10401,22 @@ fn actor_fns(
     }
     for m in actor_moves {
         let safe = plan::safe_local(&m.actor);
-        let bare = moveactor_bare(&m.actor, &m.to_anchor, &m.gate_key);
+        let bare = moveactor_bare(&m.actor, &m.to, &m.gate_key);
         let total = m.ticks();
         let supersedable = legs.get(m.actor.as_str()).copied().unwrap_or(0) > 1;
         // `#aown_<bare> < #agen_<actor>` ⇔ a later leg for this puppet has started.
         let stale = format!("score #aown_{bare} dw.sys < #agen_{safe} dw.sys");
-        // The on_arrive bundle for this (actor, to_anchor) — the first-seen effect,
+        // The on_arrive bundle for this (actor, to) — the first-seen effect,
         // matching the planner's dedup order.
         let on_arrive: &[QuestEffect] = all_campaign_effects(plan.campaign)
             .into_iter()
             .find_map(|e| match &e.verb {
                 Verb::MoveActor {
                     actor,
-                    to_anchor,
+                    to,
                     on_arrive,
                     ..
-                } if actor.as_str() == m.actor && to_anchor.as_str() == m.to_anchor => {
-                    Some(on_arrive.as_slice())
-                }
+                } if actor.as_str() == m.actor && *to == m.to => Some(on_arrive.as_slice()),
                 _ => None,
             })
             .unwrap_or(&[]);
@@ -10207,10 +10442,7 @@ fn actor_fns(
         start.push(format!("scoreboard players set #arun_{bare} dw.sys 1"));
         start.push(format!("scoreboard players set #at_{bare} dw.sys 0"));
         start.push(format!("schedule function {ns}:ma_tick_{bare} 1t"));
-        out.push((
-            moveactor_fn(&m.actor, &m.to_anchor, &m.gate_key),
-            lines(&start),
-        ));
+        out.push((moveactor_fn(&m.actor, &m.to, &m.gate_key), lines(&start)));
 
         let mut tick: Vec<String> = Vec::new();
         if supersedable {
@@ -13595,6 +13827,22 @@ fn emit_packtest(
     // the objective scoreboard. Emits nothing for a v0.2 campaign.
     emit_verb_packtests(plan, out);
 
+    // The hand camera (spec-0069): the creator overlay stamps an eye and a
+    // rotation, and takes a body out of itself and back. Every campaign emits the
+    // overlay, so every suite proves it; the PackTest server loads
+    // `creator-datapack/` beside this suite for exactly these templates.
+    let column = plan
+        .areas
+        .first()
+        .map(|a| {
+            let (min, _) = a.bounds();
+            [min[0], min[2]]
+        })
+        .unwrap_or([0, 0]);
+    for (path, body) in crate::compiler::creator::packtests(ns, artifact_title(c), column) {
+        out.insert(path, body.into_bytes());
+    }
+
     // The dialogue trigger must survive a second use with NO tick in between —
     // the singleplayer pause-freeze contract. Emits nothing for a campaign with no
     // terminal dialogue option.
@@ -13931,26 +14179,23 @@ fn campaign_complete_tail(
                 })
                 .max(),
             Verb::MoveNpc {
-                npc,
-                to_anchor,
-                on_arrive,
-                ..
+                npc, to, on_arrive, ..
             } => campaign_complete_tail(on_arrive, moves, actor_moves).map(|t| {
                 t + moves
                     .iter()
-                    .find(|m| m.npc == npc.as_str() && m.to_anchor == to_anchor.as_str())
+                    .find(|m| m.npc == npc.as_str() && m.to == *to)
                     .map(|m| m.ticks() as u32)
                     .unwrap_or(0)
             }),
             Verb::MoveActor {
                 actor,
-                to_anchor,
+                to,
                 on_arrive,
                 ..
             } => campaign_complete_tail(on_arrive, moves, actor_moves).map(|t| {
                 t + actor_moves
                     .iter()
-                    .find(|m| m.actor == actor.as_str() && m.to_anchor == to_anchor.as_str())
+                    .find(|m| m.actor == actor.as_str() && m.to == *to)
                     .map(|m| m.ticks() as u32)
                     .unwrap_or(0)
             }),
@@ -14263,11 +14508,8 @@ fn emit_scheduled_executor_packtests(
             .into_iter()
             .find_map(|e| match &e.verb {
                 Verb::MoveNpc {
-                    npc,
-                    to_anchor,
-                    on_arrive,
-                    ..
-                } if npc.as_str() == m.npc && to_anchor.as_str() == m.to_anchor => on_arrive
+                    npc, to, on_arrive, ..
+                } if npc.as_str() == m.npc && *to == m.to => on_arrive
                     .iter()
                     .find_map(|a| match &a.verb {
                         Verb::SetFlag { flag, .. } => Some(flag.as_str().to_string()),
@@ -14278,7 +14520,7 @@ fn emit_scheduled_executor_packtests(
             })
     });
     let Some((m, flag)) = arrival else { return };
-    let bare = movenpc_bare(&m.npc, &m.to_anchor, &m.gate_key);
+    let bare = movenpc_bare(&m.npc, &m.to, &m.gate_key);
     let score = plan::flag_score(&flag);
 
     // The walk is real, so the test must outlive it: the driver reschedules
@@ -14303,7 +14545,7 @@ fn emit_scheduled_executor_packtests(
     // stands still throughout; nothing here supplies it as an executor.
     t.push(format!(
         "function {ns}:{}",
-        movenpc_fn(&m.npc, &m.to_anchor, &m.gate_key)
+        movenpc_fn(&m.npc, &m.to, &m.gate_key)
     ));
     t.push(format!("await score {} {score} matches 1", plan::PARTY));
     out.insert(
@@ -14885,58 +15127,96 @@ fn emit_loot_packtest(plan: &Plan, out: &mut BuildOutput) {
 /// puppet and summons a fresh entity, so gear that rode only on the puppet would
 /// vanish the instant the elite came alive — a regression invisible to any
 /// compile-time check. Emitted only for a campaign with an equipped actor.
+///
+/// **A skinned body is not excluded, and excluding it was the defect.** The
+/// filter used to demand `skin.is_none()`, which was true of the engine it was
+/// written against — the skin branch of the puppet summon dropped `equipment`
+/// outright, so a skinned actor had no gear for this to find. That is fixed, and
+/// the exclusion then read exactly backwards: it refused to look at the one case
+/// that had ever been broken, and it was an opt-out the defect itself could
+/// supply. It was measured doing so — a campaign whose every actor is skinned
+/// emitted no actor-equipment test at all and its proof set shrank by one with
+/// nothing saying why. The body a campaign dresses is now irrelevant to whether
+/// its gear is proved.
 fn emit_actor_equipment_packtest(plan: &Plan, out: &mut BuildOutput) {
-    let ns = &plan.namespace;
-    let title = artifact_title(plan.campaign);
-    let Some(a) = plan
+    // One test per BODY KIND among the equipped actors, taking the first actor
+    // of each kind. What is under test is whether the body a campaign dresses
+    // changes whether its gear survives, so the kinds are the population and a
+    // second guard in the same livery would add a run and prove nothing. A
+    // campaign that dresses both a plain entity and a mannequin gets both.
+    let mut seen: Vec<String> = Vec::new();
+    for a in plan
         .campaign
         .quests
         .content
         .actors
         .iter()
-        .find(|a| a.equipment.is_some() && a.skin.is_none())
-    else {
-        return;
-    };
-    // The slot the assertion reads: prefer a hand, else the first armour piece.
+        .filter(|a| a.equipment.is_some())
+    {
+        let body = crate::compiler::nav::actor_body_entity(a);
+        if seen.contains(&body) {
+            continue;
+        }
+        seen.push(body.clone());
+        emit_one_actor_equipment_packtest(plan, a, &body, out);
+    }
+}
+
+/// One body kind's gear test. Split out so the population above is a plain loop
+/// over the kinds rather than a loop with a body inlined in it.
+fn emit_one_actor_equipment_packtest(
+    plan: &Plan,
+    a: &delvewright_dsl::Actor,
+    body: &str,
+    out: &mut BuildOutput,
+) {
+    let ns = &plan.namespace;
+    let title = artifact_title(plan.campaign);
+    // Every slot the actor fills is asserted on both bodies: the live proof that
+    // the pinned server stores each key the summon writes (spec-0067 §3 —
+    // `body` and `saddle` included).
     let eq = a.equipment.as_ref().expect("filtered on Some");
-    let probe: Option<(&str, &EquipItem)> = [
-        ("mainhand", eq.main_hand.as_ref()),
-        ("offhand", eq.off_hand.as_ref()),
-        ("head", eq.head.as_ref()),
-        ("chest", eq.chest.as_ref()),
-        ("legs", eq.legs.as_ref()),
-        ("feet", eq.feet.as_ref()),
-    ]
-    .into_iter()
-    .find_map(|(slot, p)| p.map(|p| (slot, p)));
-    let Some((slot, piece)) = probe else {
+    let filled: Vec<(&str, &EquipItem)> = eq
+        .pieces()
+        .into_iter()
+        .filter_map(|(slot, p)| p.map(|p| (slot.nbt(), p)))
+        .collect();
+    if filled.is_empty() {
         return;
-    };
+    }
     let safe = plan::safe_local(a.id.as_str());
     let mut b = packtest_header(&format!(
-        "{title}: actor `{}` keeps its gear across unleash (spec-0021)",
+        "{title}: actor `{}`, a {body}, keeps its gear across unleash (spec-0021)",
         a.id
     ));
     b.push(format!("function {ns}:setup"));
     // Clean slate: the shared batch server may already carry this actor.
     b.push(format!("kill @e[tag=dw_actor_{safe}]"));
     b.push(format!("function {ns}:spawn_actor_{safe}"));
-    b.push(format!(
-        "execute store success score #aeqp dw.sys if data entity @e[tag=dw_pup_{safe},limit=1] equipment.{slot}{{id:\"{}\"}}",
-        piece.item()
-    ));
-    b.push("assert score #aeqp dw.sys matches 1".to_string());
+    for (slot, piece) in &filled {
+        b.push(format!(
+            "execute store success score #aeqp dw.sys if data entity @e[tag=dw_pup_{safe},limit=1] equipment.{slot}{{id:\"{}\"}}",
+            piece.item()
+        ));
+        b.push("assert score #aeqp dw.sys matches 1".to_string());
+    }
     b.push(format!("function {ns}:unleash_{safe}"));
     // The twin is the actor-tagged entity that is NOT the puppet.
-    b.push(format!(
-        "execute store success score #aeqt dw.sys if data entity @e[tag=dw_actor_{safe},tag=!dw_pup_{safe},limit=1] equipment.{slot}{{id:\"{}\"}}",
-        piece.item()
-    ));
-    b.push("assert score #aeqt dw.sys matches 1".to_string());
+    for (slot, piece) in &filled {
+        b.push(format!(
+            "execute store success score #aeqt dw.sys if data entity @e[tag=dw_actor_{safe},tag=!dw_pup_{safe},limit=1] equipment.{slot}{{id:\"{}\"}}",
+            piece.item()
+        ));
+        b.push("assert score #aeqt dw.sys matches 1".to_string());
+    }
     b.push(format!("kill @e[tag=dw_actor_{safe}]"));
+    // The body is in the name, so a campaign that dresses two kinds gets two
+    // files rather than one overwriting the other. The namespace colon is
+    // replaced rather than dropped: two ids differing only in namespace are two
+    // kinds, and a resource location's path does not admit a colon.
+    let body_local = body.replace([':', '-', '/', '.'], "_");
     out.insert(
-        format!("packtest-datapack/data/{ns}/test/v06_actor_equipment.mcfunction"),
+        format!("packtest-datapack/data/{ns}/test/v06_actor_equipment_{body_local}.mcfunction"),
         lines(&b).into_bytes(),
     );
 }
@@ -15969,13 +16249,12 @@ fn emit_reseat_undefeated_packtests(plan: &Plan, out: &mut BuildOutput) {
         .collect();
 
     // --- the actor elite (the barrow-warden's defect) ---
-    if let Some(a) = plan
-        .reseat_actors()
-        .into_iter()
-        .find(|a| anchor_point_any(plan, a.anchor.as_str()).is_some())
-    {
+    if let Some(a) = plan.reseat_actors().into_iter().find(|a| {
+        plan.body_point(delvewright_dsl::BodyRef::Actor(a))
+            .is_some()
+    }) {
         let safe = plan::safe_local(a.id.as_str());
-        let origin = ent_xyz(anchor_point_any(plan, a.anchor.as_str()).unwrap());
+        let origin = ent_xyz(plan.body_point(delvewright_dsl::BodyRef::Actor(a)).unwrap());
         let (pin, sel) = pin_dummy("dw_rsua");
         let mut b = packtest_header(&format!(
             "{title}: a rest re-seats the undefeated elite `{}` at its origin, and never \
@@ -18623,7 +18902,7 @@ fn emit_v06_actor_packtests(
     // that same tick) and assert the puppet is at the destination cell.
     if let Some(m) = actor_moves.first() {
         let safe = plan::safe_local(&m.actor);
-        let bare = moveactor_bare(&m.actor, &m.to_anchor, &m.gate_key);
+        let bare = moveactor_bare(&m.actor, &m.to, &m.gate_key);
         let total = m.ticks();
         let p = m.target;
         let mut b = packtest_header(&format!(
@@ -18661,10 +18940,10 @@ fn emit_v06_actor_packtests(
             .find_map(|e| match &e.verb {
                 Verb::MoveActor {
                     actor,
-                    to_anchor,
+                    to,
                     on_arrive,
                     ..
-                } if actor.as_str() == m.actor && to_anchor.as_str() == m.to_anchor => on_arrive
+                } if actor.as_str() == m.actor && *to == m.to => on_arrive
                     .iter()
                     .find_map(|a| match &a.verb {
                         Verb::SpawnNpc { npc, .. } => Some(npc.as_str().to_string()),
@@ -18682,7 +18961,7 @@ fn emit_v06_actor_packtests(
             .map(|n| n.tag.clone())
     {
         let safe = plan::safe_local(&m.actor);
-        let bare = moveactor_bare(&m.actor, &m.to_anchor, &m.gate_key);
+        let bare = moveactor_bare(&m.actor, &m.to, &m.gate_key);
         let total = m.ticks();
         // Every distinct gate a `close-gate` effect seals, in first-appearance
         // order (deterministic).
@@ -19068,7 +19347,7 @@ fn emit_v04_packtests(
     // is the path's real final waypoint.
     if let Some(m) = moves.first() {
         let safe = plan::safe_local(&m.npc);
-        let bare = movenpc_bare(&m.npc, &m.to_anchor, &m.gate_key);
+        let bare = movenpc_bare(&m.npc, &m.to, &m.gate_key);
         let total = m.ticks();
         let p = m.target;
         let mut b = packtest_header(&format!(
@@ -21187,6 +21466,7 @@ mod tests {
             name: Some("Boss".to_string()),
             skin: None,
             anchor: delvewright_dsl::AnchorId("anchor/stage".to_string()),
+            offset: [0, 0, 0],
             facing: Some(delvewright_dsl::Facing::West),
             vulnerable,
             equipment: None,
@@ -21244,6 +21524,72 @@ mod tests {
         );
         assert!(s.contains("profile:{texture:\"delvewright:npc/giant-idle\",model:\"wide\"}"));
         assert!(s.contains("dw_pup_keeper"));
+    }
+
+    /// A `skin` is a costume, not a lobotomy: a skinned actor is the same body
+    /// with a different dress, so everything the author declared about the body
+    /// rides it. Before this, the mannequin branch carried none of `vulnerable`,
+    /// `attributes` or `equipment` — an actor that ships armed and tunable
+    /// shipped naked and vanilla the moment it was given a face.
+    #[test]
+    fn a_skinned_puppet_keeps_everything_declared_about_its_body() {
+        let mut a = mk_actor("actor/keeper", "minecraft:zombie", true);
+        a.skin = Some(delvewright_dsl::NpcSkin {
+            texture_id: "guard".to_string(),
+            model: delvewright_dsl::SkinModel::Wide,
+        });
+        a.equipment = Some(delvewright_dsl::MobEquipment {
+            head: Some(EquipItem::Plain("minecraft:netherite_helmet".to_string())),
+            chest: Some(EquipItem::Plain(
+                "minecraft:netherite_chestplate".to_string(),
+            )),
+            legs: None,
+            feet: None,
+            main_hand: Some(EquipItem::Plain("minecraft:netherite_sword".to_string())),
+            off_hand: None,
+            body: None,
+            saddle: None,
+        });
+        a.attributes = Some(delvewright_dsl::MobAttributes {
+            max_health: Some(40.0),
+            attack_damage: Some(9.0),
+            movement_speed: None,
+            follow_range: None,
+        });
+        let s = actor_puppet_summon("dw", &a, [1, 2, 3], 180);
+
+        assert!(
+            s.contains("Invulnerable:0b"),
+            "a `vulnerable` skinned puppet takes damage like any other body: {s}"
+        );
+        assert!(
+            s.contains("{id:\"minecraft:knockback_resistance\",base:1.0}"),
+            "a vulnerable puppet stays knockback-immune whatever it is wearing: {s}"
+        );
+        assert!(
+            s.contains("{id:\"minecraft:max_health\",base:40.0}")
+                && s.contains("{id:\"minecraft:attack_damage\",base:9.0}"),
+            "declared `attributes` must reach the mannequin — vanilla merges them \
+             over its defaults (live-probed: `max_health` 40 ⇒ `Health: 40.0f`): {s}"
+        );
+        assert!(
+            s.contains("mainhand:{id:\"minecraft:netherite_sword\"")
+                && s.contains("head:{id:\"minecraft:netherite_helmet\"")
+                && s.contains("chest:{id:\"minecraft:netherite_chestplate\",count:1}"),
+            "declared `equipment` must reach the mannequin, which wears and renders \
+             it: {s}"
+        );
+
+        // The loot half is a vanilla limit and is stated as one: a mannequin is a
+        // `LivingEntity`, not a `Mob`, so neither `DeathLootTable` nor
+        // `drop_chances` is part of its save data (both read back
+        // `Found no elements matching` on the pinned server) and a killed one
+        // drops nothing at all. Writing them here would be a claim the world does
+        // not carry — see [`body_carries_loot_nbt`].
+        assert!(
+            !s.contains("DeathLootTable") && !s.contains("drop_chances"),
+            "a mannequin body carries no Mob loot NBT: {s}"
+        );
     }
 
     #[test]
@@ -21510,6 +21856,7 @@ mod loot_emit_tests {
             name: None,
             skin: None,
             anchor: delvewright_dsl::AnchorId("anchor/stage".to_string()),
+            offset: [0, 0, 0],
             facing: None,
             vulnerable: false,
             equipment: eq,
@@ -21541,7 +21888,74 @@ mod loot_emit_tests {
                     .collect(),
             })),
             off_hand: None,
+            body: None,
+            saddle: None,
         }
+    }
+
+    /// A horse barded and saddled (spec-0067 criterion 7): both new keys ride
+    /// the summon's `equipment` compound, each at drop chance 0 unless a drop
+    /// names it (criterion 13).
+    #[test]
+    fn a_barded_and_saddled_horse_carries_body_and_saddle_keys() {
+        use delvewright_dsl::EquipItem;
+        let mut a = actor_with(Some(delvewright_dsl::MobEquipment {
+            head: None,
+            chest: None,
+            legs: None,
+            feet: None,
+            main_hand: None,
+            off_hand: None,
+            body: Some(EquipItem::Plain("minecraft:iron_horse_armor".to_string())),
+            saddle: Some(EquipItem::Plain("minecraft:saddle".to_string())),
+        }));
+        a.entity = "minecraft:horse".to_string();
+        for s in [
+            actor_puppet_summon("dw", &a, [1, 2, 3], 0),
+            actor_twin_summon("dw", &a, "~ ~ ~"),
+        ] {
+            assert!(
+                s.contains(
+                    "equipment:{body:{id:\"minecraft:iron_horse_armor\",count:1},\
+                     saddle:{id:\"minecraft:saddle\",count:1}}"
+                ),
+                "{s}"
+            );
+            assert!(s.contains("drop_chances:{body:0.0f,saddle:0.0f}"), "{s}");
+        }
+        a.tier = Some(delvewright_dsl::EncounterTier::Boss);
+        a.drops = vec![delvewright_dsl::MobDrop::Slot(delvewright_dsl::SlotDrop {
+            slot: EquipSlot::Saddle,
+        })];
+        let twin = actor_twin_summon("dw", &a, "~ ~ ~");
+        assert!(
+            twin.contains(&format!(
+                "drop_chances:{{body:0.0f,saddle:{DECLARED_DROP_CHANCE}}}"
+            )),
+            "a declared saddle drop is guaranteed: {twin}"
+        );
+    }
+
+    /// The drop-strip line zeroes one `drop_chances` key per slot of
+    /// [`EquipSlot::ALL`] (spec-0067 criterion 1).
+    #[test]
+    fn the_strip_line_zeroes_every_slot_the_game_has() {
+        let line = strip_drops_line("dw_actor_x");
+        let inner = line
+            .split("drop_chances:{")
+            .nth(1)
+            .and_then(|r| r.split('}').next())
+            .expect("the strip line writes a drop_chances compound");
+        let keys: Vec<&str> = inner
+            .split(',')
+            .map(|kv| kv.split(':').next().unwrap())
+            .collect();
+        assert_eq!(keys.len(), EquipSlot::ALL.len(), "{line}");
+        assert_eq!(
+            keys,
+            EquipSlot::ALL.iter().map(|s| s.nbt()).collect::<Vec<_>>(),
+            "{line}"
+        );
     }
 
     /// An actor WITHOUT equipment must emit exactly what it did before the field
@@ -21549,7 +21963,7 @@ mod loot_emit_tests {
     #[test]
     fn an_unequipped_actor_is_byte_identical() {
         let a = actor_with(None);
-        assert_eq!(actor_equipment(&a), None);
+        assert_eq!(actor_equipment(&a, &a.entity), None);
         let puppet = actor_puppet_summon("dw", &a, [1, 2, 3], 0);
         assert!(!puppet.contains("equipment:"), "{puppet}");
         assert!(!actor_twin_summon("dw", &a, "~ ~ ~").contains("equipment:"));

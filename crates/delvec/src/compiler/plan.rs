@@ -148,28 +148,44 @@ pub fn area_base_y(
 ///
 /// # The decision this function is
 ///
-/// A surround has to know how big the map is, and there are two possible
-/// answers. **The map's declared region**, which a campaign with a site plan
-/// states outright and which nothing may grow — a box outside it is `DW0826`.
-/// Or **the union of what actually got placed**, which is the only answer a
-/// campaign that places `areas[]` by hand can give, because it never states an
-/// extent at all.
+/// A surround has to know how big the map is, and **an extent is DECLARED or it
+/// does not exist**. There are two documents that declare one, and they are the
+/// only two.
 ///
-/// Where both exist the region wins, and that is not a convenience. spec-0049
-/// exists to stop extent flowing upward from the parts: the region is the
-/// brief's number flowing DOWN, and a box is never grounds to grow it. A
-/// surround keyed to the placed footprint would reintroduce exactly that flow
-/// one layer out — the mountains would creep inward wherever a plan reserved
-/// space and had not yet filled it, so the act of detailing a place later would
-/// move a mountain that a walk had already been judged against. Keyed to the
-/// region, the landform is fixed the moment the whole is stated, and every
-/// later part is built inside a horizon that was already there.
+/// **A site plan's `region`**, which a campaign planned as a whole map states
+/// outright and which nothing may grow — a box outside it is `DW0826`. Where a
+/// plan exists this is the answer, and that is not a convenience: spec-0049
+/// exists to stop extent flowing upward from the parts, so the region is the
+/// brief's number flowing DOWN. A surround keyed to a plan's placed footprints
+/// would reintroduce that flow one layer out — the mountains would creep inward
+/// wherever a plan reserved space and had not yet filled it, so detailing a
+/// place later would move a mountain a walk had already been judged against.
+///
+/// **A single prefab's own region**, for a campaign whose whole map is one
+/// piece: one area, binding one `prefab`, whose declared structure size is the
+/// map. That is a declaration too — it is written in the prefab document, held
+/// to the `.nbt`'s own bytes by the byte-claim check (`DW0888`), and the piece
+/// is what a `site` is: a building together with its island, its moat and its
+/// banks inside one box. Nothing flows upward here, because there is exactly
+/// one part and it is the whole; detailing its interior cannot move its box,
+/// and enlarging its region is a re-export of the asset, not a side effect of
+/// authoring.
+///
+/// **Everything else has stated no extent, and `DW0855` refuses it** — which is
+/// that refusal's own argument, held to its own words. It reads: *areas sit on
+/// the compiler's fixed stride with void between them, so that union is mostly
+/// nothing*. [`AREA_SPACING`] is what makes a union meaningless, and a campaign
+/// with one area never uses it: its single area sits at `0 * AREA_SPACING` and
+/// the union is the piece. Two areas, or one drawing from a pool, and the
+/// argument bites again — a pool's footprint is the solver's answer, so it
+/// would move with the seed.
 ///
 /// The vertical extent is deliberately absent. A surround stands on its own
 /// datum ([`crate::compiler::horizon::VALLEY_GAP_FLOOR_TOP_Y`]) and rises by its own
 /// param; what the map does above that floor is the map's business.
 pub fn surround_rect(
     campaign: &Campaign,
+    areas: &[AreaPlacement],
 ) -> Option<(crate::compiler::surround::SceneRect, &'static str)> {
     if let Some(plan) = campaign.site_plan.as_ref() {
         let r = &plan.content.region;
@@ -184,6 +200,27 @@ pub fn surround_rect(
             "site-plan region",
         ));
     }
+    // *Is this campaign one piece* is asked of `Extent`, which is the same
+    // predicate the validation tier refuses on — one rule, one answer. *How big
+    // is that piece* is a different question and is asked of the placement the
+    // prefab's own declared size produced.
+    let single = delvewright_dsl::placement::Extent::of(campaign)
+        == delvewright_dsl::placement::Extent::OnePiece;
+    if single
+        && let [area] = areas
+        && let [piece] = area.pieces.as_slice()
+    {
+        let (min, max) = piece.bbox();
+        return Some((
+            crate::compiler::surround::SceneRect {
+                min_x: min[0],
+                min_z: min[2],
+                max_x: max[0],
+                max_z: max[2],
+            },
+            "one placed piece's own region",
+        ));
+    }
     None
 }
 
@@ -191,12 +228,11 @@ pub fn surround_rect(
 /// with no map for that terrain to stand around.
 ///
 /// A surround has to ring something, and the only thing it can ring is a
-/// statement of the whole map's extent. A campaign that places `areas[]` by
-/// hand never makes one — and the obvious substitute, the union of what got
-/// placed, is not a statement of extent but an artifact of
-/// [`AREA_SPACING`]: two small areas sit 256 blocks apart with void between
-/// them, so their union is a rectangle that is mostly nothing, and ringing it
-/// generates a mountain range around empty space.
+/// statement of the whole map's extent. The substitute that is not one is the
+/// union of what got placed, which is an artifact of [`AREA_SPACING`]: two
+/// small areas sit 256 blocks apart with void between them, so their union is a
+/// rectangle that is mostly nothing, and ringing it generates a mountain range
+/// around empty space.
 ///
 /// That is not a performance note; it is the reason the refusal is right. It
 /// was measured: the same surround around a site plan's declared 64x64 region
@@ -204,6 +240,22 @@ pub fn surround_rect(
 /// two hand-placed areas it had not finished in ten minutes. The fast answer
 /// and the correct answer are the same answer here, which is usually the sign
 /// that the substitute was never the thing.
+///
+/// **The refusal is bound to the argument above and to nothing wider.** It read
+/// *this campaign places `areas[]`, therefore it has stated no extent*, and
+/// that is a step further than the argument goes: what makes a union
+/// meaningless is the stride, and a campaign with one area bound to one
+/// `prefab` never uses it — its whole map is that piece, its extent is the
+/// piece's own declared region, and [`surround_rect`] takes it from there.
+/// Nothing about the refusal is softened by that: a campaign that has stated no
+/// extent is refused exactly as it was, and the remedy list gains one entry a
+/// campaign in that state can actually reach.
+///
+/// The old list could not. Its remedy was *give the campaign a site plan*, and
+/// `DW0839` refuses a site plan beside a non-empty `areas[]` — so a creator who
+/// wanted terrain around a hand-placed piece was sent from `DW0855` to `DW0839`
+/// and back. CLAUDE.md names that shape: a gate that names a remedy owes a check
+/// that the remedy is reachable, and nothing held that check.
 pub const DW_SURROUND_NO_REGION: delvewright_dsl::DwCode =
     delvewright_dsl::diagnostic::codes::SURROUND_NO_REGION;
 
@@ -279,18 +331,19 @@ fn build_surround(
     if !h.base.has_surround() {
         return Ok(None);
     }
-    let Some((scene, authority)) = surround_rect(campaign) else {
+    let Some((scene, authority)) = surround_rect(campaign, areas) else {
         return Err(PlanError::new(
             DW_SURROUND_NO_REGION,
             format!(
                 "`horizon` base `{base}` builds terrain around the map, and this campaign never \
-                 says how big the map is. A surround rings a declared extent — the `region` of a \
-                 site plan — and this campaign places {n} area(s) with `areas[]`, which states \
-                 no extent at all. The union of what happens to get placed is not a substitute: \
-                 areas sit {sp} blocks apart, so that union is mostly the void between them, and \
-                 the horizon would be a mountain range built around empty space. Give the \
-                 campaign a site plan, or set `horizon` to `void` or `ocean`, which need no map \
-                 to be a horizon of.",
+                 says how big the map is. A surround rings a declared extent — a site plan's \
+                 `region`, or the declared region of the ONE prefab a one-area campaign binds — \
+                 and this campaign places {n} area(s) with `areas[]` and states neither. The \
+                 union of what happens to get placed is not a substitute: areas sit {sp} blocks \
+                 apart, so that union is mostly the void between them, and the horizon would be \
+                 a mountain range built around empty space. Make the map one area bound to one \
+                 `prefab`, or give the campaign a site plan, or set `horizon` to `void` or \
+                 `ocean`, which need no map to be a horizon of.",
                 base = h.base.token(),
                 n = areas.len(),
                 sp = AREA_SPACING,
@@ -953,6 +1006,14 @@ pub struct Plan<'a> {
     /// for every campaign that declares none — which is what keeps the navigation
     /// world, the emitted tick and the build outputs byte-identical.
     pub lethal_volumes: Vec<LethalVolumePlan>,
+    /// **Every placed furniture region** (spec-0065): `(anchor name, inclusive
+    /// world box)` for each anchor with `role: furniture` on each placed piece, in
+    /// area order, then placed-piece order, then anchor-name order — never hash
+    /// order (ADR-0006). A piece seated twice contributes its tables twice,
+    /// because both copies of the blocks are in the world. Empty for every
+    /// campaign whose pieces declare none, which keeps every walk proof and
+    /// output byte-identical.
+    pub furniture: Vec<FurnitureRegion>,
     /// Per-step stealth hint (DSL v0.4), aligned 1:1 with `critical_path`: `true`
     /// when the step's objective is `stealth`-marked → emitted as `sneak: true`.
     pub critical_path_sneak: Vec<bool>,
@@ -2059,6 +2120,11 @@ impl AnchorTable {
     /// the role index is written, so the refusal below cannot be bypassed by
     /// arriving through a different producer.
     fn record_role(&mut self, area: &str, name: &str, role: AnchorRole) -> Result<(), PlanError> {
+        // A role naming a kind of place (furniture) is held by as many anchors
+        // as the pieces declare; only a role naming THE place is indexed here.
+        if !role.one_per_area() {
+            return Ok(());
+        }
         let held = self
             .roles
             .entry((area.to_string(), role))
@@ -3003,6 +3069,9 @@ impl<'a> Plan<'a> {
         // ---- lethal volumes (spec-0031) ----
         let lethal_volumes = collect_lethal_volumes(campaign, &anchors);
 
+        // ---- furniture (spec-0065) ----
+        let furniture = collect_furniture(&areas, prefabs);
+
         // ---- `collect` container adoption (DSL v0.8) ----
         let collect_fills = collect_collect_fills(campaign, &anchors);
 
@@ -3150,6 +3219,7 @@ impl<'a> Plan<'a> {
             critical_path_cutscene: cp.cutscene_by_step,
             checkpoints,
             lethal_volumes,
+            furniture,
             stealth_beats,
             objective_steps,
             traps,
@@ -3348,6 +3418,63 @@ impl<'a> Plan<'a> {
             .iter()
             .find(|q| q.id.as_str() == quest_id)
             .map(|q| q.area.as_str())
+    }
+
+    /// **The cell a body is summoned onto** — the one resolution rule for a
+    /// [`delvewright_dsl::BodyRef`] of either class: its mark's anchor, resolved,
+    /// plus the mark's offset (spec-0066).
+    ///
+    /// A body that declares an area is resolved in that area's table first and
+    /// falls back to any placed piece; a body that declares none (an actor) is
+    /// resolved across every placed piece, exactly as an `open-gate` or
+    /// `move-actor` destination is. Which of the two applies is
+    /// [`delvewright_dsl::BodyRef::area`]'s answer, so the rule is stated once
+    /// instead of once per consumer.
+    ///
+    /// `None` when nothing provides the anchor. Every consumer skips such a
+    /// body rather than reporting against it — `DW0325`/`DW0345`/`DW0360` own
+    /// dangling references, and a geometry or occupancy finding for one would
+    /// send the author to the wrong line.
+    pub fn body_point(&self, body: delvewright_dsl::BodyRef<'_>) -> Option<[i32; 3]> {
+        let mark = body.mark();
+        self.body_anchor_site(body)
+            .map(|(_, anchor_cell)| mark.cell(anchor_cell))
+    }
+
+    /// Where a body's mark's ANCHOR resolves — the area that answered and the
+    /// anchor's own cell, before the offset is added. The same rule as
+    /// [`Self::body_point`] (area-scoped for a body that declares an area, across
+    /// every placed piece for one that does not); the area is what `DW0897` asks
+    /// [`Self::piece_bounds`] about.
+    pub fn body_anchor_site(
+        &self,
+        body: delvewright_dsl::BodyRef<'_>,
+    ) -> Option<(String, [i32; 3])> {
+        let mark = body.mark();
+        let anchor = mark.anchor.as_str();
+        if let Some(area) = body.area()
+            && let Some(p) = self.point(area.as_str(), anchor)
+        {
+            return Some((area.as_str().to_string(), p));
+        }
+        self.point_any_site(anchor)
+    }
+
+    /// [`Self::point_any`] with the area that answered: the first `(area, name)`
+    /// in the anchor table's order whose name is `anchor`.
+    pub fn point_any_site(&self, anchor: &str) -> Option<(String, [i32; 3])> {
+        self.anchors
+            .iter()
+            .find(|((_, n), _)| n == anchor)
+            .map(|((area, _), resolved)| {
+                (
+                    area.clone(),
+                    match resolved {
+                        ResolvedAnchor::Point { pos, .. } => *pos,
+                        ResolvedAnchor::Gate { from, .. } => *from,
+                    },
+                )
+            })
     }
 
     /// Resolve `(area, anchor)` to a point position, if it is a point anchor.
@@ -3862,8 +3989,8 @@ fn collect_effect_anchors(e: &QuestEffect, set: &mut BTreeSet<String>) {
     if let Some((a, _)) = e.set_block() {
         set.insert(a.as_str().to_string());
     }
-    if let Some((_, a)) = e.move_npc() {
-        set.insert(a.as_str().to_string());
+    if let Some((_, to)) = e.move_npc() {
+        set.insert(to.anchor.as_str().to_string());
     }
     // Every shot's waypoints, plus each shot's `look_at` subject — the camera is
     // aimed at that world point, so the area's assembly must provide its anchor.
@@ -3895,7 +4022,7 @@ fn resolve_piece_anchor(
         }
     } else {
         ResolvedAnchor::Point {
-            pos: solver::transform_point(placed, am.pos.unwrap_or([0, 0, 0])),
+            pos: solver::transform_point(placed, anchor_point(am)),
             facing: solver::transform_facing(placed, am.facing.as_deref()),
         }
     }
@@ -3917,6 +4044,9 @@ fn resolve_piece_anchor(
 fn local_gate(meta: &PrefabMeta, name: &str, am: &AnchorMeta) -> Option<GateAnchor> {
     match meta.gate_anchor(name) {
         Ok(gate) => gate,
+        // Furniture is never refused as a gate (the authority answers `None`), so
+        // this arm cannot reach one; the guard says so where a region is read.
+        Err(_) if am.role == Some(AnchorRole::Furniture) => None,
         Err(_) => am.region.as_ref().map(|r| GateAnchor {
             from: r.from,
             to: r.to,
@@ -3943,10 +4073,66 @@ fn resolve_anchor(
         }
     } else {
         ResolvedAnchor::Point {
-            pos: add(am.pos.unwrap_or([0, 0, 0])),
+            pos: add(anchor_point(am)),
             facing: am.facing.clone(),
         }
     }
+}
+
+/// One placed furniture region: `(anchor name, inclusive world box)` (spec-0065).
+pub type FurnitureRegion = (String, ([i32; 3], [i32; 3]));
+
+/// **Every furniture region the placed pieces declare**, in world space
+/// (spec-0065 §4.1).
+///
+/// Read off the placed pieces rather than off the anchor table, and that is the
+/// point: the table resolves a name first-wins, so a pool that seats one
+/// furnished piece twice would lose the second table — and the second table's
+/// blocks are in the world all the same. Detail pieces are placed pieces too, so
+/// they are reached by the same walk. Order: area, placed piece, anchor name
+/// (the prefab document's map is a `BTreeMap`).
+fn collect_furniture(areas: &[AreaPlacement], prefabs: &PrefabRegistry) -> Vec<FurnitureRegion> {
+    let mut out = Vec::new();
+    for area in areas {
+        for piece in &area.pieces {
+            let Some(meta) = prefabs.get(&piece.prefab_id) else {
+                continue;
+            };
+            for (name, am) in &meta.anchors {
+                if am.role != Some(AnchorRole::Furniture) {
+                    continue;
+                }
+                // The role with no region is `DW0888`'s first shape, refused by
+                // the byte-claim check; there is nothing here to exclude.
+                let Some(region) = &am.region else {
+                    continue;
+                };
+                let world = |local: [i32; 3]| {
+                    let t = piece.rotation.transform(local);
+                    [
+                        piece.pos[0] + t[0],
+                        piece.pos[1] + t[1],
+                        piece.pos[2] + t[2],
+                    ]
+                };
+                let (a, b) = (world(region.from), world(region.to));
+                let lo = [a[0].min(b[0]), a[1].min(b[1]), a[2].min(b[2])];
+                let hi = [a[0].max(b[0]), a[1].max(b[1]), a[2].max(b[2])];
+                out.push((name.clone(), (lo, hi)));
+            }
+        }
+    }
+    out
+}
+
+/// **The one cell a non-gate anchor names**, piece-local: its `pos`, or — for a
+/// named place declared as a region, such as furniture (spec-0065 §3.4) — the
+/// region's `from` corner, which is the cell every region anchor already
+/// resolves to when a point is asked of it ([`anchor_node`]).
+fn anchor_point(am: &AnchorMeta) -> [i32; 3] {
+    am.pos
+        .or_else(|| am.region.as_ref().map(|r| r.from))
+        .unwrap_or([0, 0, 0])
 }
 
 fn plan_npc(npc: &Npc, tree: &NpcDialogue) -> NpcPlan {
@@ -4195,7 +4381,7 @@ fn build_critical_path(
                         &begun,
                         flags_at.get(si).unwrap_or(&BTreeSet::new()),
                     ) {
-                        Some(crate::compiler::cast::Station::At(anchor)) => {
+                        Some(crate::compiler::cast::Station::At(anchor, ledger_offset)) => {
                             match body_station(
                                 anchors,
                                 BodyScope::Beat {
@@ -4207,7 +4393,12 @@ fn build_critical_path(
                                 station @ BodyStation::At { .. } => {
                                     let (a, pos) = station
                                         .place()
-                                        .map(|(a, p)| (a.to_string(), p))
+                                        .map(|(a, p)| {
+                                            (
+                                                a.to_string(),
+                                                delvewright_dsl::offset_cell(p, ledger_offset),
+                                            )
+                                        })
                                         .expect("an `At` station has a place");
                                     // `DW0461`, the place arm. This is the ONE
                                     // site in the compiler that reads a ledger
@@ -4234,18 +4425,37 @@ fn build_critical_path(
                                             staged.anchor.as_str(),
                                         )
                                         .place()
-                                        && (ha, hp) != (a.as_str(), pos)
+                                        && (ha, delvewright_dsl::offset_cell(hp, staged.offset))
+                                            != (a.as_str(), pos)
                                     {
-                                        return Err(PlanError::new(
-                                            crate::compiler::cast::DW_CAST_PLACEMENT,
+                                        let hp = delvewright_dsl::offset_cell(hp, staged.offset);
+                                        let ledger_mark = delvewright_dsl::Mark {
+                                            anchor: delvewright_dsl::AnchorId(anchor.to_string()),
+                                            offset: ledger_offset,
+                                        };
+                                        // Two different marks are the document
+                                        // arm's finding, in its words; two equal
+                                        // marks at two places are the split.
+                                        let message = if ledger_mark != staged.mark() {
+                                            crate::compiler::cast::placement_contradiction(
+                                                qid,
+                                                npc.as_str(),
+                                                &ledger_mark.display(),
+                                                &staged.mark().display(),
+                                            )
+                                        } else {
                                             crate::compiler::cast::station_split(
                                                 qid,
                                                 npc.as_str(),
-                                                anchor,
-                                                staged.anchor.as_str(),
+                                                &ledger_mark.display(),
+                                                &staged.mark().display(),
                                                 (a.as_str(), pos),
                                                 (ha, hp),
-                                            ),
+                                            )
+                                        };
+                                        return Err(PlanError::new(
+                                            crate::compiler::cast::DW_CAST_PLACEMENT,
+                                            message,
                                         ));
                                     }
                                     (a, pos)
@@ -4328,7 +4538,14 @@ fn build_critical_path(
                         // campaign. Keep the stage-2 anchor, byte for byte.
                         None => {
                             let anchor = decl.map(|nn| nn.anchor.as_str()).unwrap_or("");
-                            (home_area.to_string(), point_of(anchors, home_area, anchor)?)
+                            let offset = decl.map(|nn| nn.offset).unwrap_or([0, 0, 0]);
+                            (
+                                home_area.to_string(),
+                                delvewright_dsl::offset_cell(
+                                    point_of(anchors, home_area, anchor)?,
+                                    offset,
+                                ),
+                            )
                         }
                     };
                     steps.push(Step::TalkTo {
@@ -4904,7 +5121,10 @@ fn collect_ambushes(
             .actors
             .iter()
             .filter_map(|id| by_id.get(id.as_str()))
-            .filter_map(|a| point_any(anchors, a.anchor.as_str()))
+            .filter_map(|a| {
+                point_any(anchors, a.anchor.as_str())
+                    .map(|p| delvewright_dsl::offset_cell(p, a.offset))
+            })
             .collect();
         out.push(AmbushPlan {
             id: amb.id.as_str().to_string(),
@@ -6531,11 +6751,7 @@ fn anchor_node(
     gates: &BTreeMap<String, GateInfo>,
 ) -> Option<Node> {
     let (pi, am) = anchor_piece(pieces, registry, anchor_name)?;
-    let local = am
-        .pos
-        .or_else(|| am.region.as_ref().map(|r| r.from))
-        .unwrap_or([0, 0, 0]);
-    Some((pi, side_of(pi, local, gates)))
+    Some((pi, side_of(pi, anchor_point(am), gates)))
 }
 
 /// Every connector socket of every placed piece, in world space.

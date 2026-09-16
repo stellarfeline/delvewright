@@ -1,0 +1,115 @@
+{
+  "campaign_id": "gallery",
+  "content": {
+    "quests": [
+      {
+        "cast": {
+          "npc/bank-warden": {
+            "at": "anchor/bank-court",
+            "dialogue": "dlg/bank-greeting",
+            "doing": "standing in the middle of the court"
+          }
+        },
+        "happening": {
+          "text": "the party takes on quest/walk-the-bank",
+          "verb": "learns"
+        },
+        "id": "quest/walk-the-bank",
+        "objectives": [
+          {
+            "happening": {
+              "text": "the party completes obj/ask-the-warden",
+              "verb": "learns"
+            },
+            "id": "obj/ask-the-warden",
+            "npc": "npc/bank-warden",
+            "type": "talk-to"
+          },
+          {
+            "after": [
+              "obj/ask-the-warden"
+            ],
+            "anchor": "anchor/bank-corner",
+            "happening": {
+              "text": "the party completes obj/far-corner",
+              "verb": "arrives"
+            },
+            "id": "obj/far-corner",
+            "radius": 2,
+            "type": "reach-anchor"
+          }
+        ],
+        "on_complete": [
+          {
+            "at": {
+              "anchor": "anchor/bank-court",
+              "offset": [
+                0,
+                0,
+                2
+              ]
+            },
+            "explosions": [
+              {
+                "colors": [
+                  "#ffd700",
+                  "#ffffff"
+                ],
+                "fade_colors": [
+                  "#8b0000"
+                ],
+                "shape": "large_ball",
+                "trail": true,
+                "twinkle": true
+              },
+              {
+                "colors": [
+                  "#4fa3ff"
+                ],
+                "shape": "small_ball"
+              },
+              {
+                "colors": [
+                  "#ffe066",
+                  "#ff8c1a"
+                ],
+                "shape": "star"
+              },
+              {
+                "colors": [
+                  "#5aa02c"
+                ],
+                "shape": "creeper"
+              },
+              {
+                "colors": [
+                  "#ffffff",
+                  "#b0c4de"
+                ],
+                "shape": "burst"
+              }
+            ],
+            "flight": 1,
+            "happening": {
+              "text": "the bank answers with one rocket",
+              "verb": "survives"
+            },
+            "type": "firework"
+          },
+          {
+            "happening": {
+              "text": "the delve is complete",
+              "verb": "survives"
+            },
+            "type": "campaign-complete"
+          }
+        ],
+        "trigger": {
+          "type": "campaign-start"
+        }
+      }
+    ]
+  },
+  "dsl_version": "0.29.0",
+  "stage": "quests"
+}

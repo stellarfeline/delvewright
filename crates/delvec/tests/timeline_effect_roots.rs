@@ -84,7 +84,7 @@ const TRAP_SEALS_THEN_WALKS: &str = r#"{
   "lethality": "harmful",
   "payload": [
     { "type": "close-gate", "anchor": "anchor/door", "sealed_hint": "Sealed." },
-    { "type": "move-actor", "actor": "actor/ram", "to_anchor": "anchor/exit" }
+    { "type": "move-actor", "actor": "actor/ram", "to": { "anchor": "anchor/exit" } }
   ]
 }"#;
 
@@ -98,7 +98,7 @@ const TRAP_WALKS_THEN_SEALS: &str = r#"{
   "trigger": "trapped-chest",
   "lethality": "harmful",
   "payload": [
-    { "type": "move-actor", "actor": "actor/ram", "to_anchor": "anchor/exit" },
+    { "type": "move-actor", "actor": "actor/ram", "to": { "anchor": "anchor/exit" } },
     { "type": "close-gate", "anchor": "anchor/door", "sealed_hint": "Sealed." }
   ]
 }"#;
@@ -126,7 +126,7 @@ static DIALOGUE_SEALS_THEN_WALKS: LazyLock<String> = LazyLock::new(|| {
                 { "type": "set-checkpoint", "anchor": "anchor/exit",
                   "on_respawn": [
                     { "type": "close-gate", "anchor": "anchor/door", "sealed_hint": "Sealed." },
-                    { "type": "move-actor", "actor": "actor/ram", "to_anchor": "anchor/exit" }
+                    { "type": "move-actor", "actor": "actor/ram", "to": { "anchor": "anchor/exit" } }
                   ] }
               ] }
           ] }

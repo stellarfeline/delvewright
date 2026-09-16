@@ -880,14 +880,14 @@ pub fn render_plan(
     // --- NPCs --------------------------------------------------------------
     for npc in &plan.npcs {
         let area = plan.npc_area(&npc.npc_id).unwrap_or("").to_string();
-        let anchor = c
+        let decl = c
             .npcs
             .content
             .npcs
             .iter()
-            .find(|n| n.id.as_str() == npc.npc_id)
-            .map(|n| n.anchor.as_str())
-            .unwrap_or("");
+            .find(|n| n.id.as_str() == npc.npc_id);
+        let anchor = decl.map(|n| n.anchor.as_str()).unwrap_or("");
+        let offset = decl.map(|n| n.offset).unwrap_or([0, 0, 0]);
         let name = c
             .npcs
             .content
@@ -902,7 +902,7 @@ pub fn render_plan(
             continue;
         };
         let f = facing_vec(facing.as_deref());
-        let base = centre(*pos);
+        let base = centre(delvewright_dsl::offset_cell(*pos, offset));
         // The player approaches from the direction the NPC faces (NPCs are summoned
         // facing the player), so the camera stands there and looks back at the NPC.
         let eye = [base[0] + f[0] * 4.0, base[1] + 1.6, base[2] + f[2] * 4.0];
@@ -1043,8 +1043,44 @@ pub fn render_plan(
             .expect("render plan root is a JSON object")
             .insert("horizon".to_string(), h);
     }
+    // **Every showcase camera photographs the scene** (spec-0069): the cameras of
+    // `design/cameras.json` are not plan shots — `delvec cameras` emits their
+    // scenes from the record — but they owe the same clear eye, asked of the same
+    // world, plus a frame that holds what the scene loads. Proven against the
+    // document just built, read back through the reader the scenes are cut from,
+    // so the box asked about is the box the chunk list is.
+    if let Some(record) = &plan.design_files.cameras {
+        use crate::compiler::view::camera::{ShowcaseRefusal, prove_showcase};
+        let bytes = serde_json::to_vec(&root).expect("render plan serializes");
+        let parsed = crate::compiler::view::scene::parse_plan(&bytes).map_err(|d| Failure {
+            code: DW_CAMERA_RECORD,
+            message: d.message,
+        })?;
+        let showcase =
+            prove_showcase(record, &parsed, |cell| !world.is_clear(cell)).map_err(|refusal| {
+                match refusal {
+                    ShowcaseRefusal::Record(d) => Failure {
+                        code: DW_CAMERA_RECORD,
+                        message: d.message,
+                    },
+                    ShowcaseRefusal::Camera(message) => Failure {
+                        code: crate::compiler::nav::DW_CAMERA_EYE_OCCLUDED,
+                        message,
+                    },
+                }
+            })?;
+        root["camera_eye_proof"]["showcase"] = json!(showcase);
+    }
     Ok((root, warnings))
 }
+
+/// `DW0721` raised by the build: `design/cameras.json` is refused by its one
+/// reader (`compiler::view::camera`) — the same rule `delvec cameras` refuses it
+/// under, stopping the build that reads it.
+const DW_CAMERA_RECORD: delvewright_dsl::DwCode = delvewright_dsl::DwCode::new(
+    crate::compiler::view::diag::DW_INPUT,
+    delvewright_dsl::ExitTier::Build,
+);
 
 /// **The hour this delve is played at**, as the render layer needs it.
 ///
