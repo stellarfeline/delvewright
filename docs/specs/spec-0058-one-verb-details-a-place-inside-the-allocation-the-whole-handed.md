@@ -6,8 +6,8 @@
   `docs/reference/tools.md` §1, §2a and §3 documented at that revision and
   the content repository's skill page §13 walks: `delvec allocation`,
   `delvec grammar expand`, `delvec prefab audit`, `delvec prefab lighting`, a
-  file move, a hand-written `details[]` row. Every count below was measured
-  on that tree with the verb built, by the tests named beside it.
+  file move, a hand-written `details[]` row. Every count below is measured on
+  the merged tree, engine `1c1b4f39` and after, by the tests named beside it.
 - **DSL**: no document-shape change. The `details[]` row is written by the
   verb in the shape spec-0050 fixed; the program's address is derived from the
   place (§2.1), so nothing new is written into a stage document.
@@ -314,7 +314,12 @@ and `contract-exterior-faces` says so. Pinned by
   the row the overlay commits, so a hand-edited row cannot stand where the
   program's output belongs. `node/exit` keeps its hand-built kit piece, so
   both ways a place is bound stay demonstrated. No schema unit is new; the
-  element binds the verb, not a field.
+  element binds the verb, not a field. The program declares
+  `shown_faces: ["down"]`: the box stands on its own under the `valley`
+  horizon, so its floor is the one side the world does not cover, and a piece
+  that says nothing about it is `DW0885` at step 9. The grammar writes a
+  program's `shown_faces` through to the exported prefab, so the verb carries
+  the claim with no surface of its own.
 - **Probes**, each the primary plus its own documents and a perturbed program,
   refused by the verb in a `detail` phase the coverage gate now runs first
   wherever a materialised point carries `programs/`: a program declaring
@@ -337,8 +342,13 @@ and `contract-exterior-faces` says so. Pinned by
 
 ## 8. The skill page, §13, as this spec leaves it
 
-Applied by the content round when the authoring pin moves; drafted here so the
-two surfaces are written against one another.
+The page is `.claude/skills/delvewright/skills/new-delve/` in this repository
+(spec-0063), and `tools/check-skill-page.py` holds every subcommand it names to
+the clap surface at the engine revision `versions.toml` beside it pins. That pin
+is older than this verb by construction, so naming `detail` on the page before
+the pin moves is a red rather than a documentation improvement: the text below
+replaces `references/detail.md` in the change that re-pins the page, and is
+drafted here so the two surfaces are written against one another.
 
 > ## 13. Detail — site-plan campaigns only, and only after the walk
 >
@@ -415,12 +425,15 @@ number measured on the ground revision with this verb built.
    and re-recorded, `detail --all` is `DW0882` naming the stale handed name
    and the new one.
 6. **Count.** `the_gym_is_detailed_by_one_command`: the metrics gym's 18
-   places, of which **15** are answerable by a plain-walk program, are
-   detailed by **one** `detail --all` from 15 generated programs, with 15 rows
+   places, of which **14** are answerable by a plain-walk program, are
+   detailed by **one** `detail --all` from 14 generated programs, with 14 rows
    written and the whole built green; the blockout fixture's 3 answerable
    places by one command from 3 programs. Under the ground revision's chain
-   the same 15 places cost 60 commands (`allocation`, `expand`, `audit`,
-   `lighting`) plus a 15-row hand-written document.
+   the same 14 places cost 56 commands (`allocation`, `expand`, `audit`,
+   `lighting`) plus a 14-row hand-written document. Both counts are asserted
+   exactly by that test — 18 allocations, 14 of them answerable — because the
+   assertion that stood here was a floor (`>= 8`), and a floor cannot tell a
+   census from a drift.
 7. **`*.report.json`.** A prefab directory holding `stray.report.json` loads
    with zero `DW0346`; one holding a malformed `report.json` still raises it —
    the skip is the full suffix.

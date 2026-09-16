@@ -141,10 +141,7 @@ fn carve(
         _ => 2,
     };
     // Group by the range on this axis, ordered by its low end.
-    let mut groups: Vec<(
-        (i64, i64),
-        Vec<&delvec::compiler::detail::AllocatedSeam>,
-    )> = Vec::new();
+    let mut groups: Vec<((i64, i64), Vec<&delvec::compiler::detail::AllocatedSeam>)> = Vec::new();
     for s in seams {
         let key = (s.cells[0][idx], s.cells[1][idx]);
         match groups.iter_mut().find(|(k, _)| *k == key) {
@@ -302,10 +299,15 @@ fn program_for(a: &Allocation, shift: Option<(&str, i64)>, marks: bool) -> Value
         .collect();
 
     json!({
-        "version": "1.8.0",
+        "version": "1.9.0",
         "name": format!("generated for {}", a.place),
         "start": "piece",
         "params": params,
+        // The fixture's horizon is `void`, which buries nothing, and a box the
+        // plan stands on its own has its floor in air a party can reach, so the
+        // piece says which side that is (`DW0885`) through the program-level
+        // list the grammar writes into every exported prefab.
+        "shown_faces": ["down"],
         "palette": {
             "floor": "minecraft:stone",
             "lamp": "minecraft:sea_lantern"
@@ -749,16 +751,25 @@ fn the_gym_is_detailed_by_one_command() {
     common::record_walk(&campaign);
     let c = common::campaign_at(&campaign);
     let mut places = Vec::new();
-    for a in detail::allocations(&c) {
-        if answerable(&a) {
-            write_program(&campaign, &a.place, &program_for(&a, None, true));
+    let allocations = detail::allocations(&c);
+    for a in &allocations {
+        if answerable(a) {
+            write_program(&campaign, &a.place, &program_for(a, None, true));
             places.push(a.place.clone());
         }
     }
-    assert!(
-        places.len() >= 8,
-        "the gym offers {} plain-walk place(s): {places:?}",
-        places.len()
+    // The census is asserted EXACTLY, not as a floor. This read `>= 8`, and a
+    // floor is not a measurement: spec-0058 §9 criterion 6 carried 15 where the
+    // instrument says 14 for as long as the criterion existed, and nothing could
+    // redden. The gym allocates 18 places and 4 of them want more than a walk —
+    // the two climb hosts, the drop's top and the pit (§10) — so 14 are
+    // answerable by a plain-walk program, and a gym that grows a place or moves
+    // a seam class reds here instead of drifting.
+    assert_eq!(allocations.len(), 18, "the gym's places");
+    assert_eq!(
+        places.len(),
+        14,
+        "the gym's plain-walk places: {places:?}"
     );
 
     let out = delvec(&["--prefabs", ps, "detail", cs, "--all"]);
