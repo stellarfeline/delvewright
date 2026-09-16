@@ -1,6 +1,6 @@
 # spec-0058: One verb details a place inside the allocation the whole handed
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Ground**: engine `f25dc13a` (`origin/main` with the one-binary refactor,
   ADR-0023, landed). The stage-6 chain classified here is the one
   `docs/reference/tools.md` §1, §2a and §3 documented at that revision and
