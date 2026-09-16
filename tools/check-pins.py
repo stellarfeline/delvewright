@@ -156,12 +156,21 @@ catch could not itself produce the hatch's proof. A free-text "frozen on purpose
 field fails that immediately: a rotted pin's holder writes the same sentence. So
 the kinds are decided by properties of the OBJECT, verified online:
 
-- `release` — the pin resolves to a commit that a release tag points at. A
-  released delve reproduces through its own pinned engine, so this pin must never
-  move, and drift is never a finding. The defect cannot supply this: a main-tip
-  commit somebody stopped looking at carries no release tag, and tagging is a
-  release act gated elsewhere. Declared `release` with no tag at the value is a
-  red.
+- `release` — the value is a release tag in the grammar of
+  `tools/lib/release_tags.py`, and it names either a tag the pinned repository
+  already carries, whose commit's tree states that tag's version, or the tag THIS
+  tree's own release will create (ADR-0029 §3). A released delve reproduces
+  through its own pinned engine, so this pin must never move, and drift is never a
+  finding. The defect cannot supply either state: a main-tip commit somebody
+  stopped looking at carries no release tag, tagging is a release act gated
+  elsewhere, and the unborn arm demands the tag's version equal the version this
+  tree ITSELF states for that line — a value naming any other unborn tag is a red.
+  The unborn arm exists because the pull request that moves the pin is the one
+  that names the tag and the release that creates it is dispatched on that merge
+  commit, so between the two there is an interval in which the object does not
+  exist yet; it is available only for a line whose version this tree states
+  (`delvec`, `delvewright-dsl`), never for one whose version arrives as a release
+  dispatch's input.
 - `track` — the pin names a commit on the upstream default branch and is expected
   to be re-pinned. Two demands. The value must still be an ancestor of that
   branch (a pin onto an abandoned or rewritten commit is a red on its own). And
@@ -221,6 +230,9 @@ import shlex
 import subprocess
 import sys
 import tomllib
+
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent / "lib"))
+import release_tags  # noqa: E402  — the release-tag grammar, stated once (ADR-0028 §1)
 
 # ---------------------------------------------------------------------------
 # Where a pin can live: every file class through which this repo fetches.
@@ -1415,6 +1427,96 @@ def package_dirs(repo: pathlib.Path, packages: list[str]) -> list[str]:
     return sorted(out)
 
 
+# Where THIS tree states the version of each thing it releases, so a release tag
+# that does not exist yet can be held to the tree that will create it (ADR-0029
+# §3). Each entry is read where that line's own release workflow reads it:
+# `engine-release.yml` and `dsl-crate-publish.yml` both take a key of the root
+# `versions.toml`. `delvewright` is deliberately absent — `plugin-release.yml`
+# takes its version as a dispatch INPUT and writes the bump itself, so no tree
+# states it in advance and there is no unborn tag to accept.
+OWN_VERSION_KEY = {
+    "delvec": ("engine", "version"),
+    "delvewright-dsl": ("engine", "dsl_crate_version"),
+}
+
+
+def release_pin(
+    root: pathlib.Path, repo: pathlib.Path, pid: str, pin: dict, value: str
+) -> list[str]:
+    """A `release` pin: a tag this repository carries, or the one it will write.
+
+    Two states, and the OBJECT decides which — whether the remote has the tag —
+    never the entry. An existing tag is held to the tree it points at: the
+    version the tag states is the version that commit's tree states, which is
+    what `identity` in the release workflow guarantees and what a hand-written
+    tag could not. An absent tag is accepted only as THIS tree's own next tag,
+    which the release dispatched on the merge commit creates; any other absent
+    name is a pin onto something nobody is about to publish.
+    """
+    try:
+        name, version = release_tags.parse(value)
+    except release_tags.Refused as exc:
+        return [
+            f"{pid}: policy 'release' names a release tag, and {exc}. The grammar "
+            f"is `tools/lib/release_tags.py`'s and is stated once."
+        ]
+    listed = git(repo, "tag", "--list", value).split()
+    if listed:
+        try:
+            commit = git(repo, "rev-parse", "--verify", f"refs/tags/{value}^{{commit}}")
+        except subprocess.CalledProcessError:
+            return [f"{pid}: {value} is a tag in {pin.get('repo')} that points at no commit"]
+        key = OWN_VERSION_KEY.get(name)
+        if key is None:
+            print(f"  ok   {pid}: release pin at {value} ({commit[:8]}) — frozen, drift is not a finding")
+            return []
+        stated, why = keyed_value(git(repo, "show", f"{commit}:versions.toml"), key)
+        if stated is None:
+            return [
+                f"{pid}: {value} points at {commit[:8]}, whose versions.toml {why} — "
+                f"the tag cannot be held to the tree it names"
+            ]
+        if stated != version:
+            return [
+                f"{pid}: {value} points at {commit[:8]}, whose tree states "
+                f"{name} {stated}. A tag and the tree it names disagree about which "
+                f"release this is, so what a creator downloads and what a developer "
+                f"builds are two different things."
+            ]
+        print(
+            f"  ok   {pid}: release pin at {value} ({commit[:8]}), whose tree states "
+            f"{name} {stated} — frozen, drift is not a finding"
+        )
+        return []
+    # The tag does not exist. ADR-0029 §3: the pull request that names it is this
+    # one, and the release dispatched on its merge commit writes it.
+    key = OWN_VERSION_KEY.get(name)
+    if key is None:
+        return [
+            f"{pid}: {pin.get('repo')} has no tag {value}, and no tree states a "
+            f"{name} version in advance ({name}'s release takes its version as a "
+            f"dispatch input), so there is no unborn tag this pin could be naming."
+        ]
+    stated, why = keyed_value((root / "versions.toml").read_text(encoding="utf-8"), key)
+    if stated is None:
+        return [f"{pid}: this tree's versions.toml {why}, so its own {name} tag cannot be derived"]
+    own = release_tags.tag_for(name, stated)
+    if value != own:
+        return [
+            f"{pid}: {pin.get('repo')} has no tag {value}, and this tree's own "
+            f"{name} tag is {own} (`{'.'.join(key)}` = {stated}). An unborn tag is "
+            f"accepted only as the one THIS tree's release will create at its merge "
+            f"commit; any other name is a pin onto something nobody is about to "
+            f"publish. Either move the pin to {own}, or move the version first."
+        ]
+    print(
+        f"  ok   {pid}: {value} is unborn and is this tree's own next {name} tag "
+        f"(`{'.'.join(key)}` = {stated}) — the release dispatched on this pull "
+        f"request's merge commit writes it (ADR-0029 §3)"
+    )
+    return []
+
+
 def check_online(
     root: pathlib.Path, registry: list[dict], checkouts: dict[str, pathlib.Path]
 ) -> tuple[int, list[str]]:
@@ -1435,6 +1537,11 @@ def check_online(
             continue
         bound += 1
         value = pin["value"]
+
+        if policy == "release":
+            errors.extend(release_pin(root, repo, pid, pin, value))
+            continue
+
         try:
             git(repo, "cat-file", "-e", f"{value}^{{commit}}")
         except subprocess.CalledProcessError:
@@ -1442,23 +1549,6 @@ def check_online(
                 f"{pid}: {value} is not a commit in {pin.get('repo')} — the pin "
                 f"names nothing"
             )
-            continue
-
-        if policy == "release":
-            tags = [
-                t
-                for t in git(repo, "tag", "--points-at", value).splitlines()
-                if re.fullmatch(r"v\d+\.\d+\.\d+", t.strip())
-            ]
-            if not tags:
-                errors.append(
-                    f"{pid}: declared `release` but no v<semver> tag points at "
-                    f"{value[:8]}. A release pin names something published and "
-                    f"immutable; this names a commit somebody stopped looking at."
-                )
-            else:
-                print(f"  ok   {pid}: release pin at {', '.join(tags)} — frozen, "
-                      f"drift is not a finding")
             continue
 
         if policy == "held":
