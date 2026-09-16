@@ -23,7 +23,7 @@
   flight duration, the explosion's damage and radius — are the wiki's and are
   marked **cited**; the rules built on them are **authored**.
 - **Numbers**: no spec or ADR beyond this one. **One new DW code**, `DW0899`
-  (§5). **`dsl_version` moves** to `0.29.0`: the effect vocabulary gains a verb.
+  (§5). **`dsl_version` moves**: the effect vocabulary gains a verb.
 - **Non-goals**: a `particle` verb (§7 names it as the next member of the
   class and stops); a rocket fired *at* something (a crossbow's shape); a
   firework a player holds or uses; a display of many rockets as one verb —
@@ -242,15 +242,16 @@ column(s) checked to H cell(s), P post(s) within reach examined, R refused`
 ## 8. Acceptance criteria
 
 Machine-checkable; each names its instrument and the result it has on the tree
-that lands it. `delvec` is this tree's `target/debug/delvec` (delvec 1.5.0, dsl
-0.29.0, mc 1.21.11); `gallery-prefabs` is the tree `prefabs/gallery-generator`
-writes.
+that lands it. `delvec` is this tree's `target/debug/delvec`, built from the
+crate manifests this tree carries; `gallery-prefabs` is the tree
+`prefabs/gallery-generator` writes.
 
 1. **The surface.** `delvec schema --stage all` exports `QuestEffect::firework`
    with `at` (a `Mark`), `flight` (`minimum: 1`, `maximum: 3`, optional) and
    `explosions` (`minItems: 1`, `maxItems: 7` of `{shape, colors, fade_colors,
    trail, twinkle}`), and a `FireworkShape` of exactly five string constants, at
-   `dsl_version` `0.29.0`; the effect union's `oneOf` names 38 verbs. *Met —
+   the `dsl_version` the crate manifest states; the effect union's `oneOf` names
+   38 verbs. *Met —
    `crates/dsl/tests/v29_firework.rs::the_schema_exports_the_verb_and_its_bounds`,
    `::the_schema_exports_the_explosion_and_its_colour_pattern`,
    `::the_effect_union_names_thirty_eight_verbs`; the export is 534011 bytes
