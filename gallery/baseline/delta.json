@@ -1,27 +1,27 @@
 {
-  "added": [],
-  "base_commit": "e3ccae7c401352bb0c5e35ca0e5e4f8387830b8a",
+  "added": [
+    "site-plan.en:datapack/data/gallery/structure/gallery-annex.nbt"
+  ],
+  "base_commit": "23f05e2a2546f3677bada316663c14d5d62e0681",
   "changed": [
-    "easy.en:render-plan.json",
-    "easy.en:validation/design-record.json",
-    "hard.en:render-plan.json",
-    "hard.en:validation/design-record.json",
-    "ocean-horizon.en:render-plan.json",
-    "ocean-horizon.en:validation/design-record.json",
-    "primary.en:render-plan.json",
-    "primary.en:validation/design-record.json",
-    "primary.zh-cn:render-plan.json",
-    "primary.zh-cn:validation/design-record.json",
+    "site-plan.en:creator-datapack/layout.json",
+    "site-plan.en:critical-path.json",
+    "site-plan.en:datapack/data/gallery/function/place_all.mcfunction",
+    "site-plan.en:datapack/data/gallery/function/place_verify.mcfunction",
+    "site-plan.en:datapack/data/gallery/function/setup.mcfunction",
+    "site-plan.en:datapack/data/gallery/function/setup_finish.mcfunction",
     "site-plan.en:render-plan.json",
-    "site-plan.en:validation/design-record.json",
-    "valley-site.en:render-plan.json",
-    "valley-site.en:validation/design-record.json",
-    "void-horizon.en:render-plan.json",
-    "void-horizon.en:validation/design-record.json"
+    "site-plan.en:validation/critical-path-waypoints.json",
+    "site-plan.en:validation/fluid-escape.json",
+    "site-plan.en:validation/piece-exposure.json",
+    "site-plan.en:validation/piece-mating.json",
+    "site-plan.en:validation/sea-seepage.json"
   ],
   "classes": {
-    "other": 8,
-    "validation ledger": 8
+    "creator overlay": 1,
+    "datapack function": 5,
+    "other": 2,
+    "validation ledger": 5
   },
   "removed": []
 }
