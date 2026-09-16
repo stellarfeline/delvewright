@@ -647,7 +647,8 @@ picture at the moment of approving.
 | `references[].time` / `.weather` | The sky the picture was drawn under, typed as `WorldTime` / `WorldWeather` — the world's own two enums, so an hour added to the world is an hour a row can state with no second table. These two tokens are the only **creative judgement** on this surface; everything else the check derives. |
 | The directory | `design/concept/` and `design/reference/` are the two directories an approved image lives in. A file there whose extension is one of `jpeg`, `jpg`, `png`, `webp` (`dsl::design::IMAGE_EXTENSIONS`, one constant) is an approved image and owes a row; anything else — the re-issue sidecars `tools/refimg.py` writes, a creator's notes — is neither counted nor refused. |
 | The comparison | `DW0890`, at validation: the set of skies the world can reach and the set the rows state must be equal, and every row must resolve to exactly one file and every file must have a row. |
-| The ledger | `validation/design-record.json`, written by **every** build — see `DW0890`. |
+| The camera | Every row is answered by a camera of `design/cameras.json` — `DW0900`, at the **build** (§7 `delvec cameras`), because a camera is written against a built world. A campaign with rows and no record at all builds, and is refused at the staging gate. |
+| The ledger | `validation/design-record.json`, written by **every** build — `references`, `image_files`, `by_directory`, `skies_stated`, `world`, `unrecorded_files`, `unresolved_rows` (`DW0890`) plus `cameras`, `answered` and `unanswered_rows` (`DW0900`). |
 
 ### The map pipeline — `geometry-brief` and `layout-graph` (optional; v0.13, spec-0049)
 
@@ -5034,6 +5035,12 @@ was never compared against anybody's stated intent.
 
 **Binding.** Every build that assembles a world prints `firework binding: F firework(s) declared, B burst column(s) checked to H cell(s), P post(s) within reach examined, R refused` — zeroes included — before the verdict is taken. A campaign that declares one also emits `validation/firework-gate.json`, with a row per firework naming its pointer, mark, launch cell, flight, column length and burst cell; a campaign that declares none emits no file, so a file reporting zero columns is a finding rather than an absence.
 
+### DW0900 — every approved image is answered (`compiler::design`; error; exit 3)
+
+| Code | Meaning |
+|------|---------|
+| `DW0900` | **An approved picture has no showcase camera** (spec-0070). A row of `design.json` that no camera of `design/cameras.json` answers. `compiler::design::answered`, raised beside `DW0890` from the same `DesignFiles`, **build tier (exit 3)**, after validation and analysis and **before `Plan::build` seats a piece or anything is written under `-o`** — and by `delvec cameras` at its own exit 2 when it emits scenes, one code in two tiers exactly as `DW0721` is. **The defect it generalises** (`drill3-03`): the built areas bore no resemblance to the approved design set, and nothing in the pipeline put the two side by side — the gallery recorded six approved pictures, stated two cameras that both answered the same one, and exited 0 with five pictures no view of the built world ever stood beside. **Why the build and not validation.** A camera row is written AGAINST a built world: `delvec cameras --preview` reads a build's `render-plan.json`, `delvec place-camera --report` reads a pose fired in a running server of a build, `--candidates` picks from a bracket emitted from one. Every view command validates the campaign first (`main::load_for_view` → `validate_stage` → `validate_loaded`), so a validation-tier refusal would refuse `--preview`, the instrument this rule's own remedy names. At the build the creator still has `validate`, `analyze`, `snapshot`, `cameras --preview` against the last built tree, `place-camera` and `contact-sheet`; the refusal leaves that tree on disk. **Why the ABSENT record is not refused here.** The first build of every campaign has no camera record — the record is made from that build — so a build that refused the absent record would refuse the state every campaign passes through between its design step and its first build, and the only way out would be a placeholder row. The absent record is a measured zero on the binding line and in the ledger, and it is refused at the event that hands a build to a person: `tools/staging-gate.py`, through `drill3-03`, whose binding is `answered`. **The pair reads together**: the build's refusal names *write a camera against the last built tree* and the staging gate's names the same move, so neither refuses what the other prescribes, and a creator who deletes the record to get a build through arrives at the gate with `answered: 0`. **One comparison, not two.** Both directions come out of `compiler::view::camera::tally` — the one function that compares the two documents, which `bind_answers` is. **The camera side at the build**: a camera whose `answers` names no row was refused by `delvec cameras` and accepted by the build, whose showcase proof parses the record and never asked; the build now holds the record to `design.json` through the same call, under `DW0721`, with that reader's own sentence. **It never opens an image** (spec-0028 §3, spec-0061 §12): it reads two JSON documents and compares two lists of names. What it asserts is that a stated view of the built world exists for every approved picture; whether the view LOOKS like the picture is a person's reading, made at the contact sheet and the storybook. **Every move it names is reachable** — write the camera, delete the picture and its row, delete the record and build — each a row in `crates/delvec/tests/remedy_reachability.rs` reaching a different verdict. **Binding**: appended to the design gate's line on every run, zeroes included — `showcase cameras: C in design/cameras.json answering K of N approved image(s)`, or `showcase cameras: none (no design/cameras.json); 0 of N approved image(s) answered`, or, for a record its reader refuses, a line saying so and counting nothing. A camera naming a row that does not exist is named on the same line. `delvec cameras --preview`, `delvec cameras` and `delvec place-camera` print the same `answers: K of N approved image(s) in design.json have a camera` sentence, so a creator placing cameras sees the count move without running a build. **Artifact**: `validation/design-record.json` gains `cameras`, `answered` and `unanswered_rows` (the design's own order) — `cameras: 0` means the record is absent, since a record that states no camera is refused by its reader. |
+
 ### DW0860–DW0863 — an objective keeps the promise its prompt makes (`compiler::promise`; error; exit 1)
 
 An objective carries exactly two player-facing strings — `title` and `hint` — and
@@ -6222,7 +6229,7 @@ the rule's domain is the more useful thing for the number to say.
 | `DW0702` | `delvec schem` | Source `DataVersion` ≠ pinned MC 1.21.11. |
 | `DW0710` | `delvec schem` | Input unreadable / not a Sponge schematic. |
 | `DW0720` | `delvec render` | Missing-texture (magenta) placeholder detected (fidelity gate; exit 4). |
-| `DW0721` | `delvec render` | Input (`.nbt`/metadata/`render-plan.json`/`design/cameras.json`) unreadable, a `cameras` record that breaks its rules (§7, `delvec cameras`; the same refusal stops `delvec build`, exit 3, since the build reads the record), a `place-camera` write the record refuses (an estimate over a `hand` row, a new hand row without `--answers`, another row's `answers`, a slot the report does not hold), a `panorama --subject` anchor the build did not resolve, a `scene`/`panorama`/`cameras` world save that is not there (no `level.dat` or no region file in `--world`, default `<build-dir>/world`; Chunky would render it as an empty frame at exit 0), or a `--view` that cannot be rendered as asked (exit 2). A declared view is refused **before any frame**: a malformed spec, a bearing given twice or not at all, a subject the piece does not declare (the message lists the anchors it does), or a name a planned shot already holds — which would overwrite that shot's image and quietly regress a review set. A view is never dropped or silently re-aimed: a set missing the one camera the reviewer asked for still looks complete in a directory listing. |
+| `DW0721` | `delvec render` | Input (`.nbt`/metadata/`render-plan.json`/`design/cameras.json`) unreadable, a `cameras` record that breaks its rules (§7, `delvec cameras`; the same refusal stops `delvec build`, exit 3, since the build reads the record — **including a camera whose `answers` names no row of `design.json`**, which the build read past until spec-0070 and now refuses through the record's one reader, with that reader's own sentence, before anything is placed), a `place-camera` write the record refuses (an estimate over a `hand` row, a new hand row without `--answers`, another row's `answers`, a slot the report does not hold), a `panorama --subject` anchor the build did not resolve, a `scene`/`panorama`/`cameras` world save that is not there (no `level.dat` or no region file in `--world`, default `<build-dir>/world`; Chunky would render it as an empty frame at exit 0), or a `--view` that cannot be rendered as asked (exit 2). A declared view is refused **before any frame**: a malformed spec, a bearing given twice or not at all, a subject the piece does not declare (the message lists the anchors it does), or a name a planned shot already holds — which would overwrite that shot's image and quietly regress a review set. A view is never dropped or silently re-aimed: a set missing the one camera the reviewer asked for still looks complete in a directory listing. |
 | `DW0722` | `delvec render` | Output file could not be written (exit 3). |
 | `DW0723` | `delvec render` | GPU renderer failed / textures absent (exit 5). |
 | `DW0724` | `delvec` (visual tier) | **A render-plan camera's eye cell is occupied** (solid/water) in the FINAL assembled world — the frame would render the inside of a block, and a picture of the inside of a block is indistinguishable from a picture of a featureless room. `compiler::nav::verify_camera_eyes`, over **every** shot the plan holds: `spawn`, `interior`, `seam`, `npc`, `interact`, `gate` and `pov`. It is bound at the derivation, not at a call site — `render_plan::render_plan` is the only constructor of a plan document and it takes the world, and every kind enters the shot list through one `push` that records the eye from the same position it writes into the camera, so a kind added later is covered without anyone remembering. (It was bound to `pov` alone, which is the kind that happened to need it first; the identical defect on a seam camera standing inside a hung ceiling lantern was invisible to every build in the repository.) Two verdicts, decided by the object rather than by the author. **`pov`** is the player's own eye, 1.62 above a DW0314-proven-standable waypoint, so it is clear by construction and is never moved: a violation there is the derivation changing (or a later pass mutating the cell) and fails the build (exit 3) — fix the derivation, never the waypoint or the geometry. **Every other kind** states a fixed stand-off from a subject it frames, which is a preference and not a position: a camera whose own cell holds a block stands instead at the furthest clear point on its own sight line (`compiler::camera::stand_in_open_air`) and records `camera.requested_pos` + `camera.standoff` on its shot, because a displaced camera is invisible in its own frame. It yields to that one fact and nothing else — an interior shot's dollhouse eye is deliberately above the piece and is not pulled through the roof it looks past. The error survives for those kinds too: it fires when even the subject's own cell is buried, so there is no vantage on the sight line at all. Every plan states the proof's binding counts (`camera_eye_proof`: `cameras` examined, `pulled_in`), and a plan holding zero cameras is a warning under the same code rather than a silent pass. **Second shape — every showcase camera of `design/cameras.json`** (spec-0069): its lens cell is clear, its lens is inside the build height, and its view ray meets the scene's loaded extent; a showcase camera is never moved, so each violation refuses (exit 3) naming the row, with `camera_eye_proof.showcase` its count. Numbered in the `DW072x` visual/render range. Scale, measured over every campaign and fixture that builds before this binding existed: **204 of 752 cameras stood inside a block** — 144 seam, 38 gate, 16 NPC, 6 interact, 0 POV — and every one of the 27 campaigns had at least one. |
@@ -7039,9 +7046,11 @@ in the `--camera` convention above, vertical `fov`, `exposure`, `width`,
 `height`, `source` (`estimated` or `hand`), `spp`. Keys are alphabetical, so the
 record a tool writes is already canonical. The record is not a stage document
 and reaches neither the datapack nor the plan's shots; `delvec build` reads it
-as a hashed input and proves every camera in it (`DW0724`, above), so the only
-bytes of the build it moves are `manifest.json`'s input hash and
-`render-plan.json`'s `camera_eye_proof.showcase`.
+as a hashed input, proves every camera in it (`DW0724`, above) and holds it to
+`design.json` in both directions — every camera answers a row (`DW0721`) and
+every row is answered (`DW0900`) — so the only bytes of the build it moves are
+`manifest.json`'s input hash, `render-plan.json`'s `camera_eye_proof.showcase`
+and `validation/design-record.json`'s three camera keys.
 
 Emission writes one Chunky scene per camera (`<campaign>_camera_<name>.json`)
 against a build's `render-plan.json`: the camera verbatim, rounded to six
@@ -7054,8 +7063,11 @@ before any file: a record that does not parse or carries an unknown key, an
 illegal name, two cameras of one name, an empty `answers` or one naming no row,
 a non-positive exposure, a pitch outside −90..90, a field of view outside
 (0, 180), a zero frame or sample target, an empty record, a record for another
-campaign than the build, an `--only` name the record lacks. Every run prints how
-many approved images have a camera and names the rest.
+campaign than the build, an `--only` name the record lacks. **Scene emission is
+also held to `DW0900`** (exit 2): a record leaving any approved image unanswered
+emits no scene, `--only` included, because the record is what is judged and a
+set with a hole in it is not a set. Every run prints how many approved images
+have a camera and names the rest.
 
 `--bracket` appends, after each camera, the camera moved one field by one step
 each way (`dolly` along the heading, `truck` to the frame's right, `rise` up),
@@ -7067,7 +7079,9 @@ assembles the world as `snapshot` does (it reads `--prefabs`) and rasterises eac
 camera at half its frame as `<stem>_preview.png`, byte-identical to `snapshot
 --camera` with the same numbers, and names each camera whose lens is inside or
 within `LENS_CLEARANCE` (0.25 block) of a placed block, with a `lens:` binding
-line — a report, since the grid counts every block as a full cube. Byte-deterministic (ADR-0006): the same record,
+line — a report, since the grid counts every block as a full cube. It draws any
+record its reader accepts and is never refused by `DW0900`: it is the instrument
+that closes the hole, and it prints the count it is closing. Byte-deterministic (ADR-0006): the same record,
 plan and options give the same scene, candidate and preview bytes.
 
 ### `delvec place-camera` — the record's one writer
@@ -7090,7 +7104,9 @@ exposure. `--candidates` writes the named camera of a record-format file
 refused, naming the row**; only `--delete` frees the name. A row keeps its
 `answers`: a different `--answers` for an existing row is refused (a camera
 aimed at another picture is a new row). The written record is held to
-`design.json` like `delvec cameras` holds it. Refusals are `DW0721` (exit 2) and
+`design.json` like `delvec cameras` holds it, and the same
+`answers: K of N approved image(s) …` line is printed after the write, so the
+count moves under the creator's hand. Refusals are `DW0721` (exit 2) and
 write nothing.
 
 ### `delvec edit apply` / `delvec edit preview` (spec-0017)

@@ -1284,8 +1284,16 @@ Everything else a frame needs comes from the build and is not restated: the
 declared hour's sun, the layout and its landform in the chunk list, the ocean
 plane. A record for another campaign than the build, two cameras of one name, a
 pitch past vertical, a zero frame or sample target, and an empty record are
-refused (`DW0721`) before any scene is written. Every run states how many of
-`design.json`'s approved images have a camera and names the ones that do not.
+refused (`DW0721`) before any scene is written. **Every approved image is
+answered, or nothing is emitted**: `delvec cameras` writes no scene while a row
+of `design.json` has no camera (`DW0900`, exit 2), `--only` included, and
+`delvec build` refuses the same record (exit 3) before it seats a piece.
+`delvec cameras --preview`, `delvec cameras` and `delvec place-camera` each
+print `answers: K of N approved image(s) in design.json have a camera` and name
+the rest, so the count moves while the cameras are being placed; `--preview` is
+never refused by that rule, because it is the instrument that closes the hole.
+A campaign that has placed no camera at all builds — its first build is what a
+camera is estimated against — and is refused at the staging gate instead.
 
 **`delvec place-camera` writes this record** (`compiler.md` §7 has the rules). A
 first estimate is written into the record by hand as `estimated`; every later

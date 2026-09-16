@@ -835,8 +835,13 @@ fn run_place_camera(
         Ok(r) => r,
         Err(d) => return fail(d, json, exit::INPUT),
     };
-    if let Err(d) = camera::bind_answers(&written, &rows) {
-        return fail(d, json, exit::INPUT);
+    let answers = camera::tally(&written, &rows);
+    if let Some((name, a)) = answers.stray.first() {
+        return fail(
+            Diagnostic::error(DW_INPUT, camera::stray_message(name, a, &rows)),
+            json,
+            exit::INPUT,
+        );
     }
     let bytes = match camera::sheet_bytes(&written) {
         Ok(b) => b,
@@ -864,6 +869,9 @@ fn run_place_camera(
         row.fov,
         row.answers
     );
+    // The count a creator is placing cameras to move (spec-0070 §5), so it moves
+    // under their hand rather than at the next build.
+    eprintln!("{}", answers.line());
     ExitCode::SUCCESS
 }
 
@@ -888,14 +896,40 @@ fn run_cameras(
             Ok(s) => s,
             Err(d) => return fail(d, json, exit::INPUT),
         };
-    let rows = match read(campaign.join("design.json")).and_then(|b| camera::reference_names(&b)) {
+    let rows = match read(campaign.join("design.json")).and_then(|b| camera::reference_rows(&b)) {
         Ok(r) => r,
         Err(d) => return fail(d, json, exit::INPUT),
     };
-    let unanswered = match camera::bind_answers(&sheet, &rows) {
-        Ok(u) => u,
-        Err(d) => return fail(d, json, exit::INPUT),
-    };
+    // **Every approved picture is answered** (`DW0900`, spec-0070). Read where
+    // the record is read FRESH, so a record edited after the build cannot emit a
+    // set with a hole in it; `--only` selects which scenes are written and
+    // exempts nothing, because the record is what is judged. `--preview` is the
+    // instrument that closes the hole and is not this path.
+    let answers = camera::tally(
+        &sheet,
+        &rows.iter().map(|r| r.name.clone()).collect::<Vec<_>>(),
+    );
+    if let Some((name, a)) = answers.stray.first() {
+        let names: Vec<String> = rows.iter().map(|r| r.name.clone()).collect();
+        return fail(
+            Diagnostic::error(
+                camera::DW_RECORD_AT_BUILD.id(),
+                camera::stray_message(name, a, &names),
+            ),
+            json,
+            exit::INPUT,
+        );
+    }
+    if !answers.unanswered.is_empty() {
+        return fail(
+            Diagnostic::error(
+                crate::compiler::design::DW_DESIGN_ANSWERED.id(),
+                crate::compiler::design::unanswered_message(&rows, &answers),
+            ),
+            json,
+            exit::INPUT,
+        );
+    }
     opts.world_path = match resolve_world(build_dir, world) {
         Ok(w) => w,
         Err(d) => return fail(d, json, exit::INPUT),
@@ -942,16 +976,7 @@ fn run_cameras(
             String::new()
         }
     );
-    eprintln!(
-        "answers: {} of {} approved image(s) in design.json have a camera{}",
-        rows.len() - unanswered.len(),
-        rows.len(),
-        if unanswered.is_empty() {
-            String::new()
-        } else {
-            format!("; none answers {}", unanswered.join(", "))
-        }
-    );
+    eprintln!("{}", answers.line());
     ExitCode::SUCCESS
 }
 

@@ -1971,3 +1971,144 @@ fn dw0897_shortening_the_offset_ends_green() {
         "and DW0896 is green over the shortened rank"
     );
 }
+
+// ---------------------------------------------------------------------------
+// DW0900 — every approved image is answered
+// ---------------------------------------------------------------------------
+//
+// Three moves, all three taken here: write the camera, delete the picture and
+// its row, or delete the record and build. The third is the one a creator with
+// no built tree to preview against has to be able to take, and it is the one a
+// rule that refused the absent record would have closed.
+
+/// Write `design/cameras.json` answering `rows`, every camera at `pos`.
+fn design_cameras(camp: &Path, pos: [f64; 3], rows: &[(&str, &str)]) {
+    let cams: Vec<serde_json::Value> = rows
+        .iter()
+        .map(|(name, answers)| {
+            serde_json::json!({
+                "answers": answers, "exposure": 1.0, "fov": 70.0, "height": 90,
+                "name": name, "pitch": 10.0, "pos": pos, "source": "estimated",
+                "spp": 16, "width": 160, "yaw": 0.0
+            })
+        })
+        .collect();
+    std::fs::create_dir_all(camp.join("design")).unwrap();
+    std::fs::write(
+        camp.join("design/cameras.json"),
+        serde_json::to_vec_pretty(&serde_json::json!({
+            "campaign_id": "hello-world", "cameras": cams
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+}
+
+/// The eye of a plain hello-world build's first player-POV shot — a point that
+/// build proved clear, so a showcase camera there passes `DW0724` and the
+/// verdict this row reads is about `DW0900` and nothing else.
+fn proven_eye(tag: &str) -> [f64; 3] {
+    let camp = design_campaign(tag, "noon", &[], &[]);
+    let out = tmp(&format!("eye-out-{tag}"));
+    let r = delvec(&[
+        "build",
+        camp.to_str().unwrap(),
+        "-o",
+        out.to_str().unwrap(),
+        "--prefabs",
+        common::prefabs_dir().to_str().unwrap(),
+    ]);
+    assert_eq!(r.status.code(), Some(0), "{}", log(&r));
+    let plan: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(out.join("render-plan.json")).unwrap()).unwrap();
+    let pov = plan["shots"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|s| s["kind"] == "pov")
+        .expect("hello-world has a walked POV")
+        .clone();
+    serde_json::from_value(pov["camera"]["pos"].clone()).unwrap()
+}
+
+/// **`AUTHOR a camera for each`**, **`DELETE the picture and its row from
+/// `design.json``** and **`DELETE `design/cameras.json`, build`** — the three
+/// moves `DW0900`'s message names, each reaching a build.
+#[test]
+fn dw0900_writing_the_camera_deleting_the_picture_and_deleting_the_record_all_build() {
+    let dir = common::prefabs_dir();
+    let eye = proven_eye("answered-eye");
+    let two = [
+        ("concept/shore-far", "noon", "clear"),
+        ("concept/tower-far", "noon", "clear"),
+    ];
+
+    let red = design_campaign(
+        "answered-red",
+        "noon",
+        &["concept/shore-far.png", "concept/tower-far.png"],
+        &two,
+    );
+    design_cameras(&red, eye, &[("shore", "concept/shore-far")]);
+    let (code, before) = build("answered-red", &red, &dir);
+    assert_eq!(code, 3, "refused:\n{before}");
+    assert!(before.contains("DW0900"), "{before}");
+    assert!(
+        before.contains("(1) AUTHOR a camera for each"),
+        "the message names the move:\n{before}"
+    );
+    assert!(
+        before.contains("(2) DELETE the picture and its row from `design.json`"),
+        "and the second one:\n{before}"
+    );
+    assert!(
+        before.contains("(3) DELETE `design/cameras.json`, build"),
+        "and the third:\n{before}"
+    );
+
+    // Move one: write the missing camera.
+    let a = design_campaign(
+        "answered-camera",
+        "noon",
+        &["concept/shore-far.png", "concept/tower-far.png"],
+        &two,
+    );
+    design_cameras(
+        &a,
+        eye,
+        &[
+            ("shore", "concept/shore-far"),
+            ("tower", "concept/tower-far"),
+        ],
+    );
+    let (code, after) = build("answered-camera", &a, &dir);
+    assert_eq!(code, 0, "the second camera builds:\n{after}");
+    assert!(!after.contains("DW0900 [error]"), "{after}");
+
+    // Move two: delete the picture nobody drew a camera for, and its row.
+    let b = design_campaign(
+        "answered-delete-row",
+        "noon",
+        &["concept/shore-far.png"],
+        &two[..1],
+    );
+    design_cameras(&b, eye, &[("shore", "concept/shore-far")]);
+    let (code, after) = build("answered-delete-row", &b, &dir);
+    assert_eq!(code, 0, "deleting the picture and its row builds:\n{after}");
+    assert!(!after.contains("DW0900 [error]"), "{after}");
+
+    // Move three: delete the record, build, and write it against that build.
+    let c = design_campaign(
+        "answered-delete-record",
+        "noon",
+        &["concept/shore-far.png", "concept/tower-far.png"],
+        &two,
+    );
+    let (code, after) = build("answered-delete-record", &c, &dir);
+    assert_eq!(code, 0, "with no record at all the build runs:\n{after}");
+    assert!(!after.contains("DW0900 [error]"), "{after}");
+    assert!(
+        after.contains("showcase cameras: none (no design/cameras.json); 0 of 2"),
+        "and the zero is measured, not silent:\n{after}"
+    );
+}

@@ -3,14 +3,14 @@
     {
       "answers": "concept/noon-hall",
       "exposure": 1.0,
-      "fov": 50.0,
+      "fov": 46.0,
       "height": 900,
       "name": "hall-exterior",
-      "pitch": 20.0,
+      "pitch": 9.4,
       "pos": [
-        44.5,
-        82.0,
-        44.5
+        46.5,
+        74.0,
+        46.5
       ],
       "source": "estimated",
       "spp": 300,
@@ -23,13 +23,13 @@
       "fov": 70.0,
       "height": 900,
       "name": "hall-from-its-corner",
-      "pitch": 15.0,
+      "pitch": 4.1,
       "pos": [
         2.5,
-        71.5,
+        67.5,
         2.5
       ],
-      "source": "hand",
+      "source": "estimated",
       "spp": 768,
       "width": 1600,
       "yaw": 315.0
@@ -40,33 +40,33 @@
       "fov": 46.0,
       "height": 900,
       "name": "quay-from-the-water",
-      "pitch": 4.0,
+      "pitch": 8.8,
       "pos": [
-        -16.5,
-        73.0,
-        -13.5
+        501.5,
+        64.8,
+        9.5
       ],
       "source": "estimated",
       "spp": 300,
       "width": 1600,
-      "yaw": 312.1
+      "yaw": 246.0
     },
     {
       "answers": "concept/night-quay",
       "exposure": 6.0,
-      "fov": 60.0,
+      "fov": 58.0,
       "height": 900,
       "name": "quay-after-dark",
-      "pitch": -1.9,
+      "pitch": 4.4,
       "pos": [
-        -8.5,
-        69.5,
-        -6.5
+        504.5,
+        63.5,
+        12.5
       ],
       "source": "estimated",
       "spp": 300,
       "width": 1600,
-      "yaw": 309.6
+      "yaw": 234.5
     },
     {
       "answers": "concept/dusk-rampart",
@@ -74,28 +74,28 @@
       "fov": 42.0,
       "height": 900,
       "name": "rampart-against-the-sky",
-      "pitch": 2.7,
+      "pitch": 3.0,
       "pos": [
-        41.5,
-        75.2,
-        36.5
+        44.5,
+        71.5,
+        40.5
       ],
       "source": "estimated",
       "spp": 300,
       "width": 1600,
-      "yaw": 112.7
+      "yaw": 121.2
     },
     {
       "answers": "concept/midnight-crypt",
       "exposure": 8.0,
-      "fov": 62.0,
+      "fov": 64.0,
       "height": 900,
       "name": "crypt-stair",
-      "pitch": 15.8,
+      "pitch": -4.1,
       "pos": [
-        11.5,
-        70.5,
-        11.5
+        8.5,
+        64.5,
+        8.5
       ],
       "source": "estimated",
       "spp": 300,
@@ -105,19 +105,19 @@
     {
       "answers": "concept/dawn-approach",
       "exposure": 1.0,
-      "fov": 48.0,
+      "fov": 46.0,
       "height": 900,
       "name": "approach-at-first-light",
-      "pitch": 7.5,
+      "pitch": 12.0,
       "pos": [
         278.5,
-        74.0,
-        30.5
+        70.0,
+        28.5
       ],
       "source": "estimated",
       "spp": 300,
       "width": 1600,
-      "yaw": 137.7
+      "yaw": 136.4
     }
   ],
   "campaign_id": "gallery"

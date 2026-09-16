@@ -77,6 +77,14 @@ use crate::compiler::view::scene::{
 /// Where the record lives inside a campaign directory.
 pub const CAMERAS_FILE: &str = "design/cameras.json";
 
+/// `DW0721` **as the build raises it**: the record's own rules — a document that
+/// is the record, a camera that answers a row that exists — read by a run that
+/// consumes the record and therefore reads all of it. The same code
+/// `delvec cameras` refuses those rules under, at the build's tier, so the two
+/// give one answer (spec-0070 §5).
+pub const DW_RECORD_AT_BUILD: delvewright_dsl::DwCode =
+    delvewright_dsl::DwCode::new(DW_INPUT, delvewright_dsl::ExitTier::Build);
+
 /// The file `--bracket` writes the candidates into, in the output directory.
 pub const CANDIDATES_FILE: &str = "candidates.json";
 
@@ -267,8 +275,22 @@ pub fn parse_sheet(bytes: &[u8]) -> Result<CameraSheet, Diagnostic> {
     Ok(sheet)
 }
 
-/// The names of the approved-image rows a `design.json` carries.
-pub fn reference_names(design_json: &[u8]) -> Result<Vec<String>, Diagnostic> {
+/// One row of `design.json` as the camera surface reads it: the name a camera
+/// answers, and the sentence that says which picture it is.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ApprovedRow {
+    /// The row's `name`: `concept/morning-quay`.
+    pub name: String,
+    /// The row's `shows` sentence, empty when the document states none.
+    pub shows: String,
+}
+
+/// The approved-image rows a `design.json` carries, in the design's own order.
+///
+/// The one parse of that document on this side of the engine
+/// ([`reference_names`] is this function's names), so every camera command and
+/// the build read the record the same way.
+pub fn reference_rows(design_json: &[u8]) -> Result<Vec<ApprovedRow>, Diagnostic> {
     let doc: serde_json::Value = serde_json::from_slice(design_json)
         .map_err(|e| Diagnostic::error(DW_INPUT, format!("parse design.json: {e}")))?;
     let rows = doc
@@ -284,36 +306,118 @@ pub fn reference_names(design_json: &[u8]) -> Result<Vec<String>, Diagnostic> {
         })?;
     Ok(rows
         .iter()
-        .filter_map(|r| r.get("name").and_then(|n| n.as_str()).map(str::to_string))
+        .filter_map(|r| {
+            let name = r.get("name").and_then(|n| n.as_str())?;
+            Some(ApprovedRow {
+                name: name.to_string(),
+                shows: r
+                    .get("shows")
+                    .and_then(|s| s.as_str())
+                    .unwrap_or_default()
+                    .to_string(),
+            })
+        })
         .collect())
+}
+
+/// The names of the approved-image rows a `design.json` carries.
+pub fn reference_names(design_json: &[u8]) -> Result<Vec<String>, Diagnostic> {
+    Ok(reference_rows(design_json)?
+        .into_iter()
+        .map(|r| r.name)
+        .collect())
+}
+
+/// **What a camera record answers of a design record's rows** — the one
+/// comparison between the two documents (spec-0070 §2).
+///
+/// Both directions come out of one walk, because they are one question asked
+/// from two ends: a camera whose `answers` names no row is `stray`, and a row no
+/// camera names is `unanswered`. Nothing else in this engine compares the two
+/// documents; [`bind_answers`] is this function, refused at the first stray.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Answers {
+    /// How many cameras the record states.
+    pub cameras: usize,
+    /// Rows at least one camera answers, in the design's order.
+    pub answered: Vec<String>,
+    /// Rows no camera answers, in the design's order.
+    pub unanswered: Vec<String>,
+    /// `(camera name, what it answers)` for every camera naming no row, in the
+    /// record's order.
+    pub stray: Vec<(String, String)>,
+}
+
+impl Answers {
+    /// How many rows were counted: the design record's own denominator.
+    pub fn rows(&self) -> usize {
+        self.answered.len() + self.unanswered.len()
+    }
+
+    /// The one sentence every camera command prints about the two records,
+    /// zeroes included.
+    pub fn line(&self) -> String {
+        format!(
+            "answers: {} of {} approved image(s) in design.json have a camera{}",
+            self.answered.len(),
+            self.rows(),
+            if self.unanswered.is_empty() {
+                String::new()
+            } else {
+                format!("; none answers {}", self.unanswered.join(", "))
+            }
+        )
+    }
+}
+
+/// Count what the record answers of `rows` — see [`Answers`].
+pub fn tally(sheet: &CameraSheet, rows: &[String]) -> Answers {
+    let mut a = Answers {
+        cameras: sheet.cameras.len(),
+        ..Answers::default()
+    };
+    for cam in &sheet.cameras {
+        if !rows.iter().any(|r| r == &cam.answers) {
+            a.stray.push((cam.name.clone(), cam.answers.clone()));
+        }
+    }
+    for r in rows {
+        if sheet.cameras.iter().any(|c| &c.answers == r) {
+            a.answered.push(r.clone());
+        } else {
+            a.unanswered.push(r.clone());
+        }
+    }
+    a
 }
 
 /// Every camera answers a row that exists. Returns the rows no camera answers,
 /// in the design's own order.
+///
+/// The refusal's sentence is the one the build raises too (`DW0721`,
+/// spec-0070 §5): the record has one reader, so it has one answer.
 pub fn bind_answers(sheet: &CameraSheet, rows: &[String]) -> Result<Vec<String>, Diagnostic> {
-    for cam in &sheet.cameras {
-        if !rows.iter().any(|r| r == &cam.answers) {
-            return Err(Diagnostic::error(
-                DW_INPUT,
-                format!(
-                    "{CAMERAS_FILE}: camera `{}` answers `{}`, which is not a row of design.json. \
-                     Rows: {}",
-                    cam.name,
-                    cam.answers,
-                    if rows.is_empty() {
-                        "none".to_string()
-                    } else {
-                        rows.join(", ")
-                    }
-                ),
-            ));
-        }
+    let a = tally(sheet, rows);
+    if let Some((name, answers)) = a.stray.first() {
+        return Err(Diagnostic::error(
+            DW_INPUT,
+            stray_message(name, answers, rows),
+        ));
     }
-    Ok(rows
-        .iter()
-        .filter(|r| !sheet.cameras.iter().any(|c| &c.answers == *r))
-        .cloned()
-        .collect())
+    Ok(a.unanswered)
+}
+
+/// The sentence a camera answering no row earns, wherever it is read.
+pub fn stray_message(name: &str, answers: &str, rows: &[String]) -> String {
+    format!(
+        "{CAMERAS_FILE}: camera `{name}` answers `{answers}`, which is not a row of design.json. \
+         Rows: {}",
+        if rows.is_empty() {
+            "none".to_string()
+        } else {
+            rows.join(", ")
+        }
+    )
 }
 
 /// The steps a bracket moves a camera by. A zero step is not bracketed.

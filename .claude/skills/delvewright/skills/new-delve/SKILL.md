@@ -125,6 +125,7 @@ Decide          areas[] or a site plan — one campaign, one    ── §Which p
  6  fmt         delvec fmt              ← every campaign, not optional
  7  analyze     analyze the quest graph
  8  build       build the datapack and the world
+ 8b cameras     one showcase camera per approved image
  9  the walk    STOP — the user walks the blockout, you wait
 10  ladder      PackTest · bot · branch runs
 11  chronicle   only when the plan declares branch_points
@@ -329,6 +330,21 @@ dead quest is a design bug. **Read**: `references/build.md`.
 `"$DELVEWRIGHT_ENGINE/validation/delve-output"`, `critical-path.json` and
 `render-plan.json`; on a site-plan campaign the three hashes and the pacing
 line. Must exit 0. **Read**: `references/build.md`.
+
+## 8b. The showcase cameras
+
+**Needs**: step 8's tree. **Produces**: `campaigns/<id>/design/cameras.json`,
+one showcase camera per approved image of `design.json`. Estimate each from the
+picture — which side, how high, how close, how wide, what the point of interest
+is — then draw it against the tree step 8 built and move it until the picture is
+in the frame. An approved picture with no camera stops the next build, naming
+the pictures, and stops the staging gate in step 14, so this is before the walk
+and not after it. A camera answers one picture: never re-aim one at a second,
+write another row. The engine at the pinned release does not carry the
+showcase-camera subcommands; the tool, its flags and the craft are
+`$DELVEWRIGHT_ENGINE/docs/reference/showcase-shots.md` §4 and
+`$DELVEWRIGHT_ENGINE/docs/reference/tools.md` §4a, read at the engine you built
+in Init.
 
 ## 9. The walk — STOP, this one is the user's
 
