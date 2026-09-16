@@ -1,0 +1,35 @@
+{
+  "actions": [
+    {
+      "action": {
+        "command": "/trigger dw.class set 1",
+        "type": "minecraft:run_command"
+      },
+      "label": {
+        "fallback": "Measurer",
+        "translate": "delve.metrics-gym.class.measurer.name"
+      },
+      "tooltip": {
+        "fallback": "A rule, a lamp and nothing worth carrying.",
+        "translate": "delve.metrics-gym.class.measurer.blurb"
+      }
+    }
+  ],
+  "after_action": "close",
+  "body": [
+    {
+      "contents": {
+        "fallback": "Pick the kit you will carry.",
+        "translate": "delve.metrics-gym.delvewright.ui.class.body"
+      },
+      "type": "minecraft:plain_message"
+    }
+  ],
+  "can_close_with_escape": false,
+  "columns": 1,
+  "title": {
+    "fallback": "Choose your class",
+    "translate": "delve.metrics-gym.delvewright.ui.class.title"
+  },
+  "type": "minecraft:multi_action"
+}

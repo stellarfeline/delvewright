@@ -1,0 +1,31 @@
+{
+  "actions": [
+    {
+      "action": {
+        "command": "/trigger dw.dlg_invigilator set 1",
+        "type": "minecraft:run_command"
+      },
+      "label": {
+        "fallback": "What am I looking for?",
+        "translate": "delve.metrics-gym.dlg.invigilator.greeting.opt.0.label"
+      }
+    }
+  ],
+  "after_action": "close",
+  "body": [
+    {
+      "contents": {
+        "fallback": "This is the smallest place the ladder allows. Walk east until it stops getting bigger, and tell me where you stopped believing in the sizes.",
+        "translate": "delve.metrics-gym.dlg.invigilator.greeting.text"
+      },
+      "type": "minecraft:plain_message"
+    }
+  ],
+  "can_close_with_escape": true,
+  "columns": 1,
+  "title": {
+    "fallback": "The Invigilator",
+    "translate": "delve.metrics-gym.npc.invigilator.name"
+  },
+  "type": "minecraft:multi_action"
+}

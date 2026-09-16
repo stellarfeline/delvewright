@@ -851,10 +851,17 @@ def test_a_trigger_the_overlay_does_not_register_reds(mod, tree, engine):
 
 
 def test_a_moved_layout_manifest_reds(mod, tree, engine):
+    """One occurrence is enough, and the page names the path more than once.
+
+    `edit` demands a unique match, which is the right rule for a perturbation
+    that must land somewhere known — so the anchor here is the whole invocation
+    that carries the path, not the path alone. Moving one occurrence is what the
+    rule sees: it reads every `creator-datapack/` path a page file names.
+    """
     edit(
         tree / "references" / "tools-by-symptom.md",
-        "<out>/creator-datapack/layout.json",
-        "<out>/creator-datapack/manifest.json",
+        "calibrate\n  <report> --layout <out>/creator-datapack/layout.json",
+        "calibrate\n  <report> --layout <out>/creator-datapack/manifest.json",
     )
     assert has(run(mod, engine), "names path `creator-datapack/manifest.json`")
 

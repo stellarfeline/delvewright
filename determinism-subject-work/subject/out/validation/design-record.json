@@ -1,0 +1,22 @@
+{
+  "answered": 0,
+  "by_directory": {
+    "concept": 0,
+    "reference": 0
+  },
+  "cameras": 0,
+  "image_files": 0,
+  "references": 0,
+  "skies_stated": [],
+  "unanswered_rows": [],
+  "unrecorded_files": [],
+  "unresolved_rows": [],
+  "world": {
+    "times": [
+      "noon"
+    ],
+    "weathers": [
+      "clear"
+    ]
+  }
+}

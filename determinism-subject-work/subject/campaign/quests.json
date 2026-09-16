@@ -1,0 +1,64 @@
+{
+  "campaign_id": "metrics-gym",
+  "content": {
+    "quests": [
+      {
+        "cast": {
+          "npc/invigilator": {
+            "at": "anchor/node-alcove-least",
+            "dialogue": "dlg/greeting",
+            "doing": "standing in the smallest bay with a rule in her hand"
+          }
+        },
+        "happening": {
+          "subject": "npc/invigilator",
+          "text": "The party arrives at the small end of the ladder.",
+          "verb": "arrives"
+        },
+        "id": "quest/walk-the-ladder",
+        "objectives": [
+          {
+            "happening": {
+              "subject": "npc/invigilator",
+              "text": "The Invigilator explains what the walk is for.",
+              "verb": "learns"
+            },
+            "hint": "The Invigilator stands in the smallest bay.",
+            "id": "obj/hear-the-brief",
+            "npc": "npc/invigilator",
+            "title": "Hear the brief",
+            "type": "talk-to"
+          },
+          {
+            "after": [
+              "obj/hear-the-brief"
+            ],
+            "anchor": "anchor/node-road-16-wide",
+            "happening": {
+              "text": "The party crosses the largest bay the ladder admits.",
+              "verb": "arrives"
+            },
+            "id": "obj/reach-the-far-end",
+            "radius": 3,
+            "title": "Walk to the far end",
+            "type": "reach-anchor"
+          }
+        ],
+        "on_complete": [
+          {
+            "happening": {
+              "text": "The ladder has been walked end to end.",
+              "verb": "departs"
+            },
+            "type": "campaign-complete"
+          }
+        ],
+        "trigger": {
+          "type": "campaign-start"
+        }
+      }
+    ]
+  },
+  "dsl_version": "0.29.0",
+  "stage": "quests"
+}

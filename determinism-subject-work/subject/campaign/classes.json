@@ -1,0 +1,25 @@
+{
+  "campaign_id": "metrics-gym",
+  "content": {
+    "classes": [
+      {
+        "blurb": "A rule, a lamp and nothing worth carrying.",
+        "id": "class/measurer",
+        "kit": [
+          {
+            "count": 1,
+            "item": "minecraft:stick",
+            "name": "Rule"
+          },
+          {
+            "count": 3,
+            "item": "minecraft:bread"
+          }
+        ],
+        "name": "Measurer"
+      }
+    ]
+  },
+  "dsl_version": "0.29.0",
+  "stage": "classes"
+}

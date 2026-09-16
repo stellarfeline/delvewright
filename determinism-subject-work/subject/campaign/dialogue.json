@@ -1,0 +1,44 @@
+{
+  "campaign_id": "metrics-gym",
+  "content": {
+    "dialogues": [
+      {
+        "nodes": [
+          {
+            "id": "dlg/greeting",
+            "options": [
+              {
+                "label": "What am I looking for?",
+                "next": "dlg/what"
+              },
+              {
+                "effects": [
+                  {
+                    "objective": "obj/hear-the-brief",
+                    "type": "complete-objective"
+                  }
+                ],
+                "label": "Understood."
+              }
+            ],
+            "text": "This is the smallest place the ladder allows. Walk east until it stops getting bigger, and tell me where you stopped believing in the sizes."
+          },
+          {
+            "id": "dlg/what",
+            "options": [
+              {
+                "label": "Back.",
+                "next": "dlg/greeting"
+              }
+            ],
+            "text": "Whether a rung feels like the rung below it. Whether a doorway is one you would put a party through. Whether the climb is one you would make twice."
+          }
+        ],
+        "npc": "npc/invigilator",
+        "root": "dlg/greeting"
+      }
+    ]
+  },
+  "dsl_version": "0.29.0",
+  "stage": "dialogue"
+}

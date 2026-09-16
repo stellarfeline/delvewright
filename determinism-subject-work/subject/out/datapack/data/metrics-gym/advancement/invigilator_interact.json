@@ -1,0 +1,16 @@
+{
+  "criteria": {
+    "interact": {
+      "conditions": {
+        "entity": {
+          "nbt": "{Tags:[\"dw_npc_invigilator\"]}",
+          "type": "minecraft:interaction"
+        }
+      },
+      "trigger": "minecraft:player_interacted_with_entity"
+    }
+  },
+  "rewards": {
+    "function": "metrics-gym:talk_invigilator"
+  }
+}

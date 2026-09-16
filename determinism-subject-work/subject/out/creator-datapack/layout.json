@@ -1,0 +1,233 @@
+{
+  "anchors": [
+    {
+      "area": "area/site",
+      "id": "anchor/node-alcove-least",
+      "kind": "point",
+      "pos": [
+        5,
+        64,
+        5
+      ]
+    },
+    {
+      "area": "area/site",
+      "id": "anchor/node-alcove-most",
+      "kind": "point",
+      "pos": [
+        12,
+        64,
+        7
+      ]
+    },
+    {
+      "area": "area/site",
+      "id": "anchor/node-arena-least",
+      "kind": "point",
+      "pos": [
+        33,
+        64,
+        19
+      ]
+    },
+    {
+      "area": "area/site",
+      "id": "anchor/node-arena-most",
+      "kind": "point",
+      "pos": [
+        82,
+        64,
+        35
+      ]
+    },
+    {
+      "area": "area/site",
+      "id": "anchor/node-corridor-4-wide",
+      "kind": "point",
+      "pos": [
+        387,
+        64,
+        7
+      ]
+    },
+    {
+      "area": "area/site",
+      "id": "anchor/node-expanse-least",
+      "kind": "point",
+      "pos": [
+        147,
+        64,
+        35
+      ]
+    },
+    {
+      "area": "area/site",
+      "id": "anchor/node-expanse-most",
+      "kind": "point",
+      "pos": [
+        244,
+        64,
+        67
+      ]
+    },
+    {
+      "area": "area/site",
+      "id": "anchor/node-gentle-landing",
+      "kind": "point",
+      "pos": [
+        25,
+        69,
+        44
+      ]
+    },
+    {
+      "area": "area/site",
+      "id": "anchor/node-hall-least",
+      "kind": "point",
+      "pos": [
+        317,
+        64,
+        11
+      ]
+    },
+    {
+      "area": "area/site",
+      "id": "anchor/node-hall-most",
+      "kind": "point",
+      "pos": [
+        342,
+        64,
+        19
+      ]
+    },
+    {
+      "area": "area/site",
+      "id": "anchor/node-pit",
+      "kind": "point",
+      "pos": [
+        25,
+        64,
+        61
+      ]
+    },
+    {
+      "area": "area/site",
+      "id": "anchor/node-road-12-wide",
+      "kind": "point",
+      "pos": [
+        410,
+        64,
+        13
+      ]
+    },
+    {
+      "area": "area/site",
+      "id": "anchor/node-road-16-wide",
+      "kind": "point",
+      "pos": [
+        425,
+        64,
+        13
+      ]
+    },
+    {
+      "area": "area/site",
+      "id": "anchor/node-road-4-wide",
+      "kind": "point",
+      "pos": [
+        392,
+        64,
+        13
+      ]
+    },
+    {
+      "area": "area/site",
+      "id": "anchor/node-road-8-wide",
+      "kind": "point",
+      "pos": [
+        399,
+        64,
+        13
+      ]
+    },
+    {
+      "area": "area/site",
+      "id": "anchor/node-room-least",
+      "kind": "point",
+      "pos": [
+        363,
+        64,
+        7
+      ]
+    },
+    {
+      "area": "area/site",
+      "id": "anchor/node-room-most",
+      "kind": "point",
+      "pos": [
+        376,
+        64,
+        11
+      ]
+    },
+    {
+      "area": "area/site",
+      "id": "anchor/node-steep-landing",
+      "kind": "point",
+      "pos": [
+        12,
+        69,
+        16
+      ]
+    },
+    {
+      "area": "area/site",
+      "id": "spawn",
+      "kind": "point",
+      "pos": [
+        5,
+        64,
+        5
+      ]
+    }
+  ],
+  "areas": [
+    {
+      "id": "area/site",
+      "origin": [
+        3,
+        63,
+        3
+      ],
+      "prefab": "blockout/node/alcove-least",
+      "size": [
+        432,
+        21,
+        130
+      ]
+    }
+  ],
+  "campaign_id": "metrics-gym",
+  "npcs": [
+    {
+      "id": "npc/invigilator",
+      "pos": [
+        5,
+        64,
+        5
+      ]
+    }
+  ],
+  "objectives": [
+    {
+      "id": "obj/hear-the-brief",
+      "quest": "quest/walk-the-ladder"
+    },
+    {
+      "id": "obj/reach-the-far-end",
+      "quest": "quest/walk-the-ladder"
+    }
+  ],
+  "shots": [],
+  "version": "0.29.0"
+}

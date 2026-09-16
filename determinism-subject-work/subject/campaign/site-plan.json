@@ -1,0 +1,434 @@
+{
+  "campaign_id": "metrics-gym",
+  "content": {
+    "boxes": [
+      {
+        "ceiling": {
+          "clearance": 5
+        },
+        "extent": [
+          4,
+          4
+        ],
+        "floor": {
+          "y": 64
+        },
+        "min": [
+          4,
+          4
+        ],
+        "node": "node/alcove-least"
+      },
+      {
+        "ceiling": {
+          "clearance": 10
+        },
+        "extent": [
+          8,
+          8
+        ],
+        "floor": {
+          "y": 64
+        },
+        "node": "node/alcove-most"
+      },
+      {
+        "ceiling": {
+          "clearance": 14
+        },
+        "extent": [
+          32,
+          32
+        ],
+        "floor": {
+          "y": 64
+        },
+        "node": "node/arena-least"
+      },
+      {
+        "ceiling": {
+          "clearance": 14
+        },
+        "extent": [
+          64,
+          64
+        ],
+        "floor": {
+          "y": 64
+        },
+        "node": "node/arena-most"
+      },
+      {
+        "ceiling": {
+          "clearance": 16
+        },
+        "extent": [
+          64,
+          64
+        ],
+        "floor": {
+          "y": 64
+        },
+        "node": "node/expanse-least"
+      },
+      {
+        "ceiling": {
+          "clearance": 16
+        },
+        "extent": [
+          128,
+          128
+        ],
+        "floor": {
+          "y": 64
+        },
+        "node": "node/expanse-most"
+      },
+      {
+        "ceiling": {
+          "clearance": 8
+        },
+        "extent": [
+          16,
+          16
+        ],
+        "floor": {
+          "y": 64
+        },
+        "node": "node/hall-least"
+      },
+      {
+        "ceiling": {
+          "clearance": 8
+        },
+        "extent": [
+          32,
+          32
+        ],
+        "floor": {
+          "y": 64
+        },
+        "node": "node/hall-most"
+      },
+      {
+        "ceiling": {
+          "clearance": 5
+        },
+        "extent": [
+          8,
+          8
+        ],
+        "floor": {
+          "y": 64
+        },
+        "node": "node/room-least"
+      },
+      {
+        "ceiling": {
+          "clearance": 5
+        },
+        "extent": [
+          16,
+          16
+        ],
+        "floor": {
+          "y": 64
+        },
+        "node": "node/room-most"
+      },
+      {
+        "ceiling": {
+          "clearance": 5
+        },
+        "extent": [
+          4,
+          8
+        ],
+        "floor": {
+          "y": 64
+        },
+        "node": "node/corridor-4-wide"
+      },
+      {
+        "ceiling": {
+          "clearance": 8
+        },
+        "extent": [
+          4,
+          20
+        ],
+        "floor": {
+          "y": 64
+        },
+        "node": "node/road-4-wide"
+      },
+      {
+        "ceiling": {
+          "clearance": 8
+        },
+        "extent": [
+          8,
+          20
+        ],
+        "floor": {
+          "y": 64
+        },
+        "node": "node/road-8-wide"
+      },
+      {
+        "ceiling": {
+          "clearance": 8
+        },
+        "extent": [
+          12,
+          20
+        ],
+        "floor": {
+          "y": 64
+        },
+        "node": "node/road-12-wide"
+      },
+      {
+        "ceiling": {
+          "clearance": 8
+        },
+        "extent": [
+          16,
+          20
+        ],
+        "floor": {
+          "y": 64
+        },
+        "node": "node/road-16-wide"
+      },
+      {
+        "ceiling": {
+          "clearance": 8
+        },
+        "extent": [
+          8,
+          8
+        ],
+        "floor": {
+          "y": 69
+        },
+        "node": "node/steep-landing"
+      },
+      {
+        "ceiling": {
+          "clearance": 14
+        },
+        "extent": [
+          16,
+          16
+        ],
+        "floor": {
+          "y": 69
+        },
+        "node": "node/gentle-landing"
+      },
+      {
+        "ceiling": {
+          "clearance": 8
+        },
+        "extent": [
+          16,
+          16
+        ],
+        "floor": {
+          "y": 64
+        },
+        "node": "node/pit"
+      }
+    ],
+    "datums": [
+      {
+        "id": "datum/grade",
+        "note": "The plane the ladder stands on.",
+        "y": 64
+      },
+      {
+        "id": "datum/landing",
+        "note": "What both climbs reach and the fall leaves.",
+        "y": 69
+      }
+    ],
+    "identities": [
+      {
+        "cmp": "eq",
+        "fact": "fact/smallest-place-span",
+        "measure": {
+          "axis": "x",
+          "node": "node/alcove-least",
+          "of": "box-extent"
+        }
+      },
+      {
+        "cmp": "eq",
+        "fact": "fact/largest-place-span",
+        "measure": {
+          "axis": "x",
+          "node": "node/road-16-wide",
+          "of": "box-extent"
+        }
+      },
+      {
+        "cmp": "eq",
+        "fact": "fact/landing-datum",
+        "measure": {
+          "datum": "datum/landing",
+          "of": "datum-y"
+        }
+      }
+    ],
+    "lighting": {
+      "fixture": "torch",
+      "min_light": 7
+    },
+    "region": {
+      "extent": [
+        442,
+        43,
+        140
+      ],
+      "min": [
+        0,
+        48,
+        0
+      ]
+    },
+    "seams": [
+      {
+        "at": 1,
+        "edge": "edge/alcove-least-to-alcove-most",
+        "face": "east",
+        "meets": 1,
+        "opening": "passage"
+      },
+      {
+        "at": 1,
+        "edge": "edge/alcove-most-to-arena-least",
+        "face": "east",
+        "meets": 1,
+        "opening": "gateway"
+      },
+      {
+        "at": 1,
+        "edge": "edge/arena-least-to-arena-most",
+        "face": "east",
+        "meets": 1,
+        "opening": "gateway"
+      },
+      {
+        "at": 1,
+        "edge": "edge/arena-most-to-expanse-least",
+        "face": "east",
+        "meets": 1,
+        "opening": "gateway"
+      },
+      {
+        "at": 1,
+        "edge": "edge/expanse-least-to-expanse-most",
+        "face": "east",
+        "meets": 1,
+        "opening": "gateway"
+      },
+      {
+        "at": 1,
+        "edge": "edge/expanse-most-to-hall-least",
+        "face": "east",
+        "meets": 1,
+        "opening": "gateway"
+      },
+      {
+        "at": 1,
+        "edge": "edge/hall-least-to-hall-most",
+        "face": "east",
+        "meets": 1,
+        "opening": "gateway"
+      },
+      {
+        "at": 1,
+        "edge": "edge/hall-most-to-room-least",
+        "face": "east",
+        "meets": 1,
+        "opening": "gateway"
+      },
+      {
+        "at": 1,
+        "edge": "edge/room-least-to-room-most",
+        "face": "east",
+        "meets": 1,
+        "opening": "gateway"
+      },
+      {
+        "at": 1,
+        "edge": "edge/room-most-to-corridor-4-wide",
+        "face": "east",
+        "meets": 1,
+        "opening": "gateway"
+      },
+      {
+        "at": 1,
+        "edge": "edge/corridor-4-wide-to-road-4-wide",
+        "face": "east",
+        "meets": 1,
+        "opening": "gateway"
+      },
+      {
+        "at": 1,
+        "edge": "edge/road-4-wide-to-road-8-wide",
+        "face": "east",
+        "meets": 1,
+        "opening": "gateway"
+      },
+      {
+        "at": 1,
+        "edge": "edge/road-8-wide-to-road-12-wide",
+        "face": "east",
+        "meets": 1,
+        "opening": "gateway"
+      },
+      {
+        "at": 1,
+        "edge": "edge/road-12-wide-to-road-16-wide",
+        "face": "east",
+        "meets": 1,
+        "opening": "gateway"
+      },
+      {
+        "at": 1,
+        "edge": "edge/steep-landing-climb",
+        "face": "south",
+        "meets": 1,
+        "opening": "door",
+        "stair_in": "node/alcove-most"
+      },
+      {
+        "at": 1,
+        "edge": "edge/gentle-landing-climb",
+        "face": "south",
+        "meets": 1,
+        "opening": "arch",
+        "stair_in": "node/arena-least"
+      },
+      {
+        "at": 1,
+        "edge": "edge/the-fall",
+        "face": "south",
+        "meets": 1,
+        "opening": "arch"
+      },
+      {
+        "at": 8,
+        "edge": "edge/out-of-the-pit",
+        "face": "north",
+        "meets": 8,
+        "opening": "arch",
+        "stair_in": "node/pit"
+      }
+    ]
+  },
+  "dsl_version": "0.29.0",
+  "stage": "site-plan"
+}

@@ -1,0 +1,8 @@
+{
+  "borne_declared": 1,
+  "box_selectors_examined": 0,
+  "fixtures_declared": 1,
+  "packtest_templates": 0,
+  "unbound": true,
+  "unbound_reason": "the campaign declares no region verb (`teleport`, `lethal_volumes[]`), so no box-narrowed selector was examined. The class itself is bound; the clause the stake-marker defect lives in is not exercised here"
+}

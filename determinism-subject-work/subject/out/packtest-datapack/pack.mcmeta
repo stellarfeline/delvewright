@@ -1,0 +1,13 @@
+{
+  "pack": {
+    "description": "Delvewright PackTest suite: metrics-gym",
+    "max_format": [
+      94,
+      1
+    ],
+    "min_format": [
+      94,
+      1
+    ]
+  }
+}

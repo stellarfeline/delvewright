@@ -1,0 +1,259 @@
+{
+  "campaign_id": "metrics-gym",
+  "content": {
+    "beats": [
+      {
+        "node": "node/alcove-least",
+        "objective": "obj/hear-the-brief",
+        "quest": "quest/walk-the-ladder"
+      },
+      {
+        "node": "node/road-16-wide",
+        "objective": "obj/reach-the-far-end",
+        "quest": "quest/walk-the-ladder"
+      }
+    ],
+    "critical_path": [
+      "node/alcove-least",
+      "node/alcove-most",
+      "node/arena-least",
+      "node/arena-most",
+      "node/expanse-least",
+      "node/expanse-most",
+      "node/hall-least",
+      "node/hall-most",
+      "node/room-least",
+      "node/room-most",
+      "node/corridor-4-wide",
+      "node/road-4-wide",
+      "node/road-8-wide",
+      "node/road-12-wide",
+      "node/road-16-wide"
+    ],
+    "edges": [
+      {
+        "a": "node/alcove-least",
+        "b": "node/alcove-most",
+        "class": "walk",
+        "id": "edge/alcove-least-to-alcove-most"
+      },
+      {
+        "a": "node/alcove-most",
+        "b": "node/arena-least",
+        "class": "walk",
+        "id": "edge/alcove-most-to-arena-least"
+      },
+      {
+        "a": "node/arena-least",
+        "b": "node/arena-most",
+        "class": "walk",
+        "id": "edge/arena-least-to-arena-most"
+      },
+      {
+        "a": "node/arena-most",
+        "b": "node/expanse-least",
+        "class": "walk",
+        "id": "edge/arena-most-to-expanse-least"
+      },
+      {
+        "a": "node/expanse-least",
+        "b": "node/expanse-most",
+        "class": "walk",
+        "id": "edge/expanse-least-to-expanse-most"
+      },
+      {
+        "a": "node/expanse-most",
+        "b": "node/hall-least",
+        "class": "walk",
+        "id": "edge/expanse-most-to-hall-least"
+      },
+      {
+        "a": "node/hall-least",
+        "b": "node/hall-most",
+        "class": "walk",
+        "id": "edge/hall-least-to-hall-most"
+      },
+      {
+        "a": "node/hall-most",
+        "b": "node/room-least",
+        "class": "walk",
+        "id": "edge/hall-most-to-room-least"
+      },
+      {
+        "a": "node/room-least",
+        "b": "node/room-most",
+        "class": "walk",
+        "id": "edge/room-least-to-room-most"
+      },
+      {
+        "a": "node/room-most",
+        "b": "node/corridor-4-wide",
+        "class": "walk",
+        "id": "edge/room-most-to-corridor-4-wide"
+      },
+      {
+        "a": "node/corridor-4-wide",
+        "b": "node/road-4-wide",
+        "class": "walk",
+        "id": "edge/corridor-4-wide-to-road-4-wide"
+      },
+      {
+        "a": "node/road-4-wide",
+        "b": "node/road-8-wide",
+        "class": "walk",
+        "id": "edge/road-4-wide-to-road-8-wide"
+      },
+      {
+        "a": "node/road-8-wide",
+        "b": "node/road-12-wide",
+        "class": "walk",
+        "id": "edge/road-8-wide-to-road-12-wide"
+      },
+      {
+        "a": "node/road-12-wide",
+        "b": "node/road-16-wide",
+        "class": "walk",
+        "id": "edge/road-12-wide-to-road-16-wide"
+      },
+      {
+        "a": "node/alcove-most",
+        "b": "node/steep-landing",
+        "class": "stair",
+        "id": "edge/steep-landing-climb"
+      },
+      {
+        "a": "node/arena-least",
+        "b": "node/gentle-landing",
+        "class": "stair",
+        "id": "edge/gentle-landing-climb"
+      },
+      {
+        "a": "node/gentle-landing",
+        "b": "node/pit",
+        "class": "drop",
+        "falls": "a-to-b",
+        "id": "edge/the-fall"
+      },
+      {
+        "a": "node/pit",
+        "b": "node/gentle-landing",
+        "class": "stair",
+        "id": "edge/out-of-the-pit"
+      }
+    ],
+    "entry": "node/alcove-least",
+    "goal": "node/road-16-wide",
+    "nodes": [
+      {
+        "id": "node/alcove-least",
+        "intent": "size-class specimen",
+        "note": "The `alcove` rung at its lower bound: 4 by 4 with 5 of headroom.",
+        "size_class": "alcove"
+      },
+      {
+        "id": "node/alcove-most",
+        "intent": "size-class specimen",
+        "note": "The `alcove` rung at its upper bound: 8 by 8 with 10 of headroom.",
+        "size_class": "alcove"
+      },
+      {
+        "id": "node/arena-least",
+        "intent": "size-class specimen",
+        "note": "The `arena` rung at its lower bound: 32 by 32 with 14 of headroom.",
+        "size_class": "arena"
+      },
+      {
+        "id": "node/arena-most",
+        "intent": "size-class specimen",
+        "note": "The `arena` rung at its upper bound: 64 by 64 with 14 of headroom.",
+        "size_class": "arena"
+      },
+      {
+        "id": "node/expanse-least",
+        "intent": "size-class specimen",
+        "note": "The `expanse` rung at its lower bound: 64 by 64 with 16 of headroom.",
+        "size_class": "expanse"
+      },
+      {
+        "id": "node/expanse-most",
+        "intent": "size-class specimen",
+        "note": "The `expanse` rung at its upper bound: 128 by 128 with 16 of headroom.",
+        "size_class": "expanse"
+      },
+      {
+        "id": "node/hall-least",
+        "intent": "size-class specimen",
+        "note": "The `hall` rung at its lower bound: 16 by 16 with 8 of headroom.",
+        "size_class": "hall"
+      },
+      {
+        "id": "node/hall-most",
+        "intent": "size-class specimen",
+        "note": "The `hall` rung at its upper bound: 32 by 32 with 8 of headroom.",
+        "size_class": "hall"
+      },
+      {
+        "id": "node/room-least",
+        "intent": "size-class specimen",
+        "note": "The `room` rung at its lower bound: 8 by 8 with 5 of headroom.",
+        "size_class": "room"
+      },
+      {
+        "id": "node/room-most",
+        "intent": "size-class specimen",
+        "note": "The `room` rung at its upper bound: 16 by 16 with 5 of headroom.",
+        "size_class": "room"
+      },
+      {
+        "id": "node/corridor-4-wide",
+        "intent": "way-class specimen",
+        "note": "A `corridor` at a cross-section of 4: 4 by 8 with 5 of headroom. The run exceeds the class's widest cross-section, which is the elongation that makes it a way and not a room.",
+        "way_class": "corridor"
+      },
+      {
+        "id": "node/road-4-wide",
+        "intent": "way-class specimen",
+        "note": "A `road` at a cross-section of 4: 4 by 20 with 8 of headroom. The run exceeds the class's widest cross-section, which is the elongation that makes it a way and not a room.",
+        "way_class": "road"
+      },
+      {
+        "id": "node/road-8-wide",
+        "intent": "way-class specimen",
+        "note": "A `road` at a cross-section of 8: 8 by 20 with 8 of headroom. The run exceeds the class's widest cross-section, which is the elongation that makes it a way and not a room.",
+        "way_class": "road"
+      },
+      {
+        "id": "node/road-12-wide",
+        "intent": "way-class specimen",
+        "note": "A `road` at a cross-section of 12: 12 by 20 with 8 of headroom. The run exceeds the class's widest cross-section, which is the elongation that makes it a way and not a room.",
+        "way_class": "road"
+      },
+      {
+        "id": "node/road-16-wide",
+        "intent": "way-class specimen",
+        "note": "A `road` at a cross-section of 16: 16 by 20 with 8 of headroom. The run exceeds the class's widest cross-section, which is the elongation that makes it a way and not a room.",
+        "way_class": "road"
+      },
+      {
+        "id": "node/steep-landing",
+        "intent": "climb landing",
+        "note": "Reached by a 5-block climb hosted in `node/alcove-most`, which affords 8 of run — the derivation picks the gentlest standard pitch that fits it.",
+        "size_class": "alcove"
+      },
+      {
+        "id": "node/gentle-landing",
+        "intent": "climb landing",
+        "note": "Reached by a 5-block climb hosted in `node/arena-least`, which affords 32 of run — the derivation picks the gentlest standard pitch that fits it.",
+        "size_class": "room"
+      },
+      {
+        "id": "node/pit",
+        "intent": "designed fall",
+        "note": "The floor of a 5-block drop — the deepest a designed one-way fall may be. The stair beside it is what stops the pit being a strand.",
+        "size_class": "room"
+      }
+    ]
+  },
+  "dsl_version": "0.29.0",
+  "stage": "layout-graph"
+}

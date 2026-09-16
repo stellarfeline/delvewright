@@ -1,0 +1,15 @@
+{
+  "campaign_id": "metrics-gym",
+  "content": {
+    "areas": [],
+    "premise": "Every number a level is built to, standing side by side at the size it names. Walk it once and the standard stops being a seed.",
+    "seed": 20260821,
+    "target_minutes": 8,
+    "theme": "A gym of bays: the ladder, the doorways, the climbs and the fall.",
+    "time": "noon",
+    "title": "The Metrics Gym",
+    "weather": "clear"
+  },
+  "dsl_version": "0.29.0",
+  "stage": "world"
+}

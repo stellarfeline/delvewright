@@ -1,0 +1,14 @@
+{
+  "boundary_cells": 0,
+  "examined": 0,
+  "exposed_cells": 0,
+  "faces_bound": 0,
+  "faces_declared": 0,
+  "horizon": "void",
+  "horizon_base": "void",
+  "judged_cells": 0,
+  "party_air_cells": 424843,
+  "party_air_cut_off": false,
+  "placed": 18,
+  "sides_seen": 0
+}
