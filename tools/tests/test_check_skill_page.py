@@ -868,13 +868,19 @@ def test_a_page_naming_a_tool_that_is_not_in_the_tree_reds(mod, tree, engine):
 
 
 def test_the_finding_names_the_file_and_line_that_named_it(mod, tree, engine):
+    page = tree / "references" / "new-pieces.md"
     edit(
-        tree / "references" / "new-pieces.md",
+        page,
         "$DELVEWRIGHT_ENGINE/tools/block-appearance.py",
         "$DELVEWRIGHT_ENGINE/tools/gone.py",
     )
+    line = next(
+        i
+        for i, text in enumerate(page.read_text(encoding="utf-8").split("\n"), 1)
+        if "$DELVEWRIGHT_ENGINE/tools/gone.py" in text
+    )
     rep = run(mod, engine)
-    assert any("new-pieces.md:32" in f for f in rep.findings), rep.findings
+    assert any(f"new-pieces.md:{line}" in f for f in rep.findings), rep.findings
 
 
 def test_a_directory_only_ignore_pattern_is_read_as_git_reads_it(mod):
