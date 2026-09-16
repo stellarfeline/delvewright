@@ -196,8 +196,8 @@ Read it now and run from it. The table below is the order and the postconditions
 |---|---|
 | **I0 · mode** | `DELVEWRIGHT_MODE` is `dev` when the working directory carries **both** `crates/delvec/Cargo.toml` and `.claude/skills/delvewright/skills/new-delve/SKILL.md`, else `creator`. `DELVEWRIGHT_ENGINE` is the working directory in dev, `~/.delvewright/engine` otherwise. Dev: `campaigns/` there resolves to a directory, or **stop** |
 | **I1 · already here** | `git`; a Python ≥ 3.11 recorded as `DELVEWRIGHT_PYTHON` and used by every Python invocation on this page; the **skill root** recorded as `DELVEWRIGHT_SKILL` — every bundled path below is `"$DELVEWRIGHT_SKILL/…"`, and it is never the working directory; `java` ≥ 21, enumerated with `scripts/find-jdk.py` before halting, and exported; `docker info` exits 0, **and `docker compose version` exits 0** — Compose v2 is a separate per-user CLI plugin that `docker info` says nothing about, and every entry point of step 10 is built on it. Not here: Rust and `git-lfs` |
-| **I1b · the pin, every run** | `"$DELVEWRIGHT_PYTHON" "$DELVEWRIGHT_SKILL/scripts/check-toolchain.py" --mode "$DELVEWRIGHT_MODE" --engine "$DELVEWRIGHT_ENGINE"`, with **this run's** I0 and I1 values and never `env.sh`'s, exits 0: `delvec --version` through `env.sh` equals `[engine].release` (dev: the checkout's `[engine].version`), the creator engine tree's `rev-parse HEAD` equals `[engine].ref`, and `env.sh`'s `DELVEWRIGHT_SKILL`, `DELVEWRIGHT_MODE` and `DELVEWRIGHT_ENGINE` are this run's. **Exit 3 is a refusal**: run the steps it prints, in order, then I1b again. Exit 4: no toolchain, all of I2–I8. Exit 2: stop. After 0: I2–I4 are skipped and nothing is downloaded; I5 only if the jar is not at its path; I6 on every run; I7 and I8 after a repair or a first run |
-| **I2 · engine tree** | `"$DELVEWRIGHT_SKILL/versions.toml"` is read, never restated. Creator: the clone at `~/.delvewright/engine` is `--detach`ed at `[engine].ref` and `rev-parse HEAD` equals it. Dev: HEAD is recorded and said out loud |
+| **I1b · the pin, every run** | `"$DELVEWRIGHT_PYTHON" "$DELVEWRIGHT_SKILL/scripts/check-toolchain.py" --mode "$DELVEWRIGHT_MODE" --engine "$DELVEWRIGHT_ENGINE"`, with **this run's** I0 and I1 values and never `env.sh`'s, exits 0: `delvec --version` through `env.sh` equals the version `[engine].ref` states (dev: the checkout's `[engine].version`), the creator engine tree's `rev-parse HEAD` equals the commit `[engine].ref` resolves to, and `env.sh`'s `DELVEWRIGHT_SKILL`, `DELVEWRIGHT_MODE` and `DELVEWRIGHT_ENGINE` are this run's. **Exit 3 is a refusal**: run the steps it prints, in order, then I1b again. Exit 4: no toolchain, all of I2–I8. Exit 2: stop. After 0: I2–I4 are skipped and nothing is downloaded; I5 only if the jar is not at its path; I6 on every run; I7 and I8 after a repair or a first run |
+| **I2 · engine tree** | `"$DELVEWRIGHT_SKILL/versions.toml"` is read, never restated. Creator: the clone at `~/.delvewright/engine` fetches the tag `[engine].ref`, is `--detach`ed at it, and `rev-parse HEAD` equals `rev-parse "$ENGINE_REF^{commit}"`. Dev: HEAD is recorded and said out loud |
 | **I3a · `delvec`** | `"$DELVEWRIGHT_PYTHON" "$DELVEWRIGHT_SKILL/scripts/fetch-delvec.py" --into ~/.delvewright/bin` exits 0 having printed its target, archive, digest and version. Exit 3 or 4 → I3b. **Exit 5 is a refusal** — never the floor, never a retry. Exit 6: stop |
 | **I3b · the floor** | Only after exit 3 or 4, and in dev mode always. `cargo build --release -p delvec` **from inside** the engine tree, with `cargo --version` and `rustc --version` equal to the channel `rust-toolchain.toml` names. No `cargo`: hand over `rustup` and wait |
 | **I3c · the binary** | `delvec --version` answers **the number I1b holds it to**. **Write down the `dsl` number** — step 1 needs it on every document. The GPU arms are **not** asked here: they draw with the client jar I5 fetches, so a gate run now refuses on every clean machine there is, for a reason this page created |
@@ -340,11 +340,12 @@ is — then draw it against the tree step 8 built and move it until the picture 
 in the frame. An approved picture with no camera stops the next build, naming
 the pictures, and stops the staging gate in step 14, so this is before the walk
 and not after it. A camera answers one picture: never re-aim one at a second,
-write another row. The engine at the pinned release does not carry the
-showcase-camera subcommands; the tool, its flags and the craft are
-`$DELVEWRIGHT_ENGINE/docs/reference/showcase-shots.md` §4 and
-`$DELVEWRIGHT_ENGINE/docs/reference/tools.md` §4a, read at the engine you built
-in Init.
+write another row. `delvec cameras` draws the record against that tree and
+renders its scenes; `delvec place-camera` is the record's one writer. A row no
+camera answers is `DW0900`. The craft — which side, how high, how close, how
+wide — is `$DELVEWRIGHT_ENGINE/docs/reference/showcase-shots.md` §4; placing one
+by hand, in the running game, is
+`$DELVEWRIGHT_ENGINE/docs/reference/tools.md` §4a.
 
 ## 9. The walk — STOP, this one is the user's
 
@@ -373,7 +374,9 @@ skip it and the campaign is not verified, however green the ladder is.
 route order, read against `campaigns/<id>/design/concept/`, scene by scene.
 Yours to do, not a checklist to hand off: judging a frame is the whole task.
 **Read**: `references/visual-review.md` — its cost section before you run its
-first command.
+first command. **A POV frame that is the wrong picture** is a camera question,
+not a render one: place that one by hand in the running game
+(`references/tools-by-symptom.md`, *a render camera nobody is satisfied with*).
 
 ## 13. Detail — site-plan campaigns only, and only after the walk
 
@@ -387,7 +390,10 @@ Optional, and impossible until `walk-record.json` records a **passed** walk
 
 **Needs**: everything above. **Produces**: `campaigns/<id>/README.md` — the
 storybook — its localized editions, and the report that ends the run. Nothing
-comes back. **Read**: `references/hand-over.md`.
+comes back. **Read**: `references/hand-over.md`. **When the exterior or
+starting-scene shot is not the one to ship**, place that camera by hand in the
+running game (`references/tools-by-symptom.md`, *a render camera nobody is
+satisfied with*) rather than re-rendering the one you have.
 
 **A newer page is not pushed at anybody.** Auto-update is off by default for a
 third-party marketplace, so a newer `/new-delve` arrives when the user runs

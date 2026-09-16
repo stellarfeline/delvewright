@@ -1,20 +1,28 @@
-# The page's own pin: the ONE engine this page is written against and proven on.
+# The page's own pin: the ONE engine this page is written against, proven on,
+# and SHIPS AT.
 #
-# spec-0063 §8. The page reads `release` and `ref` from this file and restates
-# neither — a literal on the page goes stale and nothing catches it; an
-# indirection stays true and `tools/check-skill-page.py` holds it.
+# spec-0063 §8, ADR-0029 §1. `ref` is the engine release TAG the marketplace
+# entry serves this page from, so the plugin root a creator installs and the
+# engine tree their Init clones are the same commit — a creator never holds a
+# page and an engine from different revisions. The page reads this file and
+# restates nothing: a literal on the page goes stale the first time the pin
+# moves and nothing catches it; an indirection stays true and
+# `tools/check-skill-page.py` holds it.
 #
-# `release` and `ref` are the same engine arriving by the two channels ADR-0023
-# names: the archive on the release shelf (the default acquisition) and the
-# source tree the floor builds from. They move together, in the pull request
-# that walks the page against the newer engine.
+# ONE NAME, BOTH CHANNELS (ADR-0023). The archive Init I3a downloads is on the
+# Release at this tag and is named for the version the tag states; the source
+# tree Init I2 detaches at is the commit this tag points at. Both are derived
+# from `ref`, and neither is written a second time.
 #
-# Registered in `.github/pins.toml` under the `release` policy — the value must
-# be a commit a `v<semver>` tag points at, which a revision somebody merely
-# stopped looking at cannot be. Drift past it is not a finding: what an author
-# needs is the engine the page was WALKED against, not the newest one.
+# THE SECOND FILE. `.claude-plugin/marketplace.json`'s entry carries the same
+# name, because Claude Code reads that file and reads nothing else. This file is
+# the authority and the entry is its copy; `tools/check-skill-page.py` holds them
+# equal and a difference is a red.
+#
+# Registered in `.github/pins.toml` under the `release` policy. Drift past it is
+# not a finding: what an author needs is the engine the page was WALKED against,
+# not the newest one.
 
 [engine]
 repo = "stellarfeline/delvewright"
-release = "v1.5.0"
-ref = "70eea6296cfab2440054f95670729081c3d4bca1"
+ref = "delvec--v1.6.0"

@@ -9,7 +9,12 @@
     {
       "description": "/delvewright:new-delve — author a delve end to end: staged DSL documents, deterministic compile, machine validation, joinable output.",
       "name": "delvewright",
-      "source": "./.claude/skills/delvewright"
+      "source": {
+        "path": ".claude/skills/delvewright",
+        "ref": "delvec--v1.6.0",
+        "source": "git-subdir",
+        "url": "stellarfeline/delvewright"
+      }
     }
   ]
 }

@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
 import pathlib
 import shutil
 import subprocess
@@ -34,9 +35,10 @@ def mod():
 
 @pytest.fixture(scope="module")
 def engine(mod, tmp_path_factory):
-    _repo, _release, rev = mod.read_pin()
+    _repo, ref = mod.read_pin()
+    rev, tag_exists = mod.resolve_ref(ref)
     into = tmp_path_factory.mktemp("engine")
-    return mod.materialise(rev, into), rev
+    return mod.materialise(rev, into), rev, tag_exists
 
 
 @pytest.fixture
@@ -46,16 +48,17 @@ def tree(mod, tmp_path, monkeypatch):
     `REPO` stays the real repository: it is where the engine at `ref` and the
     pre-split blob are read from, and both are instruments rather than subjects.
     """
-    plugin = tmp_path / "plugin"
+    # ONE copy, laid out as the repository lays it out: the marketplace root is
+    # `tmp_path`, and the entry's `path` resolves from there to the plugin root
+    # this gate judges. A second copy under the marketplace would let the entry
+    # point at a directory nothing here reads, which is the class ADR-0029
+    # closes — so the fixture cannot contain the shape the rule forbids.
+    plugin = tmp_path / ".claude" / "skills" / "delvewright"
+    plugin.parent.mkdir(parents=True)
     shutil.copytree(mod.PLUGIN_ROOT, plugin)
     skill = plugin / "skills" / "new-delve"
-    market = tmp_path / "marketplace" / ".claude-plugin"
+    market = tmp_path / ".claude-plugin"
     market.mkdir(parents=True)
-    # The marketplace's `source` is resolved from ITS root, so the copy sits
-    # where the real layout puts it.
-    (tmp_path / "marketplace" / ".claude").mkdir(parents=True, exist_ok=True)
-    (tmp_path / "marketplace" / ".claude" / "skills").mkdir(exist_ok=True)
-    shutil.copytree(plugin, tmp_path / "marketplace" / ".claude" / "skills" / "delvewright")
     shutil.copy2(mod.MARKETPLACE, market / "marketplace.json")
 
     census = tmp_path / "skill-page-headings.json"
@@ -79,9 +82,13 @@ def run(mod, engine, base=None):
     because it is the instrument and no test perturbs it.
     """
     rep = mod.Report()
-    engine_root, _real_rev = engine
-    _repo, release, rev = mod.read_pin()
-    mod.check(rep, engine_root, rev, release, base)
+    engine_root, real_rev, real_tag_exists = engine
+    _repo, ref = mod.read_pin()
+    try:
+        rev, tag_exists = mod.resolve_ref(ref)
+    except mod.Unusable:
+        rev, tag_exists = real_rev, real_tag_exists
+    mod.check(rep, engine_root, rev, ref, tag_exists, base)
     return rep
 
 
@@ -134,24 +141,51 @@ def test_a_name_that_is_not_the_directory_reds(mod, tree, engine):
 
 
 def test_a_branch_name_in_ref_reds(mod, tree, engine):
-    """The revision is read out of the pin, never written down here.
+    """The tag is read out of the pin, never written down here.
 
-    A gate's guard that pasted the revision would be a second copy of it, in a
-    file pin discovery reads — which is the very defect rule 2 exists for.
+    A gate's guard that pasted the name would be a second copy of it, in a file
+    pin discovery reads — which is the very defect rule 2 exists for.
     """
-    _repo, _release, rev = mod.read_pin()
-    edit(tree / "versions.toml", f'ref = "{rev}"', 'ref = "main"')
-    assert has(run(mod, engine), "not a full 40-hex revision")
+    _repo, ref = mod.read_pin()
+    edit(tree / "versions.toml", f'ref = "{ref}"', 'ref = "main"')
+    assert has(run(mod, engine), "is not `<name>--v")
 
 
-def test_the_release_pasted_into_a_reference_reds(mod, tree, engine):
-    _repo, release, _ref = mod.read_pin()
-    path = tree / "references" / "init.md"
+def test_a_tag_of_another_released_line_reds(mod, tree, engine):
+    """The page installs the creator binary, so only that line may be pinned."""
+    _repo, ref = mod.read_pin()
+    edit(tree / "versions.toml", f'ref = "{ref}"', 'ref = "delvewright-dsl--v0.26.0"')
+    assert has(run(mod, engine), "is a delvewright-dsl release tag")
+
+
+def test_an_unborn_tag_that_is_not_this_trees_own_reds(mod, tree, engine):
+    """The one unborn name a pin may carry is the tag this tree's own release
+    would create (ADR-0029 §3); any other is a pin onto something nobody is
+    about to publish."""
+    _repo, ref = mod.read_pin()
+    edit(tree / "versions.toml", f'ref = "{ref}"', 'ref = "delvec--v99.0.0"')
+    assert has(run(mod, engine), "this repository has no tag for")
+
+
+def test_a_pin_that_still_carries_release_is_unusable(mod, tree, engine):
+    """Two keys naming one release is the restatement ADR-0029 §2 removes."""
+    path = tree / "versions.toml"
     path.write_text(
-        path.read_text(encoding="utf-8") + f"\nThe release is {release}.\n",
+        path.read_text(encoding="utf-8").replace("[engine]\n", '[engine]\nrelease = "v1.5.0"\n'),
         encoding="utf-8",
     )
-    assert has(run(mod, engine), "carries the `release` literal")
+    with pytest.raises(mod.Unusable, match="still carries"):
+        mod.read_pin()
+
+
+def test_the_tag_pasted_into_a_reference_reds(mod, tree, engine):
+    _repo, ref = mod.read_pin()
+    path = tree / "references" / "init.md"
+    path.write_text(
+        path.read_text(encoding="utf-8") + f"\nThe release is {ref}.\n",
+        encoding="utf-8",
+    )
+    assert has(run(mod, engine), "carries the `ref` literal")
 
 
 def test_a_page_that_stops_reading_the_pin_reds(mod, tree, engine):
@@ -366,12 +400,39 @@ def test_a_plugin_version_that_is_not_semver_reds(mod, tree, engine):
     assert has(run(mod, engine), "which is not semver")
 
 
-def test_a_marketplace_source_resolving_to_no_plugin_reds(mod, tree, engine):
+def test_a_relative_path_source_reds(mod, tree, engine):
+    """A relative path is a string: it carries no field, so it cannot pin."""
     path = mod.MARKETPLACE
     data = json.loads(path.read_text(encoding="utf-8"))
-    data["plugins"][0]["source"] = "./.claude/skills/moved-away"
+    data["plugins"][0]["source"] = "./.claude/skills/delvewright"
     path.write_text(json.dumps(data, indent=2), encoding="utf-8")
-    assert has(run(mod, engine), "carries no `.claude-plugin/plugin.json`")
+    assert has(run(mod, engine), "It is a `git-subdir` object")
+
+
+def test_an_entry_ref_that_is_not_the_pin_reds(mod, tree, engine):
+    """One name in two files, held equal here or it is two authorities."""
+    path = mod.MARKETPLACE
+    data = json.loads(path.read_text(encoding="utf-8"))
+    data["plugins"][0]["source"]["ref"] = "delvec--v1.4.0"
+    path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+    assert has(run(mod, engine), "`source.ref` is 'delvec--v1.4.0'")
+
+
+def test_an_entry_carrying_a_sha_reds(mod, tree, engine):
+    """The documentation makes a `sha` the effective pin where both are set."""
+    path = mod.MARKETPLACE
+    data = json.loads(path.read_text(encoding="utf-8"))
+    data["plugins"][0]["source"]["sha"] = "0" * 40
+    path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+    assert has(run(mod, engine), "source declares `sha`")
+
+
+def test_an_entry_path_that_is_not_the_plugin_root_reds(mod, tree, engine):
+    path = mod.MARKETPLACE
+    data = json.loads(path.read_text(encoding="utf-8"))
+    data["plugins"][0]["source"]["path"] = ".claude/skills/moved-away"
+    path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+    assert has(run(mod, engine), "not to the plugin root")
 
 
 def test_a_marketplace_entry_declaring_its_own_version_reds(mod, tree, engine):
@@ -615,7 +676,7 @@ def test_a_dw_code_the_pinned_engine_does_not_declare_reds(mod, tree, engine):
     """The shape a page written against a newer engine than it pins has: it names
     a diagnostic the installed engine cannot print. The code is checked absent
     from the materialised engine first, so the red is about the pin."""
-    engine_root, _rev = engine
+    engine_root, _rev, _tag_exists = engine
     source = "\n".join(
         rs.read_text(encoding="utf-8") for rs in (engine_root / "crates").rglob("*.rs")
     )
@@ -790,10 +851,17 @@ def test_a_trigger_the_overlay_does_not_register_reds(mod, tree, engine):
 
 
 def test_a_moved_layout_manifest_reds(mod, tree, engine):
+    """One occurrence is enough, and the page names the path more than once.
+
+    `edit` demands a unique match, which is the right rule for a perturbation
+    that must land somewhere known — so the anchor here is the whole invocation
+    that carries the path, not the path alone. Moving one occurrence is what the
+    rule sees: it reads every `creator-datapack/` path a page file names.
+    """
     edit(
         tree / "references" / "tools-by-symptom.md",
-        "<out>/creator-datapack/layout.json",
-        "<out>/creator-datapack/manifest.json",
+        "calibrate\n  <report> --layout <out>/creator-datapack/layout.json",
+        "calibrate\n  <report> --layout <out>/creator-datapack/manifest.json",
     )
     assert has(run(mod, engine), "names path `creator-datapack/manifest.json`")
 
@@ -850,3 +918,121 @@ def test_the_cli_exits_zero_on_the_committed_tree():
     )
     assert proc.returncode == 0, proc.stdout + proc.stderr
     assert "check-skill-page: ok" in proc.stdout
+
+
+# ------------------------------------ rule 21, the tree the page ships from --
+
+
+def test_a_page_naming_a_tool_that_is_not_in_the_tree_reds(mod, tree, engine):
+    """The shape a `tools/` reorganisation walks into: the tool moved, the page did not."""
+    edit(
+        tree / "references" / "new-pieces.md",
+        "$DELVEWRIGHT_ENGINE/tools/block-appearance.py",
+        "$DELVEWRIGHT_ENGINE/tools/render/block-appearance.py",
+    )
+    rep = run(mod, engine)
+    assert has(rep, "`$DELVEWRIGHT_ENGINE/tools/render/block-appearance.py` is named by")
+    assert has(rep, "does not carry it")
+
+
+def test_the_finding_names_the_file_and_line_that_named_it(mod, tree, engine):
+    page = tree / "references" / "new-pieces.md"
+    edit(
+        page,
+        "$DELVEWRIGHT_ENGINE/tools/block-appearance.py",
+        "$DELVEWRIGHT_ENGINE/tools/gone.py",
+    )
+    line = next(
+        i
+        for i, text in enumerate(page.read_text(encoding="utf-8").split("\n"), 1)
+        if "$DELVEWRIGHT_ENGINE/tools/gone.py" in text
+    )
+    rep = run(mod, engine)
+    assert any(f"new-pieces.md:{line}" in f for f in rep.findings), rep.findings
+
+
+def test_a_directory_only_ignore_pattern_is_read_as_git_reads_it(mod):
+    """`validation/delve-output*/` matches a directory, and git must be asked so."""
+    assert mod.produced(["validation/delve-output"]) == {"validation/delve-output"}
+    assert mod.produced(["tools/refimg.py"]) == set()
+    assert mod.produced(["tools/gone.py"]) == set()
+    assert mod.produced([]) == set()
+
+
+def test_the_tracked_set_is_the_index_and_carries_directories(mod):
+    tracked = mod.shipping_tree()
+    assert "tools/refimg.py" in tracked
+    assert "tools" in tracked and "tools/lib" in tracked
+    assert "validation/delve-output" not in tracked
+
+
+def test_a_placeholder_segment_is_not_read_as_a_path(mod, tree, engine):
+    named = mod.engine_paths(mod.shipped())
+    assert "validation/run-out/<id>/run-report.json" in named
+    assert "…" in named
+    rep = run(mod, engine)
+    assert not any("run-out/<id>" in f for f in rep.findings), rep.findings
+
+
+def test_the_terminators_read_the_page_s_own_spellings(mod):
+    got = mod.ENGINE_PATH_RE.search('"$DELVEWRIGHT_ENGINE/target/release:$PATH"')
+    assert got.group("path") == "/target/release"
+    got = mod.ENGINE_PATH_RE.search("`$DELVEWRIGHT_ENGINE/versions.toml`")
+    assert got.group("path") == "/versions.toml"
+    got = mod.ENGINE_PATH_RE.search("read $DELVEWRIGHT_ENGINE/CLAUDE.md.")
+    assert got.group("path") == "/CLAUDE.md."
+    got = mod.ENGINE_PATH_RE.search('"${DELVEWRIGHT_ENGINE}/tools/refimg.py"')
+    assert got.group("path") == "/tools/refimg.py"
+
+
+def test_both_arms_bind_to_every_path_the_page_names(mod, tree, engine):
+    rep = run(mod, engine)
+    bound = [b for b in rep.bindings if "engine path(s) held to" in b[0]]
+    assert len(bound) == 2, rep.bindings
+    assert any("ships from" in what for what, _b, _o in bound), bound
+    assert any("the pin names" in what for what, _b, _o in bound), bound
+    for _what, judged, of in bound:
+        assert of == len(mod.engine_paths(mod.shipped()))
+        assert judged > 0 and judged <= of
+
+
+def test_the_pin_arm_reds_when_the_pinned_tree_lacks_a_chunky_script(
+    mod, tree, engine, tmp_path
+):
+    """The property rule 21's second arm exists to hold, tested by removing it.
+
+    `validation/chunky.sh` is one of the two paths that paid for this arm: the
+    page names it, this tree carries it, and the tree at the OLD 40-hex pin did
+    not. The perturbation is a real git tree — built through a private index so
+    this repository's own is untouched — with that one path removed, handed in
+    as the object the pin resolves to. Only the PIN arm may red: the shipping
+    tree still carries the file, which is exactly the state that used to be
+    green.
+    """
+    removed = "validation/chunky.sh"
+    assert removed in mod.shipping_tree()
+    index = tmp_path / "perturbed.index"
+    env = {**os.environ, "GIT_INDEX_FILE": str(index)}
+
+    def git(*args: str) -> str:
+        out = subprocess.run(
+            ["git", "-C", str(mod.REPO), *args],
+            capture_output=True,
+            text=True,
+            env=env,
+            check=True,
+        )
+        return out.stdout.strip()
+
+    git("read-tree", "HEAD")
+    git("update-index", "--force-remove", removed)
+    perturbed = git("write-tree")
+    assert removed not in mod.pinned_tree(perturbed)
+    assert removed in mod.shipping_tree(), "the real index must be untouched"
+
+    rep = mod.Report()
+    mod.engine_paths_rule(rep, perturbed, "delvec--v0.0.0", True)
+    named = [f for f in rep.findings if removed in f]
+    assert len(named) == 1, rep.findings
+    assert "the tree the pin names" in named[0], named[0]
+    assert "the tree the page ships from does not carry it" not in named[0]

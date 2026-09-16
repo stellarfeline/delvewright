@@ -10,12 +10,14 @@ WHAT IT COMPARES
 
     the binary       `delvec --version`, as `. ~/.delvewright/env.sh && delvec`
                      resolves it — the binary every later command runs, not a
-                     path this script guesses. Creator mode: equal to the pin's
-                     `[engine].release`. Dev mode: equal to the checkout's own
-                     `versions.toml` `[engine].version` (Init I3b).
+                     path this script guesses. Creator mode: equal to the
+                     version the pin's `[engine].ref` tag states. Dev mode: equal
+                     to the checkout's own `versions.toml` `[engine].version`
+                     (Init I3b).
     the engine tree  creator mode: `git -C <engine> rev-parse HEAD` equal to the
-                     pin's `[engine].ref`. Dev mode: the checkout is the engine
-                     under work, so HEAD is printed and not compared.
+                     COMMIT the pin's `[engine].ref` tag points at, resolved in
+                     the creator's own clone. Dev mode: the checkout is the
+                     engine under work, so HEAD is printed and not compared.
     env.sh           `DELVEWRIGHT_SKILL` equal to the skill root this script
                      lives in, and `DELVEWRIGHT_MODE` / `DELVEWRIGHT_ENGINE`
                      equal to this run's I0 — read by sourcing the file in `sh`,
@@ -122,14 +124,31 @@ def checkout_version(engine: pathlib.Path) -> str:
         ) from exc
 
 
+def tag_commit(engine: pathlib.Path, ref: str) -> str:
+    """The commit `ref` names in the creator's own engine clone.
+
+    The pin names a TAG, and a tag is not a revision until something resolves
+    it — so the comparison is `rev-parse HEAD` against `rev-parse <ref>^{commit}`
+    in the clone Init I2 made, never the two strings. A clone that cannot resolve
+    the tag has not fetched it, which is I2's own repair.
+    """
+    proc = subprocess.run(
+        ["git", "-C", str(engine), "rev-parse", "--verify", f"{ref}^{{commit}}"],
+        capture_output=True,
+        text=True,
+    )
+    return proc.stdout.strip() if proc.returncode == 0 else ""
+
+
 def same_path(got: str, want: str) -> bool:
     return bool(got) and pathlib.Path(got).resolve() == pathlib.Path(want).resolve()
 
 
 def run(mode: str, engine: pathlib.Path, env: pathlib.Path, pin: pathlib.Path) -> int:
-    _repo, release, ref = FD.read_pin(pin)
+    _repo, ref = FD.read_pin(pin)
+    version = FD.tag_version(ref)
     print(f"pin check: skill root {SKILL_ROOT}")
-    print(f"pin check: its pin names release {release}, ref {ref}")
+    print(f"pin check: its pin names engine release {ref} (delvec {version})")
 
     if not env.is_file():
         print(f"pin check: {env} is absent — there is no toolchain on this machine")
@@ -148,7 +167,14 @@ def run(mode: str, engine: pathlib.Path, env: pathlib.Path, pin: pathlib.Path) -
     # -- the engine tree -----------------------------------------------------
     tree = head(engine)
     if mode == "creator":
-        compare(f"engine tree {engine} HEAD", tree, ref, tree == ref, "I2")
+        want_commit = tag_commit(engine, ref)
+        compare(
+            f"engine tree {engine} HEAD",
+            tree,
+            f"{ref} ({want_commit or 'which this clone cannot resolve'})",
+            bool(want_commit) and tree == want_commit,
+            "I2",
+        )
     else:
         print(
             f"pin check: engine tree {engine} HEAD {tree or 'nothing'} — dev mode, "
@@ -159,7 +185,7 @@ def run(mode: str, engine: pathlib.Path, env: pathlib.Path, pin: pathlib.Path) -
     m = FD.VERSION_RE.match(answer)
     found = m.group("version") if m else None
     if mode == "creator":
-        want, repair = release.lstrip("v"), "I3a"
+        want, repair = version, "I3a"
     else:
         want, repair = checkout_version(engine), "I3b"
     compare(
