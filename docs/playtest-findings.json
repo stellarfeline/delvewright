@@ -2642,6 +2642,25 @@
       "note": "Re-measured on the tree this row lands on: the engine at this branch's merge commit `f34a93be1588e1a297488a684e59c927cd1e4146`, against the released campaign at content `73182027db05e14d3a52a39e0c30fabd9025b9c0`. The game's side is unmoved: `crates/delvec/data/PROVENANCE.md` still pins `item_components/data.min.json` at sha-256 `51b191e13f86813ca02f1498942e5bc235947edb71eb8105a78401670b3665c4` — byte-identical across the merge (`git diff` over that file between this branch's pre-merge head and the merge commit is empty) — so the 8-slot/84-item registry fact the original reproduction read from it stands. The engine's side reproduces in the identical words: writing `body`/`saddle` into `actor/captain`'s equipment is refused at DW0100 — `unknown field `body`/`saddle`, expected one of `head`, `chest`, `legs`, `feet`, `main_hand`, `off_hand`` — and `MobEquipment::slots()` (`crates/dsl/src/stages.rs`) still returns the same fixed array of 6. The binding, computed by `tools/staging-gate.py`'s own `probe()`, still counts the equipment declarations this campaign makes: 7 of the 155 nodes `quests.json` now holds, one per actor; the precondition (bodies that could carry one) is also 7. Closed by spec-0067: `EquipSlot::ALL` carries the eight slots and every slot list derives from it; `crates/delvec/tests/equipment_tables.rs::every_slot_the_item_data_declares_is_in_the_vocabulary` reads `crates/delvec/data/item-equippable-1.21.11.json` (84 items over 7 slot values, extracted from the same item-components digest) and asserts each value is in the set. Measured with `tools/staging-gate.py` against the gallery primary built by a delvec force-built from the branch that carries the change: BOUND, binding 4 equipment declarations, among them a horse in `body` and `saddle`.",
       "round": 1,
       "triage": "capability"
+    },
+    {
+      "applies_when": {
+        "glob": "world.json",
+        "kind": "campaign"
+      },
+      "binding": {
+        "file": "design-record.json",
+        "kind": "artifact",
+        "path": "references"
+      },
+      "campaign": "the-tidewatch",
+      "carrier": null,
+      "finding": "the built areas bore no resemblance to the design set approved at the gate — a flat sand floor in a box of cobble where the approved image is a tide-cut stair on a black rock headland — and nothing in the pipeline put the two side by side: the build compares the sky and nothing else, and no rendered view of the built world was required to answer any approved image",
+      "general_form": "a built world and the design set its gate approved are assembled into one comparison before the build is reviewed: every approved reference is answered by a stated view of the BUILT world, so the disagreement is put in front of a reader rather than left to be remembered; the likeness itself is that reader's judgement and no machine's",
+      "id": "drill3-03",
+      "note": "Two halves, and only the second is a judgement. MACHINE-CHECKABLE AND UNCARRIED: nothing holds `design/cameras.json` to `design.json` in the direction that matters. `delvec cameras` holds every camera's `answers` to a recorded reference (DW0721) and nothing holds a reference to a camera, so a campaign may record six approved concept images, state two cameras that both answer the same one, and exit 0 with four images no view of the built world ever stood beside — measured on the gallery's `ocean-horizon` point: `design record: 6 reference(s) recorded over 6 image file(s)`, `previewed 2 camera frame(s)`, exit 0. Deleting `design/cameras.json` outright also exits 0. A HUMAN READING: whether what was built LOOKS like the picture is ruled to be a person's, not a classifier's — `compiler::design` opens no image bytes on purpose, and spec-0028 §3 keeps `refscore` an ordering of a contact sheet and never a verdict. That ruling is not what this row reports; the row reports that the pipeline does not even assemble the pair the person is meant to look at. WHAT DOES COMPARE, measured on the same point: `DW0890` holds the times and weathers the approved rows state to the set the world can reach, as sets, for equality, and refuses at validation — binding 6 references over 6 image files. Everything else about the built world's appearance is uncompared.",
+      "round": "drill-3",
+      "triage": "capability"
     }
   ],
   "ledger_version": "2026-08-11"
