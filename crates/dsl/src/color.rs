@@ -54,7 +54,7 @@ mod tests {
         assert_eq!(packed("#ffd700"), Some(16_766_720));
         assert_eq!(packed("#ffffff"), Some(16_777_215));
         assert_eq!(packed("#8b0000"), Some(9_109_504));
-        assert_eq!(packed("#000000"), Some(0));
+        assert_eq!(packed("#0a0b0c"), Some(658_188));
         assert_eq!(packed("#fff"), None);
     }
 }

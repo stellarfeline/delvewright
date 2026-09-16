@@ -1,6 +1,6 @@
 # spec-0068: A firework is an effect
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Ground**: written against engine `495fca44` (`origin/main`), read only —
   the stage-5 effect vocabulary (`Verb`, 37 variants, `crates/dsl/src/stages.rs`),
   `emit::emit_play_sound`, the command-tree validator
@@ -22,9 +22,8 @@
   component's fields and the five explosion shapes, the burst height per
   flight duration, the explosion's damage and radius — are the wiki's and are
   marked **cited**; the rules built on them are **authored**.
-- **Numbers**: no spec or ADR beyond this one. **One new DW code** (§5), to be
-  allocated at implementation. **`dsl_version` moves**: the effect vocabulary
-  gains a verb.
+- **Numbers**: no spec or ADR beyond this one. **One new DW code**, `DW0899`
+  (§5). **`dsl_version` moves** to `0.29.0`: the effect vocabulary gains a verb.
 - **Non-goals**: a `particle` verb (§7 names it as the next member of the
   class and stops); a rocket fired *at* something (a crossbow's shape); a
   firework a player holds or uses; a display of many rockets as one verb —
@@ -154,8 +153,8 @@ proof in §5 is trusted with it; the acceptance criteria say so.
 
 ## 5. The refusal — a burst where the campaign put a body, or a roof
 
-**Authored.** One new code, build tier (exit 3), `compiler::lethal`'s
-neighbour, asked over the assembled world once the mark is a cell. Two
+**Authored.** `DW0899`, build tier (exit 3), `compiler::firework` —
+`compiler::lethal`'s neighbour, asked over the assembled world once the mark is a cell. Two
 shapes of one rule — *a firework bursts where the campaign meant it to, and
 hurts nobody the campaign posted*:
 
@@ -199,10 +198,18 @@ column(s) checked to H cell(s), P post(s) within reach examined, R refused`
   overlay already ends on. Bound by perturbation: changing a colour moves the
   `summon` line. Units: `QuestEffect::firework` and each of its properties,
   the explosion object's properties, the five shape variants.
-- **The probe.** One committed probe for the new code: the same firework
+- **The probe.** One committed probe for `DW0899`: the same firework
   declared in the primary's hall at `anchor/exit`, refused at `build` (shape
-  1, the roof). Shape 2 is a unit test (a firework at a mark two cells from a
-  posted NPC, sky above).
+  1, the roof). Shape 2 is a unit test over `compiler::firework::judge`, with
+  a posted body four cells from the burst cell and six cells from it, under
+  open sky. It is asked of the rule directly rather than of a campaign because
+  of what the arithmetic says: a burst stands at least eight blocks over its
+  mark and the reach is five, so the only body a burst can catch is one posted
+  three or more courses **above** the launch plane — a wall walk, a gallery, a
+  tower — and no fixture in this repository has an anchor like that under open
+  sky. What carries a campaign's posts into the rule is asserted separately:
+  adding a respawn seat to a built campaign moves `lethal::posted_places` and
+  the firework gate's own count together, because there is one enumeration.
 - **The record.** `docs/reference/compiler.md`: the effect's surface row, the
   emission row beside `play-sound`'s, the new code's row and the binding
   line; the `LifeTime` rule and the `FireworksItem` key are written there
@@ -213,7 +220,7 @@ column(s) checked to H cell(s), P post(s) within reach examined, R refused`
   it needs eight blocks of sky per flight step; it is refused under a roof
   and beside a posted body; a display is a `sequence` of them — and the
   height it flies is stated there as the page's number.
-- **The demo level.** A row in `docs/demo-levels.md` when the code lands: a
+- **The demo level.** A row in `docs/demo-levels.md`: a
   court under open sky where a rung bell answers with one rocket, then a
   sequence of five; the level measures the burst height at each flight on the
   pinned server and the record takes the measured number over §3.3's cited
@@ -234,51 +241,92 @@ column(s) checked to H cell(s), P post(s) within reach examined, R refused`
 
 ## 8. Acceptance criteria
 
-Machine-checkable; each names its instrument, and each was checked against the
-tree at `495fca44` before being written. Where the tree cannot yet satisfy a
-criterion the verdict is recorded as a debt.
+Machine-checkable; each names its instrument and the result it has on the tree
+that lands it. `delvec` is this tree's `target/debug/delvec` (delvec 1.5.0, dsl
+0.29.0, mc 1.21.11); `gallery-prefabs` is the tree `prefabs/gallery-generator`
+writes.
 
 1. **The surface.** `delvec schema --stage all` exports `QuestEffect::firework`
-   with `at`, `flight` (1..=3), `explosions` (1..=7 items of `{shape, colors,
-   fade_colors, trail, twinkle}`) and a `FireworkShape` enum of exactly five
-   variants, under the `dsl_version` the implementing round is handed; the
-   `DW0100` enumeration names 38 verbs. *Tree: debt — 37 verbs, no such
-   variant.*
-2. **The emission.** A test declares one firework and asserts the emitted line
-   parses under `CommandTree::v1_21_11`, carries `LifeTime:20` for flight 1
-   (`30`, `40` for 2, 3), `FireworksItem`, `flight_duration:1b`, the five
-   shape names spelled as the component spells them, and colours as `[I;…]`
-   packed integers equal to the `#rrggbb` values; two builds are byte-identical
-   (ADR-0006). *Tree: debt.*
-3. **The colour rule.** A test asserts `#ffd700` emits `16766720` and a
-   malformed colour string is `DW0100` (the schema's pattern, the one
-   `PotionContents.color` uses). *Tree: debt.*
-4. **The roof.** A test places a firework under a solid cell six blocks up and
-   asserts the new code naming that cell; the same mark under an open column
-   of eight cells is green; flight 2 under an open column of eight is refused
-   naming eighteen. *Tree: debt — the code is on no ref.*
-5. **The reach.** A test posts an NPC four cells from a firework's burst cell
-   under open sky and asserts the new code naming the NPC; six cells away is
-   green; the enumeration of posts is `DW0511`'s own, asserted by a test that
-   adds a post class to one and reads it from the other. *Tree: debt.*
-6. **The binding line.** Every build prints §5's line; the valley-site overlay
-   reports `F ≥ 1`, `H ≥ 8`. *Tree: debt.*
+   with `at` (a `Mark`), `flight` (`minimum: 1`, `maximum: 3`, optional) and
+   `explosions` (`minItems: 1`, `maxItems: 7` of `{shape, colors, fade_colors,
+   trail, twinkle}`), and a `FireworkShape` of exactly five string constants, at
+   `dsl_version` `0.29.0`; the effect union's `oneOf` names 38 verbs. *Met —
+   `crates/dsl/tests/v29_firework.rs::the_schema_exports_the_verb_and_its_bounds`,
+   `::the_schema_exports_the_explosion_and_its_colour_pattern`,
+   `::the_effect_union_names_thirty_eight_verbs`; the export is 534011 bytes
+   carrying `firework` 20 times.*
+2. **The emission.** A test declares one firework and reads the emitted line off
+   the build: it carries `LifeTime:20` for flight 1 (`30`, `40` for 2, 3),
+   `FireworksItem`, `flight_duration:<f>b`, the five shape names as the
+   component spells them, and colours as `[I;…]` packed integers equal to the
+   `#rrggbb` values. `emit::build` walks every line it writes against
+   `CommandTree::v1_21_11`, so reaching the assertion is the tree's verdict; two
+   builds are byte-identical (ADR-0006). *Met —
+   `crates/delvec/tests/v29_firework.rs::the_emitted_rocket_carries_the_component_the_page_names`,
+   `::lifetime_is_written_per_flight`,
+   `::every_shape_and_every_optional_field_reaches_the_component`,
+   `::two_builds_are_byte_identical`.*
+3. **The colour rule.** `#ffd700` emits `16766720` and a malformed colour string
+   is `DW0100`, naming the schema's own pattern. The rule is one function,
+   `dsl::color`, read by the validator, the firework emitter and the potion
+   bottle's `custom_color`. *Met —
+   `crates/dsl/tests/v29_firework.rs::a_colour_packs_to_what_vanilla_stores`,
+   `::a_malformed_colour_is_dw0100`.*
+4. **The roof.** A firework under a solid cell is `DW0899` naming that cell; the
+   same mark under an open column of eight is green; flight 2 over an open eight
+   is refused naming eighteen. *Met —
+   `crates/delvec/tests/v29_firework.rs::the_roof_rule_reads_the_column_the_flight_needs`
+   over `firework::judge`, and end to end through a real build by
+   `::a_rocket_under_the_halls_ceiling_is_dw0899` (the hall's ceiling stands
+   four cells over `anchor/exit`, which is the solid cell the refusal names) and
+   its perturbation `::the_same_rocket_under_open_sky_is_green`.*
+5. **The reach.** A body posted four cells from a firework's burst cell under
+   open sky is `DW0899` naming the post; six cells away is green; the
+   enumeration of posts is `DW0511`'s own, asserted by adding a post class to
+   one and reading it from the other. *Met —
+   `crates/delvec/tests/v29_firework.rs::a_posted_body_in_reach_of_the_burst_is_dw0899`,
+   `::a_wall_between_the_burst_and_the_post_is_not_credited`,
+   `::a_post_on_the_launch_plane_is_never_in_reach`, and
+   `::the_posts_are_dw0511s_own_enumeration`, which adds a respawn seat to a
+   built campaign and reads the same number from `lethal::posted_places` and
+   from the firework gate. §6 records why the first three are asked of the rule
+   rather than of a campaign.*
+6. **The binding line.** Every build that assembles a world prints §5's line;
+   the valley-site overlay reports `F = 1`, `H = 8`. *Met — the overlay's build
+   prints `firework binding: 1 firework(s) declared, 1 burst column(s) checked
+   to 8 cell(s), 3 post(s) within reach examined, 0 refused`; the primary, which
+   declares none, prints the same line with zeroes.
+   `crates/delvec/tests/v29_firework.rs::the_binding_line_states_what_was_examined`
+   pins both texts.*
 7. **The pinned facts.** One test names the three wiki pages and asserts the
    constants read from them — five shapes, the `LifeTime` formula's fixed term
    `(flight + 1) × 10`, the heights 8/18/32, the five-block radius, the
-   `FireworksItem` key — so a re-pin is one diff in one file. *Tree: debt.*
-8. **The live half.** The demo level's PackTest asserts a rocket entity with
-   the component exists on the tick after the effect fires; the level's
-   generation record states the measured burst height per flight; if it
-   differs from §3.3 the constant of criterion 7 is changed and this section
-   is cited as superseded on that number. *Tree: not yet due.*
+   `FireworksItem` key — so a re-pin is one diff in `crates/dsl/src/firework.rs`.
+   *Met — `crates/dsl/tests/v29_firework.rs::the_pinned_facts_are_what_the_pages_say`.*
+8. **The live half.** The demo level's PackTest asserts a rocket entity with the
+   component exists on the tick after the effect fires; the level's generation
+   record states the measured burst height per flight; if it differs from §3.3
+   the constant of criterion 7 is changed and this section is cited as
+   superseded on that number. *Not yet due — the demo level is queued
+   (criterion 11), and until it is built the heights 8/18/32 are cited, never
+   measured. Recorded here so the gap is read rather than assumed.*
 9. **The gallery.** §6's element builds green on the valley-site overlay;
-   perturbing a colour moves the summon line; the probe is refused at build
-   with the new code; `tools/check-gallery-coverage.py` reports 0 units in
-   neither state. *Tree: debt — no overlay fires one.*
+   perturbing a colour moves the `summon` line; the probe is refused at build
+   with `DW0899`; `tools/check-gallery-coverage.py` reports 0 units in neither
+   state. *Met — the coverage gate reports 899 units enumerated, 895 bound, 4
+   refusal-proven, 0 in neither state, and 36 probes refused with the code they
+   name, `a-rocket-under-a-roof` among them. The perturbation is the emitted
+   line: the overlay's colours reach the `summon` as `colors:[I;16766720,…]`,
+   so changing one changes the byte.*
 10. **The record and the skill.** The rows and page of §6, in the pull request
-    that lands the code. *Tree: debt.*
-11. A demo-level row is queued when the code lands. *Tree: not yet due.*
+    that lands the code. *Met — `docs/reference/compiler.md` carries the surface
+    row, the emission row beside `play-sound`'s, the `DW0899` section and the
+    binding paragraph; `references/quest-capabilities.md` carries the creator's
+    paragraph under *Things that change the world*, stating the behaviour
+    without the code, because the skill page pins an engine that does not yet
+    declare `DW0899` and `tools/check-skill-page.py` holds it to that pin.*
+11. A demo-level row is queued when the code lands. *Met — **The Bell and the
+    Sky** in `docs/demo-levels.md`.*
 
 ## 9. Decisions for the owner
 
