@@ -1,9 +1,0 @@
-{
-  "cells_outside_built_volume": 0,
-  "fluid_cells_examined": 0,
-  "from_pieces": [],
-  "horizon": "void",
-  "horizon_base": "void",
-  "pieces_examined": 18,
-  "verdict": "pass"
-}

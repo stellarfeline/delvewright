@@ -1,1 +1,0 @@
-execute if score #party dw.o_hear_the_brief matches 1 if score #party dw.o_reach_the_far_end matches 1 unless score #party dw.q_walk_the_ladder matches 1 run function metrics-gym:complete_q_walk_the_ladder

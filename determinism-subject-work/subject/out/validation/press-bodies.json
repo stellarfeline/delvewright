@@ -1,7 +1,0 @@
-{
-  "code": "DW0426",
-  "examined": 0,
-  "presses": [],
-  "reason": "this campaign arms no `strike`/`use` trigger on an anchor at all, so nothing here can be pressed and DW0426 had nothing to resolve a body for. A press that lands on nothing is the defect this proof exists for; a campaign with no presses has not passed it, it is outside it",
-  "unbound": true
-}

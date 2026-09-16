@@ -1,3 +1,0 @@
-Accepting Mojang's EULA is the operator's action, never the compiler's.
-Set EULA=TRUE in the environment (or eula.txt) before running a server here.
-The server jar is NOT shipped (ADR-0010); it is fetched by version at run time.
