@@ -7,7 +7,7 @@
   the content repository's skill page §13 walks: `delvec allocation`,
   `delvec grammar expand`, `delvec prefab audit`, `delvec prefab lighting`, a
   file move, a hand-written `details[]` row. Every count below is measured on
-  the merged tree, engine `1c1b4f39` and after, by the tests named beside it.
+  engine `ccbc563a` by the tests named beside it.
 - **DSL**: no document-shape change. The `details[]` row is written by the
   verb in the shape spec-0050 fixed; the program's address is derived from the
   place (§2.1), so nothing new is written into a stage document.
@@ -430,10 +430,12 @@ number measured on the ground revision with this verb built.
    written and the whole built green; the blockout fixture's 3 answerable
    places by one command from 3 programs. Under the ground revision's chain
    the same 14 places cost 56 commands (`allocation`, `expand`, `audit`,
-   `lighting`) plus a 14-row hand-written document. Both counts are asserted
-   exactly by that test — 18 allocations, 14 of them answerable — because the
-   assertion that stood here was a floor (`>= 8`), and a floor cannot tell a
-   census from a drift.
+   `lighting`) plus a 14-row hand-written document. The test asserts both
+   numbers exactly, never a floor: `allocations.len() == 18` and
+   `places.len() == 14`, so a gym that grows a place or moves a seam's class
+   reds here. The four the predicate excludes are the two climb hosts, the
+   drop's top and the pit — §10's fixture, and the whole of the difference
+   between 18 and 14.
 7. **`*.report.json`.** A prefab directory holding `stray.report.json` loads
    with zero `DW0346`; one holding a malformed `report.json` still raises it —
    the skip is the full suffix.
