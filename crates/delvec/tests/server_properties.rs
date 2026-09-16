@@ -5,7 +5,7 @@
 //! build, and a delve has two boot paths that do not share a default source: the
 //! shipped image (`validation/Dockerfile.delve`) starts from the itzg base's own
 //! `/image/server.properties` template, while the owner's playtest server
-//! (`tools/playtest-server.sh`, `OVERRIDE_SERVER_PROPERTIES=false`) copies this
+//! (`tools/creator/playtest-server.sh`, `OVERRIDE_SERVER_PROPERTIES=false`) copies this
 //! file in and lets the vanilla jar fill in the rest. Two hosts that decide a
 //! world-affecting key differently are two different worlds (ADR-0006), and
 //! where the two sources agree today it is a coincidence of upstream files this

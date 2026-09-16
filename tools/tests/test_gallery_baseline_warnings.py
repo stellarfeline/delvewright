@@ -27,7 +27,7 @@ REPO = pathlib.Path(__file__).resolve().parents[2]
 
 
 def _load():
-    path = REPO / "tools" / "gallery-baseline.py"
+    path = REPO / "tools" / "ci" / "gallery-baseline.py"
     spec = importlib.util.spec_from_file_location("gallery_baseline", path)
     mod = importlib.util.module_from_spec(spec)
     assert spec.loader is not None

@@ -197,7 +197,7 @@ const TYPICAL_ADVANCE: u32 = 6;
 /// `advance = round(inkWidth * height / cellHeight) + 1`, and for the ASCII sheet
 /// `height == cellHeight == 8`, so the advance is simply the glyph's ink width + 1.
 ///
-/// **Measured**, not recited: `tools/extract-font-metrics.py` reads the sheet out of
+/// **Measured**, not recited: `tools/maintenance/extract-font-metrics.py` reads the sheet out of
 /// the 1.21.11 client jar and applies that rule (see `data/PROVENANCE.md`). The jar is
 /// EULA-bound and never vendored, so the result is committed here as a constant and
 /// the script is the reproduce path. 68 of the 95 are 6; the measured table matches

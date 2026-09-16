@@ -12,7 +12,7 @@
 # [i18n] — translate l10n sidecars with an external OpenAI-compatible LLM API
 # instead of having the /new-delve agent translate in-agent.
 #
-#   consumed by: tools/i18n-translate.py   ·   docs: docs/reference/i18n.md
+#   consumed by: tools/creator/i18n-translate.py   ·   docs: docs/reference/i18n.md
 #
 # Generation-time only. Shipped delves never call an LLM (CLAUDE.md forbidden
 # zones) — the sidecar is written into the campaign source and baked at build time.
@@ -39,7 +39,7 @@
 # picture instead of prose. NOT a render — a render is a candidate prefab imaged
 # by `delvec render`, later, at contact-sheet curation. Two stages, two producers.
 #
-#   consumed by: tools/refimg.py           ·   docs: docs/reference/tools.md
+#   consumed by: tools/creator/refimg.py           ·   docs: docs/reference/tools.md
 #
 # Output goes to a gitignored working directory, which is where a DRAFT belongs.
 # An APPROVED reference is copied into the campaign it belongs to — under
@@ -89,7 +89,7 @@
 # [refscore] — score candidate RENDERS against a REFERENCE IMAGE, to ORDER a
 # contact sheet (spec-0028 §3).
 #
-#   consumed by: tools/refscore.py         ·   docs: docs/reference/tools.md
+#   consumed by: tools/creator/refscore.py         ·   docs: docs/reference/tools.md
 #
 # THE SCORE RANKS; IT NEVER GATES. Cross-domain calibration
 # between a painterly reference and a voxel render is unproven, so a number here

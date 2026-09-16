@@ -14,7 +14,7 @@
 //!
 //! # What this document is not
 //!
-//! It is not prose, and it is not the sidecar `tools/refimg.py` writes. The
+//! It is not prose, and it is not the sidecar `tools/creator/refimg.py` writes. The
 //! sidecar records what was *asked for*, before any approval exists; this
 //! records what came back and was *said yes to*. It is not player-visible, so
 //! nothing in it is l10n-inventoried.
@@ -47,7 +47,7 @@ pub const REFERENCE_DIRS: [&str; 2] = [CONCEPT_DIR, REFERENCE_DIR];
 /// one place the set is written down.
 ///
 /// It is a set of *image* extensions on purpose. `design/` also carries the
-/// re-issue sidecars `tools/refimg.py` writes, and those are neither counted
+/// re-issue sidecars `tools/creator/refimg.py` writes, and those are neither counted
 /// as approved images nor refused for having no row — a file that is not an
 /// image is simply not this record's subject.
 pub const IMAGE_EXTENSIONS: [&str; 4] = ["jpeg", "jpg", "png", "webp"];

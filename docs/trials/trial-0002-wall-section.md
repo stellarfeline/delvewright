@@ -272,7 +272,7 @@ instrument could frame the thing being judged, so the answer is about the
 artifact; `instrument-bound` when it could not, with the blocker named so the
 verdict can be re-taken once it is fixed. Trial 0001 shipped a bounded answer as
 a verdict with the disclaimer three paragraphs away, and later rounds cited the
-verdict; `tools/check-trial-verdicts.py` is what makes this table exist.
+verdict; `tools/ci/check-trial-verdicts.py` is what makes this table exist.
 
 | Verdict | Bound | Judged from |
 |---|---|---|

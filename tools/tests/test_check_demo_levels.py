@@ -1,4 +1,4 @@
-r"""Guards for `tools/check-demo-levels.py`.
+r"""Guards for `tools/ci/check-demo-levels.py`.
 
 The red this gate exists to prevent: a change lands author-facing command-line
 surface and the demo queue never hears about it, so the capability has no demo
@@ -24,7 +24,7 @@ from pathlib import Path
 import pytest
 
 REPO = Path(__file__).resolve().parents[2]
-CHECKER = REPO / "tools" / "check-demo-levels.py"
+CHECKER = REPO / "tools" / "ci" / "check-demo-levels.py"
 
 
 @pytest.fixture
@@ -399,7 +399,7 @@ def test_ci_runs_this_gate():
     still nobody's job to run would be the same defect wearing the fix's
     clothes. This binds the invocation to a job that already has to pass."""
     ci = (REPO / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
-    assert "python3 tools/check-demo-levels.py" in ci, (
+    assert "python3 tools/ci/check-demo-levels.py" in ci, (
         "ci.yml no longer runs the demo-queue gate"
     )
     # The gate needs `origin/main` present; the docs job fetches it once for the

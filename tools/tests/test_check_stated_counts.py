@@ -1,4 +1,4 @@
-r"""Guards for `tools/check-stated-counts.py`.
+r"""Guards for `tools/ci/check-stated-counts.py`.
 
 THE RED IT EXISTS TO PREVENT, in the exact bytes it arrives in. Two open PRs
 change the idiom index's intent. One adds a tenth technique (`idiom-arguments`)
@@ -34,7 +34,7 @@ from pathlib import Path
 import pytest
 
 REPO = Path(__file__).resolve().parents[2]
-CHECKER = REPO / "tools" / "check-stated-counts.py"
+CHECKER = REPO / "tools" / "ci" / "check-stated-counts.py"
 
 
 @pytest.fixture

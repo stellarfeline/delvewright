@@ -182,7 +182,7 @@ and the tag must not be re-cut.
 The generalisable part is not "someone forgot a checkbox". It is that **every
 element that made this gate look real lived in the repository, and the single
 element that made it bind did not** — the same out-of-band shape that
-`tools/check-required-contexts.py` exists for one door further out. A gate whose
+`tools/ci/check-required-contexts.py` exists for one door further out. A gate whose
 binding no artifact can observe is indistinguishable from a vacuous one, and this
 project's own doctrine already says a green gate that binds to nothing is not a
 pass.
@@ -190,7 +190,7 @@ pass.
 So §4 now has a repository-side realisation, and the obligation is keyed to
 `environment:` — the object class — rather than to the job that was burned:
 
-- `tools/assert-run-approved.sh` is the first step of any environment-gated job.
+- `tools/ci/assert-run-approved.sh` is the first step of any environment-gated job.
   It reads the run's own approval history and refuses when no approval names the
   environment. A run that was never held records none.
 A CI checker enforcing that assertion on every environment-gated job was built

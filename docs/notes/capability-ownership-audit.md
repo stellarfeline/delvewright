@@ -4,7 +4,7 @@ A one-time sweep of the DSL surface and compiler for capabilities bound to the
 feature that first needed them. Filed in `docs/notes/` rather than
 `docs/reference/`: it is a dated finding-set with a fix sequence, not a record of
 current behaviour — the behaviour it describes is what we intend to change. The
-part that must not rot is enforced instead by `tools/check-capability-ownership.py`.
+part that must not rot is enforced instead by `tools/ci/check-capability-ownership.py`.
 
 ## The governing question
 
@@ -109,7 +109,7 @@ This shape has been fixed thirteen times already. It is **not closed**.
 | 18 | Twelve further hand-rolled effect walks still miss roots: `has_any_sustain`/`DW0474` (3/5), `collect_open_gate_anchors` (3/5), `gate_open_indices` (3/5, and its comment says it "mirrors" the one above — it mirrors the gap), `collect_v06_effects` (3/5 + a private dialogue walk), `wave_area` (4/5), `required_anchors_for_area` (2-3/5), `continuity` NPC-lifecycle (2/5 — the same module walks both ways), `quests_ending_tail` (2/5), the kill-less-wave PackTest picker (1/5), `branch` beat-account (2/5), `flow` advance replay (2/5), `actor_beats` (4/5, self-documented). | as listed | **B** |
 | 19 | **Two affordance registries with divergent membership.** `emit::affordances` (feeding `DW0420`/`DW0421` — "the affordance has visible hardware") is a hand-enumerated list of four kinds, and its own doc claims "the list is the definition of the class … which is what makes the proof total rather than a spot check". It is a spot check: it never sees `interact` objectives, env triggers, NPC hitboxes, seals or trapfire bodies. `eclipse::affordances` enumerates a *different* subset. | `emit.rs:4676-4724`, `eclipse.rs:308-395` | **B** |
 
-`tools/check-effect-roots.py` did not catch rows 17–18: it is a 40-line proximity
+`tools/ci/check-effect-roots.py` did not catch rows 17–18: it is a 40-line proximity
 heuristic, and these walks either spread their roots wider or reach them through
 helpers. Its own `ALLOWED` already records one such open finding
 (`required_anchors_for_area`).
@@ -259,13 +259,13 @@ because step 5's shape depends entirely on step 1's outcome.
 
 ## The machine form
 
-`tools/check-capability-ownership.py`, wired into the `docs (local link check)`
+`tools/ci/check-capability-ownership.py`, wired into the `docs (local link check)`
 job (an existing required context — no new job name, so no branch-protection
 deadlock). Four ledger checks; each prints its binding count and **fails on a zero
 binding**, because a gate that matched nothing is vacuous, not a pass.
 
 > **This table is checked against the build, not copied from it.**
-> `tools/check-capability-ownership.py` reads each row's number and reds when it
+> `tools/ci/check-capability-ownership.py` reads each row's number and reds when it
 > disagrees with what the check binds, naming the row and both figures. A
 > hand-copied binding count is exactly the unbound fact this table exists to
 > prevent, and three of these five rows had sat below the build with nothing

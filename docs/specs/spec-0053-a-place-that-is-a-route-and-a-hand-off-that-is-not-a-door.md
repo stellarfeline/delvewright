@@ -238,10 +238,10 @@ unreached entries, the subsumed corridor entries) are true at `ba81399c`.
    `metrics_version` digest test moves per its own rule.
 2. `delvec schema --stage all` shows a layout-graph node accepting exactly
    one of `size_class` / `way_class`, and a seam accepting exactly one of
-   opening-name / contact-span; `tools/check-gallery-coverage.py` is green
+   opening-name / contact-span; `tools/ci/check-gallery-coverage.py` is green
    with every new unit bound in the gallery domain or refusal-proven.
 3. Every refusal in §6 has an allocated code, at least one test asserting
-   it, and a fixture the compiler refuses with it; `tools/check-dw-codes.py`
+   it, and a fixture the compiler refuses with it; `tools/ci/check-dw-codes.py`
    is green in both directions with zero new allowlist entries.
 4. The way branch of the box-geometry check reds each of §6's three way
    trips in committed fixtures; a way-classed box that satisfies all three
@@ -257,8 +257,8 @@ unreached entries, the subsumed corridor entries) are true at `ba81399c`.
    its plan-site and bytes-site figures for a way leg equal the box's long
    extent; all sites remain thresholdless.
 8. `docs/reference/compiler.md` carries the new rows and the two-kind seam
-   and node tables; the docs job, `tools/check-doc-dupes.py` and
-   `tools/check-reference-versions.py` are green.
+   and node tables; the docs job, `tools/ci/check-doc-dupes.py` and
+   `tools/ci/check-reference-versions.py` are green.
 
 ## 10. Not settled here
 

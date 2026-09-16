@@ -1,4 +1,4 @@
-"""`tools/check-generator-preservation.py` — a generator deletes nothing it did
+"""`tools/ci/check-generator-preservation.py` — a generator deletes nothing it did
 not write.
 
 The gate itself runs the generators, which needs a release build of a second
@@ -22,7 +22,7 @@ import pathlib
 import re
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
-TOOL = ROOT / "tools" / "check-generator-preservation.py"
+TOOL = ROOT / "tools" / "ci" / "check-generator-preservation.py"
 
 
 def load():

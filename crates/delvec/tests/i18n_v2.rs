@@ -512,7 +512,7 @@ fn campaign_named(src: &Path, id: &str, title: &str) -> std::path::PathBuf {
 /// A client merges every applied resource pack into ONE language table, and a
 /// `{"translate": …, "fallback": …}` component reads its `fallback` only when the
 /// key is missing from that table. So while any other delve's pack is applied —
-/// `tools/playtest-server.sh` installs each one into the player's own
+/// `tools/creator/playtest-server.sh` installs each one into the player's own
 /// `resourcepacks/` directory, where it stays enabled across servers — a
 /// globally-keyed `world.title` is answered by whichever delve's pack is loaded,
 /// not by the delve being played. It was: a finished tour of Doune Castle toasted

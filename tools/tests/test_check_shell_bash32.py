@@ -1,4 +1,4 @@
-r"""Guards for `tools/check-shell-bash32.py`.
+r"""Guards for `tools/ci/check-shell-bash32.py`.
 
 The gate refuses bash-4-and-later syntax in repo shell, because Dev is macOS and
 macOS ships bash 3.2.57. Its failure mode is not a wrong verdict — it is a
@@ -25,7 +25,7 @@ from pathlib import Path
 import pytest
 
 REPO = Path(__file__).resolve().parents[2]
-CHECKER = REPO / "tools" / "check-shell-bash32.py"
+CHECKER = REPO / "tools" / "ci" / "check-shell-bash32.py"
 
 
 def load():

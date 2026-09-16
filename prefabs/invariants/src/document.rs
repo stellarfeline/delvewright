@@ -22,7 +22,7 @@
 //! the transplant this replaces. So the safe path is the default: every
 //! generator writes its documents through [`write_preserving`], which merges its
 //! own output ONTO whatever is already on disk. A gate still exists
-//! (`tools/check-generator-preservation.py`) and proves the property over every
+//! (`tools/ci/check-generator-preservation.py`) and proves the property over every
 //! generator, because a rule with no check is a sentence.
 //!
 //! # What "preserve" means, exactly

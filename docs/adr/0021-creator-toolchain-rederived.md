@@ -85,10 +85,10 @@ only. So `delvec`'s dependency graph stays nucleation-free under this section.
 same-name-different-capability binary — the defect where the artifact's name
 promises a surface its bytes do not carry. The surface is unconditional code,
 and the proof is artifact-side, not conventional:
-`tools/build-release-binaries.sh` runs each built binary and asserts its
+`tools/ci/build-release-binaries.sh` runs each built binary and asserts its
 `--help` subcommand list equals the clap surface parsed from source (the
 parser `tools/check-skill-version.py` already has), per target, at build time.
-`tools/check-publishable.sh`'s packaged-tarball build already proves the
+`tools/ci/check-publishable.sh`'s packaged-tarball build already proves the
 crates.io bytes build the same binary.
 
 ### 2. `crates/render` re-enters the root workspace, on registry Nucleation
@@ -109,7 +109,7 @@ jobs. Workspace builds that touch the render crate then compile the wgpu stack;
 build time is not a concern, so this is a note, not
 an argument. The root `Cargo.lock` gains the nucleation/wgpu entries, but the
 cross-build shelf gate compiles only `delvec`'s own graph
-(`cargo check -p delvec --bin delvec`, `tools/build-release-binaries.sh`), so
+(`cargo check -p delvec --bin delvec`, `tools/ci/build-release-binaries.sh`), so
 §3's blocker 1 stays out of its reach.
 
 ### 3. The GPU arms are built from a checkout, not shipped on the shelf

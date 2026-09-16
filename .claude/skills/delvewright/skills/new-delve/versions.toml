@@ -2,7 +2,7 @@
 #
 # spec-0063 §8. The page reads `release` and `ref` from this file and restates
 # neither — a literal on the page goes stale and nothing catches it; an
-# indirection stays true and `tools/check-skill-page.py` holds it.
+# indirection stays true and `tools/ci/check-skill-page.py` holds it.
 #
 # `release` and `ref` are the same engine arriving by the two channels ADR-0023
 # names: the archive on the release shelf (the default acquisition) and the

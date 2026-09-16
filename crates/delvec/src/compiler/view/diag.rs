@@ -44,7 +44,7 @@ pub const DW_ANCHOR_EYE: &str = "DW0727";
 // highest constant here and never from the catalog this branch started at:
 // `DW078x` was free when these three were written and was taken by the spatial
 // contract before they landed, so all three collided on arrival. The uniqueness
-// half of `tools/check-dw-codes.py` is what says so.
+// half of `tools/ci/check-dw-codes.py` is what says so.
 
 /// A blockstate has no definition in the pinned asset source: the id does not
 /// exist at this version, or its model or one of its textures is absent.

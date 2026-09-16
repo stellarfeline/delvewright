@@ -1,4 +1,4 @@
-"""`tools/playtest-server.sh down` says whether a container ever existed.
+"""`tools/creator/playtest-server.sh down` says whether a container ever existed.
 
 The defect: `docker rm -f "$NAME" >/dev/null 2>&1 && echo "$NAME removed" ||
 echo "$NAME was not running"` reads the exit status of `docker rm -f` as the
@@ -22,7 +22,7 @@ import pathlib
 import subprocess
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
-SCRIPT = ROOT / "tools" / "playtest-server.sh"
+SCRIPT = ROOT / "tools" / "creator" / "playtest-server.sh"
 NAME = "dw-test-session"
 
 

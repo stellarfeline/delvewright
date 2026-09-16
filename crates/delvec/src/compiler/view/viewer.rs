@@ -343,7 +343,7 @@ fn check_bundle_text(bundle: &str) -> Result<(), BuildError> {
             return Err(BuildError::Bundle(format!(
                 "the vendored renderer still asks for `{wrong}`, a path no Minecraft version \
                  ships — every banner and shield would draw as the missing-texture checker. \
-                 Rebuild it with tools/build-deepslate-bundle.sh, which applies the patch and \
+                 Rebuild it with tools/maintenance/build-deepslate-bundle.sh, which applies the patch and \
                  refuses if upstream has moved the id again."
             )));
         }
@@ -352,7 +352,7 @@ fn check_bundle_text(bundle: &str) -> Result<(), BuildError> {
         if !bundle.contains(right) {
             return Err(BuildError::Bundle(format!(
                 "the vendored renderer never mentions `{right}`, so it is not the bundle this \
-                 crate was built against. Rebuild it with tools/build-deepslate-bundle.sh."
+                 crate was built against. Rebuild it with tools/maintenance/build-deepslate-bundle.sh."
             )));
         }
     }

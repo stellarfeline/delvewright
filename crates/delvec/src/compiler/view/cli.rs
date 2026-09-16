@@ -9,7 +9,7 @@
 //! **No cargo feature gates any of this.** A feature would ship a
 //! same-name-different-capability binary — an artifact whose name promises a
 //! surface its bytes may not carry — so the arms are unconditional code, and
-//! `tools/build-release-binaries.sh` proves per target that the built binary's
+//! `tools/ci/build-release-binaries.sh` proves per target that the built binary's
 //! own `--help` lists exactly the surface the source declares.
 //!
 //! The three arms that are NOT here — `piece`, `batch`, `fidelity-gate` — are
@@ -211,7 +211,7 @@ pub enum ViewCommand {
         /// candidate ids is not a curation page.
         #[arg(short, long)]
         out: PathBuf,
-        /// Similarity scores from `tools/refscore.py`. Absent → id order.
+        /// Similarity scores from `tools/creator/refscore.py`. Absent → id order.
         #[arg(long)]
         scores: Option<PathBuf>,
         /// Representative shot per candidate in the per-directory layout

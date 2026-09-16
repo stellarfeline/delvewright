@@ -448,7 +448,7 @@ existing mechanism for settings that cannot coexist with the primary) that
 builds the gallery's quest layer over a small graph + site plan, and a
 committed **probe** binds `DW0839` itself — the mutual exclusion produces
 exactly the machine refusal the probe form demands. Every new DW code above
-lands with a test asserting it (`tools/check-dw-codes.py`), a red fixture and
+lands with a test asserting it (`tools/ci/check-dw-codes.py`), a red fixture and
 its catalog row in `docs/reference/compiler.md`, in the same PR as its check.
 
 ## 7. What makes the ordering structural
@@ -604,12 +604,12 @@ Machine-checkable; each names its verdict's instrument.
    unit test asserts the exported player metrics are (compile-time) the nav
    model's own constants — one definition, not two agreeing.
 2. `delvec schema --stage all` includes `geometry-brief`, `layout-graph` and
-   `site-plan`; `tools/check-gallery-coverage.py` is green with every new
+   `site-plan`; `tools/ci/check-gallery-coverage.py` is green with every new
    unit bound in the gallery domain or refusal-proven, and the `DW0839`
    probe is committed and red.
 3. Every code in DW0812–DW0814, DW0816–DW0822, DW0824–DW0839 (as assigned;
    DW0815/DW0823 unassigned) has at least one test asserting it and a
-   fixture the compiler refuses (or warns) with it; `tools/check-dw-codes.py`
+   fixture the compiler refuses (or warns) with it; `tools/ci/check-dw-codes.py`
    is green in both directions with zero new allowlist entries.
 4. The fixture campaign (`layout-graph` + `site-plan` + quest layer, zero
    authored geometry) builds to a joinable world: `delvec build` exit 0; two
@@ -632,8 +632,8 @@ Machine-checkable; each names its verdict's instrument.
    and its row is queued in `docs/demo-levels.md`.
 10. `docs/reference/compiler.md` carries the new stage tables, the metrics
     export, and every new DW row; `docs/reference/tools.md` carries
-    `delvec metrics`; `tools/check-doc-dupes.py`,
-    `tools/check-reference-versions.py` and the docs job are green.
+    `delvec metrics`; `tools/ci/check-doc-dupes.py`,
+    `tools/ci/check-reference-versions.py` and the docs job are green.
 
 ## 14. Not settled here
 

@@ -37,7 +37,7 @@ The full inventory — every binary, script and flag that exists today — is
   curate` / `curate-merge` fold them into the catalog cards. Human-optional.
 - **Several candidate prefabs for one slot, and a human has to pick**: `delvec --prefabs "$DELVEWRIGHT_PREFABS" 
   contact-sheet <renders> -o <png>` — all the candidates on one page, each
-  labelled with its rank and id, with `$DELVEWRIGHT_ENGINE/tools/refscore.py` optionally ordering the
+  labelled with its rank and id, with `$DELVEWRIGHT_ENGINE/tools/creator/refscore.py` optionally ordering the
   page by similarity to the design gate's reference image. Human-optional. Say
   plainly that the score only orders the page: every candidate is on it, and the
   low scorer is present, last — the human is the selector, the number is not.
@@ -53,7 +53,7 @@ The full inventory — every binary, script and flag that exists today — is
   scene framing the entire layout, computed from the plan. Never hand-edit a scene
   JSON to get one.
 - **An NPC needs a look no vanilla mob gives you**: the skin toolchain,
-  `PYTHONPATH="$DELVEWRIGHT_ENGINE/tools/skin" .venv-skin/bin/python -m delve_skin all <cast.json>
+  `PYTHONPATH="$DELVEWRIGHT_ENGINE/tools/creator/skin" .venv-skin/bin/python -m delve_skin all <cast.json>
   --skins-dir … --preview-dir … --catalog-dir …`, in the venv *NPC skins* establishes at step 5. **Look at the previews**, and
   always set `model` (`wide`/`slim`) — an omitted model renders slim and distorts
   a wide skin. The compiler bakes the PNG into the delve's resource pack from
@@ -63,4 +63,4 @@ The full inventory — every binary, script and flag that exists today — is
   mode. It reclaims what the project owns — containers, volumes and networks —
   and proves it. The `--profile play` stack from step 9 pins a fixed container
   name, so tear that one down with `docker compose … down -v` or
-  `$DELVEWRIGHT_ENGINE/tools/playtest-server.sh down` rather than with `fresh-volumes.sh`.
+  `$DELVEWRIGHT_ENGINE/tools/creator/playtest-server.sh down` rather than with `fresh-volumes.sh`.

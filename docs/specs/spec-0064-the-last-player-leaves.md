@@ -298,7 +298,7 @@ on port 25575. What is proved, not assured (§10.6): the image's OCI config
 exposes exactly `25565/tcp` — read from the pinned base and from
 `Dockerfile.delve`'s own `EXPOSE`, so `docker run -P` publishes nothing else;
 the shipped compose service publishes no port at all
-(`tools/check-compose-isolation.py`); and a TCP connect to port 25575 at the
+(`tools/ci/check-compose-isolation.py`); and a TCP connect to port 25575 at the
 host's published address is refused while the flag is on. **The residual is
 named**: another container on the same Docker bridge network can reach 25575,
 and RCON-on-by-default is a property of the image whether or not this flag is
@@ -394,7 +394,7 @@ criterion the verdict is recorded as a debt.
 6. **No new reachable listener.** With the flag on: the pinned base image's
    and the built delve image's `ExposedPorts` are exactly `{25565/tcp}`
    (`docker image inspect`); the compose service publishes no port
-   (`tools/check-compose-isolation.py`, already green on the tree); a TCP
+   (`tools/ci/check-compose-isolation.py`, already green on the tree); a TCP
    connect from the host to the container's port 25575 at its published
    address is refused, asserted by exit status. *Tree: the two `ExposedPorts`
    facts hold today and were read; the connect check is debt.*

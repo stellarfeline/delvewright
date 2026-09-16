@@ -33,11 +33,11 @@ which makes it the only compose path to the owner's client — so it carries a
 `staging-admission` service that `server` and `playtest` both
 `depends_on: service_completed_successfully`. It runs
 `validation/staging-admission.sh`, which refuses any build tree not admitted by
-`tools/staging-gate.py` for THAT EXACT tree (the token binds the tree's
+`tools/creator/staging-gate.py` for THAT EXACT tree (the token binds the tree's
 `manifest.json` sha256). Mint the token on the host first:
 
 ```sh
-python3 tools/staging-gate.py --campaign <campaign-dir> --build validation/delve-output
+python3 tools/creator/staging-gate.py --campaign <campaign-dir> --build validation/delve-output
 EULA=TRUE docker compose -f validation/compose.yaml -f validation/owner-play.yaml \
     --profile play up
 ```
@@ -76,7 +76,7 @@ session had **zero containers running**. The lock outlived the work and nothing
 could tell.
 
 So `compose.yaml` now pins no container name and publishes no port, and
-`tools/check-compose-isolation.py` (CI) fails if one comes back. Two ladders on
+`tools/ci/check-compose-isolation.py` (CI) fails if one comes back. Two ladders on
 one host are independent by construction. `mutex.sh` is left guarding exactly one
 resource — host port **25565**, the owner's client address — and a worker ladder
 does not take it at all. *If you find yourself waiting on that lock to run a
@@ -138,7 +138,7 @@ is content-addressed and global, so no project owns one.
 
 ### The 25565 mutex, for the two things that bind it
 
-`owner-play.yaml` and [`../tools/playtest-server.sh`](../tools/playtest-server.sh)
+`owner-play.yaml` and [`../tools/creator/playtest-server.sh`](../tools/creator/playtest-server.sh)
 are the only sanctioned bindings of the owner's port. `playtest-server.sh up`
 takes the lock as `owner-play-session` and `down` releases it:
 

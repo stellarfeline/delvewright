@@ -61,7 +61,7 @@ secondary account read in full), WEAK (one example, not a practice).
 ## 3. What this engine takes from it
 
 **[authored]**, from §1 and §2 together, and from the engine's own record of
-what it can and cannot read (`tools/refimg.py`: no part of the toolchain
+what it can and cannot read (`tools/creator/refimg.py`: no part of the toolchain
 places, reads or compiles a reference image).
 
 1. **The record of an approved hour is a written token beside the approved

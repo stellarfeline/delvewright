@@ -47,7 +47,7 @@ fn scratch(tag: &str) -> PathBuf {
 /// A fixture that authors a palette owes the same rule a generator does: an id
 /// or a property value the pinned version does not have loads as **air**, with
 /// no error anywhere, so the piece silently loses those cells and the test that
-/// measured them measured a hole. `tools/check-structure-emitters.py` binds
+/// measured them measured a hole. `tools/ci/check-structure-emitters.py` binds
 /// this, and an exemption would have been the weaker answer to a check that is
 /// right.
 const STATES: [&str; 2] = ["minecraft:stone_bricks", "minecraft:air"];

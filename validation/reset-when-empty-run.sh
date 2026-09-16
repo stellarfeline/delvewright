@@ -197,7 +197,7 @@ trap cleanup EXIT
 # ------------------------------------------------------------------- primitives
 server_cid() { # capture, then take the first line — never `| head -1`, which
   # SIGPIPEs its producer and, under pipefail, reads as a failure BECAUSE the
-  # match succeeded (tools/check-shell-pipe-shortcircuit.py binds this).
+  # match succeeded (tools/ci/check-shell-pipe-shortcircuit.py binds this).
   local out; out="$("${COMPOSE[@]}" ps -q server)"; printf '%s' "${out%%$'\n'*}"; }
 
 boot_server() { # boot_server <window|"">  — window empty means the flag is OFF
@@ -396,7 +396,7 @@ print(m.group(1))
 base_exposed="$(docker image inspect "$base_ports" --format '{{json .Config.ExposedPorts}}' 2>/dev/null || echo '{}')"
 delve_exposed="$(docker image inspect "$DELVE_IMAGE" --format '{{json .Config.ExposedPorts}}' 2>/dev/null || echo '{}')"
 published="$(docker port "$(server_cid)" 2>/dev/null || true)"
-iso_ok=0; python3 "$repo/tools/check-compose-isolation.py" >/dev/null 2>&1 && iso_ok=1
+iso_ok=0; python3 "$repo/tools/ci/check-compose-isolation.py" >/dev/null 2>&1 && iso_ok=1
 if [ "$base_exposed" = '{"25565/tcp":{}}' ] && [ "$delve_exposed" = '{"25565/tcp":{}}' ] \
    && [ -z "$published" ] && [ "$iso_ok" = 1 ]; then
   crit 6 PASS "base and delve images expose exactly {25565/tcp}; the compose service publishes NOTHING, so there is no published address for 25575 to be reachable at (the stronger fact than a refused connect); check-compose-isolation.py green. RESIDUAL, named not assumed: another container on the same bridge network can reach 25575, which is a property of the base image whether or not this flag is set (spec-0064 §9)"

@@ -1,4 +1,4 @@
-r"""Guards for `tools/check-numbered-doc-uniqueness.py`.
+r"""Guards for `tools/ci/check-numbered-doc-uniqueness.py`.
 
 The red this gate exists to prevent: two branches each pick "the next spec
 number" against the SAME `docs/specs/` they can each see, and neither sees the
@@ -28,7 +28,7 @@ from pathlib import Path
 import pytest
 
 REPO = Path(__file__).resolve().parents[2]
-CHECKER = REPO / "tools" / "check-numbered-doc-uniqueness.py"
+CHECKER = REPO / "tools" / "ci" / "check-numbered-doc-uniqueness.py"
 
 
 @pytest.fixture

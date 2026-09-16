@@ -72,16 +72,16 @@ edge: never a sheet, never a grid, never a panel, never an inset or a caption."
 # --- on gemini-native ------------------------------------------------------
 
 # view 1 — from the prompt alone, framed as an elevation
-python3 "$DELVEWRIGHT_ENGINE/tools/refimg.py" --prompt-file v1-front.txt --style-note "$STYLE" \
+python3 "$DELVEWRIGHT_ENGINE/tools/creator/refimg.py" --prompt-file v1-front.txt --style-note "$STYLE" \
     --aspect-ratio 16:9 --out .refimg/map-view1-front
 
 # read view 1's interaction id out of its sidecar — this is the series anchor
 V1=$(python3 -c 'import json;print(json.load(open(".refimg/map-view1-front.json"))["id"])')
 
 # every later view: the same anchor, its own prompt, its own frame
-python3 "$DELVEWRIGHT_ENGINE/tools/refimg.py" --prompt-file v2-west.txt  --style-note "$STYLE" \
+python3 "$DELVEWRIGHT_ENGINE/tools/creator/refimg.py" --prompt-file v2-west.txt  --style-note "$STYLE" \
     --chain-from "$V1" --aspect-ratio 16:9 --out .refimg/map-view2-west
-python3 "$DELVEWRIGHT_ENGINE/tools/refimg.py" --prompt-file v3-plan.txt  --style-note "$STYLE" \
+python3 "$DELVEWRIGHT_ENGINE/tools/creator/refimg.py" --prompt-file v3-plan.txt  --style-note "$STYLE" \
     --chain-from "$V1" --aspect-ratio 1:1  --out .refimg/map-view3-plan
 
 # --- on ideogram-v3 --------------------------------------------------------
@@ -89,11 +89,11 @@ python3 "$DELVEWRIGHT_ENGINE/tools/refimg.py" --prompt-file v3-plan.txt  --style
 # view 1's IMAGE is the anchor, and the frame is named in pixels.
 
 cat style.txt v1-front.txt > .refimg/v1-prompt.txt
-python3 "$DELVEWRIGHT_ENGINE/tools/refimg.py" --prompt-file .refimg/v1-prompt.txt \
+python3 "$DELVEWRIGHT_ENGINE/tools/creator/refimg.py" --prompt-file .refimg/v1-prompt.txt \
     --resolution 1344x768 --out .refimg/map-view1-front
 
 cat style.txt v2-west.txt > .refimg/v2-prompt.txt
-python3 "$DELVEWRIGHT_ENGINE/tools/refimg.py" --prompt-file .refimg/v2-prompt.txt \
+python3 "$DELVEWRIGHT_ENGINE/tools/creator/refimg.py" --prompt-file .refimg/v2-prompt.txt \
     --style-ref .refimg/map-view1-front.png --resolution 1344x768 --out .refimg/map-view2-west
 ```
 

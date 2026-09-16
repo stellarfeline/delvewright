@@ -2,7 +2,7 @@
 
 One spec per feature, owner-approved before implementation (ADR-0008: no spec, no
 feature). The status column below is a **copy**: a spec's own `Status:` line is the
-authority for its status, and `tools/check-numbered-doc-index.py` refuses a row
+authority for its status, and `tools/ci/check-numbered-doc-index.py` refuses a row
 that disagrees with the file it points at, a spec with no row, and a status word
 outside the recognised set — **Proposed**, **Draft**, **Accepted**, **Approved**,
 **Implemented**, **Superseded**.

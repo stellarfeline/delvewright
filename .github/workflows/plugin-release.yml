@@ -3,7 +3,7 @@ name: plugin release (delvewright)
 # The `delvewright` Claude Code plugin, released as `delvewright--v<version>`
 # (ADR-0028 §1, §5). The marketplace delivers whatever `plugin.json` `version`
 # `main` carries, so THIS WORKFLOW IS THE ONLY THING THAT MOVES THAT VERSION: an
-# ordinary pull request may not (`tools/check-skill-page.py`, rule 11).
+# ordinary pull request may not (`tools/ci/check-skill-page.py`, rule 11).
 #
 # A human dispatches it with the new version. It never starts on a push or merge.
 #
@@ -11,14 +11,14 @@ name: plugin release (delvewright)
 #                           from `main`'s tip; dispatch `ci.yml` there (a push
 #                           made with a job token starts no run); wait until every
 #                           context in `.github/required-status-checks.txt`
-#                           SUCCEEDED on that commit (`tools/wait-required-checks.py`
+#                           SUCCEEDED on that commit (`tools/ci/wait-required-checks.py`
 #                           — a skip is a refusal); archive, checksum, notes.
 #   publish  (no approval)  fast-forward `main` to that commit — refused if
 #                           `main` moved, re-dispatch — then tag it, create the
 #                           Release (`--latest=false`, §8) and delete the branch.
 #
 # The dispatch is the approval: nothing starts this but a human, and it publishes
-# a tag and a GitHub Release, never to a registry. `tools/check-release-publish-gate.py`
+# a tag and a GitHub Release, never to a registry. `tools/ci/check-release-publish-gate.py`
 # keys that on the file: dispatch-only, and no registry act in any job.
 
 on:
@@ -114,7 +114,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           SHA: ${{ steps.bump.outputs.sha }}
-        run: python3 tools/wait-required-checks.py --sha "$SHA"
+        run: python3 tools/ci/wait-required-checks.py --sha "$SHA"
       - name: archive, checksums and notes
         env:
           VERSION: ${{ github.event.inputs.version }}
@@ -127,7 +127,7 @@ jobs:
           git archive --format=zip --mtime="$(git log -1 --format=%cI "$SHA")" \
             --output "dist/delvewright-plugin-$VERSION.zip" "$SHA:.claude/skills/delvewright"
           (cd dist && sha256sum "delvewright-plugin-$VERSION.zip" > SHA256SUMS && cat SHA256SUMS)
-          python3 tools/release-notes.py delvewright --commit "$SHA" > dist/notes.md
+          python3 tools/ci/release-notes.py delvewright --commit "$SHA" > dist/notes.md
       - uses: actions/upload-artifact@v4
         with:
           name: plugin-release

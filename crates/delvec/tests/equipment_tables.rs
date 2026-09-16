@@ -2,7 +2,7 @@
 //! held to the game's own data.
 //!
 //! - `crates/delvec/data/item-equippable-1.21.11.json` — the item half,
-//!   extracted by `tools/extract-item-equippable.py`;
+//!   extracted by `tools/maintenance/extract-item-equippable.py`;
 //! - `crates/dsl/data/entity-slots-1.21.11.json` — the body table, authored
 //!   from the pinned client's renderers.
 //!

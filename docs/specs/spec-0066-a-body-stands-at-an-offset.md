@@ -23,7 +23,7 @@
   resolution of where a body is), `body_sites` (the one walk of the campaign's
   bodies), the three camera types that already carry `{anchor, offset}`
   (`CameraWaypoint`, `AnchorSubject`, `CameraTarget`) and the ledger entry in
-  `tools/check-capability-ownership.py` that accepts them as three types on the
+  `tools/ci/check-capability-ownership.py` that accepts them as three types on the
   ground that *nothing wants a generic anchor+offset*, spec-0062 §9 (the
   refusal of an offset on a killing volume's region) and spec-0055 (an anchor
   reference resolves where its object stands). Every rule below is marked
@@ -268,7 +268,7 @@ offset prints its zeros and reads as *checked*.
   prescription, the `DW0461` row's document arm, the surface rows for `Npc`,
   `Actor`, `move-npc`, `move-actor`, `teleport`, `cast`, `play-sound` and the
   camera types, the new code's row and the binding line — in the pull request
-  that lands the code. `tools/check-capability-ownership.py`: the
+  that lands the code. `tools/ci/check-capability-ownership.py`: the
   `AnchorSubject`/`CameraTarget`/`CameraWaypoint` entry retired.
 - **The skill.** A creator reads it from `references/quest-capabilities.md`
   under *Bodies* (a body stands at a mark: anchor plus offset; a rank is one
@@ -307,7 +307,7 @@ implementing tree measures.
 
 1. **One type.** `crates/dsl/src/stages.rs` declares `Mark {anchor, offset}`
    once; `CameraWaypoint`, `AnchorSubject` and `CameraTarget` are gone or are
-   aliases of it; `tools/check-capability-ownership.py` check C reports no
+   aliases of it; `tools/ci/check-capability-ownership.py` check C reports no
    structural twin among them and its ledger entry is removed; the check's
    binding count is printed and non-zero. *Tree: met — the three types are
    gone; check C examines 73 structs, matches 2 groups, 0 unjustified, and the
@@ -357,7 +357,7 @@ implementing tree measures.
 10. **The gallery.** §6's element builds green in every declared language;
     perturbing the page's offset moves its summon coordinate; the new probe
     is refused at build with the new code; `two-bodies-on-one-mark` is still
-    refused with `DW0896`; `tools/check-gallery-coverage.py` reports 0 units in
+    refused with `DW0896`; `tools/ci/check-gallery-coverage.py` reports 0 units in
     neither state; two builds are byte-identical (ADR-0006). *Tree: met — the
     baseline builds all 8 domain points green; the page's offset moved from 4
     to 3 moves its summon from x 17.5 to 16.5; the probe is refused with

@@ -218,7 +218,7 @@ summoned. The general forms now in the tree: `ok()`'s rejection rule moved to
 `tools/lib/rcon.{sh,mjs}` and every live site sends through it; the gallery
 validates its emission against the pinned command tree exactly as `delvec` does;
 that validator gained the SNBT byte/short range check; and
-`tools/check-live-commands.py` binds both rules in CI.
+`tools/ci/check-live-commands.py` binds both rules in CI.
 
 **(b) A respawned player is invulnerable for 59 ticks (≈3 s), and `/kill` lies
 about it.** This surfaced as two instrument defects — `/kill <player>` answering

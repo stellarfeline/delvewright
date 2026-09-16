@@ -185,7 +185,7 @@ USAGE = """usage: github_releases.py <command> [args]
 
 
 def main(argv: list[str]) -> int:
-    sys.stdout.reconfigure(newline="\n")  # CRLF-proof: tools/check-python-shell-newlines.py
+    sys.stdout.reconfigure(newline="\n")  # CRLF-proof: tools/ci/check-python-shell-newlines.py
     if not argv:
         print(USAGE, file=sys.stderr)
         return 2

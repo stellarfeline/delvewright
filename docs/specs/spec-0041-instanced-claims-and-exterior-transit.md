@@ -180,7 +180,7 @@ every version (AC7).
 `qualify` node, optional `rise` on `stair`/`drop`, and `face` on exterior
 edges. A `1.5.0` document writing any of them is refused naming the field and
 the version; a `1.6.0` document using none expands byte-identically to its
-`1.5.0` self. `tools/check-grammar-ir-compat.py` gains all three rows.
+`1.5.0` self. `tools/ci/check-grammar-ir-compat.py` gains all three rows.
 
 ## 5. Acceptance criteria
 

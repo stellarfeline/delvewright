@@ -1101,7 +1101,7 @@ mod tests {
     ///
     /// That is why it lives under `tests/golden/` and not under
     /// `tests/fixtures/`. The `delvec fmt --check` sweep in CI
-    /// (`tools/check-json-canonical.py`) covers every JSON file git tracks, and
+    /// (`tools/ci/check-json-canonical.py`) covers every JSON file git tracks, and
     /// `tests/golden/` is its ONE exemption. This file is neither authored nor
     /// Delvewright JSON — it is
     /// Chunky's scene schema, in Chunky's own key order, and canonical form
@@ -1131,7 +1131,7 @@ mod tests {
     /// `tests/golden/` sits outside the `delvec fmt --check` sweep on purpose,
     /// and it is now the **only** directory in the repository that does — the
     /// sweep's population is `git ls-files '*.json'`
-    /// (`tools/check-json-canonical.py`). That makes this test the sole thing
+    /// (`tools/ci/check-json-canonical.py`). That makes this test the sole thing
     /// standing between an authored JSON file and no canonical-form gate at all.
     /// A comment would not stop that — a doc line is not an invocation — so the
     /// directory's admission rule is enforced here: every `.json` under it is

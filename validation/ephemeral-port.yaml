@@ -13,7 +13,7 @@
 #             -f validation/ephemeral-port.yaml --profile playtest \
 #             port playtest 25565)"      # -> 127.0.0.1:49173
 #
-# Never add a fixed host port here — `tools/check-compose-isolation.py` fails on
+# Never add a fixed host port here — `tools/ci/check-compose-isolation.py` fails on
 # one, because a fixed port in a file every flow includes is a shared resource
 # again by another name.
 services:

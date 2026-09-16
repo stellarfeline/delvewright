@@ -21,7 +21,7 @@ import subprocess
 import pytest
 
 REPO = pathlib.Path(__file__).resolve().parents[2]
-GATE = REPO / "tools" / "check-skill-page.py"
+GATE = REPO / "tools" / "ci" / "check-skill-page.py"
 
 
 @pytest.fixture(scope="module")

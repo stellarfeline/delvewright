@@ -1,7 +1,7 @@
 r"""Guards for `tools/lib/cargo-fingerprint-inputs.py`.
 
 The red it exists to prevent is not a red at all, which is why it needed a guard:
-`tools/worktree-new.sh` cloned a donor's `target/` into a new worktree, the
+`tools/planner/worktree-new.sh` cloned a donor's `target/` into a new worktree, the
 refusal compared only `rustc`, and a donor whose `target/` predated
 `[profile.dev] debug = "line-tables-only"` passed it. Nothing errored. The clone
 succeeded, every cloned unit was invalid, and the first build rebuilt all 140

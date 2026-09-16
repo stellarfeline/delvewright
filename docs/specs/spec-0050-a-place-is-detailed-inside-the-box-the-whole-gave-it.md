@@ -497,12 +497,12 @@ Machine-checkable; each names its verdict's instrument.
    object is authored. What it cost was a key that re-opened for changes no
    body can feel, and that is what is gone.
 2. `delvec schema --stage all` includes `detail-plan`;
-   `tools/check-gallery-coverage.py` is green with every new unit bound in
+   `tools/ci/check-gallery-coverage.py` is green with every new unit bound in
    the gallery domain or refusal-proven; the two `DW0841` probes and the
    `DW0843` probe are committed and red.
 3. Every code in DW0841–DW0845, DW0848 has at least one test asserting it
    and a fixture the compiler (or `delvec prefab`) refuses with it;
-   `tools/check-dw-codes.py` is green in both directions with zero new
+   `tools/ci/check-dw-codes.py` is green in both directions with zero new
    allowlist entries.
 4. On the blockout fixture with one place bound and a fresh passed record:
    `delvec build` exit 0; double-build byte-identity holds; the battery's
@@ -538,7 +538,7 @@ Machine-checkable; each names its verdict's instrument.
     contradict (`DW0848`); the same piece bound in a `detail-plan` is
     refused at validation.
 11. Every new check's output states a binding count with its denominator;
-    `tools/check-stated-counts.py` and the docs job are green;
+    `tools/ci/check-stated-counts.py` and the docs job are green;
     `docs/reference/compiler.md` and `tools.md` carry the new rows and the
     new verb.
 

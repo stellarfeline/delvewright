@@ -424,7 +424,7 @@ the claim moves and is not weakened.
 **`versions.toml` beside the page**: `[engine] repo`, `release` (`v<semver>`),
 `ref` (40-hex). Registered in the engine's `.github/pins.toml` under the
 `release` policy — a commit a release tag points at, drift never a finding —
-and discovered by `tools/check-pins.py`, which today matches `versions.toml`
+and discovered by `tools/ci/check-pins.py`, which today matches `versions.toml`
 at the root only and gains this path.
 
 **`plugin.json` `version`** continues the frontmatter's line. It moves on every
@@ -432,12 +432,12 @@ pull request that changes any file under the plugin root, which is what makes
 "a creator gets an update" and "the page changed" the same event. A re-pin is
 one such change.
 
-**The gate** is `tools/check-skill-page.py`, replacing the content repository's
+**The gate** is `tools/ci/check-skill-page.py`, replacing the content repository's
 `check-skill-version.py` and `check-authoring-pin.py` as one tool with an
 `--online` mode; its offline rules run as a step of a required job on every
 push, the online rule in the job that already asks the remote about pins. It
 imports `tools/lib/clap_surface.py`, `tools/lib/mdtable.py` and
-`tools/check-stated-counts.py` from the tree — no vendoring, no second parser —
+`tools/ci/check-stated-counts.py` from the tree — no vendoring, no second parser —
 and materialises every engine file it judges against at `ref` with `git show`,
 never from the working tree. Its rules, each with the perturbation that reds
 it:
@@ -482,7 +482,7 @@ What leaves it, in one pull request drafted until the engine's has merged (so
 the page is never in zero places): `.claude/skills/new-delve/SKILL.md`;
 `tools/check-skill-version.py`, `tools/check-authoring-pin.py` and their two
 test files; the three vendored files that existed for them
-(`tools/check-stated-counts.py`, `tools/lib/clap_surface.py`,
+(`tools/ci/check-stated-counts.py`, `tools/lib/clap_surface.py`,
 `tools/lib/mdtable.py`) and the `engine-authoring` entry in `.github/pins.toml`
 that carried them; `versions.toml [engine].authoring_ref` and `[engine].release`;
 the steps of `prefab-audit.yml` that fetched the authoring revision and ran the
@@ -543,7 +543,7 @@ written. Where the tree cannot yet satisfy a criterion the verdict is a debt.
    `.claude/skills/new-delve/SKILL.md` and the engine tracks exactly one
    `SKILL.md` under `.claude/skills/`. *Tree: debt — the content tree at
    `ee25912f` tracks the page; the engine tracks no `SKILL.md`.*
-3. **Frontmatter.** `tools/check-skill-page.py` reads exactly `name`,
+3. **Frontmatter.** `tools/ci/check-skill-page.py` reads exactly `name`,
    `description`, `metadata`; `metadata.requires_delvec` is a major window
    containing the pinned release's number. *Tree: debt — at `ee25912f` the
    frontmatter carries `version`, `requires` and `verified_with` (measured:

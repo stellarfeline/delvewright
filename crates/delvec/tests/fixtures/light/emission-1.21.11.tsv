@@ -4,7 +4,7 @@
 # BlockState.getLightEmission() returns inside the pinned server jar.
 #   server jar sha256 f83b8e093865806f931c7e34aae41b177d4c076335263dd124c75d6d65dd1726
 #   server mappings sha1 5621e9253f05fd57872bbe7f8ddf5f9a7d525955
-# Regenerate with tools/dump-block-light.py; --check diffs against this file.
+# Regenerate with tools/maintenance/dump-block-light.py; --check diffs against this file.
 #
 # 1419 rows collapse the game's 29671 blockstates onto the
 # properties that can change the light, so every state is represented by

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # The one rule for `package-verify`, the `CARGO_TARGET_DIR` two scripts point
-# `cargo package` at: `tools/check-publishable.sh` (the whole shelf, every
-# push) and `tools/crates-io-publish.sh --only` (the DSL crate's own two
+# `cargo package` at: `tools/ci/check-publishable.sh` (the whole shelf, every
+# push) and `tools/ci/crates-io-publish.sh --only` (the DSL crate's own two
 # automatic sites, which package just that one crate themselves — see the
 # "WHICH CRATES ONE RUN DECIDES ABOUT" section of that script).
 #
@@ -28,7 +28,7 @@
 # WHAT A PACKAGING RUN MAY LEAVE BEHIND ON SUCCESS
 #
 # Only `package/*.crate` and `package/*.crate.sha256` — the shape
-# `tools/crates-io-publish.sh`'s `local_crate_path` / `local_cksum` read as
+# `tools/ci/crates-io-publish.sh`'s `local_crate_path` / `local_cksum` read as
 # proof `check-publishable.sh` verified these exact bytes. Everything else —
 # the extracted `<name>-<version>/` source trees (each carrying its own nested
 # `tests/` fixtures, the ENOENT class above), the temporary local registry

@@ -13,14 +13,14 @@ stop on it:
 
 ```sh
 python3 -m venv .venv-skin
-.venv-skin/bin/pip install -r "$DELVEWRIGHT_ENGINE/tools/skin/requirements.txt"
-PYTHONPATH="$DELVEWRIGHT_ENGINE/tools/skin" .venv-skin/bin/python -m delve_skin --help
+.venv-skin/bin/pip install -r "$DELVEWRIGHT_ENGINE/tools/creator/skin/requirements.txt"
+PYTHONPATH="$DELVEWRIGHT_ENGINE/tools/creator/skin" .venv-skin/bin/python -m delve_skin --help
 ```
 
 The last line answering is the confirmation. Only the dependencies are
 installed; the package itself is reached on `PYTHONPATH`, which leaves no build
 artifacts in either repository. Use
-`PYTHONPATH="$DELVEWRIGHT_ENGINE/tools/skin" .venv-skin/bin/python -m delve_skin …`
+`PYTHONPATH="$DELVEWRIGHT_ENGINE/tools/creator/skin" .venv-skin/bin/python -m delve_skin …`
 wherever this page says `python -m delve_skin`.
 
 ## Dress the character; do not hope the palette does it

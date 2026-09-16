@@ -102,7 +102,7 @@ impl DesignFiles {
     ///
     /// Only the two directories are read, and only files whose extension is in
     /// [`delvewright_dsl::IMAGE_EXTENSIONS`] are collected. `design/` also
-    /// carries the re-issue sidecars `tools/refimg.py` writes and whatever
+    /// carries the re-issue sidecars `tools/creator/refimg.py` writes and whatever
     /// prose the creator keeps beside their pictures; a file that is not an
     /// image is not this record's subject, and is neither counted nor refused.
     ///

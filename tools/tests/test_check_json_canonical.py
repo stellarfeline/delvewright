@@ -1,4 +1,4 @@
-r"""Guards for `tools/check-json-canonical.py` — the canonical-form sweep.
+r"""Guards for `tools/ci/check-json-canonical.py` — the canonical-form sweep.
 
 The defect this replaces was not a wrong check. It was a check that looked at
 two directories somebody named by hand in `ci.yml` and was green about the other
@@ -31,7 +31,7 @@ from pathlib import Path
 import pytest
 
 REPO = Path(__file__).resolve().parents[2]
-CHECKER = REPO / "tools" / "check-json-canonical.py"
+CHECKER = REPO / "tools" / "ci" / "check-json-canonical.py"
 
 # Copied from the checker on purpose, not imported: if a rename moves the
 # exemption, these fixtures should stop describing it and the tests should

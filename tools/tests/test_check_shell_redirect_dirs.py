@@ -2,7 +2,7 @@ r"""Guards for the release-preflight bug that reported the wrong failure.
 
 The v1.0.0 red (`crates.io preflight (no credential)`):
 
-    tools/check-publishable.sh: line 79: .../target/package-log.txt: No such file
+    tools/ci/check-publishable.sh: line 79: .../target/package-log.txt: No such file
       FAIL cargo package failed:
     sed: can't read .../target/package-log.txt
 
@@ -15,10 +15,10 @@ supposed to capture the command's output. The general form:
 
 Two layers, both needed:
 
-  * the functional tests below run the REAL `tools/check-publishable.sh` against a
+  * the functional tests below run the REAL `tools/ci/check-publishable.sh` against a
     `cargo` that fails, and assert the report describes what actually happened.
     Syntax cannot check a message; only running it can.
-  * the gate tests exercise `tools/check-shell-redirect-dirs.py`, which removes
+  * the gate tests exercise `tools/ci/check-shell-redirect-dirs.py`, which removes
     the root cause repo-wide by requiring every redirect's directory to be
     guaranteed before the redirect is opened.
 """
@@ -35,8 +35,8 @@ from pathlib import Path
 import pytest
 
 REPO = Path(__file__).resolve().parents[2]
-CHECKER = REPO / "tools" / "check-shell-redirect-dirs.py"
-PREFLIGHT = REPO / "tools" / "check-publishable.sh"
+CHECKER = REPO / "tools" / "ci" / "check-shell-redirect-dirs.py"
+PREFLIGHT = REPO / "tools" / "ci" / "check-publishable.sh"
 LIB = REPO / "tools" / "lib"
 
 FIXTURE_DRIVER = """
@@ -64,7 +64,8 @@ def preflight_tree(tmp_path: Path) -> tuple[Path, dict[str, str]]:
     release hit, and the state the script must survive.
     """
     (tmp_path / "tools" / "lib").mkdir(parents=True)
-    shutil.copy(PREFLIGHT, tmp_path / "tools" / "check-publishable.sh")
+    (tmp_path / "tools" / "ci").mkdir(parents=True)
+    shutil.copy(PREFLIGHT, tmp_path / "tools" / "ci" / "check-publishable.sh")
     shutil.copy(REPO / "versions.toml", tmp_path / "versions.toml")
     shutil.copy(LIB / "checksum.sh", tmp_path / "tools" / "lib" / "checksum.sh")
     shutil.copy(LIB / "package-verify.sh", tmp_path / "tools" / "lib" / "package-verify.sh")
@@ -84,7 +85,7 @@ def preflight_tree(tmp_path: Path) -> tuple[Path, dict[str, str]]:
 
 def run_preflight(tree: Path, env: dict[str, str]) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
-        ["bash", str(tree / "tools" / "check-publishable.sh"), "--allow-dirty"],
+        ["bash", str(tree / "tools" / "ci" / "check-publishable.sh"), "--allow-dirty"],
         cwd=tree,
         capture_output=True,
         text=True,

@@ -124,8 +124,8 @@ binds both to `versions.toml` `[engine] dsl_crate_version`.
   emission arm; `DW0133`, `DW0141` and `DW0465`, whose only verdict was a
   number; the harness allowlist; `tools/check-harness-dsl-version.py`;
   `tools/check-version-ledger-uniqueness.py`; spec-0045.
-- Kept: `tools/check-reference-versions.py`, reduced to binding the one number
-  a reader is told to the build, and `tools/check-storybook-version.py`, which
+- Kept: `tools/ci/check-reference-versions.py`, reduced to binding the one number
+  a reader is told to the build, and `tools/creator/check-storybook-version.py`, which
   binds a storybook's engine marker to the campaign's own documents and is
   unaffected by how many numbers an engine accepts.
 

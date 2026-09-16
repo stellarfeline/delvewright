@@ -1,4 +1,4 @@
-"""The approval-guard gate (`tools/check-approval-guard.py`) and its parse rule.
+"""The approval-guard gate (`tools/ci/check-approval-guard.py`) and its parse rule.
 
 The defect class this pins is recorded in ADR-0017: the `crates-io` environment
 held `CARGO_REGISTRY_TOKEN`, its required-reviewer rule had never been saved, and
@@ -48,7 +48,7 @@ import pytest
 
 TOOLS = pathlib.Path(__file__).resolve().parents[1]
 REPO = TOOLS.parent
-SCRIPT = TOOLS / "check-approval-guard.py"
+SCRIPT = TOOLS / "ci" / "check-approval-guard.py"
 FIXTURES = TOOLS / "tests" / "fixtures" / "approval-guard"
 RECORDING = FIXTURES / "psych-parse.json"
 WORKFLOWS = REPO / ".github" / "workflows"
@@ -186,7 +186,7 @@ def test_a_missing_guard_step_is_a_red_naming_the_job_and_the_file(gate, tree):
     code, err = run(gate, tree("clean.yml", "missing-guard.yml"))
     assert code == 1
     assert "missing-guard.yml" in err and "'publish'" in err
-    assert "tools/assert-run-approved.sh" in err
+    assert "tools/ci/assert-run-approved.sh" in err
     # The clean file in the same directory must not be named.
     assert "clean.yml" not in err
 
@@ -195,7 +195,7 @@ def test_a_guard_below_another_run_step_is_a_red(gate, tree):
     code, err = run(gate, tree("guard-not-first.yml"))
     assert code == 1
     assert "guard-not-first.yml" in err
-    assert "does not call tools/assert-run-approved.sh" in err
+    assert "does not call tools/ci/assert-run-approved.sh" in err
     # It names the step that got there first, so the repair is obvious.
     assert "package first, ask afterwards" in err
 
