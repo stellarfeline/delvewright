@@ -2,7 +2,7 @@
   "added": [
     "site-plan.en:datapack/data/gallery/structure/gallery-annex.nbt"
   ],
-  "base_commit": "9a48c8910af6a6d40e522ca12ed8bb1a9158d51b",
+  "base_commit": "e3ccae7c401352bb0c5e35ca0e5e4f8387830b8a",
   "changed": [
     "site-plan.en:creator-datapack/layout.json",
     "site-plan.en:critical-path.json",
