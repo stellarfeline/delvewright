@@ -1315,11 +1315,21 @@ fn run_cameras_preview(
             read(campaign_dir.join(camera::CAMERAS_FILE)).and_then(|b| camera::parse_sheet(&b))?;
         let rows =
             read(campaign_dir.join("design.json")).and_then(|b| camera::reference_names(&b))?;
-        camera::bind_answers(&sheet, &rows)?;
+        // The record's own rule still holds here (`DW0721`), and the answered
+        // count is REPORTED and never refused: this is the instrument a creator
+        // closes the hole with, so a rule that refused it would refuse the
+        // repair it prescribes (spec-0070 §3).
+        let answers = camera::tally(&sheet, &rows);
+        if let Some((name, a)) = answers.stray.first() {
+            return Err(delvec::compiler::view::diag::Diagnostic::error(
+                delvec::compiler::view::diag::DW_INPUT,
+                camera::stray_message(name, a, &rows),
+            ));
+        }
         let cams = camera::selected(&id, &sheet, only, bracket)?;
-        Ok((id, cams))
+        Ok((id, cams, answers))
     });
-    let (campaign_id, cameras) = match selected {
+    let (campaign_id, cameras, answers) = match selected {
         Ok(v) => v,
         Err(d) => return delvec::compiler::view::cli::fail(d, json, 2),
     };
@@ -1411,6 +1421,7 @@ fn run_cameras_preview(
         cameras.len(),
         camera::LENS_CLEARANCE
     );
+    eprintln!("{}", answers.line());
     ExitCode::SUCCESS
 }
 
@@ -1924,6 +1935,22 @@ fn run_build(
     if !adiags.is_empty() {
         print_diags(&adiags, json);
         return ExitCode::from(2);
+    }
+
+    // **Every approved picture is answered** (`DW0900`, spec-0070), and the
+    // record's own rule read by the run that consumes it (`DW0721`). Here —
+    // after validation and analysis, before a piece is seated and before
+    // anything is written under `-o` — because the two documents are already in
+    // hand, and a refusal at this point leaves the creator's previous build tree
+    // on disk, which is what `delvec cameras --preview` needs to place the
+    // camera the refusal asks for. Not at validation: every view command
+    // validates first, so a validation-tier refusal would refuse the instrument.
+    {
+        let answered = delvec::compiler::design::answered(&campaign, &loaded.design_files);
+        if !answered.is_empty() {
+            print_diags(&answered, json);
+            return ExitCode::from(3);
+        }
     }
 
     // A perturbation naming a place no box declares would derive a perfectly
