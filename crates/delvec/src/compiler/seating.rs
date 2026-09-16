@@ -71,8 +71,10 @@
 //! | [`Shape::UnstatedShore`] | cannot arise | a derived box has no authored bytes: [`crate::compiler::blockout::palette`] is a fixed set of opaque cubes and holds no water for a waterline to be about |
 //! | [`Shape::FluidOffTheWorld`] | cannot arise | same palette, same reason — there is no fluid to run off a face |
 //! | [`Shape::WalkPlanesDisagree`] | cannot arise | it is a property of a POOL the solver draws from; a plan states every box's plane individually, so there is no draw and no one origin two members could disagree about |
+//! | [`Shape::ShownSideEmpty`] | cannot arise | a derived box has no document to declare a side in |
+//! | [`Shape::OutsideUnanswered`] | cannot arise for a box | a derived box is undocumented, and `DW0885` passes over it for that reason (`burial::Piece::documented`). A library piece a detail plan places INTO a box is documented and is judged by `DW0885` at build; this check reads the plan's boxes, not the detail plan's pieces, and that is its stated residual on this model |
 //!
-//! Those four are reported as not applying rather than dropped: each is a fact
+//! Those six are reported as not applying rather than dropped: each is a fact
 //! about the site plan's own shape, and if one ever stops being true — a plan
 //! that seats a library piece, a palette that gains water — this table is the
 //! line that was wrong.
@@ -110,6 +112,66 @@ pub const DW_WATERLINE_FICTION: DwCode = DwCode::new("DW0887", ExitTier::Build);
 /// refuses a fiction must all mean the same block, and a `waterlogged=false`
 /// blockstate whose name merely contains the word is not water.
 const WATER: &str = "minecraft:water";
+
+/// The one block that is not a block. `DW0885` reads every other name as
+/// something in a cell (`burial::is_solid`), and so does this.
+const AIR: &str = "minecraft:air";
+
+/// **The first cell of the piece's own air that stands on its box boundary with
+/// no socket's opening to account for it** — see [`PieceFacts::opening_to_outside`].
+fn opening_to_outside(
+    meta: &PrefabMeta,
+    standable: &std::collections::BTreeSet<[i32; 3]>,
+    max: [i32; 3],
+    solid: &dyn Fn([i32; 3]) -> bool,
+) -> Option<[i32; 3]> {
+    use std::collections::{BTreeSet, VecDeque};
+    let inside = |c: [i32; 3]| (0..3).all(|a| c[a] >= 0 && c[a] <= max[a]);
+    let sockets: BTreeSet<([i32; 3], &str)> = meta
+        .connectors
+        .iter()
+        .flat_map(|c| {
+            crate::admit::socket::opening_cells(c.local_pos, &c.facing, c.opening)
+                .into_iter()
+                .map(move |cell| (cell, c.facing.as_str()))
+        })
+        .collect();
+    let mut seen: BTreeSet<[i32; 3]> = BTreeSet::new();
+    let mut queue: VecDeque<[i32; 3]> = VecDeque::new();
+    for cell in standable {
+        for dy in 0..=1 {
+            let c = [cell[0], cell[1] + dy, cell[2]];
+            if inside(c) && !solid(c) && seen.insert(c) {
+                queue.push_back(c);
+            }
+        }
+    }
+    while let Some(c) = queue.pop_front() {
+        for axis in 0..3 {
+            for (bound, sign) in [(0, -1), (max[axis], 1)] {
+                if c[axis] != bound {
+                    continue;
+                }
+                let mut d = [0i32; 3];
+                d[axis] = sign;
+                let side = crate::compiler::faces::dir_name(d);
+                if !sockets.contains(&(c, side)) {
+                    return Some(c);
+                }
+            }
+        }
+        for axis in 0..3 {
+            for sign in [-1, 1] {
+                let mut n = c;
+                n[axis] += sign;
+                if inside(n) && !solid(n) && seen.insert(n) {
+                    queue.push_back(n);
+                }
+            }
+        }
+    }
+    None
+}
 
 // ---------------------------------------------------------------------------
 // What one piece's own bytes say
@@ -153,6 +215,29 @@ pub struct PieceFacts {
     /// `.nbt` files opened for this piece. A denominator, so a piece whose
     /// tiles are missing cannot be reported as examined.
     pub nbt_opened: usize,
+    /// **Each of the piece's six local sides its own bytes put a block on**,
+    /// with the highest local y of the cells in front of those blocks
+    /// ([`crate::compiler::burial::solid_sides`] — the reading `DW0885` makes of
+    /// a placed piece, made of the unplaced one).
+    pub solid_sides: BTreeMap<[i32; 3], i32>,
+    /// The sides the document declares finished exterior surface, as written.
+    pub shown_faces: Vec<String>,
+    /// **Where the piece's own air reaches its box boundary with no socket to
+    /// account for it** — the first such air cell, local, or `None` when the
+    /// piece's air is sealed inside its walls and its sockets.
+    ///
+    /// Flooded from the piece's standable cells, feet and head, through every
+    /// cell holding no block. A socket's opening is excluded because the layout
+    /// answers for it: a mated one opens into the neighbour, an unmated one is
+    /// sealed with wall material (`solver::seal_layout`). Anything else — an open
+    /// top, a window, a shore — is where a party gets outside, and outside is
+    /// where `DW0885` judges every side of every piece its air can reach.
+    pub opening_to_outside: Option<[i32; 3]>,
+    /// For each socket, its local y less the piece's `walk_y`: how high above
+    /// the walk plane a neighbour is joined. A set whose sockets all agree
+    /// stands every member on one walk plane, so an origin derived for one is
+    /// the origin of all; any disagreement stands a member higher or lower.
+    pub socket_rises: Vec<i32>,
     /// **Everything else this document claims about these same bytes**, held to
     /// them at the same read (`DW0888`, [`crate::compiler::claims`]).
     ///
@@ -169,6 +254,25 @@ impl PieceFacts {
     /// Read one piece: its declarations from `meta`, its measurements from the
     /// `.nbt` files beside it in `dir`.
     pub fn read(meta: &PrefabMeta, dir: &Path) -> Result<PieceFacts, String> {
+        // A template whose own extent is not the one its document declares is
+        // two exports of one piece, and `DW0803` is the one answer to that: the
+        // move is to re-export. Measuring the blocks anyway would judge a shape
+        // the piece does not have and send an author to the wrong document, so
+        // such a piece is unreadable here and is left to the rule that owns it.
+        for t in meta.templates() {
+            let Ok(raw) = std::fs::read(dir.join(t.file)) else {
+                continue;
+            };
+            if let Some(actual) = crate::compiler::assembled::structure_size(&raw)
+                && actual != t.size
+            {
+                return Err(format!(
+                    "`{}` is {actual:?} in its own `.nbt` and {:?} in the document — two exports \
+                     of one piece (DW0803)",
+                    t.file, t.size
+                ));
+            }
+        }
         let (grid, bytes) = crate::admit::settling::piece_bytes(meta, dir)?;
         Ok(PieceFacts::measure(meta, &grid, &bytes))
     }
@@ -206,6 +310,23 @@ impl PieceFacts {
             None => 0,
         };
         let fluid_at_edge = crate::grammar::settle::fluid_bodies(grid).at_edge.len();
+        let region = grid.region();
+        let max = [
+            region.size[0] as i32 - 1,
+            region.size[1] as i32 - 1,
+            region.size[2] as i32 - 1,
+        ];
+        let solid = |pos: [i32; 3]| grid.get(pos).is_some_and(|b| b.name != AIR);
+        let solid_sides = crate::compiler::burial::solid_sides(
+            region.positions().filter(|p| solid(*p)),
+            [0, 0, 0],
+            max,
+        );
+        let opening_to_outside = opening_to_outside(meta, &standable, max, &solid);
+        let socket_rises = match meta.walk_y {
+            Some(w) => meta.connectors.iter().map(|c| c.local_pos[1] - w).collect(),
+            None => Vec::new(),
+        };
         PieceFacts {
             id: meta.prefab_id.clone(),
             base: meta.base().to_string(),
@@ -218,6 +339,10 @@ impl PieceFacts {
             standable_below_walk,
             fluid_at_edge,
             nbt_opened: bytes.opened,
+            solid_sides,
+            shown_faces: meta.shown_faces.clone(),
+            opening_to_outside,
+            socket_rises,
             claims: crate::compiler::claims::check_piece(meta, grid, bytes),
         }
     }
@@ -253,6 +378,13 @@ pub enum Shape {
     /// draw do not agree about their own walk plane, and one origin cannot be
     /// derived from two numbers.
     WalkPlanesDisagree,
+    /// The set lets a party outside, and this member puts a block on a side
+    /// that neither the horizon buries nor the document declares shown — the
+    /// face `DW0885` refuses once the world is assembled, known from the
+    /// documents and the bytes before anything is placed.
+    OutsideUnanswered,
+    /// The member declares a side shown that its bytes put no block on.
+    ShownSideEmpty,
 }
 
 /// One reason a member cannot be seated, with the code that owns it.
@@ -264,6 +396,9 @@ pub struct Reason {
     pub code: DwCode,
     /// The member this is about.
     pub member: String,
+    /// The sides of the member this reason is about, by name — empty for a
+    /// reason that is not about a side.
+    pub sides: Vec<String>,
     /// The one line `delvec prefab seating` prints beside the member.
     pub short: String,
     /// The full refusal, with its moves.
@@ -306,6 +441,7 @@ pub fn waterline_reason(f: &PieceFacts) -> Option<Reason> {
         shape: Shape::WaterlineFiction,
         code: DW_WATERLINE_FICTION,
         member: f.id.clone(),
+        sides: Vec::new(),
         short,
         full: format!(
             "prefab `{id}` {detail}. The moves, in the order to try them: (1) DELETE the \
@@ -357,6 +493,7 @@ fn walk_plane_over_waterline(base: HorizonBase, f: &PieceFacts) -> Option<Reason
         shape: Shape::WalkPlaneOffItsWaterline,
         code: crate::compiler::plan::DW_OCEAN_WATERLINE,
         member: f.id.clone(),
+        sides: Vec::new(),
         short: format!(
             "declares `walk_y: {w}` and `waterline_y: {wl}`; a shore stands its walk plane one \
              course above its own waterline, so this piece's water would land {n} block(s) \
@@ -448,6 +585,7 @@ pub fn set_walk_plane(
             shape: Shape::NoWalkPlane,
             code: DW_UNSEATABLE,
             member: label.to_string(),
+            sides: Vec::new(),
             short: format!(
                 "{n} of {total} member(s) declare no `walk_y`, so no origin can be derived: {list}",
                 n = silent.len(),
@@ -478,6 +616,7 @@ pub fn set_walk_plane(
             shape: Shape::WalkPlanesDisagree,
             code: DW_UNSEATABLE,
             member: label.to_string(),
+            sides: Vec::new(),
             short: format!(
                 "its members do not agree about their own walk plane — `walk_y` values {values:?} \
                  across {total} member(s) — and one origin cannot be derived from two",
@@ -512,6 +651,137 @@ pub enum SetPlane {
     NotDerived,
     /// One origin cannot be derived from this set, and why.
     Refused(Vec<Reason>),
+}
+
+/// **Can this set's outside be left where a party can see it** — `DW0885`'s
+/// question, asked before anything is placed (`DW0886`).
+///
+/// The build refuses a placed piece's side when the party's air reaches it and
+/// neither a neighbour, the horizon nor the piece's `shown_faces` answers for
+/// it. Two of those facts are in the documents and the bytes, and this asks
+/// them with the build's own predicates ([`crate::compiler::burial::solid_sides`],
+/// [`crate::compiler::burial::ambient_buries`]); the other two depend on a
+/// layout nobody has drawn yet, and each is taken in the direction that cannot
+/// call a set seatable that the build then refuses:
+///
+/// - **whether the party's air gets outside** is read off every member's own
+///   air ([`PieceFacts::opening_to_outside`]). One member that opens outward
+///   lets the air wrap every piece the layout puts near it, so the whole set is
+///   judged; a set of sealed members is not asked, which is what seats a keep
+///   on `void`.
+/// - **whether a neighbour buries a side** is never assumed: which neighbour a
+///   draw puts against which face is the solver's, and a member may be drawn
+///   alone at the end of a branch.
+///
+/// The horizon's burial is asked at the height the member stands at, and that
+/// height is known when every socket in the set joins its neighbour at one
+/// rise above the walk plane ([`PieceFacts::socket_rises`]) — every member then
+/// stands on the plane the origin was derived from. A set whose rises differ
+/// can stand a member anywhere, so the horizon is credited with nothing.
+///
+/// `valley` is not asked here: its ground is terrain the surround derives
+/// around a declared extent, not a plane, and the only `areas[]` campaign that
+/// reaches it is one area bound to one prefab (`DW0855`), whose outside the
+/// build judges against the landform it actually builds.
+pub fn set_exposure(base: HorizonBase, label: &str, members: &[&PieceFacts]) -> Vec<Reason> {
+    if base == HorizonBase::Valley {
+        return Vec::new();
+    }
+    let Some((open_member, open_cell)) = members
+        .iter()
+        .find_map(|f| f.opening_to_outside.map(|c| (f.id.as_str(), c)))
+    else {
+        return Vec::new();
+    };
+    let ambient = crate::compiler::nav::Ambient::of_base(base);
+    let rises: std::collections::BTreeSet<i32> = members
+        .iter()
+        .flat_map(|f| f.socket_rises.iter().copied())
+        .collect();
+    let one_plane = rises.len() <= 1 && members.iter().all(|f| f.walk_y.is_some());
+    let origin_of = |f: &PieceFacts| -> Option<i32> {
+        let walk_ref = crate::compiler::horizon::walk_ref_y(base)?;
+        one_plane.then_some(walk_ref - f.walk_y?)
+    };
+    let mut out = Vec::new();
+    for f in members {
+        let origin = origin_of(f);
+        let unanswered: Vec<&'static str> = f
+            .solid_sides
+            .iter()
+            .filter(|(dir, top_out_y)| {
+                let side = crate::compiler::faces::dir_name(**dir);
+                if f.shown_faces.iter().any(|s| s == side) {
+                    return false;
+                }
+                !origin.is_some_and(|o| {
+                    crate::compiler::burial::ambient_buries(&ambient, [0, o + **top_out_y, 0])
+                })
+            })
+            .map(|(dir, _)| crate::compiler::faces::dir_name(*dir))
+            .collect();
+        if unanswered.is_empty() {
+            continue;
+        }
+        let list = unanswered
+            .iter()
+            .map(|s| format!("`{s}`"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let burial = if origin.is_some() {
+            format!(
+                "`{}` does not bury at the height it seats this piece",
+                base.token()
+            )
+        } else if base == HorizonBase::Void {
+            "`void` buries nothing".to_string()
+        } else {
+            format!(
+                "`{}` buries nothing at a height nothing fixes — the set joins its neighbours \
+                 at {} different rise(s) above the walk plane ({:?}), so a member can stand \
+                 anywhere",
+                base.token(),
+                rises.len(),
+                rises.iter().copied().collect::<Vec<_>>(),
+            )
+        };
+        out.push(Reason {
+            shape: Shape::OutsideUnanswered,
+            code: DW_UNSEATABLE,
+            member: f.id.clone(),
+            sides: unanswered.iter().map(|s| (*s).to_string()).collect(),
+            short: format!(
+                "puts blocks on its {list} side(s); {burial}, `shown_faces` does not declare \
+                 them, and a party can get outside this set (through `{open_member}` at local \
+                 {open_cell:?})",
+            ),
+            full: format!(
+                "prefab `{id}` puts blocks on its {list} side(s), and nothing answers for them \
+                 on a `{token}` horizon: {burial}, the document declares {declared}, and a \
+                 neighbour is not something a draw promises. This \
+                 is `DW0885`'s refusal known before the build — `{label}` lets a party \
+                 outside, through `{open_member}`, whose own air reaches its box boundary at \
+                 local {open_cell:?} with no socket there, and air that gets outside runs \
+                 along every side of every piece the layout puts near it. The moves: (1) \
+                 DECLARE the sides shown — add them to `shown_faces` in `{base_file}.json` — \
+                 only if they are finished exterior surface the player is meant to look at; \
+                 a side built to be covered stays a slab in the sky and the declaration only \
+                 stops anything saying so; (2) SEAL the way out, so the party's air never \
+                 leaves the pieces — the cell named above is where it does; (3) CHOOSE the \
+                 base the set was built for — a piece authored to stand inside a hill wants \
+                 `valley`, whose terrain buries it",
+                id = f.id,
+                token = base.token(),
+                declared = if f.shown_faces.is_empty() {
+                    "no `shown_faces` at all".to_string()
+                } else {
+                    format!("`shown_faces: {:?}`", f.shown_faces)
+                },
+                base_file = f.base,
+            ),
+        });
+    }
+    out
 }
 
 /// **The one question a horizon asks of anything that will stand a body**: at
@@ -557,6 +827,7 @@ pub fn box_reasons(base: HorizonBase, b: &PlacedBox) -> Vec<Reason> {
         shape: Shape::WadingUnderTheSea,
         code: DW_UNSEATABLE,
         member: b.node.as_str().to_string(),
+        sides: Vec::new(),
         short: format!(
             "stands its walk plane at y={floor}, {n} block(s) at or below this world's sea \
              plane (y={sea}) — a body stands in this place with the water over its feet",
@@ -597,6 +868,7 @@ pub fn seating_reasons(base: HorizonBase, f: &PieceFacts) -> Vec<Reason> {
             shape: Shape::NoWalkPlane,
             code: DW_UNSEATABLE,
             member: f.id.clone(),
+            sides: Vec::new(),
             short: "declares no `walk_y`; the piece's own walk plane is unstated".to_string(),
             full: format!(
                 "prefab `{id}` declares no `walk_y`, so nothing states the piece's own walk \
@@ -613,6 +885,44 @@ pub fn seating_reasons(base: HorizonBase, f: &PieceFacts) -> Vec<Reason> {
                 measured = f
                     .lowest_standable
                     .map_or_else(|| "no cell at all".to_string(), |y| y.to_string()),
+            ),
+        });
+    }
+    // **A side declared shown is a side the piece has** (`DW0885`'s second arm,
+    // asked of the bytes before anything is placed): a finished face is surface,
+    // and a declaration over a side with no block on it is about nothing. On
+    // every base, because the build refuses it wherever the piece stands.
+    let empty: Vec<String> = f
+        .shown_faces
+        .iter()
+        .filter(|side| {
+            crate::compiler::faces::dir_vector(side).is_none_or(|d| !f.solid_sides.contains_key(&d))
+        })
+        .cloned()
+        .collect();
+    if !empty.is_empty() {
+        let list = empty
+            .iter()
+            .map(|s| format!("`{s}`"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        out.push(Reason {
+            shape: Shape::ShownSideEmpty,
+            code: DW_UNSEATABLE,
+            member: f.id.clone(),
+            sides: empty.clone(),
+            short: format!(
+                "declares {list} shown, and not one cell of that side holds a block (or it is not \
+                 a side)"
+            ),
+            full: format!(
+                "prefab `{id}` declares `shown_faces` {list}, and its own bytes put no block on \
+                 that side — or the word is not one of `east`, `west`, `up`, `down`, `north`, \
+                 `south`. A side is finished exterior surface or it is nothing, and the build \
+                 refuses the declaration wherever the piece is placed (`DW0885`). The move: drop \
+                 it from `shown_faces` in `{base_file}.json`, or build the side it claims",
+                id = f.id,
+                base_file = f.base,
             ),
         });
     }
@@ -634,6 +944,7 @@ pub fn seating_reasons(base: HorizonBase, f: &PieceFacts) -> Vec<Reason> {
                 shape: Shape::WadingUnderTheSea,
                 code: DW_UNSEATABLE,
                 member: f.id.clone(),
+                sides: Vec::new(),
                 short: format!(
                     "declares `walk_y: {w}` but stands a body {n} cell(s) below it, the \
                          lowest at local y={lowest} — the sea plane cuts through the piece",
@@ -676,6 +987,7 @@ pub fn seating_reasons(base: HorizonBase, f: &PieceFacts) -> Vec<Reason> {
                 shape: Shape::UnstatedShore,
                 code: DW_UNSEATABLE,
                 member: f.id.clone(),
+                sides: Vec::new(),
                 short: format!(
                     "authors {n} water cell(s) and declares no `waterline_y`; nothing states \
                      where it meets the sea",
@@ -710,6 +1022,7 @@ pub fn seating_reasons(base: HorizonBase, f: &PieceFacts) -> Vec<Reason> {
             shape: Shape::FluidOffTheWorld,
             code: DW_UNSEATABLE,
             member: f.id.clone(),
+            sides: Vec::new(),
             short: format!(
                 "authors fluid that runs out of {n} of its own face(s), and `{token}` puts \
                  nothing beyond them",
@@ -830,6 +1143,10 @@ pub struct SeatingBinding {
     pub members: usize,
     /// `.nbt` files opened.
     pub nbt_opened: usize,
+    /// Members whose own air reaches their box boundary with no socket there —
+    /// the ones that let a party outside, which is what puts a set's sides
+    /// under `DW0886`'s exposure question.
+    pub members_open_outward: usize,
     /// Waterline declarations examined among those members.
     pub waterlines_declared: usize,
     /// Of those, the ones the bytes bear out.
@@ -851,13 +1168,14 @@ impl SeatingBinding {
     pub fn line(&self) -> String {
         format!(
             "seating binding: horizon base `{base}`; areas[]: {ex} of {areas} area(s) name a \
-             piece set, examined over {members} member(s), {opened} `.nbt` opened, {wl} \
-             waterline declaration(s) examined, {ok} borne out by the bytes; site plan: \
+             piece set, examined over {members} member(s), {open} opening outward, {opened} \
+             `.nbt` opened, {wl} waterline declaration(s) examined, {ok} borne out by the bytes; site plan: \
              {bex} of {boxes} box(es) judged against this base.",
             base = self.base,
             ex = self.areas_examined,
             areas = self.areas,
             members = self.members,
+            open = self.members_open_outward,
             opened = self.nbt_opened,
             wl = self.waterlines_declared,
             ok = self.waterlines_borne_out,
@@ -977,21 +1295,35 @@ pub fn check(
             .iter()
             .filter_map(|id| prefabs.get(id).map(|m| (id.clone(), m.walk_y)))
             .collect();
-        if let SetPlane::Refused(reasons) = set_walk_plane(base, area.id.as_str(), &declared) {
-            for r in reasons {
-                diags.push(Diagnostic::error(
-                    r.code,
-                    "world",
-                    format!("/content/areas/{}", area.id.as_str()),
-                    format!(
-                        "area `{area}` cannot be seated on a `{base}` horizon: {full}. {tail}",
-                        area = area.id.as_str(),
-                        base = base.token(),
-                        full = r.full,
-                        tail = TAIL,
-                    ),
-                ));
-            }
+        let mut set_reasons = match set_walk_plane(base, area.id.as_str(), &declared) {
+            SetPlane::Refused(reasons) => reasons,
+            _ => Vec::new(),
+        };
+        // **And whether the set's outside can stand where a party sees it**
+        // (`DW0885`'s question, asked of the same facts `delvec prefab seating`
+        // reads for the same pool).
+        let facts: Vec<&PieceFacts> = members
+            .iter()
+            .filter_map(|id| read.get(id).and_then(Option::as_ref))
+            .collect();
+        binding.members_open_outward += facts
+            .iter()
+            .filter(|f| f.opening_to_outside.is_some())
+            .count();
+        set_reasons.extend(set_exposure(base, area.id.as_str(), &facts));
+        for r in set_reasons {
+            diags.push(Diagnostic::error(
+                r.code,
+                "world",
+                format!("/content/areas/{}", area.id.as_str()),
+                format!(
+                    "area `{area}` cannot be seated on a `{base}` horizon: {full}. {tail}",
+                    area = area.id.as_str(),
+                    base = base.token(),
+                    full = r.full,
+                    tail = TAIL,
+                ),
+            ));
         }
     }
 
@@ -1101,7 +1433,118 @@ mod tests {
             standable_below_walk: 0,
             fluid_at_edge: 0,
             nbt_opened: 1,
+            solid_sides: BTreeMap::new(),
+            shown_faces: Vec::new(),
+            opening_to_outside: None,
+            socket_rises: Vec::new(),
             claims: crate::compiler::claims::ClaimVerdict::default(),
+        }
+    }
+
+    /// A 5-tall room with blocks on every side; `down`'s outward cells are one
+    /// under the floor, `up`'s one over the roof.
+    fn room(open: bool, shown: &[&str], rises: &[i32]) -> PieceFacts {
+        let mut f = facts();
+        for (dir, top) in [
+            ([0, -1, 0], -1),
+            ([0, 1, 0], 5),
+            ([1, 0, 0], 4),
+            ([-1, 0, 0], 4),
+            ([0, 0, 1], 4),
+            ([0, 0, -1], 4),
+        ] {
+            f.solid_sides.insert(dir, top);
+        }
+        f.shown_faces = shown.iter().map(|s| (*s).to_string()).collect();
+        f.opening_to_outside = open.then_some([0, 2, 3]);
+        f.socket_rises = rises.to_vec();
+        f
+    }
+
+    fn named(reasons: &[Reason]) -> Vec<Vec<String>> {
+        reasons.iter().map(|r| r.sides.clone()).collect()
+    }
+
+    /// A set nobody can get outside of is not asked, on any base: its sides are
+    /// in front of nothing a party can stand in, which is what seats a keep.
+    #[test]
+    fn a_sealed_set_owes_no_side() {
+        let a = room(false, &[], &[0]);
+        let b = room(false, &[], &[0]);
+        for base in [HorizonBase::Void, HorizonBase::Ocean, HorizonBase::Valley] {
+            assert!(
+                set_exposure(base, "pool/p", &[&a, &b]).is_empty(),
+                "{base:?}"
+            );
+        }
+    }
+
+    /// One open member opens the whole set: its air runs along every side the
+    /// layout puts near it, sealed members included.
+    #[test]
+    fn one_open_member_puts_every_members_sides_in_question_on_void() {
+        let open = room(true, &["north"], &[0]);
+        let sealed = room(false, &[], &[0]);
+        let r = set_exposure(HorizonBase::Void, "pool/p", &[&open, &sealed]);
+        assert_eq!(r.len(), 2, "{r:?}");
+        assert!(
+            r.iter()
+                .all(|r| r.shape == Shape::OutsideUnanswered && r.code == DW_UNSEATABLE)
+        );
+        assert_eq!(
+            named(&r)[0].len(),
+            5,
+            "the declared side is answered: {r:?}"
+        );
+        assert!(!named(&r)[0].contains(&"north".to_string()));
+        assert_eq!(named(&r)[1].len(), 6, "{r:?}");
+        let all = room(
+            true,
+            &["down", "up", "east", "west", "south", "north"],
+            &[0],
+        );
+        assert!(set_exposure(HorizonBase::Void, "pool/p", &[&all]).is_empty());
+    }
+
+    /// The sea buries what stands under it, at the height the base seats the
+    /// piece — and only where that height is known.
+    #[test]
+    fn the_sea_is_credited_only_at_a_known_height() {
+        // walk_y 1 on an ocean: origin 62, so `down`'s outward cells at local -1
+        // stand at y=61, under the sea; the walls reach y=66, over it.
+        let one_plane = room(true, &[], &[0, 0]);
+        let r = set_exposure(HorizonBase::Ocean, "pool/p", &[&one_plane]);
+        assert_eq!(r.len(), 1);
+        assert!(!r[0].sides.contains(&"down".to_string()), "{r:?}");
+        assert_eq!(r[0].sides.len(), 5, "{r:?}");
+
+        let stair = room(true, &[], &[0, 3]);
+        let r = set_exposure(HorizonBase::Ocean, "pool/p", &[&stair]);
+        assert!(r[0].sides.contains(&"down".to_string()), "{r:?}");
+        assert!(r[0].short.contains("nothing fixes"), "{}", r[0].short);
+    }
+
+    /// `valley`'s ground is terrain around an extent, not a plane; the build
+    /// judges it against the landform it builds.
+    #[test]
+    fn valley_is_not_asked() {
+        let open = room(true, &[], &[0]);
+        assert!(set_exposure(HorizonBase::Valley, "pool/p", &[&open]).is_empty());
+    }
+
+    /// A side declared shown must be a side the bytes put a block on, on every
+    /// base — the build refuses it wherever the piece stands.
+    #[test]
+    fn a_declared_side_with_no_block_is_refused_on_every_base() {
+        let mut f = room(false, &["up", "top"], &[0]);
+        f.solid_sides.remove(&[0, 1, 0]);
+        for base in [HorizonBase::Void, HorizonBase::Ocean, HorizonBase::Valley] {
+            let r: Vec<Reason> = seating_reasons(base, &f)
+                .into_iter()
+                .filter(|r| r.shape == Shape::ShownSideEmpty)
+                .collect();
+            assert_eq!(r.len(), 1, "{base:?}");
+            assert_eq!(r[0].sides, vec!["up".to_string(), "top".to_string()]);
         }
     }
 
