@@ -308,7 +308,9 @@ PLACEHOLDER_RE = re.compile(
 # capability refusal is recognised by the sentence the tool itself prints. The
 # values below exist only so `argparse` accepts the flag; a wrong one cannot
 # manufacture a verdict, because a value refusal does not carry that sentence.
-REFIMG = "refimg.py"
+# Relative to `tools/` in the engine tree, so it carries the home of the reader
+# the tool is for: the page runs it, so it lives under `tools/creator/`.
+REFIMG = "creator/refimg.py"
 REFIMG_PROBE_VALUES = {
     "--chain-from": "probe-interaction-id",
     "--style-note": "one style, held constant",
@@ -1332,11 +1334,12 @@ def refimg_probe(
 ) -> object:
     """Configure `workdir` for one provider and return a runner for one flag.
 
-    The tool resolves its config as `<its parent's parent>/delvewright.local.toml`,
-    so a provider is selected by writing that file — which is how a creator
-    selects one, and therefore how this gate must.
+    The tool resolves its config as `delvewright.local.toml` at the engine root,
+    which is three directories up from `tools/creator/refimg.py`, so a provider is
+    selected by writing that file — which is how a creator selects one, and
+    therefore how this gate must.
     """
-    (refimg.parent.parent / "delvewright.local.toml").write_text(
+    (refimg.parents[2] / "delvewright.local.toml").write_text(
         f'[refimg]\nprovider = "{provider}"\nmodel = "{model}"\n'
         f'api_key_env = "DELVEWRIGHT_SKILL_PAGE_PROBE"\n{frame}\n',
         encoding="utf-8",
@@ -1712,7 +1715,7 @@ def container_names(engine: pathlib.Path) -> set[str]:
     out: set[str] = set()
     for path in sorted((engine / "validation").glob("*.yaml")):
         out.update(re.findall(r"^\s*container_name:\s*([A-Za-z0-9_.-]+)", path.read_text(encoding="utf-8"), re.M))
-    for path in sorted((engine / "tools").glob("*.sh")) + sorted((engine / "validation").glob("*.sh")):
+    for path in sorted((engine / "tools").rglob("*.sh")) + sorted((engine / "validation").glob("*.sh")):
         text = path.read_text(encoding="utf-8")
         out.update(re.findall(r'^NAME="([A-Za-z0-9_.-]+)"', text, re.M))
     return out

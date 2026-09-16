@@ -19,7 +19,7 @@ validates the site-plan overlay as `DW0842` — a piece the library does not hol
    and the design records it reads stand at `gallery/design`.
 2. Materialises the site-plan overlay into a scratch directory, exactly as the
    coverage gate, the baseline and `gallery-build.py` materialise it
-   (`tools/gallery_domain.py`), and runs `delvec detail <point> --all
+   (`tools/ci/gallery_domain.py`), and runs `delvec detail <point> --all
    --prefabs <out>` over it.
 3. **Asserts the row the verb wrote equals the row the overlay commits.** The
    committed `detail-plan.json` is what every other tool builds; the verb's

@@ -45,7 +45,7 @@ The full inventory — every binary, script and flag that exists today — is
   come back, and `/trigger dw.cam set <n>` when the frame is right, `<n>` the
   slot you give her in chat. FOV Effects off; ask her slider's number. **(3)**
   Read the log before `down`: `docker logs dw-playtest > <file>` on the
-  `$DELVEWRIGHT_ENGINE/tools/playtest-server.sh` path, or `docker compose …
+  `$DELVEWRIGHT_ENGINE/tools/creator/playtest-server.sh` path, or `docker compose …
   --profile playtest logs --no-color > <file>` on the compose path. **(4)**
   Harvest it: `delvec --prefabs "$DELVEWRIGHT_PREFABS" harvest <file>
   <out>/creator-datapack/layout.json --camera-out camera-report.json`, `<out>`

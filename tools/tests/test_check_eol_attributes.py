@@ -25,7 +25,7 @@ import subprocess
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
-CHECKER = REPO / "tools" / "check-eol-attributes.py"
+CHECKER = REPO / "tools" / "ci" / "check-eol-attributes.py"
 
 COVERS_SHELL_ONLY = "*.sh text eol=lf\n"
 

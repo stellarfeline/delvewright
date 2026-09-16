@@ -1487,7 +1487,7 @@ def with_a_release_pin(repo: Path, tag: str, tree_version: str = "1.6.0") -> Non
         ".github/workflows/page.yml",
         "name: page\njobs:\n  a:\n    steps:\n"
         f"      - run: bash {RELEASE_BINDER}\n"
-        "      - run: python3 tools/check-pins.py --online --checkout skill-page-engine=.\n",
+        "      - run: python3 tools/ci/check-pins.py --online --checkout skill-page-engine=.\n",
     )
     write_registry(
         repo,

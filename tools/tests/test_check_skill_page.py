@@ -927,7 +927,7 @@ def test_a_page_naming_a_tool_that_is_not_in_the_tree_reds(mod, tree, engine):
     """The shape a `tools/` reorganisation walks into: the tool moved, the page did not."""
     edit(
         tree / "references" / "new-pieces.md",
-        "$DELVEWRIGHT_ENGINE/tools/block-appearance.py",
+        "$DELVEWRIGHT_ENGINE/tools/creator/block-appearance.py",
         "$DELVEWRIGHT_ENGINE/tools/render/block-appearance.py",
     )
     rep = run(mod, engine)
@@ -939,7 +939,7 @@ def test_the_finding_names_the_file_and_line_that_named_it(mod, tree, engine):
     page = tree / "references" / "new-pieces.md"
     edit(
         page,
-        "$DELVEWRIGHT_ENGINE/tools/block-appearance.py",
+        "$DELVEWRIGHT_ENGINE/tools/creator/block-appearance.py",
         "$DELVEWRIGHT_ENGINE/tools/gone.py",
     )
     line = next(
@@ -954,14 +954,14 @@ def test_the_finding_names_the_file_and_line_that_named_it(mod, tree, engine):
 def test_a_directory_only_ignore_pattern_is_read_as_git_reads_it(mod):
     """`validation/delve-output*/` matches a directory, and git must be asked so."""
     assert mod.produced(["validation/delve-output"]) == {"validation/delve-output"}
-    assert mod.produced(["tools/refimg.py"]) == set()
+    assert mod.produced(["tools/creator/refimg.py"]) == set()
     assert mod.produced(["tools/gone.py"]) == set()
     assert mod.produced([]) == set()
 
 
 def test_the_tracked_set_is_the_index_and_carries_directories(mod):
     tracked = mod.shipping_tree()
-    assert "tools/refimg.py" in tracked
+    assert "tools/creator/refimg.py" in tracked
     assert "tools" in tracked and "tools/lib" in tracked
     assert "validation/delve-output" not in tracked
 
@@ -981,8 +981,8 @@ def test_the_terminators_read_the_page_s_own_spellings(mod):
     assert got.group("path") == "/versions.toml"
     got = mod.ENGINE_PATH_RE.search("read $DELVEWRIGHT_ENGINE/CLAUDE.md.")
     assert got.group("path") == "/CLAUDE.md."
-    got = mod.ENGINE_PATH_RE.search('"${DELVEWRIGHT_ENGINE}/tools/refimg.py"')
-    assert got.group("path") == "/tools/refimg.py"
+    got = mod.ENGINE_PATH_RE.search('"${DELVEWRIGHT_ENGINE}/tools/creator/refimg.py"')
+    assert got.group("path") == "/tools/creator/refimg.py"
 
 
 def test_both_arms_bind_to_every_path_the_page_names(mod, tree, engine):

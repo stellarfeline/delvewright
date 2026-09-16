@@ -343,7 +343,7 @@ and `contract-exterior-faces` says so. Pinned by
 ## 8. The skill page, §13, as this spec leaves it
 
 The page is `.claude/skills/delvewright/skills/new-delve/` in this repository
-(spec-0063), and `tools/check-skill-page.py` holds every subcommand it names to
+(spec-0063), and `tools/ci/check-skill-page.py` holds every subcommand it names to
 the clap surface at the engine revision `versions.toml` beside it pins. That pin
 is older than this verb by construction, so naming `detail` on the page before
 the pin moves is a red rather than a documentation improvement: the text below
@@ -411,7 +411,7 @@ number measured on the ground revision with this verb built.
 3. **Refuse where entered.** The same file has a test per row of §3 marked
    *none* that asserts the code (or the named words) and that the prefab
    directory and the campaign are byte-identical before and after; the
-   perturbations are made on a program that was green. `tools/check-dw-codes.py`
+   perturbations are made on a program that was green. `tools/ci/check-dw-codes.py`
    is green in both directions with zero new allowlist entries; `DW0882` has
    its test and its probe.
 4. **Same words.** The `DW0843`, `DW0844`, `DW0845` and `DW0848` messages the
@@ -439,17 +439,17 @@ number measured on the ground revision with this verb built.
 7. **`*.report.json`.** A prefab directory holding `stray.report.json` loads
    with zero `DW0346`; one holding a malformed `report.json` still raises it —
    the skip is the full suffix.
-8. **Gallery.** `tools/check-gallery-coverage.py` is green with the three
+8. **Gallery.** `tools/ci/check-gallery-coverage.py` is green with the three
    probes of §6 refused with their codes in the `detail` phase, and the unit
    total and zero-in-neither count unchanged before and after (stated in the
-   commit body). `tools/gallery-baseline.py` is green with every moved row
+   commit body). `tools/ci/gallery-baseline.py` is green with every moved row
    attributed.
 9. **Docs.** `docs/reference/tools.md` carries the `detail` row and says of
    `allocation` that it is what `detail` reads and remains for reading;
    `docs/reference/compiler.md` carries `DW0882`, the `*.report.json` rule and
    the three entry points of detail work; `docs/reference/prefab-procedure.md`
    points the handed-region exception at the verb; the docs job and
-   `tools/check-diagnostic-messages.py` are green.
+   `tools/ci/check-diagnostic-messages.py` are green.
 
 ## 10. Not settled here
 
