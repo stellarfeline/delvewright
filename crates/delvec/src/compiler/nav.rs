@@ -772,7 +772,16 @@ impl Ambient {
     /// that is [`built_volume`], a property of the assembled world under every
     /// horizon (see [`World::built`]).
     pub fn of_plan(plan: &Plan) -> Ambient {
-        match delvewright_dsl::horizon_base(&plan.campaign.world.content.horizon) {
+        Ambient::of_base(delvewright_dsl::horizon_base(
+            &plan.campaign.world.content.horizon,
+        ))
+    }
+
+    /// The ambient a horizon base declares — the same answer [`Ambient::of_plan`]
+    /// gives, asked of the base alone, so a check that runs before anything is
+    /// placed (`compiler::seating`) reads the one generator fact the build reads.
+    pub fn of_base(base: delvewright_dsl::HorizonBase) -> Ambient {
+        match base {
             delvewright_dsl::HorizonBase::Ocean => Ambient::Ocean(Sea {
                 level: crate::compiler::plan::SEA_LEVEL,
                 floor_top: crate::compiler::plan::SEA_FLOOR_TOP_Y,

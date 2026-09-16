@@ -67,6 +67,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import shutil
 import subprocess
 import sys
@@ -89,6 +90,12 @@ SEATING_CODES = {"DW0886", "DW0887", "DW0344"}
 # about the piece set: a base that builds terrain needs a site plan, and an
 # `areas[]` campaign states none.
 NOT_AN_AREAS_BASE = "DW0855"
+
+# The build's own refusal of a placed piece's outside. It is not a seating code —
+# it judges the assembled world — but it is the refusal the seating command's
+# exposure answer (`DW0886`) exists to reach first, so a pool the command seats
+# must build without it.
+PIECE_EXPOSED = "DW0885"
 
 
 def die(msg: str) -> None:
@@ -188,6 +195,11 @@ def write_campaign(dest: Path, pool: str, base: str) -> None:
     area = content["areas"][0]
     area.pop("prefab", None)
     area["prefab_pool"] = pool
+    # A pool area draws a piece count (`DW0161`), and the fixture's one-piece
+    # area cannot hold an entry plus the anchor-bearing pieces its quests bind
+    # (`DW0303`). A build that stops there never reaches the exposure check the
+    # build half of this comparison exists for.
+    area["pieces"] = {"min": 3, "max": 8}
     # The island pieces are dark and a probe that declared no mitigation reds
     # `DW0210` — the harness's defect, not the library's (spec-0060 §1.1).
     area["mitigation"] = "night-vision"
@@ -225,6 +237,35 @@ def analyze(delvec: Path, prefabs: Path, campaign: Path) -> tuple[int, set[str],
     return r.returncode, codes_in(text), text
 
 
+def build(delvec: Path, prefabs: Path, campaign: Path, out: Path) -> tuple[int, set[str], str]:
+    if out.exists():
+        shutil.rmtree(out)
+    r = run(
+        [str(delvec), "--json", "build", str(campaign), "-o", str(out), "--prefabs", str(prefabs)]
+    )
+    text = r.stdout + r.stderr
+    return r.returncode, codes_in(text), text
+
+
+EXPOSURE_LINE = re.compile(
+    r"piece-exposure binding: .*? and (?P<judged>\d+) stand in air the party can be in"
+    r".*? of which (?P<bound>\d+) are bound"
+)
+
+
+def exposure_compared(text: str) -> tuple[int, int] | None:
+    """`(judged cells, bound declarations)` from the build's own exposure binding
+    line, or `None` when the build stopped before that check ran.
+
+    Read from the line the build prints rather than from
+    `validation/piece-exposure.json`, because the ledger is written only by a
+    build that finishes, and a build refused LATER — a walkable edge over the
+    void (`DW0322`), say — has still made the comparison this gate is about.
+    """
+    m = EXPOSURE_LINE.search(text)
+    return (int(m["judged"]), int(m["bound"])) if m else None
+
+
 def judge(
     delvec: Path, prefabs: Path, pool: str, base: str, verdict: dict, work: Path
 ) -> tuple[str, str]:
@@ -256,7 +297,34 @@ def judge(
                 f"pool states none; an `areas[]` campaign reaches this base by being one "
                 f"area bound to one prefab. Codes {sorted(raised)}",
             )
-        return ("agree", f"seatable, analyze exit {code}, codes {sorted(raised)}")
+        # **And the build.** `analyze` places nothing, so a seatable cell has
+        # only been compared with the half of the engine that reads documents.
+        # The exposure refusal is the build's (`DW0885`), and the command's
+        # promise is about the build: build it, and demand the exposure ledger
+        # the build writes, so a build that stopped before that check is a cell
+        # that did not compare rather than one that agreed.
+        out = work / f"out-{camp.name}"
+        bcode, braised, btext = build(delvec, prefabs, camp, out)
+        refused = braised & (SEATING_CODES | {PIECE_EXPOSED})
+        if refused:
+            return (
+                "DISAGREE",
+                f"the command called `{pool}` SEATABLE on `{base}` and the BUILD refused "
+                f"it with {sorted(refused)}:\n{btext}",
+            )
+        compared = exposure_compared(btext)
+        if compared is None:
+            return (
+                "not-compared",
+                f"seatable; the build exited {bcode} with {sorted(braised)} before the "
+                f"exposure check ran, so this cell compared analyze alone — a harness "
+                f"campaign this pool cannot stand in, not an answer",
+            )
+        return (
+            "agree",
+            f"seatable, analyze exit {code}, build exit {bcode} {sorted(braised)}, "
+            f"exposure judged {compared[0]} cell(s), {compared[1]} declaration(s) bound",
+        )
 
     if not said:
         return (
@@ -343,6 +411,7 @@ def main() -> int:
     cells = 0
     disagreements: list[str] = []
     site_plan_cells = 0
+    not_compared = 0
     codes_seen: set[str] = set()
 
     for base in bases:
@@ -361,6 +430,8 @@ def main() -> int:
                 disagreements.append(f"{pool} on {base}: {note}")
             elif state == "not-an-areas-base":
                 site_plan_cells += 1
+            elif state == "not-compared":
+                not_compared += 1
             print(f"  {pool:<28} {base:<8} {state:<18} {note.splitlines()[0]}")
 
     # The perturbations: each is the shape the tree carried, planted in a copy,
@@ -404,12 +475,80 @@ def main() -> int:
                 disagreements.append(f"{kind} on {pool}: {note}")
             print(f"  {kind:<28} {pool:<20} {state:<10} ({moved}) {note.splitlines()[0]}")
 
+    # **The build half, bound.** A seatable cell of a sealed pool builds with an
+    # exposure ledger that judged nothing, which agrees vacuously. So every pool
+    # the command refuses on a base ONLY because its outside is unanswered is
+    # answered the one way a library can — each named side declared shown, in a
+    # copy — and then the command must seat it and the BUILD must agree, with a
+    # ledger that judged cells and bound declarations. A command that seated a
+    # pool the build refuses reds here, and so does a declaration the build
+    # does not read.
+    declared_cells = 0
+    built_declared = 0
+    judged_total = 0
+    for base in bases:
+        verdicts = {p["pool"]: p for p in seating(delvec, prefabs, base)["pools"]}
+        for pool in sorted(pools):
+            v = verdicts.get(pool)
+            if not v or v["verdict"] == "SEATABLE" or not v["reasons"]:
+                continue
+            if any(r.get("shape") != "OutsideUnanswered" for r in v["reasons"]):
+                continue
+            copy = work / f"lib-declared-{pool.replace('/', '-')}-{base}"
+            if copy.exists():
+                shutil.rmtree(copy)
+            shutil.copytree(prefabs, copy)
+            moved = 0
+            for r in v["reasons"]:
+                stem = r["about"].split("/", 1)[-1]
+                path = copy / f"{stem}.json"
+                doc = json.loads(path.read_text())
+                shown = list(doc.get("shown_faces", []))
+                for side in r.get("sides", []):
+                    if side not in shown:
+                        shown.append(side)
+                        moved += 1
+                doc["shown_faces"] = shown
+                path.write_text(json.dumps(doc, indent=2) + "\n")
+            again = {p["pool"]: p for p in seating(delvec, copy, base)["pools"]}[pool]
+            declared_cells += 1
+            if moved == 0 or again["verdict"] != "SEATABLE":
+                disagreements.append(
+                    f"{pool} on {base}, every named side declared shown ({moved} "
+                    f"declaration(s) added): the command still says {again['verdict']} "
+                    f"with {sorted({r['code'] for r in again['reasons']})}"
+                )
+                continue
+            state, note = judge(delvec, copy, pool, base, again, work)
+            print(f"  {'every-side-declared':<28} {pool:<20} {base:<8} {state:<12} {note.splitlines()[0]}")
+            if state == "not-compared":
+                not_compared += 1
+                continue
+            if state != "agree":
+                disagreements.append(f"every-side-declared {pool} on {base}: {note}")
+                continue
+            m = re.search(r"exposure judged (\d+) cell\(s\), (\d+) declaration", note)
+            judged, bound = int(m[1]), int(m[2])
+            if not judged or not bound:
+                disagreements.append(
+                    f"every-side-declared {pool} on {base}: the build agreed with an exposure "
+                    f"check that judged {judged} cell(s) and bound {bound} declaration(s) — "
+                    f"the comparison bound to nothing"
+                )
+                continue
+            built_declared += 1
+            judged_total += judged
+
     print(
         f"seating-agreement binding: {len(pools)} pool(s) x {len(bases)} base(s) = "
         f"{cells} cell(s) judged, of which {site_plan_cells} are a base this sweep's "
         f"POOL-bound campaigns cannot reach ({NOT_AN_AREAS_BASE}: a pool states no "
         f"extent); "
         f"{perturbed_cells} perturbation cell(s) judged; "
+        f"{declared_cells} pool/base cell(s) refused for their outside alone, of which "
+        f"{built_declared} built to the exposure check with every named side declared, "
+        f"judging {judged_total} exposed cell(s); {not_compared} cell(s) whose harness "
+        f"campaign stopped before the exposure check; "
         f"codes named by the command: {sorted(codes_seen) or 'none'}."
     )
     if tmp:

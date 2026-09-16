@@ -52,12 +52,17 @@ fn text(out: &Output) -> String {
 /// A one-piece library whose document is true of its bytes: a room with a
 /// carved socket, a walk plane read off the blocks, and one named place.
 ///
+/// The room is the sealed shell, so its only way out is the socket: a room
+/// with a doorway of its own lets a party outside, and a seatable verdict would
+/// then owe `shown_faces` for its walls (`DW0886`), which is not what this
+/// library is here to say.
+///
 /// Written into `dir` and also into `dir/../honest`, which is what a
 /// perturbation is restored from — a scratch copy rather than `git checkout`, so
 /// the restore cannot quietly bring back anything else.
 fn honest_library(dir: &Path) {
     std::fs::create_dir_all(dir).unwrap();
-    let mut s = fixtures::clean_room();
+    let mut s = fixtures::sealed_room();
     let mut meta = delvewright_dsl::prefab::PrefabMeta::skeleton(
         "room",
         s.size,
