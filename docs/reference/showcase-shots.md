@@ -33,6 +33,8 @@ A showcase picture shows **one built thing, close, from the side that says what 
 
 ## 4. How a camera is found
 
+**Every approved image is answered, and the engine holds the record to it.** One camera per row of `design.json` — a row may have several, a camera answers exactly one — or `delvec build` refuses the campaign (`DW0900`) and `delvec cameras` writes no scene. Cameras are placed after the first build, against that build; a campaign that has placed none builds and is stopped at the staging gate. Never re-aim a camera at a second picture to clear the count: a row keeps its `answers`, and another picture is another row. **[authored]**
+
 1. **Estimate from the approved image**: which side, how high, how close, how wide, what is the point of interest. Write it into `design/cameras.json` as `source: estimated`.
 2. **Place it with `--preview`** — the assembled world flat-lit in seconds, the same camera convention as `snapshot --camera` — until the camera is in the room and the point of interest is in frame.
 3. **Bracket it**: `--bracket yaw=,pitch=,fov=,dolly=,truck=,rise=` emits the camera moved one thing at a time; `delvec contact-sheet` lays the candidates on one page beside the approved image. Pick by looking; write the pick with `delvec place-camera <campaign> --name <row> --candidates candidates.json --pick <candidate>`.

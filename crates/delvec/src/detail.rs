@@ -751,6 +751,16 @@ fn battery(campaign_dir: &Path, prefabs_dir: &Path, lang: &str, json: bool) -> R
         print_diags(&adiags, json);
         return Err(2);
     }
+    // **Every approved picture is answered** (`DW0900`, spec-0070). `build`
+    // asks this after validation and analysis and before a piece is seated, so
+    // the battery asks it at the same point: the battery's whole claim is that
+    // it is the verdict `delvec build` would give, and a gate `build` runs that
+    // this does not is a verdict about a smaller world.
+    let answered = delvec::compiler::design::answered(&v.campaign, &v.loaded.design_files);
+    if !answered.is_empty() {
+        print_diags(&answered, json);
+        return Err(3);
+    }
     let mut campaign = v.campaign;
     if lang == delvewright_dsl::CANONICAL_LANG {
         delvewright_dsl::tag_translatables(&mut campaign);

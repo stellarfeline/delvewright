@@ -1053,14 +1053,14 @@ pub fn render_plan(
         use crate::compiler::view::camera::{ShowcaseRefusal, prove_showcase};
         let bytes = serde_json::to_vec(&root).expect("render plan serializes");
         let parsed = crate::compiler::view::scene::parse_plan(&bytes).map_err(|d| Failure {
-            code: DW_CAMERA_RECORD,
+            code: crate::compiler::view::camera::DW_RECORD_AT_BUILD,
             message: d.message,
         })?;
         let showcase =
             prove_showcase(record, &parsed, |cell| !world.is_clear(cell)).map_err(|refusal| {
                 match refusal {
                     ShowcaseRefusal::Record(d) => Failure {
-                        code: DW_CAMERA_RECORD,
+                        code: crate::compiler::view::camera::DW_RECORD_AT_BUILD,
                         message: d.message,
                     },
                     ShowcaseRefusal::Camera(message) => Failure {
@@ -1073,14 +1073,6 @@ pub fn render_plan(
     }
     Ok((root, warnings))
 }
-
-/// `DW0721` raised by the build: `design/cameras.json` is refused by its one
-/// reader (`compiler::view::camera`) — the same rule `delvec cameras` refuses it
-/// under, stopping the build that reads it.
-const DW_CAMERA_RECORD: delvewright_dsl::DwCode = delvewright_dsl::DwCode::new(
-    crate::compiler::view::diag::DW_INPUT,
-    delvewright_dsl::ExitTier::Build,
-);
 
 /// **The hour this delve is played at**, as the render layer needs it.
 ///
