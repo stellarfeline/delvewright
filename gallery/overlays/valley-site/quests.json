@@ -41,6 +41,62 @@
         ],
         "on_complete": [
           {
+            "at": {
+              "anchor": "anchor/bank-court",
+              "offset": [
+                0,
+                0,
+                2
+              ]
+            },
+            "explosions": [
+              {
+                "colors": [
+                  "#ffd700",
+                  "#ffffff"
+                ],
+                "fade_colors": [
+                  "#8b0000"
+                ],
+                "shape": "large_ball",
+                "trail": true,
+                "twinkle": true
+              },
+              {
+                "colors": [
+                  "#4fa3ff"
+                ],
+                "shape": "small_ball"
+              },
+              {
+                "colors": [
+                  "#ffe066",
+                  "#ff8c1a"
+                ],
+                "shape": "star"
+              },
+              {
+                "colors": [
+                  "#5aa02c"
+                ],
+                "shape": "creeper"
+              },
+              {
+                "colors": [
+                  "#ffffff",
+                  "#b0c4de"
+                ],
+                "shape": "burst"
+              }
+            ],
+            "flight": 1,
+            "happening": {
+              "text": "the bank answers with one rocket",
+              "verb": "survives"
+            },
+            "type": "firework"
+          },
+          {
             "happening": {
               "text": "the delve is complete",
               "verb": "survives"
@@ -54,6 +110,6 @@
       }
     ]
   },
-  "dsl_version": "0.28.0",
+  "dsl_version": "0.29.0",
   "stage": "quests"
 }

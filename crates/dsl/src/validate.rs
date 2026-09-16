@@ -101,6 +101,7 @@ pub fn validate_campaign_with(
     loot_checks(c, items, anchors, &mut d);
     lane_checks(c, anchors, &mut d);
     difficulty_checks(c, &mut d);
+    firework_checks(c, &mut d);
     // Stage 7 (spec-0017): the map-editor edit script. Structural
     // checks only — frame/region *resolution* happens at build time against the
     // solved layout (the compiler's `DW0323`).
@@ -3683,12 +3684,137 @@ fn kit_potion_checks(c: &Campaign, effects: &dyn EffectRegistry, d: &mut Vec<Dia
     }
 }
 
-/// True if `s` is a `#rrggbb` colour literal.
+/// True if `s` is a `#rrggbb` colour literal — [`crate::color::is_hex`], the one
+/// rule every hex-colour surface reads.
 fn is_hex_color(s: &str) -> bool {
-    let Some(hex) = s.strip_prefix('#') else {
-        return false;
+    crate::color::is_hex(s)
+}
+
+/// **A firework's shape, at every effect root** (spec-0068 §3.1).
+///
+/// Three bounds the exported schema states and serde does not enforce — the
+/// flight's `1..=3`, the explosion list's `1..=7`, and every colour's
+/// `#rrggbb` pattern — so each is restated here, at the schema tier, because
+/// that is what each of them is: a document that does not conform to its own
+/// schema. The verb's anchor is not this function's business; `DW0142` and
+/// `DW0360` own a mark whose anchor is nothing, as they do for every
+/// anchor-bearing effect.
+fn firework_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
+    let mut found: Vec<(String, &'static str, String)> = Vec::new();
+    // The roots come from the single enumeration and the nesting from the single
+    // descent authority, so a `firework` inside a `sequence` step of a dialogue
+    // option's `on_respawn` bundle is asked exactly what a top-level one is —
+    // and the finding is reported against the stage document it really lives in.
+    fn descend(
+        stage: &'static str,
+        path: String,
+        eff: &QuestEffect,
+        found: &mut Vec<(String, &'static str, String)>,
+    ) {
+        firework_shape(stage, &path, eff, found);
+        for (pseg, _kseg, list) in eff.nested_effect_lists_labeled() {
+            for (j, inner) in list.iter().enumerate() {
+                descend(stage, format!("{path}/{pseg}/{j}"), inner, found);
+            }
+        }
+    }
+    crate::effects::for_each_effect_root(c, &mut |site, effs| {
+        for (i, eff) in effs.iter().enumerate() {
+            descend(site.stage, format!("{}/{i}", site.path), eff, &mut found);
+        }
+    });
+    for (path, stage, message) in found {
+        d.push(Diagnostic::error(codes::SCHEMA, stage, path, message));
+    }
+}
+
+/// One firework effect's shape, at the pointer it was found at.
+fn firework_shape(
+    stage: &'static str,
+    path: &str,
+    eff: &QuestEffect,
+    found: &mut Vec<(String, &'static str, String)>,
+) {
+    use crate::firework;
+    let Verb::Firework {
+        flight, explosions, ..
+    } = &eff.verb
+    else {
+        return;
     };
-    hex.len() == 6 && hex.chars().all(|c| c.is_ascii_hexdigit())
+    if let Some(f) = flight
+        && !(firework::MIN_FLIGHT..=firework::MAX_FLIGHT).contains(f)
+    {
+        found.push((
+            format!("{path}/flight"),
+            stage,
+            format!(
+                "`firework` `flight` is {f}. A flight duration is one of the three the game \
+                 crafts — {min}, {min2} or {max} — and the wiki states a burst height for \
+                 those and for nothing else, so a fourth would put the burst at a height this \
+                 engine cannot state. Write {min}, {min2} or {max}.",
+                min = firework::MIN_FLIGHT,
+                min2 = firework::MIN_FLIGHT + 1,
+                max = firework::MAX_FLIGHT,
+            ),
+        ));
+    }
+    if explosions.len() < firework::MIN_EXPLOSIONS {
+        found.push((
+            format!("{path}/explosions"),
+            stage,
+            format!(
+                "`firework` declares no explosion. A rocket with none is a flare: it glides \
+                 along whatever it meets and shows nothing. Declare between {} and {} \
+                 burst(s).",
+                firework::MIN_EXPLOSIONS,
+                firework::MAX_EXPLOSIONS,
+            ),
+        ));
+    }
+    if explosions.len() > firework::MAX_EXPLOSIONS {
+        found.push((
+            format!("{path}/explosions"),
+            stage,
+            format!(
+                "`firework` declares {n} explosions, and a rocket carries at most {max} — the \
+                 game's own crafting cap, and the largest count the page states a damage for \
+                 ({worst} HP, under a full body's twenty). A display of more rockets is a \
+                 `sequence` of `firework` effects, not one rocket that could kill an unhurt \
+                 player by itself.",
+                n = explosions.len(),
+                max = firework::MAX_EXPLOSIONS,
+                worst = firework::worst_damage_hp(),
+            ),
+        ));
+    }
+    for (i, ex) in explosions.iter().enumerate() {
+        if ex.colors.is_empty() {
+            found.push((
+                format!("{path}/explosions/{i}/colors"),
+                stage,
+                "`firework` explosion declares no `colors`. A star with no colour is not a \
+                 star — write at least one `#rrggbb` literal (e.g. `#ffd700`)."
+                    .to_string(),
+            ));
+        }
+        for (field, list) in [("colors", &ex.colors), ("fade_colors", &ex.fade_colors)] {
+            for (j, col) in list.iter().enumerate() {
+                if !crate::color::is_hex(col) {
+                    found.push((
+                        format!("{path}/explosions/{i}/{field}/{j}"),
+                        stage,
+                        format!(
+                            "`firework` colour `{col}` is malformed — write a burst colour as \
+                             `#rrggbb` (e.g. `#ffd700`), the spelling a potion's `color` \
+                             uses. The schema's own pattern is `{pat}`.",
+                            pat = crate::color::HEX_PATTERN,
+                        ),
+                    ));
+                }
+            }
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------

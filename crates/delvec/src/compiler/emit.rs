@@ -697,6 +697,11 @@ pub fn build_with_warnings(
     // the world block below. `None` for a campaign that declares no volume — no
     // ledger, no artifact, no byte moved for anybody who has not opted in.
     let mut lethal_gate: Option<crate::compiler::lethal::LethalGate> = None;
+    // The firework proofs' binding ledger (`compiler::firework`, spec-0068 §5),
+    // filled inside the world block below. `None` for a campaign that declares no
+    // firework — no ledger, no artifact, no byte moved for anybody who has not
+    // opted in; a ledger that exists and reports zero columns is a finding.
+    let mut firework_gate: Option<crate::compiler::firework::FireworkGate> = None;
     // The recovery stake's compile-time placement table (`compiler::stake`), and
     // the ledger of what its proofs looked at. `None` for a campaign that declares
     // no stake, which is the whole feature's byte-identity guarantee: no table, no
@@ -1078,6 +1083,33 @@ pub fn build_with_warnings(
             // reading of the plan alone can produce. Everything below is a
             // consumer of this answer; nothing it needs is computed below it.
             let (waves, rings) = plan_wave_spawns(plan, &world)?;
+
+            // **spec-0068: a firework bursts in open air, clear of every posted
+            // body** (`DW0899`). Asked here, immediately after the seating pass,
+            // because a wave's seats ARE posted places and the reach rule reads
+            // `DW0511`'s own enumeration — so the proof has to run where that
+            // enumeration is complete. It reads the plan, the assembled blocks
+            // and the seating, never a route, so nothing below it is lost by
+            // asking it first.
+            //
+            // The line is printed whether or not it found anything, and before
+            // the verdict is taken: a refusal owes its reader the same
+            // denominators a pass does.
+            {
+                let (binding, findings) =
+                    crate::compiler::firework::check(plan, &blocks, campaign_spawn(plan), &waves);
+                eprintln!("{}", binding.line());
+                firework_gate = Some(binding);
+                if let Some((first, rest)) = findings.split_first() {
+                    for extra in rest {
+                        eprintln!("{} [error] build: {}", extra.code, extra.message);
+                    }
+                    return Err(BuildFailure::Diagnostic {
+                        code: first.code,
+                        message: first.message.clone(),
+                    });
+                }
+            }
             let (moves, actor_moves) = if crate::compiler::nav::needs_world(plan) {
                 let m = crate::compiler::nav::plan_moves(plan, &world)?;
                 // move-actor (spec-0014): A* over the actor's footprint; DW0325 if
@@ -2041,6 +2073,9 @@ pub fn build_with_warnings(
     }
     if let Some(gate) = &lethal_gate {
         put_json(&mut out, "validation/lethal-gate.json", &gate.to_json());
+    }
+    if let Some(gate) = firework_gate.as_ref().filter(|g| g.declared > 0) {
+        put_json(&mut out, "validation/firework-gate.json", &gate.to_json());
     }
     // The recovery stake's binding ledger (`compiler::stake`, spec-0032 AC10): how
     // many stakes were declared, how many respawn seats and death regions the
@@ -5265,6 +5300,11 @@ fn assembles_world(plan: &Plan) -> bool {
     crate::compiler::nav::needs_world(plan)
         || !plan.campaign.quests.content.waves.is_empty()
         || crate::compiler::clearance::has_bodies(plan)
+        // spec-0068: a firework's roof proof is a question about blocks, so a
+        // campaign whose only reason to assemble the world is a rocket still
+        // assembles it — otherwise `DW0899` would be declared, compiled and
+        // never asked of exactly the campaign that needs it most.
+        || crate::compiler::firework::declares_one(plan)
 }
 
 /// Fail the build if any campaign effect — at **every effect root**, at **any
@@ -5971,6 +6011,14 @@ fn emit_quest_effect(plan: &Plan, eff: &QuestEffect, aud: Audience, body: &mut V
         } => {
             emit_damage_players(plan, *amount, within.as_ref(), *damage_type, who, body);
         }
+        // --- DSL v0.29 (spec-0068): a firework is an effect ---
+        Verb::Firework {
+            at,
+            flight,
+            explosions,
+        } => {
+            emit_firework(plan, at, *flight, explosions, body);
+        }
         Verb::SetCheckpoint { anchor, on_respawn } => {
             emit_set_checkpoint(plan, anchor.as_str(), on_respawn, body);
         }
@@ -6252,6 +6300,82 @@ fn emit_play_sound(
         cmd = format!("execute as {who} at @s run {cmd}");
     }
     body.push(cmd);
+}
+
+/// Emit a `firework` effect (DSL v0.29, spec-0068): one `summon` of a
+/// `minecraft:firework_rocket` at the mark's cell centre, carrying the bursts as
+/// a `minecraft:fireworks` item component.
+///
+/// **`LifeTime` is written, never left to the game.** Unset, vanilla randomises
+/// it at launch, so two runs of one datapack would burst at two heights and
+/// `DW0899`'s proof would be about a number nobody chose. The emitter writes the
+/// floor of that range ([`delvewright_dsl::firework::lifetime_ticks`]), which is
+/// both deterministic (ADR-0006) and the conservative side of the height proof.
+///
+/// Every spelling in the line — the entity, the item field, the component and
+/// the five shape tokens — comes from [`delvewright_dsl::firework`], the one
+/// file the game facts are pinned in, so a re-pin moves this command without
+/// touching this function.
+///
+/// The audience selector is not consulted: a rocket is a body in the world, not
+/// something played at a listener, so every player present sees the same burst.
+/// An unresolved anchor emits nothing and is `DW0360` long before here.
+fn emit_firework(
+    plan: &Plan,
+    at: &delvewright_dsl::Mark,
+    flight: Option<u8>,
+    explosions: &[delvewright_dsl::FireworkExplosion],
+    body: &mut Vec<String>,
+) {
+    use delvewright_dsl::firework;
+    let Some(anchor) = anchor_point_any(plan, at.anchor.as_str()) else {
+        return; // unresolved anchor (`DW0360` owns it)
+    };
+    let cell = at.cell(anchor);
+    let v = ent_xyz(cell);
+    let flight = flight.unwrap_or(firework::MIN_FLIGHT);
+    // `[I;…]` packed integers, the form the component reads. Validation proved
+    // every literal well-formed (`DW0100`), so a colour that will not pack is a
+    // colour that never reached here.
+    let packed = |list: &[String]| -> String {
+        list.iter()
+            .filter_map(|c| delvewright_dsl::color::packed(c))
+            .map(|n| n.to_string())
+            .collect::<Vec<_>>()
+            .join(",")
+    };
+    let bursts: Vec<String> = explosions
+        .iter()
+        .map(|e| {
+            let mut f = vec![
+                format!("shape:\"{}\"", e.shape.token()),
+                format!("colors:[I;{}]", packed(&e.colors)),
+            ];
+            if !e.fade_colors.is_empty() {
+                f.push(format!("fade_colors:[I;{}]", packed(&e.fade_colors)));
+            }
+            if e.trail {
+                f.push("has_trail:1b".to_string());
+            }
+            if e.twinkle {
+                f.push("has_twinkle:1b".to_string());
+            }
+            format!("{{{}}}", f.join(","))
+        })
+        .collect();
+    body.push(format!(
+        "summon {entity} {x} {y} {z} {{LifeTime:{life},{item}:{{id:\"{item_id}\",count:1,\
+         components:{{\"{component}\":{{flight_duration:{flight}b,explosions:[{bursts}]}}}}}}}}",
+        entity = firework::ROCKET_ENTITY,
+        x = v[0],
+        y = v[1],
+        z = v[2],
+        life = firework::lifetime_ticks(flight),
+        item = firework::ITEM_FIELD,
+        item_id = firework::ROCKET_ITEM,
+        component = firework::FIREWORKS_COMPONENT,
+        bursts = bursts.join(","),
+    ));
 }
 
 /// Emit a `damage-players` effect (DSL v0.6). `who` is the audience selector
@@ -7540,9 +7664,10 @@ fn potion_contents_snbt(pc: &delvewright_dsl::PotionContents) -> String {
         parts.push(format!("custom_effects:[{}]", effects.join(",")));
     }
     if let Some(col) = &pc.color {
-        // `#rrggbb` → the packed int vanilla stores. Validation (`DW0486`)
-        // already proved the literal well-formed.
-        if let Ok(v) = u32::from_str_radix(col.trim_start_matches('#'), 16) {
+        // `#rrggbb` → the packed int vanilla stores, through the one colour rule
+        // (`dsl::color`) the validator and the firework emitter also read.
+        // Validation (`DW0486`) already proved the literal well-formed.
+        if let Some(v) = delvewright_dsl::color::packed(col) {
             parts.push(format!("custom_color:{v}"));
         }
     }

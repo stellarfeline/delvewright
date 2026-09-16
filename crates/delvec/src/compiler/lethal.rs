@@ -506,7 +506,7 @@ fn npc_body(n: &delvewright_dsl::Npc) -> delvewright_dsl::metrics::Body {
 /// cannot state them. A campaign whose waves have not been seated (a proof run
 /// before that pass) passes an empty map and the wave arm binds to nothing, which
 /// is why the caller's ledger counts what it examined.
-fn posted_places(
+pub fn posted_places(
     plan: &Plan,
     entry: Option<[i32; 3]>,
     wave_seats: &std::collections::BTreeMap<String, Vec<[i32; 3]>>,

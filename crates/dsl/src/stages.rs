@@ -9,6 +9,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+use crate::firework::FireworkExplosion;
 use crate::layout::StationKind;
 
 use crate::ids::{
@@ -5129,6 +5130,43 @@ pub enum Verb {
         /// search.
         to: Mark,
     },
+    /// Fires a **firework rocket** from a mark (DSL v0.29, spec-0068).
+    ///
+    /// One effect at a point, the member of the same class as [`Verb::PlaySound`]
+    /// — a one-shot thing that happens where the campaign says, beside the sound
+    /// that goes with it. A display of many rockets is a [`Verb::Sequence`] of
+    /// these, not a verb with timing of its own.
+    ///
+    /// # The burst height is a stated number, not a roll
+    ///
+    /// The emitter writes the entity's `LifeTime`
+    /// ([`crate::firework::lifetime_ticks`]) rather than leaving it to the game,
+    /// which randomises it at launch: two runs of one datapack would otherwise
+    /// burst at two heights and nothing could be proven about where the burst is.
+    /// Fixed at the floor of the game's range, the burst stands
+    /// [`crate::firework::burst_height`] blocks over the mark.
+    ///
+    /// # A burst hurts, so the compiler asks where it is
+    ///
+    /// A build refuses a rocket whose column to that height is roofed, and one
+    /// whose burst lies within [`crate::firework::BLAST_RADIUS`] blocks of a
+    /// place the campaign posts a body (`DW0899`). Players are **not** posted:
+    /// a player standing level with a burst takes up to
+    /// [`crate::firework::worst_damage_hp`] HP, under a full body's twenty, and
+    /// that is a hazard a player can see coming.
+    Firework {
+        /// The mark the rocket is launched from — the cell's centre, at the
+        /// mark's own plane.
+        at: Mark,
+        /// Flight duration, 1–3 (the three the game crafts). Absent =
+        /// [`crate::firework::MIN_FLIGHT`].
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[schemars(range(min = 1, max = 3))]
+        flight: Option<u8>,
+        /// One to seven bursts, in the order the component carries them.
+        #[schemars(length(min = 1, max = 7))]
+        explosions: Vec<FireworkExplosion>,
+    },
 }
 
 /// Default `grace_ticks` for [`Verb::BeginStealth`] (spec-0014).
@@ -5992,6 +6030,7 @@ impl Verb {
             Verb::GiveEffect { .. } => "give-effect",
             Verb::ClearEffect { .. } => "clear-effect",
             Verb::Teleport { .. } => "teleport",
+            Verb::Firework { .. } => "firework",
         }
     }
 }
@@ -6141,6 +6180,8 @@ impl QuestEffect {
             | Verb::GiveEffect { .. }
             | Verb::ClearEffect { .. }
             | Verb::Teleport { .. }
+            // spec-0068's `firework` is v0.29.
+            | Verb::Firework { .. }
             | Verb::DropStake { .. } => None,
         }
     }
@@ -6690,6 +6731,9 @@ impl QuestEffect {
                 at: Some(SoundAt::Anchor { anchor, .. }),
                 ..
             } => vec![("at/anchor".to_string(), anchor, None)],
+            // A firework is launched from a point and seats nothing, so it names
+            // a location in the same shape `play-sound` does.
+            Verb::Firework { at, .. } => vec![("at/anchor".to_string(), &at.anchor, None)],
             // spec-0022 trap-payload verbs. Both anchors of a `volley` are
             // load-bearing for the coverage proof, so both register here — a
             // typo'd `kill_zone` must be a dangling-reference error, never a
