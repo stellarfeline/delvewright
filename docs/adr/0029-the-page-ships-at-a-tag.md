@@ -332,6 +332,35 @@ entry a `git-subdir` source, that is the real implementation of the format
 reading the shape this gate reads, the pair the constitution asks for, with no
 change to the step.
 
+### 6a. How CI gets the pinned engine, in both states
+
+Three jobs materialise the pinned engine, and each reaches it through the one
+composite action `.github/actions/skill-page-objects`: `manifest consistency
+(versions.toml)`, `i18n translation tool (pytest)` and `content pin (drift +
+zone-program audit)`. The action reads `[engine].ref` out of the page's
+`versions.toml` at run time — never a literal — and fetches it.
+
+**The tag exists.** The action fetches it by an explicit refspec,
+`git fetch --no-tags --quiet origin "refs/tags/<tag>:refs/tags/<tag>"`, and
+prints the commit. Measured on git 2.54.0: `--no-tags` turns off automatic tag
+FOLLOWING and does not suppress a tag a refspec names, so the ref lands in
+`refs/tags/` and `git archive <tag>` resolves afterwards; exit 0, silent. The
+bare spelling `git fetch --no-tags origin <tag>` also exits 0 and leaves the
+object in `FETCH_HEAD`, but writes no local tag, so the name does not resolve
+later — which is why the refspec is explicit.
+
+**The tag does not exist.** The fetch exits 128 with `fatal: couldn't find
+remote ref refs/tags/<tag>` and writes nothing, in either spelling. That is not
+a failure of the job: the action reports the state and continues, because the
+engine the gate judges is then this tree, which is the tree the release
+dispatched on this merge commit would tag — the same answer
+`tools/check-skill-page.py`'s `resolve_ref` gives, from the same reading of the
+same object. Without that arm the pull request that NAMES a tag could never be
+green, since the tag it names is created by the release dispatched on its own
+merge commit: the ordering of §3 would be unsatisfiable inside CI. So the
+interval of §4 has a second face, stated here rather than discovered — a fresh
+install is refused, and CI judges the tree that is about to become the tag.
+
 ### 7. Every consumer the change moves
 
 Each verified in the tree at `227e7504`; a consumer found later is this
