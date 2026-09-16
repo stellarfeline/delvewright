@@ -340,11 +340,12 @@ is — then draw it against the tree step 8 built and move it until the picture 
 in the frame. An approved picture with no camera stops the next build, naming
 the pictures, and stops the staging gate in step 14, so this is before the walk
 and not after it. A camera answers one picture: never re-aim one at a second,
-write another row. The engine at the pinned release does not carry the
-showcase-camera subcommands; the tool, its flags and the craft are
-`$DELVEWRIGHT_ENGINE/docs/reference/showcase-shots.md` §4 and
-`$DELVEWRIGHT_ENGINE/docs/reference/tools.md` §4a, read at the engine you built
-in Init.
+write another row. `delvec cameras` draws the record against that tree and
+renders its scenes; `delvec place-camera` is the record's one writer. A row no
+camera answers is `DW0900`. The craft — which side, how high, how close, how
+wide — is `$DELVEWRIGHT_ENGINE/docs/reference/showcase-shots.md` §4; placing one
+by hand, in the running game, is
+`$DELVEWRIGHT_ENGINE/docs/reference/tools.md` §4a.
 
 ## 9. The walk — STOP, this one is the user's
 
@@ -373,7 +374,9 @@ skip it and the campaign is not verified, however green the ladder is.
 route order, read against `campaigns/<id>/design/concept/`, scene by scene.
 Yours to do, not a checklist to hand off: judging a frame is the whole task.
 **Read**: `references/visual-review.md` — its cost section before you run its
-first command.
+first command. **A POV frame that is the wrong picture** is a camera question,
+not a render one: place that one by hand in the running game
+(`references/tools-by-symptom.md`, *a render camera nobody is satisfied with*).
 
 ## 13. Detail — site-plan campaigns only, and only after the walk
 
@@ -387,7 +390,10 @@ Optional, and impossible until `walk-record.json` records a **passed** walk
 
 **Needs**: everything above. **Produces**: `campaigns/<id>/README.md` — the
 storybook — its localized editions, and the report that ends the run. Nothing
-comes back. **Read**: `references/hand-over.md`.
+comes back. **Read**: `references/hand-over.md`. **When the exterior or
+starting-scene shot is not the one to ship**, place that camera by hand in the
+running game (`references/tools-by-symptom.md`, *a render camera nobody is
+satisfied with*) rather than re-rendering the one you have.
 
 **A newer page is not pushed at anybody.** Auto-update is off by default for a
 third-party marketplace, so a newer `/new-delve` arrives when the user runs

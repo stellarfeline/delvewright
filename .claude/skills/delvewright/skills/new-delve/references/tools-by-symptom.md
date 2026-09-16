@@ -23,16 +23,39 @@ The full inventory — every binary, script and flag that exists today — is
   document, `world-edits.json`: batches of declared edits, replayed
   deterministically, with the post-batch invariants enforced. Never hand-patch
   `.nbt` or invent block edits outside it.
-- **An approved picture no view of the built world answers**: the showcase
-  camera record, `campaigns/<id>/design/cameras.json` — one camera per row of
-  `design.json`, estimated from the picture and drawn over the assembled world
-  in seconds. The build refuses a record that leaves any row without a camera
-  and names the pictures; the repair is a camera for each, never re-aiming one
-  camera at a second picture. A campaign that has placed no camera at all still
-  builds — the first build is what a camera is estimated against — and is
-  stopped at the staging gate instead. Workflow, at step 8b; the subcommands and
-  their flags are `$DELVEWRIGHT_ENGINE/docs/reference/tools.md` §4a, which is
-  the engine you built, not the pinned release.
+- **An approved picture no view of the built world answers** (`DW0900`): the
+  showcase camera record, `campaigns/<id>/design/cameras.json` — one camera per
+  row of `design.json`, estimated from the picture and drawn over the assembled
+  world in seconds. `delvec --prefabs "$DELVEWRIGHT_PREFABS" cameras <build-dir>
+  --campaign <campaign-dir> -o <dir> --preview` draws every camera flat-lit in
+  seconds and `--bracket` writes the candidates beside them; `delvec --prefabs
+  "$DELVEWRIGHT_PREFABS" place-camera <campaign-dir> --name <row> --candidates
+  candidates.json --pick <candidate>` is the record's one writer. The build
+  refuses a record that leaves any row without a
+  camera and names the pictures; the repair is a camera for each, never
+  re-aiming one camera at a second picture. A campaign that has placed no camera
+  at all still builds — the first build is what a camera is estimated against —
+  and is stopped at the staging gate instead. Workflow, at step 8b; the craft is
+  `$DELVEWRIGHT_ENGINE/docs/reference/showcase-shots.md` §4.
+- **A render camera nobody is satisfied with**: stop estimating and let her
+  stand where the shot is. Five steps, in this order. **(1)** The server she is
+  in already has the overlay — it is step 9's command, and when it is not up,
+  that command again; `owner-play.yaml` publishes `localhost:25565` and nothing
+  else does. **(2)** Tell her the two triggers: `/trigger dw.free` to fly and to
+  come back, and `/trigger dw.cam set <n>` when the frame is right, `<n>` the
+  slot you give her in chat. FOV Effects off; ask her slider's number. **(3)**
+  Read the log before `down`: `docker logs dw-playtest > <file>` on the
+  `$DELVEWRIGHT_ENGINE/tools/playtest-server.sh` path, or `docker compose …
+  --profile playtest logs --no-color > <file>` on the compose path. **(4)**
+  Harvest it: `delvec --prefabs "$DELVEWRIGHT_PREFABS" harvest <file>
+  <out>/creator-datapack/layout.json --camera-out camera-report.json`, `<out>`
+  the build the server runs. **(5)** Write the row with `delvec --prefabs
+  "$DELVEWRIGHT_PREFABS" place-camera <campaign-dir> --name <row> --report
+  camera-report.json --slot <n> --fov <her slider>`, show her the draft
+  (`cameras --draft`) and render that one scene (`cameras --only <row>`). A hand pose replaces the estimate in its own row and
+  the writer refuses to put an estimate back over it; deleting the row is her
+  call, asked in chat. Human-in-the-loop, at step 12 and at step 14; the full
+  procedure is `$DELVEWRIGHT_ENGINE/docs/reference/tools.md` §4a.
 - **Handing a build to a playtester**: the playtest note flow — `/trigger dw.note`
   in-game, then `delvec harvest` → `playtest-report.json`. Human-optional.
 - **Delivering or revising a cutscene**: shot calibration — in-game

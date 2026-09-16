@@ -57,7 +57,7 @@ this section is what they are *for* and the traps in each.
   ghast's harness) and `saddle`; each takes a bare item id or `{item,
   enchantments}`. The server keeps whatever you write on any living body, but
   the player sees a piece only where that body's model draws it, so a piece is
-  refused where the game would not show it on that body: a slot the
+  refused where the game would not show it on that body (`DW0898`): a slot the
   body does not draw (a chestplate on a horse, a sword in a creeper's hand, a
   helmet on a villager, whose head takes a pumpkin or a skull but not armour),
   an item in a slot other than its own (a helmet in `legs`; the hands take
