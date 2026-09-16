@@ -850,3 +850,69 @@ def test_the_cli_exits_zero_on_the_committed_tree():
     )
     assert proc.returncode == 0, proc.stdout + proc.stderr
     assert "check-skill-page: ok" in proc.stdout
+
+
+# ------------------------------------ rule 21, the tree the page ships from --
+
+
+def test_a_page_naming_a_tool_that_is_not_in_the_tree_reds(mod, tree, engine):
+    """The shape #778 walked into: the tool moved, the page kept the old path."""
+    edit(
+        tree / "references" / "new-pieces.md",
+        "$DELVEWRIGHT_ENGINE/tools/block-appearance.py",
+        "$DELVEWRIGHT_ENGINE/tools/render/block-appearance.py",
+    )
+    rep = run(mod, engine)
+    assert has(rep, "`$DELVEWRIGHT_ENGINE/tools/render/block-appearance.py` is named by")
+    assert has(rep, "does not carry it")
+
+
+def test_the_finding_names_the_file_and_line_that_named_it(mod, tree, engine):
+    edit(
+        tree / "references" / "new-pieces.md",
+        "$DELVEWRIGHT_ENGINE/tools/block-appearance.py",
+        "$DELVEWRIGHT_ENGINE/tools/gone.py",
+    )
+    rep = run(mod, engine)
+    assert any("new-pieces.md:32" in f for f in rep.findings), rep.findings
+
+
+def test_a_directory_only_ignore_pattern_is_read_as_git_reads_it(mod):
+    """`validation/delve-output*/` matches a directory, and git must be asked so."""
+    assert mod.produced(["validation/delve-output"]) == {"validation/delve-output"}
+    assert mod.produced(["tools/refimg.py"]) == set()
+    assert mod.produced(["tools/gone.py"]) == set()
+    assert mod.produced([]) == set()
+
+
+def test_the_tracked_set_is_the_index_and_carries_directories(mod):
+    tracked = mod.shipping_tree()
+    assert "tools/refimg.py" in tracked
+    assert "tools" in tracked and "tools/lib" in tracked
+    assert "validation/delve-output" not in tracked
+
+
+def test_a_placeholder_segment_is_not_read_as_a_path(mod, tree, engine):
+    named = mod.engine_paths(mod.shipped())
+    assert "validation/run-out/<id>/run-report.json" in named
+    assert "…" in named
+    rep = run(mod, engine)
+    assert not any("run-out/<id>" in f for f in rep.findings), rep.findings
+
+
+def test_the_terminators_read_the_page_s_own_spellings(mod):
+    got = mod.ENGINE_PATH_RE.search('"$DELVEWRIGHT_ENGINE/target/release:$PATH"')
+    assert got.group("path") == "/target/release"
+    got = mod.ENGINE_PATH_RE.search("`$DELVEWRIGHT_ENGINE/versions.toml`")
+    assert got.group("path") == "/versions.toml"
+    got = mod.ENGINE_PATH_RE.search("read $DELVEWRIGHT_ENGINE/CLAUDE.md.")
+    assert got.group("path") == "/CLAUDE.md."
+
+
+def test_the_rule_binds_to_every_path_the_page_names(mod, tree, engine):
+    rep = run(mod, engine)
+    bound = [b for b in rep.bindings if "engine path(s)" in b[0]]
+    assert len(bound) == 1, rep.bindings
+    _what, judged, of = bound[0]
+    assert of == len(mod.engine_paths(mod.shipped()))
+    assert judged > 0 and judged <= of

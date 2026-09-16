@@ -88,6 +88,25 @@ WHAT IS CHECKED, AND THE PERTURBATION THAT REDS EACH
        is a profile `validation/compose.yaml` at `ref` declares.
                                                RED: a renamed trigger; a moved
                                                     layout manifest
+   21  every `$DELVEWRIGHT_ENGINE/<path>` a shipped file names is a path the
+       tree the page ships from carries, unless that tree's own `.gitignore`
+       says it is build output.             RED: `tools/refimg.py` on the page
+                                                 after the tool moved
+
+RULE 21, AND THE HALF OF THE PAIR IT DOES NOT YET HOLD
+
+A creator holds two things: the PAGE, which a fresh marketplace install takes
+from this repository's default branch, and the ENGINE, cloned at `[engine].ref`.
+Rule 21 judges the first — the tree this gate runs in, which on a pull request
+is its merge tree, and that is the tree a fresh install receives the moment the
+merge lands. It does NOT yet judge the second, and the difference is real rather
+than theoretical: measured at `3598d8f8`, the page names 40 distinct engine
+paths, of which `validation/chunky.sh` and `validation/chunky-install.sh` are in
+this tree and are NOT in the tree at `[engine].ref`, because the pin predates
+them. Closing that half means making the page's publication and `[engine].ref`
+name one revision, which is a decision about how the plugin is published and not
+a rule this gate may invent; until it lands, rule 21 holds one of the two trees
+and says so here rather than implying both.
 
 RULES 17 AND 18, AND WHAT THEY CANNOT SEE
 
@@ -297,6 +316,29 @@ ACQUIRED_DEFERRED = {
     "rustc": "I3b — the source floor, entered only on I3a's exit 3 or 4",
     "git-lfs": "the shipped library, optional and taken at the step that wants it",
 }
+
+# --- rule 21: the engine paths a page names ----------------------------------
+#
+# The page addresses the engine checkout it told the creator to make, always by
+# the same variable: `"$DELVEWRIGHT_ENGINE/tools/refimg.py"`. Rule 4 holds every
+# `delvec` subcommand to the engine and rule 20 holds every in-game name, but
+# nothing held the FILE PATHS, and they are the ones a repository reorganisation
+# moves. A pull request that moves `tools/` therefore left every such path on
+# the page dangling and stayed green, because no rule read them as paths.
+#
+# The terminators are the characters a path cannot contain in the spellings the
+# page uses — whitespace, a quote, a fence tick, a closing bracket, a comma, a
+# semicolon, and the `:` of `"$DELVEWRIGHT_ENGINE/target/release:$PATH"`. A
+# trailing `/` or sentence `.` is trimmed.
+ENGINE_PATH_RE = re.compile(r"\$DELVEWRIGHT_ENGINE(?P<path>/[^\s`\"'\)\]\},;:]*)?")
+# One path segment as a filesystem carries it. `<id>` and `…` fail it, which is
+# how `validation/run-out/<id>/run-report.json` and the page's own
+# `"$DELVEWRIGHT_ENGINE/…"` are read as spellings rather than as paths.
+SEGMENT_RE = re.compile(r"^[.A-Za-z0-9][A-Za-z0-9._-]*$")
+# Paths that are real in a clone and are never tree entries. A fixed list in the
+# gate, one entry long: git's own directory, which Init reads to confirm the
+# clone stands at the pin. A defect cannot add itself here.
+NOT_TREE_ENTRIES = {".git"}
 
 # --- rules 17 and 18: the names a page gives the engine ----------------------
 #
@@ -1064,6 +1106,9 @@ def check(rep: Report, engine: pathlib.Path, rev: str, release: str, base: str |
     # -- 20. every in-game and log name the page gives, the pin has ----------
     playtest_names_rule(rep, engine, rev)
 
+    # -- 21. every engine path the page names, the tree it ships from has ----
+    engine_paths_rule(rep)
+
     # -- 10. the split dropped nothing ---------------------------------------
     heading_rule(rep)
 
@@ -1570,6 +1615,134 @@ def playtest_names_rule(rep: Report, engine: pathlib.Path, rev: str) -> None:
                     )
     rep.bind("trigger, overlay path, container and profile name(s) the pin has", bound, named)
     print(f"  ok   {len(triggers)} overlay trigger(s) registered by the engine at {rev[:8]}")
+
+
+# ------------------------------- rule 21, the page and the tree it ships from --
+
+
+def shipping_tree() -> set[str]:
+    """Every path the tree the page ships from carries, files and directories.
+
+    The INDEX, not the working directory. A creator receives the plugin out of
+    the repository — the marketplace clones it, `git archive` packs it for the
+    Release — and clones the engine the same way, so what a creator can reach is
+    exactly what git tracks. A working-directory `exists()` would answer `True`
+    on a developer's machine for build output no creator ever receives, and
+    `False` in CI for the same path: the one reading that is the same in both
+    places is the tracked set.
+    """
+    proc = subprocess.run(
+        ["git", "-C", str(REPO), "ls-files", "-z"], capture_output=True
+    )
+    if proc.returncode != 0:
+        raise Unusable(
+            "could not list the tracked tree: "
+            f"{proc.stderr.decode('utf-8', 'replace').strip()}"
+        )
+    out: set[str] = set()
+    for entry in proc.stdout.decode("utf-8").split("\0"):
+        if not entry:
+            continue
+        out.add(entry)
+        parent = pathlib.PurePosixPath(entry).parent
+        while str(parent) != ".":
+            out.add(str(parent))
+            parent = parent.parent
+    if not out:
+        raise Unusable(
+            "the tracked tree is empty — this gate would then hold the page to "
+            "nothing and call it a pass"
+        )
+    return out
+
+
+def produced(paths: list[str]) -> set[str]:
+    """The subset the tree's own `.gitignore` says is build output, git judging.
+
+    The discriminator is not a list in this gate and not a note beside the line:
+    it is `.gitignore` at the same revision, read by git itself. A tool that
+    moves cannot ignore its own old path on the way, which is what makes this an
+    exclusion the defect cannot supply.
+
+    Each path is asked twice, bare and with a trailing `/`. A pattern written
+    `validation/delve-output*/` matches only a DIRECTORY, and on a path that is
+    not on disk git cannot know which one it was handed: `check-ignore` answers
+    "not ignored" for the bare spelling and "ignored" for the slashed one. The
+    page names a path without saying which it is, so both readings are put and
+    either verdict of ignored is taken — a pattern a moved file could not match
+    under either spelling.
+    """
+    if not paths:
+        return set()
+    asked = [spelling for p in paths for spelling in (p, p + "/")]
+    proc = subprocess.run(
+        ["git", "-C", str(REPO), "check-ignore", "--no-index", "--stdin", "-z"],
+        input="\0".join(asked).encode("utf-8"),
+        capture_output=True,
+    )
+    # exit 0 = some ignored, 1 = none ignored, anything else = it did not judge.
+    if proc.returncode not in (0, 1):
+        raise Unusable(
+            "could not ask git which of the page's engine paths are ignored: "
+            f"{proc.stderr.decode('utf-8', 'replace').strip()}"
+        )
+    answered = {p.rstrip("/") for p in proc.stdout.decode("utf-8").split("\0") if p}
+    return {p for p in paths if p in answered}
+
+
+def engine_paths(files: list[pathlib.Path]) -> dict[str, list[str]]:
+    """Each `$DELVEWRIGHT_ENGINE/<path>` a shipped file names, to where it is named."""
+    out: dict[str, list[str]] = {}
+    for path in files:
+        try:
+            text = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            continue
+        for i, line in enumerate(text.split("\n"), 1):
+            for m in ENGINE_PATH_RE.finditer(line):
+                named = (m.group("path") or "").lstrip("/").rstrip("/.")
+                if not named:
+                    continue
+                out.setdefault(named, []).append(f"{rel(path)}:{i}")
+    return out
+
+
+def engine_paths_rule(rep: Report) -> None:
+    """Rule 21: every engine path the page names is in the tree it ships from."""
+    named = engine_paths(shipped())
+    unspelt = {
+        p: where
+        for p, where in named.items()
+        if not all(SEGMENT_RE.match(s) for s in p.split("/"))
+    }
+    not_entries = {p: where for p, where in named.items() if p in NOT_TREE_ENTRIES}
+    judged = sorted(set(named) - set(unspelt) - set(not_entries))
+    tracked = shipping_tree()
+    missing = [p for p in judged if p not in tracked]
+    build_output = produced(missing)
+    for path in missing:
+        if path in build_output:
+            continue
+        rep.find(
+            f"`$DELVEWRIGHT_ENGINE/{path}` is named by "
+            f"{', '.join(named[path])}, and the tree the page ships from does "
+            f"not carry it. The page and the engine reach a creator as one "
+            f"revision, so a path that is not in this tree is a path the "
+            f"creator's clone will not have either: move the page to where the "
+            f"thing now lives, or restore the thing."
+        )
+    rep.bind(
+        "engine path(s) held to the tree the page ships from", len(judged), len(named)
+    )
+    print(
+        f"  ok   {len(judged) - len(missing)} of {len(judged)} engine path(s) are "
+        f"tracked; {len(build_output)} named as build output the tree's own "
+        f".gitignore covers ({', '.join(sorted(build_output)) or 'none'}); "
+        f"{len(not_entries)} never a tree entry "
+        f"({', '.join(sorted(not_entries)) or 'none'}); "
+        f"{len(unspelt)} written with a placeholder segment "
+        f"({', '.join(sorted(unspelt)) or 'none'})"
+    )
 
 
 # -------------------------------------------------- rule 18, the release asked --
