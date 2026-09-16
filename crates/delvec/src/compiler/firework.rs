@@ -181,35 +181,88 @@ fn blocks_a_rocket(blocks: &BTreeMap<[i32; 3], String>, cell: [i32; 3]) -> bool 
         .is_some_and(|b| !delvewright_dsl::blockshape::passes_body(b))
 }
 
+/// **One resolved launch**: what [`judge`] is asked about, once the plan has
+/// said where the mark is.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Launch {
+    /// The JSON pointer the effect was found at.
+    pub path: String,
+    /// The mark, as a diagnostic spells it.
+    pub mark: String,
+    /// The cell the mark resolved to.
+    pub cell: [i32; 3],
+    /// The flight duration in force.
+    pub flight: u8,
+}
+
 /// **Prove every firework bursts in open air, clear of every posted body**
 /// (`DW0899`).
 ///
-/// Returns the binding beside the findings, so the line a run prints is a count
-/// over every firework rather than over the ones that preceded the failure.
-/// Findings are returned in content order; the caller raises the first and
-/// prints the rest, as the other assembled-world proofs do.
+/// Resolves the campaign's fireworks against the solved layout and the posts
+/// against `DW0511`'s own enumeration, then hands both to [`judge`], which is
+/// where the rule lives.
 pub fn check(
     plan: &Plan,
     blocks: &BTreeMap<[i32; 3], String>,
     entry: Option<[i32; 3]>,
     wave_seats: &BTreeMap<String, Vec<[i32; 3]>>,
 ) -> (FireworkGate, Vec<Failure>) {
-    use delvewright_dsl::firework;
-    let mut gate = FireworkGate::default();
     let declared = declared_fireworks(plan);
-    gate.declared = declared.len();
     if declared.is_empty() {
-        return (gate, Vec::new());
+        return (FireworkGate::default(), Vec::new());
+    }
+    let mut launches: Vec<Launch> = Vec::new();
+    for (path, mark, flight) in &declared {
+        // `DW0360` owns a mark whose anchor resolves to nothing.
+        if let Some(anchor) = plan.point_any(mark.anchor.as_str()) {
+            launches.push(Launch {
+                path: path.clone(),
+                mark: mark.display(),
+                cell: mark.cell(anchor),
+                flight: *flight,
+            });
+        }
     }
     // `DW0511`'s own enumeration, handed over rather than re-derived.
     let posts = crate::compiler::lethal::posted_places(plan, entry, wave_seats);
+    let (mut gate, findings) = judge(&launches, &posts, blocks);
+    gate.declared = declared.len();
+    (gate, findings)
+}
+
+/// **The rule itself** (spec-0068 §5), over resolved launches and resolved
+/// posts.
+///
+/// Separated from [`check`] so it can be asked directly of a geometry a
+/// campaign fixture cannot easily stand up — a body posted three or more
+/// courses above a launch plane, which is the only way a burst eight blocks up
+/// can be within five blocks of a post at all.
+///
+/// Returns the binding beside the findings, so the line a run prints is a count
+/// over every firework rather than over the ones that preceded the failure.
+/// Findings are in content order; the caller raises the first and prints the
+/// rest, as the other assembled-world proofs do. `declared` is the caller's to
+/// fill: this function is only told about the launches that resolved.
+pub fn judge(
+    launches: &[Launch],
+    posts: &[crate::compiler::lethal::PostedPlace],
+    blocks: &BTreeMap<[i32; 3], String>,
+) -> (FireworkGate, Vec<Failure>) {
+    use delvewright_dsl::firework;
+    let mut gate = FireworkGate {
+        declared: launches.len(),
+        ..Default::default()
+    };
     let mut findings: Vec<Failure> = Vec::new();
 
-    for (path, mark, flight) in declared {
-        let Some(anchor) = plan.point_any(mark.anchor.as_str()) else {
-            continue; // `DW0360` owns a mark whose anchor resolves to nothing
-        };
-        let cell = mark.cell(anchor);
+    for launch in launches {
+        let Launch {
+            path,
+            mark,
+            cell,
+            flight,
+        } = launch;
+        let (cell, flight) = (*cell, *flight);
         let height = firework::burst_height(flight);
         let burst = [cell[0], cell[1] + height, cell[2]];
         let column: Vec<[i32; 3]> = (1..=height)
@@ -217,7 +270,7 @@ pub fn check(
             .collect();
         gate.rows.push(FireworkRow {
             path: path.clone(),
-            mark: mark.display(),
+            mark: mark.clone(),
             cell,
             flight,
             column: column.len(),
@@ -240,7 +293,6 @@ pub fn check(
                      is standing on, and its burst deals up to {worst} HP. Lower the `flight`, \
                      move the mark under open sky, or build the room taller; do NOT remove the \
                      check.",
-                    mark = mark.display(),
                     radius = firework::BLAST_RADIUS,
                     worst = firework::worst_damage_hp(),
                 ),
@@ -274,7 +326,6 @@ pub fn check(
                      A burst deals up to {worst} HP to a body in reach and no wall is credited \
                      with stopping it, so whatever the campaign puts there is hurt every time the \
                      beat fires. Move the mark, raise the `flight`, or move the post.",
-                    mark = mark.display(),
                     n = caught.len(),
                     radius = firework::BLAST_RADIUS,
                     worst = firework::worst_damage_hp(),
