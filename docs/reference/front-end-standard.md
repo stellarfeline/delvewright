@@ -341,9 +341,28 @@ neither in one place.
 
 Each entry in `plugins` requires `name` and `source`. Source types: a relative
 path (resolved from the marketplace root, not from `.claude-plugin/`),
-`github` (`repo`, `ref`, `sha`), `url` (a git URL), `git-subdir` (`url`, `path`),
+`github` (`repo`, `ref`, `sha`), `url` (a git URL), `git-subdir`,
 `npm` (`package`, `version`, `registry`), `archive` (`url`, `sha256`), and
 `command` (a command whose output names the plugin path).
+
+A relative path is a string: "For plugins in the same repository, use a path
+starting with `./`". It carries no field, so it cannot pin. A `git-subdir`
+source "point[s] to a plugin that lives inside a subdirectory of a git
+repository" through "a sparse, partial clone", and takes exactly four fields:
+`url` ("Required. Git repository URL, GitHub `owner/repo` shorthand, or SSH
+URL"), `path` ("Required. Subdirectory path within the repo containing the
+plugin"), `ref` ("Optional. Git branch or tag (defaults to repository default
+branch)") and `sha` ("Optional. Full 40-character git commit SHA to pin to an
+exact version"). "When both `ref` and `sha` are set … the `sha` is the effective
+pin." A marketplace "added with a branch or tag `ref` updates to the latest
+commit of that ref, not the repository's default branch."
+
+**SILENT**, on the two questions ADR-0029 needed, and both were settled by
+measurement rather than invention (the throwaway marketplace over local smart
+HTTP, on the pinned Claude Code): what a fresh install receives while a
+`git-subdir` entry's `ref` names a tag the remote does not have, and what
+`plugin update` does for an already-installed creator in that interval. Both are
+recorded in ADR-0029 §4 in the tool's own words.
 
 The documented layout:
 

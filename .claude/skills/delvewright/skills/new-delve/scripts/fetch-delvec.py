@@ -24,7 +24,7 @@ that published file as a fixture.
 
 THE HOST MAP IS THE ENGINE'S OWN LIST, NOT A COPY
 
-`[engine].targets` in the engine tree at the pinned `ref` is the authority for
+`[engine].targets` in the engine tree at the pinned tag is the authority for
 what the shelf carries. This script computes a target triple from
 `platform.system()` and `platform.machine()` and then asks whether that triple
 is in the engine's list — so a target added upstream is a line in the engine's
@@ -71,8 +71,16 @@ EXIT_DOWNLOAD = 4
 EXIT_CHECKSUM = 5
 EXIT_VERSION = 6
 
-DOWNLOAD = "https://github.com/{repo}/releases/download/{release}"
-ARCHIVE = "delvec-{release}-{target}.tar.gz"
+DOWNLOAD = "https://github.com/{repo}/releases/download/{tag}"
+# The archive is named for the VERSION, the shelf for the TAG (ADR-0028 §2).
+ARCHIVE = "delvec-v{version}-{target}.tar.gz"
+# The release-tag grammar (ADR-0028 §1), restated here as one expression rather
+# than imported from `tools/lib/release_tags.py`: this script ships inside the
+# plugin and runs on a creator's machine BEFORE any engine checkout exists, so a
+# page that could not read its own pin until it had cloned the thing the pin
+# names would be a circle. `tools/check-skill-page.py` holds the pin to the
+# engine's own module, which is what keeps the two readings one grammar.
+TAG_RE = re.compile(r"^delvec--v((?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*))$")
 CHECKSUMS = "SHA256SUMS"
 
 # `<64 hex>` then whitespace then an optional binary-mode `*` then the name.
@@ -128,8 +136,13 @@ def host_target(system: str, machine: str) -> str | None:
     return f"{cpu}-{suffix}"
 
 
-def read_pin(path: pathlib.Path) -> tuple[str, str, str]:
-    """`(repo, release, ref)` from the manifest beside the page."""
+def read_pin(path: pathlib.Path) -> tuple[str, str]:
+    """`(repo, ref)` from the manifest beside the page.
+
+    `ref` is the engine RELEASE TAG the page ships at (ADR-0029 §1): the shelf
+    this script downloads from, the tree Init I2 detaches at and the version the
+    binary must answer are all derived from that one name, never stated twice.
+    """
     try:
         data = tomllib.loads(path.read_text(encoding="utf-8"))
     except (OSError, tomllib.TOMLDecodeError) as exc:
@@ -138,12 +151,26 @@ def read_pin(path: pathlib.Path) -> tuple[str, str, str]:
     if not isinstance(engine, dict):
         raise Refusal(EXIT_UNUSABLE, f"{path} has no `[engine]` table")
     out = []
-    for key in ("repo", "release", "ref"):
+    for key in ("repo", "ref"):
         value = engine.get(key)
         if not isinstance(value, str) or not value:
             raise Refusal(EXIT_UNUSABLE, f"{path} has no `[engine].{key}`")
         out.append(value)
-    return out[0], out[1], out[2]
+    return out[0], out[1]
+
+
+def tag_version(tag: str) -> str:
+    """The version a `delvec--v<major>.<minor>.<patch>` tag states."""
+    m = TAG_RE.match(tag)
+    if m is None:
+        raise Refusal(
+            EXIT_UNUSABLE,
+            f"`[engine].ref` is {tag!r}, which is not a `delvec--v<major>."
+            f"<minor>.<patch>` release tag. The pin names the engine RELEASE "
+            f"this page ships at, so a name shaped any other way names no "
+            f"shelf at all.",
+        )
+    return m.group(1)
 
 
 def engine_targets(engine: pathlib.Path, ref: str) -> list[str]:
@@ -168,20 +195,20 @@ def engine_targets(engine: pathlib.Path, ref: str) -> list[str]:
     if proc.returncode != 0:
         raise Refusal(
             EXIT_UNUSABLE,
-            f"{engine} cannot serve versions.toml at {ref[:8]}: "
+            f"{engine} cannot serve versions.toml at {ref}: "
             f"{proc.stderr.decode('utf-8', 'replace').strip()}",
         )
     try:
         data = tomllib.loads(proc.stdout.decode("utf-8"))
     except (UnicodeDecodeError, tomllib.TOMLDecodeError) as exc:
         raise Refusal(
-            EXIT_UNUSABLE, f"the engine's versions.toml at {ref[:8]} is unusable: {exc}"
+            EXIT_UNUSABLE, f"the engine's versions.toml at {ref} is unusable: {exc}"
         ) from exc
     targets = data.get("engine", {}).get("targets")
     if not isinstance(targets, list) or not targets:
         raise Refusal(
             EXIT_UNUSABLE,
-            f"the engine at {ref[:8]} declares no `[engine].targets`, so this "
+            f"the engine at {ref} declares no `[engine].targets`, so this "
             f"script has no list to map the host against. A map it invented "
             f"would be a second authority for the shelf.",
         )
@@ -233,7 +260,8 @@ def run(
     system: str,
     machine: str,
 ) -> int:
-    repo, release, ref = read_pin(pin)
+    repo, ref = read_pin(pin)
+    version = tag_version(ref)
     targets = engine_targets(engine, ref)
 
     target = host_target(system, machine)
@@ -242,18 +270,18 @@ def run(
             EXIT_NO_TARGET,
             f"the shelf carries no archive for {system}/{machine}"
             + (f" ({target})" if target else "")
-            + f". Release {release} publishes: {', '.join(targets)}. "
+            + f". Release {ref} publishes: {', '.join(targets)}. "
             f"This machine builds from source (ADR-0023 §2).",
         )
 
-    base = DOWNLOAD.format(repo=repo, release=release)
-    name = ARCHIVE.format(release=release, target=target)
+    base = DOWNLOAD.format(repo=repo, tag=ref)
+    name = ARCHIVE.format(version=version, target=target)
     sums = fetch(f"{base}/{CHECKSUMS}").decode("utf-8", "replace")
     want = digest_for(sums, name)
     if want is None:
         raise Refusal(
             EXIT_CHECKSUM,
-            f"{CHECKSUMS} on release {release} carries no row for {name}, so "
+            f"{CHECKSUMS} on release {ref} carries no row for {name}, so "
             f"nothing binds those bytes to that release. This is a refusal and "
             f"not a reason to take the source build: the shelf and its manifest "
             f"disagree, and only the publisher can settle that.",
@@ -267,7 +295,7 @@ def run(
             f"{name} hashes {got}, and {CHECKSUMS} says {want}. **Refused.** "
             f"Nothing is extracted, nothing is downloaded again, and the source "
             f"build is not a way around this — the published {CHECKSUMS} is the "
-            f"only thing binding those bytes to release {release}.",
+            f"only thing binding those bytes to release {ref}.",
         )
 
     into = into.expanduser()
@@ -292,12 +320,11 @@ def run(
         shutil.copy2(found[0], binary)
         binary.chmod(binary.stat().st_mode | 0o111)
 
-    version = binary_version(binary)
-    expected = release.lstrip("v")
-    if version != expected:
+    answered = binary_version(binary)
+    if answered != version:
         raise Refusal(
             EXIT_VERSION,
-            f"{binary} answers `delvec {version}` and the pin names {release}. "
+            f"{binary} answers `delvec {answered}` and the pin names {ref}. "
             f"The shelf served a different engine than this page was written "
             f"against. Stop: every refusal, picture and diagnostic below would "
             f"come from an engine nobody chose.",
@@ -305,7 +332,7 @@ def run(
 
     print(
         f"fetch-delvec: ok — target {target}, archive {name}, "
-        f"sha256 {got}, delvec {version} at {binary}"
+        f"sha256 {got}, delvec {answered} at {binary}"
     )
     print(f"  add to PATH: {into}")
     return 0

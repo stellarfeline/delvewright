@@ -211,8 +211,8 @@ found and what the pin wants:
 
 | compared | against |
 |---|---|
-| `delvec --version`, resolved through `env.sh`'s `PATH` — the binary every later command runs | creator: `[engine].release`; dev: `"$DELVEWRIGHT_ENGINE/versions.toml"`'s `[engine].version`, the number I3b holds a dev binary to |
-| `git -C "$DELVEWRIGHT_ENGINE" rev-parse HEAD` | creator: `[engine].ref`. Dev: printed, not compared — the checkout is the engine under work |
+| `delvec --version`, resolved through `env.sh`'s `PATH` — the binary every later command runs | creator: the version `[engine].ref` states; dev: `"$DELVEWRIGHT_ENGINE/versions.toml"`'s `[engine].version`, the number I3b holds a dev binary to |
+| `git -C "$DELVEWRIGHT_ENGINE" rev-parse HEAD` | creator: the commit `[engine].ref` resolves to in that clone. Dev: printed, not compared — the checkout is the engine under work |
 | `env.sh`'s `DELVEWRIGHT_SKILL`, `DELVEWRIGHT_MODE`, `DELVEWRIGHT_ENGINE`, read by sourcing it | the skill root the script lives in, and this run's I0 |
 
 | exit | what it means | what to do |
@@ -231,10 +231,12 @@ The engine checkout is **not** the compiler. Several steps run a Python tool, a
 compose file or a reference document that lives in that tree and cannot exist
 anywhere else; they are all written `"$DELVEWRIGHT_ENGINE/…"`.
 
-**Neither the revision nor the release is yours to choose, and neither is the
-default branch.** `versions.toml` in the skill root names both. Read them from
-there; this page restates neither, because a revision or a version written on a
-page goes stale the first time the pin moves and nothing reports it.
+**The engine is not yours to choose, and it is not the default branch.**
+`versions.toml` in the skill root names it once, as `[engine].ref` — the engine
+RELEASE TAG this page ships at, so the page you are reading and the tree you are
+about to check out came out of the same commit. Read it from there; this page
+restates it nowhere, because a tag written on a page goes stale the first time
+the pin moves and nothing reports it.
 
 ```sh
 PIN="$DELVEWRIGHT_SKILL/versions.toml"
@@ -244,9 +246,10 @@ ENGINE_REPO="$("$DELVEWRIGHT_PYTHON" -c 'import tomllib,sys;print(tomllib.load(o
 mkdir -p ~/.delvewright
 [ -d "$DELVEWRIGHT_ENGINE/.git" ] \
   || git clone "https://github.com/$ENGINE_REPO.git" "$DELVEWRIGHT_ENGINE"
-git -C "$DELVEWRIGHT_ENGINE" fetch origin
+git -C "$DELVEWRIGHT_ENGINE" fetch origin "refs/tags/$ENGINE_REF:refs/tags/$ENGINE_REF"
 git -C "$DELVEWRIGHT_ENGINE" checkout --detach "$ENGINE_REF"
-[ "$(git -C "$DELVEWRIGHT_ENGINE" rev-parse HEAD)" = "$ENGINE_REF" ] \
+[ "$(git -C "$DELVEWRIGHT_ENGINE" rev-parse HEAD)" \
+  = "$(git -C "$DELVEWRIGHT_ENGINE" rev-parse "$ENGINE_REF^{commit}")" ] \
   && echo "engine at $ENGINE_REF"
 ```
 
@@ -254,9 +257,11 @@ git -C "$DELVEWRIGHT_ENGINE" checkout --detach "$ENGINE_REF"
 second run on the same machine, or a checkout somebody made by hand — and a bare
 `git clone` onto it is a hard failure at the third line of the toolchain step.
 The four lines above are the whole answer and they are safe to run any number of
-times: the clone happens once, the `fetch` brings the pinned revision into a
-tree that may predate it, and the `checkout --detach` puts the tree at the pin
-from wherever it was. A `delvewright.local.toml` a previous run left is not a
+times: the clone happens once, the `fetch` brings the pinned TAG into a tree
+that may predate it — named explicitly, so a clone made before the release still
+gets it — and the `checkout --detach` puts the tree at the pin from wherever it
+was. The equality is against `rev-parse "$ENGINE_REF^{commit}"` and not against
+the name, because a tag is not a revision until something resolves it. A `delvewright.local.toml` a previous run left is not a
 problem and is not deleted: it is gitignored there, `checkout` never touches it,
 and I7's dry-run is what decides whether it is usable.
 
@@ -281,12 +286,13 @@ One command, and it needs no particular working directory:
 "$DELVEWRIGHT_PYTHON" "$DELVEWRIGHT_SKILL/scripts/fetch-delvec.py" --into ~/.delvewright/bin
 ```
 
-It reads `[engine].repo`, `[engine].release` and `[engine].ref` out of the pin
-beside it in the skill root — all three, and none of them restated anywhere — maps this
-host onto the engine's own `[engine].targets` at `ref`, downloads that archive
-and `SHA256SUMS`, reads this
-archive's row in either form coreutils writes, verifies the bytes, unpacks, and
-asserts `delvec --version` **equals** the release's number. It prints what it
+It reads `[engine].repo` and `[engine].ref` out of the pin beside it in the
+skill root — two keys, neither restated anywhere — takes the release, the
+archive name and the version the binary must answer from that one tag, maps this
+host onto the engine's own `[engine].targets` at that tag, downloads the archive
+and `SHA256SUMS`, reads this archive's row in either form coreutils writes,
+verifies the bytes, unpacks, and asserts `delvec --version` **equals** the
+version the tag states. It prints what it
 bound: the target, the archive, the digest and the version.
 
 Its exit code is the whole failure table, and none of the four means the same
@@ -344,8 +350,8 @@ anything else is a stale binary, and the repair is a rebuild.
 delvec --version               # delvec <x.y.z>, dsl <a.b.c>, mc 1.21.11
 ```
 
-**`<x.y.z>` is the pin's number, not merely a number**: `[engine].release`
-without its `v`, or in dev mode the checkout's `[engine].version`. **Write down
+**`<x.y.z>` is the pin's number, not merely a number**: the version
+`[engine].ref` states, or in dev mode the checkout's `[engine].version`. **Write down
 the `dsl` number** — step 1 needs it on every document. A binary that does not
 answer this at all is a broken install: go back to I3a's table. One answering
 another number is I1b's exit 3.

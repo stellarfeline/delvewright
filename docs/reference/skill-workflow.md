@@ -17,14 +17,49 @@ would be a second authority for a file sitting on the same disk. A creator
 clones nothing to get it — `/plugin marketplace add` and `/plugin install` put
 it in Claude Code's own cache. `tools/check-skill-page.py` is the one gate over
 it, in this repository, judging it against the engine at `[engine].ref`.
-A newer page reaches a creator when `plugin.json` `version` moves on `main` — the
-marketplace serves the default branch, and an unchanged version is not an update.
-Only `.github/workflows/plugin-release.yml`, dispatched by a human, moves it: it
-commits the bump, waits for every required check on that commit, fast-forwards
-`main`, and tags and publishes
-`delvewright--v<version>`. A pull request that edits the page leaves the version
-alone (`tools/check-skill-page.py` refuses one that moves it), and the edit reaches
-creators at the next release.
+
+## The release order, and the property it buys
+
+**A creator never holds a page and an engine from different revisions.** The
+marketplace entry is a `git-subdir` source whose `ref` is the engine release tag
+the page pins, and `[engine].ref` inside the bytes that tag delivers is that same
+tag, so the plugin root a creator installs and the engine tree their Init clones
+are one commit. It holds by construction rather than by a gate comparing two
+trees (ADR-0029 §1).
+
+For every engine release the page moves to, in order:
+
+1. **A pull request names the tag.** It writes `[engine].ref` and the entry's
+   `ref` to `delvec--v<version>`, where `<version>` is `[engine].version` at the
+   root of the same tree. That pull request is the one that walks the page
+   against the engine — which is now this tree — and it merges on the same terms
+   as any page change. `tools/check-skill-page.py` refuses a name that is not
+   this tree's own tag, and `tools/check-pins.py --online` refuses it too.
+2. **The release is dispatched on the merge commit**, as the next act.
+   `engine-release.yml` derives the same name from the same tree, fills the
+   shelf, uploads to crates.io, writes the tag at that commit and undrafts. From
+   this moment a fresh install receives the plugin root of that commit.
+3. **Nothing follows.** No commit re-points the entry and no pull request waits
+   on the release. `main` moves on, and its tip's page is judged against the
+   engine at the tag until the next pull request names the next tag.
+
+**Between step 1 and step 2 a fresh install is refused, not broken** — measured
+on the pinned Claude Code: `claude plugin install` exits 1 with `Failed to clone
+repository for git-subdir source: … fatal: Remote branch <tag> not found in
+upstream origin`, and nothing is installed. An existing install is untouched:
+`claude plugin update` fails the same way and keeps the bytes and the version it
+had.
+
+**A newer page reaches an existing creator when the entry's `ref` moves to a tag
+whose `plugin.json` `version` is above the one they hold** — an unchanged version
+is not an update, measured. So a page meant to reach existing creators is tagged
+from a `main` that already carries the version bump: the plugin release
+(`.github/workflows/plugin-release.yml`, dispatched by a human — it commits the
+bump, waits for every required check on that commit, fast-forwards `main`, and
+tags and publishes `delvewright--v<version>`) supplies the number, and an engine
+release after it is what delivers it. **A plugin release with no engine release
+after it reaches nobody on its own.** A pull request that edits the page leaves
+the version alone (`tools/check-skill-page.py` refuses one that moves it).
 
 This file stays beside it rather than in it: it is about how an agent driving
 the page splits the work, which is engine-side planner material and is

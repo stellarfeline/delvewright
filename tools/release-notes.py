@@ -12,10 +12,11 @@ statement of a number `versions.toml` already holds.
   delvec           the engine version, the `dsl_version` the binary speaks
                    (`[engine].dsl_crate_version`), the crates.io page
   delvewright-dsl  the format version and its crates.io page
-  delvewright      the engine release the page pins and its `ref`, the
+  delvewright      the engine release tag the page ships at, the
                    `requires_delvec` window, the `dsl_version` that pinned engine
-                   speaks (read from the engine tree AT the pin), and the plugin
-                   root's tree hash at the release commit
+                   speaks (read from the engine tree AT the pin, where this
+                   checkout carries the tag), and the plugin root's tree hash at
+                   the release commit
 
 The generated changelog GitHub appends below this opening is asked for by the
 workflow, between consecutive tags of the same line (`tools/lib/release_tags.py
@@ -118,7 +119,16 @@ def notes(line: str, repo: pathlib.Path, rev: str) -> str:
         except (KeyError, tomllib.TOMLDecodeError) as exc:
             raise Missing(f"{PAGE_PIN} has no readable [engine]: {exc}")
         window = requires_delvec(show(repo, sha, PAGE))
-        pinned = engine_table(repo, pin["ref"])
+        # The pin may name a tag this repository has not written yet: a plugin
+        # release dispatched inside ADR-0029 §4's interval is exactly that state,
+        # and its notes are still owed. So an unresolvable tag is PRINTED as
+        # unborn rather than raised — the one fact a reader needs is which engine
+        # release the page ships at, and that is the name itself.
+        try:
+            speaks = engine_table(repo, f"{pin['ref']}^{{commit}}")["dsl_crate_version"]
+            speaks = f"**{speaks}**"
+        except Missing:
+            speaks = "the version that release states — the tag is not written yet"
         tree = subprocess.run(
             ["git", "-C", str(repo), "rev-parse", f"{sha}:{PLUGIN_ROOT}"], capture_output=True, text=True
         ).stdout.strip()
@@ -127,13 +137,16 @@ def notes(line: str, repo: pathlib.Path, rev: str) -> str:
         return (
             f"**`delvewright` {manifest['version']}** — the Delvewright Claude Code plugin (`/delvewright:new-delve`), "
             f"one of the three things this repository releases (the others are the `delvec` binary and the "
-            f"`delvewright-dsl` format crate). This release moved `main` to this version, which is when the "
-            f"marketplace delivers it to creators.\n\n"
-            f"- the page is proven on engine release `{pin['release']}` (`{pin['ref']}`)\n"
+            f"`delvewright-dsl` format crate). This release moved `main` to this version. It does not by "
+            f"itself deliver anything: the marketplace serves the plugin root at the engine release tag the "
+            f"entry names, so this page reaches creators when an engine release is dispatched after it "
+            f"(ADR-0029 §5).\n\n"
+            f"- the page ships at engine release `{pin['ref']}`, and installs that engine\n"
             f"- it accepts `delvec` `{window}`\n"
-            f"- that engine speaks `dsl_version` **{pinned['dsl_crate_version']}**\n"
+            f"- that engine speaks `dsl_version` {speaks}\n"
             f"- plugin root tree `{tree}`, tagged at `{sha}`\n"
-            f"- to hold this exact page: `/plugin marketplace add stellarfeline/delvewright@delvewright--v{manifest['version']}`\n"
+            f"- to hold a fixed page, add the marketplace at the ENGINE release it ships at: "
+            f"`/plugin marketplace add stellarfeline/delvewright@{pin['ref']}`\n"
         )
     raise Missing(f"{line!r} is not a released line")
 
