@@ -907,6 +907,8 @@ def test_the_terminators_read_the_page_s_own_spellings(mod):
     assert got.group("path") == "/versions.toml"
     got = mod.ENGINE_PATH_RE.search("read $DELVEWRIGHT_ENGINE/CLAUDE.md.")
     assert got.group("path") == "/CLAUDE.md."
+    got = mod.ENGINE_PATH_RE.search('"${DELVEWRIGHT_ENGINE}/tools/refimg.py"')
+    assert got.group("path") == "/tools/refimg.py"
 
 
 def test_the_rule_binds_to_every_path_the_page_names(mod, tree, engine):

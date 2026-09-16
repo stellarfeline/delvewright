@@ -329,8 +329,12 @@ ACQUIRED_DEFERRED = {
 # The terminators are the characters a path cannot contain in the spellings the
 # page uses — whitespace, a quote, a fence tick, a closing bracket, a comma, a
 # semicolon, and the `:` of `"$DELVEWRIGHT_ENGINE/target/release:$PATH"`. A
-# trailing `/` or sentence `.` is trimmed.
-ENGINE_PATH_RE = re.compile(r"\$DELVEWRIGHT_ENGINE(?P<path>/[^\s`\"'\)\]\},;:]*)?")
+# trailing `/` or sentence `.` is trimmed. Both spellings of the variable are
+# read — bare and braced — so a `${DELVEWRIGHT_ENGINE}/…` nobody has written yet
+# is not a blind spot the day somebody does.
+ENGINE_PATH_RE = re.compile(
+    r"\$(?:DELVEWRIGHT_ENGINE|\{DELVEWRIGHT_ENGINE\})(?P<path>/[^\s`\"'\)\]\},;:]*)?"
+)
 # One path segment as a filesystem carries it. `<id>` and `…` fail it, which is
 # how `validation/run-out/<id>/run-report.json` and the page's own
 # `"$DELVEWRIGHT_ENGINE/…"` are read as spellings rather than as paths.
