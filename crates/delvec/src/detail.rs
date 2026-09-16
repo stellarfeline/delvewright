@@ -33,16 +33,16 @@ use delvec::admit::meta as admit_meta;
 use delvec::admit::structure::Structure;
 use delvec::compiler::detail::{self as engine, Allocation};
 use delvec::compiler::registry::{PrefabRegistry, REPORT_SUFFIX};
+use delvec::grammar::cli::{composition_to_stderr, report_to_stderr};
+use delvec::grammar::ir::Paint;
+use delvec::grammar::{
+    BlockState, Box3, ExpandOptions, Overrides, document, expand, export, gates,
+};
 use delvewright_dsl::detailplan::{Detail, DetailPlanContent};
 use delvewright_dsl::prefab::PrefabMeta;
 use delvewright_dsl::split::TilePart;
 use delvewright_dsl::{
     Campaign, Diagnostic, DwCode, Envelope, ExitTier, NodeId, PrefabId, Stage, parse_campaign,
-};
-use delvec::grammar::cli::{composition_to_stderr, report_to_stderr};
-use delvec::grammar::ir::Paint;
-use delvec::grammar::{
-    BlockState, Box3, ExpandOptions, Overrides, document, expand, export, gates,
 };
 use sha2::{Digest, Sha256};
 
