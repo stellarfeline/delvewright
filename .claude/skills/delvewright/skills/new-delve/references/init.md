@@ -453,8 +453,8 @@ writes `~/.chunky/resources/minecraft.jar`. **A sha1 that does not match is a
 refusal** (exit 5): it does not retry and it writes nothing.
 
 Nothing in it is a constant this page made up. The manifest URL is the one
-`"$DELVEWRIGHT_ENGINE/tools/creator/check-patrol-types.py"` and
-`"$DELVEWRIGHT_ENGINE/tools/creator/derive-client-langs.py"` both already carry, and the
+`"$DELVEWRIGHT_ENGINE/tools/maintenance/check-patrol-types.py"` and
+`"$DELVEWRIGHT_ENGINE/tools/maintenance/derive-client-langs.py"` both already carry, and the
 version is the engine's own pin. **The client half has no committed pin to agree
 with**, so the sha1 checked is Mojang's own: it proves the transfer and the
 version, and nothing in this project would notice if Mojang republished. Say

@@ -58,7 +58,7 @@ def tool_copy(tmp_path):
     branch against the repository these tests live in.
     """
     root = tmp_path / "toolcopy"
-    (root / "tools").mkdir(parents=True)
+    (root / "tools" / "planner").mkdir(parents=True)
     copy = root / "tools" / "planner" / "worktree-new.sh"
     copy.write_bytes(TOOL.read_bytes())
     copy.chmod(0o755)

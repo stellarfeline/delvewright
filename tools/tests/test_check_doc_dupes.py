@@ -360,7 +360,7 @@ def test_gitignored_private_notes_are_skipped(gate):
 
 def test_the_live_docs_tree_is_clean(gate):
     """The gate must be green on the real repo — it ships wired into CI."""
-    repo_root = SCRIPT.resolve().parents[1]
+    repo_root = SCRIPT.resolve().parents[2]
     module_spec = importlib.util.spec_from_file_location("check_doc_dupes_live", SCRIPT)
     live = importlib.util.module_from_spec(module_spec)
     assert module_spec.loader is not None

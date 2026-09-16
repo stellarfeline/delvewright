@@ -767,7 +767,8 @@ fn header_lines(
         None => {
             out.push((format!("{n} candidates - no score file - id order"), FG));
             out.push((
-                "run tools/creator/refscore.py to order this page by similarity to a reference".to_string(),
+                "run tools/creator/refscore.py to order this page by similarity to a reference"
+                    .to_string(),
                 DIM,
             ));
             out.push((RULING.to_string(), DIM));

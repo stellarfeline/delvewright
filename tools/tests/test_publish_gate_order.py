@@ -64,7 +64,7 @@ import pytest
 
 REPO = Path(__file__).resolve().parents[2]
 LIB = REPO / "tools" / "lib"
-# `d5908698:tools/ci/check-publishable.sh`, frozen — see the fixture's own header
+# `d5908698:tools/check-publishable.sh`, frozen — see the fixture's own header
 # comment for the revision and why it exists. Read as a committed file, never
 # via `git show`: CI's shallow checkout does not carry that commit at all (the
 # required-status job running this suite: `git show d5908698:...` exited 128,
@@ -205,6 +205,7 @@ def _scratch_clone(tmp_path: Path, check_src: str, publish_src: str) -> Path:
     """
     tree = tmp_path / "clone"
     (tree / "tools" / "lib").mkdir(parents=True)
+    (tree / "tools" / "ci").mkdir(parents=True)
     (tree / "tools" / "ci" / "check-publishable.sh").write_text(check_src, encoding="utf-8")
     (tree / "tools" / "ci" / "crates-io-publish.sh").write_text(publish_src, encoding="utf-8")
     # EVERY shared lib, not a list of the ones these scripts happened to call
@@ -321,14 +322,18 @@ def test_red_on_the_original_gate_leaves_no_tarball_for_the_plan(tmp_path: Path)
     # decided about from today's numbers — not a frozen copy of an older file.
     tree = tmp_path / "clone"
     tree.mkdir()
+    # At d5908698 the script lived at `tools/check-publishable.sh` and resolved
+    # its ROOT one directory up, so the frozen instrument is laid out the way
+    # that revision laid it out. Placing it where the CURRENT script lives would
+    # be running the frozen bytes against a tree they were never written for.
     (tree / "tools").mkdir()
-    (tree / "tools" / "ci" / "check-publishable.sh").write_text(check_src, encoding="utf-8")
+    (tree / "tools" / "check-publishable.sh").write_text(check_src, encoding="utf-8")
     _legacy_versions_toml(REPO / "versions.toml", tree / "versions.toml")
     crates = _legacy_engine_crates(tree / "versions.toml")
     env = _install_fake_cargo(tree, crates)
 
     check = subprocess.run(
-        ["bash", str(tree / "tools" / "ci" / "check-publishable.sh"), "--allow-dirty"],
+        ["bash", str(tree / "tools" / "check-publishable.sh"), "--allow-dirty"],
         cwd=tree,
         capture_output=True,
         text=True,

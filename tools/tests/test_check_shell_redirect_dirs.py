@@ -64,6 +64,7 @@ def preflight_tree(tmp_path: Path) -> tuple[Path, dict[str, str]]:
     release hit, and the state the script must survive.
     """
     (tmp_path / "tools" / "lib").mkdir(parents=True)
+    (tmp_path / "tools" / "ci").mkdir(parents=True)
     shutil.copy(PREFLIGHT, tmp_path / "tools" / "ci" / "check-publishable.sh")
     shutil.copy(REPO / "versions.toml", tmp_path / "versions.toml")
     shutil.copy(LIB / "checksum.sh", tmp_path / "tools" / "lib" / "checksum.sh")

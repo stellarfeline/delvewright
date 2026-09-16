@@ -61,7 +61,7 @@ class Tree:
 
     def __init__(self, root: Path):
         self.root = root
-        (root / "tools").mkdir(parents=True)
+        (root / "tools" / "ci").mkdir(parents=True)
         self._git("init", "-q")
         self._git("config", "user.email", "t@example.com")
         self._git("config", "user.name", "t")

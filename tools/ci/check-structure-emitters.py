@@ -482,7 +482,7 @@ def check_generators_are_wired() -> tuple[list[str], int]:
     # recorded shape of asking the right question about the wrong key — nothing
     # errors, and the answer comes back plausible and wrong.
     runnable = "\n".join(ln for ln in ci.splitlines() if not ln.lstrip().startswith("#"))
-    sweep_invoked = re.search(r"tools/fmt-workspaces\.sh[^\n]*--check", runnable) is not None
+    sweep_invoked = re.search(r"tools/ci/fmt-workspaces\.sh[^\n]*--check", runnable) is not None
     prefix = sweep_excluded_prefix()
     tracked_manifests = set(tracked("Cargo.toml"))
     # The workspace root manifest is in the population too: it is what

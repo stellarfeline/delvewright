@@ -42,6 +42,7 @@ def preflight_tree_with_leftover_cargo(tmp_path: Path) -> tuple[Path, dict[str, 
     to remove is never merely absent to begin with.
     """
     (tmp_path / "tools" / "lib").mkdir(parents=True)
+    (tmp_path / "tools" / "ci").mkdir(parents=True)
     shutil.copy(PREFLIGHT, tmp_path / "tools" / "ci" / "check-publishable.sh")
     shutil.copy(REPO / "versions.toml", tmp_path / "versions.toml")
     shutil.copy(LIB / "checksum.sh", tmp_path / "tools" / "lib" / "checksum.sh")

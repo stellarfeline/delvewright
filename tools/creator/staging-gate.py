@@ -919,8 +919,10 @@ def carrier_exists(carrier: dict, eng: Engine, subj: Subject) -> tuple[bool, str
             return False, f"no `fn {name}(` anywhere in crates/ or prefabs/"
         return True, ""
     if kind == "tool":
-        # A CI check script. Same rule as every other carrier: named, not
-        # assumed. A ledger row pointing at a tool nobody kept is a promise.
+        # A check script, named relative to `tools/` and therefore carrying the
+        # home directory of the reader it is for (`ci/…`, `creator/…`). Same rule
+        # as every other carrier: named, not assumed. A ledger row pointing at a
+        # tool nobody kept is a promise.
         p = REPO_ROOT / "tools" / carrier["script"]
         if not p.is_file():
             return False, f"tools/{carrier['script']} does not exist"

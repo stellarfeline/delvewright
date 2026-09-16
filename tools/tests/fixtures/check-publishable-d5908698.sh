@@ -52,7 +52,7 @@
 # Deterministic and offline except for the crates.io index / dep downloads that
 # `cargo package` needs anyway. Run from anywhere:
 #
-#   bash tools/ci/check-publishable.sh [--allow-dirty]
+#   bash tools/check-publishable.sh [--allow-dirty]
 #
 # Exit 0 = publishable, 1 = a finding, 2 = IO/usage error.
 set -euo pipefail
@@ -89,7 +89,7 @@ DIRTY_FLAG=()
 
 eval "$(python3 - "$MANIFEST" <<'PY'
 import sys, tomllib
-sys.stdout.reconfigure(newline="\n")  # CRLF-proof: tools/ci/check-python-shell-newlines.py
+sys.stdout.reconfigure(newline="\n")  # CRLF-proof: tools/check-python-shell-newlines.py
 e = tomllib.load(open(sys.argv[1], "rb"))["engine"]
 for k in ("version", "crate", "dsl_crate", "dsl_crate_version", "dsl_crate_req"):
     print(f'{k.upper()}={e[k]!r}'.replace("'", '"'))
@@ -119,7 +119,7 @@ fail() { printf '  FAIL %s\n' "$1"; fails=$((fails + 1)); }
 #
 # Two things are needed and neither substitutes for the other:
 #   * the directory is guaranteed before any redirect into it
-#     (`tools/ci/check-shell-redirect-dirs.py` now requires that of every script);
+#     (`tools/check-shell-redirect-dirs.py` now requires that of every script);
 #   * the report is honest when the log is missing or empty, so the next such
 #     failure names itself instead of impersonating a different one.
 emit_log() { # <log-path> <what-was-being-run>
@@ -213,7 +213,7 @@ report_file="$(mktemp)"
 python3 - "$PKG" "$VERSION" "$DSL_CRATE" "$DSL_CRATE_VERSION" "$DSL_CRATE_REQ" "${NAMES[@]}" > "$report_file" <<'PY'
 import sys, tomllib
 from pathlib import Path
-sys.stdout.reconfigure(newline="\n")  # CRLF-proof: tools/ci/check-python-shell-newlines.py
+sys.stdout.reconfigure(newline="\n")  # CRLF-proof: tools/check-python-shell-newlines.py
 pkg, version, dsl_crate, dsl_version, dsl_req = sys.argv[1:6]
 names = sys.argv[6:]
 out = []

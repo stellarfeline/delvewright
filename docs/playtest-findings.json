@@ -1717,7 +1717,7 @@
       "campaign": "nobodys-cave-island",
       "carrier": {
         "kind": "tool",
-        "script": "check-storybook-version.py"
+        "script": "creator/check-storybook-version.py"
       },
       "finding": "the shipped release notes advertised a player count and a playtime that the delve did not have, and a host-facing instruction named a version that was no longer current",
       "general_form": "release notes are rendered from the storybook, and a release refuses when storybook and campaign disagree",
@@ -2496,7 +2496,7 @@
       "campaign": "gallery",
       "carrier": {
         "kind": "tool",
-        "script": "check-generator-preservation.py"
+        "script": "ci/check-generator-preservation.py"
       },
       "finding": "a tileset generator re-emits a whole prefab metadata document, so re-running one over the library deletes every key added after generation — the anchors a campaign binds by name, an entry role, a shown-faces declaration, a lighting verdict measured at admission rather than estimated — and nothing binds the generators, so the deletion is silent and is discovered only by a campaign that no longer resolves an anchor it names",
       "general_form": "a generator may not delete a key it did not write: re-running every document-writing generator over the committed library preserves every key the generator does not own, and that preservation is checked over the whole library rather than argued per generator",

@@ -1285,10 +1285,10 @@ def test_the_hook_end_to_end_drains_a_stale_tree(fx, tmp_path):
     This is the whole point of the design: nobody typed a reclamation command.
     The tree goes away because a session started.
     """
-    tools = fx.repo / "tools"
-    tools.mkdir()
+    tools = fx.repo / "tools" / "planner"
+    tools.mkdir(parents=True)
     for name in ("planner-state.sh", "worktree-reclaim.py"):
-        src = pathlib.Path(__file__).resolve().parents[1] / name
+        src = pathlib.Path(__file__).resolve().parents[1] / "planner" / name
         dst = tools / name
         dst.write_text(src.read_text(encoding="utf-8"), encoding="utf-8")
         dst.chmod(0o755)
@@ -1321,8 +1321,8 @@ def test_the_hook_end_to_end_drains_a_stale_tree(fx, tmp_path):
 def test_the_hook_refuses_by_name_when_the_tool_is_absent(fx, tmp_path):
     """The same shape the page already uses for the missing constitution half:
     a silent no-op here is the UNRUN vacuity mode wearing the fix's clothes."""
-    tools = fx.repo / "tools"
-    tools.mkdir()
+    tools = fx.repo / "tools" / "planner"
+    tools.mkdir(parents=True)
     src = pathlib.Path(__file__).resolve().parents[1] / "planner" / "planner-state.sh"
     dst = tools / "planner-state.sh"
     dst.write_text(src.read_text(encoding="utf-8"), encoding="utf-8")

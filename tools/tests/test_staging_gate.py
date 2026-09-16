@@ -500,7 +500,7 @@ def test_a_declaration_shaped_zero_without_a_probe_stays_red_on_a_blockout(gate,
 STORYBOOK_ROW = {
     "id": "book",
     "finding": "f",
-    "carrier": {"kind": "tool", "script": "check-storybook-version.py"},
+    "carrier": {"kind": "tool", "script": "creator/check-storybook-version.py"},
     "binding": {"kind": "campaign", "glob": "README*.md"},
 }
 

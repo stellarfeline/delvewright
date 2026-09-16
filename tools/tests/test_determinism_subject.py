@@ -62,11 +62,11 @@ exit 3
 def bare_tree(tmp_path: Path, stub: str = STUB) -> tuple[Path, Path]:
     """A checkout shaped like a fresh runner's: NO `campaigns/` anywhere."""
     root = tmp_path / "repo"
-    (root / "tools").mkdir(parents=True)
+    (root / "tools" / "ci").mkdir(parents=True)
     (root / "bin").mkdir()
     for name in ("determinism-subject.sh", "tree-digest.py"):
-        (root / "tools" / name).write_bytes((REPO / "tools" / name).read_bytes())
-        (root / "tools" / name).chmod(0o755)
+        (root / "tools" / "ci" / name).write_bytes((REPO / "tools" / "ci" / name).read_bytes())
+        (root / "tools" / "ci" / name).chmod(0o755)
     engine = root / "bin" / "delvec"
     engine.write_text(stub)
     engine.chmod(0o755)
