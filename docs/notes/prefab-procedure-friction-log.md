@@ -88,7 +88,7 @@ screen, measure the mix, then look at the sheet.
 reproduced exactly:
 
 ```
-$ python3 tools/creator/block-appearance.py --screen --where full_cube --where 'L>=0.75' \
+$ python3 tools/block-appearance.py --screen --where full_cube --where 'L>=0.75' \
       --where 'L<=0.95' --where 'C_mean<0.02' --where 'texture_range<=0.30'
 all candidate blocks   1146
 ...
@@ -101,7 +101,7 @@ My own screen (`L>=0.35 … L<=0.62`, neutral, quiet, `not gravity`) → 48
 survivors. Mix measured:
 
 ```
-$ python3 tools/creator/block-appearance.py --mix 'cobblestone=6,stone=3,cobbled_deepslate=1'
+$ python3 tools/block-appearance.py --mix 'cobblestone=6,stone=3,cobbled_deepslate=1'
 binding: 1 of 1 declared paint(s) examined, 1 mix(es) with >= 2 members
    60.0%  minecraft:cobblestone …
    10.0%  minecraft:cobbled_deepslate …
