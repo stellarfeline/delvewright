@@ -62,6 +62,7 @@ jobs:
       i18n-tool: ${{ steps.reach.outputs.i18n-tool }}
       mecha-crosscheck: ${{ steps.reach.outputs.mecha-crosscheck }}
       docs: ${{ steps.reach.outputs.docs }}
+      line-endings: ${{ steps.reach.outputs.line-endings }}
       storybook-version: ${{ steps.reach.outputs.storybook-version }}
       content-pin: ${{ steps.reach.outputs.content-pin }}
       gallery: ${{ steps.reach.outputs.gallery }}
@@ -918,6 +919,22 @@ jobs:
       # `$GITHUB_OUTPUT`. Deterministic, offline, stdlib-only python3.
       - name: inline python pins its stdout newline (CRLF on Windows runners)
         run: python3 tools/check-python-shell-newlines.py
+      # The other half of the same platform: not what a script WRITES on Windows,
+      # but how it ARRIVES there. `core.autocrlf=true` is git's Windows default,
+      # so a tracked script materialises with CRLF unless an attribute says
+      # otherwise, and the kernel then reads `#!/usr/bin/env bash\r` as a request
+      # for an interpreter named `bash\r`. `*.sh` is the class that broke; the
+      # class that CAN break is every tracked file some machine runs through line
+      # one, derived from the tree as shebang UNION executable bit and never
+      # listed. The authority on coverage is git itself (`git check-attr eol`),
+      # the same resolution a checkout performs, so no second parse of
+      # `.gitattributes` can disagree with the one that decides. States its
+      # binding count with its denominator; an empty population is a red. The
+      # assertion a declaration cannot make — that the bytes reach disk as LF —
+      # is the `line endings (Windows checkout)` job. Deterministic, offline,
+      # stdlib-only python3.
+      - name: every file a machine runs through its first line is pinned to LF
+        run: python3 tools/check-eol-attributes.py
       # `cmd >"$LOG"` is opened by the SHELL before `cmd` runs. The preflight job's
       # runner restored no cache, so `target/` did not exist, the redirect failed,
       # `cargo package` NEVER RAN — and the else-branch then `sed`ed the log that
@@ -1059,6 +1076,51 @@ jobs:
         with:
           args: "--offline --no-progress './**/*.md'"
           fail: true
+
+  # The one job on Windows, and the only place the attribute pin is PROVED
+  # rather than declared.
+  #
+  # `.gitattributes` says a file materialises with LF; `tools/check-eol-attributes.py`
+  # says every file some machine runs through its first line carries that
+  # attribute. Both are readings of a declaration, and both are green on a Linux
+  # runner whose checkout would have been LF anyway — the platform where the
+  # defect lives had never run here at all. This job makes the checkout a Windows
+  # machine makes and reads what landed on disk.
+  #
+  # `core.autocrlf` is set to `true` BEFORE the checkout and its resolved value
+  # printed, for two reasons. It is git's Windows default, so the job reproduces
+  # the machine that broke; and stating it means a runner image that ever ships
+  # `false` cannot turn this into a green that proves nothing. The step asserts
+  # the value it read, so a silent relaxation is a red rather than a pass.
+  #
+  # No Rust toolchain, no content checkout, no cache: the whole job is a
+  # checkout, a git config read and one stdlib python3 script.
+  line-endings:
+    name: line endings (Windows checkout)
+    needs: changes
+    if: github.event_name != 'pull_request' || needs.changes.outputs.line-endings == 'true'
+    runs-on: windows-latest
+    steps:
+      - name: git's Windows default for line-ending conversion, stated not inherited
+        shell: bash
+        run: git config --global core.autocrlf true
+      - uses: actions/checkout@v4
+      - name: the conversion this checkout actually ran under
+        shell: bash
+        run: |
+          set -euo pipefail
+          got="$(git config --get core.autocrlf)"
+          echo "core.autocrlf=$got"
+          if [ "$got" != "true" ]; then
+            echo "this job proves nothing unless the hostile default is in force" >&2
+            exit 1
+          fi
+      - name: every file a machine runs through its first line materialised with LF
+        shell: bash
+        run: |
+          set -euo pipefail
+          python --version
+          python tools/check-eol-attributes.py --working-tree
 
   storybook-version:
     # A campaign's storybook is what a server host reads before running the
