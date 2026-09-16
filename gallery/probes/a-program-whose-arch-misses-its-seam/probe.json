@@ -1,0 +1,5 @@
+{
+  "code": "DW0844",
+  "units": [],
+  "why": "The site-plan overlay's own `programs/annex.json`, with its east lining carved one cell further along the wall than the handed `handed/seam/annex-arch/z0` — the program reads the handed value and then adds one. The expansion's face contract is judged against the plan's seams before any file is written, by the same `DW0844` validation raises: the arch's cells no longer answer `edge/annex-arch` on the east side, and the piece's opening one cell over is a way the plan never allocated. It declares no unit for the sibling's reason: a program is not a stage document, and what must not be written is a piece whose ways are not the whole's seams."
+}
