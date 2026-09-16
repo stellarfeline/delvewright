@@ -1,27 +1,7 @@
 {
-  "added": [
-    "site-plan.en:datapack/data/gallery/structure/gallery-annex.nbt"
-  ],
-  "base_commit": "23f05e2a2546f3677bada316663c14d5d62e0681",
-  "changed": [
-    "site-plan.en:creator-datapack/layout.json",
-    "site-plan.en:critical-path.json",
-    "site-plan.en:datapack/data/gallery/function/place_all.mcfunction",
-    "site-plan.en:datapack/data/gallery/function/place_verify.mcfunction",
-    "site-plan.en:datapack/data/gallery/function/setup.mcfunction",
-    "site-plan.en:datapack/data/gallery/function/setup_finish.mcfunction",
-    "site-plan.en:render-plan.json",
-    "site-plan.en:validation/critical-path-waypoints.json",
-    "site-plan.en:validation/fluid-escape.json",
-    "site-plan.en:validation/piece-exposure.json",
-    "site-plan.en:validation/piece-mating.json",
-    "site-plan.en:validation/sea-seepage.json"
-  ],
-  "classes": {
-    "creator overlay": 1,
-    "datapack function": 5,
-    "other": 2,
-    "validation ledger": 5
-  },
+  "added": [],
+  "base_commit": "33e3dbe3e74fb372eef2231f2197504451a44e64",
+  "changed": [],
+  "classes": {},
   "removed": []
 }
