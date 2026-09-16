@@ -9,10 +9,13 @@
 mod common;
 
 use delvewright_dsl::{RawCampaign, check_campaign, l10n_inventory, localize, parse_campaign};
+use std::sync::LazyLock;
 
 /// A v0.6 stage-1 world document: ocean horizon + a boundary (the happy path).
-const WORLD_V06: &str = r#"{
-  "dsl_version": "0.19.0",
+static WORLD_V06: LazyLock<String> = LazyLock::new(|| {
+    common::at_dsl_version(
+        r#"{
+  "dsl_version": "%dsl_version%",
   "campaign_id": "hello-world",
   "stage": "world",
   "content": {
@@ -21,17 +24,23 @@ const WORLD_V06: &str = r#"{
     "premise": "One locked door stands between you and the road home.",
     "seed": 20260729,
     "target_minutes": 5,
+    "time": "noon",
+    "weather": "clear",
     "horizon": "ocean",
     "boundary": { "margin": 24, "message": "The tide turns you back." },
     "areas": [
       { "id": "area/keep", "name": "The Keep", "prefab": "prefab/hello-room" }
     ]
   }
-}"#;
+}"#,
+    )
+});
 
 /// Ocean horizon with NO boundary — the `DW0320` authoring error.
-const WORLD_V06_OCEAN_NO_BOUNDARY: &str = r#"{
-  "dsl_version": "0.19.0",
+static WORLD_V06_OCEAN_NO_BOUNDARY: LazyLock<String> = LazyLock::new(|| {
+    common::at_dsl_version(
+        r#"{
+  "dsl_version": "%dsl_version%",
   "campaign_id": "hello-world",
   "stage": "world",
   "content": {
@@ -40,16 +49,22 @@ const WORLD_V06_OCEAN_NO_BOUNDARY: &str = r#"{
     "premise": "One locked door stands between you and the road home.",
     "seed": 20260729,
     "target_minutes": 5,
+    "time": "noon",
+    "weather": "clear",
     "horizon": "ocean",
     "areas": [
       { "id": "area/keep", "name": "The Keep", "prefab": "prefab/hello-room" }
     ]
   }
-}"#;
+}"#,
+    )
+});
 
 /// Explicit void horizon, no boundary — valid (void needs no return rule).
-const WORLD_V06_VOID: &str = r#"{
-  "dsl_version": "0.19.0",
+static WORLD_V06_VOID: LazyLock<String> = LazyLock::new(|| {
+    common::at_dsl_version(
+        r#"{
+  "dsl_version": "%dsl_version%",
   "campaign_id": "hello-world",
   "stage": "world",
   "content": {
@@ -58,12 +73,16 @@ const WORLD_V06_VOID: &str = r#"{
     "premise": "One locked door stands between you and the road home.",
     "seed": 20260729,
     "target_minutes": 5,
+    "time": "noon",
+    "weather": "clear",
     "horizon": "void",
     "areas": [
       { "id": "area/keep", "name": "The Keep", "prefab": "prefab/hello-room" }
     ]
   }
-}"#;
+}"#,
+    )
+});
 
 fn campaign_with_world(world: &str) -> RawCampaign {
     RawCampaign {
@@ -78,13 +97,14 @@ fn campaign_with_world(world: &str) -> RawCampaign {
         layout_graph: None,
         site_plan: None,
         detail_plan: None,
+        design: None,
     }
 }
 
 /// v0.6 horizon + boundary validate clean under `dsl_version 0.6.0`.
 #[test]
 fn v06_world_surface_validates_clean() {
-    let diags = check_campaign(&campaign_with_world(WORLD_V06));
+    let diags = check_campaign(&campaign_with_world(WORLD_V06.as_str()));
     assert!(
         diags.is_empty(),
         "expected zero diagnostics for the v0.6 world surface, got: {diags:#?}"
@@ -94,7 +114,7 @@ fn v06_world_surface_validates_clean() {
 /// `horizon: "ocean"` without a `boundary` is `DW0320`.
 #[test]
 fn v06_ocean_without_boundary_is_dw0320() {
-    let diags = check_campaign(&campaign_with_world(WORLD_V06_OCEAN_NO_BOUNDARY));
+    let diags = check_campaign(&campaign_with_world(WORLD_V06_OCEAN_NO_BOUNDARY.as_str()));
     assert!(
         diags.iter().any(|d| d.code == "DW0320"),
         "ocean without boundary must be DW0320: {diags:#?}"
@@ -126,7 +146,7 @@ fn v06_margin_zero_is_in_range() {
 /// An explicit `void` horizon with no boundary validates clean.
 #[test]
 fn v06_void_horizon_needs_no_boundary() {
-    let diags = check_campaign(&campaign_with_world(WORLD_V06_VOID));
+    let diags = check_campaign(&campaign_with_world(WORLD_V06_VOID.as_str()));
     assert!(
         diags.is_empty(),
         "explicit void horizon needs no boundary: {diags:#?}"
@@ -152,13 +172,16 @@ fn campaign_with_quests(quests: &str) -> RawCampaign {
         layout_graph: None,
         site_plan: None,
         detail_plan: None,
+        design: None,
     }
 }
 
 /// A 0.6.0 quests document: an `open-gate` effect gated on a flag the same
 /// objective sets first (the happy path for per-effect `requires_flags`).
-const QUESTS_V06_GATED_EFFECT: &str = r#"{
-  "dsl_version": "0.19.0",
+static QUESTS_V06_GATED_EFFECT: LazyLock<String> = LazyLock::new(|| {
+    common::at_dsl_version(
+        r#"{
+  "dsl_version": "%dsl_version%",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {
@@ -173,18 +196,22 @@ const QUESTS_V06_GATED_EFFECT: &str = r#"{
         "on_objective_complete": {
           "obj/talk": [
             { "type": "set-flag", "flag": "flag/opened" },
-            { "type": "open-gate", "anchor": "anchor/door", "requires_flags": ["flag/opened"] }
+            { "type": "open-gate", "when": { "requires_flags": ["flag/opened"] }, "anchor": "anchor/door" }
           ]
         },
         "on_complete": [ { "type": "campaign-complete" } ]
       }
     ]
   }
-}"#;
+}"#,
+    )
+});
 
 /// A per-effect `requires_flags` that references a flag no `set-flag` produces.
-const QUESTS_V06_GATED_EFFECT_UNKNOWN_FLAG: &str = r#"{
-  "dsl_version": "0.19.0",
+static QUESTS_V06_GATED_EFFECT_UNKNOWN_FLAG: LazyLock<String> = LazyLock::new(|| {
+    common::at_dsl_version(
+        r#"{
+  "dsl_version": "%dsl_version%",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {
@@ -198,18 +225,22 @@ const QUESTS_V06_GATED_EFFECT_UNKNOWN_FLAG: &str = r#"{
         ],
         "on_objective_complete": {
           "obj/talk": [
-            { "type": "open-gate", "anchor": "anchor/door", "requires_flags": ["flag/never-set"] }
+            { "type": "open-gate", "when": { "requires_flags": ["flag/never-set"] }, "anchor": "anchor/door" }
           ]
         },
         "on_complete": [ { "type": "campaign-complete" } ]
       }
     ]
   }
-}"#;
+}"#,
+    )
+});
 
 /// A 0.6.0 quests document placing a block that carries a vanilla blockstate.
-const QUESTS_V06_BLOCKSTATE: &str = r#"{
-  "dsl_version": "0.19.0",
+static QUESTS_V06_BLOCKSTATE: LazyLock<String> = LazyLock::new(|| {
+    common::at_dsl_version(
+        r#"{
+  "dsl_version": "%dsl_version%",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {
@@ -230,12 +261,14 @@ const QUESTS_V06_BLOCKSTATE: &str = r#"{
       }
     ]
   }
-}"#;
+}"#,
+    )
+});
 
 /// A per-effect flag gate that resolves validates clean under 0.6.0.
 #[test]
 fn v06_effect_requires_flags_validates_clean() {
-    let diags = check_campaign(&campaign_with_quests(QUESTS_V06_GATED_EFFECT));
+    let diags = check_campaign(&campaign_with_quests(QUESTS_V06_GATED_EFFECT.as_str()));
     assert!(
         diags.is_empty(),
         "a resolved per-effect requires_flags must validate clean at 0.6.0: {diags:#?}"
@@ -245,7 +278,9 @@ fn v06_effect_requires_flags_validates_clean() {
 /// A per-effect `requires_flags` referencing an unproduced flag is `DW0172`.
 #[test]
 fn v06_effect_requires_flags_unknown_is_dw0172() {
-    let diags = check_campaign(&campaign_with_quests(QUESTS_V06_GATED_EFFECT_UNKNOWN_FLAG));
+    let diags = check_campaign(&campaign_with_quests(
+        QUESTS_V06_GATED_EFFECT_UNKNOWN_FLAG.as_str(),
+    ));
     assert!(
         diags.iter().any(|d| d.code == "DW0172"),
         "an unproduced effect requires_flags must be DW0172: {diags:#?}"
@@ -256,8 +291,10 @@ fn v06_effect_requires_flags_unknown_is_dw0172() {
 /// real producer: a later `requires_flags` referencing it must resolve, not
 /// spuriously trip `DW0172`. Regression for the shallow producer scan that skipped
 /// nested `set-flag`s.
-const QUESTS_V06_SEQUENCE_SETS_FLAG: &str = r#"{
-  "dsl_version": "0.19.0",
+static QUESTS_V06_SEQUENCE_SETS_FLAG: LazyLock<String> = LazyLock::new(|| {
+    common::at_dsl_version(
+        r#"{
+  "dsl_version": "%dsl_version%",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {
@@ -274,21 +311,25 @@ const QUESTS_V06_SEQUENCE_SETS_FLAG: &str = r#"{
             { "type": "sequence", "steps": [
               { "at_ticks": 0, "effects": [ { "type": "set-flag", "flag": "flag/opened" } ] }
             ] },
-            { "type": "open-gate", "anchor": "anchor/door", "requires_flags": ["flag/opened"] }
+            { "type": "open-gate", "when": { "requires_flags": ["flag/opened"] }, "anchor": "anchor/door" }
           ]
         },
         "on_complete": [ { "type": "campaign-complete" } ]
       }
     ]
   }
-}"#;
+}"#,
+    )
+});
 
 /// A quests doc with a `narrate` nested inside a `sequence` step (the Q4/Q7
 /// cinematic shape): its player-visible text must be inventoried under a stable,
 /// position-derived nested key so a translated build ships it localized instead of
 /// English-only.
-const QUESTS_V06_SEQUENCE_NARRATE: &str = r#"{
-  "dsl_version": "0.19.0",
+static QUESTS_V06_SEQUENCE_NARRATE: LazyLock<String> = LazyLock::new(|| {
+    common::at_dsl_version(
+        r#"{
+  "dsl_version": "%dsl_version%",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {
@@ -312,7 +353,9 @@ const QUESTS_V06_SEQUENCE_NARRATE: &str = r#"{
       }
     ]
   }
-}"#;
+}"#,
+    )
+});
 
 /// The nested-narrate key for a `sequence` narrate in quest `open-the-door`,
 /// objective `talk`, top-level effect 0, step 1, nested effect 0.
@@ -324,7 +367,7 @@ const NESTED_NARRATE_KEY: &str = "fx.open-the-door.oc.talk.0.seq.1.0.narrate";
 /// shallow inventory that only walked top-level effects.
 #[test]
 fn v06_sequence_narrate_is_inventoried_and_localized() {
-    let raw = campaign_with_quests(QUESTS_V06_SEQUENCE_NARRATE);
+    let raw = campaign_with_quests(QUESTS_V06_SEQUENCE_NARRATE.as_str());
     assert!(
         check_campaign(&raw).is_empty(),
         "the sequence-narrate campaign validates clean: {:#?}",
@@ -351,8 +394,8 @@ fn v06_sequence_narrate_is_inventoried_and_localized() {
         .iter()
         .flat_map(|e| e.nested_effect_lists())
         .flatten()
-        .filter_map(|e| match e {
-            delvewright_dsl::QuestEffect::Narrate { text, .. } => Some(text.as_str()),
+        .filter_map(|e| match &e.verb {
+            delvewright_dsl::Verb::Narrate { text, .. } => Some(text.as_str()),
             _ => None,
         })
         .collect();
@@ -364,7 +407,9 @@ fn v06_sequence_narrate_is_inventoried_and_localized() {
 
 #[test]
 fn v06_set_flag_nested_in_sequence_is_a_producer_no_dw0172() {
-    let diags = check_campaign(&campaign_with_quests(QUESTS_V06_SEQUENCE_SETS_FLAG));
+    let diags = check_campaign(&campaign_with_quests(
+        QUESTS_V06_SEQUENCE_SETS_FLAG.as_str(),
+    ));
     assert!(
         !diags.iter().any(|d| d.code == "DW0172"),
         "a set-flag nested in a sequence produces its flag — requires_flags must \
@@ -379,7 +424,7 @@ fn v06_set_flag_nested_in_sequence_is_a_producer_no_dw0172() {
 /// A block field carrying a well-formed vanilla blockstate validates clean.
 #[test]
 fn v06_blockstate_suffix_validates_clean() {
-    let diags = check_campaign(&campaign_with_quests(QUESTS_V06_BLOCKSTATE));
+    let diags = check_campaign(&campaign_with_quests(QUESTS_V06_BLOCKSTATE.as_str()));
     assert!(
         diags.is_empty(),
         "a well-formed blockstate suffix must validate clean: {diags:#?}"

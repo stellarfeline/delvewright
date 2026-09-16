@@ -60,7 +60,7 @@ one with `--prefabs <dir>`.
 | `viewer` | One self-contained HTML page per room or zone: a camera you drive, drawn from the game's own block models and textures. |
 | `palette` | The per-blockstate colour and shape table a room is built from, as JSON. |
 | `scene` | Chunky scene descriptions for every planned shot of a build. |
-| `panorama` | One 45° oblique scene framing the whole map. |
+| `panorama` | One oblique exterior scene framed on the placed areas — the storybook shot. |
 | `contact-sheet` | Many candidate renders laid out on one page to choose from. |
 | `index` | The shot list as (image, expectation) pairs, for review. |
 | `grammar` | Prefab authoring from a rule program: `list`, `show`, `check`, `expand`, `coverage`, `audit`. |
@@ -86,24 +86,24 @@ the server.
 
 ## As a library
 
-This crate is the executable only. The compiler behind it is
-[`delvewright-compiler`](https://crates.io/crates/delvewright-compiler), and
-the campaign format is
+The same crate is the engine as a library: `delvec::compiler` is the compiler
+behind the verbs above, and `grammar`, `schem`, `admit`, `orchestrator` and
+`render` are the modules behind the other subcommands. The campaign format is
 [`delvewright-dsl`](https://crates.io/crates/delvewright-dsl):
 
 ```toml
 [dependencies]
-delvewright-compiler = "1"
+delvec = "1.5"
 ```
 
 ```rust
-use delvewright_compiler::{DELVEC_VERSION, DSL_VERSION, MC_VERSION};
+use delvec::compiler::{DELVEC_VERSION, DSL_VERSION, MC_VERSION};
 ```
 
 ## Compatibility
 
 - **Minecraft**: Java Edition 1.21.11. Output targets that version and no other.
-- **Campaign format**: `dsl_version` `0.19.0`, the one number this engine accepts.
+- **Campaign format**: `dsl_version` `0.29.0`, the one number this engine accepts.
 - **Rust**: 1.97.1 or newer.
 - The binary is self-contained: no JVM, no runtime dependencies.
 

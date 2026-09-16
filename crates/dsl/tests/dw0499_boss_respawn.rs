@@ -20,12 +20,15 @@
 
 mod common;
 
-use delvewright_dsl::{RawCampaign, check_campaign};
+use delvewright_dsl::{DSL_VERSION, RawCampaign, check_campaign};
+use std::sync::LazyLock;
 
 /// A v0.7 quests document with a bonfire and a wave that re-seats on rest,
 /// billed `tier`. `{TIER}` is substituted per test.
-const QUESTS_V07_TEMPLATE: &str = r#"{
-  "dsl_version": "0.19.0",
+static QUESTS_V07_TEMPLATE: LazyLock<String> = LazyLock::new(|| {
+    common::at_dsl_version(
+        r#"{
+  "dsl_version": "%dsl_version%",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {
@@ -59,7 +62,9 @@ const QUESTS_V07_TEMPLATE: &str = r#"{
       }
     ]
   }
-}"#;
+}"#,
+    )
+});
 
 /// Splice a `tier` declaration (or none at all) into the template in place of
 /// the `"TIER_SLOT": true,` placeholder.
@@ -77,7 +82,7 @@ fn quests_with_tier(tier: Option<&str>) -> String {
 fn classes_with_flask() -> String {
     let mut v: serde_json::Value =
         serde_json::from_str(&common::read_valid("classes.json")).unwrap();
-    v["dsl_version"] = serde_json::json!("0.19.0");
+    v["dsl_version"] = serde_json::json!(DSL_VERSION);
     for class in v["content"]["classes"].as_array_mut().unwrap() {
         class["kit"]
             .as_array_mut()
@@ -102,6 +107,7 @@ fn campaign_with_quests(quests: &str) -> RawCampaign {
         layout_graph: None,
         site_plan: None,
         detail_plan: None,
+        design: None,
     }
 }
 

@@ -19,7 +19,7 @@ surface is parsed out of the clap derive macros rather than asked of a binary.
 The shape it keys off is the one rustfmt guarantees: variants at four spaces,
 their fields at eight.
 
-The surface spans several crates (ADR-0023 §3): the binary's own `main.rs`
+The surface spans several modules of one crate (ADR-0023 §3, ADR-0025): the binary's own `main.rs`
 declares the compiler's verbs and MOUNTS the grammar, prefab, schematic,
 harvest and render surfaces as tuple variants — `Grammar(GrammarArgs)` — whose
 `Args` type carries a `#[command(subcommand)]` enum of its own. Callers hand
@@ -57,7 +57,7 @@ EXPLICIT_LONG_RE = re.compile(r'long\s*=\s*"(?P<name>[^"]+)"')
 SUBCOMMAND_ATTR_RE = re.compile(r"^\s*#\[command\(subcommand\)\]")
 NESTED_TYPE_RE = re.compile(r":\s*(?:Option<)?(?P<name>[A-Z]\w*)")
 # A mounted surface: a tuple variant whose payload is an `Args` struct, not
-# preceded by `#[command(flatten)]` — `Grammar(delvewright_grammar::cli::GrammarArgs),`.
+# preceded by `#[command(flatten)]` — `Grammar(delvec::grammar::cli::GrammarArgs),`.
 MOUNTED_VARIANT_RE = re.compile(r"^    (?P<name>[A-Z]\w*)\((?P<ty>[\w:]+)\),?\s*$")
 # An `Args` struct: `#[derive(Clone, Args)]` / `#[derive(clap::Args)]`, any
 # further attribute lines (`#[group(...)]`), then the struct. Its body carries

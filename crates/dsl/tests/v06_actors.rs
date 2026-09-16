@@ -11,11 +11,14 @@
 mod common;
 
 use delvewright_dsl::{RawCampaign, check_campaign};
+use std::sync::LazyLock;
 
 /// A v0.6 stage-5 quests document: one actor puppet, spawned then walked to the
 /// exit (despawn-on-arrive), then a two-step timeline unleashing and killing it.
-const QUESTS_V06: &str = r#"{
-  "dsl_version": "0.19.0",
+static QUESTS_V06: LazyLock<String> = LazyLock::new(|| {
+    common::at_dsl_version(
+        r#"{
+  "dsl_version": "%dsl_version%",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {
@@ -31,7 +34,7 @@ const QUESTS_V06: &str = r#"{
           "obj/talk": [
             { "type": "open-gate", "anchor": "anchor/door" },
             { "type": "spawn-actor", "actor": "actor/giant" },
-            { "type": "move-actor", "actor": "actor/giant", "to_anchor": "anchor/exit",
+            { "type": "move-actor", "actor": "actor/giant", "to": { "anchor": "anchor/exit" },
               "on_arrive": [ { "type": "despawn-actor", "actor": "actor/giant", "style": "vanish" } ] },
             { "type": "sequence", "steps": [
               { "at_ticks": 0, "effects": [ { "type": "unleash-actor", "actor": "actor/giant" } ] },
@@ -47,7 +50,9 @@ const QUESTS_V06: &str = r#"{
         "anchor": "anchor/keeper-stand", "facing": "north" }
     ]
   }
-}"#;
+}"#,
+    )
+});
 
 /// hello-world's world stage raised to 0.6.0 with a declared `difficulty`.
 ///
@@ -79,13 +84,14 @@ fn campaign_with_quests(quests: &str) -> RawCampaign {
         layout_graph: None,
         site_plan: None,
         detail_plan: None,
+        design: None,
     }
 }
 
 /// The full v0.6 actor surface validates clean under `dsl_version 0.6.0`.
 #[test]
 fn v06_actor_surface_validates_clean() {
-    let diags = check_campaign(&campaign_with_quests(QUESTS_V06));
+    let diags = check_campaign(&campaign_with_quests(QUESTS_V06.as_str()));
     assert!(
         diags.is_empty(),
         "expected zero diagnostics for the v0.6 actor surface, got: {diags:#?}"

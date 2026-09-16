@@ -19,7 +19,7 @@
 
 use std::collections::BTreeSet;
 
-use delvewright_compiler::gym;
+use delvec::compiler::gym;
 use delvewright_dsl::metrics::Metrics;
 
 /// `DW0840` fires, names its denominator, and names exactly the entries the

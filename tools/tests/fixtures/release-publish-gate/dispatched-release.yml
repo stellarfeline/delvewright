@@ -1,0 +1,25 @@
+# The shape `plugin-release.yml` has: only a human dispatch starts it, and it
+# publishes a tag and a public GitHub Release with no registry act anywhere in
+# the file — so the dispatch is the approval and no job declares `environment:`.
+name: fixture — a release a human dispatches
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        required: true
+        type: string
+permissions:
+  contents: read
+jobs:
+  publish:
+    name: publish the release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: ./.github/actions/fixture-checkout
+      - name: the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$TAG" dist/plugin.zip --title "fixture $TAG"

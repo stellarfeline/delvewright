@@ -14,15 +14,16 @@
 
 mod common;
 
+use delvewright_dsl::Verb;
 use std::collections::BTreeMap;
 
-use delvewright_compiler::commands::CommandTree;
-use delvewright_compiler::emit;
-use delvewright_compiler::nav;
-use delvewright_compiler::plan::Plan;
-use delvewright_compiler::registry::{FullEntityRegistry, FullItemRegistry, PrefabRegistry};
-use delvewright_compiler::timeline;
-use delvewright_dsl::{Campaign, QuestEffect, RawCampaign, parse_campaign};
+use delvec::compiler::commands::CommandTree;
+use delvec::compiler::emit;
+use delvec::compiler::nav;
+use delvec::compiler::plan::Plan;
+use delvec::compiler::registry::{FullEntityRegistry, FullItemRegistry, PrefabRegistry};
+use delvec::compiler::timeline;
+use delvewright_dsl::{Campaign, DSL_VERSION, RawCampaign, parse_campaign};
 
 /// A hello-world `quests` doc carrying a stage-5 actor plus a caller-supplied
 /// `on_complete` body (raw JSON array contents, no surrounding brackets).
@@ -34,7 +35,7 @@ use delvewright_dsl::{Campaign, QuestEffect, RawCampaign, parse_campaign};
 fn quests_doc(on_complete: &str) -> String {
     format!(
         r#"{{
-  "dsl_version": "0.19.0",
+  "dsl_version": "{DSL_VERSION}",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {{
@@ -81,6 +82,7 @@ fn parse_hw(quests: &str) -> Campaign {
         layout_graph: None,
         site_plan: None,
         detail_plan: None,
+        design: None,
     };
     parse_campaign(&raw).expect("campaign parses")
 }
@@ -141,7 +143,7 @@ fn walk_after_close_gate_in_the_same_sequence_is_dw0410() {
     let body = r#"{ "type": "sequence", "steps": [
           { "at_ticks": 460, "effects": [ { "type": "close-gate", "anchor": "anchor/door", "sealed_hint": "Sealed." } ] },
           { "at_ticks": 700, "effects": [
-              { "type": "move-actor", "actor": "actor/ram", "to_anchor": "anchor/exit" } ] }
+              { "type": "move-actor", "actor": "actor/ram", "to": { "anchor": "anchor/exit" } } ] }
        ] },
        { "type": "campaign-complete" }"#;
     assert_validates(body);
@@ -158,7 +160,7 @@ fn walk_after_close_gate_in_the_same_sequence_is_dw0410() {
 #[test]
 fn walk_after_close_gate_in_the_same_effect_list_is_dw0410() {
     let body = r#"{ "type": "close-gate", "anchor": "anchor/door", "sealed_hint": "Sealed." },
-       { "type": "move-actor", "actor": "actor/ram", "to_anchor": "anchor/exit" },
+       { "type": "move-actor", "actor": "actor/ram", "to": { "anchor": "anchor/exit" } },
        { "type": "campaign-complete" }"#;
     assert_validates(body);
     assert_eq!(build_code(body).as_deref(), Some("DW0410"));
@@ -168,7 +170,7 @@ fn walk_after_close_gate_in_the_same_effect_list_is_dw0410() {
 #[test]
 fn move_npc_after_close_gate_is_dw0410() {
     let body = r#"{ "type": "close-gate", "anchor": "anchor/door", "sealed_hint": "Sealed." },
-       { "type": "move-npc", "npc": "npc/keeper", "to_anchor": "anchor/exit" },
+       { "type": "move-npc", "npc": "npc/keeper", "to": { "anchor": "anchor/exit" } },
        { "type": "campaign-complete" }"#;
     assert_validates(body);
     assert_eq!(build_code(body).as_deref(), Some("DW0410"));
@@ -180,7 +182,7 @@ fn move_npc_after_close_gate_is_dw0410() {
 fn dw0410_message_names_the_verb_mover_and_gate() {
     let c = parse_hw(&quests_doc(
         r#"{ "type": "close-gate", "anchor": "anchor/door", "sealed_hint": "Sealed." },
-           { "type": "move-actor", "actor": "actor/ram", "to_anchor": "anchor/exit" },
+           { "type": "move-actor", "actor": "actor/ram", "to": { "anchor": "anchor/exit" } },
            { "type": "campaign-complete" }"#,
     ));
     let prefabs = prefabs();
@@ -215,7 +217,7 @@ fn dw0410_message_names_the_verb_mover_and_gate() {
 fn walk_before_close_gate_builds_clean() {
     let body = r#"{ "type": "sequence", "steps": [
           { "at_ticks": 100, "effects": [
-              { "type": "move-actor", "actor": "actor/ram", "to_anchor": "anchor/exit" } ] },
+              { "type": "move-actor", "actor": "actor/ram", "to": { "anchor": "anchor/exit" } } ] },
           { "at_ticks": 700, "effects": [ { "type": "close-gate", "anchor": "anchor/door", "sealed_hint": "Sealed." } ] }
        ] },
        { "type": "campaign-complete" }"#;
@@ -231,7 +233,7 @@ fn sequence_order_follows_at_ticks_not_declaration_order() {
     let body = r#"{ "type": "sequence", "steps": [
           { "at_ticks": 700, "effects": [ { "type": "close-gate", "anchor": "anchor/door", "sealed_hint": "Sealed." } ] },
           { "at_ticks": 100, "effects": [
-              { "type": "move-actor", "actor": "actor/ram", "to_anchor": "anchor/exit" } ] }
+              { "type": "move-actor", "actor": "actor/ram", "to": { "anchor": "anchor/exit" } } ] }
        ] },
        { "type": "campaign-complete" }"#;
     assert_validates(body);
@@ -246,7 +248,7 @@ fn close_then_open_then_walk_builds_clean() {
           { "at_ticks": 0,   "effects": [ { "type": "close-gate", "anchor": "anchor/door", "sealed_hint": "Sealed." } ] },
           { "at_ticks": 200, "effects": [ { "type": "open-gate",  "anchor": "anchor/door" } ] },
           { "at_ticks": 700, "effects": [
-              { "type": "move-actor", "actor": "actor/ram", "to_anchor": "anchor/exit" } ] }
+              { "type": "move-actor", "actor": "actor/ram", "to": { "anchor": "anchor/exit" } } ] }
        ] },
        { "type": "campaign-complete" }"#;
     assert_validates(body);
@@ -258,8 +260,8 @@ fn close_then_open_then_walk_builds_clean() {
 /// mode the no-false-certainty rule exists to prevent.
 #[test]
 fn conditional_close_gate_seals_nothing() {
-    let body = r#"{ "type": "close-gate", "anchor": "anchor/door", "sealed_hint": "Sealed.", "requires_flags": ["flag/sealed"] },
-       { "type": "move-actor", "actor": "actor/ram", "to_anchor": "anchor/exit" },
+    let body = r#"{ "type": "close-gate", "when": { "requires_flags": ["flag/sealed"] }, "anchor": "anchor/door", "sealed_hint": "Sealed." },
+       { "type": "move-actor", "actor": "actor/ram", "to": { "anchor": "anchor/exit" } },
        { "type": "campaign-complete" }"#;
     assert_validates(body);
     assert_eq!(build_code(body), None);
@@ -271,8 +273,9 @@ fn conditional_close_gate_seals_nothing() {
 /// player's forced route; this proof deliberately stays quiet.
 #[test]
 fn close_gate_in_another_bundle_does_not_seal_this_timeline() {
-    let quests = r#"{
-  "dsl_version": "0.19.0",
+    let quests = common::at_dsl_version(
+        r#"{
+  "dsl_version": "%dsl_version%",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {
@@ -292,14 +295,15 @@ fn close_gate_in_another_bundle_does_not_seal_this_timeline() {
           "obj/talk": [ { "type": "close-gate", "anchor": "anchor/door", "sealed_hint": "Sealed." } ]
         },
         "on_complete": [
-          { "type": "move-actor", "actor": "actor/ram", "to_anchor": "anchor/exit" },
+          { "type": "move-actor", "actor": "actor/ram", "to": { "anchor": "anchor/exit" } },
           { "type": "campaign-complete" }
         ]
       }
     ]
   }
-}"#;
-    let c = parse_hw(quests);
+}"#,
+    );
+    let c = parse_hw(&quests);
     let prefabs = prefabs();
     let plan = Plan::build(&c, &prefabs).expect("plan builds");
     let mut structures: BTreeMap<String, Vec<u8>> = BTreeMap::new();
@@ -328,12 +332,12 @@ fn seal_flags(c: &Campaign) -> Vec<(String, bool)> {
     timeline::walk(&plan)
         .into_iter()
         .map(|(e, state)| {
-            let name = match e {
-                QuestEffect::CloseGate { .. } => "close-gate",
-                QuestEffect::OpenGate { .. } => "open-gate",
-                QuestEffect::MoveActor { .. } => "move-actor",
-                QuestEffect::Sequence { .. } => "sequence",
-                QuestEffect::CampaignComplete { .. } => "campaign-complete",
+            let name = match &e.verb {
+                Verb::CloseGate { .. } => "close-gate",
+                Verb::OpenGate { .. } => "open-gate",
+                Verb::MoveActor { .. } => "move-actor",
+                Verb::Sequence { .. } => "sequence",
+                Verb::CampaignComplete { .. } => "campaign-complete",
                 _ => "other",
             };
             (name.to_string(), !state.is_empty())
@@ -347,7 +351,7 @@ fn seal_flags(c: &Campaign) -> Vec<(String, bool)> {
 fn state_is_as_of_the_effect_not_after_it() {
     let c = parse_hw(&quests_doc(
         r#"{ "type": "close-gate", "anchor": "anchor/door", "sealed_hint": "Sealed." },
-           { "type": "move-actor", "actor": "actor/ram", "to_anchor": "anchor/exit" },
+           { "type": "move-actor", "actor": "actor/ram", "to": { "anchor": "anchor/exit" } },
            { "type": "campaign-complete" }"#,
     ));
     let flags = seal_flags(&c);
@@ -366,7 +370,7 @@ fn walk_yields_every_effect_including_nested_ones() {
         r#"{ "type": "sequence", "steps": [
               { "at_ticks": 0, "effects": [ { "type": "close-gate", "anchor": "anchor/door", "sealed_hint": "Sealed." } ] },
               { "at_ticks": 40, "effects": [
-                  { "type": "move-actor", "actor": "actor/ram", "to_anchor": "anchor/exit" } ] }
+                  { "type": "move-actor", "actor": "actor/ram", "to": { "anchor": "anchor/exit" } } ] }
            ] },
            { "type": "campaign-complete" }"#,
     ));

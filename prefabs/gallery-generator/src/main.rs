@@ -34,11 +34,10 @@ use std::path::Path;
 use flate2::{Compression, GzBuilder};
 use serde::Serialize;
 
-#[path = "../../invariants.rs"]
-mod invariants;
-
-#[path = "../../connections.rs"]
-mod connections;
+/// The cross-tileset invariants and the connection derivation, shared as a
+/// crate so the rule is compiled once and its own tests run with the
+/// generators' (`prefabs/invariants`).
+use prefab_invariants::{connections, document, invariants, walkplane, waterline};
 
 /// MC 1.21.11 data version (ADR-0009).
 const DATA_VERSION: i32 = 4671;
@@ -63,6 +62,64 @@ const DIVIDER_Z: i32 = 15;
 /// three tall (`y ∈ 1..=3`) and filled with iron bars, which is what a
 /// prefab-declared gate anchor opens.
 const GATES: [(i32, i32); 5] = [(14, 15), (24, 25), (4, 5), (9, 10), (19, 20)];
+
+/// **The west terrace, and the well cut through it** — the gallery's pit whose
+/// keep-out lies under the rim (spec-0062 §10).
+///
+/// A killing volume that catches floor the party walks is refused (`DW0891`),
+/// and the repair is to MOVE THE HAZARD, never to mark walkable-looking ground
+/// unwalkable. So the west pit is a real pit: a terrace three courses over the
+/// near hall's west corner, with a one-cell well cut down through it to the
+/// hall's own floor. The volume sits at the well's bottom, its keep-out's top
+/// course lies a full body under the rim, and every cell of that keep-out at the
+/// walk plane is terrace stone.
+///
+/// `(x0, x1, z0, z1)` inclusive, in room space.
+const TERRACE: (i32, i32, i32, i32) = (0, 5, 1, 6);
+
+/// The terrace's top solid course: solid `y ∈ 1..=TERRACE_TOP_Y`, so its rim is
+/// walked at `y = TERRACE_TOP_Y + 1`.
+///
+/// Three courses is not a round number, it is the rule: a body steps one course
+/// ([`prefab_invariants`]'s own walk), so a rim three over the well's floor is a
+/// place nothing can walk down into. The well's bottom is therefore outside the
+/// population `DW0891` measures against, which is what makes a hole in the floor
+/// *checked and clear* rather than *caught*.
+const TERRACE_TOP_Y: i32 = 3;
+
+/// The well's column, `(x, z)` — the cell `anchor/west-pit` names, cut open from
+/// the hall's floor to the terrace's rim.
+const WELL: (i32, i32) = (2, 3);
+
+/// The treads that climb the terrace from the near hall, `(x, top_y)` on the
+/// well's own `z` — one course of rise each, so the rim is somewhere the party
+/// can actually stand and look in. Without them the terrace is scenery and every
+/// reach anchored on the well is `DW0850`.
+///
+/// They stand OUTSIDE the terrace, and the terrace is drawn wide enough that no
+/// hall-floor cell lies nearer the well than its own rim does. That is not
+/// decoration: `DW0881` measures the anchor's footing as the nearest standable
+/// cells to it, so a strip of hall floor two cells south of the well would be
+/// "where a body arrives at the well" and the rim three courses up would be
+/// floor nothing can walk to it from.
+const TERRACE_STEPS: [(i32, i32); 2] = [(7, 1), (6, 2)];
+
+/// **The east strip: a flush hazard that shows itself** (spec-0062 §3).
+///
+/// The other half of the ruling. This volume is level with the floor on purpose
+/// — the block IS the signal — so the floor course under every cell it catches
+/// is molten stone, and `lethal/east-pit` declares `shown_by`. The span is the
+/// volume's keep-out at the walk plane, one cell wider than the volume on every
+/// side, because that is exactly how far a body's hitbox reaches into it.
+///
+/// `(x0, x1, z0, z1)` inclusive, in room space.
+const BURNING_STRIP: (i32, i32, i32, i32) = (18, 22, 1, 4);
+
+/// What the burning strip is made of — one of the blocks vanilla hurts a body
+/// with ([`delvewright_dsl::blockshape::HURTING_BLOCKS_1_21_11`], reached here
+/// through the campaign's own `shown_by`), and a full cube, so the floor it
+/// makes is floor.
+const BURNING_BLOCK: &str = "minecraft:magma_block";
 
 /// One named place in the hall.
 ///
@@ -179,6 +236,23 @@ const ANCHORS: &[Anchor] = &[
         facing: Some("north"),
         trigger_block: None,
         note: "the second speaking part, so a root SWAP has somewhere to go",
+        role: None,
+    },
+    Anchor {
+        name: "anchor/usher",
+        pos: [13, 1, 5],
+        facing: Some("south"),
+        trigger_block: None,
+        note: "a standing place for two bodies a spawn puts down and NOTHING \
+               takes away: the usher on the anchor and the page at an offset \
+               from it, four cells east along the speaking row. `DW0896` refuses \
+               two co-existing bodies on one cell and judges an entry only \
+               against a body whose lifetime it can bound — every other actor \
+               in this hall is `vulnerable` or is despawned, so without this \
+               place the live half of that rule binds to the world-init npcs \
+               alone. One anchor and an offset apiece is how a rank of bodies \
+               is placed (spec-0066): the campaign spends one anchor on it, and \
+               `DW0897` holds each offset inside this piece",
         role: None,
     },
     Anchor {
@@ -500,6 +574,50 @@ const WAY_NAME: &str = "broken-flight";
 /// the box the tread courses are carved out of.
 const FLIGHT_VIA: (i32, i32, i32, i32, i32, i32) = (FLIGHT.0, FLIGHT.1, 1, 3, FLIGHT.2, FLIGHT.3);
 
+/// **The high table** — a laid dining table across the standard-bearer's walk
+/// from `anchor/march` to `anchor/vantage` (spec-0065 §7).
+///
+/// Built the way the released castle's hall table is built, because that table
+/// is the finding: a row of `oak_fence` legs under an `oak_slab[type=bottom]`
+/// top, with a `spruce_slab[type=bottom]` bench on its near side. Every cell of
+/// the top is standable under the walk model's own rule, and bench-then-top is a
+/// half-block step and a one-block jump, so a body routed from the march to the
+/// vantage takes three cells over the table where the way round is eleven — long
+/// enough that the router's elevation cost (a block of rise or fall is two of
+/// walking) still prefers the climb. The piece declares it furniture, and the
+/// walk goes round.
+///
+/// `(x0, x1, z)` inclusive: the legs stand at `y = 1`, the top at `y = 2`.
+const TABLE: (i32, i32, i32) = (12, 18, 26);
+
+/// The bench on the table's near (south) side: `(x0, x1, z)`, at `y = 1`. The
+/// far side has none — the back wall's levers and the reliquary stand there.
+const BENCH: (i32, i32, i32) = (12, 18, 25);
+
+/// The table's leg, top and bench blocks, each written once.
+const TABLE_LEG: &str = "minecraft:oak_fence";
+const TABLE_TOP: &str = "minecraft:oak_slab";
+const BENCH_BLOCK: &str = "minecraft:spruce_slab";
+
+/// A named place declared as furniture: the region is the furniture's own
+/// blocks (spec-0065 §3), and the anchor carries `role: furniture`.
+struct FurnitureAnchor {
+    name: &'static str,
+    from: [i32; 3],
+    to: [i32; 3],
+    note: &'static str,
+}
+
+/// The furniture inventory. One table, so the element answers one question: a
+/// body walked past a table goes round it.
+const FURNITURE_ANCHORS: &[FurnitureAnchor] = &[FurnitureAnchor {
+    name: "anchor/high-table",
+    from: [TABLE.0, 1, TABLE.2],
+    to: [TABLE.1, 2, TABLE.2],
+    note: "the laid table across the standard-bearer's walk to the vantage: legs and \
+           top are furniture, so the bearer walks round it rather than over it",
+}];
+
 /// The gate inventory. Every opening is a real hole in the divider, so an
 /// unopened gate really does stop a body and `DW0311` has something to prove.
 const GATE_ANCHORS: &[GateAnchor] = &[
@@ -632,6 +750,29 @@ impl Palette {
     }
 }
 
+/// `minecraft:tripwire[attached=true]` -> `("minecraft:tripwire", [("attached",
+/// "true")])`.
+///
+/// One spelling of a block state, read where it is declared. The alternative was
+/// a second constant beside [`Anchor::trigger_block`] holding the same block in
+/// a different shape, which is two authorities on one fact.
+fn split_state(declared: &'static str) -> (&'static str, Vec<(&'static str, &'static str)>) {
+    match declared.split_once('[') {
+        None => (declared, Vec::new()),
+        Some((name, rest)) => (
+            name,
+            rest.trim_end_matches(']')
+                .split(',')
+                .filter(|s| !s.is_empty())
+                .map(|term| {
+                    term.split_once('=')
+                        .unwrap_or_else(|| panic!("{ID}: `{declared}` is not a block state"))
+                })
+                .collect(),
+        ),
+    }
+}
+
 fn block_at(
     x: i32,
     y: i32,
@@ -641,7 +782,14 @@ fn block_at(
     &'static str,
     Option<&'static [(&'static str, &'static str)]>,
 ) {
-    if y == 0 || y == SIZE[1] - 1 {
+    if y == 0 {
+        let (bx0, bx1, bz0, bz1) = BURNING_STRIP;
+        if (bx0..=bx1).contains(&x) && (bz0..=bz1).contains(&z) {
+            return (BURNING_BLOCK, None);
+        }
+        return ("minecraft:stone", None);
+    }
+    if y == SIZE[1] - 1 {
         return ("minecraft:stone", None);
     }
     if x == 0 || x == SIZE[0] - 1 || z == 0 || z == SIZE[2] - 1 {
@@ -654,6 +802,35 @@ fn block_at(
             }
         }
         return ("minecraft:stone", None);
+    }
+    // The west terrace and its well. The well column is cut before the terrace
+    // fills, so the hole is a hole rather than a cell the terrace happens to
+    // miss — one order, one authority.
+    let (tx0, tx1, tz0, tz1) = TERRACE;
+    if (tx0..=tx1).contains(&x)
+        && (tz0..=tz1).contains(&z)
+        && (1..=TERRACE_TOP_Y).contains(&y)
+        && (x, z) != WELL
+    {
+        return ("minecraft:stone", None);
+    }
+    if z == WELL.1
+        && TERRACE_STEPS
+            .iter()
+            .any(|&(sx, top)| sx == x && (1..=top).contains(&y))
+    {
+        return ("minecraft:stone", None);
+    }
+    // The high table and its bench (spec-0065 §7).
+    if (TABLE.0..=TABLE.1).contains(&x) && z == TABLE.2 {
+        match y {
+            1 => return (TABLE_LEG, None),
+            2 => return (TABLE_TOP, Some(&[("type", "bottom")])),
+            _ => {}
+        }
+    }
+    if (BENCH.0..=BENCH.1).contains(&x) && z == BENCH.2 && y == 1 {
+        return (BENCH_BLOCK, Some(&[("type", "bottom")]));
     }
     let (cx0, cx1, cy, cz0, cz1) = CANOPY;
     if y == cy && (cx0..=cx1).contains(&x) && (cz0..=cz1).contains(&z) {
@@ -691,6 +868,10 @@ fn build() -> Structure {
             "minecraft:chest",
             Some(&[("facing", "north"), ("type", "single")][..]),
         ),
+        (BURNING_BLOCK, None),
+        (TABLE_LEG, None),
+        (TABLE_TOP, Some(&[("type", "bottom")][..])),
+        (BENCH_BLOCK, Some(&[("type", "bottom")][..])),
     ] {
         palette.idx(name, props);
     }
@@ -707,6 +888,33 @@ fn build() -> Structure {
             }
         }
     }
+    // **A trap's trigger is HARDWARE the piece wires**, not a sentence the
+    // document tells the compiler. A flag gate physically removes that block
+    // while it is shut and puts it back verbatim when it opens, so a
+    // `trigger_block` over an air cell makes opening the gate create a block the
+    // piece never had — which is what `DW0888` refuses. Every anchor that
+    // declares one gets it here, from the same constant the metadata is written
+    // from, so the two halves cannot say different things.
+    let mut triggers = 0usize;
+    for a in ANCHORS {
+        let Some(declared) = a.trigger_block else {
+            continue;
+        };
+        let (name, props) = split_state(declared);
+        let refs: Vec<(&str, &str)> = props.iter().map(|(k, v)| (*k, *v)).collect();
+        let state = palette.idx(name, (!refs.is_empty()).then_some(&refs[..]));
+        let cell = blocks
+            .iter_mut()
+            .find(|b| b.pos == a.pos)
+            .unwrap_or_else(|| panic!("{ID}: anchor `{}` is outside the piece", a.name));
+        cell.state = state;
+        triggers += 1;
+    }
+    assert!(
+        triggers > 0,
+        "{ID}: no anchor declares a `trigger_block`, so the trap-hardware surface is unbound"
+    );
+    println!("{ID}: wired {triggers} declared trap trigger(s) into the blocks");
     for (i, e) in palette.entries.iter().enumerate() {
         assert!(
             blocks.iter().any(|b| b.state == i as i32),
@@ -746,9 +954,14 @@ fn assert_anchors_are_standable(s: &Structure) {
     };
     for a in ANCHORS {
         let [x, y, z] = a.pos;
+        // Air, or the trap trigger this very anchor declares. A pressure plate
+        // and a tripwire are the two blocks a body stands ON rather than in, and
+        // an anchor that declares one is an anchor whose own cell holds it —
+        // demanding air there would forbid the hardware the document promises.
+        let want = a.trigger_block.map(|b| split_state(b).0);
         assert_eq!(
             at([x, y, z]),
-            "minecraft:air",
+            want.unwrap_or("minecraft:air"),
             "{ID}: anchor `{}` stands in a solid cell",
             a.name
         );
@@ -795,22 +1008,53 @@ fn assert_anchors_are_standable(s: &Structure) {
             }
         }
     }
+    // Furniture is declared over the blocks it names, never over air: every cell
+    // of the region is a leg or the top, and at least one of them is a top a
+    // body could otherwise stand on (`DW0888`'s furniture key, asked here first).
+    for f in FURNITURE_ANCHORS {
+        let mut tops = 0usize;
+        for x in f.from[0]..=f.to[0] {
+            for y in f.from[1]..=f.to[1] {
+                for z in f.from[2]..=f.to[2] {
+                    let found = at([x, y, z]);
+                    assert!(
+                        found == TABLE_LEG || found == TABLE_TOP,
+                        "{ID}: furniture `{}` claims {:?}, which holds `{found}` — not the \
+                         table's own blocks",
+                        f.name,
+                        [x, y, z]
+                    );
+                    if found == TABLE_TOP && at([x, y + 1, z]) == "minecraft:air" {
+                        tops += 1;
+                    }
+                }
+            }
+        }
+        assert!(
+            tops > 0,
+            "{ID}: furniture `{}` has no top a body could stand on, so declaring it \
+             withholds nothing",
+            f.name
+        );
+    }
     // A metadata that declares nothing is the vacuous case: the assertions above
     // are all universally quantified and pass over an empty inventory.
     assert!(
         !ANCHORS.is_empty()
             && !GATE_ANCHORS.is_empty()
             && !CONTAINERS.is_empty()
-            && !SOLID_ANCHORS.is_empty(),
+            && !SOLID_ANCHORS.is_empty()
+            && !FURNITURE_ANCHORS.is_empty(),
         "{ID}: the anchor inventory is empty, so nothing above examined anything"
     );
     println!(
         "{ID}: anchor inventory bound — {} point anchor(s), {} container(s), \
-         {} solid anchor(s), {} gate anchor(s) checked against the blocks",
+         {} solid anchor(s), {} gate anchor(s), {} furniture anchor(s) checked against the blocks",
         ANCHORS.len(),
         CONTAINERS.len(),
         SOLID_ANCHORS.len(),
-        GATE_ANCHORS.len()
+        GATE_ANCHORS.len(),
+        FURNITURE_ANCHORS.len()
     );
 }
 
@@ -1313,6 +1557,13 @@ fn metadata() -> serde_json::Value {
         m.insert("note".into(), json!(g.note));
         anchors.insert(g.name.into(), Value::Object(m));
     }
+    for f in FURNITURE_ANCHORS {
+        let mut m = Map::new();
+        m.insert("region".into(), json!({ "from": f.from, "to": f.to }));
+        m.insert("role".into(), json!("furniture"));
+        m.insert("note".into(), json!(f.note));
+        anchors.insert(f.name.into(), Value::Object(m));
+    }
     json!({
         "prefab_id": format!("prefab/{ID}"),
         "structure": {
@@ -1343,12 +1594,16 @@ fn metadata() -> serde_json::Value {
 }
 
 fn write_piece(out: &Path) {
-    let mut s = build();
-    resolve_connections(ID, &mut s);
-    assert_anchors_are_standable(&s);
+    let mut room = build();
+    resolve_connections(ID, &mut room);
+    assert_anchors_are_standable(&room);
     assert_the_muster_clears_the_pits();
     assert_the_lane_keeps_off_the_muster();
-    assert_the_flight_is_broken(&s);
+    assert_the_flight_is_broken(&room);
+    // The room is designed against its own floor and then stands on the plinth
+    // the sea needs: every proof above is about the room, every proof below is
+    // about the piece that ships.
+    let (s, meta) = to_shore(ID, &room, &metadata(), &HALL_POOL);
     let cells = invariant_cells(&s);
     invariants::assert_distress_never_stacks(ID, &cells);
     invariants::assert_blocks_are_real(ID, &cells);
@@ -1368,10 +1623,9 @@ fn write_piece(out: &Path) {
         .unwrap_or_else(|e| panic!("write {}: {e}", nbt_path.display()));
 
     let meta_path = out.join(format!("{ID}.json"));
-    let mut meta = serde_json::to_string_pretty(&metadata()).expect("metadata serializes");
-    meta.push('\n');
-    std::fs::write(&meta_path, meta.as_bytes())
-        .unwrap_or_else(|e| panic!("write {}: {e}", meta_path.display()));
+    // Merged onto whatever is already there: a generator deletes nothing it did
+    // not write (`prefab_invariants::document`).
+    document::write_preserving(&meta_path, &meta);
 
     println!(
         "wrote {} ({} blocks, {} palette entries, {} gz bytes) and {}",
@@ -1394,8 +1648,8 @@ const SKINS: [(&str, [u8; 3], [u8; 3]); 2] = [
 ];
 
 /// Standard CRC-32 (PNG's, and gzip's). Written out rather than pulled in: the
-/// generator workspaces deliberately carry a four-crate dependency set, and one
-/// polynomial is cheaper than a fifth.
+/// generators deliberately carry a small third-party dependency set, and one
+/// polynomial is cheaper than another crate in it.
 fn crc32(bytes: &[u8]) -> u32 {
     let mut crc: u32 = 0xFFFF_FFFF;
     for b in bytes {
@@ -1456,6 +1710,348 @@ fn skin_png(base: [u8; 3], belt: [u8; 3]) -> Vec<u8> {
     png.extend_from_slice(&png_chunk(b"IDAT", &idat));
     png.extend_from_slice(&png_chunk(b"IEND", &[]));
     png
+}
+
+/// **The shore variants**: the same pieces, built to stand on an ocean.
+///
+/// `horizon: ocean` puts every area origin at `SEA_LEVEL - 2` (the compiler's
+/// `OCEAN_BASE_Y`, 60, under a sea at 62), because that is the datum the island
+/// convention needs: a shore piece authors its water up to local y=2 and stands
+/// its land plane at local y=3, one block clear of the sea. A piece built with
+/// its floor at local y=0 — which is every piece in this file — puts its walk
+/// plane at world y=61, a block UNDER the surface, and vanilla then floods it:
+/// `/place template` hands each waterloggable block the water already in the
+/// cell, so the hall's own gate bars and chests come out `waterlogged=true` and
+/// spread. Measured on the pinned server, booting this gallery's own
+/// `ocean-horizon` point: 10 waterlogged blocks and 367 water cells across the
+/// walk plane, under a `sea-seepage.json` that said `pass`.
+///
+/// So the ocean point does not build from the same bytes. It builds from these:
+/// each piece lifted onto [`SHORE_PLINTH`] courses of solid plinth, with a tide
+/// pool cut into its floor course so the piece's own top water block lands
+/// exactly on the sea plane, and `waterline_y` declared to say so. The primary
+/// (void) point still builds from the unlifted pieces, byte for byte.
+const SHORE_PLINTH: i32 = 2;
+
+/// The hall's tide pool, in ROOM-space `(x, z)` — cut out of the floor course,
+/// which the lift puts at local y=[`SHORE_PLINTH`], so its water surface is the
+/// sea's own plane.
+///
+/// Against the west wall and away from every anchor: the nearest is
+/// `anchor/west-pit` at `[2, 1, 3]`, nine cells north of it, and
+/// [`assert_the_pool_is_clear_of_every_anchor`] is what keeps that true rather
+/// than this sentence.
+const HALL_POOL: [(i32, i32); 4] = [(1, 12), (1, 13), (2, 12), (2, 13)];
+
+/// The same, one cell, in each annex tile: the interior corner opposite the
+/// tile's own anchor at `[3, 1, 3]`.
+const ANNEX_POOL: [(i32, i32); 1] = [(1, 1)];
+
+/// Lift a built structure onto its plinth and cut the tide pool into its floor
+/// course.
+///
+/// Everything the piece already is moves up by [`SHORE_PLINTH`]; the courses
+/// underneath are solid stone; and `pool` names the floor cells that become
+/// water. Because the lift happens after [`resolve_connections`], the connector
+/// shapes the tile set resolved are carried through untouched.
+fn lift_to_shore(s: &Structure, pool: &[(i32, i32)]) -> Structure {
+    let mut palette = s.palette.clone();
+    let mut idx = |name: &str| -> i32 {
+        let e = PaletteEntry {
+            name: name.to_string(),
+            properties: None,
+        };
+        match palette.iter().position(|x| *x == e) {
+            Some(i) => i as i32,
+            None => {
+                palette.push(e);
+                (palette.len() - 1) as i32
+            }
+        }
+    };
+    let stone = idx("minecraft:stone");
+    let water = idx("minecraft:water");
+    let mut blocks: Vec<BlockEntry> =
+        Vec::with_capacity(s.blocks.len() + (s.size[0] * SHORE_PLINTH * s.size[2]) as usize);
+    for y in 0..SHORE_PLINTH {
+        for x in 0..s.size[0] {
+            for z in 0..s.size[2] {
+                blocks.push(BlockEntry {
+                    pos: [x, y, z],
+                    state: stone,
+                });
+            }
+        }
+    }
+    for b in &s.blocks {
+        let pos = [b.pos[0], b.pos[1] + SHORE_PLINTH, b.pos[2]];
+        let state = if pos[1] == SHORE_PLINTH && pool.contains(&(pos[0], pos[2])) {
+            water
+        } else {
+            b.state
+        };
+        blocks.push(BlockEntry { pos, state });
+    }
+    let cut = blocks.iter().filter(|b| b.state == water).count();
+    assert_eq!(
+        cut,
+        pool.len(),
+        "the tide pool cut {cut} cell(s) where {} were named — a waterline declared over water \
+         the piece does not author is the fiction DW0344 exists to refuse",
+        pool.len()
+    );
+    Structure {
+        data_version: s.data_version,
+        size: [s.size[0], s.size[1] + SHORE_PLINTH, s.size[2]],
+        palette,
+        blocks,
+        entities: Vec::new(), // the gallery's pieces carry none, and a lift invents none
+    }
+}
+
+/// The same lift applied to the piece's metadata: every declared position rises
+/// with the blocks and the extent grows. The waterline is NOT stated here —
+/// [`declare_waterline_y`] reads it back off the lifted bytes, beside
+/// [`declare_walk_y`].
+///
+/// The keys are named rather than inferred. A blind walk over "every array of
+/// three integers" would also lift `structure.size`, which is an extent and not
+/// a place, and the piece would claim a box it does not fill.
+fn lift_metadata(meta: &serde_json::Value) -> serde_json::Value {
+    fn walk(v: &mut serde_json::Value) {
+        match v {
+            serde_json::Value::Object(map) => {
+                for (k, child) in map.iter_mut() {
+                    if matches!(k.as_str(), "pos" | "local_pos" | "from" | "to") {
+                        if let Some(a) = child.as_array_mut() {
+                            if a.len() == 3 {
+                                let y = a[1].as_i64().expect("a position's y is an integer");
+                                a[1] = serde_json::json!(y + SHORE_PLINTH as i64);
+                                continue;
+                            }
+                        }
+                    }
+                    walk(child);
+                }
+            }
+            serde_json::Value::Array(items) => {
+                for child in items.iter_mut() {
+                    walk(child);
+                }
+            }
+            _ => {}
+        }
+    }
+    let mut m = meta.clone();
+    walk(&mut m);
+    let sy = m["structure"]["size"][1]
+        .as_i64()
+        .expect("the declared extent has a y");
+    m["structure"]["size"][1] = serde_json::json!(sy + SHORE_PLINTH as i64);
+    m
+}
+
+/// **The piece's own waterline, measured off the bytes about to be written**
+/// (spec-0060 §4) — [`declare_walk_y`]'s pair.
+///
+/// The declaration `DW0344` binds to is the local y of the top authored water
+/// block, and `DW0887` holds the document to it. The tide pool this generator
+/// cuts puts that block on `SHORE_PLINTH` by construction, and writing the
+/// constant was therefore *correct* — which is exactly why it is the shape to
+/// remove: it is correct until the cut moves, and nothing here would say. Every
+/// generator in this workspace reads the number back out of its own blocks
+/// through one rule (`prefab_invariants::waterline`), and a piece that authors
+/// no water writes no key at all.
+fn declare_waterline_y(s: &Structure, meta: &mut serde_json::Value) {
+    let cells = invariant_cells(s);
+    match waterline::measure_waterline_y(&cells) {
+        Some(y) => {
+            meta["waterline_y"] = serde_json::json!(y);
+        }
+        None => {
+            meta.as_object_mut()
+                .expect("prefab metadata is an object")
+                .remove("waterline_y");
+        }
+    }
+}
+
+/// **Every anchor stands clear of the tide pool** — the standability proof the
+/// lift could break, because a pool cut under an anchor puts a body in the
+/// water.
+///
+/// It used to carry a second half, that the declared `waterline_y` is the top
+/// authored water block, and that half is **gone on purpose**. It is now
+/// `DW0887` in the engine, reached by every library rather than by this one
+/// generator; a generator-private copy of an engine rule is a second authority
+/// that agrees until it does not, and this one could only ever have proven the
+/// gallery. What proves the gallery's shores now is what proves a creator's:
+/// the build opens the bytes (spec-0060 §11).
+fn assert_the_shore_is_standable(id: &str, s: &Structure, meta: &serde_json::Value) {
+    let water: Vec<[i32; 3]> = s
+        .blocks
+        .iter()
+        .filter(|b| s.palette[b.state as usize].name == "minecraft:water")
+        .map(|b| b.pos)
+        .collect();
+    let anchors = meta["anchors"].as_object().expect("an anchor inventory");
+    let mut examined = 0usize;
+    for (name, a) in anchors {
+        let Some(pos) = a.get("pos").and_then(|p| p.as_array()) else {
+            continue; // a region anchor (a gate) stands nowhere
+        };
+        let cell = [
+            pos[0].as_i64().unwrap() as i32,
+            pos[1].as_i64().unwrap() as i32,
+            pos[2].as_i64().unwrap() as i32,
+        ];
+        examined += 1;
+        for probe in [cell, [cell[0], cell[1] - 1, cell[2]]] {
+            assert!(
+                !water.contains(&probe),
+                "{id}: anchor `{name}` stands in or on the tide pool at {probe:?}"
+            );
+        }
+    }
+    assert!(
+        examined > 0,
+        "{id}: the shore proof examined ZERO anchors — a universally quantified assertion over \
+         an empty set is vacuous, not a pass"
+    );
+}
+
+/// **The piece's own walk plane, measured off the bytes about to be written**
+/// (spec-0060 §4).
+///
+/// Every generator writes this, and every one of them measures it rather than
+/// typing it: `walk_y` has no default, so a number nobody read off the blocks
+/// is one tileset's convention wearing the name of a measurement. The rule
+/// itself lives once, in `prefab_invariants::walkplane`, so the number this
+/// generator writes and the number the engine's seating derivation expects are
+/// the same rule rather than two that agree.
+///
+/// It refuses a piece with no standable cell instead of writing some number for
+/// it: a piece a body cannot stand in has no walk plane, and every piece that
+/// reaches here is one a party walks.
+fn declare_walk_y(id: &str, s: &Structure, meta: &mut serde_json::Value) {
+    let cells = invariant_cells(s);
+    meta["walk_y"] = serde_json::json!(walkplane::measure_walk_y(id, s.size, &cells));
+}
+
+/// Lift one piece onto its plinth, prove the result, and hand back both halves.
+fn to_shore(
+    id: &str,
+    s: &Structure,
+    meta: &serde_json::Value,
+    pool: &[(i32, i32)],
+) -> (Structure, serde_json::Value) {
+    let lifted = lift_to_shore(s, pool);
+    let mut meta = lift_metadata(meta);
+    declare_waterline_y(&lifted, &mut meta);
+    assert_the_shore_is_standable(id, &lifted, &meta);
+    declare_walk_y(id, &lifted, &mut meta);
+    (lifted, meta)
+}
+
+/// **One of the gallery's stand-in reference images**: `(stem, sky_top_rgb,
+/// sky_bottom_rgb, lamp_rgb)`.
+///
+/// There is one per [`WorldTime`](delvewright_dsl::WorldTime) the gallery
+/// reaches, and `gallery/design.json`'s rows spread the three weathers across
+/// them, because `DW0890` compares the skies the rows state with the skies the
+/// world reaches for EQUALITY: a picture missing for an hour the party can be
+/// in is exactly what that code refuses.
+type DesignScene = (&'static str, [u8; 3], [u8; 3], [u8; 3]);
+
+/// The six scenes — see [`DesignScene`] for the tuple.
+const DESIGN_SCENES: [DesignScene; 6] = [
+    (
+        "morning-quay",
+        [150, 190, 230],
+        [200, 215, 200],
+        [255, 230, 160],
+    ),
+    (
+        "noon-hall",
+        [175, 205, 240],
+        [215, 220, 205],
+        [255, 235, 175],
+    ),
+    (
+        "dusk-rampart",
+        [205, 130, 85],
+        [120, 85, 75],
+        [255, 205, 130],
+    ),
+    ("night-quay", [20, 28, 55], [35, 40, 60], [255, 210, 140]),
+    ("midnight-crypt", [8, 10, 22], [16, 18, 30], [230, 190, 130]),
+    (
+        "dawn-approach",
+        [120, 120, 175],
+        [195, 165, 145],
+        [255, 225, 165],
+    ),
+];
+
+/// A 48x48 RGB stand-in for an approved concept image: a vertical sky gradient
+/// with one warm lamp in it.
+///
+/// **Deliberately not art**, for the reason [`skin_png`] gives about a
+/// mannequin. Nothing in this toolchain opens an approved image — `DW0890`
+/// holds the world to the TOKEN a creator wrote beside the picture, never to
+/// its pixels (spec-0061 §12) — so what the gallery needs here is a file that
+/// exists, resolves from a row's stem, and reads at a glance as a different
+/// hour from its five neighbours.
+fn concept_png(top: [u8; 3], bottom: [u8; 3], lamp: [u8; 3]) -> Vec<u8> {
+    const W: usize = 48;
+    const H: usize = 48;
+    let mut raw = Vec::with_capacity(H * (1 + W * 3));
+    for y in 0..H {
+        raw.push(0); // filter type 0 (None) on every scanline
+        let t = y as f32 / (H - 1) as f32;
+        let mix = |a: u8, b: u8| (a as f32 + (b as f32 - a as f32) * t).round() as u8;
+        let sky = [
+            mix(top[0], bottom[0]),
+            mix(top[1], bottom[1]),
+            mix(top[2], bottom[2]),
+        ];
+        for x in 0..W {
+            let c = if (20..=27).contains(&x) && (28..=35).contains(&y) {
+                lamp
+            } else {
+                sky
+            };
+            raw.extend_from_slice(&c);
+        }
+    }
+    let mut z = flate2::write::ZlibEncoder::new(Vec::new(), Compression::new(9));
+    z.write_all(&raw).expect("zlib write");
+    let idat = z.finish().expect("zlib finish");
+
+    let mut ihdr = Vec::new();
+    ihdr.extend_from_slice(&(W as u32).to_be_bytes());
+    ihdr.extend_from_slice(&(H as u32).to_be_bytes());
+    ihdr.extend_from_slice(&[8, 2, 0, 0, 0]); // 8-bit, RGB, deflate, no filter, no interlace
+
+    let mut png = vec![0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A];
+    png.extend_from_slice(&png_chunk(b"IHDR", &ihdr));
+    png.extend_from_slice(&png_chunk(b"IDAT", &idat));
+    png.extend_from_slice(&png_chunk(b"IEND", &[]));
+    png
+}
+
+/// Write the stand-in concept images into `<out>/concept/`, the directory
+/// `gallery/design.json`'s row names resolve against.
+fn write_design(out: &Path) {
+    let concept = out.join("concept");
+    std::fs::create_dir_all(&concept)
+        .unwrap_or_else(|e| panic!("mkdir {}: {e}", concept.display()));
+    for (stem, top, bottom, lamp) in DESIGN_SCENES {
+        let path = concept.join(format!("{stem}.png"));
+        std::fs::write(&path, concept_png(top, bottom, lamp))
+            .unwrap_or_else(|e| panic!("write {}: {e}", path.display()));
+        println!("wrote {}", path.display());
+    }
 }
 
 fn write_skins(out: &Path) {
@@ -1790,13 +2386,30 @@ fn annex_metadata(t: &AnnexTile) -> serde_json::Value {
     })
 }
 
-/// The pool the annex area draws from.
+/// The pools this library declares: the one the annex area draws from, and the
+/// one that exists to be refused.
 ///
 /// Written here rather than printed for a human to paste, unlike the tileset
 /// generators: the gallery's prefab directory is a BUILD directory this program
 /// owns end to end, so there is no shared library for a stray file to be
 /// mis-parsed in (`DW0346`).
-fn annex_pool() -> serde_json::Value {
+///
+/// # `pool/gallery-two-planes` is a refusal, and it is made of real pieces
+///
+/// `DW0886`'s set shape — *the members of this pool do not agree about their own
+/// walk plane, and one origin cannot be derived from two* — is the rule this
+/// whole library exists to demonstrate firing, and it is the one thing a
+/// campaign-level probe cannot reach on its own: a probe patches campaign
+/// documents, and a walk plane is prefab metadata. So the pool is declared here,
+/// out of two pieces this generator already writes whose planes genuinely
+/// differ: `gallery-quay` stands on a shore plinth at local y=3 and
+/// `gallery-yard` is a detail piece whose floor is local y=1. Nothing is faked —
+/// what makes the pool unseatable on an ocean is a true fact about two true
+/// pieces, which is exactly what a creator's own mixed pool would be.
+///
+/// The gallery's primary never seats it; `gallery/probes/a-pool-of-two-walk-planes`
+/// does, and the engine refuses it.
+fn pools() -> serde_json::Value {
     use serde_json::{json, Value};
     let members: Vec<Value> = ANNEX_TILES
         .iter()
@@ -1804,16 +2417,25 @@ fn annex_pool() -> serde_json::Value {
             |t| json!({ "prefab": format!("prefab/{}", t.id), "weight": t.weight, "role": t.role }),
         )
         .collect();
-    json!({ "pools": { "pool/gallery-annex": { "members": members } } })
+    json!({
+        "pools": {
+            "pool/gallery-annex": { "members": members },
+            "pool/gallery-two-planes": { "members": [
+                { "prefab": format!("prefab/{QUAY_ID}"), "weight": 1, "role": "entry" },
+                { "prefab": format!("prefab/{YARD_ID}"), "weight": 1, "role": "terminal" },
+            ]},
+        }
+    })
 }
 
 fn write_annex(out: &Path) {
     let mut anchors_proven = 0usize;
     for t in ANNEX_TILES {
-        let mut s = build_annex(t);
-        resolve_connections(t.id, &mut s);
-        assert_annex_anchor_stands(t, &s);
+        let mut room = build_annex(t);
+        resolve_connections(t.id, &mut room);
+        assert_annex_anchor_stands(t, &room);
         anchors_proven += 1;
+        let (s, tile_meta) = to_shore(t.id, &room, &annex_metadata(t), &ANNEX_POOL);
         let cells = invariant_cells(&s);
         invariants::assert_distress_never_stacks(t.id, &cells);
         invariants::assert_blocks_are_real(t.id, &cells);
@@ -1830,15 +2452,9 @@ fn write_annex(out: &Path) {
         std::fs::write(out.join(format!("{}.nbt", t.id)), &framed)
             .unwrap_or_else(|e| panic!("write {}.nbt: {e}", t.id));
 
-        let mut meta =
-            serde_json::to_string_pretty(&annex_metadata(t)).expect("metadata serializes");
-        meta.push('\n');
-        std::fs::write(out.join(format!("{}.json", t.id)), meta.as_bytes())
-            .unwrap_or_else(|e| panic!("write {}.json: {e}", t.id));
+        document::write_preserving(&out.join(format!("{}.json", t.id)), &tile_meta);
     }
-    let mut pool = serde_json::to_string_pretty(&annex_pool()).expect("pool serializes");
-    pool.push('\n');
-    std::fs::write(out.join("pools.json"), pool.as_bytes()).expect("write pools.json");
+    document::write_preserving(&out.join("pools.json"), &pools());
     assert_eq!(
         anchors_proven,
         ANNEX_TILES.len(),
@@ -1914,16 +2530,22 @@ fn write_shard(out: &Path) {
     gz.write_all(&nbt).expect("gzip write");
     let framed = gz.finish().expect("gzip finish");
     std::fs::write(out.join(format!("{SHARD_ID}.nbt")), &framed).expect("write shard nbt");
-    let meta = serde_json::json!({
+    let mut meta = serde_json::json!({
         "prefab_id": format!("prefab/{SHARD_ID}"),
         "structure": { "file": format!("{SHARD_ID}.nbt"), "id": SHARD_ID, "size": SHARD_SIZE, "data_version": DATA_VERSION, "generator": "prefabs/gallery-generator (gallery-prefab-gen)" },
         "anchors": {},
         "lighting": { "profile": "lit", "measured_min_light": 8, "measured": "2026-08-20", "method": "derived: a lantern on a solid 3-cube; never entered, only stamped" },
         "license": { "source": "original", "spdx": "GPL-3.0-or-later", "note": "Original Delvewright project asset (pipeline-code license per prefabs/LICENSE-ASSETS.md). No third-party material ingested.", "provenance": "Generated deterministically by prefabs/gallery-generator (ADR-0006)." }
     });
-    let mut t = serde_json::to_string_pretty(&meta).expect("metadata serializes");
-    t.push(chr_nl());
-    std::fs::write(out.join(format!("{SHARD_ID}.json")), t.as_bytes()).expect("write shard json");
+    // A fragment source is a block of material something later cuts from, not a
+    // place a party stands, so it may genuinely have no walk plane — and a
+    // piece with none writes no `walk_y`. That is the honest document: it
+    // cannot be seated on a horizon that derives an origin from one, and
+    // `DW0886` is where a campaign that tries to learns it.
+    if let Some(w) = walkplane::walk_y(s.size, &cells) {
+        meta["walk_y"] = serde_json::json!(w);
+    }
+    document::write_preserving(&out.join(format!("{SHARD_ID}.json")), &meta);
     println!("{SHARD_ID}: fragment source written");
 }
 
@@ -2035,6 +2657,25 @@ fn yard_metadata() -> serde_json::Value {
         // own bytes at admission and again wherever a detail plan consumes it
         // (`DW0848`). 8×8 on the kit grid, three of clearance: an `alcove`.
         "footprint_class": "alcove",
+        // **The sides of this piece the player is meant to see** (`DW0885`).
+        // The yard is the one piece in this gallery whose outside the party's
+        // own air reaches: it is an `open_top` court, so the air a body stands
+        // in leaves through the sky, runs around the outside of the box and
+        // comes back under it. Its four walls and its top are inside the site
+        // plan's own volumes and buried by them; its FLOOR is the one face with
+        // nothing in front of it, hanging over a `void` world's nothing.
+        //
+        // So `down` is the whole list, and it is the piece saying that its
+        // underside is a deliberate finished face of a free-standing court
+        // rather than the cut edge of something that expected ground there.
+        //
+        // The list is exact, never a blanket: a side declared here that the
+        // world has in fact buried is refused by the same code, so padding it
+        // out to six reds rather than passing. That is what makes this a bound
+        // declaration and not a hatch — perturb it either way and the gallery
+        // goes red, which is what `gallery/probes/a-face-nothing-stands-in-front-of`
+        // pins.
+        "shown_faces": ["down"],
         "spatial_contract": {
             "entry": "yard",
             "spaces": {
@@ -2117,32 +2758,370 @@ fn write_yard(out: &Path) {
     gz.write_all(&nbt).expect("gzip write");
     let framed = gz.finish().expect("gzip finish");
     std::fs::write(out.join(format!("{YARD_ID}.nbt")), &framed).expect("write yard nbt");
-    let mut t = serde_json::to_string_pretty(&yard_metadata()).expect("metadata serializes");
-    t.push(chr_nl());
-    std::fs::write(out.join(format!("{YARD_ID}.json")), t.as_bytes()).expect("write yard json");
+    let mut yard = yard_metadata();
+    declare_walk_y(YARD_ID, &s, &mut yard);
+    document::write_preserving(&out.join(format!("{YARD_ID}.json")), &yard);
     println!(
         "{YARD_ID}: detail piece written — {}x{}x{} to fill the exit box's frame exactly",
         YARD_SIZE[0], YARD_SIZE[1], YARD_SIZE[2]
     );
 }
 
-fn chr_nl() -> char {
-    10 as u8 as char
+// ---------------------------------------------------------------------------
+// The BANK: a SITE — one box holding a building and the ground it stands on
+// ---------------------------------------------------------------------------
+
+/// The site piece's id.
+///
+/// # What a site is, and why the gallery owes one
+///
+/// Every other gallery piece is a *building*: it is the inside of something,
+/// and everything outside its box belongs to the horizon. A **site** is the
+/// other shape — one box holding the building together with its own ground, its
+/// bank running out to the box's own edge, and mass under that bank. It is what
+/// a whole-map zone exported by `delvec grammar expand` is, and until a
+/// one-area campaign could state its extent it had nowhere to stand: no base
+/// that builds terrain would take it.
+///
+/// Two things are only true of a site, and this piece is where the engine is
+/// asked both:
+///
+/// * **It is seated by its walk plane.** Its bank's top course has to be the
+///   ground outside it, or the party walks up to a cliff it cannot climb. A
+///   piece whose walk plane is its own floor course could not tell whether that
+///   was being done; this one carries three courses of mass under its bank, so
+///   the number moves it.
+/// * **Its outward faces are partly buried and partly seen, in one piece.**
+///   The courses under the bank stand in the valley's own ground; the parapet
+///   stands above it and the document answers for it. Both halves of `DW0885`
+///   bind here, exactly as they do on the quay — where the burying is done by
+///   water instead of by earth.
+const BANK_ID: &str = "gallery-bank";
+
+/// Extent: 24 × 12 × 24.
+///
+/// Wide enough that a body walks a real distance across the bank before it
+/// reaches the parapet, small enough that the valley around it builds in
+/// seconds.
+const BANK_SIZE: [i32; 3] = [24, 12, 24];
+
+/// The local y of the bank's top solid course — the ground a body stands on.
+///
+/// Three courses of mass sit under it (`0..=2`), and that mass is the half of
+/// the site a horizon has to bury. Seated on a `valley` the origin is
+/// `VALLEY_WALK_REF_Y - walk_y`, so this course lands exactly on the gap
+/// floor's own top course and the two grounds are one ground.
+const BANK_GRADE_Y: i32 = 3;
+
+/// How many courses of parapet stand above the bank, on the box's outer ring.
+const BANK_PARAPET: i32 = 3;
+
+/// The x range of the way in, cut through the parapet on the north face.
+const BANK_GATE_X: std::ops::RangeInclusive<i32> = 10..=13;
+
+/// A site: three courses of island mass, a bank across the whole footprint, and
+/// a parapet on the box's own edge with one way through it.
+///
+/// The parapet is what makes the piece answerable, for the quay's reason: a
+/// bank with nothing above its grade course would put every solid boundary cell
+/// at or below the ground outside, the valley would bury all of them, and the
+/// binding would prove nothing about `shown_faces`. What is wanted is both.
+fn build_bank() -> Structure {
+    let mut palette = Palette::new();
+    let mut blocks = Vec::new();
+    let [sx, sy, sz] = BANK_SIZE;
+    let parapet_top = BANK_GRADE_Y + BANK_PARAPET;
+    for x in 0..sx {
+        for y in 0..sy {
+            for z in 0..sz {
+                let ring = x == 0 || x == sx - 1 || z == 0 || z == sz - 1;
+                let gate = z == 0 && BANK_GATE_X.contains(&x);
+                let above_grade = y > BANK_GRADE_Y && y <= parapet_top;
+                // A lamp in the parapet, so the court is lit by something the
+                // piece carries rather than by the sky alone: `DW0210` measures
+                // under the DARKEST reachable sky, and a campaign is free to
+                // declare one this court would not survive on daylight.
+                let lamp = above_grade
+                    && y == BANK_GRADE_Y + 2
+                    && matches!(
+                        (x, z),
+                        (0, 0) | (0, 23) | (23, 0) | (23, 23) | (0, 11) | (23, 11) | (11, 23)
+                    );
+                let name = if y < BANK_GRADE_Y {
+                    "minecraft:stone"
+                } else if y == BANK_GRADE_Y {
+                    "minecraft:grass_block"
+                } else if lamp {
+                    "minecraft:sea_lantern"
+                } else if above_grade && ring && !gate {
+                    "minecraft:cobblestone"
+                } else {
+                    "minecraft:air"
+                };
+                blocks.push(BlockEntry {
+                    pos: [x, y, z],
+                    state: palette.idx(name, None),
+                });
+            }
+        }
+    }
+    Structure {
+        data_version: DATA_VERSION,
+        size: BANK_SIZE,
+        palette: palette.entries,
+        blocks,
+        entities: Vec::new(),
+    }
+}
+
+/// The site's document.
+///
+/// `shown_faces` names the four sides and nothing else, and the exactness is
+/// the demonstration. `down` is the island's underside, which stands in the
+/// valley's own ground; `up` is open sky over a court with no solid cell on the
+/// box's top plane, so there is no side there to show. `DW0885` refuses a
+/// declared side the world buried and a declared side of pure air alike, so
+/// padding this list out to six reds — which is what makes these four a bound
+/// declaration rather than a hatch.
+fn bank_metadata() -> serde_json::Value {
+    serde_json::json!({
+        "prefab_id": format!("prefab/{BANK_ID}"),
+        "structure": {
+            "file": format!("{BANK_ID}.nbt"),
+            "id": BANK_ID,
+            "size": BANK_SIZE,
+            "data_version": DATA_VERSION,
+            "generator": "prefabs/gallery-generator (gallery-prefab-gen)"
+        },
+        "anchors": {
+            "anchor/bank-arrival": {
+                "pos": [11, BANK_GRADE_Y + 1, 2],
+                "facing": "south",
+                "role": "entry",
+                "note": "just inside the way through the parapet — the cell a body arrives at"
+            },
+            "anchor/bank-court": {
+                "pos": [11, BANK_GRADE_Y + 1, 11],
+                "facing": "north",
+                "note": "the middle of the court, where the warden of the bank stands"
+            },
+            "anchor/bank-corner": {
+                "pos": [20, BANK_GRADE_Y + 1, 20],
+                "facing": "north",
+                "note": "the far corner of the bank, inside the parapet"
+            }
+        },
+        "shown_faces": ["east", "north", "south", "west"],
+        "lighting": {
+            "profile": "lit",
+            "measured_min_light": 15,
+            "measured": "2026-09-10",
+            "method": "derived: seven sea lanterns set in the parapet, over a court open to the sky"
+        },
+        "license": {
+            "source": "original",
+            "spdx": "GPL-3.0-or-later",
+            "note": "Original Delvewright project asset (pipeline-code license per prefabs/LICENSE-ASSETS.md). No third-party material ingested.",
+            "provenance": "Generated deterministically by prefabs/gallery-generator (ADR-0006)."
+        }
+    })
+}
+
+fn write_bank(out: &Path) {
+    let s = build_bank();
+    let cells = invariant_cells(&s);
+    invariants::assert_blocks_are_real(BANK_ID, &cells);
+    connections::assert_shape_is_stated(BANK_ID, &cells);
+
+    let nbt = fastnbt::to_bytes(&s).expect("structure serializes to NBT");
+    let mut gz = GzBuilder::new()
+        .mtime(0)
+        .write(Vec::new(), Compression::new(6));
+    gz.write_all(&nbt).expect("gzip write");
+    let framed = gz.finish().expect("gzip finish");
+    std::fs::write(out.join(format!("{BANK_ID}.nbt")), &framed).expect("write bank nbt");
+    let mut meta = bank_metadata();
+    declare_walk_y(BANK_ID, &s, &mut meta);
+    // The measured plane and the designed grade are one number or this piece is
+    // not the site it says it is: a body stands one course above the bank, and
+    // everything the seating rule derives is that number under the horizon's.
+    assert_eq!(
+        meta["walk_y"],
+        serde_json::json!(BANK_GRADE_Y + 1),
+        "{BANK_ID}: the measured walk plane must be the course above the bank"
+    );
+    document::write_preserving(&out.join(format!("{BANK_ID}.json")), &meta);
+    println!(
+        "{BANK_ID}: site piece written — {}x{}x{}, walk plane at local y={}, \
+         {BANK_GRADE_Y} course(s) of mass under the bank, {BANK_PARAPET} of parapet above it",
+        BANK_SIZE[0], BANK_SIZE[1], BANK_SIZE[2], meta["walk_y"],
+    );
+}
+
+// ---------------------------------------------------------------------------
+// The QUAY: the one gallery piece the party can walk OUTSIDE of, on a sea
+// ---------------------------------------------------------------------------
+
+/// The shore piece's id.
+///
+/// # What it is here to make askable
+///
+/// The gallery's ocean point was four sealed boxes. Every one of them is solid
+/// on all six sides and every one of those sides has nothing in front of it —
+/// and `DW0885` correctly judged none of them, because there is nowhere out
+/// there for a body to be. So the ocean's own power to bury an outward face —
+/// the thing that makes `ocean` seat a keep at all — was asserted nowhere, and
+/// the point's exposure binding read `0 judged` and `0 shown_faces
+/// declaration(s) of which 0 are bound`. A zero binding is a finding
+/// (spec-0060 §11.3).
+///
+/// A quay closes it. It is an open court on two courses of plinth, so the air a
+/// body stands in leaves through the sky and runs around the outside, and every
+/// one of its four walls is then judged. Its plinth stands below y=62 and the
+/// SEA buries it; its parapet stands above and the piece answers for it in
+/// `shown_faces`. One piece, both halves of the rule, on the base where the
+/// answer is the water itself.
+const QUAY_ID: &str = "gallery-quay";
+
+/// Extent before the shore lift; `to_shore` adds [`SHORE_PLINTH`] courses under
+/// it and grows the y.
+const QUAY_SIZE: [i32; 3] = [8, 4, 8];
+
+/// The tide pool cut into the quay's own paving, in `(x, z)`. Clear of the
+/// mooring anchor, and interior on every side so the water is the piece's own
+/// rather than a run off its face.
+const QUAY_POOL: [(i32, i32); 2] = [(1, 1), (1, 2)];
+
+/// Where a body stands on the quay, before the lift.
+const QUAY_SEAT: [i32; 3] = [4, 1, 4];
+
+/// A quay: paving, a parapet around three sides, and a mooring post.
+///
+/// The parapet is what makes the piece answerable. A court with nothing above
+/// its floor course would put every solid boundary cell under the sea, the sea
+/// would bury all of them, and the binding would be non-zero and prove nothing
+/// about `shown_faces`. What is wanted is both: cells the water buries and
+/// cells the document answers for.
+fn build_quay() -> Structure {
+    let mut palette = Palette::new();
+    let mut blocks = Vec::new();
+    let [sx, sy, sz] = QUAY_SIZE;
+    for x in 0..sx {
+        for y in 0..sy {
+            for z in 0..sz {
+                let edge = x == 0 || x == sx - 1 || z == 0 || z == sz - 1;
+                // The way in: the north face is left open at the paving's own
+                // level, so a body can walk off the quay into the water and
+                // back up onto it — the beach relationship the ocean datum is.
+                let opening = z == 0 && (3..=4).contains(&x);
+                let lamp =
+                    (1..=2).contains(&y) && matches!((x, z), (0, 0) | (0, 7) | (7, 0) | (7, 7));
+                let name = if y == 0 {
+                    "minecraft:polished_andesite"
+                } else if lamp {
+                    "minecraft:sea_lantern"
+                } else if (1..=2).contains(&y) && edge && !opening {
+                    "minecraft:polished_blackstone_bricks"
+                } else {
+                    "minecraft:air"
+                };
+                blocks.push(BlockEntry {
+                    pos: [x, y, z],
+                    state: palette.idx(name, None),
+                });
+            }
+        }
+    }
+    Structure {
+        data_version: DATA_VERSION,
+        size: QUAY_SIZE,
+        palette: palette.entries,
+        blocks,
+        entities: Vec::new(),
+    }
+}
+
+/// The quay's document, before the shore lift.
+///
+/// `shown_faces` names the four walls and NOTHING else, and the exactness is
+/// the whole demonstration. `down` is the plinth's underside, standing under
+/// the sea, which the water buries; `up` is open sky over a court with no solid
+/// cell on its top plane, so there is no side there to show. `DW0885` refuses a
+/// declared side the world has in fact buried and a declared side of pure air
+/// alike, so padding this list out to six reds — which is what makes these four
+/// a bound declaration rather than a hatch.
+fn quay_metadata() -> serde_json::Value {
+    serde_json::json!({
+        "prefab_id": format!("prefab/{QUAY_ID}"),
+        "structure": {
+            "file": format!("{QUAY_ID}.nbt"),
+            "id": QUAY_ID,
+            "size": QUAY_SIZE,
+            "data_version": DATA_VERSION,
+            "generator": "prefabs/gallery-generator (gallery-prefab-gen)"
+        },
+        "anchors": {
+            "quay-mooring": {
+                "pos": QUAY_SEAT,
+                "facing": "north",
+                "note": "where a body stands on the quay, clear of the tide pool"
+            }
+        },
+        "shown_faces": ["east", "north", "south", "west"],
+        "lighting": {
+            "profile": "lit",
+            "measured_min_light": 15,
+            "measured": "2026-09-07",
+            "method": "derived: four sea lanterns in the parapet corners, over a court open to the sky"
+        },
+        "license": {
+            "source": "original",
+            "spdx": "GPL-3.0-or-later",
+            "note": "Original Delvewright project asset (pipeline-code license per prefabs/LICENSE-ASSETS.md). No third-party material ingested.",
+            "provenance": "Generated deterministically by prefabs/gallery-generator (ADR-0006)."
+        }
+    })
+}
+
+fn write_quay(out: &Path) {
+    let court = build_quay();
+    let (s, meta) = to_shore(QUAY_ID, &court, &quay_metadata(), &QUAY_POOL);
+    let cells = invariant_cells(&s);
+    invariants::assert_blocks_are_real(QUAY_ID, &cells);
+    connections::assert_shape_is_stated(QUAY_ID, &cells);
+    let fluid = invariants::assert_fluid_is_contained(QUAY_ID, s.size, &cells);
+
+    let nbt = fastnbt::to_bytes(&s).expect("structure serializes to NBT");
+    let mut gz = GzBuilder::new()
+        .mtime(0)
+        .write(Vec::new(), Compression::new(6));
+    gz.write_all(&nbt).expect("gzip write");
+    let framed = gz.finish().expect("gzip finish");
+    std::fs::write(out.join(format!("{QUAY_ID}.nbt")), &framed).expect("write quay nbt");
+    document::write_preserving(&out.join(format!("{QUAY_ID}.json")), &meta);
+    println!(
+        "{QUAY_ID}: shore piece written — walk plane at local y={}, waterline {}, \
+         {} fluid source(s) examined, {} at the piece's own face",
+        meta["walk_y"], meta["waterline_y"], fluid.examined, fluid.at_edge
+    );
 }
 
 fn main() {
     let mut args = std::env::args().skip(1);
     let Some(out) = args.next() else {
         eprintln!(
-            "usage: gallery-prefab-gen <out_dir> [--skins <skins_dir>]   \
+            "usage: gallery-prefab-gen <out_dir> [--skins <skins_dir>] \
+              [--design <design_dir>]   \
              (a BUILD directory — spec-0039 §6 commits no generated bytes)"
         );
         std::process::exit(2);
     };
     let mut skins: Option<String> = None;
+    let mut design: Option<String> = None;
     while let Some(a) = args.next() {
         match a.as_str() {
             "--skins" => skins = args.next(),
+            "--design" => design = args.next(),
             other => {
                 eprintln!("gallery-prefab-gen: unknown argument `{other}`");
                 std::process::exit(2);
@@ -2165,10 +3144,18 @@ fn main() {
     write_annex(out);
     write_shard(out);
     write_yard(out);
+    write_quay(out);
+    write_bank(out);
     // The skins destination IS created: unlike the prefab directory it is not an
     // existing library the operator might mistype, it is a fixed subdirectory of
     // the campaign the caller just named, and it is gitignored build output.
     if let Some(s) = skins {
         write_skins(Path::new(&s));
+    }
+    // The design destination is created for the same reason the skins one is:
+    // it is a fixed subdirectory of the campaign the caller just named, and it
+    // is gitignored build output (spec-0039 §6 commits no generated bytes).
+    if let Some(d) = design {
+        write_design(Path::new(&d));
     }
 }

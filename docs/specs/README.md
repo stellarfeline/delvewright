@@ -67,3 +67,14 @@ machine-checkable assertions — each criterion maps to a CI check.
 | [spec-0055](spec-0055-the-scope-belongs-to-the-object.md) | The scope belongs to the object — an anchor reference resolves where its object stands | Proposed |
 | [spec-0056](spec-0056-one-rule-for-what-a-body-can-pass-through.md) | One rule for what a body can pass through — the block-shape authority shared by walk and compiler | Proposed |
 | [spec-0058](spec-0058-one-verb-details-a-place-inside-the-allocation-the-whole-handed.md) | One verb details a place inside the allocation the whole handed — `delvec detail`, the `handed/` binding, and stage 6 as one command | Proposed |
+| [spec-0059](spec-0059-a-box-is-placed-by-its-seam.md) | A box is placed by its seam, and the grid is derived | Proposed |
+| [spec-0060](spec-0060-a-horizon-and-a-piece-set-are-a-pair.md) | A horizon and a piece set are a pair | Proposed |
+| [spec-0061](spec-0061-the-approved-hour-is-the-built-hour.md) | The approved hour is the built hour — the design record states the sky, and the world is held to it | Proposed |
+| [spec-0062](spec-0062-danger-is-visible-or-the-engine-refuses-it.md) | Danger is visible, or the engine refuses it — a killing volume that reaches floor the player reads as safe is refused, and a flush hazard declares the block that shows it | Proposed |
+| [spec-0063](spec-0063-the-front-end-as-a-product.md) | The front end as a product — one plugin, a page that is a spine, an exact Init, an optional library | Proposed |
+| [spec-0064](spec-0064-the-last-player-leaves.md) | The last player leaves, and the delve is built again — an optional container flag that returns a running delve to its built state once the online count has read zero for a whole window | Accepted |
+| [spec-0065](spec-0065-furniture-is-not-floor.md) | Furniture is not floor — a piece declares its furniture as a named place, and the walk model never proves a body onto it | Accepted |
+| [spec-0066](spec-0066-a-body-stands-at-an-offset.md) | A body stands at an offset — one mark type, anchor plus integer offset, for every place a body is put, walked to or recorded at | Accepted |
+| [spec-0067](spec-0067-every-slot-the-game-has.md) | Every slot the game has — the equipment block names the pinned game's eight slots, and a piece is refused where the game would not show it on that body | Accepted |
+| [spec-0068](spec-0068-a-firework-is-an-effect.md) | A firework is an effect — one verb at a mark, the burst height fixed by the emitter, refused under a roof or beside a posted body | Accepted |
+| [spec-0069](spec-0069-a-showcase-camera-placed-by-hand.md) | A showcase camera placed by hand — when no agent-chosen render camera satisfies, a person places it in the running game and exactly that camera reaches the Chunky render | Accepted |

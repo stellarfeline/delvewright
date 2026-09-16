@@ -1,0 +1,290 @@
+{
+  "documents": {
+    "clean.yml": {
+      "jobs": {
+        "plan": {
+          "name": "work out whether there is anything to do",
+          "runs-on": "ubuntu-latest",
+          "steps": [
+            {
+              "uses": "./.github/actions/fixture-checkout"
+            },
+            {
+              "name": "decide",
+              "run": "echo \"publish=true\" >> \"$GITHUB_OUTPUT\"\n"
+            }
+          ]
+        },
+        "publish": {
+          "environment": "crates-io",
+          "name": "publish (owner approval)",
+          "needs": "plan",
+          "permissions": {
+            "actions": "read",
+            "contents": "read"
+          },
+          "runs-on": "ubuntu-latest",
+          "steps": [
+            {
+              "uses": "./.github/actions/fixture-checkout"
+            },
+            {
+              "env": {
+                "GH_TOKEN": "${{ github.token }}"
+              },
+              "name": "the gate actually bound",
+              "run": "bash tools/assert-run-approved.sh crates-io"
+            },
+            {
+              "uses": "./.github/actions/fixture-cache",
+              "with": {
+                "key": "fixture"
+              }
+            },
+            {
+              "name": "the irreversible act",
+              "run": "bash tools/does-the-thing.sh"
+            }
+          ]
+        }
+      },
+      "name": "fixture — a guarded environment job",
+      "permissions": {
+        "contents": "read"
+      },
+      "true": {
+        "push": {
+          "branches": [
+            "main"
+          ]
+        }
+      }
+    },
+    "environment-mapping.yml": {
+      "jobs": {
+        "publish": {
+          "environment": {
+            "name": "crates-io",
+            "url": "https://crates.io/crates/delvec"
+          },
+          "name": "publish (owner approval)",
+          "runs-on": "ubuntu-latest",
+          "steps": [
+            {
+              "uses": "./.github/actions/fixture-checkout"
+            },
+            {
+              "name": "the gate actually bound",
+              "run": "set -euo pipefail\n# Shell options and comments may lead; nothing else may.\nbash tools/assert-run-approved.sh crates-io\n"
+            },
+            {
+              "name": "the irreversible act",
+              "run": "bash tools/does-the-thing.sh"
+            }
+          ]
+        }
+      },
+      "name": "fixture — the environment is a mapping, and the run has a prelude",
+      "true": {
+        "push": {
+          "branches": [
+            "main"
+          ]
+        }
+      }
+    },
+    "environment-unreadable.yml": {
+      "jobs": {
+        "publish": {
+          "environment": {
+            "url": "https://crates.io/crates/delvec"
+          },
+          "name": "publish (owner approval)",
+          "runs-on": "ubuntu-latest",
+          "steps": [
+            {
+              "uses": "./.github/actions/fixture-checkout"
+            },
+            {
+              "name": "the gate actually bound",
+              "run": "bash tools/assert-run-approved.sh crates-io"
+            }
+          ]
+        }
+      },
+      "name": "fixture — the environment name cannot be read out of the declaration",
+      "true": {
+        "push": {
+          "branches": [
+            "main"
+          ]
+        }
+      }
+    },
+    "guard-not-first.yml": {
+      "jobs": {
+        "publish": {
+          "environment": "crates-io",
+          "name": "publish (owner approval)",
+          "runs-on": "ubuntu-latest",
+          "steps": [
+            {
+              "uses": "./.github/actions/fixture-checkout"
+            },
+            {
+              "name": "package first, ask afterwards",
+              "run": "bash tools/package.sh"
+            },
+            {
+              "name": "the gate actually bound",
+              "run": "bash tools/assert-run-approved.sh crates-io"
+            },
+            {
+              "name": "the irreversible act",
+              "run": "bash tools/does-the-thing.sh"
+            }
+          ]
+        }
+      },
+      "name": "fixture — the guard runs, but not first",
+      "true": {
+        "push": {
+          "branches": [
+            "main"
+          ]
+        }
+      }
+    },
+    "missing-guard.yml": {
+      "jobs": {
+        "publish": {
+          "environment": "crates-io",
+          "name": "publish (owner approval)",
+          "runs-on": "ubuntu-latest",
+          "steps": [
+            {
+              "uses": "./.github/actions/fixture-checkout"
+            },
+            {
+              "name": "the irreversible act",
+              "run": "bash tools/does-the-thing.sh"
+            }
+          ]
+        }
+      },
+      "name": "fixture — the guard step was never written",
+      "true": {
+        "push": {
+          "branches": [
+            "main"
+          ]
+        }
+      }
+    },
+    "no-run-step.yml": {
+      "jobs": {
+        "publish": {
+          "environment": "crates-io",
+          "name": "publish (owner approval)",
+          "runs-on": "ubuntu-latest",
+          "steps": [
+            {
+              "uses": "./.github/actions/fixture-checkout"
+            },
+            {
+              "uses": "./.github/actions/fixture-publish",
+              "with": {
+                "token": "${{ secrets.FIXTURE_TOKEN }}"
+              }
+            }
+          ]
+        }
+      },
+      "name": "fixture — a gated job that runs no command of its own",
+      "true": {
+        "push": {
+          "branches": [
+            "main"
+          ]
+        }
+      }
+    },
+    "no-steps.yml": {
+      "jobs": {
+        "publish": {
+          "environment": "crates-io",
+          "name": "publish (owner approval)",
+          "secrets": "inherit",
+          "uses": "./.github/workflows/reusable.yml"
+        }
+      },
+      "name": "fixture — a gated job that is a reusable-workflow call",
+      "true": {
+        "push": {
+          "branches": [
+            "main"
+          ]
+        }
+      }
+    },
+    "ungated.yml": {
+      "jobs": {
+        "build": {
+          "name": "build",
+          "runs-on": "ubuntu-latest",
+          "steps": [
+            {
+              "uses": "./.github/actions/fixture-checkout"
+            },
+            {
+              "run": "cargo build --workspace"
+            }
+          ]
+        }
+      },
+      "name": "fixture — no job declares an environment",
+      "true": {
+        "push": {
+          "branches": [
+            "main"
+          ]
+        }
+      }
+    },
+    "wrong-environment.yml": {
+      "jobs": {
+        "publish": {
+          "environment": "crates-io",
+          "name": "publish (owner approval)",
+          "runs-on": "ubuntu-latest",
+          "steps": [
+            {
+              "uses": "./.github/actions/fixture-checkout"
+            },
+            {
+              "name": "the gate actually bound",
+              "run": "bash tools/assert-run-approved.sh staging"
+            },
+            {
+              "name": "the irreversible act",
+              "run": "bash tools/does-the-thing.sh"
+            }
+          ]
+        }
+      },
+      "name": "fixture — the guard asserts somebody else's approval",
+      "true": {
+        "push": {
+          "branches": [
+            "main"
+          ]
+        }
+      }
+    }
+  },
+  "instrument": {
+    "psych": "5.3.1",
+    "ruby": "4.0.6"
+  },
+  "what": "Psych's parse of every fixture workflow in this directory, with every scalar stringified (tools/lib/workflow_yaml.normalize does the same to ours). Regenerate: python3 tools/tests/test_check_approval_guard.py"
+}

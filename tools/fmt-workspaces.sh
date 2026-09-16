@@ -6,25 +6,24 @@
 # ## What this exists to remove
 #
 # `cargo fmt --all` at the repository root reaches the ROOT workspace and nothing
-# else. Every `prefabs/*-generator` is a separate workspace on purpose, so the
-# obvious local command reports clean while a generator is unformatted — and CI's per-workspace fmt
-# steps then redden the pull request. That is not a hypothetical: a stage's new
-# generator code went in unformatted and reddened a pull request after a merge.
+# else. `prefabs/` is a separate workspace on purpose, so the obvious local
+# command reports clean while a generator is unformatted — and CI's per-workspace
+# fmt steps then redden the pull request. That is not a hypothetical: a stage's
+# new generator code went in unformatted and reddened a pull request after a merge.
 #
 # The defect is not the missing minute. It is that **the cost is paid by whoever
 # pushes rather than by whoever wrote it**, which is the same shape as every
 # other check this repository moves earlier. Widening the root workspace would
-# close it and is refused: those crates are separate for reasons measured in
-# /Cargo.toml, and a generator entering `crates/` would enter the shipped binary's
-# resolution.
+# close it and is refused: the root workspace `exclude`s `prefabs/` on purpose,
+# and a generator entering the engine's resolution is exactly what that prevents.
 #
 # ## The population is DERIVED, never listed
 #
 # CI listed its seven generators by hand. A hand-written list is a claim about a
 # repository that nothing re-checks, and this one was already wrong: the tree
-# holds TEN cargo workspaces and that list, plus the root and render steps, named
-# NINE. The tenth — `docs/experiments/m2-jigsaw-seed-stability/generator` — was
-# reached by no fmt step anywhere and is unformatted today. Nothing was red,
+# then held TEN cargo workspaces and that list, plus the root and render steps,
+# named NINE. The tenth — `docs/experiments/m2-jigsaw-seed-stability/generator` —
+# was reached by no fmt step anywhere and is unformatted today. Nothing was red,
 # because nothing looked.
 #
 # So the population here is `git ls-files -- '*Cargo.toml'`, and each manifest's
@@ -54,9 +53,10 @@
 #
 # ## What it does NOT do
 #
-# It does not run `clippy`. `prefabs/generator` carries two pre-existing style
-# lints that are somebody's own pull request, and bundling them in here would be a
-# check nobody can go green under today.
+# It does not run `clippy`. Each workspace's own CI job does that — `rust (fmt,
+# clippy, test)` for the root and `prefab generators (invariants + determinism)`
+# for `prefabs/` — and a sweep that ran both would be a second authority on which
+# lints each workspace is held to.
 #
 # It does not format the harness (TypeScript, `harness/`). That is prettier's
 # subject and a different command; this one is about `cargo fmt`'s reach.

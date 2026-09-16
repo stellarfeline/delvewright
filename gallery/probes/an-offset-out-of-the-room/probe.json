@@ -1,0 +1,17 @@
+{
+  "code": "DW0897",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "replace",
+      "path": "/content/actors/5/offset",
+      "value": [
+        40,
+        0,
+        0
+      ]
+    }
+  ],
+  "units": [],
+  "why": "The hall's page stands at `anchor/usher` plus an offset of four cells east, on the speaking row. This edit writes forty instead of four: the usher's anchor is at hall-local x 13, the hall is 31 cells wide, and the page's cell lands 22 cells past the hall's east wall, in ground no piece put there. An offset says where beside a place, never which place, so a mark's cell lies inside the placed piece its anchor belongs to, and the build refuses the mark with the anchor, the offset, the cell it reaches and the box it left. It declares no unit: `offset` on an actor is a surface the primary already binds at four cells, and what the engine refuses is arithmetic that carries a body out of the room its anchor names. What makes it worth committing is what an offset would be without the refusal: a second placement vocabulary wearing a small field, standing a body on the horizon or inside the next area, where every proof that reads a body as being in its anchor's room would judge the wrong room. It is refused by `build`, not `validate`: the piece's box is known only once the anchors resolve."
+}

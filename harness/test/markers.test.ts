@@ -84,14 +84,28 @@ test("a campaign id is matched exactly — another campaign's marker is a differ
 // --- the wave census channel -------------------------------------
 
 test("a census summary parses into the server's own counts", () => {
-  assert.deepEqual(parseCensusSummary("[dw:census the-drowned-bell wave/gate-assault 7 2 1 1]"), {
+  assert.deepEqual(parseCensusSummary("[dw:census the-drowned-bell wave/gate-assault 7 2 1 1 3]"), {
     campaignId: "the-drowned-bell",
     wave: "wave/gate-assault",
     seq: 7,
     present: 2,
     branded: 1,
     damaged: 1,
+    credited: 3,
   });
+});
+
+// `credited` is the only field about the FALLEN. It is what separates a cohort
+// the party felled from one a lethal volume ate, which the countdown stopped
+// distinguishing on purpose.
+test("the credited count is read off the census, not inferred from the survivors", () => {
+  const a = parseCensusSummary("[dw:census c wave/x 1 0 0 0 3]");
+  const b = parseCensusSummary("[dw:census c wave/x 1 0 0 0 0]");
+  assert.equal(a?.credited, 3);
+  assert.equal(b?.credited, 0);
+  // Same survivors, same brand, same damage: nothing but `credited` tells the
+  // two apart, and the floor gate's verdict turns on exactly that.
+  assert.equal(a?.present, b?.present);
 });
 
 test("a census mob line carries position and health as real units", () => {
@@ -112,12 +126,16 @@ test("a census mob line carries position and health as real units", () => {
 
 test("the census channel is as anchored as the completion channel", () => {
   for (const line of [
-    "[dw:census the-drowned-bell wave/gate-assault 7 2 1]", // one field short
-    "[dw:census the-drowned-bell obj/hold-the-gate 7 2 1 1]", // not a wave id
-    "[dw:census the-drowned-bell wave/gate-assault 7 2 1 1] ", // trailing space
-    " [dw:census the-drowned-bell wave/gate-assault 7 2 1 1]", // leading space
-    "look out: [dw:census the-drowned-bell wave/gate-assault 7 2 1 1]", // substring
-    "[dw:census the-drowned-bell wave/gate-assault 7 2 1 x]", // non-numeric
+    "[dw:census the-drowned-bell wave/gate-assault 7 2 1 1]", // one field short
+    "[dw:census the-drowned-bell obj/hold-the-gate 7 2 1 1 1]", // not a wave id
+    "[dw:census the-drowned-bell wave/gate-assault 7 2 1 1 1] ", // trailing space
+    " [dw:census the-drowned-bell wave/gate-assault 7 2 1 1 1]", // leading space
+    "look out: [dw:census the-drowned-bell wave/gate-assault 7 2 1 1 1]", // substring
+    "[dw:census the-drowned-bell wave/gate-assault 7 2 1 1 x]", // non-numeric
+    // A holder with no score renders as the empty string, so a census whose
+    // credited ledger was never seeded arrives with a hole in it. It must not
+    // parse: a line the harness half-reads is worse than one it rejects.
+    "[dw:census the-drowned-bell wave/gate-assault 7 2 1 1 ]",
     "",
   ]) {
     assert.equal(parseCensusSummary(line), undefined, JSON.stringify(line));

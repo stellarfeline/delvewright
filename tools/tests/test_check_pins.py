@@ -320,13 +320,257 @@ why = "the judge"
         f"      - uses: {ACTION}\n"
         f"        with:\n          image: {DIGEST}\n"
         f"      - run: python3 tools/check-pins.py --online engine\n"
-        f"      - run: cargo build -p delvewright-admit --release\n",
+        f"      - run: cargo build -p delvec --release\n",
         encoding="utf-8",
     )
     subprocess.run(["git", "-C", str(repo), "add", "-A"], check=True)
     r = run(repo)
     assert r.returncode == 1
     assert "`builds` does not name it" in r.stderr
+
+
+# ---------------------------------------------------------------------------
+# `held` — a pin that names an instrument, judged as one unit with the site
+# that builds it. The content repo's admit-ref pin measured that `builds = []`
+# does not silence `track` for a site that really builds the crate: the offline
+# builds-omission check (above) catches exactly that lie. `held` is the honest
+# alternative, so its own vacuity is asserted the same way `track`'s is —
+# offline, structurally, with no checkout needed — and its online behaviour
+# (drift printed as information, never a finding) is asserted against a real
+# upstream history, paired with a `track` fixture proving the addition left
+# `track`'s own drift-is-a-red behaviour untouched.
+# ---------------------------------------------------------------------------
+
+
+def make_upstream_repo(
+    tmp_path_factory: pytest.TempPathFactory, name: str = "upstream", n: int = 3
+) -> tuple[Path, list[str]]:
+    """A minimal real git history: `n` commits, oldest first, no remote."""
+    upstream = tmp_path_factory.mktemp(name)
+    subprocess.run(["git", "-C", str(upstream), "init", "-q"], check=True)
+    subprocess.run(
+        ["git", "-C", str(upstream), "config", "user.email", "t@example.com"],
+        check=True,
+    )
+    subprocess.run(["git", "-C", str(upstream), "config", "user.name", "t"], check=True)
+    shas = []
+    for i in range(n):
+        (upstream / f"f{i}.txt").write_text(str(i), encoding="utf-8")
+        subprocess.run(["git", "-C", str(upstream), "add", "-A"], check=True)
+        subprocess.run(["git", "-C", str(upstream), "commit", "-q", "-m", f"c{i}"], check=True)
+        shas.append(
+            subprocess.run(
+                ["git", "-C", str(upstream), "rev-parse", "HEAD"],
+                capture_output=True,
+                text=True,
+                check=True,
+            ).stdout.strip()
+        )
+    return upstream, shas
+
+
+def test_held_pin_must_say_what_it_was_reviewed_against(repo: Path) -> None:
+    write_registry(repo, COMPLETE + f"""
+[[pin]]
+id = "engine"
+value = "{REV}"
+sites = [".github/workflows/audit.yml"]
+repo = "stellarfeline/delvewright"
+policy = "held"
+judged_by = ".github/workflows/audit.yml"
+why = "the judge"
+""")
+    (repo / ".github" / "workflows" / "audit.yml").write_text(
+        f"name: audit\nenv:\n  E: {REV}\njobs:\n  a:\n    steps:\n"
+        f"      - uses: {ACTION}\n"
+        f"        with:\n          image: {DIGEST}\n",
+        encoding="utf-8",
+    )
+    subprocess.run(["git", "-C", str(repo), "add", "-A"], check=True)
+    r = run(repo)
+    assert r.returncode == 1
+    assert "must carry `reviewed`" in r.stderr
+
+
+def test_a_complete_held_pin_passes_offline_though_its_site_builds_a_crate(
+    repo: Path,
+) -> None:
+    """`held` needs no `builds` at all — that is the whole point of it.
+
+    `test_builds_that_omits_what_the_site_builds_is_a_finding` shows a `track`
+    pin cannot silence itself by emptying `builds` while its site still builds
+    something real: the offline check catches the lie. This is the honest
+    alternative, on the identical site, and it passes without ever declaring
+    `builds`.
+    """
+    write_registry(repo, COMPLETE + f"""
+[[pin]]
+id = "engine"
+value = "{REV}"
+sites = [".github/workflows/audit.yml"]
+repo = "stellarfeline/delvewright"
+policy = "held"
+judged_by = ".github/workflows/audit.yml"
+reviewed = "{REV}"
+why = "judged the interval ending here; the admission rules it enforces did not change"
+""")
+    (repo / ".github" / "workflows" / "audit.yml").write_text(
+        f"name: audit\nenv:\n  E: {REV}\njobs:\n  a:\n    steps:\n"
+        f"      - uses: {ACTION}\n"
+        f"        with:\n          image: {DIGEST}\n"
+        f"      - run: python3 tools/check-pins.py --online engine\n"
+        f"      - run: cargo build -p delvec --release\n",
+        encoding="utf-8",
+    )
+    subprocess.run(["git", "-C", str(repo), "add", "-A"], check=True)
+    r = run(repo)
+    assert r.returncode == 0, r.stderr
+
+
+def test_held_policy_prints_drift_as_information_not_a_finding(
+    repo: Path, tmp_path_factory: pytest.TempPathFactory
+) -> None:
+    """Red -> green, half one: upstream ahead of the held value is not a finding."""
+    upstream, shas = make_upstream_repo(tmp_path_factory)
+    value = shas[0]
+    (repo / ".github" / "workflows" / "judge.yml").write_text(
+        "name: judge\njobs:\n  a:\n    steps:\n"
+        "      - run: python3 tools/check-pins.py --online judge\n"
+        f"      - run: git checkout {value}\n",
+        encoding="utf-8",
+    )
+    subprocess.run(["git", "-C", str(repo), "add", "-A"], check=True)
+    write_registry(repo, COMPLETE + f"""
+[[pin]]
+id = "judge"
+value = "{value}"
+sites = [".github/workflows/judge.yml"]
+repo = "stellarfeline/delvewright-campaigns"
+policy = "held"
+judged_by = ".github/workflows/judge.yml"
+reviewed = "{value}"
+why = "judged the interval ending here; the admission rules it enforces did not change"
+""")
+    r = run(repo, "--online", "--checkout", f"judge={upstream}")
+    assert r.returncode == 0, r.stderr
+    assert "commit(s) behind" in r.stdout
+    assert "drift is not a finding for this policy" in r.stdout
+
+
+def test_held_policy_missing_why_is_a_finding(
+    repo: Path, tmp_path_factory: pytest.TempPathFactory
+) -> None:
+    """Red -> green, half two: the same fixture with `why` removed reds, naming it."""
+    upstream, shas = make_upstream_repo(tmp_path_factory)
+    value = shas[0]
+    (repo / ".github" / "workflows" / "judge.yml").write_text(
+        "name: judge\njobs:\n  a:\n    steps:\n"
+        "      - run: python3 tools/check-pins.py --online judge\n"
+        f"      - run: git checkout {value}\n",
+        encoding="utf-8",
+    )
+    subprocess.run(["git", "-C", str(repo), "add", "-A"], check=True)
+    write_registry(repo, COMPLETE + f"""
+[[pin]]
+id = "judge"
+value = "{value}"
+sites = [".github/workflows/judge.yml"]
+repo = "stellarfeline/delvewright-campaigns"
+policy = "held"
+judged_by = ".github/workflows/judge.yml"
+reviewed = "{value}"
+""")
+    r = run(repo, "--online", "--checkout", f"judge={upstream}")
+    assert r.returncode == 1
+    assert "must carry `why`" in r.stderr
+
+
+def test_held_policy_workflow_literal_that_differs_from_the_value_is_a_finding(
+    repo: Path, tmp_path_factory: pytest.TempPathFactory
+) -> None:
+    """Red -> green, half two: the workflow naming a DIFFERENT commit reds, naming it.
+
+    The value and what CI actually builds from are two separate facts; a `held`
+    pin claims they agree, and this is the check that could catch it lying.
+    """
+    upstream, shas = make_upstream_repo(tmp_path_factory)
+    value, other = shas[0], shas[1]
+    (repo / ".github" / "workflows" / "judge.yml").write_text(
+        "name: judge\njobs:\n  a:\n    steps:\n"
+        "      - run: python3 tools/check-pins.py --online judge\n"
+        f"      - run: git checkout {other}\n",
+        encoding="utf-8",
+    )
+    subprocess.run(["git", "-C", str(repo), "add", "-A"], check=True)
+    write_registry(repo, COMPLETE + f"""
+[[pin]]
+id = "judge"
+value = "{value}"
+sites = [".github/workflows/judge.yml"]
+repo = "stellarfeline/delvewright-campaigns"
+policy = "held"
+judged_by = ".github/workflows/judge.yml"
+reviewed = "{value}"
+why = "judged the interval ending here; the admission rules it enforces did not change"
+""")
+    r = run(repo, "--online", "--checkout", f"judge={upstream}")
+    assert r.returncode == 1
+    assert "does not carry" in r.stderr
+    assert value in r.stderr
+
+
+def test_track_still_reds_when_upstream_changed_its_watched_sources(
+    repo: Path, tmp_path_factory: pytest.TempPathFactory
+) -> None:
+    """Perturbation check: adding `held` must not weaken `track`'s own drift red.
+
+    Same shape of change `held` is built to stop being a finding — a commit
+    landing after `reviewed` that touches the sources the site builds — still
+    reds under `track`, unchanged.
+    """
+    upstream = tmp_path_factory.mktemp("upstream-track")
+    subprocess.run(["git", "-C", str(upstream), "init", "-q"], check=True)
+    subprocess.run(
+        ["git", "-C", str(upstream), "config", "user.email", "t@example.com"],
+        check=True,
+    )
+    subprocess.run(["git", "-C", str(upstream), "config", "user.name", "t"], check=True)
+    foo = upstream / "crates" / "foo"
+    (foo / "src").mkdir(parents=True)
+    (foo / "Cargo.toml").write_text('[package]\nname = "foo"\nversion = "0.1.0"\n', encoding="utf-8")
+    (foo / "src" / "lib.rs").write_text("// v1\n", encoding="utf-8")
+    subprocess.run(["git", "-C", str(upstream), "add", "-A"], check=True)
+    subprocess.run(["git", "-C", str(upstream), "commit", "-q", "-m", "c0"], check=True)
+    value = subprocess.run(
+        ["git", "-C", str(upstream), "rev-parse", "HEAD"],
+        capture_output=True, text=True, check=True,
+    ).stdout.strip()
+    (foo / "src" / "lib.rs").write_text("// v2\n", encoding="utf-8")
+    subprocess.run(["git", "-C", str(upstream), "add", "-A"], check=True)
+    subprocess.run(["git", "-C", str(upstream), "commit", "-q", "-m", "c1: touch foo"], check=True)
+
+    (repo / ".github" / "workflows" / "judge.yml").write_text(
+        "name: judge\njobs:\n  a:\n    steps:\n"
+        "      - run: python3 tools/check-pins.py --online engine\n"
+        "      - run: cargo build -p foo --release\n",
+        encoding="utf-8",
+    )
+    subprocess.run(["git", "-C", str(repo), "add", "-A"], check=True)
+    write_registry(repo, COMPLETE + f"""
+[[pin]]
+id = "engine"
+value = "{value}"
+sites = [".github/workflows/judge.yml"]
+repo = "stellarfeline/delvewright"
+policy = "track"
+judged_by = ".github/workflows/judge.yml"
+reviewed = "{value}"
+builds = ["foo"]
+why = "the judge"
+""")
+    r = run(repo, "--online", "--checkout", f"engine={upstream}")
+    assert r.returncode == 1
+    assert "The instrument moved" in r.stderr
 
 
 def test_a_checkout_at_a_branch_is_a_pin_too(repo: Path) -> None:
@@ -581,7 +825,7 @@ def test_a_dockerfile_directive_wrapped_into_rust_prose_is_not_a_fetch_site(
     write_registry(repo, COMPLETE)
     add_file(
         repo,
-        "crates/compiler/src/nav.rs",
+        "crates/delvec/src/compiler/nav.rs",
         'pub const SOFT_LOCK: &str = "\\\n'
         "             What this red claims is what declarations can carry: \\\n"
         "             NOTHING THIS CAMPAIGN DECLARES SEPARATES THIS RETRY \\\n"
@@ -596,7 +840,7 @@ def test_a_workflow_directive_quoted_in_rust_is_not_a_fetch_site(repo: Path) -> 
     write_registry(repo, COMPLETE)
     add_file(
         repo,
-        "crates/compiler/src/docs.rs",
+        "crates/delvec/src/compiler/docs.rs",
         "/// The shape a workflow step takes:\n"
         'pub const STEP: &str = r#"\n'
         "    - uses: " + ACTION + "\n"
@@ -612,9 +856,9 @@ def test_a_cargo_dependency_line_quoted_in_rust_is_not_a_fetch_site(
     write_registry(repo, COMPLETE)
     add_file(
         repo,
-        "crates/compiler/src/manifest.rs",
+        "crates/delvec/src/compiler/manifest.rs",
         'pub const EXAMPLE: &str = r#"\n'
-        '    delvewright-grammar = { git = "https://example.invalid/g" }\n'
+        '    example-crate = { git = "https://example.invalid/g" }\n'
         '"#;\n',
     )
     r = run(repo)
@@ -629,14 +873,14 @@ def test_a_rust_file_that_really_runs_docker_is_a_finding(repo: Path) -> None:
     write_registry(repo, COMPLETE)
     add_file(
         repo,
-        "crates/orchestrator/src/stage.rs",
+        "crates/delvec/src/orchestrator/stage.rs",
         "pub fn stage() {\n"
         '    Command::new("sh").arg("-c").arg("docker run --rm base:latest");\n'
         "}\n",
     )
     r = run(repo)
     assert r.returncode == 1
-    assert "crates/orchestrator/src/stage.rs" in r.stderr
+    assert "crates/delvec/src/orchestrator/stage.rs" in r.stderr
     assert "no FETCH_SITES pattern covers it" in r.stderr
 
 
@@ -644,14 +888,14 @@ def test_a_rust_file_that_clones_a_repository_is_a_finding(repo: Path) -> None:
     write_registry(repo, COMPLETE)
     add_file(
         repo,
-        "crates/orchestrator/src/fetch.rs",
+        "crates/delvec/src/orchestrator/fetch.rs",
         "pub fn fetch() {\n"
         '    Command::new("sh").arg("-c").arg("git clone https://example.invalid/r");\n'
         "}\n",
     )
     r = run(repo)
     assert r.returncode == 1
-    assert "crates/orchestrator/src/fetch.rs" in r.stderr
+    assert "crates/delvec/src/orchestrator/fetch.rs" in r.stderr
 
 
 def test_a_dockerfile_the_site_list_does_not_name_is_a_finding(repo: Path) -> None:
@@ -691,7 +935,7 @@ def test_the_fetch_verb_enumeration_states_what_it_examined(repo: Path) -> None:
     change is meant to be looked at rather than absorbed.
     """
     write_registry(repo, COMPLETE)
-    add_file(repo, "crates/compiler/src/nav.rs", "pub fn nav() {}\n")
+    add_file(repo, "crates/delvec/src/compiler/nav.rs", "pub fn nav() {}\n")
     r = run(repo)
     assert r.returncode == 0, r.stdout + r.stderr
     line = next(

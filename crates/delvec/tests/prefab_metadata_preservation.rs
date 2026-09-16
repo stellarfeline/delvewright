@@ -51,8 +51,8 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use delvewright_grammar::library::spatial_contract;
-use delvewright_grammar::{Box3, ExpandOptions, export_prefab};
+use delvec::grammar::library::spatial_contract;
+use delvec::grammar::{Box3, ExpandOptions, export_prefab};
 
 /// `delvec prefab …`: the one binary, entered at the prefab-admission surface.
 fn prefab() -> Command {
@@ -70,7 +70,7 @@ const HARDWARE_ANCHOR: &str = "anchor/watcher-1";
 /// This list is checked against the binary's own `--help` below, so a new
 /// subcommand fails this test until someone classifies it — the classification
 /// cannot be forgotten, because there is nowhere to forget it.
-const WRITES_METADATA: &[&str] = &["socket", "anchor", "lighting"];
+const WRITES_METADATA: &[&str] = &["socket", "anchor", "lighting", "planes"];
 const DOES_NOT_WRITE_METADATA: &[&str] = &[
     "audit",          // reads the `.nbt`, writes only a report
     "resolve-jigsaw", // rewrites the `.nbt`, never the metadata
@@ -78,6 +78,8 @@ const DOES_NOT_WRITE_METADATA: &[&str] = &[
     "gallery",        // reads metadata, writes a world
     "curate",         // reads a server log, writes a report
     "curate-merge",   // writes catalog cards, a different document
+    "seating",        // reads every document and its bytes, writes only a verdict
+    "anchors",        // reads every document's anchors and roles, writes only a report
     "help",
 ];
 
@@ -87,6 +89,7 @@ const DOES_NOT_WRITE_METADATA: &[&str] = &[
 /// proving nothing.
 const AT_RISK: &[&[&str]] = &[
     &["license", "generated_by"],
+    &["walk_y"],
     &["waterline_y"],
     &["spatial_contract"],
     &["from_the_future"],
@@ -244,7 +247,7 @@ fn every_metadata_writing_step_preserves_the_rest_of_the_document() {
         };
         for case in cases {
             let (nbt, json) = exported_piece(case);
-            let before = read_json(&json);
+            let mut before = read_json(&json);
             for path in AT_RISK {
                 let owned: Vec<String> = path.iter().map(|s| s.to_string()).collect();
                 assert!(
@@ -332,8 +335,36 @@ fn every_metadata_writing_step_preserves_the_rest_of_the_document() {
                     ]
                 }
                 "lighting" => {
+                    // **The fixture is un-measured first, on purpose.** The
+                    // expansion this document came from now measures its own
+                    // light, so `--write` writing the same figure back would
+                    // leave the document untouched and the `assert_ne!` below —
+                    // the guard that keeps the preservation check from being
+                    // vacuous — would fire on a step that did nothing wrong.
+                    // Blanking the block restores the state this verb exists for:
+                    // a document that does not carry the measurement yet, which
+                    // is every piece that came from somewhere other than an
+                    // expansion.
+                    let mut doc = read_json(&json);
+                    doc["lighting"] = serde_json::json!({ "profile": "unmeasured" });
+                    std::fs::write(
+                        &json,
+                        format!("{}\n", serde_json::to_string_pretty(&doc).unwrap()),
+                    )
+                    .unwrap();
+                    before = read_json(&json);
                     run(&["lighting", nbt_s, "--write"]);
                     vec![vec!["lighting"]]
+                }
+                // The two numbers a piece states about its own bytes, and
+                // nothing else. `waterline_y` is in `AT_RISK` above and is a
+                // path this step OWNS, which is why the fixture's declared
+                // waterline is re-measured rather than preserved here — the
+                // whole point of the verb is that the document's copy of a
+                // measurement is not the authority the blocks are.
+                "planes" => {
+                    run(&["planes", nbt_s, "--write"]);
+                    vec![vec!["walk_y"], vec!["waterline_y"]]
                 }
                 other => panic!("no invocation written for `{other}`"),
             };
@@ -354,11 +385,37 @@ fn every_metadata_writing_step_preserves_the_rest_of_the_document() {
                 after["license"]["generated_by"], before["license"]["generated_by"],
                 "`{case}` dropped or altered the regeneration inputs"
             );
-            assert_eq!(
-                after["waterline_y"], before["waterline_y"],
-                "`{case}` dropped the declared waterline — `DW0344` would then examine one piece \
-                 fewer and stay green"
-            );
+            // Quantified over the steps that do NOT own this path, which is
+            // every step but one. `planes` exists to re-measure it, so demanding
+            // preservation of it there would be demanding that the verb not do
+            // the thing it is for — and a fiction it removed would be a
+            // "preserved" field. What `planes` owes instead is that the document
+            // it leaves is one `DW0887` accepts, which is stronger than equality
+            // and is asserted below.
+            if !owned.iter().any(|p| p == &["waterline_y"]) {
+                assert_eq!(
+                    after["waterline_y"], before["waterline_y"],
+                    "`{case}` dropped the declared waterline — `DW0344` would then examine one \
+                     piece fewer and stay green"
+                );
+            } else {
+                let audit = prefab()
+                    .args(["audit", nbt_s])
+                    .output()
+                    .expect("delvec prefab audit runs");
+                let report: serde_json::Value = serde_json::from_slice(&audit.stdout)
+                    .expect("the audit report is JSON on stdout");
+                assert_eq!(
+                    report["waterline"]["refused"], 0,
+                    "`{case}` owns `waterline_y` and must leave a number the bytes bear out \
+                     (`DW0887`): {report}"
+                );
+                assert_eq!(
+                    after["waterline_y"], report["waterline"]["top_authored_water_y"],
+                    "`{case}` wrote a waterline that is not this piece's top authored water \
+                     block: {report}"
+                );
+            }
             assert_eq!(
                 after["anchors"][HARDWARE_ANCHOR]["trigger_block"],
                 before["anchors"][HARDWARE_ANCHOR]["trigger_block"],

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Regenerate `crates/compiler/data/item-combat-1.21.11.json` from the pinned MC
+"""Regenerate `crates/delvec/data/item-combat-1.21.11.json` from the pinned MC
 1.21.11 item-components summary — the vendored `item id -> combat stats` table the
 spec-0023 winnability arithmetic reads (`DW0472`, `DW0473`).
 
@@ -52,7 +52,7 @@ is projectile code, not an attribute — which is why `minecraft:bow` is absent 
 the compiler must never read it as "deals no damage"; see `combat.rs`).
 
     python3 tools/extract-item-combat-stats.py item_components.min.json \
-      crates/compiler/data/item-combat-1.21.11.json
+      crates/delvec/data/item-combat-1.21.11.json
 """
 
 import hashlib
@@ -91,7 +91,7 @@ def main(argv: list[str]) -> int:
             f"source SHA-256 mismatch\n  expected {EXPECTED_SOURCE_SHA256}\n  got      {got}\n"
             "This table is pinned to MC 1.21.11 (ADR-0009). Re-fetch the 1.21.11-summary\n"
             "file, or — if the MC pin genuinely moved — update the pin here AND in\n"
-            "crates/compiler/data/PROVENANCE.md in the same commit.\n"
+            "crates/delvec/data/PROVENANCE.md in the same commit.\n"
         )
         return 2
 

@@ -16,9 +16,9 @@ mod common;
 
 use std::path::{Path, PathBuf};
 
-use delvewright_compiler::flow::{DW_STATE_GATE_CLEARED, Flow};
-use delvewright_compiler::load::load_campaign_dir;
-use delvewright_compiler::statepath;
+use delvec::compiler::flow::{DW_STATE_GATE_CLEARED, Flow};
+use delvec::compiler::load::load_campaign_dir;
+use delvec::compiler::statepath;
 use delvewright_dsl::{Campaign, Diagnostic, parse_campaign};
 
 fn fixture_dir() -> PathBuf {

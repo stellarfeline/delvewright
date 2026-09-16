@@ -26,11 +26,12 @@ mod common;
 
 use std::collections::BTreeMap;
 
-use delvewright_compiler::commands::CommandTree;
-use delvewright_compiler::emit::{self, BuildOutput};
-use delvewright_compiler::plan::Plan;
-use delvewright_compiler::registry::PrefabRegistry;
+use delvec::compiler::commands::CommandTree;
+use delvec::compiler::emit::{self, BuildOutput};
+use delvec::compiler::plan::Plan;
+use delvec::compiler::registry::PrefabRegistry;
 use delvewright_dsl::{Campaign, RawCampaign, parse_campaign};
+use std::sync::LazyLock;
 
 fn read_hw(name: &str) -> String {
     std::fs::read_to_string(common::hello_world_dir().join(name)).unwrap()
@@ -44,8 +45,10 @@ fn read_hw(name: &str) -> String {
 ///
 /// The third leg's origin must be `anchor/exit` (the last leg its own branch
 /// can prove ran), never `anchor/keeper-stand` (the flee leg's destination).
-const QUESTS_BRANCHED: &str = r#"{
-  "dsl_version": "0.19.0",
+static QUESTS_BRANCHED: LazyLock<String> = LazyLock::new(|| {
+    common::at_dsl_version(
+        r#"{
+  "dsl_version": "%dsl_version%",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {
@@ -61,20 +64,22 @@ const QUESTS_BRANCHED: &str = r#"{
         "on_objective_complete": {
           "obj/talk": [
             { "type": "open-gate", "anchor": "anchor/door" },
-            { "type": "move-npc", "npc": "npc/keeper", "to_anchor": "anchor/exit" },
-            { "type": "move-npc", "npc": "npc/keeper", "to_anchor": "anchor/keeper-stand",
-              "requires_flags": ["flag/flee"] }
+            { "type": "move-npc", "npc": "npc/keeper", "to": { "anchor": "anchor/exit" } },
+            { "type": "move-npc",
+              "when": { "requires_flags": ["flag/flee"] }, "npc": "npc/keeper", "to": { "anchor": "anchor/keeper-stand" } }
           ]
         },
         "on_complete": [
-          { "type": "move-npc", "npc": "npc/keeper", "to_anchor": "anchor/door",
-            "requires_flags": ["flag/wait"] },
+          { "type": "move-npc",
+            "when": { "requires_flags": ["flag/wait"] }, "npc": "npc/keeper", "to": { "anchor": "anchor/door" } },
           { "type": "campaign-complete" }
         ]
       }
     ]
   }
-}"#;
+}"#,
+    )
+});
 
 /// Two beats walk one body to ONE mark from two different places — the island's
 /// `anchor/gangplank` shape. Leg 1 is unconditional to `anchor/exit`; leg 2 is
@@ -83,8 +88,10 @@ const QUESTS_BRANCHED: &str = r#"{
 /// unconditional to `anchor/exit` (from `anchor/exit` itself is degenerate, so
 /// leg 1 goes to `keeper-stand` instead). Kept deliberately small: the point is
 /// that `(body, destination)` alone cannot key a driver.
-const QUESTS_SHARED_MARK: &str = r#"{
-  "dsl_version": "0.19.0",
+static QUESTS_SHARED_MARK: LazyLock<String> = LazyLock::new(|| {
+    common::at_dsl_version(
+        r#"{
+  "dsl_version": "%dsl_version%",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {
@@ -100,22 +107,26 @@ const QUESTS_SHARED_MARK: &str = r#"{
         "on_objective_complete": {
           "obj/talk": [
             { "type": "open-gate", "anchor": "anchor/door" },
-            { "type": "move-npc", "npc": "npc/keeper", "to_anchor": "anchor/door",
-              "requires_flags": ["flag/flee"] },
-            { "type": "move-npc", "npc": "npc/keeper", "to_anchor": "anchor/exit",
-              "requires_flags": ["flag/flee"] },
-            { "type": "move-npc", "npc": "npc/keeper", "to_anchor": "anchor/exit" }
+            { "type": "move-npc",
+              "when": { "requires_flags": ["flag/flee"] }, "npc": "npc/keeper", "to": { "anchor": "anchor/door" } },
+            { "type": "move-npc",
+              "when": { "requires_flags": ["flag/flee"] }, "npc": "npc/keeper", "to": { "anchor": "anchor/exit" } },
+            { "type": "move-npc", "npc": "npc/keeper", "to": { "anchor": "anchor/exit" } }
           ]
         },
         "on_complete": [ { "type": "campaign-complete" } ]
       }
     ]
   }
-}"#;
+}"#,
+    )
+});
 
 /// The pre-branch baseline: one unconditional walk, nothing gated anywhere.
-const QUESTS_UNGATED: &str = r#"{
-  "dsl_version": "0.19.0",
+static QUESTS_UNGATED: LazyLock<String> = LazyLock::new(|| {
+    common::at_dsl_version(
+        r#"{
+  "dsl_version": "%dsl_version%",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {
@@ -131,14 +142,16 @@ const QUESTS_UNGATED: &str = r#"{
         "on_objective_complete": {
           "obj/talk": [
             { "type": "open-gate", "anchor": "anchor/door" },
-            { "type": "move-npc", "npc": "npc/keeper", "to_anchor": "anchor/exit" }
+            { "type": "move-npc", "npc": "npc/keeper", "to": { "anchor": "anchor/exit" } }
           ]
         },
         "on_complete": [ { "type": "campaign-complete" } ]
       }
     ]
   }
-}"#;
+}"#,
+    )
+});
 
 fn parse_with(quests: &str) -> Campaign {
     let raw = RawCampaign {
@@ -153,6 +166,7 @@ fn parse_with(quests: &str) -> Campaign {
         layout_graph: None,
         site_plan: None,
         detail_plan: None,
+        design: None,
     };
     parse_campaign(&raw).expect("campaign parses")
 }
@@ -237,7 +251,7 @@ fn driver_named(out: &BuildOutput, stem: &str) -> String {
 /// `flag/flee`-gated leg it can never co-occur with.
 #[test]
 fn a_gated_leg_does_not_poison_another_branchs_origin() {
-    let out = build_with(QUESTS_BRANCHED);
+    let out = build_with(QUESTS_BRANCHED.as_str());
 
     // Leg 1 (unconditional) is the only staging the wait branch can prove, so
     // both the flee leg and the wait leg start where it ended.
@@ -294,7 +308,7 @@ fn a_gated_leg_does_not_poison_another_branchs_origin() {
 /// single driver and the second beat silently ran the first beat's polyline.
 #[test]
 fn one_mark_two_branches_emits_two_drivers() {
-    let out = build_with(QUESTS_SHARED_MARK);
+    let out = build_with(QUESTS_SHARED_MARK.as_str());
     let all = names(&out);
     let to_exit: Vec<&String> = all
         .iter()
@@ -326,7 +340,7 @@ fn one_mark_two_branches_emits_two_drivers() {
 /// campaign's output is untouched.
 #[test]
 fn an_ungated_campaign_keeps_its_historical_driver_names() {
-    let out = build_with(QUESTS_UNGATED);
+    let out = build_with(QUESTS_UNGATED.as_str());
     let all = names(&out);
     assert!(
         all.iter().any(|n| n == "mv_keeper_exit.mcfunction"),
@@ -346,8 +360,8 @@ fn an_ungated_campaign_keeps_its_historical_driver_names() {
 /// so two builds of the same DSL name the same functions (ADR-0006).
 #[test]
 fn branch_keyed_driver_names_are_deterministic() {
-    let a = names(&build_with(QUESTS_BRANCHED));
-    let b = names(&build_with(QUESTS_BRANCHED));
+    let a = names(&build_with(QUESTS_BRANCHED.as_str()));
+    let b = names(&build_with(QUESTS_BRANCHED.as_str()));
     assert_eq!(a, b);
 }
 
@@ -362,8 +376,9 @@ fn branch_keyed_driver_names_are_deterministic() {
 /// keeper's stand.
 #[test]
 fn two_origins_on_one_branch_is_dw0488() {
-    const QUESTS: &str = r#"{
-  "dsl_version": "0.19.0",
+    let quests = common::at_dsl_version(
+        r#"{
+  "dsl_version": "%dsl_version%",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {
@@ -379,17 +394,18 @@ fn two_origins_on_one_branch_is_dw0488() {
         "on_objective_complete": {
           "obj/talk": [
             { "type": "open-gate", "anchor": "anchor/door" },
-            { "type": "move-npc", "npc": "npc/keeper", "to_anchor": "anchor/exit" },
-            { "type": "move-npc", "npc": "npc/keeper", "to_anchor": "anchor/door" },
-            { "type": "move-npc", "npc": "npc/keeper", "to_anchor": "anchor/exit" }
+            { "type": "move-npc", "npc": "npc/keeper", "to": { "anchor": "anchor/exit" } },
+            { "type": "move-npc", "npc": "npc/keeper", "to": { "anchor": "anchor/door" } },
+            { "type": "move-npc", "npc": "npc/keeper", "to": { "anchor": "anchor/exit" } }
           ]
         },
         "on_complete": [ { "type": "campaign-complete" } ]
       }
     ]
   }
-}"#;
-    let campaign = parse_with(QUESTS);
+}"#,
+    );
+    let campaign = parse_with(&quests);
     let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
     let plan = Plan::build(&campaign, &prefabs).expect("plan builds");
     let mut structures: BTreeMap<String, Vec<u8>> = BTreeMap::new();

@@ -15,7 +15,8 @@ validates the site-plan overlay as `DW0842` — a piece the library does not hol
 ## What it does, in order
 
 1. Runs the generator into `--out`; the skins go to `gallery/skins`, which is
-   where every materialised point carries them from (gitignored, generated).
+   where every materialised point carries them from (gitignored, generated),
+   and the design records it reads stand at `gallery/design`.
 2. Materialises the site-plan overlay into a scratch directory, exactly as the
    coverage gate, the baseline and `gallery-build.py` materialise it
    (`tools/gallery_domain.py`), and runs `delvec detail <point> --all
@@ -58,7 +59,7 @@ def die(msg: str) -> None:
     raise SystemExit(1)
 
 
-def generate(out: Path, skins: Path) -> int:
+def generate(out: Path, skins: Path, design: Path) -> int:
     out.mkdir(parents=True, exist_ok=True)
     skins.mkdir(parents=True, exist_ok=True)
     r = subprocess.run(
@@ -67,12 +68,15 @@ def generate(out: Path, skins: Path) -> int:
             "run",
             "-q",
             "--locked",
+            "--release",
             "--manifest-path",
             str(GENERATOR),
             "--",
             str(out),
             "--skins",
             str(skins),
+            "--design",
+            str(design),
         ],
         capture_output=True,
         text=True,
@@ -149,7 +153,7 @@ def main() -> int:
     out = Path(args.out)
     if out.exists():
         shutil.rmtree(out)
-    pieces = generate(out, GALLERY / "skins")
+    pieces = generate(out, GALLERY / "skins", GALLERY / "design")
     if pieces == 0:
         die("the generator wrote ZERO pieces")
     places, compared = detail(delvec, out)

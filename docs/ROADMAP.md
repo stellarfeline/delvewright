@@ -80,10 +80,13 @@ sealing (spec-0002) added as an M2 emission requirement.
 - Skills mature into **the product itself** (ADR-0012): `/new-delve` takes a prompt —
   a bare theme or a detailed level-and-plot brief — and delivers a validated,
   playable delve end-to-end; `/validate` and `/release` complete the set.
-- **Creator distribution** (ADR-0014): creators clone only the content repo; the skill installs as a Claude Code plugin (marketplace +
-  content-repo recommendation), bootstraps pinned multi-platform binaries from
-  Releases + GHCR images, and runs dual-mode (dev = pipeline repo, creator =
-  content repo).
+- **Creator distribution** (ADR-0014, executed by spec-0063; refined by ADR-0027): **done for the front end.** The page ships as a
+  Claude Code plugin from a marketplace in this repository, bootstraps pinned
+  checksum-verified binaries from the release shelf, and runs dual-mode off the
+  working directory (dev = this checkout, creator = anywhere). The content
+  repository is an OPTIONAL clone, taken only for the shipped prefab library or
+  to publish a campaign. Still owed: the GHCR image half, and the drill that
+  walks the whole thing from an empty directory on a machine with no clone.
 - Release automation: RC → full bot playthrough → multi-arch OCI publish → GitHub
   Release with content license.
 - On-demand generation: producing a fresh delve is a routine, low-effort act, not a

@@ -4,15 +4,18 @@
 //! (`docs/notes/td-routing-spike.md`). The DSL layer owns the five that are
 //! decidable from the declaration alone; lane *geometry* (standable, walkable,
 //! spaced > 10) and ring *occupancy* are build-tier proofs over the assembled
-//! world (`DW0386`/`DW0387`, `crates/compiler/tests/souls_td_lanes.rs`).
+//! world (`DW0386`/`DW0387`, `crates/delvec/tests/souls_td_lanes.rs`).
 
 mod common;
 
 use delvewright_dsl::{RawCampaign, check_campaign};
+use std::sync::LazyLock;
 
 /// hello-world's quest stage at 0.6.0 with a raider lane and an aggro-edge wave.
-const QUESTS_V06: &str = r#"{
-  "dsl_version": "0.19.0",
+static QUESTS_V06: LazyLock<String> = LazyLock::new(|| {
+    common::at_dsl_version(
+        r#"{
+  "dsl_version": "%dsl_version%",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {
@@ -56,7 +59,9 @@ const QUESTS_V06: &str = r#"{
       }
     ]
   }
-}"#;
+}"#,
+    )
+});
 
 fn campaign_with_quests(quests: &str) -> RawCampaign {
     RawCampaign {
@@ -71,6 +76,7 @@ fn campaign_with_quests(quests: &str) -> RawCampaign {
         layout_graph: None,
         site_plan: None,
         detail_plan: None,
+        design: None,
     }
 }
 
@@ -81,7 +87,7 @@ fn diags_for(quests: &str) -> Vec<delvewright_dsl::Diagnostic> {
 /// A well-formed lane and a well-formed aggro-edge wave validate clean.
 #[test]
 fn lane_and_aggro_edge_validate_clean() {
-    let diags = diags_for(QUESTS_V06);
+    let diags = diags_for(QUESTS_V06.as_str());
     assert!(
         diags.is_empty(),
         "expected zero diagnostics for the v0.6 §6 surface, got: {diags:#?}"
@@ -276,7 +282,9 @@ fn a_lane_pillager_without_its_crossbow_is_dw0384() {
     // The default arming path is NOT a violation: an unspecified main hand takes
     // the compiler's crossbow.
     assert!(
-        !diags_for(QUESTS_V06).iter().any(|d| d.code == "DW0384"),
+        !diags_for(QUESTS_V06.as_str())
+            .iter()
+            .any(|d| d.code == "DW0384"),
         "the default-armed pillager is fine"
     );
 }
@@ -298,7 +306,7 @@ fn an_aggro_edge_mob_without_follow_range_is_dw0385() {
 /// exists for. The species rule is scoped to lanes only.
 #[test]
 fn aggro_edge_accepts_any_species() {
-    let diags = diags_for(QUESTS_V06);
+    let diags = diags_for(QUESTS_V06.as_str());
     assert!(
         !diags.iter().any(|d| d.code == "DW0382"),
         "the drowned need no patrol AI to be summoned at the edge: {diags:#?}"

@@ -1,6 +1,6 @@
 """The source merge-artifact gate (`tools/check-source-dupes.py`).
 
-The defect this pins, from the field: `crates/compiler/src/plan.rs` invoked the
+The defect this pins, from the field: `crates/delvec/src/compiler/plan.rs` invoked the
 face-mating pass twice, as two verbatim copies of one labelled block — header
 comment, `let binding = crate::faces::check(...)`, and the advisory push. The
 pass is idempotent, so the second run recomputed the same answer and the second

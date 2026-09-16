@@ -15,10 +15,11 @@ here (GPL code) and writes its outputs into the content repo's `prefabs/`:
 cargo run --manifest-path prefabs/generator/Cargo.toml --release -- campaigns/prefabs/
 ```
 
-This is a **standalone crate** (its own `[workspace]`), deliberately outside
-`crates/` so it is not a member of the compiler workspace and never enters the
-shipped `delvec` binary. Every prefab generator is such a crate, `hello-room`
-included (`prefabs/hello-room-generator`).
+This is a member of the `prefabs/` workspace, deliberately outside `crates/` —
+and excluded by the root workspace — so it is not a member of the engine's
+workspace and never enters the shipped `delvec` binary. Every prefab generator
+is a member of it, `hello-room` included (`prefabs/hello-room-generator`), and
+they share the rule crate `prefabs/invariants` (`prefab-invariants`).
 
 Piece geometry, the connection ("keep-socket-v1") convention, and the live-probed
 lighting minimums are documented in `../keep-tileset.md`. `measured_min_light` in

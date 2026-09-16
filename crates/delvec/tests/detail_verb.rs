@@ -14,7 +14,7 @@ use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
-use delvewright_compiler::detail::{self, Allocation};
+use delvec::compiler::detail::{self, Allocation};
 use delvewright_dsl::NodeId;
 use serde_json::{Value, json};
 
@@ -126,7 +126,7 @@ fn room_air() -> Value {
 /// over the handed names, so the same document carves the seams wherever the
 /// plan moves them.
 fn carve(
-    seams: Vec<&delvewright_compiler::detail::AllocatedSeam>,
+    seams: Vec<&delvec::compiler::detail::AllocatedSeam>,
     axes: &[(&str, Value)],
     shift: Option<(&str, i64)>,
 ) -> Value {
@@ -143,7 +143,7 @@ fn carve(
     // Group by the range on this axis, ordered by its low end.
     let mut groups: Vec<(
         (i64, i64),
-        Vec<&delvewright_compiler::detail::AllocatedSeam>,
+        Vec<&delvec::compiler::detail::AllocatedSeam>,
     )> = Vec::new();
     for s in seams {
         let key = (s.cells[0][idx], s.cells[1][idx]);
@@ -153,7 +153,7 @@ fn carve(
         }
     }
     groups.sort_by_key(|(k, _)| *k);
-    let bound = |s: &delvewright_compiler::detail::AllocatedSeam, end: &str| {
+    let bound = |s: &delvec::compiler::detail::AllocatedSeam, end: &str| {
         let p = param(&seam_param(&s.edge, &format!("{axis}{end}")));
         match shift {
             Some((e, n)) if e == s.edge && *axis == "z" => add(p, int(n)),

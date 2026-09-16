@@ -29,15 +29,12 @@ use std::path::Path;
 use flate2::{Compression, GzBuilder};
 use serde::Serialize;
 
-#[path = "../../invariants.rs"]
-mod invariants;
+/// The cross-tileset invariants and the connection derivation, shared as a
+/// crate so the rule is compiled once and its own tests run with the
+/// generators' (`prefabs/invariants`).
+use prefab_invariants::{connections, invariants};
 
-/// The connection derivation, shared the same way: what a fence, a wall, a pane
-/// or a lichen joins is computed from the blocks beside it, at the emitter.
-#[path = "../../connections.rs"]
-mod connections;
-
-/// MC 1.21.11 data version (ADR-0009); see `crates/compiler/data/PROVENANCE.md`.
+/// MC 1.21.11 data version (ADR-0009); see `crates/delvec/data/PROVENANCE.md`.
 const DATA_VERSION: i32 = 4671;
 
 /// The piece's id — the `.nbt` stem and what the invariants report against.

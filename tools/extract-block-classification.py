@@ -51,11 +51,11 @@ welding the twelve species together welds everything downstream of them. The
 purely-derived table is what ships; `--family-tags` reproduces the measurement.
 
 Reproduce (the two sources are the same misode/mcmeta 1.21.11 summary the rest of
-`crates/compiler/data/` comes from — see PROVENANCE.md):
+`crates/delvec/data/` comes from — see PROVENANCE.md):
 
     python3 tools/extract-block-classification.py \\
         <data/tag/block/data.min.json> <data/recipe/data.min.json> \\
-        crates/compiler/data/block-classification-1.21.11.json
+        crates/delvec/data/block-classification-1.21.11.json
 
 The source SHA-256s are pinned below and checked before anything is derived.
 """

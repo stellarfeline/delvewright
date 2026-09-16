@@ -1,6 +1,6 @@
 """The crates.io front-page gate (`tools/check-crates-io-readmes.py`).
 
-The defect this pins, from the field: `crates/compiler/README.md` is rendered
+The defect this pins, from the field: `crates/delvec/README.md` is rendered
 VERBATIM as the front page of `crates.io/crates/delvec`, and it opened with
 "The deterministic compiler (spec-0002, ADR-0001/0006/0011)" — a citation the
 one reader who has never seen this repository cannot resolve and gains nothing

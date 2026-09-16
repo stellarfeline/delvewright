@@ -26,22 +26,22 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-use delvewright_admit::allowlist::Allowlist;
-use delvewright_admit::audit;
-use delvewright_admit::light::{self, DEFAULT_DARK_THRESHOLD, Zone};
-use delvewright_admit::meta as admit_meta;
-use delvewright_admit::structure::Structure;
-use delvewright_compiler::detail::{self as engine, Allocation};
-use delvewright_compiler::registry::{PrefabRegistry, REPORT_SUFFIX};
+use delvec::admit::allowlist::Allowlist;
+use delvec::admit::audit;
+use delvec::admit::light::{self, DEFAULT_DARK_THRESHOLD, Zone};
+use delvec::admit::meta as admit_meta;
+use delvec::admit::structure::Structure;
+use delvec::compiler::detail::{self as engine, Allocation};
+use delvec::compiler::registry::{PrefabRegistry, REPORT_SUFFIX};
 use delvewright_dsl::detailplan::{Detail, DetailPlanContent};
 use delvewright_dsl::prefab::PrefabMeta;
 use delvewright_dsl::split::TilePart;
 use delvewright_dsl::{
     Campaign, Diagnostic, DwCode, Envelope, ExitTier, NodeId, PrefabId, Stage, parse_campaign,
 };
-use delvewright_grammar::cli::{composition_to_stderr, report_to_stderr};
-use delvewright_grammar::ir::Paint;
-use delvewright_grammar::{
+use delvec::grammar::cli::{composition_to_stderr, report_to_stderr};
+use delvec::grammar::ir::Paint;
+use delvec::grammar::{
     BlockState, Box3, ExpandOptions, Overrides, document, expand, export, gates,
 };
 use sha2::{Digest, Sha256};
@@ -480,7 +480,7 @@ fn detail_one(
         eprintln!(
             "{} [error] {place}: the light probe bound to ZERO cells, so nothing was measured: \
              {}. Nothing was written.",
-            delvewright_admit::diag::DW_UNBOUND,
+            delvec::admit::diag::DW_UNBOUND,
             probe.unbound_reason()
         );
         return Err(1);
@@ -667,7 +667,7 @@ fn row_for(campaign: &Campaign, node: &NodeId, id: &str, meta: &PrefabMeta) -> D
 fn with_row(campaign: &Campaign, row: &Detail) -> Campaign {
     let mut c = campaign.clone();
     let env = c.detail_plan.get_or_insert_with(|| Envelope {
-        dsl_version: delvewright_compiler::DSL_VERSION.to_string(),
+        dsl_version: delvec::compiler::DSL_VERSION.to_string(),
         campaign_id: campaign.world.campaign_id.clone(),
         stage: Stage::DetailPlan,
         content: DetailPlanContent {
@@ -683,7 +683,7 @@ fn with_row(campaign: &Campaign, row: &Detail) -> Campaign {
 /// Write the row into `detail-plan.json`, canonical, creating the document when
 /// the campaign has none. A re-run that changes nothing moves no byte.
 fn write_row(campaign_dir: &Path, campaign: &Campaign, row: &Detail) -> Result<(), u8> {
-    let path = campaign_dir.join(delvewright_compiler::load::DETAIL_PLAN_FILE);
+    let path = campaign_dir.join(delvec::compiler::load::DETAIL_PLAN_FILE);
     let mut env: Envelope<DetailPlanContent> = if path.is_file() {
         let text = std::fs::read_to_string(&path).map_err(|e| {
             eprintln!("internal error: cannot read {}: {e}", path.display());
@@ -698,7 +698,7 @@ fn write_row(campaign_dir: &Path, campaign: &Campaign, row: &Detail) -> Result<(
         })?
     } else {
         Envelope {
-            dsl_version: delvewright_compiler::DSL_VERSION.to_string(),
+            dsl_version: delvec::compiler::DSL_VERSION.to_string(),
             campaign_id: campaign.world.campaign_id.clone(),
             stage: Stage::DetailPlan,
             content: DetailPlanContent {
@@ -736,10 +736,10 @@ fn write(dir: &Path, file: &str, bytes: &[u8]) -> Result<(), u8> {
 /// The whole, validated and built in memory — the same observers `delvec
 /// build` runs, output discarded.
 fn battery(campaign_dir: &Path, prefabs_dir: &Path, lang: &str, json: bool) -> Result<(), u8> {
-    use delvewright_compiler::analyze::analyze_campaign;
-    use delvewright_compiler::commands::CommandTree;
-    use delvewright_compiler::emit;
-    use delvewright_compiler::plan::Plan;
+    use delvec::compiler::analyze::analyze_campaign;
+    use delvec::compiler::commands::CommandTree;
+    use delvec::compiler::emit;
+    use delvec::compiler::plan::Plan;
 
     let v = validate_stage(campaign_dir, prefabs_dir, json)?;
     if has_error(&v.diags) {
@@ -755,7 +755,16 @@ fn battery(campaign_dir: &Path, prefabs_dir: &Path, lang: &str, json: bool) -> R
     if lang == delvewright_dsl::CANONICAL_LANG {
         delvewright_dsl::tag_translatables(&mut campaign);
     }
-    let plan = match Plan::build(&campaign, &v.prefabs) {
+    // The battery proves exactly what `build` proves, so it emits the same
+    // bodies and reads the same directory: every body's texture is rewritten to
+    // this delve's own id before anything reads one (the map back to the
+    // authored id is what finds the PNG on disk), and the approved reference
+    // images the campaign directory holds are attached to the plan, which
+    // cannot read them for itself (spec-0061).
+    let skin_sources = delvewright_dsl::namespace_skin_textures(&mut campaign);
+    let plan = match Plan::build(&campaign, &v.prefabs)
+        .map(|p| p.with_design_files(v.loaded.design_files.clone()))
+    {
         Ok(p) => p,
         Err(e) => {
             print_diags(&e.warnings, json);
@@ -764,7 +773,7 @@ fn battery(campaign_dir: &Path, prefabs_dir: &Path, lang: &str, json: bool) -> R
         }
     };
     let structures = read_structures(&plan, &v.prefabs, prefabs_dir, json)?;
-    let skins = read_skins(campaign_dir, &campaign, json)?;
+    let skins = read_skins(campaign_dir, &campaign, &skin_sources, json)?;
     let tree = CommandTree::v1_21_11();
     match emit::build_with_warnings(
         &plan,

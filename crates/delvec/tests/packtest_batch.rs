@@ -34,7 +34,7 @@
 //! So the obligation is inverted rather than widened, and it moves to the party
 //! that can discharge it: a template that DRIVES the outcome it asserts on must
 //! WRITE every `#party` term the gates on that outcome's path read, whoever else
-//! touches it. That is `delvewright_compiler::batchstate` (`DW0807`), bound in
+//! touches it. That is `delvec::compiler::batchstate` (`DW0807`), bound in
 //! the emitter over the shipped bytes and asserted here by
 //! `every_template_owns_the_gate_it_asserts_on`.
 //!
@@ -70,11 +70,12 @@ fn scratch_dir(kind: &str) -> std::path::PathBuf {
     ))
 }
 
-use delvewright_compiler::commands::CommandTree;
-use delvewright_compiler::emit::{self, BuildOutput};
-use delvewright_compiler::load::load_campaign_dir;
-use delvewright_compiler::plan::Plan;
-use delvewright_compiler::registry::PrefabRegistry;
+use delvec::compiler::commands::CommandTree;
+use delvec::compiler::emit::{self, BuildOutput};
+use delvec::compiler::load::load_campaign_dir;
+use delvec::compiler::plan::Plan;
+use delvec::compiler::registry::PrefabRegistry;
+use delvewright_dsl::DSL_VERSION;
 use delvewright_dsl::parse_campaign;
 
 /// Build any valid campaign directory (loading `skins/` when the campaign
@@ -127,11 +128,11 @@ fn build_actor_hello_world() -> BuildOutput {
         std::fs::copy(src.join(f), dst.join(f)).unwrap();
     }
     common::patch_file(&dst.join("quests.json"), |d| {
-        d["dsl_version"] = serde_json::json!("0.19.0");
+        d["dsl_version"] = serde_json::json!(DSL_VERSION);
         common::objective_effects(d, 0, "obj/talk").extend([
             serde_json::json!({ "type": "spawn-actor", "actor": "actor/giant" }),
             serde_json::json!({
-                "type": "move-actor", "actor": "actor/giant", "to_anchor": "anchor/exit",
+                "type": "move-actor", "actor": "actor/giant", "to": { "anchor": "anchor/exit" },
                 "on_arrive": [
                     { "type": "despawn-actor", "actor": "actor/giant", "style": "vanish" }
                 ]
@@ -140,7 +141,7 @@ fn build_actor_hello_world() -> BuildOutput {
         ]);
         d["content"]["actors"] = serde_json::json!([
             { "id": "actor/giant", "entity": "minecraft:zombie", "name": "The Sleeper",
-              "anchor": "anchor/keeper-stand", "facing": "east" }
+              "anchor": "spawn", "facing": "east" }
         ]);
     });
     let out = build_dir(&dst);
@@ -162,15 +163,15 @@ fn build_handoff_hello_world() -> BuildOutput {
         std::fs::copy(src.join(f), dst.join(f)).unwrap();
     }
     common::patch_file(&dst.join("npcs.json"), |d| {
-        d["dsl_version"] = serde_json::json!("0.19.0");
+        d["dsl_version"] = serde_json::json!(DSL_VERSION);
         d["content"]["npcs"][0]["deferred"] = serde_json::json!(true);
     });
     common::patch_file(&dst.join("quests.json"), |d| {
-        d["dsl_version"] = serde_json::json!("0.19.0");
+        d["dsl_version"] = serde_json::json!(DSL_VERSION);
         common::objective_effects(d, 0, "obj/talk").extend([
             serde_json::json!({ "type": "spawn-actor", "actor": "actor/giant" }),
             serde_json::json!({
-                "type": "move-actor", "actor": "actor/giant", "to_anchor": "anchor/exit",
+                "type": "move-actor", "actor": "actor/giant", "to": { "anchor": "anchor/exit" },
                 "on_arrive": [
                     { "type": "despawn-actor", "actor": "actor/giant", "style": "vanish" },
                     { "type": "spawn-npc", "npc": "npc/keeper" }
@@ -193,7 +194,7 @@ fn build_handoff_hello_world() -> BuildOutput {
         ]);
         d["content"]["actors"] = serde_json::json!([
             { "id": "actor/giant", "entity": "minecraft:zombie", "name": "The Sleeper",
-              "anchor": "anchor/keeper-stand", "facing": "east" }
+              "anchor": "spawn", "facing": "east" }
         ]);
     });
     let out = build_dir(&dst);
@@ -613,7 +614,7 @@ fn packtest_templates_are_interleaving_independent() {
 }
 
 /// **Every generated template owns the gate its own assertion depends on**
-/// (`DW0807`, `delvewright_compiler::batchstate`).
+/// (`DW0807`, `delvec::compiler::batchstate`).
 ///
 /// The batch model's third leg, and the one that was missing. The invariants
 /// above pin a template's dummy and its scratch holders; neither can see a term
@@ -637,7 +638,7 @@ fn every_template_owns_the_gate_it_asserts_on() {
             })
             .unwrap_or_else(|| panic!("{suite}: no generated PackTest tree"))
             .to_string();
-        match delvewright_compiler::batchstate::check_tree(&ns, &out) {
+        match delvec::compiler::batchstate::check_tree(&ns, &out) {
             Ok(b) => {
                 assert!(
                     b.templates > 0,

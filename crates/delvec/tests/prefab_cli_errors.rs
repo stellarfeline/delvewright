@@ -6,7 +6,7 @@
 use std::path::PathBuf;
 use std::process::Command;
 
-use delvewright_admit::fixtures;
+use delvec::admit::fixtures;
 
 /// `delvec prefab …`: the one binary, entered at the prefab-admission surface.
 fn prefab() -> Command {
@@ -186,7 +186,7 @@ fn stage_tile_set(dir: &std::path::Path) -> PathBuf {
                 "part_max": 48,
                 "grid": [1, 1, 2],
                 "data_version": room.data_version,
-                "generator": "crates/grammar",
+                "generator": "crates/delvec/src/grammar",
                 "parts": parts,
             },
             "anchors": { "anchor/nave": { "pos": [3, 1, 3], "facing": "north" } },
@@ -196,7 +196,7 @@ fn stage_tile_set(dir: &std::path::Path) -> PathBuf {
                 "source": "original",
                 "spdx": "GPL-3.0-or-later",
                 "note": "n",
-                "provenance": "Generated deterministically by crates/grammar",
+                "provenance": "Generated deterministically by crates/delvec/src/grammar",
                 "generated_by": {
                     "generator": "grammar",
                     "program": "zone",

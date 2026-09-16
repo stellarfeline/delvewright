@@ -2,8 +2,8 @@
 //! prefabs that stage "The Drowned Bell" (a souls campaign: barrow shore →
 //! gatehouse → wall walk → courtyard/chapel hub → cistern undercroft → bell
 //! tower). A sibling of `prefabs/island-terrain-generator` and
-//! `prefabs/cave-generator`: its own `[workspace]`, outside `crates/`, so it never
-//! enters the shipped `delvec` binary and no existing `.nbt` output moves
+//! `prefabs/cave-generator`: a member of the `prefabs/` workspace, outside
+//! `crates/` and excluded from the engine's, so it never enters the shipped `delvec` binary and no existing `.nbt` output moves
 //! (ADR-0006).
 //!
 //! Convention: `tk:socket` — keep-socket-v1 geometry (3×3 opening, one jigsaw
@@ -32,16 +32,10 @@ use std::collections::BTreeMap;
 use std::io::Write as _;
 use std::path::Path;
 
-/// Cross-tileset generator invariants, shared by source include so a lesson
-/// learned in one tileset does not have to be re-learned in the other four
-/// (the generators are separate Cargo workspaces on purpose).
-#[path = "../../invariants.rs"]
-mod invariants;
-
-/// The connection derivation, shared the same way: what a fence, a wall, a pane
-/// or a lichen joins is computed from the blocks beside it, at the emitter.
-#[path = "../../connections.rs"]
-mod connections;
+/// The cross-tileset invariants and the connection derivation, shared as a
+/// crate so the rule is compiled once and its own tests run with the
+/// generators' (`prefabs/invariants`).
+use prefab_invariants::{connections, document, invariants, walkplane, waterline};
 
 use flate2::{Compression, GzBuilder};
 
@@ -54,11 +48,6 @@ struct Spec {
     id: &'static str,
     size: [i32; 3],
     doors: Vec<Door>,
-    /// Only the pieces that author sea declare `waterline_y` — the barrow shore
-    /// and (r5) the bell tower's ferry pier, both on the shore datum. Every
-    /// other piece omits it so `DW0344` does not demand it land at sea level
-    /// (the keep RISES).
-    waterline_y: Option<i32>,
     build: fn(&mut Grid, u64),
     anchors: fn() -> Vec<(&'static str, AnchorJson)>,
     light: Light,
@@ -79,7 +68,6 @@ fn specs() -> Vec<Spec> {
             id: "tk-barrow-field",
             size: [barrow::SX, barrow::SY, barrow::SZ],
             doors: vec![(North, SHORE_FLOOR_Y, 24)],
-            waterline_y: Some(SHORE_FLOOR_Y),
             build: barrow::build,
             anchors: barrow::anchors,
             light: Light::OpenAir,
@@ -89,7 +77,6 @@ fn specs() -> Vec<Spec> {
             id: "tk-gatehouse",
             size: [gatehouse::SX, gatehouse::SY, gatehouse::SZ],
             doors: vec![(South, SHORE_FLOOR_Y, 14), (North, KEEP_FLOOR_Y, 14)],
-            waterline_y: None,
             build: gatehouse::build,
             anchors: gatehouse::anchors,
             light: Light::Measured(gatehouse::light_regions, None),
@@ -99,7 +86,6 @@ fn specs() -> Vec<Spec> {
             id: "tk-wall-walk",
             size: [wallwalk::SX, wallwalk::SY, wallwalk::SZ],
             doors: vec![(South, KEEP_FLOOR_Y, 7), (North, KEEP_FLOOR_Y, 7)],
-            waterline_y: None,
             build: wallwalk::build,
             anchors: wallwalk::anchors,
             light: Light::OpenAir,
@@ -109,7 +95,6 @@ fn specs() -> Vec<Spec> {
             id: "tk-courtyard-chapel",
             size: [courtyard::SX, courtyard::SY, courtyard::SZ],
             doors: vec![(South, KEEP_FLOOR_Y, 23), (East, KEEP_FLOOR_Y, 23)],
-            waterline_y: None,
             build: courtyard::build,
             anchors: courtyard::anchors,
             light: Light::Measured(courtyard::light_regions, None),
@@ -119,7 +104,6 @@ fn specs() -> Vec<Spec> {
             id: "tk-cistern",
             size: [cistern::SX, cistern::SY, cistern::SZ],
             doors: vec![(West, KEEP_FLOOR_Y, 19), (East, KEEP_FLOOR_Y, 19)],
-            waterline_y: None,
             build: cistern::build,
             anchors: cistern::anchors,
             light: Light::Measured(
@@ -139,7 +123,6 @@ fn specs() -> Vec<Spec> {
             id: "tk-bell-tower",
             size: [belltower::SX, belltower::SY, belltower::SZ],
             doors: vec![(West, KEEP_FLOOR_Y, 13)],
-            waterline_y: Some(SHORE_FLOOR_Y),
             build: belltower::build,
             anchors: belltower::anchors,
             light: Light::Measured(belltower::light_regions, None),
@@ -263,7 +246,15 @@ fn write_piece(out: &Path, spec: &Spec) {
             data_version: DATA_VERSION,
             generator: GENERATOR.into(),
         },
-        waterline_y: spec.waterline_y,
+        walk_y: walkplane::walk_y(spec.size, &cells),
+        // **Measured, never stated** (spec-0060 §4). The pieces that author sea
+        // — the barrow shore and the bell tower's ferry pier — get the local y
+        // of their own top water block; every other piece authors none and
+        // writes no key, which is what keeps `DW0344` from demanding a keep
+        // that RISES land its waterline on sea level. This was a per-spec
+        // `Option<i32>` a person set beside the geometry, and a number set
+        // beside geometry is a number the geometry can leave behind.
+        waterline_y: waterline::measure_waterline_y(&cells),
         anchors,
         connectors,
         lighting: LightingJson {
@@ -282,8 +273,11 @@ fn write_piece(out: &Path, spec: &Spec) {
                          (tidal-keep-gen), ADR-0006; regenerating yields byte-identical NBT.",
         },
     };
-    let json = serde_json::to_string_pretty(&meta).expect("json") + "\n";
-    std::fs::write(out.join(format!("{}.json", spec.id)), json).expect("write json");
+    // The generator owns what it measures and nothing else: a key a later step
+    // added — an anchor a campaign binds, an entry role, a shown face, a
+    // lighting verdict measured at admission — survives this write
+    // (`prefab_invariants::document`).
+    document::write_preserving(&out.join(format!("{}.json", spec.id)), &meta);
     println!(
         "wrote {:<22} {:>3}x{:>3}x{:>3}  {:>8} nbt bytes  profile {:<4} min-light {:>2}  \
          {} sockets  {} anchors",

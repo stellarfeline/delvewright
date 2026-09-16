@@ -18,11 +18,11 @@ mod common;
 use std::collections::BTreeMap;
 use std::path::Path;
 
-use delvewright_compiler::commands::CommandTree;
-use delvewright_compiler::emit::{self, BuildFailure, BuildOutput};
-use delvewright_compiler::load::load_campaign_dir;
-use delvewright_compiler::plan::{self, Plan};
-use delvewright_compiler::registry::PrefabRegistry;
+use delvec::compiler::commands::CommandTree;
+use delvec::compiler::emit::{self, BuildFailure, BuildOutput};
+use delvec::compiler::load::load_campaign_dir;
+use delvec::compiler::plan::{self, Plan};
+use delvec::compiler::registry::PrefabRegistry;
 use delvewright_dsl::parse_campaign;
 use serde_json::{Value, json};
 
@@ -38,7 +38,7 @@ fn fixture_dir() -> std::path::PathBuf {
 fn try_build_campaign(dir: &Path) -> Result<BuildOutput, BuildFailure> {
     let loaded = load_campaign_dir(dir).unwrap();
     let campaign = parse_campaign(&loaded.raw).expect("valid campaign parses");
-    let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
+    let prefabs = PrefabRegistry::load_dir(&common::shown_prefabs_dir("branch-transport")).unwrap();
     let plan = Plan::build(&campaign, &prefabs).expect("plan builds");
 
     let mut structures: BTreeMap<String, Vec<u8>> = BTreeMap::new();
@@ -70,7 +70,7 @@ fn build_campaign(dir: &Path) -> BuildOutput {
 fn with_plan<T>(dir: &Path, f: impl FnOnce(&Plan) -> T) -> T {
     let loaded = load_campaign_dir(dir).unwrap();
     let campaign = parse_campaign(&loaded.raw).expect("valid campaign parses");
-    let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
+    let prefabs = PrefabRegistry::load_dir(&common::shown_prefabs_dir("branch-transport")).unwrap();
     let plan = Plan::build(&campaign, &prefabs).expect("plan builds");
     f(&plan)
 }

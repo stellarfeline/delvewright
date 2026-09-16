@@ -23,14 +23,15 @@ mod common;
 
 use std::collections::BTreeMap;
 
-use delvewright_compiler::commands::CommandTree;
-use delvewright_compiler::emit::{self, BuildFailure};
-use delvewright_compiler::plan::Plan;
-use delvewright_compiler::registry::PrefabRegistry;
-use delvewright_compiler::traversal::{
+use delvec::compiler::commands::CommandTree;
+use delvec::compiler::emit::{self, BuildFailure};
+use delvec::compiler::plan::Plan;
+use delvec::compiler::registry::PrefabRegistry;
+use delvec::compiler::traversal::{
     DW_BARRIER_SURMOUNTED, DW_TRAVERSAL_IMPOSSIBLE, Locomotion, Traversal,
 };
-use delvewright_dsl::{Diagnostic, RawCampaign, Severity, parse_campaign};
+use delvewright_dsl::{DSL_VERSION, Diagnostic, RawCampaign, Severity, parse_campaign};
+use std::sync::LazyLock;
 
 fn read_hw(name: &str) -> String {
     std::fs::read_to_string(common::hello_world_dir().join(name)).unwrap()
@@ -39,8 +40,10 @@ fn read_hw(name: &str) -> String {
 /// A v0.6 quests doc whose only staged motion is one `move-npc` from the
 /// keeper's stand to the room's exit — a straight north-south walk the barrier
 /// line below cuts across.
-const QUESTS_WALK: &str = r#"{
-  "dsl_version": "0.19.0",
+static QUESTS_WALK: LazyLock<String> = LazyLock::new(|| {
+    common::at_dsl_version(
+        r#"{
+  "dsl_version": "%dsl_version%",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {
@@ -56,26 +59,28 @@ const QUESTS_WALK: &str = r#"{
         "on_objective_complete": {
           "obj/talk": [
             { "type": "open-gate", "anchor": "anchor/door" },
-            { "type": "move-npc", "npc": "npc/keeper", "to_anchor": "anchor/exit" }
+            { "type": "move-npc", "npc": "npc/keeper", "to": { "anchor": "anchor/exit" } }
           ]
         },
         "on_complete": [ { "type": "campaign-complete" } ]
       }
     ]
   }
-}"#;
+}"#,
+    )
+});
 
 /// `QUESTS_WALK` with a stage-5 actor of `entity` walking the same line, so a
 /// fixture can put a chosen BODY on the route rather than only the keeper.
 fn quests_with_actor(entity: &str) -> String {
     serde_json::json!({
-        "dsl_version": "0.19.0",
+        "dsl_version": DSL_VERSION,
         "campaign_id": "hello-world",
         "stage": "quests",
         "content": {
             "actors": [
                 { "id": "actor/subject", "entity": entity, "name": "Subject",
-                  "anchor": "anchor/keeper-stand" }
+                  "anchor": "spawn" }
             ],
             "quests": [ {
                 "id": "quest/open-the-door",
@@ -89,7 +94,7 @@ fn quests_with_actor(entity: &str) -> String {
                     { "type": "open-gate", "anchor": "anchor/door" },
                     { "type": "spawn-actor", "actor": "actor/subject" },
                     { "type": "move-actor", "actor": "actor/subject",
-                      "to_anchor": "anchor/exit" }
+                      "to": { "anchor": "anchor/exit" } }
                 ] },
                 "on_complete": [ { "type": "campaign-complete" } ]
             } ]
@@ -108,7 +113,7 @@ fn dialogue_v06() -> String {
 /// cell (offset `[0, dy, 3]`) — the one place a body can cross.
 fn barrier_line(line: &str, middle: &str, middle_dy: i32) -> String {
     serde_json::json!({
-        "dsl_version": "0.19.0",
+        "dsl_version": DSL_VERSION,
         "campaign_id": "hello-world",
         "stage": "world-edits",
         "content": { "batches": [ {
@@ -142,7 +147,7 @@ fn barrier_line(line: &str, middle: &str, middle_dy: i32) -> String {
 /// declaration, exercised rather than asserted.
 fn npcs_declaring(base_entity: &str, locomotion: Option<&str>) -> String {
     let mut doc: serde_json::Value = serde_json::from_str(&read_hw("npcs.json")).unwrap();
-    doc["dsl_version"] = serde_json::json!("0.19.0");
+    doc["dsl_version"] = serde_json::json!(DSL_VERSION);
     let npc = &mut doc["content"]["npcs"][0];
     npc["base_entity"] = serde_json::json!(base_entity);
     if let Some(l) = locomotion {
@@ -223,6 +228,7 @@ fn build_all(
         layout_graph: None,
         site_plan: None,
         detail_plan: None,
+        design: None,
     };
     let campaign = parse_campaign(&raw).expect("campaign parses");
     let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
@@ -704,7 +710,7 @@ fn the_stage_5_actor_carries_the_same_declaration_and_the_same_proof() {
     let declared = |l: Option<&str>| {
         let mut doc: serde_json::Value =
             serde_json::from_str(&quests_with_actor("minecraft:sheep")).unwrap();
-        doc["dsl_version"] = serde_json::json!("0.19.0");
+        doc["dsl_version"] = serde_json::json!(DSL_VERSION);
         if let Some(l) = l {
             doc["content"]["actors"][0]["traversal"] = serde_json::json!({ "locomotion": l });
         }

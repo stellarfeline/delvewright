@@ -3,8 +3,8 @@
 Deterministic generator for the **terrain** half of the nobodys-cave-island remake
 (design brief §1, §5): the greenfield connectors and the mountain terminal. A
 sibling of `prefabs/island-generator` (the set-piece gen — beach camp + galley) and
-`prefabs/cave-generator`: its own `[workspace]`, outside `crates/`, so it never
-enters the shipped `delvec` binary and the keep/cave/set-piece `.nbt` output stays
+`prefabs/cave-generator`: a member of the `prefabs/` workspace, outside `crates/`
+and excluded from the engine's, so it never enters the shipped `delvec` binary and the keep/cave/set-piece `.nbt` output stays
 byte-identical (ADR-0006). It reuses the cave-generator primitive family
 (splitmix64 PRNG, trilinear value-noise palette field, vanilla-structure `.nbt`
 emit, keep-socket geometry, the gravity-substrate invariant, a derived static

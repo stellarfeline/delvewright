@@ -4,7 +4,7 @@
 //!
 //! # The artifacts are real
 //!
-//! The way-carrying piece is exported by `crates/grammar` from a program built
+//! The way-carrying piece is exported by `crates/delvec/src/grammar` from a program built
 //! here — the corpus contract piece with its doorway's threshold course claimed
 //! as `deck` and left empty, and the door declared a `walk` whose way is `laid`.
 //! As built the two rooms are severed: a body cannot stand on a threshold that
@@ -20,16 +20,16 @@ mod common;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use delvewright_compiler::commands::CommandTree;
-use delvewright_compiler::emit::{self, BuildOutput};
-use delvewright_compiler::plan::Plan;
-use delvewright_compiler::registry::PrefabRegistry;
-use delvewright_dsl::{Campaign, RawCampaign, parse_campaign};
-use delvewright_grammar::ir::{
-    Contract, EXTERIOR, EdgeClass, Envelope, Mark, MarkAt, Node, Opens, Program, Reorient,
-    Rounding, Size, Split, Way,
+use delvec::compiler::commands::CommandTree;
+use delvec::compiler::emit::{self, BuildOutput};
+use delvec::compiler::plan::Plan;
+use delvec::compiler::registry::PrefabRegistry;
+use delvec::grammar::ir::{
+    Contract, EXTERIOR, EdgeClass, Envelope, Mark, MarkAt, Node, Opens, Program, Reorient, Size,
+    Split, Way,
 };
-use delvewright_grammar::{Axis, BlockState, Box3, ExpandOptions, export_prefab};
+use delvec::grammar::{Axis, BlockState, Box3, ExpandOptions, export_prefab};
+use delvewright_dsl::{Campaign, DSL_VERSION, RawCampaign, parse_campaign};
 
 /// The vault is `9 x 8 x 11`: a low room, a raised room, a flight between them
 /// whose treads are missing, and a shaft through the roof.
@@ -83,7 +83,7 @@ fn broken_flight(block: &str) -> Program {
         Node::Split(Split {
             axis,
             sizes,
-            rounding: Rounding::Truncate,
+            rounding: None,
             repeat: false,
             orient: Reorient::KEEP,
             children,
@@ -356,6 +356,12 @@ fn library(tag: &str, deck_block: &str) -> Library {
     )
     .expect("the broken threshold exports green with its way declared");
     exported.write_to_dir(&dir).unwrap();
+    // The grammar exporter writes no `shown_faces` — which sides of a building
+    // are finished is a fact about where it is placed, and the exporter has no
+    // placement (`DW0885`). This tower stands alone under an open sky, so the
+    // fixture says what the piece is: a free-standing tower whose every built
+    // side is one the player walks up to.
+    common::declare_shown_faces(&dir, "broken-threshold");
     with_a_spawn(&dir, "broken-threshold");
 
     let meta: serde_json::Value =
@@ -399,8 +405,8 @@ fn hw(name: &str) -> String {
 
 /// Hello-world's world with a second area holding the way-carrying piece.
 fn world_doc() -> String {
-    r#"{
-  "dsl_version": "0.19.0",
+    common::at_dsl_version(r#"{
+  "dsl_version": "%dsl_version%",
   "campaign_id": "hello-world",
   "stage": "world",
   "content": {
@@ -409,13 +415,15 @@ fn world_doc() -> String {
     "premise": "One locked door stands between you and the road home. The Keeper holds the key, and only conversation will move him.",
     "seed": 20260729,
     "target_minutes": 5,
+    "time": "noon",
+    "weather": "clear",
     "areas": [
       { "id": "area/keep", "name": "The Keep", "prefab": "prefab/hello-room" },
       { "id": "area/tower", "name": "The Tower", "prefab": "prefab/broken-threshold",
         "mitigation": "night-vision" }
     ]
   }
-}"#
+}"#)
     .to_string()
 }
 
@@ -424,8 +432,9 @@ fn world_doc() -> String {
 /// way and scenery behind one.
 fn quest_plan_doc(tower: bool) -> String {
     if !tower {
-        return r#"{
-  "dsl_version": "0.19.0",
+        return common::at_dsl_version(
+            r#"{
+  "dsl_version": "%dsl_version%",
   "campaign_id": "hello-world",
   "stage": "quest-plan",
   "content": {
@@ -436,11 +445,13 @@ fn quest_plan_doc(tower: bool) -> String {
         "mandatory": true, "npcs": ["npc/keeper"] }
     ]
   }
-}"#
+}"#,
+        )
         .to_string();
     }
-    r#"{
-  "dsl_version": "0.19.0",
+    common::at_dsl_version(
+        r#"{
+  "dsl_version": "%dsl_version%",
   "campaign_id": "hello-world",
   "stage": "quest-plan",
   "content": {
@@ -454,7 +465,8 @@ fn quest_plan_doc(tower: bool) -> String {
         "goal": "Cross the mended threshold.", "mandatory": true, "npcs": [] }
     ]
   }
-}"#
+}"#,
+    )
     .to_string()
 }
 
@@ -516,7 +528,7 @@ fn quests_doc(opening: Opening, tower: bool) -> String {
         }));
     }
     let doc = serde_json::json!({
-      "dsl_version": "0.19.0",
+      "dsl_version": DSL_VERSION,
       "campaign_id": "hello-world",
       "stage": "quests",
       "content": { "on_death": on_death, "quests": quests }
@@ -541,6 +553,7 @@ fn campaign_with(world: String, quests: String, tower: bool) -> Campaign {
         layout_graph: None,
         site_plan: None,
         detail_plan: None,
+        design: None,
     };
     parse_campaign(&raw).expect("campaign parses")
 }
@@ -549,7 +562,7 @@ fn campaign_with(world: String, quests: String, tower: bool) -> Campaign {
 /// instead. Returns the ERROR rather than the plan, because a `Plan` has no
 /// `Debug` to unwrap against — and because every caller here is asserting a
 /// refusal.
-fn plan_err(c: &Campaign, dir: &Path, expected: &str) -> delvewright_compiler::plan::PlanError {
+fn plan_err(c: &Campaign, dir: &Path, expected: &str) -> delvec::compiler::plan::PlanError {
     let prefabs = PrefabRegistry::load_dir(dir).unwrap();
     match Plan::build(c, &prefabs) {
         Ok(_) => panic!("{expected}: the campaign built instead"),
@@ -1000,8 +1013,9 @@ fn an_open_way_naming_no_staged_way_is_dw0547() {
 #[test]
 fn an_open_way_in_a_world_that_stages_no_way_is_still_dw0547() {
     let dir = common::prefabs_dir();
-    let plain = r#"{
-  "dsl_version": "0.19.0",
+    let plain = common::at_dsl_version(
+        r#"{
+  "dsl_version": "%dsl_version%",
   "campaign_id": "hello-world",
   "stage": "world",
   "content": {
@@ -1010,9 +1024,12 @@ fn an_open_way_in_a_world_that_stages_no_way_is_still_dw0547() {
     "premise": "One locked door stands between you and the road home. The Keeper holds the key, and only conversation will move him.",
     "seed": 20260729,
     "target_minutes": 5,
+    "time": "noon",
+    "weather": "clear",
     "areas": [ { "id": "area/keep", "name": "The Keep", "prefab": "prefab/hello-room" } ]
   }
-}"#;
+}"#,
+    );
     let c = campaign_with(plain.to_string(), quests_doc(Opening::Before, false), false);
     let err = plan_err(&c, &dir, "a way no piece stages cannot be opened");
     assert_eq!(err.failure.code.id(), "DW0547");

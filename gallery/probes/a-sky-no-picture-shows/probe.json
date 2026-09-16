@@ -1,0 +1,13 @@
+{
+  "code": "DW0890",
+  "patch": [
+    {
+      "doc": "design.json",
+      "op": "replace",
+      "path": "/content/references/4/time",
+      "value": "night"
+    }
+  ],
+  "units": [],
+  "why": "The gallery's world reaches all six hours, and the record states one picture per hour. Moving the midnight row to `night` leaves `midnight` an hour the party can be in that no approved picture shows — the drill's own defect, whose delve was approved entirely at night and built at noon. The refusal names both sets and the two moves: declare the hour the record states, or approve the design under the hour the world reaches."
+}

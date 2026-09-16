@@ -116,5 +116,5 @@ cargo run --manifest-path prefabs/generator/Cargo.toml --release -- campaigns/pr
 ```
 
 Byte-identical on every run (double-run hash-checked). The generator is a
-standalone crate (its own `[workspace]`), **outside** `crates/`, so it is not
+member of the `prefabs/` workspace, **outside** `crates/`, so it is not
 part of the compiler workspace and never enters the shipped binary.

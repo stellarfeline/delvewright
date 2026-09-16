@@ -1,0 +1,729 @@
+# Init — the commands, and what every failure means
+
+The page carries the step list, each step's postcondition, and the checklist
+Init is finished by. This file carries the commands and the meaning of every
+way each one fails. Read it while running Init and at no other time.
+
+Every command below runs through the environment file I4 writes, once I4 has
+written it: `. ~/.delvewright/env.sh && <the command>`. **I0, I1 and I1b are the
+exception**: they run on every run, before `env.sh` is sourced, because I1b is
+the step that decides whether `env.sh` still describes this run.
+
+## Contents
+
+- [I0 — the mode](#i0--the-mode)
+- [I1 — what has to be on the machine already](#i1--what-has-to-be-on-the-machine-already)
+- [I1b — the pin, checked on every run](#i1b--the-pin-checked-on-every-run)
+- [I2 — the engine tree](#i2--the-engine-tree)
+- [I3a — `delvec` from the release shelf](#i3a--delvec-from-the-release-shelf)
+- [I3b — `delvec` from source, the floor](#i3b--delvec-from-source-the-floor)
+- [I3c — the binary, answering about itself](#i3c--the-binary-answering-about-itself)
+- [I4 — the environment file](#i4--the-environment-file)
+- [I5 — the client jar](#i5--the-client-jar)
+- [I6 — the library, named](#i6--the-library-named)
+- [I7 — named, not installed](#i7--named-not-installed)
+- [I8 — the whole toolchain, answering](#i8--the-whole-toolchain-answering)
+- [Where output goes, and the one place it cannot go](#where-output-goes-and-the-one-place-it-cannot-go)
+
+**No step here checks something a later step supplies.** Each command below runs
+with only what the steps above it established, and every check whose input
+arrives later sits at I8, where the whole toolchain is exercised end to end. A
+stop that fires for a reason the page itself created is worse than no check,
+because it is confidently wrong about the creator's machine.
+
+## I0 — the mode
+
+The mode is a property of the **working directory** and of nothing else — not
+of where this page was loaded from, not of an environment variable, not of what
+happens to be on `PATH`.
+
+```sh
+DELVEWRIGHT_MODE="$(
+  if [ -f crates/delvec/Cargo.toml ] \
+     && [ -f .claude/skills/delvewright/skills/new-delve/SKILL.md ]
+  then echo dev; else echo creator; fi
+)"
+[ "$DELVEWRIGHT_MODE" = dev ] \
+  && DELVEWRIGHT_ENGINE="$PWD" \
+  || DELVEWRIGHT_ENGINE="$HOME/.delvewright/engine"
+```
+
+**One assignment, on purpose.** The mode is written here and read everywhere
+else; a form with a branch per assignment is a form somebody adds a third branch
+to, and a third mode is a page that behaves two ways nobody wrote down.
+
+
+Both conditions, never one: a directory carrying only the first is a checkout of
+the engine that does not carry this page, and a directory carrying only the
+second is somebody's copy of the plugin.
+
+**Dev mode owes one more thing.** `campaigns/` in the engine checkout must
+resolve to a directory. When it dangles, **stop**: a campaign is never written
+into the engine repository, and that link is what keeps it out. Say the link is
+broken and what it should point at; do not create one and do not carry on
+without it.
+
+## I1 — what has to be on the machine already
+
+| | why | check |
+|---|---|---|
+| `git` | I2 clones the engine tree, in creator mode | `git --version` |
+| **Python 3.11+** | `tomllib` is stdlib from 3.11, and I3a's selector reads the pin with it. The three scripts in the skill root are stdlib Python | see below |
+| **Java 21+** | **the pinned game's own requirement** — 1.21.11 declares `javaVersion.majorVersion: 21` in Mojang's version manifest, and every jar-reading checker runs under it. Chunky is not where this number comes from: its core runs under it, and its build at step 12 wants a JDK 17 of its own | `java -version` |
+| Docker | the play server at step 9, which drives `docker run` directly | `docker info` |
+| **Compose v2** | **a second install, and the whole of step 10 needs it** — every ladder entry point builds a `docker compose -p …` command line | `docker compose version` |
+
+**Not here, deliberately.** Rust belongs to I3b: on the default path the archive
+arrives built, and demanding a compiler for a download is the front-loading this
+Init exists to remove. `git-lfs` belongs to the library,
+which is optional and is taken at the step that needs it.
+
+**Python is found by asking, and the answer is recorded once.** Three names may
+answer to a Python across the three platforms, and none of them answers
+everywhere: on Windows the documented commands are `python` and the `py`
+launcher, and while the Python install manager does ship a `python3`, its own
+documentation says that one "is not meant to be widely used or recommended" and
+describes environments where `python3.exe` is simply not there. So the first
+name that answers at 3.11 or above is recorded as `DELVEWRIGHT_PYTHON` for the
+whole run, and nothing below invokes a Python by any other name:
+
+```sh
+for c in python3 python "py -3" ; do
+  v="$($c -c 'import sys;print("%d.%d"%sys.version_info[:2])' 2>/dev/null)" || continue
+  case "$v" in 3.1[1-9]|3.[2-9]*|[4-9].*) DELVEWRIGHT_PYTHON="$c"; break ;; esac
+done
+```
+
+**No Python at 3.11: halt** — installing one is the user's action on their own
+machine, and there is no version of this page that runs without `tomllib`.
+
+**The skill root is named here, because everything bundled is addressed from
+it.** `versions.toml` and the three `scripts/` this page runs live beside
+`SKILL.md`, in the **skill root** — which is *not* the working directory, and is
+not any directory this page can assume you are standing in. It is recorded once,
+as `DELVEWRIGHT_SKILL`, and every bundled path below is written
+`"$DELVEWRIGHT_SKILL/…"`:
+
+```sh
+DELVEWRIGHT_SKILL="$("$DELVEWRIGHT_PYTHON" - "$DELVEWRIGHT_MODE" "$DELVEWRIGHT_ENGINE" <<'PY'
+import json, pathlib, sys
+mode, engine = sys.argv[1], sys.argv[2]
+if mode == "dev":
+    root = pathlib.Path(engine, ".claude/skills/delvewright/skills/new-delve")
+else:
+    reg = pathlib.Path.home() / ".claude/plugins/installed_plugins.json"
+    rows = json.loads(reg.read_text(encoding="utf-8"))["plugins"]
+    seen = {pathlib.Path(r["installPath"], "skills/new-delve")
+            for key, installs in rows.items() if key.split("@")[0] == "delvewright"
+            for r in installs}
+    if len(seen) != 1:
+        sys.exit(f"{len(seen)} installed delvewright plugin(s) in {reg}, expected 1: {sorted(seen)}")
+    root = seen.pop()
+if not (root / "SKILL.md").is_file():
+    sys.exit(f"{root} carries no SKILL.md")
+print(root)
+PY
+)"
+```
+
+**This one algorithm is inline and the other three are files**, and that is not
+an inconsistency: this is the algorithm that *finds* `scripts/`, so it is the one
+thing that cannot live there. In dev mode it is the path I0 already tested for.
+In creator mode it reads Claude Code's own install register — the file that
+records where each installed plugin was unpacked — and **refuses rather than
+guesses** when that names anything but exactly one Delvewright: an upgrade can
+leave an older version in the cache beside the current one, and picking from a
+glob would silently run a page other than the one you are reading. A non-zero
+exit here is a **stop**: say what it printed. Nothing below can be run by hand
+around it, because a wrong skill root means a wrong pin, and a wrong pin means an
+engine nobody proved this page against.
+
+**Java is a stop — but look before you halt.** A machine whose default `java`
+answers below 21 very often *has* a 21 sitting beside it, unselected. Installing
+a JDK is the user's action; **choosing among the ones already on their disk is
+yours**, and halting for something already present spends the user's session on
+a `PATH` line:
+
+```sh
+"$DELVEWRIGHT_PYTHON" "$DELVEWRIGHT_SKILL/scripts/find-jdk.py"
+```
+
+It prints the highest JDK 21+ it found, as `<major> <path>`, and exits 1 having
+printed nothing when there is none. It asks each binary its own version and
+never reads one off a directory name: on a Homebrew machine `openjdk@20`, `@22`
+and `@23` are all symlinks to whatever `openjdk` currently is, so the name says
+20 and the binary answers 26 — and `openjdk@21`, the one that is genuinely 21,
+is keg-only and does not appear in `/usr/libexec/java_home -V` at all.
+
+Found one, export it for the session and say which you took:
+
+```sh
+export JAVA_HOME=<the path it printed>
+export PATH="$JAVA_HOME/bin:$PATH"
+java -version                            # confirm it, do not assume it
+```
+
+**Only if it prints nothing, halt** and tell the user a JDK 21 has to be
+installed — that, and not the selection, is their action. The failure you avoid
+by stopping is silent: a jar-reading tool whose Java is too old exits non-zero
+with a traceback that never names the version, several hours into the run, and
+reads as a broken gate.
+
+**Docker absent: halt.** Steps 9 and 10 cannot run at all without it.
+
+**Compose answering and Docker answering are two different facts, so ask for
+both.** Compose v2 is a **per-user CLI plugin** — a file under
+`$DOCKER_CONFIG/cli-plugins` (or `~/.docker/cli-plugins`), installed beside the
+engine and not by it — so a machine can have a perfectly working daemon and no
+`docker compose` at all: a CLI-only install, a CI image, a `DOCKER_CONFIG`
+pointing somewhere else. `docker info` exits 0 on every one of them. **Compose
+absent: halt for step 10 the same way.** What you avoid by asking here is the
+failure this whole section exists to prevent: `docker compose -p …` with no
+plugin to resolve it hands `-p` to `docker` itself, and the ladder dies hours
+into the run with `unknown shorthand flag: 'p' in -p` and a usage screen — with
+two of its own guards failing first and unhelpfully, `ladder-images` refusing to
+judge on an empty answer and `fresh-volumes` reporting the image class NOT
+JUDGED. None of those three lines names Compose.
+
+## I1b — the pin, checked on every run
+
+**A machine that has run Init before still runs this, first.** The toolchain in
+`~/.delvewright/` is whatever the last run left there, and the page you are
+reading may pin a different engine than that run's page did. Nothing on disk
+says so by itself: an older `delvec` refuses a newer page's documents with
+`unknown variant` and codes it has never heard of, and none of those name a
+version.
+
+```sh
+"$DELVEWRIGHT_PYTHON" "$DELVEWRIGHT_SKILL/scripts/check-toolchain.py" \
+    --mode "$DELVEWRIGHT_MODE" --engine "$DELVEWRIGHT_ENGINE"
+```
+
+**Every value on that line is this run's**: `DELVEWRIGHT_MODE` and
+`DELVEWRIGHT_ENGINE` from I0 as it ran just now, `DELVEWRIGHT_PYTHON` and
+`DELVEWRIGHT_SKILL` from I1 as it ran just now. **Never source `env.sh` for
+it.** `env.sh`'s `DELVEWRIGHT_SKILL` names the skill root that wrote the file,
+and the script there would hold that root's pin against its own toolchain and
+agree.
+
+It reads the pin beside it and prints one line per comparison, with what it
+found and what the pin wants:
+
+| compared | against |
+|---|---|
+| `delvec --version`, resolved through `env.sh`'s `PATH` — the binary every later command runs | creator: `[engine].release`; dev: `"$DELVEWRIGHT_ENGINE/versions.toml"`'s `[engine].version`, the number I3b holds a dev binary to |
+| `git -C "$DELVEWRIGHT_ENGINE" rev-parse HEAD` | creator: `[engine].ref`. Dev: printed, not compared — the checkout is the engine under work |
+| `env.sh`'s `DELVEWRIGHT_SKILL`, `DELVEWRIGHT_MODE`, `DELVEWRIGHT_ENGINE`, read by sourcing it | the skill root the script lives in, and this run's I0 |
+
+| exit | what it means | what to do |
+|---|---|---|
+| `0` | the toolchain on disk is the one this page pins | skip I2, I3 and I4 — nothing is cloned or downloaded. I5 only when `~/.chunky/resources/minecraft.jar` is not there. I6 on every run: the working directory decides it. I7 and I8 only when this run repaired something |
+| `3` a comparison disagrees | **a refusal.** The run may not go past it | run the steps its last line names, in that order — I3a's own table still applies and may send you to I3b — then this command again. **No campaign document is read and no `delvec` subcommand is run until it exits 0.** Then I6, I7 and I8 |
+| `4` no `env.sh` | this machine has never finished I4 | all of Init from I2 through I8, in order. I8 runs this command again |
+| `2` unusable | the pin, the checkout's `versions.toml` in dev mode, or `env.sh` cannot be read | **stop**, and say what it printed |
+
+Say the versions it found out loud whenever it does not exit 0: the user reads
+which engine the machine had and which the page wants.
+
+## I2 — the engine tree
+
+The engine checkout is **not** the compiler. Several steps run a Python tool, a
+compose file or a reference document that lives in that tree and cannot exist
+anywhere else; they are all written `"$DELVEWRIGHT_ENGINE/…"`.
+
+**Neither the revision nor the release is yours to choose, and neither is the
+default branch.** `versions.toml` in the skill root names both. Read them from
+there; this page restates neither, because a revision or a version written on a
+page goes stale the first time the pin moves and nothing reports it.
+
+```sh
+PIN="$DELVEWRIGHT_SKILL/versions.toml"
+ENGINE_REF="$("$DELVEWRIGHT_PYTHON" -c 'import tomllib,sys;print(tomllib.load(open(sys.argv[1],"rb"))["engine"]["ref"])' "$PIN")"
+ENGINE_REPO="$("$DELVEWRIGHT_PYTHON" -c 'import tomllib,sys;print(tomllib.load(open(sys.argv[1],"rb"))["engine"]["repo"])' "$PIN")"
+
+mkdir -p ~/.delvewright
+[ -d "$DELVEWRIGHT_ENGINE/.git" ] \
+  || git clone "https://github.com/$ENGINE_REPO.git" "$DELVEWRIGHT_ENGINE"
+git -C "$DELVEWRIGHT_ENGINE" fetch origin
+git -C "$DELVEWRIGHT_ENGINE" checkout --detach "$ENGINE_REF"
+[ "$(git -C "$DELVEWRIGHT_ENGINE" rev-parse HEAD)" = "$ENGINE_REF" ] \
+  && echo "engine at $ENGINE_REF"
+```
+
+**The clone is guarded because the directory very often already exists** — a
+second run on the same machine, or a checkout somebody made by hand — and a bare
+`git clone` onto it is a hard failure at the third line of the toolchain step.
+The four lines above are the whole answer and they are safe to run any number of
+times: the clone happens once, the `fetch` brings the pinned revision into a
+tree that may predate it, and the `checkout --detach` puts the tree at the pin
+from wherever it was. A `delvewright.local.toml` a previous run left is not a
+problem and is not deleted: it is gitignored there, `checkout` never touches it,
+and I7's dry-run is what decides whether it is usable.
+
+**`unable to read tree`** means the pin names a revision the remote no longer
+carries: say so and **stop** — never fall back to the default branch, which is
+the moving toolchain this pin exists to replace.
+
+**In dev mode nothing is cloned.** Record `git -C "$DELVEWRIGHT_ENGINE"
+rev-parse HEAD` and say which revision the run is authoring against.
+
+## I3a — `delvec` from the release shelf
+
+**`delvec` is one binary** (ADR-0023). Every creator-facing capability is a
+subcommand of it — the compiler, the grammar, prefab admission, schematic
+conversion, harvest, and both render arms. There is nothing else to install and
+no second `PATH` entry to forget. **You download it**; building it is the floor
+you fall to, not the route you take.
+
+One command, and it needs no particular working directory:
+
+```sh
+"$DELVEWRIGHT_PYTHON" "$DELVEWRIGHT_SKILL/scripts/fetch-delvec.py" --into ~/.delvewright/bin
+```
+
+It reads `[engine].repo`, `[engine].release` and `[engine].ref` out of the pin
+beside it in the skill root — all three, and none of them restated anywhere — maps this
+host onto the engine's own `[engine].targets` at `ref`, downloads that archive
+and `SHA256SUMS`, reads this
+archive's row in either form coreutils writes, verifies the bytes, unpacks, and
+asserts `delvec --version` **equals** the release's number. It prints what it
+bound: the target, the archive, the digest and the version.
+
+Its exit code is the whole failure table, and none of the four means the same
+thing:
+
+| exit | what it means | what to do |
+|---|---|---|
+| `0` | the pinned engine is unpacked and answering | continue |
+| `3` no target for this host | the shelf carries no archive for this platform | **I3b**, the floor. That is the answer ADR-0023 §2 gives for exactly this machine |
+| `4` download failed | the transfer never completed | **I3b**, the floor |
+| `5` checksum mismatch | the bytes are not the bytes the release published | **a refusal.** Never the floor, never a retry, never extract what you have. The published `SHA256SUMS` is the only thing binding those bytes to that release |
+| `6` version is not the pin's | the shelf served a different engine than this page was written against | **stop.** Say which version answered and which the pin names |
+
+## I3b — `delvec` from source, the floor
+
+**Only when I3a exited 3 or 4, and in dev mode always.** Not on a checksum
+mismatch: that is a refusal and this is not a way around it.
+
+The floor needs a Rust toolchain, and installing one touches the machine outside
+this project. **`cargo --version` absent is a hand-over**: offer `rustup`, say
+what it installs and where, and wait.
+
+```sh
+( cd "$DELVEWRIGHT_ENGINE" \
+  && cargo --version && rustc --version \
+  && cargo build --release -p delvec )
+export PATH="$DELVEWRIGHT_ENGINE/target/release:$PATH"
+```
+
+**Build from inside the clone, and read the two version lines it prints.** The
+engine pins its compiler in `rust-toolchain.toml` at its own root, and rustup
+finds that file by walking up from the **working directory** — never from a
+`--manifest-path`. Build from a directory outside it and rustup never sees the
+pin: your default toolchain compiles the engine, at exit 0, with nothing
+anywhere saying so. Standing in the clone is what makes the pin apply, which is
+why the `cd` is not tidiness.
+
+```sh
+grep channel "$DELVEWRIGHT_ENGINE/rust-toolchain.toml"
+```
+
+`cargo --version` and `rustc --version` inside the clone must both answer the
+channel that file names. Compare them against that file rather than against this
+page — the page can go stale, the file cannot. **A different number means the
+`cd` did not take effect**, and everything built after it was built with the
+wrong compiler: rebuild.
+
+**In dev mode the binary is held to the checkout's own number.** `delvec
+--version` must equal `"$DELVEWRIGHT_ENGINE/versions.toml"`'s `[engine].version`;
+anything else is a stale binary, and the repair is a rebuild.
+
+## I3c — the binary, answering about itself
+
+```sh
+delvec --version               # delvec <x.y.z>, dsl <a.b.c>, mc 1.21.11
+```
+
+**`<x.y.z>` is the pin's number, not merely a number**: `[engine].release`
+without its `v`, or in dev mode the checkout's `[engine].version`. **Write down
+the `dsl` number** — step 1 needs it on every document. A binary that does not
+answer this at all is a broken install: go back to I3a's table. One answering
+another number is I1b's exit 3.
+
+**The GPU arms are not proved here, and the reason is worth reading once.**
+`delvec render` draws with **Minecraft's own textures**, and the client jar that
+carries them arrives at I5, two steps below. Asked at this point on a machine
+that has never run this page, `render fidelity-gate` refuses with `DW0723 no
+textures found` and exit 5 — the same code and the same tier it uses when a
+machine genuinely has no GPU adapter. So a stop placed here would fire on every
+clean machine there is, and would tell the creator their hardware cannot render
+when the only thing missing is a download this page has not made yet. The arms
+are proved at **I8**, unchanged, where the jar is on disk and a refusal means
+what it says.
+
+The subcommand tree is the whole surface, and this page uses all of it:
+
+| subcommand | what it is |
+|---|---|
+| `delvec validate` / `analyze` / `build` / `fmt` / `schema` / `metrics` | the compiler proper |
+| `delvec snapshot` / `blocking-chart` / `allocation` / `edit` / `calibrate` | the layout loop |
+| `delvec viewer` / `palette` / `scene` / `panorama` / `contact-sheet` / `index` | the CPU render arms |
+| `delvec render` | the GPU arms (`piece`, `batch`, `fidelity-gate`) |
+| `delvec grammar` | writes a new prefab from a rule program |
+| `delvec prefab` | admits a prefab into the library |
+| `delvec schem` | converts an outside schematic |
+| `delvec harvest` | turns in-game playtest notes into a report |
+| `delvec l10n-inventory` | the translation input |
+
+Ask the binary rather than this table when you need the exact shape:
+`delvec --help`, and `delvec <subcommand> --help` for a group's own verbs.
+
+## I4 — the environment file
+
+**Check whether your shell carries state between commands first.** Run `export
+DW_PROBE=1` and then, as a *separate* command, `echo $DW_PROBE`. An empty answer
+means every command you issue gets a fresh shell — the normal case for an agent
+— and every `export` above is lost each time.
+
+The environment goes in one file, outside every campaign. I4 owns six of its
+lines and writes them with this run's values; **every other line is kept**, so
+running I4 again — which is how I1b's exit 3 repairs `env.sh` — never loses the
+library I6 named or a provider key I7 put there:
+
+```sh
+mkdir -p ~/.delvewright
+E="$HOME/.delvewright/env.sh"
+touch "$E"
+{
+  grep -Ev '^export (JAVA_HOME|DELVEWRIGHT_MODE|DELVEWRIGHT_ENGINE|DELVEWRIGHT_PYTHON|DELVEWRIGHT_SKILL|PATH)=' "$E"
+  grep -q '^export DELVEWRIGHT_PREFABS=' "$E" || echo 'export DELVEWRIGHT_PREFABS=""'
+  cat <<EOF
+export JAVA_HOME="$JAVA_HOME"
+export DELVEWRIGHT_MODE="$DELVEWRIGHT_MODE"
+export DELVEWRIGHT_ENGINE="$DELVEWRIGHT_ENGINE"
+export DELVEWRIGHT_PYTHON="$DELVEWRIGHT_PYTHON"
+export DELVEWRIGHT_SKILL="$DELVEWRIGHT_SKILL"
+export PATH="\$JAVA_HOME/bin:<the bin or target/release directory>:\$PATH"
+EOF
+} > "$E.next" && mv "$E.next" "$E"
+```
+
+`DELVEWRIGHT_PREFABS` is written by I6; the first I4 leaves the line empty for
+it. Every command on this page then runs as `. ~/.delvewright/env.sh && <the
+command>`, and that is the form to use consistently.
+
+**Do not reach for the shorter-looking remedy of calling `delvec` by absolute
+path**: it carries `delvec` and nothing else, while later steps need
+`$DELVEWRIGHT_ENGINE` for every Python tool and compose file, `$DELVEWRIGHT_SKILL`
+for every bundled script, `JAVA_HOME` for
+every jar-reading tool and for Chunky at step 12, and `DELVEWRIGHT_PREFABS` for
+every invocation that reads a piece. A run that takes it reaches step 10 with
+`DELVEWRIGHT_ENGINE` empty and reads the failure as a broken harness.
+
+## I5 — the client jar
+
+Every picture in this pipeline is drawn with Minecraft's own textures. The jar
+is in no repository and this toolchain never redistributes it, so it has to
+reach the machine one of two ways — and **which way is the user's decision, not
+yours.** Reading files outside the project is not something you do because it
+happened to be convenient; it is something they asked for.
+
+**This is a hand-over: present both, and wait.** Say it in this form, then end
+your turn:
+
+> The renders need Minecraft 1.21.11's own textures — a 31 MB jar. By default I
+> **download it from Mojang**, and it lands in `~/.chunky/resources/` and
+> nowhere else. If you would rather not download, **tell me your Minecraft
+> directory** and I will copy the jar out of it instead. Which?
+
+Take **A, the download,** on a plain yes and on any answer that names no
+directory. Take **B** only when they name one — never go looking for it
+yourself, and never widen a directory they named into a search.
+
+**A — download (the default).**
+
+```sh
+"$DELVEWRIGHT_PYTHON" "$DELVEWRIGHT_SKILL/scripts/fetch-client-jar.py" --engine "$DELVEWRIGHT_ENGINE"
+```
+
+It resolves the version from `"$DELVEWRIGHT_ENGINE/versions.toml"`'s
+`[minecraft]` pin, walks Mojang's version manifest to that version's client
+download, checks the sha1 Mojang publishes **on the bytes as they arrive**, and
+writes `~/.chunky/resources/minecraft.jar`. **A sha1 that does not match is a
+refusal** (exit 5): it does not retry and it writes nothing.
+
+Nothing in it is a constant this page made up. The manifest URL is the one
+`"$DELVEWRIGHT_ENGINE/tools/check-patrol-types.py"` and
+`"$DELVEWRIGHT_ENGINE/tools/derive-client-langs.py"` both already carry, and the
+version is the engine's own pin. **The client half has no committed pin to agree
+with**, so the sha1 checked is Mojang's own: it proves the transfer and the
+version, and nothing in this project would notice if Mojang republished. Say
+that when you report, rather than writing a pin of your own onto this page.
+
+**B — copy, from the directory they named.**
+
+```sh
+mkdir -p ~/.chunky/resources
+cp "<the directory they named>/versions/1.21.11/1.21.11.jar" \
+   ~/.chunky/resources/minecraft.jar
+```
+
+If they ask where it usually is: `~/Library/Application Support/minecraft` on
+macOS, `~/.minecraft` on Linux. Offer those for them to confirm — do not `find`
+the disk for them.
+
+Either way the jar ends at `~/.chunky/resources/minecraft.jar`, the last of the
+three paths every texture-reading tool tries, in this order: `--textures <jar>`
+on the command, `$DELVEWRIGHT_CLIENT_JAR`, then that file. Chunky reads the same
+jar when it renders at step 12, which is why one copy serves both.
+
+**This step's postcondition is that the file is there**, and on path B nothing
+prints it, so look:
+
+```sh
+ls -l ~/.chunky/resources/minecraft.jar
+```
+
+Path A's script says the same thing itself, with the size and the sha1 it
+checked. **That the texture ladder actually answers is I8's line, not this
+one** — reading a jar takes `delvec`, a scratch directory and a piece to read,
+and the tools that own those are the finish checklist's.
+
+## I6 — the library, named
+
+**Nothing is cloned here.** The shipped prefab library is an optional input:
+its absence is a refusal at the step that wanted it, never a wrong answer. This
+step decides what `DELVEWRIGHT_PREFABS` names and says out loud what is there.
+
+| the working directory is | `DELVEWRIGHT_PREFABS` becomes |
+|---|---|
+| a dev engine checkout | the `campaigns/` link's `prefabs/` |
+| a clone of the content repository | its own `prefabs/` |
+| anything else, and `~/.delvewright/campaigns` exists | that clone's `prefabs/` |
+| anything else | `campaigns/prefabs` under the working directory, created empty |
+
+Report which of the four it is, and — when a clone answered — the revision it
+stands at against the revision `"$DELVEWRIGHT_ENGINE/versions.toml"`'s
+`[content].sha` names. A clone at a different revision is **named, not
+corrected**: step 2 says which revision it will use and records it in
+`GENERATION.md`.
+
+The whole of what a library must satisfy before it is used, and how one is
+taken, is *The shipped library*, named from step 2. Do not take it here.
+
+## I7 — named, not installed
+
+Init's job is that nothing later stops on a missing tool without having said so.
+A creator about to lose their network needs to learn **now** that a download is
+still owed, not four hours later.
+
+**Chunky.** It renders every frame that has to *look* like Minecraft — the
+player-POV review shots, the storybook art, the whole-map panorama. It is a
+separate program: `delvec` writes the scene, Chunky renders it. Step 12 installs
+it, at the moment the first frame is wanted, by building the pinned core from
+Chunky's source, and step 14 reuses that install.
+
+```sh
+git ls-remote --exit-code "$("$DELVEWRIGHT_PYTHON" "$DELVEWRIGHT_ENGINE/tools/lib/versions.py" render.chunky_source)" HEAD >/dev/null
+```
+
+Exit 0 means step 12 will be able to fetch the source. **A non-zero is not a
+stop** — it blocks no authoring step — but say it out loud here, because it *is*
+a stop at step 12. Step 12 also needs a JDK 17, which Chunky's own build runs
+under: say now whether `scripts/find-jdk.py --major 17` finds one. The 21 in I1 is
+the pinned game's own number.
+
+**Reference images, and only on the drawing path.** The design gate at step 4 is
+confirmed on pictures of the design, and there are two ways to have them.
+
+*Path A — the campaign already has an approved design.* **No campaign id exists
+yet — step 1 decides it** — so this looks at the working directory rather than
+at a name, and enumerates:
+
+```sh
+ls -d campaigns/*/design/ 2>/dev/null || echo "no campaign here carries a design/"
+```
+
+A directory listed puts this run on path A only when it belongs to **the
+campaign the user's prompt is asking for again**. That is the whole test, and
+the prompt is what answers it: a design belonging to some other campaign that
+happens to share the working directory is not this run's reference, and a prompt
+that names no existing campaign is path B whatever the listing says.
+
+A campaign being re-made carries `design/README.md` (the approved names),
+`design/concept/` (one image per scene) and, when the map was designed as a
+whole, `design/reference/` (the map views, their prompts, their style note and
+their sidecars), with `design.json` beside them at the campaign root carrying
+one row per approved image and the sky it was drawn under. **If that directory
+exists, the reference exists.** Read it, author from it, judge against it, and
+present every later choice beside it. You need no image provider, and nothing
+else in I7 is owed. Do not re-draw an approved image; the approval is attached
+to the file that is there.
+
+*Path B — there is no approved design yet, and you are drawing one.*
+`"$DELVEWRIGHT_ENGINE/tools/refimg.py"` draws reference images. It is stdlib
+Python and needs nothing built, but it calls a **paid third-party image API**,
+and three things must be in place before step 4 — establish them here, not at
+the gate:
+
+- a `[refimg]` section in `"$DELVEWRIGHT_ENGINE/delvewright.local.toml"`. The
+  tool reads that one file and takes no `--config`.
+  **Expect it to be absent, and write it — that is this bullet's whole
+  instruction.** `delvewright.local.toml*` is gitignored in the engine, so no
+  clone carries one and the checkout I2 just made has none. It is owed **once
+  per checkout**, which means again the next time I2 clones the engine, however
+  many times you have set one up before. Where the section comes from: the
+  committed `"$DELVEWRIGHT_ENGINE/delvewright.toml"`, which documents the shape
+  and stays inert. Copy its commented `[refimg]` block out, strip the `# `, and
+  fill in `provider`, `model`, `api_key_env` and the frame keys that provider
+  takes. `.local` overrides the committed file section by section, so `[refimg]`
+  is the only section this file needs;
+- **the key never enters that file, and there is nothing to paste into it.**
+  `api_key_env` is the NAME of an environment variable, read at call time and
+  never stored or logged, and an inline `api_key =` is refused outright. So the
+  key lives in **the environment your shell sees**, under the name that section
+  gives.
+  - **The name is yours to choose, so look before you write it.** You are
+    writing the section, so it can name whatever variable the machine already
+    has — and the block you copied out of `delvewright.toml` names an example,
+    not a requirement. Read the environment for provider keys first; this prints
+    NAMES and never values:
+
+    ```sh
+    env | grep -Eo '^[A-Z0-9_]*(API_KEY|APIKEY|TOKEN)[A-Z0-9_]*' | sort
+    ```
+
+    **A name is evidence of a provider only when it NAMES one.** A variable
+    carrying `GEMINI` or `IDEOGRAM` says which of the two it is for, so write
+    that name into `api_key_env` and set `provider`/`model` to match it —
+    copying the example name literally and then finding it unset is how a run
+    spends a turn of the user's asking for a key they already have under another
+    name. **A provider-neutral name is a candidate, not a match**, and
+    `DELVEWRIGHT_REFIMG_API_KEY` is exactly that: it says what the key is *for*
+    and nothing about *whose* it is, and nothing in the engine tree resolves it —
+    `grep -rn DELVEWRIGHT_REFIMG_API_KEY "$DELVEWRIGHT_ENGINE"` returns nothing,
+    because the convention in `delvewright.toml` is one variable per provider and
+    a shared name is the case it did not anticipate. **Never guess between the
+    two.** Ask the user which provider that key is for, in one line, naming the
+    variable you found — that is a turn; a wrong guess is `HTTP 401: Access
+    denied` from a provider the key was never issued by, which reads like a dead
+    key rather than a wrong address and sends the next turn to the user anyway.
+    **Read the list, do not count it**: the pattern matches any name carrying
+    `TOKEN`, and on a machine that has never drawn anything the only hit is the
+    harness's own `CLAUDE_CODE_MESSAGING_TOKEN`, which is not a provider key.
+  - **Only when the list holds no provider key at all, ask the user for one.**
+    That is the ordinary case on a clean machine, so ask for the whole thing at
+    once rather than one field per turn, and ask for exactly this:
+
+    > Drawing the design reference calls a paid image API, and this machine has
+    > no image-provider key set. `delvec` supports two: **Google Gemini**
+    > (`gemini-native`) or **Ideogram** (`ideogram-v3`). Tell me which you have
+    > an account with and paste the key, and I will put the key in your shell
+    > environment — never in a file in the repository — under a name of your
+    > choosing. Without one I can still author the campaign, but step 4's design
+    > gate has no picture to show you.
+
+    Never guess a provider, and never invent a key name for a key you were not
+    given. **Where the key goes matters as much as having it**: your shell
+    almost certainly carries nothing between commands (I4's probe), so a key
+    exported in one turn is gone by the next. Put the `export` line in
+    `~/.delvewright/env.sh`, which every command already sources and which lives
+    outside every repository — and say to the user, in one line, that you have
+    done so and where the file is;
+- a confirmation that costs no call:
+
+```sh
+"$DELVEWRIGHT_PYTHON" "$DELVEWRIGHT_ENGINE/tools/refimg.py" \
+    --prompt "smoke test" --dry-run
+```
+
+Absent configuration exits 2 and says exactly what to add. A malformed one is a
+hard error.
+
+**The two providers do not hold a series to one style the same way, and the
+difference is settled HERE, where the provider is chosen — not at the command
+that fails.** A reference is several full-frame views of one place, the first
+setting the style and every later one anchored to it, and each provider takes a
+different anchor and a different frame vocabulary:
+
+| | anchor every later view with | frame each view with | the style contract goes |
+|---|---|---|---|
+| `gemini-native` | `--chain-from` with view 1's interaction id — the structural anchor; `--style-ref` with view 1's image also works | `--aspect-ratio` / `--image-size` | in `--style-note`, held constant |
+| `ideogram-v3` | `--style-ref` with view 1's image — **it has no interaction chaining** | `--resolution` as `WxH` | **in the prompt itself**, repeated per call |
+
+`--style-ref` is therefore the one anchor both providers take, and a run that
+wants one method for both uses it. Every mismatch is a refusal at `--dry-run`,
+free and by name — `--chain-from: provider 'ideogram-v3' has no interaction
+chaining`, `--style-note: provider 'ideogram-v3' has no system-instruction
+channel; put the style contract in the prompt itself`, `--aspect-ratio: provider
+'ideogram-v3' has no aspect_ratio — it frames a picture with --resolution` — so
+nothing is ever silently dropped. But the refusal arrives mid-series; the row
+above is what stops you writing the series against the wrong vocabulary.
+`--style-code` is Ideogram's own exact-reuse anchor and it is **not** an option
+for a run: the generate response was measured not to return one, so the code can
+only be read off the web UI, which is a human at a browser in the middle of an
+agent's series. Say out loud which of the two rows this run is on.
+
+On path B this is a **hard prerequisite of the whole run**, not of one step. For
+a site-plan campaign the map's own reference is the first thing written and
+everything below is written against it; for an `areas[]` campaign the same wall
+stands at step 4. Reaching either without a provider stops the line where
+stopping is most expensive.
+
+**The skin toolchain is not mentioned in Init at all.** A face is established
+when a design first calls for one, at step 5.
+
+## I8 — the whole toolchain, answering
+
+The checklist is on the page; this section is what each of its lines means when
+it does not answer. It is the **only** place the toolchain is exercised end to
+end, and that is deliberate: three of its lines need a client jar, a `delvec` and
+a named library all at once, and no earlier step has all three. Run every line
+through `env.sh`, so that a line failing because the environment was lost cannot
+be mistaken for a missing tool.
+
+`mkdir -p .out` before the last two is not decoration: `delvec … -o` writes the
+file and does **not** create its parent, so a missing directory comes back as
+`DW0722 … No such file or directory` at exit 3 — a write error that reads like a
+missing prefab. (`delvec render` does create its output tree; the two are not
+consistent.)
+
+| the line | a non-zero, and what it actually means |
+|---|---|
+| `java -version` | `JAVA_HOME` never reached `env.sh`, or the JDK I1 chose is not the one on `PATH`. Re-read I1; do not install anything |
+| `echo "$DELVEWRIGHT_ENGINE"` | empty means `env.sh` was not sourced, or I4 wrote it before I2 set the value |
+| the I1b line | anything but exit 0 means the toolchain is not the pin's: take I1b's table, not this one |
+| `delvec --version` | no answer: the binary on `PATH` is not the one I3a unpacked or I3b built — check the `PATH` line `env.sh` carries. **An answer whose number is not the pin's is the same failure**, and I1b's line above has already said which step repairs it |
+| `delvec grammar list` | the binary answers about itself but its compiled-in corpus does not load: a broken archive. Re-run I3a; a second failure is a refusal, not a retry |
+| `delvec render fidelity-gate` | **this is the GPU-arms proof, and by here it means what it says.** `DW0723 no textures found` means I5 did not land the jar — go back to I5, this is not a verdict on the machine. Any other `DW0723` (`gpu init: …`) is the GPU arms failing on this hardware: **stop**, because the visual half of the run cannot be reviewed and nothing downstream would say so. `DW0720` at exit 4 is a third thing again — the fixture rendered and a block came out untextured, which is a jar that is not 1.21.11 |
+| `grammar expand` then `palette` | the texture ladder. A `DW0723` here says the same thing it says on the line above; a `DW0722` says `.out/` is missing |
+| the Chunky probe | not a stop — said out loud at I7, and a stop at step 12, as is a missing JDK 17 |
+| `docker info` | steps 9 and 10 cannot run. Halt |
+| `docker compose version` | the daemon is fine and the **Compose plugin** is not installed for this user — `docker info` above already passed and says nothing about it. Step 10 cannot run: halt for it. `docker: unknown command: docker compose` is the whole message you get |
+
+**Any line answering wrongly means Init is not finished**, and a run that
+continues authors against a half-built toolchain.
+
+## Where output goes, and the one place it cannot go
+
+`.out/` under the working directory is scratch; put everything disposable there.
+**One tree is different: the build output the machine ladder boots.**
+
+Three ladder entries can boot a tree anywhere: `bot-run.sh` and
+`packtest-run.sh` take `--output <tree>`, and `branch-runs.sh` takes the same
+tree from `DELVE_OUTPUT` — give that one an absolute path, because
+`branch-runs.sh` resolves a relative value against the engine root while compose
+resolves it against `validation/`, so one relative value names two trees.
+
+**Two paths still need the tree one level inside the engine's `validation/`,**
+and for two different reasons. A bare `docker compose … --profile play` sets no
+`DELVE_DOCKERFILE`, so `../Dockerfile.delve` is resolved against the build
+context and only a tree beside `validation/` finds it. `--profile playtest` is
+narrower still: that service's build block hardcodes `context: ./delve-output`,
+so it cannot be pointed outside `validation/` at all. Anywhere else they fail
+with `failed to read dockerfile`, which reads as a broken harness and is not one.
+
+So every step that names a build output writes to
+`"$DELVEWRIGHT_ENGINE/validation/delve-output"` — the one tree every path can
+boot, in both modes, because the engine tree is a checkout in both. It is
+gitignored there and no campaign file goes near it.

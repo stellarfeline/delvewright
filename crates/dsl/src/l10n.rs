@@ -19,6 +19,20 @@
 //! after `<prefix>/`, kebab preserved). Ids are unique within their namespace, so
 //! every key is unique.
 //!
+//! These are the keys **within one campaign** — what a sidecar answers, what
+//! `DW0180` counts, what `delvec l10n-inventory` hands a translator. What leaves
+//! the delve is each of them under that delve's own [pack namespace]
+//! (`delve.<campaign_id>.`, [`pack_key`]), because a client merges every applied
+//! resource pack into ONE language table and a campaign-relative key in there is
+//! a key some other delve answers. See [`pack_namespace`].
+//!
+//! A delve's pack writes into a second client-global space with the same property
+//! — the texture space its baked skins land in — so that namespace lives here too
+//! ([`pack_texture_id`], [`namespace_skin_textures`]), beside the one it argues
+//! from. What leaves a delve is namespaced in one place or in none.
+//!
+//! [pack namespace]: pack_namespace
+//!
 //! | Key | Source string |
 //! |-----|---------------|
 //! | `world.title` | stage-1 `content.title` |
@@ -89,6 +103,7 @@
 //! player never sees, so translating them is pointless and out of scope): world
 //! `theme`/`premise`, NPC `persona` fields, persona `relationships`.
 
+use crate::stages::Verb;
 use std::collections::{BTreeMap, BTreeSet};
 
 use schemars::JsonSchema;
@@ -103,15 +118,15 @@ use crate::stages::{NarrateStyle, QuestEffect};
 /// `narrate` line and a named `give-item`'s display name. `keybase` is the
 /// effect's stable position-derived key prefix.
 fn effect_strings(eff: &mut QuestEffect, keybase: &str, f: &mut dyn FnMut(&str, &mut String)) {
-    match eff {
-        QuestEffect::Narrate { text, .. } => f(&format!("{keybase}.narrate"), text),
-        QuestEffect::GiveItem { name: Some(n), .. } => f(&format!("{keybase}.give"), n),
+    match &mut eff.verb {
+        Verb::Narrate { text, .. } => f(&format!("{keybase}.narrate"), text),
+        Verb::GiveItem { name: Some(n), .. } => f(&format!("{keybase}.give"), n),
         // spec-0016 §1: the bonfire's rest dialog is
         // read by the player like any other on-screen line, so its authored
         // strings translate like any other. Unauthored fields are absent from the
         // inventory — the compiler bakes its canonical English, exactly as
         // `world.boundary.message` does.
-        QuestEffect::Bonfire {
+        Verb::Bonfire {
             prompt,
             rest_label,
             save_label,
@@ -131,7 +146,7 @@ fn effect_strings(eff: &mut QuestEffect, keybase: &str, f: &mut dyn FnMut(&str, 
         // off the actionbar exactly like a `narrate`, so it translates like one. An
         // unauthored hint is absent from the inventory — the compiler bakes its
         // canonical English, exactly as `world.boundary.message` does.
-        QuestEffect::CloseGate {
+        Verb::CloseGate {
             sealed_hint: Some(h),
             ..
         } => f(&format!("{keybase}.sealed_hint"), h),
@@ -923,6 +938,129 @@ pub fn tag(key: &str, english: &str) -> String {
     format!("{TR_SIGIL}{key}{TR_SIGIL}{english}")
 }
 
+/// The root segment of the **pack key space** — the key space a delve writes into
+/// its resource pack and references from its text components. Distinct from every
+/// key space a delve authors in, and from the compiler's own
+/// [`chrome::RESERVED_PREFIX`](crate::chrome::RESERVED_PREFIX), so a key's first
+/// segment says which space it is in.
+pub const PACK_KEY_ROOT: &str = "delve";
+
+/// The prefix every key of one delve's pack key space carries:
+/// `delve.<campaign_id>.`.
+///
+/// # One delve, one vocabulary
+///
+/// A campaign's own key space (`world.title`, `npc.<n>.name`, …) is
+/// **campaign-relative**: it identifies a row inside one campaign's documents, and
+/// the l10n sidecar that answers it sits in that campaign's directory. Two
+/// campaigns naming the same row therefore write the same key, which is correct
+/// where those keys live and catastrophic where they end up.
+///
+/// Where they end up is a Minecraft client's **merged language table**, and that
+/// table is not per-delve. It is the union of every applied resource pack:
+/// `tools/playtest-server.sh` installs each delve's pack into the player's
+/// `resourcepacks/` directory as `<campaign_id>.zip`, where it stays enabled
+/// across servers and worlds, and a server-pushed pack merges on top of whatever
+/// is already applied. A `{"translate": …, "fallback": …}` component renders its
+/// `fallback` **only when the key is absent from that merged table**, so any delve
+/// whose pack is still applied answers for every other delve that asks the same
+/// key — one delve's completion toast reading another delve's title, in a language
+/// the delve it was playing does not ship.
+///
+/// So every key that leaves a delve — into a component, into a lang file — is
+/// namespaced by the campaign that owns it, and two delves' vocabularies are
+/// disjoint sets. The campaign id is the right grain: it is what the pack file is
+/// named after, so a rebuilt campaign replaces its own pack rather than joining it.
+///
+/// Campaign ids are kebab tokens ([`CampaignId::is_valid_syntax`]) and carry no
+/// `.`, so the namespace of one id can never be a prefix of another's key.
+pub fn pack_namespace(campaign_id: &str) -> String {
+    format!("{PACK_KEY_ROOT}.{campaign_id}.")
+}
+
+/// One key of `campaign_id`'s [pack key space](pack_namespace): the key as the
+/// campaign's own documents and sidecars know it, under that campaign's namespace.
+/// The single authority — the tagger, the chrome resolver and the lang-file writer
+/// all build their keys here, so what a component references and what the pack
+/// defines cannot drift.
+pub fn pack_key(campaign_id: &str, key: &str) -> String {
+    format!("{}{key}", pack_namespace(campaign_id))
+}
+
+/// The directory one delve's baked skin textures occupy inside the pack's shared
+/// asset namespace: `<campaign_id>/`.
+///
+/// # The same defect, in the other space a pack writes into
+///
+/// A lang key and a texture id are the same kind of thing: a name a delve writes
+/// into a space the CLIENT owns. Enabled resource packs merge per path and stay
+/// enabled across servers and worlds, so `assets/delvewright/textures/npc/keeper.png`
+/// is `keeper`'s face in every delve applying a pack — two delves that both cast a
+/// `keeper` render each other's faces, exactly as two delves that both name
+/// `world.title` read each other's titles. The grain is the campaign id for the
+/// same reason [`pack_namespace`] gives: the pack file is named after it, so a
+/// rebuilt campaign replaces its own textures rather than joining them.
+///
+/// # Why this is not [`pack_key`]'s dotted prefix
+///
+/// A texture id is not a key, it is a **resource-location path**, and a path's
+/// namespace separator is `/`. Vanilla's own assets nest by directory
+/// (`textures/entity/villager/…`); a `.` inside a final path segment is legal by
+/// the grammar but has no vanilla precedent, and this engine does not invent
+/// notation where established practice answers. Same grain, same reasoning, the
+/// separator the space uses.
+///
+/// Campaign ids are kebab tokens ([`CampaignId::is_valid_syntax`]) and so carry no
+/// `/`, so one delve's directory can never be a prefix of another's texture id.
+pub fn pack_texture_dir(campaign_id: &str) -> String {
+    format!("{campaign_id}/")
+}
+
+/// One texture id of `campaign_id`'s [texture space](pack_texture_dir): the id as
+/// the campaign's own documents know it (`skins/<texture_id>.png`, `DW0190`,
+/// `DW0309`), under that campaign's directory. The single authority — the
+/// mannequin's `profile.texture` and the pack's archive path are both built from
+/// it, so what a summon points at and what the pack ships cannot drift.
+pub fn pack_texture_id(campaign_id: &str, texture_id: &str) -> String {
+    format!("{}{texture_id}", pack_texture_dir(campaign_id))
+}
+
+/// Rewrite every skin declaration in `c` to carry its
+/// [pack texture id](pack_texture_id), returning `pack id → authored id` — the
+/// map a caller needs to find `skins/<authored id>.png` on disk.
+///
+/// **The funnel, and the reason this is a rewrite rather than a rule emitters
+/// follow.** A body's texture reaches emission exactly one way: an emitter reads
+/// `skin.texture_id` off the body it is summoning. Applying the namespace at those
+/// emit sites is a rule each of them has to remember — the shape that let an
+/// actor's skin be emitted but never baked. Applying it here, at the one walk over
+/// every body that declares a skin ([`crate::stages::body_skins_mut`], the mutable
+/// mirror of [`crate::stages::body_skin_sites`]), leaves no un-namespaced id in the
+/// campaign for a new emit site to find: a summon written tomorrow is namespaced
+/// because there is nothing else to read. Same shape as [`tag_translatables`],
+/// which is why it sits beside it.
+///
+/// **The creator's key space does not move.** `texture_id` is what a creator
+/// writes in `npcs.json`/`quests.json` and names `skins/<texture_id>.png` after,
+/// and `DW0190` (malformed or duplicate id) and `DW0309` (missing PNG) both read it
+/// as authored — every one of them runs on the campaign *before* this rewrite, and
+/// `validate`/`analyze`, which never emit, never reach it at all.
+///
+/// Two bodies may name one texture (a character and the puppet that plays it), so
+/// the returned map is keyed by pack id and is smaller than the walk.
+pub fn namespace_skin_textures(c: &mut Campaign) -> BTreeMap<String, String> {
+    let dir = pack_texture_dir(c.world.campaign_id.as_str());
+    let mut sources = BTreeMap::new();
+    for skin in crate::stages::body_skins_mut(c) {
+        let packed = format!("{dir}{}", skin.texture_id);
+        sources.insert(
+            packed.clone(),
+            std::mem::replace(&mut skin.texture_id, packed),
+        );
+    }
+    sources
+}
+
 /// Split a translation tag into `(key, english)`. `None` for an untagged string —
 /// a compiler-baked literal such as the default boundary message, which has no
 /// inventory key and is translated by neither v1 nor v2.
@@ -959,11 +1097,19 @@ pub fn has_tr_sigil(s: &str) -> bool {
 /// The campaign handed to the compiler is tagged **once**, before the plan is
 /// built; from there the tag is the compiler's only evidence that a string it is
 /// about to emit is player-visible and translatable.
+///
+/// **The tag carries the [pack key](pack_key), not the inventory key.** The
+/// returned inventory is the campaign's own key space, unchanged — that is what a
+/// sidecar answers and what `DW0180` counts — while what travels to emission, and
+/// so into every component and lang file, is `delve.<campaign_id>.<key>`. The two
+/// differ exactly where they are read: a sidecar is read inside one campaign's
+/// directory, a lang file inside a client's shared language table.
 pub fn tag_translatables(c: &mut Campaign) -> BTreeMap<String, String> {
+    let ns = pack_namespace(c.world.campaign_id.as_str());
     let mut inv = BTreeMap::new();
     each_string(c, &mut |key, value| {
         inv.insert(key.to_string(), value.clone());
-        *value = tag(key, value);
+        *value = tag(&format!("{ns}{key}"), value);
     });
     inv
 }

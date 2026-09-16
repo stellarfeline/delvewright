@@ -18,12 +18,15 @@
 mod common;
 
 use delvewright_dsl::{RawCampaign, check_campaign};
+use std::sync::LazyLock;
 
 /// A v0.6 quests doc exercising `forbids_flags` on an objective, a quest
 /// effect, a trigger (trigger-level and effect-level). `flag/armed` and
 /// `flag/stood-down` are both produced by `set-flag` effects.
-const QUESTS_FORBIDS: &str = r#"{
-  "dsl_version": "0.19.0",
+static QUESTS_FORBIDS: LazyLock<String> = LazyLock::new(|| {
+    common::at_dsl_version(
+        r#"{
+  "dsl_version": "%dsl_version%",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {
@@ -39,7 +42,7 @@ const QUESTS_FORBIDS: &str = r#"{
         "on_objective_complete": {
           "obj/talk": [
             { "type": "set-flag", "flag": "flag/armed" },
-            { "type": "open-gate", "anchor": "anchor/door", "forbids_flags": ["flag/stood-down"] }
+            { "type": "open-gate", "when": { "forbids_flags": ["flag/stood-down"] }, "anchor": "anchor/door" }
           ]
         },
         "on_complete": [ { "type": "campaign-complete" } ]
@@ -53,13 +56,15 @@ const QUESTS_FORBIDS: &str = r#"{
         "requires_flags": ["flag/armed"],
         "forbids_flags": ["flag/stood-down"],
         "effects": [
-          { "type": "set-flag", "flag": "flag/stood-down",
-            "forbids_flags": ["flag/stood-down"] }
+          { "type": "set-flag",
+            "when": { "forbids_flags": ["flag/stood-down"] }, "flag": "flag/stood-down" }
         ]
       }
     ]
   }
-}"#;
+}"#,
+    )
+});
 
 fn campaign_with_quests(quests: &str) -> RawCampaign {
     RawCampaign {
@@ -74,6 +79,7 @@ fn campaign_with_quests(quests: &str) -> RawCampaign {
         layout_graph: None,
         site_plan: None,
         detail_plan: None,
+        design: None,
     }
 }
 
@@ -81,7 +87,7 @@ fn campaign_with_quests(quests: &str) -> RawCampaign {
 /// validates clean under 0.6.0.
 #[test]
 fn forbids_flags_validates_clean() {
-    let diags = check_campaign(&campaign_with_quests(QUESTS_FORBIDS));
+    let diags = check_campaign(&campaign_with_quests(QUESTS_FORBIDS.as_str()));
     assert!(
         diags.is_empty(),
         "forbids_flags across all quests-stage sites must validate clean: {diags:#?}"
@@ -97,8 +103,7 @@ fn unknown_forbids_flag_is_dw0172_at_every_site() {
         ("objective", r#""forbids_flags": ["flag/stood-down"] }"#),
         (
             "effect",
-            r#""forbids_flags": ["flag/stood-down"] }
-          ]"#,
+            r#""when": { "forbids_flags": ["flag/stood-down"] }, "anchor": "anchor/door""#,
         ),
     ] {
         let broken =
@@ -140,7 +145,7 @@ fn forbids_only_completing_option_is_dw0191() {
             r#""forbids_flags": ["flag/armed"], "effects": ["#,
             1,
         );
-    let mut raw = campaign_with_quests(QUESTS_FORBIDS);
+    let mut raw = campaign_with_quests(QUESTS_FORBIDS.as_str());
     raw.dialogue = dialogue;
     let diags = check_campaign(&raw);
     assert!(

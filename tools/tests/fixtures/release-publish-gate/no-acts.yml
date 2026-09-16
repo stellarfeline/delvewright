@@ -1,0 +1,13 @@
+# A workflow that publishes nothing at all. On its own it is the vacuous
+# population: a scan that finds no publishing act has not proved a tree clean.
+name: fixture — nothing to publish
+on:
+  pull_request:
+jobs:
+  build:
+    name: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: ./.github/actions/fixture-checkout
+      - name: build
+        run: echo building

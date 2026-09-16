@@ -25,8 +25,9 @@
 
 mod common;
 
-use delvewright_compiler::registry::{FullEntityRegistry, FullItemRegistry, PrefabRegistry};
-use delvewright_dsl::{Campaign, EffectRootKind, RawCampaign, parse_campaign};
+use delvec::compiler::registry::{FullEntityRegistry, FullItemRegistry, PrefabRegistry};
+use delvewright_dsl::{Campaign, DSL_VERSION, EffectRootKind, RawCampaign, parse_campaign};
+use std::sync::LazyLock;
 
 // ---------------------------------------------------------------------------
 // fixture plumbing
@@ -55,6 +56,7 @@ fn parse_hw(quests: &str, dialogue: Option<&str>) -> Campaign {
         layout_graph: None,
         site_plan: None,
         detail_plan: None,
+        design: None,
     };
     parse_campaign(&raw).expect("campaign parses")
 }
@@ -81,14 +83,13 @@ fn quests_doc(prelude: &str, exit_tail: &str) -> String {
 /// `on_objective_complete` bundle (leading comma included) — where a fixture puts
 /// a producer at whatever nesting depth it wants to test.
 fn quests_doc_with(prelude: &str, exit_tail: &str, talk_tail: &str) -> String {
-    quests_doc_versioned("0.19.0", prelude, exit_tail, talk_tail, "")
+    quests_doc_versioned(prelude, exit_tail, talk_tail, "")
 }
 
 /// As [`quests_doc_with`], with the stage's `dsl_version` and a trailing
 /// `content` section (leading comma included) under the caller's control — the
 /// v0.10 `on_death` root lives at the content level, not inside a quest.
 fn quests_doc_versioned(
-    version: &str,
     prelude: &str,
     exit_tail: &str,
     talk_tail: &str,
@@ -96,7 +97,7 @@ fn quests_doc_versioned(
 ) -> String {
     format!(
         r#"{{
-  "dsl_version": "{version}",
+  "dsl_version": "{DSL_VERSION}",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {{
@@ -189,8 +190,8 @@ fn the_walk_enumerates_every_root_and_reports_what_it_bound_to() {
 #[test]
 fn a_campaign_using_every_root_binds_every_root() {
     let c = parse_hw(
-        &quests_doc_versioned("0.19.0", ALL_ROOTS_PRELUDE, "", "", ON_DEATH_TAIL),
-        Some(RESPAWN_DIALOGUE),
+        &quests_doc_versioned(ALL_ROOTS_PRELUDE, "", "", ON_DEATH_TAIL),
+        Some(RESPAWN_DIALOGUE.as_str()),
     );
     let binding = delvewright_dsl::for_each_effect_root(&c, &mut |_, _| {});
     assert!(
@@ -209,7 +210,7 @@ fn a_campaign_using_every_root_binds_every_root() {
 #[test]
 fn an_empty_on_death_binds_nothing() {
     let c = parse_hw(
-        &quests_doc_versioned("0.19.0", "", "", "", r#", "on_death": []"#),
+        &quests_doc_versioned("", "", "", r#", "on_death": []"#),
         None,
     );
     let binding = delvewright_dsl::for_each_effect_root(&c, &mut |_, _| {});
@@ -248,8 +249,10 @@ const ON_DEATH_TAIL: &str = r#",
 
 /// A dialogue whose option sets a checkpoint carrying an `on_respawn` bundle —
 /// effect root 5, the one that hangs off the dialogue stage.
-const RESPAWN_DIALOGUE: &str = r#"{
-  "dsl_version": "0.19.0",
+static RESPAWN_DIALOGUE: LazyLock<String> = LazyLock::new(|| {
+    common::at_dsl_version(
+        r#"{
+  "dsl_version": "%dsl_version%",
   "campaign_id": "hello-world",
   "stage": "dialogue",
   "content": {
@@ -267,7 +270,9 @@ const RESPAWN_DIALOGUE: &str = r#"{
         ] }
     ]
   }
-}"#;
+}"#,
+    )
+});
 
 // ---------------------------------------------------------------------------
 // 2. `dsl::validate`'s flag-producer inventory (`collect_declared_flags`)
@@ -332,7 +337,7 @@ const GATED_TRIGGER: &str = r#""triggers": [
 
 /// The producer, one level down, in a `move-npc`'s `on_arrive` reaction bundle —
 /// the exact shape `nobodys-cave-island` ships twice.
-const NESTED_PRODUCER: &str = r#", { "type": "move-npc", "npc": "npc/keeper", "to_anchor": "anchor/exit",
+const NESTED_PRODUCER: &str = r#", { "type": "move-npc", "npc": "npc/keeper", "to": { "anchor": "anchor/exit" },
              "on_arrive": [ { "type": "set-flag", "flag": "flag/posted" } ] }"#;
 
 /// The same producer at the top level — the control.

@@ -49,6 +49,12 @@ MANIFEST = REPO / ".github" / "required-status-checks.txt"
 # future reader can weigh, not just a name.
 ADVISORY_JOBS: dict[str, str] = {}
 
+# The job every other job needs (`.github/ci-reach.toml`'s filter). When it
+# fails, every job needing it is skipped, and branch protection accepts a skipped
+# required check — so its own red is the only thing standing between that pull
+# request and `main`. It may never be advisory, and it must be required.
+FILTER_JOB = "changes (which jobs a pull request reaches)"
+
 # **How many advisory jobs this repository is allowed to hold.**
 #
 # The previous version of this file said "nothing else may be added here on this
@@ -153,6 +159,18 @@ def main() -> int:
                 f"this checker's ADVISORY_JOBS with the reason it may fail without "
                 f"consequence."
             )
+
+    if FILTER_JOB not in jobs:
+        findings.append(
+            f"the filter job {FILTER_JOB!r} is not a job in ci.yml. Every other job "
+            f"reads its group from it; if it was renamed, rename it here as well."
+        )
+    elif FILTER_JOB in ADVISORY_JOBS or FILTER_JOB not in required:
+        findings.append(
+            f"the filter job {FILTER_JOB!r} is not required. When it fails every "
+            f"job that needs it is skipped, and a skipped required check passes "
+            f"branch protection, so its own red must block the merge."
+        )
 
     # The budget. A gate nothing enforces is the shape this whole file exists to
     # prevent, and an unbounded exemption list is one.

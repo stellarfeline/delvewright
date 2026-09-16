@@ -682,7 +682,8 @@ pub fn format_text(text: &str) -> Result<String, ParseError> {
 /// works. `tests::the_guard_catches_a_renderer_that_sorts_arrays` hands this a
 /// deliberately array-sorting renderer and asserts `DW0772`.
 fn format_with(text: &str, render: impl Fn(&Node) -> String) -> Result<String, ParseError> {
-    let before = parse(text)?;
+    let mut before = parse(text)?;
+    stamp_version(&mut before);
     let out = render(&before);
     let after = parse(&out).map_err(|e| ParseError {
         code: DW_FMT_NOT_EQUIVALENT,
@@ -706,6 +707,25 @@ fn format_with(text: &str, render: impl Fn(&Node) -> String) -> Result<String, P
         });
     }
     Ok(out)
+}
+
+/// **`delvec fmt` writes the number** (ADR-0024, spec-0059 §9): an envelope's
+/// `dsl_version` is rewritten to the one this engine implements, so adopting a
+/// campaign to a new surface is `delvec fmt` plus the edit the surface asks
+/// for, and `--check` reds a document that still declares the old one. Only a
+/// top-level string `dsl_version` is touched — that key is the envelope's, and
+/// nothing else in this DSL spells it — and a document with none is not one.
+fn stamp_version(node: &mut Node) {
+    if let Node::Object(fields) = node {
+        for (key, value) in fields.iter_mut() {
+            if key == "dsl_version"
+                && let Node::Str(v) = value
+                && v != crate::DSL_VERSION
+            {
+                *v = crate::DSL_VERSION.to_string();
+            }
+        }
+    }
 }
 
 // -------------------------------------------------------------- discovery --
@@ -766,6 +786,23 @@ fn walk(dir: &Path, out: &mut Vec<PathBuf>) -> std::io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// `delvec fmt` writes the number: an envelope declaring any other
+    /// `dsl_version` comes out declaring this engine's, and only the envelope's
+    /// own key is touched — a nested `dsl_version` is content and stays.
+    #[test]
+    fn the_formatter_writes_the_one_dsl_version() {
+        let src = r#"{"dsl_version":"0.2.0","stage":"world","content":{"dsl_version":"0.2.0"}}"#;
+        let out = format_text(src).unwrap();
+        let stamped = format!(r#"  "dsl_version": "{}","#, crate::DSL_VERSION);
+        assert!(out.contains(&stamped), "{out}");
+        assert!(
+            out.contains(r#"    "dsl_version": "0.2.0""#),
+            "nested content stayed: {out}"
+        );
+        let already = format_text(&out).unwrap();
+        assert_eq!(already, out, "a stamped document is canonical");
+    }
 
     #[test]
     fn object_keys_are_sorted_arrays_are_not() {

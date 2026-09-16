@@ -83,13 +83,20 @@ export function markerLine(campaignId: string, token: string): string {
 // whole-line matching, same three unforgeability properties as the completion
 // channel. Two lines, both integers only:
 //
-//     [dw:census <campaign-id> <wave-id> <seq> <present> <branded> <damaged>]
+//     [dw:census <campaign-id> <wave-id> <seq> <present> <branded> <damaged> <credited>]
 //     [dw:censusmob <campaign-id> <wave-id> <seq> <x> <y> <z> <health> <max>]
 //
 // `seq` counts censuses server-side, so an answer can always be told from a stale
 // one without the harness writing any delve state to ask its question. The
 // `censusmob` fields are ×100 fixed-point, so positions and health cross chat as
 // exact integers with no float formatting to parse.
+//
+// `credited` is the one field that is not about the bodies standing there: every
+// other number describes the survivors, and this one describes the FALLEN — how
+// many of this wave's deaths, since the seating in force, vanilla credited to a
+// player (`minecraft:player_killed_entity`, the only credit it issues). What the
+// countdown deliberately stopped distinguishing, this restores for anyone who
+// needs it: `count - present - credited` is how many of the wave the WORLD killed.
 
 /** A signed integer field as it appears on the wire. */
 const INT = "(-?[0-9]+)";
@@ -97,7 +104,7 @@ const WAVE = "(wave\\/[a-z0-9]+(?:-[a-z0-9]+)*)";
 const CAMPAIGN = "([a-z0-9]+(?:-[a-z0-9]+)*)";
 
 const CENSUS_RE = new RegExp(
-  `^\\[dw:census ${CAMPAIGN} ${WAVE} ${INT} ${INT} ${INT} ${INT}\\]$`,
+  `^\\[dw:census ${CAMPAIGN} ${WAVE} ${INT} ${INT} ${INT} ${INT} ${INT}\\]$`,
 );
 const CENSUS_MOB_RE = new RegExp(
   `^\\[dw:censusmob ${CAMPAIGN} ${WAVE} ${INT} ${INT} ${INT} ${INT} ${INT} ${INT}\\]$`,
@@ -115,6 +122,14 @@ export interface CensusSummary {
   readonly branded: number;
   /** How many of those are below their own `max_health`. */
   readonly damaged: number;
+  /**
+   * How many of this wave's deaths, since the seating in force, vanilla credited
+   * to a player. The complement — `count - present - credited` — is how many the
+   * WORLD killed: a fall, a lethal volume, a trap, another mob. The countdown
+   * cannot tell those apart by design, and the floor gate's verdict turns on
+   * exactly that difference.
+   */
+  readonly credited: number;
 }
 
 /** One mob's line inside a census. Positions and health are real units. */
@@ -138,6 +153,7 @@ export function parseCensusSummary(line: string): CensusSummary | undefined {
     present: Number(m[4]),
     branded: Number(m[5]),
     damaged: Number(m[6]),
+    credited: Number(m[7]),
   };
 }
 

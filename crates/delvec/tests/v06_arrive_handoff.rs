@@ -17,11 +17,11 @@ mod common;
 
 use std::collections::BTreeMap;
 
-use delvewright_compiler::commands::CommandTree;
-use delvewright_compiler::emit::{self, BuildOutput};
-use delvewright_compiler::plan::Plan;
-use delvewright_compiler::registry::PrefabRegistry;
-use delvewright_dsl::{RawCampaign, parse_campaign};
+use delvec::compiler::commands::CommandTree;
+use delvec::compiler::emit::{self, BuildOutput};
+use delvec::compiler::plan::Plan;
+use delvec::compiler::registry::PrefabRegistry;
+use delvewright_dsl::{DSL_VERSION, RawCampaign, parse_campaign};
 
 const NS: &str = "hello-world";
 
@@ -57,7 +57,7 @@ fn npcs_deferred() -> String {
 fn quests_doc(on_arrive: &str) -> String {
     format!(
         r#"{{
-  "dsl_version": "0.19.0",
+  "dsl_version": "{DSL_VERSION}",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {{
@@ -85,7 +85,7 @@ fn quests_doc(on_arrive: &str) -> String {
         "effects": [
           {{ "type": "spawn-actor", "actor": "actor/sleeper" }},
           {{ "type": "move-actor", "actor": "actor/sleeper",
-             "to_anchor": "anchor/keeper-stand",
+             "to": {{ "anchor": "anchor/keeper-stand" }},
              "on_arrive": [
                {{ "type": "close-gate", "anchor": "anchor/door" }},
                {on_arrive} ] }}
@@ -124,6 +124,7 @@ fn build(on_arrive: &str) -> BuildOutput {
         layout_graph: None,
         site_plan: None,
         detail_plan: None,
+        design: None,
     };
     let campaign = parse_campaign(&raw).expect("campaign parses");
     let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();

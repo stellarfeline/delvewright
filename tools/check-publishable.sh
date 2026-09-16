@@ -11,9 +11,10 @@
 #
 # The obvious instrument, `cargo publish --dry-run`, has a documented way of
 # being VACUOUS — this repo's own named failure class (CLAUDE.md: a green gate
-# that binds to nothing). `delvec` depends on seven sibling crates in this
-# workspace. If the dry run satisfied those dependencies by reaching for the
-# siblings ON DISK, it would prove nothing about a tarball a stranger downloads.
+# that binds to nothing). `delvec` depends on one sibling crate in this
+# workspace, the format crate `delvewright-dsl`. If the dry run satisfied that
+# dependency by reaching for the sibling ON DISK, it would prove nothing about a
+# tarball a stranger downloads.
 # MEASURED on cargo 1.97.1 (2026-08-06) rather than assumed: a multi-package
 # `cargo package` builds a temporary LOCAL REGISTRY under
 # `<target>/package/tmp-registry/` holding the packaged siblings, and verifies each
@@ -27,8 +28,8 @@
 # 1. Every published crate packages at all (`cargo package`), which is where a
 #    path-only dependency, a missing `description`/`license`, a `publish =
 #    false`, or a file `include!`d from outside the package would fail — by
-#    name. The set is `versions.toml [engine]`: the DSL crate, every crate in
-#    `crates`, and `crate` itself.
+#    name. The set is `versions.toml [engine].crates`: the format crate, then
+#    the engine, and nothing else (ADR-0025).
 # 2. The GENERATED manifest that crates.io will actually serve declares no
 #    `path` under any `*dependencies*` table (dev-dependencies included — a
 #    path-only dev-dependency is stripped, one carrying a version survives as a
@@ -41,6 +42,11 @@
 #    crates.io will hold, never from `crates/*` on disk — and the binary it
 #    builds offers the whole surface (`--version`, and `--help` on every
 #    mounted group).
+# 4. A sha256 is written beside each verified tarball, and ONLY THEN — a run
+#    that found anything wrong leaves nothing behind. `tools/crates-io-publish.sh`
+#    re-reads both: the tarball to know what crates.io would receive, the sum to
+#    refuse a tarball whose bytes moved after this script proved them
+#    publishable.
 #
 # WHAT THIS DOES NOT PROVE
 #
@@ -60,6 +66,33 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 MANIFEST="$ROOT/versions.toml"
 [ -f "$MANIFEST" ] || { echo "FATAL: $MANIFEST not found" >&2; exit 2; }
 
+. "$ROOT/tools/lib/checksum.sh"
+. "$ROOT/tools/lib/package-verify.sh"
+
+# Two gates guard one artifact: this script packages and verifies the tarball,
+# `tools/crates-io-publish.sh` reads it back to decide what crates.io is
+# missing. A run that PASSES leaves `package-verify/package/*.crate` (plus a
+# sha256 written beside each, right below, once every check is 0 findings) for
+# that second gate to read; a run that fails leaves NOTHING, because a tarball
+# nobody verified is not proof of anything. `$SUCCESS` decides which of those
+# `cleanup` does, and it is registered here — before either scratch variable is
+# assigned — so a check that exits early (packaging itself failing, for one)
+# still tears its tree down in full. `tools/lib/package-verify.sh` states what
+# "leaves" means and why `package-verify` sits beside `target/`, not under it.
+VERIFY_TARGET=""
+SCRATCH=""
+SUCCESS=0
+cleanup() {
+  if [ "$SUCCESS" = 1 ] && [ -n "$VERIFY_TARGET" ]; then
+    dw_prune_package_verify "$VERIFY_TARGET"
+  elif [ -n "$VERIFY_TARGET" ]; then
+    rm -rf "$VERIFY_TARGET"
+  fi
+  [ -n "$SCRATCH" ] && rm -rf "$SCRATCH"
+  return 0
+}
+trap cleanup EXIT
+
 # `--allow-dirty` is for local runs only. CI works from a clean checkout, so the
 # VCS-dirty check stays armed there — a packaged tarball built from uncommitted
 # bytes is exactly the artifact nobody could reproduce.
@@ -72,15 +105,18 @@ sys.stdout.reconfigure(newline="\n")  # CRLF-proof: tools/check-python-shell-new
 e = tomllib.load(open(sys.argv[1], "rb"))["engine"]
 for k in ("version", "crate", "dsl_crate", "dsl_crate_version", "dsl_crate_req"):
     print(f'{k.upper()}={e[k]!r}'.replace("'", '"'))
-print('ENGINE_CRATES=' + repr(" ".join(e["crates"])).replace("'", '"'))
+print('PUBLISH_CRATES=' + repr(" ".join(e["crates"])).replace("'", '"'))
 PY
 )"
-# Dependency order, as versions.toml states it: the DSL crate first, the engine
-# library crates, the binary last. bash 3.2 (macOS) has no `mapfile`.
-NAMES=("$DSL_CRATE")
-VERS=("$DSL_CRATE_VERSION")
-for n in $ENGINE_CRATES; do NAMES+=("$n"); VERS+=("$VERSION"); done
-NAMES+=("$CRATE"); VERS+=("$VERSION")
+# Publish order, as versions.toml states it: the format crate, then the engine
+# (ADR-0025); each name's version is its own line's. bash 3.2 (macOS) has no
+# `mapfile`.
+NAMES=()
+VERS=()
+for n in $PUBLISH_CRATES; do
+  NAMES+=("$n")
+  if [ "$n" = "$DSL_CRATE" ]; then VERS+=("$DSL_CRATE_VERSION"); else VERS+=("$VERSION"); fi
+done
 
 fails=0
 pass() { printf '  ok   %s\n' "$1"; }
@@ -152,7 +188,7 @@ mkdir -p "$ROOT/target"
 # exports, with `Unpacking` of the fresh tarball printed right above it). An
 # unpublished version has no immutable bytes, so nothing built from one may
 # outlive the run that built it.
-VERIFY_TARGET="$ROOT/target/package-verify"
+VERIFY_TARGET="$ROOT/package-verify"
 rm -rf "$VERIFY_TARGET"
 PKG_LOG="$ROOT/target/package-log.txt"
 rm -f "$PKG_LOG"
@@ -251,7 +287,6 @@ echo "== 3. the packaged binary builds standing alone =="
 # a packaged version disagreed, cargo would go looking for a crate on crates.io
 # that does not exist and fail here.
 SCRATCH="$(mktemp -d)"
-trap 'rm -rf "$SCRATCH"' EXIT
 i=0
 while [ "$i" -lt "${#NAMES[@]}" ]; do
   tar -xzf "$PKG/${NAMES[$i]}-${VERS[$i]}.crate" -C "$SCRATCH"
@@ -311,4 +346,26 @@ echo "check-publishable: ${#NAMES[@]} crate(s) packaged, 1 standalone build, eng
 if [ "$fails" -ne 0 ]; then
   echo "check-publishable: $fails finding(s)" >&2; exit 1
 fi
-echo "check-publishable: OK — \`cargo install $CRATE\` has everything it needs"
+
+echo
+echo "== 4. sha256 written beside each tarball, for tools/crates-io-publish.sh =="
+# The hash that makes the pair one artifact: `crates-io-publish.sh` refuses a
+# tarball whose CURRENT bytes do not match what got built standing alone in
+# check 3, above — a mistake here errors instead of silently trusting whatever
+# happens to sit at the path afterward.
+# `$PKG` is guaranteed by `cargo package` succeeding, checked directory-by-directory
+# right after check 1 — but `tools/check-shell-redirect-dirs.py` reads redirects
+# by syntax, not by what an earlier check proved, so the redirect below still
+# needs its own `mkdir -p` (AN ERROR PATH MUST NOT DEPEND ON AN ARTIFACT THE
+# ERROR MAY HAVE PREVENTED FROM EXISTING applies to a passing path too: nothing
+# here may assume `cargo package`'s own directory creation).
+mkdir -p "$PKG"
+i=0
+while [ "$i" -lt "${#NAMES[@]}" ]; do
+  crate_file="$PKG/${NAMES[$i]}-${VERS[$i]}.crate"
+  dw_sha256_file "$crate_file" > "$crate_file.sha256"
+  i=$((i + 1))
+done
+pass "sha256 written beside all ${#NAMES[@]} tarball(s)"
+SUCCESS=1
+echo "check-publishable: OK — \`cargo install $CRATE\` has everything it needs; tarballs kept at $PKG (sha256 beside each) for tools/crates-io-publish.sh"

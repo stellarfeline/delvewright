@@ -1,0 +1,12 @@
+{
+  "code": "DW0890",
+  "patch": [
+    {
+      "doc": "design.json",
+      "op": "remove",
+      "path": "/content/references/3"
+    }
+  ],
+  "units": [],
+  "why": "The record and the directory are held to each other in both directions. Deleting the night row while its image stays under `design/concept/` leaves an approved picture whose sky nothing states — so the world could be built under an hour that picture was never drawn in, and no check would have anything to compare. The refusal names the file and both counts."
+}

@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""Regenerate `crates/compiler/data/sounds-1.21.11.json` from the pinned MC
+"""Regenerate `crates/delvec/data/sounds-1.21.11.json` from the pinned MC
 1.21.11 registries summary — the vendored sound-event id list `delvec` validates
 `play-sound`/`narrate.sound` against (spec-0014, `DW0326`).
 
 Deterministic, offline once the source is fetched, no dependencies (Python 3
 stdlib). This mirrors the manual transform recorded in
-`crates/compiler/data/PROVENANCE.md` for `items-`/`entities-1.21.11.json`, made
+`crates/delvec/data/PROVENANCE.md` for `items-`/`entities-1.21.11.json`, made
 repeatable so a future MC bump (ADR-0009 revisit) is one command, not folklore.
 
 ## Source
@@ -27,7 +27,7 @@ Expected SHA-256 of that source (pinned in PROVENANCE.md):
 entity registries. 1838 ids for 1.21.11.
 
     python3 tools/extract-sound-registry.py registries.min.json \
-      crates/compiler/data/sounds-1.21.11.json
+      crates/delvec/data/sounds-1.21.11.json
 """
 
 import hashlib

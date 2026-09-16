@@ -53,7 +53,7 @@ fn scratch(tag: &str) -> PathBuf {
 const STATES: [&str; 2] = ["minecraft:stone_bricks", "minecraft:air"];
 
 fn judge_the_palette() {
-    let registry = delvewright_schem::blocks::BlockRegistry::v1_21_11();
+    let registry = delvec::schem::blocks::BlockRegistry::v1_21_11();
     let none: std::collections::BTreeMap<String, String> = std::collections::BTreeMap::new();
     for name in STATES {
         let verdict = registry.validate(name, &none);
@@ -118,7 +118,7 @@ fn piece(tag: &str) -> (PathBuf, PathBuf) {
             "id": "room",
             "size": SIZE,
             "data_version": 4671,
-            "generator": "crates/admit/tests/footprint_class.rs",
+            "generator": "crates/delvec/tests/prefab_footprint_class.rs",
         },
         "anchors": {},
         "connectors": [],
@@ -127,7 +127,7 @@ fn piece(tag: &str) -> (PathBuf, PathBuf) {
             "source": "original",
             "spdx": "GPL-3.0-or-later",
             "note": "Test fixture.",
-            "provenance": "Synthesised by crates/admit/tests/footprint_class.rs."
+            "provenance": "Synthesised by crates/delvec/tests/prefab_footprint_class.rs."
         }
     });
     std::fs::write(

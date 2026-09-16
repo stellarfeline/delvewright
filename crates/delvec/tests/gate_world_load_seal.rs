@@ -16,11 +16,11 @@ mod common;
 
 use std::collections::BTreeMap;
 
-use delvewright_compiler::commands::CommandTree;
-use delvewright_compiler::emit::{self, BuildOutput};
-use delvewright_compiler::plan::Plan;
-use delvewright_compiler::registry::{FullEntityRegistry, FullItemRegistry, PrefabRegistry};
-use delvewright_dsl::{Campaign, RawCampaign, parse_campaign, validate_campaign_with};
+use delvec::compiler::commands::CommandTree;
+use delvec::compiler::emit::{self, BuildOutput};
+use delvec::compiler::plan::Plan;
+use delvec::compiler::registry::{FullEntityRegistry, FullItemRegistry, PrefabRegistry};
+use delvewright_dsl::{Campaign, DSL_VERSION, RawCampaign, parse_campaign, validate_campaign_with};
 
 /// A hello-world `quests` doc whose party must walk from the keeper to
 /// `anchor/exit` — i.e. THROUGH `anchor/door`, six cells of `iron_bars` the
@@ -29,7 +29,7 @@ use delvewright_dsl::{Campaign, RawCampaign, parse_campaign, validate_campaign_w
 fn quests_doc(opener: &str) -> String {
     format!(
         r#"{{
-  "dsl_version": "0.19.0",
+  "dsl_version": "{DSL_VERSION}",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {{
@@ -56,8 +56,9 @@ fn quests_doc(opener: &str) -> String {
 /// The same campaign with the gate opened only on `on_complete` — after the exit
 /// has already been reached.
 fn quests_doc_opened_too_late() -> String {
-    r#"{
-  "dsl_version": "0.19.0",
+    common::at_dsl_version(
+        r#"{
+  "dsl_version": "%dsl_version%",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {
@@ -75,7 +76,8 @@ fn quests_doc_opened_too_late() -> String {
       }
     ]
   }
-}"#
+}"#,
+    )
     .to_string()
 }
 
@@ -83,8 +85,9 @@ fn quests_doc_opened_too_late() -> String {
 /// bundle (DSL v0.10 R7) — declared, lowered, and not something the party can be
 /// made to do.
 fn quests_doc_opened_only_on_death() -> String {
-    r#"{
-  "dsl_version": "0.19.0",
+    common::at_dsl_version(
+        r#"{
+  "dsl_version": "%dsl_version%",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {
@@ -103,7 +106,8 @@ fn quests_doc_opened_only_on_death() -> String {
       }
     ]
   }
-}"#
+}"#,
+    )
     .to_string()
 }
 
@@ -124,6 +128,7 @@ fn parse_hw(quests: &str) -> Campaign {
         layout_graph: None,
         site_plan: None,
         detail_plan: None,
+        design: None,
     };
     parse_campaign(&raw).expect("campaign parses")
 }

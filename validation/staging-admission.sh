@@ -110,6 +110,19 @@ OVERRIDDEN="$(printf '%s\n' "$TOKEN_TEXT" | sed -nE 's/.*"overridden": (true|fal
 PRE_DETAIL="$(printf '%s\n' "$TOKEN_TEXT" | sed -nE 's/.*"pre_detail": (true|false).*/\1/p')"
 OOS_COUNT="$(printf '%s\n' "$TOKEN_TEXT" | sed -nE 's/.*"out_of_stage_count": ([0-9]+).*/\1/p')"
 
+# The classes this campaign contains no object of. A build passes with these
+# counted rather than refused — absence of an OPTIONAL surface is a design
+# choice, and a required one cannot be absent from a build that compiled — so
+# the pass has to say what it is not: coverage. Announced for the same reason
+# the override banner is, and on the clean path too, since that is the path a
+# small delve now takes.
+INAP_COUNT="$(printf '%s\n' "$TOKEN_TEXT" | sed -nE 's/.*"inapplicable_count": ([0-9]+).*/\1/p')"
+if [ -n "$INAP_COUNT" ] && [ "$INAP_COUNT" != "0" ]; then
+  echo "staging-admission: $CAMPAIGN contains no object of $INAP_COUNT past finding class(es);" >&2
+  echo "  this session cannot meet them (the token names each one). A pass is admission," >&2
+  echo "  never coverage — carry the list into the round summary." >&2
+fi
+
 if [ "$PRE_DETAIL" = "true" ]; then
   echo "========================================================================" >&2
   echo "BLOCKOUT WALK — campaign: $CAMPAIGN" >&2

@@ -1,0 +1,57 @@
+# The prefab generators' workspace — one lockfile, one shared crate.
+#
+# ## Why this is a workspace and not seven
+#
+# The generators must never enter the shipped `delvec`, and until now that was
+# achieved by making each of them its own workspace root: seven `[workspace]`
+# tables, seven `Cargo.lock` files, and one shared rule reached by
+# `#[path = "../../invariants.rs"] mod invariants;` — a SOURCE include, so the
+# same eleven hundred lines were compiled seven times and `cargo test` reached
+# their unit tests only through whichever manifest a person happened to name.
+#
+# Nothing about that isolation needed seven workspaces. `[workspace] exclude`
+# in the repository root keeps this whole directory out of the engine's
+# resolution, which is the property that was wanted; one workspace here then
+# buys what seven could not — a `prefab-invariants` LIBRARY the generators
+# depend on instead of copying, whose tests are its own, and one `cargo test`
+# that runs every generator's and the shared crate's.
+#
+# ## The dependency edge on `delvewright-dsl` is deliberate
+#
+# Two engine modules used to arrive here the same way the shared file did, by
+# `#[path]` into `crates/`: `blockshape` (what a block state does to a body that
+# walks into it) and `fluid` (what a cell does when there is fluid beside it).
+# Both are block knowledge, both live in `delvewright-dsl` — the crate this
+# repository publishes precisely so that every reader of a block fact can reach
+# one — and a path dependency on it is what a dependency edge is for. What is
+# still refused is a dependency on `delvec`: the generators may not reach the
+# compiler, and nothing here does.
+[workspace]
+resolver = "2"
+members = [
+    "cave-generator",
+    "gallery-generator",
+    "generator",
+    "hello-room-generator",
+    "invariants",
+    "island-generator",
+    "island-terrain-generator",
+    "tidal-keep-generator",
+]
+
+# One declaration per dependency, so a member states a name and nothing else.
+# The seven generators differed in no version and no feature; seven copies of
+# one list is seven places for them to start differing.
+[workspace.dependencies]
+prefab-invariants = { path = "invariants" }
+delvewright-dsl = { path = "../crates/dsl" }
+fastnbt = "2"
+flate2 = "1"
+serde = { version = "1", features = ["derive"] }
+# `preserve_order` so a document a generator writes comes out in the order its
+# own struct declares, exactly as it did when each generator serialised straight
+# to a string. `document::write_preserving` routes every write through
+# `serde_json::Value`, and with the default `BTreeMap` map that alone would
+# re-sort every key of every document in the library — a whole-library diff for
+# a change that is about not DELETING keys.
+serde_json = { version = "1", features = ["preserve_order"] }

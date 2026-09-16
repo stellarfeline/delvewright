@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Regenerate the block-light fixture from the PINNED Minecraft server jar.
 
-The fixture `crates/compiler/tests/fixtures/light/emission-<version>.tsv` is what
-`crates/compiler/tests/emission_table.rs` measures `light::emission()` against.
+The fixture `crates/delvec/tests/fixtures/light/emission-<version>.tsv` is what
+`crates/delvec/tests/emission_table.rs` measures `light::emission()` against.
 It is a measurement, not a table somebody typed: every value comes from calling
 the game's own `BlockState.getLightEmission()` inside the pinned server jar.
 
@@ -37,7 +37,7 @@ import urllib.request
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 VERSIONS_TOML = ROOT / "versions.toml"
 JAVA_SRC = ROOT / "tools" / "blocklight" / "BlockLightDump.java"
-FIXTURE_DIR = ROOT / "crates" / "compiler" / "tests" / "fixtures" / "light"
+FIXTURE_DIR = ROOT / "crates" / "delvec" / "tests" / "fixtures" / "light"
 MANIFEST = "https://launchermeta.mojang.com/mc/game/version_manifest_v2.json"
 
 # The DEOBFUSCATED names the dumper needs, in the order BlockLightDump.java

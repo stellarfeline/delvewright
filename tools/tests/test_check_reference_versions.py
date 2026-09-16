@@ -45,9 +45,18 @@ name = "delvec"
 version = "{version}"
 """
 
+# The constant DERIVES the number from the crate's own package version, so the
+# source carries no literal at all and the manifest below is the one authority.
 ENVELOPE_TEMPLATE = """\
 //! doc
-pub const DSL_VERSION: &str = "{dsl}";
+pub const DSL_VERSION: &str = env!("CARGO_PKG_VERSION");
+"""
+
+DSL_CARGO_TEMPLATE = """\
+[package]
+name = "delvewright-dsl"
+version = "{dsl}"
+publish = false
 """
 
 VERSIONS_TOML_TEMPLATE = """\
@@ -102,6 +111,7 @@ def gate(tmp_path, monkeypatch):
     monkeypatch.setattr(module, "DOC", tmp_path / "compiler.md")
     monkeypatch.setattr(module, "ROOT_CARGO_TOML", tmp_path / "Cargo.toml")
     monkeypatch.setattr(module, "ENVELOPE_RS", tmp_path / "envelope.rs")
+    monkeypatch.setattr(module, "DSL_CARGO_TOML", tmp_path / "dsl-Cargo.toml")
     monkeypatch.setattr(module, "VERSIONS_TOML", tmp_path / "versions.toml")
     (tmp_path / "crates" / "published").mkdir(parents=True)
     (tmp_path / "crates" / "private").mkdir(parents=True)
@@ -158,11 +168,12 @@ def run(
     gate.ROOT_CARGO_TOML.write_text(
         CARGO_TEMPLATE.format(version=real_delvec), encoding="utf-8"
     )
-    gate.ENVELOPE_RS.write_text(ENVELOPE_TEMPLATE.format(dsl=real_dsl), encoding="utf-8")
+    gate.ENVELOPE_RS.write_text(ENVELOPE_TEMPLATE, encoding="utf-8")
+    gate.DSL_CARGO_TOML.write_text(DSL_CARGO_TEMPLATE.format(dsl=real_dsl), encoding="utf-8")
     gate.VERSIONS_TOML.write_text(
         VERSIONS_TOML_TEMPLATE.format(mc=real_mc), encoding="utf-8"
     )
-    return gate.main()
+    return gate.main([])
 
 
 def test_header_matching_the_build_passes(gate):
@@ -216,13 +227,58 @@ def test_minecraft_version_is_read_from_the_minecraft_table(gate):
 def test_missing_version_header_exits_2(gate):
     run(gate)
     gate.DOC.write_text("# no version header here\n", encoding="utf-8")
-    assert gate.main() == 2
+    assert gate.main([]) == 2
+
+
+def test_a_literal_put_back_in_place_of_the_derivation_exits_2(gate):
+    """A literal there would be a SECOND authority, and this gate would then be
+    comparing the doc against whichever of the two it happened to read."""
+    run(gate)
+    gate.ENVELOPE_RS.write_text('pub const DSL_VERSION: &str = "0.19.0";\n', encoding="utf-8")
+    assert gate.main([]) == 2
 
 
 def test_missing_dsl_version_constant_exits_2(gate):
     run(gate)
     gate.ENVELOPE_RS.write_text('pub const SOMETHING_ELSE: &str = "0.19.0";\n', encoding="utf-8")
-    assert gate.main() == 2
+    assert gate.main([]) == 2
+
+
+def test_write_moves_the_pages_own_dependency_requirement(gate):
+    """The dry run of the next bump found this one: everything else on the page
+    moved and the `[dependencies]` snippet did not, which made a published page
+    the fourth file a bump edits by hand. Rule 2 admits exactly one value there
+    — the crate's current major.minor — so it is a bound claim, not a guess."""
+    page = README_TEMPLATE.format(mc="1.21.11", prose_mc="1.21.11", dsl="0.19.0", rust="1.97.1")
+    page += '\n```toml\n[dependencies]\npublished-crate = "1.0"\n```\n'
+    assert run(gate, page_text=page) == 1, "a stale requirement for the page's own crate is red"
+    assert gate.main(["--write"]) == 0, "…and --write moves it, because rule 2 admits one value"
+    moved = (gate.REPO_ROOT / "crates" / "published" / "README.md").read_text(encoding="utf-8")
+    assert 'published-crate = "1.1"' in moved, moved
+
+
+def test_write_leaves_another_crates_number_alone(gate):
+    """A third-party requirement is not this build's number to move. It still
+    reds under rule 2 — nothing here knows what it should say — and `--write`
+    leaves it exactly as it found it."""
+    page = README_TEMPLATE.format(mc="1.21.11", prose_mc="1.21.11", dsl="0.19.0", rust="1.97.1")
+    page += '\n```toml\n[dependencies]\nsomeone-else = "0.3"\n```\n'
+    assert run(gate, page_text=page) == 1
+    assert gate.main(["--write"]) == 1
+    after = (gate.REPO_ROOT / "crates" / "published" / "README.md").read_text(encoding="utf-8")
+    assert 'someone-else = "0.3"' in after, after
+
+
+def test_write_moves_every_bound_claim_and_then_passes(gate):
+    """`--write` is what makes these three documents SHAPE 2 rather than three
+    more places a person retypes the number: a bump runs it, and the checking
+    mode is what refuses a document that was not regenerated."""
+    assert run(gate, doc_delvec="0.0.1", doc_dsl="0.0.2", doc_mc="0.0.3") == 1
+    assert gate.main(["--write"]) == 0
+    assert gate.main([]) == 0
+    text = gate.DOC.read_text(encoding="utf-8")
+    assert "1.1.0" in text and "0.19.0" in text and "1.21.11" in text
+    assert "0.0.1" not in text and "0.0.2" not in text and "0.0.3" not in text
 
 
 def test_missing_dw0102_row_exits_2(gate):
@@ -233,7 +289,7 @@ def test_missing_dw0102_row_exits_2(gate):
         ),
         encoding="utf-8",
     )
-    assert gate.main() == 2
+    assert gate.main([]) == 2
 
 
 def test_a_detached_dw0102_row_is_red(gate):
@@ -246,18 +302,18 @@ def test_a_detached_dw0102_row_is_red(gate):
         ),
         encoding="utf-8",
     )
-    assert gate.main() == 1
+    assert gate.main([]) == 1
 
 
 def test_absent_file_exits_2(gate):
     run(gate)
     gate.VERSIONS_TOML.unlink()
-    assert gate.main() == 2
+    assert gate.main([]) == 2
 
 
 # --- the same constants, on the pages a stranger reads ----------------------
 #
-# `crates/compiler/README.md` and `crates/dsl/README.md` are rendered VERBATIM
+# `crates/delvec/README.md` and `crates/dsl/README.md` are rendered VERBATIM
 # as crates.io front pages. They state the Minecraft version, the `dsl_version`
 # and the minimum Rust — the facts that decide whether a visitor can use the
 # crate — and those were bound to nothing before this gate. The file set is
@@ -322,6 +378,77 @@ def test_a_version_literal_the_build_does_not_own_is_red(gate):
     )
 
 
+# --- a two-part literal, bare or in a cargo requirement form — BZ ----------
+#
+# The live defect: `delvewright-dsl` published 0.20.0 while its own front page
+# still told a visitor `delvewright-dsl = "0.19"`. `VERSION_LITERAL_RE` already
+# matched that `0.19` fine; a `literal.count(".") != 2` filter right after it
+# discarded every two-part match before it could be judged, on the theory that
+# the only two-part shape on a page was `GPL-3.0-only`. It was not: a cargo
+# dependency requirement is two-part BY CONVENTION.
+
+
+def _readme_with_dependency_line(requirement: str) -> str:
+    """A front page with a `[dependencies]` snippet, shaped like the real
+    `crates/dsl/README.md` — plus the three labelled claims rule 1 needs."""
+    return (
+        "# published-crate\n\n"
+        "## Use\n\n"
+        "```toml\n"
+        "[dependencies]\n"
+        f'published-crate = "{requirement}"\n'
+        "```\n\n"
+        "## Compatibility\n\n"
+        "- **Minecraft**: Java Edition 1.21.11.\n"
+        "- **Campaign format**: `dsl_version` `0.19.0`.\n"
+        "- **Rust**: 1.97.1 or newer.\n"
+    )
+
+
+def test_a_stale_two_part_dependency_requirement_is_red(gate, capsys):
+    """The exact motivating drift, reproduced: the page's own crate is 0.20.0,
+    its `[dependencies]` snippet still says `"0.19"` — named by line."""
+    assert (
+        run(gate, crate_version="0.20.0", page_text=_readme_with_dependency_line("0.19"))
+        == 1
+    )
+    assert "README.md:7: version literal `0.19`" in capsys.readouterr().err
+
+
+def test_a_dependency_requirement_at_the_crates_own_major_minor_is_green(gate):
+    assert (
+        run(gate, crate_version="0.20.0", page_text=_readme_with_dependency_line("0.20"))
+        == 0
+    )
+
+
+def test_a_caret_dependency_requirement_at_the_crates_own_major_minor_is_green(gate):
+    """An operator prefix is not part of the digit run — `^0.20` yields the
+    same literal, `0.20`, as the bare form."""
+    assert (
+        run(gate, crate_version="0.20.0", page_text=_readme_with_dependency_line("^0.20"))
+        == 0
+    )
+
+
+def test_a_prefix_of_the_crates_own_major_minor_is_still_red(gate):
+    """`0.2` is a STRING PREFIX of `0.20`, not the same major.minor — a prefix
+    is not a match."""
+    assert (
+        run(gate, crate_version="0.20.0", page_text=_readme_with_dependency_line("0.2"))
+        == 1
+    )
+
+
+def test_an_spdx_license_id_is_not_a_version_literal(gate):
+    """`GPL-3.0-only` embeds a two-part number, `3.0`, inside a hyphenated
+    identifier — a real false positive on all eight published pages today,
+    once a two-part literal is no longer discarded by dot-count alone."""
+    page = README_TEMPLATE.format(mc="1.21.11", prose_mc="1.21.11", dsl="0.19.0", rust="1.97.1")
+    page += "\nLicensed GPL-3.0-only.\n"
+    assert run(gate, page_text=page) == 0
+
+
 # --- the binding: derived, and never allowed to be empty --------------------
 
 
@@ -368,20 +495,20 @@ def test_zero_publishable_readmes_exits_2(gate):
         '[package]\nname = "published-crate"\nversion = "1.1.0"\npublish = false\n',
         encoding="utf-8",
     )
-    assert gate.main() == 2
+    assert gate.main([]) == 2
 
 
 def test_no_crate_manifests_at_all_exits_2(gate):
     run(gate)
     for manifest in (gate.REPO_ROOT / "crates").glob("*/Cargo.toml"):
         manifest.unlink()
-    assert gate.main() == 2
+    assert gate.main([]) == 2
 
 
 def test_a_declared_readme_that_does_not_exist_exits_2(gate):
     run(gate)
     (gate.REPO_ROOT / "crates" / "published" / "README.md").unlink()
-    assert gate.main() == 2
+    assert gate.main([]) == 2
 
 
 def test_a_stale_allowlist_entry_is_red(gate):

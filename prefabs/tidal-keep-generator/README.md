@@ -3,8 +3,8 @@
 Deterministic generator for the six-piece **tidal-keep** tileset: the souls-mode
 set (barrow shore → gatehouse → wall walk → courtyard/chapel hub → cistern
 undercroft → bell tower). A sibling of `prefabs/island-terrain-generator` and
-`prefabs/cave-generator`: its own `[workspace]`, outside `crates/`, so it never
-enters the shipped `delvec` binary and the keep / cave / island `.nbt` output
+`prefabs/cave-generator`: a member of the `prefabs/` workspace, outside `crates/`
+and excluded from the engine's, so it never enters the shipped `delvec` binary and the keep / cave / island `.nbt` output
 stays byte-identical (ADR-0006). It reuses the Delvewright primitive family
 (splitmix64 PRNG, trilinear value-noise palette field, vanilla-structure `.nbt`
 emit, keep-socket geometry, the gravity-substrate invariant, a derived static

@@ -6,16 +6,16 @@
 //! is the pair that is wrong: one declares a way out on the face they share, and
 //! the piece on the other side of it does not answer.
 //!
-//! The artifacts are real. The prefabs are exported by `crates/grammar` from the
+//! The artifacts are real. The prefabs are exported by `crates/delvec/src/grammar` from the
 //! corpus program that declares a contract, loaded back through the engine's own
 //! `PrefabRegistry`, and placed the way a campaign places them.
 
-use delvewright_compiler::faces;
-use delvewright_compiler::plan::{AreaPlacement, PiecePlacement, PlacedTemplate};
-use delvewright_compiler::registry::PrefabRegistry;
-use delvewright_compiler::solver::Rotation;
-use delvewright_grammar::library::spatial_contract::spatial_contract;
-use delvewright_grammar::{Box3, ExpandOptions, export_prefab};
+use delvec::compiler::faces;
+use delvec::compiler::plan::{AreaPlacement, PiecePlacement, PlacedTemplate};
+use delvec::compiler::registry::PrefabRegistry;
+use delvec::compiler::solver::Rotation;
+use delvec::grammar::library::spatial_contract::spatial_contract;
+use delvec::grammar::{Box3, ExpandOptions, export_prefab};
 
 /// The region the corpus program is documented at.
 const PIECE: Box3 = Box3::at_origin([11, 6, 15]);
@@ -52,7 +52,99 @@ fn placed(area: &str, pos: [i32; 3], rotation: Rotation) -> AreaPlacement {
             pos,
             size: [11, 6, 15],
             rotation,
+            mated: Vec::new(),
         }],
+        seals: Vec::new(),
+        mass: Vec::new(),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// The library as it actually is: pieces with SOCKETS and no spatial contract
+// ---------------------------------------------------------------------------
+//
+// Every hand-built piece in the content library predates spec-0036, so the
+// contract-carrying prefab above is the exception and this is the rule. It is
+// also what the drill campaign is made of, and what the check reported `0 with a
+// spatial contract` about while passing.
+
+/// A socket-only piece: a 7 × 6 × 7 box with a 3 × 3 jigsaw socket on its north
+/// and south faces, and no `spatial_contract` at all.
+///
+/// Written as the metadata document a generator emits rather than through a
+/// grammar program, because *that document* is the artifact under test: what is
+/// being asserted is that the compiler judges a piece which declares its sides
+/// the only way the library has ever declared them.
+fn socket_library(tag: &str) -> (std::path::PathBuf, PrefabRegistry) {
+    let dir = std::env::temp_dir().join(format!("dw-face-socket-{}-{tag}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let doc = serde_json::json!({
+        "prefab_id": "prefab/cell",
+        "structure": {
+            "file": "cell.nbt",
+            "id": "cell",
+            "size": [7, 6, 7],
+            "data_version": 4671,
+            "generator": "face_contract test"
+        },
+        "anchors": {},
+        "connectors": [
+            {
+                "name": "kit:socket", "target": "kit:socket",
+                "local_pos": [3, 1, 0], "facing": "north",
+                "opening": [3, 3], "joint": "aligned"
+            },
+            {
+                "name": "kit:socket", "target": "kit:socket",
+                "local_pos": [3, 1, 6], "facing": "south",
+                "opening": [3, 3], "joint": "aligned"
+            }
+        ],
+        "license": {
+            "source": "original", "spdx": "GPL-3.0-or-later",
+            "note": "test fixture", "provenance": "written by this test"
+        }
+    });
+    std::fs::write(
+        dir.join("cell.json"),
+        serde_json::to_string_pretty(&doc).unwrap(),
+    )
+    .unwrap();
+    let registry = PrefabRegistry::load_dir(&dir).expect("the engine loads a socket-only prefab");
+    assert!(
+        registry
+            .get("prefab/cell")
+            .expect("it loaded")
+            .spatial_contract
+            .is_none(),
+        "the fixture is the library as it is: sockets and no contract"
+    );
+    (dir, registry)
+}
+
+/// One socket-only piece, placed, with the layout's mated flags stated.
+fn socket_piece(pos: [i32; 3], mated: [bool; 2]) -> PiecePlacement {
+    PiecePlacement {
+        prefab_id: "prefab/cell".to_string(),
+        templates: vec![PlacedTemplate {
+            structure_id: "cell".to_string(),
+            structure_file: "cell.nbt".to_string(),
+            pos,
+            size: [7, 6, 7],
+        }],
+        pos,
+        size: [7, 6, 7],
+        rotation: Rotation::None,
+        mated: mated.to_vec(),
+    }
+}
+
+/// The chain a pool area produces: pieces in one area, mated end to end.
+fn socket_area(pieces: Vec<PiecePlacement>) -> AreaPlacement {
+    AreaPlacement {
+        area_id: "area/annex".to_string(),
+        pieces,
         seals: Vec::new(),
         mass: Vec::new(),
     }
@@ -233,4 +325,149 @@ fn pieces_in_the_site_area_are_allocated_rather_than_mated() {
     let err = faces::check(&areas, &registry)
         .expect_err("the same pair outside a site plan is still a door into a wall");
     assert_eq!(err.failure.code.id(), "DW0780");
+}
+
+// ---------------------------------------------------------------------------
+// The library the engine actually has to judge
+// ---------------------------------------------------------------------------
+
+/// **A world of socket-only pieces is examined, not excused.**
+///
+/// This is the drill campaign's shape and the gallery annex's shape: pieces that
+/// declare no `spatial_contract` and are mated end to end by the jigsaw. The
+/// check reported `0 with a spatial contract, 0 of those with a face, and 0
+/// face(s) declared in all` on exactly this and passed — while the sockets that
+/// placed the pieces sat unread in the same document.
+#[test]
+fn a_chain_of_socket_only_pieces_is_examined_by_its_sockets() {
+    let (_dir, registry) = socket_library("green");
+    let areas = vec![socket_area(vec![
+        socket_piece([0, 0, 0], [false, true]),
+        socket_piece([0, 0, 7], [true, false]),
+    ])];
+    let binding = faces::check(&areas, &registry).expect("a mated chain assembles");
+    assert_eq!(binding.contracted, 0, "not one of them declares a contract");
+    assert_eq!(binding.socketed, 2, "and both are judged by their sockets");
+    assert_eq!(binding.pairs, 1, "the two boxes touch");
+    assert_eq!(binding.judged, 1, "and a declared face crosses the plane");
+    assert_eq!(binding.bound, 2, "one socket from each side of the seam");
+    assert!(
+        binding.finding(2, false).is_none(),
+        "a bound check raises no zero-binding advisory"
+    );
+    let line = binding.line(2);
+    assert!(
+        line.contains("2 of 2 placed piece(s) touch in 1 pair(s), 1 of which"),
+        "the line states the placement's own fraction: {line}"
+    );
+}
+
+/// **The perturbation toward the vacuous shape: detach one piece by a block.**
+///
+/// Nothing about either piece changes and no author writes anything — the second
+/// piece simply stands one block further away. The pair stops touching, so a
+/// check quantified over pairs that touch has nothing left to say about it; what
+/// still speaks is the LAYOUT'S OWN claim that the socket is mated, which is the
+/// claim `seal_layout` cleared the doorway to air on. The world would ship an
+/// open hole with nothing behind it.
+#[test]
+fn detaching_a_mated_piece_by_one_block_is_named() {
+    let (_dir, registry) = socket_library("detached");
+    let areas = vec![socket_area(vec![
+        socket_piece([0, 0, 0], [false, true]),
+        socket_piece([0, 0, 8], [true, false]),
+    ])];
+    let err = faces::check(&areas, &registry)
+        .expect_err("a mated socket with nothing beyond it must be refused");
+    assert_eq!(err.failure.code.id(), "DW0780");
+    assert!(
+        err.failure.message.contains("MATED"),
+        "{}",
+        err.failure.message
+    );
+    assert!(
+        err.failure.message.contains("jigsaw socket `kit:socket`"),
+        "the socket is named where a reviewer would look it up: {}",
+        err.failure.message
+    );
+    assert!(
+        err.failure.message.contains("z 7"),
+        "and the plane it looks at: {}",
+        err.failure.message
+    );
+
+    // The suspicion is the DETACHMENT and nothing else: the same two pieces,
+    // seated where the solver mated them, assemble.
+    let areas = vec![socket_area(vec![
+        socket_piece([0, 0, 0], [false, true]),
+        socket_piece([0, 0, 7], [true, false]),
+    ])];
+    faces::check(&areas, &registry).expect("the undisturbed chain is fine");
+}
+
+/// **Two pieces that touch and say nothing about the side they share is a
+/// refusal, not a zero.**
+///
+/// The pieces here declare their ways on north and south and are placed side by
+/// side on x, so the plane they actually meet across is one neither document has
+/// an opinion about. That is the one thing this check exists for that it cannot
+/// judge — so it says so, rather than counting zero examined faces and passing.
+#[test]
+fn a_pair_that_touches_and_declares_nothing_across_the_shared_plane_is_refused() {
+    let (_dir, registry) = socket_library("silent");
+    let areas = vec![socket_area(vec![
+        socket_piece([0, 0, 0], [false, false]),
+        socket_piece([7, 0, 0], [false, false]),
+    ])];
+    let err = faces::check(&areas, &registry)
+        .expect_err("a pair nothing can judge is not a pair that passed");
+    assert_eq!(err.failure.code.id(), "DW0780");
+    assert!(
+        err.failure
+            .message
+            .contains("NEITHER piece declares anything"),
+        "{}",
+        err.failure.message
+    );
+    // The plane, so a reviewer can go and look at it.
+    assert!(
+        err.failure.message.contains("x 6..6"),
+        "{}",
+        err.failure.message
+    );
+    // And both roads out, named: a piece says what its sides are in one of two
+    // documented places, and the message names both rather than only the newer.
+    assert!(
+        err.failure.message.contains("spatial_contract")
+            && err.failure.message.contains("connectors"),
+        "{}",
+        err.failure.message
+    );
+}
+
+/// **A world whose pieces never touch is the one honest zero**, and it is stated
+/// with the denominator that makes it readable: not *zero faces declared*, which
+/// is a fact about documents, but *zero pairs*, which is a fact about the world
+/// that was built.
+#[test]
+fn pieces_that_never_touch_report_zero_pairs_rather_than_zero_declarations() {
+    let (_dir, registry) = socket_library("apart");
+    let areas = vec![socket_area(vec![
+        socket_piece([0, 0, 0], [false, false]),
+        socket_piece([0, 0, 40], [false, false]),
+    ])];
+    let binding = faces::check(&areas, &registry).expect("two pieces far apart cannot mis-mate");
+    assert_eq!(binding.pairs, 0);
+    assert_eq!(binding.bound, 0);
+    assert_eq!(
+        binding.declared, 4,
+        "the sockets are still read — the count is honest about what is there"
+    );
+    let finding = binding.finding(2, false).expect("a zero binding is stated");
+    assert_eq!(finding.code, "DW0781");
+    assert!(
+        finding.message.contains("0 abutting pair(s)"),
+        "and it says WHY the zero is a zero: {}",
+        finding.message
+    );
 }

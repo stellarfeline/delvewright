@@ -225,6 +225,13 @@ Validation tier (exit 1) unless stated; every check states its binding count.
 > exported schema is the authority on the form of any document**; where this
 > spec disagrees with it, this spec is the stale one.
 
+> **Amendment — placement is relational (spec-0059).** `boxes[].min` is an
+> optional pin and `seams[].at` is an offset along the `a` box's own face,
+> paired with `meets` on the `b` box's; the compiler packs the graph onto the
+> grid and the seam carries no sill. The form and the packing rule are
+> spec-0059 §2–§3; the departure is §9.7 below. The bullets that follow keep
+> their first statement so this section reads whole.
+
 `site-plan.json`, a new campaign stage document (stage name `site-plan`),
 `dsl_version` ≥ 0.13.0: the geometric embedding of the layout graph, and the
 whole map's design of record. It owns:
@@ -530,6 +537,16 @@ Each recorded where it is made; collected here so the list is auditable:
    answers to every document's own name, so `DW0100`'s prescription is a
    command that works; a gate that would hold this section to the schema does
    not exist and is a finding for the ledger, not a claim made here.
+
+7. **A box is placed by its seam, and the grid is derived** (spec-0059) —
+   `boxes[].min` becomes an optional pin, `seams[].at` becomes an offset on
+   the `a` box's face beside a `meets` on the `b` box's, and the sill leaves
+   the document. Reason, recorded where the finding was measured: half the
+   plan's typed scalars were determined by the graph and the extents once one
+   rule was fixed, the compiler already computed the shared face to refuse the
+   author's copy of it, and one extent edit re-typed every box east of it.
+   The two-artifact question of §10 is decided by spec-0059 §10: the graph
+   and the plan remain two documents.
 
 ## 10. The two-artifact question, carried
 

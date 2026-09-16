@@ -3,6 +3,7 @@
 //! [`validate_campaign`] uses the vendored v0 registries; the compiler injects
 //! full registries via [`validate_campaign_with`].
 
+use crate::stages::Verb;
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::diagnostic::{Diagnostic, codes};
@@ -100,6 +101,7 @@ pub fn validate_campaign_with(
     loot_checks(c, items, anchors, &mut d);
     lane_checks(c, anchors, &mut d);
     difficulty_checks(c, &mut d);
+    firework_checks(c, &mut d);
     // Stage 7 (spec-0017): the map-editor edit script. Structural
     // checks only — frame/region *resolution* happens at build time against the
     // solved layout (the compiler's `DW0323`).
@@ -156,6 +158,13 @@ pub fn validate_campaign_with(
     // spec-0032: a shop stands on a prefab anchor, and an anchor
     // no bound prefab provides is the same defect a lethal volume's is.
     shop_anchor_checks(c, anchors, &mut d);
+    // spec-0061: the design record's own document-level refusals — an empty
+    // `references`, a name that is not a path under `design/`, two rows for one
+    // picture. The comparison against the world's reachable skies (`DW0890`) is
+    // compiler-tier, because it reads the same reachable-state scan `DW0210`
+    // and `DW0496` do and needs the campaign's `design/` directory beside it.
+    // No-op for a campaign that ships no `design.json`.
+    crate::design::check(c, &mut d);
 
     d
 }
@@ -439,6 +448,54 @@ fn lethal_volume_checks(c: &Campaign, anchors: &dyn AnchorRegistry, d: &mut Vec<
                 ),
             ));
         }
+        // `DW0891`, document arm (spec-0062 §4): a `shown_by` id that is a known
+        // block and not one vanilla hurts a body with. Nothing has to be placed
+        // to know it, so it is refused here rather than three passes later, and
+        // the message prints the set the author may choose from — a remedy that
+        // named no candidates would be a remedy an author has to guess at.
+        //
+        // An id the pinned version does not have at all is `DW0193`, the code
+        // every block id in the DSL validates under, and deliberately not this
+        // rule's: a typo is a typo wherever it is written.
+        for (j, block) in v.shown_by.iter().enumerate() {
+            if crate::blocks::BlockRegistry::v1_21_11()
+                .validate_state_string(block)
+                .is_err()
+            {
+                d.push(Diagnostic::error(
+                    codes::BLOCK_UNKNOWN,
+                    "quests",
+                    format!("/content/lethal_volumes/{i}/shown_by/{j}"),
+                    format!(
+                        "lethal volume `{}` declares `shown_by` block `{block}`, which is not a \
+                         block state of Minecraft Java 1.21.11",
+                        v.id
+                    ),
+                ));
+                continue;
+            }
+            if crate::blockshape::hurts_body(block) {
+                continue;
+            }
+            d.push(Diagnostic::error(
+                codes::LETHAL_INVISIBLE,
+                "quests",
+                format!("/content/lethal_volumes/{i}/shown_by/{j}"),
+                format!(
+                    "lethal volume `{}` declares `shown_by` block `{block}`, which vanilla does \
+                     not hurt a body with — so it shows a player nothing, and floor made of it \
+                     reads as safe however this volume is declared. `shown_by` says what the \
+                     player SEES; it is not a word that switches the rule off. Name the block \
+                     that shows the danger, from the set vanilla hurts a body with: {}.",
+                    v.id,
+                    crate::blockshape::HURTING_BLOCKS_1_21_11
+                        .iter()
+                        .map(|b| format!("`{b}`"))
+                        .collect::<Vec<_>>()
+                        .join(", "),
+                ),
+            ));
+        }
         if v.message.trim().is_empty() {
             d.push(Diagnostic::error(
                 codes::LETHAL_MESSAGE_BLANK,
@@ -490,7 +547,7 @@ fn read_after_write_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
                 d.push(Diagnostic::warning(
                     codes::STATE_READ_AFTER_WRITE,
                     site.stage,
-                    format!("{}/{i}/requires_state", site.path),
+                    format!("{}/{i}/when/requires_state", site.path),
                     format!(
                         "this `{}` compares `{}`, and effect {at} of the same bundle already \
                          changes `{}` behind a gate on `{}` itself — so this comparison is made \
@@ -503,7 +560,7 @@ fn read_after_write_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
                          this: `set-state toll 0` and then a door gated on `toll at-most 0` \
                          plainly means the value the bundle just produced, and is not \
                          diagnosed.)",
-                        eff.verb(),
+                        eff.verb.tag(),
                         cmp.state.as_str(),
                         cmp.state.as_str(),
                         cmp.state.as_str()
@@ -658,7 +715,7 @@ fn economy_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
     // fires is a whole mechanism that binds to nothing.
     let mut dropped: BTreeSet<String> = BTreeSet::new();
     crate::stages::for_each_campaign_effect(c, &mut |path, _site, eff| {
-        let crate::stages::QuestEffect::DropStake { stake, .. } = eff else {
+        let crate::stages::Verb::DropStake { stake, .. } = &eff.verb else {
             return;
         };
         if c.quests.content.stake_decl(stake.as_str()).is_none() {
@@ -802,6 +859,11 @@ fn envelope(c: &Campaign, d: &mut Vec<Diagnostic>) {
                 .iter()
                 .map(|e| (Stage::DetailPlan, e.stage, e.dsl_version.as_str())),
         )
+        .chain(
+            c.design
+                .iter()
+                .map(|e| (Stage::Design, e.stage, e.dsl_version.as_str())),
+        )
         .collect();
     for (expected, actual, version) in stages {
         if actual != expected {
@@ -868,6 +930,7 @@ fn envelope(c: &Campaign, d: &mut Vec<Diagnostic>) {
             .iter()
             .map(|e| (Stage::DetailPlan, &e.campaign_id)),
     )
+    .chain(c.design.iter().map(|e| (Stage::Design, &e.campaign_id)))
     .collect();
     let canonical = c.world.campaign_id.as_str();
     for (stage, id) in ids {
@@ -1699,7 +1762,7 @@ fn mainline_key(c: &Campaign, optional: &BTreeSet<&str>, d: &mut Vec<Diagnostic>
     let mut disqualified: BTreeSet<&str> = BTreeSet::new();
 
     crate::stages::for_each_campaign_effect(c, &mut |_path, site, eff| {
-        let QuestEffect::SetFlag { flag, .. } = eff else {
+        let Verb::SetFlag { flag, .. } = &eff.verb else {
             return;
         };
         let flag = flag.as_str();
@@ -1815,6 +1878,23 @@ fn after_ordering(c: &Campaign, d: &mut Vec<Diagnostic>) {
 
 /// The spec-0026 **horizon library**: a declared horizon's params are
 /// range-checked here, and a param that belongs to another base is refused.
+/// **How far this campaign is from being one piece**, in a clause — the half of
+/// `DW0855` that tells a creator which of the three moves is one step away.
+///
+/// It names the count it read, so a reader can see what the refusal counted
+/// rather than being told a category.
+fn one_piece_gap(c: &Campaign) -> String {
+    let areas = &c.world.content.areas;
+    match areas.len() {
+        0 => ", and no area is declared at all".to_string(),
+        1 => format!(
+            ", and its one area `{id}` draws from a pool rather than binding a single `prefab`",
+            id = areas[0].id.as_str(),
+        ),
+        n => format!(", which is {n} areas rather than one"),
+    }
+}
+
 fn horizon_param_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
     use crate::stages::{HorizonBase, horizon_defaults};
 
@@ -1854,26 +1934,34 @@ fn horizon_param_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
         }
     }
 
-    // A base that BUILDS terrain needs a map to build it around, and the only
-    // statement of a whole map's extent this engine has is a site plan's
-    // `region`. Refused here rather than at the build, because it is a fact
-    // about the documents: nothing has to be placed to know that nothing states
-    // an extent.
-    if r.base.has_surround() && c.site_plan.is_none() {
+    // A base that BUILDS terrain needs a map to build it around, and whether
+    // this campaign states one is `crate::placement::Extent`'s answer — the same
+    // one `compiler::plan::surround_rect` derives the rectangle from, so the
+    // tier that refuses and the tier that builds cannot disagree about which
+    // campaigns have an extent. Refused here rather than at the build because it
+    // is a fact about the documents: nothing has to be placed to know that
+    // nothing states an extent.
+    if r.base.has_surround() && !crate::placement::Extent::of(c).is_stated() {
         d.push(Diagnostic::error(
             codes::SURROUND_NO_REGION,
             "world",
             "/content/horizon/base",
             format!(
                 "`horizon` base `{base}` builds terrain around the map, and this campaign never \
-                 says how big the map is. A surround rings a DECLARED extent — the `region` of a \
-                 site plan — and this campaign has no site plan, so its only statement of where \
-                 anything is is `areas[]`. The union of whatever those place is not a \
-                 substitute: areas sit on the compiler's fixed stride with void between them, so \
-                 that union is mostly nothing and the horizon would be a mountain range built \
-                 around empty space. Give the campaign a site plan, or set `horizon` to `void` \
-                 or `ocean`, which need no map to be a horizon of.",
-                base = r.base.token()
+                 says how big the map is. A surround rings a DECLARED extent, and this campaign \
+                 declares none: it places {n} area(s) with `areas[]`{how}. The union of whatever \
+                 those place is not a substitute — areas sit on the compiler's fixed stride with \
+                 void between them, and a pool's footprint is whatever the solver drew — so that \
+                 union is mostly nothing and the horizon would be a mountain range built around \
+                 empty space. There are three moves and all three are reachable from here: make \
+                 the map ONE PIECE — a single area bound to a single `prefab`, whose own declared \
+                 region is then the map's extent, which is how a site (a building with its \
+                 island, its moat and its banks in one box) is placed; or give the campaign a \
+                 site plan and declare `areas` empty, which is the same choice `DW0839` asks for; \
+                 or set `horizon` to `void` or `ocean`, which need no map to be a horizon of.",
+                base = r.base.token(),
+                n = c.world.content.areas.len(),
+                how = one_piece_gap(c),
             ),
         ));
     }
@@ -2377,8 +2465,8 @@ fn status_effect_bundle(
 fn effect_timeline<'a>(path: &str, list: &'a [QuestEffect]) -> Vec<(u32, String, &'a QuestEffect)> {
     let mut out = Vec::new();
     for (i, eff) in list.iter().enumerate() {
-        match eff {
-            QuestEffect::Sequence { steps } => {
+        match &eff.verb {
+            Verb::Sequence { steps } => {
                 for (s, step) in steps.iter().enumerate() {
                     for (k, inner) in step.effects.iter().enumerate() {
                         out.push((
@@ -2492,7 +2580,7 @@ fn check_one_status_effect(
                     "`{}` names status effect `{id}`, which is not in the pinned 1.21.11 \
                      `mob_effect` registry — use a valid namespaced effect id (e.g. \
                      `minecraft:blindness`)",
-                    eff.verb()
+                    eff.verb.tag()
                 ),
             ));
         }
@@ -2667,7 +2755,7 @@ fn state_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
                 format!(
                     "`{}` writes `{}`, which the campaign never declares. Add it to the stage-5 \
                      `state` list, or fix the id",
-                    eff.verb(),
+                    eff.verb.tag(),
                     id.as_str()
                 ),
             )),
@@ -2783,7 +2871,7 @@ fn check_player_state_not_scheduled(
                              `sequence` step and a `move-npc`/`move-actor` `on_arrive`). There \
                              is no player to read the datum from. Declare it `party`-scoped, or \
                              move the comparison onto a beat a player completes",
-                            e.verb(),
+                            e.verb.tag(),
                             cmp.state.as_str()
                         ),
                     ));
@@ -2806,29 +2894,29 @@ fn check_player_state_not_scheduled(
                      acting player whose datum this would be, so the write would silently reach \
                      nobody. Declare the datum `party`-scoped, or move the write onto a beat a \
                      player completes",
-                    e.verb(),
+                    e.verb.tag(),
                     id.as_str()
                 ),
             ));
         }
-        match e {
+        match &e.verb {
             // Dispatched per player; they reset the latch.
-            QuestEffect::SetCheckpoint { on_respawn, .. } => {
+            Verb::SetCheckpoint { on_respawn, .. } => {
                 check_player_state_not_scheduled(on_respawn, declared, stage, path, false, d);
             }
-            QuestEffect::BeginStealth { on_caught, .. } => {
+            Verb::BeginStealth { on_caught, .. } => {
                 check_player_state_not_scheduled(on_caught, declared, stage, path, false, d);
             }
             // The scheduler-only seams (see `emit::Audience::Scheduled`).
-            QuestEffect::Sequence { steps } => {
+            Verb::Sequence { steps } => {
                 for st in steps {
                     check_player_state_not_scheduled(&st.effects, declared, stage, path, true, d);
                 }
             }
-            QuestEffect::MoveActor { on_arrive, .. } | QuestEffect::MoveNpc { on_arrive, .. } => {
+            Verb::MoveActor { on_arrive, .. } | Verb::MoveNpc { on_arrive, .. } => {
                 check_player_state_not_scheduled(on_arrive, declared, stage, path, true, d);
             }
-            QuestEffect::Bonfire { on_rest, .. } => {
+            Verb::Bonfire { on_rest, .. } => {
                 check_player_state_not_scheduled(on_rest, declared, stage, path, scheduled, d);
             }
             _ => {}
@@ -3031,9 +3119,9 @@ fn walk_effects_deep(effs: &[QuestEffect], f: &mut dyn FnMut(&QuestEffect)) {
 /// `on_arrive`) a `sequence` — the recursion `DW0329` forbids inside another
 /// sequence's steps.
 fn reaches_sequence(e: &QuestEffect) -> bool {
-    match e {
-        QuestEffect::Sequence { .. } => true,
-        QuestEffect::MoveActor { on_arrive, .. } | QuestEffect::MoveNpc { on_arrive, .. } => {
+    match &e.verb {
+        Verb::Sequence { .. } => true,
+        Verb::MoveActor { on_arrive, .. } | Verb::MoveNpc { on_arrive, .. } => {
             on_arrive.iter().any(reaches_sequence)
         }
         _ => false,
@@ -3046,8 +3134,8 @@ fn reaches_sequence(e: &QuestEffect) -> bool {
 /// double-reporting).
 fn check_no_nested_sequence(effs: &[QuestEffect], path: &str, d: &mut Vec<Diagnostic>) {
     for e in effs {
-        match e {
-            QuestEffect::Sequence { steps } => {
+        match &e.verb {
+            Verb::Sequence { steps } => {
                 for s in steps {
                     for inner in &s.effects {
                         if reaches_sequence(inner) {
@@ -3065,7 +3153,7 @@ fn check_no_nested_sequence(effs: &[QuestEffect], path: &str, d: &mut Vec<Diagno
                     }
                 }
             }
-            QuestEffect::MoveActor { on_arrive, .. } | QuestEffect::MoveNpc { on_arrive, .. } => {
+            Verb::MoveActor { on_arrive, .. } | Verb::MoveNpc { on_arrive, .. } => {
                 check_no_nested_sequence(on_arrive, path, d);
             }
             _ => {}
@@ -3106,21 +3194,21 @@ fn check_carrier_one_not_scheduled(
                     .to_string(),
             ));
         }
-        match e {
+        match &e.verb {
             // These bundles ARE dispatched per player; they reset the latch.
-            QuestEffect::SetCheckpoint { on_respawn, .. } => {
+            Verb::SetCheckpoint { on_respawn, .. } => {
                 check_carrier_one_not_scheduled(on_respawn, path, false, d);
             }
-            QuestEffect::BeginStealth { on_caught, .. } => {
+            Verb::BeginStealth { on_caught, .. } => {
                 check_carrier_one_not_scheduled(on_caught, path, false, d);
             }
             // These are the scheduler-only seams (see `emit::Audience::Scheduled`).
-            QuestEffect::Sequence { steps } => {
+            Verb::Sequence { steps } => {
                 for st in steps {
                     check_carrier_one_not_scheduled(&st.effects, path, true, d);
                 }
             }
-            QuestEffect::MoveActor { on_arrive, .. } | QuestEffect::MoveNpc { on_arrive, .. } => {
+            Verb::MoveActor { on_arrive, .. } | Verb::MoveNpc { on_arrive, .. } => {
                 check_carrier_one_not_scheduled(on_arrive, path, true, d);
             }
             _ => {}
@@ -3254,10 +3342,10 @@ fn v06_checks(
                     ),
                 ));
             }
-            if let QuestEffect::MoveActor { to_anchor, .. } = e
+            if let Verb::MoveActor { to, .. } = &e.verb
                 && let Some(f) = station_kind_diag(
                     &providers,
-                    to_anchor.as_str(),
+                    to.anchor.as_str(),
                     crate::layout::StationKind::Point,
                     "a `move-actor` destination",
                     "quests",
@@ -3265,16 +3353,17 @@ fn v06_checks(
                 )
             {
                 d.push(f);
-            } else if let QuestEffect::MoveActor { to_anchor, .. } = e
-                && !providers.resolvable(to_anchor.as_str())
+            } else if let Verb::MoveActor { to, .. } = &e.verb
+                && !providers.resolvable(to.anchor.as_str())
             {
                 d.push(Diagnostic::error(
                     codes::ANCHOR_UNRESOLVED,
                     "quests",
                     path.clone(),
                     format!(
-                        "move-actor destination anchor `{to_anchor}` is not provided by any \
+                        "move-actor destination anchor `{}` is not provided by any \
                          area's prefab — {}",
+                        to.anchor,
                         providers.anchor_remedy("use an anchor a prefab exposes"),
                     ),
                 ));
@@ -3313,6 +3402,10 @@ fn v06_checks(
             d,
         );
     }
+
+    // spec-0067: every piece is put where the pinned game shows it on the body
+    // that wears it (`DW0898`).
+    crate::equipment::fit_checks(c, items, d);
 
     // Declared drops — the subset an elite/boss leaves behind.
     check_drops(c, quests, items, d);
@@ -3591,12 +3684,137 @@ fn kit_potion_checks(c: &Campaign, effects: &dyn EffectRegistry, d: &mut Vec<Dia
     }
 }
 
-/// True if `s` is a `#rrggbb` colour literal.
+/// True if `s` is a `#rrggbb` colour literal — [`crate::color::is_hex`], the one
+/// rule every hex-colour surface reads.
 fn is_hex_color(s: &str) -> bool {
-    let Some(hex) = s.strip_prefix('#') else {
-        return false;
+    crate::color::is_hex(s)
+}
+
+/// **A firework's shape, at every effect root** (spec-0068 §3.1).
+///
+/// Three bounds the exported schema states and serde does not enforce — the
+/// flight's `1..=3`, the explosion list's `1..=7`, and every colour's
+/// `#rrggbb` pattern — so each is restated here, at the schema tier, because
+/// that is what each of them is: a document that does not conform to its own
+/// schema. The verb's anchor is not this function's business; `DW0142` and
+/// `DW0360` own a mark whose anchor is nothing, as they do for every
+/// anchor-bearing effect.
+fn firework_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
+    let mut found: Vec<(String, &'static str, String)> = Vec::new();
+    // The roots come from the single enumeration and the nesting from the single
+    // descent authority, so a `firework` inside a `sequence` step of a dialogue
+    // option's `on_respawn` bundle is asked exactly what a top-level one is —
+    // and the finding is reported against the stage document it really lives in.
+    fn descend(
+        stage: &'static str,
+        path: String,
+        eff: &QuestEffect,
+        found: &mut Vec<(String, &'static str, String)>,
+    ) {
+        firework_shape(stage, &path, eff, found);
+        for (pseg, _kseg, list) in eff.nested_effect_lists_labeled() {
+            for (j, inner) in list.iter().enumerate() {
+                descend(stage, format!("{path}/{pseg}/{j}"), inner, found);
+            }
+        }
+    }
+    crate::effects::for_each_effect_root(c, &mut |site, effs| {
+        for (i, eff) in effs.iter().enumerate() {
+            descend(site.stage, format!("{}/{i}", site.path), eff, &mut found);
+        }
+    });
+    for (path, stage, message) in found {
+        d.push(Diagnostic::error(codes::SCHEMA, stage, path, message));
+    }
+}
+
+/// One firework effect's shape, at the pointer it was found at.
+fn firework_shape(
+    stage: &'static str,
+    path: &str,
+    eff: &QuestEffect,
+    found: &mut Vec<(String, &'static str, String)>,
+) {
+    use crate::firework;
+    let Verb::Firework {
+        flight, explosions, ..
+    } = &eff.verb
+    else {
+        return;
     };
-    hex.len() == 6 && hex.chars().all(|c| c.is_ascii_hexdigit())
+    if let Some(f) = flight
+        && !(firework::MIN_FLIGHT..=firework::MAX_FLIGHT).contains(f)
+    {
+        found.push((
+            format!("{path}/flight"),
+            stage,
+            format!(
+                "`firework` `flight` is {f}. A flight duration is one of the three the game \
+                 crafts — {min}, {min2} or {max} — and the wiki states a burst height for \
+                 those and for nothing else, so a fourth would put the burst at a height this \
+                 engine cannot state. Write {min}, {min2} or {max}.",
+                min = firework::MIN_FLIGHT,
+                min2 = firework::MIN_FLIGHT + 1,
+                max = firework::MAX_FLIGHT,
+            ),
+        ));
+    }
+    if explosions.len() < firework::MIN_EXPLOSIONS {
+        found.push((
+            format!("{path}/explosions"),
+            stage,
+            format!(
+                "`firework` declares no explosion. A rocket with none is a flare: it glides \
+                 along whatever it meets and shows nothing. Declare between {} and {} \
+                 burst(s).",
+                firework::MIN_EXPLOSIONS,
+                firework::MAX_EXPLOSIONS,
+            ),
+        ));
+    }
+    if explosions.len() > firework::MAX_EXPLOSIONS {
+        found.push((
+            format!("{path}/explosions"),
+            stage,
+            format!(
+                "`firework` declares {n} explosions, and a rocket carries at most {max} — the \
+                 game's own crafting cap, and the largest count the page states a damage for \
+                 ({worst} HP, under a full body's twenty). A display of more rockets is a \
+                 `sequence` of `firework` effects, not one rocket that could kill an unhurt \
+                 player by itself.",
+                n = explosions.len(),
+                max = firework::MAX_EXPLOSIONS,
+                worst = firework::worst_damage_hp(),
+            ),
+        ));
+    }
+    for (i, ex) in explosions.iter().enumerate() {
+        if ex.colors.is_empty() {
+            found.push((
+                format!("{path}/explosions/{i}/colors"),
+                stage,
+                "`firework` explosion declares no `colors`. A star with no colour is not a \
+                 star — write at least one `#rrggbb` literal (e.g. `#ffd700`)."
+                    .to_string(),
+            ));
+        }
+        for (field, list) in [("colors", &ex.colors), ("fade_colors", &ex.fade_colors)] {
+            for (j, col) in list.iter().enumerate() {
+                if !crate::color::is_hex(col) {
+                    found.push((
+                        format!("{path}/explosions/{i}/{field}/{j}"),
+                        stage,
+                        format!(
+                            "`firework` colour `{col}` is malformed — write a burst colour as \
+                             `#rrggbb` (e.g. `#ffd700`), the spelling a potion's `color` \
+                             uses. The schema's own pattern is `{pat}`.",
+                            pat = crate::color::HEX_PATTERN,
+                        ),
+                    ));
+                }
+            }
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -3718,13 +3936,13 @@ fn anchors_and_items(
             // camera flies wherever the shot needs), so they resolve against the
             // union of every known area's anchors; every other effect anchor names
             // a world position the quest's own area must provide.
-            let cross_area = matches!(eff, QuestEffect::Cutscene { .. });
+            let cross_area = matches!(&eff.verb, Verb::Cutscene { .. });
             for (suffix, anchor, demands) in eff.anchor_refs() {
                 if let Some(f) = station_kind_diag(
                     &providers,
                     anchor.as_str(),
                     demands,
-                    &format!("`{}`", eff.verb()),
+                    &format!("`{}`", eff.verb.tag()),
                     "quests",
                     format!("/content/quests/{i}/{path}/{suffix}"),
                 ) {
@@ -3756,7 +3974,7 @@ fn anchors_and_items(
                             "use an anchor a prefab exposes (anchor names come from prefab \
                              metadata; do NOT invent one)"
                         ),
-                        verb = eff.verb(),
+                        verb = eff.verb.tag(),
                     ),
                 ));
             }
@@ -3776,7 +3994,7 @@ fn anchors_and_items(
                         &providers,
                         anchor.as_str(),
                         demands,
-                        &format!("`{}`", eff.verb()),
+                        &format!("`{}`", eff.verb.tag()),
                         "quests",
                         format!("/content/triggers/{ti}/{path}/{suffix}"),
                     ) {
@@ -3797,7 +4015,7 @@ fn anchors_and_items(
                                 "use an anchor a prefab exposes (anchor names come from prefab \
                                  metadata; do NOT invent one)"
                             ),
-                            verb = eff.verb(),
+                            verb = eff.verb.tag(),
                         ),
                     ));
                 }
@@ -4388,7 +4606,7 @@ fn v03_checks(
                     d.push(Diagnostic::error(
                         codes::FLAG_UNKNOWN,
                         "quests",
-                        format!("/content/quests/{i}/{path}/requires_flags/{n}"),
+                        format!("/content/quests/{i}/{path}/when/requires_flags/{n}"),
                         format!(
                             "effect `requires_flags` references flag `{f}`, which no `set-flag` \
                              effect ever produces — add a `set-flag {{ flag: \"{f}\" }}` effect \
@@ -4403,7 +4621,7 @@ fn v03_checks(
                     d.push(Diagnostic::error(
                         codes::FLAG_UNKNOWN,
                         "quests",
-                        format!("/content/quests/{i}/{path}/forbids_flags/{n}"),
+                        format!("/content/quests/{i}/{path}/when/forbids_flags/{n}"),
                         format!(
                             "effect `forbids_flags` references flag `{f}`, which no `set-flag` \
                              effect ever produces — the gate can never suppress anything; add the \
@@ -4425,7 +4643,7 @@ fn v03_checks(
                     d.push(Diagnostic::error(
                         codes::FLAG_UNKNOWN,
                         "quests",
-                        format!("/content/triggers/{i}/{path}/requires_flags/{n}"),
+                        format!("/content/triggers/{i}/{path}/when/requires_flags/{n}"),
                         format!(
                             "effect `requires_flags` references flag `{f}`, which no `set-flag` \
                              effect ever produces — add a `set-flag {{ flag: \"{f}\" }}` effect \
@@ -4439,7 +4657,7 @@ fn v03_checks(
                     d.push(Diagnostic::error(
                         codes::FLAG_UNKNOWN,
                         "quests",
-                        format!("/content/triggers/{i}/{path}/forbids_flags/{n}"),
+                        format!("/content/triggers/{i}/{path}/when/forbids_flags/{n}"),
                         format!(
                             "effect `forbids_flags` references flag `{f}`, which no `set-flag` \
                              effect ever produces — the gate can never suppress anything; add the \
@@ -4666,7 +4884,12 @@ fn v04_checks(
         }
         if matches!(t.on, TriggerOn::Use)
             && let Some(at) = t.at_anchor()
-            && let Some(npc) = c.npcs.content.npcs.iter().find(|n| n.anchor.as_str() == at)
+            && let Some(npc) = c
+                .npcs
+                .content
+                .npcs
+                .iter()
+                .find(|n| n.anchor.as_str() == at && n.offset == [0, 0, 0])
         {
             d.push(Diagnostic::error(
                 codes::USE_TRIGGER_ON_NPC,
@@ -5004,8 +5227,8 @@ fn v06_trap_checks(
         // other effect root gets.
         for_each_trap_payload_deep(t, |path, eff| {
             let base = format!("/content/traps/{i}/{path}");
-            match eff {
-                QuestEffect::Volley {
+            match &eff.verb {
+                Verb::Volley {
                     projectile,
                     salvos,
                     interval,
@@ -5055,7 +5278,7 @@ fn v06_trap_checks(
                         ));
                     }
                 }
-                QuestEffect::Collapse {
+                Verb::Collapse {
                     falling_block,
                     then_floor,
                     ..
@@ -5196,8 +5419,8 @@ fn check_effect_v04(
     d: &mut Vec<Diagnostic>,
 ) {
     check_cutscene_shape(eff, base_path, d);
-    match eff {
-        QuestEffect::SetBlock { block, .. } => {
+    match &eff.verb {
+        Verb::SetBlock { block, .. } => {
             check_block_field(
                 blocks,
                 block,
@@ -5210,7 +5433,7 @@ fn check_effect_v04(
         // The v0.10 region write (spec-0031) places the same kind of block over a
         // box instead of a cell, so it is the same `DW0193` check — the registry
         // belongs to "a block id an author wrote", not to `set-block`.
-        QuestEffect::FillRegion { block, .. } => {
+        Verb::FillRegion { block, .. } => {
             check_block_field(
                 blocks,
                 block,
@@ -5222,9 +5445,7 @@ fn check_effect_v04(
         }
         // NPC-lifecycle refs. `spawn-npc` (v0.6) joins the v0.4 `despawn-npc`/
         // `move-npc` family: an unknown npc id is the same `DW0112` dangling ref.
-        QuestEffect::DespawnNpc { npc, .. }
-        | QuestEffect::MoveNpc { npc, .. }
-        | QuestEffect::SpawnNpc { npc, .. }
+        Verb::DespawnNpc { npc, .. } | Verb::MoveNpc { npc, .. } | Verb::SpawnNpc { npc, .. }
             if !npc_ids.contains(npc.as_str()) =>
         {
             let verb = eff
@@ -5252,12 +5473,12 @@ fn check_effect_v04(
 /// ([`QuestEffect::cutscene_shots`]), so this is the one place the shape is
 /// policed; emission may then assume a non-empty, well-formed list.
 fn check_cutscene_shape(eff: &QuestEffect, base_path: &str, d: &mut Vec<Diagnostic>) {
-    let QuestEffect::Cutscene {
+    let Verb::Cutscene {
         shots,
         path,
         seconds,
         ..
-    } = eff
+    } = &eff.verb
     else {
         return;
     };
@@ -5352,10 +5573,10 @@ fn cutscene_style_checks(
     /// The sibling moves visible to a cutscene: `(is_actor, id)`.
     fn moves_in(list: &[QuestEffect], scope: &mut Vec<(bool, String)>) {
         for e in list {
-            match e {
-                QuestEffect::MoveNpc { npc, .. } => scope.push((false, npc.to_string())),
-                QuestEffect::MoveActor { actor, .. } => scope.push((true, actor.to_string())),
-                QuestEffect::Sequence { steps } => {
+            match &e.verb {
+                Verb::MoveNpc { npc, .. } => scope.push((false, npc.to_string())),
+                Verb::MoveActor { actor, .. } => scope.push((true, actor.to_string())),
+                Verb::Sequence { steps } => {
                     // A sequence launched from this list shares its timeline.
                     for st in steps {
                         moves_in(&st.effects, scope);
@@ -5404,7 +5625,7 @@ fn cutscene_style_checks(
         actor_ids: &BTreeSet<&str>,
         d: &mut Vec<Diagnostic>,
     ) {
-        let QuestEffect::Cutscene { shots, .. } = eff else {
+        let Verb::Cutscene { shots, .. } = &eff.verb else {
             return;
         };
         for (i, shot) in shots.iter().enumerate() {
@@ -5547,7 +5768,7 @@ fn cutscene_style_checks(
                 // A sequence step shares this timeline's scope; reaction lists
                 // (`on_arrive`/`on_caught`/`on_respawn`) fire at an unknowable
                 // time and start fresh.
-                let inherited: &[(bool, String)] = if matches!(e, QuestEffect::Sequence { .. }) {
+                let inherited: &[(bool, String)] = if matches!(&e.verb, Verb::Sequence { .. }) {
                     &scope
                 } else {
                     &[]
@@ -7264,21 +7485,21 @@ fn difficulty_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
         .collect();
     for q in &c.quests.content.quests {
         for_each_effect_deep(q, |_, eff| {
-            if let QuestEffect::UnleashActor { actor, .. } = eff {
+            if let Verb::UnleashActor { actor, .. } = &eff.verb {
                 fighters.insert(actor.as_str().to_string());
             }
         });
     }
     for t in &c.quests.content.triggers {
         for_each_trigger_effect_deep(t, |_, eff| {
-            if let QuestEffect::UnleashActor { actor, .. } = eff {
+            if let Verb::UnleashActor { actor, .. } = &eff.verb {
                 fighters.insert(actor.as_str().to_string());
             }
         });
     }
     for t in &c.quests.content.traps {
         for_each_trap_payload_deep(t, |_, eff| {
-            if let QuestEffect::UnleashActor { actor, .. } = eff {
+            if let Verb::UnleashActor { actor, .. } = &eff.verb {
                 fighters.insert(actor.as_str().to_string());
             }
         });
@@ -7926,7 +8147,7 @@ fn check_enchantments(
 /// (cap 1) shipped an empty chest slot in the-drowned-bell round 2 — exactly the
 /// silent-failure class `DW0431` exists for, one tier too late. The cap comes from
 /// Mojang's own item-components data, vendored per MC pin
-/// (`crates/compiler/data/item-stack-sizes-1.21.11.json`), never a hand table.
+/// (`crates/delvec/data/item-stack-sizes-1.21.11.json`), never a hand table.
 ///
 /// Skipped when the registry does not carry stack sizes (the small vendored DSL-side
 /// subset) or the item id is unknown — the latter is already `DW0143`, and stacking
@@ -8151,24 +8372,6 @@ fn loot_checks(
 // DSL v0.8 — branch points, happenings, named endings (spec-0025);
 // the bonfire rest interaction + the class-kit flask (spec-0016 §1)
 // ---------------------------------------------------------------------------
-
-/// The `happening` of an effect, for the eleven story-node verbs that carry one.
-pub(crate) fn effect_happening(eff: &QuestEffect) -> Option<&crate::stages::Happening> {
-    match eff {
-        QuestEffect::OpenGate { happening, .. }
-        | QuestEffect::CloseGate { happening, .. }
-        | QuestEffect::CampaignComplete { happening, .. }
-        | QuestEffect::SpawnWave { happening, .. }
-        | QuestEffect::DespawnNpc { happening, .. }
-        | QuestEffect::MoveNpc { happening, .. }
-        | QuestEffect::SpawnNpc { happening, .. }
-        | QuestEffect::SpawnActor { happening, .. }
-        | QuestEffect::DespawnActor { happening, .. }
-        | QuestEffect::MoveActor { happening, .. }
-        | QuestEffect::UnleashActor { happening, .. } => happening.as_ref(),
-        _ => None,
-    }
-}
 
 /// Structural validation of the stage-4 `branch_points` declaration (spec-0025).
 ///
@@ -8395,7 +8598,7 @@ fn happening_subject_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
     }
     let mut effect_subjects: Vec<(String, String)> = Vec::new();
     crate::stages::for_each_campaign_effect(c, &mut |path, _site, eff| {
-        if let Some(h) = effect_happening(eff)
+        if let Some(h) = eff.happening.as_ref()
             && let Some(s) = &h.subject
         {
             effect_subjects.push((format!("{path}/happening/subject"), s.clone()));
@@ -8427,9 +8630,9 @@ fn happening_subject_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
 pub fn declared_endings(c: &Campaign) -> BTreeSet<String> {
     let mut out = BTreeSet::new();
     crate::stages::for_each_campaign_effect(c, &mut |_p, _site, eff| {
-        if let QuestEffect::CampaignComplete {
+        if let Verb::CampaignComplete {
             ending: Some(e), ..
-        } = eff
+        } = &eff.verb
         {
             out.insert(e.as_str().to_string());
         }
@@ -8461,7 +8664,7 @@ pub fn declared_endings(c: &Campaign) -> BTreeSet<String> {
 pub fn produced_flags(c: &Campaign) -> BTreeSet<String> {
     let mut out = BTreeSet::new();
     crate::stages::for_each_campaign_effect(c, &mut |_p, _site, eff| {
-        if let QuestEffect::SetFlag { flag, .. } = eff {
+        if let Verb::SetFlag { flag, .. } = &eff.verb {
             out.insert(flag.as_str().to_string());
         }
     });

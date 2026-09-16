@@ -18,7 +18,7 @@
 
 mod common;
 
-use delvewright_compiler::continuity::check_npc_continuity;
+use delvec::compiler::continuity::check_npc_continuity;
 use delvewright_dsl::{Campaign, RawCampaign, Severity, parse_campaign};
 
 fn read_hw(name: &str) -> String {
@@ -51,6 +51,7 @@ fn parse(deferred: bool, quests: &str) -> Campaign {
         layout_graph: None,
         site_plan: None,
         detail_plan: None,
+        design: None,
     };
     parse_campaign(&raw).expect("campaign parses")
 }
@@ -58,8 +59,8 @@ fn parse(deferred: bool, quests: &str) -> Campaign {
 /// A v0.6 quests doc skeleton; `{TALK_FX}` and `{COMPLETE_FX}` are the
 /// `obj/talk` completion bundle and the quest `on_complete` bundle.
 fn quests(talk_fx: &str, complete_fx: &str) -> String {
-    r#"{
-  "dsl_version": "0.19.0",
+    common::at_dsl_version(r#"{
+  "dsl_version": "%dsl_version%",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {
@@ -78,7 +79,7 @@ fn quests(talk_fx: &str, complete_fx: &str) -> String {
       }
     ]
   }
-}"#
+}"#)
     .replacen("{TALK_FX}", talk_fx, 1)
     .replacen("{COMPLETE_FX}", complete_fx, 1)
 }
@@ -119,7 +120,7 @@ fn deferred_spawn_with_no_staged_entrance_warns_dw0350() {
 fn deferred_spawn_covered_by_arrival_is_clean() {
     let quests = quests(
         r#"{ "type": "spawn-actor", "actor": "actor/stand-in" },
-            { "type": "move-actor", "actor": "actor/stand-in", "to_anchor": "anchor/keeper-stand",
+            { "type": "move-actor", "actor": "actor/stand-in", "to": { "anchor": "anchor/keeper-stand" },
               "on_arrive": [
                 { "type": "despawn-actor", "actor": "actor/stand-in", "style": "vanish" },
                 { "type": "spawn-npc", "npc": "npc/keeper" }
@@ -167,7 +168,7 @@ fn walk_then_despawn_in_scene_is_clean() {
     let c = parse(
         false,
         &quests(
-            r#"{ "type": "move-npc", "npc": "npc/keeper", "to_anchor": "anchor/exit" }"#,
+            r#"{ "type": "move-npc", "npc": "npc/keeper", "to": { "anchor": "anchor/exit" } }"#,
             r#"{ "type": "despawn-npc", "npc": "npc/keeper" },"#,
         ),
     );
@@ -184,7 +185,7 @@ fn respawn_away_from_last_staged_location_warns_dw0350() {
     let c = parse(
         false,
         &quests(
-            r#"{ "type": "move-npc", "npc": "npc/keeper", "to_anchor": "anchor/exit" }"#,
+            r#"{ "type": "move-npc", "npc": "npc/keeper", "to": { "anchor": "anchor/exit" } }"#,
             r#"{ "type": "despawn-npc", "npc": "npc/keeper" },
                { "type": "spawn-npc", "npc": "npc/keeper" },"#,
         ),

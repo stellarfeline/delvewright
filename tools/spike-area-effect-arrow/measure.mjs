@@ -723,7 +723,7 @@ async function terrainAxes(bots) {
       // ignores `HandItems`/`HandDropChances` on `/summon`, so the first
       // version of this trial armed the skeleton with nothing and read as
       // "a mob-shot arrow does not fire the enchantment". The engine already
-      // emits the component form (crates/compiler/src/emit.rs default_equipment).
+      // emits the component form (crates/delvec/src/compiler/emit.rs default_equipment).
       `equipment:{mainhand:${ench("dwspike:blast_none")}},drop_chances:{mainhand:0.0f},` +
       `attributes:[{id:"minecraft:follow_range",base:64.0}]}`,
   );

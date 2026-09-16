@@ -163,7 +163,7 @@ fn the_subject_of_a_code_is_declared_beside_it() {
         "`DW0822` is a measurement of THIS graph's critical path"
     );
     assert_eq!(
-        delvewright_compiler::faces::DW_FACE_UNBOUND.subject(),
+        delvec::compiler::faces::DW_FACE_UNBOUND.subject(),
         Subject::Campaign,
         "`DW0781` counts THIS world's pieces and faces"
     );

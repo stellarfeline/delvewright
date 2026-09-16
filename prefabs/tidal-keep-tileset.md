@@ -408,5 +408,5 @@ cargo run --manifest-path prefabs/tidal-keep-generator/Cargo.toml --release -- \
 ```
 
 Byte-identical on every run (double-run hash-checked). The generator is a
-standalone crate with its own `[workspace]`, **outside** `crates/`, so it never
+member of the `prefabs/` workspace, **outside** `crates/`, so it never
 enters the shipped `delvec` binary and no existing `.nbt` output moves.

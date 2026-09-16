@@ -31,11 +31,11 @@ mod common;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use delvewright_compiler::commands::CommandTree;
-use delvewright_compiler::load::load_campaign_dir;
-use delvewright_compiler::plan::Plan;
-use delvewright_compiler::registry::PrefabRegistry;
-use delvewright_compiler::{emit, nav};
+use delvec::compiler::commands::CommandTree;
+use delvec::compiler::load::load_campaign_dir;
+use delvec::compiler::plan::Plan;
+use delvec::compiler::registry::PrefabRegistry;
+use delvec::compiler::{emit, nav};
 use delvewright_dsl::parse_campaign;
 
 /// A scratch dir of this test's own, named for the case.
@@ -68,7 +68,7 @@ fn plan_and_structures(
     Plan<'static>,
     PrefabRegistry,
     BTreeMap<String, Vec<u8>>,
-    &'static delvewright_compiler::load::LoadedCampaign,
+    &'static delvec::compiler::load::LoadedCampaign,
 ) {
     let loaded = Box::leak(Box::new(load_campaign_dir(campaign_dir).unwrap()));
     let campaign = Box::leak(Box::new(parse_campaign(&loaded.raw).unwrap()));
@@ -274,14 +274,11 @@ fn a_leaking_world_gets_no_boundary_verdict_through_the_entry_point() {
     // The entry point every caller uses reports the leak rather than a boundary
     // verdict. If the sequence ever moves back out to the call sites, this is
     // `Ok(())` — the masking — and the assertion names what that means.
-    let err = nav::verify_boundary_safety(
-        &world,
-        &delvewright_compiler::edit::anchor_starts(&plan),
-    )
-    .expect_err(
-        "a world the water is still running out of must not yield a boundary verdict at all: \
+    let err = nav::verify_boundary_safety(&world, &delvec::compiler::edit::anchor_starts(&plan))
+        .expect_err(
+            "a world the water is still running out of must not yield a boundary verdict at all: \
              an `Ok` here is the masking, not a pass",
-    );
+        );
     assert_eq!(err.code, "DW0318");
 
     // …and the build agrees, which is the same fact one layer out.

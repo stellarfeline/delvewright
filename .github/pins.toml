@@ -32,6 +32,18 @@
 #               major tag, or a toolchain held at a major/minor line the
 #               publisher advances. Registered so that the number of
 #               deliberately-unfrozen refs is visible instead of habitual.
+#   held      — a commit on the upstream default branch, for a site that BUILDS
+#               the pinned tool and is judged as one unit with it rather than
+#               re-pinned on every upstream merge. Drift from the default branch
+#               is never a finding — the online check prints the distance as
+#               information only. What makes the hold deliberate: the value is
+#               a real upstream commit, `judged_by` carries it as a literal, so
+#               the workflow really builds from the commit it claims to; carries
+#               `reviewed`, the upstream revision the judgement read, itself a
+#               real commit; and carries `why`. Any missing term is a red naming
+#               it. `builds = []` is not the same thing — that lies the moment
+#               the site's own `cargo build … -p <pkg>` names a package, and the
+#               offline check catches the lie same as it would for `track`.
 #
 # `builds` is the package names the site file builds out of the pinned checkout.
 # It is not a watch list an author writes: the online check derives the watched
@@ -150,12 +162,12 @@ facts and then that the value stands as a whole token at every site.
 
 [[pin]]
 id = "content-repo"
-value = "a8c3f98831735aa370908a43d37db85d09fae25c"
+value = "8e09c30c17c78538ac0b6c36fa5edc5f681a45eb"
 sites = ["versions.toml"]
 repo = "stellarfeline/delvewright-campaigns"
 policy = "track"
 judged_by = ".github/workflows/ci.yml"
-reviewed = "a8c3f98831735aa370908a43d37db85d09fae25c"
+reviewed = "8e09c30c17c78538ac0b6c36fa5edc5f681a45eb"
 builds = []
 why = """
 The content commit every reproducible build resolves the prefab library and
@@ -167,6 +179,59 @@ enforced separately by validation/check-versions.sh and
 .github/content-zone-corpus.json.
 """
 
+[[pin]]
+id = "skill-page-engine"
+value = "70eea6296cfab2440054f95670729081c3d4bca1"
+sites = [".claude/skills/delvewright/skills/new-delve/versions.toml"]
+repo = "stellarfeline/delvewright"
+policy = "release"
+judged_by = ".github/workflows/ci.yml"
+why = """
+The ONE engine the creator-facing page is written against and proven on
+(spec-0063 §8, ADR-0027 §2). It decides two acquisitions: `[engine].ref` is the
+revision Init I2 clones into `~/.delvewright/engine`, and `[engine].release` is
+the tag whose archive Init I3a downloads and checksum-verifies. They are the
+same engine arriving by ADR-0023's two channels, so they move together.
+
+WHY `release` AND NOT `track`. This value must be a commit a `v<semver>` tag
+points at, and that is not the vocabulary happening to fit — it is the property
+the pin needs. A creator who takes the archive gets whatever the shelf built,
+and a developer who falls to the source build gets whatever the tree compiles;
+holding the pin to a TAG is what makes those two the same engine. A revision
+with no release behind it has no shelf, so `fetch-delvec.py` would refuse every
+platform and every creator would silently take the floor.
+
+DRIFT PAST IT IS NOT A FINDING, for the same reason it is not one for
+`content-repo`: what a creator needs is the engine the page was WALKED against,
+not the newest one. Staleness here is established by walking `/new-delve` Init
+end to end against a candidate revision, which no job in this repository can
+perform — and saying so is the honest half.
+
+WHAT ACTUALLY READS IT, because a pin whose only reader is prose is a doc line:
+
+  - `tools/check-pins.py` (offline, required job): discovery finds the literal
+    in the site above and demands this entry; the entry keeping a value the site
+    no longer holds reds as a registry that drifted from its site.
+  - `tools/check-pins.py --online` (same job): a `v<semver>` tag must point at
+    this commit, which a revision somebody merely stopped looking at cannot do.
+  - `tools/check-skill-page.py` (offline, required job): the one reader that
+    uses the revision as an INSTRUMENT rather than judging the literal. It
+    materialises the engine at this value and holds the page's
+    `metadata.requires_delvec` window, every `delvec` subcommand and flag the
+    page and its references name, every campaign stage document the engine
+    defines, every `WorldContent` field, and every number the page states about
+    the idiom index, against that one engine. Move it to an engine whose CLI has
+    dropped a subcommand the page drives and the page reds — which is the point,
+    because that is exactly what a creator would hit at Init.
+  - `tools/check-skill-page.py --online` (same job): the tag resolves to this
+    revision, and the release carries one archive per target the engine declares
+    at this revision plus a `SHA256SUMS`. A partial shelf means I3a falls to the
+    source build on exactly the platforms nobody tested.
+  - `.claude/skills/delvewright/skills/new-delve/scripts/fetch-delvec.py`, on a
+    creator's own machine: it reads the value out of the site above and maps the
+    host against `[engine].targets` in the engine tree AT this revision.
+"""
+
 # ---------------------------------------------------------------------------
 # Third-party bytes
 # ---------------------------------------------------------------------------
@@ -174,7 +239,7 @@ enforced separately by validation/check-versions.sh and
 [[pin]]
 id = "nucleation-version"
 value = "0.10.14"
-sites = ["crates/render/Cargo.toml", "versions.toml"]
+sites = ["crates/delvec/Cargo.toml", "versions.toml"]
 policy = "immutable"
 bound_by = "validation/check-versions.sh"
 bound_key = "nucleation_version"
@@ -266,6 +331,30 @@ itself. It pins BYTES rather than a version string, so a hand-edited bundle is a
 red (versions.toml [render]).
 """
 
+[[pin]]
+id = "chunky-revision"
+value = "156e2bba2526fe4cf218243704b6f3e6d0281d1a"
+sites = ["versions.toml"]
+policy = "immutable"
+why = """
+The chunky-dev/chunky commit `validation/chunky-install.sh` builds the pinned
+Chunky core from (versions.toml [render]). A third-party commit names fixed
+source; `validation/check-versions.sh` holds it to the `.g<sha7>` the core's name
+carries.
+"""
+
+[[pin]]
+id = "chunky-core-content"
+value = "6710920a30882d3e8a32121c8d97ce940a9f35539137ef91fff0e70256a809fc"
+sites = ["versions.toml"]
+policy = "immutable"
+why = """
+The content digest of the pinned Chunky core jar, by the rule in
+`tools/lib/chunky_core.py` (versions.toml [render]). It pins what the jar
+contains rather than its name or its zip bytes: the installer installs nothing
+that does not answer it, and `validation/chunky.sh` renders with nothing else.
+"""
+
 # --- misode/mcmeta data dumps, from which generated tables are extracted ------
 # Each names one retrieval of one file at the pinned Minecraft version. The
 # extractor refuses bytes that do not match, so these are what make a
@@ -274,9 +363,13 @@ red (versions.toml [render]).
 [[pin]]
 id = "mcmeta-commit"
 value = "c976eb3b2cfcb9f205171527dec46b266afa3ac9"
-sites = ["tools/extract-block-defaults.py", "tools/extract-block-registry.py"]
+sites = [
+    "tools/extract-block-defaults.py",
+    "tools/extract-block-registry.py",
+    "tools/extract-item-equippable.py",
+]
 policy = "immutable"
-why = "The misode/mcmeta commit the pinned block summaries were retrieved from."
+why = "The misode/mcmeta commit the pinned block summaries and item components were retrieved from."
 
 [[pin]]
 id = "mcmeta-blocks"
@@ -290,10 +383,25 @@ id = "mcmeta-item-components"
 value = "51b191e13f86813ca02f1498942e5bc235947edb71eb8105a78401670b3665c4"
 sites = [
     "tools/extract-item-combat-stats.py",
+    "tools/extract-item-equippable.py",
     "tools/extract-item-stack-sizes.py",
 ]
 policy = "immutable"
 why = "sha256 of the mcmeta `item_components/data.min.json`."
+
+[[pin]]
+id = "mcmeta-assets-commit"
+value = "c5b876288e0df01b5cd5798434b066ab97eff88c"
+sites = ["tools/extract-item-equippable.py"]
+policy = "immutable"
+why = "The misode/mcmeta `1.21.11-assets` commit the pinned client's equipment assets were retrieved from."
+
+[[pin]]
+id = "mcmeta-equipment-assets"
+value = "150b585538e2295db9daee16e3fce4c23ac5bcdddc85358208b8e7adadbf78bb"
+sites = ["tools/extract-item-equippable.py"]
+policy = "immutable"
+why = "sha256 of the sorted `sha256sum` listing of the 44 files under the pinned `assets/minecraft/equipment/`."
 
 [[pin]]
 id = "mcmeta-damage-types"
@@ -352,10 +460,11 @@ value = "actions/checkout@v4"
 sites = [
     ".github/actions/checkout-content/action.yml",
     ".github/workflows/ci.yml",
+    ".github/workflows/dsl-crate-publish.yml",
     ".github/workflows/engine-release.yml",
     ".github/workflows/gpu-probe.yml",
     ".github/workflows/infra-images.yml",
-    ".github/workflows/release.yml",
+    ".github/workflows/plugin-release.yml",
 ]
 policy = "floating"
 why = "GitHub's own checkout action, held at its major tag."
@@ -365,9 +474,9 @@ id = "action-rust-cache"
 value = "Swatinem/rust-cache@v2"
 sites = [
     ".github/workflows/ci.yml",
+    ".github/workflows/dsl-crate-publish.yml",
     ".github/workflows/engine-release.yml",
     ".github/workflows/gpu-probe.yml",
-    ".github/workflows/release.yml",
 ]
 policy = "floating"
 why = "Cargo cache action, held at its major tag. Affects build time, not output."
@@ -375,28 +484,36 @@ why = "Cargo cache action, held at its major tag. Affects build time, not output
 [[pin]]
 id = "action-setup-node"
 value = "actions/setup-node@v4"
-sites = [".github/workflows/ci.yml", ".github/workflows/release.yml"]
+sites = [".github/workflows/ci.yml"]
 policy = "floating"
 why = "GitHub's Node toolchain action, held at its major tag."
 
 [[pin]]
 id = "action-setup-python"
 value = "actions/setup-python@v5"
-sites = [".github/workflows/ci.yml"]
+sites = [".github/workflows/ci.yml", ".github/workflows/engine-release.yml"]
 policy = "floating"
 why = "GitHub's Python toolchain action, held at its major tag."
 
 [[pin]]
 id = "action-upload-artifact"
 value = "actions/upload-artifact@v4"
-sites = [".github/workflows/ci.yml", ".github/workflows/engine-release.yml"]
+sites = [
+    ".github/workflows/ci.yml",
+    ".github/workflows/engine-release.yml",
+    ".github/workflows/plugin-release.yml",
+]
 policy = "floating"
 why = "GitHub's artifact upload action, held at its major tag."
 
 [[pin]]
 id = "action-download-artifact"
 value = "actions/download-artifact@v4"
-sites = [".github/workflows/ci.yml", ".github/workflows/engine-release.yml"]
+sites = [
+    ".github/workflows/ci.yml",
+    ".github/workflows/engine-release.yml",
+    ".github/workflows/plugin-release.yml",
+]
 policy = "floating"
 why = "GitHub's artifact download action, held at its major tag."
 
@@ -410,28 +527,28 @@ why = "Link checker, held at its major tag; runs --offline so it fetches nothing
 [[pin]]
 id = "action-docker-qemu"
 value = "docker/setup-qemu-action@v3"
-sites = [".github/workflows/infra-images.yml", ".github/workflows/release.yml"]
+sites = [".github/workflows/infra-images.yml"]
 policy = "floating"
 why = "arm64 emulation for the multi-arch build (ADR-0010), held at its major tag."
 
 [[pin]]
 id = "action-docker-buildx"
 value = "docker/setup-buildx-action@v3"
-sites = [".github/workflows/infra-images.yml", ".github/workflows/release.yml"]
+sites = [".github/workflows/infra-images.yml"]
 policy = "floating"
 why = "buildx setup, held at its major tag."
 
 [[pin]]
 id = "action-docker-login"
 value = "docker/login-action@v3"
-sites = [".github/workflows/infra-images.yml", ".github/workflows/release.yml"]
+sites = [".github/workflows/infra-images.yml"]
 policy = "floating"
 why = "GHCR login, held at its major tag."
 
 [[pin]]
 id = "action-docker-build-push"
 value = "docker/build-push-action@v6"
-sites = [".github/workflows/infra-images.yml", ".github/workflows/release.yml"]
+sites = [".github/workflows/infra-images.yml"]
 policy = "floating"
 why = "Image build/push, held at its major tag."
 
@@ -450,16 +567,15 @@ id = "ci-node"
 value = "24"
 sites = [
     ".github/workflows/ci.yml",
-    ".github/workflows/release.yml",
     "versions.toml",
 ]
 policy = "floating"
 bound_by = "validation/check-versions.sh"
 bound_key = "node_version"
 why = """
-The Node runtime five CI jobs select: the harness (`npm ci`, typecheck, tests),
-the viewer's stdlib `node --test` control suite, and the three storybook jobs in
-release.yml.
+The Node runtime two CI jobs select: `harness (typecheck, test)` (`npm ci`,
+typecheck, tests) and `rust (fmt, clippy, test)`'s stdlib `node --test` control
+suites for the viewer.
 
 HELD FOR the runtime, and NOT for the dependency set — `harness/package-lock.json`
 is what fixes the packages, and mineflayer is pinned separately in versions.toml
@@ -472,33 +588,39 @@ tag, and the trust boundary is the publisher. Registered so that the count of
 deliberately-unfrozen selections is a number somebody can see instead of a habit.
 Not `immutable`: that is for a value naming fixed bytes, and this one names a
 line that moves. It may move to another major line as an ordinary reviewed edit;
-what it may not do is disagree between the five sites, which is what the binder
-below refuses.
+what it may not do is disagree between the sites, which is what the binder below
+refuses.
 
 BOUND because nothing discovers a restatement. check-versions.sh reads
-[ci].node_version and asserts that EVERY `node-version:` line in both workflows
-states it — two in ci.yml and three in release.yml, counted, because presence is
-not the property: the drift is one of five moving while the other four sit still,
-and a `grep -q` stops at the first and calls that agreement.
+[ci].node_version and asserts that EVERY `node-version:` line in ci.yml states
+it — two of them, counted, because presence is not the property: the drift is one
+site moving while the other sits still, and a `grep -q` stops at the first and
+calls that agreement.
 """
 
 [[pin]]
 id = "ci-python-tools"
 value = "3.12"
-sites = [".github/workflows/ci.yml", "versions.toml"]
+sites = [".github/workflows/ci.yml", ".github/workflows/engine-release.yml", "versions.toml"]
 policy = "floating"
 bound_by = "validation/check-versions.sh"
 bound_key = "python_tools_version"
 why = """
 The interpreter the two Python tool suites run on: `tools/skin` (spec-0009
 composition + preview, whose test asserts byte-identical PNGs) and `tools/tests`
-(the stdlib-only tooling suite, whose network is blocked at `urlopen`).
+(the stdlib-only tooling suite, whose network is blocked at `urlopen`) — and,
+since release run 34069406209 (v1.2.0), the same interpreter
+`tools/build-release-binaries.sh` needs to read `versions.toml`: `ubuntu-22.04`
+and `ubuntu-22.04-arm` ship python3.10 by default, below stdlib `tomllib`'s
+floor, so both the release's shelf job (engine-release.yml) and the CI job that
+stands in for it (ci.yml's `engine-shelf`) now pin this line explicitly rather
+than trusting the runner image's default.
 
-HELD FOR one interpreter across both suites, which is what makes a determinism
-result from one month comparable to the next — the same argument the Rust
-toolchain pin makes, one language over. The floor is real and lower: both suites
-need >= 3.11 for stdlib `tomllib`, and `tools/skin`'s own manifest declares
-`requires-python >= 3.10`.
+HELD FOR one interpreter across every one of these, which is what makes a
+determinism result from one month comparable to the next — the same argument
+the Rust toolchain pin makes, one language over. The floor is real and lower:
+every consumer needs >= 3.11 for stdlib `tomllib`, and `tools/skin`'s own
+manifest declares `requires-python >= 3.10`.
 
 WHY IT DIFFERS from `ci-python-mecha`, since two interpreter lines in one
 workflow reads as drift and this pair is not: they carry disjoint dependency
@@ -512,10 +634,13 @@ POLICY `floating`: `3.12` is a MINOR line, resolved by actions/setup-python to
 its newest patch, so patch releases arrive without a pull request.
 
 BOUND by check-versions.sh, which reads [ci].python_tools_version and asserts the
-WHOLE SET rather than this value alone — every `python-version:` in ci.yml is one
-of the two declared lines, used exactly as many times as declared. A third value
-anywhere in the file breaks the sum and reds, which is the property a per-value
-presence check cannot give when one file legitimately holds two.
+WHOLE SET rather than this value alone — every `python-version:` in ci.yml is
+one of the two declared lines, used exactly as many times as declared (three of
+the tools line, one of the mecha line, since ci.yml's `engine-shelf` job joined
+the tools line), and engine-release.yml's single `python-version:` line is
+checked the same way. A third value anywhere in either file breaks its sum and
+reds, which is the property a per-value presence check cannot give when a file
+legitimately holds more than one occurrence.
 """
 
 [[pin]]
@@ -632,6 +757,55 @@ an ordinary reviewed edit; what it may not be is silent.
 # ---------------------------------------------------------------------------
 # The skin toolchain's one third-party dependency
 # ---------------------------------------------------------------------------
+
+[[pin]]
+id = "skills-ref"
+value = "0.1.5"
+sites = ["versions.toml"]
+policy = "immutable"
+bound_by = "validation/check-versions.sh"
+bound_key = "skills_ref_version"
+why = """
+The Agent Skills reference library's own validator, run over the `/new-delve`
+skill directory in a required status check (spec-0063 §8). It is an INSTRUMENT
+and not a convenience: it decides whether the page's frontmatter is legal by the
+FORMAT's rule rather than by this project's, and a validator whose version can
+move underneath a gate moves that gate's verdict with nothing in any diff to
+show it did.
+
+`immutable`, on the same published-artifact argument as `pytest`: a bump is an
+ordinary reviewed edit that re-runs the reading; what it may not be is silent.
+
+BINDING, and it is the unusual half. `ci.yml` carries no literal — it reads the
+number out of `versions.toml` at run time — so the binder does not look for a
+copy, it asserts the INDIRECTION: that the workflow reads this key, and that no
+second `skills-ref@<version>` stands anywhere in it. A binder that only looked
+for a literal would pass a workflow that had quietly stopped reading the
+manifest.
+"""
+
+[[pin]]
+id = "claude-code"
+value = "2.1.265"
+sites = ["versions.toml"]
+policy = "immutable"
+bound_by = "validation/check-versions.sh"
+bound_key = "claude_code_version"
+why = """
+Claude Code's own `plugin validate --strict`, run over the plugin root and over
+the marketplace manifest in a required status check (spec-0063 §8). The other
+half of the pair above: `skills-ref` reads the SKILL by the cross-vendor format,
+this reads the PLUGIN by the runtime that will actually load it, and neither
+substitutes for the other.
+
+CONFIRMED TO RUN UNAUTHENTICATED before it was named here — spec-0063 criterion
+10 left that to be established rather than assumed. `plugin validate` reads a
+manifest off disk and asks the network nothing: run with `HOME` pointed at an
+empty directory and every credential unset, both invocations exit 0. So it is a
+step and not a ledger row.
+
+`immutable` and bound exactly as `skills-ref` is, for the same reasons.
+"""
 
 [[pin]]
 id = "skinpy-extended"

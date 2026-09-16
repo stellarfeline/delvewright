@@ -1,0 +1,13 @@
+{
+  "code": "DW0850",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "replace",
+      "path": "/content/quests/2/objectives/2/radius",
+      "value": 2
+    }
+  ],
+  "units": [],
+  "why": "One number: `obj/look-into-the-well`'s completion radius goes from 3 to 2. `anchor/west-pit` is the bottom of a well cut through the west terrace, three courses under the rim a body stands on to look in — which is what makes the well a pit whose keep-out never reaches walked floor, and the anchor a cell no body may stand on. At radius 3 the completion cube reaches the rim and the objective completes from it. At radius 2 the cube stops one course short: it holds the well's own column, the terrace's solid stone and nothing a body can stand in, so arriving cannot complete the objective however the party gets there. The refusal names `radius: 3` as the move, and the number is VERIFIED rather than derived — the judgement is taken again at each candidate radius and only a green one is printed, which is what stops this rule prescribing a radius the footprint rule then refuses. It declares no unit: `reach-anchor` and `radius` are written by the gallery proper. What must not compile is a completion volume with no footing in it."
+}

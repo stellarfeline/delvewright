@@ -17,12 +17,13 @@ mod common;
 
 use std::collections::BTreeMap;
 
-use delvewright_compiler::commands::CommandTree;
-use delvewright_compiler::crosshair::{DW_CROSSHAIR_CONTEST, threshold};
-use delvewright_compiler::emit::{self, BuildFailure};
-use delvewright_compiler::plan::Plan;
-use delvewright_compiler::registry::PrefabRegistry;
-use delvewright_dsl::{Diagnostic, RawCampaign, Severity, parse_campaign};
+use delvec::compiler::commands::CommandTree;
+use delvec::compiler::crosshair::{DW_CROSSHAIR_CONTEST, threshold};
+use delvec::compiler::emit::{self, BuildFailure};
+use delvec::compiler::plan::Plan;
+use delvec::compiler::registry::PrefabRegistry;
+use delvewright_dsl::{DSL_VERSION, Diagnostic, RawCampaign, Severity, parse_campaign};
+use std::sync::LazyLock;
 
 fn hw(name: &str) -> String {
     std::fs::read_to_string(common::hello_world_dir().join(name)).unwrap()
@@ -30,8 +31,10 @@ fn hw(name: &str) -> String {
 
 /// Two NPCs in the hello-room: the keeper on his stand, a scout at the exit
 /// (`anchor/keeper-stand` is local `[5, 1, 4]`, `anchor/exit` is `[5, 1, 8]`).
-const NPCS: &str = r#"{
-  "dsl_version": "0.19.0", "campaign_id": "hello-world", "stage": "npcs",
+static NPCS: LazyLock<String> = LazyLock::new(|| {
+    common::at_dsl_version(
+        r#"{
+  "dsl_version": "%dsl_version%", "campaign_id": "hello-world", "stage": "npcs",
   "content": { "npcs": [
     { "id": "npc/keeper", "name": "The Keeper", "role": "quest-giver",
       "area": "area/keep", "anchor": "anchor/keeper-stand", "base_entity": "minecraft:villager",
@@ -40,20 +43,28 @@ const NPCS: &str = r#"{
       "area": "area/keep", "anchor": "anchor/exit", "base_entity": "minecraft:villager",
       "persona": { "archetype": "restless scout", "speech_style": "Clipped.", "motivation": "Get out." } }
   ] }
-}"#;
+}"#,
+    )
+});
 
-const QUEST_PLAN: &str = r#"{
-  "dsl_version": "0.19.0", "campaign_id": "hello-world", "stage": "quest-plan",
+static QUEST_PLAN: LazyLock<String> = LazyLock::new(|| {
+    common::at_dsl_version(
+        r#"{
+  "dsl_version": "%dsl_version%", "campaign_id": "hello-world", "stage": "quest-plan",
   "content": { "quests": [
     { "id": "quest/one", "goal": "Speak with the Keeper.", "area": "area/keep",
       "npcs": ["npc/keeper"], "depends_on": [], "mandatory": true, "act": 1 },
     { "id": "quest/two", "goal": "Leave the keep.", "area": "area/keep",
       "npcs": ["npc/scout"], "depends_on": ["quest/one"], "mandatory": true, "act": 1 }
   ], "finale": "quest/two" }
-}"#;
+}"#,
+    )
+});
 
-const DIALOGUE: &str = r#"{
-  "dsl_version": "0.19.0", "campaign_id": "hello-world", "stage": "dialogue",
+static DIALOGUE: LazyLock<String> = LazyLock::new(|| {
+    common::at_dsl_version(
+        r#"{
+  "dsl_version": "%dsl_version%", "campaign_id": "hello-world", "stage": "dialogue",
   "content": { "dialogues": [
     { "npc": "npc/keeper", "root": "dlg/greeting", "nodes": [
       { "id": "dlg/greeting", "text": "Halt.", "options": [
@@ -63,7 +74,9 @@ const DIALOGUE: &str = r#"{
       { "id": "dlg/scout-root", "text": "Quiet, now.", "options": [] },
       { "id": "dlg/scout-later", "text": "We are clear.", "options": [] } ] }
   ] }
-}"#;
+}"#,
+    )
+});
 
 /// The stage-5 document. `scout_to` is where the scout is walked when quest/one
 /// completes — the whole variable of this fixture — and `cast_two` is the scene
@@ -77,12 +90,12 @@ const DIALOGUE: &str = r#"{
 fn quests(scout_to: &str, cast_two: &str) -> String {
     format!(
         r#"{{
-  "dsl_version": "0.19.0", "campaign_id": "hello-world", "stage": "quests",
+  "dsl_version": "{DSL_VERSION}", "campaign_id": "hello-world", "stage": "quests",
   "content": {{ "quests": [
     {{ "id": "quest/one", "trigger": {{ "type": "campaign-start" }},
        "objectives": [ {{ "type": "talk-to", "id": "obj/talk", "npc": "npc/keeper" }} ],
        "on_complete": [ {{ "type": "open-gate", "anchor": "anchor/door" }},
-                        {{ "type": "move-npc", "npc": "npc/scout", "to_anchor": "{scout_to}" }} ],
+                        {{ "type": "move-npc", "npc": "npc/scout", "to": {{ "anchor": "{scout_to}" }} }} ],
        "cast": {{
          "npc/keeper": {{ "at": "anchor/keeper-stand", "doing": "barring the door", "dialogue": "dlg/greeting" }},
          "npc/scout":  {{ "at": "anchor/exit", "doing": "watching the road", "dialogue": {{ "barks": ["Nothing yet."] }} }}
@@ -110,6 +123,7 @@ fn build(scout_to: &str, cast_two: &str) -> Result<Vec<Diagnostic>, BuildFailure
         layout_graph: None,
         site_plan: None,
         detail_plan: None,
+        design: None,
     };
     let campaign = parse_campaign(&raw).expect("campaign parses");
     let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
@@ -201,11 +215,12 @@ fn the_eclipse_proof_is_silent_on_the_same_fixture() {
         layout_graph: None,
         site_plan: None,
         detail_plan: None,
+        design: None,
     };
     let campaign = parse_campaign(&raw).expect("campaign parses");
     let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
     let plan = Plan::build(&campaign, &prefabs).expect("plan builds");
-    let eclipse = delvewright_compiler::eclipse::check_body_eclipse(&plan)
+    let eclipse = delvec::compiler::eclipse::check_body_eclipse(&plan)
         .expect("DW0359 has nothing to say about two bodies");
     assert!(
         !eclipse.iter().any(|d| d.code == "DW0359"),

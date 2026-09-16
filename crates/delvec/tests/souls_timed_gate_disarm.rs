@@ -8,11 +8,11 @@ mod common;
 
 use std::collections::BTreeMap;
 
-use delvewright_compiler::commands::CommandTree;
-use delvewright_compiler::emit::{self, BuildOutput};
-use delvewright_compiler::load::load_campaign_dir;
-use delvewright_compiler::plan::Plan;
-use delvewright_compiler::registry::{FullEntityRegistry, FullItemRegistry, PrefabRegistry};
+use delvec::compiler::commands::CommandTree;
+use delvec::compiler::emit::{self, BuildOutput};
+use delvec::compiler::load::load_campaign_dir;
+use delvec::compiler::plan::Plan;
+use delvec::compiler::registry::{FullEntityRegistry, FullItemRegistry, PrefabRegistry};
 use delvewright_dsl::{parse_campaign, validate_campaign_with};
 
 const NS: &str = "souls-timed-gate-disarm";
@@ -211,7 +211,7 @@ fn a_disarmable_gate_is_still_a_hazard_for_the_observability_proof() {
         "the fixture's gate declares a jam lever"
     );
     assert_eq!(
-        delvewright_compiler::nav::timed_hazards(&plan).len(),
+        delvec::compiler::nav::timed_hazards(&plan).len(),
         1,
         "a disarmable gate is still a timed hazard under proof (DW0388)"
     );

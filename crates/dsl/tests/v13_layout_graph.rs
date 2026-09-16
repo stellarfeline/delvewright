@@ -24,6 +24,7 @@ mod common;
 
 use delvewright_dsl::{RawCampaign, check_campaign};
 use serde_json::{Value, json};
+use std::sync::LazyLock;
 
 /// The green map, drawn by hand:
 ///
@@ -49,9 +50,11 @@ use serde_json::{Value, json};
 ///   critical path or reach it.
 /// * **the critical path is `porch → hall → vault`,** two steps, and it visits
 ///   both beat-bound places.
-const GREEN: &str = r#"{
+static GREEN: LazyLock<String> = LazyLock::new(|| {
+    common::at_dsl_version(
+        r#"{
   "campaign_id": "hello-world",
-  "dsl_version": "0.19.0",
+  "dsl_version": "%dsl_version%",
   "stage": "layout-graph",
   "content": {
     "nodes": [
@@ -79,23 +82,29 @@ const GREEN: &str = r#"{
       { "quest": "quest/open-the-door", "objective": "obj/exit", "node": "node/hall" }
     ]
   }
-}"#;
+}"#,
+    )
+});
 
-const BRIEF: &str = r#"{
+static BRIEF: LazyLock<String> = LazyLock::new(|| {
+    common::at_dsl_version(
+        r#"{
   "campaign_id": "hello-world",
-  "dsl_version": "0.19.0",
+  "dsl_version": "%dsl_version%",
   "stage": "geometry-brief",
   "content": {
     "facts": [
       { "id": "fact/hall-span", "value": 16.0, "unit": "blocks", "note": "The hall is sixteen across." }
     ]
   }
-}"#;
+}"#,
+    )
+});
 
 /// The green graph with one field changed. The patch is the whole test: what it
 /// touches is what the assertion is about.
 fn graph_with(patch: impl Fn(&mut Value)) -> String {
-    let mut v: Value = serde_json::from_str(GREEN).expect("the green graph parses");
+    let mut v: Value = serde_json::from_str(GREEN.as_str()).expect("the green graph parses");
     patch(&mut v);
     serde_json::to_string(&v).expect("re-serialize")
 }
@@ -105,6 +114,7 @@ fn campaign(graph: Option<String>, brief: Option<String>) -> RawCampaign {
         layout_graph: graph,
         site_plan: None,
         detail_plan: None,
+        design: None,
         geometry_brief: brief,
         ..common::valid_raw()
     }
@@ -123,7 +133,7 @@ fn validate(graph: Option<String>) -> Vec<String> {
 /// closure's own verdict from the rest of the validation battery `validate`
 /// above runs. Both are the same tier now: `layout::check` is the only caller
 /// of `reachability`, and the compiler side of that binding is
-/// `crates/compiler/tests/layout_graph.rs`.
+/// `crates/delvec/tests/layout_graph.rs`.
 fn reachability(graph: Option<String>) -> Vec<String> {
     let raw = campaign(graph, Some(BRIEF.to_string()));
     let c = delvewright_dsl::parse_campaign(&raw).expect("the fixture parses");
@@ -281,7 +291,7 @@ fn dw0110_malformed_ids_are_the_ordinary_refusal() {
 
 #[test]
 fn dw0111_two_brief_facts_of_one_name() {
-    let mut v: Value = serde_json::from_str(BRIEF).expect("parses");
+    let mut v: Value = serde_json::from_str(BRIEF.as_str()).expect("parses");
     let first = v["content"]["facts"][0].clone();
     v["content"]["facts"]
         .as_array_mut()

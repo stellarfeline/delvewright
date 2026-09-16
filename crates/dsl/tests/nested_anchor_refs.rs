@@ -17,7 +17,7 @@
 
 mod common;
 
-use delvewright_dsl::{RawCampaign, check_campaign};
+use delvewright_dsl::{DSL_VERSION, RawCampaign, check_campaign};
 
 fn campaign_with_quests(quests: &str) -> RawCampaign {
     RawCampaign {
@@ -32,6 +32,7 @@ fn campaign_with_quests(quests: &str) -> RawCampaign {
         layout_graph: None,
         site_plan: None,
         detail_plan: None,
+        design: None,
     }
 }
 
@@ -41,7 +42,7 @@ fn campaign_with_quests(quests: &str) -> RawCampaign {
 fn quests_doc(effects: &str, triggers: &str) -> String {
     format!(
         r#"{{
-  "dsl_version": "0.19.0",
+  "dsl_version": "{DSL_VERSION}",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {{
@@ -113,7 +114,7 @@ fn typod_anchor_nested_in_a_sequence_is_dw0142() {
 fn typod_anchor_two_levels_down_is_dw0142() {
     let effects = r#"{ "type": "sequence", "steps": [
         { "at_ticks": 0, "effects": [
-            { "type": "move-npc", "npc": "npc/keeper", "to_anchor": "anchor/exit",
+            { "type": "move-npc", "npc": "npc/keeper", "to": { "anchor": "anchor/exit" },
               "on_arrive": [
                 { "type": "set-block", "anchor": "anchor/nowhere",
                   "block": "minecraft:air" } ] } ] } ] }"#;
@@ -179,7 +180,7 @@ fn trigger_effect_on_a_real_anchor_validates_clean() {
 fn two_quest_doc(despawn: &str) -> (String, String) {
     let quests = format!(
         r#"{{
-  "dsl_version": "0.19.0",
+  "dsl_version": "{DSL_VERSION}",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {{
@@ -208,8 +209,9 @@ fn two_quest_doc(despawn: &str) -> (String, String) {
   }}
 }}"#
     );
-    let plan = r#"{
-  "dsl_version": "0.19.0",
+    let plan = common::at_dsl_version(
+        r#"{
+  "dsl_version": "%dsl_version%",
   "campaign_id": "hello-world",
   "stage": "quest-plan",
   "content": {
@@ -221,7 +223,8 @@ fn two_quest_doc(despawn: &str) -> (String, String) {
     ],
     "finale": "quest/second"
   }
-}"#;
+}"#,
+    );
     (quests, plan.to_string())
 }
 
@@ -239,6 +242,7 @@ fn check_two_quest(despawn: &str) -> Vec<delvewright_dsl::Diagnostic> {
         layout_graph: None,
         site_plan: None,
         detail_plan: None,
+        design: None,
     })
 }
 
@@ -265,8 +269,8 @@ fn nested_despawn_npc_still_yields_dw0195() {
 fn flag_gated_nested_despawn_is_not_dw0195() {
     let despawn = r#"{ "type": "sequence", "steps": [
         { "at_ticks": 0, "effects": [
-            { "type": "despawn-npc", "npc": "npc/keeper",
-              "requires_flags": ["flag/fled"] } ] } ] }"#;
+            { "type": "despawn-npc",
+              "when": { "requires_flags": ["flag/fled"] }, "npc": "npc/keeper" } ] } ] }"#;
     let diags = check_two_quest(despawn);
     assert!(
         !diags.iter().any(|d| d.code == "DW0195"),

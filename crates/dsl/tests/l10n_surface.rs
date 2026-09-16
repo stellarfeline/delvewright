@@ -47,6 +47,7 @@ enum Kind {
 }
 
 use Kind::*;
+use delvewright_dsl::DSL_VERSION;
 
 /// **The classification.** One row per string-valued property of the stage
 /// schemas, `(type, field, kind)`.
@@ -97,6 +98,7 @@ const SURFACE: &[(&str, &str, Kind)] = &[
     ("KitItem", "item", Reference),
     ("KitItem", "name", Inventoried),
     ("LethalVolume", "message", Inventoried),
+    ("LethalVolume", "shown_by", Reference),
     ("Forfeit", "kind", Machine),
     ("Shop", "title", Inventoried),
     ("Shop", "marker_item", Reference),
@@ -152,6 +154,8 @@ const SURFACE: &[(&str, &str, Kind)] = &[
         "speech_style",
         NotPlayerVisible("persona — see `archetype`"),
     ),
+    ("FireworkExplosion", "colors", Reference),
+    ("FireworkExplosion", "fade_colors", Reference),
     ("PlannedQuest", "goal", Inventoried),
     ("PotionContents", "color", Reference),
     ("PotionContents", "potion", Reference),
@@ -473,7 +477,7 @@ fn fixture_with_actors() -> delvewright_dsl::Campaign {
     let read =
         |f: &str| std::fs::read_to_string(dir.join(f)).unwrap_or_else(|e| panic!("read {f}: {e}"));
     let mut quests: Value = serde_json::from_str(&read("quests.json")).expect("quests parse");
-    quests["dsl_version"] = Value::String("0.19.0".to_string());
+    quests["dsl_version"] = Value::String(DSL_VERSION.to_string());
     // A narrate, so the `fx.…` key kind binds too.
     quests["content"]["quests"][0]["on_complete"] = serde_json::json!([
         { "type": "narrate", "text": "The hall falls quiet." }
@@ -500,6 +504,7 @@ fn fixture_with_actors() -> delvewright_dsl::Campaign {
         layout_graph: None,
         site_plan: None,
         detail_plan: None,
+        design: None,
     })
     .expect("the patched keep-trial parses")
 }

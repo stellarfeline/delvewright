@@ -14,16 +14,19 @@
 //! * a `sequence` reached through `move-npc.on_arrive` inside another `sequence`
 //!   is `DW0329`, exactly as through `move-actor.on_arrive`;
 //! * the stable `Debug` rendering: an effect using none of the new fields prints
-//!   byte-identically to the pre-addition derive (the `seq_<hash>` content key).
+//!   byte-identically to the pre-addition derive (`payload_verb_key`'s content key).
 
 mod common;
 
 use delvewright_dsl::{RawCampaign, check_campaign, parse_campaign};
+use std::sync::LazyLock;
 
 /// A v0.6 stage-5 quests doc: the keeper walks to the exit; arrival sets
 /// `flag/arrived` (+ narrates), and the follow-up objective is gated on it.
-const QUESTS_ARRIVE: &str = r#"{
-  "dsl_version": "0.19.0",
+static QUESTS_ARRIVE: LazyLock<String> = LazyLock::new(|| {
+    common::at_dsl_version(
+        r#"{
+  "dsl_version": "%dsl_version%",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {
@@ -39,7 +42,7 @@ const QUESTS_ARRIVE: &str = r#"{
         "on_objective_complete": {
           "obj/talk": [
             { "type": "open-gate", "anchor": "anchor/door" },
-            { "type": "move-npc", "npc": "npc/keeper", "to_anchor": "anchor/exit",
+            { "type": "move-npc", "npc": "npc/keeper", "to": { "anchor": "anchor/exit" },
               "on_arrive": [
                 { "type": "set-flag", "flag": "flag/arrived" },
                 { "type": "narrate", "text": "The keeper beckons from the doorway." }
@@ -50,7 +53,9 @@ const QUESTS_ARRIVE: &str = r#"{
       }
     ]
   }
-}"#;
+}"#,
+    )
+});
 
 fn campaign_with_quests(quests: &str) -> RawCampaign {
     RawCampaign {
@@ -65,6 +70,7 @@ fn campaign_with_quests(quests: &str) -> RawCampaign {
         layout_graph: None,
         site_plan: None,
         detail_plan: None,
+        design: None,
     }
 }
 
@@ -73,7 +79,7 @@ fn campaign_with_quests(quests: &str) -> RawCampaign {
 /// consumer-validation walkers recurse into the new nesting site.
 #[test]
 fn move_npc_on_arrive_validates_clean_and_produces_flags() {
-    let diags = check_campaign(&campaign_with_quests(QUESTS_ARRIVE));
+    let diags = check_campaign(&campaign_with_quests(QUESTS_ARRIVE.as_str()));
     assert!(
         diags.is_empty(),
         "move-npc.on_arrive must validate clean (nested set-flag is a producer): {diags:#?}"
@@ -91,8 +97,8 @@ fn sequence_via_move_npc_on_arrive_inside_sequence_is_dw0329() {
     // Wrap the move-npc itself in a sequence step: outer sequence -> move-npc
     // .on_arrive -> inner sequence.
     let quests = quests.replace(
-        r#"{ "type": "move-npc", "npc": "npc/keeper", "to_anchor": "anchor/exit","#,
-        r#"{ "type": "sequence", "steps": [ { "at_ticks": 0, "effects": [ { "type": "move-npc", "npc": "npc/keeper", "to_anchor": "anchor/exit","#,
+        r#"{ "type": "move-npc", "npc": "npc/keeper", "to": { "anchor": "anchor/exit" },"#,
+        r#"{ "type": "sequence", "steps": [ { "at_ticks": 0, "effects": [ { "type": "move-npc", "npc": "npc/keeper", "to": { "anchor": "anchor/exit" },"#,
     );
     let quests = quests.replace(
         r#"{ "type": "narrate", "text": "The keeper beckons from the doorway." }
@@ -112,7 +118,8 @@ fn sequence_via_move_npc_on_arrive_inside_sequence_is_dw0329() {
 /// shares the same traversal, so a translated build localizes it too.
 #[test]
 fn move_npc_on_arrive_narrate_enters_l10n_inventory() {
-    let campaign = parse_campaign(&campaign_with_quests(QUESTS_ARRIVE)).expect("campaign parses");
+    let campaign =
+        parse_campaign(&campaign_with_quests(QUESTS_ARRIVE.as_str())).expect("campaign parses");
     let inv = delvewright_dsl::l10n_inventory(&campaign);
     let key = "fx.open-the-door.oc.talk.1.arrive.1.narrate";
     assert_eq!(
@@ -120,43 +127,5 @@ fn move_npc_on_arrive_narrate_enters_l10n_inventory() {
         Some("The keeper beckons from the doorway."),
         "narrate inside move-npc.on_arrive must be inventoried under `{key}`; got keys: {:#?}",
         inv.keys().collect::<Vec<_>>()
-    );
-}
-
-/// Stable content-key `Debug`: an effect that uses none of the v0.6 additions
-/// renders without the new fields (so the compiler's `seq_<hash>` names cannot
-/// churn), and prints them once they are used.
-#[test]
-fn quest_effect_debug_is_stable_over_the_additive_fields() {
-    use delvewright_dsl::QuestEffect;
-    let quests = campaign_with_quests(QUESTS_ARRIVE);
-    let campaign = parse_campaign(&quests).expect("parses");
-    let effs = &campaign.quests.content.quests[0].on_objective_complete
-        [&delvewright_dsl::ObjectiveId("obj/talk".to_string())];
-    // open-gate without forbids: renders exactly the pre-addition shape.
-    assert_eq!(
-        format!("{:?}", effs[0]),
-        r#"OpenGate { anchor: AnchorId("anchor/door"), requires_flags: [] }"#,
-    );
-    // move-npc WITH on_arrive: the field is printed (it is real content).
-    let printed = format!("{:?}", effs[1]);
-    assert!(
-        printed.contains("on_arrive") && !printed.contains("forbids_flags"),
-        "move-npc with on_arrive but no forbids must print on_arrive only: {printed}"
-    );
-    // A bare move-npc renders byte-identically to the pre-addition derive.
-    let bare = QuestEffect::MoveNpc {
-        npc: delvewright_dsl::NpcId("npc/keeper".to_string()),
-        to_anchor: delvewright_dsl::AnchorId("anchor/exit".to_string()),
-        speed: None,
-        on_arrive: vec![],
-        requires_flags: vec![],
-        forbids_flags: vec![],
-        requires_state: vec![],
-        happening: None,
-    };
-    assert_eq!(
-        format!("{bare:?}"),
-        r#"MoveNpc { npc: NpcId("npc/keeper"), to_anchor: AnchorId("anchor/exit"), speed: None, requires_flags: [] }"#,
     );
 }

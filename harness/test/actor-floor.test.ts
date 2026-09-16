@@ -6,9 +6,11 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   CombatPlanParseError,
+  actorAttribution,
   actorExercise,
   actorFloorFinding,
   parseCombatPlan,
+  waveAttribution,
   type ActorEncounter,
   type ActorTrial,
 } from "../src/combat.ts";
@@ -253,7 +255,7 @@ const TRIAL: ActorTrial = {
 };
 
 test("beating a billed actor cold is the advisory — the inverted gate, on actors", () => {
-  const finding = actorFloorFinding(TRIAL);
+  const finding = actorFloorFinding(TRIAL, actorAttribution());
   assert.match(finding!, /billed `elite`/);
   assert.match(finding!, /UNASSISTED bot beat it on its first attempt/);
   assert.match(finding!, /11 swing/);
@@ -263,7 +265,28 @@ test("losing, timing out, or never finding the body says nothing — and never a
   // A bot that loses is the DESIGN (spec-0023 downgraded bot melee competence to
   // telemetry). What must not happen is any of these reading as a measured win.
   for (const outcome of ["lost", "timed-out", "body-not-found"] as const) {
-    assert.equal(actorFloorFinding({ ...TRIAL, outcome }), undefined, outcome);
+    assert.equal(actorFloorFinding({ ...TRIAL, outcome }, actorAttribution()), undefined, outcome);
   }
-  assert.equal(actorFloorFinding({ ...TRIAL, tier: "ordinary" }), undefined);
+  assert.equal(actorFloorFinding({ ...TRIAL, tier: "ordinary" }, actorAttribution()), undefined);
+});
+
+// The actor gate reads `won-first-try` off the body vanishing from the client's
+// entity map, and the gallery's own `actor/hall-moth` suffocated in a wall on the
+// run that measured this. Until a census walks `dw_actor_<id>`, the advisory
+// carries the gap in its own words rather than reading as a measured kill.
+test("an actor advisory names the attribution gap it cannot close", () => {
+  const finding = actorFloorFinding(TRIAL, actorAttribution());
+  assert.match(finding!, /cannot say who felled it/);
+  assert.match(finding!, /dw_actor_/);
+  // Still the advisory: an actor fight is not disqualified, only qualified.
+  assert.match(finding!, /Advisory: raise the stack/);
+});
+
+// The same rule reads a MEASUREMENT with no change here, the day a census reaches
+// actor tags — which is what makes this the object class's rule rather than the
+// wave gate's private one.
+test("a measured actor attribution disqualifies the advisory exactly as a wave's does", () => {
+  const finding = actorFloorFinding(TRIAL, waveAttribution(3, 0, 1));
+  assert.match(finding!, /2 of its 3 bodies died with NO player credited/);
+  assert.doesNotMatch(finding!, /Advisory: raise the stack/);
 });

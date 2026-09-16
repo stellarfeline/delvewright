@@ -3,6 +3,7 @@
 
 mod common;
 
+use delvewright_dsl::DSL_VERSION;
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 use std::process::{Command, Output};
@@ -104,7 +105,7 @@ fn version_line() {
     // workaround the version exists to remove. No committed document carries
     // either surface, so every campaign that compiled before compiles
     // byte-identically.
-    assert!(s.contains("dsl 0.19.0"), "{s}");
+    assert!(s.contains(&format!("dsl {DSL_VERSION}")), "{s}");
     assert!(s.contains("mc 1.21.11"), "{s}");
 }
 
@@ -1099,9 +1100,20 @@ fn v04_showcase_double_build_is_byte_identical() {
 /// Every per-tick `tp` of a walked `move-npc` carries the **bearing of the segment
 /// it is about to walk**, so the body faces where it is going instead of gliding
 /// backwards on a stale yaw (owner playtest, island round 13). Asserted against the
-/// real emitted driver: each line's yaw is recomputed from that waypoint's own
-/// delta, and the walk must contain a mid-path direction change — a corner turns on
-/// the tick it is taken, with no smoothing.
+/// real emitted driver.
+///
+/// **Measured per RUN of one held bearing, not per tick, and that is forced by the
+/// emission rather than chosen.** Two things moved under this test. The walked path
+/// is string-pulled, so a leg across open ground is now one straight diagonal rather
+/// than a staircase of cardinal steps; and the yaw is read off the unrounded samples
+/// while the position is rounded to 0.01 of a block, because reading it off the
+/// rounded ones made a perfectly straight run twitch its bearing on nearly every
+/// tick. A single tick's rounded delta therefore no longer fixes that tick's true
+/// bearing — over a 0.15-block step, 0.005 of rounding on a component is degrees of
+/// direction. Over a whole run it does, and the tolerance below is **derived** from
+/// the rounding and the run's own length, tightening as the baseline grows. A stale
+/// or absent yaw — what this test exists to catch — is tens of degrees out and fails
+/// at any length.
 #[test]
 fn walked_move_npc_tps_carry_the_segment_bearing() {
     let dir = common::compiler_fixtures_dir().join("v04-showcase");
@@ -1149,35 +1161,83 @@ fn walked_move_npc_tps_carry_the_segment_bearing() {
     }
     assert!(wp.len() > 20, "expected a many-tick walked path");
 
-    // The bearing of waypoint i is the bearing of the segment i -> i+1 (MC yaw:
-    // 0 = +z south, atan2(-dx, dz)); a segment with no horizontal motion inherits
-    // the previous bearing. The final waypoint keeps the last leg's facing.
-    let mut expect = 0i32;
-    let mut seeded = false;
-    for (i, w) in wp.iter().enumerate() {
+    for w in &wp {
         assert_eq!(w.4, 0, "a level walk is emitted with pitch 0");
-        if i + 1 < wp.len() {
-            let (dx, dz) = (wp[i + 1].0 - w.0, wp[i + 1].2 - w.2);
-            if dx.abs() >= 1e-6 || dz.abs() >= 1e-6 {
-                expect = (((-dx).atan2(dz).to_degrees().round() as i32 % 360) + 360) % 360;
-                seeded = true;
-            }
+    }
+
+    // Maximal runs of one held bearing. The yaw at tick i is the bearing of the
+    // motion from i to i+1, so run `a..=b` is the motion from `wp[a]` to `wp[b+1]`.
+    let mut runs: Vec<(usize, usize)> = Vec::new();
+    let mut start = 0usize;
+    for i in 1..=wp.len() {
+        if i == wp.len() || wp[i].3 != wp[start].3 {
+            runs.push((start, i - 1));
+            start = i;
         }
-        if seeded {
-            assert_eq!(
-                w.3, expect,
-                "tick {i} tp faces {} but its own movement bears {expect}",
-                w.3
+    }
+    // A corner turns: this route is not a straight line, so the driver must show
+    // more than one bearing.
+    assert!(
+        runs.len() > 1,
+        "expected a direction change mid-walk, saw only yaw {}",
+        wp[0].3
+    );
+
+    for &(a, b) in &runs {
+        let yaw = wp[a].3;
+        let e = if b + 1 < wp.len() { b + 1 } else { b };
+        let (dx, dz) = (wp[e].0 - wp[a].0, wp[e].2 - wp[a].2);
+        let d = (dx * dx + dz * dz).sqrt();
+        if d < 1e-9 {
+            // The one motionless run is the arrival tick, whose yaw is the
+            // destination anchor's rule rather than a bearing — checked below.
+            assert_eq!(b, wp.len() - 1, "a motionless run mid-walk at tick {a}");
+            continue;
+        }
+        // Each endpoint is rounded by up to 0.005 per component, so the emitted
+        // coordinates fix this run's direction only to within `atan(0.01 / d)`;
+        // the emitted yaw is itself a whole degree. Both terms are derived from
+        // the rounding, not picked.
+        let slack = 1.0 + (0.01f64 / d).atan().to_degrees();
+        let bearing = ((((-dx).atan2(dz).to_degrees().round() as i32) % 360) + 360) % 360;
+        let off = (yaw - bearing)
+            .rem_euclid(360)
+            .min((bearing - yaw).rem_euclid(360));
+        assert!(
+            f64::from(off) <= slack,
+            "ticks {a}..{b} hold yaw {yaw} but their own motion over {d:.2} blocks bears \
+             {bearing} — {off} deg out, against {slack:.2} deg of coordinate rounding"
+        );
+        // A held bearing must mean a straight run: every emitted point on it stays
+        // on the chord, to within what the same rounding can move it.
+        for w in &wp[a..=e] {
+            let cross = ((w.0 - wp[a].0) * dz - (w.2 - wp[a].2) * dx).abs() / d;
+            assert!(
+                cross <= 0.03,
+                "ticks {a}..{b} hold one yaw but bow {cross:.3} blocks off the straight line"
             );
         }
     }
 
-    // A corner turns: this route is not a straight line, so the driver must show
-    // more than one bearing.
-    let distinct: std::collections::BTreeSet<i32> = wp.iter().map(|w| w.3).collect();
+    // The arrival tick is deliberately NOT a tangent: it carries the destination
+    // anchor's declared facing, or the reverse of the last leg (`nav::arrival_yaw`).
+    // This fixture's anchor declares one, so the final yaw differs from the bearing
+    // the body arrived on — which is what keeps the exemption above from being
+    // vacuous: delete the arrival rule and this line reds.
+    assert_ne!(
+        wp[wp.len() - 1].3,
+        wp[wp.len() - 2].3,
+        "the arrival tick still carries the path tangent — `nav::arrival_yaw` did not fire"
+    );
+
+    // The point of string-pulling: a long open leg is ONE held bearing, not a
+    // staircase of them, and not a bearing that twitches every tick.
+    let longest = runs.iter().map(|&(a, b)| b - a + 1).max().unwrap();
     assert!(
-        distinct.len() > 1,
-        "expected a direction change mid-walk, saw only yaw {distinct:?}"
+        longest >= 50,
+        "expected one long straight run across the open ground, but the longest held \
+         bearing is only {longest} tick(s) — the walked path is not being straightened, \
+         or its yaw is being read off the rounded coordinates"
     );
 }
 
@@ -1192,9 +1252,9 @@ fn move_unroutable_exits_3_with_dw0307() {
     let camp = tmp("mv-cross-void");
     copy_dir(&common::keep_crawl_dir(), &camp);
     common::patch_file(&camp.join("quests.json"), |d| {
-        d["dsl_version"] = serde_json::json!("0.19.0");
+        d["dsl_version"] = serde_json::json!(DSL_VERSION);
         common::objective_effects(d, 1, "obj/arrive").push(serde_json::json!({
-            "type": "move-npc", "npc": "npc/keeper", "to_anchor": "anchor/objective"
+            "type": "move-npc", "npc": "npc/keeper", "to": { "anchor": "anchor/objective" }
         }));
     });
     common::declare_story_dir(&camp);
@@ -1228,9 +1288,9 @@ fn move_actor_unroutable_exits_3_with_dw0325() {
     let camp = tmp("ma-cross-void");
     copy_dir(&common::keep_crawl_dir(), &camp);
     common::patch_file(&camp.join("quests.json"), |d| {
-        d["dsl_version"] = serde_json::json!("0.19.0");
+        d["dsl_version"] = serde_json::json!(DSL_VERSION);
         common::objective_effects(d, 1, "obj/arrive").push(serde_json::json!({
-            "type": "move-actor", "actor": "actor/beast", "to_anchor": "anchor/objective"
+            "type": "move-actor", "actor": "actor/beast", "to": { "anchor": "anchor/objective" }
         }));
         d["content"]["actors"] = serde_json::json!([
             { "id": "actor/beast", "entity": "minecraft:zombie", "anchor": "anchor/keeper-stand" }
@@ -1292,7 +1352,7 @@ fn cutscene_over_angular_budget_exits_3_with_dw0347() {
     // Halve the duration and add a `look_at` (v0.6 surface) the pan cannot
     // reach inside the budget.
     let camp = showcase_with_quests_patch("cs-spin", |d| {
-        d["dsl_version"] = serde_json::json!("0.19.0");
+        d["dsl_version"] = serde_json::json!(DSL_VERSION);
         let cs = showcase_cutscene(d);
         cs["seconds"] = serde_json::json!(1);
         cs["look_at"] = serde_json::json!({ "anchor": "anchor/objective", "offset": [1, 2, 1] });
@@ -1383,11 +1443,14 @@ fn read_tree(root: &Path) -> BTreeMap<String, Vec<u8>> {
 /// versions; the v0.6 gate keys off `world`).
 #[test]
 fn v06_ocean_boundary_builds_byte_identical_and_wires_return() {
-    let pf = common::prefabs_dir();
+    // An ocean fixture stands on a shore, not in the sea: see
+    // `common::ocean_prefabs_dir`.
+    let pf = common::ocean_prefabs_dir("v06-ocean-prefabs", common::OceanRoom::Shore);
     let camp = tmp("v06-ocean");
     copy_dir(&common::hello_world_dir(), &camp);
-    let world = r#"{
-  "dsl_version": "0.19.0",
+    let world = common::at_dsl_version(
+        r#"{
+  "dsl_version": "%dsl_version%",
   "campaign_id": "hello-world",
   "stage": "world",
   "content": {
@@ -1396,13 +1459,16 @@ fn v06_ocean_boundary_builds_byte_identical_and_wires_return() {
     "premise": "One locked door stands between you and the road home.",
     "seed": 20260729,
     "target_minutes": 5,
+    "time": "noon",
+    "weather": "clear",
     "horizon": "ocean",
     "boundary": { "margin": 20 },
     "areas": [
       { "id": "area/keep", "name": "The Keep", "prefab": "prefab/hello-room" }
     ]
   }
-}"#;
+}"#,
+    );
     std::fs::write(camp.join("world.json"), world).unwrap();
 
     let out_a = tmp("v06-ocean-a");
@@ -1538,11 +1604,11 @@ fn v06_actor_datapack_emits_the_mechanics() {
     let camp = tmp("v06-actors");
     copy_dir(&common::hello_world_dir(), &camp);
     common::patch_file(&camp.join("quests.json"), |d| {
-        d["dsl_version"] = serde_json::json!("0.19.0");
+        d["dsl_version"] = serde_json::json!(DSL_VERSION);
         common::objective_effects(d, 0, "obj/talk").extend([
             serde_json::json!({ "type": "spawn-actor", "actor": "actor/giant" }),
             serde_json::json!({
-                "type": "move-actor", "actor": "actor/giant", "to_anchor": "anchor/exit",
+                "type": "move-actor", "actor": "actor/giant", "to": { "anchor": "anchor/exit" },
                 "on_arrive": [
                     { "type": "despawn-actor", "actor": "actor/giant", "style": "vanish" }
                 ]
@@ -1559,7 +1625,7 @@ fn v06_actor_datapack_emits_the_mechanics() {
         ]);
         d["content"]["actors"] = serde_json::json!([
             { "id": "actor/giant", "entity": "minecraft:zombie", "name": "The Sleeper",
-              "anchor": "anchor/keeper-stand", "facing": "east" }
+              "anchor": "spawn", "facing": "east" }
         ]);
     });
     common::declare_story_dir(&camp);
@@ -1634,7 +1700,7 @@ fn v06_actor_datapack_emits_the_mechanics() {
 /// unchanged at y=64 — the byte-identity guarantee for every existing campaign.
 #[test]
 fn ocean_areas_sit_on_the_sea_level_datum_void_unchanged() {
-    let pf = common::prefabs_dir();
+    let pf = common::ocean_prefabs_dir("datum-ocean-prefabs", common::OceanRoom::Shore);
 
     let place_line = |horizon: Option<&str>, name: &str| -> String {
         let camp = tmp(name);
@@ -1643,7 +1709,7 @@ fn ocean_areas_sit_on_the_sea_level_datum_void_unchanged() {
             serde_json::from_str(&std::fs::read_to_string(camp.join("world.json")).unwrap())
                 .unwrap();
         if let Some(h) = horizon {
-            world["dsl_version"] = serde_json::json!("0.19.0");
+            world["dsl_version"] = serde_json::json!(DSL_VERSION);
             let content = world["content"].as_object_mut().unwrap();
             content.insert("horizon".into(), serde_json::json!(h));
             content.insert("boundary".into(), serde_json::json!({ "margin": 20 }));
@@ -1701,7 +1767,7 @@ fn beach_camp_campaign(name: &str, ocean: bool) -> std::path::PathBuf {
             serde_json::from_str(&std::fs::read_to_string(&p).unwrap()).unwrap();
         f(&mut doc);
         if ocean {
-            doc["dsl_version"] = serde_json::json!("0.19.0");
+            doc["dsl_version"] = serde_json::json!(DSL_VERSION);
         }
         std::fs::write(&p, serde_json::to_string_pretty(&doc).unwrap()).unwrap();
     };
@@ -1737,7 +1803,26 @@ fn beach_camp_campaign(name: &str, ocean: bool) -> std::path::PathBuf {
 
 #[test]
 fn a_shoreline_piece_placed_against_the_void_leaks_dw0318_and_against_the_sea_does_not() {
-    let pf = common::prefabs_dir();
+    // The shore piece stands under an open sky here, so `DW0885` asks it which
+    // of its sides are finished surface; this fixture is about where its water
+    // goes. See `common::shown_prefabs_dir`.
+    let pf = common::shown_prefabs_dir("dw0318");
+    // **The island tileset's own walk plane**, written onto this fixture's
+    // private copy rather than measured: `prefabs/island-tileset.md` states the
+    // convention (water to local y=2, the land plane one block above it at 3),
+    // and the shipped documents do not yet carry the field — that is
+    // spec-0060 §8's content round. The general helper writes the LOWEST
+    // standable cell, which on this piece is a single beach cell down at the
+    // waterline itself; the number below is the piece's claim about what it is,
+    // and the second half of this test is what the engine then says about the
+    // difference between the two.
+    {
+        let path = pf.join("island-beach-camp.json");
+        let mut doc: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        doc["walk_y"] = serde_json::json!(3);
+        std::fs::write(&path, serde_json::to_string_pretty(&doc).unwrap()).unwrap();
+    }
 
     // --- void: the water runs out of the world ------------------------------
     let camp = beach_camp_campaign("dw0318-void", false);
@@ -1755,18 +1840,47 @@ fn a_shoreline_piece_placed_against_the_void_leaks_dw0318_and_against_the_sea_do
         String::from_utf8_lossy(&r.stdout),
         String::from_utf8_lossy(&r.stderr)
     );
-    assert_eq!(code(&r), 3, "build-tier failure:\n{log}");
-    assert!(log.contains("DW0318"), "expected DW0318:\n{log}");
+    // Refused at VALIDATION, before a block is placed: that this piece's water
+    // runs off a `void` world is a fact about the piece's own bytes and the
+    // declared base, so `DW0886` says it at the document tier rather than
+    // letting the author spend a build to reach `DW0318`'s finding about the
+    // assembled world. `DW0318` keeps judging that world — see
+    // `integration_pairs::a_leaking_world_gets_no_boundary_verdict_through_the_entry_point`,
+    // which reaches it with a piece whose water is contained in its own bytes.
+    assert_eq!(code(&r), 1, "refused at validation:\n{log}");
+    assert!(log.contains("DW0886"), "expected DW0886:\n{log}");
     assert!(
         log.contains("prefab/island-beach-camp"),
         "names the piece the water came from:\n{log}"
     );
     assert!(
-        log.contains("Examined") && log.contains("fluid cell(s) across"),
-        "states its binding count, not only its finding:\n{log}"
+        log.contains("run direction(s)") && log.contains("DW0318"),
+        "states its count and names the build-tier rule it stands in front of:\n{log}"
+    );
+    assert!(
+        !log.contains("place template"),
+        "and nothing was placed:\n{log}"
     );
 
-    // --- ocean: the same water meets the sea --------------------------------
+    // --- ocean: the sea holds the water, and the piece stands clear of it ---
+    //
+    // This half carried a MEASURED FINDING for one round, pinned here so the
+    // repair would have a red to turn green: `island-beach-camp` declaring
+    // `walk_y: 3` is placed at y=60 and stands its land at 63, and the engine
+    // then read one more standable cell down at local y=2, landing at world
+    // y=62 — the sea's own plane, with a party apparently standing in it.
+    //
+    // The cell was `minecraft:seagrass` at local (20,2,11), and there is no body
+    // in it: a seagrass block's cell holds a water SOURCE in vanilla, which is
+    // what the generator that laid it says in its own comment, and the collision
+    // table read it as a thin decoration a body steps over. That is repaired in
+    // `blockshape::is_submerged_by_nature`, and the piece measures 223 standable
+    // cells at local y=3 and none below it.
+    //
+    // So the finding is closed by the instrument being right rather than by the
+    // library moving, and what this half asserts now is the green with the
+    // binding that makes it a measurement: every walk cell judged against the
+    // sea, none at or below it, over a non-zero count.
     let camp = beach_camp_campaign("dw0318-ocean", true);
     let out = tmp("dw0318-ocean-out");
     let r = delvec(&[
@@ -1782,48 +1896,63 @@ fn a_shoreline_piece_placed_against_the_void_leaks_dw0318_and_against_the_sea_do
         String::from_utf8_lossy(&r.stdout),
         String::from_utf8_lossy(&r.stderr)
     );
-    assert_eq!(code(&r), 0, "an ocean horizon holds this water:\n{log}");
-    assert!(!log.contains("DW0318"), "no finding under ocean:\n{log}");
-
-    // The binding ledger ships either way, and says what was examined.
-    let ledger: serde_json::Value = serde_json::from_str(
-        &std::fs::read_to_string(out.join("validation/fluid-escape.json"))
-            .expect("every assembled world emits the fluid-escape ledger"),
-    )
-    .unwrap();
-    assert_eq!(ledger["horizon"], "ocean");
-    assert_eq!(ledger["verdict"], "pass");
-    assert_eq!(ledger["pieces_examined"], 1);
-    let examined = ledger["fluid_cells_examined"].as_u64().unwrap();
-    let outside = ledger["cells_outside_built_volume"].as_u64().unwrap();
+    assert_eq!(code(&r), 0, "the shore builds on an ocean:\n{log}");
+    let sea_walk = log
+        .lines()
+        .find(|l| l.starts_with("sea walk-plane binding:"))
+        .unwrap_or_else(|| panic!("every ocean build states this binding:\n{log}"));
     assert!(
-        examined > 0 && outside > 0 && outside < examined,
-        "the binding count is the world's water, not the finding list: {ledger}"
+        sea_walk.contains("0 stand at or below it"),
+        "no body stands in the sea:\n{sea_walk}"
+    );
+    let judged: usize = sea_walk
+        .split(" of ")
+        .next()
+        .and_then(|s| s.rsplit(' ').next())
+        .and_then(|n| n.parse().ok())
+        .unwrap_or(0);
+    assert!(
+        judged > 0,
+        "and the zero is over a non-empty population — a zero over nothing is the unbound \
+         vacuity mode, not a pass:\n{sea_walk}"
+    );
+    // The water itself is not the finding here: under an ocean there IS a sea
+    // for it to meet, which is what the void half proved there is not.
+    assert!(
+        !log.contains("run direction(s)"),
+        "the ocean puts a sea against the face the void left open:\n{log}"
     );
 }
 
-/// `DW0344`: in an `ocean` world, a placed piece whose metadata declares a
-/// waterline that does not land at sea level (y=62) is a build error — the piece
+/// `DW0344`, **first arm**: in an `ocean` world a placed piece whose declared
+/// waterline does not land at sea level (y=62) is a build error — the piece
 /// would float above the sea (an unclimbable shore) or drown under it. Nothing
-/// downstream can catch this: nav, boundary, POV and PackTest all derive from the
-/// very placement that is wrong. Uses a private copy of the real prefabs dir.
+/// downstream can catch this: nav, boundary, POV and PackTest all derive from
+/// the very placement that is wrong.
+///
+/// The perturbation is the piece's **walk plane**, and that is what makes this
+/// arm reachable at all. An ocean area's origin is derived as
+/// `walk_ref_y - walk_y` (spec-0060 §3.2), and a shore stands its walk plane one
+/// block above its own waterline; so a piece that declares a waterline of 2 and
+/// a walk plane of 3 lands its water exactly on the sea, and the same piece
+/// declaring a walk plane of 2 lands it one block over. The two declarations are
+/// claims about one building and this is the rule that holds them to each other.
 #[test]
-fn ocean_waterline_off_sea_level_exits_3_with_dw0344() {
-    let prefabs_copy = tmp("dw0344-prefabs");
-    common::copy_dir_all(&common::prefabs_dir(), &prefabs_copy);
-    // hello-room is not an island piece; declaring a waterline one block off the
-    // convention is exactly the mis-authored-datum case the check exists for.
+fn ocean_waterline_off_sea_level_is_refused_at_validation_with_dw0344() {
+    let prefabs_copy = common::ocean_prefabs_dir("dw0344-arm1-prefabs", common::OceanRoom::Shore);
     let meta_path = prefabs_copy.join("hello-room.json");
-    let mut meta: serde_json::Value =
-        serde_json::from_str(&std::fs::read_to_string(&meta_path).unwrap()).unwrap();
-    meta["waterline_y"] = serde_json::json!(3);
-    std::fs::write(&meta_path, serde_json::to_string_pretty(&meta).unwrap()).unwrap();
+    let read_meta = || -> serde_json::Value {
+        serde_json::from_str(&std::fs::read_to_string(&meta_path).unwrap()).unwrap()
+    };
+    let write_meta = |m: &serde_json::Value| {
+        std::fs::write(&meta_path, serde_json::to_string_pretty(m).unwrap()).unwrap();
+    };
 
-    let camp = tmp("dw0344-camp");
+    let camp = tmp("dw0344-arm1-camp");
     copy_dir(&common::hello_world_dir(), &camp);
     let mut world: serde_json::Value =
         serde_json::from_str(&std::fs::read_to_string(camp.join("world.json")).unwrap()).unwrap();
-    world["dsl_version"] = serde_json::json!("0.19.0");
+    world["dsl_version"] = serde_json::json!(DSL_VERSION);
     let content = world["content"].as_object_mut().unwrap();
     content.insert("horizon".into(), serde_json::json!("ocean"));
     content.insert("boundary".into(), serde_json::json!({ "margin": 20 }));
@@ -1833,48 +1962,79 @@ fn ocean_waterline_off_sea_level_exits_3_with_dw0344() {
     )
     .unwrap();
 
-    let out = tmp("dw0344-out");
-    let b = delvec(&[
-        "build",
-        camp.to_str().unwrap(),
-        "-o",
-        out.to_str().unwrap(),
-        "--prefabs",
-        prefabs_copy.to_str().unwrap(),
-        "--json",
-    ]);
-    assert_eq!(code(&b), 3, "off-level waterline should exit 3");
-    let stdout = String::from_utf8_lossy(&b.stdout);
-    assert!(stdout.contains("DW0344"), "expected DW0344:\n{stdout}");
+    let build = |tag: &str| -> (i32, String) {
+        let out = tmp(tag);
+        let r = delvec(&[
+            "build",
+            camp.to_str().unwrap(),
+            "-o",
+            out.to_str().unwrap(),
+            "--prefabs",
+            prefabs_copy.to_str().unwrap(),
+        ]);
+        (
+            code(&r),
+            format!(
+                "{}{}",
+                String::from_utf8_lossy(&r.stdout),
+                String::from_utf8_lossy(&r.stderr)
+            ),
+        )
+    };
 
-    // The same piece declaring the island convention (local y=2) lands its
-    // waterline exactly at sea level and builds clean.
-    meta["waterline_y"] = serde_json::json!(2);
-    std::fs::write(&meta_path, serde_json::to_string_pretty(&meta).unwrap()).unwrap();
-    let out_ok = tmp("dw0344-out-ok");
-    let ok = delvec(&[
-        "build",
-        camp.to_str().unwrap(),
-        "-o",
-        out_ok.to_str().unwrap(),
-        "--prefabs",
-        prefabs_copy.to_str().unwrap(),
-    ]);
-    assert_eq!(
-        code(&ok),
-        0,
-        "convention waterline must build: {}",
-        String::from_utf8_lossy(&ok.stderr)
+    // Green: the shore piece's two declarations agree, so its water lands on the
+    // sea and the build states the binding it was held to.
+    let (ok, log) = build("dw0344-arm1-ok");
+    assert_eq!(ok, 0, "a consistent shore must build:\n{log}");
+    assert!(
+        log.contains("waterline binding: horizon base `ocean`; 1 of 1 placed piece(s) declare a `waterline_y`"),
+        "the binding count is stated on a green build too — a count only says \
+         something when the run that found nothing prints it:\n{log}"
     );
 
-    // A `void` world is not an ocean, so the same metadata is not checked there.
-    let void_camp = tmp("dw0344-void-camp");
+    // Red: the same bytes, one declaration moved. The piece now claims a walk
+    // plane one course lower, so the area is seated one block higher and the
+    // waterline the piece really authors hangs a block over the sea.
+    let mut meta = read_meta();
+    meta["walk_y"] = serde_json::json!(2);
+    write_meta(&meta);
+    let (bad, log) = build("dw0344-arm1-bad");
+    // **Refused at VALIDATION, exit 1, before a block is placed.** The two
+    // numbers are both in the document and the area's origin is derived from one
+    // of them, so `pos.y + waterline_y == 62` is exactly `waterline_y ==
+    // walk_y - 1` — nothing has to be placed to know it. The code is the same
+    // (`DW0344`), which is the point: this is the placement question asked one
+    // stage earlier, not a second rule with a second number.
+    assert_eq!(
+        bad, 1,
+        "off-level waterline is refused at validation:\n{log}"
+    );
+    assert!(log.contains("DW0344"), "expected DW0344:\n{log}");
+    assert!(
+        log.contains("block(s) above this world's sea plane"),
+        "it says which way and by how much:\n{log}"
+    );
+    assert!(
+        !log.contains("place template"),
+        "and nothing was placed:\n{log}"
+    );
+    // The remedy names the number that would make it right, so the move is one
+    // an author can take rather than one they have to derive.
+    assert!(
+        log.contains("`walk_y: 3`"),
+        "the refusal names the walk plane that seats this waterline on the sea:\n{log}"
+    );
+
+    // A `void` world has no sea for a waterline to miss, so the WATERLINE
+    // declaration is not checked there. The walk plane is put back first: it is
+    // a measurement of the blocks and `DW0888` holds it to them on every base,
+    // so leaving the perturbed number in place would refuse this arm for the
+    // half of the edit it is not about.
+    meta["walk_y"] = serde_json::json!(3);
+    write_meta(&meta);
+    let void_camp = tmp("dw0344-arm1-void-camp");
     copy_dir(&common::hello_world_dir(), &void_camp);
-    let mut m2: serde_json::Value =
-        serde_json::from_str(&std::fs::read_to_string(&meta_path).unwrap()).unwrap();
-    m2["waterline_y"] = serde_json::json!(3);
-    std::fs::write(&meta_path, serde_json::to_string_pretty(&m2).unwrap()).unwrap();
-    let out_void = tmp("dw0344-void-out");
+    let out_void = tmp("dw0344-arm1-void-out");
     let v = delvec(&[
         "build",
         void_camp.to_str().unwrap(),
@@ -1891,51 +2051,39 @@ fn ocean_waterline_off_sea_level_exits_3_with_dw0344() {
     );
 }
 
-/// `DW0344`'s **zero binding**: an ocean world in which the invariant examined
-/// **nothing** reports under the invariant's own code, never under a second one.
+/// **A shore that says nothing about where it meets the sea is refused before
+/// anything is placed** (`DW0886`), and the run states its binding count either
+/// way.
 ///
-/// This is the shape of the failure `DW0344` cannot have on its own: it is keyed
-/// off an optional metadata field, so a piece that loses that field does not fail
-/// the check, it silently leaves it. That is exactly what the admission tool did
-/// to `waterline_y` — it read prefab metadata through a type that did not model
-/// the field and wrote the document back without it — and the world it deleted
-/// the field from would have gone on building green with `DW0344` binding to zero
-/// pieces.
-///
-/// There is deliberately no discharge: the only one an author could offer
-/// ("this piece needs no waterline") is the deleted declaration under another
-/// name, and the only geometric one ("no piece reaches the sea") is
-/// unsatisfiable while every ocean area sits at `OCEAN_BASE_Y` = 60 under a sea
-/// at 62.
-///
-/// **The tripwire.** That last fact is asserted here rather than assumed. A
-/// binding of zero earns a refusal, and the only reason this reports instead is
-/// that the same global datum leaves an author no lever to satisfy one — the
-/// piece really is in the water and nothing in the DSL can lift it out, so a
-/// refusal would be demanding a fiction. The day a per-area datum makes a dry
-/// ocean piece authorable, the sea-plane assertion below reds and the severity
-/// question is reopened by this test rather than by anyone remembering a
-/// comment.
+/// This was `DW0344`'s second arm, and it asked the wrong question: does the
+/// placement BOX reach the sea plane. The box's minimum y is the area origin, so
+/// under one global ocean datum that was true of every piece in every ocean
+/// world whatever its bytes held, and the refusal's own second remedy — raise
+/// the piece clear of the sea — could not be performed by any amount of
+/// authoring (spec-0060 §1.2). The question the rule was always about is
+/// whether the piece states where its own water meets the world's, and that is
+/// a fact about the document and its `.nbt`: nothing has to be placed to know
+/// it, so it is refused at validation.
 ///
 /// Both directions, because a one-directional gate proves nothing: with the
-/// declaration present the build says nothing, with it gone the build names
-/// what it examined and out of how many. And a non-ocean world raises nothing
-/// either way — "does not apply" and "applies and examined nothing" are
+/// declaration present the build is green and the seating line says what it
+/// examined; with it gone the campaign is REFUSED at exit 1, having placed
+/// nothing, and names the number the bytes hold. A non-ocean world raises
+/// nothing either way — "does not apply" and "applies and examined nothing" are
 /// different states.
 #[test]
-fn an_ocean_world_where_nothing_declares_a_waterline_reports_dw0344_unbound() {
-    let prefabs_copy = tmp("dw0364-prefabs");
-    common::copy_dir_all(&common::prefabs_dir(), &prefabs_copy);
+fn an_ocean_world_whose_shore_declares_no_waterline_is_refused_dw0886() {
+    let prefabs_copy = common::ocean_prefabs_dir("dw0886-prefabs", common::OceanRoom::Shore);
     let meta_path = prefabs_copy.join("hello-room.json");
     let mut meta: serde_json::Value =
         serde_json::from_str(&std::fs::read_to_string(&meta_path).unwrap()).unwrap();
 
-    let ocean_camp = tmp("dw0364-camp");
+    let ocean_camp = tmp("dw0886-camp");
     copy_dir(&common::hello_world_dir(), &ocean_camp);
     let mut world: serde_json::Value =
         serde_json::from_str(&std::fs::read_to_string(ocean_camp.join("world.json")).unwrap())
             .unwrap();
-    world["dsl_version"] = serde_json::json!("0.19.0");
+    world["dsl_version"] = serde_json::json!(DSL_VERSION);
     let content = world["content"].as_object_mut().unwrap();
     content.insert("horizon".into(), serde_json::json!("ocean"));
     content.insert("boundary".into(), serde_json::json!({ "margin": 20 }));
@@ -1955,8 +2103,6 @@ fn an_ocean_world_where_nothing_declares_a_waterline_reports_dw0344_unbound() {
             "--prefabs",
             prefabs_copy.to_str().unwrap(),
         ]);
-        // Both streams: an advisory is written to stdout beside the build, a
-        // refusal to stderr, and this test asserts across that boundary.
         (
             code(&r),
             format!(
@@ -1967,63 +2113,60 @@ fn an_ocean_world_where_nothing_declares_a_waterline_reports_dw0344_unbound() {
         )
     };
 
-    // Bound: the placed piece declares the convention waterline, so the datum is
-    // really checked, the binding count is 1 of 1, and the build is green.
-    meta["waterline_y"] = serde_json::json!(2);
-    std::fs::write(&meta_path, serde_json::to_string_pretty(&meta).unwrap()).unwrap();
-    let (bound_code, bound) = build("dw0344-bound-out", &ocean_camp);
+    // Bound: the placed piece declares the waterline its bytes hold, the datum
+    // is really checked, and the build is green.
+    let (bound_code, bound) = build("dw0886-bound-out", &ocean_camp);
     assert_eq!(
         bound_code, 0,
-        "a bound ocean datum at the convention waterline must build:\n{bound}"
+        "a bound ocean datum at the piece's own waterline must build:\n{bound}"
     );
     assert!(
-        !bound.contains("the ocean-datum check examined ZERO"),
-        "a check that examined a piece must not report itself unbound:\n{bound}"
+        bound.contains("seating binding: horizon base `ocean`")
+            && bound.contains("1 waterline declaration(s) examined, 1 borne out by the bytes"),
+        "the seating line states its denominators on a green run too:\n{bound}"
     );
 
     // Unbound: the declaration is gone — which is precisely what an admission
-    // step that did not model the field left behind. The check now binds to
-    // zero pieces, and a check that examined nothing has proved nothing.
+    // step that did not model the field left behind. The campaign is refused
+    // before a single piece is placed.
     meta.as_object_mut().unwrap().remove("waterline_y");
     std::fs::write(&meta_path, serde_json::to_string_pretty(&meta).unwrap()).unwrap();
-    let (unbound_code, unbound) = build("dw0344-unbound-out", &ocean_camp);
+    let (unbound_code, unbound) = build("dw0886-unbound-out", &ocean_camp);
     assert_eq!(
-        unbound_code, 0,
-        "the zero binding reports beside the build today:\n{unbound}"
+        unbound_code, 1,
+        "refused at validation, not at the build:\n{unbound}"
     );
     assert!(
-        unbound.contains("DW0344"),
-        "the zero binding answers under the invariant's own code, not a second \
-         code of its own:\n{unbound}"
+        unbound.contains("DW0886"),
+        "under the pairing's own code:\n{unbound}"
     );
     assert!(
-        unbound.contains("the ocean-datum check examined ZERO of 1 placed piece(s)"),
-        "it must state what it examined and out of how many:\n{unbound}"
+        !unbound.contains("place template"),
+        "and nothing was placed:\n{unbound}"
     );
-    // The tripwire. This is the fact that makes a refusal undemandable rather
-    // than merely unchosen: the piece really is in the water, and under the
-    // single global ocean datum an author has no lever to lift it out. When a
-    // per-area datum lands and a dry ocean piece becomes authorable, this
-    // assertion reds — which is the point. Do not relax it; take it as the
-    // signal to raise this zero binding to a refusal.
     assert!(
-        unbound.contains("1 of those piece(s) stand at or below the sea plane"),
-        "it must state how many pieces stand in the sea:\n{unbound}"
+        unbound.contains("prefab/hello-room") && unbound.contains("declares no `waterline_y`"),
+        "it names the piece and what is missing:\n{unbound}"
+    );
+    // A diagnostic that refuses owes the author a move, and this one's is the
+    // number its own bytes hold.
+    assert!(
+        unbound.contains("DECLARE `waterline_y: 2`"),
+        "the move names the local y this piece's top water block stands at:\n{unbound}"
     );
 
     // A world with no ocean horizon is not in scope at all: "does not apply" and
-    // "applies and examined nothing" are different states, and only the second
-    // refuses.
-    let void_camp = tmp("dw0344-void-camp");
+    // "applies and examined nothing" are different states, and the line says which.
+    let void_camp = tmp("dw0886-void-camp");
     copy_dir(&common::hello_world_dir(), &void_camp);
-    let (void_code, void) = build("dw0344-void-out", &void_camp);
+    let (void_code, void) = build("dw0886-void-out", &void_camp);
     assert_eq!(
         void_code, 0,
         "a world with no ocean horizon has no datum to bind to:\n{void}"
     );
     assert!(
-        !void.contains("the ocean-datum check examined ZERO"),
-        "a non-ocean world must not report an unbound ocean datum:\n{void}"
+        void.contains("horizon base `void` has no sea"),
+        "a non-ocean world says the invariant does not apply:\n{void}"
     );
 }
 
@@ -2257,7 +2400,7 @@ fn dw0330_warning_reports_but_does_not_fail_the_build() {
     )
     .unwrap();
     // `narrate` is a v0.4 effect; the hello-world fixture is v0.3.
-    quests["dsl_version"] = serde_json::json!("0.19.0");
+    quests["dsl_version"] = serde_json::json!(DSL_VERSION);
     // An on-screen title far wider than any screen renders.
     quests["content"]["quests"][0]["on_complete"]
         .as_array_mut()
@@ -2319,7 +2462,7 @@ fn a_missing_skin_png_is_dw0309() {
         &std::fs::read_to_string(common::hello_world_dir().join("npcs.json")).unwrap(),
     )
     .unwrap();
-    npcs["dsl_version"] = "0.19.0".into();
+    npcs["dsl_version"] = DSL_VERSION.into();
     npcs["content"]["npcs"][0]["skin"] =
         serde_json::json!({ "texture_id": "keeper", "model": "wide" });
     common::materialize_from(
@@ -2352,7 +2495,7 @@ fn actor_skin_campaign(name: &str) -> std::path::PathBuf {
     let camp = tmp(name);
     copy_dir(&common::hello_world_dir(), &camp);
     common::patch_file(&camp.join("quests.json"), |d| {
-        d["dsl_version"] = serde_json::json!("0.19.0");
+        d["dsl_version"] = serde_json::json!(DSL_VERSION);
         common::objective_effects(d, 0, "obj/talk").push(serde_json::json!({
             "type": "spawn-actor", "actor": "actor/giant"
         }));
@@ -2409,15 +2552,17 @@ fn a_missing_actor_skin_png_is_dw0309() {
 /// carries both textures and `SKINS.md` lists both.
 ///
 /// The positive direction of the same fact: an emitted
-/// `delvewright:npc/<texture_id>` is only true if the pack holds
-/// `assets/delvewright/textures/npc/<texture_id>.png`, and until this walk was
-/// over bodies exactly one of these two was in there.
+/// `delvewright:npc/<id>` is only true if the pack holds
+/// `assets/delvewright/textures/npc/<id>.png`, and until this walk was
+/// over bodies exactly one of these two was in there. `<id>` is the delve's own
+/// texture id (`dsl::pack_texture_id`), derived here rather than written out, so
+/// this test asserts the pairing and `skin_namespace.rs` asserts the namespace.
 #[test]
 fn every_declared_skin_is_baked_into_the_pack() {
     let camp = actor_skin_campaign("actor-skin-baked");
     // Give the stage-2 npc a skin too, so one build carries one of each class.
     common::patch_file(&camp.join("npcs.json"), |d| {
-        d["dsl_version"] = serde_json::json!("0.19.0");
+        d["dsl_version"] = serde_json::json!(DSL_VERSION);
         d["content"]["npcs"][0]["skin"] =
             serde_json::json!({ "texture_id": "keeper", "model": "slim" });
     });
@@ -2451,12 +2596,19 @@ fn every_declared_skin_is_baked_into_the_pack() {
     // Binding, stated: 2 skin declarations of 2 body classes, and both must be in
     // the archive. A pass that found one of them is the defect this test exists
     // for, so both are asserted separately and named.
+    let campaign_id = {
+        let world: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(camp.join("world.json")).unwrap())
+                .unwrap();
+        world["campaign_id"].as_str().unwrap().to_string()
+    };
     for (class, id, payload) in [
         ("npc/keeper", "keeper", "NPC-SKIN-KEEPER-PAYLOAD"),
         ("actor/giant", "giant-idle", "ACTOR-SKIN-GIANT-PAYLOAD"),
     ] {
+        let baked = delvewright_dsl::pack_texture_id(&campaign_id, id);
         assert!(
-            text.contains(&format!("assets/delvewright/textures/npc/{id}.png")),
+            text.contains(&format!("assets/delvewright/textures/npc/{baked}.png")),
             "`{class}` declares `skin.texture_id` `{id}` and the pack has no entry for it — \
              its mannequin would ship pointing at a texture nothing serves"
         );
@@ -2561,7 +2713,7 @@ fn each_branch_gets_an_executable_path_in_the_critical_path_contract() {
     // Same contract the harness parses — the version fields the bot checks first.
     assert_eq!(
         bolt["format_version"],
-        delvewright_compiler::plan::CRITICAL_PATH_FORMAT_VERSION
+        delvec::compiler::plan::CRITICAL_PATH_FORMAT_VERSION
     );
     assert_eq!(bolt["campaign_id"], "hello-world");
     let steps = bolt["steps"].as_array().unwrap();

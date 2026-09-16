@@ -36,38 +36,30 @@ use serde_json::Value;
 
 /// How many object schemas across the seven stage documents declare a gate.
 ///
-/// Five objective kinds + twenty-five gatable effect verbs + the environment
-/// trigger + the trap + the dialogue option + the cast placement + **the shop
-/// offer**. Asserted exactly rather than as a lower bound: this is the **binding
+/// Five objective kinds + **`Guard`**, the effect's one gate + the environment
+/// trigger + the trap + the dialogue option + the cast placement + the shop
+/// offer. Asserted exactly rather than as a lower bound: this is the **binding
 /// count** the generality claim rests on, and a green that bound to fewer sites
 /// than it thinks is vacuous, not a pass (CLAUDE.md). Changing it is a deliberate
 /// act — a new gate consumer, or a verb becoming gatable — and it should be
 /// visible in the diff that does it.
 ///
-/// **Re-derived, not adjusted to fit** (spec-0032, merging after spec-0031's
-/// three rounds). The count is `5 + 26 + 1 + 1 + 1 + 1 + 1`, and the 26 gatable
-/// effect verbs are, in the order the schema declares them: `open-gate`,
-/// `close-gate`, `give-item`, `set-flag`, `set-state`, `add-state`, `drop-stake`,
-/// `clear-state`, `spawn-wave`, `narrate`, `set-block`, `fill-region`,
-/// `clear-region`, `despawn-npc`, `move-npc`, `cutscene`, `set-time`,
-/// `set-weather`, `play-sound`, `damage-players`, `volley`, `collapse`,
-/// `give-effect`, `clear-effect`, `teleport`, `open-way`.
+/// The count fell from 36 to 11 when the effect's gate became one object. That
+/// is a **narrower enumeration of a wider capability**, not a loosening: the
+/// twenty-six gatable verbs each declared the three fields for themselves and
+/// ten verbs declared none, so a verb carrying two of three was a shape this
+/// walk had to look for verb by verb. It cannot exist now — every effect reaches
+/// its gate through the same `Guard`, and the ten that could not be gated at all
+/// are gatable on identical terms. What this file still catches is the case it
+/// was written for: a **new consumer class** — an eighth object that asks "may
+/// this happen yet?" — declaring `requires_flags` without `requires_state`.
 ///
-/// Ledger of the moves: 28 (spec-0031 §1, the gate's third field) → 30
-/// (`fill-region` / `clear-region`) → 33 (`give-effect` / `clear-effect` /
-/// `teleport`) → **35** (spec-0032's `drop-stake`, and the **seventh gate
-/// consumer**, `ShopOffer`) → **36** (spec-0042's `open-way`: a gatable verb
-/// and no new consumer — a way is an object the campaign opens, and *may this
-/// happen yet?* is the question the gate has always answered).
-///
-/// The consumer is the interesting half of this step. A shop's price is *"may
-/// this happen yet?"*, which is the question the gate already answers for six
-/// other object classes, so an offer carries the whole gate and declares no
-/// comparison of its own — which is why the shop shows up in THIS count rather
-/// than in a `price` field nothing else could reuse. Generality decided at the
-/// first site: a second consumer with a bespoke comparison would have cost a
-/// `dsl_version` bump and an adoption round on every live campaign.
-const GATE_SITES: usize = 36;
+/// Ledger of the moves: 28 (spec-0031 §1, the gate's third field) -> 30
+/// (`fill-region` / `clear-region`) -> 33 (`give-effect` / `clear-effect` /
+/// `teleport`) -> 35 (spec-0032's `drop-stake`, and the seventh gate consumer,
+/// `ShopOffer`) -> 36 (spec-0042's `open-way`) -> **11** (one `Guard` under an
+/// effect's `when`, in place of twenty-six per-verb declarations).
+const GATE_SITES: usize = 11;
 
 /// The gate's fields, as they are spelled in the schema. Every site must declare
 /// all of them.

@@ -17,18 +17,19 @@ mod common;
 
 use std::collections::BTreeMap;
 
-use delvewright_compiler::commands::CommandTree;
-use delvewright_compiler::emit::{self, BuildFailure, BuildOutput};
-use delvewright_compiler::plan::Plan;
-use delvewright_compiler::registry::PrefabRegistry;
-use delvewright_dsl::{Campaign, RawCampaign, parse_campaign};
+use delvec::compiler::commands::CommandTree;
+use delvec::compiler::emit::{self, BuildFailure, BuildOutput};
+use delvec::compiler::plan::Plan;
+use delvec::compiler::registry::PrefabRegistry;
+use delvewright_dsl::{Campaign, DSL_VERSION, RawCampaign, parse_campaign};
+use std::sync::LazyLock;
 
 /// A hello-world `quests` doc that never opens `anchor/door` itself, with a raw
 /// `traps` array body (no surrounding brackets) spliced in.
 fn quests_doc(traps: &str) -> String {
     format!(
         r#"{{
-  "dsl_version": "0.19.0",
+  "dsl_version": "{DSL_VERSION}",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {{
@@ -64,8 +65,10 @@ const TRAP_SEALS_THE_DOOR: &str = r#"{
 /// `anchor/door`. `DialogueEffect` carries no gate verb, but the bundle is a plain
 /// `Vec<QuestEffect>` and its `close-gate` is really lowered (into
 /// `cp_on_respawn_<i>`).
-const DIALOGUE_SEALS_THE_DOOR: &str = r#"{
-  "dsl_version": "0.19.0",
+static DIALOGUE_SEALS_THE_DOOR: LazyLock<String> = LazyLock::new(|| {
+    common::at_dsl_version(
+        r#"{
+  "dsl_version": "%dsl_version%",
   "campaign_id": "hello-world",
   "stage": "dialogue",
   "content": {
@@ -84,7 +87,9 @@ const DIALOGUE_SEALS_THE_DOOR: &str = r#"{
       ] }
     ]
   }
-}"#;
+}"#,
+    )
+});
 
 fn read_hw(name: &str) -> String {
     std::fs::read_to_string(common::hello_world_dir().join(name)).unwrap()
@@ -105,6 +110,7 @@ fn parse_hw(quests: &str, dialogue: Option<&str>) -> Campaign {
         layout_graph: None,
         site_plan: None,
         detail_plan: None,
+        design: None,
     };
     parse_campaign(&raw).expect("campaign parses")
 }
@@ -165,7 +171,7 @@ fn a_trap_payload_close_gate_is_modelled() {
 /// quests stage entirely, so this seal was invisible to every nav proof.
 #[test]
 fn a_dialogue_nested_close_gate_is_modelled() {
-    let c = parse_hw(&quests_doc(""), Some(DIALOGUE_SEALS_THE_DOOR));
+    let c = parse_hw(&quests_doc(""), Some(DIALOGUE_SEALS_THE_DOOR.as_str()));
     let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
     let err = try_build(&c, &prefabs)
         .expect_err("a dialogue-nested seal on the forced path must fail the nav proof");
@@ -183,8 +189,9 @@ fn a_dialogue_nested_close_gate_is_modelled() {
 /// it must keep passing — the model gained sight of a close, not a veto.)
 #[test]
 fn a_later_open_gate_still_wins() {
-    let quests = r#"{
-  "dsl_version": "0.19.0",
+    let quests = common::at_dsl_version(
+        r#"{
+  "dsl_version": "%dsl_version%",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {
@@ -213,8 +220,9 @@ fn a_later_open_gate_still_wins() {
       }
     ]
   }
-}"#;
-    let c = parse_hw(quests, None);
+}"#,
+    );
+    let c = parse_hw(&quests, None);
     let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
     try_build(&c, &prefabs).expect("a reopened gate is not a sealed gate");
 }

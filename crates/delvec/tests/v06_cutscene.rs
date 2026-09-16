@@ -10,11 +10,11 @@ mod common;
 
 use std::collections::BTreeMap;
 
-use delvewright_compiler::commands::CommandTree;
-use delvewright_compiler::emit::{self, BuildOutput};
-use delvewright_compiler::plan::{Plan, ResolvedAnchor};
-use delvewright_compiler::registry::PrefabRegistry;
-use delvewright_dsl::{Campaign, RawCampaign, parse_campaign};
+use delvec::compiler::commands::CommandTree;
+use delvec::compiler::emit::{self, BuildOutput};
+use delvec::compiler::plan::{Plan, ResolvedAnchor};
+use delvec::compiler::registry::PrefabRegistry;
+use delvewright_dsl::{Campaign, DSL_VERSION, RawCampaign, parse_campaign};
 
 const NS: &str = "hello-world";
 
@@ -22,7 +22,7 @@ const NS: &str = "hello-world";
 fn quests_doc(cutscene: &str) -> String {
     format!(
         r#"{{
-  "dsl_version": "0.19.0",
+  "dsl_version": "{DSL_VERSION}",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {{
@@ -63,6 +63,7 @@ fn parse_hw(quests: &str) -> Campaign {
         layout_graph: None,
         site_plan: None,
         detail_plan: None,
+        design: None,
     };
     parse_campaign(&raw).expect("campaign parses")
 }
@@ -483,7 +484,7 @@ fn side_track_rides_the_move_path() {
         r#"{ "type": "cutscene", "shots": [
              { "shot_style": "side-track", "dist": 1, "seconds": 2,
                "subject": { "npc": "npc/keeper" } } ] },
-           { "type": "move-npc", "npc": "npc/keeper", "to_anchor": "anchor/exit" }"#,
+           { "type": "move-npc", "npc": "npc/keeper", "to": { "anchor": "anchor/exit" } }"#,
     );
     let fr = frames(&tick_body(&out));
     assert!(

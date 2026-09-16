@@ -22,7 +22,8 @@
 - **ADRs**: 0003 (vanilla-first: the primitive is vanilla's own fluid), 0006
   (determinism: the waterline is a function of the DSL, never of fluid ticks)
 - **Evidence**: every claim below is either demonstrated against the engine
-  (`docs/specs/spec-0038-probes/`, commands inline, re-measured at engine
+  (`crates/delvec/tests/fixtures/standing-fluid-probes/`, run by hand with the
+  commands inline, re-measured at engine
   revision `be8eab02` — the per-probe state is §4) or measured on the pinned
   1.21.11 (`tools/spike-fluid-plane/`, raw data in `observations.json`,
   re-runnable via `EULA=TRUE tools/spike-fluid-plane/run.sh`).
@@ -351,8 +352,8 @@ levels. No verb names a tide; the campaign's fiction calls it one.
 
 | # | what | where | result |
 |---|---|---|---|
-| P1 | water as a standable deck | `spec-0038-probes/water-deck` (lift fixture, 2 fill blocks → `minecraft:water`) | at `be8eab02`: **exit 0**, still emitting `fill 4 65 3 6 65 5 minecraft:water` mid-air. The fluid-not-floor half (§2.1) is landed; what keeps it green is that the deck is reached by `teleport`, which nav models nowhere — the §2.4 red |
-| P2 | a region one cell below its anchor | `spec-0038-probes/region-offset` | at `be8eab02`: `DW0100`, exit 1 — the §2.6 red |
+| P1 | water as a standable deck | `standing-fluid-probes/water-deck` (lift fixture, 2 fill blocks → `minecraft:water`) | at `be8eab02`: **exit 0**, still emitting `fill 4 65 3 6 65 5 minecraft:water` mid-air. The fluid-not-floor half (§2.1) is landed; what keeps it green is that the deck is reached by `teleport`, which nav models nowhere — the §2.4 red |
+| P2 | a region one cell below its anchor | `standing-fluid-probes/region-offset` | at `be8eab02`: `DW0100`, exit 1 — the §2.6 red |
 | P3 | any level surface at all | `delvec schema --stage all` grep | at `be8eab02`: no field; every level-word hit is prose in a description |
 | M1 | fill ceiling + gamerule | spike `fill_ceiling` | 32768; refusal text verbatim; 262 144 blocks in one command = 591 ms stall |
 | M2 | plane-raise stillness + cost | `plane_raise_512` | interior + rim **0 flowing**; 8 cmds/layer; MSPT 2.5→12.1→6.9 |
@@ -415,7 +416,7 @@ embedded waterloggable (the fact is measured, its cause is not).
 
 1. **P1 inverts, and the half that stayed green is the half that reds.** At
    `be8eab02` the fluid classification is landed and
-   `spec-0038-probes/water-deck` still builds exit 0, because its deck is
+   `standing-fluid-probes/water-deck` still builds exit 0, because its deck is
    reached by teleport. Under §2.4 it fails to build: the destination is wet
    at the level in force, the deck's cells deliver a body no route returns,
    and the refusal names them. Restoring the slab block builds green,

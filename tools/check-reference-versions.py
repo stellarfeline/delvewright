@@ -52,7 +52,7 @@ written once and the build moves.
 
 ## The same claims, on the pages a stranger reads
 
-`crates/compiler/README.md` and `crates/dsl/README.md` are rendered VERBATIM as
+`crates/delvec/README.md` and `crates/dsl/README.md` are rendered VERBATIM as
 the crates.io front pages of `delvec` and `delvewright-dsl`, and each states the
 Minecraft version, the `dsl_version` and the minimum Rust — the three
 facts that decide whether a visitor can use the crate at all. Those were the
@@ -75,13 +75,17 @@ Two rules per page, and the second is the one that catches prose:
    AND equal: a page that quietly drops its compatibility section stops telling a
    stranger the one thing they need, so an absent claim is a shape error (exit 2),
    never a silent pass.
-2. **No unbound version literal anywhere on the page.** Every `X.Y.Z` on the page
-   must be one of the build's own constants — the pinned Minecraft version, the
-   `dsl_version`, or a publishable crate's `version` / `rust-version`.
+2. **No unbound version literal anywhere on the page.** Every `X.Y.Z` — and every
+   two-part `X.Y`, bare or in a cargo requirement form (`"0.19"`, `"^0.19"`,
+   `"=0.19.0"`, `"0.19.*"`) — must be one of the build's own constants: the
+   pinned Minecraft version, the `dsl_version`, a publishable crate's `version`
+   / `rust-version`, or the page's OWN crate named at its current major.minor.
    Rule 1 alone binds only the compatibility bullets; the `delvec` page states the
    Minecraft version three times, and "the vendored 1.21.11 Brigadier command
-   tree" is prose that rule 1 cannot see. Under rule 2 an `mc` bump reds every
-   stale mention at once, with line numbers.
+   tree" is prose that rule 1 cannot see, exactly as a `[dependencies]` snippet
+   naming a stale major.minor is prose rule 1 never reads either. Under rule 2
+   an `mc` bump, or a crate's own version bump, reds every stale mention at
+   once, with line numbers.
 
 Deterministic, offline, no dependencies (Python 3 stdlib). Run from the repo
 root:
@@ -91,9 +95,11 @@ usage/IO error, or a source file no longer matches the expected shape — fix th
 regex, never loosen the check (CLAUDE.md debug doctrine).
 """
 
+import argparse
 import pathlib
 import re
 import sys
+import tomllib
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent / "lib"))
@@ -105,6 +111,7 @@ from versions import PinError, minecraft_version  # noqa: E402
 REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent
 DOC = REPO_ROOT / "docs" / "reference" / "compiler.md"
 ROOT_CARGO_TOML = REPO_ROOT / "Cargo.toml"
+DSL_CARGO_TOML = REPO_ROOT / "crates" / "dsl" / "Cargo.toml"
 ENVELOPE_RS = REPO_ROOT / "crates" / "dsl" / "src" / "envelope.rs"
 VERSIONS_TOML = REPO_ROOT / "versions.toml"
 
@@ -120,16 +127,22 @@ DOC_VERSIONS_RE = re.compile(
 # the root manifest carries at column zero.
 CARGO_VERSION_RE = re.compile(r'(?m)^version\s*=\s*"([^"]+)"')
 
-# `pub const DSL_VERSION: &str = "0.19.0";` — the one `dsl_version` the engine
-# accepts (ADR-0024).
-RS_DSL_VERSION_RE = re.compile(r'pub\s+const\s+DSL_VERSION\s*:\s*&str\s*=\s*"([^"]+)"\s*;')
+# The one `dsl_version` the engine accepts (ADR-0024) is the DSL crate's package
+# version, and `DSL_VERSION` reads it through `env!("CARGO_PKG_VERSION")` rather
+# than restating it. So the NUMBER is read from the manifest, and what is checked
+# in the Rust source is that the derivation is still there: a literal put back
+# here would be a second authority, and this gate would then be comparing the doc
+# against whichever of the two it happened to read.
+RS_DSL_DERIVED_RE = re.compile(
+    r'pub\s+const\s+DSL_VERSION\s*:\s*&str\s*=\s*env!\("CARGO_PKG_VERSION"\)\s*;'
+)
 
 # The Minecraft pin is read by `lib/versions.py`, through `tomllib` — a real
 # implementation of the format the file is written in, and the one reading every
 # gate that wants a pin shares. A regex here was a second parser of TOML.
 
 # The DW0102 catalog row restates the one number by hand:
-#   | `DW0102` | The document's `dsl_version` is not the one this engine accepts, `0.19.0`. … |
+#   | `DW0102` | The document's `dsl_version` is not the one this engine accepts, `<X.Y.Z>`. … |
 #
 # It is looked for among the rows a TABLE holds, not anywhere in the file. A
 # blank line ends a pipe table, so a row under one renders as a paragraph of
@@ -144,14 +157,18 @@ DOC_DW0102_RE = re.compile(
 
 # `- **Minecraft**: Java Edition 1.21.11.`
 README_MC_RE = re.compile(r"\*\*Minecraft\*\*:\s*Java Edition\s+`?(\d[\d.]*\d)`?")
-# ``- **Campaign format**: `dsl_version` `0.19.0`.``
+# ``- **Campaign format**: `dsl_version` `<X.Y.Z>`.``
 README_FORMAT_RE = re.compile(r"\*\*Campaign format\*\*:\s*`dsl_version`\s+`([^`]+)`")
 # `- **Rust**: 1.97.1 or newer.`
 README_RUST_RE = re.compile(r"\*\*Rust\*\*:\s*`?(\d[\d.]*\d)`?\s+or newer")
 
-# Any dotted numeric run, wherever it sits in the prose; the caller keeps the
-# three-component ones. Matching greedily and filtering afterwards is what makes
-# `GPL-3.0-only` (two components) and `1.2.3.4` (four) fall out on their own.
+# Any dotted numeric run, wherever it sits in the prose — two components and
+# up. A bare `X.Y` is a version literal exactly as much as `X.Y.Z`: cargo's own
+# caret-range convention writes a dependency requirement as `"0.19"` to mean
+# `^0.19`, and an operator prefix (`^`, `~`, `=`) or a wildcard suffix (`.*`)
+# is not part of the digit run this pattern needs — `^0.19` and `0.19.*` both
+# yield the literal `0.19` on their own, because `^`, `~`, `=` and `*` are none
+# of `\d` or `.`.
 #
 # The right-hand guard is `(?!\w)` and NOT `(?![\w.])`, which is the shape this
 # first shipped with and was silently blind: a version at the end of a sentence
@@ -159,6 +176,18 @@ README_RUST_RE = re.compile(r"\*\*Rust\*\*:\s*`?(\d[\d.]*\d)`?\s+or newer")
 # followed by a full stop, so a lookahead that forbids a trailing dot matched
 # nothing on either page and rule 2 examined zero literals while printing green.
 # Caught by the test that plants a stale literal in prose.
+#
+# `1.2.3.4` is still caught: the whole four-component run matches as ONE
+# literal and fails the `known`/`own_major_minor` check below just like any
+# other number nothing in the build owns (no version here has four parts) —
+# it no longer needs a dot-count filter to be a finding, it needed one only
+# to be COUNTED as a two- or three-part literal, which it never was.
+# `GPL-3.0-only` no longer falls out by dot-count (a real two-part literal,
+# `0.19` in a cargo dependency line, has exactly the same shape as `3.0` in
+# that license id) — it is excluded below by where it sits: immediately after
+# a hyphen that is itself immediately after a letter, the one shape an SPDX
+# license expression has and a version claim does not. Demonstrated false
+# positive: `GPL-3.0-only.` sits on both published pages today.
 VERSION_LITERAL_RE = re.compile(r"(?<![\d.])\d+(?:\.\d+)+(?!\w)")
 
 # Version literals on a published page that are deliberately NOT one of this
@@ -285,20 +314,40 @@ def check_published_pages(
                 "[package] rust-version"
             )
 
-        # Rule 2 — the one that reaches prose the labelled claims never touch.
+        # Rule 2 — the one that reaches prose the labelled claims never touch,
+        # and now the one that reaches a `[dependencies]` snippet too: a bare
+        # `X.Y` and a cargo requirement form (`"0.19"`, `"^0.19"`, `"=0.19.0"`,
+        # `"0.19.*"`) are version literals exactly as much as `X.Y.Z` in prose.
+        # A page's OWN crate is additionally allowed to be named at its current
+        # major.minor — the caret-range convention a `[dependencies]` line
+        # actually uses — because "the exact version" is already in `known`.
+        own_major_minor = ".".join(crate.version.split(".")[:2])
         literals_seen = 0
         for n, line in enumerate(text.splitlines(), start=1):
-            for literal in VERSION_LITERAL_RE.findall(line):
-                if literal.count(".") != 2:
-                    continue  # `GPL-3.0-only`, `delvewright-dsl = "0.1"`
+            for m in VERSION_LITERAL_RE.finditer(line):
+                literal = m.group(0)
+                start = m.start()
+                # An SPDX license expression (`GPL-3.0-only`, `Apache-2.0`)
+                # embeds a version-shaped number inside a hyphenated
+                # identifier — immediately after a hyphen that is itself
+                # immediately after a letter — and is not a claim about the
+                # build at all. This is the one exclusion earned by a real
+                # false positive on both pages today, not a guess at one.
+                if start >= 2 and line[start - 1] == "-" and line[start - 2].isalpha():
+                    continue
                 literals_seen += 1
-                if literal in known or (rel, literal) in UNBOUND_VERSION_LITERALS:
+                if (
+                    literal in known
+                    or literal == own_major_minor
+                    or (rel, literal) in UNBOUND_VERSION_LITERALS
+                ):
                     continue
                 problems.append(
                     f"  {rel}:{n}: version literal `{literal}` is not one this "
                     "build owns\n"
                     f"      the build's constants are: "
-                    f"{', '.join(sorted(known))}\n"
+                    f"{', '.join(sorted(known))} (or `{crate.name}`'s own "
+                    f"major.minor, `{own_major_minor}`)\n"
                     "      a stale mention in prose is exactly how a published "
                     "page goes wrong"
                 )
@@ -328,8 +377,83 @@ def check_published_pages(
     return problems, pages, known, sum(literal_counts)
 
 
-def main() -> int:
-    for p in (DOC, ROOT_CARGO_TOML, ENVELOPE_RS, VERSIONS_TOML):
+
+def _sub_group(text: str, pat: "re.Pattern[str]", values: dict[int, str]) -> tuple[str, int]:
+    """Replace named capture groups of the FIRST match, leaving the rest byte-identical.
+
+    Used only by `--write`. Splicing by span rather than by `re.sub` template
+    means the surrounding prose — which differs on every page — is never
+    rewritten from a pattern, and a claim this gate cannot locate is simply not
+    touched (the checking pass then reds on it, which is the right outcome).
+    """
+    m = pat.search(text)
+    if m is None:
+        return text, 0
+    out, moved = text, 0
+    for idx in sorted(values, reverse=True):
+        a, b = m.span(idx)
+        if a < 0 or text[a:b] == values[idx]:
+            continue
+        out = out[:a] + values[idx] + out[b:]
+        moved += 1
+    return out, moved
+
+
+def write_claims(root: pathlib.Path, real_delvec: str, real_dsl: str, real_mc: str) -> int:
+    """Move every claim this gate binds to what the build has. Returns claims moved.
+
+    This is what makes the three documents SHAPE 2 — written by a tool and bound
+    by a gate — rather than three more places a person retypes the number. A
+    bump is `python3 tools/check-reference-versions.py --write`, and the same
+    file's checking mode is what refuses a document that was not regenerated.
+    """
+    moved = 0
+    doc_text = DOC.read_text(encoding="utf-8")
+    doc_text, n = _sub_group(doc_text, DOC_VERSIONS_RE, {1: real_delvec, 2: real_dsl, 3: real_mc})
+    moved += n
+    doc_text, n = _sub_group(doc_text, DOC_DW0102_RE, {1: real_dsl})
+    moved += n
+    DOC.write_text(doc_text, encoding="utf-8")
+
+    for crate in readmes(root):
+        text = crate.readme.read_text(encoding="utf-8")
+        text, n = _sub_group(text, README_MC_RE, {1: real_mc})
+        moved += n
+        text, n = _sub_group(text, README_FORMAT_RE, {1: real_dsl})
+        moved += n
+        if crate.rust_version:
+            text, n = _sub_group(text, README_RUST_RE, {1: crate.rust_version})
+            moved += n
+        # The `[dependencies]` line naming the page's OWN crate. Rule 2 admits
+        # exactly one value there — the crate's current major.minor, cargo's
+        # caret convention — so it is a bound claim and `--write` can move it.
+        # It is here because the dry run of the next bump found it: everything
+        # else on the page moved and this one line did not, which made a
+        # published page the fourth file a bump edits by hand. A dependency on
+        # any OTHER crate is untouched; that number is not this build's.
+        text, n = _sub_group(
+            text,
+            re.compile(r"^" + re.escape(crate.name) + r'\s*=\s*"\^?(\d+\.\d+)"', re.M),
+            {1: ".".join(crate.version.split(".")[:2])},
+        )
+        moved += n
+        crate.readme.write_text(text, encoding="utf-8")
+    return moved
+
+
+def main(argv: list[str] | None = None) -> int:
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument(
+        "--write",
+        action="store_true",
+        help="move every bound claim to what the build has, then check. This is "
+        "how a version bump reaches these three documents: they are written by "
+        "this tool, never retyped. An UNBOUND literal in prose (rule 2) is not "
+        "written and still reds — nothing here knows what such a number meant.",
+    )
+    args = ap.parse_args(argv or [])
+
+    for p in (DOC, ROOT_CARGO_TOML, DSL_CARGO_TOML, ENVELOPE_RS, VERSIONS_TOML):
         if not p.is_file():
             sys.stderr.write(f"error: {p} not found (run from the repo root)\n")
             return 2
@@ -352,16 +476,38 @@ def main() -> int:
                           "CARGO_VERSION_RE")
     real_delvec = m.group(1)
 
-    m = RS_DSL_VERSION_RE.search(rs_text)
-    if m is None:
-        return fail_shape("`pub const DSL_VERSION`", ENVELOPE_RS, "RS_DSL_VERSION_RE")
-    real_dsl = m.group(1)
+    if RS_DSL_DERIVED_RE.search(rs_text) is None:
+        return fail_shape(
+            "`pub const DSL_VERSION: &str = env!(\"CARGO_PKG_VERSION\");` — the "
+            "derivation that makes crates/dsl/Cargo.toml the one authority",
+            ENVELOPE_RS,
+            "RS_DSL_DERIVED_RE",
+        )
+    try:
+        real_dsl = tomllib.loads(DSL_CARGO_TOML.read_text(encoding="utf-8"))["package"]["version"]
+    except (tomllib.TOMLDecodeError, KeyError):
+        return fail_shape("`[package] version`", DSL_CARGO_TOML, "tomllib read")
 
     try:
         real_mc = minecraft_version()
     except PinError:
         return fail_shape("`[minecraft]` `version = \"…\"`", VERSIONS_TOML,
                           "lib/versions.py minecraft_version")
+
+    if args.write:
+        try:
+            moved = write_claims(REPO_ROOT, real_delvec, real_dsl, real_mc)
+        except DerivationError as exc:
+            sys.stderr.write(f"error: the publishable-crate derivation broke — {exc}\n")
+            return 2
+        print(f"--write: {moved} bound claim(s) moved to delvec {real_delvec}, dsl {real_dsl}, mc {real_mc}")
+        doc_text = DOC.read_text(encoding="utf-8")
+        m = DOC_VERSIONS_RE.search(doc_text)
+        if m is None:
+            return fail_shape(
+                "the `Versions (as of this doc): …` line", DOC, "DOC_VERSIONS_RE"
+            )
+        doc_delvec, doc_dsl, doc_mc = m.group(1), m.group(2), m.group(3)
 
     problems: list[str] = []
     for label, claimed, real, source in (
@@ -480,4 +626,4 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(main(sys.argv[1:]))

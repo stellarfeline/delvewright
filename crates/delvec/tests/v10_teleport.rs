@@ -35,12 +35,13 @@ mod common;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use delvewright_compiler::commands::CommandTree;
-use delvewright_compiler::emit::{self, BuildOutput};
-use delvewright_compiler::load::load_campaign_dir;
-use delvewright_compiler::plan::Plan;
-use delvewright_compiler::registry::{FullEntityRegistry, FullItemRegistry, PrefabRegistry};
-use delvewright_dsl::{parse_campaign, validate_campaign_with};
+use delvec::compiler::commands::CommandTree;
+use delvec::compiler::emit::{self, BuildOutput};
+use delvec::compiler::load::load_campaign_dir;
+use delvec::compiler::plan::Plan;
+use delvec::compiler::registry::{FullEntityRegistry, FullItemRegistry, PrefabRegistry};
+use delvewright_dsl::{DSL_VERSION, parse_campaign, validate_campaign_with};
+use std::sync::LazyLock;
 
 /// The fixture campaign's namespace — the emitted function prefix.
 const NS: &str = "cast-ledger";
@@ -55,8 +56,10 @@ fn tmp(name: &str) -> PathBuf {
     dir
 }
 
-const WORLD: &str = r#"{
-  "dsl_version": "0.19.0",
+static WORLD: LazyLock<String> = LazyLock::new(|| {
+    common::at_dsl_version(
+        r#"{
+  "dsl_version": "%dsl_version%",
   "campaign_id": "cast-ledger",
   "stage": "world",
   "content": {
@@ -65,13 +68,19 @@ const WORLD: &str = r#"{
     "premise": "One locked door stands between you and the road home.",
     "seed": 20260729,
     "target_minutes": 5,
+    "time": "noon",
+    "weather": "clear",
     "difficulty": "normal",
     "areas": [ { "id": "area/keep", "name": "The Keep", "prefab": "prefab/hello-room" } ]
   }
-}"#;
+}"#,
+    )
+});
 
-const DIALOGUE: &str = r#"{
-  "dsl_version": "0.19.0",
+static DIALOGUE: LazyLock<String> = LazyLock::new(|| {
+    common::at_dsl_version(
+        r#"{
+  "dsl_version": "%dsl_version%",
   "campaign_id": "cast-ledger",
   "stage": "dialogue",
   "content": {
@@ -97,7 +106,9 @@ const DIALOGUE: &str = r#"{
       }
     ]
   }
-}"#;
+}"#,
+    )
+});
 
 /// The worked shape, minus the lift: blind whoever is standing in the box, move
 /// everything in that box to the far anchor, and let the blindness expire on its
@@ -106,7 +117,7 @@ const DIALOGUE: &str = r#"{
 fn quests(teleport_extent: &str) -> String {
     format!(
         r#"{{
-  "dsl_version": "0.19.0",
+  "dsl_version": "{DSL_VERSION}",
   "campaign_id": "cast-ledger",
   "stage": "quests",
   "content": {{
@@ -133,7 +144,7 @@ fn quests(teleport_extent: &str) -> String {
               {{ "at_ticks": 2, "effects": [
                 {{ "type": "teleport",
                    "from": {{ "anchor": "anchor/keeper-stand", "extent": {teleport_extent} }},
-                   "to": "anchor/exit" }} ] }}
+                   "to": {{ "anchor": "anchor/exit" }} }} ] }}
             ] }},
             {{ "type": "clear-effect", "effect": "minecraft:poison" }}
           ]
@@ -165,9 +176,9 @@ fn try_build(who: &str, teleport_extent: &str) -> Result<BuildOutput, (String, S
         )
         .unwrap();
     }
-    std::fs::write(dir.join("world.json"), WORLD).unwrap();
+    std::fs::write(dir.join("world.json"), WORLD.as_str()).unwrap();
     std::fs::write(dir.join("quests.json"), quests(teleport_extent)).unwrap();
-    std::fs::write(dir.join("dialogue.json"), DIALOGUE).unwrap();
+    std::fs::write(dir.join("dialogue.json"), DIALOGUE.as_str()).unwrap();
 
     let prefab_dir = common::prefabs_dir();
     let loaded = load_campaign_dir(&dir).unwrap();

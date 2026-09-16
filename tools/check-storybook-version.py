@@ -114,6 +114,25 @@ entry is PRINTED on each run — an exemption nobody can see is an exemption
 nobody removes. An allowlisted campaign that would now PASS is an error: drop
 it. Keep this list empty whenever the repo lets you.
 
+**An entry is a fact about the CONTENT REPOSITORY, so it is only applied and
+only audited against it.** This script is not run only here: `/new-delve`'s
+step 14 runs it on a creator's machine, over the creator's own `campaigns/`,
+which never holds this repository's campaigns. Judging a repo-local exemption
+against that directory made the whole gate red on every creator machine **by
+construction** — `hollow-vigil: ALLOWLIST entry names a campaign that is not
+under campaigns`, exit 1, before a single storybook was read — so the creator
+learned nothing about their own storybook, not even that it had been looked at.
+The exemption was a fact about this repo being enforced against everyone else's.
+
+So the allowlist binds to ONE tree: `DEFAULT_CAMPAIGNS_ROOT`, the content
+sources this engine checkout names. When `--campaigns` resolves to that tree
+(CI, and any dev run over the content symlink) the allowlist exempts and the
+staleness audit runs, exactly as before. When it resolves anywhere else the
+allowlist is OUT OF SCOPE: nothing is exempted, nothing is audited, every entry
+is printed saying so and where it *is* judged. The discriminator is path
+identity after `resolve()`, not a flag anyone can pass: `--campaigns
+campaigns/campaigns` still audits.
+
 Deterministic, offline, no dependencies (Python 3 stdlib). Run from the repo
 root:
 
@@ -450,6 +469,18 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     root: pathlib.Path = args.campaigns
 
+    # The allowlist is a fact about THIS repository's content sources, so it
+    # binds to that one tree and to no other (module docstring). Resolved paths,
+    # never spellings: `--campaigns campaigns/campaigns` is the same tree.
+    def _resolved(p: pathlib.Path) -> pathlib.Path:
+        try:
+            return p.resolve()
+        except OSError:  # pragma: no cover - a path the OS refuses to resolve
+            return p
+
+    allowlist_applies = _resolved(root) == _resolved(DEFAULT_CAMPAIGNS_ROOT)
+    allowlist = ALLOWLIST if allowlist_applies else {}
+
     if not root.is_dir():
         print(
             f"campaign sources not found at {root} — check out the content repo "
@@ -480,7 +511,7 @@ def main(argv: list[str] | None = None) -> int:
 
     for campaign in campaigns:
         errors = check_campaign(campaign, engine_delvec, engine_mc)
-        if campaign.name in ALLOWLIST:
+        if campaign.name in allowlist:
             skipped.append(campaign.name)
             if not errors:
                 failures.append(
@@ -493,7 +524,7 @@ def main(argv: list[str] | None = None) -> int:
         scanned += sum(1 for r in expected_readmes(campaign) if r.is_file())
         failures.extend(f"{campaign.name}: {e}" for e in errors)
 
-    for stale in sorted(set(ALLOWLIST) - ids):
+    for stale in sorted(set(allowlist) - ids):
         failures.append(
             f"{stale}: ALLOWLIST entry names a campaign that is not under {root} — "
             "remove it (a stale exemption hides the next real one)"
@@ -511,19 +542,35 @@ def main(argv: list[str] | None = None) -> int:
     for name in skipped:
         print(f"TEMPORARILY ALLOWLISTED (no marker required yet): {name}")
         print(f"  reason: {ALLOWLIST[name]}")
+    if not allowlist_applies:
+        for name in sorted(ALLOWLIST):
+            print(
+                f"ALLOWLIST ENTRY OUT OF SCOPE HERE (neither applied nor audited): "
+                f"{name}"
+            )
+        print(
+            f"  {len(ALLOWLIST)} entry(s) name campaigns of {DEFAULT_CAMPAIGNS_ROOT}, "
+            f"and this run reads {root}. An exemption belongs to the repository it "
+            f"names; it is judged where that repository is."
+        )
+
+    # The binding count is printed on EVERY path, including the refusing one: a
+    # tool that fails owes the reader what it examined, or they cannot tell a
+    # broken storybook from a gate that never reached theirs (CLAUDE.md).
+    summary = (
+        f"{len(checked)} campaign(s) checked against delvec {engine_delvec} and "
+        f"Minecraft Java {engine_mc}, {len(skipped)} allowlisted; {scanned} "
+        f"storybook file(s) scanned for unbound version literals."
+    )
 
     if failures:
         print("storybook version-marker check FAILED:", file=sys.stderr)
         for failure in failures:
             print(f"  - {failure}", file=sys.stderr)
+        print(f"  examined: {summary}", file=sys.stderr)
         return 1
 
-    print(
-        f"storybook version markers OK: {len(checked)} campaign(s) checked against "
-        f"delvec {engine_delvec} and Minecraft Java {engine_mc}, {len(skipped)} "
-        f"allowlisted; {scanned} storybook file(s) scanned for unbound version "
-        "literals."
-    )
+    print(f"storybook version markers OK: {summary}")
     return 0
 
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """The grammar program document cannot grow a field that rides through in silence.
 
-A `Program` (`crates/grammar/src/ir.rs`) is a long-lived on-disk document
+A `Program` (`crates/delvec/src/grammar/ir.rs`) is a long-lived on-disk document
 (ADR-0018 §4/§5). Two shapes of new surface, and they are not equally safe:
 
 - **A new variant of a tagged enum is safe.** `Node`, `Cond`, `Expr`, `Size` and
@@ -45,9 +45,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from lib import mdtable  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
-IR = ROOT / "crates/grammar/src/ir.rs"
-GEOM = ROOT / "crates/grammar/src/geom.rs"
-VERSION_RS = ROOT / "crates/grammar/src/version.rs"
+IR = ROOT / "crates/delvec/src/grammar/ir.rs"
+GEOM = ROOT / "crates/delvec/src/grammar/geom.rs"
+VERSION_RS = ROOT / "crates/delvec/src/grammar/version.rs"
 REFERENCE = ROOT / "docs/reference/grammar.md"
 
 SOURCES = {"ir": IR, "geom": GEOM}

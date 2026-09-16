@@ -1,0 +1,40 @@
+{
+  "campaign": "_fixture",
+  "skins": [
+    {
+      "features": {
+        "quality": 4,
+        "style": "present-day-steward"
+      },
+      "hidden_layers": [],
+      "model": "wide",
+      "palette": {
+        "belt": "#212a3a",
+        "eye": "#4b5a51",
+        "hair": "#7d7669",
+        "hair_grey": "#a9a29a",
+        "hair_shadow": "#564f42",
+        "legwear": "#3a3b41",
+        "legwear_shadow": "#2a2b2f",
+        "sandal": "#2c2521",
+        "skin": "#d0a17c",
+        "skin_shadow": "#a67a58",
+        "tunic": "#39495e",
+        "tunic_shadow": "#2a3646"
+      },
+      "role": "quest-giver",
+      "seed": 60219,
+      "style_brief": "The castle steward, a woman in her fifties on the morning round: iron-grey hair cut to the jaw, a navy jacket buttoned to the throat over charcoal trousers, flat dark shoes. Reads as the person who holds the keys.",
+      "texture_id": "castle-steward",
+      "wardrobe": {
+        "collar": "closed",
+        "facial_hair": "none",
+        "footwear": "shoe",
+        "greying": "hair",
+        "hair": "jaw",
+        "legs": "full",
+        "sleeves": "long"
+      }
+    }
+  ]
+}

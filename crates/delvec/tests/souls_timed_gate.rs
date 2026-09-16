@@ -8,11 +8,11 @@ mod common;
 
 use std::collections::BTreeMap;
 
-use delvewright_compiler::commands::CommandTree;
-use delvewright_compiler::emit::{self, BuildOutput};
-use delvewright_compiler::load::load_campaign_dir;
-use delvewright_compiler::plan::Plan;
-use delvewright_compiler::registry::{FullEntityRegistry, FullItemRegistry, PrefabRegistry};
+use delvec::compiler::commands::CommandTree;
+use delvec::compiler::emit::{self, BuildOutput};
+use delvec::compiler::load::load_campaign_dir;
+use delvec::compiler::plan::Plan;
+use delvec::compiler::registry::{FullEntityRegistry, FullItemRegistry, PrefabRegistry};
 use delvewright_dsl::{parse_campaign, validate_campaign_with};
 
 const NS: &str = "souls-timed-gate";
@@ -79,7 +79,7 @@ fn the_fixture_gate_can_be_watched_before_it_is_entered() {
     }
     // The campaign declares a timed gate, so the proof has something to judge …
     assert_eq!(
-        delvewright_compiler::nav::timed_hazards(&plan).len(),
+        delvec::compiler::nav::timed_hazards(&plan).len(),
         1,
         "the fixture's portcullis is the hazard under proof"
     );

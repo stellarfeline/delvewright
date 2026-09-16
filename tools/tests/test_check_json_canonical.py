@@ -36,8 +36,8 @@ CHECKER = REPO / "tools" / "check-json-canonical.py"
 # Copied from the checker on purpose, not imported: if a rename moves the
 # exemption, these fixtures should stop describing it and the tests should
 # notice, rather than silently following it wherever it went.
-GOLDEN_DIR = "crates/compiler/tests/golden"
-BINDING_FILE = "crates/compiler/src/view/scene.rs"
+GOLDEN_DIR = "crates/delvec/tests/golden"
+BINDING_FILE = "crates/delvec/src/compiler/view/scene.rs"
 
 STUB = """#!/usr/bin/env python3
 import os, sys

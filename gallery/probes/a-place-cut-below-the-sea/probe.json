@@ -1,0 +1,31 @@
+{
+  "code": "DW0886",
+  "patch": [
+    {
+      "doc": "world.json",
+      "op": "add",
+      "path": "/content/horizon",
+      "value": "ocean"
+    },
+    {
+      "doc": "overlays/site-plan/site-plan.json",
+      "op": "add",
+      "path": "/content/datums/-",
+      "value": {
+        "id": "datum/deep",
+        "note": "The plane the undercroft stands on, named so that one number moves it.",
+        "y": 60
+      }
+    },
+    {
+      "doc": "overlays/site-plan/site-plan.json",
+      "op": "replace",
+      "path": "/content/boxes/4/floor",
+      "value": {
+        "datum": "datum/deep"
+      }
+    }
+  ],
+  "units": [],
+  "why": "A place standing under the sea, in a campaign that seats no prefab at all. The site-plan overlay states its whole map with boxes rather than with `areas[]`, and until this refusal existed a horizon had nothing to say about a campaign that places that way: the pairing check read one placement model, so a plan could put a room below the water and the engine would report `0 of 0 area(s)` and pass. Measured before the check reached here, on the overlay itself with nothing changed but `horizon: ocean`: `delvec analyze` exited 0, GREEN, while `node/undercroft` stood two courses under the sea plane — and the build then refused it at DW0344 after paying for the assembly, naming a `blockout/node/undercroft.json` no author can edit, because a derived box has no prefab document. This probe is that campaign. The declared edit moves no geometry: it gives the undercroft's plane a NAME, `datum/deep`, at the y it already stood at, because a datum is the object the refusal's first move acts on and a plan that states the number inline has nothing to move. What answers it is the same rule an `areas[]` piece meets, asked of the number a plan states instead of the number a piece derives: a box's `floor` IS a walk plane in world coordinates, so nothing has to be placed to know that a body standing there has the sea over its feet, and the refusal comes at validation, exit 1, on DW0855's own precedent. Both moves it names are taken green in `crates/delvec/tests/remedy_reachability.rs` — raise the floor, which a datum does for every place standing on it at once, or choose a base with no sea, which is what a place cut below grade usually wants and is why the overlay itself declares `valley`. There is deliberately no third move telling the author to declare a `walk_y`: a site plan's mass is derived and authored by no one. The binding line reads `site plan: 6 of 7 box(es)` here rather than 7 of 7, and that is the numerator doing its job — this probe stands the overlay's plan on the PRIMARY's layout graph, which declares six places and not the causeway, so the box nothing could place is a number a reader can see. It declares no unit: `floor`, `datums` and `region` are all bound on the site-plan overlay, where the plan stands where the horizon says it may."
+}

@@ -13,7 +13,7 @@
 //!
 //! So the assertion here is the whole KEY SET, not the presence of a file: what
 //! is pinned and what is left to the host is a reviewed decision, and adding or
-//! dropping a key has to be written down here to pass. `crates/compiler/src/
+//! dropping a key has to be written down here to pass. `crates/delvec/src/compiler/
 //! emit.rs` (`DELVE_VIEW_DISTANCE`, `DELVE_SIMULATION_DISTANCE`) carries the
 //! reasoning for the two chunk distances; `docs/reference/compiler.md` carries
 //! the verdict on every key deliberately left unset.
@@ -28,13 +28,11 @@ mod common;
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
-use delvewright_compiler::commands::CommandTree;
-use delvewright_compiler::emit::{
-    self, BuildOutput, DELVE_SIMULATION_DISTANCE, DELVE_VIEW_DISTANCE,
-};
-use delvewright_compiler::load::load_campaign_dir;
-use delvewright_compiler::plan::Plan;
-use delvewright_compiler::registry::PrefabRegistry;
+use delvec::compiler::commands::CommandTree;
+use delvec::compiler::emit::{self, BuildOutput, DELVE_SIMULATION_DISTANCE, DELVE_VIEW_DISTANCE};
+use delvec::compiler::load::load_campaign_dir;
+use delvec::compiler::plan::Plan;
+use delvec::compiler::registry::PrefabRegistry;
 use delvewright_dsl::parse_campaign;
 
 /// Exactly the keys a delve pins. Everything else on the pinned server version

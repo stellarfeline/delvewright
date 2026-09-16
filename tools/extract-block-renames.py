@@ -55,7 +55,7 @@ Usage::
 
 The summaries come from the community mirror of Mojang's generated reports
 (``misode/mcmeta``, one ``<version>-summary`` branch per release), the same
-source ``crates/compiler/data/PROVENANCE.md`` records for every other vendored
+source ``crates/delvec/data/PROVENANCE.md`` records for every other vendored
 table here.
 """
 

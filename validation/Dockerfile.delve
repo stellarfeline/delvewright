@@ -85,12 +85,43 @@ RUN cat > /delve/entrypoint.sh <<'EOS' && chmod +x /delve/entrypoint.sh
 #
 # CONTRACT: this file and the heredoc body in validation/Dockerfile.delve are
 # byte-identical; validation/check-world-settings.sh fails CI if they drift.
+#
+# It also owns DELVE_RESET_WHEN_EMPTY (spec-0064): the seconds every reading of
+# the online player count must be zero across before this delve is removed and
+# built again from the image. Unset, none of it runs.
 set -e
 props="${DELVE_SERVER_PROPERTIES:-/delve/server/server.properties}"
 if [ ! -f "$props" ]; then
   echo "FATAL: $props is missing - cannot derive the world the compiler declared;" >&2
   echo "refusing to boot a world that is not this campaign's." >&2
   exit 1
+fi
+# spec-0064: the last player leaves, and the delve is built again.
+# DELVE_RESET_WHEN_EMPTY is the WINDOW, in seconds, that EVERY reading of the
+# online player count must be zero across before this world is thrown away and
+# built again from the image. Unset is OFF, and off is this script exactly as it
+# was: no daemon, no removal, `exec` at the bottom, mc-server-runner as PID 1.
+#
+# Validated HERE, before a single setting is derived and long before anything is
+# removed. The flag was asked for, so a value that cannot be honoured refuses the
+# boot: a server that starts with the flag silently ignored is the silent-default
+# defect, and it would be discovered by a host only when a stranger walked into
+# the previous stranger's finished delve.
+if [ -n "${DELVE_RESET_WHEN_EMPTY:-}" ]; then
+  case "$DELVE_RESET_WHEN_EMPTY" in
+    *[!0-9]*|'')
+      echo "FATAL: DELVE_RESET_WHEN_EMPTY='$DELVE_RESET_WHEN_EMPTY' is not a whole number of seconds." >&2
+      echo "It is the window every player-count reading must be zero across, and its floor is 60." >&2
+      exit 1
+      ;;
+  esac
+  if [ "$DELVE_RESET_WHEN_EMPTY" -lt 60 ]; then
+    echo "FATAL: DELVE_RESET_WHEN_EMPTY=$DELVE_RESET_WHEN_EMPTY is below the 60-second floor." >&2
+    echo "A player is counted only once the server has PLACED them in the world, not when they" >&2
+    echo "connect, so a shorter window can read zero straight across a login handshake and wipe" >&2
+    echo "a world out from under a party that is still loading in." >&2
+    exit 1
+  fi
 fi
 # First match wins, and `sed` stops by itself rather than being cut off by a
 # reader. It used to be `sed -n "s/^$1=//p" "$props" | head -1`, which is the
@@ -147,7 +178,107 @@ if [ -n "${DELVE_OPS_OFFLINE:-}" ]; then
     "$u" "$n" > /data/ops.json
   echo "[init] Seeded offline op $n ($u) into /data/ops.json"
 fi
-exec /image/scripts/start "$@"
+# OFF is the boot this image has always had: `exec`, so mc-server-runner is PID 1
+# and every signal reaches it the way it does today. Everything below this line
+# runs only when the operator asked for the reset.
+if [ -z "${DELVE_RESET_WHEN_EMPTY:-}" ]; then
+  exec /image/scripts/start "$@"
+fi
+
+# WHICH directory holds the world: `level-name`, read from the build's own file
+# exactly like every world key above, never a constant typed here. The 15 pinned
+# properties carry it, so the compiler is the authority; `world` is the floor for
+# a file that somehow lacks it.
+lvl=$(prop level-name); [ -n "$lvl" ] || lvl=world
+
+# The EVENT, and it is not "the count reached zero". itzg's autostop daemon reads
+# the online player count every AUTOSTOP_PERIOD (10 s) with a server-list ping to
+# the game port, and stops the server only when EVERY reading across
+# AUTOSTOP_TIMEOUT_EST seconds was zero; any non-zero reading starts the wait
+# again, and a ping that fails after its retries counts as ONE player, never
+# zero. That direction is the whole safety of this flag: a lagging server with a
+# party inside it is never reset.
+export ENABLE_AUTOSTOP=true
+export AUTOSTOP_TIMEOUT_EST="$DELVE_RESET_WHEN_EMPTY"
+# Upstream has no "never" for the INITIAL-idle stop, and a server nobody has
+# joined is already pristine - stopping there would only cycle the boot forever.
+# This is the largest value the daemon's arithmetic is known to hold, and it is a
+# workaround, named here as one.
+export AUTOSTOP_TIMEOUT_INIT=2147483647
+# The count exists only while the server answers status pings WITH a player list.
+# Both keys are among the ones the build leaves to the host, so left to chance a
+# host that hid its player list would turn every reading into a failed ping,
+# every failed ping into "one player", and this flag into a flag that does
+# nothing - the unbound shape, with nothing anywhere saying so.
+export ENABLE_STATUS=true
+export HIDE_ONLINE_PLAYERS=false
+
+# PID 1 gets no default signal handling, and the start chain is a CHILD here
+# rather than an `exec`. So `docker stop` has to be forwarded by hand - and it
+# must end the container rather than feed the loop, or a `docker stop` would boot
+# the delve again instead of stopping it.
+dw_stopping=0
+dw_child=""
+dw_forward() {
+  dw_stopping=1
+  if [ -n "$dw_child" ]; then kill -TERM "$dw_child" 2>/dev/null || true; fi
+  return 0
+}
+trap dw_forward TERM INT
+
+while :; do
+  # A world the server is about to make under a DIFFERENT name is a world this
+  # removal does not reach: the played one would survive untouched and the reset
+  # would reset nothing, silently, which is the one failure this flag cannot be
+  # allowed to have. The server's own file is the second reading; they must agree.
+  if [ -f /data/server.properties ]; then
+    running_lvl=$(sed -n '/^level-name=/{s///;p;q;}' /data/server.properties)
+    if [ -n "$running_lvl" ] && [ "$running_lvl" != "$lvl" ]; then
+      echo "FATAL: the build declares level-name=$lvl and the server's own /data/server.properties" >&2
+      echo "says level-name=$running_lvl - so removing '$lvl' would leave the played world in place" >&2
+      echo "and reset nothing at all. Refusing to boot a reset that resets nothing." >&2
+      exit 1
+    fi
+  fi
+  # The reset RESTORES; it never undoes. The world directory goes wholesale and
+  # the boot below makes it again from the image - so quest scores, command
+  # storage, player inventories, advancements, statistics and every block a
+  # session moved are covered by one removal, and no list of carriers can go
+  # stale behind it. usercache.json is the only thing outside the world folder
+  # that is about players.
+  for victim in "/data/$lvl" /data/usercache.json; do
+    if [ -e "$victim" ]; then
+      rm -rf "$victim"
+      echo "[reset] removed $victim"
+    else
+      echo "[reset] $victim was already absent"
+    fi
+  done
+  # Upstream's one hold, and the only hatch: while this file exists the daemon
+  # logs that it is skipping and never stops. Nothing here creates it, and every
+  # boot says whether it is there.
+  if [ -e /data/.skip-stop ]; then
+    echo "[reset] /data/.skip-stop is present - the autostop daemon will SKIP stopping this server"
+  else
+    echo "[reset] /data/.skip-stop is absent - this world ends ${DELVE_RESET_WHEN_EMPTY}s after the last player leaves"
+  fi
+
+  /image/scripts/start "$@" &
+  dw_child=$!
+  rc=0; wait "$dw_child" || rc=$?
+  # A trapped signal makes `wait` return >128 while the child may still be
+  # running; ask again until the child is really gone, or the exit status
+  # reported here is the signal rather than the server's.
+  while [ "$rc" -gt 128 ] && kill -0 "$dw_child" 2>/dev/null; do
+    rc=0; wait "$dw_child" || rc=$?
+  done
+  dw_child=""
+  if [ "$dw_stopping" = 1 ]; then
+    echo "[reset] the container was signalled - this world ends here and no boot follows"
+    exit "$rc"
+  fi
+  echo "[reset] the server stopped (exit $rc) - the last player left, so the delve is built again"
+done
 EOS
 ENTRYPOINT ["/delve/entrypoint.sh"]
 

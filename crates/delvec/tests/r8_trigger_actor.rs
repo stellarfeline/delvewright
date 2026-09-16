@@ -25,11 +25,12 @@ use std::collections::BTreeMap;
 use std::path::Path;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use delvewright_compiler::commands::CommandTree;
-use delvewright_compiler::emit::{self, BuildOutput};
-use delvewright_compiler::load::load_campaign_dir;
-use delvewright_compiler::plan::Plan;
-use delvewright_compiler::registry::PrefabRegistry;
+use delvec::compiler::commands::CommandTree;
+use delvec::compiler::emit::{self, BuildOutput};
+use delvec::compiler::load::load_campaign_dir;
+use delvec::compiler::plan::Plan;
+use delvec::compiler::registry::PrefabRegistry;
+use delvewright_dsl::DSL_VERSION;
 use delvewright_dsl::parse_campaign;
 
 const NS: &str = "hello-world";
@@ -86,7 +87,7 @@ fn build_two_trigger(entity: &str) -> BuildOutput {
         std::fs::copy(src.join(f), dst.join(f)).unwrap();
     }
     common::patch_file(&dst.join("quests.json"), |d| {
-        d["dsl_version"] = serde_json::json!("0.19.0");
+        d["dsl_version"] = serde_json::json!(DSL_VERSION);
         d["content"]["triggers"] = serde_json::json!([
             { "id": "trigger/wake", "on": { "on": "strike-npc", "npc": "npc/keeper" },
               "once": false, "requires_flags": ["flag/asleep"],
@@ -104,7 +105,7 @@ fn build_two_trigger(entity: &str) -> BuildOutput {
         ]);
         d["content"]["actors"] = serde_json::json!([
             { "id": "actor/giant", "entity": entity, "name": "The Sleeper",
-              "anchor": "anchor/keeper-stand", "facing": "east" }
+              "anchor": "spawn", "facing": "east" }
         ]);
     });
     let out = build_dir(&dst);
@@ -112,41 +113,65 @@ fn build_two_trigger(entity: &str) -> BuildOutput {
     out
 }
 
-/// hello-world with FOUR actors each given their own `move-actor` in one
-/// `sequence`, so the concurrency claim below has something to measure.
-fn build_four_moves() -> BuildOutput {
+/// The marks the concurrent movers stand on before they walk, one apiece.
+///
+/// **A mark is one cell and a cell holds one body** (`DW0896`), so the number of
+/// concurrent movers this fixture can carry is the number of free standing marks
+/// in `hello-room`, and there are two: `anchor/door` is a gate region rather than
+/// a point, and `anchor/keeper-stand` is where all of them walk TO — which is a
+/// walked destination and not a mark, so the keeper standing on it is no
+/// concern of this rule. This fixture was written with four sheep stacked on one
+/// anchor, and cutting it to two is a **loosening**, declared here in those
+/// words: the property is proven over two drivers instead of four. Nothing the
+/// claim rests on is lost — every assertion below is per-driver (its own latch,
+/// its own counter, its own function, its own puppet tag) plus the pairwise
+/// "no holder belongs to two drivers", and all of those are witnessed by a pair.
+/// What four bought was not a stronger proof but a bigger pile.
+const MOVER_MARKS: [&str; 2] = ["spawn", "anchor/exit"];
+
+/// Where every mover walks. One destination, so the drivers really do run at
+/// once over one goal and the only thing separating them is per-actor state.
+const MOVER_GOAL: &str = "anchor/keeper-stand";
+
+/// hello-world with one actor per [`MOVER_MARKS`] entry, each given its own
+/// `move-actor` in one `sequence`, so the concurrency claim below has something
+/// to measure.
+fn build_concurrent_moves() -> BuildOutput {
     let src = common::hello_world_dir();
-    let dst = scratch_dir("four-moves");
+    let dst = scratch_dir("concurrent-moves");
     let _ = std::fs::remove_dir_all(&dst);
     std::fs::create_dir_all(&dst).unwrap();
     for f in common::STAGE_FILES {
         std::fs::copy(src.join(f), dst.join(f)).unwrap();
     }
-    let steps: Vec<serde_json::Value> = (1..=4)
+    let steps: Vec<serde_json::Value> = (1..=MOVER_MARKS.len())
         .map(|i| {
             serde_json::json!({
                 "at_ticks": (i - 1) * 20,
                 "effects": [
                     { "type": "move-actor", "actor": format!("actor/a{i}"),
-                      "to_anchor": "anchor/exit" }
+                      "to": { "anchor": MOVER_GOAL } }
                 ]
             })
         })
         .collect();
     common::patch_file(&dst.join("quests.json"), |d| {
-        d["dsl_version"] = serde_json::json!("0.19.0");
+        d["dsl_version"] = serde_json::json!(DSL_VERSION);
         let effects = common::objective_effects(d, 0, "obj/talk");
-        for i in 1..=4 {
+        for i in 1..=MOVER_MARKS.len() {
             effects
                 .push(serde_json::json!({ "type": "spawn-actor", "actor": format!("actor/a{i}") }));
         }
         effects.push(serde_json::json!({ "type": "sequence", "steps": steps }));
         d["content"]["actors"] = serde_json::Value::Array(
-            (1..=4)
-                .map(|i| {
+            MOVER_MARKS
+                .iter()
+                .enumerate()
+                .map(|(n, anchor)| {
+                    let i = n + 1;
                     serde_json::json!({
                         "id": format!("actor/a{i}"), "entity": "minecraft:sheep",
-                        "anchor": "anchor/keeper-stand"
+                        "anchor": anchor
                     })
                 })
                 .collect(),
@@ -426,18 +451,18 @@ fn build_four_moves_with_vanish() -> BuildOutput {
         std::fs::copy(src.join(f), dst.join(f)).unwrap();
     }
     common::patch_file(&dst.join("quests.json"), |d| {
-        d["dsl_version"] = serde_json::json!("0.19.0");
+        d["dsl_version"] = serde_json::json!(DSL_VERSION);
         common::objective_effects(d, 0, "obj/talk").extend([
             serde_json::json!({ "type": "spawn-actor", "actor": "actor/a1" }),
             serde_json::json!({
-                "type": "move-actor", "actor": "actor/a1", "to_anchor": "anchor/exit",
+                "type": "move-actor", "actor": "actor/a1", "to": { "anchor": "anchor/exit" },
                 "on_arrive": [
                     { "type": "despawn-actor", "actor": "actor/a1", "style": "vanish" }
                 ]
             }),
         ]);
         d["content"]["actors"] = serde_json::json!([
-            { "id": "actor/a1", "entity": "minecraft:sheep", "anchor": "anchor/keeper-stand" }
+            { "id": "actor/a1", "entity": "minecraft:sheep", "anchor": "spawn" }
         ]);
     });
     let out = build_dir(&dst);
@@ -455,10 +480,10 @@ fn build_four_moves_with_vanish() -> BuildOutput {
 /// the property the island's four-sheep-plus-giant cinematic relies on.
 #[test]
 fn concurrent_move_actors_share_no_state() {
-    let out = build_four_moves();
+    let out = build_concurrent_moves();
     let mut totals = Vec::new();
-    for i in 1..=4 {
-        let bare = format!("a{i}_exit");
+    for i in 1..=MOVER_MARKS.len() {
+        let bare = format!("a{i}_keeper_stand");
         let start = func(&out, &format!("ma_{bare}"));
         assert!(
             start.contains(&format!("scoreboard players set #arun_{bare} dw.sys 1"))
@@ -486,11 +511,13 @@ fn concurrent_move_actors_share_no_state() {
         "each driver really walks a path (waypoint counts {totals:?})"
     );
     // No two drivers share a scoreboard holder or a function name.
-    let holders: Vec<String> = (1..=4).map(|i| format!("#at_a{i}_exit")).collect();
+    let holders: Vec<String> = (1..=MOVER_MARKS.len())
+        .map(|i| format!("#at_a{i}_keeper_stand"))
+        .collect();
     for h in &holders {
-        let uses: usize = (1..=4)
+        let uses: usize = (1..=MOVER_MARKS.len())
             .map(|i| {
-                func(&out, &format!("ma_tick_a{i}_exit"))
+                func(&out, &format!("ma_tick_a{i}_keeper_stand"))
                     .matches(h.as_str())
                     .count()
             })

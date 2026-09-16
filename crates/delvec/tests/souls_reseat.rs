@@ -24,12 +24,12 @@ mod common;
 
 use std::collections::BTreeMap;
 
-use delvewright_compiler::commands::CommandTree;
-use delvewright_compiler::emit::{self, BuildOutput};
-use delvewright_compiler::load::load_campaign_dir;
-use delvewright_compiler::plan::Plan;
-use delvewright_compiler::registry::{FullEntityRegistry, FullItemRegistry, PrefabRegistry};
-use delvewright_dsl::{Campaign, parse_campaign, validate_campaign_with};
+use delvec::compiler::commands::CommandTree;
+use delvec::compiler::emit::{self, BuildOutput};
+use delvec::compiler::load::load_campaign_dir;
+use delvec::compiler::plan::Plan;
+use delvec::compiler::registry::{FullEntityRegistry, FullItemRegistry, PrefabRegistry};
+use delvewright_dsl::{Campaign, DSL_VERSION, parse_campaign, validate_campaign_with};
 
 const NS: &str = "souls-bonfire";
 
@@ -59,14 +59,17 @@ fn fixture_dir() -> std::path::PathBuf {
 fn fixture_campaign(with_unleash: bool) -> Campaign {
     let loaded = load_campaign_dir(&fixture_dir()).unwrap();
     let mut c = parse_campaign(&loaded.raw).expect("souls-bonfire parses");
-    c.quests.dsl_version = "0.19.0".to_string();
-    for a in [ELITE, SCENERY] {
+    c.quests.dsl_version = DSL_VERSION.to_string();
+    // A mark apiece. Both bodies are staged and neither is ever removed, so one
+    // cell for the two of them is two live bodies on one mark (`DW0896`) and the
+    // fixture would not build — which is the rule, not a fixture inconvenience.
+    for (a, anchor) in [(ELITE, "anchor/wave"), (SCENERY, "anchor/npc-stand")] {
         c.quests.content.actors.push(
             serde_json::from_value(serde_json::json!({
                 "id": a,
                 "entity": "minecraft:wither_skeleton",
                 "name": "The Barrow Warden",
-                "anchor": "anchor/wave",
+                "anchor": anchor,
                 "facing": "north"
             }))
             .expect("actor parses"),

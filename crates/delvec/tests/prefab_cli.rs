@@ -3,8 +3,8 @@
 use std::path::PathBuf;
 use std::process::Command;
 
-use delvewright_admit::fixtures;
-use delvewright_admit::meta::{AnchorRole, PrefabMeta};
+use delvec::admit::fixtures;
+use delvec::admit::meta::{AnchorRole, PrefabMeta};
 
 /// `delvec prefab …`: the one binary, entered at the prefab-admission surface.
 fn prefab() -> Command {
@@ -95,10 +95,7 @@ fn socket_and_lighting_write_metadata() {
     assert_eq!(meta.connectors.len(), 1);
     assert!(meta.anchors.contains_key("anchor/npc-stand"));
     let lighting = meta.lighting.expect("--write records the probe");
-    assert_eq!(
-        lighting.profile,
-        delvewright_admit::meta::LightingProfile::Lit
-    );
+    assert_eq!(lighting.profile, delvec::admit::meta::LightingProfile::Lit);
     assert!(lighting.method.as_deref().unwrap().contains("static"));
 
     std::fs::remove_dir_all(&dir).ok();
@@ -173,7 +170,7 @@ fn gallery_and_curate_merge_end_to_end() {
         .unwrap();
     assert!(status.success());
 
-    let merged = delvewright_admit::catalog::CatalogCard::from_json(
+    let merged = delvec::admit::catalog::CatalogCard::from_json(
         &std::fs::read_to_string(catalog_dir.join("gatehouse.json")).unwrap(),
     )
     .unwrap();
@@ -263,6 +260,71 @@ fn anchor_writes_and_clears_the_role_and_refuses_a_term_it_does_not_know() {
     // The two are contradictory and the parser says so rather than picking one.
     let out = anchor(&["--pos", "4,1,4", "--role", "entry", "--no-role"]);
     assert_eq!(out.status.code(), Some(2));
+
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+/// **`--role furniture` names blocks, never a point** (spec-0065 §3, §9.1): the
+/// command writes the role with a region, refuses it with only a `--pos` at exit
+/// 2 without touching the document, and a misspelled role names both terms.
+#[test]
+fn anchor_writes_a_furniture_role_over_a_region_and_refuses_one_over_a_point() {
+    let dir = tmp("anchor-furniture");
+    let nbt = dir.join("piece.nbt");
+    std::fs::write(&nbt, fixtures::clean_room().write()).unwrap();
+    let anchor = |args: &[&str]| {
+        prefab()
+            .arg("anchor")
+            .arg(&nbt)
+            .args(["--name", "anchor/table"])
+            .args(args)
+            .output()
+            .unwrap()
+    };
+    let now = || {
+        PrefabMeta::beside_nbt(&nbt)
+            .unwrap()
+            .map(|m| m.anchors.get("anchor/table").cloned())
+    };
+
+    let out = anchor(&["--pos", "3,1,3", "--role", "furniture"]);
+    assert_eq!(
+        out.status.code(),
+        Some(2),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(
+        String::from_utf8_lossy(&out.stderr).contains("--region"),
+        "the refusal names the missing region: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(
+        now().flatten().is_none(),
+        "a refused furniture declaration writes nothing"
+    );
+
+    let out = anchor(&["--region", "2,1,3:4,1,3", "--role", "furniture"]);
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let written = now().flatten().expect("the anchor is written");
+    assert_eq!(written.role, Some(AnchorRole::Furniture));
+    assert_eq!(
+        written.region.map(|r| (r.from, r.to)),
+        Some(([2, 1, 3], [4, 1, 3]))
+    );
+
+    let out = anchor(&["--region", "2,1,3:4,1,3", "--role", "furnature"]);
+    assert_eq!(out.status.code(), Some(2));
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("`entry`") && stderr.contains("`furniture`"),
+        "a misspelled role names every term: {stderr}"
+    );
+    assert_eq!(AnchorRole::ALL.len(), 2, "the vocabulary has two terms");
 
     std::fs::remove_dir_all(&dir).ok();
 }

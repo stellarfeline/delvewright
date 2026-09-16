@@ -36,8 +36,8 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use delvewright_compiler::assembled::Occupancy;
-use delvewright_compiler::nav::{Premises, World};
+use delvec::compiler::assembled::Occupancy;
+use delvec::compiler::nav::{Premises, World};
 use delvewright_dsl::metrics::{
     self, MAX_AUTO_STEP_16, MAX_JUMP_RISE_16, METRICS_VERSION, Metrics,
 };
@@ -97,6 +97,7 @@ fn two_ledges(rise: i64) -> (World, [i32; 3], [i32; 3]) {
             use_gates: BTreeSet::new(),
             flooded: BTreeSet::new(),
             partial,
+            waterloggable: BTreeSet::new(),
         },
         Premises::geometry_only(),
     );
@@ -138,16 +139,16 @@ fn the_published_jump_ceiling_is_where_the_model_stops() {
 /// The body the table describes is the body the model routes.
 #[test]
 fn the_published_body_is_the_body_the_model_routes() {
-    let (w, h) = delvewright_compiler::nav::entity_dims("minecraft:player");
+    let (w, h) = delvec::compiler::nav::entity_dims("minecraft:player");
     assert_eq!(w, metrics::PLAYER_WIDTH);
     assert_eq!(h, metrics::PLAYER_HEIGHT);
     // And the eye every player-POV camera in this engine stands at.
     assert_eq!(
-        delvewright_compiler::render_plan::EYE_HEIGHT,
+        delvec::compiler::render_plan::EYE_HEIGHT,
         metrics::PLAYER_EYE_HEIGHT
     );
     assert_eq!(
-        f64::from(delvewright_compiler::view::viewer::EYE_HEIGHT),
+        f64::from(delvec::compiler::view::viewer::EYE_HEIGHT),
         f64::from(metrics::PLAYER_EYE_HEIGHT as f32),
     );
 }

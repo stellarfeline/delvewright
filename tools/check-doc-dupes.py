@@ -84,7 +84,11 @@ import re
 import sys
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent
-DEFAULT_TARGETS = ("docs", "README.md")
+# `.claude/skills` is the creator-facing plugin (spec-0063): the page, its
+# references and its scripts. It is documentation a stranger executes, and it
+# had never been under any documentation gate — the first run over it found a
+# citation table carrying one key twice, which is rule 1's own shape.
+DEFAULT_TARGETS = ("docs", "README.md", ".claude/skills")
 
 # `docs/notes/private/` is gitignored by design (CLAUDE.md *Privacy in repo
 # artifacts*) — it exists on a workstation and never in CI. Scanning it would make

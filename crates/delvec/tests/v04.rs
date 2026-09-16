@@ -7,11 +7,11 @@ mod common;
 
 use std::collections::BTreeMap;
 
-use delvewright_compiler::commands::CommandTree;
-use delvewright_compiler::emit::{self, BuildOutput};
-use delvewright_compiler::load::load_campaign_dir;
-use delvewright_compiler::plan::Plan;
-use delvewright_compiler::registry::{FullEntityRegistry, FullItemRegistry, PrefabRegistry};
+use delvec::compiler::commands::CommandTree;
+use delvec::compiler::emit::{self, BuildOutput};
+use delvec::compiler::load::load_campaign_dir;
+use delvec::compiler::plan::Plan;
+use delvec::compiler::registry::{FullEntityRegistry, FullItemRegistry, PrefabRegistry};
 use delvewright_dsl::{parse_campaign, validate_campaign_with};
 
 fn fixture_dir() -> std::path::PathBuf {
@@ -478,8 +478,8 @@ fn wave_mobs_land_on_distinct_standable_in_room_cells() {
     }
     // The exact occupancy world the emitter seated mobs over: assembled geometry
     // plus any colliding relight fixtures (spec-0010), matching emit::build.
-    let relight = delvewright_compiler::light::relight(&plan, &structures);
-    let world = delvewright_compiler::nav::World::from_plan_with_extra(
+    let relight = delvec::compiler::light::relight(&plan, &structures);
+    let world = delvec::compiler::nav::World::from_plan_with_extra(
         &plan,
         &structures,
         &relight.extra_solid,
@@ -541,7 +541,7 @@ fn summon_cells(body: &str) -> Vec<[i32; 3]> {
 fn wave_area_resolves_from_spawn_site_not_kill() {
     let loaded = load_campaign_dir(&fixture_dir()).unwrap();
     let campaign = parse_campaign(&loaded.raw).expect("v04-showcase parses");
-    use delvewright_compiler::plan::wave_area;
+    use delvec::compiler::plan::wave_area;
     assert_eq!(wave_area(&campaign, "wave/ambush"), Some("area/keep"));
     assert_eq!(wave_area(&campaign, "wave/guards"), Some("area/keep"));
     assert_eq!(wave_area(&campaign, "wave/nope"), None);

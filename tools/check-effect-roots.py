@@ -91,7 +91,7 @@ ALLOWED = {
         "THE enumeration. This is the one file that is supposed to name every "
         "root; every other walk inherits from it."
     ),
-    "crates/compiler/src/plan.rs": (
+    "crates/delvec/src/compiler/plan.rs": (
         "`required_anchors_for_area` — OPEN FINDING, not a false positive. It "
         "collects the anchors an area's assembly must provide from R1+R2 (and R3 "
         "only when the campaign has a single area), so an anchor named only in a "

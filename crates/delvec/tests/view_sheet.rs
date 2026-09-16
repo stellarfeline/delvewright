@@ -14,7 +14,7 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use delvewright_compiler::view::sheet::{self, Candidate, Layout, ScoreSet, SheetOptions};
+use delvec::compiler::view::sheet::{self, Candidate, Layout, ScoreSet, SheetOptions};
 
 const BIN: &str = env!("CARGO_BIN_EXE_delvec");
 

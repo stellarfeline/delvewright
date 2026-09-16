@@ -7,11 +7,14 @@
 mod common;
 
 use delvewright_dsl::{RawCampaign, check_campaign};
+use std::sync::LazyLock;
 
 /// A v0.6 quests document that damages the party (lethal, generic) on the exit
 /// beat — the "consequence" the verb exists for.
-const QUESTS_V06: &str = r#"{
-  "dsl_version": "0.19.0",
+static QUESTS_V06: LazyLock<String> = LazyLock::new(|| {
+    common::at_dsl_version(
+        r#"{
+  "dsl_version": "%dsl_version%",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {
@@ -33,7 +36,9 @@ const QUESTS_V06: &str = r#"{
       }
     ]
   }
-}"#;
+}"#,
+    )
+});
 
 fn campaign_with_quests(quests: &str) -> RawCampaign {
     RawCampaign {
@@ -48,13 +53,14 @@ fn campaign_with_quests(quests: &str) -> RawCampaign {
         layout_graph: None,
         site_plan: None,
         detail_plan: None,
+        design: None,
     }
 }
 
 /// `damage-players` (with a curated `damage_type`) validates clean under 0.6.0.
 #[test]
 fn damage_players_validates_clean() {
-    let diags = check_campaign(&campaign_with_quests(QUESTS_V06));
+    let diags = check_campaign(&campaign_with_quests(QUESTS_V06.as_str()));
     assert!(
         diags.is_empty(),
         "expected zero diagnostics for a v0.6 damage-players, got: {diags:#?}"
@@ -101,8 +107,8 @@ fn damage_players_requires_flags_resolves() {
     );
     let gated = gated.replace(
         r#"{ "type": "damage-players", "amount": 40, "damage_type": "wither" }"#,
-        r#"{ "type": "damage-players", "amount": 40, "damage_type": "wither",
-             "requires_flags": ["flag/doomed"] }"#,
+        r#"{ "type": "damage-players",
+             "when": { "requires_flags": ["flag/doomed"] }, "amount": 40, "damage_type": "wither" }"#,
     );
     let diags = check_campaign(&campaign_with_quests(&gated));
     assert!(

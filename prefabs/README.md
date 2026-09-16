@@ -23,23 +23,23 @@ byte-identical datapack, with the content SHA recorded in the build manifest.
   here; the generator itself is GPL code and stays in the main repo. See
   `generator/README.md`.
 - **`cave-generator/`** — the deterministic "Mediterranean cave/shore" tileset
-  generator (prefab-ceiling probe), a sibling of `generator/` with its own
-  `[workspace]`; keep output is untouched. Emits `pool/cave-shore`, a structural
+  generator (prefab-ceiling probe), a sibling of `generator/` in this workspace;
+  keep output is untouched. Emits `pool/cave-shore`, a structural
   drop-in for `pool/stone-keep`. See `cave-generator/README.md`.
 - **`island-generator/`** — the deterministic "nobodys-cave island" SET-PIECE
   generator (spec-0013 remake): the sea-level beach camp + the ancient-Greek
-  galley. Another sibling with its own `[workspace]`; reuses the cave-generator
-  NBT/socket/substrate machinery. Emits the `island:socket` convention. See
+  galley. Another sibling; reuses the cave-generator NBT/socket/substrate
+  machinery. Emits the `island:socket` convention. See
   `island-generator/README.md` and `island-tileset.md`.
 - **`island-terrain-generator/`** — the deterministic "nobodys-cave island"
   TERRAIN generator: the greenfield connectors + the mountain terminal (shell +
-  30×14×24 cavern, switchback slope on the face). Another sibling with its own
-  `[workspace]`; reuses the cave-generator machinery and the `island:socket`
+  30×14×24 cavern, switchback slope on the face). Another sibling; reuses the
+  cave-generator machinery and the `island:socket`
   floor_y=2 datum. See `island-terrain-generator/README.md` and `island-tileset.md`.
 - **`tidal-keep-generator/`** — the deterministic "tidal keep" SOULS tileset
   generator: the six pieces of the drowned-shore set (barrow field, gatehouse,
-  wall walk, courtyard/chapel, cistern, bell tower). Another sibling with its own
-  `[workspace]`; reuses the cave/island generator machinery and emits the
+  wall walk, courtyard/chapel, cistern, bell tower). Another sibling; reuses the
+  cave/island generator machinery and emits the
   `tk:socket` convention on two datums (shore + keep plinth). See
   `tidal-keep-generator/README.md` and `tidal-keep-tileset.md`.
 - **`keep-tileset.md`** — the stone-keep connection convention, piece list, and

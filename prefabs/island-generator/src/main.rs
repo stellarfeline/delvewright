@@ -21,7 +21,7 @@
 //!     base at world `sea_level-2` (y=60), the authored water meets the world
 //!     ocean seamlessly.
 //!   * The walkable land plane is **local y=3** — ONE block above the waterline.
-//!     Water (the conservative compiler flood, `crates/compiler/src/assembled.rs`)
+//!     Water (the conservative compiler flood, `crates/delvec/src/compiler/assembled.rs`)
 //!     spreads horizontally and downward but never CLIMBS, so a y=3 walk surface
 //!     over solid-at-y=2 land can never flood: dry standable cells are dry by
 //!     construction, not by distance. That is why the tutorial `surf-wave` anchor
@@ -55,16 +55,10 @@ use std::collections::BTreeMap;
 use std::io::Write as _;
 use std::path::Path;
 
-/// Cross-tileset generator invariants, shared by source include so a lesson
-/// learned in one tileset does not have to be re-learned in the other four
-/// (the generators are separate Cargo workspaces on purpose).
-#[path = "../../invariants.rs"]
-mod invariants;
-
-/// The connection derivation, shared the same way: what a fence, a wall, a pane
-/// or a lichen joins is computed from the blocks beside it, at the emitter.
-#[path = "../../connections.rs"]
-mod connections;
+/// The cross-tileset invariants and the connection derivation, shared as a
+/// crate so the rule is compiled once and its own tests run with the
+/// generators' (`prefabs/invariants`).
+use prefab_invariants::{connections, document, invariants, walkplane, waterline};
 
 use flate2::{Compression, GzBuilder};
 use serde::Serialize;
@@ -72,10 +66,15 @@ use serde::Serialize;
 const DATA_VERSION: i32 = 4671; // MC 1.21.11
 const GENERATOR: &str = "prefabs/island-generator (island-prefab-gen)";
 const MEASURED_DATE: &str = "2026-08-01";
-/// The island convention's waterline (`../island-tileset.md`): the top authored
-/// water block is local y=2, the walkable land plane local y=3. Declared in every
-/// piece's metadata as `waterline_y`, which the compiler pins to world sea level
-/// when it places an ocean-horizon area (`DW0344`).
+/// The island convention's waterline (`../island-tileset.md`): this generator
+/// lays its top water course at local y=2 and its walkable land plane at local
+/// y=3.
+///
+/// A **construction** datum and nothing else. What each document declares as
+/// `waterline_y` is read back out of the blocks
+/// (`prefab_invariants::waterline`), never taken from here: a constant in the
+/// metadata is a claim about bytes that nothing measured, and this one had
+/// already outlived three pieces of this library that author no water at all.
 const WATERLINE_Y: i32 = 2;
 
 // ---------------------------------------------------------------------------
@@ -404,10 +403,25 @@ struct LicenseJson {
 struct MetaJson {
     prefab_id: String,
     structure: StructureJson,
-    /// Local y of the top authored water block (the island convention's waterline).
-    /// The compiler's ocean-horizon placement invariant (`DW0344`) requires this to
-    /// land at world sea level (y=62) — see `prefabs/island-tileset.md`.
-    waterline_y: i32,
+    /// **The piece's own walk plane, measured** (spec-0060 §4): the local y of
+    /// the cell a body's feet occupy on this piece's principal floor, and the
+    /// number an ocean area's origin is derived from. Read back out of the
+    /// blocks this generator just laid, through the one rule every producer
+    /// spells (`prefab_invariants::walkplane`), because a `walk_y` nobody
+    /// measured is one tileset's convention wearing the name of a measurement.
+    /// `None` only for a piece a body cannot stand in at all.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    walk_y: Option<i32>,
+    /// **The piece's own waterline, measured** (spec-0060 §4): the local y of
+    /// its top authored water block, read back out of the blocks this generator
+    /// just laid (`prefab_invariants::waterline`). The compiler's ocean-horizon
+    /// placement invariant (`DW0344`) puts that plane on world sea level, and
+    /// `DW0887` holds the declaration to the bytes — so a constant here would be
+    /// a claim the piece can stop bearing out with nothing to say it had.
+    /// `None`, and no key at all, for a piece that authors no water: a piece
+    /// with no shore has no waterline to state.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    waterline_y: Option<i32>,
     anchors: BTreeMap<String, AnchorJson>,
     connectors: Vec<ConnectorJson>,
     lighting: LightingJson,
@@ -1123,6 +1137,7 @@ fn write_piece(out: &Path, spec: &Spec) {
 
     let meta = MetaJson {
         prefab_id: format!("prefab/{}", spec.id),
+        walk_y: walkplane::walk_y(structure.size, &cells),
         structure: StructureJson {
             file: format!("{}.nbt", spec.id),
             id: spec.id.into(),
@@ -1130,7 +1145,7 @@ fn write_piece(out: &Path, spec: &Spec) {
             data_version: DATA_VERSION,
             generator: GENERATOR.into(),
         },
-        waterline_y: WATERLINE_Y,
+        waterline_y: waterline::measure_waterline_y(&cells),
         anchors,
         connectors,
         lighting: LightingJson {
@@ -1151,8 +1166,11 @@ fn write_piece(out: &Path, spec: &Spec) {
                          byte-identical NBT.",
         },
     };
-    let json = serde_json::to_string_pretty(&meta).expect("json") + "\n";
-    std::fs::write(out.join(format!("{}.json", spec.id)), json).expect("write json");
+    // The generator owns what it measures and nothing else: a key a later step
+    // added — an anchor a campaign binds, an entry role, a shown face, a
+    // lighting verdict measured at admission — survives this write
+    // (`prefab_invariants::document`).
+    document::write_preserving(&out.join(format!("{}.json", spec.id)), &meta);
     println!("wrote {} ({} nbt bytes)", spec.id, framed.len());
 }
 

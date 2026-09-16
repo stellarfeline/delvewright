@@ -1,0 +1,51 @@
+{
+  "code": "DW0344",
+  "patch": [
+    {
+      "doc": "world.json",
+      "op": "add",
+      "path": "/content/horizon",
+      "value": "ocean"
+    },
+    {
+      "doc": "world-edits.json",
+      "op": "add",
+      "path": "/content/batches/-",
+      "value": {
+        "area": "area/hall",
+        "edits": [
+          {
+            "name": "region/sink",
+            "shape": {
+              "frame": {
+                "kind": "piece-local",
+                "piece": 0,
+                "prefab": "prefab/gallery-hall"
+              },
+              "kind": "box",
+              "max": [
+                14,
+                2,
+                14
+              ],
+              "min": [
+                12,
+                2,
+                12
+              ]
+            },
+            "verb": "select"
+          },
+          {
+            "region": "region/sink",
+            "verb": "carve"
+          }
+        ],
+        "id": "batch/sink-the-floor",
+        "note": "One course of the hall's plinth, taken out after the piece is placed."
+      }
+    }
+  ],
+  "units": [],
+  "why": "A body standing at the sea's own plane, in a world whose every declaration is honest. `horizon: ocean` states a datum for the WALK PLANE — y=63, one block above the water, the beach relationship a swimmer can climb out onto — and derives each area's origin from the piece set's own `walk_y`, so the hall declares 3, is seated at 60 and stands its floor dry at 63. Nothing in the library is wrong here and nothing about the placement is either. What is wrong is one thing the campaign does AFTER the piece is placed: this batch carves three by three cells out of the plinth course at local y=2, which lands at world y=62. A party walks down into it, and vanilla floods a dry cell at the sea's own level from the ocean beside it. This is the arm of `DW0344` that could not be asked before spec-0060. The check used to ask whether a piece's placement BOX reached the sea plane, and a box's minimum y IS the area origin, so under one global ocean datum that was true of every piece in every ocean world whatever its bytes held: the refusal fired on pieces standing perfectly dry, and its own second remedy — raise the piece clear of the sea — could not be performed by any amount of authoring. The quantifier is now the walk cell, which is where a party's feet actually go, and the remedy is one an author can take: the count the refusal names is what filling this pit back in moves. It declares no unit, because `HorizonBase::ocean` is bound on the ocean-horizon overlay, where the pieces stand where the horizon says they do."
+}

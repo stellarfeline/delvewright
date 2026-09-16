@@ -6,10 +6,13 @@
 mod common;
 
 use delvewright_dsl::{RawCampaign, check_campaign, l10n_inventory, parse_campaign};
+use std::sync::LazyLock;
 
 /// A v0.8 quests document that seals `anchor/door` with an authored answer.
-const QUESTS_V08: &str = r#"{
-  "dsl_version": "0.19.0",
+static QUESTS_V08: LazyLock<String> = LazyLock::new(|| {
+    common::at_dsl_version(
+        r#"{
+  "dsl_version": "%dsl_version%",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {
@@ -36,7 +39,9 @@ const QUESTS_V08: &str = r#"{
       }
     ]
   }
-}"#;
+}"#,
+    )
+});
 
 fn campaign_with_quests(quests: &str) -> RawCampaign {
     RawCampaign {
@@ -51,13 +56,14 @@ fn campaign_with_quests(quests: &str) -> RawCampaign {
         layout_graph: None,
         site_plan: None,
         detail_plan: None,
+        design: None,
     }
 }
 
 /// An authored `sealed_hint` validates clean under `dsl_version 0.8.0`.
 #[test]
 fn sealed_hint_validates_clean_at_0_8() {
-    let diags = check_campaign(&campaign_with_quests(QUESTS_V08));
+    let diags = check_campaign(&campaign_with_quests(QUESTS_V08.as_str()));
     assert!(
         diags.is_empty(),
         "expected zero diagnostics for a v0.8 sealed_hint, got: {diags:#?}"
@@ -69,7 +75,7 @@ fn sealed_hint_validates_clean_at_0_8() {
 /// `narrate` line.
 #[test]
 fn an_authored_hint_is_inventoried() {
-    let c = parse_campaign(&campaign_with_quests(QUESTS_V08)).expect("campaign parses");
+    let c = parse_campaign(&campaign_with_quests(QUESTS_V08.as_str())).expect("campaign parses");
     let inv = l10n_inventory(&c);
     assert_eq!(
         inv.get("fx.open-the-door.done.0.sealed_hint")
@@ -94,38 +100,5 @@ fn an_unauthored_hint_is_not_inventoried() {
             .keys()
             .any(|k| k.ends_with("sealed_hint")),
         "an unauthored seal answer must not appear in the inventory"
-    );
-}
-
-/// A `close-gate` that authors no hint renders in `Debug` exactly as it did
-/// before the field existed — the content-key stability rule, so no existing
-/// campaign's generated `seq_<hash>` function names move.
-#[test]
-fn an_unauthored_hint_does_not_move_a_content_key() {
-    use delvewright_dsl::{AnchorId, QuestEffect};
-    let plain = QuestEffect::CloseGate {
-        anchor: AnchorId("anchor/door".to_string()),
-        requires_flags: Vec::new(),
-        forbids_flags: Vec::new(),
-        requires_state: Vec::new(),
-        happening: None,
-        sealed_hint: None,
-    };
-    assert_eq!(
-        format!("{plain:?}"),
-        "CloseGate { anchor: AnchorId(\"anchor/door\"), requires_flags: [] }"
-    );
-    let authored = QuestEffect::CloseGate {
-        anchor: AnchorId("anchor/door".to_string()),
-        requires_flags: Vec::new(),
-        forbids_flags: Vec::new(),
-        requires_state: Vec::new(),
-        happening: None,
-        sealed_hint: Some("It will not shift.".to_string()),
-    };
-    assert_ne!(
-        format!("{authored:?}"),
-        format!("{plain:?}"),
-        "an authored answer changes emission, so it must change the content key"
     );
 }

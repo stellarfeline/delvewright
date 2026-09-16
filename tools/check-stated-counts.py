@@ -187,7 +187,7 @@ def section_of(text: str, heading: str) -> str:
 
 # --------------------------------------------------------------------- oracles
 
-_LIBRARY_MOD = "crates/grammar/src/library/mod.rs"
+_LIBRARY_MOD = "crates/delvec/src/grammar/library/mod.rs"
 _GRAMMAR_MD = "docs/reference/grammar.md"
 _INDEX_SECTION = r"^## 2c\. "
 _COMPILER_MD = "docs/reference/compiler.md"
@@ -302,7 +302,7 @@ def oracle_idiom_techniques(root: pathlib.Path) -> tuple[int, str]:
     )
 
 
-_EMISSION_FIXTURE = "crates/compiler/tests/fixtures/light/emission-1.21.11.tsv"
+_EMISSION_FIXTURE = "crates/delvec/tests/fixtures/light/emission-1.21.11.tsv"
 
 
 def _emission_rows(root: pathlib.Path) -> list[tuple[str, int, int]]:

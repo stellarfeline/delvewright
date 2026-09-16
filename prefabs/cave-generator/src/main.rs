@@ -35,16 +35,10 @@ use std::collections::BTreeMap;
 use std::io::Write as _;
 use std::path::Path;
 
-/// Cross-tileset generator invariants, shared by source include so a lesson
-/// learned in one tileset does not have to be re-learned in the other four
-/// (the generators are separate Cargo workspaces on purpose).
-#[path = "../../invariants.rs"]
-mod invariants;
-
-/// The connection derivation, shared the same way: what a fence, a wall, a pane
-/// or a lichen joins is computed from the blocks beside it, at the emitter.
-#[path = "../../connections.rs"]
-mod connections;
+/// The cross-tileset invariants and the connection derivation, shared as a
+/// crate so the rule is compiled once and its own tests run with the
+/// generators' (`prefabs/invariants`).
+use prefab_invariants::{connections, document, invariants, walkplane, waterline};
 
 use flate2::{Compression, GzBuilder};
 use serde::Serialize;
@@ -502,6 +496,28 @@ struct LicenseJson {
 struct MetaJson {
     prefab_id: String,
     structure: StructureJson,
+    /// **The piece's own walk plane, measured** (spec-0060 §4): the local y of
+    /// the cell a body's feet occupy on this piece's principal floor, and the
+    /// number an ocean area's origin is derived from. Read back out of the
+    /// blocks this generator just laid, through the one rule every producer
+    /// spells (`prefab_invariants::walkplane`), because a `walk_y` nobody
+    /// measured is one tileset's convention wearing the name of a measurement.
+    /// `None` only for a piece a body cannot stand in at all.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    walk_y: Option<i32>,
+    /// **The piece's own waterline, measured** (spec-0060 §4): the local y of
+    /// its top authored water block, read back out of the blocks this generator
+    /// just laid (`prefab_invariants::waterline`). `None`, and no key at all,
+    /// for a piece that authors no water — every enclosed cave piece here.
+    ///
+    /// This generator wrote NO waterline at all before, which is why
+    /// `cave-shore` — sixteen water cells at local y=1 — said nothing about
+    /// where it meets a sea. On an `ocean` horizon that is `DW0886`'s unstated
+    /// shore, and the number a person would have copied off the island tileset
+    /// (`2`) would have been a fiction `DW0887` refuses. The piece states the
+    /// number its own bytes hold, and only ever that.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    waterline_y: Option<i32>,
     anchors: BTreeMap<String, AnchorJson>,
     connectors: Vec<ConnectorJson>,
     lighting: LightingJson,
@@ -1522,12 +1538,35 @@ fn build_shore(spec: &Spec, g: &mut Grid, seed: u64) {
             }
         }
     }
-    // inland socket on the north cliff
-    let (cells, jc) = doorway_cells(spec.size, Side::North, 0);
-    for c in &cells {
-        g.set(c[0], c[1], c[2], Cell::Air);
+    // The inland socket on the north cliff, at the SHORE'S OWN FLOOR.
+    //
+    // `floor_y` is the course the doorway's threshold sits on, and this piece's
+    // beach is one block thick (`surf - 1` bed, sand at y=1), so a body walks
+    // this cove at local y=2 and the socket has to open there. It was cut at
+    // `floor_y: 0` — a threshold at y=1, one course down inside the sand — which
+    // did two things at once. It left two air cells at (5,1,0) and (7,1,0)
+    // standing on the y=0 stone, so the walk-plane measurement read this piece's
+    // plane as 1 while the other twelve pieces of the tileset read 2, and a pool
+    // whose members disagree about their walk plane cannot be seated on a
+    // horizon that derives one origin from it (`DW0886`). And it put this
+    // piece's connector at local y=1 against every other cave connector's y=2,
+    // so the two only ever met by the solver absorbing the offset.
+    //
+    // One course up settles both: the socket now opens on the beach a body
+    // actually stands on, and its connector is at y=2 like the rest of the set.
+    //
+    // Read from `spec.doors` rather than named here, which is the second half of
+    // the same defect: the metadata's connector list is derived from that field,
+    // so a doorway carved to a number this function held privately was a doorway
+    // the document could not describe. Every other builder in this file already
+    // iterates it.
+    for &(side, fy) in &spec.doors {
+        let (cells, jc) = doorway_cells(spec.size, side, fy);
+        for c in &cells {
+            g.set(c[0], c[1], c[2], Cell::Air);
+        }
+        g.set(jc[0], jc[1], jc[2], Cell::Jigsaw(side.orientation()));
     }
-    g.set(jc[0], jc[1], jc[2], Cell::Jigsaw(Side::North.orientation()));
 }
 
 // ---------------------------------------------------------------------------
@@ -1751,6 +1790,8 @@ fn write_piece(out: &Path, spec: &Spec) {
 
     let meta = MetaJson {
         prefab_id: format!("prefab/{}", spec.id),
+        walk_y: walkplane::walk_y(size, &cells),
+        waterline_y: waterline::measure_waterline_y(&cells),
         structure: StructureJson {
             file: format!("{}.nbt", spec.id),
             id: spec.id.into(),
@@ -1782,8 +1823,11 @@ fn write_piece(out: &Path, spec: &Spec) {
             provenance: "Generated deterministically by prefabs/cave-generator (cave-prefab-gen), ADR-0006; regenerating yields byte-identical NBT.",
         },
     };
-    let json = serde_json::to_string_pretty(&meta).expect("json") + "\n";
-    std::fs::write(out.join(format!("{}.json", spec.id)), json).expect("write json");
+    // The generator owns what it measures and nothing else: a key a later step
+    // added — an anchor a campaign binds, an entry role, a shown face, a
+    // lighting verdict measured at admission — survives this write
+    // (`prefab_invariants::document`).
+    document::write_preserving(&out.join(format!("{}.json", spec.id)), &meta);
     println!(
         "wrote {} ({} nbt bytes, profile {}, min-light {})",
         spec.id,
@@ -1800,7 +1844,14 @@ fn specs() -> Vec<Spec> {
         Spec {
             id: "cave-shore",
             size: [13, 6, 11],
-            doors: vec![(North, 0)],
+            // `floor_y: 1`, the beach's own top course — this piece has no
+            // substrate lift (`open_air`), so the number that puts its socket on
+            // the same emitted plane as every enclosed piece's is one, not zero.
+            // At zero the doorway was threshold-deep in the sand: two standable
+            // air cells at (5,1,0) and (7,1,0), a walk plane of 1 against the
+            // tileset's 2, and a connector at y=1 against every other cave
+            // connector's y=2.
+            doors: vec![(North, 1)],
             wall_thickness: 1,
             open_air: true,
             lantern_grid: false,

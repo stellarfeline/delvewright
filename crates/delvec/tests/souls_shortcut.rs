@@ -9,11 +9,11 @@ mod common;
 
 use std::collections::BTreeMap;
 
-use delvewright_compiler::commands::CommandTree;
-use delvewright_compiler::emit::{self, BuildOutput};
-use delvewright_compiler::load::load_campaign_dir;
-use delvewright_compiler::plan::Plan;
-use delvewright_compiler::registry::{FullEntityRegistry, FullItemRegistry, PrefabRegistry};
+use delvec::compiler::commands::CommandTree;
+use delvec::compiler::emit::{self, BuildOutput};
+use delvec::compiler::load::load_campaign_dir;
+use delvec::compiler::plan::Plan;
+use delvec::compiler::registry::{FullEntityRegistry, FullItemRegistry, PrefabRegistry};
 use delvewright_dsl::parse_campaign;
 
 const NS: &str = "souls-shortcut";
@@ -274,7 +274,7 @@ fn the_same_gate_as_a_plain_open_gate_is_still_dw0306() {
     );
     assert_eq!(
         plan_code(&dir),
-        Err(delvewright_compiler::plan::DW_GATE_DEADLOCK),
+        Err(delvec::compiler::plan::DW_GATE_DEADLOCK),
         "an ORDINARY gate whose only opener is the far-side objective itself must \
          still be a DW0306 deadlock"
     );

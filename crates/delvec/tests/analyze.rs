@@ -10,9 +10,9 @@
 
 mod common;
 
-use delvewright_compiler::analyze::analyze_campaign;
-use delvewright_compiler::load::load_campaign_dir;
-use delvewright_compiler::registry::PrefabRegistry;
+use delvec::compiler::analyze::analyze_campaign;
+use delvec::compiler::load::load_campaign_dir;
+use delvec::compiler::registry::PrefabRegistry;
 use delvewright_dsl::{
     AnchorRegistry, Lighting, LightingProfile, PoolId, PrefabId, RawCampaign, parse_campaign,
 };

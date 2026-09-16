@@ -21,7 +21,7 @@
 #     `max_block_modifications` gamerule that moves it.
 #
 # The world is the delve ocean superflat, layer for layer what
-# `crates/compiler/src/horizon.rs` emits: bedrock 1 + stone 118 + water 8,
+# `crates/delvec/src/compiler/horizon.rs` emits: bedrock 1 + stone 118 + water 8,
 # water top y=62 (SEA_LEVEL), sea floor top y=54.
 #
 # Usage:  EULA=TRUE tools/spike-fluid-plane/run.sh [--out <path>]

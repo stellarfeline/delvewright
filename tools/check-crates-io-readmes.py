@@ -3,7 +3,7 @@
 
 WHAT THIS GUARDS
 
-`crates/compiler/README.md` and `crates/dsl/README.md` are rendered VERBATIM as
+`crates/delvec/README.md` and `crates/dsl/README.md` are rendered VERBATIM as
 the crates.io front pages of `delvec` and `delvewright-dsl`. They are the only
 documents in this repository whose reader has never seen this repository. Both
 were written as crate-local development notes and served to that reader for

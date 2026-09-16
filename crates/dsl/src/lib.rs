@@ -19,10 +19,20 @@ pub mod blocks;
 pub mod blockshape;
 pub mod canonical;
 pub mod chrome;
+pub mod color;
+pub mod design;
 pub mod detailplan;
 pub mod diagnostic;
 pub mod effects;
 pub mod envelope;
+pub mod equipment;
+pub mod firework;
+/// **What a cell does when there is fluid beside it** — block knowledge, so it
+/// lives beside [`blocks`] and [`blockshape`] rather than beside any one reader
+/// of it. `delvewright_schem::fluid` re-exports it, and the prefab generators
+/// reach it through their dependency on this crate: they may not depend on
+/// `delvec`, and this is the crate every reader of a block fact can reach.
+pub mod fluid;
 pub mod fmt;
 pub mod gate;
 pub mod ids;
@@ -41,6 +51,10 @@ pub mod validate;
 
 pub use canonical::to_canonical_string;
 pub use chrome::{Chrome, ChromeString, validate_chrome_namespace};
+pub use design::{
+    CONCEPT_DIR, DesignContent, IMAGE_EXTENSIONS, REFERENCE_DIR, REFERENCE_DIRS, Reference,
+    is_image_extension,
+};
 pub use detailplan::{Detail, DetailPlanContent, FLOOR_COURSE, Frame, bound_places, is_bound};
 pub use diagnostic::{Diagnostic, DwCode, ExitTier, Group, Severity, Subject, codes};
 pub use effects::{
@@ -50,6 +64,8 @@ pub use effects::{
 pub use envelope::{
     Campaign, DSL_VERSION, Envelope, RawCampaign, Stage, check_campaign, parse_campaign,
 };
+pub use equipment::{EquipmentBinding, Equippable, EquippableFact, PieceKind};
+pub use firework::{FireworkExplosion, FireworkShape};
 pub use gate::{Gate, GateBinding, GateConsumer, GateSite, for_each_gate};
 pub use ids::{
     ActorId, AmbushId, AnchorId, AreaId, BranchId, BranchPointId, CampaignId, ClassId, DatumId,
@@ -61,7 +77,8 @@ pub use l10n::{
     ArtNarrate, CANONICAL_LANG, L10nDoc, L10nKind, MARKER_SIGIL, OptionLabel, ScreenNarrate,
     SoundRef, TR_SIGIL, art_narrates, bonfire_option_labels, declared_mc_codes,
     dialogue_option_labels, each_string, has_tr_sigil, inventory as l10n_inventory, key_speaker,
-    local_id, localize, on_screen_narrates, plain as l10n_plain, play_sound_actor_refs, sound_refs,
+    local_id, localize, namespace_skin_textures, on_screen_narrates, pack_key, pack_namespace,
+    pack_texture_dir, pack_texture_id, plain as l10n_plain, play_sound_actor_refs, sound_refs,
     tag_translatables, untag as l10n_untag, validate_l10n, validate_l10n_provenance,
     validate_marker_channel, validate_tr_sigil,
 };
@@ -79,33 +96,34 @@ pub use registry::{
 };
 pub use schema::stage_schema;
 pub use siteplan::{
-    Axis, Ceiling, Cmp, Datum, ENTRY_ANCHOR, Face, Floor, Identity, Measure, PlanAxis, PlanBinding,
-    PlanBox, SITE_AREA, Seam, Sightline, SitePlanContent, View, Volume, VolumeRole, WorldBox,
-    node_anchor, owed_anchors, placed_boxes, placed_seams, refused_upstream, seam_anchor,
-    seam_unlock_anchor, synthesized_anchor_kinds, synthesized_anchors, synthesized_gate_block,
+    Axis, Ceiling, Cmp, Datum, ENTRY_ANCHOR, Face, Floor, Identity, Measure, Offset, PackedBox,
+    PlanAxis, PlanBinding, PlanBox, Provenance, SITE_AREA, Seam, Sightline, SitePlanContent, View,
+    Volume, VolumeRole, WorldBox, node_anchor, owed_anchors, placed_boxes, placed_seams,
+    placements, refused_upstream, seam_anchor, seam_unlock_anchor, synthesized_anchor_kinds,
+    synthesized_anchors, synthesized_gate_block,
 };
 pub use siteplan::{PlacedBox, PlacedSeam};
 pub use stages::{
     Actor, Ambush, Area, AreaLighting, AreaMitigation, BONFIRE_PROMPT_EN, BONFIRE_REST_LABEL_EN,
     BONFIRE_SAVE_LABEL_EN, BodyTraversal, BonfireLabels, Boundary, BranchDecl, BranchPoint,
-    CameraShot, CameraSubject, CameraTarget, CameraWaypoint, Carrier, CastAbsence, CastBarks,
-    CastDialogue, CastDialogueKeyword, CastEntry, CastPlace, CastPlacement, Class, ClassesContent,
-    CollectBy, CompareOp, DamageKind, DespawnStyle, DialogueContent, DialogueEffect, DialogueNode,
-    DialogueOption, EffectSite, EnchantedItem, EncounterTier, EnvTrigger, EquipItem, EquipSlot,
-    Facing, Fixture, Forfeit, Happening, HappeningVerb, Horizon, HorizonBase, HorizonSpec,
-    ItemDrop, KitItem, LethalVolume, Lethality, Locomotion, Loot, LootItem, MAX_POTION_AMPLIFIER,
-    MAX_POTION_DURATION_TICKS, MobAttributes, MobDrop, MobEffect, MobEquipment, NarrateStyle, Npc,
-    NpcDialogue, NpcSkin, NpcsContent, Objective, OnFull, Persona, Pieces, PlannedQuest,
+    CameraShot, CameraSubject, Carrier, CastAbsence, CastBarks, CastDialogue, CastDialogueKeyword,
+    CastEntry, CastPlace, CastPlacement, Class, ClassesContent, CollectBy, CompareOp, DamageKind,
+    DespawnStyle, DialogueContent, DialogueEffect, DialogueNode, DialogueOption, EffectSite,
+    EnchantedItem, EncounterTier, EnvTrigger, EquipItem, EquipSlot, Facing, Fixture, Forfeit,
+    Guard, Happening, HappeningVerb, Horizon, HorizonBase, HorizonSpec, ItemDrop, KitItem,
+    LethalVolume, Lethality, Locomotion, Loot, LootItem, MAX_POTION_AMPLIFIER,
+    MAX_POTION_DURATION_TICKS, Mark, MobAttributes, MobDrop, MobEffect, MobEquipment, NarrateStyle,
+    Npc, NpcDialogue, NpcSkin, NpcsContent, Objective, OnFull, Persona, Pieces, PlannedQuest,
     PotionContents, PotionEffect, Prop, Quest, QuestEffect, QuestPlanContent, QuestsContent,
     Relationship, Role, SequenceStep, Shop, ShopOffer, Shortcut, ShotStyle, SkinModel, SlotDrop,
     SoundAt, Stake, StateCompare, StateDecl, StateScope, StateWrite, StealthZone, TimedGate, Trap,
-    TrapDisarm, TrapEffect, TrapReset, TrapTrigger, Trigger, TriggerAudience, TriggerOn, Wave,
-    WaveLane, WaveMob, WaveSummon, WorldContent, WorldDifficulty, WorldTime, WorldWeather,
-    is_potion_bearing_item,
+    TrapDisarm, TrapEffect, TrapReset, TrapTrigger, Trigger, TriggerAudience, TriggerOn, Verb,
+    Wave, WaveLane, WaveMob, WaveSummon, WorldContent, WorldDifficulty, WorldTime, WorldWeather,
+    is_potion_bearing_item, offset_cell,
 };
 pub use stages::{
     BodyRef, BodySite, BodySkinSite, BodyTraversalSite, body_sites, body_skin_sites,
-    body_traversal_sites, for_each_campaign_effect,
+    body_skins_mut, body_traversal_sites, for_each_campaign_effect,
 };
 pub use stages::{
     EditBatch, EditFrame, FragmentRotation, MorphOp, PaletteBlock, PaletteRecipe, RegionShape,

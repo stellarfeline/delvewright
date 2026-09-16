@@ -16,10 +16,10 @@ mod common;
 
 use std::path::{Path, PathBuf};
 
-use delvewright_compiler::load::load_campaign_dir;
-use delvewright_compiler::plan::Plan;
-use delvewright_compiler::pool::DW_POOL_DOUBLE_DRAW;
-use delvewright_compiler::registry::PrefabRegistry;
+use delvec::compiler::load::load_campaign_dir;
+use delvec::compiler::plan::Plan;
+use delvec::compiler::pool::DW_POOL_DOUBLE_DRAW;
+use delvec::compiler::registry::PrefabRegistry;
 use delvewright_dsl::{Diagnostic, Severity, parse_campaign};
 
 /// A private prefab-library copy carrying the synthetic pools this file needs.

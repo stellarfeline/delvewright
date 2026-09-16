@@ -8,7 +8,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use delvewright_compiler::watch::{self, DW_UNWATCHED_SIBLING};
+use delvec::compiler::watch::{self, DW_UNWATCHED_SIBLING};
 
 const NS: &str = "g";
 
