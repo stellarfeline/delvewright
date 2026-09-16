@@ -856,7 +856,7 @@ def test_the_cli_exits_zero_on_the_committed_tree():
 
 
 def test_a_page_naming_a_tool_that_is_not_in_the_tree_reds(mod, tree, engine):
-    """The shape #778 walked into: the tool moved, the page kept the old path."""
+    """The shape a `tools/` reorganisation walks into: the tool moved, the page did not."""
     edit(
         tree / "references" / "new-pieces.md",
         "$DELVEWRIGHT_ENGINE/tools/block-appearance.py",
