@@ -778,3 +778,81 @@ fn two_builds_of_a_campaign_with_a_camera_record_are_byte_identical() {
         std::fs::read(b.join("manifest.json")).unwrap(),
     );
 }
+
+/// **Criterion 9, the engine side of the gallery probe.** The perturbation
+/// `gallery/probes/a-picture-nobody-looks-at` makes — one camera re-aimed from
+/// the only picture it answers onto a picture another camera already answers —
+/// is caught by `DW0900` and by nothing else.
+///
+/// Every other rule over these two documents is asserted green on the perturbed
+/// campaign: `DW0890` and `DW0721` at validation, which the perturbation leaves
+/// untouched, and `DW0724` over the same lenses — the two records differ in one
+/// `answers` string and in nothing else, which this test asserts by diffing
+/// them, and the unperturbed one builds with `camera_eye_proof.showcase` over
+/// both cameras.
+#[test]
+fn re_aiming_a_camera_at_an_answered_picture_moves_only_the_answered_count() {
+    let eye = proven_eye("reaim-eye");
+    let camp = campaign("reaim", "noon");
+    image(&camp, "concept/shore-far.png");
+    image(&camp, "concept/tower-far.png");
+    record(
+        &camp,
+        &[
+            ("concept/shore-far", "noon", "clear"),
+            ("concept/tower-far", "noon", "clear"),
+        ],
+    );
+    cameras(
+        &camp,
+        eye,
+        &[
+            ("shore", "concept/shore-far"),
+            ("tower", "concept/tower-far"),
+        ],
+    );
+    let whole = std::fs::read_to_string(camp.join("design/cameras.json")).unwrap();
+    let (code, out, dir) = build("reaim-green", &camp);
+    assert_eq!(code, 0, "{out}");
+    let plan: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(dir.join("render-plan.json")).unwrap()).unwrap();
+    assert_eq!(
+        plan["camera_eye_proof"]["showcase"], 2,
+        "DW0724 examined both lenses"
+    );
+
+    // The perturbation: `tower` answers `concept/shore-far`, which `shore`
+    // already answers. Nothing else in the document moves.
+    let reaimed = whole.replace(
+        "\"answers\": \"concept/tower-far\"",
+        "\"answers\": \"concept/shore-far\"",
+    );
+    assert_ne!(reaimed, whole, "the perturbation applied");
+    assert_eq!(
+        reaimed.len() + "concept/tower-far".len(),
+        whole.len() + "concept/shore-far".len(),
+        "one string moved and the record is otherwise the same document"
+    );
+    std::fs::write(camp.join("design/cameras.json"), &reaimed).unwrap();
+
+    // `DW0890` and `DW0721` are green: validation passes, and the binding line
+    // states the count that moved.
+    let (code, v) = validate(&camp);
+    assert_eq!(code, 0, "{v}");
+    assert!(!v.contains("DW0890 [error]") && !v.contains("DW0721"), "{v}");
+    assert!(
+        v.contains("showcase cameras: 2 in design/cameras.json answering 1 of 2"),
+        "{v}"
+    );
+
+    // The build is refused, by this rule and by no other.
+    let (code, b, _) = build("reaim-red", &camp);
+    assert_eq!(code, 3, "{b}");
+    assert!(b.contains("DW0900"), "{b}");
+    for other in ["DW0721", "DW0724", "DW0890 [error]"] {
+        assert!(
+            !b.contains(other),
+            "the perturbation is caught by DW0900 and not by {other}:\n{b}"
+        );
+    }
+}
