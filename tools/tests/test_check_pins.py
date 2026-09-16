@@ -1466,3 +1466,103 @@ why = "the same bytes, held for a different reason, at its own site"
     assert "build/undeclared.yml" in r.stderr
     assert "no entry holding that value lists as a site" in r.stderr
     assert "image, twin" in r.stderr
+
+
+# ---------------------------------------------------------------------------
+# The `release` policy, whose value is a release TAG and whose object may not
+# exist yet (ADR-0029 §3). Two arms, and the OBJECT decides which — whether the
+# pinned repository carries the tag. The unborn arm is the one that could become
+# an escape hatch, so it is perturbed toward exactly that: a name nobody is
+# about to publish, and a line no tree states a version for in advance.
+# ---------------------------------------------------------------------------
+
+RELEASE_SITE = ".claude/skills/delvewright/skills/new-delve/versions.toml"
+RELEASE_BINDER = "tools/hold-the-page-pin.sh"
+
+
+def with_a_release_pin(repo: Path, tag: str, tree_version: str = "1.6.0") -> None:
+    """A `release` pin on this project's own history, with the binder it owes."""
+    add_file(repo, "versions.toml", f'[engine]\nversion = "{tree_version}"\n')
+    add_file(repo, RELEASE_SITE, f'[engine]\nrepo = "stellarfeline/delvewright"\nref = "{tag}"\n')
+    add_file(
+        repo,
+        RELEASE_BINDER,
+        "#!/usr/bin/env bash\n"
+        f"# holds engine.ref equal across {RELEASE_SITE} and .claude-plugin/marketplace.json\n",
+    )
+    add_file(
+        repo,
+        ".github/workflows/page.yml",
+        "name: page\njobs:\n  a:\n    steps:\n"
+        f"      - run: bash {RELEASE_BINDER}\n"
+        "      - run: python3 tools/check-pins.py --online --checkout skill-page-engine=.\n",
+    )
+    write_registry(
+        repo,
+        COMPLETE
+        + f"""
+[[pin]]
+id = "skill-page-engine"
+value = "{tag}"
+sites = ["{RELEASE_SITE}"]
+repo = "stellarfeline/delvewright"
+policy = "release"
+judged_by = ".github/workflows/page.yml"
+bound_by = "{RELEASE_BINDER}"
+bound_key = "engine.ref"
+why = "the one engine release the page ships at"
+""",
+    )
+    subprocess.run(["git", "-C", str(repo), "commit", "-q", "-m", "release pin"], check=True)
+
+
+def test_an_unborn_release_tag_that_is_this_trees_own_passes(repo: Path) -> None:
+    """The interval of ADR-0029 §3: the pin names the tag this tree's own release
+    will write at its merge commit, and the object does not exist yet."""
+    with_a_release_pin(repo, "delvec--v1.6.0", tree_version="1.6.0")
+    r = run(repo, "--online", "--checkout", f"skill-page-engine={repo}")
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert "is unborn and is this tree's own next delvec tag" in r.stdout
+
+
+def test_an_unborn_release_tag_that_is_not_this_trees_own_is_a_finding(repo: Path) -> None:
+    """The perturbation toward the hatch: any other absent name would make the
+    unborn arm a way to pin at nothing."""
+    with_a_release_pin(repo, "delvec--v9.9.9", tree_version="1.6.0")
+    r = run(repo, "--online", "--checkout", f"skill-page-engine={repo}")
+    assert r.returncode == 1
+    assert "this tree's own delvec tag is delvec--v1.6.0" in r.stderr
+
+
+def test_a_release_tag_that_exists_is_held_to_the_tree_it_names(repo: Path) -> None:
+    with_a_release_pin(repo, "delvec--v1.6.0", tree_version="1.6.0")
+    subprocess.run(["git", "-C", str(repo), "tag", "delvec--v1.6.0"], check=True)
+    r = run(repo, "--online", "--checkout", f"skill-page-engine={repo}")
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert "whose tree states delvec 1.6.0" in r.stdout
+
+
+def test_a_release_tag_whose_tree_states_another_version_is_a_finding(repo: Path) -> None:
+    """A hand-written tag is the shape this catches: the release workflow derives
+    the name from the tree, so a tag and its tree can only disagree by hand."""
+    with_a_release_pin(repo, "delvec--v1.6.0", tree_version="1.5.0")
+    subprocess.run(["git", "-C", str(repo), "tag", "delvec--v1.6.0"], check=True)
+    r = run(repo, "--online", "--checkout", f"skill-page-engine={repo}")
+    assert r.returncode == 1
+    assert "whose tree states delvec 1.5.0" in r.stderr
+
+
+def test_a_value_outside_the_tag_grammar_is_a_finding(repo: Path) -> None:
+    with_a_release_pin(repo, "v1.6.0", tree_version="1.6.0")
+    r = run(repo, "--online", "--checkout", f"skill-page-engine={repo}")
+    assert r.returncode == 1
+    assert "policy 'release' names a release tag" in r.stderr
+
+
+def test_an_unborn_tag_of_a_line_no_tree_states_in_advance_is_a_finding(repo: Path) -> None:
+    """`delvewright`'s version arrives as a release dispatch's input, so no tree
+    states it beforehand and there is no unborn tag a pin could be naming."""
+    with_a_release_pin(repo, "delvewright--v1.4.3", tree_version="1.6.0")
+    r = run(repo, "--online", "--checkout", f"skill-page-engine={repo}")
+    assert r.returncode == 1
+    assert "no tree states a delvewright version in advance" in r.stderr

@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
 import pathlib
 import shutil
 import subprocess
@@ -34,9 +35,10 @@ def mod():
 
 @pytest.fixture(scope="module")
 def engine(mod, tmp_path_factory):
-    _repo, _release, rev = mod.read_pin()
+    _repo, ref = mod.read_pin()
+    rev, tag_exists = mod.resolve_ref(ref)
     into = tmp_path_factory.mktemp("engine")
-    return mod.materialise(rev, into), rev
+    return mod.materialise(rev, into), rev, tag_exists
 
 
 @pytest.fixture
@@ -79,9 +81,13 @@ def run(mod, engine, base=None):
     because it is the instrument and no test perturbs it.
     """
     rep = mod.Report()
-    engine_root, _real_rev = engine
-    _repo, release, rev = mod.read_pin()
-    mod.check(rep, engine_root, rev, release, base)
+    engine_root, real_rev, real_tag_exists = engine
+    _repo, ref = mod.read_pin()
+    try:
+        rev, tag_exists = mod.resolve_ref(ref)
+    except mod.Unusable:
+        rev, tag_exists = real_rev, real_tag_exists
+    mod.check(rep, engine_root, rev, ref, tag_exists, base)
     return rep
 
 
@@ -134,24 +140,51 @@ def test_a_name_that_is_not_the_directory_reds(mod, tree, engine):
 
 
 def test_a_branch_name_in_ref_reds(mod, tree, engine):
-    """The revision is read out of the pin, never written down here.
+    """The tag is read out of the pin, never written down here.
 
-    A gate's guard that pasted the revision would be a second copy of it, in a
-    file pin discovery reads — which is the very defect rule 2 exists for.
+    A gate's guard that pasted the name would be a second copy of it, in a file
+    pin discovery reads — which is the very defect rule 2 exists for.
     """
-    _repo, _release, rev = mod.read_pin()
-    edit(tree / "versions.toml", f'ref = "{rev}"', 'ref = "main"')
-    assert has(run(mod, engine), "not a full 40-hex revision")
+    _repo, ref = mod.read_pin()
+    edit(tree / "versions.toml", f'ref = "{ref}"', 'ref = "main"')
+    assert has(run(mod, engine), "is not `<name>--v")
 
 
-def test_the_release_pasted_into_a_reference_reds(mod, tree, engine):
-    _repo, release, _ref = mod.read_pin()
-    path = tree / "references" / "init.md"
+def test_a_tag_of_another_released_line_reds(mod, tree, engine):
+    """The page installs the creator binary, so only that line may be pinned."""
+    _repo, ref = mod.read_pin()
+    edit(tree / "versions.toml", f'ref = "{ref}"', 'ref = "delvewright-dsl--v0.26.0"')
+    assert has(run(mod, engine), "is a delvewright-dsl release tag")
+
+
+def test_an_unborn_tag_that_is_not_this_trees_own_reds(mod, tree, engine):
+    """The one unborn name a pin may carry is the tag this tree's own release
+    would create (ADR-0029 §3); any other is a pin onto something nobody is
+    about to publish."""
+    _repo, ref = mod.read_pin()
+    edit(tree / "versions.toml", f'ref = "{ref}"', 'ref = "delvec--v99.0.0"')
+    assert has(run(mod, engine), "this repository has no tag for")
+
+
+def test_a_pin_that_still_carries_release_is_unusable(mod, tree, engine):
+    """Two keys naming one release is the restatement ADR-0029 §2 removes."""
+    path = tree / "versions.toml"
     path.write_text(
-        path.read_text(encoding="utf-8") + f"\nThe release is {release}.\n",
+        path.read_text(encoding="utf-8").replace("[engine]\n", '[engine]\nrelease = "v1.5.0"\n'),
         encoding="utf-8",
     )
-    assert has(run(mod, engine), "carries the `release` literal")
+    with pytest.raises(mod.Unusable, match="still carries"):
+        mod.read_pin()
+
+
+def test_the_tag_pasted_into_a_reference_reds(mod, tree, engine):
+    _repo, ref = mod.read_pin()
+    path = tree / "references" / "init.md"
+    path.write_text(
+        path.read_text(encoding="utf-8") + f"\nThe release is {ref}.\n",
+        encoding="utf-8",
+    )
+    assert has(run(mod, engine), "carries the `ref` literal")
 
 
 def test_a_page_that_stops_reading_the_pin_reds(mod, tree, engine):
@@ -366,12 +399,39 @@ def test_a_plugin_version_that_is_not_semver_reds(mod, tree, engine):
     assert has(run(mod, engine), "which is not semver")
 
 
-def test_a_marketplace_source_resolving_to_no_plugin_reds(mod, tree, engine):
+def test_a_relative_path_source_reds(mod, tree, engine):
+    """A relative path is a string: it carries no field, so it cannot pin."""
     path = mod.MARKETPLACE
     data = json.loads(path.read_text(encoding="utf-8"))
-    data["plugins"][0]["source"] = "./.claude/skills/moved-away"
+    data["plugins"][0]["source"] = "./.claude/skills/delvewright"
     path.write_text(json.dumps(data, indent=2), encoding="utf-8")
-    assert has(run(mod, engine), "carries no `.claude-plugin/plugin.json`")
+    assert has(run(mod, engine), "It is a `git-subdir` object")
+
+
+def test_an_entry_ref_that_is_not_the_pin_reds(mod, tree, engine):
+    """One name in two files, held equal here or it is two authorities."""
+    path = mod.MARKETPLACE
+    data = json.loads(path.read_text(encoding="utf-8"))
+    data["plugins"][0]["source"]["ref"] = "delvec--v1.4.0"
+    path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+    assert has(run(mod, engine), "`source.ref` is 'delvec--v1.4.0'")
+
+
+def test_an_entry_carrying_a_sha_reds(mod, tree, engine):
+    """The documentation makes a `sha` the effective pin where both are set."""
+    path = mod.MARKETPLACE
+    data = json.loads(path.read_text(encoding="utf-8"))
+    data["plugins"][0]["source"]["sha"] = "0" * 40
+    path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+    assert has(run(mod, engine), "source declares `sha`")
+
+
+def test_an_entry_path_that_is_not_the_plugin_root_reds(mod, tree, engine):
+    path = mod.MARKETPLACE
+    data = json.loads(path.read_text(encoding="utf-8"))
+    data["plugins"][0]["source"]["path"] = ".claude/skills/moved-away"
+    path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+    assert has(run(mod, engine), "`source.path` is '.claude/skills/moved-away'")
 
 
 def test_a_marketplace_entry_declaring_its_own_version_reds(mod, tree, engine):
@@ -615,7 +675,7 @@ def test_a_dw_code_the_pinned_engine_does_not_declare_reds(mod, tree, engine):
     """The shape a page written against a newer engine than it pins has: it names
     a diagnostic the installed engine cannot print. The code is checked absent
     from the materialised engine first, so the red is about the pin."""
-    engine_root, _rev = engine
+    engine_root, _rev, _tag_exists = engine
     source = "\n".join(
         rs.read_text(encoding="utf-8") for rs in (engine_root / "crates").rglob("*.rs")
     )
@@ -917,10 +977,54 @@ def test_the_terminators_read_the_page_s_own_spellings(mod):
     assert got.group("path") == "/tools/refimg.py"
 
 
-def test_the_rule_binds_to_every_path_the_page_names(mod, tree, engine):
+def test_both_arms_bind_to_every_path_the_page_names(mod, tree, engine):
     rep = run(mod, engine)
-    bound = [b for b in rep.bindings if "engine path(s)" in b[0]]
-    assert len(bound) == 1, rep.bindings
-    _what, judged, of = bound[0]
-    assert of == len(mod.engine_paths(mod.shipped()))
-    assert judged > 0 and judged <= of
+    bound = [b for b in rep.bindings if "engine path(s) held to" in b[0]]
+    assert len(bound) == 2, rep.bindings
+    assert any("ships from" in what for what, _b, _o in bound), bound
+    assert any("the pin names" in what for what, _b, _o in bound), bound
+    for _what, judged, of in bound:
+        assert of == len(mod.engine_paths(mod.shipped()))
+        assert judged > 0 and judged <= of
+
+
+def test_the_pin_arm_reds_when_the_pinned_tree_lacks_a_chunky_script(
+    mod, tree, engine, tmp_path
+):
+    """The property rule 21's second arm exists to hold, tested by removing it.
+
+    `validation/chunky.sh` is one of the two paths that paid for this arm: the
+    page names it, this tree carries it, and the tree at the OLD 40-hex pin did
+    not. The perturbation is a real git tree — built through a private index so
+    this repository's own is untouched — with that one path removed, handed in
+    as the object the pin resolves to. Only the PIN arm may red: the shipping
+    tree still carries the file, which is exactly the state that used to be
+    green.
+    """
+    removed = "validation/chunky.sh"
+    assert removed in mod.shipping_tree()
+    index = tmp_path / "perturbed.index"
+    env = {**os.environ, "GIT_INDEX_FILE": str(index)}
+
+    def git(*args: str) -> str:
+        out = subprocess.run(
+            ["git", "-C", str(mod.REPO), *args],
+            capture_output=True,
+            text=True,
+            env=env,
+            check=True,
+        )
+        return out.stdout.strip()
+
+    git("read-tree", "HEAD")
+    git("update-index", "--force-remove", removed)
+    perturbed = git("write-tree")
+    assert removed not in mod.pinned_tree(perturbed)
+    assert removed in mod.shipping_tree(), "the real index must be untouched"
+
+    rep = mod.Report()
+    mod.engine_paths_rule(rep, perturbed, "delvec--v0.0.0", True)
+    named = [f for f in rep.findings if removed in f]
+    assert len(named) == 1, rep.findings
+    assert "the tree the pin names" in named[0], named[0]
+    assert "the tree the page ships from does not carry it" not in named[0]

@@ -148,3 +148,84 @@ def test_no_workflow_starts_on_a_tag_push():
         push = on.get("push") if isinstance(on, dict) else None
         assert not (isinstance(push, dict) and push.get("tags")), f"{path.name} starts on a tag push"
     assert judged >= 3, f"only {judged} workflow file(s) read"
+
+
+# ---------------------------------------------------------------------------
+# The one copy of this grammar that is NOT this module, and why it is allowed to
+# exist: `scripts/fetch-delvec.py` ships inside the plugin and runs on a
+# creator's machine before any engine checkout exists (ADR-0029 §1), so it
+# cannot import a file that only arrives once the pin it is reading has been
+# resolved. A copy nothing holds equal is two authorities, so this is what holds
+# them: every input is put to both readings and they must answer the same.
+# ---------------------------------------------------------------------------
+
+SHIPPED = (
+    REPO
+    / ".claude"
+    / "skills"
+    / "delvewright"
+    / "skills"
+    / "new-delve"
+    / "scripts"
+    / "fetch-delvec.py"
+)
+
+GRAMMAR_INPUTS = (
+    "delvec--v1.6.0",
+    "delvec--v0.0.0",
+    "delvec--v10.2.30",
+    "delvec--v01.6.0",
+    "delvec--v1.6",
+    "delvec--v1.6.0-rc1",
+    "delvec--v1.6.0+build",
+    "v1.5.0",
+    "delvewright--v1.4.3",
+    "delvewright-dsl--v0.26.0",
+    "main",
+    "70eea6296cfab2440054f95670729081c3d4bca1",
+    "",
+)
+
+
+def _shipped_module():
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("_shipped_fetch_delvec", SHIPPED)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_the_shipped_copy_of_the_grammar_answers_what_this_module_answers():
+    shipped = _shipped_module()
+    judged = 0
+    for value in GRAMMAR_INPUTS:
+        judged += 1
+        try:
+            theirs = shipped.tag_version(value)
+        except shipped.Refusal:
+            theirs = None
+        try:
+            name, version = release_tags.parse(value)
+            ours = version if name == "delvec" else None
+        except release_tags.Refused:
+            ours = None
+        assert theirs == ours, f"{value!r}: the page reads {theirs!r}, the engine {ours!r}"
+    assert judged == len(GRAMMAR_INPUTS) and judged >= 13, judged
+
+
+def test_the_shipped_copy_accepts_at_least_one_tag_and_refuses_at_least_one():
+    """Not vacuous: a copy that refused everything would also agree everywhere."""
+    shipped = _shipped_module()
+    accepted = [v for v in GRAMMAR_INPUTS if _accepts(shipped, v)]
+    refused = [v for v in GRAMMAR_INPUTS if not _accepts(shipped, v)]
+    assert len(accepted) == 3, accepted
+    assert len(refused) == 10, refused
+
+
+def _accepts(shipped, value: str) -> bool:
+    try:
+        shipped.tag_version(value)
+    except shipped.Refusal:
+        return False
+    return True

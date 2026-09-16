@@ -142,8 +142,8 @@ def test_a_row_for_another_name_is_not_this_archive(mod):
 # `VERSION_RE` reads the FIRST field and nothing else, so the `dsl` field of a
 # fake binary's `--version` line is never compared to anything. It names a
 # number this tree does not hold, so the engine's own `dsl_version` bump cannot
-# reach this file. `1.4.0` beside it is the rig's invented pin (`release =
-# "v1.4.0"` below), which the script does read.
+# reach this file. `1.4.0` beside it is the version the rig's invented pin states
+# (`ref = "delvec--v1.4.0"` below), which the script does read.
 _UNREAD_DSL = "0.0.0"
 
 
@@ -181,8 +181,7 @@ def rig(mod, tmp_path, monkeypatch):
     pin = tmp_path / "versions.toml"
     pin.write_text(
         '[engine]\nrepo = "stellarfeline/delvewright"\n'
-        'release = "v1.4.0"\n'
-        f'ref = "{"0" * 40}"\n',  # a placeholder, not a revision: nothing fetches it
+        'ref = "delvec--v1.4.0"\n',
         encoding="utf-8",
     )
     monkeypatch.setattr(
