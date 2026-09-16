@@ -90,6 +90,7 @@ def test_a_readme_change_reaches_only_the_whole_tree_readers():
         "dsl-crate-version",
         "i18n-tool",
         "docs",
+        "line-endings",
     }
 
 
