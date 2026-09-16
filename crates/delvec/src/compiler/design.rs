@@ -821,6 +821,12 @@ mod tests {
             skies_stated: vec![(WorldTime::Night, WorldWeather::Clear, 4)],
             world_times: vec![WorldTime::Night],
             world_weathers: vec![WorldWeather::Clear],
+            cameras: CameraRecord::Read(Answers {
+                cameras: 2,
+                answered: vec!["concept/shore-far".to_string()],
+                unanswered: vec!["concept/tower-far".to_string()],
+                stray: Vec::new(),
+            }),
         };
         let line = b.line();
         assert!(
@@ -831,6 +837,27 @@ mod tests {
         assert!(line.contains("night+clear x4"), "{line}");
         assert!(
             line.contains("world reaches times {night} weathers {clear}"),
+            "{line}"
+        );
+        assert!(
+            line.contains(
+                "showcase cameras: 2 in design/cameras.json answering 1 of 4 approved image(s)"
+            ),
+            "{line}"
+        );
+    }
+
+    #[test]
+    fn a_campaign_with_no_camera_record_says_so_and_counts_its_rows() {
+        let b = DesignBinding {
+            references: 3,
+            ..DesignBinding::default()
+        };
+        let line = b.line();
+        assert!(
+            line.contains(
+                "showcase cameras: none (no design/cameras.json); 0 of 3 approved image(s) answered"
+            ),
             "{line}"
         );
     }

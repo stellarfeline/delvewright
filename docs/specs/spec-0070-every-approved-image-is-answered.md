@@ -1,6 +1,6 @@
 # spec-0070: Every approved image is answered
 
-- **Status**: Draft
+- **Status**: Accepted
 - **Ground**: the engine at `origin/main` `9e101878` (`delvec` 1.5.0, `dsl`
   0.28.0), read only. It carries the design record (`design.json`,
   `compiler::design`, `DW0890`, spec-0061) and the showcase camera record
@@ -22,9 +22,9 @@
 - **Numbers**: `spec-0070` is the only number taken, verified free by
   `tools/next-numbered-doc.py spec` (571 refs examined, 69 numbers claimed,
   next free 0070) and by listing `docs/specs/` at every `refs/remotes/origin`
-  ref (highest 0069; no ref mentions `spec-0070`). §5 needs **one** DW code,
-  written `DW-ANSWER` until the planner allocates it. No `dsl_version` moves:
-  neither record's shape changes.
+  ref (highest 0069; no ref mentions `spec-0070`). §5 needs **one** DW code, and
+  the planner allocated `DW0900`. No `dsl_version` moves: neither record's shape
+  changes.
 - **Non-goals**: reading a picture by machine (§4); judging whether a camera
   is a good picture (`showcase-shots.md`); whether the frame was rendered and
   reached the storybook (the hand-over's rule); any change to `DW0890`'s
@@ -188,7 +188,7 @@ rule keeps it: it reads two JSON documents and compares two lists of names.
 **Authored**, in the shape this project's diagnostics take: what it refused,
 what it measured, a remedy that is reachable.
 
-**One new code, `DW-ANSWER`**, for one fact — *an approved picture has no
+**One new code, `DW0900`**, for one fact — *an approved picture has no
 view of the built world* — because its repair (write a camera) is unrelated to
 `DW0890`'s (change the hour or the record) and to `DW0721`'s (fix the record's
 own rules), and a creator looks a code up to find its repair. It is raised by
@@ -209,7 +209,7 @@ zeroes included:
 
 ```
 design record: 6 reference(s) recorded over 6 image file(s) under `design/` (…) (DW0890);
-  showcase cameras: 2 in design/cameras.json answering 1 of 6 approved image(s) (DW-ANSWER)
+  showcase cameras: 2 in design/cameras.json answering 1 of 6 approved image(s) (DW0900)
 ```
 
 With no record: `showcase cameras: none (no design/cameras.json); 0 of 6
@@ -221,7 +221,7 @@ cameras sees the count move without running the build.
 every unanswered row with its `shows` sentence, because the sentence is what
 tells the creator which picture it is:
 
-> `DW-ANSWER` design: 5 of 6 approved image(s) have no showcase camera:
+> `DW0900` design: 5 of 6 approved image(s) have no showcase camera:
 > `concept/morning-quay` (the quay from off the water in early light, the
 > lamp still lit), `concept/dusk-rampart` (…), … `design/cameras.json` holds
 > 2 camera(s) answering `concept/noon-hall`. An approved picture nobody has
@@ -261,7 +261,7 @@ job is the absent case, for the staging gate. `render-plan.json` does not
 move.
 
 **The staging row.** `docs/playtest-findings.json` row `drill3-03` takes
-carrier `DW-ANSWER` and binding `{"kind": "artifact", "file":
+carrier `DW0900` and binding `{"kind": "artifact", "file":
 "design-record.json", "path": "answered"}`, `applies_when` as `drill3-01`'s
 (`world.json`, every campaign), so a zero is `UNBOUND` and refuses. Edited by
 the pull request that lands the code, on the branch that holds the row.
@@ -279,7 +279,7 @@ same `DesignFiles`; `Subject::Campaign`; `ExitTier::Build`.
 | no `design.json`, a record present | passes; line counts the cameras | `DW0721`: every camera answers a row that does not exist — a camera is an answer to a picture | `DW0721` (today) | never reached |
 | rows, no record — every campaign between step 4 and its first build | passes; `0 of N answered` | passes; ledger `cameras: 0, answered: 0, unanswered_rows: all` | `DW0721` (today) | refused, `drill3-03` `UNBOUND` |
 | rows, a record answering every row | passes; `N of N` | passes; every camera proven (`DW0724`); ledger `answered: N` | emits | bound, `answered = N` |
-| rows, a record leaving some unanswered | passes; `k of N`, the line names the count | **`DW-ANSWER`, exit 3, before placement** | scenes refused, `DW-ANSWER`, exit 2; `--preview` draws and prints `k of N` | never reached |
+| rows, a record leaving some unanswered | passes; `k of N`, the line names the count | **`DW0900`, exit 3, before placement** | scenes refused, `DW0900`, exit 2; `--preview` draws and prints `k of N` | never reached |
 | a camera answering no row | passes; the line says the record names a row that does not exist | `DW0721` | `DW0721` (today) | never reached |
 
 `--only <name>` on `delvec cameras` selects which scenes are written and
@@ -305,7 +305,7 @@ hole, so it runs on any record its reader accepts.
    real row (`DW0721` green), no lens moves (`DW0724` green, `showcase` count
    unchanged), `design.json` is untouched (`DW0890` green), the record's size
    is unchanged; only the answered count moves, six to five. It is refused by
-   `delvec build` with `DW-ANSWER` and by nothing else. A demonstration probe
+   `delvec build` with `DW0900` and by nothing else. A demonstration probe
    (`units: []`): the record is not a schema unit. A probe may name
    `design/cameras.json` as its `doc` (`gallery_domain.materialise` applies
    a patch to any document of the primary).
@@ -322,7 +322,7 @@ frame, the approved image it answers. After this spec the page states, between
 step 8 and step 9: *one camera per approved image, estimated from the picture
 and drawn with `--preview`, before the walk* — because the walk's staging gate
 refuses without them; and `references/tools-by-symptom.md` carries the
-`DW-ANSWER` line. Those lines land with the release that carries the code
+`DW0900` line. Those lines land with the release that carries the code
 (spec-0069 §8.8's debt shape: `tools/check-skill-page.py` rule 4 holds every
 `delvec` subcommand the page names to the pinned release).
 
@@ -342,7 +342,7 @@ satisfy is a debt, stated as such, never a pass.
    *Checked: debt — the line ends at `(DW0890)`.*
 2. **Red then green at the build, nothing placed, nothing written.** A fixture
    with two rows and a record answering one: `delvec build` exits 3 with
-   `DW-ANSWER` naming the unanswered row and its `shows` sentence, before any
+   `DW0900` naming the unanswered row and its `shows` sentence, before any
    placement line, and a tree previously built into the same `-o` is
    byte-unchanged; the same fixture with a second camera builds green with
    `answered: 2`. Both halves in one test. Instrument: `design_record.rs`.
@@ -366,14 +366,14 @@ satisfy is a debt, stated as such, never a pass.
    accepts it; the test is the measurement.*
 6. **Scene emission is held.** On the partial fixture with a built tree and a
    world save, `delvec cameras` (with and without `--only <the one camera>`)
-   exits 2 with `DW-ANSWER` and writes no scene; on the complete fixture it
+   exits 2 with `DW0900` and writes no scene; on the complete fixture it
    emits every scene and prints `answers: 2 of 2`. Instrument:
    `crates/delvec/tests/view_cli.rs`. *Checked: debt — exit 0 with the report
    line.*
 7. **Every named remedy is reachable.** `remedy_reachability.rs` gains one row
    per move of §5's message, each reaching a different verdict;
    `tools/check-dw-codes.py` is green with the new code and zero new allowlist
-   entries; every `DW-ANSWER` and new `DW0721` shape is asserted by a test.
+   entries; every `DW0900` and new `DW0721` shape is asserted by a test.
    *Checked: debt — the file and the cross-check exist; no rows for this code.*
 8. **The gallery binds it.** Every point's `validation/design-record.json`
    reads `answered: 6` of `references: 6` (denominator: the points enumerated
@@ -382,7 +382,7 @@ satisfy is a debt, stated as such, never a pass.
    `BOUND` on each; the coverage line reports 0 in neither state.
    *Checked: debt — `answered` would read 1 of 6 on every point.*
 9. **The perturbation.** The probe of §7.2 is accepted by `delvec validate`
-   and refused by `delvec build` with `DW-ANSWER`; `tools/check-gallery-coverage.py`
+   and refused by `delvec build` with `DW0900`; `tools/check-gallery-coverage.py`
    runs it and reds if it is ever accepted. A second, engine-side perturbation
    proves the probe measures this rule and no other: with the re-aim applied,
    `DW0721`, `DW0724` and `DW0890` are each asserted green on the same
@@ -391,7 +391,7 @@ satisfy is a debt, stated as such, never a pass.
     are byte-identical, `validation/design-record.json` included (ADR-0006).
     Instrument: `design_record.rs`, `tools/gallery-baseline.py`. *Checked:
     debt for the new keys; the existing ledger is byte-stable.*
-11. **The record.** `docs/reference/compiler.md` gains the `DW-ANSWER` row,
+11. **The record.** `docs/reference/compiler.md` gains the `DW0900` row,
     the `DW0721` build shape, the three ledger keys under the `design` stage
     table and `DW0890`'s artifact, and the `cameras` section's refusal;
     `docs/reference/tools.md` §4a states the count every command prints;

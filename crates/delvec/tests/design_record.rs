@@ -839,7 +839,10 @@ fn re_aiming_a_camera_at_an_answered_picture_moves_only_the_answered_count() {
     // states the count that moved.
     let (code, v) = validate(&camp);
     assert_eq!(code, 0, "{v}");
-    assert!(!v.contains("DW0890 [error]") && !v.contains("DW0721"), "{v}");
+    assert!(
+        !v.contains("DW0890 [error]") && !v.contains("DW0721"),
+        "{v}"
+    );
     assert!(
         v.contains("showcase cameras: 2 in design/cameras.json answering 1 of 2"),
         "{v}"
