@@ -211,6 +211,6 @@ def test_every_tool_that_runs_an_engine_uses_the_one_resolver():
     ]
     assert len(users) == 5
     for name in users:
-        src = (REPO / "tools" / name).read_text(encoding="utf-8")
+        src = (REPO / "tools" / "ci" / name).read_text(encoding="utf-8")
         assert "from delvec_bin import resolve" in src, name
         assert 'default=str(REPO / "target/release/delvec")' not in src, name

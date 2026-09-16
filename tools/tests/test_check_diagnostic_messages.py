@@ -1,4 +1,4 @@
-"""The diagnostic-message wholeness gate (`tools/check-diagnostic-messages.py`).
+"""The diagnostic-message wholeness gate (`tools/ci/check-diagnostic-messages.py`).
 
 The defect this pins, from the field: `delvec grammar expand` refused an author's
 export with
@@ -23,7 +23,7 @@ import pathlib
 
 import pytest
 
-SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "check-diagnostic-messages.py"
+SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "ci" / "check-diagnostic-messages.py"
 
 
 @pytest.fixture

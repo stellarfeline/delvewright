@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Write one l10n sidecar with `tools/i18n-translate.py`'s own writer.
+"""Write one l10n sidecar with `tools/creator/i18n-translate.py`'s own writer.
 
 The driver exists so the writer can be judged by the engine's own formatter over
 a REAL FILE rather than over a string: `crates/delvec/tests/i18n_sidecar.rs`
@@ -26,7 +26,7 @@ import json
 import sys
 from pathlib import Path
 
-TOOL = Path(__file__).resolve().parents[3] / "i18n-translate.py"
+TOOL = Path(__file__).resolve().parents[3] / "creator" / "i18n-translate.py"
 
 INVENTORY = {
     "campaign_id": "keep-trial",

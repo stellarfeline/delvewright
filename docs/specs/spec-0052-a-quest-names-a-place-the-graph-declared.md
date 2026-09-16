@@ -322,7 +322,7 @@ about the implemented surface, evaluable in-repo when it lands; the one
 claim not evaluable in-repo is stated as such where it appears.
 
 1. `delvec schema --stage all` includes `stations[]` with the three kinds;
-   `tools/check-gallery-coverage.py` is green with every new unit bound in
+   `tools/ci/check-gallery-coverage.py` is green with every new unit bound in
    the gallery domain or refusal-proven.
 2. A site-plan fixture declaring a point station and a region station, with
    quest references to both and **zero pieces bound**, validates exit 0 and
@@ -330,7 +330,7 @@ claim not evaluable in-repo is stated as such where it appears.
    byte of the stand-ins.
 3. Each refusal in §7 has a fixture the compiler refuses with its allocated
    code, a test asserting that code, and — where the gallery is the bearer —
-   a committed probe; `tools/check-dw-codes.py` is green in both directions
+   a committed probe; `tools/ci/check-dw-codes.py` is green in both directions
    with zero new allowlist entries.
 4. On the fixture with a piece bound to the station-bearing node: the owed
    line's count includes the stations; the campaign name resolves at the
@@ -349,7 +349,7 @@ claim not evaluable in-repo is stated as such where it appears.
    over every released campaign is byte-identical before and after the
    implementation lands.
 8. Every new or widened check states its binding count with its
-   denominator; `tools/check-stated-counts.py` and the docs job are green;
+   denominator; `tools/ci/check-stated-counts.py` and the docs job are green;
    station counts of zero are stated, not omitted.
 9. Whether stand-in placement suffices for walk judgement **cannot be
    evaluated in-repo** — it is walk evidence, and §5 names it as the

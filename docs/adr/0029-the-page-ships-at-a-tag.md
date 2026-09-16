@@ -40,7 +40,7 @@ engine: Init I2 clones `stellarfeline/delvewright` and detaches at
 `v1.5.0` commit, registered in `.github/pins.toml` as `skill-page-engine`
 under the `release` policy. Nothing makes those two revisions one.
 
-The gap is measured, not theoretical. `tools/check-skill-page.py` rule 21
+The gap is measured, not theoretical. `tools/ci/check-skill-page.py` rule 21
 holds every `$DELVEWRIGHT_ENGINE/<path>` the page names to the tree the gate
 runs in — at `227e7504`, 37 of 41 engine paths bound, the gate green. Its own
 preamble says which half of the pair it holds: the tree the page ships from,
@@ -165,7 +165,7 @@ name, the version the binary must answer) derives it from `ref`.
 The marketplace entry's `ref` is the same name in a second file, because
 `marketplace.json` is read by Claude Code, which reads nothing else. That is
 two files stating one name, and the gate holds them equal (§6): the pin is the
-authority, the entry is its copy, and a difference is a red. `tools/check-pins.py`
+authority, the entry is its copy, and a difference is a red. `tools/ci/check-pins.py`
 registers the pin under the `release` policy with the tag name as its value
 and discovers it in the site the way it discovers a revision today.
 
@@ -300,7 +300,7 @@ the entry inside it names itself.
 
 ### 6. The gate: one pair, one tree
 
-`tools/check-skill-page.py` judges the page against the engine at
+`tools/ci/check-skill-page.py` judges the page against the engine at
 `[engine].ref`, as it does today; what changes is what the ref is and what the
 page's own tree is to it:
 
@@ -354,7 +354,7 @@ remote ref refs/tags/<tag>` and writes nothing, in either spelling. That is not
 a failure of the job: the action reports the state and continues, because the
 engine the gate judges is then this tree, which is the tree the release
 dispatched on this merge commit would tag — the same answer
-`tools/check-skill-page.py`'s `resolve_ref` gives, from the same reading of the
+`tools/ci/check-skill-page.py`'s `resolve_ref` gives, from the same reading of the
 same object. Without that arm the pull request that NAMES a tag could never be
 green, since the tag it names is created by the release dispatched on its own
 merge commit: the ordering of §3 would be unsatisfiable inside CI. So the
@@ -370,15 +370,15 @@ record's defect.
 |---|---|---|
 | `.claude/skills/delvewright/skills/new-delve/versions.toml` | `release = "v1.5.0"`, `ref = <40-hex>` | `ref` is the tag; `release` is removed |
 | `.claude-plugin/marketplace.json` | `"source": "./.claude/skills/delvewright"` | a `git-subdir` source: `url`, `path`, `ref`; no `sha`, no `version` |
-| `tools/check-skill-page.py` | `REV_RE` (40-hex) and `RELEASE_RE` (`v<semver>`) in rule 2; rule 3 takes the number from `release`; rule 12 demands a relative-path string `source`; rule 13 `--online` resolves `release` to `ref`; rule 18 fetches the shelf by `release`; rule 21's instrument is the tree it runs in, and its preamble says so; `materialise()` serves `rev^{commit}`; rule 11's docstring says the marketplace delivers what `main` carries | one name, the grammar of `release_tags.py` imported and not copied; rule 12 reads the four fields; the two-state `--online`; rule 21 over the tree at the tag; the docstrings restated |
+| `tools/ci/check-skill-page.py` | `REV_RE` (40-hex) and `RELEASE_RE` (`v<semver>`) in rule 2; rule 3 takes the number from `release`; rule 12 demands a relative-path string `source`; rule 13 `--online` resolves `release` to `ref`; rule 18 fetches the shelf by `release`; rule 21's instrument is the tree it runs in, and its preamble says so; `materialise()` serves `rev^{commit}`; rule 11's docstring says the marketplace delivers what `main` carries | one name, the grammar of `release_tags.py` imported and not copied; rule 12 reads the four fields; the two-state `--online`; rule 21 over the tree at the tag; the docstrings restated |
 | `tools/tests/test_check_skill_page.py` | fixtures asserting "not a full 40-hex revision" and the `["engine"]["ref"]` extraction | follow the rules above |
 | `.github/actions/skill-page-objects/action.yml` | `git fetch --no-tags --quiet origin "$REF"` by sha | a tag is fetched as `refs/tags/<tag>:refs/tags/<tag>`; when the tag is unborn the engine is this tree |
 | `.github/pins.toml` | `skill-page-engine` `value` is the revision; the `release` policy's text says "a commit a `v<semver>` tag points at" in three places | the value is the tag name; the policy's text says a release tag of the thing the entry names, existing or this tree's own unborn one |
-| `tools/check-pins.py` | discovery finds a 40-hex literal in the site (`RE_REV`); `--online` `cat-file -e value^{commit}`, then `tag --points-at value` filtered by `v<semver>` | the entry moves to the registry's `bound_by` arm, with `check-skill-page.py` as the binder and `engine.ref` as the key, and `--online` judges a release tag: the tag exists and its commit's tree states the tag's version, or it is absent and equals this tree's own tag, through `release_tags.py`'s grammar. **Corrected at finalisation**: the draft said discovery would find the literal by that grammar. Measured against this tree's fetch sites, twelve distinct `<name>--v<semver>` literals stand in them and eleven are fixtures of `tools/tests/test_release_tags.py` and examples in `tools/lib/release_tags.py`'s own docstring, so a shape scan would report eleven pins nobody fetches. A tag name therefore carries no shape the scan can separate from data, which is the exact condition the `bound_by` arm exists for — and it is the stronger outcome, because the binder is what holds the pin and the marketplace entry to one name |
+| `tools/ci/check-pins.py` | discovery finds a 40-hex literal in the site (`RE_REV`); `--online` `cat-file -e value^{commit}`, then `tag --points-at value` filtered by `v<semver>` | the entry moves to the registry's `bound_by` arm, with `check-skill-page.py` as the binder and `engine.ref` as the key, and `--online` judges a release tag: the tag exists and its commit's tree states the tag's version, or it is absent and equals this tree's own tag, through `release_tags.py`'s grammar. **Corrected at finalisation**: the draft said discovery would find the literal by that grammar. Measured against this tree's fetch sites, twelve distinct `<name>--v<semver>` literals stand in them and eleven are fixtures of `tools/tests/test_release_tags.py` and examples in `tools/lib/release_tags.py`'s own docstring, so a shape scan would report eleven pins nobody fetches. A tag name therefore carries no shape the scan can separate from data, which is the exact condition the `bound_by` arm exists for — and it is the stronger outcome, because the binder is what holds the pin and the marketplace entry to one name |
 | `.claude/skills/delvewright/skills/new-delve/scripts/fetch-delvec.py` | `DOWNLOAD` and `ARCHIVE` are formatted from `release`; `expected = release.lstrip("v")`; `engine_targets()` runs `git show <ref>:versions.toml` | URL from the tag, archive name `delvec-v<version>-<target>.tar.gz` from the tag's version (the archive grammar is unchanged, ADR-0028 §2); `git show` at a tag name once I2 has fetched it |
 | `.claude/skills/delvewright/skills/new-delve/scripts/check-toolchain.py` | compares `rev-parse HEAD` to `ref` as strings; `want = release.lstrip("v")` | compares to `rev-parse <ref>^{commit}`; the version from the tag |
 | `.claude/skills/delvewright/skills/new-delve/references/init.md` (I2) and `SKILL.md` (I1b, I2 rows) | `checkout --detach "$ENGINE_REF"` then `[ "$(rev-parse HEAD)" = "$ENGINE_REF" ]`; the rows name `[engine].release` | the fetch names the tag; the equality is against `rev-parse "$ENGINE_REF^{commit}"`; the rows name one key |
-| `tools/release-notes.py` (`delvewright` arm) | prints `pin['release']` and `pin['ref']`, and reads the engine table at `ref` | prints the one name; an unborn tag is printed as unborn, not raised, so a plugin release dispatched inside §4's interval still writes its notes |
+| `tools/ci/release-notes.py` (`delvewright` arm) | prints `pin['release']` and `pin['ref']`, and reads the engine table at `ref` | prints the one name; an unborn tag is printed as unborn, not raised, so a plugin release dispatched inside §4's interval still writes its notes |
 | `docs/reference/skill-workflow.md` | "A newer page reaches a creator when `plugin.json` `version` moves on `main` — the marketplace serves the default branch" | the marketplace serves the tag the entry names; a newer page reaches a creator when the entry moves to a tag carrying a higher version |
 | `docs/reference/tools.md` | the rows for `check-skill-page.py`, `check-pins.py`, `fetch-delvec.py`, `check-toolchain.py` | restated |
 | `docs/specs/spec-0063-the-front-end-as-a-product.md` §8 and its criteria | "`release` (`v<semver>`), `ref` (40-hex)"; the rule table's pin row; criterion 4 | restated to one name under the tag grammar; criterion 4's rewrite IS a loosening and is declared in those words, with the narrower online assertion that replaces it in the unborn state |
@@ -387,7 +387,7 @@ record's defect.
 
 Not moved: `plugin-release.yml` and rule 11 (the version still moves only in
 the plugin release); `engine-release.yml` (it already tags an existing `main`
-commit); `tools/build-release-binaries.sh` and the archive grammar; the content
+commit); `tools/ci/build-release-binaries.sh` and the archive grammar; the content
 repository, whose `engine-release` pin names a commit and is not this page's.
 
 ## Consequences
@@ -412,10 +412,10 @@ repository, whose `engine-release` pin names a commit and is not this page's.
   reason two), bounded by the gate; the interval of §4; one name in two files,
   held equal by the gate; a plugin release that delivers nothing until an
   engine release follows it.
-- **Checks that change**: `tools/check-skill-page.py` rules 2, 3, 12, 13, 18
-  and 21 and their tests; `tools/check-pins.py`'s `release` policy and the arm
+- **Checks that change**: `tools/ci/check-skill-page.py` rules 2, 3, 12, 13, 18
+  and 21 and their tests; `tools/ci/check-pins.py`'s `release` policy and the arm
   the entry sits on; `.github/actions/skill-page-objects/action.yml`; the two
-  creator-side scripts; `tools/release-notes.py`. No required status context is
+  creator-side scripts; `tools/ci/release-notes.py`. No required status context is
   added or renamed.
 - **Rule 21 holds the pair whole**, one arm per tree, each with its own binding
   count and the same denominator: 37 of 41 engine paths in the tree the page

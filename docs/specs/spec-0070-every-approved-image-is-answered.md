@@ -20,7 +20,7 @@
   question is open here: what a showcase camera is and how it is found is
   `docs/reference/showcase-shots.md`, and this spec adds no rule to it.
 - **Numbers**: `spec-0070` is the only number taken, verified free by
-  `tools/next-numbered-doc.py spec` (571 refs examined, 69 numbers claimed,
+  `tools/planner/next-numbered-doc.py spec` (571 refs examined, 69 numbers claimed,
   next free 0070) and by listing `docs/specs/` at every `refs/remotes/origin`
   ref (highest 0069; no ref mentions `spec-0070`). §5 needs **one** DW code, and
   the planner allocated `DW0900`. No `dsl_version` moves: neither record's shape
@@ -240,7 +240,7 @@ tells the creator which picture it is:
 **Every remedy it names is reachable, and that is a test** (spec-0060 §10.3):
 each move — write the missing row; delete the picture and its row; delete the
 record and build — is a row in `crates/delvec/tests/remedy_reachability.rs`
-reaching a different verdict, and `tools/check-dw-codes.py`'s cross-check
+reaching a different verdict, and `tools/ci/check-dw-codes.py`'s cross-check
 refuses a message naming a document as a move with no row.
 
 **The ledger.** `validation/design-record.json` gains three keys, written on
@@ -309,7 +309,7 @@ hole, so it runs on any record its reader accepts.
    (`units: []`): the record is not a schema unit. A probe may name
    `design/cameras.json` as its `doc` (`gallery_domain.materialise` applies
    a patch to any document of the primary).
-3. **The stageable gate.** `tools/check-gallery-stageable.py` runs the staging
+3. **The stageable gate.** `tools/ci/check-gallery-stageable.py` runs the staging
    gate over every point; `drill3-03` reads `BOUND` with `answered = 6` on each.
 4. **The baseline moves** — three new ledger keys on every point — and is
    regenerated after the merge commit exists, never three-way merged.
@@ -323,7 +323,7 @@ step 8 and step 9: *one camera per approved image, estimated from the picture
 and drawn with `--preview`, before the walk* — because the walk's staging gate
 refuses without them; and `references/tools-by-symptom.md` carries the
 `DW0900` line. Those lines land with the release that carries the code
-(spec-0069 §8.8's debt shape: `tools/check-skill-page.py` rule 4 holds every
+(spec-0069 §8.8's debt shape: `tools/ci/check-skill-page.py` rule 4 holds every
 `delvec` subcommand the page names to the pinned release).
 
 ## 8. Acceptance criteria
@@ -372,7 +372,7 @@ satisfy is a debt, stated as such, never a pass.
    line.*
 7. **Every named remedy is reachable.** `remedy_reachability.rs` gains one row
    per move of §5's message, each reaching a different verdict;
-   `tools/check-dw-codes.py` is green with the new code and zero new allowlist
+   `tools/ci/check-dw-codes.py` is green with the new code and zero new allowlist
    entries; every `DW0900` and new `DW0721` shape is asserted by a test.
    *Checked: debt — the file and the cross-check exist; no rows for this code.*
 8. **The gallery binds it.** Every point's `validation/design-record.json`
@@ -382,21 +382,21 @@ satisfy is a debt, stated as such, never a pass.
    `BOUND` on each; the coverage line reports 0 in neither state.
    *Checked: debt — `answered` would read 1 of 6 on every point.*
 9. **The perturbation.** The probe of §7.2 is accepted by `delvec validate`
-   and refused by `delvec build` with `DW0900`; `tools/check-gallery-coverage.py`
+   and refused by `delvec build` with `DW0900`; `tools/ci/check-gallery-coverage.py`
    runs it and reds if it is ever accepted. A second, engine-side perturbation
    proves the probe measures this rule and no other: with the re-aim applied,
    `DW0721`, `DW0724` and `DW0890` are each asserted green on the same
    materialised point. *Checked: debt — no probe.*
 10. **Determinism.** Two builds of the complete fixture and of the gallery
     are byte-identical, `validation/design-record.json` included (ADR-0006).
-    Instrument: `design_record.rs`, `tools/gallery-baseline.py`. *Checked:
+    Instrument: `design_record.rs`, `tools/ci/gallery-baseline.py`. *Checked:
     debt for the new keys; the existing ledger is byte-stable.*
 11. **The record.** `docs/reference/compiler.md` gains the `DW0900` row,
     the `DW0721` build shape, the three ledger keys under the `design` stage
     table and `DW0890`'s artifact, and the `cameras` section's refusal;
     `docs/reference/tools.md` §4a states the count every command prints;
     `docs/specs/README.md` carries this spec's row
-    (`tools/check-numbered-doc-index.py`). *Checked: the index row is in this
+    (`tools/ci/check-numbered-doc-index.py`). *Checked: the index row is in this
     pull request; the rest is debt landing with the code.*
 12. **The class on the content tree.** Denominator: campaigns on the content
     repository's `main` carrying a `design.json`. Every one merged after the

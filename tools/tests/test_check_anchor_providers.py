@@ -1,4 +1,4 @@
-"""The one-authority gate for anchor providers (`tools/check-anchor-providers.py`).
+"""The one-authority gate for anchor providers (`tools/ci/check-anchor-providers.py`).
 
 The drift this pins: *what anchors does this campaign have* was answered by
 eleven hand-rolled walks over `world.areas` in `dsl::validate`. When the site
@@ -16,7 +16,7 @@ import pathlib
 
 import pytest
 
-SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "check-anchor-providers.py"
+SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "ci" / "check-anchor-providers.py"
 
 REGISTRY_RS = """
 pub trait AnchorRegistry {

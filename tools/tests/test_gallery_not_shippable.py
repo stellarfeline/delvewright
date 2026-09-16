@@ -34,7 +34,7 @@ SHIPPING_SURFACES = [
     ".github/workflows/engine-release.yml",
     ".github/workflows/infra-images.yml",
     ".github/workflows/plugin-release.yml",
-    "tools/staging-gate.py",
+    "tools/creator/staging-gate.py",
 ]
 
 # What makes a workflow a shipping surface is that it PUBLISHES — pushes an image

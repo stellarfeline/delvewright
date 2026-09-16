@@ -26,7 +26,7 @@
 //!
 //! The agreement between this command and the build — the property spec-0060
 //! §6.3 makes load-bearing — is a separate gate over the gallery's own library,
-//! `tools/check-seating-agrees.py`, which enumerates every pool and every base
+//! `tools/ci/check-seating-agrees.py`, which enumerates every pool and every base
 //! and perturbs toward both disagreement shapes.
 
 use std::path::{Path, PathBuf};

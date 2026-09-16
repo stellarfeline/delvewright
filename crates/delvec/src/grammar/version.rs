@@ -40,7 +40,7 @@
 //! The fence cannot reach an engine older than the fence itself — that engine's
 //! refusal would have to be code it already carries. What it does is make every
 //! optional field from `1.1.0` on self-announcing, which is why the ledger in
-//! `tools/check-grammar-ir-compat.py` names every one of them and why a new one
+//! `tools/ci/check-grammar-ir-compat.py` names every one of them and why a new one
 //! is a red until it is either at `1.0.0` or fenced here.
 //!
 //! # One number, one surface

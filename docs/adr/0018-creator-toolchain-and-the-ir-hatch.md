@@ -104,7 +104,7 @@ classification is by audience, not a blanket rule:
 | `delvec` and creator-facing tools | Rust | one binary, one install, cross-platform by build |
 | CI-only checks (15) | Python, stdlib-only | the runner guarantees `python3`; cross-platform is irrelevant; a JVM/Rust build step would slow every job for nothing |
 | `tools/extract-*.py` (maintenance) | Python | harvest registries from the game; never in a creator's hands |
-| `tools/skin/` (`delve_skin`) | **Python, kept** | see §3 |
+| `tools/creator/skin/` (`delve_skin`) | **Python, kept** | see §3 |
 
 ### 3. Python is a declared prerequisite too, for skins — `delve_skin` is not ported
 

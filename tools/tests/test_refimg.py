@@ -1,4 +1,4 @@
-"""Unit tests for tools/refimg.py (reference-image generation).
+"""Unit tests for tools/creator/refimg.py (reference-image generation).
 
 Three things are proven here, and the third is the one this file was added for.
 
@@ -34,7 +34,7 @@ from pathlib import Path
 
 import pytest
 
-TOOL = Path(__file__).resolve().parents[1] / "refimg.py"
+TOOL = Path(__file__).resolve().parents[1] / "creator" / "refimg.py"
 
 
 def _load():
@@ -98,7 +98,7 @@ def test_absent_config_says_what_to_add_and_exits_2(root, capsys):
 
     The tool raised a bare `SystemExit` on absent config, so it left with 1 —
     while its own module docstring, its row in `docs/reference/tools.md` and the
-    skill's Init step all said 2, and `tools/refscore.py`, which states the same
+    skill's Init step all said 2, and `tools/creator/refscore.py`, which states the same
     convention in the same words, does exit 2. The old assertion covered the
     message alone, so nothing held the tool to the number a creator following
     the Init step is told to check for. Strengthened, not relaxed: the message

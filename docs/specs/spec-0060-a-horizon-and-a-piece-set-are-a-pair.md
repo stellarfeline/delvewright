@@ -454,7 +454,7 @@ Machine-checkable; each names its instrument.
    this criterion at `c2a90ac2` (§1.2) and is either made observable or
    removed from the message before this criterion can pass. Adding a
    remedy-naming diagnostic without extending this test is a red
-   (`tools/check-dw-codes.py` gains the cross-check: a message that names a
+   (`tools/ci/check-dw-codes.py` gains the cross-check: a message that names a
    base or a document as a move owes a row here).
 4. **The waterline byte check.** DW0887 has a test per shape (declared with no
    water anywhere; declared with water at another plane) and a committed
@@ -479,7 +479,7 @@ Machine-checkable; each names its instrument.
 8. **Determinism and the record.** Double builds of one fixture per base are
    byte-identical (ADR-0006); `docs/reference/compiler.md` carries the DW0886
    and DW0887 rows, the ocean datum of §3 and the piece contract of §4, in the
-   PR that lands each; `tools/check-dw-codes.py` is green with zero new
+   PR that lands each; `tools/ci/check-dw-codes.py` is green with zero new
    allowlist entries.
 9. **`walk_y` reaches the surface it changes.** `delvec schema` exports it on
    the prefab-metadata document, every generator under `prefabs/` writes it as

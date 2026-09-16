@@ -33,7 +33,7 @@
                 "GH_TOKEN": "${{ github.token }}"
               },
               "name": "the gate actually bound",
-              "run": "bash tools/assert-run-approved.sh crates-io"
+              "run": "bash tools/ci/assert-run-approved.sh crates-io"
             },
             {
               "uses": "./.github/actions/fixture-cache",
@@ -75,7 +75,7 @@
             },
             {
               "name": "the gate actually bound",
-              "run": "set -euo pipefail\n# Shell options and comments may lead; nothing else may.\nbash tools/assert-run-approved.sh crates-io\n"
+              "run": "set -euo pipefail\n# Shell options and comments may lead; nothing else may.\nbash tools/ci/assert-run-approved.sh crates-io\n"
             },
             {
               "name": "the irreversible act",
@@ -107,7 +107,7 @@
             },
             {
               "name": "the gate actually bound",
-              "run": "bash tools/assert-run-approved.sh crates-io"
+              "run": "bash tools/ci/assert-run-approved.sh crates-io"
             }
           ]
         }
@@ -137,7 +137,7 @@
             },
             {
               "name": "the gate actually bound",
-              "run": "bash tools/assert-run-approved.sh crates-io"
+              "run": "bash tools/ci/assert-run-approved.sh crates-io"
             },
             {
               "name": "the irreversible act",
@@ -263,7 +263,7 @@
             },
             {
               "name": "the gate actually bound",
-              "run": "bash tools/assert-run-approved.sh staging"
+              "run": "bash tools/ci/assert-run-approved.sh staging"
             },
             {
               "name": "the irreversible act",

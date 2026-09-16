@@ -526,7 +526,7 @@ pub struct SizeClass {
     /// (spec-0049 §3.3).
     ///
     /// The code that reads it is not named here on purpose: a `DW` number in a
-    /// source comment is a code as far as `tools/check-dw-codes.py` is
+    /// source comment is a code as far as `tools/ci/check-dw-codes.py` is
     /// concerned, and one whose check lands two rounds from now has no catalog
     /// row to match, so naming it early reds the docs job on a rule nothing has
     /// written yet.

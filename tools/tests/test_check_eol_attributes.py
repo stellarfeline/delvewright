@@ -1,4 +1,4 @@
-r"""Guards for `tools/check-eol-attributes.py`.
+r"""Guards for `tools/ci/check-eol-attributes.py`.
 
 The red this gate exists to prevent: a Windows checkout writes a tracked script
 to disk with CRLF, and the kernel reads `#!/usr/bin/env bash\r` as a request for
@@ -25,7 +25,7 @@ import subprocess
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
-CHECKER = REPO / "tools" / "check-eol-attributes.py"
+CHECKER = REPO / "tools" / "ci" / "check-eol-attributes.py"
 
 COVERS_SHELL_ONLY = "*.sh text eol=lf\n"
 

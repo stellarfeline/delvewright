@@ -2,11 +2,11 @@ r"""Guards for the CRLF bug that broke the v1.0.0 shelf on the msvc runner alone
 
 Two layers, and both are needed:
 
-  * `test_release_shelf_*` runs the REAL `tools/build-release-binaries.sh` under an
+  * `test_release_shelf_*` runs the REAL `tools/ci/build-release-binaries.sh` under an
     interpreter whose stdout translates `\n` to `\r\n` — i.e. a Windows python,
     faithfully simulated — and asserts the target list comes back clean. That is
     the behaviour, and it would have caught the release failure from a mac.
-  * the rest exercise `tools/check-python-shell-newlines.py` itself, so the gate
+  * the rest exercise `tools/ci/check-python-shell-newlines.py` itself, so the gate
     that keeps the fix in place cannot silently stop matching.
 
 The simulation is a `sitecustomize.py` on `PYTHONPATH` doing
@@ -27,8 +27,8 @@ from pathlib import Path
 import pytest
 
 REPO = Path(__file__).resolve().parents[2]
-CHECKER = REPO / "tools" / "check-python-shell-newlines.py"
-SHELF = REPO / "tools" / "build-release-binaries.sh"
+CHECKER = REPO / "tools" / "ci" / "check-python-shell-newlines.py"
+SHELF = REPO / "tools" / "ci" / "build-release-binaries.sh"
 
 # Import the checker with its repo root rebound, and report only whether it
 # MATCHED — deliberately bypassing main()'s vacuity guard, which is about the

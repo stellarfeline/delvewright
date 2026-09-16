@@ -86,7 +86,7 @@ fn copy_dir(src: &Path, dst: &Path) {
 /// canonical form. That is the same enumeration-somebody-remembered shape the CI
 /// sweep had, one layer down and wearing a truthful-sounding sentence — and it
 /// is why there is now ONE derivation rather than two lists that can disagree.
-/// `tools/check-json-canonical.py` is its sibling and takes its population the
+/// `tools/ci/check-json-canonical.py` is its sibling and takes its population the
 /// same way.
 ///
 /// `crates/delvec/tests/golden/` is excluded for the reason

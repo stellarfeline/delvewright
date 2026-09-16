@@ -1,4 +1,4 @@
-"""The release-publish gate (`tools/check-release-publish-gate.py`).
+"""The release-publish gate (`tools/ci/check-release-publish-gate.py`).
 
 The defect it pins: `engine-release.yml` had two publishes and one approval in
 front of one of them. The GitHub Release was created and filled by an ungated
@@ -37,7 +37,7 @@ import pytest
 
 TOOLS = pathlib.Path(__file__).resolve().parents[1]
 REPO = TOOLS.parent
-SCRIPT = TOOLS / "check-release-publish-gate.py"
+SCRIPT = TOOLS / "ci" / "check-release-publish-gate.py"
 FIXTURES = TOOLS / "tests" / "fixtures" / "release-publish-gate"
 WORKFLOWS = REPO / ".github" / "workflows"
 
@@ -292,8 +292,8 @@ def test_population_b_excludes_the_workflows_and_is_not_empty(gate):
 def test_the_shared_publish_script_is_reached_only_with_publish(gate):
     """`--plan` is not an act and `--publish` is: the distinction that lets the
     preflight job run the same script with no credential in the run."""
-    assert gate.acts_on_line("bash tools/crates-io-publish.sh --plan") == []
-    assert [k for k, _ in gate.acts_on_line("bash tools/crates-io-publish.sh --publish")] == [
+    assert gate.acts_on_line("bash tools/ci/crates-io-publish.sh --plan") == []
+    assert [k for k, _ in gate.acts_on_line("bash tools/ci/crates-io-publish.sh --publish")] == [
         "cargo-publish"
     ]
 

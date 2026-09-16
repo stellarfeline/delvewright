@@ -247,7 +247,7 @@ def test_both_creator_steps_go_through_the_shared_rule(tmp_path: Path) -> None:
     neither keeps a private default. Read off the scripts, so a third private
     resolver added later reds here.
     """
-    for rel in ("tools/playtest-server.sh", "validation/render-shots.sh"):
+    for rel in ("tools/creator/playtest-server.sh", "validation/render-shots.sh"):
         src = (REPO / rel).read_text()
         assert "tools/lib/delvec-bin.sh" in src, rel
         assert "dw_resolve_delvec" in src, rel

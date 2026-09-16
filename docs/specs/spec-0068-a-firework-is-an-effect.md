@@ -313,7 +313,7 @@ crate manifests this tree carries; `gallery-prefabs` is the tree
    measured. Recorded here so the gap is read rather than assumed.*
 9. **The gallery.** §6's element builds green on the valley-site overlay;
    perturbing a colour moves the `summon` line; the probe is refused at build
-   with `DW0899`; `tools/check-gallery-coverage.py` reports 0 units in neither
+   with `DW0899`; `tools/ci/check-gallery-coverage.py` reports 0 units in neither
    state. *Met — the coverage gate reports 899 units enumerated, 895 bound, 4
    refusal-proven, 0 in neither state, and 36 probes refused with the code they
    name, `a-rocket-under-a-roof` among them. The perturbation is the emitted
@@ -325,7 +325,7 @@ crate manifests this tree carries; `gallery-prefabs` is the tree
     binding paragraph; `references/quest-capabilities.md` carries the creator's
     paragraph under *Things that change the world*, stating the behaviour
     without the code, because the skill page pins an engine that does not yet
-    declare `DW0899` and `tools/check-skill-page.py` holds it to that pin.*
+    declare `DW0899` and `tools/ci/check-skill-page.py` holds it to that pin.*
 11. A demo-level row is queued when the code lands. *Met — **The Bell and the
     Sky** in `docs/demo-levels.md`.*
 

@@ -911,7 +911,7 @@ fn the_committed_unwalked_probe_refuses_on_the_verdict_and_not_on_a_stale_key() 
     let probe = gallery.join("probes/a-record-that-says-nobody-walked");
     let camp = tempdir("probe-unwalked");
 
-    // The materialisation `tools/gallery_domain.py` performs for a point: the
+    // The materialisation `tools/ci/gallery_domain.py` performs for a point: the
     // primary's stage documents, then the point's own laid over them. This probe
     // declares no `patch`, so everything but its own documents is the primary.
     for src in [gallery.clone(), probe.clone()] {

@@ -455,7 +455,7 @@ pub fn graded_erosion() -> Program {
 /// light-emitting member it is a sconce course — see [`light`].
 ///
 /// Scatter members are deliberately not full cubes (`moss_carpet`,
-/// `short_grass`, `brown_mushroom`). `tools/block-appearance.py --full-cube-only`
+/// `short_grass`, `brown_mushroom`). `tools/creator/block-appearance.py --full-cube-only`
 /// exists for the structural roles; a litter layer is exactly where the rest
 /// belong.
 ///

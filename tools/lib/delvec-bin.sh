@@ -7,7 +7,7 @@
 # `PATH` (ADR-0023 — the release archive is the route, a source build is the
 # floor). Later steps then reached for a `delvec` of their own:
 #
-# - `tools/playtest-server.sh` defaulted to `$REPO_ROOT/target/release/delvec`
+# - `tools/creator/playtest-server.sh` defaulted to `$REPO_ROOT/target/release/delvec`
 #   and, finding nothing there, compiled the whole workspace — 1 min 33 s on the
 #   third end-to-end drill — while the binary Init had already verified sat on
 #   `PATH` unused.

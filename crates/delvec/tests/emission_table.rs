@@ -2,11 +2,11 @@
 //!
 //! The fixture is a MEASUREMENT, not a table somebody typed: every value in it
 //! is what `BlockState.getLightEmission()` returns inside the pinned 1.21.11
-//! server jar, dumped by `tools/dump-block-light.py` (which refuses any jar
+//! server jar, dumped by `tools/maintenance/dump-block-light.py` (which refuses any jar
 //! whose sha256 is not the `versions.toml` pin). That is the property that makes
 //! this a proof rather than coverage — a wrong emission value cannot be made
 //! green by editing the expectation without editing a file whose header names
-//! the jar it came from, and `tools/dump-block-light.py --check` re-derives it.
+//! the jar it came from, and `tools/maintenance/dump-block-light.py --check` re-derives it.
 //!
 //! Three assertions, and the first is the one the gate exists for.
 

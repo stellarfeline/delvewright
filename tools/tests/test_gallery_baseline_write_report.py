@@ -1,6 +1,6 @@
 """A re-based review delta is not an emission drift, and the write says which it is.
 
-`tools/gallery-baseline.py --write` printed ONE sentence carrying three figures —
+`tools/ci/gallery-baseline.py --write` printed ONE sentence carrying three figures —
 changed paths, warning rows, recorded manifest values — every one of them measured
 between THIS TREE and THE REVIEW BASE, and none of them against what was on disk.
 Nothing in the arm measured the write's own effect at all.
@@ -47,7 +47,7 @@ REPO = pathlib.Path(__file__).resolve().parents[2]
 
 
 def _load():
-    path = REPO / "tools" / "gallery-baseline.py"
+    path = REPO / "tools" / "ci" / "gallery-baseline.py"
     spec = importlib.util.spec_from_file_location("gallery_baseline_write_report", path)
     mod = importlib.util.module_from_spec(spec)
     assert spec.loader is not None

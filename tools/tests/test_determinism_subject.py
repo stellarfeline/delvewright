@@ -1,4 +1,4 @@
-"""Guards for `tools/determinism-subject.sh` — the cross-OS gate's subject.
+"""Guards for `tools/ci/determinism-subject.sh` — the cross-OS gate's subject.
 
 Both properties asserted here were learned from one red, and neither was
 guessable from the script's own text.
@@ -29,7 +29,7 @@ import subprocess
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent.parent
-SCRIPT = REPO / "tools" / "determinism-subject.sh"
+SCRIPT = REPO / "tools" / "ci" / "determinism-subject.sh"
 
 # A stub engine that refuses exactly the way the real one did: `build` without
 # `--prefabs` is `internal error: cannot read prefabs dir campaigns/prefabs`,
@@ -62,11 +62,11 @@ exit 3
 def bare_tree(tmp_path: Path, stub: str = STUB) -> tuple[Path, Path]:
     """A checkout shaped like a fresh runner's: NO `campaigns/` anywhere."""
     root = tmp_path / "repo"
-    (root / "tools").mkdir(parents=True)
+    (root / "tools" / "ci").mkdir(parents=True)
     (root / "bin").mkdir()
     for name in ("determinism-subject.sh", "tree-digest.py"):
-        (root / "tools" / name).write_bytes((REPO / "tools" / name).read_bytes())
-        (root / "tools" / name).chmod(0o755)
+        (root / "tools" / "ci" / name).write_bytes((REPO / "tools" / "ci" / name).read_bytes())
+        (root / "tools" / "ci" / name).chmod(0o755)
     engine = root / "bin" / "delvec"
     engine.write_text(stub)
     engine.chmod(0o755)
@@ -82,7 +82,7 @@ def run(root: Path, engine: Path, out: Path) -> subprocess.CompletedProcess:
     return subprocess.run(
         [
             "bash",
-            str(root / "tools" / "determinism-subject.sh"),
+            str(root / "tools" / "ci" / "determinism-subject.sh"),
             "--delvec",
             str(engine),
             "--out",

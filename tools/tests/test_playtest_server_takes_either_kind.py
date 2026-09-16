@@ -1,4 +1,4 @@
-"""`tools/playtest-server.sh up <path>` reads which kind of artifact it was handed.
+"""`tools/creator/playtest-server.sh up <path>` reads which kind of artifact it was handed.
 
 This engine makes two kinds of thing a person might want to stand inside — a
 campaign, and a prefab, which for a zone past the 48-per-axis template cap ships
@@ -25,7 +25,7 @@ import subprocess
 import pytest
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
-SCRIPT = ROOT / "tools" / "playtest-server.sh"
+SCRIPT = ROOT / "tools" / "creator" / "playtest-server.sh"
 
 
 @pytest.fixture

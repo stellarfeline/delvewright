@@ -1,4 +1,4 @@
-"""The DW-code gate's own uniqueness check (`tools/check-dw-codes.py`).
+"""The DW-code gate's own uniqueness check (`tools/ci/check-dw-codes.py`).
 
 The collision this pins, from the field: two branches developed in parallel each
 picked "the next free DW code" against the main they branched from, and the merge
@@ -17,7 +17,7 @@ import pathlib
 
 import pytest
 
-SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "check-dw-codes.py"
+SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "ci" / "check-dw-codes.py"
 
 
 @pytest.fixture

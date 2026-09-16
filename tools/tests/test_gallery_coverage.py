@@ -21,14 +21,14 @@ import sys
 import pytest
 
 REPO = pathlib.Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(REPO / "tools"))
+sys.path.insert(0, str(REPO / "tools" / "ci"))
 
 from gallery_units import Binder, Enumerator  # noqa: E402
 
 
 def _load_checker():
     spec = importlib.util.spec_from_file_location(
-        "check_gallery_coverage", REPO / "tools" / "check-gallery-coverage.py"
+        "check_gallery_coverage", REPO / "tools" / "ci" / "check-gallery-coverage.py"
     )
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
@@ -441,7 +441,7 @@ def test_a_zero_compiler_binding_reds_rather_than_being_printed(tmp_path):
     # `main()` driven end to end, because reaching this branch needs a real
     # schema export, a real gallery walk and a real build tree — and a test that
     # needs all three to prove one `return 1` is a test nobody keeps green.
-    src = (REPO / "tools" / "check-gallery-coverage.py").read_text()
+    src = (REPO / "tools" / "ci" / "check-gallery-coverage.py").read_text()
     assert "if zero_bindings:" in src, "the list must gate, not merely print"
     body = src.split("if zero_bindings:", 1)[1].split("\n    return 0", 1)[0]
     assert "return 1" in body, "a zero binding must fail the run"
@@ -556,6 +556,6 @@ def test_the_gate_names_the_probe_in_a_materialisation_refusal():
 
 def test_the_binding_line_states_the_patch_figures():
     """A count nobody prints is a count nobody can contradict (CLAUDE.md)."""
-    src = (REPO / "tools" / "check-gallery-coverage.py").read_text()
+    src = (REPO / "tools" / "ci" / "check-gallery-coverage.py").read_text()
     for phrase in ("probe patches:", "probe(s) examined", "JSON path(s) touched"):
         assert phrase in src, f"the binding line no longer states `{phrase}`"

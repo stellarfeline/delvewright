@@ -26,13 +26,13 @@
 # Names come from the compose project; workers reach the server over the compose
 # network or with `docker exec <id> rcon-cli`, never through localhost.
 #
-# The rule has a machine gate — `tools/check-compose-isolation.py` (CI) fails on a
+# The rule has a machine gate — `tools/ci/check-compose-isolation.py` (CI) fails on a
 # `container_name:` or `ports:` re-entering this file. Two files may add them
 # back, both by name:
 #
 #   * `owner-play.yaml`     — the owner's fixed `127.0.0.1:25565` binding plus the
 #     pinned `delvewright-server` / `delvewright-playtest` names. The ONLY file in
-#     the repo allowed to publish 25565 (with `tools/playtest-server.sh`).
+#     the repo allowed to publish 25565 (with `tools/creator/playtest-server.sh`).
 #   * `ephemeral-port.yaml` — an EPHEMERAL loopback port, for the flows that must
 #     drive a host-side bot (`playtest-note-flow.sh`, `rehearsal-flow.sh`). Docker
 #     picks the number; two of them can never collide.

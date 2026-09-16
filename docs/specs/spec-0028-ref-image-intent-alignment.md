@@ -75,7 +75,7 @@ actually in the tree, measured, and is updated whenever that changes.
 
 **Built — §3 ranking.**
 
-- `tools/refscore.py` scores candidate renders against a reference image and
+- `tools/creator/refscore.py` scores candidate renders against a reference image and
   emits one score per candidate, with no verdict surface of any kind. Three
   backends: `stub` (deterministic, offline, dependency-free — **not** a
   similarity measure, and every artifact it touches says so), `open-clip` (MIT,
@@ -104,7 +104,7 @@ actually in the tree, measured, and is updated whenever that changes.
   offline in CI with the stub backend and with `--dry-run` (no network, no key,
   no model). The *other* half of AC2 — the image-gen alignment loop producing an
   (image, prompt) acceptance record that conditions the builder — is **not
-  built**: `tools/refimg.py` draws a reference image, and nothing yet records an
+  built**: `tools/creator/refimg.py` draws a reference image, and nothing yet records an
   acceptance or hands the pair to the spec-0027 builder.
 - **AC1 (guided-text fallback, skill-battery check), AC4 (generation-dir default
   keeping images out of commits — `.sheets/` and `.refimg/` are gitignored, but

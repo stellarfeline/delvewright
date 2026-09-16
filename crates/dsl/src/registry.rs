@@ -55,7 +55,7 @@ pub trait EntityRegistry {
 
 /// The vendored `entity_type` **tag** table: tag id → its member entity ids,
 /// from Mojang's own generated reports (`crates/dsl/data/entity-tags-1.21.11.json`,
-/// regenerated per MC pin by `tools/extract-entity-tags.py`;
+/// regenerated per MC pin by `tools/maintenance/extract-entity-tags.py`;
 /// `crates/delvec/data/PROVENANCE.md`).
 ///
 /// Vanilla's answer to every question of the form "which entity types do X" that

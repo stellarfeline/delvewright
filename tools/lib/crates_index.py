@@ -2,7 +2,7 @@
 
 ## Why this is a library
 
-`tools/crates-io-publish.sh` had the whole of it inline: the sparse-index path
+`tools/ci/crates-io-publish.sh` had the whole of it inline: the sparse-index path
 scheme, the fetch, the JSON-lines scan for one version's `cksum`, and the bind
 test that refuses to believe any of it until a version everyone knows exists
 resolves. A second caller needs the same registry — `dsl-crate-publish.yml`
@@ -199,7 +199,7 @@ def main(argv: list[str]) -> int:
         print(USAGE, file=sys.stderr)
         return 2
     command, rest = argv[0], argv[1:]
-    sys.stdout.reconfigure(newline="\n")  # CRLF-proof: tools/check-python-shell-newlines.py
+    sys.stdout.reconfigure(newline="\n")  # CRLF-proof: tools/ci/check-python-shell-newlines.py
     if command == "path" and len(rest) == 1:
         print(index_path(rest[0]))
         return 0

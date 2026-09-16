@@ -22,7 +22,7 @@ against that exact tree, starts the container, and verifies over rcon that the
 datapack actually loaded before it says READY:
 
 ```sh
-"$DELVEWRIGHT_ENGINE/tools/playtest-server.sh" up campaigns/<id> \
+"$DELVEWRIGHT_ENGINE/tools/creator/playtest-server.sh" up campaigns/<id> \
     --prefabs "$DELVEWRIGHT_PREFABS" --delvec "$(command -v delvec)" --out "$PWD/.out/delve"
 ```
 
@@ -48,7 +48,7 @@ and the ladder is coming next anyway — it serves that tree instead of building
 a fresh one:
 
 ```sh
-python3 "$DELVEWRIGHT_ENGINE/tools/staging-gate.py" --campaign campaigns/<id> \
+python3 "$DELVEWRIGHT_ENGINE/tools/creator/staging-gate.py" --campaign campaigns/<id> \
     --build "$DELVEWRIGHT_ENGINE/validation/delve-output" \
     --report .out/round-1-gate.md
 EULA=TRUE docker compose -f "$DELVEWRIGHT_ENGINE/validation/compose.yaml" \
@@ -93,7 +93,7 @@ and do not write `walk-record.json`.
 ## When they answer
 
 Their words are the finding — record them, and take the server down:
-`$DELVEWRIGHT_ENGINE/tools/playtest-server.sh down --name <name>` — which also frees
+`$DELVEWRIGHT_ENGINE/tools/creator/playtest-server.sh down --name <name>` — which also frees
 the 25565 mutex. `--name` defaults to `dw-playtest`; pass the one you brought up.
 `docker compose … down -v` is the compose path's teardown.
 
@@ -132,7 +132,7 @@ expected; a row in the RED list is not, and is worth stopping for.
 To go in anyway on a build you know is red:
 
 ```sh
-python3 "$DELVEWRIGHT_ENGINE/tools/staging-gate.py" --campaign <dir> --build <out> \
+python3 "$DELVEWRIGHT_ENGINE/tools/creator/staging-gate.py" --campaign <dir> --build <out> \
     --stage-anyway "<why this session needs a red build>" --acknowledge-red <N>
 ```
 

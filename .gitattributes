@@ -13,7 +13,7 @@ Dockerfile.* text eol=lf
 # The kernel reads the same first line for every interpreter, not only for bash.
 # The class is every tracked file some machine runs through line one — one that
 # carries a shebang, or one that carries the executable bit. That population is
-# derived from the tree by `tools/check-eol-attributes.py`, which refuses a file
+# derived from the tree by `tools/ci/check-eol-attributes.py`, which refuses a file
 # no pattern here covers, so a new extension reds on the pull request rather
 # than on the Windows checkout that cannot run it.
 # `*.py` covers every python in the tree; it leaves out a python program named

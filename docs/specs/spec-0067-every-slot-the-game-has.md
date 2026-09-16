@@ -326,7 +326,7 @@ The item side reads a vendored derivation,
 `{slot, asset_id?, allowed_entities?, kind}` (`allowed_entities` always a
 list), and `asset_layers`, every equipment asset's layer types, extracted from
 `item_components/data.min.json` and the equipment assets by
-`tools/extract-item-equippable.py`, which pins both source digests and the counts of §1
+`tools/maintenance/extract-item-equippable.py`, which pins both source digests and the counts of §1
 and §4.1 (84 items; seven slot values; 45 with an allowed list; 29 armour, 1
 wings, 45 animal, 9 item; 44 assets, 18 layer types, 15 of them a body or
 saddle layer) and refuses a source whose digest or counts differ.
@@ -446,7 +446,7 @@ is recorded as a debt.
    an allowed list) and the kinds of §4.1 (29 armour, 1 wings, 45 animal, 9
    item). *Tree: met —
    `equipment_tables.rs::every_slot_the_item_data_declares_is_in_the_vocabulary`.*
-3. **The extractor.** `tools/extract-item-equippable.py` pins the item-data
+3. **The extractor.** `tools/maintenance/extract-item-equippable.py` pins the item-data
    digest `51b191e1…` and the equipment-asset list digest `150b5855…`, pins
    the counts, refuses a mismatch by exit status, and is reproducible
    byte-for-byte (two runs, one digest); `PROVENANCE.md` carries the rows.
@@ -517,19 +517,19 @@ is recorded as a debt.
     holds the line's shape and its zeroes.*
 15. **The gallery.** §6's horse builds green; perturbing the armour id moves
     the summon line; the probe is refused at `validate` with the new code;
-    `tools/check-gallery-coverage.py` reports 0 units in neither state. *Tree:
+    `tools/ci/check-gallery-coverage.py` reports 0 units in neither state. *Tree:
     met — `actor/destrier`; probe `a-chestplate-on-a-horse`.*
 16. **The ledger row for §7.1** exists in `docs/playtest-findings.json` with a
     binding computed over the bodies whose entity falls back to the default
     box. *Tree: debt — a row with no carrier is `NO-GENERAL-FORM` on every
-    campaign `tools/staging-gate.py` judges, the gallery included, so the row
-    reds `tools/check-gallery-stageable.py` on the tree that lands it; it is
+    campaign `tools/creator/staging-gate.py` judges, the gallery included, so the row
+    reds `tools/ci/check-gallery-stageable.py` on the tree that lands it; it is
     held with the ledger's other open capability rows until a carrier for the
     mounts' footprint exists.*
 17. **The record and the skill.** The rows and pages of §6, in the pull
     request that lands the code. *Tree: met — the record's rows and the
     skill page's two sections. The page describes the refusal without naming
-    its code: `tools/check-skill-page.py` holds every code a page names to the
+    its code: `tools/ci/check-skill-page.py` holds every code a page names to the
     page's engine pin, a release that predates `DW0898`, so the code's name is
     added to the page when the pin moves to a release that declares it.*
 18. A demo-level row is queued when the code lands. *Tree: met — The Stable

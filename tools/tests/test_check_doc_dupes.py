@@ -1,4 +1,4 @@
-"""The documentation merge-artifact gate (`tools/check-doc-dupes.py`).
+"""The documentation merge-artifact gate (`tools/ci/check-doc-dupes.py`).
 
 The defect this pins, from the field: the stage-5 DSL
 table of `docs/reference/compiler.md` carried `shortcuts[]` twice and
@@ -26,7 +26,7 @@ import pathlib
 
 import pytest
 
-SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "check-doc-dupes.py"
+SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "ci" / "check-doc-dupes.py"
 
 
 @pytest.fixture
@@ -360,7 +360,7 @@ def test_gitignored_private_notes_are_skipped(gate):
 
 def test_the_live_docs_tree_is_clean(gate):
     """The gate must be green on the real repo — it ships wired into CI."""
-    repo_root = SCRIPT.resolve().parents[1]
+    repo_root = SCRIPT.resolve().parents[2]
     module_spec = importlib.util.spec_from_file_location("check_doc_dupes_live", SCRIPT)
     live = importlib.util.module_from_spec(module_spec)
     assert module_spec.loader is not None

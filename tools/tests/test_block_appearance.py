@@ -52,8 +52,8 @@ from pathlib import Path
 import pytest
 
 REPO = Path(__file__).resolve().parents[2]
-TOOL = REPO / "tools" / "block-appearance.py"
-EXTRACTOR = REPO / "tools" / "extract-block-classification.py"
+TOOL = REPO / "tools" / "creator" / "block-appearance.py"
+EXTRACTOR = REPO / "tools" / "maintenance" / "extract-block-classification.py"
 CLASSIFICATION = REPO / "crates" / "delvec" / "data" / "block-classification-1.21.11.json"
 ASSEMBLED = REPO / "crates" / "delvec" / "src" / "compiler" / "assembled.rs"
 
@@ -106,7 +106,7 @@ JAR_GATED = {
 @pytest.fixture(scope="module")
 def table():
     assert CLASSIFICATION.exists(), (
-        f"{CLASSIFICATION} is missing — regenerate with tools/extract-block-classification.py"
+        f"{CLASSIFICATION} is missing — regenerate with tools/maintenance/extract-block-classification.py"
     )
     return json.loads(CLASSIFICATION.read_text())
 

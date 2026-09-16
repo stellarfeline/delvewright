@@ -1,7 +1,7 @@
 r"""Guard: the pair is judged in the WORKFLOW's order.
 
-`engine-release.yml` runs `tools/check-publishable.sh` and THEN
-`tools/crates-io-publish.sh --plan|--publish` in the same job, on the belief
+`engine-release.yml` runs `tools/ci/check-publishable.sh` and THEN
+`tools/ci/crates-io-publish.sh --plan|--publish` in the same job, on the belief
 that the second reads what the first packaged. Release re-run 34072383204
 (`v1.2.0`, tree `d0505ef9`, workflow from `main` at `d5908698`) is where nothing
 had ever run them in that exact order before the tag: `check-publishable.sh`
@@ -9,7 +9,7 @@ packaged all eight crates, printed OK, and its `cleanup()` trap removed the
 whole verify tree on every exit — success included — so `crates-io-publish.sh
 --plan` immediately failed with "no packaged tarball at
 .../package-verify/package/delvewright-dsl-0.20.0.crate — run
-tools/check-publishable.sh first", three steps after that exact script had just
+tools/ci/check-publishable.sh first", three steps after that exact script had just
 run. See docs/notes/private/briefs/
 BY-the-publish-plan-reads-the-tarballs-the-gate-packaged.md.
 
@@ -205,8 +205,9 @@ def _scratch_clone(tmp_path: Path, check_src: str, publish_src: str) -> Path:
     """
     tree = tmp_path / "clone"
     (tree / "tools" / "lib").mkdir(parents=True)
-    (tree / "tools" / "check-publishable.sh").write_text(check_src, encoding="utf-8")
-    (tree / "tools" / "crates-io-publish.sh").write_text(publish_src, encoding="utf-8")
+    (tree / "tools" / "ci").mkdir(parents=True)
+    (tree / "tools" / "ci" / "check-publishable.sh").write_text(check_src, encoding="utf-8")
+    (tree / "tools" / "ci" / "crates-io-publish.sh").write_text(publish_src, encoding="utf-8")
     # EVERY shared lib, not a list of the ones these scripts happened to call
     # when this was written. The list was `checksum.sh`, `package-verify.sh` and
     # `crates_index.py`; `crates-io-publish.sh` then gained a fourth
@@ -270,7 +271,7 @@ def _install_fake_cargo(tree: Path, crates: list[tuple[str, str]]) -> dict[str, 
 
 def _run_sequence(tree: Path, env: dict[str, str], index_base: str) -> tuple[subprocess.CompletedProcess, subprocess.CompletedProcess]:
     check = subprocess.run(
-        ["bash", str(tree / "tools" / "check-publishable.sh"), "--allow-dirty"],
+        ["bash", str(tree / "tools" / "ci" / "check-publishable.sh"), "--allow-dirty"],
         cwd=tree,
         capture_output=True,
         text=True,
@@ -278,7 +279,7 @@ def _run_sequence(tree: Path, env: dict[str, str], index_base: str) -> tuple[sub
     )
     plan_env = {**env, "DW_CRATES_INDEX": index_base}
     plan = subprocess.run(
-        ["bash", str(tree / "tools" / "crates-io-publish.sh"), "--plan"],
+        ["bash", str(tree / "tools" / "ci" / "crates-io-publish.sh"), "--plan"],
         cwd=tree,
         capture_output=True,
         text=True,
@@ -291,8 +292,8 @@ def test_the_plan_reads_what_the_gate_packaged(tmp_path: Path, fake_index: str) 
     crates = _engine_crates(REPO / "versions.toml")
     tree = _scratch_clone(
         tmp_path,
-        (REPO / "tools" / "check-publishable.sh").read_text(encoding="utf-8"),
-        (REPO / "tools" / "crates-io-publish.sh").read_text(encoding="utf-8"),
+        (REPO / "tools" / "ci" / "check-publishable.sh").read_text(encoding="utf-8"),
+        (REPO / "tools" / "ci" / "crates-io-publish.sh").read_text(encoding="utf-8"),
     )
     env = _install_fake_cargo(tree, crates)
 
@@ -321,6 +322,10 @@ def test_red_on_the_original_gate_leaves_no_tarball_for_the_plan(tmp_path: Path)
     # decided about from today's numbers — not a frozen copy of an older file.
     tree = tmp_path / "clone"
     tree.mkdir()
+    # At d5908698 the script lived at `tools/check-publishable.sh` and resolved
+    # its ROOT one directory up, so the frozen instrument is laid out the way
+    # that revision laid it out. Placing it where the CURRENT script lives would
+    # be running the frozen bytes against a tree they were never written for.
     (tree / "tools").mkdir()
     (tree / "tools" / "check-publishable.sh").write_text(check_src, encoding="utf-8")
     _legacy_versions_toml(REPO / "versions.toml", tree / "versions.toml")
@@ -337,7 +342,7 @@ def test_red_on_the_original_gate_leaves_no_tarball_for_the_plan(tmp_path: Path)
     assert check.returncode == 0, check.stdout + check.stderr
     assert "check-publishable: OK" in check.stdout, check.stdout
 
-    # The exact path `tools/crates-io-publish.sh`'s `local_crate_path` reads —
+    # The exact path `tools/ci/crates-io-publish.sh`'s `local_crate_path` reads —
     # reproduced here, not imported, because at d5908698 that function computed
     # this same formula under `target/package-verify`, and the point is that
     # the FILE is gone, independent of which script's copy of the formula asks.

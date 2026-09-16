@@ -202,7 +202,7 @@ const SPECIAL_TEXTURES: &[(&str, &[&str])] = &[
 /// The banner and shield base textures sit at the jar's top level
 /// (`entity/banner_base.png`), not inside the pattern folder; the vendored
 /// renderer is patched to ask for them there. See
-/// `tools/build-deepslate-bundle.sh`.
+/// `tools/maintenance/build-deepslate-bundle.sh`.
 const SPECIAL_SUFFIXES: &[(&str, &str, &str)] = &[
     // (suffix, texture prefix, "" | the suffix to strip beyond the match)
     ("_wall_hanging_sign", "entity/signs/hanging/", ""),

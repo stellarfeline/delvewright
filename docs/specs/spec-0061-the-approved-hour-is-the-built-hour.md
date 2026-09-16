@@ -298,7 +298,7 @@ are not a fifth shape of `DW-SKY`.
 promise** — spec-0060 §10.3's rule, inherited: each move above (declare the
 hour the rows state; add the row; delete the row; copy the file in; remove the
 `set-time`) is a row in `crates/delvec/tests/remedy_reachability.rs`, and
-`tools/check-dw-codes.py`'s cross-check refuses a message naming a move with no
+`tools/ci/check-dw-codes.py`'s cross-check refuses a message naming a move with no
 row.
 
 **Tier and subject.** `DW-SKY` is raised by `delvec validate` at exit 1. Its
@@ -321,7 +321,7 @@ look", which is a different fact.
 
 ## 7. The staging event
 
-**Authored.** The staging gate (`tools/staging-gate.py`) is the one entry point
+**Authored.** The staging gate (`tools/creator/staging-gate.py`) is the one entry point
 to the owner's walk, and it is where "this campaign has an approved design" is
 enforced.
 
@@ -479,7 +479,7 @@ a debt, stated as such, never a pass.
    *Checked: debt.*
 6. **Every named remedy is reachable.** `crates/delvec/tests/remedy_reachability.rs`
    gains one row per move `DW-SKY` names (§6), each building the campaign that
-   takes it and asserting a different verdict; `tools/check-dw-codes.py`'s
+   takes it and asserting a different verdict; `tools/ci/check-dw-codes.py`'s
    cross-check is green with the new code and refuses if a message names a
    move with no row.
    *Checked: debt — the test file and the cross-check exist at `ba461b28`
@@ -506,7 +506,7 @@ a debt, stated as such, never a pass.
     fixture are byte-identical (ADR-0006); `docs/reference/compiler.md` gains
     the `DW-SKY` row, a *Stage — `design`* section, and `required` on the
     world's `time`/`weather` rows, in the PR that lands each;
-    `tools/check-dw-codes.py` is green with zero new allowlist entries.
+    `tools/ci/check-dw-codes.py` is green with zero new allowlist entries.
     *Checked: debt.*
 11. **The first binding.** The drill campaign, re-made through `/new-delve`
     after §10 lands, carries a `design.json` of four rows all stating

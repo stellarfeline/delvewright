@@ -39,11 +39,11 @@ pub struct FullItemRegistry {
     ids: BTreeSet<String>,
     /// Item id → default `minecraft:max_stack_size` (1, 16 or 64 in 1.21.11).
     /// Mojang's own data, regenerated per MC pin by
-    /// `tools/extract-item-stack-sizes.py` — never a hand-maintained table.
+    /// `tools/maintenance/extract-item-stack-sizes.py` — never a hand-maintained table.
     stack_sizes: BTreeMap<String, u32>,
     /// Item id → its `minecraft:equippable` facts (spec-0067), for the 84 items
     /// that carry the component. Regenerated per MC pin by
-    /// `tools/extract-item-equippable.py`.
+    /// `tools/maintenance/extract-item-equippable.py`.
     equippable: BTreeMap<String, delvewright_dsl::Equippable>,
 }
 
@@ -163,7 +163,7 @@ impl EntityRegistry for FullEntityRegistry {
 
 /// The complete 1.21.11 `sound_event` registry (1838 ids), vendored under `data/`
 /// from the same `misode/mcmeta` summary as the item/entity registries (see
-/// `data/PROVENANCE.md`; regenerate with `tools/extract-sound-registry.py`).
+/// `data/PROVENANCE.md`; regenerate with `tools/maintenance/extract-sound-registry.py`).
 /// Validates v0.6 `play-sound` / v0.4 `narrate.sound` ids (`DW0326`, spec-0014).
 #[derive(Debug, Clone)]
 pub struct FullSoundRegistry {
@@ -198,7 +198,7 @@ impl FullSoundRegistry {
 /// Per-item combat & sustain numbers for the pinned MC version — Mojang's own
 /// `minecraft:attribute_modifiers` / `minecraft:food` default components,
 /// vendored under `data/` (see `data/PROVENANCE.md`; regenerate with
-/// `tools/extract-item-combat-stats.py`). Read by the spec-0023 winnability
+/// `tools/maintenance/extract-item-combat-stats.py`). Read by the spec-0023 winnability
 /// arithmetic (`compiler::combat`).
 ///
 /// **Absence is a fact, not a gap.** An item with no entry has no combat

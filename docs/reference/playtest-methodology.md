@@ -181,7 +181,7 @@ Rules 2 and 4 were written down and obeyed by hand, which meant they were obeyed
 exactly as well as whoever remembered them. Both are now enforced:
 `docs/playtest-findings.json` is the ledger — **every finding reported on any
 campaign, from the first M2 dress rehearsal (2026-07-30) onward** — and
-`tools/staging-gate.py` refuses to stage a build while any row's
+`tools/creator/staging-gate.py` refuses to stage a build while any row's
 general form is not a live, binding check on THAT build.
 
 The gate asks a question no other check in this repo asks, and it is the reason
@@ -377,9 +377,9 @@ put a build in front of the owner:
 
 | Staging path | How the gate is bound to it |
 |---|---|
-| `tools/playtest-server.sh up` (throwaway `docker run`, binds 25565 — the one she actually runs) | runs the gate itself between `delvec build` and `docker run`; a refusal dies before any container exists |
+| `tools/creator/playtest-server.sh up` (throwaway `docker run`, binds 25565 — the one she actually runs) | runs the gate itself between `delvec build` and `docker run`; a refusal dies before any container exists |
 | `docker compose -f compose.yaml -f validation/owner-play.yaml --profile play\|playtest up` (the other sanctioned 25565 binder) | `owner-play.yaml` adds a `staging-admission` service that both port-publishing services `depends_on: service_completed_successfully` |
-| The content repository's `release` workflow (`stellarfeline/delvewright-campaigns`, on a `release/<campaign>/v<semver>` tag, spec-0024 §1) → multi-arch delve image to GHCR + a GitHub Release (she runs the image on the Pi) | **NOT BOUND.** That workflow runs its own ladder and publishes without ever calling this gate. To bind it, add a step in the content repository between `delvec build` and its `docker/login-action` that runs `python3 <engine checkout>/tools/staging-gate.py --campaign <campaign dir> --build <build tree>` — the engine is already checked out there, at the revision `versions.toml` pins |
+| The content repository's `release` workflow (`stellarfeline/delvewright-campaigns`, on a `release/<campaign>/v<semver>` tag, spec-0024 §1) → multi-arch delve image to GHCR + a GitHub Release (she runs the image on the Pi) | **NOT BOUND.** That workflow runs its own ladder and publishes without ever calling this gate. To bind it, add a step in the content repository between `delvec build` and its `docker/login-action` that runs `python3 <engine checkout>/tools/creator/staging-gate.py --campaign <campaign dir> --build <build tree>` — the engine is already checked out there, at the revision `versions.toml` pins |
 
 The compose path cannot run the gate itself — the gate needs the campaign
 SOURCE, which the build tree does not carry, and Python, which the delve image
@@ -430,7 +430,7 @@ step earlier.
 
 The subject a push HAS is the gallery: engine-owned, built by every revision,
 holding one instance of every surface the DSL declares (spec-0039). So
-`tools/check-gallery-stageable.py` runs this gate on **every point of the gallery
+`tools/ci/check-gallery-stageable.py` runs this gate on **every point of the gallery
 domain**, as a step of the `gallery (coverage + build + baseline)` job. The points
 are enumerated from `gallery/baseline/manifests.json`, the ladder's own build
 ledger, and cross-checked against the gallery directory; judging fewer points
@@ -505,7 +505,7 @@ the verdict, one of two declarations:
   yet. An instrument-bound verdict is re-taken when its blocker closes; it is
   never left standing as though it were about the artifact.
 
-`tools/check-trial-verdicts.py` enforces this over `docs/trials/`, in the docs
+`tools/ci/check-trial-verdicts.py` enforces this over `docs/trials/`, in the docs
 job. It enumerates the entry points rather than trusting a checklist — every
 trial record, every `## Run N — result` section in it, every rubric row that
 carries a bolded verdict — so a record cannot gain a run, or an answer, without

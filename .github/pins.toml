@@ -1,7 +1,7 @@
 # THE PIN REGISTRY — every literal in this repo that decides which version of an
 # external thing gets fetched, with the policy that says whether it may drift.
 #
-# `tools/check-pins.py` reads this file. It discovers pins by SHAPE across every
+# `tools/ci/check-pins.py` reads this file. It discovers pins by SHAPE across every
 # file kind that can execute or be resolved from, so an entry is not how a pin
 # becomes visible — a pin is visible whether or not anyone registers it, and an
 # unregistered one is a red. What the entry adds is the DECISION: what this pin
@@ -109,7 +109,7 @@ too, and no workflow overrides it, so CI and a creator's own clone build on the
 same compiler. versions.toml restates it, the root manifest's `[workspace.package]` carries it
 as the `rust-version` floor every engine crate inherits, and the DSL crate's
 manifest carries its own; validation/check-versions.sh holds those four equal,
-and tools/check-reference-versions.py holds every crate README's "Rust 1.97.1
+and tools/ci/check-reference-versions.py holds every crate README's "Rust 1.97.1
 or newer" line equal to them in turn.
 
 HELD FOR one instrument, constant across time and machines. ADR-0006's
@@ -191,7 +191,7 @@ sites = [
 repo = "stellarfeline/delvewright"
 policy = "release"
 judged_by = ".github/workflows/ci.yml"
-bound_by = "tools/check-skill-page.py"
+bound_by = "tools/ci/check-skill-page.py"
 bound_key = "engine.ref"
 why = """
 The ONE engine release the creator-facing page is written against, proven on and
@@ -232,20 +232,20 @@ Measured over the fetch sites of this tree: twelve distinct `<name>--v<semver>`
 literals stand in them, and eleven are fixtures of `tools/tests/test_release_tags.py`
 and examples in `tools/lib/release_tags.py`'s own docstring. A shape scan would
 therefore report eleven pins nobody fetches, so this value is on the `bound_by`
-arm the registry keeps for exactly that case: `tools/check-skill-page.py` reads
+arm the registry keeps for exactly that case: `tools/ci/check-skill-page.py` reads
 `engine.ref` out of the manifest beside the page and holds the marketplace
 entry's `ref` equal to it, which is what makes two files stating one name
 checkable rather than conventional.
 
 WHAT ACTUALLY READS IT, because a pin whose only reader is prose is a doc line:
 
-  - `tools/check-pins.py` (offline, required job): the binder above is verified —
+  - `tools/ci/check-pins.py` (offline, required job): the binder above is verified —
     that it reads the key, that it names both sites, and that a workflow runs it —
     and each site is then asserted to carry this value as a whole token.
-  - `tools/check-pins.py --online` (same job): the tag exists in this repository
+  - `tools/ci/check-pins.py --online` (same job): the tag exists in this repository
     and its version is the version its commit's tree states, or it is this tree's
     own unborn tag.
-  - `tools/check-skill-page.py` (offline, required job): the one reader that uses
+  - `tools/ci/check-skill-page.py` (offline, required job): the one reader that uses
     the tag as an INSTRUMENT rather than judging the literal. It materialises the
     engine at the tag's commit — this tree, while the tag is unborn — and holds
     the page's `metadata.requires_delvec` window, every `delvec` subcommand and
@@ -255,7 +255,7 @@ WHAT ACTUALLY READS IT, because a pin whose only reader is prose is a doc line:
     against that one engine. Move it to an engine whose CLI has dropped a
     subcommand the page drives and the page reds — which is the point, because
     that is exactly what a creator would hit at Init.
-  - `tools/check-skill-page.py --online` (same job): the tag's commit is on `main`
+  - `tools/ci/check-skill-page.py --online` (same job): the tag's commit is on `main`
     and its tree states the tag's version, and the Release carries one archive per
     target that tree declares plus a `SHA256SUMS`. A partial shelf means I3a falls
     to the source build on exactly the platforms nobody tested.
@@ -397,9 +397,9 @@ that does not answer it, and `validation/chunky.sh` renders with nothing else.
 id = "mcmeta-commit"
 value = "c976eb3b2cfcb9f205171527dec46b266afa3ac9"
 sites = [
-    "tools/extract-block-defaults.py",
-    "tools/extract-block-registry.py",
-    "tools/extract-item-equippable.py",
+    "tools/maintenance/extract-block-defaults.py",
+    "tools/maintenance/extract-block-registry.py",
+    "tools/maintenance/extract-item-equippable.py",
 ]
 policy = "immutable"
 why = "The misode/mcmeta commit the pinned block summaries and item components were retrieved from."
@@ -407,7 +407,7 @@ why = "The misode/mcmeta commit the pinned block summaries and item components w
 [[pin]]
 id = "mcmeta-blocks"
 value = "178a12096f59f863758a6c685e5eb6de38721b376a30a30383e171d0799f3ee7"
-sites = ["tools/extract-block-defaults.py", "tools/extract-block-registry.py"]
+sites = ["tools/maintenance/extract-block-defaults.py", "tools/maintenance/extract-block-registry.py"]
 policy = "immutable"
 why = "sha256 of the mcmeta `blocks/data.min.json` both block extractors read."
 
@@ -415,9 +415,9 @@ why = "sha256 of the mcmeta `blocks/data.min.json` both block extractors read."
 id = "mcmeta-item-components"
 value = "51b191e13f86813ca02f1498942e5bc235947edb71eb8105a78401670b3665c4"
 sites = [
-    "tools/extract-item-combat-stats.py",
-    "tools/extract-item-equippable.py",
-    "tools/extract-item-stack-sizes.py",
+    "tools/maintenance/extract-item-combat-stats.py",
+    "tools/maintenance/extract-item-equippable.py",
+    "tools/maintenance/extract-item-stack-sizes.py",
 ]
 policy = "immutable"
 why = "sha256 of the mcmeta `item_components/data.min.json`."
@@ -425,56 +425,56 @@ why = "sha256 of the mcmeta `item_components/data.min.json`."
 [[pin]]
 id = "mcmeta-assets-commit"
 value = "c5b876288e0df01b5cd5798434b066ab97eff88c"
-sites = ["tools/extract-item-equippable.py"]
+sites = ["tools/maintenance/extract-item-equippable.py"]
 policy = "immutable"
 why = "The misode/mcmeta `1.21.11-assets` commit the pinned client's equipment assets were retrieved from."
 
 [[pin]]
 id = "mcmeta-equipment-assets"
 value = "150b585538e2295db9daee16e3fce4c23ac5bcdddc85358208b8e7adadbf78bb"
-sites = ["tools/extract-item-equippable.py"]
+sites = ["tools/maintenance/extract-item-equippable.py"]
 policy = "immutable"
 why = "sha256 of the sorted `sha256sum` listing of the 44 files under the pinned `assets/minecraft/equipment/`."
 
 [[pin]]
 id = "mcmeta-damage-types"
 value = "0ce7edc377446ecddfd1c3b74b32e2dc3b248edc4035275134fb821e98a6c7ad"
-sites = ["tools/extract-damage-types.py"]
+sites = ["tools/maintenance/extract-damage-types.py"]
 policy = "immutable"
 why = "sha256 of the mcmeta damage-type summary."
 
 [[pin]]
 id = "mcmeta-damage-type-tags"
 value = "794ce6343293660b5f32d6a78f7a374623bb785d18dfc5ce3cbdeb3093b0161d"
-sites = ["tools/extract-damage-types.py"]
+sites = ["tools/maintenance/extract-damage-types.py"]
 policy = "immutable"
 why = "sha256 of the mcmeta damage-type TAG summary."
 
 [[pin]]
 id = "mcmeta-entity-tags"
 value = "5523f45b7ddb178cd9f8bbe998458cc070910a74bc6c551a37b9279f5d73f844"
-sites = ["tools/extract-entity-tags.py"]
+sites = ["tools/maintenance/extract-entity-tags.py"]
 policy = "immutable"
 why = "sha256 of the mcmeta entity-type TAG summary."
 
 [[pin]]
 id = "mcmeta-sound-registry"
 value = "7efb184902cfef62b431bc9826ebcbcde2c23746e5624326ffcf922e15cf28f9"
-sites = ["tools/extract-sound-registry.py"]
+sites = ["tools/maintenance/extract-sound-registry.py"]
 policy = "immutable"
 why = "sha256 of the mcmeta registries summary the sound table is derived from."
 
 [[pin]]
 id = "mcmeta-block-tags"
 value = "ff73a0c7f08cb8276a48daa39c104a34d79f0aebd872b37de9c9dc137d49082f"
-sites = ["tools/extract-block-classification.py"]
+sites = ["tools/maintenance/extract-block-classification.py"]
 policy = "immutable"
 why = "sha256 of the mcmeta block-tag summary."
 
 [[pin]]
 id = "mcmeta-recipes"
 value = "811e914cf45fc801146103442811285342327a6bb2f46641a58120a131e31918"
-sites = ["tools/extract-block-classification.py"]
+sites = ["tools/maintenance/extract-block-classification.py"]
 policy = "immutable"
 why = "sha256 of the mcmeta recipe summary."
 
@@ -639,11 +639,11 @@ policy = "floating"
 bound_by = "validation/check-versions.sh"
 bound_key = "python_tools_version"
 why = """
-The interpreter the two Python tool suites run on: `tools/skin` (spec-0009
+The interpreter the two Python tool suites run on: `tools/creator/skin` (spec-0009
 composition + preview, whose test asserts byte-identical PNGs) and `tools/tests`
 (the stdlib-only tooling suite, whose network is blocked at `urlopen`) — and,
 since release run 34069406209 (v1.2.0), the same interpreter
-`tools/build-release-binaries.sh` needs to read `versions.toml`: `ubuntu-22.04`
+`tools/ci/build-release-binaries.sh` needs to read `versions.toml`: `ubuntu-22.04`
 and `ubuntu-22.04-arm` ship python3.10 by default, below stdlib `tomllib`'s
 floor, so both the release's shelf job (engine-release.yml) and the CI job that
 stands in for it (ci.yml's `engine-shelf`) now pin this line explicitly rather
@@ -652,7 +652,7 @@ than trusting the runner image's default.
 HELD FOR one interpreter across every one of these, which is what makes a
 determinism result from one month comparable to the next — the same argument
 the Rust toolchain pin makes, one language over. The floor is real and lower:
-every consumer needs >= 3.11 for stdlib `tomllib`, and `tools/skin`'s own
+every consumer needs >= 3.11 for stdlib `tomllib`, and `tools/creator/skin`'s own
 manifest declares `requires-python >= 3.10`.
 
 WHY IT DIFFERS from `ci-python-mecha`, since two interpreter lines in one
@@ -844,9 +844,9 @@ step and not a ledger row.
 id = "skinpy-extended"
 value = "1.0.1"
 sites = [
-    "tools/skin/delve_skin/catalog.py",
-    "tools/skin/pyproject.toml",
-    "tools/skin/requirements.txt",
+    "tools/creator/skin/delve_skin/catalog.py",
+    "tools/creator/skin/pyproject.toml",
+    "tools/creator/skin/requirements.txt",
     "versions.toml",
 ]
 policy = "immutable"
@@ -854,11 +854,11 @@ bound_by = "validation/check-versions.sh"
 bound_key = "skinpy_extended"
 why = """
 skinpy-extended (MIT, ADR-0013 allowlist): the part/face-addressable composer and
-the pure-Python isometric preview renderer `tools/skin` is built on (spec-0009).
+the pure-Python isometric preview renderer `tools/creator/skin` is built on (spec-0009).
 
 HELD FOR byte-identity. The suite's whole claim is that one cast entry produces
 one PNG (ADR-0006), so a different library version is a different picture under
-the same declared version — and `tools/skin/delve_skin/compose.py` states its
+the same declared version — and `tools/creator/skin/delve_skin/compose.py` states its
 face-coordinate convention as verified against THIS release, which is a frozen
 measurement naming its instrument.
 

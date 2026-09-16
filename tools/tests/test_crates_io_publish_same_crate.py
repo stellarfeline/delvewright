@@ -1,6 +1,6 @@
 r"""Guard: a publish run that finds its crate already served AS THE SAME CRATE ends green.
 
-`tools/crates-io-publish.sh --publish --only delvewright-dsl` decides "same
+`tools/ci/crates-io-publish.sh --publish --only delvewright-dsl` decides "same
 crate, different bytes" when the registry's tarball differs from this tree's
 only in provenance (`.cargo_vcs_info.json` names the commit it was packaged
 at). That is the normal state of a re-run from a later `main` commit — which
@@ -107,8 +107,8 @@ def test_a_same_crate_skip_passes_its_post_condition(tmp_path: Path) -> None:
     assert name == "delvewright-dsl", crates
     tree = _scratch_clone(
         tmp_path,
-        (REPO / "tools" / "check-publishable.sh").read_text(encoding="utf-8"),
-        (REPO / "tools" / "crates-io-publish.sh").read_text(encoding="utf-8"),
+        (REPO / "tools" / "ci" / "check-publishable.sh").read_text(encoding="utf-8"),
+        (REPO / "tools" / "ci" / "crates-io-publish.sh").read_text(encoding="utf-8"),
     )
     env = _install_fake_cargo(tree, crates)
     server, thread, base = _serve(tree, name, version)
@@ -122,7 +122,7 @@ def test_a_same_crate_skip_passes_its_post_condition(tmp_path: Path) -> None:
         }
         run_env.pop("CARGO_REGISTRY_TOKEN", None)
         result = subprocess.run(
-            ["bash", str(tree / "tools" / "crates-io-publish.sh"), "--publish", "--only", name, "--allow-dirty"],
+            ["bash", str(tree / "tools" / "ci" / "crates-io-publish.sh"), "--publish", "--only", name, "--allow-dirty"],
             cwd=tree, capture_output=True, text=True, env=run_env, timeout=120,
         )
     finally:

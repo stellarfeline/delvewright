@@ -2218,7 +2218,7 @@ fn ns_item(id: &str) -> String {
 /// happened to remember: effects come through
 /// [`crate::stages::for_each_campaign_effect`], which is
 /// [`crate::effects::for_each_effect_root`] underneath — the same eight roots
-/// emission lowers from, and the one `tools/check-effect-roots.py` holds closed.
+/// emission lowers from, and the one `tools/ci/check-effect-roots.py` holds closed.
 ///
 /// A trap's `dispense` payload is **not** a source, and the exclusion is about
 /// the object rather than about effort: a dispenser fires its stack at the party

@@ -85,7 +85,7 @@ second capture format — three things for a case the game covers.
 ## 3. The loop, with her actions counted
 
 **Authored.** From *the agent's shot is not good enough* to *the record is
-committed*. She is in the game already (step 9, `tools/playtest-server.sh up`,
+committed*. She is in the game already (step 9, `tools/creator/playtest-server.sh up`,
 or the compose pair); the agent is at the terminal beside the same tree.
 
 | # | who | does | she types |
@@ -112,7 +112,7 @@ parses it, the writer writes it.
 Three things the loop relies on:
 
 - **The server she is standing in carries the overlay.**
-  `tools/playtest-server.sh up` stages `creator-datapack/` beside the delve's
+  `tools/creator/playtest-server.sh up` stages `creator-datapack/` beside the delve's
   datapack whenever the build emitted one; the compose `playtest` profile
   mounts it. Both are step 9's commands.
 - **The overlay works for a plain player.** Every `dw.*` trigger is armed each
@@ -240,7 +240,7 @@ starting-scene shot is not the one to ship*), in one line each, and carries the
 five lines under one symptom in `references/tools-by-symptom.md` — *a render
 camera nobody is satisfied with* — once the page's pin (`versions.toml`
 `[engine].ref`) is a release that carries `dw.cam`, `dw.free` and `delvec
-place-camera`. `tools/check-skill-page.py` rule 4 holds every `delvec`
+place-camera`. `tools/ci/check-skill-page.py` rule 4 holds every `delvec`
 subcommand and flag the page names to the pin's clap surface, and rule 20 holds
 every `dw.*` trigger, `creator-datapack/` path, `docker logs` container and
 compose profile the page names to the overlay, engine, scripts and compose files
@@ -360,7 +360,7 @@ lands this spec.
    row and writes nothing; after the row is deleted the same write succeeds.
    *Result: the `hand_camera` test of criterion 5 and
    `camera::an_estimate_is_never_written_over_a_hand_camera`, passed.*
-8. **Reach from the page.** `tools/check-skill-page.py` rule 20 holds every
+8. **Reach from the page.** `tools/ci/check-skill-page.py` rule 20 holds every
    `dw.*` trigger the page names to the overlay at the pinned `ref`, and every
    `creator-datapack/` path, `docker logs` container and compose profile to the
    engine, scripts and compose files at `ref` — red when a trigger is renamed or

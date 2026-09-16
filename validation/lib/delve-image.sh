@@ -26,7 +26,7 @@
 # shared `delvewright/delve:local`, as did the two `playtest`-profile flows,
 # whose own headers claim they carry "no name either of them could collide
 # with". A rule that has to be remembered at each new call site is the weakest
-# form there is, so it is one function, and `tools/check-compose-isolation.py`
+# form there is, so it is one function, and `tools/ci/check-compose-isolation.py`
 # fails any `validation/*.sh` that runs a compose `up --build` without calling it.
 #
 # The DEFAULT is unchanged: a bare `docker compose` that sets nothing still builds

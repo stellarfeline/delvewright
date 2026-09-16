@@ -26,7 +26,7 @@
 //! unguarded. The seven `prefabs/*-generator` packages may not depend on
 //! `delvec` and reach the same rule through `prefab-invariants`, which depends
 //! on this crate. Which sites owe it is therefore not remembered: it
-//! is discovered from the ingredient by `tools/check-structure-emitters.py`,
+//! is discovered from the ingredient by `tools/ci/check-structure-emitters.py`,
 //! which treats every tracked file that calls the NBT serialiser as a
 //! candidate, and requires each to name the rule or declare why it need not.
 //!
@@ -55,7 +55,7 @@ const REGISTRY_JSON: &str = include_str!("../data/blocks-1.21.11.json");
 
 /// The shape-carrying properties per block: the properties named by `multipart`
 /// selectors in the block's own blockstate definition, derived from the 1.21.11
-/// client jar by `tools/extract-shape-properties.py` (see
+/// client jar by `tools/maintenance/extract-shape-properties.py` (see
 /// `crates/delvec/data/PROVENANCE.md`). A `variants` property picks one
 /// complete model, so omitting it renders the author's default; a `multipart`
 /// property *assembles* the model, so omitting it drops geometry — wall arms,
@@ -90,7 +90,7 @@ const DEFAULTS_JSON: &str = include_str!("../data/block-defaults-1.21.11.json");
 /// because `minecraft:chain` is not a name at the pin.
 ///
 /// Derived from Mojang's own published data by
-/// `tools/extract-block-renames.py` (see `crates/delvec/data/PROVENANCE.md`):
+/// `tools/maintenance/extract-block-renames.py` (see `crates/delvec/data/PROVENANCE.md`):
 /// which ids left the registry and when, from the per-version block registries;
 /// what each became, from the crafting recipe whose ingredient side is
 /// unchanged across the version step. A removal the recipe graph cannot pair is
@@ -436,7 +436,7 @@ impl BlockRegistry {
     /// green by ceasing to bind, over a library whose walls are still isolated
     /// posts. What an emitter owes instead is the connection derived from the
     /// blocks beside the cell (`prefabs/invariants/src/connections.rs`), and
-    /// `tools/check-structure-emitters.py` is what holds every emitter to it.
+    /// `tools/ci/check-structure-emitters.py` is what holds every emitter to it.
     pub fn default_state(&self, name: &str) -> Option<&BTreeMap<String, String>> {
         self.defaults.get(namespace(name).as_ref())
     }

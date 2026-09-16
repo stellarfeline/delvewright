@@ -25,7 +25,7 @@
 # environment, never hardcoded here.
 #
 # PORTS. Ephemeral loopback port only, never 25565 (the owner's client address;
-# see validation/README.md and tools/check-compose-isolation.py).
+# see validation/README.md and tools/ci/check-compose-isolation.py).
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"

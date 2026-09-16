@@ -3,7 +3,7 @@ r"""What two trees must AGREE about before one's `target/` is worth cloning into
 
 WHY THIS EXISTS
 
-`tools/worktree-new.sh` clones a donor's `target/` into a new worktree with
+`tools/planner/worktree-new.sh` clones a donor's `target/` into a new worktree with
 `cp -c`. That is only a saving while the cloned units are still VALID, and cargo
 decides validity by a fingerprint. So the script already refuses when the two
 trees resolve different `rustc` — the trap that made the original measurement run

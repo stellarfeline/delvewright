@@ -57,7 +57,7 @@
 //! What this module deliberately does **not** try to be is a guard against a
 //! fourteenth hand-rolled walk being written tomorrow. Nothing in the type system
 //! can stop someone iterating `campaign.quests.content.quests` directly; that
-//! half of the obligation is `tools/check-effect-roots.py`, which fails CI when a
+//! half of the obligation is `tools/ci/check-effect-roots.py`, which fails CI when a
 //! source file reaches for two or more root fields outside this module.
 //!
 //! Determinism (ADR-0006): iteration is over `BTreeMap` keys and slices, in a

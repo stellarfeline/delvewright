@@ -1,4 +1,4 @@
-"""The CI reach filter (`tools/lib/ci_reach.py`) and its gate (`tools/check-ci-reach.py`).
+"""The CI reach filter (`tools/lib/ci_reach.py`) and its gate (`tools/ci/check-ci-reach.py`).
 
 The filter decides which jobs a pull request skips, and a skip passes branch
 protection, so each refusal of the gate is proven here by perturbing a COPY of the
@@ -24,7 +24,7 @@ sys.path.insert(0, str(TOOLS / "lib"))
 
 import ci_reach  # noqa: E402
 
-_spec = importlib.util.spec_from_file_location("check_ci_reach", TOOLS / "check-ci-reach.py")
+_spec = importlib.util.spec_from_file_location("check_ci_reach", TOOLS / "ci" / "check-ci-reach.py")
 gate = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(gate)
 
@@ -246,7 +246,7 @@ def test_a_group_no_job_reads_is_refused(tmp_path, capsys):
 
 
 def test_a_glob_that_binds_nothing_is_refused(tmp_path, capsys):
-    table = perturbed(tmp_path, '{ glob = "tools/skin/**",', '{ glob = "tools/skn/**",', source=TABLE)
+    table = perturbed(tmp_path, '{ glob = "tools/creator/skin/**",', '{ glob = "tools/skn/**",', source=TABLE)
     code, out = run_gate(capsys, table=table)
     assert code == 1
     assert "glob `tools/skn/**` matches no tracked file" in out

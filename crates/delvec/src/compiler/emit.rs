@@ -20824,7 +20824,7 @@ fn emit_server(plan: &Plan, out: &mut BuildOutput) {
     // delve actually has do not share a default source: the shipped image
     // (`validation/Dockerfile.delve`) starts from the itzg base's own
     // `/image/server.properties` template, while the owner's playtest server
-    // (`tools/playtest-server.sh`, `OVERRIDE_SERVER_PROPERTIES=false`) copies THIS
+    // (`tools/creator/playtest-server.sh`, `OVERRIDE_SERVER_PROPERTIES=false`) copies THIS
     // file in and lets the vanilla jar fill in the rest. Where the two default
     // sources happen to agree it is a coincidence of an upstream file we do not
     // own, not an invariant — so a key that matters is pinned, never inherited.

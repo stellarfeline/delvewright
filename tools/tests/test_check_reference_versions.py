@@ -1,4 +1,4 @@
-"""The compiler-reference version-header gate (`tools/check-reference-versions.py`).
+"""The compiler-reference version-header gate (`tools/ci/check-reference-versions.py`).
 
 The defect this pins, from the field: `docs/reference/compiler.md` is the
 authoritative current-behavior record, and its header read `delvec 0.1.0`,
@@ -27,7 +27,7 @@ import pathlib
 
 import pytest
 
-SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "check-reference-versions.py"
+SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "ci" / "check-reference-versions.py"
 
 DOC_TEMPLATE = """\
 # delvec compiler — behavior reference

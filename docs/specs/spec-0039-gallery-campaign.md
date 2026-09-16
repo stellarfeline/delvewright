@@ -86,7 +86,7 @@ stages 1–7 and the sidecar schema. Values of vanilla registries (potion ids,
 block ids, sound ids) are data, not surface, and are never units — exhausting
 them is meaningless and would make the gallery a registry dump.
 
-**The binding.** `tools/check-gallery-coverage.py` (stdlib python, CI job,
+**The binding.** `tools/ci/check-gallery-coverage.py` (stdlib python, CI job,
 runnable on any clone) walks the gallery's authored JSON **guided by the
 schema** — never by grep — and maps every unit to its binding sites (JSON
 pointers). The binding domain is the primary gallery plus its **overlays**:
@@ -212,7 +212,7 @@ distinct verdicts, because they mean opposite things:
   probe, for free.
 
 **Who updates it, and what stops the rubber stamp.** Only
-`tools/gallery-baseline.py --write` regenerates it; it also writes
+`tools/ci/gallery-baseline.py --write` regenerates it; it also writes
 `gallery/baseline/delta.json`: every added/removed/changed emitted path,
 grouped by output class (datapack function, structure, PackTest, plan, …). CI
 recomputes the delta from the two baseline versions in git (merge-base vs
@@ -290,7 +290,7 @@ dev-machine render, and follows rule 8 of the playtest methodology
 
 ## 8. Acceptance criteria
 
-1. `tools/check-gallery-coverage.py` derives the unit set solely from `delvec
+1. `tools/ci/check-gallery-coverage.py` derives the unit set solely from `delvec
    schema --stage all` of the tree's own delvec; it enumerates zero units →
    red; it contains no parser of `stages.rs`.
 2. Every unit is bound in the primary+overlay domain or refusal-proven by a

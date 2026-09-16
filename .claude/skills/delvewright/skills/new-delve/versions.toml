@@ -7,7 +7,7 @@
 # page and an engine from different revisions. The page reads this file and
 # restates nothing: a literal on the page goes stale the first time the pin
 # moves and nothing catches it; an indirection stays true and
-# `tools/check-skill-page.py` holds it.
+# `tools/ci/check-skill-page.py` holds it.
 #
 # ONE NAME, BOTH CHANNELS (ADR-0023). The archive Init I3a downloads is on the
 # Release at this tag and is named for the version the tag states; the source
@@ -16,7 +16,7 @@
 #
 # THE SECOND FILE. `.claude-plugin/marketplace.json`'s entry carries the same
 # name, because Claude Code reads that file and reads nothing else. This file is
-# the authority and the entry is its copy; `tools/check-skill-page.py` holds them
+# the authority and the entry is its copy; `tools/ci/check-skill-page.py` holds them
 # equal and a difference is a red.
 #
 # Registered in `.github/pins.toml` under the `release` policy. Drift past it is

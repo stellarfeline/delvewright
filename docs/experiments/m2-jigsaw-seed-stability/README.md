@@ -57,7 +57,7 @@ therefore ran at the vanilla default limit (65536) in every run recorded below.
 It does not disturb the verdict: the limit applied identically to every run, and
 the comparison is between runs, but the scripts are left exactly as they were
 executed so the recorded result stays reproducible from the recorded method.
-`tools/check-live-commands.py` excludes `docs/experiments/` for that reason.
+`tools/ci/check-live-commands.py` excludes `docs/experiments/` for that reason.
 
 ## Evidence (`evidence/runs.txt`, full harness output)
 

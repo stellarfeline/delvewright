@@ -117,7 +117,7 @@ enum Command {
     },
     /// Emit the l10n key inventory (key → canonical English) as JSON, with the
     /// existing `--lang` sidecar and NPC persona context — the machine-readable
-    /// input for translation tooling (`tools/i18n-translate.py`, docs/reference/i18n.md).
+    /// input for translation tooling (`tools/creator/i18n-translate.py`, docs/reference/i18n.md).
     L10nInventory {
         /// Campaign directory.
         campaign_dir: PathBuf,
@@ -1067,7 +1067,7 @@ struct NpcContext<'a> {
 ///
 /// The inventory is [`delvewright_dsl::l10n_inventory`] itself, i.e. **exactly** the
 /// key set `DW0180`/`DW0181` enforce, so a translator (human, in-agent, or an
-/// external API via `tools/i18n-translate.py`) can be handed the work list up front
+/// external API via `tools/creator/i18n-translate.py`) can be handed the work list up front
 /// instead of discovering it by writing an empty sidecar and reading the coverage
 /// diagnostics back. Rows carry the canonical English, the speaking NPC (via
 /// [`delvewright_dsl::key_speaker`]) and any translation the current
@@ -1933,7 +1933,7 @@ fn run_blocking_chart(
 /// comment because the guarantee is worth stating in a form a reader cannot
 /// misread: the perturbed arm has nowhere to write, so it does not decline to
 /// write a tree — it has no path to write one to. No tree means no
-/// `manifest.json`, and `tools/staging-gate.py` fingerprints a build by hashing
+/// `manifest.json`, and `tools/creator/staging-gate.py` fingerprints a build by hashing
 /// exactly that file: *a tree with no manifest has no identity and therefore
 /// cannot be admitted at all*.
 enum BuildKind<'a> {

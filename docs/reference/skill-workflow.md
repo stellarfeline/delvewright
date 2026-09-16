@@ -15,7 +15,7 @@ and ADR-0027 §2 is why it lives here rather than in the content repository: the
 page reaches thirty-seven paths under the engine tree, and a copy of any of them
 would be a second authority for a file sitting on the same disk. A creator
 clones nothing to get it — `/plugin marketplace add` and `/plugin install` put
-it in Claude Code's own cache. `tools/check-skill-page.py` is the one gate over
+it in Claude Code's own cache. `tools/ci/check-skill-page.py` is the one gate over
 it, in this repository, judging it against the engine at `[engine].ref`.
 
 ## The release order, and the property it buys
@@ -33,8 +33,8 @@ For every engine release the page moves to, in order:
    `ref` to `delvec--v<version>`, where `<version>` is `[engine].version` at the
    root of the same tree. That pull request is the one that walks the page
    against the engine — which is now this tree — and it merges on the same terms
-   as any page change. `tools/check-skill-page.py` refuses a name that is not
-   this tree's own tag, and `tools/check-pins.py --online` refuses it too.
+   as any page change. `tools/ci/check-skill-page.py` refuses a name that is not
+   this tree's own tag, and `tools/ci/check-pins.py --online` refuses it too.
 2. **The release is dispatched on the merge commit**, as the next act.
    `engine-release.yml` derives the same name from the same tree, fills the
    shelf, uploads to crates.io, writes the tag at that commit and undrafts. From
@@ -59,7 +59,7 @@ bump, waits for every required check on that commit, fast-forwards `main`, and
 tags and publishes `delvewright--v<version>`) supplies the number, and an engine
 release after it is what delivers it. **A plugin release with no engine release
 after it reaches nobody on its own.** A pull request that edits the page leaves
-the version alone (`tools/check-skill-page.py` refuses one that moves it).
+the version alone (`tools/ci/check-skill-page.py` refuses one that moves it).
 
 This file stays beside it rather than in it: it is about how an agent driving
 the page splits the work, which is engine-side planner material and is
@@ -210,14 +210,14 @@ something it does not check is how a green run ships a broken delve.
 
 | # | Gate | Proves | Does **not** prove |
 |---|---|---|---|
-| 4 | design gate | that the owner has seen the design **in the medium she reviews in** — the whole story, every scene, near view and far — and said yes. The images at *this* gate are **reference images**: concept art drawn from the scene description before any prefab exists, optionally by `tools/refimg.py`. A render is a candidate prefab imaged by `delvec render`, and belongs to curation later. **The approved images are then committed to `campaigns/<id>/design/`** with the approval date and the approved names. Since spec-0061 the engine also reads that approval: `design.json` records one row per approved image with the `time` and `weather` it was drawn under, and `DW0890` refuses at the next `delvec validate` when the skies the built world reaches and the skies the rows state are not equal, or when a row and a file do not answer to each other. **The page's own half is not written yet** — spec-0061 §10 names it, and until it lands nothing tells a creator to write the row at the moment of approving | nothing, if it was built from orbit renders. "Is the set pretty" is a different question from "what does a player walking in experience". And **nothing at all in a later session, if the approval was never persisted**: `refimg` writes to a gitignored directory, so an approval left in a published page is unreachable by every round that follows it — which is how a whole campaign round got authored against no design and had to be abandoned |
+| 4 | design gate | that the owner has seen the design **in the medium she reviews in** — the whole story, every scene, near view and far — and said yes. The images at *this* gate are **reference images**: concept art drawn from the scene description before any prefab exists, optionally by `tools/creator/refimg.py`. A render is a candidate prefab imaged by `delvec render`, and belongs to curation later. **The approved images are then committed to `campaigns/<id>/design/`** with the approval date and the approved names. Since spec-0061 the engine also reads that approval: `design.json` records one row per approved image with the `time` and `weather` it was drawn under, and `DW0890` refuses at the next `delvec validate` when the skies the built world reaches and the skies the rows state are not equal, or when a row and a file do not answer to each other. **The page's own half is not written yet** — spec-0061 §10 names it, and until it lands nothing tells a creator to write the row at the moment of approving | nothing, if it was built from orbit renders. "Is the set pretty" is a different question from "what does a player walking in experience". And **nothing at all in a later session, if the approval was never persisted**: `refimg` writes to a gitignored directory, so an approval left in a published page is unreachable by every round that follows it — which is how a whole campaign round got authored against no design and had to be abandoned |
 | 7 | `delvec analyze` | the quest graph is reachable, no deadlock, darkness is mitigated | that any of it is *good* |
 | 8 | `delvec build` | the DSL compiles to a datapack | nothing about play |
 | 9 | the walk | somebody has stood in the world — scale, route legibility, silhouette; and the staging gate has run, because `owner-play.yaml` is the only file publishing 25565 and it refuses a build with no admission token minted for that exact tree | nothing mechanical. A red gate is the list of defect classes the playtester is unprotected from, drawn from every finding ever reported on any campaign; it refuses only where an object of the class is PRESENT and nothing binds to it. A campaign that contains none of a class's objects reads `INAPPLICABLE` — counted, named in the token, announced at boot, and not a refusal: absence of an optional surface is a design choice, and a required one cannot be absent from a build that compiled |
 | 11 | branch chronicle | every branch's storyline is coherent **in sequence**, and every branch-divergent dialogue line is licensed by a chronicle line, cited by number in `GENERATION.md` | anything on a branch with no rows — an empty table is a **fail**, not a pass |
 | 10 | machine ladder | PackTest green; the bot completes the critical path; it survives `die-retry`; every declared branch was walked | that any fight was measured — read `floor_gate`. `covered`/`not_covered`/`actors[]` **all empty** means no body declares a tier and the gate examined nothing. The island sat in exactly that state, green, for nineteen rounds |
 | 12 | visual review | the frame matches the shot's `expect` — **read the POV sequence in route order first**, orbit renders second | `DW0308` proves a camera path is air, not that the shot points at the subject — round 6 shipped an inside-out cinematic that was fully DW-green |
-| 14 | storybook marker | the host is told which engine they need, and the player which Minecraft to install | verified by `tools/check-storybook-version.py`, which is the thing that stops a stale marker |
+| 14 | storybook marker | the host is told which engine they need, and the player which Minecraft to install | verified by `tools/creator/check-storybook-version.py`, which is the thing that stops a stale marker |
 
 Step 11 exists because of the **decompilation principle** (spec-0025): the
 compiler renders the compiled DSL *back into natural language*
@@ -364,7 +364,7 @@ because that is what the rewrite will consume. Not a proposal — an inventory.
    hand-carried is the *building* of the Artifact: assembling the story and the
    near/far frames is still the authoring agent's own composition, with no
    template and nothing checking that every scene actually got a pair of images.
-   `tools/refimg.py` draws the individual reference image, and the multi-view
+   `tools/creator/refimg.py` draws the individual reference image, and the multi-view
    sequence a whole subject needs is a workflow step with its anchor and its
    per-view frame written down — but it needs a human iterating on the prompt,
    and it composes nothing.

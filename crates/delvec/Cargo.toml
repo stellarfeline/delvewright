@@ -91,7 +91,7 @@ pollster = "0.4"
 # `blake3` is a non-optional dependency of Nucleation, and its build script
 # compiles C or assembly for the host — which a `cargo check --target` from a
 # machine without that target's C compiler cannot do, so the cross-build shelf
-# gate (`tools/build-release-binaries.sh --check-only`) would red on every
+# gate (`tools/ci/build-release-binaries.sh --check-only`) would red on every
 # target but the host's own. `pure` turns every C and assembly path off and
 # leaves the Rust implementation; nothing here hashes enough for the speed to
 # matter. Declared here, not in nucleation's manifest, because a feature is

@@ -1,4 +1,4 @@
-"""The crates.io front-page gate (`tools/check-crates-io-readmes.py`).
+"""The crates.io front-page gate (`tools/ci/check-crates-io-readmes.py`).
 
 The defect this pins, from the field: `crates/delvec/README.md` is rendered
 VERBATIM as the front page of `crates.io/crates/delvec`, and it opened with
@@ -28,7 +28,7 @@ import pathlib
 
 import pytest
 
-SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "check-crates-io-readmes.py"
+SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "ci" / "check-crates-io-readmes.py"
 
 PUBLISHED_CARGO = """\
 [package]

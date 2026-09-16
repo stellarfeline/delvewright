@@ -3,7 +3,7 @@
 
 ## What this exists to remove
 
-`tools/crates-io-publish.sh` refuses a version that is on crates.io with
+`tools/ci/crates-io-publish.sh` refuses a version that is on crates.io with
 different bytes, and the refusal is only useful because of what it prints next:
 the list of places the reader must move the number to. That list was a literal
 typed beside the `echo`s, and both halves of it had rotted without anything
@@ -163,7 +163,7 @@ ROWS: dict[str, list[dict[str, object]]] = {
         {
             "path": "docs/reference/compiler.md",
             "label": "the version header and the DW0102 row — written by "
-            "`python3 tools/check-reference-versions.py --write`",
+            "`python3 tools/ci/check-reference-versions.py --write`",
             "kind": "present",
             "shape": "tool-written",
             "sites": 2,
@@ -171,7 +171,7 @@ ROWS: dict[str, list[dict[str, object]]] = {
         {
             "path": "crates/dsl/README.md",
             "label": "the crates.io front page's `Campaign format` claim — written by "
-            "`python3 tools/check-reference-versions.py --write`",
+            "`python3 tools/ci/check-reference-versions.py --write`",
             "kind": "present",
             "shape": "tool-written",
             "sites": 1,
@@ -179,7 +179,7 @@ ROWS: dict[str, list[dict[str, object]]] = {
         {
             "path": "crates/delvec/README.md",
             "label": "the crates.io front page's `Campaign format` claim — written by "
-            "`python3 tools/check-reference-versions.py --write`",
+            "`python3 tools/ci/check-reference-versions.py --write`",
             "kind": "present",
             "shape": "tool-written",
             "sites": 1,
@@ -249,7 +249,7 @@ ROWS: dict[str, list[dict[str, object]]] = {
 # `manifest.json` recorded inside a baseline), so `delvec fmt` does not stamp
 # them and a bump is the generator's own command. Prefix -> the command.
 GENERATED_JSON_ROOTS: dict[str, str] = {
-    "gallery/baseline/": "python3 tools/gallery-baseline.py --delvec <bin> --prefabs <dir> --write",
+    "gallery/baseline/": "python3 tools/ci/gallery-baseline.py --delvec <bin> --prefabs <dir> --write",
 }
 
 # Deliberate counter-examples: a STATEMENT, inside a named file, that spells this
@@ -325,12 +325,12 @@ def _resolve(root: Path, row: dict[str, object], version: str) -> str | None:
     if row["kind"] == "present":
         # A document a tool writes: what is checked here is that the number is
         # actually in it. WHERE it may sit, and that no other version literal
-        # sits beside it, is `tools/check-reference-versions.py`'s, which binds
+        # sits beside it, is `tools/ci/check-reference-versions.py`'s, which binds
         # each claim by equality in both directions and writes them on --write.
         if want not in text:
             return (
                 f"{row['path']} does not state `{want}` at all — it is written by "
-                "`python3 tools/check-reference-versions.py --write`; run it"
+                "`python3 tools/ci/check-reference-versions.py --write`; run it"
             )
         return None
 
@@ -565,7 +565,7 @@ def verify(root: Path) -> int:
     assert checked == total, f"resolved {checked} of {total} row(s)"
     if findings:
         print(
-            "version-sites: the advice `tools/crates-io-publish.sh` prints names a place "
+            "version-sites: the advice `tools/ci/crates-io-publish.sh` prints names a place "
             "that is not in this tree.",
             file=sys.stderr,
         )

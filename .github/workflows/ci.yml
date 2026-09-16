@@ -22,8 +22,8 @@ name: CI (tiers 1 + 2)
 # its group through its `if`. The table of what each job reads — every path,
 # with the reader that reads it — is `.github/ci-reach.toml`, interpreted only by
 # `tools/lib/ci_reach.py`. On `push` and `workflow_dispatch` every job runs, so
-# `tools/wait-required-checks.py`, which refuses a skipped required check, sees
-# the whole set on the release's commit. `tools/check-ci-reach.py` (a step of
+# `tools/ci/wait-required-checks.py`, which refuses a skipped required check, sees
+# the whole set on the release's commit. `tools/ci/check-ci-reach.py` (a step of
 # `docs`) refuses a job with no group, a group no job reads, a glob that matches
 # no tracked file, and an `if` that does not run on every non-pull-request event.
 #
@@ -123,7 +123,7 @@ jobs:
       # naming its policy. It states its binding count, and a binding of zero is
       # a finding rather than a pass.
       - name: every pin is declared
-        run: python3 tools/check-pins.py
+        run: python3 tools/ci/check-pins.py
 
       # The creator-facing plugin, held to its pin, its layout and the engine
       # it names (spec-0063 §8). Offline here, on every push, because the event
@@ -132,7 +132,7 @@ jobs:
       # asks the remote about pins.
       #
       - name: the creator plugin is held to its pin and its layout
-        run: python3 tools/check-skill-page.py --base origin/main
+        run: python3 tools/ci/check-skill-page.py --base origin/main
 
       # The format's own implementations, reading the same artifact. Ours knows
       # about the pin, the engine and the split; these know what the loader will
@@ -178,7 +178,7 @@ jobs:
   # network, and a registry outage should name itself rather than redden the
   # tree's fmt/clippy/test verdict. Its name is a required status context —
   # `.github/required-status-checks.txt`, held in lockstep by
-  # `tools/check-required-contexts.py`.
+  # `tools/ci/check-required-contexts.py`.
   dsl-crate-version:
     name: dsl crate version (crates.io)
     needs: changes
@@ -189,7 +189,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with: { key: "dsl-crate-version" }
       - name: the dsl crate's number has moved if its bytes have
-        run: bash tools/crates-io-publish.sh --plan --only delvewright-dsl
+        run: bash tools/ci/crates-io-publish.sh --plan --only delvewright-dsl
 
   rust:
     name: rust (fmt, clippy, test)
@@ -213,7 +213,7 @@ jobs:
       # wrote it. The sweep derives its population from `git ls-files` and asks
       # cargo which workspace each manifest belongs to, so it also covers a
       # workspace nobody has added a step for yet; the hand-written list it
-      # replaces named nine of the tree's ten. `bash tools/fmt-workspaces.sh`
+      # replaces named nine of the tree's ten. `bash tools/ci/fmt-workspaces.sh`
       # (no flag) fixes everything this reports.
       #
       # Still FIRST: measured with an empty `CARGO_HOME` and
@@ -221,7 +221,7 @@ jobs:
       # `CARGO_HOME` empty. `cargo fmt` resolves nothing, so a formatting error
       # reds without waiting on a network reach.
       - name: cargo fmt --check (every workspace in the tree)
-        run: bash tools/fmt-workspaces.sh --check
+        run: bash tools/ci/fmt-workspaces.sh --check
       - name: cargo clippy -D warnings
         run: cargo clippy --locked --workspace --all-targets -- -D warnings
       - name: cargo test (incl. determinism double-build gate)
@@ -293,12 +293,12 @@ jobs:
       # tracks, and 50 of the 95 it never looked at were not canonical, including
       # every one of `gallery/`'s — whose own spec asserts in writing that gallery
       # JSON is inside this sweep. Nothing was red, because nothing looked.
-      # `tools/check-json-canonical.py` takes its population from `git ls-files`
+      # `tools/ci/check-json-canonical.py` takes its population from `git ls-files`
       # instead, so a directory of authored JSON added next month is swept the
       # moment it is committed with nothing here to edit, and it states its
       # binding count against that population on every run.
       - name: every JSON document this repository holds is canonical
-        run: python3 tools/check-json-canonical.py
+        run: python3 tools/ci/check-json-canonical.py
       # ADR-0017: `cargo install delvec` has to keep working, and `cargo publish`
       # is a ONE-WAY DOOR — a version can never be reused and a name never freed
       # — so the packaging contract is proven on every push from a tree nobody
@@ -310,7 +310,7 @@ jobs:
       # `crates/dsl` on disk would prove nothing about a stranger's download.
       # A STEP, not a job: every job name here is a required status context.
       - name: the published crates would build standing alone
-        run: bash tools/check-publishable.sh
+        run: bash tools/ci/check-publishable.sh
       # The same crates ship a FRONT PAGE, and it is the only document in this
       # repo whose reader has never seen this repo. `crates/delvec/README.md`
       # and `crates/dsl/README.md` are rendered verbatim on crates.io; the
@@ -330,7 +330,7 @@ jobs:
       # crates.io receives. A STEP, not a job: every job name here is a required
       # status context. Deterministic, offline, stdlib-only python3.
       - name: no internal reference reaches a crates.io front page
-        run: python3 tools/check-crates-io-readmes.py
+        run: python3 tools/ci/check-crates-io-readmes.py
 
       # ADR-0006's LINUX HALF. The determinism promise is "same DSL + same seed
       # -> byte-identical datapack and world", and until this step every gate
@@ -346,13 +346,13 @@ jobs:
       # the `cross-OS determinism (macOS vs Linux bytes)` job, which builds the
       # same subject on macOS and reads this artifact.
       #
-      # The subject is `tools/determinism-subject.sh`, invoked identically on
+      # The subject is `tools/ci/determinism-subject.sh`, invoked identically on
       # both runners so the two sides cannot drift into building different
       # things.
       - name: ADR-0006 cross-OS — the Linux side's digest
         run: |
           cargo build --locked -p delvec --bin delvec
-          bash tools/determinism-subject.sh \
+          bash tools/ci/determinism-subject.sh \
             --delvec target/debug/delvec --out determinism-linux.txt
       - uses: actions/upload-artifact@v4
         with:
@@ -390,7 +390,7 @@ jobs:
         run: cargo build --locked -p delvec --bin delvec
       - name: the macOS side's digest
         run: |
-          bash tools/determinism-subject.sh \
+          bash tools/ci/determinism-subject.sh \
             --delvec target/debug/delvec --out determinism-macos.txt
       - uses: actions/download-artifact@v4
         with:
@@ -399,7 +399,7 @@ jobs:
       # rather than a hash nobody can act on.
       - name: the two hosts wrote the same bytes
         run: |
-          python3 tools/tree-digest.py \
+          python3 tools/ci/tree-digest.py \
             --compare determinism-linux.txt determinism-macos.txt
       # Both sides, kept, so a red can be read after the runners are gone.
       - uses: actions/upload-artifact@v4
@@ -419,7 +419,7 @@ jobs:
   # dependency that drags in a C toolchain fails here too. The real per-target
   # link happens in engine-release.yml on its own runners.
   #
-  # The target list is NOT duplicated here — `tools/build-release-binaries.sh`
+  # The target list is NOT duplicated here — `tools/ci/build-release-binaries.sh`
   # reads it out of `versions.toml [engine].targets`, the same list the release
   # matrix is checked against, and it states its binding count on every run.
   #
@@ -451,7 +451,7 @@ jobs:
         with:
           python-version: "3.12"
       - name: every shelf target compiles
-        run: bash tools/build-release-binaries.sh --check-only
+        run: bash tools/ci/build-release-binaries.sh --check-only
 
   # The prefab generators are ONE workspace outside `crates/` (`prefabs/`, which
   # the root workspace excludes, so nothing here can enter the shipped `delvec`),
@@ -476,7 +476,7 @@ jobs:
       # lived in a hand-written list of generator names, so a person's
       # `cargo fmt --all` could not reach it and only a pull request could tell
       # them. It is one sweep in `rust (fmt, clippy, test)` running
-      # `tools/fmt-workspaces.sh --check` — the same script a person runs, over a
+      # `tools/ci/fmt-workspaces.sh --check` — the same script a person runs, over a
       # population derived from `git ls-files` rather than typed here.
       #
       # `clippy -D warnings` IS here now. It was held back while the oldest
@@ -497,7 +497,7 @@ jobs:
       # once: the invariants (a panic fails the job) and ADR-0006 byte-identity.
       #
       # The list is written out rather than derived, and it is not a list
-      # somebody has to remember: `tools/check-structure-emitters.py` holds it
+      # somebody has to remember: `tools/ci/check-structure-emitters.py` holds it
       # equal to the generators on disk in both directions, so a generator added
       # to the workspace and not named here is a red rather than a silence.
       - name: run every generator twice — invariants hold, output is identical
@@ -523,7 +523,7 @@ jobs:
       # refuses if a re-generation loses one.
       - name: a generator deletes nothing it did not write
         run: |
-          python3 tools/check-generator-preservation.py \
+          python3 tools/ci/check-generator-preservation.py \
             --scratch "$RUNNER_TEMP/generator-preservation"
 
   harness:
@@ -554,7 +554,7 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: tools/skin
+        working-directory: tools/creator/skin
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -567,7 +567,7 @@ jobs:
 
   i18n-tool:
     name: i18n translation tool (pytest)
-    # docs/reference/i18n.md: tools/i18n-translate.py drives an external
+    # docs/reference/i18n.md: tools/creator/i18n-translate.py drives an external
     # OpenAI-compatible LLM API at generation time. The suite proves the request it
     # would build, config resolution incl. the not-configured fallback, and that the
     # API key never leaves the named env var — with the network blocked at
@@ -643,7 +643,7 @@ jobs:
       # (CLAUDE.md Methodology). Deterministic, offline, stdlib-only python3
       # (ubuntu-latest ships >=3.11).
       - name: DW-code catalog matches the compiler reference (both directions)
-        run: python3 tools/check-dw-codes.py
+        run: python3 tools/ci/check-dw-codes.py
       # The step above proves a diagnostic's CODE exists, is documented, is
       # unique and is asserted by a test. Nothing proved anything about the
       # SENTENCE, and `delvec grammar expand` refused an author's export with "…
@@ -656,12 +656,12 @@ jobs:
       # message out of reach is a line in the log, never a silent pass.
       # Deterministic, offline, stdlib-only python3.
       - name: every diagnostic message is a whole sentence
-        run: python3 tools/check-diagnostic-messages.py
+        run: python3 tools/ci/check-diagnostic-messages.py
       # The decision ledger and its checker used to run here. They are now
       # gitignored — a ledger of one person's decisions is not a repository
       # artifact (CLAUDE.md *Privacy in repo artifacts*) — so CI cannot see the
       # file it would check, and a CI step is not what binds them any more.
-      # `tools/planner-state.sh` does, on `SessionStart` and on
+      # `tools/planner/planner-state.sh` does, on `SessionStart` and on
       # `UserPromptSubmit --if-stale 12`, and it REFUSES by name when either the
       # ledger or the operating-practice page is absent. That is a weaker gate
       # than a pull-request red and is stated as such rather than papered over:
@@ -688,7 +688,7 @@ jobs:
       # the question, rather than adding a second one, is deliberate: a parallel
       # mechanism is the privately-re-implemented-general-mechanism defect.
       - name: documented versions match the build (reference + crates.io pages)
-        run: python3 tools/check-reference-versions.py
+        run: python3 tools/ci/check-reference-versions.py
       # The same number, asked of the WHOLE TREE rather than of the places
       # somebody remembered. A `dsl_version` bump moved 446 files and 816
       # occurrences, and 319 of those files changed nothing but that one string:
@@ -711,7 +711,7 @@ jobs:
       # live instances the manual sweep had missed on the run that introduced it.
       # Deterministic, offline, stdlib-only python3.
       - name: no walk enumerates the campaign's effect roots by hand
-        run: python3 tools/check-effect-roots.py
+        run: python3 tools/ci/check-effect-roots.py
       # The same shape, one question over. *What anchors does this campaign have*
       # was answered by eleven hand-rolled walks over `world.areas` in
       # `dsl::validate`. When the site plan became a second placement authority
@@ -723,7 +723,7 @@ jobs:
       # now the one authority and this is what stops the twelfth walk.
       # Deterministic, offline, stdlib-only python3.
       - name: one authority answers what anchors a campaign has
-        run: python3 tools/check-anchor-providers.py
+        run: python3 tools/ci/check-anchor-providers.py
       # Merge artifacts in the docs tree: a table row duplicated under one key, a
       # doubled heading, a stray conflict marker. Two branches appending rows at
       # the same table anchor merge cleanly and silently, so this class is
@@ -738,9 +738,9 @@ jobs:
       # FINDINGS (docs/notes/capability-ownership-audit.md); the gate's job is
       # that none can be added or removed in silence.
       - name: no capability is bound to the verb that first needed it
-        run: python3 tools/check-capability-ownership.py
+        run: python3 tools/ci/check-capability-ownership.py
       - name: docs tree carries no duplicate rows/headings or conflict markers
-        run: python3 tools/check-doc-dupes.py
+        run: python3 tools/ci/check-doc-dupes.py
       # The same rule where the sections are code. `plan.rs` invoked the
       # face-mating pass twice, as two verbatim copies of one labelled block —
       # and nothing could go red, because the pass is idempotent: the second run
@@ -751,7 +751,7 @@ jobs:
       # 3930 hits across 283 correct files, and is declined in the tool's own
       # docstring rather than shipped behind an allowlist the size of the tree.
       - name: source tree carries no duplicated section headers
-        run: python3 tools/check-source-dupes.py
+        run: python3 tools/ci/check-source-dupes.py
       # The sanctioned identifiers are ADR numbers, spec numbers and DW codes
       # (CLAUDE.md *Privacy in repo artifacts*). A task id, a pull-request number
       # and a dated attribution are not: a stranger cannot resolve any of them,
@@ -769,7 +769,7 @@ jobs:
       # carries no prose from this repository.
       # Deterministic, offline, stdlib-only python3.
       - name: no artifact carries an identifier a reader cannot resolve
-        run: python3 tools/check-unsanctioned-identifiers.py
+        run: python3 tools/ci/check-unsanctioned-identifiers.py
       # The same merge class one level up from a duplicated row: a NUMBER stated
       # in prose whose subject the tree enumerates. One branch adds a tenth
       # teaching technique and moves the count in four places; another, which
@@ -785,7 +785,7 @@ jobs:
       # its binding count; a page that has stopped stating its count is a red,
       # not a pass. Deterministic, offline, stdlib-only python3.
       - name: every count stated in the reference matches what decides it
-        run: python3 tools/check-stated-counts.py
+        run: python3 tools/ci/check-stated-counts.py
       # `docs/specs/spec-NNNN-*.md` and `docs/adr/NNNN-*.md` are both
       # picked by listing the directory and writing the next integer. Two new
       # files never produce a git conflict, so a per-branch "no duplicate number
@@ -814,7 +814,7 @@ jobs:
       - name: fetch origin/main for the numbering-uniqueness gates
         run: git fetch --no-tags origin main:refs/remotes/origin/main
       - name: no spec or ADR number collides with origin/main after this merges
-        run: python3 tools/check-numbered-doc-uniqueness.py
+        run: python3 tools/ci/check-numbered-doc-uniqueness.py
       # The same two series, asked a different question: not "is this number
       # unique" but "does the index TELL THE TRUTH about it". `docs/specs/
       # README.md` and `docs/adr/README.md` carry a status column, and neither is
@@ -840,7 +840,7 @@ jobs:
       # stdlib-only python3, and no network I/O — it compares this tree
       # against itself.
       - name: every index row agrees with its document, and every spec carries its acceptance criteria
-        run: python3 tools/check-numbered-doc-index.py
+        run: python3 tools/ci/check-numbered-doc-index.py
       # Every new mechanic owes a demo level (CLAUDE.md), and the demo queue is
       # not a backlog — it is the form an engine capability's confirmation takes,
       # so a capability with no row cannot be put in front of anyone. That
@@ -859,7 +859,7 @@ jobs:
       # is invisible to it. Uses the fetch above; no further network action.
       # Deterministic, offline, stdlib-only python3.
       - name: a change that adds author-facing surface adds its demo row
-        run: python3 tools/check-demo-levels.py
+        run: python3 tools/ci/check-demo-levels.py
       # Isolation by construction (validation/README.md): container
       # names and host ports are Docker-GLOBAL — the only two things `docker
       # compose -p <project>` does not isolate — so validation/compose.yaml
@@ -868,7 +868,7 @@ jobs:
       # has cost one twice — once on `server`, then on `bot`.
       # Deterministic, offline, stdlib-only python3.
       - name: validation compose carries no Docker-global name or port
-        run: python3 tools/check-compose-isolation.py
+        run: python3 tools/ci/check-compose-isolation.py
       # `cmd | grep -q` under `set -o pipefail` is a coin flip that reports FAILURE
       # *because* the match succeeded: grep exits at the first hit, the producer
       # dies of SIGPIPE (141), and pipefail promotes 141 to the pipeline. Measured
@@ -878,7 +878,7 @@ jobs:
       # owner's mutex may be released while a human is playing.
       # Deterministic, offline, stdlib-only python3.
       - name: no early-exit consumer on the right of a pipe (SIGPIPE + pipefail)
-        run: python3 tools/check-shell-pipe-shortcircuit.py
+        run: python3 tools/ci/check-shell-pipe-shortcircuit.py
       # A command whose response nobody reads cannot fail. `delvec prefab`'s gallery
       # emitted four legacy camelCase gamerules and a `text_opacity:255b`; 1.21.11
       # refused `admit:load` and `admit:finish` outright, so the gallery world came
@@ -891,7 +891,7 @@ jobs:
       # the PINNED command tree actually has, so it can never drift from ADR-0009.
       # Deterministic, offline, stdlib-only python3.
       - name: no command is issued to a server that cannot answer back
-        run: python3 tools/check-live-commands.py
+        run: python3 tools/ci/check-live-commands.py
       # The set of things that write a prefab .nbt was enumerated by hand, and the
       # hand missed one: hello-room built its own palette from an examples/ target,
       # so nothing judged the block states it wrote. The set is discovered here
@@ -903,7 +903,7 @@ jobs:
       # each cell, or completed from the block default that means disconnected —
       # which passes validation, ships an isolated post, and empties DW0735.
       - name: every site that writes a prefab .nbt judges and connects its blocks
-        run: python3 tools/check-structure-emitters.py
+        run: python3 tools/ci/check-structure-emitters.py
       # The v1.0.0 release run (2026-08-06) found both of the next two, in the
       # release machinery itself, on the first path CI had never exercised.
       #
@@ -918,7 +918,7 @@ jobs:
       # `run:` blocks too: `.github/actions/checkout-content` writes straight into
       # `$GITHUB_OUTPUT`. Deterministic, offline, stdlib-only python3.
       - name: inline python pins its stdout newline (CRLF on Windows runners)
-        run: python3 tools/check-python-shell-newlines.py
+        run: python3 tools/ci/check-python-shell-newlines.py
       # The other half of the same platform: not what a script WRITES on Windows,
       # but how it ARRIVES there. `core.autocrlf=true` is git's Windows default,
       # so a tracked script materialises with CRLF unless an attribute says
@@ -934,7 +934,7 @@ jobs:
       # is the `line endings (Windows checkout)` job. Deterministic, offline,
       # stdlib-only python3.
       - name: every file a machine runs through its first line is pinned to LF
-        run: python3 tools/check-eol-attributes.py
+        run: python3 tools/ci/check-eol-attributes.py
       # `cmd >"$LOG"` is opened by the SHELL before `cmd` runs. The preflight job's
       # runner restored no cache, so `target/` did not exist, the redirect failed,
       # `cargo package` NEVER RAN — and the else-branch then `sed`ed the log that
@@ -946,7 +946,7 @@ jobs:
       # tools/tests/test_check_shell_redirect_dirs.py, since syntax cannot check a
       # message. Deterministic, offline, stdlib-only python3.
       - name: every redirect writes into a directory the script guarantees exists
-        run: python3 tools/check-shell-redirect-dirs.py
+        run: python3 tools/ci/check-shell-redirect-dirs.py
       # Dev is macOS, macOS ships bash 3.2.57, and CLAUDE.md says every validation
       # must be runnable on the creator's own machine. `mapfile` is a bash 4.0
       # builtin: on 3.2 it prints `command not found`, LEAVES THE ARRAY EMPTY and
@@ -961,7 +961,7 @@ jobs:
       # `engine-release.yml` builds two darwin targets on `macos-latest`.
       # Deterministic, offline, stdlib-only python3.
       - name: no repo shell uses syntax the creator's bash 3.2 does not have
-        run: python3 tools/check-shell-bash32.py
+        run: python3 tools/ci/check-shell-bash32.py
       # A grammar `Program` is a long-lived on-disk document (ADR-0018 §4/§5), and
       # the two ways it grows new surface are not equally safe. A new variant of a
       # tagged enum is safe — an older engine meets an `"op"` it does not know and
@@ -978,7 +978,7 @@ jobs:
       # the floor must be REFUSED by name in `ir.rs` — a constant nothing enforces
       # is not a fence. Deterministic, offline, stdlib-only python3.
       - name: every optional field of the grammar IR is closed or fenced
-        run: python3 tools/check-grammar-ir-compat.py
+        run: python3 tools/ci/check-grammar-ir-compat.py
       # EVERY job here is a required status check — an advisory gate is one
       # nobody has to obey, and `tier 2` (datapack load plus the whole PackTest
       # suite) is not one. Branch protection matches a required context by its NAME
@@ -990,7 +990,7 @@ jobs:
       # branch protection, and a gate needing a privileged token is a gate that
       # quietly stops running. Deterministic, offline, stdlib-only python3.
       - name: required status checks and ci.yml job names agree
-        run: python3 tools/check-required-contexts.py
+        run: python3 tools/ci/check-required-contexts.py
       # A job skipped on a pull request never ran on that tree, so what decides
       # the skip is a gate's business, not a convention's: `.github/ci-reach.toml`
       # is held to the jobs here. Refuses a job with no group, a group no job
@@ -999,13 +999,13 @@ jobs:
       # workflow and the filter. States its binding counts; refuses a zero.
       # Deterministic, offline, stdlib-only python3.
       - name: every job reads the group of paths it reads, and runs on every push
-        run: python3 tools/check-ci-reach.py
+        run: python3 tools/ci/check-ci-reach.py
       # The same class one door further out, on the one path that can never be
       # undone. `crates-io` holds CARGO_REGISTRY_TOKEN and is supposed to hold a
       # run until a reviewer approves it; it carried `protection_rules: []`, so a
       # tag push published two crates to crates.io through a job named "(owner
       # approval)" with nobody reviewing anything, and a crates.io version can
-      # never be deleted. `tools/assert-run-approved.sh` reads the run's own
+      # never be deleted. `tools/ci/assert-run-approved.sh` reads the run's own
       # approval history and refuses when none names the environment — the
       # CONSEQUENCE of the setting, which is the only half of it this repository
       # can see. That assertion was then invoked by hand, and ADR-0017 records the
@@ -1019,7 +1019,7 @@ jobs:
       # scan that finds no environment-gated job is the discovery rule breaking,
       # not a clean repository. Deterministic, offline, stdlib-only python3.
       - name: every environment-gated job proves its own approval
-        run: python3 tools/check-approval-guard.py
+        run: python3 tools/ci/check-approval-guard.py
       # The step above binds the guard to every job that CAN publish; this binds
       # which jobs those are. `engine-release.yml` fills two shelves from one tag
       # and used to gate one of them: `publish-assets` needed only `[identity,
@@ -1040,7 +1040,7 @@ jobs:
       # its binding counts and refuses a zero. Deterministic, offline,
       # stdlib-only python3.
       - name: only the approval-gated job publishes anything
-        run: python3 tools/check-release-publish-gate.py
+        run: python3 tools/ci/check-release-publish-gate.py
       # ADR-0016's third version line — the `/new-delve` skill's own version and
       # the `delvec` window it drives — is checked in the CONTENT repository, by
       # `tools/check-skill-version.py` there, because that is where the page
@@ -1064,7 +1064,7 @@ jobs:
       # rides in this job because a new job needs a new required context, and an
       # advisory gate does not gate. Deterministic, offline, stdlib-only python3.
       - name: every judged trial verdict declares what bounded it
-        run: python3 tools/check-trial-verdicts.py
+        run: python3 tools/ci/check-trial-verdicts.py
       # --offline: check only local/internal links — the ones this repo can
       # actually keep true. This used to be justified by the repo being private;
       # it is PUBLIC, so that premise was false, but the flag is still right for
@@ -1080,7 +1080,7 @@ jobs:
   # The one job on Windows, and the only place the attribute pin is PROVED
   # rather than declared.
   #
-  # `.gitattributes` says a file materialises with LF; `tools/check-eol-attributes.py`
+  # `.gitattributes` says a file materialises with LF; `tools/ci/check-eol-attributes.py`
   # says every file some machine runs through its first line carries that
   # attribute. Both are readings of a declaration, and both are green on a Linux
   # runner whose checkout would have been LF anyway — the platform where the
@@ -1120,7 +1120,7 @@ jobs:
         run: |
           set -euo pipefail
           python --version
-          python tools/check-eol-attributes.py --working-tree
+          python tools/ci/check-eol-attributes.py --working-tree
 
   storybook-version:
     # A campaign's storybook is what a server host reads before running the
@@ -1147,7 +1147,7 @@ jobs:
           lfs: "false"
       # Deterministic, offline, stdlib-only python3.
       - name: every campaign storybook carries a TRUE engine-version marker
-        run: python3 tools/check-storybook-version.py
+        run: python3 tools/creator/check-storybook-version.py
 
   # A released campaign is never edited and is built only by the engine
   # revision it pins (spec-0039): the engine never builds old campaigns to
@@ -1215,7 +1215,7 @@ jobs:
       - name: the content pin is measured against what it names
         run: |
           git fetch --tags --force origin
-          python3 tools/check-pins.py --online \
+          python3 tools/ci/check-pins.py --online \
             --checkout content-repo=campaigns \
             --checkout skill-page-engine=.
       # The other half of `skill-page-engine`, and the one only the remote can
@@ -1239,7 +1239,7 @@ jobs:
       - name: the plugin's shelf carries every target
         env:
           GH_TOKEN: ${{ github.token }}
-        run: python3 tools/check-skill-page.py --online --base origin/main
+        run: python3 tools/ci/check-skill-page.py --online --base origin/main
       # A campaign's ZONE PROGRAMS are the grammar IR a zone's prefab is
       # expanded from; they live under `design/programs/`, and a campaign that
       # has them may carry no `world.json` at all yet (the drowned-bell remake
@@ -1297,12 +1297,12 @@ jobs:
       # The gallery's prefab directory is made by TWO committed acts: the
       # generator for the hand-built pieces and the skins, and `delvec detail
       # --all` over the site-plan point for the program-detailed place
-      # (spec-0058). `tools/gallery-prefabs.py` runs both and asserts the row
+      # (spec-0058). `tools/ci/gallery-prefabs.py` runs both and asserts the row
       # the verb writes is the row the overlay commits, so a hand-edited row
       # cannot stand where the program's own output belongs.
       - name: generate the gallery's pieces and skins
         run: |
-          python3 tools/gallery-prefabs.py \
+          python3 tools/ci/gallery-prefabs.py \
             --delvec target/debug/delvec --out gallery-prefabs
       # `analyze` is the reachability half of the ladder (spec-0039 §4.2) and
       # `build --lang en` is the tree the coverage gate reads its binding ledgers
@@ -1319,7 +1319,7 @@ jobs:
       # surface, and on no others.
       - name: every declared surface is written or proven refused
         run: |
-          python3 tools/check-gallery-coverage.py \
+          python3 tools/ci/check-gallery-coverage.py \
             --delvec target/debug/delvec \
             --prefabs gallery-prefabs \
             --build-out gallery-out-en \
@@ -1333,7 +1333,7 @@ jobs:
       - name: every declared view is produced, and shows something
         if: '!cancelled()'
         run: |
-          python3 tools/check-gallery-render.py \
+          python3 tools/ci/check-gallery-render.py \
             --delvec target/debug/delvec \
             --prefabs gallery-prefabs \
             --build-out gallery-out-en \
@@ -1349,7 +1349,7 @@ jobs:
       - name: the seating answer is the build answer
         if: '!cancelled()'
         run: |
-          python3 tools/check-seating-agrees.py \
+          python3 tools/ci/check-seating-agrees.py \
             --delvec target/debug/delvec --prefabs gallery-prefabs
 
       # The other half of the render surface, and until this ran nothing in this
@@ -1363,7 +1363,7 @@ jobs:
       - name: the whole-map illustration path runs, on every horizon
         if: '!cancelled()'
         run: |
-          python3 tools/check-whole-map-render.py \
+          python3 tools/ci/check-whole-map-render.py \
             --delvec target/debug/delvec \
             --prefabs gallery-prefabs \
             --work whole-map-render
@@ -1371,7 +1371,7 @@ jobs:
       - name: emission baseline + expected-warnings ledger
         if: '!cancelled()'
         run: |
-          python3 tools/gallery-baseline.py \
+          python3 tools/ci/gallery-baseline.py \
             --delvec target/debug/delvec --prefabs gallery-prefabs
       # The step above compiles every overlay and keeps only a hash — correctly,
       # it is a baseline. The consequence was that the site-plan overlay, the map
@@ -1389,10 +1389,10 @@ jobs:
       - name: the walked whole rebuilds from a committed act
         if: '!cancelled()'
         run: |
-          python3 tools/gallery-build.py --point site-plan \
+          python3 tools/ci/gallery-build.py --point site-plan \
             --delvec target/debug/delvec --prefabs gallery-prefabs
-      # `tools/staging-gate.py` decides whether a built delve may be served, and
-      # its only consumer was `tools/playtest-server.sh` — step 9 of the
+      # `tools/creator/staging-gate.py` decides whether a built delve may be served, and
+      # its only consumer was `tools/creator/playtest-server.sh` — step 9 of the
       # `/new-delve` page. That binds it to the staging EVENT, correctly, and it
       # is also the whole of it: nothing asked the question on a push, so the
       # engine could grow a campaign the gate refuses and the first thing to say
@@ -1414,7 +1414,7 @@ jobs:
       - name: every point the ladder builds can be served
         if: '!cancelled()'
         run: |
-          python3 tools/check-gallery-stageable.py \
+          python3 tools/ci/check-gallery-stageable.py \
             --delvec target/debug/delvec --prefabs gallery-prefabs \
             --work validation/gallery-stageable
       # §6: the numbers are reported from day one, and no wall-clock value gates

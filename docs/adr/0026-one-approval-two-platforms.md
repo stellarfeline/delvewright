@@ -37,7 +37,7 @@ job able to obtain the token. Two do: the release workflow's gated job, and the
 the count changed with no edit to §4, and nothing in the record said so.
 ADR-0017's own *What happened in practice* section foresaw the shape — a second
 environment-gated job inherits nothing — and named the checker as the work to
-redo; that checker exists (`tools/check-approval-guard.py`) and is part of what
+redo; that checker exists (`tools/ci/check-approval-guard.py`) and is part of what
 this record relies on.
 
 The general point, which §4 already demonstrated once, is that an environment
@@ -156,19 +156,19 @@ contents, which the undraft needs and which only the shelf job (bounded to
 drafts by its own read-back) and the gated job carry.
 
 **By a check, on every push** (`ci.yml`): that only a gated job publishes —
-`tools/check-release-publish-gate.py` refuses a publishing act (the registry
+`tools/ci/check-release-publish-gate.py` refuses a publishing act (the registry
 token, a registry upload, a release created other than as a draft, an undraft)
 in any job that declares no environment, refuses the release verbs in scripts
 outright so a job cannot hide one behind a call, requires an ungated job that
 writes to a release to read its draft state back in the same job, and reds on a
 zero binding; and that every gated job asserts its own approval first —
-`tools/check-approval-guard.py`, keyed to `environment:` as the object class
+`tools/ci/check-approval-guard.py`, keyed to `environment:` as the object class
 rather than to any job by name. Both prove that the shape is authored. Neither
 can see GitHub's configuration.
 
 **After the fact only**: whether the run actually paused. The reviewer
 requirement lives in GitHub's environment settings, outside the repository, and
-nothing in the tree can read it. `tools/assert-run-approved.sh`, the first
+nothing in the tree can read it. `tools/ci/assert-run-approved.sh`, the first
 `run:` step of every gated job, reads the run's own approval record and refuses
 when no approval names the environment; a run that was never held records none.
 This ADR therefore claims exactly this about the pause: a run nobody approved

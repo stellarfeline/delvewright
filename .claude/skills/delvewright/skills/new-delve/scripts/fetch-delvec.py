@@ -78,7 +78,7 @@ ARCHIVE = "delvec-v{version}-{target}.tar.gz"
 # than imported from `tools/lib/release_tags.py`: this script ships inside the
 # plugin and runs on a creator's machine BEFORE any engine checkout exists, so a
 # page that could not read its own pin until it had cloned the thing the pin
-# names would be a circle. `tools/check-skill-page.py` holds the pin to the
+# names would be a circle. `tools/ci/check-skill-page.py` holds the pin to the
 # engine's own module, which is what keeps the two readings one grammar.
 TAG_RE = re.compile(r"^delvec--v((?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*))$")
 CHECKSUMS = "SHA256SUMS"

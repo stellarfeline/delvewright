@@ -14,7 +14,7 @@ name: GPU arm probe (manual)
 # a fact; §7 already defines both outcomes:
 #
 #   * an adapter is available  -> the GPU arms join CI with the fidelity gate
-#     (`DW0720`), and `tools/check-gallery-render.py` grows a GPU half.
+#     (`DW0720`), and `tools/ci/check-gallery-render.py` grows a GPU half.
 #   * no adapter               -> the CPU set is the CI floor (which is what it
 #     runs today) and GPU shots are produced on a dev machine as part of visual
 #     review. Nothing about the engine changes either way.

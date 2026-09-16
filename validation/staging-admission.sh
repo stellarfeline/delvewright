@@ -9,7 +9,7 @@
 #
 # ## Why this exists as a separate, tiny thing
 #
-# `tools/staging-gate.py` answers the coverage question. It was, on arrival,
+# `tools/creator/staging-gate.py` answers the coverage question. It was, on arrival,
 # invoked by nothing but its own tests — the UNRUN shape: a correct gate that
 # failed in the right direction and that nothing called, so the obligation to
 # run it lived in a doc line. This project has shipped that shape five times.
@@ -17,7 +17,7 @@
 # A doc line is not an invocation. The two owner-facing paths therefore do not
 # *ask* for the gate, they REQUIRE its output:
 #
-#   * `tools/playtest-server.sh` runs the gate itself, between the build and the
+#   * `tools/creator/playtest-server.sh` runs the gate itself, between the build and the
 #     container, and dies on a refusal.
 #   * `validation/owner-play.yaml` — the ONE compose file that publishes host
 #     25565, so reaching the owner's client means naming it — runs THIS script
@@ -62,7 +62,7 @@ if [ ! -f "$TOKEN" ]; then
 This build has not been through the staging gate, or the gate REFUSED it (a
 refusal deletes the token). Nothing owner-facing serves an unadmitted build.
 
-  python3 tools/staging-gate.py --campaign <campaign-dir> --build $BUILD
+  python3 tools/creator/staging-gate.py --campaign <campaign-dir> --build $BUILD
 
 If it reds, that red list is the set of defect classes the owner has already
 reported once and that nothing on this build would catch a second time. Fix
@@ -74,7 +74,7 @@ fi
 # Capture, then test. Never `cmd | grep -q` under `set -o pipefail`: grep exits
 # at the first match, the producer dies of SIGPIPE (141), and pipefail promotes
 # that to the pipeline — the guard fails BECAUSE it matched. CI keeps this
-# idiom out of the tree (tools/check-shell-pipe-shortcircuit.py).
+# idiom out of the tree (tools/ci/check-shell-pipe-shortcircuit.py).
 SUMS="$(sha256sum "$MANIFEST")"
 ACTUAL="${SUMS%% *}"
 

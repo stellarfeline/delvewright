@@ -598,7 +598,7 @@ block is not counted as a heading, over the page at the one revision spec-0063
 moved it from: `.claude/skills/new-delve/SKILL.md` in the content repository at
 `ee25912f`. It is the measurement that decided the split, and it is frozen at
 that revision on purpose — the page's current shape is measured by
-`tools/check-skill-page.py` on every push, and a second hand-written census
+`tools/ci/check-skill-page.py` on every push, and a second hand-written census
 here would be a second authority for it.
 
 **The skill directory holds exactly one file.** There is no `scripts/`, no
@@ -700,7 +700,7 @@ now says the page lives in this repository, and gives ADR-0014's form and
 ADR-0027 §2 as the reason. The measurements in §5 above are of the page as it
 stood at that move and are not re-taken here: this record's subject is what the
 standard requires, and the page's own shape is measured by
-`tools/check-skill-page.py` on every push.
+`tools/ci/check-skill-page.py` on every push.
 
 ---
 

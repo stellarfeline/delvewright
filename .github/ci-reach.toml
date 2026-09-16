@@ -2,7 +2,7 @@
 #
 # On `pull_request`, a job runs only when the change touches a path its group
 # lists here; on `push` and `workflow_dispatch` every job runs. The table is
-# interpreted by `tools/lib/ci_reach.py` alone, and `tools/check-ci-reach.py`
+# interpreted by `tools/lib/ci_reach.py` alone, and `tools/ci/check-ci-reach.py`
 # holds it to `ci.yml`: every job but `changes` reads a group through its `if`,
 # every group is read by a job, every glob matches a tracked file, and every
 # `if` also runs on the non-pull-request events.
@@ -28,13 +28,13 @@ inputs = [
 [[group]]
 name = "manifest"
 inputs = [
-  { glob = "**", why = "`tools/check-pins.py` scans every tracked file (`git ls-files`) for a fetch verb; `validation/check-versions.sh` reads Dockerfiles, compose, workflows, crate manifests, harness and skin manifests" },
+  { glob = "**", why = "`tools/ci/check-pins.py` scans every tracked file (`git ls-files`) for a fetch verb; `validation/check-versions.sh` reads Dockerfiles, compose, workflows, crate manifests, harness and skin manifests" },
 ]
 
 [[group]]
 name = "dsl-crate-version"
 inputs = [
-  { glob = "**", why = "`tools/crates-io-publish.sh --plan` runs `tools/lib/version_sites.py verify`, which sweeps every tracked file for a `dsl_version` carrier; it packages `crates/dsl`" },
+  { glob = "**", why = "`tools/ci/crates-io-publish.sh --plan` runs `tools/lib/version_sites.py verify`, which sweeps every tracked file for a `dsl_version` carrier; it packages `crates/dsl`" },
 ]
 
 [[group]]
@@ -42,12 +42,12 @@ name = "rust"
 inputs = [
   { glob = "crates/**", why = "clippy and `cargo test --workspace`, the viewer's node tests, `check-publishable.sh`, `check-crates-io-readmes.py`, the grammar coverage table, the Linux determinism digest" },
   { glob = "Cargo.toml", why = "the root workspace manifest and `[workspace.package]` version" },
-  { glob = "**/Cargo.toml", why = "`tools/fmt-workspaces.sh --check` derives every workspace from `git ls-files`" },
-  { glob = "**/*.rs", why = "`tools/fmt-workspaces.sh --check` formats every workspace's sources" },
+  { glob = "**/Cargo.toml", why = "`tools/ci/fmt-workspaces.sh --check` derives every workspace from `git ls-files`" },
+  { glob = "**/*.rs", why = "`tools/ci/fmt-workspaces.sh --check` formats every workspace's sources" },
   { glob = "prefabs/**", why = "the prefab workspace is swept by `fmt-workspaces.sh`; `tools/lib/publishable.py` cross-checks the excluded nested workspace" },
   { glob = "gallery/**", why = "crate tests read the gallery (`detail.rs`, `remedy_reachability.rs`, `site_plan_edit_script.rs`, `prefab_*` tests)" },
-  { glob = "tools/**", why = "the scripts this job runs (`fmt-workspaces.sh`, `check-json-canonical.py`, `check-publishable.sh`, `check-crates-io-readmes.py`, `determinism-subject.sh`, `tree-digest.py`, `tools/lib/*`) and files crate tests read (`tools/refscore.py`, `tools/tests/fixtures/i18n-sidecar`, `tools/spike-block-settling/observations.json`)" },
-  { glob = "**/*.json", why = "`tools/check-json-canonical.py` judges every tracked JSON document" },
+  { glob = "tools/**", why = "the scripts this job runs (`fmt-workspaces.sh`, `check-json-canonical.py`, `check-publishable.sh`, `check-crates-io-readmes.py`, `determinism-subject.sh`, `tree-digest.py`, `tools/lib/*`) and files crate tests read (`tools/creator/refscore.py`, `tools/tests/fixtures/i18n-sidecar`, `tools/spike-block-settling/observations.json`)" },
+  { glob = "**/*.json", why = "`tools/ci/check-json-canonical.py` judges every tracked JSON document" },
 ]
 
 [[group]]
@@ -55,7 +55,7 @@ name = "engine-shelf"
 inputs = [
   { glob = "crates/**", why = "`cargo check` of `delvec` for every shelf target" },
   { glob = "Cargo.toml", why = "the workspace manifest the shelf build resolves" },
-  { glob = "tools/build-release-binaries.sh", why = "the script this job runs" },
+  { glob = "tools/ci/build-release-binaries.sh", why = "the script this job runs" },
   { glob = "tools/lib/**", why = "shared helpers the release scripts source" },
   { glob = "LICENSE", why = "`build-release-binaries.sh` stages it into every archive" },
 ]
@@ -67,7 +67,7 @@ inputs = [
   { glob = "crates/dsl/**", why = "`prefabs/Cargo.toml` depends on `delvewright-dsl` by path" },
   { glob = "crates/delvec/data/**", why = "`prefabs/invariants/src/connections.rs` includes `block-classification-1.21.11.json`" },
   { glob = "Cargo.toml", why = "the root manifest a path dependency inherits workspace keys from" },
-  { glob = "tools/check-generator-preservation.py", why = "the script this job runs" },
+  { glob = "tools/ci/check-generator-preservation.py", why = "the script this job runs" },
 ]
 
 [[group]]
@@ -79,7 +79,7 @@ inputs = [
 [[group]]
 name = "skin-tool"
 inputs = [
-  { glob = "tools/skin/**", why = "`pip install -r requirements.txt` and `pytest` inside `tools/skin/`" },
+  { glob = "tools/creator/skin/**", why = "`pip install -r requirements.txt` and `pytest` inside `tools/creator/skin/`" },
 ]
 
 [[group]]
@@ -110,7 +110,7 @@ inputs = [
 [[group]]
 name = "storybook-version"
 inputs = [
-  { glob = "tools/check-storybook-version.py", why = "the script this job runs" },
+  { glob = "tools/creator/check-storybook-version.py", why = "the script this job runs" },
   { glob = "tools/lib/**", why = "`versions.py`, which the script imports" },
   { glob = "Cargo.toml", why = "the compiler's release version, read from `[workspace.package]`" },
 ]
@@ -122,7 +122,7 @@ inputs = [
   { glob = "Cargo.toml", why = "the workspace manifest the build resolves" },
   { glob = ".claude/**", why = "`check-skill-page.py --online` judges the plugin tree" },
   { glob = ".claude-plugin/**", why = "`check-skill-page.py` reads the marketplace manifest" },
-  { glob = "tools/**", why = "`check-pins.py`, `check-skill-page.py` and the modules it loads (`check-stated-counts.py`, `check-dw-codes.py`), `tools/data/skill-page-headings.json`, `tools/lib/*`, and the `extract-*.py` pins are judged by" },
+  { glob = "tools/**", why = "`check-pins.py`, `check-skill-page.py` and the modules it loads (`check-stated-counts.py`, `check-dw-codes.py`), `tools/ci/data/skill-page-headings.json`, `tools/lib/*`, and the `extract-*.py` pins are judged by" },
   { glob = "validation/**", why = "pins judged by `validation/check-versions.sh`, `validation/Dockerfile.toolserver` and `validation/compose.yaml`" },
   { glob = "docs/reference/**", why = "the documents `check-stated-counts.py` and `check-dw-codes.py` read when `check-skill-page.py` loads them" },
 ]

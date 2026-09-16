@@ -1,5 +1,5 @@
 # The `uses:` steps below are LOCAL action paths on purpose: an `owner/repo@ref`
-# anywhere in this tree is a pin the registry must hold (`tools/check-pins.py`),
+# anywhere in this tree is a pin the registry must hold (`tools/ci/check-pins.py`),
 # and a fixture is not a place this repository fetches anything from.
 name: fixture — the guard step was never written
 on: { push: { branches: [main] } }

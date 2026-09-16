@@ -33,7 +33,7 @@
 # Nothing hashes it, by construction rather than by exclusion: the build
 # manifest's `outputs` is an index over the compiler's in-memory emission map
 # (`emit.rs`), not a walk of the output directory, so a directory that appeared
-# after the build cannot enter it; and `tools/gallery-baseline.py` hashes source
+# after the build cannot enter it; and `tools/ci/gallery-baseline.py` hashes source
 # trees (`gallery/`, `crates/`) and reads each build's `manifest.json`, never the
 # build directory itself. Keep it that way: a world save inside a hashed walk
 # would turn every render into a determinism finding.
@@ -109,7 +109,7 @@ done
 : "${EULA:?set EULA=TRUE to accept the Mojang EULA (https://aka.ms/MinecraftEULA)}"
 
 # The repo's ONE definition of "the server refused that command"
-# (tools/check-live-commands.py binds this). `dw_rcon` asserts the reply;
+# (tools/ci/check-live-commands.py binds this). `dw_rcon` asserts the reply;
 # `dw_rcon_probe` is the deliberately unjudged form, used here only for the
 # liveness poll, which EXPECTS failure until rcon is listening.
 # shellcheck source=tools/lib/rcon.sh

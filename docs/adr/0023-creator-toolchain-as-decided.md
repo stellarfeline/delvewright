@@ -75,7 +75,7 @@ Everything a creator runs is a subcommand of it: compiling and analysing, the
 CPU render arms, the GPU render arms, prefab authoring, admission, schematic
 conversion and playtest harvesting. **No cargo feature gates any subcommand**
 (ADR-0021 §1's rule, kept): the surface is unconditional code, and
-`tools/build-release-binaries.sh` asserts per target that the built binary's
+`tools/ci/build-release-binaries.sh` asserts per target that the built binary's
 `--help` lists exactly the clap surface parsed from source.
 
 A subcommand is named after the **object it acts on**, never after the crate the
@@ -143,9 +143,9 @@ own version line (ADR-0017 §2's argument stands), and the seven engine crates �
 `[workspace.package]`, with `=` requirements between them declared once in
 `[workspace.dependencies]`. `versions.toml [engine].crates` enumerates the
 engine crates; `validation/check-versions.sh` binds every manifest to it, and
-`tools/check-publishable.sh` packages all eight and rebuilds `delvec` from the
+`tools/ci/check-publishable.sh` packages all eight and rebuilds `delvec` from the
 packaged tarballs alone. A publish that half-succeeds is retried at the same
-version (`tools/crates-io-publish.sh` skips what the registry already holds
+version (`tools/ci/crates-io-publish.sh` skips what the registry already holds
 byte-identically); a crate whose bytes must change after it landed costs a patch
 bump of the whole line and a new tag, the same cost `delvec` alone carried.
 

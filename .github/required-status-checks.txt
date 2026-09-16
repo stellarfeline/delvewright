@@ -4,7 +4,7 @@
 # THIS FILE IS A DEADLOCK TRIPWIRE. Branch protection matches a required context
 # by its NAME STRING. Rename a job in ci.yml and its required context stops
 # reporting forever, so every PR blocks with no way to merge the fix — the fix is
-# itself a PR. `tools/check-required-contexts.py` fails the moment this file and
+# itself a PR. `tools/ci/check-required-contexts.py` fails the moment this file and
 # `ci.yml` disagree, in either direction, which turns that deadlock into an
 # ordinary red on the PR that would have caused it.
 #
@@ -24,7 +24,7 @@
 # skipped required check. On a pull request most jobs are skipped when the change
 # cannot reach them (`.github/ci-reach.toml`), and every job needs `changes`, so a
 # failed `changes` skips all of them. That is why `changes` is required too, and
-# why `tools/check-required-contexts.py` refuses it as advisory.
+# why `tools/ci/check-required-contexts.py` refuses it as advisory.
 changes (which jobs a pull request reaches)
 rust (fmt, clippy, test)
 engine binaries (cross-build shelf)

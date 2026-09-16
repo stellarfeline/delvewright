@@ -132,7 +132,7 @@ emitted identifiers.
    `advisories_waived`; a campaign that declares none reports zeros rather than
    omitting the block.
 10. Every criterion above is asserted by a test naming its DW code, and both
-    `tools/check-dw-codes.py` and `tools/check-reference-versions.py` are green.
+    `tools/ci/check-dw-codes.py` and `tools/ci/check-reference-versions.py` are green.
 11. A campaign that declares no `traversal` builds byte-identically to the same
     campaign built by the pre-0.11 engine, in every language it declares — apart
     from the engine's own `dsl_version` stamp (`creator-datapack/layout.json`),

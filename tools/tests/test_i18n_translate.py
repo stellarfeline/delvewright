@@ -1,4 +1,4 @@
-"""Unit tests for tools/i18n-translate.py (external-LLM l10n translation).
+"""Unit tests for tools/creator/i18n-translate.py (external-LLM l10n translation).
 
 No test may touch the network: the HTTP poster is always injected or monkeypatched
 to explode. What is proven here is the request we *would* send, the config
@@ -16,7 +16,7 @@ from pathlib import Path
 
 import pytest
 
-TOOL = Path(__file__).resolve().parents[1] / "i18n-translate.py"
+TOOL = Path(__file__).resolve().parents[1] / "creator" / "i18n-translate.py"
 
 
 def _load():

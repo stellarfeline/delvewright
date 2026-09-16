@@ -47,8 +47,8 @@ And the composition rules — how the routes combine into an area:
   emits no jigsaw connectors, so a grammar prefab cannot join a
   `prefab_pool` until a socket is carved (§7) — and connector *emission* is an
   open design, flagged, not improvised.
-- **Intent flows one way**: a reference image (`tools/refimg.py`) conditions
-  the human and the program; a similarity score (`tools/refscore.py`) RANKS
+- **Intent flows one way**: a reference image (`tools/creator/refimg.py`) conditions
+  the human and the program; a similarity score (`tools/creator/refscore.py`) RANKS
   candidate expansions on the contact sheet and can never gate or veto —
   structurally enforced (`DW0725`/`DW0726`). Generate N seed-varied
   candidates, machine-order, **human picks one**. No image is ever
@@ -115,7 +115,7 @@ Three steps, in this order. Do not stop after the first.
 as a guessed hex. Constraints eliminate; they never score.
 
 ```sh
-python3 tools/block-appearance.py --screen \
+python3 tools/creator/block-appearance.py --screen \
     --where full_cube --where 'L>=0.75' --where 'L<=0.95' \
     --where 'C_mean<0.02' --where 'texture_range<=0.30'
 ```
@@ -134,9 +134,9 @@ and `--id` still answers "what colour IS this".
 by four numbers:
 
 ```sh
-python3 tools/block-appearance.py --mix 'sandstone=3,smooth_sandstone=3,andesite=4'
-python3 tools/block-appearance.py --mix 'deepslate[axis=y]=3,stone=1'   # states, properties and all
-python3 tools/block-appearance.py --program my-piece.json   # every role + inline fill
+python3 tools/creator/block-appearance.py --mix 'sandstone=3,smooth_sandstone=3,andesite=4'
+python3 tools/creator/block-appearance.py --mix 'deepslate[axis=y]=3,stone=1'   # states, properties and all
+python3 tools/creator/block-appearance.py --program my-piece.json   # every role + inline fill
 ```
 
 `chroma_mass`, `chromatic_area` (what fraction of the wall is coloured rather
@@ -159,7 +159,7 @@ reason and exits 2. A zero binding is a finding, not a pass.
 **2c. Look at it.** A shortlist is not a choice.
 
 ```sh
-python3 tools/block-appearance.py --screen --where full_cube --where 'L>=0.75' \
+python3 tools/creator/block-appearance.py --screen --where full_cube --where 'L>=0.75' \
     --mix 'calcite=6,diorite=3,white_concrete=1' --sheet --seed 7
 ```
 
