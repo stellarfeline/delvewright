@@ -1,27 +1,7 @@
 {
   "added": [],
-  "base_commit": "e3ccae7c401352bb0c5e35ca0e5e4f8387830b8a",
-  "changed": [
-    "easy.en:render-plan.json",
-    "easy.en:validation/design-record.json",
-    "hard.en:render-plan.json",
-    "hard.en:validation/design-record.json",
-    "ocean-horizon.en:render-plan.json",
-    "ocean-horizon.en:validation/design-record.json",
-    "primary.en:render-plan.json",
-    "primary.en:validation/design-record.json",
-    "primary.zh-cn:render-plan.json",
-    "primary.zh-cn:validation/design-record.json",
-    "site-plan.en:render-plan.json",
-    "site-plan.en:validation/design-record.json",
-    "valley-site.en:render-plan.json",
-    "valley-site.en:validation/design-record.json",
-    "void-horizon.en:render-plan.json",
-    "void-horizon.en:validation/design-record.json"
-  ],
-  "classes": {
-    "other": 8,
-    "validation ledger": 8
-  },
+  "base_commit": "33e3dbe3e74fb372eef2231f2197504451a44e64",
+  "changed": [],
+  "classes": {},
   "removed": []
 }
