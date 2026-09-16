@@ -231,7 +231,7 @@ import subprocess
 import sys
 import tomllib
 
-sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent / "lib"))
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "lib"))
 import release_tags  # noqa: E402  — the release-tag grammar, stated once (ADR-0028 §1)
 
 # ---------------------------------------------------------------------------
