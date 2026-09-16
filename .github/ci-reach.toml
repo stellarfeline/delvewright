@@ -98,7 +98,13 @@ inputs = [
 [[group]]
 name = "docs"
 inputs = [
-  { glob = "**", why = "lychee over every `*.md`; `check-unsanctioned-identifiers.py`, `version_sites.py verify` and `check-doc-dupes.py` sweep the tree; `check-dw-codes.py` and `check-diagnostic-messages.py` read `crates/**`" },
+  { glob = "**", why = "lychee over every `*.md`; `check-unsanctioned-identifiers.py`, `version_sites.py verify`, `check-doc-dupes.py` and `check-eol-attributes.py` sweep the tree; `check-dw-codes.py` and `check-diagnostic-messages.py` read `crates/**`" },
+]
+
+[[group]]
+name = "line-endings"
+inputs = [
+  { glob = "**", why = "the Windows job re-derives the population from every tracked file — a new shebang or a new executable bit anywhere joins it — and reads the whole working tree that checkout materialised" },
 ]
 
 [[group]]
