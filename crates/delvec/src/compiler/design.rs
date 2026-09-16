@@ -50,6 +50,8 @@ use delvewright_dsl::{
     WorldTime, WorldWeather, is_image_extension,
 };
 
+use crate::compiler::view::camera::Answers;
+
 use crate::compiler::light::reachable_time_weather;
 
 /// `DW0890`: **the approved design and the built world do not agree about the
@@ -65,6 +67,21 @@ use crate::compiler::light::reachable_time_weather;
 /// one every validation diagnostic carries and says what it means: if this rule
 /// refuses with a build under way, it stops the build.
 pub const DW_DESIGN_SKY: DwCode = DwCode::new("DW0890", ExitTier::Build);
+
+/// `DW0900`: **an approved picture has no showcase camera** — a row of
+/// `design.json` that no camera of `design/cameras.json` answers (spec-0070).
+///
+/// One code for one fact, separate from [`DW_DESIGN_SKY`] because its repair is
+/// unrelated: a creator writes a camera against the last built tree, where
+/// `DW0890`'s repair changes the hour or the record and `DW0721`'s fixes the
+/// record's own rules. A creator looks a code up to find its repair.
+///
+/// Build tier (exit 3), and `delvec cameras` raises the same code at its own
+/// exit 2 when it emits scenes — one code in two tiers, as `DW0721` already is.
+/// It refuses at the build rather than at validation because every view command
+/// validates first, so a validation-tier refusal would refuse `cameras
+/// --preview`, the instrument that completes the record (spec-0070 §3).
+pub const DW_DESIGN_ANSWERED: DwCode = DwCode::new("DW0900", ExitTier::Build);
 
 /// One approved image found under `design/`.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -194,6 +211,56 @@ pub struct DesignBinding {
     pub world_times: Vec<WorldTime>,
     /// Every weather state the world can reach.
     pub world_weathers: Vec<WorldWeather>,
+    /// The showcase camera record beside the rows (spec-0070): absent, refused
+    /// by its own reader, or read and counted.
+    pub cameras: CameraRecord,
+}
+
+/// **What the showcase camera record was at this run**, and what it answered.
+///
+/// Three states rather than a count, because a zero has to say which fact it
+/// is: a campaign between its design step and its first build has no record at
+/// all, and a record its reader refuses is a different thing again — one the
+/// build stops for under `DW0721`, and one this gate never turns into a number.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub enum CameraRecord {
+    /// No `design/cameras.json`. The ordinary state of a campaign that has not
+    /// placed a camera yet.
+    #[default]
+    Absent,
+    /// Present, and refused by its one reader (`compiler::view::camera`). The
+    /// message is that reader's; this gate counts nothing from it.
+    Unreadable(String),
+    /// Present and read: what it answers of the rows.
+    Read(Answers),
+}
+
+impl CameraRecord {
+    /// The cameras the record states — `0` for a record that is not there and
+    /// for one nothing could read.
+    pub fn cameras(&self) -> usize {
+        match self {
+            CameraRecord::Read(a) => a.cameras,
+            _ => 0,
+        }
+    }
+
+    /// Rows with at least one camera.
+    pub fn answered(&self) -> usize {
+        match self {
+            CameraRecord::Read(a) => a.answered.len(),
+            _ => 0,
+        }
+    }
+
+    /// Rows no camera answers, in the design's order — every row when there is
+    /// no readable record.
+    pub fn unanswered<'a>(&'a self, rows: &'a [Reference]) -> Vec<String> {
+        match self {
+            CameraRecord::Read(a) => a.unanswered.clone(),
+            _ => rows.iter().map(|r| r.name.clone()).collect(),
+        }
+    }
 }
 
 /// Render a set of tokens as `{a, b}` — `{}` when it is empty.
@@ -223,14 +290,52 @@ impl DesignBinding {
         format!(
             "design record: {} reference(s) recorded over {} image file(s) under `design/` \
              ({CONCEPT_DIR}/ {}, {REFERENCE_DIR}/ {}); skies stated: {skies}; world reaches times \
-             {} weathers {} (DW0890)",
+             {} weathers {} (DW0890); {}",
             self.references,
             self.image_files,
             self.concept_files,
             self.reference_files,
             set_line(&self.world_times, WorldTime::keyword),
             set_line(&self.world_weathers, WorldWeather::keyword),
+            self.cameras_line(),
         )
+    }
+
+    /// The showcase half of the binding line (spec-0070 §5), zeroes included:
+    /// how many cameras the record states and how many approved images they
+    /// answer. Printed on every run, whether or not there is a record.
+    pub fn cameras_line(&self) -> String {
+        let n = self.references;
+        match &self.cameras {
+            CameraRecord::Absent => format!(
+                "showcase cameras: none (no {file}); 0 of {n} approved image(s) answered (DW0900)",
+                file = crate::compiler::view::camera::CAMERAS_FILE,
+            ),
+            CameraRecord::Unreadable(why) => format!(
+                "showcase cameras: {file} is refused by its reader, so nothing counts it \
+                 (DW0721: {why}); 0 of {n} approved image(s) answered (DW0900)",
+                file = crate::compiler::view::camera::CAMERAS_FILE,
+            ),
+            CameraRecord::Read(a) => format!(
+                "showcase cameras: {} in {file} answering {} of {n} approved image(s){stray} (DW0900)",
+                a.cameras,
+                a.answered.len(),
+                file = crate::compiler::view::camera::CAMERAS_FILE,
+                stray = if a.stray.is_empty() {
+                    String::new()
+                } else {
+                    format!(
+                        "; {} camera(s) name a row that does not exist ({})",
+                        a.stray.len(),
+                        a.stray
+                            .iter()
+                            .map(|(name, answers)| format!("`{name}` -> `{answers}`"))
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    )
+                },
+            ),
+        }
     }
 }
 
@@ -263,6 +368,9 @@ pub fn record(binding: &DesignBinding, findings: &Findings) -> serde_json::Value
         },
         "unrecorded_files": findings.unrecorded_files,
         "unresolved_rows": findings.unresolved_rows,
+        "cameras": binding.cameras.cameras(),
+        "answered": binding.cameras.answered(),
+        "unanswered_rows": findings.unanswered_rows,
     })
 }
 
@@ -274,6 +382,10 @@ pub struct Findings {
     pub unrecorded_files: Vec<String>,
     /// Row names that resolve to no file, or to more than one, in row order.
     pub unresolved_rows: Vec<String>,
+    /// Row names no showcase camera answers, in row order (spec-0070): every
+    /// row when the campaign has no readable `design/cameras.json`, which is the
+    /// case the staging gate refuses and the build cannot.
+    pub unanswered_rows: Vec<String>,
 }
 
 /// Run the design gate: the binding, the refusals, and the two lists the
@@ -298,6 +410,7 @@ pub fn check(c: &Campaign, files: &DesignFiles) -> (Vec<Diagnostic>, DesignBindi
         skies_stated: Vec::new(),
         world_times: world_times.clone(),
         world_weathers: world_weathers.clone(),
+        cameras: camera_record(files, rows),
     };
     // Counted through an ordered map so the artifact and the binding line are
     // byte-stable (ADR-0006): the key is the pair's declaration order in the
@@ -314,7 +427,10 @@ pub fn check(c: &Campaign, files: &DesignFiles) -> (Vec<Diagnostic>, DesignBindi
         .collect();
 
     let mut d = Vec::new();
-    let mut findings = Findings::default();
+    let mut findings = Findings {
+        unanswered_rows: binding.cameras.unanswered(rows),
+        ..Findings::default()
+    };
 
     // ---- shape b: a row names an image that is not there --------------------
     for (i, r) in rows.iter().enumerate() {
@@ -470,6 +586,134 @@ pub fn check(c: &Campaign, files: &DesignFiles) -> (Vec<Diagnostic>, DesignBindi
     (d, binding, findings)
 }
 
+/// Read the campaign's showcase camera record and count what it answers of
+/// `rows` — through [`crate::compiler::view::camera::tally`], the one comparison
+/// between the two documents (spec-0070 §2).
+fn camera_record(files: &DesignFiles, rows: &[Reference]) -> CameraRecord {
+    use crate::compiler::view::camera;
+    let Some(bytes) = &files.cameras else {
+        return CameraRecord::Absent;
+    };
+    match camera::parse_sheet(bytes) {
+        Ok(sheet) => {
+            let names: Vec<String> = rows.iter().map(|r| r.name.clone()).collect();
+            CameraRecord::Read(camera::tally(&sheet, &names))
+        }
+        Err(d) => CameraRecord::Unreadable(d.message),
+    }
+}
+
+/// **Every approved picture has a showcase camera** — the build's half of
+/// spec-0070, and the record's own rule the build reads it under.
+///
+/// Two refusals over the same two documents, in the order a creator repairs
+/// them: a camera answering a row that does not exist is `DW0721`, the sentence
+/// `delvec cameras` has always refused it with, and an approved row no camera
+/// answers is `DW0900`. Both are build tier (exit 3), and both are raised
+/// **before anything is placed** — the caller runs this after analysis and
+/// before `Plan::build`, so the creator's previous build tree is still on disk
+/// for `delvec cameras --preview` to draw against.
+///
+/// An **absent** record raises nothing: the first build of every campaign is the
+/// build a camera is written against, so refusing it here would refuse the state
+/// every campaign passes through. That zero is measured in the binding line and
+/// in `validation/design-record.json`, and refused at the staging gate
+/// (`drill3-03`).
+pub fn answered(c: &Campaign, files: &DesignFiles) -> Vec<Diagnostic> {
+    let rows: &[Reference] = c
+        .design
+        .as_ref()
+        .map(|e| e.content.references.as_slice())
+        .unwrap_or(&[]);
+    let names: Vec<String> = rows.iter().map(|r| r.name.clone()).collect();
+    let CameraRecord::Read(a) = camera_record(files, rows) else {
+        // Absent: nothing to hold. Unreadable: `DW0721` is raised by the record's
+        // own reader when the build proves the cameras against the world, and a
+        // second copy of that refusal here would name the same defect twice.
+        return Vec::new();
+    };
+    let mut d = Vec::new();
+    if let Some((name, answers)) = a.stray.first() {
+        d.push(Diagnostic::error(
+            crate::compiler::view::camera::DW_RECORD_AT_BUILD,
+            "design",
+            crate::compiler::view::camera::CAMERAS_FILE,
+            crate::compiler::view::camera::stray_message(name, answers, &names),
+        ));
+        // One defect at a time: with a stray camera the record does not yet say
+        // which pictures it answers, so counting unanswered rows beside it would
+        // report a second number the first defect produced.
+        return d;
+    }
+    if !a.unanswered.is_empty() {
+        d.push(Diagnostic::error(
+            DW_DESIGN_ANSWERED,
+            "design",
+            crate::compiler::view::camera::CAMERAS_FILE,
+            unanswered_message(&approved_rows(rows), &a),
+        ));
+    }
+    d
+}
+
+/// `design.json`'s rows as the camera surface reads them, so the refusal below
+/// is built from one shape whichever side raises it.
+fn approved_rows(rows: &[Reference]) -> Vec<crate::compiler::view::camera::ApprovedRow> {
+    rows.iter()
+        .map(|r| crate::compiler::view::camera::ApprovedRow {
+            name: r.name.clone(),
+            shows: r.shows.clone(),
+        })
+        .collect()
+}
+
+/// The refusal's sentence, shared by the build and by `delvec cameras` so the
+/// two give one answer (spec-0070 §5). Each unanswered row is named with its
+/// `shows` sentence, because that is what tells a creator which picture it is.
+pub fn unanswered_message(
+    rows: &[crate::compiler::view::camera::ApprovedRow],
+    a: &Answers,
+) -> String {
+    let shows = |name: &str| -> String {
+        rows.iter()
+            .find(|r| r.name == name)
+            .map(|r| format!(" ({})", r.shows))
+            .unwrap_or_default()
+    };
+    let named = a
+        .unanswered
+        .iter()
+        .map(|n| format!("`{n}`{}", shows(n)))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let answering = if a.answered.is_empty() {
+        "no approved image".to_string()
+    } else {
+        a.answered
+            .iter()
+            .map(|n| format!("`{n}`"))
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
+    format!(
+        "{} of {} approved image(s) have no showcase camera: {named}. `{file}` holds {} camera(s) \
+         answering {answering}. An approved picture nobody has pointed a camera at is a picture \
+         the build is never held beside. Either (1) AUTHOR a camera for each: estimate the view \
+         from the picture (`showcase-shots.md` §4) and draw it with `delvec cameras <last build> \
+         --campaign <dir> -o <dir> --preview`, then write the row (`source: estimated`), or place \
+         it by hand in the running game and write it with `delvec place-camera --report`; or (2) \
+         DELETE the picture and its row from `design.json`, which is re-opening the design gate \
+         for that scene, and is said to the user in those words. Never re-aim an existing camera \
+         at a second picture: a row keeps its `answers`, and a camera for another picture is a new \
+         row. With no built tree to preview against, (3) DELETE `design/cameras.json`, build, and \
+         write it against that build.",
+        a.unanswered.len(),
+        a.rows(),
+        a.cameras,
+        file = crate::compiler::view::camera::CAMERAS_FILE,
+    )
+}
+
 /// The files under one of the two directories, quoted, for a refusal that has
 /// to say what IS there.
 fn present_list(files: &DesignFiles, dir: &str) -> String {
@@ -577,6 +821,12 @@ mod tests {
             skies_stated: vec![(WorldTime::Night, WorldWeather::Clear, 4)],
             world_times: vec![WorldTime::Night],
             world_weathers: vec![WorldWeather::Clear],
+            cameras: CameraRecord::Read(Answers {
+                cameras: 2,
+                answered: vec!["concept/shore-far".to_string()],
+                unanswered: vec!["concept/tower-far".to_string()],
+                stray: Vec::new(),
+            }),
         };
         let line = b.line();
         assert!(
@@ -587,6 +837,27 @@ mod tests {
         assert!(line.contains("night+clear x4"), "{line}");
         assert!(
             line.contains("world reaches times {night} weathers {clear}"),
+            "{line}"
+        );
+        assert!(
+            line.contains(
+                "showcase cameras: 2 in design/cameras.json answering 1 of 4 approved image(s)"
+            ),
+            "{line}"
+        );
+    }
+
+    #[test]
+    fn a_campaign_with_no_camera_record_says_so_and_counts_its_rows() {
+        let b = DesignBinding {
+            references: 3,
+            ..DesignBinding::default()
+        };
+        let line = b.line();
+        assert!(
+            line.contains(
+                "showcase cameras: none (no design/cameras.json); 0 of 3 approved image(s) answered"
+            ),
             "{line}"
         );
     }

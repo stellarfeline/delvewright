@@ -2479,6 +2479,28 @@
     },
     {
       "applies_when": {
+        "glob": "world.json",
+        "kind": "campaign"
+      },
+      "binding": {
+        "file": "design-record.json",
+        "kind": "artifact",
+        "path": "answered"
+      },
+      "campaign": "the-tidewatch",
+      "carrier": {
+        "code": "DW0900",
+        "kind": "dw"
+      },
+      "finding": "the built areas bore no resemblance to the design set approved at the gate — a flat sand floor in a box of cobble where the approved image is a tide-cut stair on a black rock headland — and nothing in the pipeline put the two side by side: the build compares the sky and nothing else, and no rendered view of the built world was required to answer any approved image",
+      "general_form": "a built world and the design set its gate approved are assembled into one comparison before the build is reviewed: every approved reference is answered by a stated view of the BUILT world, so the disagreement is put in front of a reader rather than left to be remembered; the likeness itself is that reader's judgement and no machine's",
+      "id": "drill3-03",
+      "note": "Closed by spec-0070: DW0900 holds every row of design.json to a camera of design/cameras.json, through camera::tally — the one comparison between the two documents, which bind_answers is. A present record leaving any approved picture unanswered refuses delvec build (exit 3) before a piece is seated and delvec cameras scene emission (exit 2); a camera answering no row refuses the build under DW0721, the record's own rule, which the build read past until now. The absent record is not refused at the build, because the first build of every campaign is the build its cameras are written against: it is a measured zero on the binding line and in validation/design-record.json (cameras, answered, unanswered_rows), and it is refused HERE. The binding counts `answered`, so a campaign with rows and no camera reads UNBOUND. applies_when is world.json for drill3-01's reason: every campaign owes a design gate, so INAPPLICABLE is unreachable and a zero is a refusal. The human reading this row also names — whether what was built LOOKS like the picture — is unchanged and stays a person's, at the contact sheet and the storybook; what the engine now guarantees is that the pair they look at exists.",
+      "round": "drill-3",
+      "triage": "capability"
+    },
+    {
+      "applies_when": {
         "files": [
           "world.json"
         ],

@@ -23,6 +23,16 @@ The full inventory — every binary, script and flag that exists today — is
   document, `world-edits.json`: batches of declared edits, replayed
   deterministically, with the post-batch invariants enforced. Never hand-patch
   `.nbt` or invent block edits outside it.
+- **An approved picture no view of the built world answers**: the showcase
+  camera record, `campaigns/<id>/design/cameras.json` — one camera per row of
+  `design.json`, estimated from the picture and drawn over the assembled world
+  in seconds. The build refuses a record that leaves any row without a camera
+  and names the pictures; the repair is a camera for each, never re-aiming one
+  camera at a second picture. A campaign that has placed no camera at all still
+  builds — the first build is what a camera is estimated against — and is
+  stopped at the staging gate instead. Workflow, at step 8b; the subcommands and
+  their flags are `$DELVEWRIGHT_ENGINE/docs/reference/tools.md` §4a, which is
+  the engine you built, not the pinned release.
 - **Handing a build to a playtester**: the playtest note flow — `/trigger dw.note`
   in-game, then `delvec harvest` → `playtest-report.json`. Human-optional.
 - **Delivering or revising a cutscene**: shot calibration — in-game
