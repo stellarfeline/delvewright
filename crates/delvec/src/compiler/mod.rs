@@ -36,6 +36,7 @@
 //! - [`emit`]: build the `<out>/` output tree (bytes), deterministically.
 //! - [`faces`]: does the piece next to this one answer the way out it declares?
 //! - [`failure`]: the one type a compiler pass fails with — a DW code and the message that goes with it.
+//! - [`firework`]: `DW0899` — a rocket bursts in open air, clear of every posted body (spec-0068).
 //! - [`flow`]: the branch-coherent flag/quest flow model and the critical-path extraction (`DW0204`).
 //! - [`gates`]: `close-gate` gate-block validation — the physical dual of `open-gate`.
 //! - [`guarantee`]: which anchors an area's binding guarantees, answered before anything is placed (`DW0889`).
@@ -108,6 +109,7 @@ pub mod edit;
 pub mod emit;
 pub mod faces;
 pub mod failure;
+pub mod firework;
 pub mod flow;
 pub mod gates;
 pub mod guarantee;

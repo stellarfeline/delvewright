@@ -1,0 +1,27 @@
+{
+  "code": "DW0899",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "add",
+      "path": "/content/quests/2/on_complete/-",
+      "value": {
+        "at": {
+          "anchor": "anchor/exit"
+        },
+        "explosions": [
+          {
+            "colors": [
+              "#ffd700"
+            ],
+            "shape": "large_ball"
+          }
+        ],
+        "flight": 1,
+        "type": "firework"
+      }
+    }
+  ],
+  "units": [],
+  "why": "The hall is thirty-one by eight by thirty-one of stone and there is no eight-block column of air over any floor cell in it, so a rocket fired at `anchor/exit` cannot reach the height flight 1 puts its burst at. It bursts against the ceiling instead — at a height this engine cannot state, and possibly within five blocks of the floor the party is standing on, where the burst deals up to 19 HP. The build names the mark, the first solid cell in the column and the height the flight needed. It declares no unit: `firework`, its mark, its flight and every explosion field are bound by the valley-site overlay, whose walled court stands under open sky; what the engine refuses here is a rocket fired into a ceiling. The remedy is a lower flight, a mark with sky over it, or a taller room — never removing the check. Perturbing toward the vacuous shape is the other direction: move the same declaration onto the valley-site court and the gate goes green over a column it still walks, which the binding line states as a count of cells."
+}

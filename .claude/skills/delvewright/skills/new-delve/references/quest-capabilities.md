@@ -241,6 +241,26 @@ this section is what they are *for* and the traps in each.
   `on_death`, a shop offer, a shortcut's far-side unlock. To spell "the party
   walks up to this and the door opens", use an environment `trigger` — that one
   counts.
+- **A firework is one effect at a mark.** `firework {at {anchor, offset?},
+  flight?, explosions}` fires one rocket where the campaign says — over the gate
+  when the guard is drawn up, over the court when the bell is rung — beside the
+  `play-sound` that goes with it. `explosions` is one to seven bursts of
+  `{shape, colors, fade_colors?, trail?, twinkle?}`; `shape` is one of the
+  game's five (`small_ball`, `large_ball`, `star`, `creeper`, `burst`) and every
+  colour is a `#rrggbb` literal, the spelling a potion's `color` uses.
+  `flight` is 1, 2 or 3 — the three the game crafts — and decides how high the
+  rocket goes: the burst stands **8, 18 or 32 blocks over the mark**, a stated
+  number rather than a roll, because the compiler writes the rocket's lifetime
+  itself. So the mark needs that much sky: a rocket fired indoors bursts against
+  the ceiling and the build refuses it, naming the cell that stopped it. It is
+  also refused when the burst lands within five blocks of a place the campaign
+  posts a body — an NPC's stand, an actor's post, a checkpoint seat, a wave's
+  seat — because the burst hurts what it reaches. **Players are not posted, and
+  are not proved safe**: a party standing on a wall walk level with a burst over
+  the court takes up to 19 HP from a seven-star rocket, never a full body's
+  twenty, and that is a hazard they can see coming — judge it in playtest. A
+  display of many rockets is a `sequence` of `firework` effects, not one
+  overloaded rocket.
 - **A teleport selects a REGION, never a block.** `teleport {from {anchor,
   extent}, to {anchor, offset?}}` moves **everything** inside the box to the
   destination mark —

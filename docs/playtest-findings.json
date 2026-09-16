@@ -2642,6 +2642,30 @@
       "note": "Re-measured on the tree this row lands on: the engine at this branch's merge commit `f34a93be1588e1a297488a684e59c927cd1e4146`, against the released campaign at content `73182027db05e14d3a52a39e0c30fabd9025b9c0`. The game's side is unmoved: `crates/delvec/data/PROVENANCE.md` still pins `item_components/data.min.json` at sha-256 `51b191e13f86813ca02f1498942e5bc235947edb71eb8105a78401670b3665c4` — byte-identical across the merge (`git diff` over that file between this branch's pre-merge head and the merge commit is empty) — so the 8-slot/84-item registry fact the original reproduction read from it stands. The engine's side reproduces in the identical words: writing `body`/`saddle` into `actor/captain`'s equipment is refused at DW0100 — `unknown field `body`/`saddle`, expected one of `head`, `chest`, `legs`, `feet`, `main_hand`, `off_hand`` — and `MobEquipment::slots()` (`crates/dsl/src/stages.rs`) still returns the same fixed array of 6. The binding, computed by `tools/staging-gate.py`'s own `probe()`, still counts the equipment declarations this campaign makes: 7 of the 155 nodes `quests.json` now holds, one per actor; the precondition (bodies that could carry one) is also 7. Closed by spec-0067: `EquipSlot::ALL` carries the eight slots and every slot list derives from it; `crates/delvec/tests/equipment_tables.rs::every_slot_the_item_data_declares_is_in_the_vocabulary` reads `crates/delvec/data/item-equippable-1.21.11.json` (84 items over 7 slot values, extracted from the same item-components digest) and asserts each value is in the set. Measured with `tools/staging-gate.py` against the gallery primary built by a delvec force-built from the branch that carries the change: BOUND, binding 4 equipment declarations, among them a horse in `body` and `saddle`.",
       "round": 1,
       "triage": "capability"
+    },
+    {
+      "binding": {
+        "files": [
+          "quests.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "eq": {
+            "type": "firework"
+          }
+        }
+      },
+      "campaign": "doune-castle-tour",
+      "carrier": {
+        "kind": "invariant",
+        "test": "the_emitted_rocket_carries_the_component_the_page_names"
+      },
+      "finding": "a firework is a vanilla primitive with no DSL surface: no verb in the stage-5 effect vocabulary fires one, so a scene that wants fireworks cannot have them",
+      "general_form": "the effect vocabulary carries a verb that fires a firework at a declared point, taking the same anchor-and-offset the other one-shot point effects take, with its emitted command checked against the pinned command tree by the emitter like every other command",
+      "id": "doune-05",
+      "note": "Re-measured on the tree this row lands on, the engine at `83916f66b03354034465f22b8f996fc79bb34c1c`: `delvec schema --stage all` exports 534011 bytes carrying the word `firework` 20 times, and the effect union's `oneOf` now names 38 verbs, counted off the exported schema by `the_effect_union_names_thirty_eight_verbs` rather than read out of a message. The verb is `firework` at a `Mark` — the same anchor-and-offset `play-sound` takes since spec-0066 — carrying the game's five explosion shapes, colours as `#rrggbb` packed to the integers the `minecraft:fireworks` component reads, and a flight of 1, 2 or 3. One `summon minecraft:firework_rocket` is emitted per effect and is walked against the pinned 1.21.11 command tree by the emitter like every other line it writes, which is what the carrier test reaches: it reads the command off a real build, so the build that produced it had already passed the tree. The emitter writes the entity's `LifeTime` at the floor of the game's randomised range so the burst height is a stated number, and `DW0899` refuses a rocket whose column to that height is roofed or whose burst lies within five blocks of a place the campaign posts a body. The binding counts `firework` effects by identity, so a campaign that declares none is INAPPLICABLE rather than unbound; the released `doune-castle-tour` is never edited and declares none, and the class is exercised by the gallery's valley-site court, which fires one rocket of five stars under open sky.",
+      "round": 1,
+      "triage": "capability"
     }
   ],
   "ledger_version": "2026-08-11"

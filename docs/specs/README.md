@@ -75,4 +75,5 @@ machine-checkable assertions — each criterion maps to a CI check.
 | [spec-0065](spec-0065-furniture-is-not-floor.md) | Furniture is not floor — a piece declares its furniture as a named place, and the walk model never proves a body onto it | Accepted |
 | [spec-0066](spec-0066-a-body-stands-at-an-offset.md) | A body stands at an offset — one mark type, anchor plus integer offset, for every place a body is put, walked to or recorded at | Accepted |
 | [spec-0067](spec-0067-every-slot-the-game-has.md) | Every slot the game has — the equipment block names the pinned game's eight slots, and a piece is refused where the game would not show it on that body | Accepted |
+| [spec-0068](spec-0068-a-firework-is-an-effect.md) | A firework is an effect — one verb at a mark, the burst height fixed by the emitter, refused under a roof or beside a posted body | Accepted |
 | [spec-0069](spec-0069-a-showcase-camera-placed-by-hand.md) | A showcase camera placed by hand — when no agent-chosen render camera satisfies, a person places it in the running game and exactly that camera reaches the Chunky render | Accepted |
