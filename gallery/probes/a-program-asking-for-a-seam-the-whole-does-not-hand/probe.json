@@ -1,0 +1,5 @@
+{
+  "code": "DW0882",
+  "units": [],
+  "why": "The site-plan overlay's own `programs/annex.json`, declaring one more `handed/…` parameter — `handed/seam/no-such-edge/x0` — than the allocation hands `node/annex`. A `handed/` parameter is bound by `delvec detail` from the allocation and by nothing else, so one nothing hands would expand at its default in silence, a number standing where the plan's figure belongs; `detail` refuses it before the program is expanded, naming the parameter and every name this place IS handed. It declares no unit: the surface it perturbs is a program, not a stage document, and what must not run is a detail whose handing is not the whole's."
+}
