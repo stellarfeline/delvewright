@@ -190,6 +190,12 @@ fn a_hand_row_is_written_as_stamped_and_no_estimate_replaces_it() {
     ];
     let r = place(&hand);
     assert!(r.status.success(), "{}", log(&r));
+    // The count the write moved (spec-0070 §5), printed where the creator is.
+    assert!(
+        log(&r).contains("answers: 1 of 1 approved image(s)"),
+        "{}",
+        log(&r)
+    );
     let record = json(&camp.join("design/cameras.json"));
     let row = &record["cameras"][0];
     assert_eq!(row["source"], "hand");
@@ -278,7 +284,25 @@ fn camera_row(name: &str, source: &str, pos: [f64; 3], yaw: f64, pitch: f64) -> 
     })
 }
 
+/// A hello-world copy, with a camera record when one is given.
+///
+/// A record arrives with the design record it answers: `concept/keep`'s row and
+/// the approved file under `design/concept/`. A record beside no `design.json`
+/// at all is a state of its own (`DW0721`, spec-0070 §6) and is built
+/// deliberately, by `hello_with_orphan_record`, rather than by every case here.
 fn hello_with(tag: &str, cameras: Option<serde_json::Value>) -> PathBuf {
+    let camp = hello_with_orphan_record(tag, cameras.clone());
+    if cameras.is_some() {
+        design_rows(&camp);
+        std::fs::create_dir_all(camp.join("design/concept")).unwrap();
+        std::fs::write(camp.join("design/concept/keep.png"), b"not read").unwrap();
+    }
+    camp
+}
+
+/// The same, and the design record is NOT written: the record answers rows that
+/// are not there.
+fn hello_with_orphan_record(tag: &str, cameras: Option<serde_json::Value>) -> PathBuf {
     let camp = tmp(&format!("camp-{tag}"));
     common::copy_dir_all(&common::hello_world_dir(), &camp);
     if let Some(cams) = cameras {
@@ -399,6 +423,185 @@ fn the_build_proves_every_showcase_camera_photographs_the_scene() {
     assert!(out.contains("DW0721"), "{out}");
 }
 
+// ---------------------------------------------------------------------------
+// The camera side at the build (spec-0070 criterion 5)
+// ---------------------------------------------------------------------------
+
+/// **A camera answering no row is refused by the build**, under the record's own
+/// code and with the record's own sentence — the rule `delvec cameras` has
+/// always held and the build read past. Before placement: the tree a previous
+/// build wrote into the same `-o` is byte-unchanged.
+#[test]
+fn a_camera_that_answers_no_row_is_refused_by_the_build() {
+    let (eye, _, _) = clear_eye_and_floor("stray-plain");
+
+    // A row nobody drew: the record names `concept/a-view-nobody-drew`, the
+    // design record holds `concept/keep`.
+    let mut row = camera_row("hero", "estimated", eye, 0.0, 10.0);
+    row["answers"] = serde_json::json!("concept/a-view-nobody-drew");
+    let camp = hello_with("stray", Some(serde_json::json!([row])));
+    let (code, out, tree) = build("stray", &camp);
+    assert_eq!(code, 3, "{out}");
+    assert!(out.contains("DW0721"), "{out}");
+    assert!(
+        out.contains("camera `hero` answers `concept/a-view-nobody-drew`")
+            && out.contains("Rows: concept/keep"),
+        "the refusal names the camera and lists the rows:\n{out}"
+    );
+    assert!(!tree.join("manifest.json").is_file(), "nothing was written");
+
+    // And the same record beside no `design.json` at all: every camera answers a
+    // row that does not exist, because there are no rows.
+    let camp = hello_with_orphan_record(
+        "stray-no-doc",
+        Some(serde_json::json!([camera_row(
+            "hero",
+            "estimated",
+            eye,
+            0.0,
+            10.0
+        )])),
+    );
+    let (code, out, _) = build("stray-no-doc", &camp);
+    assert_eq!(code, 3, "{out}");
+    assert!(
+        out.contains("DW0721") && out.contains("Rows: none"),
+        "{out}"
+    );
+
+    // Green: the same camera answering the row that is there.
+    let camp = hello_with(
+        "stray-green",
+        Some(serde_json::json!([camera_row(
+            "hero",
+            "estimated",
+            eye,
+            0.0,
+            10.0
+        )])),
+    );
+    let (code, out, tree) = build("stray-green", &camp);
+    assert_eq!(code, 0, "{out}");
+    assert_eq!(
+        json(&tree.join("render-plan.json"))["camera_eye_proof"]["showcase"],
+        1
+    );
+}
+
+/// **The placing instruments are not refused** (spec-0070 criterion 3): on a
+/// record that answers one of two approved images, `delvec validate` exits 0
+/// and `delvec cameras --preview` draws the one camera against the last built
+/// tree and prints the count. The build of that same campaign is refused
+/// (`DW0900`), and the tree it was refused over is unchanged.
+#[test]
+fn the_instruments_that_close_the_hole_run_on_the_record_with_a_hole_in_it() {
+    let (eye, _, _) = clear_eye_and_floor("partial-plain");
+    let camp = hello_with(
+        "partial",
+        Some(serde_json::json!([camera_row(
+            "hero",
+            "estimated",
+            eye,
+            0.0,
+            10.0
+        )])),
+    );
+    // A second approved picture, with no camera.
+    std::fs::write(camp.join("design/concept/gate.png"), b"not read").unwrap();
+    let mut doc: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(camp.join("design.json")).unwrap()).unwrap();
+    doc["content"]["references"]
+        .as_array_mut()
+        .unwrap()
+        .push(serde_json::json!({
+            "name": "concept/gate", "shows": "the gate at its best",
+            "time": "noon", "weather": "clear"
+        }));
+    std::fs::write(
+        camp.join("design.json"),
+        serde_json::to_vec_pretty(&doc).unwrap(),
+    )
+    .unwrap();
+
+    // The last built tree: the same campaign before the second picture was
+    // approved builds, and that tree is what `--preview` draws against.
+    let built = tmp("partial-built");
+    let r = delvec(&[
+        "build",
+        hello_with(
+            "partial-built-src",
+            Some(serde_json::json!([camera_row(
+                "hero",
+                "estimated",
+                eye,
+                0.0,
+                10.0
+            )])),
+        )
+        .to_str()
+        .unwrap(),
+        "-o",
+        built.to_str().unwrap(),
+        "--prefabs",
+        common::prefabs_dir().to_str().unwrap(),
+    ]);
+    assert!(r.status.success(), "{}", log(&r));
+    let before: Vec<u8> = std::fs::read(built.join("manifest.json")).unwrap();
+
+    // Validation passes and states the count.
+    let r = delvec(&[
+        "validate",
+        camp.to_str().unwrap(),
+        "--prefabs",
+        common::prefabs_dir().to_str().unwrap(),
+    ]);
+    assert_eq!(r.status.code(), Some(0), "{}", log(&r));
+    assert!(
+        log(&r).contains("showcase cameras: 1 in design/cameras.json answering 1 of 2"),
+        "{}",
+        log(&r)
+    );
+
+    // `--preview` draws the one camera and prints the count.
+    let shots = tmp("partial-preview");
+    let r = delvec(&[
+        "cameras",
+        built.to_str().unwrap(),
+        "--campaign",
+        camp.to_str().unwrap(),
+        "-o",
+        shots.to_str().unwrap(),
+        "--preview",
+        "--prefabs",
+        common::prefabs_dir().to_str().unwrap(),
+    ]);
+    assert_eq!(r.status.code(), Some(0), "{}", log(&r));
+    assert!(
+        log(&r).contains("previewed 1 camera frame(s)")
+            && log(&r).contains("answers: 1 of 2 approved image(s)")
+            && log(&r).contains("concept/gate"),
+        "{}",
+        log(&r)
+    );
+
+    // The build into that same tree is refused, and the tree is byte-unchanged.
+    let r = delvec(&[
+        "build",
+        camp.to_str().unwrap(),
+        "-o",
+        built.to_str().unwrap(),
+        "--prefabs",
+        common::prefabs_dir().to_str().unwrap(),
+    ]);
+    assert_eq!(r.status.code(), Some(3), "{}", log(&r));
+    assert!(log(&r).contains("DW0900"), "{}", log(&r));
+    assert_eq!(
+        std::fs::read(built.join("manifest.json")).unwrap(),
+        before,
+        "the refusal is before anything is written"
+    );
+}
+
 /// **Criterion 11 — byte identity.** Two builds of a campaign with a hand row
 /// write byte-identical `render-plan.json` and `manifest.json`, and `delvec
 /// cameras` over each writes byte-identical scenes.
@@ -415,9 +618,6 @@ fn a_hand_row_builds_byte_identically() {
     let mut outs = Vec::new();
     for run in ["a", "b"] {
         let camp = hello_with(&format!("twice-{run}"), Some(rows.clone()));
-        design_rows(&camp);
-        std::fs::create_dir_all(camp.join("design/concept")).unwrap();
-        std::fs::write(camp.join("design/concept/keep.png"), b"not read").unwrap();
         let (code, out, dir) = build(&format!("twice-{run}"), &camp);
         assert_eq!(code, 0, "{out}");
         let scenes = tmp(&format!("scenes-{run}"));

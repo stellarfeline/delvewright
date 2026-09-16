@@ -465,3 +465,316 @@ fn a_campaign_with_no_approved_design_states_its_zero_and_passes() {
         "the zero is printed, not inferred:\n{out}"
     );
 }
+
+// ---------------------------------------------------------------------------
+// Every approved image is answered — `DW0900` (spec-0070)
+// ---------------------------------------------------------------------------
+
+/// Write `design/cameras.json` over `(name, answers)` pairs, all at `pos`.
+///
+/// Nothing at validation asks where a camera is; the build does (`DW0724`), so
+/// the build cases below take their position from a proven-clear eye.
+fn cameras(camp: &Path, pos: [f64; 3], rows: &[(&str, &str)]) {
+    let cams: Vec<serde_json::Value> = rows
+        .iter()
+        .map(|(name, answers)| {
+            serde_json::json!({
+                "answers": answers, "exposure": 1.0, "fov": 70.0, "height": 90,
+                "name": name, "pitch": 10.0, "pos": pos, "source": "estimated",
+                "spp": 16, "width": 160, "yaw": 0.0
+            })
+        })
+        .collect();
+    std::fs::create_dir_all(camp.join("design")).unwrap();
+    std::fs::write(
+        camp.join("design/cameras.json"),
+        serde_json::to_vec_pretty(&serde_json::json!({
+            "campaign_id": "hello-world", "cameras": cams
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+}
+
+/// The eye of a hello-world build's first player-POV shot: a point that build
+/// itself proved clear, so a showcase camera placed there passes `DW0724`.
+fn proven_eye(tag: &str) -> [f64; 3] {
+    let camp = campaign(tag, "noon");
+    let (code, out, dir) = build(tag, &camp);
+    assert_eq!(code, 0, "{out}");
+    let plan: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(dir.join("render-plan.json")).unwrap()).unwrap();
+    let pov = plan["shots"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|s| s["kind"] == "pov")
+        .expect("hello-world has a walked POV")
+        .clone();
+    serde_json::from_value(pov["camera"]["pos"].clone()).unwrap()
+}
+
+/// **Criterion 1.** The binding line carries the camera count and the answered
+/// count on every `validate`, zeroes included, in each state a campaign can be
+/// in (spec-0070 §6) — and none of these states is a refusal at validation.
+#[test]
+fn the_binding_line_states_what_the_cameras_answer_in_every_state() {
+    let here = [8.5, 66.0, 8.5];
+
+    // 1. no images, no `design.json`, no record.
+    let bare = campaign("answers-bare", "noon");
+    let (code, out) = validate(&bare);
+    assert_eq!(code, 0, "{out}");
+    assert!(
+        out.contains(
+            "showcase cameras: none (no design/cameras.json); 0 of 0 approved image(s) answered"
+        ),
+        "{out}"
+    );
+
+    // 2. no `design.json`, a record present: it is counted, and its cameras
+    //    answer rows that do not exist.
+    let orphan = campaign("answers-orphan", "noon");
+    cameras(&orphan, here, &[("hero", "concept/shore-far")]);
+    let (code, out) = validate(&orphan);
+    assert_eq!(code, 0, "{out}");
+    assert!(
+        out.contains(
+            "showcase cameras: 1 in design/cameras.json answering 0 of 0 approved image(s)"
+        ) && out
+            .contains("1 camera(s) name a row that does not exist (`hero` -> `concept/shore-far`)"),
+        "{out}"
+    );
+
+    // 3. rows, no record — every campaign between its design step and its first
+    //    build.
+    let rows_only = campaign("answers-rows", "noon");
+    image(&rows_only, "concept/shore-far.png");
+    image(&rows_only, "concept/tower-far.png");
+    record(
+        &rows_only,
+        &[
+            ("concept/shore-far", "noon", "clear"),
+            ("concept/tower-far", "noon", "clear"),
+        ],
+    );
+    let (code, out) = validate(&rows_only);
+    assert_eq!(code, 0, "{out}");
+    assert!(
+        out.contains(
+            "showcase cameras: none (no design/cameras.json); 0 of 2 approved image(s) answered"
+        ),
+        "{out}"
+    );
+
+    // 4. rows, a record answering every row.
+    let whole = campaign("answers-whole", "noon");
+    image(&whole, "concept/shore-far.png");
+    image(&whole, "concept/tower-far.png");
+    record(
+        &whole,
+        &[
+            ("concept/shore-far", "noon", "clear"),
+            ("concept/tower-far", "noon", "clear"),
+        ],
+    );
+    cameras(
+        &whole,
+        here,
+        &[
+            ("shore", "concept/shore-far"),
+            ("tower", "concept/tower-far"),
+        ],
+    );
+    let (code, out) = validate(&whole);
+    assert_eq!(code, 0, "{out}");
+    assert!(
+        out.contains(
+            "showcase cameras: 2 in design/cameras.json answering 2 of 2 approved image(s)"
+        ),
+        "{out}"
+    );
+
+    // 5. rows, a record leaving one unanswered — validation still passes: the
+    //    build is where it is refused, so the instruments stay reachable.
+    let partial = campaign("answers-partial", "noon");
+    image(&partial, "concept/shore-far.png");
+    image(&partial, "concept/tower-far.png");
+    record(
+        &partial,
+        &[
+            ("concept/shore-far", "noon", "clear"),
+            ("concept/tower-far", "noon", "clear"),
+        ],
+    );
+    cameras(&partial, here, &[("shore", "concept/shore-far")]);
+    let (code, out) = validate(&partial);
+    assert_eq!(code, 0, "{out}");
+    assert!(
+        out.contains(
+            "showcase cameras: 1 in design/cameras.json answering 1 of 2 approved image(s)"
+        ),
+        "{out}"
+    );
+
+    // 6. a camera answering no row, beside rows that exist.
+    let stray = campaign("answers-stray", "noon");
+    image(&stray, "concept/shore-far.png");
+    record(&stray, &[("concept/shore-far", "noon", "clear")]);
+    cameras(
+        &stray,
+        here,
+        &[
+            ("shore", "concept/shore-far"),
+            ("nobody", "concept/a-view-nobody-drew"),
+        ],
+    );
+    let (code, out) = validate(&stray);
+    assert_eq!(code, 0, "{out}");
+    assert!(
+        out.contains(
+            "showcase cameras: 2 in design/cameras.json answering 1 of 1 approved image(s)"
+        ) && out.contains("(`nobody` -> `concept/a-view-nobody-drew`)"),
+        "{out}"
+    );
+}
+
+/// **Criterion 2.** Red then green at the build: two rows and a record
+/// answering one is refused with `DW0900` naming the unanswered row and its
+/// `shows` sentence, before any placement line, and the tree a previous build
+/// wrote into the same `-o` is byte-unchanged; the second camera builds it green
+/// with `answered: 2` in the ledger.
+#[test]
+fn a_picture_with_no_camera_refuses_the_build_and_the_second_camera_builds_it() {
+    let eye = proven_eye("answered-eye");
+
+    let camp = campaign("answered-red", "noon");
+    image(&camp, "concept/shore-far.png");
+    image(&camp, "concept/tower-far.png");
+    record(
+        &camp,
+        &[
+            ("concept/shore-far", "noon", "clear"),
+            ("concept/tower-far", "noon", "clear"),
+        ],
+    );
+    cameras(&camp, eye, &[("shore", "concept/shore-far")]);
+
+    // A tree this campaign already built into, before the second picture was
+    // approved: what `--preview` draws against, and what the refusal must leave
+    // alone.
+    let before_camp = campaign("answered-before", "noon");
+    image(&before_camp, "concept/shore-far.png");
+    record(&before_camp, &[("concept/shore-far", "noon", "clear")]);
+    cameras(&before_camp, eye, &[("shore", "concept/shore-far")]);
+    let (code, out, tree) = build("answered-before", &before_camp);
+    assert_eq!(code, 0, "{out}");
+    let manifest = std::fs::read(tree.join("manifest.json")).unwrap();
+
+    let r = delvec(&[
+        "build",
+        camp.to_str().unwrap(),
+        "-o",
+        tree.to_str().unwrap(),
+        "--prefabs",
+        common::prefabs_dir().to_str().unwrap(),
+    ]);
+    let refused = log(&r);
+    assert_eq!(r.status.code(), Some(3), "{refused}");
+    assert!(refused.contains("DW0900"), "{refused}");
+    assert!(
+        refused.contains("`concept/tower-far` (what the picture shows, in one sentence)"),
+        "the refusal names the picture and what it shows:\n{refused}"
+    );
+    assert!(
+        !refused.contains("blockout sha256") && !refused.contains("wrote "),
+        "the refusal arrives before anything is placed or written:\n{refused}"
+    );
+    assert_eq!(
+        std::fs::read(tree.join("manifest.json")).unwrap(),
+        manifest,
+        "a refused build leaves the previous tree alone"
+    );
+
+    // Green: the second camera.
+    cameras(
+        &camp,
+        eye,
+        &[
+            ("shore", "concept/shore-far"),
+            ("tower", "concept/tower-far"),
+        ],
+    );
+    let (code, out, dir) = build("answered-green", &camp);
+    assert_eq!(code, 0, "{out}");
+    let r = design_record(&dir);
+    assert_eq!(r["references"], 2);
+    assert_eq!(r["cameras"], 2);
+    assert_eq!(r["answered"], 2);
+    assert_eq!(r["unanswered_rows"], serde_json::json!([]));
+}
+
+/// **Criterion 4, the build's half.** With no record the build exits 0 and the
+/// ledger reads `cameras: 0`, `answered: 0` and every row unanswered — the
+/// measured zero the staging gate refuses and the build cannot.
+#[test]
+fn a_campaign_with_no_camera_record_builds_and_its_ledger_counts_the_zero() {
+    let camp = campaign("answers-ledger", "noon");
+    image(&camp, "concept/shore-far.png");
+    image(&camp, "concept/tower-far.png");
+    record(
+        &camp,
+        &[
+            ("concept/shore-far", "noon", "clear"),
+            ("concept/tower-far", "noon", "clear"),
+        ],
+    );
+    let (code, out, dir) = build("answers-ledger", &camp);
+    assert_eq!(
+        code, 0,
+        "a campaign that has not placed a camera builds:\n{out}"
+    );
+    let r = design_record(&dir);
+    assert_eq!(r["references"], 2);
+    assert_eq!(r["cameras"], 0);
+    assert_eq!(r["answered"], 0);
+    assert_eq!(
+        r["unanswered_rows"],
+        serde_json::json!(["concept/shore-far", "concept/tower-far"]),
+        "in the design's own order"
+    );
+
+    // And a campaign with no design at all counts its zeroes without inventing
+    // an unanswered row.
+    let bare = campaign("answers-ledger-bare", "noon");
+    let (code, out, dir) = build("answers-ledger-bare", &bare);
+    assert_eq!(code, 0, "{out}");
+    let r = design_record(&dir);
+    assert_eq!(r["cameras"], 0);
+    assert_eq!(r["answered"], 0);
+    assert_eq!(r["unanswered_rows"], serde_json::json!([]));
+}
+
+/// **Criterion 10.** Two builds of a campaign whose record answers every row
+/// are byte-identical, the three new ledger keys included (ADR-0006).
+#[test]
+fn two_builds_of_a_campaign_with_a_camera_record_are_byte_identical() {
+    let eye = proven_eye("answered-twice-eye");
+    let camp = campaign("answers-determinism", "noon");
+    image(&camp, "concept/shore-far.png");
+    record(&camp, &[("concept/shore-far", "noon", "clear")]);
+    cameras(&camp, eye, &[("shore", "concept/shore-far")]);
+    let (a_code, a_log, a) = build("answers-determinism-a", &camp);
+    let (b_code, b_log, b) = build("answers-determinism-b", &camp);
+    assert_eq!(a_code, 0, "{a_log}");
+    assert_eq!(b_code, 0, "{b_log}");
+    assert_eq!(
+        std::fs::read(a.join("validation/design-record.json")).unwrap(),
+        std::fs::read(b.join("validation/design-record.json")).unwrap(),
+    );
+    assert_eq!(design_record(&a)["answered"], 1);
+    assert_eq!(
+        std::fs::read(a.join("manifest.json")).unwrap(),
+        std::fs::read(b.join("manifest.json")).unwrap(),
+    );
+}
