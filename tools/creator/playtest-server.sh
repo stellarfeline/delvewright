@@ -4,6 +4,7 @@
 #
 #   tools/creator/playtest-server.sh up <path> [--lang LANG] [--prefabs DIR]
 #                                [--delvec BIN] [--name NAME] [--out DIR]
+#                                [--memory SIZE]
 #                                [--stage-anyway "REASON" --acknowledge-red N]
 #   tools/creator/playtest-server.sh down [--name NAME]
 #   tools/creator/playtest-server.sh status
@@ -86,10 +87,24 @@
 # left on this host, `up` TAKES the 25565 mutex as `owner-play-session` and `down`
 # releases it: while it is held, no automation may bind the port, and the release
 # is refused while any container still publishes it (validation/mutex.sh).
+#
+# The container runs at `MEMORY_DEFAULT` (below) unless `--memory` says
+# otherwise. itzg's OWN default is 1G, which is not enough for a large-ish
+# campaign: 84 tiles plus 170 horizon templates OOM'd it
+# (`java.lang.OutOfMemoryError: Java heap space`), NPCs never spawned, and the
+# probe that checks for them died reporting a missing-NPC defect rather than
+# an out-of-memory one. A probe failure now stops and removes the container
+# and releases the mutex before this script exits — nothing is left running
+# for a creator to discover later — and an OOM specifically is reported as
+# what it is, not as whatever downstream symptom it caused.
 set -euo pipefail
 
+# `${BASH_SOURCE[0]}`, never `$0`: this file is executed directly in normal use
+# but SOURCED under DW_PLAYTEST_SERVER_TEST_HOOK (below) so a test can reach
+# the argv-building / OOM-detection functions without a docker or a delvec —
+# `$0` under `source` is the interpreter's own path, not this file's.
 # shellcheck source=validation/mutex.sh
-. "$(cd "$(dirname "$0")/../.." && pwd)/validation/mutex.sh"
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/validation/mutex.sh"
 set -euo pipefail  # mutex.sh sets its own options when sourced; take ours back
 
 MC_VERSION="1.21.11"
@@ -101,8 +116,99 @@ OUT_DIR=""
 STAGE_ANYWAY=""
 ACK_RED=""
 RCON_PW="playtest"
+MEMORY_ARG=""
+# itzg's own default is 1G, which is not enough for a large campaign: a build
+# of many tiles and horizon templates can throw `java.lang.OutOfMemoryError:
+# Java heap space` loading structures, and the NPCs that then never spawn read
+# as a content defect rather than a memory one. This default is authored, not
+# measured against every campaign size: it sits well above 1G for an ordinary
+# creator workstation. `--memory` is the escape hatch for a campaign this
+# default is still not enough for — the probe-failure path below names an OOM
+# as an OOM rather than a missing-NPC defect regardless, and leaves nothing
+# running either way.
+MEMORY_DEFAULT="4G"
 
 die() { echo "playtest-server: $*" >&2; exit 1; }
+
+# Whether NAME is a container docker knows about — never inferred from `rm`'s
+# own exit status, which still succeeds removing nothing on modern docker.
+# Shared by `down` (a session ending normally) and `up_failed` (one that never
+# got that far): both must ask this exact question about the exact resource.
+dw_playtest_container_exists() {
+  docker container inspect "$1" >/dev/null 2>&1
+}
+
+# The docker-run argv for the throwaway server, one token per line — a seam:
+# the flow below needs a real docker to run it, and this function does not, so
+# a unit test can assert the exact flags (in particular `-e MEMORY=...`)
+# without a docker on PATH.
+dw_playtest_docker_run_argv() {
+  local name="$1" mc_version="$2" rcon_pw="$3" memory="$4" stage="$5"
+  printf '%s\n' docker run -d --name "$name" -p 25565:25565 \
+    -e EULA=TRUE -e TYPE=VANILLA -e VERSION="$mc_version" \
+    -e MEMORY="$memory" \
+    -e RCON_PASSWORD="$rcon_pw" -e OVERRIDE_SERVER_PROPERTIES=false \
+    -v "$stage:/data" itzg/minecraft-server:latest
+}
+
+# True when a boot or server log shows the JVM ran out of heap — the literal
+# string the JVM itself prints, read from the log the failure actually
+# happened in, never re-derived. An OOM during structure loading leaves no
+# NPCs, and dying with "no dw_npc entities found" would be true but the wrong
+# defect — this is what lets a probe failure name the real one.
+dw_playtest_log_shows_oom() {
+  [[ ${1-} == *"java.lang.OutOfMemoryError"* ]]
+}
+
+# The `up` EXIT trap. Defined here (above the test seam) rather than beside
+# where it is armed, so a test can call it directly — with NAME, STAGE,
+# SESSION_FILE and UP_OK set by hand and a fake docker on PATH — without going
+# through a real build, staging gate or boot.
+#
+# A failed `up` keeps its STAGED WORLD on purpose — `$STAGE/logs/latest.log` is
+# where a boot failure is diagnosed, and `die` already sends the reader to the
+# logs. What it must not do is leave them unreachable, so it names the command
+# that reclaims them. The record is written before the container exists, which
+# is what makes that command work after any failure past this point.
+#
+# The CONTAINER is a different resource and is not kept: leaving it running
+# after a probe failure (an OOM loading structures, an unreached objective, a
+# missing NPC) would hold host 25565 behind a mutex this same failure already
+# released, eating memory nobody is watching for. Every resource this failed
+# session holds is named and released here — the container, then
+# the mutex — before the directories are reported kept. `docker logs` is
+# captured into the staged world FIRST, because it is the one thing that dies
+# with the container: `$STAGE/logs/latest.log` is the server's own log and
+# survives on disk regardless (it is a bind mount), but the wrapper's own
+# stdout is not, and an early failure (before the JVM ever writes that file)
+# has nothing else to diagnose from.
+up_failed() {
+  [ "${UP_OK:-0}" = 1 ] && return 0
+  if dw_playtest_container_exists "$NAME"; then
+    if [ -n "${STAGE:-}" ] && [ -d "${STAGE:-}" ]; then
+      docker logs "$NAME" >"$STAGE/docker-boot.log" 2>&1 || true
+    fi
+    if docker rm -f "$NAME" >/dev/null 2>&1; then
+      echo "playtest-server: removed the container this failed session started ($NAME)" >&2
+    else
+      echo "playtest-server: could not remove $NAME — remove it by hand: docker rm -f $NAME" >&2
+    fi
+  fi
+  dw_mutex_release
+  if [ -n "${SESSION_FILE:-}" ] && [ -f "$SESSION_FILE" ]; then
+    echo "playtest-server: this session left directories behind (see $SESSION_FILE)." >&2
+    echo "  reclaim: tools/creator/playtest-server.sh down --name $NAME" >&2
+  fi
+  return 0
+}
+
+# A seam for tests: sourcing this file with DW_PLAYTEST_SERVER_TEST_HOOK=1
+# stops here, before any argument parsing or side effect, leaving every
+# function above (and mutex.sh's, already sourced above) callable directly —
+# with no docker, no delvec and no mutex directory the caller did not choose.
+if [ "${DW_PLAYTEST_SERVER_TEST_HOOK:-}" = "1" ]; then
+  return 0 2>/dev/null || exit 0
+fi
 
 cmd="${1:-}"; shift || true
 case "$cmd" in up|down|status) ;; *) die "usage: up|down|status (see header)";; esac
@@ -115,6 +221,10 @@ while [ $# -gt 0 ]; do
     --delvec)  DELVEC="$2"; shift 2;;
     --name)    NAME="$2"; shift 2;;
     --out)     OUT_DIR="$2"; shift 2;;
+    # Not campaign-only (unlike --lang/--prefabs/--stage-anyway below): the
+    # container this bounds is the same one for a campaign and a prefab, so
+    # this is accepted, and applies, on either subject.
+    --memory)  MEMORY_ARG="$2"; shift 2;;
     # The deliberate override (playtest-methodology.md rule 7). Never a bare
     # flag: it needs a real reason AND the exact current red count, which moves
     # as the ledger does, so it cannot become the way this script is run.
@@ -225,7 +335,7 @@ if [ "$cmd" = "down" ]; then
   # inspect call fails not-found (127) exactly the way `rm -f` already had to
   # tolerate, and is read the same as "no such container": the disk half below
   # must still run either way.
-  if docker container inspect "$NAME" >/dev/null 2>&1; then
+  if dw_playtest_container_exists "$NAME"; then
     docker rm -f "$NAME" >/dev/null 2>&1 && echo "$NAME removed" || echo "$NAME existed but could not be removed"
   else
     echo "$NAME was not running"
@@ -336,20 +446,6 @@ dw_mutex_acquire "owner-play-session" || die "another 25565 session holds the mu
 # the port back, or the next `up` waits on a lock nothing is behind (the failure
 # mode compose-project isolation removed everywhere else).
 UP_OK=0
-# A failed `up` keeps its directories on purpose — `$STAGE/logs/latest.log` is
-# where a boot failure is diagnosed, and `die` already sends the reader to the
-# logs. What it must not do is leave them unreachable, so it names the command
-# that reclaims them. The record is written before the container exists, which is
-# what makes that command work after any failure past this point.
-up_failed() {
-  [ "$UP_OK" = 1 ] && return 0
-  dw_mutex_release
-  if [ -f "$SESSION_FILE" ]; then
-    echo "playtest-server: this session left directories behind (see $SESSION_FILE)." >&2
-    echo "  reclaim: tools/creator/playtest-server.sh down --name $NAME" >&2
-  fi
-  return 0
-}
 trap up_failed EXIT
 
 # A previous session under this name that never reached `down` (a crash, or a
@@ -466,10 +562,39 @@ if [[ -d "$OUT_DIR/creator-datapack" ]]; then
   cp -R "$OUT_DIR/creator-datapack" "$STAGE/world/datapacks/$CAMP_ID-creator"
 fi
 
-docker run -d --name "$NAME" -p 25565:25565 \
-  -e EULA=TRUE -e TYPE=VANILLA -e VERSION="$MC_VERSION" \
-  -e RCON_PASSWORD="$RCON_PW" -e OVERRIDE_SERVER_PROPERTIES=false \
-  -v "$STAGE:/data" itzg/minecraft-server:latest >/dev/null
+MEMORY="${MEMORY_ARG:-$MEMORY_DEFAULT}"
+echo "container memory: $MEMORY (itzg default is 1G; raise with --memory)"
+# Not `mapfile`/`readarray`: bash 3.2 (macOS's shipped /bin/bash — the creator's
+# own machine, CLAUDE.md) does not have them, and silently leaves the array
+# empty rather than failing (tools/ci/check-shell-bash32.py).
+DOCKER_RUN_ARGV=()
+while IFS= read -r dw_argv_line; do
+  DOCKER_RUN_ARGV+=("$dw_argv_line")
+done < <(dw_playtest_docker_run_argv "$NAME" "$MC_VERSION" "$RCON_PW" "$MEMORY" "$STAGE")
+"${DOCKER_RUN_ARGV[@]}" >/dev/null
+
+# Where every log this session can offer lives, stated once so every die()
+# below can point at it — including after `up_failed` has already removed the
+# container that a bare `docker logs $NAME` would otherwise need. The server's
+# own log is the bind-mounted world directory, so it survives container
+# removal; the wrapper's stdout does not, which is why `up_failed` captures it
+# into the same directory first.
+LOG_HINT="server log: $STAGE/logs/latest.log (docker-boot.log alongside it once cleanup runs)"
+
+# A probe that would otherwise read as "the pack did not do X" is told the
+# truth instead when the log shows why: an OOM loading structures or NPCs is
+# not a content defect, and reporting it as one sends a creator chasing a
+# datapack that is not broken.
+die_or_oom() {
+  local plain="$1" log
+  log="$(docker logs "$NAME" 2>&1 || true)"
+  if dw_playtest_log_shows_oom "$log"; then
+    die "$plain — AND the server log shows java.lang.OutOfMemoryError: raise" \
+      "--memory (current: $MEMORY; itzg's own default is 1G) rather than" \
+      "treat this as a content defect. $LOG_HINT"
+  fi
+  die "$plain. $LOG_HINT"
+}
 
 echo "waiting for world generation…"
 READY=0
@@ -477,8 +602,12 @@ for _ in $(seq 1 60); do
   sleep 10
   BOOT_LOG="$(docker logs "$NAME" 2>&1 || true)"
   if [[ $BOOT_LOG == *"Done ("* ]]; then READY=1; break; fi
+  if dw_playtest_log_shows_oom "$BOOT_LOG"; then
+    die "server ran out of heap booting (java.lang.OutOfMemoryError) with" \
+      "MEMORY=$MEMORY — raise it with --memory (e.g. --memory 8G). $LOG_HINT"
+  fi
 done
-[ "$READY" = 1 ] || die "server did not come up — docker logs $NAME"
+[ "$READY" = 1 ] || die "server did not come up after 600s. $LOG_HINT"
 
 # rcon verification. Every command's response is READ (CLAUDE.md) — a world that
 # booted is not a world that loaded its pack, and the difference is invisible
@@ -491,13 +620,13 @@ done
 OBJECTIVES="$(rcon "scoreboard objectives list")"
 if [ "$SUBJECT_KIND" = "campaign" ]; then
   # campaign objectives present, at least one campaign NPC, sidebar cleared.
-  [[ $OBJECTIVES == *"dw."* ]] || die "no dw.* objectives — datapack not loaded"
+  [[ $OBJECTIVES == *"dw."* ]] || die_or_oom "no dw.* objectives — datapack not loaded"
   NPC_PROBE="$(rcon "execute if entity @e[tag=dw_npc]")"
-  [[ $NPC_PROBE == *"Test passed"* ]] || die "no dw_npc entities found"
+  [[ $NPC_PROBE == *"Test passed"* ]] || die_or_oom "no dw_npc entities found"
 else
   # `admit.sys` is created by `admit:load`, so its absence is a pack the server
   # dropped rather than a world that is merely slow.
-  [[ $OBJECTIVES == *"admit.sys"* ]] || die "no admit.sys objective — the gallery datapack did not load (docker logs $NAME)"
+  [[ $OBJECTIVES == *"admit.sys"* ]] || die_or_oom "no admit.sys objective — the gallery datapack did not load"
   # One label per exhibit, COUNTED against the layout the same build wrote.
   # `execute if entity` answers only pass/fail, and a pass over one label of nine
   # exhibits is the vacuity this project keeps paying for — so the count is
@@ -516,8 +645,8 @@ else
     [ "$LABELS" -ge "$EXPECTED_EXHIBITS" ] && break
     sleep 2
   done
-  [ "$LABELS" = "$EXPECTED_EXHIBITS" ] || die \
-    "the browse world has $LABELS labelled exhibit(s) where the layout declares $EXPECTED_EXHIBITS — the datapack did not finish placing (docker logs $NAME)"
+  [ "$LABELS" = "$EXPECTED_EXHIBITS" ] || die_or_oom \
+    "the browse world has $LABELS labelled exhibit(s) where the layout declares $EXPECTED_EXHIBITS — the datapack did not finish placing"
   echo "browse world binding: $LABELS of $EXPECTED_EXHIBITS exhibit(s) placed and labelled"
 fi
 rcon_raw "scoreboard objectives setdisplay sidebar" >/dev/null || true
