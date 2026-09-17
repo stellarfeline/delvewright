@@ -277,9 +277,11 @@ element now exercises `WaveSummon::aggro-edge` instead of merely naming it.
 None of the four was found by reading code. Each was found by trying to write the
 surface down.
 
-## The far hall, and what a drawing reaches that a partition does not
+## The far hall of the site plan, and what a drawing reaches that a partition does not
 
-`node/far-hall` of the site-plan overlay is detailed from
+`node/far-hall` of the site-plan overlay — the same fiction as `area/far-hall`
+below, at the point of the campaign where nothing is placed by hand — is
+detailed from
 `overlays/site-plan/drawings/far-hall.json`, and it is the only place in this
 repository built from an ordered list of solids rather than a partition of its
 box. It is here to be read: 76 top-level operations, every one with a note
