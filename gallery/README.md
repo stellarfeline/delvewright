@@ -302,8 +302,8 @@ gives every cell to exactly one leaf, so it has nothing to carve. The piers rise
 vault exists. And the frieze the west and south walls step back at is a
 two-course recess in a wall the wall operation already built.
 
-Its contract is what the checks read: five spaces across all three envelopes,
-one out-of-walk region each of the two kinds a region can earn, fourteen edges
+Its contract is what the checks read: seven spaces across all three envelopes,
+one out-of-walk region each of the two kinds a region can earn, sixteen edges
 covering every class the contract declares, and three contingent ways — a sill
 laid, boards cleared, a fall of stone cleared — each guarding a dead end,
 because an internal way is shut for the whole's own reachability until content
