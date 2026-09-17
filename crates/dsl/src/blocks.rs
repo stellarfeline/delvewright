@@ -894,24 +894,29 @@ fn property_image(
 
     // Everything below is stated against a fixed vertical; the first two are
     // stated against a fixed handedness as well.
-    let turn_about_the_vertical = local_to_world[1] == 1 && reflected == [false; 3];
+    let horizontal = horizontal_frame(local_to_world, reflected);
     let vertical_kept = local_to_world[1] == 1 && !reflected[1];
 
     // A 16-step yaw (signs, banners, skulls): `rotation` 0 is south and the
-    // segments run with the yaw, so a reflection sends r to (12 - r) mod 16.
+    // segments run with the yaw, so a turn adds the turn's own yaw and a
+    // reflection subtracts the value from it.
     if key == "rotation" && legal.iter().all(|l| l.parse::<u8>().is_ok()) {
-        let (true, Ok(r)) = (turn_about_the_vertical, value.parse::<u32>()) else {
+        let (Some((zero, det)), Ok(r)) = (horizontal, value.parse::<u32>()) else {
             return PropertyImage::Undetermined;
         };
-        let moved = ((28 - r % 16) % 16).to_string();
-        return image_of_value(key, value, &moved, legal);
+        let moved = if det > 0 {
+            (r % 16 + zero) % 16
+        } else {
+            (zero + 16 - r % 16) % 16
+        };
+        return image_of_value(key, value, &moved.to_string(), legal);
     }
     // A chirality: a door's `hinge`, a stair's `shape`, a double chest's
-    // `type`. Handedness is what a reflection swaps — but a value that names
-    // no handedness (`straight`, `single`) is its own image under EVERY frame,
-    // and that case is settled before the frame is consulted at all. Deciding
-    // it the other way round would refuse every straight stair in a mirrored
-    // body.
+    // `type`. Handedness is what a REFLECTION swaps and a turn keeps — but a
+    // value that names no handedness (`straight`, `single`) is its own image
+    // under EVERY frame, and that case is settled before the frame is
+    // consulted at all. Deciding it the other way round would refuse every
+    // straight stair in a mirrored body.
     if legal
         .iter()
         .any(|l| l.split('_').any(|w| w == "left" || w == "right"))
@@ -928,10 +933,11 @@ fn property_image(
         if moved == value {
             return PropertyImage::Fixed;
         }
-        if !turn_about_the_vertical {
-            return PropertyImage::Undetermined;
-        }
-        return image_of_value(key, value, &moved, legal);
+        return match horizontal {
+            Some((_, det)) if det > 0 => PropertyImage::Fixed,
+            Some(_) => image_of_value(key, value, &moved, legal),
+            None => PropertyImage::Undetermined,
+        };
     }
     // A vertical position: a slab's `type`, a stair's or a door's `half`. A
     // `double` slab has no vertical half to lose, so it too is settled before
@@ -1011,6 +1017,54 @@ fn axis_sign_direction(axis: usize, sign: i8) -> &'static str {
         (2, 1) => "south",
         _ => unreachable!("axis index is always 0..3 and sign ±1"),
     }
+}
+
+/// **A frame that keeps the vertical, read as a turn of the horizontal plane**:
+/// `(zero, det)`, where `zero` is the 16-step yaw the frame sends `rotation` 0
+/// to and `det` is `+1` for a rotation and `-1` for a reflection. `None` once
+/// the vertical moves to another axis or runs backwards.
+///
+/// This is the vocabulary a yaw and a chirality are stated in, and it is
+/// arithmetic rather than a game fact. A frame that keeps the vertical acts on
+/// the horizontal plane as one of the square's eight symmetries — four turns
+/// and four mirrors — and the 16 yaws are a set every one of those permutes
+/// exactly. So the images are computed, not tabulated: where the frame sends
+/// the two directions `rotation` 0 and `rotation` 4 name fixes the whole
+/// permutation, and whether those two images stay a quarter-turn apart in the
+/// same sense fixes the handedness. A frame whose local `Y` is a horizontal
+/// world axis, or runs down the world's, leaves `up` with nothing to mean and
+/// therefore leaves a yaw with nothing to be measured from.
+fn horizontal_frame(local_to_world: [usize; 3], reflected: [bool; 3]) -> Option<(u32, i32)> {
+    if local_to_world[1] != 1 || reflected[1] {
+        return None;
+    }
+    let image = |axis: usize, sign: i8| {
+        let sign = if reflected[axis] { -sign } else { sign };
+        axis_sign_direction(local_to_world[axis], sign)
+    };
+    let zero = yaw_index(image(2, 1))?;
+    let quarter = yaw_index(image(0, -1))?;
+    match (quarter + 16 - zero) % 16 {
+        4 => Some((zero, 1)),
+        12 => Some((zero, -1)),
+        // Unreachable for a frame that keeps the vertical: the two directions
+        // are a quarter-turn apart and a symmetry of the plane preserves that.
+        // Reported as no image rather than asserted, because the answer to a
+        // frame this function cannot read is a refusal, never a guess.
+        _ => None,
+    }
+}
+
+/// The 16-step `rotation` value that names a cardinal direction. `rotation` 0
+/// is south and the index runs with the yaw, so west is 4, north 8 and east 12.
+fn yaw_index(direction: &str) -> Option<u32> {
+    Some(match direction {
+        "south" => 0,
+        "west" => 4,
+        "north" => 8,
+        "east" => 12,
+        _ => return None,
+    })
 }
 
 /// An axis word (`x`/`y`/`z`) as its index.
@@ -2017,27 +2071,38 @@ mod tests {
         );
     }
 
-    /// The yaw and the handedness are the residue, and a reflected frame is
-    /// **outside** the vocabulary that determines them — so the resolver
-    /// refuses rather than writing a plausible skull, and refuses exactly where
-    /// the judge calls the same state wrong.
+    /// The yaw and the handedness are the residue, and the vocabulary that
+    /// determines them is stated against a fixed vertical — so a frame that
+    /// moves the vertical onto a horizontal axis, or runs it backwards, leaves
+    /// them with nothing to be measured from. The resolver refuses rather than
+    /// writing a plausible skull, and refuses exactly where the judge calls the
+    /// same state wrong.
+    ///
+    /// **The boundary is the vertical, not the reflection.** A horizontal
+    /// mirror is inside the vocabulary: it is one of the square's eight
+    /// symmetries, it permutes the 16 yaws exactly, and it swaps left for right
+    /// — which is the sibling test's table. What has no image is a frame that
+    /// has no `up`.
     ///
     /// One verdict read from two ends is the invariant that makes the refusal
     /// safe: were the resolver to guess here, it would write states the
     /// `DW0736` gate reports as mismatched, and the build would be red about a
     /// block the build itself had chosen.
     #[test]
-    fn the_frame_relative_residue_refuses_under_a_reflection_and_the_judge_agrees() {
+    fn the_frame_relative_residue_refuses_once_the_vertical_moves_and_the_judge_agrees() {
         let reg = BlockRegistry::v1_21_11();
         let keep = [0, 1, 2];
         let flip_x = [true, false, false];
-        let swap_xz = [2, 1, 0];
+        let flip_y = [false, true, false];
+        // Local Y onto world Z: the scope's own "up" is a horizontal world
+        // axis.
+        let tipped = [0, 2, 1];
 
         for (perm, refl, state, prop) in [
-            (keep, flip_x, "minecraft:skeleton_skull", "rotation=8"),
-            (swap_xz, flip_x, "minecraft:skeleton_skull", "rotation=8"),
-            (keep, flip_x, "minecraft:oak_door", "hinge=left"),
-            (swap_xz, flip_x, "minecraft:oak_door", "hinge=left"),
+            (tipped, flip_x, "minecraft:skeleton_skull", "rotation=8"),
+            (keep, flip_y, "minecraft:skeleton_skull", "rotation=8"),
+            (tipped, flip_x, "minecraft:oak_door", "hinge=left"),
+            (keep, flip_y, "minecraft:oak_door", "hinge=left"),
         ] {
             let (k, v) = prop.split_once('=').unwrap();
             let p = props(&[(k, v)]);
