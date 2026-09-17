@@ -691,7 +691,7 @@ enum Spelling<'o> {
         count: &'o Int,
     },
     Fitted {
-        along: Axis,
+        along: crate::drawing::ir::Axis,
         stride: &'o Int,
         item: &'o Int,
         remainder: Remainder,
@@ -1618,14 +1618,15 @@ impl Executor<'_> {
         at: &Address,
     ) -> Result<(), Refusal> {
         if let Some(f) = flat
-            && !round[f.axis().index()]
+            && !round[crate::drawing::ir::face_axis(f)]
         {
             return Err(Refusal::new(
                 DW_OUT_OF_RANGE,
                 at.clone(),
                 format!(
-                    "`flat` is {f}, which lies on the straight axis. A flat is the cut plane of a \
-                     HALF solid, so it names a face of an axis the solid is round on."
+                    "`flat` is {}, which lies on the straight axis. A flat is the cut plane of a \
+                     HALF solid, so it names a face of an axis the solid is round on.",
+                    f.as_str()
                 ),
             ));
         }

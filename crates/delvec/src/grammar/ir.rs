@@ -648,8 +648,15 @@ pub enum Side {
 }
 
 /// A cardinal direction an anchor can face, as prefab metadata spells it.
+///
+/// **The exported schema calls it `AnchorFacing`.** A schema export's `$defs`
+/// is one flat namespace over every document a creator writes, and the campaign
+/// DSL already declares a `Facing` — a puppet's spawn yaw, which is a different
+/// thing. One name is one thing there, so the type keeps its Rust name and the
+/// export says which facing it is.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
+#[schemars(rename = "AnchorFacing")]
 pub enum Facing {
     /// `-Z`.
     North,
@@ -756,7 +763,12 @@ pub enum MarkIndex {
 /// would be silently droppable by an engine that predates it. What holds the line
 /// instead is the version ledger of `grammar.md` §2e, which `tools/ci/check-grammar-ir-compat.py`
 /// enforces in both directions.
+///
+/// **The exported schema calls it `AnchorMark`**, for the reason
+/// [`Facing`] is `AnchorFacing`: the campaign DSL's own `Mark` is an anchor
+/// plus an offset a body stands at, and one `$defs` name is one thing.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[schemars(rename = "AnchorMark")]
 pub struct Mark {
     /// The anchor name stem, kebab-case. The exported key is `anchor/<stem>`
     /// (plus the index suffix when [`MarkIndex::Auto`]), which is the DSL's
@@ -1103,7 +1115,12 @@ impl EdgeClass {
 }
 
 /// One declared way between two spaces, or between a space and the exterior.
+///
+/// **The exported schema calls it `SpatialContractEdge`**: the layout graph's
+/// own `Edge` is a connection between two PLACES of a map, and one `$defs` name
+/// is one thing.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[schemars(rename = "SpatialContractEdge")]
 pub struct Edge {
     /// A declared space name, or [`EXTERIOR`].
     pub a: String,

@@ -133,8 +133,11 @@ fn the_shared_definitions_are_generated_from_the_program_documents_own_types() {
             "Cond",
             serde_json::to_value(schemars::schema_for!(delvec::grammar::ir::Cond)).unwrap(),
         ),
+        // The exported name says which document's mark it is: a schema
+        // export's `$defs` is one flat namespace over every document a creator
+        // writes, and the campaign DSL declares a `Mark` of its own.
         (
-            "Mark",
+            "AnchorMark",
             serde_json::to_value(schemars::schema_for!(delvec::grammar::Mark)).unwrap(),
         ),
         (

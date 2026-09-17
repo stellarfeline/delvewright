@@ -30,7 +30,6 @@ use std::collections::BTreeMap;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::grammar::geom::Axis;
 use crate::grammar::ir::{Cond, Contract, Expr, Mark, States};
 
 /// The role a solid paints to write nothing — the reserved name that clears.
@@ -89,111 +88,60 @@ pub fn cell(x: i64, y: i64, z: i64) -> Vec3 {
     [Int::at(x), Int::at(y), Int::at(z)]
 }
 
-/// One of the six faces of an operation's box: the low and the high face of
-/// `x`, `y` and `z`, in that order.
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, JsonSchema,
-)]
-#[serde(rename_all = "snake_case")]
-pub enum Face {
-    /// The low face of `x`.
-    West,
-    /// The high face of `x`.
-    East,
-    /// The low face of `y`.
-    Down,
-    /// The high face of `y`.
-    Up,
-    /// The low face of `z`.
-    North,
-    /// The high face of `z`.
-    South,
-}
+/// **A face of an operation's box** — the engine's one face vocabulary
+/// ([`delvewright_dsl::siteplan::Face`]), the same six names a prefab's face
+/// contract and a site plan's seams are written with.
+///
+/// Not a type of this module's own: a second enum of six words would be a
+/// second vocabulary, and the two would disagree the first time one of them
+/// gained a name. The low and high faces of `x`, `y`, `z` are `west`/`east`,
+/// `down`/`up`, `north`/`south`.
+pub use delvewright_dsl::siteplan::Face;
 
-impl Face {
-    /// Every face, in the order the table above reads.
-    pub const ALL: [Face; 6] = [
-        Face::West,
-        Face::East,
-        Face::Down,
-        Face::Up,
-        Face::North,
-        Face::South,
-    ];
+/// **A world axis** — the engine's own ([`delvewright_dsl::siteplan::Axis`]).
+///
+/// What a `cylinder` calls straight and what a fitted `repeat` runs along.
+pub use delvewright_dsl::siteplan::Axis;
 
-    /// The axis this face lies on.
-    pub fn axis(self) -> Axis {
-        match self {
-            Face::West | Face::East => Axis::X,
-            Face::Down | Face::Up => Axis::Y,
-            Face::North | Face::South => Axis::Z,
-        }
-    }
-
-    /// True for the high face of its axis.
-    pub fn is_high(self) -> bool {
-        matches!(self, Face::East | Face::Up | Face::South)
-    }
-
-    /// The keyword.
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Face::West => "west",
-            Face::East => "east",
-            Face::Down => "down",
-            Face::Up => "up",
-            Face::North => "north",
-            Face::South => "south",
-        }
-    }
-}
-
-impl std::fmt::Display for Face {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(self.as_str())
-    }
-}
-
-/// A horizontal axis — the only kind a drawing turns, mirrors or tapers along.
+/// **A horizontal axis** — the engine's own
+/// ([`delvewright_dsl::siteplan::PlanAxis`]), and the only kind a drawing
+/// turns, mirrors or tapers along.
 ///
 /// **The vertical never moves: a drawing has gravity.** A frame that named a
 /// horizontal world axis as its local `y` would leave every `half`, every yaw
 /// and every stair with nothing to mean, and a `mirror` about the vertical
-/// would turn a building upside down. One type for `prism.taper`, `use.mirror`
-/// and `mirror.axis`, so the restriction is stated once and refused by the
-/// schema rather than by three checks.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "snake_case")]
-pub enum Horizontal {
-    /// West-east.
-    X,
-    /// North-south.
-    Z,
+/// would turn a building upside down. One type for `prism.taper`,
+/// `use.mirror` and `mirror.axis`, so the restriction is stated once and
+/// refused by the schema rather than by three checks — and it is the type a
+/// site plan already uses to say *a box is a footprint, so its extent has no
+/// `y` to ask about*.
+pub use delvewright_dsl::siteplan::PlanAxis as Horizontal;
+
+/// **Which axis a face lies on, and which end of it** — derived from the face's
+/// own unit vector rather than tabulated beside it, so a face and its axis
+/// cannot disagree.
+pub fn face_axis(face: Face) -> usize {
+    let v = face.vector();
+    (0..3)
+        .find(|&a| v[a] != 0)
+        .expect("a face points somewhere")
 }
 
-impl Horizontal {
-    /// The world axis.
-    pub fn axis(self) -> Axis {
-        match self {
-            Horizontal::X => Axis::X,
-            Horizontal::Z => Axis::Z,
-        }
-    }
-
-    /// The keyword.
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Horizontal::X => "x",
-            Horizontal::Z => "z",
-        }
-    }
+/// True for the high face of its axis.
+pub fn face_is_high(face: Face) -> bool {
+    face.vector()[face_axis(face)] > 0
 }
 
-impl std::fmt::Display for Horizontal {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(self.as_str())
-    }
-}
+/// Every face, in the order the box rule reads them: the low and the high face
+/// of `x`, then of `y`, then of `z`.
+pub const FACES: [Face; 6] = [
+    Face::West,
+    Face::East,
+    Face::Down,
+    Face::Up,
+    Face::North,
+    Face::South,
+];
 
 /// Which faces of a [`Op::Prism`]'s tapering axis step in as the courses rise.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]

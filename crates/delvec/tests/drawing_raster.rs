@@ -19,9 +19,9 @@ use std::collections::BTreeSet;
 
 use delvec::drawing::execute::{self, ExecuteOptions};
 use delvec::drawing::ir::Drawing;
+use delvec::drawing::ir::{Axis, FACES, face_axis, face_is_high};
 use delvec::drawing::raster::{RoundRule, Rule};
 use delvec::grammar::Box3;
-use delvec::grammar::geom::Axis;
 
 const VERSION: &str = delvec::compiler::DSL_VERSION;
 
@@ -614,10 +614,10 @@ fn the_inequality_agrees_with_an_arbitrary_precision_oracle_over_every_small_box
         let mut v: Vec<(Option<Axis>, Option<Face>)> = Vec::new();
         for straight in [None, Some(Axis::X), Some(Axis::Y), Some(Axis::Z)] {
             v.push((straight, None));
-            for face in Face::ALL {
+            for face in FACES {
                 // A `flat` names a face of a round axis; the engine refuses the
                 // others, so the oracle is not asked about them either.
-                if straight != Some(face.axis()) {
+                if straight.map(|a| a.index()) != Some(face_axis(face)) {
                     v.push((straight, Some(face)));
                 }
             }
@@ -640,7 +640,7 @@ fn the_inequality_agrees_with_an_arbitrary_precision_oracle_over_every_small_box
                         None => RoundRule::sphere(n, *flat, None),
                     };
                     let round = rule.round;
-                    let flat_pair = flat.map(|f| (f.axis().index(), f.is_high()));
+                    let flat_pair = flat.map(|f| (face_axis(f), face_is_high(f)));
                     let rule = Rule::Round(rule);
                     solids += 1;
                     for x in 0..nx {

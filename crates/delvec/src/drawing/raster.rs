@@ -11,8 +11,7 @@
 //! even extent and an odd one (spec-0072 criterion 4). The executor's job is
 //! where the box is; this is what is in it.
 
-use crate::drawing::ir::{Face, Horizontal, Section, Sides};
-use crate::grammar::geom::Axis;
+use crate::drawing::ir::{Axis, Face, Horizontal, Section, Sides, face_axis, face_is_high};
 
 /// The largest extent a round axis may have.
 ///
@@ -95,8 +94,8 @@ impl BoxRule {
             return true;
         };
         faces.iter().any(|f| {
-            let a = f.axis().index();
-            if f.is_high() {
+            let a = face_axis(*f);
+            if face_is_high(*f) {
                 i[a] >= self.n[a] - self.t
             } else {
                 i[a] < self.t
@@ -159,10 +158,10 @@ impl RoundRule {
             }
             let cut_low = self
                 .flat
-                .is_some_and(|f| f.axis().index() == a && !f.is_high());
+                .is_some_and(|f| face_axis(f) == a && !face_is_high(f));
             let cut_high = self
                 .flat
-                .is_some_and(|f| f.axis().index() == a && f.is_high());
+                .is_some_and(|f| face_axis(f) == a && face_is_high(f));
             if !cut_low {
                 lo[a] = t;
                 inner[a] -= t;
@@ -192,11 +191,11 @@ impl RoundRule {
             let c = i[a] - lo[a];
             let na = n[a];
             match self.flat {
-                Some(f) if f.axis().index() == a && !f.is_high() => {
+                Some(f) if face_axis(f) == a && !face_is_high(f) => {
                     u[a] = (2 * c + 1) as i128;
                     d[a] = (2 * na) as i128;
                 }
-                Some(f) if f.axis().index() == a && f.is_high() => {
+                Some(f) if face_axis(f) == a && face_is_high(f) => {
                     u[a] = (2 * (na - 1 - c) + 1) as i128;
                     d[a] = (2 * na) as i128;
                 }
@@ -278,7 +277,7 @@ impl StepRule {
         let n = self.n[axis];
         let (lo, hi) = match self.step {
             Step::Prism { taper, sides } => {
-                if taper.axis().index() != axis {
+                if taper.world().index() != axis {
                     return Some((0, n - 1));
                 }
                 let low = matches!(sides, Sides::Both | Sides::Low);
@@ -336,7 +335,7 @@ impl StepRule {
         }
         match self.step {
             Step::Prism { taper, sides } => {
-                let a = taper.axis().index();
+                let a = taper.world().index();
                 let Some((lo, hi)) = self.span(k, a) else {
                     return false;
                 };

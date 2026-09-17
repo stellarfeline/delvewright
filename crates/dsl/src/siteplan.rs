@@ -802,8 +802,16 @@ pub enum Measure {
     },
 }
 
-/// One of the three world axes.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+/// One of the three world axes. `Y` is up, matching Minecraft.
+///
+/// **The engine's one world axis.** It lives here rather than beside any one
+/// reader because a world axis is a fact about the game and not about the
+/// document that happens to name it: a site plan's seams, a drawing's solids and
+/// the grammar's frames all mean the same three letters, and a second enum of
+/// them would be a second vocabulary that nothing compares.
+#[derive(
+    Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, JsonSchema,
+)]
 #[serde(rename_all = "kebab-case")]
 pub enum Axis {
     /// East–west.
@@ -4330,7 +4338,23 @@ fn describe(m: &Measure) -> String {
 }
 
 impl Axis {
-    fn index(self) -> usize {
+    /// All three axes in canonical order.
+    pub const ALL: [Axis; 3] = [Axis::X, Axis::Y, Axis::Z];
+
+    /// The axis for an index; panics outside `0..=2`.
+    #[must_use]
+    pub const fn from_index(i: usize) -> Axis {
+        match i {
+            0 => Axis::X,
+            1 => Axis::Y,
+            2 => Axis::Z,
+            _ => panic!("axis index out of range"),
+        }
+    }
+
+    /// The axis as an index into a `[_; 3]` world-space triple.
+    #[must_use]
+    pub const fn index(self) -> usize {
         match self {
             Axis::X => 0,
             Axis::Y => 1,
@@ -4338,7 +4362,9 @@ impl Axis {
         }
     }
 
-    fn as_str(self) -> &'static str {
+    /// The keyword.
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
         match self {
             Axis::X => "x",
             Axis::Y => "y",
@@ -4347,19 +4373,44 @@ impl Axis {
     }
 }
 
+impl std::fmt::Display for Axis {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
 impl PlanAxis {
-    fn index(self) -> usize {
+    /// The axis as an index into a `[_; 2]` horizontal pair.
+    #[must_use]
+    pub fn index(self) -> usize {
         match self {
             PlanAxis::X => 0,
             PlanAxis::Z => 1,
         }
     }
 
-    fn as_str(self) -> &'static str {
+    /// The **world** axis this horizontal one is.
+    #[must_use]
+    pub fn world(self) -> Axis {
+        match self {
+            PlanAxis::X => Axis::X,
+            PlanAxis::Z => Axis::Z,
+        }
+    }
+
+    /// The keyword.
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
         match self {
             PlanAxis::X => "x",
             PlanAxis::Z => "z",
         }
+    }
+}
+
+impl std::fmt::Display for PlanAxis {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
     }
 }
 
