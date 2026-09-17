@@ -11,7 +11,7 @@ The question: when a creator agent is asked for a designed building, what does i
 | `castle.json` | 10 686 414 bytes |
 | top-level `rules` / `params` | 1 rule / 0 params |
 | nodes by `op` | `fill` 16 836, `void` 7 471, `split` 4 271, `mark` 31 (28 609 of 28 609 nodes carry one of these four; no `call`, no `bind`, no `repeat`) |
-| generator (`build_castle.py` + `castle/*.py`) | 2 207 lines |
+| generator (`build_castle.py` + `castle/*.py`) | 2 395 lines by `wc -l` (188 + 2 207) |
 | other stage documents of the same campaign | `quests.json` 27 074 bytes, `dialogue.json` 25 569 bytes — no generator beside them |
 
 **Second object, not measured here**: an unreleased campaign's work products, as its creator agent reported them — a generator of about 2 100 lines, a program of about 11 MB, produced by painting a voxel grid and serialising it as "one column per cell as a stack of spans, equal columns merged along x, equal rows merged along z". Its generator's docstrings and function list were read directly; its program was not parsed. Counts for it are the creator's, not this record's.
@@ -30,7 +30,7 @@ Read from the function lists of both generators.
 | a gate *region* written into the prefab manifest after expansion | once per expansion | an anchor kind the program surface cannot declare |
 | walkability search, fall-and-return search, shortcut length, reach check, slice printer | five scripts | private copies of compiler judgements, asked during authoring |
 
-Nothing in either generator computes a value the grammar's integer expression algebra could not. The host language is used for vocabulary, stride and symmetry.
+In the buildings, nothing in either generator computes a value the grammar's integer expression algebra could not: the host language is used for vocabulary, stride and symmetry. The ground is different — both generators carry a positional hash (`grounds.py::_hash`, `grid.py::hsh`) for rock heights, clumped cover and tree placement, and one reads its canvas at a neighbouring cell; spec-0072 §7 classifies every function of both.
 
 ## 3. The quest stage is a different finding
 

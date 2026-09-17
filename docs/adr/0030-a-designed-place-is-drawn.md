@@ -14,14 +14,14 @@ Both campaigns that set out to build a *designed* castle — a specific building
 
 | | released campaign (content `7318202`) | unreleased campaign (creator's report) |
 |---|---|---|
-| hand-written generator | 2207 lines of Python | about 2100 lines of Python |
+| hand-written generator | 2395 lines of Python (`build_castle.py` 188, `castle/*.py` 2207) | about 2100 lines of Python |
 | grammar `Program` checked in | 10.7 MB | about 11 MB |
 | `rules` / `params` in that program | 1 / 0 | not measured |
 | nodes (`fill` / `void` / `split` / `mark`) | 16836 / 7471 / 4271 / 31 | not measured |
 
 The generator of the first computes a column of courses for every `(x, z)` and merges equal neighbours; the second paints roles into a voxel grid with a drawing vocabulary of its own (`box`, `clear`, `room`, `crenels`, `flight`, `gable`, `pyramid`, `lancet`, `rose`, `machicolate`, `tower`) and then serialises the grid into a split tree. The measured program uses no rule call, no parameter, no `bind`, and `repeat` on 0 of its 4271 splits; the second was not parsed, and its generator's own description is the same encoding. The grammar is being used as a transport encoding for voxels.
 
-Around that encoding the creator re-implemented, privately, things the engine owns: stair-shape derivation (the engine demands it, `DW0801`, and derives nothing); a walkability search, a fall-and-return search, a shortcut-length measure and a reach check, each a private copy of a judgement the compiler makes much later (`DW0525`, `DW0881`, `DW0374`); and a post-expansion step that writes gate *region* anchors into the prefab manifest by hand, because `mark` declares points only. The second campaign also abandoned its site plan and shipped the whole site as one piece, because the site-plan path could not produce a designed exterior — so ADR-0022's stages 4 to 6 were bypassed with it.
+Around that encoding the creator re-implemented, privately, things the engine owns: stair-shape derivation (the engine demands it, `DW0801`, and derives nothing); a walkability search, a fall-and-return search, a shortcut-length measure and a reach check, each a private copy of a judgement the compiler makes much later (`DW0525`, `DW0881`, `DW0374`); and a post-expansion step that writes gate *region* anchors into the prefab manifest by hand. The program surface can declare a gate — a `barred` edge's `bar` names a claimed region, and a mark inside it exports as the gate (`PrefabMeta::gate_anchor`) — but a generated partition declares no contract, so the generator reached for the manifest instead. The second campaign also abandoned its site plan and shipped the whole site as one piece, because the site-plan path could not produce a designed exterior — so ADR-0022's stages 4 to 6 were bypassed with it.
 
 ### This is sanctioned, and the sanction's own trigger has fired
 
@@ -47,7 +47,7 @@ The creator's arguments are judgements — *which solid, where, how big, of what
 
 ### 2. The operations are solids, not building parts
 
-`box` (solid, hollow, or faces), `clear`, `replace` (role for role inside a box), `cylinder` and `disc` (axis-aligned), `sphere` and `dome`, `prism` (a box tapering along one axis to a ridge: the gable), `pyramid` (tapering to a point or a cap: the spire, the batter), `flight` (a stair from one floor to another, of a declared pitch), `line`. Integer arithmetic only; the rasterisation rule of every curved solid is stated once and tested for byte-identity.
+`box` (solid, hollow, or faces), `cylinder` (axis-aligned; one cell long it is the disc, halved it is the apse and the barrel vault), `sphere` (halved it is the dome), `prism` (a box tapering along one axis to a ridge: the gable, and one-sided the wedge), `pyramid` (tapering to a point or a cap: the spire, the batter, and round the cone), `line`. Every solid paints a role, the reserved role `air` included, and may be restricted to cells that currently hold a listed role — which is what clearing and replacing are. A flight of stairs is a wedge and a stamped tread (§3), not an operation. spec-0072 §3.1 gives the reason operation by operation. Integer arithmetic only; the rasterisation rule of every curved solid is stated once and tested for byte-identity.
 
 There is no `tower`, `crenels` or `machicolate` in the engine. Those are design decisions about what solids are *for*, and the general-engine rule puts them with the creator. They are written with §3.
 
@@ -57,12 +57,12 @@ There is no `tower`, `crenels` or `machicolate` in the engine. Those are design 
 - `repeat`: an operation or `use` stamped along an axis at a stride, with the remainder rule stated by the caller.
 - `mirror`: across a declared plane of the place's box.
 
-This is the whole of what the two generators used Python *for*, once the painting is taken out: their loops are strides and mirrors, and their functions are parameterised stamps. Neither computes anything the algebra cannot.
+This is the whole of what the two generators used Python *for* **in their buildings**, once the painting is taken out: their loops are strides and mirrors, and their functions are parameterised stamps. It is not true of their ground: both carry a positional hash that decides rock heights, clumped ground cover and where a tree stands, and one reads its own canvas at a neighbouring cell to decide a cell. A drawing does not say those (spec-0072 §7 lists each with its cost); per-cell scatter it says with a weighted paint.
 
 ### 4. What the engine knows, the creator does not type
 
-- **Derived block state is the engine's.** Stair shape, and the connection state of fences, walls, panes and bars, follow from neighbours by the pinned game's own placement rule; the executor derives them after the last operation, from the pinned block-state registry. A drawing names `stairs` of a material and a facing; `DW0801` becomes unreachable from a drawing rather than a thing to satisfy by hand.
-- **Anchors are operations.** `mark` (a point, a facing), `region` (a box: the gate a story opens or closes, with its closed and open fills), and `way` take their place in the list and land in the prefab metadata through the path that writes it today. Nothing edits a manifest after the fact.
+- **Derived block state is the engine's.** Stair shape, and the connection state of fences, walls, panes and bars, follow from neighbours by the pinned game's own placement rule, and the executor derives them after the last operation. For stair shape the rule is in the tree and measured against the pinned server (`schem::stairs::derive_shape`): a drawing names `stairs` of a material and a facing, and `DW0801` becomes unreachable from a drawing rather than a thing to satisfy by hand. For connection state the tree holds only an unmeasured reading of the game's code, outside `crates/`, over a hand-declared table of full cubes; it is measured on the pinned server first (spec-0072 §5.3), and until then a drawing writes its connections as every producer does today.
+- **Anchors are operations.** `mark` (a point, a facing) and `claim` (a named box) take their place in the list, and the document's spatial contract — the one a grammar program already carries — says what each claimed name is: a space, a `bar` a story opens or closes, a `way` it lays or clears. The operation that claims a gate's box is the operation that paints it. They land in the prefab metadata through the path that writes it today. Nothing edits a manifest after the fact.
 
 ### 5. A building is built twice by two hands: the base build owns the wall, the room fits out what it is handed
 
@@ -83,7 +83,7 @@ The draft of this section asked how a place yields a face to a shell. The resear
 
 ### 6. The grammar stays for what it was adopted for
 
-A drawing operation `grammar` expands a named rule into a box (a colonnade, a run of bays, a weathered ruin under a seed). The grammar does not call drawings. Seed variation remains the grammar's property; a drawing has no seed and is the same every time.
+A drawing operation `grammar` expands a named rule into a box (a colonnade, a run of bays, a weathered ruin under a seed). The grammar does not call drawings. Seed variation remains the grammar's property, and the operation writes its seed as a literal. A drawing's geometry has no seed and is the same every time; its weighted paints — both generators use them for weathered masonry — draw per cell by position from the seed the verb derives for the place, so an edit re-textures nothing else.
 
 ### 7. The spatial judgements answer during authoring
 
