@@ -6867,12 +6867,28 @@ Three properties worth stating explicitly:
 - **Only blocks exist.** Entities (NPC mannequins, scripted actors, item
   displays) are not in the assembled model and are not drawn; their *posts* are
   in the manifest and, with `--labels`, stamped on the frame.
-- **Unknown blocks render magenta** (`255,0,255`, the same missing-texture key
-  `delvec render`'s fidelity gate scans for). The palette resolves exact vanilla
-  ids first, then material-family substrings (`_planks`, `_wool`, `stone`, …); a
-  unit test asserts every block the shipped prefab library places has a real
-  colour, so magenta in a frame means "a prefab introduced a block the palette
-  has never seen" — extend the palette.
+- **The colour is the pinned client jar's, and a block the pin does not have
+  renders magenta** (`255,0,255`, the same missing-texture key `delvec render`'s
+  fidelity gate scans for). `snapshot::block_color` reads
+  `crates/delvec/data/block-appearance-1.21.11.json` — every block of the pinned
+  registry at its default state, `minecraft:plains` tints, derived by
+  `compiler::view::blockcolor::Deriver` from the jar the GPU path textures with,
+  so the draft and the render hold one opinion about what a block looks like.
+  1161 of 1161 non-air blocks resolve; `crates/delvec/tests/preview_palette.rs`
+  enumerates the registry and reds on any that does not, and re-derives the whole
+  table from the jar (`--ignored`, needs one) so the committed file is measured
+  rather than trusted. The jar is EULA-bound and never committed; the
+  derivation's output is, as for the shape-carrying property table and the font
+  metrics. Regenerate with `delvec palette --pinned-blocks -o <that file>
+  --textures <jar>` — never by hand. Keyed by block id: the grid draws every cell
+  as a full cube, so a blockstate's own geometry has nowhere to go and
+  `oak_slab[type=top]` shades as `oak_slab`. Magenta therefore means one of three
+  things: `jigsaw` or `structure_block` reached the model (the solver strips
+  both — the magenta is the alarm), a template carries an id 1.21.11 renamed
+  (`chain` → `iron_chain`), or a datapack block outside `minecraft:`. **The
+  fallback is never silent**: every surface that draws a grid prints `unpainted:
+  N of M block kind(s) …` on stderr naming every id
+  (`snapshot::unpainted_report`).
 
 **`--labels`** burns in: a coordinate lattice tinted onto every visible **top**
 face on a 16-block X/Z line (so it follows the terrain rather than an invented
@@ -7085,7 +7101,11 @@ assembles the world as `snapshot` does (it reads `--prefabs`) and rasterises eac
 camera at half its frame as `<stem>_preview.png`, byte-identical to `snapshot
 --camera` with the same numbers, and names each camera whose lens is inside or
 within `LENS_CLEARANCE` (0.25 block) of a placed block, with a `lens:` binding
-line — a report, since the grid counts every block as a full cube. It draws any
+line — a report, since the grid counts every block as a full cube. The material
+is the pinned jar's, off the same derivation the emitted scene is path-traced
+with, so what the preview says a wall is made of is what the render will say; a
+block the pin does not have is magenta and named on stderr (`unpainted:`, above).
+It draws any
 record its reader accepts and is never refused by `DW0900`: it is the instrument
 that closes the hole, and it prints the count it is closing. Byte-deterministic (ADR-0006): the same record,
 plan and options give the same scene, candidate and preview bytes.

@@ -86,7 +86,7 @@ The only path from DSL to datapack (ADR-0001). Full behavior:
 | `calibrate <report>` | harvested shot proposals → `anchor + offset` DSL patch (spec-0019) | `--layout <creator-datapack/layout.json>` (required), `-o shot-patch.json` |
 | `place-camera <campaign-dir>` | writes one row of `design/cameras.json`: a pose placed by hand in the game, an estimate, or a deletion (spec-0069) | `--name <row>` (required), `--answers <design.json row>`, `--report <camera-report.json> --slot <n> --fov <deg>` \| `--candidates <file> --pick <camera>` \| `--delete` |
 | `viewer <nbt\|dir\|manifest>…` | ONE self-contained interactive page: a camera the reviewer drives, every block drawn from the pinned version's own model | `-o page.html` (required), `--title`, `--textures <jar>` |
-| `palette <nbt\|dir>…` | the derived per-blockstate colour/shape table | `-o palette.json` (required), `--biome minecraft:plains`, `--textures <jar>` |
+| `palette <nbt\|dir>…` | the derived per-blockstate colour/shape table; `--pinned-blocks` derives the whole pinned 1.21.11 registry instead — the regeneration path for `crates/delvec/data/block-appearance-1.21.11.json`, the table the CPU draft rasteriser paints with | `-o palette.json` (required), `--pinned-blocks`, `--biome minecraft:plains`, `--textures <jar>` |
 | `scene <build-dir>` | Chunky scene JSONs from `render-plan.json` | `-o <dir>` (required), `--world <build-dir>/world`, `--size 1024` |
 | `panorama <build-dir>` | an oblique exterior of the built place, fitted to a subject — the default release panorama | `-o <dir>` (required), `--world <build-dir>/world`, `--bearing se\|sw\|ne\|nw\|n\|e\|s\|w`, `--pitch 45`, `--fov 40`, `--subject layout\|anchor/<a>,…`, `--spp 300`, `--width 1600`, `--height 900` |
 | `cameras <build-dir>` | one Chunky scene per showcase camera the campaign states in `design/cameras.json` — the storybook and front-page pictures | `--campaign <dir>` (required), `-o <dir>` (required), `--world <build-dir>/world`, `--only <name>`…, `--bracket yaw=,pitch=,fov=,dolly=,truck=,rise=`, `--draft`, `--preview` |
@@ -777,7 +777,19 @@ delvec viewer <nbt|dir|manifest.json>... -o <page.html> [--title T] [--textures 
                                              # every block drawn from the pinned version's own model
 delvec palette <nbt|dir>... -o <palette.json> [--biome minecraft:plains] [--textures <jar>]
                                              # the derived per-blockstate colour/shape table
+delvec palette --pinned-blocks -o <table.json> [--biome …] [--textures <jar>]
+                                             # the same derivation over the whole pinned 1.21.11
+                                             # registry: how crates/delvec/data/
+                                             # block-appearance-1.21.11.json is regenerated
 ```
+
+`--pinned-blocks` takes no inputs: it derives every block of the pinned registry
+at its default state, keyed by id, and refuses an asset source that does not
+declare 1.21.11 — that table stands in for the jar on every machine that has
+none, so it may only come from the jar. It is what the CPU draft rasteriser
+paints with ([`compiler.md`](compiler.md), `delvec snapshot`); regenerate it at a
+pin bump, never edit it by hand. Both modes write canonical JSON, so a generated
+table is already in the form the canonical-form gate holds this repository to.
 
 **Every arm that puts a piece in front of an eye — `viewer`, `render piece`,
 `render batch` — says two things about it first.** `DW0894` refuses a piece with
@@ -1392,7 +1404,10 @@ it applies):
   half its frame, as `<stem>_preview.png` — seconds for a whole record. The
   preview of a record camera is byte-identical to `snapshot --camera` with the
   same numbers (`crates/delvec/tests/snapshot.rs`). It is for placing: is the
-  camera in the room, is the point of interest in frame. It also names every
+  camera in the room, is the point of interest in frame. **The material is the
+  pinned jar's**, off the same derivation the GPU render textures with, so the
+  draft reads as the stone it is built of; a block the pin does not have is drawn
+  magenta and named on stderr (`unpainted: …`). It also names every
   camera whose lens is inside a block or within 0.25 block of one — a pinhole
   camera has no near plane, so such a frame shows the block's inside faces or a
   sliver of it across a corner — and prints `lens: N of M camera(s) clear`. A

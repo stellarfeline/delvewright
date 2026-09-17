@@ -106,6 +106,34 @@ not third-party reconstructions.
   `prefabs/invariants/src/connections.rs`, which fills the properties this table names from the
   piece's own neighbours before a generator writes its bytes.
 
+- **`block-appearance-1.21.11.json`** — how every 1.21.11 block **looks**: its
+  alpha-weighted mean texture colour, its mean alpha, and the union of its model
+  elements, at its default state, with `minecraft:plains` tints. 1161 entries —
+  the registry's 1166 less the 5 air-like states, which are absence rather than
+  appearance — and 0 the derivation could not resolve.
+  **Why it exists**: the CPU draft rasteriser (`delvec snapshot`, `delvec cameras
+  --preview`, `delvec edit preview`) drew the world from a curated table of
+  130-odd ids plus material substrings while the GPU path textured the same world
+  from the pinned client jar — two lookups answering one question, and 275 of the
+  1159 paintable blocks reached neither branch and came out as the missing-texture
+  magenta, so a creator judging a shot could read its composition and not its
+  material. There is one derivation now
+  (`delvec::compiler::view::blockcolor::Deriver`, which resolves a blockstate to
+  its model chain and its textures exactly as the client does) and one jar; this
+  file is that derivation's output, because the jar is EULA-bound and never
+  committed — the same rule as the shape-carrying property table above and the
+  font metrics below. Consumed by `delvec::compiler::snapshot::block_color`.
+  **Reproduce it**: `delvec palette --pinned-blocks -o
+  crates/delvec/data/block-appearance-1.21.11.json --textures
+  <minecraft-1.21.11-client.jar>`. It is a subcommand and not a script because a
+  second implementation of the derivation is exactly the defect being closed. The
+  command refuses an asset source whose `version.json` does not declare `1.21.11`,
+  enumerates the registry rather than any list of its own, and writes canonical
+  JSON. Deterministic: two runs of the same jar give the same bytes.
+  `crates/delvec/tests/preview_palette.rs` holds the file to the registry, and —
+  on a machine with a jar, `--ignored` — re-derives every entry and compares, so
+  the committed table is measured against its source rather than trusted.
+
 - **`block-defaults-1.21.11.json`** — every 1.21.11 block's **default state**: the
   value the game resolves each unwritten property to. Same source and same pinned
   SHA-256 as `blocks-1.21.11.json`; that file keeps the source entry's first
