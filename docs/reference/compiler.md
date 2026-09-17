@@ -7062,11 +7062,17 @@ delvec cameras <build-dir> --campaign <campaign-dir> -o <dir>
 ```
 
 `<campaign-dir>/design/cameras.json` is the one record of a campaign's showcase
-cameras; `compiler::view::camera` is its one reader. Per camera: `name`,
-`answers` (a `design.json` row), `pos` (the lens, world blocks), `yaw`/`pitch`
-in the `--camera` convention above, vertical `fov`, `exposure`, `width`,
-`height`, `source` (`estimated` or `hand`), `spp`. Keys are alphabetical, so the
-record a tool writes is already canonical. The record is not a stage document
+cameras; `compiler::view::camera` is its one reader. At the top level, both
+required: `campaign_id` — the campaign the record belongs to, held equal to the
+build's, so a record cannot silently place cameras in another world — and
+`cameras`. Per camera: `name`, `answers` (a `design.json` row), `pos` (the lens,
+world blocks), `yaw`/`pitch` in the `--camera` convention above, vertical `fov`,
+`exposure`, `width`, `height`, `source` (`estimated` or `hand`), `spp`. **Every
+field is required**: the reader denies unknown fields and serde refuses a missing
+one, both as `DW0721`. Keys are alphabetical, so the
+record a tool writes is already canonical. This list is not hand-kept:
+`crates/delvec/tests/hand_camera.rs` serialises the reader's own structs and
+holds this paragraph to the field names that come out, in both directions. The record is not a stage document
 and reaches neither the datapack nor the plan's shots; `delvec build` reads it
 as a hashed input, proves every camera in it (`DW0724`, above) and holds it to
 `design.json` in both directions — every camera answers a row (`DW0721`) and
