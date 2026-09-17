@@ -62,6 +62,7 @@ use serde_json::{Value, json};
 
 use crate::compiler::plan::{Plan, ResolvedAnchor};
 use crate::compiler::raster::{Canvas, GLYPH_ROWS, LabelPlacer, ScreenBox, kind_color, text_width};
+use crate::compiler::view::blockcolor::{GRAIN_SIDE, GRAIN_UNIT};
 
 /// Default frame size — 16:9, big enough to read a label, small enough to render
 /// in a fraction of a second.
@@ -138,6 +139,27 @@ pub fn block_color(name: &str) -> ([u8; 3], bool) {
     }
 }
 
+/// The block's grain: how its own texture's brightness varies across a face,
+/// as `GRAIN_SIDE`² cells multiplying the flat colour, row major from the
+/// top-left. A block the pinned version does not have is flat.
+///
+/// Separate from [`block_color`] because the flat surfaces that draw a PLAN —
+/// `delvec blocking-chart`'s cutaways — want the colour and not the grain: a
+/// floor plan is read for where things are, and a top-down cell is one pixel.
+pub fn block_grain(name: &str) -> [u8; GRAIN_SIDE * GRAIN_SIDE] {
+    let bare = crate::compiler::assembled::base_id(name);
+    let key = if bare.contains(':') {
+        bare.to_string()
+    } else {
+        format!("minecraft:{bare}")
+    };
+    crate::compiler::view::blockcolor::PaletteTable::pinned()
+        .entries
+        .get(&key)
+        .map(|a| a.grain_cells())
+        .unwrap_or([GRAIN_UNIT; GRAIN_SIDE * GRAIN_SIDE])
+}
+
 /// Whether a block renders emissive — a drawing decision, not an asset fact, so
 /// it is this surface's own and not the jar's: an id is emissive if it
 /// *contains* an [`EMISSIVE`] stem, which catches the placement variants vanilla
@@ -200,6 +222,8 @@ pub struct VoxelGrid {
     palette: Vec<String>,
     /// Per-palette-entry `(colour, emissive)`, precomputed.
     shading: Vec<([u8; 3], bool)>,
+    /// Per-palette-entry texture grain, precomputed beside the colour.
+    grain: Vec<[u8; GRAIN_SIDE * GRAIN_SIDE]>,
     /// Chunk-space origin and dimensions.
     cmin: [i32; 3],
     cdim: [usize; 3],
@@ -236,6 +260,8 @@ impl VoxelGrid {
             }
         }
         let shading: Vec<([u8; 3], bool)> = palette.iter().map(|n| block_color(n)).collect();
+        let grain: Vec<[u8; GRAIN_SIDE * GRAIN_SIDE]> =
+            palette.iter().map(|n| block_grain(n)).collect();
         // Palette index 0 is the air sentinel, which is never drawn.
         let mut unpainted: Vec<String> = palette
             .iter()
@@ -250,6 +276,7 @@ impl VoxelGrid {
             return VoxelGrid {
                 palette,
                 shading,
+                grain,
                 cmin: [0; 3],
                 cdim: [0; 3],
                 chunks: Vec::new(),
@@ -269,6 +296,7 @@ impl VoxelGrid {
         let mut grid = VoxelGrid {
             palette,
             shading,
+            grain,
             cmin,
             cdim,
             chunks,
@@ -1154,10 +1182,18 @@ fn shade(grid: &VoxelGrid, hit: &Hit) -> [u8; 3] {
         .min(1.0 - hit.uv[0])
         .min(hit.uv[1].min(1.0 - hit.uv[1]));
     let relief = if edge < 0.0625 { 0.86 } else { 1.0 };
+    // The block's own grain, sampled where the ray landed on the face. Without
+    // it every face of one material is a single rectangle of one value, and a
+    // draft of a wall carries as much information as a paint swatch — which is
+    // what a flat-shaded near-black stone comes out as.
+    let cells = grid.grain[hit.block as usize];
+    let gx = ((hit.uv[0] * GRAIN_SIDE as f64) as usize).min(GRAIN_SIDE - 1);
+    let gy = ((hit.uv[1] * GRAIN_SIDE as f64) as usize).min(GRAIN_SIDE - 1);
+    let grain = f64::from(cells[gy * GRAIN_SIDE + gx]) / f64::from(GRAIN_UNIT);
     let lit = [
-        b[0] * face * relief,
-        b[1] * face * relief,
-        b[2] * face * relief,
+        b[0] * face * relief * grain,
+        b[1] * face * relief * grain,
+        b[2] * face * relief * grain,
     ];
     let f = fog_factor(hit.t);
     let c = mix(lit, SKY_HORIZON, f * 0.85);

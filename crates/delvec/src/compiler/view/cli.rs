@@ -256,19 +256,9 @@ pub enum ViewCommand {
     /// blockstate) for some prefabs, as JSON — what a palette actually looks
     /// like, measured rather than recalled.
     Palette {
-        /// Prefab `.nbt` files, or directories of them. Omitted with
-        /// `--pinned-blocks`.
-        #[arg(
-            required_unless_present = "pinned_blocks",
-            conflicts_with = "pinned_blocks"
-        )]
+        /// Prefab `.nbt` files, or directories of them.
+        #[arg(required = true)]
         inputs: Vec<PathBuf>,
-        /// Derive every block of the pinned 1.21.11 registry at its default
-        /// state instead of a prefab's palette — the regeneration path for the
-        /// vendored preview colour table (`crates/delvec/data/`). Refuses an
-        /// asset source that does not declare the pinned version.
-        #[arg(long)]
-        pinned_blocks: bool,
         /// Output `.json`.
         #[arg(short, long)]
         out: PathBuf,
@@ -429,13 +419,11 @@ impl ViewCommand {
             ),
             ViewCommand::Palette {
                 inputs,
-                pinned_blocks,
                 out,
                 biome,
                 textures,
             } => run_palette(
                 inputs,
-                *pinned_blocks,
                 out,
                 biome,
                 &ViewOpts {
@@ -1494,77 +1482,30 @@ fn run_viewer(inputs: &[PathBuf], out: &Path, title: Option<&str>, vopts: &ViewO
     ExitCode::from(exit::OK)
 }
 
-fn run_palette(
-    inputs: &[PathBuf],
-    pinned_blocks: bool,
-    out: &Path,
-    biome: &str,
-    vopts: &ViewOpts,
-) -> ExitCode {
-    let models = if pinned_blocks {
-        Vec::new()
-    } else {
-        let paths = match collect_pieces(inputs) {
-            Ok(p) => p,
-            Err(d) => return fail(d, vopts.json, exit::INPUT),
-        };
-        match load_models(&paths) {
-            Ok(m) => m,
-            Err(d) => return fail(d, vopts.json, exit::INPUT),
-        }
+fn run_palette(inputs: &[PathBuf], out: &Path, biome: &str, vopts: &ViewOpts) -> ExitCode {
+    let paths = match collect_pieces(inputs) {
+        Ok(p) => p,
+        Err(d) => return fail(d, vopts.json, exit::INPUT),
+    };
+    let models = match load_models(&paths) {
+        Ok(m) => m,
+        Err(d) => return fail(d, vopts.json, exit::INPUT),
     };
     let assets = match open_assets(vopts) {
         Ok(a) => a,
         Err(d) => return fail(d, vopts.json, exit::RENDER),
     };
     let deriver = Deriver::with_biome(&assets, biome);
-    let table = if pinned_blocks {
-        // The vendored table stands in for the jar on every machine that has
-        // none, so it may only be derived FROM the pinned jar: a source that
-        // does not say which version it is cannot be taken for it.
-        match assets.declared_version().as_deref() {
-            Some(v) if v == crate::schem::blocks::MC_VERSION => {}
-            other => {
-                return fail(
-                    Diagnostic::error(
-                        DW_RENDER,
-                        format!(
-                            "--pinned-blocks derives the vendored {} colour table, so the asset \
-                             source must be the pinned client jar: {} declares {}",
-                            crate::schem::blocks::MC_VERSION,
-                            assets.path().display(),
-                            other.unwrap_or("no version at all (no version.json)")
-                        ),
-                    ),
-                    vopts.json,
-                    exit::RENDER,
-                );
-            }
-        }
-        let registry = crate::schem::blocks::BlockRegistry::v1_21_11();
-        crate::compiler::view::blockcolor::PaletteTable::derive(&deriver, registry.ids())
-    } else {
-        viewer::palette_for(&models, &deriver)
-    };
+    let table = viewer::palette_for(&models, &deriver);
 
-    let json = match serde_json::to_string(&table) {
+    let mut json = match serde_json::to_string_pretty(&table) {
         Ok(s) => s,
         Err(e) => {
             eprintln!("internal: serialise palette: {e}");
             return ExitCode::from(exit::INTERNAL);
         }
     };
-    // Canonical form, through the repository's one formatter: this table is a
-    // document the repository may hold (the vendored one does), and a generator
-    // that writes a shape the canonical-form gate then refuses would leave the
-    // creator to reformat by hand what a tool produced.
-    let json = match delvewright_dsl::fmt::format_text(&json) {
-        Ok(s) => s,
-        Err(e) => {
-            eprintln!("internal: canonicalise palette: {}", e.message);
-            return ExitCode::from(exit::INTERNAL);
-        }
-    };
+    json.push('\n');
     if let Err(e) = std::fs::write(out, &json) {
         return fail(
             Diagnostic::error(DW_OUTPUT, format!("write {}: {e}", out.display())),

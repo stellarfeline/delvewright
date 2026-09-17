@@ -107,10 +107,14 @@ not third-party reconstructions.
   piece's own neighbours before a generator writes its bytes.
 
 - **`block-appearance-1.21.11.json`** — how every 1.21.11 block **looks**: its
-  alpha-weighted mean texture colour, its mean alpha, and the union of its model
+  alpha-weighted mean texture colour, its **grain** (a 4×4 summary of that
+  texture's brightness relative to its own mean, so a wall reads as its material
+  and not as a paint swatch), its mean alpha, and the union of its model
   elements, at its default state, with `minecraft:plains` tints. 1161 entries —
   the registry's 1166 less the 5 air-like states, which are absence rather than
-  appearance — and 0 the derivation could not resolve.
+  appearance — and 0 the derivation could not resolve. Every one of those is a
+  statistic about an image and never an image: nothing here can reconstruct a
+  texture.
   **Why it exists**: what a block looks like is the client jar's answer, and the
   jar is EULA-bound and never committed — the same rule as the shape-carrying
   property table above and the font metrics below. This file carries that answer
@@ -123,13 +127,16 @@ not third-party reconstructions.
   interactive viewer runs live against a jar.
   **Reproduce it**: `python3 tools/maintenance/refresh-block-appearance.py
   <minecraft-1.21.11-client.jar>`, at a pin bump or when the derivation changes.
-  It re-derives the table (`delvec palette --pinned-blocks`, a subcommand rather
-  than a script, so the derivation exists once) and then **proves the result
-  against the same jar**: the jar-gated half of
+  It re-derives the table (`cargo run -p delvec --example
+  derive-block-appearance`, which calls the one derivation rather than owning a
+  second) and then **proves the result against the same jar**: the jar-gated
+  half of
   `crates/delvec/tests/preview_palette.rs` re-derives every entry and compares,
   and the command fails if any differs. That comparison runs here and nowhere
   else, because the one occasion a jar is in hand is the occasion this file
-  changes. The derivation refuses an asset source whose `version.json` does not
+  changes. The derivation is an example rather than a `delvec` subcommand because
+  `delvec` is what an authoring session runs: a flag on it is author-facing
+  surface owing a demo level, and a creator never holds this file. The derivation refuses an asset source whose `version.json` does not
   declare `1.21.11`, enumerates the registry rather than any list of its own, and
   writes canonical JSON; two runs of one jar give the same bytes.
   **What holds it between pin bumps**, with no jar and therefore in CI: the file

@@ -347,13 +347,6 @@ impl BlockRegistry {
         self.blocks.is_empty()
     }
 
-    /// Every block id of the pinned version, namespaced and sorted — the
-    /// container a check over "every block" enumerates, instead of restating a
-    /// list of ids in its own source.
-    pub fn ids(&self) -> impl ExactSizeIterator<Item = &str> {
-        self.blocks.keys().map(String::as_str)
-    }
-
     /// True if `name` (namespaced, e.g. `minecraft:stone`) is a block.
     pub fn has(&self, name: &str) -> bool {
         self.blocks.contains_key(name)

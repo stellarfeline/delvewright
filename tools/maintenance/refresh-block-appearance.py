@@ -15,10 +15,19 @@ draft shows the same materials the GPU render textures from the jar. See
 The jar is EULA-bound and is never committed, so CI has none and can only check
 the table against itself. The single occasion a jar IS in hand is the occasion
 the table changes — ADR-0009's pin moving — and that is this command. So the
-proof runs here: `delvec palette --pinned-blocks` writes the table, and the
+proof runs here: the `derive-block-appearance` example writes the table, and the
 jar-gated half of `crates/delvec/tests/preview_palette.rs` re-derives every entry
 and compares. A regeneration whose proof is a test somebody may remember to type
 is a regeneration nobody proved.
+
+## Why an example and not a `delvec` subcommand
+
+`delvec` is what an authoring session runs, so a flag on it is author-facing
+surface that owes a demo level. Regenerating a table this repository commits is
+not something a creator does — they never hold the file, and the release archive
+they install cannot carry the program at all. The derivation itself is still the
+one `delvec palette` and the interactive viewer run
+(`compiler::view::blockcolor::Deriver`); only the caller differs.
 
 The other half of the binding is in CI and needs no jar: the table records the
 version its source declared, and `the_vendored_table_is_the_pinned_version_s`
@@ -43,9 +52,6 @@ import subprocess
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "lib"))
-from delvec_bin import resolve as resolve_delvec  # noqa: E402
-
 REPO = Path(__file__).resolve().parents[2]
 CALLER = "refresh-block-appearance"
 
@@ -63,11 +69,6 @@ def run(argv: list[str], **kw) -> subprocess.CompletedProcess:
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("jar", help="the pinned Minecraft client jar (or an unpacked directory)")
-    ap.add_argument(
-        "--delvec",
-        help="the `delvec` this tool runs — resolved, NAMED on stderr, and refused when it is "
-        "older than the compiler sources it is supposed to be built from",
-    )
     args = ap.parse_args()
 
     jar = Path(args.jar).expanduser()
@@ -85,11 +86,23 @@ def main() -> int:
         die("crates/dsl/src/blocks.rs declares no MC_VERSION")
     out = REPO / "crates/delvec/data" / f"block-appearance-{pin}.json"
 
-    delvec = resolve_delvec(args.delvec, repo=REPO, caller=CALLER)
-
-    r = run([str(delvec), "palette", "--pinned-blocks", "-o", str(out), "--textures", str(jar)])
+    r = run(
+        [
+            "cargo",
+            "run",
+            "--release",
+            "-q",
+            "-p",
+            "delvec",
+            "--example",
+            "derive-block-appearance",
+            "--",
+            str(jar),
+            str(out),
+        ]
+    )
     if r.returncode != 0:
-        die(f"`delvec palette --pinned-blocks` exited {r.returncode}")
+        die(f"`derive-block-appearance` exited {r.returncode}")
 
     table = json.loads(out.read_text(encoding="utf-8"))
     entries = len(table.get("entries") or {})

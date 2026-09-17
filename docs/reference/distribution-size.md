@@ -61,7 +61,7 @@ ls -l target/aarch64-apple-darwin/release/delvec             → 24,489,840 B
 wc -c < target/aarch64-apple-darwin/release/delvec           → 24,489,840 (second reader, same answer)
 ```
 
-The **harvested game-registry data is not a separate download**: 1,253,371 B of
+The **harvested game-registry data is not a separate download**: 1,312,582 B of
 `crates/{delvec,dsl}/data/*.json` is `include_str!`-ed into the binary and is
 already inside the numbers above (§4).
 
@@ -183,7 +183,7 @@ budget**: binary size under 100 MB is not a decision input (ADR-0023 §1), and
 the alternative it replaces was a second binary a creator had to find, build
 and keep in step.
 
-### 4.3 Embedded harvested registry data: 1,253,371 B
+### 4.3 Embedded harvested registry data: 1,312,582 B
 
 Every file under `crates/delvec/data/` and `crates/dsl/data/` that an
 `include_str!`/`include_bytes!` site names — **19 files over 20 sites**. The
@@ -201,7 +201,7 @@ grep -rEoh 'include_(str|bytes)!\("[^"]*"\)' crates/delvec/src crates/dsl/src \
 | file | bytes |
 |---|---|
 | `commands-1.21.11.json` | 474,604 |
-| `block-appearance-1.21.11.json` | 252,113 |
+| `block-appearance-1.21.11.json` | 311,324 |
 | `blocks-1.21.11.json` | 178,040 |
 | `block-defaults-1.21.11.json` | 89,343 |
 | `sounds-1.21.11.json` | 71,582 |
@@ -215,7 +215,7 @@ grep -rEoh 'include_(str|bytes)!\("[^"]*"\)' crates/delvec/src crates/dsl/src \
 | `damage-types-1.21.11.json` | 5,472 |
 | `entities-1.21.11.json` (delvec) | 4,042 |
 | the remaining 5 (dsl `entities`, `items`, `anchors`, `block-renames`, `pools`) | 856 |
-| **total** | **1,253,371** |
+| **total** | **1,312,582** |
 
 The second-largest row is the block-appearance table: it is what lets the CPU
 draft rasteriser paint from the pinned client jar on a machine that has no jar

@@ -11,6 +11,10 @@
 //!   a ladder, a sapling) reporting the colour of its empty pixels.
 //! - **coverage** — mean alpha, which is how a translucent block is told from a
 //!   solid one without a list of which blocks are glass.
+//! - **grain** — how that texture's brightness varies across a face, in a 4x4
+//!   summary relative to its own mean. A mean colour says what a block is made
+//!   of and nothing about what a wall of it looks like; this is what makes a
+//!   flat-shaded wall read as blockwork instead of as a paint swatch.
 //! - **shape** — the union of the model elements' `from`/`to`, with the variant's
 //!   `x`/`y` rotation applied, in sixteenths of a block. This is what makes a
 //!   slab a slab, a carpet a carpet and a chain a thin vertical post instead of
@@ -51,6 +55,45 @@ pub struct Appearance {
     /// `[x0, y0, z0, x1, y1, z1]`, each 0–16.
     #[serde(rename = "box")]
     pub shape: [u8; 6],
+    /// The block's **grain**: how its own texture's brightness varies across a
+    /// face, as [`GRAIN_SIDE`]² cells of `rgb` multiplied by `cell / 128`, row
+    /// major from the top-left of the face, hex.
+    ///
+    /// A mean colour says what a block is made of and nothing about what a wall
+    /// of it looks like: a flat-shaded face is one rectangle of one value,
+    /// whatever the material, and a draft frame of a wall carries as much
+    /// information as a paint swatch. This is the smallest measured thing that
+    /// makes the wall read as blockwork — the block's own texture, reduced to a
+    /// 4x4 summary of brightness relative to its mean, so
+    /// it is a statistic about an image and never an image (the jar is
+    /// EULA-bound; what is committed is always a derivation).
+    ///
+    /// `128` is "exactly the mean", so a texture with no variation gives a
+    /// uniform table and changes no pixel.
+    pub grain: String,
+}
+
+/// Cells per side of an [`Appearance::grain`] table.
+pub const GRAIN_SIDE: usize = 4;
+
+/// A grain cell that multiplies by exactly 1.
+pub const GRAIN_UNIT: u8 = 128;
+
+impl Appearance {
+    /// [`Appearance::grain`] decoded, or a uniform table when it is absent or
+    /// malformed — a block whose grain cannot be read is flat, never invisible.
+    pub fn grain_cells(&self) -> [u8; GRAIN_SIDE * GRAIN_SIDE] {
+        let mut out = [GRAIN_UNIT; GRAIN_SIDE * GRAIN_SIDE];
+        let b = self.grain.as_bytes();
+        if b.len() != out.len() * 2 {
+            return out;
+        }
+        for (i, cell) in out.iter_mut().enumerate() {
+            let hex = std::str::from_utf8(&b[i * 2..i * 2 + 2]).unwrap_or("80");
+            *cell = u8::from_str_radix(hex, 16).unwrap_or(GRAIN_UNIT);
+        }
+        out
+    }
 }
 
 /// Coverage at or above which a full-cube block occludes its neighbours' faces.
@@ -240,6 +283,7 @@ impl<'a> Deriver<'a> {
         let mut cov = 0f64;
         let mut n = 0f64;
         let mut tinted_any = false;
+        let mut grain = [0f64; GRAIN_SIDE * GRAIN_SIDE];
         for (path, tinted) in &textures {
             let Some((r, g, b, a)) = self.mean_texture(path) else {
                 continue;
@@ -250,10 +294,25 @@ impl<'a> Deriver<'a> {
             cov += a;
             n += 1.0;
             tinted_any |= *tinted;
+            // The grain comes from the same textures the mean does, so what a
+            // face is shaded by and what it varies by have one provenance.
+            let cells = self
+                .texture_grain(path)
+                .unwrap_or([1.0; GRAIN_SIDE * GRAIN_SIDE]);
+            for (acc, c) in grain.iter_mut().zip(cells.iter()) {
+                *acc += c;
+            }
         }
         if n == 0.0 {
             return Err(Unresolved::NoTexture);
         }
+        let grain: String = grain
+            .iter()
+            .map(|c| {
+                let q = (c / n * f64::from(GRAIN_UNIT)).round().clamp(0.0, 255.0) as u8;
+                format!("{q:02x}")
+            })
+            .collect();
 
         let mut rgb = [
             (sum[0] / n).round().clamp(0.0, 255.0) as u8,
@@ -275,6 +334,7 @@ impl<'a> Deriver<'a> {
                 clamp16(hi[1]),
                 clamp16(hi[2]),
             ],
+            grain,
         })
     }
 
@@ -297,6 +357,55 @@ impl<'a> Deriver<'a> {
         } else {
             Some(self.tints.grass)
         }
+    }
+
+    /// One texture's brightness in [`GRAIN_SIDE`]² cells, each **relative to
+    /// that texture's own mean** — so the result says how the surface varies and
+    /// nothing about how bright or what colour it is.
+    ///
+    /// Alpha-weighted like the mean, and `None` for a texture with nothing
+    /// opaque in it. A cell with no opaque pixel takes the texture's mean, which
+    /// is the neutral answer rather than a hole.
+    fn texture_grain(&self, path: &str) -> Option<[f64; GRAIN_SIDE * GRAIN_SIDE]> {
+        let (ns, p) = match path.split_once(':') {
+            Some((ns, p)) => (ns.to_string(), p.to_string()),
+            None => ("minecraft".to_string(), path.to_string()),
+        };
+        let (w, h, px) = self.assets.texture_rgba(&ns, &p)?;
+        if w == 0 || h == 0 {
+            return None;
+        }
+        let mut lum = [0f64; GRAIN_SIDE * GRAIN_SIDE];
+        let mut wt = [0f64; GRAIN_SIDE * GRAIN_SIDE];
+        let (mut total, mut total_wt) = (0f64, 0f64);
+        for y in 0..h as usize {
+            for x in 0..w as usize {
+                let q = &px[(y * w as usize + x) * 4..(y * w as usize + x) * 4 + 4];
+                let a = f64::from(q[3]);
+                // Rec. 709 luma: the eye's own weighting, so a red and a green
+                // of one brightness do not read as a step in the wall.
+                let l =
+                    0.2126 * f64::from(q[0]) + 0.7152 * f64::from(q[1]) + 0.0722 * f64::from(q[2]);
+                let cx = (x * GRAIN_SIDE / w as usize).min(GRAIN_SIDE - 1);
+                let cy = (y * GRAIN_SIDE / h as usize).min(GRAIN_SIDE - 1);
+                let i = cy * GRAIN_SIDE + cx;
+                lum[i] += l * a;
+                wt[i] += a;
+                total += l * a;
+                total_wt += a;
+            }
+        }
+        if total_wt == 0.0 || total == 0.0 {
+            return None;
+        }
+        let mean = total / total_wt;
+        let mut out = [1.0f64; GRAIN_SIDE * GRAIN_SIDE];
+        for i in 0..out.len() {
+            if wt[i] > 0.0 {
+                out[i] = lum[i] / wt[i] / mean;
+            }
+        }
+        Some(out)
     }
 
     /// Alpha-weighted mean `(r, g, b, mean_alpha)` of one texture.
@@ -797,7 +906,7 @@ pub struct PaletteTable {
 }
 
 /// Current [`PaletteTable::version`].
-pub const PALETTE_VERSION: u32 = 1;
+pub const PALETTE_VERSION: u32 = 2;
 
 /// The vendored appearance of every block the pinned version has, derived by
 /// [`Deriver`] from the pinned client jar at [`DEFAULT_BIOME`].
@@ -1024,6 +1133,7 @@ mod tests {
             rgb: [1, 2, 3],
             coverage: 255,
             shape: [0, 0, 0, 16, 16, 16],
+            grain: String::new(),
         };
         assert!(solid.is_opaque_cube());
         let slab = Appearance {
