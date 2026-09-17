@@ -1143,7 +1143,8 @@ fn run_diff(a: &Path, b: &Path, r#box: Option<&str>, at: Option<&str>, json: boo
     );
     if outside > 0 {
         eprintln!(
-            "  {outside} cell(s) of the box lie outside one of the two pieces and were not              compared — {} is {}x{}x{} and {} is {}x{}x{}",
+            "  {outside} cell(s) of the box lie outside one of the two pieces and were not \
+             compared: {} is {}x{}x{} and {} is {}x{}x{}",
             a.display(),
             sa[0],
             sa[1],

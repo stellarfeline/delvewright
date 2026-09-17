@@ -626,6 +626,39 @@ from l10n (no stage-7 string is player-visible).
 | Seeding | Every seeded verb streams from `stream_seed(campaign_seed, "edits/<batch-id>/<edit-index>")` — renaming a batch (or moving an edit) deliberately reseeds it; nothing else does (ADR-0006). |
 | Emission | The replay lowers to a `world_edits` function (x-run-coalesced `fill`/`setblock`), called from `setup_finish` after the socket seals and before the relight fixtures — the exact model order, and the reason `DW0352` exists (`trap_setup` runs later). `setup` additionally forceloads every batch's write AABB (an edit may write outside the piece bboxes — a leaning canopy, a stamped fragment — and a `setblock` on an unloaded chunk silently fails); those chunks then follow the **forceload lifecycle** below. `world-edits.json` is hashed into `manifest.json` inputs. |
 
+### A place's drawing — `drawings/<place stem>.json` (optional; v0.30, spec-0072)
+
+**A place's detail, as an ordered list of solids the engine executes** (ADR-0030).
+One document per place, at `drawings/<place stem>.json` inside the campaign —
+the address derived from the place exactly as `programs/<place stem>.json` is.
+It is not a `Stage`: a stage is one file named `<stage>.json`, and a campaign
+holds one drawing per place. It is exported by `delvec schema --stage drawing`
+and is **part of `--stage all`**, because `all` is the enumeration of what a
+creator can write; that is the difference from `prefab-metadata`, which `all`
+leaves out because no creator writes it.
+
+Executed in the place's box in the box's own frame — `x` east, `y` up, `z`
+south, the origin at the box's minimum corner, every coordinate a cell — and
+**a later operation overwrites an earlier one**, which is what a designer does
+and what a box-split partition cannot do. Thirteen operations: six solids
+(`box`, `cylinder`, `sphere`, `prism`, `pyramid`, `line`), five arrangers
+(`scope`, `use`, `repeat`, `mirror`, `grammar`) and `mark` and `claim`.
+
+**`Expr`, `Cond`, `States`, `Mark` and `Contract` are the program document's own
+types**, used by reference: one expression algebra, one guard algebra, one
+weighted paint, one anchor and one spatial contract, each with one checker. The
+export names three of them `AnchorMark`, `SpatialContractEdge` and
+`AnchorFacing`, because a schema export's `$defs` is one flat namespace over
+every document a creator writes and the campaign DSL declares a `Mark`, an
+`Edge` and a `Facing` of its own.
+
+Executing one yields the same `Expansion` a grammar program derives to, so every
+gate that reads delivered blocks binds to a drawing exactly as it binds to a
+program, and `grammar::export`'s freezer takes an expansion, a provenance row
+and `shown_faces` rather than a `Program`. The full record — every operation
+with its integer rule, the frame table, the executor's order, derived state and
+the refusals — is `docs/reference/drawing.md`.
+
 ### The design record — `design` (optional; v0.22, spec-0061)
 
 `design.json`, the machine half of an approved look. **Optional**: absent = a
@@ -6219,6 +6252,48 @@ palette. It is derived from the site plan on every invocation and is **an input
 to nothing** — no gate, no build step and no check ever reads what it prints, so
 a file made of it is a copy with no consumer and its staleness has no vector into
 the build. Every obligation is recomputed from the plan at every validation.
+
+### DW0902–DW0908 — the drawing (`delvec::drawing`; spec-0072, ADR-0030, DSL v0.30)
+
+A place's detail as an ordered list of solids (§2). Every refusal is addressed
+by **the operation's path in the document the creator wrote** — a JSON pointer,
+`/ops/12/body/3` — followed, inside a define, by the chain of uses that reached
+it (`/defines/tower/body/4 ← /ops/7`), the `repeat` indices in force (`k=3`) and
+the mirror side. A cell coordinate is added where there is one; it is never the
+address, because a cell is where the mistake landed and the pointer is where it
+was made.
+
+**What invokes each check.** `DW0903`, `DW0904` and `DW0907` are decidable from
+the document alone and run at `delvec drawing check`, and again first thing
+inside `delvec drawing execute` — a verb that executes runs the validation it
+would otherwise be relying on somebody else to have run. `DW0902`, `DW0905` and
+`DW0906` are evaluated against a scope, so they fire at the operation, before it
+paints. `DW0908` fires at `delvec detail`, on the ADDRESS the documents stand
+at, before either is opened. The refusals a drawing inherits — `DW0100`,
+`DW0102`, `DW0738`, `DW0735`, `DW0737`, `DW0801`, `DW0882`, `DW0843`–`DW0845`,
+`DW0848`, the contract gates and the settle gates — fire where they fire today,
+with the operation's address added wherever the executor knows it.
+
+**No opt-out exists**, and none is possible for the six that are about a
+document: each refuses a shape the author can only have got wrong, and every one
+of them names the repair in its own message.
+
+| Code | Rule |
+|---|---|
+| `DW0902` | **An operation reaches a cell its scope does not hold.** A solid's box, a `line`'s brush (the points' bounding box grown by the brush, which is what the operation actually reaches), a `mark`, a `claim`, a `grammar` box — outside the place's box or the enclosing `scope` / `use` / `repeat` slice. Refused at that operation, before it paints, naming the operation, both boxes and the scope it left. The rule is stated as *a cell its scope does not hold*, never *outside the box*: ADR-0030 §5 will hand a place its **net cells** instead of a box, and a mask is a narrower holding handed to the executor as an input rather than a second refusal. Build tier (exit 3). **Binding: every box an operation establishes, and every `repeat` instance's translated box, with `k` named.** |
+| `DW0903` | **A name resolves to nothing, or to two things.** A `role` (on a solid, in `where`, in `use.roles`, in the contract's `block`), a `define`, a parameter, a region the contract names and nothing claims or the reverse, an anchor two marks produce. Says the kind, the name, and every name of that kind the document declares. A define is **closed**: `use.params` may name only parameters it declares, and every role it lists is bound at every `use` — a parameter has a default and a role has none, so an unbound role names nothing. The contract half is the one checker a grammar program is held to (`ir::check_contract_references`), so a name that is two things is two things in both documents. Build tier (exit 3). **Binding: every operation of `ops` and of every define body, against the names visible where it is written.** |
+| `DW0904` | **A define reaches itself**, directly or through others. Refused at validation, before anything executes, with the **chain** named rather than the fact that there is one. There is no recursion in a drawing, so there is no depth to limit and nothing to finish the body with. Build tier (exit 3). **Binding: every define, walked depth-first.** |
+| `DW0905` | **A value outside its range at the operation that evaluates it.** `to` below `from` (naming the axis), a `t` / `rise` / `run` / `stride` / `item` / `brush` side below 1, a negative `count`, division or remainder by zero, a `flat` that is not a face of a round axis, a round axis over 4096 cells, a place past the volume budget, more than the instance ceiling, and a coordinate past what a cell of a world can be. That last one is what stands between a **saturated** `i64` and a box quietly clamped onto the wrong cells: the expression algebra saturates rather than wrapping, so a value that large is arithmetic that ran off the end rather than a number anyone wrote. Names the field, the value, the range and **the parameters in force**, so the repair is upstream of the number. Build tier (exit 3). **Binding: every `Int` an operation evaluates.** |
+| `DW0906` | **A fitted `repeat` does not fit.** `exact` with cells left over, or a run shorter than one whole item. Names `E`, `stride`, `item`, `r` and the three remainder words that would accept it. `remainder` has no default because a run whose leftover nobody placed is a run whose ends nobody decided; a fitted `repeat` that omits it is `DW0100` at the operation. Build tier (exit 3). **Binding: every fitted `repeat` laid out.** |
+| `DW0907` | **A paint writes a property the engine derives.** `shape` on a stair: the shape is derived after the last operation from the stair's four neighbours, by the rule the pinned server was measured against (`schem::stairs::derive_shape`), so an authored one is a claim about neighbours the author has not got. Refused at validation rather than silently overwritten, which is what makes `DW0801` unreachable from a drawing; the message says that omitting the property is the repair. Build tier (exit 3). **Binding: every state of every palette role.** |
+| `DW0908` | **A place with two media.** `programs/<place stem>.json` and `drawings/<place stem>.json` both present. Refused at `delvec detail`, before either is opened, naming both paths: the medium is read off the ADDRESS the document stands at, so two documents are two buildings and nothing but the author can choose between them — least of all a rule that would pick whichever the engine happened to look for first. Build tier (exit 3). **Binding: every place `delvec detail` targets.** |
+
+**Not a refusal, and printed on every execution**: operations written, instances
+executed, cells painted, cells surviving to the model, stairs settled, and
+**every written operation none of whose instances painted a cell**, by address.
+An operation that paints nothing is dead text in the document of record; it is
+listed, with its count, rather than refused, because a `define` written for many
+sizes may honestly have an operation with nothing to do at one of them.
 
 ### DW07xx — workspace tooling (spec-0007; **not `delvec`**)
 

@@ -496,6 +496,17 @@ hand-built prefabs.
 
 ## 2c. The idiom index — how the constructs make shapes
 
+**A designed building is not built here.** A box-split program *partitions*:
+every cell belongs to exactly one leaf and nothing paints over anything, so a
+rose window in a gable in a wall has to be reached by one split tree that
+anticipated all three. A designer paints — raise the wall, cut the window, lay
+the tracery over it — and that is the **drawing**
+([`drawing.md`](drawing.md), ADR-0030): a place's detail as an ordered list of
+solids, where a later operation overwrites an earlier one. Reach for it for a
+specific building, and for a `grammar` operation inside one when a run of bays
+or a weathered ruin wants seed variation. What follows is the grammar's own
+idioms, for what it was adopted for: a library of seed-varied typologies.
+
 §2 is the list of constructs. What an author is missing is not that list: it is
 the handful of ways those constructs compose into a shape, none of which is
 visible from a type signature. `prefab-procedure.md` §3 says to start from the

@@ -333,7 +333,10 @@ fn detail_one(
             STAGE,
             drawing_path.display().to_string(),
             format!(
-                "`{place}` is detailed twice: `{}` and `{}` both exist. A place's detail is a                  program or a drawing, and the medium is read off the address the document stands                  at — so two documents are two buildings and nothing here can choose between                  them. Delete the one that is not the record.",
+                "`{place}` is detailed twice: `{}` and `{}` both exist. A place's detail is \
+                 a program or a drawing, and the medium is read off the address the document \
+                 stands at, so two documents are two buildings and nothing here can choose \
+                 between them. Delete the one that is not the record.",
                 program_path.display(),
                 drawing_path.display()
             ),

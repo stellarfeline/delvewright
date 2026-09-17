@@ -456,6 +456,41 @@ the sentence the command itself prints on every run.
 
 Exit: `0` ok · `2` input/usage · `3` output · `4` a gate went red.
 
+## 2b. `delvec drawing` — a place's detail as an ordered list of solids (`crates/delvec/src/drawing`) · agent
+
+The other medium a place's detail can be written in (ADR-0030, spec-0072). A
+drawing is a JSON document per place — a palette of roles, named bodies, a
+spatial contract, and an ordered list of thirteen operations over the place's
+box — and **a later operation overwrites an earlier one**, which is what a
+designer does and what a box-split partition cannot do.
+
+```
+delvec drawing check   <drawing.json>
+delvec drawing execute <drawing.json> --region XxYxZ -o <dir>
+                       [--id <id>] [--seed N] [--param k=v] [--role r=state]
+                       [--traversable [--allow-falls]] [--symmetric x|y|z]
+                       [--reachable-floor]
+```
+
+`check` decides everything that is decidable from the document alone — every
+name (`DW0903`), every define chain (`DW0904`), every paint that would write a
+property the engine derives (`DW0907`), and the contract's reference integrity
+— with no region and no seed involved. It prints what it examined and names any
+define no `use` names.
+
+`execute` executes, judges with **the same gates `delvec grammar expand` runs**,
+and freezes through the same freezer, so a piece a drawing produced is a piece
+of the same shape, judged by the same refusals, carrying the same document. It
+writes `<id>.nbt` (or a tile set), `<id>.json` and `<id>.report.json`, and
+prints — on every run, red or green — how many operations were written, how many
+instances executed, how many cells were painted and survived, how many stairs
+were settled, and **which written operations did nothing**, by address.
+
+The full record is [`drawing.md`](drawing.md): every operation with its integer
+rule, the frame table, the executor's order, derived state and the refusals.
+
+Exit: `0` ok · `2` input/usage · `3` output · `4` a gate went red.
+
 ## 3. `delvec prefab` — prefab admission (`crates/delvec/src/admit`) · agent + human
 
 The gate every prefab passes before the library will place it: mechanical palette
@@ -495,6 +530,15 @@ delvec prefab anchor <nbt> --name anchor/<id>
     # a role off, which is the remedy DW0804 prescribes. Omitted, an existing
     # role is kept: moving a cell is not a statement that the piece stopped
     # being the way in
+delvec prefab diff <a> <b> [--box x0,y0,z0,x1,y1,z1] [--at x,y,z]
+    # Are these two pieces the same blocks? Block STATES, cell for cell, over a
+    # box of `a` against the same-sized box of `b` at `--at` (default the
+    # origin), tiled pieces included, plus the point anchors inside the box. It
+    # reads two pieces and nothing of any campaign, which is what makes it the
+    # instrument a port, a rewrite or a second producer is judged with. Prints
+    # cells compared and cells differing, names the first few with BOTH states,
+    # refuses a comparison that examined zero cells (exit 2), and exits 1 on any
+    # difference. A lone tile of a tiled zone is refused on either side (DW0739)
 delvec prefab lighting <nbt|manifest.json> [--write] [--dark-threshold 3]
 delvec prefab planes <nbt|manifest.json> [--write]
     # The piece's OWN walk plane (`walk_y`) and, where it authors water, its own
