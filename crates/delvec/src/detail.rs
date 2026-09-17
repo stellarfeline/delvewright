@@ -22,7 +22,7 @@
 //! compiler's allocation and bindings check with the grammar's expansion and
 //! the admission crate's audit and light probe.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
@@ -33,8 +33,9 @@ use delvec::admit::meta as admit_meta;
 use delvec::admit::structure::Structure;
 use delvec::compiler::detail::{self as engine, Allocation};
 use delvec::compiler::registry::{PrefabRegistry, REPORT_SUFFIX};
+use delvec::drawing::DRAWINGS_DIR;
 use delvec::grammar::cli::{composition_to_stderr, report_to_stderr};
-use delvec::grammar::ir::Paint;
+use delvec::grammar::ir::{Paint, States};
 use delvec::grammar::{
     BlockState, Box3, ExpandOptions, Overrides, document, expand, export, gates,
 };
@@ -179,39 +180,32 @@ fn targets(
         .map(|(f, _)| f.node)
         .collect();
     if all {
-        let dir = campaign_dir.join(PROGRAMS_DIR);
-        let mut stems: Vec<String> = Vec::new();
-        if dir.is_dir() {
-            let mut entries: Vec<PathBuf> = match std::fs::read_dir(&dir) {
-                Ok(rd) => rd.filter_map(|e| e.ok().map(|e| e.path())).collect(),
-                Err(e) => {
-                    eprintln!("internal error: cannot read {}: {e}", dir.display());
-                    return Err(EXIT_INTERNAL);
-                }
-            };
-            entries.sort();
-            for p in entries {
-                if p.extension().and_then(|e| e.to_str()) == Some("json")
-                    && let Some(stem) = p.file_stem().and_then(|s| s.to_str())
-                {
-                    stems.push(stem.to_string());
-                }
+        // **Both media, because a campaign's places need not agree about which
+        // one each is written in.** The directories are read separately and
+        // their stems unioned, so a place is named once however it is written
+        // and a stale file in either is refused by name.
+        let mut stems: BTreeSet<String> = BTreeSet::new();
+        for dir in [PROGRAMS_DIR, DRAWINGS_DIR] {
+            for stem in stems_under(&campaign_dir.join(dir))? {
+                stems.insert(stem);
             }
         }
-        // A program naming no place is a stale file, refused by name before
+        // A document naming no place is a stale file, refused by name before
         // anything is written: `--all` must not quietly detail fewer places
-        // than the directory holds programs.
+        // than the two directories hold documents.
         let orphans: Vec<&String> = stems
             .iter()
             .filter(|s| !boxes.iter().any(|b| stem_of(b) == s.as_str()))
             .collect();
         if !orphans.is_empty() {
             eprintln!(
-                "error: {n} program(s) under `{dir}` name no place the site plan allocates a box \
-                 to: {list}. A program is `{dir}/<place stem>.json` for a `node/<place stem>` \
-                 of the layout graph; the plan allocates {b} box(es): {boxes}.",
+                "error: {n} document(s) under `{p}` or `{d}` name no place the site plan \
+                 allocates a box to: {list}. A place's detail is `{PROGRAMS_DIR}/<place \
+                 stem>.json` or `{DRAWINGS_DIR}/<place stem>.json` for a `node/<place stem>` of \
+                 the layout graph; the plan allocates {b} box(es): {boxes}.",
                 n = orphans.len(),
-                dir = campaign_dir.join(PROGRAMS_DIR).display(),
+                p = campaign_dir.join(PROGRAMS_DIR).display(),
+                d = campaign_dir.join(DRAWINGS_DIR).display(),
                 list = orphans
                     .iter()
                     .map(|s| format!("`{s}.json`"))
@@ -228,16 +222,17 @@ fn targets(
         }
         let out: Vec<NodeId> = boxes
             .into_iter()
-            .filter(|b| stems.iter().any(|s| s == stem_of(b)))
+            .filter(|b| stems.contains(stem_of(b)))
             .collect();
         if out.is_empty() {
             eprintln!(
-                "error: `--all` found ZERO programs under `{}`, so there is nothing to detail. \
-                 A place is detailed from `{}/<place stem>.json`; write one and run again. This \
-                 is a refusal rather than a pass because a run that detailed nothing is not \
-                 evidence that every place is detailed.",
+                "error: `--all` found ZERO documents under `{}` or `{}`, so there is nothing to \
+                 detail. A place is detailed from `{PROGRAMS_DIR}/<place stem>.json` or \
+                 `{DRAWINGS_DIR}/<place stem>.json`; write one and run again. This is a refusal \
+                 rather than a pass because a run that detailed nothing is not evidence that \
+                 every place is detailed.",
                 campaign_dir.join(PROGRAMS_DIR).display(),
-                PROGRAMS_DIR
+                campaign_dir.join(DRAWINGS_DIR).display(),
             );
             return Err(1);
         }
@@ -256,6 +251,30 @@ fn targets(
         return Err(1);
     }
     Ok(vec![node])
+}
+
+/// The `<stem>` of every `<stem>.json` directly under a directory, sorted.
+///
+/// Not recursive, deliberately: a document is at `<dir>/<place stem>.json` and
+/// nowhere else, so a subdirectory is a creator's own working space — a
+/// program a `grammar` operation names, a note — and not a place's detail.
+fn stems_under(dir: &Path) -> Result<Vec<String>, u8> {
+    if !dir.is_dir() {
+        return Ok(Vec::new());
+    }
+    let mut entries: Vec<PathBuf> = match std::fs::read_dir(dir) {
+        Ok(rd) => rd.filter_map(|e| e.ok().map(|e| e.path())).collect(),
+        Err(e) => {
+            eprintln!("internal error: cannot read {}: {e}", dir.display());
+            return Err(EXIT_INTERNAL);
+        }
+    };
+    entries.sort();
+    Ok(entries
+        .iter()
+        .filter(|p| p.is_file() && p.extension().and_then(|e| e.to_str()) == Some("json"))
+        .filter_map(|p| p.file_stem().and_then(|s| s.to_str()).map(str::to_string))
+        .collect())
 }
 
 /// `node/<stem>` → `<stem>`.
@@ -324,9 +343,7 @@ fn detail_one(
     // between them — least of all a rule that would pick whichever the engine
     // happened to look for first.
     let program_path = campaign_dir.join(PROGRAMS_DIR).join(format!("{stem}.json"));
-    let drawing_path = campaign_dir
-        .join(delvec::drawing::DRAWINGS_DIR)
-        .join(format!("{stem}.json"));
+    let drawing_path = campaign_dir.join(DRAWINGS_DIR).join(format!("{stem}.json"));
     if program_path.is_file() && drawing_path.is_file() {
         let d = Diagnostic::error(
             delvec::drawing::diag::DW_TWO_MEDIA,
@@ -344,133 +361,65 @@ fn detail_one(
         print_one_diag(&d, json);
         return Err(1);
     }
-    if !program_path.is_file() {
+    let source = if drawing_path.is_file() {
+        drawing_path.clone()
+    } else if program_path.is_file() {
+        program_path.clone()
+    } else {
         eprintln!(
-            "error: `{place}` has no program at `{}`. A place is detailed from \
-             `{PROGRAMS_DIR}/<place stem>.json` inside the campaign; write it against \
+            "error: `{place}` has no detail document. A place is detailed from \
+             `{PROGRAMS_DIR}/<place stem>.json` or `{DRAWINGS_DIR}/<place stem>.json` inside the \
+             campaign — a grammar program or a drawing, whichever medium the building wants — \
+             and this campaign has neither at `{}` or `{}`. Write one against \
              `delvec allocation {place}` and run again.",
-            program_path.display()
+            program_path.display(),
+            drawing_path.display()
         );
         return Err(1);
-    }
-    let loaded = match document::load(&program_path) {
-        Ok(l) => l,
-        Err(e) => {
-            eprintln!("error: `{place}`: {}: {e}", program_path.display());
-            return Err(1);
-        }
     };
-    composition_to_stderr(&loaded);
-    let mut program = loaded.program;
     let handed = handed(&a);
-    let mut overrides = Overrides::none();
-    let declared: Vec<String> = program
-        .params
-        .keys()
-        .filter(|k| k.starts_with(HANDED_PREFIX))
-        .cloned()
-        .collect();
-    for name in &declared {
-        let Some(value) = handed.get(name) else {
-            let d = Diagnostic::error(
-                DW_NOT_HANDED,
-                STAGE,
-                program_path.display().to_string(),
-                format!(
-                    "the program declares `{name}`, and the whole hands `{place}` no such value. \
-                     A `{HANDED_PREFIX}…` parameter is bound by `delvec detail` from the \
-                     allocation and by nothing else, so one the allocation does not hand would \
-                     expand at its default in silence — a number standing where the plan's own \
-                     figure belongs. Rename it to one of the {n} name(s) this place is handed: \
-                     {list}. (A seam is `{HANDED_PREFIX}seam/<edge stem>/{{x0,y0,z0,x1,y1,z1,\
-                     rise}}`, keyed by the layout-graph edge without its `edge/` prefix.)",
-                    n = handed.len(),
-                    list = handed
-                        .keys()
-                        .map(|k| format!("`{k}`"))
-                        .collect::<Vec<_>>()
-                        .join(", "),
-                ),
-            );
-            print_one_diag(&d, json);
-            return Err(1);
-        };
-        program
-            .set_param(name, *value)
-            .expect("a declared parameter can be set");
-        overrides.params.insert(name.clone(), *value);
-    }
-    // ---- the palette, handed and gated by nothing (spec-0050 §4) ----
-    if let Some(palette) = campaign
+    let palette = campaign
         .detail_plan
         .as_ref()
-        .and_then(|e| e.content.palette.as_ref())
-    {
-        for (role, state) in palette {
-            let Some(role_stem) = role.strip_prefix("role/") else {
-                continue;
-            };
-            if !program.palette.contains_key(role_stem) {
-                continue;
-            }
-            let block: BlockState = match state.parse() {
-                Ok(b) => b,
-                Err(e) => {
-                    eprintln!(
-                        "error: `{place}`: the detail plan's `palette` binds `{role}` to \
-                         {state:?}, which is not a block state: {e}"
-                    );
-                    return Err(1);
-                }
-            };
-            // A restyle keeps the frame of the binding it replaces — the one
-            // rule `delvec grammar expand --role` applies.
-            let paint = if program.palette.get(role_stem).is_some_and(Paint::is_local) {
-                Paint::local_block(block)
-            } else {
-                Paint::block(block)
-            };
-            program
-                .set_role(role_stem, paint)
-                .expect("a declared role can be rebound");
-            overrides.roles.insert(role_stem.to_string(), state.clone());
-        }
-    }
-
-    // ---- 3. the expansion, at the frame ----
+        .and_then(|e| e.content.palette.as_ref());
     let seed = seed_of(node);
-    let opts = ExpandOptions::seeded(seed).with_overrides(overrides);
     let size = [a.extent[0] as u32, a.extent[1] as u32, a.extent[2] as u32];
     let region = Box3::at_origin(size);
-    let expansion = match expand(&program, region, &opts) {
-        Ok(e) => e,
-        Err(e) => {
-            eprintln!(
-                "error: `{place}`: `{}` cannot expand at the frame the whole hands this place \
-                 ({}x{}x{}): {e}. The frame is not editable from here — the box is the site \
-                 plan's — so the program is what changes.",
-                program_path.display(),
-                size[0],
-                size[1],
-                size[2]
-            );
-            return Err(1);
-        }
+
+    let made = if drawing_path.is_file() {
+        draw(
+            campaign_dir,
+            &drawing_path,
+            place,
+            &handed,
+            palette,
+            seed,
+            region,
+            json,
+        )?
+    } else {
+        expand_program(&program_path, place, &handed, palette, seed, region, json)?
     };
 
     // ---- 4. the grammar gates, exactly as `grammar expand` runs them ----
-    let report = gates::judge(&expansion, gates::Options::default());
+    let report = gates::judge(&made.expansion, gates::Options::default());
     if report.is_fail() {
         report_to_stderr(&id, &report);
         eprintln!(
             "error: `{place}`: a machine gate went red on `{}`; nothing was written.",
-            program_path.display()
+            source.display()
         );
         return Err(1);
     }
 
     // ---- 5. the piece, in memory ----
-    let exported = match export::export_zone(&program, region, &opts, &id) {
+    let exported = match export::freeze_zone(
+        made.expansion.clone(),
+        region,
+        &id,
+        &made.shown_faces,
+        &made.provenance,
+    ) {
         Ok(e) => e,
         Err(e) => {
             eprintln!("error: `{place}`: {id}: {e}\n  nothing was written.");
@@ -588,14 +537,14 @@ fn detail_one(
          bound; {} declared face(s) answering {} allocated seam(s); {} of {} owed name(s) bound; \
          light `{}` over {} measured cell(s){}; files: {}",
         exported.prefab_id(),
-        program_path
+        source
             .strip_prefix(campaign_dir)
-            .unwrap_or(&program_path)
+            .unwrap_or(&source)
             .display(),
         size[0],
         size[1],
         size[2],
-        declared.len(),
+        made.declared,
         handed.len(),
         faces,
         a.seams.len(),
@@ -616,10 +565,10 @@ fn detail_one(
             serde_json::json!({
                 "place": place,
                 "piece": exported.prefab_id(),
-                "program": program_path.strip_prefix(campaign_dir).unwrap_or(&program_path).display().to_string(),
+                "document": source.strip_prefix(campaign_dir).unwrap_or(&source).display().to_string(),
                 "frame": size,
                 "seed": seed,
-                "handed": { "bound": declared.len(), "offered": handed.len() },
+                "handed": { "bound": made.declared, "offered": handed.len() },
                 "seams": { "faces": faces, "allocated": a.seams.len() },
                 "owed": { "bound": row.anchors.len(), "owed": a.owed_anchors.len() },
                 "lighting": { "profile": probe.profile, "measured_cells": probe.measured_cells },
@@ -628,6 +577,237 @@ fn detail_one(
         );
     }
     Ok(exported.prefab_id().to_string())
+}
+
+/// **What a medium produced**: the expansion every gate reads, and the three
+/// things the freezer needs beside it.
+///
+/// spec-0072 §1's finding, made into a type: everything after the blocks takes
+/// an `Expansion`, and only the freeze needs to know what made it — the
+/// provenance row, the sides the document declares finished, and how many of
+/// the handed names it read. So the two producers differ in exactly this
+/// struct's width and in nothing downstream of it.
+struct Made {
+    expansion: delvec::grammar::Expansion,
+    shown_faces: Vec<String>,
+    provenance: export::Provenance,
+    /// `handed/…` names the document declares — the numerator of the line the
+    /// verb prints, against the count the allocation offers.
+    declared: usize,
+}
+
+/// Bind the handing into a grammar program and expand it at the frame.
+#[allow(clippy::too_many_arguments)]
+fn expand_program(
+    path: &Path,
+    place: &str,
+    handed: &BTreeMap<String, i64>,
+    palette: Option<&BTreeMap<String, String>>,
+    seed: u64,
+    region: Box3,
+    json: bool,
+) -> Result<Made, u8> {
+    let loaded = match document::load(path) {
+        Ok(l) => l,
+        Err(e) => {
+            eprintln!("error: `{place}`: {}: {e}", path.display());
+            return Err(1);
+        }
+    };
+    composition_to_stderr(&loaded);
+    let mut program = loaded.program;
+    let mut overrides = Overrides::none();
+    let declared: Vec<String> = program
+        .params
+        .keys()
+        .filter(|k| k.starts_with(HANDED_PREFIX))
+        .cloned()
+        .collect();
+    for name in &declared {
+        let value = not_handed(name, place, handed, path, json)?;
+        program
+            .set_param(name, value)
+            .expect("a declared parameter can be set");
+        overrides.params.insert(name.clone(), value);
+    }
+    // ---- the palette, handed and gated by nothing (spec-0050 §4) ----
+    for (role_stem, state, block) in restyles(palette, place, |r| program.palette.contains_key(r))?
+    {
+        // A restyle keeps the frame of the binding it replaces — the one rule
+        // `delvec grammar expand --role` applies.
+        let paint = if program.palette.get(&role_stem).is_some_and(Paint::is_local) {
+            Paint::local_block(block)
+        } else {
+            Paint::block(block)
+        };
+        program
+            .set_role(&role_stem, paint)
+            .expect("a declared role can be rebound");
+        overrides.roles.insert(role_stem, state);
+    }
+    let opts = ExpandOptions::seeded(seed).with_overrides(overrides);
+    let expansion = match expand(&program, region, &opts) {
+        Ok(e) => e,
+        Err(e) => return Err(cannot_fit(place, path, region, &e.to_string())),
+    };
+    Ok(Made {
+        shown_faces: program.shown_faces.clone(),
+        provenance: export::Provenance::of_program(&program, &opts),
+        expansion,
+        declared: declared.len(),
+    })
+}
+
+/// Bind the handing into a drawing and execute it at the frame.
+///
+/// The same steps in the same order, because it is the same handing: the
+/// `handed/…` names are bound from the allocation and by nothing else
+/// (`DW0882`), the plan's palette rebinds the roles the document declares, the
+/// seed is the place's, and what comes out is the expansion every gate already
+/// reads.
+#[allow(clippy::too_many_arguments)]
+fn draw(
+    campaign_dir: &Path,
+    path: &Path,
+    place: &str,
+    handed: &BTreeMap<String, i64>,
+    palette: Option<&BTreeMap<String, String>>,
+    seed: u64,
+    region: Box3,
+    json: bool,
+) -> Result<Made, u8> {
+    let mut drawing = match delvec::drawing::load(path) {
+        Ok(d) => d,
+        Err(e) => {
+            print_one_diag(&e.diagnostic(), json);
+            return Err(1);
+        }
+    };
+    let mut overrides = Overrides::none();
+    let declared: Vec<String> = drawing
+        .params
+        .keys()
+        .filter(|k| k.starts_with(HANDED_PREFIX))
+        .cloned()
+        .collect();
+    for name in &declared {
+        let value = not_handed(name, place, handed, path, json)?;
+        drawing.params.insert(name.clone(), value);
+        overrides.params.insert(name.clone(), value);
+    }
+    for (role_stem, state, block) in restyles(palette, place, |r| drawing.palette.contains_key(r))?
+    {
+        // A drawing has no frame to inherit: every state in one is read in the
+        // frame of the scope that paints it, so a restyle is the material and
+        // nothing else.
+        drawing
+            .palette
+            .insert(role_stem.clone(), States::One(block));
+        overrides.roles.insert(role_stem, state);
+    }
+    // A `grammar` operation names a program file relative to the drawing, so
+    // the root is the drawings directory and never the working directory.
+    let options = delvec::drawing::ExecuteOptions {
+        seed,
+        limits: delvec::grammar::Limits::default(),
+        overrides,
+        root: campaign_dir.join(delvec::drawing::DRAWINGS_DIR),
+    };
+    let run = match delvec::drawing::execute(&drawing, region, &options) {
+        Ok(r) => r,
+        Err(e) => return Err(cannot_fit(place, path, region, &e.to_string())),
+    };
+    delvec::drawing::cli::run_report_to_stderr(&run);
+    Ok(Made {
+        shown_faces: drawing.shown_faces.clone(),
+        provenance: delvec::drawing::cli::provenance_of(&drawing, &run, &options),
+        expansion: run.expansion,
+        declared: declared.len(),
+    })
+}
+
+/// `DW0882`: the document asks for a value the whole does not hand.
+fn not_handed(
+    name: &str,
+    place: &str,
+    handed: &BTreeMap<String, i64>,
+    path: &Path,
+    json: bool,
+) -> Result<i64, u8> {
+    if let Some(value) = handed.get(name) {
+        return Ok(*value);
+    }
+    let d = Diagnostic::error(
+        DW_NOT_HANDED,
+        STAGE,
+        path.display().to_string(),
+        format!(
+            "the document declares `{name}`, and the whole hands `{place}` no such value. \
+             A `{HANDED_PREFIX}…` parameter is bound by `delvec detail` from the allocation and \
+             by nothing else, so one the allocation does not hand would build at its default in \
+             silence — a number standing where the plan's own figure belongs. Rename it to one \
+             of the {n} name(s) this place is handed: {list}. (A seam is \
+             `{HANDED_PREFIX}seam/<edge stem>/{{x0,y0,z0,x1,y1,z1,rise}}`, keyed by the \
+             layout-graph edge without its `edge/` prefix.)",
+            n = handed.len(),
+            list = handed
+                .keys()
+                .map(|k| format!("`{k}`"))
+                .collect::<Vec<_>>()
+                .join(", "),
+        ),
+    );
+    print_one_diag(&d, json);
+    Err(1)
+}
+
+/// The plan's palette, as the restyles a document actually declares a role for.
+///
+/// `declares` is the one thing the two media differ about here — a program's
+/// palette and a drawing's are the same map under different types — so the
+/// rule that a restyle is handed and gated by nothing is written once.
+fn restyles(
+    palette: Option<&BTreeMap<String, String>>,
+    place: &str,
+    declares: impl Fn(&str) -> bool,
+) -> Result<Vec<(String, String, BlockState)>, u8> {
+    let mut out = Vec::new();
+    let Some(palette) = palette else {
+        return Ok(out);
+    };
+    for (role, state) in palette {
+        let Some(role_stem) = role.strip_prefix("role/") else {
+            continue;
+        };
+        if !declares(role_stem) {
+            continue;
+        }
+        match state.parse::<BlockState>() {
+            Ok(block) => out.push((role_stem.to_string(), state.clone(), block)),
+            Err(e) => {
+                eprintln!(
+                    "error: `{place}`: the detail plan's `palette` binds `{role}` to {state:?}, \
+                     which is not a block state: {e}"
+                );
+                return Err(1);
+            }
+        }
+    }
+    Ok(out)
+}
+
+/// The refusal a document that will not build at the handed frame gets.
+fn cannot_fit(place: &str, path: &Path, region: Box3, why: &str) -> u8 {
+    eprintln!(
+        "error: `{place}`: `{}` cannot build at the frame the whole hands this place \
+         ({}x{}x{}): {why}. The frame is not editable from here — the box is the site plan's — \
+         so the document is what changes.",
+        path.display(),
+        region.size[0],
+        region.size[1],
+        region.size[2]
+    );
+    1
 }
 
 /// The export's bytes as structures, tile by tile, in the order the metadata

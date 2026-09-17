@@ -326,34 +326,44 @@ fn program_for(a: &Allocation, shift: Option<(&str, i64)>, marks: bool) -> Value
 ///
 /// Generated from the allocation and nothing else, exactly as `program_for` is,
 /// and answering the same contract: the floor course the piece owns, the play
-/// space over it lit from its own floor, every seam carved as a claimed way at
+/// space over it lit from its own floor, the seam carved as a claimed way at
 /// its handed cells, every owed name marked. Every handed value is read through
 /// a `handed/…` parameter, so the file doubles as the demonstration that a
 /// DRAWING is handed what a program is handed.
 ///
-/// It is a different medium and not a different building: what it shows is that
-/// the address a place's document stands at is the only thing that changes.
+/// It is a different medium and not a different building: what the tests
+/// measure is the address the document stands at.
+///
+/// **One seam**, deliberately. A program carves any number with a chain of
+/// splits, because a split piece may be zero cells wide; a drawing says the
+/// same thing as boxes that avoid the way, and an empty box is a refusal rather
+/// than a piece of nothing (`DW0905`). What stands in for the zero-size piece
+/// is `when`: each of the six boxes is guarded by whether it has any cells, so
+/// a seam at a face simply leaves three of them unwritten. Generalising that to
+/// four seams is a document, not an engine question — and it is the cost
+/// spec-0072 §13 records under *a predicate over neighbouring cells*.
 fn drawing_for(a: &Allocation) -> Value {
     assert!(answerable(a), "`{}` wants more than walk faces", a.place);
+    assert_eq!(a.seams.len(), 1, "`{}` is not this generator's", a.place);
+    let seam = &a.seams[0];
     let datum = param("handed/datum-y");
     let mut params = serde_json::Map::new();
     params.insert("handed/datum-y".into(), json!(a.datum_y));
-    for s in &a.seams {
-        let [lo, hi] = s.cells;
-        for (k, v) in [
-            ("x0", lo[0]),
-            ("y0", lo[1]),
-            ("z0", lo[2]),
-            ("x1", hi[0]),
-            ("y1", hi[1]),
-            ("z1", hi[2]),
-            ("rise", s.rise),
-        ] {
-            params.insert(seam_param(&s.edge, k), json!(v));
-        }
+    let [lo, hi] = seam.cells;
+    for (k, v) in [
+        ("x0", lo[0]),
+        ("y0", lo[1]),
+        ("z0", lo[2]),
+        ("x1", hi[0]),
+        ("y1", hi[1]),
+        ("z1", hi[2]),
+        ("rise", seam.rise),
+    ] {
+        params.insert(seam_param(&seam.edge, k), json!(v));
     }
     params.insert("lamp_period".into(), json!(4));
 
+    let p = |k: &str| param(&seam_param(&seam.edge, k));
     let last = |axis: &str| sub(dim(axis), int(1));
     let mut ops: Vec<Value> = Vec::new();
 
@@ -365,43 +375,78 @@ fn drawing_for(a: &Allocation) -> Value {
         "note": "the floor course"
     }));
 
-    // The play space over it, claimed as the room, lit from its own floor on a
-    // grid that starts one cell in on both axes — so the row at `z = 0`, where
-    // the owed marks stand, never carries a lamp.
+    // The play space over it, claimed as the room — as the six boxes that
+    // avoid the way, each written only where it has cells. An opening is a hole
+    // through a boundary, never a piece of the room it opens.
+    let room = |from: [Value; 3], to: [Value; 3], guard: Value, note: &str| {
+        json!({"op": "claim", "region": "room", "body": [],
+               "from": from, "to": to, "when": guard, "note": note})
+    };
+    let le = |a: Value, b: Value| json!({"cond": "cmp", "lhs": a, "op": "le", "rhs": b});
+    let top = last("y");
+    ops.push(room(
+        [int(0), datum.clone(), int(0)],
+        [sub(p("x0"), int(1)), top.clone(), last("z")],
+        le(int(0), sub(p("x0"), int(1))),
+        "the room before the way's own slab",
+    ));
+    ops.push(room(
+        [add(p("x1"), int(1)), datum.clone(), int(0)],
+        [last("x"), top.clone(), last("z")],
+        le(add(p("x1"), int(1)), last("x")),
+        "and after it",
+    ));
+    ops.push(room(
+        [p("x0"), datum.clone(), int(0)],
+        [p("x1"), top.clone(), sub(p("z0"), int(1))],
+        le(int(0), sub(p("z0"), int(1))),
+        "the slab, before the way",
+    ));
+    ops.push(room(
+        [p("x0"), datum.clone(), add(p("z1"), int(1))],
+        [p("x1"), top.clone(), last("z")],
+        le(add(p("z1"), int(1)), last("z")),
+        "the slab, after it",
+    ));
+    ops.push(room(
+        [p("x0"), datum.clone(), p("z0")],
+        [p("x1"), sub(p("y0"), int(1)), p("z1")],
+        le(datum.clone(), sub(p("y0"), int(1))),
+        "the column, under the way",
+    ));
+    ops.push(room(
+        [p("x0"), add(p("y1"), int(1)), p("z0")],
+        [p("x1"), top, p("z1")],
+        le(add(p("y1"), int(1)), last("y")),
+        "and over it",
+    ));
+
+    // Lit from its own floor, on a grid that starts one cell in on both axes —
+    // so the row at `z = 0`, where the owed marks stand, never carries a lamp.
     let lamp = json!({"op": "box", "role": "lamp"});
     let row = json!({"op": "repeat", "along": "z", "stride": param("lamp_period"),
                      "item": int(1), "remainder": "middle", "body": [lamp]});
-    let grid = json!({"op": "repeat", "along": "x", "stride": param("lamp_period"),
-                      "item": int(1), "remainder": "middle", "body": [row]});
     ops.push(json!({
-        "op": "claim", "region": "room",
-        "from": [int(0), add(datum.clone(), int(1)), int(0)],
-        "to": [last("x"), last("y"), last("z")],
-        "body": [ {"op": "scope",
-                   "from": [int(1), int(0), int(1)],
-                   "to": [sub(dim("x"), int(2)), int(0), sub(dim("z"), int(2))],
-                   "body": [grid]} ]
+        "op": "scope",
+        "from": [int(1), datum.clone(), int(1)],
+        "to": [sub(dim("x"), int(2)), datum.clone(), sub(dim("z"), int(2))],
+        "body": [ {"op": "repeat", "along": "x", "stride": param("lamp_period"),
+                   "item": int(1), "remainder": "middle", "body": [row]} ]
     }));
 
-    // Every seam, carved at its handed cells and claimed as its own way: an
-    // opening is a hole through a boundary, never a piece of the room it opens.
-    for s in &a.seams {
-        let stem = s.edge.strip_prefix("edge/").unwrap_or(&s.edge);
-        let p = |k: &str| param(&seam_param(&s.edge, k));
-        ops.push(json!({
-            "op": "claim", "region": format!("way/{stem}"),
-            "from": [p("x0"), p("y0"), p("z0")],
-            "to": [p("x1"), p("y1"), p("z1")],
-            "body": [ {"op": "box", "role": "air"} ]
-        }));
-    }
+    // The way itself: the operation that claims the box is the operation that
+    // carves it, so the cells are typed once. It runs after the lamps, so a
+    // lamp inside the opening is cleared by the same act that declares it.
+    let stem = seam.edge.strip_prefix("edge/").unwrap_or(&seam.edge);
+    ops.push(json!({
+        "op": "claim", "region": format!("way/{stem}"),
+        "from": [p("x0"), p("y0"), p("z0")],
+        "to": [p("x1"), p("y1"), p("z1")],
+        "body": [ {"op": "box", "role": "air"} ]
+    }));
 
     // One mark per owed name, on a cell no seam claims, on the room's own floor.
-    let on_a_seam = |x: i64, z: i64| {
-        a.seams.iter().any(|s| {
-            x >= s.cells[0][0] && x <= s.cells[1][0] && z >= s.cells[0][2] && z <= s.cells[1][2]
-        })
-    };
+    let on_a_seam = |x: i64, z: i64| x >= lo[0] && x <= hi[0] && z >= lo[2] && z <= hi[2];
     let mut cells = (0..a.extent[0]).map(|x| (x, 0));
     for owed in &a.owed_anchors {
         let (x, z) = cells
@@ -412,23 +457,17 @@ fn drawing_for(a: &Allocation) -> Value {
         ops.push(json!({
             "op": "mark",
             "mark": {"anchor": stem, "at": "offset",
-                     "x": int(x), "y": add(datum.clone(), int(1)), "z": int(z)}
+                     "x": int(x), "y": datum.clone(), "z": int(z)}
         }));
     }
-
-    let edges: Vec<Value> = a
-        .seams
-        .iter()
-        .map(|s| {
-            let stem = s.edge.strip_prefix("edge/").unwrap_or(&s.edge);
-            json!({"a": "exterior", "b": "room", "class": "walk", "via": format!("way/{stem}")})
-        })
-        .collect();
 
     json!({
         "dsl_version": delvec::compiler::DSL_VERSION,
         "name": format!("drawn for {}", a.place),
         "params": params,
+        // The fixture's horizon is `void`, which buries nothing, and a box the
+        // plan stands on its own has its floor in air a party can reach, so the
+        // piece says which side that is (`DW0885`).
         "shown_faces": ["down"],
         "palette": {
             "floor": "minecraft:stone",
@@ -439,7 +478,8 @@ fn drawing_for(a: &Allocation) -> Value {
             "entry": "room",
             "spaces": {"room": {"envelope": "enclosed"}},
             "no_body": {},
-            "edges": edges
+            "edges": [ {"a": "exterior", "b": "room", "class": "walk",
+                        "via": format!("way/{stem}")} ]
         }
     })
 }
@@ -773,7 +813,11 @@ fn detail_all_over_no_program_is_a_zero_binding() {
             "--all",
         ],
     );
-    assert!(t.contains("ZERO programs"), "{t}");
+    assert!(t.contains("ZERO documents"), "{t}");
+    assert!(
+        t.contains("programs") && t.contains("drawings"),
+        "both addresses the verb looked at: {t}"
+    );
 }
 
 #[test]
@@ -1069,17 +1113,16 @@ fn detail_all_details_both_media_in_one_run() {
     common::copy_dir_all(&blockout_dir(), &campaign);
     common::record_walk(&campaign);
     let c = common::campaign_at(&campaign);
-    let a = |node: &str| detail::allocation(&c, &NodeId(node.to_string())).unwrap();
+    let a = |node: &str| {
+        detail::allocation(&c, &NodeId(node.to_string()))
+            .unwrap_or_else(|| panic!("no allocation for {node}"))
+    };
     write_program(
         &campaign,
         "node/exit",
         &program_for(&a("node/exit"), None, true),
     );
-    write_drawing(
-        &campaign,
-        "node/vestibule",
-        &drawing_for(&a("node/vestibule")),
-    );
+    write_drawing(&campaign, "node/tunnel", &drawing_for(&a("node/tunnel")));
 
     let out = delvec(&[
         "--prefabs",
@@ -1092,7 +1135,7 @@ fn detail_all_details_both_media_in_one_run() {
     let t = text(&out);
     assert!(t.contains("detail: 2 place(s) detailed of 2 named"), "{t}");
     assert!(t.contains("written from `programs/exit.json`"), "{t}");
-    assert!(t.contains("written from `drawings/vestibule.json`"), "{t}");
+    assert!(t.contains("written from `drawings/tunnel.json`"), "{t}");
     let rows = detail_plan(&campaign)["content"]["details"]
         .as_array()
         .unwrap()
@@ -1111,7 +1154,17 @@ fn a_place_with_two_media_is_refused_before_either_is_opened() {
     write_drawing(&campaign, "node/exit", &drawing_for(&a));
 
     let before = snapshot(&prefabs);
-    let t = refused(&campaign, &prefabs, &["node/exit"]);
+    let t = refused(
+        &campaign,
+        &prefabs,
+        &[
+            "--prefabs",
+            prefabs.to_str().unwrap(),
+            "detail",
+            campaign.to_str().unwrap(),
+            "node/exit",
+        ],
+    );
     assert!(t.contains("DW0908"), "{t}");
     assert!(t.contains("programs/exit.json"), "{t}");
     assert!(t.contains("drawings/exit.json"), "{t}");
@@ -1130,7 +1183,17 @@ fn a_drawing_asking_for_a_seam_the_whole_does_not_hand_is_refused() {
     d["params"]["handed/seam/nowhere/x0"] = json!(0);
     std::fs::write(&path, serde_json::to_string_pretty(&d).unwrap()).unwrap();
 
-    let t = refused(&campaign, &prefabs, &["node/exit"]);
+    let t = refused(
+        &campaign,
+        &prefabs,
+        &[
+            "--prefabs",
+            prefabs.to_str().unwrap(),
+            "detail",
+            campaign.to_str().unwrap(),
+            "node/exit",
+        ],
+    );
     assert!(t.contains("DW0882"), "{t}");
     assert!(t.contains("handed/seam/nowhere/x0"), "{t}");
     assert!(t.contains("handed/datum-y"), "the names it IS handed: {t}");
@@ -1143,7 +1206,17 @@ fn a_place_with_no_document_names_both_addresses() {
     let tmp = tempdir("no-medium");
     let (campaign, prefabs) = fixture(&tmp, &["node/exit"]);
     std::fs::remove_file(campaign.join("programs/exit.json")).unwrap();
-    let t = refused(&campaign, &prefabs, &["node/exit"]);
+    let t = refused(
+        &campaign,
+        &prefabs,
+        &[
+            "--prefabs",
+            prefabs.to_str().unwrap(),
+            "detail",
+            campaign.to_str().unwrap(),
+            "node/exit",
+        ],
+    );
     assert!(t.contains("programs/exit.json"), "{t}");
     assert!(t.contains("drawings/exit.json"), "{t}");
 }

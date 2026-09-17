@@ -6244,6 +6244,18 @@ so a kit piece keeps its own vocabulary and a campaign keeps its own: the quest
 layer bound those names to places at stage 3, before any detail existed, and
 detailing must never force a quest edit.
 
+**A place's detail is a program or a drawing, and the medium is the ADDRESS**
+(spec-0072 §9). `delvec detail` reads `drawings/<place stem>.json` where one
+stands and `programs/<place stem>.json` otherwise, both is `DW0908` before
+either is opened, and neither names both addresses. Steps 1–9 are unchanged and
+step 3 executes instead of expanding: the `handed/…` names are bound from the
+allocation by the one rule (`DW0882`), the plan's palette rebinds the roles the
+document declares, the seed is the place's, every gate is the same gate and the
+row is the same row. `--all` walks both directories, unions their stems and
+details every place in site-plan order, refusing a stale document in either by
+name. The one difference a reader sees is the document the summary names and the
+`generated_by.generator` the piece carries — `grammar` or `drawing`.
+
 **`delvec allocation <place>` / `--all`** emits the handed allocation as JSON:
 the frame's extents, the datum in piece-local coordinates, every seam of the box
 in piece-local coordinates with its face, cells, class, rise and the answering

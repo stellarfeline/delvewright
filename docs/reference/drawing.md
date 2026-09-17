@@ -419,6 +419,22 @@ SHA-256 of its canonical bytes **together with those of every program file a
 `grammar` operation names**, the seed, the region, and the parameters and roles
 overridden.
 
+## 8b. Where a drawing is bound
+
+`delvec detail <campaign> <place>` reads a place's medium off the **address**
+its document stands at: a drawing at `drawings/<place stem>.json`, a program at
+`programs/<place stem>.json`, both is `DW0908` before either is opened, and
+neither names both addresses. Everything else is the verb it already was — the
+allocation's `handed/…` names bound by the one rule (`DW0882`), the detail
+plan's palette rebinding the roles the document declares, the place's own seed,
+every gate, the same `details[]` row. `--all` walks both directories and details
+every place in site-plan order.
+
+A `grammar` operation's `program` path is relative to the **drawings**
+directory, so a program a drawing composes lives beside it — in a subdirectory,
+which `--all` does not walk, because a document at `drawings/<x>/<y>.json` is
+not a place's detail.
+
 ## 9. Comparing two pieces
 
 ```text
@@ -435,9 +451,5 @@ cells, and exits 1 on any difference.
 ## 10. What is not here yet
 
 - **Connection state is written, not derived** (§6). spec-0072 criterion 2.
-- **`delvec detail` does not execute a drawing.** It refuses a place with two
-  media (`DW0908`) and details from `programs/<stem>.json`. spec-0072
-  criterion 8.
-- **The gallery binds no unit of this surface yet**, so
-  `tools/ci/check-gallery-coverage.py` reports every one of them unaccounted.
-  spec-0072 criterion 9.
+- **The gallery binds no unit of this surface yet.** spec-0072 criterion 9.
+

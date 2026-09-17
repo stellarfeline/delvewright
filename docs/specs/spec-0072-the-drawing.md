@@ -833,9 +833,12 @@ Recorded as debts, never as passes (§12's own rule).
   move into `crates/dsl` are not built. A drawing **writes** its connections in
   full, as every producer does today, and `DW0735` binds it as it binds a
   program. Criterion 6's connection half is a debt with it.
-- **Criterion 8** — `delvec detail` does not execute a drawing. What landed is
-  the medium refusal alone: a place with a program and a drawing at both
-  addresses is `DW0908` before either is opened. Step 3 still expands a program.
+- **Criterion 8 — met.** `delvec detail` reads the medium off the address, binds
+  the `handed/…` names by the one rule, executes at the frame, runs every gate
+  it runs today, freezes through the shared freezer and writes the same row;
+  `--all` walks both directories. `crates/delvec/tests/detail_verb.rs` generates
+  the same room in both media from the allocation and nothing else, so what its
+  five new tests measure is the address and not a different building.
 - **Criterion 9** — the gallery binds no unit of the `drawing` schema.
   `tools/ci/check-gallery-coverage.py` on this tree: **1148 units enumerated,
   895 bound, 4 refusal-proven, 249 in NEITHER state**, exit 1. Every one of the
