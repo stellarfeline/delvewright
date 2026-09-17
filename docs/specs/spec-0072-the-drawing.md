@@ -750,6 +750,8 @@ Proposed as an edit to the draft ADR, in a commit of its own beside this spec.
    the seed the verb derives for the place (§5.1).
 5. **Context table, 2207 lines.** That is `castle/*.py`; with
    `build_castle.py`, which the row names, it is 2395.
+6. **§2's operation list.** Five of its operations are fields or compositions
+   of the others; §3.1 gives the reason for each.
 
 ## 12. Acceptance criteria
 
