@@ -75,6 +75,29 @@ fn every_pinned_block_has_a_preview_colour() {
     );
 }
 
+/// **The pin bump is the event that can make the table wrong, so the pin is what
+/// the table is held to** — here, with no jar and therefore in CI.
+///
+/// A colour is a fact about one Minecraft version's textures. Moving ADR-0009's
+/// pin moves every one of them, and nothing else in this repository would
+/// notice: the key set survives a version that adds no block, the file parses,
+/// and the frames come out plausible and wrong. The table records the version
+/// its asset source declared; this holds that to the engine's own pin, so the
+/// commit that moves the pin is red until `tools/maintenance/refresh-block-
+/// appearance.py` has been run against the new jar.
+#[test]
+fn the_vendored_table_is_the_pinned_version_s() {
+    let table = PaletteTable::pinned();
+    assert_eq!(
+        table.mc_version.as_deref(),
+        Some(MC_VERSION),
+        "the vendored appearance table is {:?} and the engine is pinned to {MC_VERSION}. Every \
+         colour in it is a fact about one version's textures, so the table is re-derived against \
+         the new jar: `python3 tools/maintenance/refresh-block-appearance.py <client.jar>`",
+        table.mc_version
+    );
+}
+
 /// The vendored table is the whole pinned registry minus absence, and it
 /// resolved all of it: an entry the derivation could not make would be a block
 /// the interactive viewer draws as the placeholder too, and there are none.
@@ -107,12 +130,11 @@ fn the_vendored_table_covers_the_registry_it_was_derived_from() {
 /// by re-deriving it here rather than by trusting the file.
 ///
 /// `#[ignore]` by default: it needs the 1.21.11 client jar, which is EULA-bound
-/// and never committed.
-///
-/// ```text
-/// DELVEWRIGHT_CLIENT_JAR=~/.chunky/resources/minecraft.jar \
-///   cargo test -p delvec --test preview_palette -- --ignored --nocapture
-/// ```
+/// and never committed, so CI has none. **Its entry point is
+/// `tools/maintenance/refresh-block-appearance.py`**, which is the pin-bump step
+/// that re-derives the table and then runs this: the one occasion a jar is in
+/// hand is the one occasion the table can change, and the regeneration does not
+/// count as done until this has compared every entry.
 #[test]
 #[ignore = "needs the 1.21.11 client jar"]
 fn the_vendored_table_is_what_the_pinned_jar_says() {
@@ -143,12 +165,14 @@ fn the_vendored_table_is_what_the_pinned_jar_says() {
     );
     assert!(
         moved.is_empty(),
-        "{} entry(ies) differ from the jar — regenerate with `delvec palette --pinned-blocks`: {:?}",
+        "{} entry(ies) differ from the jar — re-derive with \
+         `python3 tools/maintenance/refresh-block-appearance.py {path}`: {:?}",
         moved.len(),
         moved
     );
     assert_eq!(fresh.entries.len(), committed.entries.len());
     assert_eq!(fresh.unresolved, committed.unresolved);
+    assert_eq!(fresh.mc_version, committed.mc_version);
 }
 
 /// The frame itself, not just the lookup: a room built of the stone the report

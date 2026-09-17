@@ -171,6 +171,11 @@ impl<'a> Deriver<'a> {
         &self.biome
     }
 
+    /// The Minecraft version the asset source declares, if it declares one.
+    pub fn declared_version(&self) -> Option<String> {
+        self.assets.declared_version()
+    }
+
     /// Resolve one palette blockstate string.
     pub fn appearance(&self, state: &str) -> Result<Appearance, Unresolved> {
         let (ns, id) = base_id(state);
@@ -776,6 +781,14 @@ pub struct PaletteTable {
     pub version: u32,
     /// The biome whose tints were applied.
     pub biome: String,
+    /// The Minecraft version the asset source declares, `None` for a resource
+    /// pack that declares none.
+    ///
+    /// A table outlives the jar it is derived from, and the one thing a later
+    /// reader cannot recover is which game it describes. The vendored table carries the
+    /// pin here, so the event that can make it wrong — the pin moving — is the
+    /// event a check can see with no jar in hand.
+    pub mc_version: Option<String>,
     /// Blockstate string → appearance.
     pub entries: BTreeMap<String, Appearance>,
     /// Blockstate strings that could not be resolved, with the reason.
@@ -839,6 +852,7 @@ impl PaletteTable {
         PaletteTable {
             version: PALETTE_VERSION,
             biome: deriver.biome().to_string(),
+            mc_version: deriver.declared_version(),
             entries,
             unresolved,
         }

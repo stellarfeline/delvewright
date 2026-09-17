@@ -6875,12 +6875,13 @@ Three properties worth stating explicitly:
   `compiler::view::blockcolor::Deriver` from the jar the GPU path textures with,
   so the draft and the render hold one opinion about what a block looks like.
   1161 of 1161 non-air blocks resolve; `crates/delvec/tests/preview_palette.rs`
-  enumerates the registry and reds on any that does not, and re-derives the whole
-  table from the jar (`--ignored`, needs one) so the committed file is measured
-  rather than trusted. The jar is EULA-bound and never committed; the
+  enumerates the registry and reds on any that does not, and holds the table's
+  recorded `mc_version` to the engine's pin, so a pin bump that leaves the table
+  behind reds with no jar in hand. The jar is EULA-bound and never committed; the
   derivation's output is, as for the shape-carrying property table and the font
-  metrics. Regenerate with `delvec palette --pinned-blocks -o <that file>
-  --textures <jar>` — never by hand. Keyed by block id: the grid draws every cell
+  metrics. `python3 tools/maintenance/refresh-block-appearance.py <jar>`
+  re-derives the table and proves every entry against that jar in the same run;
+  the file is never edited by hand. Keyed by block id: the grid draws every cell
   as a full cube, so a blockstate's own geometry has nowhere to go and
   `oak_slab[type=top]` shades as `oak_slab`. Magenta therefore means one of three
   things: `jigsaw` or `structure_block` reached the model (the solver strips

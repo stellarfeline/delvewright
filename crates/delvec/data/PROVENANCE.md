@@ -123,16 +123,22 @@ not third-party reconstructions.
   file is that derivation's output, because the jar is EULA-bound and never
   committed — the same rule as the shape-carrying property table above and the
   font metrics below. Consumed by `delvec::compiler::snapshot::block_color`.
-  **Reproduce it**: `delvec palette --pinned-blocks -o
-  crates/delvec/data/block-appearance-1.21.11.json --textures
-  <minecraft-1.21.11-client.jar>`. It is a subcommand and not a script because a
-  second implementation of the derivation is exactly the defect being closed. The
-  command refuses an asset source whose `version.json` does not declare `1.21.11`,
-  enumerates the registry rather than any list of its own, and writes canonical
-  JSON. Deterministic: two runs of the same jar give the same bytes.
-  `crates/delvec/tests/preview_palette.rs` holds the file to the registry, and —
-  on a machine with a jar, `--ignored` — re-derives every entry and compares, so
-  the committed table is measured against its source rather than trusted.
+  **Reproduce it**: `python3 tools/maintenance/refresh-block-appearance.py
+  <minecraft-1.21.11-client.jar>`, at a pin bump or when the derivation changes.
+  It re-derives the table (`delvec palette --pinned-blocks`, a subcommand rather
+  than a script, so the derivation exists once) and then **proves the result
+  against the same jar**: the jar-gated half of
+  `crates/delvec/tests/preview_palette.rs` re-derives every entry and compares,
+  and the command fails if any differs. That comparison runs here and nowhere
+  else, because the one occasion a jar is in hand is the occasion this file
+  changes. The derivation refuses an asset source whose `version.json` does not
+  declare `1.21.11`, enumerates the registry rather than any list of its own, and
+  writes canonical JSON; two runs of one jar give the same bytes.
+  **What holds it between pin bumps**, with no jar and therefore in CI: the file
+  records the version its source declared (`mc_version`), and
+  `preview_palette.rs` holds that to the engine's own pin and holds the key set
+  to `blocks-1.21.11.json`. A commit that moves ADR-0009's pin without running
+  the command above is red.
 
 - **`block-defaults-1.21.11.json`** — every 1.21.11 block's **default state**: the
   value the game resolves each unwritten property to. Same source and same pinned
