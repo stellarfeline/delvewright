@@ -2075,6 +2075,107 @@ mod tests {
         );
     }
 
+    /// **The eight frames that keep the vertical determine a yaw and a
+    /// handedness exactly** — the four turns and their four mirrors — so a
+    /// standing banner, a skull and a door resolve inside a turned or mirrored
+    /// body instead of being refused.
+    ///
+    /// The images are arithmetic, not a game fact. A frame that keeps the
+    /// vertical acts on the horizontal plane as one of the square's eight
+    /// symmetries, and the 16 yaws are a set that symmetry permutes: a turn by
+    /// `t` quarter-turns sends `rotation` `r` to `(r + 4t) mod 16` and keeps
+    /// left and right, and a mirror sends `r` to the reflection of its
+    /// direction and swaps them. The table below is the whole of the eight,
+    /// each row the frame, the image of `rotation` 8 (north) and the image of
+    /// `hinge=left`.
+    #[test]
+    fn a_yaw_and_a_handedness_resolve_under_every_frame_that_keeps_the_vertical() {
+        let reg = BlockRegistry::v1_21_11();
+        let keep = [0usize, 1, 2];
+        let swap = [2usize, 1, 0];
+        // frame, the image of rotation 8 (north), the image of hinge=left.
+        let table: [([usize; 3], [bool; 3], &str, &str); 8] = [
+            // The four turns: local X and local Z both forward is the
+            // identity; a turn by one quarter is the swap with local Z
+            // reversed; a half-turn reverses both; three quarters is the swap
+            // with local X reversed.
+            (keep, [false, false, false], "8", "left"),
+            (swap, [false, false, true], "12", "left"),
+            (keep, [true, false, true], "0", "left"),
+            (swap, [true, false, false], "4", "left"),
+            // The four mirrors: one reversed axis, or the bare transposition.
+            (keep, [true, false, false], "8", "right"),
+            (keep, [false, false, true], "0", "right"),
+            (swap, [false, false, false], "4", "right"),
+            (swap, [true, false, true], "12", "right"),
+        ];
+        for (perm, refl, yaw, hinge) in table {
+            assert_eq!(
+                reg.permuted_properties(
+                    "minecraft:skeleton_skull",
+                    &props(&[("powered", "false"), ("rotation", "8")]),
+                    perm,
+                    refl
+                ),
+                Ok(props(&[("powered", "false"), ("rotation", yaw)])),
+                "rotation 8 under {perm:?}/{refl:?}"
+            );
+            assert_eq!(
+                reg.permuted_properties(
+                    "minecraft:oak_door",
+                    &props(&[("facing", "north"), ("hinge", "left")]),
+                    perm,
+                    refl
+                )
+                .map(|p| p["hinge"].clone()),
+                Ok(hinge.to_string()),
+                "hinge under {perm:?}/{refl:?}"
+            );
+        }
+
+        // A yaw that is not a multiple of four turns with the frame too: a
+        // quarter-turn is four steps, and a mirror across the world X sends a
+        // direction to its reflection.
+        assert_eq!(
+            reg.permuted_properties(
+                "minecraft:skeleton_skull",
+                &props(&[("rotation", "3")]),
+                swap,
+                [false, false, true]
+            ),
+            Ok(props(&[("rotation", "7")])),
+            "one quarter-turn is four steps"
+        );
+        assert_eq!(
+            reg.permuted_properties(
+                "minecraft:skeleton_skull",
+                &props(&[("rotation", "3")]),
+                keep,
+                [true, false, false]
+            ),
+            Ok(props(&[("rotation", "13")])),
+            "a mirror in world X sends the yaw to its reflection"
+        );
+
+        // And the boundary is the vertical, not the reflection: move it or run
+        // it backwards and there is no image to write.
+        for (perm, refl) in [
+            ([0usize, 2, 1], [false, false, false]),
+            ([0usize, 1, 2], [false, true, false]),
+        ] {
+            assert_eq!(
+                reg.permuted_properties(
+                    "minecraft:skeleton_skull",
+                    &props(&[("rotation", "8")]),
+                    perm,
+                    refl
+                ),
+                Err("rotation=8".to_string()),
+                "a frame that does not keep the vertical determines no yaw"
+            );
+        }
+    }
+
     /// The two entry points cannot drift apart: over a corpus of real states
     /// and every frame the grammar can produce, `permuted_properties` succeeds
     /// exactly when `oriented_mismatch` is silent, and its output is a state
