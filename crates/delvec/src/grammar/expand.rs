@@ -29,10 +29,11 @@ use crate::grammar::explain::{self, GuardLeaf, axis_name, render_cond, render_ex
 use crate::grammar::geom::{Axis, Box3, Orientation};
 use crate::grammar::ir::{
     Alternative, AxisSpec, Bar, Cond, Envelope, Facing, Mark, MarkAt, Material, Node, Opens, Paint,
-    Program, ProgramError, Reorient, Side, Size, Split, States, Way,
+    Program, ProgramError, Reorient, Size, Split, States, Way,
 };
 use crate::grammar::model::{PaletteFull, VoxelModel};
 use crate::grammar::orient::{FrameSet, OrientError, reachable_frames, reorient};
+use crate::grammar::place::frame_label;
 use crate::grammar::rng::Rng;
 use crate::grammar::split::{ResolvedSize, SplitError, make_split};
 
@@ -922,6 +923,28 @@ fn resolve_contract(
     regions: &mut BTreeMap<String, ResolvedRegion>,
 ) -> Option<ResolvedContract> {
     let declared = program.contract.as_ref()?;
+    // `validate` refuses a mix and an unbound role, so neither reaches here;
+    // air is the inert stand-in a panic would otherwise be.
+    let state_of = |role: &str| match program.palette.get(role).map(Paint::states) {
+        Some(States::One(state)) => state.clone(),
+        _ => BlockState::air(),
+    };
+    Some(resolve_declared_contract(declared, &state_of, regions))
+}
+
+/// The same resolution, over a contract and a palette that need not be a
+/// program's.
+///
+/// **One authority, two producers.** A drawing declares the program document's
+/// own [`Contract`](crate::grammar::ir::Contract) and claims boxes for it with
+/// its own operation; what the declaration MEANS once the boxes exist is this
+/// function, and a second copy of it would be a second contract semantics
+/// visible only in a built world.
+pub(crate) fn resolve_declared_contract(
+    declared: &crate::grammar::ir::Contract,
+    state_of: &dyn Fn(&str) -> BlockState,
+    regions: &mut BTreeMap<String, ResolvedRegion>,
+) -> ResolvedContract {
     let take = |regions: &mut BTreeMap<String, ResolvedRegion>, name: &str| -> ResolvedRegion {
         regions.remove(name).unwrap_or_default()
     };
@@ -959,12 +982,6 @@ fn resolve_contract(
         region: name.to_string(),
         boxes: boxes_of(name),
     };
-    // `validate` refuses a mix and an unbound role, so neither reaches here;
-    // air is the inert stand-in a panic would otherwise be.
-    let state_of = |role: &str| match program.palette.get(role).map(Paint::states) {
-        Some(States::One(state)) => state.clone(),
-        _ => BlockState::air(),
-    };
     let bar = |b: &Bar| ResolvedBar {
         region: b.region.clone(),
         boxes: boxes_of(&b.region),
@@ -991,13 +1008,13 @@ fn resolve_contract(
             way: e.class.way().map(way),
         })
         .collect();
-    Some(ResolvedContract {
+    ResolvedContract {
         entry: declared.entry.clone(),
         spaces,
         no_body,
         edges,
         no_body_majority_ack: declared.no_body_majority_ack.clone(),
-    })
+    }
 }
 
 /// True when a passed `cond` **entails** a [`Cond::Orientation`]: the guard
@@ -1010,29 +1027,6 @@ fn cond_pins_orientation(cond: &Cond) -> bool {
         Cond::All { of } => of.iter().any(cond_pins_orientation),
         _ => false,
     }
-}
-
-/// A frame written for a person to find: `x->X,y->Y,z->-Z`, local to world,
-/// with a leading `-` on an axis that runs backwards.
-///
-/// A diagnostic that named only the permutation would print `x->X,y->Y,z->Z`
-/// for a reflected identity frame — an author reading that would look for a
-/// `reorient` there is none of, and the reflection that actually turned their
-/// block would not appear anywhere in the message.
-fn frame_label(orient: Orientation) -> String {
-    let axis = |local: Axis| {
-        format!(
-            "{}{:?}",
-            if orient.reversed(local) { "-" } else { "" },
-            orient.axis(local)
-        )
-    };
-    format!(
-        "x->{},y->{},z->{}",
-        axis(Axis::X),
-        axis(Axis::Y),
-        axis(Axis::Z)
-    )
 }
 
 /// What a child scope inherits about its frame: the set of frames it could have
@@ -1530,46 +1524,24 @@ impl<'a> Expander<'a> {
     }
 
     /// Read a local-frame paint's states in the scope's own axis names and
-    /// return them in the world's.
+    /// return them in the world's — [`crate::grammar::place::resolve_states`],
+    /// dressed as this producer's error.
     ///
-    /// The transform is the registry's
-    /// (`BlockRegistry::permuted_properties`) — the same one the `DW0736`
-    /// predicate runs to decide that an unframed literal landed wrong. It is
-    /// handed **both halves of the frame**: the axis permutation and the
-    /// reflection. Handing it the permutation alone would be the same short
-    /// circuit the `DW0736` judge once had, except that here it does not miss a
-    /// defect, it writes one — a pure reflection has the identity permutation,
-    /// so every mirrored body would silently take the unmirrored state.
-    ///
-    /// A property whose image the pinned vocabulary does not determine is
-    /// refused here rather than guessed: there is no correct block to write,
-    /// and writing a plausible one is how a wrong facing gets frozen into a
-    /// `.nbt`.
+    /// The rule lives beside the mark placement rather than here because a
+    /// drawing resolves every one of its paints through the same transform, and
+    /// two copies of it would be two answers about the same block.
     fn resolve_local(
         &self,
         symbol: &str,
         states: &States,
         state: &ScopeState<'_>,
     ) -> Result<States, ExpandError> {
-        let registry = crate::schem::blocks::BlockRegistry::v1_21_11();
-        let perm = [
-            state.orient.axis(Axis::X).index(),
-            state.orient.axis(Axis::Y).index(),
-            state.orient.axis(Axis::Z).index(),
-        ];
-        let reflected = state.orient.mirror.axes();
-        states.map(|block| {
-            match registry.permuted_properties(&block.name, &block.properties, perm, reflected) {
-                Ok(properties) => Ok(BlockState {
-                    name: block.name.clone(),
-                    properties,
-                }),
-                Err(property) => Err(ExpandError::LocalFrameUnresolvable {
-                    symbol: symbol.to_string(),
-                    state: block.to_string(),
-                    property,
-                    orientation: frame_label(state.orient),
-                }),
+        crate::grammar::place::resolve_states(states, state.orient).map_err(|u| {
+            ExpandError::LocalFrameUnresolvable {
+                symbol: symbol.to_string(),
+                state: u.state,
+                property: u.property,
+                orientation: u.orientation,
             }
         })
     }
@@ -1681,24 +1653,11 @@ impl<'a> Expander<'a> {
         state: &ScopeState<'_>,
     ) -> Result<(), ExpandError> {
         let cell = self.mark_cell(symbol, mark, state)?;
-        let facing = match mark.facing {
-            Some(f) => f,
-            // A derived facing is the direction of *decreasing local Z* — the
-            // way the rule library's frame says travel runs. Which world
-            // direction that is depends on both halves of the frame: the world
-            // axis local Z names, and whether local Z runs down it.
-            None => match (state.orient.axis(Axis::Z), state.orient.reversed(Axis::Z)) {
-                (Axis::Z, false) => Facing::North,
-                (Axis::Z, true) => Facing::South,
-                (Axis::X, false) => Facing::West,
-                (Axis::X, true) => Facing::East,
-                (Axis::Y, _) => {
-                    return Err(ExpandError::MarkFacingNotCardinal {
-                        symbol: symbol.to_string(),
-                        anchor: mark.anchor.clone(),
-                    });
-                }
-            },
+        let Some(facing) = crate::grammar::place::mark_facing(mark, state.orient) else {
+            return Err(ExpandError::MarkFacingNotCardinal {
+                symbol: symbol.to_string(),
+                anchor: mark.anchor.clone(),
+            });
         };
 
         let seen = self.marks_seen.entry(mark.anchor.clone()).or_insert(0);
@@ -1727,86 +1686,46 @@ impl<'a> Expander<'a> {
         Ok(())
     }
 
-    /// The world cell a mark names, refused if it is not one of the scope's own.
+    /// The world cell a mark names — [`crate::grammar::place::mark_cell`],
+    /// dressed as this producer's error.
     fn mark_cell(
         &self,
         symbol: &str,
         mark: &Mark,
         state: &ScopeState<'_>,
     ) -> Result<[i32; 3], ExpandError> {
-        let size = state.region.size;
-        // Extent along the world axis a local axis names.
-        let extent = |local: Axis| size[state.orient.axis(local).index()] as i64;
-        // Centre of an extent, rounding down; 0 for a degenerate axis, which the
-        // bounds check below then reports.
-        let mid = |n: i64| (n - 1).max(0) / 2;
-
-        // Offsets from the scope's minimum **world** corner, per world axis.
-        //
-        // Every `at` but `floor_center` names a cell in LOCAL terms, so it is
-        // computed in local coordinates and put through the frame once, at the
-        // end: a reflected axis counts from the far end of the box, which is
-        // exactly what makes the mirror image of a rule land on the mirror image
-        // of its anchor.
-        let mut delta = [0i64; 3];
-        let mut local = [Option::<i64>::None; 3];
-        match &mark.at {
-            MarkAt::CornerMin => local = [Some(0), Some(0), Some(0)],
-            MarkAt::FloorCenter => {
-                // Gravity is a world fact, so this one position ignores the
-                // frame entirely — both halves of it.
-                delta[Axis::X.index()] = mid(size[Axis::X.index()] as i64);
-                delta[Axis::Y.index()] = 0;
-                delta[Axis::Z.index()] = mid(size[Axis::Z.index()] as i64);
-            }
-            MarkAt::FaceCenter { axis, side } => {
-                for l in Axis::ALL {
-                    local[l.index()] = Some(if l == *axis {
-                        match side {
-                            Side::Min => 0,
-                            Side::Max => (extent(l) - 1).max(0),
-                        }
-                    } else {
-                        mid(extent(l))
-                    });
-                }
-            }
-            MarkAt::Offset { x, y, z } => {
-                let scope = state.scope();
-                for (l, expr) in [(Axis::X, x), (Axis::Y, y), (Axis::Z, z)] {
-                    let value = scope.eval(expr).map_err(|error| ExpandError::Eval {
+        let scope = state.scope();
+        let mut eval = |expr: &crate::grammar::ir::Expr| scope.eval(expr);
+        crate::grammar::place::mark_cell(mark, state.region, state.orient, &mut eval).map_err(|e| {
+            match e {
+                crate::grammar::place::MarkError::Eval { error, axis } => {
+                    let expr = match &mark.at {
+                        MarkAt::Offset { x, y, z } => render_expr(match axis {
+                            Axis::X => x,
+                            Axis::Y => y,
+                            Axis::Z => z,
+                        }),
+                        other => format!("{other:?}"),
+                    };
+                    ExpandError::Eval {
                         symbol: symbol.to_string(),
                         error,
-                        expr: render_expr(expr),
+                        expr,
                         scope: Box::new(state.at()),
                         path: Vec::new(),
-                    })?;
-                    local[l.index()] = Some(value);
+                    }
+                }
+                crate::grammar::place::MarkError::Outside { cell } => {
+                    ExpandError::MarkOutsideScope {
+                        symbol: symbol.to_string(),
+                        anchor: mark.anchor.clone(),
+                        cell,
+                        origin: state.region.origin,
+                        size: state.region.size,
+                    }
                 }
             }
-        }
-        for l in Axis::ALL {
-            if let Some(coord) = local[l.index()] {
-                delta[state.orient.axis(l).index()] = state.orient.offset(l, coord, size);
-            }
-        }
-
-        let cell = [
-            state.region.origin[0] as i64 + delta[0],
-            state.region.origin[1] as i64 + delta[1],
-            state.region.origin[2] as i64 + delta[2],
-        ];
-        let inside = (0..3).all(|a| delta[a] >= 0 && delta[a] < size[a] as i64);
-        if !inside {
-            return Err(ExpandError::MarkOutsideScope {
-                symbol: symbol.to_string(),
-                anchor: mark.anchor.clone(),
-                cell,
-                origin: state.region.origin,
-                size,
-            });
-        }
-        Ok([cell[0] as i32, cell[1] as i32, cell[2] as i32])
+        })
     }
 
     fn run_split(

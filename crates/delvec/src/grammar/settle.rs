@@ -120,6 +120,58 @@ pub fn stair_shapes(model: &VoxelModel) -> ShapeAudit {
     audit
 }
 
+/// **Write every stair's `shape`**, from the same derivation [`stair_shapes`]
+/// judges against, and report how many stairs were settled.
+///
+/// The judge and the writer are one rule read from two ends, which is why they
+/// are neighbours: a drawing calls this after its last operation and never types
+/// a `shape`, so `DW0801` is unreachable from one, while a grammar program types
+/// its shapes and is judged. Were the writer a second derivation, a drawing
+/// could ship a corner the gate calls wrong.
+///
+/// A cell outside the region reads as "no stair" here exactly as it does in the
+/// judge — a piece is settled on its own bytes, and the neighbour a placed piece
+/// will actually have belongs to the face contract.
+///
+/// **Read first, write second.** Every shape is derived against the model as the
+/// operations left it and only then written back, so no stair's answer depends
+/// on whether its neighbour was settled before it (ADR-0006).
+pub fn derive_stair_shapes(model: &mut VoxelModel) -> usize {
+    let registry = BlockRegistry::v1_21_11();
+    let mut settled: Vec<([i32; 3], crate::grammar::block::BlockState)> = Vec::new();
+    for pos in model.region().positions() {
+        let Some(state) = model.get(pos) else {
+            continue;
+        };
+        if !registry.is_stairs(&state.name) {
+            continue;
+        }
+        let Some(here) = stair_at(registry, model, pos) else {
+            continue;
+        };
+        let derived = stairs::derive_shape(here, |dir| {
+            let step = dir.step();
+            stair_at(
+                registry,
+                model,
+                [pos[0] + step[0], pos[1] + step[1], pos[2] + step[2]],
+            )
+        });
+        let mut written = state.clone();
+        written
+            .properties
+            .insert("shape".to_string(), derived.as_str().to_string());
+        settled.push((pos, written));
+    }
+    let count = settled.len();
+    for (pos, state) in settled {
+        model
+            .set(pos, &state)
+            .expect("a settled stair is one more state of a block the model already holds");
+    }
+    count
+}
+
 /// The one-line message the `stair-shape` gate carries when it is red.
 pub fn shape_detail(audit: &ShapeAudit) -> String {
     let named: Vec<String> = audit

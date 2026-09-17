@@ -10,10 +10,13 @@
 //! that axis local coordinates increase. Rules are therefore written once and
 //! reused turned (`reorient`) or reflected (`mirror`).
 
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 /// A world axis. `Y` is up, matching Minecraft.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, JsonSchema,
+)]
 #[serde(rename_all = "snake_case")]
 pub enum Axis {
     /// West-east.
@@ -118,7 +121,7 @@ impl Box3 {
 /// *every* question a rule asks of its box — where a split lays its first piece,
 /// which corner `corner_min` is, which way an anchor looks — is asked in the
 /// frame's terms.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Hash, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Mirror {
     /// The local `X` runs against the world axis it names.

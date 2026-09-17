@@ -19,6 +19,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::grammar::block::BlockState;
@@ -42,7 +43,7 @@ use crate::grammar::version::{
 /// *constraints* returned `min(size)` — a copy/paste bug in `Scope.get_value`
 /// (`SplitGrammar.py`); here it returns the maximum, as its name and its own
 /// use in reorientation both require.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum DimRef {
     /// Extent along the local `X`.
@@ -64,7 +65,7 @@ pub enum DimRef {
 }
 
 /// Integer arithmetic available inside constraints and split sizes.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum ArithOp {
     /// Addition.
@@ -85,7 +86,7 @@ pub enum ArithOp {
 
 /// An integer expression over constants, program parameters and scope
 /// dimensions.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "expr", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Expr {
     /// A literal.
@@ -143,7 +144,7 @@ impl Expr {
 }
 
 /// A comparison operator.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum CmpOp {
     /// `<`
@@ -161,7 +162,7 @@ pub enum CmpOp {
 }
 
 /// A rule guard, evaluated against the scope the rule is about to expand into.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "cond", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Cond {
     /// Always applicable.
@@ -464,7 +465,7 @@ fn is_false(v: &bool) -> bool {
 // ---------------------------------------------------------------------------
 
 /// One block of a weighted material.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct WeightedBlock {
     /// Relative weight; must be positive.
@@ -474,7 +475,7 @@ pub struct WeightedBlock {
 }
 
 /// The block states a paint writes: one, or a weighted draw.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(untagged)]
 pub enum States {
     /// A single block state.
@@ -637,7 +638,7 @@ impl Material {
 // ---------------------------------------------------------------------------
 
 /// Which end of an axis a [`MarkAt::FaceCenter`] means.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum Side {
     /// The low end of the axis.
@@ -647,7 +648,7 @@ pub enum Side {
 }
 
 /// A cardinal direction an anchor can face, as prefab metadata spells it.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum Facing {
     /// `-Z`.
@@ -685,7 +686,7 @@ impl fmt::Display for Facing {
 /// survives into review. Centres round down on an even extent (the lower-middle
 /// cell), which is a choice, not an accident: it has to be one of the two, and
 /// it has to be the same one every time (ADR-0006).
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "at", rename_all = "snake_case", deny_unknown_fields)]
 pub enum MarkAt {
     /// The centre of the scope's **world** floor: lowest world `Y`, centred on
@@ -727,7 +728,7 @@ impl MarkAt {
 }
 
 /// How a [`Mark`]'s anchor name is completed when the rule runs more than once.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum MarkIndex {
     /// The name is exactly `anchor/<anchor>`. A second mark producing the same
@@ -755,7 +756,7 @@ pub enum MarkIndex {
 /// would be silently droppable by an engine that predates it. What holds the line
 /// instead is the version ledger of `grammar.md` §2e, which `tools/ci/check-grammar-ir-compat.py`
 /// enforces in both directions.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct Mark {
     /// The anchor name stem, kebab-case. The exported key is `anchor/<stem>`
     /// (plus the index suffix when [`MarkIndex::Auto`]), which is the DSL's
@@ -876,7 +877,7 @@ pub(crate) fn is_kebab(s: &str) -> bool {
 pub const EXTERIOR: &str = "exterior";
 
 /// How much of a space's boundary the author claims is solid.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum Envelope {
     /// Boundary solid on every face except a declared opening.
@@ -903,7 +904,7 @@ impl Envelope {
 /// *Which cells* it covers is not here — that is the rules' business, stated at
 /// the scope with [`Node::Claim`] and resolved per expansion. This says what the
 /// named region **is**, once, however many rules claim boxes for it.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct SpaceDecl {
     /// The envelope claim.
@@ -918,7 +919,7 @@ pub struct SpaceDecl {
 /// be picking which demand has to be met, and a choice between demands is only
 /// ever as strong as the weakest one on offer. What the author does supply is
 /// the reason, because no measurement recovers that.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct NoBodyDecl {
     /// Why these cells are out of play, in the author's words.
@@ -927,7 +928,7 @@ pub struct NoBodyDecl {
 
 /// The bar of a `barred` edge: the region that stands in the way, and what
 /// fills it.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Bar {
     /// A region name some rule claims.
@@ -939,7 +940,7 @@ pub struct Bar {
 }
 
 /// Which direction opening a [`Way`] moves in.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum Opens {
     /// The region is empty as built; opening fills it with the way's block.
@@ -966,7 +967,7 @@ impl Opens {
 /// the checker normalises the one into the other rather than proving each with
 /// its own connectivity walk — a second prover for the same claim is the private
 /// copy this corpus keeps finding.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Way {
     /// Which direction opening it moves in.
@@ -987,7 +988,7 @@ pub struct Way {
 /// traversal classes, so a way on a sightline (which claims no traversal to be
 /// contingent about) and a way on a `barred` edge (which already declares one,
 /// spelled `bar`) are both unwritable rather than caught afterwards.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "class", rename_all = "snake_case", deny_unknown_fields)]
 pub enum EdgeClass {
     /// Level passage.
@@ -1102,7 +1103,7 @@ impl EdgeClass {
 }
 
 /// One declared way between two spaces, or between a space and the exterior.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct Edge {
     /// A declared space name, or [`EXTERIOR`].
     pub a: String,
@@ -1121,7 +1122,7 @@ pub struct Edge {
 /// three rules states its envelope once, not three times that must agree — and
 /// because a parametric program's boxes are not knowable until it is expanded,
 /// while its intent is knowable from the document alone.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Contract {
     /// The space a body enters at.
@@ -1901,6 +1902,155 @@ impl fmt::Display for ProgramError {
 
 impl std::error::Error for ProgramError {}
 
+/// **The contract's own references, both directions** — the half of
+/// [`Program::validate`] that is about a [`Contract`] and the boxes something
+/// claims for it, and nothing about a program.
+///
+/// Extracted because a **drawing** declares this same `Contract` and claims its
+/// boxes with its own operation (spec-0072 §6.2): one checker, so a name that
+/// resolves in a program resolves in a drawing and a name that is two things is
+/// two things in both. Reference integrity only — whether the declared geometry
+/// is *true* is a question about the expanded model, and it belongs to the
+/// checker that reads one.
+///
+/// `claimed` maps each region name something claims to the thing that claimed
+/// it, for the message. `role_states` answers what a palette role is bound to,
+/// or `None` for an unbound one; a contingent region — a bar, a way — is one
+/// material, so a role bound to a mix is refused here for either spelling.
+pub(crate) fn check_contract_references<'p>(
+    contract: &Contract,
+    claimed: &BTreeMap<String, String>,
+    role_states: &dyn Fn(&str) -> Option<&'p States>,
+) -> Result<(), ProgramError> {
+    // One name, one thing — checked before anything else reads the maps, so
+    // a doubly-classified region cannot resolve under whichever reading
+    // happens to be consulted first.
+    for name in contract.no_body.keys() {
+        if contract.spaces.contains_key(name) {
+            return Err(ProgramError::RegionClassifiedTwice {
+                region: name.clone(),
+                first: "a space".to_string(),
+                second: "an out-of-walk region".to_string(),
+            });
+        }
+    }
+
+    for name in contract.spaces.keys().chain(contract.no_body.keys()) {
+        if !is_region_name(name) {
+            return Err(ProgramError::BadRegionName {
+                written_by: "the contract".to_string(),
+                region: name.clone(),
+            });
+        }
+    }
+
+    // An edge's own volumes are regions in their own right: a name that is
+    // also a space would let a transit volume answer a space's obligations.
+    for edge in &contract.edges {
+        let site = format!("edge {:?}->{:?}", edge.a, edge.b);
+        for endpoint in [&edge.a, &edge.b] {
+            if endpoint != EXTERIOR && !contract.spaces.contains_key(endpoint) {
+                return Err(ProgramError::UnknownSpace {
+                    space: endpoint.clone(),
+                    referenced_by: site.clone(),
+                });
+            }
+        }
+        let mut own = Vec::new();
+        if let Some(via) = edge.class.via() {
+            own.push(via.to_string());
+        }
+        // A bar and a way are the same object class — a region whose
+        // presence decides whether the edge is crossable — so they answer
+        // the same two demands here, through one loop rather than two
+        // copies of it.
+        let contingent: Vec<(&'static str, &str, &str)> = edge
+            .class
+            .bar()
+            .map(|b| ("bar", b.region.as_str(), b.block.as_str()))
+            .into_iter()
+            .chain(
+                edge.class
+                    .way()
+                    .map(|w| ("way", w.region.as_str(), w.block.as_str())),
+            )
+            .collect();
+        for (what, region, role) in contingent {
+            own.push(region.to_string());
+            match role_states(role) {
+                None => {
+                    return Err(ProgramError::UnknownRole {
+                        role: role.to_string(),
+                        referenced_by: site.clone(),
+                    });
+                }
+                // It is ONE state, in either frame: the local frame is
+                // resolved at fill time and leaves the role single-valued,
+                // so it is a mix — not a frame — that this refuses.
+                Some(States::Mix(_)) => {
+                    return Err(ProgramError::ContingentBlockIsAMix {
+                        what,
+                        role: role.to_string(),
+                        region: region.to_string(),
+                    });
+                }
+                Some(_) => {}
+            }
+        }
+        for name in own {
+            if !is_region_name(&name) {
+                return Err(ProgramError::BadRegionName {
+                    written_by: format!("the contract's {site}"),
+                    region: name,
+                });
+            }
+            if contract.spaces.contains_key(&name) {
+                return Err(ProgramError::RegionClassifiedTwice {
+                    region: name,
+                    first: "a space".to_string(),
+                    second: format!("{site}'s own volume"),
+                });
+            }
+            if contract.no_body.contains_key(&name) {
+                return Err(ProgramError::RegionClassifiedTwice {
+                    region: name,
+                    first: "an out-of-walk region".to_string(),
+                    second: format!("{site}'s own volume"),
+                });
+            }
+        }
+    }
+
+    if !contract.spaces.contains_key(&contract.entry) {
+        return Err(ProgramError::UnknownSpace {
+            space: contract.entry.clone(),
+            referenced_by: "`entry`".to_string(),
+        });
+    }
+
+    // Both directions: a name the contract uses that no rule claims cannot
+    // resolve to a box, and a name a rule claims that the contract never
+    // classifies resolves to boxes that belong to nothing.
+    let referenced = contract.referenced_regions();
+    for (region, referenced_by) in &referenced {
+        if !claimed.contains_key(region) {
+            return Err(ProgramError::UnclaimedRegion {
+                region: region.clone(),
+                referenced_by: referenced_by.clone(),
+            });
+        }
+    }
+    for (region, declared_by) in claimed {
+        if !referenced.contains_key(region) {
+            return Err(ProgramError::UnclassifiedRegion {
+                region: region.clone(),
+                declared_by: declared_by.clone(),
+            });
+        }
+    }
+    Ok(())
+}
+
 impl Program {
     /// An empty program with the given name and start rule, at the latest
     /// document version.
@@ -2230,133 +2380,9 @@ impl Program {
             });
         }
 
-        // One name, one thing — checked before anything else reads the maps, so
-        // a doubly-classified region cannot resolve under whichever reading
-        // happens to be consulted first.
-        for name in contract.no_body.keys() {
-            if contract.spaces.contains_key(name) {
-                return Err(ProgramError::RegionClassifiedTwice {
-                    region: name.clone(),
-                    first: "a space".to_string(),
-                    second: "an out-of-walk region".to_string(),
-                });
-            }
-        }
-
-        for name in contract.spaces.keys().chain(contract.no_body.keys()) {
-            if !is_region_name(name) {
-                return Err(ProgramError::BadRegionName {
-                    written_by: "the contract".to_string(),
-                    region: name.clone(),
-                });
-            }
-        }
-
-        // An edge's own volumes are regions in their own right: a name that is
-        // also a space would let a transit volume answer a space's obligations.
-        for edge in &contract.edges {
-            let site = format!("edge {:?}->{:?}", edge.a, edge.b);
-            for endpoint in [&edge.a, &edge.b] {
-                if endpoint != EXTERIOR && !contract.spaces.contains_key(endpoint) {
-                    return Err(ProgramError::UnknownSpace {
-                        space: endpoint.clone(),
-                        referenced_by: site.clone(),
-                    });
-                }
-            }
-            let mut own = Vec::new();
-            if let Some(via) = edge.class.via() {
-                own.push(via.to_string());
-            }
-            // A bar and a way are the same object class — a region whose
-            // presence decides whether the edge is crossable — so they answer
-            // the same two demands here, through one loop rather than two
-            // copies of it.
-            let contingent: Vec<(&'static str, &str, &str)> = edge
-                .class
-                .bar()
-                .map(|b| ("bar", b.region.as_str(), b.block.as_str()))
-                .into_iter()
-                .chain(
-                    edge.class
-                        .way()
-                        .map(|w| ("way", w.region.as_str(), w.block.as_str())),
-                )
-                .collect();
-            for (what, region, role) in contingent {
-                own.push(region.to_string());
-                match self.palette.get(role) {
-                    None => {
-                        return Err(ProgramError::UnknownRole {
-                            role: role.to_string(),
-                            referenced_by: site.clone(),
-                        });
-                    }
-                    // It is ONE state, in either frame: the local frame is
-                    // resolved at fill time and leaves the role single-valued,
-                    // so it is a mix — not a frame — that this refuses.
-                    Some(p) if matches!(p.states(), States::Mix(_)) => {
-                        return Err(ProgramError::ContingentBlockIsAMix {
-                            what,
-                            role: role.to_string(),
-                            region: region.to_string(),
-                        });
-                    }
-                    Some(_) => {}
-                }
-            }
-            for name in own {
-                if !is_region_name(&name) {
-                    return Err(ProgramError::BadRegionName {
-                        written_by: format!("the contract's {site}"),
-                        region: name,
-                    });
-                }
-                if contract.spaces.contains_key(&name) {
-                    return Err(ProgramError::RegionClassifiedTwice {
-                        region: name,
-                        first: "a space".to_string(),
-                        second: format!("{site}'s own volume"),
-                    });
-                }
-                if contract.no_body.contains_key(&name) {
-                    return Err(ProgramError::RegionClassifiedTwice {
-                        region: name,
-                        first: "an out-of-walk region".to_string(),
-                        second: format!("{site}'s own volume"),
-                    });
-                }
-            }
-        }
-
-        if !contract.spaces.contains_key(&contract.entry) {
-            return Err(ProgramError::UnknownSpace {
-                space: contract.entry.clone(),
-                referenced_by: "`entry`".to_string(),
-            });
-        }
-
-        // Both directions: a name the contract uses that no rule claims cannot
-        // resolve to a box, and a name a rule claims that the contract never
-        // classifies resolves to boxes that belong to nothing.
-        let referenced = contract.referenced_regions();
-        for (region, referenced_by) in &referenced {
-            if !claimed.contains_key(region) {
-                return Err(ProgramError::UnclaimedRegion {
-                    region: region.clone(),
-                    referenced_by: referenced_by.clone(),
-                });
-            }
-        }
-        for (region, declared_by) in &claimed {
-            if !referenced.contains_key(region) {
-                return Err(ProgramError::UnclassifiedRegion {
-                    region: region.clone(),
-                    declared_by: declared_by.clone(),
-                });
-            }
-        }
-        Ok(())
+        check_contract_references(contract, &claimed, &|role| {
+            self.palette.get(role).map(Paint::states)
+        })
     }
 
     fn check_node(&self, symbol: &str, node: &Node, in_split: bool) -> Result<(), ProgramError> {
