@@ -294,3 +294,174 @@ fn every_new_player_visible_string_is_inventoried() {
         );
     }
 }
+
+// ---------------------------------------------------------------------------
+// DW0901 — a purchase whose literals do not add up (spec-0071 §2)
+// ---------------------------------------------------------------------------
+//
+// `GOOD` above is the reference purchase and the false-positive guard: the
+// apology is gated `at-most 0`, the charge `at-least 1`, and it charges 1. Every
+// red below is that shape with one literal moved.
+
+/// One shop offer, with `apology` and `charge` gate terms and a charge `amount`,
+/// on a purse whose datum is declared. The literals are the only difference
+/// between these fixtures, which is what makes each refusal unambiguous.
+fn offer(apology: &str, charge_gate: &str, amount: i32) -> String {
+    format!(
+        r#",
+    "state": [
+      {{ "id": "state/embers", "scope": "player", "initial": 5, "name": "Embers" }}
+    ],
+    "shops": [
+      {{ "id": "shop/brazier", "anchor": "spawn", "title": "The brazier",
+        "offers": [
+          {{ "label": "A case key",
+            "effects": [
+              {{ "type": "narrate"{apology}, "text": "You cannot afford that." }},
+              {{ "type": "add-state"{charge_gate}, "state": "state/embers", "amount": {amount} }}
+            ] }}
+        ] }}
+    ]"#
+    )
+}
+
+/// `when` carrying one numeric term on the purse.
+fn gate(op: &str, value: i32) -> String {
+    format!(
+        r#", "when": {{ "requires_state": [ {{ "state": "state/embers", "op": "{op}", "value": {value} }} ] }}"#
+    )
+}
+
+fn dw0901(c: &Campaign) -> delvewright_dsl::Diagnostic {
+    validate_campaign(c)
+        .into_iter()
+        .find(|d| d.code == "DW0901")
+        .unwrap_or_else(|| panic!("DW0901 expected; got {:#?}", validate_campaign(c)))
+}
+
+/// The motivating shape: the offer gates on 15 and charges 16, so a player at 15
+/// buys and is left at −1. Both literals and the datum are in the message.
+#[test]
+fn dw0901_a_charge_deeper_than_its_own_gate() {
+    let c = campaign(&offer(&gate("at-most", 14), &gate("at-least", 15), -16));
+    let d = dw0901(&c);
+    assert!(d.message.contains("charges 16"), "{}", d.message);
+    assert!(d.message.contains("opens at 15"), "{}", d.message);
+    assert!(d.message.contains("state/embers"), "{}", d.message);
+    assert!(d.message.contains("leaves `state/embers` at -1"), "{}", d.message);
+}
+
+/// The sale starts at 15 and the apology stops at 13, so a player holding exactly
+/// 14 presses the button and nothing happens at all.
+#[test]
+fn dw0901_a_gap_between_the_sale_and_the_apology() {
+    let c = campaign(&offer(&gate("at-most", 13), &gate("at-least", 15), -15));
+    let d = dw0901(&c);
+    assert!(d.message.contains("leaves a gap"), "{}", d.message);
+    assert!(d.message.contains("14..14"), "{}", d.message);
+    assert!(d.message.contains("at-most 14"), "{}", d.message);
+}
+
+/// The apology runs to 15 and the sale starts at 15, so a player holding 15 is
+/// charged **and** told they cannot afford it.
+#[test]
+fn dw0901_an_overlap_between_the_sale_and_the_apology() {
+    let c = campaign(&offer(&gate("at-most", 15), &gate("at-least", 15), -15));
+    let d = dw0901(&c);
+    assert!(d.message.contains("overlaps the sale"), "{}", d.message);
+    assert!(d.message.contains("15..15"), "{}", d.message);
+}
+
+/// The price is on the **offer's own gate** — the correct spelling spec-0032
+/// prescribes — and the charge is bare. The enclosing gate is read together with
+/// the effect's own, so 15/15 is clean and 15/16 is refused.
+#[test]
+fn dw0901_reads_the_offer_s_own_gate() {
+    let priced = |amount: i32| {
+        format!(
+            r#",
+    "state": [
+      {{ "id": "state/embers", "scope": "player", "initial": 5, "name": "Embers" }}
+    ],
+    "shops": [
+      {{ "id": "shop/brazier", "anchor": "spawn", "title": "The brazier",
+        "offers": [
+          {{ "label": "A case key",
+            "requires_state": [ {{ "state": "state/embers", "op": "at-least", "value": 15 }} ],
+            "effects": [
+              {{ "type": "add-state", "state": "state/embers", "amount": {amount} }}
+            ] }}
+        ] }}
+    ]"#
+        )
+    };
+    assert!(
+        !codes(&campaign(&priced(-15))).contains(&"DW0901".to_string()),
+        "a button shown only at 15 that charges 15 adds up: {:#?}",
+        validate_campaign(&campaign(&priced(-15)))
+    );
+    let d = dw0901(&campaign(&priced(-16)));
+    assert!(d.message.contains("charges 16"), "{}", d.message);
+    assert!(
+        d.message.contains("/content/shops/0/offers/0") || d.path.contains("/content/shops/0/offers/0"),
+        "the refusal points at the offer: {} {}",
+        d.path,
+        d.message
+    );
+}
+
+/// **The rule is not about shops.** The same shape inside an environment
+/// trigger's effects is the same refusal — the quantifier is every effect list
+/// whose effects charge a datum.
+#[test]
+fn dw0901_binds_outside_a_shop() {
+    let toll = r#",
+    "state": [
+      { "id": "state/embers", "scope": "party", "initial": 5 }
+    ],
+    "triggers": [
+      { "id": "trigger/toll", "at": "anchor/door", "on": { "on": "approach", "range": 2 },
+        "requires_state": [ { "state": "state/embers", "op": "at-least", "value": 3 } ],
+        "effects": [
+          { "type": "add-state", "state": "state/embers", "amount": -4 }
+        ] }
+    ]"#;
+    let d = dw0901(&campaign(toll));
+    assert_eq!(d.stage, "quests");
+    assert!(d.message.contains("charges 4"), "{}", d.message);
+    assert!(d.message.contains("opens at 3"), "{}", d.message);
+}
+
+/// A debit in a list that says nothing else about the datum is a design, not a
+/// purchase: no second copy of the number exists to disagree with, so the rule
+/// stays silent. The narrowest place the rule declines to speak, stated as a
+/// test so it cannot widen by accident.
+#[test]
+fn dw0901_says_nothing_about_a_datum_the_list_does_not_price() {
+    let drain = r#",
+    "state": [
+      { "id": "state/embers", "scope": "party", "initial": 5 }
+    ],
+    "triggers": [
+      { "id": "trigger/toll", "at": "anchor/door", "on": { "on": "approach", "range": 2 },
+        "effects": [
+          { "type": "add-state", "state": "state/embers", "amount": -4 }
+        ] }
+    ]"#;
+    assert!(
+        !codes(&campaign(drain)).contains(&"DW0901".to_string()),
+        "{:#?}",
+        validate_campaign(&campaign(drain))
+    );
+}
+
+/// A charge with no gate of its own, beside an arm that prices the same datum:
+/// the copy is missing rather than wrong, and it is the same defect.
+#[test]
+fn dw0901_an_ungated_charge_beside_a_priced_arm() {
+    let c = campaign(&offer(&gate("at-most", 14), "", -15));
+    let d = dw0901(&c);
+    assert!(d.message.contains("nothing gates it"), "{}", d.message);
+}
+
+// (the binding test needs the new type and cannot exist at this revision)
