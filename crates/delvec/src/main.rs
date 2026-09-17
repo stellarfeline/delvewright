@@ -782,9 +782,9 @@ fn validate_loaded(
             // spec-0067: what the equipment fit rule (`DW0898`, raised inside
             // `validate_campaign_with` above) examined, zeroes included.
             examined.push(delvewright_dsl::EquipmentBinding::of(&campaign, &items).line());
-            // spec-0071 §2: what the purchase rule (`DW0901`) examined — charges
-            // found, the `(list, datum)` pairs they bind, and the effect lists
-            // walked as the denominator.
+            // spec-0071 §2: what the purchase rule (`DW0901`) examines — the
+            // charges it counts, the `(list, datum)` pairs they bind, and the
+            // effect lists walked as the denominator.
             examined.push(delvewright_dsl::PurchaseBinding::of(&campaign).line());
             // Prefab-library load failures (DW0346): a metadata file that did
             // not parse (e.g. newer schema than this delvec) is a first-class

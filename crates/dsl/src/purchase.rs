@@ -8,23 +8,22 @@
 //! has an owner ([`crate::gate::Gate`]). That ruling stands, and this rule is its
 //! missing half.
 //!
-//! Its cost is that one number is written four or five times with nothing binding
-//! the copies — once in the button's own words, once as the `at-least` gate on
-//! what the player receives, once as the `at-least` gate on the charge, once as
-//! the charge's `amount`, and once (minus one) as the `at-most` gate on the line
-//! that apologises. Nothing compared them, so an offer that gates on `at-least
-//! 15` and charges `16` compiled, shipped, and drove a purse one below the floor
-//! the creator had gated on. Measured on a real quest stage: twenty constructor
-//! functions in a 960-line script, and the first of them existed to stop that
-//! number being typed five times.
+//! Its cost is that one number stands in four or five places with nothing binding
+//! the copies — in the button's own words, on the `at-least` gate of what the
+//! player receives, on the `at-least` gate of the charge, as the charge's
+//! `amount`, and, minus one, on the `at-most` gate of the line that apologises.
+//! An author moves one of them and the rest stay where they are. This is what
+//! compares them: an offer gating on `at-least 15` and charging `16` drives a
+//! purse one below the floor its own gate states, and that is a refusal rather
+//! than a shipped delve.
 //!
 //! # The rule, and what it binds to
 //!
 //! Every **effect list whose effects charge a state** — not every shop, and not
 //! every offer. A charge is an `add-state` moving a datum by a negative amount;
 //! the rule reads the gate, so it binds wherever the shape occurs: a shop offer,
-//! a trigger, a trap payload, a quest's `on_complete`, a `sequence`'s step. Shops
-//! are where it was found, never what it is about.
+//! a trigger, a trap payload, a quest's `on_complete`, a `sequence`'s step. A
+//! shop is the shape's commonest home, never what the rule is about.
 //!
 //! For one list `L` and one datum `S` that some effect of `L` charges:
 //!
@@ -61,7 +60,7 @@
 //! # Binding
 //!
 //! [`PurchaseBinding`] states what the rule examined on this campaign: lists
-//! walked, charges found, `(list, datum)` pairs bound, and refusals — with the
+//! walked, charges counted, `(list, datum)` pairs bound, and refusals — with the
 //! denominator, because a rule that binds to nothing is vacuous rather than green
 //! (CLAUDE.md).
 
@@ -367,7 +366,7 @@ pub struct PurchaseBinding {
     pub lists: usize,
     /// Lists with an enclosing gate that states a numeric term.
     pub gated_lists: usize,
-    /// Charges found (an `add-state` moving a datum down).
+    /// Charges the walk counts (an `add-state` moving a datum down).
     pub charges: usize,
     /// `(list, datum)` pairs bound — the objects the rule judges.
     pub pairs: usize,

@@ -5208,8 +5208,8 @@ Validation-tier (exit 1), like the `DW046x` ledger it extends.
 
 **A beat's subject is derived where the effect supplies one** (spec-0071 §3).
 `happening.subject` is optional, and `DW0485` reasons only over beats that name
-one — so a careful creator named it on every effect, and every time it was the id
-two keys to the left. Where a `happening` hangs on an effect naming **exactly
+one, so a careful creator names it on every effect — and every time it is the id
+two keys to the left, typed a second time. Where a `happening` hangs on an effect naming **exactly
 one** object of a subject kind (an `npc/`, `actor/`, `wave/` or `anchor/` id), an
 absent `subject` resolves to that object, for the proof and for the chronicle
 alike. The rule is over the objects an effect names, not over a list of verbs:
