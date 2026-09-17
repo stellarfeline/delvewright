@@ -6256,6 +6256,21 @@ details every place in site-plan order, refusing a stale document in either by
 name. The one difference a reader sees is the document the summary names and the
 `generated_by.generator` the piece carries — `grammar` or `drawing`.
 
+**A run detailing several places judges each one against the campaign the row
+would make, minus the rows of places it has not reached yet, and carries the
+pieces it has written.** Both halves are the same fact: a sibling's committed
+row names a piece this same run is about to freeze, so judging it at the first
+place's turn refused that place for the second place's sake (`DW0842`), and a
+registry read once before anything was written could not show a later place an
+earlier one's piece. Every row is still judged — its own at its own turn, and
+all of them together in the traversal battery the run ends with.
+
+**A document that will not execute at the handed frame is refused as the
+diagnostic it is**, with its `DW` code and the pointer of the operation that
+failed, and the prose about the frame follows it. A `--json` caller reading only
+the machine lines would otherwise have been told nothing at all about which rule
+refused the place.
+
 **`delvec allocation <place>` / `--all`** emits the handed allocation as JSON:
 the frame's extents, the datum in piece-local coordinates, every seam of the box
 in piece-local coordinates with its face, cells, class, rise and the answering

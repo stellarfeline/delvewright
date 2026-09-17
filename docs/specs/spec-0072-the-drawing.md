@@ -825,6 +825,28 @@ corrected here rather than designed around.
    form would be a private copy of splitmix64's internals, which is the defect
    the one generator exists to prevent.
 
+9. **§9, the gallery element is one document.** It is one document and three
+   defects the tree did not have a second detailed place to find. `delvec detail
+   --all` judged every place against the campaign's whole detail plan, so the
+   first place was refused for a sibling's piece not existing yet (`DW0842`),
+   and the registry a run read once could not show a later place an earlier
+   one's piece. A document that would not execute at the handed frame printed
+   prose and no diagnostic, so `--json` carried no code. And
+   `tools/ci/gallery_units.py`'s binder never descended an `Int` — "an integer
+   or an expression" — so every expression written in a coordinate bound
+   nothing. All three are fixed here; none of them is about the drawing, and all
+   three were invisible until a second place was detailed from a document.
+10. **§9, a detailed place keeps the brief its box was written to.** It cannot,
+   where the brief measures depth. `DW0833`'s second call site measures the clear
+   run through a place's middle **at the top course of its play space**, and a
+   piece owes its own shell inside the box the plan gave it — the derivation
+   masses an undetailed place and does not mass a detailed one — so a 16-deep
+   box can measure 16 while nobody has built in it and at most 14 once somebody
+   has. The gallery's `fact/far-hall-depth` moves from 16 to 14 with its
+   sentence, which is a loosening of what the brief asserts and is declared as
+   one: the place keeps two blocks less than it did as an undetailed box, and
+   the reason is the walls it now has. What is NOT weakened is the check.
+
 ## 11b. What this spec's criteria do not yet have
 
 Recorded as debts, never as passes (§12's own rule).
@@ -839,20 +861,44 @@ Recorded as debts, never as passes (§12's own rule).
   `--all` walks both directories. `crates/delvec/tests/detail_verb.rs` generates
   the same room in both media from the allocation and nothing else, so what its
   five new tests measure is the address and not a different building.
-- **Criterion 9** — the gallery binds no unit of the `drawing` schema.
-  `tools/ci/check-gallery-coverage.py` on this tree: **1148 units enumerated,
-  895 bound, 4 refusal-proven, 249 in NEITHER state**, exit 1. Every one of the
-  249 is a unit of the new document class. The gate was not weakened and no unit
-  was special-cased.
+- **Criterion 9 — met.** `gallery/overlays/site-plan/drawings/far-hall.json`
+  details `node/far-hall`, and `tools/ci/check-gallery-coverage.py` on this
+  tree reports **1148 units enumerated, 1135 bound, 13 refusal-proven, 0 in
+  NEITHER state**, over `drawings/*.json 1` walked. Nine probes carry the
+  refusal half. Seven demonstrate the drawing's own codes; two are exemptions,
+  and they are why nine units cannot be bound by any drawing at all —
+  `Cond::otherwise` has no sibling alternative to be about in an ordered list,
+  and `Cond::orientation` with the `Mirror` it carries would ask a scope which
+  frame it stands in when the answer is written at the `use` above it. The gate
+  was not weakened and no unit was special-cased: what learned something is
+  `tools/ci/gallery_units.py`, which now reads each document class's address off
+  the export rather than deriving it from the class name, and descends an `Int`
+  into the expression it may hold.
 - **Criterion 10** — the port is the content repository's.
-- **Criterion 11** — `docs/reference/drawing.md`, `compiler.md`, `tools.md` and
-  `grammar.md` §2c are written. The `/new-delve` page is **not** rewritten
-  around the drawing, and deliberately: a validated pipeline enters the skill
-  with the change that makes it work, and `delvec detail` does not execute a
-  drawing yet (criterion 8). `tools/ci/check-skill-page.py` is green, which it
-  is because the page still describes the medium the verb still reads.
-- **Criterion 12** — the demo row is a later round's, queued with the gallery
-  element it would be built from.
+- **Criterion 11 — met but for the page, which is a debt.**
+  `docs/reference/drawing.md`, `compiler.md`, `tools.md` and `grammar.md` §2c
+  are written. The `/new-delve` page's place-detail step **was written** — the
+  medium chosen by address, the thirteen operations, `delvec drawing check` and
+  `delvec drawing execute` as the iteration loop, `DW0908` for a place written
+  at both addresses — and `tools/ci/check-skill-page.py` refuses it, four
+  findings, every one of them the pin:
+
+      - the page drives `delvec drawing`, which the CLI does not have.
+          engine delvec--v1.6.0 offers: allocation, analyze, …, detail, …
+      - …names `DW0908`, and the engine at delvec--v1.6.0 declares no such
+        diagnostic.
+      - …is 120 lines and opens with no contents list.
+
+  The page ships with a pinned engine tag and that tag predates this document
+  class, so a page driving `delvec drawing` describes a verb the engine it
+  installs does not have. The step was reverted and the gate is green again.
+  **The debt is discharged by the change that cuts the next engine tag**: that
+  change re-pins the page, and this step lands with it, with its contents list
+  and a `Reference: the drawing` page beside it.
+- **Criterion 12 — met.** `docs/demo-levels.md` queues **The Drawn Gate**: one
+  place detailed twice, once as a program and once as a drawing, and a third
+  panel a partition cannot produce. `tools/ci/check-demo-levels.py` is green and
+  every code it cites resolves.
 
 **And one defect this spec does not own.** A drawing's refusal at load now
 carries the pointer of the value that failed (§8). **The `delvec grammar`
