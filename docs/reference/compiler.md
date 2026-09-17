@@ -3770,12 +3770,25 @@ states — `nav::reachable_under_every_quest_state`, the seat model `DW0525` rea
 runs to `critical_path.len()` **inclusive**, one past the end. Neither the
 completion assertion nor that sentinel is an objective, so `strict_ancestor_steps`
 carries a row for each of them holding **every** objective on the path: the
-exported path has only completing quests, so all of them are done before
-`dw.campaign` can be asserted, in every valid play order. Without those rows the
-two arrivals at which everything has fired answered as if nothing had, and the
-error ran both ways — a door the party is FORCED to open was treated as shut again
-at the end of the delve (refusing a rest point behind it), and a `close-gate` fired
-by the LAST objective was dropped (admitting a rest point sealed in).
+exported path is rooted at the finale, so it holds exactly the quests campaign
+completion depends on, and all of them are done before `dw.campaign` can be
+asserted, in every valid play order. Those rows are what keeps the two arrivals at
+which everything has fired from answering as if nothing has, and the answer there
+matters both ways — a door the party is FORCED to open reads shut again at the end
+of the delve (refusing a rest point behind it), and a `close-gate` fired by the
+LAST objective goes missing (admitting a rest point sealed in).
+
+**Forcedness is decided one layer earlier, and the set is deliberately every
+objective on the path rather than the mandatory ones** (spec-0051).
+`plan::collect_region_events` drops a write that does not FILL when its root is
+unforced, so an `open-gate` hanging off a quest nobody has to play is not in
+`plan.region_events` for any relation to credit; an unforced FILL is kept, because
+a wall the party may find standing is one the proof must survive. A second reading
+of forcedness here would be a second authority, and for a fill it would be the
+answer that ships. A **branch** path (`Plan::branch_gate_model`) is ordered over
+what its world completes rather than by the finale's closure, so it can carry a
+quest that world's player may skip; it is sound for the same reason, and its
+consumers arrive only at objective steps.
 
 **Close-gate solidity for *staged walks* (v0.6, timeline-local — `DW0410`, round
 8).** The DAG-causal model above answers "which gates are shut while the **player**

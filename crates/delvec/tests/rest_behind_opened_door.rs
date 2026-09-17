@@ -5,20 +5,23 @@
 //! force. Those states are the critical path's arrival steps, and the critical path
 //! is `[select-class, objective…, assert-complete]` — so its last two arrivals (the
 //! completion assertion, and the one-past-the-end sentinel the sweep ends on) are
-//! not objectives. The causal predicate behind the seal model
-//! (`Plan::gate_fired_before`) answered from a map keyed by *objective* step, so at
-//! those two arrivals nothing but step `0` counted as having fired: every firing the
-//! party had already been forced to make was discarded, and only what the world was
-//! built holding survived.
+//! not objectives. `Plan::strict_ancestor_steps` therefore owes those two arrivals
+//! a row of their own, holding every objective on the path; with the rows keyed by
+//! objective alone, nothing but step `0` counts as fired at the two arrivals where
+//! everything has fired, and only what the world is built holding survives.
 //!
-//! Both directions of that are wrong, and they are the two tests below.
+//! Both directions of that matter, and they are the first two tests below.
 //!
-//! * A rest point behind a door the critical path OPENS is judged walled in — a
-//!   true campaign refused, and a refusal no repair answers but building the door
-//!   open, which changes what the player sees.
-//! * A rest point whose one way out the LAST objective SEALS is judged open — a
-//!   false campaign admitted, which is the direction that ships a purse the player
-//!   can never reach again.
+//! * A rest point behind a door the critical path OPENS reads walled in — a true
+//!   campaign refused, and a refusal no repair answers but building the door open,
+//!   which changes what the player sees.
+//! * A rest point whose one way out the LAST objective SEALS reads open — a false
+//!   campaign admitted, which is the direction that ships a purse the player can
+//!   never reach again.
+//!
+//! The third asks what that "every objective" set may credit (spec-0051): an
+//! objective the party can skip is on the path like any other, and the answer is
+//! that forcedness is decided a layer earlier.
 //!
 //! `hello-room` is the geometry: one room, one 2-wide doorway through a dividing
 //! wall, `anchor/door` the six cells of `iron_bars` the prefab authors across it,
@@ -29,7 +32,7 @@
 
 mod common;
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 use delvec::compiler::commands::CommandTree;
@@ -54,7 +57,7 @@ fn classes_with_a_flask() -> String {
             "flask": true,
             "item": "minecraft:bread""#,
     );
-    assert_ne!(out, src, "the flask really was spliced into the kit");
+    assert_ne!(out, src, "the flask really is in the kit");
     out
 }
 
@@ -104,11 +107,15 @@ fn quests_doc(talk_effects: &str, exit_effects: &str) -> String {
 }
 
 fn parse_hw(quests: &str) -> Campaign {
+    parse_hw_planned(quests, &hw("quest-plan.json"))
+}
+
+fn parse_hw_planned(quests: &str, quest_plan: &str) -> Campaign {
     let raw = RawCampaign {
         world: hw("world.json"),
         npcs: hw("npcs.json"),
         classes: classes_with_a_flask(),
-        quest_plan: hw("quest-plan.json"),
+        quest_plan: quest_plan.to_string(),
         quests: quests.to_string(),
         dialogue: hw("dialogue.json"),
         world_edits: None,
@@ -213,7 +220,7 @@ fn a_rest_point_behind_a_story_opened_door_is_reachable() {
     match try_build_with(&campaign, &common::prefabs_dir()) {
         Ok(_) => {}
         Err(emit::BuildFailure::Diagnostic { code, message }) => panic!(
-            "a rest point behind a door the party was FORCED to open is walled in only if the \
+            "a rest point behind a door the party is FORCED to open reads walled in only when the \
              arrivals the judgement walks forget the openings: {code}: {message}"
         ),
         Err(other) => panic!("expected a clean build, got {other:?}"),
@@ -259,7 +266,7 @@ fn a_rest_point_the_last_beat_seals_in_is_refused() {
     match try_build_with(&campaign, &prefabs_dir) {
         Ok(_) => panic!(
             "a bonfire whose one way home the same beat bars can strand a purse forever, and \
-             this build was admitted: the arrivals past the last objective dropped the \
+             this build is admitted: the arrivals past the last objective drop the \
              `close-gate`"
         ),
         Err(emit::BuildFailure::Diagnostic { code, message }) => {
@@ -271,5 +278,168 @@ fn a_rest_point_the_last_beat_seals_in_is_refused() {
             );
         }
         Err(other) => panic!("expected a diagnostic failure, got {other:?}"),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// The optional half: what the arrivals past the last objective may credit
+// ---------------------------------------------------------------------------
+
+/// A two-quest plan whose finale depends on an errand declared `mandatory`
+/// according to the argument — so the errand's objective sits on the exported
+/// critical path either way, and only its forcedness differs.
+fn two_quest_plan(errand_is_mandatory: bool) -> String {
+    format!(
+        r#"{{
+  "dsl_version": "{DSL_VERSION}",
+  "campaign_id": "hello-world",
+  "stage": "quest-plan",
+  "content": {{
+    "finale": "quest/open-the-door",
+    "quests": [
+      {{ "id": "quest/side-errand", "act": 1, "area": "area/keep", "npcs": [],
+         "goal": "Look in on the Keeper's stand.", "depends_on": [],
+         "mandatory": {errand_is_mandatory} }},
+      {{ "id": "quest/open-the-door", "act": 1, "area": "area/keep",
+         "npcs": ["npc/keeper"], "goal": "Get the Keeper to let you rest.",
+         "depends_on": ["quest/side-errand"], "mandatory": true }}
+    ]
+  }}
+}}"#
+    )
+}
+
+/// The stage-5 pair: the errand opens `anchor/door`, and the bonfire behind it is
+/// armed by the finale's own beat. The rest point's only way home is that door.
+fn errand_opens_the_door_quests() -> String {
+    format!(
+        r#"{{
+  "dsl_version": "{DSL_VERSION}",
+  "campaign_id": "hello-world",
+  "stage": "quests",
+  "content": {{{PURSE_AND_STAKE}
+    "quests": [
+      {{
+        "id": "quest/side-errand",
+        "trigger": {{ "type": "campaign-start" }},
+        "objectives": [
+          {{ "type": "reach-anchor", "id": "obj/errand",
+             "anchor": "anchor/keeper-stand", "radius": 2 }}
+        ],
+        "on_objective_complete": {{
+          "obj/errand": [ {{ "type": "open-gate", "anchor": "anchor/door" }} ]
+        }},
+        "on_complete": []
+      }},
+      {{
+        "id": "quest/open-the-door",
+        "trigger": {{ "type": "quest-complete", "quest": "quest/side-errand" }},
+        "objectives": [
+          {{ "type": "talk-to", "id": "obj/talk", "npc": "npc/keeper" }}
+        ],
+        "on_objective_complete": {{
+          "obj/talk": [ {{ "type": "bonfire", "anchor": "anchor/exit" }} ]
+        }},
+        "on_complete": [ {{ "type": "campaign-complete" }} ]
+      }}
+    ]
+  }}
+}}"#
+    )
+}
+
+/// **A door only OPTIONAL content opens does not free the rest point behind it.**
+///
+/// The arrivals past the last objective credit every objective on the exported
+/// path, and `quest/side-errand` is on that path — the finale depends on it, so
+/// `obj/errand` has a step and that step is in the set. The question spec-0051
+/// makes worth asking is whether the party can be made to reach it, and the
+/// campaign below says no: the errand is `mandatory: false`.
+///
+/// **The mechanism that excludes it is forcedness, and it is applied one layer
+/// earlier**, where the constitution puts it: `plan::collect_region_events` drops
+/// a write that does not FILL when its root is unforced (`if !write.fills() &&
+/// !forced { continue; }`), and `open-gate` is `RegionWrite::Unseal`. So the
+/// opening is never in `plan.region_events` at all and no ancestor relation can
+/// credit it. The complement holds for the same reason: an unforced FILL is kept,
+/// because crediting a wall the party may find standing is the conservative
+/// reading, and the arrivals past the last objective must credit it too.
+///
+/// That is why this set is every objective on the path and not "every objective
+/// whose quest is mandatory": forcedness has one authority, and re-deciding it
+/// here would be a second one — which would also, for a fill, be the answer that
+/// ships.
+///
+/// The pair is the element. The same campaign with the errand declared
+/// `mandatory: true` builds clean, so the refusal below is about optionality and
+/// not about anything else in the shape.
+#[test]
+fn a_door_only_optional_content_opens_does_not_free_a_rest_point() {
+    let optional = parse_hw_planned(&errand_opens_the_door_quests(), &two_quest_plan(false));
+
+    // The binding, so the refusal below is about the set this change adds and not
+    // about a shape that never reaches it. The path is
+    // `[select-class, obj/errand, obj/talk, assert-complete]`, and the two arrivals
+    // past the last objective carry BOTH objective steps — the errand's included,
+    // although the party may never play it.
+    let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
+    let plan = Plan::build(&optional, &prefabs).expect("plan builds");
+    assert_eq!(
+        plan.critical_path.len(),
+        4,
+        "select-class, the errand, the talk, and the completion assertion"
+    );
+    let every: BTreeSet<usize> = [1, 2].into_iter().collect();
+    for arrival in [3usize, 4] {
+        assert_eq!(
+            plan.strict_ancestor_steps.get(&arrival),
+            Some(&every),
+            "arrival {arrival} carries every objective on the path"
+        );
+    }
+    // And the opening is not in the model to be credited: `collect_region_events`
+    // kept every FILL and dropped the unforced unseal, so nothing here can open
+    // that door however the ancestor relation answers.
+    assert!(
+        plan.region_events.iter().all(|e| e.fills()),
+        "an unforced `open-gate` is dropped before the seal model sees it: {:#?}",
+        plan.region_events
+    );
+
+    match try_build_with(&optional, &common::prefabs_dir()) {
+        Ok(_) => panic!(
+            "the only `open-gate` on the rest point's door hangs off a quest nobody has to \
+             play, and this build is admitted"
+        ),
+        Err(emit::BuildFailure::Diagnostic { code, message }) => {
+            eprintln!("{code}: {message}");
+            assert_eq!(
+                code,
+                delvec::compiler::stake::DW_STAKE_NO_ROUTE_BACK,
+                "a rest point whose door only optional content opens is `DW0525`"
+            );
+        }
+        Err(other) => panic!("expected a diagnostic failure, got {other:?}"),
+    }
+
+    let forced = parse_hw_planned(&errand_opens_the_door_quests(), &two_quest_plan(true));
+    let forced_plan = Plan::build(&forced, &prefabs).expect("plan builds");
+    assert_eq!(
+        forced_plan
+            .region_events
+            .iter()
+            .filter(|e| !e.fills())
+            .count(),
+        1,
+        "declared mandatory, the same `open-gate` IS in the model: {:#?}",
+        forced_plan.region_events
+    );
+    match try_build_with(&forced, &common::prefabs_dir()) {
+        Ok(_) => {}
+        Err(emit::BuildFailure::Diagnostic { code, message }) => panic!(
+            "declaring the same errand mandatory makes the party open that door, so the rest \
+             point behind it is reachable: {code}: {message}"
+        ),
+        Err(other) => panic!("expected a clean build, got {other:?}"),
     }
 }
