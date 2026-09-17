@@ -834,8 +834,13 @@ corrected here rather than designed around.
    prose and no diagnostic, so `--json` carried no code. And
    `tools/ci/gallery_units.py`'s binder never descended an `Int` — "an integer
    or an expression" — so every expression written in a coordinate bound
-   nothing. All three are fixed here; none of them is about the drawing, and all
-   three were invisible until a second place was detailed from a document.
+   nothing. And a `grammar` operation's `rule` was read by the loader, exported
+   in the schema and ignored by the executor, which expanded the program's own
+   `start` whatever the operation said — the unemitted shape, found by
+   perturbing the gallery's own grammar operation and hashing the frozen piece.
+   All four are fixed here; none of them is about the drawing's design, and
+   every one needed a second detailed place or a perturbation measurement to be
+   visible at all.
 10. **§9, a detailed place keeps the brief its box was written to.** It cannot,
    where the brief measures depth. `DW0833`'s second call site measures the clear
    run through a place's middle **at the top course of its play space**, and a

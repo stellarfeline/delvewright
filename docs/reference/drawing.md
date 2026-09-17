@@ -248,8 +248,9 @@ A `mark` inside takes `"index": "auto"` or is a name written twice (`DW0903`).
 
 The named program — a file, **relative to the drawing**, resolved by the program
 loader with its `include` list and its path rules — is expanded into the
-operation's box, from `rule` (default: the program's `start`), at the
-**literal** `seed` the operation writes. Which variant is a judgement, so it is
+operation's box, from `rule` (default: the program's `start`; a name the program
+does not declare is `DW0903` with every name it does), at the **literal** `seed`
+the operation writes. Which variant is a judgement, so it is
 an argument; nothing derives it.
 
 **Non-air overwrites; air leaves what was drawn.** A grammar expansion is a
