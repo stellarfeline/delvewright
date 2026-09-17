@@ -329,6 +329,7 @@ fn handed(a: &Allocation) -> BTreeMap<String, i64> {
 }
 
 /// Detail one place: steps 1–8 of spec-0058 §2.2. Returns the piece id written.
+#[allow(clippy::too_many_arguments)]
 fn detail_one(
     campaign_dir: &Path,
     campaign: &Campaign,

@@ -372,6 +372,8 @@ identifier at line 49 column 3. The forms this value accepts are `corner_min`,
 `face_center`, `floor_center`, `offset`. — at /ops/7/mark/at
 ```
 
+| Code | What it refuses |
+|---|---|
 | `DW0902` | an operation that reaches a cell its scope does not hold — a solid's box, a `line`'s brush, a `mark`, a `claim`, a `grammar` box |
 | `DW0903` | a name that resolves to nothing, or to two things — a role, a define, a parameter, a region only one side names, an anchor two marks produce |
 | `DW0904` | a `define` that reaches itself |

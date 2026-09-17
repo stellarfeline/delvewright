@@ -527,6 +527,7 @@ def main() -> int:
     probes_patched = 0
     paths_touched = 0
     own_documents = 0
+    carried_documents = 0
     tmp = Path(tempfile.mkdtemp(prefix="gallery-probes-"))
     try:
         for pd in sorted(p for p in probes_dir.iterdir() if p.is_dir()) if probes_dir.is_dir() else []:
@@ -550,6 +551,7 @@ def main() -> int:
             probes_patched += 1 if ops else 0
             paths_touched += len(ops)
             own_documents += own
+            carried_documents += len(gallery_domain.carried_documents(pd))
             dest = tmp / pd.name
             materialise_point("probe", pd, dest)
             rc, codes, phase = run_probe(delvec, dest, prefabs, export)
@@ -591,7 +593,8 @@ def main() -> int:
     print(
         f"probe patches: {probes_examined} probe(s) examined, {probes_patched} carrying a "
         f"declared edit over the primary, {paths_touched} JSON path(s) touched, "
-        f"{own_documents} document(s) of their own the primary does not hold."
+        f"{own_documents} document(s) of their own the primary does not hold, "
+        f"{carried_documents} overlay document(s) carried by path."
     )
 
     # ------------------------------------------- compiler-stated bindings (§8.6)
@@ -618,6 +621,7 @@ def main() -> int:
         "probes_with_a_patch": probes_patched,
         "probe_patch_paths": paths_touched,
         "probe_own_documents": own_documents,
+        "probe_carried_documents": carried_documents,
     }
     if args.report:
         Path(args.report).write_text(json.dumps(report, indent=2, sort_keys=True) + "\n")
