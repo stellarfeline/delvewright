@@ -68,7 +68,13 @@ use crate::grammar::geom::Box3;
 use crate::grammar::ir::Program;
 use crate::grammar::model::VoxelModel;
 
-/// What the `generator` breadcrumb of an exported structure says.
+/// What the `generator` breadcrumb of an exported structure says for a piece a
+/// grammar program produced.
+///
+/// It is the **module that produced the expansion**, not the module that froze
+/// it: a reader following the breadcrumb wants the code that decided the blocks.
+/// A drawing names its own ([`crate::drawing::GENERATOR`]) through
+/// [`Provenance::module`].
 pub const GENERATOR: &str = "crates/delvec/src/grammar";
 
 /// The lighting profile a grammar export carries when the probe **binds to
@@ -504,6 +510,44 @@ pub fn export_prefab(
     }
 
     let expansion = expand(program, region, options)?;
+    freeze_prefab(
+        expansion,
+        region,
+        id,
+        &program.shown_faces,
+        &Provenance::of_program(program, options),
+    )
+}
+
+/// **Freeze an expansion as one structure template plus its metadata** — the
+/// half of the export that has nothing to do with how the expansion was made.
+///
+/// spec-0072 §1 finds that everything after the blocks already takes an
+/// `Expansion`; only the export took a `Program`, and it took one for four
+/// things — to expand it, to hash it, to write its provenance row and to copy
+/// `shown_faces` through. The first is the producer's; the other three are
+/// arguments. So a drawing freezes through this same function, and a piece
+/// built from one is a piece of the same shape, judged by the same refusals,
+/// carrying the same document.
+pub fn freeze_prefab(
+    expansion: Expansion,
+    region: Box3,
+    id: &str,
+    shown_faces: &[String],
+    provenance: &Provenance,
+) -> Result<PrefabExport, ExportError> {
+    if !is_valid_id(id) {
+        return Err(ExportError::BadId { id: id.to_string() });
+    }
+    if region.is_empty() {
+        return Err(ExportError::EmptyRegion { size: region.size });
+    }
+    if region.size.iter().any(|&s| s > MAX_STRUCTURE_AXIS) {
+        return Err(ExportError::TooLarge {
+            size: region.size,
+            cap: MAX_STRUCTURE_AXIS,
+        });
+    }
     let palette = zone_palette(&expansion.model);
     refuse_unknown_states(&expansion.model, &palette)?;
     // The block-spelling family first, the contract second, and the order is
@@ -519,7 +563,6 @@ pub fn export_prefab(
         region.size[1] as i32,
         region.size[2] as i32,
     ];
-    let hash = program_hash(program);
     let metadata = PrefabMetadata {
         prefab_id: format!("prefab/{id}"),
         structure: Some(StructureMetadata {
@@ -527,7 +570,7 @@ pub fn export_prefab(
             id: id.to_string(),
             size,
             data_version: DATA_VERSION,
-            generator: Some(GENERATOR.to_string()),
+            generator: Some(provenance.module.to_string()),
         }),
         structure_set: None,
         anchors: anchor_metadata(&expansion),
@@ -543,14 +586,7 @@ pub fn export_prefab(
         // [`UNBOUND_LIGHTING_PROFILE`] for what the export used to declare here,
         // why it no longer does, and the write-then-expand pair that settled it.
         lighting: Some(measured_lighting(&expansion)),
-        license: Some(license_metadata(
-            program,
-            &hash,
-            options.seed,
-            size,
-            &options.overrides,
-            None,
-        )),
+        license: Some(license_metadata(provenance, size, None)),
         // **The piece's own walk plane, measured** (spec-0060 §4). A grammar
         // program says where its floors are and the expansion says where a body
         // can stand on them, so the number is read back out of the model the
@@ -578,7 +614,7 @@ pub fn export_prefab(
         //
         // Empty is still the strict answer, and a program that declares nothing
         // exports the bytes and the metadata it exported before.
-        shown_faces: program.shown_faces.clone(),
+        shown_faces: shown_faces.to_vec(),
         spatial_contract: contract_metadata(&expansion),
         // The export makes no `footprint_class` claim (spec-0050 §5). A program
         // states a building; which size class of site-plan box that building is
@@ -625,6 +661,40 @@ pub fn export_zone(
     if region.is_empty() {
         return Err(ExportError::EmptyRegion { size: region.size });
     }
+    // One expansion for the whole zone, whichever packaging it needs. The tiles
+    // are cut out of it afterwards, so the blocks a tile holds cannot depend on
+    // the tiling.
+    let expansion = expand(program, region, options)?;
+    freeze_zone(
+        expansion,
+        region,
+        id,
+        &program.shown_faces,
+        &Provenance::of_program(program, options),
+    )
+}
+
+/// **Freeze an expansion as a zone**, tiling it if it does not fit — the
+/// freezing half of [`export_zone`], and the one a drawing calls.
+///
+/// A region within [`MAX_STRUCTURE_AXIS`] on every axis produces exactly what
+/// [`freeze_prefab`] produces, byte for byte, under the same two filenames:
+/// tiling adds nothing to the shape of the ordinary case. Where the cuts fall is
+/// [`plan_split`]'s answer, a pure function of the region and the cap — no RNG,
+/// no clock, and no dependence on the expansion (ADR-0006).
+pub fn freeze_zone(
+    expansion: Expansion,
+    region: Box3,
+    id: &str,
+    shown_faces: &[String],
+    provenance: &Provenance,
+) -> Result<ZoneExport, ExportError> {
+    if !is_valid_id(id) {
+        return Err(ExportError::BadId { id: id.to_string() });
+    }
+    if region.is_empty() {
+        return Err(ExportError::EmptyRegion { size: region.size });
+    }
 
     let size = [
         region.size[0] as i32,
@@ -634,12 +704,10 @@ pub fn export_zone(
     let part_max = MAX_STRUCTURE_AXIS as i32;
     let plan = plan_split(size, part_max);
     if plan.is_single() {
-        return export_prefab(program, region, options, id).map(ZoneExport::Single);
+        return freeze_prefab(expansion, region, id, shown_faces, provenance)
+            .map(ZoneExport::Single);
     }
 
-    // One expansion for the whole zone. The tiles are cut out of it afterwards,
-    // so the blocks a tile holds cannot depend on the tiling.
-    let expansion = expand(program, region, options)?;
     let palette = zone_palette(&expansion.model);
     refuse_unknown_states(&expansion.model, &palette)?;
     // The block-spelling family first, the contract second, and the order is
@@ -679,7 +747,6 @@ pub fn export_zone(
         tiles.push(TileFile { file, nbt });
     }
 
-    let hash = program_hash(program);
     let metadata = TileSetMetadata {
         prefab_id: format!("prefab/{id}"),
         structure: None,
@@ -689,7 +756,7 @@ pub fn export_zone(
             part_max,
             grid: plan.grid,
             data_version: DATA_VERSION,
-            generator: GENERATOR.to_string(),
+            generator: provenance.module.to_string(),
             parts,
         }),
         anchors: anchor_metadata(&expansion),
@@ -704,11 +771,8 @@ pub fn export_zone(
         // why it no longer does, and the write-then-expand pair that settled it.
         lighting: Some(measured_lighting(&expansion)),
         license: Some(license_metadata(
-            program,
-            &hash,
-            options.seed,
+            provenance,
             size,
-            &options.overrides,
             Some((plan.grid, tiles.len())),
         )),
         // **The piece's own walk plane, measured** (spec-0060 §4). A grammar
@@ -738,7 +802,7 @@ pub fn export_zone(
         //
         // Empty is still the strict answer, and a program that declares nothing
         // exports the bytes and the metadata it exported before.
-        shown_faces: program.shown_faces.clone(),
+        shown_faces: shown_faces.to_vec(),
         spatial_contract: contract_metadata(&expansion),
         // The export makes no `footprint_class` claim (spec-0050 §5). A program
         // states a building; which size class of site-plan box that building is
@@ -977,14 +1041,57 @@ fn range(b: &Box3) -> RegionMetadata {
     }
 }
 
-/// The `license` block, shared by both export shapes so the provenance sentence
+/// **What made these bytes, and what regenerates them.**
+///
+/// The provenance row is the whole of what the freezer needs to know about the
+/// producer: which generator ran, what document it read, that document's hash,
+/// the seed, and what the caller changed on the way in. A drawing and a grammar
+/// program fill it from their own documents, and the freezer writes one
+/// sentence for both — so the two artifacts are the same artifact, and a reader
+/// comparing them is comparing buildings rather than pipelines.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Provenance {
+    /// The generator, as `generated_by.generator` names it.
+    pub generator: String,
+    /// The module that produced the expansion, as the structure's `generator`
+    /// breadcrumb names it. A reader following it wants the code that decided
+    /// the blocks, which is the producer and never the freezer.
+    pub module: &'static str,
+    /// What the generator was pointed at — the document's own `name`.
+    pub source: String,
+    /// `sha256:<hex>` over the source document's canonical bytes.
+    pub hash: String,
+    /// The seed the run derived its draws from.
+    pub seed: u64,
+    /// What the caller changed before the document was read.
+    pub overrides: Overrides,
+    /// **Every other document the run read**, each with its own hash — a
+    /// drawing's `grammar` operations name program files, and a row that
+    /// promised byte reproducibility while leaving them out would be promising
+    /// something it cannot keep.
+    pub composed: Vec<(String, String)>,
+}
+
+impl Provenance {
+    /// The row for a grammar program expanded under `options`.
+    pub fn of_program(program: &Program, options: &ExpandOptions) -> Provenance {
+        Provenance {
+            generator: "grammar".to_string(),
+            module: GENERATOR,
+            source: program.name.clone(),
+            hash: program_hash(program),
+            seed: options.seed,
+            overrides: options.overrides.clone(),
+            composed: Vec::new(),
+        }
+    }
+}
+
+/// The `license` block, shared by every export shape so the provenance sentence
 /// cannot drift between them. `tiling` is `Some((grid, count))` for a tile set.
 fn license_metadata(
-    program: &Program,
-    hash: &str,
-    seed: u64,
+    prov: &Provenance,
     size: [i32; 3],
-    overrides: &Overrides,
     tiling: Option<([i32; 3], usize)>,
 ) -> LicenseMetadata {
     let packaging = match tiling {
@@ -999,41 +1106,67 @@ fn license_metadata(
     // Named in the sentence too, and not only in the machine row: a reader
     // handed "these inputs regenerate it" and a list that omits one of them has
     // been told something false.
-    let restyled = if overrides.is_empty() {
+    let restyled = if prov.overrides.is_empty() {
         " as its document reads".to_string()
     } else {
         let mut said = Vec::new();
-        for (name, value) in &overrides.params {
+        for (name, value) in &prov.overrides.params {
             said.push(format!("{name}={value}"));
         }
-        for (role, block) in &overrides.roles {
+        for (role, block) in &prov.overrides.roles {
             said.push(format!("{role}={block}"));
         }
         format!(" with {}", said.join(", "))
     };
+    // The documents the run ALSO read, each with its own hash. A drawing's
+    // `grammar` operation names a program file, and the bytes depend on it.
+    let composed = if prov.composed.is_empty() {
+        String::new()
+    } else {
+        format!(
+            " It also reads {}: {}.",
+            match prov.composed.len() {
+                1 => "one other document".to_string(),
+                n => format!("{n} other documents"),
+            },
+            prov.composed
+                .iter()
+                .map(|(path, hash)| format!("{path} ({hash})"))
+                .collect::<Vec<_>>()
+                .join(", ")
+        )
+    };
     LicenseMetadata {
         source: "original".to_string(),
         spdx: "GPL-3.0-or-later".to_string(),
-        note: "Original Delvewright project asset, derived from a grammar program in this \
-               repository. No third-party material is ingested at expansion time; the \
+        note: "Original Delvewright project asset, derived from a generation document in this \
+               repository. No third-party material is ingested at generation time; the \
                generator itself is a port credited in docs/ACKNOWLEDGEMENTS.md."
             .to_string(),
         provenance: format!(
-            "Generated deterministically by {GENERATOR} (spec-0027) from grammar program \
-             {:?}{restyled} ({hash}) at seed {seed} over a {}x{}x{} region; ADR-0006: the \
-             inputs in `generated_by` regenerate this NBT byte for byte.{packaging}",
-            program.name, size[0], size[1], size[2]
+            "Generated deterministically by {} from the {} document {:?}{restyled} \
+             ({}) at seed {} over a {}x{}x{} region; ADR-0006: the inputs in `generated_by` \
+             regenerate this NBT byte for byte.{composed}{packaging}",
+            prov.module,
+            prov.generator,
+            prov.source,
+            prov.hash,
+            prov.seed,
+            size[0],
+            size[1],
+            size[2]
         ),
         // Optional in the document — an ingested piece has nothing that
-        // regenerates it — and never optional here: an expansion always does.
+        // regenerates it — and never optional here: a generated piece always
+        // does.
         generated_by: Some(GeneratedBy {
-            generator: "grammar".to_string(),
-            program: program.name.clone(),
-            program_hash: hash.to_string(),
-            seed,
+            generator: prov.generator.clone(),
+            program: prov.source.clone(),
+            program_hash: prov.hash.clone(),
+            seed: prov.seed,
             region: size,
-            params: overrides.params.clone(),
-            roles: overrides.roles.clone(),
+            params: prov.overrides.params.clone(),
+            roles: prov.overrides.roles.clone(),
         }),
     }
 }

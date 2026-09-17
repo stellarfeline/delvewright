@@ -117,6 +117,7 @@ pub mod library;
 pub mod model;
 pub mod nav;
 pub mod orient;
+pub mod place;
 pub mod rng;
 pub mod settle;
 pub mod split;

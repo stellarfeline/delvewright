@@ -97,4 +97,12 @@ pollster = "0.4"
 # matter. Declared here, not in nucleation's manifest, because a feature is
 # unioned across the graph and this is the crate that needs it. MIT/Apache-2.0.
 blake3 = { version = "1", features = ["pure"] }
+# **The pointer of the value that failed**, for a document a creator wrote by
+# hand. `serde_json`'s own error names a line and a column, and for a flattened
+# or tagged field that is where the ENCLOSING object closes — which in a
+# 300-operation drawing is a message nobody can act on. This deserialises
+# through a path-tracking layer, so every field is covered by construction
+# rather than by per-field hand code. MIT/Apache-2.0, recorded in
+# docs/ACKNOWLEDGEMENTS.md.
+serde_path_to_error = "0.1.20"
 

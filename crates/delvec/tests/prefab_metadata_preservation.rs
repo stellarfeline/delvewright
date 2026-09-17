@@ -80,6 +80,7 @@ const DOES_NOT_WRITE_METADATA: &[&str] = &[
     "curate-merge",   // writes catalog cards, a different document
     "seating",        // reads every document and its bytes, writes only a verdict
     "anchors",        // reads every document's anchors and roles, writes only a report
+    "diff",           // compares two pieces, writes nothing at all
     "help",
 ];
 

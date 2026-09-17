@@ -373,15 +373,18 @@ image in silence.
 
 The resolution is exact or it refuses (`DW0738`, §4b). A direction (by key or by
 value), an `axis` and a `<dir>_<dir>` pair have exact images under every frame.
-A 16-step `rotation` and a handedness (`hinge`, a stair's corner `shape`) do not:
-they are stated against a fixed vertical *and* a fixed handedness, so they are
-determined only under a **pure turn about the vertical** — the identity, or the
-horizontal transposition `x↔z`, which is itself a reflection of the horizontal
-plane and sends a yaw `r` to `(12 − r) mod 16` and left to right. Reflect any
-axis, or move the vertical, and they are refused rather than guessed. A
-`top`/`bottom` half needs the vertical kept and running forward. A value that
-names no handedness (`straight`, `single`) and a `double` slab are their own
-image under every frame and are never refused.
+A 16-step `rotation` and a handedness (`hinge`, a stair's corner `shape`) are
+stated against a **fixed vertical**, so they are determined under the **eight
+frames that keep it** and under no other. Those eight are the symmetries of the
+square — four turns and their four mirrors — and each permutes the 16 yaws
+exactly: a turn sends a yaw `r` to `(r + z) mod 16`, where `z` is the yaw that
+turn sends `rotation` 0 to, and keeps left and right; a mirror sends `r` to
+`(z − r) mod 16` and swaps them. So a door, a standing banner and a skull
+resolve inside a turned or mirrored body. Move the vertical onto a horizontal
+axis, or run it backwards, and there is no `up` left to measure a yaw from:
+refused rather than guessed. A `top`/`bottom` half needs the vertical kept and
+running forward too. A value that names no handedness (`straight`, `single`) and
+a `double` slab are their own image under every frame and are never refused.
 
 `local` is fenced at document version **1.4.0** (§2e).
 
@@ -492,6 +495,17 @@ Two marks on the same **cell** under different names are legal, as in the
 hand-built prefabs.
 
 ## 2c. The idiom index — how the constructs make shapes
+
+**A designed building is not built here.** A box-split program *partitions*:
+every cell belongs to exactly one leaf and nothing paints over anything, so a
+rose window in a gable in a wall has to be reached by one split tree that
+anticipated all three. A designer paints — raise the wall, cut the window, lay
+the tracery over it — and that is the **drawing**
+([`drawing.md`](drawing.md), ADR-0030): a place's detail as an ordered list of
+solids, where a later operation overwrites an earlier one. Reach for it for a
+specific building, and for a `grammar` operation inside one when a run of bays
+or a weathered ruin wants seed variation. What follows is the grammar's own
+idioms, for what it was adopted for: a library of seed-varied typologies.
 
 §2 is the list of constructs. What an author is missing is not that list: it is
 the handful of ways those constructs compose into a shape, none of which is
@@ -1425,12 +1439,11 @@ model to judge at all.
   judges is what was AUTHORED.
 - **Unresolvable local frame (`DW0738`).** A state written in the scope's own
   axis frame whose image the pinned vocabulary does not determine: a yaw or a
-  handedness under anything but a pure turn about the vertical — which is to
-  say under any reflection, or under a frame that moves the vertical — a
-  `top`/`bottom` half under a frame that moves or reverses the vertical, a
-  horizontal connection turned onto a block with no `up` key, a rail's
-  direction-composed `shape`. Refused at expansion, naming the state, the
-  property and the frame. It shares its classifier with `DW0736`, so a state one
+  handedness under a frame that does not keep the vertical — one that names a
+  horizontal world axis as its local `Y`, or runs the vertical backwards — a
+  `top`/`bottom` half under the same, a horizontal connection turned onto a
+  block with no `up` key, a rail's direction-composed `shape`. Refused at
+  expansion, naming the state, the property and the frame. It shares its classifier with `DW0736`, so a state one
   of them calls wrong is never one the other quietly rewrites — the judge and
   the rewriter are one transform, read from two ends, and the refusal is what
   keeps them from ever disagreeing.

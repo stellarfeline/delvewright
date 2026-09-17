@@ -1,0 +1,113 @@
+# ADR-0030: A designed place is drawn — the detail medium is an ordered list of solids the engine executes
+
+- **Status**: Proposed (draft — a direction check; finalised against what is built)
+- **Date**: 2026-09-17
+- **Source**: the work products of two creator runs through `/new-delve` (one released campaign on the content repository's `main`, one unreleased), read against ADR-0018's third revisit trigger; `docs/research/what-a-creator-agent-writes-instead-of-the-grammar.md` carries the measurements and the outside sources.
+- **Refines**: ADR-0018 §1 (the escape hatch at the grammar IR) — narrowed, not withdrawn. ADR-0022 stage 6 (detail per place) — its medium is named.
+- **Constrained by**: ADR-0001, ADR-0003, ADR-0004 (the piece library and placement stand), ADR-0006, ADR-0012, the general-engine rule, the no-hacks rule.
+
+## Context
+
+### What was observed
+
+Both campaigns that set out to build a *designed* castle — a specific building with a gatehouse, a hall, a chapel, wall walks — reached the same authoring method independently:
+
+| | released campaign (content `7318202`) | unreleased campaign (creator's report) |
+|---|---|---|
+| hand-written generator | 2395 lines of Python (`build_castle.py` 188, `castle/*.py` 2207) | about 2100 lines of Python |
+| grammar `Program` checked in | 10.7 MB | about 11 MB |
+| `rules` / `params` in that program | 1 / 0 | not measured |
+| nodes (`fill` / `void` / `split` / `mark`) | 16836 / 7471 / 4271 / 31 | not measured |
+
+The generator of the first computes a column of courses for every `(x, z)` and merges equal neighbours; the second paints roles into a voxel grid with a drawing vocabulary of its own (`box`, `clear`, `room`, `crenels`, `flight`, `gable`, `pyramid`, `lancet`, `rose`, `machicolate`, `tower`) and then serialises the grid into a split tree. The measured program uses no rule call, no parameter, no `bind`, and `repeat` on 0 of its 4271 splits; the second was not parsed, and its generator's own description is the same encoding. The grammar is being used as a transport encoding for voxels.
+
+Around that encoding the creator re-implemented, privately, things the engine owns: stair-shape derivation (the engine demands it, `DW0801`, and derives nothing); a walkability search, a fall-and-return search, a shortcut-length measure and a reach check, each a private copy of a judgement the compiler makes much later (`DW0525`, `DW0881`, `DW0374`); and a post-expansion step that writes gate *region* anchors into the prefab manifest by hand. The program surface can declare a gate — a `barred` edge's `bar` names a claimed region, and a mark inside it exports as the gate (`PrefabMeta::gate_anchor`) — but a generated partition declares no contract, so the generator reached for the manifest instead. The second campaign also abandoned its site plan and shipped the whole site as one piece, because the site-plan path could not produce a designed exterior — so ADR-0022's stages 4 to 6 were bypassed with it.
+
+### This is sanctioned, and the sanction's own trigger has fired
+
+ADR-0018 §1 permits exactly this: *a creator may compute a `Program` by any means at authoring time — Rust, Python, an LLM — provided the emitted `Program` is checked in as the artifact of record*; §6 makes the data normative and the generator provenance. Nothing above breaks a rule.
+
+But ADR-0018 argued the hatch for *a genuinely one-off complex thing*, preferred the IR hatch over a frozen prefab because a `Program` can be seed-varied, composed, and seen by ADR-0015's promotion detectors, and named as a revisit trigger: **"creators come to need *computed* programs rather than written ones."** Two of two designed buildings are computed. A flattened partition of 28 000 literal leaves can be neither seed-varied nor composed, and shows a promotion detector nothing: every property for which the IR hatch was preferred is void in the way it is actually used. What remains is the cost side. The normative artifact is unreadable, so review happens against a script that §6 says has no standing; a diagnostic addresses a JSON path no author wrote; and the hatch has become the road.
+
+### Why the grammar is not what a designer reaches for
+
+spec-0027 adopted box-split grammars for a different job — a *library of seed-varied typologies* (the temple sweep, curated from a contact sheet) — on a stated bet: models are *semantically right and geometrically weak, so the model authors rules and the expander does geometry*. Both halves have moved. The job is now a bespoke site, where variation is unwanted. And the creator agent wrote two thousand lines of parametric geometry without being asked, which is not what geometrically weak looks like.
+
+The mismatch is one of model, not of syntax. A box-split program **partitions**: every cell belongs to exactly one leaf and nothing paints over anything, so a rose window in a gable in a wall must be reached by one split tree that anticipates all three. A designer — human or model — **paints**: raise the wall, cut the window, lay the tracery over it; later work overwrites earlier work. Both generators are painters that compile to a partition at the end.
+
+**Cited.** The mature form of this family agrees. CityEngine's CGA, the production descendant of split grammars, did not stay a pure split language: beside `split` and `comp` it carries geometry-creation operations (`roofGable`, `roofHip`, `roofPyramid`, `roofShed`, `primitiveCylinder`, `primitiveSphere`, `primitiveCone`, `insert`), 3D booleans (`union`, `subtract`, `intersect`) and occlusion queries (`inside`, `overlaps`, `touches`) — solids and overwriting, added to a splitter (Esri, *CGA reference*, operation index). Imperative, overwriting solid placement is also the idiom of the Minecraft generation framework the GDMC competition standardised on (GDPC, MIT: `editor.placeBlock`, `geometry.placeCuboid`, read from its README; ideas only, nothing taken). **From memory, unverified**: WorldEdit's region and shape commands are the same model. **Cited from an abstract only**: a 2026 benchmark of models writing voxel-building code reports that *producing executable code is far easier than producing spatially correct output, with geometric construction and multi-object composition particularly hard* (VoxelCodeBench) — which argues for the engine's spatial checks being answerable while the author draws, not for taking the drawing away. **Authored**: everything in the Decision.
+
+## Decision
+
+### 1. A place's detail is a **drawing**: data, ordered, executed by the engine
+
+A drawing is a JSON document, schema-checked like every stage: a palette of roles, and an ordered list of operations over the place's box in its local frame. **A later operation overwrites an earlier one.** `delvec` executes it deterministically into the same `VoxelModel` the grammar expander produces, and from there the existing prefab path is unchanged — so every gate that reads delivered blocks (ADR-0018's own observation) binds to a drawing exactly as it binds today.
+
+The creator's arguments are judgements — *which solid, where, how big, of what role*. Nothing else is typed.
+
+### 2. The operations are solids, not building parts
+
+`box` (solid, hollow, or faces), `cylinder` (axis-aligned; one cell long it is the disc, halved it is the apse and the barrel vault), `sphere` (halved it is the dome), `prism` (a box tapering along one axis to a ridge: the gable, and one-sided the wedge), `pyramid` (tapering to a point or a cap: the spire, the batter, and round the cone), `line`. Every solid paints a role, the reserved role `air` included, and may be restricted to cells that currently hold a listed role — which is what clearing and replacing are. A flight of stairs is a wedge and a stamped tread (§3), not an operation. spec-0072 §3.1 gives the reason operation by operation. Integer arithmetic only; the rasterisation rule of every curved solid is stated once and tested for byte-identity.
+
+There is no `tower`, `crenels` or `machicolate` in the engine. Those are design decisions about what solids are *for*, and the general-engine rule puts them with the creator. They are written with §3.
+
+### 3. Repetition and reuse are in the document, so no host language is needed
+
+- `define` / `use`: a named, parameterised list of operations with its own local box, instantiated at a position, facing and size. Parameters are integers over the expression algebra the IR already has (`+ - * / % max min`); this ADR does not add a second one.
+- `repeat`: an operation or `use` stamped along an axis at a stride, with the remainder rule stated by the caller.
+- `mirror`: across a declared plane of the place's box.
+
+This is the whole of what the two generators used Python *for* **in their buildings**, once the painting is taken out: their loops are strides and mirrors, and their functions are parameterised stamps. It is not true of their ground: both carry a positional hash that decides rock heights, clumped ground cover and where a tree stands, and one reads its own canvas at a neighbouring cell to decide a cell. A drawing does not say those (spec-0072 §7 lists each with its cost); per-cell scatter it says with a weighted paint.
+
+### 4. What the engine knows, the creator does not type
+
+- **Derived block state is the engine's.** Stair shape, and the connection state of fences, walls, panes and bars, follow from neighbours by the pinned game's own placement rule, and the executor derives them after the last operation. For stair shape the rule is in the tree and measured against the pinned server (`schem::stairs::derive_shape`): a drawing names `stairs` of a material and a facing, and `DW0801` becomes unreachable from a drawing rather than a thing to satisfy by hand. For connection state the tree holds only an unmeasured reading of the game's code, outside `crates/`, over a hand-declared table of full cubes; it is measured on the pinned server first (spec-0072 §5.3), and until then a drawing writes its connections as every producer does today.
+- **Anchors are operations.** `mark` (a point, a facing) and `claim` (a named box) take their place in the list, and the document's spatial contract — the one a grammar program already carries — says what each claimed name is: a space, a `bar` a story opens or closes, a `way` it lays or clears. The operation that claims a gate's box is the operation that paints it. They land in the prefab metadata through the path that writes it today. Nothing edits a manifest after the fact.
+
+### 5. A building is built twice by two hands: the base build owns the wall, the room fits out what it is handed
+
+Stage 6 already hands a detail program its box, datums, palette and seams. A drawing is that detail program: `delvec allocation` hands it and `delvec detail` (spec-0058) binds, executes, gates and freezes it exactly as it does a grammar program today.
+
+The draft of this section asked how a place yields a face to a shell. The research (`docs/research/what-a-creator-agent-writes-instead-of-the-grammar.md` §6) says the question is mis-posed: in the practices that build many-roomed buildings, **the wall never belonged to the room**.
+
+**Cited.** The construction industry splits one building into a *base build* (shell and core: structure, floor heights, the envelope — external walls, glazing, roofs — and the cores: stairs and shared risers) and a *fit-out* (interior partitions, finishes, furnishing), so that many parties can work inside one envelope without negotiating it. The building-model standard (IFC, ISO 16739) encodes the same ownership: an opening is a void *of the wall* (`IfcRelVoidsElement`), it "shall not participate in the containment relationship" of any space, and a room meets a wall only through a space boundary. Doune itself is the type: a six-foot curtain, a stair "in the thickness of the walls", mural chambers and window embrasures — the wall is a zone with its own contents, not a surface between two rooms. **Own record.** The released castle's generator has exactly this structure without having been told to: a building box, a wall ring two cells thick, windows placed on the wall by a bay modulus on every storey, and only then the interior "floor by floor".
+
+**Decision (authored).** Between the site and the place, the site plan names **buildings**: a box, its storey datums, and the places inside it.
+
+- **The building's drawing is the base build.** It owns the envelope at its declared thickness, the roof, the floor slabs, the partitions between its rooms, the cores (a stair between storeys is a seam, and its flight is the building's), and **every opening in any of them**. An opening is declared once, on the wall it voids, at a position on the wall's **bay module**; partitions stand on bay lines and openings in bay centres, so an opening never meets a partition's end — fit by construction, which is ADR-0022's method applied one level down. The site shell is the same thing one level up: the curtain, the ground and the approach are the site's base build.
+- **Every cell has one owner, and the owner is derived, not typed.** After the building's drawing is executed, what it painted is the building's; the air it left inside is divided among its places by the storey plan. `delvec allocation` hands a place its net cells — not a box: a round tower's room is a disc — and, per face, the openings and seams it looks onto.
+- **The place's drawing is the fit-out.** It paints only its own cells: linings, floor, furniture, light, dressing up to an opening's reveal. An operation that reaches a cell it does not own is refused at that operation. A room that wants a window is asking for a building revision, and gets it the way ADR-0022 already prescribes: the building changes visibly, the allocation is re-handed, the place is otherwise untouched.
+- **The order of work follows.** An envelope with its openings, slabs and stairs and no fit-out is a walkable milestone — silhouette, light through real windows and the vertical routes are judged before a single room is furnished. It is ADR-0022's stage 5 for a building.
+
+**Why this scales (authored; the port measures it).** No place document names another place, and no place document names a coordinate outside what it was handed; every coupling runs through the allocation, which a tool derives. A building's drawing grows with its perimeter and its count of *distinct* bays (`define` + `repeat`), not with its rooms; a place's drawing does not grow at all. Thirty rooms are more documents of the same size, dispatched in parallel, and neither the exterior nor any interior waits on, or is compromised by, another. What would break this is a place that needs to know its neighbour — a sightline composed across two rooms, a shared light — and that is a revisit trigger, not something designed for here.
+
+### 6. The grammar stays for what it was adopted for
+
+A drawing operation `grammar` expands a named rule into a box (a colonnade, a run of bays, a weathered ruin under a seed). The grammar does not call drawings. Seed variation remains the grammar's property, and the operation writes its seed as a literal. A drawing's geometry has no seed and is the same every time; its weighted paints — both generators use them for weathered masonry — draw per cell by position from the seed the verb derives for the place, so an edit re-textures nothing else.
+
+### 7. The spatial judgements answer during authoring
+
+A creator agent wrote five private checkers because the engine's answers arrive after the whole campaign compiles. `delvec` answers the same questions on one drawing, with the engine's one rule for what a body can pass through (spec-0056) and no second implementation: which anchors are reached from an entry with a stated set of regions open; floor that can be fallen to and not walked back from; a sliced view of any sub-box. The surface is a spec under this ADR. The compiler's campaign-level judgements are unchanged and remain the authority; the query is the same code asked early.
+
+### 8. ADR-0018 §1 is narrowed
+
+The IR and prefab hatches remain, for what §1 argued them for: the thing that is genuinely one-off *and* that the drawing cannot say. The skill stops presenting a computed `Program` as a way to build a place, and no released campaign is owed anything by this (it is built only by the engine it pins). Whether the engine should *refuse* a partition-shaped voxel dump is **not decided here**: a gate that names a remedy owes a check that the remedy is reachable, and it is not reachable until §§1–4 exist.
+
+## Alternatives considered
+
+- **Run creator code inside the build (sandboxed WASM — ADR-0018 §1's deferred form).** Declined again, on new evidence: what the generators contain is vocabulary and strides, not computation. A sandbox would host a private drawing library per campaign — the defect, made deterministic.
+- **Extend the grammar the way CGA was extended** — creation primitives and booleans at the leaves of the split tree. The honest competitor, and the cited precedent. Declined as the *primary* medium because partition-first is the part designers route around: both generators discard the split tree as a way of thinking and keep it only as an encoding. §6 keeps the door open in the direction that costs nothing.
+- **Leave it: the hatch works and both castles shipped or built.** The cost is per campaign and recurring: two thousand lines of unreviewed script, five private checkers whose verdicts can disagree with the compiler's, an artifact of record nobody can read, and ADR-0022's pipeline bypassed. It also teaches: the second campaign cites the first as its method.
+
+## Consequences
+
+- A new document class and a `dsl_version` move; every operation is a schema unit and owes a gallery element, and the mechanic owes a demo-level row (`docs/demo-levels.md`).
+- `docs/reference/` gains the drawing's live record; the `/new-delve` page's place-detail step is rewritten around it in the change that makes it work, and the `grammar.md` idiom index stops being the route to a designed building.
+- **The experiment that is allowed to fail** (ADR-0018's precedent): port one building of the released castle — the gatehouse — from its generator to a base build and its fit-outs (§5). Pass means: the executed drawing's blocks equal the generator's blocks cell for cell inside the part's box; the document is shorter than the generator's share of lines and readable in review; no script is needed to produce it; stair shapes and gate regions are typed nowhere. And for §5: no fit-out names another place or a cell it was not handed; and a synthetic building of thirty rooms on the same module shows fit-out documents no larger than the gatehouse's and a base build that grew with its perimeter, not its room count. If the drawing is longer or needs a host language, that is the answer, and this ADR is withdrawn rather than Accepted.
+
+## Revisit triggers
+
+- A creator needs a solid that is neither in §2 nor a composition of §2 under §3 — decide it against that instance (ADR-0015).
+- A place's drawing exceeds what one reader can review — the signal that §3 is too weak, not that a host language is needed.
+- The first designed place built through a drawing still arrives with a generator script beside it.
+- A place needs to know its neighbour — a composition across two rooms that the allocation cannot hand. Decide then whether the building owns it.

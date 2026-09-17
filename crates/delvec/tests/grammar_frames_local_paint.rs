@@ -23,7 +23,7 @@
 //!    arrives from an environment rather than from the program's own palette,
 //! 4. a local frame inside a **`claim`ed** space, where a second wrapper sits
 //!    between the frame and the fill,
-//! 5. the **refusal** under a reflection: a yaw and a handedness are stated
+//! 5. the **residue** and its boundary: a yaw and a handedness are stated
 //!    against a fixed vertical AND a fixed handedness, so a reflected frame
 //!    leaves them no image and `DW0738` says so rather than guessing.
 //!
@@ -304,19 +304,24 @@ fn a_local_frame_inside_a_claimed_space_keeps_the_frame_and_the_claim() {
 }
 
 // ---------------------------------------------------------------------------
-// 5. The refusal under a reflection
+// 5. The residue: what a frame that keeps the vertical determines, and where
+//    the refusal is
 // ---------------------------------------------------------------------------
 
-/// **A yaw has no image under a reflected frame, and the build says so.** A
-/// 16-step `rotation` is stated against a fixed vertical and a fixed handedness,
-/// so the frames that determine it are the pure turns about the vertical. A
-/// reflection is not one, and the answer is `DW0738` naming the state, the
-/// property and the frame — never a plausible skull.
+/// **A yaw and a handedness turn with a mirrored body, and lose their meaning
+/// only where the frame loses `up`.** A 16-step `rotation` and a chirality are
+/// stated against a fixed vertical, and the eight frames that keep it — the four
+/// turns and their four mirrors — are symmetries of the square, so they permute
+/// the 16 yaws exactly. A mirrored body therefore resolves: the yaw goes to the
+/// reflection of its direction and left becomes right. A frame whose local `Y`
+/// is a horizontal world axis has no `up` to measure a yaw from, and the answer
+/// there is `DW0738` naming the state, the property and the frame — never a
+/// plausible skull.
 ///
-/// The control is the same role in an unreflected scope: resolved, not refused.
-/// Without it this would pass for an engine that refused every local frame.
+/// The control is the same role in an unreflected scope. Without it this would
+/// pass for an engine that refused every local frame.
 #[test]
-fn a_yaw_in_a_mirrored_body_is_refused_rather_than_reflected() {
+fn a_yaw_turns_with_a_mirrored_body_and_refuses_where_up_is_lost() {
     let skull: BlockState = "minecraft:skeleton_skull[powered=false,rotation=8]"
         .parse()
         .unwrap();
@@ -331,48 +336,100 @@ fn a_yaw_in_a_mirrored_body_is_refused_rather_than_reflected() {
                 })],
             )
     };
+    let skull_state = |out: &Expansion| -> String {
+        out.model
+            .palette()
+            .iter()
+            .find(|s| s.name == "minecraft:skeleton_skull")
+            .expect("the fill wrote a skull")
+            .to_string()
+    };
 
-    let err = expand(
+    // A mirror across the scope's own Z: `rotation` 8 is north, and north
+    // reflected in Z is south, which is `rotation` 0.
+    let mirrored = expand(
         &program(Reorient::KEEP.flip(Axis::Z)),
         BOX,
         &ExpandOptions::seeded(1),
     )
-    .expect_err("a reflected frame determines no yaw");
-    let text = err.to_string();
-    assert!(text.contains("DW0738"), "{text}");
-    assert!(text.contains("rotation=8"), "{text}");
-    assert!(
-        text.contains("-Z"),
-        "the frame is printed with its sign: {text}"
+    .expect("a mirror of the horizontal plane permutes the yaws exactly");
+    assert_eq!(
+        skull_state(&mirrored),
+        "minecraft:skeleton_skull[powered=false,rotation=0]"
     );
+    assert_eq!(mirrored.oriented.resolved, 1);
 
-    // The control, and the reason the refusal is about the FRAME rather than
-    // about the construct.
+    // The control, and the reason the resolution above is about the FRAME
+    // rather than about the construct.
     let out = expand(&program(Reorient::KEEP), BOX, &ExpandOptions::seeded(1))
         .expect("an unreflected frame resolves it");
+    assert_eq!(
+        skull_state(&out),
+        "minecraft:skeleton_skull[powered=false,rotation=8]"
+    );
     assert_eq!(out.oriented.resolved, 1);
 
-    // A handedness refuses on the same rule and for the same reason: a mirror
-    // is exactly what swaps it, and a reflected frame is outside the vocabulary
-    // that says by how much.
+    // The refusal: local Y onto world Z leaves the scope's own "up" a
+    // horizontal world axis, so nothing in the yaw vocabulary survives.
+    let text = expand(
+        &program(Reorient::KEEP.y(AxisSpec::WorldZ).z(AxisSpec::WorldY)),
+        BOX,
+        &ExpandOptions::seeded(1),
+    )
+    .expect_err("a frame with no `up` determines no yaw")
+    .to_string();
+    assert!(text.contains("DW0738"), "{text}");
+    assert!(text.contains("rotation=8"), "{text}");
+
+    // A handedness follows the same rule from the other side: a mirror is
+    // exactly what swaps it, so the mirrored body gets the other hinge.
     let door: BlockState =
         "minecraft:oak_door[facing=north,half=lower,hinge=left,open=false,powered=false]"
             .parse()
             .unwrap();
-    let hinged = Program::new("hinge", "start")
-        .role_local("door", door)
-        .rule_alts(
-            "start",
-            vec![Alternative::new(Node::Reorient {
-                orient: Reorient::KEEP.mirror(Mirror::of(Axis::X)),
-                body: Box::new(Node::fill("door")),
-            })],
-        );
-    let text = expand(&hinged, BOX, &ExpandOptions::seeded(1))
-        .expect_err("a reflected frame determines no handedness")
-        .to_string();
-    assert!(text.contains("DW0738"), "{text}");
-    assert!(text.contains("hinge=left"), "{text}");
+    let hinged = |frame: Reorient| {
+        Program::new("hinge", "start")
+            .role_local("door", door.clone())
+            .rule_alts(
+                "start",
+                vec![Alternative::new(Node::Reorient {
+                    orient: frame,
+                    body: Box::new(Node::fill("door")),
+                })],
+            )
+    };
+    let hinge_of = |out: &Expansion| -> String {
+        out.model
+            .palette()
+            .iter()
+            .find(|s| s.name == "minecraft:oak_door")
+            .expect("the fill wrote a door")
+            .properties["hinge"]
+            .clone()
+    };
+    assert_eq!(
+        hinge_of(
+            &expand(
+                &hinged(Reorient::KEEP.mirror(Mirror::of(Axis::X))),
+                BOX,
+                &ExpandOptions::seeded(1),
+            )
+            .expect("a mirror swaps the hand")
+        ),
+        "right"
+    );
+    // ...and a half-turn keeps it, because a turn is not a reflection.
+    assert_eq!(
+        hinge_of(
+            &expand(
+                &hinged(Reorient::KEEP.turned()),
+                BOX,
+                &ExpandOptions::seeded(1),
+            )
+            .expect("a half-turn about the vertical keeps the hand")
+        ),
+        "left"
+    );
 }
 
 /// **The judge and the resolver never disagree about a reflected frame.** Over

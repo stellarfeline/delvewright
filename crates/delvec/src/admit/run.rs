@@ -101,6 +101,9 @@ pub fn run(args: PrefabArgs, prefabs_dir: &Path, json: bool) -> ExitCode {
             id,
             cols,
         } => run_gallery(&path, &out, id, cols, json),
+        PrefabCommand::Diff { a, b, r#box, at } => {
+            run_diff(&a, &b, r#box.as_deref(), at.as_deref(), json)
+        }
         PrefabCommand::Curate { log, layout, out } => {
             run_curate(&log, &layout, out.as_deref(), json)
         }
@@ -945,6 +948,229 @@ fn read_zone(manifest: &Path) -> Result<(TileSet, Vec<(TilePart, Structure)>), S
         tiles.push((part.clone(), structure));
     }
     Ok((set, tiles))
+}
+
+/// **A piece as one grid**, whichever of the two packagings its blocks arrived
+/// in: a structure `.nbt`, or the `.json` manifest of a tile set.
+///
+/// Block STATES, not ids: a comparison that read only the ids would call an
+/// `oak_stairs[facing=east]` and an `oak_stairs[facing=west]` the same
+/// building, which is exactly the class of defect a diff exists to find.
+fn read_piece(path: &Path) -> Result<crate::grammar::model::VoxelModel, String> {
+    if path.extension().and_then(|s| s.to_str()) == Some("json") {
+        let (set, tiles) = read_zone(path)?;
+        return Ok(settling::zone_grid(set.size, &tiles));
+    }
+    let bytes = std::fs::read(path).map_err(|e| format!("cannot read {}: {e}", path.display()))?;
+    let structure =
+        Structure::read(&bytes).map_err(|e| format!("cannot parse {}: {e}", path.display()))?;
+    Ok(crate::admit::spatial::grid(&structure))
+}
+
+/// The point anchors a piece's metadata declares, by name.
+///
+/// A piece's document sits beside its bytes: `<id>.json` for a single template,
+/// and the manifest itself for a tile set. A piece with no document declares
+/// none, which is a fact the comparison prints rather than an error — the
+/// question a diff answers is about blocks first.
+fn read_anchors(path: &Path) -> BTreeMap<String, ([i32; 3], String)> {
+    let meta_path = if path.extension().and_then(|s| s.to_str()) == Some("json") {
+        path.to_path_buf()
+    } else {
+        path.with_extension("json")
+    };
+    let Ok(text) = std::fs::read_to_string(&meta_path) else {
+        return BTreeMap::new();
+    };
+    let Ok(meta) = PrefabMeta::from_json(&text) else {
+        return BTreeMap::new();
+    };
+    meta.anchors
+        .iter()
+        .filter_map(|(name, a)| {
+            a.pos
+                .map(|pos| (name.clone(), (pos, a.facing.clone().unwrap_or_default())))
+        })
+        .collect()
+}
+
+fn parse_triple(s: &str, what: &str) -> Result<[i32; 3], String> {
+    let parts: Vec<&str> = s.split(',').collect();
+    if parts.len() != 3 {
+        return Err(format!("{what} {s:?} is not x,y,z"));
+    }
+    let mut out = [0i32; 3];
+    for (i, p) in parts.iter().enumerate() {
+        out[i] = p
+            .trim()
+            .parse()
+            .map_err(|_| format!("{what} {s:?}: {p:?} is not an integer"))?;
+    }
+    Ok(out)
+}
+
+/// `delvec prefab diff <a> <b> [--box …] [--at …]`.
+fn run_diff(a: &Path, b: &Path, r#box: Option<&str>, at: Option<&str>, json: bool) -> ExitCode {
+    // Both sides, before either is read: a lone tile handed to a comparison
+    // produces a confident verdict about a building nobody has, and the verdict
+    // reads as "they agree" exactly where the tiling differs.
+    for piece in [a, b] {
+        if piece.extension().and_then(|s| s.to_str()) != Some("json")
+            && let Err(code) = refuse_fragment(
+                piece,
+                "compare",
+                "report one tile's blocks as the whole building's",
+                json,
+            )
+        {
+            return code;
+        }
+    }
+    let (ga, gb) = match (read_piece(a), read_piece(b)) {
+        (Ok(ga), Ok(gb)) => (ga, gb),
+        (Err(e), _) | (_, Err(e)) => return input_err(&e, json),
+    };
+    let sa = ga.region().size;
+    let (lo, hi) = match r#box {
+        None => (
+            [0, 0, 0],
+            [sa[0] as i32 - 1, sa[1] as i32 - 1, sa[2] as i32 - 1],
+        ),
+        Some(spec) => {
+            let parts: Vec<&str> = spec.split(',').collect();
+            if parts.len() != 6 {
+                return input_err(&format!("--box {spec:?} is not x0,y0,z0,x1,y1,z1"), json);
+            }
+            let lo = match parse_triple(&parts[..3].join(","), "--box") {
+                Ok(v) => v,
+                Err(e) => return input_err(&e, json),
+            };
+            let hi = match parse_triple(&parts[3..].join(","), "--box") {
+                Ok(v) => v,
+                Err(e) => return input_err(&e, json),
+            };
+            (lo, hi)
+        }
+    };
+    let offset = match at.map(|s| parse_triple(s, "--at")) {
+        Some(Ok(v)) => v,
+        Some(Err(e)) => return input_err(&e, json),
+        None => [0, 0, 0],
+    };
+    if (0..3).any(|i| hi[i] < lo[i]) {
+        return input_err(
+            &format!(
+                "--box has its high corner below its low one: {},{},{} .. {},{},{}",
+                lo[0], lo[1], lo[2], hi[0], hi[1], hi[2]
+            ),
+            json,
+        );
+    }
+
+    let mut compared = 0usize;
+    let mut differing = 0usize;
+    let mut differ: Vec<String> = Vec::new();
+    let mut outside = 0usize;
+    for x in lo[0]..=hi[0] {
+        for y in lo[1]..=hi[1] {
+            for z in lo[2]..=hi[2] {
+                let pb = [
+                    x - lo[0] + offset[0],
+                    y - lo[1] + offset[1],
+                    z - lo[2] + offset[2],
+                ];
+                let (Some(va), Some(vb)) = (ga.get([x, y, z]), gb.get(pb)) else {
+                    // A cell one of the two pieces does not have is not a
+                    // difference and is not an agreement: it is counted and
+                    // reported, so a box that half-misses cannot read as green.
+                    outside += 1;
+                    continue;
+                };
+                compared += 1;
+                if va != vb {
+                    differing += 1;
+                    // The first few, with both states: a reader wants the cell
+                    // and what each side put there, and a list of every cell of
+                    // a wall that moved one block is not a reading.
+                    if differ.len() < 8 {
+                        differ.push(format!(
+                            "{x},{y},{z}: {va}  vs  {},{},{}: {vb}",
+                            pb[0], pb[1], pb[2]
+                        ));
+                    } else if differ.len() == 8 {
+                        differ.push("…".to_string());
+                    }
+                }
+            }
+        }
+    }
+
+    // The anchors inside the box, compared by name, cell and facing.
+    let aa = read_anchors(a);
+    let ab = read_anchors(b);
+    let inside = |p: [i32; 3]| (0..3).all(|i| p[i] >= lo[i] && p[i] <= hi[i]);
+    let mut anchor_rows: Vec<String> = Vec::new();
+    let mut anchors_compared = 0usize;
+    for (name, (pos, facing)) in aa.iter().filter(|(_, (p, _))| inside(*p)) {
+        anchors_compared += 1;
+        let want = [
+            pos[0] - lo[0] + offset[0],
+            pos[1] - lo[1] + offset[1],
+            pos[2] - lo[2] + offset[2],
+        ];
+        match ab.get(name) {
+            None => anchor_rows.push(format!("{name}: only in {}", a.display())),
+            Some((other, other_facing)) => {
+                if *other != want || other_facing != facing {
+                    anchor_rows.push(format!(
+                        "{name}: {},{},{} {facing}  vs  {},{},{} {other_facing}",
+                        want[0], want[1], want[2], other[0], other[1], other[2]
+                    ));
+                }
+            }
+        }
+    }
+    for name in ab.keys() {
+        if !aa.contains_key(name) {
+            anchor_rows.push(format!("{name}: only in {}", b.display()));
+        }
+    }
+
+    println!("{compared} cell(s) compared, {differing} differ");
+    println!(
+        "{anchors_compared} point anchor(s) in the box, {} differ",
+        anchor_rows.len()
+    );
+    if outside > 0 {
+        eprintln!(
+            "  {outside} cell(s) of the box lie outside one of the two pieces and were not \
+             compared: {} is {}x{}x{} and {} is {}x{}x{}",
+            a.display(),
+            sa[0],
+            sa[1],
+            sa[2],
+            b.display(),
+            gb.region().size[0],
+            gb.region().size[1],
+            gb.region().size[2]
+        );
+    }
+    for row in &differ {
+        eprintln!("  {row}");
+    }
+    for row in &anchor_rows {
+        eprintln!("  anchor {row}");
+    }
+    if compared == 0 {
+        eprintln!(
+            "error: ZERO cells compared. A comparison that examined nothing is not an agreement,              so it is a refusal: check `--box` against the two pieces' own sizes."
+        );
+        return ExitCode::from(EXIT_INPUT);
+    }
+    if differing > 0 || !anchor_rows.is_empty() || outside > 0 {
+        return ExitCode::from(EXIT_FAIL);
+    }
+    ExitCode::SUCCESS
 }
 
 /// Refuse a path that is one tile of a tiled zone.

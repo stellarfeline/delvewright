@@ -1,0 +1,3810 @@
+{
+  "contract": {
+    "edges": [
+      {
+        "a": "nave",
+        "b": "exterior",
+        "class": "walk",
+        "via": "way/annex-chute"
+      },
+      {
+        "a": "nave",
+        "b": "exterior",
+        "class": "walk",
+        "via": "way/west-door"
+      },
+      {
+        "a": "nave",
+        "b": "exterior",
+        "class": "walk",
+        "via": "way/centre-door"
+      },
+      {
+        "a": "nave",
+        "b": "exterior",
+        "class": "walk",
+        "via": "way/east-door"
+      },
+      {
+        "a": "nave",
+        "b": "exterior",
+        "class": "walk",
+        "rise": 0,
+        "via": "way/exit-arch"
+      },
+      {
+        "a": "nave",
+        "b": "exterior",
+        "class": "walk",
+        "via": "way/undercroft-stair"
+      },
+      {
+        "a": "porch",
+        "b": "exterior",
+        "class": "walk",
+        "via": "way/causeway-front"
+      },
+      {
+        "a": "nave",
+        "b": "porch",
+        "class": "walk",
+        "via": "porch-mouth"
+      },
+      {
+        "a": "sanctuary",
+        "b": "crypt",
+        "class": "walk",
+        "via": "crypt-mouth",
+        "way": {
+          "block": "floor",
+          "opens": "laid",
+          "region": "crypt-sill"
+        }
+      },
+      {
+        "a": "nave",
+        "b": "gallery",
+        "class": "stair",
+        "rise": 5,
+        "via": "flight"
+      },
+      {
+        "a": "nave",
+        "b": "tribune",
+        "class": "stair",
+        "rise": 5,
+        "via": "tribune-flight",
+        "way": {
+          "block": "wall",
+          "opens": "cleared",
+          "region": "tribune-fall"
+        }
+      },
+      {
+        "a": "gallery",
+        "b": "exterior",
+        "class": "walk",
+        "via": "way/loft-stair"
+      },
+      {
+        "a": "gallery",
+        "b": "exterior",
+        "class": "walk",
+        "via": "way/loft-drop"
+      },
+      {
+        "a": "gallery",
+        "b": "strongroom",
+        "class": "drop",
+        "rise": -5,
+        "via": "shaft",
+        "way": {
+          "block": "floor",
+          "opens": "cleared",
+          "region": "hatch"
+        }
+      },
+      {
+        "a": "nave",
+        "b": "sanctuary",
+        "bar": {
+          "block": "grate",
+          "region": "gate-bar"
+        },
+        "class": "barred",
+        "rise": 0,
+        "via": "gate-way"
+      },
+      {
+        "a": "nave",
+        "b": "sanctuary",
+        "class": "vision",
+        "via": "squint"
+      }
+    ],
+    "entry": "nave",
+    "no_body": {
+      "dais": {
+        "reason": "The plinth is what the sanctuary is for. A body may climb it and nothing is ever asked to walk over it."
+      },
+      "frieze": {
+        "reason": "The set-back courses of the west and south walls are dressing on an outward face. A body can be lifted into them and nothing is ever asked to walk there."
+      }
+    },
+    "no_body_majority_ack": "Most of this hall is floor a body walks; the set-back courses and the plinth are the only cells that are not, and they are dressing.",
+    "spaces": {
+      "crypt": {
+        "envelope": "enclosed"
+      },
+      "gallery": {
+        "envelope": "open_top"
+      },
+      "nave": {
+        "envelope": "enclosed"
+      },
+      "porch": {
+        "envelope": "open_top"
+      },
+      "sanctuary": {
+        "envelope": "enclosed"
+      },
+      "strongroom": {
+        "envelope": "enclosed"
+      },
+      "tribune": {
+        "envelope": "open"
+      }
+    }
+  },
+  "defines": {
+    "pier": {
+      "body": [
+        {
+          "axis": "y",
+          "note": "the round shaft, rising the whole height of its bay",
+          "op": "cylinder",
+          "role": "stone",
+          "when": {
+            "cond": "all",
+            "of": [
+              {
+                "cond": "cmp",
+                "lhs": {
+                  "dim": "world_x",
+                  "expr": "dim"
+                },
+                "op": "ge",
+                "rhs": {
+                  "expr": "int",
+                  "value": 3
+                }
+              },
+              {
+                "cond": "cmp",
+                "lhs": {
+                  "dim": "world_z",
+                  "expr": "dim"
+                },
+                "op": "ge",
+                "rhs": {
+                  "expr": "int",
+                  "value": 3
+                }
+              }
+            ]
+          }
+        },
+        {
+          "from": [
+            0,
+            {
+              "expr": "arith",
+              "lhs": {
+                "expr": "param",
+                "name": "shaft"
+              },
+              "op": "min",
+              "rhs": {
+                "expr": "arith",
+                "lhs": {
+                  "dim": "world_y",
+                  "expr": "dim"
+                },
+                "op": "sub",
+                "rhs": {
+                  "expr": "int",
+                  "value": 1
+                }
+              }
+            },
+            0
+          ],
+          "note": "the capital band, cut in the shaft rather than corbelled out of it",
+          "op": "box",
+          "role": "cap",
+          "to": [
+            {
+              "expr": "arith",
+              "lhs": {
+                "dim": "x",
+                "expr": "dim"
+              },
+              "op": "sub",
+              "rhs": {
+                "expr": "int",
+                "value": 1
+              }
+            },
+            {
+              "expr": "arith",
+              "lhs": {
+                "expr": "param",
+                "name": "shaft"
+              },
+              "op": "min",
+              "rhs": {
+                "expr": "arith",
+                "lhs": {
+                  "dim": "world_y",
+                  "expr": "dim"
+                },
+                "op": "sub",
+                "rhs": {
+                  "expr": "int",
+                  "value": 1
+                }
+              }
+            },
+            {
+              "expr": "arith",
+              "lhs": {
+                "dim": "z",
+                "expr": "dim"
+              },
+              "op": "sub",
+              "rhs": {
+                "expr": "int",
+                "value": 1
+              }
+            }
+          ],
+          "when": {
+            "cond": "cmp",
+            "lhs": {
+              "dim": "smallest",
+              "expr": "dim"
+            },
+            "op": "gt",
+            "rhs": {
+              "expr": "int",
+              "value": 2
+            }
+          },
+          "where": [
+            "stone"
+          ]
+        }
+      ],
+      "params": {
+        "shaft": 4
+      },
+      "roles": [
+        "stone",
+        "cap"
+      ]
+    },
+    "stall": {
+      "body": [
+        {
+          "note": "the bench itself",
+          "op": "box",
+          "role": "seat",
+          "when": {
+            "cond": "cmp",
+            "lhs": {
+              "dim": "x",
+              "expr": "dim"
+            },
+            "op": "ge",
+            "rhs": {
+              "expr": "param",
+              "name": "len"
+            }
+          }
+        },
+        {
+          "note": "and its arm, at the low end of its own frame",
+          "op": "box",
+          "role": "arm",
+          "to": [
+            0,
+            {
+              "expr": "arith",
+              "lhs": {
+                "dim": "y",
+                "expr": "dim"
+              },
+              "op": "sub",
+              "rhs": {
+                "expr": "int",
+                "value": 1
+              }
+            },
+            {
+              "expr": "arith",
+              "lhs": {
+                "dim": "z",
+                "expr": "dim"
+              },
+              "op": "sub",
+              "rhs": {
+                "expr": "int",
+                "value": 1
+              }
+            }
+          ],
+          "when": {
+            "cond": "none_of",
+            "of": [
+              {
+                "cond": "cmp",
+                "lhs": {
+                  "dim": "largest",
+                  "expr": "dim"
+                },
+                "op": "lt",
+                "rhs": {
+                  "expr": "int",
+                  "value": 2
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "params": {
+        "len": 3
+      },
+      "roles": [
+        "seat",
+        "arm"
+      ]
+    }
+  },
+  "dsl_version": "0.30.0",
+  "name": "gallery-far-hall",
+  "ops": [
+    {
+      "from": [
+        0,
+        0,
+        0
+      ],
+      "note": "the floor course the whole hall stands on",
+      "op": "box",
+      "role": "floor",
+      "to": [
+        {
+          "expr": "arith",
+          "lhs": {
+            "dim": "x",
+            "expr": "dim"
+          },
+          "op": "sub",
+          "rhs": {
+            "expr": "int",
+            "value": 1
+          }
+        },
+        0,
+        {
+          "expr": "arith",
+          "lhs": {
+            "dim": "z",
+            "expr": "dim"
+          },
+          "op": "sub",
+          "rhs": {
+            "expr": "int",
+            "value": 1
+          }
+        }
+      ]
+    },
+    {
+      "brush": [
+        1,
+        1,
+        2
+      ],
+      "from": [
+        2,
+        0,
+        2
+      ],
+      "note": "the line inlaid across the pavement, laid however this place is framed",
+      "op": "line",
+      "role": "tie",
+      "to": [
+        24,
+        0,
+        12
+      ],
+      "when": {
+        "cond": "always"
+      },
+      "where": [
+        "floor"
+      ]
+    },
+    {
+      "faces": [
+        "west",
+        "east",
+        "north",
+        "south"
+      ],
+      "note": "the four walls, one course thick",
+      "op": "box",
+      "role": "wall",
+      "t": 1
+    },
+    {
+      "from": [
+        1,
+        {
+          "expr": "arith",
+          "lhs": {
+            "expr": "param",
+            "name": "handed/datum-y"
+          },
+          "op": "add",
+          "rhs": {
+            "expr": "arith",
+            "lhs": {
+              "expr": "param",
+              "name": "handed/seam/loft-stair/rise"
+            },
+            "op": "sub",
+            "rhs": {
+              "expr": "int",
+              "value": 1
+            }
+          }
+        },
+        1
+      ],
+      "note": "the mass every vault in this hall is cut out of",
+      "op": "box",
+      "role": "wall",
+      "to": [
+        {
+          "expr": "arith",
+          "lhs": {
+            "dim": "x",
+            "expr": "dim"
+          },
+          "op": "sub",
+          "rhs": {
+            "expr": "int",
+            "value": 2
+          }
+        },
+        {
+          "expr": "arith",
+          "lhs": {
+            "dim": "y",
+            "expr": "dim"
+          },
+          "op": "sub",
+          "rhs": {
+            "expr": "int",
+            "value": 1
+          }
+        },
+        {
+          "expr": "arith",
+          "lhs": {
+            "dim": "z",
+            "expr": "dim"
+          },
+          "op": "sub",
+          "rhs": {
+            "expr": "int",
+            "value": 2
+          }
+        }
+      ]
+    },
+    {
+      "axis": "z",
+      "flat": "down",
+      "from": [
+        7,
+        {
+          "expr": "arith",
+          "lhs": {
+            "expr": "param",
+            "name": "handed/datum-y"
+          },
+          "op": "add",
+          "rhs": {
+            "expr": "arith",
+            "lhs": {
+              "expr": "param",
+              "name": "handed/seam/loft-stair/rise"
+            },
+            "op": "sub",
+            "rhs": {
+              "expr": "int",
+              "value": 1
+            }
+          }
+        },
+        1
+      ],
+      "note": "the barrel vault over the nave, its ridge running the hall's whole depth",
+      "op": "cylinder",
+      "role": "air",
+      "to": [
+        23,
+        {
+          "expr": "arith",
+          "lhs": {
+            "dim": "y",
+            "expr": "dim"
+          },
+          "op": "sub",
+          "rhs": {
+            "expr": "int",
+            "value": 1
+          }
+        },
+        {
+          "expr": "arith",
+          "lhs": {
+            "dim": "z",
+            "expr": "dim"
+          },
+          "op": "sub",
+          "rhs": {
+            "expr": "int",
+            "value": 2
+          }
+        }
+      ],
+      "where": [
+        "wall"
+      ]
+    },
+    {
+      "flat": "down",
+      "from": [
+        1,
+        {
+          "expr": "arith",
+          "lhs": {
+            "expr": "param",
+            "name": "handed/datum-y"
+          },
+          "op": "add",
+          "rhs": {
+            "expr": "arith",
+            "lhs": {
+              "expr": "param",
+              "name": "handed/seam/loft-stair/rise"
+            },
+            "op": "sub",
+            "rhs": {
+              "expr": "int",
+              "value": 1
+            }
+          }
+        },
+        2
+      ],
+      "note": "the dome over the west bay, under a course of solid mass",
+      "op": "sphere",
+      "role": "air",
+      "to": [
+        6,
+        {
+          "expr": "arith",
+          "lhs": {
+            "expr": "arith",
+            "lhs": {
+              "dim": "y",
+              "expr": "dim"
+            },
+            "op": "sub",
+            "rhs": {
+              "expr": "int",
+              "value": 1
+            }
+          },
+          "op": "sub",
+          "rhs": {
+            "expr": "int",
+            "value": 1
+          }
+        },
+        12
+      ],
+      "when": {
+        "cond": "cmp",
+        "lhs": {
+          "dim": "smallest",
+          "expr": "dim"
+        },
+        "op": "ge",
+        "rhs": {
+          "expr": "int",
+          "value": 3
+        }
+      },
+      "where": [
+        "wall"
+      ]
+    },
+    {
+      "from": [
+        2,
+        {
+          "expr": "arith",
+          "lhs": {
+            "expr": "arith",
+            "lhs": {
+              "expr": "param",
+              "name": "handed/datum-y"
+            },
+            "op": "add",
+            "rhs": {
+              "expr": "arith",
+              "lhs": {
+                "expr": "param",
+                "name": "handed/seam/loft-stair/rise"
+              },
+              "op": "sub",
+              "rhs": {
+                "expr": "int",
+                "value": 1
+              }
+            }
+          },
+          "op": "add",
+          "rhs": {
+            "expr": "int",
+            "value": 1
+          }
+        },
+        6
+      ],
+      "note": "the boss hanging from the crown of that dome",
+      "op": "sphere",
+      "role": "furniture",
+      "t": 1,
+      "to": [
+        4,
+        {
+          "expr": "arith",
+          "lhs": {
+            "dim": "y",
+            "expr": "dim"
+          },
+          "op": "sub",
+          "rhs": {
+            "expr": "int",
+            "value": 1
+          }
+        },
+        8
+      ],
+      "where": [
+        "air"
+      ]
+    },
+    {
+      "from": [
+        26,
+        {
+          "expr": "arith",
+          "lhs": {
+            "expr": "param",
+            "name": "handed/datum-y"
+          },
+          "op": "add",
+          "rhs": {
+            "expr": "arith",
+            "lhs": {
+              "expr": "param",
+              "name": "handed/seam/loft-stair/rise"
+            },
+            "op": "sub",
+            "rhs": {
+              "expr": "int",
+              "value": 1
+            }
+          }
+        },
+        4
+      ],
+      "note": "the sanctuary's gabled ceiling, cut from the same mass",
+      "op": "prism",
+      "rise": 1,
+      "role": "air",
+      "run": 1,
+      "sides": "both",
+      "skin": false,
+      "taper": "x",
+      "to": [
+        30,
+        {
+          "expr": "arith",
+          "lhs": {
+            "dim": "y",
+            "expr": "dim"
+          },
+          "op": "sub",
+          "rhs": {
+            "expr": "int",
+            "value": 1
+          }
+        },
+        14
+      ],
+      "where": [
+        "wall"
+      ]
+    },
+    {
+      "from": [
+        20,
+        {
+          "expr": "arith",
+          "lhs": {
+            "expr": "param",
+            "name": "handed/datum-y"
+          },
+          "op": "add",
+          "rhs": {
+            "expr": "arith",
+            "lhs": {
+              "expr": "param",
+              "name": "handed/seam/loft-stair/rise"
+            },
+            "op": "sub",
+            "rhs": {
+              "expr": "int",
+              "value": 1
+            }
+          }
+        },
+        1
+      ],
+      "note": "the gallery's own head, open to the sky",
+      "op": "box",
+      "role": "air",
+      "to": [
+        25,
+        {
+          "expr": "arith",
+          "lhs": {
+            "dim": "y",
+            "expr": "dim"
+          },
+          "op": "sub",
+          "rhs": {
+            "expr": "int",
+            "value": 1
+          }
+        },
+        2
+      ],
+      "where": [
+        "wall"
+      ]
+    },
+    {
+      "from": [
+        20,
+        {
+          "expr": "arith",
+          "lhs": {
+            "expr": "param",
+            "name": "handed/datum-y"
+          },
+          "op": "add",
+          "rhs": {
+            "expr": "arith",
+            "lhs": {
+              "expr": "param",
+              "name": "handed/seam/loft-stair/rise"
+            },
+            "op": "sub",
+            "rhs": {
+              "expr": "int",
+              "value": 1
+            }
+          }
+        },
+        3
+      ],
+      "note": "and the stair turret below it",
+      "op": "box",
+      "role": "air",
+      "to": [
+        22,
+        {
+          "expr": "arith",
+          "lhs": {
+            "dim": "y",
+            "expr": "dim"
+          },
+          "op": "sub",
+          "rhs": {
+            "expr": "int",
+            "value": 1
+          }
+        },
+        7
+      ],
+      "where": [
+        "wall"
+      ]
+    },
+    {
+      "from": [
+        15,
+        {
+          "expr": "arith",
+          "lhs": {
+            "expr": "param",
+            "name": "handed/datum-y"
+          },
+          "op": "add",
+          "rhs": {
+            "expr": "arith",
+            "lhs": {
+              "expr": "param",
+              "name": "handed/seam/loft-stair/rise"
+            },
+            "op": "sub",
+            "rhs": {
+              "expr": "int",
+              "value": 1
+            }
+          }
+        },
+        13
+      ],
+      "note": "the head of the great portal",
+      "op": "box",
+      "role": "air",
+      "to": [
+        20,
+        {
+          "expr": "arith",
+          "lhs": {
+            "dim": "y",
+            "expr": "dim"
+          },
+          "op": "sub",
+          "rhs": {
+            "expr": "int",
+            "value": 1
+          }
+        },
+        14
+      ],
+      "where": [
+        "wall"
+      ]
+    },
+    {
+      "from": [
+        20,
+        {
+          "expr": "param",
+          "name": "handed/datum-y"
+        },
+        1
+      ],
+      "note": "the solid pier the gallery's west end rests on",
+      "op": "box",
+      "role": "wall",
+      "to": [
+        22,
+        {
+          "expr": "arith",
+          "lhs": {
+            "expr": "param",
+            "name": "handed/datum-y"
+          },
+          "op": "add",
+          "rhs": {
+            "expr": "arith",
+            "lhs": {
+              "expr": "param",
+              "name": "handed/seam/loft-stair/rise"
+            },
+            "op": "sub",
+            "rhs": {
+              "expr": "int",
+              "value": 1
+            }
+          }
+        },
+        2
+      ]
+    },
+    {
+      "from": [
+        23,
+        {
+          "expr": "arith",
+          "lhs": {
+            "expr": "param",
+            "name": "handed/datum-y"
+          },
+          "op": "add",
+          "rhs": {
+            "expr": "arith",
+            "lhs": {
+              "expr": "param",
+              "name": "handed/seam/loft-stair/rise"
+            },
+            "op": "sub",
+            "rhs": {
+              "expr": "int",
+              "value": 1
+            }
+          }
+        },
+        1
+      ],
+      "note": "the gallery floor over the strong room",
+      "op": "box",
+      "role": "floor",
+      "to": [
+        25,
+        {
+          "expr": "arith",
+          "lhs": {
+            "expr": "param",
+            "name": "handed/datum-y"
+          },
+          "op": "add",
+          "rhs": {
+            "expr": "arith",
+            "lhs": {
+              "expr": "param",
+              "name": "handed/seam/loft-stair/rise"
+            },
+            "op": "sub",
+            "rhs": {
+              "expr": "int",
+              "value": 1
+            }
+          }
+        },
+        2
+      ]
+    },
+    {
+      "from": [
+        20,
+        {
+          "expr": "param",
+          "name": "handed/datum-y"
+        },
+        3
+      ],
+      "note": "five stone steps climbing north to the gallery, where the loft is more than a step up",
+      "op": "prism",
+      "rise": 1,
+      "role": "wall",
+      "run": 1,
+      "sides": "high",
+      "taper": "z",
+      "to": [
+        22,
+        {
+          "expr": "arith",
+          "lhs": {
+            "expr": "param",
+            "name": "handed/datum-y"
+          },
+          "op": "add",
+          "rhs": {
+            "expr": "arith",
+            "lhs": {
+              "expr": "param",
+              "name": "handed/seam/loft-stair/rise"
+            },
+            "op": "sub",
+            "rhs": {
+              "expr": "int",
+              "value": 1
+            }
+          }
+        },
+        7
+      ],
+      "when": {
+        "cond": "cmp",
+        "lhs": {
+          "expr": "param",
+          "name": "handed/seam/loft-stair/rise"
+        },
+        "op": "ge",
+        "rhs": {
+          "expr": "int",
+          "value": 2
+        }
+      }
+    },
+    {
+      "body": [
+        {
+          "note": "one course of it, facing the way the climb goes",
+          "op": "box",
+          "role": "tread"
+        }
+      ],
+      "count": 5,
+      "from": [
+        20,
+        {
+          "expr": "param",
+          "name": "handed/datum-y"
+        },
+        7
+      ],
+      "index": "t",
+      "note": "the nosing of each tread, cut as a stair block",
+      "op": "repeat",
+      "step": [
+        0,
+        1,
+        -1
+      ],
+      "to": [
+        22,
+        {
+          "expr": "param",
+          "name": "handed/datum-y"
+        },
+        7
+      ]
+    },
+    {
+      "from": [
+        23,
+        {
+          "expr": "param",
+          "name": "handed/datum-y"
+        },
+        4
+      ],
+      "note": "the wall that shuts the turret and the tribune's climb off from the hall",
+      "op": "box",
+      "role": "wall",
+      "to": [
+        23,
+        {
+          "expr": "arith",
+          "lhs": {
+            "dim": "y",
+            "expr": "dim"
+          },
+          "op": "sub",
+          "rhs": {
+            "expr": "int",
+            "value": 1
+          }
+        },
+        14
+      ]
+    },
+    {
+      "from": [
+        23,
+        {
+          "expr": "param",
+          "name": "handed/datum-y"
+        },
+        3
+      ],
+      "note": "the cross wall the strong room and the shaft stand behind",
+      "op": "box",
+      "role": "wall",
+      "to": [
+        25,
+        {
+          "expr": "arith",
+          "lhs": {
+            "dim": "y",
+            "expr": "dim"
+          },
+          "op": "sub",
+          "rhs": {
+            "expr": "int",
+            "value": 1
+          }
+        },
+        3
+      ]
+    },
+    {
+      "from": [
+        26,
+        {
+          "expr": "param",
+          "name": "handed/datum-y"
+        },
+        1
+      ],
+      "note": "the mass at the sanctuary's north end",
+      "op": "box",
+      "role": "wall",
+      "to": [
+        30,
+        {
+          "expr": "arith",
+          "lhs": {
+            "dim": "y",
+            "expr": "dim"
+          },
+          "op": "sub",
+          "rhs": {
+            "expr": "int",
+            "value": 1
+          }
+        },
+        3
+      ]
+    },
+    {
+      "from": [
+        27,
+        {
+          "expr": "param",
+          "name": "handed/datum-y"
+        },
+        1
+      ],
+      "note": "the crypt cut into it, and the threshold onto the sanctuary",
+      "op": "box",
+      "role": "air",
+      "to": [
+        29,
+        4,
+        3
+      ],
+      "where": [
+        "wall"
+      ]
+    },
+    {
+      "from": [
+        24,
+        {
+          "expr": "arith",
+          "lhs": {
+            "expr": "param",
+            "name": "handed/datum-y"
+          },
+          "op": "add",
+          "rhs": {
+            "expr": "arith",
+            "lhs": {
+              "expr": "param",
+              "name": "handed/seam/loft-stair/rise"
+            },
+            "op": "sub",
+            "rhs": {
+              "expr": "int",
+              "value": 1
+            }
+          }
+        },
+        8
+      ],
+      "note": "the stairwell and the tribune over the east aisle",
+      "op": "box",
+      "role": "air",
+      "to": [
+        24,
+        {
+          "expr": "arith",
+          "lhs": {
+            "dim": "y",
+            "expr": "dim"
+          },
+          "op": "sub",
+          "rhs": {
+            "expr": "int",
+            "value": 1
+          }
+        },
+        14
+      ],
+      "where": [
+        "wall"
+      ]
+    },
+    {
+      "from": [
+        24,
+        {
+          "expr": "param",
+          "name": "handed/datum-y"
+        },
+        8
+      ],
+      "note": "five steps climbing south to that tribune",
+      "op": "prism",
+      "rise": 1,
+      "role": "wall",
+      "run": 1,
+      "sides": "low",
+      "taper": "z",
+      "to": [
+        24,
+        {
+          "expr": "arith",
+          "lhs": {
+            "expr": "param",
+            "name": "handed/datum-y"
+          },
+          "op": "add",
+          "rhs": {
+            "expr": "arith",
+            "lhs": {
+              "expr": "param",
+              "name": "handed/seam/loft-stair/rise"
+            },
+            "op": "sub",
+            "rhs": {
+              "expr": "int",
+              "value": 1
+            }
+          }
+        },
+        12
+      ]
+    },
+    {
+      "from": [
+        24,
+        {
+          "expr": "param",
+          "name": "handed/datum-y"
+        },
+        13
+      ],
+      "note": "the solid pier the tribune stands on, and its floor",
+      "op": "box",
+      "role": "wall",
+      "to": [
+        24,
+        {
+          "expr": "arith",
+          "lhs": {
+            "expr": "param",
+            "name": "handed/datum-y"
+          },
+          "op": "add",
+          "rhs": {
+            "expr": "arith",
+            "lhs": {
+              "expr": "param",
+              "name": "handed/seam/loft-stair/rise"
+            },
+            "op": "sub",
+            "rhs": {
+              "expr": "int",
+              "value": 1
+            }
+          }
+        },
+        14
+      ]
+    },
+    {
+      "from": [
+        25,
+        {
+          "expr": "param",
+          "name": "handed/datum-y"
+        },
+        4
+      ],
+      "note": "the screen that closes the sanctuary off",
+      "op": "box",
+      "role": "wall",
+      "to": [
+        25,
+        4,
+        14
+      ]
+    },
+    {
+      "from": [
+        1,
+        {
+          "expr": "arith",
+          "lhs": {
+            "expr": "arith",
+            "lhs": {
+              "expr": "param",
+              "name": "handed/datum-y"
+            },
+            "op": "add",
+            "rhs": {
+              "expr": "arith",
+              "lhs": {
+                "expr": "param",
+                "name": "handed/seam/loft-stair/rise"
+              },
+              "op": "sub",
+              "rhs": {
+                "expr": "int",
+                "value": 1
+              }
+            }
+          },
+          "op": "add",
+          "rhs": {
+            "expr": "int",
+            "value": 1
+          }
+        },
+        1
+      ],
+      "note": "the backing of the high frieze, behind the west wall",
+      "op": "box",
+      "role": "wall",
+      "to": [
+        1,
+        {
+          "expr": "arith",
+          "lhs": {
+            "expr": "arith",
+            "lhs": {
+              "expr": "param",
+              "name": "handed/datum-y"
+            },
+            "op": "add",
+            "rhs": {
+              "expr": "arith",
+              "lhs": {
+                "expr": "param",
+                "name": "handed/seam/loft-stair/rise"
+              },
+              "op": "sub",
+              "rhs": {
+                "expr": "int",
+                "value": 1
+              }
+            }
+          },
+          "op": "add",
+          "rhs": {
+            "expr": "int",
+            "value": 2
+          }
+        },
+        14
+      ]
+    },
+    {
+      "from": [
+        1,
+        {
+          "expr": "arith",
+          "lhs": {
+            "expr": "arith",
+            "lhs": {
+              "expr": "param",
+              "name": "handed/datum-y"
+            },
+            "op": "add",
+            "rhs": {
+              "expr": "arith",
+              "lhs": {
+                "expr": "param",
+                "name": "handed/seam/loft-stair/rise"
+              },
+              "op": "sub",
+              "rhs": {
+                "expr": "int",
+                "value": 1
+              }
+            }
+          },
+          "op": "add",
+          "rhs": {
+            "expr": "int",
+            "value": 1
+          }
+        },
+        14
+      ],
+      "note": "and behind the south wall's own stretch of it",
+      "op": "box",
+      "role": "wall",
+      "to": [
+        13,
+        {
+          "expr": "arith",
+          "lhs": {
+            "expr": "arith",
+            "lhs": {
+              "expr": "param",
+              "name": "handed/datum-y"
+            },
+            "op": "add",
+            "rhs": {
+              "expr": "arith",
+              "lhs": {
+                "expr": "param",
+                "name": "handed/seam/loft-stair/rise"
+              },
+              "op": "sub",
+              "rhs": {
+                "expr": "int",
+                "value": 1
+              }
+            }
+          },
+          "op": "add",
+          "rhs": {
+            "expr": "int",
+            "value": 2
+          }
+        },
+        14
+      ]
+    },
+    {
+      "from": [
+        14,
+        {
+          "expr": "param",
+          "name": "handed/datum-y"
+        },
+        13
+      ],
+      "note": "the west cheek of the porch",
+      "op": "box",
+      "role": "wall",
+      "to": [
+        14,
+        {
+          "expr": "arith",
+          "lhs": {
+            "dim": "y",
+            "expr": "dim"
+          },
+          "op": "sub",
+          "rhs": {
+            "expr": "int",
+            "value": 1
+          }
+        },
+        14
+      ]
+    },
+    {
+      "from": [
+        21,
+        {
+          "expr": "param",
+          "name": "handed/datum-y"
+        },
+        13
+      ],
+      "note": "and its east cheek",
+      "op": "box",
+      "role": "wall",
+      "to": [
+        21,
+        {
+          "expr": "arith",
+          "lhs": {
+            "dim": "y",
+            "expr": "dim"
+          },
+          "op": "sub",
+          "rhs": {
+            "expr": "int",
+            "value": 1
+          }
+        },
+        14
+      ]
+    },
+    {
+      "body": [
+        {
+          "axis": "z",
+          "body": [
+            {
+              "along": "x",
+              "body": [
+                {
+                  "define": "pier",
+                  "note": "the pier",
+                  "op": "use",
+                  "params": {
+                    "shaft": 4
+                  },
+                  "roles": {
+                    "cap": "cap",
+                    "stone": "pier"
+                  },
+                  "turn": 0,
+                  "when": {
+                    "cond": "cmp",
+                    "lhs": {
+                      "dim": "smallest",
+                      "expr": "dim"
+                    },
+                    "op": "ge",
+                    "rhs": {
+                      "expr": "param",
+                      "name": "pier"
+                    }
+                  }
+                },
+                {
+                  "mark": {
+                    "anchor": "pier",
+                    "at": "face_center",
+                    "axis": "z",
+                    "facing": "north",
+                    "index": "auto",
+                    "side": "min"
+                  },
+                  "note": "a banner bracket on every other pier",
+                  "op": "mark",
+                  "when": {
+                    "cond": "cmp",
+                    "lhs": {
+                      "expr": "arith",
+                      "lhs": {
+                        "expr": "param",
+                        "name": "b"
+                      },
+                      "op": "rem",
+                      "rhs": {
+                        "expr": "int",
+                        "value": 2
+                      }
+                    },
+                    "op": "eq",
+                    "rhs": {
+                      "expr": "int",
+                      "value": 0
+                    }
+                  }
+                }
+              ],
+              "from": [
+                0,
+                0,
+                3
+              ],
+              "index": "b",
+              "item": {
+                "expr": "param",
+                "name": "pier"
+              },
+              "note": "a pier every bay, the odd cells shared between the ends",
+              "op": "repeat",
+              "remainder": "middle",
+              "stride": {
+                "expr": "param",
+                "name": "bay"
+              },
+              "to": [
+                12,
+                {
+                  "expr": "arith",
+                  "lhs": {
+                    "dim": "y",
+                    "expr": "dim"
+                  },
+                  "op": "sub",
+                  "rhs": {
+                    "expr": "int",
+                    "value": 1
+                  }
+                },
+                5
+              ],
+              "when": {
+                "cond": "cmp",
+                "lhs": {
+                  "dim": "x",
+                  "expr": "dim"
+                },
+                "op": "ge",
+                "rhs": {
+                  "expr": "param",
+                  "name": "pier"
+                }
+              }
+            }
+          ],
+          "from": [
+            0,
+            0,
+            0
+          ],
+          "note": "one row of piers, and its twin",
+          "op": "mirror",
+          "to": [
+            12,
+            {
+              "expr": "arith",
+              "lhs": {
+                "dim": "y",
+                "expr": "dim"
+              },
+              "op": "sub",
+              "rhs": {
+                "expr": "int",
+                "value": 1
+              }
+            },
+            13
+          ],
+          "when": {
+            "cond": "cmp",
+            "lhs": {
+              "dim": "z",
+              "expr": "dim"
+            },
+            "op": "ge",
+            "rhs": {
+              "expr": "int",
+              "value": 6
+            }
+          }
+        }
+      ],
+      "from": [
+        1,
+        {
+          "expr": "param",
+          "name": "handed/datum-y"
+        },
+        1
+      ],
+      "note": "the west hall, where the arcade stands — only where there is width for one",
+      "op": "scope",
+      "to": [
+        13,
+        {
+          "expr": "arith",
+          "lhs": {
+            "dim": "y",
+            "expr": "dim"
+          },
+          "op": "sub",
+          "rhs": {
+            "expr": "int",
+            "value": 1
+          }
+        },
+        14
+      ],
+      "when": {
+        "cond": "cmp",
+        "lhs": {
+          "dim": "x",
+          "expr": "dim"
+        },
+        "op": "ge",
+        "rhs": {
+          "expr": "int",
+          "value": 8
+        }
+      }
+    },
+    {
+      "define": "stall",
+      "from": [
+        2,
+        {
+          "expr": "param",
+          "name": "handed/datum-y"
+        },
+        1
+      ],
+      "note": "the stalls against the north wall",
+      "op": "use",
+      "params": {
+        "len": 3
+      },
+      "roles": {
+        "arm": "cap",
+        "seat": "furniture"
+      },
+      "to": [
+        6,
+        {
+          "expr": "param",
+          "name": "handed/datum-y"
+        },
+        2
+      ],
+      "turn": 0
+    },
+    {
+      "define": "stall",
+      "from": [
+        2,
+        {
+          "expr": "param",
+          "name": "handed/datum-y"
+        },
+        13
+      ],
+      "mirror": "x",
+      "note": "and their twins against the south wall, turned to face the nave",
+      "op": "use",
+      "params": {
+        "len": 3
+      },
+      "roles": {
+        "arm": "cap",
+        "seat": "furniture"
+      },
+      "to": [
+        6,
+        {
+          "expr": "param",
+          "name": "handed/datum-y"
+        },
+        14
+      ],
+      "turn": 2
+    },
+    {
+      "along": "x",
+      "body": [
+        {
+          "op": "box",
+          "role": "lamp"
+        }
+      ],
+      "from": [
+        1,
+        {
+          "expr": "arith",
+          "lhs": {
+            "expr": "arith",
+            "lhs": {
+              "expr": "param",
+              "name": "handed/datum-y"
+            },
+            "op": "add",
+            "rhs": {
+              "expr": "arith",
+              "lhs": {
+                "expr": "param",
+                "name": "handed/seam/loft-stair/rise"
+              },
+              "op": "sub",
+              "rhs": {
+                "expr": "int",
+                "value": 1
+              }
+            }
+          },
+          "op": "sub",
+          "rhs": {
+            "expr": "int",
+            "value": 1
+          }
+        },
+        0
+      ],
+      "index": "n",
+      "item": 1,
+      "note": "lamps set into the north wall, the odd cells at the west end",
+      "op": "repeat",
+      "remainder": "start",
+      "stride": {
+        "expr": "param",
+        "name": "sconce"
+      },
+      "to": [
+        24,
+        {
+          "expr": "arith",
+          "lhs": {
+            "expr": "arith",
+            "lhs": {
+              "expr": "param",
+              "name": "handed/datum-y"
+            },
+            "op": "add",
+            "rhs": {
+              "expr": "arith",
+              "lhs": {
+                "expr": "param",
+                "name": "handed/seam/loft-stair/rise"
+              },
+              "op": "sub",
+              "rhs": {
+                "expr": "int",
+                "value": 1
+              }
+            }
+          },
+          "op": "sub",
+          "rhs": {
+            "expr": "int",
+            "value": 1
+          }
+        },
+        0
+      ]
+    },
+    {
+      "along": "x",
+      "body": [
+        {
+          "op": "box",
+          "role": "lamp"
+        }
+      ],
+      "from": [
+        1,
+        {
+          "expr": "arith",
+          "lhs": {
+            "expr": "arith",
+            "lhs": {
+              "expr": "param",
+              "name": "handed/datum-y"
+            },
+            "op": "add",
+            "rhs": {
+              "expr": "arith",
+              "lhs": {
+                "expr": "param",
+                "name": "handed/seam/loft-stair/rise"
+              },
+              "op": "sub",
+              "rhs": {
+                "expr": "int",
+                "value": 1
+              }
+            }
+          },
+          "op": "sub",
+          "rhs": {
+            "expr": "int",
+            "value": 1
+          }
+        },
+        15
+      ],
+      "index": "n",
+      "item": 1,
+      "note": "and into the south wall, the odd cells at the east end",
+      "op": "repeat",
+      "remainder": "end",
+      "stride": {
+        "expr": "param",
+        "name": "sconce"
+      },
+      "to": [
+        24,
+        {
+          "expr": "arith",
+          "lhs": {
+            "expr": "arith",
+            "lhs": {
+              "expr": "param",
+              "name": "handed/datum-y"
+            },
+            "op": "add",
+            "rhs": {
+              "expr": "arith",
+              "lhs": {
+                "expr": "param",
+                "name": "handed/seam/loft-stair/rise"
+              },
+              "op": "sub",
+              "rhs": {
+                "expr": "int",
+                "value": 1
+              }
+            }
+          },
+          "op": "sub",
+          "rhs": {
+            "expr": "int",
+            "value": 1
+          }
+        },
+        15
+      ]
+    },
+    {
+      "along": "z",
+      "body": [
+        {
+          "op": "box",
+          "role": "lamp"
+        }
+      ],
+      "from": [
+        0,
+        {
+          "expr": "arith",
+          "lhs": {
+            "expr": "arith",
+            "lhs": {
+              "expr": "param",
+              "name": "handed/datum-y"
+            },
+            "op": "add",
+            "rhs": {
+              "expr": "arith",
+              "lhs": {
+                "expr": "param",
+                "name": "handed/seam/loft-stair/rise"
+              },
+              "op": "sub",
+              "rhs": {
+                "expr": "int",
+                "value": 1
+              }
+            }
+          },
+          "op": "sub",
+          "rhs": {
+            "expr": "int",
+            "value": 1
+          }
+        },
+        1
+      ],
+      "index": "n",
+      "item": 1,
+      "note": "one at each end of the west wall, and nothing left over",
+      "op": "repeat",
+      "remainder": "exact",
+      "stride": 13,
+      "to": [
+        0,
+        {
+          "expr": "arith",
+          "lhs": {
+            "expr": "arith",
+            "lhs": {
+              "expr": "param",
+              "name": "handed/datum-y"
+            },
+            "op": "add",
+            "rhs": {
+              "expr": "arith",
+              "lhs": {
+                "expr": "param",
+                "name": "handed/seam/loft-stair/rise"
+              },
+              "op": "sub",
+              "rhs": {
+                "expr": "int",
+                "value": 1
+              }
+            }
+          },
+          "op": "sub",
+          "rhs": {
+            "expr": "int",
+            "value": 1
+          }
+        },
+        14
+      ]
+    },
+    {
+      "body": [
+        {
+          "axis": "y",
+          "note": "the bowl",
+          "op": "cylinder",
+          "role": "furniture",
+          "t": 1,
+          "when": {
+            "cond": "cmp",
+            "lhs": {
+              "expr": "int",
+              "value": 2
+            },
+            "op": "le",
+            "rhs": {
+              "dim": "z",
+              "expr": "dim"
+            }
+          }
+        },
+        {
+          "mark": {
+            "anchor": "hearth",
+            "at": "floor_center",
+            "facing": "east",
+            "index": "auto"
+          },
+          "note": "the fire's own place",
+          "op": "mark",
+          "when": {
+            "cond": "cmp",
+            "lhs": {
+              "dim": "y",
+              "expr": "dim"
+            },
+            "op": "ge",
+            "rhs": {
+              "expr": "int",
+              "value": 1
+            }
+          }
+        },
+        {
+          "from": [
+            1,
+            0,
+            1
+          ],
+          "note": "and the fire in it",
+          "op": "box",
+          "role": "lamp",
+          "to": [
+            1,
+            0,
+            1
+          ],
+          "when": {
+            "cond": "any",
+            "of": [
+              {
+                "cond": "cmp",
+                "lhs": {
+                  "expr": "arith",
+                  "lhs": {
+                    "expr": "param",
+                    "name": "k"
+                  },
+                  "op": "mul",
+                  "rhs": {
+                    "expr": "int",
+                    "value": 2
+                  }
+                },
+                "op": "ge",
+                "rhs": {
+                  "expr": "int",
+                  "value": 0
+                }
+              },
+              {
+                "cond": "cmp",
+                "lhs": {
+                  "expr": "param",
+                  "name": "bay"
+                },
+                "op": "ne",
+                "rhs": {
+                  "expr": "int",
+                  "value": 0
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "count": 4,
+      "from": [
+        2,
+        {
+          "expr": "param",
+          "name": "handed/datum-y"
+        },
+        7
+      ],
+      "index": "k",
+      "note": "four braziers down the middle of the hall",
+      "op": "repeat",
+      "step": [
+        6,
+        0,
+        0
+      ],
+      "to": [
+        4,
+        {
+          "expr": "param",
+          "name": "handed/datum-y"
+        },
+        9
+      ]
+    },
+    {
+      "from": [
+        28,
+        {
+          "expr": "param",
+          "name": "handed/datum-y"
+        },
+        8
+      ],
+      "note": "the stepped plinth the sanctuary is built around",
+      "op": "pyramid",
+      "rise": 1,
+      "role": "furniture",
+      "run": 1,
+      "section": "square",
+      "to": [
+        30,
+        {
+          "expr": "arith",
+          "lhs": {
+            "expr": "param",
+            "name": "handed/datum-y"
+          },
+          "op": "add",
+          "rhs": {
+            "expr": "int",
+            "value": 1
+          }
+        },
+        12
+      ],
+      "when": {
+        "cond": "cmp",
+        "lhs": {
+          "dim": "y",
+          "expr": "dim"
+        },
+        "op": "ge",
+        "rhs": {
+          "expr": "int",
+          "value": 2
+        }
+      }
+    },
+    {
+      "from": [
+        28,
+        {
+          "expr": "arith",
+          "lhs": {
+            "expr": "param",
+            "name": "handed/datum-y"
+          },
+          "op": "add",
+          "rhs": {
+            "expr": "int",
+            "value": 2
+          }
+        },
+        9
+      ],
+      "note": "the round stepped crown standing on it, kept to its own face",
+      "op": "pyramid",
+      "rise": 1,
+      "role": "furniture",
+      "run": 1,
+      "section": "round",
+      "skin": true,
+      "to": [
+        30,
+        {
+          "expr": "arith",
+          "lhs": {
+            "expr": "param",
+            "name": "handed/datum-y"
+          },
+          "op": "add",
+          "rhs": {
+            "expr": "int",
+            "value": 3
+          }
+        },
+        11
+      ],
+      "where": [
+        "air"
+      ]
+    },
+    {
+      "from": [
+        25,
+        {
+          "expr": "param",
+          "name": "handed/datum-y"
+        },
+        9
+      ],
+      "note": "the banded relief across the screen, stamped from a program",
+      "op": "grammar",
+      "params": {
+        "courses": 2
+      },
+      "program": "fragments/band.json",
+      "roles": {
+        "mullion": "minecraft:polished_blackstone"
+      },
+      "rule": "light",
+      "seed": 7,
+      "to": [
+        25,
+        4,
+        14
+      ],
+      "when": {
+        "cond": "cmp",
+        "lhs": {
+          "dim": "y",
+          "expr": "dim"
+        },
+        "op": "ge",
+        "rhs": {
+          "expr": "int",
+          "value": 2
+        }
+      }
+    },
+    {
+      "body": [
+        {
+          "op": "box",
+          "role": "air"
+        }
+      ],
+      "from": [
+        {
+          "expr": "param",
+          "name": "handed/seam/annex-chute/x0"
+        },
+        {
+          "expr": "param",
+          "name": "handed/seam/annex-chute/y0"
+        },
+        {
+          "expr": "param",
+          "name": "handed/seam/annex-chute/z0"
+        }
+      ],
+      "note": "the opening `edge/annex-chute` crosses",
+      "op": "claim",
+      "region": "way/annex-chute",
+      "to": [
+        {
+          "expr": "param",
+          "name": "handed/seam/annex-chute/x1"
+        },
+        {
+          "expr": "param",
+          "name": "handed/seam/annex-chute/y1"
+        },
+        {
+          "expr": "param",
+          "name": "handed/seam/annex-chute/z1"
+        }
+      ]
+    },
+    {
+      "body": [
+        {
+          "op": "box",
+          "role": "air"
+        }
+      ],
+      "from": [
+        {
+          "expr": "param",
+          "name": "handed/seam/west-door/x0"
+        },
+        {
+          "expr": "param",
+          "name": "handed/seam/west-door/y0"
+        },
+        {
+          "expr": "param",
+          "name": "handed/seam/west-door/z0"
+        }
+      ],
+      "note": "the opening `edge/west-door` crosses",
+      "op": "claim",
+      "region": "way/west-door",
+      "to": [
+        {
+          "expr": "param",
+          "name": "handed/seam/west-door/x1"
+        },
+        {
+          "expr": "param",
+          "name": "handed/seam/west-door/y1"
+        },
+        {
+          "expr": "param",
+          "name": "handed/seam/west-door/z1"
+        }
+      ]
+    },
+    {
+      "body": [
+        {
+          "op": "box",
+          "role": "air"
+        }
+      ],
+      "from": [
+        {
+          "expr": "param",
+          "name": "handed/seam/centre-door/x0"
+        },
+        {
+          "expr": "param",
+          "name": "handed/seam/centre-door/y0"
+        },
+        {
+          "expr": "param",
+          "name": "handed/seam/centre-door/z0"
+        }
+      ],
+      "note": "the opening `edge/centre-door` crosses",
+      "op": "claim",
+      "region": "way/centre-door",
+      "to": [
+        {
+          "expr": "param",
+          "name": "handed/seam/centre-door/x1"
+        },
+        {
+          "expr": "param",
+          "name": "handed/seam/centre-door/y1"
+        },
+        {
+          "expr": "param",
+          "name": "handed/seam/centre-door/z1"
+        }
+      ]
+    },
+    {
+      "body": [
+        {
+          "op": "box",
+          "role": "air"
+        }
+      ],
+      "from": [
+        {
+          "expr": "param",
+          "name": "handed/seam/east-door/x0"
+        },
+        {
+          "expr": "param",
+          "name": "handed/seam/east-door/y0"
+        },
+        {
+          "expr": "param",
+          "name": "handed/seam/east-door/z0"
+        }
+      ],
+      "note": "the opening `edge/east-door` crosses",
+      "op": "claim",
+      "region": "way/east-door",
+      "to": [
+        {
+          "expr": "param",
+          "name": "handed/seam/east-door/x1"
+        },
+        {
+          "expr": "param",
+          "name": "handed/seam/east-door/y1"
+        },
+        {
+          "expr": "param",
+          "name": "handed/seam/east-door/z1"
+        }
+      ]
+    },
+    {
+      "body": [
+        {
+          "op": "box",
+          "role": "air"
+        }
+      ],
+      "from": [
+        {
+          "expr": "param",
+          "name": "handed/seam/loft-stair/x0"
+        },
+        {
+          "expr": "param",
+          "name": "handed/seam/loft-stair/y0"
+        },
+        {
+          "expr": "param",
+          "name": "handed/seam/loft-stair/z0"
+        }
+      ],
+      "note": "the opening `edge/loft-stair` crosses",
+      "op": "claim",
+      "region": "way/loft-stair",
+      "to": [
+        {
+          "expr": "param",
+          "name": "handed/seam/loft-stair/x1"
+        },
+        {
+          "expr": "param",
+          "name": "handed/seam/loft-stair/y1"
+        },
+        {
+          "expr": "param",
+          "name": "handed/seam/loft-stair/z1"
+        }
+      ]
+    },
+    {
+      "body": [
+        {
+          "op": "box",
+          "role": "air"
+        }
+      ],
+      "from": [
+        {
+          "expr": "param",
+          "name": "handed/seam/loft-drop/x0"
+        },
+        {
+          "expr": "param",
+          "name": "handed/seam/loft-drop/y0"
+        },
+        {
+          "expr": "param",
+          "name": "handed/seam/loft-drop/z0"
+        }
+      ],
+      "note": "the opening `edge/loft-drop` crosses",
+      "op": "claim",
+      "region": "way/loft-drop",
+      "to": [
+        {
+          "expr": "param",
+          "name": "handed/seam/loft-drop/x1"
+        },
+        {
+          "expr": "param",
+          "name": "handed/seam/loft-drop/y1"
+        },
+        {
+          "expr": "param",
+          "name": "handed/seam/loft-drop/z1"
+        }
+      ]
+    },
+    {
+      "body": [
+        {
+          "op": "box",
+          "role": "air"
+        }
+      ],
+      "from": [
+        {
+          "expr": "param",
+          "name": "handed/seam/undercroft-stair/x0"
+        },
+        {
+          "expr": "param",
+          "name": "handed/seam/undercroft-stair/y0"
+        },
+        {
+          "expr": "param",
+          "name": "handed/seam/undercroft-stair/z0"
+        }
+      ],
+      "note": "the opening `edge/undercroft-stair` crosses",
+      "op": "claim",
+      "region": "way/undercroft-stair",
+      "to": [
+        {
+          "expr": "param",
+          "name": "handed/seam/undercroft-stair/x1"
+        },
+        {
+          "expr": "param",
+          "name": "handed/seam/undercroft-stair/y1"
+        },
+        {
+          "expr": "param",
+          "name": "handed/seam/undercroft-stair/z1"
+        }
+      ]
+    },
+    {
+      "body": [
+        {
+          "op": "box",
+          "role": "air"
+        }
+      ],
+      "from": [
+        {
+          "expr": "param",
+          "name": "handed/seam/exit-arch/x0"
+        },
+        {
+          "expr": "param",
+          "name": "handed/seam/exit-arch/y0"
+        },
+        {
+          "expr": "param",
+          "name": "handed/seam/exit-arch/z0"
+        }
+      ],
+      "note": "the opening `edge/exit-arch` crosses",
+      "op": "claim",
+      "region": "way/exit-arch",
+      "to": [
+        {
+          "expr": "param",
+          "name": "handed/seam/exit-arch/x1"
+        },
+        {
+          "expr": "param",
+          "name": "handed/seam/exit-arch/y1"
+        },
+        {
+          "expr": "param",
+          "name": "handed/seam/exit-arch/z1"
+        }
+      ]
+    },
+    {
+      "body": [
+        {
+          "op": "box",
+          "role": "air"
+        }
+      ],
+      "from": [
+        {
+          "expr": "param",
+          "name": "handed/seam/causeway-front/x0"
+        },
+        {
+          "expr": "param",
+          "name": "handed/seam/causeway-front/y0"
+        },
+        {
+          "expr": "param",
+          "name": "handed/seam/causeway-front/z0"
+        }
+      ],
+      "note": "the opening `edge/causeway-front` crosses",
+      "op": "claim",
+      "region": "way/causeway-front",
+      "to": [
+        {
+          "expr": "param",
+          "name": "handed/seam/causeway-front/x1"
+        },
+        {
+          "expr": "param",
+          "name": "handed/seam/causeway-front/y1"
+        },
+        {
+          "expr": "param",
+          "name": "handed/seam/causeway-front/z1"
+        }
+      ]
+    },
+    {
+      "body": [],
+      "from": [
+        1,
+        {
+          "expr": "param",
+          "name": "handed/datum-y"
+        },
+        1
+      ],
+      "note": "the hall, west of the great portal",
+      "op": "claim",
+      "region": "nave",
+      "to": [
+        13,
+        {
+          "expr": "arith",
+          "lhs": {
+            "dim": "y",
+            "expr": "dim"
+          },
+          "op": "sub",
+          "rhs": {
+            "expr": "int",
+            "value": 1
+          }
+        },
+        14
+      ]
+    },
+    {
+      "body": [],
+      "from": [
+        14,
+        {
+          "expr": "param",
+          "name": "handed/datum-y"
+        },
+        1
+      ],
+      "note": "the bay beside the porch's west cheek",
+      "op": "claim",
+      "region": "nave",
+      "to": [
+        14,
+        {
+          "expr": "arith",
+          "lhs": {
+            "dim": "y",
+            "expr": "dim"
+          },
+          "op": "sub",
+          "rhs": {
+            "expr": "int",
+            "value": 1
+          }
+        },
+        12
+      ]
+    },
+    {
+      "body": [],
+      "from": [
+        15,
+        {
+          "expr": "param",
+          "name": "handed/datum-y"
+        },
+        1
+      ],
+      "note": "the bay the great portal opens into",
+      "op": "claim",
+      "region": "nave",
+      "to": [
+        19,
+        {
+          "expr": "arith",
+          "lhs": {
+            "dim": "y",
+            "expr": "dim"
+          },
+          "op": "sub",
+          "rhs": {
+            "expr": "int",
+            "value": 1
+          }
+        },
+        12
+      ]
+    },
+    {
+      "body": [],
+      "from": [
+        20,
+        {
+          "expr": "param",
+          "name": "handed/datum-y"
+        },
+        8
+      ],
+      "note": "the strip south of the turret",
+      "op": "claim",
+      "region": "nave",
+      "to": [
+        20,
+        {
+          "expr": "arith",
+          "lhs": {
+            "dim": "y",
+            "expr": "dim"
+          },
+          "op": "sub",
+          "rhs": {
+            "expr": "int",
+            "value": 1
+          }
+        },
+        12
+      ]
+    },
+    {
+      "body": [],
+      "from": [
+        21,
+        {
+          "expr": "param",
+          "name": "handed/datum-y"
+        },
+        8
+      ],
+      "note": "the bay before the screen",
+      "op": "claim",
+      "region": "nave",
+      "to": [
+        22,
+        {
+          "expr": "arith",
+          "lhs": {
+            "dim": "y",
+            "expr": "dim"
+          },
+          "op": "sub",
+          "rhs": {
+            "expr": "int",
+            "value": 1
+          }
+        },
+        12
+      ]
+    },
+    {
+      "body": [],
+      "from": [
+        22,
+        {
+          "expr": "param",
+          "name": "handed/datum-y"
+        },
+        13
+      ],
+      "note": "its south-east corner",
+      "op": "claim",
+      "region": "nave",
+      "to": [
+        22,
+        {
+          "expr": "arith",
+          "lhs": {
+            "dim": "y",
+            "expr": "dim"
+          },
+          "op": "sub",
+          "rhs": {
+            "expr": "int",
+            "value": 1
+          }
+        },
+        14
+      ]
+    },
+    {
+      "body": [],
+      "from": [
+        24,
+        {
+          "expr": "param",
+          "name": "handed/datum-y"
+        },
+        4
+      ],
+      "note": "the east aisle, beside the turret",
+      "op": "claim",
+      "region": "nave",
+      "to": [
+        24,
+        4,
+        7
+      ]
+    },
+    {
+      "body": [],
+      "from": [
+        4,
+        {
+          "expr": "param",
+          "name": "handed/datum-y"
+        },
+        0
+      ],
+      "note": "the lip of the hole down to the undercroft",
+      "op": "claim",
+      "region": "nave",
+      "to": [
+        6,
+        {
+          "expr": "param",
+          "name": "handed/datum-y"
+        },
+        2
+      ]
+    },
+    {
+      "body": [],
+      "from": [
+        20,
+        {
+          "expr": "arith",
+          "lhs": {
+            "expr": "arith",
+            "lhs": {
+              "expr": "param",
+              "name": "handed/datum-y"
+            },
+            "op": "add",
+            "rhs": {
+              "expr": "arith",
+              "lhs": {
+                "expr": "param",
+                "name": "handed/seam/loft-stair/rise"
+              },
+              "op": "sub",
+              "rhs": {
+                "expr": "int",
+                "value": 1
+              }
+            }
+          },
+          "op": "add",
+          "rhs": {
+            "expr": "int",
+            "value": 1
+          }
+        },
+        1
+      ],
+      "note": "the gallery the flight climbs to, open at its head",
+      "op": "claim",
+      "region": "gallery",
+      "to": [
+        25,
+        {
+          "expr": "arith",
+          "lhs": {
+            "dim": "y",
+            "expr": "dim"
+          },
+          "op": "sub",
+          "rhs": {
+            "expr": "int",
+            "value": 1
+          }
+        },
+        2
+      ]
+    },
+    {
+      "body": [],
+      "from": [
+        23,
+        {
+          "expr": "param",
+          "name": "handed/datum-y"
+        },
+        1
+      ],
+      "note": "the strong room under the gallery, with no door at all",
+      "op": "claim",
+      "region": "strongroom",
+      "to": [
+        24,
+        {
+          "expr": "arith",
+          "lhs": {
+            "expr": "arith",
+            "lhs": {
+              "expr": "param",
+              "name": "handed/datum-y"
+            },
+            "op": "add",
+            "rhs": {
+              "expr": "arith",
+              "lhs": {
+                "expr": "param",
+                "name": "handed/seam/loft-stair/rise"
+              },
+              "op": "sub",
+              "rhs": {
+                "expr": "int",
+                "value": 1
+              }
+            }
+          },
+          "op": "sub",
+          "rhs": {
+            "expr": "int",
+            "value": 1
+          }
+        },
+        2
+      ]
+    },
+    {
+      "body": [],
+      "from": [
+        26,
+        {
+          "expr": "param",
+          "name": "handed/datum-y"
+        },
+        4
+      ],
+      "note": "the sanctuary behind the screen",
+      "op": "claim",
+      "region": "sanctuary",
+      "to": [
+        30,
+        {
+          "expr": "arith",
+          "lhs": {
+            "dim": "y",
+            "expr": "dim"
+          },
+          "op": "sub",
+          "rhs": {
+            "expr": "int",
+            "value": 1
+          }
+        },
+        14
+      ]
+    },
+    {
+      "body": [],
+      "from": [
+        15,
+        {
+          "expr": "param",
+          "name": "handed/datum-y"
+        },
+        14
+      ],
+      "note": "the porch inside the great portal",
+      "op": "claim",
+      "region": "porch",
+      "to": [
+        20,
+        {
+          "expr": "arith",
+          "lhs": {
+            "dim": "y",
+            "expr": "dim"
+          },
+          "op": "sub",
+          "rhs": {
+            "expr": "int",
+            "value": 1
+          }
+        },
+        14
+      ]
+    },
+    {
+      "body": [
+        {
+          "op": "box",
+          "role": "air"
+        }
+      ],
+      "from": [
+        0,
+        {
+          "expr": "arith",
+          "lhs": {
+            "expr": "arith",
+            "lhs": {
+              "expr": "param",
+              "name": "handed/datum-y"
+            },
+            "op": "add",
+            "rhs": {
+              "expr": "arith",
+              "lhs": {
+                "expr": "param",
+                "name": "handed/seam/loft-stair/rise"
+              },
+              "op": "sub",
+              "rhs": {
+                "expr": "int",
+                "value": 1
+              }
+            }
+          },
+          "op": "add",
+          "rhs": {
+            "expr": "int",
+            "value": 1
+          }
+        },
+        1
+      ],
+      "note": "the two courses the west wall steps back at: dressing on the outward face, never floor",
+      "op": "claim",
+      "region": "frieze",
+      "to": [
+        0,
+        {
+          "expr": "arith",
+          "lhs": {
+            "expr": "arith",
+            "lhs": {
+              "expr": "param",
+              "name": "handed/datum-y"
+            },
+            "op": "add",
+            "rhs": {
+              "expr": "arith",
+              "lhs": {
+                "expr": "param",
+                "name": "handed/seam/loft-stair/rise"
+              },
+              "op": "sub",
+              "rhs": {
+                "expr": "int",
+                "value": 1
+              }
+            }
+          },
+          "op": "add",
+          "rhs": {
+            "expr": "int",
+            "value": 2
+          }
+        },
+        14
+      ]
+    },
+    {
+      "body": [
+        {
+          "op": "box",
+          "role": "air"
+        }
+      ],
+      "from": [
+        1,
+        {
+          "expr": "arith",
+          "lhs": {
+            "expr": "arith",
+            "lhs": {
+              "expr": "param",
+              "name": "handed/datum-y"
+            },
+            "op": "add",
+            "rhs": {
+              "expr": "arith",
+              "lhs": {
+                "expr": "param",
+                "name": "handed/seam/loft-stair/rise"
+              },
+              "op": "sub",
+              "rhs": {
+                "expr": "int",
+                "value": 1
+              }
+            }
+          },
+          "op": "add",
+          "rhs": {
+            "expr": "int",
+            "value": 1
+          }
+        },
+        15
+      ],
+      "note": "and the same course carried round the south wall",
+      "op": "claim",
+      "region": "frieze",
+      "to": [
+        13,
+        {
+          "expr": "arith",
+          "lhs": {
+            "expr": "arith",
+            "lhs": {
+              "expr": "param",
+              "name": "handed/datum-y"
+            },
+            "op": "add",
+            "rhs": {
+              "expr": "arith",
+              "lhs": {
+                "expr": "param",
+                "name": "handed/seam/loft-stair/rise"
+              },
+              "op": "sub",
+              "rhs": {
+                "expr": "int",
+                "value": 1
+              }
+            }
+          },
+          "op": "add",
+          "rhs": {
+            "expr": "int",
+            "value": 2
+          }
+        },
+        15
+      ]
+    },
+    {
+      "body": [],
+      "from": [
+        27,
+        {
+          "expr": "param",
+          "name": "handed/datum-y"
+        },
+        1
+      ],
+      "note": "the crypt cut into the mass behind the sanctuary",
+      "op": "claim",
+      "region": "crypt",
+      "to": [
+        29,
+        4,
+        2
+      ]
+    },
+    {
+      "body": [],
+      "from": [
+        24,
+        {
+          "expr": "arith",
+          "lhs": {
+            "expr": "arith",
+            "lhs": {
+              "expr": "param",
+              "name": "handed/datum-y"
+            },
+            "op": "add",
+            "rhs": {
+              "expr": "arith",
+              "lhs": {
+                "expr": "param",
+                "name": "handed/seam/loft-stair/rise"
+              },
+              "op": "sub",
+              "rhs": {
+                "expr": "int",
+                "value": 1
+              }
+            }
+          },
+          "op": "add",
+          "rhs": {
+            "expr": "int",
+            "value": 1
+          }
+        },
+        13
+      ],
+      "note": "the tribune over the east aisle",
+      "op": "claim",
+      "region": "tribune",
+      "to": [
+        24,
+        {
+          "expr": "arith",
+          "lhs": {
+            "dim": "y",
+            "expr": "dim"
+          },
+          "op": "sub",
+          "rhs": {
+            "expr": "int",
+            "value": 1
+          }
+        },
+        14
+      ]
+    },
+    {
+      "body": [
+        {
+          "mark": {
+            "anchor": "reliquary",
+            "at": "floor_center",
+            "facing": "east",
+            "role": "furniture"
+          },
+          "note": "what the sanctuary is for",
+          "op": "mark"
+        },
+        {
+          "mark": {
+            "anchor": "offering",
+            "at": "corner_min",
+            "facing": "east",
+            "role": "furniture"
+          },
+          "note": "and where it is laid",
+          "op": "mark"
+        },
+        {
+          "mark": {
+            "anchor": "flame",
+            "at": "offset",
+            "x": {
+              "expr": "int",
+              "value": 1
+            },
+            "y": {
+              "expr": "int",
+              "value": 3
+            },
+            "z": {
+              "expr": "int",
+              "value": 1
+            }
+          },
+          "note": "the light kept over it",
+          "op": "mark"
+        }
+      ],
+      "from": [
+        28,
+        {
+          "expr": "arith",
+          "lhs": {
+            "expr": "param",
+            "name": "handed/datum-y"
+          },
+          "op": "add",
+          "rhs": {
+            "expr": "int",
+            "value": 1
+          }
+        },
+        8
+      ],
+      "note": "the plinth and what stands on it: floor a body may reach and is never asked to cross",
+      "op": "claim",
+      "region": "dais",
+      "to": [
+        30,
+        {
+          "expr": "arith",
+          "lhs": {
+            "expr": "param",
+            "name": "handed/datum-y"
+          },
+          "op": "add",
+          "rhs": {
+            "expr": "int",
+            "value": 4
+          }
+        },
+        12
+      ],
+      "when": {
+        "cond": "cmp",
+        "lhs": {
+          "dim": "y",
+          "expr": "dim"
+        },
+        "op": "ge",
+        "rhs": {
+          "expr": "int",
+          "value": 2
+        }
+      }
+    },
+    {
+      "body": [],
+      "from": [
+        20,
+        {
+          "expr": "param",
+          "name": "handed/datum-y"
+        },
+        3
+      ],
+      "note": "the flight's own transit volume: the treads belong to the edge",
+      "op": "claim",
+      "region": "flight",
+      "to": [
+        22,
+        {
+          "expr": "arith",
+          "lhs": {
+            "dim": "y",
+            "expr": "dim"
+          },
+          "op": "sub",
+          "rhs": {
+            "expr": "int",
+            "value": 1
+          }
+        },
+        7
+      ]
+    },
+    {
+      "body": [],
+      "from": [
+        24,
+        {
+          "expr": "param",
+          "name": "handed/datum-y"
+        },
+        8
+      ],
+      "note": "the climb to the tribune, and the well it rises through",
+      "op": "claim",
+      "region": "tribune-flight",
+      "to": [
+        24,
+        {
+          "expr": "arith",
+          "lhs": {
+            "dim": "y",
+            "expr": "dim"
+          },
+          "op": "sub",
+          "rhs": {
+            "expr": "int",
+            "value": 1
+          }
+        },
+        12
+      ]
+    },
+    {
+      "body": [
+        {
+          "op": "box",
+          "role": "wall"
+        }
+      ],
+      "from": [
+        24,
+        {
+          "expr": "arith",
+          "lhs": {
+            "expr": "param",
+            "name": "handed/datum-y"
+          },
+          "op": "add",
+          "rhs": {
+            "expr": "int",
+            "value": 1
+          }
+        },
+        8
+      ],
+      "note": "the fall of stone choking the foot of that climb, until it is cleared",
+      "op": "claim",
+      "region": "tribune-fall",
+      "to": [
+        24,
+        {
+          "expr": "arith",
+          "lhs": {
+            "dim": "y",
+            "expr": "dim"
+          },
+          "op": "sub",
+          "rhs": {
+            "expr": "int",
+            "value": 1
+          }
+        },
+        8
+      ]
+    },
+    {
+      "body": [],
+      "from": [
+        25,
+        {
+          "expr": "param",
+          "name": "handed/datum-y"
+        },
+        1
+      ],
+      "note": "the shaft the gallery's hatch drops into",
+      "op": "claim",
+      "region": "shaft",
+      "to": [
+        25,
+        {
+          "expr": "arith",
+          "lhs": {
+            "expr": "param",
+            "name": "handed/datum-y"
+          },
+          "op": "add",
+          "rhs": {
+            "expr": "arith",
+            "lhs": {
+              "expr": "param",
+              "name": "handed/seam/loft-stair/rise"
+            },
+            "op": "sub",
+            "rhs": {
+              "expr": "int",
+              "value": 1
+            }
+          }
+        },
+        2
+      ]
+    },
+    {
+      "body": [
+        {
+          "op": "box",
+          "role": "floor"
+        }
+      ],
+      "from": [
+        25,
+        {
+          "expr": "arith",
+          "lhs": {
+            "expr": "param",
+            "name": "handed/datum-y"
+          },
+          "op": "add",
+          "rhs": {
+            "expr": "arith",
+            "lhs": {
+              "expr": "param",
+              "name": "handed/seam/loft-stair/rise"
+            },
+            "op": "sub",
+            "rhs": {
+              "expr": "int",
+              "value": 1
+            }
+          }
+        },
+        1
+      ],
+      "note": "the boards over that hatch, until they are taken up",
+      "op": "claim",
+      "region": "hatch",
+      "to": [
+        25,
+        {
+          "expr": "arith",
+          "lhs": {
+            "expr": "param",
+            "name": "handed/datum-y"
+          },
+          "op": "add",
+          "rhs": {
+            "expr": "arith",
+            "lhs": {
+              "expr": "param",
+              "name": "handed/seam/loft-stair/rise"
+            },
+            "op": "sub",
+            "rhs": {
+              "expr": "int",
+              "value": 1
+            }
+          }
+        },
+        2
+      ]
+    },
+    {
+      "body": [],
+      "from": [
+        15,
+        {
+          "expr": "param",
+          "name": "handed/datum-y"
+        },
+        13
+      ],
+      "note": "the threshold between the porch and the hall",
+      "op": "claim",
+      "region": "porch-mouth",
+      "to": [
+        20,
+        {
+          "expr": "arith",
+          "lhs": {
+            "dim": "y",
+            "expr": "dim"
+          },
+          "op": "sub",
+          "rhs": {
+            "expr": "int",
+            "value": 1
+          }
+        },
+        13
+      ]
+    },
+    {
+      "body": [],
+      "from": [
+        27,
+        0,
+        3
+      ],
+      "note": "the threshold between the sanctuary and the crypt",
+      "op": "claim",
+      "region": "crypt-mouth",
+      "to": [
+        29,
+        4,
+        3
+      ]
+    },
+    {
+      "body": [
+        {
+          "op": "box",
+          "role": "air"
+        }
+      ],
+      "from": [
+        27,
+        0,
+        3
+      ],
+      "note": "the sill of that threshold, which is not there until it is laid",
+      "op": "claim",
+      "region": "crypt-sill",
+      "to": [
+        29,
+        0,
+        3
+      ]
+    },
+    {
+      "body": [
+        {
+          "op": "box",
+          "role": "air"
+        },
+        {
+          "mark": {
+            "anchor": "gate",
+            "at": "face_center",
+            "axis": "x",
+            "facing": "west",
+            "index": "unique",
+            "side": "max"
+          },
+          "note": "where the gate is worked from",
+          "op": "mark"
+        }
+      ],
+      "from": [
+        25,
+        {
+          "expr": "param",
+          "name": "handed/datum-y"
+        },
+        6
+      ],
+      "note": "the way through the screen into the sanctuary",
+      "op": "claim",
+      "region": "gate-way",
+      "to": [
+        25,
+        3,
+        7
+      ]
+    },
+    {
+      "body": [
+        {
+          "op": "box",
+          "role": "grate"
+        }
+      ],
+      "from": [
+        25,
+        {
+          "expr": "param",
+          "name": "handed/datum-y"
+        },
+        6
+      ],
+      "note": "the iron gate standing in it",
+      "op": "claim",
+      "region": "gate-bar",
+      "to": [
+        25,
+        3,
+        7
+      ]
+    },
+    {
+      "body": [
+        {
+          "op": "box",
+          "role": "grate"
+        }
+      ],
+      "from": [
+        25,
+        2,
+        4
+      ],
+      "note": "the barred squint the sanctuary is watched through",
+      "op": "claim",
+      "region": "squint",
+      "to": [
+        25,
+        3,
+        5
+      ]
+    },
+    {
+      "mark": {
+        "anchor": "node-far-hall",
+        "at": "offset",
+        "facing": "south",
+        "index": "unique",
+        "role": "entry",
+        "x": {
+          "expr": "arith",
+          "lhs": {
+            "dim": "x",
+            "expr": "dim"
+          },
+          "op": "div",
+          "rhs": {
+            "expr": "int",
+            "value": 2
+          }
+        },
+        "y": {
+          "expr": "param",
+          "name": "handed/datum-y"
+        },
+        "z": {
+          "expr": "int",
+          "value": 11
+        }
+      },
+      "note": "where the whole binds this place: on the hall's own centre line",
+      "op": "mark"
+    },
+    {
+      "mark": {
+        "anchor": "unlock-east-door",
+        "at": "offset",
+        "facing": "north",
+        "x": {
+          "expr": "arith",
+          "lhs": {
+            "expr": "int",
+            "value": 13
+          },
+          "op": "max",
+          "rhs": {
+            "expr": "int",
+            "value": 11
+          }
+        },
+        "y": {
+          "expr": "param",
+          "name": "handed/datum-y"
+        },
+        "z": {
+          "expr": "int",
+          "value": 2
+        }
+      },
+      "note": "the lever that draws the east door",
+      "op": "mark"
+    }
+  ],
+  "palette": {
+    "cap": "minecraft:polished_blackstone",
+    "floor": "minecraft:polished_andesite",
+    "furniture": "minecraft:chiseled_stone_bricks",
+    "grate": "minecraft:iron_bars[east=false,north=true,south=true,waterlogged=false,west=false]",
+    "lamp": "minecraft:sea_lantern",
+    "pier": [
+      {
+        "block": "minecraft:stone_bricks",
+        "weight": 9
+      },
+      {
+        "block": "minecraft:cracked_stone_bricks",
+        "weight": 3
+      },
+      {
+        "block": "minecraft:mossy_stone_bricks",
+        "weight": 1
+      }
+    ],
+    "tie": "minecraft:polished_blackstone",
+    "tread": "minecraft:polished_blackstone_brick_stairs[facing=north,half=bottom,waterlogged=false]",
+    "wall": "minecraft:polished_blackstone_bricks"
+  },
+  "params": {
+    "bay": 6,
+    "handed/datum-y": 1,
+    "handed/seam/annex-chute/x0": 0,
+    "handed/seam/annex-chute/x1": 0,
+    "handed/seam/annex-chute/y0": 0,
+    "handed/seam/annex-chute/y1": 0,
+    "handed/seam/annex-chute/z0": 0,
+    "handed/seam/annex-chute/z1": 0,
+    "handed/seam/causeway-front/x0": 0,
+    "handed/seam/causeway-front/x1": 0,
+    "handed/seam/causeway-front/y0": 0,
+    "handed/seam/causeway-front/y1": 0,
+    "handed/seam/causeway-front/z0": 0,
+    "handed/seam/causeway-front/z1": 0,
+    "handed/seam/centre-door/x0": 0,
+    "handed/seam/centre-door/x1": 0,
+    "handed/seam/centre-door/y0": 0,
+    "handed/seam/centre-door/y1": 0,
+    "handed/seam/centre-door/z0": 0,
+    "handed/seam/centre-door/z1": 0,
+    "handed/seam/east-door/x0": 0,
+    "handed/seam/east-door/x1": 0,
+    "handed/seam/east-door/y0": 0,
+    "handed/seam/east-door/y1": 0,
+    "handed/seam/east-door/z0": 0,
+    "handed/seam/east-door/z1": 0,
+    "handed/seam/exit-arch/x0": 0,
+    "handed/seam/exit-arch/x1": 0,
+    "handed/seam/exit-arch/y0": 0,
+    "handed/seam/exit-arch/y1": 0,
+    "handed/seam/exit-arch/z0": 0,
+    "handed/seam/exit-arch/z1": 0,
+    "handed/seam/loft-drop/x0": 0,
+    "handed/seam/loft-drop/x1": 0,
+    "handed/seam/loft-drop/y0": 0,
+    "handed/seam/loft-drop/y1": 0,
+    "handed/seam/loft-drop/z0": 0,
+    "handed/seam/loft-drop/z1": 0,
+    "handed/seam/loft-stair/rise": 5,
+    "handed/seam/loft-stair/x0": 0,
+    "handed/seam/loft-stair/x1": 0,
+    "handed/seam/loft-stair/y0": 0,
+    "handed/seam/loft-stair/y1": 0,
+    "handed/seam/loft-stair/z0": 0,
+    "handed/seam/loft-stair/z1": 0,
+    "handed/seam/undercroft-stair/x0": 0,
+    "handed/seam/undercroft-stair/x1": 0,
+    "handed/seam/undercroft-stair/y0": 0,
+    "handed/seam/undercroft-stair/y1": 0,
+    "handed/seam/undercroft-stair/z0": 0,
+    "handed/seam/undercroft-stair/z1": 0,
+    "handed/seam/west-door/x0": 0,
+    "handed/seam/west-door/x1": 0,
+    "handed/seam/west-door/y0": 0,
+    "handed/seam/west-door/y1": 0,
+    "handed/seam/west-door/z0": 0,
+    "handed/seam/west-door/z1": 0,
+    "pier": 3,
+    "sconce": 4
+  },
+  "shown_faces": [
+    "down"
+  ]
+}

@@ -1,0 +1,20 @@
+{
+  "carries": [
+    "overlays/site-plan/site-plan.json",
+    "overlays/site-plan/layout-graph.json",
+    "overlays/site-plan/detail-plan.json",
+    "overlays/site-plan/walk-record.json",
+    "overlays/site-plan/programs/annex.json"
+  ],
+  "code": "DW0905",
+  "patch": [
+    {
+      "doc": "overlays/site-plan/drawings/far-hall.json",
+      "op": "replace",
+      "path": "/ops/2/t",
+      "value": 0
+    }
+  ],
+  "units": [],
+  "why": "The hall's four walls, asked for at a thickness of zero. A `t` below one is a value outside its range at the operation that evaluates it, named with the field, the value, the range and the parameters in force."
+}

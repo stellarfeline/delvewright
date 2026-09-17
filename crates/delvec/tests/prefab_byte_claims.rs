@@ -341,6 +341,12 @@ const DOES_NOT: &[(&[&str], &str)] = &[
         &["curate-merge"],
         "takes a curation report and a catalog directory, and edits cards",
     ),
+    (
+        &["diff"],
+        "compares two pieces' BYTES against each other and reads a document only for the point \
+         anchors inside the box; it makes no claim about either piece, so there is no declaration \
+         of its own for the bytes to deny",
+    ),
 ];
 
 fn discovered_commands() -> Vec<Vec<String>> {

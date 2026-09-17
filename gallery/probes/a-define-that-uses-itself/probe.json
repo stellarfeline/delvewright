@@ -1,0 +1,28 @@
+{
+  "carries": [
+    "overlays/site-plan/site-plan.json",
+    "overlays/site-plan/layout-graph.json",
+    "overlays/site-plan/detail-plan.json",
+    "overlays/site-plan/walk-record.json",
+    "overlays/site-plan/programs/annex.json"
+  ],
+  "code": "DW0904",
+  "patch": [
+    {
+      "doc": "overlays/site-plan/drawings/far-hall.json",
+      "op": "add",
+      "path": "/defines/pier/body/-",
+      "value": {
+        "define": "pier",
+        "note": "the pier inside the pier",
+        "op": "use",
+        "roles": {
+          "cap": "cap",
+          "stone": "pier"
+        }
+      }
+    }
+  ],
+  "units": [],
+  "why": "The `pier` define, with a `use` of itself added to its own body. There is no recursion in a drawing, so there is no depth to limit: the chain is named at validation, before anything executes."
+}

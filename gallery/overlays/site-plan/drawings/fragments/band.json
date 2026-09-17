@@ -1,0 +1,108 @@
+{
+  "name": "gallery-band",
+  "palette": {
+    "mullion": "minecraft:polished_blackstone",
+    "sill": [
+      {
+        "block": "minecraft:chiseled_polished_blackstone",
+        "weight": 3
+      },
+      {
+        "block": "minecraft:cracked_polished_blackstone_bricks",
+        "weight": 1
+      }
+    ]
+  },
+  "params": {
+    "courses": 2
+  },
+  "rules": {
+    "band": [
+      {
+        "body": {
+          "material": {
+            "role": "sill"
+          },
+          "op": "fill"
+        },
+        "weight": 2
+      },
+      {
+        "body": {
+          "axis": "z",
+          "children": [
+            {
+              "material": {
+                "role": "sill"
+              },
+              "op": "fill"
+            },
+            {
+              "material": {
+                "role": "mullion"
+              },
+              "op": "fill"
+            }
+          ],
+          "op": "split",
+          "sizes": [
+            {
+              "size": "relative",
+              "weight": {
+                "expr": "int",
+                "value": 1
+              }
+            },
+            {
+              "size": "relative",
+              "weight": {
+                "expr": "int",
+                "value": 1
+              }
+            }
+          ]
+        },
+        "weight": 1
+      }
+    ],
+    "light": [
+      {
+        "body": {
+          "axis": "y",
+          "children": [
+            {
+              "material": {
+                "role": "mullion"
+              },
+              "op": "fill"
+            },
+            {
+              "op": "call",
+              "symbol": "band"
+            }
+          ],
+          "op": "split",
+          "sizes": [
+            {
+              "blocks": {
+                "expr": "param",
+                "name": "courses"
+              },
+              "size": "absolute"
+            },
+            {
+              "size": "relative",
+              "weight": {
+                "expr": "int",
+                "value": 1
+              }
+            }
+          ]
+        },
+        "weight": 1
+      }
+    ]
+  },
+  "start": "light",
+  "version": "1.9.0"
+}

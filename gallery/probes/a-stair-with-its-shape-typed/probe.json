@@ -1,0 +1,20 @@
+{
+  "carries": [
+    "overlays/site-plan/site-plan.json",
+    "overlays/site-plan/layout-graph.json",
+    "overlays/site-plan/detail-plan.json",
+    "overlays/site-plan/walk-record.json",
+    "overlays/site-plan/programs/annex.json"
+  ],
+  "code": "DW0907",
+  "patch": [
+    {
+      "doc": "overlays/site-plan/drawings/far-hall.json",
+      "op": "replace",
+      "path": "/palette/tread",
+      "value": "minecraft:polished_blackstone_brick_stairs[facing=north,half=bottom,shape=straight,waterlogged=false]"
+    }
+  ],
+  "units": [],
+  "why": "The flight's tread role, with the stair's `shape` written into it. A stair's shape is derived after the last operation from its four neighbours, by the rule the pinned server was measured against, so an authored one is a claim about neighbours the author has not got. Refused at validation rather than silently overwritten."
+}

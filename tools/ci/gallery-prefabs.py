@@ -6,8 +6,8 @@
 The gallery commits no piece. Its hand-built pieces — the hall, the annex kit,
 the yard, the skins — are written by `prefabs/gallery-generator`; its
 program-detailed place, `node/annex` of the site-plan overlay, is written by
-`delvec detail` from `gallery/overlays/site-plan/programs/annex.json`
-(spec-0058). Every tool that builds the gallery takes `--prefabs <dir>` and
+`delvec detail` from `gallery/overlays/site-plan/programs/annex.json` and
+`gallery/overlays/site-plan/drawings/far-hall.json` (spec-0058, spec-0072). Every tool that builds the gallery takes `--prefabs <dir>` and
 expects both to be there, and until this file existed the second half had no
 committed act producing it: a directory holding only the generator's output
 validates the site-plan overlay as `DW0842` — a piece the library does not hold.
@@ -112,8 +112,14 @@ def detail(delvec: Path, out: Path) -> tuple[int, int]:
                 "incomplete.\n" + r.stdout
             )
         written = json.loads((point / "detail-plan.json").read_text())
-    # Which rows the verb wrote: every row whose place has a program.
-    programs = {p.stem for p in (overlay / "programs").glob("*.json")}
+    # Which rows the verb wrote: every row whose place has detail an author wrote,
+    # in EITHER medium. A place's detail is a program or a drawing and `delvec
+    # detail` chooses by address (spec-0072 §2.1); a comparison that knew only
+    # about programs would have written the drawn place's row and compared
+    # nothing about it.
+    documented = {p.stem for p in (overlay / "programs").glob("*.json")}
+    documented |= {p.stem for p in (overlay / "drawings").glob("*.json")}
+    programs = documented
     by_place = {row["place"]: row for row in committed["content"]["details"]}
     compared = 0
     for row in written["content"]["details"]:
@@ -135,7 +141,7 @@ def detail(delvec: Path, out: Path) -> tuple[int, int]:
     if compared == 0:
         die(
             f"`delvec detail --all` detailed a place but wrote no row for any program under "
-            f"`{overlay.relative_to(REPO)}/programs/` — nothing was compared."
+            f"`{overlay.relative_to(REPO)}/programs/` or `.../drawings/` — nothing was compared."
         )
     return len(programs), compared
 

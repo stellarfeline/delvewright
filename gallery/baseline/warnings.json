@@ -996,6 +996,11 @@
       "stage": "world"
     },
     {
+      "code": "DW0555",
+      "pointer": "/content/quests",
+      "stage": "quests"
+    },
+    {
       "code": "DW0821",
       "pointer": "/content/sightlines[edge/loft-sightline]",
       "stage": "site-plan"

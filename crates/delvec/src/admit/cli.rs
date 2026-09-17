@@ -177,6 +177,31 @@ pub enum PrefabCommand {
         #[arg(long, default_value_t = 4)]
         cols: usize,
     },
+    /// **Are these two pieces the same blocks?** Cell for cell, over a box of
+    /// one against the same-sized box of the other.
+    ///
+    /// The instrument for a port, a rewrite or a second producer: it reads two
+    /// pieces and nothing of any campaign, compares **block states** rather than
+    /// ids, and compares the point anchors inside the box beside them. Zero
+    /// cells compared is a refusal, because a comparison that examined nothing
+    /// is not an agreement; any difference is exit 1, with the first few named
+    /// and both states printed.
+    Diff {
+        /// The first piece: a structure `.nbt`, or the `.json` manifest of a
+        /// zone that ships as a tile set.
+        a: PathBuf,
+        /// The second piece, in either packaging. Packaging is not part of what
+        /// a piece IS, so the two need not match.
+        b: PathBuf,
+        /// The box of `a` to compare, as `x0,y0,z0,x1,y1,z1` — inclusive
+        /// corners in `a`'s own local coordinates. Omitted, the whole of `a`.
+        #[arg(long, value_name = "X0,Y0,Z0,X1,Y1,Z1")]
+        r#box: Option<String>,
+        /// Where that box sits in `b`, as `x,y,z` — the cell of `b` the box's
+        /// low corner is at. Default `0,0,0`.
+        #[arg(long, value_name = "X,Y,Z")]
+        at: Option<String>,
+    },
     /// Harvest a gallery playtest server log into a per-asset curation report.
     Curate {
         /// The server stdout log from the gallery playtest.
