@@ -84,9 +84,17 @@ pub fn schema() -> serde_json::Value {
     let mut v = serde_json::to_value(schemars::schema_for!(ir::Drawing))
         .expect("the drawing schema serializes to JSON");
     if let Some(obj) = v.as_object_mut() {
+        obj.insert("title".into(), serde_json::Value::String("Drawing".into()));
+        // **Where the document lives, said by the engine that reads it.**
+        // A stage document is one file named `<stage>.json`, so a tool walking
+        // a campaign directory could derive every address from the export's own
+        // keys. A drawing is one file per place under `drawings/`, and the
+        // moment a document class stops being one file that derivation is a
+        // guess: the tool would hand-write `drawings` beside `DRAWINGS_DIR`,
+        // which is the second authority the export exists to prevent.
         obj.insert(
-            "title".into(),
-            serde_json::Value::String("drawings/<place stem>.json (a place's drawing)".into()),
+            "documents".into(),
+            serde_json::Value::String(format!("{DRAWINGS_DIR}/*.json")),
         );
         obj.insert(
             "description".into(),

@@ -89,7 +89,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "lib"))
 import gallery_domain  # noqa: E402
 from delvec_bin import resolve as resolve_delvec  # noqa: E402
-from gallery_units import Binder, Enumerator, stage_files  # noqa: E402
+from gallery_units import (  # noqa: E402
+    Binder,
+    Enumerator,
+    document_dirs,
+    stage_documents,
+    stage_files,
+)
 
 REPO = Path(__file__).resolve().parents[2]
 GALLERY = REPO / "gallery"
@@ -109,13 +115,17 @@ def schema_export(delvec: Path) -> dict:
     return json.loads(r.stdout)
 
 
-def load_stage_docs(campaign: Path, export: dict) -> dict[str, dict]:
-    out: dict[str, dict] = {}
-    for stage, fn in stage_files(export).items():
-        p = campaign / fn
-        if p.is_file():
-            out[stage] = json.loads(p.read_text())
-    return out
+def load_stage_docs(campaign: Path, export: dict) -> list[tuple[str, Path, dict]]:
+    """Every authored document `campaign` holds, with the class that judges it.
+
+    A LIST, never a map keyed by class. A class can hold MANY documents — one
+    drawing per place — and a map would have kept whichever file sorted last and
+    reported every other place's surface as unbound, which is the coverage gate
+    lying in the direction that costs nothing to ignore.
+    """
+    return [
+        (stage, p, json.loads(p.read_text())) for stage, p in stage_documents(campaign, export)
+    ]
 
 
 def materialise(base: Path, overlay: Path, dest: Path) -> None:
@@ -150,9 +160,9 @@ def materialise_point(kind: str, point: Path, dest: Path) -> None:
         die(f"{kind} `{point.name}` {e}")
 
 
-def bind(enumerator: Enumerator, export: dict, docs: dict[str, dict], label: str):
+def bind(enumerator: Enumerator, export: dict, docs: list[tuple[str, Path, dict]], label: str):
     b = Binder(enumerator)
-    for stage, doc in docs.items():
+    for stage, _path, doc in docs:
         b.walk(export[stage], doc, label)
     return b
 
@@ -170,7 +180,9 @@ def _codes(r: subprocess.CompletedProcess) -> list[str]:
     return [c for c in codes if c]
 
 
-def run_probe(delvec: Path, campaign: Path, prefabs: Path) -> tuple[int, list[str], str]:
+def run_probe(
+    delvec: Path, campaign: Path, prefabs: Path, export: dict
+) -> tuple[int, list[str], str]:
     """Put a probe through the engine and report how it was refused.
 
     **`detail` first where the probe carries a program, then `validate`, then
@@ -194,10 +206,17 @@ def run_probe(delvec: Path, campaign: Path, prefabs: Path) -> tuple[int, list[st
     # written, and its refusals — a handed name nothing hands, an opening off
     # its seam, an owed name no mark answers — fire on the program, ahead of
     # any verdict `validate` would give the campaign around it. So where the
-    # materialised point carries `programs/`, `detail --all` runs first, over a
-    # scratch copy of the prefab directory so a probe that is NOT refused
-    # cannot write into the directory every other point builds from.
-    if (campaign / "programs").is_dir():
+    # materialised point carries detail an author wrote, `detail --all` runs
+    # first, over a scratch copy of the prefab directory so a probe that is NOT
+    # refused cannot write into the directory every other point builds from.
+    #
+    # **Detail is a medium, not a format** (spec-0072): a place's detail is a
+    # program or a drawing, `delvec detail` chooses by address, and a probe
+    # about a drawing is refused in exactly the same phase. `programs` is
+    # spelled here because a program is not a document class of the campaign
+    # schema and the export cannot name it; every class the export DOES name
+    # comes from the export.
+    if any((campaign / d).is_dir() for d in ["programs", *document_dirs(export)]):
         scratch = Path(tempfile.mkdtemp(prefix="gallery-probe-prefabs-")) / "prefabs"
         try:
             if gallery_domain.probe_prefabs(prefabs, scratch) == 0:
@@ -442,6 +461,13 @@ def main() -> int:
     if not primary_docs:
         die(f"the gallery at `{GALLERY}` holds no stage documents")
     docs_walked = len(primary_docs)
+    # How many documents of each declared class the WHOLE domain walked. A class
+    # the export declares and no point holds is a surface this gate examined
+    # zero objects of, and every unit it owns would read as unaccounted — or, if
+    # a probe claimed them, as discharged — without one file ever being opened.
+    walked: dict[str, int] = {stage: 0 for stage in export}
+    for stage, _p, _d in primary_docs:
+        walked[stage] += 1
 
     primary = bind(enumerator, export, primary_docs, "primary")
     bound: dict[str, list[str]] = {k: list(v) for k, v in primary.bound.items()}
@@ -465,7 +491,10 @@ def main() -> int:
                 )
             dest = tmp / od.name
             materialise_point("overlay", od, dest)
-            ov = bind(enumerator, export, load_stage_docs(dest, export), f"overlay:{od.name}")
+            ov_docs = load_stage_docs(dest, export)
+            for stage, _p, _d in ov_docs:
+                walked[stage] += 1
+            ov = bind(enumerator, export, ov_docs, f"overlay:{od.name}")
             for unit in declared:
                 if unit not in units:
                     die(f"overlay `{od.name}` declares `{unit}`, which is not a unit")
@@ -523,7 +552,7 @@ def main() -> int:
             own_documents += own
             dest = tmp / pd.name
             materialise_point("probe", pd, dest)
-            rc, codes, phase = run_probe(delvec, dest, prefabs)
+            rc, codes, phase = run_probe(delvec, dest, prefabs, export)
             assert_refused(pd.name, kind, code, rc, codes, phase)
             if kind == DEMONSTRATION:
                 demonstrations[pd.name] = {"code": code, "why": why, "phase": phase}
@@ -552,6 +581,13 @@ def main() -> int:
         f"{len(overlay_rows)} overlay(s), {len(refusal)} unit(s) behind "
         f"{len({r['probe'] for r in refusal.values()})} probe(s)."
     )
+    classes = stage_files(export)
+    print(
+        "documents walked, by class (primary and every overlay): "
+        + ", ".join(f"{classes[s]} {walked[s]}" for s in sorted(walked))
+        + "."
+    )
+    empty = sorted(s for s, n in walked.items() if n == 0)
     print(
         f"probe patches: {probes_examined} probe(s) examined, {probes_patched} carrying a "
         f"declared edit over the primary, {paths_touched} JSON path(s) touched, "
@@ -577,6 +613,7 @@ def main() -> int:
         "overlays": overlay_rows,
         "refusal_proven": {k: refusal[k] for k in sorted(refusal)},
         "primary_documents": docs_walked,
+        "documents_walked": {classes[s]: walked[s] for s in sorted(walked)},
         "probes_examined": probes_examined,
         "probes_with_a_patch": probes_patched,
         "probe_patch_paths": paths_touched,
@@ -594,6 +631,22 @@ def main() -> int:
             unaccounted,
             demonstrations,
         )
+
+    if empty:
+        print(
+            "\nThe engine declares these document classes and no point in the "
+            "domain holds one, so this gate opened ZERO files of each:",
+            file=sys.stderr,
+        )
+        for s in empty:
+            print(f"  {s} — `{classes[s]}`", file=sys.stderr)
+        print(
+            "\nEvery unit such a class owns is judged without a single document "
+            "of it being read. Write the element (spec-0039: every engine "
+            "surface owes a gallery element), never an exemption.",
+            file=sys.stderr,
+        )
+        return 1
 
     if unaccounted:
         print(

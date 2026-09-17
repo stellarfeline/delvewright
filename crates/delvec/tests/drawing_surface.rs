@@ -265,3 +265,46 @@ fn no_struck_verb_has_an_operation_type() {
         }
     }
 }
+
+/// **Every class the export names says where its documents live**, and the
+/// drawing's answer is a directory rather than a file.
+///
+/// A tool that walks a campaign directory has to turn a class into an address.
+/// For as long as every class was one file named for itself, that address was
+/// derivable from the export's own key, and `tools/ci/gallery_units.py` derived
+/// it. A drawing is one file per place, so the derivation became a guess — and a
+/// guessed filename matches nothing, finds no document, and reports perfect
+/// coverage of an empty set. The export answers instead, so `DRAWINGS_DIR` and
+/// the walking tool are one authority.
+#[test]
+fn every_document_class_the_export_names_says_where_its_documents_live() {
+    let all = schema("all");
+    let classes = all.as_object().expect("`--stage all` is an object");
+    assert!(!classes.is_empty(), "the export names ZERO classes");
+    let mut globbed = 0usize;
+    for (name, doc) in classes {
+        let at = doc
+            .get("documents")
+            .and_then(|v| v.as_str())
+            .unwrap_or_else(|| panic!("`{name}` does not say where its documents live"));
+        assert!(at.ends_with(".json"), "`{name}` lives at `{at}`");
+        if at.contains('/') {
+            globbed += 1;
+            assert_eq!(
+                at,
+                format!("{}/*.json", delvec::drawing::DRAWINGS_DIR),
+                "`{name}` is a class of many documents and names its own directory"
+            );
+        } else {
+            assert_eq!(
+                at,
+                format!("{name}.json"),
+                "a class of one file is named for itself"
+            );
+        }
+    }
+    assert_eq!(
+        globbed, 1,
+        "one class holds many documents today: the drawing"
+    );
+}
