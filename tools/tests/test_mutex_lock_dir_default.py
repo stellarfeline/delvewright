@@ -28,10 +28,11 @@ ROOT = pathlib.Path(__file__).resolve().parents[2]
 MUTEX = ROOT / "validation" / "mutex.sh"
 
 
-def run_bash(code: str, env: dict) -> subprocess.CompletedProcess:
+def run_bash(code: str, env: dict, timeout: float | None = None) -> subprocess.CompletedProcess:
     full_env = {"PATH": "/usr/bin:/bin:/usr/sbin:/sbin", **env}
     return subprocess.run(
-        ["bash", "-c", code], cwd=ROOT, env=full_env, capture_output=True, text=True
+        ["bash", "-c", code], cwd=ROOT, env=full_env, capture_output=True, text=True,
+        timeout=timeout,
     )
 
 
@@ -173,3 +174,73 @@ def test_a_mkdir_that_fails_once_with_the_lock_dir_absent_retries_and_succeeds(t
     )
     assert "held by" not in result.stderr, result.stderr
     assert lock_dir.is_dir(), "the retry never actually acquired the lock"
+
+
+# ---------------------------------------------------------------------------
+# The race retry is BOUNDED: each race site above also has a PERSISTENT state
+# that looks identical to it on a single check, and a retry with no bound and
+# no sleep spins on either forever, silently, at full CPU. Every test below
+# carries its own subprocess timeout, so the failure mode this guards against
+# — an unbounded spin — is a prompt, named test failure rather than a hung
+# suite.
+# ---------------------------------------------------------------------------
+
+
+def test_a_plain_file_at_the_lock_path_is_reported_promptly_not_spun_on(tmp_path):
+    """`mkdir` against a plain file (or a dangling symlink) fails every time,
+    and the lock path is never a directory afterward — the exact shape the
+    race check above also sees, except it never resolves. That is not a
+    holder releasing (which clears in one or two immediate tries); it is
+    permanent, and the retry budget must give up and report `mkdir`'s own
+    error rather than loop forever."""
+    parent = tmp_path / "parent"
+    parent.mkdir()
+    lock_dir = parent / "lock.d"
+    lock_dir.write_text("not a directory", encoding="utf-8")
+    env = {"HOME": str(tmp_path), "DW_MUTEX_DIR": str(lock_dir)}
+    try:
+        result = run_bash(
+            'source "%s"; dw_mutex_acquire test-holder 0' % MUTEX, env=env, timeout=10
+        )
+    except subprocess.TimeoutExpired:
+        pytest.fail(
+            "dw_mutex_acquire spun forever against a plain file at the lock "
+            "path instead of giving up after its retry budget"
+        )
+    assert result.returncode != 0
+    assert "cannot create" in result.stderr, result.stderr
+    # Not a literal retry count here: that number lives once, in
+    # `dw_mutex_acquire`'s own `race_tries_max`, and a test copy of it would
+    # be the second authority CLAUDE.md forbids. "time(s) in a row" is the
+    # retry-budget-exhausted message's own wording, distinguishing it from
+    # the immediate "missing or not writable" parent message.
+    assert "time(s) in a row" in result.stderr, (
+        f"expected the retry-budget-exhausted message, got:\n{result.stderr}"
+    )
+
+
+def test_a_lock_dir_with_an_empty_holder_file_resolves_through_held_by_unknown(tmp_path):
+    """A holder killed between its own `mkdir` and writing `HOLDER` leaves the
+    lock directory present with an EMPTY `HOLDER` file — permanently, since
+    nothing is left to finish writing it or to release the directory.
+    `dw_mutex_holder` reads that as an empty string (`cut` succeeds on an
+    empty file), the same shape the race check sees for an instant when a
+    real holder is mid-release — except this one never resolves, and the
+    retry budget must fall through to the ordinary held-by-unknown path
+    instead of spinning on it forever."""
+    lock_dir = tmp_path / "lock.d"
+    lock_dir.mkdir()
+    (lock_dir / "HOLDER").write_text("", encoding="utf-8")
+    env = {"HOME": str(tmp_path), "DW_MUTEX_DIR": str(lock_dir)}
+    try:
+        result = run_bash(
+            'source "%s"; dw_mutex_acquire test-holder 0' % MUTEX, env=env, timeout=10
+        )
+    except subprocess.TimeoutExpired:
+        pytest.fail(
+            "dw_mutex_acquire spun forever against an empty HOLDER file "
+            "instead of falling through to the held-by-unknown path"
+        )
+    assert result.returncode != 0
+    assert "held by 'unknown' after 0s" in result.stderr, result.stderr
+    assert "cannot create" not in result.stderr, result.stderr
