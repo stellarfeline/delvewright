@@ -316,8 +316,31 @@ fn detail_one(
         return Err(1);
     }
 
-    // ---- 2. the program, and the handing bound into it ----
+    // ---- 2. the medium, then the program, and the handing bound into it ----
+    //
+    // **A place has one medium** (`DW0908`, spec-0072 §9). Which one is read off
+    // the ADDRESS the document stands at, before either is opened: a place
+    // detailed twice is two buildings, and nothing but the author can choose
+    // between them — least of all a rule that would pick whichever the engine
+    // happened to look for first.
     let program_path = campaign_dir.join(PROGRAMS_DIR).join(format!("{stem}.json"));
+    let drawing_path = campaign_dir
+        .join(delvec::drawing::DRAWINGS_DIR)
+        .join(format!("{stem}.json"));
+    if program_path.is_file() && drawing_path.is_file() {
+        let d = Diagnostic::error(
+            delvec::drawing::diag::DW_TWO_MEDIA,
+            STAGE,
+            drawing_path.display().to_string(),
+            format!(
+                "`{place}` is detailed twice: `{}` and `{}` both exist. A place's detail is a                  program or a drawing, and the medium is read off the address the document stands                  at — so two documents are two buildings and nothing here can choose between                  them. Delete the one that is not the record.",
+                program_path.display(),
+                drawing_path.display()
+            ),
+        );
+        print_one_diag(&d, json);
+        return Err(1);
+    }
     if !program_path.is_file() {
         eprintln!(
             "error: `{place}` has no program at `{}`. A place is detailed from \

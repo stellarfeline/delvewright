@@ -47,6 +47,15 @@
 /// What the `generator` breadcrumb of a piece a drawing produced says.
 pub const GENERATOR: &str = "crates/delvec/src/drawing";
 
+/// **Where a campaign keeps its drawings**: `<campaign>/drawings/<place
+/// stem>.json`.
+///
+/// The address is derived from the place exactly as a program's is (spec-0058
+/// §2.1); the document at it is the creator's. A place whose detail is written
+/// at BOTH addresses is refused before either is opened (`DW0908`): two media
+/// are two buildings, and nothing can choose between them but the author.
+pub const DRAWINGS_DIR: &str = "drawings";
+
 pub mod cli;
 pub mod diag;
 pub mod execute;

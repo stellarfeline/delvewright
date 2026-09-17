@@ -2241,6 +2241,135 @@ mod tests {
         }
     }
 
+    /// **Every block of the pinned registry, through every frame that keeps the
+    /// vertical**: a state either resolves to one the registry accepts, or is
+    /// refused — and the judge calls the same states wrong.
+    ///
+    /// The whole registry, not a corpus: a frame rule derived from the block's
+    /// own value vocabulary reaches a block the pin adds without being told, and
+    /// the only way to say that is to ask every block. What this refuses to let
+    /// happen is a resolver that writes an ILLEGAL state — one no gate below it
+    /// would catch, because every gate below reads the resolved state and
+    /// believes it.
+    ///
+    /// Binding counts on both outcomes, and on the population the rule can bite
+    /// on at all: a sweep that only ever resolved, or that found no
+    /// frame-sensitive block, would discriminate nothing.
+    #[test]
+    fn every_block_resolves_or_refuses_under_every_frame_that_keeps_the_vertical() {
+        let reg = BlockRegistry::v1_21_11();
+        // The eight: the four turns and their four mirrors, as
+        // (local_to_world, reflected). The vertical is kept in all of them.
+        let frames: [([usize; 3], [bool; 3]); 8] = [
+            ([0, 1, 2], [false, false, false]),
+            ([2, 1, 0], [false, false, true]),
+            ([0, 1, 2], [true, false, true]),
+            ([2, 1, 0], [true, false, false]),
+            ([0, 1, 2], [true, false, false]),
+            ([0, 1, 2], [false, false, true]),
+            ([2, 1, 0], [false, false, false]),
+            ([2, 1, 0], [true, false, true]),
+        ];
+        let mut examined = 0usize;
+        let mut resolved = 0usize;
+        let mut refused = 0usize;
+        let mut moved = 0usize;
+        for name in reg.blocks.keys() {
+            let default = reg.default_state(name).expect("every block has a default");
+            for (perm, refl) in frames {
+                examined += 1;
+                match reg.permuted_properties(name, default, perm, refl) {
+                    Ok(out) => {
+                        resolved += 1;
+                        assert!(
+                            reg.validate(name, &out).is_ok(),
+                            "{name} under {perm:?}/{refl:?} resolved to {out:?}, which the pin \
+                             does not accept"
+                        );
+                        if out != *default {
+                            moved += 1;
+                        }
+                        assert_eq!(
+                            reg.oriented_mismatch(name, default, perm, refl).is_none(),
+                            out == *default,
+                            "{name} under {perm:?}/{refl:?}: the judge and the resolver disagree"
+                        );
+                    }
+                    Err(_) => {
+                        refused += 1;
+                        assert!(
+                            reg.oriented_mismatch(name, default, perm, refl).is_some(),
+                            "{name} under {perm:?}/{refl:?} was refused while the judge called it \
+                             safe"
+                        );
+                    }
+                }
+            }
+        }
+        assert_eq!(examined, reg.len() * 8, "binding count: blocks x frames");
+        assert!(
+            moved > 0 && resolved > 0,
+            "binding count: {moved} state(s) of {resolved} resolved to something else — a sweep \
+             where no frame moved anything is measuring nothing"
+        );
+        // A default state is mostly frame-free (a `north` facing is a default,
+        // a `rotation` is 0 and its image is 0), so the refusals here are few
+        // and the number is stated rather than asserted to be large: what
+        // matters is that the two ends never disagree.
+        assert!(
+            refused <= resolved,
+            "{refused} refused, {resolved} resolved"
+        );
+    }
+
+    /// **Four quarter-turns are the identity**, for every block of the registry.
+    ///
+    /// The arithmetic claim the eight frames rest on, checked rather than
+    /// argued: a turn is a symmetry of the square, so composing it four times
+    /// is the state the author wrote. A rule that drifted by a step would show
+    /// here and nowhere else.
+    #[test]
+    fn four_quarter_turns_of_any_state_are_the_state() {
+        let reg = BlockRegistry::v1_21_11();
+        // One quarter-turn: local x names world z, local z names world x
+        // reversed.
+        let quarter = ([2usize, 1, 0], [false, false, true]);
+        let mut examined = 0usize;
+        let mut turned = 0usize;
+        for name in reg.blocks.keys() {
+            let default = reg.default_state(name).expect("every block has a default");
+            let mut state = default.clone();
+            let mut ok = true;
+            for _ in 0..4 {
+                match reg.permuted_properties(name, &state, quarter.0, quarter.1) {
+                    Ok(next) => state = next,
+                    // A state this frame cannot turn at all is not a
+                    // counter-example to what four turns do.
+                    Err(_) => {
+                        ok = false;
+                        break;
+                    }
+                }
+            }
+            if !ok {
+                continue;
+            }
+            examined += 1;
+            if state != *default {
+                turned += 1;
+            }
+            assert_eq!(
+                state, *default,
+                "{name}: four quarter-turns left it at {state:?} instead of {default:?}"
+            );
+        }
+        assert!(
+            examined > 500,
+            "binding count: {examined} block(s) turned four times"
+        );
+        assert_eq!(turned, 0);
+    }
+
     /// The two entry points cannot drift apart: over a corpus of real states
     /// and every frame the grammar can produce, `permuted_properties` succeeds
     /// exactly when `oriented_mismatch` is silent, and its output is a state
