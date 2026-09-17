@@ -622,3 +622,58 @@ def test_a_declared_class_no_point_holds_is_a_red(tmp_path, monkeypatch, capsys)
     assert "drawings/*.json 0" in out.out
     assert "ZERO files of each" in out.err
     assert "drawing — `drawings/*.json`" in out.err
+
+
+def test_a_union_branch_that_is_itself_a_union_is_descended():
+    """`Int` is "an integer or an expression", and an expression is a union.
+
+    The tagged loop sees a branch with no tag of its own, and the record fit sees
+    one with no properties, so before this every expression written in a
+    COORDINATE bound nothing at all — silently, on a document whose every `from`
+    and `to` is one.
+    """
+    export = {
+        "world": {
+            "title": "Envelope_for_WorldContent",
+            "documents": "world.json",
+            "type": "object",
+            "properties": {"content": {"$ref": "#/$defs/WorldContent"}},
+            "$defs": {
+                "WorldContent": {
+                    "type": "object",
+                    "properties": {"at": {"$ref": "#/$defs/Int"}},
+                },
+                "Int": {
+                    "anyOf": [{"type": "integer"}, {"$ref": "#/$defs/Expr"}],
+                },
+                "Expr": {
+                    "oneOf": [
+                        {
+                            "type": "object",
+                            "properties": {
+                                "expr": {"const": "int", "type": "string"},
+                                "value": {"type": "integer"},
+                            },
+                            "required": ["expr"],
+                        },
+                        {
+                            "type": "object",
+                            "properties": {
+                                "expr": {"const": "dim", "type": "string"},
+                                "dim": {"type": "string"},
+                            },
+                            "required": ["expr"],
+                        },
+                    ]
+                },
+            },
+        }
+    }
+    e = Enumerator(export)
+    units = e.run()
+    assert "Expr::dim" in units and "Expr::dim.dim" in units
+    b = Binder(e)
+    b.walk(export["world"], _doc({"at": {"expr": "dim", "dim": "x"}}), "build")
+    assert "Expr::dim" in b.bound, sorted(b.bound)
+    assert "Expr::dim.dim" in b.bound, sorted(b.bound)
+    assert "Expr::int" not in b.bound, "the branch the value does not satisfy stays unbound"
