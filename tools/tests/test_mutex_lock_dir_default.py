@@ -166,7 +166,9 @@ def test_a_mkdir_that_fails_once_with_the_lock_dir_absent_retries_and_succeeds(t
         "HOME": str(tmp_path),
         "DW_MUTEX_DIR": str(lock_dir),
     }
-    result = run_bash('source "%s"; dw_mutex_acquire test-holder 0' % MUTEX, env=env)
+    result = run_bash(
+        'source "%s"; dw_mutex_acquire test-holder 0' % MUTEX, env=env, timeout=10
+    )
     assert result.returncode == 0, result.stderr
     assert "cannot create" not in result.stderr, (
         f"a transient mkdir failure with the lock dir absent was reported as "
