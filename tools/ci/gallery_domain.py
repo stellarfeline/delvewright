@@ -226,6 +226,32 @@ def patch_ops(point: Path | None) -> list[dict]:
     return ops
 
 
+def carried_documents(point: Path | None) -> list[str]:
+    """Overlay documents a probe declares it CARRIES, unchanged, by path.
+
+    A probe about a document only one overlay holds needs that overlay's whole
+    point around it — a drawing needs the site plan that allocates its place, the
+    graph that gives the place its headroom, and the walk record of that grid.
+    Shipping copies of them is how eight of the fifteen older probes drifted up
+    to 113 JSON paths away from what they claimed to be a perturbation of, and a
+    document the probe does not edit has nothing for `patch` to name.
+
+    So it names them: `overlays/<name>/<path>` each, brought into the point at
+    `<path>` exactly as the overlay holds it. Nothing is copied into the
+    repository, so nothing can drift, and a reader sees in one list what campaign
+    the probe is a probe of.
+    """
+    if point is None:
+        return []
+    manifest = Path(point) / "probe.json"
+    if not manifest.is_file():
+        return []
+    carries = json.loads(manifest.read_text()).get("carries") or []
+    if not isinstance(carries, list) or not all(isinstance(c, str) for c in carries):
+        raise PatchError(f"`{manifest}` has a `carries` that is not a list of paths")
+    return carries
+
+
 def shadowed_documents(point: Path | None) -> list[str]:
     """Files a probe ships that the PRIMARY also holds — the copy shape, by name.
 
@@ -329,6 +355,23 @@ def materialise(dest: Path, point: Path | None = None) -> int:
                 shutil.copytree(f, dest / f.name, dirs_exist_ok=True)
             else:
                 shutil.copy2(f, dest / f.name)
+        for rel in carried_documents(point):
+            campaign_rel = _overlay_document(rel)
+            if campaign_rel is None:
+                raise PatchError(
+                    f"carries `{rel}`, which is not an overlay document "
+                    "(`overlays/<name>/<path>`)"
+                )
+            source = GALLERY / rel
+            if not source.is_file():
+                raise PatchError(f"carries `{rel}`, and no overlay holds that document")
+            if (Path(point) / campaign_rel).is_file():
+                raise PatchError(
+                    f"carries `{rel}` and also ships `{campaign_rel}` — a copy of the "
+                    "document it carries, which nothing compares"
+                )
+            (dest / campaign_rel).parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(source, dest / campaign_rel)
         by_doc: dict[str, list[dict]] = {}
         for op in patch_ops(point):
             by_doc.setdefault(op.get("doc") or "", []).append(op)
@@ -351,6 +394,7 @@ def materialise(dest: Path, point: Path | None = None) -> int:
                         "of the document it edits, which nothing compares. Ship neither; the "
                         "edit brings the overlay's document in"
                     )
+                (dest / campaign_rel).parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(source, dest / campaign_rel)
                 rel = campaign_rel
             target = dest / rel
@@ -370,12 +414,15 @@ def materialise(dest: Path, point: Path | None = None) -> int:
 def _overlay_document(rel: str) -> str | None:
     """`overlays/<name>/<document>` -> `<document>`, or `None` for any other path.
 
-    Exactly one directory level under `overlays/`: an overlay is flat beside its
-    manifest, and a deeper path is not a shape a build point has.
+    An overlay's documents sit beside its manifest, and a class of MANY documents
+    sits in a directory of its own there — `programs/<place>.json`,
+    `drawings/<place>.json`. Everything under the overlay's name is that
+    overlay's, at the same path inside the campaign, so the campaign-relative
+    path is whatever follows the name.
     """
     parts = Path(rel).parts
-    if len(parts) == 3 and parts[0] == "overlays" and parts[2] not in POINT_MANIFESTS:
-        return parts[2]
+    if len(parts) >= 3 and parts[0] == "overlays" and parts[2] not in POINT_MANIFESTS:
+        return str(Path(*parts[2:]))
     return None
 
 

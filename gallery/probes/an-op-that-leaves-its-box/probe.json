@@ -1,0 +1,24 @@
+{
+  "carries": [
+    "overlays/site-plan/site-plan.json",
+    "overlays/site-plan/layout-graph.json",
+    "overlays/site-plan/detail-plan.json",
+    "overlays/site-plan/walk-record.json",
+    "overlays/site-plan/programs/annex.json"
+  ],
+  "code": "DW0902",
+  "patch": [
+    {
+      "doc": "overlays/site-plan/drawings/far-hall.json",
+      "op": "add",
+      "path": "/ops/27/body/0/body/0/body/0/to",
+      "value": [
+        9,
+        0,
+        0
+      ]
+    }
+  ],
+  "units": [],
+  "why": "The arcade's `scope`, with one pier's `use` reaching a cell the fitted slice it stands in does not hold. An operation is refused at the operation, before it paints, with both boxes and the scope it left named — never after the fact."
+}

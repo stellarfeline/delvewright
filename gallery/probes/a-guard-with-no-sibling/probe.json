@@ -1,0 +1,24 @@
+{
+  "carries": [
+    "overlays/site-plan/site-plan.json",
+    "overlays/site-plan/layout-graph.json",
+    "overlays/site-plan/detail-plan.json",
+    "overlays/site-plan/walk-record.json",
+    "overlays/site-plan/programs/annex.json"
+  ],
+  "code": "DW0100",
+  "patch": [
+    {
+      "doc": "overlays/site-plan/drawings/far-hall.json",
+      "op": "replace",
+      "path": "/ops/1/when",
+      "value": {
+        "cond": "otherwise"
+      }
+    }
+  ],
+  "units": [
+    "Cond::otherwise"
+  ],
+  "why": "The far hall's inlaid pavement line, with its `when` rewritten to `otherwise`. `otherwise` means \"no sibling alternative of this rule matched\", and a drawing's operations are an ordered list rather than a set of alternatives, so there is no sibling for it to be about. The loader takes the document and the executor refuses the guard where it is written, with the pointer of the value that failed, rather than letting it evaluate to a constant."
+}

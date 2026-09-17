@@ -1,0 +1,20 @@
+{
+  "carries": [
+    "overlays/site-plan/site-plan.json",
+    "overlays/site-plan/layout-graph.json",
+    "overlays/site-plan/detail-plan.json",
+    "overlays/site-plan/walk-record.json",
+    "overlays/site-plan/programs/annex.json"
+  ],
+  "code": "DW0906",
+  "patch": [
+    {
+      "doc": "overlays/site-plan/drawings/far-hall.json",
+      "op": "replace",
+      "path": "/ops/27/body/0/body/0/remainder",
+      "value": "exact"
+    }
+  ],
+  "units": [],
+  "why": "The arcade's fitted `repeat`, told its bays divide the hall exactly when four cells are left over. `exact` is the author saying there is no remainder to place, so the refusal names the run, the stride, the item, the leftover and the three words that would accept it."
+}

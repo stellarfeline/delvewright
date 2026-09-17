@@ -141,16 +141,31 @@ fn run(
     };
 
     let mut done: Vec<String> = Vec::new();
+    // **What this run has not reached yet is not yet a claim about the library.**
+    // A run detailing several places judges each one against the campaign the
+    // row would make; a sibling's committed row names a piece that this same
+    // run is about to write, and judging it before its turn refuses the first
+    // place for the second place's sake (`DW0842`). The set shrinks as the run
+    // goes, so every row is judged — the one it is about at its own turn, and
+    // all of them together in the battery below.
+    let mut pending: BTreeSet<NodeId> = targets.iter().cloned().collect();
+    // Pieces this run has already frozen. `library` was read once, before
+    // anything was written, so without this a later place cannot see an earlier
+    // one's piece either.
+    let mut library = library;
     for node in &targets {
-        let written = detail_one(
+        pending.remove(node);
+        let (written, meta) = detail_one(
             campaign_dir,
             &campaign,
             loaded.walk_record.as_deref(),
             &library,
             prefabs_dir,
             node,
+            &pending,
             json,
         )?;
+        library.insert(meta);
         done.push(written);
     }
     eprintln!(
@@ -321,8 +336,9 @@ fn detail_one(
     library: &PrefabRegistry,
     prefabs_dir: &Path,
     node: &NodeId,
+    pending: &BTreeSet<NodeId>,
     json: bool,
-) -> Result<String, u8> {
+) -> Result<(String, PrefabMeta), u8> {
     let stem = stem_of(node);
     let place = node.0.as_str();
     let a = engine::allocation(campaign, node).expect("a target is a place the plan allocates");
@@ -466,7 +482,7 @@ fn detail_one(
     let row = row_for(campaign, node, &id, &meta);
     let mut registry = library.clone();
     registry.insert(meta.clone());
-    let judged = with_row(campaign, &row);
+    let judged = with_row(campaign, &row, pending);
     let (diags, binding) = engine::check(&judged, &registry, walk_record);
     let errors: Vec<&Diagnostic> = diags
         .iter()
@@ -576,7 +592,7 @@ fn detail_one(
             })
         );
     }
-    Ok(exported.prefab_id().to_string())
+    Ok((exported.prefab_id().to_string(), meta))
 }
 
 /// **What a medium produced**: the expansion every gate reads, and the three
@@ -715,7 +731,14 @@ fn draw(
     };
     let run = match delvec::drawing::execute(&drawing, region, &options) {
         Ok(r) => r,
-        Err(e) => return Err(cannot_fit(place, path, region, &e.to_string())),
+        Err(e) => {
+            // **The refusal first, as a diagnostic.** It carries a `DW` code and
+            // the pointer of the operation that failed, and a caller reading
+            // `--json` gets nothing from prose on stderr: a machine asking which
+            // rule refused this place would have read no code at all.
+            print_one_diag(&e.diagnostic(), json);
+            return Err(cannot_fit(place, path, region, "the refusal above"));
+        }
     };
     delvec::drawing::cli::run_report_to_stderr(&run);
     Ok(Made {
@@ -870,7 +893,7 @@ fn row_for(campaign: &Campaign, node: &NodeId, id: &str, meta: &PrefabMeta) -> D
 
 /// The campaign with `row` standing in its detail plan — the document as the
 /// write would leave it, judged before the write.
-fn with_row(campaign: &Campaign, row: &Detail) -> Campaign {
+fn with_row(campaign: &Campaign, row: &Detail, pending: &BTreeSet<NodeId>) -> Campaign {
     let mut c = campaign.clone();
     let env = c.detail_plan.get_or_insert_with(|| Envelope {
         dsl_version: delvec::compiler::DSL_VERSION.to_string(),
@@ -882,6 +905,9 @@ fn with_row(campaign: &Campaign, row: &Detail) -> Campaign {
         },
     });
     env.content.details.retain(|d| d.place != row.place);
+    env.content
+        .details
+        .retain(|d| !pending.iter().any(|n| n.0 == d.place.0));
     env.content.details.push(row.clone());
     c
 }

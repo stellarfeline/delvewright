@@ -1,0 +1,62 @@
+{
+  "name": "gallery-band",
+  "palette": {
+    "mullion": "minecraft:polished_blackstone",
+    "sill": "minecraft:chiseled_polished_blackstone"
+  },
+  "params": {
+    "courses": 2
+  },
+  "rules": {
+    "band": [
+      {
+        "body": {
+          "material": {
+            "role": "sill"
+          },
+          "op": "fill"
+        },
+        "weight": 1
+      }
+    ],
+    "light": [
+      {
+        "body": {
+          "axis": "y",
+          "children": [
+            {
+              "material": {
+                "role": "mullion"
+              },
+              "op": "fill"
+            },
+            {
+              "op": "call",
+              "symbol": "band"
+            }
+          ],
+          "op": "split",
+          "sizes": [
+            {
+              "blocks": {
+                "expr": "param",
+                "name": "courses"
+              },
+              "size": "absolute"
+            },
+            {
+              "size": "relative",
+              "weight": {
+                "expr": "int",
+                "value": 1
+              }
+            }
+          ]
+        },
+        "weight": 1
+      }
+    ]
+  },
+  "start": "light",
+  "version": "1.9.0"
+}

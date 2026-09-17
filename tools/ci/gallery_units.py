@@ -379,6 +379,25 @@ class Binder:
             if len(branches) == 1 and hops < 8:
                 self._value(branches[0], owner, value, ptr, hops + 1)
                 return
+            # A branch that is itself a TAGGED union. `Int` is "an integer, or
+            # an expression", and `Expr` is a `oneOf` of four tagged variants:
+            # the tag loop above sees a branch carrying no tag of its own, and
+            # the fit below sees one carrying no properties, so every expression
+            # written in a COORDINATE bound nothing at all — silently, on a
+            # document whose every `from` and `to` is one. The discriminator is
+            # the inner union's own tag, which is what serde uses.
+            if hops < 8:
+                for branch in branches:
+                    b, _ = self._resolve(branch)
+                    for inner in self._branches(b):
+                        ib, _ = self._resolve(inner)
+                        tp, tv = _variant_tag(ib)
+                        if tv is None or tp is None:
+                            continue
+                        if value.get(tp) == tv:
+                            self._value(branch, owner, value, ptr, hops + 1)
+                            return
+
             # An UNTAGGED union. Two shapes of it, and they need different
             # discriminators:
             #

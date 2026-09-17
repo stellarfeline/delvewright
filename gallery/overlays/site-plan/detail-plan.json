@@ -16,6 +16,14 @@
         },
         "piece": "prefab/gallery-annex",
         "place": "node/annex"
+      },
+      {
+        "anchors": {
+          "anchor/node-far-hall": "anchor/node-far-hall",
+          "anchor/unlock-east-door": "anchor/unlock-east-door"
+        },
+        "piece": "prefab/gallery-far-hall",
+        "place": "node/far-hall"
       }
     ],
     "palette": {
