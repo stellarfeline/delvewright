@@ -1616,8 +1616,21 @@ def test_the_owner_facing_paths_actually_invoke_the_gate(gate):
     root = pathlib.Path(__file__).resolve().parents[2]
     server = (root / "tools" / "creator" / "playtest-server.sh").read_text()
     assert "staging-gate.py" in server, "playtest-server.sh no longer runs the gate"
-    # and it must run BEFORE the container exists, or a refusal costs a session
-    assert server.index("staging-gate.py") < server.index("docker run"), \
+    # and it must run BEFORE the container exists, or a refusal costs a session.
+    # The literal text "docker run" is no longer only the invocation: it is
+    # also spelled once inside `dw_playtest_docker_run_argv`, a TEMPLATE the
+    # container's argv is built from (a seam so a unit test can assert its
+    # flags — in particular `-e MEMORY=...` — without a docker on PATH), and
+    # that definition sits earlier in the file than the gate call for
+    # sourceability reasons unrelated to execution order. The actual creation
+    # point is where the built argv is executed, which carries no literal
+    # "docker run" substring at all, so that call site is the marker instead.
+    create_marker = 'DOCKER_RUN_ARGV[@]}" >/dev/null'
+    assert create_marker in server, (
+        "the container-creation call site text moved; update this marker "
+        "(tools/creator/playtest-server.sh, the line executing the built argv)"
+    )
+    assert server.index("staging-gate.py") < server.index(create_marker), \
         "the gate must run before the container is created"
 
     owner_play = (root / "validation" / "owner-play.yaml").read_text()
