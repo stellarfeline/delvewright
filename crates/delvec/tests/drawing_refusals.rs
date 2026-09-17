@@ -424,3 +424,119 @@ fn a_place_with_two_media_has_a_code_of_its_own() {
     assert_eq!(delvec::drawing::diag::DW_TWO_MEDIA.id(), "DW0908");
     assert_eq!(delvec::drawing::DRAWINGS_DIR, "drawings");
 }
+
+// ---------------------------------------------------------------------------
+// The address a load-time refusal carries
+// ---------------------------------------------------------------------------
+//
+// spec-0072 §8 addresses **every** refusal by the operation's path in the
+// document the creator wrote. A refusal at load had no such address: it carried
+// `/`, and serde's own words name a line and a column — which, for a
+// flattened or tagged field, is the line where the enclosing object CLOSES.
+// In a 300-operation drawing that is a message nobody can act on.
+//
+// Each case below plants one mistake and asserts the pointer of the value that
+// failed. The document is otherwise well formed, so what is under test is the
+// address and not whether the refusal happens.
+
+/// The value that failed is a `mark`'s `at`, eight operations in.
+#[test]
+fn a_malformed_field_is_addressed_by_its_own_pointer() {
+    let dir = scratch("pointer-top");
+    let path = dir.join("tower.json");
+    std::fs::write(
+        &path,
+        &doc(&format!(
+            r#""ops": [ {} {{ "op": "mark",
+                        "mark": {{ "anchor": "gate", "at": {{ "cell": [5,1,10] }} }} }} ]"#,
+            r#"{ "op": "box", "role": "wall" }, "#.repeat(7)
+        )),
+    )
+    .unwrap();
+    let r = execute::load(&path).expect_err("`at` has no such form");
+    assert_eq!(r.code.id(), "DW0100");
+    assert_eq!(
+        r.at.pointer, "/ops/7/mark/at",
+        "the value that failed, not the document: {r}"
+    );
+    assert!(
+        r.to_string().contains("floor_center") && r.to_string().contains("offset"),
+        "an enum names the forms it accepts: {r}"
+    );
+}
+
+/// The same mistake inside a define's body: the pointer is the define's, which
+/// is where the author has to go, and the `use` site is not it.
+#[test]
+fn a_malformed_field_inside_a_define_is_addressed_inside_the_define() {
+    let dir = scratch("pointer-define");
+    let path = dir.join("tower.json");
+    std::fs::write(
+        &path,
+        &doc(r#""defines": { "post": { "roles": ["s"], "body": [
+               { "op": "box", "role": "s" },
+               { "op": "mark", "mark": { "anchor": "top", "at": { "cell": [0,0,0] } } } ] } },
+           "ops": [ { "op": "use", "define": "post", "roles": { "s": "wall" } } ]"#),
+    )
+    .unwrap();
+    let r = execute::load(&path).expect_err("`at` has no such form");
+    assert_eq!(r.code.id(), "DW0100");
+    assert_eq!(r.at.pointer, "/defines/post/body/1/mark/at", "{r}");
+}
+
+/// An unknown `op` is addressed at the operation, and names the thirteen.
+#[test]
+fn an_unknown_op_is_addressed_at_the_operation_and_names_the_thirteen() {
+    let dir = scratch("pointer-op");
+    let path = dir.join("tower.json");
+    std::fs::write(
+        &path,
+        &doc(r#""ops": [ { "op": "box", "role": "wall" },
+                    { "op": "flight", "role": "wall" } ]"#),
+    )
+    .unwrap();
+    let r = execute::load(&path).expect_err("`flight` is struck");
+    assert_eq!(r.code.id(), "DW0100");
+    assert!(
+        r.at.pointer.starts_with("/ops/1"),
+        "the operation that names it: {r}"
+    );
+    let message = r.to_string();
+    assert!(message.contains("flight"), "{message}");
+    for verb in ["box", "cylinder", "prism", "mirror", "claim"] {
+        assert!(message.contains(verb), "the forms it accepts: {message}");
+    }
+}
+
+/// A misspelt field on a solid is addressed at that solid.
+#[test]
+fn a_misspelt_field_on_a_solid_is_addressed_at_that_solid() {
+    let dir = scratch("pointer-field");
+    let path = dir.join("tower.json");
+    std::fs::write(
+        &path,
+        &doc(r#""ops": [ { "op": "box", "role": "wall" },
+                    { "op": "box", "rol": "wall" } ]"#),
+    )
+    .unwrap();
+    let r = execute::load(&path).expect_err("`rol` is not a field of `box`");
+    assert_eq!(r.code.id(), "DW0100");
+    assert!(r.at.pointer.starts_with("/ops/1"), "{r}");
+    assert!(r.to_string().contains("rol"), "{r}");
+}
+
+/// The control: a document that parses is not refused, so the three above are
+/// about the mistake they plant and not about the loader.
+#[test]
+fn a_well_formed_drawing_loads() {
+    let dir = scratch("pointer-control");
+    let path = dir.join("tower.json");
+    std::fs::write(
+        &path,
+        &doc(r#""ops": [ { "op": "box", "role": "wall" },
+                    { "op": "mark", "mark": { "anchor": "gate", "at": "floor_center" } } ]"#),
+    )
+    .unwrap();
+    let d = execute::load(&path).expect("a well-formed drawing loads");
+    assert_eq!(d.ops.len(), 2);
+}
