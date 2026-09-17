@@ -12,6 +12,7 @@
 
 pub mod admit;
 pub mod compiler;
+pub mod drawing;
 pub mod grammar;
 pub mod orchestrator;
 pub mod render;

@@ -157,8 +157,12 @@ impl RoundRule {
             if !self.round[a] {
                 continue;
             }
-            let cut_low = self.flat.is_some_and(|f| f.axis().index() == a && !f.is_high());
-            let cut_high = self.flat.is_some_and(|f| f.axis().index() == a && f.is_high());
+            let cut_low = self
+                .flat
+                .is_some_and(|f| f.axis().index() == a && !f.is_high());
+            let cut_high = self
+                .flat
+                .is_some_and(|f| f.axis().index() == a && f.is_high());
             if !cut_low {
                 lo[a] = t;
                 inner[a] -= t;
@@ -204,20 +208,20 @@ impl RoundRule {
         }
         // Σ_a ( u_a² · Π_{b≠a} D_b² ) ≤ Π_a D_a², over the round axes.
         let mut whole: i128 = 1;
-        for a in 0..3 {
+        for (a, da) in d.iter().enumerate() {
             if self.round[a] {
-                whole *= d[a] * d[a];
+                whole *= da * da;
             }
         }
         let mut sum: i128 = 0;
-        for a in 0..3 {
+        for (a, ua) in u.iter().enumerate() {
             if !self.round[a] {
                 continue;
             }
-            let mut term = u[a] * u[a];
-            for b in 0..3 {
+            let mut term = ua * ua;
+            for (b, db) in d.iter().enumerate() {
                 if b != a && self.round[b] {
-                    term *= d[b] * d[b];
+                    term *= db * db;
                 }
             }
             sum += term;

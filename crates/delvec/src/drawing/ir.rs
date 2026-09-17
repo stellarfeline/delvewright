@@ -91,7 +91,9 @@ pub fn cell(x: i64, y: i64, z: i64) -> Vec3 {
 
 /// One of the six faces of an operation's box: the low and the high face of
 /// `x`, `y` and `z`, in that order.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, JsonSchema)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, JsonSchema,
+)]
 #[serde(rename_all = "snake_case")]
 pub enum Face {
     /// The low face of `x`.

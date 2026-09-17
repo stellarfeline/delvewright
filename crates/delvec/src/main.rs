@@ -294,6 +294,8 @@ enum Command {
     /// need a GPU are `delvec render …` below.
     #[command(flatten)]
     View(delvec::compiler::view::cli::ViewCommand),
+    /// A place's drawing: check one, or execute it into a prefab (ADR-0030).
+    Drawing(delvec::drawing::cli::DrawingArgs),
     /// Grammar programs: list the corpus, show or check one, expand it into a
     /// prefab, measure demonstration coverage, audit every program.
     Grammar(delvec::grammar::cli::GrammarArgs),
@@ -477,6 +479,7 @@ fn main() -> ExitCode {
             cli.json,
         ),
         Command::View(cmd) => cmd.run(cli.json),
+        Command::Drawing(args) => delvec::drawing::cli::run(args.clone()),
         Command::Grammar(args) => delvec::grammar::cli::run(args.clone()),
         Command::Prefab(args) => delvec::admit::cli::run(args.clone(), &cli.prefabs, cli.json),
         Command::Schem(args) => delvec::schem::cli::run(args.clone(), cli.json),
@@ -2954,6 +2957,19 @@ fn run_schema(stage: &str) -> ExitCode {
             );
             return ExitCode::SUCCESS;
         }
+        // `drawings/<place stem>.json` is not a stage document either — a stage
+        // is one file named `<stage>.json` and a campaign holds one drawing per
+        // place — but it IS a document a creator writes, so unlike
+        // `prefab-metadata` it is part of `all`: `all` is the enumeration of
+        // what a creator can write, and the gallery's coverage gate reads its
+        // units from that export (spec-0072 §2.1).
+        "drawing" => {
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&drawing_schema()).unwrap()
+            );
+            return ExitCode::SUCCESS;
+        }
         "all" => Stage::ALL.to_vec(),
         other => {
             let names: Vec<String> = Stage::ALL
@@ -2962,9 +2978,10 @@ fn run_schema(stage: &str) -> ExitCode {
                 .collect();
             eprintln!(
                 "unknown document `{other}`. Want `1`..`7` (the campaign DSL's numbered \
-                 stages), any stage by name — {names} — `walk-record` for the hand-written \
+                 stages), any stage by name — {names} — `drawing` for a place's own \
+                 `drawings/<place stem>.json`, `walk-record` for the hand-written \
                  walk record, `prefab-metadata` for a prefab library asset's sibling \
-                 `<prefab-id>.json`, or `all` for every stage document at once.",
+                 `<prefab-id>.json`, or `all` for every document a creator writes.",
                 names = names.join(", "),
             );
             return ExitCode::from(EXIT_INTERNAL);
@@ -2978,12 +2995,42 @@ fn run_schema(stage: &str) -> ExitCode {
         for s in stages {
             map.insert(s.name().to_string(), stage_schema(s));
         }
+        map.insert("drawing".to_string(), drawing_schema());
         println!(
             "{}",
             serde_json::to_string_pretty(&serde_json::Value::Object(map)).unwrap()
         );
     }
     ExitCode::SUCCESS
+}
+
+/// The drawing document's schema, titled and described where it is exported.
+///
+/// Derived from the Rust types like every other schema here, and the shared half
+/// of it — `Expr`, `Cond`, `Mark`, `Contract` and their members — is generated
+/// from the **program document's own** types, so the two documents cannot drift
+/// about what an expression or a contract is (spec-0072 criterion 1).
+fn drawing_schema() -> serde_json::Value {
+    let mut v = serde_json::to_value(schemars::schema_for!(delvec::drawing::Drawing))
+        .expect("the drawing schema serializes to JSON");
+    if let Some(obj) = v.as_object_mut() {
+        obj.insert(
+            "title".into(),
+            serde_json::Value::String("drawings/<place stem>.json (a place's drawing)".into()),
+        );
+        obj.insert(
+            "description".into(),
+            serde_json::Value::String(
+                "A place's detail as an ordered list of solids the engine executes (ADR-0030). \
+                 One document per place, at `drawings/<place stem>.json` inside the campaign, \
+                 executed in the place's box in the box's own frame: `x` east, `y` up, `z` south, \
+                 the origin at the box's minimum corner, every coordinate a cell. A later \
+                 operation overwrites an earlier one."
+                    .into(),
+            ),
+        );
+    }
+    v
 }
 
 /// Export the metrics standard (spec-0049 §2 — pipeline stage 0).
