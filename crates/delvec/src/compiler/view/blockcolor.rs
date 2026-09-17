@@ -423,14 +423,29 @@ fn parse_element(v: &serde_json::Value) -> Option<Element> {
     Some(Element { from, to, faces })
 }
 
-/// Follow `#name` indirection to a concrete `ns:path` texture reference.
+/// Follow a texture variable to a concrete `ns:path` texture reference.
+///
+/// **The `#` is optional, and the pinned jar proves it.** A face names its
+/// texture either as `#all` or as the bare variable name `all`, and the client
+/// resolves both the same way: strip a leading `#` if there is one, then look
+/// the name up in the merged `textures` map and, failing that, take it as a
+/// path. `assets/minecraft/models/block/heavy_core.json` is the one model in
+/// the pinned 1.21.11 jar written the bare way — six faces of `"texture":
+/// "all"` over `"all": "block/heavy_core"` — and the block draws with its own
+/// texture in game. Requiring the `#` read that model as a texture at
+/// `assets/minecraft/textures/all.png`, found nothing, and reported the block
+/// as having no texture at all.
 fn resolve_texture_ref(reference: &str, textures: &BTreeMap<String, String>) -> Option<String> {
     let mut cur = reference.to_string();
     for _ in 0..16 {
-        if let Some(key) = cur.strip_prefix('#') {
-            cur = textures.get(key)?.clone();
-        } else {
-            return Some(cur);
+        let name = cur.strip_prefix('#').unwrap_or(cur.as_str());
+        match textures.get(name) {
+            // A variable pointing at itself is a malformed pack, not a chain.
+            Some(next) if *next != cur => cur = next.clone(),
+            // A name the map does not define is a literal path — unless it was
+            // written `#name`, which asserts a variable that is not there.
+            _ if cur.starts_with('#') => return None,
+            _ => return Some(cur),
         }
     }
     None
@@ -770,6 +785,34 @@ pub struct PaletteTable {
 
 /// Current [`PaletteTable::version`].
 pub const PALETTE_VERSION: u32 = 1;
+
+/// The vendored appearance of every block the pinned version has, derived by
+/// [`Deriver`] from the pinned client jar at [`DEFAULT_BIOME`].
+///
+/// The jar is EULA-bound and is never committed, so a creator who has not
+/// installed one — and every CI runner — has no assets to derive from. What is
+/// committed is this derivation's output, exactly as the shape-carrying
+/// property table and the font metrics are committed (`crates/delvec/data/`,
+/// `PROVENANCE.md`). It is what lets the CPU draft rasteriser
+/// ([`crate::compiler::snapshot`]) paint what the GPU path paints without
+/// holding a second opinion about what a block looks like: one derivation, one
+/// jar, two consumers.
+///
+/// Keyed by bare block id (`minecraft:stone`), since the table stands for a
+/// block at its default state; a caller holding a full blockstate string and a
+/// jar should derive that state instead.
+const PINNED_APPEARANCE_JSON: &str = include_str!("../../../data/block-appearance-1.21.11.json");
+
+impl PaletteTable {
+    /// [`PINNED_APPEARANCE_JSON`], parsed once per process.
+    pub fn pinned() -> &'static PaletteTable {
+        static TABLE: std::sync::OnceLock<PaletteTable> = std::sync::OnceLock::new();
+        TABLE.get_or_init(|| {
+            serde_json::from_str(PINNED_APPEARANCE_JSON)
+                .expect("the vendored block appearance table is valid JSON")
+        })
+    }
+}
 
 impl PaletteTable {
     /// Derive a table for a set of blockstate strings. Air-like states are
