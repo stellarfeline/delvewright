@@ -1,5 +1,8 @@
 {
-  "added": [],
+  "added": [
+    "site-plan.en:datapack/data/gallery/structure/gallery-far-hall.nbt",
+    "site-plan.en:validation/ways.json"
+  ],
   "base_commit": "90e44a8ad79674c3b32f1a0ade9109da775960ec",
   "changed": [
     "easy.en:creator-datapack/layout.json",
@@ -59,9 +62,19 @@
     "primary.zh-cn:validation/death-plan.json",
     "site-plan.en:creator-datapack/layout.json",
     "site-plan.en:critical-path.json",
+    "site-plan.en:datapack/data/gallery/function/place_all.mcfunction",
+    "site-plan.en:datapack/data/gallery/function/place_verify.mcfunction",
+    "site-plan.en:datapack/data/gallery/function/setup.mcfunction",
+    "site-plan.en:datapack/data/gallery/function/setup_finish.mcfunction",
+    "site-plan.en:datapack/data/gallery/function/spawn_muster.mcfunction",
+    "site-plan.en:packtest-datapack/data/gallery/test/souls_reseat_stationed.mcfunction",
     "site-plan.en:render-plan.json",
     "site-plan.en:validation/combat-plan.json",
     "site-plan.en:validation/critical-path-waypoints.json",
+    "site-plan.en:validation/fluid-escape.json",
+    "site-plan.en:validation/piece-exposure.json",
+    "site-plan.en:validation/piece-mating.json",
+    "site-plan.en:validation/sea-seepage.json",
     "valley-site.en:creator-datapack/layout.json",
     "valley-site.en:critical-path.json",
     "valley-site.en:render-plan.json",
@@ -79,9 +92,11 @@
     "void-horizon.en:validation/death-plan.json"
   ],
   "classes": {
+    "PackTest": 1,
     "creator overlay": 8,
+    "datapack function": 6,
     "other": 16,
-    "validation ledger": 51
+    "validation ledger": 56
   },
   "removed": []
 }
