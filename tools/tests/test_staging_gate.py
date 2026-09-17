@@ -1617,8 +1617,8 @@ def test_the_owner_facing_paths_actually_invoke_the_gate(gate):
     server = (root / "tools" / "creator" / "playtest-server.sh").read_text()
     assert "staging-gate.py" in server, "playtest-server.sh no longer runs the gate"
     # and it must run BEFORE the container exists, or a refusal costs a session.
-    # The literal text "docker run" is no longer only the invocation: it is
-    # also spelled once inside `dw_playtest_docker_run_argv`, a TEMPLATE the
+    # The literal text "docker run" is not a reliable marker for that point: it
+    # is also spelled inside `dw_playtest_docker_run_argv`, a TEMPLATE the
     # container's argv is built from (a seam so a unit test can assert its
     # flags — in particular `-e MEMORY=...` — without a docker on PATH), and
     # that definition sits earlier in the file than the gate call for

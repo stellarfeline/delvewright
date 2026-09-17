@@ -1,18 +1,21 @@
-"""`validation/mutex.sh`'s lock directory is a macOS path on every platform.
+"""`validation/mutex.sh`'s lock directory is a real path on every platform.
 
-The defect (ENGINE-LIMITS.md B2, a creator's report from a WSL2 Linux host):
-`DW_MUTEX_DIR` defaulted to `/private/tmp/delvewright-validation.lock.d`, which
-exists only on macOS. On Linux `mkdir` fails because the PARENT is not there —
-nobody holds anything — and the old `dw_mutex_acquire` could not tell that
-apart from "someone else holds the lock", so `playtest-server.sh up` printed
-"25565 mutex held by 'unknown' after 0s" for a lock nobody was holding, and
-refused to start at all.
+`DW_MUTEX_DIR` defaults to `/private/tmp/delvewright-validation.lock.d`, a
+macOS-only path: on Linux `mkdir` against it fails because the PARENT is not
+there — nobody holds anything — and an acquire loop that cannot tell that
+apart from "someone else holds the lock" reports it as held, refusing to
+start `playtest-server.sh up` on a host where the lock was never anyone's to
+begin with.
 
-Two things are bound here: the default is chosen by platform (a function of the
-`uname -s` string, not a hardcoded literal, so a test can drive both branches
-without a second host), and a failed acquisition says WHY — "cannot create" is
-a materially different fact from "someone is holding the lock", and only one of
-them is a reason to wait or to complain about a holder.
+Three things are bound here: the default is chosen by platform (a function
+of the `uname -s` string, not a hardcoded literal, so a test can drive both
+branches without a second host); a failed acquisition says WHY — "cannot
+create" is a materially different fact from "someone is holding the lock",
+tested against the PARENT directory rather than the lock directory itself, so
+only a parent that is missing or unwritable ever reads as "cannot create";
+and a lock directory that vanishes between a failed `mkdir` and either check
+that follows it — a real holder releasing in that instant — retries instead
+of reporting an empty holder as though something is held.
 """
 
 import os
@@ -48,7 +51,7 @@ def test_darwin_keeps_the_private_tmp_default(tmp_path):
 @pytest.mark.parametrize("uname_s", ["Linux", "FreeBSD", "SunOS"])
 def test_a_non_macos_uname_gets_a_path_that_exists_there(tmp_path, uname_s):
     """`/private/tmp` is a macOS-only alias; everywhere else `/tmp` is the one
-    directory guaranteed to exist, which is the entire fix for B2."""
+    directory guaranteed to exist."""
     result = run_bash(
         f'source "{MUTEX}"; dw_mutex_default_dir {uname_s}', env={"HOME": str(tmp_path)}
     )

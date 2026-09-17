@@ -1,19 +1,20 @@
 """`playtest-server.sh up` sets a real MEMORY, and a probe failure leaves
 nothing running.
 
-Two defects, reported from a WSL2 Linux host bringing up a large campaign — 84
-tiles plus 170 horizon templates (ENGINE-LIMITS.md B3, docs/reference/tools.md):
+Two things are bound here, both about a large campaign — many tiles plus many
+horizon templates, more than a small build:
 
-- The `docker run` set no `MEMORY`, so the itzg image ran at its own 1G
-  default. Loading the campaign OOM'd it (`java.lang.OutOfMemoryError: Java
-  heap space`), structure loads failed, NPCs never spawned, and the script
-  died reporting "no dw_npc entities found" — true, but the wrong defect: a
-  creator reading that message goes looking for a content bug that is not
-  there.
-- The probe failure left the half-booted container RUNNING. The next `up`
-  would find host 25565 still bound behind a mutex the failed session already
-  released — or a creator would be staring at a "failed" session that was
-  still quietly holding memory.
+- The `docker run` carries a real `MEMORY`, well above the itzg image's own 1G
+  default. Loading a large campaign at 1G can throw
+  `java.lang.OutOfMemoryError: Java heap space` failing structure loads, so
+  NPCs never spawn — and dying with "no dw_npc entities found" would be true
+  but the wrong defect: a creator reading that message goes looking for a
+  content bug that is not there. A probe failure checks the log for the OOM
+  string and names it instead.
+- A probe failure removes the half-booted container rather than leaving it
+  running: the next `up` would otherwise find host 25565 still bound behind a
+  mutex the failed session already released, or a creator would be staring at
+  a "failed" session that is still quietly holding memory.
 
 Both `up`'s expensive parts (a real `delvec` build, the staging gate, an
 actual boot) are out of reach of a unit test — `up` publishes host 25565 with

@@ -117,14 +117,15 @@ STAGE_ANYWAY=""
 ACK_RED=""
 RCON_PW="playtest"
 MEMORY_ARG=""
-# itzg's own default (1G) OOM'd loading a large campaign — 84 tiles plus 170
-# horizon templates, `java.lang.OutOfMemoryError: Java heap space`, structure
-# loads failing, NPCs never spawning (B3, docs/reference/tools.md). This
-# default is authored, not measured against every campaign size: it sits well
-# above the proven-insufficient 1G on an ordinary creator workstation.
-# `--memory` is the escape hatch for a campaign this default still is not
-# enough for — the probe-failure path below still names an OOM as an OOM
-# rather than a missing-NPC defect, and leaves nothing running either way.
+# itzg's own default is 1G, which is not enough for a large campaign: a build
+# of many tiles and horizon templates can throw `java.lang.OutOfMemoryError:
+# Java heap space` loading structures, and the NPCs that then never spawn read
+# as a content defect rather than a memory one. This default is authored, not
+# measured against every campaign size: it sits well above 1G for an ordinary
+# creator workstation. `--memory` is the escape hatch for a campaign this
+# default is still not enough for — the probe-failure path below names an OOM
+# as an OOM rather than a missing-NPC defect regardless, and leaves nothing
+# running either way.
 MEMORY_DEFAULT="4G"
 
 die() { echo "playtest-server: $*" >&2; exit 1; }
@@ -152,9 +153,9 @@ dw_playtest_docker_run_argv() {
 
 # True when a boot or server log shows the JVM ran out of heap — the literal
 # string the JVM itself prints, read from the log the failure actually
-# happened in, never re-derived. What this exists for: an OOM during structure
-# loading left no NPCs, and the old script died with "no dw_npc entities
-# found" — true, and the wrong defect (B3).
+# happened in, never re-derived. An OOM during structure loading leaves no
+# NPCs, and dying with "no dw_npc entities found" would be true but the wrong
+# defect — this is what lets a probe failure name the real one.
 dw_playtest_log_shows_oom() {
   [[ ${1-} == *"java.lang.OutOfMemoryError"* ]]
 }
@@ -170,11 +171,11 @@ dw_playtest_log_shows_oom() {
 # that reclaims them. The record is written before the container exists, which
 # is what makes that command work after any failure past this point.
 #
-# The CONTAINER is a different resource and is not kept: a probe failure (an
-# OOM loading structures, an unreached objective, a missing NPC) used to leave
-# it running forever, holding host 25565 behind the released mutex and eating
-# memory nobody was watching for (B3, docs/reference/tools.md). Every resource
-# this failed session holds is named and released here — the container, then
+# The CONTAINER is a different resource and is not kept: leaving it running
+# after a probe failure (an OOM loading structures, an unreached objective, a
+# missing NPC) would hold host 25565 behind a mutex this same failure already
+# released, eating memory nobody is watching for. Every resource this failed
+# session holds is named and released here — the container, then
 # the mutex — before the directories are reported kept. `docker logs` is
 # captured into the staged world FIRST, because it is the one thing that dies
 # with the container: `$STAGE/logs/latest.log` is the server's own log and
@@ -582,8 +583,8 @@ LOG_HINT="server log: $STAGE/logs/latest.log (docker-boot.log alongside it once 
 
 # A probe that would otherwise read as "the pack did not do X" is told the
 # truth instead when the log shows why: an OOM loading structures or NPCs is
-# not a content defect, and reporting it as one sent a creator chasing a
-# datapack that was never broken (B3, docs/reference/tools.md).
+# not a content defect, and reporting it as one sends a creator chasing a
+# datapack that is not broken.
 die_or_oom() {
   local plain="$1" log
   log="$(docker logs "$NAME" 2>&1 || true)"

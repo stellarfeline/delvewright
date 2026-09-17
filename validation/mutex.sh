@@ -56,12 +56,11 @@
 set -uo pipefail
 
 # The default lock directory, keyed by platform: `/private/tmp` is a macOS-only
-# alias of `/tmp`. On any other `uname -s` it does not exist, `mkdir` fails
-# with ENOENT, and the old single-literal default made `dw_mutex_acquire` read
-# that as "held by unknown" for a lock nobody was holding (B2,
-# docs/reference/tools.md). Takes the uname string as an argument rather than
-# calling `uname -s` itself, so a test can drive both branches without a
-# second host.
+# alias of `/tmp` and does not exist on any other `uname -s`, where `mkdir`
+# against it fails with ENOENT — indistinguishable, to a caller that only
+# checks directory existence, from a real holder. Takes the uname string as an
+# argument rather than calling `uname -s` itself, so a test can drive both
+# branches without a second host.
 dw_mutex_default_dir() {
   case "${1:-$(uname -s)}" in
     Darwin) printf '%s\n' "/private/tmp/delvewright-validation.lock.d" ;;
@@ -113,6 +112,7 @@ dw_mutex_assert_not_owner_session() {
 # Returns 0 only when WE created the lock. Never proceeds on someone else's.
 dw_mutex_acquire() {
   local me="${1:?dw_mutex_acquire needs a holder name}" wait_s="${2:-0}" waited=0
+  local parent; parent="$(dirname -- "$DW_MUTEX_DIR")"
   while :; do
     local mkdir_err=""
     if mkdir_err="$(mkdir "$DW_MUTEX_DIR" 2>&1)"; then
@@ -121,21 +121,34 @@ dw_mutex_acquire() {
       echo "25565 mutex acquired by $me"
       return 0
     fi
-    # `mkdir` fails two ways, and only one of them means "someone holds the
-    # lock": the directory is already there. The other — its PARENT is not
-    # there, or is not writable — means NOBODY holds anything; on a Linux host
-    # with the old macOS-only default that was every single attempt (B2), and
-    # it read as "held by unknown" instead of the plain fact that mkdir itself
-    # could not run. Waiting cannot fix a missing parent, so this returns
-    # immediately rather than entering the retry loop below.
-    if [ ! -d "$DW_MUTEX_DIR" ]; then
+    # `mkdir` fails for two reasons, and only one of them is ever worth
+    # reporting as "cannot create": the PARENT directory is missing or not
+    # writable, so mkdir can never succeed here and waiting will not help.
+    # Testing the PARENT rather than the lock directory itself is what keeps
+    # this race-free: a real holder can `rmdir` the lock directory in the
+    # instant between our failed mkdir above and this check, and that release
+    # cannot touch the parent — so a vanished lock directory with a sound
+    # parent means someone just let go, not that nobody ever held anything.
+    if [ ! -d "$parent" ] || [ ! -w "$parent" ]; then
       echo "25565 mutex: cannot create '$DW_MUTEX_DIR': $mkdir_err" >&2
-      echo "  nobody holds this lock — mkdir itself failed. Fix the path (or" >&2
-      echo "  set DW_MUTEX_DIR), rather than waiting: waiting cannot make a" >&2
-      echo "  missing parent directory appear." >&2
+      echo "  its parent '$parent' is missing or not writable, so mkdir" >&2
+      echo "  cannot run there. Fix the path (or set DW_MUTEX_DIR) — waiting" >&2
+      echo "  will not make a missing parent directory appear." >&2
       return 1
     fi
+    if [ ! -d "$DW_MUTEX_DIR" ]; then
+      # The lock directory is gone even though mkdir just failed against it —
+      # a concurrent holder released between that mkdir and this check. Retry
+      # the mkdir immediately rather than reading the gap as an empty holder.
+      continue
+    fi
     local holder; holder="$(dw_mutex_holder)"
+    if [ -z "$holder" ]; then
+      # The same race, one line later: the directory existed above and is
+      # gone by the time its holder is read. Retry rather than reporting an
+      # empty holder as though something is held.
+      continue
+    fi
     if [ "$holder" = "owner-play-session" ]; then
       echo "25565 mutex held by owner-play-session — refusing to wait or steal." >&2
       return 1
