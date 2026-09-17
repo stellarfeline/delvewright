@@ -42,6 +42,14 @@ mutex and holds it until `down`, so no automation can bind the port under the
 user's feet. Its staging-gate report goes to `<out>.gate/staging-gate.md`,
 beside the build tree, and it prints that path.
 
+**A large campaign can need more than the container's default memory.** `up`
+runs it at `--memory 4G` unless you pass a different `--memory SIZE`; a build
+with many prefab tiles can still exhaust that (`docker logs` shows
+`java.lang.OutOfMemoryError` and the readiness probe says so rather than
+reporting a content defect) — re-run with `--memory 8G` or higher. A build,
+boot or probe failure past this point removes the container it started and
+releases the mutex on its own; nothing is left running for you to find later.
+
 The **second path** is the compose pair, and it is the one to take when step
 8's tree is already sitting at `"$DELVEWRIGHT_ENGINE/validation/delve-output"`
 and the ladder is coming next anyway — it serves that tree instead of building

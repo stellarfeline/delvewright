@@ -56,6 +56,7 @@ The full inventory — every binary, script and flag that exists today — is
   the writer refuses to put an estimate back over it; deleting the row is her
   call, asked in chat. Human-in-the-loop, at step 12 and at step 14; the full
   procedure is `$DELVEWRIGHT_ENGINE/docs/reference/tools.md` §4a.
+- **NPCs never spawn, or a large build dies partway**: an OOM, not a content bug — `up` checks and says so; raise `--memory` past its `4G` default.
 - **Handing a build to a playtester**: the playtest note flow — `/trigger dw.note`
   in-game, then `delvec harvest` → `playtest-report.json`. Human-optional.
 - **Delivering or revising a cutscene**: shot calibration — in-game
@@ -83,8 +84,7 @@ The full inventory — every binary, script and flag that exists today — is
   page. Human-optional; read its fidelity list first (step 12).
 - **A picture of the whole map** (storybook hero image, release asset): `delvec --prefabs "$DELVEWRIGHT_PREFABS" 
   panorama <build-dir> -o <dir> [--bearing se|sw|ne|nw] [--spp N]` — a 45° oblique
-  scene framing the entire layout, computed from the plan. Never hand-edit a scene
-  JSON to get one.
+  scene framing the entire layout, computed from the plan. Never hand-edit a scene JSON to get one.
 - **An NPC needs a look no vanilla mob gives you**: the skin toolchain,
   `PYTHONPATH="$DELVEWRIGHT_ENGINE/tools/creator/skin" .venv-skin/bin/python -m delve_skin all <cast.json>
   --skins-dir … --preview-dir … --catalog-dir …`, in the venv *NPC skins* establishes at step 5. **Look at the previews**, and

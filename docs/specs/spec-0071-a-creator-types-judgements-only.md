@@ -3,7 +3,7 @@
 - **Status**: Proposed (draft)
 - **Ground**: written against engine `90e44a8a` (`origin/main`), read only — `ShopOffer`, `Happening`, `SoundAt` and the per-effect `when` guard in `crates/dsl/src/stages.rs`; `happening_subject_checks` in `crates/dsl/src/validate.rs`; `delvec l10n-inventory` and `tools/creator/i18n-translate.py`; `docs/reference/i18n.md` — and against one creator run's work product: a 960-line script that writes `quests.json` and `dialogue.json`, read in full.
 - **What it is for**: a creator agent writes the quest stage as the document, not as a program that prints the document.
-- **Numbers**: no ADR. **DW code**: `DW0901`, for §2. **`dsl_version`**: does not move — §3 is taken as a reading rule, not as a field.
+- **Numbers**: no ADR. **DW code**: `DW0901`, for §2. **`dsl_version`**: **moves, by one minor step.** The format number is the `delvewright-dsl` crate version (ADR-0024), this change edits that crate's source, and a published version cannot carry different bytes — so the number moves whatever the surface does. A minor step rather than a patch because a new refusal is a format change in its own right: a document that compiled before, and whose purchase does not add up, is refused after. The value itself is not written here — it is typed in exactly one place, `crates/dsl/Cargo.toml`, and `tools/lib/version_sites.py` refuses a second. What does **not** move is the surface: §2 adds no field and §3 is a reading rule, so no document stops parsing and no surface label is owed.
 - **Non-goals**: a new surface syntax; a host language; a `price` field (§5); any change to what a player experiences.
 
 ## 1. The finding
@@ -65,7 +65,7 @@ Four verbs answer **per instance rather than per verb**, because the object is i
 
 **The named gap: `open-way`.** Its object is a placed piece (`prefab/<name>`), which the subject namespace does not hold — so the one verb whose whole meaning is opening a way must state its subject or resolve nothing. Widening the namespace to `prefab/` is a DSL surface decision and no ruling is taken here.
 
-This is a reading rule, not a field: no document stops compiling and `dsl_version` does not move.
+This is a reading rule, not a field: no document stops compiling, and §3 adds no surface for a `dsl_version` step to number (the number moves for the crate's own reason — see the header).
 
 ## 4. An agent that translates hands over a table, and the tool does the keys
 
