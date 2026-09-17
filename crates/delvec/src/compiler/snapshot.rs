@@ -343,8 +343,8 @@ impl VoxelGrid {
 /// id — or `None` when it will paint none.
 ///
 /// A frame whose material is wrong is worth nothing to the creator judging it,
-/// and until this existed the only way to learn that a block had fallen to the
-/// placeholder was to look at the picture and recognise the colour. One sentence
+/// and the placeholder is a colour in a picture: a reader who does not recognise
+/// it reads the frame as the truth. So the frame says so in words. One sentence
 /// for every surface that draws a grid, so none of them can word it differently
 /// or forget to say it.
 pub fn unpainted_report(grid: &VoxelGrid) -> Option<String> {
@@ -1810,8 +1810,9 @@ mod tests {
 
     #[test]
     fn the_colour_is_the_jar_s_and_not_a_family_guess() {
-        // Two deepslate surfaces the old substring rules could not tell apart —
-        // and did not colour at all — now differ by their own textures.
+        // Two deepslate surfaces that share every substring a material rule
+        // could key on. Each carries its own texture, so each has its own
+        // colour, and neither borrows a family's.
         let polished = block_color("minecraft:polished_deepslate").0;
         let tiles = block_color("minecraft:deepslate_tiles").0;
         assert_ne!(polished, FALLBACK_COLOR);
@@ -1821,9 +1822,10 @@ mod tests {
 
     #[test]
     fn an_id_the_pin_does_not_have_is_unpainted_and_named() {
-        // `chain` became `iron_chain` in 1.21.11. The curated table listed both
-        // and drew the retired id as if it existed; the pinned table cannot,
-        // and the grid says so instead of guessing.
+        // `minecraft:chain` is the id 1.21.11 renames to `iron_chain`, so the
+        // pin has no such block and the table has no colour for it. A template
+        // carrying it is named on stderr rather than shaded from a guess, which
+        // is the whole difference between a draft and an invention.
         assert_eq!(block_color("minecraft:chain").0, FALLBACK_COLOR);
         assert_ne!(block_color("minecraft:iron_chain").0, FALLBACK_COLOR);
         let mut m = BTreeMap::new();

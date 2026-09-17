@@ -217,8 +217,8 @@ grep -rEoh 'include_(str|bytes)!\("[^"]*"\)' crates/delvec/src crates/dsl/src \
 | the remaining 5 (dsl `entities`, `items`, `anchors`, `block-renames`, `pools`) | 856 |
 | **total** | **1,253,371** |
 
-The block-appearance table is the newest and second-largest row: it is what lets
-the CPU draft rasteriser paint from the pinned client jar without shipping one
+The second-largest row is the block-appearance table: it is what lets the CPU
+draft rasteriser paint from the pinned client jar on a machine that has no jar
 (`compiler.md`, `delvec snapshot`).
 
 Embedding it is correct — it is what makes `delvec` a single self-contained

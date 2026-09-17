@@ -45,8 +45,8 @@ fn every_pinned_block_has_a_preview_colour() {
             assert_eq!(
                 block_color(id).0,
                 FALLBACK_COLOR,
-                "`{id}` is excluded because its magenta is the alarm; if it now has a \
-                 colour the alarm is gone and the exclusion is wrong"
+                "`{id}` is excluded because its magenta is the alarm; a colour here \
+                 silences the alarm and makes the exclusion wrong"
             );
             continue;
         }
