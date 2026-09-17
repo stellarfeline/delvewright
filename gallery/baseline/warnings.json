@@ -126,11 +126,6 @@
       "stage": "layout-graph"
     },
     {
-      "code": "DW0188",
-      "pointer": "l10n/zh-cn.json",
-      "stage": "l10n"
-    },
-    {
       "code": "DW0330",
       "pointer": "/content/triggers/3/effects/0/text",
       "stage": "quests"
@@ -316,11 +311,6 @@
       "code": "DW0822",
       "pointer": "/content/critical_path",
       "stage": "layout-graph"
-    },
-    {
-      "code": "DW0188",
-      "pointer": "l10n/zh-cn.json",
-      "stage": "l10n"
     },
     {
       "code": "DW0330",
@@ -510,11 +500,6 @@
       "stage": "layout-graph"
     },
     {
-      "code": "DW0188",
-      "pointer": "l10n/zh-cn.json",
-      "stage": "l10n"
-    },
-    {
       "code": "DW0330",
       "pointer": "/content/triggers/3/effects/0/text",
       "stage": "quests"
@@ -702,11 +687,6 @@
       "stage": "layout-graph"
     },
     {
-      "code": "DW0188",
-      "pointer": "l10n/zh-cn.json",
-      "stage": "l10n"
-    },
-    {
       "code": "DW0330",
       "pointer": "/content/triggers/3/effects/0/text",
       "stage": "quests"
@@ -892,11 +872,6 @@
       "code": "DW0822",
       "pointer": "/content/critical_path",
       "stage": "layout-graph"
-    },
-    {
-      "code": "DW0188",
-      "pointer": "l10n/zh-cn.json",
-      "stage": "l10n"
     },
     {
       "code": "DW0330",
@@ -1153,11 +1128,6 @@
       "code": "DW0822",
       "pointer": "/content/critical_path",
       "stage": "layout-graph"
-    },
-    {
-      "code": "DW0188",
-      "pointer": "l10n/zh-cn.json",
-      "stage": "l10n"
     },
     {
       "code": "DW0330",
