@@ -55,7 +55,20 @@
 # blind to a lock a live session had already taken.
 set -uo pipefail
 
-DW_MUTEX_DIR="${DW_MUTEX_DIR:-/private/tmp/delvewright-validation.lock.d}"
+# The default lock directory, keyed by platform: `/private/tmp` is a macOS-only
+# alias of `/tmp` and does not exist on any other `uname -s`, where `mkdir`
+# against it fails with ENOENT — indistinguishable, to a caller that only
+# checks directory existence, from a real holder. Takes the uname string as an
+# argument rather than calling `uname -s` itself, so a test can drive both
+# branches without a second host.
+dw_mutex_default_dir() {
+  case "${1:-$(uname -s)}" in
+    Darwin) printf '%s\n' "/private/tmp/delvewright-validation.lock.d" ;;
+    *)      printf '%s\n' "/tmp/delvewright-validation.lock.d" ;;
+  esac
+}
+
+DW_MUTEX_DIR="${DW_MUTEX_DIR:-$(dw_mutex_default_dir)}"
 DW_MUTEX_ME=""
 
 # The current holder's name, or empty if the lock is free.
@@ -99,14 +112,72 @@ dw_mutex_assert_not_owner_session() {
 # Returns 0 only when WE created the lock. Never proceeds on someone else's.
 dw_mutex_acquire() {
   local me="${1:?dw_mutex_acquire needs a holder name}" wait_s="${2:-0}" waited=0
+  local parent; parent="$(dirname -- "$DW_MUTEX_DIR")"
+  # A releasing holder's mkdir-then-rmdir gap is sub-millisecond, so a
+  # handful of IMMEDIATE re-attempts (no sleep) is enough slack for scheduling
+  # jitter to close it. This budget is shared by both race sites below and
+  # spent once per `dw_mutex_acquire` call, never refilled: past it, the same
+  # symptom is read as PERSISTENT rather than as the same release still in
+  # flight — a plain file or dangling symlink at the lock path, a permissions
+  # or read-only-filesystem refusal, or a holder that died between its own
+  # `mkdir` and writing `HOLDER` are all standing states, not windows that
+  # close on their own, and spinning on any of them forever at 100% CPU with
+  # no output is worse than reporting them plainly.
+  local race_tries=0 race_tries_max=3
   while :; do
-    if mkdir "$DW_MUTEX_DIR" 2>/dev/null; then
+    local mkdir_err=""
+    if mkdir_err="$(mkdir "$DW_MUTEX_DIR" 2>&1)"; then
       printf '%s %s\n' "$me" "$(date +%s)" >"$DW_MUTEX_DIR/HOLDER"
       DW_MUTEX_ME="$me"
       echo "25565 mutex acquired by $me"
       return 0
     fi
+    # `mkdir` fails for two reasons, and only one of them is ever worth
+    # reporting as "cannot create": the PARENT directory is missing or not
+    # writable, so mkdir can never succeed here and waiting will not help.
+    # Testing the PARENT rather than the lock directory itself is what keeps
+    # this race-free: a real holder can `rmdir` the lock directory in the
+    # instant between our failed mkdir above and this check, and that release
+    # cannot touch the parent — so a vanished lock directory with a sound
+    # parent means someone just let go, not that nobody ever held anything.
+    if [ ! -d "$parent" ] || [ ! -w "$parent" ]; then
+      echo "25565 mutex: cannot create '$DW_MUTEX_DIR': $mkdir_err" >&2
+      echo "  its parent '$parent' is missing or not writable, so mkdir" >&2
+      echo "  cannot run there. Fix the path (or set DW_MUTEX_DIR) — waiting" >&2
+      echo "  will not make a missing parent directory appear." >&2
+      return 1
+    fi
+    if [ ! -d "$DW_MUTEX_DIR" ]; then
+      # The lock directory is gone even though mkdir just failed against it —
+      # ordinarily a concurrent holder releasing between that mkdir and this
+      # check. Retry the mkdir immediately, but only while the shared budget
+      # lasts: mkdir failing every time against a path that is never a
+      # directory afterward is not a holder letting go, it is something
+      # lasting, and `mkdir_err` already names it.
+      if [ "$race_tries" -lt "$race_tries_max" ]; then
+        race_tries=$((race_tries + 1))
+        continue
+      fi
+      echo "25565 mutex: cannot create '$DW_MUTEX_DIR': $mkdir_err" >&2
+      echo "  mkdir failed $race_tries_max time(s) in a row with no directory" >&2
+      echo "  ever there right after — a releasing holder resolves in one or" >&2
+      echo "  two tries, so this is standing: a file already at that path, a" >&2
+      echo "  permissions refusal, or a filesystem mkdir cannot use there." >&2
+      echo "  Fix the path (or set DW_MUTEX_DIR)." >&2
+      return 1
+    fi
     local holder; holder="$(dw_mutex_holder)"
+    if [ -z "$holder" ] && [ "$race_tries" -lt "$race_tries_max" ]; then
+      # The same race, one line later: the directory existed above and is
+      # gone — or its HOLDER file is empty, which is also what a holder
+      # killed between its own `mkdir` and writing `HOLDER` leaves permanently
+      # — by the time its holder is read. Retry from the shared budget rather
+      # than reading either as an empty holder; once it is spent, fall
+      # through to the ordinary held-by-unknown path below, which already
+      # knows how to wait or refuse.
+      race_tries=$((race_tries + 1))
+      continue
+    fi
     if [ "$holder" = "owner-play-session" ]; then
       echo "25565 mutex held by owner-play-session — refusing to wait or steal." >&2
       return 1
