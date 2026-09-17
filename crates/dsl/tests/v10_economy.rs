@@ -348,7 +348,11 @@ fn dw0901_a_charge_deeper_than_its_own_gate() {
     assert!(d.message.contains("charges 16"), "{}", d.message);
     assert!(d.message.contains("opens at 15"), "{}", d.message);
     assert!(d.message.contains("state/embers"), "{}", d.message);
-    assert!(d.message.contains("leaves `state/embers` at -1"), "{}", d.message);
+    assert!(
+        d.message.contains("leaves `state/embers` at -1"),
+        "{}",
+        d.message
+    );
 }
 
 /// The sale starts at 15 and the apology stops at 13, so a player holding exactly
@@ -403,7 +407,8 @@ fn dw0901_reads_the_offer_s_own_gate() {
     let d = dw0901(&campaign(&priced(-16)));
     assert!(d.message.contains("charges 16"), "{}", d.message);
     assert!(
-        d.message.contains("/content/shops/0/offers/0") || d.path.contains("/content/shops/0/offers/0"),
+        d.message.contains("/content/shops/0/offers/0")
+            || d.path.contains("/content/shops/0/offers/0"),
         "the refusal points at the offer: {} {}",
         d.path,
         d.message
@@ -465,3 +470,34 @@ fn dw0901_an_ungated_charge_beside_a_priced_arm() {
 }
 
 // (the binding test needs the new type and cannot exist at this revision)
+
+/// A campaign-wide effect walk names **which** offer it is standing in. The
+/// index is parsed back out of the root's path, and a shop with two offers is
+/// what tells a right answer from a constant.
+#[test]
+fn an_effect_site_names_the_offer_it_stands_in() {
+    use delvewright_dsl::{EffectSite, for_each_campaign_effect};
+    let two = r#",
+    "state": [
+      { "id": "state/embers", "scope": "party", "initial": 5 }
+    ],
+    "shops": [
+      { "id": "shop/brazier", "anchor": "spawn", "title": "The brazier",
+        "offers": [
+          { "label": "First", "effects": [ { "type": "narrate", "text": "One." } ] },
+          { "label": "Second", "effects": [ { "type": "narrate", "text": "Two." } ] }
+        ] }
+    ]"#;
+    let c = campaign(two);
+    let mut seen: Vec<usize> = Vec::new();
+    for_each_campaign_effect(&c, &mut |_p, site, _e| {
+        if let EffectSite::ShopOffer { offer, .. } = site {
+            seen.push(*offer);
+        }
+    });
+    assert_eq!(
+        seen,
+        vec![0, 1],
+        "each offer's effects know their own index"
+    );
+}

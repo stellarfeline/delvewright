@@ -122,6 +122,23 @@ enum Command {
         /// Campaign directory.
         campaign_dir: PathBuf,
     },
+    /// Write the `--lang` l10n sidecar from a table of canonical English →
+    /// translation (spec-0071 §4) — the verb a translating agent has instead of
+    /// addressing positional keys it cannot derive.
+    ///
+    /// The keys are the tool's: every inventory row whose English the table
+    /// carries is written with its `source`, rows already translated from
+    /// unchanged English are kept, and the run ends by stating how many of the
+    /// inventory's rows are translated, which English strings are still missing,
+    /// and which table entries matched no row.
+    L10nApply {
+        /// Campaign directory.
+        campaign_dir: PathBuf,
+        /// A JSON object mapping canonical English to its translation. `-`
+        /// reads it from stdin.
+        #[arg(long, value_name = "FILE")]
+        table: PathBuf,
+    },
     /// Rewrite authored Delvewright JSON in canonical form — object keys
     /// sorted, two-space indent, non-ASCII raw, one trailing newline — so an
     /// insertion is a one-line diff instead of a whole-file rewrite. **Array
@@ -374,6 +391,10 @@ fn main() -> ExitCode {
         Command::L10nInventory { campaign_dir } => {
             run_l10n_inventory(campaign_dir, &cli.lang, cli.json)
         }
+        Command::L10nApply {
+            campaign_dir,
+            table,
+        } => run_l10n_apply(campaign_dir, &cli.lang, table, cli.json),
         Command::Fmt { paths, check } => run_fmt(paths, *check, cli.json),
         Command::Schema { stage } => run_schema(stage),
         Command::Allocation {
@@ -761,6 +782,10 @@ fn validate_loaded(
             // spec-0067: what the equipment fit rule (`DW0898`, raised inside
             // `validate_campaign_with` above) examined, zeroes included.
             examined.push(delvewright_dsl::EquipmentBinding::of(&campaign, &items).line());
+            // spec-0071 §2: what the purchase rule (`DW0901`) examined — charges
+            // found, the `(list, datum)` pairs they bind, and the effect lists
+            // walked as the denominator.
+            examined.push(delvewright_dsl::PurchaseBinding::of(&campaign).line());
             // Prefab-library load failures (DW0346): a metadata file that did
             // not parse (e.g. newer schema than this delvec) is a first-class
             // validation diagnostic, never a silent skip that resurfaces later
@@ -1143,6 +1168,239 @@ fn run_l10n_inventory(campaign_dir: &Path, lang: &str, json: bool) -> ExitCode {
             eprintln!("internal error: cannot serialize inventory: {e}");
             ExitCode::from(EXIT_INTERNAL)
         }
+    }
+}
+
+/// `delvec l10n-apply <campaign-dir> --lang <code> --table <file>` — write the
+/// sidecar from a table of canonical English → translation (spec-0071 §4).
+///
+/// ## The verb an agent that translates did not have
+///
+/// `l10n-inventory` hands out the work list and `tools/creator/i18n-translate.py`
+/// fills a sidecar by calling an outside model. An agent that is itself the
+/// translator had neither: to write `l10n/<code>.json` it had to address every
+/// row by its inventory key, and the effect keys are **positional**
+/// (`fx.<quest>.oc.<objective>.<i>`), so inserting one effect renumbers every
+/// sibling and silently re-attaches translations to the wrong lines. A creator
+/// agent measured doing this kept its own table keyed by English text and wrote
+/// the merge by hand — a derivation, typed.
+///
+/// So the agent hands over what it actually knows — *this English becomes this
+/// line* — and the tool does the keys. Both ends already exist: the inventory
+/// carries each key's canonical English, and the sidecar records the `source`
+/// each row was translated from.
+///
+/// ## What it writes
+///
+/// Exactly the inventory, so an orphan row is impossible by construction:
+///
+/// * a row whose English the table carries is written from the table, with its
+///   `source` recorded — that is what makes a later English edit detectable
+///   (`DW0187`) rather than audited;
+/// * a row the sidecar already translates **from unchanged English** is kept,
+///   provenance and all, so re-running translates only what moved;
+/// * a row the sidecar translates with no `source` at all is kept too, and
+///   counted separately: nothing can say whether it still matches its English,
+///   and throwing away a translation over that would be worse than saying so.
+///
+/// ## The one thing the table form cannot say
+///
+/// Two inventory rows can hold the same English and want two different
+/// translations. A table keyed by English has no way to distinguish them, so the
+/// run **lists** every such English with its keys and the sidecar stays directly
+/// editable for them. Named, not hidden: the alternative is a tool that silently
+/// gives one answer to two questions.
+fn run_l10n_apply(campaign_dir: &Path, lang: &str, table_path: &Path, json: bool) -> ExitCode {
+    use delvewright_dsl::{L10nDoc, L10nKind};
+    use std::collections::{BTreeMap, BTreeSet};
+
+    let loaded = match load_or_refuse(campaign_dir, json) {
+        Ok(l) => l,
+        Err(exit) => return ExitCode::from(exit),
+    };
+    let campaign = match parse_campaign(&loaded.raw) {
+        Ok(c) => c,
+        Err(diags) => {
+            print_diags(&diags, json);
+            return ExitCode::from(1);
+        }
+    };
+    let raw_table = if table_path == Path::new("-") {
+        let mut buf = String::new();
+        match std::io::Read::read_to_string(&mut std::io::stdin(), &mut buf) {
+            Ok(_) => buf,
+            Err(e) => {
+                eprintln!("cannot read the table from stdin: {e}");
+                return ExitCode::from(1);
+            }
+        }
+    } else {
+        match std::fs::read_to_string(table_path) {
+            Ok(s) => s,
+            Err(e) => {
+                eprintln!("cannot read the table {}: {e}", table_path.display());
+                return ExitCode::from(1);
+            }
+        }
+    };
+    let table: BTreeMap<String, String> = match serde_json::from_str(&raw_table) {
+        Ok(t) => t,
+        Err(e) => {
+            eprintln!(
+                "the table must be a JSON object mapping canonical English to its translation: {e}"
+            );
+            return ExitCode::from(1);
+        }
+    };
+
+    let inventory = delvewright_dsl::l10n_inventory(&campaign);
+    let existing = loaded
+        .l10n
+        .get(lang)
+        .and_then(|b| serde_json::from_slice::<L10nDoc>(b).ok());
+
+    let mut content: BTreeMap<String, String> = BTreeMap::new();
+    let mut source: BTreeMap<String, String> = BTreeMap::new();
+    let mut from_table = 0usize;
+    let mut kept = 0usize;
+    let mut kept_unguarded = 0usize;
+    let mut missing: Vec<(&str, &str)> = Vec::new();
+    let mut matched: BTreeSet<&str> = BTreeSet::new();
+    // English → the keys that hold it. More than one key is the named limit.
+    let mut by_english: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
+
+    for (key, en) in &inventory {
+        by_english
+            .entry(en.as_str())
+            .or_default()
+            .push(key.as_str());
+        if let Some(t) = table.get(en) {
+            matched.insert(en.as_str());
+            content.insert(key.clone(), t.clone());
+            source.insert(key.clone(), en.clone());
+            from_table += 1;
+            continue;
+        }
+        let Some(doc) = existing.as_ref() else {
+            missing.push((key, en));
+            continue;
+        };
+        match (doc.content.get(key), doc.source.get(key)) {
+            (Some(t), Some(was)) if was == en => {
+                content.insert(key.clone(), t.clone());
+                source.insert(key.clone(), en.clone());
+                kept += 1;
+            }
+            (Some(t), None) => {
+                content.insert(key.clone(), t.clone());
+                kept_unguarded += 1;
+            }
+            _ => missing.push((key, en)),
+        }
+    }
+
+    let unmatched: Vec<&str> = table
+        .keys()
+        .map(String::as_str)
+        .filter(|en| !matched.contains(en))
+        .collect();
+    let shared: Vec<(&str, &Vec<&str>)> = by_english
+        .iter()
+        .filter(|(_, keys)| keys.len() > 1)
+        .map(|(en, keys)| (*en, keys))
+        .collect();
+
+    let doc = L10nDoc {
+        dsl_version: campaign.world.dsl_version.clone(),
+        campaign_id: campaign.world.campaign_id.clone(),
+        kind: L10nKind::L10n,
+        lang: lang.to_string(),
+        content,
+        source,
+    };
+    let text = match delvewright_dsl::to_canonical_string(&doc) {
+        Ok(t) => t,
+        Err(e) => {
+            eprintln!("internal error: cannot serialize the sidecar: {e}");
+            return ExitCode::from(EXIT_INTERNAL);
+        }
+    };
+    let dir = campaign_dir.join("l10n");
+    if let Err(e) = std::fs::create_dir_all(&dir) {
+        eprintln!("cannot create {}: {e}", dir.display());
+        return ExitCode::from(1);
+    }
+    let path = dir.join(format!("{lang}.json"));
+    if let Err(e) = std::fs::write(&path, &text) {
+        eprintln!("cannot write {}: {e}", path.display());
+        return ExitCode::from(1);
+    }
+
+    let translated = doc.content.len();
+    let total = inventory.len();
+    if json {
+        let report = serde_json::json!({
+            "lang": lang,
+            "path": path.display().to_string(),
+            "rows_total": total,
+            "rows_translated": translated,
+            "from_table": from_table,
+            "kept": kept,
+            "kept_without_source": kept_unguarded,
+            "missing": missing.iter().map(|(k, en)| serde_json::json!({"key": k, "en": en})).collect::<Vec<_>>(),
+            "unmatched_table_entries": unmatched,
+            "shared_english": shared.iter().map(|(en, keys)| serde_json::json!({"en": en, "keys": keys})).collect::<Vec<_>>(),
+        });
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&report).unwrap_or_default()
+        );
+    } else {
+        println!(
+            "{translated} of {total} rows translated → {}",
+            path.display()
+        );
+        println!(
+            "  {from_table} from the table, {kept} kept from unchanged English, \
+             {kept_unguarded} kept with no recorded source"
+        );
+        if missing.is_empty() {
+            println!("  no English string is missing a translation");
+        } else {
+            println!("  {} English string(s) still untranslated:", missing.len());
+            for (key, en) in &missing {
+                println!("    {key}: {en}");
+            }
+        }
+        if unmatched.is_empty() {
+            println!("  every table entry matched a row");
+        } else {
+            println!(
+                "  {} table entry(ies) matched no inventory row:",
+                unmatched.len()
+            );
+            for en in &unmatched {
+                println!("    {en}");
+            }
+        }
+        if !shared.is_empty() {
+            println!(
+                "  {} English string(s) are held by more than one key — the table form cannot \
+                 give them different translations; edit the sidecar directly where they must \
+                 differ:",
+                shared.len()
+            );
+            for (en, keys) in &shared {
+                println!("    {en}\n      {}", keys.join(", "));
+            }
+        }
+    }
+    if missing.is_empty() && unmatched.is_empty() {
+        ExitCode::SUCCESS
+    } else {
+        // The same signal `fmt --check` gives: the artifact on disk is written,
+        // and it does not yet say what the campaign needs.
+        ExitCode::from(1)
     }
 }
 

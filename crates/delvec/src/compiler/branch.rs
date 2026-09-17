@@ -350,17 +350,26 @@ fn chronicle_of(c: &Campaign, journal: &[JournalStep]) -> (Vec<ChronicleLine>, V
         .enumerate()
         .map(|(i, q)| (q.id.as_str(), i))
         .collect();
-    let mut push =
-        |kind: &'static str, node: String, h: &Happening, lines: &mut Vec<ChronicleLine>| {
-            lines.push(ChronicleLine {
-                n: lines.len() + 1,
-                kind,
-                node,
-                verb: h.verb,
-                subject: h.subject.clone(),
-                text: h.text.clone(),
-            });
-        };
+    // A node's own line. `subject` is passed in rather than read off the
+    // `happening`, because an effect's subject is the one **derivation**
+    // (`QuestEffect::happening_subject`, spec-0071 §3) and a chronicle that
+    // re-read `h.subject` here would be a second answer to a question the DSL
+    // already answers — the beat would be about one thing for the proof and
+    // another for the reader.
+    let mut push = |kind: &'static str,
+                    node: String,
+                    h: &Happening,
+                    subject: Option<String>,
+                    lines: &mut Vec<ChronicleLine>| {
+        lines.push(ChronicleLine {
+            n: lines.len() + 1,
+            kind,
+            node,
+            verb: h.verb,
+            subject,
+            text: h.text.clone(),
+        });
+    };
     let mut announced: BTreeSet<&str> = BTreeSet::new();
     for step in journal {
         let Some(q) = c
@@ -378,7 +387,13 @@ fn chronicle_of(c: &Campaign, journal: &[JournalStep]) -> (Vec<ChronicleLine>, V
         if announced.insert(q.id.as_str())
             && let Some(h) = &q.happening
         {
-            push("quest", q.id.as_str().to_string(), h, &mut lines);
+            push(
+                "quest",
+                q.id.as_str().to_string(),
+                h,
+                h.subject.clone(),
+                &mut lines,
+            );
         }
         if let Some(obj) = q
             .objectives
@@ -386,7 +401,13 @@ fn chronicle_of(c: &Campaign, journal: &[JournalStep]) -> (Vec<ChronicleLine>, V
             .find(|o| o.id().as_str() == step.objective)
             && let Some(h) = obj.happening()
         {
-            push("objective", step.objective.clone(), h, &mut lines);
+            push(
+                "objective",
+                step.objective.clone(),
+                h,
+                h.subject.clone(),
+                &mut lines,
+            );
         }
         // The dialogue option this branch takes to complete a `talk-to` beat —
         // the place a fork's divergence actually lives, since a dialogue effect
@@ -398,7 +419,13 @@ fn chronicle_of(c: &Campaign, journal: &[JournalStep]) -> (Vec<ChronicleLine>, V
             && let Some((node, opt)) = option_at(c, npc, n)
             && let Some(h) = &opt.happening
         {
-            push("choice", format!("{npc} {node}#{n}"), h, &mut lines);
+            push(
+                "choice",
+                format!("{npc} {node}#{n}"),
+                h,
+                h.subject.clone(),
+                &mut lines,
+            );
         }
         let qi = quest_index[step.quest.as_str()];
         if let Some(effs) = q
@@ -444,7 +471,7 @@ fn chronicle_of(c: &Campaign, journal: &[JournalStep]) -> (Vec<ChronicleLine>, V
                 kind: "ambient",
                 node: path.to_string(),
                 verb: h.verb,
-                subject: h.subject.clone(),
+                subject: eff.happening_subject().map(|s| s.id.to_string()),
                 text: h.text.clone(),
             });
         }
@@ -457,7 +484,7 @@ fn record_effect(
     eff: &QuestEffect,
     lines: &mut Vec<ChronicleLine>,
     endings: &mut Vec<String>,
-    push: &mut impl FnMut(&'static str, String, &Happening, &mut Vec<ChronicleLine>),
+    push: &mut impl FnMut(&'static str, String, &Happening, Option<String>, &mut Vec<ChronicleLine>),
 ) {
     if let Verb::CampaignComplete { ending, .. } = &eff.verb {
         endings.push(
@@ -468,7 +495,10 @@ fn record_effect(
         );
     }
     if let Some(h) = eff.happening.as_ref() {
-        push("effect", path.to_string(), h, lines);
+        // The subject an effect's beat is about: stated, or derived from the
+        // effect's own single object (spec-0071 §3).
+        let subject = eff.happening_subject().map(|s| s.id.to_string());
+        push("effect", path.to_string(), h, subject, lines);
     }
 }
 
@@ -1140,6 +1170,12 @@ fn describe(p: &CastPlacement) -> String {
 
 /// `DW0485` — hard event contradictions, per branch, over the chronicle order.
 ///
+/// **Public because the chronicle is its whole input.** The subject each line
+/// carries is derived (`QuestEffect::happening_subject`, spec-0071 §3), and the
+/// only way to test that the derivation is what makes a contradiction visible is
+/// to run this over a chronicle with the derived subject taken back out. A rule
+/// whose perturbation cannot be reached is a rule nothing has ever tested.
+///
 /// Four rules, each decidable from the structured verbs alone:
 /// 1. `dies(S)` then any later ACT by `S` — a dead man does nothing.
 /// 2. `departs(S)` then a later beat by `S` with no `arrives(S)` between.
@@ -1148,7 +1184,7 @@ fn describe(p: &CastPlacement) -> String {
 ///
 /// Ambient lines (triggers, traps) are excluded: `flow` refuses to date them, so
 /// ordering them against the dated account would invent a sequence.
-fn check_contradictions(r: &RealizedBranch, d: &mut Vec<Diagnostic>) {
+pub fn check_contradictions(r: &RealizedBranch, d: &mut Vec<Diagnostic>) {
     let dated: Vec<&ChronicleLine> = r.chronicle.iter().filter(|l| l.kind != "ambient").collect();
     #[derive(Clone)]
     struct State<'a> {

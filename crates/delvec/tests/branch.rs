@@ -586,6 +586,36 @@ fn derived_subject_fixture() -> Campaign {
     })
 }
 
+/// **The perturbation only this rule can catch.** The same realized branch, with
+/// the derived subject taken back out of the chronicle line that carries it, and
+/// nothing else changed: the contradiction disappears. What makes `DW0485` see
+/// this clash is the derivation and not the fixture.
+#[test]
+fn without_the_derived_subject_the_same_branch_is_silent() {
+    let c = derived_subject_fixture();
+    let mut realized = branch::realize(&c);
+    let mut stripped = 0usize;
+    for r in &mut realized {
+        for line in &mut r.chronicle {
+            // The seal states no subject of its own — the document is right
+            // there in the fixture above — so this is exactly the derivation.
+            if line.verb == delvewright_dsl::HappeningVerb::Seals && line.subject.is_some() {
+                line.subject = None;
+                stripped += 1;
+            }
+        }
+    }
+    assert!(stripped > 0, "the perturbation bound to something");
+    let mut d = Vec::new();
+    for r in &realized {
+        branch::check_contradictions(r, &mut d);
+    }
+    assert!(
+        d.is_empty(),
+        "with the subject un-derived the proof has nothing to reason over: {d:#?}"
+    );
+}
+
 /// A stated subject wins over the effect's own object: the caller knows more.
 /// Here the seal is about the Keeper, not about the gate he bars, so the party's
 /// walk out through the gate is no contradiction at all.

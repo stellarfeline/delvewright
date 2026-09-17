@@ -158,6 +158,11 @@ pub fn validate_campaign_with(
     // spec-0032: a shop stands on a prefab anchor, and an anchor
     // no bound prefab provides is the same defect a lethal volume's is.
     shop_anchor_checks(c, anchors, &mut d);
+    // spec-0071 §2: a price has no field, so the copies of it — the gate term,
+    // the charge, the ceiling on the arm that answers below it — are compared
+    // here. Quantified over every effect list that charges a datum, never over
+    // shops.
+    crate::purchase::purchase_checks(c, &mut d);
     // spec-0061: the design record's own document-level refusals — an empty
     // `references`, a name that is not a path under `design/`, two rows for one
     // picture. The comparison against the world's reachable skies (`DW0890`) is
@@ -8598,10 +8603,13 @@ fn happening_subject_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
     }
     let mut effect_subjects: Vec<(String, String)> = Vec::new();
     crate::stages::for_each_campaign_effect(c, &mut |path, _site, eff| {
-        if let Some(h) = eff.happening.as_ref()
-            && let Some(s) = &h.subject
-        {
-            effect_subjects.push((format!("{path}/happening/subject"), s.clone()));
+        // The one derivation (spec-0071 §3), read here exactly as the chronicle
+        // reads it. Only a **stated** subject is policed: a derived one is the
+        // effect's own `anchor`/`npc`/`actor`/`wave` reference, already refused
+        // by kind where it is written, and a second report would point the
+        // author at a `happening/subject` the document does not have.
+        if let Some(s) = eff.happening_subject().filter(|s| !s.derived) {
+            effect_subjects.push((format!("{path}/happening/subject"), s.id.to_string()));
         }
     });
     for (path, s) in effect_subjects {

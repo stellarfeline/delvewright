@@ -1926,6 +1926,21 @@ pub struct Happening {
     pub subject: Option<String>,
 }
 
+/// The subject a beat is about, and whether the document said so (spec-0071 §3).
+///
+/// Answered by [`QuestEffect::happening_subject`], the one derivation. `derived`
+/// is carried rather than dropped because the two readers want different things
+/// from it: the namespace check reports on what an author **wrote**, and the
+/// chronicle reasons over what the beat **is about**.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct HappeningSubject<'a> {
+    /// The subject id (`npc/`, `actor/`, `wave/`, `anchor/` or an `item/` label).
+    pub id: &'a str,
+    /// `true` when the effect's own single object supplied it, `false` when the
+    /// `happening` states it.
+    pub derived: bool,
+}
+
 /// The structured event vocabulary (DSL v0.8, spec-0025).
 ///
 /// Deliberately small and closed. These ten verbs are what make a subset of
@@ -6788,6 +6803,77 @@ impl QuestEffect {
         }
     }
 
+    /// **Every object of a subject kind this effect names at this node** — the
+    /// `npc/`, `actor/`, `wave/` and `anchor/` ids [`Happening::subject`] may
+    /// name, in a fixed order, deduplicated (spec-0071 §3).
+    ///
+    /// The bodies come from [`Self::body_entry`] / [`Self::body_exit`] and the
+    /// move verbs; the anchors come from [`Self::anchor_refs`], the single
+    /// authority on the anchor-bearing surface, so a verb that gains an anchor
+    /// gains it here too. Not recursive: a `sequence`'s steps each answer for
+    /// themselves.
+    ///
+    /// This is a question about the **object class** a beat can be about, not
+    /// about a list of verbs somebody maintains — which is why `unleash-actor`
+    /// (one actor), `set-block` (one anchor) and `fill-region` (one anchor)
+    /// answer it without being named anywhere, and why `move-actor` (an actor
+    /// AND a destination anchor) and `teleport` (two anchors) answer with two.
+    pub fn subject_objects(&self) -> Vec<&str> {
+        fn add<'a>(id: &'a str, out: &mut Vec<&'a str>) {
+            if !out.contains(&id) {
+                out.push(id);
+            }
+        }
+        let mut out: Vec<&str> = Vec::new();
+        match &self.verb {
+            Verb::SpawnNpc { npc, .. }
+            | Verb::DespawnNpc { npc, .. }
+            | Verb::MoveNpc { npc, .. } => add(npc.as_str(), &mut out),
+            Verb::SpawnWave { wave, .. } => add(wave.as_str(), &mut out),
+            _ => {}
+        }
+        if let Some(actor) = self.actor_ref() {
+            add(actor.as_str(), &mut out);
+        }
+        for (_, anchor, _) in self.anchor_refs() {
+            add(anchor.as_str(), &mut out);
+        }
+        out
+    }
+
+    /// **What this effect's `happening` is about**: the subject the branch
+    /// chronicle records and the contradiction proof (`DW0485`) reasons over
+    /// (spec-0071 §3).
+    ///
+    /// A stated [`Happening::subject`] always wins — the caller knows more. An
+    /// absent one resolves to the effect's own object when it has exactly one
+    /// ([`Self::subject_objects`]), because the beat that opens a gate is about
+    /// that gate and the id is otherwise typed twice, two keys apart. An effect
+    /// with several objects, or none, resolves nothing: naming one of them would
+    /// be the compiler guessing which.
+    ///
+    /// **The one derivation.** The namespace check (`dsl::validate`) and the
+    /// chronicle writer (`delvec::compiler::branch`) both read the subject
+    /// through here, so a beat cannot be about one thing for the proof and
+    /// another for the account a reader is handed.
+    pub fn happening_subject(&self) -> Option<HappeningSubject<'_>> {
+        let h = self.happening.as_ref()?;
+        if let Some(stated) = h.subject.as_deref() {
+            return Some(HappeningSubject {
+                id: stated,
+                derived: false,
+            });
+        }
+        let objects = self.subject_objects();
+        match objects.as_slice() {
+            [only] => Some(HappeningSubject {
+                id: only,
+                derived: true,
+            }),
+            _ => None,
+        }
+    }
+
     /// The `cutscene` camera subject if this is a single-shot `cutscene` carrying
     /// the v0.6 `look_at` field.
     pub fn cutscene_look_at(&self) -> Option<&Mark> {
@@ -7568,13 +7654,16 @@ pub fn for_each_campaign_effect<'a>(
             crate::effects::EffectRootOwner::OnDeath => EffectSite::OnDeath,
             crate::effects::EffectRootOwner::ShopOffer(h) => EffectSite::ShopOffer {
                 shop: h.id.as_str().to_string(),
-                // The offer index is in the root's path (`…/offers/<i>/effects`),
-                // parsed back rather than widening the owner for one consumer —
-                // the same call the dialogue arm above makes.
+                // The offer index is in the root's path
+                // (`/content/shops/<h>/offers/<i>/effects`), parsed back rather
+                // than widening the owner for one consumer — the same call the
+                // dialogue arm above makes. Segment 5 is the index: segment 4 is
+                // the literal `offers`, which parses as nothing and reported
+                // every offer as the shop's first.
                 offer: root
                     .path
                     .split('/')
-                    .nth(4)
+                    .nth(5)
                     .and_then(|n| n.parse().ok())
                     .unwrap_or(0),
             },
@@ -7704,5 +7793,118 @@ mod spine_tests {
             &[("quest/a", &[]), ("quest/b", &["quest/a"])],
         );
         assert_eq!(sorted(&p), ["quest/ghost"]);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// The derived happening subject (spec-0071 §3)
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod happening_subject_tests {
+    use super::QuestEffect;
+
+    /// An effect with a `happening` that states no subject.
+    fn beat(verb: serde_json::Value) -> QuestEffect {
+        let mut v = verb;
+        v["happening"] = serde_json::json!({ "verb": "opens", "text": "It gives." });
+        serde_json::from_value(v).expect("effect fixture parses")
+    }
+
+    fn subject(v: serde_json::Value) -> Option<String> {
+        beat(v).happening_subject().map(|s| {
+            assert!(s.derived, "the fixture states no subject");
+            s.id.to_string()
+        })
+    }
+
+    /// **The census, written down.** Which verbs resolve a subject is a fact
+    /// about the objects an effect names, not a list of verbs — so the four the
+    /// spec illustrates (`open-gate`, `spawn-actor`, `spawn-wave`,
+    /// `despawn-npc`) are here beside the ones it does not name and the rule
+    /// covers anyway: `unleash-actor` names one actor, `set-block` one anchor.
+    #[test]
+    fn an_effect_with_one_object_is_about_that_object() {
+        for (effect, want) in [
+            (
+                serde_json::json!({ "type": "open-gate", "anchor": "anchor/door" }),
+                "anchor/door",
+            ),
+            (
+                serde_json::json!({ "type": "close-gate", "anchor": "anchor/door" }),
+                "anchor/door",
+            ),
+            (
+                serde_json::json!({ "type": "spawn-actor", "actor": "actor/giant" }),
+                "actor/giant",
+            ),
+            (
+                serde_json::json!({ "type": "despawn-actor", "actor": "actor/giant", "style": "vanish" }),
+                "actor/giant",
+            ),
+            (
+                serde_json::json!({ "type": "unleash-actor", "actor": "actor/giant" }),
+                "actor/giant",
+            ),
+            (
+                serde_json::json!({ "type": "spawn-wave", "wave": "wave/muster" }),
+                "wave/muster",
+            ),
+            (
+                serde_json::json!({ "type": "spawn-npc", "npc": "npc/keeper" }),
+                "npc/keeper",
+            ),
+            (
+                serde_json::json!({ "type": "despawn-npc", "npc": "npc/keeper" }),
+                "npc/keeper",
+            ),
+            (
+                serde_json::json!({ "type": "set-block", "anchor": "anchor/altar", "block": "minecraft:stone" }),
+                "anchor/altar",
+            ),
+        ] {
+            assert_eq!(subject(effect.clone()).as_deref(), Some(want), "{effect}");
+        }
+    }
+
+    /// Several objects, or none, resolve nothing: naming one of them would be
+    /// the compiler guessing which the beat is about. A `move-actor` walks an
+    /// actor to an anchor and names both.
+    #[test]
+    fn an_effect_with_no_single_object_resolves_nothing() {
+        for effect in [
+            serde_json::json!({ "type": "move-actor", "actor": "actor/giant", "to": { "anchor": "anchor/door" } }),
+            serde_json::json!({ "type": "move-npc", "npc": "npc/keeper", "to": { "anchor": "anchor/door" } }),
+            serde_json::json!({ "type": "teleport", "from": { "anchor": "anchor/hall", "extent": [2, 2, 2] }, "to": { "anchor": "anchor/door" } }),
+            serde_json::json!({ "type": "narrate", "text": "The hall answers." }),
+            serde_json::json!({ "type": "set-flag", "flag": "flag/heard" }),
+        ] {
+            assert_eq!(subject(effect.clone()), None, "{effect}");
+        }
+    }
+
+    /// A stated subject wins, and says so.
+    #[test]
+    fn a_stated_subject_is_not_derived() {
+        let e: QuestEffect = serde_json::from_value(serde_json::json!({
+            "type": "open-gate",
+            "anchor": "anchor/door",
+            "happening": { "verb": "opens", "text": "He lifts it.", "subject": "npc/keeper" }
+        }))
+        .unwrap();
+        let s = e.happening_subject().expect("a stated subject");
+        assert_eq!((s.id, s.derived), ("npc/keeper", false));
+    }
+
+    /// No `happening`, no subject: the derivation is about a beat, not about an
+    /// effect.
+    #[test]
+    fn an_effect_with_no_happening_has_no_subject() {
+        let e: QuestEffect = serde_json::from_value(
+            serde_json::json!({ "type": "open-gate", "anchor": "anchor/door" }),
+        )
+        .unwrap();
+        assert!(e.happening_subject().is_none());
+        assert_eq!(e.subject_objects(), vec!["anchor/door"]);
     }
 }
