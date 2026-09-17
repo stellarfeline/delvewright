@@ -1,0 +1,20 @@
+{
+  "carries": [
+    "overlays/site-plan/site-plan.json",
+    "overlays/site-plan/layout-graph.json",
+    "overlays/site-plan/detail-plan.json",
+    "overlays/site-plan/walk-record.json",
+    "overlays/site-plan/programs/annex.json"
+  ],
+  "code": "DW0908",
+  "patch": [
+    {
+      "doc": "overlays/site-plan/drawings/far-hall.json",
+      "op": "replace",
+      "path": "/name",
+      "value": "gallery-far-hall-in-two-media"
+    }
+  ],
+  "units": [],
+  "why": "`node/far-hall` written at both addresses: the drawing the overlay commits and a program beside it. The medium is read off the address the document stands at, so two documents are two buildings and nothing but the author can choose between them — least of all a rule that would pick whichever the engine looked for first. Refused at `delvec detail`, naming both paths, before either is opened."
+}

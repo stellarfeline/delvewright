@@ -31,5 +31,17 @@ pub fn stage_schema(stage: Stage) -> serde_json::Value {
         Stage::DetailPlan => schema_for!(Envelope<DetailPlanContent>),
         Stage::Design => schema_for!(Envelope<DesignContent>),
     };
-    serde_json::to_value(schema).expect("schema serializes to JSON")
+    let mut v = serde_json::to_value(schema).expect("schema serializes to JSON");
+    // **Where the document lives**, stated beside the shape it must have. A
+    // stage is one file named for the stage, and every tool that walks a
+    // campaign directory needs that address; deriving it from the export's own
+    // key was right while every document class was one file, and stopped being
+    // right the day one was not (`delvec::drawing::schema`).
+    if let Some(obj) = v.as_object_mut() {
+        obj.insert(
+            "documents".into(),
+            serde_json::Value::String(format!("{}.json", stage.name())),
+        );
+    }
+    v
 }

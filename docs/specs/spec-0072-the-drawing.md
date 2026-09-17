@@ -30,11 +30,12 @@
   ADR-0030 §5 (buildings, one owner per cell, the allocation of net cells,
   the fit-out refusal) and §7 (the authoring-time spatial queries). §9 says
   what §5 will bind and why no field of a drawing moves when it does.
-- **Numbers**: no spec or ADR beyond this one. **Seven new DW codes**, written
-  here as `DW-A` … `DW-G` (§8) and allocated at the implementation dispatch.
-  **`dsl_version` moves** (§2.1). **The grammar-program ledger does not
-  move**: the drawing reuses the program document's types and adds nothing to
-  a program.
+- **Numbers**: no spec or ADR beyond this one. **Seven new DW codes**,
+  `DW0902` … `DW0908` (§8). **`dsl_version` moves**, once, in the change that
+  lands the document (§2.1); the number is the authority's
+  (`crates/dsl/Cargo.toml`) and is not restated here. **The grammar-program
+  ledger does not move**: the drawing reuses the program document's types and
+  adds nothing to a program.
 - **Non-goals**: a host language, a loop over data, a function that returns a
   value, recursion; reading the canvas inside an expression; a second
   expression algebra; a seed for geometry; block-by-block import of a finished
@@ -201,7 +202,7 @@ face. For each round axis `a`:
 products over the round axes. That is the ellipse or ellipsoid inscribed in
 the box, tested at cell centres in doubled coordinates, so an even extent and
 an odd one obey one rule and nothing is ever halved. The arithmetic is exact:
-a round axis may not exceed 4096 cells (`DW-D`), which keeps every term inside
+a round axis may not exceed 4096 cells (`DW0905`), which keeps every term inside
 128 bits.
 
 With `t`, the solid is a tube or a shell: a cell is in when it is in the
@@ -264,7 +265,7 @@ operations — and `when` and `note`. None paints.
 `{ "op": "scope", "from": …, "to": …, "body": [ … ] }` — the body's
 coordinates are local to the box, its extents are what
 `{"expr":"dim"}` reads, and an operation that reaches outside it is refused
-(`DW-A`). It exists so that a block of operations moves as one when the plan
+(`DW0902`). It exists so that a block of operations moves as one when the plan
 moves it, and it is the carrier the three constructs below share: **every
 body-bearing operation takes `from` / `to` and makes that box its body's
 scope.**
@@ -296,10 +297,10 @@ A define is `{ "params": {name: default}, "roles": [names], "body": [ … ] }`.
   Frames compose as signed permutations of the two horizontal axes. The
   vertical never moves: a drawing has gravity.
 - `params` may name only parameters the define declares, `roles` only roles it
-  lists (`DW-B`) — closed, as `bind` is. A body reads its own parameters, the
+  lists (`DW0903`) — closed, as `bind` is. A body reads its own parameters, the
   indices bound around it, and the document's `params`; nothing else.
 - A define may `use` another. **A define that reaches itself, directly or
-  through others, is refused with the chain named** (`DW-C`), at validation,
+  through others, is refused with the chain named** (`DW0904`), at validation,
   before anything executes. There is no recursion, so there is no depth to
   limit.
 
@@ -315,7 +316,7 @@ Two spellings of how many, one construct:
 
 - **Counted.** Instance `k = 0 … count − 1` runs the body with the scope's
   origin moved by `k · step`. The scope's extents do not change, and an
-  instance that paints outside the enclosing scope is `DW-A` with `k` named.
+  instance that paints outside the enclosing scope is `DW0902` with `k` named.
   A step with a vertical part is what makes a flight, a stepped arch and a
   corbel table one operation each.
 - **Fitted.** Items `item` cells long stand every `stride` cells along the
@@ -326,7 +327,7 @@ Two spellings of how many, one construct:
   `middle` (the lower-middle split), the words `split`'s `rounding` already
   uses. A missing `remainder` is refused by the schema at the operation
   (`DW0100`); `exact` with cells left over, or a run that fits no item, is
-  `DW-E`, naming `E`, `stride`, `item` and `r`.
+  `DW0906`, naming `E`, `stride`, `item` and `r`.
 - `index` binds the instance number as a parameter for the body — what lets a
   course step in as it rises, or alternate two roles by `k % 2`. The
   grammar's `repeat` cannot know how far along it is (`grammar.md` §2); a
@@ -353,7 +354,7 @@ way.
 body, then runs it again reflected across the centre plane of the operation's
 box on `axis`: a cell at `c` lands at `n − 1 − c`, exact for odd and even
 extents alike. States reflect with it (§5.2). A `mark` inside takes
-`index: "auto"` or is refused as a name written twice (`DW-B`).
+`index: "auto"` or is refused as a name written twice (`DW0903`).
 
 ### 4.5 `grammar` — the grammar stays for what it was adopted for
 
@@ -436,7 +437,7 @@ drawing alike — and the grammar's `Reorient::turned` gains them with it.
   settled on the pinned server (`tools/spike-block-settling/`,
   `crates/delvec/tests/schem_stair_shape_measured.rs`); the drawing calls it
   and owns no second rule. **A drawing's paint that writes `shape` on a stair
-  is refused** (`DW-F`) rather than silently overwritten, so `DW0801` is
+  is refused** (`DW0907`) rather than silently overwritten, so `DW0801` is
   unreachable from a drawing.
 - **Connection state — fences, walls, panes, bars — is to measure, and until
   it is, a drawing writes it.** The tree holds a derivation,
@@ -611,13 +612,13 @@ the address.
 | Code | Refuses | Fires | Says |
 |---|---|---|---|
 | `DW0100`, `DW0102` | a document that does not parse — an unknown `op`, a missing `remainder`, a `turn` of 4; a `dsl_version` that is not the engine's | load | the path and the schema's own words |
-| **`DW-A`** | **an operation that reaches a cell its scope does not hold** — a solid's box, a `line`'s brush, a `mark`, a `claim`, a `grammar` box, outside the place's box or the enclosing `scope` / `use` / `repeat` slice | at that operation, before it paints | the operation, the scope it left, both boxes |
-| **`DW-B`** | **a name that resolves to nothing, or to two things** — a `role` (on a solid, in `where`, in `use.roles`, in the contract's `block`), a `define`, a parameter, a region the contract names and nothing claims or the reverse, an anchor two marks produce | validation; the anchor at the second mark | the kind, the name, every name of that kind the document declares |
-| **`DW-C`** | **a `define` that reaches itself** | validation | the chain |
-| **`DW-D`** | **a value outside its range at the operation that evaluates it** — `to` below `from`, a `t`, `rise`, `run`, `stride` or `item` below 1, a negative `count`, division or remainder by zero, arithmetic past 64 bits, a `flat` that is not a face of a round axis, a round axis over 4096 cells, a place past the expander's `max_volume`, more than the executor's instance ceiling | evaluation | the field, the value, the range, the parameters that produced it |
-| **`DW-E`** | **a fitted `repeat` that does not fit** — `exact` with cells left over, or no whole item | evaluation | `E`, `stride`, `item`, `r`, and the three remainder words that would accept it |
-| **`DW-F`** | **a paint that writes a property the engine derives** — `shape` on a stair; after criterion 2, nothing more unless that measurement says a written connection does not survive | validation | the role, the property, and that omitting it is the repair |
-| **`DW-G`** | **a place with two media** — `programs/<stem>.json` and `drawings/<stem>.json` both present | `detail`, before either is opened | both paths |
+| **`DW0902`** | **an operation that reaches a cell its scope does not hold** — a solid's box, a `line`'s brush, a `mark`, a `claim`, a `grammar` box, outside the place's box or the enclosing `scope` / `use` / `repeat` slice | at that operation, before it paints | the operation, the scope it left, both boxes |
+| **`DW0903`** | **a name that resolves to nothing, or to two things** — a `role` (on a solid, in `where`, in `use.roles`, in the contract's `block`), a `define`, a parameter, a region the contract names and nothing claims or the reverse, an anchor two marks produce | validation; the anchor at the second mark | the kind, the name, every name of that kind the document declares |
+| **`DW0904`** | **a `define` that reaches itself** | validation | the chain |
+| **`DW0905`** | **a value outside its range at the operation that evaluates it** — `to` below `from`, a `t`, `rise`, `run`, `stride` or `item` below 1, a negative `count`, division or remainder by zero, arithmetic past 64 bits, a `flat` that is not a face of a round axis, a round axis over 4096 cells, a place past the expander's `max_volume`, more than the executor's instance ceiling | evaluation | the field, the value, the range, the parameters that produced it |
+| **`DW0906`** | **a fitted `repeat` that does not fit** — `exact` with cells left over, or no whole item | evaluation | `E`, `stride`, `item`, `r`, and the three remainder words that would accept it |
+| **`DW0907`** | **a paint that writes a property the engine derives** — `shape` on a stair; after criterion 2, nothing more unless that measurement says a written connection does not survive | validation | the role, the property, and that omitting it is the repair |
+| **`DW0908`** | **a place with two media** — `programs/<stem>.json` and `drawings/<stem>.json` both present | `detail`, before either is opened | both paths |
 | `DW0738`, `DW0735`, `DW0737`, `DW0882`, `DW0843`–`DW0845`, `DW0848`, the contract gates, the settle gates, the audit | what they refuse today | where they fire today, with the operation's address added wherever the executor knows it | their own words |
 
 Not a refusal, and printed on every run: **operations written, instances
@@ -632,14 +633,14 @@ honestly have an operation with nothing to do at one of them.
 **Authored**, against spec-0058.
 
 - **`delvec detail`** reads a place's medium from its address: a drawing at
-  `drawings/<stem>.json`, a program at `programs/<stem>.json`, both is `DW-G`.
+  `drawings/<stem>.json`, a program at `programs/<stem>.json`, both is `DW0908`.
   Steps 1–9 of spec-0058 §2.2 are unchanged; step 3 executes instead of
   expanding. The `handed/…` names are bound into `params` (`DW0882`), the
   plan's palette rebinds the roles the drawing declares (spec-0058 §2.5), the
   seed is the place's, the row is the same row. `--all` walks both
   directories in site-plan order.
 - **`delvec drawing check <file>`** validates without executing: the schema,
-  every `DW-B` / `DW-C` / `DW-F`, the contract's reference integrity.
+  every `DW0903` / `DW0904` / `DW0907`, the contract's reference integrity.
   **`delvec drawing execute <file> --region XxYxZ --out <dir> [--id] [--seed]
   [--param k=v] [--role r=state]`** executes, judges and freezes, printing and
   writing what `delvec grammar expand` prints and writes, `<id>.report.json`
@@ -664,7 +665,7 @@ honestly have an operation with nothing to do at one of them.
 
 | A later allocation hands | It binds to | Already shaped for it |
 |---|---|---|
-| the place's **net cells** instead of a box | the executor's notion of *the cells a scope holds*, which `DW-A` is written against | `DW-A` says *a cell its scope does not hold*, never *outside the box*; a mask is a narrower holding, handed as an executor input. No operation names its owner |
+| the place's **net cells** instead of a box | the executor's notion of *the cells a scope holds*, which `DW0902` is written against | `DW0902` says *a cell its scope does not hold*, never *outside the box*; a mask is a narrower holding, handed as an executor input. No operation names its owner |
 | per face, the **openings and seams** the place looks onto | `params`, under `handed/…` | it is spec-0058's prefix; new names are new keys |
 | the split into a **building's** drawing and its places' | which document `detail` executes for which node | a building's base build and a room's fit-out are the same document class; nothing in a drawing says which it is |
 | defines **shared** across a building's documents | `defines` | names are a keyed map a later `include` can qualify by prefix, as `grammar.md` §5c does for rules. Not built here |
@@ -693,10 +694,10 @@ honestly have an operation with nothing to do at one of them.
   for `programs/`.
 - **The probes.** One per new code, each the primary plus one declared edit of
   `far-hall.json`, refused by `delvec detail` with the code it names:
-  `an-op-that-leaves-its-box` (`DW-A`), `a-role-nobody-declared` (`DW-B`),
-  `a-define-that-uses-itself` (`DW-C`), `a-wall-thinner-than-one` (`DW-D`),
-  `a-bay-that-does-not-fit` (`DW-E`), `a-stair-with-its-shape-typed` (`DW-F`),
-  `a-place-with-two-media` (`DW-G`, which ships a program beside the drawing).
+  `an-op-that-leaves-its-box` (`DW0902`), `a-role-nobody-declared` (`DW0903`),
+  `a-define-that-uses-itself` (`DW0904`), `a-wall-thinner-than-one` (`DW0905`),
+  `a-bay-that-does-not-fit` (`DW0906`), `a-stair-with-its-shape-typed` (`DW0907`),
+  `a-place-with-two-media` (`DW0908`, which ships a program beside the drawing).
 - **The demo level.** A row in `docs/demo-levels.md`: **The Drawn Gate** — one
   small gatehouse authored as one drawing and nothing beside it: a round
   tower and its cone, a domed niche, a gable skinned in stairs, a chain hung
@@ -753,6 +754,171 @@ Proposed as an edit to the draft ADR, in a commit of its own beside this spec.
 6. **§2's operation list.** Five of its operations are fields or compositions
    of the others; §3.1 gives the reason for each.
 
+## 11a. Where this spec is corrected by the tree
+
+Written by reading, with no build run (§Ground). These are the points the
+implementation found, each with the site that decides it. The spec's sentence is
+corrected here rather than designed around.
+
+1. **§2.2, the palette binds `Paint`.** It binds
+   [`States`](../../crates/delvec/src/grammar/ir.rs) — one block state or a
+   weighted list. `Paint` (`crates/delvec/src/grammar/ir.rs`, `pub enum Paint`)
+   **is** the world-frame / local-frame choice, and §5.2 removes that choice:
+   every state in a drawing is written in the frame of the scope that paints it.
+   Binding `Paint` would offer a `local` wrapper that means nothing and a
+   world-frame spelling no operation could honour. The table's own sentence
+   beside it — *a block-state string or a weighted list* — already describes
+   `States`.
+2. **§4.5, `fill` and `void` overwrite and `skip` leaves what was drawn.** The
+   tree cannot tell those apart. A grammar expansion is a `VoxelModel` that
+   starts as air (`crates/delvec/src/grammar/model.rs`, `VoxelModel::new`) and
+   `Node::Void` writes air, so a voided cell and a skipped one are the same
+   byte. The rule implemented is **non-air overwrites; air leaves what was
+   drawn** — the one the compiler's own `fragment` stamp already applies
+   (`docs/reference/compiler.md` §2, stage 7) — and it is stated rather than
+   approximated.
+3. **§4.5, a `grammar` operation's claims join the drawing's regions.** They
+   cannot arrive: `Program::validate` refuses a claim the program's own contract
+   does not classify (`crates/delvec/src/grammar/ir.rs`,
+   `ProgramError::UnclassifiedRegion`), and `expand` consumes every claimed
+   region into the program's own resolved contract
+   (`crates/delvec/src/grammar/expand.rs`, `resolve_contract`), so an
+   `Expansion` carries no unclassified claim for a drawing to adopt. A program
+   under a `grammar` operation is therefore self-contained about its regions.
+   Its **marks do** join the drawing's anchors, rebased onto the place's box,
+   and a name two of them produce is `DW0903`. Whether a composed contract
+   should merge is a question for ADR-0030 §5's spec, not a thing to invent
+   here.
+4. **§8, `DW0905` refuses arithmetic past 64 bits.** The expression algebra
+   **saturates** rather than wrapping
+   (`crates/delvec/src/grammar/eval.rs`, `saturating_add`/`_sub`/`_mul`), so
+   there is no overflow to observe. What is implemented is a bound on the value:
+   a coordinate or an extent past what a cell of a world can be (`±i32::MAX`) is
+   refused at the operation that evaluated it, naming the parameters in force.
+   That refuses every saturated value and is strictly tighter than the spec's
+   sentence.
+5. **§2.1, the schema export is produced in the binary, which can reach both.**
+   True, and not sufficient: the export's `$defs` is **one flat namespace over
+   every document a creator writes**, and `tools/ci/gallery_units.py` refuses by
+   name when one name is two things. Five collided — `Mark`, `Edge`, `Facing`,
+   `Axis`, `Face`. Three were the same concept declared twice and the copies are
+   gone: the drawing uses `delvewright_dsl::siteplan::Face` and `PlanAxis`, and
+   `grammar::geom::Axis` is now a re-export of `delvewright_dsl::siteplan::Axis`.
+   Three are different things that shared a name, and the grammar's three take
+   an exported name — `AnchorMark`, `SpatialContractEdge`, `AnchorFacing` —
+   while keeping their Rust names.
+6. **§3.4, `skin` keeps a cell on a stepping edge of its own course.** The
+   sentence does not say whether the outer edge of a side that does **not** step
+   is one. It is not, and the difference is visible: a one-sided `prism` with
+   `skin` is the bare slope under the strict reading and the slope plus a
+   vertical wall at the ridge under the loose one, and §3.4's own example — two
+   one-sided skinned prisms making a stair-block roof — wants the former. Every
+   side of a round course steps, so there the stepping edge is the ellipse's own
+   boundary.
+7. **§9, `delvec prefab diff` is "the instrument of criterion 9".** It is
+   criterion **10**'s: criterion 9 is the gallery. The verb is built as the spec
+   describes it.
+8. **§5.1, the `(n + 1)`-th output of splitmix64 seeded with the execution's
+   seed.** Implemented by advancing the one generator
+   (`crates/delvec/src/grammar/rng.rs`) once per cell in `VoxelModel`'s own
+   order, which **is** that output at linear index `n`. Computing it in closed
+   form would be a private copy of splitmix64's internals, which is the defect
+   the one generator exists to prevent.
+
+9. **§9, the gallery element is one document.** It is one document and three
+   defects the tree did not have a second detailed place to find. `delvec detail
+   --all` judged every place against the campaign's whole detail plan, so the
+   first place was refused for a sibling's piece not existing yet (`DW0842`),
+   and the registry a run read once could not show a later place an earlier
+   one's piece. A document that would not execute at the handed frame printed
+   prose and no diagnostic, so `--json` carried no code. And
+   `tools/ci/gallery_units.py`'s binder never descended an `Int` — "an integer
+   or an expression" — so every expression written in a coordinate bound
+   nothing. And a `grammar` operation's `rule` was read by the loader, exported
+   in the schema and ignored by the executor, which expanded the program's own
+   `start` whatever the operation said — the unemitted shape, found by
+   perturbing the gallery's own grammar operation and hashing the frozen piece.
+   All four are fixed here; none of them is about the drawing's design, and
+   every one needed a second detailed place or a perturbation measurement to be
+   visible at all.
+10. **§9, a detailed place keeps the brief its box was written to.** It cannot,
+   where the brief measures depth. `DW0833`'s second call site measures the clear
+   run through a place's middle **at the top course of its play space**, and a
+   piece owes its own shell inside the box the plan gave it — the derivation
+   masses an undetailed place and does not mass a detailed one — so a 16-deep
+   box can measure 16 while nobody has built in it and at most 14 once somebody
+   has. The gallery's `fact/far-hall-depth` moves from 16 to 14 with its
+   sentence, which is a loosening of what the brief asserts and is declared as
+   one: the place keeps two blocks less than it did as an undetailed box, and
+   the reason is the walls it now has. What is NOT weakened is the check.
+
+## 11b. What this spec's criteria do not yet have
+
+Recorded as debts, never as passes (§12's own rule).
+
+- **Criterion 2** — the connection-state measurement rig and the derivation's
+  move into `crates/dsl` are not built. A drawing **writes** its connections in
+  full, as every producer does today, and `DW0735` binds it as it binds a
+  program. Criterion 6's connection half is a debt with it.
+- **Criterion 8 — met.** `delvec detail` reads the medium off the address, binds
+  the `handed/…` names by the one rule, executes at the frame, runs every gate
+  it runs today, freezes through the shared freezer and writes the same row;
+  `--all` walks both directories. `crates/delvec/tests/detail_verb.rs` generates
+  the same room in both media from the allocation and nothing else, so what its
+  five new tests measure is the address and not a different building.
+- **Criterion 9 — met.** `gallery/overlays/site-plan/drawings/far-hall.json`
+  details `node/far-hall`, and `tools/ci/check-gallery-coverage.py` on this
+  tree reports **1148 units enumerated, 1135 bound, 13 refusal-proven, 0 in
+  NEITHER state**, over `drawings/*.json 1` walked. Nine probes carry the
+  refusal half. Seven demonstrate the drawing's own codes; two are exemptions,
+  and they are why nine units cannot be bound by any drawing at all —
+  `Cond::otherwise` has no sibling alternative to be about in an ordered list,
+  and `Cond::orientation` with the `Mirror` it carries would ask a scope which
+  frame it stands in when the answer is written at the `use` above it. The gate
+  was not weakened and no unit was special-cased: what learned something is
+  `tools/ci/gallery_units.py`, which now reads each document class's address off
+  the export rather than deriving it from the class name, and descends an `Int`
+  into the expression it may hold.
+- **Criterion 10** — the port is the content repository's.
+- **Criterion 11 — met but for the page, which is a debt.**
+  `docs/reference/drawing.md`, `compiler.md`, `tools.md` and `grammar.md` §2c
+  are written. The `/new-delve` page's place-detail step **was written** — the
+  medium chosen by address, the thirteen operations, `delvec drawing check` and
+  `delvec drawing execute` as the iteration loop, `DW0908` for a place written
+  at both addresses — and `tools/ci/check-skill-page.py` refuses it, four
+  findings, every one of them the pin:
+
+      - the page drives `delvec drawing`, which the CLI does not have.
+          engine delvec--v1.6.0 offers: allocation, analyze, …, detail, …
+      - …names `DW0908`, and the engine at delvec--v1.6.0 declares no such
+        diagnostic.
+      - …is 120 lines and opens with no contents list.
+
+  The page ships with a pinned engine tag and that tag predates this document
+  class, so a page driving `delvec drawing` describes a verb the engine it
+  installs does not have. The step was reverted and the gate is green again.
+  **The debt is discharged by the change that cuts the next engine tag**: that
+  change re-pins the page, and this step lands with it, with its contents list
+  and a `Reference: the drawing` page beside it.
+- **Criterion 12 — met.** `docs/demo-levels.md` queues **The Drawn Gate**: one
+  place detailed twice, once as a program and once as a drawing, and a third
+  panel a partition cannot produce. `tools/ci/check-demo-levels.py` is green and
+  every code it cites resolves.
+
+**And one defect this spec does not own.** A drawing's refusal at load now
+carries the pointer of the value that failed (§8). **The `delvec grammar`
+program loader does not**, and the same mistake planted in a program's `mark`
+proves it: `error: parse p.json: invalid type: map, expected variant identifier
+at line 6 column 65` — no rule, no node, no pointer. It is **not the same
+code**: `grammar::document::load` has its own loader and its own error type, and
+the mechanism a drawing uses needs an **exported schema** to read the accepted
+forms from, which the program document does not have (`delvec schema` exports
+the stage documents, the drawing, the walk record and a prefab's metadata, and
+no program). Recorded here rather than in `docs/playtest-findings.json`: that
+ledger's rows are defects of a built campaign and its consumer refuses a
+staging while a row's general form is not a binding check on the build being
+staged, which is a judgement it cannot make about an authoring tool's message.
+
 ## 12. Acceptance criteria
 
 Machine-checkable; each names its instrument. `delvec` is the tree's own
@@ -796,10 +962,10 @@ a debt, never as a pass.
 6. **Derived state.** A drawing that paints two stair runs meeting at a corner
    exports the corner shapes `derive_shape` gives, and the `stair-shape` gate
    reports them bound and none mismatched; the same drawing with `shape`
-   typed is `DW-F`. After criterion 2: a run of fence between two posts of
+   typed is `DW0907`. After criterion 2: a run of fence between two posts of
    masonry exports joined, with no connection property in the document.
-7. **Refusals.** Each of `DW-A` … `DW-G` is asserted by a test that reads the
-   operation's address out of the message — for `DW-A`, from inside a `use`
+7. **Refusals.** Each of `DW0902` … `DW0908` is asserted by a test that reads the
+   operation's address out of the message — for `DW0902`, from inside a `use`
    inside a `repeat`, so the chain and the index are both asserted — and by
    its probe (§10). `tools/ci/check-dw-codes.py` green.
 8. **Bound where a program is bound.** `delvec detail --all` over the
@@ -847,7 +1013,7 @@ a debt, never as a pass.
       `Expr` objects with their share of the bytes (§13).
     - *No script, nothing typed that the engine owns.* The README's build
       commands are `delvec drawing execute` and nothing else; the directory
-      holds no other executable; `drawing.json` is green, which by `DW-F`
+      holds no other executable; `drawing.json` is green, which by `DW0907`
       means no stair `shape` is written in it.
     - **A zero binding, stated.** The released gatehouse declares no gate: its
       piece carries 31 point anchors, no region anchor and no contract. The

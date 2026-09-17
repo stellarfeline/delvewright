@@ -10,43 +10,18 @@
 //! that axis local coordinates increase. Rules are therefore written once and
 //! reused turned (`reorient`) or reflected (`mirror`).
 
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-/// A world axis. `Y` is up, matching Minecraft.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum Axis {
-    /// West-east.
-    X,
-    /// Down-up.
-    Y,
-    /// North-south.
-    Z,
-}
-
-impl Axis {
-    /// The axis as an index into a `[_; 3]` world-space triple.
-    pub const fn index(self) -> usize {
-        match self {
-            Axis::X => 0,
-            Axis::Y => 1,
-            Axis::Z => 2,
-        }
-    }
-
-    /// The axis for an index; panics outside `0..=2`.
-    pub const fn from_index(i: usize) -> Axis {
-        match i {
-            0 => Axis::X,
-            1 => Axis::Y,
-            2 => Axis::Z,
-            _ => panic!("axis index out of range"),
-        }
-    }
-
-    /// All three axes in canonical order.
-    pub const ALL: [Axis; 3] = [Axis::X, Axis::Y, Axis::Z];
-}
+/// **A world axis** — the engine's one, which lives with the campaign format
+/// ([`delvewright_dsl::siteplan::Axis`]) because a world axis is a fact about
+/// the game rather than about the document that names it.
+///
+/// It was declared here as well, so a site plan's seams and a grammar's frames
+/// spoke two vocabularies of three letters that nothing compared — and a schema
+/// export, whose `$defs` is one flat namespace over every document a creator
+/// writes, had two different definitions under one name.
+pub use delvewright_dsl::siteplan::Axis;
 
 /// A half-open integer box: `origin` inclusive, `origin + size` exclusive.
 ///
@@ -118,7 +93,7 @@ impl Box3 {
 /// *every* question a rule asks of its box — where a split lays its first piece,
 /// which corner `corner_min` is, which way an anchor looks — is asked in the
 /// frame's terms.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Hash, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Mirror {
     /// The local `X` runs against the world axis it names.

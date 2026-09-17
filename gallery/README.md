@@ -146,6 +146,15 @@ applied to it, so the probe is the primary plus that document plus one edit and
 ships no copy — a probe that both names an overlay document and ships a file of
 the same name is refused.
 
+A probe may also **carry** overlay documents it does not edit, naming them the
+same way in a `carries` list. A probe about a drawing needs the site plan that
+allocates its place, the graph that gives that place its headroom, the walk
+record of that grid and the program beside it; none of those is a document the
+probe edits, so `patch` has nothing to name them with. The nine drawing probes
+carry five documents each and ship one file between them — the second program
+that makes `a-place-with-two-media` two media. Carrying a document and also
+shipping it is refused, as naming one and shipping it is.
+
 A probe is an OVERLAY, not a campaign, so `delvec validate` pointed at a probe
 directory refuses the directory (`DW0874`) rather than the document. Materialise
 it over the primary first, exactly as the coverage gate does, and then run any of
@@ -267,6 +276,40 @@ element now exercises `WaveSummon::aggro-edge` instead of merely naming it.
 
 None of the four was found by reading code. Each was found by trying to write the
 surface down.
+
+## The far hall of the site plan, and what a drawing reaches that a partition does not
+
+`node/far-hall` of the site-plan overlay — the same fiction as `area/far-hall`
+below, at the point of the campaign where nothing is placed by hand — is
+detailed from
+`overlays/site-plan/drawings/far-hall.json`, and it is the only place in this
+repository built from an ordered list of solids rather than a partition of its
+box. It is here to be read: 76 top-level operations, every one with a note
+saying what it is, and every gate the engine has fires over it.
+
+What it builds, roughly west to east: a floor with an inlaid line, four walls,
+a domed west bay with a stone boss hanging from its crown, a barrel vault whose
+ridge runs the hall's whole depth, an arcade of round piers mirrored across the
+nave, four braziers, sconces set into three walls, a flight of stone steps with
+stair-block nosings climbing to a gallery, a boarded hatch dropping into a
+strong room with no door, a tribune over the east aisle behind a fall of stone,
+a screen carrying a relief a grammar program stamps into it, an iron gate and a
+barred squint into the sanctuary, a stepped plinth with a round crown, and a
+crypt behind a sill that is not there until it is laid.
+
+Three of those are things a box-split program cannot state at all. The vault and
+the dome are **cut out of** a solid mass a previous operation laid — a partition
+gives every cell to exactly one leaf, so it has nothing to carve. The piers rise
+**through** the vault's own void, written by an operation that does not know the
+vault exists. And the frieze the west and south walls step back at is a
+two-course recess in a wall the wall operation already built.
+
+Its contract is what the checks read: seven spaces across all three envelopes,
+one out-of-walk region each of the two kinds a region can earn, sixteen edges
+covering every class the contract declares, and three contingent ways — a sill
+laid, boards cleared, a fall of stone cleared — each guarding a dead end,
+because an internal way is shut for the whole's own reachability until content
+opens it and a way across a route the map needs would sever the map.
 
 ## The annex, and what a socket is worth looking at
 

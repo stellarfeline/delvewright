@@ -43,6 +43,38 @@ impl<'de> Deserialize<'de> for BlockState {
     }
 }
 
+/// **The schema says what the serialisation says**: one string, in the vanilla
+/// form.
+///
+/// Hand-written because the derive would describe the Rust struct — a `name` and
+/// a map of properties — and no document ever holds that shape: both halves of
+/// the format are decided by the `Serialize`/`Deserialize` impls above, so a
+/// derived schema would describe a document the engine refuses. The pattern is
+/// deliberately not a full grammar of the property list; it says the id is
+/// namespaced-or-bare and the properties, if any, are bracketed, which is the
+/// part an author gets wrong. The rest is the parse error's to say, at the
+/// operation that wrote it.
+impl schemars::JsonSchema for BlockState {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "BlockState".into()
+    }
+
+    fn schema_id() -> std::borrow::Cow<'static, str> {
+        "delvec::grammar::block::BlockState".into()
+    }
+
+    fn json_schema(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        schemars::json_schema!({
+            "type": "string",
+            "description": "A block with its full state, in the vanilla string form: \
+                            `minecraft:oak_stairs[facing=east,half=top,shape=straight,\
+                            waterlogged=false]`. A bare id is read as `minecraft:`-namespaced \
+                            and properties are sorted on parse, so one state has one spelling.",
+            "pattern": r"^[a-z0-9_.-]+(:[a-z0-9_./-]+)?(\[[^\[\]]*\])?$",
+        })
+    }
+}
+
 /// Why a block-state string would not parse.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BlockStateParseError {

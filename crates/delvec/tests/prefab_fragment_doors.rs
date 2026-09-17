@@ -115,6 +115,14 @@ const PIECE_DOORS: &[Door] = &[
         extra: &[],
         handed: Handed::Dir,
     },
+    // `diff` takes TWO pieces, and `run` hands the staged one to both
+    // positions: a comparison is a door twice over, and a tile arriving as
+    // either side is the same defect.
+    Door {
+        path: &["diff"],
+        extra: &[],
+        handed: Handed::Nbt,
+    },
 ];
 
 /// Commands that do not open a piece, each with the reason, PRINTED on every
@@ -250,6 +258,12 @@ fn run(path: &[&str], extra: &[&str], piece: &Path, out_dir: &Path) -> Output {
         }
         ["curate-merge"] => {
             cmd.arg("--catalog").arg(out_dir);
+        }
+        // The second piece of a comparison. The same one: what is under test is
+        // that a fragment is refused before anything is read, and a tile is a
+        // tile whichever side it arrives on.
+        ["diff"] => {
+            cmd.arg(piece);
         }
         _ => {}
     }

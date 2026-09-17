@@ -16,6 +16,14 @@
         },
         "piece": "prefab/gallery-annex",
         "place": "node/annex"
+      },
+      {
+        "anchors": {
+          "anchor/node-far-hall": "anchor/node-far-hall",
+          "anchor/unlock-east-door": "anchor/unlock-east-door"
+        },
+        "piece": "prefab/gallery-far-hall",
+        "place": "node/far-hall"
       }
     ],
     "palette": {
@@ -24,6 +32,6 @@
       "role/wall": "minecraft:polished_blackstone_bricks"
     }
   },
-  "dsl_version": "0.29.0",
+  "dsl_version": "0.30.0",
   "stage": "detail-plan"
 }

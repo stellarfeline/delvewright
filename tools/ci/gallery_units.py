@@ -68,9 +68,9 @@ REGISTRY_VALUED: dict[str, str] = {}
 
 
 def stage_files(export: dict) -> dict[str, str]:
-    """stage name -> the filename a campaign directory holds it under.
+    """document class -> the glob a campaign directory holds its documents under.
 
-    **Derived from the export, never listed.** The map was written out by hand in
+    **Read off the export, never listed.** The map was written out by hand in
     two tools — the coverage gate and the baseline tool — and the two then
     disagreed the moment a stage was added: the coverage gate learned about the
     map-pipeline documents and the baseline tool did not, so the same tree
@@ -78,11 +78,51 @@ def stage_files(export: dict) -> dict[str, str]:
     run. That is the second-authority defect this module's own docstring refuses
     for the unit enumeration, sitting one function away from it.
 
-    Nothing needs listing, because the filename IS the stage name: every stage
-    document in a campaign directory is `<stage>.json`, which is a convention the
-    loader already keeps and which the export's own keys therefore state.
+    The address used to be the export's own key plus `.json`, because every
+    class was one file named for itself. A drawing is **one file per place**
+    under `drawings/` (spec-0072 §2.1), so that derivation became a guess the
+    day the drawing class existed — and the repair is not a second hand-written
+    map here, it is the engine saying where its document lives. Every schema the
+    export carries states `documents`, and a class that does not is refused
+    rather than guessed at: a tool that silently walks the wrong filename finds
+    no document and reports perfect coverage of nothing.
     """
-    return {stage: f"{stage}.json" for stage in export}
+    out: dict[str, str] = {}
+    for stage, schema in export.items():
+        pattern = schema.get("documents") if isinstance(schema, dict) else None
+        if not isinstance(pattern, str) or not pattern:
+            raise SystemExit(
+                f"the schema export's `{stage}` does not say where its documents live "
+                "(`documents` at the schema root). Nothing here may guess the address: a "
+                "walk over a filename no campaign holds reads as full coverage of an empty "
+                "set. Teach the engine's schema export, not this tool."
+            )
+        out[stage] = pattern
+    return out
+
+
+def document_dirs(export: dict) -> list[str]:
+    """Every subdirectory a document class lives in, read off the export.
+
+    A class of one file lives at the campaign root and contributes nothing here;
+    a class of many lives in a directory named by its address. A tool that asks
+    "does this point carry detail an author wrote" asks this, rather than
+    spelling `drawings` a second time.
+    """
+    return sorted({p.split("/", 1)[0] for p in stage_files(export).values() if "/" in p})
+
+
+def stage_documents(root, export: dict):
+    """Every document of every class that `root` actually holds.
+
+    Yields `(class, path)` in a deterministic order. A class whose address is a
+    glob contributes every file it matches, which is what makes a class of MANY
+    documents — a place's drawing — walkable by the same loop as a class of one.
+    """
+    for stage, pattern in sorted(stage_files(export).items()):
+        for p in sorted(root.glob(pattern)):
+            if p.is_file():
+                yield stage, p
 
 
 @dataclass(frozen=True)
@@ -339,6 +379,25 @@ class Binder:
             if len(branches) == 1 and hops < 8:
                 self._value(branches[0], owner, value, ptr, hops + 1)
                 return
+            # A branch that is itself a TAGGED union. `Int` is "an integer, or
+            # an expression", and `Expr` is a `oneOf` of four tagged variants:
+            # the tag loop above sees a branch carrying no tag of its own, and
+            # the fit below sees one carrying no properties, so every expression
+            # written in a COORDINATE bound nothing at all — silently, on a
+            # document whose every `from` and `to` is one. The discriminator is
+            # the inner union's own tag, which is what serde uses.
+            if hops < 8:
+                for branch in branches:
+                    b, _ = self._resolve(branch)
+                    for inner in self._branches(b):
+                        ib, _ = self._resolve(inner)
+                        tp, tv = _variant_tag(ib)
+                        if tv is None or tp is None:
+                            continue
+                        if value.get(tp) == tv:
+                            self._value(branch, owner, value, ptr, hops + 1)
+                            return
+
             # An UNTAGGED union. Two shapes of it, and they need different
             # discriminators:
             #

@@ -23,7 +23,7 @@ import pytest
 REPO = pathlib.Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO / "tools" / "ci"))
 
-from gallery_units import Binder, Enumerator  # noqa: E402
+from gallery_units import Binder, Enumerator, document_dirs, stage_documents, stage_files  # noqa: E402
 
 
 def _load_checker():
@@ -55,6 +55,7 @@ def _schema(extra_props: dict | None = None, extra_variants: list | None = None)
     return {
         "world": {
             "title": "Envelope_for_WorldContent",
+            "documents": "world.json",
             "type": "object",
             "properties": {"content": {"$ref": "#/$defs/WorldContent"}},
             "$defs": {
@@ -347,6 +348,7 @@ def test_a_demonstration_discharges_nothing_and_the_verdict_says_so(tmp_path, mo
     export = {
         "world": {
             "title": "Envelope_for_WorldContent",
+            "documents": "world.json",
             "type": "object",
             "properties": {"content": {"$ref": "#/$defs/WorldContent"}},
             "$defs": {
@@ -559,3 +561,119 @@ def test_the_binding_line_states_the_patch_figures():
     src = (REPO / "tools" / "ci" / "check-gallery-coverage.py").read_text()
     for phrase in ("probe patches:", "probe(s) examined", "JSON path(s) touched"):
         assert phrase in src, f"the binding line no longer states `{phrase}`"
+
+
+def test_a_class_of_many_documents_is_walked_by_the_address_the_engine_states():
+    """One drawing per place: the walk yields every file, not the last one."""
+    export = _schema()
+    export["drawing"] = {"title": "Drawing", "documents": "drawings/*.json", "type": "object"}
+    assert stage_files(export)["drawing"] == "drawings/*.json"
+    assert document_dirs(export) == ["drawings"]
+
+
+def test_the_walk_yields_every_document_of_a_class_that_holds_many(tmp_path):
+    export = _schema()
+    export["drawing"] = {"title": "Drawing", "documents": "drawings/*.json", "type": "object"}
+    (tmp_path / "world.json").write_text("{}")
+    (tmp_path / "drawings").mkdir()
+    for stem in ("far-hall", "annex", "tunnel"):
+        (tmp_path / "drawings" / f"{stem}.json").write_text("{}")
+    walked = list(stage_documents(tmp_path, export))
+    assert [p.name for s, p in walked if s == "drawing"] == [
+        "annex.json",
+        "far-hall.json",
+        "tunnel.json",
+    ]
+    assert [p.name for s, p in walked if s == "world"] == ["world.json"]
+
+
+def test_a_class_that_does_not_say_where_it_lives_is_refused_not_guessed():
+    """A guessed filename finds nothing and reads as full coverage of an empty set."""
+    export = _schema()
+    del export["world"]["documents"]
+    with pytest.raises(SystemExit) as e:
+        stage_files(export)
+    assert "does not say where its documents live" in str(e.value)
+
+
+def test_a_declared_class_no_point_holds_is_a_red(tmp_path, monkeypatch, capsys):
+    """Zero documents of a class is zero objects examined, never a pass."""
+    mod = _load_checker()
+    export = _schema()
+    export["drawing"] = {
+        "title": "Drawing",
+        "documents": "drawings/*.json",
+        "type": "object",
+        "properties": {"ops": {"type": "array"}},
+    }
+    monkeypatch.setattr(mod, "schema_export", lambda _d: export)
+    monkeypatch.setattr(
+        mod, "resolve_delvec", lambda *_a, **_k: pathlib.Path("/nonexistent/delvec")
+    )
+    gallery = tmp_path / "gallery"
+    (gallery / "probes").mkdir(parents=True)
+    (gallery / "world.json").write_text(json.dumps(_doc({"id": "x", "name": "n"})))
+    monkeypatch.setattr(mod, "GALLERY", gallery)
+    prefabs = tmp_path / "prefabs"
+    prefabs.mkdir()
+    monkeypatch.setattr(sys, "argv", ["check", "--prefabs", str(prefabs)])
+    assert mod.main() == 1
+    out = capsys.readouterr()
+    assert "drawings/*.json 0" in out.out
+    assert "ZERO files of each" in out.err
+    assert "drawing — `drawings/*.json`" in out.err
+
+
+def test_a_union_branch_that_is_itself_a_union_is_descended():
+    """`Int` is "an integer or an expression", and an expression is a union.
+
+    The tagged loop sees a branch with no tag of its own, and the record fit sees
+    one with no properties, so before this every expression written in a
+    COORDINATE bound nothing at all — silently, on a document whose every `from`
+    and `to` is one.
+    """
+    export = {
+        "world": {
+            "title": "Envelope_for_WorldContent",
+            "documents": "world.json",
+            "type": "object",
+            "properties": {"content": {"$ref": "#/$defs/WorldContent"}},
+            "$defs": {
+                "WorldContent": {
+                    "type": "object",
+                    "properties": {"at": {"$ref": "#/$defs/Int"}},
+                },
+                "Int": {
+                    "anyOf": [{"type": "integer"}, {"$ref": "#/$defs/Expr"}],
+                },
+                "Expr": {
+                    "oneOf": [
+                        {
+                            "type": "object",
+                            "properties": {
+                                "expr": {"const": "int", "type": "string"},
+                                "value": {"type": "integer"},
+                            },
+                            "required": ["expr"],
+                        },
+                        {
+                            "type": "object",
+                            "properties": {
+                                "expr": {"const": "dim", "type": "string"},
+                                "dim": {"type": "string"},
+                            },
+                            "required": ["expr"],
+                        },
+                    ]
+                },
+            },
+        }
+    }
+    e = Enumerator(export)
+    units = e.run()
+    assert "Expr::dim" in units and "Expr::dim.dim" in units
+    b = Binder(e)
+    b.walk(export["world"], _doc({"at": {"expr": "dim", "dim": "x"}}), "build")
+    assert "Expr::dim" in b.bound, sorted(b.bound)
+    assert "Expr::dim.dim" in b.bound, sorted(b.bound)
+    assert "Expr::int" not in b.bound, "the branch the value does not satisfy stays unbound"

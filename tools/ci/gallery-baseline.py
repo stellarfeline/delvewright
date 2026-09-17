@@ -329,7 +329,7 @@ def coverage_counts(delvec: Path) -> dict:
     Derived from the same enumeration the coverage gate uses, never a second one.
     """
     sys.path.insert(0, str(REPO / "tools" / "ci"))
-    from gallery_units import Binder, Enumerator, stage_files
+    from gallery_units import Binder, Enumerator, stage_documents
 
     r = subprocess.run(
         [str(delvec), "schema", "--stage", "all"], capture_output=True, text=True
@@ -344,10 +344,8 @@ def coverage_counts(delvec: Path) -> dict:
 
     def bind_dir(root: Path, label: str, into: set) -> None:
         b = Binder(e)
-        for stage, fn in stage_files(export).items():
-            f = root / fn
-            if f.is_file():
-                b.walk(export[stage], json.loads(f.read_text()), label)
+        for stage, f in stage_documents(root, export):
+            b.walk(export[stage], json.loads(f.read_text()), label)
         into |= set(b.bound) & set(units)
 
     bound: set = set()

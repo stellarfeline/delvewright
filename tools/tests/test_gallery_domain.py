@@ -401,3 +401,59 @@ def test_a_probe_may_edit_an_overlay_document_named_by_its_path(tmp_path):
     }))
     with pytest.raises(gallery_domain.PatchError, match="no overlay holds"):
         gallery_domain.materialise(dest, p)
+
+
+def test_a_probe_carries_the_overlay_documents_it_does_not_edit(tmp_path):
+    """A probe about a drawing needs the point around it — named, never copied."""
+    p = tmp_path / "a-carried-point"
+    p.mkdir()
+    (p / "probe.json").write_text(json.dumps({
+        "code": "DW0906",
+        "carries": [
+            "overlays/site-plan/site-plan.json",
+            "overlays/site-plan/programs/annex.json",
+        ],
+        "patch": [{
+            "doc": "overlays/site-plan/drawings/far-hall.json",
+            "op": "replace", "path": "/name", "value": "perturbed",
+        }],
+    }))
+    dest = tmp_path / "out"
+    gallery_domain.materialise(dest, p)
+    assert (dest / "site-plan.json").is_file(), "a flat overlay document is carried"
+    assert (dest / "programs" / "annex.json").is_file(), "and one in a class directory"
+    assert json.loads((dest / "drawings" / "far-hall.json").read_text())["name"] == "perturbed"
+    assert not (dest / "overlays").exists()
+
+
+def test_a_carried_document_may_not_also_be_shipped(tmp_path):
+    """Carrying it and copying it is the copy shape wearing a declaration."""
+    p = tmp_path / "a-carried-copy"
+    p.mkdir()
+    (p / "site-plan.json").write_text("{}")
+    (p / "probe.json").write_text(json.dumps({
+        "code": "DW0906",
+        "carries": ["overlays/site-plan/site-plan.json"],
+        "patch": [{"doc": "world.json", "op": "replace", "path": "/campaign_id", "value": "x"}],
+    }))
+    with pytest.raises(gallery_domain.PatchError, match="also ships"):
+        gallery_domain.materialise(tmp_path / "out", p)
+
+
+def test_a_carried_path_that_is_not_an_overlay_document_is_refused(tmp_path):
+    p = tmp_path / "a-carried-nothing"
+    p.mkdir()
+    (p / "probe.json").write_text(json.dumps({
+        "code": "DW0906",
+        "carries": ["world.json"],
+        "patch": [{"doc": "world.json", "op": "replace", "path": "/campaign_id", "value": "x"}],
+    }))
+    with pytest.raises(gallery_domain.PatchError, match="not an overlay document"):
+        gallery_domain.materialise(tmp_path / "out", p)
+    (p / "probe.json").write_text(json.dumps({
+        "code": "DW0906",
+        "carries": ["overlays/site-plan/no-such-file.json"],
+        "patch": [{"doc": "world.json", "op": "replace", "path": "/campaign_id", "value": "x"}],
+    }))
+    with pytest.raises(gallery_domain.PatchError, match="no overlay holds"):
+        gallery_domain.materialise(tmp_path / "out", p)

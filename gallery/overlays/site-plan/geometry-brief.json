@@ -28,9 +28,9 @@
       },
       {
         "id": "fact/far-hall-depth",
-        "note": "At least sixteen blocks deep, so the muster has ground to form up on before it reaches the wall.",
+        "note": "At least fourteen blocks of clear depth under its vault, so the muster has ground to form up on before it reaches the wall.",
         "unit": "blocks",
-        "value": 16.0
+        "value": 14.0
       },
       {
         "id": "fact/hall-headroom",
@@ -52,6 +52,6 @@
       }
     ]
   },
-  "dsl_version": "0.29.0",
+  "dsl_version": "0.30.0",
   "stage": "geometry-brief"
 }
