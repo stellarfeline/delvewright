@@ -6850,9 +6850,9 @@ finished yet.
 **Renderer** — a voxel DDA raycaster (`compiler::snapshot`) over a chunked
 flattening of the assembled block map. Shading is block-palette colour ×
 face brightness (top brightest, bottom darkest, the two horizontal axes
-distinct — the "ambient occlusion by face orientation") × the block's own
-**grain**, sampled where the ray lands on the face × a block-edge relief
-darkening, then a distance fade toward the horizon. Background is a sky
+distinct — the "ambient occlusion by face orientation") × a **grain** whose
+amplitude is the block's measured roughness × a block-edge relief darkening,
+then a distance fade toward the horizon. Background is a sky
 gradient; for an `ocean`-horizon campaign the world generator's sea plane is
 drawn analytically at `SEA_LEVEL` (a world-generation backdrop, never part of
 the voxel model, never occluding a manifest target).
@@ -6887,13 +6887,18 @@ Three properties worth stating explicitly:
   a creator never holds this file. Keyed by block id: the grid draws every cell
   as a full cube, so a blockstate's own geometry has nowhere to go and
   `oak_slab[type=top]` shades as `oak_slab`. **What varies inside a face is the
-  block's grain**: a 4×4 summary of its own texture's brightness relative to that
-  texture's mean, `128` meaning exactly the mean, multiplying the flat colour at
-  the cell the ray lands in. Without it a wall of one material is one rectangle
-  of one value whatever the material — a draft worth as much as a paint swatch,
-  and, for a dark stone, a frame the gallery render gate reads as showing no
-  scene at all. It is a statistic about an image and never an image: the jar is
-  EULA-bound, so what is committed is a derivation of it, as everywhere else.
+  grain**, and the two halves of it are in different places. The PATTERN is this
+  renderer's: an FNV-1a hash of the world cell, the face and a 4×4 sub-cell, so
+  it belongs to the wall rather than to the camera and two runs give the same
+  bytes (ADR-0006). The AMPLITUDE is the block's measured `roughness` — the
+  standard deviation of its texture's brightness as a fraction of that texture's
+  mean — scaled so the drawn face's spread is the spread the texture has, which
+  is why smooth stone reads smooth and cobble reads rubbly. Without it a wall of
+  one material is one rectangle of one value whatever the material: a draft worth
+  as much as a paint swatch, and, for a dark stone, a frame the gallery render
+  gate reads as showing no scene at all. **The table holds one number and no
+  layout**, which is what lets it be committed while the jar cannot be: a
+  reduced rendition of an asset would not be (ADR-0013).
   Magenta therefore means one of three
   things: `jigsaw` or `structure_block` reached the model (the solver strips
   both — the magenta is the alarm), a template carries an id 1.21.11 renamed

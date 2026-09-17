@@ -62,7 +62,7 @@ use serde_json::{Value, json};
 
 use crate::compiler::plan::{Plan, ResolvedAnchor};
 use crate::compiler::raster::{Canvas, GLYPH_ROWS, LabelPlacer, ScreenBox, kind_color, text_width};
-use crate::compiler::view::blockcolor::{GRAIN_SIDE, GRAIN_UNIT};
+use crate::compiler::view::blockcolor::ROUGHNESS_FULL;
 
 /// Default frame size — 16:9, big enough to read a label, small enough to render
 /// in a fraction of a second.
@@ -139,14 +139,14 @@ pub fn block_color(name: &str) -> ([u8; 3], bool) {
     }
 }
 
-/// The block's grain: how its own texture's brightness varies across a face,
-/// as `GRAIN_SIDE`² cells multiplying the flat colour, row major from the
-/// top-left. A block the pinned version does not have is flat.
+/// The block's roughness: how far its texture's brightness strays from its own
+/// mean, as a fraction of that mean x255. A block the pinned version does not
+/// have is smooth.
 ///
-/// Separate from [`block_color`] because the flat surfaces that draw a PLAN —
-/// `delvec blocking-chart`'s cutaways — want the colour and not the grain: a
-/// floor plan is read for where things are, and a top-down cell is one pixel.
-pub fn block_grain(name: &str) -> [u8; GRAIN_SIDE * GRAIN_SIDE] {
+/// Separate from [`block_color`] because the surfaces that draw a PLAN —
+/// `delvec blocking-chart`'s cutaways — want the colour and not the variation:
+/// a floor plan is read for where things are, and a top-down cell is one pixel.
+pub fn block_roughness(name: &str) -> u8 {
     let bare = crate::compiler::assembled::base_id(name);
     let key = if bare.contains(':') {
         bare.to_string()
@@ -156,11 +156,41 @@ pub fn block_grain(name: &str) -> [u8; GRAIN_SIDE * GRAIN_SIDE] {
     crate::compiler::view::blockcolor::PaletteTable::pinned()
         .entries
         .get(&key)
-        .map(|a| a.grain_cells())
-        .unwrap_or([GRAIN_UNIT; GRAIN_SIDE * GRAIN_SIDE])
+        .map_or(0, |a| a.roughness)
 }
 
-/// Whether a block renders emissive — a drawing decision, not an asset fact, so
+/// Sub-cells per side of a face the grain pattern is drawn on. Four reads as
+/// blockwork at the distance a room is judged from; sixteen reads as noise.
+pub const GRAIN_CELLS: i64 = 4;
+
+/// A deterministic value in `0..=255` for one sub-cell of one face of one world
+/// cell.
+///
+/// **Integer arithmetic, keyed on the world and never on the camera**: the
+/// pattern belongs to the wall, so it does not crawl when the camera moves and
+/// two runs of the same scene give the same bytes (ADR-0006). The mix is
+/// FNV-1a's, which is a hash and not a random number generator: there is no
+/// state, no seed and nothing to re-roll.
+fn grain_hash(cell: [i32; 3], axis: usize, sign: i32, u: i64, v: i64) -> u8 {
+    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+    for word in [
+        cell[0] as i64,
+        cell[1] as i64,
+        cell[2] as i64,
+        axis as i64,
+        sign as i64,
+        u,
+        v,
+    ] {
+        for byte in (word as u64).to_le_bytes() {
+            h ^= u64::from(byte);
+            h = h.wrapping_mul(0x0000_0100_0000_01b3);
+        }
+    }
+    ((h >> 24) & 0xff) as u8
+}
+
+/// Whether a block renders emissive/// Whether a block renders emissive — a drawing decision, not an asset fact, so
 /// it is this surface's own and not the jar's: an id is emissive if it
 /// *contains* an [`EMISSIVE`] stem, which catches the placement variants vanilla
 /// spells separately (`wall_torch`, `soul_wall_torch`, `redstone_wall_torch`)
@@ -222,8 +252,8 @@ pub struct VoxelGrid {
     palette: Vec<String>,
     /// Per-palette-entry `(colour, emissive)`, precomputed.
     shading: Vec<([u8; 3], bool)>,
-    /// Per-palette-entry texture grain, precomputed beside the colour.
-    grain: Vec<[u8; GRAIN_SIDE * GRAIN_SIDE]>,
+    /// Per-palette-entry texture roughness, precomputed beside the colour.
+    roughness: Vec<u8>,
     /// Chunk-space origin and dimensions.
     cmin: [i32; 3],
     cdim: [usize; 3],
@@ -260,8 +290,7 @@ impl VoxelGrid {
             }
         }
         let shading: Vec<([u8; 3], bool)> = palette.iter().map(|n| block_color(n)).collect();
-        let grain: Vec<[u8; GRAIN_SIDE * GRAIN_SIDE]> =
-            palette.iter().map(|n| block_grain(n)).collect();
+        let roughness: Vec<u8> = palette.iter().map(|n| block_roughness(n)).collect();
         // Palette index 0 is the air sentinel, which is never drawn.
         let mut unpainted: Vec<String> = palette
             .iter()
@@ -276,7 +305,7 @@ impl VoxelGrid {
             return VoxelGrid {
                 palette,
                 shading,
-                grain,
+                roughness,
                 cmin: [0; 3],
                 cdim: [0; 3],
                 chunks: Vec::new(),
@@ -296,7 +325,7 @@ impl VoxelGrid {
         let mut grid = VoxelGrid {
             palette,
             shading,
-            grain,
+            roughness,
             cmin,
             cdim,
             chunks,
@@ -1182,14 +1211,27 @@ fn shade(grid: &VoxelGrid, hit: &Hit) -> [u8; 3] {
         .min(1.0 - hit.uv[0])
         .min(hit.uv[1].min(1.0 - hit.uv[1]));
     let relief = if edge < 0.0625 { 0.86 } else { 1.0 };
-    // The block's own grain, sampled where the ray landed on the face. Without
-    // it every face of one material is a single rectangle of one value, and a
-    // draft of a wall carries as much information as a paint swatch — which is
-    // what a flat-shaded near-black stone comes out as.
-    let cells = grid.grain[hit.block as usize];
-    let gx = ((hit.uv[0] * GRAIN_SIDE as f64) as usize).min(GRAIN_SIDE - 1);
-    let gy = ((hit.uv[1] * GRAIN_SIDE as f64) as usize).min(GRAIN_SIDE - 1);
-    let grain = f64::from(cells[gy * GRAIN_SIDE + gx]) / f64::from(GRAIN_UNIT);
+    // The face's own grain. Without it every face of one material is a single
+    // rectangle of one value, and a draft of a wall carries as much information
+    // as a paint swatch — which is what a flat-shaded near-black stone comes out
+    // as. The PATTERN is this renderer's, made from the world position; its
+    // AMPLITUDE is the block's measured roughness, so a smooth block reads
+    // smooth and a rubbly one reads rubbly, and the committed table holds no
+    // texture's layout.
+    let roughness = f64::from(grid.roughness[hit.block as usize]) / ROUGHNESS_FULL;
+    let u = (hit.uv[0] * GRAIN_CELLS as f64) as i64;
+    let v = (hit.uv[1] * GRAIN_CELLS as f64) as i64;
+    let noise = f64::from(grain_hash(
+        hit.cell,
+        hit.axis,
+        hit.sign,
+        u.clamp(0, GRAIN_CELLS - 1),
+        v.clamp(0, GRAIN_CELLS - 1),
+    ));
+    // `noise / 255` is uniform on 0..1, whose standard deviation is 1/sqrt(12);
+    // scaling by sqrt(12) makes the drawn face's spread the spread the texture
+    // measured, rather than a decorative amount somebody chose.
+    let grain = (1.0 + (noise / 255.0 - 0.5) * 12f64.sqrt() * roughness).max(0.0);
     let lit = [
         b[0] * face * relief * grain,
         b[1] * face * relief * grain,

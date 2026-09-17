@@ -107,14 +107,21 @@ not third-party reconstructions.
   piece's own neighbours before a generator writes its bytes.
 
 - **`block-appearance-1.21.11.json`** — how every 1.21.11 block **looks**: its
-  alpha-weighted mean texture colour, its **grain** (a 4×4 summary of that
-  texture's brightness relative to its own mean, so a wall reads as its material
-  and not as a paint swatch), its mean alpha, and the union of its model
-  elements, at its default state, with `minecraft:plains` tints. 1161 entries —
-  the registry's 1166 less the 5 air-like states, which are absence rather than
-  appearance — and 0 the derivation could not resolve. Every one of those is a
-  statistic about an image and never an image: nothing here can reconstruct a
-  texture.
+  alpha-weighted mean texture colour, its **roughness** (the standard deviation
+  of that texture's brightness as a fraction of its own mean, one byte, so a
+  wall reads as its material and not as a paint swatch), its mean alpha, and the
+  union of its model elements, at its default state, with `minecraft:plains`
+  tints. 1161 entries — the registry's 1166 less the 5 air-like states, which
+  are absence rather than appearance — and 0 the derivation could not resolve.
+  **Every value here is a scalar statistic about an image, and the file carries
+  no spatial layout of any texture**: a mean, a standard deviation, a mean alpha
+  and a bounding box, each one number or a handful, none of them saying which
+  pixel is bright or where an edge falls. No arrangement, no downsampling, no
+  thumbnail — nothing from which any part of a texture can be recovered. That is
+  what makes it committable when the jar is not (ADR-0013, CLAUDE.md forbidden
+  zones), the same footing the font metrics and the shape-carrying property
+  table stand on, and it is why the draft rasteriser makes its own positional
+  pattern and takes only the AMPLITUDE from here.
   **Why it exists**: what a block looks like is the client jar's answer, and the
   jar is EULA-bound and never committed — the same rule as the shape-carrying
   property table above and the font metrics below. This file carries that answer

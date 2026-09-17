@@ -266,7 +266,7 @@ fn a_room_of_deepslate_draws_with_no_missing_texture_pixel() {
 }
 
 /// **A wall of one material is not a flat rectangle**, judged by the gate's own
-/// predicate.
+/// predicate — and a smooth material and a rubbly one do not look alike.
 ///
 /// `tools/ci/check-gallery-render.py` calls a frame of four distinct colours or
 /// fewer FEATURELESS — "it shows no scene at all" — and the premise its own
@@ -278,73 +278,95 @@ fn a_room_of_deepslate_draws_with_no_missing_texture_pixel() {
 /// stone has no such headroom, so the same wall lands on two colours and a
 /// creator asked to judge the material is looking at a rectangle.
 ///
-/// The grain is what carries the material here, so this is measured on a wall of
-/// polished blackstone — the one the gallery's own critical-path shot faces —
-/// seen flat on, one face orientation, at close range: every source of variation
-/// the rasteriser has except the grain is held at a constant by construction.
+/// The grain is what carries the material, and its amplitude is the block's
+/// measured roughness — so this walks three walls, seen flat on at close range
+/// with every other source of variation held constant by construction: the
+/// polished blackstone the gallery's own critical-path shot faces, and a smooth
+/// block beside a rubbly one. A wall that reds the gate, and an ordering that
+/// says the amplitude is doing the work rather than merely clearing a floor.
 #[test]
-fn a_wall_of_one_stone_shows_its_material_and_not_a_rectangle() {
-    use delvec::compiler::snapshot::{Camera, FrameOpts, VoxelGrid, render_frame};
+fn a_wall_shows_its_material_and_a_rough_one_from_a_smooth_one() {
+    use delvec::compiler::snapshot::{Camera, FrameOpts, VoxelGrid, block_roughness, render_frame};
     use delvec::compiler::view::detect::{FEATURELESS_MAX_COLORS, is_featureless};
-    use std::collections::BTreeMap;
-    use std::collections::BTreeSet;
+    use std::collections::{BTreeMap, BTreeSet};
 
-    const WALL: &str = "minecraft:polished_blackstone";
-    let mut blocks: BTreeMap<[i32; 3], String> = BTreeMap::new();
-    for y in 60..80 {
-        for z in -10..=10 {
-            blocks.insert([10, y, z], WALL.to_string());
+    /// One wall of one block, seen flat on from just under half a block away:
+    /// one face orientation, no second material, a distance range too small for
+    /// the fog mix to round more than one way.
+    fn wall(block: &str) -> (usize, bool) {
+        let mut blocks: BTreeMap<[i32; 3], String> = BTreeMap::new();
+        for y in 60..80 {
+            for z in -10..=10 {
+                blocks.insert([10, y, z], block.to_string());
+            }
         }
+        let grid = VoxelGrid::build(&blocks);
+        let frame = render_frame(
+            &grid,
+            &Camera {
+                pos: [9.4, 70.0, 0.5],
+                yaw: -90.0, // east, onto the wall's −X faces
+                pitch: 0.0,
+                fov: 70.0,
+            },
+            &FrameOpts {
+                width: 320,
+                height: 180,
+                sea_level: None,
+                labels: false,
+            },
+        );
+        let px = &frame.canvas.rgba;
+        let total = (frame.width() as usize) * (frame.height() as usize);
+        let distinct: BTreeSet<[u8; 3]> = (0..total)
+            .map(|i| [px[i * 4], px[i * 4 + 1], px[i * 4 + 2]])
+            .collect();
+        let featureless = is_featureless(px, frame.width(), frame.height()).is_some();
+        eprintln!(
+            "wall binding: {} pixel(s) of `{block}` (roughness {}), {} distinct colour(s), \
+             floor {FEATURELESS_MAX_COLORS}",
+            total,
+            block_roughness(block),
+            distinct.len()
+        );
+        (distinct.len(), featureless)
     }
-    let grid = VoxelGrid::build(&blocks);
-    let frame = render_frame(
-        &grid,
-        &Camera {
-            pos: [9.4, 70.0, 0.5],
-            yaw: -90.0, // east, onto the wall's −X faces
-            pitch: 0.0,
-            fov: 70.0,
-        },
-        &FrameOpts {
-            width: 320,
-            height: 180,
-            sea_level: None,
-            labels: false,
-        },
+
+    const DARK: &str = "minecraft:polished_blackstone";
+    let (dark, featureless) = wall(DARK);
+    assert!(
+        !featureless,
+        "a wall of `{DARK}` renders as {dark} distinct colour(s), which the gallery render gate \
+         reads as a frame showing no scene at all"
     );
-    let px = &frame.canvas.rgba;
-    let total = (frame.width() as usize) * (frame.height() as usize);
-    let distinct: BTreeSet<[u8; 3]> = (0..total)
-        .map(|i| [px[i * 4], px[i * 4 + 1], px[i * 4 + 2]])
-        .collect();
-    eprintln!(
-        "one-material wall binding: {total} pixel(s) of `{WALL}`, {} distinct colour(s), floor {}",
-        distinct.len(),
-        FEATURELESS_MAX_COLORS
+
+    const SMOOTH: &str = "minecraft:white_concrete";
+    const ROUGH: &str = "minecraft:cobblestone";
+    let (smooth, _) = wall(SMOOTH);
+    let (rough, _) = wall(ROUGH);
+    assert!(
+        rough > smooth,
+        "`{ROUGH}` (roughness {}) draws {rough} distinct colour(s) and `{SMOOTH}` (roughness {}) \
+         draws {smooth}: the amplitude is not the block's own",
+        block_roughness(ROUGH),
+        block_roughness(SMOOTH)
     );
     assert!(
-        is_featureless(px, frame.width(), frame.height()).is_none(),
-        "a wall of `{WALL}` renders as {} distinct colour(s), which the gallery render gate reads \
-         as a frame showing no scene at all",
-        distinct.len()
+        block_roughness(SMOOTH) < block_roughness(ROUGH),
+        "the measurement itself has them the wrong way round"
     );
 }
 
 /// A block the pinned version does not have is drawn flat, never invisible: its
-/// grain is the neutral table, so the fallback magenta is the magenta.
+/// roughness is zero, so the fallback magenta is the magenta.
 #[test]
-fn a_block_outside_the_pin_has_a_neutral_grain() {
-    use delvec::compiler::snapshot::block_grain;
-    use delvec::compiler::view::blockcolor::{GRAIN_SIDE, GRAIN_UNIT};
+fn a_block_outside_the_pin_is_drawn_smooth() {
+    use delvec::compiler::snapshot::block_roughness;
 
-    assert_eq!(
-        block_grain("minecraft:totally_made_up_block"),
-        [GRAIN_UNIT; GRAIN_SIDE * GRAIN_SIDE]
-    );
+    assert_eq!(block_roughness("minecraft:totally_made_up_block"), 0);
     // And a block it does have varies, or the table is carrying nothing.
-    let stone = block_grain("minecraft:polished_blackstone");
     assert!(
-        stone.iter().any(|c| *c != GRAIN_UNIT),
-        "the pinned table records no grain for polished blackstone: {stone:?}"
+        block_roughness("minecraft:polished_blackstone") > 0,
+        "the pinned table records no roughness for polished blackstone"
     );
 }
