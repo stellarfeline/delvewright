@@ -60,8 +60,45 @@ pub mod cli;
 pub mod diag;
 pub mod execute;
 pub mod ir;
+pub mod load;
 pub mod raster;
 
 pub use diag::{Address, Refusal, STAGE};
-pub use execute::{Census, ExecuteOptions, Execution, Frame, RunReport, check, execute, load};
+pub use execute::{Census, ExecuteOptions, Execution, Frame, RunReport, check, execute};
 pub use ir::{Define, Drawing, Op};
+pub use load::{from_str, load};
+
+/// **The drawing document's JSON Schema**, titled and described where it is
+/// exported.
+///
+/// Derived from the Rust types like every other schema the engine exports, and
+/// the shared half of it — `Expr`, `Cond`, `AnchorMark`, `Contract` and their
+/// members — is generated from the **program document's own** types, so the two
+/// documents cannot drift about what an expression or a contract is.
+///
+/// It lives here rather than in the binary because the **loader** reads it: the
+/// forms a value accepts are resolved out of this schema at the pointer that
+/// failed, so the refusal an author meets and the schema they were authoring
+/// against are one document.
+pub fn schema() -> serde_json::Value {
+    let mut v = serde_json::to_value(schemars::schema_for!(ir::Drawing))
+        .expect("the drawing schema serializes to JSON");
+    if let Some(obj) = v.as_object_mut() {
+        obj.insert(
+            "title".into(),
+            serde_json::Value::String("drawings/<place stem>.json (a place's drawing)".into()),
+        );
+        obj.insert(
+            "description".into(),
+            serde_json::Value::String(
+                "A place's detail as an ordered list of solids the engine executes (ADR-0030). \
+                 One document per place, at `drawings/<place stem>.json` inside the campaign, \
+                 executed in the place's box in the box's own frame: `x` east, `y` up, `z` south, \
+                 the origin at the box's minimum corner, every coordinate a cell. A later \
+                 operation overwrites an earlier one."
+                    .into(),
+            ),
+        );
+    }
+    v
+}

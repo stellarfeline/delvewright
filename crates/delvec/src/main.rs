@@ -2966,7 +2966,7 @@ fn run_schema(stage: &str) -> ExitCode {
         "drawing" => {
             println!(
                 "{}",
-                serde_json::to_string_pretty(&drawing_schema()).unwrap()
+                serde_json::to_string_pretty(&delvec::drawing::schema()).unwrap()
             );
             return ExitCode::SUCCESS;
         }
@@ -2995,42 +2995,13 @@ fn run_schema(stage: &str) -> ExitCode {
         for s in stages {
             map.insert(s.name().to_string(), stage_schema(s));
         }
-        map.insert("drawing".to_string(), drawing_schema());
+        map.insert("drawing".to_string(), delvec::drawing::schema());
         println!(
             "{}",
             serde_json::to_string_pretty(&serde_json::Value::Object(map)).unwrap()
         );
     }
     ExitCode::SUCCESS
-}
-
-/// The drawing document's schema, titled and described where it is exported.
-///
-/// Derived from the Rust types like every other schema here, and the shared half
-/// of it — `Expr`, `Cond`, `Mark`, `Contract` and their members — is generated
-/// from the **program document's own** types, so the two documents cannot drift
-/// about what an expression or a contract is (spec-0072 criterion 1).
-fn drawing_schema() -> serde_json::Value {
-    let mut v = serde_json::to_value(schemars::schema_for!(delvec::drawing::Drawing))
-        .expect("the drawing schema serializes to JSON");
-    if let Some(obj) = v.as_object_mut() {
-        obj.insert(
-            "title".into(),
-            serde_json::Value::String("drawings/<place stem>.json (a place's drawing)".into()),
-        );
-        obj.insert(
-            "description".into(),
-            serde_json::Value::String(
-                "A place's detail as an ordered list of solids the engine executes (ADR-0030). \
-                 One document per place, at `drawings/<place stem>.json` inside the campaign, \
-                 executed in the place's box in the box's own frame: `x` east, `y` up, `z` south, \
-                 the origin at the box's minimum corner, every coordinate a cell. A later \
-                 operation overwrites an earlier one."
-                    .into(),
-            ),
-        );
-    }
-    v
 }
 
 /// Export the metrics standard (spec-0049 §2 — pipeline stage 0).

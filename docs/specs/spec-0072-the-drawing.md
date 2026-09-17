@@ -851,6 +851,20 @@ Recorded as debts, never as passes (§12's own rule).
 - **Criterion 12** — the demo row is a later round's, queued with the gallery
   element it would be built from.
 
+**And one defect this spec does not own.** A drawing's refusal at load now
+carries the pointer of the value that failed (§8). **The `delvec grammar`
+program loader does not**, and the same mistake planted in a program's `mark`
+proves it: `error: parse p.json: invalid type: map, expected variant identifier
+at line 6 column 65` — no rule, no node, no pointer. It is **not the same
+code**: `grammar::document::load` has its own loader and its own error type, and
+the mechanism a drawing uses needs an **exported schema** to read the accepted
+forms from, which the program document does not have (`delvec schema` exports
+the stage documents, the drawing, the walk record and a prefab's metadata, and
+no program). Recorded here rather than in `docs/playtest-findings.json`: that
+ledger's rows are defects of a built campaign and its consumer refuses a
+staging while a row's general form is not a binding check on the build being
+staged, which is a judgement it cannot make about an authoring tool's message.
+
 ## 12. Acceptance criteria
 
 Machine-checkable; each names its instrument. `delvec` is the tree's own

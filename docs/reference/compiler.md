@@ -6274,6 +6274,21 @@ at, before either is opened. The refusals a drawing inherits — `DW0100`,
 `DW0848`, the contract gates and the settle gates — fire where they fire today,
 with the operation's address added wherever the executor knows it.
 
+**`DW0100` at load carries the pointer of the value that failed**, which no
+other document class does yet. `serde_json`'s error names a line and a column,
+and for an internally-tagged or a flattened field that is where the enclosing
+object CLOSES: a mis-formed `mark.at` in the eighth operation of a drawing
+reported the closing brace of `defines` and named neither the operation nor the
+field. Two mechanisms, neither per-field: the document is deserialised through a
+path-tracking layer, so every field is covered by construction; and below the
+line `serde`'s content buffering hides, the **exported schema** is walked beside
+the document — every member of every object, against the branch the document's
+own tag selects — for the deepest value it refuses. Where that value has a
+closed set of forms, the schema names them, so a form added later is named the
+day it exists. The `delvec grammar` program loader has the same defect and is
+NOT the same code: it has its own loader, its own error type and no exported
+schema to read forms from (spec-0072 §11b).
+
 **No opt-out exists**, and none is possible for the six that are about a
 document: each refuses a shape the author can only have got wrong, and every one
 of them names the repair in its own message.

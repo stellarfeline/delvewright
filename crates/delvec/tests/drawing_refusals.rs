@@ -404,7 +404,7 @@ fn a_dsl_version_that_is_not_the_engines_is_refused_at_load() {
         r#"{ "dsl_version": "9.9.9", "name": "t", "palette": {}, "ops": [] }"#,
     )
     .unwrap();
-    let r = execute::load(&path).expect_err("one campaign format number, ADR-0024");
+    let r = delvec::drawing::load(&path).expect_err("one campaign format number, ADR-0024");
     assert_eq!(r.code.id(), "DW0102");
     assert!(r.to_string().contains("9.9.9"), "{r}");
     assert!(r.to_string().contains(VERSION), "{r}");
@@ -446,14 +446,14 @@ fn a_malformed_field_is_addressed_by_its_own_pointer() {
     let path = dir.join("tower.json");
     std::fs::write(
         &path,
-        &doc(&format!(
+        doc(&format!(
             r#""ops": [ {} {{ "op": "mark",
                         "mark": {{ "anchor": "gate", "at": {{ "cell": [5,1,10] }} }} }} ]"#,
             r#"{ "op": "box", "role": "wall" }, "#.repeat(7)
         )),
     )
     .unwrap();
-    let r = execute::load(&path).expect_err("`at` has no such form");
+    let r = delvec::drawing::load(&path).expect_err("`at` has no such form");
     assert_eq!(r.code.id(), "DW0100");
     assert_eq!(
         r.at.pointer, "/ops/7/mark/at",
@@ -473,13 +473,13 @@ fn a_malformed_field_inside_a_define_is_addressed_inside_the_define() {
     let path = dir.join("tower.json");
     std::fs::write(
         &path,
-        &doc(r#""defines": { "post": { "roles": ["s"], "body": [
+        doc(r#""defines": { "post": { "roles": ["s"], "body": [
                { "op": "box", "role": "s" },
                { "op": "mark", "mark": { "anchor": "top", "at": { "cell": [0,0,0] } } } ] } },
            "ops": [ { "op": "use", "define": "post", "roles": { "s": "wall" } } ]"#),
     )
     .unwrap();
-    let r = execute::load(&path).expect_err("`at` has no such form");
+    let r = delvec::drawing::load(&path).expect_err("`at` has no such form");
     assert_eq!(r.code.id(), "DW0100");
     assert_eq!(r.at.pointer, "/defines/post/body/1/mark/at", "{r}");
 }
@@ -491,11 +491,11 @@ fn an_unknown_op_is_addressed_at_the_operation_and_names_the_thirteen() {
     let path = dir.join("tower.json");
     std::fs::write(
         &path,
-        &doc(r#""ops": [ { "op": "box", "role": "wall" },
+        doc(r#""ops": [ { "op": "box", "role": "wall" },
                     { "op": "flight", "role": "wall" } ]"#),
     )
     .unwrap();
-    let r = execute::load(&path).expect_err("`flight` is struck");
+    let r = delvec::drawing::load(&path).expect_err("`flight` is struck");
     assert_eq!(r.code.id(), "DW0100");
     assert!(
         r.at.pointer.starts_with("/ops/1"),
@@ -515,11 +515,11 @@ fn a_misspelt_field_on_a_solid_is_addressed_at_that_solid() {
     let path = dir.join("tower.json");
     std::fs::write(
         &path,
-        &doc(r#""ops": [ { "op": "box", "role": "wall" },
+        doc(r#""ops": [ { "op": "box", "role": "wall" },
                     { "op": "box", "rol": "wall" } ]"#),
     )
     .unwrap();
-    let r = execute::load(&path).expect_err("`rol` is not a field of `box`");
+    let r = delvec::drawing::load(&path).expect_err("`rol` is not a field of `box`");
     assert_eq!(r.code.id(), "DW0100");
     assert!(r.at.pointer.starts_with("/ops/1"), "{r}");
     assert!(r.to_string().contains("rol"), "{r}");
@@ -533,10 +533,10 @@ fn a_well_formed_drawing_loads() {
     let path = dir.join("tower.json");
     std::fs::write(
         &path,
-        &doc(r#""ops": [ { "op": "box", "role": "wall" },
+        doc(r#""ops": [ { "op": "box", "role": "wall" },
                     { "op": "mark", "mark": { "anchor": "gate", "at": "floor_center" } } ]"#),
     )
     .unwrap();
-    let d = execute::load(&path).expect("a well-formed drawing loads");
+    let d = delvec::drawing::load(&path).expect("a well-formed drawing loads");
     assert_eq!(d.ops.len(), 2);
 }

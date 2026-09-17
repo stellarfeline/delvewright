@@ -65,46 +65,6 @@ pub const COORD_LIMIT: i64 = i32::MAX as i64;
 static NO_PALETTE: LazyLock<BTreeMap<String, Paint>> = LazyLock::new(BTreeMap::new);
 
 // ---------------------------------------------------------------------------
-// Loading
-// ---------------------------------------------------------------------------
-
-/// Read a drawing from disk: the schema, then the one `dsl_version`.
-///
-/// Both refusals are the campaign format's own (`DW0100`, `DW0102`, ADR-0024),
-/// because a drawing is a campaign document and an author who has met them in a
-/// stage document has met them here.
-pub fn load(path: &Path) -> Result<Drawing, Refusal> {
-    let text = std::fs::read_to_string(path).map_err(|e| {
-        Refusal::at_field(
-            codes::SCHEMA,
-            "/",
-            format!("cannot read {}: {e}", path.display()),
-        )
-    })?;
-    let drawing: Drawing = serde_json::from_str(&text).map_err(|e| {
-        Refusal::at_field(
-            codes::SCHEMA,
-            "/",
-            format!("{} is not a drawing: {e}", path.display()),
-        )
-    })?;
-    let engine = crate::compiler::DSL_VERSION;
-    if drawing.dsl_version != engine {
-        return Err(Refusal::at_field(
-            codes::DSL_VERSION,
-            "/dsl_version",
-            format!(
-                "{} declares `dsl_version` {:?}; this engine reads {engine:?}. There is one \
-                 campaign format number and every document of a campaign declares it (ADR-0024).",
-                path.display(),
-                drawing.dsl_version
-            ),
-        ));
-    }
-    Ok(drawing)
-}
-
-// ---------------------------------------------------------------------------
 // Validation
 // ---------------------------------------------------------------------------
 

@@ -179,7 +179,7 @@ fn split_once_eq<'a>(s: &'a str, what: &str) -> Result<(&'a str, &'a str), Strin
 }
 
 fn run_check(file: &Path) -> ExitCode {
-    let drawing = match execute::load(file) {
+    let drawing = match crate::drawing::load::load(file) {
         Ok(d) => d,
         Err(e) => return bad_input(e),
     };
@@ -293,7 +293,7 @@ fn run_execute(
     options: gates::Options,
     out: &Path,
 ) -> ExitCode {
-    let drawing = match execute::load(file) {
+    let drawing = match crate::drawing::load::load(file) {
         Ok(d) => d,
         Err(e) => return bad_input(e),
     };

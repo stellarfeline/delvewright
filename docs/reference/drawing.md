@@ -357,6 +357,21 @@ there is one; it is never the address.
 | Code | Refuses |
 |---|---|
 | `DW0100`, `DW0102` | a document that does not parse — an unknown `op`, a missing `remainder`, a `turn` of 4, an `otherwise` or an `orientation` in a `when`; a `dsl_version` that is not the engine's |
+
+**A refusal at load carries the pointer too.** `serde_json`'s own error names a
+line and a column, and for a tagged or flattened field that is where the
+*enclosing object closes* — so a mis-formed `mark.at` in the eighth operation
+used to report the closing brace of `defines`. The document is read through a
+path-tracking layer, and where `serde`'s buffering of a tagged union hides the
+rest of the path, the **exported schema** is walked beside the document to find
+the deepest value it refuses. A closed set of values at that pointer is named:
+
+```
+DW0100: tower.json is not a drawing: invalid type: map, expected variant
+identifier at line 49 column 3. The forms this value accepts are `corner_min`,
+`face_center`, `floor_center`, `offset`. — at /ops/7/mark/at
+```
+
 | `DW0902` | an operation that reaches a cell its scope does not hold — a solid's box, a `line`'s brush, a `mark`, a `claim`, a `grammar` box |
 | `DW0903` | a name that resolves to nothing, or to two things — a role, a define, a parameter, a region only one side names, an anchor two marks produce |
 | `DW0904` | a `define` that reaches itself |
