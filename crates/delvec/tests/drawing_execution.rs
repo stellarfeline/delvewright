@@ -661,3 +661,76 @@ fn a_grammar_operation_with_an_absolute_program_path_is_refused() {
     assert_eq!(e.code.id(), "DW0100");
     assert!(e.to_string().contains("relative"), "{e}");
 }
+
+/// **`rule` chooses which of a program's rules is expanded**, and the program's
+/// own `start` is what an operation naming none gets.
+///
+/// Which variant of a program a drawing wants is a judgement, so it is an
+/// argument and nothing derives it. It was declared, documented and read by the
+/// schema, and the executor expanded `start` whatever it said — a field an
+/// author could write, a gallery could bind and a gate could count, that moved
+/// no byte of any emission. A name the program does not declare is refused with
+/// every name it does.
+#[test]
+fn a_grammar_operation_expands_the_rule_it_names() {
+    use std::path::Path;
+    let dir = Path::new(env!("CARGO_TARGET_TMPDIR")).join("drawing-grammar-rule");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(
+        dir.join("two.json"),
+        r#"{ "version": "1.9.0", "name": "two", "start": "pale",
+             "palette": { "pale": "minecraft:polished_andesite",
+                          "dark": "minecraft:polished_blackstone" },
+             "rules": {
+               "pale": [ { "body": { "op": "fill", "material": { "role": "pale" } } } ],
+               "dark": [ { "body": { "op": "fill", "material": { "role": "dark" } } } ] } }"#,
+    )
+    .unwrap();
+    let at_rule = |rule: &str| -> String {
+        let named = if rule.is_empty() {
+            String::new()
+        } else {
+            format!(r#", "rule": "{rule}""#)
+        };
+        let drawing: Drawing = serde_json::from_str(&doc(&format!(
+            r#""palette": {{}},
+               "ops": [ {{ "op": "grammar", "program": "two.json"{named},
+                          "from": [1,1,1], "to": [2,2,2] }} ]"#
+        )))
+        .unwrap();
+        let x = execute::execute(
+            &drawing,
+            Box3::at_origin([4, 4, 4]),
+            &ExecuteOptions::seeded(0, &dir),
+        )
+        .expect("the program expands");
+        at(&x, [1, 1, 1])
+    };
+    assert_eq!(
+        at_rule(""),
+        "minecraft:polished_andesite",
+        "the program's own start"
+    );
+    assert_eq!(at_rule("pale"), "minecraft:polished_andesite");
+    assert_eq!(
+        at_rule("dark"),
+        "minecraft:polished_blackstone",
+        "the rule the operation names, not the one the program starts at"
+    );
+
+    let drawing: Drawing = serde_json::from_str(&doc(r#""palette": {},
+           "ops": [ { "op": "grammar", "program": "two.json", "rule": "middling",
+                      "from": [1,1,1], "to": [2,2,2] } ]"#))
+    .unwrap();
+    let e = execute::execute(
+        &drawing,
+        Box3::at_origin([4, 4, 4]),
+        &ExecuteOptions::seeded(0, &dir),
+    )
+    .expect_err("a rule the program does not declare is refused");
+    assert_eq!(e.code.id(), "DW0903");
+    let m = e.to_string();
+    assert!(m.contains("\"middling\""), "{m}");
+    assert!(m.contains("\"pale\"") && m.contains("\"dark\""), "{m}");
+}

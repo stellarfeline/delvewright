@@ -2210,6 +2210,26 @@ impl Executor<'_> {
             )
         })?;
         let mut program = loaded.program;
+        // **The rule this operation expands from**, the program's own `start`
+        // when the operation names none. Which variant of a program a drawing
+        // wants is a judgement, so it is an argument; a name the program does
+        // not declare is refused here, with every name it does.
+        if let Some(rule) = &op.rule {
+            if !program.rules.contains_key(rule.as_str()) {
+                return Err(Refusal::new(
+                    DW_UNKNOWN_NAME,
+                    at.clone(),
+                    format!(
+                        "`rule` is {rule:?}, which `{}` does not declare; the {} rule(s) it has \
+                         are {}.",
+                        op.program,
+                        program.rules.len(),
+                        listed(program.rules.keys()),
+                    ),
+                ));
+            }
+            program.start = rule.clone();
+        }
         let mut overrides = Overrides::none();
         for (name, value) in &op.params {
             program
