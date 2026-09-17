@@ -663,8 +663,11 @@ fn the_inequality_agrees_with_an_arbitrary_precision_oracle_over_every_small_box
             }
         }
     }
+    // The binding count, PRINTED as well as asserted: a sweep's denominator is
+    // a measurement, and a bound nobody can read is a number nobody checked.
+    println!("oracle sweep: {solids} solid(s), {cells_examined} cell(s), {inside} inside");
     assert!(
-        solids > 1000 && cells_examined > 100_000,
+        solids > 5_000 && cells_examined > 1_000_000,
         "binding count: {solids} solid(s), {cells_examined} cell(s)"
     );
     assert!(
