@@ -55,7 +55,21 @@
 # blind to a lock a live session had already taken.
 set -uo pipefail
 
-DW_MUTEX_DIR="${DW_MUTEX_DIR:-/private/tmp/delvewright-validation.lock.d}"
+# The default lock directory, keyed by platform: `/private/tmp` is a macOS-only
+# alias of `/tmp`. On any other `uname -s` it does not exist, `mkdir` fails
+# with ENOENT, and the old single-literal default made `dw_mutex_acquire` read
+# that as "held by unknown" for a lock nobody was holding (B2,
+# docs/reference/tools.md). Takes the uname string as an argument rather than
+# calling `uname -s` itself, so a test can drive both branches without a
+# second host.
+dw_mutex_default_dir() {
+  case "${1:-$(uname -s)}" in
+    Darwin) printf '%s\n' "/private/tmp/delvewright-validation.lock.d" ;;
+    *)      printf '%s\n' "/tmp/delvewright-validation.lock.d" ;;
+  esac
+}
+
+DW_MUTEX_DIR="${DW_MUTEX_DIR:-$(dw_mutex_default_dir)}"
 DW_MUTEX_ME=""
 
 # The current holder's name, or empty if the lock is free.
@@ -100,11 +114,26 @@ dw_mutex_assert_not_owner_session() {
 dw_mutex_acquire() {
   local me="${1:?dw_mutex_acquire needs a holder name}" wait_s="${2:-0}" waited=0
   while :; do
-    if mkdir "$DW_MUTEX_DIR" 2>/dev/null; then
+    local mkdir_err=""
+    if mkdir_err="$(mkdir "$DW_MUTEX_DIR" 2>&1)"; then
       printf '%s %s\n' "$me" "$(date +%s)" >"$DW_MUTEX_DIR/HOLDER"
       DW_MUTEX_ME="$me"
       echo "25565 mutex acquired by $me"
       return 0
+    fi
+    # `mkdir` fails two ways, and only one of them means "someone holds the
+    # lock": the directory is already there. The other — its PARENT is not
+    # there, or is not writable — means NOBODY holds anything; on a Linux host
+    # with the old macOS-only default that was every single attempt (B2), and
+    # it read as "held by unknown" instead of the plain fact that mkdir itself
+    # could not run. Waiting cannot fix a missing parent, so this returns
+    # immediately rather than entering the retry loop below.
+    if [ ! -d "$DW_MUTEX_DIR" ]; then
+      echo "25565 mutex: cannot create '$DW_MUTEX_DIR': $mkdir_err" >&2
+      echo "  nobody holds this lock — mkdir itself failed. Fix the path (or" >&2
+      echo "  set DW_MUTEX_DIR), rather than waiting: waiting cannot make a" >&2
+      echo "  missing parent directory appear." >&2
+      return 1
     fi
     local holder; holder="$(dw_mutex_holder)"
     if [ "$holder" = "owner-play-session" ]; then
