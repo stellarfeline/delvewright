@@ -15,6 +15,7 @@ a materially different fact from "someone is holding the lock", and only one of
 them is a reason to wait or to complain about a holder.
 """
 
+import os
 import pathlib
 import subprocess
 
@@ -110,3 +111,62 @@ def test_the_sacred_owner_session_is_still_never_stolen_or_waited_on(tmp_path):
     assert result.returncode != 0
     assert "owner-play-session" in result.stderr
     assert "refusing to wait or steal" in result.stderr, result.stderr
+
+
+# ---------------------------------------------------------------------------
+# The race: a holder can release BETWEEN a failed `mkdir` and the check that
+# decides what the failure meant, and a release cannot touch the PARENT
+# directory. Testing the lock directory itself for that decision reads a
+# holder's release as "nobody can ever hold this lock" instead of "someone
+# just did."
+# ---------------------------------------------------------------------------
+
+
+def stub_mkdir_failing_n_times(tmp_path, n: int) -> pathlib.Path:
+    """A `mkdir` that fails its first `n` calls (creating nothing) and then
+    behaves normally — standing in for a real `mkdir` that failed because a
+    holder was there for an instant and is gone before the next check."""
+    bindir = tmp_path / "fakebin"
+    bindir.mkdir(exist_ok=True)
+    counter = tmp_path / "mkdir-calls.txt"
+    counter.write_text("0", encoding="utf-8")
+    stub = bindir / "mkdir"
+    stub.write_text(
+        "#!/usr/bin/env python3\n"
+        "import os, sys, pathlib\n"
+        f"counter = pathlib.Path({str(counter)!r})\n"
+        "count = int(counter.read_text()) + 1\n"
+        "counter.write_text(str(count))\n"
+        "target = sys.argv[-1]\n"
+        f"if count <= {n}:\n"
+        "    sys.stderr.write(\"mkdir: cannot create directory '\" + target + \"': File exists\\n\")\n"
+        "    sys.exit(1)\n"
+        "os.mkdir(target)\n"
+        "sys.exit(0)\n",
+        encoding="utf-8",
+    )
+    stub.chmod(0o755)
+    return bindir
+
+
+def test_a_mkdir_that_fails_once_with_the_lock_dir_absent_retries_and_succeeds(tmp_path):
+    """The exact race: `mkdir` reports failure, and by the time the next line
+    checks, the lock directory is not there and its parent is fine — a real
+    holder that let go in between, not a path nobody could ever create."""
+    parent = tmp_path / "parent"
+    parent.mkdir()
+    lock_dir = parent / "lock.d"
+    bindir = stub_mkdir_failing_n_times(tmp_path, n=1)
+    env = {
+        "PATH": f"{bindir}{os.pathsep}/usr/bin:/bin:/usr/sbin:/sbin",
+        "HOME": str(tmp_path),
+        "DW_MUTEX_DIR": str(lock_dir),
+    }
+    result = run_bash('source "%s"; dw_mutex_acquire test-holder 0' % MUTEX, env=env)
+    assert result.returncode == 0, result.stderr
+    assert "cannot create" not in result.stderr, (
+        f"a transient mkdir failure with the lock dir absent was reported as "
+        f"'cannot create' instead of retried:\n{result.stderr}"
+    )
+    assert "held by" not in result.stderr, result.stderr
+    assert lock_dir.is_dir(), "the retry never actually acquired the lock"
