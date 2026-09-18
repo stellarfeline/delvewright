@@ -1728,8 +1728,17 @@ npm --prefix harness start              # node src/run.ts <critical-path.json>  
 `harness/src/note-bot.ts` is driven by `validation/playtest-note-flow.sh` and
 `harness/src/rehearsal-bot.ts` by `validation/rehearsal-flow.sh`, never by hand.
 
+**Trigger steps (`MineflayerExecutor.fireTrigger`).** A `trigger` step in
+`critical-path.json` is an environment trigger the path depends on (see
+`docs/reference/compiler.md`, "`trigger` steps"). The bot does to the target what
+a player does: `strike` and `strike-npc` are a real attack (`bot.attack`) on the
+`interaction` hitbox at `pos`, `use` a real right-click (`bot.activateEntity`),
+`approach` a walk into the trigger's `range` — never a command. The hitbox is
+acquired by the crosshair rule below, and the step passes only on the trigger's
+own fired marker, `[dw:complete <campaign> trigger/<id>]`.
+
 **Crosshair acquisition (`harness/src/crosshair.ts`).** Every interaction step —
-`talk-to`, `interact`, `rest` — now proves the click was *available to a player*
+`talk-to`, `interact`, `rest`, and the click kinds of `trigger` — now proves the click was *available to a player*
 before it acts. It casts the entity-pick ray vanilla casts (eye → box, nearest
 hit wins, reach 3.0, pick radius 0) at every aim point on the target's hitbox,
 from every standable cell the step's walk goal allows, and fails the step naming

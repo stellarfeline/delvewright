@@ -1532,9 +1532,11 @@ the anchored form
 [dw:complete <campaign_id> <token>]
 ```
 
-`<token>` is `campaign` (the whole delve, from `campaign-complete`) or the
+`<token>` is `campaign` (the whole delve, from `campaign-complete`), the
 completing objective's own `obj/<kebab>` id (broadcast by `complete_o_<obj>`, as
-the score flips, before that objective's effects run). Both are `tellraw @a`,
+the score flips, before that objective's effects run), or a fired environment
+trigger's own `trigger/<kebab>` id (broadcast first thing in `trig_<id>` by every
+trigger a path could perform — the proof a `trigger` step passes on). Both are `tellraw @a`,
 dark-gray. The harness matches the **whole line**, exactly (`harness/src/markers.ts`
 mirrors `plan::marker_line`) — never a substring of a longer line.
 
@@ -2259,6 +2261,35 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   the EXPORTED one, and `Plan::exported_step` is the single translation — a
   consumer that mixes them is a silent off-by-N, which is what the combat plan's
   `step` was until it was reconciled.
+
+  **`trigger` steps — the path performs the triggers it depends on**
+  (`plan::path_triggers`). An environment trigger is a party act nothing on the
+  quest DAG orders, and two proofs credit what it does: the region-write model
+  credits the way it opens, the flow replay credits the flags it sets. A path
+  credited with either owes the act, so it carries
+  `{"action":"trigger","trigger":"trigger/…","on":"strike"|"use"|"approach"|"strike-npc","pos":[x,y,z]}`
+  plus `anchor` (every kind but `strike-npc`), `npc` (`strike-npc` only) and
+  `range` (`approach` only). A trigger is performed when its bundle **opens a
+  way** (`open-gate` / `open-way`) — at the first path step where its
+  `requires_flags` hold, none of its `forbids_flags` is set, and the party is in
+  the area its target stands in — or when it **pays a flag debt**
+  (`Flow::trigger_debts`) — at that same point if it comes no later than the step
+  that reads the flag, else directly in front of the reader. A `clear-region` does
+  not make a trigger performed by itself (a lift's car, a collapsing floor — not a
+  threshold); it is credited when its trigger is performed for one of those two
+  reasons. `pos` is the anchor cell the emitter summons the hitbox on, or the
+  NPC's body at that beat (the cast ledger's station). Unlike `rest`, the step IS
+  in `plan.critical_path`: it is a place the party must walk to, so the leg into
+  it is a leg `DW0311`/`DW0317` prove, with the trigger's own opening not yet
+  credited. It carries no `objective`; the bot does what a player does — a real
+  attack for `strike`/`strike-npc`, a real right-click for `use`, a walk into
+  range for `approach`, never a command — and passes only on the trigger's fired
+  marker `[dw:complete <campaign> trigger/<id>]`, which every trigger whose bundle
+  opens a way or sets a flag broadcasts first thing (`plan::trigger_may_be_performed`).
+  A path whose trigger gate never holds, or whose target never shares an area
+  with a step, does not perform it, and nothing it opens is credited. Numeric
+  gates (`requires_state`) are not evaluated: a press whose state gate is closed
+  broadcasts no marker and the step fails where it stands.
 - `<out>/validation/critical-path-waypoints.json`: the DW0311-proven per-leg route
   thinned to sparse waypoints (`from`/`to` = the `critical-path.json` step
   positions; a waypoint at each corner/floor-height change **and the corridor commit
@@ -3533,9 +3564,15 @@ matrix asks every walker about every root, and names both when it fails.
 **When a firing happens** comes off the site's `EffectRoot`. A quest
 `on_objective_complete`/`on_complete` fires at its objective's / the quest's
 completion step — the player is *forced* through both, so both gate directions are
-modelled. An environment trigger, a trap payload, a dialogue-hosted `on_respawn`
+modelled. An **environment trigger** is a party act nothing on the quest DAG
+orders, so its **openings** fire at the `trigger` step the critical path performs
+it in (`plan::path_triggers`, below) and a trigger no path step performs opens
+nothing; its **fills** root at step 0, forced, so a wall a trigger raises is
+assumed up from the start and never assumed down before somebody strikes it. A
+trigger step precedes every later step of its path in the ancestry relation
+(`compute_strict_ancestor_steps`). A trap payload, a dialogue-hosted `on_respawn`
 bundle, a shortcut's `on_unlock` and the campaign's `on_death` have no step of
-their own (proximity, a sprung trap, a death, a bar thrown), so all five
+their own (a sprung trap, a death, a bar thrown), so all four
 root conservatively at step 0, which precedes every leg. The four **optional**
 roots — trap payload, `on_respawn`, `on_unlock` and `on_death` — register their
 `close-gate`s **only**: an
@@ -3751,7 +3788,9 @@ rather than a silent one:
   every shortcut gate sealed so the delve is finishable the long way. A delve whose
   only door-opener is a sprung trap is therefore refused; the first-class way to
   spell "the party walks/presses here and the door opens" is an environment
-  `trigger`, which the model does credit.
+  `trigger`, which the model credits **at the `trigger` step the path performs it
+  in** — so the critical path carries the press, and a trigger whose flag gate
+  first holds after the leg through its door is `DW0317` like any late opener.
 
 The `foreign_blocks` count in the ledger below exposes a fourth, older gap the
 measurement made visible: an `open-gate`'s fill is `replace`-filtered to the
@@ -4694,7 +4733,7 @@ A flag producer is conditional on its gating context:
 | `set-flag` in `on_objective_complete[o]` | `o` is completable **and** every `requires_flags` gate on the enclosing effect chain is satisfied |
 | `set-flag` in a quest's `on_complete` | that quest completes, same gate rule |
 | `set-flag` on a dialogue option | the option is reachable from **one of the roots the campaign can put a body in front of** (below) through options whose own gates are satisfied, and is the world's selected alternative of its group |
-| `set-flag` in an environment trigger's `effects` | the trigger's `requires_flags` are satisfied — **ambient** (a `strike`/`use`/`approach` trigger is player-initiated and has no DAG position) |
+| `set-flag` in an environment trigger's `effects` | the trigger's `requires_flags` are satisfied — **ambient** (a `strike`/`use`/`approach` trigger is player-initiated and has no DAG position). The exported path still owes the act: `Flow::trigger_debts` replays the path with trigger producers withheld until performed, and every flag a step reads (its objective's `requires_flags`, a `talk-to`'s taken option's `requires`) that only a trigger supplies becomes a `trigger` step before that reader |
 | `set-flag` in a `traps[].payload` | the trap's `requires_flags` are satisfied (ambient, same reasoning — the party can always walk over and spring it) |
 | a trap's `disarm.sets_flag` | the trap's `requires_flags` are satisfied (ambient, same reasoning) |
 | `set-flag` in an `on_respawn` / `on_caught` reaction bundle | **never** — reaction bundles fire at statically unknowable times, so nothing inside one is a producer (the conservative stance `compiler::continuity` already takes) — whether the bundle is rooted in the quests stage or hung off a **dialogue option's** `set-checkpoint` |

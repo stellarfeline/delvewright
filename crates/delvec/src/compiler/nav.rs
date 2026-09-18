@@ -4277,15 +4277,9 @@ fn positions_of(
     }
     let mut transport_pending = false;
     for (i, step) in steps.iter().enumerate() {
-        let pos = match step {
-            Step::TalkTo { pos, .. }
-            | Step::Reach { pos, .. }
-            | Step::Kill { pos, .. }
-            | Step::Collect { pos, .. }
-            | Step::Interact { pos, .. } => Some(*pos),
-            Step::SelectClass { .. } | Step::AssertComplete { .. } => None,
-        };
-        if let Some(pos) = pos {
+        // A `trigger` step stands somewhere like an objective does: the party walks
+        // to what it strikes, so the leg to it is a leg the proof owes.
+        if let Some(pos) = step.pos() {
             out.push(VisitedPos {
                 pos,
                 transport_before: transport_pending,

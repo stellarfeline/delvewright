@@ -1,0 +1,285 @@
+//! **The path performs the triggers it depends on.**
+//!
+//! An environment trigger is a party action nothing on the quest DAG orders:
+//! somebody has to strike it, use it, walk up to it or hit the NPC it watches.
+//! Two proofs credit what it does — the region-write model credits the way it
+//! opens, the flow replay credits the flags it sets — and until this file the
+//! exported `critical-path.json` contained no step that did the act. The
+//! vesperhold ladder walked into exactly that: `anchor/gate-psalter-wall` is
+//! opened only by a `strike` trigger gated on `flag/ledger-read`, the region
+//! model credited the open at step 0 (before the flag could even be set), the
+//! build was green, and the bot stopped in front of a wall nobody struck.
+//!
+//! The pair below is on the in-repo `hello-world` fixture: `hello-room`'s
+//! `anchor/door` bars six cells of the doorway between the keeper and the exit,
+//! and the only thing that lifts them is a `strike` trigger on the bars.
+
+mod common;
+
+use std::collections::BTreeMap;
+
+use delvec::compiler::commands::CommandTree;
+use delvec::compiler::emit::{self, BuildOutput};
+use delvec::compiler::plan::Plan;
+use delvec::compiler::registry::{FullEntityRegistry, FullItemRegistry, PrefabRegistry};
+use delvewright_dsl::{Campaign, RawCampaign, parse_campaign, validate_campaign_with};
+
+/// A hello-world `quests` doc: talk to the keeper (which sets `flag/told`), then
+/// reach `anchor/exit` beyond the barred door. `trigger` is the one environment
+/// trigger; `on_complete` is spliced into the quest's `on_complete`.
+fn quests_doc(trigger: &str, on_complete: &str) -> String {
+    common::at_dsl_version(&format!(
+        r#"{{
+  "dsl_version": "%dsl_version%",
+  "campaign_id": "hello-world",
+  "stage": "quests",
+  "content": {{
+    "quests": [
+      {{
+        "id": "quest/open-the-door",
+        "trigger": {{ "type": "campaign-start" }},
+        "objectives": [
+          {{ "type": "talk-to", "id": "obj/talk", "npc": "npc/keeper" }},
+          {{ "type": "reach-anchor", "id": "obj/exit", "anchor": "anchor/exit",
+             "radius": 2, "after": ["obj/talk"] }}
+        ],
+        "on_objective_complete": {{
+          "obj/talk": [ {{ "type": "set-flag", "flag": "flag/told" }} ]
+        }},
+        "on_complete": [ {on_complete} ]
+      }}
+    ],
+    "triggers": [ {trigger} ]
+  }}
+}}"#
+    ))
+}
+
+/// The bars fall to a strike once the keeper has spoken.
+const STRIKE_THE_BARS: &str = r#"{
+  "id": "trigger/break-the-bars", "at": "anchor/door", "on": { "on": "strike" },
+  "requires_flags": ["flag/told"],
+  "effects": [ { "type": "open-gate", "anchor": "anchor/door" } ]
+}"#;
+
+/// The same trigger armed only by a flag the quest sets on completion — after
+/// the exit, so no point of the path both holds the flag and precedes the leg
+/// through the door.
+const STRIKE_THE_BARS_TOO_LATE: &str = r#"{
+  "id": "trigger/break-the-bars", "at": "anchor/door", "on": { "on": "strike" },
+  "requires_flags": ["flag/out"],
+  "effects": [ { "type": "open-gate", "anchor": "anchor/door" } ]
+}"#;
+
+fn read_hw(name: &str) -> String {
+    std::fs::read_to_string(common::hello_world_dir().join(name)).unwrap()
+}
+
+fn parse_hw(quests: &str) -> Campaign {
+    let raw = RawCampaign {
+        world: read_hw("world.json"),
+        npcs: read_hw("npcs.json"),
+        classes: read_hw("classes.json"),
+        quest_plan: read_hw("quest-plan.json"),
+        quests: quests.to_string(),
+        dialogue: read_hw("dialogue.json"),
+        world_edits: None,
+        geometry_brief: None,
+        layout_graph: None,
+        site_plan: None,
+        detail_plan: None,
+        design: None,
+    };
+    parse_campaign(&raw).expect("campaign parses")
+}
+
+fn prefabs() -> PrefabRegistry {
+    PrefabRegistry::load_dir(&common::prefabs_dir()).expect("prefab library loads")
+}
+
+fn structures(plan: &Plan) -> BTreeMap<String, Vec<u8>> {
+    let mut out = BTreeMap::new();
+    for area in &plan.areas {
+        for piece in &area.pieces {
+            for t in &piece.templates {
+                let bytes = std::fs::read(common::prefabs_dir().join(&t.structure_file)).unwrap();
+                out.insert(t.structure_file.clone(), bytes);
+            }
+        }
+    }
+    out
+}
+
+fn build(campaign: &Campaign, prefabs: &PrefabRegistry) -> Result<BuildOutput, String> {
+    let plan = Plan::build(campaign, prefabs).map_err(|e| format!("{e:?}"))?;
+    let structures = structures(&plan);
+    let tree = CommandTree::v1_21_11();
+    emit::build(
+        &plan,
+        &BTreeMap::new(),
+        &structures,
+        &tree,
+        prefabs,
+        None,
+        &BTreeMap::new(),
+    )
+    .map_err(|e| format!("{e:?}"))
+}
+
+fn validated(quests: &str, prefabs: &PrefabRegistry) -> Campaign {
+    let c = parse_hw(quests);
+    let items = FullItemRegistry::v1_21_11();
+    let entities = FullEntityRegistry::v1_21_11();
+    let d = validate_campaign_with(&c, &items, prefabs, &entities);
+    assert!(
+        d.is_empty(),
+        "the campaign under test must be valid: {d:#?}"
+    );
+    c
+}
+
+fn critical_path(out: &BuildOutput) -> serde_json::Value {
+    serde_json::from_slice(
+        out.get("critical-path.json")
+            .expect("a critical path ships"),
+    )
+    .expect("critical-path.json parses")
+}
+
+fn actions(path: &serde_json::Value) -> Vec<String> {
+    path["steps"]
+        .as_array()
+        .expect("steps")
+        .iter()
+        .map(|s| s["action"].as_str().unwrap_or("").to_string())
+        .collect()
+}
+
+/// **The step.** The path talks to the keeper, then strikes the bars, then walks
+/// through them — the strike is a step of its own, naming the trigger, the kind
+/// of act, and the cell it is done at.
+#[test]
+fn a_path_through_a_struck_gate_strikes_it() {
+    let p = prefabs();
+    let c = validated(&quests_doc(STRIKE_THE_BARS, ""), &p);
+    let out = build(&c, &p).expect("the struck gate opens the way");
+    let path = critical_path(&out);
+    assert_eq!(
+        actions(&path),
+        [
+            "select-class",
+            "talk-to",
+            "trigger",
+            "reach",
+            "assert-complete"
+        ],
+        "the strike sits between the beat that arms it and the leg through the door: {path:#}"
+    );
+    let strike = &path["steps"][2];
+    assert_eq!(strike["trigger"], "trigger/break-the-bars");
+    assert_eq!(strike["on"], "strike");
+    assert_eq!(strike["anchor"], "anchor/door");
+    assert!(
+        strike["pos"].is_array(),
+        "a strike is done somewhere: {strike}"
+    );
+    assert!(
+        strike.get("objective").is_none(),
+        "a trigger step proves no objective: {strike}"
+    );
+}
+
+/// **The marker it passes on.** The trigger's bundle broadcasts the anchored
+/// fired line with its own id as the token, before its effects run — the
+/// strike landing is not the proof, the bundle running is.
+#[test]
+fn a_performable_trigger_broadcasts_its_fired_marker() {
+    let p = prefabs();
+    let c = validated(&quests_doc(STRIKE_THE_BARS, ""), &p);
+    let out = build(&c, &p).expect("builds");
+    let f = out
+        .get("datapack/data/hello-world/function/trig_break_the_bars.mcfunction")
+        .expect("the trigger's bundle");
+    let text = String::from_utf8(f.clone()).unwrap();
+    let marker = text
+        .lines()
+        .position(|l| l.contains("[dw:complete hello-world trigger/break-the-bars]"))
+        .unwrap_or_else(|| panic!("no fired marker in the bundle: {text}"));
+    let open = text
+        .lines()
+        .position(|l| l.contains("minecraft:air replace minecraft:iron_bars"))
+        .unwrap_or_else(|| panic!("no open in the bundle: {text}"));
+    assert!(marker < open, "the marker precedes the effects: {text}");
+}
+
+/// **The model no longer credits an open nobody makes.** The trigger's gate holds
+/// only after the exit has been reached, so no point of the path can strike the
+/// bars before walking through them. The region-write model used to fire every
+/// trigger's open at step 0 — before `flag/out` could possibly be set — and this
+/// campaign built green with a path that walks into iron bars.
+#[test]
+fn a_gate_only_a_trigger_the_path_cannot_perform_opens_is_dw0317() {
+    let p = prefabs();
+    let c = validated(
+        &quests_doc(
+            STRIKE_THE_BARS_TOO_LATE,
+            r#"{ "type": "set-flag", "flag": "flag/out" }"#,
+        ),
+        &p,
+    );
+    let err = build(&c, &p).expect_err("a wall nobody on the path strikes is a wall");
+    assert!(err.contains("DW0317"), "{err}");
+    assert!(err.contains("anchor/door"), "{err}");
+}
+
+/// **The flag half.** The door is opened by the talk beat, and the exit is gated
+/// on `flag/lit`, which only a `use` trigger on the spawn stone sets. The flow
+/// replay credits a trigger's flag the moment its gate holds; the path has to
+/// contain the press that sets it, before the step that reads it.
+#[test]
+fn a_flag_only_a_trigger_sets_is_paid_by_a_trigger_step() {
+    let p = prefabs();
+    let quests = common::at_dsl_version(
+        r#"{
+  "dsl_version": "%dsl_version%",
+  "campaign_id": "hello-world",
+  "stage": "quests",
+  "content": {
+    "quests": [
+      {
+        "id": "quest/open-the-door",
+        "trigger": { "type": "campaign-start" },
+        "objectives": [
+          { "type": "talk-to", "id": "obj/talk", "npc": "npc/keeper" },
+          { "type": "reach-anchor", "id": "obj/exit", "anchor": "anchor/exit",
+            "radius": 2, "after": ["obj/talk"], "requires_flags": ["flag/lit"] }
+        ],
+        "on_objective_complete": {
+          "obj/talk": [ { "type": "open-gate", "anchor": "anchor/door" } ]
+        },
+        "on_complete": []
+      }
+    ],
+    "triggers": [
+      { "id": "trigger/light-the-stone", "at": "spawn", "on": { "on": "use" },
+        "effects": [ { "type": "set-flag", "flag": "flag/lit" } ] }
+    ]
+  }
+}"#,
+    );
+    let c = validated(&quests, &p);
+    let out = build(&c, &p).expect("builds");
+    let path = critical_path(&out);
+    let acts = actions(&path);
+    let press = acts
+        .iter()
+        .position(|a| a == "trigger")
+        .unwrap_or_else(|| panic!("the path never presses the stone: {path:#}"));
+    let exit = acts.iter().position(|a| a == "reach").expect("the exit");
+    assert!(
+        press < exit,
+        "the press precedes the step that reads its flag: {path:#}"
+    );
+    assert_eq!(path["steps"][press]["trigger"], "trigger/light-the-stone");
+    assert_eq!(path["steps"][press]["on"], "use");
+}

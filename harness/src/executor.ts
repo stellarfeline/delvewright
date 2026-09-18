@@ -24,6 +24,7 @@ import type {
   KillStep,
   ReachStep,
   RestStep,
+  TriggerStep,
   SelectClassStep,
   TalkToStep,
   Transport,
@@ -5498,6 +5499,59 @@ export class MineflayerExecutor implements StepExecutor {
     bot.chat(step.command);
     await delay(EFFECT_SETTLE_MS);
     this.restedBonfires.add(step.bonfire);
+  }
+
+  /**
+   * Perform an environment trigger the way a player does, then wait for the
+   * trigger's own fired marker — the only evidence the step accepts.
+   *
+   * A `strike` is a real attack (`bot.attack`, the client's left-click packet) on
+   * the `interaction` hitbox the compiler summoned at the anchor; a `use` is a
+   * real right-click on it; a `strike-npc` attacks the NPC's own hitbox at its
+   * beat's station; an `approach` is a walk into the trigger's range. Never a
+   * server-side command: a trigger fired by one would prove the command, not
+   * that a player can reach and hit the thing.
+   *
+   * The target is acquired by the same crosshair rule every click step uses —
+   * proximity proposes, the ray decides — so a hitbox buried in a wall or behind
+   * another body fails here, naming both, rather than as a silent miss.
+   */
+  async fireTrigger(step: TriggerStep): Promise<void> {
+    const bot = this.requireBot();
+    const label = `trigger ${step.trigger} (${step.on})`;
+    if (step.on === "approach") {
+      // The tick fires on `distance=..range` from the anchor cell; aim a block
+      // inside it so the goal's own tolerance cannot leave the bot on the rim.
+      await this.walkTo(step.pos, Math.max(1, (step.range ?? 1) - 1), label);
+    } else {
+      await this.walkTo(step.pos, INTERACT_RANGE, label);
+      const acquired = this.requireCrosshair(step.pos, label, INTERACT_RANGE);
+      const target = acquired ? bot.entities[acquired.target.id] : undefined;
+      if (!acquired || !target) {
+        throw new Error(
+          `${label}: no \`interaction\` hitbox within ${AFFORDANCE_RADIUS} blocks of ` +
+            `[${step.pos.join(", ")}] — the bot is standing at the target and there is ` +
+            `nothing to ${step.on === "use" ? "right-click" : "hit"}, so the trigger can ` +
+            `never be fired (bot at ${fmt(bot.entity.position)})`,
+        );
+      }
+      const here = bot.entity.position;
+      await bot.lookAt(
+        here.offset(acquired.aim.x - here.x, acquired.aim.y - here.y, acquired.aim.z - here.z),
+        true,
+      );
+      process.stderr.write(
+        `[trigger] ${step.trigger}: ${step.on === "use" ? "right-clicking" : "striking"} ` +
+          `the hitbox at ${fmt(target.position)}\n`,
+      );
+      if (step.on === "use") {
+        await bot.activateEntity(target);
+      } else {
+        bot.attack(target);
+      }
+    }
+    await this.awaitObjectiveMarker(step.trigger, label);
+    await delay(EFFECT_SETTLE_MS);
   }
 
   /**

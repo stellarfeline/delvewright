@@ -11,6 +11,7 @@ import type {
   SelectClassStep,
   Step,
   TalkToStep,
+  TriggerStep,
 } from "../src/critical-path.ts";
 import {
   runSequence,
@@ -55,6 +56,9 @@ class RecordingExecutor implements StepExecutor {
   }
   interact(_step: InteractStep): Promise<void> {
     return this.record("interact");
+  }
+  fireTrigger(_step: TriggerStep): Promise<void> {
+    return this.record("trigger");
   }
   assertComplete(_step: AssertCompleteStep): Promise<void> {
     return this.record("assert-complete");
@@ -504,4 +508,34 @@ test("a rest step is never mistaken for the beat the campaign marker is due at",
     ],
     "the last objective is the kill at index 2, not the rest at index 3",
   );
+});
+
+// --- trigger steps -------------------------------------------------------------
+
+const strikeTheWall: TriggerStep = {
+  action: "trigger",
+  trigger: "trigger/psalter-wall",
+  on: "strike",
+  anchor: "anchor/psalter-face",
+  pos: [18, 80, 111],
+};
+
+test("runSequence dispatches a trigger step to the executor's fireTrigger", async () => {
+  const executor = new RecordingExecutor();
+  await runSequence(path([selectClass, talkTo, strikeTheWall, reach, assertComplete]), executor);
+  assert.deepEqual(executor.calls, ["select-class", "talk-to", "trigger", "reach", "assert-complete"]);
+});
+
+test("a trigger step just before the finale is not the beat the campaign marker is due at", async () => {
+  // A struck wall proves no objective, exactly like a rested fire: the endgame
+  // check must key on the last OBJECTIVE step, so the campaign completing at
+  // `reach` below is not reported as completing early.
+  const seen: Array<[number, number]> = [];
+  const executor = new (class extends RecordingExecutor {
+    assertEndgameNotReached(i: number, finalIndex: number): void {
+      seen.push([i, finalIndex]);
+    }
+  })();
+  await runSequence(path([selectClass, reach, strikeTheWall, assertComplete]), executor);
+  assert.deepEqual(seen, [[0, 1]]);
 });

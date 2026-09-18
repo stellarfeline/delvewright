@@ -20,6 +20,15 @@ test("parses a per-objective marker", () => {
   });
 });
 
+test("parses a fired-trigger marker (a critical-path trigger step's proof)", () => {
+  assert.deepEqual(parseCompletionMarker("[dw:complete vesperhold trigger/psalter-wall]"), {
+    campaignId: "vesperhold",
+    token: "trigger/psalter-wall",
+  });
+  assert.equal(parseCompletionMarker("[dw:complete vesperhold trigger/]"), undefined);
+  assert.equal(parseCompletionMarker("[dw:complete vesperhold trigger/Psalter]"), undefined);
+});
+
 test("parses the campaign-completion marker", () => {
   assert.deepEqual(parseCompletionMarker("[dw:complete hello-world campaign]"), {
     campaignId: "hello-world",

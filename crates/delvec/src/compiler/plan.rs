@@ -1461,6 +1461,7 @@ pub struct OptionPlan {
 /// it a step could only be checked positionally — arriving somewhere is not
 /// completing anything — which is how a run once passed 22/22 on a path whose
 /// campaign had in fact completed at step 12.
+#[derive(Clone)]
 pub enum Step {
     /// Select a class by chatting `command`.
     SelectClass {
@@ -1541,6 +1542,32 @@ pub enum Step {
         /// Item required in inventory, if any.
         requires_item: Option<String>,
     },
+    /// Perform an environment trigger the path depends on: do to its target
+    /// what a player does — strike it, use it, walk within `range` of it, or
+    /// strike the NPC it watches — and wait for its fired marker — [`marker_line`] with the
+    /// trigger's own `trigger/<kebab>` id as the token.
+    ///
+    /// The one step that proves no objective and still stands somewhere. It
+    /// exists because a trigger's effects can open the way on (`open-gate`,
+    /// `clear-region`, `open-way`) or set a flag a later step reads, and nothing
+    /// on the quest DAG makes anybody fire it: a path without this step is a walk
+    /// whose proof credited a door nobody opened.
+    Trigger {
+        /// The `trigger/<id>` performed.
+        trigger_id: String,
+        /// The event, as its kebab tag (`strike` / `use` / `approach` /
+        /// `strike-npc`) — what the harness does.
+        on: &'static str,
+        /// The watched anchor (absent for `strike-npc`).
+        anchor_id: Option<String>,
+        /// The watched NPC (`strike-npc` only).
+        npc_id: Option<String>,
+        /// The cell the target stands on: the anchor, or the NPC's body at
+        /// this beat.
+        pos: [i32; 3],
+        /// An `approach` trigger's radius; `None` for a click.
+        range: Option<u32>,
+    },
     /// Assert a scoreboard objective value.
     AssertComplete {
         /// The objective (`dw.campaign`).
@@ -1562,7 +1589,7 @@ impl Step {
             | Step::Kill { objective_id, .. }
             | Step::Collect { objective_id, .. }
             | Step::Interact { objective_id, .. } => Some(objective_id.as_str()),
-            Step::SelectClass { .. } | Step::AssertComplete { .. } => None,
+            Step::SelectClass { .. } | Step::AssertComplete { .. } | Step::Trigger { .. } => None,
         }
     }
 
@@ -1579,8 +1606,17 @@ impl Step {
             | Step::Reach { pos, .. }
             | Step::Kill { pos, .. }
             | Step::Collect { pos, .. }
-            | Step::Interact { pos, .. } => Some(*pos),
+            | Step::Interact { pos, .. }
+            | Step::Trigger { pos, .. } => Some(*pos),
             Step::SelectClass { .. } | Step::AssertComplete { .. } => None,
+        }
+    }
+
+    /// The `trigger/<id>` this step performs, when it is a trigger step.
+    pub fn trigger(&self) -> Option<&str> {
+        match self {
+            Step::Trigger { trigger_id, .. } => Some(trigger_id.as_str()),
+            _ => None,
         }
     }
 }
@@ -2971,6 +3007,7 @@ impl<'a> Plan<'a> {
         // ---- v0.6 checkpoints + stealth beats (spec-0012 / spec-0014) ----
         let (checkpoints, stealth_beats) = collect_v06_effects(campaign, &anchors, &cp.obj_step);
         let objective_steps = cp.obj_step;
+        let trigger_steps = cp.trigger_step;
 
         // ---- v0.6 traps (spec-0011) ----
         let traps = collect_traps(campaign, &anchors, &dispenser_cells);
@@ -3043,7 +3080,8 @@ impl<'a> Plan<'a> {
         ways.seal().map_err(|e| e.with_warnings(warnings.clone()))?;
 
         // ---- v0.6 gate open/close firings (drives the close-gate nav proof) ----
-        let mut region_events = collect_region_events(campaign, &anchors, &objective_steps, &ways);
+        let mut region_events =
+            collect_region_events(campaign, &anchors, &objective_steps, &trigger_steps, &ways);
         // A shortcut gate is sealed from world-load and is opened only by an
         // OPTIONAL far-side interaction no proof can order (spec-0016 §2). Seal it
         // for the whole completability model — `fire_step: 0` precedes every leg —
@@ -3058,8 +3096,12 @@ impl<'a> Plan<'a> {
         region_events.extend(shortcuts.iter().map(|sc| {
             RegionEvent::forced(sc.gate_region, RegionWrite::of_block(&sc.gate_block), 0)
         }));
-        let strict_ancestor_steps =
-            compute_strict_ancestor_steps(campaign, &objective_steps, cp.steps.len());
+        let strict_ancestor_steps = compute_strict_ancestor_steps(
+            campaign,
+            &objective_steps,
+            &trigger_steps,
+            cp.steps.len(),
+        );
         // v0.10 (spec-0031): where the party can be CARRIED rather than walk.
         let transit_teleports = collect_transit_teleports(campaign, &anchors);
 
@@ -3082,7 +3124,7 @@ impl<'a> Plan<'a> {
         // staged ways alone would skip in silence, which is how an effect comes to
         // emit nothing and be reported by nobody (the class `DW0360` exists for).
         let mut way_gate = None;
-        let openings = collect_way_openings(campaign, &objective_steps);
+        let openings = collect_way_openings(campaign, &objective_steps, &trigger_steps);
         if !ways.ways.is_empty() || !openings.is_empty() {
             let elements = collect_required_elements(campaign, &anchors, &objective_steps);
             let precedes = |g: usize, s: usize| {
@@ -3247,21 +3289,33 @@ impl<'a> Plan<'a> {
         &self,
         cp: &CriticalPath,
     ) -> (Vec<RegionEvent>, BTreeMap<usize, BTreeSet<usize>>) {
-        let mut region_events =
-            collect_region_events(self.campaign, &self.anchors, &cp.obj_step, &self.ways);
+        let mut region_events = collect_region_events(
+            self.campaign,
+            &self.anchors,
+            &cp.obj_step,
+            &cp.trigger_step,
+            &self.ways,
+        );
         region_events.extend(self.shortcuts.iter().map(|sc| {
             RegionEvent::forced(sc.gate_region, RegionWrite::of_block(&sc.gate_block), 0)
         }));
-        let ancestors = compute_strict_ancestor_steps(self.campaign, &cp.obj_step, cp.steps.len());
+        let ancestors = compute_strict_ancestor_steps(
+            self.campaign,
+            &cp.obj_step,
+            &cp.trigger_step,
+            cp.steps.len(),
+        );
         (region_events, ancestors)
     }
 
     /// Whether a gate firing at critical-path step `g` is guaranteed to have fired
-    /// before a leg arriving at step `s` — i.e. `g`'s objective is a strict DAG
-    /// ancestor of the arrival (see [`Self::strict_ancestor_steps`]). Step `0`
-    /// (class-select / an environment trigger's conservative fire step) is treated
-    /// as always-preceding, and an arrival past the last objective has every
-    /// objective on the path preceding it. Drives the `close-gate` seal model in
+    /// before a walked leg arriving at step `s` — i.e. `g`'s objective is a strict
+    /// DAG ancestor of `s`'s objective (see [`Self::strict_ancestor_steps`]), or a
+    /// `trigger` step the path performs before `s`. Step `0` (class-select, and
+    /// the fire step of every fill a trigger or an optional root registers) is
+    /// treated as always-preceding, and an arrival past the last objective has
+    /// every objective and every trigger step on the path preceding it. Drives the
+    /// `close-gate` seal model in
     /// `crate::compiler::nav`.
     pub fn gate_fired_before(&self, g: usize, s: usize) -> bool {
         g == 0
@@ -4148,6 +4202,10 @@ pub struct CriticalPath {
     /// no-stranding proof (DW0315) and the stealth-zone reachability proof
     /// (DW0327) at the beat that fires the effect.
     pub(crate) obj_step: BTreeMap<String, usize>,
+    /// Trigger id → the `trigger` step that performs it on this path. The
+    /// region-write model fires a trigger's openings at this step and at no
+    /// other; a trigger absent here opens nothing any proof may lean on.
+    pub(crate) trigger_step: BTreeMap<String, usize>,
 }
 
 /// Build the critical path: select first class, then each objective of the
@@ -4229,6 +4287,11 @@ fn build_critical_path(
         .collect();
     let begun: BTreeSet<String> = path.quests.iter().cloned().collect();
 
+    // The environment triggers this path performs, keyed by the path step each
+    // is performed in front of. See [`path_triggers`].
+    let due = path_triggers(campaign, anchors, flow, path, &flags_at, &begun);
+    let mut trigger_step: BTreeMap<String, usize> = BTreeMap::new();
+
     for (si, st) in path.steps.iter().enumerate() {
         let qid = st.quest.as_str();
         let Some(quest) = stage5.get(qid) else {
@@ -4242,6 +4305,12 @@ fn build_critical_path(
             .find(|q| q.id.as_str() == qid)
             .map(|q| q.area.as_str())
             .unwrap_or("");
+        for step in due.get(&si).into_iter().flatten() {
+            if let Step::Trigger { trigger_id, .. } = step {
+                trigger_step.insert(trigger_id.clone(), steps.len());
+            }
+            steps.push(step.clone());
+        }
         let Some(obj) = quest
             .objectives
             .iter()
@@ -4735,7 +4804,202 @@ fn build_critical_path(
         sneak_by_step,
         cutscene_by_step,
         obj_step,
+        trigger_step,
     })
+}
+
+/// **The environment triggers a path performs, and where** — keyed by the index
+/// (into `path.steps`) of the objective step each is performed in front of.
+///
+/// A trigger is a party action nothing on the quest DAG orders, and the proofs
+/// credit two things it does: the way it opens (the region-write model) and the
+/// flags it sets (the flow replay). A path that is credited with either owes the
+/// act that produces it, or the bot walks up to a wall the proof called open. So
+/// a path performs:
+///
+/// * every trigger whose bundle **opens a way** — an `open-gate` or an
+///   `open-way`, the two verbs whose one meaning is that a threshold stands open
+///   ([`opens_a_way`]) — at the first step where its flag gate holds
+///   (`requires_flags` held, no `forbids_flags` set) and the party is in the area
+///   its target stands in; and
+/// * every trigger that pays a **flag debt** ([`crate::compiler::flow::Flow::trigger_debts`]),
+///   at that same first point if it comes no later than the step that reads the
+///   flag, otherwise immediately in front of the reader.
+///
+/// A `clear-region` is a general region write (a lift's car, a collapsing floor),
+/// not a threshold, so it does not make a trigger performed by itself: pressing
+/// every lever in a room is not what a player does. It is credited when the path
+/// performs its trigger for one of the two reasons above, and otherwise not at
+/// all.
+///
+/// A trigger whose gate never holds on this path, or whose target never shares
+/// an area with a step of it, is not performed — and then nothing it opens is
+/// credited ([`collect_region_events`]), which is the direction that can only
+/// turn a proof red. Numeric gates (`requires_state`) are not evaluated here: a
+/// trigger performed while one does not hold never broadcasts its marker, and
+/// the step fails where it stands rather than further on.
+fn path_triggers(
+    campaign: &Campaign,
+    anchors: &AnchorTable,
+    flow: &crate::compiler::flow::Flow<'_>,
+    path: &crate::compiler::flow::Playthrough,
+    flags_at: &[BTreeSet<String>],
+    begun: &BTreeSet<String>,
+) -> BTreeMap<usize, Vec<Step>> {
+    let mut out: BTreeMap<usize, Vec<Step>> = BTreeMap::new();
+    if path.steps.is_empty() {
+        return out;
+    }
+    // Which triggers open a way: the SAME walk the region-write model credits
+    // them from, so the two cannot disagree about what a trigger's bundle holds.
+    let mut opens: BTreeSet<&str> = BTreeSet::new();
+    for_each_gate_effect(campaign, &mut |site, e| {
+        if let EffectRoot::Trigger(t) = site.root
+            && opens_a_way(e)
+        {
+            opens.insert(t.id.as_str());
+        }
+    });
+    let debts = flow.trigger_debts(path);
+    let area_of = |si: usize| -> &str {
+        let qid = path.steps[si].quest.as_str();
+        campaign
+            .quest_plan
+            .content
+            .quests
+            .iter()
+            .find(|q| q.id.as_str() == qid)
+            .map(|q| q.area.as_str())
+            .unwrap_or("")
+    };
+    for t in &campaign.quests.content.triggers {
+        let reader = debts
+            .iter()
+            .find(|d| d.trigger == t.id.as_str())
+            .map(|d| d.step);
+        if reader.is_none() && !opens.contains(t.id.as_str()) {
+            continue;
+        }
+        let enabled = |si: usize| {
+            let held = &flags_at[si];
+            t.requires_flags.iter().all(|f| held.contains(f.as_str()))
+                && !t.forbids_flags.iter().any(|f| held.contains(f.as_str()))
+        };
+        // Where the target stands when the party is at step `si`: the area the
+        // emitter summoned its body in, or the NPC's body at this beat.
+        let target = |si: usize| -> Option<(String, [i32; 3])> {
+            match t.on.npc_target() {
+                Some(npc) => npc_beat_cell(
+                    campaign,
+                    anchors,
+                    npc.as_str(),
+                    path.steps[si].quest.as_str(),
+                    area_of(si),
+                    begun,
+                    &flags_at[si],
+                ),
+                None => {
+                    let at = t.at_anchor()?;
+                    anchors
+                        .iter()
+                        .find(|((_, n), _)| n == at)
+                        .map(|((a, _), r)| {
+                            (
+                                a.clone(),
+                                match r {
+                                    ResolvedAnchor::Point { pos, .. } => *pos,
+                                    ResolvedAnchor::Gate { from, .. } => *from,
+                                },
+                            )
+                        })
+                }
+            }
+        };
+        let last = reader.unwrap_or(path.steps.len() - 1);
+        let at = (0..=last)
+            .find(|&si| enabled(si) && target(si).is_some_and(|(a, _)| a == area_of(si)))
+            .or_else(|| reader.filter(|&r| enabled(r)));
+        let Some(si) = at else { continue };
+        let Some((_, pos)) = target(si) else { continue };
+        out.entry(si).or_default().push(Step::Trigger {
+            trigger_id: t.id.as_str().to_string(),
+            on: t.on.kind(),
+            anchor_id: t.at_anchor().map(str::to_string),
+            npc_id: t.on.npc_target().map(|n| n.as_str().to_string()),
+            pos,
+            range: match t.on {
+                delvewright_dsl::TriggerOn::Approach { range } => Some(range),
+                _ => None,
+            },
+        });
+    }
+    out
+}
+
+/// Whether a critical path could ever perform this trigger — its bundle opens a
+/// way or sets a flag, the only two things [`path_triggers`] performs a trigger
+/// for. The emitter broadcasts a fired marker from exactly these, so
+/// every `trigger` step has a line to pass on and no other trigger prints one.
+pub(crate) fn trigger_may_be_performed(t: &delvewright_dsl::EnvTrigger) -> bool {
+    fn deep(effs: &[QuestEffect]) -> bool {
+        effs.iter().any(|e| {
+            opens_a_way(e)
+                || matches!(e.verb, delvewright_dsl::Verb::SetFlag { .. })
+                || e.nested_effect_lists_labeled()
+                    .into_iter()
+                    .any(|(_, _, list)| deep(list))
+        })
+    }
+    deep(&t.effects)
+}
+
+/// Whether an effect opens a way on: an `open-gate` or an `open-way`.
+fn opens_a_way(e: &QuestEffect) -> bool {
+    matches!(e.gate_region_write(), Some((_, false))) || e.way_write().is_some()
+}
+
+/// Where an NPC's body stands for the beat of quest `qid` — the cast ledger's
+/// station for this beat when it has one, otherwise the stage-2 declaration —
+/// as `(area, cell)`. The position half of the `talk-to` step's resolution,
+/// without its refusals: those belong to the `talk-to` that owns the beat, and a
+/// `strike-npc` trigger aimed at a body the ledger cannot place simply has no
+/// target, so the path does not perform it.
+fn npc_beat_cell(
+    campaign: &Campaign,
+    anchors: &AnchorTable,
+    npc: &str,
+    qid: &str,
+    area: &str,
+    begun: &BTreeSet<String>,
+    flags: &BTreeSet<String>,
+) -> Option<(String, [i32; 3])> {
+    let decl = campaign
+        .npcs
+        .content
+        .npcs
+        .iter()
+        .find(|n| n.id.as_str() == npc)?;
+    let home = decl.area.as_str();
+    match crate::compiler::cast::station(campaign, npc, qid, begun, flags) {
+        Some(crate::compiler::cast::Station::At(anchor, offset)) => {
+            body_station(anchors, BodyScope::Beat { beat: area, home }, anchor)
+                .place()
+                .map(|(a, p)| (a.to_string(), delvewright_dsl::offset_cell(p, offset)))
+        }
+        Some(crate::compiler::cast::Station::Absent(_)) => None,
+        None => anchors
+            .get(&(home.to_string(), decl.anchor.as_str().to_string()))
+            .map(|r| {
+                let p = match r {
+                    ResolvedAnchor::Point { pos, .. } => *pos,
+                    ResolvedAnchor::Gate { from, .. } => *from,
+                };
+                (
+                    home.to_string(),
+                    delvewright_dsl::offset_cell(p, decl.offset),
+                )
+            }),
+    }
 }
 
 /// **The scope a body's anchor reference resolves in.**
@@ -5589,9 +5853,14 @@ fn zone_box_in(
 /// - a quest `on_objective_complete` fires at that objective's step, an
 ///   `on_complete` at the quest's completion step — the player is *forced* through
 ///   both, so both directions are modelled;
-/// - an environment trigger, a trap payload and a dialogue-hosted `on_respawn`
-///   bundle have no step of their own (proximity, a sprung trap, a death), so all
-///   three are rooted conservatively at step 0, which precedes every leg.
+/// - an environment trigger's **openings** fire at the `trigger` step the path
+///   performs it in (`trigger_step`), and a trigger the path never performs opens
+///   nothing; its **fills** are rooted at step 0, forced, which seals every leg
+///   against them — a wall is assumed up from the start and never assumed down
+///   before somebody strikes it;
+/// - a trap payload and a dialogue-hosted `on_respawn` bundle have no step of
+///   their own (a sprung trap, a death), so both are rooted conservatively at
+///   step 0, which precedes every leg.
 ///
 /// The **optional** roots — a trap the party may never trip, a death nobody is
 /// forced to suffer, an offer nobody is forced to buy — register their *filling*
@@ -5599,9 +5868,7 @@ fn zone_box_in(
 /// assuming so is conservative: it can seal a region (the proof must survive the
 /// seal), it can never unseal one (the proof may not lean on a wall the player might
 /// never open). That is the same rule a shortcut gate already obeys — sealed for the
-/// whole model, because the delve must be finishable the long way. Environment
-/// triggers keep their older both-directions treatment unchanged; narrowing that is a
-/// different proof's verdict and is not this function's call to make.
+/// whole model, because the delve must be finishable the long way.
 ///
 /// **A fill from such a root is registered, and marked unforced, because "it sealed"
 /// and "you can stand on it" are two different conclusions and only the first is
@@ -5619,6 +5886,7 @@ fn collect_region_events(
     campaign: &Campaign,
     anchors: &BTreeMap<(String, String), ResolvedAnchor>,
     obj_step: &BTreeMap<String, usize>,
+    trigger_step: &BTreeMap<String, usize>,
     ways: &crate::compiler::ways::WayStaging,
 ) -> Vec<RegionEvent> {
     // spec-0051 §8.6: the skippable-root class, widened. A bundle rooted in an
@@ -5680,12 +5948,15 @@ fn collect_region_events(
                 "the completion of optional quest `{}`, which the party may never play",
                 q.id
             ),
-            // Genuinely not reachable: an environment trigger is forced at every
-            // version. Worded rather than `unreachable!()` so a later root added
-            // to the optional list cannot panic the compiler.
-            EffectRoot::Trigger(_) => format!("the effect bundle at `{}`", site.path),
+            // A trigger this path never performs. Only its openings are unforced,
+            // and an unforced opening is dropped before it is blamed; worded
+            // rather than `unreachable!()` so a later change cannot panic here.
+            EffectRoot::Trigger(t) => format!(
+                "the effects of trigger `{}`, which the critical path never performs",
+                t.id
+            ),
         };
-        let (fire_step, forced) = firing_of(&site.root, obj_step, &optional);
+        let (fire_step, forced) = firing_of(&site.root, obj_step, trigger_step, &optional);
         // The three spellings of one write. A gate names a prefab gate anchor and
         // takes that anchor's box and its `replace`-filtered clear; a
         // `fill-region`/`clear-region` names its own anchor-centred box and clears
@@ -5739,6 +6010,16 @@ fn collect_region_events(
             return; // an unresolvable anchor is DW0142/DW0343/DW0355's finding
         }
         for (region, write) in resolved {
+            // A trigger's FILL keeps the treatment it has always had — fired at
+            // step 0 and forced, which seals every leg against it. Only its
+            // openings are dated by the step that performs it: a wall is assumed
+            // up from the start, never assumed down before somebody strikes it.
+            let (fire_step, forced) =
+                if write.fills() && matches!(site.root, EffectRoot::Trigger(_)) {
+                    (0, true)
+                } else {
+                    (fire_step, forced)
+                };
             if !write.fills() && !forced {
                 // An optional firing may make a region impassable, never passable — a
                 // flood is credited for the same reason a fill is: the proof must
@@ -5766,9 +6047,11 @@ fn collect_region_events(
 /// - a quest `on_objective_complete` fires at that objective's step, an
 ///   `on_complete` at the quest's completion step — the player is *forced*
 ///   through both;
-/// - an environment trigger, a trap payload and a dialogue-hosted `on_respawn`
-///   bundle have no step of their own (proximity, a sprung trap, a death), so all
-///   three are rooted conservatively at step 0, which precedes every leg.
+/// - an environment trigger fires at the `trigger` step the path performs it in,
+///   forced; one the path never performs is unforced at step 0;
+/// - a trap payload and a dialogue-hosted `on_respawn` bundle have no step of
+///   their own (a sprung trap, a death), so both are rooted conservatively at
+///   step 0, which precedes every leg.
 ///
 /// The **optional** roots — a trap the party may never trip, a death nobody is
 /// forced to suffer, an offer nobody is forced to buy, a shortcut opened from its
@@ -5778,6 +6061,7 @@ fn collect_region_events(
 fn firing_of(
     root: &EffectRoot<'_>,
     obj_step: &BTreeMap<String, usize>,
+    trigger_step: &BTreeMap<String, usize>,
     optional: &BTreeSet<&str>,
 ) -> (usize, bool) {
     match root {
@@ -5789,7 +6073,13 @@ fn firing_of(
             quest_complete_step(q, obj_step),
             !optional.contains(q.id.as_str()),
         ),
-        EffectRoot::Trigger(_) => (0, true),
+        // Performed by the path at its own `trigger` step, or not at all: a
+        // trigger nobody on the path fires is as optional as a trap nobody
+        // springs.
+        EffectRoot::Trigger(t) => match trigger_step.get(t.id.as_str()) {
+            Some(&s) => (s, true),
+            None => (0, false),
+        },
         EffectRoot::TrapPayload(_)
         | EffectRoot::DialogueRespawn
         | EffectRoot::ShortcutUnlock
@@ -5809,6 +6099,7 @@ fn firing_of(
 pub(crate) fn collect_way_openings(
     campaign: &Campaign,
     obj_step: &BTreeMap<String, usize>,
+    trigger_step: &BTreeMap<String, usize>,
 ) -> Vec<crate::compiler::ways::WayOpening> {
     // The same widening as `collect_region_events`, for the same reason: an
     // `open-way` fired from an optional quest is a way the party may never open.
@@ -5818,7 +6109,7 @@ pub(crate) fn collect_way_openings(
         let Some((piece, name)) = e.way_write() else {
             return;
         };
-        let (fire_step, forced) = firing_of(&site.root, obj_step, &optional);
+        let (fire_step, forced) = firing_of(&site.root, obj_step, trigger_step, &optional);
         out.push(crate::compiler::ways::WayOpening {
             prefab_id: piece.as_str().to_string(),
             way: name.to_string(),
@@ -5893,9 +6184,15 @@ fn transitive_closure<'a>(
 ///
 /// Pure DAG structure, so it is deterministic and independent of the lineariser's
 /// choice among valid orders. `steps` is the critical path's length.
+///
+/// A `trigger` step (`trigger_step`) is a path act rather than a DAG node: it
+/// takes what precedes the objective it is performed in front of, and it
+/// precedes every later step on the path — the arrivals past the last objective
+/// included.
 fn compute_strict_ancestor_steps(
     campaign: &Campaign,
     obj_step: &BTreeMap<String, usize>,
+    trigger_step: &BTreeMap<String, usize>,
     steps: usize,
 ) -> BTreeMap<usize, BTreeSet<usize>> {
     // Quest direct `depends_on`, then its transitive-ancestor closure.
@@ -5962,6 +6259,19 @@ fn compute_strict_ancestor_steps(
         }
         out.insert(s, anc);
     }
+    // A `trigger` step is a path act, not a DAG node: nothing orders it but the
+    // path that performs it. So it precedes every step after it on that path —
+    // the walk the proofs judge IS this path — and what precedes it is what
+    // precedes the objective it is performed in front of, since the party
+    // arrives at it on the way to that objective.
+    let mut trigger_anc: Vec<(usize, BTreeSet<usize>)> = Vec::new();
+    for &t in trigger_step.values() {
+        let next = obj_step.values().copied().filter(|&o| o > t).min();
+        let mut anc = next.and_then(|n| out.get(&n)).cloned().unwrap_or_default();
+        anc.retain(|&a| a < t);
+        trigger_anc.push((t, anc));
+    }
+    out.extend(trigger_anc);
 
     // ---- the arrivals past the last objective ----
     //
@@ -5977,7 +6287,8 @@ fn compute_strict_ancestor_steps(
     // is. `DW0525` reads both arrivals, and a wrong answer there runs both ways —
     // a door the party is FORCED to open reads shut again (refusing a rest point
     // behind it), and a `close-gate` the last objective fires goes missing
-    // (admitting a rest point sealed in).
+    // (admitting a rest point sealed in). The trigger steps the path performs
+    // before them are added by the sweep below, like every later step's.
     //
     // **Forcedness is not re-decided here, and the set is every objective on the
     // path rather than the mandatory ones** (spec-0051). `collect_region_events`
@@ -5999,8 +6310,13 @@ fn compute_strict_ancestor_steps(
     if let Some(&last) = obj_step.values().max() {
         let every: BTreeSet<usize> = obj_step.values().copied().collect();
         for s in last + 1..=steps {
-            out.insert(s, every.clone());
+            out.entry(s).or_insert_with(|| every.clone());
         }
+    }
+
+    // Every step after a trigger step has it as an ancestor.
+    for (&s, anc) in out.iter_mut() {
+        anc.extend(trigger_step.values().copied().filter(|&t| t < s));
     }
     out
 }
