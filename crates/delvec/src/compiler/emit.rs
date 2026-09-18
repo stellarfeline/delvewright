@@ -2789,8 +2789,11 @@ fn has_item_drop(drops: &[delvewright_dsl::MobDrop]) -> bool {
 ///
 /// The invariant, stated once: a declared drop is what a *player's kill* yields.
 /// Every removal the compiler performs itself — the `unleash` that swaps a
-/// puppet for its twin, a `despawn-actor` (either style), a souls re-seat's
-/// re-caging — goes through `/kill`, and vanilla `/kill` is an ordinary death:
+/// puppet for its twin, a `despawn-actor` (either style), a bonfire's re-seat of
+/// a wave (`wave_reseat_<wave>`, both the `respawns_on_rest` and the undefeated
+/// billed kind) and of an unleashed actor (`actor_restand_<id>`) — goes through
+/// `/kill`, reached only through [`removal_lines`], and vanilla `/kill` is an
+/// ordinary death:
 /// a preserved slot (chance > 1.0) drops **even when the killer is not a
 /// player**. Without this line an elite would shed its axe every time the story
 /// moved it, and a re-seat would turn the boss into a vending machine.
@@ -2810,6 +2813,33 @@ fn strip_drops_line(tag: &str) -> String {
         "execute as @e[tag={tag}] run data merge entity @s {{drop_chances:{{{}}},DeathLootTable:\"minecraft:empty\"}}",
         zeros.join(",")
     )
+}
+
+/// **The one way the compiler removes a body it placed**: every `kill` the
+/// datapack runs against a wave mob, an actor's puppet or an actor's twin is
+/// built here, so the strip in front of it cannot be forgotten at a new site.
+///
+/// `declares_drops` is the body's own declaration ([`wave_declares_drops`],
+/// [`actor_declares_drops`]); a body that declares none carries no loot NBT the
+/// compiler wrote, and gets the bare `kill` alone.
+fn removal_lines(tag: &str, declares_drops: bool) -> Vec<String> {
+    let mut out = Vec::new();
+    if declares_drops {
+        out.push(strip_drops_line(tag));
+    }
+    out.push(format!("kill @e[tag={tag}]"));
+    out
+}
+
+/// Whether any mob of this wave declares a drop — the wave's bodies share one
+/// tag, so the removal strips them all when one of them carries loot.
+fn wave_declares_drops(w: &delvewright_dsl::Wave) -> bool {
+    w.mobs.iter().any(|m| !m.drops.is_empty())
+}
+
+/// Whether this actor declares a drop (on either body: puppet or twin).
+fn actor_declares_drops(a: &delvewright_dsl::Actor) -> bool {
+    !a.drops.is_empty()
 }
 
 /// The `equipment`/`drop_chances` SNBT fragment for a wave mob (no leading
@@ -4667,13 +4697,11 @@ fn emit_functions(
         // refresh), and for nothing else → byte-identical.
         if w.respawns_on_rest || plan.undefeated_reseat_waves().iter().any(|u| u.id == w.id) {
             let safe = plan::safe_local(w.id.as_str());
-            fns.push((
-                format!("wave_reseat_{safe}"),
-                lines(&[
-                    format!("kill @e[tag={}]", plan::wave_tag(w.id.as_str())),
-                    format!("function {ns}:spawn_{safe}"),
-                ]),
-            ));
+            // A re-seat is not a kill the party earned: the standing bodies go
+            // through [`removal_lines`], which strips a declared drop first.
+            let mut reseat = removal_lines(&plan::wave_tag(w.id.as_str()), wave_declares_drops(w));
+            reseat.push(format!("function {ns}:spawn_{safe}"));
+            fns.push((format!("wave_reseat_{safe}"), lines(&reseat)));
         }
         // --- The wave CENSUS probe surface ---
         //
@@ -6082,7 +6110,7 @@ fn emit_quest_effect(plan: &Plan, eff: &QuestEffect, aud: Audience, body: &mut V
                 .content
                 .actors
                 .iter()
-                .any(|a| a.id.as_str() == actor.as_str() && !a.drops.is_empty());
+                .any(|a| a.id.as_str() == actor.as_str() && actor_declares_drops(a));
             emit_despawn_actor(actor.as_str(), *style, declares_drops, body);
         }
         Verb::MoveActor { actor, to, .. } => {
@@ -6228,18 +6256,11 @@ fn emit_despawn_actor(
     // an elite the story re-cages (a souls re-seat) would shed its axe on every
     // rest. Strip the declaration off the body first; emitted only when the
     // actor declares drops, so every earlier campaign's despawn is byte-identical.
-    if declares_drops {
-        body.push(strip_drops_line(&format!("dw_actor_{safe}")));
+    let tag = format!("dw_actor_{safe}");
+    if style == DespawnStyle::Vanish {
+        body.push(format!("execute as @e[tag={tag}] at @s run tp @s ~ -128 ~"));
     }
-    match style {
-        DespawnStyle::Kill => body.push(format!("kill @e[tag=dw_actor_{safe}]")),
-        DespawnStyle::Vanish => {
-            body.push(format!(
-                "execute as @e[tag=dw_actor_{safe}] at @s run tp @s ~ -128 ~"
-            ));
-            body.push(format!("kill @e[tag=dw_actor_{safe}]"));
-        }
-    }
+    body.extend(removal_lines(&tag, declares_drops));
 }
 
 /// Emit a `play-sound` effect (DSL v0.6). `who` is the audience selector
@@ -10350,10 +10371,10 @@ fn actor_fns(
         // ordinary death: a puppet carrying a declared drop would shed it the
         // moment the elite stood up. Strip first — the twin standing beside it
         // is the body that owes the player a prize.
-        if !a.drops.is_empty() {
-            unleash.push(strip_drops_line(&format!("dw_pup_{safe}")));
-        }
-        unleash.push(format!("kill @e[tag=dw_pup_{safe}]"));
+        unleash.extend(removal_lines(
+            &format!("dw_pup_{safe}"),
+            actor_declares_drops(a),
+        ));
         if campaign_captures_striker(plan.campaign) {
             unleash.extend(aggro_lock_lines(&a.entity, &safe));
         }
@@ -10381,13 +10402,13 @@ fn actor_fns(
         // bonfire ([`Plan::reseat_actors`]) → byte-identical everywhere else.
         if plan.reseat_actors().iter().any(|r| r.id == a.id) {
             let p = ent_xyz(pos);
-            out.push((
-                format!("actor_restand_{safe}"),
-                lines(&[
-                    format!("kill @e[tag=dw_actor_{safe}]"),
-                    actor_twin_summon(ns, a, &format!("{} {} {}", p[0], p[1], p[2])),
-                ]),
+            let mut restand = removal_lines(&format!("dw_actor_{safe}"), actor_declares_drops(a));
+            restand.push(actor_twin_summon(
+                ns,
+                a,
+                &format!("{} {} {}", p[0], p[1], p[2]),
             ));
+            out.push((format!("actor_restand_{safe}"), lines(&restand)));
         }
     }
     // move-actor per-tick drivers.

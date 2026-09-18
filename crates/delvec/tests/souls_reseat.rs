@@ -435,3 +435,198 @@ fn the_undefeated_reseat_ships_its_packtests() {
         "the chipped boss wave comes back whole and unbranded; the beaten one stays beaten:\n{t}"
     );
 }
+
+// ---------------------------------------------------------------------------
+// 4. a removal the compiler performs yields nothing
+// ---------------------------------------------------------------------------
+
+/// The fixture with a declared drop on every body a rest or a beat can remove:
+/// the elite actor (puppet and twin), the scenery actor (removed by a
+/// `despawn-actor`, `vanish` style — the style whose removal is two commands),
+/// the billed boss wave and the ordinary `respawns_on_rest` wave.
+fn fixture_campaign_with_drops() -> Campaign {
+    let mut c = fixture_campaign(true);
+    let drop = |name: &str| {
+        serde_json::from_value::<delvewright_dsl::MobDrop>(serde_json::json!({
+            "item": "minecraft:tripwire_hook",
+            "name": name
+        }))
+        .expect("drop parses")
+    };
+    // Only a billed fight leaves anything behind (`DW0491`).
+    for a in &mut c.quests.content.actors {
+        a.tier = Some(delvewright_dsl::EncounterTier::Elite);
+        a.drops.push(drop("Warden Key"));
+    }
+    for w in &mut c.quests.content.waves {
+        w.tier.get_or_insert(delvewright_dsl::EncounterTier::Elite);
+        for m in &mut w.mobs {
+            m.drops.push(drop("Guard Key"));
+        }
+    }
+    let trigger = c
+        .quests
+        .content
+        .triggers
+        .iter_mut()
+        .find(|t| t.id.as_str() == "trigger/gate-ward")
+        .expect("the fixture's strike trigger");
+    trigger.effects.push(
+        serde_json::from_value(serde_json::json!({
+            "type": "despawn-actor",
+            "actor": SCENERY,
+            "style": "vanish"
+        }))
+        .expect("despawn-actor parses"),
+    );
+    c
+}
+
+/// Every tag a body carrying compiler-written loot NBT wears, read off the
+/// emitted `summon` lines themselves: a summon whose NBT points `DeathLootTable`
+/// at a compiler-emitted drop table, or marks a slot with the guaranteed-drop
+/// chance.
+fn loot_bearing_tags(out: &BuildOutput) -> std::collections::BTreeSet<String> {
+    let mut tags = std::collections::BTreeSet::new();
+    for (path, bytes) in out {
+        if !(path.starts_with("datapack/") && path.ends_with(".mcfunction")) {
+            continue;
+        }
+        for line in std::str::from_utf8(bytes).unwrap().lines() {
+            let Some(at) = line.find("summon ") else {
+                continue;
+            };
+            let summon = &line[at..];
+            let carries = summon.contains(&format!("DeathLootTable:\"{NS}:dw_drop/"))
+                || summon
+                    .split("drop_chances:{")
+                    .nth(1)
+                    .and_then(|r| r.split('}').next())
+                    .is_some_and(|chances| chances.contains(":2.0f"));
+            if !carries {
+                continue;
+            }
+            let list = summon
+                .split("Tags:[")
+                .nth(1)
+                .and_then(|r| r.split(']').next())
+                .expect("every compiler summon carries its Tags");
+            for t in list.split(',') {
+                tags.insert(t.trim_matches('"').to_string());
+            }
+        }
+    }
+    tags
+}
+
+/// Every `tag=` a line's selectors name.
+fn selector_tags(line: &str) -> Vec<String> {
+    line.split("tag=")
+        .skip(1)
+        .map(|r| {
+            r.chars()
+                .take_while(|c| !matches!(c, ',' | ']' | ' '))
+                .collect()
+        })
+        .collect()
+}
+
+/// **The general form**: a declared drop is what a PLAYER's kill yields. Every
+/// `kill` the shipped datapack runs whose selector can reach a loot-bearing body
+/// must be preceded, in the same function, by the strip for that same tag —
+/// vanilla `/kill` is an ordinary death, and a preserved slot or a death loot
+/// table rolls whoever the killer was.
+///
+/// The playtest this exists for: a rest re-seated an undefeated billed elite
+/// (`wave_reseat_<wave>`) with a bare `kill`, and the party picked the elite's
+/// quest key up off the floor where he had stood — once per rest, and once per
+/// death at the fire — before ever fighting him.
+///
+/// The loot-bearing set is read off the emitted summons, not listed here, so a
+/// body a later change teaches to carry loot is covered without an edit; and the
+/// sites are enumerated from every function, so a new removal is too.
+#[test]
+fn every_compiler_removal_strips_declared_loot_first() {
+    let out = build(&fixture_campaign_with_drops());
+    let loot = loot_bearing_tags(&out);
+    for want in [
+        format!("dw_actor_{ELITE_SAFE}"),
+        format!("dw_pup_{ELITE_SAFE}"),
+        format!("dw_actor_{SCENERY_SAFE}"),
+        "dw_wave_ambush".to_string(),
+        "dw_wave_guards".to_string(),
+    ] {
+        assert!(
+            loot.contains(&want),
+            "the fixture's drop-declaring body `{want}` is read as loot-bearing: {loot:?}"
+        );
+    }
+
+    let mut bound: Vec<String> = Vec::new();
+    let mut unstripped: Vec<String> = Vec::new();
+    for (path, bytes) in &out {
+        if !(path.starts_with("datapack/") && path.ends_with(".mcfunction")) {
+            continue;
+        }
+        let body = std::str::from_utf8(bytes).unwrap();
+        let mut stripped: std::collections::BTreeSet<String> = Default::default();
+        for line in body.lines() {
+            if line.contains("run data merge entity @s {drop_chances:{")
+                && line.contains("DeathLootTable:\"minecraft:empty\"")
+            {
+                stripped.extend(selector_tags(line));
+                continue;
+            }
+            let is_kill = line.starts_with("kill ") || line.contains(" run kill ");
+            if !is_kill {
+                continue;
+            }
+            for t in selector_tags(line).into_iter().filter(|t| loot.contains(t)) {
+                let site = format!("{path}: {line}");
+                if stripped.contains(&t) {
+                    bound.push(site);
+                } else {
+                    unstripped.push(site);
+                }
+            }
+        }
+    }
+    eprintln!(
+        "removal-strip binding: {} loot-bearing tag(s) read off the summons; {} removal(s) of \
+         one examined, {} stripped first, {} bare.",
+        loot.len(),
+        bound.len() + unstripped.len(),
+        bound.len(),
+        unstripped.len()
+    );
+    assert!(
+        unstripped.is_empty(),
+        "{} of {} removal(s) of a loot-bearing body run a bare `kill`, which yields the \
+         declared drop to nobody's kill:\n{}",
+        unstripped.len(),
+        unstripped.len() + bound.len(),
+        unstripped.join("\n")
+    );
+    // Binding: every removal site this fixture is built to reach was examined.
+    for site in [
+        "wave_reseat_ambush.mcfunction",
+        "wave_reseat_guards.mcfunction",
+        &format!("actor_restand_{ELITE_SAFE}.mcfunction"),
+        &format!("unleash_{ELITE_SAFE}.mcfunction"),
+    ] {
+        assert!(
+            bound.iter().any(|b| b.contains(site)),
+            "the scan reached `{site}` (bound {}):\n{}",
+            bound.len(),
+            bound.join("\n")
+        );
+    }
+    assert!(
+        bound
+            .iter()
+            .any(|b| b.contains(&format!("kill @e[tag=dw_actor_{SCENERY_SAFE}]"))),
+        "the scan reached the `despawn-actor` (bound {}):\n{}",
+        bound.len(),
+        bound.join("\n")
+    );
+}
