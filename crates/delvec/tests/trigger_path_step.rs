@@ -283,3 +283,266 @@ fn a_flag_only_a_trigger_sets_is_paid_by_a_trigger_step() {
     assert_eq!(path["steps"][press]["trigger"], "trigger/light-the-stone");
     assert_eq!(path["steps"][press]["on"], "use");
 }
+
+/// A hello-world `quests` doc whose only `open-gate` is a `strike` trigger on the
+/// `spawn` stone, armed by the talk beat. The stone stands on the keeper's side
+/// of the barred door, so the leg from the stone to `anchor/exit` crosses the
+/// door — and is walkable only if the strike, performed at its own step, counts
+/// as having happened before the arrival at the exit.
+fn strike_the_stone_doc() -> String {
+    common::at_dsl_version(
+        r#"{
+  "dsl_version": "%dsl_version%",
+  "campaign_id": "hello-world",
+  "stage": "quests",
+  "content": {
+    "quests": [
+      {
+        "id": "quest/open-the-door",
+        "trigger": { "type": "campaign-start" },
+        "objectives": [
+          { "type": "talk-to", "id": "obj/talk", "npc": "npc/keeper" },
+          { "type": "reach-anchor", "id": "obj/exit", "anchor": "anchor/exit",
+            "radius": 2, "after": ["obj/talk"] }
+        ],
+        "on_objective_complete": {
+          "obj/talk": [ { "type": "set-flag", "flag": "flag/told" } ]
+        },
+        "on_complete": []
+      }
+    ],
+    "triggers": [
+      { "id": "trigger/strike-the-stone", "at": "spawn", "on": { "on": "strike" },
+        "requires_flags": ["flag/told"],
+        "effects": [ { "type": "open-gate", "anchor": "anchor/door" } ] }
+    ]
+  }
+}"#,
+    )
+}
+
+/// A hello-world `quests` doc where the talk beat itself opens the door (and arms
+/// the lamp), and the exit reads `flag/lit`, which only a `use` on the far-side
+/// `anchor/exit` sets.
+/// The leg INTO that trigger step crosses the door, so it is walkable only if
+/// the talk beat — an ancestor of the objective the press is performed in front
+/// of — counts as having fired before the arrival at the trigger step.
+fn press_beyond_the_door_doc() -> String {
+    common::at_dsl_version(
+        r#"{
+  "dsl_version": "%dsl_version%",
+  "campaign_id": "hello-world",
+  "stage": "quests",
+  "content": {
+    "quests": [
+      {
+        "id": "quest/open-the-door",
+        "trigger": { "type": "campaign-start" },
+        "objectives": [
+          { "type": "talk-to", "id": "obj/talk", "npc": "npc/keeper" },
+          { "type": "reach-anchor", "id": "obj/exit", "anchor": "anchor/exit",
+            "radius": 2, "after": ["obj/talk"], "requires_flags": ["flag/lit"] }
+        ],
+        "on_objective_complete": {
+          "obj/talk": [
+            { "type": "open-gate", "anchor": "anchor/door" },
+            { "type": "set-flag", "flag": "flag/told" }
+          ]
+        },
+        "on_complete": []
+      }
+    ],
+    "triggers": [
+      { "id": "trigger/light-the-lamp", "at": "anchor/exit", "on": { "on": "use" },
+        "requires_flags": ["flag/told"],
+        "effects": [ { "type": "set-flag", "flag": "flag/lit" } ] }
+    ]
+  }
+}"#,
+    )
+}
+
+fn step_index(plan: &Plan, pred: impl Fn(&delvec::compiler::plan::Step) -> bool) -> usize {
+    plan.critical_path
+        .iter()
+        .position(pred)
+        .expect("the step is on the path")
+}
+
+/// **The ordering, asked directly.** A trigger step precedes every later step of
+/// its path: a gate it opens has fired before the arrival at the exit, and the
+/// step it is performed at inherits what precedes the objective after it.
+#[test]
+fn a_trigger_step_has_fired_before_every_later_arrival() {
+    let p = prefabs();
+    let c = validated(&strike_the_stone_doc(), &p);
+    let plan = Plan::build(&c, &p).expect("plan builds");
+    let t = step_index(&plan, |s| s.trigger() == Some("trigger/strike-the-stone"));
+    let exit = step_index(&plan, |s| s.objective() == Some("obj/exit"));
+    assert!(t < exit, "the strike is performed before the exit");
+    assert!(
+        plan.gate_fired_before(t, exit),
+        "the strike at step {t} has fired before the arrival at step {exit}"
+    );
+    assert!(
+        !plan.gate_fired_before(exit, t),
+        "and not the other way round"
+    );
+
+    let c = validated(&press_beyond_the_door_doc(), &p);
+    let plan = Plan::build(&c, &p).expect("plan builds");
+    let talk = step_index(&plan, |s| s.objective() == Some("obj/talk"));
+    let t = step_index(&plan, |s| s.trigger() == Some("trigger/light-the-lamp"));
+    assert!(talk < t);
+    assert!(
+        plan.gate_fired_before(talk, t),
+        "the talk beat (step {talk}) precedes the press performed in front of its successor \
+         (step {t})"
+    );
+}
+
+/// **A verdict that turns on the sweep.** The strike opens the door from the
+/// keeper's side, and the walk from the stone to the exit goes through the door.
+/// Crediting the opening to every later arrival is what makes that leg walkable;
+/// without it the build is `DW0317` on the door.
+#[test]
+fn a_door_a_trigger_step_opened_is_open_for_the_legs_after_it() {
+    let p = prefabs();
+    let c = validated(&strike_the_stone_doc(), &p);
+    let out = build(&c, &p).expect("the struck door is open for the walk to the exit");
+    assert_eq!(
+        actions(&critical_path(&out)),
+        [
+            "select-class",
+            "talk-to",
+            "trigger",
+            "reach",
+            "assert-complete"
+        ]
+    );
+}
+
+/// **A verdict that turns on the trigger step's own row.** The talk beat opens
+/// the door; the press stands beyond it. The leg into the press crosses the
+/// door, so it is walkable only because the press inherits the talk beat as a
+/// predecessor; without that row the build is `DW0317` on the door.
+#[test]
+fn the_leg_into_a_trigger_step_sees_what_its_objective_inherits() {
+    let p = prefabs();
+    let c = validated(&press_beyond_the_door_doc(), &p);
+    let out = build(&c, &p).expect("the door the talk opened is open for the walk to the press");
+    assert_eq!(
+        actions(&critical_path(&out)),
+        [
+            "select-class",
+            "talk-to",
+            "trigger",
+            "reach",
+            "assert-complete"
+        ]
+    );
+}
+
+// ---------------------------------------------------------------------------
+// The refusals the ordering makes possible.
+//
+// A leg whose start is not an ancestor of its arrival is judged over the OPEN
+// world (`World::leg_region_state`: a lineariser artifact the party never walks
+// is not sealed). So a trigger step with no place in the ancestry is a step whose
+// legs are never judged against a shut gate at all — the direction that ships.
+// Each fixture below crosses a door nothing opens, on a leg only the trigger
+// ordering makes causal, and must be refused.
+// ---------------------------------------------------------------------------
+
+/// The talk arms a stone on the keeper's side; the stone pays the exit's flag;
+/// the door between the stone and the exit is never opened.
+fn stone_then_barred_exit_doc() -> String {
+    common::at_dsl_version(
+        r#"{
+  "dsl_version": "%dsl_version%",
+  "campaign_id": "hello-world",
+  "stage": "quests",
+  "content": {
+    "quests": [
+      {
+        "id": "quest/open-the-door",
+        "trigger": { "type": "campaign-start" },
+        "objectives": [
+          { "type": "talk-to", "id": "obj/talk", "npc": "npc/keeper" },
+          { "type": "reach-anchor", "id": "obj/exit", "anchor": "anchor/exit",
+            "radius": 2, "after": ["obj/talk"], "requires_flags": ["flag/lit"] }
+        ],
+        "on_objective_complete": {
+          "obj/talk": [ { "type": "set-flag", "flag": "flag/told" } ]
+        },
+        "on_complete": []
+      }
+    ],
+    "triggers": [
+      { "id": "trigger/light-the-stone", "at": "spawn", "on": { "on": "use" },
+        "requires_flags": ["flag/told"],
+        "effects": [ { "type": "set-flag", "flag": "flag/lit" } ] }
+    ]
+  }
+}"#,
+    )
+}
+
+/// The talk arms a lamp BEYOND the door; the door is never opened.
+fn lamp_beyond_a_barred_door_doc() -> String {
+    common::at_dsl_version(
+        r#"{
+  "dsl_version": "%dsl_version%",
+  "campaign_id": "hello-world",
+  "stage": "quests",
+  "content": {
+    "quests": [
+      {
+        "id": "quest/open-the-door",
+        "trigger": { "type": "campaign-start" },
+        "objectives": [
+          { "type": "talk-to", "id": "obj/talk", "npc": "npc/keeper" },
+          { "type": "reach-anchor", "id": "obj/exit", "anchor": "anchor/exit",
+            "radius": 2, "after": ["obj/talk"], "requires_flags": ["flag/lit"] }
+        ],
+        "on_objective_complete": {
+          "obj/talk": [ { "type": "set-flag", "flag": "flag/told" } ]
+        },
+        "on_complete": []
+      }
+    ],
+    "triggers": [
+      { "id": "trigger/light-the-lamp", "at": "anchor/exit", "on": { "on": "use" },
+        "requires_flags": ["flag/told"],
+        "effects": [ { "type": "set-flag", "flag": "flag/lit" } ] }
+    ]
+  }
+}"#,
+    )
+}
+
+/// **The sweep.** The leg out of the trigger step, from the stone to the exit,
+/// crosses a door nothing opens. It is judged only because the stone precedes
+/// the exit in the ancestry; without that the leg is read over the open world
+/// and the delve builds with a path that walks into iron bars.
+#[test]
+fn the_leg_out_of_a_trigger_step_is_judged_against_a_shut_door() {
+    let p = prefabs();
+    let c = validated(&stone_then_barred_exit_doc(), &p);
+    let err = build(&c, &p).expect_err("the walk from the stone to the exit meets the bars");
+    assert!(err.contains("DW0317"), "{err}");
+    assert!(err.contains("anchor/door"), "{err}");
+}
+
+/// **The trigger step's own row.** The leg INTO the press, from the keeper to
+/// the lamp beyond the door, crosses a door nothing opens. It is judged only
+/// because the press inherits the talk beat as a predecessor; without that row
+/// the leg is read over the open world and the delve builds.
+#[test]
+fn the_leg_into_a_trigger_step_is_judged_against_a_shut_door() {
+    let p = prefabs();
+    let c = validated(&lamp_beyond_a_barred_door_doc(), &p);
+    let err = build(&c, &p).expect_err("the walk from the keeper to the lamp meets the bars");
+    assert!(err.contains("DW0317"), "{err}");
+    assert!(err.contains("anchor/door"), "{err}");
+}
