@@ -6,8 +6,9 @@
 //! made of): stone/brick/wood/glass/copper/deepslate families plus common
 //! decoration (stairs/slabs/walls/fences/doors/lights/carpets/banners), the inert
 //! **flora** worldgen structures grow over themselves (grasses, flowers,
-//! mushrooms, vines, coral, saplings), non-functional **furniture/job-site**
-//! blocks (lectern, cartography table, loom, …), decorative **mineral** blocks and
+//! mushrooms, vines, coral, saplings), **furniture/job-site** blocks (lectern,
+//! cartography table, loom, anvil, …), the **trap trigger** blocks (pressure
+//! plates, buttons, the trapped chest), decorative **mineral** blocks and
 //! ores, and archaeology (suspicious sand/gravel). It is intentionally *inclusive*
 //! — the hard gate that actually protects the server is the code-injection forbid
 //! list (command/structure blocks, NBT-bearing spawners), not this list. The
@@ -390,6 +391,16 @@ const DEFAULT_EXACT: &[&str] = &[
     "minecraft:beehive",
     "minecraft:bee_nest",
     "minecraft:amethyst_cluster",
+    // --- Furniture a player uses, and the trigger a trap is built from ---
+    // An anvil is job-site furniture like the grindstone and smithing table
+    // above; its fall is the gravity gate's business, not this list's. A trapped
+    // chest is the visible trigger of the compiler's own `trapped-chest` trap,
+    // in the same class as the `_pressure_plate` family: a signal source, not a
+    // contraption.
+    "minecraft:anvil",
+    "minecraft:chipped_anvil",
+    "minecraft:damaged_anvil",
+    "minecraft:trapped_chest",
     // --- Inert flora: grasses & foliage ---
     "minecraft:short_grass",
     "minecraft:tall_grass",
