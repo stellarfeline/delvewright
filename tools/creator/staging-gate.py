@@ -901,7 +901,19 @@ def _absence_is_declared(binding: dict, applies_when: dict | None) -> bool:
 def carrier_exists(carrier: dict, eng: Engine, subj: Subject) -> tuple[bool, str]:
     kind = carrier.get("kind")
     if kind == "dw":
-        return eng.dw_exists(carrier["code"])
+        # One code, or a list when the class the binding counts is judged by
+        # one rule per member kind (`bell-06`: a timed gate by DW0378, a volley
+        # by DW0918, one body model). Every code must exist: a list is carried
+        # only while every member of it is, so losing either check reds the row
+        # on a campaign whose binding counts the other.
+        codes = dw_codes(carrier)
+        if not codes:
+            return False, "a `dw` carrier names no code"
+        for code in codes:
+            ok, why = eng.dw_exists(code)
+            if not ok:
+                return False, why
+        return True, ""
     if kind == "packtest":
         name = carrier["template"]
         if name not in eng.rust_text:
@@ -939,12 +951,22 @@ def carrier_exists(carrier: dict, eng: Engine, subj: Subject) -> tuple[bool, str
     return False, f"unknown carrier kind `{kind}`"
 
 
+def dw_codes(carrier: dict) -> list[str]:
+    """A `dw` carrier's `code`, which is one code or a list of them."""
+    code = carrier.get("code")
+    if isinstance(code, str):
+        return [code]
+    if isinstance(code, list) and all(isinstance(c, str) for c in code):
+        return list(code)
+    return []
+
+
 def carrier_label(carrier: dict | None) -> str:
     if carrier is None:
         return "—"
     kind = carrier.get("kind")
     if kind == "dw":
-        return carrier["code"]
+        return " + ".join(dw_codes(carrier)) or "—"
     if kind == "packtest":
         return f"PackTest `{carrier['template']}`"
     if kind == "harness":
