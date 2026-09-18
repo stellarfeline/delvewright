@@ -223,7 +223,11 @@ echo "==> packtest: tearing down project '$project'"
 rm -f "$runlog"
 trap - EXIT
 
-if [ "$rc" -ne 0 ]; then
+if [ "$verdict" -eq 10 ]; then
+  echo "::error:: PackTest did not run in project '$project' over '$output': the server ran out of heap (exit $rc)" >&2
+elif [ "$verdict" -eq 11 ]; then
+  echo "::error:: PackTest did not finish in project '$project' over '$output': stopped at ${timeout}s (exit $rc)" >&2
+elif [ "$rc" -ne 0 ]; then
   echo "::error:: PackTest FAILED in project '$project' over '$output' (exit $rc = failed tests)" >&2
 else
   echo "==> packtest PASSED (project '$project', tree '$output'; 0 live bootstrap fetches)"
