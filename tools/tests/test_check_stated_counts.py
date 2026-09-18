@@ -29,6 +29,7 @@ actually arrives from, and not be silenceable.
 from __future__ import annotations
 
 import importlib.util
+import json
 from pathlib import Path
 
 import pytest
@@ -157,12 +158,32 @@ def emission_tsv(rows: int = 3, states: int = 30) -> str:
     return "\n".join(lines) + "\n"
 
 
-def compiler_md(rows: str = "3", states: str = "30") -> str:
+# The preview-colour oracle reads the vendored appearance table, so the
+# miniature tree carries a miniature one: two blocks, and a `delvec snapshot`
+# section below claiming exactly that. The claim and the artifact have to be
+# able to disagree, which is why both are parameters.
+def block_appearance_json(blocks: int = 2) -> str:
+    entries = {
+        f"minecraft:probe_{i}": {"rgb": [i, i, i], "coverage": 255,
+                                 "box": [0, 0, 0, 16, 16, 16]}
+        for i in range(blocks)
+    }
+    return json.dumps(
+        {"biome": "minecraft:plains", "entries": entries, "unresolved": {},
+         "version": 1},
+        indent=2,
+    ) + "\n"
+
+
+def compiler_md(rows: str = "3", states: str = "30", blocks: str = "2") -> str:
     return (
         "# compiler\n\n"
         "### DW02xx light\n\n"
         f"The emitter table rests on a fixture of {rows} rows covering "
-        f"{states} blockstates.\n"
+        f"{states} blockstates.\n\n"
+        "### `delvec snapshot`\n\n"
+        f"The draft paints from the pinned jar: {blocks} of {blocks} non-air "
+        "blocks resolve.\n"
     )
 
 
@@ -190,9 +211,13 @@ def build_tree(root: Path, **kw) -> Path:
         "crates/delvec/tests/fixtures/light/emission-1.21.11.tsv": emission_tsv(
             rows=kw.get("emission_rows", 3), states=kw.get("emission_states", 30)
         ),
+        "crates/delvec/data/block-appearance-1.21.11.json": block_appearance_json(
+            blocks=kw.get("preview_blocks", 2)
+        ),
         "docs/reference/compiler.md": compiler_md(
             rows=kw.get("emission_rows_claim", "3"),
             states=kw.get("emission_states_claim", "30"),
+            blocks=kw.get("preview_blocks_claim", "2"),
         ),
     }
     for rel, text in files.items():
@@ -231,6 +256,19 @@ def test_a_stale_count_in_one_page_is_a_finding(checker, tmp_path, capsys):
     assert "docs/reference/tools.md" in err
     assert "claims there are 3" in err
     assert "There are 4 teaching programs" in err
+
+
+def test_a_preview_table_that_grew_leaves_the_page_behind(
+    checker, tmp_path, capsys
+):
+    """A pin bump changes what the draft rasteriser can paint, and the page that
+    tells a creator so is the one thing nothing recomputes."""
+    checker.ROOT = build_tree(tmp_path, preview_blocks=3)
+    assert checker.main() == 1
+    err = capsys.readouterr().err
+    assert "docs/reference/compiler.md" in err
+    assert "claims there are 2" in err
+    assert "There are 3 blocks the vendored preview colour table paints" in err
 
 
 def test_the_count_is_checked_in_every_page_that_states_it(

@@ -11,6 +11,10 @@
 //!   a ladder, a sapling) reporting the colour of its empty pixels.
 //! - **coverage** — mean alpha, which is how a translucent block is told from a
 //!   solid one without a list of which blocks are glass.
+//! - **roughness** — how far that texture's brightness strays from its own mean,
+//!   as one number. A mean colour says what a block is made of and nothing about
+//!   whether a wall of it is smooth or rubbly; this is what lets a flat-shaded
+//!   wall read as its own material instead of as a paint swatch.
 //! - **shape** — the union of the model elements' `from`/`to`, with the variant's
 //!   `x`/`y` rotation applied, in sixteenths of a block. This is what makes a
 //!   slab a slab, a carpet a carpet and a chain a thin vertical post instead of
@@ -51,7 +55,30 @@ pub struct Appearance {
     /// `[x0, y0, z0, x1, y1, z1]`, each 0–16.
     #[serde(rename = "box")]
     pub shape: [u8; 6],
+    /// The block's **roughness**: the standard deviation of its texture's
+    /// brightness as a fraction of that texture's own mean, x255, saturating at
+    /// 1.0. `0` is a surface of one flat tone; a rubbly one is tens.
+    ///
+    /// A mean colour says what a block is made of and nothing about what a wall
+    /// of it looks like: a flat-shaded face is one rectangle of one value,
+    /// whatever the material, and a draft frame of a wall carries as much
+    /// information as a paint swatch. This is the measurement the draft
+    /// rasteriser varies a face by, so smooth stone reads smooth and cobble
+    /// reads rubbly.
+    ///
+    /// **It is a statistic, and carries no layout.** One number per texture says
+    /// how much the brightness strays and nothing about where: no arrangement of
+    /// pixels, no downsampling, nothing from which any part of the texture can
+    /// be recovered. That is what makes it committable when the jar is not
+    /// (ADR-0013, CLAUDE.md forbidden zones) — the same footing as the mean
+    /// colour, the mean alpha and the glyph widths, and the reason the
+    /// rasteriser makes its own pattern rather than replaying one from here.
+    pub roughness: u8,
 }
+
+/// Roughness at which a face varies by its whole mean — the saturation point of
+/// [`Appearance::roughness`], and the scale it is quantised on.
+pub const ROUGHNESS_FULL: f64 = 255.0;
 
 /// Coverage at or above which a full-cube block occludes its neighbours' faces.
 pub const OPAQUE_COVERAGE: u8 = 250;
@@ -171,6 +198,11 @@ impl<'a> Deriver<'a> {
         &self.biome
     }
 
+    /// The Minecraft version the asset source declares, if it declares one.
+    pub fn declared_version(&self) -> Option<String> {
+        self.assets.declared_version()
+    }
+
     /// Resolve one palette blockstate string.
     pub fn appearance(&self, state: &str) -> Result<Appearance, Unresolved> {
         let (ns, id) = base_id(state);
@@ -235,6 +267,7 @@ impl<'a> Deriver<'a> {
         let mut cov = 0f64;
         let mut n = 0f64;
         let mut tinted_any = false;
+        let mut spread = 0f64;
         for (path, tinted) in &textures {
             let Some((r, g, b, a)) = self.mean_texture(path) else {
                 continue;
@@ -245,10 +278,14 @@ impl<'a> Deriver<'a> {
             cov += a;
             n += 1.0;
             tinted_any |= *tinted;
+            // The spread comes from the same textures the mean does, so what a
+            // face is shaded by and what it varies by have one provenance.
+            spread += self.texture_spread(path).unwrap_or(0.0);
         }
         if n == 0.0 {
             return Err(Unresolved::NoTexture);
         }
+        let roughness = (spread / n * ROUGHNESS_FULL).round().clamp(0.0, 255.0) as u8;
 
         let mut rgb = [
             (sum[0] / n).round().clamp(0.0, 255.0) as u8,
@@ -270,6 +307,7 @@ impl<'a> Deriver<'a> {
                 clamp16(hi[1]),
                 clamp16(hi[2]),
             ],
+            roughness,
         })
     }
 
@@ -292,6 +330,48 @@ impl<'a> Deriver<'a> {
         } else {
             Some(self.tints.grass)
         }
+    }
+
+    /// One texture's brightness spread: the alpha-weighted standard deviation of
+    /// its luminance, as a fraction of its own mean.
+    ///
+    /// A fraction rather than an absolute, so a dark material and a bright one
+    /// with the same visible relief report the same number, and so the value
+    /// means the same thing wherever it is multiplied in. `None` for a texture
+    /// with nothing opaque in it.
+    ///
+    /// Alpha-weighted like the mean. The result is one number: which pixel was
+    /// bright and which is dark leaves no trace in it.
+    fn texture_spread(&self, path: &str) -> Option<f64> {
+        let (ns, p) = match path.split_once(':') {
+            Some((ns, p)) => (ns.to_string(), p.to_string()),
+            None => ("minecraft".to_string(), path.to_string()),
+        };
+        let (w, h, px) = self.assets.texture_rgba(&ns, &p)?;
+        let count = (w as usize) * (h as usize);
+        if count == 0 {
+            return None;
+        }
+        let (mut sum, mut sum_sq, mut weight) = (0f64, 0f64, 0f64);
+        for i in 0..count {
+            let q = &px[i * 4..i * 4 + 4];
+            let a = f64::from(q[3]);
+            // Rec. 709 luma: the eye's own weighting, so a red and a green of
+            // one brightness do not read as a step in the wall.
+            let l = 0.2126 * f64::from(q[0]) + 0.7152 * f64::from(q[1]) + 0.0722 * f64::from(q[2]);
+            sum += l * a;
+            sum_sq += l * l * a;
+            weight += a;
+        }
+        if weight == 0.0 {
+            return None;
+        }
+        let mean = sum / weight;
+        if mean <= 0.0 {
+            return None;
+        }
+        let variance = (sum_sq / weight - mean * mean).max(0.0);
+        Some(variance.sqrt() / mean)
     }
 
     /// Alpha-weighted mean `(r, g, b, mean_alpha)` of one texture.
@@ -423,14 +503,29 @@ fn parse_element(v: &serde_json::Value) -> Option<Element> {
     Some(Element { from, to, faces })
 }
 
-/// Follow `#name` indirection to a concrete `ns:path` texture reference.
+/// Follow a texture variable to a concrete `ns:path` texture reference.
+///
+/// **The `#` is optional, and the pinned jar proves it.** A face names its
+/// texture either as `#all` or as the bare variable name `all`, and the client
+/// resolves both the same way: strip a leading `#` if there is one, then look
+/// the name up in the merged `textures` map and, failing that, take it as a
+/// path. `assets/minecraft/models/block/heavy_core.json` is the one model in
+/// the pinned 1.21.11 jar written the bare way — six faces of `"texture":
+/// "all"` over `"all": "block/heavy_core"` — and the block draws with its own
+/// texture in game. Requiring the `#` read that model as a texture at
+/// `assets/minecraft/textures/all.png`, found nothing, and reported the block
+/// as having no texture at all.
 fn resolve_texture_ref(reference: &str, textures: &BTreeMap<String, String>) -> Option<String> {
     let mut cur = reference.to_string();
     for _ in 0..16 {
-        if let Some(key) = cur.strip_prefix('#') {
-            cur = textures.get(key)?.clone();
-        } else {
-            return Some(cur);
+        let name = cur.strip_prefix('#').unwrap_or(cur.as_str());
+        match textures.get(name) {
+            // A variable pointing at itself is a malformed pack, not a chain.
+            Some(next) if *next != cur => cur = next.clone(),
+            // A name the map does not define is a literal path — unless it was
+            // written `#name`, which asserts a variable that is not there.
+            _ if cur.starts_with('#') => return None,
+            _ => return Some(cur),
         }
     }
     None
@@ -761,6 +856,14 @@ pub struct PaletteTable {
     pub version: u32,
     /// The biome whose tints were applied.
     pub biome: String,
+    /// The Minecraft version the asset source declares, `None` for a resource
+    /// pack that declares none.
+    ///
+    /// A table outlives the jar it is derived from, and the one thing a later
+    /// reader cannot recover is which game it describes. The vendored table carries the
+    /// pin here, so the event that can make it wrong — the pin moving — is the
+    /// event a check can see with no jar in hand.
+    pub mc_version: Option<String>,
     /// Blockstate string → appearance.
     pub entries: BTreeMap<String, Appearance>,
     /// Blockstate strings that could not be resolved, with the reason.
@@ -769,7 +872,35 @@ pub struct PaletteTable {
 }
 
 /// Current [`PaletteTable::version`].
-pub const PALETTE_VERSION: u32 = 1;
+pub const PALETTE_VERSION: u32 = 2;
+
+/// The vendored appearance of every block the pinned version has, derived by
+/// [`Deriver`] from the pinned client jar at [`DEFAULT_BIOME`].
+///
+/// The jar is EULA-bound and is never committed, so a creator who has not
+/// installed one — and every CI runner — has no assets to derive from. What is
+/// committed is this derivation's output, exactly as the shape-carrying
+/// property table and the font metrics are committed (`crates/delvec/data/`,
+/// `PROVENANCE.md`). It is what lets the CPU draft rasteriser
+/// ([`crate::compiler::snapshot`]) paint what the GPU path paints without
+/// holding a second opinion about what a block looks like: one derivation, one
+/// jar, two consumers.
+///
+/// Keyed by bare block id (`minecraft:stone`), since the table stands for a
+/// block at its default state; a caller holding a full blockstate string and a
+/// jar should derive that state instead.
+const PINNED_APPEARANCE_JSON: &str = include_str!("../../../data/block-appearance-1.21.11.json");
+
+impl PaletteTable {
+    /// [`PINNED_APPEARANCE_JSON`], parsed once per process.
+    pub fn pinned() -> &'static PaletteTable {
+        static TABLE: std::sync::OnceLock<PaletteTable> = std::sync::OnceLock::new();
+        TABLE.get_or_init(|| {
+            serde_json::from_str(PINNED_APPEARANCE_JSON)
+                .expect("the vendored block appearance table is valid JSON")
+        })
+    }
+}
 
 impl PaletteTable {
     /// Derive a table for a set of blockstate strings. Air-like states are
@@ -796,6 +927,7 @@ impl PaletteTable {
         PaletteTable {
             version: PALETTE_VERSION,
             biome: deriver.biome().to_string(),
+            mc_version: deriver.declared_version(),
             entries,
             unresolved,
         }
@@ -967,6 +1099,7 @@ mod tests {
             rgb: [1, 2, 3],
             coverage: 255,
             shape: [0, 0, 0, 16, 16, 16],
+            roughness: 0,
         };
         assert!(solid.is_opaque_cube());
         let slab = Appearance {

@@ -1232,6 +1232,7 @@ fn run_snapshot(
     );
     let blocks = assembled.blocks;
     let grid = snapshot::VoxelGrid::build(&blocks);
+    snapshot::report_unpainted(&grid);
     let assembled_ms = started.elapsed().as_secs_f64() * 1000.0;
 
     let cam = match resolve_camera(&plan, &prefabs, &grid, &world, &args) {
@@ -1398,6 +1399,7 @@ fn run_cameras_preview(
         Err(code) => return ExitCode::from(code),
     };
     let grid = snapshot::VoxelGrid::build(&assembled.blocks);
+    snapshot::report_unpainted(&grid);
     if let Err(e) = std::fs::create_dir_all(out) {
         eprintln!("internal error: mkdir {}: {e}", out.display());
         return ExitCode::from(EXIT_INTERNAL);
@@ -2486,6 +2488,7 @@ fn run_edit(
     // One snapshot per batch: frame the batch's edited region over the FINAL
     // edited world (a dollhouse view pulled into open air, like `--at`).
     let grid = snapshot::VoxelGrid::build(&replay.assembled.blocks);
+    snapshot::report_unpainted(&grid);
     let targets = snapshot::collect_targets(&plan);
     // The solved layout, hoisted out of the per-batch loop: it is a property of
     // the plan, identical in every batch's manifest.

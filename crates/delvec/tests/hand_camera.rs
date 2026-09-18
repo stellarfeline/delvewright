@@ -656,3 +656,94 @@ fn a_hand_row_builds_byte_identically() {
         "the record is a hashed build input: {inputs}"
     );
 }
+
+/// **The record's field list in `compiler.md` is held to the reader's own
+/// structs**, in both directions.
+///
+/// That paragraph is what a creator writing `design/cameras.json` by hand reads,
+/// and it omitted the top-level `campaign_id` — which the reader requires, and
+/// without which it refuses `DW0721`. Nothing caught it: `delvec schema` covers
+/// the stage documents and this record is deliberately not one, `check-dw-codes`
+/// binds codes rather than fields, and no gate in the tree held a prose field
+/// list to a struct. This is that gate, and it lives here rather than in
+/// `tools/ci/` because the fields come out of serde — asking Rust, not parsing
+/// it.
+#[test]
+fn the_record_s_documented_fields_are_the_reader_s_fields() {
+    use delvec::compiler::view::camera;
+
+    // Serialised through the reader's own structs, so these keys are the
+    // structs' and not this literal's.
+    let sheet = camera::parse_sheet(
+        br#"{"campaign_id":"c","cameras":[{"answers":"concept/a","exposure":1.0,
+            "fov":70.0,"height":900,"name":"one","pitch":0.0,"pos":[0.5,70.0,0.5],
+            "source":"estimated","spp":300,"width":1600,"yaw":0.0}]}"#,
+    )
+    .expect("the literal is a record");
+    let value = serde_json::to_value(&sheet).unwrap();
+    let mut fields: Vec<String> = value.as_object().unwrap().keys().cloned().collect();
+    fields.extend(
+        value["cameras"][0]
+            .as_object()
+            .unwrap()
+            .keys()
+            .cloned()
+            .collect::<Vec<String>>(),
+    );
+    fields.sort();
+    fields.dedup();
+
+    let md = std::fs::read_to_string(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../docs/reference/compiler.md"),
+    )
+    .expect("the reference page");
+    let head = "At the top level, both";
+    let tail = "Keys are alphabetical";
+    let from = md.find(head).expect("the record's field paragraph");
+    let to = md[from..].find(tail).expect("the paragraph's end") + from;
+    let para = &md[from..to];
+
+    // Forward: every field the reader has is named.
+    let missing: Vec<&String> = fields
+        .iter()
+        .filter(|f| !para.contains(&format!("`{f}`")))
+        .collect();
+    assert!(
+        missing.is_empty(),
+        "`docs/reference/compiler.md` does not name {} of the record's {} field(s): {:?}. A \
+         creator writing the record by hand reads that paragraph and nothing else.",
+        missing.len(),
+        fields.len(),
+        missing
+    );
+
+    // Backward: every bare identifier it backticks is a field — except the two
+    // values of `source`, which are named where the field is.
+    const VALUES: &[&str] = &["estimated", "hand"];
+    let mut named = 0usize;
+    for token in para.split('`').skip(1).step_by(2) {
+        if token.is_empty()
+            || !token
+                .chars()
+                .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
+        {
+            continue;
+        }
+        if VALUES.contains(&token) {
+            continue;
+        }
+        assert!(
+            fields.iter().any(|f| f == token),
+            "`docs/reference/compiler.md` names `{token}` as a field of the camera record; the \
+             reader has {fields:?}"
+        );
+        named += 1;
+    }
+    eprintln!(
+        "camera record fields binding: {} field(s) on the reader's structs, {named} backticked \
+         mention(s) in the documented paragraph",
+        fields.len()
+    );
+    assert_eq!(fields.len(), 13, "the record's fields");
+    assert!(named >= fields.len(), "every field named at least once");
+}
