@@ -635,7 +635,7 @@ fn every_compiler_removal_strips_declared_loot_first() {
     );
     assert!(
         unstripped.is_empty(),
-        "{} of {} removal(s) of a loot-bearing body run a bare `kill`, which yields the \
+        "{} of {} removal(s) of a loot-bearing body have no strip before them, so the sweep's or the bare `kill` yields the \
          declared drop to nobody's kill:\n{}",
         unstripped.len(),
         unstripped.len() + bound.len(),
