@@ -253,17 +253,21 @@ climb, a wall to fly over) rather than a declaration. The hall's one vertical
 route is the mezzanine's broken flight, and no body walks it — the climb is a
 player's, so it settles nothing about a declared locomotion.
 
-**A wave nothing fires still gets its kill advancement.** All of a wave's
+**A wave nothing fires still got its kill advancement.** All of a wave's
 machinery — `spawn_<wave>`, the census probe, the brand, the kill reward — is
 gated on the wave resolving a spawn AREA, which it does only through an effect
-that fires it. `advancement/k_<wave>.json` is not: it is emitted for every
-declared wave, and its `rewards.function` names the `k_reward_<wave>` a wave
+that fires it. `advancement/k_<wave>.json` was not: it was emitted for every
+declared wave, and its `rewards.function` named the `k_reward_<wave>` a wave
 nothing fires never gets. *Attribution:* the gallery's `wave/edge` was declared
 and fired by nothing, and the build shipped `k_edge.json` pointing at a
 function that was not in the pack; arming the wave produced the function and
-five more beside it. *State:* not fixed. The gallery no longer holds the shape,
-which is why arming `wave/edge` rather than deleting it was the fix — the
-element now exercises `WaveSummon::aggro-edge` instead of merely naming it.
+five more beside it. *State:* fixed. `DW0497` reads an advancement's reward as
+a call site, and `k_<wave>` is emitted behind the same gate as its reward;
+`call_graph_integrity`'s `every_reward_names_a_function_that_exists` builds a
+wave nothing seats and asserts no kill advancement ships for it. The gallery no
+longer holds the shape, which is why arming `wave/edge` rather than deleting it
+was the fix — the element now exercises `WaveSummon::aggro-edge` instead of
+merely naming it.
 
 None of the four was found by reading code. Each was found by trying to write the
 surface down.

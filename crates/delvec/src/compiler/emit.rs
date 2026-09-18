@@ -1674,7 +1674,7 @@ pub fn build_with_warnings(
     }
 
     // advancements
-    for (name, value) in emit_advancements(plan, &chrome) {
+    for (name, value) in emit_advancements(plan, &chrome, &wave_placements) {
         insert_unique(
             &mut out,
             format!("datapack/data/{ns}/advancement/{name}.json"),
@@ -13488,7 +13488,11 @@ fn emit_drop_loot_tables(plan: &Plan) -> Vec<(String, Value)> {
     out
 }
 
-fn emit_advancements(plan: &Plan, chrome: &delvewright_dsl::Chrome) -> Vec<(String, Value)> {
+fn emit_advancements(
+    plan: &Plan,
+    chrome: &delvewright_dsl::Chrome,
+    wave_placements: &WavePlacements,
+) -> Vec<(String, Value)> {
     let ns = &plan.namespace;
     let c = plan.campaign;
     let mut advs = Vec::new();
@@ -13677,7 +13681,14 @@ fn emit_advancements(plan: &Plan, chrome: &delvewright_dsl::Chrome) -> Vec<(Stri
             }
         }
     }
+    // One kill advancement per wave that has kill machinery — the same gate
+    // `k_reward_<wave>` is emitted behind. A wave no beat seats resolves no
+    // spawn area and gets no reward function, so an advancement for it would
+    // name a function the pack never had (`DW0497` reads advancement rewards).
     for w in &c.quests.content.waves {
+        if !wave_placements.contains_key(w.id.as_str()) {
+            continue;
+        }
         let tag = plan::wave_tag(w.id.as_str());
         advs.push((
             format!("k_{}", plan::safe_local(w.id.as_str())),
