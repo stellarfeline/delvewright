@@ -315,9 +315,7 @@ export function jumpForCrit(opts: {
  * What a fight's hands did — so a log reader can see whether the bot fenced or
  * flailed. `swings` and `guards` (times the shield went up) are the bot's own
  * inputs. `landed` and `noDamage` are the server's verdict on each swing, read
- * off the sound vanilla plays at the attacker for it (`entity.player.attack.*`:
- * `nodamage` when the target took nothing — hurt immunity, or no damage at all —
- * any other when it was hurt). `crits` is the server's critical-hit animation
+ * off the sound vanilla plays at the attacker for it (`swingVerdict`). `crits` is the server's critical-hit animation
  * on the target;
  * `shieldDisabled` is the server putting the shield on cooldown (`set_cooldown`
  * for `minecraft:shield`, what an axe blow on a raised shield does);
@@ -353,21 +351,40 @@ export function describeTally(t: MeleeTally): string {
 }
 
 /**
- * The server's verdict on a player's swing, from the sound it plays at the
- * attacker: `landed` for every `entity.player.attack.*` sound that follows a
- * hurt target, `nodamage` for the one that follows a swing that hurt nothing,
- * `undefined` for any other sound.
+ * The server's verdict on a player's swing, keyed by the protocol id of the
+ * sound it plays at the attacker, in the pinned 1.21.11 `minecraft:sound_event`
+ * registry (the server jar's own registry report): `entity.player.attack.crit`
+ * 1241, `.knockback` 1242, `.nodamage` 1243, `.strong` 1244, `.sweep` 1245,
+ * `.weak` 1246. `nodamage` follows a swing that hurt nothing; every other one
+ * follows a hurt target.
+ *
+ * By id, never by the name mineflayer attaches: minecraft-data files every
+ * 1.21.11 sound one id late (it has `entity.player.attack.strong` at 1245), and
+ * minecraft-protocol already takes the holder's +1 off, so mineflayer's
+ * `soundEffectHeard` names each sound after the one registered before it — a
+ * sweep arrives called `strong`, a strong hit called `nodamage`.
+ * `test/melee.test.ts` pins that offset, so a data fix fails a test rather than
+ * silently re-labelling the tally.
  */
-export function swingVerdict(sound: string): "landed" | "nodamage" | undefined {
-  const bare = sound.replace(/^minecraft:/, "");
-  if (bare === "entity.player.attack.nodamage") return "nodamage";
-  if (/^entity\.player\.attack\.(strong|weak|crit|knockback|sweep)$/.test(bare)) return "landed";
-  return undefined;
+export const ATTACK_SOUND_VERDICT: ReadonlyMap<number, "landed" | "nodamage"> = new Map([
+  [1241, "landed"],
+  [1242, "landed"],
+  [1243, "nodamage"],
+  [1244, "landed"],
+  [1245, "landed"],
+  [1246, "landed"],
+]);
+
+/** The verdict for a `sound_effect` packet's registry id, `undefined` for any
+ * sound that is not a player's attack. */
+export function swingVerdict(soundId: number): "landed" | "nodamage" | undefined {
+  return ATTACK_SOUND_VERDICT.get(soundId);
 }
 
 /** How near the bot (blocks) an attack sound must play to be the bot's own swing —
- * vanilla plays it at the attacker. */
-export const OWN_SWING_RADIUS = 1.5;
+ * vanilla plays it at the attacker, which is the bot's server-side position,
+ * up to a jump and a step away from where the client last put it. */
+export const OWN_SWING_RADIUS = 3;
 
 /** The cooldown group vanilla puts a disabled shield in. */
 export const SHIELD_COOLDOWN_GROUP = "minecraft:shield";

@@ -1769,13 +1769,20 @@ export class MineflayerExecutor implements StepExecutor {
     bot.on("entityCriticalEffect", (entity: Entity) => {
       if (entity && entity.id === this.meleeTarget) this.melee.crits += 1;
     });
-    bot.on("soundEffectHeard", (name: string, at: { x: number; y: number; z: number }) => {
-      const me = bot.entity?.position;
-      if (!me || Math.hypot(at.x - me.x, at.y - me.y, at.z - me.z) > OWN_SWING_RADIUS) return;
-      const verdict = swingVerdict(name);
-      if (verdict === "landed") this.melee.landed += 1;
-      if (verdict === "nodamage") this.melee.noDamage += 1;
-    });
+    bot._client?.on(
+      "sound_effect",
+      (packet: { sound?: { soundId?: number }; x: number; y: number; z: number }) => {
+        const id = packet.sound?.soundId;
+        const me = bot.entity?.position;
+        if (id === undefined || !me) return;
+        // Fixed-point eighths of a block on the wire.
+        const d = Math.hypot(packet.x / 8 - me.x, packet.y / 8 - me.y, packet.z / 8 - me.z);
+        if (d > OWN_SWING_RADIUS) return;
+        const verdict = swingVerdict(id);
+        if (verdict === "landed") this.melee.landed += 1;
+        if (verdict === "nodamage") this.melee.noDamage += 1;
+      },
+    );
     bot._client?.on("set_cooldown", (packet: { cooldownGroup?: string; cooldownTicks?: number }) => {
       if (packet.cooldownGroup === SHIELD_COOLDOWN_GROUP && (packet.cooldownTicks ?? 0) > 0) {
         this.melee.shieldDisabled += 1;

@@ -196,11 +196,27 @@ test("the tally line names every count", () => {
   );
 });
 
-test("the server's attack sound is its verdict on the swing", () => {
-  assert.equal(swingVerdict("entity.player.attack.strong"), "landed");
-  assert.equal(swingVerdict("minecraft:entity.player.attack.crit"), "landed");
-  assert.equal(swingVerdict("entity.player.attack.knockback"), "landed");
-  assert.equal(swingVerdict("entity.player.attack.nodamage"), "nodamage");
-  assert.equal(swingVerdict("entity.player.hurt"), undefined);
-  assert.equal(swingVerdict("item.shield.block"), undefined);
+test("the server's attack sound is its verdict on the swing, by registry id", () => {
+  assert.equal(swingVerdict(1244), "landed"); // entity.player.attack.strong
+  assert.equal(swingVerdict(1241), "landed"); // .crit
+  assert.equal(swingVerdict(1245), "landed"); // .sweep
+  assert.equal(swingVerdict(1243), "nodamage");
+  assert.equal(swingVerdict(1247), undefined);
+  assert.equal(swingVerdict(1394), undefined); // item.shield.block
+});
+
+test("minecraft-data files 1.21.11 sounds one id after the server's registry", () => {
+  // The pinned server's registry report puts entity.player.attack.crit at 1241 and
+  // .weak at 1246; minecraft-data has each one id later. mineflayer's
+  // `soundEffectHeard` looks the (already un-offset) packet id up in this table, so
+  // every name it reports is the previous sound's. If this starts failing, the data
+  // was fixed: re-derive ATTACK_SOUND_VERDICT rather than trusting either side.
+  const sounds = require("minecraft-data/minecraft-data/data/pc/1.21.11/sounds.json") as Array<{
+    id: number;
+    name: string;
+  }>;
+  const byId = new Map(sounds.map((s) => [s.id, s.name]));
+  assert.equal(byId.get(1241 + 1), "entity.player.attack.crit");
+  assert.equal(byId.get(1244 + 1), "entity.player.attack.strong");
+  assert.equal(byId.get(1246 + 1), "entity.player.attack.weak");
 });
