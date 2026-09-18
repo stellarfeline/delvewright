@@ -72,7 +72,7 @@ fn quests_doc() -> String {
 }
 
 /// The same quests doc, with the keeper also **despawned** when the quest ends —
-/// the shape that makes the compiler emit the `v04_despawn` PackTest.
+/// the shape that makes the compiler emit the `v04_despawn_<npc>` PackTest.
 fn quests_doc_with_despawn() -> String {
     quests_doc().replace(
         r#""on_complete": [ { "type": "campaign-complete" } ]"#,
@@ -134,7 +134,7 @@ fn file(out: &BuildOutput, path: &str) -> Option<String> {
 
 const SETUP_FINISH: &str = "datapack/data/hello-world/function/setup_finish.mcfunction";
 const SPAWN_NPC: &str = "datapack/data/hello-world/function/spawn_npc_keeper.mcfunction";
-const V04_DESPAWN: &str = "packtest-datapack/data/hello-world/test/v04_despawn.mcfunction";
+const V04_DESPAWN: &str = "packtest-datapack/data/hello-world/test/v04_despawn_keeper.mcfunction";
 
 /// A **deferred** NPC is absent from world init and enters only via `spawn-npc`:
 /// no summon in `setup_finish`, a generated `spawn_npc_<id>` carrying the body +
@@ -240,7 +240,7 @@ fn a_campaign_with_no_spawn_npc_emits_no_entrance() {
     );
 }
 
-/// The `v04_despawn` PackTest must stay true when its target NPC is `deferred`.
+/// The `v04_despawn_<npc>` PackTest must stay true when its target NPC is `deferred`.
 /// A deferred NPC is absent after `setup_finish`, so the unmodified test asserted
 /// `#before == 2` against an empty world and failed. The test now fires the NPC's
 /// generated entrance first — the presence and removal assertions are unchanged,
@@ -279,7 +279,7 @@ fn despawn_packtest_unchanged_for_a_non_deferred_target() {
 
     let t = file(&out, V04_DESPAWN).expect("v04_despawn emitted for a despawn-npc campaign");
     assert!(
-        !t.contains("spawn_npc_"),
+        !t.contains("function hello-world:spawn_npc_"),
         "no entrance call belongs in the test when the target is not deferred:\n{t}"
     );
     assert!(
