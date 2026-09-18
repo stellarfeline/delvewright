@@ -552,6 +552,98 @@ fn departs_then_arrives_then_acts_is_clean() {
     );
 }
 
+// --- the derived subject (spec-0071 §3) ------------------------------------
+
+/// The hold branch's gate is **sealed** by an effect that states no
+/// `happening.subject`, and the party walks out through it two beats later. The
+/// clash is visible only because the seal's subject is the gate it names: the id
+/// is two keys to the left of the `happening` and a creator who typed it again
+/// would be typing a derivation.
+#[test]
+fn a_seal_with_no_stated_subject_is_still_about_its_gate() {
+    let d = find(branch::check_branches(&derived_subject_fixture()), "DW0485");
+    assert!(d.message.contains("after it is sealed"), "{}", d.message);
+    assert!(d.message.contains("anchor/door"), "{}", d.message);
+}
+
+/// The fixture the §3 tests share: one `close-gate` whose beat names no subject,
+/// and a later beat that walks through the same gate.
+fn derived_subject_fixture() -> Campaign {
+    campaign_with(|_, quests, _| {
+        quest(quests, "quest/hold")["on_objective_complete"]["obj/watch"][0] = serde_json::json!({
+            "type": "close-gate",
+            "anchor": "anchor/door",
+            "happening": {
+                "verb": "seals",
+                "text": "The Keeper drops the bar across the gate for good."
+            }
+        });
+        quest(quests, "quest/hold")["objectives"][1]["happening"] = serde_json::json!({
+            "verb": "departs",
+            "text": "The party walks out through the gate.",
+            "subject": "anchor/door"
+        });
+    })
+}
+
+/// **The perturbation only this rule can catch.** The same realized branch, with
+/// the derived subject taken back out of the chronicle line that carries it, and
+/// nothing else changed: the contradiction disappears. What makes `DW0485` see
+/// this clash is the derivation and not the fixture.
+#[test]
+fn without_the_derived_subject_the_same_branch_is_silent() {
+    let c = derived_subject_fixture();
+    let mut realized = branch::realize(&c);
+    let mut stripped = 0usize;
+    for r in &mut realized {
+        for line in &mut r.chronicle {
+            // The seal states no subject of its own — the document is right
+            // there in the fixture above — so this is exactly the derivation.
+            if line.verb == delvewright_dsl::HappeningVerb::Seals && line.subject.is_some() {
+                line.subject = None;
+                stripped += 1;
+            }
+        }
+    }
+    assert!(stripped > 0, "the perturbation bound to something");
+    let mut d = Vec::new();
+    for r in &realized {
+        branch::check_contradictions(r, &mut d);
+    }
+    assert!(
+        d.is_empty(),
+        "with the subject un-derived the proof has nothing to reason over: {d:#?}"
+    );
+}
+
+/// A stated subject wins over the effect's own object: the caller knows more.
+/// Here the seal is about the Keeper, not about the gate he bars, so the party's
+/// walk out through the gate is no contradiction at all.
+#[test]
+fn a_stated_subject_beats_the_effect_s_own_object() {
+    let c = campaign_with(|_, quests, _| {
+        quest(quests, "quest/hold")["on_objective_complete"]["obj/watch"][0] = serde_json::json!({
+            "type": "close-gate",
+            "anchor": "anchor/door",
+            "happening": {
+                "verb": "seals",
+                "text": "The Keeper shuts himself in behind the bar.",
+                "subject": "npc/keeper"
+            }
+        });
+        quest(quests, "quest/hold")["objectives"][1]["happening"] = serde_json::json!({
+            "verb": "departs",
+            "text": "The party walks out through the gate.",
+            "subject": "anchor/door"
+        });
+    });
+    assert!(
+        !codes(&c).contains(&"DW0485".to_string()),
+        "{:#?}",
+        branch::check_branches(&c)
+    );
+}
+
 // --- the artifacts ---------------------------------------------------------
 
 // --- artifacts -------------------------------------------------------------

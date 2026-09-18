@@ -466,7 +466,6 @@
           {
             "anchor": "anchor/gate-main",
             "happening": {
-              "subject": "anchor/gate-main",
               "text": "The main gate goes up.",
               "verb": "opens"
             },
@@ -518,7 +517,6 @@
           },
           {
             "happening": {
-              "subject": "npc/marshal",
               "text": "The Marshal takes the far hall.",
               "verb": "arrives"
             },
@@ -1496,7 +1494,6 @@
             {
               "anchor": "anchor/gate-main",
               "happening": {
-                "subject": "anchor/gate-main",
                 "text": "The main gate comes down again.",
                 "verb": "seals"
               },
@@ -2033,7 +2030,6 @@
             {
               "actor": "actor/rafter-spider",
               "happening": {
-                "subject": "actor/rafter-spider",
                 "text": "The spider is put down where it landed.",
                 "verb": "dies"
               },
@@ -2407,6 +2403,22 @@
           {
             "effects": [
               {
+                "text": "The Factor turns the key over once and puts it back. Four tokens, he says.",
+                "type": "narrate",
+                "when": {
+                  "forbids_flags": [
+                    "flag/hall-sealed"
+                  ],
+                  "requires_state": [
+                    {
+                      "op": "at-most",
+                      "state": "state/tokens",
+                      "value": 3
+                    }
+                  ]
+                }
+              },
+              {
                 "count": 1,
                 "item": "minecraft:iron_pickaxe",
                 "type": "give-item",
@@ -2419,13 +2431,35 @@
                       "op": "at-most",
                       "state": "state/labels-read",
                       "value": 9
+                    },
+                    {
+                      "op": "at-least",
+                      "state": "state/tokens",
+                      "value": 4
+                    }
+                  ]
+                }
+              },
+              {
+                "amount": -4,
+                "state": "state/tokens",
+                "type": "add-state",
+                "when": {
+                  "forbids_flags": [
+                    "flag/hall-sealed"
+                  ],
+                  "requires_state": [
+                    {
+                      "op": "at-least",
+                      "state": "state/tokens",
+                      "value": 4
                     }
                   ]
                 }
               }
             ],
-            "label": "A case key, four emeralds",
-            "tooltip": "The Factor keeps one spare."
+            "label": "A case key, four tokens",
+            "tooltip": "The Factor keeps one spare, and will not be talked down."
           },
           {
             "effects": [
@@ -3006,6 +3040,6 @@
       }
     ]
   },
-  "dsl_version": "0.29.0",
+  "dsl_version": "0.30.0",
   "stage": "quests"
 }

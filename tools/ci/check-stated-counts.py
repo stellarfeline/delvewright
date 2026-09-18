@@ -80,6 +80,7 @@ Deterministic, offline, stdlib-only. Exit 0 = pass, 1 = a finding.
 
 from __future__ import annotations
 
+import json
 import pathlib
 import re
 import sys
@@ -192,6 +193,7 @@ _GRAMMAR_MD = "docs/reference/grammar.md"
 _INDEX_SECTION = r"^## 2c\. "
 _COMPILER_MD = "docs/reference/compiler.md"
 _DW02XX_SECTION = r"^### DW02xx "
+_SNAPSHOT_SECTION = r"^### `delvec snapshot`"
 
 _PROGRAMS_RE = re.compile(
     r"pub const PROGRAMS: &\[LibraryProgram\] = &\[(?P<body>.*?)^\];", re.S | re.M
@@ -335,6 +337,25 @@ def oracle_emission_states(root: pathlib.Path) -> tuple[int, str]:
     return total, f"{_EMISSION_FIXTURE}, third column summed over {len(rows)} rows"
 
 
+
+_PREVIEW_TABLE = "crates/delvec/data/block-appearance-1.21.11.json"
+
+
+def oracle_preview_palette(root: pathlib.Path) -> tuple[int, str]:
+    """Blocks the CPU draft rasteriser can paint: the vendored table's own size."""
+    path = root / _PREVIEW_TABLE
+    if not path.exists():
+        raise SystemExit(
+            f"{_PREVIEW_TABLE} is missing, and compiler.md states how many blocks "
+            "the CPU draft rasteriser paints. Either it moved — update the "
+            "oracle — or the table the preview's colours come from is gone."
+        )
+    entries = json.loads(path.read_text(encoding="utf-8")).get("entries") or {}
+    if not entries:
+        raise SystemExit(f"{_PREVIEW_TABLE} holds no entry — it was truncated.")
+    return len(entries), f"{_PREVIEW_TABLE}, {len(entries)} entries"
+
+
 #: id -> (what the number counts, how to compute it, how prose states it).
 #: A phrasing is `(regex capturing one number, offset)`; the captured number is
 #: expected to equal the oracle plus the offset.
@@ -383,6 +404,14 @@ ORACLES: dict[str, dict] = {
             (r"\*{0,2}([\d,]+)\*{0,2}\s+blockstates\b", 0),
         ],
     },
+    "preview-palette-blocks": {
+        "describe": "blocks the vendored preview colour table paints",
+        "compute": oracle_preview_palette,
+        "phrasings": [
+            (r"\*{0,2}([\d,]+)\*{0,2} of [\d,]+ non-air blocks resolve\b", 0),
+            (r"\b[\d,]+ of \*{0,2}([\d,]+)\*{0,2} non-air blocks resolve\b", 0),
+        ],
+    },
 }
 
 #: The pages that state those counts. `section` narrows the search to one region
@@ -405,6 +434,10 @@ SITES: list[dict] = [
     # bind sentences about some other table on a 4000-line page.
     {"oracle": "emission-fixture-rows", "path": _COMPILER_MD, "section": _DW02XX_SECTION},
     {"oracle": "emission-fixture-states", "path": _COMPILER_MD, "section": _DW02XX_SECTION},
+    # The vendored preview colour table's own size, scoped to the snapshot
+    # section: the number moves at a pin bump, and the page that tells a
+    # creator what the draft can paint must move with it.
+    {"oracle": "preview-palette-blocks", "path": _COMPILER_MD, "section": _SNAPSHOT_SECTION},
 ]
 
 
