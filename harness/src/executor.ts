@@ -4220,8 +4220,8 @@ export class MineflayerExecutor implements StepExecutor {
       // Swings landed on each body this step, so a body can be held to the budget
       // its own kind was given. Counting SWINGS rather than seconds is the
       // compiler's own choice of unit for this arithmetic: swing damage is
-      // Mojang's item data, while timing depends on charge discipline nothing
-      // here models.
+      // Mojang's item data, and every swing counted here is a full-charge one
+      // (`strike`), while the seconds between them depend on footwork.
       const swings = new Map<number, number>();
       // The wave's own census: every "the fight is over" test below is
       // a guess made from SHAPES, and the server can simply be asked. See
