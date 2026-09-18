@@ -4200,11 +4200,11 @@ impl Facing {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "kebab-case")]
 pub enum DespawnStyle {
-    /// Silent removal (`kill @e` with no death animation is not possible; the
-    /// compiler removes the entity via `/kill` on an `Invulnerable` puppet, or a
-    /// data-driven removal — see the emitter — so no death particles/sound show).
+    /// The body leaves unseen: no death animation, red flash or death particles
+    /// where it stood. It is moved under the world and removed there.
     Vanish,
-    /// Plays the vanilla death animation (a cutscene death).
+    /// The body dies where it stands, with the vanilla death animation (a death
+    /// the player is meant to watch).
     Kill,
 }
 
@@ -4701,7 +4701,8 @@ pub enum Verb {
         /// (`spatial_contract.edges[].way.region`).
         way: String,
     },
-    /// Despawns an NPC and its interaction hitbox (DSL v0.4, spec-0008 §5).
+    /// Despawns an NPC and its interaction hitbox (DSL v0.4, spec-0008 §5). The
+    /// NPC leaves unseen: no death animation, red flash or death particles.
     DespawnNpc {
         /// The NPC (stage-2 ref) to remove.
         npc: NpcId,

@@ -1,18 +1,15 @@
-// Scripted-teardown death classification (2026-08-06 island triage). The
-// compiler's despawn-actor `style: vanish` idiom (crates/delvec/src/compiler/emit.rs,
-// `emit_despawn_actor`) relocates an actor far below the floor and then kills
-// it — `execute as … at @s run tp @s ~ -128 ~` followed by `kill` — so the
-// server broadcasts the SAME "<name> died" line a real combat loss would. The
-// message carries no signal that this was staging, not a fight: the island
-// run's report surfaced five such named-entity deaths with no way to tell which
-// were the two scripted vanishes and which were the three real losses. It cost
-// a triage cycle.
+// Scripted-teardown death classification. Every removal the story makes that
+// is not a death on screen (crates/delvec/src/compiler/emit.rs,
+// `removal_lines` with `Exit::Unseen`: a `despawn-npc`, a `despawn-actor`
+// `vanish`, the puppet an `unleash` replaces, a bonfire re-seat) moves the body
+// to the ABSOLUTE Y -128 down its own column — `execute as … at @s run tp @s
+// ~ -128 ~` — and kills it there a few ticks later, so the server broadcasts the
+// SAME "<name> died" line a real combat loss would. The message carries no
+// signal that this was staging, not a fight.
 //
 // The distinguishing fact is depth: a real death happens somewhere in the
-// playable map; a scripted vanish happens far below it, at a Y nothing in the
-// delve's story ever visits. Classify on Y, not on cause text — the compiler
-// deliberately reuses the ordinary damage path so the vanish reads as an
-// ordinary death on purpose (that is the whole point of the idiom).
+// playable map; a scripted removal happens below the world's floor, at a Y
+// nothing in the delve's story ever visits. Classify on Y, not on cause text.
 //
 // This module is pure (no mineflayer import) so the classifier is unit-testable
 // with fake positions; wiring it to a real death's observed Y lives in
@@ -26,23 +23,14 @@ export type DeathKind = "scripted_teardown" | "combat";
  * teardown, never a real loss.
  *
  * Derived from the delve's own floor when the run context carries one:
- * `worldMinY - 64` sits clear of the compiler's own relocation without
- * hardcoding it — that relocation is `emit_despawn_actor`'s implementation
- * detail (currently 128 blocks, and RELATIVE to each actor's own Y — `execute
- * as … at @s run tp @s ~ -128 ~`, not anchored to `worldMinY`), not a property
- * of the world this classifier should depend on.
+ * `worldMinY - 64` is the compiler's own relocation Y on the overworld's floor
+ * (`-64 - 64 = -128`), and a removed body dies there.
  *
  * The harness has no wired source for a delve's `min_y` today — nothing in
  * `critical-path.json` or the run environment carries it (see
  * docs/reference/tools.md) — so absent one this falls back to a fixed
- * `y <= -100` heuristic. KNOWN LIMITATION: because the compiler's relocation is
- * relative to the actor's own Y rather than anchored to the world floor, an
- * actor staged above y≈28 vanishes to a depth SHALLOWER than -100 and this
- * heuristic under-classifies it as `combat`. The island's own vanishes (actors
- * at y≈-55) landed at -128, well past the cutoff — the heuristic is sound for
- * a below-ground box-garden delve, the case it was built for; a min_y-derived
- * threshold is the correct fix for a delve staged nearer the surface, which is
- * exactly why this function accepts one.
+ * `y <= -100`, which every unseen removal passes: the relocation Y is absolute
+ * (`~ -128 ~` keeps only X and Z relative), whatever height the body stood at.
  */
 export function scriptedTeardownThreshold(worldMinY?: number): number {
   return worldMinY !== undefined ? worldMinY - 64 : -100;

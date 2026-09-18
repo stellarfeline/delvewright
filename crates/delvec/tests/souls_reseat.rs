@@ -186,6 +186,21 @@ fn all_functions(out: &BuildOutput) -> String {
     s
 }
 
+/// The unseen removal of every body carrying `tag` — the lines
+/// `emit::removal_lines` writes for a re-seat, spelled out.
+fn unseen_removal(tag: &str) -> Vec<String> {
+    vec![
+        format!(
+            "execute if entity @e[tag={tag}] run schedule function {NS}:unseen_sweep 5t replace"
+        ),
+        format!("execute as @e[tag={tag}] on passengers run ride @s dismount"),
+        format!("execute as @e[tag={tag}] at @s run tp @s ~ -128 ~"),
+        format!(
+            "execute as @e[tag={tag}] run data merge entity @s {{Tags:[\"dw_unseen\"],NoGravity:1b,NoAI:1b,Silent:1b}}"
+        ),
+    ]
+}
+
 // ---------------------------------------------------------------------------
 // 1. the actor elite — the barrow-warden regression
 // ---------------------------------------------------------------------------
@@ -219,12 +234,14 @@ fn the_elite_is_deleted_and_resummoned_at_its_origin_anchor() {
     let out = build(&fixture_campaign(true));
     let restand = func(&out, &format!("actor_restand_{ELITE_SAFE}"));
     let mut ls = restand.lines().filter(|l| !l.trim().is_empty());
-    assert_eq!(
-        ls.next().unwrap(),
-        format!("kill @e[tag=dw_actor_{ELITE_SAFE}]"),
-        "the wounded body is REMOVED first — never topped up:\n{restand}"
-    );
-    let summon = ls.next().expect("a summon follows the kill");
+    for want in unseen_removal(&format!("dw_actor_{ELITE_SAFE}")) {
+        assert_eq!(
+            ls.next().unwrap(),
+            want,
+            "the wounded body is REMOVED first, unseen — never topped up:\n{restand}"
+        );
+    }
+    let summon = ls.next().expect("a summon follows the removal");
     assert!(
         summon.starts_with("summon minecraft:wither_skeleton "),
         "a fresh body of the actor's own species is summoned:\n{restand}"
@@ -336,15 +353,15 @@ fn an_undefeated_boss_wave_is_reseated_on_its_own_bodies() {
         );
     }
     let reseat = func(&out, "wave_reseat_ambush");
+    let mut want = unseen_removal("dw_wave_ambush");
+    want.push(format!("function {NS}:spawn_ambush"));
     assert_eq!(
         reseat
             .lines()
             .filter(|l| !l.trim().is_empty())
+            .map(str::to_string)
             .collect::<Vec<_>>(),
-        vec![
-            "kill @e[tag=dw_wave_ambush]".to_string(),
-            format!("function {NS}:spawn_ambush"),
-        ],
+        want,
         "the refresh is the authored wave, re-seated whole:\n{reseat}"
     );
 }
@@ -532,10 +549,12 @@ fn selector_tags(line: &str) -> Vec<String> {
 }
 
 /// **The general form**: a declared drop is what a PLAYER's kill yields. Every
-/// `kill` the shipped datapack runs whose selector can reach a loot-bearing body
-/// must be preceded, in the same function, by the strip for that same tag —
-/// vanilla `/kill` is an ordinary death, and a preserved slot or a death loot
-/// table rolls whoever the killer was.
+/// removal the shipped datapack makes of a loot-bearing body must be preceded,
+/// in the same function, by the strip for that same tag — vanilla `/kill` is an
+/// ordinary death, and a preserved slot or a death loot table rolls whoever the
+/// killer was. A removal is a `kill` whose selector reaches the body, or the
+/// retag to `dw_unseen` that hands it to `unseen_sweep`'s `kill` under the world
+/// (after that retag no selector naming its own tag can reach it again).
 ///
 /// The playtest this exists for: a rest re-seated an undefeated billed elite
 /// (`wave_reseat_<wave>`) with a bare `kill`, and the party picked the elite's
@@ -578,7 +597,8 @@ fn every_compiler_removal_strips_declared_loot_first() {
                 continue;
             }
             let is_kill = line.starts_with("kill ") || line.contains(" run kill ");
-            if !is_kill {
+            let is_unseen_exit = line.contains("run data merge entity @s {Tags:[\"dw_unseen\"]");
+            if !is_kill && !is_unseen_exit {
                 continue;
             }
             for t in selector_tags(line).into_iter().filter(|t| loot.contains(t)) {
@@ -622,9 +642,9 @@ fn every_compiler_removal_strips_declared_loot_first() {
         );
     }
     assert!(
-        bound
-            .iter()
-            .any(|b| b.contains(&format!("kill @e[tag=dw_actor_{SCENERY_SAFE}]"))),
+        bound.iter().any(|b| b.contains(&format!(
+            "@e[tag=dw_actor_{SCENERY_SAFE}] run data merge entity @s {{Tags:[\"dw_unseen\"]"
+        ))),
         "the scan reached the `despawn-actor` (bound {}):\n{}",
         bound.len(),
         bound.join("\n")
@@ -633,9 +653,10 @@ fn every_compiler_removal_strips_declared_loot_first() {
 
 /// The runtime half ships as a generated PackTest: every drop-declaring body a
 /// rest re-seats is met, dragged onto the party, unleashed and rested through
-/// the REAL functions, and no item may lie at the party's feet after either —
-/// then a bare `kill` of each fresh body must yield one, so the zero is a
-/// measurement and not an empty room. Absent when no re-seated body declares a
+/// the REAL functions, each followed by the REAL `unseen_sweep`, and no item may
+/// lie where the removed bodies die (Y −128 in the party's column) after either
+/// — then a bare `kill` of each fresh body at that same place must yield one, so
+/// the zero is a measurement and not an empty room. Absent when no re-seated body declares a
 /// drop.
 #[test]
 fn the_removal_rule_ships_its_packtest() {
@@ -643,7 +664,7 @@ fn the_removal_rule_ships_its_packtest() {
     let t = packtest(&out, "souls_reseat_yields_nothing");
     for want in [
         format!("function {NS}:unleash_{ELITE_SAFE}"),
-        format!("function {NS}:bonfire_rest_0"),
+        format!("function {NS}:bonfire_rest_0\nfunction {NS}:unseen_sweep\n"),
         "assert score #u_rsyn dw.sys matches 0".to_string(),
         "assert score #r_rsyn dw.sys matches 0".to_string(),
     ] {
@@ -656,7 +677,9 @@ fn the_removal_rule_ships_its_packtest() {
     ] {
         assert!(
             t.contains(&format!(
-                "kill @e[tag={tag}]\nexecute at @a[tag=dw_rsyn,limit=1] store result score #p_rsyn"
+                "execute at @a[tag=dw_rsyn,limit=1] positioned ~ -128 ~ run tp @e[tag={tag}] ~ ~ ~\n\
+                 kill @e[tag={tag}]\n\
+                 execute at @a[tag=dw_rsyn,limit=1] positioned ~ -128 ~ store result score #p_rsyn"
             )),
             "each re-seated body `{tag}` owes its own non-vacuity control:\n{t}"
         );

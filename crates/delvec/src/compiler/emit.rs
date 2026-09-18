@@ -2791,9 +2791,9 @@ fn has_item_drop(drops: &[delvewright_dsl::MobDrop]) -> bool {
 /// Every removal the compiler performs itself — the `unleash` that swaps a
 /// puppet for its twin, a `despawn-actor` (either style), a bonfire's re-seat of
 /// a wave (`wave_reseat_<wave>`, both the `respawns_on_rest` and the undefeated
-/// billed kind) and of an unleashed actor (`actor_restand_<id>`) — goes through
-/// `/kill`, reached only through [`removal_lines`], and vanilla `/kill` is an
-/// ordinary death:
+/// billed kind) and of an unleashed actor (`actor_restand_<id>`) — is built by
+/// [`removal_lines`] and ends in `/kill`, in place or under the world for
+/// [`Exit::Unseen`], and vanilla `/kill` is an ordinary death:
 /// a preserved slot (chance > 1.0) drops **even when the killer is not a
 /// player**. Without this line an elite would shed its axe every time the story
 /// moved it, and a re-seat would turn the boss into a vending machine.
@@ -2815,20 +2815,93 @@ fn strip_drops_line(tag: &str) -> String {
     )
 }
 
-/// **The one way the compiler removes a body it placed**: every `kill` the
-/// datapack runs against a wave mob, an actor's puppet or an actor's twin is
-/// built here, so the strip in front of it cannot be forgotten at a new site.
+/// How a body the compiler removes leaves the scene.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Exit {
+    /// The body leaves where no player can see it go: no death animation, no
+    /// red flash, no death particles in the room. Every removal the story makes
+    /// that is not a death on screen — a `despawn-npc`, a `despawn-actor`
+    /// `vanish`, the puppet an `unleash` replaces, a bonfire's re-seat.
+    Unseen,
+    /// The body dies where it stands, with vanilla's death animation: a
+    /// `despawn-actor` the author wrote as `style: kill`, and nothing else.
+    OnScreen,
+}
+
+/// The tag an [`Exit::Unseen`] body carries, alone, from the moment it leaves
+/// until [`UNSEEN_SWEEP_FN`] removes it.
+const UNSEEN_TAG: &str = "dw_unseen";
+
+/// The function that removes every body waiting under [`UNSEEN_TAG`].
+const UNSEEN_SWEEP_FN: &str = "unseen_sweep";
+
+/// The Y an [`Exit::Unseen`] body is moved to, straight down its own column: the
+/// overworld's floor is `-64`, and vanilla's void damage starts below `-128`, so
+/// a body frozen here is under the world and takes no damage.
+const UNSEEN_Y: i32 = -128;
+
+/// Ticks between an [`Exit::Unseen`] body's departure and its removal. The
+/// server tells a client that a tracked entity moved within the entity type's
+/// update interval (at most 3 ticks for a living entity); the death that follows
+/// is sent only after that, so no client renders it where the body stood.
+const UNSEEN_DELAY_TICKS: u32 = 5;
+
+/// **The one way the compiler removes a body it placed.** Every removal of an
+/// NPC's body, an actor's puppet or twin, or a wave's mobs is built here, so a
+/// site cannot choose a removal that plays a death the story did not write, nor
+/// forget the strip in front of it.
+///
+/// [`Exit::OnScreen`] is vanilla `/kill` in place. [`Exit::Unseen`] composes
+/// intended primitives only: any passenger is set down (a rider is never carried
+/// out of the world), the body is moved straight down its own column to
+/// [`UNSEEN_Y`] and frozen there with every tag replaced by [`UNSEEN_TAG`] — so
+/// from that command on no selector the datapack writes can find it — and
+/// [`UNSEEN_SWEEP_FN`] kills it [`UNSEEN_DELAY_TICKS`] later, under the world.
+/// The sweep is scheduled with `replace`, and only when a body is really
+/// leaving, so every body waits at least the full delay. The move runs
+/// `execute as … at @s` because every path reaching a removal runs from the
+/// server source, where a bare `tp <targets> ~ Y ~` resolves `~ ~` at world
+/// spawn rather than down each body's own column.
 ///
 /// `declares_drops` is the body's own declaration ([`wave_declares_drops`],
-/// [`actor_declares_drops`]); a body that declares none carries no loot NBT the
-/// compiler wrote, and gets the bare `kill` alone.
-fn removal_lines(tag: &str, declares_drops: bool) -> Vec<String> {
+/// [`actor_declares_drops`]) and puts [`strip_drops_line`] first: a declared
+/// drop is what a player's kill yields, never a removal's, and the sweep's
+/// `/kill` under the world is still an ordinary death.
+fn removal_lines(ns: &str, tag: &str, declares_drops: bool, exit: Exit) -> Vec<String> {
     let mut out = Vec::new();
     if declares_drops {
         out.push(strip_drops_line(tag));
     }
-    out.push(format!("kill @e[tag={tag}]"));
+    match exit {
+        Exit::OnScreen => out.push(format!("kill @e[tag={tag}]")),
+        Exit::Unseen => {
+            out.push(format!(
+                "execute if entity @e[tag={tag}] run schedule function {ns}:{UNSEEN_SWEEP_FN} {UNSEEN_DELAY_TICKS}t replace"
+            ));
+            out.push(format!(
+                "execute as @e[tag={tag}] on passengers run ride @s dismount"
+            ));
+            out.push(format!(
+                "execute as @e[tag={tag}] at @s run tp @s ~ {UNSEEN_Y} ~"
+            ));
+            out.push(format!(
+                "execute as @e[tag={tag}] run data merge entity @s {{Tags:[\"{UNSEEN_TAG}\"],NoGravity:1b,NoAI:1b,Silent:1b}}"
+            ));
+        }
+    }
     out
+}
+
+/// The [`UNSEEN_SWEEP_FN`] function, emitted exactly when some function
+/// schedules it.
+fn unseen_sweep_fn(fns: &[(String, String)], ns: &str) -> Option<(String, String)> {
+    let call = format!("schedule function {ns}:{UNSEEN_SWEEP_FN} ");
+    fns.iter().any(|(_, body)| body.contains(&call)).then(|| {
+        (
+            UNSEEN_SWEEP_FN.to_string(),
+            lines(&[format!("kill @e[tag={UNSEEN_TAG}]")]),
+        )
+    })
 }
 
 /// Whether any mob of this wave declares a drop — the wave's bodies share one
@@ -4697,9 +4770,15 @@ fn emit_functions(
         // refresh), and for nothing else → byte-identical.
         if w.respawns_on_rest || plan.undefeated_reseat_waves().iter().any(|u| u.id == w.id) {
             let safe = plan::safe_local(w.id.as_str());
-            // A re-seat is not a kill the party earned: the standing bodies go
-            // through [`removal_lines`], which strips a declared drop first.
-            let mut reseat = removal_lines(&plan::wave_tag(w.id.as_str()), wave_declares_drops(w));
+            // The standing bodies leave unseen through [`removal_lines`]: a
+            // re-seat is a reset, not a death the party watches at the fire, and
+            // not a kill the party earned — a declared drop is stripped first.
+            let mut reseat = removal_lines(
+                ns,
+                &plan::wave_tag(w.id.as_str()),
+                wave_declares_drops(w),
+                Exit::Unseen,
+            );
             reseat.push(format!("function {ns}:spawn_{safe}"));
             fns.push((format!("wave_reseat_{safe}"), lines(&reseat)));
         }
@@ -4858,6 +4937,7 @@ fn emit_functions(
     // v0.4 generated functions: NPC moves, cutscene drivers, trigger effects.
     // Each is empty for a campaign that uses none (byte-identical v0.2/v0.3).
     fns.extend(spawn_npc_fns(plan));
+    fns.extend(despawn_npc_fns(plan));
     fns.extend(movenpc_fns(plan, moves));
     fns.extend(actor_fns(plan, actor_moves));
     fns.extend(sequence_fns(plan));
@@ -4873,6 +4953,11 @@ fn emit_functions(
     fns.extend(night_vision_fns(plan));
     // v0.8 seal answers. Empty for a campaign that seals no gate.
     fns.extend(seal_fns(plan, chrome));
+    // Last, over every function above: the sweep exists exactly when a removal
+    // schedules it.
+    if let Some(sweep) = unseen_sweep_fn(&fns, ns) {
+        fns.push(sweep);
+    }
 
     fns.sort_by(|a, b| a.0.cmp(&b.0));
     fns
@@ -5990,12 +6075,7 @@ fn emit_quest_effect(plan: &Plan, eff: &QuestEffect, aud: Audience, body: &mut V
             }
         }
         Verb::DespawnNpc { npc, .. } => {
-            // Removes both the body and the interaction hitbox — both carry the
-            // per-npc id tag (spec-0008 §5).
-            body.push(format!(
-                "kill @e[tag=dw_npc_{}]",
-                plan::safe_local(npc.as_str())
-            ));
+            body.push(format!("function {ns}:{}", despawn_npc_fn(npc.as_str())));
         }
         Verb::MoveNpc { npc, to, .. } => {
             body.push(format!(
@@ -6111,7 +6191,7 @@ fn emit_quest_effect(plan: &Plan, eff: &QuestEffect, aud: Audience, body: &mut V
                 .actors
                 .iter()
                 .any(|a| a.id.as_str() == actor.as_str() && actor_declares_drops(a));
-            emit_despawn_actor(actor.as_str(), *style, declares_drops, body);
+            emit_despawn_actor(ns, actor.as_str(), *style, declares_drops, body);
         }
         Verb::MoveActor { actor, to, .. } => {
             body.push(format!(
@@ -6225,42 +6305,25 @@ fn effect_give_command(
     format!("effect give {selector} {effect} {seconds} {amplifier} {hide_particles}")
 }
 
-/// Emit a `despawn-actor` inline (spec-0014). Both styles target the actor body tag
-/// `dw_actor_<id>` (so a puppet **or** an unleashed twin is removed — re-caging is
-/// despawn + spawn). `kill` plays the vanilla death animation in place; `vanish`
-/// relocates the (Silent) body far below the floor first, so the death sequence
-/// plays entirely out of the players' view — a silent removal from two intended
-/// primitives (tp + kill).
-///
-/// **The relocation must be per-actor** (round-8 island QA, caught on a live
-/// server). `tp <targets> ~ -128 ~` resolves `~ ~` against the **command source**,
-/// not against each target, and every path that reaches a `despawn-actor` — a
-/// `move-actor`'s `on_arrive`, a `sequence` step, a trigger bundle — runs from the
-/// server source, whose position is world spawn. So `vanish` dropped the body at
-/// (spawn.x, -128, spawn.z) rather than straight down its own column: the island's
-/// herdsman, standing at `6.5, -55.5`, died at `10.0, -128.0, 9.0`. Invisible today
-/// only because the `kill` lands on the very next line — but the intent of the
-/// style is "out of sight, in place", and an actor that briefly exists at another
-/// area's coordinates is wrong data, not a detail. `execute as … at @s` is the same
-/// idiom [`emit_play_sound`] uses to make `~ ~ ~` resolve per entity.
+/// Emit a `despawn-actor` inline (spec-0014). Both styles target the actor body
+/// tag `dw_actor_<id>` (so a puppet **or** an unleashed twin is removed —
+/// re-caging is despawn + spawn) through [`removal_lines`]: `kill` is the
+/// author's on-screen death ([`Exit::OnScreen`]), `vanish` leaves unseen
+/// ([`Exit::Unseen`]).
 fn emit_despawn_actor(
+    ns: &str,
     actor: &str,
     style: delvewright_dsl::DespawnStyle,
     declares_drops: bool,
     body: &mut Vec<String>,
 ) {
     use delvewright_dsl::DespawnStyle;
-    let safe = plan::safe_local(actor);
-    // v0.9: a removal is not a death the player earned. Both styles
-    // end in `/kill`, and a preserved drop chance survives a non-player kill, so
-    // an elite the story re-cages (a souls re-seat) would shed its axe on every
-    // rest. Strip the declaration off the body first; emitted only when the
-    // actor declares drops, so every earlier campaign's despawn is byte-identical.
-    let tag = format!("dw_actor_{safe}");
-    if style == DespawnStyle::Vanish {
-        body.push(format!("execute as @e[tag={tag}] at @s run tp @s ~ -128 ~"));
-    }
-    body.extend(removal_lines(&tag, declares_drops));
+    let exit = match style {
+        DespawnStyle::Kill => Exit::OnScreen,
+        DespawnStyle::Vanish => Exit::Unseen,
+    };
+    let tag = format!("dw_actor_{}", plan::safe_local(actor));
+    body.extend(removal_lines(ns, &tag, declares_drops, exit));
 }
 
 /// Emit a `play-sound` effect (DSL v0.6). `who` is the audience selector
@@ -9405,6 +9468,36 @@ fn spawn_npc_sites(c: &delvewright_dsl::Campaign) -> BTreeSet<String> {
     out
 }
 
+/// The generated function name for a `despawn-npc` effect.
+fn despawn_npc_fn(npc: &str) -> String {
+    format!("despawn_npc_{}", plan::safe_local(npc))
+}
+
+/// `despawn_npc_<id>` functions: one per NPC any `despawn-npc` effect removes,
+/// taken from the same effect walk ([`all_campaign_effects`]) that compiles the
+/// calls, so each call has its callee by construction (`DW0497`).
+/// The body and its interaction hitbox both carry the per-NPC id tag
+/// (spec-0008 §5) and leave together through [`removal_lines`] as
+/// [`Exit::Unseen`]: an NPC the story sends away is never seen to die.
+fn despawn_npc_fns(plan: &Plan) -> Vec<(String, String)> {
+    let ns = &plan.namespace;
+    let sites: BTreeSet<String> = all_campaign_effects(plan.campaign)
+        .into_iter()
+        .filter_map(|e| e.despawn_npc())
+        .map(|npc| npc.as_str().to_string())
+        .collect();
+    sites
+        .into_iter()
+        .map(|npc| {
+            let tag = format!("dw_npc_{}", plan::safe_local(&npc));
+            (
+                despawn_npc_fn(&npc),
+                lines(&removal_lines(ns, &tag, false, Exit::Unseen)),
+            )
+        })
+        .collect()
+}
+
 /// `spawn_npc_<id>` functions (DSL v0.6): one per NPC any `spawn-npc` effect
 /// summons, the scripted-entrance dual of `despawn-npc`. A campaign that fires
 /// none and defers none emits nothing here, so it is byte-identical to pre-0.6.
@@ -10367,13 +10460,15 @@ fn actor_fns(
             "execute at @e[tag=dw_pup_{safe},limit=1] run {}",
             actor_twin_summon(ns, a, "~ ~ ~")
         )];
-        // The unleash removes the cage by killing it, and vanilla `/kill` is an
-        // ordinary death: a puppet carrying a declared drop would shed it the
-        // moment the elite stood up. Strip first — the twin standing beside it
-        // is the body that owes the player a prize.
+        // The cage leaves unseen: the elite standing up is the twin, and a
+        // puppet dying beside it is a death the story never wrote. A puppet
+        // carrying a declared drop is stripped first — the twin is the body
+        // that owes the player a prize.
         unleash.extend(removal_lines(
+            ns,
             &format!("dw_pup_{safe}"),
             actor_declares_drops(a),
+            Exit::Unseen,
         ));
         if campaign_captures_striker(plan.campaign) {
             unleash.extend(aggro_lock_lines(&a.entity, &safe));
@@ -10402,7 +10497,12 @@ fn actor_fns(
         // bonfire ([`Plan::reseat_actors`]) → byte-identical everywhere else.
         if plan.reseat_actors().iter().any(|r| r.id == a.id) {
             let p = ent_xyz(pos);
-            let mut restand = removal_lines(&format!("dw_actor_{safe}"), actor_declares_drops(a));
+            let mut restand = removal_lines(
+                ns,
+                &format!("dw_actor_{safe}"),
+                actor_declares_drops(a),
+                Exit::Unseen,
+            );
             restand.push(actor_twin_summon(
                 ns,
                 a,
@@ -16415,14 +16515,22 @@ fn emit_reseat_undefeated_packtests(plan: &Plan, out: &mut BuildOutput) {
 /// the killer was. A playtest found the re-seat half open: every rest dropped an
 /// undefeated elite's quest key where he stood.
 ///
+/// Every such removal is [`Exit::Unseen`]: the body is moved to [`UNSEEN_Y`]
+/// down its own column and dies there when [`UNSEEN_SWEEP_FN`] runs, so its loot
+/// would land under the world, never at the party's feet — a count at the
+/// party binds nothing. The template therefore judges where the body dies.
+///
 /// For every re-seated body that declares a drop — each wave a rest re-seats
 /// (`respawns_on_rest` or billed-undefeated) and each hostile actor — the
-/// template meets it, drags it onto the party, and then demands no item entity
-/// within reach of the party after the unleash and after the REAL
-/// `bonfire_rest_<i>`. The zero is then proven not to be vacuous: the fresh
-/// bodies are dragged onto the party and killed by a bare `kill`, which must
-/// yield at least one item — the body really carries the loot the removal
-/// withheld.
+/// template meets it and drags it onto the party, runs the unleash, runs the
+/// REAL sweep in the same tick (a dropped item below the world is discarded on
+/// its own next tick, so the count cannot wait for the scheduled one), and
+/// demands no item entity at [`UNSEEN_Y`] in the party's column; then the same
+/// after the REAL `bonfire_rest_<i>`. The zero is then proven not to be vacuous
+/// at that same place: each fresh body is moved to [`UNSEEN_Y`] in the party's
+/// column and killed by a bare `kill`, which must yield at least one item there
+/// — the body really carries the loot the removal withheld, and the count sees
+/// loot where the removal's death happens.
 ///
 /// Emits nothing without a bonfire and a drop-declaring re-seated body.
 fn emit_reseat_yields_nothing_packtest(
@@ -16458,14 +16566,15 @@ fn emit_reseat_yields_nothing_packtest(
         return;
     }
     let (pin, sel) = pin_dummy("dw_rsyn");
-    // The loot of a `/kill` lands where the body stood, in the tick it dies;
-    // every body is dragged onto the party first, so this radius is the whole
+    // The loot of a `/kill` lands where the body dies, in the tick it dies;
+    // every body is dragged onto the party first, so an unseen removal kills it
+    // at `UNSEEN_Y` in the party's column, and this radius there is the whole
     // claim.
     let items = "@e[type=minecraft:item,distance=..3]";
-    let count = |score: &str| {
-        format!("execute at {sel} store result score {score} dw.sys if entity {items}")
-    };
-    let clear_items = format!("execute at {sel} run kill {items}");
+    let low = format!("execute at {sel} positioned ~ {UNSEEN_Y} ~");
+    let count = |score: &str| format!("{low} store result score {score} dw.sys if entity {items}");
+    let clear_items = format!("{low} run kill {items}");
+    let sweep = format!("function {ns}:{UNSEEN_SWEEP_FN}");
     let board: Vec<String> = plan
         .reseat_waves()
         .iter()
@@ -16491,7 +16600,7 @@ fn emit_reseat_yields_nothing_packtest(
 
     let mut b = packtest_header(&format!(
         "{}: a removal the compiler performs — the unleash and every bonfire re-seat — yields \
-         no declared drop; only a kill does",
+         no declared drop where the body dies; only a kill does",
         artifact_title(plan.campaign)
     ));
     b.push(format!("function {ns}:setup"));
@@ -16503,6 +16612,7 @@ fn emit_reseat_yields_nothing_packtest(
             b.push(k);
         }
     }
+    b.push(sweep.clone());
     b.push(clear_items.clone());
     // Meet every fight, on top of the party.
     for w in &waves {
@@ -16519,19 +16629,22 @@ fn emit_reseat_yields_nothing_packtest(
         ));
         b.push(format!("function {ns}:unleash_{safe}"));
     }
+    b.push(sweep.clone());
     b.push(count("#u_rsyn"));
     b.push("assert score #u_rsyn dw.sys matches 0".to_string());
     for t in &tags {
         b.push(format!("execute at {sel} run tp @e[tag={t}] ~ ~ ~"));
     }
-    // The rest, through the REAL generated rest function.
+    // The rest, through the REAL generated rest function, and the removals it
+    // makes, through the REAL sweep.
     b.push(format!("function {ns}:bonfire_rest_{i}"));
+    b.push(sweep.clone());
     b.push(count("#r_rsyn"));
     b.push("assert score #r_rsyn dw.sys matches 0".to_string());
-    // Not vacuous, body by body: each fresh body carries the loot, and a bare
-    // kill yields it.
+    // Not vacuous, body by body, at the same place: each fresh body carries the
+    // loot, and a bare kill where the removal kills yields it.
     for t in &tags {
-        b.push(format!("execute at {sel} run tp @e[tag={t}] ~ ~ ~"));
+        b.push(format!("{low} run tp @e[tag={t}] ~ ~ ~"));
         b.push(format!("kill @e[tag={t}]"));
         b.push(count("#p_rsyn"));
         b.push("assert score #p_rsyn dw.sys matches 1..".to_string());
@@ -19285,30 +19398,28 @@ fn emit_v04_packtests(
         }
     }
 
-    // despawn-npc removes body + interaction hitbox (both carry the id tag).
+    // despawn-npc removes body + interaction hitbox (both carry the id tag), and
+    // the body leaves unseen — one template per NPC a `despawn-npc` names, since
+    // each `despawn_npc_<id>` is that NPC's own function (`DW0810`).
     //
-    // Every root, every depth. This picked the first `despawn-npc` out of a
-    // hand-rolled three-of-five chain that was also shallow, so a campaign whose
-    // only `despawn-npc` sits in a `sequence` step, a trap payload or a dialogue
-    // `on_respawn` bundle generated no despawn PackTest at all — the verb shipped
-    // with nothing asserting it.
-    let first_despawn_npc = {
-        let mut found: Option<&delvewright_dsl::NpcId> = None;
-        crate::compiler::plan::for_each_effect_root(c, &mut |_site, effs| {
-            for e in effs {
-                e.visit_deep(&mut |x| {
-                    if found.is_none() {
-                        found = x.despawn_npc();
-                    }
-                });
-            }
-        });
-        found
-    };
-    if let Some(npc) = first_despawn_npc {
-        let safe = plan::safe_local(npc.as_str());
+    // Every root, every depth: a campaign whose only `despawn-npc` sits in a
+    // `sequence` step, a trap payload or a dialogue `on_respawn` bundle still
+    // gets its template.
+    let despawn_targets: BTreeSet<String> = all_campaign_effects(c)
+        .into_iter()
+        .filter_map(|e| e.despawn_npc())
+        .map(|npc| npc.as_str().to_string())
+        .collect();
+    for (i, npc) in despawn_targets.iter().enumerate() {
+        let watched_uuid = [
+            PT_WATCHED_UUID[0],
+            PT_WATCHED_UUID[1],
+            PT_WATCHED_UUID[2],
+            PT_WATCHED_UUID[3] + i as u32,
+        ];
+        let safe = plan::safe_local(npc);
         let mut b = packtest_header(&format!(
-            "{}: despawn-npc removes body + hitbox",
+            "{}: despawn-npc `{npc}` removes body + hitbox, unseen",
             artifact_title(c)
         ));
         b.push(format!("function {ns}:setup"));
@@ -19332,21 +19443,42 @@ fn emit_v04_packtests(
         if plan
             .npcs
             .iter()
-            .any(|n| n.npc_id == npc.as_str() && npc_is_deferred(c, &n.npc_id))
+            .any(|n| n.npc_id == *npc && npc_is_deferred(c, &n.npc_id))
         {
-            b.push(format!("function {ns}:{}", spawn_npc_fn(npc.as_str())));
+            b.push(format!("function {ns}:{}", spawn_npc_fn(npc)));
+        }
+        // The body the test watches: the NPC's own body summon (a mannequin or
+        // a villager — never the hitbox), re-issued with a fixed UUID. A selector never matches a dying body, so the UUID is how
+        // the test reads the body through its death.
+        let watched = plan
+            .npcs
+            .iter()
+            .find(|n| n.npc_id == *npc)
+            .and_then(|n| {
+                npc_summon_commands(c, plan, n).into_iter().find(|cmd| {
+                    cmd.starts_with("summon ") && !cmd.starts_with("summon minecraft:interaction ")
+                })
+            })
+            .and_then(|cmd| with_uuid(&cmd, watched_uuid));
+        if let Some(summon) = &watched {
+            b.push(format!("kill @e[tag=dw_npc,tag=dw_npc_{safe}]"));
+            b.push(summon.clone());
         }
         // body + interaction hitbox both carry `dw_npc_<npc>` → two entities.
         b.push(format!(
             "execute store result score #before_ndsp dw.sys if entity @e[tag=dw_npc_{safe}]"
         ));
         b.push("assert score #before_ndsp dw.sys matches 2".to_string());
-        b.push(format!("kill @e[tag=dw_npc_{safe}]"));
+        // The verb's own function — the one every `despawn-npc` site calls.
+        b.push(format!("function {ns}:{}", despawn_npc_fn(npc)));
         b.push(format!(
             "execute store result score #after_ndsp dw.sys if entity @e[tag=dw_npc_{safe}]"
         ));
         b.push("assert score #after_ndsp dw.sys matches 0".to_string());
-        write("v04_despawn", b);
+        if watched.is_some() {
+            b.extend(unseen_exit_samples(&uuid_hyphenated(watched_uuid), &safe));
+        }
+        write(&format!("v04_despawn_{safe}"), b);
     }
 
     // strike trigger on an NPC's anchor (round-4 island QA): the NPC's own
@@ -20033,6 +20165,70 @@ fn emit_shared_hitbox_packtest(plan: &Plan, out: &mut BuildOutput) {
 }
 
 /// The header lines shared by every generated PackTest (`# @dummy` + timeout).
+/// The UUID a generated PackTest gives a body it watches through its death.
+const PT_WATCHED_UUID: [u32; 4] = [0x4457_0000, 0x756e_7365, 0x656e_0000, 0x0000_0001];
+
+/// A UUID as the int array entity NBT stores.
+fn uuid_nbt(u: [u32; 4]) -> String {
+    format!(
+        "[I;{},{},{},{}]",
+        u[0] as i32, u[1] as i32, u[2] as i32, u[3] as i32
+    )
+}
+
+/// A UUID as the hyphenated form a command's entity argument takes.
+fn uuid_hyphenated(u: [u32; 4]) -> String {
+    format!(
+        "{:08x}-{:04x}-{:04x}-{:04x}-{:04x}{:08x}",
+        u[0],
+        u[1] >> 16,
+        u[1] & 0xffff,
+        u[2] >> 16,
+        u[2] & 0xffff,
+        u[3]
+    )
+}
+
+/// `summon <type> <x> <y> <z> {…}` with `UUID:<u>` written first into its NBT;
+/// `None` for a summon that carries no NBT compound.
+fn with_uuid(summon: &str, u: [u32; 4]) -> Option<String> {
+    let at = summon.find('{')?;
+    Some(format!(
+        "{}{{UUID:{},{}",
+        &summon[..at],
+        uuid_nbt(u),
+        &summon[at + 1..]
+    ))
+}
+
+/// The PackTest lines that watch a body leave through [`removal_lines`]'
+/// [`Exit::Unseen`], read by UUID (a selector never matches a dying body). A
+/// death is irreversible, so three readings cover the whole exit: the body is
+/// not dying on the removal's own tick, nor [`UNSEEN_DELAY_TICKS`]` - 1` ticks
+/// later (the client has been told where it went before any death is sent), and
+/// on the first tick it is dying — awaited — it is at [`UNSEEN_Y`], under the
+/// world. A removal that kills the body where it stands reds the first; one that
+/// kills it at once under the world reds the second; a body that never dies
+/// times the test out. `key` names the template's own score holders: templates
+/// in one batch share `dw.sys`.
+fn unseen_exit_samples(uuid: &str, key: &str) -> Vec<String> {
+    let floor = UNSEEN_Y + 1;
+    let y = format!("#usn_y_{key}");
+    let now = format!("#usn_now_{key}");
+    let dying =
+        format!("execute store success score {now} dw.sys if data entity {uuid} {{Health:0.0f}}");
+    vec![
+        dying.clone(),
+        format!("assert score {now} dw.sys matches 0"),
+        format!("await delay {}t", UNSEEN_DELAY_TICKS - 1),
+        dying,
+        format!("assert score {now} dw.sys matches 0"),
+        format!("await data entity {uuid} {{Health:0.0f}}"),
+        format!("execute store result score {y} dw.sys run data get entity {uuid} Pos[1]"),
+        format!("assert score {y} dw.sys matches ..{floor}"),
+    ]
+}
+
 fn packtest_header(title: &str) -> Vec<String> {
     vec![
         format!("#> {title}"),
@@ -21772,6 +21968,7 @@ mod tests {
     fn despawn_strips_declared_drops_first() {
         let mut cmds = Vec::new();
         emit_despawn_actor(
+            "dw",
             "actor/giant",
             delvewright_dsl::DespawnStyle::Kill,
             true,
@@ -21792,6 +21989,7 @@ mod tests {
     fn despawn_styles_differ() {
         let mut kill = Vec::new();
         emit_despawn_actor(
+            "dw",
             "actor/giant",
             delvewright_dsl::DespawnStyle::Kill,
             false,
@@ -21800,19 +21998,40 @@ mod tests {
         assert_eq!(kill, vec!["kill @e[tag=dw_actor_giant]".to_string()]);
         let mut vanish = Vec::new();
         emit_despawn_actor(
+            "dw",
             "actor/giant",
             delvewright_dsl::DespawnStyle::Vanish,
             false,
             &mut vanish,
         );
-        // The drop is relative to each ACTOR, not to the command source — see
-        // `emit_despawn_actor` for the live-observed failure the bare `tp` caused.
+        // `vanish` leaves unseen: the body is moved down its OWN column (the
+        // `at @s` — a server-source `tp` resolves `~ ~` at world spawn), frozen
+        // under the world with every tag replaced, and killed there by the sweep
+        // a full delay later. Nothing in it kills the body where it stood.
         assert_eq!(
             vanish,
             vec![
+                "execute if entity @e[tag=dw_actor_giant] run schedule function dw:unseen_sweep 5t replace".to_string(),
+                "execute as @e[tag=dw_actor_giant] on passengers run ride @s dismount".to_string(),
                 "execute as @e[tag=dw_actor_giant] at @s run tp @s ~ -128 ~".to_string(),
-                "kill @e[tag=dw_actor_giant]".to_string(),
+                "execute as @e[tag=dw_actor_giant] run data merge entity @s {Tags:[\"dw_unseen\"],NoGravity:1b,NoAI:1b,Silent:1b}".to_string(),
             ]
+        );
+        assert!(!vanish.iter().any(|l| l.starts_with("kill ")), "{vanish:?}");
+    }
+
+    /// The watched body's UUID reaches the command in the form vanilla prints it
+    /// and the NBT in the form vanilla stores it — the same 128 bits.
+    #[test]
+    fn watched_uuid_forms_agree() {
+        let u = PT_WATCHED_UUID;
+        assert_eq!(uuid_hyphenated(u), "44570000-756e-7365-656e-000000000001");
+        assert_eq!(uuid_nbt(u), "[I;1146552320,1970172773,1701707776,1]");
+        assert_eq!(
+            with_uuid("summon minecraft:villager 1 2 3 {NoAI:1b}", u).as_deref(),
+            Some(
+                "summon minecraft:villager 1 2 3 {UUID:[I;1146552320,1970172773,1701707776,1],NoAI:1b}"
+            )
         );
     }
 
@@ -21848,7 +22067,7 @@ mod tests {
             delvewright_dsl::DespawnStyle::Vanish,
         ] {
             let mut cmds = Vec::new();
-            emit_despawn_actor("actor/giant", style, false, &mut cmds);
+            emit_despawn_actor("dw", "actor/giant", style, false, &mut cmds);
             assert!(!cmds.is_empty());
             for c in &cmds {
                 assert!(
