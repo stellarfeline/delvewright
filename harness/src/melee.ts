@@ -77,7 +77,10 @@ const TICK_MS = 50;
  */
 export function fullChargeMs(attackSpeed: number): number {
   const periodTicks = 20 / attackSpeed;
-  return (Math.ceil(periodTicks - 0.5) + 1) * TICK_MS;
+  // The server's numbers are floats: an iron sword's -2.4 arrives as
+  // -2.4000000953674316, which puts the period a hair over 12.5 ticks. Vanilla
+  // compares the same floats, so a millionth of a tick is not a whole tick.
+  return (Math.ceil(periodTicks - 0.5 - 1e-6) + 1) * TICK_MS;
 }
 
 /**
@@ -127,20 +130,27 @@ export function drinkHeal(
 export type DrinkDecision =
   | { readonly kind: "drink"; readonly heal: number }
   | { readonly kind: "healthy" }
+  | { readonly kind: "pressed" }
   | { readonly kind: "none-carried" };
 
 /**
  * Drink a healing draught when a bottle's whole heal fits under the missing
  * health — a player does not waste half a flask on a scratch, and does not
  * carry four of them into the grave. Of the bottles that fit, the strongest.
- * Unlike food, a hostile in reach does not forbid it: a potion is the thing a
- * player drinks MID-fight, and the heal lands whole when the drink ends.
+ *
+ * Not with a melee attacker in its reach: a drink holds the bottle for 32 ticks
+ * at a fifth of walking speed, and a vindicator strikes about once a second —
+ * measured on vesperhold, a draught drunk in the Porter's reach healed nothing
+ * the next blow did not take back. The footwork opens the gap; the drink waits
+ * for it ({@link DRINK_CLEAR_RANGE}).
  */
 export function drinkDecision(opts: {
   readonly health: number;
   readonly maxHealth: number;
   /** The heal of every drinkable healing draught carried, one entry per kind. */
   readonly heals: readonly number[];
+  /** Horizontal distance to the nearest melee attacker, `undefined` when none. */
+  readonly nearestMeleeDistance: number | undefined;
 }): DrinkDecision {
   if (opts.heals.length === 0) {
     return opts.health < opts.maxHealth ? { kind: "none-carried" } : { kind: "healthy" };
@@ -148,8 +158,15 @@ export function drinkDecision(opts: {
   const missing = opts.maxHealth - opts.health;
   const fitting = opts.heals.filter((h) => h <= missing);
   if (fitting.length === 0) return { kind: "healthy" };
+  if (opts.nearestMeleeDistance !== undefined && opts.nearestMeleeDistance < DRINK_CLEAR_RANGE) {
+    return { kind: "pressed" };
+  }
   return { kind: "drink", heal: Math.max(...fitting) };
 }
+
+/** How far (blocks, horizontal) the nearest melee attacker must be before a
+ * draught is started. */
+export const DRINK_CLEAR_RANGE = 4;
 
 /**
  * How long before its swing is charged the bot jumps, so the swing is released
@@ -165,64 +182,196 @@ export const CRIT_JUMP_LEAD_MS = 350;
  * wait on a fall that is not coming. */
 export const CRIT_FALL_WAIT_MS = 400;
 
-/** One strike's worth of what a player's hands do, in order. */
-export interface StrikePlan {
-  /** Raise the shield while the swing charges. */
-  readonly guard: boolean;
-  /** Jump so the charged swing lands falling. */
-  readonly jump: boolean;
+/** A player's melee reach: `minecraft:entity_interaction_range`, eye to hitbox. */
+export const PLAYER_REACH = 3.0;
+
+/** A standing player's eye height. */
+export const PLAYER_EYE_HEIGHT = 1.62;
+
+/**
+ * Horizontal distance (feet to feet) inside which a MELEE attacker is about to
+ * swing, so the bot steps back while its own swing charges. A vindicator or a
+ * zombie hits a body its attack box — its own box grown ~0.83 blocks sideways —
+ * touches, about 1.4 blocks centre to centre; a player's sword reaches about 3.
+ * The whole art of fighting one is standing in that gap.
+ */
+export const KITE_DISTANCE = 2.5;
+
+/**
+ * How near (blocks) a body must be for the exchange to be fought with the
+ * hands — stepping in, stepping back, holding the shield — rather than walked
+ * to by the pathfinder.
+ */
+export const MELEE_ENGAGE_RANGE = 6;
+
+/** Longest one exchange waits for its body to come into reach before handing the
+ * approach back to the pathfinder. */
+export const ENGAGE_BUDGET_MS = 2_000;
+
+/** Weapons whose holder fights at range: it backs away rather than closing, so
+ * stepping back from it is running from the fight. */
+const RANGED_WEAPONS = new Set(["bow", "crossbow"]);
+
+/** Whether a mob holding `heldItem` (its main hand, as the client sees it) fights at range. */
+export function holdsRangedWeapon(heldItem: string | undefined): boolean {
+  return heldItem !== undefined && RANGED_WEAPONS.has(heldItem);
+}
+
+/** An axis-aligned box: `[minX, minY, minZ, maxX, maxY, maxZ]`. */
+export type Box3 = readonly [number, number, number, number, number, number];
+
+/** Distance from a point to the nearest point of a box (0 inside it). */
+export function distanceToBox(p: readonly [number, number, number], b: Box3): number {
+  const dx = Math.max(b[0] - p[0], 0, p[0] - b[3]);
+  const dy = Math.max(b[1] - p[1], 0, p[1] - b[4]);
+  const dz = Math.max(b[2] - p[2], 0, p[2] - b[5]);
+  return Math.hypot(dx, dy, dz);
 }
 
 /**
- * What the bot does with the charge time before its next swing.
- *
- * The shield goes up whenever the off hand holds one and there is time for it
- * to count: vanilla's shield blocks only after `block_delay_seconds` (0.25 s)
- * raised, so a raise with less than that before the swing is a gesture, and it
- * is skipped. The jump is taken only from solid footing with headroom.
+ * Whether a body standing at `feet` can hit a mob at `mobFeet` of `width` ×
+ * `height`: vanilla measures reach from the eye to the target's hitbox.
  */
-export function planStrike(opts: {
-  readonly msUntilCharged: number;
+export function inReach(
+  feet: readonly [number, number, number],
+  mobFeet: readonly [number, number, number],
+  width: number,
+  height: number,
+): boolean {
+  const eye: [number, number, number] = [feet[0], feet[1] + PLAYER_EYE_HEIGHT, feet[2]];
+  const h = width / 2;
+  const box: Box3 = [
+    mobFeet[0] - h,
+    mobFeet[1],
+    mobFeet[2] - h,
+    mobFeet[0] + h,
+    mobFeet[1] + height,
+    mobFeet[2] + h,
+  ];
+  return distanceToBox(eye, box) <= PLAYER_REACH;
+}
+
+/** What the feet do this tick of an exchange. */
+export type Footwork = "back" | "forward" | "hold";
+
+/**
+ * The footwork of one tick of an exchange, the way a player fences:
+ *
+ *  * while the swing charges, a MELEE attacker inside {@link KITE_DISTANCE} is
+ *    backed away from — the swing it is about to make lands on air;
+ *  * a body out of reach is stepped toward (a ranged one at once, since it
+ *    will not come; a melee one once the swing is charged, since it is coming);
+ *  * otherwise the feet hold and the shield takes what comes.
+ *
+ * A step is taken only onto ground the caller has proven safe; a refused step
+ * is a hold.
+ */
+export function footwork(opts: {
+  readonly ranged: boolean;
+  readonly horizontalDistance: number;
+  readonly charged: boolean;
+  readonly inReach: boolean;
+  readonly canStepBack: boolean;
+  readonly canStepIn: boolean;
+}): Footwork {
+  if (!opts.charged && !opts.ranged && opts.horizontalDistance < KITE_DISTANCE) {
+    return opts.canStepBack ? "back" : "hold";
+  }
+  if (!opts.inReach && (opts.ranged || opts.charged)) {
+    return opts.canStepIn ? "forward" : "hold";
+  }
+  return "hold";
+}
+
+/**
+ * Whether to hold the shield up this tick: only while standing (a raised shield
+ * slows a walking player to a crawl) and only while the swing charges.
+ */
+export function guardUp(opts: {
   readonly shieldInOffhand: boolean;
+  readonly footwork: Footwork;
+  readonly charged: boolean;
+}): boolean {
+  return opts.shieldInOffhand && opts.footwork === "hold" && !opts.charged;
+}
+
+/**
+ * Whether to jump now so the charged swing lands falling (a critical hit): the
+ * body is in reach, the feet are on the ground with headroom and not stepping,
+ * and the charge completes within {@link CRIT_JUMP_LEAD_MS}.
+ */
+export function jumpForCrit(opts: {
+  readonly msUntilCharged: number;
+  readonly inReach: boolean;
   readonly onGround: boolean;
   readonly headroom: boolean;
-}): StrikePlan {
-  return {
-    guard: opts.shieldInOffhand && opts.msUntilCharged >= SHIELD_BLOCK_DELAY_MS,
-    jump: opts.onGround && opts.headroom,
-  };
+}): boolean {
+  return (
+    opts.inReach && opts.onGround && opts.headroom && opts.msUntilCharged <= CRIT_JUMP_LEAD_MS
+  );
 }
 
-/** Vanilla shield `blocks_attacks.block_delay_seconds`, in ms. */
-export const SHIELD_BLOCK_DELAY_MS = 250;
-
 /**
- * What a fight's hands did, counted from what the server reported back — so a
- * log reader can see whether the bot fenced or flailed. Every count except
- * `swings` and `draughts` is the server's own broadcast: a critical hit on the
- * target (animation 4), a blow taken on the shield (entity event 29), the
- * shield knocked out of use by an axe (entity event 30).
+ * What a fight's hands did — so a log reader can see whether the bot fenced or
+ * flailed. `swings` and `guards` (times the shield went up) are the bot's own
+ * inputs. `landed` and `noDamage` are the server's verdict on each swing, read
+ * off the sound vanilla plays at the attacker for it (`entity.player.attack.*`:
+ * `nodamage` when the target took nothing — hurt immunity, or no damage at all —
+ * any other when it was hurt). `crits` is the server's critical-hit animation
+ * on the target;
+ * `shieldDisabled` is the server putting the shield on cooldown (`set_cooldown`
+ * for `minecraft:shield`, what an axe blow on a raised shield does);
+ * `draughts` counts only drinks the server finished (entity event 9) and the
+ * bag shows gone.
+ *
+ * A blow the shield TOOK is not counted, because nothing the client is sent
+ * says so reliably: measured on the pinned server, a zombie's blow on a raised
+ * shield arrived as no packet at all, and only the axe blow that disabled it
+ * played `item.shield.block`.
  */
 export interface MeleeTally {
   swings: number;
+  landed: number;
+  noDamage: number;
   crits: number;
-  blocked: number;
+  guards: number;
   shieldDisabled: number;
   draughts: number;
 }
 
 export function emptyTally(): MeleeTally {
-  return { swings: 0, crits: 0, blocked: 0, shieldDisabled: 0, draughts: 0 };
+  return { swings: 0, landed: 0, noDamage: 0, crits: 0, guards: 0, shieldDisabled: 0, draughts: 0 };
 }
 
 /** One line for the log: what the hands did this fight. */
 export function describeTally(t: MeleeTally): string {
   return (
-    `${t.swings} charged swing(s), ${t.crits} critical, ${t.blocked} blow(s) taken on the ` +
-    `shield, shield disabled ${t.shieldDisabled}×, ${t.draughts} draught(s) drunk`
+    `${t.swings} charged swing(s) (${t.landed} hurt the target, ${t.noDamage} did nothing), ` +
+    `${t.crits} critical, shield raised ${t.guards}×, ` +
+    `shield disabled ${t.shieldDisabled}×, ${t.draughts} draught(s) drunk`
   );
 }
 
-/** Vanilla entity events the tally counts off the bot's own entity. */
-export const ENTITY_EVENT_SHIELD_BLOCK = 29;
-export const ENTITY_EVENT_SHIELD_DISABLED = 30;
+/**
+ * The server's verdict on a player's swing, from the sound it plays at the
+ * attacker: `landed` for every `entity.player.attack.*` sound that follows a
+ * hurt target, `nodamage` for the one that follows a swing that hurt nothing,
+ * `undefined` for any other sound.
+ */
+export function swingVerdict(sound: string): "landed" | "nodamage" | undefined {
+  const bare = sound.replace(/^minecraft:/, "");
+  if (bare === "entity.player.attack.nodamage") return "nodamage";
+  if (/^entity\.player\.attack\.(strong|weak|crit|knockback|sweep)$/.test(bare)) return "landed";
+  return undefined;
+}
+
+/** How near the bot (blocks) an attack sound must play to be the bot's own swing —
+ * vanilla plays it at the attacker. */
+export const OWN_SWING_RADIUS = 1.5;
+
+/** The cooldown group vanilla puts a disabled shield in. */
+export const SHIELD_COOLDOWN_GROUP = "minecraft:shield";
+
+/** How long (ms) a drink may take before it is abandoned: a potion's 32-tick use
+ * plus the round trip. */
+export const DRINK_TIMEOUT_MS = 2_500;

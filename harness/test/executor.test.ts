@@ -3793,3 +3793,82 @@ test("a matched leg still binds only the gates the compiler proved it crosses", 
     ["timed-gate/inner-door"],
   );
 });
+
+// --- a drop-gated collect walks onto the drop, wherever the body fell ---------
+
+import type { CollectStep } from "../src/critical-path.ts";
+
+/**
+ * A world with one dropped item lying where a wave body fell — seven blocks
+ * from the wave's anchor, as vesperhold's Porter left his key. The pathfinder
+ * moves the bot to each goal it is given; vanilla pickup is modelled as "the
+ * bot's cell is within a block of the item", which completes the objective.
+ */
+class DropFakeBot extends TransportReachBot {
+  goals: Array<[number, number, number]> = [];
+  dropAt = new FakeVec3(94.7, 80, 161.5);
+  constructor() {
+    super();
+    this.entity.position = new FakeVec3(87.5, 80, 158.5);
+    const self = this;
+    this.entities[77] = {
+      id: 77,
+      name: "item",
+      get position(): FakeVec3 {
+        return self.dropAt;
+      },
+      getDroppedItem: () => ({ name: "tripwire_hook" }),
+    };
+    (this.pathfinder as { goto: (goal: unknown) => Promise<void> }).goto = async (
+      goal: unknown,
+    ): Promise<void> => {
+      const g = goal as { x: number; y: number; z: number };
+      this.goals.push([g.x, g.y, g.z]);
+      this.entity.position = new FakeVec3(g.x + 0.5, g.y, g.z + 0.5);
+      const d = Math.hypot(g.x + 0.5 - this.dropAt.x, g.z + 0.5 - this.dropAt.z);
+      if (d <= 1.5 && this.entities[77]) {
+        delete this.entities[77];
+        this.emit("messagestr", "[dw:complete vesperhold obj/take-the-postern-key]");
+      }
+    };
+  }
+  async lookAt(): Promise<void> {}
+}
+
+const DROP_STEP: CollectStep = {
+  action: "collect",
+  objective: "obj/take-the-postern-key",
+  item: "minecraft:tripwire_hook",
+  count: 1,
+  droppedBy: "wave/porter",
+  pos: [87, 80, 158],
+  sneak: false,
+} as unknown as CollectStep;
+
+test("a drop-gated collect walks onto the drop where the body fell, not to the anchor", async () => {
+  const bot = new DropFakeBot();
+  const executor = attach(bot);
+  executor.useCampaign("vesperhold");
+  executor.beginStep(5);
+  await executor.collect(DROP_STEP);
+  // The last goal is the drop's own cell; before the fix the walk ended at the
+  // anchor and the step timed out beside a key seven blocks away.
+  assert.deepEqual(bot.goals.at(-1), [94, 80, 161]);
+  assert.equal(bot.entities[77], undefined, "the key was picked up");
+});
+
+test("a drop beyond the fight's radius is not this fight's drop", async () => {
+  const bot = new DropFakeBot();
+  bot.dropAt = new FakeVec3(87.5 + 40, 80, 158.5);
+  const executor = attach(bot);
+  executor.useCampaign("vesperhold");
+  executor.beginStep(5);
+  // Nothing within reach of the fight: the step waits on its objective and says so.
+  setTimeout(() => bot.emit("messagestr", "delve-bot fell out of the world"), 300);
+  setTimeout(() => bot.emit("death"), 310);
+  await assert.rejects(() => executor.collect(DROP_STEP));
+  assert.ok(
+    bot.goals.every((g) => Math.abs(g[0] - 127) > 2),
+    `never walked to the far item: ${JSON.stringify(bot.goals)}`,
+  );
+});

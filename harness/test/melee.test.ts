@@ -4,7 +4,9 @@ import { createRequire } from "node:module";
 import {
   ATTACK_SPEED_KEY,
   HEALING_POTION_HEAL,
-  SHIELD_BLOCK_DELAY_MS,
+  DRINK_CLEAR_RANGE,
+  KITE_DISTANCE,
+  PLAYER_REACH,
   attackSpeedFrom,
   attributeValue,
   describeTally,
@@ -12,7 +14,12 @@ import {
   drinkHeal,
   emptyTally,
   fullChargeMs,
-  planStrike,
+  footwork,
+  guardUp,
+  holdsRangedWeapon,
+  inReach,
+  jumpForCrit,
+  swingVerdict,
 } from "../src/melee.ts";
 
 const require = createRequire(import.meta.url);
@@ -68,6 +75,8 @@ test("no readable attack speed is undefined, never a guessed number", () => {
 test("a full-charge swing waits out the whole cooldown the weapon has", () => {
   // Iron sword, 1.6/s: a 12.5-tick period, full at 12 ticks, +1 tick in flight.
   assert.equal(fullChargeMs(1.6), 650);
+  // …and as the server actually sends it: base 4 with a -2.4000000953674316 float.
+  assert.equal(fullChargeMs(4 - 2.4000000953674316), 650);
   // Every sword swing is now slower than the old flat 400 ms cadence, which was a
   // 57% swing with a sword and every second one inside the target's hurt immunity.
   assert.ok(fullChargeMs(1.6) > 400);
@@ -93,52 +102,105 @@ test("a healing draught is recognised by its potion contents, not its name", () 
 });
 
 test("a draught is drunk when its whole heal fits, the strongest that fits", () => {
-  assert.deepEqual(drinkDecision({ health: 12, maxHealth: 20, heals: [8] }), {
+  const clear = { maxHealth: 20, nearestMeleeDistance: undefined } as const;
+  assert.deepEqual(drinkDecision({ ...clear, health: 12, heals: [8] }), { kind: "drink", heal: 8 });
+  assert.deepEqual(drinkDecision({ ...clear, health: 12.5, heals: [8] }), { kind: "healthy" });
+  assert.deepEqual(drinkDecision({ ...clear, health: 14, heals: [4, 8] }), { kind: "drink", heal: 4 });
+  assert.deepEqual(drinkDecision({ ...clear, health: 3, heals: [4, 8] }), { kind: "drink", heal: 8 });
+  assert.deepEqual(drinkDecision({ ...clear, health: 3, heals: [] }), { kind: "none-carried" });
+  assert.deepEqual(drinkDecision({ ...clear, health: 20, heals: [] }), { kind: "healthy" });
+});
+
+test("a draught waits for a melee attacker to be out of its reach", () => {
+  const hurt = { maxHealth: 20, health: 6, heals: [8] } as const;
+  assert.deepEqual(
+    drinkDecision({ ...hurt, nearestMeleeDistance: DRINK_CLEAR_RANGE - 0.1 }),
+    { kind: "pressed" },
+  );
+  assert.deepEqual(drinkDecision({ ...hurt, nearestMeleeDistance: DRINK_CLEAR_RANGE }), {
     kind: "drink",
     heal: 8,
   });
-  assert.deepEqual(drinkDecision({ health: 12.5, maxHealth: 20, heals: [8] }), {
-    kind: "healthy",
-  });
-  assert.deepEqual(drinkDecision({ health: 14, maxHealth: 20, heals: [4, 8] }), {
-    kind: "drink",
-    heal: 4,
-  });
-  assert.deepEqual(drinkDecision({ health: 3, maxHealth: 20, heals: [4, 8] }), {
-    kind: "drink",
-    heal: 8,
-  });
-  assert.deepEqual(drinkDecision({ health: 3, maxHealth: 20, heals: [] }), {
-    kind: "none-carried",
-  });
-  assert.deepEqual(drinkDecision({ health: 20, maxHealth: 20, heals: [] }), { kind: "healthy" });
 });
 
-test("the shield goes up only when there is time for it to block", () => {
-  const base = { shieldInOffhand: true, onGround: true, headroom: true } as const;
-  assert.equal(planStrike({ ...base, msUntilCharged: 600 }).guard, true);
-  assert.equal(planStrike({ ...base, msUntilCharged: SHIELD_BLOCK_DELAY_MS }).guard, true);
-  assert.equal(planStrike({ ...base, msUntilCharged: SHIELD_BLOCK_DELAY_MS - 1 }).guard, false);
-  assert.equal(planStrike({ ...base, shieldInOffhand: false, msUntilCharged: 600 }).guard, false);
+test("reach is the eye to the hitbox, three blocks", () => {
+  // A vindicator (0.6 × 1.95) three blocks away on the level: the eye is 1.62 up,
+  // inside the box's height, so the reach is the horizontal gap to its face.
+  assert.equal(inReach([0, 64, 0], [3.2, 64, 0], 0.6, 1.95), true);
+  assert.equal(inReach([0, 64, 0], [PLAYER_REACH + 0.31, 64, 0], 0.6, 1.95), false);
+  // Standing on a ledge two blocks above a zombie: the reach bends down to its head.
+  assert.equal(inReach([0, 66, 0], [2, 64, 0], 0.6, 1.95), true);
 });
 
-test("the crit jump is taken only from footing with headroom", () => {
-  const base = { shieldInOffhand: true, msUntilCharged: 600 } as const;
-  assert.equal(planStrike({ ...base, onGround: true, headroom: true }).jump, true);
-  assert.equal(planStrike({ ...base, onGround: false, headroom: true }).jump, false);
-  assert.equal(planStrike({ ...base, onGround: true, headroom: false }).jump, false);
+test("the footwork backs away from a melee attacker while the swing charges", () => {
+  const base = { ranged: false, charged: false, inReach: true, canStepBack: true, canStepIn: true };
+  assert.equal(footwork({ ...base, horizontalDistance: KITE_DISTANCE - 0.1 }), "back");
+  // A ledge behind: stand and take it on the shield.
+  assert.equal(
+    footwork({ ...base, horizontalDistance: KITE_DISTANCE - 0.1, canStepBack: false }),
+    "hold",
+  );
+  // Charged: the swing is the answer, not the retreat.
+  assert.equal(footwork({ ...base, horizontalDistance: 1, charged: true }), "hold");
+  // An archer is never backed away from.
+  assert.equal(footwork({ ...base, ranged: true, horizontalDistance: 1 }), "hold");
+});
+
+test("the footwork steps in on a body out of reach", () => {
+  const base = { horizontalDistance: 4, inReach: false, canStepBack: true, canStepIn: true };
+  // An archer backs off, so it is chased at once.
+  assert.equal(footwork({ ...base, ranged: true, charged: false }), "forward");
+  // A melee attacker is coming: wait for it until the swing is ready, then meet it.
+  assert.equal(footwork({ ...base, ranged: false, charged: false }), "hold");
+  assert.equal(footwork({ ...base, ranged: false, charged: true }), "forward");
+  assert.equal(footwork({ ...base, ranged: false, charged: true, canStepIn: false }), "hold");
+});
+
+test("the shield is up only while standing and charging", () => {
+  assert.equal(guardUp({ shieldInOffhand: true, footwork: "hold", charged: false }), true);
+  assert.equal(guardUp({ shieldInOffhand: true, footwork: "back", charged: false }), false);
+  assert.equal(guardUp({ shieldInOffhand: true, footwork: "hold", charged: true }), false);
+  assert.equal(guardUp({ shieldInOffhand: false, footwork: "hold", charged: false }), false);
+});
+
+test("the crit jump is taken in reach, from footing with headroom, just before the charge", () => {
+  const base = { msUntilCharged: 300, inReach: true, onGround: true, headroom: true };
+  assert.equal(jumpForCrit(base), true);
+  assert.equal(jumpForCrit({ ...base, msUntilCharged: 600 }), false);
+  assert.equal(jumpForCrit({ ...base, inReach: false }), false);
+  assert.equal(jumpForCrit({ ...base, onGround: false }), false);
+  assert.equal(jumpForCrit({ ...base, headroom: false }), false);
+});
+
+test("a bow or crossbow in the main hand is a ranged fighter", () => {
+  assert.equal(holdsRangedWeapon("bow"), true);
+  assert.equal(holdsRangedWeapon("crossbow"), true);
+  assert.equal(holdsRangedWeapon("iron_axe"), false);
+  assert.equal(holdsRangedWeapon(undefined), false);
 });
 
 test("the tally line names every count", () => {
   const t = emptyTally();
   t.swings = 15;
+  t.landed = 13;
+  t.noDamage = 2;
   t.crits = 9;
-  t.blocked = 2;
+  t.guards = 12;
   t.shieldDisabled = 1;
   t.draughts = 3;
   assert.equal(
     describeTally(t),
-    "15 charged swing(s), 9 critical, 2 blow(s) taken on the shield, shield disabled 1×, " +
+    "15 charged swing(s) (13 hurt the target, 2 did nothing), 9 critical, shield raised 12×, " +
+      "shield disabled 1×, " +
       "3 draught(s) drunk",
   );
+});
+
+test("the server's attack sound is its verdict on the swing", () => {
+  assert.equal(swingVerdict("entity.player.attack.strong"), "landed");
+  assert.equal(swingVerdict("minecraft:entity.player.attack.crit"), "landed");
+  assert.equal(swingVerdict("entity.player.attack.knockback"), "landed");
+  assert.equal(swingVerdict("entity.player.attack.nodamage"), "nodamage");
+  assert.equal(swingVerdict("entity.player.hurt"), undefined);
+  assert.equal(swingVerdict("item.shield.block"), undefined);
 });

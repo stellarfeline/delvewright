@@ -61,7 +61,10 @@ class FakeBot extends EventEmitter {
   entities: Record<number, FakeEntity> = {};
   /** Pinned minecraft-data shape: food items keyed by item type id. */
   registry = { foods: { 900: { foodPoints: 10 } } as Record<number, { foodPoints: number }> };
-  inventoryItems: Array<{ type: number; name: string; count: number }> = [SWORD, RABBIT_STEW];
+  inventoryItems: Array<{ type: number; name: string; count: number; components?: unknown[] }> = [
+    SWORD,
+    RABBIT_STEW,
+  ];
   inventory = {
     items: (): Array<{ type: number; name: string; count: number }> => this.inventoryItems,
     slots: [] as Array<{ name: string } | undefined>,
@@ -226,4 +229,94 @@ test("a delve that stages no NPC states an EMPTY cast, which is not the same as 
     executor.recentAttackers().map((a) => a.id),
     [42],
   );
+});
+
+// --- drinking a healing draught, the way a player drinks it --------------------
+
+/** A Vigil Draught as the server describes it: Potion of Healing II (registry id 25). */
+function draught(): { type: number; name: string; count: number; components: unknown[] } {
+  return {
+    type: 1000,
+    name: "potion",
+    count: 1,
+    components: [{ type: "potion_contents", data: { potionId: 25, customEffects: [] } }],
+  };
+}
+
+/**
+ * A bot whose server finishes a drink the way vanilla does: the use key is held,
+ * 32 ticks later the entity event 9 arrives on the bot, the bottle is gone and the
+ * heal has landed. `consume()` — mineflayer's shortcut, which a blow mid-drink
+ * resolves early — must never be the path.
+ */
+class DrinkBot extends FakeBot {
+  _client = new EventEmitter();
+  heldName: string | undefined;
+  used: string[] = [];
+  setControlState(): void {}
+  override async equip(item: { name: string }, dest: string): Promise<void> {
+    await super.equip(item, dest);
+    if (dest === "hand") this.heldName = item.name;
+  }
+  activateItem(offHand = false): void {
+    this.used.push(offHand ? "off-hand" : `hand:${this.heldName}`);
+    if (offHand || this.heldName !== "potion") return;
+    setTimeout(() => {
+      const i = this.inventoryItems.findIndex((it) => it.name === "potion");
+      if (i >= 0) this.inventoryItems.splice(i, 1);
+      this.health = Math.min(20, this.health + 8);
+      this._client.emit("entity_status", { entityId: 1, entityStatus: 9 });
+    }, 60);
+  }
+  deactivateItem(): void {
+    this.used.push("release");
+  }
+}
+
+test("a hurt bot drinks a healing draught with the use key, and it lands", async () => {
+  const bot = new DrinkBot();
+  bot.health = 9;
+  bot.inventoryItems = [SWORD, draught(), draught()];
+  const executor = attach(bot);
+  await executor.maybeDrink("test fight");
+  assert.equal(bot.health, 17);
+  assert.equal(bot.inventoryItems.filter((i) => i.name === "potion").length, 1);
+  assert.equal(bot.consumed, 0, "never through mineflayer's consume()");
+  assert.deepEqual(bot.used, ["hand:potion"]);
+  assert.ok(
+    bot.equips.some(([name, dest]) => name === "iron_sword" && dest === "hand"),
+    "the sword is back in hand after the drink",
+  );
+});
+
+test("a draught is not wasted on a scratch", async () => {
+  const bot = new DrinkBot();
+  bot.health = 13; // 7 missing, the draught heals 8
+  bot.inventoryItems = [SWORD, draught()];
+  const executor = attach(bot);
+  await executor.maybeDrink("test fight");
+  assert.deepEqual(bot.used, []);
+  assert.equal(bot.health, 13);
+});
+
+test("a draught waits while a melee attacker is on the bot", async () => {
+  const bot = new DrinkBot();
+  bot.health = 6;
+  bot.inventoryItems = [SWORD, draught()];
+  bot.entities[43] = mob(43, "vindicator", 2);
+  const executor = attach(bot);
+  await executor.maybeDrink("test fight");
+  assert.deepEqual(bot.used, []);
+});
+
+test("a bottle of harming is never drunk", async () => {
+  const bot = new DrinkBot();
+  bot.health = 6;
+  bot.inventoryItems = [
+    SWORD,
+    { ...draught(), components: [{ type: "potion_contents", data: { potionId: 26 } }] },
+  ];
+  const executor = attach(bot);
+  await executor.maybeDrink("test fight");
+  assert.deepEqual(bot.used, []);
 });
