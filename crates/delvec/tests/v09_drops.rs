@@ -234,7 +234,7 @@ fn actor_drops_ride_both_bodies() {
 }
 
 /// A removal the compiler performs is not a death the player earned: `unleash`
-/// strips the cage's declaration before killing it, so standing the elite up
+/// strips the cage's declaration before removing it, so standing the elite up
 /// never showers the party with its own helm.
 #[test]
 fn unleash_strips_the_cage_before_killing_it() {
@@ -251,11 +251,18 @@ fn unleash_strips_the_cage_before_killing_it() {
         .lines()
         .position(|l| l.contains("data merge entity @s") && l.contains("drop_chances"))
         .expect("the strip line is emitted");
-    let kill = unleash
+    // The strip selects the cage by its tag, so it must run while the cage still
+    // carries it: before the removal replaces every tag.
+    let retag = unleash
         .lines()
-        .position(|l| l.starts_with("kill @e[tag=dw_pup_warden]"))
-        .expect("the cage is killed");
-    assert!(strip < kill, "the strip must precede the kill:\n{unleash}");
+        .position(|l| {
+            l.starts_with("execute as @e[tag=dw_pup_warden] run data merge entity @s {Tags:[")
+        })
+        .expect("the cage is removed");
+    assert!(
+        strip < retag,
+        "the strip must precede the removal:\n{unleash}"
+    );
     let line = unleash.lines().nth(strip).unwrap();
     assert!(
         line.contains("mainhand:0.0f") && line.contains("head:0.0f"),

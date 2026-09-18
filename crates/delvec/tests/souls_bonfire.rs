@@ -420,6 +420,21 @@ fn on_rest_runs_at_the_right_audience_on_both_paths() {
     }
 }
 
+/// The unseen removal of every body carrying `tag` — the lines
+/// `emit::removal_lines` writes for a re-seat, spelled out.
+fn unseen_removal(tag: &str) -> Vec<String> {
+    vec![
+        format!(
+            "execute if entity @e[tag={tag}] run schedule function {NS}:unseen_sweep 5t replace"
+        ),
+        format!("execute as @e[tag={tag}] on passengers run ride @s dismount"),
+        format!("execute as @e[tag={tag}] at @s run tp @s ~ -128 ~"),
+        format!(
+            "execute as @e[tag={tag}] run data merge entity @s {{Tags:[\"dw_unseen\"],NoGravity:1b,NoAI:1b,Silent:1b}}"
+        ),
+    ]
+}
+
 /// A `respawns_on_rest` wave is re-seated on every rest and on every respawn at a
 /// bonfire — but only once the party has actually met it (the seated sentinel).
 #[test]
@@ -431,13 +446,12 @@ fn respawns_on_rest_wave_is_reseated_by_rest_and_respawn() {
         "spawning the wave marks it seated: {spawn}"
     );
     let reseat = fn_body(&out, "wave_reseat_guards");
+    let mut want = unseen_removal("dw_wave_guards");
+    want.push(format!("function {NS}:spawn_guards"));
     assert_eq!(
-        reseat.lines().collect::<Vec<_>>(),
-        vec![
-            "kill @e[tag=dw_wave_guards]",
-            &format!("function {NS}:spawn_guards")
-        ],
-        "the re-seat clears survivors then re-runs the authored spawn"
+        reseat.lines().map(str::to_string).collect::<Vec<_>>(),
+        want,
+        "the re-seat clears survivors unseen then re-runs the authored spawn"
     );
     let guard = format!(
         "execute if score #wseat_guards dw.sys matches 1 run function {NS}:wave_reseat_guards"
@@ -571,11 +585,13 @@ fn bonfire_runtime_behaviour_is_packtested() {
 fn the_reseat_re_enters_through_the_wave_s_own_spawn() {
     let out = build_fixture();
     let reseat = fn_body(&out, "wave_reseat_guards");
+    let mut want = unseen_removal("dw_wave_guards");
+    want.push(format!("function {NS}:spawn_guards"));
     assert_eq!(
-        reseat.lines().count(),
-        2,
-        "the re-seat is exactly `kill` + the authored spawn — any third line is state the \
-         first summon never wrote: {reseat}"
+        reseat.lines().map(str::to_string).collect::<Vec<_>>(),
+        want,
+        "the re-seat is exactly the survivors' removal + the authored spawn — any other \
+         line is state the first summon never wrote: {reseat}"
     );
     assert!(
         reseat.trim_end().ends_with(&format!("{NS}:spawn_guards")),

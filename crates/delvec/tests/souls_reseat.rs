@@ -186,6 +186,21 @@ fn all_functions(out: &BuildOutput) -> String {
     s
 }
 
+/// The unseen removal of every body carrying `tag` — the lines
+/// `emit::removal_lines` writes for a re-seat, spelled out.
+fn unseen_removal(tag: &str) -> Vec<String> {
+    vec![
+        format!(
+            "execute if entity @e[tag={tag}] run schedule function {NS}:unseen_sweep 5t replace"
+        ),
+        format!("execute as @e[tag={tag}] on passengers run ride @s dismount"),
+        format!("execute as @e[tag={tag}] at @s run tp @s ~ -128 ~"),
+        format!(
+            "execute as @e[tag={tag}] run data merge entity @s {{Tags:[\"dw_unseen\"],NoGravity:1b,NoAI:1b,Silent:1b}}"
+        ),
+    ]
+}
+
 // ---------------------------------------------------------------------------
 // 1. the actor elite — the barrow-warden regression
 // ---------------------------------------------------------------------------
@@ -219,12 +234,14 @@ fn the_elite_is_deleted_and_resummoned_at_its_origin_anchor() {
     let out = build(&fixture_campaign(true));
     let restand = func(&out, &format!("actor_restand_{ELITE_SAFE}"));
     let mut ls = restand.lines().filter(|l| !l.trim().is_empty());
-    assert_eq!(
-        ls.next().unwrap(),
-        format!("kill @e[tag=dw_actor_{ELITE_SAFE}]"),
-        "the wounded body is REMOVED first — never topped up:\n{restand}"
-    );
-    let summon = ls.next().expect("a summon follows the kill");
+    for want in unseen_removal(&format!("dw_actor_{ELITE_SAFE}")) {
+        assert_eq!(
+            ls.next().unwrap(),
+            want,
+            "the wounded body is REMOVED first, unseen — never topped up:\n{restand}"
+        );
+    }
+    let summon = ls.next().expect("a summon follows the removal");
     assert!(
         summon.starts_with("summon minecraft:wither_skeleton "),
         "a fresh body of the actor's own species is summoned:\n{restand}"
@@ -336,15 +353,15 @@ fn an_undefeated_boss_wave_is_reseated_on_its_own_bodies() {
         );
     }
     let reseat = func(&out, "wave_reseat_ambush");
+    let mut want = unseen_removal("dw_wave_ambush");
+    want.push(format!("function {NS}:spawn_ambush"));
     assert_eq!(
         reseat
             .lines()
             .filter(|l| !l.trim().is_empty())
+            .map(str::to_string)
             .collect::<Vec<_>>(),
-        vec![
-            "kill @e[tag=dw_wave_ambush]".to_string(),
-            format!("function {NS}:spawn_ambush"),
-        ],
+        want,
         "the refresh is the authored wave, re-seated whole:\n{reseat}"
     );
 }

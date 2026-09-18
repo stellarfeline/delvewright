@@ -1678,7 +1678,7 @@ fn v06_actor_datapack_emits_the_mechanics() {
     );
     assert!(
         all.contains("execute as @e[tag=dw_actor_giant] at @s run tp @s ~ -128 ~"),
-        "on-arrive vanish relocates each actor down ITS OWN column before killing \
+        "on-arrive vanish relocates each actor down ITS OWN column \
          (round-8: the bare `tp @e[…] ~ -128 ~` resolved against the command source, \
          dropping the body at world spawn's x/z)"
     );
@@ -1688,8 +1688,10 @@ fn v06_actor_datapack_emits_the_mechanics() {
     );
     assert!(
         all.contains("execute at @e[tag=dw_pup_giant,limit=1] run summon minecraft:zombie")
-            && all.contains("kill @e[tag=dw_pup_giant]"),
-        "unleash summons a twin at the puppet then removes the puppet"
+            && all.contains("execute as @e[tag=dw_pup_giant] at @s run tp @s ~ -128 ~")
+            && !all.contains("kill @e[tag=dw_pup_giant]"),
+        "unleash summons a twin at the puppet then removes the puppet unseen, never \
+         killing it beside the twin"
     );
 }
 
