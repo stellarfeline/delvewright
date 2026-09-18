@@ -3764,6 +3764,32 @@ before it) still fails `DW0311` (`DW0315` from a checkpoint) with a message nami
 the sealed gate — the "point of no return by geometry" the owner's staging vision
 wants, provable at compile time.
 
+**Every arrival is keyed, not every objective.** The critical path is
+`[select-class, objective…, assert-complete]`, and a consumer that sweeps quest
+states — `nav::reachable_under_every_quest_state`, the seat model `DW0525` reads —
+runs to `critical_path.len()` **inclusive**, one past the end. Neither the
+completion assertion nor that sentinel is an objective, so `strict_ancestor_steps`
+carries a row for each of them holding **every** objective on the path: the
+exported path is rooted at the finale, so it holds exactly the quests campaign
+completion depends on, and all of them are done before `dw.campaign` can be
+asserted, in every valid play order. Those rows are what keeps the two arrivals at
+which everything has fired from answering as if nothing has, and the answer there
+matters both ways — a door the party is FORCED to open reads shut again at the end
+of the delve (refusing a rest point behind it), and a `close-gate` fired by the
+LAST objective goes missing (admitting a rest point sealed in).
+
+**Forcedness is decided one layer earlier, and the set is deliberately every
+objective on the path rather than the mandatory ones** (spec-0051).
+`plan::collect_region_events` drops a write that does not FILL when its root is
+unforced, so an `open-gate` hanging off a quest nobody has to play is not in
+`plan.region_events` for any relation to credit; an unforced FILL is kept, because
+a wall the party may find standing is one the proof must survive. A second reading
+of forcedness here would be a second authority, and for a fill it would be the
+answer that ships. A **branch** path (`Plan::branch_gate_model`) is ordered over
+what its world completes rather than by the finale's closure, so it can carry a
+quest that world's player may skip; it is sound for the same reason, and its
+consumers arrive only at objective steps.
+
 **Close-gate solidity for *staged walks* (v0.6, timeline-local — `DW0410`, round
 8).** The DAG-causal model above answers "which gates are shut while the **player**
 walks a critical leg". It says nothing about two effects inside one bundle,
@@ -5912,8 +5938,9 @@ of three compile-time quantities it is a table, and every quantity already has a
 owner: **walkable** is the same `nav::World` the completability proof runs on
 (including a lethal volume's impassable cells, so "the near lip of the hazard"
 falls out rather than being a second rule); **the quest state** is the DAG-indexed
-sealing `close-gate` established (`nav::seal_configurations`); and **the respawn
-point in force** is engine state the runtime already keeps in `#cp dw.sys`.
+sealing the region-write model establishes, swept over the seat's own arrivals by
+`nav::reachable_under_every_quest_state`; and **the respawn point in force** is
+engine state the runtime already keeps in `#cp dw.sys`.
 
 The rule degenerates, which is why there is only one rule: a player who dies on
 ground they can walk back to is at distance zero from themselves, so the anchor is
@@ -5991,6 +6018,13 @@ every sealing configuration that can hold while that seat is in force. The ancho
 is then reachable under all of them, which is strictly stronger than the rule as
 written and needs no runtime discriminator for quest state at all. A campaign with
 no `close-gate` has exactly one configuration and pays nothing.
+
+The span swept is every critical-path arrival from the seat's own firing step to
+`critical_path.len()` inclusive — **the arrivals past the last objective
+included**, each of them carrying every objective on the path as fired (see *Every
+arrival is keyed* above). A seat's configurations therefore hold the world as the
+party leaves it at the end of the delve, which is the one a death after the last
+beat respawns into.
 
 #### What the runtime tiers can and cannot witness — stated, not implied
 
