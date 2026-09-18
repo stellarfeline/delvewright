@@ -39,6 +39,7 @@ const TRIAL: DeathTrial = {
   reEngaged: true,
   objectiveComplete: false,
   reseats: false,
+  reseat: undefined,
   reengage: undefined,
   objectivesIntact: true,
   lostObjectives: [],
@@ -458,6 +459,17 @@ test("a die-retry entry publishes what the settled re-engage probe saw", () => {
     {
       ...TRIAL,
       reseats: true,
+      reseat: {
+        present: 3,
+        declared: 3,
+        carriedOver: 0,
+        healthReadable: 3,
+        damaged: 0,
+        credited: 0,
+        nearest: 1,
+        farthest: 2,
+        settleMs: 120,
+      },
       reengage: {
         present: 3,
         declared: 3,
@@ -479,6 +491,16 @@ test("a die-retry entry publishes what the settled re-engage probe saw", () => {
   assert.equal(re["credited"], 2, "the correction the count half was judged against");
   assert.equal(re["farthest_blocks"], 61.25, "how far a feral mob strayed is evidence");
   assert.equal(re["settle_ms"], 750);
+  const at = json["die_retry"][0]!["reseat"] as Record<string, unknown>;
+  assert.equal(at["present"], 3, "the reading fidelity is judged on is published beside it");
+  assert.equal(at["settle_ms"], 120);
+});
+
+test("a wave that does not re-seat publishes no re-seat reading", () => {
+  const report = new RunReport("nobodys-cave-island", "normal");
+  report.recordTrials([TRIAL]);
+  const json = report.toJSON() as { die_retry: Record<string, unknown>[] };
+  assert.equal(json["die_retry"][0]!["reseat"], null);
 });
 
 test("named-entity deaths carry their scripted_teardown/combat classification, never dropped", () => {

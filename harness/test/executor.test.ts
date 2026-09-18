@@ -403,7 +403,13 @@ test("forcedMove resets the pathfinder only on a large cross-area jump", () => {
 
 // --- stall-recovery ---------------------------------------------
 
-import { isWaveMob, replayLegWithRecovery, type Unstick } from "../src/executor.ts";
+import {
+  disconnectReason,
+  isLivingBody,
+  isWaveMob,
+  replayLegWithRecovery,
+  type Unstick,
+} from "../src/executor.ts";
 import type { GoalSpec } from "../src/waypoints.ts";
 
 // Record every goto the replay issues, and script per-hop outcomes.
@@ -554,8 +560,10 @@ test("replayLegWithRecovery bounds the physics unstick then fails loudly", async
 // mannequin (nobodys-cave surf wave), misclassifying it fixated the bot on an
 // unkillable puppet at d<3 and timed the kill step out with drowned still alive.
 const SELF = { name: "delve-bot", height: 1.8, position: { x: 0, y: 64, z: 0 } };
-function ent(name: string | undefined, height = 1.8): unknown {
-  return { name, height, position: { x: 1, y: 64, z: 0 } };
+/** A fake entity. `type` is the pinned registry's category, which mineflayer
+ * copies onto every entity it tracks; the default is the one a wave mob has. */
+function ent(name: string | undefined, height = 1.8, type = "hostile"): unknown {
+  return { name, height, type, position: { x: 1, y: 64, z: 0 } };
 }
 /** What the delve says is not a fight. In a real run this comes off
  * `critical-path.json`; here it is written out so each case says which half of
@@ -589,10 +597,55 @@ test("isWaveMob excludes vanilla non-bodies and the bot itself, cast or no cast"
   assert.equal(isWaveMob(SELF, SELF, CAST), false, "the bot is not its own target");
   assert.equal(isWaveMob(ent(undefined), SELF, CAST), false, "an unnamed entity is not a target");
   assert.equal(
-    isWaveMob(ent("item", 0.25), SELF, CAST),
+    isWaveMob(ent("item", 0.25, "other"), SELF, CAST),
     false,
     "a short dropped entity is excluded",
   );
+});
+
+// Vesperhold's choir: a Drowned Chorister threw its trident at the bot, the
+// trident lay beside it, and the mid-fight trade swung at it. A thrown trident is
+// an `AbstractArrow`, and vanilla DISCONNECTS a player who attacks one ("Attempting
+// to attack an invalid entity") — the bot was kicked, and the scripted death that
+// followed "never landed". It was half a block tall, so the height rule passed it.
+test("isWaveMob never targets a projectile or any other non-living entity", () => {
+  for (const [name, height, type] of [
+    ["trident", 0.5, "projectile"],
+    ["arrow", 0.5, "projectile"],
+    ["fireball", 1, "projectile"],
+    ["falling_block", 0.98, "other"],
+    ["tnt", 0.98, "other"],
+    ["evoker_fangs", 0.8, "other"],
+    ["oak_boat", 0.5625, "other"],
+    ["experience_orb", 0.5, "orb"],
+  ] as const) {
+    assert.equal(isWaveMob(ent(name, height, type), SELF, NO_CAST), false, `${name} is not a body`);
+    assert.equal(isLivingBody(ent(name, height, type)), false, `${name} is never swung at`);
+  }
+});
+
+test("isWaveMob targets a living mob of any size, by category rather than height", () => {
+  // The height proxy spared a silverfish or an endermite wave for no reason.
+  assert.equal(isWaveMob(ent("silverfish", 0.3, "hostile"), SELF, NO_CAST), true);
+  assert.equal(isWaveMob(ent("magma_cube", 0.52, "mob"), SELF, NO_CAST), true);
+  assert.equal(isLivingBody(ent("zombie")), true);
+  assert.equal(isLivingBody(undefined), false);
+});
+
+test("a disconnect reason is read out of whatever shape the packet carried", () => {
+  assert.equal(
+    disconnectReason({
+      type: "compound",
+      value: { translate: { type: "string", value: "multiplayer.disconnect.invalid_entity_attacked" } },
+    }),
+    "multiplayer.disconnect.invalid_entity_attacked",
+  );
+  assert.equal(
+    disconnectReason('{"translate":"multiplayer.disconnect.kicked"}'),
+    "multiplayer.disconnect.kicked",
+  );
+  assert.equal(disconnectReason("socketClosed"), "socketClosed");
+  assert.equal(disconnectReason({ odd: 1 }), '{"odd":1}');
 });
 
 // --- completion oracle (AUDIT-P0) ---------------------------------------------
@@ -1547,12 +1600,18 @@ interface ReseatSpec {
    * withered two seconds after it appeared and another fell one second later.
    */
   worldKills?: number;
+  /** The same, but after the re-seat has been read once rather than the instant
+   * the cohort lands: vesperhold's choir, whose re-seated drowned swam into the lethal well
+   * beside their seat 14–19 s after the re-seat, before the bot got there. */
+  worldKillsOnReturn?: number;
 }
 
 /** One wave mob as the fake server publishes it to a client. */
 interface FakeMob {
   id: number;
   name: string;
+  /** The registry category mineflayer copies onto a tracked entity. */
+  type: string;
   height: number;
   position: FakeVec3;
   metadata: Record<number, unknown>;
@@ -1596,6 +1655,9 @@ class CombatFakeBot extends InteractFakeBot {
   respawnAt: [number, number, number] | undefined;
   /** The route back from the respawn is not walkable — the bell run-five symptom. */
   failReturnLeg = false;
+  /** Bodies of the current cohort the world kills once the re-seat has been read. */
+  killOnReturn: number[] = [];
+  censusSinceSeat = 0;
   /** The server did NOT keep the inventory across the death (a broken
    * `gamerule keep_inventory true` seal). */
   loseKitOnDeath = false;
@@ -1662,6 +1724,8 @@ class CombatFakeBot extends InteractFakeBot {
       this.nextId += 1;
     }
     for (const id of seated.slice(0, opts.worldKills ?? 0)) this.worldKill(id);
+    this.censusSinceSeat = 0;
+    this.killOnReturn = seated.slice(opts.worldKills ?? 0).slice(0, opts.worldKillsOnReturn ?? 0);
     // Bystanders are not of the wave, so the re-seat's tag sweep never touched
     // them: they are still standing where they were.
     for (const id of [...this.bystanders]) {
@@ -1687,6 +1751,7 @@ class CombatFakeBot extends InteractFakeBot {
     return {
       id,
       name: "zombie",
+      type: "hostile",
       height: 2,
       waveTagged: opts.waveTagged ?? true,
       ...(opts.hitsToKill !== undefined ? { hitsToKill: opts.hitsToKill } : {}),
@@ -1717,6 +1782,13 @@ class CombatFakeBot extends InteractFakeBot {
       }
       if (fn.includes(":wave_census_")) {
         if (this.failReEngageProbe && this.died) return; // the probe never answers
+        // The world thins the cohort AFTER the re-seat has been read once: every
+        // later answer sees it gone, exactly as the census at the encounter did.
+        if (this.censusSinceSeat >= 1 && this.killOnReturn.length > 0) {
+          for (const id of this.killOnReturn) this.worldKill(id);
+          this.killOnReturn = [];
+        }
+        this.censusSinceSeat += 1;
         this.censusSeq += 1;
         const mobs = this.waveMobs();
         for (const m of mobs) {
@@ -1788,6 +1860,7 @@ class CombatFakeBot extends InteractFakeBot {
     this.entities[id] = {
       id,
       name: "husk",
+      type: "hostile",
       height: 2,
       hitsToKill,
       metadata: { [ZOMBIE_HEALTH_IDX]: FULL_HEALTH },
@@ -2381,6 +2454,43 @@ test("a re-seat that comes back SHORT is red", async () => {
   assert.equal(executor.deathTrials()[0]!.reengage!.present, 2);
 });
 
+test("a cohort the world thins AFTER a whole re-seat is the encounter's finding, not a short re-seat", async () => {
+  const bot = new CombatFakeBot();
+  bot.seat(4);
+  bot.reSeat = { count: 4, worldKillsOnReturn: 2 };
+  const executor = await dieRetryAgainst(bot, 4);
+
+  const t = executor.deathTrials()[0]!;
+  assert.equal(t.reseat!.present, 4, "the re-seat was read whole the moment it landed");
+  assert.equal(t.reengage!.present, 2);
+  const [finding] = dieRetryFindings(executor.deathTrials());
+  assert.match(String(finding), /re-seat brought back 4 of 4/);
+  assert.match(String(finding), /kills its own wave/);
+  assert.doesNotMatch(String(finding), /came back SHORT/);
+});
+
+test("a server kick is named as the cause, and no scripted death is chatted to a dead socket", async () => {
+  const bot = new CombatFakeBot();
+  bot.seat(2);
+  bot.reSeat = { count: 2 };
+  const executor = attach(bot);
+  executor.useCampaign("the-drowned-bell");
+  executor.useCombatPlan(combatPlan(2, true), true);
+  bot.emit("kicked", {
+    type: "compound",
+    value: { translate: { type: "string", value: "multiplayer.disconnect.invalid_entity_attacked" } },
+  });
+  await assert.rejects(
+    executor.kill({ ...KILL_STEP, count: 2 }),
+    /disconnected the bot \(kicked: multiplayer\.disconnect\.invalid_entity_attacked\)/,
+  );
+  assert.equal(
+    bot.calls.filter((c) => c.startsWith("chat(/damage")).length,
+    0,
+    "nothing is sent after the server dropped the connection",
+  );
+});
+
 test("a damaged survivor carried across a life is red — the owner's grind rule", async () => {
   // 打一半的怪要移除重新生成一模一样的: a half-fought mob is REMOVED and regenerated.
   // Here the re-seat tops the wave up AROUND the survivor the last life chipped,
@@ -2450,7 +2560,11 @@ test("the re-engage probe SETTLES instead of sampling the instant it arrives", a
     trials.map((t) => t.outcome),
     ["re-engaged", "re-engaged"],
   );
-  assert.ok(trials[0]!.reengage!.settleMs >= 500, "the probe waited rather than guessed");
+  // The fake's census answers from the same table the delay gates, so the first
+  // reading to meet the late cohort is the one taken at the re-seat: that is the
+  // probe that must wait rather than guess, and the return probe then finds it.
+  assert.ok(trials[0]!.reseat!.settleMs >= 500, "the probe waited rather than guessed");
+  assert.equal(trials[0]!.reseat!.present, 2);
   assert.equal(trials[0]!.reengage!.present, 2);
 });
 
@@ -2612,6 +2726,7 @@ class ActorFakeBot extends InteractFakeBot {
     this.entities[id] = {
       id,
       name: "wither_skeleton",
+      type: "hostile",
       height: 2.4,
       customName: "Barrow Warden",
       position: new FakeVec3(pos[0], pos[1], pos[2]),

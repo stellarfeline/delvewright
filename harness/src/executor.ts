@@ -1074,6 +1074,14 @@ const SPAWN_POLL_MS = 50;
 const REENGAGE_SETTLE_MS = 6_000;
 
 /**
+ * How long the re-seat census may settle ({@link Executor.awaitReseat}). The
+ * re-seat lands one server tick after the respawn; this only has to outlast the
+ * census round-trips around that tick, and stays far below any walk back, so no
+ * harm a re-seated wave takes on its own can land inside it.
+ */
+const RESEAT_SETTLE_MS = 3_000;
+
+/**
  * How long one census may take to come back.
  *
  * A census is a `/function` call whose answer arrives on the chat channel within
@@ -1359,6 +1367,15 @@ export class MineflayerExecutor implements StepExecutor {
    * fails FAST with a diagnostic instead of respawning and pathfinding across the void.
    */
   private death: BotDeathError | undefined;
+  /**
+   * Why the server dropped the connection mid-run, once it has. Every act after
+   * a disconnect is a no-op against a socket that is gone — `bot.chat` sends
+   * nothing and the chat stream answers nothing — so an unrecorded kick turns
+   * into whatever the NEXT wait times out on. At vesperhold's choir that was a
+   * scripted death "that never landed", blamed on the op seed, when the server
+   * had kicked the bot three seconds earlier. {@link requireBot} throws this.
+   */
+  private lostConnection: string | undefined;
   /**
    * The one owner of the pathfinder's goal. Every trip is issued and collected
    * through it, so a hop this executor walks away from (a death, a timeout, a
@@ -1694,9 +1711,35 @@ export class MineflayerExecutor implements StepExecutor {
     await this.awaitEntitySettle();
   }
 
+  /**
+   * The only place the harness swings. Refuses — and says so — anything that is
+   * not a living body by {@link isLivingBody}: vanilla disconnects a player who
+   * attacks an item, an orb, itself or a thrown arrow/trident, and a kicked bot
+   * cannot take the death, walk the route or read the census it was about to.
+   */
+  private swing(target: Entity): boolean {
+    const bot = this.requireBot();
+    if (!isLivingBody(target)) {
+      process.stderr.write(
+        `[melee] refused a swing at ${target.name ?? "?"}#${target.id} ` +
+          `(registry category \`${target.type ?? "?"}\`): not a living body, and the ` +
+          `server disconnects a player who attacks one\n`,
+      );
+      return false;
+    }
+    bot.attack(target);
+    return true;
+  }
+
   private requireBot(): Bot {
     if (!this.bot) {
       throw new Error("executor is not connected; call connect() first");
+    }
+    if (this.lostConnection !== undefined) {
+      throw new Error(
+        `the server disconnected the bot (${this.lostConnection}) — nothing after that ` +
+          `moment was performed or observed`,
+      );
     }
     return this.bot;
   }
@@ -1731,6 +1774,18 @@ export class MineflayerExecutor implements StepExecutor {
     // value, which is the one direction a currency assertion must never drift in.
     this.installScoreObserver(bot);
     bot.on("death", () => this.onDeath());
+    // A mid-run disconnect is recorded the moment it happens (see lostConnection).
+    // `close()` detaches the bot before it ends it, so our own quit never lands here.
+    bot.on("kicked", (reason: unknown) => {
+      if (this.bot !== bot) return;
+      this.lostConnection ??= `kicked: ${disconnectReason(reason)}`;
+      process.stderr.write(`[connection] ${this.lostConnection}\n`);
+    });
+    bot.on("end", (reason: unknown) => {
+      if (this.bot !== bot) return;
+      this.lostConnection ??= `connection ended: ${disconnectReason(reason)}`;
+      process.stderr.write(`[connection] ${this.lostConnection}\n`);
+    });
     // Scripted-teardown death classification (2026-08-06 island triage): `entityDead`
     // fires on the LivingEntity death status packet, while the entity's last known
     // position is still readable — unlike `entityGone`, which also fires for an
@@ -3124,8 +3179,9 @@ export class MineflayerExecutor implements StepExecutor {
   /** Disconnect the bot, if connected. Safe to call more than once. */
   close(): void {
     if (this.bot) {
-      this.bot.end();
+      const bot = this.bot;
       this.bot = undefined;
+      bot.end();
     }
   }
 
@@ -3449,7 +3505,7 @@ export class MineflayerExecutor implements StepExecutor {
           if (!rising || fallWaitOver) {
             this.lowerShield();
             stop();
-            bot.attack(live);
+            if (!this.swing(live)) return "gone";
             this.lastSwingAt = Date.now();
             this.melee.swings += 1;
             return "swung";
@@ -5025,6 +5081,22 @@ export class MineflayerExecutor implements StepExecutor {
             `${trial.respawnPos ? trial.respawnPos.join(",") : "an unknown position"}` +
             `${trial.atCheckpoint ? "" : ` — NOT the governing checkpoint ${enc.checkpoint?.join(",") ?? "(none)"}`}\n`,
         );
+        // Fidelity is read HERE, at the event it guards: the re-seat has just
+        // landed (`cp_respawn_fire` runs on the first tick after the respawn) and
+        // nothing has touched the new cohort yet. Read after the walk back, the
+        // same census also carried everything the wave did to itself on the way
+        // (issue #809) and everything the world did to it (vesperhold's choir,
+        // drowned in a lethal well) — and blamed the re-seat for both.
+        if (enc.respawnsOnRest) {
+          const at = await this.awaitReseat(enc);
+          trial.reseat = at;
+          process.stderr.write(
+            `[die-retry] ${step.wave} death ${attempt}: re-seat read ${at.present}/${at.declared} ` +
+              `wave mob(s) after ${at.settleMs}ms` +
+              `${at.carriedOver > 0 ? `, ${at.carriedOver} carried over from a previous life` : ""}` +
+              `${at.healthReadable > 0 ? `, ${at.damaged}/${at.healthReadable} damaged` : ""}\n`,
+          );
+        }
         // The walk back ends INSIDE the re-seated wave, and the probe then stands
         // there for the whole settle — so both are assisted, for the same reason
         // the approach is. Whether the ROUTE is walkable is the measurement; a bot
@@ -5167,6 +5239,8 @@ export class MineflayerExecutor implements StepExecutor {
     const deadline = Date.now() + timeoutMs;
     for (;;) {
       if (this.deathSeq > seq) return true;
+      // A bot the server dropped can never die; say so rather than time out.
+      this.requireBot();
       if (Date.now() >= deadline) return false;
       await delay(SCORE_POLL_MS);
     }
@@ -5326,6 +5400,36 @@ export class MineflayerExecutor implements StepExecutor {
       throw new Error(
         `die-retry: the wave census \`${enc.census.census}\` never answered within ` +
           `${CENSUS_TIMEOUT_MS}ms — the bot must be opped to call it`,
+      );
+    }
+    return observationOf(census, enc.count, enc.pos, Date.now() - started);
+  }
+
+  /**
+   * The census the moment a re-seat has landed.
+   *
+   * The re-seat runs on the server tick after the respawn, and a census can be
+   * answered before that tick. A reading taken too early still shows the branded
+   * cohort of the life that just ended (or nothing, if the party had cleared it),
+   * so this settles until the census shows what only a completed re-seat can: no
+   * branded body standing and the declared count present. Bounded; a re-seat that
+   * never gets there is exactly what the fidelity verdict then reports, from the
+   * last reading.
+   */
+  private async awaitReseat(enc: Encounter): Promise<ReengageObservation> {
+    const started = Date.now();
+    const deadline = started + RESEAT_SETTLE_MS;
+    let census = await this.census(enc);
+    for (;;) {
+      if (census && census.summary.branded === 0 && census.summary.present >= enc.count) break;
+      if (Date.now() >= deadline) break;
+      await delay(REACH_POLL_MS);
+      census = (await this.census(enc)) ?? census;
+    }
+    if (!census) {
+      throw new Error(
+        `die-retry: the wave census \`${enc.census.census}\` never answered at the re-seat ` +
+          `within ${CENSUS_TIMEOUT_MS}ms — the bot must be opped to call it`,
       );
     }
     return observationOf(census, enc.count, enc.pos, Date.now() - started);
@@ -6218,10 +6322,66 @@ const NON_WAVE_ENTITIES = new Set<string>([
 ]);
 
 /**
+ * A server's disconnect reason as one readable line. mineflayer hands it over as
+ * whatever the packet carried — a plain string, a JSON text component, or (1.20.3+)
+ * an NBT compound — so a translate key or text is dug out where there is one and
+ * the raw value is printed otherwise, never dropped.
+ */
+export function disconnectReason(reason: unknown): string {
+  if (typeof reason === "string") {
+    try {
+      return disconnectReason(JSON.parse(reason));
+    } catch {
+      return reason;
+    }
+  }
+  const pick = (o: unknown): string | undefined => {
+    if (o === null || typeof o !== "object") return typeof o === "string" ? o : undefined;
+    const r = o as Record<string, unknown>;
+    // NBT: { type: "compound", value: { translate: { type: "string", value } } }
+    if (r["type"] !== undefined && "value" in r) return pick(r["value"]);
+    return pick(r["translate"]) ?? pick(r["text"]) ?? pick(r["fallback"]);
+  };
+  const found = pick(reason);
+  if (found !== undefined && found !== "") return found;
+  return JSON.stringify(reason) ?? String(reason);
+}
+
+/**
+ * The registry categories whose members are LIVING bodies — the only things a
+ * melee swing is ever meant for.
+ *
+ * mineflayer sets `entity.type` from the pinned version's minecraft-data
+ * `entities[].type`, so this is the registry's own statement, not a guess from a
+ * silhouette. Everything outside it is `projectile`, `other` (boats, minecarts,
+ * displays, falling blocks, TNT, evoker fangs, end crystals…), `orb`, `player`,
+ * `global` or `object`.
+ *
+ * Why a category and not the height proxy this replaced: vanilla does not merely
+ * ignore a swing at a non-body — `ServerGamePacketListenerImpl` DISCONNECTS the
+ * player for attacking an item, an experience orb, itself, or any non-redirectable
+ * `AbstractArrow` ("Attempting to attack an invalid entity"). A thrown `trident`
+ * is an `AbstractArrow`, half a block tall, and lay beside the bot after a
+ * Drowned Chorister threw it; the height rule passed it, the bot swung, and the
+ * server kicked it mid-trade at vesperhold's choir. A deny-list of names cannot
+ * keep up with every projectile the registry has; the category can.
+ */
+const LIVING_CATEGORIES = new Set<string>([
+  "hostile",
+  "mob",
+  "animal",
+  "passive",
+  "ambient",
+  "water_creature",
+  "living",
+]);
+
+/**
  * True if `e` is something the bot could swing at: not the bot, not a vanilla
- * non-body, not one of the kinds THIS delve stages as an NPC, and tall enough to
- * be a living mob. Classified by name (reliable across mineflayer versions)
- * rather than `type`/`kind`, which vary.
+ * non-body, not one of the kinds THIS delve stages as an NPC, and a LIVING entity
+ * by the pinned registry's own category ({@link LIVING_CATEGORIES}). Excluded
+ * names are matched by `name`; living-ness is read off `type`, which mineflayer
+ * fills from the same registry the server runs.
  *
  * `nonCombatants` is the delve's own cast statement, read off
  * `critical-path.json` — required, never defaulted. Passing an empty set is a
@@ -6238,8 +6398,19 @@ const NON_WAVE_ENTITIES = new Set<string>([
  */
 export function isWaveMob(e: unknown, self: unknown, nonCombatants: ReadonlySet<string>): boolean {
   if (!e || e === self) return false;
-  const ent = e as { name?: string; height?: number };
+  const ent = e as { name?: string; type?: string };
   const name = ent.name ?? "";
   if (name === "" || NON_WAVE_ENTITIES.has(name) || nonCombatants.has(name)) return false;
-  return (ent.height ?? 0) >= 0.5;
+  return isLivingBody(e);
+}
+
+/**
+ * Is `e` a living body by the pinned registry's category? The one rule every
+ * swing passes through ({@link Executor.swing}), so no caller — wave loop,
+ * self-defense, actor fight, mid-fight trade — can hand the server an entity it
+ * disconnects the player for attacking.
+ */
+export function isLivingBody(e: unknown): boolean {
+  if (!e) return false;
+  return LIVING_CATEGORIES.has((e as { type?: string }).type ?? "");
 }
