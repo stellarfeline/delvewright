@@ -94,6 +94,17 @@ decides anything about the content. A round reporting a red stage says which of
 the two it was; a crashed harness is a finding about the harness, and the delve is
 unmeasured rather than failed.
 
+The server can die the same way. A server out of Java heap logs
+`java.lang.OutOfMemoryError`, loses the structure templates it was loading, and
+either goes quiet or takes the bot down before it spawns. The ladders name it:
+`validation/packtest-run.sh` stops at the first OOM line with exit 125 and at its
+`--timeout` with exit 124, neither of them a test count; `validation/bot-run.sh`
+and `validation/branch-runs.sh` read the server log after a red run and say OOM
+instead of the bot's socket error. Every server gets the heap ceiling in
+`versions.toml` `[server].heap_max` unless its operator sets one
+(`tools/tests/test_server_heap.py` enumerates the entry points). An OOM red is a
+finding about the infrastructure, and the delve is unmeasured rather than failed.
+
 ## Rule 2 — a finding is not closed until its general form is a diagnostic
 
 An instance fix leaves every other instance of the same defect in the build,

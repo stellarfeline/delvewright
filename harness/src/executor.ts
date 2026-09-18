@@ -80,9 +80,9 @@ import {
   bodyInVolume,
   entryCellOf,
   inBox,
+  lethalStepCost,
   markersAt,
   expectedForfeit,
-  volumeReachesCell,
   openLethalTrial,
   seatAtRespawn,
   stakesDropped,
@@ -1171,12 +1171,6 @@ const MARKER_SEARCH_RADIUS = 4;
  * interaction in it.
  */
 const MARKER_PAIR_RADIUS = 0.5;
-/**
- * The pathfinder cost that makes a cell impassable. The library treats a step
- * whose total cost exceeds 100 as no move at all (`movements.js`: `if (cost > 100)
- * return`), so anything above it is a refusal rather than a preference.
- */
-const LETHAL_STEP_COST = 1_000;
 /**
  * How long the bot leaves its own corpse on the death screen before taking the
  * respawn — one human beat (20 server ticks).
@@ -2577,11 +2571,7 @@ export class MineflayerExecutor implements StepExecutor {
   private applyLethalExclusion(movements: InstanceType<typeof Movements>): void {
     if (this.lethalExclusionSuspended || this.lethalBoxes.length === 0) return;
     const boxes = this.lethalBoxes;
-    movements.exclusionAreasStep.push((block): number => {
-      const p = block.position;
-      const cell: Vec3Tuple = [p.x, p.y, p.z];
-      return boxes.some((b) => volumeReachesCell(cell, b)) ? LETHAL_STEP_COST : 0;
-    });
+    movements.exclusionAreasStep.push((block): number => lethalStepCost(block, boxes));
   }
 
   /**
