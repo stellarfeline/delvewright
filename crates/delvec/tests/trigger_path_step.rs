@@ -283,3 +283,162 @@ fn a_flag_only_a_trigger_sets_is_paid_by_a_trigger_step() {
     assert_eq!(path["steps"][press]["trigger"], "trigger/light-the-stone");
     assert_eq!(path["steps"][press]["on"], "use");
 }
+
+/// A hello-world `quests` doc whose only `open-gate` is a `strike` trigger on the
+/// `spawn` stone, armed by the talk beat. The stone stands on the keeper's side
+/// of the barred door, so the leg from the stone to `anchor/exit` crosses the
+/// door — and is walkable only if the strike, performed at its own step, counts
+/// as having happened before the arrival at the exit.
+fn strike_the_stone_doc() -> String {
+    common::at_dsl_version(
+        r#"{
+  "dsl_version": "%dsl_version%",
+  "campaign_id": "hello-world",
+  "stage": "quests",
+  "content": {
+    "quests": [
+      {
+        "id": "quest/open-the-door",
+        "trigger": { "type": "campaign-start" },
+        "objectives": [
+          { "type": "talk-to", "id": "obj/talk", "npc": "npc/keeper" },
+          { "type": "reach-anchor", "id": "obj/exit", "anchor": "anchor/exit",
+            "radius": 2, "after": ["obj/talk"] }
+        ],
+        "on_objective_complete": {
+          "obj/talk": [ { "type": "set-flag", "flag": "flag/told" } ]
+        },
+        "on_complete": []
+      }
+    ],
+    "triggers": [
+      { "id": "trigger/strike-the-stone", "at": "spawn", "on": { "on": "strike" },
+        "requires_flags": ["flag/told"],
+        "effects": [ { "type": "open-gate", "anchor": "anchor/door" } ] }
+    ]
+  }
+}"#,
+    )
+}
+
+/// A hello-world `quests` doc where the talk beat itself opens the door (and arms
+/// the lamp), and the exit reads `flag/lit`, which only a `use` on the far-side
+/// `anchor/exit` sets.
+/// The leg INTO that trigger step crosses the door, so it is walkable only if
+/// the talk beat — an ancestor of the objective the press is performed in front
+/// of — counts as having fired before the arrival at the trigger step.
+fn press_beyond_the_door_doc() -> String {
+    common::at_dsl_version(
+        r#"{
+  "dsl_version": "%dsl_version%",
+  "campaign_id": "hello-world",
+  "stage": "quests",
+  "content": {
+    "quests": [
+      {
+        "id": "quest/open-the-door",
+        "trigger": { "type": "campaign-start" },
+        "objectives": [
+          { "type": "talk-to", "id": "obj/talk", "npc": "npc/keeper" },
+          { "type": "reach-anchor", "id": "obj/exit", "anchor": "anchor/exit",
+            "radius": 2, "after": ["obj/talk"], "requires_flags": ["flag/lit"] }
+        ],
+        "on_objective_complete": {
+          "obj/talk": [
+            { "type": "open-gate", "anchor": "anchor/door" },
+            { "type": "set-flag", "flag": "flag/told" }
+          ]
+        },
+        "on_complete": []
+      }
+    ],
+    "triggers": [
+      { "id": "trigger/light-the-lamp", "at": "anchor/exit", "on": { "on": "use" },
+        "requires_flags": ["flag/told"],
+        "effects": [ { "type": "set-flag", "flag": "flag/lit" } ] }
+    ]
+  }
+}"#,
+    )
+}
+
+fn step_index(plan: &Plan, pred: impl Fn(&delvec::compiler::plan::Step) -> bool) -> usize {
+    plan.critical_path
+        .iter()
+        .position(pred)
+        .expect("the step is on the path")
+}
+
+/// **The ordering, asked directly.** A trigger step precedes every later step of
+/// its path: a gate it opens has fired before the arrival at the exit, and the
+/// step it is performed at inherits what precedes the objective after it.
+#[test]
+fn a_trigger_step_has_fired_before_every_later_arrival() {
+    let p = prefabs();
+    let c = validated(&strike_the_stone_doc(), &p);
+    let plan = Plan::build(&c, &p).expect("plan builds");
+    let t = step_index(&plan, |s| s.trigger() == Some("trigger/strike-the-stone"));
+    let exit = step_index(&plan, |s| s.objective() == Some("obj/exit"));
+    assert!(t < exit, "the strike is performed before the exit");
+    assert!(
+        plan.gate_fired_before(t, exit),
+        "the strike at step {t} has fired before the arrival at step {exit}"
+    );
+    assert!(
+        !plan.gate_fired_before(exit, t),
+        "and not the other way round"
+    );
+
+    let c = validated(&press_beyond_the_door_doc(), &p);
+    let plan = Plan::build(&c, &p).expect("plan builds");
+    let talk = step_index(&plan, |s| s.objective() == Some("obj/talk"));
+    let t = step_index(&plan, |s| s.trigger() == Some("trigger/light-the-lamp"));
+    assert!(talk < t);
+    assert!(
+        plan.gate_fired_before(talk, t),
+        "the talk beat (step {talk}) precedes the press performed in front of its successor \
+         (step {t})"
+    );
+}
+
+/// **A verdict that turns on the sweep.** The strike opens the door from the
+/// keeper's side, and the walk from the stone to the exit goes through the door.
+/// Crediting the opening to every later arrival is what makes that leg walkable;
+/// without it the build is `DW0317` on the door.
+#[test]
+fn a_door_a_trigger_step_opened_is_open_for_the_legs_after_it() {
+    let p = prefabs();
+    let c = validated(&strike_the_stone_doc(), &p);
+    let out = build(&c, &p).expect("the struck door is open for the walk to the exit");
+    assert_eq!(
+        actions(&critical_path(&out)),
+        [
+            "select-class",
+            "talk-to",
+            "trigger",
+            "reach",
+            "assert-complete"
+        ]
+    );
+}
+
+/// **A verdict that turns on the trigger step's own row.** The talk beat opens
+/// the door; the press stands beyond it. The leg into the press crosses the
+/// door, so it is walkable only because the press inherits the talk beat as a
+/// predecessor; without that row the build is `DW0317` on the door.
+#[test]
+fn the_leg_into_a_trigger_step_sees_what_its_objective_inherits() {
+    let p = prefabs();
+    let c = validated(&press_beyond_the_door_doc(), &p);
+    let out = build(&c, &p).expect("the door the talk opened is open for the walk to the press");
+    assert_eq!(
+        actions(&critical_path(&out)),
+        [
+            "select-class",
+            "talk-to",
+            "trigger",
+            "reach",
+            "assert-complete"
+        ]
+    );
+}
