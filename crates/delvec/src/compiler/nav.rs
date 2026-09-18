@@ -157,6 +157,14 @@ pub const DW_CHECKPOINT_UNSTANDABLE: DwCode = DwCode::new("DW0316", ExitTier::Bu
 /// not a skill check, it is a slot machine, and no amount of learning the level
 /// makes it fair.
 pub const DW_TIMED_GATE_COIN_FLIP: DwCode = DwCode::new("DW0378", ExitTier::Build);
+/// `DW0918`: a `volley` (spec-0022) whose cadence is a coin flip rather than a
+/// timing read — a player standing anywhere in the kill zone when a salvo lands
+/// cannot leave the zone before the next salvo in at least **20% of the
+/// interval**. The volley's counterplay is LEAVING the zone (spec-0022: "a
+/// decision, not a lucky strafe"); an interval too short for the walk out makes
+/// that decision unavailable. The same body model and floor as
+/// [`DW_TIMED_GATE_COIN_FLIP`] (`DW0378`), through the one [`timing_read`].
+pub const DW_VOLLEY_COIN_FLIP: DwCode = DwCode::new("DW0918", ExitTier::Build);
 /// `DW0388`: a **timed hazard** (spec-0016 §4 addendum) the player cannot
 /// observe before committing to it — no standable cell exists that is clear of
 /// the hazard's lethal span, reachable without entering it, and has line of
@@ -5434,11 +5442,59 @@ fn verify_checkpoints(
     Ok(())
 }
 
-/// The minimum share of a `timed-gate` cycle that must admit a crossing
-/// (spec-0016 §4). Below this the gate stops being a
-/// timing read and becomes a coin flip. Expressed as a percentage so the
-/// arithmetic below stays in integers — no float rounding in a proof (ADR-0006).
-const TIMED_GATE_MIN_ADMIT_PERCENT: u32 = 20;
+/// The minimum share of a timed hazard's cycle that must admit passage
+/// (spec-0016 §4). Below this the hazard stops being a timing read and becomes a
+/// coin flip. Expressed as a percentage so the arithmetic below stays in
+/// integers — no float rounding in a proof (ADR-0006). One floor for every timed
+/// hazard: a `timed-gate` (`DW0378`) and a `volley` (`DW0918`) are judged by
+/// [`timing_read`] against this same number.
+const TIMING_READ_MIN_ADMIT_PERCENT: u32 = 20;
+
+/// One timing read: a route of `moves` blocks that must be completed inside a
+/// window of `open_ticks` which recurs every `open_ticks + closed_ticks`.
+///
+/// **The one body model every timed-hazard proof is taken under.** The route is
+/// charged at [`SPRINT_TICKS_PER_BLOCK`]; a body that sets off `p` ticks into the
+/// window arrives in time iff `p + cross <= open_ticks`, so the admitting phases
+/// are `max(0, open_ticks - cross + 1)` of the cycle, and the share is an integer
+/// percentage rounded DOWN — the proof never credits a hazard with a share it
+/// does not have.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct TimingRead {
+    /// Blocks on the route the body must complete inside the window.
+    moves: u32,
+    /// `moves` charged at [`SPRINT_TICKS_PER_BLOCK`].
+    cross_ticks: u32,
+    /// Entry phases, of `cycle`, from which the route is completed in time.
+    admits: u32,
+    /// Ticks in one full cycle.
+    cycle: u32,
+    /// `admits` as a percentage of `cycle`, rounded down.
+    percent: u32,
+}
+
+impl TimingRead {
+    /// Below [`TIMING_READ_MIN_ADMIT_PERCENT`]: a coin flip, not a timing read.
+    fn is_coin_flip(&self) -> bool {
+        self.percent < TIMING_READ_MIN_ADMIT_PERCENT
+    }
+}
+
+/// Judge a route of `moves` blocks against a window of `open_ticks` recurring
+/// every `open_ticks + closed_ticks` — see [`TimingRead`].
+fn timing_read(moves: u32, open_ticks: u32, closed_ticks: u32) -> TimingRead {
+    let cross_ticks = moves * SPRINT_TICKS_PER_BLOCK;
+    let cycle = open_ticks + closed_ticks;
+    let admits = open_ticks.saturating_sub(cross_ticks) + u32::from(cross_ticks <= open_ticks);
+    let percent = admits.saturating_mul(100) / cycle.max(1);
+    TimingRead {
+        moves,
+        cross_ticks,
+        admits,
+        cycle,
+        percent,
+    }
+}
 
 /// Prove every `timed-gate` is readable — [`DW_TIMED_GATE_COIN_FLIP`] (`DW0378`).
 ///
@@ -5446,7 +5502,7 @@ const TIMED_GATE_MIN_ADMIT_PERCENT: u32 = 20;
 /// explicit that a gate which punishes bad timing is the entire point. What must
 /// hold is that the gate can be *read*: over one full cycle, the entry phases from
 /// which a walking player clears the span before it shuts must cover at least
-/// [`TIMED_GATE_MIN_ADMIT_PERCENT`] of the cycle.
+/// [`TIMING_READ_MIN_ADMIT_PERCENT`] of the cycle.
 ///
 /// The crossing cost comes from the same nav model every other proof uses: the A*
 /// step count from the footing on one side of the gate region to the footing on
@@ -5540,26 +5596,30 @@ fn verify_timed_gates(
             continue; // the open gate connects nothing — DW0311's business
         };
         // `path` includes both endpoints; the crossing is the moves between them.
-        let cross_ticks = (path.len().saturating_sub(1) as u32) * SPRINT_TICKS_PER_BLOCK;
-        let cycle = g.open_ticks + g.closed_ticks;
-        let admits =
-            g.open_ticks.saturating_sub(cross_ticks) + u32::from(cross_ticks <= g.open_ticks);
-        // Integer percentage, rounded DOWN — the proof never credits the gate with
-        // a share it does not have.
-        let percent = admits.saturating_mul(100) / cycle.max(1);
-        if percent < TIMED_GATE_MIN_ADMIT_PERCENT {
+        let read = timing_read(
+            path.len().saturating_sub(1) as u32,
+            g.open_ticks,
+            g.closed_ticks,
+        );
+        if read.is_coin_flip() {
+            let TimingRead {
+                moves,
+                cross_ticks,
+                admits,
+                cycle,
+                percent,
+            } = read;
             return Err(Failure {
                 code: DW_TIMED_GATE_COIN_FLIP,
                 message: format!(
                     "timed gate `{}` is a coin flip, not a timing read: crossing its span takes \
-                     {cross_ticks} ticks ({} blocks at {SPRINT_TICKS_PER_BLOCK} t/block), so only \
-                     {admits} of its {cycle}-tick cycle ({percent}%) admit a player who starts \
-                     walking then — under the {TIMED_GATE_MIN_ADMIT_PERCENT}% floor \
+                     {cross_ticks} ticks ({moves} blocks at {SPRINT_TICKS_PER_BLOCK} t/block), so \
+                     only {admits} of its {cycle}-tick cycle ({percent}%) admit a player who \
+                     starts walking then — under the {TIMING_READ_MIN_ADMIT_PERCENT}% floor \
                      (spec-0016 §4). Punishing bad timing is the point; punishing EVERY \
                      timing is a slot machine. Lengthen `open_ticks`, shorten `closed_ticks`, or \
                      narrow the span — never lower the floor.",
-                    g.id,
-                    path.len().saturating_sub(1)
+                    g.id
                 ),
             });
         }
@@ -5603,6 +5663,123 @@ fn gate_crossing_footings(
         }
     }
     None
+}
+
+/// Prove a `volley`'s cadence is a timing read — [`DW_VOLLEY_COIN_FLIP`]
+/// (`DW0918`).
+///
+/// **What must be readable is the way out.** spec-0022 defines a volley as
+/// saturation: every standable cell of the kill zone is fired on every salvo, so
+/// "escaping means LEAVING the zone, a decision, not a lucky strafe". A volley is
+/// finite and does not loop, so a body outside the zone is never forced through
+/// it — the chain ends, and a `rearm` trap fires again only when someone steps on
+/// its trigger. The one body a volley can trap is the one inside the zone when a
+/// salvo lands (the party's own step on a pressure plate fires salvo 0 the same
+/// tick), and the decision spec-0022 promises it is to walk out before the next
+/// salvo. So the route judged is the **escape**: from the standable kill-zone
+/// cell whose walk out is longest, the moves to the nearest standable cell
+/// outside the zone, by the same router and step rule every route proof uses.
+///
+/// The window is the interval between two salvos. The body sets off `p` ticks
+/// after a salvo and is clear iff it stands outside when the next one is
+/// summoned, so this is [`timing_read`] with `open_ticks = interval` and nothing
+/// shut: the admitting phases must cover [`TIMING_READ_MIN_ADMIT_PERCENT`] of the
+/// interval — a reaction window the player can read, not a sprint that has to
+/// start on the frame the plate clicks. Projectile flight is not credited as
+/// extra time (the proof never grants a share it does not have).
+///
+/// A volley with `salvos: 1` has no cadence — no next salvo exists to escape —
+/// and is not judged: its single salvo is the trap's consequence, the way a
+/// `collapse` is, and whether it can be watched before it is triggered is
+/// `DW0388`'s question. A zone with no standable cell is `DW0444`'s. A standable
+/// zone cell from which no standable cell outside the zone can be reached at all
+/// is the limit of this rule — no phase admits an escape — and is refused.
+pub fn check_volley_cadence(
+    world: &World,
+    region: ([i32; 3], [i32; 3]),
+    salvos: u32,
+    interval: u32,
+    label: &str,
+) -> Result<(), Failure> {
+    if salvos < 2 {
+        return Ok(());
+    }
+    let zone: BTreeSet<[i32; 3]> =
+        crate::compiler::assembled::region_cells(region.0, region.1).collect();
+    let cells: Vec<[i32; 3]> = zone
+        .iter()
+        .copied()
+        .filter(|c| world.is_standable(*c))
+        .collect();
+    // Every way out passes through a first cell outside the zone, and that cell
+    // is a step-rule neighbour of a zone cell — so these are all the exits.
+    let exits: BTreeSet<[i32; 3]> = cells
+        .iter()
+        .flat_map(|c| world.neighbors(*c))
+        .filter(|n| !zone.contains(n))
+        .collect();
+    // The worst cell: the longest shortest walk out. Ties keep the first cell in
+    // ascending order (ADR-0006).
+    let mut worst: Option<([i32; 3], Option<u32>)> = None;
+    for &cell in &cells {
+        let out = exits
+            .iter()
+            .filter_map(|&e| world.find_path(cell, e))
+            .map(|path| path.len().saturating_sub(1) as u32)
+            .min();
+        let worse = match (&worst, out) {
+            (None, _) => true,
+            (Some((_, Some(_))), None) => true,
+            (Some((_, Some(w))), Some(m)) => m > *w,
+            (Some((_, None)), _) => false,
+        };
+        if worse {
+            worst = Some((cell, out));
+        }
+    }
+    let Some((cell, moves)) = worst else {
+        return Ok(()); // no standable cell — DW0444's business
+    };
+    let Some(moves) = moves else {
+        return Err(Failure {
+            code: DW_VOLLEY_COIN_FLIP,
+            message: format!(
+                "{label}: a player standing on kill-zone cell [{}, {}, {}] cannot walk out of \
+                 the zone at all — no standable cell outside it is reachable — so every one of \
+                 the {salvos} salvos lands on them and no timing of theirs changes that. A \
+                 volley's counterplay is LEAVING the zone (spec-0022); give the zone an exit \
+                 a body can step onto, or shrink `kill_zone` to the floor that has one — never \
+                 lower the floor of the proof.",
+                cell[0], cell[1], cell[2]
+            ),
+        });
+    };
+    let read = timing_read(moves, interval, 0);
+    if read.is_coin_flip() {
+        let TimingRead {
+            moves,
+            cross_ticks,
+            admits,
+            cycle,
+            percent,
+        } = read;
+        return Err(Failure {
+            code: DW_VOLLEY_COIN_FLIP,
+            message: format!(
+                "{label} is a coin flip, not a timing read: from kill-zone cell [{}, {}, {}] \
+                 the walk out of the zone takes {cross_ticks} ticks ({moves} blocks at \
+                 {SPRINT_TICKS_PER_BLOCK} t/block), so only {admits} of its {cycle}-tick salvo \
+                 interval ({percent}%) admit a player who sets off then — under the \
+                 {TIMING_READ_MIN_ADMIT_PERCENT}% floor every timed hazard is held to \
+                 (spec-0016 §4). A volley's counterplay is LEAVING the zone (spec-0022); an \
+                 interval shorter than the walk out takes that decision away. Lengthen \
+                 `interval`, or shrink `kill_zone` so no cell is deep inside it — never lower \
+                 the floor.",
+                cell[0], cell[1], cell[2]
+            ),
+        });
+    }
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------
@@ -12949,6 +13126,75 @@ mod tests {
         let err = verify_timed_gates(&world, &[g])
             .expect_err("a window shorter than the crossing admits no phase at all");
         assert_eq!(err.code, DW_TIMED_GATE_COIN_FLIP); // DW0378
+    }
+
+    // --- volley cadence (spec-0022, DW0918) ---
+
+    /// A kill zone five cells deep down a one-wide hall at x=0 (z=3..=7). The
+    /// middle cell is 3 blocks from the floor outside either end, so the walk out
+    /// costs 12 ticks at the sprint model.
+    fn volley_hall() -> (World, ([i32; 3], [i32; 3])) {
+        (carved(&run_z(0, 0, 12)), ([0, WY, 3], [0, WY, 7]))
+    }
+
+    /// 15 ticks between salvos against a 12-tick walk out: 4 of 15 phases (26%)
+    /// admit an escape. A readable cadence.
+    #[test]
+    fn volley_whose_interval_admits_the_walk_out_is_readable() {
+        let (world, zone) = volley_hall();
+        check_volley_cadence(&world, zone, 3, 15, "volley")
+            .expect("4 of 15 phases admit the walk out: a timing read");
+    }
+
+    /// The same zone with 13 ticks between salvos: 2 of 13 phases (15%) admit the
+    /// walk out — under the floor. `DW0918`, naming the cell it judged.
+    #[test]
+    fn volley_whose_interval_barely_admits_the_walk_out_is_dw0918() {
+        let (world, zone) = volley_hall();
+        let err = check_volley_cadence(&world, zone, 3, 13, "volley")
+            .expect_err("15% of the interval is a coin flip");
+        assert_eq!(err.code, DW_VOLLEY_COIN_FLIP); // DW0918
+        assert!(err.message.contains("coin flip"), "{}", err.message);
+        assert!(err.message.contains("[0, 65, 5]"), "{}", err.message);
+        assert!(err.message.contains("2 of its 13-tick"), "{}", err.message);
+    }
+
+    /// One salvo has no cadence: there is no next salvo to walk out ahead of, so
+    /// even an interval no escape fits in is not judged.
+    #[test]
+    fn a_single_salvo_volley_has_no_cadence_to_judge() {
+        let (world, zone) = volley_hall();
+        check_volley_cadence(&world, zone, 1, 1, "volley").expect("salvos: 1 is not judged");
+    }
+
+    /// A zone that fills a sealed chamber has no way out at all: every salvo lands
+    /// and no timing changes that — the limit of the same rule.
+    #[test]
+    fn a_volley_zone_with_no_way_out_is_dw0918() {
+        let world = carved(&run_z(0, 0, 4));
+        let err = check_volley_cadence(&world, ([0, WY, 0], [0, WY, 4]), 3, 200, "volley")
+            .expect_err("no exit admits no phase");
+        assert_eq!(err.code, DW_VOLLEY_COIN_FLIP); // DW0918
+        assert!(err.message.contains("cannot walk out"), "{}", err.message);
+    }
+
+    /// The window arithmetic is the one `DW0378` uses: a 2-move doorway inside a
+    /// 10-open / 190-shut gate admits 3 of 200 phases, the figure its own test
+    /// states.
+    #[test]
+    fn timing_read_is_the_gate_window_arithmetic() {
+        let r = timing_read(2, 10, 190);
+        assert_eq!(
+            (r.cross_ticks, r.admits, r.cycle, r.percent),
+            (8, 3, 200, 1)
+        );
+        assert!(r.is_coin_flip());
+        let v = timing_read(3, 15, 0);
+        assert_eq!(
+            (v.cross_ticks, v.admits, v.cycle, v.percent),
+            (12, 4, 15, 26)
+        );
+        assert!(!v.is_coin_flip());
     }
 
     // --- hazard observability (spec-0016 §4 addendum, DW0388) ---
