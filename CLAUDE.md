@@ -1,6 +1,6 @@
 # Delvewright — Agent Constitution
 
-Delvewright is an automated production line that outputs **self-contained Minecraft adventure "delves" on demand** for a fixed group of 1–4 players. A delve is a 2–3 hour (10h ceiling), story-driven, box-garden (箱庭) adventure map: adventure mode, class selection with pre-provided gear, zero grind. It ships as a versioned OCI image — one `docker run` = a joinable dungeon — and must be **provably completable by machine** before a human spends their one QA hour on it.
+Delvewright is an automated production line that outputs **self-contained Minecraft adventure "delves" on demand** for a fixed group of 1–4 players. A delve is a 2–3 hour (10h ceiling), story-driven, box-garden (箱庭) adventure map: adventure mode, class selection with pre-provided gear. It ships as a versioned OCI image — one `docker run` = a joinable dungeon — and must be **provably completable by machine** before a human spends their one QA hour on it.
 
 The creator is an agent (ADR-0012): the LLM writes the DSL, the human gives ideas and plays the result. Every authoring surface — DSL, CLI, skill — is agent-facing. Every input to a surface is either a creative judgement (the agent's argument) or a procedural derivation (handed by the tool, never typed); an error is refused where it is entered, not at the end.
 
@@ -34,7 +34,7 @@ This file holds what anyone building Delvewright must obey to produce a correct 
 - **No mods on the player-facing server** — validation-layer only.
 - **No nondeterminism in the compiler**: no wall-clock time, no unseeded RNG, no hash-order iteration, no absolute paths in output.
 - **No CC BY-NC / ND / unknown-license assets, ever.** Original, CC0, CC BY, MIT, Apache-2.0, or GPL-3.0-compatible only (ADR-0013). Record provenance in prefab metadata.
-- **No grind mechanics in delve design**: no mining/leveling loops, resource farming, or base building.
+- **No mining/leveling loops or base building in delve design.** How currency and resources are earned, farming included, is the creator's design; the engine does not restrict it.
 - **No runtime LLM in shipped delves**: all content, dialogue included, is authored at generation time as pre-written branching options (spec-0001).
 - **The production host is prod-only** — never target a delve-hosting machine for dev or tests.
 - **Generated campaigns/worlds do not live in this repo** — they ship via GitHub Releases / OCI registry (content licensed separately from GPL code; ADR-0007).
