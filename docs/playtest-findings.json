@@ -1023,6 +1023,7 @@
         "kind": "dsl",
         "match": {
           "eq": {
+            "dropped_by": null,
             "type": "collect"
           }
         }
@@ -1046,7 +1047,7 @@
       "finding": "a collect objective could not fill the room's own container or name its item, so the compiler stamped a chest of its own beside the barrels the fiction described",
       "general_form": "a collect objective adopts a declared container that must resolve to a real fillable container in the assembled world, and no two fills claim one anchor",
       "id": "isl-33",
-      "note": "applies_when added 2026-08-21: the carriers of a `container` declaration are collect objectives. Collects declared with none carrying a container = UNBOUND; no collect anywhere = the class measures zero.",
+      "note": "The precondition is a collect that provisions from a container: one adopting a declared `container`, or one naming neither `container` nor `dropped_by`, where the compiler stamps its own chest at `anchor` - the chest-beside-the-barrels shape of this finding. A `dropped_by` collect is not counted: its item comes off a wave's body, the compiler places no chest and fills no container, and `container` beside it is refused (DW0492), so neither half of the general form has an object to act on. Collects that provision from a container with none declaring `container` = UNBOUND; no such collect = the class measures zero.",
       "round": 12,
       "triage": "capability"
     },
@@ -1470,13 +1471,34 @@
     {
       "applies_when": {
         "files": [
-          "quests.json"
+          "world.json",
+          "quests.json",
+          "dialogue.json"
         ],
         "kind": "dsl",
         "match": {
-          "eq": {
-            "type": "cutscene"
-          }
+          "any_of": [
+            {
+              "has": [
+                "mitigation"
+              ]
+            },
+            {
+              "eq": {
+                "type": "give-effect"
+              },
+              "in": {
+                "effect": [
+                  "minecraft:night_vision",
+                  "night_vision",
+                  "minecraft:blindness",
+                  "blindness",
+                  "minecraft:darkness",
+                  "darkness"
+                ]
+              }
+            }
+          ]
         }
       },
       "binding": {
@@ -1498,7 +1520,7 @@
       "finding": "granted night vision expired and flickered part-way through the ending cutscene it was granted for",
       "general_form": "a granted sight effect outlasts any authored camera it can overlap, plus vanilla's wind-down, so it can never begin ramping down on screen",
       "id": "isl-52",
-      "note": "applies_when added 2026-08-21: the class is a granted sight effect outlasting an authored camera, so its carriers are cutscenes. Cutscenes with no `mitigation` declared = UNBOUND; no cutscene = the class measures zero.",
+      "note": "The precondition is a granted sight effect - an area's `mitigation` or a `give-effect` of night vision, blindness or darkness in any effect list of quests.json or dialogue.json - because the general form quantifies over the grant, and a cutscene with no sight effect granted anywhere has nothing to expire on screen. A potion in a class kit is not counted: the party drinks it on its own clock, so no authored camera is timed against it. The binding reaches only the `mitigation` grant, whose lease the compiler derives from the longest camera; a `give-effect` sight grant's author-chosen `seconds` has no check against the cameras it can overlap, so a campaign whose only sight grant is a `give-effect` is UNBOUND, correctly. No sight grant = the class measures zero.",
       "round": 15,
       "triage": "capability"
     },
@@ -1510,6 +1532,7 @@
         "kind": "dsl",
         "match": {
           "eq": {
+            "dropped_by": null,
             "type": "collect"
           }
         }
@@ -1536,7 +1559,7 @@
       "finding": "only one of four identical barrels held the item the objective wanted, and nothing told the party which",
       "general_form": "an objective's target is distinguishable from identical scenery, or every copy satisfies it",
       "id": "isl-53",
-      "note": "Closed WEAKER than the general form as written, and the gap is stated rather than papered over. DW0861 refuses a `collect` that adopts a prefab container without both a `title` and an `item_name` - the two things that can tell the party which box to open and what they have found - keyed to adoption, which is the act that creates the ambiguity: the compiler's own chest at `anchor` appears when the objective activates, an adopted one is scenery the party has been walking past since the beat began. What it does NOT prove is that the target is visually distinguishable from its identical neighbours, which needs the assembled world and a search radius. The general form's second disjunct - or every copy satisfies it - is not expressible at any strength: `container` names one anchor.",
+      "note": "Closed WEAKER than the general form as written, and the gap is stated rather than papered over. DW0861 refuses a `collect` that adopts a prefab container without both a `title` and an `item_name` - the two things that can tell the party which box to open and what they have found - keyed to adoption, which is the act that creates the ambiguity: the compiler's own chest at `anchor` appears when the objective activates, an adopted one is scenery the party has been walking past since the beat began. What it does NOT prove is that the target is visually distinguishable from its identical neighbours, which needs the assembled world and a search radius. The general form's second disjunct - or every copy satisfies it - is not expressible at any strength: `container` names one anchor. The precondition is a collect that provisions from a container - adopted, or the compiler's own chest - the same class as isl-33. A `dropped_by` collect is not counted: its item lies where the wave's body fell, and no box stands for it to be confused with.",
       "round": 16,
       "triage": "capability"
     },
