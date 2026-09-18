@@ -22,8 +22,7 @@
 use std::collections::BTreeSet;
 
 use crate::envelope::Campaign;
-use crate::onkill::OnKill;
-use crate::stages::{Actor, Objective, QuestEffect, Verb, Wave, for_each_campaign_effect};
+use crate::stages::{Actor, Objective, OnKill, QuestEffect, Verb, Wave, for_each_campaign_effect};
 
 /// One fight the campaign declares: a wave or an actor.
 #[derive(Clone, Copy, Debug)]
@@ -136,7 +135,7 @@ fn fires_wave<'a>(effs: impl IntoIterator<Item = &'a QuestEffect>, wave_id: &str
 /// objective references the wave (defensive fallback for a wave declared with a
 /// kill but no explicit spawn). `None` if nothing spawns it.
 ///
-/// **Every root is walked DEEP** ([`fires_wave`]), through
+/// **Every root is walked DEEP** (`fires_wave`), through
 /// [`QuestEffect::nested_effect_lists`] — the DSL's single authority on effect
 /// nesting, and the same authority `emit::all_campaign_effects` walks to decide
 /// what to compile. A wave the emitter writes a `function <ns>:spawn_<wave>` call

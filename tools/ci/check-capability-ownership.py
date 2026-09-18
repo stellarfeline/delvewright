@@ -313,7 +313,9 @@ EFFECT_BUNDLES = {
     "on_complete": "ROOT R2 (`EffectRootKind::QuestComplete`).",
     "effects": (
         "ROOT R3 (`EffectRootKind::Trigger`) for `EnvTrigger.effects`; ROOT R8 "
-        "(`EffectRootKind::ShopOffer`) for `ShopOffer.effects`; "
+        "(`EffectRootKind::ShopOffer`) for `ShopOffer.effects`; ROOT R9 "
+        "(`EffectRootKind::OnKill`) for `OnKill.effects`, a wave's or an actor's "
+        "`on_kill` (spec-0074); "
         "`SequenceStep.effects` is reached as a nested list of "
         "`QuestEffect::Sequence`."
     ),

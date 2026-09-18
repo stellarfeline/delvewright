@@ -2,18 +2,20 @@
 //! killed.
 //!
 //! `on_kill` is an optional property of `waves[]` and `actors[]` — one type on
-//! both ([`OnKill`]). Its `effects` run once per body a player is **credited**
-//! with killing (vanilla's `minecraft:player_killed_entity`), as that player, so
-//! a `player`-scoped datum pays the killer and a `party`-scoped one pays the
-//! party once. It is effect root **R9** ([`crate::EffectRootKind::OnKill`]).
+//! both. Its `effects` run once per body a player is **credited** with killing
+//! (vanilla's `minecraft:player_killed_entity`), as that player, so a
+//! `player`-scoped datum pays the killer and a `party`-scoped one pays the party
+//! once. It is effect root **R9** ([`crate::EffectRootKind::OnKill`]).
 //!
 //! `fires` is the creator's judgement on whether a body that comes back pays
-//! again ([`KillFires`]). It is required exactly where the fight comes back after
-//! the party has met it (`DW0915`) and refused as inert where it does not
-//! (`DW0914`); both refusals read one compiler-side predicate
-//! (`plan::fight_comes_back`), which needs the campaign's rest points.
+//! again. It is required exactly where the fight comes back after the party has
+//! met it (`DW0915`) and refused as inert where it does not (`DW0914`); both
+//! refusals read one compiler-side predicate (`plan::fight_comes_back`), which
+//! needs the campaign's rest points.
 //!
-//! This module holds the two refusals that need only the documents:
+//! The types ([`crate::stages::OnKill`], [`crate::stages::KillFires`]) are
+//! stage-5 surface and live with the rest of it in [`crate::stages`]; this
+//! module holds the two refusals that need only the documents:
 //!
 //! * `DW0100` — an empty `effects` list (the exported schema's `minItems: 1`,
 //!   which serde does not enforce);
@@ -22,52 +24,9 @@
 //!   `unleash-actor` names that is not `vulnerable`
 //!   ([`crate::fight::unleashed_actors`]).
 
-use schemars::JsonSchema;
-use serde::{Deserialize, Serialize};
-
 use crate::diagnostic::{Diagnostic, codes};
 use crate::envelope::Campaign;
 use crate::fight::{Fight, fights, unleashed_actors, wave_area};
-use crate::stages::QuestEffect;
-
-/// What happens each time a body of this fight is killed (spec-0074): the
-/// `on_kill` of a wave or an actor.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct OnKill {
-    /// Whether a body that comes back pays again. Required where the fight comes
-    /// back after the party has met it — a bonfire re-seats it, or the beat that
-    /// seats it can fire more than once (`DW0915`); left off where it does not,
-    /// and `every-kill` there is refused as inert (`DW0914`). No default: whether
-    /// an economy can be farmed is the creator's judgement.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub fires: Option<KillFires>,
-    /// The effects, run as the credited player for each credited kill. Every verb
-    /// an `on_objective_complete` bundle accepts, each gated by its own `when`.
-    #[schemars(length(min = 1))]
-    pub effects: Vec<QuestEffect>,
-}
-
-/// Whether a body that comes back after a rest pays again (spec-0074 §4).
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "kebab-case")]
-pub enum KillFires {
-    /// Over the whole delve the fight pays at most once per body it seats — the
-    /// wave's body count, or once for an actor. A re-seat does not renew it.
-    FirstKill,
-    /// Every credited kill pays, however many times the fight is re-seated.
-    EveryKill,
-}
-
-impl KillFires {
-    /// The kebab token, as it appears in the DSL.
-    pub fn token(self) -> &'static str {
-        match self {
-            KillFires::FirstKill => "first-kill",
-            KillFires::EveryKill => "every-kill",
-        }
-    }
-}
 
 /// The document-tier `on_kill` refusals (spec-0074 §8.1): `DW0100` for an empty
 /// `effects` list and `DW0913` for a bundle no credited kill can ever reach. A

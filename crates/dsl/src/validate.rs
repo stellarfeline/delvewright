@@ -3052,22 +3052,28 @@ fn lighting_range_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
 /// flag/wave *producer* scans and emission already descend). Top-level paths are
 /// unchanged, so a nesting-free campaign is validated identically.
 /// Does the campaign declare a `bonfire` — a rest point that re-seats fights
-/// (spec-0016 §1)? Read at the roots the compiler collects rest points from (a
-/// quest's bundles and an environment trigger's effects, at any nesting depth).
-/// `DW0370` asks it, and so does the compiler's `fight_comes_back` where no plan
-/// exists yet (`DW0914`/`DW0915`).
+/// (spec-0016 §1)? Read at the roots the compiler collects rest points from: a
+/// quest's bundles and an environment trigger's effects, at any nesting depth.
+/// The match over the site is exhaustive, so a new root answers here. `DW0370`
+/// asks it, and so does the compiler's `fight_comes_back` where no plan exists
+/// yet (`DW0914`/`DW0915`).
 pub fn declares_bonfire(c: &Campaign) -> bool {
+    use crate::stages::EffectSite;
     let mut has_bonfire = false;
-    for q in &c.quests.content.quests {
-        for_each_effect_deep(q, |_path, eff| {
-            has_bonfire |= eff.bonfire().is_some();
-        });
-    }
-    for t in &c.quests.content.triggers {
-        for_each_trigger_effect_deep(t, |_path, eff| {
-            has_bonfire |= eff.bonfire().is_some();
-        });
-    }
+    crate::stages::for_each_campaign_effect(c, &mut |_, site, eff| {
+        let collected = match site {
+            EffectSite::Objective { .. }
+            | EffectSite::QuestComplete { .. }
+            | EffectSite::Trigger { .. } => true,
+            EffectSite::Trap { .. }
+            | EffectSite::DialogueRespawn { .. }
+            | EffectSite::ShortcutUnlock { .. }
+            | EffectSite::ShopOffer { .. }
+            | EffectSite::OnDeath
+            | EffectSite::OnKill { .. } => false,
+        };
+        has_bonfire |= collected && eff.bonfire().is_some();
+    });
     has_bonfire
 }
 

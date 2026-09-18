@@ -16849,10 +16849,11 @@ fn emit_kill_reward_packtests(
 ///   `verb_kill_uncredited`'s claim; asserting the countdown here would make every
 ///   gate that can reach a spawn this template's business, `DW0807`.)
 /// * `kill_pays_removed_<f>` — every removal the compiler owns for this fight,
-///   run over standing bodies (a wave's `wave_reseat_<wave>`; an actor's
-///   `unleash_<actor>` puppet swap, its `actor_restand_<actor>`, and the
-///   `despawn-actor` lines of both styles): the ledger is still 0. Emitted where
-///   the fight has a removal to run;
+///   run over standing bodies (a rest's re-seat through the real
+///   `bonfire_rest_<i>`, which runs `wave_reseat_<wave>` / `actor_restand_<actor>`;
+///   an actor's `unleash_<actor>` puppet swap; the `despawn-actor` lines of both
+///   styles): the ledger is still 0. Emitted where the fight has a removal to
+///   run;
 /// * `kill_pays_across_rest_<f>` — only where a rest brings the fight back:
 ///   kill, run the real `bonfire_rest_<i>`, kill again, and the ledger tells the
 ///   two `fires` values apart. A `respawns_on_rest` wave comes back whether it
@@ -17024,33 +17025,32 @@ fn emit_kill_pays_packtests(plan: &Plan, out: &mut BuildOutput, wave_placements:
         write(&format!("kill_pays_uncredited_{f}"), b, out);
 
         // --- kill_pays_removed_<f>: no compiler removal pays ---
-        let removals: Vec<Vec<String>> = match fight {
+        // A rest's re-seat is reached through the real `bonfire_rest_<i>` — the
+        // one path that runs it in play — rather than by calling
+        // `wave_reseat_<wave>` / `actor_restand_<actor>` directly: a direct call
+        // would drive this fight's re-seat body and leave its un-bundled
+        // siblings undriven, which is `DW0810`'s finding against the suite.
+        let rest = plan.bonfires().next().map(|bf| bf.index);
+        let reseated = match fight {
             Fight::Wave(w) => {
-                let safe = plan::safe_local(w.id.as_str());
-                if w.respawns_on_rest || plan.undefeated_reseat_waves().iter().any(|u| u.id == w.id)
-                {
-                    vec![vec![format!("function {ns}:wave_reseat_{safe}")]]
-                } else {
-                    Vec::new()
-                }
+                w.respawns_on_rest || plan.undefeated_reseat_waves().iter().any(|u| u.id == w.id)
             }
-            Fight::Actor(a) => {
-                let safe = plan::safe_local(a.id.as_str());
-                let mut r: Vec<Vec<String>> = Vec::new();
-                if plan.reseat_actors().iter().any(|x| x.id == a.id) {
-                    r.push(vec![format!("function {ns}:actor_restand_{safe}")]);
-                }
-                for style in [
-                    delvewright_dsl::DespawnStyle::Kill,
-                    delvewright_dsl::DespawnStyle::Vanish,
-                ] {
-                    let mut lines_ = Vec::new();
-                    emit_despawn_actor(a.id.as_str(), style, !a.drops.is_empty(), &mut lines_);
-                    r.push(lines_);
-                }
-                r
-            }
+            Fight::Actor(a) => plan.reseat_actors().iter().any(|x| x.id == a.id),
         };
+        let mut removals: Vec<Vec<String>> = Vec::new();
+        if let Some(i) = rest.filter(|_| reseated) {
+            removals.push(vec![format!("function {ns}:bonfire_rest_{i}")]);
+        }
+        if let Fight::Actor(a) = fight {
+            for style in [
+                delvewright_dsl::DespawnStyle::Kill,
+                delvewright_dsl::DespawnStyle::Vanish,
+            ] {
+                let mut lines_ = Vec::new();
+                emit_despawn_actor(a.id.as_str(), style, !a.drops.is_empty(), &mut lines_);
+                removals.push(lines_);
+            }
+        }
         if !removals.is_empty() {
             let mut b = packtest_header(&format!(
                 "{title}: no removal the compiler performs on {} `{}` pays its `on_kill` \
@@ -17071,7 +17071,16 @@ fn emit_kill_pays_packtests(plan: &Plan, out: &mut BuildOutput, wave_placements:
                     "execute store result score #kpr_{f} dw.sys if entity {living}"
                 ));
                 b.push(format!("assert score #kpr_{f} dw.sys matches 1.."));
+                // Brand the standing bodies, so the template can see the removal
+                // really removed THEM — a removal that did nothing would also
+                // pay nothing.
+                b.push(format!("tag {living} add dw_kpr_{f}"));
                 b.extend(removal.iter().cloned());
+                b.push(format!(
+                    "execute store result score #kpr_{f} dw.sys if entity \
+                     @e[tag=dw_kpr_{f},nbt=!{{Health:0.0f}}]"
+                ));
+                b.push(format!("assert score #kpr_{f} dw.sys matches 0"));
                 b.push(format!("assert score {ledger} dw.sys matches 0"));
             }
             b.push(format!("kill @e[tag={tag}]"));

@@ -91,7 +91,7 @@ pub use layout::{
     LayoutBinding, LayoutGraphContent, OpensFrom, Station, StationKind,
 };
 pub use mclang::mc_lang_code;
-pub use onkill::{KillFires, OnKill, on_kill_checks};
+pub use onkill::on_kill_checks;
 pub use placement::{Placement, anchor_vocabulary_unknowable};
 pub use prefab::PrefabMeta;
 pub use purchase::{PurchaseBinding, purchase_checks};
@@ -117,15 +117,15 @@ pub use stages::{
     DespawnStyle, DialogueContent, DialogueEffect, DialogueNode, DialogueOption, EffectSite,
     EnchantedItem, EncounterTier, EnvTrigger, EquipItem, EquipSlot, Facing, Fixture, Forfeit,
     Guard, Happening, HappeningSubject, HappeningVerb, Horizon, HorizonBase, HorizonSpec, ItemDrop,
-    KitItem, LethalVolume, Lethality, Locomotion, Loot, LootItem, MAX_POTION_AMPLIFIER,
+    KillFires, KitItem, LethalVolume, Lethality, Locomotion, Loot, LootItem, MAX_POTION_AMPLIFIER,
     MAX_POTION_DURATION_TICKS, Mark, MobAttributes, MobDrop, MobEffect, MobEquipment, NarrateStyle,
-    Npc, NpcDialogue, NpcSkin, NpcsContent, Objective, OnFull, Persona, Pieces, PlannedQuest,
-    PotionContents, PotionEffect, Prop, Quest, QuestEffect, QuestPlanContent, QuestsContent,
-    Relationship, Role, SequenceStep, Shop, ShopOffer, Shortcut, ShotStyle, SkinModel, SlotDrop,
-    SoundAt, Stake, StateCompare, StateDecl, StateScope, StateWrite, StealthZone, TimedGate, Trap,
-    TrapDisarm, TrapEffect, TrapReset, TrapTrigger, Trigger, TriggerAudience, TriggerOn, Verb,
-    Wave, WaveLane, WaveMob, WaveSummon, WorldContent, WorldDifficulty, WorldTime, WorldWeather,
-    is_potion_bearing_item, offset_cell,
+    Npc, NpcDialogue, NpcSkin, NpcsContent, Objective, OnFull, OnKill, Persona, Pieces,
+    PlannedQuest, PotionContents, PotionEffect, Prop, Quest, QuestEffect, QuestPlanContent,
+    QuestsContent, Relationship, Role, SequenceStep, Shop, ShopOffer, Shortcut, ShotStyle,
+    SkinModel, SlotDrop, SoundAt, Stake, StateCompare, StateDecl, StateScope, StateWrite,
+    StealthZone, TimedGate, Trap, TrapDisarm, TrapEffect, TrapReset, TrapTrigger, Trigger,
+    TriggerAudience, TriggerOn, Verb, Wave, WaveLane, WaveMob, WaveSummon, WorldContent,
+    WorldDifficulty, WorldTime, WorldWeather, is_potion_bearing_item, offset_cell,
 };
 pub use stages::{
     BodyRef, BodySite, BodySkinSite, BodyTraversalSite, body_sites, body_skin_sites,
