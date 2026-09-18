@@ -56,7 +56,7 @@ The full inventory — every binary, script and flag that exists today — is
   the writer refuses to put an estimate back over it; deleting the row is her
   call, asked in chat. Human-in-the-loop, at step 12 and at step 14; the full
   procedure is `$DELVEWRIGHT_ENGINE/docs/reference/tools.md` §4a.
-- **NPCs never spawn, or a large build dies partway**: an OOM, not a content bug — `up` checks and says so; raise `--memory` past its `4G` default.
+- **NPCs never spawn, or a large build dies partway**: an OOM, not a content bug — `up` checks and says so; raise `--memory` past the default heap ceiling `up` prints.
 - **Handing a build to a playtester**: the playtest note flow — `/trigger dw.note`
   in-game, then `delvec harvest` → `playtest-report.json`. Human-optional.
 - **Delivering or revising a cutscene**: shot calibration — in-game

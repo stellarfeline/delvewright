@@ -67,6 +67,17 @@ def engine_version(path: pathlib.Path | None = None) -> str:
     return pin("engine", "version", path)
 
 
+def server_heap_max(path: pathlib.Path | None = None) -> str:
+    """`[server] heap_max` — the Java heap ceiling every Minecraft server this
+    engine starts gets by default (itzg `MAX_MEMORY`).
+
+    Read by `tools/lib/server-heap.sh` for host-side `docker run`s and by
+    `tools/tests/test_server_heap.py`, which holds the delve entrypoint's default
+    equal to it.
+    """
+    return pin("server", "heap_max", path)
+
+
 def chunky_core(path: pathlib.Path | None = None) -> str:
     """`[render] chunky_core` — the Chunky snapshot core every emitted scene was
     verified against (`crates/delvec/src/compiler/view/scene.rs`).

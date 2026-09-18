@@ -534,6 +534,45 @@ export function volumeReachesCell(
   return bodyInVolume([nearest(0), cell[1]!, nearest(2)], box, width, height);
 }
 
+/**
+ * The pathfinder cost that makes a cell impassable. The library treats a step
+ * whose total cost exceeds 100 as no move at all (`movements.js`: `if (cost > 100)
+ * return`), so anything above it is a refusal rather than a preference.
+ */
+export const LETHAL_STEP_COST = 1_000;
+
+/**
+ * What mineflayer-pathfinder hands an `exclusionAreasStep` callback. For a loaded
+ * cell it is a prismarine block with a `position`; for a cell the client has not
+ * loaded, `Movements.getBlock` returns a stub with NO `position` (`bot.blockAt`
+ * answered null) and `safe: false` — the library's own rule for an unknown cell,
+ * under which `safeOrBreak` already costs the step 100, i.e. no move. A diagonal
+ * move probes the cells beside its path, so the stub reaches the callback
+ * whenever a path grazes the edge of what the client has loaded.
+ */
+export interface PathfinderCell {
+  readonly position?: { readonly x: number; readonly y: number; readonly z: number } | null;
+}
+
+/**
+ * The exclusion cost of stepping on `block`: {@link LETHAL_STEP_COST} when a
+ * declared lethal volume can kill a body standing there
+ * ({@link volumeReachesCell}), else 0.
+ *
+ * A block with no position names no cell, so it is in no volume and costs 0 here;
+ * the pathfinder has already walled it as unknown (above). Reading its `x` threw a
+ * `TypeError` out of the path search and ended the run.
+ */
+export function lethalStepCost(
+  block: PathfinderCell | null | undefined,
+  boxes: readonly Box[],
+): number {
+  const p = block?.position;
+  if (p === undefined || p === null) return 0;
+  const cell: Vec3Tuple = [p.x, p.y, p.z];
+  return boxes.some((b) => volumeReachesCell(cell, b)) ? LETHAL_STEP_COST : 0;
+}
+
 /** Every cell of an inclusive box, in a fixed order. */
 export function boxCells(box: Box): Vec3Tuple[] {
   const out: Vec3Tuple[] = [];

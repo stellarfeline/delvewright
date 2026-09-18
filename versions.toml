@@ -49,6 +49,26 @@ pack_format = [94, 1]
 # rung of the validation ladder.
 pack_format = [75, 0]
 
+[server]
+# The Java heap CEILING every Minecraft server this engine starts gets unless its
+# operator says otherwise (itzg `MAX_MEMORY`; the initial heap stays at itzg's own
+# 1G, so a small delve only commits what it uses). itzg's own ceiling is 1G, and
+# a delve's structure templates live on that heap: vesperhold (one 172x104x292
+# piece in 84 tiles plus 170 horizon templates) threw 44 OutOfMemoryErrors
+# loading `horizon/valley` templates under PackTest at 1G and 0 at 4G.
+# A constant, not derived from the build: one campaign is measured, so any
+# formula from template count to heap would be invented. A delve that needs
+# more reds by name (`java.lang.OutOfMemoryError`, the rule in
+# tools/lib/server-heap.sh) and is raised with `-e MEMORY=...` on the image or
+# `--memory` on tools/creator/playtest-server.sh.
+# Consumed by: validation/world-settings-entrypoint.sh (and its byte-identical
+# copy baked by validation/Dockerfile.delve) — the entrypoint of the shipped delve
+# image, every compose service that boots it, and the PackTest runner;
+# tools/lib/server-heap.sh — every host-side `docker run` of a bare server image.
+# tools/tests/test_server_heap.py enumerates every server entry point and fails
+# one that does not take this value.
+heap_max = "4G"
+
 [images.base]
 # ghcr.io/stellarfeline/delvewright-base — a TRUE mirror (buildx imagetools create,
 # see spec-0005 open question resolution below) of itzg/minecraft-server at the pin.
