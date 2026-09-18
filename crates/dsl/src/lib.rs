@@ -35,6 +35,7 @@ pub mod firework;
 pub mod fluid;
 pub mod fmt;
 pub mod gate;
+pub mod healthbar;
 pub mod ids;
 pub mod l10n;
 pub mod layout;
@@ -68,6 +69,7 @@ pub use envelope::{
 pub use equipment::{EquipmentBinding, Equippable, EquippableFact, PieceKind};
 pub use firework::{FireworkExplosion, FireworkShape};
 pub use gate::{Gate, GateBinding, GateConsumer, GateSite, for_each_gate};
+pub use healthbar::{Fight, FightKind, HealthBar, HealthBarBinding, fights, health_bar_checks};
 pub use ids::{
     ActorId, AmbushId, AnchorId, AreaId, BranchId, BranchPointId, CampaignId, ClassId, DatumId,
     DialogueId, EdgeId, EditBatchId, EndingId, FactId, FlagId, LethalVolumeId, NodeId, NpcId,

@@ -79,8 +79,15 @@ fn every_tier_keyword_validates_at_v08() {
         // `DW0469` is the fixture's own pre-existing advisory (a fighting actor
         // in a campaign that declares no `world.difficulty`) and has nothing to
         // do with the tier — it fires identically with the field absent.
+        // spec-0073: a `boss`-billed actor with no `health_bar` is ADVISED —
+        // one `DW0912` warning; no other tier is named.
+        assert_eq!(
+            d.iter().filter(|x| x.code == "DW0912").count(),
+            usize::from(tier == "boss"),
+            "`{tier}`: {d:#?}"
+        );
         assert!(
-            d.iter().all(|x| x.code == "DW0469"),
+            d.iter().all(|x| x.code == "DW0469" || x.code == "DW0912"),
             "`{tier}` must validate clean: {d:#?}"
         );
     }

@@ -41,6 +41,7 @@
 //! - [`gates`]: `close-gate` gate-block validation — the physical dual of `open-gate`.
 //! - [`guarantee`]: which anchors an area's binding guarantees, answered before anything is placed (`DW0889`).
 //! - [`gym`]: the metrics gym — a site-plan campaign generated from the metrics table.
+//! - [`healthbar`]: a fight's health bar — its emission, and the colour/style vocabulary read from the pinned command tree (`DW0911`).
 //! - [`horizon`]: the one place a resolved `horizon` becomes the physical facts the rest of the compiler reads.
 //! - [`integrity`]: the emitted call graph is closed — every `function` call points at a function the compiler wrote (`DW0497`).
 //! - [`lethal`]: lethal volumes — the proofs a box that kills owes the completability model.
@@ -114,6 +115,7 @@ pub mod flow;
 pub mod gates;
 pub mod guarantee;
 pub mod gym;
+pub mod healthbar;
 pub mod horizon;
 pub mod integrity;
 pub mod lethal;
