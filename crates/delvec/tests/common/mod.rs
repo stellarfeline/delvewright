@@ -1213,3 +1213,57 @@ fn box_pal_entry(name: &str) -> fastnbt::Value {
     c.insert("Name".to_string(), fastnbt::Value::String(name.to_string()));
     fastnbt::Value::Compound(c)
 }
+
+/// The block a trap of `trigger` kind is built from, as a test piece places it.
+pub fn trap_trigger_block(trigger: delvewright_dsl::TrapTrigger) -> &'static str {
+    match trigger {
+        delvewright_dsl::TrapTrigger::PressurePlate => "minecraft:stone_pressure_plate",
+        delvewright_dsl::TrapTrigger::Tripwire => "minecraft:tripwire",
+        delvewright_dsl::TrapTrigger::TrappedChest => "minecraft:trapped_chest",
+    }
+}
+
+/// Every structure `plan` places, read from `dir`, with each trap's trigger
+/// block written into its trigger cell.
+///
+/// A trap's trigger is hardware the piece places (`DW0917`), and the shared
+/// test library's pieces carry none: a fixture that hangs a trap on an existing
+/// anchor is a piece that places the trigger there, and this is that piece.
+/// Only identity-rotated templates are written; a trap cell no such template
+/// covers is left alone, so the build says `DW0917` rather than this helper
+/// guessing.
+pub fn plan_structures_with_trap_triggers(
+    plan: &delvec::compiler::plan::Plan,
+    dir: &Path,
+) -> std::collections::BTreeMap<String, Vec<u8>> {
+    use delvec::admit::structure::{PaletteEntry, Structure};
+    let mut out = std::collections::BTreeMap::new();
+    for area in &plan.areas {
+        for piece in &area.pieces {
+            for t in &piece.templates {
+                let mut bytes = std::fs::read(dir.join(&t.structure_file)).unwrap();
+                if piece.rotation == delvec::compiler::solver::Rotation::None {
+                    let mut s = Structure::read(&bytes).unwrap();
+                    let mut placed = false;
+                    for trap in &plan.traps {
+                        let c = trap.trigger_cell;
+                        let local = [c[0] - t.pos[0], c[1] - t.pos[1], c[2] - t.pos[2]];
+                        if s.in_bounds(local) {
+                            s.set_cell(
+                                local,
+                                PaletteEntry::simple(trap_trigger_block(trap.trigger)),
+                                None,
+                            );
+                            placed = true;
+                        }
+                    }
+                    if placed {
+                        bytes = s.write();
+                    }
+                }
+                out.insert(t.structure_file.clone(), bytes);
+            }
+        }
+    }
+    out
+}

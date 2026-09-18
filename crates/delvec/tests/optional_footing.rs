@@ -113,15 +113,7 @@ fn parse_hw(quests: &str) -> Campaign {
 fn try_build(c: &Campaign, prefab_dir: &Path) -> Result<BuildOutput, emit::BuildFailure> {
     let prefabs = PrefabRegistry::load_dir(prefab_dir).unwrap();
     let plan = Plan::build(c, &prefabs).expect("plan builds");
-    let mut structures: BTreeMap<String, Vec<u8>> = BTreeMap::new();
-    for area in &plan.areas {
-        for piece in &area.pieces {
-            for t in &piece.templates {
-                let bytes = std::fs::read(prefab_dir.join(&t.structure_file)).unwrap();
-                structures.insert(t.structure_file.clone(), bytes);
-            }
-        }
-    }
+    let structures = common::plan_structures_with_trap_triggers(&plan, prefab_dir);
     emit::build(
         &plan,
         &BTreeMap::new(),

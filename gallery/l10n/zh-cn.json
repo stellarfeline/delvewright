@@ -99,6 +99,8 @@
     "shop.counter.offer.0.label": "展柜钥匙，四枚代币",
     "shop.counter.offer.0.tooltip": "经纪留了一把备用，价钱不还。",
     "shop.counter.offer.1.label": "面包，一颗绿宝石",
+    "shop.counter.offer.2.label": "利刃与修补之页",
+    "shop.counter.offer.2.tooltip": "经纪卖的是展柜里的东西：一把不会变钝的刃，和一页铁砧读得懂的书。",
     "shop.counter.title": "经纪的柜台",
     "stake.keepsake.collected": "你取回了信物。",
     "stake.relics.collected": "只有你能取回自己的遗物。",
@@ -117,7 +119,7 @@
     "world.outro": "厅中每一只展柜都已读过。",
     "world.title": "陈列厅"
   },
-  "dsl_version": "0.30.0",
+  "dsl_version": "0.33.0",
   "kind": "l10n",
   "lang": "zh-cn",
   "source": {
@@ -219,6 +221,8 @@
     "shop.counter.offer.0.label": "A case key, four tokens",
     "shop.counter.offer.0.tooltip": "The Factor keeps one spare, and will not be talked down.",
     "shop.counter.offer.1.label": "Bread, one emerald",
+    "shop.counter.offer.2.label": "A keen blade and a mended page",
+    "shop.counter.offer.2.tooltip": "The Factor sells what the case holds: an edge that stays sharp, and a page an anvil can read.",
     "shop.counter.title": "The Factor's Counter",
     "stake.keepsake.collected": "You take back the keepsake.",
     "stake.relics.collected": "Only you can lift your own relics.",

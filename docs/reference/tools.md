@@ -546,8 +546,10 @@ embedded `Command` — found by the same recursive scan the `delvec schem`
 conversion strip uses, so the two cannot drift. The **palette allowlist**
 (`DW0730`) is a broad default vanilla building-and-decoration set
 (`crates/delvec/src/admit/allowlist.rs`: stone, wood, glass and copper families, inert
-flora, non-functional furniture and job-site blocks, decorative minerals and
-ores, archaeology) that deliberately still flags surprising blocks — redstone,
+flora, furniture and job-site blocks — anvils in every damage stage included —,
+the trap trigger blocks (pressure plates, buttons, the trapped chest), decorative
+minerals and ores, archaeology) that deliberately still flags surprising blocks —
+redstone contraption parts (dispensers, droppers, pistons, observers, repeaters),
 tnt, note blocks — for review, and is overridable with `--allowlist <file>`
 (`{ "allow": [...], "allow_suffixes": [...] }`). Jigsaw is deliberately NOT
 forbidden here: the conversion strip forbids it on raw community schematics,

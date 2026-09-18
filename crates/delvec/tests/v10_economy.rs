@@ -1338,3 +1338,82 @@ fn the_ci_fixture_validates_and_emits_the_chain() {
     assert_eq!(ledger["unbound"], serde_json::json!(false), "{ledger}");
     assert_eq!(ledger["stakes_declared"], serde_json::json!(1));
 }
+
+// --- a shop sells enchanted things (spec-0075) ---------------------------
+
+/// A smithy that sells an enchanted sword and an enchanted book, priced in
+/// embers. The offer is the spelling spec-0032 prescribes — the price on the
+/// offer's own gate, the effects bare.
+const ENCHANTED_SHOP: &str = r#",
+    "state": [
+      { "id": "state/embers", "scope": "player", "initial": 5, "name": "Embers" }
+    ],
+    "shops": [
+      { "id": "shop/smithy", "anchor": "spawn", "title": "The smithy",
+        "offers": [
+          { "label": "A keen blade, three embers",
+            "requires_state": [ { "state": "state/embers", "op": "at-least", "value": 3 } ],
+            "effects": [
+              { "type": "give-item", "item": "minecraft:iron_sword", "count": 1,
+                "enchantments": { "minecraft:sharpness": 2 } },
+              { "type": "give-item", "item": "minecraft:enchanted_book", "count": 1,
+                "enchantments": { "minecraft:mending": 1 } },
+              { "type": "add-state", "state": "state/embers", "amount": -3 }
+            ] },
+          { "label": "Bread", "effects": [
+              { "type": "give-item", "item": "minecraft:bread", "count": 2, "name": "Loaf" } ] }
+        ] }
+    ]"#;
+
+/// **A purchase hands over the enchanted stack, and an enchanted book stores
+/// its enchantment.** The sword carries `minecraft:enchantments`; the book
+/// carries `minecraft:stored_enchantments`, the component an anvil applies —
+/// `minecraft:enchantments` on a book is a book that glints and does nothing.
+/// The generated PackTest buys it on the pinned server and asserts both stacks
+/// with exactly those components; an offer with no enchanted stack gets none.
+#[test]
+fn a_shop_sells_an_enchanted_sword_and_an_enchanted_book() {
+    let out = build(&parse_hw(&quests_doc(ENCHANTED_SHOP, "")));
+    let pick = fnc(&out, "shop_pick_0_0");
+    assert!(
+        pick.contains(r#"give @s minecraft:iron_sword[enchantments={"minecraft:sharpness":2}] 1"#),
+        "{pick}"
+    );
+    assert!(
+        pick.contains(
+            r#"give @s minecraft:enchanted_book[stored_enchantments={"minecraft:mending":1}] 1"#
+        ),
+        "{pick}"
+    );
+    // A named, unenchanted give is the pre-existing line, byte for byte.
+    let bread = fnc(&out, "shop_pick_0_1");
+    assert!(
+        bread.contains("give @s minecraft:bread[custom_name={") && !bread.contains("enchant"),
+        "{bread}"
+    );
+
+    let t = text(
+        &out,
+        "packtest-datapack/data/hello-world/test/shop_enchanted_stack_0_0.mcfunction",
+    );
+    for pred in [
+        r#"minecraft:iron_sword[minecraft:enchantments={"minecraft:sharpness":2}]"#,
+        r#"minecraft:enchanted_book[minecraft:stored_enchantments={"minecraft:mending":1}]"#,
+    ] {
+        assert_eq!(
+            t.matches(pred).count(),
+            2,
+            "probed before the purchase (must read 0) and after (must read 1): {pred}\n{t}"
+        );
+    }
+    assert!(t.contains("function hello-world:shop_pick_0_0"), "{t}");
+    assert!(
+        t.contains("scoreboard players set @s dw.s_embers 3"),
+        "the offer's price gate is driven open as the buyer:\n{t}"
+    );
+    assert!(
+        !out.keys()
+            .any(|k| k.ends_with("/test/shop_enchanted_stack_0_1.mcfunction")),
+        "an offer that hands over no enchanted stack has nothing to witness"
+    );
+}
