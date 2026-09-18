@@ -34,7 +34,7 @@ This file holds what anyone building Delvewright must obey to produce a correct 
 - **No mods on the player-facing server** — validation-layer only.
 - **No nondeterminism in the compiler**: no wall-clock time, no unseeded RNG, no hash-order iteration, no absolute paths in output.
 - **No CC BY-NC / ND / unknown-license assets, ever.** Original, CC0, CC BY, MIT, Apache-2.0, or GPL-3.0-compatible only (ADR-0013). Record provenance in prefab metadata.
-- **No mining/leveling loops or base building in delve design.** How currency and resources are earned, farming included, is the creator's design; the engine does not restrict it.
+- **No mining/leveling loops or base building in delve design.**
 - **No runtime LLM in shipped delves**: all content, dialogue included, is authored at generation time as pre-written branching options (spec-0001).
 - **The production host is prod-only** — never target a delve-hosting machine for dev or tests.
 - **Generated campaigns/worlds do not live in this repo** — they ship via GitHub Releases / OCI registry (content licensed separately from GPL code; ADR-0007).
