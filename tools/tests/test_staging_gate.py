@@ -1109,6 +1109,171 @@ def test_the_live_flask_precondition_binds_on_a_potion_bearing_kit_item(gate, tm
     assert counts == {"bare": 1, "full": 1, "none": 0}, counts
 
 
+def test_the_live_container_preconditions_do_not_count_a_body_drop(gate, tmp_path):
+    """`isl-33` (DW0438) and `isl-53` (DW0861) are about a collect's container:
+    the one it adopts, or the chest the compiler stamps at `anchor` when it
+    adopts none. A `dropped_by` collect has neither — the item comes off a
+    wave's body, no chest is placed, and `container` beside it is DW0492 — so
+    it cannot carry either class. The narrowing is driven toward the vacuous
+    shape: strip `dropped_by` from the same collect and both rows red, because
+    the compiler would now stamp a chest nothing checks."""
+    rows = live_rows(gate, {"isl-33", "isl-53"})
+    aw = rows["isl-33"]["applies_when"]
+    assert aw == rows["isl-53"]["applies_when"], "one class, one precondition"
+
+    base = {"type": "collect", "id": "obj/take", "item": "minecraft:bell", "anchor": "anchor/a"}
+    shapes = {
+        "dropped": [{**base, "dropped_by": "wave/w"}],
+        "plain": [dict(base)],
+        "explicit-null": [{**base, "dropped_by": None}],
+        "adopted": [{**base, "container": "anchor/barrel"}],
+        "none": [{"type": "interact"}],
+    }
+    build = make_build(tmp_path / "out")
+    camps = {}
+    for name, objectives in shapes.items():
+        (tmp_path / name).mkdir()
+        camps[name] = make_campaign(tmp_path / name, objectives=objectives)
+    counts = {n: gate.probe(aw, gate.Subject(d, build))[0] for n, d in camps.items()}
+    # `dropped_by: null` is what the DSL's `Option` reads as absent, so the
+    # predicate reads it the same way.
+    assert counts == {
+        "dropped": 0, "plain": 1, "explicit-null": 1, "adopted": 1, "none": 0,
+    }, counts
+
+    for rid, row in rows.items():
+        dropped = adjudicate_on(gate, camps["dropped"], build, row)
+        assert (dropped["verdict"], dropped["precondition"]) == ("INAPPLICABLE", 0), (rid, dropped)
+        # The planted defect-carrying shape: a collect with neither
+        # `container` nor `dropped_by` — the compiler's own chest.
+        plain = adjudicate_on(gate, camps["plain"], build, row)
+        assert plain["verdict"] == "UNBOUND", (rid, plain)
+        adopted = adjudicate_on(gate, camps["adopted"], build, row)
+        assert (adopted["verdict"], adopted["binding"]) == ("BOUND", 1), (rid, adopted)
+
+
+def sight_campaign(tmp_path, where, *, quest_effects=(), dialogue_effects=None, areas=()):
+    """A campaign with one cutscene and whatever sight grants the case names."""
+    d = tmp_path / where
+    d.mkdir(parents=True, exist_ok=True)
+    (d / "world.json").write_text(
+        json.dumps(
+            {
+                "dsl_version": FIXTURE_DSL_VERSION,
+                "stage": 1,
+                "content": {"title": "t", "areas": [{"id": "area/a", **a} for a in areas]},
+            }
+        )
+    )
+    quest = {
+        "id": "quest/a",
+        "objectives": [{"type": "interact", "id": "obj/a"}],
+        "on_complete": [{"type": "cutscene", "shots": []}, *quest_effects],
+    }
+    (d / "quests.json").write_text(
+        json.dumps(
+            {
+                "dsl_version": FIXTURE_DSL_VERSION,
+                "stage": 5,
+                "content": {"quests": [quest]},
+            }
+        )
+    )
+    if dialogue_effects is not None:
+        (d / "dialogue.json").write_text(
+            json.dumps(
+                {
+                    "dsl_version": FIXTURE_DSL_VERSION,
+                    "stage": "dialogue",
+                    "content": {
+                        "dialogues": [
+                            {
+                                "npc": "npc/a",
+                                "root": "dlg/r",
+                                "nodes": [
+                                    {
+                                        "id": "dlg/r",
+                                        "text": "t",
+                                        "options": [{"label": "l", "effects": list(dialogue_effects)}],
+                                    }
+                                ],
+                            }
+                        ]
+                    },
+                }
+            )
+        )
+    return d
+
+
+def test_the_live_sight_precondition_counts_grants_not_cameras(gate, tmp_path):
+    """`isl-52`'s general form quantifies over a GRANTED sight effect: it must
+    outlast any camera it can overlap. A cutscene with no sight effect granted
+    anywhere has nothing to expire on screen, so a camera alone is not the
+    class. A grant is, wherever an effect list can carry it (quests.json and
+    dialogue.json are the only stages with effect roots), in the namespaced and
+    bare forms `give-effect` normalises. A wave mob's `effects[]` entry names an
+    effect on a MOB and carries no `type`, so it is not counted.
+
+    Driven toward the vacuous shape: add one night-vision `give-effect` to the
+    camera-only campaign and the row reds — its `seconds` is the author's, and
+    no check measures it against the camera."""
+    row = live_rows(gate, {"isl-52"})["isl-52"]
+    aw = row["applies_when"]
+    nv = {"type": "give-effect", "effect": "minecraft:night_vision", "seconds": 5}
+    build = make_build(tmp_path / "out")
+    camps = {
+        "camera-only": sight_campaign(tmp_path, "camera-only"),
+        "mob-effect": sight_campaign(
+            tmp_path,
+            "mob-effect",
+            quest_effects=[
+                {
+                    "type": "spawn-wave",
+                    "mobs": [{"effects": [{"effect": "minecraft:night_vision"}]}],
+                }
+            ],
+        ),
+        "give-nv": sight_campaign(tmp_path, "give-nv", quest_effects=[nv]),
+        "bare-blindness-in-dialogue": sight_campaign(
+            tmp_path,
+            "bare-blindness-in-dialogue",
+            dialogue_effects=[{"type": "give-effect", "effect": "blindness", "seconds": 5}],
+        ),
+        "not-a-sight-effect": sight_campaign(
+            tmp_path,
+            "not-a-sight-effect",
+            quest_effects=[{"type": "give-effect", "effect": "minecraft:slowness", "seconds": 5}],
+        ),
+        "mitigated": sight_campaign(tmp_path, "mitigated", areas=[{"mitigation": "night-vision"}]),
+    }
+    counts = {n: gate.probe(aw, gate.Subject(d, build))[0] for n, d in camps.items()}
+    assert counts == {
+        "camera-only": 0,
+        "mob-effect": 0,
+        "give-nv": 1,
+        "bare-blindness-in-dialogue": 1,
+        "not-a-sight-effect": 0,
+        "mitigated": 1,
+    }, counts
+
+    only = adjudicate_on(gate, camps["camera-only"], build, row)
+    assert (only["verdict"], only["precondition"]) == ("INAPPLICABLE", 0), only
+    # The planted defect-carrying shape: an author-timed sight grant beside a
+    # camera, with no mitigation for the check to bind to.
+    for name in ("give-nv", "bare-blindness-in-dialogue"):
+        r = adjudicate_on(gate, camps[name], build, row)
+        assert r["verdict"] == "UNBOUND", (name, r)
+    mitigated = adjudicate_on(gate, camps["mitigated"], build, row)
+    assert (mitigated["verdict"], mitigated["binding"]) == ("BOUND", 1), mitigated
+
+
+def test_describe_names_an_absent_field_in_words(gate):
+    assert gate.describe({"eq": {"type": "collect", "dropped_by": None}}) == (
+        "[type=collect, dropped_by:absent]"
+    )
+
+
 def test_the_live_difficulty_precondition_binds_on_a_declaring_world(gate, tmp_path):
     """`emit.rs` emits the `declared_difficulty` PackTest only
     `if let Some(diff) = declared_difficulty(c)`, so the class that check
