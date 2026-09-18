@@ -630,3 +630,42 @@ fn every_compiler_removal_strips_declared_loot_first() {
         bound.join("\n")
     );
 }
+
+/// The runtime half ships as a generated PackTest: every drop-declaring body a
+/// rest re-seats is met, dragged onto the party, unleashed and rested through
+/// the REAL functions, and no item may lie at the party's feet after either —
+/// then a bare `kill` of each fresh body must yield one, so the zero is a
+/// measurement and not an empty room. Absent when no re-seated body declares a
+/// drop.
+#[test]
+fn the_removal_rule_ships_its_packtest() {
+    let out = build(&fixture_campaign_with_drops());
+    let t = packtest(&out, "souls_reseat_yields_nothing");
+    for want in [
+        format!("function {NS}:unleash_{ELITE_SAFE}"),
+        format!("function {NS}:bonfire_rest_0"),
+        "assert score #u_rsyn dw.sys matches 0".to_string(),
+        "assert score #r_rsyn dw.sys matches 0".to_string(),
+    ] {
+        assert!(t.contains(&want), "`{want}` in the template:\n{t}");
+    }
+    for tag in [
+        format!("dw_actor_{ELITE_SAFE}"),
+        "dw_wave_ambush".to_string(),
+        "dw_wave_guards".to_string(),
+    ] {
+        assert!(
+            t.contains(&format!(
+                "kill @e[tag={tag}]\nexecute at @a[tag=dw_rsyn,limit=1] store result score #p_rsyn"
+            )),
+            "each re-seated body `{tag}` owes its own non-vacuity control:\n{t}"
+        );
+    }
+    let bare = build(&fixture_campaign(true));
+    assert!(
+        !bare.contains_key(&format!(
+            "packtest-datapack/data/{NS}/test/souls_reseat_yields_nothing.mcfunction"
+        )),
+        "no drop-declaring re-seated body, no template"
+    );
+}

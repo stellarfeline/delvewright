@@ -4,6 +4,11 @@
     "actors": [
       {
         "anchor": "anchor/east-bay",
+        "drops": [
+          {
+            "item": "minecraft:feather"
+          }
+        ],
         "entity": "minecraft:bat",
         "facing": "west",
         "id": "actor/hall-moth",
@@ -3016,6 +3021,11 @@
               "follow_range": 8.0
             },
             "count": 2,
+            "drops": [
+              {
+                "item": "minecraft:arrow"
+              }
+            ],
             "entity": "minecraft:pillager",
             "name": "Lane Pillager"
           }
