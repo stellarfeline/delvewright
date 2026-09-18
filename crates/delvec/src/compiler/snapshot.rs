@@ -62,6 +62,7 @@ use serde_json::{Value, json};
 
 use crate::compiler::plan::{Plan, ResolvedAnchor};
 use crate::compiler::raster::{Canvas, GLYPH_ROWS, LabelPlacer, ScreenBox, kind_color, text_width};
+use crate::compiler::view::blockcolor::ROUGHNESS_FULL;
 
 /// Default frame size — 16:9, big enough to read a label, small enough to render
 /// in a fraction of a second.
@@ -91,93 +92,109 @@ pub const SEA_PLANE_NOTE: &str = "ocean-horizon sea plane drawn at world-gen sea
 // Block → colour
 // ---------------------------------------------------------------------------
 
-/// The colour an unrecognised block renders as: full magenta, the same
-/// missing-texture key `delvec render`'s fidelity gate scans for
-/// (`crate::compiler::…`/`delvec::render::detect`). Deliberately loud — a block the
-/// palette has never seen must be *obvious* in the frame rather than quietly
-/// shaded as generic stone, so extending the palette is prompted by looking at a
-/// render instead of by reading source.
+/// The colour a block the pinned version does not have renders as: full
+/// magenta, the same missing-texture key `delvec render`'s fidelity gate scans
+/// for (`delvec::render::detect`). Deliberately loud — a block the draft
+/// rasteriser cannot paint must be *obvious* in the frame rather than quietly
+/// shaded as generic stone — and never silent: every surface that draws a grid
+/// reports what it fell back on ([`VoxelGrid::unpainted`]).
 pub const FALLBACK_COLOR: [u8; 3] = [255, 0, 255];
 
 /// Flat draft colour for a block id, plus whether it renders emissive (drawn at
 /// full brightness, ignoring face shading and distance fade).
 ///
-/// Resolution order, first match wins:
-/// 1. exact vanilla id (the curated table — every block the shipped prefab
-///    library uses is covered, see `every_library_block_has_a_colour`);
-/// 2. material *family* substrings (`_planks`, `_wool`, `_concrete`, …), so an
-///    unseen variant of a known material still shades plausibly;
-/// 3. [`FALLBACK_COLOR`].
+/// **The colour is the pinned client jar's**, read off the vendored table
+/// [`PaletteTable::pinned`] derives from it — the same derivation the
+/// interactive viewer runs live and the same jar the GPU path textures with, so
+/// the draft and the render do not hold two opinions about what a block looks
+/// like. The table is keyed by bare id at the default state, which is what this
+/// surface can use: the grid draws every cell as a full cube, so a blockstate's
+/// own geometry has nowhere to go.
+///
+/// The only ids without a colour are the two authoring markers and anything the
+/// pinned version does not have.
 pub fn block_color(name: &str) -> ([u8; 3], bool) {
-    // The assembled map carries full blockstates — shade on the bare
-    // id, or `oak_slab[type=top]` misses both the exact table and the `_slab`
-    // family and shades as an unknown block.
-    let id = crate::compiler::assembled::base_id(name);
-    let id = id.strip_prefix("minecraft:").unwrap_or(id);
-    // 1. Exact ids.
-    if let Some(c) = exact_color(id) {
-        return (c, is_emissive(id));
+    // The assembled map carries full blockstates — the table is keyed by id, so
+    // `oak_slab[type=top]` and `oak_slab` are one entry.
+    let bare = crate::compiler::assembled::base_id(name);
+    let id = bare.strip_prefix("minecraft:").unwrap_or(bare);
+    // `jigsaw` / `structure_block` are authoring markers: vanilla deletes the
+    // former at placement and the latter is a tool, not scenery. They should
+    // never reach the model (the solver strips them), so they keep the fallback
+    // as an alarm even though the jar paints them.
+    if matches!(id, "jigsaw" | "structure_block") {
+        return (FALLBACK_COLOR, false);
     }
-    // 2. Family fallbacks (ordered: the most specific suffix first).
-    let fam: &[(&str, [u8; 3])] = &[
-        ("_concrete_powder", [190, 165, 120]),
-        ("_concrete", [125, 125, 135]),
-        ("_terracotta", [160, 110, 90]),
-        ("_glazed", [200, 200, 205]),
-        ("_stained_glass", [160, 200, 215]),
-        ("_glass", [180, 215, 225]),
-        ("_wool", [200, 200, 200]),
-        ("_carpet", [190, 190, 190]),
-        ("_planks", [162, 130, 78]),
-        ("_log", [104, 83, 50]),
-        ("_wood", [104, 83, 50]),
-        ("_leaves", [64, 110, 46]),
-        ("_sapling", [72, 122, 52]),
-        ("_stairs", [128, 128, 128]),
-        ("_slab", [128, 128, 128]),
-        ("_wall", [122, 122, 122]),
-        ("_fence_gate", [150, 120, 72]),
-        ("_fence", [150, 120, 72]),
-        ("_door", [150, 120, 72]),
-        ("_trapdoor", [150, 120, 72]),
-        ("_button", [140, 112, 68]),
-        ("_pressure_plate", [140, 112, 68]),
-        ("_sign", [150, 120, 72]),
-        ("_banner", [200, 200, 200]),
-        ("_bed", [170, 60, 60]),
-        ("_shulker_box", [140, 106, 140]),
-        ("_ore", [120, 120, 122]),
-        ("_bricks", [130, 130, 130]),
-        ("_brick", [130, 130, 130]),
-        ("stone", [126, 126, 126]),
-        ("dirt", [122, 88, 60]),
-        ("sand", [214, 203, 152]),
-        ("grass", [104, 152, 66]),
-        ("water", [58, 96, 178]),
-        ("lava", [214, 106, 30]),
-        ("ice", [160, 200, 230]),
-        ("snow", [238, 244, 248]),
-        ("copper", [176, 110, 80]),
-        ("iron", [190, 190, 190]),
-        ("gold", [220, 186, 84]),
-        ("amethyst", [150, 110, 200]),
-        ("coral", [200, 90, 140]),
-        ("mushroom", [180, 140, 120]),
-        ("candle", [220, 210, 180]),
-    ];
-    for (suffix, c) in fam {
-        if id.contains(suffix) {
-            return (*c, is_emissive(id));
-        }
+    let key = if bare.contains(':') {
+        bare.to_string()
+    } else {
+        format!("minecraft:{bare}")
+    };
+    match crate::compiler::view::blockcolor::PaletteTable::pinned()
+        .entries
+        .get(&key)
+    {
+        Some(a) => (a.rgb, is_emissive(id)),
+        None => (FALLBACK_COLOR, false),
     }
-    // 3. Unknown.
-    (FALLBACK_COLOR, false)
 }
 
-/// Whether a block renders emissive. One rule for both resolution branches: an
-/// id is emissive if it *contains* an [`EMISSIVE`] stem, which catches the
-/// placement variants vanilla spells separately (`wall_torch`,
-/// `soul_wall_torch`, `redstone_wall_torch`) without listing each.
+/// The block's roughness: how far its texture's brightness strays from its own
+/// mean, as a fraction of that mean x255. A block the pinned version does not
+/// have is smooth.
+///
+/// Separate from [`block_color`] because the surfaces that draw a PLAN —
+/// `delvec blocking-chart`'s cutaways — want the colour and not the variation:
+/// a floor plan is read for where things are, and a top-down cell is one pixel.
+pub fn block_roughness(name: &str) -> u8 {
+    let bare = crate::compiler::assembled::base_id(name);
+    let key = if bare.contains(':') {
+        bare.to_string()
+    } else {
+        format!("minecraft:{bare}")
+    };
+    crate::compiler::view::blockcolor::PaletteTable::pinned()
+        .entries
+        .get(&key)
+        .map_or(0, |a| a.roughness)
+}
+
+/// Sub-cells per side of a face the grain pattern is drawn on. Four reads as
+/// blockwork at the distance a room is judged from; sixteen reads as noise.
+pub const GRAIN_CELLS: i64 = 4;
+
+/// A deterministic value in `0..=255` for one sub-cell of one face of one world
+/// cell.
+///
+/// **Integer arithmetic, keyed on the world and never on the camera**: the
+/// pattern belongs to the wall, so it does not crawl when the camera moves and
+/// two runs of the same scene give the same bytes (ADR-0006). The mix is
+/// FNV-1a's, which is a hash and not a random number generator: there is no
+/// state, no seed and nothing to re-roll.
+fn grain_hash(cell: [i32; 3], axis: usize, sign: i32, u: i64, v: i64) -> u8 {
+    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+    for word in [
+        cell[0] as i64,
+        cell[1] as i64,
+        cell[2] as i64,
+        axis as i64,
+        sign as i64,
+        u,
+        v,
+    ] {
+        for byte in (word as u64).to_le_bytes() {
+            h ^= u64::from(byte);
+            h = h.wrapping_mul(0x0000_0100_0000_01b3);
+        }
+    }
+    ((h >> 24) & 0xff) as u8
+}
+
+/// Whether a block renders emissive/// Whether a block renders emissive — a drawing decision, not an asset fact, so
+/// it is this surface's own and not the jar's: an id is emissive if it
+/// *contains* an [`EMISSIVE`] stem, which catches the placement variants vanilla
+/// spells separately (`wall_torch`, `soul_wall_torch`, `redstone_wall_torch`)
+/// without listing each.
 ///
 /// `torchflower` (a plant) is the one id the substring rule would over-match, so
 /// it is excluded by name.
@@ -212,104 +229,6 @@ const EMISSIVE: &[&str] = &[
     "light",
 ];
 
-/// The curated exact-id colour table. Every block id the shipped prefab library
-/// places is here (guarded by a test); ids beyond it fall through to the family
-/// rules in [`block_color`].
-#[rustfmt::skip]
-fn exact_color(id: &str) -> Option<[u8; 3]> {
-    Some(match id {
-        // --- terrain / rock -------------------------------------------------
-        "stone" => [126, 126, 126],
-        "andesite" => [136, 136, 136],
-        "polished_andesite" => [150, 150, 150],
-        "diorite" => [188, 188, 188],
-        "polished_diorite" => [199, 199, 199],
-        "granite" => [154, 106, 88],
-        "polished_granite" => [166, 116, 96],
-        "tuff" => [108, 109, 102],
-        "deepslate" => [80, 80, 84],
-        "calcite" => [224, 224, 218],
-        "dripstone_block" => [140, 108, 92],
-        "pointed_dripstone" => [150, 118, 100],
-        "cobblestone" => [122, 122, 122],
-        "mossy_cobblestone" => [104, 122, 92],
-        "stone_bricks" => [122, 122, 122],
-        "mossy_stone_bricks" => [104, 120, 96],
-        "cracked_stone_bricks" => [116, 116, 114],
-        "chiseled_stone_bricks" => [130, 130, 128],
-        "gravel" => [136, 130, 127],
-        "suspicious_gravel" => [142, 136, 132],
-        "sand" => [214, 203, 152],
-        "red_sand" => [190, 102, 33],
-        "clay" => [160, 166, 179],
-        "obsidian" => [20, 16, 30],
-        "basalt" => [80, 78, 82],
-        "blackstone" => [42, 36, 42],
-        // --- soils / plants -------------------------------------------------
-        "dirt" => [122, 88, 60],
-        "coarse_dirt" => [118, 86, 58],
-        "rooted_dirt" => [144, 108, 82],
-        "podzol" => [92, 66, 32],
-        "grass_block" => [104, 152, 66],
-        "moss_block" => [92, 128, 56],
-        "short_grass" => [110, 160, 70],
-        "tall_grass" => [110, 160, 70],
-        "fern" => [104, 150, 68],
-        "large_fern" => [104, 150, 68],
-        "seagrass" => [70, 140, 80],
-        "vine" => [76, 122, 50],
-        "glow_lichen" => [130, 168, 130],
-        "dead_bush" => [136, 106, 56],
-        "hay_block" => [200, 172, 46],
-        "poppy" => [200, 60, 56],
-        "dandelion" => [230, 208, 60],
-        "cornflower" => [86, 110, 210],
-        "oxeye_daisy" => [232, 236, 226],
-        "oak_leaves" => [64, 110, 46],
-        "spruce_leaves" => [50, 88, 50],
-        // --- wood -----------------------------------------------------------
-        "oak_log" => [104, 83, 50],
-        "spruce_log" => [82, 60, 34],
-        "stripped_oak_log" => [172, 138, 84],
-        "stripped_spruce_log" => [140, 106, 66],
-        "oak_planks" => [162, 130, 78],
-        "spruce_planks" => [114, 84, 48],
-        "dark_oak_planks" => [66, 43, 20],
-        // --- fixtures / furniture -------------------------------------------
-        "barrel" => [136, 104, 60],
-        "chest" => [162, 121, 55],
-        "cartography_table" => [124, 100, 72],
-        "decorated_pot" => [178, 110, 84],
-        "ladder" => [150, 120, 72],
-        "chain" | "iron_chain" => [70, 74, 84],
-        "iron_bars" => [150, 152, 156],
-        "glass_pane" => [180, 215, 225],
-        "white_glazed_terracotta" => [222, 226, 226],
-        "emerald_block" => [42, 202, 108],
-        "white_wool" => [232, 232, 232],
-        "light_gray_wool" => [156, 158, 158],
-        "black_wool" => [26, 26, 30],
-        "white_banner" => [230, 230, 230],
-        // --- light sources ---------------------------------------------------
-        "glowstone" => [252, 226, 154],
-        "lantern" => [250, 214, 130],
-        "soul_lantern" => [140, 220, 226],
-        "torch" => [252, 214, 122],
-        "wall_torch" => [252, 214, 122],
-        "campfire" => [242, 156, 60],
-        "soul_campfire" => [110, 214, 226],
-        // --- fluids / structure ------------------------------------------------
-        "water" => [58, 96, 178],
-        "lava" => [214, 106, 30],
-        // `jigsaw` / `structure_void` are authoring markers: vanilla deletes the
-        // former at placement and the latter is not a block at all. They should
-        // never reach the model (the solver strips them) — colour them the
-        // fallback magenta so it is visible immediately if one ever does.
-        "jigsaw" | "structure_block" | "structure_void" => FALLBACK_COLOR,
-        _ => return None,
-    })
-}
-
 // ---------------------------------------------------------------------------
 // Voxel grid
 // ---------------------------------------------------------------------------
@@ -333,6 +252,8 @@ pub struct VoxelGrid {
     palette: Vec<String>,
     /// Per-palette-entry `(colour, emissive)`, precomputed.
     shading: Vec<([u8; 3], bool)>,
+    /// Per-palette-entry texture roughness, precomputed beside the colour.
+    roughness: Vec<u8>,
     /// Chunk-space origin and dimensions.
     cmin: [i32; 3],
     cdim: [usize; 3],
@@ -340,6 +261,10 @@ pub struct VoxelGrid {
     chunks: Vec<Option<Box<[u16; CHUNK_CELLS]>>>,
     /// Inclusive world-cell bounds of the occupied region.
     bounds: Option<([i32; 3], [i32; 3])>,
+    /// Palette ids this grid will draw with [`FALLBACK_COLOR`], sorted and
+    /// unique — computed while the palette is built, so no surface has to
+    /// remember to look for them.
+    unpainted: Vec<String>,
 }
 
 /// Floor-divide `v` by [`CHUNK`] (correct for negatives, unlike `/`).
@@ -364,15 +289,28 @@ impl VoxelGrid {
                 hi[a] = hi[a].max(cell[a]);
             }
         }
-        let shading = palette.iter().map(|n| block_color(n)).collect();
+        let shading: Vec<([u8; 3], bool)> = palette.iter().map(|n| block_color(n)).collect();
+        let roughness: Vec<u8> = palette.iter().map(|n| block_roughness(n)).collect();
+        // Palette index 0 is the air sentinel, which is never drawn.
+        let mut unpainted: Vec<String> = palette
+            .iter()
+            .zip(shading.iter())
+            .skip(1)
+            .filter(|(_, (c, _))| *c == FALLBACK_COLOR)
+            .map(|(n, _)| n.clone())
+            .collect();
+        unpainted.sort();
+        unpainted.dedup();
         if blocks.is_empty() {
             return VoxelGrid {
                 palette,
                 shading,
+                roughness,
                 cmin: [0; 3],
                 cdim: [0; 3],
                 chunks: Vec::new(),
                 bounds: None,
+                unpainted,
             };
         }
         let cmin = [chunk_of(lo[0]), chunk_of(lo[1]), chunk_of(lo[2])];
@@ -387,10 +325,12 @@ impl VoxelGrid {
         let mut grid = VoxelGrid {
             palette,
             shading,
+            roughness,
             cmin,
             cdim,
             chunks,
             bounds: Some((lo, hi)),
+            unpainted,
         };
         for (cell, name) in blocks {
             let id = *index.get(name.as_str()).expect("palette holds every id");
@@ -448,6 +388,41 @@ impl VoxelGrid {
     /// Number of distinct block ids (excluding the air sentinel).
     pub fn block_kinds(&self) -> usize {
         self.palette.len() - 1
+    }
+
+    /// The block ids this grid draws as [`FALLBACK_COLOR`], sorted.
+    pub fn unpainted(&self) -> &[String] {
+        &self.unpainted
+    }
+}
+
+/// What a grid will paint magenta, as one sentence carrying the count and every
+/// id — or `None` when it will paint none.
+///
+/// A frame whose material is wrong is worth nothing to the creator judging it,
+/// and the placeholder is a colour in a picture: a reader who does not recognise
+/// it reads the frame as the truth. So the frame says so in words. One sentence
+/// for every surface that draws a grid, so none of them can word it differently
+/// or forget to say it.
+pub fn unpainted_report(grid: &VoxelGrid) -> Option<String> {
+    if grid.unpainted().is_empty() {
+        return None;
+    }
+    Some(format!(
+        "unpainted: {} of {} block kind(s) here have no colour in the pinned {} table and are \
+         drawn as the missing-texture magenta — {}. The material in this draft is wrong for them; \
+         the GPU render is not affected.",
+        grid.unpainted().len(),
+        grid.block_kinds(),
+        crate::schem::blocks::MC_VERSION,
+        grid.unpainted().join(", ")
+    ))
+}
+
+/// Print [`unpainted_report`] on stderr — how every drawing surface says it.
+pub fn report_unpainted(grid: &VoxelGrid) {
+    if let Some(line) = unpainted_report(grid) {
+        eprintln!("{line}");
     }
 }
 
@@ -1236,10 +1211,31 @@ fn shade(grid: &VoxelGrid, hit: &Hit) -> [u8; 3] {
         .min(1.0 - hit.uv[0])
         .min(hit.uv[1].min(1.0 - hit.uv[1]));
     let relief = if edge < 0.0625 { 0.86 } else { 1.0 };
+    // The face's own grain. Without it every face of one material is a single
+    // rectangle of one value, and a draft of a wall carries as much information
+    // as a paint swatch — which is what a flat-shaded near-black stone comes out
+    // as. The PATTERN is this renderer's, made from the world position; its
+    // AMPLITUDE is the block's measured roughness, so a smooth block reads
+    // smooth and a rubbly one reads rubbly, and the committed table holds no
+    // texture's layout.
+    let roughness = f64::from(grid.roughness[hit.block as usize]) / ROUGHNESS_FULL;
+    let u = (hit.uv[0] * GRAIN_CELLS as f64) as i64;
+    let v = (hit.uv[1] * GRAIN_CELLS as f64) as i64;
+    let noise = f64::from(grain_hash(
+        hit.cell,
+        hit.axis,
+        hit.sign,
+        u.clamp(0, GRAIN_CELLS - 1),
+        v.clamp(0, GRAIN_CELLS - 1),
+    ));
+    // `noise / 255` is uniform on 0..1, whose standard deviation is 1/sqrt(12);
+    // scaling by sqrt(12) makes the drawn face's spread the spread the texture
+    // measured, rather than a decorative amount somebody chose.
+    let grain = (1.0 + (noise / 255.0 - 0.5) * 12f64.sqrt() * roughness).max(0.0);
     let lit = [
-        b[0] * face * relief,
-        b[1] * face * relief,
-        b[2] * face * relief,
+        b[0] * face * relief * grain,
+        b[1] * face * relief * grain,
+        b[2] * face * relief * grain,
     ];
     let f = fog_factor(hit.t);
     let c = mix(lit, SKY_HORIZON, f * 0.85);
@@ -1876,12 +1872,61 @@ mod tests {
     }
 
     #[test]
-    fn family_rules_shade_unseen_variants_of_known_materials() {
-        // A wood the exact table has never listed still reads as planks, not magenta.
-        let (c, _) = block_color("minecraft:cherry_planks");
-        assert_ne!(c, FALLBACK_COLOR);
-        let (c, _) = block_color("minecraft:crimson_stairs");
-        assert_ne!(c, FALLBACK_COLOR);
+    fn a_blockstate_shades_as_its_block() {
+        // The table is keyed by id, and the grid draws every cell as a full
+        // cube, so the properties on a palette entry change nothing.
+        assert_eq!(
+            block_color("minecraft:oak_slab[type=top,waterlogged=false]").0,
+            block_color("minecraft:oak_slab").0
+        );
+        assert_eq!(
+            block_color("oak_slab").0,
+            block_color("minecraft:oak_slab").0
+        );
+        assert_ne!(block_color("minecraft:oak_slab").0, FALLBACK_COLOR);
+    }
+
+    #[test]
+    fn the_colour_is_the_jar_s_and_not_a_family_guess() {
+        // Two deepslate surfaces that share every substring a material rule
+        // could key on. Each carries its own texture, so each has its own
+        // colour, and neither borrows a family's.
+        let polished = block_color("minecraft:polished_deepslate").0;
+        let tiles = block_color("minecraft:deepslate_tiles").0;
+        assert_ne!(polished, FALLBACK_COLOR);
+        assert_ne!(tiles, FALLBACK_COLOR);
+        assert_ne!(polished, tiles);
+    }
+
+    #[test]
+    fn an_id_the_pin_does_not_have_is_unpainted_and_named() {
+        // `minecraft:chain` is the id 1.21.11 renames to `iron_chain`, so the
+        // pin has no such block and the table has no colour for it. A template
+        // carrying it is named on stderr rather than shaded from a guess, which
+        // is the whole difference between a draft and an invention.
+        assert_eq!(block_color("minecraft:chain").0, FALLBACK_COLOR);
+        assert_ne!(block_color("minecraft:iron_chain").0, FALLBACK_COLOR);
+        let mut m = BTreeMap::new();
+        m.insert([0, 0, 0], "minecraft:chain".to_string());
+        m.insert([0, 1, 0], "minecraft:stone".to_string());
+        let g = VoxelGrid::build(&m);
+        assert_eq!(g.unpainted(), ["minecraft:chain".to_string()]);
+        let said = super::unpainted_report(&g).expect("the grid says what it could not paint");
+        assert!(said.contains("1 of 2 block kind(s)"), "{said}");
+        assert!(said.contains("minecraft:chain"), "{said}");
+        assert!(said.contains("1.21.11"), "{said}");
+        // A grid with nothing to report says nothing.
+        m.remove(&[0, 0, 0]);
+        assert!(super::unpainted_report(&VoxelGrid::build(&m)).is_none());
+    }
+
+    #[test]
+    fn the_authoring_markers_keep_their_alarm() {
+        // The jar paints both; the draft must not, because neither may reach
+        // the model at all.
+        for id in ["minecraft:jigsaw", "minecraft:structure_block"] {
+            assert_eq!(block_color(id).0, FALLBACK_COLOR, "{id}");
+        }
     }
 
     #[test]
@@ -1896,96 +1941,6 @@ mod tests {
             assert!(block_color(id).1, "{id} must be emissive");
         }
         assert!(!block_color("minecraft:stone").1);
-    }
-
-    #[test]
-    fn every_library_block_has_a_colour() {
-        // Every block id the shipped prefab library places (enumerated from
-        // `campaigns/prefabs/*.nbt`) must resolve to a real colour — the magenta
-        // fallback is for blocks a future prefab introduces, never for today's.
-        // `jigsaw`/`structure_void` are deliberately excluded: they are authoring
-        // markers the solver strips, and colouring them magenta is the alarm.
-        const LIBRARY: &[&str] = &[
-            "andesite",
-            "barrel",
-            "black_wool",
-            "campfire",
-            "cartography_table",
-            "chain",
-            "chest",
-            "chiseled_stone_bricks",
-            "coarse_dirt",
-            "cobblestone",
-            "cobblestone_stairs",
-            "cobblestone_wall",
-            "cornflower",
-            "cracked_stone_bricks",
-            "dandelion",
-            "dark_oak_planks",
-            "dead_bush",
-            "decorated_pot",
-            "dirt",
-            "dripstone_block",
-            "emerald_block",
-            "glass_pane",
-            "glow_lichen",
-            "glowstone",
-            "grass_block",
-            "gravel",
-            "hay_block",
-            "iron_bars",
-            "ladder",
-            "lantern",
-            "light_gray_wool",
-            "moss_block",
-            "mossy_cobblestone",
-            "mossy_stone_bricks",
-            "oak_door",
-            "oak_fence",
-            "oak_fence_gate",
-            "oak_leaves",
-            "oak_log",
-            "oak_planks",
-            "oak_slab",
-            "oak_stairs",
-            "oak_trapdoor",
-            "oxeye_daisy",
-            "podzol",
-            "pointed_dripstone",
-            "polished_andesite",
-            "poppy",
-            "rooted_dirt",
-            "sand",
-            "seagrass",
-            "short_grass",
-            "spruce_button",
-            "spruce_log",
-            "spruce_planks",
-            "spruce_stairs",
-            "spruce_trapdoor",
-            "stone",
-            "stone_brick_stairs",
-            "stone_bricks",
-            "stripped_oak_log",
-            "stripped_spruce_log",
-            "suspicious_gravel",
-            "torch",
-            "tuff",
-            "vine",
-            "wall_torch",
-            "water",
-            "white_banner",
-            "white_glazed_terracotta",
-            "white_wool",
-        ];
-        for id in LIBRARY {
-            let full = format!("minecraft:{id}");
-            assert_ne!(
-                block_color(&full).0,
-                FALLBACK_COLOR,
-                "prefab-library block `{full}` has no colour — extend the palette"
-            );
-        }
     }
 
     #[test]

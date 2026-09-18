@@ -7,7 +7,7 @@
     "primary.zh-cn:packtest-datapack/data/gallery/test/v10_shop_purchase.mcfunction",
     "void-horizon.en:packtest-datapack/data/gallery/test/v10_shop_purchase.mcfunction"
   ],
-  "base_commit": "286490a88d538b1578e6f8f79cd8d9a405ff2c95",
+  "base_commit": "4b556236fe18a01568b4177079bb83997b39729d",
   "changed": [
     "easy.en:SKINS.md",
     "easy.en:creator-datapack/layout.json",
