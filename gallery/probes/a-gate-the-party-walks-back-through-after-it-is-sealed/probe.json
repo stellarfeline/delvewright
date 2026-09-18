@@ -1,0 +1,17 @@
+{
+  "code": "DW0485",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "replace",
+      "path": "/content/quests/2/objectives/0/happening",
+      "value": {
+        "subject": "anchor/gate-main",
+        "text": "They come back down the hall and in through the main gate.",
+        "verb": "arrives"
+      }
+    }
+  ],
+  "units": [],
+  "why": "The main gate is sealed at beat 25 by a `close-gate` whose `happening` states no subject at all - the beat is about the gate two keys to its left, and the engine reads it there rather than making a creator type it again. This probe gives a later beat that gate as its subject, and the contradiction proof sees a party walking in through a gate that came down twenty beats earlier. Nothing about the perturbed document names the seal: strip the derivation out of the engine and this campaign compiles clean, which is what makes the probe a live proof of the reading rule rather than a demonstration of `DW0485`, which already has one. It declares no unit: `happening` and every one of its fields are bound in the gallery proper, and an ABSENT `subject` is not a surface anybody writes."
+}

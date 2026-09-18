@@ -1,0 +1,13 @@
+{
+  "code": "DW0901",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "replace",
+      "path": "/content/shops/0/offers/0/effects/2/amount",
+      "value": -5
+    }
+  ],
+  "units": [],
+  "why": "The gallery's own counter, with the charge deepened from four tokens to five and NOTHING else changed: the same button, the same apology at `at-most 3`, the same `at-least 4` on the key and on the debit, the same l10n inventory. One integer is the whole perturbation. A price has no field (spec-0032) - it is written as gate terms and a charge, four or five copies of one number with nothing binding them - so the engine compares the copies. What this document asks for is a player holding exactly four tokens who presses the button, receives the key, and is left at minus one. It declares no unit: `add-state` and its `amount` are both bound in the gallery proper, and what must not compile is a value of one that the gate beside it cannot pay."
+}

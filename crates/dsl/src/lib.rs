@@ -42,6 +42,7 @@ pub mod mclang;
 pub mod metrics;
 pub mod placement;
 pub mod prefab;
+pub mod purchase;
 pub mod registry;
 pub mod schema;
 pub mod siteplan;
@@ -89,6 +90,7 @@ pub use layout::{
 pub use mclang::mc_lang_code;
 pub use placement::{Placement, anchor_vocabulary_unknowable};
 pub use prefab::PrefabMeta;
+pub use purchase::{PurchaseBinding, purchase_checks};
 pub use registry::{
     AnchorRegistry, BlockRegistry, EffectRegistry, EntityRegistry, ItemBackedBlockRegistry,
     ItemRegistry, Lighting, LightingProfile, VendoredAnchorRegistry, VendoredEffectRegistry,
@@ -110,8 +112,8 @@ pub use stages::{
     CastEntry, CastPlace, CastPlacement, Class, ClassesContent, CollectBy, CompareOp, DamageKind,
     DespawnStyle, DialogueContent, DialogueEffect, DialogueNode, DialogueOption, EffectSite,
     EnchantedItem, EncounterTier, EnvTrigger, EquipItem, EquipSlot, Facing, Fixture, Forfeit,
-    Guard, Happening, HappeningVerb, Horizon, HorizonBase, HorizonSpec, ItemDrop, KitItem,
-    LethalVolume, Lethality, Locomotion, Loot, LootItem, MAX_POTION_AMPLIFIER,
+    Guard, Happening, HappeningSubject, HappeningVerb, Horizon, HorizonBase, HorizonSpec, ItemDrop,
+    KitItem, LethalVolume, Lethality, Locomotion, Loot, LootItem, MAX_POTION_AMPLIFIER,
     MAX_POTION_DURATION_TICKS, Mark, MobAttributes, MobDrop, MobEffect, MobEquipment, NarrateStyle,
     Npc, NpcDialogue, NpcSkin, NpcsContent, Objective, OnFull, Persona, Pieces, PlannedQuest,
     PotionContents, PotionEffect, Prop, Quest, QuestEffect, QuestPlanContent, QuestsContent,

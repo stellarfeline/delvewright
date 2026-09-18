@@ -617,6 +617,43 @@ impl DatumSet {
         }
     }
 
+    /// **The smallest value in the set**, or `None` when it is unbounded below
+    /// or empty.
+    ///
+    /// The question a price asks: *what is the least balance at which this gate
+    /// opens?* It is the same arithmetic [`Self::pick`] does — an interval with
+    /// holes, stepped past — asked from the bottom, so the purchase rule
+    /// (`DW0901`) and the satisfiability verdict cannot disagree about what a
+    /// term means. `equals` pins, and a pin is its own floor.
+    pub fn min(&self) -> Option<i32> {
+        let lo = self.pin.or(self.lo)?;
+        let steps = self.holes.len() as i64 + 1;
+        (lo as i64..lo as i64 + steps)
+            .filter_map(|v| i32::try_from(v).ok())
+            .find(|v| self.contains(*v))
+    }
+
+    /// **The largest value in the set**, or `None` when it is unbounded above or
+    /// empty — the mirror of [`Self::min`], which is what a refusal arm's
+    /// ceiling is read from.
+    pub fn max(&self) -> Option<i32> {
+        let hi = self.pin.or(self.hi)?;
+        let steps = self.holes.len() as i64 + 1;
+        ((hi as i64 - steps + 1)..=hi as i64)
+            .rev()
+            .filter_map(|v| i32::try_from(v).ok())
+            .find(|v| self.contains(*v))
+    }
+
+    /// Whether `v` satisfies every term this set carries.
+    fn contains(&self, v: i32) -> bool {
+        !self.contra
+            && self.pin.is_none_or(|p| p == v)
+            && self.lo.is_none_or(|l| v >= l)
+            && self.hi.is_none_or(|h| v <= h)
+            && !self.holes.contains(&v)
+    }
+
     /// A deterministic member of the set, or `None` when the set is empty —
     /// which is the satisfiability verdict.
     ///
@@ -754,6 +791,33 @@ mod tests {
         let mut ne = DatumSet::all();
         ne.forbid(NotEquals, 9);
         assert_eq!(ne.pick(), Some(9));
+    }
+
+    /// The floor and the ceiling of a set — what a price reads. A pin is its own
+    /// floor and its own ceiling; a hole at a bound steps past it; an unbounded
+    /// side answers `None` rather than a number nothing stated.
+    #[test]
+    fn a_datum_set_states_its_floor_and_its_ceiling() {
+        let mut s = DatumSet::all();
+        assert_eq!((s.min(), s.max()), (None, None), "nothing bounds it");
+        s.require(AtLeast, 15);
+        assert_eq!((s.min(), s.max()), (Some(15), None));
+        s.require(AtMost, 20);
+        assert_eq!((s.min(), s.max()), (Some(15), Some(20)));
+        s.require(NotEquals, 15);
+        s.require(NotEquals, 20);
+        assert_eq!((s.min(), s.max()), (Some(16), Some(19)));
+        let mut pinned = DatumSet::all();
+        pinned.require(Equals, 7);
+        assert_eq!((pinned.min(), pinned.max()), (Some(7), Some(7)));
+        let mut empty = DatumSet::all();
+        empty.require(AtLeast, 5);
+        empty.require(AtMost, 4);
+        assert_eq!(
+            (empty.min(), empty.max()),
+            (None, None),
+            "an empty set has neither"
+        );
     }
 
     #[test]

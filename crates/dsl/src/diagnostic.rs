@@ -524,6 +524,15 @@ pub mod codes {
     /// entities exclude the body. One code, three shapes in one message.
     /// Validation-tier (exit 1).
     pub const EQUIPMENT_UNSHOWN: DwCode = DwCode::new("DW0898", ExitTier::Build);
+    /// (spec-0071 §2) **A purchase whose literals do not add up.** In one effect
+    /// list, a charge (`add-state` moving a datum down) fires at a balance that
+    /// cannot pay it — the floor its own `when` and its list's enclosing gate
+    /// leave open is below the amount charged, or nothing floors it at all — or
+    /// the arm that answers below the price stops at a ceiling that is not one
+    /// below where the charge starts, leaving a gap or an overlap. A price has no
+    /// field (spec-0032): it is written as gate terms and a charge, so the
+    /// engine compares the copies. Validation-tier (exit 1).
+    pub const PURCHASE_ARITHMETIC: DwCode = DwCode::new("DW0901", ExitTier::Build);
     /// A `collect` `dropped_by` is not backed by the wave it names:
     /// the wave declares no `{item}` drop of this objective's item, the count
     /// asks for more copies than the wave's mobs can yield, or the objective
