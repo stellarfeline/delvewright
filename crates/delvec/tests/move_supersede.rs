@@ -327,9 +327,11 @@ impl Sim {
                     );
                 }
                 ["scoreboard", "players", "operation", p, o, "=", p2, o2] => {
-                    if let Some(v) = self.score(p2, o2) {
-                        self.scores.insert((p.to_string(), o.to_string()), v);
-                    }
+                    // Vanilla creates an unset source (and target) at 0 before
+                    // it applies the operation.
+                    let v = self.score(p2, o2).unwrap_or(0);
+                    self.scores.insert((p2.to_string(), o2.to_string()), v);
+                    self.scores.insert((p.to_string(), o.to_string()), v);
                 }
                 ["schedule", "function", f, "1t"] => {
                     let bare = f.split_once(':').map(|(_, n)| n).unwrap_or(f).to_string();
@@ -649,5 +651,108 @@ fn a_single_leg_puppet_emits_byte_identical_functions() {
         got.trim_end(),
         GOLDEN_ONE_LEG.trim_end(),
         "single-leg move-actor emission moved"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// A template that invokes a guarded driver directly.
+// ---------------------------------------------------------------------------
+
+/// The lines of the generated PackTest template `name` that reach a driver — its
+/// score writes and its function calls — in file order. The rest of a template
+/// (summons, kills, entity counts, asserts) moves no body along a walk.
+fn template_driver_lines(out: &BuildOutput, name: &str) -> Vec<String> {
+    let path = format!("packtest-datapack/data/hello-world/test/{name}.mcfunction");
+    let body = out
+        .iter()
+        .find(|(p, _)| p.as_str() == path)
+        .map(|(_, b)| String::from_utf8(b.clone()).unwrap())
+        .unwrap_or_else(|| panic!("the build emits no `{path}`"));
+    body.lines()
+        .filter(|l| l.starts_with("scoreboard ") || l.starts_with("function "))
+        .map(str::to_string)
+        .collect()
+}
+
+/// The driver a template invokes directly (`function <ns>:<prefix>tick_<bare>`).
+fn invoked_driver(lines: &[String], prefix: &str) -> String {
+    lines
+        .iter()
+        .find_map(|l| {
+            l.strip_prefix("function hello-world:")
+                .filter(|f| f.starts_with(&format!("{prefix}tick_")))
+        })
+        .unwrap_or_else(|| panic!("the template invokes no `{prefix}tick_` driver"))
+        .to_string()
+}
+
+/// Run `template` after a sibling left the suite-wide scoreboard as a real delve
+/// leaves it: the template's own walk fired, then the body's other walk fired over
+/// it, both run out. Returns the teleports the template's direct driver call made.
+fn jump_after_sibling(
+    fns: &BTreeMap<String, Vec<String>>,
+    template: Vec<String>,
+    prefix: &str,
+) -> (String, Vec<Tp>) {
+    let driver = invoked_driver(&template, prefix);
+    let own_start = driver.replacen("tick_", "", 1);
+    let other_start = fns
+        .keys()
+        .find(|k| {
+            !k.starts_with(&format!("{prefix}tick_"))
+                && !k.starts_with(&format!("{prefix}arrive_"))
+                && **k != own_start
+        })
+        .unwrap_or_else(|| panic!("fixture premise: the body has a second walk"))
+        .clone();
+    let mut sim = Sim::new(fns.clone());
+    sim.call(&own_start);
+    sim.call(&other_start);
+    sim.run(400);
+    assert!(
+        sim.pending.is_empty(),
+        "fixture premise: the sibling's walks have run out"
+    );
+    let before = sim.tps.len();
+    sim.fns.insert("template".to_string(), template);
+    sim.call("template");
+    let jumped = sim.tps[before..]
+        .iter()
+        .filter(|t| t.func == driver)
+        .cloned()
+        .collect();
+    (driver, jumped)
+}
+
+/// `v04_move` jumps its NPC's driver to the last waypoint and runs it once. The
+/// scoreboard is shared by the whole suite, so a sibling template that fired both
+/// of the body's walks leaves this driver's stamp behind the body's generation: the
+/// template claims the driver first, and the jump still lands the body on the
+/// walk's endpoint.
+#[test]
+fn the_move_npc_template_claims_the_driver_it_invokes() {
+    let out = build_with(quests_two_walks());
+    let fns = driver_fns(&out, "mv_");
+    let (driver, jumped) = jump_after_sibling(&fns, template_driver_lines(&out, "v04_move"), "mv_");
+    assert_eq!(
+        jumped.last().map(|t| t.pos),
+        Some(endpoint(&fns, &driver)),
+        "`v04_move` invoked `{driver}` after a sibling fired both walks, and the driver \
+         teleported nothing: its stamp is behind the body's walk generation"
+    );
+}
+
+/// The same for `move-actor`: `v06_move_actor` claims the guarded leg driver it jumps.
+#[test]
+fn the_move_actor_template_claims_the_driver_it_invokes() {
+    let out = build_with(quests_two_legs());
+    let fns = driver_fns(&out, "ma_");
+    let (driver, jumped) =
+        jump_after_sibling(&fns, template_driver_lines(&out, "v06_move_actor"), "ma_");
+    assert_eq!(
+        jumped.last().map(|t| t.pos),
+        Some(endpoint(&fns, &driver)),
+        "`v06_move_actor` invoked `{driver}` after a sibling fired both legs, and the \
+         driver teleported nothing: its stamp is behind the puppet's leg generation"
     );
 }

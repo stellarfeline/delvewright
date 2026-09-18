@@ -9608,6 +9608,60 @@ fn push_effect_deep<'a>(e: &'a QuestEffect, out: &mut Vec<&'a QuestEffect>) {
     }
 }
 
+/// Which kind of body a walk driver moves: an NPC (`move-npc`, `mv_tick_*`) or an
+/// actor's puppet (`move-actor`, `ma_tick_*`). Only the names of the scores a
+/// driver's supersession guard reads differ between the two.
+#[derive(Clone, Copy)]
+enum Walker {
+    Npc,
+    Actor,
+}
+
+/// The two scores a supersedable walk driver's staleness guard compares: the
+/// driver's own stamp and its body's current walk generation (`#mown_<bare>` /
+/// `#mgen_<npc>` for an NPC, `#aown_<bare>` / `#agen_<actor>` for a puppet). The
+/// driver is stale exactly when `own < gen`. The start function, the guard and a
+/// template that invokes the driver directly ([`walk_claim`]) all name them here.
+fn walk_stamp(walker: Walker, bare: &str, safe: &str) -> (String, String) {
+    let (own, gen_) = match walker {
+        Walker::Npc => ("mown", "mgen"),
+        Walker::Actor => ("aown", "agen"),
+    };
+    (format!("#{own}_{bare}"), format!("#{gen_}_{safe}"))
+}
+
+/// Every body that owns two or more planned walks. Such a body's drivers carry the
+/// supersession guard; a body with one walk can never be superseded and carries
+/// none of it.
+fn supersedable_walkers<'a>(bodies: impl IntoIterator<Item = &'a str>) -> BTreeSet<&'a str> {
+    let mut legs: BTreeMap<&str, usize> = BTreeMap::new();
+    for b in bodies {
+        *legs.entry(b).or_insert(0) += 1;
+    }
+    legs.into_iter()
+        .filter(|(_, n)| *n > 1)
+        .map(|(b, _)| b)
+        .collect()
+}
+
+/// What a PackTest template runs before it invokes a walk driver directly: the
+/// driver takes its body's current generation as its own stamp, so its guard
+/// reads it as the live walk whatever walks earlier templates fired. The
+/// scoreboard is global to the whole suite, so a sibling that fired two walks for
+/// the same body leaves this driver's stamp behind the generation, and a driver
+/// invoked without the claim returns before it teleports. The generation is taken,
+/// not bumped: a walk a sibling is running is not superseded by this template.
+/// Empty for a body whose driver carries no guard.
+fn walk_claim(walker: Walker, bare: &str, safe: &str, supersedable: bool) -> Vec<String> {
+    if !supersedable {
+        return Vec::new();
+    }
+    let (own, gen_) = walk_stamp(walker, bare, safe);
+    vec![format!(
+        "scoreboard players operation {own} dw.sys = {gen_} dw.sys"
+    )]
+}
+
 /// The scoreboard-safe suffix shared by a move's driver functions/sentinels.
 fn movenpc_bare(npc: &str, to: &delvewright_dsl::Mark, gate_key: &str) -> String {
     movenpc_fn(npc, to, gate_key)
@@ -9657,30 +9711,30 @@ fn movenpc_bare(npc: &str, to: &delvewright_dsl::Mark, gate_key: &str) -> String
 /// declared start, so the new leg snaps to that first waypoint — the same instant
 /// snap single-walk content already gets when a walk fires while its NPC stands
 /// elsewhere). The staleness test is written as the positive `if own < gen`, never as
-/// `unless own = gen`: with both scores unset — a driver invoked directly, as the
-/// `v04_move` PackTest does — a score comparison is *false*, and the `unless`
-/// spelling would read that as "stale" and cancel a walk nothing superseded.
+/// `unless own = gen`: with both scores unset a score comparison is *false*, and the
+/// `unless` spelling would read that as "stale" and cancel a walk nothing superseded.
+/// A PackTest that invokes a guarded driver directly (`v04_move`) cannot rely on the
+/// scores being unset — the scoreboard is shared by the whole suite, and a sibling
+/// that fired two walks for the body leaves this driver's stamp behind — so it claims
+/// the driver first ([`walk_claim`]).
 ///
 /// A body with only one planned walk can never be superseded, so it carries none of
 /// this: campaigns whose NPCs each walk at most once stay byte-identical (ADR-0006).
 fn movenpc_fns(plan: &Plan, moves: &[crate::compiler::nav::MovePlan]) -> Vec<(String, String)> {
     let ns = &plan.namespace;
     let mut out = Vec::new();
-    // How many drivers each body owns, in the planner's deterministic order. Two or
-    // more ⇒ a later walk can catch an earlier one mid-flight ⇒ that body's drivers
-    // carry the generation guard.
-    let mut legs: BTreeMap<&str, usize> = BTreeMap::new();
-    for m in moves {
-        *legs.entry(m.npc.as_str()).or_insert(0) += 1;
-    }
+    // A body with two or more walks can be caught mid-flight by a later one ⇒ its
+    // drivers carry the generation guard.
+    let guarded = supersedable_walkers(moves.iter().map(|m| m.npc.as_str()));
     for m in moves {
         let start_name = movenpc_fn(&m.npc, &m.to, &m.gate_key);
         let bare = movenpc_bare(&m.npc, &m.to, &m.gate_key);
         let safe = plan::safe_local(&m.npc);
         let total = m.ticks();
-        let supersedable = legs.get(m.npc.as_str()).copied().unwrap_or(0) > 1;
+        let supersedable = guarded.contains(m.npc.as_str());
         // `#mown_<bare> < #mgen_<npc>` ⇔ a later walk for this body has started.
-        let stale = format!("score #mown_{bare} dw.sys < #mgen_{safe} dw.sys");
+        let (own, gen_) = walk_stamp(Walker::Npc, &bare, &safe);
+        let stale = format!("score {own} dw.sys < {gen_} dw.sys");
         // The on_arrive bundle for this (npc, to) — the first-seen effect,
         // matching the planner's dedup order (mirrors `actor_fns`).
         let on_arrive: &[QuestEffect] = all_campaign_effects(plan.campaign)
@@ -9702,9 +9756,9 @@ fn movenpc_fns(plan: &Plan, moves: &[crate::compiler::nav::MovePlan]) -> Vec<(St
             start.push(format!(
                 "execute if score #mrun_{bare} dw.sys matches 1 unless {stale} run return fail"
             ));
-            start.push(format!("scoreboard players add #mgen_{safe} dw.sys 1"));
+            start.push(format!("scoreboard players add {gen_} dw.sys 1"));
             start.push(format!(
-                "scoreboard players operation #mown_{bare} dw.sys = #mgen_{safe} dw.sys"
+                "scoreboard players operation {own} dw.sys = {gen_} dw.sys"
             ));
         } else {
             start.push(format!(
@@ -10316,9 +10370,10 @@ fn teleport_fns(plan: &Plan) -> Vec<(String, String)> {
 /// `#aown_<bare>`. A driver whose stamp is behind the generation drops its latch and
 /// returns without teleporting, arriving, or rescheduling — so it dies on its next
 /// scheduled tick. The staleness test is the positive `if own < gen` for the same
-/// reason: with both scores unset (a driver invoked directly, as the `v06_move_actor`
-/// and `v06_arrive_handoff` PackTests do) a score comparison is *false*, so the
-/// unfired-generation case reads as "not stale" and the leg runs.
+/// reason: with both scores unset a score comparison is *false*, so the
+/// unfired-generation case reads as "not stale" and the leg runs. A PackTest that
+/// invokes a guarded driver directly (`v06_move_actor`, `v06_arrive_handoff`) claims it
+/// first ([`walk_claim`]).
 ///
 /// A puppet with only one planned leg can never be superseded and carries none of this,
 /// so pre-existing single-leg campaigns stay byte-identical (ADR-0006) — pinned
@@ -10392,20 +10447,18 @@ fn actor_fns(
     }
     // move-actor per-tick drivers.
     //
-    // How many legs each puppet owns, in the planner's deterministic order. Two or
-    // more ⇒ a later leg can catch an earlier one mid-flight ⇒ that puppet's drivers
-    // carry the generation guard (see the supersession section of `movenpc_fns`).
-    let mut legs: BTreeMap<&str, usize> = BTreeMap::new();
-    for m in actor_moves {
-        *legs.entry(m.actor.as_str()).or_insert(0) += 1;
-    }
+    // A puppet with two or more legs can be caught mid-flight by a later one ⇒ its
+    // drivers carry the generation guard (see the supersession section of
+    // `movenpc_fns`).
+    let guarded = supersedable_walkers(actor_moves.iter().map(|m| m.actor.as_str()));
     for m in actor_moves {
         let safe = plan::safe_local(&m.actor);
         let bare = moveactor_bare(&m.actor, &m.to, &m.gate_key);
         let total = m.ticks();
-        let supersedable = legs.get(m.actor.as_str()).copied().unwrap_or(0) > 1;
+        let supersedable = guarded.contains(m.actor.as_str());
         // `#aown_<bare> < #agen_<actor>` ⇔ a later leg for this puppet has started.
-        let stale = format!("score #aown_{bare} dw.sys < #agen_{safe} dw.sys");
+        let (own, gen_) = walk_stamp(Walker::Actor, &bare, &safe);
+        let stale = format!("score {own} dw.sys < {gen_} dw.sys");
         // The on_arrive bundle for this (actor, to) — the first-seen effect,
         // matching the planner's dedup order.
         let on_arrive: &[QuestEffect] = all_campaign_effects(plan.campaign)
@@ -10430,9 +10483,9 @@ fn actor_fns(
             start.push(format!(
                 "execute if score #arun_{bare} dw.sys matches 1 unless {stale} run return fail"
             ));
-            start.push(format!("scoreboard players add #agen_{safe} dw.sys 1"));
+            start.push(format!("scoreboard players add {gen_} dw.sys 1"));
             start.push(format!(
-                "scoreboard players operation #aown_{bare} dw.sys = #agen_{safe} dw.sys"
+                "scoreboard players operation {own} dw.sys = {gen_} dw.sys"
             ));
         } else {
             start.push(format!(
@@ -18898,6 +18951,9 @@ fn emit_v06_actor_packtests(
         write(&format!("v06_unleash_{safe}"), b);
     }
 
+    // The puppets whose leg drivers carry the supersession guard: a template that
+    // invokes one of their drivers directly claims it first ([`walk_claim`]).
+    let actor_guarded = supersedable_walkers(actor_moves.iter().map(|m| m.actor.as_str()));
     // move-actor: fast-forward the driver to its final waypoint (running on_arrive on
     // that same tick) and assert the puppet is at the destination cell.
     if let Some(m) = actor_moves.first() {
@@ -18912,6 +18968,12 @@ fn emit_v06_actor_packtests(
         b.push(format!("function {ns}:setup"));
         b.push(format!("kill @e[tag=dw_actor_{safe}]"));
         b.push(format!("function {ns}:spawn_actor_{safe}"));
+        b.extend(walk_claim(
+            Walker::Actor,
+            &bare,
+            &safe,
+            actor_guarded.contains(m.actor.as_str()),
+        ));
         b.push(format!("scoreboard players set #at_{bare} dw.sys {total}"));
         b.push(format!("function {ns}:ma_tick_{bare}"));
         b.push(format!(
@@ -18995,6 +19057,12 @@ fn emit_v06_actor_packtests(
             ));
         }
         b.push(format!("function {ns}:spawn_actor_{safe}"));
+        b.extend(walk_claim(
+            Walker::Actor,
+            &bare,
+            &safe,
+            actor_guarded.contains(m.actor.as_str()),
+        ));
         b.push(format!("scoreboard players set #at_{bare} dw.sys {total}"));
         b.push(format!("function {ns}:ma_tick_{bare}"));
         b.push(format!(
@@ -19364,6 +19432,12 @@ fn emit_v04_packtests(
         }
         b.push(format!("function {ns}:setup_finish"));
         // Jump the driver to its last tick, then execute the final waypoint tp.
+        b.extend(walk_claim(
+            Walker::Npc,
+            &bare,
+            &safe,
+            supersedable_walkers(moves.iter().map(|m| m.npc.as_str())).contains(m.npc.as_str()),
+        ));
         b.push(format!("scoreboard players set #mt_{bare} dw.sys {total}"));
         b.push(format!("function {ns}:mv_tick_{bare}"));
         b.push(format!(
