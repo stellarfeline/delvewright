@@ -2789,8 +2789,11 @@ fn has_item_drop(drops: &[delvewright_dsl::MobDrop]) -> bool {
 ///
 /// The invariant, stated once: a declared drop is what a *player's kill* yields.
 /// Every removal the compiler performs itself — the `unleash` that swaps a
-/// puppet for its twin, a `despawn-actor` (either style), a souls re-seat's
-/// re-caging — goes through `/kill`, and vanilla `/kill` is an ordinary death:
+/// puppet for its twin, a `despawn-actor` (either style), a bonfire's re-seat of
+/// a wave (`wave_reseat_<wave>`, both the `respawns_on_rest` and the undefeated
+/// billed kind) and of an unleashed actor (`actor_restand_<id>`) — goes through
+/// `/kill`, reached only through [`removal_lines`], and vanilla `/kill` is an
+/// ordinary death:
 /// a preserved slot (chance > 1.0) drops **even when the killer is not a
 /// player**. Without this line an elite would shed its axe every time the story
 /// moved it, and a re-seat would turn the boss into a vending machine.
@@ -2810,6 +2813,33 @@ fn strip_drops_line(tag: &str) -> String {
         "execute as @e[tag={tag}] run data merge entity @s {{drop_chances:{{{}}},DeathLootTable:\"minecraft:empty\"}}",
         zeros.join(",")
     )
+}
+
+/// **The one way the compiler removes a body it placed**: every `kill` the
+/// datapack runs against a wave mob, an actor's puppet or an actor's twin is
+/// built here, so the strip in front of it cannot be forgotten at a new site.
+///
+/// `declares_drops` is the body's own declaration ([`wave_declares_drops`],
+/// [`actor_declares_drops`]); a body that declares none carries no loot NBT the
+/// compiler wrote, and gets the bare `kill` alone.
+fn removal_lines(tag: &str, declares_drops: bool) -> Vec<String> {
+    let mut out = Vec::new();
+    if declares_drops {
+        out.push(strip_drops_line(tag));
+    }
+    out.push(format!("kill @e[tag={tag}]"));
+    out
+}
+
+/// Whether any mob of this wave declares a drop — the wave's bodies share one
+/// tag, so the removal strips them all when one of them carries loot.
+fn wave_declares_drops(w: &delvewright_dsl::Wave) -> bool {
+    w.mobs.iter().any(|m| !m.drops.is_empty())
+}
+
+/// Whether this actor declares a drop (on either body: puppet or twin).
+fn actor_declares_drops(a: &delvewright_dsl::Actor) -> bool {
+    !a.drops.is_empty()
 }
 
 /// The `equipment`/`drop_chances` SNBT fragment for a wave mob (no leading
@@ -4667,13 +4697,11 @@ fn emit_functions(
         // refresh), and for nothing else → byte-identical.
         if w.respawns_on_rest || plan.undefeated_reseat_waves().iter().any(|u| u.id == w.id) {
             let safe = plan::safe_local(w.id.as_str());
-            fns.push((
-                format!("wave_reseat_{safe}"),
-                lines(&[
-                    format!("kill @e[tag={}]", plan::wave_tag(w.id.as_str())),
-                    format!("function {ns}:spawn_{safe}"),
-                ]),
-            ));
+            // A re-seat is not a kill the party earned: the standing bodies go
+            // through [`removal_lines`], which strips a declared drop first.
+            let mut reseat = removal_lines(&plan::wave_tag(w.id.as_str()), wave_declares_drops(w));
+            reseat.push(format!("function {ns}:spawn_{safe}"));
+            fns.push((format!("wave_reseat_{safe}"), lines(&reseat)));
         }
         // --- The wave CENSUS probe surface ---
         //
@@ -6082,7 +6110,7 @@ fn emit_quest_effect(plan: &Plan, eff: &QuestEffect, aud: Audience, body: &mut V
                 .content
                 .actors
                 .iter()
-                .any(|a| a.id.as_str() == actor.as_str() && !a.drops.is_empty());
+                .any(|a| a.id.as_str() == actor.as_str() && actor_declares_drops(a));
             emit_despawn_actor(actor.as_str(), *style, declares_drops, body);
         }
         Verb::MoveActor { actor, to, .. } => {
@@ -6228,18 +6256,11 @@ fn emit_despawn_actor(
     // an elite the story re-cages (a souls re-seat) would shed its axe on every
     // rest. Strip the declaration off the body first; emitted only when the
     // actor declares drops, so every earlier campaign's despawn is byte-identical.
-    if declares_drops {
-        body.push(strip_drops_line(&format!("dw_actor_{safe}")));
+    let tag = format!("dw_actor_{safe}");
+    if style == DespawnStyle::Vanish {
+        body.push(format!("execute as @e[tag={tag}] at @s run tp @s ~ -128 ~"));
     }
-    match style {
-        DespawnStyle::Kill => body.push(format!("kill @e[tag=dw_actor_{safe}]")),
-        DespawnStyle::Vanish => {
-            body.push(format!(
-                "execute as @e[tag=dw_actor_{safe}] at @s run tp @s ~ -128 ~"
-            ));
-            body.push(format!("kill @e[tag=dw_actor_{safe}]"));
-        }
-    }
+    body.extend(removal_lines(&tag, declares_drops));
 }
 
 /// Emit a `play-sound` effect (DSL v0.6). `who` is the audience selector
@@ -10350,10 +10371,10 @@ fn actor_fns(
         // ordinary death: a puppet carrying a declared drop would shed it the
         // moment the elite stood up. Strip first — the twin standing beside it
         // is the body that owes the player a prize.
-        if !a.drops.is_empty() {
-            unleash.push(strip_drops_line(&format!("dw_pup_{safe}")));
-        }
-        unleash.push(format!("kill @e[tag=dw_pup_{safe}]"));
+        unleash.extend(removal_lines(
+            &format!("dw_pup_{safe}"),
+            actor_declares_drops(a),
+        ));
         if campaign_captures_striker(plan.campaign) {
             unleash.extend(aggro_lock_lines(&a.entity, &safe));
         }
@@ -10381,13 +10402,13 @@ fn actor_fns(
         // bonfire ([`Plan::reseat_actors`]) → byte-identical everywhere else.
         if plan.reseat_actors().iter().any(|r| r.id == a.id) {
             let p = ent_xyz(pos);
-            out.push((
-                format!("actor_restand_{safe}"),
-                lines(&[
-                    format!("kill @e[tag=dw_actor_{safe}]"),
-                    actor_twin_summon(ns, a, &format!("{} {} {}", p[0], p[1], p[2])),
-                ]),
+            let mut restand = removal_lines(&format!("dw_actor_{safe}"), actor_declares_drops(a));
+            restand.push(actor_twin_summon(
+                ns,
+                a,
+                &format!("{} {} {}", p[0], p[1], p[2]),
             ));
+            out.push((format!("actor_restand_{safe}"), lines(&restand)));
         }
     }
     // move-actor per-tick drivers.
@@ -13896,6 +13917,10 @@ fn emit_packtest(
     // one they finished stays finished. Emits nothing without a bonfire and a
     // hostile actor / billed wave.
     emit_reseat_undefeated_packtests(plan, out);
+    // A removal the compiler performs yields nothing: the unleash and every
+    // re-seat, on a body that declares a drop. Emits nothing without a bonfire
+    // and a re-seated body that declares one.
+    emit_reseat_yields_nothing_packtest(plan, out, waves.placements);
     // spec-0016 §1: rest and save-only really differ.
     emit_bonfire_option_packtest(plan, out);
     // spec-0016 §2: the shortcut really opens, and opens exactly once.
@@ -16379,6 +16404,143 @@ fn emit_reseat_undefeated_packtests(plan: &Plan, out: &mut BuildOutput) {
     b.extend(board.iter().cloned());
     out.insert(
         format!("packtest-datapack/data/{ns}/test/souls_reseat_undefeated.mcfunction"),
+        lines(&b).into_bytes(),
+    );
+}
+
+/// **A removal the compiler performs yields nothing.** A declared drop is what a
+/// player's kill yields ([`strip_drops_line`]); the unleash that kills a cage
+/// and the bonfire's re-seats kill bodies too, and vanilla `/kill` is an
+/// ordinary death that rolls a guaranteed slot and a death loot table whoever
+/// the killer was. A playtest found the re-seat half open: every rest dropped an
+/// undefeated elite's quest key where he stood.
+///
+/// For every re-seated body that declares a drop — each wave a rest re-seats
+/// (`respawns_on_rest` or billed-undefeated) and each hostile actor — the
+/// template meets it, drags it onto the party, and then demands no item entity
+/// within reach of the party after the unleash and after the REAL
+/// `bonfire_rest_<i>`. The zero is then proven not to be vacuous: the fresh
+/// bodies are dragged onto the party and killed by a bare `kill`, which must
+/// yield at least one item — the body really carries the loot the removal
+/// withheld.
+///
+/// Emits nothing without a bonfire and a drop-declaring re-seated body.
+fn emit_reseat_yields_nothing_packtest(
+    plan: &Plan,
+    out: &mut BuildOutput,
+    wave_placements: &WavePlacements,
+) {
+    let ns = &plan.namespace;
+    let Some(bf) = plan.bonfires().next() else {
+        return;
+    };
+    let i = bf.index;
+    let mut waves: Vec<&delvewright_dsl::Wave> = plan.reseat_waves();
+    waves.extend(plan.undefeated_reseat_waves());
+    waves.retain(|w| {
+        wave_declares_drops(w)
+            && plan::wave_total(w) >= 1
+            && wave_placements
+                .get(w.id.as_str())
+                .is_some_and(|c| !c.is_empty())
+    });
+    let actors: Vec<&delvewright_dsl::Actor> = plan
+        .reseat_actors()
+        .into_iter()
+        .filter(|a| {
+            actor_declares_drops(a)
+                && plan
+                    .body_point(delvewright_dsl::BodyRef::Actor(a))
+                    .is_some()
+        })
+        .collect();
+    if waves.is_empty() && actors.is_empty() {
+        return;
+    }
+    let (pin, sel) = pin_dummy("dw_rsyn");
+    // The loot of a `/kill` lands where the body stood, in the tick it dies;
+    // every body is dragged onto the party first, so this radius is the whole
+    // claim.
+    let items = "@e[type=minecraft:item,distance=..3]";
+    let count = |score: &str| {
+        format!("execute at {sel} store result score {score} dw.sys if entity {items}")
+    };
+    let clear_items = format!("execute at {sel} run kill {items}");
+    let board: Vec<String> = plan
+        .reseat_waves()
+        .iter()
+        .flat_map(|r| {
+            [
+                format!("kill @e[tag={}]", plan::wave_tag(r.id.as_str())),
+                format!(
+                    "scoreboard players set {} dw.sys 0",
+                    wave_seated_holder(r.id.as_str())
+                ),
+            ]
+        })
+        .collect();
+    let mut tags: Vec<String> = waves
+        .iter()
+        .map(|w| plan::wave_tag(w.id.as_str()))
+        .collect();
+    tags.extend(
+        actors
+            .iter()
+            .map(|a| format!("dw_actor_{}", plan::safe_local(a.id.as_str()))),
+    );
+
+    let mut b = packtest_header(&format!(
+        "{}: a removal the compiler performs — the unleash and every bonfire re-seat — yields \
+         no declared drop; only a kill does",
+        artifact_title(plan.campaign)
+    ));
+    b.push(format!("function {ns}:setup"));
+    b.push(pin);
+    b.extend(board.iter().cloned());
+    for t in &tags {
+        let k = format!("kill @e[tag={t}]");
+        if !board.contains(&k) {
+            b.push(k);
+        }
+    }
+    b.push(clear_items.clone());
+    // Meet every fight, on top of the party.
+    for w in &waves {
+        b.push(format!(
+            "function {ns}:spawn_{}",
+            plan::safe_local(w.id.as_str())
+        ));
+    }
+    for a in &actors {
+        let safe = plan::safe_local(a.id.as_str());
+        b.push(format!("function {ns}:spawn_actor_{safe}"));
+        b.push(format!(
+            "execute at {sel} run tp @e[tag=dw_pup_{safe}] ~ ~ ~"
+        ));
+        b.push(format!("function {ns}:unleash_{safe}"));
+    }
+    b.push(count("#u_rsyn"));
+    b.push("assert score #u_rsyn dw.sys matches 0".to_string());
+    for t in &tags {
+        b.push(format!("execute at {sel} run tp @e[tag={t}] ~ ~ ~"));
+    }
+    // The rest, through the REAL generated rest function.
+    b.push(format!("function {ns}:bonfire_rest_{i}"));
+    b.push(count("#r_rsyn"));
+    b.push("assert score #r_rsyn dw.sys matches 0".to_string());
+    // Not vacuous, body by body: each fresh body carries the loot, and a bare
+    // kill yields it.
+    for t in &tags {
+        b.push(format!("execute at {sel} run tp @e[tag={t}] ~ ~ ~"));
+        b.push(format!("kill @e[tag={t}]"));
+        b.push(count("#p_rsyn"));
+        b.push("assert score #p_rsyn dw.sys matches 1..".to_string());
+        b.push(clear_items.clone());
+    }
+    b.extend(board.iter().cloned());
+    b.push(format!("tag {sel} remove dw_rsyn"));
+    out.insert(
+        format!("packtest-datapack/data/{ns}/test/souls_reseat_yields_nothing.mcfunction"),
         lines(&b).into_bytes(),
     );
 }
