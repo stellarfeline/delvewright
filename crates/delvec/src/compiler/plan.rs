@@ -1783,110 +1783,14 @@ pub fn wave_seats<'a>(
 /// The area a stage-4 quest belongs to (free-function form of [`Plan::quest_area`],
 /// usable before a [`Plan`] exists — e.g. from anchor collection).
 fn quest_area_of<'a>(campaign: &'a Campaign, quest_id: &str) -> Option<&'a str> {
-    campaign
-        .quest_plan
-        .content
-        .quests
-        .iter()
-        .find(|q| q.id.as_str() == quest_id)
-        .map(|q| q.area.as_str())
+    delvewright_dsl::quest_area(campaign, quest_id)
 }
 
-/// Does any effect in `effs`, or anywhere in the trees nested under them, fire a
-/// `spawn-wave` for `wave_id`?
-///
-/// Descends through [`QuestEffect::visit_deep`], so `sequence` steps,
-/// `set-checkpoint` `on_respawn`, `bonfire` `on_rest`, `begin-stealth`
-/// `on_caught` and `move-npc`/`move-actor` `on_arrive` are all spawn sites — as
-/// they already are for emission. A verb the emitter compiles from a nesting site
-/// is a verb every consumer scan must see from the same site.
-fn fires_wave<'a>(effs: impl IntoIterator<Item = &'a QuestEffect>, wave_id: &str) -> bool {
-    let mut found = false;
-    for e in effs {
-        e.visit_deep(&mut |x| {
-            if matches!(x.spawn_wave(), Some(w) if w.as_str() == wave_id) {
-                found = true;
-            }
-        });
-    }
-    found
-}
-
-/// The area a wave's mobs spawn in — resolved from the wave's **spawn site**, not
-/// from any `kill` objective. A `spawn-wave` effect (on a quest step, on a quest's
-/// completion, or on an environment trigger) is what makes a wave appear; its
-/// mobs materialize at `Wave.anchor` resolved in that spawning quest's area. This
-/// is deliberately independent of objective type so a kill-less "live threat" wave
-/// (spec-0008 §4 — e.g. a weakened warden the player sneaks past, an ambient mob
-/// flock) resolves a spawn position exactly like a wave that is later slain.
-///
-/// Resolution order: the quest that fires the `spawn-wave` (`on_objective_complete`
-/// or `on_complete`); else, in a single-area campaign, an environment trigger or a
-/// trap payload that fires it (both are global — their sole possible area is the
-/// one area); else a quest whose `kill` objective references the wave (defensive
-/// fallback for a wave declared with a kill but no explicit spawn). `None` if
-/// nothing spawns it.
-///
-/// **Every root is walked DEEP** ([`fires_wave`]), through
-/// [`QuestEffect::nested_effect_lists`] — the DSL's single authority on effect
-/// nesting, and the same authority `emit::all_campaign_effects` walks to decide
-/// what to compile. A wave the emitter writes a `function <ns>:spawn_<wave>` call
-/// for is therefore always a wave this function resolves an area for, and so
-/// always a wave whose support machinery is emitted: the agreement is structural,
-/// not two walks that have to remember each other.
-///
-/// It used to be a shallow scan of the top-level chains only, and the island's
-/// round-21 build is what that cost: `wave/storm-shore` and `wave/storm-fire` were
-/// fired from step 7 of a `sequence`, resolved no area, got no `spawn_…`, no
-/// census, no brand and no kill reward — while `seq_under_ram` still shipped the
-/// call. Two of three storm waves never spawned (`DW0497` is now the standing
-/// proof that this class cannot ship again).
-pub fn wave_area<'a>(campaign: &'a Campaign, wave_id: &str) -> Option<&'a str> {
-    // 1. A quest whose effect TREE fires `spawn-wave` for this wave — the true
-    //    spawn site.
-    for q in &campaign.quests.content.quests {
-        if fires_wave(
-            q.on_objective_complete
-                .values()
-                .flatten()
-                .chain(&q.on_complete),
-            wave_id,
-        ) {
-            return quest_area_of(campaign, q.id.as_str());
-        }
-    }
-    // 2. An environment trigger or trap payload that fires it. Both are global
-    //    effect roots carrying no area of their own; in a single-area campaign the
-    //    sole area is unambiguous. (Multi-area trigger-only waves are not
-    //    resolvable here and surface as a build diagnostic rather than a silent
-    //    dangling spawn.)
-    if campaign.world.content.areas.len() == 1
-        && (campaign
-            .quests
-            .content
-            .triggers
-            .iter()
-            .any(|t| fires_wave(&t.effects, wave_id))
-            || campaign
-                .quests
-                .content
-                .traps
-                .iter()
-                .any(|t| fires_wave(&t.payload, wave_id)))
-    {
-        return campaign.world.content.areas.first().map(|a| a.id.as_str());
-    }
-    // 3. Defensive fallback: a `kill` objective's quest.
-    for q in &campaign.quests.content.quests {
-        if q.objectives
-            .iter()
-            .any(|o| matches!(o, Objective::Kill { wave, .. } if wave.as_str() == wave_id))
-        {
-            return quest_area_of(campaign, q.id.as_str());
-        }
-    }
-    None
-}
+/// The area a wave's mobs spawn in — `None` for a wave no beat seats. The one
+/// definition lives with the fight classes in the DSL
+/// ([`delvewright_dsl::wave_area`]), because the document-tier `on_kill` rule
+/// (`DW0913`) reads the same fact before any build.
+pub use delvewright_dsl::wave_area;
 
 /// Errors that stop planning (map to build failure, exit 3). Carries a stable
 /// `DW03xx` build/solver diagnostic code (catalogued in
@@ -3669,6 +3573,21 @@ impl<'a> Plan<'a> {
         self.checkpoints.iter().filter(|c| c.rest)
     }
 
+    /// Does this fight come back after the party has met it (spec-0074 §4) — a
+    /// rest re-seats it, or the beat that seats it can fire more than once? The
+    /// one derivation ([`crate::compiler::onkill::fight_comes_back`]), asked with
+    /// this plan's collected rest points.
+    pub fn fight_comes_back(
+        &self,
+        fight: delvewright_dsl::Fight<'_>,
+    ) -> Option<crate::compiler::onkill::ComesBack> {
+        crate::compiler::onkill::fight_comes_back(
+            self.campaign,
+            self.bonfires().next().is_some(),
+            fight,
+        )
+    }
+
     /// **Every trigger this build emits**: the campaign's own, in declaration
     /// order, then the compiler's press answers ([`PressAnswer`]).
     ///
@@ -5440,6 +5359,10 @@ pub(crate) enum EffectRoot<'a> {
     /// gate that decides whether the button exists is the offer's own, and the
     /// site's `path` already names it.
     ShopOffer,
+    /// A wave's or an actor's `on_kill` (spec-0074) — fired by a player being
+    /// credited with one of the fight's bodies, so it has no step and is
+    /// optional: nobody is forced to be credited with a kill. Carries the fight.
+    OnKill(delvewright_dsl::Fight<'a>),
 }
 
 /// **The area an [`EffectRoot`]'s bundle plays in, when it has one.**
@@ -5537,6 +5460,7 @@ pub(crate) fn for_each_effect_root<'a>(
             delvewright_dsl::EffectRootOwner::ShortcutUnlock(_) => EffectRoot::ShortcutUnlock,
             delvewright_dsl::EffectRootOwner::OnDeath => EffectRoot::OnDeath,
             delvewright_dsl::EffectRootOwner::ShopOffer(_) => EffectRoot::ShopOffer,
+            delvewright_dsl::EffectRootOwner::OnKill(f) => EffectRoot::OnKill(f),
         };
         f(
             &EffectRootSite {
@@ -5736,6 +5660,12 @@ fn collect_region_events(
                 "a shop offer's effects at `{}`, which fire only if the party buys it",
                 site.path
             ),
+            EffectRoot::OnKill(f) => format!(
+                "the `on_kill` bundle of {} `{}`, which fires only on a kill a player is \
+                 credited with",
+                f.word(),
+                f.id()
+            ),
             // The two DAG roots reach this arm only when their owning quest is
             // OPTIONAL (spec-0051 §8.6) — while it is mandatory they are forced
             // and a forced event carries no blame. Naming the quest is the whole
@@ -5864,7 +5794,8 @@ fn firing_of(
         | EffectRoot::DialogueRespawn
         | EffectRoot::ShortcutUnlock
         | EffectRoot::OnDeath
-        | EffectRoot::ShopOffer => (0, false),
+        | EffectRoot::ShopOffer
+        | EffectRoot::OnKill(_) => (0, false),
     }
 }
 

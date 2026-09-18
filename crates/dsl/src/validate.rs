@@ -167,6 +167,10 @@ pub fn validate_campaign_with(
     // here. Quantified over every effect list that charges a datum, never over
     // shops.
     crate::purchase::purchase_checks(c, &mut d);
+    // spec-0074 §8.1: an `on_kill` bundle a credited kill can never reach
+    // (`DW0913`), and an empty one (`DW0100`). The pair that needs the rest
+    // points (`DW0914`/`DW0915`) is compiler-side.
+    crate::onkill::on_kill_checks(c, &mut d);
     // spec-0061: the design record's own document-level refusals — an empty
     // `references`, a name that is not a path under `design/`, two rows for one
     // picture. The comparison against the world's reachable skies (`DW0890`) is
@@ -3051,6 +3055,32 @@ fn lighting_range_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
 /// ref nested in a timeline is caught, not shipped unvalidated (mirroring how the
 /// flag/wave *producer* scans and emission already descend). Top-level paths are
 /// unchanged, so a nesting-free campaign is validated identically.
+/// Does the campaign declare a `bonfire` — a rest point that re-seats fights
+/// (spec-0016 §1)? Read at the roots the compiler collects rest points from: a
+/// quest's bundles and an environment trigger's effects, at any nesting depth.
+/// The match over the site is exhaustive, so a new root answers here. `DW0370`
+/// asks it, and so does the compiler's `fight_comes_back` where no plan exists
+/// yet (`DW0914`/`DW0915`).
+pub fn declares_bonfire(c: &Campaign) -> bool {
+    use crate::stages::EffectSite;
+    let mut has_bonfire = false;
+    crate::stages::for_each_campaign_effect(c, &mut |_, site, eff| {
+        let collected = match site {
+            EffectSite::Objective { .. }
+            | EffectSite::QuestComplete { .. }
+            | EffectSite::Trigger { .. } => true,
+            EffectSite::Trap { .. }
+            | EffectSite::DialogueRespawn { .. }
+            | EffectSite::ShortcutUnlock { .. }
+            | EffectSite::ShopOffer { .. }
+            | EffectSite::OnDeath
+            | EffectSite::OnKill { .. } => false,
+        };
+        has_bonfire |= collected && eff.bonfire().is_some();
+    });
+    has_bonfire
+}
+
 fn for_each_effect_deep(q: &crate::stages::Quest, mut f: impl FnMut(String, &QuestEffect)) {
     fn descend(path: String, eff: &QuestEffect, f: &mut dyn FnMut(String, &QuestEffect)) {
         f(path.clone(), eff);
@@ -3423,17 +3453,7 @@ fn v06_checks(
     // `bonfire` anywhere in the campaign nothing can ever fire the re-seat, so
     // the field is a silent no-op — the class of defect this compiler always
     // turns loud (`DW0370`).
-    let mut has_bonfire = false;
-    for q in &c.quests.content.quests {
-        for_each_effect_deep(q, |_path, eff| {
-            has_bonfire |= eff.bonfire().is_some();
-        });
-    }
-    for t in &c.quests.content.triggers {
-        for_each_trigger_effect_deep(t, |_path, eff| {
-            has_bonfire |= eff.bonfire().is_some();
-        });
-    }
+    let has_bonfire = declares_bonfire(c);
     if !has_bonfire {
         for (i, w) in quests.waves.iter().enumerate() {
             if w.respawns_on_rest {

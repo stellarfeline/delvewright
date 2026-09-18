@@ -108,7 +108,9 @@ fn fixture_campaign(with_unleash: bool) -> Campaign {
 fn assert_only_boss_advisories(c: &Campaign, diags: &[delvewright_dsl::Diagnostic]) {
     let owed = delvewright_dsl::fights(c)
         .iter()
-        .filter(|f| f.tier == Some(delvewright_dsl::EncounterTier::Boss) && f.bar.is_none())
+        .filter(|(_, f)| {
+            f.tier() == Some(delvewright_dsl::EncounterTier::Boss) && f.health_bar().is_none()
+        })
         .count();
     assert!(
         diags

@@ -61,8 +61,8 @@ const LIVE: &str = "nbt=!{Health:0.0f}";
 /// message lists the literals, read from the tree — never a copy.
 pub fn check_vocabulary(c: &Campaign, tree: &CommandTree) -> Vec<Diagnostic> {
     let mut d = Vec::new();
-    for f in fights(c) {
-        let Some(bar) = f.bar else { continue };
+    for (decl, f) in fights(c) {
+        let Some(bar) = f.health_bar() else { continue };
         for (field, value, path) in [
             ("color", bar.color.as_deref(), &COLOR_PATH),
             ("style", bar.style.as_deref(), &STYLE_PATH),
@@ -75,13 +75,13 @@ pub fn check_vocabulary(c: &Campaign, tree: &CommandTree) -> Vec<Diagnostic> {
             d.push(Diagnostic::error(
                 DW_HEALTH_BAR_VOCABULARY,
                 "quests",
-                format!("{}/health_bar/{field}", f.path),
+                format!("{decl}/health_bar/{field}"),
                 format!(
                     "`health_bar` `{field}` `{value}` on {} `{}` is not a {field} the pinned game \
                      draws a boss bar in. `bossbar set <id> {field}` accepts exactly: {}. Write one \
                      of those, or remove `{field}` to keep the game's default.",
-                    f.kind.word(),
-                    f.id,
+                    f.word(),
+                    f.id(),
                     known.join(", ")
                 ),
             ));
@@ -112,9 +112,9 @@ impl<'a> Bar<'a> {
     /// The selector arguments naming the bodies the bar reads — the ones whose
     /// health can move.
     pub fn bodies(&self) -> String {
-        match self.fight.kind {
-            FightKind::Wave => format!("tag={}", plan::wave_tag(self.fight.id)),
-            FightKind::Actor if self.fight.vulnerable => format!("tag=dw_actor_{}", self.safe),
+        match self.fight.kind() {
+            FightKind::Wave => format!("tag={}", plan::wave_tag(self.fight.id())),
+            FightKind::Actor if self.fight.vulnerable() => format!("tag=dw_actor_{}", self.safe),
             FightKind::Actor => format!("tag=dw_actor_{s},tag=!dw_pup_{s}", s = self.safe),
         }
     }
@@ -177,10 +177,10 @@ impl<'a> Bar<'a> {
 pub fn bars(c: &Campaign) -> Vec<Bar<'_>> {
     fights(c)
         .into_iter()
-        .filter_map(|f| {
-            let bar = f.bar?;
-            let safe = plan::safe_local(f.id);
-            let key = format!("{}_{safe}", f.kind.word());
+        .filter_map(|(_, f)| {
+            let bar = f.health_bar()?;
+            let safe = plan::safe_local(f.id());
+            let key = format!("{}_{safe}", f.word());
             Some(Bar {
                 fight: f,
                 bar,
@@ -195,14 +195,14 @@ pub fn bars(c: &Campaign) -> Vec<Bar<'_>> {
 pub fn wave_bar<'a>(c: &'a Campaign, wave_id: &str) -> Option<Bar<'a>> {
     bars(c)
         .into_iter()
-        .find(|b| b.fight.kind == FightKind::Wave && b.fight.id == wave_id)
+        .find(|b| b.fight.kind() == FightKind::Wave && b.fight.id() == wave_id)
 }
 
 /// The bar over the actor `actor_id`, if it declares one.
 pub fn actor_bar<'a>(c: &'a Campaign, actor_id: &str) -> Option<Bar<'a>> {
     bars(c)
         .into_iter()
-        .find(|b| b.fight.kind == FightKind::Actor && b.fight.id == actor_id)
+        .find(|b| b.fight.kind() == FightKind::Actor && b.fight.id() == actor_id)
 }
 
 /// World-init lines (`setup`): every declared bar is removed and re-added from
@@ -218,7 +218,7 @@ pub fn setup_lines(ns: &str, bars: &[Bar<'_>], title: &dyn Fn(&str) -> String) -
         out.push(format!("bossbar remove {id}"));
         out.push(format!(
             "bossbar add {id} {}",
-            title(b.fight.title().unwrap_or_default())
+            title(b.fight.bar_title().unwrap_or_default())
         ));
         if let Some(color) = &b.bar.color {
             out.push(format!("bossbar set {id} color {color}"));

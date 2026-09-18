@@ -580,6 +580,10 @@ fn actor_beats(c: &Campaign) -> BTreeMap<String, (Vec<ActorBeat>, Vec<ActorBeat>
             // offer fires when a player presses a button, which they may do at
             // any time or never.
             EffectSite::ShopOffer { shop, .. } => ("shop-offer", shop.clone(), None),
+            // Effect root 9 (spec-0074). Ambient: a fight's `on_kill` fires when a
+            // player is credited with one of its bodies, which nobody is forced
+            // to be.
+            EffectSite::OnKill { fight } => ("on-kill", fight.clone(), None),
         };
         let t = (kind == "trigger")
             .then(|| triggers.get(owner.as_str()))
@@ -731,16 +735,12 @@ fn uncovered_tiered_waves<'a>(plan: &Plan<'a>) -> Vec<(usize, &'a Wave, String)>
 /// undefeated re-seat (spec-0016 §1) — which must refresh exactly the bodies the
 /// party can be fighting when they rest, and nothing that is scenery.
 pub fn hostile_actors(c: &Campaign) -> Vec<&Actor> {
-    let beats = actor_beats(c);
+    let unleashed = delvewright_dsl::unleashed_actors(c);
     c.quests
         .content
         .actors
         .iter()
-        .filter(|a| {
-            beats
-                .get(a.id.as_str())
-                .is_some_and(|(_, unleashes)| !unleashes.is_empty())
-        })
+        .filter(|a| unleashed.contains(a.id.as_str()))
         .collect()
 }
 
@@ -2048,6 +2048,7 @@ mod tests {
         effects: Vec<delvewright_dsl::MobEffect>,
     ) -> delvewright_dsl::Wave {
         delvewright_dsl::Wave {
+            on_kill: None,
             id: delvewright_dsl::WaveId(id.to_string()),
             anchor: delvewright_dsl::AnchorId("anchor/pit".to_string()),
             mobs: vec![WaveMob {

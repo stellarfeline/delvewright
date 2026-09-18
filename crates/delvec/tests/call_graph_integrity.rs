@@ -176,8 +176,8 @@ fn uncaptured_summons(
     let mut examined = 0;
     let mut missing = Vec::new();
     for bar in bars {
-        let tag = match bar.fight.kind {
-            FightKind::Wave => delvec::compiler::plan::wave_tag(bar.fight.id),
+        let tag = match bar.fight.kind() {
+            FightKind::Wave => delvec::compiler::plan::wave_tag(bar.fight.id()),
             FightKind::Actor => format!("dw_actor_{}", bar.safe),
         };
         let quoted = format!("\"{tag}\"");
@@ -271,4 +271,104 @@ fn every_summon_of_a_bar_carrying_body_captures_the_bars_max() {
     let (examined, missing) = uncaptured_summons(ns, &bars, &broken);
     assert_eq!(examined, 5);
     assert_eq!(missing, vec![path]);
+}
+
+/// An advancement's `rewards.function` is a call site too. Vanilla runs it when
+/// the advancement is granted and resolves an unknown name to nothing, so a
+/// kill advancement whose reward was never emitted is the same silent no-op as
+/// a dangling `function` line.
+#[test]
+fn a_dangling_advancement_reward_is_dw0497() {
+    let mut out: BTreeMap<String, Vec<u8>> = BTreeMap::new();
+    out.insert(
+        "datapack/data/isle/advancement/k_edge.json".to_string(),
+        br#"{"criteria":{},"rewards":{"function":"isle:k_reward_edge"}}"#.to_vec(),
+    );
+    let err = integrity::check_tree("isle", &out)
+        .expect_err("a reward naming a function nobody emitted must fail the build");
+    assert_eq!(err.code, "DW0497", "{}", err.message);
+    for needle in ["advancement/k_edge.json", "k_reward_edge"] {
+        assert!(
+            err.message.contains(needle),
+            "the diagnostic must name the advancement and its missing reward \
+             (missing `{needle}`): {}",
+            err.message
+        );
+    }
+    out.insert(
+        "datapack/data/isle/function/k_reward_edge.mcfunction".to_string(),
+        b"say paid\n".to_vec(),
+    );
+    assert!(
+        integrity::check_tree("isle", &out).is_ok(),
+        "a reward whose function is emitted resolves"
+    );
+}
+
+/// **Every reward names a function that exists** (spec-0074 criterion 2) — over
+/// a build carrying every reward shape a fight has: the waves' `k_<wave>`, an
+/// actor's `ka_<actor>` from an `on_kill`, and a wave NO beat seats, whose kill
+/// advancement used to ship naming a `k_reward_<wave>` the pack never had
+/// (the gallery README's finding). The binding is stated: the number of
+/// advancements carrying a reward, which must include both kill families.
+#[test]
+fn every_reward_names_a_function_that_exists() {
+    let dir = common::compiler_fixtures_dir().join("souls-bonfire");
+    let mut campaign = parse_dir(&dir);
+    // A wave no beat spawns — declared, never seated.
+    let mut idle = campaign.quests.content.waves[1].clone();
+    idle.id = serde_json::from_str("\"wave/idle\"").unwrap();
+    campaign.quests.content.waves.push(idle);
+    // A wave bundle and an actor bundle, so both kill families are present.
+    campaign.quests.content.waves[0].on_kill = Some(
+        serde_json::from_str(
+            r#"{ "fires": "every-kill",
+                 "effects": [ { "type": "play-sound", "sound": "minecraft:entity.experience_orb.pickup" } ] }"#,
+        )
+        .unwrap(),
+    );
+    let anchor = campaign.quests.content.waves[0].anchor.as_str().to_string();
+    let actor: delvewright_dsl::Actor = serde_json::from_str(&format!(
+        r#"{{ "id": "actor/moth", "entity": "minecraft:bat", "anchor": "{anchor}",
+              "vulnerable": true,
+              "on_kill": {{ "effects": [ {{ "type": "play-sound",
+                "sound": "minecraft:entity.experience_orb.pickup" }} ] }} }}"#
+    ))
+    .unwrap();
+    campaign.quests.content.actors.push(actor);
+    let ns = campaign.world.campaign_id.as_str().to_string();
+    let out = build(&campaign, &dir)
+        .unwrap_or_else(|e| panic!("the fight fixture must build with a closed call graph: {e:?}"));
+    integrity::check_tree(&ns, &out).unwrap_or_else(|e| panic!("{}", e.message));
+    let rewards: Vec<(&String, String)> = out
+        .iter()
+        .filter(|(p, _)| p.contains("/advancement/") && p.ends_with(".json"))
+        .filter_map(|(p, b)| {
+            let v: serde_json::Value = serde_json::from_slice(b).ok()?;
+            Some((p, v["rewards"]["function"].as_str()?.to_string()))
+        })
+        .collect();
+    let has = |needle: &str| rewards.iter().any(|(p, _)| p.contains(needle));
+    assert!(
+        has("/advancement/k_guards.json") && has("/advancement/ka_moth.json"),
+        "the binding must include both kill families; rewards found: {rewards:#?}"
+    );
+    assert!(
+        !has("/advancement/k_idle.json"),
+        "a wave no beat seats has no kill machinery, so it ships no kill advancement"
+    );
+    for (path, reward) in &rewards {
+        let name = reward.split_once(':').map(|(_, n)| n).unwrap_or(reward);
+        assert!(
+            out.contains_key(&format!("datapack/data/{ns}/function/{name}.mcfunction")),
+            "`{path}` rewards `{reward}`, which is not emitted"
+        );
+    }
+    eprintln!(
+        "reward binding: {} advancement reward(s) resolved, over {} advancement(s)",
+        rewards.len(),
+        out.keys()
+            .filter(|p| p.contains("/advancement/") && p.ends_with(".json"))
+            .count()
+    );
 }

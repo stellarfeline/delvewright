@@ -385,6 +385,31 @@ this section is what they are *for* and the traps in each.
   commands, so a gate written after the debit reads the balance the debit just
   produced — buy your last coin and you are charged and apologised to in the same
   breath.
+- **A fight pays per body through `on_kill`.** `on_kill {fires?, effects[]}` is
+  **optional** on any `waves[]` or `actors[]` entry. Its effects run **once per
+  body a player is credited with killing**, as that player: a `player`-scoped
+  datum written there pays the killer, and a `party`-scoped datum pays the party
+  once. A body that dies with no player credited — a fall, a hazard, another mob
+  — pays nothing, and the fight still clears. Where the fight **comes back**
+  after the party has met it — a rest re-seats it, or the beat that seats it can
+  fire again — you **must** say `fires: "first-kill"` (the fight pays as many
+  kills as it has bodies, once, over the whole delve) or `fires: "every-kill"`
+  (every kill pays, so the fight can be farmed); where it does not come back,
+  leave `fires` off. Who is paid is the datum's scope, never a field on the
+  bundle:
+
+  | you want | write | with four players |
+  |---|---|---|
+  | the one who lands the blow keeps it | `add-state` on a `player` datum | the killer's purse moves; the others' do not |
+  | a shared purse | `add-state` on a `party` datum | one write to the party per kill |
+  | every player paid per kill, each into their own purse | — | not a shape this bundle has; pay a `party` datum and price from it |
+
+  The engine refuses a bundle no player can be credited with — on a wave no
+  beat spawns, or on an actor never unleashed and not `vulnerable` — and it
+  refuses `every-kill` on a fight that never comes back and a missing `fires`
+  on one that does, naming the fight each time. The bundle of the last body fires before the `kill` objective's
+  `on_objective_complete`, so a beat for the whole fight falling stays on the
+  objective.
 
 ## Bodies
 

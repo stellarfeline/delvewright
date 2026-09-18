@@ -1,0 +1,21 @@
+{
+  "code": "DW0913",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "add",
+      "path": "/content/actors/4/on_kill",
+      "value": {
+        "effects": [
+          {
+            "amount": 1,
+            "state": "state/keepsake",
+            "type": "add-state"
+          }
+        ]
+      }
+    }
+  ],
+  "units": [],
+  "why": "`actor/hall-usher` is staged by a `spawn-actor` beat and never unleashed, and it is not `vulnerable`: its body is `Invulnerable` for the whole delve, so no player can ever be credited with killing it and a bundle that pays for its kill can never fire. The engine refuses the declaration where it is written and names the three ways out — unleash it, mark it `vulnerable`, or remove the bundle. `fires` is left off because the usher never comes back, so this document demonstrates exactly one refusal. It declares no unit: `Actor.on_kill` is bound in the primary by `actor/hall-moth`, whose unleashed body a player can kill."
+}

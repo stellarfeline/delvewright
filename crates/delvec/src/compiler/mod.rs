@@ -51,6 +51,7 @@
 //! - [`mark`]: a mark stays in the room its anchor names — an offset that leaves its anchor's piece is refused (`DW0897`).
 //! - [`massing`]: the L2 massing verbs — declarative control of a pool area's solved jigsaw layout.
 //! - [`nav`]: compile-time navigation over the solved voxel grid.
+//! - [`onkill`]: whether a fight comes back, and the `on_kill.fires` judgement it owes (`DW0914`/`DW0915`).
 //! - [`plan`]: resolve a validated campaign into the placement + naming model emission reads.
 //! - [`png`]: the deterministic hand-rolled PNG writer.
 //! - [`pool`]: a pool draw that seats the same anchored prefab twice (`DW0498`).
@@ -126,6 +127,7 @@ pub mod loot;
 pub mod mark;
 pub mod massing;
 pub mod nav;
+pub mod onkill;
 pub mod plan;
 pub mod png;
 pub mod pool;

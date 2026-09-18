@@ -790,8 +790,14 @@ impl<'a> Flow<'a> {
             // Crediting `on_death` would be worse than a missing producer: it
             // would let the mainline be proven reachable via a flag the party only
             // obtains by dying.
+            //
+            // A fight's `on_kill` (spec-0074) is the same shape: it fires only
+            // when a player is CREDITED with a body, and a body may fall, burn or
+            // be cut down by another mob with nobody credited, so no kill is
+            // forced and nothing inside is a producer.
             crate::compiler::plan::EffectRoot::DialogueRespawn
-            | crate::compiler::plan::EffectRoot::OnDeath => {}
+            | crate::compiler::plan::EffectRoot::OnDeath
+            | crate::compiler::plan::EffectRoot::OnKill(_) => {}
         });
         // `disarm.sets_flag` is a field, not an effect list, so it has no root of
         // its own; same ambient reasoning, same gate.

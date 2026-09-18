@@ -547,6 +547,12 @@ pub mod codes {
     /// for `boss` only, on a wave or an actor alike; `elite` and `ordinary` are
     /// never named by it.
     pub const HEALTH_BAR_ADVISED: DwCode = DwCode::new("DW0912", ExitTier::Build);
+    /// (spec-0074 §8.1) **An `on_kill` bundle on a body no player can be credited
+    /// with killing**: on a wave no beat spawns (it resolves no area, so it has
+    /// no bodies and no kill machinery), or on an actor no `unleash-actor` names
+    /// that is not `vulnerable` (its body is `Invulnerable` for the whole delve).
+    /// A declaration nothing can exercise is refused. Validation-tier (exit 1).
+    pub const ON_KILL_UNREACHABLE: DwCode = DwCode::new("DW0913", ExitTier::Build);
     /// A `collect` `dropped_by` is not backed by the wave it names:
     /// the wave declares no `{item}` drop of this objective's item, the count
     /// asks for more copies than the wave's mobs can yield, or the objective

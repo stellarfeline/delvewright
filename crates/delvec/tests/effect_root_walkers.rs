@@ -267,6 +267,26 @@ fn probe_at(loaded: &LoadedCampaign, k: EffectRootKind, bundle_json: &str) -> Ca
             shop.offers[0].effects = bundle;
             c.quests.content.shops.push(shop);
         }
+        // Root 9 (spec-0074). The smallest fight a player can be credited with
+        // killing without a beat to seat it: a `vulnerable` actor, standing on
+        // the probe's own free anchor, whose `on_kill` IS the probe bundle. It
+        // comes back through nothing (no bonfire, no seating beat), so `fires`
+        // is left off — the judgement is owed only where a fight returns.
+        EffectRootKind::OnKill => {
+            let mut actor: delvewright_dsl::Actor = serde_json::from_str(
+                r#"{ "id": "actor/probe", "entity": "minecraft:zombie",
+                     "anchor": "anchor/shop", "vulnerable": true,
+                     "on_kill": { "effects": [] } }"#,
+            )
+            .expect("probe actor parses");
+            actor.on_kill.as_mut().expect("declared above").effects = bundle;
+            c.quests.content.actors.push(actor);
+            // A fight in a campaign with no waves ships `peaceful` unless the
+            // world says otherwise (`DW0469`), and a zombie on peaceful is gone
+            // on the tick it spawns.
+            c.world.content.difficulty =
+                Some(serde_json::from_str("\"easy\"").expect("difficulty parses"));
+        }
     }
     c
 }
@@ -463,6 +483,7 @@ fn site_kind(site: &EffectSite) -> EffectRootKind {
         EffectSite::ShortcutUnlock { .. } => EffectRootKind::ShortcutUnlock,
         EffectSite::OnDeath => EffectRootKind::OnDeath,
         EffectSite::ShopOffer { .. } => EffectRootKind::ShopOffer,
+        EffectSite::OnKill { .. } => EffectRootKind::OnKill,
     }
 }
 

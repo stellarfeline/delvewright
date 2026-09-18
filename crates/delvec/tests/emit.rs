@@ -1741,3 +1741,246 @@ mod health_bar {
         assert!(all.contains("wave/ambush"), "{all}");
     }
 }
+
+// ---------------------------------------------------------------------------
+// spec-0074: a kill pays — the `on_kill` emission, beside the wave and actor
+// machinery it rides
+// ---------------------------------------------------------------------------
+
+/// `souls-bonfire` (a `respawns_on_rest` wave of two, a plain wave, a bonfire)
+/// with one party datum and one player datum declared, a vulnerable actor on the
+/// guards' anchor, and `mutate` applied — then built in process.
+fn build_fight(mutate: impl FnOnce(&mut delvewright_dsl::Campaign)) -> BuildOutput {
+    let dir = common::compiler_fixtures_dir().join("souls-bonfire");
+    let loaded = load_campaign_dir(&dir).unwrap();
+    let mut campaign = parse_campaign(&loaded.raw).expect("fixture parses");
+    let content = &mut campaign.quests.content;
+    content.state.push(
+        serde_json::from_str(r#"{ "id": "state/purse", "scope": "party", "initial": 0 }"#).unwrap(),
+    );
+    content.state.push(
+        serde_json::from_str(r#"{ "id": "state/coin", "scope": "player", "initial": 0 }"#).unwrap(),
+    );
+    let anchor = content.waves[0].anchor.as_str().to_string();
+    content.actors.push(
+        serde_json::from_str(&format!(
+            r#"{{ "id": "actor/moth", "entity": "minecraft:bat", "anchor": "{anchor}",
+                  "vulnerable": true }}"#
+        ))
+        .unwrap(),
+    );
+    mutate(&mut campaign);
+    let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
+    let plan = Plan::build(&campaign, &prefabs).expect("plan builds");
+    let mut structures: BTreeMap<String, Vec<u8>> = BTreeMap::new();
+    for area in &plan.areas {
+        for piece in &area.pieces {
+            for t in &piece.templates {
+                let bytes = std::fs::read(common::prefabs_dir().join(&t.structure_file)).unwrap();
+                structures.insert(t.structure_file.clone(), bytes);
+            }
+        }
+    }
+    emit::build(
+        &plan,
+        &loaded.inputs,
+        &structures,
+        &CommandTree::v1_21_11(),
+        &prefabs,
+        None,
+        &BTreeMap::new(),
+    )
+    .expect("emission succeeds")
+}
+
+fn on_kill(json: &str) -> Option<delvewright_dsl::OnKill> {
+    Some(serde_json::from_str(json).expect("on_kill parses"))
+}
+
+fn fight_lines<'a>(out: &'a BuildOutput, name: &str) -> Vec<&'a str> {
+    text(
+        out,
+        &format!("datapack/data/souls-bonfire/function/{name}.mcfunction"),
+    )
+    .lines()
+    .collect()
+}
+
+/// An `every-kill` wave: the bundle function increments its ledger FIRST and
+/// then runs the effects as the credited player; `k_reward_<wave>` calls it
+/// unguarded, after the credited-kill ledger and before the re-arm. A `party`
+/// datum writes `#party`, a `player` datum writes `@s` (the killer).
+#[test]
+fn an_every_kill_wave_pays_unguarded_between_the_ledger_and_the_rearm() {
+    let out = build_fight(|c| {
+        c.quests.content.waves[0].on_kill = on_kill(
+            r#"{ "fires": "every-kill", "effects": [
+                  { "type": "add-state", "state": "state/purse", "amount": 3 },
+                  { "type": "add-state", "state": "state/coin", "amount": 2 } ] }"#,
+        );
+    });
+    assert_eq!(
+        fight_lines(&out, "on_kill_w_guards"),
+        vec![
+            "scoreboard players add #kf_w_guards dw.sys 1",
+            "scoreboard players add #party dw.s_purse 3",
+            "scoreboard players add @s dw.s_coin 2",
+        ]
+    );
+    assert_eq!(
+        fight_lines(&out, "k_reward_guards"),
+        vec![
+            "scoreboard players remove #guards dw.wave 1",
+            "scoreboard players add #wcred_guards dw.sys 1",
+            "function souls-bonfire:on_kill_w_guards",
+            "advancement revoke @s only souls-bonfire:k_guards",
+        ]
+    );
+    let setup = text(
+        &out,
+        "datapack/data/souls-bonfire/function/setup.mcfunction",
+    );
+    let cred = setup
+        .lines()
+        .position(|l| l == "scoreboard players set #wcred_guards dw.sys 0")
+        .expect("the credited ledger is seeded");
+    assert_eq!(
+        setup.lines().nth(cred + 1),
+        Some("scoreboard players set #kf_w_guards dw.sys 0"),
+        "the payment ledger is seeded beside the credited ledger"
+    );
+}
+
+/// A `first-kill` wave of three bodies pays at most three times over the delve:
+/// the call is guarded on the ledger `..2`. Perturbation: the same wave stating
+/// `every-kill` loses the guard, and changing the amount moves the operand.
+#[test]
+fn a_first_kill_wave_of_three_is_guarded_on_its_ledger() {
+    let bundle = |fires: &str, amount: i32| {
+        format!(
+            r#"{{ "fires": "{fires}", "effects": [
+                  {{ "type": "add-state", "state": "state/purse", "amount": {amount} }} ] }}"#
+        )
+    };
+    let three = |c: &mut delvewright_dsl::Campaign, json: &str| {
+        c.quests.content.waves[0].mobs[0].count = 3;
+        c.quests.content.waves[0].on_kill = on_kill(json);
+    };
+    let first = build_fight(|c| three(c, &bundle("first-kill", 1)));
+    let reward = fight_lines(&first, "k_reward_guards");
+    assert_eq!(
+        reward[2],
+        "execute if score #kf_w_guards dw.sys matches ..2 run function \
+         souls-bonfire:on_kill_w_guards"
+    );
+    let every = build_fight(|c| three(c, &bundle("every-kill", 1)));
+    assert_eq!(
+        fight_lines(&every, "k_reward_guards")[2],
+        "function souls-bonfire:on_kill_w_guards",
+        "changing `fires` removes the guard"
+    );
+    let moved = build_fight(|c| three(c, &bundle("first-kill", 7)));
+    assert_eq!(
+        fight_lines(&moved, "on_kill_w_guards")[1],
+        "scoreboard players add #party dw.s_purse 7",
+        "changing the amount moves the operand"
+    );
+    assert_eq!(
+        fight_lines(&first, "on_kill_w_guards")[1],
+        "scoreboard players add #party dw.s_purse 1"
+    );
+}
+
+/// An actor with a bundle gets its own kill advancement over its own tag, a
+/// reward that pays (guarded `..0` for one body) and re-arms, and the bundle
+/// function; `setup` seeds its ledger. An actor without one gets none of it.
+#[test]
+fn an_actor_bundle_gets_its_own_kill_advancement_reward_and_function() {
+    let out = build_fight(|c| {
+        c.quests.content.actors[0].on_kill = on_kill(
+            r#"{ "fires": "first-kill", "effects": [
+                  { "type": "add-state", "state": "state/coin", "amount": 1 } ] }"#,
+        );
+    });
+    let adv: serde_json::Value = serde_json::from_str(text(
+        &out,
+        "datapack/data/souls-bonfire/advancement/ka_moth.json",
+    ))
+    .unwrap();
+    assert_eq!(
+        adv["criteria"]["slain"]["trigger"],
+        "minecraft:player_killed_entity"
+    );
+    assert_eq!(
+        adv["criteria"]["slain"]["conditions"]["entity"]["nbt"],
+        "{Tags:[\"dw_actor_moth\"]}"
+    );
+    assert_eq!(adv["rewards"]["function"], "souls-bonfire:ka_reward_moth");
+    assert_eq!(
+        fight_lines(&out, "ka_reward_moth"),
+        vec![
+            "execute if score #kf_a_moth dw.sys matches ..0 run function \
+             souls-bonfire:on_kill_a_moth",
+            "advancement revoke @s only souls-bonfire:ka_moth",
+        ]
+    );
+    assert_eq!(
+        fight_lines(&out, "on_kill_a_moth"),
+        vec![
+            "scoreboard players add #kf_a_moth dw.sys 1",
+            "scoreboard players add @s dw.s_coin 1",
+        ]
+    );
+    assert!(
+        text(
+            &out,
+            "datapack/data/souls-bonfire/function/setup.mcfunction"
+        )
+        .lines()
+        .any(|l| l == "scoreboard players set #kf_a_moth dw.sys 0")
+    );
+    let bare = build_fight(|_| {});
+    for path in [
+        "datapack/data/souls-bonfire/advancement/ka_moth.json",
+        "datapack/data/souls-bonfire/function/ka_reward_moth.mcfunction",
+        "datapack/data/souls-bonfire/function/on_kill_a_moth.mcfunction",
+    ] {
+        assert!(!bare.contains_key(path), "no bundle, no `{path}`");
+    }
+}
+
+/// **No bundle, no byte moved.** A build whose fights declare no `on_kill` is
+/// the build the previous engine made: removing the bundle leaves
+/// `k_reward_<wave>` and `setup` exactly as they are without one, and no
+/// `on_kill_*`/`ka_*` artifact or `#kf_` holder exists anywhere in the tree.
+/// Two builds of one bundle are byte-equal (ADR-0006).
+#[test]
+fn removing_the_bundle_is_byte_identical_and_a_build_is_deterministic() {
+    let bare = build_fight(|_| {});
+    let dressed = |c: &mut delvewright_dsl::Campaign| {
+        c.quests.content.waves[0].on_kill = on_kill(
+            r#"{ "fires": "every-kill", "effects": [
+                  { "type": "add-state", "state": "state/purse", "amount": 1 } ] }"#,
+        );
+    };
+    let with = build_fight(dressed);
+    let reward = "datapack/data/souls-bonfire/function/k_reward_guards.mcfunction";
+    assert_ne!(text(&bare, reward), text(&with, reward));
+    let removed = build_fight(|c| {
+        dressed(c);
+        c.quests.content.waves[0].on_kill = None;
+    });
+    assert_eq!(removed, bare, "removing the bundle restores every byte");
+    assert!(
+        bare.keys()
+            .all(|p| !p.contains("/on_kill_") && !p.contains("/ka_")),
+        "a tree with no bundle carries no bundle artifact"
+    );
+    assert!(
+        bare.values()
+            .filter_map(|b| std::str::from_utf8(b).ok())
+            .all(|t| !t.contains("#kf_")),
+        "a tree with no bundle carries no payment ledger"
+    );
+    assert_eq!(build_fight(dressed), with, "two builds are byte-equal");
+}
