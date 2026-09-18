@@ -1734,6 +1734,13 @@ class CombatFakeBot extends InteractFakeBot {
     }
   }
 
+  /** The ids of every body the last seating placed, tagged or not. */
+  waveIdsAll(): number[] {
+    return (Object.values(this.entities) as FakeMob[])
+      .filter((m) => !this.bystanders.has(m.id))
+      .map((m) => m.id);
+  }
+
   /** The ids of everything currently wearing the wave tag. */
   waveIds(): number[] {
     return this.waveMobs().map((m) => m.id);
@@ -1899,6 +1906,10 @@ class CombatFakeBot extends InteractFakeBot {
    * the fight to outlast something else dying beside it. */
   waveHitsToKill = 1;
   private readonly hitsTaken = new Map<number, number>();
+  /** Swings that landed on body `id`. */
+  hitsOn(id: number): number {
+    return this.hitsTaken.get(id) ?? 0;
+  }
 
   attack(mob: { id: number }): void {
     this.calls.push("attack");
@@ -3452,11 +3463,14 @@ test("a body that outlives its encounter's melee budget is a FINDING, not a sile
   // report names: either nothing in the party's kit can damage this body, or the
   // encounter's numbers are wrong.
   const bot = new CombatFakeBot();
-  // A hostile the wave census cannot see — an ambusher belonging to no wave, so
-  // the fight can still end and this test is about the finding rather than about
-  // the 90s timeout an unkillable TAGGED body correctly earns.
+  // A hostile the wave census cannot see — an ambusher belonging to no wave — that
+  // is HITTING the bot, so the bot fights it (retaliation) and the fight can still
+  // end; this test is about the finding rather than about the 90s timeout an
+  // unkillable TAGGED body correctly earns. (A body that is neither the census's
+  // nor hitting the bot is not hunted at all: see the bystander case below.)
   bot.seat(1, { waveTagged: false, hitsToKill: 10_000 }); // nothing the bot does fells it
   const executor = attach(bot);
+  bot.emit("entityHurt", bot.entity, bot.entities[bot.waveIdsAll()[0]!]);
   executor.useCampaign("the-drowned-bell");
   executor.useCombatPlan(
     combatPlan(1, true, [{ kind: "zombie", count: 1, giveUpSwings: 3 }]),
@@ -3482,7 +3496,7 @@ test("an encounter that states no budget for a kind gives up on nothing", async 
   // sibling case allowed, and still falls. No finding, and no constant of the
   // harness's own deciding it was scenery at swing four.
   const bot = new CombatFakeBot();
-  bot.seat(1, { waveTagged: false, hitsToKill: 6 });
+  bot.seat(1, { hitsToKill: 6 });
   const executor = attach(bot);
   executor.useCampaign("the-drowned-bell");
   executor.useCombatPlan(
@@ -4101,4 +4115,22 @@ test("a strike with no hitbox at the target fails the step loudly, before any wa
   executor.useCampaign("vesperhold");
   await assert.rejects(() => executor.fireTrigger(STRIKE_STEP), /nothing to hit/);
   assert.ok(!bot.calls.some((c) => c.startsWith("attack")), bot.calls.join(", "));
+});
+
+test("the kill step hunts only what the census calls the wave, never a bystander", async () => {
+  // vesperhold, third ladder: with the Cliff Watchmen down the bot swung 94 times
+  // at the stable's Invulnerable horse puppets — living bodies, never of the wave
+  // — while the last watchman stood elsewhere. A body the census does not stand
+  // is not hunted; the wave's own body is.
+  const bot = new CombatFakeBot();
+  bot.seat(1, { distance: 3 });
+  bot.addBystander(77, 1, 10_000); // nearer than the wave body, and unkillable
+  const executor = attach(bot);
+  executor.useCampaign("the-drowned-bell");
+  executor.useCombatPlan(combatPlan(1, true, [{ kind: "zombie", count: 1, giveUpSwings: 24 }]), false);
+
+  await executor.kill(KILL_STEP);
+
+  assert.equal(bot.hitsOn(77), 0, "no swing at the bystander");
+  assert.deepEqual(bot.waveIds(), [], "the wave body was");
 });

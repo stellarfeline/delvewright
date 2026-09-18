@@ -303,7 +303,7 @@ test("a draught is not wasted on a scratch", async () => {
 
 test("a draught waits while a melee attacker is on the bot", async () => {
   const bot = new DrinkBot();
-  bot.health = 6;
+  bot.health = 9;
   bot.inventoryItems = [SWORD, draught()];
   bot.entities[43] = mob(43, "vindicator", 2);
   const executor = attach(bot);
@@ -321,4 +321,15 @@ test("a bottle of harming is never drunk", async () => {
   const executor = attach(bot);
   await executor.maybeDrink("test fight");
   assert.deepEqual(bot.used, []);
+});
+
+test("at a third of max health the draught is drunk with the attacker on the bot", async () => {
+  const bot = new DrinkBot();
+  bot.health = 5.6;
+  bot.inventoryItems = [SWORD, draught()];
+  bot.entities[43] = mob(43, "zombie", 2);
+  const executor = attach(bot);
+  await executor.maybeDrink("test fight");
+  assert.deepEqual(bot.used, ["hand:potion"]);
+  assert.equal(bot.health, 13.6);
 });

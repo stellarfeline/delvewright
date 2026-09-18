@@ -5,6 +5,7 @@ import {
   ATTACK_SPEED_KEY,
   HEALING_POTION_HEAL,
   DRINK_CLEAR_RANGE,
+  DRINK_CRITICAL_FRACTION,
   KITE_DISTANCE,
   PLAYER_REACH,
   attackSpeedFrom,
@@ -112,7 +113,7 @@ test("a draught is drunk when its whole heal fits, the strongest that fits", () 
 });
 
 test("a draught waits for a melee attacker to be out of its reach", () => {
-  const hurt = { maxHealth: 20, health: 6, heals: [8] } as const;
+  const hurt = { maxHealth: 20, health: 9, heals: [8] } as const;
   assert.deepEqual(
     drinkDecision({ ...hurt, nearestMeleeDistance: DRINK_CLEAR_RANGE - 0.1 }),
     { kind: "pressed" },
@@ -219,4 +220,17 @@ test("minecraft-data files 1.21.11 sounds one id after the server's registry", (
   assert.equal(byId.get(1241 + 1), "entity.player.attack.crit");
   assert.equal(byId.get(1244 + 1), "entity.player.attack.strong");
   assert.equal(byId.get(1246 + 1), "entity.player.attack.weak");
+});
+
+test("at a third of max health a draught is drunk with the attacker on the bot", () => {
+  const near = { maxHealth: 20, heals: [8], nearestMeleeDistance: 1 } as const;
+  assert.deepEqual(drinkDecision({ ...near, health: 20 * DRINK_CRITICAL_FRACTION }), {
+    kind: "drink",
+    heal: 8,
+  });
+  // The vesperhold grooms: 5.6/20, a spear beside the bot, four draughts in the bag.
+  assert.deepEqual(drinkDecision({ ...near, health: 5.6 }), { kind: "drink", heal: 8 });
+  assert.deepEqual(drinkDecision({ ...near, health: 20 * DRINK_CRITICAL_FRACTION + 0.1 }), {
+    kind: "pressed",
+  });
 });

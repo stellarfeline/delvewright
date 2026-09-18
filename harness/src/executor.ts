@@ -185,6 +185,9 @@ import {
 import {
   WAVE_CLEAR_STREAK,
   WAVE_ENGAGE_NEAR,
+  CENSUS_MATCH_RADIUS,
+  isWaveBody,
+  pickWaveBody,
   beginCensusWatch,
   beginWave,
   censusCleared,
@@ -917,7 +920,7 @@ const ENTITY_EVENT_USE_FINISHED = 9;
  * one tick of walking, so the ledge is seen before the body reaches it. */
 const STEP_PROBE_BLOCKS = 0.7;
 /** How one {@link MineflayerExecutor.strike} exchange ended. */
-type StrikeOutcome = "swung" | "gone" | "out-of-reach";
+type StrikeOutcome = "swung" | "gone" | "out-of-reach" | "disengaged";
 
 /**
  * How far from its anchor cell an actor's unleashed body may be and still be
@@ -1599,6 +1602,8 @@ export class MineflayerExecutor implements StepExecutor {
   /** Bodies an exchange could not bring into reach by footwork: the next turn
    * walks to them with the pathfinder. */
   private readonly unreached = new Set<number>();
+  /** Said once per disengagement: the bot is backing off to drink. */
+  private pressedSaid = false;
   /** When the bot last drank a draught (ms). */
   private lastDrinkAt = 0;
   /** Whether the bot is holding its shield up. */
@@ -3298,12 +3303,7 @@ export class MineflayerExecutor implements StepExecutor {
     if (!bot?.entity || this.death) return;
     if (Date.now() - this.lastDrinkAt < DRINK_SETTLE_MS) return;
     const draughts = this.draughtsCarried();
-    const decision = drinkDecision({
-      health: bot.health,
-      maxHealth: PLAYER_MAX_HEALTH,
-      heals: [...new Set(draughts.map((d) => d.heal))],
-      nearestMeleeDistance: this.nearestMeleeDistance(),
-    });
+    const decision = this.drinkNow(draughts);
     if (decision.kind !== "drink") return;
     const draught = draughts.find((d) => d.heal === decision.heal)!;
     this.lastDrinkAt = Date.now();
@@ -3350,6 +3350,18 @@ export class MineflayerExecutor implements StepExecutor {
       bot._client.removeListener("entity_status", onStatus);
       if (!this.death) await this.equipLoadout();
     }
+  }
+
+  /** The drink decision for the bot as it stands (see `drinkDecision`). */
+  private drinkNow(
+    draughts: ReadonlyArray<{ heal: number }> = this.draughtsCarried(),
+  ): ReturnType<typeof drinkDecision> {
+    return drinkDecision({
+      health: this.requireBot().health,
+      maxHealth: PLAYER_MAX_HEALTH,
+      heals: [...new Set(draughts.map((d) => d.heal))],
+      nearestMeleeDistance: this.nearestMeleeDistance(),
+    });
   }
 
   /** Every drinkable healing draught in the bag, with its heal. */
@@ -3452,6 +3464,7 @@ export class MineflayerExecutor implements StepExecutor {
     stop();
     const deadline = Date.now() + ENGAGE_BUDGET_MS;
     let jumpedAt: number | undefined;
+    let lastTickDisengaged = false;
     try {
       while (Date.now() < deadline) {
         const live = bot.entities[mob.id];
@@ -3469,12 +3482,37 @@ export class MineflayerExecutor implements StepExecutor {
         const hx = at[0] - feet[0];
         const hz = at[2] - feet[2];
         const flat = Math.hypot(hx, hz) || 1;
+        const canStepBack = this.safeStep(-hx / flat, -hz / flat);
+        // Hurt enough that a draught's whole heal fits, with a melee attacker too
+        // close to drink: open the gap instead of trading (`drinkDecision`). Where
+        // there is no ground behind to open it on, the exchange goes on.
+        const disengage = canStepBack && this.drinkNow().kind === "pressed";
+        if (disengage && !this.pressedSaid) {
+          this.pressedSaid = true;
+          process.stderr.write(
+            `[drink] ${label}: hurt enough to drink (health ${bot.health.toFixed(1)}/` +
+              `${PLAYER_MAX_HEALTH}) with a melee attacker within reach — backing off to drink\n`,
+          );
+        }
+        lastTickDisengaged = disengage;
+        if (disengage) {
+          this.lowerShield();
+          bot.setControlState("forward", false);
+          bot.setControlState("back", true);
+          await delay(TICK_POLL_MS);
+          if (this.drinkNow().kind === "drink") {
+            bot.setControlState("back", false);
+            await this.maybeDrink(label);
+          }
+          continue;
+        }
+        this.pressedSaid = false;
         const steps = footwork({
           ranged: holdsRangedWeapon(live.heldItem?.name),
           horizontalDistance: Math.hypot(hx, hz),
           charged,
           inReach: reach,
-          canStepBack: this.safeStep(-hx / flat, -hz / flat),
+          canStepBack,
           canStepIn: this.safeStep(hx / flat, hz / flat),
         });
         if (steps !== "hold") this.lowerShield();
@@ -3513,7 +3551,9 @@ export class MineflayerExecutor implements StepExecutor {
         }
         await delay(TICK_POLL_MS);
       }
-      return "out-of-reach";
+      // Out of time while backing off to drink is not a body out of reach: the
+      // caller must not walk back INTO the attacker.
+      return lastTickDisengaged ? "disengaged" : "out-of-reach";
     } finally {
       this.lowerShield();
       stop();
@@ -3531,6 +3571,55 @@ export class MineflayerExecutor implements StepExecutor {
       shieldDisabled: this.melee.shieldDisabled - since.shieldDisabled,
       draughts: this.melee.draughts - since.draughts,
     };
+  }
+
+  /**
+   * The nearest visible body that is one of `enc`'s wave (`isWaveBody`), not
+   * blacklisted. Without a plan entry every living non-cast body qualifies, as
+   * before the plan existed.
+   */
+  private nearestWaveBody(
+    enc: Encounter | undefined,
+    blacklist: ReadonlySet<number> = new Set(),
+  ): Entity | null {
+    const bot = this.requireBot();
+    const cast = this.requireNonCombatants();
+    const census = enc ? this.lastStanding.get(enc.wave) : undefined;
+    const matched: Array<{ entity: Entity; kind: string; distance: number }> = [];
+    for (const e of Object.values(bot.entities)) {
+      if (!e?.position || !isWaveMob(e, bot.entity, cast) || blacklist.has(e.id)) continue;
+      if (!isWaveBody({ pos: [e.position.x, e.position.y, e.position.z], census })) continue;
+      matched.push({
+        entity: e,
+        kind: e.name ?? "",
+        distance: bot.entity.position.distanceTo(e.position),
+      });
+    }
+    const kinds = new Set((enc?.bodies ?? []).map((b) => b.kind));
+    return pickWaveBody(matched, kinds)?.entity ?? null;
+  }
+
+  /**
+   * Where the census last found a body of `enc` standing that the bot cannot
+   * see as a wave body — the nearest one not already walked at in vain. The
+   * kill step walks there: a wave member that wandered out of the fight is
+   * still the fight.
+   */
+  private unseenCensusBody(
+    enc: Encounter | undefined,
+    walkedInVain: ReadonlyArray<readonly [number, number, number]>,
+  ): readonly [number, number, number] | undefined {
+    if (!enc) return undefined;
+    const me = this.requireBot().entity.position;
+    let best: { pos: readonly [number, number, number]; d: number } | undefined;
+    for (const m of this.lastStanding.get(enc.wave) ?? []) {
+      if (walkedInVain.some((w) => Math.hypot(w[0] - m.pos[0], w[1] - m.pos[1], w[2] - m.pos[2]) <= CENSUS_MATCH_RADIUS)) {
+        continue;
+      }
+      const d = Math.hypot(m.pos[0] - me.x, m.pos[1] - me.y, m.pos[2] - me.z);
+      if (!best || d < best.d) best = { pos: m.pos, d };
+    }
+    return best?.pos;
   }
 
   /** ` — standing at the last census: …`, or empty when it found nothing. */
@@ -4256,6 +4345,10 @@ export class MineflayerExecutor implements StepExecutor {
     // which is thrown outside the loop, because "the bot gave up on nothing" and
     // "there was nothing to give up on" are different facts.
     const unbounded = new Set<string>();
+    // Census positions the bot walked to and found no wave body at — not walked
+    // to again this step, so a body standing somewhere unreachable ends the step
+    // on its budget with its position named, rather than looping the walk.
+    const walkedInVain: Array<readonly [number, number, number]> = [];
     const hands = { ...this.melee };
     try {
       await this.equipLoadout();
@@ -4318,10 +4411,7 @@ export class MineflayerExecutor implements StepExecutor {
         }
         // Eat between exchanges when hurt and nothing is in reach (no-op otherwise).
         await this.maybeEat(`wave ${step.wave}`);
-        const cast = this.requireNonCombatants();
-        const wave = bot.nearestEntity(
-          (e) => isWaveMob(e, bot.entity, cast) && !blacklist.has(e.id),
-        );
+        const wave = this.nearestWaveBody(enc, blacklist);
         // RETALIATION (souls ladder): the wave is the objective, but anything currently
         // drawing the bot's blood in melee outranks it — a souls `ambush` desugars to
         // spawn + unleash with no kill objective, so a bypassed ambusher belongs to no
@@ -4373,6 +4463,24 @@ export class MineflayerExecutor implements StepExecutor {
           continue;
         }
         clearedStreak = 0;
+        const stray = mob ? undefined : this.unseenCensusBody(enc, walkedInVain);
+        if (!mob && stray) {
+          // The census stands a body of this wave where the bot sees none of it:
+          // it wandered out of the fight. Go where the server says it is.
+          const cell: Vec3Tuple = [Math.floor(stray[0]), Math.floor(stray[1]), Math.floor(stray[2])];
+          process.stderr.write(
+            `[kill ${step.wave}] the census stands a body of the wave at ` +
+              `[${stray.map((v) => v.toFixed(1)).join(", ")}], out of the bot's sight — going to it\n`,
+          );
+          try {
+            await this.walkTo(cell, 2, `census body of ${step.wave}`, step.sneak);
+          } catch (err) {
+            if (err instanceof BotDeathError) throw err;
+            walkedInVain.push(stray);
+          }
+          if (!this.nearestWaveBody(enc, blacklist)) walkedInVain.push(stray);
+          continue;
+        }
         if (!mob) {
           // No eligible wave mob remains (every real mob dead; any unkillable actor
           // blacklisted) → wave cleared, unless the census can still see it. When it
@@ -5274,7 +5382,9 @@ export class MineflayerExecutor implements StepExecutor {
     for (;;) {
       const sum = this.censusSummary;
       if (sum && sum.seq > before && sum.wave === enc.wave) {
-        return { summary: sum, mobs: this.censusMobs.get(sum.seq) ?? [] };
+        const mobs = this.censusMobs.get(sum.seq) ?? [];
+        this.lastStanding.set(enc.wave, mobs);
+        return { summary: sum, mobs };
       }
       if (Date.now() >= deadline) return undefined;
       await delay(SCORE_POLL_MS);
@@ -5329,7 +5439,6 @@ export class MineflayerExecutor implements StepExecutor {
       present: census.summary.present,
       credited: census.summary.credited,
     });
-    this.lastStanding.set(step.wave, census.mobs);
     // Who felled this cohort. `step.count` is the seating the compiler declared
     // and `spawn_<wave>` wrote; the other two are the server's own answer.
     this.waveAttributions.set(
@@ -5442,8 +5551,7 @@ export class MineflayerExecutor implements StepExecutor {
     const bot = this.requireBot();
     const deadline = Date.now() + MID_FIGHT_MS;
     while (Date.now() < deadline && !this.death) {
-      const cast = this.requireNonCombatants();
-      const mob = bot.nearestEntity((e) => isWaveMob(e, bot.entity, cast));
+      const mob = this.nearestWaveBody(this.encounterFor(step.wave));
       if (!mob) break;
       if (
         bot.entity.position.distanceTo(mob.position) > MELEE_ENGAGE_RANGE ||

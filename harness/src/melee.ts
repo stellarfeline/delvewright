@@ -141,8 +141,16 @@ export type DrinkDecision =
  * Not with a melee attacker in its reach: a drink holds the bottle for 32 ticks
  * at a fifth of walking speed, and a vindicator strikes about once a second —
  * measured on vesperhold, a draught drunk in the Porter's reach healed nothing
- * the next blow did not take back. The footwork opens the gap; the drink waits
- * for it ({@link DRINK_CLEAR_RANGE}).
+ * the next blow did not take back. The footwork opens the gap (`pressed`: the
+ * exchange backs away instead of swinging); the drink waits for it
+ * ({@link DRINK_CLEAR_RANGE}).
+ *
+ * Except at a third of max health or less ({@link DRINK_CRITICAL_FRACTION}),
+ * where the bottle is drunk with the attacker on the bot. Authored, not cited:
+ * at that health the next exchange is the last one either way, and on
+ * vesperhold the bot opened the grooms' fight at 5.6/20 with four draughts in
+ * the bag, refused them all for the spear beside it, and was speared dead three
+ * seconds later.
  */
 export function drinkDecision(opts: {
   readonly health: number;
@@ -158,7 +166,11 @@ export function drinkDecision(opts: {
   const missing = opts.maxHealth - opts.health;
   const fitting = opts.heals.filter((h) => h <= missing);
   if (fitting.length === 0) return { kind: "healthy" };
-  if (opts.nearestMeleeDistance !== undefined && opts.nearestMeleeDistance < DRINK_CLEAR_RANGE) {
+  if (
+    opts.nearestMeleeDistance !== undefined &&
+    opts.nearestMeleeDistance < DRINK_CLEAR_RANGE &&
+    opts.health > opts.maxHealth * DRINK_CRITICAL_FRACTION
+  ) {
     return { kind: "pressed" };
   }
   return { kind: "drink", heal: Math.max(...fitting) };
@@ -167,6 +179,10 @@ export function drinkDecision(opts: {
 /** How far (blocks, horizontal) the nearest melee attacker must be before a
  * draught is started. */
 export const DRINK_CLEAR_RANGE = 4;
+
+/** At or below this fraction of max health a draught is drunk even with a melee
+ * attacker in reach — see {@link drinkDecision}. */
+export const DRINK_CRITICAL_FRACTION = 1 / 3;
 
 /**
  * How long before its swing is charged the bot jumps, so the swing is released

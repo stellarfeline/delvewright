@@ -229,3 +229,52 @@ export function waveEngagementCleared(opts: {
   const near = opts.near ?? WAVE_ENGAGE_NEAR;
   return opts.nearestEligibleDistance === undefined || opts.nearestEligibleDistance > near;
 }
+
+/**
+ * How far (blocks) a visible body may be from a position the wave census last
+ * reported and still be that census body. The kill step asks the census every
+ * two seconds; in that time a walking mob covers two or three blocks, and a
+ * knocked-back one a little more.
+ */
+export const CENSUS_MATCH_RADIUS = 4;
+
+/**
+ * Whether a visible living body stands where the wave census last found a body
+ * of THIS wave — the only kind of body the kill step may hunt. (A body that is
+ * hitting the bot is fought whatever it is; that is retaliation, not the wave.)
+ *
+ * The client cannot read the wave's tag, so identity is the server's own
+ * statement of where the wave's bodies are: within {@link CENSUS_MATCH_RADIUS}
+ * of a census position. `undefined` census (none answered yet): position does
+ * not decide. A census that answered with nobody standing matches nothing.
+ *
+ * Before this the kill loop hunted the nearest living body of any kind. On
+ * vesperhold that was the stable's `Invulnerable` horse puppets and the gate
+ * hall's Gate-Sergeant puppet — 94 swings on the shelf that hurt nothing,
+ * while the last Cliff Watchman stood unhunted in the gate hall at 20/20.
+ */
+export function isWaveBody(opts: {
+  readonly pos: readonly [number, number, number];
+  readonly census: ReadonlyArray<{ readonly pos: readonly [number, number, number] }> | undefined;
+}): boolean {
+  if (opts.census === undefined) return true;
+  return opts.census.some(
+    (m) =>
+      Math.hypot(m.pos[0] - opts.pos[0], m.pos[1] - opts.pos[1], m.pos[2] - opts.pos[2]) <=
+      CENSUS_MATCH_RADIUS,
+  );
+}
+
+/**
+ * Of the bodies that pass {@link isWaveBody}, the one to hunt: the nearest of a
+ * kind the encounter seats (`combat-plan.json` `bodies[].kind`), else the
+ * nearest of any kind — a wave body can change kind in vanilla (a zombie that
+ * drowns), and the census, not the kind, is the identity.
+ */
+export function pickWaveBody<T extends { readonly kind: string; readonly distance: number }>(
+  matched: readonly T[],
+  waveKinds: ReadonlySet<string>,
+): T | undefined {
+  const byDistance = [...matched].sort((a, b) => a.distance - b.distance);
+  return byDistance.find((m) => waveKinds.has(m.kind)) ?? byDistance[0];
+}
