@@ -53,6 +53,7 @@ import {
   observationOf,
   openTrial,
   unboundedEncounterNote,
+  describeStanding,
   unkillableFinding,
   respawnedAtCheckpoint,
   retryOutcome,
@@ -79,6 +80,7 @@ import {
 import {
   bodyInVolume,
   entryCellOf,
+  volumeReachesCell,
   inBox,
   lethalStepCost,
   markersAt,
@@ -148,6 +150,29 @@ import {
   isSafeFood,
   pickFood,
 } from "./sustain.ts";
+import {
+  CRIT_FALL_WAIT_MS,
+  DRINK_TIMEOUT_MS,
+  ENGAGE_BUDGET_MS,
+  MELEE_ENGAGE_RANGE,
+  OWN_SWING_RADIUS,
+  SHIELD_COOLDOWN_GROUP,
+  attackSpeedFrom,
+  describeTally,
+  drinkDecision,
+  drinkHeal,
+  emptyTally,
+  footwork,
+  fullChargeMs,
+  guardUp,
+  holdsRangedWeapon,
+  inReach,
+  jumpForCrit,
+  swingVerdict,
+  type AttributeReading,
+  type ItemComponent,
+  type MeleeTally,
+} from "./melee.ts";
 import {
   INTERACTION_REACH,
   acquireFromStances,
@@ -874,8 +899,24 @@ const REACH_TIMEOUT_MS = 60_000;
 const REACH_POLL_MS = 250;
 /** How long (ms) a `kill` step may run before it is declared failed. */
 const KILL_TIMEOUT_MS = 90_000;
-/** Attack cadence (ms) — roughly the vanilla sword cooldown. */
-const ATTACK_INTERVAL_MS = 400;
+/**
+ * The slowest full-charge attack speed any vanilla melee weapon has (swings per
+ * second: the mace). The swing cadence when the server sent no
+ * readable attack speed — see `chargeMs`.
+ */
+const SLOWEST_VANILLA_ATTACK_SPEED = 0.6;
+/** One server tick (ms) — the granularity the hands are driven at. */
+const TICK_POLL_MS = 50;
+/** How long (ms) after a drink before another is considered, so the health the
+ * first one restored has arrived before the decision is taken again. */
+const DRINK_SETTLE_MS = 1_000;
+/** Vanilla entity event 9: the entity finished using its item (the drink landed). */
+const ENTITY_EVENT_USE_FINISHED = 9;
+/** How far ahead (blocks) a step is probed for safe footing — a little more than
+ * one tick of walking, so the ledge is seen before the body reaches it. */
+const STEP_PROBE_BLOCKS = 0.7;
+/** How one {@link MineflayerExecutor.strike} exchange ended. */
+type StrikeOutcome = "swung" | "gone" | "out-of-reach";
 
 /**
  * How far from its anchor cell an actor's unleashed body may be and still be
@@ -1244,6 +1285,31 @@ const HEALTH_ATTRIBUTION_GRACE_MS = 500;
 const PLAYER_MAX_HEALTH = 20;
 const PLAYER_MAX_FOOD = 20;
 
+/**
+ * The dropped `item` (unnamespaced id) nearest `anchor` within `radius` blocks,
+ * off the item entities the client tracks, or `undefined` when none is in sight.
+ */
+function nearestDrop(
+  bot: Bot,
+  item: string,
+  anchor: readonly [number, number, number],
+  radius: number,
+): { id: number; position: Entity["position"]; fromAnchor: number } | undefined {
+  let best: { id: number; position: Entity["position"]; fromAnchor: number } | undefined;
+  for (const e of Object.values(bot.entities)) {
+    if (!e?.position || e.name !== "item") continue;
+    if (e.getDroppedItem()?.name !== item) continue;
+    const fromAnchor = Math.hypot(
+      e.position.x - (anchor[0] + 0.5),
+      e.position.y - anchor[1],
+      e.position.z - (anchor[2] + 0.5),
+    );
+    if (fromAnchor > radius) continue;
+    if (!best || fromAnchor < best.fromAnchor) best = { id: e.id, position: e.position, fromAnchor };
+  }
+  return best;
+}
+
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -1510,6 +1576,24 @@ export class MineflayerExecutor implements StepExecutor {
   private readonly defenseExempt = new Set<number>();
   /** Timestamp (ms) of the last eat attempt, throttling both the action and its log. */
   private lastEatAt = 0;
+  /** Each wave's bodies as its last census found them standing. */
+  private readonly lastStanding = new Map<string, readonly CensusMob[]>();
+  /** Bodies an exchange could not bring into reach by footwork: the next turn
+   * walks to them with the pathfinder. */
+  private readonly unreached = new Set<number>();
+  /** When the bot last drank a draught (ms). */
+  private lastDrinkAt = 0;
+  /** Whether the bot is holding its shield up. */
+  private guarding = false;
+  /** When the bot last released a swing (ms) — the start of its charge. */
+  private lastSwingAt = 0;
+  /** The body the bot is swinging at, so a critical-hit broadcast on it is ours. */
+  private meleeTarget: number | undefined;
+  /** What the bot's hands have done over the whole run; a fight reports its
+   * own share as the difference from a snapshot taken when it opened. */
+  private readonly melee: MeleeTally = emptyTally();
+  /** Said once: the server sent no readable attack speed. */
+  private attackSpeedWarned = false;
   /**
    * Armed fight-or-flight watchers (see {@link armStalkerTrip}). Fired from the damage
    * handler so the bot reacts on the hit that qualifies a stalker, not up to a poll
@@ -1679,6 +1763,31 @@ export class MineflayerExecutor implements StepExecutor {
     // fought or resumed across the void (the "No path to the goal!" / "Path was
     // stopped" race documented in the nobodys-cave gap-8 field notes).
     bot.on("forcedMove", () => this.onForcedMove());
+    // What the hands did, as the server broadcast it back: a critical hit on the
+    // body being swung at, a blow taken on the shield, the shield knocked out of
+    // use. Counted only — nothing decides on them.
+    bot.on("entityCriticalEffect", (entity: Entity) => {
+      if (entity && entity.id === this.meleeTarget) this.melee.crits += 1;
+    });
+    bot._client?.on(
+      "sound_effect",
+      (packet: { sound?: { soundId?: number }; x: number; y: number; z: number }) => {
+        const id = packet.sound?.soundId;
+        const me = bot.entity?.position;
+        if (id === undefined || !me) return;
+        // Fixed-point eighths of a block on the wire.
+        const d = Math.hypot(packet.x / 8 - me.x, packet.y / 8 - me.y, packet.z / 8 - me.z);
+        if (d > OWN_SWING_RADIUS) return;
+        const verdict = swingVerdict(id);
+        if (verdict === "landed") this.melee.landed += 1;
+        if (verdict === "nodamage") this.melee.noDamage += 1;
+      },
+    );
+    bot._client?.on("set_cooldown", (packet: { cooldownGroup?: string; cooldownTicks?: number }) => {
+      if (packet.cooldownGroup === SHIELD_COOLDOWN_GROUP && (packet.cooldownTicks ?? 0) > 0) {
+        this.melee.shieldDisabled += 1;
+      }
+    });
   }
 
   /**
@@ -1998,6 +2107,17 @@ export class MineflayerExecutor implements StepExecutor {
       bot.setControlState(control, false);
     }
     const deadline = Date.now() + DEFEND_BUDGET_MS;
+    const hands = { ...this.melee };
+    try {
+      await this.defendLoop(id, name, label, deadline);
+    } finally {
+      this.reportMelee(`defend ${name}#${id}`, hands);
+    }
+  }
+
+  /** The exchange loop of {@link defendAgainst}, bounded by `deadline`. */
+  private async defendLoop(id: number, name: string, label: string, deadline: number): Promise<void> {
+    const bot = this.requireBot();
     while (Date.now() < deadline) {
       if (this.death) throw this.death;
       const mob = bot.entities[id];
@@ -2013,18 +2133,9 @@ export class MineflayerExecutor implements StepExecutor {
         );
         return;
       }
-      if (dist > RETALIATION_RANGE) {
-        // Out of the bot's own reach but still on it — let it close rather than chase.
-        await delay(REACH_POLL_MS);
-        continue;
-      }
-      try {
-        await bot.lookAt(mob.position.offset(0, (mob.height ?? 1) * 0.5, 0), true);
-      } catch {
-        // best effort — a failed look must not abort the defense
-      }
-      bot.attack(mob);
-      await delay(ATTACK_INTERVAL_MS);
+      // Inside RETALIATION_RANGE + 2 the exchange's own footwork meets it; the bot
+      // never walks a leg after it — a mob that breaks off is let go.
+      await this.strike(mob, `defend ${name}#${id}`);
     }
     this.defenseExempt.add(id);
     process.stderr.write(
@@ -3061,6 +3172,319 @@ export class MineflayerExecutor implements StepExecutor {
         }
       }
     }
+    // The shield goes where a player holds it. A kit's `give` drops it in the bag,
+    // and a shield in the bag blocks nothing — the bot carried the Sellsword's
+    // through every fight it lost.
+    if (!this.shieldInOffhand()) {
+      const shield = bot.inventory.items().find((i) => i.name === "shield");
+      if (shield) {
+        try {
+          await bot.equip(shield, "off-hand");
+        } catch {
+          // best effort, as above
+        }
+      }
+    }
+  }
+
+  /** Whether the off hand holds a shield (inventory slot 45 on the player window). */
+  private shieldInOffhand(): boolean {
+    return this.requireBot().inventory.slots[45]?.name === "shield";
+  }
+
+  /**
+   * Full-charge swing interval for what the bot is holding, from the attack speed
+   * the SERVER sent (`fullChargeMs`). When the server sent none the client can
+   * read, the run says so once and swings at the slowest charge any vanilla melee
+   * weapon has (the mace, 0.6/s):
+   * waiting too long costs time, swinging early costs the fight.
+   */
+  private chargeMs(): number {
+    const bot = this.requireBot();
+    const speed = attackSpeedFrom(
+      (bot.entity as { attributes?: Record<string, AttributeReading> }).attributes,
+    );
+    if (speed !== undefined) return fullChargeMs(speed);
+    if (!this.attackSpeedWarned) {
+      this.attackSpeedWarned = true;
+      process.stderr.write(
+        `[melee] the server sent no readable attack speed — swinging at the slowest ` +
+          `vanilla full-charge interval (${fullChargeMs(SLOWEST_VANILLA_ATTACK_SPEED)}ms) ` +
+          `rather than at a guessed one\n`,
+      );
+    }
+    return fullChargeMs(SLOWEST_VANILLA_ATTACK_SPEED);
+  }
+
+  /** Whether a jump from here has room to rise (the cell above the head is open). */
+  private headroom(): boolean {
+    const bot = this.requireBot();
+    const above = bot.blockAt(bot.entity.position.offset(0, 2, 0));
+    return above !== null && above.boundingBox === "empty";
+  }
+
+  /**
+   * Drink a healing draught the way a player does mid-fight (see
+   * `drinkDecision`). Only drinks and failed drinks are logged: the decision
+   * runs before every exchange.
+   *
+   * Not through mineflayer's `consume()`. It resolves on any `heldItemChanged`
+   * after the first (it never advances its `previousHeldItem` past a switch),
+   * and a blow taken mid-drink re-sends the inventory: on vesperhold every
+   * draught "drunk" in a fight returned inside a second with the bottle still in
+   * the bag, and the re-equip that followed cancelled the drink server-side. So
+   * the bottle is held up with the use key until the server says the use
+   * FINISHED (entity event 9 on the bot) and the bag shows one bottle fewer.
+   */
+  async maybeDrink(label: string): Promise<void> {
+    const bot = this.bot;
+    if (!bot?.entity || this.death) return;
+    if (Date.now() - this.lastDrinkAt < DRINK_SETTLE_MS) return;
+    const draughts = this.draughtsCarried();
+    const decision = drinkDecision({
+      health: bot.health,
+      maxHealth: PLAYER_MAX_HEALTH,
+      heals: [...new Set(draughts.map((d) => d.heal))],
+      nearestMeleeDistance: this.nearestMeleeDistance(),
+    });
+    if (decision.kind !== "drink") return;
+    const draught = draughts.find((d) => d.heal === decision.heal)!;
+    this.lastDrinkAt = Date.now();
+    const before = bot.health;
+    const bottlesBefore = draughts.length;
+    let finished = false;
+    const onStatus = (p: { entityId: number; entityStatus: number }): void => {
+      if (p.entityId === bot.entity?.id && p.entityStatus === ENTITY_EVENT_USE_FINISHED) {
+        finished = true;
+      }
+    };
+    bot._client.on("entity_status", onStatus);
+    try {
+      this.lowerShield();
+      for (const control of ["forward", "back", "left", "right", "jump", "sprint"] as const) {
+        bot.setControlState(control, false);
+      }
+      await bot.equip(draught.item, "hand");
+      bot.activateItem();
+      const deadline = Date.now() + DRINK_TIMEOUT_MS;
+      while (!finished && !this.death && Date.now() < deadline) await delay(TICK_POLL_MS);
+      if (!finished) bot.deactivateItem();
+      await delay(TICK_POLL_MS * 2); // the heal and the bag update ride the next packets
+      const left = this.draughtsCarried().length;
+      if (finished && left < bottlesBefore) {
+        this.melee.draughts += 1;
+        process.stderr.write(
+          `[drink] ${label}: drank a healing draught (+${decision.heal}) at health ` +
+            `${before.toFixed(1)}/${PLAYER_MAX_HEALTH} → ${bot.health.toFixed(1)}/` +
+            `${PLAYER_MAX_HEALTH}; ${left} left\n`,
+        );
+      } else {
+        process.stderr.write(
+          `[drink] ${label}: the drink did not finish (${this.death ? "the bot died" : finished ? "the bottle is still in the bag" : `no use-finished event within ${DRINK_TIMEOUT_MS}ms`}) ` +
+            `at health ${before.toFixed(1)}/${PLAYER_MAX_HEALTH}\n`,
+        );
+      }
+    } catch (err) {
+      process.stderr.write(
+        `[drink] ${label}: could not drink at health ${before.toFixed(1)}/${PLAYER_MAX_HEALTH}: ` +
+          `${err instanceof Error ? err.message : String(err)}\n`,
+      );
+    } finally {
+      bot._client.removeListener("entity_status", onStatus);
+      if (!this.death) await this.equipLoadout();
+    }
+  }
+
+  /** Every drinkable healing draught in the bag, with its heal. */
+  private draughtsCarried(): Array<{ item: Item; heal: number }> {
+    return this.requireBot()
+      .inventory.items()
+      .map((item) => ({
+        item,
+        heal: drinkHeal(item.name, (item as { components?: ItemComponent[] }).components),
+      }))
+      .filter((d): d is { item: Item; heal: number } => d.heal !== undefined);
+  }
+
+  /** Horizontal distance to the nearest visible hostile that fights in melee. */
+  private nearestMeleeDistance(): number | undefined {
+    const bot = this.requireBot();
+    const { candidates, byId } = this.visibleHostiles();
+    let best: number | undefined;
+    for (const c of candidates) {
+      const e = byId.get(c.id);
+      if (!e?.position || holdsRangedWeapon(e.heldItem?.name)) continue;
+      const d = Math.hypot(e.position.x - bot.entity.position.x, e.position.z - bot.entity.position.z);
+      if (best === undefined || d < best) best = d;
+    }
+    return best;
+  }
+
+  /** Put the shield down, if it is up. */
+  private lowerShield(): void {
+    const bot = this.requireBot();
+    if (!this.guarding) return;
+    this.guarding = false;
+    bot.deactivateItem();
+  }
+
+  /** Raise the shield, if it is down. */
+  private raiseShield(): void {
+    const bot = this.requireBot();
+    if (this.guarding) return;
+    this.guarding = true;
+    this.melee.guards += 1;
+    bot.activateItem(true);
+  }
+
+  /**
+   * Whether one step from here along the horizontal unit vector `(dx, dz)` lands
+   * on ground a body can stand on: open at the feet and head, solid underfoot,
+   * no liquid, and outside every cell a declared lethal volume can kill in. The
+   * footwork never walks the bot off a ledge it was backing along.
+   */
+  private safeStep(dx: number, dz: number): boolean {
+    const bot = this.requireBot();
+    const p = bot.entity.position;
+    const x = Math.floor(p.x + dx * STEP_PROBE_BLOCKS);
+    const z = Math.floor(p.z + dz * STEP_PROBE_BLOCKS);
+    const y = Math.floor(p.y + 0.01);
+    const at = (dy: number): { boundingBox?: string; name?: string } | null =>
+      bot.blockAt(p.offset(x + 0.5 - p.x, y + dy + 0.5 - p.y, z + 0.5 - p.z)) as {
+        boundingBox?: string;
+        name?: string;
+      } | null;
+    const feet = at(0);
+    const head = at(1);
+    const floor = at(-1);
+    if (!feet || !head || !floor) return false;
+    if (feet.boundingBox !== "empty" || head.boundingBox !== "empty") return false;
+    if (floor.boundingBox !== "block") return false;
+    for (const b of [feet, head, floor]) {
+      if (b.name === "water" || b.name === "lava") return false;
+    }
+    return !this.lethalBoxes.some((box) => volumeReachesCell([x, y, z], box));
+  }
+
+  /**
+   * One melee exchange the way a player fences, tick by tick until a swing is
+   * released, the body or the bot dies, or {@link ENGAGE_BUDGET_MS} passes with
+   * the body out of reach (`out-of-reach`: the caller walks to it):
+   *
+   *  * drink first if a draught's whole heal fits and no melee attacker is on
+   *    the bot (`drinkDecision`);
+   *  * while the swing charges, back away from a melee attacker about to swing
+   *    (`footwork`), otherwise hold the shield up (`guardUp`);
+   *  * step toward a body out of reach;
+   *  * jump so the charged swing comes down as a critical hit (`jumpForCrit`);
+   *  * release the swing at FULL charge, only with the body inside the player's
+   *    own reach (`inReach`).
+   *
+   * Every one of these is a client input — the movement keys, the use key on
+   * the off hand, the jump key, the attack key — and the server adjudicates the
+   * block, the crit and the damage exactly as it would for a person.
+   */
+  private async strike(mob: Entity, label: string): Promise<StrikeOutcome> {
+    const bot = this.requireBot();
+    this.meleeTarget = mob.id;
+    await this.maybeDrink(label);
+    const moves = ["forward", "back", "left", "right", "jump", "sprint"] as const;
+    const stop = (): void => {
+      for (const control of moves) bot.setControlState(control, false);
+    };
+    stop();
+    const deadline = Date.now() + ENGAGE_BUDGET_MS;
+    let jumpedAt: number | undefined;
+    try {
+      while (Date.now() < deadline) {
+        const live = bot.entities[mob.id];
+        if (this.death || !live?.position) return "gone";
+        await bot
+          .lookAt(live.position.offset(0, (live.height ?? 1) * 0.5, 0), true)
+          .catch(() => {});
+        const me = bot.entity.position;
+        const feet: [number, number, number] = [me.x, me.y, me.z];
+        const at: [number, number, number] = [live.position.x, live.position.y, live.position.z];
+        const reach = inReach(feet, at, live.width ?? 0.6, live.height ?? 1.8);
+        const now = Date.now();
+        const chargedAt = this.lastSwingAt + this.chargeMs();
+        const charged = now >= chargedAt;
+        const hx = at[0] - feet[0];
+        const hz = at[2] - feet[2];
+        const flat = Math.hypot(hx, hz) || 1;
+        const steps = footwork({
+          ranged: holdsRangedWeapon(live.heldItem?.name),
+          horizontalDistance: Math.hypot(hx, hz),
+          charged,
+          inReach: reach,
+          canStepBack: this.safeStep(-hx / flat, -hz / flat),
+          canStepIn: this.safeStep(hx / flat, hz / flat),
+        });
+        if (steps !== "hold") this.lowerShield();
+        bot.setControlState("back", steps === "back");
+        bot.setControlState("forward", steps === "forward");
+        if (guardUp({ shieldInOffhand: this.shieldInOffhand(), footwork: steps, charged })) {
+          this.raiseShield();
+        }
+        const onGround = bot.entity.onGround === true;
+        if (
+          jumpedAt === undefined &&
+          steps === "hold" &&
+          jumpForCrit({
+            msUntilCharged: chargedAt - now,
+            inReach: reach,
+            onGround,
+            headroom: this.headroom(),
+          })
+        ) {
+          bot.setControlState("jump", true);
+          jumpedAt = now;
+        } else if (jumpedAt !== undefined && now - jumpedAt >= TICK_POLL_MS * 2) {
+          bot.setControlState("jump", false);
+        }
+        if (charged && reach) {
+          const rising = jumpedAt !== undefined && !onGround && bot.entity.velocity.y >= 0;
+          const fallWaitOver = now >= chargedAt + CRIT_FALL_WAIT_MS;
+          if (!rising || fallWaitOver) {
+            this.lowerShield();
+            stop();
+            bot.attack(live);
+            this.lastSwingAt = Date.now();
+            this.melee.swings += 1;
+            return "swung";
+          }
+        }
+        await delay(TICK_POLL_MS);
+      }
+      return "out-of-reach";
+    } finally {
+      this.lowerShield();
+      stop();
+    }
+  }
+
+  /** The hands' share of the run since `since` was taken. */
+  private meleeSince(since: MeleeTally): MeleeTally {
+    return {
+      swings: this.melee.swings - since.swings,
+      landed: this.melee.landed - since.landed,
+      noDamage: this.melee.noDamage - since.noDamage,
+      crits: this.melee.crits - since.crits,
+      guards: this.melee.guards - since.guards,
+      shieldDisabled: this.melee.shieldDisabled - since.shieldDisabled,
+      draughts: this.melee.draughts - since.draughts,
+    };
+  }
+
+  /** ` — standing at the last census: …`, or empty when it found nothing. */
+  private standingNote(wave: string): string {
+    const mobs = this.lastStanding.get(wave) ?? [];
+    return mobs.length === 0 ? "" : ` — standing at the last census: ${describeStanding(mobs)}`;
+  }
+
+  /** Log what the hands did in one fight. */
+  private reportMelee(label: string, since: MeleeTally): void {
+    process.stderr.write(`[melee] ${label}: ${describeTally(this.meleeSince(since))}\n`);
   }
 
   async talkTo(step: TalkToStep): Promise<void> {
@@ -3775,6 +4199,7 @@ export class MineflayerExecutor implements StepExecutor {
     // which is thrown outside the loop, because "the bot gave up on nothing" and
     // "there was nothing to give up on" are different facts.
     const unbounded = new Set<string>();
+    const hands = { ...this.melee };
     try {
       await this.equipLoadout();
       await this.walkTo(step.pos, 3, `wave ${step.wave}`, step.sneak, {
@@ -3802,8 +4227,8 @@ export class MineflayerExecutor implements StepExecutor {
       // Swings landed on each body this step, so a body can be held to the budget
       // its own kind was given. Counting SWINGS rather than seconds is the
       // compiler's own choice of unit for this arithmetic: swing damage is
-      // Mojang's item data, while timing depends on charge discipline nothing
-      // here models.
+      // Mojang's item data, and every swing counted here is a full-charge one
+      // (`strike`), while the seconds between them depend on footwork.
       const swings = new Map<number, number>();
       // The wave's own census: every "the fight is over" test below is
       // a guess made from SHAPES, and the server can simply be asked. See
@@ -3921,7 +4346,7 @@ export class MineflayerExecutor implements StepExecutor {
                 `resuming the wave\n`,
             );
           }
-          if (dist > 3) {
+          if (dist > MELEE_ENGAGE_RANGE) {
             // Never chase a retaliation target away from the wave anchor: it is on the
             // bot, so it closes by itself. The wave stays the job.
             engagedId = undefined;
@@ -3929,7 +4354,9 @@ export class MineflayerExecutor implements StepExecutor {
             continue;
           }
         }
-        if (dist > 3) {
+        // Inside the engage range the exchange's own footwork closes the last
+        // blocks; a body it could not reach from here is walked to.
+        if (dist > MELEE_ENGAGE_RANGE || this.unreached.delete(mob.id)) {
           engagedId = undefined; // moving; re-establish the melee timer on arrival
           try {
             await this.walkTo(
@@ -3957,11 +4384,11 @@ export class MineflayerExecutor implements StepExecutor {
           // {@link creditsWaveKill} is the arbiter, for a self-defense kill exactly as
           // for one the kill loop targeted.
           engagement.engaged.add(mob.id);
-          await bot.lookAt(mob.position.offset(0, (mob.height ?? 1) * 0.5, 0), true);
-          bot.attack(mob);
+          const struck = await this.strike(mob, `wave ${step.wave}`);
+          if (struck === "out-of-reach") this.unreached.add(mob.id);
+          if (struck !== "swung") continue;
           const landed = (swings.get(mob.id) ?? 0) + 1;
           swings.set(mob.id, landed);
-          await delay(ATTACK_INTERVAL_MS);
           const budget = giveUpBudgetFor(enc, mob.name);
           if (budget === undefined) {
             // The encounter states no budget for this kind, so there is nothing
@@ -3983,6 +4410,7 @@ export class MineflayerExecutor implements StepExecutor {
     } finally {
       bot.removeListener("entityGone", onGone);
       this.activeWave = undefined;
+      this.reportMelee(`wave ${step.wave}`, hands);
     }
     throw new Error(
       `kill timed out after ${KILL_TIMEOUT_MS}ms: wave ${step.wave} not cleared — the census ` +
@@ -3990,6 +4418,7 @@ export class MineflayerExecutor implements StepExecutor {
         `answer(s)${watch.seen ? "" : ", and never once saw the wave exist"} ` +
         `(the bot confirmed ${engagement.killed}/${step.count} itself; ` +
         `${engagement.engaged.size} mob(s) engaged)` +
+        this.standingNote(step.wave) +
         unboundedEncounterNote(unbounded),
     );
   }
@@ -4162,7 +4591,8 @@ export class MineflayerExecutor implements StepExecutor {
       process.stderr.write(
         `[floor] ${step.wave}: unassisted outcome \`${outcome.result}\` — opened at ` +
           `${outcome.healthAtStart.toFixed(1)}/${outcome.maxHealth} health, ` +
-          `${outcome.engaged} body/bodies engaged, ${outcome.killed} down\n`,
+          `${outcome.engaged} body/bodies engaged, ${outcome.killed} down` +
+          `${outcome.result === "won" ? "" : this.standingNote(step.wave)}\n`,
       );
       // The attribution the attempt's own last census gave. `unattributed` only
       // when no census answered during it, which is a fact about the probe rather
@@ -4288,7 +4718,7 @@ export class MineflayerExecutor implements StepExecutor {
         }
         await this.maybeEat(`actor ${a.actor}`);
         const dist = bot.entity.position.distanceTo(live.position);
-        if (dist > 3) {
+        if (dist > MELEE_ENGAGE_RANGE || this.unreached.delete(id)) {
           await this.walkTo(
             [Math.floor(live.position.x), Math.floor(live.position.y), Math.floor(live.position.z)],
             2,
@@ -4296,10 +4726,9 @@ export class MineflayerExecutor implements StepExecutor {
           );
           continue;
         }
-        await bot.lookAt(live.position.offset(0, (live.height ?? 1) * 0.5, 0), true);
-        bot.attack(live);
-        swings += 1;
-        await delay(ATTACK_INTERVAL_MS);
+        const struck = await this.strike(live, `actor ${a.actor}`);
+        if (struck === "swung") swings += 1;
+        if (struck === "out-of-reach") this.unreached.add(id);
       }
       const why = `still standing after ${ACTOR_FIGHT_TIMEOUT_MS}ms and ${swings} swing(s)`;
       process.stderr.write(`[actor] ${a.actor}: ${why}\n`);
@@ -4825,6 +5254,7 @@ export class MineflayerExecutor implements StepExecutor {
       present: census.summary.present,
       credited: census.summary.credited,
     });
+    this.lastStanding.set(step.wave, census.mobs);
     // Who felled this cohort. `step.count` is the seating the compiler declared
     // and `spawn_<wave>` wrote; the other two are the server's own answer.
     this.waveAttributions.set(
@@ -4910,7 +5340,10 @@ export class MineflayerExecutor implements StepExecutor {
       const cast = this.requireNonCombatants();
       const mob = bot.nearestEntity((e) => isWaveMob(e, bot.entity, cast));
       if (!mob) break;
-      if (bot.entity.position.distanceTo(mob.position) > 3) {
+      if (
+        bot.entity.position.distanceTo(mob.position) > MELEE_ENGAGE_RANGE ||
+        this.unreached.delete(mob.id)
+      ) {
         try {
           await this.walkTo(
             [Math.floor(mob.position.x), Math.floor(mob.position.y), Math.floor(mob.position.z)],
@@ -4923,8 +5356,9 @@ export class MineflayerExecutor implements StepExecutor {
         }
         continue;
       }
-      bot.attack(mob);
-      await delay(ATTACK_INTERVAL_MS);
+      if ((await this.strike(mob, `die-retry trade ${step.wave}`)) === "out-of-reach") {
+        this.unreached.add(mob.id);
+      }
     }
   }
 
@@ -5307,9 +5741,14 @@ export class MineflayerExecutor implements StepExecutor {
    * Collect items from the chest at the anchor: go there, open it, withdraw all.
    *
    * A **drop-gated** collect (v0.9 `dropped_by`) has no chest to open — the
-   * compiler places none, because the item exists only after the fight. The bot
-   * walks the ground the wave died on and lets vanilla pickup do the rest; the
-   * proof is the same one every collect uses, the objective's own marker.
+   * compiler places none, because the item exists only after the fight. The drop
+   * lies where the body FELL, which is wherever the fight took it, not the anchor
+   * the wave was seated on: the vesperhold Porter died seven blocks from
+   * `anchor/porter`, and a bot that walked to the anchor and waited there timed
+   * out beside a key a player would simply have picked up. So the bot walks to
+   * the fight's ground, then goes to the dropped item it can SEE and lets vanilla
+   * pickup do the rest (`pickUpDrop`); the proof is the same one every collect
+   * uses, the objective's own marker.
    */
   async collect(step: CollectStep): Promise<void> {
     const bot = this.requireBot();
@@ -5318,6 +5757,7 @@ export class MineflayerExecutor implements StepExecutor {
         objective: step.objective,
         transport: step.transport,
       });
+      await this.pickUpDrop(step);
       await this.requireObjective(step.objective, `collect ${step.item}`);
       return;
     }
@@ -5346,6 +5786,63 @@ export class MineflayerExecutor implements StepExecutor {
     // Holding the items is not the objective; the inventory_changed advancement
     // completing it is. Wait for that objective's own marker.
     await this.requireObjective(step.objective, `collect ${step.item}`);
+  }
+
+  /**
+   * Walk onto the dropped `step.item` nearest the fight's anchor until the
+   * objective completes, the drop is gone, or the objective's own budget runs out.
+   *
+   * What a player does: look at the floor of the room the fight was in, see the
+   * item, walk over it. The search is bounded by {@link WAVE_ENGAGE_NEAR}, the
+   * radius inside which this harness already counts a body as still part of a
+   * fight — a drop outside it is not one this fight left. Seeing none is not a failure here:
+   * the objective's marker decides, and its timeout names the step.
+   */
+  private async pickUpDrop(step: CollectStep): Promise<void> {
+    const bot = this.requireBot();
+    const want = step.item.replace(/^minecraft:/, "");
+    const deadline = Date.now() + OBJECTIVE_TIMEOUT_MS;
+    let reported = false;
+    while (Date.now() < deadline && !this.completedObjectives.has(step.objective)) {
+      if (this.death) throw this.death;
+      const drop = nearestDrop(bot, want, step.pos, WAVE_ENGAGE_NEAR);
+      if (drop === undefined) {
+        await delay(REACH_POLL_MS);
+        continue;
+      }
+      if (!reported) {
+        reported = true;
+        process.stderr.write(
+          `[collect ${step.objective}] the ${want} lies at ${fmt(drop.position)}, ` +
+            `${drop.fromAnchor.toFixed(1)} blocks from the anchor — walking onto it\n`,
+        );
+      }
+      const cell: Vec3Tuple = [
+        Math.floor(drop.position.x),
+        Math.floor(drop.position.y),
+        Math.floor(drop.position.z),
+      ];
+      try {
+        await this.walkTo(cell, 1, `drop of ${step.item}`, step.sneak);
+      } catch (err) {
+        if (err instanceof BotDeathError) throw err;
+        process.stderr.write(
+          `[collect ${step.objective}] could not walk to the ${want}: ` +
+            `${err instanceof Error ? err.message : String(err)}\n`,
+        );
+        return;
+      }
+      // The pathfinder stops within a block; vanilla picks up an item the player's
+      // box, grown by one block sideways, touches. Close the last step by hand.
+      const live = bot.entities[drop.id];
+      if (live?.position && !this.completedObjectives.has(step.objective)) {
+        await bot.lookAt(live.position, true).catch(() => {});
+        bot.setControlState("forward", true);
+        await delay(UNSTICK_BURST_MS);
+        bot.setControlState("forward", false);
+      }
+      await delay(REACH_POLL_MS);
+    }
   }
 
   /**
