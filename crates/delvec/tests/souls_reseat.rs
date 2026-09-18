@@ -669,7 +669,9 @@ fn every_compiler_removal_strips_declared_loot_first() {
 
 /// The runtime half ships as a generated PackTest: every drop-declaring body a
 /// rest re-seats is met, dragged onto the party, unleashed and rested through
-/// the REAL functions, each followed by the REAL `unseen_sweep`, and no item may
+/// the REAL functions, each followed by a kill of the bodies the removal parked in
+/// the party's column (never the world-wide `unseen_sweep`, which would reach
+/// every sibling's waiting bodies too), and no item may
 /// lie where the removed bodies die (Y −128 in the party's column) after either
 /// — then a bare `kill` of each fresh body at that same place must yield one, so
 /// the zero is a measurement and not an empty room. Absent when no re-seated body declares a
@@ -680,7 +682,10 @@ fn the_removal_rule_ships_its_packtest() {
     let t = packtest(&out, "souls_reseat_yields_nothing");
     for want in [
         format!("function {NS}:unleash_{ELITE_SAFE}"),
-        format!("function {NS}:bonfire_rest_0\nfunction {NS}:unseen_sweep\n"),
+        format!(
+            "function {NS}:bonfire_rest_0\nexecute at @a[tag=dw_rsyn,limit=1] positioned ~ -128 ~ \
+             run kill @e[tag=dw_unseen,distance=..1]\n"
+        ),
         "assert score #u_rsyn dw.sys matches 0".to_string(),
         "assert score #r_rsyn dw.sys matches 0".to_string(),
     ] {

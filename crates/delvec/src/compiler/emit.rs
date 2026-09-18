@@ -2919,6 +2919,22 @@ fn removal_lines(ns: &str, tag: &str, declares_drops: bool, exit: Exit) -> Vec<S
     out
 }
 
+/// **The one way a generated PackTest runs the unseen sweep in the tick it needs
+/// a removal's death**: a `kill` of the bodies waiting under [`UNSEEN_TAG`] in the
+/// column of the template's own dummy `sel`, at [`UNSEEN_Y`], and of no other.
+///
+/// The suite shares one world, and [`UNSEEN_SWEEP_FN`] kills every waiting body in
+/// it: a template that ran it would kill each body a sibling's removal parked in
+/// the same batch, inside the [`UNSEEN_DELAY_TICKS`] the removal promises it —
+/// the delay `v04_despawn_<npc>` watches, and which a sibling's direct sweep
+/// failed on the pinned server. A template that needs the death drags the bodies
+/// onto its dummy before the removal, so the removal parks them in the dummy's
+/// column, where this reaches them. The dummies of a batch stand apart, so no two
+/// templates' columns meet.
+fn unseen_sweep_under(sel: &str) -> String {
+    format!("execute at {sel} positioned ~ {UNSEEN_Y} ~ run kill @e[tag={UNSEEN_TAG},distance=..1]")
+}
+
 /// The [`UNSEEN_SWEEP_FN`] function, emitted exactly when some function
 /// schedules it.
 fn unseen_sweep_fn(fns: &[(String, String)], ns: &str) -> Option<(String, String)> {
@@ -16912,9 +16928,10 @@ fn emit_reseat_undefeated_packtests(plan: &Plan, out: &mut BuildOutput) {
 ///
 /// For every re-seated body that declares a drop — each wave a rest re-seats
 /// (`respawns_on_rest` or billed-undefeated) and each hostile actor — the
-/// template meets it and drags it onto the party, runs the unleash, runs the
-/// REAL sweep in the same tick (a dropped item below the world is discarded on
-/// its own next tick, so the count cannot wait for the scheduled one), and
+/// template meets it and drags it onto the party, runs the unleash, kills what
+/// the removal parked in the party's column in the same tick
+/// ([`unseen_sweep_under`]: a dropped item below the world is discarded on its
+/// own next tick, so the count cannot wait for the scheduled sweep), and
 /// demands no item entity at [`UNSEEN_Y`] in the party's column; then the same
 /// after the REAL `bonfire_rest_<i>`. The zero is then proven not to be vacuous
 /// at that same place: each fresh body is moved to [`UNSEEN_Y`] in the party's
@@ -16964,7 +16981,7 @@ fn emit_reseat_yields_nothing_packtest(
     let low = format!("execute at {sel} positioned ~ {UNSEEN_Y} ~");
     let count = |score: &str| format!("{low} store result score {score} dw.sys if entity {items}");
     let clear_items = format!("{low} run kill {items}");
-    let sweep = format!("function {ns}:{UNSEEN_SWEEP_FN}");
+    let sweep = unseen_sweep_under(&sel);
     let board: Vec<String> = plan
         .reseat_waves()
         .iter()
@@ -17026,7 +17043,7 @@ fn emit_reseat_yields_nothing_packtest(
         b.push(format!("execute at {sel} run tp @e[tag={t}] ~ ~ ~"));
     }
     // The rest, through the REAL generated rest function, and the removals it
-    // makes, through the REAL sweep.
+    // makes, killed where the removal parked them.
     b.push(format!("function {ns}:bonfire_rest_{i}"));
     b.push(sweep.clone());
     b.push(count("#r_rsyn"));
@@ -18003,18 +18020,32 @@ fn emit_kill_pays_packtests(plan: &Plan, out: &mut BuildOutput, wave_placements:
                 // really removed THEM — a removal that did nothing would also
                 // pay nothing.
                 b.push(format!("tag {living} add dw_kpr_{f}"));
+                // Onto the dummy, so an unseen removal parks them in its column.
+                b.push(format!("execute at {sel} run tp {living} ~ ~ ~"));
                 b.extend(removal.iter().cloned());
                 // An unseen removal ([`Exit::Unseen`]) only moves the body under
-                // the world; it dies when [`UNSEEN_SWEEP_FN`] runs, a few ticks
-                // on. The REAL sweep runs here, in the same tick, so the ledger
-                // is read after the removal's death and not before it — a
-                // removal whose death were credited would red this template.
+                // the world and takes its tags, the brand with them; it dies when
+                // the sweep runs, a few ticks on. The bodies are counted waiting
+                // in the dummy's column, then killed there in the same tick
+                // ([`unseen_sweep_under`]), so the ledger is read after the
+                // removal's death and not before it — a removal whose death were
+                // credited would red this template.
                 let sweep = format!("schedule function {ns}:{UNSEEN_SWEEP_FN} ");
                 if removal
                     .iter()
                     .any(|l| l.contains(&sweep) || l.contains(":bonfire_rest_"))
                 {
-                    b.push(format!("function {ns}:{UNSEEN_SWEEP_FN}"));
+                    let waiting = format!("@e[tag={UNSEEN_TAG},distance=..1,nbt=!{{Health:0.0f}}]");
+                    let low = format!("execute at {sel} positioned ~ {UNSEEN_Y} ~");
+                    b.push(format!(
+                        "{low} store result score #kpu_{f} dw.sys if entity {waiting}"
+                    ));
+                    b.push(format!("assert score #kpu_{f} dw.sys matches 1.."));
+                    b.push(unseen_sweep_under(&sel));
+                    b.push(format!(
+                        "{low} store result score #kpu_{f} dw.sys if entity {waiting}"
+                    ));
+                    b.push(format!("assert score #kpu_{f} dw.sys matches 0"));
                 }
                 b.push(format!(
                     "execute store result score #kpr_{f} dw.sys if entity \

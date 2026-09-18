@@ -280,3 +280,101 @@ fn a_despawn_written_as_a_kill_still_dies_on_screen() {
         "{hits:#?}"
     );
 }
+
+/// `campaign("vanish")` with a fight whose PackTests need a removal's death in the
+/// tick it happens: the unleashed elite, billed, carrying a declared drop (so
+/// `souls_reseat_yields_nothing` meets it) and an `on_kill` (so
+/// `kill_pays_removed_<f>` removes it every way the compiler can).
+fn campaign_with_fights() -> Campaign {
+    let mut c = campaign("vanish");
+    let elite = c
+        .quests
+        .content
+        .actors
+        .iter_mut()
+        .find(|a| a.id.as_str() == ELITE)
+        .expect("the fixture's elite");
+    elite.tier = Some(delvewright_dsl::EncounterTier::Elite);
+    elite.drops.push(
+        serde_json::from_value(serde_json::json!({
+            "item": "minecraft:tripwire_hook",
+            "name": "Warden Key"
+        }))
+        .expect("drop parses"),
+    );
+    elite.on_kill = Some(
+        serde_json::from_value(serde_json::json!({
+            "effects": [ { "type": "play-sound",
+                           "sound": "minecraft:entity.experience_orb.pickup" } ]
+        }))
+        .expect("on_kill parses"),
+    );
+    c
+}
+
+/// **No generated PackTest runs the sweep.** The suite is one world: the sweep kills
+/// every body waiting under it, so a template that ran it would kill the bodies a
+/// sibling's removal parked in the same batch inside the delay the removal
+/// promises them — the delay `v04_despawn_<npc>` watches. A template that needs a
+/// removal's death in the tick it happens kills the waiting bodies in its own
+/// dummy's column and nowhere else. A scheduled sweep (`schedule … replace`, the
+/// removal's own line) is not a run: it waits the full delay.
+///
+/// Binding: every template file is read; each template this fixture emits that
+/// needs a removal's death is shown reaching it by the column-scoped kill, and the
+/// delay watcher is in the same suite.
+#[test]
+fn no_template_runs_the_sweep() {
+    let (out, _) = build(&campaign_with_fights());
+    let run = format!("function {NS}:{UNSEEN_SWEEP_FN}");
+    let scoped = format!("positioned ~ {UNSEEN_Y} ~ run kill @e[tag={UNSEEN_TAG},distance=");
+    let prefix = format!("packtest-datapack/data/{NS}/test/");
+    let mut examined = 0usize;
+    let mut runs: Vec<String> = Vec::new();
+    let mut scoped_in: Vec<String> = Vec::new();
+    for (path, bytes) in &out {
+        let Some(name) = path
+            .strip_prefix(&prefix)
+            .and_then(|n| n.strip_suffix(".mcfunction"))
+        else {
+            continue;
+        };
+        examined += 1;
+        let body = std::str::from_utf8(bytes).unwrap();
+        for line in body.lines() {
+            if line.contains(&run) && !line.contains("schedule function ") {
+                runs.push(format!("{name}: {line}"));
+            }
+            if line.contains(&scoped) && !scoped_in.iter().any(|n| n == name) {
+                scoped_in.push(name.to_string());
+            }
+        }
+    }
+    eprintln!(
+        "template sweep binding: {examined} template(s) read; {} run the sweep; {} kill the \
+         waiting bodies in their own dummy's column: {scoped_in:?}",
+        runs.len(),
+        scoped_in.len()
+    );
+    assert!(
+        runs.is_empty(),
+        "{} template line(s) of {examined} template(s) run the world-wide sweep, killing \
+         every sibling's waiting body inside its promised delay:\n{}",
+        runs.len(),
+        runs.join("\n")
+    );
+    for t in [
+        "souls_reseat_yields_nothing",
+        "kill_pays_removed_a_barrow_warden",
+    ] {
+        assert!(
+            scoped_in.iter().any(|n| n == t),
+            "binding: `{t}` kills what its removals parked, in its own column \
+             (scoped in {scoped_in:?})"
+        );
+    }
+    assert!(
+        out.contains_key(&format!("{prefix}v04_despawn_keeper.mcfunction")),
+        "binding: the delay watcher `v04_despawn_keeper` is in the same suite"
+    );
+}
