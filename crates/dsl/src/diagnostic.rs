@@ -533,6 +533,20 @@ pub mod codes {
     /// field (spec-0032): it is written as gate terms and a charge, so the
     /// engine compares the copies. Validation-tier (exit 1).
     pub const PURCHASE_ARITHMETIC: DwCode = DwCode::new("DW0901", ExitTier::Build);
+    /// (spec-0073 §8.1) **A health bar over a body whose health cannot move**:
+    /// an actor declaring `health_bar` that is not `vulnerable` and that no
+    /// `unleash-actor` names, so the only body the bar could ever read is an
+    /// invulnerable puppet. Validation-tier (exit 1).
+    pub const HEALTH_BAR_STILL: DwCode = DwCode::new("DW0909", ExitTier::Build);
+    /// (spec-0073 §8.2) **A health bar with nothing to title it**: no `title`
+    /// (or a blank one), and the fight has no single name of its own — a wave of
+    /// two entries or more, or a body with no `name`. Validation-tier (exit 1).
+    pub const HEALTH_BAR_UNTITLED: DwCode = DwCode::new("DW0910", ExitTier::Build);
+    /// (spec-0073 §8.4) **Advisory: a fight billed `boss` declares no
+    /// `health_bar`.** Warning tier, never blocking — the build proceeds. Fires
+    /// for `boss` only, on a wave or an actor alike; `elite` and `ordinary` are
+    /// never named by it.
+    pub const HEALTH_BAR_ADVISED: DwCode = DwCode::new("DW0912", ExitTier::Build);
     /// A `collect` `dropped_by` is not backed by the wave it names:
     /// the wave declares no `{item}` drop of this objective's item, the count
     /// asks for more copies than the wave's mobs can yield, or the objective

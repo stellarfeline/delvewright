@@ -3109,6 +3109,14 @@ fn emit_functions(
     // spec-0032: the economy's objectives and constants. Empty for a campaign that
     // declares neither a shop nor a stake → byte-identical.
     setup.extend(economy_setup(plan));
+    // spec-0073: every declared health bar is re-created from nothing at world
+    // init. Empty for a campaign that declares none → byte-identical.
+    let health_bars = crate::compiler::healthbar::bars(c);
+    setup.extend(crate::compiler::healthbar::setup_lines(
+        ns,
+        &health_bars,
+        &|t| tr(t).to_string(),
+    ));
     // v0.4: the per-player scratch bitmask used by display-gated dialogue choosers
     // (flag axis and/or objective-state axis). Declared only when a gated option
     // exists, so v0.2/v0.3 setup is unchanged.
@@ -3916,9 +3924,13 @@ fn emit_functions(
     // spec-0032: a named datum announces its new balance whenever it changes, from
     // ANY cause. Before the economy dispatch, so a purchase made in this tick is
     // announced in the next one rather than being missed entirely.
+    // spec-0073: refresh every health bar whose fight has a live body, hide the
+    // rest. Empty for a campaign that declares none → byte-identical.
+    tick.extend(crate::compiler::healthbar::tick_lines(ns, &health_bars));
     tick.extend(named_state_tick(plan));
     tick.extend(economy_tick(plan));
     fns.push(("tick".to_string(), lines(&tick)));
+    fns.extend(crate::compiler::healthbar::functions(ns, &health_bars));
 
     // --- v0.6 checkpoint respawn dispatch (spec-0012) ---
     fns.extend(emit_checkpoint_functions(plan));
@@ -4652,6 +4664,11 @@ fn emit_functions(
             body.push(format!(
                 "schedule function {ns}:lane_tick_{safe} {LANE_PERIOD_TICKS}t"
             ));
+        }
+        // spec-0073: the bar's max follows the bodies this function just put in
+        // the world. Absent without a bar → byte-identical.
+        if let Some(bar) = crate::compiler::healthbar::wave_bar(c, w.id.as_str()) {
+            body.push(bar.capture_call(ns));
         }
         fns.push((
             format!("spawn_{}", plan::safe_local(w.id.as_str())),
@@ -10335,13 +10352,16 @@ fn actor_fns(
             continue; // resolution guaranteed by check_actor_placement (DW0325)
         };
         let yaw = actor_facing_yaw(a);
-        out.push((
-            format!("spawn_actor_{safe}"),
-            lines(&[format!(
-                "execute unless entity @e[tag=dw_actor_{safe}] run {}",
-                actor_puppet_summon(ns, a, pos, yaw)
-            )]),
-        ));
+        // spec-0073: every function that summons this actor's bodies re-captures
+        // its bar's max. Absent without a bar → byte-identical.
+        let capture = crate::compiler::healthbar::actor_bar(plan.campaign, a.id.as_str())
+            .map(|b| b.capture_call(ns));
+        let mut spawn = vec![format!(
+            "execute unless entity @e[tag=dw_actor_{safe}] run {}",
+            actor_puppet_summon(ns, a, pos, yaw)
+        )];
+        spawn.extend(capture.clone());
+        out.push((format!("spawn_actor_{safe}"), lines(&spawn)));
         let mut unleash = vec![format!(
             "execute at @e[tag=dw_pup_{safe},limit=1] run {}",
             actor_twin_summon(ns, a, "~ ~ ~")
@@ -10357,6 +10377,7 @@ fn actor_fns(
         if campaign_captures_striker(plan.campaign) {
             unleash.extend(aggro_lock_lines(&a.entity, &safe));
         }
+        unleash.extend(capture.clone());
         out.push((format!("unleash_{safe}"), lines(&unleash)));
         // spec-0016 §1: the UNDEFEATED re-seat. A rest
         // (and a death-respawn at the same fire) deletes the elite the party is
@@ -10381,13 +10402,12 @@ fn actor_fns(
         // bonfire ([`Plan::reseat_actors`]) → byte-identical everywhere else.
         if plan.reseat_actors().iter().any(|r| r.id == a.id) {
             let p = ent_xyz(pos);
-            out.push((
-                format!("actor_restand_{safe}"),
-                lines(&[
-                    format!("kill @e[tag=dw_actor_{safe}]"),
-                    actor_twin_summon(ns, a, &format!("{} {} {}", p[0], p[1], p[2])),
-                ]),
-            ));
+            let mut restand = vec![
+                format!("kill @e[tag=dw_actor_{safe}]"),
+                actor_twin_summon(ns, a, &format!("{} {} {}", p[0], p[1], p[2])),
+            ];
+            restand.extend(capture.clone());
+            out.push((format!("actor_restand_{safe}"), lines(&restand)));
         }
     }
     // move-actor per-tick drivers.
@@ -21474,6 +21494,7 @@ mod tests {
             attributes: None,
             tier: None,
             traversal: None,
+            health_bar: None,
         }
     }
 
@@ -21864,6 +21885,7 @@ mod loot_emit_tests {
             tier: None,
             drops: Vec::new(),
             traversal: None,
+            health_bar: None,
         }
     }
 

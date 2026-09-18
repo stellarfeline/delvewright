@@ -114,6 +114,7 @@ pub mod flow;
 pub mod gates;
 pub mod guarantee;
 pub mod gym;
+pub mod healthbar;
 pub mod horizon;
 pub mod integrity;
 pub mod lethal;

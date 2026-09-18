@@ -786,6 +786,10 @@ fn validate_loaded(
             // charges it counts, the `(list, datum)` pairs they bind, and the
             // effect lists walked as the denominator.
             examined.push(delvewright_dsl::PurchaseBinding::of(&campaign).line());
+            // spec-0073: what the health-bar rules (`DW0909`/`DW0910`/`DW0912`,
+            // raised inside `validate_campaign_with` above) examined — fights
+            // carrying a bar over fights declared, zeroes included.
+            examined.push(delvewright_dsl::HealthBarBinding::of(&campaign).line());
             // Prefab-library load failures (DW0346): a metadata file that did
             // not parse (e.g. newer schema than this delvec) is a first-class
             // validation diagnostic, never a silent skip that resurfaces later
@@ -856,6 +860,14 @@ fn validate_loaded(
             // v0.8 seal answers (DW0423): one gate anchor, one `sealed_hint`
             // wording. No-op for a campaign that authors none.
             diags.extend(delvec::compiler::gates::check_seal_hints(&campaign));
+            // spec-0073 §8.3 (DW0911): a health bar's colour and style are the
+            // literals the pinned command tree lists, and that tree is this
+            // crate's data, so the check runs here (validation tier). No-op for a
+            // campaign that declares no bar.
+            diags.extend(delvec::compiler::healthbar::check_vocabulary(
+                &campaign,
+                &CommandTree::v1_21_11(),
+            ));
             // NPC location-continuity lint (DW0351). Advisory tier — a warning
             // names a staging discontinuity (an NPC materializing or vanishing
             // away from where it was last staged) but never fails the run:

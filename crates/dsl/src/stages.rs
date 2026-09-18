@@ -3020,6 +3020,12 @@ pub struct Wave {
     /// `respawns_on_rest` at once.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tier: Option<EncounterTier>,
+    /// A health bar over this wave's bodies (DSL v0.31, spec-0073): a named bar
+    /// over their total health, drawn for every player within `range` blocks of a
+    /// live one. Absent = no bar, byte-identical. Declared, never derived from
+    /// `tier`; a `boss`-billed wave without one is advised (`DW0912`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub health_bar: Option<crate::healthbar::HealthBar>,
 }
 
 /// What a wave is billed as (DSL v0.7, spec-0023). Consumed by the validation
@@ -4151,6 +4157,13 @@ pub struct Actor {
     /// (`DW0477`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tier: Option<EncounterTier>,
+    /// A health bar over this actor's fight (DSL v0.31, spec-0073) — the same
+    /// [`HealthBar`](crate::healthbar::HealthBar) a [`Wave`] declares. It reads the
+    /// bodies whose health can move: the unleashed twin, or the puppet itself when
+    /// the actor is `vulnerable`. A bar on an actor that is neither is `DW0909`.
+    /// Absent = no bar, byte-identical.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub health_bar: Option<crate::healthbar::HealthBar>,
     /// What this actor leaves behind when a player kills it. Only an
     /// `elite`/`boss` actor may
     /// declare it (`DW0491`). Emitted into BOTH the staged puppet and the

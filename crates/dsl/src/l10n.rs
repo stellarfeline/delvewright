@@ -427,6 +427,13 @@ pub fn each_string(c: &mut Campaign, f: &mut dyn FnMut(&str, &mut String)) {
                 }
             }
         }
+        // Stage 5 — a wave's stated health-bar title (DSL v0.31, spec-0073). A
+        // DERIVED title is not a string of its own: it is the one mob entry's
+        // name, emitted under that name's key, so the character is translated
+        // once and the bar cannot call it something else.
+        if let Some(t) = w.health_bar.as_mut().and_then(|b| b.title.as_mut()) {
+            f(&format!("wave.{wl}.health_bar.title"), t);
+        }
     }
     // Stage 5 — actors: the nameplate over the puppet, then its v0.9 drops,
     // keyed off the actor id exactly as a wave mob's drop is keyed off its
@@ -450,6 +457,11 @@ pub fn each_string(c: &mut Campaign, f: &mut dyn FnMut(&str, &mut String)) {
             if let Some(name) = dr.name_mut() {
                 f(&format!("actor.{al}.drop.{n}.name"), name);
             }
+        }
+        // An actor's stated health-bar title (spec-0073); a derived one is the
+        // actor's `name`, under whatever key that name is inventoried.
+        if let Some(t) = a.health_bar.as_mut().and_then(|b| b.title.as_mut()) {
+            f(&format!("actor.{al}.health_bar.title"), t);
         }
     }
     // Stage 5 — loot item custom names (spec-0021), keyed like a class kit
