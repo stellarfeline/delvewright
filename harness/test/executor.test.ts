@@ -2016,6 +2016,7 @@ function combatPlan(
         checkpoint: ENCOUNTER.checkpoint,
       },
     ],
+    runBacks: [],
     // No tiered actor and an empty (but PRESENT) ledger: this fixture's campaign
     // bills nothing the wave gate does not already cover.
     actors: [],
@@ -2783,6 +2784,7 @@ function actorPlan(actors: ActorEncounter[] = [BARROW_WARDEN]): CP {
     campaignId: "souls-bonfire",
     difficulty: "normal",
     encounters: [],
+    runBacks: [],
     actors,
     floorGate: { present: true, covered: [], notCovered: [] },
   };
@@ -4133,4 +4135,107 @@ test("the kill step hunts only what the census calls the wave, never a bystander
 
   assert.equal(bot.hitsOn(77), 0, "no swing at the bystander");
   assert.deepEqual(bot.waveIds(), [], "the wave body was");
+});
+
+// --- run-backs: a re-seated fight beside a later leg is fought, assisted --------
+
+import type { RunBack } from "../src/combat.ts";
+
+const RUN_BACK: RunBack = {
+  wave: "wave/gate-assault",
+  objective: "obj/hold-the-gate",
+  bonfire: 1,
+  before: "obj/great-hall",
+  tier: "ordinary",
+  pos: [0, 64, 0],
+  count: 1,
+  radius: 16,
+  crossing: [4, 64, 0],
+  distance: 4,
+  paths: ["critical-path"],
+};
+
+const GREAT_HALL: ReachStep = {
+  action: "reach",
+  objective: "obj/great-hall",
+  anchor: "anchor/great-hall",
+  pos: [0, 64, 0],
+  radius: 2,
+  completion: { kind: "cube", lo: [-1, 63, -1], hi: [1, 65, 1] },
+};
+
+test("a run-back the rest re-seated is fought under a named assist before the leg", async () => {
+  // vesperhold, ladder run: the Tower Fire rest put wave/walk-ambush back on the
+  // buttress walk, and the leg to the great hall walked through it unassisted and
+  // died in one exchange. The leg is an encounter; the ladder fights it as one.
+  const bot = new BonfireFakeBot();
+  bot.armBonfire(55, new FakeVec3(0.5, 64, 0.5));
+  bot.reSeat = undefined;
+  const executor = attach(bot);
+  executor.useCampaign("the-drowned-bell");
+  executor.useCombatPlan({ ...combatPlan(1, true), runBacks: [RUN_BACK] }, false);
+
+  executor.beginStep(9);
+  await executor.kill(KILL_STEP); // cleared once…
+  executor.beginStep(12);
+  await executor.rest(REST_STEP); // …the rest puts it back…
+  bot.seat(1);
+  executor.beginStep(14);
+  const swingsBefore = bot.calls.filter((c) => c === "attack").length;
+  await executor.beforeStep(GREAT_HALL); // …so the leg to the hall fights it
+
+  assert.ok(
+    bot.calls.filter((c) => c === "attack").length > swingsBefore,
+    "the re-seated wave was fought before the leg",
+  );
+  const windows = executor.assistWindows().filter((w) => w.reason.startsWith("run-back:"));
+  assert.equal(windows.length, 1, "one labelled assist window, named as a run-back");
+  assert.match(windows[0]!.reason, /bonfire 1.*obj\/great-hall/);
+  assert.deepEqual(executor.runBacks().map((r) => r.wave), ["wave/gate-assault"]);
+});
+
+test("no run-back is fought before the rest that re-seats it, nor twice after one", async () => {
+  const bot = new BonfireFakeBot();
+  bot.armBonfire(55, new FakeVec3(0.5, 64, 0.5));
+  bot.reSeat = undefined;
+  const executor = attach(bot);
+  executor.useCampaign("the-drowned-bell");
+  executor.useCombatPlan({ ...combatPlan(1, true), runBacks: [RUN_BACK] }, false);
+
+  executor.beginStep(9);
+  await executor.kill(KILL_STEP);
+  executor.beginStep(10);
+  await executor.beforeStep(GREAT_HALL); // cleared, not rested: the leg is empty
+  assert.equal(executor.runBacks().length, 0);
+
+  executor.beginStep(12);
+  await executor.rest(REST_STEP);
+  bot.seat(1);
+  executor.beginStep(14);
+  await executor.beforeStep(GREAT_HALL);
+  executor.beginStep(15);
+  await executor.beforeStep(GREAT_HALL); // fought once; down until the next rest
+  assert.equal(executor.runBacks().length, 1);
+});
+
+test("a wave two rests put back beside one leg is fought once", async () => {
+  const bot = new BonfireFakeBot();
+  bot.armBonfire(55, new FakeVec3(0.5, 64, 0.5));
+  bot.reSeat = undefined;
+  const executor = attach(bot);
+  executor.useCampaign("the-drowned-bell");
+  executor.useCombatPlan(
+    { ...combatPlan(1, true), runBacks: [RUN_BACK, { ...RUN_BACK, bonfire: 2 }] },
+    false,
+  );
+  executor.beginStep(9);
+  await executor.kill(KILL_STEP);
+  executor.beginStep(12);
+  await executor.rest(REST_STEP);
+  executor.beginStep(13);
+  await executor.rest({ ...REST_STEP, bonfire: 2 });
+  bot.seat(1);
+  executor.beginStep(14);
+  await executor.beforeStep(GREAT_HALL);
+  assert.equal(executor.runBacks().length, 1);
 });

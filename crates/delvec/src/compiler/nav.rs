@@ -2223,7 +2223,7 @@ impl World {
     /// mob eye height) crosses no camera-blocking geometry. Reuses the cutscene
     /// clip traversal, so "can this be seen through" has exactly one definition in
     /// the compiler.
-    fn has_line_of_sight(&self, a: [i32; 3], b: [i32; 3]) -> bool {
+    pub(crate) fn has_line_of_sight(&self, a: [i32; 3], b: [i32; 3]) -> bool {
         let eye = |c: [i32; 3]| {
             let p = cell_center(c);
             [p[0], p[1] + 1.5, p[2]]
@@ -6708,7 +6708,7 @@ fn nearest_offending(
 
 /// Every hostile force in the campaign, in deterministic content order (waves
 /// then actors, each in declaration order).
-fn aggro_sources(
+pub(crate) fn aggro_sources(
     plan: &Plan,
     world: &World,
     placements: &BTreeMap<String, Vec<[i32; 3]>>,
@@ -7783,6 +7783,23 @@ impl LegRoute {
     /// route, rather than one answer per caller.
     fn proven_world(&self, world: &World) -> Option<World> {
         (!self.region_state.is_empty()).then(|| world.with_region_state(&self.region_state))
+    }
+
+    /// The same leg walked from somewhere else: an A* route from `from` (snapped
+    /// to standable footing) to this leg's own snapped destination, over the
+    /// world this leg was proven in. `None` when `from` has no footing or no
+    /// route — the caller keeps the proven leg.
+    ///
+    /// The critical path's legs run step to step, and a rest is not a step: the
+    /// party walks to the fire, rests, and sets off from the fire. The leg that
+    /// follows a rest therefore starts at the fire, which is what a question
+    /// about that leg (the run-back finder) has to route.
+    pub(crate) fn rerouted_from(&self, world: &World, from: [i32; 3]) -> Option<Vec<[i32; 3]>> {
+        let owned = self.proven_world(world);
+        let w: &World = owned.as_ref().unwrap_or(world);
+        let start = w.snap_standable(from, SNAP_RADIUS)?;
+        let goal = *self.cells.last()?;
+        w.find_path(start, goal)
     }
 }
 

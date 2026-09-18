@@ -539,3 +539,21 @@ test("a trigger step just before the finale is not the beat the campaign marker 
   await runSequence(path([selectClass, reach, strikeTheWall, assertComplete]), executor);
   assert.deepEqual(seen, [[0, 1]]);
 });
+
+test("runSequence runs the executor's beforeStep ahead of each step's own action", async () => {
+  const executor = new (class extends RecordingExecutor {
+    beforeStep(step: Step): Promise<void> {
+      this.calls.push(`before:${step.action}`);
+      return Promise.resolve();
+    }
+  })();
+  await runSequence(path([selectClass, reach, assertComplete]), executor);
+  assert.deepEqual(executor.calls, [
+    "before:select-class",
+    "select-class",
+    "before:reach",
+    "reach",
+    "before:assert-complete",
+    "assert-complete",
+  ]);
+});

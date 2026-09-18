@@ -210,6 +210,120 @@ export interface FloorLedger {
   readonly binding?: BindingCount;
 }
 
+/**
+ * A run-back (spec-0016 §1): a `respawns_on_rest` wave the path already cleared,
+ * re-seated by a rest the path performs, standing within its aggro radius of the
+ * leg to `before`. The compiler exports it as an encounter because it is one — a
+ * player walking that leg meets the fight again — and spec-0023 §3 runs every
+ * encounter under a labelled assist and everything between fights clean.
+ */
+export interface RunBack {
+  readonly wave: string;
+  /** The `kill` objective that cleared it the first time. */
+  readonly objective: string;
+  /** The bonfire whose rest re-seats it. */
+  readonly bonfire: number;
+  /** The token (`obj/…` or `trigger/…`) of the step whose leg re-crosses it. */
+  readonly before: string;
+  readonly tier: EncounterTier;
+  readonly pos: Vec3Tuple;
+  readonly count: number;
+  /** The aggro radius the crossing was measured at, and where it happened. */
+  readonly radius: number;
+  readonly crossing: Vec3Tuple;
+  readonly distance: number;
+  /** Which exported paths carry it (`critical-path` or a branch slug). */
+  readonly paths: readonly string[];
+}
+
+/**
+ * The run-backs due before the step named `before`: those whose bonfire this
+ * run rested at AFTER it last cleared the wave. A run-back is only a fight when
+ * both halves happened on this walk — the wave was beaten, and a rest put it back
+ * — and once fought it is down again until the next rest, which is why the
+ * caller records a fought run-back as a fresh clearance.
+ *
+ * `clearedAt` / `restedAt` map a wave / bonfire to the step index it last
+ * happened at.
+ */
+export function dueRunBacks(
+  runBacks: readonly RunBack[],
+  before: string,
+  clearedAt: ReadonlyMap<string, number>,
+  restedAt: ReadonlyMap<number, number>,
+): RunBack[] {
+  return runBacks.filter((r) => {
+    if (r.before !== before) return false;
+    const cleared = clearedAt.get(r.wave);
+    const rested = restedAt.get(r.bonfire);
+    return cleared !== undefined && rested !== undefined && rested > cleared;
+  });
+}
+
+/**
+ * A death-respawn at a bonfire fires that fire's rest hooks (spec-0016 §1), so
+ * it re-seats every `respawns_on_rest` wave exactly as a rest does. The party
+ * returns to the fire it last rested at — the latest entry of `restedAt` — so
+ * that bonfire is recorded as rested at `step`. No rest yet means the respawn is
+ * at world spawn and re-seats nothing a run-back is keyed to.
+ */
+export function respawnReseats(restedAt: Map<number, number>, step: number): void {
+  let last: number | undefined;
+  let lastAt = -1;
+  for (const [b, at] of restedAt) {
+    if (at > lastAt) {
+      last = b;
+      lastAt = at;
+    }
+  }
+  if (last !== undefined) restedAt.set(last, step);
+}
+
+function parseRunBacks(v: unknown, pointer: string): readonly RunBack[] {
+  // Required, with no default: a plan that cannot say whether a rest puts a fight
+  // back beside the path would have the ladder walk that leg as empty — which is
+  // the defect this field exists to end.
+  if (!Array.isArray(v)) throw new CombatPlanParseError(pointer, "expected an array");
+  return v.map((r, i): RunBack => {
+    const p = `${pointer}/${i}`;
+    if (!isRecord(r)) throw new CombatPlanParseError(p, "expected an object");
+    for (const key of ["wave", "objective", "before"] as const) {
+      if (typeof r[key] !== "string" || (r[key] as string).length === 0) {
+        throw new CombatPlanParseError(`${p}/${key}`, "expected a non-empty string");
+      }
+    }
+    for (const key of ["bonfire", "count"] as const) {
+      if (!Number.isInteger(r[key])) throw new CombatPlanParseError(`${p}/${key}`, "expected an integer");
+    }
+    for (const key of ["radius", "distance"] as const) {
+      if (typeof r[key] !== "number" || !Number.isFinite(r[key])) {
+        throw new CombatPlanParseError(`${p}/${key}`, "expected a finite number");
+      }
+    }
+    const tier = r["tier"];
+    if (typeof tier !== "string" || !ENCOUNTER_TIERS.includes(tier as EncounterTier)) {
+      throw new CombatPlanParseError(`${p}/tier`, `expected one of ${ENCOUNTER_TIERS.join("|")}`);
+    }
+    const paths = r["paths"];
+    if (!Array.isArray(paths) || paths.length === 0 || paths.some((x) => typeof x !== "string")) {
+      throw new CombatPlanParseError(`${p}/paths`, "expected a non-empty array of path labels");
+    }
+    return {
+      wave: r["wave"] as string,
+      objective: r["objective"] as string,
+      bonfire: r["bonfire"] as number,
+      before: r["before"] as string,
+      tier: tier as EncounterTier,
+      pos: requirePos(r["pos"], `${p}/pos`),
+      count: r["count"] as number,
+      radius: r["radius"] as number,
+      crossing: requirePos(r["crossing"], `${p}/crossing`),
+      distance: r["distance"] as number,
+      paths: paths as string[],
+    };
+  });
+}
+
 /** The parsed combat plan. */
 export interface CombatPlan {
   readonly version: string;
@@ -217,6 +331,8 @@ export interface CombatPlan {
   /** The declared world difficulty the run is verified AT (spec-0023 §3). */
   readonly difficulty: string;
   readonly encounters: readonly Encounter[];
+  /** Re-seated fights the path walks past again after a rest. */
+  readonly runBacks: readonly RunBack[];
   /** Tier-declaring stage-5 actors — the other shape an elite takes. */
   readonly actors: readonly ActorEncounter[];
   /** The compiler's coverage ledger, printed verbatim in the run report. */
@@ -309,6 +425,7 @@ export function parseCombatPlan(raw: unknown): CombatPlan {
     campaignId,
     difficulty,
     encounters,
+    runBacks: parseRunBacks(raw["run_backs"], "/run_backs"),
     actors: parseActors(raw["actors"], "/actors"),
     floorGate: parseFloorLedger(raw["floor_gate"], "/floor_gate"),
     actorsGate: parseBindingCount(raw["actors_gate"], "/actors_gate"),

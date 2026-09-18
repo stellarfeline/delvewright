@@ -1400,3 +1400,63 @@ fn one_unproven_stack_makes_the_whole_kind_unproven() {
         "{bodies:#?}"
     );
 }
+
+// ---------------------------------------------------------------------------
+// Run-backs (spec-0016 §1, spec-0023 §3): a cleared `respawns_on_rest` wave
+// that a rest the path performs puts back beside a leg the path walks
+// afterwards is an encounter, and the combat plan says so.
+// ---------------------------------------------------------------------------
+
+fn run_backs_of(out: &BuildOutput) -> Vec<serde_json::Value> {
+    let plan: serde_json::Value =
+        serde_json::from_slice(out.get("validation/combat-plan.json").unwrap()).unwrap();
+    plan["run_backs"]
+        .as_array()
+        .unwrap_or_else(|| panic!("the combat plan states its run-backs: {plan}"))
+        .clone()
+}
+
+/// `souls-bonfire`: `wave/guards` stands at the keeper's stand, is cleared by
+/// `obj/slay`, and `obj/slay` itself arms the bonfire the path then rests at —
+/// which re-seats the guards beside the walk on to the chest.
+#[test]
+fn a_rest_that_re_seats_a_cleared_wave_beside_the_next_leg_is_a_run_back() {
+    let tmp = TempCampaign::new();
+    campaign_with(tmp.path(), |quests, _| {
+        quests["dsl_version"] = serde_json::json!(DSL_VERSION);
+    });
+    let (out, _) = build(tmp.path()).expect("souls-bonfire builds");
+    let rbs = run_backs_of(&out);
+    let guards: Vec<&serde_json::Value> =
+        rbs.iter().filter(|r| r["wave"] == "wave/guards").collect();
+    assert_eq!(guards.len(), 1, "one run-back for the guards: {rbs:#?}");
+    let rb = guards[0];
+    assert_eq!(rb["objective"], "obj/slay");
+    assert_eq!(rb["bonfire"], 0);
+    assert!(
+        rb["before"].as_str().is_some_and(|b| b.starts_with("obj/")),
+        "keyed by the beat whose leg re-crosses it: {rb}"
+    );
+    assert!(
+        rb["distance"].as_f64().unwrap() <= rb["radius"].as_f64().unwrap(),
+        "the crossing is inside the wave's own aggro radius: {rb}"
+    );
+    assert_eq!(rb["paths"], serde_json::json!(["critical-path"]));
+}
+
+/// A wave that does not come back after a rest is not met again.
+#[test]
+fn a_wave_that_stays_down_is_no_run_back() {
+    let tmp = TempCampaign::new();
+    campaign_with(tmp.path(), |quests, _| {
+        quests["dsl_version"] = serde_json::json!(DSL_VERSION);
+        quests["content"]["waves"][0]["respawns_on_rest"] = serde_json::json!(false);
+    });
+    let (out, _) = build(tmp.path()).expect("souls-bonfire builds");
+    assert!(
+        run_backs_of(&out)
+            .iter()
+            .all(|r| r["wave"] != "wave/guards"),
+        "the guards stay down"
+    );
+}

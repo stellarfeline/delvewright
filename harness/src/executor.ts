@@ -22,6 +22,7 @@ import type {
   CollectStep,
   InteractStep,
   KillStep,
+  Step,
   ReachStep,
   RestStep,
   TriggerStep,
@@ -47,7 +48,9 @@ import {
   assistCommand,
   assistPolicy,
   deathPhases,
+  dueRunBacks,
   floorFinding,
+  respawnReseats,
   unmeasuredFloorFinding,
   checkpointPrecondition,
   giveUpBudgetFor,
@@ -73,6 +76,7 @@ import {
   type FightAttribution,
   type PerformedRest,
   type ReengageObservation,
+  type RunBack,
   type UnassistedOutcome,
   type UnassistedResult,
   type UnkillableBody,
@@ -1519,6 +1523,12 @@ export class MineflayerExecutor implements StepExecutor {
    * resting" is a statement the check can actually make. */
   private restSteps: readonly PerformedRest[] = [];
   private readonly restedBonfires = new Set<number>();
+  /** Bonfire → the step index this run last rested at it (run-back bookkeeping). */
+  private readonly restedAt = new Map<number, number>();
+  /** Wave → the step index this run last cleared it at (run-back bookkeeping). */
+  private readonly waveClearedAt = new Map<string, number>();
+  /** Every run-back this run fought, in order — named in the log and the assists. */
+  private readonly runBacksFought: RunBack[] = [];
   /** Encounters whose scripted deaths were SKIPPED because the checkpoint the
    * stage would measure against was never armed — the RUN's own gap, and red. */
   private readonly preconditionFindings: string[] = [];
@@ -1808,6 +1818,10 @@ export class MineflayerExecutor implements StepExecutor {
     // late (see recoverFromDeath).
     bot.on("spawn", () => {
       this.spawnSeq += 1;
+      // A respawn after the first join is a death-respawn at the last-rested
+      // bonfire, which fires the rest's own hooks (spec-0016 §1): every
+      // `respawns_on_rest` wave is back, exactly as after a rest.
+      if (this.spawnSeq > 1) respawnReseats(this.restedAt, this.currentStep);
     });
     // Self-defense attribution (souls ladder). PRIMARY channel: mineflayer 4.37 turns
     // the 1.20+ `damage_event` packet into `entityHurt(entity, source)`, where `source`
@@ -4337,7 +4351,7 @@ export class MineflayerExecutor implements StepExecutor {
    * Navigation + assertion only: the datapack's kill advancement + countdown are what
    * actually complete the objective when the last tagged mob dies.
    */
-  private async fightWave(step: KillStep): Promise<void> {
+  private async fightWave(step: KillStep, runBack = false): Promise<void> {
     const bot = this.requireBot();
     // Confirmed kills: a mob the bot has attacked that then vanishes near the wave
     // anchor (see wave.ts). Counting these (rather than "no mob-shaped entity remains")
@@ -4381,10 +4395,16 @@ export class MineflayerExecutor implements StepExecutor {
     const hands = { ...this.melee };
     try {
       await this.equipLoadout();
-      await this.walkTo(step.pos, 3, `wave ${step.wave}`, step.sneak, {
-        objective: step.objective,
-        transport: step.transport,
-      });
+      // A run-back re-fights a wave whose objective completed long ago, so the
+      // objective's marker settles nothing about this walk: it walks as a plain
+      // approach.
+      await this.walkTo(
+        step.pos,
+        3,
+        `wave ${step.wave}`,
+        step.sneak,
+        runBack ? undefined : { objective: step.objective, transport: step.transport },
+      );
       // Give AI-enabled mobs a moment to path toward the bot after we arrive.
       await delay(1_000);
       // Diagnostic: what does the bot see near the wave anchor?
@@ -4763,6 +4783,63 @@ export class MineflayerExecutor implements StepExecutor {
    * billed it hard.
    */
   async kill(step: KillStep): Promise<void> {
+    await this.killStep(step);
+    this.waveClearedAt.set(step.wave, this.currentStep);
+  }
+
+  /**
+   * Fight every run-back due before `step` (spec-0016 §1, spec-0023 §3): a wave
+   * this run cleared, that a rest it took since has put back beside the leg
+   * the step walks. A player walking that leg meets the fight again, so the
+   * ladder fights it — under a labelled assist, like every encounter — before
+   * the step walks on. What is due is the compiler's `run_backs` filtered by
+   * what this walk did (`dueRunBacks`); the harness decides nothing else.
+   */
+  async beforeStep(step: Step): Promise<void> {
+    const plan = this.combatPlan;
+    if (!plan || plan.runBacks.length === 0) return;
+    const token =
+      "objective" in step && typeof step.objective === "string"
+        ? step.objective
+        : step.action === "trigger"
+          ? step.trigger
+          : undefined;
+    if (token === undefined) return;
+    for (const rb of dueRunBacks(plan.runBacks, token, this.waveClearedAt, this.restedAt)) {
+      // Two rests can put one wave back beside the same leg; it stands there
+      // once, so it is fought once.
+      if (this.waveClearedAt.get(rb.wave) === this.currentStep) continue;
+      const enc = this.encounterFor(rb.wave);
+      const fight: KillStep = {
+        action: "kill",
+        objective: rb.objective,
+        wave: rb.wave,
+        pos: rb.pos,
+        tag: "",
+        count: rb.count,
+      };
+      process.stderr.write(
+        `[run-back] ${rb.wave}: re-seated by the rest at bonfire ${rb.bonfire}, ` +
+          `${rb.distance.toFixed(1)} blocks from the leg to ${rb.before} (aggro radius ` +
+          `${rb.radius}) — fighting it before the leg\n`,
+      );
+      const reason = `run-back: re-seated by the rest at bonfire ${rb.bonfire}, beside the leg to ${rb.before}`;
+      if (enc) {
+        await this.withAssist(enc, reason, () => this.fightWave(fight, true));
+      } else {
+        await this.fightWave(fight, true);
+      }
+      this.runBacksFought.push(rb);
+      this.waveClearedAt.set(rb.wave, this.currentStep);
+    }
+  }
+
+  /** The run-backs this run fought, in order. */
+  runBacks(): readonly RunBack[] {
+    return this.runBacksFought;
+  }
+
+  private async killStep(step: KillStep): Promise<void> {
     const enc = this.encounterFor(step.wave);
     if (!enc) {
       // No combat plan (or a wave outside it): pre-spec-0023 behaviour, untouched.
@@ -5740,6 +5817,7 @@ export class MineflayerExecutor implements StepExecutor {
     bot.chat(step.command);
     await delay(EFFECT_SETTLE_MS);
     this.restedBonfires.add(step.bonfire);
+    this.restedAt.set(step.bonfire, this.currentStep);
   }
 
   /**

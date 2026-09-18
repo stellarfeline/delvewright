@@ -428,6 +428,220 @@ pub fn encounters(plan: &Plan) -> Vec<Encounter> {
     out
 }
 
+/// **A run-back** (spec-0016 §1, spec-0023 §3): a `respawns_on_rest` wave the
+/// path has already cleared, re-seated by a rest the path performs, standing
+/// within its own aggro radius of a leg the path walks afterwards.
+///
+/// For a player this is the souls run-back — the fight comes back and the way
+/// on goes past it. The bonfire does not retire the wave, so the leg is not
+/// empty: it is an encounter the party passes again, and a machine plan that
+/// exports it as a plain walk is claiming a leg that does not exist. spec-0023
+/// §3 says what the ladder does at an encounter — it runs it under a labelled
+/// assist, and runs everything BETWEEN fights clean — so a run-back is exported
+/// as an encounter of its own, and the ladder fights it before walking the leg.
+#[derive(Debug, Clone, PartialEq)]
+pub struct RunBack {
+    /// The re-seated wave.
+    pub wave_id: String,
+    /// The `kill` objective that cleared it the first time.
+    pub objective_id: String,
+    /// The bonfire (`CheckpointPlan::index`) whose rest re-seats it.
+    pub bonfire: usize,
+    /// The step the re-crossing leg walks TO, by its own token — an objective
+    /// id or a trigger id. A token rather than an index because the same beat
+    /// has a different index on every per-branch path, and every one of those
+    /// paths reads this one plan.
+    pub before: String,
+    /// The wave anchor cell — where the fight is fought.
+    pub pos: [i32; 3],
+    /// Total mob count, as re-seated (a re-seat is full count, full health).
+    pub count: i32,
+    /// What the content bills the fight as.
+    pub tier: EncounterTier,
+    /// The perception radius the crossing was measured at.
+    pub radius: f64,
+    /// The routed cell nearest the wave, and its distance: what makes the leg
+    /// a crossing.
+    pub crossing: [i32; 3],
+    /// How far `crossing` is from the nearest occupied cell of the wave.
+    pub distance: f64,
+    /// Which exported paths carry it (`critical-path`, or a branch slug).
+    pub paths: BTreeSet<String>,
+}
+
+/// One exported path as the run-back finder reads it: a label, its step list,
+/// and the proven routes of its walked legs (each leg's `to_step` indexes
+/// `steps`).
+pub struct PathLegs<'a> {
+    /// `critical-path` or a branch slug.
+    pub label: String,
+    /// The path's steps (the compiler's own coordinates, no rest splices).
+    pub steps: &'a [Step],
+    /// The routes DW0311 proved over those steps.
+    pub routes: &'a [crate::compiler::nav::LegRoute],
+}
+
+/// Every [`RunBack`] on every exported path, deduplicated by
+/// `(wave, bonfire, before)` with the paths that carry it unioned.
+///
+/// Per path: for each `respawns_on_rest` wave cleared by a `kill` step `k`,
+/// for each bonfire whose rest the path performs at or after `k` (the rest is
+/// spliced after the beat that arms it, `emit::rest_step_index`), the FIRST
+/// walked leg after that rest whose routed cells come within the wave's aggro
+/// radius (plus its reach margin) of any cell the wave occupies, in sight of it,
+/// is a run-back. Only the first: once fought, the wave stays down until the
+/// next rest. The first leg after the rest is routed from the fire
+/// ([`crate::compiler::nav::LegRoute::rerouted_from`]), where the party actually
+/// sets off from.
+///
+/// The aggro model is [`crate::compiler::nav::aggro_sources`], the one the
+/// respawn safe zone (`DW0478`) measures with — seated spawn cells and a lane's
+/// marched corridor, radius the declared `follow_range` or the documented
+/// default — plus the sight gate the aggro-edge ring already uses
+/// ([`World::has_line_of_sight`]): vanilla's nearest-attackable-target goal
+/// acquires only a target it can see, so a leg on the far side of a wall from
+/// the seat is not a meeting. The sight test runs over the assembled world with
+/// no runtime region state, the same world the ring is placed in.
+pub fn run_backs(
+    plan: &Plan,
+    world: &World,
+    paths: &[PathLegs<'_>],
+    sources: &[crate::compiler::nav::AggroSource],
+) -> Vec<RunBack> {
+    let mut out: Vec<RunBack> = Vec::new();
+    for path in paths {
+        for (k, step) in path.steps.iter().enumerate() {
+            let Step::Kill {
+                objective_id,
+                wave_id,
+                pos,
+                count,
+                ..
+            } = step
+            else {
+                continue;
+            };
+            let Some(wave) = plan::wave_of(plan.campaign, wave_id) else {
+                continue;
+            };
+            if !wave.respawns_on_rest {
+                continue;
+            }
+            let Some(src) = sources.iter().find(|s| s.id == *wave_id) else {
+                continue;
+            };
+            for b in plan.bonfires() {
+                // Where this path performs the rest: after the beat that arms
+                // the fire, translated through that beat's objective.
+                let rest_at = match plan
+                    .critical_path
+                    .get(b.fire_step)
+                    .and_then(Step::objective)
+                {
+                    None => (b.fire_step < path.steps.len()).then_some(b.fire_step),
+                    Some(obj) => path.steps.iter().position(|s| s.objective() == Some(obj)),
+                };
+                let Some(r) = rest_at else { continue };
+                if r < k {
+                    continue;
+                }
+                let mut legs: Vec<&crate::compiler::nav::LegRoute> =
+                    path.routes.iter().filter(|l| l.to_step > r).collect();
+                legs.sort_by_key(|l| l.to_step);
+                // The first leg after the rest sets off from the fire, not from the
+                // step before it: the party walked to the fire to rest.
+                let first = legs.first().map(|l| l.to_step);
+                let hit =
+                    legs.into_iter().find_map(|leg| {
+                        // The leg that walks to this wave's own kill again fights it
+                        // there; that is not a run-back.
+                        if path.steps.get(leg.to_step).is_some_and(
+                            |s| matches!(s, Step::Kill { wave_id: w, .. } if w == wave_id),
+                        ) {
+                            return None;
+                        }
+                        let from_fire;
+                        let cells: &[[i32; 3]] = if Some(leg.to_step) == first {
+                            from_fire = leg.rerouted_from(world, b.pos);
+                            from_fire.as_deref().unwrap_or(&leg.cells)
+                        } else {
+                            &leg.cells
+                        };
+                        let mut best: Option<([i32; 3], f64)> = None;
+                        for c in cells {
+                            for (_, cell, margin) in &src.cells {
+                                let d = (0..3)
+                                    .map(|i| f64::from(c[i] - cell[i]).powi(2))
+                                    .sum::<f64>()
+                                    .sqrt();
+                                if d <= src.radius + margin
+                                    && best.is_none_or(|(_, b)| d < b)
+                                    && world.has_line_of_sight(*cell, *c)
+                                {
+                                    best = Some((*c, d));
+                                }
+                            }
+                        }
+                        best.map(|(c, d)| (leg.to_step, c, d))
+                    });
+                let Some((to, crossing, distance)) = hit else {
+                    continue;
+                };
+                let Some(before) = path
+                    .steps
+                    .get(to)
+                    .and_then(|s| s.objective().or(s.trigger()))
+                else {
+                    continue;
+                };
+                if let Some(rb) = out
+                    .iter_mut()
+                    .find(|x| x.wave_id == *wave_id && x.bonfire == b.index && x.before == before)
+                {
+                    rb.paths.insert(path.label.clone());
+                    continue;
+                }
+                out.push(RunBack {
+                    wave_id: wave_id.clone(),
+                    objective_id: objective_id.clone(),
+                    bonfire: b.index,
+                    before: before.to_string(),
+                    pos: *pos,
+                    count: *count,
+                    tier: wave.tier.unwrap_or_default(),
+                    radius: src.radius,
+                    crossing,
+                    distance,
+                    paths: BTreeSet::from([path.label.clone()]),
+                });
+            }
+        }
+    }
+    out
+}
+
+/// The `run_backs` block of `combat-plan.json`.
+fn run_backs_json(run_backs: &[RunBack]) -> Value {
+    json!(
+        run_backs
+            .iter()
+            .map(|r| json!({
+                "wave": r.wave_id,
+                "objective": r.objective_id,
+                "bonfire": r.bonfire,
+                "before": r.before,
+                "tier": r.tier.token(),
+                "pos": [r.pos[0], r.pos[1], r.pos[2]],
+                "count": r.count,
+                "radius": r.radius,
+                "crossing": [r.crossing[0], r.crossing[1], r.crossing[2]],
+                "distance": (r.distance * 100.0).round() / 100.0,
+                "paths": r.paths,
+            }))
+            .collect::<Vec<_>>()
+    )
+}
+
 /// The mandatory-encounter wave ids, for the checks that walk waves directly.
 fn mandatory_waves(plan: &Plan) -> BTreeSet<String> {
     encounters(plan).into_iter().map(|e| e.wave_id).collect()
@@ -1784,7 +1998,12 @@ fn coverage_json(c: &FloorCoverage) -> Value {
 ///   is `floor_gate.not_covered` only), so `actors_gate.unbound`
 ///   does not by itself mean "no hostile actor in this campaign"; the reason
 ///   text says so and points at `floor_gate.not_covered`.
-pub fn combat_plan_json(plan: &Plan, encounters: &[Encounter], actors: &[ActorEncounter]) -> Value {
+pub fn combat_plan_json(
+    plan: &Plan,
+    encounters: &[Encounter],
+    actors: &[ActorEncounter],
+    run_backs: &[RunBack],
+) -> Value {
     let difficulty = effective_difficulty(plan.campaign);
     let items = ItemCombatRegistry::v1_21_11();
     let entries: Vec<Value> = encounters
@@ -1888,6 +2107,10 @@ pub fn combat_plan_json(plan: &Plan, encounters: &[Encounter], actors: &[ActorEn
         // this delve" is what let a five-hostile campaign look combat-free.
         "fights": mandatory_fights(plan).to_json(),
         "encounters": entries,
+        // Re-seated fights the path walks past again after a rest (spec-0016
+        // §1): each is an encounter the ladder fights under assist before the
+        // leg it names. Always present — an empty list is a measurement.
+        "run_backs": run_backs_json(run_backs),
         "actors": actors.iter().map(actor_json).collect::<Vec<_>>(),
         // Sibling of `actors[]`, not a rename of anything: how many actors this
         // build's tier machinery tracked at all. See the `combat_plan_json` doc

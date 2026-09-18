@@ -80,6 +80,12 @@ export interface StepExecutor {
    */
   beginStep?(index: number): void;
   /**
+   * Optional: anything the path owes BEFORE this step's own action — a run-back
+   * fight (spec-0016 §1) the leg to this step passes. Runs inside the step's
+   * retry loop, so a death during it is the step's death.
+   */
+  beforeStep?(step: Step): Promise<void>;
+  /**
    * Optional (AUDIT-P0): assert the campaign has NOT completed yet. Called after
    * every step that still has an objective step ahead of it. Campaign completion
    * belongs to the last objective step; arriving earlier means the remaining steps
@@ -227,6 +233,7 @@ export async function runSequence(
     // Retry loop: at most one re-attempt, and only after a bot death when opted in.
     for (;;) {
       try {
+        await executor.beforeStep?.(step);
         await dispatch(executor, step);
         // Endgame discipline (AUDIT-P0): the campaign must not already be complete
         // while objective steps remain. Checked before the transport/cutscene waits

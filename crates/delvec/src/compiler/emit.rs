@@ -669,6 +669,11 @@ pub fn build_with_warnings(
     // emitted alongside the branch paths. Empty for a campaign with no declared
     // branch points, so nothing moves for anybody who has not opted in.
     let mut branch_waypoints: Vec<(String, Value)> = Vec::new();
+    // Every exported path's steps and proven routes — the exported path and each
+    // reachable branch's — kept for the run-back finder, which needs the seated
+    // hostiles and the lanes that are only resolved further down.
+    let mut path_legs: Vec<(String, Vec<plan::Step>, Vec<crate::compiler::nav::LegRoute>)> =
+        Vec::new();
     // The traversal proof's binding ledger (`compiler::traversal`), filled inside
     // the world block below. `None` for a campaign that assembles no world —
     // which is not the same fact as "examined nothing", so the artifact is
@@ -1346,6 +1351,11 @@ pub fn build_with_warnings(
                         &crate::compiler::waypoints::waypoints_json(plan, &routes),
                     );
                 }
+                path_legs.push((
+                    "critical-path".to_string(),
+                    plan.critical_path.clone(),
+                    routes.clone(),
+                ));
                 // Visual-tier POV cameras (spec-0003): one first-person shot per
                 // corner-thinned waypoint. Their eye cells are proven clear in the
                 // FINAL assembled world with every other kind's, at the one place
@@ -1413,6 +1423,7 @@ pub fn build_with_warnings(
                                 crate::compiler::waypoints::waypoints_json(plan, &branch_routes),
                             ));
                         }
+                        path_legs.push((r.branch.slug.clone(), cp.steps.clone(), branch_routes));
                     }
                 }
                 (m, am)
@@ -1503,6 +1514,13 @@ pub fn build_with_warnings(
             // is enough for the same reason and one step further
             // out: it is a fight nothing bills, so without the ledger line
             // naming it there is no artifact anywhere that says it existed.
+            // spec-0016 §6: resolve and prove each TD lane polyline (DW0386). The
+            // proven cells are what `patrol_target` carries, so the squad is only
+            // ever sent somewhere it can stand and walk to.
+            //
+            // Before the combat plan: a run-back is measured against where the
+            // hostiles actually are, and a lane wave is where it marches.
+            let lanes = crate::compiler::nav::plan_lanes(plan, &world)?;
             let tiered_actors = crate::compiler::combat::actor_encounters(plan);
             if crate::compiler::combat::has_encounters(plan)
                 || !tiered_actors.is_empty()
@@ -1514,16 +1532,31 @@ pub fn build_with_warnings(
                     &mandatory,
                     &tiered_actors,
                 ));
+                // Run-backs (spec-0016 §1): a cleared `respawns_on_rest` wave a
+                // rest re-seats beside a leg the path walks afterwards. Measured
+                // over every exported path, against the same aggro model the
+                // respawn safe zone uses.
+                let sources = crate::compiler::nav::aggro_sources(plan, &world, &waves, &lanes);
+                let legs: Vec<crate::compiler::combat::PathLegs<'_>> = path_legs
+                    .iter()
+                    .map(|(label, steps, routes)| crate::compiler::combat::PathLegs {
+                        label: label.clone(),
+                        steps,
+                        routes,
+                    })
+                    .collect();
+                let run_backs = crate::compiler::combat::run_backs(plan, &world, &legs, &sources);
                 put_json(
                     &mut out,
                     "validation/combat-plan.json",
-                    &crate::compiler::combat::combat_plan_json(plan, &mandatory, &tiered_actors),
+                    &crate::compiler::combat::combat_plan_json(
+                        plan,
+                        &mandatory,
+                        &tiered_actors,
+                        &run_backs,
+                    ),
                 );
             }
-            // spec-0016 §6: resolve and prove each TD lane polyline (DW0386). The
-            // proven cells are what `patrol_target` carries, so the squad is only
-            // ever sent somewhere it can stand and walk to.
-            let lanes = crate::compiler::nav::plan_lanes(plan, &world)?;
             // spec-0016 §1: the RESPAWN-POINT safe zone
             // (DW0478). Runs here because it needs both halves of where the
             // hostiles actually are — the seated spawn cells above and the lane

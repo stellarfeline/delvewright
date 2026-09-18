@@ -22,6 +22,7 @@ function planJson(over: Record<string, unknown> = {}): Record<string, unknown> {
     campaign_id: "souls-bonfire",
     difficulty: "normal",
     encounters: [],
+    run_backs: [],
     actors: [
       {
         actor: "actor/barrow-warden",

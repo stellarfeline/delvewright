@@ -1737,6 +1737,16 @@ a player does: `strike` and `strike-npc` are a real attack (`bot.attack`) on the
 acquired by the crosshair rule below, and the step passes only on the trigger's
 own fired marker, `[dw:complete <campaign> trigger/<id>]`.
 
+**Run-backs (`MineflayerExecutor.beforeStep`, `combat.ts` `dueRunBacks`).** Before
+each step the sequencer asks the executor for anything the path owes ahead of the
+step's own action. For every `combat-plan.json` `run_backs` entry naming that
+step's `obj/…` or `trigger/…` token, the bot fights the re-seated wave under a
+labelled `run-back:` assist window — the ordinary kill loop, census-terminated,
+with no objective marker to wait for — when this walk has cleared the wave and
+rested at the named bonfire since (a death-respawn at a fire counts as a rest,
+`respawnReseats`). A fought run-back is a fresh clearance; it is not fought again
+until the next rest.
+
 **Crosshair acquisition (`harness/src/crosshair.ts`).** Every interaction step —
 `talk-to`, `interact`, `rest`, and the click kinds of `trigger` — now proves the click was *available to a player*
 before it acts. It casts the entity-pick ray vanilla casts (eye → box, nearest

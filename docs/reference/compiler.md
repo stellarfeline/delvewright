@@ -2686,6 +2686,50 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
     re-deriving it would be the downstream folklore CLAUDE.md forbids. Present
     on every encounter; a plan that cannot state it is refused by the harness
     rather than silently measured by silhouette.
+  - **`run_backs`** (spec-0016 §1, spec-0023 §3; `combat::run_backs`) — the
+    re-seated fights the path walks past again. A `respawns_on_rest` wave the
+    path has cleared comes back when the path rests at a bonfire, stationed at
+    its seat; a leg the path walks after that rest, within the wave's aggro
+    radius of a cell it occupies and in sight of it, meets the fight again. For
+    a player that is the souls run-back — fight it or run past it — and a plan
+    that exported the leg as a plain walk claimed a leg that does not exist (the
+    vesperhold ladder died on the buttress walk, unassisted, three times out of
+    three). Each entry: `wave`, `objective` (the kill that first cleared it),
+    `bonfire` (whose rest re-seats it), `before` (the token — `obj/…` or
+    `trigger/…` — of the step whose leg re-crosses it; a token and not an index
+    because every per-branch path carries the same beat at a different index and
+    reads this one plan), `tier`, `pos`, `count`, `radius`, `crossing` and
+    `distance` (the routed cell that makes it a crossing), and `paths` (the
+    exported paths — `critical-path` or branch slugs — that carry it). Per path:
+    for each cleared wave and each bonfire rest the path performs at or after the
+    kill, the FIRST walked leg after the rest that crosses is the run-back; once
+    fought, the wave is down until the next rest. The aggro model is the one
+    `DW0478` measures with (`nav::aggro_sources`: seated spawn cells, a lane's
+    marched corridor with its drift margin, the declared `follow_range` or the
+    default) plus the sight gate the aggro-edge ring uses
+    (`World::has_line_of_sight` — vanilla's nearest-attackable-target goal is
+    sight-gated). The first leg after a rest is routed from the fire
+    (`LegRoute::rerouted_from`), because a rest is not a step and the party sets
+    off from where it rested. The list is always present; an empty list is a
+    measurement. The ladder fights each due run-back under a labelled assist
+    before the step it names (see `docs/reference/tools.md`).
+
+    **Why an encounter, not a route or a sprint.** spec-0023 §3 runs every
+    encounter under a labelled assist and everything between fights clean, so a
+    leg that passes a standing fight is an encounter or the ladder walks into it
+    bare. Routing round it is not available to the engine: the only alternative
+    route may be a shortcut, and the path never opens an optional one (spec-0016
+    §2 — the delve must be finishable the long way). Running past is a player's
+    choice whose success is movement skill, exactly the variable spec-0023 leaves
+    to the human; a bot sprint proves nothing a machine can repeat.
+
+    **What no static proof assumed.** No engine proof models hostiles on a walked
+    leg — `DW0311`/`DW0317` route geometry only — so none assumed a re-seated
+    wave absent. `DW0478` measures every re-seated wave as present at every rest
+    point, and its dominance credit (`respawn::Evidence::dominance`) reads the
+    path's own meeting with a force as a forced encounter the machine playthrough
+    proves winnable; for a re-seated wave that meeting is a run-back, which the
+    playthrough now fights as one rather than walking.
   - `checkpoint` is the last checkpoint/bonfire fired **strictly before** the
     step, omitted when there is none. Strictly, not "at or before": a
     `fire_step` is the step whose COMPLETION arms the checkpoint, and a death

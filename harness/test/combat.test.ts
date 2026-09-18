@@ -37,6 +37,9 @@ import {
   waveAttribution,
   type DeathTrial,
   type Encounter,
+  dueRunBacks,
+  respawnReseats,
+  type RunBack,
 } from "../src/combat.ts";
 
 function encounter(over: Partial<Encounter> = {}): Encounter {
@@ -81,6 +84,7 @@ const PLAN = {
       bodies: [{ kind: "drowned", count: 2, give_up_swings: 24 }],
     },
   ],
+  run_backs: [],
 };
 
 // --- the plan ---------------------------------------------------------------
@@ -902,4 +906,81 @@ test("a timeout says which kinds the encounter could not budget, and stays silen
   assert.match(note, /husk, skeleton/, "named in a stable order");
   assert.match(note, /max_health/);
   assert.match(note, /DW0475/);
+});
+
+// --- run-backs ----------------------------------------------------------------
+
+const RUN_BACK_RAW = {
+  wave: "wave/walk-ambush",
+  objective: "obj/survive-the-knives",
+  bonfire: 3,
+  before: "obj/enter-the-great-hall",
+  tier: "ordinary",
+  pos: [120, 92, 14],
+  count: 3,
+  radius: 16,
+  crossing: [118, 92, 14],
+  distance: 2.24,
+  paths: ["critical-path", "halvard-released+ring"],
+};
+
+test("a plan's run-backs parse, and a plan that states none is refused", () => {
+  const plan = parseCombatPlan({ ...PLAN, run_backs: [RUN_BACK_RAW] });
+  assert.deepEqual(plan.runBacks[0], {
+    wave: "wave/walk-ambush",
+    objective: "obj/survive-the-knives",
+    bonfire: 3,
+    before: "obj/enter-the-great-hall",
+    tier: "ordinary",
+    pos: [120, 92, 14],
+    count: 3,
+    radius: 16,
+    crossing: [118, 92, 14],
+    distance: 2.24,
+    paths: ["critical-path", "halvard-released+ring"],
+  });
+  // No default: a plan that cannot say whether a rest puts a fight back beside
+  // the path would have the ladder walk the leg as empty.
+  const { run_backs: _gone, ...without } = { ...PLAN };
+  assert.throws(() => parseCombatPlan(without), /run_backs/);
+  assert.throws(
+    () => parseCombatPlan({ ...PLAN, run_backs: [{ ...RUN_BACK_RAW, paths: [] }] }),
+    /paths/,
+  );
+});
+
+test("a run-back is due only after this walk cleared the wave and then rested", () => {
+  const rb = parseCombatPlan({ ...PLAN, run_backs: [RUN_BACK_RAW] }).runBacks as RunBack[];
+  const before = "obj/enter-the-great-hall";
+  assert.deepEqual(dueRunBacks(rb, before, new Map(), new Map([[3, 30]])), [], "never cleared");
+  assert.deepEqual(dueRunBacks(rb, before, new Map([["wave/walk-ambush", 25]]), new Map()), [], "never rested");
+  assert.deepEqual(
+    dueRunBacks(rb, before, new Map([["wave/walk-ambush", 25]]), new Map([[3, 20]])),
+    [],
+    "the rest came before the clearance: the wave is down",
+  );
+  assert.equal(
+    dueRunBacks(rb, before, new Map([["wave/walk-ambush", 25]]), new Map([[3, 30]])).length,
+    1,
+  );
+  assert.deepEqual(
+    dueRunBacks(rb, "obj/elsewhere", new Map([["wave/walk-ambush", 25]]), new Map([[3, 30]])),
+    [],
+    "only before the step whose leg re-crosses it",
+  );
+});
+
+test("a death-respawn re-seats as the last rest did", () => {
+  const rested = new Map([
+    [1, 10],
+    [3, 30],
+  ]);
+  respawnReseats(rested, 41);
+  assert.deepEqual([...rested], [
+    [1, 10],
+    [3, 41],
+  ]);
+  const none = new Map<number, number>();
+  respawnReseats(none, 41);
+  assert.equal(none.size, 0, "no rest yet: the respawn is at world spawn");
 });
