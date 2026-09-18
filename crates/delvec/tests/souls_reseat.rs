@@ -102,6 +102,23 @@ fn fixture_campaign(with_unleash: bool) -> Campaign {
     c
 }
 
+/// spec-0073: the one advisory a `boss`-billed fight with no `health_bar` owes
+/// (`DW0912`, warning tier). The fixture's diagnostics must be EXACTLY those —
+/// one per such fight, counted from the campaign itself — and nothing else.
+fn assert_only_boss_advisories(c: &Campaign, diags: &[delvewright_dsl::Diagnostic]) {
+    let owed = delvewright_dsl::fights(c)
+        .iter()
+        .filter(|f| f.tier == Some(delvewright_dsl::EncounterTier::Boss) && f.bar.is_none())
+        .count();
+    assert!(
+        diags
+            .iter()
+            .all(|d| d.code == "DW0912" && d.severity == delvewright_dsl::Severity::Warning),
+        "the fixture must validate clean but for the boss advisory: {diags:#?}"
+    );
+    assert_eq!(diags.len(), owed, "{diags:#?}");
+}
+
 /// Validate + plan + emit. `emit::build` validates every emitted command against
 /// the pinned 1.21.11 command tree, so a clean build is itself the proof that the
 /// new re-seat lines are commands the server will accept.
@@ -112,10 +129,7 @@ fn build(campaign: &Campaign) -> BuildOutput {
     let items = FullItemRegistry::v1_21_11();
     let entities = FullEntityRegistry::v1_21_11();
     let diags = validate_campaign_with(campaign, &items, &prefabs, &entities);
-    assert!(
-        diags.is_empty(),
-        "the fixture must validate clean: {diags:#?}"
-    );
+    assert_only_boss_advisories(campaign, &diags);
 
     let plan = Plan::build(campaign, &prefabs).expect("plan builds");
     let mut structures: BTreeMap<String, Vec<u8>> = BTreeMap::new();

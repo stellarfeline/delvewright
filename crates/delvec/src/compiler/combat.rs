@@ -2063,6 +2063,7 @@ mod tests {
             lane: None,
             summon: None,
             tier: None,
+            health_bar: None,
         }
     }
 

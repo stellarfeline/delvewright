@@ -1,0 +1,12 @@
+{
+  "code": "DW0910",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "remove",
+      "path": "/content/waves/0/health_bar/title"
+    }
+  ],
+  "units": [],
+  "why": "`wave/muster` fields two kinds of body — the named Muster Hands and a Muster Stray — so no one entry's name is the name of the whole fight, and with its `title` removed the bar has nothing to draw. The engine owns no English that is right for a porter, a bell-ringer and a choir at once, so it refuses rather than inventing one. The build names the wave, says it has two mob entries, and prescribes stating `title` or naming the body. It declares no unit: the derived title is bound by `wave/lane`, whose one entry's name titles its bar, and the stated title by the primary's own `wave/muster`."
+}

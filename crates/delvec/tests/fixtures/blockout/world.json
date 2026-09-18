@@ -10,6 +10,6 @@
     "title": "The Derived Whole",
     "weather": "clear"
   },
-  "dsl_version": "0.30.0",
+  "dsl_version": "0.31.0",
   "stage": "world"
 }

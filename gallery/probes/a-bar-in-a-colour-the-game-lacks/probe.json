@@ -1,0 +1,13 @@
+{
+  "code": "DW0911",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "add",
+      "path": "/content/waves/1/health_bar/color",
+      "value": "crimson"
+    }
+  ],
+  "units": [],
+  "why": "A boss bar is drawn in one of the colours the pinned game's `bossbar set <id> color` lists, and `crimson` is not one of them. The list is read from the pinned command tree — the same authority every emitted line is held to — and printed in the refusal, so the remedy is in front of the reader. It declares no unit: `color` is bound by `actor/hall-moth`'s red bar; what the engine refuses here is a colour the game does not draw, which a schema enum would have been a second copy of the tree to say."
+}

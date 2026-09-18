@@ -445,6 +445,35 @@ this section is what they are *for* and the traps in each.
   of the same effect in the same bundle is `DW0540`. `clear-effect {effect?,
   in?}` exists for effects the campaign did NOT grant (a potion the player
   drank, a `wither` a mob applied); omit `effect` to clear everything.
+- **A fight can show its health: `health_bar`.** A health bar is
+  **optional** on any wave or actor: `"health_bar": { "range": 16 }`, with
+  `title`, `color` and `style` optional beside it. Declaring one draws a named
+  bar over the fight's total health for every player within `range` blocks of a
+  live body of the fight, from the moment they enter that range until the last
+  body falls. The compiler **warns** — an advisory, never a failure — only when a
+  fight billed `tier: "boss"` declares none, and says nothing about any other
+  tier — whether an `elite` or `ordinary` fight shows a bar is yours to decide.
+  - *The title is the fight's own name* unless you state `title`: an actor's
+    `name`, or the `name` of a wave's one mob entry, translated under that
+    name's own key. A wave of two entries or more, or a body with no name, has
+    no single name to draw, so it must state `title`, or the build is refused.
+  - *`range` is the size of the place the fight happens in*, in blocks (4–64),
+    not the body's `follow_range`: the bar should appear as a player crosses
+    into that place, before the body has noticed anyone. It disappears for a
+    player who leaves the range, dies or watches a cutscene.
+  - *Spell the shape with waves.* A named body with lesser bodies around it is
+    two waves spawned by the same beat, the bar on the named body's wave only;
+    a fight of several bodies (`count` above 1, or several entries) is one bar
+    over their summed health, dropping as they fall; two fights are two waves
+    with a bar each, drawn at once.
+  - *On an actor the bar reads the body that can be hurt*: the unleashed body,
+    or the puppet itself when the actor is `vulnerable`. A bar on an actor that
+    is neither is refused — it would sit full forever.
+  - `color` and `style` are the game's own boss-bar words (`red`, `purple`,
+    `notched_6`, `notched_20`, …); anything else is refused, and the refusal
+    lists the words the game accepts. Leave them out to keep the game's defaults.
+  - A rest that re-seats the fight re-seats the bar with it: it reads full
+    again when the party walks back in.
 
 ## Sealed things, and pacing
 
