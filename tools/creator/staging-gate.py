@@ -520,7 +520,12 @@ def _iter_nodes(node):
 # possible spelling. `load_ledger` refuses a key outside this set, so a typo is
 # a loud ledger defect on every campaign rather than a probe that quietly
 # stopped selecting anything.
-PREDICATE_CLAUSES = ("eq", "in", "prefix", "has", "has_any", "any_of")
+PREDICATE_CLAUSES = ("eq", "in", "not_in", "prefix", "has", "has_any", "any_of")
+
+# The clauses that only EXCLUDE. A predicate made of nothing else names its
+# population by what it is not — every node in the document but a few — so
+# `load_ledger` refuses one standing alone, in a row or in an `any_of` arm.
+EXCLUDING_CLAUSES = ("not_in",)
 
 
 def _matches(node: dict, pred: dict) -> bool:
@@ -529,6 +534,15 @@ def _matches(node: dict, pred: dict) -> bool:
             return False
     for field, wants in (pred.get("in") or {}).items():
         if node.get(field) not in wants:
+            return False
+    # The complement of `in`, read the same way: an absent field is None, so
+    # `not_in {salvos: [1]}` keeps a node that omits `salvos` (the DSL's
+    # default) and drops one that declares exactly 1. It lets a row exclude the
+    # one variant that cannot carry its class without restating the range of
+    # values the engine admits — that range belongs to the diagnostic that
+    # enforces it, not to the ledger.
+    for field, unwanted in (pred.get("not_in") or {}).items():
+        if node.get(field) in unwanted:
             return False
     for field, want in (pred.get("prefix") or {}).items():
         val = node.get(field)
@@ -559,8 +573,8 @@ def _matches(node: dict, pred: dict) -> bool:
 
 
 def _identity_shaped(pred: dict) -> bool:
-    """Does this predicate select its objects by IDENTITY — `eq`/`in`/`prefix`
-    — rather than by a DECLARATION carried on objects that exist anyway?
+    """Does this predicate select its objects by IDENTITY — `eq`/`in`/`prefix`,
+    with `not_in` excluding values of them — rather than by a DECLARATION carried on objects that exist anyway?
 
     The distinction is `probe_is_self_measuring`'s, and it is stated once here
     so the disjunction cannot become a way around it: a disjunction is identity
@@ -590,6 +604,8 @@ def describe(pred: dict) -> str:
         bits.append(f"{field}:absent" if want is None else f"{field}={want}")
     for field, wants in (pred.get("in") or {}).items():
         bits.append(f"{field}∈{{{','.join(map(str, wants))}}}")
+    for field, unwanted in (pred.get("not_in") or {}).items():
+        bits.append(f"{field}∉{{{','.join(map(str, unwanted))}}}")
     for field, want in (pred.get("prefix") or {}).items():
         bits.append(f"{field}~{want}*")
     for field in pred.get("has") or []:
@@ -901,7 +917,19 @@ def _absence_is_declared(binding: dict, applies_when: dict | None) -> bool:
 def carrier_exists(carrier: dict, eng: Engine, subj: Subject) -> tuple[bool, str]:
     kind = carrier.get("kind")
     if kind == "dw":
-        return eng.dw_exists(carrier["code"])
+        # One code, or a list when the class the binding counts is judged by
+        # one rule per member kind (`bell-06`: a timed gate by DW0378, a volley
+        # by DW0918, one body model). Every code must exist: a list is carried
+        # only while every member of it is, so losing either check reds the row
+        # on a campaign whose binding counts the other.
+        codes = dw_codes(carrier)
+        if not codes:
+            return False, "a `dw` carrier names no code"
+        for code in codes:
+            ok, why = eng.dw_exists(code)
+            if not ok:
+                return False, why
+        return True, ""
     if kind == "packtest":
         name = carrier["template"]
         if name not in eng.rust_text:
@@ -939,12 +967,22 @@ def carrier_exists(carrier: dict, eng: Engine, subj: Subject) -> tuple[bool, str
     return False, f"unknown carrier kind `{kind}`"
 
 
+def dw_codes(carrier: dict) -> list[str]:
+    """A `dw` carrier's `code`, which is one code or a list of them."""
+    code = carrier.get("code")
+    if isinstance(code, str):
+        return [code]
+    if isinstance(code, list) and all(isinstance(c, str) for c in code):
+        return list(code)
+    return []
+
+
 def carrier_label(carrier: dict | None) -> str:
     if carrier is None:
         return "—"
     kind = carrier.get("kind")
     if kind == "dw":
-        return carrier["code"]
+        return " + ".join(dw_codes(carrier)) or "—"
     if kind == "packtest":
         return f"PackTest `{carrier['template']}`"
     if kind == "harness":
@@ -1179,6 +1217,17 @@ def _unknown_clauses(pred: dict):
         yield from _unknown_clauses(alt)
 
 
+def _only_excludes(pred: dict) -> bool:
+    """Is this predicate, or any `any_of` arm of it, made of excluding clauses
+    alone? Such a predicate selects every node but the ones it names."""
+    if not isinstance(pred, dict):
+        return False
+    keys = [k for k in pred if k != "any_of"]
+    if keys and all(k in EXCLUDING_CLAUSES for k in keys) and "any_of" not in pred:
+        return True
+    return any(_only_excludes(a) for a in pred.get("any_of") or [])
+
+
 def load_ledger(path: pathlib.Path) -> dict:
     doc = json.loads(path.read_text(encoding="utf-8"))
     rows = doc.get("findings")
@@ -1222,6 +1271,14 @@ def load_ledger(path: pathlib.Path) -> dict:
                     "unrecognised clause restricts nothing, so the probe would "
                     "count every node in the document while describing itself "
                     f"as something narrower (known clauses: {', '.join(PREDICATE_CLAUSES)})"
+                )
+            if _only_excludes(b.get("match") or {}):
+                raise ValueError(
+                    f"{path}: row `{r['id']}` `{key}` has a predicate made only "
+                    f"of excluding clauses ({', '.join(EXCLUDING_CLAUSES)}) — it "
+                    "selects every node in the document but the ones it names, "
+                    "so pair the exclusion with a clause that says what the "
+                    "class IS"
                 )
             for f in b.get("files") or []:
                 if f not in Subject.STAGE_FILES:

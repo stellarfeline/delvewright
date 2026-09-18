@@ -11680,6 +11680,9 @@ fn plan_payload_verbs(
                 payload_anchor_failure(placement, &label, kill_zone.anchor.as_str())
             })?;
             let geom = crate::compiler::nav::plan_volley(world, from, region, &label)?;
+            // The cadence is a timing read (DW0918): a body a salvo lands on can
+            // walk out of the zone before the next one.
+            crate::compiler::nav::check_volley_cadence(world, region, salvos, interval, &label)?;
             out.volleys.push(VolleyEmit {
                 key,
                 geom,

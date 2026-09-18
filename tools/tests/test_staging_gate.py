@@ -1537,6 +1537,115 @@ def test_the_live_combat_preconditions_do_not_count_a_ceremony_as_a_fight(gate, 
         assert (r["verdict"], r["binding"]) == ("BOUND", 1), (rid, r)
 
 
+def test_the_live_timing_read_row_binds_a_volley_with_a_cadence(gate, tmp_path):
+    """`bell-06`'s class is every hazard on a repeating clock the party must
+    read: a `timed-gate`, judged by DW0378, and a `volley` that fires more than
+    once, judged by DW0918 — one body model, one row. A volley campaign read
+    UNBOUND while the carrier judged gates only; it now binds. A volley with
+    `salvos: 1` has no cadence, and a campaign whose only volley is one reads
+    INAPPLICABLE. Driven both ways, through the verdicts."""
+    row = live_rows(gate, {"bell-06"})["bell-06"]
+    assert gate.dw_codes(row["carrier"]) == ["DW0378", "DW0918"]
+    build = make_build(tmp_path)
+
+    def volley(**extra):
+        return dict(
+            {
+                "type": "volley",
+                "from_anchor": "anchor/battery",
+                "kill_zone": {"anchor": "anchor/rampart", "extent": [3, 1, 3]},
+            },
+            **extra,
+        )
+
+    def trap(payload):
+        return {
+            "traps": [
+                {
+                    "id": "trap/rampart-volley",
+                    "at": "anchor/plate",
+                    "trigger": "pressure-plate",
+                    "payload": payload,
+                }
+            ]
+        }
+
+    camps = {
+        # vesperhold's own volley: pressure plate, 3 salvos every 15 ticks.
+        "salvos-3": quests_content(tmp_path, "s3", trap([volley(salvos=3, interval=15)])),
+        # `salvos` omitted defaults to 3 — the `has_any` precondition missed it.
+        "default": quests_content(tmp_path, "sd", trap([volley()])),
+        "salvos-1": quests_content(tmp_path, "s1", trap([volley(salvos=1)])),
+        "gate": quests_content(
+            tmp_path,
+            "g",
+            {"timed_gates": [{"id": "timed-gate/portcullis", "gate": "anchor/g",
+                              "open_ticks": 60, "closed_ticks": 40}]},
+        ),
+        "neither": quests_content(tmp_path, "n", {"quests": []}),
+    }
+    verdicts = {
+        k: (lambda r: (r["verdict"], r["binding"]))(
+            gate.adjudicate(row, gate.Engine(), gate.Subject(d, build))
+        )
+        for k, d in camps.items()
+    }
+    assert verdicts == {
+        "salvos-3": ("BOUND", 1),
+        "default": ("BOUND", 1),
+        "salvos-1": ("INAPPLICABLE", 0),
+        "gate": ("BOUND", 1),
+        "neither": ("INAPPLICABLE", 0),
+    }, verdicts
+
+
+def test_not_in_excludes_the_values_it_names_and_keeps_an_absent_field(gate, tmp_path):
+    """`not_in` is the complement of `in`, read the same way: an absent field
+    is None. It must exclude exactly what it names — not be ignored, which would
+    count every node — and a predicate made of it alone is refused at load,
+    because it names a population only by what it is not."""
+    m = {"eq": {"type": "volley"}, "not_in": {"salvos": [1]}}
+    assert gate._matches({"type": "volley"}, m)
+    assert gate._matches({"type": "volley", "salvos": 3}, m)
+    assert not gate._matches({"type": "volley", "salvos": 1}, m)
+    assert not gate._matches({"type": "collapse"}, m)
+    assert "salvos∉{1}" in gate.describe(m)
+
+    def ledger(match):
+        return {
+            "findings": [
+                dict(
+                    BOUND_ROW,
+                    binding={"kind": "dsl", "files": ["quests.json"], "match": match},
+                )
+            ]
+        }
+
+    for alone in ({"not_in": {"salvos": [1]}}, {"any_of": [{"not_in": {"salvos": [1]}}]}):
+        bad = tmp_path / "l.json"
+        bad.write_text(json.dumps(ledger(alone)))
+        with pytest.raises(ValueError, match="only of excluding clauses"):
+            gate.load_ledger(bad)
+    good = tmp_path / "g.json"
+    good.write_text(json.dumps(ledger(m)))
+    gate.load_ledger(good)
+
+
+def test_a_dw_carrier_list_is_carried_only_while_every_code_is(gate, tmp_path):
+    """A `dw` carrier may name a list — one rule per member kind of the class —
+    and the row is carried only while EVERY code in it exists: losing either
+    check leaves objects the binding counts with nothing judging them."""
+    both = dict(BOUND_ROW, carrier={"kind": "dw", "code": [LIVE_CODE, "DW0378"]})
+    r = run(gate, tmp_path, both)
+    assert (r["verdict"], r["carrier"]) == ("BOUND", f"{LIVE_CODE} + DW0378")
+    one_gone = dict(BOUND_ROW, carrier={"kind": "dw", "code": [LIVE_CODE, "DW9998"]})
+    r = run(gate, tmp_path, one_gone)
+    assert r["verdict"] == "MISSING-CHECK"
+    assert "DW9998" in r["detail"]
+    empty = dict(BOUND_ROW, carrier={"kind": "dw", "code": []})
+    assert run(gate, tmp_path, empty)["verdict"] == "MISSING-CHECK"
+
+
 def test_every_live_precondition_can_measure_non_zero(gate):
     """A precondition that no campaign shape could ever satisfy is the sixth
     vacuity mode with a probe's face on. The count below is COMPUTED from the

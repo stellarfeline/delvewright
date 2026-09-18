@@ -1929,39 +1929,44 @@
       "triage": "capability"
     },
     {
-      "applies_when": {
-        "files": [
-          "quests.json"
-        ],
-        "kind": "dsl",
-        "match": {
-          "has_any": [
-            "open_ticks",
-            "closed_ticks",
-            "salvos"
-          ]
-        }
-      },
       "binding": {
         "files": [
-          "quests.json"
+          "quests.json",
+          "dialogue.json"
         ],
         "kind": "dsl",
         "match": {
-          "prefix": {
-            "id": "timed-gate/"
-          }
+          "any_of": [
+            {
+              "prefix": {
+                "id": "timed-gate/"
+              }
+            },
+            {
+              "eq": {
+                "type": "volley"
+              },
+              "not_in": {
+                "salvos": [
+                  1
+                ]
+              }
+            }
+          ]
         }
       },
       "campaign": "the-drowned-bell",
       "carrier": {
-        "code": "DW0378",
+        "code": [
+          "DW0378",
+          "DW0918"
+        ],
         "kind": "dw"
       },
       "finding": "a portcullis cycled too slowly to read as a hazard to time",
-      "general_form": "a timed gate is a timing read, not a coin flip: enough entry phases clear the span",
+      "general_form": "a timed hazard is a timing read, not a coin flip: enough entry phases clear a timed gate's span, and a body a volley's salvo lands on can walk out of its kill zone before the next salvo in enough phases of the interval",
       "id": "bell-06",
-      "note": "applies_when corrected 2026-08-11 (staging-gate UNBOUND audit). It named `type in {close-gate, open-gate}` — a claim that having any gate means the campaign could carry a timing-window defect. It cannot: close-gate/open-gate are one-shot permanent state changes fired by a quest beat, with no clock and so no window to be a coin flip. That precondition demanded CONTENT (add a portcullis) rather than COVERAGE, and would hold every campaign without one red forever. The precondition is now the object class that can carry a timing read: anything driven by a repeating clock the party must cross — a timed-gate's open_ticks/closed_ticks, or a volley payload's salvos. A campaign with a volley and no timed gate is then UNBOUND, correctly. nobodys-cave-island declares neither and is INAPPLICABLE — counted and named to the owner as a class this build cannot present to her, and not a refusal.",
+      "note": "The class is every hazard on a repeating clock the party must read: a `timed-gate` (its id), and a `volley` that fires more than once (`salvos` absent, which defaults to 3, or any value but 1 — `DW0443` owns the range the engine admits, so the ledger does not restate it). Both are judged by one body model, `nav::timing_read` (4 t/block sprint, admitting phases of the window, integer share against a 20% floor): `DW0378` charges the crossing of a gate's span against its open window; `DW0918` charges the walk out of a volley's kill zone, from its deepest standable cell, against the interval between salvos, because leaving the zone is the counterplay spec-0022 names and a finite volley never forces a body outside it through. A `volley` with `salvos: 1` has no cadence and is outside the class. `close-gate`/`open-gate` are one-shot state changes with no clock and are outside it too. The binding selects by identity, so its zero is the class measuring zero: a campaign with neither is INAPPLICABLE. This row carried an `applies_when` of `has_any [open_ticks, closed_ticks, salvos]` and a binding of timed gates only, which held every volley campaign UNBOUND; the precondition is removed because the binding now counts the class itself. That removal is a LOOSENING for one shape, declared as one: a campaign whose only volleys declare `salvos: 1` read UNBOUND and now reads INAPPLICABLE — there is no next salvo for a timing read to judge. It is also a tightening for another: a volley that omits `salvos` matched no `has_any` clause and is now counted.",
       "round": 2,
       "triage": "content"
     },
