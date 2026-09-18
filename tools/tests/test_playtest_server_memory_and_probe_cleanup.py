@@ -1,11 +1,12 @@
-"""`playtest-server.sh up` sets a real MEMORY, and a probe failure leaves
+"""`playtest-server.sh up` sets a real heap, and a probe failure leaves
 nothing running.
 
 Two things are bound here, both about a large campaign — many tiles plus many
 horizon templates, more than a small build:
 
-- The `docker run` carries a real `MEMORY`, well above the itzg image's own 1G
-  default. Loading a large campaign at 1G can throw
+- The `docker run` carries a real heap — the shared ceiling
+  (`versions.toml` `[server].heap_max`, through `tools/lib/server-heap.sh`),
+  well above the itzg image's own 1G default, or `--memory`'s value. Loading a large campaign at 1G can throw
   `java.lang.OutOfMemoryError: Java heap space` failing structure loads, so
   NPCs never spawn — and dying with "no dw_npc entities found" would be true
   but the wrong defect: a creator reading that message goes looking for a
@@ -23,10 +24,10 @@ this drives the extracted SEAMS instead, with `DW_PLAYTEST_SERVER_TEST_HOOK=1`
 sourcing the real script and calling its real functions directly:
 
 - `dw_playtest_docker_run_argv` — the exact `docker run` argv, provably
-  carrying `-e MEMORY=<value>` for both the default and an explicit
-  `--memory`, with no docker on PATH at all;
-- `dw_playtest_log_shows_oom` — the OOM string match a probe failure consults
-  before blaming content;
+  carrying the heap `-e` for both the default and an explicit `--memory`,
+  with no docker on PATH at all;
+- `dw_server_log_shows_oom` — the shared OOM string match a probe failure
+  consults before blaming content;
 - `up_failed` — the real EXIT trap, called directly with a fake `docker` on
   PATH and the handful of variables the real `up` flow would have set
   (`NAME`, `STAGE`, `SESSION_FILE`, `UP_OK`), proving the container is removed
@@ -36,6 +37,7 @@ sourcing the real script and calling its real functions directly:
 import os
 import pathlib
 import subprocess
+import sys
 
 import pytest
 
@@ -43,7 +45,12 @@ ROOT = pathlib.Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "tools" / "creator" / "playtest-server.sh"
 
 
-def run_hook(code: str, path: str = "/usr/bin:/bin:/usr/sbin:/sbin", extra_env=None):
+# The heap pin is read through `tools/lib/versions.py` (stdlib `tomllib`, 3.11+),
+# so the interpreter running this suite is put first on the hook's PATH.
+BASE_PATH = f"{pathlib.Path(sys.executable).parent}:/usr/bin:/bin:/usr/sbin:/sbin"
+
+
+def run_hook(code: str, path: str = BASE_PATH, extra_env=None):
     env = {"PATH": path, **(extra_env or {})}
     return subprocess.run(
         ["bash", "-c", f'DW_PLAYTEST_SERVER_TEST_HOOK=1 . "{SCRIPT}"; {code}'],
@@ -59,15 +66,23 @@ def run_hook(code: str, path: str = "/usr/bin:/bin:/usr/sbin:/sbin", extra_env=N
 # ---------------------------------------------------------------------------
 
 
-def test_the_default_is_a_gigabyte_figure_above_itzgs_own_1g():
-    result = run_hook('printf "%s" "$MEMORY_DEFAULT"')
+def test_the_default_is_the_shared_ceiling_above_itzgs_own_1g():
+    result = run_hook('dw_server_heap_env ""')
     assert result.returncode == 0, result.stderr
     value = result.stdout.strip()
-    assert value.endswith("G"), f"not a gigabyte figure: {value!r}"
-    assert int(value[:-1]) >= 2, (
-        f"MEMORY_DEFAULT={value!r} is not clearly above itzg's own 1G default, "
+    assert value.startswith("MAX_MEMORY="), value
+    size = value.split("=", 1)[1]
+    assert size.endswith("G"), f"not a gigabyte figure: {size!r}"
+    assert int(size[:-1]) >= 2, (
+        f"{value!r} is not clearly above itzg's own 1G default, "
         "which is exactly what OOM'd on the reported campaign"
     )
+
+
+def test_memory_overrides_both_initial_and_ceiling():
+    result = run_hook('dw_server_heap_env 8G')
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == "MEMORY=8G"
 
 
 # ---------------------------------------------------------------------------
@@ -77,24 +92,32 @@ def test_the_default_is_a_gigabyte_figure_above_itzgs_own_1g():
 
 def argv_of(memory: str) -> list[str]:
     result = run_hook(
-        f'dw_playtest_docker_run_argv myname 1.21.11 pw {memory} /stage/dir'
+        f'dw_playtest_docker_run_argv myname 1.21.11 pw "$(dw_server_heap_env {memory!r})" /stage/dir'
     )
     assert result.returncode == 0, result.stderr
     return result.stdout.splitlines()
 
 
-@pytest.mark.parametrize("memory", ["4G", "8G", "512M"])
-def test_the_argv_carries_exactly_the_memory_it_was_given(memory):
+@pytest.mark.parametrize(
+    "memory,expected",
+    [("", None), ("8G", "MEMORY=8G"), ("512M", "MEMORY=512M")],
+)
+def test_the_argv_carries_exactly_the_heap_it_was_given(memory, expected):
+    if expected is None:
+        pin = subprocess.run(
+            [sys.executable, str(ROOT / "tools/lib/versions.py"), "server.heap_max"],
+            capture_output=True, text=True, check=True,
+        ).stdout.strip()
+        expected = f"MAX_MEMORY={pin}"
     lines = argv_of(memory)
-    assert "-e" in lines, lines
-    idx = lines.index(f"MEMORY={memory}")
+    idx = lines.index(expected)
     assert lines[idx - 1] == "-e", (
-        f"MEMORY={memory} is present but not paired with its own -e flag: {lines}"
+        f"{expected} is present but not paired with its own -e flag: {lines}"
     )
 
 
 def test_the_argv_still_carries_the_container_name_port_and_image():
-    lines = argv_of("4G")
+    lines = argv_of("")
     assert lines[:2] == ["docker", "run"]
     assert "myname" in lines
     assert "25565:25565" in lines
@@ -102,7 +125,7 @@ def test_the_argv_still_carries_the_container_name_port_and_image():
 
 
 # ---------------------------------------------------------------------------
-# `dw_playtest_log_shows_oom`: the exact JVM string, nothing looser
+# `dw_server_log_shows_oom`: the exact JVM string, nothing looser
 # ---------------------------------------------------------------------------
 
 
@@ -115,7 +138,7 @@ def test_the_argv_still_carries_the_container_name_port_and_image():
     ],
 )
 def test_oom_detection_matches_the_literal_jvm_string_only(log, expected):
-    result = run_hook(f'dw_playtest_log_shows_oom {log!r} && echo YES || echo NO')
+    result = run_hook(f'dw_server_log_shows_oom {log!r} && echo YES || echo NO')
     assert result.stdout.strip() == ("YES" if expected else "NO"), result.stderr
 
 

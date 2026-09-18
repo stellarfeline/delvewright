@@ -91,6 +91,9 @@ export DELVE_DOCKERFILE="$here/Dockerfile.delve"
 # shellcheck source=validation/lib/delve-image.sh
 . "$here/lib/delve-image.sh"
 dw_export_delve_image "$project"
+# The OOM rule every server this engine starts shares (tools/lib/server-heap.sh).
+# shellcheck source=tools/lib/server-heap.sh
+. "$here/../tools/lib/server-heap.sh"
 export DW_BOT_OUT="$run_abs"
 COMPOSE=(docker compose -p "$project" -f "$here/compose.yaml" --profile validate)
 
@@ -106,7 +109,15 @@ echo "==> bot ladder: project '$project', build tree '$output'"
 set +e
 "${COMPOSE[@]}" up --build --abort-on-container-exit --exit-code-from bot
 rc=$?
+# A server that ran out of heap takes the bot down with it (`socketClosed`
+# before spawn), and the bot's exit says nothing about why. The server's own
+# log does; read it before teardown removes the container.
+server_log="$("${COMPOSE[@]}" logs --no-color server 2>&1)"
 set -e
+if dw_server_log_shows_oom "$server_log"; then
+  echo "::error:: bot ladder in '$project': $(dw_server_oom_advice)" >&2
+  [ "$rc" -ne 0 ] || rc=1
+fi
 
 report="$run_abs/run-report.json"
 if [ -f "$report" ]; then

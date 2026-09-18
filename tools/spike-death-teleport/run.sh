@@ -25,6 +25,10 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 # shellcheck source=tools/lib/rcon.sh
 . "${REPO_ROOT}/tools/lib/rcon.sh"
+# The heap every server this engine starts gets (versions.toml [server].heap_max).
+# shellcheck source=tools/lib/server-heap.sh
+. "${REPO_ROOT}/tools/lib/server-heap.sh"
+HEAP_ENV="$(dw_server_heap_env)"
 HERE="${REPO_ROOT}/tools/spike-death-teleport"
 CONTAINER="${SPIKE_CONTAINER:-dw-spike-death-tp}"
 OUT="${HERE}/observations.json"
@@ -54,6 +58,7 @@ docker run -d --name "${CONTAINER}" \
   -e EULA="${EULA}" \
   -e VERSION=1.21.11 -e TYPE=VANILLA \
   -e ONLINE_MODE=FALSE \
+  -e "${HEAP_ENV}" \
   -e MODE=survival -e DIFFICULTY=hard \
   -e LEVEL_TYPE=minecraft:flat -e GENERATE_STRUCTURES=false \
   -e SPAWN_PROTECTION=0 -e VIEW_DISTANCE=8 \

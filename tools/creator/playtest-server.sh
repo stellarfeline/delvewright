@@ -88,9 +88,11 @@
 # releases it: while it is held, no automation may bind the port, and the release
 # is refused while any container still publishes it (validation/mutex.sh).
 #
-# The container runs at `MEMORY_DEFAULT` (below) unless `--memory` says
-# otherwise. itzg's OWN default is 1G, which is not enough for a large-ish
-# campaign: 84 tiles plus 170 horizon templates OOM'd it
+# The container's heap ceiling is `versions.toml` `[server].heap_max`, applied
+# by `tools/lib/server-heap.sh` — the same default every server this engine
+# starts gets — unless `--memory` says otherwise. itzg's OWN default is 1G,
+# which is not enough for a large-ish campaign: 84 tiles plus 170 horizon
+# templates OOM'd it
 # (`java.lang.OutOfMemoryError: Java heap space`), NPCs never spawned, and the
 # probe that checks for them died reporting a missing-NPC defect rather than
 # an out-of-memory one. A probe failure now stops and removes the container
@@ -106,6 +108,9 @@ set -euo pipefail
 # shellcheck source=validation/mutex.sh
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/validation/mutex.sh"
 set -euo pipefail  # mutex.sh sets its own options when sourced; take ours back
+# The heap default and the OOM rule every server this engine starts shares.
+# shellcheck source=tools/lib/server-heap.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/tools/lib/server-heap.sh"
 
 MC_VERSION="1.21.11"
 NAME="dw-playtest"
@@ -116,17 +121,12 @@ OUT_DIR=""
 STAGE_ANYWAY=""
 ACK_RED=""
 RCON_PW="playtest"
+# Empty = the shared default (`dw_server_heap_env`, versions.toml
+# `[server].heap_max` as the ceiling). `--memory` is the escape hatch for a
+# campaign that default is still not enough for — the probe-failure path below
+# names an OOM as an OOM rather than a missing-NPC defect regardless, and leaves
+# nothing running either way.
 MEMORY_ARG=""
-# itzg's own default is 1G, which is not enough for a large campaign: a build
-# of many tiles and horizon templates can throw `java.lang.OutOfMemoryError:
-# Java heap space` loading structures, and the NPCs that then never spawn read
-# as a content defect rather than a memory one. This default is authored, not
-# measured against every campaign size: it sits well above 1G for an ordinary
-# creator workstation. `--memory` is the escape hatch for a campaign this
-# default is still not enough for — the probe-failure path below names an OOM
-# as an OOM rather than a missing-NPC defect regardless, and leaves nothing
-# running either way.
-MEMORY_DEFAULT="4G"
 
 die() { echo "playtest-server: $*" >&2; exit 1; }
 
@@ -140,24 +140,15 @@ dw_playtest_container_exists() {
 
 # The docker-run argv for the throwaway server, one token per line — a seam:
 # the flow below needs a real docker to run it, and this function does not, so
-# a unit test can assert the exact flags (in particular `-e MEMORY=...`)
-# without a docker on PATH.
+# a unit test can assert the exact flags (in particular the heap's `-e`)
+# without a docker on PATH. <heap_env> is `dw_server_heap_env`'s output.
 dw_playtest_docker_run_argv() {
-  local name="$1" mc_version="$2" rcon_pw="$3" memory="$4" stage="$5"
+  local name="$1" mc_version="$2" rcon_pw="$3" heap_env="$4" stage="$5"
   printf '%s\n' docker run -d --name "$name" -p 25565:25565 \
     -e EULA=TRUE -e TYPE=VANILLA -e VERSION="$mc_version" \
-    -e MEMORY="$memory" \
+    -e "$heap_env" \
     -e RCON_PASSWORD="$rcon_pw" -e OVERRIDE_SERVER_PROPERTIES=false \
     -v "$stage:/data" itzg/minecraft-server:latest
-}
-
-# True when a boot or server log shows the JVM ran out of heap — the literal
-# string the JVM itself prints, read from the log the failure actually
-# happened in, never re-derived. An OOM during structure loading leaves no
-# NPCs, and dying with "no dw_npc entities found" would be true but the wrong
-# defect — this is what lets a probe failure name the real one.
-dw_playtest_log_shows_oom() {
-  [[ ${1-} == *"java.lang.OutOfMemoryError"* ]]
 }
 
 # The `up` EXIT trap. Defined here (above the test seam) rather than beside
@@ -562,15 +553,15 @@ if [[ -d "$OUT_DIR/creator-datapack" ]]; then
   cp -R "$OUT_DIR/creator-datapack" "$STAGE/world/datapacks/$CAMP_ID-creator"
 fi
 
-MEMORY="${MEMORY_ARG:-$MEMORY_DEFAULT}"
-echo "container memory: $MEMORY (itzg default is 1G; raise with --memory)"
+HEAP_ENV="$(dw_server_heap_env "$MEMORY_ARG")" || die "cannot read versions.toml [server].heap_max"
+echo "container heap: $HEAP_ENV (itzg's own ceiling is 1G; raise with --memory)"
 # Not `mapfile`/`readarray`: bash 3.2 (macOS's shipped /bin/bash — the creator's
 # own machine, CLAUDE.md) does not have them, and silently leaves the array
 # empty rather than failing (tools/ci/check-shell-bash32.py).
 DOCKER_RUN_ARGV=()
 while IFS= read -r dw_argv_line; do
   DOCKER_RUN_ARGV+=("$dw_argv_line")
-done < <(dw_playtest_docker_run_argv "$NAME" "$MC_VERSION" "$RCON_PW" "$MEMORY" "$STAGE")
+done < <(dw_playtest_docker_run_argv "$NAME" "$MC_VERSION" "$RCON_PW" "$HEAP_ENV" "$STAGE")
 "${DOCKER_RUN_ARGV[@]}" >/dev/null
 
 # Where every log this session can offer lives, stated once so every die()
@@ -588,10 +579,8 @@ LOG_HINT="server log: $STAGE/logs/latest.log (docker-boot.log alongside it once 
 die_or_oom() {
   local plain="$1" log
   log="$(docker logs "$NAME" 2>&1 || true)"
-  if dw_playtest_log_shows_oom "$log"; then
-    die "$plain — AND the server log shows java.lang.OutOfMemoryError: raise" \
-      "--memory (current: $MEMORY; itzg's own default is 1G) rather than" \
-      "treat this as a content defect. $LOG_HINT"
+  if dw_server_log_shows_oom "$log"; then
+    die "$plain — AND $(dw_server_oom_advice) Current: $HEAP_ENV. $LOG_HINT"
   fi
   die "$plain. $LOG_HINT"
 }
@@ -602,9 +591,8 @@ for _ in $(seq 1 60); do
   sleep 10
   BOOT_LOG="$(docker logs "$NAME" 2>&1 || true)"
   if [[ $BOOT_LOG == *"Done ("* ]]; then READY=1; break; fi
-  if dw_playtest_log_shows_oom "$BOOT_LOG"; then
-    die "server ran out of heap booting (java.lang.OutOfMemoryError) with" \
-      "MEMORY=$MEMORY — raise it with --memory (e.g. --memory 8G). $LOG_HINT"
+  if dw_server_log_shows_oom "$BOOT_LOG"; then
+    die "booting: $(dw_server_oom_advice) Current: $HEAP_ENV. $LOG_HINT"
   fi
 done
 [ "$READY" = 1 ] || die "server did not come up after 600s. $LOG_HINT"
