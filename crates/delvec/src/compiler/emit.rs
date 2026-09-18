@@ -449,7 +449,7 @@ pub fn build_with_warnings(
     // container is, so it is proven off the same assembled (or edited) world, in
     // the same pass, rather than by a second model that could disagree with this
     // one about what is in the room.
-    if !plan.loot.is_empty() || !plan.collect_fills.is_empty() {
+    if !plan.loot.is_empty() || !plan.collect_fills.is_empty() || !plan.traps.is_empty() {
         let blocks = match &edit_replay {
             Some(er) => er.assembled.blocks.clone(),
             None => crate::compiler::assembled::assembled_blocks(plan, structures),
@@ -477,6 +477,13 @@ pub fn build_with_warnings(
             code: e.code,
             message: e.message,
         })?;
+        // DW0917: a trap's trigger is prefab hardware on the same terms as a
+        // container, so it is proven off the same block map.
+        crate::compiler::trap_trigger::check_trap_triggers(&blocks, &plan.traps, &plan.anchors)
+            .map_err(|e| BuildFailure::Diagnostic {
+                code: e.code,
+                message: e.message,
+            })?;
     }
 
     // v0.4 navigation planning over the solved voxel grid (spec-0008 addendum):

@@ -5161,8 +5161,9 @@ fn v06_trap_checks(
                     providers.anchor_remedy(
                         "bind the trap to a point anchor some area's prefab exposes, whatever \
                          that anchor is called (names come from prefab metadata; do NOT invent \
-                         one). A `payload` trap needs nothing of the piece but that one cell — \
-                         the compiler emits the detection; only a legacy `dispense` effect \
+                         one). A `payload` trap needs nothing of the piece but that one cell and \
+                         the trigger block standing in it (`DW0917`) — the compiler emits the \
+                         detection; only a legacy `dispense` effect \
                          needs the anchor's `dispenser` socket, and only a flag-gated trap \
                          needs its `trigger_block`"
                     ),

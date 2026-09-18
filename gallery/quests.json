@@ -2747,7 +2747,7 @@
         "trigger": "tripwire"
       },
       {
-        "at": "anchor/east-bay",
+        "at": "anchor/strongbox",
         "id": "trap/chest",
         "lethality": "nonlethal",
         "payload": [
