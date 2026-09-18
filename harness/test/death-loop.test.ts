@@ -27,6 +27,8 @@ import {
   openLethalTrial,
   parseDeathPlan,
   volumeReachesCell,
+  LETHAL_STEP_COST,
+  lethalStepCost,
   seatAtRespawn,
   stakesDropped,
   tableAnchor,
@@ -36,6 +38,7 @@ import {
   type StakeRule,
 } from "../src/death-loop.ts";
 import type { Vec3Tuple } from "../src/critical-path.ts";
+import { createRequire } from "node:module";
 
 /** The economy fixture's plan, as `delvec` really emits it. */
 function planDoc(): Record<string, unknown> {
@@ -843,4 +846,52 @@ test("the binding counts what was really examined", () => {
     walksBack: 1,
   });
   assert.deepEqual(deathLoopBindingFailures(b), []);
+});
+
+// --- the lethal exclusion, fed what the REAL pathfinder feeds it -------------
+//
+// `Movements.getBlock` is the library's own, not a model of it: for a cell the
+// client has not loaded (`bot.blockAt` answers null) it returns a stub with no
+// `position`, and a diagonal move hands that stub to every `exclusionAreasStep`
+// callback through `exclusionStep`. The harness's callback read `position.x` off
+// it and threw a TypeError out of the path search, ending a ladder run.
+const requireCjs = createRequire(import.meta.url);
+const { Movements } = requireCjs("mineflayer-pathfinder") as {
+  Movements: {
+    prototype: {
+      getBlock(this: unknown, pos: unknown, dx: number, dy: number, dz: number): Record<string, unknown>;
+      exclusionStep(this: unknown, block: unknown): number;
+    };
+  };
+};
+
+/** The block the real `getBlock` returns for a cell `blockAt` does not know. */
+function unloadedCell(): Record<string, unknown> {
+  const self = { bot: { blockAt: (): null => null } };
+  return Movements.prototype.getBlock.call(self, { x: 5, y: 65, z: 8 }, 1, 0, 1);
+}
+
+test("the library's own unloaded-cell stub carries no position and is unsafe", () => {
+  const stub = unloadedCell();
+  assert.equal(stub["position"], undefined, "the contract this guard answers has moved");
+  assert.equal(stub["safe"], false, "the library no longer walls an unknown cell itself");
+});
+
+test("an unloaded cell costs no exclusion and does not throw out of the path search", () => {
+  const box = VOLUME.region;
+  const through = { exclusionAreasStep: [(b: unknown) => lethalStepCost(b as never, [box])] };
+  assert.equal(Movements.prototype.exclusionStep.call(through, unloadedCell()), 0);
+  assert.equal(lethalStepCost(undefined, [box]), 0);
+  assert.equal(lethalStepCost(null, [box]), 0);
+});
+
+test("a loaded cell the volume reaches is walled, and one it does not is free", () => {
+  const box = VOLUME.region;
+  // Inside the declared box, and one cell outside it (the shell the server still
+  // kills in, `volumeReachesCell`), are both walled; three cells away is free.
+  assert.equal(lethalStepCost({ position: { x: 5, y: 65, z: 8 } }, [box]), LETHAL_STEP_COST);
+  assert.equal(volumeReachesCell([6, 65, 8], box), true);
+  assert.equal(lethalStepCost({ position: { x: 6, y: 65, z: 8 } }, [box]), LETHAL_STEP_COST);
+  assert.equal(lethalStepCost({ position: { x: 9, y: 65, z: 8 } }, [box]), 0);
+  assert.ok(LETHAL_STEP_COST > 100, "the library treats only a cost above 100 as no move");
 });

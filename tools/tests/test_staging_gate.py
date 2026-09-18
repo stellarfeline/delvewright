@@ -1785,7 +1785,7 @@ def test_the_owner_facing_paths_actually_invoke_the_gate(gate):
     # The literal text "docker run" is not a reliable marker for that point: it
     # is also spelled inside `dw_playtest_docker_run_argv`, a TEMPLATE the
     # container's argv is built from (a seam so a unit test can assert its
-    # flags — in particular `-e MEMORY=...` — without a docker on PATH), and
+    # flags — in particular the heap `-e` — without a docker on PATH), and
     # that definition sits earlier in the file than the gate call for
     # sourceability reasons unrelated to execution order. The actual creation
     # point is where the built argv is executed, which carries no literal

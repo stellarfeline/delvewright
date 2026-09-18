@@ -36,6 +36,18 @@
 # volume before the server starts. Measured: with the seed in place the whole
 # PackTest suite runs green under `--network none`. Isolation is unchanged: the copy
 # lands in THIS project's volume and `fresh-volumes.sh` still removes it.
+#
+# ## Why the run is watched, and bounded
+#
+# A server that runs out of Java heap loading structure templates does not exit:
+# it logs `java.lang.OutOfMemoryError`, starts the suite over a world missing
+# its templates, and goes quiet — a ladder once waited ~20 minutes on one with
+# no log growth. So the run is watched (`dw_server_watch`, the shared rule in
+# `tools/lib/server-heap.sh`): the OOM line ends it at once, exit 125, named;
+# and a run still going after `--timeout` seconds ends as a timeout, exit 124.
+# Neither is a test count. The heap the server got is asserted from its own log
+# (`max to <versions.toml [server].heap_max>`), so a default that never reached
+# the JVM reds rather than passing on itzg's 1G.
 set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 
@@ -43,21 +55,31 @@ usage() {
   cat >&2 <<'USAGE'
 usage: EULA=TRUE validation/packtest-run.sh --project <compose-project>
                                             [--output <build-tree>]
+                                            [--timeout <seconds>]
 
   --project  REQUIRED. The compose project this ladder owns (e.g. dw-worker-7).
              Distinct per concurrent ladder; there is no default, because a
              shared default is what made ladders queue on each other.
   --output   Build tree to boot, relative to validation/ (default ./delve-output).
+  --timeout  Seconds the server run may take before it is stopped and reported
+             as a timeout, exit 124 (default 900; the largest suite measured,
+             vesperhold's, ran ~100 s of server time on a workstation).
+
+  Exit: the number of failed tests; 125 when the server ran out of heap
+  (java.lang.OutOfMemoryError); 124 when the run passed --timeout; 1 when a
+  binding below did not hold.
 USAGE
   exit 2
 }
 
 project=""
 output="${DELVE_OUTPUT:-./delve-output}"
+timeout=900
 while [ $# -gt 0 ]; do
   case "$1" in
     --project|-p) [ $# -ge 2 ] || usage; project="$2"; shift 2 ;;
     --output|-o)  [ $# -ge 2 ] || usage; output="$2";  shift 2 ;;
+    --timeout)    [ $# -ge 2 ] || usage; timeout="$2"; shift 2 ;;
     -h|--help) usage ;;
     *) echo "packtest-run: unknown argument '$1'" >&2; usage ;;
   esac
@@ -69,6 +91,14 @@ if [ -z "$project" ]; then
   usage
 fi
 : "${EULA:?set EULA=TRUE to accept the Mojang EULA (https://aka.ms/MinecraftEULA)}"
+case "$timeout" in
+  ''|*[!0-9]*) echo "packtest-run: --timeout '$timeout' is not a whole number of seconds" >&2; usage ;;
+esac
+
+# The heap default and the OOM rule every server this engine starts shares.
+# shellcheck source=tools/lib/server-heap.sh
+. "$here/../tools/lib/server-heap.sh"
+heap_max="$(dw_server_heap_max)"
 
 export DELVE_OUTPUT="$output"
 cache="${DW_SERVER_CACHE:-$here/server-cache}"
@@ -111,10 +141,39 @@ echo "==> packtest: seeding the server bootstrap into '$project' world volume"
 
 runlog="$(mktemp)"
 trap 'rm -f "$runlog"; cleanup' EXIT
+echo "==> packtest: heap ceiling $heap_max; bounded at ${timeout}s; an OutOfMemoryError ends the run at once"
 set +e
-"${COMPOSE[@]}" up --abort-on-container-exit --exit-code-from packtest 2>&1 | tee "$runlog"
-rc=${PIPESTATUS[0]}
+"${COMPOSE[@]}" up --abort-on-container-exit --exit-code-from packtest >"$runlog" 2>&1 &
+up_pid=$!
+tail -n +1 -f "$runlog" &
+tail_pid=$!
+trap 'kill "$tail_pid" 2>/dev/null; rm -f "$runlog"; cleanup' EXIT
+dw_server_watch "$up_pid" "$runlog" "$timeout"
+verdict=$?
+if [ "$verdict" -ne 0 ]; then
+  echo "==> packtest: stopping project '$project' (watch verdict $verdict)"
+  "${COMPOSE[@]}" kill >/dev/null 2>&1
+fi
+wait "$up_pid"
+rc=$?
+# A run that finished by itself with an OOM in its log is still an OOM run: the
+# suite ran over a world missing whatever failed to load.
+if [ "$verdict" -eq 0 ] && dw_server_log_file_shows_oom "$runlog"; then verdict=10; fi
+sleep 1
+kill "$tail_pid" 2>/dev/null
+wait "$tail_pid" 2>/dev/null
 set -e
+case "$verdict" in
+  10)
+    echo "::error::packtest in '$project': $(dw_server_oom_advice)" >&2
+    rc=125
+    ;;
+  11)
+    echo "::error::packtest in '$project' was still running after ${timeout}s and was stopped —" >&2
+    echo "  a hang, not a verdict on the tests. Read the log above from the top." >&2
+    rc=124
+    ;;
+esac
 
 # BINDING (CLAUDE.md: a green gate that binds to nothing is VACUOUS). The seed is
 # only worth anything if the boot actually used it, so assert the server took the
@@ -134,6 +193,19 @@ case "$boot_log" in
     fi
     ;;
 esac
+# BINDING: the heap the JVM actually got, in itzg's own words. The ceiling comes
+# from the shared entrypoint (versions.toml [server].heap_max); a server that
+# reports anything else was not given it, and a pass on itzg's 1G is a pass that
+# the next larger campaign turns into a hang.
+case "$boot_log" in
+  *"and max to $heap_max"*) : ;;
+  *)
+    echo "::error::the PackTest server in '$project' never reported the heap ceiling" >&2
+    echo "  $heap_max (itzg: 'Setting initial memory to ... and max to $heap_max') — the" >&2
+    echo "  default in validation/world-settings-entrypoint.sh did not reach the JVM." >&2
+    if [ "$rc" -eq 0 ]; then rc=1; fi
+    ;;
+esac
 fetched=""
 for marker in "Downloading Minecraft server" "Downloading library " "Downloading required files"; do
   case "$boot_log" in *"$marker"*) fetched="$fetched  - $marker"$'\n' ;; esac
@@ -151,7 +223,11 @@ echo "==> packtest: tearing down project '$project'"
 rm -f "$runlog"
 trap - EXIT
 
-if [ "$rc" -ne 0 ]; then
+if [ "$verdict" -eq 10 ]; then
+  echo "::error:: PackTest did not run in project '$project' over '$output': the server ran out of heap (exit $rc)" >&2
+elif [ "$verdict" -eq 11 ]; then
+  echo "::error:: PackTest did not finish in project '$project' over '$output': stopped at ${timeout}s (exit $rc)" >&2
+elif [ "$rc" -ne 0 ]; then
   echo "::error:: PackTest FAILED in project '$project' over '$output' (exit $rc = failed tests)" >&2
 else
   echo "==> packtest PASSED (project '$project', tree '$output'; 0 live bootstrap fetches)"

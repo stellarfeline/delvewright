@@ -118,6 +118,9 @@ export DELVE_DOCKERFILE="$PWD/validation/Dockerfile.delve"
 # shellcheck source=validation/lib/delve-image.sh
 . "$here/lib/delve-image.sh"
 dw_export_delve_image "$PROJECT"
+# The OOM rule every server this engine starts shares (tools/lib/server-heap.sh).
+# shellcheck source=tools/lib/server-heap.sh
+. "$here/../tools/lib/server-heap.sh"
 TIER="${DELVEWRIGHT_BRANCHES:-all}"
 
 COMPOSE=(docker compose -p "$PROJECT" -f "$here/compose.yaml" --profile validate)
@@ -167,13 +170,25 @@ while IFS= read -r branch; do
   DELVEWRIGHT_BRANCH="$branch" DELVEWRIGHT_BRANCHES="$TIER" \
     "${COMPOSE[@]}" up --build --abort-on-container-exit --exit-code-from bot
   rc=$?
+  # An OOM'd server takes the bot down before spawn, and the bot's exit says
+  # nothing about why; the server's own log does, read before the next
+  # branch's teardown removes it.
+  server_log="$("${COMPOSE[@]}" logs --no-color server 2>&1)"
   set -e
+  oom=0
+  if dw_server_log_shows_oom "$server_log"; then
+    oom=1
+    echo "::error:: branch $branch: $(dw_server_oom_advice)" >&2
+    [ "$rc" -ne 0 ] || rc=1
+  fi
 
   # The bot writes into the compose-mounted $BOT_OUT; file this branch's copy
   # under its own name in $RUN_OUT so the merge can read them all back.
   if [ -f "$BOT_OUT/run-report.json" ]; then
     mv "$BOT_OUT/run-report.json" "$report"
     reports+=("$report")
+  elif [ "$oom" = 1 ]; then
+    infra+=("$branch=$rc, and the server log shows $DW_SERVER_OOM_MARKER (out of Java heap)")
   else
     infra+=("$branch=$rc")
   fi
