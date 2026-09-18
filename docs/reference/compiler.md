@@ -6897,10 +6897,11 @@ stops it), because the loop exists precisely to look at builds that are not
 finished yet.
 
 **Renderer** — a voxel DDA raycaster (`compiler::snapshot`) over a chunked
-flattening of the assembled block map. Shading is flat block-palette colour ×
+flattening of the assembled block map. Shading is block-palette colour ×
 face brightness (top brightest, bottom darkest, the two horizontal axes
-distinct — the "ambient occlusion by face orientation") × a block-edge relief
-darkening, then a distance fade toward the horizon. Background is a sky
+distinct — the "ambient occlusion by face orientation") × a **grain** whose
+amplitude is the block's measured roughness × a block-edge relief darkening,
+then a distance fade toward the horizon. Background is a sky
 gradient; for an `ocean`-horizon campaign the world generator's sea plane is
 drawn analytically at `SEA_LEVEL` (a world-generation backdrop, never part of
 the voxel model, never occluding a manifest target).
@@ -6916,12 +6917,44 @@ Three properties worth stating explicitly:
 - **Only blocks exist.** Entities (NPC mannequins, scripted actors, item
   displays) are not in the assembled model and are not drawn; their *posts* are
   in the manifest and, with `--labels`, stamped on the frame.
-- **Unknown blocks render magenta** (`255,0,255`, the same missing-texture key
-  `delvec render`'s fidelity gate scans for). The palette resolves exact vanilla
-  ids first, then material-family substrings (`_planks`, `_wool`, `stone`, …); a
-  unit test asserts every block the shipped prefab library places has a real
-  colour, so magenta in a frame means "a prefab introduced a block the palette
-  has never seen" — extend the palette.
+- **The colour is the pinned client jar's, and a block the pin does not have
+  renders magenta** (`255,0,255`, the same missing-texture key `delvec render`'s
+  fidelity gate scans for). `snapshot::block_color` reads
+  `crates/delvec/data/block-appearance-1.21.11.json` — every block of the pinned
+  registry at its default state, `minecraft:plains` tints, derived by
+  `compiler::view::blockcolor::Deriver` from the jar the GPU path textures with,
+  so the draft and the render hold one opinion about what a block looks like.
+  1161 of 1161 non-air blocks resolve; `crates/delvec/tests/preview_palette.rs`
+  enumerates the registry and reds on any that does not, and holds the table's
+  recorded `mc_version` to the engine's pin, so a pin bump that leaves the table
+  behind reds with no jar in hand. The jar is EULA-bound and never committed; the
+  derivation's output is, as for the shape-carrying property table and the font
+  metrics. `python3 tools/maintenance/refresh-block-appearance.py <jar>`
+  re-derives the table and proves every entry against that jar in the same run;
+  the file is never edited by hand. The derivation it runs is a `cargo` example
+  and not a `delvec` flag, because `delvec` is what an authoring session runs and
+  a creator never holds this file. Keyed by block id: the grid draws every cell
+  as a full cube, so a blockstate's own geometry has nowhere to go and
+  `oak_slab[type=top]` shades as `oak_slab`. **What varies inside a face is the
+  grain**, and the two halves of it are in different places. The PATTERN is this
+  renderer's: an FNV-1a hash of the world cell, the face and a 4×4 sub-cell, so
+  it belongs to the wall rather than to the camera and two runs give the same
+  bytes (ADR-0006). The AMPLITUDE is the block's measured `roughness` — the
+  standard deviation of its texture's brightness as a fraction of that texture's
+  mean — scaled so the drawn face's spread is the spread the texture has, which
+  is why smooth stone reads smooth and cobble reads rubbly. Without it a wall of
+  one material is one rectangle of one value whatever the material: a draft worth
+  as much as a paint swatch, and, for a dark stone, a frame the gallery render
+  gate reads as showing no scene at all. **The table holds one number and no
+  layout**, which is what lets it be committed while the jar cannot be: a
+  reduced rendition of an asset would not be (ADR-0013).
+  Magenta therefore means one of three
+  things: `jigsaw` or `structure_block` reached the model (the solver strips
+  both — the magenta is the alarm), a template carries an id 1.21.11 renamed
+  (`chain` → `iron_chain`), or a datapack block outside `minecraft:`. **The
+  fallback is never silent**: every surface that draws a grid prints `unpainted:
+  N of M block kind(s) …` on stderr naming every id
+  (`snapshot::unpainted_report`).
 
 **`--labels`** burns in: a coordinate lattice tinted onto every visible **top**
 face on a 16-block X/Z line (so it follows the terrain rather than an invented
@@ -7095,11 +7128,17 @@ delvec cameras <build-dir> --campaign <campaign-dir> -o <dir>
 ```
 
 `<campaign-dir>/design/cameras.json` is the one record of a campaign's showcase
-cameras; `compiler::view::camera` is its one reader. Per camera: `name`,
-`answers` (a `design.json` row), `pos` (the lens, world blocks), `yaw`/`pitch`
-in the `--camera` convention above, vertical `fov`, `exposure`, `width`,
-`height`, `source` (`estimated` or `hand`), `spp`. Keys are alphabetical, so the
-record a tool writes is already canonical. The record is not a stage document
+cameras; `compiler::view::camera` is its one reader. At the top level, both
+required: `campaign_id` — the campaign the record belongs to, held equal to the
+build's, so a record cannot silently place cameras in another world — and
+`cameras`. Per camera: `name`, `answers` (a `design.json` row), `pos` (the lens,
+world blocks), `yaw`/`pitch` in the `--camera` convention above, vertical `fov`,
+`exposure`, `width`, `height`, `source` (`estimated` or `hand`), `spp`. **Every
+field is required**: the reader denies unknown fields and serde refuses a missing
+one, both as `DW0721`. Keys are alphabetical, so the
+record a tool writes is already canonical. This list is not hand-kept:
+`crates/delvec/tests/hand_camera.rs` serialises the reader's own structs and
+holds this paragraph to the field names that come out, in both directions. The record is not a stage document
 and reaches neither the datapack nor the plan's shots; `delvec build` reads it
 as a hashed input, proves every camera in it (`DW0724`, above) and holds it to
 `design.json` in both directions — every camera answers a row (`DW0721`) and
@@ -7134,7 +7173,11 @@ assembles the world as `snapshot` does (it reads `--prefabs`) and rasterises eac
 camera at half its frame as `<stem>_preview.png`, byte-identical to `snapshot
 --camera` with the same numbers, and names each camera whose lens is inside or
 within `LENS_CLEARANCE` (0.25 block) of a placed block, with a `lens:` binding
-line — a report, since the grid counts every block as a full cube. It draws any
+line — a report, since the grid counts every block as a full cube. The material
+is the pinned jar's, off the same derivation the emitted scene is path-traced
+with, so what the preview says a wall is made of is what the render will say; a
+block the pin does not have is magenta and named on stderr (`unpainted:`, above).
+It draws any
 record its reader accepts and is never refused by `DW0900`: it is the instrument
 that closes the hole, and it prints the count it is closing. Byte-deterministic (ADR-0006): the same record,
 plan and options give the same scene, candidate and preview bytes.

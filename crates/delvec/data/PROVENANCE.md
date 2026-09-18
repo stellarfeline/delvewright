@@ -106,6 +106,52 @@ not third-party reconstructions.
   `prefabs/invariants/src/connections.rs`, which fills the properties this table names from the
   piece's own neighbours before a generator writes its bytes.
 
+- **`block-appearance-1.21.11.json`** — how every 1.21.11 block **looks**: its
+  alpha-weighted mean texture colour, its **roughness** (the standard deviation
+  of that texture's brightness as a fraction of its own mean, one byte, so a
+  wall reads as its material and not as a paint swatch), its mean alpha, and the
+  union of its model elements, at its default state, with `minecraft:plains`
+  tints. 1161 entries — the registry's 1166 less the 5 air-like states, which
+  are absence rather than appearance — and 0 the derivation could not resolve.
+  **Every value here is a scalar statistic about an image, and the file carries
+  no spatial layout of any texture**: a mean, a standard deviation, a mean alpha
+  and a bounding box, each one number or a handful, none of them saying which
+  pixel is bright or where an edge falls. No arrangement, no downsampling, no
+  thumbnail — nothing from which any part of a texture can be recovered. That is
+  what makes it committable when the jar is not (ADR-0013, CLAUDE.md forbidden
+  zones), the same footing the font metrics and the shape-carrying property
+  table stand on, and it is why the draft rasteriser makes its own positional
+  pattern and takes only the AMPLITUDE from here.
+  **Why it exists**: what a block looks like is the client jar's answer, and the
+  jar is EULA-bound and never committed — the same rule as the shape-carrying
+  property table above and the font metrics below. This file carries that answer
+  to every machine without one, so the CPU draft rasteriser (`delvec snapshot`,
+  `delvec cameras --preview`, `delvec edit preview`) and the GPU path paint from
+  one derivation rather than holding two opinions about a question with one
+  answer. Consumed by `delvec::compiler::snapshot::block_color`. Its one
+  derivation is `delvec::compiler::view::blockcolor::Deriver`, which resolves a
+  blockstate to its model chain and its textures as the client does and which the
+  interactive viewer runs live against a jar.
+  **Reproduce it**: `python3 tools/maintenance/refresh-block-appearance.py
+  <minecraft-1.21.11-client.jar>`, at a pin bump or when the derivation changes.
+  It re-derives the table (`cargo run -p delvec --example
+  derive-block-appearance`, which calls the one derivation rather than owning a
+  second) and then **proves the result against the same jar**: the jar-gated
+  half of
+  `crates/delvec/tests/preview_palette.rs` re-derives every entry and compares,
+  and the command fails if any differs. That comparison runs here and nowhere
+  else, because the one occasion a jar is in hand is the occasion this file
+  changes. The derivation is an example rather than a `delvec` subcommand because
+  `delvec` is what an authoring session runs: a flag on it is author-facing
+  surface owing a demo level, and a creator never holds this file. The derivation refuses an asset source whose `version.json` does not
+  declare `1.21.11`, enumerates the registry rather than any list of its own, and
+  writes canonical JSON; two runs of one jar give the same bytes.
+  **What holds it between pin bumps**, with no jar and therefore in CI: the file
+  records the version its source declared (`mc_version`), and
+  `preview_palette.rs` holds that to the engine's own pin and holds the key set
+  to `blocks-1.21.11.json`. A commit that moves ADR-0009's pin without running
+  the command above is red.
+
 - **`block-defaults-1.21.11.json`** — every 1.21.11 block's **default state**: the
   value the game resolves each unwritten property to. Same source and same pinned
   SHA-256 as `blocks-1.21.11.json`; that file keeps the source entry's first

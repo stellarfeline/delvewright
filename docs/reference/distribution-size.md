@@ -61,8 +61,8 @@ ls -l target/aarch64-apple-darwin/release/delvec             → 24,489,840 B
 wc -c < target/aarch64-apple-darwin/release/delvec           → 24,489,840 (second reader, same answer)
 ```
 
-The **harvested game-registry data is not a separate download**: 684,698 B of
-`crates/{compiler,dsl}/data/*.json` is `include_str!`-ed into the binary and is
+The **harvested game-registry data is not a separate download**: 1,280,075 B of
+`crates/{delvec,dsl}/data/*.json` is `include_str!`-ed into the binary and is
 already inside the numbers above (§4).
 
 ### Required, but only as a *way of getting* `delvec`
@@ -183,23 +183,43 @@ budget**: binary size under 100 MB is not a decision input (ADR-0023 §1), and
 the alternative it replaces was a second binary a creator had to find, build
 and keep in step.
 
-### 4.3 Embedded harvested registry data: 684,698 B
+### 4.3 Embedded harvested registry data: 1,280,075 B
 
-`crates/delvec/data/*.json` + `crates/dsl/data/*.json`, pulled in by 21
-`include_str!`/`include_bytes!` sites:
+Every file under `crates/delvec/data/` and `crates/dsl/data/` that an
+`include_str!`/`include_bytes!` site names — **19 files over 20 sites**. The
+population is the sites, not the directories: `block-classification-1.21.11.json`
+(128,644 B) sits beside these and is read by a tool rather than embedded, so it
+is not here.
+
+```
+grep -rEoh 'include_(str|bytes)!\("[^"]*"\)' crates/delvec/src crates/dsl/src \
+  | sed -E 's/include_(str|bytes)!\("//; s/"\)//' | grep data/ \
+  | xargs -n1 basename | sort -u \
+  | while read f; do ls -l crates/*/data/"$f" 2>/dev/null; done
+```
 
 | file | bytes |
 |---|---|
 | `commands-1.21.11.json` | 474,604 |
+| `block-appearance-1.21.11.json` | 278,817 |
+| `blocks-1.21.11.json` | 178,040 |
+| `block-defaults-1.21.11.json` | 89,343 |
 | `sounds-1.21.11.json` | 71,582 |
 | `item-stack-sizes-1.21.11.json` | 52,762 |
-| `items-1.21.11.json` | 46,986 |
+| `items-1.21.11.json` (delvec) | 46,986 |
+| `entity-slots-1.21.11.json` | 22,829 |
 | `item-combat-1.21.11.json` | 19,982 |
+| `item-equippable-1.21.11.json` | 17,443 |
+| `blockstate-shape-props-1.21.11.json` | 8,814 |
 | `entity-tags-1.21.11.json` | 8,503 |
 | `damage-types-1.21.11.json` | 5,472 |
-| `entities-1.21.11.json` | 4,042 |
-| `crates/dsl/data/*` (4 files) | 765 |
-| **total** | **684,698** |
+| `entities-1.21.11.json` (delvec) | 4,042 |
+| the remaining 5 (dsl `entities`, `items`, `anchors`, `block-renames`, `pools`) | 856 |
+| **total** | **1,280,075** |
+
+The second-largest row is the block-appearance table: it is what lets the CPU
+draft rasteriser paint from the pinned client jar on a machine that has no jar
+(`compiler.md`, `delvec snapshot`).
 
 Embedding it is correct — it is what makes `delvec` a single self-contained
 download with no data directory to lose (ADR-0006 reproducibility).
