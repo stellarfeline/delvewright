@@ -123,6 +123,7 @@ pub mod loot;
 pub mod mark;
 pub mod massing;
 pub mod nav;
+pub mod onkill;
 pub mod plan;
 pub mod png;
 pub mod pool;

@@ -3020,6 +3020,12 @@ pub struct Wave {
     /// `respawns_on_rest` at once.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tier: Option<EncounterTier>,
+    /// What happens each time a player is credited with killing one of this
+    /// wave's bodies (spec-0074) — effect root R9, the same
+    /// [`crate::onkill::OnKill`] an actor declares. Absent = no bundle, and the
+    /// wave's emission is byte-identical.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub on_kill: Option<crate::onkill::OnKill>,
 }
 
 /// What a wave is billed as (DSL v0.7, spec-0023). Consumed by the validation
@@ -4167,6 +4173,12 @@ pub struct Actor {
     /// is set).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub traversal: Option<BodyTraversal>,
+    /// What happens each time a player is credited with killing this actor's
+    /// body (spec-0074) — effect root R9, the same [`crate::onkill::OnKill`] a
+    /// wave declares. Absent = no bundle, and the actor's emission is
+    /// byte-identical.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub on_kill: Option<crate::onkill::OnKill>,
 }
 
 /// A cardinal facing keyword (DSL v0.6). Emitted as the puppet's spawn yaw
@@ -7575,6 +7587,12 @@ pub enum EffectSite {
     /// The campaign's `on_death` bundle (spec-0031) — ambient, no DAG position,
     /// and no owning object: there is one per campaign.
     OnDeath,
+    /// A wave's or an actor's `on_kill` bundle (spec-0074) — ambient, no DAG
+    /// position: nobody is forced to be credited with a kill.
+    OnKill {
+        /// The fight's id (`wave/<kebab>` or `actor/<kebab>`).
+        fight: String,
+    },
 }
 
 impl EffectSite {
@@ -7601,7 +7619,8 @@ impl EffectSite {
             | EffectSite::DialogueRespawn { .. }
             | EffectSite::ShortcutUnlock { .. }
             | EffectSite::ShopOffer { .. }
-            | EffectSite::OnDeath => None,
+            | EffectSite::OnDeath
+            | EffectSite::OnKill { .. } => None,
         }
     }
 }
@@ -7666,6 +7685,9 @@ pub fn for_each_campaign_effect<'a>(
                     .nth(5)
                     .and_then(|n| n.parse().ok())
                     .unwrap_or(0),
+            },
+            crate::effects::EffectRootOwner::OnKill(f) => EffectSite::OnKill {
+                fight: f.id().to_string(),
             },
         };
         for (i, eff) in list.iter().enumerate() {

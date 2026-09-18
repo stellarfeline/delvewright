@@ -26,6 +26,7 @@ pub mod diagnostic;
 pub mod effects;
 pub mod envelope;
 pub mod equipment;
+pub mod fight;
 pub mod firework;
 /// **What a cell does when there is fluid beside it** — block knowledge, so it
 /// lives beside [`blocks`] and [`blockshape`] rather than beside any one reader
@@ -40,6 +41,7 @@ pub mod l10n;
 pub mod layout;
 pub mod mclang;
 pub mod metrics;
+pub mod onkill;
 pub mod placement;
 pub mod prefab;
 pub mod purchase;
@@ -66,6 +68,7 @@ pub use envelope::{
     Campaign, DSL_VERSION, Envelope, RawCampaign, Stage, check_campaign, parse_campaign,
 };
 pub use equipment::{EquipmentBinding, Equippable, EquippableFact, PieceKind};
+pub use fight::{Fight, fights, quest_area, unleashed_actors, wave_area};
 pub use firework::{FireworkExplosion, FireworkShape};
 pub use gate::{Gate, GateBinding, GateConsumer, GateSite, for_each_gate};
 pub use ids::{
@@ -88,6 +91,7 @@ pub use layout::{
     LayoutBinding, LayoutGraphContent, OpensFrom, Station, StationKind,
 };
 pub use mclang::mc_lang_code;
+pub use onkill::{KillFires, OnKill, on_kill_checks};
 pub use placement::{Placement, anchor_vocabulary_unknowable};
 pub use prefab::PrefabMeta;
 pub use purchase::{PurchaseBinding, purchase_checks};
@@ -132,4 +136,4 @@ pub use stages::{
     SocketState, TreeKind, WorldEdit, WorldEditsContent,
 };
 pub use stages::{ResolvedHorizon, horizon_base, horizon_defaults, resolved_horizon};
-pub use validate::{validate_campaign, validate_campaign_with};
+pub use validate::{declares_bonfire, validate_campaign, validate_campaign_with};
