@@ -99,6 +99,7 @@ pub fn validate_campaign_with(
     ambush_checks(c, &mut d);
     timed_gate_checks(c, anchors, &mut d);
     loot_checks(c, items, anchors, &mut d);
+    give_item_enchantment_checks(c, &mut d);
     lane_checks(c, anchors, &mut d);
     difficulty_checks(c, &mut d);
     firework_checks(c, &mut d);
@@ -8090,11 +8091,49 @@ fn check_equipment(
         check_enchantments(
             piece.enchantments(),
             &format!("{what} equipment `{slot}`"),
+            "quests",
             &format!("{base_path}/{slot}/enchantments"),
             &ench_reg,
             d,
         );
     }
+}
+
+/// `give-item` enchantments (`DW0433`/`DW0434`) at **every effect root**, at
+/// any nesting depth: the same checks a `loot` stack and an equipped piece get,
+/// because it is the same field on the same object — an item stack.
+fn give_item_enchantment_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
+    let reg = crate::registry::VendoredEnchantmentRegistry::v1_21_11();
+    fn walk(
+        stage: &'static str,
+        path: &str,
+        list: &[QuestEffect],
+        reg: &dyn crate::registry::EnchantmentRegistry,
+        d: &mut Vec<Diagnostic>,
+    ) {
+        for (n, eff) in list.iter().enumerate() {
+            let p = format!("{path}/{n}");
+            if let Verb::GiveItem {
+                item, enchantments, ..
+            } = &eff.verb
+            {
+                check_enchantments(
+                    enchantments,
+                    &format!("`give-item` item `{item}`"),
+                    stage,
+                    &format!("{p}/enchantments"),
+                    reg,
+                    d,
+                );
+            }
+            for (seg, _key, inner) in eff.nested_effect_lists_labeled() {
+                walk(stage, &format!("{p}/{seg}"), inner, reg, d);
+            }
+        }
+    }
+    crate::effects::for_each_effect_root(c, &mut |site, list| {
+        walk(site.stage, &site.path, list, &reg, d);
+    });
 }
 
 /// Validate an enchantment map: known ids (`DW0433`), legal levels (`DW0434`).
@@ -8108,6 +8147,7 @@ fn check_equipment(
 fn check_enchantments(
     ench: &std::collections::BTreeMap<String, u32>,
     what: &str,
+    stage: &'static str,
     path: &str,
     reg: &dyn crate::registry::EnchantmentRegistry,
     d: &mut Vec<Diagnostic>,
@@ -8116,7 +8156,7 @@ fn check_enchantments(
         if !reg.contains(id) {
             d.push(Diagnostic::error(
                 codes::ENCHANTMENT_UNKNOWN,
-                "quests",
+                stage,
                 format!("{path}/{id}"),
                 format!(
                     "{what} enchantment `{id}` is not in the pinned 1.21.11 enchantment \
@@ -8130,7 +8170,7 @@ fn check_enchantments(
         if *level == 0 || *level > 255 {
             d.push(Diagnostic::error(
                 codes::ENCHANTMENT_LEVEL,
-                "quests",
+                stage,
                 format!("{path}/{id}"),
                 format!(
                     "{what} enchantment `{id}` has level {level}, outside the 1..=255 range \
@@ -8366,6 +8406,7 @@ fn loot_checks(
             check_enchantments(
                 &it.enchantments,
                 &format!("loot `{}` item `{}`", l.id, it.item),
+                "quests",
                 &format!("/content/loot/{i}/items/{k}/enchantments"),
                 &ench_reg,
                 d,

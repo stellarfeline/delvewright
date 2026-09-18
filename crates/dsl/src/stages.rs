@@ -2361,7 +2361,9 @@ pub struct LootItem {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
     /// Enchantments on this stack (`{"minecraft:sharpness": 3}`), emitted as the
-    /// 1.21 `minecraft:enchantments` item component.
+    /// 1.21 `minecraft:enchantments` item component — or, on a
+    /// `minecraft:enchanted_book`, `minecraft:stored_enchantments`
+    /// ([`enchantment_component`]).
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub enchantments: BTreeMap<String, u32>,
 }
@@ -3453,6 +3455,25 @@ impl EquipItem {
             EquipItem::Plain(_) => &EMPTY,
             EquipItem::Enchanted(e) => &e.enchantments,
         }
+    }
+}
+
+/// **The item component a stack's enchantments are written to** — vanilla's own
+/// rule (`EnchantmentHelper.getComponentType` at 1.21.11): an enchanted book
+/// STORES its enchantments (`minecraft:stored_enchantments`, what an anvil
+/// applies to the item it is combined with), and every other item CARRIES them
+/// (`minecraft:enchantments`). Both are in the pinned 1.21.11
+/// `data_component_type` registry.
+///
+/// A property of the item, not of the surface that writes the stack: a book in
+/// a `loot` chest, a book handed over by `give-item` and a book on an equipped
+/// piece are one object, so every emitter asks this one function. An
+/// enchantment map written to the other component is a book that glints and
+/// an anvil ignores, which the game accepts without a word.
+pub fn enchantment_component(item: &str) -> &'static str {
+    match item.strip_prefix("minecraft:").unwrap_or(item) {
+        "enchanted_book" => "minecraft:stored_enchantments",
+        _ => "minecraft:enchantments",
     }
 }
 
@@ -4567,6 +4588,13 @@ pub enum Verb {
         /// has no acting player.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         carrier: Option<Carrier>,
+        /// Enchantments on the given stack (`{"minecraft:sharpness": 2}`) —
+        /// the field a `loot` stack and an equipped piece carry, under the same
+        /// checks (`DW0433`/`DW0434`) and written by the same rule
+        /// ([`enchantment_component`]): on a `minecraft:enchanted_book` they are
+        /// the book's stored enchantments, the ones an anvil applies.
+        #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+        enchantments: BTreeMap<String, u32>,
     },
     /// Sets a campaign flag, enabling flag-gated objectives (v0.3).
     SetFlag {

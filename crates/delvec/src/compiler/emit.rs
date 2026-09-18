@@ -2636,13 +2636,17 @@ fn artifact_title(c: &delvewright_dsl::Campaign) -> &str {
 /// `minecraft:enchantments`, whose value is a map of enchantment id → level.
 /// Emission order is the `BTreeMap`'s id order, never hash order (ADR-0006).
 fn enchantment_components(piece: &EquipItem) -> String {
-    enchantment_component_tail(piece.enchantments())
+    enchantment_component_tail(piece.item(), piece.enchantments())
 }
 
 /// The shared `,components:{"minecraft:enchantments":{…}}` renderer — one
 /// implementation for equipped gear and for container loot, so the two cannot
-/// disagree about the component's shape.
-fn enchantment_component_tail(ench: &std::collections::BTreeMap<String, u32>) -> String {
+/// disagree about the component's shape. Which component is the item's
+/// ([`delvewright_dsl::enchantment_component`]): an enchanted book stores.
+fn enchantment_component_tail(
+    item: &str,
+    ench: &std::collections::BTreeMap<String, u32>,
+) -> String {
     if ench.is_empty() {
         return String::new();
     }
@@ -2651,7 +2655,10 @@ fn enchantment_component_tail(ench: &std::collections::BTreeMap<String, u32>) ->
         .map(|(id, lvl)| format!("\"{id}\":{lvl}"))
         .collect::<Vec<_>>()
         .join(",");
-    format!(",components:{{\"minecraft:enchantments\":{{{body}}}}}")
+    format!(
+        ",components:{{\"{}\":{{{body}}}}}",
+        delvewright_dsl::enchantment_component(item)
+    )
 }
 
 /// The default main-hand weapon for a summoned mob whose natural spawns are
@@ -5844,12 +5851,16 @@ fn emit_quest_effect(plan: &Plan, eff: &QuestEffect, aud: Audience, body: &mut V
             body.push(format!("function {ns}:campaign_complete"));
         }
         Verb::GiveItem {
-            item, count, name, ..
+            item,
+            count,
+            name,
+            enchantments,
+            ..
         } => {
-            let comp = match name {
-                Some(n) => format!("[custom_name={}]", tr_with(n, &[("italic", json!(false))])),
-                None => String::new(),
-            };
+            // One renderer for every stack a command writes: a given stack is
+            // described exactly as a container fill's is, name and enchantments
+            // alike, so a `give-item` and a `loot` entry for one item agree.
+            let comp = container_stack_components(item, name.as_deref(), enchantments);
             // spec-0018: a quest beat arms the whole party (`@a`) unless the item
             // declares `carrier: "one"` — one quest prop, handed to the player
             // whose action earned it (`@s`), for the party to pass around. A
@@ -11429,7 +11440,7 @@ fn loot_setup(loot: &[crate::compiler::plan::LootPlan]) -> Vec<String> {
                 c[1],
                 c[2],
                 it.item,
-                container_stack_components(it.name.as_deref(), &it.enchantments),
+                container_stack_components(&it.item, it.name.as_deref(), &it.enchantments),
                 it.count
             ));
         }
@@ -11448,6 +11459,7 @@ fn loot_setup(loot: &[crate::compiler::plan::LootPlan]) -> Vec<String> {
 /// two places describing one stack, drifting apart the moment either moves.
 /// Enchantment order is the `BTreeMap`'s id order, never hash order (ADR-0006).
 fn container_stack_components(
+    item: &str,
     name: Option<&str>,
     ench: &std::collections::BTreeMap<String, u32>,
 ) -> String {
@@ -11464,7 +11476,12 @@ fn container_stack_components(
             .map(|(id, lvl)| format!("\"{id}\":{lvl}"))
             .collect::<Vec<_>>()
             .join(",");
-        comps.push(format!("enchantments={{{body}}}"));
+        // The component the item writes them to: an enchanted book stores them.
+        let comp = delvewright_dsl::enchantment_component(item);
+        comps.push(format!(
+            "{}={{{body}}}",
+            comp.strip_prefix("minecraft:").unwrap_or(comp)
+        ));
     }
     if comps.is_empty() {
         return String::new();
@@ -11476,8 +11493,8 @@ fn container_stack_components(
 /// when the objective declares none. A thin alias over
 /// [`container_stack_components`] — a collect stack is a container fill, and is
 /// rendered by the container fill's renderer.
-fn item_component_tail(name: Option<&str>) -> String {
-    container_stack_components(name, &std::collections::BTreeMap::new())
+fn item_component_tail(item: &str, name: Option<&str>) -> String {
+    container_stack_components(item, name, &std::collections::BTreeMap::new())
 }
 
 /// `setup_finish` commands for traps (spec-0011): fill each `dispense` trap's
@@ -12489,7 +12506,7 @@ fn activation_commands(plan: &Plan, area: &str, o: &Objective) -> Vec<String> {
             // byte.
             let stack = format!(
                 "{item}{} {count}",
-                item_component_tail(item_name.as_deref())
+                item_component_tail(item, item_name.as_deref())
             );
             for slot in 0..=*fill_count {
                 cmds.push(format!(
@@ -18389,6 +18406,87 @@ fn emit_economy_packtests(plan: &Plan, out: &mut BuildOutput) {
         );
     }
 
+    // --- 1b. an offer's enchanted stack arrives enchanted -----------------
+    // Every offer that hands over an enchanted stack is bought once by a pinned
+    // dummy with an emptied inventory, and the dummy must then hold the item
+    // carrying exactly those enchantments in the component the item writes them
+    // to (`enchantment_component`: an enchanted book stores them). The same
+    // probe is run before the purchase and must read 0 there, so a green cannot
+    // come from a stack the dummy already had.
+    for (i, sh, _) in shops(plan) {
+        for (j, off) in sh.offers.iter().enumerate() {
+            let enchanted: Vec<(&QuestEffect, &str, &std::collections::BTreeMap<String, u32>)> =
+                off.effects
+                    .iter()
+                    .filter_map(|e| match &e.verb {
+                        Verb::GiveItem {
+                            item, enchantments, ..
+                        } if !enchantments.is_empty() => Some((e, item.as_str(), enchantments)),
+                        _ => None,
+                    })
+                    .collect();
+            if enchanted.is_empty() {
+                continue;
+            }
+            let (pin, me) = pin_dummy(&format!("dw_t_ench_{i}_{j}"));
+            let mut t = packtest_header(&format!(
+                "{title}: shop `{}` offer {j} hands over its stacks with their enchantments",
+                sh.id
+            ));
+            t.push(format!("function {ns}:setup"));
+            t.push(pin);
+            t.push(format!("clear {me}"));
+            // The offer's gate and each stack's own `when`, driven open as the
+            // buyer, so a player-scoped datum is written on the dummy.
+            for line in packtest_gate_drive(plan, off.gate(), true) {
+                t.push(format!("execute as {me} run {line}"));
+            }
+            for (e, _, _) in &enchanted {
+                for line in packtest_gate_drive(plan, e.gate(), true) {
+                    t.push(format!("execute as {me} run {line}"));
+                }
+            }
+            let probes: Vec<(String, String)> = enchanted
+                .iter()
+                .enumerate()
+                .map(|(k, (_, item, ench))| {
+                    let body = ench
+                        .iter()
+                        .map(|(id, lvl)| format!("\"{id}\":{lvl}"))
+                        .collect::<Vec<_>>()
+                        .join(",");
+                    let pred = format!(
+                        "{item}[{}={{{body}}}]",
+                        delvewright_dsl::enchantment_component(item)
+                    );
+                    (format!("#ench_{i}_{j}_{k}"), pred)
+                })
+                .collect();
+            for (holder, pred) in &probes {
+                t.push(format!("scoreboard players set {holder} dw.sys 0"));
+                t.push(format!(
+                    "execute as {me} if items entity @s container.* {pred} run scoreboard \
+                     players set {holder} dw.sys 1"
+                ));
+                t.push(format!("assert score {holder} dw.sys matches 0"));
+            }
+            t.push(format!(
+                "execute as {me} run function {ns}:shop_pick_{i}_{j}"
+            ));
+            for (holder, pred) in &probes {
+                t.push(format!(
+                    "execute as {me} if items entity @s container.* {pred} run scoreboard \
+                     players set {holder} dw.sys 1"
+                ));
+                t.push(format!("assert score {holder} dw.sys matches 1"));
+            }
+            out.insert(
+                format!("packtest-datapack/data/{ns}/test/shop_enchanted_stack_{i}_{j}.mcfunction"),
+                lines(&t).into_bytes(),
+            );
+        }
+    }
+
     // --- 2. the stake's drop → collect round trip -------------------------
     for (st, safe) in stakes(plan) {
         if st.max_live() == 0 {
@@ -20685,7 +20783,7 @@ fn emit_verb_packtests(plan: &Plan, out: &mut BuildOutput) {
         let party = plan::PARTY;
         let stack = format!(
             "{item}{} {count}",
-            item_component_tail(item_name.as_deref())
+            item_component_tail(item, item_name.as_deref())
         );
         let mut b = packtest_header(&format!(
             "{}: collect `{id}` fills the adopted container and completes on the named stack",
@@ -21822,6 +21920,46 @@ mod loot_emit_tests {
             "{}",
             out[0]
         );
+    }
+
+    /// An enchanted book STORES its enchantments, on every surface that writes
+    /// a stack: a `loot` fill and an equipped piece ask the same rule a
+    /// `give-item` does (`delvewright_dsl::enchantment_component`). Before it,
+    /// a book in a chest shipped `enchantments=` — a book that glints and that
+    /// an anvil ignores.
+    #[test]
+    fn an_enchanted_book_stores_its_enchantments_on_every_surface() {
+        let out = loot_setup(&plan_of(vec![item(
+            "minecraft:enchanted_book",
+            1,
+            None,
+            &[("minecraft:mending", 1)],
+        )]));
+        assert!(
+            out[0].contains(
+                r#"minecraft:enchanted_book[stored_enchantments={"minecraft:mending":1}] 1"#
+            ),
+            "{}",
+            out[0]
+        );
+        let mut ench = std::collections::BTreeMap::new();
+        ench.insert("minecraft:mending".to_string(), 1);
+        assert_eq!(
+            enchantment_component_tail("minecraft:enchanted_book", &ench),
+            r#",components:{"minecraft:stored_enchantments":{"minecraft:mending":1}}"#
+        );
+        assert_eq!(
+            enchantment_component_tail("minecraft:iron_sword", &ench),
+            r#",components:{"minecraft:enchantments":{"minecraft:mending":1}}"#
+        );
+        let tree = crate::compiler::commands::CommandTree::v1_21_11();
+        for line in &out {
+            assert!(
+                tree.validate_line(line).is_ok(),
+                "emitted command must validate: {line}\n{:?}",
+                tree.validate_line(line)
+            );
+        }
     }
 
     /// The emitted fill must be a command 1.21.11 actually accepts — the item
