@@ -583,7 +583,11 @@ def describe(pred: dict) -> str:
     a fact about the campaign rather than as "0 nodes"."""
     bits = []
     for field, want in (pred.get("eq") or {}).items():
-        bits.append(f"{field}={want}")
+        # `eq` against JSON null names an optional field the node does not
+        # carry: `_matches` reads an absent field as None, which is also what
+        # the DSL's `Option` fields deserialize an explicit null to. Printed as
+        # a word, never as Python's spelling of it.
+        bits.append(f"{field}:absent" if want is None else f"{field}={want}")
     for field, wants in (pred.get("in") or {}).items():
         bits.append(f"{field}∈{{{','.join(map(str, wants))}}}")
     for field, want in (pred.get("prefix") or {}).items():
