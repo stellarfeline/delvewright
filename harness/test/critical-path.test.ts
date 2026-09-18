@@ -191,7 +191,7 @@ test("rejects an unknown action with the closed enum in the message", () => {
     (err: unknown) =>
       err instanceof CriticalPathParseError &&
       err.pointer === "/steps/1/action" &&
-      /select-class, talk-to, reach, kill, collect, interact, rest, assert-complete/.test(err.message),
+      /select-class, talk-to, reach, kill, collect, interact, rest, trigger, assert-complete/.test(err.message),
   );
 });
 
@@ -737,4 +737,76 @@ test("an NPC bodied as something the party fights arrives as an ambiguity", () =
   const path = parseCriticalPath(raw);
   assert.equal(path.nonCombatants.ambiguous[0]?.kind, "zombie");
   assert.equal(path.nonCombatants.kinds.size, 0);
+});
+
+// --- trigger steps -------------------------------------------------------------
+
+function withStep(step: Record<string, unknown>): Record<string, unknown> {
+  const raw = validRaw();
+  const steps = raw["steps"] as unknown[];
+  steps.splice(2, 0, step);
+  return raw;
+}
+
+test("parses a strike trigger step: the trigger, the act, the anchor and the cell", () => {
+  const path = parseCriticalPath(
+    withStep({
+      action: "trigger",
+      trigger: "trigger/psalter-wall",
+      on: "strike",
+      anchor: "anchor/psalter-face",
+      pos: [18, 80, 111],
+    }),
+  );
+  assert.deepEqual(path.steps[2], {
+    action: "trigger",
+    trigger: "trigger/psalter-wall",
+    on: "strike",
+    anchor: "anchor/psalter-face",
+    pos: [18, 80, 111],
+  });
+});
+
+test("an approach trigger carries its range and a strike-npc its npc", () => {
+  const approach = parseCriticalPath(
+    withStep({
+      action: "trigger",
+      trigger: "trigger/east-yard",
+      on: "approach",
+      anchor: "anchor/east-yard",
+      pos: [1, 64, 1],
+      range: 6,
+    }),
+  ).steps[2];
+  assert.equal(approach!.action === "trigger" && approach!.range, 6);
+  const npc = parseCriticalPath(
+    withStep({
+      action: "trigger",
+      trigger: "trigger/hit-the-giant",
+      on: "strike-npc",
+      npc: "npc/giant",
+      pos: [1, 64, 1],
+    }),
+  ).steps[2];
+  assert.equal(npc!.action === "trigger" && npc!.npc, "npc/giant");
+});
+
+test("a trigger step's fields are present exactly when its kind has them", () => {
+  const base = { action: "trigger", trigger: "trigger/t", pos: [0, 64, 0] };
+  for (const [bad, pointer] of [
+    [{ ...base, on: "strike" }, "/steps/2/anchor"], // a click on nothing
+    [{ ...base, on: "strike-npc", anchor: "anchor/a", npc: "npc/n" }, "/steps/2/anchor"],
+    [{ ...base, on: "strike-npc" }, "/steps/2/npc"],
+    [{ ...base, on: "approach", anchor: "anchor/a" }, "/steps/2/range"],
+    [{ ...base, on: "use", anchor: "anchor/a", range: 3 }, "/steps/2/range"],
+    [{ ...base, on: "kick", anchor: "anchor/a" }, "/steps/2/on"],
+    [{ ...base, trigger: "obj/t", on: "use", anchor: "anchor/a" }, "/steps/2/trigger"],
+    [{ ...base, on: "use", anchor: "anchor/a", objective: "obj/x" }, "/steps/2/objective"],
+  ] as const) {
+    assert.throws(
+      () => parseCriticalPath(withStep(bad as Record<string, unknown>)),
+      (e: unknown) => e instanceof CriticalPathParseError && e.pointer === pointer,
+      JSON.stringify(bad),
+    );
+  }
 });

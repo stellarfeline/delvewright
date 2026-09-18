@@ -67,6 +67,7 @@ export const STEP_ACTIONS = [
   "collect",
   "interact",
   "rest",
+  "trigger",
   "assert-complete",
 ] as const;
 
@@ -230,6 +231,35 @@ export interface RestStep extends PresentationMarkers {
   readonly command: string;
 }
 
+/** The environment-trigger events a `trigger` step performs — the DSL's `on` tags. */
+export const TRIGGER_KINDS = ["strike", "use", "approach", "strike-npc"] as const;
+
+export type TriggerKind = (typeof TRIGGER_KINDS)[number];
+
+/**
+ * Perform an environment trigger the path depends on (a path EXPORT step, like
+ * `rest`): the compiler emits one wherever a trigger opens the way on or sets a
+ * flag a later step reads, because nothing on the quest DAG makes anybody fire
+ * it. The bot does what a player does — a `strike` is a real attack on the
+ * target's hitbox, a `use` a real right-click, an `approach` a walk into range,
+ * a `strike-npc` an attack on the NPC's own hitbox — and the step passes only on
+ * the trigger's own fired marker, never on the click landing.
+ */
+export interface TriggerStep {
+  readonly action: "trigger";
+  /** The `trigger/<id>` performed — also the marker token the step passes on. */
+  readonly trigger: string;
+  readonly on: TriggerKind;
+  /** The watched anchor; absent exactly for `strike-npc`. */
+  readonly anchor?: string;
+  /** The watched NPC; present exactly for `strike-npc`. */
+  readonly npc?: string;
+  /** The cell the target stands on: the anchor, or the NPC's body at this beat. */
+  readonly pos: Vec3Tuple;
+  /** An `approach` trigger's radius; present exactly for `approach`. */
+  readonly range?: number;
+}
+
 /** Assert the campaign-completion scoreboard objective holds `value` (terminal step). */
 export interface AssertCompleteStep {
   readonly action: "assert-complete";
@@ -255,6 +285,7 @@ export type Step =
   | CollectStep
   | InteractStep
   | RestStep
+  | TriggerStep
   | AssertCompleteStep;
 
 /**
@@ -751,6 +782,51 @@ function parseStep(value: unknown, pointer: string): Step {
         pos: requirePos(obj, pointer),
         command: requireString(obj, "command", pointer),
         ...presentationFields(obj, pointer),
+      };
+    }
+    case "trigger": {
+      rejectUnknownKeys(obj, ["action", "trigger", "on", "anchor", "npc", "pos", "range"], pointer);
+      const trigger = requireString(obj, "trigger", pointer);
+      if (!/^trigger\/[a-z0-9]+(?:-[a-z0-9]+)*$/.test(trigger)) {
+        fail(`${pointer}/trigger`, `must be a \`trigger/<kebab>\` id, got ${JSON.stringify(trigger)}`);
+      }
+      const on = obj["on"];
+      if (typeof on !== "string" || !(TRIGGER_KINDS as readonly string[]).includes(on)) {
+        fail(`${pointer}/on`, `must be one of ${TRIGGER_KINDS.join(", ")}, got ${JSON.stringify(on)}`);
+      }
+      const kind = on as TriggerKind;
+      // Each field is present exactly when the kind has one: a strike-npc watches
+      // a character and no cell, an approach has a radius and a click does not.
+      const anchor = obj["anchor"];
+      if (kind === "strike-npc") {
+        if (anchor !== undefined) fail(`${pointer}/anchor`, "a strike-npc trigger watches no anchor");
+      } else if (typeof anchor !== "string" || anchor.length === 0) {
+        fail(`${pointer}/anchor`, `a ${kind} trigger must name its anchor, got ${describe(anchor)}`);
+      }
+      const npc = obj["npc"];
+      if (kind === "strike-npc") {
+        if (typeof npc !== "string" || npc.length === 0) {
+          fail(`${pointer}/npc`, `a strike-npc trigger must name its npc, got ${describe(npc)}`);
+        }
+      } else if (npc !== undefined) {
+        fail(`${pointer}/npc`, `a ${kind} trigger watches no npc`);
+      }
+      const range = obj["range"];
+      if (kind === "approach") {
+        if (!Number.isInteger(range) || (range as number) <= 0) {
+          fail(`${pointer}/range`, `an approach trigger must carry a positive integer range, got ${describe(range)}`);
+        }
+      } else if (range !== undefined) {
+        fail(`${pointer}/range`, `a ${kind} trigger has no range`);
+      }
+      return {
+        action: "trigger",
+        trigger,
+        on: kind,
+        ...(typeof anchor === "string" ? { anchor } : {}),
+        ...(typeof npc === "string" ? { npc } : {}),
+        pos: requirePos(obj, pointer),
+        ...(kind === "approach" ? { range: range as number } : {}),
       };
     }
     case "assert-complete": {

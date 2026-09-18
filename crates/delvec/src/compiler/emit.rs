@@ -11189,6 +11189,20 @@ fn env_trigger_fns(plan: &Plan, chrome: &delvewright_dsl::Chrome) -> Vec<(String
         }
         let mut body: Vec<String> = Vec::new();
         body.push(format!("scoreboard players set #trig_{id} dw.sys 1"));
+        // The fired marker a critical-path `trigger` step passes on — the same
+        // anchored channel an objective's completion uses, with the trigger's own
+        // id as the token, broadcast before any effect can teleport or end the
+        // delve. Only a trigger a path could perform carries one
+        // (`plan::trigger_may_be_performed`), so no other bundle moves a byte.
+        if plan::trigger_may_be_performed(t) {
+            body.push(format!(
+                "tellraw @a {}",
+                json!({
+                    "text": plan::marker_line(&plan.namespace, t.id.as_str()),
+                    "color": "dark_gray"
+                })
+            ));
+        }
         // Striker capture. The click record is still on
         // the hitbox here — `env_trigger_tick` clears every record only after every
         // trigger has been offered it — so this is the one place the acting player's
@@ -21279,6 +21293,27 @@ fn critical_path_json(
                     "action": "interact", "objective": objective_id, "anchor": anchor_id,
                     "pos": pos, "command": command, "requires_item": requires_item
                 }),
+                // A path act that proves no objective: it passes on the trigger's
+                // own fired marker (`[dw:complete <campaign> trigger/<id>]`,
+                // broadcast from its bundle), never on the click landing. `anchor`
+                // / `npc` / `range` are present exactly when the kind has one.
+                Step::Trigger { trigger_id, on, anchor_id, npc_id, pos, range } => {
+                    let mut v = json!({
+                        "action": "trigger", "trigger": trigger_id, "on": on, "pos": pos
+                    });
+                    if let Some(obj) = v.as_object_mut() {
+                        if let Some(a) = anchor_id {
+                            obj.insert("anchor".to_string(), json!(a));
+                        }
+                        if let Some(n) = npc_id {
+                            obj.insert("npc".to_string(), json!(n));
+                        }
+                        if let Some(r) = range {
+                            obj.insert("range".to_string(), json!(r));
+                        }
+                    }
+                    v
+                }
                 Step::AssertComplete { objective, value } => {
                     let mut v = json!({
                         "action": "assert-complete", "scoreboard": { "objective": objective, "value": value }
