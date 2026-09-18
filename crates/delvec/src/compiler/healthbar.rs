@@ -236,25 +236,17 @@ pub fn setup_lines(ns: &str, bars: &[Bar<'_>], title: &dyn Fn(&str) -> String) -
     out
 }
 
-/// Per-tick lines: refresh a bar whose fight has a live body, hide one whose
-/// fight has none — on the tick of the last death.
+/// Per-tick lines: one call per bar into its refresh, which hides the bar
+/// itself when the fight has no live body — so the one function the tick runs
+/// is the one function a generated test drives, both halves included.
 pub fn tick_lines(ns: &str, bars: &[Bar<'_>]) -> Vec<String> {
-    let mut out = Vec::new();
-    for b in bars {
-        let live = b.live();
-        out.push(format!(
-            "execute if entity @e[{live},limit=1] run function {ns}:{}",
-            b.refresh_fn()
-        ));
-        out.push(format!(
-            "execute unless entity @e[{live},limit=1] run bossbar set {} visible false",
-            b.id(ns)
-        ));
-    }
-    out
+    bars.iter()
+        .map(|b| format!("function {ns}:{}", b.refresh_fn()))
+        .collect()
 }
 
-/// The functions every declared bar owns: the refresh, its per-body
+/// The functions every declared bar owns: the refresh (hide when no body
+/// lives, else re-sum the value, restate the max and re-derive the audience), its per-body
 /// accumulation, the max capture and its per-body accumulation.
 pub fn functions(ns: &str, bars: &[Bar<'_>]) -> Vec<(String, String)> {
     let mut out = Vec::new();
@@ -269,6 +261,12 @@ pub fn functions(ns: &str, bars: &[Bar<'_>]) -> Vec<(String, String)> {
         out.push((
             b.refresh_fn(),
             [
+                // No live body: hidden for everyone, on the tick of the last
+                // death, and nothing below runs.
+                format!(
+                    "execute unless entity @e[{live},limit=1] run return run bossbar set {id} \
+                     visible false"
+                ),
                 format!("scoreboard players set {v} {SYS} 0"),
                 format!("execute as @e[{live}] run function {ns}:{}", b.acc_fn()),
                 format!(

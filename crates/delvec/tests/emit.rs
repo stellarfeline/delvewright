@@ -1263,3 +1263,481 @@ fn dialogue_handler_rearms_its_own_trigger() {
         "both uses are asserted on the pinned dummy:\n{pt}"
     );
 }
+
+// ---------------------------------------------------------------------------
+// spec-0073: a fight shows its health
+// ---------------------------------------------------------------------------
+
+/// The emission half of spec-0073, read off whole real builds of the
+/// `souls-bonfire` fixture (the one fixture with a bonfire, so the re-seat
+/// capture sites exist) with the bar surface declared in-test.
+mod health_bar {
+    use std::collections::BTreeMap;
+
+    use delvec::compiler::commands::CommandTree;
+    use delvec::compiler::emit::{self, BuildOutput};
+    use delvec::compiler::healthbar;
+    use delvec::compiler::load::load_campaign_dir;
+    use delvec::compiler::plan::Plan;
+    use delvec::compiler::registry::{FullEntityRegistry, FullItemRegistry, PrefabRegistry};
+    use delvewright_dsl::{Campaign, parse_campaign, validate_campaign_with};
+    use serde_json::json;
+
+    use super::common;
+
+    const NS: &str = "souls-bonfire";
+
+    fn fixture_dir() -> std::path::PathBuf {
+        common::compiler_fixtures_dir().join(NS)
+    }
+
+    /// The fixture, with `wave/guards` cut to ONE named body and the given bar
+    /// on it, plus the barrow-warden actor (staged, and unleashed when
+    /// `unleash`) carrying `actor_bar`. `vulnerable` marks the actor damageable.
+    fn campaign(
+        wave_bar: Option<serde_json::Value>,
+        actor_bar: Option<serde_json::Value>,
+        unleash: bool,
+        vulnerable: bool,
+    ) -> Campaign {
+        let loaded = load_campaign_dir(&fixture_dir()).unwrap();
+        let mut c = parse_campaign(&loaded.raw).expect("souls-bonfire parses");
+        for w in &mut c.quests.content.waves {
+            if w.id.as_str() == "wave/guards" {
+                w.mobs[0].count = 1;
+                w.health_bar = wave_bar
+                    .clone()
+                    .map(|b| serde_json::from_value(b).expect("bar parses"));
+            }
+        }
+        let mut a = json!({
+            "id": "actor/barrow-warden",
+            "entity": "minecraft:wither_skeleton",
+            "name": "The Barrow Warden",
+            "anchor": "anchor/wave",
+            "facing": "north",
+        });
+        if vulnerable {
+            a["vulnerable"] = json!(true);
+        }
+        if let Some(b) = actor_bar {
+            a["health_bar"] = b;
+        }
+        c.quests
+            .content
+            .actors
+            .push(serde_json::from_value(a).expect("actor parses"));
+        let trigger = c
+            .quests
+            .content
+            .triggers
+            .iter_mut()
+            .find(|t| t.id.as_str() == "trigger/gate-ward")
+            .expect("the fixture's strike trigger");
+        trigger.effects.push(
+            serde_json::from_value(json!({"type": "spawn-actor", "actor": "actor/barrow-warden"}))
+                .unwrap(),
+        );
+        if unleash {
+            trigger.effects.push(
+                serde_json::from_value(
+                    json!({"type": "unleash-actor", "actor": "actor/barrow-warden"}),
+                )
+                .unwrap(),
+            );
+        }
+        c
+    }
+
+    /// Validate (the DSL tier and the compiler's DW0911), plan and emit.
+    /// `emit::build` holds every emitted line to the pinned command tree, so a
+    /// clean build is itself the proof that every bar line is a command the
+    /// server parses.
+    fn build(c: &Campaign) -> BuildOutput {
+        let loaded = load_campaign_dir(&fixture_dir()).unwrap();
+        let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
+        let tree = CommandTree::v1_21_11();
+        let mut diags = validate_campaign_with(
+            c,
+            &FullItemRegistry::v1_21_11(),
+            &prefabs,
+            &FullEntityRegistry::v1_21_11(),
+        );
+        diags.extend(healthbar::check_vocabulary(c, &tree));
+        assert!(
+            diags
+                .iter()
+                .all(|d| d.severity == delvewright_dsl::Severity::Warning),
+            "the fixture must validate clean: {diags:#?}"
+        );
+        // The default (all-languages) build tags every player-visible string
+        // with its l10n key before planning, exactly as `delvec build` does, so
+        // a title lowers to `{"translate", "fallback"}`.
+        let mut c = c.clone();
+        delvewright_dsl::tag_translatables(&mut c);
+        let c = &c;
+        let plan = Plan::build(c, &prefabs).expect("plan builds");
+        let mut structures: BTreeMap<String, Vec<u8>> = BTreeMap::new();
+        for area in &plan.areas {
+            for piece in &area.pieces {
+                for t in &piece.templates {
+                    let bytes =
+                        std::fs::read(common::prefabs_dir().join(&t.structure_file)).unwrap();
+                    structures.insert(t.structure_file.clone(), bytes);
+                }
+            }
+        }
+        let mut skins: BTreeMap<String, Vec<u8>> = BTreeMap::new();
+        for npc in &c.npcs.content.npcs {
+            if let Some(skin) = &npc.skin {
+                let png = std::fs::read(
+                    fixture_dir()
+                        .join("skins")
+                        .join(format!("{}.png", skin.texture_id)),
+                )
+                .expect("skin png present");
+                skins.insert(skin.texture_id.clone(), png);
+            }
+        }
+        emit::build(
+            &plan,
+            &loaded.inputs,
+            &structures,
+            &tree,
+            &prefabs,
+            None,
+            &skins,
+        )
+        .expect("every emitted command validates")
+    }
+
+    fn text(out: &BuildOutput, path: &str) -> String {
+        String::from_utf8(
+            out.get(path)
+                .unwrap_or_else(|| panic!("{path} emitted"))
+                .clone(),
+        )
+        .unwrap()
+    }
+
+    fn func(out: &BuildOutput, name: &str) -> String {
+        text(
+            out,
+            &format!("datapack/data/{NS}/function/{name}.mcfunction"),
+        )
+    }
+
+    fn has_func(out: &BuildOutput, name: &str) -> bool {
+        out.contains_key(&format!("datapack/data/{NS}/function/{name}.mcfunction"))
+    }
+
+    /// One bar on a `count: 1` wave: the world-init lines, the tick line, the
+    /// refresh and its accumulation, and the capture inside `spawn_<wave>`.
+    /// The derived title is the mob's own name under the name's own key.
+    #[test]
+    fn a_bar_on_a_one_body_wave_emits_init_tick_refresh_and_capture() {
+        let out = build(&campaign(Some(json!({"range": 12})), None, true, false));
+        let id = format!("{NS}:hb_wave_guards");
+        let setup = func(&out, "setup");
+        for want in [
+            format!("bossbar remove {id}"),
+            format!(
+                "bossbar add {id} {{\"fallback\":\"Keep Guard\",\"translate\":\"delve.{NS}.wave.guards.mob.0.name\"}}"
+            ),
+            format!("bossbar set {id} players"),
+            "scoreboard players set #hbm_wave_guards dw.sys 0".to_string(),
+        ] {
+            assert!(
+                setup.lines().any(|l| l == want),
+                "setup lacks `{want}`:\n{setup}"
+            );
+        }
+        assert!(
+            !setup.contains(&format!("bossbar set {id} color"))
+                && !setup.contains(&format!("bossbar set {id} style")),
+            "no colour or style declared → no line; the game's default stands:\n{setup}"
+        );
+        let tick = func(&out, "tick");
+        assert!(
+            tick.lines()
+                .any(|l| l == format!("function {NS}:hb_wave_guards")),
+            "{tick}"
+        );
+        let refresh = func(&out, "hb_wave_guards");
+        let live = "tag=dw_wave_guards,nbt=!{Health:0.0f}";
+        for want in [
+            format!(
+                "execute unless entity @e[{live},limit=1] run return run bossbar set {id} visible false"
+            ),
+            format!("execute as @e[{live}] run function {NS}:hb_acc_wave_guards"),
+            format!(
+                "execute store result bossbar {id} value run scoreboard players get #hbv_wave_guards dw.sys"
+            ),
+            format!(
+                "execute as @e[{live}] at @s run tag @a[distance=..12,tag=!dw_cutscene,nbt=!{{Health:0.0f}}] add dw_hb_wave_guards"
+            ),
+            format!("bossbar set {id} players @a[tag=dw_hb_wave_guards]"),
+            format!("bossbar set {id} visible true"),
+        ] {
+            assert!(
+                refresh.lines().any(|l| l == want),
+                "refresh lacks `{want}`:\n{refresh}"
+            );
+        }
+        assert!(func(&out, "hb_acc_wave_guards").contains("data get entity @s Health 1"));
+        assert!(
+            func(&out, "hb_macc_wave_guards").contains("attribute @s minecraft:max_health get 1")
+        );
+        let spawn = func(&out, "spawn_guards");
+        assert_eq!(
+            spawn.lines().last(),
+            Some(format!("function {NS}:hb_max_wave_guards").as_str()),
+            "the capture runs after every body the spawn summons:\n{spawn}"
+        );
+    }
+
+    /// A bar on an unleashed actor reads the twin only (`tag=!dw_pup_<id>`), and
+    /// every function that summons the actor's bodies captures its max:
+    /// `spawn_actor_<id>`, `unleash_<id>` and — with a bonfire — the re-seat's
+    /// `actor_restand_<id>`.
+    #[test]
+    fn a_bar_on_an_unleashed_actor_narrows_to_the_twin_and_captures_everywhere() {
+        let out = build(&campaign(None, Some(json!({"range": 16})), true, false));
+        let refresh = func(&out, "hb_actor_barrow_warden");
+        assert!(
+            refresh.contains(
+                "tag=dw_actor_barrow_warden,tag=!dw_pup_barrow_warden,nbt=!{Health:0.0f}"
+            ),
+            "{refresh}"
+        );
+        let capture = format!("function {NS}:hb_max_actor_barrow_warden");
+        for f in [
+            "spawn_actor_barrow_warden",
+            "unleash_barrow_warden",
+            "actor_restand_barrow_warden",
+        ] {
+            let body = func(&out, f);
+            assert_eq!(
+                body.lines().last(),
+                Some(capture.as_str()),
+                "`{f}` ends with the capture:\n{body}"
+            );
+        }
+    }
+
+    /// A `vulnerable` actor nothing unleashes is a damageable puppet: the bar
+    /// reads the puppet itself, so no `tag=!dw_pup_` narrowing is emitted.
+    #[test]
+    fn a_vulnerable_actor_nothing_unleashes_is_read_without_narrowing() {
+        let out = build(&campaign(None, Some(json!({"range": 16})), false, true));
+        let refresh = func(&out, "hb_actor_barrow_warden");
+        assert!(refresh.contains("tag=dw_actor_barrow_warden,nbt=!{Health:0.0f}"));
+        assert!(!refresh.contains("dw_pup_"), "{refresh}");
+        assert!(
+            func(&out, "spawn_actor_barrow_warden")
+                .contains("function souls-bonfire:hb_max_actor_barrow_warden")
+        );
+    }
+
+    /// Two fights, two bars: two ids, two refreshes, and the generated suite's
+    /// several-bars template counts both.
+    #[test]
+    fn two_fights_emit_two_ids() {
+        let out = build(&campaign(
+            Some(json!({"range": 12, "style": "notched_10"})),
+            Some(json!({"range": 16, "color": "purple"})),
+            true,
+            false,
+        ));
+        let setup = func(&out, "setup");
+        let adds: Vec<&str> = setup
+            .lines()
+            .filter(|l| l.starts_with("bossbar add "))
+            .collect();
+        assert_eq!(adds.len(), 2, "{setup}");
+        assert!(adds[0].starts_with(&format!("bossbar add {NS}:hb_wave_guards ")));
+        assert!(adds[1].starts_with(&format!("bossbar add {NS}:hb_actor_barrow_warden ")));
+        assert!(setup.contains(&format!("bossbar set {NS}:hb_wave_guards style notched_10")));
+        assert!(setup.contains(&format!(
+            "bossbar set {NS}:hb_actor_barrow_warden color purple"
+        )));
+        assert!(has_func(&out, "hb_wave_guards") && has_func(&out, "hb_actor_barrow_warden"));
+        let several = text(
+            &out,
+            &format!("packtest-datapack/data/{NS}/test/health_bar_several.mcfunction"),
+        );
+        assert!(
+            several.contains("assert score #n_hbl dw.sys matches 2"),
+            "{several}"
+        );
+        // One template per bar, each driving its own refresh.
+        for key in ["wave_guards", "actor_barrow_warden"] {
+            let t = text(
+                &out,
+                &format!("packtest-datapack/data/{NS}/test/health_bar_{key}.mcfunction"),
+            );
+            assert!(t.contains(&format!("function {NS}:hb_{key}")), "{t}");
+            assert!(t.contains(&format!("function {NS}:bonfire_rest_0")), "{t}");
+        }
+        // The wave's bodies declare `max_health` 12, so its template asserts the
+        // literal rather than asking the server.
+        let wave_t = text(
+            &out,
+            &format!("packtest-datapack/data/{NS}/test/health_bar_wave_guards.mcfunction"),
+        );
+        assert!(
+            wave_t.contains("assert score #m_hb0 dw.sys matches 12"),
+            "{wave_t}"
+        );
+        let actor_t = text(
+            &out,
+            &format!("packtest-datapack/data/{NS}/test/health_bar_actor_barrow_warden.mcfunction"),
+        );
+        assert!(actor_t.contains("max_health base get 1"), "{actor_t}");
+    }
+
+    /// Perturbation: a declared number reaches the byte it names. Moving
+    /// `range` moves the audience's `distance`; removing `color` removes the
+    /// `set color` line.
+    #[test]
+    fn range_and_color_reach_the_bytes_they_name() {
+        let a = build(&campaign(
+            Some(json!({"range": 12, "color": "red"})),
+            None,
+            true,
+            false,
+        ));
+        let b = build(&campaign(Some(json!({"range": 20})), None, true, false));
+        assert!(func(&a, "hb_wave_guards").contains("distance=..12,"));
+        assert!(func(&b, "hb_wave_guards").contains("distance=..20,"));
+        assert!(!func(&b, "hb_wave_guards").contains("distance=..12,"));
+        assert!(func(&a, "setup").contains(&format!("bossbar set {NS}:hb_wave_guards color red")));
+        assert!(!func(&b, "setup").contains("color"));
+    }
+
+    /// ADR-0006: two builds of the same bar-carrying campaign are byte-equal.
+    #[test]
+    fn a_bar_carrying_build_is_deterministic() {
+        let c = campaign(
+            Some(json!({"range": 12})),
+            Some(json!({"range": 16, "color": "red"})),
+            true,
+            false,
+        );
+        assert_eq!(build(&c), build(&c));
+    }
+
+    /// A campaign that declares no bar emits no bar byte — no `bossbar`, no
+    /// `hb_` function, no capture, no template.
+    #[test]
+    fn no_bar_no_bytes() {
+        let out = build(&campaign(None, None, true, false));
+        for (path, bytes) in &out {
+            assert!(
+                !path.contains("hb_") && !path.contains("health_bar"),
+                "{path}"
+            );
+            if path.ends_with(".mcfunction") {
+                let s = std::str::from_utf8(bytes).unwrap();
+                assert!(
+                    !s.contains("bossbar") && !s.contains(":hb_"),
+                    "{path}:\n{s}"
+                );
+            }
+        }
+    }
+
+    /// `DW0911`: a colour or style the pinned game does not draw. The message
+    /// lists the literals the tree lists — read from the tree, never a copy.
+    #[test]
+    fn dw0911_a_colour_or_style_the_pinned_game_does_not_draw() {
+        let tree = CommandTree::v1_21_11();
+        let c = campaign(
+            Some(json!({"range": 12, "color": "crimson", "style": "notched_7"})),
+            None,
+            true,
+            false,
+        );
+        let d = healthbar::check_vocabulary(&c, &tree);
+        assert_eq!(d.len(), 2, "{d:#?}");
+        assert!(d.iter().all(|x| x.code == "DW0911"));
+        assert_eq!(d[0].path, "/content/waves/0/health_bar/color");
+        assert!(d[0].message.contains("`crimson`"), "{}", d[0].message);
+        assert!(
+            d[0].message
+                .contains("blue, green, pink, purple, red, white, yellow"),
+            "{}",
+            d[0].message
+        );
+        assert_eq!(d[1].path, "/content/waves/0/health_bar/style");
+        assert!(d[1].message.contains("`notched_7`"), "{}", d[1].message);
+        let ok = campaign(
+            Some(json!({"range": 12, "color": "red", "style": "notched_20"})),
+            None,
+            true,
+            false,
+        );
+        assert!(healthbar::check_vocabulary(&ok, &tree).is_empty());
+    }
+
+    /// A private copy of the fixture directory with the given quests patch,
+    /// under cargo's own per-target temp directory.
+    fn fixture_copy(whose: &str, patch: impl FnOnce(&mut serde_json::Value)) -> std::path::PathBuf {
+        let dir =
+            std::path::Path::new(env!("CARGO_TARGET_TMPDIR")).join(format!("health-bar-{whose}"));
+        let _ = std::fs::remove_dir_all(&dir);
+        common::copy_dir_all(&fixture_dir(), &dir);
+        common::patch_file(&dir.join("quests.json"), patch);
+        dir
+    }
+
+    fn delvec(args: &[&std::ffi::OsStr]) -> std::process::Output {
+        std::process::Command::new(env!("CARGO_BIN_EXE_delvec"))
+            .arg("--prefabs")
+            .arg(common::prefabs_dir())
+            .args(args)
+            .output()
+            .expect("delvec runs")
+    }
+
+    /// Through the CLI: `DW0911` is raised at `delvec validate`, where the field
+    /// is entered, and stops the run at the validation tier (exit 1).
+    #[test]
+    fn dw0911_stops_delvec_validate() {
+        let dir = fixture_copy("dw0911", |q| {
+            q["content"]["waves"][0]["health_bar"] = json!({"range": 12, "color": "crimson"});
+        });
+        let out = delvec(&["validate".as_ref(), dir.as_os_str()]);
+        let all = format!(
+            "{}{}",
+            String::from_utf8_lossy(&out.stdout),
+            String::from_utf8_lossy(&out.stderr)
+        );
+        assert_eq!(out.status.code(), Some(1), "{all}");
+        assert!(all.contains("DW0911"), "{all}");
+    }
+
+    /// Through the CLI: a `boss`-billed wave with no bar is advised (`DW0912`)
+    /// and the BUILD STILL EXITS 0 — the advisory stops nothing.
+    #[test]
+    fn dw0912_is_advice_and_the_build_exits_zero() {
+        let dir = fixture_copy("dw0912", |q| {
+            q["content"]["waves"][1]["tier"] = json!("boss");
+        });
+        let out_dir = dir.with_extension("out");
+        let out = delvec(&[
+            "build".as_ref(),
+            dir.as_os_str(),
+            "-o".as_ref(),
+            out_dir.as_os_str(),
+        ]);
+        let all = format!(
+            "{}{}",
+            String::from_utf8_lossy(&out.stdout),
+            String::from_utf8_lossy(&out.stderr)
+        );
+        assert_eq!(out.status.code(), Some(0), "{all}");
+        assert!(all.contains("DW0912"), "{all}");
+        assert!(all.contains("wave/ambush"), "{all}");
+    }
+}
