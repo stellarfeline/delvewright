@@ -17,8 +17,11 @@
 //!   completability proof runs on — including a lethal volume's cells, which are
 //!   impassable there, so "the near lip of the hazard" falls out rather than being
 //!   a second rule;
-//! * **under the quest state** is the DAG-indexed sealing `close-gate` established
-//!   ([`crate::compiler::nav::seal_configurations`]);
+//! * **under the quest state** is the DAG-indexed sealing the region-write model
+//!   establishes, swept over the seat's own arrivals by
+//!   [`crate::compiler::nav::reachable_under_every_quest_state`] — from the seat's
+//!   firing step to one past the last arrival, so the world as the party leaves it
+//!   at the end of the delve is among the states judged;
 //! * **the respawn point in force** is engine state the runtime already tracks in
 //!   `#cp dw.sys`.
 //!

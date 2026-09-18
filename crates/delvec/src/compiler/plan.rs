@@ -1106,13 +1106,24 @@ pub struct Plan<'a> {
     /// (spec-0017), keyed by batch id — the editor's per-batch snapshot
     /// framing for massing batches. Empty for a campaign without massing.
     pub massing_bounds: BTreeMap<String, ([i32; 3], [i32; 3])>,
-    /// For each objective's `critical_path` step, the set of steps of its **strict
+    /// For each `critical_path` **arrival** step, the set of steps of its **strict
     /// DAG ancestors** — objectives guaranteed to complete before it in *every* valid
     /// play order (transitive `after` within its quest ∪ every objective of a
     /// transitive `depends_on`-ancestor quest). The `close-gate` seal model
     /// (`crate::compiler::nav`) uses this so a gate only seals a leg whose objective is a true
     /// causal descendant of the gate's firing objective — not a parallel branch the
     /// lineariser merely interleaved ahead of it.
+    ///
+    /// **Every arrival is keyed, not every objective.** The path is
+    /// `[select-class, objective…, assert-complete]` and a sweep runs to
+    /// `critical_path.len()` inclusive, so the last two arrivals are not
+    /// objectives; they carry every objective on the path, because the path holds
+    /// exactly the quests campaign completion depends on and the campaign is
+    /// complete by then. `DW0525` reads those two arrivals, and keying objectives
+    /// alone loses both directions there: a door the party is forced to open reads
+    /// shut again at the end of the delve, and a door the last beat bars goes
+    /// missing. Whether a firing counts at all is forcedness, and
+    /// `collect_region_events` decides that before this relation sees it.
     pub strict_ancestor_steps: BTreeMap<usize, BTreeSet<usize>>,
     /// **The derived blockout** (spec-0049 §5), for a campaign whose placement
     /// authority is a site plan. `None` for every campaign that places pieces
@@ -3143,7 +3154,8 @@ impl<'a> Plan<'a> {
         region_events.extend(shortcuts.iter().map(|sc| {
             RegionEvent::forced(sc.gate_region, RegionWrite::of_block(&sc.gate_block), 0)
         }));
-        let strict_ancestor_steps = compute_strict_ancestor_steps(campaign, &objective_steps);
+        let strict_ancestor_steps =
+            compute_strict_ancestor_steps(campaign, &objective_steps, cp.steps.len());
         // v0.10 (spec-0031): where the party can be CARRIED rather than walk.
         let transit_teleports = collect_transit_teleports(campaign, &anchors);
 
@@ -3336,15 +3348,16 @@ impl<'a> Plan<'a> {
         region_events.extend(self.shortcuts.iter().map(|sc| {
             RegionEvent::forced(sc.gate_region, RegionWrite::of_block(&sc.gate_block), 0)
         }));
-        let ancestors = compute_strict_ancestor_steps(self.campaign, &cp.obj_step);
+        let ancestors = compute_strict_ancestor_steps(self.campaign, &cp.obj_step, cp.steps.len());
         (region_events, ancestors)
     }
 
     /// Whether a gate firing at critical-path step `g` is guaranteed to have fired
-    /// before a walked leg arriving at step `s` — i.e. `g`'s objective is a strict
-    /// DAG ancestor of `s`'s objective (see [`Self::strict_ancestor_steps`]). Step
-    /// `0` (class-select / an environment trigger's conservative fire step) is
-    /// treated as always-preceding. Drives the `close-gate` seal model in
+    /// before a leg arriving at step `s` — i.e. `g`'s objective is a strict DAG
+    /// ancestor of the arrival (see [`Self::strict_ancestor_steps`]). Step `0`
+    /// (class-select / an environment trigger's conservative fire step) is treated
+    /// as always-preceding, and an arrival past the last objective has every
+    /// objective on the path preceding it. Drives the `close-gate` seal model in
     /// `crate::compiler::nav`.
     pub fn gate_fired_before(&self, g: usize, s: usize) -> bool {
         g == 0
@@ -5914,12 +5927,6 @@ fn collect_transit_teleports(
     out
 }
 
-/// Compute, for each objective's `critical_path` step, the set of steps of its
-/// **strict DAG ancestors** (see [`Plan::strict_ancestor_steps`]): the transitive
-/// `after`-closure within its own quest, plus every objective of every transitive
-/// `depends_on`-ancestor quest (a quest completes — all its objectives — before any
-/// dependent quest starts). Pure DAG structure, so it is deterministic and
-/// independent of the lineariser's choice among valid orders.
 /// Transitive-reachability closure over a `node → direct successors` adjacency,
 /// seeded by `start` (exclusive of the seeds' own membership only insofar as they
 /// re-enter via the graph). Shared by the quest-`depends_on` and objective-`after`
@@ -5940,9 +5947,25 @@ fn transitive_closure<'a>(
     seen
 }
 
+/// For each `critical_path` **arrival** step, the set of steps of its **strict DAG
+/// ancestors** (see [`Plan::strict_ancestor_steps`]).
+///
+/// An objective's own step takes the transitive `after`-closure within its quest,
+/// plus every objective of every transitive `depends_on`-ancestor quest — a quest
+/// completes, all its objectives, before any dependent quest starts.
+///
+/// An arrival **past the last objective** — the completion assertion, and the
+/// one-past-the-end sentinel a sweep to `steps` inclusive finishes on — takes every
+/// objective on the path. The exported path is rooted at the finale
+/// (`flow::finale_order`), so it holds exactly the quests campaign completion
+/// depends on, and the assertion cannot hold until all of them do.
+///
+/// Pure DAG structure, so it is deterministic and independent of the lineariser's
+/// choice among valid orders. `steps` is the critical path's length.
 fn compute_strict_ancestor_steps(
     campaign: &Campaign,
     obj_step: &BTreeMap<String, usize>,
+    steps: usize,
 ) -> BTreeMap<usize, BTreeSet<usize>> {
     // Quest direct `depends_on`, then its transitive-ancestor closure.
     let quest_deps: BTreeMap<&str, Vec<&str>> = campaign
@@ -6007,6 +6030,46 @@ fn compute_strict_ancestor_steps(
             }
         }
         out.insert(s, anc);
+    }
+
+    // ---- the arrivals past the last objective ----
+    //
+    // The critical path is `[select-class, objective…, assert-complete]`, and its
+    // consumers sweep arrivals to `steps` INCLUSIVE — one past the end, the
+    // sentinel `crate::compiler::nav::reachable_under_every_quest_state` finishes
+    // on. Neither the completion assertion nor that sentinel is an objective, so
+    // these rows are what keeps a lookup from answering "nothing has fired yet" at
+    // the two arrivals where EVERYTHING has fired. The exported path is rooted at
+    // the finale (`flow::finale_order`), so it holds exactly the quests campaign
+    // completion depends on: every objective on it is done before `dw.campaign`
+    // can be asserted, in every valid play order — which is what a strict ancestor
+    // is. `DW0525` reads both arrivals, and a wrong answer there runs both ways —
+    // a door the party is FORCED to open reads shut again (refusing a rest point
+    // behind it), and a `close-gate` the last objective fires goes missing
+    // (admitting a rest point sealed in).
+    //
+    // **Forcedness is not re-decided here, and the set is every objective on the
+    // path rather than the mandatory ones** (spec-0051). `collect_region_events`
+    // owns that reading and applies it one layer earlier: a write that does not
+    // FILL is dropped outright when its root is unforced, so an `open-gate`
+    // (`RegionWrite::Unseal`) hanging off a quest nobody has to play is not in
+    // `region_events` for any relation to credit, while an unforced FILL is kept —
+    // a wall the party may find standing, which the proof must survive. Asking the
+    // question a second time here would give a second authority, and for a fill it
+    // would be the answer that ships.
+    //
+    // A **branch** path (`Plan::branch_gate_model`) is ordered by
+    // `flow::dag_order` over what its world completes rather than by the finale's
+    // closure, so it can carry a quest that world's player may skip. It is sound
+    // for the same reason: the branch's own `collect_region_events` has already
+    // dropped that quest's unseals. Its consumers — `nav::check_branch_path` and
+    // `nav::branch_path_routes` — arrive only at objective steps, so these rows
+    // answer nothing there either way.
+    if let Some(&last) = obj_step.values().max() {
+        let every: BTreeSet<usize> = obj_step.values().copied().collect();
+        for s in last + 1..=steps {
+            out.insert(s, every.clone());
+        }
     }
     out
 }
