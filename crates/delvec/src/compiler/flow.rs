@@ -150,6 +150,11 @@ pub const MAX_WORLDS: usize = 512;
 struct GatedFlag {
     flag: String,
     requires: Vec<String>,
+    /// The environment trigger whose effects produce it, when it is one. A
+    /// trigger is ambient only in the sense that nothing on the quest DAG orders
+    /// it: somebody still has to strike, use, approach or hit it, and
+    /// [`Flow::trigger_debts`] is where the path is made to say who and when.
+    trigger: Option<String>,
 }
 
 /// One dialogue option, flattened.
@@ -416,6 +421,18 @@ impl DivisionFailure {
             ),
         }
     }
+}
+
+/// One flag the exported path reads that only an environment trigger produces,
+/// and the trigger the path performs to produce it ([`Flow::trigger_debts`]).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TriggerDebt {
+    /// Index into [`Playthrough::steps`] of the first step that reads the flag.
+    pub step: usize,
+    /// The trigger the path performs, before that step, to pay it.
+    pub trigger: String,
+    /// The flag it pays.
+    pub flag: String,
 }
 
 /// One step of a branch's compiled play order (spec-0025), with the state
@@ -757,7 +774,12 @@ impl<'a> Flow<'a> {
             // the party can always walk over and spring it, which is the same
             // reason `strike`/`use`/`approach` are producers.
             crate::compiler::plan::EffectRoot::Trigger(t) => {
-                collect_flags(effs, &gate_of(&t.requires_flags), &mut ambient);
+                collect_flags_from(
+                    effs,
+                    &gate_of(&t.requires_flags),
+                    Some(t.id.as_str()),
+                    &mut ambient,
+                );
             }
             crate::compiler::plan::EffectRoot::TrapPayload(trap) => {
                 collect_flags(effs, &gate_of(&trap.requires_flags), &mut ambient);
@@ -800,6 +822,7 @@ impl<'a> Flow<'a> {
                 ambient.push(GatedFlag {
                     flag: d.sets_flag.as_str().to_string(),
                     requires: gate_of(&trap.requires_flags),
+                    trigger: None,
                 });
             }
         }
@@ -810,6 +833,7 @@ impl<'a> Flow<'a> {
                 ambient.push(GatedFlag {
                     flag: d.sets_flag.as_str().to_string(),
                     requires: Vec::new(),
+                    trigger: None,
                 });
             }
         }
@@ -978,6 +1002,78 @@ impl<'a> Flow<'a> {
                     .collect(),
                 flags_before: before.flags,
                 flags_after: st.flags.clone(),
+            });
+        }
+        out
+    }
+
+    /// **The flags `p` owes to an environment trigger, and which trigger pays
+    /// each one** — the flag half of the path-performs-its-triggers rule.
+    ///
+    /// The replay credits a trigger's `set-flag` the moment the trigger's own flag
+    /// gate holds, because a player *can* fire it then. The exported path is what a
+    /// bot walks, and a bot only does what a step tells it: a flag the path reads
+    /// that only a trigger produces is a party action the path must contain, or the
+    /// walk the replay proved is a walk nobody makes.
+    ///
+    /// This is the same state machine ([`Self::advance`]) with trigger-rooted
+    /// producers withheld until the path performs them. At each step, every flag
+    /// the step reads — its objective's `requires_flags`, and for a `talk-to` the
+    /// taken option's own `requires` — that the withheld walk does not hold is a
+    /// debt; it is paid by the first declared trigger that produces the flag and
+    /// whose gate holds there, and from then on that trigger's producers are
+    /// credited. A debt no trigger can pay is not reported here: the unwithheld
+    /// replay (`DW0204`) owns every flag nothing produces.
+    ///
+    /// Returned in path order; `step` indexes `p.steps`.
+    pub fn trigger_debts(&self, p: &Playthrough) -> Vec<TriggerDebt> {
+        let mut performed: BTreeSet<String> = BTreeSet::new();
+        let mut complete_at: Option<(usize, String)> = None;
+        let mut st = self.initial_state_with(&|g: &GatedFlag| g.trigger.is_none());
+        let mut out: Vec<TriggerDebt> = Vec::new();
+        for (i, step) in p.steps.iter().enumerate() {
+            let mut reads: Vec<String> = self
+                .objective(&step.objective)
+                .map(|o| {
+                    o.requires_flags()
+                        .iter()
+                        .map(|f| f.as_str().to_string())
+                        .collect()
+                })
+                .unwrap_or_default();
+            if let (Some(n), Some(Objective::TalkTo { npc, .. })) =
+                (step.talk_option, self.objective(&step.objective))
+                && let Some(t) = self.trees.iter().find(|t| t.npc == npc.as_str())
+                && let Some(o) = t.options.iter().find(|o| o.n == n)
+            {
+                reads.extend(o.requires.iter().cloned());
+            }
+            for flag in reads {
+                if st.flags.contains(&flag) {
+                    continue;
+                }
+                let payer = self.ambient.iter().find_map(|g| {
+                    let t = g.trigger.as_ref()?;
+                    (g.flag == flag
+                        && !performed.contains(t)
+                        && g.requires.iter().all(|f| st.flags.contains(f)))
+                    .then(|| t.clone())
+                });
+                let Some(trigger) = payer else { continue };
+                performed.insert(trigger.clone());
+                out.push(TriggerDebt {
+                    step: i,
+                    trigger,
+                    flag,
+                });
+                let paid = &performed;
+                self.saturate_ambient_with(&mut st.flags, &|g: &GatedFlag| {
+                    g.trigger.as_ref().is_none_or(|t| paid.contains(t))
+                });
+            }
+            let paid = &performed;
+            self.advance_with(&mut st, step, i + 1, &mut complete_at, &|g: &GatedFlag| {
+                g.trigger.as_ref().is_none_or(|t| paid.contains(t))
             });
         }
         out
@@ -1620,6 +1716,12 @@ impl<'a> Flow<'a> {
     /// The replay's starting state: campaign-start quests active, ambient
     /// (trigger / trap payload / trap-disarm) flags saturated.
     fn initial_state(&self) -> ReplayState {
+        self.initial_state_with(&|_| true)
+    }
+
+    /// [`Self::initial_state`], crediting only the ambient producers `allow`
+    /// admits.
+    fn initial_state_with(&self, allow: &dyn Fn(&GatedFlag) -> bool) -> ReplayState {
         let mut st = ReplayState::default();
         for q in &self.c.quests.content.quests {
             if matches!(q.trigger, Trigger::CampaignStart) {
@@ -1634,7 +1736,7 @@ impl<'a> Flow<'a> {
             };
             st.state.insert(id.clone(), d);
         }
-        self.saturate_ambient(&mut st.flags);
+        self.saturate_ambient_with(&mut st.flags, allow);
         st
     }
 
@@ -1649,6 +1751,18 @@ impl<'a> Flow<'a> {
         step: &PathStep,
         pos: usize,
         complete_at: &mut Option<(usize, String)>,
+    ) {
+        self.advance_with(st, step, pos, complete_at, &|_| true);
+    }
+
+    /// [`Self::advance`], crediting only the ambient producers `allow` admits.
+    fn advance_with(
+        &self,
+        st: &mut ReplayState,
+        step: &PathStep,
+        pos: usize,
+        complete_at: &mut Option<(usize, String)>,
+        allow: &dyn Fn(&GatedFlag) -> bool,
     ) {
         st.done_obj.insert(step.objective.clone());
         if let Some(n) = step.talk_option {
@@ -1695,7 +1809,7 @@ impl<'a> Flow<'a> {
                 break;
             }
         }
-        self.saturate_ambient(&mut st.flags);
+        self.saturate_ambient_with(&mut st.flags, allow);
     }
 
     /// The objective with this id, anywhere in the campaign.
@@ -1944,11 +2058,19 @@ impl<'a> Flow<'a> {
 
     /// Add every ambient (trigger / trap payload / trap-disarm) flag whose gate
     /// is satisfied, to fixpoint.
-    fn saturate_ambient(&self, flags: &mut BTreeSet<String>) {
+    /// [`Self::saturate_ambient`] over the producers `allow` admits.
+    fn saturate_ambient_with(
+        &self,
+        flags: &mut BTreeSet<String>,
+        allow: &dyn Fn(&GatedFlag) -> bool,
+    ) {
         loop {
             let mut changed = false;
             for g in &self.ambient {
-                if g.requires.iter().all(|f| flags.contains(f)) && flags.insert(g.flag.clone()) {
+                if allow(g)
+                    && g.requires.iter().all(|f| flags.contains(f))
+                    && flags.insert(g.flag.clone())
+                {
                     changed = true;
                 }
             }
@@ -2184,6 +2306,16 @@ fn produce(src: Option<&Vec<GatedFlag>>, flags: &mut BTreeSet<String>, changed: 
 /// `on_caught`) are NOT descended: they fire at statically unknowable times, so
 /// nothing inside them is a producer.
 fn collect_flags(effs: &[QuestEffect], gate: &[String], out: &mut Vec<GatedFlag>) {
+    collect_flags_from(effs, gate, None, out);
+}
+
+/// [`collect_flags`], each producer stamped with the trigger that fires it.
+fn collect_flags_from(
+    effs: &[QuestEffect],
+    gate: &[String],
+    trigger: Option<&str>,
+    out: &mut Vec<GatedFlag>,
+) {
     for e in effs {
         let mut here: Vec<String> = gate.to_vec();
         here.extend(e.requires_flags().iter().map(|f| f.as_str().to_string()));
@@ -2193,6 +2325,7 @@ fn collect_flags(effs: &[QuestEffect], gate: &[String], out: &mut Vec<GatedFlag>
             out.push(GatedFlag {
                 flag: flag.as_str().to_string(),
                 requires: here.clone(),
+                trigger: trigger.map(str::to_string),
             });
         }
         match &e.verb {
@@ -2201,7 +2334,7 @@ fn collect_flags(effs: &[QuestEffect], gate: &[String], out: &mut Vec<GatedFlag>
             }
             _ => {
                 for list in e.nested_effect_lists() {
-                    collect_flags(list, &here, out);
+                    collect_flags_from(list, &here, trigger, out);
                 }
             }
         }

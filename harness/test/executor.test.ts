@@ -3776,3 +3776,118 @@ test("a matched leg still binds only the gates the compiler proved it crosses", 
     ["timed-gate/inner-door"],
   );
 });
+
+// --- trigger steps: the bot does to the target what a player does ---------------
+
+import type { TriggerStep } from "../src/critical-path.ts";
+
+/**
+ * A fake server with one environment trigger's `interaction` hitbox at the
+ * target cell. It fires the trigger the way the datapack does — only on the
+ * client act the trigger watches (an attack for a strike, a right-click for a
+ * use) — and answers with the trigger's fired marker. Nothing else fires it:
+ * a chatted command, in particular, does nothing.
+ */
+class TriggerFakeBot extends InteractFakeBot {
+  /** Which client act the emitted tick line reads (`attack` or `interaction`). */
+  watches: "attack" | "interaction" = "attack";
+  constructor() {
+    super();
+    // The real summon: `minecraft:interaction` 1.0 x 2.0 on the anchor cell.
+    this.entities[77] = {
+      id: 77,
+      name: "interaction",
+      width: 1,
+      height: 2,
+      position: new FakeVec3(1.5, 64, 0.5),
+    };
+  }
+  async lookAt(): Promise<void> {
+    this.calls.push("lookAt");
+  }
+  private fire(act: "attack" | "interaction", id: number): void {
+    if (act === this.watches && id === 77) {
+      setTimeout(
+        () => this.emit("messagestr", "[dw:complete vesperhold trigger/psalter-wall]"),
+        10,
+      );
+    }
+  }
+  attack(e: { id: number }): void {
+    this.calls.push(`attack(${e.id})`);
+    this.fire("attack", e.id);
+  }
+  async activateEntity(e: { id: number }): Promise<void> {
+    this.calls.push(`activateEntity(${e.id})`);
+    this.fire("interaction", e.id);
+  }
+}
+
+const STRIKE_STEP: TriggerStep = {
+  action: "trigger",
+  trigger: "trigger/psalter-wall",
+  on: "strike",
+  anchor: "anchor/psalter-face",
+  pos: [1, 64, 0],
+};
+
+test("a strike trigger step ATTACKS the target's hitbox and passes on the fired marker", async () => {
+  // The vesperhold ladder stopped in front of a wall only a strike opens. The step
+  // is a real left-click on the hitbox the compiler summoned — never a command —
+  // and it passes on the trigger's own marker, never on the swing landing.
+  const bot = new TriggerFakeBot();
+  const executor = attach(bot);
+  executor.useCampaign("vesperhold");
+  executor.beginStep(16);
+  await executor.fireTrigger(STRIKE_STEP);
+  assert.deepEqual(
+    bot.calls.filter((c) => c !== "goto"),
+    ["lookAt", "attack(77)"],
+    "looked at the hitbox, then hit it — and chatted nothing",
+  );
+});
+
+test("a use trigger step RIGHT-CLICKS the hitbox instead of hitting it", async () => {
+  const bot = new TriggerFakeBot();
+  bot.watches = "interaction";
+  const executor = attach(bot);
+  executor.useCampaign("vesperhold");
+  await executor.fireTrigger({ ...STRIKE_STEP, on: "use" });
+  assert.deepEqual(
+    bot.calls.filter((c) => c !== "goto"),
+    ["lookAt", "activateEntity(77)"],
+  );
+});
+
+test("a strike-npc trigger step hits the NPC's own hitbox at its station", async () => {
+  const bot = new TriggerFakeBot();
+  const executor = attach(bot);
+  executor.useCampaign("vesperhold");
+  const { anchor: _anchor, ...rest } = STRIKE_STEP;
+  await executor.fireTrigger({ ...rest, on: "strike-npc", npc: "npc/giant" });
+  assert.ok(bot.calls.includes("attack(77)"), bot.calls.join(", "));
+});
+
+test("an approach trigger step walks into range and clicks nothing", async () => {
+  const bot = new TriggerFakeBot();
+  const executor = attach(bot);
+  executor.useCampaign("vesperhold");
+  // The fake server fires an approach on proximity; the bot already stands there.
+  setTimeout(() => bot.emit("messagestr", "[dw:complete vesperhold trigger/psalter-wall]"), 10);
+  const { anchor, ...rest } = STRIKE_STEP;
+  await executor.fireTrigger({ ...rest, anchor, on: "approach", range: 6 });
+  assert.deepEqual(
+    bot.calls.filter((c) => c !== "goto"),
+    [],
+    "an approach is a walk: no look, no swing, no click, no command",
+  );
+});
+
+test("a strike with no hitbox at the target fails the step loudly, before any wait", async () => {
+  const bot = new TriggerFakeBot();
+  delete bot.entities[77];
+  const executor = attach(bot);
+  executor.useCampaign("vesperhold");
+  await assert.rejects(() => executor.fireTrigger(STRIKE_STEP), /nothing to hit/);
+  assert.ok(!bot.calls.some((c) => c.startsWith("attack")), bot.calls.join(", "));
+});
