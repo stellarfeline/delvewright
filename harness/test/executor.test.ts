@@ -19,6 +19,14 @@ import { lethalTrialFailures, parseDeathPlan } from "../src/death-loop.ts";
 const PLAN_VERSION = "0.0.0-fixture";
 
 // Minimal Vec3 stand-in with the methods the executor reads off bot.entity.position.
+/**
+ * The attack speed the fake server sends: 20 swings a second, so the bot's
+ * full-charge wait (`fullChargeMs`) is two ticks and a test of the fight's LOGIC
+ * does not sit through a sword's real cooldown. The cadence itself is
+ * `melee.test.ts`'s subject.
+ */
+const FAKE_WEAPON = { "generic.attack_speed": { value: 20, modifiers: [] } };
+
 class FakeVec3 {
   readonly x: number;
   readonly y: number;
@@ -44,7 +52,7 @@ class FakeVec3 {
 // attach seam — tests may use structural fakes the full type can't express.
 class FakeBot extends EventEmitter {
   username = "delve-bot";
-  entity = { position: new FakeVec3(0, 64, 0), onGround: true };
+  entity = { position: new FakeVec3(0, 64, 0), onGround: true, attributes: FAKE_WEAPON };
   game = { gameMode: "adventure" as "adventure" | "spectator" };
   pathfinderStops = 0;
   /** Every pathfinder call, in order — pins that a stop is always followed by the
@@ -1328,7 +1336,10 @@ class InteractFakeBot extends FakeBot {
   /** Everything the step made the bot DO, in order. */
   calls: string[] = [];
   carried: Array<{ name: string; type: number }> = [];
-  inventory = { items: (): Array<{ name: string; type: number }> => this.carried };
+  inventory = {
+    items: (): Array<{ name: string; type: number }> => this.carried,
+    slots: [] as Array<{ name: string } | undefined>,
+  };
   override pathfinder = {
     stop: (): void => {
       this.pathfinderStops += 1;
@@ -1415,7 +1426,10 @@ class TransportReachBot extends FakeBot {
   health = 20;
   food = 20;
   entities: Record<number, unknown> = {};
-  inventory = { items: (): Array<{ name: string; type: number }> => [] };
+  inventory = {
+    items: (): Array<{ name: string; type: number }> => [],
+    slots: [] as Array<{ name: string } | undefined>,
+  };
   gotoCalls = 0;
   override pathfinder = {
     stop: (): void => {
@@ -3577,7 +3591,10 @@ class GatedApproachBot extends DrivableFakeBot {
   health = 20;
   food = 20;
   entities: Record<number, unknown> = {};
-  inventory = { items: (): Array<{ name: string; type: number }> => [] };
+  inventory = {
+    items: (): Array<{ name: string; type: number }> => [],
+    slots: [] as Array<{ name: string } | undefined>,
+  };
   /** The door's state at each pathfind, in order. */
   gotoStates: string[] = [];
   /** The gallery's mid door: a 1×3×1 plug at [5, 65..67, 9]. */

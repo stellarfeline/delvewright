@@ -10,6 +10,14 @@ import { EventEmitter } from "node:events";
 import type { Bot } from "mineflayer";
 import { MineflayerExecutor, type BotConfig } from "../src/executor.ts";
 
+/**
+ * The attack speed the fake server sends: 20 swings a second, so the bot's
+ * full-charge wait (`fullChargeMs`) is two ticks and a test of the fight's LOGIC
+ * does not sit through a sword's real cooldown. The cadence itself is
+ * `melee.test.ts`'s subject.
+ */
+const FAKE_WEAPON = { "generic.attack_speed": { value: 20, modifiers: [] } };
+
 class FakeVec3 {
   readonly x: number;
   readonly y: number;
@@ -46,7 +54,7 @@ const SWORD = { type: 700, name: "iron_sword", count: 1 };
 
 class FakeBot extends EventEmitter {
   username = "delve-bot";
-  entity = { id: 1, position: new FakeVec3(0, 64, 0), onGround: true };
+  entity = { id: 1, position: new FakeVec3(0, 64, 0), onGround: true, attributes: FAKE_WEAPON };
   game = { gameMode: "adventure" as const };
   health = 20;
   food = 14;
@@ -54,7 +62,10 @@ class FakeBot extends EventEmitter {
   /** Pinned minecraft-data shape: food items keyed by item type id. */
   registry = { foods: { 900: { foodPoints: 10 } } as Record<number, { foodPoints: number }> };
   inventoryItems: Array<{ type: number; name: string; count: number }> = [SWORD, RABBIT_STEW];
-  inventory = { items: (): Array<{ type: number; name: string; count: number }> => this.inventoryItems };
+  inventory = {
+    items: (): Array<{ type: number; name: string; count: number }> => this.inventoryItems,
+    slots: [] as Array<{ name: string } | undefined>,
+  };
   equips: Array<[string, string]> = [];
   consumed = 0;
   pathfinder = { stop: (): void => {} };
