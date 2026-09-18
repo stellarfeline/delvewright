@@ -88,15 +88,7 @@ fn build_campaign(quests: &str, dialogue: Option<&str>) -> Result<BuildOutput, B
     let campaign = parse_hw(quests, dialogue);
     let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
     let plan = Plan::build(&campaign, &prefabs).expect("plan builds");
-    let mut structures: BTreeMap<String, Vec<u8>> = BTreeMap::new();
-    for area in &plan.areas {
-        for piece in &area.pieces {
-            for t in &piece.templates {
-                let bytes = std::fs::read(common::prefabs_dir().join(&t.structure_file)).unwrap();
-                structures.insert(t.structure_file.clone(), bytes);
-            }
-        }
-    }
+    let structures = common::plan_structures_with_trap_triggers(&plan, &common::prefabs_dir());
     emit::build(
         &plan,
         &BTreeMap::new(),
@@ -477,15 +469,7 @@ fn build_worldless(volley_anchor: &str) -> Result<BuildOutput, BuildFailure> {
     let campaign = worldless_campaign(volley_anchor);
     let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
     let plan = Plan::build(&campaign, &prefabs).expect("plan builds");
-    let mut structures: BTreeMap<String, Vec<u8>> = BTreeMap::new();
-    for area in &plan.areas {
-        for piece in &area.pieces {
-            for t in &piece.templates {
-                let bytes = std::fs::read(common::prefabs_dir().join(&t.structure_file)).unwrap();
-                structures.insert(t.structure_file.clone(), bytes);
-            }
-        }
-    }
+    let structures = common::plan_structures_with_trap_triggers(&plan, &common::prefabs_dir());
     emit::build(
         &plan,
         &BTreeMap::new(),

@@ -378,3 +378,46 @@ fn an_omitted_connection_property_fails_and_a_variant_omission_does_not() {
     assert_eq!(rep.underspecified, 0);
     assert!(rep.is_pass(), "{:?}", rep.findings);
 }
+
+/// **A merchant's anvil and a trap's trapped chest are building material.**
+///
+/// Both were refused (`DW0730`) by omission, not by the list's rationale: the
+/// allowlist flags redstone *contraptions*, tnt and note blocks, and admits the
+/// trigger blocks a trap is built from (`_pressure_plate`, `_button`). A trapped
+/// chest is the visible trigger of the compiler's own `trapped-chest` trap, so a
+/// library that cannot carry one cannot build that trap at all; an anvil is
+/// job-site furniture a player uses, like the grindstone and smithing table
+/// already on the list, and its fall is the gravity gate's business. Every
+/// damage stage is judged, because a prefab that dresses a forge with a worn
+/// anvil is the same object.
+#[test]
+fn an_anvil_and_a_trapped_chest_pass_the_default_allowlist() {
+    let admitted = [
+        "minecraft:anvil",
+        "minecraft:chipped_anvil",
+        "minecraft:damaged_anvil",
+        "minecraft:trapped_chest",
+    ];
+    let mut s = fixtures::clean_room();
+    for (i, id) in admitted.iter().enumerate() {
+        s.set_cell(
+            [1 + i as i32 % 2, 1, 1 + i as i32 / 2],
+            delvec::admit::structure::PaletteEntry::simple(*id),
+            None,
+        );
+    }
+    let (rep, _) = audit("forge", &s, &Allowlist::default_building());
+    assert!(rep.is_pass(), "{:?}", rep.findings);
+    for id in admitted {
+        assert!(rep.palette.iter().any(|b| b == id), "{id} was not examined");
+    }
+    // The rationale still holds for what it names: a contraption part stays out.
+    let mut c = fixtures::clean_room();
+    c.set_cell(
+        [1, 1, 1],
+        delvec::admit::structure::PaletteEntry::simple("minecraft:dispenser"),
+        None,
+    );
+    let (rep, _) = audit("contraption", &c, &Allowlist::default_building());
+    assert!(rep.findings.iter().any(|f| f.code == "DW0730"));
+}

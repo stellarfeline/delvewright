@@ -115,6 +115,7 @@ holding them at once.
 | `two-bodies-on-one-mark` | `DW0896` | `build` | taking the page's offset away, so it is summoned onto the usher's own cell while the usher is still standing on it |
 | `an-offset-out-of-the-room` | `DW0897` | `build` | writing the page's offset from the usher as forty cells instead of four, past the hall's east wall |
 | `a-chestplate-on-a-horse` | `DW0898` | `validate` | putting a chestplate on the barded horse, which the server stores and the client never draws |
+| `a-chest-that-is-not-there` | `DW0917` | `build` | hanging the trapped-chest trap on open floor, so the chest the party should open is empty air |
 
 **A probe is the primary plus one declared edit.** It carries no copy of any
 document the primary already holds; what it perturbs is written out in its own

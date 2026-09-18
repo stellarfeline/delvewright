@@ -2524,6 +2524,52 @@
                 "value": 0
               }
             ]
+          },
+          {
+            "effects": [
+              {
+                "count": 1,
+                "enchantments": {
+                  "minecraft:sharpness": 2
+                },
+                "item": "minecraft:iron_sword",
+                "type": "give-item",
+                "when": {
+                  "forbids_flags": [
+                    "flag/hall-sealed"
+                  ],
+                  "requires_state": [
+                    {
+                      "op": "at-most",
+                      "state": "state/labels-read",
+                      "value": 9
+                    }
+                  ]
+                }
+              },
+              {
+                "count": 1,
+                "enchantments": {
+                  "minecraft:mending": 1
+                },
+                "item": "minecraft:enchanted_book",
+                "type": "give-item",
+                "when": {
+                  "forbids_flags": [
+                    "flag/hall-sealed"
+                  ],
+                  "requires_state": [
+                    {
+                      "op": "at-most",
+                      "state": "state/labels-read",
+                      "value": 9
+                    }
+                  ]
+                }
+              }
+            ],
+            "label": "A keen blade and a mended page",
+            "tooltip": "The Factor sells what the case holds: an edge that stays sharp, and a page an anvil can read."
           }
         ],
         "title": "The Factor's Counter"
@@ -2756,7 +2802,7 @@
         "trigger": "tripwire"
       },
       {
-        "at": "anchor/east-bay",
+        "at": "anchor/strongbox",
         "id": "trap/chest",
         "lethality": "nonlethal",
         "payload": [
@@ -3062,6 +3108,6 @@
       }
     ]
   },
-  "dsl_version": "0.31.0",
+  "dsl_version": "0.33.0",
   "stage": "quests"
 }

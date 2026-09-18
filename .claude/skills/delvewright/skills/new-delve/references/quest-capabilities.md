@@ -51,6 +51,15 @@ this section is what they are *for* and the traps in each.
   anchor — **the compiler fills furniture, it never places it** (`DW0431`).
   Elites and set-piece actors take `equipment` in the same shape wave mobs use,
   enchantments included.
+- **A handed-over stack is described the same way.** `give-item {item, count,
+  name?, carrier?, enchantments?}` — so a shop offer can sell an iron sword with
+  `"enchantments": {"minecraft:sharpness": 2}`, and a quest can hand over a
+  `minecraft:enchanted_book` with `"enchantments": {"minecraft:mending": 1}`.
+  Write a book's enchantments in the same `enchantments` field: the compiler
+  stores them on the book (`stored_enchantments`), which is what an anvil
+  applies, and the same holds for a book in a `loot` chest. Ids and levels are
+  checked as everywhere else (`DW0433`, `DW0434`); a level above the survival
+  maximum is allowed.
 - **`equipment` has the game's eight slots, and a body shows only some of
   them.** `head`, `chest`, `legs`, `feet`, `main_hand`, `off_hand`, `body`
   (horse armour, wolf armour, a llama's carpet, a nautilus's armour, a happy
@@ -292,11 +301,17 @@ this section is what they are *for* and the traps in each.
   falling_block?, then_floor?}`, which deletes a region and buries whoever is
   under it, with the settled world re-run through the completability proof
   (`DW0445`). A trap that declares no consequence at all is `DW0440`.
-- **`at` is an ORDINARY POINT ANCHOR and the piece needs no hardware.** The
-  compiler owns the detection tick for a command payload: a plate or a tripwire
-  is a position test on that anchor's cell, and a trapped chest is the same
-  interaction-entity `use` a disarm lever rides. So any anchor carrying a `pos`
-  that some area's prefab provides will hold a trap — and on a site-plan
+- **`at` is an ORDINARY POINT ANCHOR, and its cell holds the trigger block.**
+  The compiler owns the detection tick for a command payload: a plate or a
+  tripwire is a position test on that anchor's cell, and a trapped chest is the
+  same interaction-entity `use` a disarm lever rides. The block the `trigger`
+  names — a `*_pressure_plate`, a `minecraft:tripwire`, a
+  `minecraft:trapped_chest` — is the piece's, standing in that cell: the party
+  has to see what springs, and the build refuses a trap whose cell holds
+  anything else, a plain chest included. Place it with the piece (a detail
+  program, an edit batch, or a piece of your own); never a runtime `set-block`.
+  So any anchor carrying a `pos` that some area's prefab provides, with the
+  trigger block in its cell, will hold a trap — and on a site-plan
   campaign that is `anchor/node-<place>`, which is exactly what a derived map
   has. `volley`'s `from_anchor` is another one, and all it owes is a clear cell.
   **The name `anchor/trap` is a convention from the redstone era and the check
@@ -307,7 +322,8 @@ this section is what they are *for* and the traps in each.
   anchor that does. Measured over the shipped library: **0 of 36 prefabs
   declares an `anchor/trap`**, or any anchor carrying `dispenser` or
   `trigger_block` metadata, out of 103 anchors in all — so the piece that
-  reading asks for does not exist here, and a command payload never wanted one.
+  reading asks for does not exist here, and a command payload never wanted one:
+  it wants the trigger block in an ordinary anchor's cell.
 - **Two things do want hardware in the piece, and neither of them is the
   payload.** The superseded `effect: {dispense: {…}}` fills a dispenser socket
   the prefab pre-wired, so it needs that metadata; and a trap carrying a gate

@@ -3,6 +3,6 @@
   "content": {
     "npcs": []
   },
-  "dsl_version": "0.31.0",
+  "dsl_version": "0.33.0",
   "stage": "npcs"
 }

@@ -355,6 +355,17 @@ const ANCHORS: &[Anchor] = &[
         role: None,
     },
     Anchor {
+        name: "anchor/strongbox",
+        pos: [29, 1, 17],
+        facing: Some("west"),
+        trigger_block: Some("minecraft:trapped_chest[facing=west,type=single]"),
+        note: "the false chest: a `trapped-chest` trap's trigger is the chest the \
+               piece places at its cell, and a trap whose cell holds anything else \
+               is DW0917. Against the east wall, clear of the east bay's fill box, \
+               so no region verb overwrites it",
+        role: None,
+    },
+    Anchor {
         name: "anchor/pocket",
         pos: [26, 1, 3],
         facing: Some("west"),

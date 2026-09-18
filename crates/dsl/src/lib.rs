@@ -123,7 +123,7 @@ pub use stages::{
     SoundAt, Stake, StateCompare, StateDecl, StateScope, StateWrite, StealthZone, TimedGate, Trap,
     TrapDisarm, TrapEffect, TrapReset, TrapTrigger, Trigger, TriggerAudience, TriggerOn, Verb,
     Wave, WaveLane, WaveMob, WaveSummon, WorldContent, WorldDifficulty, WorldTime, WorldWeather,
-    is_potion_bearing_item, offset_cell,
+    enchantment_component, is_potion_bearing_item, offset_cell,
 };
 pub use stages::{
     BodyRef, BodySite, BodySkinSite, BodyTraversalSite, body_sites, body_skin_sites,
