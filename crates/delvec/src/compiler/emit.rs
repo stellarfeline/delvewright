@@ -1696,6 +1696,18 @@ pub fn build_with_warnings(
         )?;
     }
 
+    // item modifiers — the bonfire rest's mend (spec-0016 §1); a campaign with no
+    // bonfire emits none.
+    if plan.bonfires().next().is_some() {
+        insert_unique(
+            &mut out,
+            format!("datapack/data/{ns}/item_modifier/{BONFIRE_MEND}.json"),
+            json_bytes(&bonfire_mend_modifier()),
+            "item modifier",
+            BONFIRE_MEND,
+        )?;
+    }
+
     // predicates — currently only the cutscene bounce's sneak-held gate (see
     // SNEAK_HELD_PREDICATE); a cutscene-less campaign emits none.
     if campaign_has_cutscene(plan.campaign) {
@@ -7694,6 +7706,9 @@ fn kit_item_components(item: &delvewright_dsl::KitItem) -> String {
     if let Some(pc) = &item.contents {
         parts.push(format!("potion_contents={}", potion_contents_snbt(pc)));
     }
+    if let Some((id, count)) = flask_remainder(item) {
+        parts.push(format!("use_remainder={}", flask_remainder_snbt(id, count)));
+    }
     if parts.is_empty() {
         String::new()
     } else {
@@ -7720,8 +7735,70 @@ fn kit_item_predicate(item: &delvewright_dsl::KitItem) -> String {
     }
 }
 
+/// The items whose pinned 1.21.11 definition carries a default
+/// `minecraft:use_remainder` — what vanilla leaves in the hand once the item is
+/// consumed — with that remainder's id and count.
+///
+/// Read off the pinned 1.21.11 `item_components` summary (SHA-256
+/// `51b191e13f86813ca02f1498942e5bc235947edb71eb8105a78401670b3665c4`, the
+/// misode/mcmeta ref `crates/delvec/data/PROVENANCE.md` pins): exactly these
+/// seven of its 1505 items declare the component.
+const USE_REMAINDERS_1_21_11: &[(&str, &str, u32)] = &[
+    ("minecraft:beetroot_soup", "minecraft:bowl", 1),
+    ("minecraft:honey_bottle", "minecraft:glass_bottle", 1),
+    ("minecraft:milk_bucket", "minecraft:bucket", 1),
+    ("minecraft:mushroom_stew", "minecraft:bowl", 1),
+    ("minecraft:potion", "minecraft:glass_bottle", 1),
+    ("minecraft:rabbit_stew", "minecraft:bowl", 1),
+    ("minecraft:suspicious_stew", "minecraft:bowl", 1),
+];
+
+/// The `custom_data` key that marks a remainder as **the flask's own**: a flask
+/// is given with its vanilla `use_remainder` restated plus this mark, so the
+/// empty it leaves is told apart from the same item obtained any other way, and
+/// `bonfire_flask` takes back exactly those.
+const FLASK_EMPTY_MARK: &str = "dw_flask_empty";
+
+/// The flask's marked remainder as the `use_remainder` component value: vanilla's
+/// own remainder item and count, carrying the [`FLASK_EMPTY_MARK`].
+fn flask_remainder_snbt(id: &str, count: u32) -> String {
+    format!(
+        "{{id:\"{id}\",count:{count},components:{{\"minecraft:custom_data\":{{{FLASK_EMPTY_MARK}:1b}}}}}}"
+    )
+}
+
+/// The flask's empty as an item stack / predicate: the remainder item with the
+/// [`FLASK_EMPTY_MARK`] — what drinking the flask leaves, and all that the refill
+/// takes back.
+fn flask_empty_stack(id: &str) -> String {
+    format!("{id}[custom_data={{{FLASK_EMPTY_MARK}:1b}}]")
+}
+
+/// The flask's vanilla remainder (`(id, count)`), when this kit item is a flask
+/// whose item leaves one; `None` for every other kit item and for a flask that is
+/// thrown or eaten whole.
+fn flask_remainder(item: &delvewright_dsl::KitItem) -> Option<(&'static str, u32)> {
+    if !item.flask {
+        return None;
+    }
+    let norm = if item.item.contains(':') {
+        item.item.clone()
+    } else {
+        format!("minecraft:{}", item.item)
+    };
+    USE_REMAINDERS_1_21_11
+        .iter()
+        .find(|(it, _, _)| *it == norm)
+        .map(|&(_, id, count)| (id, count))
+}
+
 /// The `bonfire_flask` function: refill every declared flask to its declared
-/// count, for the player it runs as.
+/// count, for the player it runs as, and take back the empties the flask left.
+///
+/// The take-back clears the flask's MARKED remainder (see [`FLASK_EMPTY_MARK`])
+/// for every flask of every class, unguarded by class: an empty a party member
+/// handed over is still a flask's empty, and a bottle the player found or was
+/// given is never marked, so it is never taken.
 ///
 /// `clear` + `give` rather than `item replace`: a kit item has no fixed inventory
 /// slot (the player carries it wherever they moved it), and `item replace` needs
@@ -7743,6 +7820,14 @@ fn emit_flask_function(plan: &Plan) -> Option<(String, String)> {
     }
     let classes = &plan.campaign.classes.content.classes;
     let mut body: Vec<String> = Vec::new();
+    let empties: std::collections::BTreeSet<&str> = flasks
+        .iter()
+        .filter_map(|&(ci, ki)| flask_remainder(&classes[ci].kit[ki]))
+        .map(|(id, _)| id)
+        .collect();
+    for id in empties {
+        body.push(format!("clear @s {}", flask_empty_stack(id)));
+    }
     for (ci, ki) in flasks {
         let item = &classes[ci].kit[ki];
         let tag = class_tag(&plan.classes[ci].safe);
@@ -7775,6 +7860,15 @@ fn class_tag(class_safe: &str) -> String {
 /// these two effects ARE the primitive (CLAUDE.md no-hacks: use the intended one,
 /// do not invent a workaround). Both are instant/1-second and leave nothing
 /// behind.
+///
+/// **Mending** is vanilla's `set_damage` item modifier (`BONFIRE_MEND`, damage
+/// fraction 1.0 = full durability), applied with `item modify` to every slot the
+/// player carries ([`CARRIED_SLOTS`]) — in place, so the rest repairs what the
+/// player holds now, gear picked up in play included, and never re-kits them.
+/// `item modify` takes one slot, so it is one line per slot, each guarded on the
+/// slot holding a damaged item: an empty slot, a stack and an item with no
+/// durability are never handed to the modifier (unguarded, `set_damage` leaves
+/// them unchanged but logs a warning per slot per rest).
 fn emit_restore_function(plan: &Plan) -> Option<(String, String)> {
     plan.bonfires().next()?;
     let ns = &plan.namespace;
@@ -7791,10 +7885,73 @@ fn emit_restore_function(plan: &Plan) -> Option<(String, String)> {
             .iter()
             .map(|e| format!("effect clear @s {e}")),
     );
+    body.extend(CARRIED_SLOTS.iter().map(|slot| {
+        format!(
+            "execute if items entity @s {slot} *[damage~{{damage:{{min:1}}}}] \
+             run item modify entity @s {slot} {ns}:{BONFIRE_MEND}"
+        )
+    }));
     if !plan.flasks().is_empty() {
         body.push(format!("function {ns}:bonfire_flask"));
     }
     Some(("bonfire_restore".to_string(), lines(&body)))
+}
+
+/// The item modifier a rest mends with: `datapack/data/<ns>/item_modifier/<this>.json`.
+const BONFIRE_MEND: &str = "bonfire_mend";
+
+/// Every slot a player carries an item in, as `item modify` names it: the four
+/// armour slots, the off-hand, and the 36 hotbar (`container.0`–`8`) and
+/// inventory (`container.9`–`35`) slots. The main hand is one of the hotbar
+/// slots, so it is not named twice.
+const CARRIED_SLOTS: &[&str] = &[
+    "armor.head",
+    "armor.chest",
+    "armor.legs",
+    "armor.feet",
+    "weapon.offhand",
+    "container.0",
+    "container.1",
+    "container.2",
+    "container.3",
+    "container.4",
+    "container.5",
+    "container.6",
+    "container.7",
+    "container.8",
+    "container.9",
+    "container.10",
+    "container.11",
+    "container.12",
+    "container.13",
+    "container.14",
+    "container.15",
+    "container.16",
+    "container.17",
+    "container.18",
+    "container.19",
+    "container.20",
+    "container.21",
+    "container.22",
+    "container.23",
+    "container.24",
+    "container.25",
+    "container.26",
+    "container.27",
+    "container.28",
+    "container.29",
+    "container.30",
+    "container.31",
+    "container.32",
+    "container.33",
+    "container.34",
+    "container.35",
+];
+
+/// The `set_damage` modifier a rest applies: durability set to full, absolutely
+/// (`damage` is the fraction of durability REMAINING; `add` defaults to false).
+fn bonfire_mend_modifier() -> serde_json::Value {
+    json!({"function": "minecraft:set_damage", "damage": 1.0})
 }
 
 /// The `bonfire_rest_<i>` functions (spec-0016 §1). Resting is the party-wide
@@ -13898,6 +14055,7 @@ fn emit_packtest(
     emit_reseat_undefeated_packtests(plan, out);
     // spec-0016 §1: rest and save-only really differ.
     emit_bonfire_option_packtest(plan, out);
+    emit_bonfire_mend_packtest(plan, out);
     // spec-0016 §2: the shortcut really opens, and opens exactly once.
     emit_shortcut_packtest(plan, out);
     // spec-0016 §4: the clock really alternates the gate region.
@@ -16480,6 +16638,163 @@ fn emit_bonfire_option_packtest(plan: &Plan, out: &mut BuildOutput) {
     b.push(format!("tag {sel} remove {ctag}"));
     out.insert(
         format!("packtest-datapack/data/{ns}/test/souls_bonfire_options.mcfunction"),
+        lines(&b).into_bytes(),
+    );
+}
+
+/// spec-0016 §1: **a rest mends what the player carries and takes back the
+/// flask's empties — and nothing else.**
+///
+/// Driven on the framework dummy (`@s`) through the real
+/// `bonfire_pick_rest_<i>`. Before the rest the dummy carries a damaged shield in
+/// the off-hand, a damaged chestplate in the armour slot, a damaged sword in the
+/// hotbar and a damaged bow in the last inventory slot (the four mends), an
+/// undamaged sword and a stack of bread (must be untouched), five glass bottles it
+/// "found" (must survive), a flask as the kit gives it (whose marked remainder is
+/// read back through the server's own component predicate) and two of the empties
+/// that remainder is.
+///
+/// **Why the dummy does not drink.** Drinking takes 32 ticks, so a drink is a
+/// multi-tick step in a batch that shares one server. Measured on the pinned
+/// toolserver: across 42 full-suite runs of this template with a real
+/// `dummy @s use item` (variants carrying diagnostics and the isolating
+/// perturbations tried: no cutscene sibling, the join teleport and the class
+/// dialog pre-empted), the potion was still undrunk in the hand at the read in
+/// 17 — cause not found — so a drink
+/// here would be an intermittent gate. That vanilla's consume hands back exactly
+/// the `use_remainder` stack is cited (the pinned `item_components` report gives
+/// `minecraft:potion` its bottle through that component) and was measured on the
+/// same server by a probe; see `docs/reference/compiler.md`, Stage 3 `flask`.
+///
+/// Unlike health (PackTest dummies are immune to `/damage`, see
+/// [`emit_bonfire_option_packtest`]), item durability is plain component state,
+/// so the repair is observable on a dummy.
+///
+/// Emits nothing without a bonfire and a flask (`DW0476` makes those the same).
+/// The empties half needs a flask whose item leaves a remainder; a flask that
+/// leaves none has no empties, so that half is not written.
+fn emit_bonfire_mend_packtest(plan: &Plan, out: &mut BuildOutput) {
+    let ns = &plan.namespace;
+    let title = artifact_title(plan.campaign);
+    let Some(bf) = plan.bonfires().next() else {
+        return;
+    };
+    let Some(&(ci, ki)) = plan.flasks().first() else {
+        return;
+    };
+    let i = bf.index;
+    let item = &plan.campaign.classes.content.classes[ci].kit[ki];
+    let ctag = class_tag(&plan.classes[ci].safe);
+    let pred = kit_item_predicate(item);
+    let comp = kit_item_components(item);
+    let remainder = flask_remainder(item);
+
+    let mut b = packtest_header(&format!(
+        "{title}: a rest mends every carried item in place and takes back only the \
+         flask's empties (spec-0016 §1)"
+    ));
+    b.push(format!("function {ns}:setup"));
+    b.push(format!("tag @s add {ctag}"));
+    b.push("clear @s".to_string());
+    // Gear to mend, one per kind of carried slot.
+    b.push("item replace entity @s weapon.offhand with minecraft:shield[damage=300]".to_string());
+    b.push(
+        "item replace entity @s armor.chest with minecraft:iron_chestplate[damage=100]".to_string(),
+    );
+    b.push("item replace entity @s container.1 with minecraft:iron_sword[damage=200]".to_string());
+    b.push("item replace entity @s container.35 with minecraft:bow[damage=50]".to_string());
+    // What the rest must not touch.
+    b.push("item replace entity @s container.2 with minecraft:iron_sword".to_string());
+    b.push("item replace entity @s container.3 with minecraft:bread 7".to_string());
+    b.push("item replace entity @s container.4 with minecraft:glass_bottle 5".to_string());
+    if let Some((id, count)) = remainder {
+        // The flask as the kit hands it out carries the marked remainder — read
+        // back through the server's own component predicate, so a mark the game
+        // parsed differently (or dropped) fails here…
+        b.push(format!(
+            "item replace entity @s container.5 with {}{comp}",
+            item.item
+        ));
+        b.push(format!(
+            "execute store result score #mark_bfmd dw.sys if items entity @s container.5 \
+             {}[use_remainder={}]",
+            item.item,
+            flask_remainder_snbt(id, count)
+        ));
+        b.push("assert score #mark_bfmd dw.sys matches 1".to_string());
+        // …and two of the empties that remainder is, as drinking leaves them.
+        b.push(format!(
+            "item replace entity @s container.6 with {} 2",
+            flask_empty_stack(id)
+        ));
+    }
+
+    b.push(format!("function {ns}:bonfire_pick_rest_{i}"));
+
+    // The four damaged items are whole again, in the slots they were in.
+    b.push("scoreboard players set #mend_bfmd dw.sys 0".to_string());
+    for (slot, it) in [
+        ("weapon.offhand", "minecraft:shield"),
+        ("armor.chest", "minecraft:iron_chestplate"),
+        ("container.1", "minecraft:iron_sword"),
+        ("container.35", "minecraft:bow"),
+    ] {
+        b.push(format!(
+            "execute if items entity @s {slot} {it}[damage=0] run scoreboard players add \
+             #mend_bfmd dw.sys 1"
+        ));
+    }
+    b.push("assert score #mend_bfmd dw.sys matches 4".to_string());
+    // Untouched: the whole sword, the stack, and nobody re-kitted the player
+    // (the kit's own sword would be a second one).
+    b.push("scoreboard players set #keep_bfmd dw.sys 0".to_string());
+    b.push(
+        "execute if items entity @s container.2 minecraft:iron_sword[damage=0] run \
+         scoreboard players add #keep_bfmd dw.sys 1"
+            .to_string(),
+    );
+    b.push(
+        "execute if items entity @s container.3 minecraft:bread run scoreboard players add \
+         #keep_bfmd dw.sys 1"
+            .to_string(),
+    );
+    b.push("assert score #keep_bfmd dw.sys matches 2".to_string());
+    b.push(
+        "execute store result score #bread_bfmd dw.sys run clear @s minecraft:bread 0".to_string(),
+    );
+    b.push("assert score #bread_bfmd dw.sys matches 7".to_string());
+    b.push(
+        "execute store result score #sword_bfmd dw.sys run clear @s minecraft:iron_sword 0"
+            .to_string(),
+    );
+    b.push("assert score #sword_bfmd dw.sys matches 2".to_string());
+    // The flask's empties are gone; the bottles found elsewhere are not.
+    if let Some((id, _)) = remainder {
+        b.push(format!(
+            "execute store result score #mine_bfmd dw.sys run clear @s {} 0",
+            flask_empty_stack(id)
+        ));
+        b.push("assert score #mine_bfmd dw.sys matches 0".to_string());
+    }
+    b.push(
+        "execute store result score #glass_bfmd dw.sys run clear @s minecraft:glass_bottle 0"
+            .to_string(),
+    );
+    b.push("assert score #glass_bfmd dw.sys matches 5".to_string());
+    // And the flask is back at its declared count.
+    b.push(format!(
+        "execute store result score #flask_bfmd dw.sys run clear @s {pred} 0"
+    ));
+    b.push(format!(
+        "assert score #flask_bfmd dw.sys matches {}",
+        item.count
+    ));
+
+    // Leave no residue for the shared batch (pin_dummy rule 4).
+    b.push("clear @s".to_string());
+    b.push(format!("tag @s remove {ctag}"));
+    out.insert(
+        format!("packtest-datapack/data/{ns}/test/souls_bonfire_mend.mcfunction"),
         lines(&b).into_bytes(),
     );
 }
