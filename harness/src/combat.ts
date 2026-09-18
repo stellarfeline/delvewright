@@ -1328,6 +1328,22 @@ export interface ReengageObservation {
 }
 
 /**
+ * Where, and how hurt, each body a census found standing was — the one reading
+ * that tells a fight the bot lost at 85/90 from one it lost at 5/90, and a wave
+ * that is merely unfinished from one standing somewhere the fight cannot reach.
+ * Empty for an empty census.
+ */
+export function describeStanding(mobs: readonly CensusMob[]): string {
+  return mobs
+    .map(
+      (m) =>
+        `[${m.pos.map((v) => v.toFixed(1)).join(", ")}] at ${m.health.toFixed(1)}/` +
+        `${m.maxHealth.toFixed(0)} health`,
+    )
+    .join("; ");
+}
+
+/**
  * Summarize one settled census.
  *
  * Every count here is the SERVER's answer about entities carrying the wave's own
