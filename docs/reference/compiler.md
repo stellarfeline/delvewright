@@ -3223,9 +3223,18 @@ The contract is **last fired wins**, carried by a per-NPC *walk generation* scor
   superseded driver therefore dies on the next tick the scheduler hands it.
 
 The staleness test is written as the positive `if own < gen`, never as
-`unless own = gen`: with both scores unset — a driver invoked directly, as the
-`v04_move` PackTest does — a score comparison is *false*, and the `unless` spelling
-would read that as "stale" and cancel a walk nothing superseded.
+`unless own = gen`: with both scores unset a score comparison is *false*, and the
+`unless` spelling would read that as "stale" and cancel a walk nothing superseded.
+
+**A template that invokes a guarded driver directly claims it first.** The scoreboard
+is shared by the whole PackTest suite: a sibling template that fires two walks for the
+body (a quest completion running both starts) leaves `#mown_<bare>` behind
+`#mgen_<npc>`, and a driver invoked with its stamp behind returns before it
+teleports. So `v04_move`, `v06_move_actor` and `v06_arrive_handoff` run
+`scoreboard players operation <own> dw.sys = <gen> dw.sys` before the jump when the
+body's drivers carry the guard (`walk_claim`). The generation is taken, not bumped, so
+a walk a sibling is running is not superseded by the template. A body whose drivers
+carry no guard gets no claim line.
 
 The new walk still starts at **its own first waypoint** (waypoints are precomputed
 from the walk's declared start anchor, so "resume from wherever the body stands" is
@@ -3244,8 +3253,9 @@ permanently. The scores are the same two under actor names: `#agen_<actor>` (the
 puppet's leg generation, bumped by every start) and `#aown_<bare>` (the generation
 this driver was started for), with the same generation-aware re-entry refusal in
 `ma_<actor>_<to>` and the same two-line staleness prologue in `ma_tick_<actor>_<to>`.
-The positive `if own < gen` spelling matters for the same reason here: `v06_move_actor`
-and `v06_arrive_handoff` invoke `ma_tick_` directly with both scores unset. A puppet
+The positive `if own < gen` spelling matters for the same reason here, and
+`v06_move_actor` and `v06_arrive_handoff` claim a guarded driver before invoking
+`ma_tick_` directly, as `v04_move` does. A puppet
 with one planned leg carries none of it and stays byte-identical. No campaign authors
 *temporally overlapping* legs today, so the defect was **latent** and the fixture is
 synthetic — though five island puppets are `supersedable` on leg count and do carry the
