@@ -371,13 +371,15 @@ fn resting_replenishes_the_flask_to_its_declared_count() {
     assert_eq!(
         flask.lines().collect::<Vec<_>>(),
         vec![
+            "clear @s minecraft:glass_bottle[custom_data={dw_flask_empty:1b}]",
             "execute if entity @s[tag=dw_class_warden] run clear @s \
              minecraft:potion[potion_contents={custom_effects:[{id:\"minecraft:instant_health\",\
              amplifier:1}],custom_color:16751664}]",
             "execute if entity @s[tag=dw_class_warden] run give @s \
              minecraft:potion[custom_name={\"italic\":false,\"text\":\"Ashen Flask\"},\
              potion_contents={custom_effects:[{id:\"minecraft:instant_health\",amplifier:1}],\
-             custom_color:16751664}] 3",
+             custom_color:16751664},use_remainder={id:\"minecraft:glass_bottle\",count:1,\
+             components:{\"minecraft:custom_data\":{dw_flask_empty:1b}}}] 3",
         ],
         "the flask is cleared and re-given at the declared count: {flask}"
     );
@@ -392,6 +394,173 @@ fn resting_replenishes_the_flask_to_its_declared_count() {
         fn_body(&out, "cp_on_respawn_0").contains(&format!("function {NS}:bonfire_flask")),
         "a respawn at a bonfire refills the flask"
     );
+}
+
+/// Every slot a player carries an item in: the four armour slots, the off-hand,
+/// and the 36 hotbar + inventory slots. What a rest mends.
+fn carried_slots() -> Vec<String> {
+    let mut s: Vec<String> = ["armor.head", "armor.chest", "armor.legs", "armor.feet"]
+        .iter()
+        .map(|x| x.to_string())
+        .collect();
+    s.push("weapon.offhand".to_string());
+    s.extend((0..36).map(|i| format!("container.{i}")));
+    s
+}
+
+/// **A rest mends everything the player carries** (spec-0016 §1, "the resting
+/// player is fully restored"). A shield broken mid-campaign with no way back is
+/// what made a boss unbeatable; the rest is the way back. Every carried slot is
+/// repaired in place, guarded on the item actually being damaged, so an empty
+/// slot, a stack and an item with no durability are never touched — and the
+/// rest never re-kits the player: gear picked up in play is what gets mended.
+#[test]
+fn a_rest_mends_every_carried_item_in_place() {
+    let out = build_fixture();
+    let restore = fn_body(&out, "bonfire_restore");
+    let slots = carried_slots();
+    assert_eq!(slots.len(), 41);
+    for slot in &slots {
+        let line = format!(
+            "execute if items entity @s {slot} *[damage~{{damage:{{min:1}}}}] \
+             run item modify entity @s {slot} {NS}:bonfire_mend"
+        );
+        assert!(
+            restore.lines().any(|l| l == line),
+            "a rest mends `{slot}` in place, guarded on damage: {restore}"
+        );
+    }
+    assert_eq!(
+        restore
+            .lines()
+            .filter(|l| l.contains("item modify"))
+            .count(),
+        slots.len(),
+        "one mend per carried slot and no other item modification: {restore}"
+    );
+    assert!(
+        !restore
+            .lines()
+            .any(|l| l.starts_with("give ") || l.contains(" run give "))
+            && !restore.contains("class_apply"),
+        "a rest mends what is carried and never re-kits the player: {restore}"
+    );
+    let modifier: serde_json::Value = serde_json::from_slice(
+        out.get(&format!(
+            "datapack/data/{NS}/item_modifier/bonfire_mend.json"
+        ))
+        .expect("the mend modifier is emitted with the bonfire"),
+    )
+    .unwrap();
+    assert_eq!(
+        modifier,
+        serde_json::json!({"function": "minecraft:set_damage", "damage": 1.0}),
+        "the mend sets durability to full, absolutely"
+    );
+    // Save-only must not grow a mend.
+    assert!(
+        !fn_body(&out, "bonfire_save_0").contains("item modify"),
+        "save-only saves and nothing else"
+    );
+}
+
+/// **A rest takes back the bottles the flask left, and only those.** A drunk
+/// `minecraft:potion` leaves its default `use_remainder` (a glass bottle); the
+/// flask's own remainder is overridden to carry a `custom_data` mark, so the
+/// refill can clear exactly the flask's empties and never a bottle the player
+/// obtained any other way.
+#[test]
+fn the_flask_takes_back_only_its_own_empties() {
+    let out = build_fixture();
+    let mark = "use_remainder={id:\"minecraft:glass_bottle\",count:1,\
+                components:{\"minecraft:custom_data\":{dw_flask_empty:1b}}}";
+    let kit = fn_body(&out, "class_apply_warden");
+    let give = kit
+        .lines()
+        .find(|l| l.contains("minecraft:potion"))
+        .expect("the kit gives the flask");
+    assert!(
+        give.contains(mark),
+        "the flask's empty bottle is marked as the flask's: {give}"
+    );
+    let flask = fn_body(&out, "bonfire_flask");
+    assert_eq!(
+        flask.lines().next(),
+        Some("clear @s minecraft:glass_bottle[custom_data={dw_flask_empty:1b}]"),
+        "the refill first takes back the flask's own empties: {flask}"
+    );
+    for l in all_functions(&out).lines() {
+        assert!(
+            !(l.contains("clear @s minecraft:glass_bottle") && !l.contains("dw_flask_empty")),
+            "no rest takes a bottle the flask did not leave: {l}"
+        );
+    }
+
+    // A potion in the kit that is NOT the flask leaves an ordinary bottle.
+    let mut c = fixture_campaign();
+    let kit = &mut c.classes.content.classes[0].kit;
+    let mut brew = kit.iter().find(|k| k.flask).unwrap().clone();
+    brew.flask = false;
+    brew.name = Some("Spare Brew".to_string());
+    brew.count = 1;
+    kit.push(brew);
+    let out = build_campaign(&c);
+    let spare = fn_body(&out, "class_apply_warden")
+        .lines()
+        .find(|l| l.contains("Spare Brew"))
+        .expect("the spare brew is given")
+        .to_string();
+    assert!(
+        !spare.contains("use_remainder"),
+        "only the flask's remainder is marked: {spare}"
+    );
+
+    // A flask whose item leaves nothing behind (a splash potion is thrown) has
+    // no empties to take back.
+    let mut c = fixture_campaign();
+    let f = c.classes.content.classes[0]
+        .kit
+        .iter_mut()
+        .find(|k| k.flask)
+        .unwrap();
+    f.item = "minecraft:splash_potion".to_string();
+    let out = build_campaign(&c);
+    let flask = fn_body(&out, "bonfire_flask");
+    assert!(
+        !flask.contains("glass_bottle") && !flask.contains("use_remainder"),
+        "a flask with no vanilla remainder marks and clears nothing: {flask}"
+    );
+}
+
+/// The mend and the bottle take-back, proven on a live server: the template
+/// damages gear in every kind of carried slot, reads the flask's marked remainder
+/// back through the server's component predicate, rests through the real option
+/// function and reads the inventory back.
+#[test]
+fn the_mend_is_packtested() {
+    let out = build_fixture();
+    let t = std::str::from_utf8(
+        out.get(&format!(
+            "packtest-datapack/data/{NS}/test/souls_bonfire_mend.mcfunction"
+        ))
+        .expect("the mend PackTest is emitted"),
+    )
+    .unwrap();
+    for needle in [
+        "item replace entity @s weapon.offhand with minecraft:shield[damage=300]".to_string(),
+        "assert score #mark_bfmd dw.sys matches 1".to_string(),
+        format!("function {NS}:bonfire_pick_rest_0"),
+        "assert score #mend_bfmd dw.sys matches 4".to_string(),
+        "assert score #bread_bfmd dw.sys matches 7".to_string(),
+        "assert score #mine_bfmd dw.sys matches 0".to_string(),
+        "assert score #glass_bfmd dw.sys matches 5".to_string(),
+        "assert score #flask_bfmd dw.sys matches 3".to_string(),
+    ] {
+        assert!(
+            t.contains(&needle),
+            "the mend template says `{needle}`: {t}"
+        );
+    }
 }
 
 /// One authored `on_rest` bundle, two audiences (spec-0018). Resting is a PARTY
@@ -738,8 +907,9 @@ fn the_kit_give_and_the_refill_give_are_the_same_item() {
         .split_once("potion_contents=")
         .expect("the flask carries contents")
         .1
-        .trim_end_matches(" 3")
-        .trim_end_matches(']');
+        .split_once(",use_remainder=")
+        .expect("the flask's remainder follows its contents")
+        .0;
     assert!(
         flask.contains(&format!(
             "clear @s minecraft:potion[potion_contents={filling}]"
