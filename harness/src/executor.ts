@@ -919,6 +919,9 @@ const ENTITY_EVENT_USE_FINISHED = 9;
 /** How far ahead (blocks) a step is probed for safe footing — a little more than
  * one tick of walking, so the ledge is seen before the body reaches it. */
 const STEP_PROBE_BLOCKS = 0.7;
+/** How long (ms) one disengagement may back off to drink before the exchange
+ * goes on — see `strike`. */
+const DISENGAGE_BUDGET_MS = 3_000;
 /** How one {@link MineflayerExecutor.strike} exchange ended. */
 type StrikeOutcome = "swung" | "gone" | "out-of-reach" | "disengaged";
 
@@ -1602,8 +1605,11 @@ export class MineflayerExecutor implements StepExecutor {
   /** Bodies an exchange could not bring into reach by footwork: the next turn
    * walks to them with the pathfinder. */
   private readonly unreached = new Set<number>();
-  /** Said once per disengagement: the bot is backing off to drink. */
-  private pressedSaid = false;
+  /** When the bot began backing off to drink; `undefined` when it is not
+   * pressed. Reset once it is no longer pressed (it drank, or got clear). */
+  private disengageSince: number | undefined;
+  /** Said once per disengagement: backing off did not open the gap. */
+  private disengageGaveUp = false;
   /** When the bot last drank a draught (ms). */
   private lastDrinkAt = 0;
   /** Whether the bot is holding its shield up. */
@@ -2234,6 +2240,10 @@ export class MineflayerExecutor implements StepExecutor {
       return;
     }
     for (let round = 0; round < DEFENSE_ROUNDS_PER_HOP; round++) {
+      // A walking player drinks too: the draughts are a per-rest budget, and
+      // vesperhold's re-seated walk-ambush killed the bot on the way to the keep
+      // at 9.3/20 with three of them in the bag.
+      await this.maybeDrink(label);
       await this.maybeEat(label);
       const trip = this.armStalkerTrip();
       // Observe the walk's outcome exactly once: the trip can win the race while the
@@ -3486,14 +3496,32 @@ export class MineflayerExecutor implements StepExecutor {
         // Hurt enough that a draught's whole heal fits, with a melee attacker too
         // close to drink: open the gap instead of trading (`drinkDecision`). Where
         // there is no ground behind to open it on, the exchange goes on.
-        const disengage = canStepBack && this.drinkNow().kind === "pressed";
-        if (disengage && !this.pressedSaid) {
-          this.pressedSaid = true;
+        // Bounded: against a crowd, or a reach the bot cannot out-walk, backing off
+        // never opens the gap — measured on the vesperhold grooms, thirteen seconds
+        // of it cost 11.6 → 5.6 health and not one swing. After DISENGAGE_BUDGET_MS
+        // the exchange goes on, and the critical-health drink takes over.
+        const pressed = this.drinkNow().kind === "pressed";
+        if (!pressed) {
+          this.disengageSince = undefined;
+          this.disengageGaveUp = false;
+        }
+        if (pressed && canStepBack && this.disengageSince === undefined) {
+          this.disengageSince = Date.now();
           process.stderr.write(
             `[drink] ${label}: hurt enough to drink (health ${bot.health.toFixed(1)}/` +
               `${PLAYER_MAX_HEALTH}) with a melee attacker within reach — backing off to drink\n`,
           );
         }
+        const disengageOpen =
+          this.disengageSince !== undefined && Date.now() - this.disengageSince < DISENGAGE_BUDGET_MS;
+        if (pressed && this.disengageSince !== undefined && !disengageOpen && !this.disengageGaveUp) {
+          this.disengageGaveUp = true;
+          process.stderr.write(
+            `[drink] ${label}: backing off did not open the gap in ${DISENGAGE_BUDGET_MS}ms ` +
+              `(health ${bot.health.toFixed(1)}/${PLAYER_MAX_HEALTH}) — fighting on\n`,
+          );
+        }
+        const disengage = canStepBack && pressed && disengageOpen;
         lastTickDisengaged = disengage;
         if (disengage) {
           this.lowerShield();
@@ -3503,10 +3531,11 @@ export class MineflayerExecutor implements StepExecutor {
           if (this.drinkNow().kind === "drink") {
             bot.setControlState("back", false);
             await this.maybeDrink(label);
+            this.disengageSince = undefined;
+            this.disengageGaveUp = false;
           }
           continue;
         }
-        this.pressedSaid = false;
         const steps = footwork({
           ranged: holdsRangedWeapon(live.heldItem?.name),
           horizontalDistance: Math.hypot(hx, hz),
