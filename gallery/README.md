@@ -70,6 +70,18 @@ purpose — `anchor/hearth` is where you come back to life, `anchor/muster` is
 where a wave forms up — and the generator prints a one-line `note` beside each
 one, so the piece explains itself without the campaign in hand.
 
+Four fights pay for their kills (`on_kill`, spec-0074), one of each shape the
+bundle takes, and each writes a datum the hall already reads: `wave/muster`
+comes back after every rest and pays `every-kill` into the killer's `tokens`;
+`wave/lane`, the boss lane, is re-seated only while it stands and pays
+`first-kill` into the party's `bounty` purse; `actor/hall-moth` pays
+`first-kill` into the killer's `keepsake`; and `wave/edge`, which nothing seats
+twice, states no `fires` and pays the killer's `relics`, with a chime gated on
+the bounty — the bounty's only reader. The generated `kill_pays_*` templates run
+each one on the pinned server with a PackTest dummy credited by vanilla's own
+`player_killed_entity`, beside a death nobody is credited with, every compiler
+removal, and a rest.
+
 One place in the hall is found rather than named, and it is the only one: the
 cell a body arrives at. `anchor/arrival` is named like every other place and is
 the entry because it declares the entry **role**; ten cells down the same floor
@@ -115,6 +127,9 @@ holding them at once.
 | `two-bodies-on-one-mark` | `DW0896` | `build` | taking the page's offset away, so it is summoned onto the usher's own cell while the usher is still standing on it |
 | `an-offset-out-of-the-room` | `DW0897` | `build` | writing the page's offset from the usher as forty cells instead of four, past the hall's east wall |
 | `a-chestplate-on-a-horse` | `DW0898` | `validate` | putting a chestplate on the barded horse, which the server stores and the client never draws |
+| `a-kill-nobody-can-be-credited-with` | `DW0913` | `validate` | paying for the kill of the usher, who is never unleashed and not `vulnerable`, so no player can ever be credited with killing him |
+| `every-kill-on-a-fight-that-never-comes-back` | `DW0914` | `validate` | saying the bay's lone skeleton pays `every-kill`, when nothing ever seats it twice |
+| `a-fight-that-comes-back-with-no-judgement` | `DW0915` | `validate` | removing `fires` from the muster's bundle, when every rest brings the muster back |
 
 **A probe is the primary plus one declared edit.** It carries no copy of any
 document the primary already holds; what it perturbs is written out in its own

@@ -1499,8 +1499,8 @@ fn removing_the_bundle_is_byte_identical_and_a_build_is_deterministic() {
         "a tree with no bundle carries no bundle artifact"
     );
     assert!(
-        bare.iter()
-            .filter_map(|(_, b)| std::str::from_utf8(b).ok())
+        bare.values()
+            .filter_map(|b| std::str::from_utf8(b).ok())
             .all(|t| !t.contains("#kf_")),
         "a tree with no bundle carries no payment ledger"
     );
