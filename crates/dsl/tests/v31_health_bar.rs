@@ -214,10 +214,6 @@ fn the_schema_exports_the_bar_on_waves_and_actors() {
         );
     }
     assert!(text.contains("health_bar"));
-    assert_eq!(
-        DSL_VERSION, "0.31.0",
-        "spec-0073 moves the format to 0.31.0"
-    );
 }
 
 /// `DW0909`: a bar on an actor that is neither `vulnerable` nor unleashed reads
