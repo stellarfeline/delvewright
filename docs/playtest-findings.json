@@ -1946,24 +1946,9 @@
               "eq": {
                 "type": "volley"
               },
-              "in": {
+              "not_in": {
                 "salvos": [
-                  null,
-                  2,
-                  3,
-                  4,
-                  5,
-                  6,
-                  7,
-                  8,
-                  9,
-                  10,
-                  11,
-                  12,
-                  13,
-                  14,
-                  15,
-                  16
+                  1
                 ]
               }
             }
@@ -1981,7 +1966,7 @@
       "finding": "a portcullis cycled too slowly to read as a hazard to time",
       "general_form": "a timed hazard is a timing read, not a coin flip: enough entry phases clear a timed gate's span, and a body a volley's salvo lands on can walk out of its kill zone before the next salvo in enough phases of the interval",
       "id": "bell-06",
-      "note": "The class is every hazard on a repeating clock the party must read: a `timed-gate` (its id), and a `volley` that fires more than once (`salvos` absent, which defaults to 3, or 2..16 — the range `DW0443` admits). Both are judged by one body model, `nav::timing_read` (4 t/block sprint, admitting phases of the window, integer share against a 20% floor): `DW0378` charges the crossing of a gate's span against its open window; `DW0918` charges the walk out of a volley's kill zone, from its deepest standable cell, against the interval between salvos, because leaving the zone is the counterplay spec-0022 names and a finite volley never forces a body outside it through. A `volley` with `salvos: 1` has no cadence and is outside the class. `close-gate`/`open-gate` are one-shot state changes with no clock and are outside it too. The binding selects by identity, so its zero is the class measuring zero: a campaign with neither is INAPPLICABLE. This row carried an `applies_when` of `has_any [open_ticks, closed_ticks, salvos]` and a binding of timed gates only, which held every volley campaign UNBOUND; the precondition is removed because the binding now counts the class itself. That removal is a LOOSENING for one shape, declared as one: a campaign whose only volleys declare `salvos: 1` read UNBOUND and now reads INAPPLICABLE — there is no next salvo for a timing read to judge. It is also a tightening for another: a volley that omits `salvos` matched no `has_any` clause and is now counted.",
+      "note": "The class is every hazard on a repeating clock the party must read: a `timed-gate` (its id), and a `volley` that fires more than once (`salvos` absent, which defaults to 3, or any value but 1 — `DW0443` owns the range the engine admits, so the ledger does not restate it). Both are judged by one body model, `nav::timing_read` (4 t/block sprint, admitting phases of the window, integer share against a 20% floor): `DW0378` charges the crossing of a gate's span against its open window; `DW0918` charges the walk out of a volley's kill zone, from its deepest standable cell, against the interval between salvos, because leaving the zone is the counterplay spec-0022 names and a finite volley never forces a body outside it through. A `volley` with `salvos: 1` has no cadence and is outside the class. `close-gate`/`open-gate` are one-shot state changes with no clock and are outside it too. The binding selects by identity, so its zero is the class measuring zero: a campaign with neither is INAPPLICABLE. This row carried an `applies_when` of `has_any [open_ticks, closed_ticks, salvos]` and a binding of timed gates only, which held every volley campaign UNBOUND; the precondition is removed because the binding now counts the class itself. That removal is a LOOSENING for one shape, declared as one: a campaign whose only volleys declare `salvos: 1` read UNBOUND and now reads INAPPLICABLE — there is no next salvo for a timing read to judge. It is also a tightening for another: a volley that omits `salvos` matched no `has_any` clause and is now counted.",
       "round": 2,
       "triage": "content"
     },

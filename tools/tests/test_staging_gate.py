@@ -1599,6 +1599,38 @@ def test_the_live_timing_read_row_binds_a_volley_with_a_cadence(gate, tmp_path):
     }, verdicts
 
 
+def test_not_in_excludes_the_values_it_names_and_keeps_an_absent_field(gate, tmp_path):
+    """`not_in` is the complement of `in`, read the same way: an absent field
+    is None. It must exclude exactly what it names — not be ignored, which would
+    count every node — and a predicate made of it alone is refused at load,
+    because it names a population only by what it is not."""
+    m = {"eq": {"type": "volley"}, "not_in": {"salvos": [1]}}
+    assert gate._matches({"type": "volley"}, m)
+    assert gate._matches({"type": "volley", "salvos": 3}, m)
+    assert not gate._matches({"type": "volley", "salvos": 1}, m)
+    assert not gate._matches({"type": "collapse"}, m)
+    assert "salvos∉{1}" in gate.describe(m)
+
+    def ledger(match):
+        return {
+            "findings": [
+                dict(
+                    BOUND_ROW,
+                    binding={"kind": "dsl", "files": ["quests.json"], "match": match},
+                )
+            ]
+        }
+
+    for alone in ({"not_in": {"salvos": [1]}}, {"any_of": [{"not_in": {"salvos": [1]}}]}):
+        bad = tmp_path / "l.json"
+        bad.write_text(json.dumps(ledger(alone)))
+        with pytest.raises(ValueError, match="only of excluding clauses"):
+            gate.load_ledger(bad)
+    good = tmp_path / "g.json"
+    good.write_text(json.dumps(ledger(m)))
+    gate.load_ledger(good)
+
+
 def test_a_dw_carrier_list_is_carried_only_while_every_code_is(gate, tmp_path):
     """A `dw` carrier may name a list — one rule per member kind of the class —
     and the row is carried only while EVERY code in it exists: losing either
