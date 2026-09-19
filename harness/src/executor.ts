@@ -4554,7 +4554,12 @@ export class MineflayerExecutor implements StepExecutor {
       // the anchor through it is walking into every blow: measured on vesperhold's
       // run-back to the walk-ambush, four blows (13.5 → 4.5) landed "while walking"
       // inside the assist window before the bot threw its first swing.
-      const onTheBot = this.hostileWithin(FIGHT_HERE_RANGE);
+      const onTheBot =
+        this.hostileWithin(FIGHT_HERE_RANGE) ??
+        // A crowd in sight is not walked into either: the loop takes a corner.
+        (this.waveMeleeNear(this.encounterFor(step.wave), CROWD_RANGE).length >= CROWD_SIZE
+          ? this.waveMeleeNear(this.encounterFor(step.wave), CROWD_RANGE)[0]
+          : undefined);
       if (onTheBot) {
         process.stderr.write(
           `[kill ${step.wave}] ${onTheBot.name ?? "?"}#${onTheBot.id} is already within ` +

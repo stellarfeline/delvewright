@@ -588,7 +588,7 @@ export function pickStand(
 export const CROWD_SIZE = 2;
 export const CROWD_RANGE = 16;
 /** How far (blocks) the bot looks for a corner to fight a crowd from. */
-export const STAND_SEARCH_RADIUS = 12;
+export const STAND_SEARCH_RADIUS = 24;
 /** How long (ms) the bot holds a corner with no wave body coming within reach
  * before it leaves it to hunt. */
 export const STAND_PATIENCE_MS = 10_000;
