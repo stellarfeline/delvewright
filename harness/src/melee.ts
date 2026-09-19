@@ -356,6 +356,19 @@ export const OPENING_WAIT_MS = 1_200;
  * is taken as not attacking (it is then no reason to keep the shield up). */
 export const IDLE_ATTACKER_MS = 1_500;
 
+/**
+ * Whether a mob's main hand holds a weapon whose blow disables a shield. In
+ * 1.21.11 that is every axe (the item's `weapon` component,
+ * `disable_blocking_for_seconds: 5`); measured on the pinned server, three of
+ * three axe blows on a raised shield put it on a 100-tick cooldown. Against such
+ * an attacker the shield buys one blow per five seconds, so the bot fences the
+ * way it does without one — and a controlled repeat of the Porter fight with
+ * the shield held against his axe lost 5 of 5 where kiting had won 8 of 8.
+ */
+export function disablesShields(heldItem: string | undefined): boolean {
+  return heldItem !== undefined && heldItem.endsWith("_axe");
+}
+
 /** One melee attacker as the opening rule reads it. */
 export interface StrikeThreat {
   /** Horizontal distance to the bot. */
@@ -516,3 +529,66 @@ export const SHIELD_COOLDOWN_GROUP = "minecraft:shield";
 /** How long (ms) a drink may take before it is abandoned: a potion's 32-tick use
  * plus the round trip. */
 export const DRINK_TIMEOUT_MS = 2_500;
+
+/**
+ * The open quadrant of a CORNER cell — a cell with walls on two orthogonal
+ * sides — as a unit horizontal vector pointing out of the corner, or
+ * `undefined` for a cell that is not a corner. `wall(dx, dz)` answers whether
+ * the neighbour at that offset blocks a body (feet or head).
+ *
+ * Why a corner: vanilla's shield blocks the front half-plane only (measured:
+ * 89° off the look 5/5 blocked, 91° 0/5). A crowd in the open surrounds the
+ * bot, and a blow from behind or beside lands through a raised shield — the
+ * Unremembered Guard's five zombies stood at 0.5–0.7 blocks, all within 4, and
+ * killed the bot in six blows. With its back in a corner every attacker stands
+ * in the open quadrant, inside ±45° of the bot's look: in front of the shield.
+ */
+export function cornerOpening(
+  wall: (dx: number, dz: number) => boolean,
+): { dx: number; dz: number } | undefined {
+  const n = wall(0, -1);
+  const s = wall(0, 1);
+  const e = wall(1, 0);
+  const w = wall(-1, 0);
+  const pick = (dx: number, dz: number) => ({ dx: dx / Math.SQRT2, dz: dz / Math.SQRT2 });
+  if (s && w && !n && !e) return pick(1, -1);
+  if (s && e && !n && !w) return pick(-1, -1);
+  if (n && w && !s && !e) return pick(1, 1);
+  if (n && e && !s && !w) return pick(-1, 1);
+  return undefined;
+}
+
+/** A candidate stand: a corner cell, its distance, its open quadrant. */
+export interface StandCandidate {
+  readonly cell: readonly [number, number, number];
+  readonly distance: number;
+  readonly opening: { readonly dx: number; readonly dz: number };
+}
+
+/**
+ * The corner to fight a crowd from: the nearest whose open quadrant faces the
+ * crowd (the crowd's centre lies in front of it), so the bot does not walk past
+ * the crowd to reach it.
+ */
+export function pickStand(
+  candidates: readonly StandCandidate[],
+  crowd: { readonly x: number; readonly z: number },
+): StandCandidate | undefined {
+  return [...candidates]
+    .filter((c) => {
+      const vx = crowd.x - (c.cell[0] + 0.5);
+      const vz = crowd.z - (c.cell[2] + 0.5);
+      return vx * c.opening.dx + vz * c.opening.dz > 0;
+    })
+    .sort((a, b) => a.distance - b.distance)[0];
+}
+
+/** How many melee bodies of the wave within this many blocks make a CROWD —
+ * one the bot fights from a corner. */
+export const CROWD_SIZE = 2;
+export const CROWD_RANGE = 16;
+/** How far (blocks) the bot looks for a corner to fight a crowd from. */
+export const STAND_SEARCH_RADIUS = 12;
+/** How long (ms) the bot holds a corner with no wave body coming within reach
+ * before it leaves it to hunt. */
+export const STAND_PATIENCE_MS = 10_000;

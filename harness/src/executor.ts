@@ -169,6 +169,14 @@ import {
   holdsRangedWeapon,
   isOpening,
   releaseSwing,
+  disablesShields,
+  cornerOpening,
+  pickStand,
+  CROWD_RANGE,
+  CROWD_SIZE,
+  STAND_PATIENCE_MS,
+  STAND_SEARCH_RADIUS,
+  type StandCandidate,
   MOB_STRIKE_RANGE,
   type StrikeThreat,
   inReach,
@@ -3499,7 +3507,7 @@ export class MineflayerExecutor implements StepExecutor {
    * the off hand, the jump key, the attack key — and the server adjudicates the
    * block, the crit and the damage exactly as it would for a person.
    */
-  private async strike(mob: Entity, label: string): Promise<StrikeOutcome> {
+  private async strike(mob: Entity, label: string, anchored = false): Promise<StrikeOutcome> {
     const bot = this.requireBot();
     this.meleeTarget = mob.id;
     await this.maybeDrink(label);
@@ -3527,22 +3535,34 @@ export class MineflayerExecutor implements StepExecutor {
         const hx = at[0] - feet[0];
         const hz = at[2] - feet[2];
         const flat = Math.hypot(hx, hz) || 1;
-        const shieldUsable = this.shieldUsable();
+        // The shield is HELD only against attackers it can outlast: with an axe on
+        // the bot it is disabled on the first block, so the bot fences as it does
+        // without one (`disablesShields`).
+        const threats = this.strikeThreats(now);
+        const shieldUsable = this.shieldUsable() && !threats.some((t) => t.axe);
         const steps = footwork({
           ranged: holdsRangedWeapon(live.heldItem?.name),
           horizontalDistance: Math.hypot(hx, hz),
           charged,
           inReach: reach,
-          canStepBack: this.safeStep(-hx / flat, -hz / flat),
-          canStepIn: this.safeStep(hx / flat, hz / flat),
+          // Holding a corner: the feet stay in it.
+          canStepBack: !anchored && this.safeStep(-hx / flat, -hz / flat),
+          canStepIn: !anchored && this.safeStep(hx / flat, hz / flat),
           shieldUsable,
         });
         this.hands = steps === "back" ? "backing" : steps === "forward" ? "stepping in" : "holding";
         if (steps !== "hold") this.lowerShield();
         bot.setControlState("back", steps === "back");
         bot.setControlState("forward", steps === "forward");
-        if (guardUp({ shieldUsable, footwork: steps })) this.raiseShield();
-        const opening = isOpening(this.strikeThreats(now));
+        if (shieldUsable) {
+          if (guardUp({ shieldUsable, footwork: steps })) this.raiseShield();
+        } else if (this.shieldUsable() && steps === "hold" && !charged) {
+          // Fencing: up while the swing charges, down once it is ready.
+          this.raiseShield();
+        } else if (charged) {
+          this.lowerShield();
+        }
+        const opening = isOpening(threats);
         const release = releaseSwing({
           charged,
           inReach: reach,
@@ -3593,17 +3613,92 @@ export class MineflayerExecutor implements StepExecutor {
     }
   }
 
+  /** The wave's melee bodies within `radius` blocks of the bot (census-matched). */
+  private waveMeleeNear(enc: Encounter | undefined, radius: number): Entity[] {
+    const bot = this.requireBot();
+    const cast = this.requireNonCombatants();
+    const census = enc ? this.lastStanding.get(enc.wave) : undefined;
+    return Object.values(bot.entities).filter(
+      (e) =>
+        !!e?.position &&
+        isWaveMob(e, bot.entity, cast) &&
+        !holdsRangedWeapon(e.heldItem?.name) &&
+        bot.entity.position.distanceTo(e.position) <= radius &&
+        isWaveBody({ pos: [e.position.x, e.position.y, e.position.z], census }),
+    );
+  }
+
+  /**
+   * A corner cell within {@link STAND_SEARCH_RADIUS} whose open quadrant faces
+   * `crowd` (`cornerOpening`, `pickStand`): standable (solid floor, open feet
+   * and head), outside every lethal volume, on the bot's own level or one off.
+   */
+  private findStand(crowd: { x: number; z: number }): StandCandidate | undefined {
+    const bot = this.requireBot();
+    const p = bot.entity.position;
+    const fx = Math.floor(p.x);
+    const fy = Math.floor(p.y + 0.01);
+    const fz = Math.floor(p.z);
+    const at = (x: number, y: number, z: number): { boundingBox?: string; name?: string } | null =>
+      bot.blockAt(p.offset(x + 0.5 - p.x, y + 0.5 - p.y, z + 0.5 - p.z)) as {
+        boundingBox?: string;
+        name?: string;
+      } | null;
+    const open = (x: number, y: number, z: number): boolean => {
+      const b = at(x, y, z);
+      return b !== null && b.boundingBox === "empty" && b.name !== "water" && b.name !== "lava";
+    };
+    const found: StandCandidate[] = [];
+    const r = STAND_SEARCH_RADIUS;
+    for (let dy = -1; dy <= 1; dy++) {
+      for (let dx = -r; dx <= r; dx++) {
+        for (let dz = -r; dz <= r; dz++) {
+          const x = fx + dx;
+          const y = fy + dy;
+          const z = fz + dz;
+          if (Math.hypot(dx, dz) > r) continue;
+          const floor = at(x, y - 1, z);
+          if (!floor || floor.boundingBox !== "block") continue;
+          if (!open(x, y, z) || !open(x, y + 1, z)) continue;
+          if (this.lethalBoxes.some((box) => volumeReachesCell([x, y, z], box))) continue;
+          const opening = cornerOpening(
+            (ox, oz) => !open(x + ox, y, z + oz) || !open(x + ox, y + 1, z + oz),
+          );
+          if (!opening) continue;
+          found.push({ cell: [x, y, z], distance: Math.hypot(dx, dy, dz), opening });
+        }
+      }
+    }
+    return pickStand(found, crowd);
+  }
+
+  /** Step from within a block of `cell` into it, with the movement keys. */
+  private async settleInto(cell: readonly [number, number, number]): Promise<void> {
+    const bot = this.requireBot();
+    const deadline = Date.now() + 1_500;
+    while (Date.now() < deadline) {
+      const p = bot.entity.position;
+      if (Math.floor(p.x) === cell[0] && Math.floor(p.z) === cell[2]) break;
+      await bot
+        .lookAt(p.offset(cell[0] + 0.5 - p.x, 0, cell[2] + 0.5 - p.z), true)
+        .catch(() => {});
+      bot.setControlState("forward", true);
+      await delay(TICK_POLL_MS);
+    }
+    bot.setControlState("forward", false);
+  }
+
   /** Whether the off hand holds a shield the server has not put on cooldown. */
   private shieldUsable(): boolean {
     return this.shieldInOffhand() && Date.now() >= this.shieldReadyAt;
   }
 
   /** Every visible melee attacker, as the opening rule reads it (`isOpening`). */
-  private strikeThreats(now: number): StrikeThreat[] {
+  private strikeThreats(now: number): Array<StrikeThreat & { axe: boolean }> {
     const bot = this.requireBot();
     const { byId } = this.visibleHostiles();
     const me = bot.entity.position;
-    const out: StrikeThreat[] = [];
+    const out: Array<StrikeThreat & { axe: boolean }> = [];
     for (const e of byId.values()) {
       if (holdsRangedWeapon(e.heldItem?.name)) continue;
       const distance = Math.hypot(e.position.x - me.x, e.position.z - me.z);
@@ -3618,6 +3713,7 @@ export class MineflayerExecutor implements StepExecutor {
         distance,
         swungAgoMs: swung === undefined ? undefined : now - swung,
         inRangeForMs: since === undefined ? 0 : now - since,
+        axe: distance <= MOB_STRIKE_RANGE + 2 && disablesShields(e.heldItem?.name),
       });
     }
     return out;
@@ -3718,7 +3814,8 @@ export class MineflayerExecutor implements StepExecutor {
     process.stderr.write(
       `[hit] -${lost.toFixed(1)} → ${bot.health.toFixed(1)}/${PLAYER_MAX_HEALTH} while ${this.hands}` +
         `${this.guarding ? ` (shield up ${Date.now() - this.raisedAt}ms)` : ""}; nearest hostile ` +
-        `${nearest ? `${nearest.e.name}#${nearest.e.id} at ${nearest.d.toFixed(1)}` : "none"}, ` +
+        `${nearest ? `${nearest.e.name}#${nearest.e.id} at ${nearest.d.toFixed(1)}` : "none"}` +
+        `${nearest && this.swungAt.has(nearest.e.id) ? ` (swung ${Date.now() - this.swungAt.get(nearest.e.id)!}ms ago)` : ""}, ` +
         `${within4} within 4 blocks\n`,
     );
   }
@@ -4446,6 +4543,10 @@ export class MineflayerExecutor implements StepExecutor {
     // to again this step, so a body standing somewhere unreachable ends the step
     // on its budget with its position named, rather than looping the walk.
     const walkedInVain: Array<readonly [number, number, number]> = [];
+    // The corner a crowd is being fought from, if any (`findStand`).
+    let stand: readonly [number, number, number] | undefined;
+    let standQuietSince = 0;
+    let standAbandoned = false;
     const hands = { ...this.melee };
     try {
       await this.equipLoadout();
@@ -4611,6 +4712,55 @@ export class MineflayerExecutor implements StepExecutor {
         }
         emptyStreak = 0;
         const dist = bot.entity.position.distanceTo(mob.position);
+        // A CROWD is fought from a corner, the shield covering the one quadrant
+        // it can come from (`cornerOpening`). Only while the shield is of use:
+        // an axe disables it, and then footwork is the defence.
+        const crowd = this.waveMeleeNear(enc, CROWD_RANGE);
+        if (
+          stand === undefined &&
+          !standAbandoned &&
+          crowd.length >= CROWD_SIZE &&
+          this.shieldUsable() &&
+          !crowd.some((e) => disablesShields(e.heldItem?.name))
+        ) {
+          const cx = crowd.reduce((a, e) => a + e.position.x, 0) / crowd.length;
+          const cz = crowd.reduce((a, e) => a + e.position.z, 0) / crowd.length;
+          const found = this.findStand({ x: cx, z: cz });
+          if (found) {
+            process.stderr.write(
+              `[kill ${step.wave}] ${crowd.length} of the wave close in — taking the corner at ` +
+                `[${found.cell.join(", ")}] (${found.distance.toFixed(1)} blocks), shield to the open side\n`,
+            );
+            try {
+              await this.walkTo(found.cell, 1, `corner for ${step.wave}`, step.sneak);
+              await this.settleInto(found.cell);
+              stand = found.cell;
+              standQuietSince = Date.now();
+            } catch (err) {
+              if (err instanceof BotDeathError) throw err;
+              standAbandoned = true;
+            }
+            continue;
+          }
+          standAbandoned = true;
+        }
+        if (stand !== undefined) {
+          if (dist <= MELEE_ENGAGE_RANGE) {
+            standQuietSince = Date.now();
+          } else if (Date.now() - standQuietSince < STAND_PATIENCE_MS) {
+            // Let them come to the corner.
+            await this.maybeDrink(`wave ${step.wave}`);
+            if (this.shieldUsable()) this.raiseShield();
+            await delay(REACH_POLL_MS);
+            continue;
+          } else {
+            process.stderr.write(
+              `[kill ${step.wave}] nothing came to the corner in ${STAND_PATIENCE_MS}ms — leaving it to hunt\n`,
+            );
+            stand = undefined;
+            standAbandoned = true;
+          }
+        }
         if (retaliation) {
           if (engagedId !== mob.id) {
             process.stderr.write(
@@ -4658,8 +4808,8 @@ export class MineflayerExecutor implements StepExecutor {
           // {@link creditsWaveKill} is the arbiter, for a self-defense kill exactly as
           // for one the kill loop targeted.
           engagement.engaged.add(mob.id);
-          const struck = await this.strike(mob, `wave ${step.wave}`);
-          if (struck === "out-of-reach") this.unreached.add(mob.id);
+          const struck = await this.strike(mob, `wave ${step.wave}`, stand !== undefined);
+          if (struck === "out-of-reach" && stand === undefined) this.unreached.add(mob.id);
           if (struck !== "swung") continue;
           const landed = (swings.get(mob.id) ?? 0) + 1;
           swings.set(mob.id, landed);
