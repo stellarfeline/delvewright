@@ -293,32 +293,12 @@ test("a critical drink is taken only when the bot outlives one more blow", () =>
   assert.deepEqual(drinkDecision({ ...near, health: 9, nearestMeleeBlow: 1 }), { kind: "pressed" });
 });
 
-import { cornerOpening, disablesShields, pickStand } from "../src/melee.ts";
+import { disablesShields } from "../src/melee.ts";
+
 
 test("an axe in the attacker's hand disables a shield; a sword does not", () => {
   assert.equal(disablesShields("iron_axe"), true);
   assert.equal(disablesShields("netherite_axe"), true);
   assert.equal(disablesShields("iron_sword"), false);
   assert.equal(disablesShields(undefined), false);
-});
-
-test("a corner is two orthogonal walls, and it opens away from them", () => {
-  // Walls to the south (+z) and west (-x): the open quadrant is north-east.
-  const sw = cornerOpening((dx, dz) => (dx === -1 && dz === 0) || (dx === 0 && dz === 1));
-  assert.ok(sw && sw.dx > 0 && sw.dz < 0);
-  // A corridor (walls east and west) is not a corner.
-  assert.equal(cornerOpening((dx) => dx !== 0), undefined);
-  // A dead end (three walls) is not this rule's corner either.
-  assert.equal(cornerOpening((dx, dz) => !(dx === 0 && dz === -1)), undefined);
-  assert.equal(cornerOpening(() => false), undefined);
-});
-
-test("the stand taken is the nearest corner that faces the crowd", () => {
-  const ne = { dx: Math.SQRT1_2, dz: -Math.SQRT1_2 };
-  const sw = { dx: -Math.SQRT1_2, dz: Math.SQRT1_2 };
-  const crowd = { x: 83.5, z: 72.5 }; // north-east of both corners
-  const near = { cell: [76, 80, 94] as const, distance: 8, opening: ne };
-  const nearer = { cell: [80, 80, 90] as const, distance: 3, opening: sw };
-  assert.equal(pickStand([near, nearer], crowd), near, "a corner facing away is never taken");
-  assert.equal(pickStand([], crowd), undefined);
 });
