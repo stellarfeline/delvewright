@@ -909,6 +909,12 @@ const KILL_TIMEOUT_MS = 90_000;
  * readable attack speed — see `chargeMs`.
  */
 const SLOWEST_VANILLA_ATTACK_SPEED = 0.6;
+/**
+ * A kill step whose fight is already on the bot — a hostile within this many
+ * blocks — is fought where the bot stands rather than after a walk to the wave's
+ * anchor (`fightWave`). A melee mob closes this in two seconds.
+ */
+const FIGHT_HERE_RANGE = 8;
 /** One server tick (ms) — the granularity the hands are driven at. */
 const TICK_POLL_MS = 50;
 /** How long (ms) after a drink before another is considered, so the health the
@@ -3387,6 +3393,13 @@ export class MineflayerExecutor implements StepExecutor {
       .filter((d): d is { item: Item; heal: number } => d.heal !== undefined);
   }
 
+  /** The nearest visible hostile within `range` blocks of the bot, if any. */
+  private hostileWithin(range: number): Entity | undefined {
+    const { candidates, byId } = this.visibleHostiles();
+    const near = candidates.filter((c) => c.distance <= range).sort((a, b) => a.distance - b.distance);
+    return near.length > 0 ? byId.get(near[0]!.id) : undefined;
+  }
+
   /** The nearest visible hostile that fights in melee, by horizontal distance. */
   private nearestMelee(): { id: number; distance: number } | undefined {
     const bot = this.requireBot();
@@ -4369,12 +4382,24 @@ export class MineflayerExecutor implements StepExecutor {
     const hands = { ...this.melee };
     try {
       await this.equipLoadout();
-      await this.walkTo(step.pos, 3, `wave ${step.wave}`, step.sneak, {
-        objective: step.objective,
-        transport: step.transport,
-      });
-      // Give AI-enabled mobs a moment to path toward the bot after we arrive.
-      await delay(1_000);
+      // A fight that is already on the bot is fought where it stands. Walking on to
+      // the anchor through it is walking into every blow: measured on vesperhold's
+      // run-back to the walk-ambush, four blows (13.5 → 4.5) landed "while walking"
+      // inside the assist window before the bot threw its first swing.
+      const onTheBot = this.hostileWithin(FIGHT_HERE_RANGE);
+      if (onTheBot) {
+        process.stderr.write(
+          `[kill ${step.wave}] ${onTheBot.name ?? "?"}#${onTheBot.id} is already within ` +
+            `${FIGHT_HERE_RANGE} blocks — fighting where the bot stands, not walking on to the anchor\n`,
+        );
+      } else {
+        await this.walkTo(step.pos, 3, `wave ${step.wave}`, step.sneak, {
+          objective: step.objective,
+          transport: step.transport,
+        });
+        // Give AI-enabled mobs a moment to path toward the bot after we arrive.
+        await delay(1_000);
+      }
       // Diagnostic: what does the bot see near the wave anchor?
       const near = Object.values(bot.entities)
         .filter((e) => e && e !== bot.entity && bot.entity.position.distanceTo(e.position) < 48)
