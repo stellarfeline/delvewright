@@ -284,8 +284,9 @@ export type Footwork = "back" | "forward" | "hold";
 /**
  * The footwork of one tick of an exchange, the way a player fences:
  *
- *  * while the swing charges, a MELEE attacker inside {@link KITE_DISTANCE} is
- *    backed away from — the swing it is about to make lands on air;
+ *  * with no usable shield, while the swing charges, a MELEE attacker inside
+ *    {@link KITE_DISTANCE} is backed away from — the swing it is about to make
+ *    lands on air (with one, the blow is taken on the shield: see `guardUp`);
  *  * a body out of reach is stepped toward (a ranged one at once, since it
  *    will not come; a melee one once the swing is charged, since it is coming);
  *  * otherwise the feet hold and the shield takes what comes.
@@ -300,8 +301,15 @@ export function footwork(opts: {
   readonly inReach: boolean;
   readonly canStepBack: boolean;
   readonly canStepIn: boolean;
+  /** A usable shield is held, not run from: the bot backs away only without one. */
+  readonly shieldUsable?: boolean;
 }): Footwork {
-  if (!opts.charged && !opts.ranged && opts.horizontalDistance < KITE_DISTANCE) {
+  if (
+    !opts.shieldUsable &&
+    !opts.charged &&
+    !opts.ranged &&
+    opts.horizontalDistance < KITE_DISTANCE
+  ) {
     return opts.canStepBack ? "back" : "hold";
   }
   if (!opts.inReach && (opts.ranged || opts.charged)) {
@@ -311,15 +319,98 @@ export function footwork(opts: {
 }
 
 /**
- * Whether to hold the shield up this tick: only while standing (a raised shield
- * slows a walking player to a crawl) and only while the swing charges.
+ * How long a raised shield takes to start blocking. Measured on the pinned
+ * server (probe: a NoAI husk's `mob_attack` applied by `/damage … by`, the
+ * bot's off-hand shield raised with mineflayer's `activateItem(true)` for a
+ * known number of ticks, N = 5 per row): 3 ticks 0/5 and 0/5 blocked, 4 ticks
+ * 2/5 and 1/5, 5 ticks and longer 5/5 — vanilla's `block_delay_seconds` 0.25,
+ * the 4-tick row being client timing slop.
+ */
+export const SHIELD_WARMUP_MS = 250;
+
+/**
+ * Vanilla's melee cooldown between one mob's blows (`MeleeAttackGoal`, 20
+ * ticks). After an attacker's blow the next is this far off.
+ */
+export const MOB_BLOW_INTERVAL_MS = 1_000;
+
+/**
+ * How long after an attacker's blow the bot may still drop its shield, swing,
+ * and have the shield raised and warm again before that attacker's next blow:
+ * the blow interval less the warm-up, less two ticks for the release, the swing
+ * and the packets to cross.
+ */
+export const OPENING_MS = MOB_BLOW_INTERVAL_MS - SHIELD_WARMUP_MS - 2 * 50 - 150;
+
+/** How near (blocks, horizontal) a melee attacker must be to count as able to
+ * strike before a released swing and a re-raised shield are done. */
+export const MOB_STRIKE_RANGE = 3;
+
+/**
+ * How long a charged swing waits for an opening before it is released anyway
+ * — the answer to a crowd whose blows never all fall inside one window.
+ */
+export const OPENING_WAIT_MS = 1_200;
+
+/** How long an attacker may stand in strike range without swinging before it
+ * is taken as not attacking (it is then no reason to keep the shield up). */
+export const IDLE_ATTACKER_MS = 1_500;
+
+/** One melee attacker as the opening rule reads it. */
+export interface StrikeThreat {
+  /** Horizontal distance to the bot. */
+  readonly distance: number;
+  /** ms since the server last showed it swinging, `undefined` when never. */
+  readonly swungAgoMs: number | undefined;
+  /** ms it has stood within {@link MOB_STRIKE_RANGE} this exchange. */
+  readonly inRangeForMs: number;
+}
+
+/**
+ * Whether now is an OPENING: every melee attacker able to strike has just
+ * struck (inside {@link OPENING_MS}) or has stood in range without striking for
+ * {@link IDLE_ATTACKER_MS}. The way a player fights with a shield: take the blow
+ * on it, answer in the gap before the next, raise again.
+ */
+export function isOpening(threats: readonly StrikeThreat[]): boolean {
+  return threats
+    .filter((t) => t.distance <= MOB_STRIKE_RANGE)
+    .every(
+      (t) =>
+        (t.swungAgoMs !== undefined && t.swungAgoMs <= OPENING_MS) ||
+        (t.inRangeForMs >= IDLE_ATTACKER_MS &&
+          (t.swungAgoMs === undefined || t.swungAgoMs >= IDLE_ATTACKER_MS)),
+    );
+}
+
+/**
+ * Whether to release a charged swing now: with the shield usable, only in an
+ * opening, or once {@link OPENING_WAIT_MS} of waiting has passed; without one
+ * (none carried, or an axe has disabled it), at once.
+ */
+export function releaseSwing(opts: {
+  readonly charged: boolean;
+  readonly inReach: boolean;
+  readonly shieldUsable: boolean;
+  readonly opening: boolean;
+  readonly chargedForMs: number;
+}): boolean {
+  if (!opts.charged || !opts.inReach) return false;
+  if (!opts.shieldUsable) return true;
+  return opts.opening || opts.chargedForMs >= OPENING_WAIT_MS;
+}
+
+/**
+ * Whether to hold the shield up this tick: whenever it is usable and the feet
+ * are still — including while the swing is charged and the bot waits for its
+ * opening. A raised shield slows a walking player to a crawl, so a step lowers
+ * it; the swing lowers it for the tick it is released.
  */
 export function guardUp(opts: {
-  readonly shieldInOffhand: boolean;
+  readonly shieldUsable: boolean;
   readonly footwork: Footwork;
-  readonly charged: boolean;
 }): boolean {
-  return opts.shieldInOffhand && opts.footwork === "hold" && !opts.charged;
+  return opts.shieldUsable && opts.footwork === "hold";
 }
 
 /**
@@ -356,6 +447,8 @@ export function jumpForCrit(opts: {
  */
 export interface MeleeTally {
   swings: number;
+  /** Of the swings made with a usable shield, how many were released in an opening. */
+  openings: number;
   landed: number;
   noDamage: number;
   crits: number;
@@ -368,14 +461,14 @@ export interface MeleeTally {
 }
 
 export function emptyTally(): MeleeTally {
-  return { swings: 0, landed: 0, noDamage: 0, crits: 0, guards: 0, shieldDisabled: 0, draughts: 0, hitsTaken: 0, damageTaken: 0 };
+  return { swings: 0, openings: 0, landed: 0, noDamage: 0, crits: 0, guards: 0, shieldDisabled: 0, draughts: 0, hitsTaken: 0, damageTaken: 0 };
 }
 
 /** One line for the log: what the hands did this fight. */
 export function describeTally(t: MeleeTally): string {
   return (
     `${t.swings} charged swing(s) (${t.landed} hurt the target, ${t.noDamage} did nothing), ` +
-    `${t.crits} critical, shield raised ${t.guards}×, ` +
+    `${t.crits} critical, ${t.openings} in an opening, shield raised ${t.guards}×, ` +
     `shield disabled ${t.shieldDisabled}×, ${t.draughts} draught(s) drunk; ` +
     `took ${t.hitsTaken} hit(s), ${t.damageTaken.toFixed(1)} damage`
   );

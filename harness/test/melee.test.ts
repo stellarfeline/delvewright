@@ -21,6 +21,14 @@ import {
   inReach,
   jumpForCrit,
   swingVerdict,
+  isOpening,
+  releaseSwing,
+  IDLE_ATTACKER_MS,
+  MOB_BLOW_INTERVAL_MS,
+  MOB_STRIKE_RANGE,
+  OPENING_MS,
+  OPENING_WAIT_MS,
+  SHIELD_WARMUP_MS,
 } from "../src/melee.ts";
 
 const require = createRequire(import.meta.url);
@@ -157,11 +165,46 @@ test("the footwork steps in on a body out of reach", () => {
   assert.equal(footwork({ ...base, ranged: false, charged: true, canStepIn: false }), "hold");
 });
 
-test("the shield is up only while standing and charging", () => {
-  assert.equal(guardUp({ shieldInOffhand: true, footwork: "hold", charged: false }), true);
-  assert.equal(guardUp({ shieldInOffhand: true, footwork: "back", charged: false }), false);
-  assert.equal(guardUp({ shieldInOffhand: true, footwork: "hold", charged: true }), false);
-  assert.equal(guardUp({ shieldInOffhand: false, footwork: "hold", charged: false }), false);
+test("a usable shield stays up whenever the feet are still, charged or not", () => {
+  // It used to come down the moment the swing was charged, and with every step
+  // back — so it was down exactly when a vindicator at 1.3 blocks struck.
+  assert.equal(guardUp({ shieldUsable: true, footwork: "hold" }), true);
+  assert.equal(guardUp({ shieldUsable: true, footwork: "back" }), false);
+  assert.equal(guardUp({ shieldUsable: false, footwork: "hold" }), false);
+});
+
+test("with a usable shield the bot holds its ground; without one it backs away", () => {
+  const base = { ranged: false, charged: false, inReach: true, canStepBack: true, canStepIn: true, horizontalDistance: 1.3 };
+  assert.equal(footwork({ ...base, shieldUsable: true }), "hold");
+  assert.equal(footwork({ ...base, shieldUsable: false }), "back");
+});
+
+test("an opening is every attacker in strike range having just struck", () => {
+  const struck = { distance: 1.3, swungAgoMs: 100, inRangeForMs: 3_000 };
+  assert.equal(isOpening([struck]), true);
+  // One struck, the other has not yet: no opening.
+  assert.equal(isOpening([struck, { distance: 1.5, swungAgoMs: 900, inRangeForMs: 3_000 }]), false);
+  // Just arrived and not yet struck: its first blow is coming.
+  assert.equal(isOpening([{ distance: 1.3, swungAgoMs: undefined, inRangeForMs: 200 }]), false);
+  // In range and not striking for a long time: not attacking.
+  assert.equal(isOpening([{ distance: 1.3, swungAgoMs: undefined, inRangeForMs: IDLE_ATTACKER_MS }]), true);
+  // Out of strike range does not count.
+  assert.equal(isOpening([struck, { distance: MOB_STRIKE_RANGE + 1, swungAgoMs: undefined, inRangeForMs: 0 }]), true);
+  // The window closes before the warm-up would be too late for the next blow.
+  assert.equal(isOpening([{ ...struck, swungAgoMs: OPENING_MS + 1 }]), false);
+  assert.ok(OPENING_MS + SHIELD_WARMUP_MS < MOB_BLOW_INTERVAL_MS);
+});
+
+test("a charged swing waits for the opening only while the shield is up", () => {
+  const base = { charged: true, inReach: true, chargedForMs: 100 };
+  assert.equal(releaseSwing({ ...base, shieldUsable: true, opening: false }), false);
+  assert.equal(releaseSwing({ ...base, shieldUsable: true, opening: true }), true);
+  assert.equal(releaseSwing({ ...base, shieldUsable: false, opening: false }), true);
+  assert.equal(
+    releaseSwing({ ...base, shieldUsable: true, opening: false, chargedForMs: OPENING_WAIT_MS }),
+    true,
+  );
+  assert.equal(releaseSwing({ ...base, charged: false, shieldUsable: false, opening: true }), false);
 });
 
 test("the crit jump is taken in reach, from footing with headroom, just before the charge", () => {
@@ -191,7 +234,7 @@ test("the tally line names every count", () => {
   t.draughts = 3;
   assert.equal(
     describeTally(t),
-    "15 charged swing(s) (13 hurt the target, 2 did nothing), 9 critical, shield raised 12×, " +
+    "15 charged swing(s) (13 hurt the target, 2 did nothing), 9 critical, 0 in an opening, shield raised 12×, " +
       "shield disabled 1×, " +
       "3 draught(s) drunk; took 0 hit(s), 0.0 damage",
   );

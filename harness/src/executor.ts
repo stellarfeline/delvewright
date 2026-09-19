@@ -167,6 +167,10 @@ import {
   fullChargeMs,
   guardUp,
   holdsRangedWeapon,
+  isOpening,
+  releaseSwing,
+  MOB_STRIKE_RANGE,
+  type StrikeThreat,
   inReach,
   jumpForCrit,
   swingVerdict,
@@ -1615,6 +1619,14 @@ export class MineflayerExecutor implements StepExecutor {
   private hands = "walking";
   /** The largest blow each melee attacker has landed on the bot, by entity id. */
   private readonly blowOf = new Map<number, number>();
+  /** When the server last showed each entity swinging its arm (a mob's blow). */
+  private readonly swungAt = new Map<number, number>();
+  /** Since when each melee attacker has stood within MOB_STRIKE_RANGE. */
+  private readonly inStrikeRangeSince = new Map<number, number>();
+  /** When the server's shield cooldown (an axe blow's disable) ends. */
+  private shieldReadyAt = 0;
+  /** When the shield was last raised (the `[hit]` line reports its warmth). */
+  private raisedAt = 0;
   /** Whether the bot is holding its shield up. */
   private guarding = false;
   /** When the bot last released a swing (ms) — the start of its charge. */
@@ -1836,6 +1848,9 @@ export class MineflayerExecutor implements StepExecutor {
     // What the hands did, as the server broadcast it back: a critical hit on the
     // body being swung at, a blow taken on the shield, the shield knocked out of
     // use. Counted only — nothing decides on them.
+    bot.on("entitySwingArm", (entity: Entity) => {
+      if (entity && entity.id !== bot.entity?.id) this.swungAt.set(entity.id, Date.now());
+    });
     bot.on("entityCriticalEffect", (entity: Entity) => {
       if (entity && entity.id === this.meleeTarget) this.melee.crits += 1;
     });
@@ -1856,6 +1871,9 @@ export class MineflayerExecutor implements StepExecutor {
     bot._client?.on("set_cooldown", (packet: { cooldownGroup?: string; cooldownTicks?: number }) => {
       if (packet.cooldownGroup === SHIELD_COOLDOWN_GROUP && (packet.cooldownTicks ?? 0) > 0) {
         this.melee.shieldDisabled += 1;
+        this.shieldReadyAt = Date.now() + (packet.cooldownTicks ?? 0) * 50;
+        // A disabled shield is lowered by the server; the client's state follows.
+        this.guarding = false;
       }
     });
   }
@@ -2062,6 +2080,7 @@ export class MineflayerExecutor implements StepExecutor {
     }
     const choice = pickFood(foods);
     if (!choice) return; // unreachable (hasFood was true) — defensive
+    this.lowerShield();
     const before = bot.health;
     try {
       await bot.equip(choice.item, "hand");
@@ -2182,6 +2201,7 @@ export class MineflayerExecutor implements StepExecutor {
     try {
       await this.defendLoop(id, name, label, deadline);
     } finally {
+      this.lowerShield();
       this.reportMelee(`defend ${name}#${id}`, hands);
     }
   }
@@ -3427,6 +3447,7 @@ export class MineflayerExecutor implements StepExecutor {
     const bot = this.requireBot();
     if (this.guarding) return;
     this.guarding = true;
+    this.raisedAt = Date.now();
     this.melee.guards += 1;
     bot.activateItem(true);
   }
@@ -3506,6 +3527,7 @@ export class MineflayerExecutor implements StepExecutor {
         const hx = at[0] - feet[0];
         const hz = at[2] - feet[2];
         const flat = Math.hypot(hx, hz) || 1;
+        const shieldUsable = this.shieldUsable();
         const steps = footwork({
           ranged: holdsRangedWeapon(live.heldItem?.name),
           horizontalDistance: Math.hypot(hx, hz),
@@ -3513,56 +3535,99 @@ export class MineflayerExecutor implements StepExecutor {
           inReach: reach,
           canStepBack: this.safeStep(-hx / flat, -hz / flat),
           canStepIn: this.safeStep(hx / flat, hz / flat),
+          shieldUsable,
         });
         this.hands = steps === "back" ? "backing" : steps === "forward" ? "stepping in" : "holding";
         if (steps !== "hold") this.lowerShield();
         bot.setControlState("back", steps === "back");
         bot.setControlState("forward", steps === "forward");
-        if (guardUp({ shieldInOffhand: this.shieldInOffhand(), footwork: steps, charged })) {
-          this.raiseShield();
-        }
+        if (guardUp({ shieldUsable, footwork: steps })) this.raiseShield();
+        const opening = isOpening(this.strikeThreats(now));
+        const release = releaseSwing({
+          charged,
+          inReach: reach,
+          shieldUsable: shieldUsable && this.guarding,
+          opening,
+          chargedForMs: now - chargedAt,
+        });
         const onGround = bot.entity.onGround === true;
-        if (
-          jumpedAt === undefined &&
-          steps === "hold" &&
-          jumpForCrit({
-            msUntilCharged: chargedAt - now,
-            inReach: reach,
-            onGround,
-            headroom: this.headroom(),
-          })
-        ) {
+        // The crit jump: taken from the opening itself with a shield (the jump is
+        // made shield-up, the swing comes down in the gap), on the old charge
+        // timing without one.
+        const jumpNow = shieldUsable
+          ? release && jumpedAt === undefined && onGround && this.headroom()
+          : jumpedAt === undefined &&
+            steps === "hold" &&
+            jumpForCrit({ msUntilCharged: chargedAt - now, inReach: reach, onGround, headroom: this.headroom() });
+        if (jumpNow) {
           bot.setControlState("jump", true);
           jumpedAt = now;
+          await delay(TICK_POLL_MS);
+          continue;
         } else if (jumpedAt !== undefined && now - jumpedAt >= TICK_POLL_MS * 2) {
           bot.setControlState("jump", false);
         }
-        if (charged && reach) {
-          const rising = jumpedAt !== undefined && !onGround && bot.entity.velocity.y >= 0;
-          const fallWaitOver = now >= chargedAt + CRIT_FALL_WAIT_MS;
-          if (!rising || fallWaitOver) {
-            this.lowerShield();
-            stop();
-            this.hands = "swinging";
-            if (!this.swing(live)) return "gone";
-            this.lastSwingAt = Date.now();
-            this.melee.swings += 1;
-            return "swung";
-          }
+        const inAir = jumpedAt !== undefined;
+        const rising = inAir && !onGround && bot.entity.velocity.y >= 0;
+        const fallWaitOver = inAir && now >= jumpedAt! + CRIT_FALL_WAIT_MS;
+        if ((release || (inAir && charged && reach)) && (!rising || fallWaitOver)) {
+          this.lowerShield();
+          stop();
+          this.hands = "swinging";
+          if (!this.swing(live)) return "gone";
+          this.lastSwingAt = Date.now();
+          this.melee.swings += 1;
+          if (shieldUsable) this.melee.openings += opening ? 1 : 0;
+          return "swung";
         }
         await delay(TICK_POLL_MS);
       }
       return "out-of-reach";
     } finally {
-      this.lowerShield();
-      stop();
+      // The shield stays up between exchanges: every re-raise costs its warm-up
+      // (measured: 250 ms before it blocks). It comes down for a swing, a step,
+      // a walk, a meal or a drink — each of those lowers it itself.
+      bot.setControlState("forward", false);
+      bot.setControlState("back", false);
+      bot.setControlState("jump", false);
     }
+  }
+
+  /** Whether the off hand holds a shield the server has not put on cooldown. */
+  private shieldUsable(): boolean {
+    return this.shieldInOffhand() && Date.now() >= this.shieldReadyAt;
+  }
+
+  /** Every visible melee attacker, as the opening rule reads it (`isOpening`). */
+  private strikeThreats(now: number): StrikeThreat[] {
+    const bot = this.requireBot();
+    const { byId } = this.visibleHostiles();
+    const me = bot.entity.position;
+    const out: StrikeThreat[] = [];
+    for (const e of byId.values()) {
+      if (holdsRangedWeapon(e.heldItem?.name)) continue;
+      const distance = Math.hypot(e.position.x - me.x, e.position.z - me.z);
+      if (distance > MOB_STRIKE_RANGE) {
+        this.inStrikeRangeSince.delete(e.id);
+      } else if (!this.inStrikeRangeSince.has(e.id)) {
+        this.inStrikeRangeSince.set(e.id, now);
+      }
+      const since = this.inStrikeRangeSince.get(e.id);
+      const swung = this.swungAt.get(e.id);
+      out.push({
+        distance,
+        swungAgoMs: swung === undefined ? undefined : now - swung,
+        inRangeForMs: since === undefined ? 0 : now - since,
+      });
+    }
+    return out;
   }
 
   /** The hands' share of the run since `since` was taken. */
   private meleeSince(since: MeleeTally): MeleeTally {
     return {
       swings: this.melee.swings - since.swings,
+      openings: this.melee.openings - since.openings,
       landed: this.melee.landed - since.landed,
       noDamage: this.melee.noDamage - since.noDamage,
       crits: this.melee.crits - since.crits,
@@ -3652,7 +3717,7 @@ export class MineflayerExecutor implements StepExecutor {
     }
     process.stderr.write(
       `[hit] -${lost.toFixed(1)} → ${bot.health.toFixed(1)}/${PLAYER_MAX_HEALTH} while ${this.hands}` +
-        `${this.guarding ? " (shield up)" : ""}; nearest hostile ` +
+        `${this.guarding ? ` (shield up ${Date.now() - this.raisedAt}ms)` : ""}; nearest hostile ` +
         `${nearest ? `${nearest.e.name}#${nearest.e.id} at ${nearest.d.toFixed(1)}` : "none"}, ` +
         `${within4} within 4 blocks\n`,
     );
@@ -3760,6 +3825,8 @@ export class MineflayerExecutor implements StepExecutor {
     completion?: StepCompletion,
   ): Promise<void> {
     const bot = this.requireBot();
+    // A walking player carries the shield down (raised, it slows a walk to a crawl).
+    this.lowerShield();
     const r = Math.max(1, Math.floor(range));
     const movements = new Movements(bot);
     const restoreControls = configureLeg(bot, movements, sneak);
@@ -4617,6 +4684,7 @@ export class MineflayerExecutor implements StepExecutor {
     } finally {
       bot.removeListener("entityGone", onGone);
       this.activeWave = undefined;
+      this.lowerShield();
       this.reportMelee(`wave ${step.wave}`, hands);
     }
     throw new Error(
