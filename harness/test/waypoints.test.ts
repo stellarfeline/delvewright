@@ -14,6 +14,7 @@ import {
   WaypointsParseError,
   WAYPOINT_RANGE,
   type Waypoints,
+  nearestIndex,
 } from "../src/waypoints.ts";
 import type { Vec3Tuple } from "../src/critical-path.ts";
 
@@ -401,4 +402,16 @@ test("an absent per-branch artifact loads as undefined; a present one parses", a
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
+});
+
+test("nearestIndex finds where along a leg a crossing lies, ties to the earlier cell", () => {
+  const cells: [number, number, number][] = [
+    [10, 64, 0],
+    [8, 64, 0],
+    [6, 64, 0],
+    [4, 64, 0],
+  ];
+  assert.equal(nearestIndex(cells, [4, 64, 1]), 3);
+  assert.equal(nearestIndex(cells, [7, 64, 0]), 1, "equidistant from 8 and 6: the earlier");
+  assert.equal(nearestIndex([], [0, 0, 0]), 0);
 });

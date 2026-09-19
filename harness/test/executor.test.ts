@@ -4239,3 +4239,86 @@ test("a wave two rests put back beside one leg is fought once", async () => {
   await executor.beforeStep(GREAT_HALL);
   assert.equal(executor.runBacks().length, 1);
 });
+
+/** A fake whose pathfinder actually arrives: `goto` puts the bot on the goal. */
+class WalkingBonfireBot extends BonfireFakeBot {
+  constructor() {
+    super();
+    const base = this.pathfinder;
+    this.pathfinder = {
+      ...base,
+      // mineflayer hands `goto` its goal; the base fake's signature ignores it.
+      goto: (async (goal: unknown): Promise<void> => {
+        this.calls.push("goto");
+        const g = goal as { x?: number; y?: number; z?: number };
+        if (typeof g?.x === "number" && typeof g.y === "number" && typeof g.z === "number") {
+          this.entity.position = new FakeVec3(g.x + 0.5, g.y, g.z + 0.5);
+        }
+      }) as unknown as () => Promise<void>,
+    };
+  }
+}
+
+/** The hall step, twenty blocks off the fight, so its leg is its own. */
+const HALL_FAR: ReachStep = {
+  ...GREAT_HALL,
+  pos: [0, 64, 20],
+  completion: { kind: "cube", lo: [-1, 63, 19], hi: [1, 65, 21] },
+};
+
+test("a run-back is met along the leg's own proven cells, and the leg resumes from the fight", async () => {
+  // The first ladder run with run-backs walked from the belfry to the wave's
+  // anchor across the map with no proven route and stranded. The fight is met
+  // where the compiler measured the crossing: the bot walks the leg's cells up to
+  // it, fights, and the step's walk goes on from there — never back to the start.
+  const bot = new WalkingBonfireBot();
+  bot.armBonfire(55, new FakeVec3(0.5, 64, 0.5));
+  bot.reSeat = undefined;
+  const executor = attach(bot);
+  executor.useCampaign("the-drowned-bell");
+  executor.useCombatPlan(
+    { ...combatPlan(1, true), runBacks: [{ ...RUN_BACK, crossing: [4, 64, 20] }] },
+    false,
+  );
+  executor.beginStep(9);
+  // The kill's own walk would consume the leg in lockstep; this test is about the
+  // leg the NEXT step walks, so the kill is fought without waypoints first.
+  executor.useWaypoints(parseWaypoints({ version: "0.6.0", campaign_id: "x", legs: [] }));
+  await executor.kill(KILL_STEP);
+  executor.useWaypoints(
+    parseWaypoints({
+      version: "0.6.0",
+      campaign_id: "the-drowned-bell",
+      legs: [
+        {
+          from: [12, 64, 20],
+          to: [0, 64, 20],
+          waypoints: [
+            [10, 64, 20],
+            [8, 64, 20],
+            [6, 64, 20],
+            [4, 64, 20],
+            [2, 64, 20],
+          ],
+        },
+      ],
+    }),
+  );
+  executor.beginStep(12);
+  await executor.rest(REST_STEP);
+  bot.seat(1);
+  executor.beginStep(14);
+  const gotos = (): number => bot.calls.filter((c) => c === "goto").length;
+  const before = gotos();
+  await executor.beforeStep(HALL_FAR);
+  assert.equal(executor.runBacks().length, 1);
+  const afterFight = gotos();
+  assert.ok(afterFight - before >= 4, "walked the leg's cells up to the crossing");
+  setTimeout(() => bot.emit("messagestr", "[dw:complete the-drowned-bell obj/great-hall]"), 20);
+  await executor.reach(HALL_FAR);
+  assert.equal(
+    gotos() - afterFight,
+    3,
+    "the step resumed at the crossing: two remaining cells and the goal, not all six",
+  );
+});

@@ -1742,7 +1742,11 @@ each step the sequencer asks the executor for anything the path owes ahead of th
 step's own action. For every `combat-plan.json` `run_backs` entry naming that
 step's `obj/…` or `trigger/…` token, the bot fights the re-seated wave under a
 labelled `run-back:` assist window — the ordinary kill loop, census-terminated,
-with no objective marker to wait for — when this walk has cleared the wave and
+with no objective marker to wait for — met ON the step's own proven leg: the bot
+walks the leg's waypoints up to the one nearest the compiler's `crossing`, fights
+there, and the step's walk of that leg resumes from that waypoint (walking to the
+wave's anchor from wherever the last step ended is an unproven cross-map walk,
+and stranded the bot the first time it was tried) — when this walk has cleared the wave and
 rested at the named bonfire since (a death-respawn at a fire counts as a rest,
 `respawnReseats`). A fought run-back is a fresh clearance; it is not fought again
 until the next rest.

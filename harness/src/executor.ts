@@ -114,6 +114,7 @@ import {
   describeStuckNeighbours,
 } from "./movement.ts";
 import {
+  nearestIndex,
   nextLegWaypoints,
   retainStandableWaypoints,
   walkGoals,
@@ -1592,6 +1593,12 @@ export class MineflayerExecutor implements StepExecutor {
    * — e.g. the cave entry the player returns to — never grabs the wrong leg's route.
    */
   private legCursor = 0;
+  /**
+   * A run-back already walked part of the leg at `leg` (the index into the
+   * waypoint legs) and fought beside waypoint `from`: the step's own walk of
+   * that leg resumes there instead of walking back to the leg's start.
+   */
+  private legResume: { leg: number; from: number } | undefined;
   /**
    * Who has been hitting the bot lately (see threat.ts). Feeds two behaviours a player
    * has and the bot did not: hitting back at whatever is drawing blood during a wave
@@ -3771,6 +3778,7 @@ export class MineflayerExecutor implements StepExecutor {
     label: string,
     sneak = false,
     completion?: StepCompletion,
+    explicitWaypoints?: readonly Vec3Tuple[],
   ): Promise<void> {
     const bot = this.requireBot();
     const r = Math.max(1, Math.floor(range));
@@ -3819,13 +3827,21 @@ export class MineflayerExecutor implements StepExecutor {
       // broken geometry. See `gatesBindingWalk` for the crush withholding.
       const declaredGates = this.waypoints?.timedGates ?? [];
       let walkGates: readonly TimedGate[] = [];
-      if (this.waypoints) {
+      if (explicitWaypoints) {
+        // A caller walking PART of a proven leg (a run-back's approach) hands
+        // the proven cells itself; it consumes no leg.
+        legWaypoints = explicitWaypoints;
+      } else if (this.waypoints) {
         const match = nextLegWaypoints(this.waypoints.legs, this.legCursor, [
           pos[0],
           pos[1],
           pos[2],
         ]);
         legWaypoints = match.waypoints;
+        if (match.matched && legWaypoints && this.legResume?.leg === this.legCursor) {
+          legWaypoints = legWaypoints.slice(this.legResume.from);
+          this.legResume = undefined;
+        }
         this.legCursor = match.cursor;
         const binding = gatesBindingWalk(match.matched, match.timedGates, declaredGates);
         walkGates = binding.gates;
@@ -4404,6 +4420,8 @@ export class MineflayerExecutor implements StepExecutor {
         `wave ${step.wave}`,
         step.sneak,
         runBack ? undefined : { objective: step.objective, transport: step.transport },
+        // …and it consumes no proven leg: the step it runs ahead of owns that.
+        runBack ? [] : undefined,
       );
       // Give AI-enabled mobs a moment to path toward the bot after we arrive.
       await delay(1_000);
@@ -4805,10 +4823,40 @@ export class MineflayerExecutor implements StepExecutor {
           ? step.trigger
           : undefined;
     if (token === undefined) return;
-    for (const rb of dueRunBacks(plan.runBacks, token, this.waveClearedAt, this.restedAt)) {
+    const due = dueRunBacks(plan.runBacks, token, this.waveClearedAt, this.restedAt);
+    if (due.length === 0) return;
+    // The leg this step walks, when a proven one is next: the fight is met ON it,
+    // at the crossing the compiler measured, so the bot walks the leg's own
+    // proven cells up to there, fights, and the step's walk resumes from there.
+    // Walking to the wave's anchor from wherever the last step ended is an
+    // unproven cross-map walk — measured stranding the bot in the belfry.
+    const pos = "pos" in step ? step.pos : undefined;
+    const leg =
+      pos && this.waypoints
+        ? nextLegWaypoints(this.waypoints.legs, this.legCursor, [pos[0], pos[1], pos[2]])
+        : undefined;
+    const cells = leg?.matched ? leg.waypoints : undefined;
+    const along = (rb: RunBack): number => (cells ? nearestIndex(cells, rb.crossing) : 0);
+    let walked = 0;
+    for (const rb of [...due].sort((a, b) => along(a) - along(b))) {
       // Two rests can put one wave back beside the same leg; it stands there
       // once, so it is fought once.
       if (this.waveClearedAt.get(rb.wave) === this.currentStep) continue;
+      if (cells) {
+        const k = along(rb);
+        if (k >= walked) {
+          await this.walkTo(
+            cells[k]!,
+            1,
+            `run-back approach to ${rb.wave} along the leg to ${rb.before}`,
+            false,
+            undefined,
+            cells.slice(walked, k),
+          );
+          walked = k;
+          this.legResume = { leg: this.legCursor, from: k };
+        }
+      }
       const enc = this.encounterFor(rb.wave);
       const fight: KillStep = {
         action: "kill",
