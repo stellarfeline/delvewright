@@ -3658,11 +3658,26 @@ export class MineflayerExecutor implements StepExecutor {
     const fx = Math.floor(p.x);
     const fy = Math.floor(p.y + 0.01);
     const fz = Math.floor(p.z);
-    const at = (x: number, y: number, z: number): { boundingBox?: string; name?: string } | null =>
+    const at = (
+      x: number,
+      y: number,
+      z: number,
+    ): { boundingBox?: string; name?: string; shapes?: number[][] } | null =>
       bot.blockAt(p.offset(x + 0.5 - p.x, y + 0.5 - p.y, z + 0.5 - p.z)) as {
         boundingBox?: string;
         name?: string;
+        shapes?: number[][];
       } | null;
+    // A WALL is a full cube at the feet or the head: nothing can stand
+    // overlapping it. A lantern, a slab, a fence post is not one — measured on
+    // vesperhold, the "corner" [61, 80, 91] had a floor lantern for its west
+    // wall, and a Guard zombie stood at x 60.9 over it, behind the shield.
+    const fullCube = (b: { boundingBox?: string; shapes?: number[][] } | null): boolean =>
+      b !== null &&
+      b.boundingBox === "block" &&
+      (b.shapes ?? []).some(
+        (sh) => sh[0]! <= 0 && sh[1]! <= 0 && sh[2]! <= 0 && sh[3]! >= 1 && sh[4]! >= 1 && sh[5]! >= 1,
+      );
     const open = (x: number, y: number, z: number): boolean => {
       const b = at(x, y, z);
       return b !== null && b.boundingBox === "empty" && b.name !== "water" && b.name !== "lava";
@@ -3681,7 +3696,7 @@ export class MineflayerExecutor implements StepExecutor {
           if (!open(x, y, z) || !open(x, y + 1, z)) continue;
           if (this.lethalBoxes.some((box) => volumeReachesCell([x, y, z], box))) continue;
           const opening = cornerOpening(
-            (ox, oz) => !open(x + ox, y, z + oz) || !open(x + ox, y + 1, z + oz),
+            (ox, oz) => fullCube(at(x + ox, y, z + oz)) || fullCube(at(x + ox, y + 1, z + oz)),
           );
           if (!opening) continue;
           found.push({ cell: [x, y, z], distance: Math.hypot(dx, dy, dz), opening });
