@@ -3507,7 +3507,12 @@ export class MineflayerExecutor implements StepExecutor {
    * the off hand, the jump key, the attack key — and the server adjudicates the
    * block, the crit and the damage exactly as it would for a person.
    */
-  private async strike(mob: Entity, label: string, anchored = false): Promise<StrikeOutcome> {
+  private async strike(
+    mob: Entity,
+    label: string,
+    anchored = false,
+    face?: { readonly dx: number; readonly dz: number },
+  ): Promise<StrikeOutcome> {
     const bot = this.requireBot();
     this.meleeTarget = mob.id;
     await this.maybeDrink(label);
@@ -3522,9 +3527,18 @@ export class MineflayerExecutor implements StepExecutor {
       while (Date.now() < deadline) {
         const live = bot.entities[mob.id];
         if (this.death || !live?.position) return "gone";
-        await bot
-          .lookAt(live.position.offset(0, (live.height ?? 1) * 0.5, 0), true)
-          .catch(() => {});
+        // Holding a corner, the shield faces straight out of it — along its open
+        // quadrant's bisector, so every attacker the corner lets in stands within
+        // 45° of the look (the shield covers 90° either side; measured: a target
+        // faced at the quadrant's edge put a second body at the other edge, 90°
+        // off, and its blows landed). The look turns to the target only to swing.
+        if (face) {
+          await bot.look(Math.atan2(-face.dx, -face.dz), 0, true).catch(() => {});
+        } else {
+          await bot
+            .lookAt(live.position.offset(0, (live.height ?? 1) * 0.5, 0), true)
+            .catch(() => {});
+        }
         const me = bot.entity.position;
         const feet: [number, number, number] = [me.x, me.y, me.z];
         const at: [number, number, number] = [live.position.x, live.position.y, live.position.z];
@@ -3594,6 +3608,11 @@ export class MineflayerExecutor implements StepExecutor {
           this.lowerShield();
           stop();
           this.hands = "swinging";
+          if (face) {
+            await bot
+              .lookAt(live.position.offset(0, (live.height ?? 1) * 0.5, 0), true)
+              .catch(() => {});
+          }
           if (!this.swing(live)) return "gone";
           this.lastSwingAt = Date.now();
           this.melee.swings += 1;
@@ -4546,6 +4565,7 @@ export class MineflayerExecutor implements StepExecutor {
     // The corner a crowd is being fought from, if any (`findStand`).
     let stand: readonly [number, number, number] | undefined;
     let standQuietSince = 0;
+    let standFace: { dx: number; dz: number } | undefined;
     let standAbandoned = false;
     const hands = { ...this.melee };
     try {
@@ -4740,6 +4760,7 @@ export class MineflayerExecutor implements StepExecutor {
               await this.walkTo(found.cell, 1, `corner for ${step.wave}`, step.sneak);
               await this.settleInto(found.cell);
               stand = found.cell;
+              standFace = found.opening;
               standQuietSince = Date.now();
             } catch (err) {
               if (err instanceof BotDeathError) throw err;
@@ -4753,8 +4774,11 @@ export class MineflayerExecutor implements StepExecutor {
           if (dist <= MELEE_ENGAGE_RANGE) {
             standQuietSince = Date.now();
           } else if (Date.now() - standQuietSince < STAND_PATIENCE_MS) {
-            // Let them come to the corner.
+            // Let them come to the corner, shield out.
             await this.maybeDrink(`wave ${step.wave}`);
+            if (standFace) {
+              await bot.look(Math.atan2(-standFace.dx, -standFace.dz), 0, true).catch(() => {});
+            }
             if (this.shieldUsable()) this.raiseShield();
             await delay(REACH_POLL_MS);
             continue;
@@ -4813,7 +4837,12 @@ export class MineflayerExecutor implements StepExecutor {
           // {@link creditsWaveKill} is the arbiter, for a self-defense kill exactly as
           // for one the kill loop targeted.
           engagement.engaged.add(mob.id);
-          const struck = await this.strike(mob, `wave ${step.wave}`, stand !== undefined);
+          const struck = await this.strike(
+            mob,
+            `wave ${step.wave}`,
+            stand !== undefined,
+            stand !== undefined ? standFace : undefined,
+          );
           if (struck === "out-of-reach" && stand === undefined) this.unreached.add(mob.id);
           if (struck !== "swung") continue;
           const landed = (swings.get(mob.id) ?? 0) + 1;
