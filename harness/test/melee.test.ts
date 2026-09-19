@@ -193,7 +193,7 @@ test("the tally line names every count", () => {
     describeTally(t),
     "15 charged swing(s) (13 hurt the target, 2 did nothing), 9 critical, shield raised 12×, " +
       "shield disabled 1×, " +
-      "3 draught(s) drunk",
+      "3 draught(s) drunk; took 0 hit(s), 0.0 damage",
   );
 });
 

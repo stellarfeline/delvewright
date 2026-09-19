@@ -1612,6 +1612,10 @@ export class MineflayerExecutor implements StepExecutor {
   private disengageGaveUp = false;
   /** When the bot last drank a draught (ms). */
   private lastDrinkAt = 0;
+  /** What the hands were doing, for the `[hit]` telemetry: `holding`,
+   * `backing`, `stepping in`, `backing off to drink`, `drinking`, `swinging`,
+   * `walking`. */
+  private hands = "walking";
   /** Whether the bot is holding its shield up. */
   private guarding = false;
   /** When the bot last released a swing (ms) — the start of its charge. */
@@ -1962,6 +1966,7 @@ export class MineflayerExecutor implements StepExecutor {
     const previous = this.lastHealth;
     this.lastHealth = bot.health;
     if (previous === undefined || bot.health >= previous) return;
+    if (this.meleeTarget !== undefined) this.logHit(previous - bot.health);
     if (Date.now() - this.lastAttributionAt < HEALTH_ATTRIBUTION_GRACE_MS) return;
     const { candidates, byId } = this.visibleHostiles();
     const attacker = attributeBotDamage(undefined, candidates, ATTRIBUTION_RANGE);
@@ -2245,6 +2250,7 @@ export class MineflayerExecutor implements StepExecutor {
       // at 9.3/20 with three of them in the bag.
       await this.maybeDrink(label);
       await this.maybeEat(label);
+      this.hands = "walking";
       const trip = this.armStalkerTrip();
       // Observe the walk's outcome exactly once: the trip can win the race while the
       // walk is still in flight, and an unobserved rejection would crash the process.
@@ -3332,6 +3338,7 @@ export class MineflayerExecutor implements StepExecutor {
         bot.setControlState(control, false);
       }
       await bot.equip(draught.item, "hand");
+      this.hands = "drinking";
       bot.activateItem();
       const deadline = Date.now() + DRINK_TIMEOUT_MS;
       while (!finished && !this.death && Date.now() < deadline) await delay(TICK_POLL_MS);
@@ -3524,6 +3531,7 @@ export class MineflayerExecutor implements StepExecutor {
         const disengage = canStepBack && pressed && disengageOpen;
         lastTickDisengaged = disengage;
         if (disengage) {
+          this.hands = "backing off to drink";
           this.lowerShield();
           bot.setControlState("forward", false);
           bot.setControlState("back", true);
@@ -3544,6 +3552,7 @@ export class MineflayerExecutor implements StepExecutor {
           canStepBack,
           canStepIn: this.safeStep(hx / flat, hz / flat),
         });
+        this.hands = steps === "back" ? "backing" : steps === "forward" ? "stepping in" : "holding";
         if (steps !== "hold") this.lowerShield();
         bot.setControlState("back", steps === "back");
         bot.setControlState("forward", steps === "forward");
@@ -3572,6 +3581,7 @@ export class MineflayerExecutor implements StepExecutor {
           if (!rising || fallWaitOver) {
             this.lowerShield();
             stop();
+            this.hands = "swinging";
             if (!this.swing(live)) return "gone";
             this.lastSwingAt = Date.now();
             this.melee.swings += 1;
@@ -3599,6 +3609,8 @@ export class MineflayerExecutor implements StepExecutor {
       guards: this.melee.guards - since.guards,
       shieldDisabled: this.melee.shieldDisabled - since.shieldDisabled,
       draughts: this.melee.draughts - since.draughts,
+      hitsTaken: this.melee.hitsTaken - since.hitsTaken,
+      damageTaken: this.melee.damageTaken - since.damageTaken,
     };
   }
 
@@ -3655,6 +3667,30 @@ export class MineflayerExecutor implements StepExecutor {
   private standingNote(wave: string): string {
     const mobs = this.lastStanding.get(wave) ?? [];
     return mobs.length === 0 ? "" : ` — standing at the last census: ${describeStanding(mobs)}`;
+  }
+
+  /**
+   * One `[hit]` line per health loss while a fight is open: how much, what the
+   * hands were doing (`this.hands`), and how the attackers stood — the per-blow
+   * telemetry a lost fight is compared against a won one with.
+   */
+  private logHit(lost: number): void {
+    const bot = this.requireBot();
+    const { byId } = this.visibleHostiles();
+    const me = bot.entity.position;
+    const near = [...byId.values()]
+      .map((e) => ({ e, d: Math.hypot(e.position.x - me.x, e.position.z - me.z) }))
+      .sort((a, b) => a.d - b.d);
+    const within4 = near.filter((n) => n.d <= 4).length;
+    const nearest = near[0];
+    this.melee.hitsTaken += 1;
+    this.melee.damageTaken += lost;
+    process.stderr.write(
+      `[hit] -${lost.toFixed(1)} → ${bot.health.toFixed(1)}/${PLAYER_MAX_HEALTH} while ${this.hands}` +
+        `${this.guarding ? " (shield up)" : ""}; nearest hostile ` +
+        `${nearest ? `${nearest.e.name}#${nearest.e.id} at ${nearest.d.toFixed(1)}` : "none"}, ` +
+        `${within4} within 4 blocks\n`,
+    );
   }
 
   /** Log what the hands did in one fight. */

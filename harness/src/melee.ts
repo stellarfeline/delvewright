@@ -351,10 +351,13 @@ export interface MeleeTally {
   guards: number;
   shieldDisabled: number;
   draughts: number;
+  /** Health losses while a fight was open, and their sum. */
+  hitsTaken: number;
+  damageTaken: number;
 }
 
 export function emptyTally(): MeleeTally {
-  return { swings: 0, landed: 0, noDamage: 0, crits: 0, guards: 0, shieldDisabled: 0, draughts: 0 };
+  return { swings: 0, landed: 0, noDamage: 0, crits: 0, guards: 0, shieldDisabled: 0, draughts: 0, hitsTaken: 0, damageTaken: 0 };
 }
 
 /** One line for the log: what the hands did this fight. */
@@ -362,7 +365,8 @@ export function describeTally(t: MeleeTally): string {
   return (
     `${t.swings} charged swing(s) (${t.landed} hurt the target, ${t.noDamage} did nothing), ` +
     `${t.crits} critical, shield raised ${t.guards}×, ` +
-    `shield disabled ${t.shieldDisabled}×, ${t.draughts} draught(s) drunk`
+    `shield disabled ${t.shieldDisabled}×, ${t.draughts} draught(s) drunk; ` +
+    `took ${t.hitsTaken} hit(s), ${t.damageTaken.toFixed(1)} damage`
   );
 }
 
