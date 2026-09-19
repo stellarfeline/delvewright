@@ -138,19 +138,24 @@ export type DrinkDecision =
  * health — a player does not waste half a flask on a scratch, and does not
  * carry four of them into the grave. Of the bottles that fit, the strongest.
  *
- * Not with a melee attacker in its reach: a drink holds the bottle for 32 ticks
- * at a fifth of walking speed, and a vindicator strikes about once a second —
- * measured on vesperhold, a draught drunk in the Porter's reach healed nothing
- * the next blow did not take back. The footwork opens the gap (`pressed`: the
- * exchange backs away instead of swinging); the drink waits for it
- * ({@link DRINK_CLEAR_RANGE}).
+ * Not while a melee attacker could reach the bot before the drink ends
+ * ({@link DRINK_CLEAR_RANGE}): a drink holds the bottle for 32 ticks at a fifth
+ * of walking speed, and the bot neither swings nor blocks while it lasts.
+ * Measured on the pinned server (the vesperhold Porter, an assisted fight
+ * opened at 13/20, N = 8): the six fights in which the bot only fenced took no
+ * hit at all; the two in which it backed off and drank took every one of their
+ * five hits while backing or drinking, the vindicator having closed from four
+ * blocks to under one and a half inside a single drink. So `pressed` is not a
+ * cue to retreat — the exchange simply goes on.
  *
  * Except at a third of max health or less ({@link DRINK_CRITICAL_FRACTION}),
- * where the bottle is drunk with the attacker on the bot. Authored, not cited:
- * at that health the next exchange is the last one either way, and on
- * vesperhold the bot opened the grooms' fight at 5.6/20 with four draughts in
- * the bag, refused them all for the spear beside it, and was speared dead three
- * seconds later.
+ * and then only when the bot can live through one more blow from what is on it
+ * (`health > nearestMeleeBlow`, the largest blow that attacker has landed this
+ * run): the drink then nets its heal less one blow. When one more blow kills
+ * the bot whether it drinks or not, it fights on — a drink it cannot finish
+ * only gives away the swings (vesperhold: at 4.1/20 against a 13-damage
+ * unassisted Porter the bot died mid-drink with no swing thrown, where the bot
+ * that kept swinging had won that attempt three times in four).
  */
 export function drinkDecision(opts: {
   readonly health: number;
@@ -159,6 +164,8 @@ export function drinkDecision(opts: {
   readonly heals: readonly number[];
   /** Horizontal distance to the nearest melee attacker, `undefined` when none. */
   readonly nearestMeleeDistance: number | undefined;
+  /** The largest blow the nearest melee attacker has landed on the bot, when known. */
+  readonly nearestMeleeBlow?: number | undefined;
 }): DrinkDecision {
   if (opts.heals.length === 0) {
     return opts.health < opts.maxHealth ? { kind: "none-carried" } : { kind: "healthy" };
@@ -166,22 +173,26 @@ export function drinkDecision(opts: {
   const missing = opts.maxHealth - opts.health;
   const fitting = opts.heals.filter((h) => h <= missing);
   if (fitting.length === 0) return { kind: "healthy" };
-  if (
-    opts.nearestMeleeDistance !== undefined &&
-    opts.nearestMeleeDistance < DRINK_CLEAR_RANGE &&
-    opts.health > opts.maxHealth * DRINK_CRITICAL_FRACTION
-  ) {
-    return { kind: "pressed" };
-  }
-  return { kind: "drink", heal: Math.max(...fitting) };
+  const heal = Math.max(...fitting);
+  const pressed =
+    opts.nearestMeleeDistance !== undefined && opts.nearestMeleeDistance < DRINK_CLEAR_RANGE;
+  if (!pressed) return { kind: "drink", heal };
+  const critical = opts.health <= opts.maxHealth * DRINK_CRITICAL_FRACTION;
+  const survivesABlow = opts.nearestMeleeBlow === undefined || opts.health > opts.nearestMeleeBlow;
+  return critical && survivesABlow ? { kind: "drink", heal } : { kind: "pressed" };
 }
 
-/** How far (blocks, horizontal) the nearest melee attacker must be before a
- * draught is started. */
-export const DRINK_CLEAR_RANGE = 4;
+/**
+ * How far (blocks, horizontal) the nearest melee attacker must be before a
+ * draught is started: far enough that it cannot close to striking distance in
+ * the 1.6 s the drink takes. Authored from the measurement above — a vindicator
+ * crossed from four blocks to 1.3 within one drink — at eight blocks: its
+ * crossing plus its reach, with the margin a faster walker needs.
+ */
+export const DRINK_CLEAR_RANGE = 8;
 
 /** At or below this fraction of max health a draught is drunk even with a melee
- * attacker in reach — see {@link drinkDecision}. */
+ * attacker on the bot — see {@link drinkDecision}. */
 export const DRINK_CRITICAL_FRACTION = 1 / 3;
 
 /**

@@ -234,3 +234,18 @@ test("at a third of max health a draught is drunk with the attacker on the bot",
     kind: "pressed",
   });
 });
+
+test("a critical drink is taken only when the bot outlives one more blow", () => {
+  const near = { maxHealth: 20, heals: [8], nearestMeleeDistance: 1 } as const;
+  // Assisted Porter: blows of 5.3; at 6/20 a drink nets +2.7.
+  assert.deepEqual(drinkDecision({ ...near, health: 6, nearestMeleeBlow: 5.3 }), {
+    kind: "drink",
+    heal: 8,
+  });
+  // Unassisted Porter: blows of 13.3; at 4.1/20 the drink cannot be finished alive.
+  assert.deepEqual(drinkDecision({ ...near, health: 4.1, nearestMeleeBlow: 13.3 }), {
+    kind: "pressed",
+  });
+  // Above the critical line a pressed bot fences on, whatever the blow.
+  assert.deepEqual(drinkDecision({ ...near, health: 9, nearestMeleeBlow: 1 }), { kind: "pressed" });
+});
