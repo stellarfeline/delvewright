@@ -177,6 +177,15 @@ const STAGED_BLOW = 100_000;
 const STAGED_REPLY_MS = 400;
 
 /**
+ * Consecutive unanswered censuses that end a staged clear.
+ *
+ * A probe that has not answered once in this many round trips is broken, and the
+ * step says so instead of spending its whole budget asking again. The step still
+ * FAILS — a silent probe is never a cleared wave.
+ */
+const CENSUS_SILENCE_LIMIT = 6;
+
+/**
  * How far from a `collect` step's anchor a drop is still this fight's.
  *
  * `WAVE_ENGAGE_NEAR`'s 32, because a drop lies where the BODY fell and a wave
@@ -4507,6 +4516,7 @@ export class MineflayerExecutor implements StepExecutor {
     const watch = beginCensusWatch();
     const deadline = Date.now() + KILL_TIMEOUT_MS;
     let struck = 0;
+    let silent = 0;
     // The wave has been read; from here it is on its way out, so it stops being
     // an encounter this run still owes a reading and its bodies become stageable
     // like any other. Measured on vesperhold: `wave/walk-ambush`'s last pillager
@@ -4527,12 +4537,16 @@ export class MineflayerExecutor implements StepExecutor {
       }
       const standing = await this.pollWaveCensus(step, enc, watch);
       if (standing === undefined) {
+        // A probe that has never once answered this step is broken, and waiting
+        // out the whole budget on it only delays saying so.
+        if (++silent >= CENSUS_SILENCE_LIMIT && watch.answers === 0) break;
         process.stderr.write(
           `[kill ${step.wave}] the wave census did not answer; retrying\n`,
         );
         await delay(REACH_POLL_MS);
         continue;
       }
+      silent = 0;
       if (standing === 0) {
         process.stderr.write(
           `[kill ${step.wave}] the wave census reports nothing of ${step.wave} standing after ` +
@@ -4568,7 +4582,18 @@ export class MineflayerExecutor implements StepExecutor {
           `NOBODY credited — everything that pays on a player's kill was skipped for those\n`,
       );
     }
-    const left = (await this.pollWaveCensus(step, enc, watch)) ?? 0;
+    // A census that never answered is NOT a cleared wave. The terminal condition
+    // is the server's answer, and a silent probe has given none: reading its
+    // silence as "nothing stands" would let a broken probe pass every encounter
+    // in the delve.
+    const left = await this.pollWaveCensus(step, enc, watch);
+    if (left === undefined) {
+      throw new Error(
+        `kill ${step.wave}: the wave census (${enc.census.census}) did not answer, so nothing ` +
+          `says whether the wave stands — over ${watch.answers} answer(s) this step, after ` +
+          `${struck} staged blow(s)`,
+      );
+    }
     if (left > 0) {
       throw new Error(
         `kill timed out after ${KILL_TIMEOUT_MS}ms: ${left} of wave ${step.wave} still stands ` +

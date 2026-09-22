@@ -2135,12 +2135,23 @@ test("a death that never lands says what it SAW, not what it assumed", async () 
   executor.useCombatPlan(combatPlan(), true);
   bot.game.gameMode = "spectator"; // and it never comes back
 
-  await assert.rejects(() => executor.kill({ ...KILL_STEP, cutsceneSeconds: 1 }));
+  // The STEP still completes: the die-retry stage reds on its own coverage, and
+  // ending the run here would suppress the muster of every wave behind this one.
+  await executor.kill({ ...KILL_STEP, cutsceneSeconds: 1 });
 
   const t = executor.deathTrials()[0]!;
+  assert.equal(t.completed, false, "the trial says its loop reached no verdict");
   assert.match(t.abortedWith ?? "", /spectator/);
   assert.match(t.abortedWith ?? "", /This entity cannot be damaged/);
   assert.doesNotMatch(t.abortedWith ?? "", /is the bot opped\?/);
+  assert.ok(
+    dieRetryCoverageFailures(
+      combatPlan().encounters,
+      executor.dieRetryEngagements(),
+      executor.deathTrials(),
+    ).length > 0,
+    "and the stage reds for an encounter it engaged without completing a trial",
+  );
 });
 
 
@@ -2283,7 +2294,10 @@ test("a loop abandoned after the death still carries the death in the artifact",
   executor.useCampaign("the-drowned-bell");
   executor.useCombatPlan(combatPlan(), true);
 
-  await assert.rejects(() => executor.kill(KILL_STEP), /census .* never answered/);
+  // The die-retry stage aborts; the STEP still fails, because the same silent
+  // probe is what the staged clear's terminal condition reads and a census that
+  // never answered is not a cleared wave.
+  await assert.rejects(() => executor.kill(KILL_STEP), /did not answer/);
 
   const trials = executor.deathTrials();
   assert.equal(trials.length, 1, "the death that happened is recorded");
@@ -2736,7 +2750,11 @@ test("an encounter with NO governing checkpoint skips the death as an ADVISORY, 
   const bot = new CombatFakeBot();
   bot.seat(1);
   const executor = attach(bot);
-  executor.useCampaign("souls-bonfire");
+  // The fake server answers as `the-drowned-bell`, and the census channel is
+  // campaign-scoped: a mismatched id here made the probe silent, which the staged
+  // clear now correctly refuses to read as a cleared wave. The SHAPE under test is
+  // souls-bonfire's; the campaign id is the fake server's.
+  executor.useCampaign("the-drowned-bell");
   const plan = combatPlan(1, false);
   executor.useCombatPlan(
     { ...plan, encounters: [{ ...plan.encounters[0]!, checkpoint: undefined }] },
