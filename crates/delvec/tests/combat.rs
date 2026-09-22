@@ -427,13 +427,26 @@ fn declaring_an_actor_tier_moves_no_shipped_byte() {
         shipped(&out_tiered),
         "an actor `tier` must not reach a shipped byte"
     );
-    // The untiered actor is also absent from the plan entirely — an untiered
-    // actor carries no floor expectation, exactly like an untiered wave.
+    // Tiered or not, the actor is a FIGHT, and the plan's binding count for the
+    // whole combat pass says so — which is the one thing an actor-only campaign
+    // needs the plan for now that nothing grades the fight.
     let plan_plain: serde_json::Value =
         serde_json::from_slice(out_plain.get("validation/combat-plan.json").unwrap()).unwrap();
     assert!(
-        plan_plain["actors"].as_array().unwrap().is_empty(),
+        plan_plain["fights"]["actors"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|a| a == "actor/barrow-warden"),
         "{plan_plain}"
+    );
+    assert!(
+        plan_plain["encounters"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|e| e["wave"] != "actor/barrow-warden"),
+        "an actor is a fight, never an `encounters[]` row: {plan_plain}"
     );
 }
 

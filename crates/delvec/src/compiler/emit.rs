@@ -1514,7 +1514,14 @@ pub fn build_with_warnings(
             // Before the combat plan: a run-back is measured against where the
             // hostiles actually are, and a lane wave is where it marches.
             let lanes = crate::compiler::nav::plan_lanes(plan, &world)?;
-            if crate::compiler::combat::has_encounters(plan) {
+            // A campaign whose only fight is an ACTOR still ships a plan. It has no
+            // `encounters[]` for the ladder to read or clear, but `fights` is the
+            // binding count for the whole combat pass — and a five-hostile campaign
+            // that emits no plan at all reads as combat-free, which is the silence
+            // the block was added for.
+            if crate::compiler::combat::has_encounters(plan)
+                || crate::compiler::combat::mandatory_fights(plan).any()
+            {
                 let mandatory = crate::compiler::combat::encounters(plan);
                 // Run-backs (spec-0016 §1): a cleared `respawns_on_rest` wave a
                 // rest re-seats beside a leg the path walks afterwards. Measured
