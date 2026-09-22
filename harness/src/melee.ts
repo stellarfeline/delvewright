@@ -319,12 +319,28 @@ export function footwork(opts: {
 }
 
 /**
- * How long a raised shield takes to start blocking. Measured on the pinned
- * server (probe: a NoAI husk's `mob_attack` applied by `/damage … by`, the
- * bot's off-hand shield raised with mineflayer's `activateItem(true)` for a
- * known number of ticks, N = 5 per row): 3 ticks 0/5 and 0/5 blocked, 4 ticks
- * 2/5 and 1/5, 5 ticks and longer 5/5 — vanilla's `block_delay_seconds` 0.25,
- * the 4-tick row being client timing slop.
+ * How long a raised shield takes to start blocking.
+ *
+ * Re-measured against the SERVER's own answer rather than the client's: the
+ * statistic `minecraft.custom:minecraft.damage_blocked_by_shield` on the pinned
+ * 1.21.11 server, a NoAI husk's `mob_attack` applied by `/damage … by`, the
+ * off-hand shield raised with mineflayer's `activateItem(true)` for a known
+ * number of ticks, N = 6 per row, every blow cross-checked against the bot's own
+ * `Health` delta:
+ *
+ *   0, 2, 3, 4 ticks — 0/6 blocked, 3.36 health lost every time;
+ *   5, 6, 8, 12, 20 ticks — 6/6 blocked, 0 health lost, the statistic moving by
+ *   the full blow.
+ *
+ * So the number stands at vanilla's `block_delay_seconds` 0.25, and the 4-tick
+ * row the earlier probe read as 2/5 and 1/5 was its own timing slop: under an
+ * instrument that can SEE a block, four ticks never blocks.
+ *
+ * The same run settles what the raised shield is worth: a blow it takes costs
+ * the body nothing at all (the statistic moves by the whole 6.0 and `Health`
+ * does not move), and `activateItem(true)` does put the SERVER in the blocking
+ * state with the shield in the off hand — that was never in evidence before,
+ * because every instrument the harness had was blind to a blocked blow.
  */
 export const SHIELD_WARMUP_MS = 250;
 
@@ -418,6 +434,16 @@ export function releaseSwing(opts: {
  * are still — including while the swing is charged and the bot waits for its
  * opening. A raised shield slows a walking player to a crawl, so a step lowers
  * it; the swing lowers it for the tick it is released.
+ *
+ * There is no FACING term here, and the shield has one: measured on the pinned
+ * server (the blocked-damage statistic, shield warm, N = 4 per row), a blow is
+ * blocked at every yaw up to and including 90 degrees off the attacker and at
+ * none from 92 degrees on — vanilla's `blocks_attacks`
+ * `horizontal_blocking_angle`, a 180-degree arc. Against one attacker the bot's
+ * own aim covers it. Against a crowd it cannot: measured in the vesperhold great
+ * hall against five bodies, a probe that never swung and turned to the nearest
+ * Guard every 100 ms still blocked only 52% of the blows that reached it
+ * (9.75 of 18.75 per fight, N = 4), because the rest arrive from behind.
  */
 export function guardUp(opts: {
   readonly shieldUsable: boolean;
@@ -453,10 +479,18 @@ export function jumpForCrit(opts: {
  * `draughts` counts only drinks the server finished (entity event 9) and the
  * bag shows gone.
  *
- * A blow the shield TOOK is not counted, because nothing the client is sent
+ * A blow the shield TOOK is not counted here, because nothing the client is sent
  * says so reliably: measured on the pinned server, a zombie's blow on a raised
  * shield arrived as no packet at all, and only the axe blow that disabled it
- * played `item.shield.block`.
+ * played `item.shield.block`. That is a limit of THIS instrument, not of the
+ * fact — the server keeps the answer as
+ * `minecraft.custom:minecraft.damage_blocked_by_shield` (round(damage × 10)), an
+ * objective a run can create and read, and this tally does not read it. So
+ * `hitsTaken` counts the blows the shield did NOT stop, `damageTaken` is what
+ * reached the body after armour and the assist, and neither says how hard the
+ * fight was swinging: a line reading "took 6 hit(s), 17.4 damage" was measured
+ * in a Guard fight the server had recorded as 8 blows landed for 23.2 damage
+ * and 4 more taken on the shield.
  */
 export interface MeleeTally {
   swings: number;
