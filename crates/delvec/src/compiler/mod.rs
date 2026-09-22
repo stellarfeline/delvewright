@@ -126,6 +126,7 @@ pub mod load;
 pub mod loot;
 pub mod mark;
 pub mod massing;
+pub mod muster;
 pub mod nav;
 pub mod onkill;
 pub mod plan;

@@ -49,11 +49,12 @@ export interface Encounter {
   /** Absent when the campaign has set no checkpoint by this step (world spawn). */
   readonly checkpoint: Vec3Tuple | undefined;
   /**
-   * What stands at this encounter, per entity kind, with the melee budget the
-   * encounter's own arithmetic gives each body. Required — see
-   * {@link EncounterBody}.
+   * What the campaign DECLARES stands here, phrased as questions the live bodies
+   * can be asked, plus the staged removal that follows the reading. Required —
+   * see {@link MusterPlan}; a build too old to state it cannot have its wave
+   * verified or cleared, and failing loudly beats a silent skip.
    */
-  readonly bodies: readonly EncounterBody[];
+  readonly muster: MusterPlan;
   /** The compiler-emitted tag-census probe for this wave. The names
    * come from the plan and are never re-derived here: `safe_local` is a compiler
    * naming rule, and reimplementing it in the harness is the downstream folklore
@@ -63,32 +64,169 @@ export interface Encounter {
 }
 
 /**
- * One kind of body standing at an encounter, and when the ladder must stop
- * swinging at it.
+ * One entity kind the wave declares, and the identity questions the probe puts to
+ * a body of it.
  *
- * The bot used to decide a body was unkillable by meleeing it for a fixed six
- * seconds. That is not a fact about anything — too long for a rat, too short for
- * an elite — and it lived in the harness, where nothing knows what is standing
- * there. The compiler does: declared `max_health`, the mob's resistance and the
- * best weapon any class kit carries are the three numbers its winnability proof
- * already bounds the whole fight with.
- *
- * `giveUpSwings` is `undefined` when that arithmetic could not run (Mojang
- * publishes no per-entity default attributes, so an undeclared mob's health is
- * genuinely unknown). The ladder then gives up on NOTHING here and lets the
- * step's own budget expire, saying which kinds had no bound — never a fallback to
- * a constant, which is the defect this field replaces.
+ * `facts` is ordered and bit `i` of a body's mask is `facts[i]`. The order is the
+ * compiler's (`crates/delvec/src/compiler/muster.rs`) and the harness never
+ * re-derives it — the same rule the census function names follow.
  */
-export interface EncounterBody {
-  /** Entity kind in the client's vocabulary (`zombie`) — the only identity the
-   * bot can read off a body. */
-  readonly kind: string;
-  /** How many of them the wave seats. */
+export interface MusterType {
+  readonly entity: string;
+  readonly facts: readonly string[];
+  /** Facts the wave declares that did not fit in the mask, so a short mask
+   * cannot read as a passing check. */
+  readonly droppedFacts: readonly string[];
+  readonly readsAttackDamage: boolean;
+  readonly readsFollowRange: boolean;
+}
+
+/** One declared stack, as the multiset comparison expects to find it. */
+export interface MusterProfile {
+  readonly typeIndex: number;
   readonly count: number;
-  /** Swings after which this body is not being killed by the class kit. */
-  readonly giveUpSwings: number | undefined;
-  /** Why there is no budget. Present exactly when `giveUpSwings` is undefined. */
-  readonly reason?: string;
+  readonly mask: number;
+  readonly label: string;
+  readonly maxHealth?: number;
+  readonly attackDamage?: number;
+  readonly movementSpeed?: number;
+  readonly followRange?: number;
+  readonly armorAtLeast: number;
+  readonly armorToughnessAtLeast: number;
+}
+
+/**
+ * The wave's declaration, plus the two staging functions that follow the reading.
+ *
+ * `probe` reads the live bodies. `strike` fells one of them, credited to the
+ * party — staging, never a fight, and `player_attack by @p` rather than `kill`
+ * because the wiring under test (`on_kill`, the countdown, a declared drop) pays
+ * on a player's kill and a removal crediting nobody would skip it silently.
+ * `chip` wounds the whole wave without felling anything, which is the only thing
+ * the die-retry stage's "mid-fight" death needs the wave to be.
+ */
+export interface MusterPlan {
+  readonly probe: string;
+  readonly strike: string;
+  readonly chip: string;
+  /** Fixed-point scale every reading crosses the chat channel at. */
+  readonly scale: number;
+  /** What a holder reads where the probe deliberately did not ask. */
+  readonly unread: number;
+  /** Bodies the wave seats in total. */
+  readonly bodies: number;
+  /** Declared facts this probe puts a question to — the binding count. */
+  readonly checked: number;
+  readonly types: readonly MusterType[];
+  readonly profiles: readonly MusterProfile[];
+}
+
+/**
+ * The muster block. Required, with no default: a wave the harness cannot read is
+ * a wave it cannot verify OR clear, and the only fallback is for the harness to
+ * write its own copy of the declaration — which is the thing this block exists to
+ * delete.
+ */
+function parseMusterPlan(v: unknown, pointer: string): MusterPlan {
+  if (!isRecord(v)) throw new CombatPlanParseError(pointer, "expected an object");
+  const str = (key: string): string => {
+    const x = v[key];
+    if (typeof x !== "string" || x.length === 0) {
+      throw new CombatPlanParseError(`${pointer}/${key}`, "expected a non-empty function id");
+    }
+    return x;
+  };
+  const int = (key: string): number => {
+    const x = v[key];
+    if (!Number.isInteger(x)) {
+      throw new CombatPlanParseError(`${pointer}/${key}`, "expected an integer");
+    }
+    return x as number;
+  };
+  const scale = int("scale");
+  if (scale <= 0) throw new CombatPlanParseError(`${pointer}/scale`, "expected a positive integer");
+  const rawTypes = v["types"];
+  if (!Array.isArray(rawTypes) || rawTypes.length === 0) {
+    throw new CombatPlanParseError(`${pointer}/types`, "a wave with no entity kinds is not a wave");
+  }
+  const types = rawTypes.map((t, i): MusterType => {
+    const tp = `${pointer}/types/${i}`;
+    if (!isRecord(t)) throw new CombatPlanParseError(tp, "expected an object");
+    const entity = t["entity"];
+    if (typeof entity !== "string" || entity.length === 0) {
+      throw new CombatPlanParseError(`${tp}/entity`, "expected a non-empty entity id");
+    }
+    const facts = t["facts"];
+    if (!Array.isArray(facts) || facts.some((f) => typeof f !== "string")) {
+      throw new CombatPlanParseError(`${tp}/facts`, "expected an array of strings");
+    }
+    const dropped = t["dropped_facts"];
+    if (!Array.isArray(dropped) || dropped.some((f) => typeof f !== "string")) {
+      throw new CombatPlanParseError(`${tp}/dropped_facts`, "expected an array of strings");
+    }
+    return {
+      entity,
+      facts: facts as string[],
+      droppedFacts: dropped as string[],
+      readsAttackDamage: t["reads_attack_damage"] === true,
+      readsFollowRange: t["reads_follow_range"] === true,
+    };
+  });
+  const rawProfiles = v["profiles"];
+  if (!Array.isArray(rawProfiles) || rawProfiles.length === 0) {
+    throw new CombatPlanParseError(`${pointer}/profiles`, "a wave with no stacks is not a wave");
+  }
+  const num = (o: Record<string, unknown>, key: string, pp: string): number | undefined => {
+    const x = o[key];
+    if (x === null || x === undefined) return undefined;
+    if (typeof x !== "number" || !Number.isFinite(x)) {
+      throw new CombatPlanParseError(`${pp}/${key}`, "expected a finite number or null");
+    }
+    return x;
+  };
+  const profiles = rawProfiles.map((pr, i): MusterProfile => {
+    const pp = `${pointer}/profiles/${i}`;
+    if (!isRecord(pr)) throw new CombatPlanParseError(pp, "expected an object");
+    const typeIndex = pr["type"];
+    if (!Number.isInteger(typeIndex) || (typeIndex as number) < 0 || (typeIndex as number) >= types.length) {
+      throw new CombatPlanParseError(`${pp}/type`, "expected an index into `types`");
+    }
+    const count = pr["count"];
+    if (!Number.isInteger(count) || (count as number) <= 0) {
+      throw new CombatPlanParseError(`${pp}/count`, "expected a positive integer");
+    }
+    const mask = pr["mask"];
+    if (!Number.isInteger(mask) || (mask as number) < 0) {
+      throw new CombatPlanParseError(`${pp}/mask`, "expected a non-negative integer");
+    }
+    const label = pr["label"];
+    if (typeof label !== "string" || label.length === 0) {
+      throw new CombatPlanParseError(`${pp}/label`, "expected a non-empty string");
+    }
+    return {
+      typeIndex: typeIndex as number,
+      count: count as number,
+      mask: mask as number,
+      label,
+      maxHealth: num(pr, "max_health", pp),
+      attackDamage: num(pr, "attack_damage", pp),
+      movementSpeed: num(pr, "movement_speed", pp),
+      followRange: num(pr, "follow_range", pp),
+      armorAtLeast: num(pr, "armor_at_least", pp) ?? 0,
+      armorToughnessAtLeast: num(pr, "armor_toughness_at_least", pp) ?? 0,
+    };
+  });
+  return {
+    probe: str("probe"),
+    strike: str("strike"),
+    chip: str("chip"),
+    scale,
+    unread: int("unread"),
+    bodies: int("bodies"),
+    checked: int("checked"),
+    types,
+    profiles,
+  };
 }
 
 /** The three functions the ladder calls to measure one wave by tag. */
@@ -99,115 +237,6 @@ export interface CensusProbe {
   readonly brand: string;
   /** Clears the stamp. */
   readonly unbrand: string;
-}
-
-/**
- * One beat that stages or unleashes an actor, as the plan states it (compiler
- * `ActorBeat`).
- *
- * This is what makes an actor fight *schedulable* at all. A wave encounter has a
- * `kill` step on the critical path, so the bot already knows when the fight
- * starts; an actor fight starts because something completed, or because a player
- * struck, used or walked into something — and that "something" is only stated
- * here. `site` is the half that decides whether the run can reach it: an
- * `objective` beat fires when the path completes that objective, while a
- * `trigger` beat is player-initiated and has no position in the quest DAG.
- */
-export interface ActorBeat {
-  readonly site: "trigger" | "quest" | "objective" | "trap";
-  /** The owning trigger / quest / trap id. */
-  readonly owner: string;
-  /** The objective, when the site is a quest's `on_objective_complete`. */
-  readonly objective?: string;
-  /** JSON pointer to the effect, so a report line can name it exactly. */
-  readonly path: string;
-  /** Trigger sites: the event kind (`approach`/`strike`/`use`/`strike-npc`). */
-  readonly on?: string;
-  /** Trigger sites: the anchor watched. */
-  readonly at?: string;
-  /** `strike-npc` triggers: the NPC whose body is the target. */
-  readonly npc?: string;
-}
-
-/**
- * Whether the compiler believes the inverted floor gate can measure a fight, and
- * — when it cannot — the reason, in the author's own terms.
- *
- * Carried verbatim into the run report. The whole point of the ledger is
- * that **silence must not read as a pass**: an encounter nobody fought and an
- * encounter fought and lost produce the same empty findings list, and only this
- * tells them apart.
- */
-export interface FloorCoverage {
-  readonly covered: boolean;
-  readonly reason?: string;
-}
-
-/** One tier-declaring stage-5 actor, as the validation ladder sees it. */
-export interface ActorEncounter {
-  readonly actor: string;
-  /** The vanilla entity puppeted and unleashed (`minecraft:wither_skeleton`). */
-  readonly entity: string;
-  readonly name?: string;
-  readonly tier: EncounterTier;
-  readonly anchor: string;
-  /** The anchor resolved to a world cell — where the bot walks to fight it. */
-  readonly pos: Vec3Tuple | undefined;
-  readonly tag: string;
-  readonly vulnerable: boolean;
-  readonly spawnedBy: readonly ActorBeat[];
-  readonly unleashedBy: readonly ActorBeat[];
-  readonly floorGate: FloorCoverage;
-  /** Declared `max_health`, when the actor overrides it — report context only. */
-  readonly maxHealth: number | undefined;
-}
-
-/** One line of the compiler's floor-gate ledger. */
-export interface FloorLedgerEntry {
-  readonly kind: string;
-  readonly id: string;
-  /**
-   * The declared tier — `undefined` for an **untiered hostile**: an
-   * actor the campaign unleashes on the party without billing the fight at all.
-   * It is always a `not_covered` entry, because nothing declared what the gate
-   * was supposed to hold it to.
-   */
-  readonly tier?: EncounterTier;
-  /** Present exactly on a not-covered entry. */
-  readonly reason?: string;
-}
-
-/**
- * A gate's own statement of what it bound to (playtest-methodology.md rule 1):
- * how many objects it examined, and — when that count is zero — why, in the
- * compiler's own words. A ledger that matched zero objects and one that
- * matched several and found them all fine look identical to a reader who is
- * not counting; this is the field that tells them apart without the reader
- * having to notice an empty array. `reason` is present exactly when `unbound`
- * is `true` — a bound gate carries no reason to explain.
- */
-export interface BindingCount {
-  readonly examined: number;
-  readonly unbound: boolean;
-  readonly reason?: string;
-}
-
-/**
- * The floor-gate ledger: every encounter billed `elite`/`boss` plus every
- * untiered hostile actor, split into what the gate covers and what it cannot.
- *
- * `present: false` means the build carried NO ledger (a plan from a delvec older
- * than the ledger) — deliberately distinct from a present-but-empty ledger, because
- * "this campaign bills nothing hard" and "this build cannot tell you" are
- * different facts and only one of them is reassuring. `binding` is undefined
- * for the same reason `present` can be false: a plan from a delvec older than
- * the binding-count fields simply does not carry one.
- */
-export interface FloorLedger {
-  readonly present: boolean;
-  readonly covered: readonly FloorLedgerEntry[];
-  readonly notCovered: readonly FloorLedgerEntry[];
-  readonly binding?: BindingCount;
 }
 
 /**
@@ -333,17 +362,6 @@ export interface CombatPlan {
   readonly encounters: readonly Encounter[];
   /** Re-seated fights the path walks past again after a rest. */
   readonly runBacks: readonly RunBack[];
-  /** Tier-declaring stage-5 actors — the other shape an elite takes. */
-  readonly actors: readonly ActorEncounter[];
-  /** The compiler's coverage ledger, printed verbatim in the run report. */
-  readonly floorGate: FloorLedger;
-  /**
-   * `actors[]`'s own binding count: how many actors this build's tier
-   * machinery tracked at all (any declared tier, `ordinary` included).
-   * Undefined for a plan from a delvec that predates it — see
-   * {@link FloorLedger.binding}.
-   */
-  readonly actorsGate?: BindingCount;
 }
 
 export class CombatPlanParseError extends Error {
@@ -417,7 +435,7 @@ export function parseCombatPlan(raw: unknown): CombatPlan {
       checkpoint:
         e["checkpoint"] === undefined ? undefined : requirePos(e["checkpoint"], `${p}/checkpoint`),
       census: parseCensusProbe(e["census"], `${p}/census`),
-      bodies: parseEncounterBodies(e["bodies"], `${p}/bodies`),
+      muster: parseMusterPlan(e["muster"], `${p}/muster`),
     };
   });
   return {
@@ -426,90 +444,7 @@ export function parseCombatPlan(raw: unknown): CombatPlan {
     difficulty,
     encounters,
     runBacks: parseRunBacks(raw["run_backs"], "/run_backs"),
-    actors: parseActors(raw["actors"], "/actors"),
-    floorGate: parseFloorLedger(raw["floor_gate"], "/floor_gate"),
-    actorsGate: parseBindingCount(raw["actors_gate"], "/actors_gate"),
   };
-}
-
-/**
- * The encounter's cast and its melee budgets. Required, and with no default: a
- * plan too old to state what stands at a fight cannot be measured by one, and
- * the only fallback is a constant in the harness — which is the thing these
- * fields exist to delete.
- */
-function parseEncounterBodies(v: unknown, pointer: string): readonly EncounterBody[] {
-  if (!Array.isArray(v)) throw new CombatPlanParseError(pointer, "expected an array");
-  if (v.length === 0) {
-    throw new CombatPlanParseError(pointer, "a wave with no bodies is not an encounter");
-  }
-  const seen = new Set<string>();
-  return v.map((b, i): EncounterBody => {
-    const p = `${pointer}/${i}`;
-    if (!isRecord(b)) throw new CombatPlanParseError(p, "expected an object");
-    const kind = b["kind"];
-    if (typeof kind !== "string" || kind.length === 0) {
-      throw new CombatPlanParseError(`${p}/kind`, "expected a non-empty string");
-    }
-    if (kind.includes(":")) {
-      throw new CombatPlanParseError(`${p}/kind`, "expected a client entity name, not an id");
-    }
-    // The lookup is by kind, so two entries for one kind would make the budget
-    // depend on which came first — a silent wrong answer, not an error.
-    if (seen.has(kind)) {
-      throw new CombatPlanParseError(`${p}/kind`, `duplicate kind ${kind}`);
-    }
-    seen.add(kind);
-    const count = b["count"];
-    if (!Number.isInteger(count) || (count as number) <= 0) {
-      throw new CombatPlanParseError(`${p}/count`, "expected a positive integer");
-    }
-    const swings = b["give_up_swings"];
-    const reason = b["reason"];
-    if (swings === null || swings === undefined) {
-      if (typeof reason !== "string" || reason.length === 0) {
-        throw new CombatPlanParseError(`${p}/reason`, "a body with no budget must state why");
-      }
-      return { kind, count: count as number, giveUpSwings: undefined, reason };
-    }
-    if (!Number.isInteger(swings) || (swings as number) <= 0) {
-      throw new CombatPlanParseError(`${p}/give_up_swings`, "expected a positive integer or null");
-    }
-    if (reason !== undefined) {
-      throw new CombatPlanParseError(`${p}/reason`, "a bounded body carries no reason");
-    }
-    return { kind, count: count as number, giveUpSwings: swings as number };
-  });
-}
-
-/**
- * A `{examined, unbound, reason?}` block (playtest-methodology.md rule 1).
- * `undefined` input parses as `undefined` — a plan from a delvec that predates
- * these fields carries no binding count, and that is a different fact from a
- * present one that happens to be zero.
- */
-function parseBindingCount(v: unknown, pointer: string): BindingCount | undefined {
-  if (v === undefined) return undefined;
-  if (!isRecord(v)) throw new CombatPlanParseError(pointer, "expected an object");
-  const examined = v["examined"];
-  if (!Number.isInteger(examined) || (examined as number) < 0) {
-    throw new CombatPlanParseError(`${pointer}/examined`, "expected a non-negative integer");
-  }
-  const unbound = v["unbound"];
-  if (typeof unbound !== "boolean") {
-    throw new CombatPlanParseError(`${pointer}/unbound`, "expected a boolean");
-  }
-  if (unbound !== (examined === 0)) {
-    throw new CombatPlanParseError(pointer, "`unbound` must be exactly `examined === 0`");
-  }
-  // A zero binding without its reason is the exact silence this field exists
-  // to end, so it is a parse error rather than a quietly-absent explanation.
-  if (unbound && (typeof v["reason"] !== "string" || (v["reason"] as string).length === 0)) {
-    throw new CombatPlanParseError(`${pointer}/reason`, "an unbound gate must state why");
-  }
-  return unbound
-    ? { examined: examined as number, unbound: true, reason: v["reason"] as string }
-    : { examined: examined as number, unbound: false };
 }
 
 /**
@@ -530,213 +465,6 @@ function parseCensusProbe(v: unknown, pointer: string): CensusProbe {
     brand: v["brand"] as string,
     unbrand: v["unbrand"] as string,
   };
-}
-
-function requireTier(v: unknown, pointer: string): EncounterTier {
-  if (typeof v !== "string" || !ENCOUNTER_TIERS.includes(v as EncounterTier)) {
-    throw new CombatPlanParseError(pointer, `expected one of ${ENCOUNTER_TIERS.join("|")}`);
-  }
-  return v as EncounterTier;
-}
-
-function requireString(o: Record<string, unknown>, key: string, pointer: string): string {
-  const v = o[key];
-  if (typeof v !== "string" || v.length === 0) {
-    throw new CombatPlanParseError(`${pointer}/${key}`, "expected a non-empty string");
-  }
-  return v;
-}
-
-function optionalString(o: Record<string, unknown>, key: string, pointer: string): string | undefined {
-  const v = o[key];
-  if (v === undefined) return undefined;
-  if (typeof v !== "string" || v.length === 0) {
-    throw new CombatPlanParseError(`${pointer}/${key}`, "expected a non-empty string when present");
-  }
-  return v;
-}
-
-const BEAT_SITES = ["trigger", "quest", "objective", "trap"] as const;
-
-function parseBeats(v: unknown, pointer: string): ActorBeat[] {
-  if (!Array.isArray(v)) throw new CombatPlanParseError(pointer, "expected an array");
-  return v.map((b, i): ActorBeat => {
-    const p = `${pointer}/${i}`;
-    if (!isRecord(b)) throw new CombatPlanParseError(p, "expected an object");
-    const site = b["site"];
-    if (typeof site !== "string" || !BEAT_SITES.includes(site as never)) {
-      throw new CombatPlanParseError(`${p}/site`, `expected one of ${BEAT_SITES.join("|")}`);
-    }
-    return {
-      site: site as ActorBeat["site"],
-      owner: requireString(b, "owner", p),
-      objective: optionalString(b, "objective", p),
-      path: requireString(b, "path", p),
-      on: optionalString(b, "on", p),
-      at: optionalString(b, "at", p),
-      npc: optionalString(b, "npc", p),
-    };
-  });
-}
-
-function parseCoverage(v: unknown, pointer: string): FloorCoverage {
-  if (!isRecord(v)) throw new CombatPlanParseError(pointer, "expected an object");
-  const covered = v["covered"];
-  if (typeof covered !== "boolean") {
-    throw new CombatPlanParseError(`${pointer}/covered`, "expected a boolean");
-  }
-  // A not-covered entry without its reason would be the exact silence the ledger
-  // exists to end, so it is a parse error rather than an empty string.
-  if (!covered && (typeof v["reason"] !== "string" || (v["reason"] as string).length === 0)) {
-    throw new CombatPlanParseError(`${pointer}/reason`, "a not-covered entry must state why");
-  }
-  return covered ? { covered: true } : { covered: false, reason: v["reason"] as string };
-}
-
-/**
- * The plan's `actors[]`. Absent (a plan from a delvec that predates the field)
- * parses as
- * an empty list — the run then says the ledger is absent rather than pretending
- * the campaign declares no tiered actor.
- */
-function parseActors(v: unknown, pointer: string): ActorEncounter[] {
-  if (v === undefined) return [];
-  if (!Array.isArray(v)) throw new CombatPlanParseError(pointer, "expected an array");
-  return v.map((a, i): ActorEncounter => {
-    const p = `${pointer}/${i}`;
-    if (!isRecord(a)) throw new CombatPlanParseError(p, "expected an object");
-    const attributes = a["attributes"];
-    const maxHealth =
-      isRecord(attributes) && typeof attributes["max_health"] === "number"
-        ? (attributes["max_health"] as number)
-        : undefined;
-    return {
-      actor: requireString(a, "actor", p),
-      entity: requireString(a, "entity", p),
-      name: optionalString(a, "name", p),
-      tier: requireTier(a["tier"], `${p}/tier`),
-      anchor: requireString(a, "anchor", p),
-      // Absent past DW0325, but the plan types it optional and a missing cell is
-      // exactly a "nowhere to walk" skip reason rather than a parse failure.
-      pos: a["pos"] === undefined ? undefined : requirePos(a["pos"], `${p}/pos`),
-      tag: requireString(a, "tag", p),
-      vulnerable: a["vulnerable"] === true,
-      spawnedBy: parseBeats(a["spawned_by"], `${p}/spawned_by`),
-      unleashedBy: parseBeats(a["unleashed_by"], `${p}/unleashed_by`),
-      floorGate: parseCoverage(a["floor_gate"], `${p}/floor_gate`),
-      maxHealth,
-    };
-  });
-}
-
-function parseLedgerSide(v: unknown, pointer: string, needReason: boolean): FloorLedgerEntry[] {
-  if (!Array.isArray(v)) throw new CombatPlanParseError(pointer, "expected an array");
-  return v.map((e, i): FloorLedgerEntry => {
-    const p = `${pointer}/${i}`;
-    if (!isRecord(e)) throw new CombatPlanParseError(p, "expected an object");
-    const reason = optionalString(e, "reason", p);
-    if (needReason && reason === undefined) {
-      throw new CombatPlanParseError(`${p}/reason`, "a not-covered entry must state why");
-    }
-    // `tier: null` (or absent) is the compiler saying the entry declares NO
-    // tier — the untiered hostile. Anything else present must
-    // still be a real tier, so a typo can never be read as "untiered".
-    const tier = e["tier"];
-    return {
-      kind: requireString(e, "kind", p),
-      id: requireString(e, "id", p),
-      ...(tier === null || tier === undefined
-        ? {}
-        : { tier: requireTier(tier, `${p}/tier`) }),
-      reason,
-    };
-  });
-}
-
-/** The plan's `floor_gate`. Absent → `present: false` (see {@link FloorLedger}). */
-function parseFloorLedger(v: unknown, pointer: string): FloorLedger {
-  if (v === undefined) return { present: false, covered: [], notCovered: [] };
-  if (!isRecord(v)) throw new CombatPlanParseError(pointer, "expected an object");
-  const covered = parseLedgerSide(v["covered"], `${pointer}/covered`, false);
-  const notCovered = parseLedgerSide(v["not_covered"], `${pointer}/not_covered`, true);
-  const binding = parseBindingCount(
-    v["examined"] === undefined && v["unbound"] === undefined
-      ? undefined
-      : { examined: v["examined"], unbound: v["unbound"], reason: v["reason"] },
-    pointer,
-  );
-  if (binding !== undefined && binding.examined !== covered.length + notCovered.length) {
-    throw new CombatPlanParseError(
-      pointer,
-      `examined (${binding.examined}) must equal covered.length + not_covered.length ` +
-        `(${covered.length + notCovered.length})`,
-    );
-  }
-  return { present: true, covered, notCovered, binding };
-}
-
-/**
- * The melee budget this encounter gives a body of `kind`, or `undefined` when it
- * gives none.
- *
- * `undefined` covers three honest cases and no dishonest one: the run carries no
- * combat plan for this wave, the encounter seats no body of that kind (a
- * retaliation target that wandered in from somewhere else), or the compiler could
- * not compute the arithmetic. In every one of them the answer is "nothing here
- * knows", and the caller must not substitute a number of its own — that
- * substitution is the whole defect this replaced.
- */
-export function giveUpBudgetFor(
-  encounter: Encounter | undefined,
-  kind: string | undefined,
-): number | undefined {
-  if (!encounter || kind === undefined || kind.length === 0) return undefined;
-  return encounter.bodies.find((b) => b.kind === kind)?.giveUpSwings;
-}
-
-/**
- * One body that outlived the melee budget its encounter's arithmetic gave it.
- *
- * A finding, printed in the run report — never a silent blacklist. Either the
- * body cannot be damaged by the class kit, or the encounter's numbers are wrong;
- * both are content defects, and both used to be absorbed by a six-second timer
- * that reported nothing.
- */
-export interface UnkillableBody {
-  readonly wave: string;
-  readonly kind: string;
-  readonly swings: number;
-  readonly budget: number;
-}
-
-/** The run-report line for one {@link UnkillableBody}. */
-export function unkillableFinding(u: UnkillableBody): string {
-  return (
-    `${u.wave}: a \`${u.kind}\` took ${u.swings} swing(s) in melee and did not fall. The ` +
-    `encounter's own arithmetic budgets ${u.budget} for that body, out of its declared ` +
-    `\`attributes.max_health\`, its resistance and the best weapon a class kit carries — so ` +
-    `either nothing in the party's kit can damage it, or the encounter's numbers are wrong. ` +
-    `The bot stopped swinging at it and went on with the wave.`
-  );
-}
-
-/**
- * The tail a `kill` step's timeout adds when the encounter budgeted none of the
- * bodies it swung at.
- *
- * Empty when every kind it met carried a budget — a timeout there is about the
- * fight, not about what the plan could say. Otherwise it names the kinds, because
- * "the bot gave up on nothing" and "there was nothing to give up on" are
- * different facts and only one of them is the author's to fix.
- */
-export function unboundedEncounterNote(kinds: Iterable<string>): string {
-  const named = [...kinds].sort();
-  if (named.length === 0) return "";
-  return (
-    ` — and this encounter states no melee budget for ${named.join(", ")}, so the bot could ` +
-    `not tell a tanky body from an unkillable one here; declare \`attributes.max_health\` on ` +
-    `those stacks (the same declaration DW0475 asks for)`
-  );
 }
 
 /** Read the combat plan beside `criticalPathPath`; `undefined` when absent (a
@@ -760,173 +488,26 @@ export async function loadCombatPlanForCriticalPath(
 // ---------------------------------------------------------------------------
 
 /**
- * Resistance amplifier the assist grants (amplifier 2 = Resistance III = 60%
- * incoming-damage reduction).
+ * How far a `kill` step got with one encounter.
  *
- * Deliberately NOT amplifier 4, which is total immunity: an invulnerable bot
- * would stop proving anything about the fight at all — a wave that cannot damage
- * it would read exactly like a wave that can. 60% is the smallest reduction that
- * reliably survives a souls-tuned stack's opening exchange while still leaving
- * the encounter able to kill a bot that never fights back.
- */
-export const ASSIST_AMPLIFIER = 2;
-
-/** How long one assist window lasts, in seconds. Bounded by construction: the
- * effect expires on its own even if the harness crashes before clearing it. */
-export const ASSIST_SECONDS = 60;
-
-/** The same window in ticks — the unit the run report states (spec-0023 §3
- * requires every window be named with its encounter id and ticks). */
-export const ASSIST_TICKS = ASSIST_SECONDS * 20;
-
-/** The vanilla command that opens an assist window on the acting bot. */
-export function assistCommand(
-  amplifier: number = ASSIST_AMPLIFIER,
-  seconds: number = ASSIST_SECONDS,
-): string {
-  return `/effect give @s minecraft:resistance ${seconds} ${amplifier} true`;
-}
-
-/** The vanilla command that closes it. Always issued, even on a failed fight —
- * an assist that outlives its encounter would silently help the next one. */
-export function assistClearCommand(): string {
-  return "/effect clear @s minecraft:resistance";
-}
-
-/**
- * How an encounter is approached.
+ * The run artifact states this per encounter because silence is otherwise
+ * unreadable: an encounter the run never reached and an encounter whose muster
+ * found nothing produce the same empty findings list, and only this tells them
+ * apart.
  *
- * `unassisted-first` is the inverted floor gate in action: a fight the content
- * BILLED as elite/boss gets one honest, unassisted attempt, because whether the
- * bot wins that attempt is the measurement. An `ordinary` encounter carries no
- * such billing, so there is nothing to measure and the assist is applied from
- * the start.
- */
-export function assistPolicy(enc: Encounter): "unassisted-first" | "assisted" {
-  return enc.tier === "ordinary" ? "assisted" : "unassisted-first";
-}
-
-/**
- * How far `kill()` got with one encounter.
- *
- * The run artifact states this per encounter because an `assist_windows` array is
- * otherwise unreadable: no assist is taken on the first attempt at a billed
- * `elite`/`boss` (the inverted floor gate needs one honest unassisted try), so a
- * short array is possible per policy — and, before this field existed,
- * indistinguishable from an assist mechanism that was never wired at all
- * (the-drowned-bell round 3).
- *
- * The die-retry stage DOES take assist windows, which is a correction
- * rather than a softening. It dies on purpose, but it needs the bot alive long
- * enough to SCHEDULE that death and to walk back afterwards; leaving those
- * segments bare made bot fencing skill decide whether the stage could run at all
- * — the very thing spec-0023 downgraded from gate to telemetry. Every window is
- * still named in the artifact, and the scripted death itself is taken with no
- * assist in force, so it stays unambiguous.
+ * `mustered` is the measurement — the live bodies were read against the
+ * declaration. `cleared` is what follows it, and it is STAGING: the wave is
+ * removed by an attributed command so the run can go on to the wiring the kill
+ * drives. Neither phase is a claim about whether the fight can be won; nothing
+ * the ladder does at a combat step is.
  */
 export const ENCOUNTER_PHASES = [
   "not-reached",
   "die-retry",
-  "unassisted",
-  "assisted",
+  "mustered",
   "cleared",
 ] as const;
 export type EncounterPhase = (typeof ENCOUNTER_PHASES)[number];
-
-/** One opened (and, normally, closed) assist window, as the run report states it. */
-export interface AssistWindow {
-  readonly encounter: string;
-  readonly wave: string;
-  readonly tier: EncounterTier;
-  readonly amplifier: number;
-  readonly ticks: number;
-  readonly openedAtMs: number;
-  closedAtMs?: number;
-  /** Why the assist was taken — "policy" or "after an unassisted attempt failed". */
-  readonly reason: string;
-}
-
-/** The ledger the run report is built from. Every window is recorded, opened or
- * not closed; a window the harness failed to close is a finding, not a silence. */
-export class AssistLedger {
-  private readonly opened: AssistWindow[] = [];
-
-  open(enc: Encounter, reason: string, nowMs: number): AssistWindow {
-    const w: AssistWindow = {
-      encounter: enc.objective,
-      wave: enc.wave,
-      tier: enc.tier,
-      amplifier: ASSIST_AMPLIFIER,
-      ticks: ASSIST_TICKS,
-      openedAtMs: nowMs,
-      reason,
-    };
-    this.opened.push(w);
-    return w;
-  }
-
-  close(w: AssistWindow, nowMs: number): void {
-    w.closedAtMs = nowMs;
-  }
-
-  windows(): readonly AssistWindow[] {
-    return this.opened;
-  }
-
-  /** Windows the harness opened and never closed — a bug in the harness, and one
-   * the report must show rather than swallow. */
-  leaked(): readonly AssistWindow[] {
-    return this.opened.filter((w) => w.closedAtMs === undefined);
-  }
-}
-
-// ---------------------------------------------------------------------------
-// The inverted floor gate (spec-0023 "bot as difficulty FLOOR")
-// ---------------------------------------------------------------------------
-
-/**
- * How the one honest unassisted attempt ENDED.
- *
- * Four endings, not two, because the ways of not winning are different facts
- * with different owners. `died` and `held` are measurements of the delve: the
- * bot reached melee and the fight beat it, by killing it or by outlasting the
- * step's budget. `unengaged` is not a measurement at all — the budget ran out
- * with the bot never in reach of a single wave body, so nothing about the
- * encounter's difficulty was observed. Recorded as one boolean they were
- * indistinguishable, and the ladder reported all of them as the same silence: on
- * the gallery, three runs of one tree produced one win and two losses whose
- * `encounters[]` rows were byte-identical.
- */
-export const UNASSISTED_RESULTS = ["won", "died", "held", "unengaged", "not-attempted"] as const;
-export type UnassistedResult = (typeof UNASSISTED_RESULTS)[number];
-
-/**
- * The unassisted attempt, as an OBSERVATION.
- *
- * `healthAtStart` is here because a sample owes the state it was taken at: the
- * die-retry stage runs immediately before, and what it leaves behind is the body
- * this measurement is made with. Nothing recorded it, so two runs of one tree
- * that ended differently had nowhere to differ.
- *
- * RECORDED, never manufactured, and the gallery measured why. Made to regenerate
- * to full first, the bot was beaten to death waiting: the wave it is about to be
- * measured against is standing next to it and `eatDecision` rightly refuses to
- * eat with a hostile in reach. It is also unnecessary — the die-retry stage's
- * last act is a scripted death and a respawn, so the attempt already opens at
- * `20.0/20` on every gallery run that reached it, and it ends `died` anyway.
- */
-export interface UnassistedOutcome {
-  readonly result: UnassistedResult;
-  /** The bot's health when the window opened, and the maximum it is out of. */
-  readonly healthAtStart: number;
-  readonly maxHealth: number;
-  /** Wave bodies the attempt actually reached melee with. */
-  readonly engaged: number;
-  /** Wave bodies confirmed dead during it. */
-  readonly killed: number;
-  /** How the fight ended, in the words of whatever ended it. */
-  readonly detail?: string;
-}
 
 /**
  * Who felled the bodies of a fight the floor gate is judging.
@@ -983,274 +564,6 @@ export function waveAttribution(
     uncredited: Math.max(0, bodies - standing - credited),
   };
 }
-
-/** How an attribution reads inside a finding. */
-function attributionClause(a: FightAttribution): string {
-  if (a.kind === "unattributed") {
-    return `This run cannot say who felled it (${a.reason}), so the advisory is not ` +
-      `evidence that the BOT did.`;
-  }
-  return (
-    `All ${a.credited} of the ${a.bodies} bodies that fell were credited to the party.`
-  );
-}
-
-/**
- * Why an attribution disqualifies the attempt from measuring the fight, or
- * `undefined` when it does not.
- *
- * Shared by both floor gates because it is one question about one kind of object.
- * Two disqualifying shapes, and neither is a failure — the run continues either
- * way; what changes is what the report is allowed to CLAIM.
- */
-function attributionConfound(a: FightAttribution): string | undefined {
-  if (a.kind === "unattributed") return undefined;
-  if (a.uncredited > 0) {
-    return (
-      `${a.uncredited} of its ${a.bodies} bodies died with NO player credited — the ` +
-      `world killed them (a fall, a lethal volume, a trap, another mob), and the bot ` +
-      `was credited with ${a.credited}`
-    );
-  }
-  if (a.credited === 0) {
-    return `the party was credited with none of its ${a.bodies} bodies`;
-  }
-  return undefined;
-}
-
-/**
- * The floor finding, or `undefined` when there is nothing to say.
- *
- * WARNING tier by construction — it returns prose, never a failure. A fight the
- * bot beats cold is a design signal for the author, and spec-0023 is explicit
- * that content decides. Ordinary encounters carry no expectation at all, so they
- * never produce a finding however easily they fall.
- *
- * The advisory is stated only over bodies the bot actually beat. Where the
- * attribution says otherwise the finding is still emitted — an encounter whose
- * cohort the world keeps killing is worth an author's attention on its own — but
- * it names the confound instead of advising a difficulty change nobody has
- * measured a case for.
- */
-export function floorFinding(
-  enc: Encounter,
-  outcome: UnassistedOutcome,
-  attribution: FightAttribution,
-): string | undefined {
-  if (enc.tier === "ordinary") return undefined;
-  if (outcome.result !== "won") return undefined;
-  const confound = attributionConfound(attribution);
-  if (confound !== undefined) {
-    return (
-      `${enc.wave} is billed \`${enc.tier}\` and the unassisted attempt cleared it from ` +
-      `${outcome.healthAtStart.toFixed(1)}/${outcome.maxHealth} health, but ${confound}. ` +
-      `This attempt does not measure the fight, so no difficulty advisory is drawn from ` +
-      `it — the volume, drop or hazard standing in the encounter is the finding.`
-    );
-  }
-  return (
-    `${enc.wave} is billed \`${enc.tier}\` and the UNASSISTED bot beat it on its first ` +
-    `attempt, from ${outcome.healthAtStart.toFixed(1)}/${outcome.maxHealth} health ` +
-    `(${outcome.killed} body/bodies down, ${outcome.engaged} engaged). ` +
-    `${attributionClause(attribution)} The bot is a poor ` +
-    `fencer by design — a fight it wins cold is very likely too easy to carry that ` +
-    `billing in a souls delve. Advisory: raise the stack, or drop the tier to \`ordinary\`.`
-  );
-}
-
-/**
- * The other thing the floor gate can say: **it did not measure this encounter.**
- *
- * A billed fight the bot never reached melee with produced exactly the silence a
- * fight it reached and lost produces, and the silence is the reading a reader
- * takes for "the encounter held". It did not hold; nobody swung at it. Stated as
- * its own finding so an unmeasured floor is never read as a measured one — the
- * same rule the compiler's own ledger already follows on the encounters it
- * cannot cover.
- */
-export function unmeasuredFloorFinding(
-  enc: Encounter,
-  outcome: UnassistedOutcome,
-): string | undefined {
-  if (enc.tier === "ordinary") return undefined;
-  if (outcome.result !== "unengaged" && outcome.result !== "not-attempted") return undefined;
-  return (
-    `${enc.wave} is billed \`${enc.tier}\` and the inverted floor gate did NOT measure it: ` +
-    `the unassisted attempt ended \`${outcome.result}\` with ${outcome.engaged} of its bodies ` +
-    `engaged and ${outcome.killed} down, so no honest first attempt was taken and this run ` +
-    `says nothing about how hard the fight is. Not a verdict on the content — the bot never ` +
-    `reached it${outcome.detail ? `: ${outcome.detail}` : ""}.`
-  );
-}
-
-// ---------------------------------------------------------------------------
-// The floor gate on ACTORS (spec-0023's gate, the other encounter shape)
-// ---------------------------------------------------------------------------
-
-/**
- * Whether this run can honestly measure an actor fight, and — when it cannot —
- * the reason, in the same voice the compiler's ledger uses.
- *
- * `exercise` carries the objective whose completion unleashes the actor: that is
- * the ONLY moment the harness can know a fight starts without inventing one. A
- * `trigger` beat (`strike`, `use`, `approach`, `strike-npc`) is player-initiated
- * and, as `compiler::flow` puts it, has no position in the quest DAG — the
- * campaign does not schedule it, so neither may the bot. Scheduling it anyway
- * would fabricate a fight and then report telemetry about the fabrication.
- */
-export type ActorExercise =
-  | { readonly kind: "exercise"; readonly afterObjective: string }
-  | { readonly kind: "skip"; readonly reason: string };
-
-/**
- * Decide, from the plan alone, whether the bot fights this actor on this run.
- *
- * `pathObjectives` is the set of `obj/<id>` the compiled critical path proves —
- * every step's objective. Pure and total: every actor gets either an exercise or
- * a NAMED skip, because an actor missing from the report entirely is the silence
- * the whole ledger exists to end.
- */
-export function actorExercise(
-  a: ActorEncounter,
-  pathObjectives: ReadonlySet<string>,
-): ActorExercise {
-  if (a.tier === "ordinary") {
-    return {
-      kind: "skip",
-      reason:
-        "billed `ordinary` — the inverted floor gate measures only what the content bills " +
-        "`elite`/`boss`, so there is no expectation here to hold it to",
-    };
-  }
-  if (!a.floorGate.covered) {
-    // The compiler already decided this and said why; repeating it in our own
-    // words would let the two drift.
-    return { kind: "skip", reason: `the compiler's floor gate does not cover it: ${a.floorGate.reason}` };
-  }
-  if (a.pos === undefined) {
-    return {
-      kind: "skip",
-      reason: `the plan resolved no world cell for anchor \`${a.anchor}\`, so there is nowhere to walk`,
-    };
-  }
-  const onPath = a.unleashedBy.find(
-    (b) => b.site === "objective" && b.objective !== undefined && pathObjectives.has(b.objective),
-  );
-  if (onPath?.objective !== undefined) {
-    return { kind: "exercise", afterObjective: onPath.objective };
-  }
-  return { kind: "skip", reason: unleashSkipReason(a) };
-}
-
-/** Why an actor the compiler covers is still not fought on THIS run. */
-function unleashSkipReason(a: ActorEncounter): string {
-  const beats = a.unleashedBy;
-  if (beats.length === 0) {
-    // Unreachable in practice (no unleash beat ⇒ not covered), kept because a
-    // reason must exist for every skip, not for every skip we predicted.
-    return "no `unleash-actor` beat is stated in the plan";
-  }
-  const objectives = beats.flatMap((b) => (b.site === "objective" && b.objective ? [b.objective] : []));
-  if (objectives.length > 0) {
-    return (
-      `unleashed by ${objectives.map((o) => `\`${o}\``).join(", ")}, which the compiled critical ` +
-      `path never completes — the fight is off this run's storyline`
-    );
-  }
-  const quests = beats.flatMap((b) => (b.site === "quest" ? [b.owner] : []));
-  if (quests.length > 0) {
-    return (
-      `unleashed when ${quests.map((q) => `\`${q}\``).join(", ")} completes; the critical path ` +
-      `names objectives, not quests, so the harness cannot tell when that fires`
-    );
-  }
-  const t = beats[0]!;
-  const where = t.at !== undefined ? ` at \`${t.at}\`` : t.npc !== undefined ? ` on \`${t.npc}\`` : "";
-  return (
-    `unleashed only by an ambient \`${t.on ?? t.site}\` ${t.site} (\`${t.owner}\`${where}): a ` +
-    `player-initiated beat with no position in the quest DAG. The campaign does not schedule ` +
-    `it, so the bot inventing a moment to fire it would fabricate the fight it then reported on`
-  );
-}
-
-/** How an actor engagement ended. */
-export const ACTOR_OUTCOMES = ["won-first-try", "lost", "timed-out", "body-not-found"] as const;
-export type ActorOutcome = (typeof ACTOR_OUTCOMES)[number];
-
-/** One actor fight the run attempted, as the report states it. */
-export interface ActorTrial {
-  readonly actor: string;
-  readonly tier: EncounterTier;
-  readonly afterObjective: string;
-  readonly outcome: ActorOutcome;
-  /** Melee swings landed on the body — the reading key for `body-not-found`. */
-  readonly swings: number;
-  readonly elapsedMs: number;
-  /** What ended it, when something did. */
-  readonly detail?: string;
-}
-
-/**
- * Why an actor fight cannot be attributed today.
- *
- * The census is the general mechanism for "who felled this", and its binding is
- * too narrow to reach here: the compiler emits `wave_census_<wave>` per WAVE, and
- * an actor's body carries `dw_actor_<id>` with no census walking it. So the actor
- * gate reads `won-first-try` off the body vanishing from the client's entity map,
- * which is the same silhouette guess the wave gate stopped making — and the
- * gallery's own `actor/hall-moth` suffocated in a wall on the run that measured
- * this, which is precisely the case it cannot see. Naming the gap is the honest
- * state; a second, actor-shaped attribution mechanism would be strictly weaker
- * than widening the census, which is where the repair belongs.
- */
-export const ACTOR_ATTRIBUTION_GAP =
-  "no census walks an actor's `dw_actor_<id>` tag, so the server was never asked who felled it";
-
-/** An actor fight's attribution: the named gap, until a census reaches actors. */
-export function actorAttribution(): FightAttribution {
-  return { kind: "unattributed", reason: ACTOR_ATTRIBUTION_GAP };
-}
-
-/**
- * The floor finding for an actor fight, or `undefined` when there is nothing to
- * say. Same rule and same tier as the wave gate: WARNING, never a failure.
- *
- * A bot that loses is exactly the design — spec-0023 downgraded bot melee
- * competence from gate-critical to telemetry so a souls delve could be as hard
- * as it likes. What is worth saying out loud is the inverse.
- *
- * It takes the same {@link FightAttribution} the wave gate takes, because it is
- * the same claim about the same kind of object. Today an actor's is always the
- * named gap; when a census reaches actor tags this reads a measurement with no
- * further change here.
- */
-export function actorFloorFinding(
-  t: ActorTrial,
-  attribution: FightAttribution,
-): string | undefined {
-  if (t.tier === "ordinary" || t.outcome !== "won-first-try") return undefined;
-  const confound = attributionConfound(attribution);
-  if (confound !== undefined) {
-    return (
-      `${t.actor} is billed \`${t.tier}\` and the unassisted attempt ended with the body ` +
-      `down, but ${confound}. This attempt does not measure the fight, so no difficulty ` +
-      `advisory is drawn from it.`
-    );
-  }
-  const caveat =
-    attribution.kind === "unattributed" ? ` ${attributionClause(attribution)}` : "";
-  return (
-    `${t.actor} is billed \`${t.tier}\` and the UNASSISTED bot beat it on its first attempt ` +
-    `(${t.swings} swing(s), ${(t.elapsedMs / 1000).toFixed(1)}s after ${t.afterObjective}).` +
-    `${caveat} The ` +
-    `bot is a poor fencer by design — a fight it wins cold is very likely too easy to carry ` +
-    `that billing in a souls delve. Advisory: raise the stack, or drop the tier to \`ordinary\`.`
-  );
-}
-
-// ---------------------------------------------------------------------------
-// The die-retry ladder stage (spec-0023 §1) — the load-bearing combat proof
-// ---------------------------------------------------------------------------
 
 /** Scripted deaths per encounter. spec-0023's default: one at first contact, one
  * mid-fight, because the two exercise different re-seat state. */

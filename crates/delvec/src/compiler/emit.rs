@@ -2637,7 +2637,7 @@ fn tr_with(s: &str, fields: &[(&str, Value)]) -> Value {
 /// SNBT compound, never the stringified-JSON form, for the same reason
 /// [`snbt_text_component`] always was: 1.21.11 renders `'{"text":…}'` above an
 /// entity's head verbatim.
-fn snbt_component(s: &str) -> String {
+pub(crate) fn snbt_component(s: &str) -> String {
     match delvewright_dsl::l10n_untag(s) {
         Some((key, english)) => snbt_translate(key, english),
         // An untagged string keeps the bare quoted-string component form 1.21.11
@@ -3002,21 +3002,29 @@ fn actor_declares_drops(a: &delvewright_dsl::Actor) -> bool {
 /// form only — see [`default_equipment`] for why legacy `ArmorItems`/
 /// `HandItems` are silently ignored by 1.21.11 `/summon`. Slot order is
 /// [`EquipSlot::ALL`]'s, fixed for ADR-0006 determinism.
-fn wave_equipment(
+/// Which slot holds which item on a summoned wave mob, and the authored piece
+/// behind it where there is one — the ONE resolution of "what does this stack
+/// actually wear".
+///
+/// Two readers, and they must never disagree: [`wave_equipment`] writes the
+/// `summon` NBT from it, and [`crate::compiler::muster`] turns it into the
+/// questions the live body is asked. A second derivation here would be a probe
+/// that verifies its own copy of the declaration instead of the emitted one.
+///
+/// The main-hand slot is the one place a DEFAULT (a bare id, no enchantments) can
+/// stand in for an authored piece, so it carries an id plus an optional authored
+/// piece; every other slot is authored or absent.
+pub(crate) fn wave_equipment_slots<'a>(
     entity: &str,
-    eq: Option<&MobEquipment>,
-    drops: &[delvewright_dsl::MobDrop],
-) -> Option<String> {
-    let declared = declared_drop_slots(drops);
-    let mainhand = effective_mainhand(entity, eq);
+    eq: Option<&'a MobEquipment>,
+) -> Vec<(EquipSlot, &'a str, Option<&'a EquipItem>)> {
     let Some(eq) = eq else {
-        return default_equipment(entity);
+        return default_mainhand(entity)
+            .map(|it| vec![(EquipSlot::MainHand, it, None)])
+            .unwrap_or_default();
     };
-    // The main-hand slot is the one place a DEFAULT (a bare id, no enchantments)
-    // can stand in for an authored piece, so it carries an id plus an optional
-    // authored piece; every other slot is authored or absent.
-    let mut items: Vec<String> = Vec::new();
-    let mut chances: Vec<String> = Vec::new();
+    let mainhand = effective_mainhand(entity, Some(eq));
+    let mut out = Vec::new();
     for (slot, piece) in eq.pieces() {
         let item = if slot == EquipSlot::MainHand {
             mainhand
@@ -3024,11 +3032,31 @@ fn wave_equipment(
             piece.map(EquipItem::item)
         };
         if let Some(it) = item {
-            let key = slot.nbt();
-            let comps = piece.map(enchantment_components).unwrap_or_default();
-            items.push(format!("{key}:{{id:\"{it}\",count:1{comps}}}"));
-            chances.push(format!("{key}:{}", drop_chance_for(key, &declared)));
+            out.push((slot, it, piece));
         }
+    }
+    out
+}
+
+fn wave_equipment(
+    entity: &str,
+    eq: Option<&MobEquipment>,
+    drops: &[delvewright_dsl::MobDrop],
+) -> Option<String> {
+    let declared = declared_drop_slots(drops);
+    // A stack with no `equipment` field keeps the pre-v0.6 default path exactly:
+    // the armed-mob main-hand at drop chance 0, whatever `drops[]` says. Byte
+    // identity for every wave that predates the field.
+    if eq.is_none() {
+        return default_equipment(entity);
+    }
+    let mut items: Vec<String> = Vec::new();
+    let mut chances: Vec<String> = Vec::new();
+    for (slot, it, piece) in wave_equipment_slots(entity, eq) {
+        let key = slot.nbt();
+        let comps = piece.map(enchantment_components).unwrap_or_default();
+        items.push(format!("{key}:{{id:\"{it}\",count:1{comps}}}"));
+        chances.push(format!("{key}:{}", drop_chance_for(key, &declared)));
     }
     if items.is_empty() {
         return None;
@@ -3231,6 +3259,10 @@ fn emit_functions(
     // absence is a legitimate false; a `tellraw` has no such guard, so the holder
     // must exist from world init. Empty for a campaign with no waves, so v0.2
     // setup is byte-identical.
+    // The pinned item table the muster's armour floor is derived from. Hoisted
+    // out of the wave loop: it is an embedded parse, and every wave reads the
+    // same one.
+    let item_combat = crate::compiler::registry::ItemCombatRegistry::v1_21_11();
     for w in &c.quests.content.waves {
         if !wave_placements.contains_key(w.id.as_str()) {
             continue;
@@ -4973,6 +5005,37 @@ fn emit_functions(
                     format!("tellraw @a {}", census_summary_component(ns, wid)),
                 ]),
             ));
+        }
+        // --- The wave MUSTER probe, and the staged removal ---
+        //
+        // The census counts bodies; the muster READS them. Every number a wave
+        // declares — health, damage, armour, the gear it wears, the name over its
+        // head — is written into one `summon` line and, until this probe, never
+        // looked at again: 1.21.11 has twice silently dropped a field this
+        // compiler wrote (`HandItems`, the legacy `PatrolTarget`), and both times
+        // the delve booted green over a body that was not what the document said.
+        // `crate::compiler::muster` derives the questions from the same
+        // resolution the summon is written from, so the probe cannot verify a
+        // copy of the declaration instead of the emitted one.
+        //
+        // `wave_strike_*` and `wave_chip_*` ride with it: the ladder does not
+        // fight, it reads the bodies and then removes them, attributed to the
+        // party so the wiring the kill drives actually fires.
+        {
+            let m = crate::compiler::muster::muster(
+                w,
+                &|mob| {
+                    wave_equipment_slots(&mob.entity, mob.equipment.as_ref())
+                        .into_iter()
+                        .map(|(slot, item, _)| (slot, item.to_string()))
+                        .collect()
+                },
+                &item_combat,
+                &|name| snbt_component(name),
+            );
+            for (name, body) in crate::compiler::muster::functions(ns, &m) {
+                fns.push((name, lines(&body)));
+            }
         }
         // kill reward: each slain wave mob decrements the countdown, records that
         // a PLAYER was credited with the death ([`wave_credited_holder`]), then

@@ -2045,6 +2045,27 @@ pub fn combat_plan_json(
                                        safe = crate::compiler::plan::safe_local(&e.wave_id)),
                 },
             });
+            // What the wave DECLARES, phrased as questions the live bodies can be
+            // asked, plus the staged removal that follows the reading. Absent
+            // only when the wave itself cannot be resolved, which the harness
+            // reports rather than skipping.
+            if let Some(w) = plan::wave_of(plan.campaign, &e.wave_id) {
+                let m = crate::compiler::muster::muster(
+                    w,
+                    &|mob| {
+                        crate::compiler::emit::wave_equipment_slots(
+                            &mob.entity,
+                            mob.equipment.as_ref(),
+                        )
+                        .into_iter()
+                        .map(|(slot, item, _)| (slot, item.to_string()))
+                        .collect()
+                    },
+                    &items,
+                    &crate::compiler::emit::snbt_component,
+                );
+                o["muster"] = crate::compiler::muster::to_json(&plan.namespace, &m);
+            }
             if let Some(cp) = e.checkpoint {
                 o["checkpoint"] = json!([cp[0], cp[1], cp[2]]);
             }

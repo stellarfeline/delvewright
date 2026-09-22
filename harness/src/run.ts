@@ -20,8 +20,6 @@ import {
   type Waypoints,
 } from "./waypoints.ts";
 import {
-  actorExercise,
-  assistPolicy,
   dieRetryBinding,
   dieRetryCoverageFailures,
   dieRetryFidelityGaps,
@@ -38,7 +36,6 @@ import {
   RunReport,
   reportPathFromEnv,
   writeRunReport,
-  type ActorReport,
   type BranchOutcome,
   type CrashStage,
   type EncounterReport,
@@ -105,17 +102,6 @@ function runTimeoutMs(env = process.env): number {
  */
 function dieRetryFromEnv(env = process.env): boolean {
   return env["DELVEWRIGHT_DIE_RETRY"] !== "0";
-}
-
-/**
- * Whether the actor floor gate runs. ON whenever the build's combat plan
- * declares a tiered actor. `DELVEWRIGHT_ACTOR_FLOOR=0` skips the engagements for
- * local iteration; the report then records each actor as SKIPPED with that
- * reason, never as measured — the same discipline `DELVEWRIGHT_DIE_RETRY=0`
- * follows, and for the same reason.
- */
-function actorFloorFromEnv(env = process.env): boolean {
-  return env["DELVEWRIGHT_ACTOR_FLOOR"] !== "0";
 }
 
 /**
@@ -316,7 +302,6 @@ async function main(): Promise<number> {
   }
   const combatPlan = await loadCombatPlanForCriticalPath(pathArg);
   const dieRetry = combatPlan !== undefined && dieRetryFromEnv();
-  const actorFloor = actorFloorFromEnv();
   const report = new RunReport(criticalPath.campaignId, combatPlan?.difficulty ?? "unknown");
   // From here a crash writes THIS report — with everything the run had already
   // established in it — rather than the placeholder.
@@ -350,36 +335,21 @@ async function main(): Promise<number> {
     }
   }
   if (combatPlan) {
-    executor.useCombatPlan(combatPlan, dieRetry, actorFloor);
+    executor.useCombatPlan(combatPlan, dieRetry);
+    // playtest-methodology.md rule 1: the muster's binding count, summed from the
+    // plan's own objects and printed before the run so a reader never learns it
+    // from an empty findings list. Zero declared facts over a campaign with waves
+    // is a finding about the build, not a pass.
+    const declaredFacts = combatPlan.encounters.reduce((n, e) => n + e.muster.checked, 0);
     process.stderr.write(
       `combat plan: ${combatPlan.encounters.length} mandatory encounter(s) at ` +
-        `difficulty '${combatPlan.difficulty}'; die-retry ${dieRetry ? "ON" : "SKIPPED"}\n`,
+        `difficulty '${combatPlan.difficulty}'; die-retry ${dieRetry ? "ON" : "SKIPPED"}; ` +
+        `the muster checks ${declaredFacts} declared fact(s) against the live bodies\n`,
     );
-    if (combatPlan.actors.length > 0) {
-      const exercisable = combatPlan.actors.filter(
-        (a) => actorExercise(a, pathObjectives).kind === "exercise",
-      ).length;
+    if (combatPlan.encounters.length > 0 && declaredFacts === 0) {
       process.stderr.write(
-        `combat plan: ${combatPlan.actors.length} tiered actor(s), ${exercisable} reachable on ` +
-          `this path; actor floor gate ${actorFloor ? "ON" : "SKIPPED"}\n`,
-      );
-    }
-    if (!combatPlan.floorGate.present) {
-      process.stderr.write(
-        `combat plan: NO floor-gate ledger — this build predates it; the run cannot tell you ` +
-          `which billed fights the gate covers\n`,
-      );
-    } else if (combatPlan.floorGate.binding?.unbound) {
-      // playtest-methodology.md rule 1: a gate that examined zero objects is a
-      // REPORTED state, printed here so a reader never has to notice an empty
-      // `covered`/`not_covered` pair to learn it — never silently a pass.
-      process.stderr.write(
-        `combat plan: floor gate is UNBOUND (examined 0) — ${combatPlan.floorGate.binding.reason}\n`,
-      );
-    }
-    if (combatPlan.actorsGate?.unbound) {
-      process.stderr.write(
-        `combat plan: actor gate is UNBOUND (examined 0) — ${combatPlan.actorsGate.reason}\n`,
+        `combat plan: the muster is UNBOUND — ${combatPlan.encounters.length} encounter(s) and ` +
+          `not one declared fact to check against a body\n`,
       );
     }
   }
@@ -411,7 +381,6 @@ async function main(): Promise<number> {
     // The report is written whether the run passed or failed: a red run's assist
     // windows and death trials are exactly what a reader needs to see.
     const trials = executor.deathTrials();
-    const assists = executor.assistWindows();
     // Two independent ways the stage can be red: a trial that reached a verdict
     // and failed it, and a trial (or a whole encounter) the run never proved at
     // all. The second is the one an empty `die_retry` array used to hide.
@@ -451,62 +420,24 @@ async function main(): Promise<number> {
           `encounter(s)) — ${retryBinding.reason ?? "no reason given"}\n`,
       );
     }
-    const leaked = executor.leakedAssists();
-    report.recordAssists(assists);
     report.recordTrials(trials);
-    // Per-encounter assist policy + how far the run got, so a reader can tell a
-    // policy-empty assist ledger from an unwired one.
+    // One row per planned encounter: what the muster read off its live bodies,
+    // how far the step got, and who was credited with felling them. A wave the
+    // run never reached says so rather than leaving a gap a reader fills in.
+    const musters = executor.waveMusters();
     const encounterReports: EncounterReport[] = (combatPlan?.encounters ?? []).map(
       (enc): EncounterReport => ({
         encounter: enc.objective,
         wave: enc.wave,
         tier: enc.tier,
-        assistPolicy: assistPolicy(enc),
         phaseReached: executor.encounterPhase(enc.wave),
-        assistWindows: assists.filter((w) => w.wave === enc.wave).length,
         attribution: executor.waveAttribution(enc.wave),
-        unassisted: executor.unassistedOutcome(enc.wave),
+        muster: musters.get(enc.wave),
+        declaredFacts: enc.muster.checked,
       }),
     );
     report.recordEncounters(encounterReports);
-    // The compiler's floor-gate ledger, verbatim, plus one row per tiered
-    // actor — fought (with the outcome) or not (with the reason). Recorded even on
-    // a red run: what the gate could NOT measure is exactly what a reader of a
-    // failed run needs, and an actor the run never reached must still be visible.
-    if (combatPlan) {
-      const actorTrials = executor.actorFightTrials();
-      const actorReports: ActorReport[] = combatPlan.actors.map((a): ActorReport => {
-        const trial = actorTrials.find((t) => t.actor === a.actor);
-        if (trial) {
-          return {
-            actor: a.actor,
-            tier: a.tier,
-            entity: a.entity,
-            anchor: a.anchor,
-            covered: a.floorGate.covered,
-            exercised: true,
-            trial,
-          };
-        }
-        const decision = actorExercise(a, pathObjectives);
-        return {
-          actor: a.actor,
-          tier: a.tier,
-          entity: a.entity,
-          anchor: a.anchor,
-          covered: a.floorGate.covered,
-          exercised: false,
-          reason:
-            decision.kind === "skip"
-              ? decision.reason
-              : actorFloor
-                ? `unleashed by ${decision.afterObjective}, which this run never reached`
-                : "skipped via DELVEWRIGHT_ACTOR_FLOOR=0",
-        };
-      });
-      report.recordCombatCoverage(combatPlan.floorGate, actorReports);
-      report.recordActorsGate(combatPlan.actorsGate);
-    }
+    report.recordStagedRemovals(executor.stagedBodies());
     // spec-0029: the name-preference binding, always recorded — including a zero.
     report.recordNamePreference(executor.namePreference());
     report.recordRests(executor.performedRests());
@@ -515,8 +446,12 @@ async function main(): Promise<number> {
     // does, and this run has no wired `min_y` to derive an exact depth cutoff
     // from — see teardown.ts for the fallback heuristic.
     report.recordNamedEntityDeaths(classifyNamedEntityDeaths(executor.namedEntityDeaths()));
-    for (const f of executor.floorGateFindings()) report.recordFloorFinding(f);
-    for (const f of executor.unkillableFindings()) report.recordUnkillableFinding(f);
+    // What the muster found. A declared number that never reached a body is a
+    // defect in the shipped delve, and it is a finding of the critical-path stage
+    // — the only stage that ever stands in front of the wave.
+    for (const verdict of musters.values()) {
+      for (const f of verdict.findings) report.recordMusterFinding(`${verdict.wave}: ${f}`);
+    }
     // spec-0025 §3: every enumerated branch appears here — the one this session
     // walked with its result, and each of the others with the reason it did not.
     // A skipped branch is named, never silent.
@@ -572,9 +507,7 @@ async function main(): Promise<number> {
       stage: "critical-path",
       ran: true,
       passed: failure === undefined,
-      findings: leaked.map(
-        (w) => `assist window on ${w.wave} was never closed — harness bug, not content`,
-      ),
+      findings: report.musterFindings(),
       failures:
         failure === undefined
           ? []

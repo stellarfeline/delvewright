@@ -1,13 +1,17 @@
-// The bot ladder's run report (spec-0023).
+// The bot ladder's run report.
 //
-// Before spec-0023 the critical-path bot's entire output was an exit code and a
-// stream of unstructured stderr lines. That was enough while the only question
-// was "did the whole thing pass"; it is not enough now that the run makes
-// CLAIMS about how it passed — which encounters it took a combat assist at and
-// for how long, how many scripted deaths each encounter survived, and which
-// billed fights the unassisted bot beat cold. spec-0023 requires the run
-// ARTIFACT to name every assist window, so the report is part of the contract
-// rather than a convenience.
+// The critical-path bot's entire output was once an exit code and a stream of
+// unstructured stderr lines. That was enough while the only question was "did the
+// whole thing pass"; it is not enough now that the run makes CLAIMS about MECHANISM
+// — that each wave's live bodies carry the numbers, gear and names the campaign
+// declared, that each scripted death led back to a playable encounter, that what
+// the party was given is what the delve says it gives.
+//
+// Two of its sections are the HARNESS acting rather than the delve behaving, and
+// they are printed under their own headings so nobody has to work out which is
+// which: `staged_removals` (every body the run took out of the delve by command,
+// so it could go on reading what the kill drives) and the scripted deaths of
+// `die_retry`.
 //
 // The report is written whenever DELVEWRIGHT_RUN_REPORT names a path; absent, the
 // run behaves exactly as before (stderr only). Deterministic key order, so two
@@ -15,85 +19,43 @@
 
 import { writeFile } from "node:fs/promises";
 import type {
-  ActorTrial,
-  AssistWindow,
-  BindingCount,
   DeathTrial,
   DieRetryBinding,
   EncounterPhase,
   EncounterTier,
   FightAttribution,
-  FloorLedger,
   PerformedRest,
   ReengageObservation,
-  UnassistedOutcome,
 } from "./combat.ts";
+import type { MusterVerdict } from "./muster.ts";
+import type { StagedRemoval } from "./executor.ts";
 import type { DeathLoopBinding, LethalTrial } from "./death-loop.ts";
 import type { ClassifiedDeath } from "./teardown.ts";
 import type { NamePreference } from "./executor.ts";
 
 /**
- * One tiered actor, and what this run did about it.
+ * One planned encounter, and what the run established about it.
  *
- * Every actor in the plan gets a row, fought or not — an actor missing from the
- * report is the silence the floor-gate ledger exists to end. A row that did not
- * run always carries the reason it did not.
- */
-export interface ActorReport {
-  readonly actor: string;
-  readonly tier: EncounterTier;
-  readonly entity: string;
-  readonly anchor: string;
-  /** The compiler's own coverage verdict, carried through verbatim. */
-  readonly covered: boolean;
-  readonly exercised: boolean;
-  /** Why this run did not fight it. `undefined` only when it did. */
-  readonly reason?: string;
-  /** The engagement, when there was one. */
-  readonly trial?: ActorTrial;
-}
-
-/**
- * One planned encounter, and how the run actually approached it.
+ * `muster` is the measurement: what the live bodies said when they were read
+ * against the declaration. `undefined` means the step never got as far as reading
+ * them, which is a different fact from reading them and finding nothing wrong, and
+ * the two must never share a row shape.
  *
- * `assist_windows: []` on a run where the bot demonstrably
- * died was unreadable: spec-0023 takes NO assist while the die-retry stage is
- * deliberately dying, and none on a billed `elite`/`boss`'s honest first
- * attempt, so an empty ledger is often exactly per policy — but it looks
- * identical to an assist mechanism that was never wired. Stating the policy and
- * the phase the run reached per encounter makes the two distinguishable in the
- * artifact, which is the only evidence a reader has.
+ * `attribution` is who felled the bodies. The run stages the wave away with an
+ * attributed blow precisely so that everything paying on a player's kill actually
+ * fires; an `uncredited` body is one that fell to something else, and every
+ * `on_kill`, countdown and declared drop was skipped for it.
  */
 export interface EncounterReport {
   readonly encounter: string;
   readonly wave: string;
   readonly tier: EncounterTier;
-  readonly assistPolicy: "assisted" | "unassisted-first";
   readonly phaseReached: EncounterPhase;
-  readonly assistWindows: number;
-  /**
-   * Who felled this encounter's bodies, as the compiler's census answered.
-   *
-   * `phase_reached: cleared` says the step ended; it has never said who ended it.
-   * A delve is full of things that kill a mob with no bot in them, and the
-   * engine's own gallery seats `wave/muster` within a stride of a lethal volume
-   * and a drop — so an encounter can read `cleared` over a cohort the bot barely
-   * touched. This is the evidence that separates the two, and `unattributed` (with
-   * its reason) is a legitimate value: no census answered is a fact about the
-   * probe, and it must not be readable as a clean win.
-   */
   readonly attribution: FightAttribution;
-  /**
-   * What the inverted floor gate's ONE honest unassisted attempt observed —
-   * `undefined` on an encounter whose policy takes no such attempt.
-   *
-   * The gate's own measurement, and it reached the artifact nowhere. Three
-   * gallery runs of one tree ended `won`, `died` and `died`, and their rows here
-   * were identical: `phase_reached: "cleared"` in all three, because the
-   * assisted retry cleared the fight either way. A gate whose result cannot be
-   * read off its own report is a gate nobody can disbelieve.
-   */
-  readonly unassisted?: UnassistedOutcome;
+  readonly muster?: MusterVerdict;
+  /** Declared facts the muster would have checked — the row's own binding count,
+   * stated even when the muster never ran. */
+  readonly declaredFacts: number;
 }
 
 /**
@@ -163,23 +125,15 @@ export class RunReport {
   readonly campaignId: string;
   readonly difficulty: string;
   private readonly stages = new Map<StageName, StageResult>();
-  private readonly assists: AssistWindow[] = [];
+  private readonly staged: StagedRemoval[] = [];
   private readonly trials: DeathTrial[] = [];
-  private readonly floor: string[] = [];
-  /** Bodies that outlived the melee budget their encounter's arithmetic gave
-   * them. A separate channel from {@link floor}: the floor gate is about a
-   * fight being too EASY for its billing, this is about a body not dying at
-   * all, and folding them together would make each read as the other. */
-  private readonly unkillable: string[] = [];
+  private readonly muster: string[] = [];
   private readonly encounters: EncounterReport[] = [];
   private readonly rests: PerformedRest[] = [];
   private readonly namedEntityDeaths: ClassifiedDeath[] = [];
   private branches: BranchOutcome[] | undefined;
   private branchTier: string | undefined;
   private drivenBranch: string | undefined;
-  private readonly actors: ActorReport[] = [];
-  private floorLedger: FloorLedger | undefined;
-  private actorsGate: BindingCount | undefined;
   /** Every walk into a lethal volume, and what the stage examined. */
   private readonly lethalTrials: LethalTrial[] = [];
   private deathLoopBinding: DeathLoopBinding | undefined;
@@ -218,21 +172,23 @@ export class RunReport {
     return this.harnessCrash;
   }
 
-  recordAssists(windows: readonly AssistWindow[]): void {
-    this.assists.push(...windows);
+  /** Every body the HARNESS took out of the delve, and why. */
+  recordStagedRemovals(entries: readonly StagedRemoval[]): void {
+    this.staged.push(...entries);
   }
 
   recordTrials(trials: readonly DeathTrial[]): void {
     this.trials.push(...trials);
   }
 
-  recordFloorFinding(finding: string): void {
-    this.floor.push(finding);
+  /** A declared fact the live bodies did not carry. */
+  recordMusterFinding(finding: string): void {
+    this.muster.push(finding);
   }
 
-  /** A body that did not fall inside its encounter's own melee budget. */
-  recordUnkillableFinding(finding: string): void {
-    this.unkillable.push(finding);
+  /** Everything the musters found, for the stage that owns them. */
+  musterFindings(): readonly string[] {
+    return this.muster;
   }
 
   recordEncounters(entries: readonly EncounterReport[]): void {
@@ -261,30 +217,6 @@ export class RunReport {
    * fork produces exactly the report it produced before — no empty section that
    * would have to be read as "no branches" rather than "no branch machinery".
    */
-  /**
-   * Record the compiler's floor-gate ledger and every tiered actor's outcome.
-   *
-   * The ledger is printed VERBATIM, both sides: what the inverted floor gate
-   * covers, and what it cannot with the reason. Before this the ladder's only
-   * surfacing of an unmeasurable elite was a build-time `DW0477` warning, so a
-   * reader holding a green run report had no way to learn that its empty findings
-   * list covered a fight nobody ever had.
-   */
-  recordCombatCoverage(ledger: FloorLedger, actors: readonly ActorReport[]): void {
-    this.floorLedger = ledger;
-    this.actors.push(...actors);
-  }
-
-  /**
-   * Record `actors[]`'s own binding count (playtest-methodology.md rule 1):
-   * how many actors this build's tier machinery tracked at all, distinct from
-   * `floorGate`'s count — an all-`ordinary` actor binds this one and not that
-   * one. `undefined` for a plan from a delvec that predates the field.
-   */
-  recordActorsGate(gate: BindingCount | undefined): void {
-    this.actorsGate = gate;
-  }
-
   /**
    * Record the death loop: every walk into a lethal volume, and the binding count
    * of what was examined.
@@ -337,8 +269,7 @@ export class RunReport {
   /** Every advisory the run produced, for the one-line stderr summary. */
   findings(): string[] {
     return [
-      ...this.floor,
-      ...this.unkillable,
+      ...this.muster,
       ...[...this.stages.values()].flatMap((s) => [...s.findings]),
     ];
   }
@@ -415,18 +346,16 @@ export class RunReport {
         position: [...d.position],
         kind: d.kind,
       })),
-      // Every encounter the compiler put in the plan, with the assist policy it
-      // is approached under and the phase the run actually reached. Without this
-      // an empty `assist_windows` says nothing: it is the expected reading for a
-      // run that never got past the die-retry stage, and also the reading for an
-      // assist mechanism that was never wired.
+      // Every encounter the compiler put in the plan, what the muster read off its
+      // live bodies, and how far the step got. `declared_facts` is the row's own
+      // binding count and is stated even when `muster` is null: a wave the run
+      // never reached must not read like a wave that was read and found sound.
       encounters: this.encounters.map((e) => ({
         encounter: e.encounter,
         wave: e.wave,
         tier: e.tier,
-        assist_policy: e.assistPolicy,
         phase_reached: e.phaseReached,
-        assist_windows: e.assistWindows,
+        declared_facts: e.declaredFacts,
         attribution:
           e.attribution.kind === "measured"
             ? {
@@ -436,58 +365,31 @@ export class RunReport {
                 uncredited: e.attribution.uncredited,
               }
             : { unattributed: e.attribution.reason },
-        // The floor gate's own measurement, per encounter. `null` where the
-        // policy takes no unassisted attempt; otherwise the result, the health
-        // the sample was taken at, and what the attempt reached — so two runs
-        // that ended differently differ HERE instead of nowhere.
-        unassisted: e.unassisted
+        // What the live bodies said. `null` is "never read", never "nothing
+        // wrong"; `findings: []` beside a non-zero `checked` is the pass.
+        muster: e.muster
           ? {
-              result: e.unassisted.result,
-              health_at_start: e.unassisted.healthAtStart,
-              max_health: e.unassisted.maxHealth,
-              engaged: e.unassisted.engaged,
-              killed: e.unassisted.killed,
-              detail: e.unassisted.detail ?? null,
+              checked: e.muster.checked,
+              bodies_read: e.muster.read,
+              bodies_declared: e.muster.declared,
+              matched: e.muster.matched,
+              findings: [...e.muster.findings],
             }
           : null,
       })),
-      // spec-0023 §3: "the run artifact names every assist window (encounter id,
-      // ticks)". Loudly, and including any the harness failed to close.
-      // The compiler's floor-gate ledger, verbatim. `present: false`
-      // means the build shipped NO ledger — a plan from a delvec older than the
-      // ledger — which is a different fact from a campaign that bills nothing
-      // hard, and the two must never be read as one. `not_covered` carries the
-      // compiler's own reason per entry: this is the line that stops an empty
-      // findings list being mistaken for a pass over fights nobody had.
-      floor_gate: {
-        present: this.floorLedger?.present ?? false,
-        covered: (this.floorLedger?.covered ?? []).map((e) => ({
-          kind: e.kind,
-          id: e.id,
-          tier: e.tier ?? null,
-        })),
-        // `tier: null` is an UNTIERED hostile — an actor the
-        // campaign unleashes on the party while declaring nothing about the
-        // fight. It is written as an explicit null, never dropped: a key that
-        // vanishes is the same silence this ledger exists to end.
-        not_covered: (this.floorLedger?.notCovered ?? []).map((e) => ({
-          kind: e.kind,
-          id: e.id,
-          tier: e.tier ?? null,
-          reason: e.reason ?? null,
-        })),
-        // playtest-methodology.md rule 1: the ledger's own binding count,
-        // carried through verbatim. `null` when the plan predates the field
-        // (same reason `present` can be `false`) — never a substitute for
-        // reading `covered`/`not_covered`, only a REPORTED statement of what
-        // they add up to, so an unbound gate cannot be mistaken for a pass.
-        examined: this.floorLedger?.binding?.examined ?? null,
-        unbound: this.floorLedger?.binding?.unbound ?? null,
-        reason: this.floorLedger?.binding?.reason ?? null,
-      },
-      // `actors[]`'s own binding count (rule 1): distinct question from
-      // `floor_gate`'s — an all-`ordinary` actor binds this one and not that
-      // one. `null` when the plan predates the field.
+      // Every body the HARNESS took out of the delve, and why.
+      //
+      // Under its own heading because it is the one part of this artifact that is
+      // not the delve behaving. The ladder does not fight: at a combat step it
+      // reads the wave and then removes it, credited to the bot, so the run can go
+      // on to the wiring the kill drives. A reader must never have to work out
+      // whether a body fell to the campaign's own machinery or to this.
+      staged_removals: this.staged.map((r) => ({
+        kind: r.kind,
+        why: r.why,
+        performed: r.performed,
+        detail: r.detail ?? null,
+      })),
       // spec-0029 name-preference binding. `unbound` is stated explicitly so a
       // run that never exercised the preference cannot read as one that
       // exercised it successfully — a green gate that binds to nothing is
@@ -499,29 +401,6 @@ export class RunReport {
         named_candidates: this.namePreference.namedCandidates,
         unbound: this.namePreference.decisions === 0,
       },
-      actors_gate:
-        this.actorsGate === undefined
-          ? null
-          : {
-              examined: this.actorsGate.examined,
-              unbound: this.actorsGate.unbound,
-              reason: this.actorsGate.reason ?? null,
-            },
-      // Every tiered actor the plan declares, fought or not — and when not, why.
-      actors: this.actors.map((a) => ({
-        actor: a.actor,
-        tier: a.tier,
-        entity: a.entity,
-        anchor: a.anchor,
-        covered: a.covered,
-        exercised: a.exercised,
-        reason: a.reason ?? null,
-        outcome: a.trial?.outcome ?? null,
-        after_objective: a.trial?.afterObjective ?? null,
-        swings: a.trial?.swings ?? null,
-        elapsed_ms: a.trial?.elapsedMs ?? null,
-        detail: a.trial?.detail ?? null,
-      })),
       // The death loop, the one mechanic a PackTest can never witness
       // (a fake player is permanently undamageable, measured twice). Every field
       // is an OBSERVATION: the ledger before and after, the position the player
@@ -586,16 +465,6 @@ export class RunReport {
           abandoned: t.abandoned ?? null,
         })),
       },
-      assist_windows: this.assists.map((w) => ({
-        encounter: w.encounter,
-        wave: w.wave,
-        tier: w.tier,
-        amplifier: w.amplifier,
-        ticks: w.ticks,
-        reason: w.reason,
-        opened_at_ms: w.openedAtMs,
-        closed_at_ms: w.closedAtMs ?? null,
-      })),
       // What the die-retry stage EXAMINED, beside what it found. `unbound: true`
       // means zero scripted deaths were taken, whatever the stage's `passed` says
       // — the two are different questions and only this one answers "was anything
@@ -651,8 +520,10 @@ export class RunReport {
         completed: t.completed,
         aborted_with: t.abortedWith ?? null,
       })),
-      floor_findings: [...this.floor],
-      unkillable_findings: [...this.unkillable],
+      // Every declared fact the live bodies did not carry, across every wave the
+      // run read. Empty beside a non-zero `declared_facts` is the pass; empty
+      // beside zero is a build the muster could not bind to.
+      muster_findings: [...this.muster],
     };
   }
 }

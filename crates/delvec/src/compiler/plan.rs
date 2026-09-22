@@ -1769,6 +1769,10 @@ pub fn wave_brand_tag(wave_id: &str) -> String {
 pub const MARKER_TOKEN_CENSUS: &str = "census";
 /// Marker token for one mob's line inside a census.
 pub const MARKER_TOKEN_CENSUS_MOB: &str = "censusmob";
+/// Marker token for the per-wave MUSTER summary line (`compiler::muster`).
+pub const MARKER_TOKEN_MUSTER: &str = "muster";
+/// Marker token for one live body's reading inside a muster.
+pub const MARKER_TOKEN_MUSTER_BODY: &str = "musterbody";
 
 /// A stage-5 wave by id (v0.3).
 pub fn wave_of<'a>(campaign: &'a Campaign, wave_id: &str) -> Option<&'a delvewright_dsl::Wave> {
