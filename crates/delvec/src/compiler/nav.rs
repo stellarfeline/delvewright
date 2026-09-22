@@ -6892,7 +6892,7 @@ fn verify_shortcuts(
 }
 
 /// The retry-cost budget (spec-0016 §7): 60 s of traversal from a rest point to
-/// the beat it respawns the party into, in ticks.
+/// the point of failure it respawns the party into, in ticks.
 const RETRY_BUDGET_TICKS: u32 = 60 * 20;
 
 /// Default aggro radius for a wave mob with no declared `follow_range` — vanilla's
@@ -6905,9 +6905,9 @@ pub const DEFAULT_FOLLOW_RANGE: u32 = 16;
 /// design judgement the compiler can measure but must not overrule, so these
 /// return diagnostics rather than failing the build.
 ///
-/// 1. [`DW_RETRY_COST`] (`DW0379`) — bonfire/checkpoint → the beat it respawns
-///    into, over the proven path, must be under [`RETRY_BUDGET_TICKS`]. Dying
-///    should be an investment, not a commute.
+/// 1. [`DW_RETRY_COST`] (`DW0379`) — bonfire/checkpoint → the DEEPEST beat it
+///    respawns into, over the proven path, must be under
+///    [`RETRY_BUDGET_TICKS`]. Dying should be an investment, not a commute.
 /// 2. [`DW_OPTIONAL_ELITE_UNAVOIDABLE`] (`DW0380`) — an enemy no critical-path
 ///    `kill` objective requires must have a route around it. The Tree Sentinel
 ///    pattern is legitimate; a "walk around it" you cannot walk around is not.
@@ -6918,7 +6918,7 @@ pub fn pacing_lints(plan: &Plan, world: &World) -> Vec<Diagnostic> {
     out
 }
 
-/// `DW0379`: the walk back from each rest point to the first beat that follows it.
+/// `DW0379`: the walk back from each rest point to the DEEPEST beat it governs.
 fn retry_cost_lint(plan: &Plan, world: &World) -> Vec<Diagnostic> {
     let cps: Vec<(String, [i32; 3], usize, bool)> = plan
         .checkpoints
@@ -6938,6 +6938,26 @@ struct RestRef<'a> {
 
 /// The pure core of [`retry_cost_lint`] (unit-testable against a synthetic
 /// [`World`]). Each rest point is `(anchor, cell, fire_step, is_bonfire)`.
+///
+/// **The quantity is the walk to the DEEPEST beat the rest point governs**, not
+/// to the first one after it. A party does not die at the nearest thing a fire
+/// is the checkpoint for — it dies anywhere in the stretch that fire governs,
+/// and the walk it complains about is the longest of them. Measured to the
+/// first beat, the lint reports the best case and calls it the retry cost: on
+/// vesperhold the Watch Fire's first beat is 12 blocks and the deepest beat it
+/// governs is 146, the Tower Fire's are 53 and 211, and no value of
+/// [`RETRY_BUDGET_TICKS`] separates the walk a human reported from rest points
+/// nobody has complained about (`docs/reference/retry-cost-measurement.md`).
+///
+/// A rest point **governs** every beat from its own firing step up to and
+/// including the firing step of the next rest point — which is the span over
+/// which vanilla returns a dead party to this spawn point, since the next rest
+/// point is not armed until its own step completes. The last rest point governs
+/// everything after it.
+///
+/// A beat inside that span that does not snap or does not route is skipped, not
+/// fatal: `DW0315`/`DW0316` own an unreachable beat, and dropping it only
+/// lowers this maximum.
 fn verify_retry_cost(
     world: &World,
     rests: &[(String, [i32; 3], usize, bool)],
@@ -6954,20 +6974,36 @@ fn verify_retry_cost(
         let Some(from) = world.snap_standable(cp.pos, SNAP_RADIUS) else {
             continue; // DW0316 owns an unstandable rest point
         };
-        let Some(target) = positions
+        // The step the next rest point arms at. Beats at or before it are still
+        // this rest point's to answer for; anything past it belongs to that one.
+        let governs_through = rests
             .iter()
-            .filter(|p| p.src_step > cp.fire_step && !p.transport_before)
-            .min_by_key(|p| p.src_step)
-        else {
+            .map(|(_, _, f, _)| *f)
+            .filter(|f| *f > cp.fire_step)
+            .min()
+            .unwrap_or(usize::MAX);
+        let mut deepest: Option<(usize, u32)> = None;
+        let mut governed = 0usize;
+        for target in positions
+            .iter()
+            .filter(|p| p.src_step > cp.fire_step && p.src_step <= governs_through)
+            .filter(|p| !p.transport_before)
+        {
+            governed += 1;
+            let Some(goal) = world.snap_endpoint(target.pos, target.talk_to) else {
+                continue;
+            };
+            let Some(path) = world.find_path(from, goal) else {
+                continue; // DW0315 owns an unreachable one
+            };
+            let blocks = path.len().saturating_sub(1) as u32;
+            if deepest.is_none_or(|(_, b)| blocks > b) {
+                deepest = Some((target.src_step, blocks));
+            }
+        }
+        let Some((deepest_step, blocks)) = deepest else {
             continue;
         };
-        let Some(goal) = world.snap_endpoint(target.pos, target.talk_to) else {
-            continue;
-        };
-        let Some(path) = world.find_path(from, goal) else {
-            continue; // DW0315 owns an unreachable one
-        };
-        let blocks = path.len().saturating_sub(1) as u32;
         let ticks = blocks * SPRINT_TICKS_PER_BLOCK;
         if ticks > RETRY_BUDGET_TICKS {
             out.push(Diagnostic::warning(
@@ -6976,10 +7012,11 @@ fn verify_retry_cost(
                 format!("/content/quests/checkpoint/{}", cp.anchor),
                 format!(
                     "retry cost: {} `{}` is {blocks} blocks ({} s at {SPRINT_TICKS_PER_BLOCK} \
-                     t/block) from the next beat it respawns the party into — over the {} s \
-                     budget (spec-0016 §7). Dying must be an investment, not a commute: past this \
-                     the loop stops teaching and starts taxing. Move the rest point forward, or \
-                     add one closer to the beat.",
+                     t/block) from the deepest of the {governed} beat(s) it respawns the party \
+                     into (critical-path step {deepest_step}) — over the {} s budget (spec-0016 \
+                     §7). Dying must be an investment, not a commute: past this the loop stops \
+                     teaching and starts taxing. Move the rest point forward, or add one closer \
+                     to the far end of the stretch it governs.",
                     if cp.rest { "bonfire" } else { "checkpoint" },
                     cp.anchor,
                     ticks / 20,
@@ -10803,11 +10840,15 @@ mod tests {
         );
     }
 
-    /// The budget is measured to the FIRST beat after the rest point, not the
-    /// last — a rest point followed immediately by its beat is cheap even if the
-    /// delve runs on for hundreds of blocks afterwards.
+    /// The budget is measured to the DEEPEST beat the rest point governs, not to
+    /// the first one after it. A party dies at the far end of the stretch its
+    /// checkpoint answers for and walks back from there, so a rest point with its
+    /// next beat two blocks away and its last beat across the delve is expensive,
+    /// however cheap the first step looks. This is the defect's own shape: on the
+    /// first-beat quantity the 2-block beat is the whole reading and nothing is
+    /// emitted (`docs/reference/retry-cost-measurement.md`).
     #[test]
-    fn retry_cost_measures_the_first_beat_after_the_rest_point() {
+    fn retry_cost_measures_the_deepest_beat_the_rest_point_governs() {
         let world = corridor(400, 65);
         let rests = vec![("anchor/fire".to_string(), [0, 65, 1], 0usize, false)];
         let diags = verify_retry_cost(
@@ -10815,9 +10856,64 @@ mod tests {
             &rests,
             &[vp_at([2, 65, 1], 1), vp_at([390, 65, 1], 2)],
         );
+        assert_eq!(
+            diags.len(),
+            1,
+            "the 390-block beat is this rest point's to answer for: {diags:#?}"
+        );
+        assert_eq!(diags[0].code, DW_RETRY_COST); // DW0379
+        assert!(
+            diags[0].message.contains("390 blocks")
+                && diags[0].message.contains("2 beat(s)")
+                && diags[0].message.contains("step 2"),
+            "the message reports the deepest walk, over how many beats, and which: {}",
+            diags[0].message
+        );
+    }
+
+    /// A beat past the NEXT rest point's firing step belongs to that rest point,
+    /// not to this one: the party that dies there comes back at the later fire.
+    /// Without this bound every rest point would be charged the whole delve.
+    #[test]
+    fn a_beat_past_the_next_rest_point_is_not_this_ones_to_answer_for() {
+        let world = corridor(400, 65);
+        let rests = vec![
+            ("anchor/near".to_string(), [0, 65, 1], 0usize, true),
+            ("anchor/far".to_string(), [388, 65, 1], 1usize, true),
+        ];
+        let diags = verify_retry_cost(
+            &world,
+            &rests,
+            &[vp_at([2, 65, 1], 1), vp_at([390, 65, 1], 2)],
+        );
         assert!(
             diags.is_empty(),
-            "the far LATER beat must not be charged to this rest point: {diags:#?}"
+            "each fire walks only its own stretch — 2 blocks and 2 blocks: {diags:#?}"
+        );
+    }
+
+    /// The beat that ARMS the next rest point is still governed by this one: the
+    /// later checkpoint does not exist until its own step completes, so a party
+    /// that dies reaching it respawns at the earlier fire. The span is
+    /// `(fire_step, next_fire_step]`, inclusive at the far end.
+    #[test]
+    fn the_beat_that_arms_the_next_rest_point_is_still_this_ones() {
+        let world = corridor(400, 65);
+        let rests = vec![
+            ("anchor/near".to_string(), [0, 65, 1], 0usize, true),
+            ("anchor/far".to_string(), [350, 65, 1], 2usize, true),
+        ];
+        let diags = verify_retry_cost(
+            &world,
+            &rests,
+            &[vp_at([2, 65, 1], 1), vp_at([350, 65, 1], 2)],
+        );
+        assert_eq!(diags.len(), 1, "one finding expected: {diags:#?}");
+        assert!(
+            diags[0].message.contains("bonfire `anchor/near`")
+                && diags[0].message.contains("350 blocks"),
+            "the walk to the arming beat is charged to the fire already lit: {}",
+            diags[0].message
         );
     }
 
