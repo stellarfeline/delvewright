@@ -2789,9 +2789,9 @@
       "campaign": "vesperhold",
       "carrier": null,
       "finding": "the party cannot see how much of the delve's currency it holds: the balance appears nowhere on screen",
-      "general_form": "a campaign that declares a currency shows the party its balance on screen, wherever the party is and without opening anything",
+      "general_form": "a campaign that declares a named currency gives the party a standing way to read its balance, and not only an announcement at the moment the balance changes",
       "id": "vh-08",
-      "note": "This tree carries no currency surface for a check to quantify over: no stage document declares a currency and nothing accrues one, so the general form names a primitive the DSL does not yet have -- the shape `bell-01` had before resting became a first-class verb. The obligation is the primitive and its display together, because a balance the party cannot read is a balance it cannot spend. No diagnostic code is allocated.",
+      "note": "The capability is half here and the half that is missing is the one the finding names. A player-scoped `state` datum carrying a `name` IS a currency, and the engine already announces it: one tick driver keyed on the datum differing from its shadow score fires `st_show_<datum>`, which writes the balance to the actionbar as a live score component under the delve's own translation key, once per change and from exactly one place -- a readout inside a gated effect would be evaluated after the write it reports, so spending the last of something is the one change the player would never be told about. What has no carrier is a STANDING display: once the actionbar fades the balance is nowhere the party can consult, which is what was reported. The sidebar is not a free choice either -- the completion objective is deliberately kept off `scoreboard objectives setdisplay sidebar`, because that slot shows a raw internal id and the harness cannot decode the pinned game's score packets -- so the general form has to say what a standing display IS before a check can hold anything to it. Measured on this campaign: 1 named player-scoped datum (`state/tallow`), of 644 nodes in `quests.json`.",
       "round": 1,
       "triage": "capability"
     },
