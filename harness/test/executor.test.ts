@@ -4322,3 +4322,19 @@ test("a run-back is met along the leg's own proven cells, and the leg resumes fr
     "the step resumed at the crossing: two remaining cells and the goal, not all six",
   );
 });
+
+test("a fight already on the bot is fought where it stands, not after a walk to the anchor", async () => {
+  // vesperhold run-back to the walk-ambush: the bot walked on to the wave's anchor
+  // through three attackers and took four blows before its first swing.
+  const bot = new CombatFakeBot();
+  bot.seat(1, { distance: 2 });
+  const executor = attach(bot);
+  executor.useCampaign("the-drowned-bell");
+  executor.useCombatPlan(combatPlan(1, true, [{ kind: "zombie", count: 1, giveUpSwings: 24 }]), false);
+
+  // The anchor is thirty blocks off; the body is two blocks from the bot.
+  await executor.kill({ ...KILL_STEP, pos: [30, 64, 0] });
+
+  assert.deepEqual(bot.waveIds(), [], "the wave body fell");
+  assert.equal(bot.calls.includes("goto"), false, `no walk: ${bot.calls.join(" ")}`);
+});

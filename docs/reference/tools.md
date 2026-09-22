@@ -1985,6 +1985,28 @@ an empty event loop to exit 0 on, and channel start is a retried handshake
 (the readiness probe passing and the next connection being accepted are two
 events with a measured race between them).
 
+`tools/spike-guard-fight/run.sh` (`EULA=TRUE tools/spike-guard-fight/run.sh
+--build <delvec build output tree>`) measures two things the harness had no
+instrument for. On a throwaway superflat it asks whether the shield the harness
+raises with mineflayer's `activateItem(true)` blocks at all, how long it must be
+up first and how wide its arc is — read off the SERVER's
+`minecraft.custom:minecraft.damage_blocked_by_shield` statistic, because a
+blocked blow reaches the client as no packet at all and every earlier claim about
+the shield rested on an instrument blind to the thing it measured. On the
+SHIPPED delve image built from `--build` it then asks whether one body can clear
+a melee wave under spec-0023's assist: `guard.ts` runs the harness's own
+`MineflayerExecutor` through its own `fightWave` under its own `withAssist` with
+nothing replaced, and `hold.mjs` measures the defensive ceiling — a body that
+never swings, holds the shield up the whole fight and turns to the nearest
+attacker every 100 ms. Findings:
+[`../notes/shield-and-guard-fight.md`](../notes/shield-and-guard-fight.md); raw
+observations beside the rig. It drives rcon through `tools/lib/rcon.mjs`'s
+`rconChannel` rather than a private channel, publishes ephemeral loopback ports
+for both servers, and waits on the server's own answer to `list` rather than on
+the poll having printed something — `dw_rcon_probe` folds stderr into its reply,
+so a non-empty test reads `Failed to connect to RCON server` as ready on the
+first poll and walks into a world that does not exist yet.
+
 `tools/spike-block-settling/run.sh` (`EULA=TRUE
 tools/spike-block-settling/run.sh [--out <path>]`) measures, on a throwaway
 pinned server booted on a DRY superflat, the two facts the `stair-shape`
