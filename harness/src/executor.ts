@@ -4467,11 +4467,33 @@ export class MineflayerExecutor implements StepExecutor {
    */
   private pendingEncounterAt(pos: Vec3Tuple): string | undefined {
     for (const enc of this.combatPlan?.encounters ?? []) {
-      if (this.waveClearedAt.has(enc.wave) || this.clearing === enc.wave) continue;
+      if (this.clearing === enc.wave) continue;
+      const clearedAt = this.waveClearedAt.get(enc.wave);
+      // A wave this run has cleared is protected again the moment a rest could
+      // have put it back: its run-back is a reading this run still owes.
+      // Measured on vesperhold — `wave/rampart-archers` was cleared, a rest at
+      // `anchor/watch-fire` re-seated it, one archer hit the bot on the leg and
+      // was staged away, and the run-back's muster then read two of three and
+      // reported the campaign short a body it had seated.
+      if (clearedAt !== undefined && !this.reSeatedSince(enc, clearedAt)) continue;
       const d = Math.hypot(pos[0] - enc.pos[0], pos[1] - enc.pos[1], pos[2] - enc.pos[2]);
       if (d <= WAVE_ENGAGE_NEAR) return enc.wave;
     }
     return undefined;
+  }
+
+  /**
+   * Has a rest since `clearedAt` put this wave back?
+   *
+   * The same two facts `respawnReseats` reads — a `respawns_on_rest` wave and a
+   * rest performed at or after the step that cleared it.
+   */
+  private reSeatedSince(enc: Encounter, clearedAt: number): boolean {
+    if (!enc.respawnsOnRest) return false;
+    for (const step of this.restedAt.values()) {
+      if (step >= clearedAt) return true;
+    }
+    return false;
   }
 
   /** What each wave's muster established. Read by the run report. */
