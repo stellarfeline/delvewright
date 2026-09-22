@@ -78,6 +78,8 @@ The other three content campaigns are byte-identical at this content revision to
 | `demos/guard-exhaustion` | no | — | `DW0874`: same shape |
 | `demos/mill-race` | no | — | `DW0874`: same shape |
 
+The rest-point counts for the three campaigns that do not build are counts of `bonfire` and `set-checkpoint` verbs in their authored `quests.json`, not plan counts — a campaign refused at stage validation never produces a plan, so a declaration is all there is to count and a walk is not derivable from it at all.
+
 Three of four content campaigns not building is not a defect: nothing owes compatibility to anything already built, and those documents were authored against a DSL surface that has moved. What it does mean is that **the distribution below rests on one campaign plus the gallery**, and a threshold chosen from it is chosen from that.
 
 ### Gallery
