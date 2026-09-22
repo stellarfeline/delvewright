@@ -6984,6 +6984,7 @@ fn verify_retry_cost(
             .unwrap_or(usize::MAX);
         let mut deepest: Option<(usize, u32)> = None;
         let mut governed = 0usize;
+        let mut walked = 0usize;
         for target in positions
             .iter()
             .filter(|p| p.src_step > cp.fire_step && p.src_step <= governs_through)
@@ -6996,6 +6997,7 @@ fn verify_retry_cost(
             let Some(path) = world.find_path(from, goal) else {
                 continue; // DW0315 owns an unreachable one
             };
+            walked += 1;
             let blocks = path.len().saturating_sub(1) as u32;
             if deepest.is_none_or(|(_, b)| blocks > b) {
                 deepest = Some((target.src_step, blocks));
@@ -7012,11 +7014,12 @@ fn verify_retry_cost(
                 format!("/content/quests/checkpoint/{}", cp.anchor),
                 format!(
                     "retry cost: {} `{}` is {blocks} blocks ({} s at {SPRINT_TICKS_PER_BLOCK} \
-                     t/block) from the deepest of the {governed} beat(s) it respawns the party \
-                     into (critical-path step {deepest_step}) — over the {} s budget (spec-0016 \
-                     §7). Dying must be an investment, not a commute: past this the loop stops \
-                     teaching and starts taxing. Move the rest point forward, or add one closer \
-                     to the far end of the stretch it governs.",
+                     t/block) from the deepest beat it respawns the party into — critical-path \
+                     step {deepest_step}, the furthest of {walked} walkable beat(s) of the \
+                     {governed} it governs — over the {} s budget (spec-0016 §7). Dying must be \
+                     an investment, not a commute: past this the loop stops teaching and starts \
+                     taxing. Move the rest point forward, or add one closer to the far end of \
+                     the stretch it governs.",
                     if cp.rest { "bonfire" } else { "checkpoint" },
                     cp.anchor,
                     ticks / 20,
@@ -10864,9 +10867,35 @@ mod tests {
         assert_eq!(diags[0].code, DW_RETRY_COST); // DW0379
         assert!(
             diags[0].message.contains("390 blocks")
-                && diags[0].message.contains("2 beat(s)")
+                && diags[0]
+                    .message
+                    .contains("furthest of 2 walkable beat(s) of the 2 it governs")
                 && diags[0].message.contains("step 2"),
             "the message reports the deepest walk, over how many beats, and which: {}",
+            diags[0].message
+        );
+    }
+
+    /// A beat inside the stretch that the walking model cannot route to is
+    /// skipped rather than fatal — `DW0315`/`DW0316` own an unreachable beat, and
+    /// dropping it only lowers this maximum. What it may not do is go unsaid: the
+    /// message states how many of the governed beats were actually walked, so a
+    /// maximum taken over a subset never reads as one taken over the whole.
+    #[test]
+    fn an_unroutable_beat_is_skipped_and_the_message_says_how_many_were_walked() {
+        let world = corridor(400, 65);
+        let rests = vec![("anchor/fire".to_string(), [0, 65, 1], 0usize, true)];
+        let diags = verify_retry_cost(
+            &world,
+            &rests,
+            &[vp_at([200, 65, 40], 1), vp_at([350, 65, 1], 2)],
+        );
+        assert_eq!(diags.len(), 1, "one finding expected: {diags:#?}");
+        assert!(
+            diags[0]
+                .message
+                .contains("furthest of 1 walkable beat(s) of the 2 it governs"),
+            "the skipped beat is counted and named as skipped: {}",
             diags[0].message
         );
     }

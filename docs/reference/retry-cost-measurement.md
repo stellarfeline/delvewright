@@ -1,6 +1,8 @@
 # What `DW0379` measures on shipping content
 
-`DW0379` is the retry-cost lint: the proven walk from a rest point to the beat it can respawn the party into, warned when it exceeds `RETRY_BUDGET_TICKS` (1200 ticks = 60 s = 300 blocks at the 4 t/block sprint model `DW0355` uses). Its catalogue row in `compiler.md` says the budget is a design decision rather than a compiler one, and that no box-garden delve approaches it. This page is the measurement that decision is made against. It recommends no threshold.
+`DW0379` is the retry-cost lint: the proven walk from a rest point to the deepest beat it can respawn the party into, warned when it exceeds `RETRY_BUDGET_TICKS` (1200 ticks = 60 s = 300 blocks at the 4 t/block sprint model `DW0355` uses). Its catalogue row in `compiler.md` says the budget is a design decision rather than a compiler one, and that no box-garden delve approaches it. This page is the measurement that decision is made against. It recommends no threshold.
+
+It was taken while the lint measured to the FIRST beat after each rest point, and it is what changed the quantity: the lint now takes the deepest beat, column **B** below, at the same unchanged budget. Both columns are kept — the pair is the argument. Every reading here was taken at the instrument below, and `campaigns/vesperhold` at that content revision declares a `health_bar` the engine's `main` has no field for, so the vesperhold half is not reproducible on `main` and the gallery half is.
 
 ## Instrument
 
@@ -21,7 +23,7 @@ The measured build is deterministic across the two runs the reading was taken fr
 
 The probe's readings share the nav model with the lint, so they are cross-checked against the one other reader of the same numbers: the lint's own diagnostic text, with `RETRY_BUDGET_TICKS` lowered to 1 tick and nothing else varied. All eight walks reproduce exactly — `106, 13, 12, 53, 23` on vesperhold and `20, 10, 10` on the gallery, in blocks, in the lint's own words. What the two methods share is the path; what they do not share is the reporting site, which is what was in doubt.
 
-## Vesperhold: what `DW0379` computes
+## Vesperhold: the walk to the first beat after each rest point
 
 Five rest points, all five bonfires, in critical-path order. Denominator: 5 rest points declared in the plan, 5 measured, 0 skipped.
 
@@ -37,7 +39,7 @@ Maximum 106 blocks, 21.2 s. The budget is 300 blocks, 60 s. Nothing fires.
 
 ## Vesperhold: the deepest beat each rest point covers
 
-The target in the table above is the **first** beat after the rest point, which is what the lint selects. A player does not die at the first beat; they die anywhere in the stretch the rest point is the checkpoint for. So the same nav model, over the same rest points, measured to every beat from the rest point up to and including the next rest point's own firing step. This second measure is **authored**, not cited: no spec names it, and it is here because the first measure cannot answer the question a human asks after a death.
+The target in the table above is the **first** beat after the rest point, which is what the lint selected when this was read. A player does not die at the first beat; they die anywhere in the stretch the rest point is the checkpoint for. So the same nav model, over the same rest points, measured to every beat from the rest point up to and including the next rest point's own firing step. This second measure is **authored**, not cited: no spec names it, and it is here because the first measure cannot answer the question a human asks after a death. It is the quantity `DW0379` now computes; spec-0016 §7 says *point of failure*, which the first measure was never a reading of.
 
 Denominator: 5 rest points, 37 beat-walks computed, 0 refused for want of a path.
 
@@ -104,7 +106,7 @@ Nothing, on every campaign that builds. Read from the diagnostic stream, not ass
 | `campaigns/vesperhold` | 5 warnings (`DW0351` ×3, `DW0781`, `DW0810`) | 0 of 5 |
 | `gallery` | 37 warnings (`DW0527` ×24, `DW0477` ×3, and one each of `DW0330`, `DW0351`, `DW0353`, `DW0453`, `DW0467`, `DW0475`, `DW0498`, `DW0813`, `DW0822`, `DW0889`) | 0 of 37 |
 
-The catalogue's "effectively inert in practice" is confirmed as stated, on the two campaigns that can test it. The claim next to it — that no box-garden delve approaches 300 blocks — holds for what the lint measures (peak 106) and is close to false for what a player walks (peak 266).
+The emission count is confirmed as stated, on the two campaigns that can test it, and it is unchanged by the switch to column **B**: the deepest walk of the eight is 53.2 s against a 60 s budget. The claim beside it in the catalogue — that no box-garden delve approaches 300 blocks — held comfortably for the first-beat quantity (peak 106) and is close to false for what a player walks (peak 266), which is what the lint now measures.
 
 ## Where a threshold would have to sit
 
@@ -124,4 +126,4 @@ Read against the reported complaint — the stretch from the third fire onward �
 - On **A**, no threshold catches the Watch Fire before it catches nearly everything. Its walk is 12 blocks, third shortest of the eight; the highest threshold that warns on it is 2.3 s, and at 2.3 s six of the eight warn, the gallery's own bonfire among them. The quantity cannot separate the complaint from the campaign.
 - On **B**, the Watch Fire's 146 blocks is the fourth largest of the eight, and every threshold in the band 4.6 s ≤ t < 29.2 s catches exactly the four vesperhold fires with a long stretch behind them and neither gallery hearth. The separation the complaint asks for exists in this quantity and not in the other.
 
-So the question in front of a threshold decision is not only *what number* but *of what*: no value of `RETRY_BUDGET_TICKS` makes the current measure fire on the stretch a human reported without firing on rest points nobody has complained about.
+So the question in front of a threshold decision is not only *what number* but *of what*, and the *of what* is settled: no value of `RETRY_BUDGET_TICKS` makes quantity **A** fire on the stretch a human reported without firing on rest points nobody has complained about, so the lint takes **B**. The number is still open, and at the unchanged 60 s the lint catches none of the eight.
