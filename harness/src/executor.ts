@@ -5347,8 +5347,8 @@ export class MineflayerExecutor implements StepExecutor {
         // landed (`cp_respawn_fire` runs on the first tick after the respawn) and
         // nothing has touched the new cohort yet. Read after the walk back, the
         // same census also carried everything the wave did to itself on the way
-        // (issue #809) and everything the world did to it (vesperhold's choir,
-        // drowned in a lethal well) — and blamed the re-seat for both.
+        // and everything the world did to it (a choir drowned in a lethal well)
+        // — and blamed the re-seat for both.
         if (enc.respawnsOnRest) {
           const at = await this.awaitReseat(enc);
           trial.reseat = at;
