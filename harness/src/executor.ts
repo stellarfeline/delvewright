@@ -1562,6 +1562,9 @@ export class MineflayerExecutor implements StepExecutor {
   private readonly stagedIds = new Set<number>();
   /** True while a `sneak` leg is walking: nothing is staged away on one. */
   private sneaking = false;
+  /** The wave a `kill` step is clearing right now. Its bodies have been read and
+   * are on their way out, so nothing protects them any longer. */
+  private clearing: string | undefined;
   /**
    * The encounter the die-retry stage is proving, and where its bodies last stood.
    *
@@ -3945,6 +3948,20 @@ export class MineflayerExecutor implements StepExecutor {
         this.protectedWave = { wave: enc.wave, census: [{ pos: enc.pos }] };
         try {
           await this.dieRetryAt(step, enc);
+        } catch (err) {
+          // The die-retry stage has its OWN verdict, and an encounter it engaged
+          // without completing its trials already reds it
+          // (`dieRetryCoverageFailures`). Letting that failure end the RUN as well
+          // suppresses every measurement behind this encounter — the muster of
+          // every later wave, the endings, the whole death loop — over a stage
+          // that has already said what it found. The trial carries the abort; the
+          // run carries on.
+          const detail = err instanceof Error ? err.message : String(err);
+          process.stderr.write(
+            `[die-retry] ${enc.wave}: the stage was abandoned (${detail}) — it reds on its ` +
+              `own; the run carries on to what this kill drives\n`,
+          );
+          if (this.death) await this.respawnAndRearm();
         } finally {
           this.protectedWave = undefined;
           this.stageNow = "critical-path";
@@ -4031,10 +4048,10 @@ export class MineflayerExecutor implements StepExecutor {
         // one this stage may be stopped by: the encounter is live and lethal
         // BECAUSE that is what is being proved safe. Recover and walk it again,
         // twice at most, then let the trial record the abort.
-        if (!(err instanceof BotDeathError) || attempt >= 2) throw err;
+        if (!(err instanceof BotDeathError) || attempt >= 3) throw err;
         process.stderr.write(
           `[die-retry] the approach to ${step.wave} ended in a death; recovering and walking ` +
-            `it again (attempt ${attempt + 1} of 2)\n`,
+            `it again (attempt ${attempt + 1} of 3)\n`,
         );
         await this.respawnAndRearm();
       }
@@ -4441,7 +4458,7 @@ export class MineflayerExecutor implements StepExecutor {
    */
   private pendingEncounterAt(pos: Vec3Tuple): string | undefined {
     for (const enc of this.combatPlan?.encounters ?? []) {
-      if (this.waveClearedAt.has(enc.wave)) continue;
+      if (this.waveClearedAt.has(enc.wave) || this.clearing === enc.wave) continue;
       const d = Math.hypot(pos[0] - enc.pos[0], pos[1] - enc.pos[1], pos[2] - enc.pos[2]);
       if (d <= WAVE_ENGAGE_NEAR) return enc.wave;
     }
@@ -4490,8 +4507,24 @@ export class MineflayerExecutor implements StepExecutor {
     const watch = beginCensusWatch();
     const deadline = Date.now() + KILL_TIMEOUT_MS;
     let struck = 0;
+    // The wave has been read; from here it is on its way out, so it stops being
+    // an encounter this run still owes a reading and its bodies become stageable
+    // like any other. Measured on vesperhold: `wave/walk-ambush`'s last pillager
+    // shot the bot dead in the second between two staged blows, and the step
+    // reported that the delve had killed the run.
+    this.clearing = enc.wave;
+    try {
     while (Date.now() < deadline) {
-      if (this.death) throw this.death;
+      // A death WHILE the harness is removing a wave is not a verdict on
+      // anything: nothing is being fought and nothing is being measured. Recover
+      // and carry on clearing, so the run reaches what the kill drives.
+      if (this.death) {
+        process.stderr.write(
+          `[kill ${step.wave}] the bot died while the wave was being staged away; ` +
+            `recovering and carrying on\n`,
+        );
+        await this.respawnAndRearm();
+      }
       const standing = await this.pollWaveCensus(step, enc, watch);
       if (standing === undefined) {
         process.stderr.write(
@@ -4519,6 +4552,10 @@ export class MineflayerExecutor implements StepExecutor {
         );
       }
     }
+    } finally {
+      this.clearing = undefined;
+    }
+    if (this.death) await this.respawnAndRearm();
     this.stagedRemovals.push({
       kind: step.wave,
       why: `staged clear: ${struck} attributed blow(s), so the run can read what the kill drives`,
