@@ -2716,6 +2716,266 @@
       "note": "Re-measured on the tree this row lands on, the engine at `83916f66b03354034465f22b8f996fc79bb34c1c`: `delvec schema --stage all` exports 534011 bytes carrying the word `firework` 20 times, and the effect union's `oneOf` now names 38 verbs, counted off the exported schema by `the_effect_union_names_thirty_eight_verbs` rather than read out of a message. The verb is `firework` at a `Mark` — the same anchor-and-offset `play-sound` takes since spec-0066 — carrying the game's five explosion shapes, colours as `#rrggbb` packed to the integers the `minecraft:fireworks` component reads, and a flight of 1, 2 or 3. One `summon minecraft:firework_rocket` is emitted per effect and is walked against the pinned 1.21.11 command tree by the emitter like every other line it writes, which is what the carrier test reaches: it reads the command off a real build, so the build that produced it had already passed the tree. The emitter writes the entity's `LifeTime` at the floor of the game's randomised range so the burst height is a stated number, and `DW0899` refuses a rocket whose column to that height is roofed or whose burst lies within five blocks of a place the campaign posts a body. The binding counts `firework` effects by identity, so a campaign that declares none is INAPPLICABLE rather than unbound; the released `doune-castle-tour` is never edited and declares none, and the class is exercised by the gallery's valley-site court, which fires one rocket of five stars under open sky.",
       "round": 1,
       "triage": "capability"
+    },
+    {
+      "campaign": "vesperhold",
+      "carrier": null,
+      "disposition": "no-machine-form",
+      "finding": "the bell-tower boss fight cannot be won: the party is ground down across retries by equipment that degrades with nothing in the delve that mends it, and by the walk back to the fight",
+      "general_form": "none: whether a fight can be won is a difficulty judgement the design makes",
+      "id": "vh-01",
+      "justification": "Absolute difficulty is the design's own statement, which is the class `bell-15` already records, and the machine bounds the SINGLE fight from both sides: `DW0474` holds a campaign with mandatory combat to the whole spec-0023 winnability pass against the best kit the party can field, and `DW0477` reports an encounter billed elite or boss that the unassisted bot beats on its first attempt. Neither models ATTRITION ACROSS RETRIES, which is what makes this fight unwinnable rather than merely hard. The two attritions the engine does own are their own rows: `vh-03`, a rest mending what the party carries, which is carried; and `vh-04`, the walk back from a rest, which is a placement judgement. The remedy for this row is rest placement and equipment condition; lowering the fight is refused. Standing content-QC item.",
+      "round": 1,
+      "triage": "content"
+    },
+    {
+      "campaign": "vesperhold",
+      "carrier": null,
+      "finding": "a pool the party can walk into is ringed with slabs no body can climb back over, so a body that enters it cannot leave: bodies accumulate on its floor and drown there",
+      "general_form": "a body of standing water a body can enter has a climb-out: from every cell of the water's floor, some standable cell outside the water is reachable by the moves a body in water can make",
+      "id": "vh-02",
+      "note": "No check quantifies over the class, verified by reading rather than assumed. The navigation model reads water only as a place a body may not STAND -- `nav` keeps its flooded set disjoint from its standable set, and `DW0318` and `DW0851` refuse a proven walk plane the water would be standing over -- and spec-0038 names wading and swim traversal among its deliberate non-goals, so there is no model of a body IN water against which a climb-out could be proven. The one climb-out the engine does hold is the AMBIENT sea's, and it is a constant rather than a check: an `ocean` world's walk plane stands one block above sea level (`horizon::OCEAN_WALK_REF_Y`), the vanilla beach relationship, so a body in the sea can always leave it. Nothing holds an authored body of water to anything of the kind. The pool in this campaign is around `[42, 68, 77]`. Closing this row needs the water-side traversal model first and then a diagnostic over it; no diagnostic code is allocated. Measured on this campaign's build: `validation/fluid-escape.json` examines the fluid cells of the placed pieces and reports containment alone -- whether the fluid stays inside the built volume -- and asks of no cell whether a body in it can get out.",
+      "round": 1,
+      "triage": "capability"
+    },
+    {
+      "binding": {
+        "files": [
+          "quests.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "eq": {
+            "type": "bonfire"
+          }
+        }
+      },
+      "campaign": "vesperhold",
+      "carrier": {
+        "kind": "invariant",
+        "test": "a_rest_mends_every_carried_item_in_place"
+      },
+      "finding": "a shield wears out with nothing in the delve that mends it: a rest restores the resting body, refills the flask and leaves the condition of everything else the party carries untouched",
+      "general_form": "a rest restores the condition of what the party carries -- the declared kit is mended, never re-issued -- so a retry loop cannot exhaust equipment the campaign gives the party no way to replace",
+      "id": "vh-03",
+      "note": "`DW0476` holds a campaign that places a `bonfire` to the flask its class kits must declare, and the rest loop restores the resting player, refills the flask, moves the checkpoint, fires `on_rest[]` and re-seats every `respawns_on_rest` wave. The mend is the part this row is about, and it is closed by construction rather than by a diagnostic: `bonfire_restore` emits one guarded `item modify … bonfire_mend` per carried slot -- the four armour slots, the off-hand and the 36 inventory slots, 41 in all -- and the modifier is `minecraft:set_damage` to full, absolutely. The carrier asserts the whole set and asserts that the function modifies no other item and gives nothing, so a rest MENDS what the party carries and never re-kits it: gear earned in play is what gets repaired. `save only` grows no mend. The PackTest template `souls_bonfire_mend` damages gear in every kind of carried slot on the pinned server and reads the inventory back after a real rest. Measured on this campaign: 5 `bonfire` effects, of 869 nodes in `quests.json`.",
+      "round": 1,
+      "triage": "capability"
+    },
+    {
+      "campaign": "vesperhold",
+      "carrier": null,
+      "disposition": "no-machine-form",
+      "finding": "the walk back from the nearest rest to a scripted ambush costs more than the fight does, so dying to the ambush is a commute rather than a retry",
+      "general_form": "none: where a rest point goes, and how long a walk back the design wants, are the design's own statements",
+      "id": "vh-04",
+      "justification": "Where a rest goes is a placement judgement. The machine has the SHAPE of this check and not its number: `DW0379` charges the proven walk from a rest point to the first beat it can respawn the party into against a 60 s budget, and the diagnostics catalogue records that budget as roughly 300 blocks of walking, which no box-garden delve approaches -- so the lint is inert in practice and can name no walk in a delve of this size. The threshold is a design decision and not a compiler one. The ambush in this campaign sits around `[151, 92, 19]`. Until the design states a budget the lint can charge, this is a standing content-QC item, and re-tuning `DW0379` is a queued engine obligation rather than coverage this row may claim.",
+      "round": 1,
+      "triage": "content"
+    },
+    {
+      "binding": {
+        "files": [
+          "quests.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "any_of": [
+            {
+              "eq": {
+                "type": "despawn-npc"
+              }
+            },
+            {
+              "eq": {
+                "type": "despawn-actor"
+              },
+              "not_in": {
+                "style": [
+                  "kill"
+                ]
+              }
+            }
+          ]
+        }
+      },
+      "campaign": "vesperhold",
+      "carrier": {
+        "kind": "invariant",
+        "test": "no_story_removal_kills_a_body_in_place"
+      },
+      "finding": "a body the story removes from the scene dies on screen: the removal plays a death where the fiction needs only that the body be gone",
+      "general_form": "a body the story removes leaves unseen -- no death animation, no death sound, no death message -- whatever class of body it is and wherever the removal is authored; how a removal looks belongs to removal itself, and is never a choice one body class has and another lacks",
+      "id": "vh-05",
+      "note": "Closed by construction, over every removal and not over the verb that was noticed. An unseen removal moves the body down its own column to an unseen y, replaces every tag it wears with the sweep's, and schedules the sweep -- in that order, so the schedule is taken while the body can still be found -- and the sweep is the only thing that kills it, where nobody is. The carrier is a negative over the whole shipped datapack: it collects every `kill` whose selector names a body tag and requires the set to be empty, across a build carrying a `despawn-npc`, a `despawn-actor` `vanish`, an `unleash`, an actor re-stand and a wave re-seat, and then states its binding by requiring each of those five bodies to be removed somewhere in the tree. `despawn-actor` with `style: kill` is the one removal the story writes AS a death and it still dies on screen, which is why the binding excludes it rather than the carrier making an exception. Measured on this campaign: 3 `despawn-npc` and 7 `despawn-actor`, every one of the seven declaring `style: vanish`, so the class binds 10 of 869 nodes in `quests.json`.",
+      "round": 1,
+      "triage": "capability"
+    },
+    {
+      "campaign": "vesperhold",
+      "carrier": null,
+      "disposition": "no-machine-form",
+      "finding": "the drawn faces of the cast carry oversized jaws, so the bodies do not read as the people the fiction describes",
+      "general_form": "none: whether a drawn face reads as a face is a perceptual judgement no compiler makes",
+      "id": "vh-06",
+      "justification": "The machine bounds a skin's mechanics and not its drawing: `DW0309` proves a declared skin texture is baked and served, and refuses a mannequin naming a texture with no source file. What the face looks like is the authoring prompt's output. The defect is located in the SKIN-AUTHORING PROMPT and not in rendering and not in a design choice, and the observation that locates it is that bearded faces drawn through the same pipeline read correctly. The repair is a change to the prompt the skill hands the image model, confirmed on a demo skin set before it is trusted again. Standing content-QC item.",
+      "round": 1,
+      "triage": "content"
+    },
+    {
+      "binding": {
+        "files": [
+          "quests.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "eq": {
+            "type": "bonfire"
+          }
+        }
+      },
+      "campaign": "vesperhold",
+      "carrier": {
+        "kind": "invariant",
+        "test": "the_flask_takes_back_only_its_own_empties"
+      },
+      "finding": "spent bottles stay in the party's bag after a rest, so the inventory fills with empties the delve never takes back",
+      "general_form": "a rest returns the party's consumables to the state the class kit declares: what a spent consumable leaves behind is taken back, so the bag after a rest holds the declared kit and nothing the party has spent",
+      "id": "vh-07",
+      "note": "Closed by construction with `vh-03`'s mend, and scoped so that it takes back the flask's empties and no other bottle: the flask's `use_remainder` is overridden to carry a `dw_flask_empty` mark, and `bonfire_flask` clears exactly that marked bottle before it refills. The carrier asserts the mark on the kit's give and the clear at the head of the refill, and then sweeps EVERY emitted function for a `clear @s minecraft:glass_bottle` without the mark, so no rest can take a bottle the flask did not leave; it also drives the two shapes that must stay silent -- a kit potion that is not the flask keeps an unmarked remainder, and a flask whose item leaves nothing behind (a thrown splash potion) marks and clears nothing. Measured on this campaign: 5 `bonfire` effects, of 869 nodes in `quests.json`.",
+      "round": 1,
+      "triage": "capability"
+    },
+    {
+      "campaign": "vesperhold",
+      "carrier": null,
+      "finding": "the party cannot see how much of the delve's currency it holds: the balance appears nowhere on screen",
+      "general_form": "a campaign that declares a named currency gives the party a standing way to read its balance, and not only an announcement at the moment the balance changes",
+      "id": "vh-08",
+      "note": "The capability is half here and the half that is missing is the one the finding names. A player-scoped `state` datum carrying a `name` IS a currency, and the engine already announces it: one tick driver keyed on the datum differing from its shadow score fires `st_show_<datum>`, which writes the balance to the actionbar as a live score component under the delve's own translation key, once per change and from exactly one place -- a readout inside a gated effect would be evaluated after the write it reports, so spending the last of something is the one change the player would never be told about. What has no carrier is a STANDING display: once the actionbar fades the balance is nowhere the party can consult, which is what was reported. The sidebar is not a free choice either -- the completion objective is deliberately kept off `scoreboard objectives setdisplay sidebar`, because that slot shows a raw internal id and the harness cannot decode the pinned game's score packets -- so the general form has to say what a standing display IS before a check can hold anything to it. Measured on this campaign: 1 named player-scoped datum (`state/tallow`), of 869 nodes in `quests.json`.",
+      "round": 1,
+      "triage": "capability"
+    },
+    {
+      "applies_when": {
+        "files": [
+          "quests.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "any_of": [
+            {
+              "eq": {
+                "type": "bonfire"
+              }
+            },
+            {
+              "eq": {
+                "type": "despawn-npc"
+              }
+            },
+            {
+              "eq": {
+                "type": "despawn-actor"
+              }
+            }
+          ]
+        }
+      },
+      "binding": {
+        "files": [
+          "quests.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "has": [
+            "drops"
+          ]
+        }
+      },
+      "campaign": "vesperhold",
+      "carrier": {
+        "kind": "invariant",
+        "test": "every_compiler_removal_strips_declared_loot_first"
+      },
+      "finding": "the party ends the delve holding two copies of a unique key: a rest re-seats an undefeated elite, the re-seat removes the body still standing, and that body yields its declared drop as it goes",
+      "general_form": "a body the engine removes yields none of its declared drops, on every path by which the engine removes one -- a rest's re-seat included -- so no removal the party did not earn can put a second copy of a unique item into the world",
+      "id": "vh-09",
+      "note": "Refreshing an undefeated elite on a rest is INTENDED behaviour and is not the defect: spec-0016 section 1's undefeated re-seat is what `bell-10` and `DW0499` record, and `DW0499` refuses only the combination of a `boss` billing with rest respawning. The defect is the unstripped loot and nothing else. Closed by construction: a removal writes `drop_chances` to zero and `DeathLootTable` to `minecraft:empty` on the body before anything kills it. The carrier reads the loot-bearing set off the EMITTED SUMMONS rather than from a list, and enumerates removal sites from every emitted function, so a body a later change teaches to carry loot and a removal a later change adds are both covered without editing the test; it then requires that no removal of a loot-bearing body -- a `kill`, or the exit into the unseen sweep -- stands without a strip before it, and prints the site count it examined. The binding counts the bodies that can carry the defect (a declaration of `drops`) and the precondition counts the removal paths a campaign has, so a campaign with loot and no rest and no despawn is INAPPLICABLE rather than unbound. Measured on this campaign: 9 declarations of `drops` against 15 removal sites (5 bonfires, 3 `despawn-npc`, 7 `despawn-actor`), of 869 nodes in `quests.json`.",
+      "round": 1,
+      "triage": "capability"
+    },
+    {
+      "binding": {
+        "files": [
+          "quests.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "in": {
+            "trigger": [
+              "pressure-plate",
+              "tripwire",
+              "trapped-chest"
+            ]
+          }
+        }
+      },
+      "campaign": "vesperhold",
+      "carrier": {
+        "code": "DW0917",
+        "kind": "dw"
+      },
+      "finding": "an armoury designed as one real chest among false trapped chests is built as a row of fence gates, so nothing standing at the traps' cells reads as a chest at all",
+      "general_form": "the cell a trap arms holds the hardware the trap declares, so a trap declared as a trapped chest is a trapped chest in the built world and the party can tell it from scenery",
+      "id": "vh-10",
+      "note": "`DW0917` is the carrier: a `traps[]` entry's `trigger` names a kind of hardware -- `pressure-plate` (any `minecraft:*_pressure_plate`), `tripwire` (the string, not the hook), `trapped-chest` -- and the cell of its `at` anchor in the assembled world, the edited one where a stage-7 script exists, is refused at build tier when it holds something else. The prefab places the trigger and the compiler only detects it -- a plate or tripwire by a position test, a trapped chest by an invisible interaction hitbox -- and neither detection needs the block, so before this check a trap over the wrong block, or over empty air, compiled and passed its completability proofs while showing the player nothing of what it claimed to be. Design material this row carries, so a later round transcribes rather than re-invents it: among false chests the one real chest holds gear worth the search and is never empty. `DW0431` proves a declared loot fill lands in a real fillable container and says nothing about what a trap's own trigger is; `DW0435` refuses two fills of one container. Neither reaches this class. The binding counts a trap by the trigger kind it declares, which is the object itself, so a campaign with no trap is INAPPLICABLE. Measured on this campaign: 2 traps, of which `trap/false-chest` is the one declaring `trigger: trapped-chest`, beside 2 `loot` fills, of 869 nodes in `quests.json`.",
+      "round": 1,
+      "triage": "capability"
+    },
+    {
+      "campaign": "vesperhold",
+      "carrier": null,
+      "disposition": "no-machine-form",
+      "finding": "a wooden structure standing by the gate reads as no particular thing: a player in front of it cannot say what it is meant to be",
+      "general_form": "none: whether built geometry reads as the thing it depicts is a perceptual judgement",
+      "id": "vh-11",
+      "justification": "Same class as `isl-25` and `isl-26`: how a built thing reads to a person standing in front of it is perception, not geometry. The instrument is the review loop, which is a staging step and not a gate -- `DW0900` assembles the built world and the design set its gate approved into one comparison so a disagreement is visible, and a person judges it. The structure in this campaign is around `[90, 80, 147]`. Standing content-QC item.",
+      "round": 1,
+      "triage": "content"
+    },
+    {
+      "campaign": "vesperhold",
+      "carrier": null,
+      "disposition": "no-machine-form",
+      "finding": "a designed tree is too bare to read as a tree: its canopy carries too little leaf for the trunk under it",
+      "general_form": "none: how full a tree reads is a perceptual judgement",
+      "id": "vh-12",
+      "justification": "The machine asserts quantity over a DECLARED domain -- `DW0864` states what every placement verb declared and delivered and refuses an unambiguous shortfall, and the generators carry the same assertion, which is `hv-10` -- but a tree built block by block declares no count to fall short of, and 'full enough to read as a tree' is not a number. The tree in this campaign is around `[31, 80, 76]`. Judged on the review loop alongside `vh-11`. Standing content-QC item.",
+      "round": 1,
+      "triage": "content"
+    },
+    {
+      "campaign": "vesperhold",
+      "carrier": null,
+      "disposition": "no-machine-form",
+      "finding": "the areas off the main line hold nothing to find: a party that leaves the critical path is given no reason to have left it",
+      "general_form": "none: what a side area is worth is a design judgement",
+      "id": "vh-13",
+      "justification": "Same class as `isl-45`: whether a walk is worth making is a design judgement, and the machine can prove a route exists but never that anyone should take it. This row carries the design material that answers it, so a later round transcribes rather than re-invents: off-main-line exploration and combat are what a souls delve is made of, at a density referenced against the genre's own rather than chosen freshly; side areas carry bodies worth farming for currency and optional side bosses that drop high-tier gear; every set piece owes its own idea rather than a repeat of the last one -- for one example, a conspicuous body held in place by terrain, so a party fixed on it is taken from behind; and a merchant selling mid-tier weapons and enchanted books stands beside an anvil. Filler consumables are not content. Standing content-QC item.",
+      "round": 1,
+      "triage": "content"
+    },
+    {
+      "campaign": "vesperhold",
+      "carrier": null,
+      "disposition": "no-machine-form",
+      "finding": "a pocket off the main line stands empty where the ground around it is shaped for a set-piece fight",
+      "general_form": "none: where a set piece goes is a design statement",
+      "id": "vh-14",
+      "justification": "An instance of `vh-13`'s class, kept as its own row because it names a particular place rather than the class: the ground around `[153, 80, 135]` in this campaign is shaped for an optional boss and holds none. Where a set piece goes is the design's own statement and no compiler derives it. Standing content-QC item.",
+      "round": 1,
+      "triage": "content"
     }
   ],
   "ledger_version": "2026-08-11"
