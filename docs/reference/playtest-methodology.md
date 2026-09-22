@@ -245,7 +245,7 @@ glob, an `artifact` or `out` probe over derived output) — that zero is
 genuinely ambiguous, it is the floor gate's shape, and a row of that shape
 owes a probe. Or the binding's OWN SHAPE, where the probe counts the object
 class itself and nothing stands one step behind it: a `dsl` predicate
-selecting by identity (`eq`/`in`/`prefix`, or an `any_of` every arm of which is
+selecting by identity (`eq`/`in`/`prefix`, with `not_in` excluding values, or an `any_of` every arm of which is
 one of those) across the declared design,
 and a `campaign` glob with no `contains`, where the file IS the object. Such a
 row may not declare an `applies_when` at all — it could only name its own
