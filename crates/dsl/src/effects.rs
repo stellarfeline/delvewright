@@ -65,6 +65,7 @@
 //! [`for_each_effect_root`].
 
 use crate::envelope::Campaign;
+use crate::fight::Fight;
 use crate::stages::{EnvTrigger, Quest, QuestEffect, Shop, Shortcut, Trap};
 
 /// The local part of a type-prefixed id (`npc/keeper` → `keeper`), the segment
@@ -117,12 +118,19 @@ pub enum EffectRootKind {
     /// dispatch — the same hardware a bonfire rest runs on. Desugaring it into a
     /// `use` trigger would put two independent detectors on one right-click.
     ShopOffer,
+    /// A wave's or an actor's `on_kill` bundle (spec-0074) — what happens each
+    /// time a player is credited with killing one of the fight's bodies, run as
+    /// that player. A root rather than sugar for the reason R8 is: it hangs off an
+    /// object with runtime machinery of its own (the `player_killed_entity`
+    /// advancement over the fight's tag). Visited only where declared, so
+    /// `unbound_roots` tells the truth about a campaign with none.
+    OnKill,
 }
 
 impl EffectRootKind {
     /// Every root, in enumeration order. Not the *visit* order — see
     /// [`for_each_effect_root`], which interleaves R1/R2 per quest.
-    pub const ALL: [EffectRootKind; 8] = [
+    pub const ALL: [EffectRootKind; 9] = [
         EffectRootKind::ObjectiveComplete,
         EffectRootKind::QuestComplete,
         EffectRootKind::Trigger,
@@ -131,6 +139,7 @@ impl EffectRootKind {
         EffectRootKind::ShortcutUnlock,
         EffectRootKind::OnDeath,
         EffectRootKind::ShopOffer,
+        EffectRootKind::OnKill,
     ];
 
     /// How many roots there are. The binding ledger reports coverage against this.
@@ -145,7 +154,8 @@ impl EffectRootKind {
             | EffectRootKind::TrapPayload
             | EffectRootKind::ShortcutUnlock
             | EffectRootKind::OnDeath
-            | EffectRootKind::ShopOffer => "quests",
+            | EffectRootKind::ShopOffer
+            | EffectRootKind::OnKill => "quests",
             EffectRootKind::DialogueRespawn => "dialogue",
         }
     }
@@ -188,7 +198,9 @@ impl EffectRootKind {
             // A shop offer's handler is dispatched `as @a[scores={…}]`, so the
             // choosing player IS the acting player — which is what makes a
             // `player`-scoped purse debitable from a purchase.
-            | EffectRootKind::ShopOffer => true,
+            | EffectRootKind::ShopOffer
+            // A kill's reward runs as the player the kill was credited to.
+            | EffectRootKind::OnKill => true,
             EffectRootKind::Trigger
             | EffectRootKind::TrapPayload
             | EffectRootKind::ShortcutUnlock => false,
@@ -207,6 +219,7 @@ impl EffectRootKind {
             EffectRootKind::ShortcutUnlock => "shortcut on_unlock",
             EffectRootKind::OnDeath => "campaign on_death",
             EffectRootKind::ShopOffer => "shop offer effects",
+            EffectRootKind::OnKill => "fight on_kill",
         }
     }
 }
@@ -260,6 +273,11 @@ pub enum EffectRootOwner<'a> {
     /// button, so it has no step of its own and is **optional**: nobody is forced
     /// to buy anything. Carries the shop; the offer index is in the site's `path`.
     ShopOffer(&'a Shop),
+    /// A wave's or an actor's `on_kill` (spec-0074) — fired by a player being
+    /// credited with a kill, so it has no step of its own and is **optional**:
+    /// nobody is forced to be credited with a kill (a body may fall, burn or be
+    /// cut down by another mob). Carries the fight.
+    OnKill(Fight<'a>),
 }
 
 impl<'a> EffectRootOwner<'a> {
@@ -274,6 +292,7 @@ impl<'a> EffectRootOwner<'a> {
             EffectRootOwner::ShortcutUnlock(_) => EffectRootKind::ShortcutUnlock,
             EffectRootOwner::OnDeath => EffectRootKind::OnDeath,
             EffectRootOwner::ShopOffer(_) => EffectRootKind::ShopOffer,
+            EffectRootOwner::OnKill(_) => EffectRootKind::OnKill,
         }
     }
 
@@ -305,7 +324,8 @@ impl<'a> EffectRootOwner<'a> {
             | EffectRootOwner::DialogueRespawn
             | EffectRootOwner::ShortcutUnlock(_)
             | EffectRootOwner::OnDeath
-            | EffectRootOwner::ShopOffer(_) => None,
+            | EffectRootOwner::ShopOffer(_)
+            | EffectRootOwner::OnKill(_) => None,
         }
     }
 }
@@ -455,6 +475,9 @@ macro_rules! effect_root_walk {
         shortcut_owner: |$s:ident| $owns:expr,
         death_owner: $ownx:expr,
         shop_owner: |$h:ident| $ownh:expr,
+        opt: $opt:ident,
+        wave_owner: |$w:ident| $ownw:expr,
+        actor_owner: |$a:ident| $owna:expr,
     ) => {{
         #[allow(unused_mut)]
         let mut visit = $visit;
@@ -589,6 +612,36 @@ macro_rules! effect_root_walk {
                 );
             }
         }
+        // R9 `waves[].on_kill` then `actors[].on_kill` (spec-0074) — appended after
+        // R8, and visited only where a fight declares a bundle, so a campaign
+        // with none keys and emits byte-identically and `RootBinding` can say it
+        // has none. The key is the fight's own (`wave.<id>.on_kill`,
+        // `actor.<id>.on_kill`): the bundle belongs to the body, not to a beat.
+        note(EffectRootKind::OnKill);
+        for (wi, $w) in $c.quests.content.waves.$iter().enumerate() {
+            let wl = local($w.id.as_str()).to_string();
+            let owner = $ownw;
+            if let Some(ok) = $w.on_kill.$opt() {
+                visit(
+                    (EffectRootKind::OnKill, owner, None),
+                    format!("/content/waves/{wi}/on_kill/effects"),
+                    format!("wave.{wl}.on_kill"),
+                    ok.effects.$slice(),
+                );
+            }
+        }
+        for (ai, $a) in $c.quests.content.actors.$iter().enumerate() {
+            let al = local($a.id.as_str()).to_string();
+            let owner = $owna;
+            if let Some(ok) = $a.on_kill.$opt() {
+                visit(
+                    (EffectRootKind::OnKill, owner, None),
+                    format!("/content/actors/{ai}/on_kill/effects"),
+                    format!("actor.{al}.on_kill"),
+                    ok.effects.$slice(),
+                );
+            }
+        }
     }};
 }
 
@@ -603,6 +656,7 @@ enum RawOwner<'a> {
     Shortcut(&'a Shortcut),
     Death,
     Shop(&'a Shop),
+    Fight(Fight<'a>),
 }
 
 impl<'a> RawOwner<'a> {
@@ -628,6 +682,7 @@ impl<'a> RawOwner<'a> {
             }
             (RawOwner::Death, EffectRootKind::OnDeath) => EffectRootOwner::OnDeath,
             (RawOwner::Shop(h), EffectRootKind::ShopOffer) => EffectRootOwner::ShopOffer(h),
+            (RawOwner::Fight(f), EffectRootKind::OnKill) => EffectRootOwner::OnKill(f),
             (owner, kind) => unreachable!(
                 "effect root {kind:?} was handed an owner of the wrong shape ({})",
                 match owner {
@@ -638,6 +693,7 @@ impl<'a> RawOwner<'a> {
                     RawOwner::Shortcut(_) => "shortcut",
                     RawOwner::Death => "on_death",
                     RawOwner::Shop(_) => "shop",
+                    RawOwner::Fight(_) => "fight",
                 }
             ),
         }
@@ -689,6 +745,7 @@ pub fn for_each_effect_root<'a>(
         (EffectRootKind::ShortcutUnlock, 0usize),
         (EffectRootKind::OnDeath, 0usize),
         (EffectRootKind::ShopOffer, 0usize),
+        (EffectRootKind::OnKill, 0usize),
     ];
     debug_assert_eq!(
         sites.map(|(k, _)| k),
@@ -740,6 +797,9 @@ pub fn for_each_effect_root<'a>(
         shortcut_owner: |s| RawOwner::Shortcut(s),
         death_owner: RawOwner::Death,
         shop_owner: |h| RawOwner::Shop(h),
+        opt: as_ref,
+        wave_owner: |w| RawOwner::Fight(Fight::Wave(w)),
+        actor_owner: |a| RawOwner::Fight(Fight::Actor(a)),
     );
 
     let missed: Vec<&str> = EffectRootKind::ALL
@@ -801,6 +861,9 @@ pub fn for_each_effect_root_mut<'a>(c: &'a mut Campaign, f: &mut RootVisitorMut<
         shortcut_owner: |_s| (),
         death_owner: (),
         shop_owner: |_h| (),
+        opt: as_mut,
+        wave_owner: |_w| (),
+        actor_owner: |_a| (),
     );
 }
 
@@ -823,6 +886,7 @@ mod tests {
                 (EffectRootKind::ShortcutUnlock, 0),
                 (EffectRootKind::OnDeath, 0),
                 (EffectRootKind::ShopOffer, 0),
+                (EffectRootKind::OnKill, 0),
             ],
             effects: 0,
         };

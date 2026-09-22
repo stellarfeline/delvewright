@@ -238,15 +238,37 @@ pub fn check_functions(ns: &str, functions: &BTreeMap<String, String>) -> Result
 pub fn check_tree(ns: &str, out: &BTreeMap<String, Vec<u8>>) -> Result<(), Failure> {
     let mut functions: BTreeMap<String, String> = BTreeMap::new();
     for (path, bytes) in out {
-        if !path.ends_with(".mcfunction") || Tier::of(path).is_none() {
+        if Tier::of(path).is_none() {
             continue;
         }
         let Ok(body) = std::str::from_utf8(bytes) else {
             continue;
         };
-        functions.insert(path.clone(), body.to_string());
+        if path.ends_with(".mcfunction") {
+            functions.insert(path.clone(), body.to_string());
+        } else if let Some(call) = advancement_reward_call(path, body) {
+            functions.insert(path.clone(), call);
+        }
     }
     check_functions(ns, &functions)
+}
+
+/// An advancement's `rewards.function` as the call it is, or `None` for any
+/// other artifact.
+///
+/// An advancement reward is a call site like any `function <ns>:<name>` line:
+/// vanilla runs it when the advancement is granted, and resolves an unknown
+/// name to nothing, silently. So the reward is read here as the one-line body
+/// `function <reward>` under the advancement's own path, and the same
+/// resolution judges it — a kill advancement whose reward was never emitted is
+/// a dangling call, not a different defect.
+fn advancement_reward_call(path: &str, body: &str) -> Option<String> {
+    if !path.ends_with(".json") || !path.contains("/advancement/") {
+        return None;
+    }
+    let value: serde_json::Value = serde_json::from_str(body).ok()?;
+    let reward = value.get("rewards")?.get("function")?.as_str()?;
+    Some(format!("function {reward}\n"))
 }
 
 #[cfg(test)]

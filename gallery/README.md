@@ -70,6 +70,18 @@ purpose — `anchor/hearth` is where you come back to life, `anchor/muster` is
 where a wave forms up — and the generator prints a one-line `note` beside each
 one, so the piece explains itself without the campaign in hand.
 
+Four fights pay for their kills (`on_kill`, spec-0074), one of each shape the
+bundle takes, and each writes a datum the hall already reads: `wave/muster`
+comes back after every rest and pays `every-kill` into the killer's `tokens`;
+`wave/lane`, the boss lane, is re-seated only while it stands and pays
+`first-kill` into the party's `bounty` purse; `actor/hall-moth` pays
+`first-kill` into the killer's `keepsake`; and `wave/edge`, which nothing seats
+twice, states no `fires` and pays the killer's `relics`, with a chime gated on
+the bounty — the bounty's only reader. The generated `kill_pays_*` templates run
+each one on the pinned server with a PackTest dummy credited by vanilla's own
+`player_killed_entity`, beside a death nobody is credited with, every compiler
+removal, and a rest.
+
 One place in the hall is found rather than named, and it is the only one: the
 cell a body arrives at. `anchor/arrival` is named like every other place and is
 the entry because it declares the entry **role**; ten cells down the same floor
@@ -115,6 +127,9 @@ holding them at once.
 | `two-bodies-on-one-mark` | `DW0896` | `build` | taking the page's offset away, so it is summoned onto the usher's own cell while the usher is still standing on it |
 | `an-offset-out-of-the-room` | `DW0897` | `build` | writing the page's offset from the usher as forty cells instead of four, past the hall's east wall |
 | `a-chestplate-on-a-horse` | `DW0898` | `validate` | putting a chestplate on the barded horse, which the server stores and the client never draws |
+| `a-kill-nobody-can-be-credited-with` | `DW0913` | `validate` | paying for the kill of the usher, who is never unleashed and not `vulnerable`, so no player can ever be credited with killing him |
+| `every-kill-on-a-fight-that-never-comes-back` | `DW0914` | `validate` | saying the bay's lone skeleton pays `every-kill`, when nothing ever seats it twice |
+| `a-fight-that-comes-back-with-no-judgement` | `DW0915` | `validate` | removing `fires` from the muster's bundle, when every rest brings the muster back |
 
 **A probe is the primary plus one declared edit.** It carries no copy of any
 document the primary already holds; what it perturbs is written out in its own
@@ -253,17 +268,21 @@ climb, a wall to fly over) rather than a declaration. The hall's one vertical
 route is the mezzanine's broken flight, and no body walks it — the climb is a
 player's, so it settles nothing about a declared locomotion.
 
-**A wave nothing fires still gets its kill advancement.** All of a wave's
+**A wave nothing fires still got its kill advancement.** All of a wave's
 machinery — `spawn_<wave>`, the census probe, the brand, the kill reward — is
 gated on the wave resolving a spawn AREA, which it does only through an effect
-that fires it. `advancement/k_<wave>.json` is not: it is emitted for every
-declared wave, and its `rewards.function` names the `k_reward_<wave>` a wave
+that fires it. `advancement/k_<wave>.json` was not: it was emitted for every
+declared wave, and its `rewards.function` named the `k_reward_<wave>` a wave
 nothing fires never gets. *Attribution:* the gallery's `wave/edge` was declared
 and fired by nothing, and the build shipped `k_edge.json` pointing at a
 function that was not in the pack; arming the wave produced the function and
-five more beside it. *State:* not fixed. The gallery no longer holds the shape,
-which is why arming `wave/edge` rather than deleting it was the fix — the
-element now exercises `WaveSummon::aggro-edge` instead of merely naming it.
+five more beside it. *State:* fixed. `DW0497` reads an advancement's reward as
+a call site, and `k_<wave>` is emitted behind the same gate as its reward;
+`call_graph_integrity`'s `every_reward_names_a_function_that_exists` builds a
+wave nothing seats and asserts no kill advancement ships for it. The gallery no
+longer holds the shape, which is why arming `wave/edge` rather than deleting it
+was the fix — the element now exercises `WaveSummon::aggro-edge` instead of
+merely naming it.
 
 None of the four was found by reading code. Each was found by trying to write the
 surface down.

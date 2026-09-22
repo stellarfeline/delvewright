@@ -8,6 +8,16 @@
         "facing": "west",
         "id": "actor/hall-moth",
         "name": "The Hall Moth",
+        "on_kill": {
+          "effects": [
+            {
+              "amount": 1,
+              "state": "state/keepsake",
+              "type": "add-state"
+            }
+          ],
+          "fires": "first-kill"
+        },
         "tier": "boss",
         "vulnerable": true
       },
@@ -2632,6 +2642,13 @@
         "name": "Keepsake",
         "note": "A wager a death does not touch, which is what makes the other three legible.",
         "scope": "player"
+      },
+      {
+        "id": "state/bounty",
+        "initial": 0,
+        "name": "Bounty",
+        "note": "What the lane's kills pay into. Party-scoped, so one kill pays the party once, whoever lands it; the bay's kill rings when the bounty is already paid.",
+        "scope": "party"
       }
     ],
     "timed_gates": [
@@ -2996,6 +3013,16 @@
             "name": "Muster Stray"
           }
         ],
+        "on_kill": {
+          "effects": [
+            {
+              "amount": 1,
+              "state": "state/tokens",
+              "type": "add-state"
+            }
+          ],
+          "fires": "every-kill"
+        },
         "respawns_on_rest": true,
         "summon": "anchor",
         "tier": "elite"
@@ -3020,6 +3047,16 @@
             "name": "Lane Pillager"
           }
         ],
+        "on_kill": {
+          "effects": [
+            {
+              "amount": 1,
+              "state": "state/bounty",
+              "type": "add-state"
+            }
+          ],
+          "fires": "first-kill"
+        },
         "respawns_on_rest": false,
         "tier": "boss"
       },
@@ -3035,11 +3072,36 @@
             "entity": "minecraft:skeleton"
           }
         ],
+        "on_kill": {
+          "effects": [
+            {
+              "amount": 1,
+              "state": "state/relics",
+              "type": "add-state"
+            },
+            {
+              "at": {
+                "at": "players"
+              },
+              "sound": "minecraft:entity.experience_orb.pickup",
+              "type": "play-sound",
+              "when": {
+                "requires_state": [
+                  {
+                    "op": "at-least",
+                    "state": "state/bounty",
+                    "value": 1
+                  }
+                ]
+              }
+            }
+          ]
+        },
         "summon": "aggro-edge",
         "tier": "ordinary"
       }
     ]
   },
-  "dsl_version": "0.30.0",
+  "dsl_version": "0.32.0",
   "stage": "quests"
 }

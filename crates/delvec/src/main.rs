@@ -786,6 +786,9 @@ fn validate_loaded(
             // charges it counts, the `(list, datum)` pairs they bind, and the
             // effect lists walked as the denominator.
             examined.push(delvewright_dsl::PurchaseBinding::of(&campaign).line());
+            // spec-0074: what the `on_kill` rules examine — fights carrying a
+            // bundle over fights declared, and how many of them come back.
+            examined.push(delvec::compiler::onkill::OnKillBinding::of(&campaign).line());
             // Prefab-library load failures (DW0346): a metadata file that did
             // not parse (e.g. newer schema than this delvec) is a first-class
             // validation diagnostic, never a silent skip that resurfaces later
@@ -856,6 +859,11 @@ fn validate_loaded(
             // v0.8 seal answers (DW0423): one gate anchor, one `sealed_hint`
             // wording. No-op for a campaign that authors none.
             diags.extend(delvec::compiler::gates::check_seal_hints(&campaign));
+            // spec-0074 §8.2/§8.3: `on_kill.fires` is owed where a fight comes back
+            // (DW0915) and inert where it does not (DW0914). Compiler-side because
+            // "comes back" reads the rest points; validation tier. No-op for a
+            // campaign that declares no `on_kill`.
+            diags.extend(delvec::compiler::onkill::check_on_kill_fires(&campaign));
             // NPC location-continuity lint (DW0351). Advisory tier — a warning
             // names a staging discontinuity (an NPC materializing or vanishing
             // away from where it was last staged) but never fails the run:

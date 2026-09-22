@@ -67,6 +67,10 @@
      and never swings back), and for a tiered wave no critical-path `kill`
      objective names. If you meant it as a fight, add the unleash or the `kill`
      objective; if you meant it as set dressing, drop the tier.
+  6. *A fight that comes back owes a `fires` judgement*: an `on_kill` on a wave or
+     actor that a rest re-seats, or whose seating beat can fire again, is refused
+     without `fires`, and `every-kill` on one that never comes back is refused as
+     inert — the build names the fight and what brings it back.
   Ordinary fights run the ladder under a bounded, logged combat assist, so bot
   fencing skill never caps how hard the delve is allowed to be.
 ## Bonfires, flasks and potions

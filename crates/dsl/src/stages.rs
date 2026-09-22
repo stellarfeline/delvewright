@@ -3020,6 +3020,51 @@ pub struct Wave {
     /// `respawns_on_rest` at once.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tier: Option<EncounterTier>,
+    /// What happens each time a player is credited with killing one of this
+    /// wave's bodies (spec-0074) — effect root R9, the same
+    /// [`OnKill`] an actor declares. Absent = no bundle, and the
+    /// wave's emission is byte-identical.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub on_kill: Option<OnKill>,
+}
+
+/// What happens each time a body of this fight is killed (spec-0074): the
+/// `on_kill` of a wave or an actor.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct OnKill {
+    /// Whether a body that comes back pays again. Required where the fight comes
+    /// back after the party has met it — a bonfire re-seats it, or the beat that
+    /// seats it can fire more than once (`DW0915`); left off where it does not,
+    /// and `every-kill` there is refused as inert (`DW0914`). No default: whether
+    /// an economy can be farmed is the creator's judgement.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fires: Option<KillFires>,
+    /// The effects, run as the credited player for each credited kill. Every verb
+    /// an `on_objective_complete` bundle accepts, each gated by its own `when`.
+    #[schemars(length(min = 1))]
+    pub effects: Vec<QuestEffect>,
+}
+
+/// Whether a body that comes back after a rest pays again (spec-0074 §4).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+pub enum KillFires {
+    /// Over the whole delve the fight pays at most once per body it seats — the
+    /// wave's body count, or once for an actor. A re-seat does not renew it.
+    FirstKill,
+    /// Every credited kill pays, however many times the fight is re-seated.
+    EveryKill,
+}
+
+impl KillFires {
+    /// The kebab token, as it appears in the DSL.
+    pub fn token(self) -> &'static str {
+        match self {
+            KillFires::FirstKill => "first-kill",
+            KillFires::EveryKill => "every-kill",
+        }
+    }
 }
 
 /// What a wave is billed as (DSL v0.7, spec-0023). Consumed by the validation
@@ -4167,6 +4212,12 @@ pub struct Actor {
     /// is set).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub traversal: Option<BodyTraversal>,
+    /// What happens each time a player is credited with killing this actor's
+    /// body (spec-0074) — effect root R9, the same [`OnKill`] a
+    /// wave declares. Absent = no bundle, and the actor's emission is
+    /// byte-identical.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub on_kill: Option<OnKill>,
 }
 
 /// A cardinal facing keyword (DSL v0.6). Emitted as the puppet's spawn yaw
@@ -7575,6 +7626,12 @@ pub enum EffectSite {
     /// The campaign's `on_death` bundle (spec-0031) — ambient, no DAG position,
     /// and no owning object: there is one per campaign.
     OnDeath,
+    /// A wave's or an actor's `on_kill` bundle (spec-0074) — ambient, no DAG
+    /// position: nobody is forced to be credited with a kill.
+    OnKill {
+        /// The fight's id (`wave/<kebab>` or `actor/<kebab>`).
+        fight: String,
+    },
 }
 
 impl EffectSite {
@@ -7601,7 +7658,8 @@ impl EffectSite {
             | EffectSite::DialogueRespawn { .. }
             | EffectSite::ShortcutUnlock { .. }
             | EffectSite::ShopOffer { .. }
-            | EffectSite::OnDeath => None,
+            | EffectSite::OnDeath
+            | EffectSite::OnKill { .. } => None,
         }
     }
 }
@@ -7666,6 +7724,9 @@ pub fn for_each_campaign_effect<'a>(
                     .nth(5)
                     .and_then(|n| n.parse().ok())
                     .unwrap_or(0),
+            },
+            crate::effects::EffectRootOwner::OnKill(f) => EffectSite::OnKill {
+                fight: f.id().to_string(),
             },
         };
         for (i, eff) in list.iter().enumerate() {
