@@ -71,8 +71,9 @@
      actor that a rest re-seats, or whose seating beat can fire again, is refused
      without `fires`, and `every-kill` on one that never comes back is refused as
      inert — the build names the fight and what brings it back.
-  Ordinary fights run the ladder under a bounded, logged combat assist, so bot
-  fencing skill never caps how hard the delve is allowed to be.
+  The ladder never fights: at a combat step it reads the wave's live bodies
+  against your declaration and then removes them, so bot skill caps nothing about
+  how hard the delve is allowed to be.
 ## Bonfires, flasks and potions
 
 - **Bonfires owe the party a flask.** Right-clicking a `bonfire` opens exactly two

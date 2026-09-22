@@ -24,16 +24,21 @@ project-scoped, so two ladders can never overwrite each other's.
   `critical-path` and `die-retry`. The die-retry stage adds two scripted deaths
   per encounter, so a combat-heavy delve needs a larger timeout than the
   20-minute default: `DELVEWRIGHT_RUN_TIMEOUT_MS=2400000` on the command.
-- **Read the `floor_gate` block every time.** It is the compiler's coverage
-  ledger. `not_covered` names each fight the delve bills `elite`/`boss` that the
-  gate cannot measure, with the reason — an empty findings list over an
-  uncovered elite is silence, not a pass. **`covered`, `not_covered` and
-  `actors[]` all empty is the worst case, not the best**: it means no body in the
-  campaign declares a tier, the gate examined nothing, and it would have been
-  green no matter what you shipped. Report that as **unbound**, never as a pass.
-- An **empty `assist_windows`** is not evidence of anything on its own — read
-  the `encounters` block beside it, which states each encounter's assist policy
-  and the phase the run reached. Expect several windows per encounter.
+- **Read the `encounters` block every time.** At a combat step the ladder reads
+  the wave's LIVE bodies against what your document declared — count, health,
+  attack damage, armour from the gear, the name over its head — and only then
+  removes them so the run can go on. `muster.failures` is a delve that is not the
+  document: an attribute or a piece of equipment that never reached the body, with
+  the body's own reading beside it. It reds the run, and the fix is in the
+  campaign, never in the ladder.
+- **`declared_facts: 0` is the worst case, not the best**: the muster asked the
+  bodies nothing, and the step would have been green whatever you shipped. Report
+  that as **unbound**, never as a pass. `muster: null` means the step never got as
+  far as reading, which is again not a pass.
+- **The ladder does not fight, and says nothing about whether a fight can be
+  won.** `staged_removals` lists every body the HARNESS took out of the delve and
+  why; it is the harness acting, not your delve behaving. Whether the delve is too
+  hard is the owner's hour.
 - Reading one death trial: `respawn_pos` is where the bot actually came back and
   `at_checkpoint` is derived from it; `returned` is the walk back from exactly
   there. `re_engaged` and `outcome` are observed ONLY when `returned` — a trial
