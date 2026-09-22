@@ -121,6 +121,29 @@ upstream has it, and it is not part of the FDG '22 formulation.
 |---|---|---|
 | [skinview3d](https://github.com/bs-community/skinview3d) | MIT | **Not adopted.** spec-0009 anticipated a "skinview3d-lineage, Node" preview renderer, but skinview3d is browser-only (three.js/WebGL); a headless build needs a fragile native-GL stack whose output varies across GPU drivers — contradicting the "produced deterministically" acceptance criterion. `skinpy-extended`'s pure-Python isometric renderer serves the verify loop deterministically, so no WebGL dependency was added. |
 
+## Consulted, ideas only (the face at 8x8)
+
+Where the features of a human face go on an 8×8 Minecraft head front is settled
+in [`docs/reference/face-craft.md`](reference/face-craft.md) against established
+practice. **Nothing here is adopted, ported, vendored or copied** — these are
+prose tutorials read for their rules, and rules about where a mouth goes are not
+copyrightable. No image, asset or source file from any of them is in this
+repository.
+
+| Source | What we took |
+|---|---|
+| [BlockSkinLab, *How to Add Eyes, a Mouth, and a Face to a Minecraft Skin*](https://www.blockskinlab.com/blog/how-to-add-eyes-to-minecraft-skin/) | Eyes on one row in the upper-middle with a forehead row kept above them; the mouth one or two rows below the eyes; two adjacent dark pixels merging into a visor or nose |
+| [PlanetMinecraft, *The Science of Skinning: Head and Face Design*](https://www.planetminecraft.com/blog/the-science-of-skinning-head-and-face-design/) | The top rows of the grid are masked by hair; light comes from above and one side; very light corner shading reads wrong in play |
+| [DinowCookie, *Human anatomy: tips and tricks for shading human skins*](https://www.planetminecraft.com/blog/dinow-s-tutorials-part-5-human-anatomy-tips-and-tricks-for-shading-humans-skins/) | A 1×2 mouth in a dark shade; darkening around the chin to round the head; shading under the hairline where there is a fringe |
+| [Envato Tuts+, *How to Create a Minecraft Skin in Adobe Illustrator*](https://design.tutsplus.com/tutorials/how-to-create-a-minecraft-skin-in-adobe-illustrator--cms-30831) | The mouth as a 2×1 rectangle, centred, one pixel from the bottom edge of the face |
+| [Saint11 (Pedro Medeiros), *Basic Shading*](https://saint11.art/pixel_art_articles/article4/) | Pillow shading — darkening an outline uniformly instead of lighting from a direction — as the trap to avoid when tapering a jaw |
+
+**The vanilla default player skins are Mojang's assets and are not adopted
+either.** `docs/reference/face-craft.md` records counts measured over them — which
+row holds the eyes, how wide the mouth is, how dark a chin corner is relative to
+the cheek beside it. Those are facts about the game. No hex value from them
+appears in any file in this repository, and no default skin is redistributed.
+
 ## Block palette selection (spec-0035)
 
 The palette layer's measurement is this repo's own, over its own pinned data.
