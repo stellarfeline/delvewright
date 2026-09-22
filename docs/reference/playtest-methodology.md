@@ -41,6 +41,50 @@ eight engine PRs, and the "fix the twin, not just the instance the owner stood
 on" lesson was already written down in round 9. Both were in place while the
 churn continued.
 
+## What the ladder asserts at a combat encounter
+
+**The machine verifies mechanism. It does not fight, and it makes no claim about
+whether a fight can be won.** Whether a delve is too hard or too easy is the
+owner's hour: the gap between a skilled and an unskilled Minecraft fighter is
+design material, and a bot's fencing is not a measurement of it. Every earlier
+attempt to have the ladder hold an opinion here produced advisories that read as
+mechanism defects and were not.
+
+A `kill` step does three things, in order, and only the first is a measurement.
+
+1. **The muster.** `wave_muster_<wave>` is called and every live body of the wave
+   states its own `max_health`, `armor`, `armor_toughness`, `movement_speed`,
+   `attack_damage` and `follow_range`, plus a bitmask of the identity facts that
+   hold on it — its `CustomName` component and each declared `equipment.<slot>`
+   item, answered by the SERVER through `execute if data`. A declared attribute is
+   read with `attribute … base get`, because `attribute … get` is the total after
+   a weapon's modifier and vanilla's own random spawn bonus. The harness compares
+   the multiset of what it read against the multiset the plan declares. A
+   declaration the bodies CONTRADICT fails the `critical-path` stage; a muster
+   that found nothing standing is a finding, because the declaration is then
+   unverified rather than wrong.
+2. **The staged clear.** `wave_strike_<wave>` fells one body per call until the
+   census says nothing of the wave stands. This is staging and the run artifact
+   says so: every removal is in `staged_removals` with its reason. The blow is
+   `player_attack by @p` and never `kill`, because `on_kill`, the wave countdown
+   and a declared drop all pay on a PLAYER's kill.
+3. **The wiring the kill drives**, unchanged: the objective completing, `on_kill`
+   paying, the declared drops dropping, the health bar, the re-seat, and the walk
+   to the anchor that proves the route.
+
+spec-0023 §1's **die-retry** stage is untouched and is still the load-bearing bot
+proof: scripted deaths, respawn at the governing checkpoint, a walkable route
+back, an encounter that re-engages, no progression lost. It runs between the
+reading and the clear, and its own bodies are never staged away — they are the
+subject. A die-retry stage that cannot finish reds on its own coverage and does
+not end the run: suppressing every measurement behind one fight is how a ladder
+learns least from a red.
+
+**The binding count.** `encounters[].declared_facts` is how many declared facts
+the muster put a question to, stated per encounter even when the muster never
+ran; `muster_findings` is what it could not establish. Zero declared facts over a
+campaign with waves is an unbound probe, and the run says so before it starts.
+
 ## Rule 1 — a green gate that binds to nothing must report VACUOUS, not pass
 
 Most of the early "green" was vacuous. Three distinct ways this happens, all
