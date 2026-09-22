@@ -442,8 +442,8 @@ export function releaseSwing(opts: {
  * `horizontal_blocking_angle`, a 180-degree arc. Against one attacker the bot's
  * own aim covers it. Against a crowd it cannot: measured in the vesperhold great
  * hall against five bodies, a probe that never swung and turned to the nearest
- * Guard every 100 ms still blocked only 52% of the blows that reached it
- * (9.75 of 18.75 per fight, N = 4), because the rest arrive from behind.
+ * Guard every 100 ms still blocked only 49% of the blows that reached it
+ * (8.75 of 17.74 per fight, N = 4), because the rest arrive from behind.
  */
 export function guardUp(opts: {
   readonly shieldUsable: boolean;
@@ -488,7 +488,7 @@ export function jumpForCrit(opts: {
  * objective a run can create and read, and this tally does not read it. So
  * `hitsTaken` counts the blows the shield did NOT stop, `damageTaken` is what
  * reached the body after armour and the assist, and neither says how hard the
- * fight was swinging: a line reading "took 6 hit(s), 17.4 damage" was measured
+ * fight was swinging: a line reading "took 7 hit(s), 19.6 damage" was measured
  * in a Guard fight the server had recorded as 8 blows landed for 23.2 damage
  * and 4 more taken on the shield.
  */
