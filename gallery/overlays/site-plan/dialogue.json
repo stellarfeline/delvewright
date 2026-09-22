@@ -82,6 +82,6 @@
       }
     ]
   },
-  "dsl_version": "0.30.0",
+  "dsl_version": "0.31.0",
   "stage": "dialogue"
 }

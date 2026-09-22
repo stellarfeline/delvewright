@@ -76,6 +76,17 @@ fn every_tier_keyword_validates_at_v07() {
             ",\n         \"tier\": \"{tier}\""
         )));
         let d = check_campaign(&raw);
-        assert!(d.is_empty(), "`{tier}` must validate clean: {d:#?}");
+        // spec-0073: a `boss`-billed fight with no `health_bar` is ADVISED —
+        // one `DW0912` warning, and nothing else; no other tier is named.
+        let advised = usize::from(tier == "boss");
+        assert_eq!(
+            d.iter().filter(|x| x.code == "DW0912").count(),
+            advised,
+            "`{tier}`: {d:#?}"
+        );
+        assert!(
+            d.iter().all(|x| x.code == "DW0912"),
+            "`{tier}` must validate clean: {d:#?}"
+        );
     }
 }

@@ -102,6 +102,9 @@ pub fn validate_campaign_with(
     lane_checks(c, anchors, &mut d);
     difficulty_checks(c, &mut d);
     firework_checks(c, &mut d);
+    // spec-0073: a fight's health bar. The walk is over every wave and actor;
+    // a campaign that declares no bar and bills no fight `boss` gets nothing.
+    crate::healthbar::health_bar_checks(c, &mut d);
     // Stage 7 (spec-0017): the map-editor edit script. Structural
     // checks only — frame/region *resolution* happens at build time against the
     // solved layout (the compiler's `DW0323`).

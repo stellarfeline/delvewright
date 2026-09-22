@@ -6,6 +6,10 @@
         "anchor": "anchor/east-bay",
         "entity": "minecraft:bat",
         "facing": "west",
+        "health_bar": {
+          "color": "red",
+          "range": 24
+        },
         "id": "actor/hall-moth",
         "name": "The Hall Moth",
         "tier": "boss",
@@ -2960,6 +2964,11 @@
     "waves": [
       {
         "anchor": "anchor/muster",
+        "health_bar": {
+          "range": 12,
+          "style": "notched_6",
+          "title": "The Muster"
+        },
         "id": "wave/muster",
         "mobs": [
           {
@@ -3002,6 +3011,9 @@
       },
       {
         "anchor": "anchor/lane-west",
+        "health_bar": {
+          "range": 16
+        },
         "id": "wave/lane",
         "lane": {
           "aggro_radius": 8,
@@ -3040,6 +3052,6 @@
       }
     ]
   },
-  "dsl_version": "0.30.0",
+  "dsl_version": "0.31.0",
   "stage": "quests"
 }
