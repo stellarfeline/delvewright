@@ -2711,6 +2711,153 @@
       "note": "Re-measured on the tree this row lands on, the engine at `83916f66b03354034465f22b8f996fc79bb34c1c`: `delvec schema --stage all` exports 534011 bytes carrying the word `firework` 20 times, and the effect union's `oneOf` now names 38 verbs, counted off the exported schema by `the_effect_union_names_thirty_eight_verbs` rather than read out of a message. The verb is `firework` at a `Mark` — the same anchor-and-offset `play-sound` takes since spec-0066 — carrying the game's five explosion shapes, colours as `#rrggbb` packed to the integers the `minecraft:fireworks` component reads, and a flight of 1, 2 or 3. One `summon minecraft:firework_rocket` is emitted per effect and is walked against the pinned 1.21.11 command tree by the emitter like every other line it writes, which is what the carrier test reaches: it reads the command off a real build, so the build that produced it had already passed the tree. The emitter writes the entity's `LifeTime` at the floor of the game's randomised range so the burst height is a stated number, and `DW0899` refuses a rocket whose column to that height is roofed or whose burst lies within five blocks of a place the campaign posts a body. The binding counts `firework` effects by identity, so a campaign that declares none is INAPPLICABLE rather than unbound; the released `doune-castle-tour` is never edited and declares none, and the class is exercised by the gallery's valley-site court, which fires one rocket of five stars under open sky.",
       "round": 1,
       "triage": "capability"
+    },
+    {
+      "campaign": "vesperhold",
+      "carrier": null,
+      "disposition": "no-machine-form",
+      "finding": "the bell-tower boss fight cannot be won: the party is ground down across retries by equipment that degrades with nothing in the delve that mends it, and by the walk back to the fight",
+      "general_form": "none: whether a fight can be won is a difficulty judgement the design makes",
+      "id": "vh-01",
+      "justification": "Absolute difficulty is the design's own statement, which is the class `bell-15` already records, and the machine bounds the SINGLE fight from both sides: `DW0474` holds a campaign with mandatory combat to the whole spec-0023 winnability pass against the best kit the party can field, and `DW0477` reports an encounter billed elite or boss that the unassisted bot beats on its first attempt. Neither models ATTRITION ACROSS RETRIES, which is what makes this fight unwinnable rather than merely hard. The two attritions the engine does own are queued as their own rows: `vh-03` (a rest mends what the party carries) and `vh-04` (the walk back from a rest). The remedy for this row is rest placement and equipment condition; lowering the fight is refused. Standing content-QC item.",
+      "round": 1,
+      "triage": "content"
+    },
+    {
+      "campaign": "vesperhold",
+      "carrier": null,
+      "finding": "a pool the party can walk into is ringed with slabs no body can climb back over, so a body that enters it cannot leave: bodies accumulate on its floor and drown there",
+      "general_form": "a body of standing water a body can enter has a climb-out: from every cell of the water's floor, some standable cell outside the water is reachable by the moves a body in water can make",
+      "id": "vh-02",
+      "note": "No check in this tree quantifies over the class, verified by reading rather than assumed. The navigation model reads water only as a place a body may not STAND -- `nav` keeps its flooded set disjoint from its standable set, and `DW0318` and `DW0851` refuse a proven walk plane the water would be standing over -- and spec-0038 names wading and swim traversal among its deliberate non-goals, so there is no model of a body IN water against which a climb-out could be proven. The pool in this campaign is around `[42, 68, 77]`. Closing this row needs the water-side traversal model first and then a diagnostic over it; no diagnostic code is allocated.",
+      "round": 1,
+      "triage": "capability"
+    },
+    {
+      "campaign": "vesperhold",
+      "carrier": null,
+      "finding": "a shield wears out with nothing in the delve that mends it: a rest restores the resting body, refills the flask and leaves the condition of everything else the party carries untouched",
+      "general_form": "a rest restores the condition of what the party carries -- the declared kit is mended, never re-issued -- so a retry loop cannot exhaust equipment the campaign gives the party no way to replace",
+      "id": "vh-03",
+      "note": "`DW0476` holds a campaign that places a `bonfire` to the flask its class kits must declare, and the rest loop restores the resting player, refills the flask, moves the checkpoint, fires `on_rest[]` and re-seats every `respawns_on_rest` wave. Durability is in none of it, and nothing in this tree quantifies over the condition of carried equipment. The obligation is MENDING and not re-issuing the starting kit: a party that has earned gear keeps the gear. No diagnostic code is allocated.",
+      "round": 1,
+      "triage": "capability"
+    },
+    {
+      "campaign": "vesperhold",
+      "carrier": null,
+      "disposition": "no-machine-form",
+      "finding": "the walk back from the nearest rest to a scripted ambush costs more than the fight does, so dying to the ambush is a commute rather than a retry",
+      "general_form": "none: where a rest point goes, and how long a walk back the design wants, are the design's own statements",
+      "id": "vh-04",
+      "justification": "Where a rest goes is a placement judgement. The machine has the SHAPE of this check and not its number: `DW0379` charges the proven walk from a rest point to the first beat it can respawn the party into against a 60 s budget, and the diagnostics catalogue records that budget as roughly 300 blocks of walking, which no box-garden delve approaches -- so the lint is inert in practice and can name no walk in a delve of this size. The threshold is a design decision and not a compiler one. The ambush in this campaign sits around `[151, 92, 19]`. Until the design states a budget the lint can charge, this is a standing content-QC item, and re-tuning `DW0379` is a queued engine obligation rather than coverage this row may claim.",
+      "round": 1,
+      "triage": "content"
+    },
+    {
+      "campaign": "vesperhold",
+      "carrier": null,
+      "finding": "a body the story removes from the scene dies on screen: the removal plays a death where the fiction needs only that the body be gone",
+      "general_form": "a body the story removes leaves unseen -- no death animation, no death sound, no death message -- whatever class of body it is and wherever the removal is authored; how a removal looks belongs to removal itself, and is never a choice one body class has and another lacks",
+      "id": "vh-05",
+      "note": "Half the class is carried by construction and nothing quantifies over the other half. `despawn-actor` declares a removal style, and its `vanish` arm drops the body far under its own position before the kill, so nothing is seen where the body stood. `despawn-npc` carries no style at all: it removes the body and its interaction hitbox, and whatever that removal looks like is what the player gets. A general form is owed over EVERY removal the engine performs; no diagnostic code is allocated.",
+      "round": 1,
+      "triage": "capability"
+    },
+    {
+      "campaign": "vesperhold",
+      "carrier": null,
+      "disposition": "no-machine-form",
+      "finding": "the drawn faces of the cast carry oversized jaws, so the bodies do not read as the people the fiction describes",
+      "general_form": "none: whether a drawn face reads as a face is a perceptual judgement no compiler makes",
+      "id": "vh-06",
+      "justification": "The machine bounds a skin's mechanics and not its drawing: `DW0309` proves a declared skin texture is baked and served, and refuses a mannequin naming a texture with no source file. What the face looks like is the authoring prompt's output. The defect is located in the SKIN-AUTHORING PROMPT and not in rendering and not in a design choice, and the observation that locates it is that bearded faces drawn through the same pipeline read correctly. The repair is a change to the prompt the skill hands the image model, confirmed on a demo skin set before it is trusted again. Standing content-QC item.",
+      "round": 1,
+      "triage": "content"
+    },
+    {
+      "campaign": "vesperhold",
+      "carrier": null,
+      "finding": "spent bottles stay in the party's bag after a rest, so the inventory fills with empties the delve never takes back",
+      "general_form": "a rest returns the party's consumables to the state the class kit declares: what a spent consumable leaves behind is taken back, so the bag after a rest holds the declared kit and nothing the party has spent",
+      "id": "vh-07",
+      "note": "The bonfire's rest loop refills the flask -- `DW0476` is the obligation that a campaign placing a bonfire declares one -- and nothing removes what drinking it left behind. Nothing in this tree quantifies over the state of the bag after a rest. No diagnostic code is allocated.",
+      "round": 1,
+      "triage": "capability"
+    },
+    {
+      "campaign": "vesperhold",
+      "carrier": null,
+      "finding": "the party cannot see how much of the delve's currency it holds: the balance appears nowhere on screen",
+      "general_form": "a campaign that declares a currency shows the party its balance on screen, wherever the party is and without opening anything",
+      "id": "vh-08",
+      "note": "This tree carries no currency surface for a check to quantify over: no stage document declares a currency and nothing accrues one, so the general form names a primitive the DSL does not yet have -- the shape `bell-01` had before resting became a first-class verb. The obligation is the primitive and its display together, because a balance the party cannot read is a balance it cannot spend. No diagnostic code is allocated.",
+      "round": 1,
+      "triage": "capability"
+    },
+    {
+      "campaign": "vesperhold",
+      "carrier": null,
+      "finding": "the party ends the delve holding two copies of a unique key: a rest re-seats an undefeated elite, the re-seat removes the body still standing, and that body yields its declared drop as it goes",
+      "general_form": "a body the engine removes yields none of its declared drops, on every path by which the engine removes one -- a rest's re-seat included -- so no removal the party did not earn can put a second copy of a unique item into the world",
+      "id": "vh-09",
+      "note": "Refreshing an undefeated elite on a rest is INTENDED behaviour and is not the defect: spec-0016 section 1's undefeated re-seat is what `bell-10` and `DW0499` record, and `DW0499` refuses only the combination of a `boss` billing with rest respawning. The defect is the unstripped loot and nothing else. Half the class is already carried by construction -- `compiler::emit::emit_despawn_actor` strips a declared drop off the body before the kill on the `despawn-actor` path, on the stated reasoning that a removal is not a death the player earned -- and the bonfire re-seat path does not do the same. Nothing quantifies over the whole class. No diagnostic code is allocated.",
+      "round": 1,
+      "triage": "capability"
+    },
+    {
+      "campaign": "vesperhold",
+      "carrier": null,
+      "finding": "an armoury designed as one real chest among false trapped chests is built as a row of fence gates, so nothing standing at the traps' cells reads as a chest at all",
+      "general_form": "what stands at a trap's cell in the built world is the trigger the campaign declared, so a trap declared as a trapped chest is a trapped chest the party can tell from scenery",
+      "id": "vh-10",
+      "note": "A trap's `trigger` is declared in the campaign (`pressure-plate`, `tripwire` or `trapped-chest`) and the block that actually stands at the cell comes from the prefab's own `trigger_block` metadata, so a piece whose cell carries a fence gate builds a fence gate whatever the campaign declared, and no check holds the two to each other. The armoury in this campaign is around `[155, 80, 150]`. Design material this row carries, so a later round transcribes rather than re-invents it: among false chests the one real chest holds gear worth the search and is never empty. `DW0431` proves a declared loot fill lands in a real fillable container and says nothing about what a trap's own trigger is; `DW0435` refuses two fills of one container. Neither reaches this class. No diagnostic code is allocated.",
+      "round": 1,
+      "triage": "capability"
+    },
+    {
+      "campaign": "vesperhold",
+      "carrier": null,
+      "disposition": "no-machine-form",
+      "finding": "a wooden structure standing by the gate reads as no particular thing: a player in front of it cannot say what it is meant to be",
+      "general_form": "none: whether built geometry reads as the thing it depicts is a perceptual judgement",
+      "id": "vh-11",
+      "justification": "Same class as `isl-25` and `isl-26`: how a built thing reads to a person standing in front of it is perception, not geometry. The instrument is the review loop, which is a staging step and not a gate -- `DW0900` assembles the built world and the design set its gate approved into one comparison so a disagreement is visible, and a person judges it. The structure in this campaign is around `[90, 80, 147]`. Standing content-QC item.",
+      "round": 1,
+      "triage": "content"
+    },
+    {
+      "campaign": "vesperhold",
+      "carrier": null,
+      "disposition": "no-machine-form",
+      "finding": "a designed tree is too bare to read as a tree: its canopy carries too little leaf for the trunk under it",
+      "general_form": "none: how full a tree reads is a perceptual judgement",
+      "id": "vh-12",
+      "justification": "The machine asserts quantity over a DECLARED domain -- `DW0864` states what every placement verb declared and delivered and refuses an unambiguous shortfall, and the generators carry the same assertion, which is `hv-10` -- but a tree built block by block declares no count to fall short of, and 'full enough to read as a tree' is not a number. The tree in this campaign is around `[31, 80, 76]`. Judged on the review loop alongside `vh-11`. Standing content-QC item.",
+      "round": 1,
+      "triage": "content"
+    },
+    {
+      "campaign": "vesperhold",
+      "carrier": null,
+      "disposition": "no-machine-form",
+      "finding": "the areas off the main line hold nothing to find: a party that leaves the critical path is given no reason to have left it",
+      "general_form": "none: what a side area is worth is a design judgement",
+      "id": "vh-13",
+      "justification": "Same class as `isl-45`: whether a walk is worth making is a design judgement, and the machine can prove a route exists but never that anyone should take it. This row carries the design material that answers it, so a later round transcribes rather than re-invents: off-main-line exploration and combat are what a souls delve is made of, at a density referenced against the genre's own rather than chosen freshly; side areas carry bodies worth farming for currency and optional side bosses that drop high-tier gear; every set piece owes its own idea rather than a repeat of the last one -- for one example, a conspicuous body held in place by terrain, so a party fixed on it is taken from behind; and a merchant selling mid-tier weapons and enchanted books stands beside an anvil. Filler consumables are not content. Standing content-QC item.",
+      "round": 1,
+      "triage": "content"
+    },
+    {
+      "campaign": "vesperhold",
+      "carrier": null,
+      "disposition": "no-machine-form",
+      "finding": "a pocket off the main line stands empty where the ground around it is shaped for a set-piece fight",
+      "general_form": "none: where a set piece goes is a design statement",
+      "id": "vh-14",
+      "justification": "An instance of `vh-13`'s class, kept as its own row because it names a particular place rather than the class: the ground around `[153, 80, 135]` in this campaign is shaped for an optional boss and holds none. Where a set piece goes is the design's own statement and no compiler derives it. Standing content-QC item.",
+      "round": 1,
+      "triage": "content"
     }
   ],
   "ledger_version": "2026-08-11"
