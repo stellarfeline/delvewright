@@ -682,6 +682,102 @@ fn the_combat_plan_names_the_census_probe() {
     assert_eq!(c["unbrand"], format!("{NS}:wave_unbrand_guards"));
 }
 
+/// The muster block: the probe, the staged functions, and the declaration phrased
+/// as questions the live bodies are asked.
+///
+/// Every field here is the one thing a combat step MEASURES, so the derivation is
+/// pinned rather than inferred from a run. `souls-bonfire`'s `wave/guards` seats
+/// two named zombies with `max_health`, `attack_damage` and `movement_speed`
+/// declared and no equipment.
+#[test]
+fn the_muster_states_what_the_wave_declares() {
+    let tmp = TempCampaign::new();
+    campaign_with(tmp.path(), |_, _| {});
+    let (out, _) = build(tmp.path()).expect("the reference campaign builds");
+    let json: serde_json::Value =
+        serde_json::from_slice(out.get("validation/combat-plan.json").unwrap()).unwrap();
+    let m = &json["encounters"][0]["muster"];
+    assert_eq!(m["probe"], format!("{NS}:wave_muster_guards"));
+    assert_eq!(m["strike"], format!("{NS}:wave_strike_guards"));
+    assert_eq!(m["chip"], format!("{NS}:wave_chip_guards"));
+    // Three decimal places, and a sentinel no attribute reading can be.
+    assert_eq!(m["scale"], 1000);
+    assert_eq!(m["unread"], -1);
+    assert_eq!(m["bodies"], 2);
+
+    // The identity facts name the declaration by ORDINAL, never by its text: the
+    // plan must be byte-identical between an `en` build and a `--lang` bake.
+    let t = &m["types"][0];
+    assert_eq!(t["entity"], "minecraft:zombie");
+    assert_eq!(t["facts"], serde_json::json!(["name=#0"]));
+    assert_eq!(t["dropped_facts"], serde_json::json!([]));
+    assert_eq!(t["reads_attack_damage"], true);
+
+    let p = &m["profiles"][0];
+    assert_eq!(p["type"], 0);
+    assert_eq!(p["count"], 2);
+    assert_eq!(p["mask"], 1, "one fact declared, so bit 0 and nothing else");
+    assert_eq!(p["label"], "2 × minecraft:zombie (stack 0)");
+    assert_eq!(p["max_health"], 12.0);
+    assert_eq!(p["attack_damage"], 3.0);
+    assert_eq!(p["movement_speed"], 0.2);
+    assert!(
+        p["follow_range"].is_null(),
+        "undeclared reads as null, never 0"
+    );
+    assert_eq!(p["armor_at_least"], 0.0, "no armour declared, so no floor");
+
+    // `checked` is the row's binding count, and it is COUNTED from the object:
+    // the seating, the one identity fact, and the three declared attributes.
+    assert_eq!(m["checked"], 5, "{m}");
+}
+
+/// The probe reads a DECLARED attribute as its base value and the effective
+/// numbers as totals — `attribute … get` is the total after a weapon's modifier
+/// and vanilla's own random spawn bonus, so a declaration compared against one
+/// fails on every correct body.
+#[test]
+fn the_muster_probe_reads_a_declared_attribute_at_its_base() {
+    let tmp = TempCampaign::new();
+    campaign_with(tmp.path(), |_, _| {});
+    let (out, _) = build(tmp.path()).expect("the reference campaign builds");
+    let body = String::from_utf8(
+        out.get(&format!(
+            "datapack/data/{NS}/function/wave_muster_one_guards_0.mcfunction"
+        ))
+        .expect("the per-kind muster function is emitted")
+        .clone(),
+    )
+    .unwrap();
+    for attr in ["max_health", "movement_speed", "attack_damage"] {
+        assert!(
+            body.contains(&format!("attribute @s minecraft:{attr} base get 1000")),
+            "a declared `{attr}` is read at its BASE: {body}"
+        );
+    }
+    for attr in ["armor", "armor_toughness"] {
+        assert!(
+            body.contains(&format!("attribute @s minecraft:{attr} get 1000")),
+            "armour is the EFFECTIVE total — it is what the declared gear adds up to: {body}"
+        );
+    }
+    // …and what the body actually swings with, beside what it was declared.
+    assert!(body.contains("#wmus_ade dw.sys run attribute @s minecraft:attack_damage get 1000"));
+
+    // The staged removal is an attributed player kill, never `kill`: `on_kill`,
+    // the countdown and a declared drop all pay on a PLAYER's kill.
+    let strike = String::from_utf8(
+        out.get(&format!(
+            "datapack/data/{NS}/function/wave_strike_guards.mcfunction"
+        ))
+        .expect("the staged strike is emitted")
+        .clone(),
+    )
+    .unwrap();
+    assert!(strike.contains("minecraft:player_attack by @p"), "{strike}");
+    assert!(!strike.contains("kill @s"), "{strike}");
+}
+
 // ---------------------------------------------------------------------------
 // `fights` — the binding count for the whole spec-0023 pass (staging-gate row
 // `bell-05`). The pass used to be gated on `kill`-a-wave, the VERB, so a delve
