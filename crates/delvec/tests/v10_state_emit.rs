@@ -44,6 +44,9 @@ fn tmp(name: &str) -> PathBuf {
 /// A private prefab copy whose `hello-room.json` gains an `anchor/trap` carrying
 /// a restorable `trigger_block` — a gated trap's hardware obligation (`DW0363`)
 /// holds for a numeric gate exactly as it does for a flag one.
+/// The trap stands at `[5, 1, 7]`, one cell past the doorway: the door is a gate
+/// region the compiler clears, so a trigger inside it is erased (`DW0917`), and
+/// the trigger block is written by `common::plan_structures_with_trap_triggers`.
 ///
 /// Materialized **once per process** behind a `OnceLock`, not once per test. The
 /// library is 76 files, the four tests here are read-only over it, and copying it
@@ -67,8 +70,8 @@ fn patched_prefabs() -> PathBuf {
         anchors.insert(
             "anchor/trap".to_string(),
             serde_json::json!({
-                "pos": [5, 1, 6],
-                "dispenser": [4, 1, 6],
+                "pos": [5, 1, 7],
+                "dispenser": [4, 1, 7],
                 "trigger_block": "minecraft:stone_pressure_plate"
             }),
         );
@@ -290,15 +293,7 @@ fn build(who: &str) -> (BuildOutput, delvewright_dsl::GateBinding) {
     );
 
     let plan = Plan::build(&campaign, &prefabs).expect("plan builds");
-    let mut structures: BTreeMap<String, Vec<u8>> = BTreeMap::new();
-    for area in &plan.areas {
-        for piece in &area.pieces {
-            for t in &piece.templates {
-                let bytes = std::fs::read(prefab_dir.join(&t.structure_file)).unwrap();
-                structures.insert(t.structure_file.clone(), bytes);
-            }
-        }
-    }
+    let structures = common::plan_structures_with_trap_triggers(&plan, &prefab_dir);
     let tree = CommandTree::v1_21_11();
     let out = emit::build(
         &plan,

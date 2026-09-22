@@ -73,6 +73,7 @@
 //! - [`teleport`]: the `teleport` verb's one compile-time obligation, and the ledger saying what it looked at.
 //! - [`textfit`]: on-screen text that does not fit what draws it (`DW0330`/`DW0331`).
 //! - [`timeline`]: per-effect-timeline gate state — the static half of the `close-gate` model (`DW0410`).
+//! - [`trap_trigger`]: a trap's trigger cell holds the block its trigger kind names (`DW0917`).
 //! - [`traversal`]: a walked leg may only contain moves the body walking it can make (`DW0452`/`DW0453`).
 //! - [`view`]: the CPU render surface — the visual channel that ships in the one binary a creator installs.
 //! - [`watch`]: runtime-watch coverage of per-object bodies, in two tiers.
@@ -146,6 +147,7 @@ pub mod surround;
 pub mod teleport;
 pub mod textfit;
 pub mod timeline;
+pub mod trap_trigger;
 pub mod traversal;
 pub mod view;
 pub mod watch;

@@ -1,0 +1,13 @@
+{
+  "code": "DW0917",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "replace",
+      "path": "/content/traps/2/at",
+      "value": "anchor/east-bay"
+    }
+  ],
+  "units": [],
+  "why": "The hall's `trap/chest` is a `trapped-chest` trap on `anchor/strongbox`, whose cell holds the trapped chest the piece places against the east wall. This edit hangs the same trap on `anchor/east-bay`, whose cell is open floor. It declares no unit: a trap's `at` and `trigger` are surfaces the primary already binds, and what the engine refuses is a trigger kind naming a block its cell does not hold. What makes it worth committing is what the engine did with this shape before the refusal existed: the compiler's detection for a trapped-chest trap is an invisible interaction hitbox, which needs no chest, so the build exited 0 and a campaign shipped its false chest as empty air — the party had nothing to open. This primary itself carried that shape until the refusal landed. The remedy the refusal names is the primary's own: point the trap at an anchor whose cell holds the block, which a piece places, never a runtime `set-block`."
+}

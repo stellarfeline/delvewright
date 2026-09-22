@@ -140,6 +140,9 @@ fn json_effects(src: &str) -> Vec<QuestEffect> {
 
 /// A prefab tree with an `anchor/trap` (a dispenser-backed trigger cell) added to
 /// `hello-room`, which root 4 needs and the fixture does not otherwise have.
+/// The trap stands at `[5, 1, 7]`, one cell past the doorway: the door is a gate
+/// region the compiler clears, so a trigger inside it is erased (`DW0917`), and
+/// the trigger block is written by `common::plan_structures_with_trap_triggers`.
 fn prefabs_with_trap() -> PathBuf {
     // Materialized EXACTLY ONCE per process, behind a `OnceLock`.
     //
@@ -172,7 +175,7 @@ fn prefabs_with_trap() -> PathBuf {
             .unwrap();
         anchors.insert(
             "anchor/trap".to_string(),
-            serde_json::json!({ "pos": [5, 1, 6], "dispenser": [4, 1, 6] }),
+            serde_json::json!({ "pos": [5, 1, 7], "dispenser": [4, 1, 7] }),
         );
         // …and a place for the shop probe to stand that nothing else claims.
         // `hello-room` offers four anchors and every one of them is already
@@ -290,15 +293,7 @@ fn assert_validates(c: &Campaign, k: EffectRootKind) {
 fn build(loaded: &LoadedCampaign, c: &Campaign) -> Result<BuildOutput, BuildFailure> {
     let pf = prefabs();
     let plan = Plan::build(c, &pf).expect("plan builds");
-    let mut structures: BTreeMap<String, Vec<u8>> = BTreeMap::new();
-    for area in &plan.areas {
-        for piece in &area.pieces {
-            for t in &piece.templates {
-                let bytes = std::fs::read(prefabs_with_trap().join(&t.structure_file)).unwrap();
-                structures.insert(t.structure_file.clone(), bytes);
-            }
-        }
-    }
+    let structures = common::plan_structures_with_trap_triggers(&plan, &prefabs_with_trap());
     emit::build(
         &plan,
         &loaded.inputs,
