@@ -4402,6 +4402,9 @@ export class MineflayerExecutor implements StepExecutor {
             `${verdict.matched} matching their declaration over ${verdict.checked} checked ` +
             `fact(s)\n`,
         );
+        for (const failure of verdict.failures) {
+          process.stderr.write(`[muster] ${enc.wave}: FAILED — ${failure}\n`);
+        }
         for (const finding of verdict.findings) {
           process.stderr.write(`[muster] ${enc.wave}: ${finding}\n`);
         }
@@ -4416,6 +4419,7 @@ export class MineflayerExecutor implements StepExecutor {
       read: 0,
       declared: enc.muster.bodies,
       matched: 0,
+      failures: [],
       findings: [
         `${enc.muster.probe} did not answer within ${CENSUS_TIMEOUT_MS}ms, so nothing about ` +
           `this wave's bodies was read — the ${enc.muster.checked} declared fact(s) it would ` +

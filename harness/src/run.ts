@@ -449,7 +449,12 @@ async function main(): Promise<number> {
     // What the muster found. A declared number that never reached a body is a
     // defect in the shipped delve, and it is a finding of the critical-path stage
     // — the only stage that ever stands in front of the wave.
+    const musterFailures: string[] = [];
     for (const verdict of musters.values()) {
+      // A declaration the live bodies CONTRADICT reds the run; one the probe
+      // could not establish is a finding. Both reach the artifact, and only the
+      // first is a statement about the shipped delve being wrong.
+      for (const f of verdict.failures) musterFailures.push(`${verdict.wave}: ${f}`);
       for (const f of verdict.findings) report.recordMusterFinding(`${verdict.wave}: ${f}`);
     }
     // spec-0025 §3: every enumerated branch appears here — the one this session
@@ -506,12 +511,14 @@ async function main(): Promise<number> {
     report.stage({
       stage: "critical-path",
       ran: true,
-      passed: failure === undefined,
+      passed: failure === undefined && musterFailures.length === 0,
       findings: report.musterFindings(),
-      failures:
-        failure === undefined
+      failures: [
+        ...(failure === undefined
           ? []
-          : [failure instanceof Error ? failure.message : String(failure)],
+          : [failure instanceof Error ? failure.message : String(failure)]),
+        ...musterFailures,
+      ],
     });
     // The death loop. Recorded whether it ran or not, and a stage that
     // did not run carries the reason: a skipped stage must never be readable as a

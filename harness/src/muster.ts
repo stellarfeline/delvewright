@@ -118,7 +118,18 @@ export interface MusterVerdict {
   readonly declared: number;
   /** Bodies that matched a declared stack in every checked respect. */
   readonly matched: number;
-  /** Everything that did not hold, in the declaration's own terms. */
+  /**
+   * Declarations the live bodies CONTRADICT — a shipped delve that is not the
+   * document. These red the run: a number nobody can see is wrong is the exact
+   * defect this probe exists for.
+   */
+  readonly failures: readonly string[];
+  /**
+   * What the probe could not establish, which is a different fact. Nothing of the
+   * wave standing when the step opened is the common case (the world felled it,
+   * or a run-back had already cleared it): the declaration is unverified, not
+   * contradicted, and a zero binding is a finding rather than a pass.
+   */
   readonly findings: readonly string[];
 }
 
@@ -163,6 +174,7 @@ export function verifyMuster(
       read: 0,
       declared: plan.bodies,
       matched: 0,
+      failures: [],
       findings: [
         `nothing of this wave was standing when the muster ran, so none of its ` +
           `${plan.checked} declared fact(s) could be checked against a body ` +
@@ -232,7 +244,8 @@ export function verifyMuster(
     read: bodies.length,
     declared: plan.bodies,
     matched,
-    findings,
+    failures: findings,
+    findings: [],
   };
 }
 

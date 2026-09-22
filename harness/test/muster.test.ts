@@ -110,6 +110,7 @@ test("a muster summary carries both counts, so an undeclared kind cannot hide", 
 
 test("a wave that arrived as declared produces no finding", () => {
   const v = verifyMuster(GUARD, summary(), Array.from({ length: 5 }, () => guardBody()));
+  assert.deepEqual(v.failures, []);
   assert.deepEqual(v.findings, []);
   assert.equal(v.matched, 5);
   assert.equal(v.checked, 9);
@@ -121,14 +122,14 @@ test("a declared health that never reached the body is named with both numbers",
   const bodies = [guardBody({ maxHealth: 20_000 }), ...Array.from({ length: 4 }, () => guardBody())];
   const v = verifyMuster(GUARD, summary(), bodies);
   assert.equal(v.matched, 4);
-  assert.equal(v.findings.length, 1);
-  assert.match(v.findings[0]!, /max_health` is declared 34 and the body's own attribute reads 20/);
+  assert.equal(v.failures.length, 1);
+  assert.match(v.failures[0]!, /max_health` is declared 34 and the body's own attribute reads 20/);
 });
 
 test("a declared attack_damage that never reached the body is named", () => {
   const bodies = [guardBody({ attackDamage: 3_000 }), ...Array.from({ length: 4 }, () => guardBody())];
   const v = verifyMuster(GUARD, summary(), bodies);
-  assert.match(v.findings[0]!, /attack_damage` is declared 6 and the body's own attribute reads 3/);
+  assert.match(v.failures[0]!, /attack_damage` is declared 6 and the body's own attribute reads 3/);
 });
 
 test("a missing piece of declared gear is named by slot and item", () => {
@@ -139,14 +140,14 @@ test("a missing piece of declared gear is named by slot and item", () => {
   ];
   const v = verifyMuster(GUARD, summary(), bodies);
   assert.equal(v.matched, 4);
-  assert.match(v.findings[0]!, /equipment\.chest=minecraft:iron_chestplate/);
-  assert.match(v.findings[0]!, /the gear did not reach it/);
+  assert.match(v.failures[0]!, /equipment\.chest=minecraft:iron_chestplate/);
+  assert.match(v.failures[0]!, /the gear did not reach it/);
 });
 
 test("a name that rendered as something else is a finding, not a silence", () => {
   const bodies = [guardBody({ mask: 0b1110 }), ...Array.from({ length: 4 }, () => guardBody())];
   const v = verifyMuster(GUARD, summary(), bodies);
-  assert.match(v.findings[0]!, /name=#0/);
+  assert.match(v.failures[0]!, /name=#0/);
 });
 
 test("a body of an undeclared kind standing in the wave is a finding", () => {
@@ -155,7 +156,7 @@ test("a body of an undeclared kind standing in the wave is a finding", () => {
     summary({ counted: 5, tagged: 6 }),
     Array.from({ length: 5 }, () => guardBody()),
   );
-  assert.match(v.findings[0]!, /1 body\/bodies of an undeclared entity kind/);
+  assert.match(v.failures[0]!, /1 body\/bodies of an undeclared entity kind/);
 });
 
 test("an empty anchor says the probe had nothing to read, not that five stacks are missing", () => {
@@ -170,7 +171,7 @@ test("an empty anchor says the probe had nothing to read, not that five stacks a
 
 test("the probe's own lines and its total must agree, or neither is evidence", () => {
   const v = verifyMuster(GUARD, summary({ counted: 5 }), [guardBody()]);
-  assert.ok(v.findings.some((f) => /its total\s+disagree|and its total/.test(f)));
+  assert.ok(v.failures.some((f) => /its total\s+disagree|and its total/.test(f)));
 });
 
 test("an attribute the probe did not read is a finding, never a silent pass", () => {
@@ -178,7 +179,7 @@ test("an attribute the probe did not read is a finding, never a silent pass", ()
   // ask. A declaration sitting over one is unverified, and says so.
   const bodies = [guardBody({ followRange: -1 }), ...Array.from({ length: 4 }, () => guardBody())];
   const v = verifyMuster(GUARD, summary(), bodies);
-  assert.match(v.findings[0]!, /follow_range` is declared 24 but the probe did not read it/);
+  assert.match(v.failures[0]!, /follow_range` is declared 24 but the probe did not read it/);
 });
 
 test("two stacks of one kind are matched as a multiset, not by position", () => {
@@ -235,5 +236,5 @@ test("two stacks of one kind are matched as a multiset, not by position", () => 
     body(0b01),
     body(0b01),
   ]);
-  assert.ok(short.findings.some((f) => /stack 1/.test(f)));
+  assert.ok(short.failures.some((f) => /stack 1/.test(f)));
 });

@@ -373,6 +373,7 @@ export class RunReport {
               bodies_read: e.muster.read,
               bodies_declared: e.muster.declared,
               matched: e.muster.matched,
+              failures: [...e.muster.failures],
               findings: [...e.muster.findings],
             }
           : null,

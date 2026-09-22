@@ -259,11 +259,7 @@ pub fn muster(
             // What the probe ASKS is the component itself, built by
             // `name_predicate` from the same string the summon writes.
             let predicate = format!("{{CustomName:{}}}", name_predicate(name));
-            let ordinal = t
-                .facts
-                .iter()
-                .filter(|f| f.about == "name")
-                .count();
+            let ordinal = t.facts.iter().filter(|f| f.about == "name").count();
             if !t.facts.iter().any(|f| f.predicate == predicate) {
                 push_fact(
                     t,
@@ -281,11 +277,7 @@ pub fn muster(
                 MusterFact {
                     about: format!("equipment.{}", slot.nbt()),
                     value: item.clone(),
-                    predicate: format!(
-                        "{{equipment:{{{}:{{id:\"{}\"}}}}}}",
-                        slot.nbt(),
-                        item
-                    ),
+                    predicate: format!("{{equipment:{{{}:{{id:\"{}\"}}}}}}", slot.nbt(), item),
                 },
             );
         }
@@ -299,7 +291,11 @@ pub fn muster(
         let mut mask: i64 = 0;
         if let Some(name) = &mob.name {
             let predicate = format!("{{CustomName:{}}}", name_predicate(name));
-            if let Some(i) = types[ti].facts.iter().position(|f| f.predicate == predicate) {
+            if let Some(i) = types[ti]
+                .facts
+                .iter()
+                .position(|f| f.predicate == predicate)
+            {
                 mask |= 1i64 << i;
             }
         }
@@ -315,11 +311,10 @@ pub fn muster(
             if matches!(
                 slot,
                 EquipSlot::Head | EquipSlot::Chest | EquipSlot::Legs | EquipSlot::Feet
-            ) {
-                if let Some(stats) = items.get(item) {
-                    armor += stats.armor;
-                    toughness += stats.armor_toughness;
-                }
+            ) && let Some(stats) = items.get(item)
+            {
+                armor += stats.armor;
+                toughness += stats.armor_toughness;
             }
         }
         let attrs = mob.attributes;
@@ -349,7 +344,10 @@ pub fn muster(
 
 /// Add a fact to a kind's list unless it is already there, or the mask is full.
 fn push_fact(t: &mut MusterType, fact: MusterFact) {
-    if t.facts.iter().any(|f| f.about == fact.about && f.value == fact.value) {
+    if t.facts
+        .iter()
+        .any(|f| f.about == fact.about && f.value == fact.value)
+    {
         return;
     }
     if t.facts.len() >= MUSTER_FACT_LIMIT {
@@ -472,10 +470,7 @@ pub fn functions(ns: &str, m: &Muster) -> Vec<(String, Vec<String>)> {
         // a wooden sword). Comparing a declaration against a total is a check that
         // fails on every correct body, so what the declaration set is read with
         // `base get` and what the player actually meets is read separately.
-        for (holder, attr) in [
-            (H_MAX_HEALTH, "max_health"),
-            (H_SPEED, "movement_speed"),
-        ] {
+        for (holder, attr) in [(H_MAX_HEALTH, "max_health"), (H_SPEED, "movement_speed")] {
             body.push(format!(
                 "execute store result score {holder} dw.sys run attribute @s minecraft:{attr} \
                  base get {MUSTER_SCALE}"
@@ -558,7 +553,12 @@ pub fn functions(ns: &str, m: &Muster) -> Vec<(String, Vec<String>)> {
 /// and how many carry the wave's tag at all. The two disagreeing is a body of a
 /// kind the wave never declared.
 fn summary_component(ns: &str, wave_id: &str) -> Value {
-    component(ns, plan::MARKER_TOKEN_MUSTER, wave_id, &MUSTER_SUMMARY_HOLDERS)
+    component(
+        ns,
+        plan::MARKER_TOKEN_MUSTER,
+        wave_id,
+        &MUSTER_SUMMARY_HOLDERS,
+    )
 }
 
 /// One body's line.

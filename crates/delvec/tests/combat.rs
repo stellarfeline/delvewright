@@ -400,13 +400,6 @@ fn build_with_actor(
     (json, diags, out)
 }
 
-
-
-
-
-
-
-
 #[test]
 fn declaring_an_actor_tier_moves_no_shipped_byte() {
     // A tier is pure validation metadata. Compile
@@ -449,9 +442,6 @@ fn declaring_an_actor_tier_moves_no_shipped_byte() {
 // objects must say so, additively, never by leaving `covered`/`not_covered`
 // (or `actors[]`) merely empty.
 // ---------------------------------------------------------------------------
-
-
-
 
 // ---------------------------------------------------------------------------
 // The governing checkpoint, and the one coordinate system.
@@ -947,9 +937,6 @@ fn a_campaign_with_no_npcs_states_its_own_zero() {
         "an unbound census states why: {nc}"
     );
 }
-
-
-
 
 // ---------------------------------------------------------------------------
 // Run-backs (spec-0016 §1, spec-0023 §3): a cleared `respawns_on_rest` wave

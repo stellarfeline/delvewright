@@ -87,7 +87,6 @@ pub const DW_NO_SUSTAIN: DwCode = DwCode::new("DW0474", ExitTier::Build);
 /// `DW0475`: (warning) the numeric time-to-kill bound could not be computed.
 pub const DW_TTK_UNPROVEN: DwCode = DwCode::new("DW0475", ExitTier::Build);
 
-
 /// The vanilla player's `minecraft:max_health` base value. The DSL exposes no
 /// player-attribute surface at all, so this is not a default — it is the only
 /// value a delve can ship.
@@ -668,11 +667,6 @@ pub fn hostile_actors(c: &Campaign) -> Vec<&Actor> {
         .collect()
 }
 
-
-
-
-
-
 /// Is there a cell a player could stand on and swing from, adjacent to this
 /// body?
 ///
@@ -1111,12 +1105,6 @@ fn has_any_sustain(c: &Campaign, items: &ItemCombatRegistry) -> bool {
 // When to stop swinging at one body (the per-encounter half)
 // ---------------------------------------------------------------------------
 
-
-
-
-
-
-
 // ---------------------------------------------------------------------------
 // Who is not a fight (the cast half of the targeting policy)
 // ---------------------------------------------------------------------------
@@ -1298,9 +1286,6 @@ pub fn non_combatants_json(c: &Campaign) -> Value {
     o
 }
 
-
-
-
 /// The validation-only combat plan the bot ladder reads (spec-0023 §1/§3/§4).
 ///
 /// Lives under `validation/` like the waypoint export — excluded from the
@@ -1353,11 +1338,7 @@ pub fn non_combatants_json(c: &Campaign) -> Value {
 ///   is `floor_gate.not_covered` only), so `actors_gate.unbound`
 ///   does not by itself mean "no hostile actor in this campaign"; the reason
 ///   text says so and points at `floor_gate.not_covered`.
-pub fn combat_plan_json(
-    plan: &Plan,
-    encounters: &[Encounter],
-    run_backs: &[RunBack],
-) -> Value {
+pub fn combat_plan_json(plan: &Plan, encounters: &[Encounter], run_backs: &[RunBack]) -> Value {
     let difficulty = effective_difficulty(plan.campaign);
     let items = ItemCombatRegistry::v1_21_11();
     let entries: Vec<Value> = encounters
@@ -1431,8 +1412,6 @@ pub fn combat_plan_json(
         "run_backs": run_backs_json(run_backs),
     })
 }
-
-
 
 #[cfg(test)]
 mod tests {
