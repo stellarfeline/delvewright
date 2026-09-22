@@ -36,6 +36,31 @@ def shade(color: RGBA, delta: int) -> RGBA:
     return (clamp8(r + delta), clamp8(g + delta), clamp8(b + delta), a)
 
 
+def deepen(base: RGBA, shadow: RGBA) -> RGBA:
+    """Half a step further along the shadow a palette declares, in its own step.
+
+    ``shade`` adds a fixed offset, which is the wrong instrument for a second
+    shadow: a dark skin reaches black long before a pale one has moved, and a
+    black mouth on a dark face reads as a hole rather than as a mouth. This
+    takes the step the palette itself declares -- ``skin`` to ``skin_shadow`` --
+    and goes half as far again, so a creator who gave a dark character a shallow
+    shadow gets a shallow mouth out of the same two numbers and sets nothing
+    extra.
+
+    Half, rather than a whole further step, is the measurement: against a
+    ``skin_shadow`` at the 0.67-0.72 of ``skin`` the palettes in hand declare,
+    this lands at 0.51-0.58, and the mouth and the chin corners of the pinned
+    client's own nine default skins sit at 0.56-0.65 and 0.55. A whole step
+    lands at 0.35-0.44, darker than anything vanilla puts on a face.
+    """
+    return (
+        clamp8(round(shadow[0] + (shadow[0] - base[0]) / 2)),
+        clamp8(round(shadow[1] + (shadow[1] - base[1]) / 2)),
+        clamp8(round(shadow[2] + (shadow[2] - base[2]) / 2)),
+        shadow[3],
+    )
+
+
 def seed_from_id(texture_id: str) -> int:
     """Stable 32-bit seed from a texture id (process-independent)."""
     digest = hashlib.sha256(texture_id.encode("utf-8")).digest()

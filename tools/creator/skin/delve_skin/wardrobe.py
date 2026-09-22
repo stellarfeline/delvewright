@@ -70,8 +70,10 @@ FOOTWEAR: Dict[str, Span] = {
     "tall_boot": (0, 8),
 }
 
-#: Facial hair. ``moustache`` is the one row under the nose; ``beard`` is that
-#: row plus the chin, the jaw and the chin underside.
+#: Facial hair. ``moustache`` is the lip row; ``beard`` is that row plus the
+#: mouth and chin rows, the sides of the jaw and the chin underside. ``none`` is
+#: a modelled face and not a blank one -- the composer paints a mouth, a chin
+#: and a jaw that narrows toward it for everybody (``compose.FACE_*``).
 FACIAL_HAIR = ("none", "moustache", "beard")
 
 #: How far hair comes down the SIDES of the 8-px head, bottom-up: y=0 is the
