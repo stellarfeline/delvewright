@@ -230,23 +230,21 @@ services:
       # build ships `validation/death-plan.json`; `0` skips it for local iteration
       # and the report records that it was skipped, never that it passed.
       DELVEWRIGHT_DEATH_LOOP: ${DELVEWRIGHT_DEATH_LOOP:-1}
-      # The four `src/` reads a ladder must be able to set: `bot-run.sh`'s header
+      # The three `src/` reads a ladder must be able to set: `bot-run.sh`'s header
       # promises that "every environment variable src/run.ts reads is forwarded by
-      # the compose file", and these four are part of that promise. Each keeps its
+      # the compose file", and these three are part of that promise. Each keeps its
       # own default from the module that reads it, so naming them here changes no
       # run that does not set them.
       #
-      #   * DELVEWRIGHT_ACTOR_FLOOR   — skip the tiered-actor engagements (run.ts)
       #   * DELVEWRIGHT_RETRY_ON_DEATH — resume once after an UNSCRIPTED death (run.ts)
       #   * DELVEWRIGHT_CUTSCENE_GRACE_MS / _ENTITY_SETTLE_TIMEOUT_MS — the two
       #     executor waits a slow runner has to be able to lengthen (executor.ts)
       #
       # Written with `:-` and no value so an unset variable stays unset inside the
-      # container rather than becoming an empty string: `DELVEWRIGHT_ACTOR_FLOOR=""`
-      # is not `"0"`, but an empty `_TIMEOUT_MS` is parsed, and the modules that read
-      # them already treat absent and empty alike. Compose's `VAR:` short form (no
-      # value at all) is what actually omits the key when the host has not set it.
-      DELVEWRIGHT_ACTOR_FLOOR:
+      # container rather than becoming an empty string: an empty `_TIMEOUT_MS` is
+      # parsed, and the modules that read these already treat absent and empty
+      # alike. Compose's `VAR:` short form (no value at all) is what actually omits
+      # the key when the host has not set it.
       DELVEWRIGHT_RETRY_ON_DEATH:
       DELVEWRIGHT_CUTSCENE_GRACE_MS:
       DELVEWRIGHT_ENTITY_SETTLE_TIMEOUT_MS:
