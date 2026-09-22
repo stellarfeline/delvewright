@@ -55,7 +55,7 @@ function encounter(over: Partial<Encounter> = {}): Encounter {
       types: [
         {
           entity: "minecraft:drowned",
-          facts: ["name=Bellkeeper"],
+          facts: ["name=#0"],
           droppedFacts: [],
           readsAttackDamage: false,
           readsFollowRange: false,
@@ -66,7 +66,7 @@ function encounter(over: Partial<Encounter> = {}): Encounter {
           typeIndex: 0,
           count: 1,
           mask: 1,
-          label: "1 × minecraft:drowned `Bellkeeper`",
+          label: "1 × minecraft:drowned (stack 0)",
           maxHealth: 30,
           armorAtLeast: 0,
           armorToughnessAtLeast: 0,
@@ -107,7 +107,7 @@ const PLAN = {
         types: [
           {
             entity: "minecraft:drowned",
-            facts: ["name=Gate Drowned", "equipment.mainhand=minecraft:trident"],
+            facts: ["name=#0", "equipment.mainhand=minecraft:trident"],
             dropped_facts: [],
             reads_attack_damage: false,
             reads_follow_range: false,
@@ -118,7 +118,7 @@ const PLAN = {
             type: 0,
             count: 2,
             mask: 3,
-            label: "2 × minecraft:drowned `Gate Drowned`",
+            label: "2 × minecraft:drowned (stack 0)",
             max_health: 30,
             attack_damage: null,
             movement_speed: null,
@@ -694,7 +694,7 @@ test("the muster's declared facts survive the parse in the compiler's own order"
   assert.equal(m.chip, "the-drowned-bell:wave_chip_gate_assault");
   assert.equal(m.checked, 4);
   assert.deepEqual(m.types[0]!.facts, [
-    "name=Gate Drowned",
+    "name=#0",
     "equipment.mainhand=minecraft:trident",
   ]);
   assert.equal(m.profiles[0]!.mask, 3);

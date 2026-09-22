@@ -32,7 +32,7 @@ const ENC: Encounter = {
     types: [
       {
         entity: "minecraft:drowned",
-        facts: ["name=Bellkeeper"],
+        facts: ["name=#0"],
         droppedFacts: [],
         readsAttackDamage: false,
         readsFollowRange: false,
@@ -43,7 +43,7 @@ const ENC: Encounter = {
         typeIndex: 0,
         count: 1,
         mask: 1,
-        label: "1 × minecraft:drowned `Bellkeeper`",
+        label: "1 × minecraft:drowned (stack 0)",
         maxHealth: 30,
         armorAtLeast: 0,
         armorToughnessAtLeast: 0,

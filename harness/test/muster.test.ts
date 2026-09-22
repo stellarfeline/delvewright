@@ -29,7 +29,7 @@ const GUARD: MusterPlan = {
     {
       entity: "minecraft:zombie",
       facts: [
-        "name=Unremembered Guard",
+        "name=#0",
         "equipment.mainhand=minecraft:iron_sword",
         "equipment.head=minecraft:iron_helmet",
         "equipment.chest=minecraft:iron_chestplate",
@@ -44,7 +44,7 @@ const GUARD: MusterPlan = {
       typeIndex: 0,
       count: 5,
       mask: 15,
-      label: "5 × minecraft:zombie `Unremembered Guard`",
+      label: "5 × minecraft:zombie (stack 0)",
       maxHealth: 34,
       attackDamage: 6,
       followRange: 24,
@@ -146,7 +146,7 @@ test("a missing piece of declared gear is named by slot and item", () => {
 test("a name that rendered as something else is a finding, not a silence", () => {
   const bodies = [guardBody({ mask: 0b1110 }), ...Array.from({ length: 4 }, () => guardBody())];
   const v = verifyMuster(GUARD, summary(), bodies);
-  assert.match(v.findings[0]!, /name=Unremembered Guard/);
+  assert.match(v.findings[0]!, /name=#0/);
 });
 
 test("a body of an undeclared kind standing in the wave is a finding", () => {
@@ -191,7 +191,7 @@ test("two stacks of one kind are matched as a multiset, not by position", () => 
     types: [
       {
         entity: "minecraft:drowned",
-        facts: ["name=Drowned Chorister", "name=Drowned Precentor"],
+        facts: ["name=#0", "name=#1"],
         droppedFacts: [],
         readsAttackDamage: false,
         readsFollowRange: false,
@@ -202,7 +202,7 @@ test("two stacks of one kind are matched as a multiset, not by position", () => 
         typeIndex: 0,
         count: 3,
         mask: 0b01,
-        label: "3 × minecraft:drowned `Drowned Chorister`",
+        label: "3 × minecraft:drowned (stack 0)",
         maxHealth: 34,
         armorAtLeast: 0,
         armorToughnessAtLeast: 0,
@@ -211,7 +211,7 @@ test("two stacks of one kind are matched as a multiset, not by position", () => 
         typeIndex: 0,
         count: 1,
         mask: 0b10,
-        label: "1 × minecraft:drowned `Drowned Precentor`",
+        label: "1 × minecraft:drowned (stack 1)",
         maxHealth: 34,
         armorAtLeast: 0,
         armorToughnessAtLeast: 0,
@@ -235,5 +235,5 @@ test("two stacks of one kind are matched as a multiset, not by position", () => 
     body(0b01),
     body(0b01),
   ]);
-  assert.ok(short.findings.some((f) => /Drowned Precentor/.test(f)));
+  assert.ok(short.findings.some((f) => /stack 1/.test(f)));
 });

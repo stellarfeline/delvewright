@@ -150,7 +150,7 @@ import {
   type Vec3Like,
 } from "./crosshair.ts";
 import {
-  CENSUS_MATCH_RADIUS,
+  WAVE_ENGAGE_NEAR,
   isWaveBody,
   beginCensusWatch,
   observeCensus,
@@ -179,10 +179,12 @@ const STAGED_REPLY_MS = 400;
 /**
  * How far from a `collect` step's anchor a drop is still this fight's.
  *
- * The same radius the wave census matches bodies over, for the same reason: a
- * drop further out than the fight's own bodies could reach is not one it left.
+ * `WAVE_ENGAGE_NEAR`'s 32, because a drop lies where the BODY fell and a wave
+ * body chases the party across a room before it does. Narrowed to 12 by
+ * inspection, the bell `wave/drowned-choir`'s Precentor leaves was outside the
+ * search and `obj/take-the-tongue` timed out on vesperhold.
  */
-const DROP_SEARCH_NEAR = 12;
+const DROP_SEARCH_NEAR = WAVE_ENGAGE_NEAR;
 
 /**
  * One body the HARNESS took out of the delve, and why.
@@ -4428,14 +4430,16 @@ export class MineflayerExecutor implements StepExecutor {
    * at one — by the census's own match radius around the encounter anchor.
    *
    * Deliberately by ANCHOR rather than by a census: a census is a round trip and
-   * this is asked on a damage packet. The radius is the one the census matches
-   * bodies over, so "at the encounter" means the same thing in both places.
+   * this is asked on a damage packet. The radius is `WAVE_ENGAGE_NEAR` — how far
+   * a body may be and still be part of this fight — because a wave body chases
+   * the party: measured on vesperhold, a Cliff Watchman that had followed the bot
+   * off its rampart was staged away before its own step could read it.
    */
   private pendingEncounterAt(pos: Vec3Tuple): string | undefined {
     for (const enc of this.combatPlan?.encounters ?? []) {
       if (this.waveClearedAt.has(enc.wave)) continue;
       const d = Math.hypot(pos[0] - enc.pos[0], pos[1] - enc.pos[1], pos[2] - enc.pos[2]);
-      if (d <= CENSUS_MATCH_RADIUS) return enc.wave;
+      if (d <= WAVE_ENGAGE_NEAR) return enc.wave;
     }
     return undefined;
   }

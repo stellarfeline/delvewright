@@ -470,9 +470,10 @@ see below.
 
 ## The fight, and the floor it needs
 
-The far hall carries the one encounter the inverted floor gate measures — the
-muster, billed `elite`. A gate can only grade a fight nothing else in the room
-took part in, so three facts about where things stand are load-bearing rather
+The far hall carries the one mandatory encounter — the muster, billed `elite`.
+The ladder reads its bodies against the declaration and then stages them away; it
+grades no fight. What still has to hold is that the bodies the probe reads are
+the wave's own, so three facts about where things stand are load-bearing rather
 than decorative.
 
 **A killing volume does not share a room with a fight.** A lethal volume emits

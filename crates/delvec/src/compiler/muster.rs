@@ -100,6 +100,19 @@ impl MusterFact {
     }
 }
 
+/// How the plan names a declared NAME, and why it is not the name.
+///
+/// `combat-plan.json` is language-neutral: a `--lang zh-cn` bake swaps every
+/// authored string before emission, so a plan carrying the text would differ
+/// between two builds of one campaign that must be identical outside the
+/// string-bearing files (`cli::lang_build_localizes_only_strings_and_is_deterministic`).
+/// The ordinal is the index of this distinct name among the ones this entity kind
+/// declares in this wave, in declaration order, and a finding names the stack
+/// beside it — enough to resolve against the campaign, in any language.
+fn name_token(ordinal: usize) -> String {
+    format!("#{ordinal}")
+}
+
 /// One entity kind standing in this wave, and what the probe asks of it.
 #[derive(Debug, Clone)]
 pub struct MusterType {
@@ -242,18 +255,25 @@ pub fn muster(
     for mob in &wave.mobs {
         let t = &mut types[index_of[mob.entity.as_str()]];
         if let Some(name) = &mob.name {
-            push_fact(
-                t,
-                MusterFact {
-                    about: "name".to_string(),
-                    // The plan is a harness document, never a player-visible one, so
-                    // an l10n-tagged name is carried as its English plain text
-                    // (`DW0185`). What the probe ASKS is the component itself, built
-                    // by `name_predicate` from the same string the summon uses.
-                    value: delvewright_dsl::l10n_plain(name).to_string(),
-                    predicate: format!("{{CustomName:{}}}", name_predicate(name)),
-                },
-            );
+            // The fact is named by ORDINAL, never by the text (see `name_token`).
+            // What the probe ASKS is the component itself, built by
+            // `name_predicate` from the same string the summon writes.
+            let predicate = format!("{{CustomName:{}}}", name_predicate(name));
+            let ordinal = t
+                .facts
+                .iter()
+                .filter(|f| f.about == "name")
+                .count();
+            if !t.facts.iter().any(|f| f.predicate == predicate) {
+                push_fact(
+                    t,
+                    MusterFact {
+                        about: "name".to_string(),
+                        value: name_token(ordinal),
+                        predicate,
+                    },
+                );
+            }
         }
         for (slot, item) in equipment_of(mob) {
             push_fact(
@@ -273,13 +293,14 @@ pub fn muster(
 
     // Pass two: the per-stack expectation, now that every bit position is fixed.
     let mut profiles: Vec<MusterProfile> = Vec::new();
-    for mob in &wave.mobs {
+    for (stack, mob) in wave.mobs.iter().enumerate() {
         let ti = index_of[mob.entity.as_str()];
         let equipment = equipment_of(mob);
         let mut mask: i64 = 0;
         if let Some(name) = &mob.name {
-            if let Some(b) = bit_of(&types[ti], "name", delvewright_dsl::l10n_plain(name)) {
-                mask |= b;
+            let predicate = format!("{{CustomName:{}}}", name_predicate(name));
+            if let Some(i) = types[ti].facts.iter().position(|f| f.predicate == predicate) {
+                mask |= 1i64 << i;
             }
         }
         let mut armor = 0.0;
@@ -306,15 +327,9 @@ pub fn muster(
             type_index: ti,
             count: mob.count,
             mask,
-            label: match &mob.name {
-                Some(n) => format!(
-                    "{} × {} `{}`",
-                    mob.count,
-                    mob.entity,
-                    delvewright_dsl::l10n_plain(n)
-                ),
-                None => format!("{} × {}", mob.count, mob.entity),
-            },
+            // Language-neutral, like every other field here: the stack index is
+            // what a reader resolves against the campaign document.
+            label: format!("{} × {} (stack {stack})", mob.count, mob.entity),
             max_health: attrs.and_then(|a| a.max_health),
             attack_damage: attrs.and_then(|a| a.attack_damage),
             movement_speed: attrs.and_then(|a| a.movement_speed),

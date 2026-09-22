@@ -46,10 +46,12 @@ churn continued.
 Most of the early "green" was vacuous. Three distinct ways this happens, all
 observed on the island:
 
-- **Unbound** — the gate ran and matched zero objects. Before round 20 added one
-  `actors[].tier` field, `validation/combat-plan.json` had `floor_gate.covered`,
-  `floor_gate.not_covered` **and** `actors[]` all empty: the bot's combat floor
-  gate examined zero enemies for nineteen rounds and was green every time.
+- **Unbound** — the gate ran and matched zero objects. The island's combat
+  coverage ledger examined zero enemies for nineteen rounds and was green every
+  time, because every list it printed was empty at once and nothing stated a
+  count. (That ledger is gone — the ladder no longer grades a fight at all — and
+  its successor, the per-wave **muster**, states `declared_facts` per encounter
+  for exactly this reason.)
 - **Unfenced** — the campaign's `dsl_version` had not reached the surface the gate
   keys off, so the whole proof was inert. Branch reachability, the chronicle and
   the six branch proofs did not exist for this campaign until round 19 declared
@@ -66,8 +68,8 @@ observed on the island:
 **Obligation.** Every validation artifact states its binding count, and a zero
 binding is a finding. Reading a report is not enough — an empty coverage set and
 a clean coverage set look identical to a reader who is not counting. When a
-campaign has hostile bodies but no tiered actor or wave, the floor gate is
-unbound; say so in the round summary rather than reporting a pass.
+campaign has waves whose stacks declare nothing, the muster is unbound; say so in
+the round summary rather than reporting a pass.
 
 **Which zero it is decides what the finding says, and only one of them blocks.**
 A check binds where the object is. The zero above is the one that blocks: the
@@ -211,7 +213,7 @@ the class is HERE and nothing this build carries would catch the defect again.
 |---|---|---|
 | `NO-GENERAL-FORM` | the instance was fixed, the class never built | rule 2's `DW0489`, eleven rounds late |
 | `MISSING-CHECK` | the ledger names a check this engine no longer has (absent from source, undocumented, or asserted by no test), or a stage document the COMPILER read that this gate holds no parsed copy of | four rows in the ledger's own first run named invariants that did not exist under those names |
-| `UNBOUND` | the check matched zero objects, and objects that could have carried the defect are there — or nobody has measured whether they are | rule 1's floor gate, nineteen rounds |
+| `UNBOUND` | the check matched zero objects, and objects that could have carried the defect are there — or nobody has measured whether they are | rule 1's coverage ledger, nineteen rounds |
 | `UNFENCED` | the campaign's `dsl_version` never reached the surface the check keys off | rule 1's branch proofs before round 19 |
 | `NO-SOURCE` | the campaign has no stage JSON, so nothing can be measured | the drowned-bell remake today |
 
@@ -242,7 +244,7 @@ declared this one.
 declared `applies_when` probe, for a binding that counts a DECLARATION inside
 carriers that may exist anyway (a `has`/`has_any` predicate, a `contains`
 glob, an `artifact` or `out` probe over derived output) — that zero is
-genuinely ambiguous, it is the floor gate's shape, and a row of that shape
+genuinely ambiguous, it is the unbound ledger's shape, and a row of that shape
 owes a probe. Or the binding's OWN SHAPE, where the probe counts the object
 class itself and nothing stands one step behind it: a `dsl` predicate
 selecting by identity (`eq`/`in`/`prefix`, with `not_in` excluding values, or an `any_of` every arm of which is

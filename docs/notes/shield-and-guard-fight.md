@@ -1,7 +1,15 @@
 # The shield, and one body against a five-mob wave
 
 Measured on the pinned Minecraft Java 1.21.11 server (`versions.toml`
-`[images.base]` `mirror_of`) by `tools/spike-guard-fight/run.sh`. Every number
+`[images.base]` `mirror_of`) by `tools/spike-guard-fight/run.sh`, at engine
+revision `37cf4b4f`. **That rig no longer exists.** It drove the harness's own
+melee — `fightWave` under `withAssist`, a raised shield, charged swings — and
+that machinery was removed when the ladder stopped fighting: a combat step now
+reads a wave's live bodies against the declaration and then stages them away, and
+whether one body can clear five is not a question any machine here asks. The
+numbers below stand as what was measured; they are not reproducible from the
+current tree, and §2 is the part that outlived the rig — it is exactly what the
+muster probe now reads off every wave on every run. Every number
 here is the SERVER's: the player statistics `damage_blocked_by_shield`,
 `damage_taken`, `damage_resisted` and `damage_dealt`, read as scoreboard
 objectives whose creation is verified before any zero from them is believed, each

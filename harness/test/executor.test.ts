@@ -2060,7 +2060,7 @@ function combatPlan(
           types: [
             {
               entity: "minecraft:drowned",
-              facts: ["name=Gate Drowned"],
+              facts: ["name=#0"],
               droppedFacts: [],
               readsAttackDamage: false,
               readsFollowRange: false,
@@ -2071,7 +2071,7 @@ function combatPlan(
               typeIndex: 0,
               count,
               mask: 1,
-              label: `${count} × minecraft:drowned \`Gate Drowned\``,
+              label: `${count} × minecraft:drowned (stack 0)`,
               maxHealth: FULL_HEALTH,
               armorAtLeast: 0,
               armorToughnessAtLeast: 0,

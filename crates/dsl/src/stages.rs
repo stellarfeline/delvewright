@@ -881,8 +881,7 @@ impl<'a> BodyRef<'a> {
     ///
     /// A stage-2 npc does unless it is `deferred`; a stage-5 actor never does —
     /// a puppet exists only from the `spawn-actor` that summons it, which is why
-    /// an actor no `spawn-actor` names never exists at all (`DW0477` says so of
-    /// a billed elite).
+    /// an actor no `spawn-actor` names never exists at all.
     pub fn at_world_init(self) -> bool {
         match self {
             BodyRef::Npc(n) => !n.deferred,
@@ -4237,16 +4236,12 @@ pub struct Actor {
     /// the armoured thing kneeling among the graves that stands up when you hit
     /// it — is an **actor**: staged by `spawn-actor`, given AI by
     /// `unleash-actor`, killed by hand rather than by a `kill` objective. Before
-    /// this field the validation ladder's inverted floor gate could only see
-    /// `waves[].tier`, so such a boss was *structurally invisible* to it and an
-    /// empty finding list read as a pass while covering nothing.
+    /// this field nothing anywhere stated what such a fight was billed as.
     ///
     /// Like the wave field this is a **declaration, not a knob**: the compiler
     /// never scales an actor from it, and emission is unchanged whichever tier is
-    /// declared. What it buys is scrutiny — the actor enters
-    /// `validation/combat-plan.json`, and the compiler states, per tiered actor,
-    /// whether the floor gate can measure it and why not when it cannot
-    /// (`DW0477`).
+    /// declared. Its readers are the health-bar advisory (`DW0912`) and the drop
+    /// rule — only a billed fight leaves anything behind.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tier: Option<EncounterTier>,
     /// A health bar over this actor's fight (DSL v0.31, spec-0073) — the same
