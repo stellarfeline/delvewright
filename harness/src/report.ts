@@ -25,6 +25,7 @@ import type {
   FightAttribution,
   FloorLedger,
   PerformedRest,
+  ReengageObservation,
   UnassistedOutcome,
 } from "./combat.ts";
 import type { DeathLoopBinding, LethalTrial } from "./death-loop.ts";
@@ -638,21 +639,10 @@ export class RunReport {
         // What the settled probe actually saw. `settle_ms` is the reading key for
         // a `present: 0`: a probe that answered instantly saw an empty room, one
         // that spent its whole budget waited for a room that never filled.
-        reengage:
-          t.reengage === undefined
-            ? null
-            : {
-                present: t.reengage.present,
-                declared: t.reengage.declared,
-                carried_over: t.reengage.carriedOver,
-                health_readable: t.reengage.healthReadable,
-                damaged: t.reengage.damaged,
-                // The count half's correction, stated beside the count it corrects.
-                credited: t.reengage.credited,
-                nearest_blocks: t.reengage.nearest ?? null,
-                farthest_blocks: t.reengage.farthest ?? null,
-                settle_ms: t.reengage.settleMs,
-              },
+        // The census the moment the re-seat landed — what re-seat fidelity is
+        // judged on. `null` for a wave that does not re-seat on rest.
+        reseat: observationJson(t.reseat),
+        reengage: observationJson(t.reengage),
         objectives_intact: t.objectivesIntact,
         lost_objectives: [...t.lostObjectives],
         // A trial the run abandoned half-way is still IN this array — that is the
@@ -665,6 +655,23 @@ export class RunReport {
       unkillable_findings: [...this.unkillable],
     };
   }
+}
+
+/** One census observation as the report writes it. */
+function observationJson(o: ReengageObservation | undefined): Record<string, unknown> | null {
+  if (o === undefined) return null;
+  return {
+    present: o.present,
+    declared: o.declared,
+    carried_over: o.carriedOver,
+    health_readable: o.healthReadable,
+    damaged: o.damaged,
+    // The count half's correction, stated beside the count it corrects.
+    credited: o.credited,
+    nearest_blocks: o.nearest ?? null,
+    farthest_blocks: o.farthest ?? null,
+    settle_ms: o.settleMs,
+  };
 }
 
 /** Where to write the report, or `undefined` to write none. */

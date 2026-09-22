@@ -27,7 +27,9 @@ import {
   CombatPlanParseError,
   parseCombatPlan,
   reseatFidelityFinding,
-  reseatFidelityUnjudged,
+  returnAttritionFinding,
+  returnHealthNote,
+  dieRetryFidelityGaps,
   respawnedAtCheckpoint,
   retryOutcome,
   scriptedDeathCommand,
@@ -380,6 +382,7 @@ function trial(over: Partial<DeathTrial> = {}): DeathTrial {
     reEngaged: true,
     objectiveComplete: false,
     reseats: false,
+    reseat: undefined,
     reengage: undefined,
     objectivesIntact: true,
     lostObjectives: [],
@@ -654,22 +657,55 @@ test("credit corrects the count, it does not cover a shortfall it cannot reach",
   assert.match(String(reseatFidelityFinding("wave/x", 1, "first-contact", obs)), /came back SHORT/);
 });
 
-test("the health half is UNJUDGED, by name, over a cohort the party has fought", () => {
-  const obs = observationOf(census([mob({ health: 11 }), mob()], { credited: 1 }), 3, [...ANCHOR], 40);
-  assert.equal(
-    reseatFidelityFinding("wave/x", 1, "first-contact", obs),
-    undefined,
-    "not a failure: the wound may be the bot's own",
-  );
-  const gap = reseatFidelityUnjudged("wave/x", 1, "first-contact", obs);
-  assert.match(String(gap), /UNJUDGED/);
-  assert.match(String(gap), /credited with 1 of this wave since it was re-seated/);
-});
-
-test("an untouched cohort's health half is judged, and its gap is silent", () => {
+test("a wound read at the re-seat is red — nothing has touched the cohort yet", () => {
   const obs = observationOf(census([mob({ health: 11 }), mob()]), 2, [...ANCHOR], 40);
   assert.match(String(reseatFidelityFinding("wave/x", 1, "first-contact", obs)), /BELOW full/);
-  assert.equal(reseatFidelityUnjudged("wave/x", 1, "first-contact", obs), undefined);
+});
+
+// Vesperhold's choir, reproduced: the re-seat summoned four Drowned Choristers
+// whole, and two of them swam into the lethal well beside their seat ("Drowned
+// Chorister drowned") while the bot walked back. The census at the encounter read
+// 2 of 4 with nothing credited, and the stage said the RE-SEAT "came back SHORT".
+test("bodies lost between the re-seat and the return are the encounter's, not the re-seat's", () => {
+  const reseat = observationOf(census([mob(), mob(), mob(), mob()]), 4, [...ANCHOR], 150);
+  const back = observationOf(census([mob(), mob()]), 4, [...ANCHOR], 6_000);
+  assert.equal(reseatFidelityFinding("wave/x", 1, "first-contact", reseat), undefined);
+  const v = String(returnAttritionFinding("wave/x", 1, "first-contact", reseat, back));
+  assert.match(v, /re-seat brought back 4 of 4/);
+  assert.match(v, /2 died to something that is not the party/);
+  assert.doesNotMatch(v, /came back SHORT/);
+  const verdict = String(
+    trialVerdict(trial({ reseats: true, reseat, reengage: back, outcome: "re-engaged" })),
+  );
+  assert.match(verdict, /kills its own wave/);
+});
+
+test("a body the party felled on the way back is not attrition", () => {
+  const reseat = observationOf(census([mob(), mob(), mob()]), 3, [...ANCHOR], 150);
+  const back = observationOf(census([mob(), mob()], { credited: 1 }), 3, [...ANCHOR], 6_000);
+  assert.equal(returnAttritionFinding("wave/x", 1, "first-contact", reseat, back), undefined);
+});
+
+// Reproduced from a campaign run: skeletons shot one another and spear zombies
+// stabbed one another while the bot walked back, and the census read ~30 s after
+// the re-seat found them hurt with no swing by the bot.
+test("wounds found at the return are stated, never judged, once the re-seat was read whole", () => {
+  const reseat = observationOf(census([mob(), mob(), mob()]), 3, [...ANCHOR], 150);
+  const back = observationOf(census([mob({ health: 11 }), mob({ health: 14 }), mob()]), 3, [...ANCHOR], 250);
+  const t = trial({ reseats: true, reseat, reengage: back, outcome: "re-engaged" });
+  assert.equal(trialVerdict(t), undefined);
+  const notes = dieRetryFidelityGaps([t]);
+  assert.equal(notes.length, 1);
+  assert.match(notes[0]!, /2 of 3 readable wave mob\(s\) stood below full health/);
+  assert.equal(returnHealthNote("wave/x", 1, "first-contact", reseat), undefined);
+});
+
+test("a re-seating wave whose re-seat was never read is unproven, not passed", () => {
+  const back = observationOf(census([mob(), mob()]), 2, [...ANCHOR], 250);
+  assert.match(
+    String(trialVerdict(trial({ reseats: true, reengage: back, outcome: "re-engaged" }))),
+    /never read at the re-seat/,
+  );
 });
 
 test("only a re-seating wave owes fidelity — a persisting wave is judged by outcome alone", () => {
@@ -680,7 +716,9 @@ test("only a re-seating wave owes fidelity — a persisting wave is judged by ou
     "survivors ARE the design when the wave does not re-seat",
   );
   assert.match(
-    String(trialVerdict(trial({ reseats: true, reengage: wounded, outcome: "re-engaged" }))),
+    String(
+      trialVerdict(trial({ reseats: true, reseat: wounded, reengage: wounded, outcome: "re-engaged" })),
+    ),
     /previous life/,
   );
 });

@@ -33,12 +33,14 @@ class FakeVec3 {
 interface FakeEntity {
   id: number;
   name: string;
+  /** The registry category mineflayer copies onto a tracked entity. */
+  type: string;
   height: number;
   position: FakeVec3;
 }
 
 function mob(id: number, name: string, distance: number): FakeEntity {
-  return { id, name, height: 1.95, position: new FakeVec3(distance, 64, 0) };
+  return { id, name, type: "hostile", height: 1.95, position: new FakeVec3(distance, 64, 0) };
 }
 
 const RABBIT_STEW = { type: 900, name: "rabbit_stew", count: 1 };
