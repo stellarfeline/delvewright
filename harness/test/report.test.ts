@@ -2,7 +2,6 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { RunReport, STAGES, reportPathFromEnv } from "../src/report.ts";
 import {
-  AssistLedger,
   waveAttribution,
   type DeathTrial,
   type Encounter,
@@ -22,7 +21,35 @@ const ENC: Encounter = {
     brand: "the-drowned-bell:wave_brand_bellkeeper",
     unbrand: "the-drowned-bell:wave_unbrand_bellkeeper",
   },
-  bodies: [{ kind: "drowned", count: 1, giveUpSwings: 24 }],
+  muster: {
+    probe: "the-drowned-bell:wave_muster_bellkeeper",
+    strike: "the-drowned-bell:wave_strike_bellkeeper",
+    chip: "the-drowned-bell:wave_chip_bellkeeper",
+    scale: 1000,
+    unread: -1,
+    bodies: 1,
+    checked: 2,
+    types: [
+      {
+        entity: "minecraft:drowned",
+        facts: ["name=Bellkeeper"],
+        droppedFacts: [],
+        readsAttackDamage: false,
+        readsFollowRange: false,
+      },
+    ],
+    profiles: [
+      {
+        typeIndex: 0,
+        count: 1,
+        mask: 1,
+        label: "1 × minecraft:drowned `Bellkeeper`",
+        maxHealth: 30,
+        armorAtLeast: 0,
+        armorToughnessAtLeast: 0,
+      },
+    ],
+  },
 };
 
 const TRIAL: DeathTrial = {
@@ -103,184 +130,13 @@ test("every enumerated branch appears in the report — run, or skipped with a r
   assert.equal(bolt["chronicle"], "branch-chronicle-bolt.md");
 });
 
-test("the run report prints the compiler's floor-gate ledger, both sides, verbatim", () => {
-  // Without this, an unmeasurable elite surfaces only as a build-time DW0477 —
-  // so a reader holding a green run report has no way to learn that its empty
-  // findings list covers a fight nobody ever had.
-  const report = new RunReport("souls-bonfire", "normal");
-  report.recordCombatCoverage(
-    {
-      present: true,
-      covered: [{ kind: "wave", id: "wave/bellkeeper", tier: "boss" }],
-      notCovered: [
-        {
-          kind: "actor",
-          id: "actor/barrow-warden",
-          tier: "elite",
-          reason: "it is staged but never unleashed, and it is not `vulnerable`",
-        },
-      ],
-    },
-    [],
-  );
-  const json = report.toJSON() as {
-    floor_gate: { present: boolean; covered: unknown[]; not_covered: Record<string, unknown>[] };
-  };
-  assert.equal(json.floor_gate.present, true);
-  assert.deepEqual(json.floor_gate.covered, [
-    { kind: "wave", id: "wave/bellkeeper", tier: "boss" },
-  ]);
-  assert.equal(json.floor_gate.not_covered[0]!["id"], "actor/barrow-warden");
-  assert.match(String(json.floor_gate.not_covered[0]!["reason"]), /never unleashed/);
-});
 
-test("an untiered hostile is printed with an explicit null tier, never a dropped key", () => {
-  // The row exists precisely because nothing was declared, so the
-  // report must SHOW the absence. A key that vanishes from the JSON would be the
-  // same silence one layer down.
-  const report = new RunReport("souls-bonfire", "normal");
-  report.recordCombatCoverage(
-    {
-      present: true,
-      covered: [],
-      notCovered: [
-        {
-          kind: "actor",
-          id: "actor/barrow-warden",
-          reason: "`actor/barrow-warden` is UNTIERED: the campaign `unleash-actor`s it",
-        },
-      ],
-    },
-    [],
-  );
-  const json = report.toJSON() as {
-    floor_gate: { not_covered: Record<string, unknown>[] };
-  };
-  const row = json.floor_gate.not_covered[0]!;
-  assert.ok("tier" in row, "the tier key must be present and null");
-  assert.equal(row["tier"], null);
-  assert.match(String(row["reason"]), /UNTIERED/);
-});
 
-test("a build with no ledger reports it ABSENT, not as an empty ledger", () => {
-  // "This campaign bills nothing hard" and "this build cannot tell you" are
-  // different facts, and only one of them is reassuring.
-  const report = new RunReport("hello-world", "peaceful");
-  const json = report.toJSON() as { floor_gate: { present: boolean } };
-  assert.equal(json.floor_gate.present, false);
-});
 
-test("an unbound floor gate's binding count is printed, never left to an empty pair", () => {
-  // playtest-methodology.md rule 1: the exact defect the island shipped for
-  // nineteen rounds. A reader must see `unbound: true` and the reason —
-  // never have to notice `covered`/`not_covered` are both empty to learn it.
-  const report = new RunReport("souls-bonfire", "easy");
-  report.recordCombatCoverage(
-    {
-      present: true,
-      covered: [],
-      notCovered: [],
-      binding: {
-        examined: 0,
-        unbound: true,
-        reason: "no wave or actor in this campaign is billed `elite`/`boss`",
-      },
-    },
-    [],
-  );
-  const json = report.toJSON() as {
-    floor_gate: { examined: number | null; unbound: boolean | null; reason: string | null };
-  };
-  assert.equal(json.floor_gate.examined, 0);
-  assert.equal(json.floor_gate.unbound, true);
-  assert.match(String(json.floor_gate.reason), /billed/);
-});
 
-test("a bound floor gate's binding count is printed with no reason", () => {
-  const report = new RunReport("souls-bonfire", "easy");
-  report.recordCombatCoverage(
-    {
-      present: true,
-      covered: [{ kind: "wave", id: "wave/bellkeeper", tier: "boss" }],
-      notCovered: [],
-      binding: { examined: 1, unbound: false },
-    },
-    [],
-  );
-  const json = report.toJSON() as {
-    floor_gate: { examined: number | null; unbound: boolean | null; reason: string | null };
-  };
-  assert.equal(json.floor_gate.examined, 1);
-  assert.equal(json.floor_gate.unbound, false);
-  assert.equal(json.floor_gate.reason, null);
-});
 
-test("a plan predating the binding count reports it as null, never a fabricated zero", () => {
-  const report = new RunReport("hello-world", "peaceful");
-  const json = report.toJSON() as {
-    floor_gate: { examined: number | null; unbound: boolean | null };
-    actors_gate: unknown;
-  };
-  assert.equal(json.floor_gate.examined, null);
-  assert.equal(json.floor_gate.unbound, null);
-  assert.equal(json.actors_gate, null);
-});
 
-test("the actors[] binding count is a SEPARATE question from the floor gate's", () => {
-  // An all-`ordinary` actor binds `actors_gate` while leaving `floor_gate`
-  // empty — two different counts, and the report must not conflate them.
-  const report = new RunReport("souls-bonfire", "easy");
-  report.recordCombatCoverage({ present: true, covered: [], notCovered: [] }, []);
-  report.recordActorsGate({ examined: 1, unbound: false });
-  const json = report.toJSON() as {
-    floor_gate: { examined: number | null };
-    actors_gate: { examined: number; unbound: boolean; reason: string | null } | null;
-  };
-  assert.equal(json.floor_gate.examined, null);
-  assert.deepEqual(json.actors_gate, { examined: 1, unbound: false, reason: null });
-});
 
-test("every tiered actor gets a row — fought with its outcome, or skipped with a reason", () => {
-  const report = new RunReport("souls-bonfire", "normal");
-  report.recordCombatCoverage({ present: true, covered: [], notCovered: [] }, [
-    {
-      actor: "actor/barrow-warden",
-      tier: "elite",
-      entity: "minecraft:wither_skeleton",
-      anchor: "anchor/wave",
-      covered: true,
-      exercised: true,
-      trial: {
-        actor: "actor/barrow-warden",
-        tier: "elite",
-        afterObjective: "obj/open-the-door",
-        outcome: "lost",
-        swings: 7,
-        elapsedMs: 12_000,
-        detail: "bot died",
-      },
-    },
-    {
-      actor: "actor/graveward",
-      tier: "boss",
-      entity: "minecraft:warden",
-      anchor: "anchor/graves",
-      covered: true,
-      exercised: false,
-      reason: "unleashed only by an ambient `strike` trigger",
-    },
-  ]);
-  const json = report.toJSON() as { actors: Record<string, unknown>[] };
-  assert.equal(json.actors.length, 2);
-  assert.equal(json.actors[0]!["exercised"], true);
-  assert.equal(json.actors[0]!["outcome"], "lost");
-  assert.equal(json.actors[0]!["swings"], 7);
-  assert.equal(json.actors[0]!["reason"], null);
-  // The skipped one is present, named, and has no outcome that could be misread.
-  assert.equal(json.actors[1]!["exercised"], false);
-  assert.equal(json.actors[1]!["outcome"], null);
-  assert.match(String(json.actors[1]!["reason"]), /ambient `strike` trigger/);
-});
 
 test("a branch recorded as run-but-failed never reads as passed", () => {
   const report = new RunReport("hello-world", "easy");
@@ -299,19 +155,6 @@ test("a branch recorded as run-but-failed never reads as passed", () => {
   assert.equal(json.branches.outcomes[0]!["passed"], false);
 });
 
-test("the report names every assist window with its encounter id and ticks", () => {
-  const report = new RunReport("the-drowned-bell", "easy");
-  const ledger = new AssistLedger();
-  const w = ledger.open(ENC, "after an unassisted attempt failed", 1_000);
-  ledger.close(w, 61_000);
-  report.recordAssists(ledger.windows());
-  const json = report.toJSON() as { assist_windows: Record<string, unknown>[] };
-  assert.equal(json["assist_windows"].length, 1);
-  assert.equal(json["assist_windows"][0]!["encounter"], "obj/the-keeper");
-  assert.equal(json["assist_windows"][0]!["ticks"], 1_200);
-  assert.equal(json["assist_windows"][0]!["reason"], "after an unassisted attempt failed");
-  assert.equal(json["assist_windows"][0]!["closed_at_ms"], 61_000);
-});
 
 test("a skipped die-retry stage is recorded as skipped, never as passed", () => {
   // The failure mode this guards: reading a green run and assuming the retry loop
@@ -340,18 +183,20 @@ test("stages appear in ladder order regardless of the order they were recorded",
   );
 });
 
-test("death trials and floor findings reach the artifact", () => {
+test("death trials and muster findings reach the artifact", () => {
   const report = new RunReport("the-drowned-bell", "normal");
   report.recordTrials([TRIAL]);
-  report.recordFloorFinding("wave/bellkeeper is billed `boss` and the bot beat it cold");
+  report.recordMusterFinding(
+    "wave/bellkeeper: `max_health` is declared 30 and the body's own attribute reads 20",
+  );
   const json = report.toJSON() as {
     die_retry: Record<string, unknown>[];
-    floor_findings: string[];
+    muster_findings: string[];
   };
   assert.equal(json["die_retry"][0]!["phase"], "mid-fight");
   assert.equal(json["die_retry"][0]!["at_checkpoint"], true);
   assert.deepEqual(json["die_retry"][0]!["respawn_pos"], [97, 71, -96]);
-  assert.equal(json["floor_findings"].length, 1);
+  assert.equal(json["muster_findings"].length, 1);
   assert.equal(report.findings().length, 1);
 });
 
@@ -361,32 +206,7 @@ test("the report is written only when the environment names a path", () => {
   assert.equal(reportPathFromEnv({ DELVEWRIGHT_RUN_REPORT: "/out/run.json" }), "/out/run.json");
 });
 
-// --- reading an EMPTY assist ledger ------------------------------
 
-test("the report states each encounter's assist policy and how far the run got", () => {
-  // The-drowned-bell round 3 shipped `assist_windows: []` on a run in which the
-  // bot demonstrably died. Empty was the CORRECT reading — spec-0023 takes no
-  // assist while the die-retry stage is deliberately dying, and the run never got
-  // past that stage — but the artifact could not say so, leaving "per policy"
-  // indistinguishable from "never wired". This is what makes it readable.
-  const report = new RunReport("the-drowned-bell", "normal");
-  report.recordEncounters([
-    {
-      encounter: ENC.objective,
-      wave: ENC.wave,
-      tier: ENC.tier,
-      assistPolicy: "unassisted-first",
-      phaseReached: "die-retry",
-      assistWindows: 0,
-      attribution: { kind: "unattributed", reason: "the run never reached the fight" },
-    },
-  ]);
-  const json = report.toJSON() as { encounters: Record<string, unknown>[] };
-  assert.equal(json["encounters"].length, 1);
-  assert.equal(json["encounters"][0]!["assist_policy"], "unassisted-first");
-  assert.equal(json["encounters"][0]!["phase_reached"], "die-retry");
-  assert.equal(json["encounters"][0]!["assist_windows"], 0);
-});
 
 // `phase_reached: cleared` says the step ended; it never said who ended it. A
 // gallery encounter standing beside a lethal volume reads `cleared` over a cohort
@@ -398,18 +218,16 @@ test("an encounter row states who felled its bodies, and says so when nobody can
       encounter: ENC.objective,
       wave: ENC.wave,
       tier: ENC.tier,
-      assistPolicy: "unassisted-first",
       phaseReached: "cleared",
-      assistWindows: 0,
+      declaredFacts: 2,
       attribution: waveAttribution(3, 0, 1),
     },
     {
       encounter: "obj/second",
       wave: "wave/second",
       tier: ENC.tier,
-      assistPolicy: "assisted",
       phaseReached: "cleared",
-      assistWindows: 1,
+      declaredFacts: 0,
       attribution: { kind: "unattributed", reason: "no wave census answered" },
     },
   ]);

@@ -246,7 +246,11 @@ pub fn muster(
                 t,
                 MusterFact {
                     about: "name".to_string(),
-                    value: name.clone(),
+                    // The plan is a harness document, never a player-visible one, so
+                    // an l10n-tagged name is carried as its English plain text
+                    // (`DW0185`). What the probe ASKS is the component itself, built
+                    // by `name_predicate` from the same string the summon uses.
+                    value: delvewright_dsl::l10n_plain(name).to_string(),
                     predicate: format!("{{CustomName:{}}}", name_predicate(name)),
                 },
             );
@@ -274,7 +278,7 @@ pub fn muster(
         let equipment = equipment_of(mob);
         let mut mask: i64 = 0;
         if let Some(name) = &mob.name {
-            if let Some(b) = bit_of(&types[ti], "name", name) {
+            if let Some(b) = bit_of(&types[ti], "name", delvewright_dsl::l10n_plain(name)) {
                 mask |= b;
             }
         }
@@ -303,7 +307,12 @@ pub fn muster(
             count: mob.count,
             mask,
             label: match &mob.name {
-                Some(n) => format!("{} × {} `{}`", mob.count, mob.entity, n),
+                Some(n) => format!(
+                    "{} × {} `{}`",
+                    mob.count,
+                    mob.entity,
+                    delvewright_dsl::l10n_plain(n)
+                ),
                 None => format!("{} × {}", mob.count, mob.entity),
             },
             max_health: attrs.and_then(|a| a.max_health),
@@ -364,12 +373,13 @@ const H_TOUGHNESS: &str = "#wmus_at";
 const H_SPEED: &str = "#wmus_ms";
 const H_ATTACK: &str = "#wmus_ad";
 const H_FOLLOW: &str = "#wmus_fr";
+const H_ATTACK_EFFECTIVE: &str = "#wmus_ade";
 
 /// The holders the summary line carries, in wire order.
 pub const MUSTER_SUMMARY_HOLDERS: [&str; 3] = [H_SEQ, H_COUNTED, H_ALL];
 
 /// The holders one body's line carries, in wire order.
-pub const MUSTER_BODY_HOLDERS: [&str; 9] = [
+pub const MUSTER_BODY_HOLDERS: [&str; 10] = [
     H_SEQ,
     H_TYPE,
     H_MASK,
@@ -379,6 +389,7 @@ pub const MUSTER_BODY_HOLDERS: [&str; 9] = [
     H_SPEED,
     H_ATTACK,
     H_FOLLOW,
+    H_ATTACK_EFFECTIVE,
 ];
 
 /// The function name the harness calls to take one muster of `wave_id`.
@@ -439,12 +450,27 @@ pub fn functions(ns: &str, m: &Muster) -> Vec<(String, Vec<String>)> {
                 1i64 << i
             ));
         }
+        // A declared attribute is a BASE value, and `attribute … get` returns the
+        // TOTAL after every modifier: a summoned zombie carries vanilla's own
+        // random spawn bonus on `movement_speed` (0.23 base reads 0.276 total) and
+        // its main-hand weapon's `attack_damage` modifier (2.0 base reads 5.0 with
+        // a wooden sword). Comparing a declaration against a total is a check that
+        // fails on every correct body, so what the declaration set is read with
+        // `base get` and what the player actually meets is read separately.
         for (holder, attr) in [
             (H_MAX_HEALTH, "max_health"),
-            (H_ARMOR, "armor"),
-            (H_TOUGHNESS, "armor_toughness"),
             (H_SPEED, "movement_speed"),
         ] {
+            body.push(format!(
+                "execute store result score {holder} dw.sys run attribute @s minecraft:{attr} \
+                 base get {MUSTER_SCALE}"
+            ));
+        }
+        // Armour is the EFFECTIVE total on purpose: it is not declared anywhere, and
+        // the question it answers is whether the declared gear reached the body —
+        // a mob's base armour is not in any published data, so the worn pieces'
+        // contribution is a floor under the total and never an equality.
+        for (holder, attr) in [(H_ARMOR, "armor"), (H_TOUGHNESS, "armor_toughness")] {
             body.push(format!(
                 "execute store result score {holder} dw.sys run attribute @s minecraft:{attr} \
                  get {MUSTER_SCALE}"
@@ -460,9 +486,22 @@ pub fn functions(ns: &str, m: &Muster) -> Vec<(String, Vec<String>)> {
             if read {
                 body.push(format!(
                     "execute store result score {holder} dw.sys run attribute @s \
-                     minecraft:{attr} get {MUSTER_SCALE}"
+                     minecraft:{attr} base get {MUSTER_SCALE}"
                 ));
             }
+        }
+        // …and what the body actually swings with, weapon included. Telemetry, not
+        // a check: `docs/notes/shield-and-guard-fight.md` measured a Guard declared
+        // `attack_damage: 6.0` hitting for 11.0 with its iron sword, and nothing in
+        // any artifact said so.
+        body.push(format!(
+            "scoreboard players set {H_ATTACK_EFFECTIVE} dw.sys {MUSTER_UNREAD}"
+        ));
+        if t.reads_attack_damage {
+            body.push(format!(
+                "execute store result score {H_ATTACK_EFFECTIVE} dw.sys run attribute @s \
+                 minecraft:attack_damage get {MUSTER_SCALE}"
+            ));
         }
         body.push(format!("tellraw @a {}", body_component(ns, wave_id)));
         out.push((muster_one_fn(wave_id, ti), body));

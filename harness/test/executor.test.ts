@@ -1570,7 +1570,6 @@ import {
   dieRetryFindings,
   trialVerdict,
   type CombatPlan,
-  type EncounterBody,
 } from "../src/combat.ts";
 
 /** How a test asks the fake server to re-seat the wave. */
@@ -1678,6 +1677,7 @@ class CombatFakeBot extends InteractFakeBot {
   private readonly bystanders = new Set<number>();
   private readonly bystanderArgs = new Map<number, [number, number]>();
   private censusSeq = 0;
+  private musterSeq = 0;
   /** The server's credited-kill ledger for the seating in force: `k_reward_<wave>`
    * adds one per `player_killed_entity`, and `spawn_<wave>` zeroes it. A body the
    * WORLD kills moves nothing here, which is the whole distinction. */
@@ -1785,6 +1785,44 @@ class CombatFakeBot extends InteractFakeBot {
       }
       if (fn.includes(":wave_unbrand_")) {
         this.branded.clear();
+        return;
+      }
+      if (fn.includes(":wave_muster_")) {
+        // The muster reads the SAME bodies the census counts, and states each
+        // one's attributes. The fixture's cohort is exactly what the plan
+        // declares, so a clean run reports no finding — a test that wants one
+        // moves a body's health.
+        this.musterSeq += 1;
+        const bodies = this.waveMobs();
+        for (const _ of bodies) {
+          this.emit(
+            "messagestr",
+            `[dw:musterbody the-drowned-bell wave/gate-assault ${this.musterSeq} ` +
+              `0 1 ${FULL_HEALTH * 1000} 0 0 250 -1 -1 -1]`,
+          );
+        }
+        this.emit(
+          "messagestr",
+          `[dw:muster the-drowned-bell wave/gate-assault ${this.musterSeq} ` +
+            `${bodies.length} ${bodies.length}]`,
+        );
+        return;
+      }
+      if (fn.includes(":wave_strike_")) {
+        // One attributed blow, one body — and the party is credited, which is the
+        // whole reason the staged clear is a `player_attack` and not a `kill`.
+        const [first] = this.waveMobs();
+        if (first) {
+          delete this.entities[first.id];
+          this.credited += 1;
+        }
+        return;
+      }
+      if (fn.includes(":wave_chip_")) {
+        for (const m of this.waveMobs()) {
+          m.metadata ??= [];
+          m.metadata[ZOMBIE_HEALTH_IDX] = Math.max(1, this.healthOf(m) - 1);
+        }
         return;
       }
       if (fn.includes(":wave_census_")) {
@@ -1995,7 +2033,6 @@ const ENCOUNTER = {
 function combatPlan(
   count = 1,
   respawnsOnRest = true,
-  bodies: readonly EncounterBody[] = [{ kind: "drowned", count, giveUpSwings: 24 }],
   tier: "ordinary" | "elite" | "boss" = ENCOUNTER.tier,
 ): CombatPlan {
   return {
@@ -2012,89 +2049,45 @@ function combatPlan(
         count,
         respawnsOnRest,
         census: ENCOUNTER.census,
-        bodies,
+        muster: {
+          probe: "the-drowned-bell:wave_muster_gate_assault",
+          strike: "the-drowned-bell:wave_strike_gate_assault",
+          chip: "the-drowned-bell:wave_chip_gate_assault",
+          scale: 1000,
+          unread: -1,
+          bodies: count,
+          checked: count + 1,
+          types: [
+            {
+              entity: "minecraft:drowned",
+              facts: ["name=Gate Drowned"],
+              droppedFacts: [],
+              readsAttackDamage: false,
+              readsFollowRange: false,
+            },
+          ],
+          profiles: [
+            {
+              typeIndex: 0,
+              count,
+              mask: 1,
+              label: `${count} × minecraft:drowned \`Gate Drowned\``,
+              maxHealth: FULL_HEALTH,
+              armorAtLeast: 0,
+              armorToughnessAtLeast: 0,
+            },
+          ],
+        },
         checkpoint: ENCOUNTER.checkpoint,
       },
     ],
     runBacks: [],
-    // No tiered actor and an empty (but PRESENT) ledger: this fixture's campaign
-    // bills nothing the wave gate does not already cover.
-    actors: [],
-    floorGate: { present: true, covered: [], notCovered: [] },
   };
 }
 
-const ASSIST_ON = "chat(/effect give @s minecraft:resistance 60 2 true)";
-const ASSIST_OFF = "chat(/effect clear @s minecraft:resistance)";
 const SCRIPTED_DEATH = "chat(/damage @s 1000 minecraft:generic)";
 
-test("the die-retry stage is assisted into melee range, and takes its death bare", async () => {
-  // the-drowned-bell run six. The die-retry stage walked to within 3
-  // blocks of a LIVE encounter with nothing on, so two vindicators killed the bot
-  // before it could script death 1: `dieRetryAt` threw, `kill` never reached its
-  // own assisted phase, and the artifact showed 0/2 trials beside
-  // `assist_windows: []`. Bot fencing skill was deciding whether the stage could
-  // run at all — the exact thing spec-0023 downgraded from gate to telemetry.
-  //
-  // The ordering below IS the fix, and each half of it matters:
-  //   * assist ON before the bot is ever in melee range, and again before the walk
-  //     back — the segments where it must SURVIVE to make a measurement;
-  //   * assist OFF before every scripted death — so `/damage @s 1000` needs no
-  //     argument about resistance arithmetic to be lethal.
-  const bot = new CombatFakeBot();
-  const executor = attach(bot);
-  executor.useCampaign("the-drowned-bell");
-  executor.useCombatPlan(combatPlan(), true);
-  await executor.kill(KILL_STEP);
 
-  const combat = bot.calls.filter(
-    (c) => c === ASSIST_ON || c === ASSIST_OFF || c === SCRIPTED_DEATH,
-  );
-  const deaths = combat.filter((c) => c === SCRIPTED_DEATH).length;
-  assert.equal(deaths, 2, "two scripted deaths were taken");
-  for (const [i, call] of combat.entries()) {
-    if (call !== SCRIPTED_DEATH) continue;
-    assert.equal(
-      combat[i - 1],
-      ASSIST_OFF,
-      `the scripted death is taken with no assist in force: ${combat.join(" | ")}`,
-    );
-    assert.equal(
-      combat[i + 1],
-      ASSIST_ON,
-      `and the walk back is assisted again immediately after: ${combat.join(" | ")}`,
-    );
-  }
-  assert.equal(
-    combat[0],
-    ASSIST_ON,
-    `the very first combat act of the stage is arming the assist — before the ` +
-      `approach walks into melee range: ${combat.join(" | ")}`,
-  );
-});
-
-test("die-retry assist windows are named in the ledger, not taken silently", async () => {
-  // spec-0023 §3 asks for disclosure, not for a single window. Each segment the
-  // stage protects is opened, logged and closed on its own, so `assist_windows`
-  // says exactly when the bot was helped.
-  const bot = new CombatFakeBot();
-  const executor = attach(bot);
-  executor.useCampaign("the-drowned-bell");
-  executor.useCombatPlan(combatPlan(), true);
-  await executor.kill(KILL_STEP);
-
-  const windows = executor.assistWindows();
-  const dieRetry = windows.filter((w) => w.reason.startsWith("die-retry:"));
-  assert.ok(
-    dieRetry.length >= 4,
-    `each approach and each walk back is its own named window: ${windows.map((w) => w.reason).join(" | ")}`,
-  );
-  assert.ok(
-    dieRetry.every((w) => w.encounter === "obj/hold-the-gate" && w.closedAtMs !== undefined),
-    "every die-retry window names its encounter and is closed",
-  );
-  assert.deepEqual(executor.leakedAssists(), [], "and none of them leaked");
-});
 
 test("a cutscene's spectator window cannot eat a scripted death", async () => {
   // The gallery, measured: `complete_o_clear_the_muster` fires two cutscenes, and
@@ -2150,32 +2143,6 @@ test("a death that never lands says what it SAW, not what it assumed", async () 
   assert.doesNotMatch(t.abortedWith ?? "", /is the bot opped\?/);
 });
 
-test("a wave that kills the bot mid-trade does not get credited as the scripted death", async () => {
-  // The first-contact/mid-fight race. `tradeBlows` deliberately stands
-  // in melee; if the wave wins that exchange the bot is already dead when the
-  // harness reads `deathSeq` and chats `/damage`, so the trial would wait for a
-  // death that has to happen a SECOND time and credit its loop to a life the
-  // harness never opened. The accidental death is now recovered from first.
-  const bot = new CombatFakeBot();
-  bot.killBotOnTrade = true;
-  const executor = attach(bot);
-  executor.useCampaign("the-drowned-bell");
-  executor.useCombatPlan(combatPlan(), true);
-  await executor.kill(KILL_STEP);
-
-  const trials = executor.deathTrials();
-  assert.equal(trials.length, 2, "still exactly the two scripted deaths spec-0023 asks for");
-  assert.ok(
-    trials.every((t) => t.completed),
-    "and both loops still reached a verdict",
-  );
-  assert.equal(
-    bot.calls.filter((c) => c === SCRIPTED_DEATH).length,
-    2,
-    "one scripted death per trial — the accidental one did not stand in for either",
-  );
-  assert.deepEqual(dieRetryFindings(trials), []);
-});
 
 test("the die-retry stage survives its OWN scripted death and records both trials", async () => {
   // The shipped defect (the-drowned-bell round 3): the stage waited for its
@@ -2720,162 +2687,7 @@ test("an unrested bonfire skips the scripted death and reports the gap", async (
   assert.match(findings[0]!, /passed bonfire 1 \(anchor\/beach-fire\) without resting/);
 });
 
-// ---------------------------------------------------------------------------
-// The actor floor gate: the other shape an elite takes
-// ---------------------------------------------------------------------------
-
-import type { ActorEncounter, CombatPlan as CP } from "../src/combat.ts";
 import { displayNameOf } from "../src/executor.ts";
-
-/** The body an `unleash-actor` beat leaves standing: a real-AI twin of the actor's
- * entity type, at the actor's anchor cell, wearing its custom name. */
-class ActorFakeBot extends InteractFakeBot {
-  /** Swings needed before the body goes down — the fight's whole difficulty here. */
-  hitsToKill = 1;
-  private hits = 0;
-
-  seatBody(id = 500, pos: [number, number, number] = [1, 64, 0]): void {
-    this.entities[id] = {
-      id,
-      name: "wither_skeleton",
-      type: "hostile",
-      height: 2.4,
-      customName: "Barrow Warden",
-      position: new FakeVec3(pos[0], pos[1], pos[2]),
-    };
-  }
-
-  attack(mob: { id: number }): void {
-    this.calls.push("attack");
-    if (++this.hits >= this.hitsToKill) delete this.entities[mob.id];
-  }
-
-  async lookAt(): Promise<void> {}
-  nearestEntity(): unknown {
-    return undefined;
-  }
-}
-
-const BARROW_WARDEN: ActorEncounter = {
-  actor: "actor/barrow-warden",
-  entity: "minecraft:wither_skeleton",
-  name: "Barrow Warden",
-  tier: "elite",
-  anchor: "anchor/wave",
-  pos: [0, 64, 0],
-  tag: "dw_actor_barrow_warden",
-  vulnerable: false,
-  spawnedBy: [],
-  unleashedBy: [
-    {
-      site: "objective",
-      owner: "quest/the-barrow",
-      objective: "obj/hold-the-gate",
-      path: "/content/quests/0/on_objective_complete/obj~1hold-the-gate/1",
-    },
-  ],
-  floorGate: { covered: true },
-  maxHealth: 60,
-};
-
-function actorPlan(actors: ActorEncounter[] = [BARROW_WARDEN]): CP {
-  return {
-    version: "0.8.0",
-    campaignId: "souls-bonfire",
-    difficulty: "normal",
-    encounters: [],
-    runBacks: [],
-    actors,
-    floorGate: { present: true, covered: [], notCovered: [] },
-  };
-}
-
-/** Drive an objective to completion with the actor gate armed. */
-async function completeObjective(
-  bot: ActorFakeBot,
-  env: Record<string, string | undefined> = {},
-  actors: ActorEncounter[] = [BARROW_WARDEN],
-): Promise<MineflayerExecutor> {
-  const executor = attach(bot, env);
-  executor.useCampaign("souls-bonfire");
-  executor.usePathObjectives(["obj/hold-the-gate"]);
-  executor.useCombatPlan(actorPlan(actors), false, env["DELVEWRIGHT_ACTOR_FLOOR"] !== "0");
-  executor.beginStep(3);
-  bot.emit("messagestr", "[dw:complete souls-bonfire obj/hold-the-gate]");
-  await executor.requireObjective("obj/hold-the-gate", "test");
-  return executor;
-}
-
-test("the objective that unleashes a billed actor starts one unassisted fight", async () => {
-  const bot = new ActorFakeBot();
-  bot.seatBody();
-  const executor = await completeObjective(bot);
-
-  const trials = executor.actorFightTrials();
-  assert.equal(trials.length, 1);
-  assert.equal(trials[0]!.actor, "actor/barrow-warden");
-  assert.equal(trials[0]!.afterObjective, "obj/hold-the-gate");
-  assert.equal(trials[0]!.outcome, "won-first-try");
-  assert.ok(trials[0]!.swings >= 1);
-  // …and beating a billed fight cold is the advisory the inverted gate exists for.
-  const findings = executor.floorGateFindings();
-  assert.equal(findings.length, 1);
-  assert.match(findings[0]!, /billed `elite`/);
-  // NO assist window was opened: nothing downstream waits on an actor fight, so
-  // there is no obligation to win it and nothing to unblock (spec-0023's assist
-  // exists for fights the run must finish).
-  assert.deepEqual([...executor.assistWindows()], []);
-});
-
-test("a body that never appears is `body-not-found`, never a win", async () => {
-  // The silence this closes: an unleash beat that did not fire looks exactly like
-  // a fight won instantly if the outcome is inferred from an empty room.
-  const bot = new ActorFakeBot(); // no body seated
-  const executor = await completeObjective(bot);
-  const trial = executor.actorFightTrials()[0]!;
-  assert.equal(trial.outcome, "body-not-found");
-  assert.equal(trial.swings, 0);
-  assert.match(trial.detail!, /no live `minecraft:wither_skeleton`/);
-  assert.deepEqual([...executor.floorGateFindings()], []);
-});
-
-test("the actor gate fires once per actor, however often the marker is re-broadcast", async () => {
-  const bot = new ActorFakeBot();
-  bot.seatBody();
-  const executor = await completeObjective(bot);
-  bot.seatBody(501);
-  await executor.requireObjective("obj/hold-the-gate", "test again");
-  assert.equal(executor.actorFightTrials().length, 1);
-});
-
-test("DELVEWRIGHT_ACTOR_FLOOR=0 skips the fight and records no measurement", async () => {
-  const bot = new ActorFakeBot();
-  bot.seatBody();
-  const executor = await completeObjective(bot, { DELVEWRIGHT_ACTOR_FLOOR: "0" });
-  assert.deepEqual([...executor.actorFightTrials()], []);
-  assert.deepEqual([...executor.floorGateFindings()], []);
-  assert.equal(bot.calls.includes("attack"), false);
-});
-
-test("an actor no on-path objective unleashes is never engaged", async () => {
-  const bot = new ActorFakeBot();
-  bot.seatBody();
-  const ambient: ActorEncounter = {
-    ...BARROW_WARDEN,
-    unleashedBy: [
-      {
-        site: "trigger",
-        owner: "trigger/warden-answers",
-        path: "/content/triggers/0/effects/1",
-        on: "strike-npc",
-        npc: "npc/keeper",
-      },
-    ],
-  };
-  const executor = await completeObjective(bot, {}, [ambient]);
-  assert.deepEqual([...executor.actorFightTrials()], []);
-  assert.equal(bot.calls.includes("attack"), false);
-});
 
 test("a custom name is read from every shape mineflayer hands it back in", () => {
   assert.equal(displayNameOf({ customName: "Barrow Warden" }), "Barrow Warden");
@@ -2955,32 +2767,6 @@ test("an encounter with NO governing checkpoint skips the death as an ADVISORY, 
 
 // --- the kill loop ends on the CENSUS, never on a lookalike ------
 
-test("killing a bystander beside the fight does not clear the wave", async () => {
-  // The drowned bell's belfry, reduced: `ambush/the-rafters` puts two husks where
-  // the Bellkeeper stands, and the kill loop counted one of them as the wave —
-  // `confirmed kill: husk#232 (1/1)` — then walked away from a wither skeleton
-  // still very much alive. The objective never completed, so the quest never
-  // completed, so the NEXT quest was never armed, so the next step's `interact`
-  // click was adjudicated against an unarmed quest and spent. The click was the
-  // symptom; this is the cause.
-  const bot = new CombatFakeBot();
-  bot.seat(1); // the real wave mob, in reach
-  bot.waveHitsToKill = 3; // …and it outlives the bystander, as the Bellkeeper did
-  bot.addBystander(900, 0.5); // an ambush husk, NEARER — the bot swings at it first
-  const executor = attach(bot);
-  executor.useCampaign("the-drowned-bell");
-  executor.useCombatPlan(combatPlan(1, false), false);
-
-  await executor.kill({ ...KILL_STEP, count: 1 });
-
-  // The step only returned once the WAVE was down; the bystander being killed
-  // first bought nothing.
-  const left = Object.values(bot.entities).filter(
-    (e) => (e as { waveTagged?: boolean }).waveTagged === true,
-  );
-  assert.equal(left.length, 0, "the wave itself is what has to die");
-  assert.equal(bot.entities[900], undefined, "the bystander died on the way, which is fine");
-});
 
 test("a cohort the world finished is cleared by the SERVER's answer, not the bot's tally", async () => {
   // The gallery ladder, reduced. `wave/muster` seats three bodies within a stride
@@ -3018,28 +2804,6 @@ test("a cohort the world finished is cleared by the SERVER's answer, not the bot
   assert.ok(bot.entities[900], "…and the bystander is still standing, unkilled");
 });
 
-test("the floor gate is not told the bot beat a fight the world mostly fought", async () => {
-  // The same cohort, billed `elite`. The advisory this used to print — *the
-  // UNASSISTED bot beat it on its first attempt* — advised the author to make an
-  // encounter HARDER on the strength of one confirmed kill out of three bodies.
-  const bot = new CombatFakeBot();
-  bot.seat(3);
-  bot.reSeat = undefined;
-  const [a, b] = bot.waveIds();
-  bot.worldKill(a!);
-  bot.worldKill(b!);
-
-  const executor = attach(bot);
-  executor.useCampaign("the-drowned-bell");
-  executor.useCombatPlan(combatPlan(3, false, undefined, "elite"), false);
-  await executor.kill({ ...KILL_STEP, count: 3 });
-
-  const [finding, ...rest] = executor.floorGateFindings();
-  assert.deepEqual(rest, [], "one encounter, one finding");
-  assert.match(String(finding), /2 of its 3 bodies died with NO player credited/);
-  assert.match(String(finding), /does not measure the fight/);
-  assert.doesNotMatch(String(finding), /Advisory: raise the stack/);
-});
 
 test("a re-seat resets what the SERVER says, and the step follows the server", async () => {
   // Finding 1 in its own shape. A scripted die-retry death re-seats a
@@ -3053,7 +2817,7 @@ test("a re-seat resets what the SERVER says, and the step follows the server", a
 
   const executor = attach(bot);
   executor.useCampaign("the-drowned-bell");
-  executor.useCombatPlan(combatPlan(3, true, undefined, "elite"), true);
+  executor.useCombatPlan(combatPlan(3, true, "elite"), true);
 
   const started = Date.now();
   await executor.kill({ ...KILL_STEP, count: 3 });
@@ -3063,8 +2827,12 @@ test("a re-seat resets what the SERVER says, and the step follows the server", a
   );
   assert.equal(executor.encounterPhase(KILL_STEP.wave), "cleared");
   assert.equal(bot.waveIds().length, 0);
-  const [finding] = executor.floorGateFindings();
-  assert.match(String(finding), /died with NO player credited/);
+  // Two of the three fell to the WORLD, so nothing that pays on a player's kill
+  // fired for them — the attribution is what says so, and it is the only place
+  // that can.
+  const attribution = executor.waveAttribution(KILL_STEP.wave);
+  assert.equal(attribution.kind, "measured");
+  assert.ok(attribution.kind === "measured" && attribution.uncredited > 0);
 });
 
 // --- talk-to: the walk-then-trigger contract ----------------------
@@ -3405,114 +3173,10 @@ class RealGotoCombatBot extends CombatFakeBot {
   }
 }
 
-test("a wave that kills the bot mid-walk does not crash the harness on the re-approach", async () => {
-  // Reproduces the greyhithe-saltworks rehearsal crash and asserts the two things
-  // that separate a harness fault from a content verdict:
-  //   * NOTHING rejects into the void — a `GoalChanged` on an abandoned trip is an
-  //     expected outcome the navigation owner collects, not a fatal error;
-  //   * the run CONTINUES: both trials still take their scripted death and reach a
-  //     verdict, which is what the stage exists to measure.
-  const bot = new RealGotoCombatBot();
-  // The wave stands off the anchor, so the trade has to walk into melee.
-  bot.seat(1, { distance: 6 });
-  bot.reSeat = { count: 1, distance: 6 };
-  // The bot starts away from the anchor, so the approach is a real hop.
-  bot.entity.position = new FakeVec3(20, 64, 0);
-  // …and the walk into melee is the hop that strands and gets it killed.
-  bot.strandAt = [6, 64, 0];
-  const executor = attach(bot);
-  executor.useCampaign("the-drowned-bell");
-  executor.useCombatPlan(combatPlan(), true);
-
-  const unhandled: unknown[] = [];
-  const capture = (err: unknown): void => void unhandled.push(err);
-  process.on("unhandledRejection", capture);
-  try {
-    await executor.kill(KILL_STEP);
-    // The rejection lands from a zero timer, so give the loop turns to deliver it.
-    for (let i = 0; i < 6; i++) await new Promise((r) => setTimeout(r, 5));
-  } finally {
-    process.off("unhandledRejection", capture);
-  }
-
-  assert.deepEqual(
-    unhandled.map((e) => (e instanceof Error ? `${e.name}: ${e.message}` : String(e))),
-    [],
-    "no pathfinder rejection escaped: an unhandled one here kills the whole run",
-  );
-  // The bot really did walk its hops — otherwise the test proves nothing about the
-  // path it is named for.
-  assert.ok(
-    bot.calls.filter((c) => c === "goto").length >= 3,
-    `the stage walked its hops: ${bot.calls.filter((c) => c === "goto").length}`,
-  );
-  const trials = executor.deathTrials();
-  assert.equal(trials.length, 2, "both scripted deaths were still taken");
-  assert.ok(
-    trials.every((t) => t.completed),
-    "and both loops reached a verdict rather than dying with the process",
-  );
-  assert.deepEqual(dieRetryFindings(trials), []);
-});
 
 // --- when to stop swinging at one body (the census round) ----------------------
 
-test("a body that outlives its encounter's melee budget is a FINDING, not a silent drop", async () => {
-  // What replaced `WAVE_UNKILLABLE_MS`. The old rule meleed anything for a flat
-  // six seconds and then blacklisted it in silence — too long for a rat, too
-  // short for an elite, and it reported nothing either way. The budget is now
-  // the encounter's own arithmetic, and crossing it is a content defect the run
-  // report names: either nothing in the party's kit can damage this body, or the
-  // encounter's numbers are wrong.
-  const bot = new CombatFakeBot();
-  // A hostile the wave census cannot see — an ambusher belonging to no wave — that
-  // is HITTING the bot, so the bot fights it (retaliation) and the fight can still
-  // end; this test is about the finding rather than about the 90s timeout an
-  // unkillable TAGGED body correctly earns. (A body that is neither the census's
-  // nor hitting the bot is not hunted at all: see the bystander case below.)
-  bot.seat(1, { waveTagged: false, hitsToKill: 10_000 }); // nothing the bot does fells it
-  const executor = attach(bot);
-  bot.emit("entityHurt", bot.entity, bot.entities[bot.waveIdsAll()[0]!]);
-  executor.useCampaign("the-drowned-bell");
-  executor.useCombatPlan(
-    combatPlan(1, true, [{ kind: "zombie", count: 1, giveUpSwings: 3 }]),
-    false,
-  );
 
-  await executor.kill(KILL_STEP);
-
-  const findings = executor.unkillableFindings();
-  assert.equal(findings.length, 1, findings.join(" | "));
-  assert.match(findings[0]!, /wave\/gate-assault/);
-  assert.match(findings[0]!, /`zombie`/);
-  assert.match(findings[0]!, /3 swing/);
-  // And it did stop: the budget is 3, so the bot cannot have gone on swinging.
-  const swings = bot.calls.filter((c) => c === "attack").length;
-  assert.equal(swings, 3, `stopped at the budget, not at a timer: ${swings} swing(s)`);
-});
-
-test("an encounter that states no budget for a kind gives up on nothing", async () => {
-  // `give_up_swings: null` — an undeclared `max_health`, which Mojang publishes
-  // no default for. There is then no basis for calling a body unkillable, so the
-  // bot keeps swinging: this one takes six hits, twice what any budget in the
-  // sibling case allowed, and still falls. No finding, and no constant of the
-  // harness's own deciding it was scenery at swing four.
-  const bot = new CombatFakeBot();
-  bot.seat(1, { hitsToKill: 6 });
-  const executor = attach(bot);
-  executor.useCampaign("the-drowned-bell");
-  executor.useCombatPlan(
-    combatPlan(1, true, [
-      { kind: "zombie", count: 1, giveUpSwings: undefined, reason: "declares no max_health" },
-    ]),
-    false,
-  );
-
-  await executor.kill(KILL_STEP);
-
-  assert.deepEqual(executor.unkillableFindings(), []);
-  assert.equal(bot.calls.filter((c) => c === "attack").length, 6);
-});
 
 // --- the death loop: a trial that opens over a corpse -----------------------
 
@@ -4129,7 +3793,7 @@ test("the kill step hunts only what the census calls the wave, never a bystander
   bot.addBystander(77, 1, 10_000); // nearer than the wave body, and unkillable
   const executor = attach(bot);
   executor.useCampaign("the-drowned-bell");
-  executor.useCombatPlan(combatPlan(1, true, [{ kind: "zombie", count: 1, giveUpSwings: 24 }]), false);
+  executor.useCombatPlan(combatPlan(1, true), false);
 
   await executor.kill(KILL_STEP);
 
@@ -4181,16 +3845,17 @@ test("a run-back the rest re-seated is fought under a named assist before the le
   await executor.rest(REST_STEP); // …the rest puts it back…
   bot.seat(1);
   executor.beginStep(14);
-  const swingsBefore = bot.calls.filter((c) => c === "attack").length;
-  await executor.beforeStep(GREAT_HALL); // …so the leg to the hall fights it
+  const strikesBefore = bot.calls.filter((c) => c.includes(":wave_strike_")).length;
+  await executor.beforeStep(GREAT_HALL); // …so the leg to the hall meets it
 
   assert.ok(
-    bot.calls.filter((c) => c === "attack").length > swingsBefore,
-    "the re-seated wave was fought before the leg",
+    bot.calls.filter((c) => c.includes(":wave_strike_")).length > strikesBefore,
+    "the re-seated wave was read and cleared before the leg",
   );
-  const windows = executor.assistWindows().filter((w) => w.reason.startsWith("run-back:"));
-  assert.equal(windows.length, 1, "one labelled assist window, named as a run-back");
-  assert.match(windows[0]!.reason, /bonfire 1.*obj\/great-hall/);
+  assert.ok(
+    executor.stagedBodies().some((r) => r.why.startsWith("staged clear:")),
+    "and the artifact says the harness cleared it, not the delve",
+  );
   assert.deepEqual(executor.runBacks().map((r) => r.wave), ["wave/gate-assault"]);
 });
 
@@ -4323,18 +3988,3 @@ test("a run-back is met along the leg's own proven cells, and the leg resumes fr
   );
 });
 
-test("a fight already on the bot is fought where it stands, not after a walk to the anchor", async () => {
-  // vesperhold run-back to the walk-ambush: the bot walked on to the wave's anchor
-  // through three attackers and took four blows before its first swing.
-  const bot = new CombatFakeBot();
-  bot.seat(1, { distance: 2 });
-  const executor = attach(bot);
-  executor.useCampaign("the-drowned-bell");
-  executor.useCombatPlan(combatPlan(1, true, [{ kind: "zombie", count: 1, giveUpSwings: 24 }]), false);
-
-  // The anchor is thirty blocks off; the body is two blocks from the bot.
-  await executor.kill({ ...KILL_STEP, pos: [30, 64, 0] });
-
-  assert.deepEqual(bot.waveIds(), [], "the wave body fell");
-  assert.equal(bot.calls.includes("goto"), false, `no walk: ${bot.calls.join(" ")}`);
-});

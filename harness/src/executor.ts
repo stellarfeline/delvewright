@@ -1560,6 +1560,22 @@ export class MineflayerExecutor implements StepExecutor {
   private readonly stagedIds = new Set<number>();
   /** True while a `sneak` leg is walking: nothing is staged away on one. */
   private sneaking = false;
+  /**
+   * The encounter the die-retry stage is proving, and where its bodies last stood.
+   *
+   * That stage's whole subject is a LIVE encounter: death, respawn, the route
+   * back, and a fight still there to re-engage. Staging its bodies away would
+   * delete the thing being measured — measured on the gallery, where the damage
+   * handlers cleared `wave/muster` mid-stage and the trial then reported the
+   * campaign soft-locked. Anything that is NOT of this wave is still removed:
+   * an ambusher from three rooms back is interference, not the subject.
+   */
+  private protectedWave:
+    | {
+        readonly wave: string;
+        census: ReadonlyArray<{ readonly pos: readonly [number, number, number] }>;
+      }
+    | undefined;
   /** How far `kill()` got with each encounter — the reading key for an empty
    * `assist_windows` array (spec-0023 takes no assist while deliberately dying,
    * nor on a billed encounter's honest first attempt). */
@@ -1855,11 +1871,23 @@ export class MineflayerExecutor implements StepExecutor {
     const { candidates, byId } = this.visibleHostiles();
     const attacker = attributeBotDamage(sourceId, candidates);
     if (attacker === undefined) return;
-    if (sourceId !== undefined && attacker === sourceId) {
-      this.lastAttributionAt = Date.now();
+    const named = sourceId !== undefined && attacker === sourceId;
+    if (named) this.lastAttributionAt = Date.now();
+    // ONLY a body the server itself named. The nearest-hostile fallback is a
+    // guess, and a guess that removes a body is the harness deleting part of the
+    // delve on suspicion: measured on the gallery, where a burn tick with no
+    // source entity was attributed to a villager standing beside the bot and
+    // staged it away. A guess is good enough to explain a health drop in the log
+    // and nowhere near good enough to act on.
+    if (!named) {
+      process.stderr.write(
+        `[staged] the bot was hit with no source the server named; the nearest body is ` +
+          `${byId.get(attacker)?.name ?? "?"}#${attacker}, which is a guess and so is left ` +
+          `standing\n`,
+      );
+      return;
     }
-    const how = attacker === sourceId ? "server-named source" : "nearest hostile in reach";
-    void this.stageAway(attacker, `it hit the bot (${how})`, byId.get(attacker)?.name);
+    void this.stageAway(attacker, "it hit the bot (the server named it)", byId.get(attacker)?.name);
   }
 
   /**
@@ -1878,11 +1906,14 @@ export class MineflayerExecutor implements StepExecutor {
     const { candidates, byId } = this.visibleHostiles();
     const attacker = attributeBotDamage(undefined, candidates, ATTRIBUTION_RANGE);
     if (attacker === undefined) return;
-    void this.stageAway(
-      attacker,
-      `the bot lost ${(previous - bot.health).toFixed(1)} health with no named source and it is ` +
-        `the nearest hostile in reach`,
-      byId.get(attacker)?.name,
+    // Logged, never acted on: a drop with no source is a fall, a trap, drowning or
+    // fire as readily as a blow, and nothing here can tell them apart. Removing a
+    // body on this evidence would be the harness answering a lethal volume by
+    // deleting whoever was standing nearby.
+    process.stderr.write(
+      `[staged] the bot lost ${(previous - bot.health).toFixed(1)} health with no named source; ` +
+        `the nearest body is ${byId.get(attacker)?.name ?? "?"}#${attacker}, which is a guess and ` +
+        `so is left standing\n`,
     );
   }
 
@@ -3886,19 +3917,63 @@ export class MineflayerExecutor implements StepExecutor {
           `nothing to read its bodies with and nothing to clear them with`,
       );
     }
-    if (this.dieRetry) {
-      this.encounterPhases.set(enc.wave, "die-retry");
-      this.stageNow = "die-retry";
-      try {
-        await this.dieRetryAt(step, enc);
-      } finally {
-        this.stageNow = "critical-path";
+    // Both the muster and the staged clear ask the SERVER about entities carrying
+    // the wave's tag, and an entity in an unloaded chunk is not there to be asked.
+    // The bot's own view distance is not a guarantee at the moment a step opens —
+    // and a probe that answers "no bodies" because nobody was looking is the
+    // silent zero this repository keeps finding. Hold the anchor's chunk open for
+    // the whole step instead of hoping.
+    await this.holdChunk(enc.pos, true);
+    try {
+      // The muster goes FIRST, before anything the harness does to this wave.
+      // The cohort it must read is the one the DELVE seated: the die-retry stage
+      // kills the bot twice and the wave re-seats around it, and on the gallery it
+      // also walks the bodies past a lethal pit — run second, the probe read an
+      // empty anchor and reported three declared stacks missing, over a wave that
+      // had spawned exactly as declared.
+      await this.musterWave(enc);
+      this.encounterPhases.set(enc.wave, "mustered");
+      if (this.dieRetry) {
+        this.encounterPhases.set(enc.wave, "die-retry");
+        this.stageNow = "die-retry";
+        // Until the first census of the stage refines it, everything standing at
+        // the anchor is treated as the encounter's: a protected body wrongly left
+        // standing costs the run a little health, and an unprotected one costs the
+        // measurement.
+        this.protectedWave = { wave: enc.wave, census: [{ pos: enc.pos }] };
+        try {
+          await this.dieRetryAt(step, enc);
+        } finally {
+          this.protectedWave = undefined;
+          this.stageNow = "critical-path";
+        }
       }
+      await this.clearWave(step, enc);
+      this.encounterPhases.set(enc.wave, "cleared");
+    } finally {
+      await this.holdChunk(enc.pos, false);
     }
-    await this.musterWave(enc);
-    this.encounterPhases.set(enc.wave, "mustered");
-    await this.clearWave(step, enc);
-    this.encounterPhases.set(enc.wave, "cleared");
+  }
+
+  /**
+   * Force-load (or release) the chunk an encounter stands in.
+   *
+   * Paired: the release is in the caller's `finally`, because a forceload the run
+   * leaves behind keeps a chunk ticking for the rest of the session and is the
+   * harness quietly changing the world it is measuring.
+   */
+  private async holdChunk(pos: Vec3Tuple, hold: boolean): Promise<void> {
+    const bot = this.requireBot();
+    const verb = hold ? "add" : "remove";
+    const from = this.recentChat.length;
+    bot.chat(`/forceload ${verb} ${pos[0]} ${pos[2]}`);
+    await delay(STAGED_REPLY_MS);
+    const refusal = this.recentChat.slice(from).find((line) => isRejection(line));
+    if (refusal !== undefined) {
+      process.stderr.write(
+        `[kill] forceload ${verb} ${pos[0]} ${pos[2]} was refused — ${refusal}\n`,
+      );
+    }
   }
 
   /**
@@ -3945,7 +4020,23 @@ export class MineflayerExecutor implements StepExecutor {
     // that hits it on the way is staged away by the damage handlers — the stage
     // asks "is dying safe here", not "can this bot survive the walk in", and a bot
     // cut down before it can script its first death answers neither.
-    await this.walkTo(step.pos, 3, `die-retry approach ${step.wave}`, step.sneak);
+    for (let attempt = 1; ; attempt += 1) {
+      try {
+        await this.walkTo(step.pos, 3, `die-retry approach ${step.wave}`, step.sneak);
+        break;
+      } catch (err) {
+        // A death on the way in is not a verdict on the retry loop, and it is not
+        // one this stage may be stopped by: the encounter is live and lethal
+        // BECAUSE that is what is being proved safe. Recover and walk it again,
+        // twice at most, then let the trial record the abort.
+        if (!(err instanceof BotDeathError) || attempt >= 2) throw err;
+        process.stderr.write(
+          `[die-retry] the approach to ${step.wave} ended in a death; recovering and walking ` +
+            `it again (attempt ${attempt + 1} of 2)\n`,
+        );
+        await this.respawnAndRearm();
+      }
+    }
     const phases = deathPhases();
     for (const [i, phase] of phases.entries()) {
       const attempt = i + 1;
@@ -4222,6 +4313,43 @@ export class MineflayerExecutor implements StepExecutor {
     const body = bot.entities[id];
     const uuid = (body as { uuid?: string } | undefined)?.uuid;
     const kind = name ?? body?.name ?? "?";
+    // A body of a planned encounter the run has not reached yet. Its numbers are
+    // a measurement the muster owes, and its death is the step's own act: removing
+    // it early loses the reading AND clears the fight out of order. Measured on
+    // the gallery, where two of `wave/muster`'s three bodies met the bot on the
+    // leg before their step, were staged away, and the muster then reported the
+    // campaign had seated one body of three.
+    if (body?.position) {
+      const here: Vec3Tuple = [body.position.x, body.position.y, body.position.z];
+      const owed = this.pendingEncounterAt(here);
+      if (owed !== undefined) {
+        process.stderr.write(
+          `[staged] ${kind}#${id} stands with \`${owed}\`, an encounter this run has not read ` +
+            `yet — left standing\n`,
+        );
+        return;
+      }
+      // The encounter the die-retry stage is currently proving: its bodies ARE the
+      // measurement, wherever they have wandered to.
+      const protect = this.protectedWave;
+      if (protect && isWaveBody({ pos: here, census: protect.census })) {
+        process.stderr.write(
+          `[staged] ${kind}#${id} stands with \`${protect.wave}\`, which the die-retry stage is ` +
+            `proving live — left standing\n`,
+        );
+        return;
+      }
+    }
+    // The delve's own statement of what is never a combat target. A body on that
+    // list is never removed, whatever it appears to have done — the cast is the
+    // one thing a harness may not edit.
+    if (this.nonCombatants?.has(kind)) {
+      process.stderr.write(
+        `[staged] ${kind}#${id} is on the delve's \`non_combatants\` list, so it is left ` +
+          `standing whatever hit the bot\n`,
+      );
+      return;
+    }
     this.stagedIds.add(id);
     if (!uuid) {
       this.stagedRemovals.push({ kind, why, performed: false, detail: "the client has no UUID for it" });
@@ -4293,6 +4421,23 @@ export class MineflayerExecutor implements StepExecutor {
       ],
     });
     process.stderr.write(`[muster] ${enc.wave}: the probe did not answer\n`);
+  }
+
+  /**
+   * The wave of a planned encounter this run has not cleared yet, if `pos` stands
+   * at one — by the census's own match radius around the encounter anchor.
+   *
+   * Deliberately by ANCHOR rather than by a census: a census is a round trip and
+   * this is asked on a damage packet. The radius is the one the census matches
+   * bodies over, so "at the encounter" means the same thing in both places.
+   */
+  private pendingEncounterAt(pos: Vec3Tuple): string | undefined {
+    for (const enc of this.combatPlan?.encounters ?? []) {
+      if (this.waveClearedAt.has(enc.wave)) continue;
+      const d = Math.hypot(pos[0] - enc.pos[0], pos[1] - enc.pos[1], pos[2] - enc.pos[2]);
+      if (d <= CENSUS_MATCH_RADIUS) return enc.wave;
+    }
+    return undefined;
   }
 
   /** What each wave's muster established. Read by the run report. */
@@ -4427,6 +4572,9 @@ export class MineflayerExecutor implements StepExecutor {
       const sum = this.censusSummary;
       if (sum && sum.seq > before && sum.wave === enc.wave) {
         const mobs = this.censusMobs.get(sum.seq) ?? [];
+        // Keep the protected wave's view of where its bodies stand current, so the
+        // die-retry stage's own re-seats stay protected as they move.
+        if (this.protectedWave?.wave === enc.wave) this.protectedWave.census = mobs;
         return { summary: sum, mobs };
       }
       if (Date.now() >= deadline) return undefined;

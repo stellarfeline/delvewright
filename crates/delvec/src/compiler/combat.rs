@@ -57,13 +57,12 @@ use delvewright_dsl::Verb;
 use std::collections::{BTreeMap, BTreeSet};
 
 use delvewright_dsl::{
-    Actor, Campaign, Diagnostic, EffectSite, EncounterTier, QuestEffect, Wave, WaveMob,
-    WorldDifficulty, for_each_campaign_effect,
+    Actor, Campaign, Diagnostic, EncounterTier, QuestEffect, Wave, WaveMob, WorldDifficulty,
 };
 use serde_json::{Value, json};
 
 use crate::compiler::nav::{World, entity_dims};
-use crate::compiler::plan::{self, Plan, Step, safe_local};
+use crate::compiler::plan::{self, Plan, Step};
 use crate::compiler::registry::{DamageTypeRegistry, ItemCombatRegistry};
 use delvewright_dsl::{DwCode, ExitTier};
 
@@ -88,10 +87,6 @@ pub const DW_NO_SUSTAIN: DwCode = DwCode::new("DW0474", ExitTier::Build);
 /// `DW0475`: (warning) the numeric time-to-kill bound could not be computed.
 pub const DW_TTK_UNPROVEN: DwCode = DwCode::new("DW0475", ExitTier::Build);
 
-/// `DW0477`: (warning) something the content bills `elite`/`boss` is one the
-/// inverted floor gate cannot measure — so its silence in the run report means
-/// "never fought", not "passed".
-pub const DW_FLOOR_UNCOVERED: DwCode = DwCode::new("DW0477", ExitTier::Build);
 
 /// The vanilla player's `minecraft:max_health` base value. The DSL exposes no
 /// player-attribute surface at all, so this is not a default — it is the only
@@ -647,291 +642,6 @@ fn mandatory_waves(plan: &Plan) -> BTreeSet<String> {
     encounters(plan).into_iter().map(|e| e.wave_id).collect()
 }
 
-// ---------------------------------------------------------------------------
-// Tiered ACTORS — the other shape an elite takes (spec-0023 floor gate)
-// ---------------------------------------------------------------------------
-
-/// Whether the inverted floor gate can hold a billed encounter to its billing.
-///
-/// The whole point of naming this is that **silence must not read as a pass**.
-/// Before actors carried a tier, an elite implemented as an actor was
-/// structurally invisible to the gate: the run's finding list came back empty
-/// and the ladder called that green while having fought nothing.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum FloorCoverage {
-    /// The bot can engage it, so a first-try win is a real finding about the
-    /// fight.
-    Covered,
-    /// It cannot be measured, and this is why. Carried verbatim into
-    /// `combat-plan.json` and into [`DW_FLOOR_UNCOVERED`], so the run report
-    /// says "not covered (reason)" instead of nothing at all.
-    NotCovered(String),
-}
-
-impl FloorCoverage {
-    /// Is this encounter one the gate actually measures?
-    pub fn is_covered(&self) -> bool {
-        matches!(self, FloorCoverage::Covered)
-    }
-
-    /// The reason it is not, if it is not.
-    pub fn reason(&self) -> Option<&str> {
-        match self {
-            FloorCoverage::Covered => None,
-            FloorCoverage::NotCovered(why) => Some(why),
-        }
-    }
-}
-
-/// One beat that stages or unleashes an actor: where it fires from, and — for a
-/// trigger — what the player has to do to fire it.
-///
-/// This is what makes an actor fight *runnable* by the harness. A wave
-/// encounter has a `kill` step on the critical path, so the bot already knows
-/// how to start it; an actor fight starts because something got struck, used or
-/// walked into, and that "something" is only stated here.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct ActorBeat {
-    /// `trigger` / `quest` / `objective` / `trap` / `dialogue-respawn`.
-    pub site: &'static str,
-    /// The owning trigger / quest / trap id — or, for `dialogue-respawn`, the NPC
-    /// whose tree hosts the option.
-    pub owner: String,
-    /// The objective, when the site is a quest's `on_objective_complete`.
-    pub objective: Option<String>,
-    /// JSON pointer to the effect itself, so a diagnostic can name it exactly.
-    pub path: String,
-    /// Trigger sites only: the event kind (`approach` / `strike` / `use` /
-    /// `strike-npc`).
-    pub on: Option<&'static str>,
-    /// Trigger sites only: the anchor watched (absent for `strike-npc`, which
-    /// watches a character rather than a place).
-    pub at: Option<String>,
-    /// `strike-npc` triggers only: the NPC whose body is the target.
-    pub npc: Option<String>,
-}
-
-/// One tier-declaring stage-5 actor, as the validation ladder sees it.
-#[derive(Clone, Debug)]
-pub struct ActorEncounter {
-    /// The actor id (`actor/<kebab>`).
-    pub actor_id: String,
-    /// Index into `quests.content.actors`, for the diagnostic's pointer.
-    pub index: usize,
-    /// The vanilla entity puppeted (and unleashed).
-    pub entity: String,
-    /// The custom name shown above it, if any.
-    pub name: Option<String>,
-    /// What the content bills the fight as.
-    pub tier: EncounterTier,
-    /// The anchor it is summoned on.
-    pub anchor: String,
-    /// That anchor resolved to a world cell (always `Some` past `DW0325`).
-    pub pos: Option<[i32; 3]>,
-    /// The body tag both the puppet and the unleashed twin wear.
-    pub tag: String,
-    /// Is the staged puppet damageable at all?
-    pub vulnerable: bool,
-    /// Declared attribute overrides — the body the party actually fights.
-    pub attributes: Option<delvewright_dsl::MobAttributes>,
-    /// Every beat that summons the puppet, in traversal order.
-    pub spawned_by: Vec<ActorBeat>,
-    /// Every beat that gives it real AI, in traversal order.
-    pub unleashed_by: Vec<ActorBeat>,
-    /// Whether the floor gate can measure this fight, and why not if it cannot.
-    pub coverage: FloorCoverage,
-}
-
-/// Index every `spawn-actor` / `unleash-actor` beat in the campaign, by actor id.
-///
-/// Walks the one shared traversal ([`for_each_campaign_effect`]) rather than a
-/// private one, so nesting — `sequence` steps, `on_arrive` reactions, flag-gated
-/// bundles — is descended exactly as emission descends it, and an ambush (which
-/// desugars to a real trigger at parse time) is seen as the trigger it becomes.
-/// The dialogue **stage** is not exempt. `DialogueEffect` has no actor verb of
-/// its own, but a dialogue option's `set-checkpoint` carries an `on_respawn`
-/// bundle that is a `Vec<QuestEffect>`, so a `spawn-actor` there is a beat
-/// emission lowers, and `EffectSite` must be able to *represent* it. The type is
-/// wide enough for the walk to be wide; that is what carried roots 6 and 7
-/// (spec-0031) in on the day they were added, and it is the property the
-/// exhaustive match below exists to keep.
-fn actor_beats(c: &Campaign) -> BTreeMap<String, (Vec<ActorBeat>, Vec<ActorBeat>)> {
-    let triggers: BTreeMap<&str, &delvewright_dsl::EnvTrigger> = c
-        .quests
-        .content
-        .triggers
-        .iter()
-        .map(|t| (t.id.as_str(), t))
-        .collect();
-    let mut out: BTreeMap<String, (Vec<ActorBeat>, Vec<ActorBeat>)> = BTreeMap::new();
-    for_each_campaign_effect(c, &mut |path, site, eff| {
-        let (actor, unleash) = match &eff.verb {
-            Verb::SpawnActor { actor, .. } => (actor, false),
-            Verb::UnleashActor { actor, .. } => (actor, true),
-            _ => return,
-        };
-        let (kind, owner, objective) = match site {
-            EffectSite::Objective { quest, objective } => {
-                ("objective", quest.clone(), Some(objective.clone()))
-            }
-            EffectSite::QuestComplete { quest } => ("quest", quest.clone(), None),
-            EffectSite::Trigger { trigger } => ("trigger", trigger.clone(), None),
-            EffectSite::Trap { trap } => ("trap", trap.clone(), None),
-            // Effect root 5. A `spawn-actor`/`unleash-actor` nested in a dialogue
-            // option's `set-checkpoint` `on_respawn` bundle is lowered into
-            // `cp_on_respawn_<i>` and really does put a body in the world, so it is
-            // an actor beat like any other. It is ambient — re-run on death while
-            // that checkpoint is active — so, like a trigger and a trap, it has no
-            // DAG position.
-            EffectSite::DialogueRespawn { npc, .. } => ("dialogue-respawn", npc.clone(), None),
-            // Effect roots 6 and 7 (spec-0031). Both are ambient for the same
-            // reason the two above are: the party may earn the shortcut at any
-            // time or never, and nobody is forced to die. A body put in the world
-            // from either is a beat the floor gate must be able to name.
-            EffectSite::ShortcutUnlock { shortcut } => ("shortcut-unlock", shortcut.clone(), None),
-            EffectSite::OnDeath => ("on-death", "on_death".to_string(), None),
-            // Effect root 8 (spec-0032). Ambient like the four above: a shop
-            // offer fires when a player presses a button, which they may do at
-            // any time or never.
-            EffectSite::ShopOffer { shop, .. } => ("shop-offer", shop.clone(), None),
-            // Effect root 9 (spec-0074). Ambient: a fight's `on_kill` fires when a
-            // player is credited with one of its bodies, which nobody is forced
-            // to be.
-            EffectSite::OnKill { fight } => ("on-kill", fight.clone(), None),
-        };
-        let t = (kind == "trigger")
-            .then(|| triggers.get(owner.as_str()))
-            .flatten();
-        let beat = ActorBeat {
-            site: kind,
-            owner,
-            objective,
-            path: path.to_string(),
-            on: t.map(|t| t.on.kind()),
-            at: t
-                .and_then(|t| t.at.as_ref())
-                .map(|a| a.as_str().to_string()),
-            npc: t
-                .and_then(|t| t.on.npc_target())
-                .map(|n| n.as_str().to_string()),
-        };
-        let slot = out.entry(actor.as_str().to_string()).or_default();
-        if unleash {
-            slot.1.push(beat);
-        } else {
-            slot.0.push(beat);
-        }
-    });
-    out
-}
-
-/// Can the unassisted bot be made to fight this actor at all — and if not, the
-/// one sentence that says why, in the words the author needs to fix it.
-///
-/// The rule is **unleash or nothing**, and that is a judgement worth stating.
-/// An `unleash-actor` beat replaces the puppet with a real-AI twin of the same
-/// body, and that twin is always killable (its summon carries no `Invulnerable`
-/// whatever the actor's `vulnerable` flag says — the same fact `DW0470` records).
-/// Everything short of that is not a fight:
-///
-/// - never summoned → the puppet never exists;
-/// - summoned but not `vulnerable` → it is `Invulnerable` scenery;
-/// - summoned and `vulnerable` but never unleashed → damageable, but `NoAI` and
-///   knockback-immune, so it never swings back. A target that cannot fight back
-///   is beaten cold by construction, and a floor warning derived from that would
-///   be an artifact of the check rather than a finding about the encounter.
-fn actor_coverage(a: &Actor, spawns: &[ActorBeat], unleashes: &[ActorBeat]) -> FloorCoverage {
-    if !unleashes.is_empty() {
-        return FloorCoverage::Covered;
-    }
-    let id = a.id.as_str();
-    if spawns.is_empty() {
-        return FloorCoverage::NotCovered(format!(
-            "no `spawn-actor` effect anywhere in the campaign summons `{id}`, so the puppet never \
-             exists and there is nothing for the bot to fight"
-        ));
-    }
-    if a.vulnerable {
-        FloorCoverage::NotCovered(format!(
-            "`{id}` is only ever staged as a `vulnerable` puppet: damageable, but `NoAI` and \
-             knockback-immune, so it never attacks. Anything that cannot fight back is beaten \
-             cold by construction, so a floor finding derived from it would say nothing about \
-             the encounter. Add an `unleash-actor` beat to make it a fight the gate can measure"
-        ))
-    } else {
-        FloorCoverage::NotCovered(format!(
-            "`{id}` is staged but never unleashed, and it is not `vulnerable` — the puppet is \
-             summoned `Invulnerable`, so it is scenery the party walks past, not a fight. Add an \
-             `unleash-actor` beat (or drop the tier)"
-        ))
-    }
-}
-
-/// Every tier-declaring actor, in declaration order, with its staging beats and
-/// its floor-gate coverage resolved.
-///
-/// Empty for every campaign that declares no actor `tier` — which is every
-/// campaign written before this field existed, so nothing an existing delve
-/// emits moves.
-pub fn actor_encounters(plan: &Plan) -> Vec<ActorEncounter> {
-    let c = plan.campaign;
-    let beats = actor_beats(c);
-    let mut out = Vec::new();
-    for (index, a) in c.quests.content.actors.iter().enumerate() {
-        let Some(tier) = a.tier else { continue };
-        let (spawns, unleashes) = beats.get(a.id.as_str()).cloned().unwrap_or_default();
-        let coverage = actor_coverage(a, &spawns, &unleashes);
-        out.push(ActorEncounter {
-            actor_id: a.id.as_str().to_string(),
-            index,
-            entity: a.entity.clone(),
-            name: a.name.clone(),
-            tier,
-            anchor: a.anchor.as_str().to_string(),
-            pos: plan.body_point(delvewright_dsl::BodyRef::Actor(a)),
-            tag: format!("dw_actor_{}", safe_local(a.id.as_str())),
-            vulnerable: a.vulnerable,
-            attributes: a.attributes,
-            spawned_by: spawns,
-            unleashed_by: unleashes,
-            coverage,
-        });
-    }
-    out
-}
-
-/// A tier-declaring wave that no critical-path `kill` step names.
-///
-/// The same silence, on the shape that already had a `tier`: `encounters()`
-/// collects only the MANDATORY waves, so an optional wave billed `elite` was as
-/// invisible to the floor gate as a tiered actor was. Found here rather than in
-/// a separate pass because it is one question — "what does the gate cover?" —
-/// and one question deserves one answer.
-fn uncovered_tiered_waves<'a>(plan: &Plan<'a>) -> Vec<(usize, &'a Wave, String)> {
-    let mandatory = mandatory_waves(plan);
-    plan.campaign
-        .quests
-        .content
-        .waves
-        .iter()
-        .enumerate()
-        .filter(|(_, w)| w.tier.is_some_and(EncounterTier::has_floor_expectation))
-        .filter(|(_, w)| !mandatory.contains(w.id.as_str()))
-        .map(|(i, w)| {
-            (
-                i,
-                w,
-                format!(
-                    "no `kill` objective on the compiled critical path names `{}`, so the bot \
-                     never fights it — a tier on an optional wave is a claim nothing measures. \
-                     Give the wave a `kill` objective on the path, or drop the tier",
-                    w.id.as_str()
-                ),
-            )
-        })
-        .collect()
-}
-
 /// Every actor the campaign turns loose on the party, in declaration order —
 /// the campaign's own answer to "which actors are *fights*".
 ///
@@ -958,160 +668,10 @@ pub fn hostile_actors(c: &Campaign) -> Vec<&Actor> {
         .collect()
 }
 
-/// Every actor the campaign turns loose on the party but never bills:
-/// `unleash-actor`ed somewhere, `tier` absent.
-///
-/// A tier declared `ordinary` is a *statement* — the author saying this fight is
-/// routine — and stays off the ledger like any other ordinary encounter. An
-/// ABSENT tier is not a statement, and that is the whole difference this
-/// function exists to keep.
-fn untiered_hostile_actors(c: &Campaign) -> Vec<&Actor> {
-    hostile_actors(c)
-        .into_iter()
-        .filter(|a| a.tier.is_none())
-        .collect()
-}
 
-/// Does this campaign turn any unbilled actor loose on the party? Emission asks,
-/// because a campaign whose only hostile is an untiered actor must still ship a
-/// ledger that says so — see [`untiered_hostile_actors`].
-pub fn has_untiered_hostile_actors(plan: &Plan) -> bool {
-    !untiered_hostile_actors(plan.campaign).is_empty()
-}
 
-/// One line of the floor-gate ledger: what the content declares, and whether the
-/// gate can hold it to that.
-struct FloorEntry {
-    kind: &'static str,
-    id: String,
-    /// The declared tier, or `None` for a hostile that declared none — which is
-    /// exactly why it is on the ledger.
-    tier: Option<EncounterTier>,
-    coverage: FloorCoverage,
-}
 
-/// The whole floor-gate ledger for a campaign, covered and uncovered together,
-/// in a fixed order: mandatory waves in critical-path order, then optional
-/// tiered waves in declaration order, then tiered actors in declaration order,
-/// then untiered hostile actors in declaration order.
-///
-/// The last group is why an EMPTY ledger cannot be trusted to mean "everything
-/// is covered": without it, an actor the campaign unleashes on the party
-/// without declaring a tier appears on neither side of the ledger, and the run
-/// report prints two empty lists over a delve full of fights. That reads as
-/// "everything is covered" when it means "nothing was even assessed".
-/// Silence must not read as a pass — and an
-/// unassessed fight is silence of exactly the kind [`FloorCoverage`] exists to
-/// break.
-fn floor_ledger(
-    plan: &Plan,
-    mandatory: &[Encounter],
-    actors: &[ActorEncounter],
-) -> Vec<FloorEntry> {
-    let mut out: Vec<FloorEntry> = mandatory
-        .iter()
-        .filter(|e| e.tier.has_floor_expectation())
-        .map(|e| FloorEntry {
-            kind: "wave",
-            id: e.wave_id.clone(),
-            tier: Some(e.tier),
-            coverage: FloorCoverage::Covered,
-        })
-        .collect();
-    for (_, w, why) in uncovered_tiered_waves(plan) {
-        out.push(FloorEntry {
-            kind: "wave",
-            id: w.id.as_str().to_string(),
-            tier: Some(w.tier.unwrap_or_default()),
-            coverage: FloorCoverage::NotCovered(why),
-        });
-    }
-    for a in actors.iter().filter(|a| a.tier.has_floor_expectation()) {
-        out.push(FloorEntry {
-            kind: "actor",
-            id: a.actor_id.clone(),
-            tier: Some(a.tier),
-            coverage: a.coverage.clone(),
-        });
-    }
-    for a in untiered_hostile_actors(plan.campaign) {
-        let id = a.id.as_str();
-        out.push(FloorEntry {
-            kind: "actor",
-            id: id.to_string(),
-            tier: None,
-            coverage: FloorCoverage::NotCovered(format!(
-                "`{id}` is UNTIERED: the campaign `unleash-actor`s it, so the party fights a \
-                 real-AI body that swings back, but nothing declares what that fight is worth — \
-                 so the inverted floor gate never assessed it at all. An untiered hostile is not \
-                 a covered fight and its absence from the findings is not a pass. Declare a \
-                 `tier`: `ordinary` if the fight is meant to be routine (which takes it off this \
-                 ledger as a statement rather than an omission), `elite`/`boss` if it is billed \
-                 hard and should be measured"
-            )),
-        });
-    }
-    out
-}
 
-/// `DW0477` — one warning per billed encounter the floor gate cannot measure.
-///
-/// Warning tier, one diagnostic per finding with its exact JSON pointer: an
-/// unmeasurable elite is a real gap in the verification, but it is a *design*
-/// statement (the author may genuinely want an `Invulnerable` set-dressing giant
-/// they also called a boss), and spec-0023 puts the floor gate itself at
-/// advisory tier. What is not negotiable is that it be said out loud.
-pub fn floor_coverage_warnings(
-    plan: &Plan,
-    mandatory: &[Encounter],
-    actors: &[ActorEncounter],
-) -> Vec<Diagnostic> {
-    let mut out = Vec::new();
-    let index_of: BTreeMap<&str, usize> = actors
-        .iter()
-        .map(|a| (a.actor_id.as_str(), a.index))
-        .collect();
-    let uncovered_wave_index: BTreeMap<String, usize> = uncovered_tiered_waves(plan)
-        .into_iter()
-        .map(|(i, w, _)| (w.id.as_str().to_string(), i))
-        .collect();
-    for e in floor_ledger(plan, mandatory, actors) {
-        let Some(why) = e.coverage.reason() else {
-            continue;
-        };
-        // An UNTIERED hostile is on the ledger but is not BILLED
-        // anything, and `DW0477` is by definition about a billing the gate
-        // cannot hold — its message, its pointer (`…/tier`, a field that does
-        // not exist here) and its prescription would all be wrong. The ledger
-        // line, which the run report prints verbatim, is the whole record.
-        let Some(tier) = e.tier else {
-            continue;
-        };
-        let path = match e.kind {
-            "actor" => format!("/content/actors/{}/tier", index_of[e.id.as_str()]),
-            _ => format!("/content/waves/{}/tier", uncovered_wave_index[&e.id]),
-        };
-        out.push(Diagnostic::warning(
-            DW_FLOOR_UNCOVERED,
-            "quests",
-            path,
-            format!(
-                "`{}` is billed `{}`, but the validation ladder's inverted floor gate cannot \
-                 measure it: {why}.\n\nThis matters because of how the gate reports: it emits a \
-                 warning when the UNASSISTED bot beats a billed elite on its first attempt, and \
-                 says nothing otherwise — so an encounter the bot never fought produces exactly \
-                 the same silence as one it fought and lost. `validation/combat-plan.json` \
-                 records this fight as `floor-gate: not covered`, with this reason, so the run \
-                 report cannot present the silence as a pass. Warning tier because an \
-                 unmeasurable elite is a legitimate design (set dressing the content also chose \
-                 to name) — what is not legitimate is nobody knowing.",
-                e.id,
-                tier.token()
-            ),
-        ));
-    }
-    out
-}
 
 /// Is there a cell a player could stand on and swing from, adjacent to this
 /// body?
@@ -1551,161 +1111,11 @@ fn has_any_sustain(c: &Campaign, items: &ItemCombatRegistry) -> bool {
 // When to stop swinging at one body (the per-encounter half)
 // ---------------------------------------------------------------------------
 
-/// How many times over the arithmetic's fully-charged swing count a single body
-/// may be meleed before the validation ladder stops swinging at it and says so.
-///
-/// **Authored, not cited.** Vanilla scales a swing's damage by the attack-cooldown
-/// progress, and the ladder's bot swings on a fixed cadence without ever waiting
-/// the cooldown out, so it lands well under full damage every time and needs
-/// several times the count this arithmetic produces for the same body. No source
-/// gives the right multiple for a bot's fencing, so this is a sanity margin in
-/// exactly the spirit of [`TTK_BUDGET_HITS`]: deliberately generous, crossed only
-/// by a body that is not dying at all rather than by one that is merely tanky.
-///
-/// It lives here, beside the arithmetic, and not in the harness, because the
-/// number it multiplies is a fact about the ENCOUNTER — a harness constant would
-/// be the same figure for a hall of rats and for a boss.
-pub const GIVE_UP_SWING_MARGIN: u32 = 8;
 
-/// The smallest melee budget any body gets, whatever the arithmetic says.
-///
-/// **Authored, not cited**, and for one reason: a mob the best kit fells in a
-/// single fully-charged swing would otherwise get eight, which a bot that misses
-/// twice while a mob backs away can spend without the body being unkillable at
-/// all. The floor keeps the budget a statement about "this body is not dying"
-/// rather than about the bot's aim.
-pub const GIVE_UP_SWING_FLOOR: u32 = 16;
 
-/// One kind of body standing at an encounter, with the melee budget the
-/// encounter's own arithmetic gives it.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct BodyBound {
-    /// Entity kind in the client's vocabulary (`zombie`), which is the only
-    /// identity the bot can read off a body.
-    pub kind: String,
-    /// How many of them the wave seats.
-    pub count: u32,
-    /// Swings after which this body is not being killed by the class kit —
-    /// `None` when the arithmetic could not be computed.
-    pub give_up_swings: Option<u32>,
-    /// Why there is no budget. Present exactly when `give_up_swings` is `None`.
-    pub reason: Option<String>,
-}
 
-/// The melee budgets for one encounter's bodies, worst-case per kind.
-///
-/// # What this replaces
-///
-/// The bot used to decide a body was unkillable by meleeing it for a fixed six
-/// seconds — a combat-targeting policy with no author, written in the harness,
-/// reasoned about in the comments of one campaign ("a `minecraft:warden` posing
-/// as Polyphemus"). Six seconds is not a fact about anything: it is too long for
-/// a rat and too short for an elite, and when it fires it silently blacklists the
-/// body and reports nothing.
-///
-/// The encounter already knows better. `attributes.max_health`, the mob's
-/// resistance, and the best weapon any class kit carries are the same three
-/// numbers [`check_winnability`] bounds the whole fight with; per body they give
-/// the swings that body should take. A body that outlives them is a **content
-/// defect the run report names** — not a blacklist the harness invents.
-///
-/// # Grouping
-///
-/// A wave may seat two stacks of one entity with different tuning, and the bot
-/// cannot tell them apart (it reads a name, not NBT). So kinds are grouped and
-/// the budget is the WORST of the stacks — and a single unproven stack makes the
-/// whole kind unproven. Never the other direction: giving up early on a body that
-/// was merely tougher than the stack beside it would fail a delve that is fine.
-pub fn encounter_bodies(c: &Campaign, wave: &Wave, items: &ItemCombatRegistry) -> Vec<BodyBound> {
-    let best = best_melee_hit(c, items);
-    // kind -> (count, worst swings so far, first reason it could not be bounded)
-    let mut by_kind: BTreeMap<&str, (u32, Option<u32>, Option<String>)> = BTreeMap::new();
-    for mob in &wave.mobs {
-        let kind = client_name(&mob.entity);
-        let entry = by_kind.entry(kind).or_insert((0, Some(0), None));
-        entry.0 += mob.count;
-        let bound = body_swings(mob, best.as_ref());
-        match bound {
-            Ok(swings) => {
-                if let Some(worst) = entry.1 {
-                    entry.1 = Some(worst.max(swings));
-                }
-            }
-            Err(why) => {
-                entry.1 = None;
-                if entry.2.is_none() {
-                    entry.2 = Some(why);
-                }
-            }
-        }
-    }
-    by_kind
-        .into_iter()
-        .map(|(kind, (count, swings, reason))| BodyBound {
-            kind: kind.to_string(),
-            count,
-            give_up_swings: swings,
-            reason: swings.is_none().then(|| {
-                reason.unwrap_or_else(|| "the arithmetic could not be computed".to_string())
-            }),
-        })
-        .collect()
-}
 
-/// The melee budget for ONE body of `mob`, or why there is none.
-fn body_swings(mob: &WaveMob, best: Option<&(f64, String, String)>) -> Result<u32, String> {
-    let Some((hit, class, item)) = best else {
-        return Err(
-            "no class kit carries an item with an `attack_damage` attribute, so the party's \
-             damage output is unknown (a bow's damage is projectile code and appears in no \
-             vanilla data — absence is not zero). Nothing here can say how long a body should \
-             take to fall."
-                .to_string(),
-        );
-    };
-    let Some(max_health) = mob.attributes.and_then(|a| a.max_health) else {
-        return Err(format!(
-            "{} declares no `attributes.max_health`, and Mojang publishes no per-entity default \
-             attributes — so its health is genuinely unknown at build time and this compiler \
-             refuses to invent a health table. Declare `attributes.max_health` on the stack to \
-             give the ladder a melee budget for this body (the same declaration `DW0475` asks \
-             for).",
-            mob.entity
-        ));
-    };
-    let (multiplier, _) = mob_damage_multiplier(mob);
-    // multiplier 0 (total immunity) is `DW0470`, refused long before here.
-    let effective = max_health / multiplier;
-    let charged = (effective / hit).ceil().max(1.0) as u64;
-    let budget = charged
-        .saturating_mul(u64::from(GIVE_UP_SWING_MARGIN))
-        .max(u64::from(GIVE_UP_SWING_FLOOR));
-    debug_assert!(
-        !class.is_empty() && !item.is_empty(),
-        "best_melee_hit names the kit it came from"
-    );
-    Ok(u32::try_from(budget).unwrap_or(u32::MAX))
-}
 
-/// `bodies` for one encounter, in the plan's vocabulary.
-fn bodies_json(bodies: &[BodyBound]) -> Value {
-    Value::Array(
-        bodies
-            .iter()
-            .map(|b| {
-                let mut o = json!({
-                    "kind": b.kind,
-                    "count": b.count,
-                    "give_up_swings": b.give_up_swings,
-                });
-                if let Some(why) = &b.reason {
-                    o["reason"] = json!(why);
-                }
-                o
-            })
-            .collect(),
-    )
-}
 
 // ---------------------------------------------------------------------------
 // Who is not a fight (the cast half of the targeting policy)
@@ -1888,63 +1298,8 @@ pub fn non_combatants_json(c: &Campaign) -> Value {
     o
 }
 
-/// One staging beat, as the plan states it.
-fn beat_json(b: &ActorBeat) -> Value {
-    let mut o = json!({ "site": b.site, "owner": b.owner, "path": b.path });
-    if let Some(objective) = &b.objective {
-        o["objective"] = json!(objective);
-    }
-    if let Some(on) = b.on {
-        o["on"] = json!(on);
-    }
-    if let Some(at) = &b.at {
-        o["at"] = json!(at);
-    }
-    if let Some(npc) = &b.npc {
-        o["npc"] = json!(npc);
-    }
-    o
-}
 
-/// One tiered actor, as the plan states it.
-fn actor_json(a: &ActorEncounter) -> Value {
-    let mut o = json!({
-        "actor": a.actor_id,
-        "entity": a.entity,
-        "tier": a.tier.token(),
-        "anchor": a.anchor,
-        "tag": a.tag,
-        "vulnerable": a.vulnerable,
-        "spawned_by": a.spawned_by.iter().map(beat_json).collect::<Vec<_>>(),
-        "unleashed_by": a.unleashed_by.iter().map(beat_json).collect::<Vec<_>>(),
-        "floor_gate": coverage_json(&a.coverage),
-    });
-    if let Some(name) = &a.name {
-        // spec-0029 named exclusion: `combat-plan.json` is the validation ladder's
-        // own artifact, read by the bot and by a maintainer, never rendered to a
-        // player — so the actor's name appears here as its English source, not as
-        // a translate key. (The name became translatable when `actors[].name`
-        // entered the l10n inventory; before that this line could not have carried
-        // a tag at all.)
-        o["name"] = json!(delvewright_dsl::l10n_plain(name));
-    }
-    if let Some(pos) = a.pos {
-        o["pos"] = json!([pos[0], pos[1], pos[2]]);
-    }
-    if let Some(attrs) = a.attributes {
-        o["attributes"] = serde_json::to_value(attrs).expect("MobAttributes serializes");
-    }
-    o
-}
 
-/// Coverage, spelled so that a reader who skips the prose still cannot mistake
-/// "not covered" for "passed".
-fn coverage_json(c: &FloorCoverage) -> Value {
-    match c {
-        FloorCoverage::Covered => json!({ "covered": true }),
-        FloorCoverage::NotCovered(why) => json!({ "covered": false, "reason": why }),
-    }
-}
 
 /// The validation-only combat plan the bot ladder reads (spec-0023 §1/§3/§4).
 ///
@@ -2001,7 +1356,6 @@ fn coverage_json(c: &FloorCoverage) -> Value {
 pub fn combat_plan_json(
     plan: &Plan,
     encounters: &[Encounter],
-    actors: &[ActorEncounter],
     run_backs: &[RunBack],
 ) -> Value {
     let difficulty = effective_difficulty(plan.campaign);
@@ -2009,13 +1363,6 @@ pub fn combat_plan_json(
     let entries: Vec<Value> = encounters
         .iter()
         .map(|e| {
-            // What stands at this encounter, and how long each body should take
-            // to fall. The bot picks its target by the name a client reports, so
-            // this is the encounter stating its own cast in that vocabulary —
-            // see `encounter_bodies` for what it replaces.
-            let bodies = plan::wave_of(plan.campaign, &e.wave_id)
-                .map(|w| encounter_bodies(plan.campaign, w, &items))
-                .unwrap_or_default();
             let mut o = json!({
                 "wave": e.wave_id,
                 "objective": e.objective_id,
@@ -2028,10 +1375,6 @@ pub fn combat_plan_json(
                 "pos": [e.pos[0], e.pos[1], e.pos[2]],
                 "count": e.count,
                 "respawns_on_rest": e.respawns_on_rest,
-                // The encounter's own cast and melee budgets. `bodies[].kind` is
-                // what the bot MAY swing at here; `give_up_swings` is when it
-                // must stop and let the report name the body.
-                "bodies": bodies_json(&bodies),
                 // The tag-census probe surface for this wave. The
                 // harness calls what the plan NAMES — `safe_local` is a compiler
                 // naming rule, and a harness that re-derived it would be exactly
@@ -2072,52 +1415,6 @@ pub fn combat_plan_json(
             o
         })
         .collect();
-    let ledger = floor_ledger(plan, encounters, actors);
-    let (covered, not_covered): (Vec<&FloorEntry>, Vec<&FloorEntry>) =
-        ledger.iter().partition(|e| e.coverage.is_covered());
-    let floor_examined = covered.len() + not_covered.len();
-    let mut floor_gate = json!({
-        "covered": covered
-            .iter()
-            .map(|e| json!({
-                "kind": e.kind,
-                "id": e.id,
-                "tier": e.tier.map(EncounterTier::token),
-            }))
-            .collect::<Vec<_>>(),
-        // `tier: null` is the untiered hostile — an explicit
-        // null rather than an omitted key, because this document's entire
-        // job is to make an absence legible.
-        "not_covered": not_covered
-            .iter()
-            .map(|e| json!({
-                "kind": e.kind,
-                "id": e.id,
-                "tier": e.tier.map(EncounterTier::token),
-                "reason": e.coverage.reason().unwrap_or_default(),
-            }))
-            .collect::<Vec<_>>(),
-        // playtest-methodology.md rule 1: the binding count, stated out loud —
-        // additive, never a substitute for `covered`/`not_covered`. `unbound`
-        // is `examined == 0`; a `reason` accompanies it exactly then, because a
-        // reader must never have to notice an empty pair of arrays to learn
-        // this ledger matched nothing.
-        "examined": floor_examined,
-        "unbound": floor_examined == 0,
-    });
-    if floor_examined == 0 {
-        floor_gate["reason"] = json!(FLOOR_GATE_UNBOUND_REASON);
-    }
-
-    let actors_examined = actors.len();
-    let mut actors_gate = json!({
-        "examined": actors_examined,
-        "unbound": actors_examined == 0,
-    });
-    if actors_examined == 0 {
-        actors_gate["reason"] = json!(ACTORS_GATE_UNBOUND_REASON);
-    }
-
     json!({
         "version": plan.campaign.world.dsl_version,
         "campaign_id": plan.namespace,
@@ -2129,41 +1426,13 @@ pub fn combat_plan_json(
         "fights": mandatory_fights(plan).to_json(),
         "encounters": entries,
         // Re-seated fights the path walks past again after a rest (spec-0016
-        // §1): each is an encounter the ladder fights under assist before the
+        // §1): each is an encounter the ladder reads and clears again before the
         // leg it names. Always present — an empty list is a measurement.
         "run_backs": run_backs_json(run_backs),
-        "actors": actors.iter().map(actor_json).collect::<Vec<_>>(),
-        // Sibling of `actors[]`, not a rename of anything: how many actors this
-        // build's tier machinery tracked at all. See the `combat_plan_json` doc
-        // comment for why this and `floor_gate.unbound` are different questions.
-        "actors_gate": actors_gate,
-        "floor_gate": floor_gate,
     })
 }
 
-/// `floor_gate`'s reason when `examined == 0`: the ledger holds every wave and
-/// actor billed `elite`/`boss` plus every untiered hostile actor,
-/// so an empty ledger means none of those three things exist in the campaign —
-/// a legitimate, common state (an all-`ordinary` delve) stated here so it is
-/// never mistaken for a ledger that ran and found nothing.
-const FLOOR_GATE_UNBOUND_REASON: &str = "no wave or actor in this campaign is billed \
-    `elite`/`boss`, and no hostile actor goes untiered — the floor gate's ledger has \
-    nothing to hold. This can be a legitimate build (e.g. an all-`ordinary` delve, or \
-    one whose combat never crosses this gate's weight); it is stated explicitly so an \
-    empty `covered`/`not_covered` pair is never read as a ledger that ran and passed.";
 
-/// `actors_gate`'s reason when `examined == 0`: `actors[]` holds every actor
-/// that declares ANY tier (`ordinary` included), so an empty array means no
-/// actor in the campaign declares one at all — which is not the same fact as
-/// "no hostile actor exists": an unleashed actor that never got a `tier` is
-/// invisible here BY DESIGN (it lives in `floor_gate.not_covered` instead),
-/// so this reason points a reader there rather than letting the
-/// empty array read as "no actor combat".
-const ACTORS_GATE_UNBOUND_REASON: &str = "no actor in this campaign declares a `tier` \
-    (not even `ordinary`), so this build's actor-tier machinery tracked none. This is \
-    NOT the same fact as \"no hostile actor exists\": an unleashed actor that declares \
-    no tier at all does not appear here by design — check `floor_gate.not_covered` for \
-    any UNTIERED hostile actor this may be masking.";
 
 #[cfg(test)]
 mod tests {

@@ -1500,20 +1500,13 @@ pub fn build_with_warnings(
                     )?,
                 );
             }
-            // The bot ladder's combat plan (spec-0023 §1/§3/§4): which
-            // encounters exist, what the content bills each as, and which
-            // checkpoint governs a death at it. Validation metadata only — it
-            // lives under `validation/`, which `Dockerfile.delve` excludes, so
-            // no shipped byte moves.
+            // The bot ladder's combat plan (spec-0023 §1): which encounters exist,
+            // what the content bills each as, which checkpoint governs a death at
+            // it, and — the muster — what each wave DECLARES its bodies to be, so
+            // the ladder can read the live ones against it. Validation metadata
+            // only: it lives under `validation/`, which `Dockerfile.delve`
+            // excludes, so no shipped byte moves.
             //
-            // A tier-declaring ACTOR is enough on its own to want
-            // this file: the set-piece souls fight is an actor, not a wave, and
-            // a campaign whose only billed elite is an actor would otherwise
-            // emit no plan at all — the exact silence spec-0023's floor gate
-            // must not be allowed to read as a pass. An UNTIERED hostile actor
-            // is enough for the same reason and one step further
-            // out: it is a fight nothing bills, so without the ledger line
-            // naming it there is no artifact anywhere that says it existed.
             // spec-0016 §6: resolve and prove each TD lane polyline (DW0386). The
             // proven cells are what `patrol_target` carries, so the squad is only
             // ever sent somewhere it can stand and walk to.
@@ -1521,17 +1514,8 @@ pub fn build_with_warnings(
             // Before the combat plan: a run-back is measured against where the
             // hostiles actually are, and a lane wave is where it marches.
             let lanes = crate::compiler::nav::plan_lanes(plan, &world)?;
-            let tiered_actors = crate::compiler::combat::actor_encounters(plan);
-            if crate::compiler::combat::has_encounters(plan)
-                || !tiered_actors.is_empty()
-                || crate::compiler::combat::has_untiered_hostile_actors(plan)
-            {
+            if crate::compiler::combat::has_encounters(plan) {
                 let mandatory = crate::compiler::combat::encounters(plan);
-                warnings.extend(crate::compiler::combat::floor_coverage_warnings(
-                    plan,
-                    &mandatory,
-                    &tiered_actors,
-                ));
                 // Run-backs (spec-0016 §1): a cleared `respawns_on_rest` wave a
                 // rest re-seats beside a leg the path walks afterwards. Measured
                 // over every exported path, against the same aggro model the
@@ -1549,12 +1533,7 @@ pub fn build_with_warnings(
                 put_json(
                     &mut out,
                     "validation/combat-plan.json",
-                    &crate::compiler::combat::combat_plan_json(
-                        plan,
-                        &mandatory,
-                        &tiered_actors,
-                        &run_backs,
-                    ),
+                    &crate::compiler::combat::combat_plan_json(plan, &mandatory, &run_backs),
                 );
             }
             // spec-0016 §1: the RESPAWN-POINT safe zone

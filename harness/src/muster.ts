@@ -33,7 +33,7 @@ const CAMPAIGN = "([a-z0-9]+(?:-[a-z0-9]+)*)";
 
 const SUMMARY_RE = new RegExp(`^\\[dw:muster ${CAMPAIGN} ${WAVE} ${INT} ${INT} ${INT}\\]$`);
 const BODY_RE = new RegExp(
-  `^\\[dw:musterbody ${CAMPAIGN} ${WAVE} ${INT} ${INT} ${INT} ${INT} ${INT} ${INT} ${INT} ${INT} ${INT}\\]$`,
+  `^\\[dw:musterbody ${CAMPAIGN} ${WAVE} ${INT} ${INT} ${INT} ${INT} ${INT} ${INT} ${INT} ${INT} ${INT} ${INT}\\]$`,
 );
 
 /** The line that closes one muster of one wave. */
@@ -65,6 +65,12 @@ export interface MusterBody {
   /** The plan's `unread` sentinel where the probe did not ask. */
   readonly attackDamage: number;
   readonly followRange: number;
+  /**
+   * What the body actually swings with, weapon modifiers included — telemetry,
+   * compared against nothing. A Guard declared `attack_damage: 6.0` hits for 11.0
+   * with its iron sword, and until this reading no artifact said so.
+   */
+  readonly attackDamageEffective: number;
 }
 
 /** Parse one chat line as a muster summary, or `undefined`. Whole-line, strict. */
@@ -96,6 +102,7 @@ export function parseMusterBody(line: string): MusterBody | undefined {
     movementSpeed: Number(m[9]),
     attackDamage: Number(m[10]),
     followRange: Number(m[11]),
+    attackDamageEffective: Number(m[12]),
   };
 }
 
@@ -145,6 +152,24 @@ export function verifyMuster(
     for (let i = 0; i < profile.count; i += 1) slots.push({ profile, type, taken: false });
   }
 
+  // Nothing standing is not the same fact as a body that is wrong, and it must
+  // not be reported as N missing stacks. The wave may legitimately be gone — the
+  // world felled it, or a run-back's cohort was cleared — and what is true is
+  // only that the probe had nothing to read.
+  if (summary.tagged === 0) {
+    return {
+      wave: summary.wave,
+      checked: plan.checked,
+      read: 0,
+      declared: plan.bodies,
+      matched: 0,
+      findings: [
+        `nothing of this wave was standing when the muster ran, so none of its ` +
+          `${plan.checked} declared fact(s) could be checked against a body ` +
+          `(${plan.bodies} declared: ${plan.profiles.map((p) => p.label).join("; ")})`,
+      ],
+    };
+  }
   if (summary.tagged !== summary.counted) {
     findings.push(
       `${plan.probe}: ${summary.tagged} body/bodies carry the wave's tag but only ` +
