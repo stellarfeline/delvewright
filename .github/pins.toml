@@ -294,6 +294,7 @@ sites = [
     "tools/spike-block-settling/run.sh",
     "tools/spike-death-teleport/run.sh",
     "tools/spike-fluid-plane/run.sh",
+    "tools/spike-guard-fight/run.sh",
     "tools/spike-jump-arc/run.sh",
     "validation/Dockerfile.delve",
     "validation/Dockerfile.toolserver",
@@ -302,7 +303,7 @@ sites = [
 policy = "immutable"
 why = """
 itzg/minecraft-server, and the byte-for-byte GHCR mirror of it that every server
-image is built FROM (versions.toml [images.base]). One digest in ten files, and
+image is built FROM (versions.toml [images.base]). One digest in eleven files, and
 validation/check-versions.sh is what keeps them equal.
 """
 
