@@ -686,9 +686,9 @@ test("a body the party felled on the way back is not attrition", () => {
   assert.equal(returnAttritionFinding("wave/x", 1, "first-contact", reseat, back), undefined);
 });
 
-// Issue #809, reproduced: vesperhold's skeletons shot one another and its spear
-// zombies stabbed one another while the bot walked back, and the census read ~30 s
-// after the re-seat found them hurt with no swing by the bot.
+// Reproduced from a campaign run: skeletons shot one another and spear zombies
+// stabbed one another while the bot walked back, and the census read ~30 s after
+// the re-seat found them hurt with no swing by the bot.
 test("wounds found at the return are stated, never judged, once the re-seat was read whole", () => {
   const reseat = observationOf(census([mob(), mob(), mob()]), 3, [...ANCHOR], 150);
   const back = observationOf(census([mob({ health: 11 }), mob({ health: 14 }), mob()]), 3, [...ANCHOR], 250);
