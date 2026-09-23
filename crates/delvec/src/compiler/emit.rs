@@ -5835,8 +5835,6 @@ fn root_audience(kind: delvewright_dsl::EffectRootKind) -> Audience {
 /// verbatim.
 fn emit_gated_effect(plan: &Plan, eff: &QuestEffect, aud: Audience, body: &mut Vec<String>) {
     let gate = eff.gate();
-    let flags = gate.requires_flags;
-    let forbids = gate.forbids_flags;
     let mut inner: Vec<String> = Vec::new();
     emit_quest_effect(plan, eff, aud, &mut inner);
     if gate.is_empty() {
@@ -5844,30 +5842,14 @@ fn emit_gated_effect(plan: &Plan, eff: &QuestEffect, aud: Audience, body: &mut V
         return;
     }
     // DSL v0.10: the numeric terms join the flag terms in one guard, in gate
-    // field order. `state_clauses` yields ` if score …` (leading space); this
-    // guard is built in the space-TERMINATED form, so the clauses are re-spaced
-    // rather than concatenated verbatim.
-    let guard: String = flags
+    // field order — `Plan::gate_terms`, the same reduction the death plan hands
+    // the bot tier. The clauses come back unspaced; this guard is built in the
+    // space-TERMINATED form, so each is re-spaced rather than concatenated
+    // verbatim.
+    let guard: String = plan
+        .gate_terms(gate)
         .iter()
-        .map(|f| {
-            format!(
-                "if score {} {} matches 1 ",
-                plan::PARTY,
-                plan::flag_score(f.as_str())
-            )
-        })
-        .chain(forbids.iter().map(|f| {
-            format!(
-                "unless score {} {} matches 1 ",
-                plan::PARTY,
-                plan::flag_score(f.as_str())
-            )
-        }))
-        .chain(
-            state_clauses(plan, gate.requires_state, false)
-                .into_iter()
-                .map(|c| format!("{c} ")),
-        )
+        .map(|t| format!("{} ", t.clause(false)))
         .collect();
     for line in inner {
         body.push(with_execute_prefix(&guard, line));
@@ -5940,23 +5922,12 @@ fn state_initial(plan: &Plan, id: &StateId) -> i32 {
 /// Empty for a gate with no comparison, which is every pre-0.10 campaign — so
 /// splicing this into an existing guard moves no existing command by a byte.
 fn state_clauses(plan: &Plan, cmps: &[StateCompare], negate: bool) -> Vec<String> {
-    cmps.iter()
-        .map(|c| {
-            let holder = state_holder(plan, &c.state);
-            let obj = plan::state_score(c.state.as_str());
-            // `equals`/`at-least`/`at-most` are `if … matches <range>`;
-            // `not-equals` is the same range under `unless`. Negation flips the
-            // keyword and nothing else, so the two readings can never disagree
-            // about what the range means.
-            let (positive, range) = match c.op {
-                CompareOp::Equals => (true, format!("{}", c.value)),
-                CompareOp::NotEquals => (false, format!("{}", c.value)),
-                CompareOp::AtLeast => (true, format!("{}..", c.value)),
-                CompareOp::AtMost => (true, format!("..{}", c.value)),
-            };
-            let kw = if positive != negate { "if" } else { "unless" };
-            format!("{kw} score {holder} {obj} matches {range}")
-        })
+    // `Plan::state_terms` decides the holder, the range and which keyword the
+    // comparison wants; `negate` flips that keyword and nothing else, so the two
+    // readings can never disagree about what the range means.
+    plan.state_terms(cmps)
+        .iter()
+        .map(|t| t.clause(negate))
         .collect()
 }
 
@@ -5975,23 +5946,10 @@ fn state_cond(plan: &Plan, cmps: &[StateCompare], negate: bool) -> String {
 /// Empty for an ungated site, so a caller that splices it in unconditionally
 /// emits exactly what it emitted before v0.10.
 fn gate_cond(plan: &Plan, gate: Gate<'_>) -> String {
-    let mut out = String::new();
-    for f in gate.requires_flags {
-        out.push_str(&format!(
-            " if score {} {} matches 1",
-            plan::PARTY,
-            plan::flag_score(f.as_str())
-        ));
-    }
-    for f in gate.forbids_flags {
-        out.push_str(&format!(
-            " unless score {} {} matches 1",
-            plan::PARTY,
-            plan::flag_score(f.as_str())
-        ));
-    }
-    out.push_str(&state_cond(plan, gate.requires_state, false));
-    out
+    plan.gate_terms(gate)
+        .iter()
+        .map(|t| format!(" {}", t.clause(false)))
+        .collect()
 }
 
 /// The commands that force a gate's numeric terms to be satisfied (`satisfy`) or
