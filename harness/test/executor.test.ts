@@ -5,7 +5,11 @@ import type { Bot } from "mineflayer";
 import { MineflayerExecutor, completionWindowMs, type BotConfig } from "../src/executor.ts";
 import { BotDeathError } from "../src/death.ts";
 import type { AssertCompleteStep } from "../src/critical-path.ts";
-import { lethalTrialFailures, parseDeathPlan } from "../src/death-loop.ts";
+import {
+  SUPPORTED_DEATH_PLAN_FORMAT,
+  lethalTrialFailures,
+  parseDeathPlan,
+} from "../src/death-loop.ts";
 
 /** The `dsl_version` an emitted plan carries.
  *
@@ -3212,7 +3216,7 @@ class DrivableFakeBot extends FakeBot {
 /** The smallest plan the stage will walk: one volume, one `on_death`, no stake. */
 function oneVolumePlan(): ReturnType<typeof parseDeathPlan> {
   return parseDeathPlan({
-    format_version: 2,
+    format_version: SUPPORTED_DEATH_PLAN_FORMAT,
     version: PLAN_VERSION,
     campaign_id: "probe",
     lethal_volumes: [
@@ -3245,7 +3249,7 @@ function oneVolumePlan(): ReturnType<typeof parseDeathPlan> {
 /** The gallery's west pit, as `delvec` emits it — the volume this rule was measured on. */
 function westPitPlan(): ReturnType<typeof parseDeathPlan> {
   return parseDeathPlan({
-    format_version: 2,
+    format_version: SUPPORTED_DEATH_PLAN_FORMAT,
     version: PLAN_VERSION,
     campaign_id: "gallery",
     lethal_volumes: [
@@ -3468,7 +3472,7 @@ class GatedApproachBot extends DrivableFakeBot {
 /** The west pit with a placement row, so the stage actually walks to a near lip. */
 function westPitPlanWithLip(): ReturnType<typeof parseDeathPlan> {
   return parseDeathPlan({
-    format_version: 2,
+    format_version: SUPPORTED_DEATH_PLAN_FORMAT,
     version: PLAN_VERSION,
     campaign_id: "gallery",
     lethal_volumes: [

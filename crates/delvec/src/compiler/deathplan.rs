@@ -39,7 +39,7 @@ use delvewright_dsl::{Campaign, QuestEffect};
 use serde_json::{Value, json};
 
 use crate::compiler::nav::World;
-use crate::compiler::plan::Plan;
+use crate::compiler::plan::{GateTerm, Plan};
 use crate::compiler::stake::StakeTable;
 
 /// The contract's own shape version, beside the campaign's `dsl_version` (which
@@ -53,7 +53,18 @@ use crate::compiler::stake::StakeTable;
 /// version exists for: a bot reading a v1 plan would find no `keep_out`, fall
 /// back to the volume's cells, and route itself along the ring of cells the
 /// volume kills from, reporting a navigation fault for a correct kill.
-pub const DEATH_PLAN_FORMAT_VERSION: u32 = 2;
+///
+/// Version 3 makes `drops_stake` carry each `drop-stake` effect's **gate**
+/// instead of only the stake's name. A `drop-stake` is gated like every other
+/// effect (`when`), so "this death forfeits this stake" is a conditional promise
+/// — and a plan that states it unconditionally makes the bot assert a forfeit the
+/// campaign never promised under the state in force. The gallery declares two of
+/// its four `drop-stake` effects behind `flag/hall-sealed`, which is set long
+/// before the death-loop stage runs; every run reported the engine's correct
+/// refusal to take those two purses as "the death took the wrong amount". The
+/// version exists for exactly this: a v2 bot reading a v3 plan, or the reverse,
+/// would under-assert without saying so.
+pub const DEATH_PLAN_FORMAT_VERSION: u32 = 3;
 
 /// What the bot tier will be able to examine — counted at build time, so a reader
 /// of the artifact alone can tell an empty contract from a proven one.
@@ -138,6 +149,69 @@ fn deep_effects(effs: &[QuestEffect]) -> Vec<&QuestEffect> {
         }
     }
     out
+}
+
+/// **Every `drop-stake` this bundle can fire, with the gate that decides it.**
+///
+/// One entry per stake id, carrying every *alternative* gate the bundle reaches it
+/// under: a stake dropped by two effects is forfeited when EITHER fires, so the
+/// entry is a disjunction and each alternative is the conjunction of its own
+/// effect's gate with every ancestor's. A `sequence` that is gated and whose step
+/// holds an ungated `drop-stake` promises the drop only while the sequence's gate
+/// is open, and a descent that read the leaf's own gate alone would hand the bot
+/// tier an unconditional promise the campaign never made.
+///
+/// Pre-order in declaration order at every depth, so the artifact is byte-stable
+/// (ADR-0006). The terms are [`crate::compiler::plan::Plan::gate_terms`]'s — the
+/// same reduction the emitter renders into the `execute` guard, never a second
+/// reading of the same declaration.
+fn drop_stake_gates(plan: &Plan, effs: &[QuestEffect]) -> Vec<(String, Vec<Vec<GateTerm>>)> {
+    fn walk(
+        plan: &Plan,
+        effs: &[QuestEffect],
+        inherited: &[GateTerm],
+        out: &mut Vec<(String, Vec<Vec<GateTerm>>)>,
+    ) {
+        for e in effs {
+            let mut here = inherited.to_vec();
+            here.extend(plan.gate_terms(e.gate()));
+            if let Verb::DropStake { stake, .. } = &e.verb {
+                let id = stake.as_str();
+                match out.iter_mut().find(|(s, _)| s == id) {
+                    Some((_, alts)) => {
+                        if !alts.contains(&here) {
+                            alts.push(here.clone());
+                        }
+                    }
+                    None => out.push((id.to_string(), vec![here.clone()])),
+                }
+            }
+            for nested in e.nested_effect_lists() {
+                walk(plan, nested, &here, out);
+            }
+        }
+    }
+    let mut out = Vec::new();
+    walk(plan, effs, &[], &mut out);
+    out
+}
+
+/// One gate term as the bot tier reads it: the ledger, who holds it, the closed
+/// interval with open ends, and whether the gate wants the range to FAIL.
+///
+/// The holder is carried as the selector the server answers to, for the same
+/// reason a volume's `keep_out` box is carried rather than derived: a `party`
+/// datum lives on the engine's party fake player, and a bot that mapped the
+/// declared scope onto that name itself would hold a piece of the compiler's
+/// knowledge in another language, where no Rust test reaches it.
+fn term_json(t: &GateTerm) -> Value {
+    json!({
+        "objective": t.objective,
+        "holder": t.holder(),
+        "min": t.min,
+        "max": t.max,
+        "negate": t.negate,
+    })
 }
 
 /// An l10n-tagged authored string, split into the key the delve ships it under and
@@ -243,14 +317,18 @@ pub fn build(
         .collect();
 
     let deep = deep_effects(on_death);
-    let mut drops: Vec<&str> = deep
+    let drops: Vec<Value> = drop_stake_gates(plan, on_death)
         .iter()
-        .filter_map(|e| match &e.verb {
-            Verb::DropStake { stake, .. } => Some(stake.as_str()),
-            _ => None,
+        .map(|(stake, alts)| {
+            json!({
+                "stake": stake,
+                "gates": alts
+                    .iter()
+                    .map(|terms| json!({ "terms": terms.iter().map(term_json).collect::<Vec<_>>() }))
+                    .collect::<Vec<_>>(),
+            })
         })
         .collect();
-    drops.dedup();
 
     let stakes_json: Vec<Value> = stakes
         .iter()

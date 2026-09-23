@@ -2422,7 +2422,23 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
     `damage_type`.
   - `on_death` — how many effects the bundle carries at every nesting depth
     (read through `QuestEffect::nested_effect_lists`, so a `sequence` is
-    counted), and which stakes it drops.
+    counted), and `drops_stake[]`: per stake the bundle can forfeit, **the gate
+    that decides whether this death forfeits it**. A `drop-stake` carries a
+    `when` like every other effect, so the promise is conditional, and a plan
+    that stated it unconditionally made the bot assert a forfeit the campaign
+    never promised under the state in force. Each entry is `{stake, gates[]}`:
+    the gates are alternatives — one stake dropped by two effects is forfeited
+    when either fires — and each alternative's `terms[]` is the conjunction of
+    its own effect's gate with every enclosing effect's, so a gated `sequence`
+    round an ungated drop gates the drop. A term is `{objective, holder, min,
+    max, negate}`: the ledger, the selector that holds it (`#party` for a party
+    datum or a flag, `@s` for a player datum — carried rather than derived from
+    a scope, for the same reason `keep_out` is), the closed interval with open
+    ends that `matches` spells, and whether the gate wants the range to fail.
+    The terms are `Plan::gate_terms`' — the same reduction the emitter renders
+    into the `execute` guard, so the datapack and the contract cannot disagree
+    about when a death takes a purse. An unconditional drop is one alternative
+    with no terms.
   - `stakes[]` — the declared `forfeit` rule (`all` / `proportion` /
     `fixed` / `none`), `max_live`, `on_full`, `collect_by`, the
     `collected_message` and the `marker_item`, plus the wagered `currency`: its

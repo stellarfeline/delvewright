@@ -35,7 +35,7 @@ const DEATH_PLAN_SUBPATH = ["validation", "death-plan.json"] as const;
  * one is REFUSED rather than half-read: a bot that silently ignores a field it
  * does not know reports a green over assertions it never made.
  */
-export const SUPPORTED_DEATH_PLAN_FORMAT = 2;
+export const SUPPORTED_DEATH_PLAN_FORMAT = 3;
 
 /** An inclusive world-space box. */
 export interface Box {
@@ -77,6 +77,142 @@ export interface Currency {
   readonly scope: string | undefined;
   readonly name: string | undefined;
   readonly nameKey: string | undefined;
+}
+
+/**
+ * **One term of a `drop-stake`'s gate**, as the scoreboard question the server
+ * asks: does this holder's score in this ledger fall in this range, or not?
+ *
+ * The compiler reduces all three authored gate axes — required flags, forbidden
+ * flags, numeric comparisons — to these, once
+ * (`compiler::plan::Plan::gate_terms`), and hands them here. A flag is
+ * `dw.f_<id>` on the party, matched against `1`; a datum is `dw.s_<id>` on its
+ * declared scope. Re-deriving them from the campaign would put the engine's gate
+ * rule in a second language where no Rust test reaches it — the same reason
+ * {@link LethalVolume.keepOut} is read and never computed.
+ *
+ * The range is a closed interval with open ends: an absent `min` or `max` is that
+ * side left open. {@link GateTerm.negate} is the `unless` half — a term the gate
+ * requires to be FALSE.
+ */
+export interface GateTerm {
+  readonly objective: string;
+  /**
+   * **Who holds the value**, as the selector the server answers to — the party
+   * fake player for a `party` datum, `@s` for a `player` one.
+   *
+   * Read, never derived. A bot that mapped a declared scope onto the engine's own
+   * party holder would be holding a piece of the compiler's knowledge in a second
+   * language, which is exactly what {@link LethalVolume.keepOut} exists not to do.
+   */
+  readonly holder: string;
+  readonly min: number | undefined;
+  readonly max: number | undefined;
+  readonly negate: boolean;
+}
+
+/** One alternative gate: every term must hold for it to be open. */
+export interface StakeGate {
+  readonly terms: readonly GateTerm[];
+}
+
+/**
+ * **One stake this campaign's `on_death` can drop, and what decides whether it
+ * does.**
+ *
+ * A `drop-stake` carries a `when` like every other effect, so "this death
+ * forfeits this stake" is a CONDITIONAL promise. `gates` holds every alternative
+ * the bundle reaches this stake under — two effects dropping one stake means
+ * either firing forfeits it — and each alternative is the conjunction of its own
+ * effect's gate with every enclosing effect's. An unconditional drop is one
+ * alternative with no terms.
+ */
+export interface StakeDrop {
+  readonly stake: string;
+  readonly gates: readonly StakeGate[];
+}
+
+/** The key a term's answer is filed under — the whole question, not the ledger. */
+export function termKey(t: GateTerm): string {
+  return termClause(t);
+}
+
+/** The `matches` range, as vanilla spells it. */
+export function termRange(t: GateTerm): string {
+  if (t.min !== undefined && t.max !== undefined) {
+    return t.min === t.max ? `${t.min}` : `${t.min}..${t.max}`;
+  }
+  if (t.min !== undefined) return `${t.min}..`;
+  if (t.max !== undefined) return `..${t.max}`;
+  return "";
+}
+
+/**
+ * **The term as an `execute` sub-clause — the question the SERVER is asked.**
+ *
+ * The bot does not read the ledger's value and re-apply the rule to it. It asks
+ * the server the very clause the compiler wrote into the guard and reads which
+ * way it answered, because that is the rule's own consumer: vanilla's `matches`
+ * is FALSE for a holder with no score, and an unset flag closing a
+ * `forbids_flags` gate is that fact and not a convention the harness could get
+ * right by agreement. `compiler::plan::GateTerm::clause` is the other rendering
+ * of these same fields, and `death_plan_gate.rs` holds the two together against
+ * the emitted guard.
+ */
+export function termClause(t: GateTerm): string {
+  return `${t.negate ? "unless" : "if"} score ${t.holder} ${t.objective} matches ${termRange(t)}`;
+}
+
+/** This term as the sentence a failure prints. */
+export function termText(t: GateTerm): string {
+  return `\`${t.objective}\` for ${t.holder} ${t.negate ? "NOT " : ""}in ${termRange(t) || "anything"}`;
+}
+
+/** Whether this death promises to forfeit a stake, and — when it does not — why. */
+export type GateVerdict =
+  | { readonly kind: "open" }
+  | { readonly kind: "shut"; readonly why: string }
+  | { readonly kind: "unread"; readonly why: string };
+
+/**
+ * **Does this death promise this stake's forfeit, under the state that was read?**
+ *
+ * A disjunction over the alternatives, each a conjunction of its terms — the same
+ * reading the server makes of the `execute` guard the compiler wrote from these
+ * very terms.
+ *
+ * An alternative that holds settles it open, whatever the others read; that is
+ * what makes an unreadable term harmless when some other gate is plainly open.
+ * Otherwise an unread term leaves the whole question unestablished, and THAT is a
+ * finding: a bot that treated it as shut would skip a forfeit assertion and
+ * report the run as green over an assertion it never made.
+ */
+export function gateVerdict(
+  drop: StakeDrop,
+  held: (t: GateTerm) => boolean | undefined,
+): GateVerdict {
+  let unread: string | undefined;
+  let shut: string | undefined;
+  for (const gate of drop.gates) {
+    let open = true;
+    for (const t of gate.terms) {
+      const answer = held(t);
+      if (answer === undefined) {
+        unread ??=
+          `the campaign gates it on ${termText(t)}, and the server did not answer that question`;
+        open = false;
+        break;
+      }
+      if (!answer) {
+        shut ??= `the campaign gates it on ${termText(t)}, which does not hold`;
+        open = false;
+        break;
+      }
+    }
+    if (open) return { kind: "open" };
+  }
+  if (unread !== undefined) return { kind: "unread", why: unread };
+  return { kind: "shut", why: shut ?? "the campaign's `on_death` does not drop it" };
 }
 
 /** How much of the currency a death takes (spec-0032 `Forfeit`). */
@@ -141,7 +277,7 @@ export interface DeathPlan {
   readonly campaignId: string;
   readonly volumes: readonly LethalVolume[];
   readonly onDeathEffects: number;
-  readonly dropsStake: readonly string[];
+  readonly dropsStake: readonly StakeDrop[];
   readonly stakes: readonly StakeRule[];
   readonly seats: readonly Seat[];
   readonly regions: readonly DeathRegion[];
@@ -233,6 +369,31 @@ function parseForfeit(v: unknown, pointer: string): ForfeitRule {
   }
 }
 
+function parseGateTerm(v: unknown, pointer: string): GateTerm {
+  if (!isRecord(v)) throw new DeathPlanParseError(pointer, "expected an object");
+  const holder = requireString(v["holder"], `${pointer}/holder`);
+  const negate = v["negate"];
+  if (typeof negate !== "boolean") {
+    throw new DeathPlanParseError(`${pointer}/negate`, "expected a boolean");
+  }
+  const min = optionalInteger(v["min"], `${pointer}/min`);
+  const max = optionalInteger(v["max"], `${pointer}/max`);
+  if (min === undefined && max === undefined) {
+    throw new DeathPlanParseError(
+      pointer,
+      "a term with both ends open matches every value and gates nothing — the compiler does not " +
+        "write one, so reading it would mean the two tiers disagree about what a gate is",
+    );
+  }
+  return {
+    objective: requireString(v["objective"], `${pointer}/objective`),
+    holder,
+    min,
+    max,
+    negate,
+  };
+}
+
 function parseCurrency(v: unknown, pointer: string): Currency {
   if (!isRecord(v)) throw new DeathPlanParseError(pointer, "expected an object");
   return {
@@ -322,6 +483,30 @@ export function parseDeathPlan(raw: unknown): DeathPlan {
   if (!Array.isArray(dropsRaw)) {
     throw new DeathPlanParseError("/on_death/drops_stake", "expected an array");
   }
+  const drops = dropsRaw.map((d, i): StakeDrop => {
+    const p = `/on_death/drops_stake/${i}`;
+    if (!isRecord(d)) throw new DeathPlanParseError(p, "expected an object");
+    const gatesRaw = d["gates"];
+    if (!Array.isArray(gatesRaw) || gatesRaw.length === 0) {
+      throw new DeathPlanParseError(
+        `${p}/gates`,
+        "expected a non-empty array — a drop this bundle never reaches is not in the list at all, " +
+          "and an unconditional one is exactly one alternative with no terms",
+      );
+    }
+    return {
+      stake: requireString(d["stake"], `${p}/stake`),
+      gates: gatesRaw.map((g, j): StakeGate => {
+        const gp = `${p}/gates/${j}`;
+        if (!isRecord(g)) throw new DeathPlanParseError(gp, "expected an object");
+        const termsRaw = g["terms"];
+        if (!Array.isArray(termsRaw)) {
+          throw new DeathPlanParseError(`${gp}/terms`, "expected an array");
+        }
+        return { terms: termsRaw.map((t, k) => parseGateTerm(t, `${gp}/terms/${k}`)) };
+      }),
+    };
+  });
 
   const stakesRaw = raw["stakes"];
   if (!Array.isArray(stakesRaw)) throw new DeathPlanParseError("/stakes", "expected an array");
@@ -391,7 +576,7 @@ export function parseDeathPlan(raw: unknown): DeathPlan {
     campaignId: requireString(raw["campaign_id"], "/campaign_id"),
     volumes,
     onDeathEffects: requireInteger(onDeath["effects"], "/on_death/effects"),
-    dropsStake: dropsRaw.map((d, i) => requireString(d, `/on_death/drops_stake/${i}`)),
+    dropsStake: drops,
     stakes,
     seats,
     regions,
@@ -818,6 +1003,22 @@ export interface LethalTrial {
   walkedBack: boolean;
   collectClicks: number;
   markerRetired: boolean;
+  /**
+   * **Stakes this death does NOT promise**, because the campaign's own `on_death`
+   * gate is shut — with the term that shut it.
+   *
+   * Recorded rather than dropped silently. A gated `drop-stake` is a real
+   * declaration, and a run that examines fewer datums than the campaign declares
+   * has to say which ones and why, or the stage looks exactly as green as one
+   * that examined all of them.
+   */
+  readonly withheld: { stake: string; why: string }[];
+  /**
+   * Stakes whose gate could not be READ. Each is a failure: nothing was
+   * established about whether the forfeit was promised, so nothing may be
+   * asserted about whether it happened.
+   */
+  readonly gateUnread: { stake: string; why: string }[];
   /** A step that could not be attempted at all, with the reason. */
   abandoned: string | undefined;
 }
@@ -844,6 +1045,8 @@ export function openLethalTrial(
     walkedBack: false,
     collectClicks: 0,
     markerRetired: false,
+    withheld: [],
+    gateUnread: [],
     abandoned: undefined,
   };
 }
@@ -856,7 +1059,59 @@ export function openLethalTrial(
  * those three.
  */
 export function stakesDropped(plan: DeathPlan): StakeRule[] {
-  return plan.stakes.filter((s) => plan.dropsStake.includes(s.id));
+  const dropped = new Set(plan.dropsStake.map((d) => d.stake));
+  return plan.stakes.filter((s) => dropped.has(s.id));
+}
+
+/**
+ * **The near lip of a volume: the reachable cell the placement table proved
+ * nearest it**, over every row the table holds for it.
+ *
+ * The table is keyed on (death region, respawn seat), so one volume has a row per
+ * seat and those rows do not agree: vesperhold's `lethal/undertide` is anchored at
+ * `[31, 68, 78]` from three of its six seats, at `[35, 80, 79]` from another and at
+ * `[9, 66, 79]` from the entry spawn — twenty-six blocks across the map. Taking
+ * "the first row for this volume" therefore took the ENTRY seat's anchor whatever
+ * seat was in force, and the approach became a cross-map walk through live
+ * encounters to a place that is not this volume's lip at all. On the gallery every
+ * seat agrees on one anchor, so nothing there could ever have shown it.
+ *
+ * Nearest is measured to the volume's own box, which is the question the phrase
+ * "near lip" asks; ties break lexicographically so the choice is stable across runs
+ * (ADR-0006). This is navigation, not adjudication — where the stake must LAND is
+ * still {@link tableAnchor}, keyed on the seat the bot actually respawned at.
+ */
+export function nearLip(plan: DeathPlan, volume: string): Vec3Tuple | undefined {
+  const box = plan.volumes.find((v) => v.id === volume)?.region;
+  if (box === undefined) return undefined;
+  const key = (c: Vec3Tuple): readonly number[] => [
+    [0, 1, 2].reduce((n, i) => {
+      const d = Math.max(box.lo[i]! - c[i]!, 0, c[i]! - box.hi[i]!);
+      return n + d * d;
+    }, 0),
+    c[0],
+    c[1],
+    c[2],
+  ];
+  return plan.rows
+    .filter((r) => plan.regions[r.region]?.volume === volume)
+    .map((r) => r.anchor)
+    .sort((a, b) => {
+      const ka = key(a);
+      const kb = key(b);
+      for (let i = 0; i < ka.length; i++) {
+        if (ka[i]! !== kb[i]!) return ka[i]! - kb[i]!;
+      }
+      return 0;
+    })[0];
+}
+
+/**
+ * The gate the campaign's `on_death` reaches `stake` under, or `undefined` when
+ * the bundle never drops it at all.
+ */
+export function dropOf(plan: DeathPlan, stake: string): StakeDrop | undefined {
+  return plan.dropsStake.find((d) => d.stake === stake);
 }
 
 /** Distance from a float position to a block cell's centre-of-floor. */
@@ -875,6 +1130,15 @@ function distToCell(pos: Vec3Tuple, cell: Vec3Tuple): number {
 export function lethalTrialFailures(t: LethalTrial, markerTolerance = 0.75): string[] {
   const out: string[] = [];
   const where = `[${t.entryCell.join(", ")}]`;
+  // Before anything about the death: a gate nobody could read leaves the whole
+  // question of what this death promised unestablished, and an unestablished
+  // promise is never a promise kept.
+  for (const g of t.gateUnread) {
+    out.push(
+      `${t.volume}: whether this death forfeits \`${g.stake}\` could not be established — ${g.why}. ` +
+        `Nothing may be asserted about a forfeit whose own promise was never read`,
+    );
+  }
   if (t.abandoned !== undefined) {
     out.push(`${t.volume}: the death loop could not be exercised — ${t.abandoned}`);
     return out;
@@ -1029,6 +1293,13 @@ export interface DeathLoopBinding {
   readonly volumesEntered: number;
   /** Player deaths this run OBSERVED. */
   readonly deathsObserved: number;
+  /**
+   * **Datums the campaign promised across these trials** — one per stake every
+   * declared volume's death can drop, before any gate is read. The denominator
+   * {@link DeathLoopBinding.datumsExamined} and
+   * {@link DeathLoopBinding.datumsWithheld} are read against.
+   */
+  readonly datumsPromised: number;
   /** Recovery stakes this run examined at a table anchor. */
   readonly stakesExamined: number;
   /**
@@ -1041,6 +1312,15 @@ export interface DeathLoopBinding {
    * while looking exactly as green as a run that asserted all of it.
    */
   readonly datumsExamined: number;
+  /**
+   * **Datums the campaign's own `on_death` gate withheld** across these trials.
+   *
+   * A conditional `drop-stake` whose gate is shut promises nothing, so its
+   * forfeit is not asserted — and a run that says so is a run whose reader can
+   * see the difference between "four datums proved" and "two proved and two the
+   * campaign never promised here".
+   */
+  readonly datumsWithheld: number;
   /** Respawns matched to a declared seat. */
   readonly seatsMatched: number;
   /** Walk-back legs completed. */
@@ -1056,11 +1336,13 @@ export function deathLoopBinding(
     declaredVolumes: plan.volumes.length,
     volumesEntered: trials.length,
     deathsObserved: trials.filter((t) => t.died).length,
+    datumsPromised: datumsPromised(plan),
     stakesExamined: trials.filter((t) => t.markerPos !== undefined).length,
     datumsExamined: trials
       .flatMap((t) => t.wagers)
       .filter((w) => w.balanceAfterDeath !== undefined && w.balanceAfterCollect !== undefined)
       .length,
+    datumsWithheld: trials.reduce((n, t) => n + t.withheld.length, 0),
     seatsMatched: trials.filter((t) => t.respawnSeat !== undefined).length,
     walksBack: trials.filter((t) => t.walkedBack).length,
   };
@@ -1087,6 +1369,19 @@ export function deathLoopBindingFailures(b: DeathLoopBinding): string[] {
     out.push(
       `the death-loop stage entered ${b.volumesEntered} lethal volume(s) and observed ZERO ` +
         `player deaths — every assertion downstream of the death edge is therefore unbound`,
+    );
+  }
+  // The stake half, on its own denominator. A campaign whose every `drop-stake`
+  // is gated shut by the time this stage runs declares a recovery loop the bot
+  // tier never exercises — the unrun vacuity mode, and it is a finding about the
+  // campaign, never a quiet pass. The gate that withheld each one is named in the
+  // trials, so the reader is not left to guess which.
+  if (b.datumsPromised > 0 && b.datumsExamined === 0) {
+    out.push(
+      `the death-loop stage examined ZERO of the ${b.datumsPromised} datum(s) this campaign's ` +
+        `deaths can forfeit (${b.datumsWithheld} withheld by their own \`on_death\` gate): the ` +
+        `whole recovery-stake half of the loop — forfeit, placement, walk back, collection — was ` +
+        `never exercised, and an empty examination is a finding, never a pass`,
     );
   }
   return out;

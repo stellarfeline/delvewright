@@ -53,6 +53,36 @@ export class BotDeathError extends Error {
   }
 }
 
+/** What a reader saw in one window of the chat stream, and what it missed. */
+export interface ChatWindow {
+  readonly lines: readonly string[];
+  /** Lines that fell out of the ring before this reader got to them. */
+  readonly lost: number;
+}
+
+/**
+ * **Everything said since `mark`, read out of a BOUNDED ring.**
+ *
+ * The obvious spelling — mark `ring.length`, then `ring.slice(mark)` — is a
+ * silent pass, and it is the reason this function exists. A bounded ring's
+ * `length` stops growing the moment it is full: the mark is then the cap, the
+ * slice is `[]` for the rest of the run, and a caller reading a command's reply
+ * that way finds nothing however loudly the server answered. A `/say` this
+ * harness sent, which the server logged and broadcast, was read as silence.
+ *
+ * So the mark is a position in the stream's own index space (`seen`, every line
+ * ever observed) rather than in the ring, and eviction is REPORTED: a window that
+ * lost lines did not observe nothing, it failed to observe, and only the caller
+ * can say which of the two its verdict may rest on.
+ */
+export function linesSince(ring: readonly string[], seen: number, mark: number): ChatWindow {
+  const since = Math.max(0, seen - mark);
+  return {
+    lines: ring.slice(Math.max(0, ring.length - since)),
+    lost: Math.max(0, since - ring.length),
+  };
+}
+
 /**
  * Pick the most likely death-cause line from a buffer of recent chat messages.
  * Minecraft broadcasts death messages that begin with the victim's name

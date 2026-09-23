@@ -33,7 +33,13 @@ import type {
 } from "./critical-path.ts";
 import { insideCompletion, reachGoal } from "./critical-path.ts";
 import type { StepExecutor } from "./sequencer.ts";
-import { BotDeathError, formatDeathPos, likelyDeathCause } from "./death.ts";
+import {
+  BotDeathError,
+  formatDeathPos,
+  likelyDeathCause,
+  linesSince,
+  type ChatWindow,
+} from "./death.ts";
 import { hasSettled } from "./entity-settle.ts";
 import { NavigationOwner } from "./navigation.ts";
 import type { NamedEntityDeath } from "./teardown.ts";
@@ -77,16 +83,24 @@ import {
   entryCellOf,
   volumeReachesCell,
   inBox,
+  dropOf,
+  gateVerdict,
   lethalStepCost,
   markersAt,
+  nearLip,
   expectedForfeit,
   openLethalTrial,
+  openWager,
   seatAtRespawn,
   stakesDropped,
   tableAnchor,
+  termClause,
+  termKey,
   type Box,
   type DeathPlan,
+  type GateTerm,
   type LethalTrial,
+  type StakeRule,
 } from "./death-loop.ts";
 import { presentAndTrigger } from "./held-item.ts";
 import {
@@ -1167,7 +1181,7 @@ const REST_RANGE = 2;
  * advancement reward, so `dw.rest` is enabled a tick or two after the click. */
 const REST_OPEN_SETTLE_MS = 500;
 /** Recent chat lines retained for death-cause diagnosis. */
-const CHAT_BUFFER = 16;
+const CHAT_BUFFER = 256;
 
 // --- the death loop ---------------------------------------------
 /**
@@ -1232,6 +1246,24 @@ const SCORE_DISPLAY_SLOTS: readonly string[] = [
 ];
 /** How long to wait for the collected stake's hardware to be retired. */
 const MARKER_RETIRE_TIMEOUT_MS = 5_000;
+/**
+ * How long to wait, at the anchor, for the hardware the death promised to be on
+ * the client.
+ *
+ * A separate wait from {@link MARKER_RETIRE_TIMEOUT_MS} because it answers a
+ * different question, and it exists because the question was being answered by a
+ * PROXY. The read used to follow `awaitEntitySettle`, which waits for the count
+ * of tracked non-player entities to stop changing — and a count can be perfectly
+ * steady at one while the stake's own pair (an `interaction` and the glowing
+ * `item_display` that stands with it) is still on its way over the wire. The
+ * trial then reported "no recovery stake stands at the anchor" about a stake that
+ * did, intermittently, on whichever volume the run happened to reach first.
+ *
+ * An intermittent red is an under-specified test: the thing to wait for is the
+ * object the death promised, not a proxy for the client being quiet. A stake that
+ * is really absent still reds — after this deadline, with the same sentence.
+ */
+const MARKER_PLACE_TIMEOUT_MS = 10_000;
 /** How far from the table's anchor the marker's own hardware is looked for. */
 const MARKER_SEARCH_RADIUS = 4;
 /**
@@ -1428,6 +1460,24 @@ export class MineflayerExecutor implements StepExecutor {
   /** Ring buffer of recent chat lines, mined for the death-cause message. */
   private readonly recentChat: string[] = [];
   /**
+   * **How many chat lines this run has seen** — the ring's index space, and the
+   * only safe way to read "everything said since I sent that command".
+   *
+   * `const from = this.recentChat.length` is not that, and the difference is a
+   * silent pass. The ring is bounded, so once it is full its `length` never
+   * changes again: `from` is the cap, `slice(from)` is `[]` forever, and a caller
+   * that reads a command's reply that way finds nothing however loudly the server
+   * answered. Measured here — a `/say` the server logged and broadcast was read by
+   * this executor as silence, and the three refusal readers that mark the ring the
+   * same way had been looking at `[]` for the whole back half of every run since
+   * the ring was introduced. A command whose response nobody reads cannot fail.
+   *
+   * So a reader marks {@link chatMark} and reads {@link chatSince}, which also
+   * says how many lines the ring DROPPED between the two — an answer that was
+   * evicted is not an answer that never came.
+   */
+  private chatSeen = 0;
+  /**
    * One exact line the run is currently watching for, and whether it has
    * arrived. Armed around a single act (walking into a lethal volume) rather than
    * mined out of {@link recentChat}, because that ring holds sixteen lines and a
@@ -1470,6 +1520,8 @@ export class MineflayerExecutor implements StepExecutor {
   private readonly lethalTrials: LethalTrial[] = [];
   /** Why the death-loop stage did not run, when it did not. */
   private deathLoopSkip: string | undefined;
+  /** Serial number of the last gate term asked — see {@link askTerm}. */
+  private gateAsks = 0;
   /**
    * The build's death contract — what the campaign PROMISES a death does.
    * Absent → a run in which nothing about dying is asserted at all (which is
@@ -1751,6 +1803,7 @@ export class MineflayerExecutor implements StepExecutor {
         this.trigger.lines.push(message);
       }
       this.recentChat.push(message);
+      this.chatSeen += 1;
       if (this.recentChat.length > CHAT_BUFFER) {
         this.recentChat.shift();
       }
@@ -2398,6 +2451,21 @@ export class MineflayerExecutor implements StepExecutor {
     return this.deathLoopSkip;
   }
 
+  /** A point in the chat stream, to read forward from. See {@link chatSeen}. */
+  private chatMark(): number {
+    return this.chatSeen;
+  }
+
+  /**
+   * Every chat line seen since `mark`, and how many the ring dropped before this
+   * reader got to them. A non-zero `lost` is part of the answer: it says the
+   * window was not fully observed, which is different from observing nothing in
+   * it.
+   */
+  private chatSince(mark: number): ChatWindow {
+    return linesSince(this.recentChat, this.chatSeen, mark);
+  }
+
   /**
    * Watch the ledgers off the wire. See {@link scores} for why the raw packet and
    * not mineflayer's own scoreboard model.
@@ -2505,6 +2573,113 @@ export class MineflayerExecutor implements StepExecutor {
     this.trackedSlots.clear();
   }
 
+  /**
+   * **Ask the server one gate term, and read which way it answered.**
+   *
+   * Not a value read. Two things make that the wrong instrument here, and both
+   * were measured on this delve rather than reasoned about.
+   *
+   * *The display-slot channel cannot see an empty ledger.* {@link trackScore}
+   * exists to watch a value move ACROSS a death, and a vanilla server only emits
+   * a `scoreboard_score` packet for a holder that HAS a score — so an unset flag,
+   * which is exactly how a `forbids_flags` gate stands open, is indistinguishable
+   * from a ledger nothing could read.
+   *
+   * *And the delve silences command feedback.* Every build emits `gamerule
+   * send_command_feedback false` so the engine's bookkeeping never reaches a
+   * player, which means `/scoreboard players get` answers the bot with nothing at
+   * all on the success path. Measured on the gallery: every gate term came back
+   * unread and both gated stakes were reported as unassertable — the honest
+   * failure, and still a failure.
+   *
+   * So the question is put to the server in the form it already adjudicates —
+   * `execute <clause> run tellraw @s …`, once for the term and once for its
+   * negation — and `tellraw` reaches its target as a system message whatever that
+   * gamerule says. Exactly one of the two must land; the answer is the server's
+   * own reading of the clause the compiler wrote, which is the strongest form the
+   * question has. Both, or neither, establishes nothing and is reported as such.
+   *
+   * The token is serial-numbered so a line left over from an earlier term can
+   * never be read as this one's answer, and it wears the `[dw:` sigil `DW0182`
+   * reserves in every player-visible string — authored text cannot forge one.
+   */
+  private async askTerm(term: GateTerm): Promise<boolean | undefined> {
+    const bot = this.requireBot();
+    const serial = ++this.gateAsks;
+    const yes = `[dw:gate ${serial} in]`;
+    const no = `[dw:gate ${serial} out]`;
+    const from = this.chatMark();
+    bot.chat(`/execute ${termClause(term)} run tellraw @s ${JSON.stringify({ text: yes })}`);
+    bot.chat(
+      `/execute ${termClause({ ...term, negate: !term.negate })} run tellraw @s ` +
+        JSON.stringify({ text: no }),
+    );
+    let answer: boolean | undefined;
+    await this.waitFor(
+      () => {
+        const said = this.chatSince(from).lines;
+        const saidYes = said.some((l) => l.includes(yes));
+        const saidNo = said.some((l) => l.includes(no));
+        if (saidYes === saidNo) return false;
+        answer = saidYes;
+        return true;
+      },
+      SCORE_TRACK_TIMEOUT_MS,
+      LEDGER_POLL_MS,
+    );
+    if (answer === undefined) {
+      process.stderr.write(
+        `[death-loop] the server answered neither way for \`${termClause(term)}\` — the gate it ` +
+          `belongs to cannot be read, and nothing resting on it may be asserted. What it DID say ` +
+          `in that window: ${JSON.stringify(this.chatSince(from).lines)} ` +
+          `(${this.chatSince(from).lost} line(s) dropped by the chat ring)\n`,
+      );
+    }
+    return answer;
+  }
+
+  /**
+   * **Which stakes this death actually promises to forfeit**, read from the
+   * campaign's own `on_death` gates against the state in force.
+   *
+   * A `drop-stake` carries a `when` like every other effect, so the promise is
+   * conditional and the bot has to read the condition before it can assert the
+   * consequence. Read here, immediately before the walk into the volume — the
+   * last moment before the death that a client can observe.
+   *
+   * Three outcomes, and each is written into the trial rather than folded away: a
+   * gate that is open yields a wager, one the campaign has shut is `withheld`
+   * with the term that shut it, and one that could not be read is `gateUnread`
+   * and is a FAILURE — nothing was established about what this death promised, so
+   * nothing may be asserted about what it took.
+   */
+  private async wageredStakes(
+    plan: DeathPlan,
+    trial: LethalTrial,
+    candidates: readonly StakeRule[],
+  ): Promise<StakeRule[]> {
+    const answers = new Map<string, boolean | undefined>();
+    for (const stake of candidates) {
+      for (const gate of dropOf(plan, stake.id)?.gates ?? []) {
+        for (const t of gate.terms) {
+          if (answers.has(termKey(t))) continue;
+          answers.set(termKey(t), await this.askTerm(t));
+        }
+      }
+    }
+    const read = (t: GateTerm): boolean | undefined => answers.get(termKey(t));
+    const open: StakeRule[] = [];
+    for (const stake of candidates) {
+      const drop = dropOf(plan, stake.id);
+      if (drop === undefined) continue;
+      const verdict = gateVerdict(drop, read);
+      if (verdict.kind === "open") open.push(stake);
+      else if (verdict.kind === "shut") trial.withheld.push({ stake: stake.id, why: verdict.why });
+      else trial.gateUnread.push({ stake: stake.id, why: verdict.why });
+    }
+    return open;
+  }
+
   /** The bot's own value in a tracked ledger, or `undefined` if it has none. */
   private myScore(objective: string): number | undefined {
     return this.scores.get(objective)?.get(this.config.username);
@@ -2591,12 +2766,12 @@ export class MineflayerExecutor implements StepExecutor {
     // decides which — never "the first one declared" — and all of them are
     // asserted, because a death that forfeits four datums promises four things and
     // leaves them at one place.
-    const stakes = stakesDropped(plan);
+    const candidates = stakesDropped(plan);
     if (entryCell === undefined) {
       // Every cell of the declared box is filled by a block. That is a finding
       // about the campaign — nothing can ever die in this volume — and it is
       // stated as one rather than by driving at a wall for ten seconds.
-      const trial = openLethalTrial(volume, volume.region.lo, stakes);
+      const trial = openLethalTrial(volume, volume.region.lo, []);
       trial.abandoned =
         `no cell of the declared volume [${volume.region.lo.join(", ")}]..` +
         `[${volume.region.hi.join(", ")}] can hold a body: every one of them is filled by a ` +
@@ -2604,13 +2779,29 @@ export class MineflayerExecutor implements StepExecutor {
       this.lethalTrials.push(trial);
       return;
     }
-    const trial = openLethalTrial(volume, entryCell, stakes);
+    const trial = openLethalTrial(volume, entryCell, []);
     this.lethalTrials.push(trial);
+    // The wagers this death PROMISES, not the stakes the bundle names: each
+    // `drop-stake` carries its own `when`, and a forfeit asserted under a shut
+    // gate is an assertion the campaign never made.
+    for (const stake of await this.wageredStakes(plan, trial, candidates)) {
+      trial.wagers.push(openWager(stake));
+    }
+    for (const w of trial.withheld) {
+      process.stderr.write(
+        `[death-loop] ${volume.id}: \`${w.stake}\` is not wagered by this death — ${w.why}\n`,
+      );
+    }
+    for (const g of trial.gateUnread) {
+      process.stderr.write(
+        `[death-loop] ${volume.id}: \`${g.stake}\` — ${g.why}; this trial cannot assert it\n`,
+      );
+    }
     // The near lip: the cell the placement table already proved is the reachable
     // point nearest this volume. Nothing new is computed — it is the anchor a
     // death here would leave its stake at, which is the same question as "where
     // does a player stand next to this".
-    const lip = plan.rows.find((r) => plan.regions[r.region]?.volume === volume.id)?.anchor;
+    const lip = nearLip(plan, volume.id);
     process.stderr.write(
       `[death-loop] ${volume.id}: standing at [${here.join(", ")}]; walking into ` +
         `[${entryCell.join(", ")}] to die there via the near lip ` +
@@ -2786,6 +2977,14 @@ export class MineflayerExecutor implements StepExecutor {
       return;
     }
     await this.awaitEntitySettle();
+    // Wait for the hardware this death PROMISED, not for the client to go quiet.
+    // See {@link MARKER_PLACE_TIMEOUT_MS}: the settle is a proxy and it can be
+    // satisfied while the stake's pair is still in flight.
+    await this.waitFor(
+      () => this.stakeHardwareAt(anchor).length > 0,
+      MARKER_PLACE_TIMEOUT_MS,
+      LEDGER_POLL_MS,
+    );
     // Every marker standing at the anchor, not the nearest: a death leaves ONE
     // place, and two coincident boxes have no nearest — the pick is an exact tie.
     const markers = this.stakeHardwareAt(anchor);
@@ -3993,10 +4192,10 @@ export class MineflayerExecutor implements StepExecutor {
   private async holdChunk(pos: Vec3Tuple, hold: boolean): Promise<void> {
     const bot = this.requireBot();
     const verb = hold ? "add" : "remove";
-    const from = this.recentChat.length;
+    const from = this.chatMark();
     bot.chat(`/forceload ${verb} ${pos[0]} ${pos[2]}`);
     await delay(STAGED_REPLY_MS);
-    const refusal = this.recentChat.slice(from).find((line) => isRejection(line));
+    const refusal = this.chatSince(from).lines.find((line) => isRejection(line));
     if (refusal !== undefined) {
       process.stderr.write(
         `[kill] forceload ${verb} ${pos[0]} ${pos[2]} was refused — ${refusal}\n`,
@@ -4122,7 +4321,7 @@ export class MineflayerExecutor implements StepExecutor {
         // What the bot carries INTO the death — the baseline `keep_inventory` is
         // judged against on the way out.
         this.itemsBeforeDeath = bot.inventory.items().length;
-        const chatFrom = this.recentChat.length;
+        const chatFrom = this.chatMark();
         bot.chat(scriptedDeathCommand());
         if (!(await this.awaitDeathAfter(seq, RESPAWN_TIMEOUT_MS))) {
           // No death followed, so the stage proves nothing and the trial fails —
@@ -4133,7 +4332,7 @@ export class MineflayerExecutor implements StepExecutor {
             scriptedDeathCommand(),
             RESPAWN_TIMEOUT_MS,
             this.gameModeNow(),
-            this.recentChat.slice(chatFrom),
+            this.chatSince(chatFrom).lines,
           );
           throw new Error(`die-retry: ${trial.abortedWith}`);
         }
@@ -4387,14 +4586,14 @@ export class MineflayerExecutor implements StepExecutor {
       );
       return;
     }
-    const from = this.recentChat.length;
+    const from = this.chatMark();
     const command = `/damage ${uuid} ${STAGED_BLOW} minecraft:player_attack by ${bot.username}`;
     bot.chat(command);
     process.stderr.write(`[staged] ${kind}#${id} removed: ${why}\n`);
     // Every command's response is read (CLAUDE.md). A refused `/damage` leaves the
     // body standing, and a run that did not look would report the removal anyway.
     await delay(STAGED_REPLY_MS);
-    const refusal = this.recentChat.slice(from).find((line) => isRejection(line));
+    const refusal = this.chatSince(from).lines.find((line) => isRejection(line));
     this.stagedRemovals.push({
       kind,
       why,
@@ -4576,11 +4775,11 @@ export class MineflayerExecutor implements StepExecutor {
         );
         break;
       }
-      const from = this.recentChat.length;
+      const from = this.chatMark();
       bot.chat(`/function ${enc.muster.strike}`);
       struck += 1;
       await delay(STAGED_REPLY_MS);
-      const refusal = this.recentChat.slice(from).find((line) => isRejection(line));
+      const refusal = this.chatSince(from).lines.find((line) => isRejection(line));
       if (refusal !== undefined) {
         throw new Error(
           `kill ${step.wave}: the staged blow was refused by the server — ${refusal} ` +

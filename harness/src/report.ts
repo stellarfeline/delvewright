@@ -421,10 +421,16 @@ export class RunReport {
                 volumes_entered: this.deathLoopBinding.volumesEntered,
                 deaths_observed: this.deathLoopBinding.deathsObserved,
                 stakes_examined: this.deathLoopBinding.stakesExamined,
+                // The denominator every datum count is read against.
+                datums_promised: this.deathLoopBinding.datumsPromised,
                 // Places examined and DATUMS examined are different numbers: a
                 // death that forfeits four datums leaves one place, so a run
                 // reporting one of each has asserted a quarter of the promise.
                 datums_examined: this.deathLoopBinding.datumsExamined,
+                // …and the ones the campaign's own gate said this death does not
+                // promise. Stated, because a smaller `datums_examined` with no
+                // reason beside it reads as a stage that quietly checked less.
+                datums_withheld: this.deathLoopBinding.datumsWithheld,
                 seats_matched: this.deathLoopBinding.seatsMatched,
                 walks_back: this.deathLoopBinding.walksBack,
                 unbound: this.deathLoopBinding.deathsObserved === 0,

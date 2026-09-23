@@ -2492,8 +2492,14 @@ fn sealing_commands(
         // the player, which is what every other rule in this list exists to stop.
         // NOT version-gated: a campaign at any
         // `dsl_version` wants its dialogue to stop announcing its scoreboard.
-        // rcon replies to the caller regardless of this rule, so the harness and
-        // `validation/` are unaffected, and the creator overlay's log stamp is
+        // rcon replies to the caller regardless of this rule. The bot tier does NOT
+        // drive over rcon — it drives over chat as an opped player — so on that
+        // channel this rule silences every success reply it might have read, and
+        // only a refusal (always delivered) survives. A harness question the
+        // server has to ANSWER therefore goes out as `execute <condition> run
+        // tellraw @s`, which reaches its target whatever this rule says; reading
+        // `/scoreboard players get` there comes back empty on the success path,
+        // measured on the gallery. The creator overlay's log stamp is
         // `log_admin_commands`, a different rule. (The legacy camelCase spelling is
         // rejected outright by 1.21.11 — the compiler's own command validator caught
         // `sendCommandFeedback` here before it could reach a world.)
