@@ -20,7 +20,7 @@ back → recover) is exactly the part no other tier can reach.
 
 ```sh
 cargo run -p delvec --bin delvec -- \
-  build crates/compiler/tests/fixtures/economy \
+  build crates/delvec/tests/fixtures/economy \
   -o validation/delve-output-economy --prefabs campaigns/prefabs
 EULA=TRUE validation/bot-run.sh --project dw-death --output ./delve-output-economy
 ```
@@ -40,8 +40,15 @@ rather than a silence (playtest-methodology rule 1):
 
 ```json
 { "declared_volumes": 1, "volumes_entered": 1, "deaths_observed": 1,
-  "stakes_examined": 1, "seats_matched": 1, "walks_back": 1, "unbound": false }
+  "datums_promised": 1, "stakes_examined": 1, "datums_examined": 1,
+  "datums_withheld": 0, "seats_matched": 1, "walks_back": 1, "unbound": false }
 ```
+
+`datums_withheld` counts the datums this campaign's own `on_death` gate said the
+death does not promise — a `drop-stake` carries a `when` like every other effect.
+The economy fixture gates none of its one drop, so it is zero here; on the gallery
+it is 4 of 8, and each withheld stake is named on a `[death-loop]` line with the
+term that shut it.
 
 ## The stale-build trap — read this before mutating anything
 
@@ -51,9 +58,9 @@ built and the next run silently re-tests the mutation. Every restore below is
 `cp` **followed by `touch`**:
 
 ```sh
-cp crates/compiler/src/emit.rs /tmp/emit.orig
+cp crates/delvec/src/compiler/emit.rs "$SCRATCH/emit.orig"     # never /tmp
 # …mutate, build, run…
-cp /tmp/emit.orig crates/compiler/src/emit.rs && touch crates/compiler/src/emit.rs
+cp "$SCRATCH/emit.orig" crates/delvec/src/compiler/emit.rs && touch crates/delvec/src/compiler/emit.rs
 ```
 
 Each cycle is: mutate → `delvec build` → `bot-run.sh` → restore + `touch`.
@@ -98,7 +105,7 @@ Recorded here as an open finding and a risk item at the next staging review
 
 ## The planted mutations
 
-Each is one edit to `crates/compiler/src/emit.rs`, and each was run end to end.
+Each is one edit to `crates/delvec/src/compiler/emit.rs`, and each was run end to end.
 
 ### M1 — the volume deals no damage
 
