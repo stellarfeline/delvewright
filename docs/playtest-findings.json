@@ -1628,7 +1628,7 @@
       "finding": "hostile bodies meant to fight the party by the shore ran out to sea instead",
       "general_form": "none: where a live-AI body chooses to go is vanilla's pathing, not the compiler's",
       "id": "isl-56",
-      "justification": "Once a body is unleashed its movement belongs to vanilla AI. The compiler seats it (DW0312/DW0387) and the bot ladder measures whether the fight happens (combat-plan floor gate); neither can predict a mob's target selection. This is exactly the class the bot playthrough exists to catch empirically. Standing content-QC item, with the bot run as its partial machine backstop.",
+      "justification": "Once a body is unleashed its movement belongs to vanilla AI. The compiler seats it (DW0312/DW0387) and the bot ladder reads the seated bodies against the declaration; neither can predict a mob's target selection. This is exactly the class the bot playthrough exists to catch empirically. Standing content-QC item, with the bot run as its partial machine backstop.",
       "round": 16,
       "triage": "content"
     },
@@ -1868,20 +1868,14 @@
           ]
         }
       },
-      "binding": {
-        "file": "combat-plan.json",
-        "kind": "artifact",
-        "path": "floor_gate.examined"
-      },
       "campaign": "the-drowned-bell",
-      "carrier": {
-        "code": "DW0477",
-        "kind": "dw"
-      },
+      "carrier": null,
+      "disposition": "no-machine-form",
       "finding": "an encounter billed as an elite was trivially weak, and the compiler had no way to express its durability at all",
-      "general_form": "a billed encounter's declared effective HP is bounded against the best kit the party can field, and anything billed elite or boss that the floor gate cannot measure is reported",
+      "general_form": "none: whether a fight is hard enough for its billing is a difficulty judgement the design makes",
       "id": "bell-04",
-      "note": "This is a NARROWING OF A PRECONDITION, declared as one. The probe counted every `spawn-wave`/`spawn-actor` effect — a population this general form does not name — so a ceremonial muster of invulnerable puppets that no floor gate could ever examine was adjudicated as a fight whose build owed a combat plan. The precondition is now exactly what `floor_gate.examined` counts, read off the author's own document: an encounter billed `elite`/`boss` (`waves[].tier` or `actors[].tier`, the two fields `EncounterTier::has_floor_expectation` selects), or a body the campaign turns loose on the party (an `unleash-actor` effect, or an `ambushes[]` entry, which is the sugar `Ambush::to_trigger` expands into one — a checker reads a document the way its consumer reads it). The narrowed class is a superset of `combat::floor_ledger`'s four groups, so a build that stopped emitting the ledger over declared objects still reds MISSING-CHECK. Binding count with the gate's own probe: 0 of the narrowed class on doune-castle-tour (7 of the old one), 6 on nobodys-cave-island, 6 on the gallery primary.",
+      "justification": "The ladder verifies mechanism and does not fight: at a combat step it reads the seated bodies against the declaration and removes them, so no bot result is evidence about how hard an encounter is. The row's former carrier, `DW0477`, and the inverted floor gate it reported for are removed for that reason. What the machine still bounds is the arithmetic, not the feel: `DW0472` refuses a mandatory encounter whose declared effective HP outlasts the best kit the party can field, and `DW0474` holds mandatory combat to the spec-0023 winnability pass. Whether an encounter billed elite reads as one is judged on the playtest. Standing content-QC item.",
+      "note": "The precondition names the objects this row concerns — an encounter billed `elite`/`boss`, or a body the campaign turns loose on the party — so a campaign declaring none of them reads as INAPPLICABLE rather than carrying a content-QC item it has nothing to judge.",
       "round": 2,
       "triage": "capability"
     },
@@ -2224,7 +2218,7 @@
       "finding": "the delve's overall difficulty was an order of magnitude below what the design called for",
       "general_form": "none: how hard a delve should be is the design's own statement",
       "id": "bell-15",
-      "justification": "Absolute difficulty is a design target, not a derivable fact. The machine bounds the floor and the ceiling around it -- DW0472 time-to-kill, DW0473 one-shot deaths, DW0470/DW0471 winnability, and the bot's inverted floor gate for anything billed elite or boss -- but the band between them is the designer's. Standing content-QC item.",
+      "justification": "Absolute difficulty is a design target, not a derivable fact. The machine bounds the floor and the ceiling around it -- DW0472 time-to-kill, DW0473 one-shot deaths, DW0470/DW0471 winnability -- but the band between them is the designer's. Standing content-QC item.",
       "round": 6,
       "triage": "content"
     },
@@ -2724,7 +2718,7 @@
       "finding": "the bell-tower boss fight cannot be won: the party is ground down across retries by equipment that degrades with nothing in the delve that mends it, and by the walk back to the fight",
       "general_form": "none: whether a fight can be won is a difficulty judgement the design makes",
       "id": "vh-01",
-      "justification": "Absolute difficulty is the design's own statement, which is the class `bell-15` already records, and the machine bounds the SINGLE fight from both sides: `DW0474` holds a campaign with mandatory combat to the whole spec-0023 winnability pass against the best kit the party can field, and `DW0477` reports an encounter billed elite or boss that the unassisted bot beats on its first attempt. Neither models ATTRITION ACROSS RETRIES, which is what makes this fight unwinnable rather than merely hard. The two attritions the engine does own are their own rows: `vh-03`, a rest mending what the party carries, which is carried; and `vh-04`, the walk back from a rest, which is a placement judgement. The remedy for this row is rest placement and equipment condition; lowering the fight is refused. Standing content-QC item.",
+      "justification": "Absolute difficulty is the design's own statement, which is the class `bell-15` already records, and the machine bounds the SINGLE fight from both sides: `DW0474` holds a campaign with mandatory combat to the whole spec-0023 winnability pass against the best kit the party can field. Neither models ATTRITION ACROSS RETRIES, which is what makes this fight unwinnable rather than merely hard. The two attritions the engine does own are their own rows: `vh-03`, a rest mending what the party carries, which is carried; and `vh-04`, the walk back from a rest, which is a placement judgement. The remedy for this row is rest placement and equipment condition; lowering the fight is refused. Standing content-QC item.",
       "round": 1,
       "triage": "content"
     },

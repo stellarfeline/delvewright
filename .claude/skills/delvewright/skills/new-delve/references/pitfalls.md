@@ -49,25 +49,7 @@
      re-fight it. Turning `respawns_on_rest` ON buys a stricter check: the wave
      must come back WHOLE — declared count, all-new mobs, full health — because a
      retry must never let the party grind a fight down one swing per death.
-  4. *The inverted floor gate*: mark a set-piece fight `tier: "elite"` or
-     `"boss"` — on the **wave** or on the **actor**, same three keywords. The
-     ladder then gives it one UNASSISTED bot attempt; if the bot — a poor fencer
-     by design — wins cold, the run reports the fight as too easy for its billing.
-     Leave ordinary pressure waves unmarked: they carry no such expectation.
-     Marking is how you opt into the scrutiny, so mark honestly. **Mark the actor
-     when the elite IS an actor** — the kneeling armoured thing that stands up
-     when struck is a `spawn-actor` + `unleash-actor` beat, not a wave, and an
-     unmarked one is a boss no proof ever looks at.
-  5. *A tier the gate cannot measure is said out loud, not swallowed*: the gate
-     warns on a first-try win and is silent otherwise, so an encounter nobody
-     fought would look exactly like one that was fought and lost. The compiler
-     therefore warns `DW0477` — and records `floor-gate: not covered (reason)` in
-     `validation/combat-plan.json` — for a tiered actor no `unleash-actor` beat
-     ever wakes (an `Invulnerable` puppet is scenery; a `vulnerable` one is `NoAI`
-     and never swings back), and for a tiered wave no critical-path `kill`
-     objective names. If you meant it as a fight, add the unleash or the `kill`
-     objective; if you meant it as set dressing, drop the tier.
-  6. *A fight that comes back owes a `fires` judgement*: an `on_kill` on a wave or
+  4. *A fight that comes back owes a `fires` judgement*: an `on_kill` on a wave or
      actor that a rest re-seats, or whose seating beat can fire again, is refused
      without `fires`, and `every-kill` on one that never comes back is refused as
      inert — the build names the fight and what brings it back.
