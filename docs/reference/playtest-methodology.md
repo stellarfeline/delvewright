@@ -75,10 +75,35 @@ A `kill` step does three things, in order, and only the first is a measurement.
 spec-0023 §1's **die-retry** stage is untouched and is still the load-bearing bot
 proof: scripted deaths, respawn at the governing checkpoint, a walkable route
 back, an encounter that re-engages, no progression lost. It runs between the
-reading and the clear, and its own bodies are never staged away — they are the
-subject. A die-retry stage that cannot finish reds on its own coverage and does
-not end the run: suppressing every measurement behind one fight is how a ladder
-learns least from a red.
+reading and the clear. A die-retry stage that cannot finish reds on its own
+coverage and does not end the run: suppressing every measurement behind one fight
+is how a ladder learns least from a red.
+
+**Outside a scripted death, a body never kills the bot.** A hostile that lands a
+hit the server attributes to it is an enemy and is removed by a staged blow. What
+the run must read before it removes the body is decided by which wave the body is
+of, and that is asked of the server — each candidate wave's census, by tag, matched
+to where the body stands — never guessed from a radius around an anchor:
+
+- a body of a wave whose current seating the run has not read (its step is ahead,
+  or a rest or respawn put a cleared wave back for a run-back) is read where it
+  stands — the muster's facts do not depend on position — and then removed; the
+  step's own muster does not read that seating a second time, because the second
+  reading would count the run's removal as a body the server never seated;
+- a body of the wave the die-retry stage is proving is removed when that wave
+  re-seats on respawn: the next scripted death brings it back whole, the fidelity
+  verdict is read at that landing, and a body the party fells after the landing is
+  counted (by the census's credit) as the fight re-engaging;
+- a body of a wave that does NOT re-seat is left standing while the die-retry stage
+  proves it — it persists across both lives and is the fight the next life must
+  find. This is the one place a body can still kill the bot outside a scripted
+  death, and the log says so each time it hits.
+
+Route falls and lethal volumes are mechanism, not bodies, and still kill the bot.
+A scripted death waits out vanilla's 60-tick respawn protection (counted on the
+server's clock) and is taken at the fight: a stage that recovers from an
+unscripted death walks back before it scripts the next one. A walk back that ends
+in a death is reported as a death on the leg, never as unwalkable geometry.
 
 **The binding count.** `encounters[].declared_facts` is how many declared facts
 the muster put a question to, stated per encounter even when the muster never

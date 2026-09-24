@@ -506,6 +506,11 @@ export class RunReport {
         at_checkpoint: t.atCheckpoint,
         kit_kept: t.kitKept,
         returned: t.returned,
+        // Why the walk back did not arrive — and whether it ended in a death,
+        // which says nothing about the route — or null when it arrived.
+        return_failure: t.returnFailure
+          ? { killed: t.returnFailure.killed, detail: t.returnFailure.detail }
+          : null,
         // Observed ONLY when `returned`. A trial that never walked back reports
         // `re_engaged: false`, `reengage: null` and `outcome: "unproven"` — it did
         // not look, which is not the same as looking and finding nothing.

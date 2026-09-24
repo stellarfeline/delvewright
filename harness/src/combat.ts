@@ -949,6 +949,12 @@ export interface DeathTrial {
   /** Did it walk back to the encounter, from where it respawned? */
   readonly returned: boolean;
   /**
+   * Why the walk back did not arrive, when it did not. `killed` separates a leg
+   * that ended in a death — which proves nothing about the route either way —
+   * from a leg that could not be walked, which is the retry loop broken.
+   */
+  readonly returnFailure: { readonly killed: boolean; readonly detail: string } | undefined;
+  /**
    * Raw observation behind {@link outcome}: was a wave mob standing there again?
    *
    * **Only observed when {@link returned}**. The probe reads the
@@ -1007,6 +1013,7 @@ export function openTrial(enc: Encounter, attempt: number, phase: DeathPhase): D
     atCheckpoint: false,
     kitKept: false,
     returned: false,
+    returnFailure: undefined,
     reEngaged: false,
     objectiveComplete: false,
     reseats: enc.respawnsOnRest,
@@ -1043,6 +1050,15 @@ export function trialVerdict(t: DeathTrial): string | undefined {
       `delve seals \`gamerule keep_inventory true\` — dying must never cost the kit — so ` +
       `this is a broken seal, not difficulty: the party would have to re-gear before every ` +
       `retry.`
+    );
+  }
+  if (!t.returned && t.returnFailure?.killed) {
+    return (
+      `${t.wave} death ${t.attempt} (${t.phase}): the bot was KILLED on the way back from the ` +
+      `respawn at ${t.respawnPos ? t.respawnPos.join(",") : "an unknown position"} ` +
+      `(${t.returnFailure.detail}). Nothing is proved about the route or the re-engagement — ` +
+      `a death on the leg is not a verdict on its geometry — so the trial is unproven, ` +
+      `and an unproven trial is never a passed one.`
     );
   }
   if (!t.returned) {

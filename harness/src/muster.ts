@@ -149,11 +149,21 @@ interface Slot {
  * unclaimed declared slot it satisfies exactly; what is left over on either side
  * is the finding, diagnosed against the nearest slot of the same kind so the
  * reader is told WHICH declared fact is missing rather than that something is.
+ *
+ * `credited` is the census's count of this seating's bodies the PARTY has felled
+ * (`#wcred_<wave>`, zeroed by `spawn_<wave>`), read beside the muster. A body the
+ * muster cannot read because the party already took it is a different fact from a
+ * body the server never seated — the first is the run removing a body it owed a
+ * reading, the second is the delve — and a short count is reported as whichever
+ * it is. It is never subtracted from the shortfall: a body nobody read is a
+ * declaration nobody checked, whoever removed it. `undefined` when the census did
+ * not answer; the seating line then says it cannot tell.
  */
 export function verifyMuster(
   plan: MusterPlan,
   summary: MusterSummary,
   bodies: readonly MusterBody[],
+  credited?: number,
 ): MusterVerdict {
   const findings: string[] = [];
   const slots: Slot[] = [];
@@ -197,10 +207,7 @@ export function verifyMuster(
     );
   }
   if (bodies.length !== slots.length) {
-    findings.push(
-      `wave seating: the campaign declares ${slots.length} body/bodies ` +
-        `(${plan.profiles.map((p) => p.label).join("; ")}) and the server seated ${bodies.length}`,
-    );
+    findings.push(seatingFinding(plan, slots.length, bodies.length, credited));
   }
 
   let matched = 0;
@@ -247,6 +254,48 @@ export function verifyMuster(
     failures: findings,
     findings: [],
   };
+}
+
+/**
+ * The seating line for a muster that read a different number of bodies than the
+ * wave declares — saying, of a short read, how much of the gap the party's own
+ * kills account for and how much nothing the run can see does.
+ */
+function seatingFinding(
+  plan: MusterPlan,
+  declared: number,
+  read: number,
+  credited: number | undefined,
+): string {
+  const head =
+    `wave seating: the campaign declares ${declared} body/bodies ` +
+    `(${plan.profiles.map((p) => p.label).join("; ")}) and the muster read ${read}`;
+  if (read > declared) return `${head} — more than the wave declares`;
+  const short = declared - read;
+  if (credited === undefined) {
+    return (
+      `${head}; the census did not answer beside the muster, so whether the missing ` +
+      `${short} were never seated or were felled before the reading is unknown`
+    );
+  }
+  const byParty = Math.min(credited, short);
+  const unaccounted = short - byParty;
+  const parts: string[] = [];
+  if (byParty > 0) {
+    parts.push(
+      `${byParty} of the missing ${short} were felled by the party since this seating, ` +
+        `before the muster read them — the run removed ${byParty === 1 ? "a body" : "bodies"} ` +
+        `it owed a reading, and ${byParty === 1 ? "that body's" : "their"} declared facts are unchecked`,
+    );
+  }
+  if (unaccounted > 0) {
+    parts.push(
+      `${unaccounted} ${unaccounted === 1 ? "is" : "are"} accounted for by nothing the census ` +
+        `counts: never seated, or felled by something other than the party (the census ` +
+        `credits the party's kills only, so it cannot say which)`,
+    );
+  }
+  return `${head}: ${parts.join("; ")}`;
 }
 
 /** Every way `body` fails to be what `slot` declares; empty when it is. */

@@ -1083,6 +1083,36 @@ const FOOTING_POLL_MS = 100;
 const CUTSCENE_SETTLE_MS = 500;
 const CUTSCENE_STEADY_EPS = 0.05;
 const CUTSCENE_POLL_MS = 250;
+
+/**
+ * How long a respawned player cannot be hurt, in server ticks.
+ *
+ * Vanilla's own number, stated rather than tuned: a freshly respawned
+ * `ServerPlayer` refuses non-bypassing damage for 60 ticks, and on this version
+ * it is also held invulnerable until the client reports it has loaded the world
+ * — which mineflayer never does, so the server's own 60-tick timeout ends that
+ * too. `/damage` against a body inside the window answers "Target is invulnerable
+ * to the given damage type", which is exactly what vesperhold's die-retry stage
+ * received when it scripted a death one second after recovering from an
+ * unscripted one.
+ */
+export const RESPAWN_PROTECTION_TICKS = 60;
+
+/**
+ * How often the server sends its world age (`update_time`): every 20 ticks. The
+ * age the bot holds may be this far behind the server's, so the window is counted
+ * from a reading that may be this far stale.
+ */
+const TIME_PACKET_TICKS = 20;
+
+/** Bound on the respawn-protection wait, however slowly the server ticks. */
+const RESPAWN_PROTECTION_TIMEOUT_MS = 15_000;
+
+/** The server's world age as the bot last heard it, or `undefined` before any time packet. */
+function serverAge(bot: Bot | undefined): number | undefined {
+  const age = (bot as { time?: { age?: number | null } } | undefined)?.time?.age;
+  return typeof age === "number" && Number.isFinite(age) ? age : undefined;
+}
 /** gap 7 (retry): how long (ms) to wait for the bot to respawn before resuming. */
 const RESPAWN_TIMEOUT_MS = 15_000;
 
@@ -1597,15 +1627,21 @@ export class MineflayerExecutor implements StepExecutor {
    * checkpoint before them — a content fact, reported and not graded. */
   private readonly preconditionAdvisories: string[] = [];
   private readonly preconditionWaves = new Set<string>();
-  /** The newest census summary the chat channel has delivered, and the mob lines
-   * that closed each census, keyed by the server's own sequence number.
-   * `censusSeq` is how a fresh answer is told from a stale one without the
-   * harness ever writing a delve score to ask its question. */
-  private censusSummary: CensusSummary | undefined;
+  /** The newest census summary the chat channel has delivered FOR EACH WAVE, and
+   * the mob lines that closed each census, keyed by the server's own sequence
+   * number. `censusSeq` is how a fresh answer is told from a stale one without the
+   * harness ever writing a delve score to ask its question.
+   *
+   * Per wave, not one slot: the damage handlers now read a wave's census while a
+   * step may be reading another's, and a single "latest" slot let one answer
+   * overwrite the other before its asker polled — the asker then timed out on a
+   * census the server had answered. */
+  private readonly censusSummaries = new Map<string, CensusSummary>();
   private censusSeq = 0;
   private readonly censusMobs = new Map<number, CensusMob[]>();
-  /** The latest muster summary line, and the body readings filed under its seq. */
-  private musterSummary: MusterSummary | undefined;
+  /** The latest muster summary line per wave, and the body readings filed under
+   * its seq. Per wave for the same reason as {@link censusSummaries}. */
+  private readonly musterSummaries = new Map<string, MusterSummary>();
   private musterSeq = 0;
   private readonly musterBodies = new Map<number, MusterBody[]>();
   /** What each wave's muster established — the encounter rows' evidence. */
@@ -1626,6 +1662,33 @@ export class MineflayerExecutor implements StepExecutor {
   /** The wave a `kill` step is clearing right now. Its bodies have been read and
    * are on their way out, so nothing protects them any longer. */
   private clearing: string | undefined;
+  /**
+   * How many times the delve could have re-seated its `respawns_on_rest` waves
+   * since the run began: one per rest and one per respawn (spec-0016 §1 — a death
+   * respawns the party at the last fire and fires that rest's hooks).
+   *
+   * The unit a reading is owed in. A wave's muster is a reading of ONE seating, so
+   * whether the run still owes it is "has this wave been read since the last time
+   * it could have been put back" — a count, not a step index, because a rest and a
+   * read inside one step are otherwise the same number.
+   */
+  private seatEpoch = 0;
+  /** Wave → the {@link seatEpoch} its last muster read. */
+  private readonly musteredEpoch = new Map<string, number>();
+  /** Wave → the {@link seatEpoch} this run last cleared it in. */
+  private readonly clearedEpoch = new Map<string, number>();
+  /** Forceloaded chunk → how many holders want it; `/forceload remove` only on the last. */
+  private readonly chunkHolds = new Map<string, number>();
+  /** Client ids a damage handler is reading or staging right now, so a burst of
+   * hits from one body opens one muster, not one per hit. */
+  private readonly stagingInFlight = new Set<number>();
+  /** An early muster already in flight per wave, so two bodies of one wave that hit
+   * the bot together share one reading. */
+  private readonly earlyMusters = new Map<string, Promise<void>>();
+  /** When the latest respawn landed: wall clock, and the server's world age as the
+   * last time packet before it reported it. The respawn-protection wait reads both. */
+  private lastSpawnAt: number | undefined;
+  private lastSpawnAge: number | undefined;
   /**
    * The encounter the die-retry stage is proving, and where its bodies last stood.
    *
@@ -1840,7 +1903,12 @@ export class MineflayerExecutor implements StepExecutor {
       // A respawn after the first join is a death-respawn at the last-rested
       // bonfire, which fires the rest's own hooks (spec-0016 §1): every
       // `respawns_on_rest` wave is back, exactly as after a rest.
-      if (this.spawnSeq > 1) respawnReseats(this.restedAt, this.currentStep);
+      if (this.spawnSeq > 1) {
+        respawnReseats(this.restedAt, this.currentStep);
+        this.seatEpoch += 1;
+        this.lastSpawnAt = Date.now();
+        this.lastSpawnAge = serverAge(bot);
+      }
     });
     // Self-defense attribution (souls ladder). PRIMARY channel: mineflayer 4.37 turns
     // the 1.20+ `damage_event` packet into `entityHurt(entity, source)`, where `source`
@@ -4017,6 +4085,7 @@ export class MineflayerExecutor implements StepExecutor {
   async kill(step: KillStep): Promise<void> {
     await this.killStep(step);
     this.waveClearedAt.set(step.wave, this.currentStep);
+    this.clearedEpoch.set(step.wave, this.seatEpoch);
   }
 
   /**
@@ -4091,10 +4160,11 @@ export class MineflayerExecutor implements StepExecutor {
             `the wave can be neither read nor cleared`,
         );
       }
-      await this.musterWave(enc);
+      await this.musterUnlessRead(enc);
       await this.clearWave(fight, enc);
       this.runBacksFought.push(rb);
       this.waveClearedAt.set(rb.wave, this.currentStep);
+      this.clearedEpoch.set(rb.wave, this.seatEpoch);
     }
   }
 
@@ -4144,7 +4214,7 @@ export class MineflayerExecutor implements StepExecutor {
       // also walks the bodies past a lethal pit — run second, the probe read an
       // empty anchor and reported three declared stacks missing, over a wave that
       // had spawned exactly as declared.
-      await this.musterWave(enc);
+      await this.musterUnlessRead(enc);
       this.encounterPhases.set(enc.wave, "mustered");
       if (this.dieRetry) {
         this.encounterPhases.set(enc.wave, "die-retry");
@@ -4191,6 +4261,21 @@ export class MineflayerExecutor implements StepExecutor {
    */
   private async holdChunk(pos: Vec3Tuple, hold: boolean): Promise<void> {
     const bot = this.requireBot();
+    // Counted per chunk: the damage handlers can hold a wave's chunk for an early
+    // muster while a step holds the same chunk, and the first release must not
+    // unload the chunk under the other.
+    const key = `${Math.floor(pos[0] / 16)},${Math.floor(pos[2] / 16)}`;
+    const holders = this.chunkHolds.get(key) ?? 0;
+    if (hold) {
+      this.chunkHolds.set(key, holders + 1);
+      if (holders > 0) return;
+    } else {
+      if (holders > 1) {
+        this.chunkHolds.set(key, holders - 1);
+        return;
+      }
+      this.chunkHolds.delete(key);
+    }
     const verb = hold ? "add" : "remove";
     const from = this.chatMark();
     bot.chat(`/forceload ${verb} ${pos[0]} ${pos[2]}`);
@@ -4272,10 +4357,13 @@ export class MineflayerExecutor implements StepExecutor {
       // credit a trial that never happened. Clear it first, honestly.
       if (this.death) {
         process.stderr.write(
-          `[die-retry] an unscripted death is still pending — recovering from it before ` +
-            `taking the next scripted one\n`,
+          `[die-retry] an unscripted death is still pending — recovering from it and walking ` +
+            `back to the fight before taking the next scripted one\n`,
         );
         await this.respawnAndRearm();
+        // The respawn put the bot at the checkpoint. A death scripted THERE is not a
+        // death at this encounter, and the trial would measure the checkpoint.
+        await this.walkTo(step.pos, 3, `die-retry re-approach ${step.wave}`, step.sneak);
       }
       // "mid-fight" is a state of the WAVE, not of the bot: bodies below their own
       // `max_health`, which a faithful re-seat must replace. One attributed point
@@ -4317,6 +4405,7 @@ export class MineflayerExecutor implements StepExecutor {
         // next scripted death an invulnerable body, `/damage` does nothing, and
         // the stage used to report that as a missing op.
         await this.awaitControlForScriptedDeath(step, enc);
+        await this.awaitRespawnProtection(enc);
         const seq = this.deathSeq;
         // What the bot carries INTO the death — the baseline `keep_inventory` is
         // judged against on the way out.
@@ -4369,6 +4458,13 @@ export class MineflayerExecutor implements StepExecutor {
           trial.returned = true;
         } catch (err) {
           const detail = err instanceof Error ? err.message : String(err);
+          // A leg that ended in a death has said nothing about the ROUTE: the bot
+          // was killed on it. Recorded as what it was, so the verdict never reads a
+          // death on the way back as unwalkable geometry.
+          trial.returnFailure = {
+            killed: err instanceof BotDeathError,
+            detail,
+          };
           process.stderr.write(`[die-retry] return leg failed: ${detail}\n`);
         }
         const after = new Set(this.completedObjectives.keys());
@@ -4390,9 +4486,17 @@ export class MineflayerExecutor implements StepExecutor {
         // false, `reengage` null and its outcome `unproven`: not looked at is not
         // the same fact as looked at and empty, and neither is a pass.
         if (trial.returned) {
-          const obs = await this.awaitReengage(enc);
+          // What the party had felled of this seating when it landed: the bodies
+          // it fells from here on met it on the way back, and that IS the fight
+          // re-engaging — a re-seating wave's bodies are removed when they hit
+          // the bot (see `dieRetryHolds`), and the census credits each one. Only a
+          // re-seating wave has a landing reading to count from; a wave that does
+          // not re-seat is never removed during the stage, so only what stands
+          // answers for it.
+          const landed = trial.reseat?.credited;
+          const obs = await this.awaitReengage(enc, landed);
           trial.reengage = obs;
-          trial.reEngaged = obs.present > 0;
+          trial.reEngaged = obs.present > 0 || (landed !== undefined && obs.credited > landed);
           trial.outcome = retryOutcome(trial.reEngaged, trial.objectiveComplete);
           process.stderr.write(
             `[die-retry] ${step.wave} death ${attempt}: ${obs.present}/${obs.declared} wave mob(s) ` +
@@ -4485,6 +4589,48 @@ export class MineflayerExecutor implements StepExecutor {
   }
 
   /**
+   * Hold until a respawned body can be hurt again, so a scripted death is not
+   * refused by vanilla's respawn protection (see {@link RESPAWN_PROTECTION_TICKS}).
+   *
+   * Counted in SERVER ticks, from the world age the time packets carry: the window
+   * is the server's, and a lagging server stretches it in wall-clock time. The
+   * respawn's age reading can be up to one time-packet interval stale, so the wait
+   * runs until the age has moved the window plus that interval past it. A bot that
+   * never heard a time packet waits the window at the nominal 20 ticks a second
+   * and says so. Bounded; a window that never closes is left to the refusal the
+   * scripted death then reads and reports.
+   */
+  private async awaitRespawnProtection(enc: Encounter): Promise<void> {
+    const bot = this.requireBot();
+    if (this.lastSpawnAt === undefined) return;
+    const needTicks = RESPAWN_PROTECTION_TICKS + TIME_PACKET_TICKS;
+    const from = this.lastSpawnAge;
+    const deadline = Date.now() + RESPAWN_PROTECTION_TIMEOUT_MS;
+    const closed = (): boolean => {
+      const now = serverAge(bot);
+      if (from !== undefined && now !== undefined) return now - from >= needTicks;
+      return Date.now() - this.lastSpawnAt! >= needTicks * 50;
+    };
+    if (closed()) return;
+    process.stderr.write(
+      `[die-retry] ${enc.wave}: the bot respawned ${Date.now() - this.lastSpawnAt}ms ago and is ` +
+        `inside vanilla's ${RESPAWN_PROTECTION_TICKS}-tick respawn protection — waiting it out ` +
+        `before scripting a death` +
+        `${from === undefined ? " (no time packet heard yet, so counted at 20 ticks a second)" : ""}\n`,
+    );
+    while (Date.now() < deadline) {
+      if (this.death) throw this.death;
+      if (closed()) return;
+      await delay(CUTSCENE_POLL_MS);
+    }
+    process.stderr.write(
+      `[die-retry] ${enc.wave}: the respawn-protection window did not close within ` +
+        `${RESPAWN_PROTECTION_TIMEOUT_MS}ms — scripting the death anyway, so the server's answer ` +
+        `says what happened\n`,
+    );
+  }
+
+  /**
    * Wait for a death NEWER than `seq` — the harness's own scripted one.
    *
    * Deliberately not {@link waitFor}, which THROWS the recorded
@@ -4534,38 +4680,53 @@ export class MineflayerExecutor implements StepExecutor {
    */
   private async stageAway(id: number, why: string, name?: string): Promise<void> {
     if (this.sneaking) return;
-    if (this.stagedIds.has(id)) return;
+    if (this.stagedIds.has(id) || this.stagingInFlight.has(id)) return;
     const bot = this.bot;
     if (!bot?.entity) return;
     const body = bot.entities[id];
     const uuid = (body as { uuid?: string } | undefined)?.uuid;
     const kind = name ?? body?.name ?? "?";
-    // A body of a planned encounter the run has not reached yet. Its numbers are
-    // a measurement the muster owes, and its death is the step's own act: removing
-    // it early loses the reading AND clears the fight out of order. Measured on
-    // the gallery, where two of `wave/muster`'s three bodies met the bot on the
-    // leg before their step, were staged away, and the muster then reported the
-    // campaign had seated one body of three.
+    // **Outside a scripted death, a body never kills the bot.** A hostile that
+    // engages the bot is an enemy and is removed; the only question is what the
+    // run must READ before it does, and the answer is decided by which wave the
+    // body is of — asked of the server, by tag, never guessed from where it
+    // stands. Two cases need a reading first:
+    //
+    //   * a wave whose current seating the run has not read (its step is still
+    //     ahead, or a rest put a cleared wave back for a run-back). The muster's
+    //     facts do not depend on where the body stands, so the wave is read where
+    //     it is and THEN the body is removed. Leaving it standing instead was
+    //     measured twice on vesperhold: an Unremembered Guard that walked out to
+    //     meet the bot killed it on a `reach` step; a Wall Archer that had wandered
+    //     33 blocks off its anchor — outside the radius the old rule guessed
+    //     membership by — was staged unread, and the run-back's muster then
+    //     reported the campaign had seated two of three;
+    //   * the wave the die-retry stage is proving. See `dieRetryHolds`.
     if (body?.position) {
       const here: Vec3Tuple = [body.position.x, body.position.y, body.position.z];
-      const owed = this.pendingEncounterAt(here);
-      if (owed !== undefined) {
-        process.stderr.write(
-          `[staged] ${kind}#${id} stands with \`${owed}\`, an encounter this run has not read ` +
-            `yet — left standing\n`,
-        );
-        return;
+      this.stagingInFlight.add(id);
+      try {
+        const of = await this.waveOfBody(here);
+        if (of !== undefined) {
+          const protect = this.protectedWave;
+          if (protect?.wave === of.wave) {
+            const hold = this.dieRetryHolds(of);
+            if (hold !== undefined) {
+              process.stderr.write(`[staged] ${kind}#${id} stands with \`${of.wave}\`: ${hold}\n`);
+              return;
+            }
+          } else if (this.readingOwed(of)) {
+            process.stderr.write(
+              `[staged] ${kind}#${id} is of \`${of.wave}\`, whose current seating this run has ` +
+                `not read — reading it where it stands, then removing the body\n`,
+            );
+            await this.musterEarly(of);
+          }
+        }
+      } finally {
+        this.stagingInFlight.delete(id);
       }
-      // The encounter the die-retry stage is currently proving: its bodies ARE the
-      // measurement, wherever they have wandered to.
-      const protect = this.protectedWave;
-      if (protect && isWaveBody({ pos: here, census: protect.census })) {
-        process.stderr.write(
-          `[staged] ${kind}#${id} stands with \`${protect.wave}\`, which the die-retry stage is ` +
-            `proving live — left standing\n`,
-        );
-        return;
-      }
+      if (this.stagedIds.has(id)) return;
     }
     // The delve's own statement of what is never a combat target. A body on that
     // list is never removed, whatever it appears to have done — the cast is the
@@ -4615,13 +4776,27 @@ export class MineflayerExecutor implements StepExecutor {
   private async musterWave(enc: Encounter): Promise<void> {
     const bot = this.requireBot();
     const before = this.musterSeq;
+    // The seating this reading is OF: taken before the probe is called, so a
+    // re-seat that lands while the answer is in flight leaves the wave owed.
+    const epoch = this.seatEpoch;
     bot.chat(`/function ${enc.muster.probe}`);
+    // What the party has felled of this seating, asked in the same breath: a
+    // body the muster cannot read because the party already took it is a
+    // different fact from a body the server never seated, and only the census
+    // (`#wcred_<wave>`, zeroed by `spawn_<wave>`) can tell them apart.
+    const credited = (await this.census(enc))?.summary.credited;
     const deadline = Date.now() + CENSUS_TIMEOUT_MS;
     for (;;) {
-      const sum = this.musterSummary;
-      if (sum && sum.seq > before && sum.wave === enc.wave) {
-        const verdict = verifyMuster(enc.muster, sum, this.musterBodies.get(sum.seq) ?? []);
+      const sum = this.musterSummaries.get(enc.wave);
+      if (sum && sum.seq > before) {
+        const verdict = verifyMuster(
+          enc.muster,
+          sum,
+          this.musterBodies.get(sum.seq) ?? [],
+          credited,
+        );
         this.musters.set(enc.wave, verdict);
+        this.musteredEpoch.set(enc.wave, epoch);
         process.stderr.write(
           `[muster] ${enc.wave}: read ${verdict.read}/${verdict.declared} declared body/bodies, ` +
             `${verdict.matched} matching their declaration over ${verdict.checked} checked ` +
@@ -4655,44 +4830,121 @@ export class MineflayerExecutor implements StepExecutor {
   }
 
   /**
-   * The wave of a planned encounter this run has not cleared yet, if `pos` stands
-   * at one — by the census's own match radius around the encounter anchor.
+   * Which planned wave a body is of, asked of the SERVER: the census of each
+   * candidate wave, by its tag, matched to where the body stands.
    *
-   * Deliberately by ANCHOR rather than by a census: a census is a round trip and
-   * this is asked on a damage packet. The radius is `WAVE_ENGAGE_NEAR` — how far
-   * a body may be and still be part of this fight — because a wave body chases
-   * the party: measured on vesperhold, a Cliff Watchman that had followed the bot
-   * off its rampart was staged away before its own step could read it.
+   * The body is loaded (it has just hit the bot), so its own census line exists
+   * wherever it has wandered. Candidates are the waves a reading or a die-retry
+   * stake could be riding on — the rest cannot change what happens to the body —
+   * nearest anchor first, and the first match ends the search. `undefined` when no
+   * candidate's census places a body there: an ambusher, an actor, a wave with
+   * nothing owed.
    */
-  private pendingEncounterAt(pos: Vec3Tuple): string | undefined {
-    for (const enc of this.combatPlan?.encounters ?? []) {
-      if (this.clearing === enc.wave) continue;
-      const clearedAt = this.waveClearedAt.get(enc.wave);
-      // A wave this run has cleared is protected again the moment a rest could
-      // have put it back: its run-back is a reading this run still owes.
-      // Measured on vesperhold — `wave/rampart-archers` was cleared, a rest at
-      // `anchor/watch-fire` re-seated it, one archer hit the bot on the leg and
-      // was staged away, and the run-back's muster then read two of three and
-      // reported the campaign short a body it had seated.
-      if (clearedAt !== undefined && !this.reSeatedSince(enc, clearedAt)) continue;
-      const d = Math.hypot(pos[0] - enc.pos[0], pos[1] - enc.pos[1], pos[2] - enc.pos[2]);
-      if (d <= WAVE_ENGAGE_NEAR) return enc.wave;
-    }
-    return undefined;
+  private async waveOfBody(pos: Vec3Tuple): Promise<Encounter | undefined> {
+    const candidates = (this.combatPlan?.encounters ?? []).filter(
+      (enc) => this.protectedWave?.wave === enc.wave || this.readingOwed(enc),
+    );
+    const dist = (enc: Encounter): number =>
+      Math.hypot(pos[0] - enc.pos[0], pos[1] - enc.pos[1], pos[2] - enc.pos[2]);
+    // Asked together: each census is one function call answered on the next tick,
+    // and the body is hitting the bot while the answers come back.
+    const answers = await Promise.all(candidates.map((enc) => this.census(enc)));
+    const matched = candidates.filter((enc, i) => {
+      const census = answers[i];
+      return census !== undefined && isWaveBody({ pos, census: census.mobs });
+    });
+    return matched.sort((a, b) => dist(a) - dist(b))[0];
   }
 
   /**
-   * Has a rest since `clearedAt` put this wave back?
+   * Does the run still owe a reading of this wave's CURRENT seating?
    *
-   * The same two facts `respawnReseats` reads — a `respawns_on_rest` wave and a
-   * rest performed at or after the step that cleared it.
+   * A wave being cleared owes nothing — it has been read and is on its way out. A
+   * cleared wave owes nothing until the delve could have put it back (its
+   * run-back is then a reading still owed). Otherwise it is owed until a muster
+   * has read it, and for a `respawns_on_rest` wave, read since the last rest or
+   * respawn: that is a new seating, and a reading of the old one says nothing
+   * about it.
    */
-  private reSeatedSince(enc: Encounter, clearedAt: number): boolean {
+  private readingOwed(enc: Encounter): boolean {
+    if (this.clearing === enc.wave) return false;
+    const cleared = this.clearedEpoch.get(enc.wave);
+    if (cleared !== undefined && (!enc.respawnsOnRest || cleared === this.seatEpoch)) return false;
+    const read = this.musteredEpoch.get(enc.wave);
+    if (read === undefined) return true;
     if (!enc.respawnsOnRest) return false;
-    for (const step of this.restedAt.values()) {
-      if (step >= clearedAt) return true;
+    return read !== this.seatEpoch;
+  }
+
+  /**
+   * Read a wave's muster now, if its current seating is still owed a reading —
+   * the kill step and the run-back both open with this. A seating a damage
+   * handler has already read (a body came to the bot before the step did) is NOT
+   * read a second time: the bot has since removed the body that came, and a
+   * second reading would count the run's own removal as a body the server never
+   * seated.
+   */
+  private async musterUnlessRead(enc: Encounter): Promise<void> {
+    const pending = this.earlyMusters.get(enc.wave);
+    if (pending) await pending;
+    if (!this.readingOwed(enc)) {
+      process.stderr.write(
+        `[muster] ${enc.wave}: this seating was already read (a body of it came to the bot ` +
+          `before its step did) — not read again\n`,
+      );
+      return;
     }
-    return false;
+    await this.musterWave(enc);
+  }
+
+  /**
+   * The damage handlers' reading of a wave a body of which has come to the bot:
+   * the same muster the step would take, with the anchor's chunk held for it as
+   * the step holds it. One reading per wave however many of its bodies hit at once.
+   */
+  private async musterEarly(enc: Encounter): Promise<void> {
+    const pending = this.earlyMusters.get(enc.wave);
+    if (pending) return pending;
+    const run = (async (): Promise<void> => {
+      await this.holdChunk(enc.pos, true);
+      try {
+        if (this.readingOwed(enc)) await this.musterWave(enc);
+      } finally {
+        await this.holdChunk(enc.pos, false);
+      }
+    })();
+    this.earlyMusters.set(enc.wave, run);
+    try {
+      await run;
+    } finally {
+      this.earlyMusters.delete(enc.wave);
+    }
+  }
+
+  /**
+   * Why a body of the wave the die-retry stage is proving must be left standing,
+   * or `undefined` when it is removed like any other.
+   *
+   * A wave that re-seats on respawn is removed: the next scripted death brings it
+   * back WHOLE, the fidelity verdict is read at that landing, and a body the party
+   * fells afterwards is counted as re-engagement by the census's own credit. So
+   * nothing the stage measures is lost, and the bot is not killed by the subject of
+   * a proof about dying safely — which is what happened on vesperhold's return leg,
+   * where a re-seated Guard slew the bot and the trial reported the route back as
+   * unwalkable.
+   *
+   * A wave that does NOT re-seat is different: its bodies persist across both
+   * lives, and they are the fight the second life must find again. Removing one
+   * would change what the next trial proves, so it stays — the one place a body
+   * may still land hits on the bot outside a scripted death, and the log says so
+   * every time.
+   */
+  private dieRetryHolds(enc: Encounter): string | undefined {
+    if (enc.respawnsOnRest) return undefined;
+    return (
+      `the die-retry stage is proving it live and it does not re-seat, so its bodies ` +
+      `persist across both lives and are the fight the next life must find — left standing`
+    );
   }
 
   /** What each wave's muster established. Read by the run report. */
@@ -4860,8 +5112,8 @@ export class MineflayerExecutor implements StepExecutor {
     bot.chat(`/function ${enc.census.census}`);
     const deadline = Date.now() + CENSUS_TIMEOUT_MS;
     for (;;) {
-      const sum = this.censusSummary;
-      if (sum && sum.seq > before && sum.wave === enc.wave) {
+      const sum = this.censusSummaries.get(enc.wave);
+      if (sum && sum.seq > before) {
         const mobs = this.censusMobs.get(sum.seq) ?? [];
         // Keep the protected wave's view of where its bodies stand current, so the
         // die-retry stage's own re-seats stay protected as they move.
@@ -4961,7 +5213,7 @@ export class MineflayerExecutor implements StepExecutor {
     }
     const summary = parseMusterSummary(message);
     if (!summary || summary.campaignId !== this.campaignId) return;
-    this.musterSummary = summary;
+    this.musterSummaries.set(summary.wave, summary);
     this.musterSeq = Math.max(this.musterSeq, summary.seq);
   }
 
@@ -4981,7 +5233,7 @@ export class MineflayerExecutor implements StepExecutor {
     }
     const sum = parseCensusSummary(message);
     if (!sum || sum.campaignId !== this.campaignId) return;
-    this.censusSummary = sum;
+    this.censusSummaries.set(sum.wave, sum);
     this.censusSeq = Math.max(this.censusSeq, sum.seq);
   }
 
@@ -4994,13 +5246,26 @@ export class MineflayerExecutor implements StepExecutor {
    * entity tracking lags arrival by ticks, and three living drowned read as an
    * empty room.
    */
-  private async awaitReengage(enc: Encounter): Promise<ReengageObservation> {
+  private async awaitReengage(
+    enc: Encounter,
+    landedCredited?: number,
+  ): Promise<ReengageObservation> {
     const started = Date.now();
     const deadline = started + REENGAGE_SETTLE_MS;
     let census = await this.census(enc);
     for (;;) {
-      // Enough is standing to answer every question this observation feeds.
-      if (census && census.summary.present >= enc.count) break;
+      // Enough is accounted for to answer every question this observation feeds:
+      // standing, or felled by the party since the re-seat landed.
+      if (
+        census &&
+        census.summary.present +
+          (landedCredited === undefined
+            ? 0
+            : Math.max(0, census.summary.credited - landedCredited)) >=
+          enc.count
+      ) {
+        break;
+      }
       if (Date.now() >= deadline) break;
       await delay(REACH_POLL_MS);
       census = (await this.census(enc)) ?? census;
@@ -5041,6 +5306,16 @@ export class MineflayerExecutor implements StepExecutor {
       throw new Error(
         `die-retry: the wave census \`${enc.census.census}\` never answered at the re-seat ` +
           `within ${CENSUS_TIMEOUT_MS}ms — the bot must be opped to call it`,
+      );
+    }
+    // A wound at the landing is what the fidelity verdict reds on; the census has
+    // each body's health, and the size of the wound is the one fact that can say
+    // what dealt it (an arrow still in flight from the last life, the world, a
+    // re-seat that did not summon whole). Stated so the next occurrence carries it.
+    if (census.summary.damaged > 0) {
+      process.stderr.write(
+        `[die-retry] ${enc.wave}: the re-seat landed with ${census.summary.damaged} body/bodies ` +
+          `below full — ${describeStanding(census.mobs)}\n`,
       );
     }
     return observationOf(census, enc.count, enc.pos, Date.now() - started);
@@ -5184,6 +5459,7 @@ export class MineflayerExecutor implements StepExecutor {
     await delay(EFFECT_SETTLE_MS);
     this.restedBonfires.add(step.bonfire);
     this.restedAt.set(step.bonfire, this.currentStep);
+    this.seatEpoch += 1;
   }
 
   /**

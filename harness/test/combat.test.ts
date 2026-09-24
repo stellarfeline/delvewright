@@ -216,6 +216,7 @@ function trial(over: Partial<DeathTrial> = {}): DeathTrial {
     atCheckpoint: true,
     kitKept: true,
     returned: true,
+    returnFailure: undefined,
     reEngaged: true,
     objectiveComplete: false,
     reseats: false,

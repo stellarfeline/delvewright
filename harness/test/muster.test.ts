@@ -238,3 +238,32 @@ test("two stacks of one kind are matched as a multiset, not by position", () => 
   ]);
   assert.ok(short.failures.some((f) => /stack 1/.test(f)));
 });
+
+// --- a short read says what it knows about the missing bodies -----------------
+
+test("a short read that the party's own kills account for says so — and is still red", () => {
+  // vesperhold, measured: a re-seated Wall Archer hit the bot 33 blocks off its
+  // anchor, was staged away before the run-back read the wave, and the muster then
+  // reported "the server seated 2". The server had seated three; the run removed one.
+  const plan: MusterPlan = { ...GUARD, bodies: 3, profiles: [{ ...GUARD.profiles[0]!, count: 3, label: "3 × minecraft:zombie (stack 0)" }] };
+  const v = verifyMuster(plan, summary({ counted: 2, tagged: 2 }), [guardBody(), guardBody()], 1);
+  const seating = v.failures.find((f) => f.startsWith("wave seating"));
+  assert.ok(seating, `a short read is still a failure: ${v.failures.join(" | ")}`);
+  assert.match(seating, /the muster read 2/);
+  assert.match(seating, /1 of the missing 1 were felled by the party since this seating/);
+  assert.doesNotMatch(seating, /never seated/);
+});
+
+test("a short read the party did not cause is said to be unaccountable, not a short seating", () => {
+  const plan: MusterPlan = { ...GUARD, bodies: 3, profiles: [{ ...GUARD.profiles[0]!, count: 3, label: "3 × minecraft:zombie (stack 0)" }] };
+  const none = verifyMuster(plan, summary({ counted: 2, tagged: 2 }), [guardBody(), guardBody()], 0);
+  assert.match(
+    none.failures.find((f) => f.startsWith("wave seating")) ?? "",
+    /1 is accounted for by nothing the census counts: never seated, or felled by something other than the party/,
+  );
+  const silent = verifyMuster(plan, summary({ counted: 2, tagged: 2 }), [guardBody(), guardBody()]);
+  assert.match(
+    silent.failures.find((f) => f.startsWith("wave seating")) ?? "",
+    /the census did not answer beside the muster/,
+  );
+});

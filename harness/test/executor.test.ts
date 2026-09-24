@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
+import { setTimeout as delay } from "node:timers/promises";
 import type { Bot } from "mineflayer";
 import { MineflayerExecutor, completionWindowMs, type BotConfig } from "../src/executor.ts";
 import { BotDeathError } from "../src/death.ts";
@@ -1625,6 +1626,8 @@ interface FakeMob {
   waveTagged: boolean;
   /** Swings this particular body takes, overriding the bot-wide rule. */
   hitsToKill?: number;
+  /** What a server selector accepts for this body — a staged blow names it. */
+  uuid?: string;
 }
 
 /** Where the pinned registry puts `health` in a zombie's metadata. Resolved by
@@ -1672,6 +1675,21 @@ class CombatFakeBot extends InteractFakeBot {
   /** Delay before the re-seated wave becomes visible to the client — entity
    * tracking lags arrival, which is the island-r14 false negative. */
   reSeatVisibleAfterMs = 0;
+  /** On each walk back after a death, a body of the re-seated wave comes out and
+   * lands a named hit on the bot — vesperhold's Guard on the return leg. */
+  hitOnReturn = false;
+  /** The walk back after the FIRST death ends in an unscripted death — a body
+   * the bot met on the leg killed it. Armed once. */
+  dieOnReturn = false;
+  /** Vanilla's respawn protection, in wall-clock ms from the respawn: a `/damage`
+   * inside it is refused with the server's own words and does nothing. 0 = off. */
+  respawnProtectionMs = 0;
+  private lastSpawnAt = 0;
+  /** A walk arrives: `goto` puts the bot at its goal. Off by default, because the
+   * older tests were written against a bot that never moves. */
+  moveOnGoto = false;
+  /** Every `/damage <uuid>` staged blow the fake server received, by body id. */
+  readonly stagedBlows: number[] = [];
   private died = false;
   private nextId = 100;
   /** Server-side census state: which mobs wear the brand, and how many censuses
@@ -1702,12 +1720,30 @@ class CombatFakeBot extends InteractFakeBot {
     },
     setMovements: (): void => {},
     thinkTimeout: 0,
-    goto: async (): Promise<void> => {
+    goto: async (goal?: { x?: number; y?: number; z?: number }): Promise<void> => {
       this.calls.push("goto");
       // A route walkable on the way in and not on the way back: exactly what a
       // respawn dumped somewhere unreachable looks like to the bot.
       if (this.failReturnLeg && this.died) {
         throw new Error("no path to the encounter from here");
+      }
+      if (this.dieOnReturn && this.died) {
+        this.dieOnReturn = false;
+        this.killBot("delve-bot was slain by Unremembered Guard", true);
+        await delay(50);
+        return;
+      }
+      if (this.hitOnReturn && this.died) {
+        const [body] = this.waveMobs();
+        if (body) {
+          this.emit("entityHurt", this.entity, body);
+          // Long enough for the harness to read and stage what hit it before the
+          // leg resolves, as a real leg is long enough.
+          await delay(1_500);
+        }
+      }
+      if (this.moveOnGoto && goal && typeof goal.x === "number" && typeof goal.z === "number") {
+        this.entity.position = new FakeVec3(goal.x, goal.y ?? 64, goal.z);
       }
     },
   };
@@ -1761,6 +1797,7 @@ class CombatFakeBot extends InteractFakeBot {
     const self = this;
     return {
       id,
+      uuid: `uuid-${id}`,
       name: "zombie",
       type: "hostile",
       height: 2,
@@ -1861,12 +1898,31 @@ class CombatFakeBot extends InteractFakeBot {
       }
       return;
     }
+    // A staged blow: `/damage <uuid> … by <bot>` fells that one body, credited to
+    // the party exactly as a player's kill is.
+    const staged = /^\/damage (uuid-(\d+)) /.exec(message);
+    if (staged) {
+      const id = Number(staged[2]);
+      const ent = this.entities[id] as FakeMob | undefined;
+      if (ent) {
+        this.stagedBlows.push(id);
+        delete this.entities[id];
+        this.emit("entityGone", ent);
+        if (ent.waveTagged) this.credited += 1;
+      }
+      return;
+    }
     if (!message.startsWith("/damage") || !this.scriptedDeathsLand) return;
     // A spectator is invulnerable, so a real server does NOTHING with this and
     // says so. The gallery's muster completion starts two cutscenes, and a
     // cutscene's first act is `gamemode spectator @a`.
     if (this.game.gameMode === "spectator") {
       this.emit("messagestr", "This entity cannot be damaged");
+      return;
+    }
+    // Vanilla's respawn protection: the same refusal, in the server's words.
+    if (this.respawnProtectionMs > 0 && Date.now() - this.lastSpawnAt < this.respawnProtectionMs) {
+      this.emit("messagestr", "Target is invulnerable to the given damage type");
       return;
     }
     setTimeout(() => {
@@ -1891,6 +1947,7 @@ class CombatFakeBot extends InteractFakeBot {
           if (this.reSeatVisibleAfterMs > 0) setTimeout(apply, this.reSeatVisibleAfterMs);
           else apply();
         }
+        this.lastSpawnAt = Date.now();
         this.emit("spawn");
       }, 10);
     }, 5);
@@ -1998,11 +2055,22 @@ class CombatFakeBot extends InteractFakeBot {
 
   /** A death the harness did NOT script, delivered the way a server delivers it:
    * the death, then a fast auto-respawn. */
-  private killBot(): void {
+  private killBot(message = "delve-bot was slain by Vindicator", respawnFully = false): void {
     this.died = true;
-    this.emit("messagestr", "delve-bot was slain by Vindicator");
+    this.emit("messagestr", message);
     this.emit("death");
-    setTimeout(() => this.emit("spawn"), 10);
+    setTimeout(() => {
+      // `respawnFully`: the respawn a real server gives — at the spawn point, with
+      // the wave re-seated by the respawn's rest hooks — rather than the bare
+      // spawn event the older tests were written against.
+      if (respawnFully) {
+        if (this.respawnAt) this.entity.position = new FakeVec3(...this.respawnAt);
+        const reseat = this.reSeat;
+        if (reseat) this.seat(reseat.count ?? 0, reseat);
+      }
+      this.lastSpawnAt = Date.now();
+      this.emit("spawn");
+    }, 10);
   }
 
   async lookAt(): Promise<void> {}
@@ -2540,6 +2608,166 @@ test("wave mobs that WANDERED off the anchor are re-engaged, never stranded", as
   );
   assert.deepEqual(dieRetryFindings(trials), []);
   assert.ok(trials[0]!.reengage!.farthest! > 48, "and how far they had strayed is recorded");
+});
+
+// --- outside a scripted death, a body never kills the bot ------------------
+
+/** Every `/function` the executor chatted, in order, by its bare name. */
+function functionsCalled(bot: CombatFakeBot): string[] {
+  return bot.calls
+    .filter((c) => c.startsWith("chat(/function "))
+    .map((c) => c.slice("chat(/function ".length, -1).split(":").pop()!);
+}
+
+/** Let the executor's damage handler finish reading and staging. */
+async function settleStaging(): Promise<void> {
+  await delay(2_000);
+}
+
+test("a body of a wave the run has not read yet is read where it stands, then removed", async () => {
+  // vesperhold, released+silence: an Unremembered Guard walked out to meet the bot
+  // on a `reach` step before the Guard's own `kill` step. The old rule left any
+  // body of an unread encounter standing, so the bot walked on with a Guard
+  // hitting it until it died. The muster's facts do not depend on where the body
+  // stands: the wave is read where it is, and then the body goes.
+  const bot = new CombatFakeBot();
+  bot.seat(2);
+  const executor = attach(bot);
+  executor.useCampaign("the-drowned-bell");
+  executor.useCombatPlan(combatPlan(2, true), false);
+  const [attacker] = bot.waveIds();
+  bot.emit("entityHurt", bot.entity, bot.entities[attacker!]);
+  await settleStaging();
+
+  assert.deepEqual(bot.stagedBlows, [attacker], "the body that hit the bot was removed");
+  const muster = bot.calls.findIndex((c) => c.includes(":wave_muster_"));
+  const blow = bot.calls.findIndex((c) => c.startsWith(`chat(/damage uuid-${attacker} `));
+  assert.ok(muster >= 0 && muster < blow, `read BEFORE the removal: ${bot.calls.join(" | ")}`);
+  assert.equal(executor.waveMusters().get("wave/gate-assault")?.read, 2, "the reading saw the whole seating");
+
+  // The step then reads nothing twice: the seating is already read, and a second
+  // muster would count the run's own removal as a body the server never seated.
+  await executor.kill({ ...KILL_STEP, count: 2 });
+  assert.equal(functionsCalled(bot).filter((f) => f.startsWith("wave_muster_")).length, 1);
+  const verdict = executor.waveMusters().get("wave/gate-assault")!;
+  assert.deepEqual(verdict.failures, [], "the wave is verified whole");
+  assert.equal(verdict.read, 2);
+});
+
+test("which wave a body is of is the server's tag, not a radius around the anchor", async () => {
+  // vesperhold, released+ring: a Wall Archer 33 blocks off its anchor — one block
+  // outside the radius the old rule guessed membership by — hit the bot, was
+  // removed unread, and the run-back's muster reported the campaign had seated
+  // two of three. The census places the body wherever it has wandered.
+  const bot = new CombatFakeBot();
+  bot.seat(2, { distance: 33 });
+  const executor = attach(bot);
+  executor.useCampaign("the-drowned-bell");
+  executor.useCombatPlan(combatPlan(2, true), false);
+  const [attacker] = bot.waveIds();
+  bot.emit("entityHurt", bot.entity, bot.entities[attacker!]);
+  await settleStaging();
+  await executor.kill({ ...KILL_STEP, count: 2 });
+
+  const verdict = executor.waveMusters().get("wave/gate-assault")!;
+  assert.deepEqual(verdict.failures, [], `read before it was removed: ${verdict.failures.join(" | ")}`);
+  assert.equal(verdict.read, 2);
+});
+
+test("a re-seated body that meets the bot on the way back is removed, and is the fight re-engaging", async () => {
+  // vesperhold, released+ring: the re-seated Guard came out to meet the bot on the
+  // die-retry return leg and, left standing as "the subject", killed it; the trial
+  // then reported the route back as unwalkable. A wave that re-seats is brought
+  // back whole by the next death and read at that landing, so removing what hits
+  // the bot costs the stage nothing — and a body the party fells after the landing
+  // is a body of this seating that met the party.
+  const bot = new CombatFakeBot();
+  bot.seat(1);
+  bot.reSeat = { count: 1 };
+  bot.respawnAt = [10, 64, 0];
+  bot.moveOnGoto = true;
+  bot.hitOnReturn = true;
+  const executor = attach(bot);
+  executor.useCampaign("the-drowned-bell");
+  const plan = combatPlan(1, true);
+  const encounter = { ...plan.encounters[0]!, checkpoint: [10, 64, 0] as [number, number, number] };
+  executor.useCombatPlan({ ...plan, encounters: [encounter] }, true);
+  await executor.kill(KILL_STEP);
+
+  const trials = executor.deathTrials();
+  assert.ok(bot.stagedBlows.length >= 2, `each return's attacker was removed: ${bot.stagedBlows}`);
+  assert.deepEqual(trials.map((t) => t.outcome), ["re-engaged", "re-engaged"]);
+  for (const t of trials) {
+    assert.equal(t.reseat!.present, 1, "the re-seat was read whole at the landing");
+    assert.equal(t.reengage!.present, 0, "the only body had been felled on the way back");
+    assert.equal(t.reengage!.credited, 1, "…by the party, which the census credits");
+  }
+  assert.deepEqual(dieRetryFindings(trials), []);
+});
+
+test("a wave that does not re-seat keeps its bodies through the die-retry stage", async () => {
+  // Its bodies persist across both lives and are the fight the second life must
+  // find again; removing one would change what the next trial proves.
+  const bot = new CombatFakeBot();
+  bot.seat(1);
+  // The fake server clears its entity table on a respawn, so it stands the body
+  // back up to model one that persisted; what is under test is the harness's
+  // decision, which reads the PLAN's `respawns_on_rest: false`.
+  bot.reSeat = { count: 1 };
+  bot.respawnAt = [10, 64, 0];
+  bot.moveOnGoto = true;
+  bot.hitOnReturn = true;
+  const executor = attach(bot);
+  executor.useCampaign("the-drowned-bell");
+  const plan = combatPlan(1, false);
+  const encounter = { ...plan.encounters[0]!, checkpoint: [10, 64, 0] as [number, number, number] };
+  executor.useCombatPlan({ ...plan, encounters: [encounter] }, true);
+  await executor.kill(KILL_STEP);
+
+  assert.deepEqual(bot.stagedBlows, [], "no body of the subject was staged during the stage");
+  assert.deepEqual(
+    executor.deathTrials().map((t) => t.outcome),
+    ["re-engaged", "re-engaged"],
+  );
+});
+
+test("a walk back that ends in a death reads as one, and the next death waits out respawn protection at the fight", async () => {
+  // vesperhold, released+ring, the Guard: the bot was slain on the return leg;
+  // the trial said the route was "not walkable"; the stage then recovered and
+  // scripted the next death one second after that respawn, from the checkpoint,
+  // and the server answered "Target is invulnerable to the given damage type" —
+  // vanilla's 60-tick respawn protection.
+  const bot = new CombatFakeBot();
+  bot.seat(1);
+  bot.reSeat = { count: 1 };
+  bot.respawnAt = [10, 64, 0];
+  bot.moveOnGoto = true;
+  bot.dieOnReturn = true;
+  bot.respawnProtectionMs = 3_000;
+  const executor = attach(bot);
+  executor.useCampaign("the-drowned-bell");
+  const plan = combatPlan(1, true);
+  const encounter = { ...plan.encounters[0]!, checkpoint: [10, 64, 0] as [number, number, number] };
+  executor.useCombatPlan({ ...plan, encounters: [encounter] }, true);
+  const deathsAt: string[] = [];
+  const chat = bot.chat.bind(bot);
+  bot.chat = (message: string): void => {
+    if (message.startsWith("/damage @s")) {
+      const p = bot.entity.position;
+      deathsAt.push(`${p.x},${p.y},${p.z}`);
+    }
+    chat(message);
+  };
+  await executor.kill(KILL_STEP);
+
+  const [first, second] = executor.deathTrials();
+  const verdict = String(trialVerdict(first!));
+  assert.match(verdict, /KILLED on the way back/);
+  assert.doesNotMatch(verdict, /not walkable/, "a death on the leg is not a verdict on its geometry");
+  assert.equal(first!.returnFailure?.killed, true);
+  assert.equal(second!.abortedWith, undefined, `the second death landed: ${second!.abortedWith}`);
+  assert.equal(second!.completed, true);
+  assert.deepEqual(deathsAt, ["0,64,0", "0,64,0"], "both deaths were taken AT the fight, not at the checkpoint");
 });
 
 test("the re-engage probe SETTLES instead of sampling the instant it arrives", async () => {
