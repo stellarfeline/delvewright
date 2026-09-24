@@ -191,6 +191,12 @@ const STAGED_BLOW = 100_000;
 const STAGED_REPLY_MS = 400;
 
 /**
+ * What one level of vanilla's instant health restores, in health points:
+ * `4 << amplifier` for a living body that is not undead.
+ */
+const INSTANT_HEALTH_UNIT = 4;
+
+/**
  * Consecutive unanswered censuses that end a staged clear.
  *
  * A probe that has not answered once in this many round trips is broken, and the
@@ -1682,8 +1688,8 @@ export class MineflayerExecutor implements StepExecutor {
   /** Client ids a damage handler is reading or staging right now, so a burst of
    * hits from one body opens one muster, not one per hit. */
   private readonly stagingInFlight = new Set<number>();
-  /** An early muster already in flight per wave, so two bodies of one wave that hit
-   * the bot together share one reading. */
+  /** A muster already in flight per wave — a step's or a damage handler's — so
+   * two readers of one seating share one reading. */
   private readonly earlyMusters = new Map<string, Promise<void>>();
   /** When the latest respawn landed: wall clock, and the server's world age as the
    * last time packet before it reported it. The respawn-protection wait reads both. */
@@ -1741,6 +1747,11 @@ export class MineflayerExecutor implements StepExecutor {
   private legResume: { leg: number; from: number } | undefined;
   /** Timestamp (ms) of the last damage attributed from a packet-named source. */
   private lastAttributionAt = 0;
+  /** The body the server last named as hitting the bot, and when — the health drop
+   * that follows the damage packet is that body's blow. */
+  private lastNamedHit: { readonly id: number; readonly at: number } | undefined;
+  /** Client id → health the bot lost to that body's named blows, not yet refunded. */
+  private readonly damageBy = new Map<number, number>();
   /** Last observed bot health, for the health-drop attribution fallback. */
   private lastHealth: number | undefined;
   /** Timestamp (ms) of the last eat attempt, throttling both the action and its log. */
@@ -2007,7 +2018,10 @@ export class MineflayerExecutor implements StepExecutor {
     const attacker = attributeBotDamage(sourceId, candidates);
     if (attacker === undefined) return;
     const named = sourceId !== undefined && attacker === sourceId;
-    if (named) this.lastAttributionAt = Date.now();
+    if (named) {
+      this.lastAttributionAt = Date.now();
+      this.lastNamedHit = { id: attacker, at: this.lastAttributionAt };
+    }
     // ONLY a body the server itself named. The nearest-hostile fallback is a
     // guess, and a guess that removes a body is the harness deleting part of the
     // delve on suspicion: measured on the gallery, where a burn tick with no
@@ -2037,6 +2051,12 @@ export class MineflayerExecutor implements StepExecutor {
     const previous = this.lastHealth;
     this.lastHealth = bot.health;
     if (previous === undefined || bot.health >= previous) return;
+    // A drop inside the grace of a NAMED hit is that body's blow — what a staged
+    // removal of it refunds (see `refundBlows`).
+    const hit = this.lastNamedHit;
+    if (hit !== undefined && Date.now() - hit.at < HEALTH_ATTRIBUTION_GRACE_MS) {
+      this.damageBy.set(hit.id, (this.damageBy.get(hit.id) ?? 0) + (previous - bot.health));
+    }
     if (Date.now() - this.lastAttributionAt < HEALTH_ATTRIBUTION_GRACE_MS) return;
     const { candidates, byId } = this.visibleHostiles();
     const attacker = attributeBotDamage(undefined, candidates, ATTRIBUTION_RANGE);
@@ -4763,7 +4783,61 @@ export class MineflayerExecutor implements StepExecutor {
     });
     if (refusal !== undefined) {
       process.stderr.write(`[staged] ${kind}#${id}: the server refused the blow — ${refusal}\n`);
+      return;
     }
+    await this.refundBlows(kind, id);
+  }
+
+  /**
+   * Undo what a body the run has just removed did to the bot.
+   *
+   * Removing a body on its first blow is not enough on its own: a leg through
+   * three re-seated waves lets each of their bodies land one blow before it goes,
+   * and on vesperhold's die-retry return leg a Hired Knife, a pillager, a Wall
+   * Archer and one Guard each did, one after another, until a second Guard's
+   * first swing was the killing one — the bot slain by a body a second after the
+   * run had begun removing its wave. An enemy killed outright is an enemy whose
+   * blows did not land, so the health the server named that body as taking is
+   * given back.
+   *
+   * Only that body's own, attributed blows, and rounded DOWN to what vanilla's
+   * instant health can give (4 × 2^amplifier): a fall, a lethal volume or any
+   * damage the server named no body for is never refunded, so the delve's own
+   * hazards keep exactly the reach they had. Each effect is read by the shared
+   * rejection rule and named in `staged_removals`.
+   */
+  private async refundBlows(kind: string, id: number): Promise<void> {
+    const dealt = this.damageBy.get(id) ?? 0;
+    this.damageBy.delete(id);
+    const bot = this.bot;
+    if (!bot || this.death) return;
+    let units = Math.floor(dealt / INSTANT_HEALTH_UNIT);
+    if (units <= 0) return;
+    for (let amp = 0; units > 0; amp += 1, units >>= 1) {
+      if ((units & 1) === 0) continue;
+      const from = this.chatMark();
+      bot.chat(`/effect give @s minecraft:instant_health 1 ${amp} true`);
+      await delay(STAGED_REPLY_MS);
+      const refusal = this.chatSince(from).lines.find((line) => isRejection(line));
+      const heal = INSTANT_HEALTH_UNIT << amp;
+      this.stagedRemovals.push({
+        kind: "player",
+        why:
+          `refund: ${kind}#${id} was removed after its blows took ${dealt.toFixed(1)} health; ` +
+          `${heal} of it given back with instant health ${amp + 1}`,
+        performed: refusal === undefined,
+        detail: refusal,
+      });
+      if (refusal !== undefined) {
+        process.stderr.write(`[staged] refund for ${kind}#${id} refused — ${refusal}\n`);
+        return;
+      }
+    }
+    process.stderr.write(
+      `[staged] ${kind}#${id}: its blows took ${dealt.toFixed(1)} health; refunded ` +
+        `${Math.floor(dealt / INSTANT_HEALTH_UNIT) * INSTANT_HEALTH_UNIT} (health now ` +
+        `${bot.health.toFixed(1)})\n`,
+    );
   }
 
   /**
@@ -4894,7 +4968,15 @@ export class MineflayerExecutor implements StepExecutor {
       );
       return;
     }
-    await this.musterWave(enc);
+    // Registered like an early reading, so a body that hits the bot while the
+    // step's own muster is in flight waits for it instead of reading again.
+    const run = this.musterWave(enc);
+    this.earlyMusters.set(enc.wave, run);
+    try {
+      await run;
+    } finally {
+      if (this.earlyMusters.get(enc.wave) === run) this.earlyMusters.delete(enc.wave);
+    }
   }
 
   /**
@@ -4917,7 +4999,7 @@ export class MineflayerExecutor implements StepExecutor {
     try {
       await run;
     } finally {
-      this.earlyMusters.delete(enc.wave);
+      if (this.earlyMusters.get(enc.wave) === run) this.earlyMusters.delete(enc.wave);
     }
   }
 

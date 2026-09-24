@@ -99,7 +99,12 @@ to where the body stands — never guessed from a radius around an anchor:
   find. This is the one place a body can still kill the bot outside a scripted
   death, and the log says so each time it hits.
 
-Route falls and lethal volumes are mechanism, not bodies, and still kill the bot.
+A removed body's blows are refunded: the health the server named that body as
+taking is given back with instant health, rounded DOWN to vanilla's units
+(4 × 2^amplifier), and named in `staged_removals`. Removal on the first blow alone
+let a return leg through three re-seated waves take one blow from each body until
+a later body's first swing killed the bot. Route falls and lethal volumes are
+mechanism, not bodies: nothing they take is refunded, and they still kill the bot.
 A scripted death waits out vanilla's 60-tick respawn protection (counted on the
 server's clock) and is taken at the fight: a stage that recovers from an
 unscripted death walks back before it scripts the next one. A walk back that ends
