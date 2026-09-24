@@ -4800,19 +4800,24 @@ export class MineflayerExecutor implements StepExecutor {
    * blows did not land, so the health the server named that body as taking is
    * given back.
    *
-   * Only that body's own, attributed blows, and rounded DOWN to what vanilla's
-   * instant health can give (4 × 2^amplifier): a fall, a lethal volume or any
-   * damage the server named no body for is never refunded, so the delve's own
-   * hazards keep exactly the reach they had. Each effect is read by the shared
-   * rejection rule and named in `staged_removals`.
+   * Only that body's own, attributed blows, rounded UP to what vanilla's instant
+   * health can give (4 × 2^amplifier). Rounded down, each removal leaked up to
+   * four points — measured on the next run: Guards landing 7.3 were refunded 4,
+   * the bot sank to 9.3 over six removals, and a Drowned Precentor's trident then
+   * killed it on the death-loop approach. Rounded up, a removal can give back at
+   * most 3.9 points more than its body took, and that bound is the whole of what
+   * a refund can hide. A fall, a lethal volume or any damage the server named no
+   * body for is never refunded, so the delve's own hazards keep their reach. Each
+   * effect is read by the shared rejection rule and named in `staged_removals`.
    */
   private async refundBlows(kind: string, id: number): Promise<void> {
     const dealt = this.damageBy.get(id) ?? 0;
     this.damageBy.delete(id);
     const bot = this.bot;
     if (!bot || this.death) return;
-    let units = Math.floor(dealt / INSTANT_HEALTH_UNIT);
-    if (units <= 0) return;
+    if (dealt <= 0) return;
+    const refunded = Math.ceil(dealt / INSTANT_HEALTH_UNIT);
+    let units = refunded;
     for (let amp = 0; units > 0; amp += 1, units >>= 1) {
       if ((units & 1) === 0) continue;
       const from = this.chatMark();
@@ -4835,7 +4840,7 @@ export class MineflayerExecutor implements StepExecutor {
     }
     process.stderr.write(
       `[staged] ${kind}#${id}: its blows took ${dealt.toFixed(1)} health; refunded ` +
-        `${Math.floor(dealt / INSTANT_HEALTH_UNIT) * INSTANT_HEALTH_UNIT} (health now ` +
+        `${refunded * INSTANT_HEALTH_UNIT} (health now ` +
         `${bot.health.toFixed(1)})\n`,
     );
   }

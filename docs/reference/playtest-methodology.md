@@ -100,8 +100,9 @@ to where the body stands — never guessed from a radius around an anchor:
   death, and the log says so each time it hits.
 
 A removed body's blows are refunded: the health the server named that body as
-taking is given back with instant health, rounded DOWN to vanilla's units
-(4 × 2^amplifier), and named in `staged_removals`. Removal on the first blow alone
+taking is given back with instant health, rounded UP to vanilla's units
+(4 × 2^amplifier) — at most 3.9 points more than the body took, which is the
+whole of what a refund can hide — and named in `staged_removals`. Removal on the first blow alone
 let a return leg through three re-seated waves take one blow from each body until
 a later body's first swing killed the bot. Route falls and lethal volumes are
 mechanism, not bodies: nothing they take is refunded, and they still kill the bot.

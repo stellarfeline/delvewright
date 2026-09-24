@@ -2654,7 +2654,7 @@ test("a body of a wave the run has not read yet is read where it stands, then re
   assert.equal(verdict.read, 2);
 });
 
-test("a removed body's blows are refunded — its own, named ones only, rounded down", async () => {
+test("a removed body's blows are refunded — its own, named ones only, rounded up", async () => {
   // vesperhold's die-retry return leg, measured on the fix above: a Hired Knife,
   // a pillager, a Wall Archer and a Guard each landed one blow before each was
   // removed, and a second Guard's first swing killed the bot. An enemy killed
@@ -2675,8 +2675,11 @@ test("a removed body's blows are refunded — its own, named ones only, rounded 
   const effects = bot.calls.filter((c) => c.startsWith("chat(/effect "));
   assert.deepEqual(
     effects,
-    ["chat(/effect give @s minecraft:instant_health 1 1 true)"],
-    "11 health rounds DOWN to 8: instant health II, and nothing more",
+    [
+      "chat(/effect give @s minecraft:instant_health 1 0 true)",
+      "chat(/effect give @s minecraft:instant_health 1 1 true)",
+    ],
+    "11 health rounds UP to 12: instant health I and II, and nothing more",
   );
   assert.ok(
     executor.stagedBodies().some((r) => r.kind === "player" && /refund: zombie#\d+/.test(r.why)),
@@ -2687,7 +2690,7 @@ test("a removed body's blows are refunded — its own, named ones only, rounded 
   bot.health = 3;
   bot.emit("health");
   await settleStaging();
-  assert.equal(bot.calls.filter((c) => c.startsWith("chat(/effect ")).length, 1);
+  assert.equal(bot.calls.filter((c) => c.startsWith("chat(/effect ")).length, 2, "no refund was added");
 });
 
 test("which wave a body is of is the server's tag, not a radius around the anchor", async () => {
