@@ -1840,34 +1840,6 @@
       "triage": "capability"
     },
     {
-      "applies_when": {
-        "files": [
-          "quests.json"
-        ],
-        "kind": "dsl",
-        "match": {
-          "any_of": [
-            {
-              "in": {
-                "tier": [
-                  "elite",
-                  "boss"
-                ]
-              }
-            },
-            {
-              "eq": {
-                "type": "unleash-actor"
-              }
-            },
-            {
-              "prefix": {
-                "id": "ambush/"
-              }
-            }
-          ]
-        }
-      },
       "campaign": "the-drowned-bell",
       "carrier": null,
       "disposition": "no-machine-form",
@@ -1875,7 +1847,7 @@
       "general_form": "none: whether a fight is hard enough for its billing is a difficulty judgement the design makes",
       "id": "bell-04",
       "justification": "The ladder verifies mechanism and does not fight: at a combat step it reads the seated bodies against the declaration and removes them, so no bot result is evidence about how hard an encounter is. The row's former carrier, `DW0477`, and the inverted floor gate it reported for are removed for that reason. What the machine still bounds is the arithmetic, not the feel: `DW0472` refuses a mandatory encounter whose declared effective HP outlasts the best kit the party can field, and `DW0474` holds mandatory combat to the spec-0023 winnability pass. Whether an encounter billed elite reads as one is judged on the playtest. Standing content-QC item.",
-      "note": "The precondition names the objects this row concerns — an encounter billed `elite`/`boss`, or a body the campaign turns loose on the party — so a campaign declaring none of them reads as INAPPLICABLE rather than carrying a content-QC item it has nothing to judge.",
+      "note": "The row's former precondition and binding both probed the removed floor gate's own ledger; a `no-machine-form` row states no precondition, as `vh-01` and `bell-15` do not.",
       "round": 2,
       "triage": "capability"
     },

@@ -1445,22 +1445,23 @@ CEREMONY = {
 
 
 def test_the_live_combat_preconditions_do_not_count_a_ceremony_as_a_fight(gate, tmp_path):
-    """`bell-04` and `bell-05` probe `combat-plan.json`, which `emit.rs` writes
-    only where `combat::mandatory_fights` is non-empty, an actor declares a
-    tier, or a hostile actor goes untiered. Their preconditions used to count
+    """`bell-05` probes `combat-plan.json`, which `emit.rs` writes only where
+    `combat::mandatory_fights` is non-empty. Its precondition used to count
     every `spawn-wave`/`spawn-actor` effect and every `actor/` id — populations
-    neither general form names — so a guided tour whose only bodies are seven
-    invulnerable puppets that walk out and are removed was adjudicated as a
-    campaign owing a combat plan, and refused.
+    the general form does not name — so a guided tour whose only bodies are
+    seven invulnerable puppets that walk out and are removed was adjudicated as
+    a campaign owing a combat plan, and refused.
 
-    The narrowed classes are the ones the rows say in their own words: for
-    `bell-05`, *a wave the party must kill OR a hostile it turns loose on
-    them*; for `bell-04`, what `combat::floor_ledger` holds — anything billed
-    `elite`/`boss`, or a body turned loose. Driven both ways, and through the
-    verdicts: outside the class the row reads INAPPLICABLE, inside it the
-    unemitted ledger is still MISSING-CHECK.
+    The narrowed class is the one the row says in its own words: *a wave the
+    party must kill OR a hostile it turns loose on them*. Driven both ways, and
+    through the verdicts: outside the class the row reads INAPPLICABLE, inside
+    it the unemitted ledger is still MISSING-CHECK.
+
+    `bell-04` used to sit beside it here. Its class was the inverted floor
+    gate's ledger, and the ladder no longer fights, so that gate and its code
+    are gone and the row is `no-machine-form` with no precondition to drive.
     """
-    rows = live_rows(gate, {"bell-04", "bell-05"})
+    rows = live_rows(gate, {"bell-05"})
     build = make_build(tmp_path)
 
     ceremony = quests_content(tmp_path, "ceremony", CEREMONY)
@@ -1480,32 +1481,19 @@ def test_the_live_combat_preconditions_do_not_count_a_ceremony_as_a_fight(gate, 
     elite = quests_content(tmp_path, "elite", billed)
 
     counts = {
-        rid: {
-            w: gate.probe(rows[rid]["applies_when"], gate.Subject(d, build))[0]
-            for w, d in (
-                ("ceremony", ceremony),
-                ("unleash", fight),
-                ("ambush", ambush),
-                ("kill", wave),
-                ("elite", elite),
-            )
-        }
-        for rid in ("bell-04", "bell-05")
+        w: gate.probe(rows["bell-05"]["applies_when"], gate.Subject(d, build))[0]
+        for w, d in (
+            ("ceremony", ceremony),
+            ("unleash", fight),
+            ("ambush", ambush),
+            ("kill", wave),
+            ("elite", elite),
+        )
     }
-    # `bell-04`'s class is the floor-gate ledger: billed, or turned loose. A
-    # `kill` objective alone bills nothing, and an all-`ordinary` delve is the
-    # state `FLOOR_GATE_UNBOUND_REASON` exists to say is legitimate.
-    assert counts["bell-04"] == {
-        "ceremony": 0,
-        "unleash": 1,
-        "ambush": 1,
-        "kill": 0,
-        "elite": 1,
-    }, counts
     # `bell-05`'s class is mandatory combat: a wave the party must kill, or a
     # hostile turned loose. A body billed `elite` that nothing unleashes is
     # scenery with a price tag on it, not a fight.
-    assert counts["bell-05"] == {
+    assert counts == {
         "ceremony": 0,
         "unleash": 1,
         "ambush": 1,
@@ -1515,26 +1503,23 @@ def test_the_live_combat_preconditions_do_not_count_a_ceremony_as_a_fight(gate, 
 
     # And the verdicts follow, on a build that emitted no combat plan — which
     # is the correct emission for the ceremony and a lost ledger for the rest.
-    for rid, inside in (("bell-04", (fight, ambush, elite)), ("bell-05", (fight, ambush, wave))):
-        assert (
-            gate.adjudicate(rows[rid], gate.Engine(), gate.Subject(ceremony, build))["verdict"]
-            == "INAPPLICABLE"
-        ), rid
-        for camp in inside:
-            r = gate.adjudicate(rows[rid], gate.Engine(), gate.Subject(camp, build))
-            assert r["verdict"] == "MISSING-CHECK", (rid, camp.name, r)
-            assert "emitted no ledger" in r["detail"]
+    row = rows["bell-05"]
+    assert (
+        gate.adjudicate(row, gate.Engine(), gate.Subject(ceremony, build))["verdict"]
+        == "INAPPLICABLE"
+    )
+    for camp in (fight, ambush, wave):
+        r = gate.adjudicate(row, gate.Engine(), gate.Subject(camp, build))
+        assert r["verdict"] == "MISSING-CHECK", (camp.name, r)
+        assert "emitted no ledger" in r["detail"]
 
     # The check binds where the build does emit the ledger.
     emitted = make_build(
         tmp_path / "emitted",
-        validation={
-            "combat-plan.json": {"fights": {"total": 1}, "floor_gate": {"examined": 1}},
-        },
+        validation={"combat-plan.json": {"fights": {"total": 1}}},
     )
-    for rid, camp in (("bell-04", elite), ("bell-05", fight)):
-        r = gate.adjudicate(rows[rid], gate.Engine(), gate.Subject(camp, emitted))
-        assert (r["verdict"], r["binding"]) == ("BOUND", 1), (rid, r)
+    r = gate.adjudicate(row, gate.Engine(), gate.Subject(fight, emitted))
+    assert (r["verdict"], r["binding"]) == ("BOUND", 1), r
 
 
 def test_the_live_timing_read_row_binds_a_volley_with_a_cadence(gate, tmp_path):
