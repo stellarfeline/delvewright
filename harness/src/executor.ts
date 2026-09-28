@@ -1250,19 +1250,18 @@ const SCORE_TRACK_TIMEOUT_MS = 5_000;
  * run can read across one death is the number of slots it holds. Vanilla
  * 1.21.11's `minecraft:scoreboard_slot` parser accepts `list`, `sidebar`,
  * `below_name` and one `sidebar.team.<colour>` per chat colour; the team-coloured
- * sidebars are the pool here because the plain `sidebar` is the slot the delve's
- * own campaign readout uses and `list`/`below_name` change what a human watching
- * the run sees.
+ * sidebars are the whole pool here. The plain `sidebar` is the delve's own: a
+ * currency that declares `display: sidebar` (spec-0076) stands there for the
+ * whole run, and this harness releases a slot by CLEARING it, so taking that one
+ * would evict the campaign's readout and then blank it. `list`/`below_name`
+ * change what a human watching the run sees. No player is on a colour team, so
+ * a team-coloured sidebar is visible to nobody and the world reads as it did.
  *
- * `sidebar` leads the list so a run that reads exactly one ledger takes exactly
- * the slot it always did.
- *
- * Seventeen is a ceiling, not a promise: a campaign whose death forfeits more
+ * Sixteen is a ceiling, not a promise: a campaign whose death forfeits more
  * datums than this gets a refusal by name from `trackScore`, never a ledger read
  * as unreported.
  */
 const SCORE_DISPLAY_SLOTS: readonly string[] = [
-  "sidebar",
   "sidebar.team.aqua",
   "sidebar.team.black",
   "sidebar.team.blue",
