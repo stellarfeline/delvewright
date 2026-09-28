@@ -2253,6 +2253,46 @@ pub struct StateDecl {
     /// translated like any other authored line.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
+    /// Where this datum **stands** on screen between changes (spec-0076).
+    ///
+    /// The announcement `name` buys fades with the action bar; a datum that
+    /// declares `display` also occupies a vanilla display slot, so its balance is
+    /// on screen at every moment for every player. Declared, never automatic: a
+    /// creator may want a named tally that is spoken only when it moves, and the
+    /// engine does not decide which of two named datums is the purse.
+    ///
+    /// Present ⇒ `setup` heads the datum's objective with its translated `name`,
+    /// paints the value gold, and puts the objective in the slot. Requires `name`
+    /// (the slot's heading is the display name, and without one it would show the
+    /// objective's id) and a `player` scope (the sidebar hides `#`-prefixed
+    /// holders, which is what a `party` datum's value lives on); one datum per
+    /// campaign may stand, because the slot holds one objective — all three are
+    /// `DW0919`. Absent ⇒ the datum announces itself and stands nowhere.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub display: Option<StateDisplay>,
+}
+
+/// The vanilla display slot a named datum stands in (spec-0076).
+///
+/// One value, because vanilla has one slot that stands for the viewer: `list`
+/// shows only while the tab key is held and `below_name` draws under *other*
+/// players' name tags, never over the viewer's own body. A second variant is
+/// added when the pinned game offers a second standing surface, not before.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+pub enum StateDisplay {
+    /// The right-hand sidebar: a heading (the datum's `name`) and one line per
+    /// player, each showing that player's own balance.
+    Sidebar,
+}
+
+impl StateDisplay {
+    /// The `minecraft:scoreboard_slot` token the slot is addressed by.
+    pub fn slot(self) -> &'static str {
+        match self {
+            StateDisplay::Sidebar => "sidebar",
+        }
+    }
 }
 
 /// serde `skip_serializing_if` helper: skip a zero `i32` (`StateDecl.initial`).

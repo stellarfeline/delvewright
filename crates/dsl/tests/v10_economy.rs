@@ -108,6 +108,104 @@ fn a_well_formed_economy_validates_clean() {
     );
 }
 
+// ---------------------------------------------------------------------------
+// spec-0076 — a currency STANDS on screen: `display: sidebar` on a named datum
+// ---------------------------------------------------------------------------
+
+/// `GOOD` with its one purse standing on the sidebar. The base every `DW0919`
+/// fixture below is one declared edit away from.
+fn displayed() -> String {
+    let s = GOOD.replace(
+        r#""name": "Embers" }"#,
+        r#""name": "Embers", "display": "sidebar" }"#,
+    );
+    assert_ne!(s, GOOD, "the fixture really gained a `display`");
+    s
+}
+
+/// One named, `player`-scoped datum declaring `display: sidebar` is the whole
+/// well-formed shape (spec-0076 §2, §5): nothing else about the economy changes.
+#[test]
+fn a_standing_purse_validates_clean() {
+    let c = campaign(&displayed());
+    assert!(codes(&c).is_empty(), "{:#?}", validate_campaign(&c));
+}
+
+/// `DW0919`, first shape (spec-0076 §7.1) — the sidebar holds ONE objective, so a
+/// second datum asking for it is refused naming both, never resolved by order.
+#[test]
+fn dw0919_two_purses_cannot_share_the_sidebar() {
+    let two = displayed().replace(
+        r#""name": "Embers", "display": "sidebar" }"#,
+        r#""name": "Embers", "display": "sidebar" },
+      { "id": "state/ash", "scope": "player", "name": "Ash", "display": "sidebar" }"#,
+    );
+    assert!(
+        two.contains("state/ash"),
+        "the second purse is in the fixture"
+    );
+    let diags = validate_campaign(&campaign(&two));
+    let hit: Vec<_> = diags
+        .iter()
+        .filter(|d| d.code.to_string() == "DW0919")
+        .collect();
+    assert_eq!(
+        hit.len(),
+        1,
+        "one refusal for the pair, not one per datum: {diags:#?}"
+    );
+    assert!(
+        hit[0].message.contains("state/embers") && hit[0].message.contains("state/ash"),
+        "the refusal names both datums so the creator can choose: {}",
+        hit[0].message
+    );
+    assert_eq!(
+        hit[0].path, "/content/state/1/display",
+        "raised where it is written"
+    );
+}
+
+/// `DW0919`, second shape (spec-0076 §7.2) — a `party` datum's value lives on the
+/// `#party` holder, and the sidebar hides every `#`-prefixed holder, so the display
+/// would be an empty heading. Refused, with the scope named as the cause.
+#[test]
+fn dw0919_a_party_purse_cannot_stand() {
+    let party = displayed().replace(r#""scope": "player""#, r#""scope": "party""#);
+    assert!(party.contains(r#""scope": "party""#));
+    let diags = validate_campaign(&campaign(&party));
+    let hit: Vec<_> = diags
+        .iter()
+        .filter(|d| d.code.to_string() == "DW0919")
+        .collect();
+    assert_eq!(hit.len(), 1, "{diags:#?}");
+    assert!(
+        hit[0].message.contains("state/embers") && hit[0].message.contains("`#party`"),
+        "{}",
+        hit[0].message
+    );
+}
+
+/// `DW0919`, third shape (spec-0076 §2, §7.1) — a `display` on a datum with no
+/// `name`: the slot's heading is the display name, and without one the objective's
+/// internal id would stand on screen, which is the one thing the slot must never
+/// show.
+#[test]
+fn dw0919_an_unnamed_datum_cannot_stand() {
+    let unnamed = displayed().replace(r#""name": "Embers", "#, "");
+    assert!(!unnamed.contains("Embers"), "the name really came off");
+    let diags = validate_campaign(&campaign(&unnamed));
+    let hit: Vec<_> = diags
+        .iter()
+        .filter(|d| d.code.to_string() == "DW0919")
+        .collect();
+    assert_eq!(hit.len(), 1, "{diags:#?}");
+    assert!(
+        hit[0].message.contains("state/embers") && hit[0].message.contains("`name`"),
+        "{}",
+        hit[0].message
+    );
+}
+
 /// `DW0520` — a stake's datum must exist and must be **per-player**. The scope half
 /// is the multiplayer decision spec-0032 records "for correction rather than left to
 /// emerge": one shared purse turns a teammate's death into everyone's penalty, and

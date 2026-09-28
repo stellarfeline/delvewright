@@ -2705,6 +2705,65 @@ fn state_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
         }
     }
 
+    // --- the standing display (spec-0076): what the sidebar can draw -----------
+    //
+    // One slot, one objective, drawn holder by holder under the objective's
+    // display name. A declaration the slot cannot draw as written is refused
+    // where it is written (`DW0919`), never resolved by order: a silent "first
+    // wins" would hide the one decision this field exists to make explicit.
+    let mut standing: Option<&crate::stages::StateDecl> = None;
+    for (i, s) in decls.iter().enumerate() {
+        let Some(display) = s.display else {
+            continue;
+        };
+        let slot = display.slot();
+        let path = format!("/content/state/{i}/display");
+        if s.name.is_none() {
+            d.push(Diagnostic::error(
+                codes::STATE_DISPLAY_UNDRAWABLE,
+                "quests",
+                path.clone(),
+                format!(
+                    "`{}` asks to stand on the {slot} but has no `name`, and the {slot}'s \
+                     heading is the display name — without one the objective's internal id \
+                     would stand on every player's screen. Give the datum a `name`, or take \
+                     `display` off it",
+                    s.id.as_str()
+                ),
+            ));
+        }
+        if s.scope == crate::stages::StateScope::Party {
+            d.push(Diagnostic::error(
+                codes::STATE_DISPLAY_UNDRAWABLE,
+                "quests",
+                path.clone(),
+                format!(
+                    "`{}` is `party`-scoped and asks to stand on the {slot}, but a party \
+                     datum's value lives on the `#party` holder and the {slot} hides every \
+                     holder whose name starts with `#` — the display would be an empty \
+                     heading. Declare it `player`-scoped if each player holds their own, or \
+                     take `display` off it and keep the announcement",
+                    s.id.as_str()
+                ),
+            ));
+        }
+        match standing {
+            None => standing = Some(s),
+            Some(first) => d.push(Diagnostic::error(
+                codes::STATE_DISPLAY_UNDRAWABLE,
+                "quests",
+                path,
+                format!(
+                    "`{}` and `{}` both ask to stand on the {slot}, which holds one \
+                     objective. Keep `display` on the one datum the party reads between \
+                     changes and take it off the other — the engine does not pick for you",
+                    first.id.as_str(),
+                    s.id.as_str()
+                ),
+            )),
+        }
+    }
+
     // --- the reads: every gate's `requires_state`, from the closed set --------
     let mut read: BTreeSet<String> = BTreeSet::new();
     crate::gate::for_each_gate(c, &mut |site, gate| {

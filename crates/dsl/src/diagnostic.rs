@@ -553,6 +553,19 @@ pub mod codes {
     /// that is not `vulnerable` (its body is `Invulnerable` for the whole delve).
     /// A declaration nothing can exercise is refused. Validation-tier (exit 1).
     pub const ON_KILL_UNREACHABLE: DwCode = DwCode::new("DW0913", ExitTier::Build);
+    /// (spec-0076 §7) **A standing display the sidebar cannot draw as declared.**
+    /// A `state[]` datum declares `display: sidebar` and the slot cannot show
+    /// what it is handed: a second datum already asks for the one slot (the
+    /// sidebar holds one objective, and "first wins" would hide a decision the
+    /// creator has to make); the datum has no `name` (the slot's heading is the
+    /// display name, and without one the objective's id would stand on screen);
+    /// or the datum is `party`-scoped (its value lives on `#party`, and the
+    /// sidebar hides every `#`-prefixed holder, so the display would be an empty
+    /// heading). One rule about what the slot can draw, three ways to ask for
+    /// what it cannot — the `DW0520` shape. Validation-tier (exit 1).
+    /// Prescription: keep one `display`, give the datum a `name`, or declare it
+    /// `player`-scoped; a `party` purse keeps its announcement and stands nowhere.
+    pub const STATE_DISPLAY_UNDRAWABLE: DwCode = DwCode::new("DW0919", ExitTier::Build);
     /// A `collect` `dropped_by` is not backed by the wave it names:
     /// the wave declares no `{item}` drop of this objective's item, the count
     /// asks for more copies than the wave's mobs can yield, or the objective
