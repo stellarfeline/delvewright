@@ -3306,6 +3306,31 @@ fn emit_functions(
             ));
         }
     }
+    // spec-0076: the one datum that STANDS. Its objective is headed with the
+    // datum's translated name (the slot shows the display name, never the id),
+    // its value is painted the gold the action bar already paints it, and the
+    // objective is put in the slot — once, at world init, which is the slot's
+    // lifetime. Nothing per tick: the sidebar reads the objective's own scores,
+    // which `state_seed` seeds and every state verb moves. `DW0919` has already
+    // refused a second occupant, an unnamed datum and a `party` one, so this
+    // loop runs at most once and never over a `#party` holder. Empty for a
+    // campaign that declares no `display` → byte-identical.
+    for (st, display) in standing_states(plan) {
+        let obj = plan::state_score(st.id.as_str());
+        let name = st.name.as_deref().unwrap_or_default();
+        setup.push(format!(
+            "scoreboard objectives modify {obj} displayname {}",
+            tr(name)
+        ));
+        setup.push(format!(
+            "scoreboard objectives modify {obj} numberformat styled {}",
+            json!({ "color": "gold" })
+        ));
+        setup.push(format!(
+            "scoreboard objectives setdisplay {} {obj}",
+            display.slot()
+        ));
+    }
     // spec-0032: a named datum's shadow score — the value it was last announced at.
     // Party-scoped ones are seeded here beside the datum itself, so a world that
     // has just loaded announces nothing.
@@ -8465,6 +8490,21 @@ fn named_states<'a>(plan: &'a Plan) -> Vec<&'a delvewright_dsl::StateDecl> {
     declared_states(plan.campaign)
         .iter()
         .filter(|st| st.name.is_some())
+        .collect()
+}
+
+/// Every declared datum that **stands** on screen (spec-0076), paired with the
+/// slot it declares. At most one, by `DW0919`; empty for a campaign that declares
+/// none, which is what keeps a spec-0032 campaign byte-identical.
+fn standing_states<'a>(
+    plan: &'a Plan,
+) -> Vec<(
+    &'a delvewright_dsl::StateDecl,
+    delvewright_dsl::StateDisplay,
+)> {
+    declared_states(plan.campaign)
+        .iter()
+        .filter_map(|st| st.display.map(|d| (st, d)))
         .collect()
 }
 

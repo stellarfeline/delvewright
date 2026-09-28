@@ -380,6 +380,141 @@ fn an_unnamed_datum_emits_no_readout() {
 }
 
 // ---------------------------------------------------------------------------
+// spec-0076 — a currency STANDS on screen between changes
+// ---------------------------------------------------------------------------
+
+/// `PURSE_AND_STAKE` with its purse declaring `display: sidebar`.
+fn standing_source() -> String {
+    let s = PURSE_AND_STAKE.replace(
+        r#""name": "Embers","#,
+        r#""name": "Embers", "display": "sidebar","#,
+    );
+    assert_ne!(s, PURSE_AND_STAKE, "the fixture really gained a `display`");
+    s
+}
+
+/// **A displayed datum stands on the sidebar from world init** (spec-0076 §4).
+///
+/// The announcement (`st_show_<datum>`, above) fades with the action bar; the
+/// standing half is three `setup` lines and nothing per tick: the objective is
+/// headed with the datum's translated `name` — the slot draws the display name,
+/// so the internal id `dw.s_embers` never reaches a screen — its value is painted
+/// the same gold the action bar paints it, and the objective is put in the
+/// `sidebar` slot. `setup` runs once, at world init, which is the slot's lifetime.
+///
+/// This is the carrier of finding `vh-08` (the party could not see its balance):
+/// the binding is every datum declaring `display: sidebar`, and the negative half
+/// below proves a datum without one emits none of it.
+#[test]
+fn a_displayed_datum_stands_on_the_sidebar() {
+    let c = parse_hw(&quests_doc(&standing_source(), ""));
+    let out = build(&c);
+    let setup = fnc(&out, "setup");
+    let key = delvewright_dsl::pack_key("hello-world", "state.embers.name");
+    let head = setup
+        .lines()
+        .find(|l| l.starts_with("scoreboard objectives modify dw.s_embers displayname "))
+        .unwrap_or_else(|| panic!("the objective is headed in setup:\n{setup}"));
+    assert!(
+        head.contains(&format!("\"translate\":\"{key}\""))
+            && head.contains("\"fallback\":\"Embers\""),
+        "the heading is the datum's translated name, never its id:\n{head}"
+    );
+    let want = [
+        head.to_string(),
+        "scoreboard objectives modify dw.s_embers numberformat styled {\"color\":\"gold\"}"
+            .to_string(),
+        "scoreboard objectives setdisplay sidebar dw.s_embers".to_string(),
+    ];
+    let lines: Vec<&str> = setup.lines().collect();
+    let at = lines
+        .iter()
+        .position(|l| *l == want[0])
+        .expect("heading line present");
+    assert_eq!(
+        &lines[at..at + 3],
+        &want.iter().map(String::as_str).collect::<Vec<_>>()[..],
+        "heading, number style and slot are three consecutive lines, in that order:\n{setup}"
+    );
+    assert!(
+        lines
+            .iter()
+            .position(|l| l.starts_with("scoreboard objectives add dw.s_embers "))
+            < Some(at),
+        "the objective exists before it is headed:\n{setup}"
+    );
+
+    // The slot is taken from exactly one place, and `dw.campaign` is on no slot.
+    let mut setdisplay = Vec::new();
+    for (path, bytes) in &out {
+        if !path.ends_with(".mcfunction") || path.starts_with("packtest-datapack/") {
+            continue;
+        }
+        for line in String::from_utf8(bytes.clone()).unwrap().lines() {
+            if line.starts_with("scoreboard objectives setdisplay") {
+                setdisplay.push((path.clone(), line.to_string()));
+            }
+        }
+    }
+    assert_eq!(
+        setdisplay,
+        vec![(
+            "datapack/data/hello-world/function/setup.mcfunction".to_string(),
+            want[2].clone()
+        )],
+        "one slot, taken once, by the displayed datum alone"
+    );
+
+    // Perturbation, byte-level: the same campaign with `display` off emits none of
+    // the three lines and is otherwise the same `setup`.
+    let plain = build(&purse_campaign());
+    let plain_setup = fnc(&plain, "setup");
+    for w in &want {
+        assert!(
+            !plain_setup.contains(w.as_str()),
+            "absent `display` emits no `{w}`"
+        );
+    }
+    let stripped: Vec<&str> = lines
+        .iter()
+        .copied()
+        .filter(|l| !want.iter().any(|w| w == l))
+        .collect();
+    assert_eq!(
+        stripped.join("\n"),
+        plain_setup.trim_end_matches('\n'),
+        "the three lines are the WHOLE difference a `display` makes to setup"
+    );
+
+    // ADR-0006: build twice, byte-equal.
+    let again = build(&parse_hw(&quests_doc(&standing_source(), "")));
+    assert_eq!(out, again, "a standing display is deterministic");
+}
+
+/// Renaming the datum moves the objective in all three lines — the slot is bound
+/// to the datum, not to a literal.
+#[test]
+fn a_displayed_datum_is_addressed_by_its_own_objective() {
+    let renamed = standing_source().replace("state/embers", "state/coals");
+    assert!(renamed.contains("state/coals"));
+    let out = build(&parse_hw(&quests_doc(&renamed, "")));
+    let setup = fnc(&out, "setup");
+    assert!(
+        setup.contains("scoreboard objectives modify dw.s_coals displayname "),
+        "{setup}"
+    );
+    assert!(
+        setup.contains("scoreboard objectives modify dw.s_coals numberformat styled "),
+        "{setup}"
+    );
+    assert!(
+        setup.contains("scoreboard objectives setdisplay sidebar dw.s_coals"),
+        "{setup}"
+    );
+    assert!(!setup.contains("dw.s_embers"), "{setup}");
+}
+
+// ---------------------------------------------------------------------------
 // AC2 — a price is the shared gate, and the shop adds NO comparison of its own
 // ---------------------------------------------------------------------------
 

@@ -385,6 +385,15 @@ this section is what they are *for* and the traps in each.
   commands, so a gate written after the debit reads the balance the debit just
   produced — buy your last coin and you are charged and apologised to in the same
   breath.
+- **A purse can STAND on screen.** Give the named datum `"display": "sidebar"`
+  and its balance stands on the right of every player's screen at every moment,
+  headed by its `name`, one line per player showing that player's own balance —
+  the party reads who can afford what. Without it the purse is spoken on the
+  action bar only when it changes, and once the line fades nobody can check it
+  without spending or earning. One datum per campaign may stand (the sidebar
+  holds one objective), it must carry a `name`, and it must be `player`-scoped —
+  a `party` purse cannot stand, because the sidebar hides its holder. Each of
+  those is refused at `delvec validate`, naming the datum and the fix.
 - **A fight pays per body through `on_kill`.** `on_kill {fires?, effects[]}` is
   **optional** on any `waves[]` or `actors[]` entry. Its effects run **once per
   body a player is credited with killing**, as that player: a `player`-scoped

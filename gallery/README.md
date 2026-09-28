@@ -43,7 +43,7 @@ order a player would:
 | `npcs.json` | four speaking parts — a quest-giver, a gatekeeper, a counter, a drill officer |
 | `classes.json` | two kits, one carrying a flask (what a bonfire rest refills) |
 | `quest-plan.json` | two quests and the branch point the fork opens |
-| `quests.json` | the bulk: objectives, effects, waves, actors (a barded and saddled horse among them), traps, triggers, a shop, a shortcut, a stake, a timed gate, two killing volumes |
+| `quests.json` | the bulk: objectives, effects, waves, actors (a barded and saddled horse among them), traps, triggers, a shop, a shortcut, a stake, a timed gate, two killing volumes, and six named datums of which one — the tokens — stands on the sidebar (`display: sidebar`, spec-0076) |
 | `dialogue.json` | one tree per NPC; the Curator's carries the fork, and the Marshal's carries the two scenes it leads to — a pair of nodes no option leads to, reached only because the quest's `cast` ledger opens one of them per branch |
 | `world-edits.json` | four batches that dress the floor, lay the hearth, thin the vault and rough the lane |
 | `geometry-brief.json` | four numbers out of the hall's own brief, the kind a site plan is later held to |
@@ -131,6 +131,8 @@ holding them at once.
 | `a-kill-nobody-can-be-credited-with` | `DW0913` | `validate` | paying for the kill of the usher, who is never unleashed and not `vulnerable`, so no player can ever be credited with killing him |
 | `every-kill-on-a-fight-that-never-comes-back` | `DW0914` | `validate` | saying the bay's lone skeleton pays `every-kill`, when nothing ever seats it twice |
 | `a-fight-that-comes-back-with-no-judgement` | `DW0915` | `validate` | removing `fires` from the muster's bundle, when every rest brings the muster back |
+| `a-second-purse-on-the-one-sidebar` | `DW0919` | `validate` | asking the relics to stand on the sidebar beside the tokens, when the slot holds one objective |
+| `a-party-purse-the-sidebar-cannot-draw` | `DW0919` | `validate` | moving the standing display onto the party's bounty, whose `#party` holder the sidebar hides |
 
 **A probe is the primary plus one declared edit.** It carries no copy of any
 document the primary already holds; what it perturbs is written out in its own

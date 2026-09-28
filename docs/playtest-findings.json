@@ -2814,13 +2814,27 @@
     },
     {
       "campaign": "vesperhold",
-      "carrier": null,
+      "carrier": {
+        "kind": "invariant",
+        "test": "a_displayed_datum_stands_on_the_sidebar"
+      },
       "finding": "the party cannot see how much of the delve's currency it holds: the balance appears nowhere on screen",
       "general_form": "a campaign that declares a named currency gives the party a standing way to read its balance, and not only an announcement at the moment the balance changes",
       "id": "vh-08",
-      "note": "The capability is half here and the half that is missing is the one the finding names. A player-scoped `state` datum carrying a `name` IS a currency, and the engine already announces it: one tick driver keyed on the datum differing from its shadow score fires `st_show_<datum>`, which writes the balance to the actionbar as a live score component under the delve's own translation key, once per change and from exactly one place -- a readout inside a gated effect would be evaluated after the write it reports, so spending the last of something is the one change the player would never be told about. What has no carrier is a STANDING display: once the actionbar fades the balance is nowhere the party can consult, which is what was reported. The sidebar is not a free choice either -- the completion objective is deliberately kept off `scoreboard objectives setdisplay sidebar`, because that slot shows a raw internal id and the harness cannot decode the pinned game's score packets -- so the general form has to say what a standing display IS before a check can hold anything to it. Measured on this campaign: 1 named player-scoped datum (`state/tallow`), of 869 nodes in `quests.json`.",
+      "note": "The capability is half here and the half that is missing is the one the finding names. A player-scoped `state` datum carrying a `name` IS a currency, and the engine already announces it: one tick driver keyed on the datum differing from its shadow score fires `st_show_<datum>`, which writes the balance to the actionbar as a live score component under the delve's own translation key, once per change and from exactly one place -- a readout inside a gated effect would be evaluated after the write it reports, so spending the last of something is the one change the player would never be told about. What has no carrier is a STANDING display: once the actionbar fades the balance is nowhere the party can consult, which is what was reported. The sidebar is not a free choice either -- the completion objective is deliberately kept off `scoreboard objectives setdisplay sidebar`, because that slot shows a raw internal id and the harness cannot decode the pinned game's score packets -- so the general form has to say what a standing display IS before a check can hold anything to it. Measured on this campaign: 1 named player-scoped datum (`state/tallow`), of 869 nodes in `quests.json`. CLOSED by spec-0076: a named datum may declare `display: sidebar`, and `setup` then heads its objective with the translated `name`, paints the value gold and puts the objective in the sidebar slot, once, at world init -- the standing half the finding named. The carrier is the emission invariant: the three lines are emitted, in order, from one place, and a datum without `display` emits none of them. The general form's `standing display` is answered in the spec's own words: the sidebar is the one vanilla slot that stands for the viewer; its heading is the display name, so the raw-id objection does not reach a named datum; the bot reads nothing from it, and the harness's ledger reads take team-coloured slots only. What the check quantifies over is every datum declaring `display: sidebar`, selected by identity, so a campaign whose named datum declares no display reads INAPPLICABLE rather than passing -- a creator who wants the party to read a balance between changes declares the display, and a `party`-scoped purse cannot (`DW0919`), which is the recorded gap. Measured on this campaign after the content change: 1 datum declaring `display: sidebar` (`state/tallow`), of the nodes in `quests.json` the gate counts.",
       "round": 1,
-      "triage": "capability"
+      "triage": "capability",
+      "binding": {
+        "files": [
+          "quests.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "eq": {
+            "display": "sidebar"
+          }
+        }
+      }
     },
     {
       "applies_when": {

@@ -1,0 +1,13 @@
+{
+  "code": "DW0919",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "add",
+      "path": "/content/state/2/display",
+      "value": "sidebar"
+    }
+  ],
+  "units": [],
+  "why": "The gallery's relics asking to stand beside its tokens, and nothing else changed. The sidebar is one display slot and holds one objective, so two datums declaring `display: sidebar` is a decision the creator has not made - which of the two the party reads between changes - and the engine refuses rather than picking by order, naming both. It declares no unit: `display` and its `sidebar` value are bound by `state/tokens`; what must not compile is a second occupant of the one slot."
+}

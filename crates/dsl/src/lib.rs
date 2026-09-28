@@ -124,9 +124,9 @@ pub use stages::{
     Npc, NpcDialogue, NpcSkin, NpcsContent, Objective, OnFull, OnKill, Persona, Pieces,
     PlannedQuest, PotionContents, PotionEffect, Prop, Quest, QuestEffect, QuestPlanContent,
     QuestsContent, Relationship, Role, SequenceStep, Shop, ShopOffer, Shortcut, ShotStyle,
-    SkinModel, SlotDrop, SoundAt, Stake, StateCompare, StateDecl, StateScope, StateWrite,
-    StealthZone, TimedGate, Trap, TrapDisarm, TrapEffect, TrapReset, TrapTrigger, Trigger,
-    TriggerAudience, TriggerOn, Verb, Wave, WaveLane, WaveMob, WaveSummon, WorldContent,
+    SkinModel, SlotDrop, SoundAt, Stake, StateCompare, StateDecl, StateDisplay, StateScope,
+    StateWrite, StealthZone, TimedGate, Trap, TrapDisarm, TrapEffect, TrapReset, TrapTrigger,
+    Trigger, TriggerAudience, TriggerOn, Verb, Wave, WaveLane, WaveMob, WaveSummon, WorldContent,
     WorldDifficulty, WorldTime, WorldWeather, enchantment_component, is_potion_bearing_item,
     offset_cell,
 };
