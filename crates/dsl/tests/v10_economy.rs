@@ -147,7 +147,7 @@ fn dw0919_two_purses_cannot_share_the_sidebar() {
     let diags = validate_campaign(&campaign(&two));
     let hit: Vec<_> = diags
         .iter()
-        .filter(|d| d.code.to_string() == "DW0919")
+        .filter(|d| d.code == "DW0919")
         .collect();
     assert_eq!(
         hit.len(),
@@ -175,7 +175,7 @@ fn dw0919_a_party_purse_cannot_stand() {
     let diags = validate_campaign(&campaign(&party));
     let hit: Vec<_> = diags
         .iter()
-        .filter(|d| d.code.to_string() == "DW0919")
+        .filter(|d| d.code == "DW0919")
         .collect();
     assert_eq!(hit.len(), 1, "{diags:#?}");
     assert!(
@@ -196,7 +196,7 @@ fn dw0919_an_unnamed_datum_cannot_stand() {
     let diags = validate_campaign(&campaign(&unnamed));
     let hit: Vec<_> = diags
         .iter()
-        .filter(|d| d.code.to_string() == "DW0919")
+        .filter(|d| d.code == "DW0919")
         .collect();
     assert_eq!(hit.len(), 1, "{diags:#?}");
     assert!(

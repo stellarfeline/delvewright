@@ -2671,10 +2671,11 @@
         "scope": "party"
       },
       {
+        "display": "sidebar",
         "id": "state/tokens",
         "initial": 0,
         "name": "Tokens",
-        "note": "The wager a stake carries. Player-scoped, because a stake is dropped by the body that died.",
+        "note": "The wager a stake carries. Player-scoped, because a stake is dropped by the body that died. It is the one purse that STANDS: `display: sidebar` heads the right-hand sidebar with its name and lists every player's balance, so a forfeit is seen without waiting for the action bar.",
         "scope": "player"
       },
       {
