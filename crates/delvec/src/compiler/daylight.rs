@@ -180,8 +180,8 @@ use crate::compiler::plan::Plan;
 use delvewright_dsl::{DwCode, ExitTier};
 
 /// `DW0496`: a body vanilla burns in daylight is staged for a fight whose ground
-/// reaches open sky, in a delve pinned to a burning hour, with nothing on its
-/// head.
+/// reaches open sky, in an hour and weather the fight can stand in that burn it,
+/// with nothing on its head.
 pub const DW_DAYLIGHT_BURNS_STAGING: DwCode = DwCode::new("DW0496", ExitTier::Build);
 
 /// Vanilla's built-in daylight-burn tag, vendored from Mojang's generated
@@ -233,7 +233,9 @@ fn head_piece_is_a_remedy(entity: &str) -> bool {
 
 /// Where the pinned `minecraft:day` timeline turns `minecraft:gameplay/monsters_burn`
 /// off: tick 12542 of the day. Read from `data/minecraft/timeline/day.json` in
-/// the pinned 1.21.11 server jar (`versions.toml` `[minecraft]`), keyframe
+/// the pinned 1.21.11 server jar (`versions.toml` `[minecraft]`
+/// `server_jar_sha256` `f83b8e09…dd1726`, the bundled
+/// `META-INF/versions/1.21.11/server-1.21.11.jar`), keyframe
 /// `{"ticks": 12542, "value": false}`.
 const MONSTERS_BURN_OFF_AT: i64 = 12542;
 
