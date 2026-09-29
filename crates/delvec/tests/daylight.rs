@@ -249,15 +249,115 @@ fn a_night_world_is_silent() {
     build(tmp.path()).expect("nothing burns at midnight");
 }
 
-/// Rain suppresses the burn tick outright (`isInWaterOrRain`), so a rained-on
-/// delve is silent.
+/// Rain protects only where it falls. The burn tick skips a body that is "in
+/// rain", and the pinned game counts a body in rain only where the biome at its
+/// cell precipitates. A void delve's play box stands in `minecraft:the_void`,
+/// which never does, so a declared `rain` there darkens the sky and saves no
+/// one.
 #[test]
-fn rain_is_silent() {
-    let tmp = TempCampaign::new("rain");
+fn rain_does_not_protect_where_it_does_not_fall() {
+    let tmp = TempCampaign::new("rain-void");
     campaign_with(tmp.path(), true, |world, _| {
         world["content"]["weather"] = serde_json::json!("rain");
     });
-    build(tmp.path()).expect("a mob in the rain does not burn");
+    let err = build(tmp.path()).expect_err("rain never falls on the_void, so the garrison burns");
+    assert_eq!(code_of(&err), "DW0496", "{}", message_of(&err));
+    let message = message_of(&err);
+    assert!(
+        message.contains("minecraft:the_void") && message.contains("`rain`"),
+        "names the declared rain and the dry biome: {message}"
+    );
+}
+
+/// The dual: over an ocean horizon the play box stands in `minecraft:ocean`,
+/// which rains, so the declared rain reaches the garrison and it does not burn.
+#[test]
+fn rain_protects_where_it_falls() {
+    let tmp = TempCampaign::new("rain-ocean");
+    campaign_with(tmp.path(), true, |world, _| {
+        world["content"]["weather"] = serde_json::json!("rain");
+        world["content"]["horizon"] = serde_json::json!("ocean");
+        world["content"]["boundary"] = serde_json::json!({});
+    });
+    build(tmp.path()).expect("rain falls on the ocean biome, so the garrison stays wet");
+}
+
+/// `dusk` (12000) is inside the pinned `minecraft:day` timeline's
+/// `monsters_burn` window, which only turns off at tick 12542.
+#[test]
+fn dusk_burns() {
+    let tmp = TempCampaign::new("dusk");
+    campaign_with(tmp.path(), true, |world, _| {
+        world["content"]["time"] = serde_json::json!("dusk");
+    });
+    let err = build(tmp.path()).expect_err("the pinned game burns undead at dusk");
+    assert_eq!(code_of(&err), "DW0496", "{}", message_of(&err));
+    assert!(message_of(&err).contains("`dusk`"), "{}", message_of(&err));
+}
+
+/// `dawn` (23000) is before the window turns back on at tick 23460.
+#[test]
+fn dawn_is_silent() {
+    let tmp = TempCampaign::new("dawn");
+    campaign_with(tmp.path(), true, |world, _| {
+        world["content"]["time"] = serde_json::json!("dawn");
+    });
+    build(tmp.path()).expect("nothing burns at dawn");
+}
+
+/// Prepend a clock cut to the bundle that seats the garrison.
+fn cut_before_the_spawn(quests: &mut serde_json::Value, cut: serde_json::Value) {
+    quests["content"]["quests"][0]["on_objective_complete"]["obj/muster"]
+        .as_array_mut()
+        .unwrap()
+        .insert(0, cut);
+}
+
+/// A delve that opens at midnight and brings the sun up in the very bundle
+/// that seats the garrison fights it in daylight. The rule used to withhold on
+/// any campaign that cuts its clock.
+#[test]
+fn a_cut_to_noon_before_the_spawn_is_dw0496() {
+    let tmp = TempCampaign::new("cut-noon");
+    campaign_with(tmp.path(), true, |world, quests| {
+        world["content"]["time"] = serde_json::json!("midnight");
+        cut_before_the_spawn(
+            quests,
+            serde_json::json!({ "type": "set-time", "time": "noon" }),
+        );
+    });
+    let err = build(tmp.path()).expect_err("the garrison is seated at noon");
+    assert_eq!(code_of(&err), "DW0496", "{}", message_of(&err));
+    assert!(message_of(&err).contains("`noon`"), "{}", message_of(&err));
+}
+
+/// The dual: a noon delve whose night falls in the bundle that seats the
+/// garrison fights it in the dark, and the declared noon is behind it.
+#[test]
+fn a_cut_to_midnight_before_the_spawn_is_silent() {
+    let tmp = TempCampaign::new("cut-midnight");
+    campaign_with(tmp.path(), true, |_, quests| {
+        cut_before_the_spawn(
+            quests,
+            serde_json::json!({ "type": "set-time", "time": "midnight" }),
+        );
+    });
+    build(tmp.path()).expect("the garrison is seated after night falls");
+}
+
+/// A cut after the garrison is dead cannot burn it: the `kill` objective
+/// closes before the quest's own `on_complete` runs, and no rest re-seats it.
+#[test]
+fn a_cut_to_noon_after_the_kill_is_silent() {
+    let tmp = TempCampaign::new("cut-after");
+    campaign_with(tmp.path(), true, |world, quests| {
+        world["content"]["time"] = serde_json::json!("midnight");
+        quests["content"]["quests"][0]["on_complete"]
+            .as_array_mut()
+            .unwrap()
+            .insert(0, serde_json::json!({ "type": "set-time", "time": "noon" }));
+    });
+    build(tmp.path()).expect("the sun comes up on a dead garrison");
 }
 
 /// A husk is undead and is NOT in vanilla's `#minecraft:burn_in_daylight` — the
