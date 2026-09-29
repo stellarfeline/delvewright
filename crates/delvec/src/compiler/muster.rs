@@ -305,13 +305,10 @@ pub fn muster(
             if let Some(b) = bit_of(&types[ti], &format!("equipment.{}", slot.nbt()), item) {
                 mask |= b;
             }
-            // Only worn armour contributes; a held sword's `armor` is zero in the
-            // table anyway, and naming the slots keeps that a statement rather
-            // than a coincidence.
-            if matches!(
-                slot,
-                EquipSlot::Head | EquipSlot::Chest | EquipSlot::Legs | EquipSlot::Feet
-            ) && let Some(stats) = items.get(item)
+            // Only armour worn in its own slot contributes — the one rule
+            // `combat::worn_as_armour` states for this floor and for DW0472.
+            if crate::compiler::combat::worn_as_armour(*slot, item)
+                && let Some(stats) = items.get(item)
             {
                 armor += stats.armor;
                 toughness += stats.armor_toughness;

@@ -331,23 +331,21 @@ shape on every subject and reports the measured `INAPPLICABLE` rather than
 `UNBOUND`, whose whole content is that nobody looked.
 
 **A quantifier that names a population the object cannot belong to is not a
-check weakened, it is a check made true.** `bell-04` and `bell-05` carry the
-general form of two combat findings, and their preconditions counted every
-`spawn-wave`/`spawn-actor` effect and every `actor/` id — populations neither
-general form names. A guided tour whose only bodies are invulnerable puppets
-that walk out of a gate and are removed was therefore adjudicated as a campaign
-owing a combat plan, and refused for shipping none, while `emit.rs` was right
-not to write one. Both preconditions are now the class each row's own words
-name: mandatory combat is a `kill` objective or a body turned loose
-(`combat::mandatory_fights`), and a billed encounter is `elite`/`boss`
-(`EncounterTier::has_floor_expectation`). A general form can name a population
-the DSL spells more than one way — an `unleash-actor` effect and the
-`ambushes[]` entry the compiler expands into one are members of a single class
-— so the predicate language carries `any_of`, a disjunction of predicates, and
-a checker reads a document the way its consumer reads it. The narrowing is
-proved in both directions on one campaign in two states varying one variable:
-with one `unleash-actor` beat added to the ceremony and the build held fixed,
-both rows red `MISSING-CHECK` again.
+check weakened, it is a check made true.** A precondition for "mandatory
+combat" that counts every `spawn-wave`/`spawn-actor` effect and every `actor/`
+id counts populations the general form does not name: a guided tour whose only
+bodies are invulnerable puppets that walk out of a gate and are removed is
+adjudicated as a campaign owing a combat plan, and refused for shipping none,
+while `emit.rs` is right not to write one. The precondition is the class the
+row's own words name: mandatory combat is a `kill` objective or a body turned
+loose (`combat::mandatory_fights`). A general form can name a population the
+DSL spells more than one way — an `unleash-actor` effect and the `ambushes[]`
+entry the compiler expands into one are members of a single class — so the
+predicate language carries `any_of`, a disjunction of predicates, and a checker
+reads a document the way its consumer reads it. A narrowing is proved in both
+directions on one campaign in two states varying one variable: with one
+`unleash-actor` beat added to the ceremony and the build held fixed, the row
+reds `MISSING-CHECK` again.
 
 **And at least one of the two counts is taken over the campaign SOURCE.** That
 is the property the non-refusal is secured by, and it is one the defect cannot
