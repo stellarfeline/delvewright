@@ -1699,6 +1699,15 @@ export class MineflayerExecutor implements StepExecutor {
   /** A muster already in flight per wave — a step's or a damage handler's — so
    * two readers of one seating share one reading. */
   private readonly earlyMusters = new Map<string, Promise<void>>();
+  /**
+   * Every staging act a damage handler started and has not finished — a reading
+   * of the body's wave, its removal, the refund. Awaited by {@link settleStaging}
+   * before the run report is built: a muster the server was still answering when
+   * the last stage ended was a reading the run took and then never recorded.
+   */
+  private readonly stagingTasks = new Set<Promise<void>>();
+  /** Gates the walk into a lethal volume opened, with the state each stood in. */
+  private readonly gatesOpenedByTrial: { pos: Vec3Tuple; state: string }[] = [];
   /** When the latest respawn landed: wall clock, and the server's world age as the
    * last time packet before it reported it. The respawn-protection wait reads both. */
   private lastSpawnAt: number | undefined;
@@ -2050,7 +2059,12 @@ export class MineflayerExecutor implements StepExecutor {
       );
       return;
     }
-    void this.stageAway(attacker, "it hit the bot (the server named it)", byId.get(attacker)?.name);
+    const task: Promise<void> = this.stageAway(
+      attacker,
+      "it hit the bot (the server named it)",
+      byId.get(attacker)?.name,
+    ).finally(() => this.stagingTasks.delete(task));
+    this.stagingTasks.add(task);
   }
 
   /**
@@ -2973,6 +2987,8 @@ export class MineflayerExecutor implements StepExecutor {
         }
       } finally {
         this.lethalExclusionSuspended = false;
+        // Whatever ended the walk in, a gate it opened does not stay open.
+        await this.restoreOpenedGates(volume.id);
       }
     }
 
@@ -3328,8 +3344,18 @@ export class MineflayerExecutor implements StepExecutor {
         const key = `${block.position.x},${block.position.y},${block.position.z}`;
         if (Date.now() - (opened.get(key) ?? 0) < 1_000) continue;
         opened.set(key, Date.now());
+        const before = block.getProperties() as Record<string, unknown>;
         try {
           await bot.activateBlock(block);
+          this.gatesOpenedByTrial.push({
+            pos: [block.position.x, block.position.y, block.position.z],
+            state:
+              `minecraft:${block.name}[` +
+              Object.entries(before)
+                .map(([k, v]) => `${k}=${String(v)}`)
+                .join(",") +
+              `]`,
+          });
           process.stderr.write(
             `[death-loop] ${volume}: opened the closed ${block.name} at [${key}] in the way in\n`,
           );
@@ -3341,6 +3367,44 @@ export class MineflayerExecutor implements StepExecutor {
         }
         return;
       }
+    }
+  }
+
+  /**
+   * **Put back every gate the walk in opened**, in the state it stood in — by
+   * command, named in `staged_removals` as staging, read by the shared rejection
+   * rule.
+   *
+   * The walk in opens a closed gate the way a player does, and a player who then
+   * dies in the hazard leaves it open. That is the harness changing the world on
+   * its own account: on vesperhold the well's gate, left open by the death loop,
+   * let the drowned choir — re-seated by the bot's own death — walk into the
+   * lethal well it cannot otherwise reach (a chorister drowned 23 s after the
+   * trial's death, and the choir's next reading would have read 3 of 4). Called
+   * the moment the body is released over the volume, when the gate is already
+   * behind it, and again when the trial ends however it ends.
+   */
+  private async restoreOpenedGates(volume: string): Promise<void> {
+    const bot = this.bot;
+    if (!bot) return;
+    while (this.gatesOpenedByTrial.length > 0) {
+      const g = this.gatesOpenedByTrial.shift()!;
+      const from = this.chatMark();
+      bot.chat(`/setblock ${g.pos[0]} ${g.pos[1]} ${g.pos[2]} ${g.state}`);
+      await delay(STAGED_REPLY_MS);
+      const refusal = this.chatSince(from).lines.find((line) => isRejection(line));
+      this.stagedRemovals.push({
+        kind: "world",
+        why:
+          `${volume}: the gate the walk in opened at [${g.pos.join(", ")}] put back as it stood ` +
+          `(${g.state})`,
+        performed: refusal === undefined,
+        detail: refusal,
+      });
+      process.stderr.write(
+        `[death-loop] ${volume}: put back the gate at [${g.pos.join(", ")}] as it stood` +
+          `${refusal === undefined ? "" : ` — REFUSED: ${refusal}`}\n`,
+      );
     }
   }
 
@@ -3357,6 +3421,7 @@ export class MineflayerExecutor implements StepExecutor {
   private async sinkInto(box: Box, trial: LethalTrial, inside: () => boolean): Promise<boolean> {
     const bot = this.requireBot();
     const from = bot.entity.position.clone();
+    await this.restoreOpenedGates(trial.volume);
     const depth = from.y - (box.hi[1] + 1);
     const budget = sinkBudgetMs(depth);
     process.stderr.write(
@@ -5334,6 +5399,21 @@ export class MineflayerExecutor implements StepExecutor {
   /** What each wave's muster established. Read by the run report. */
   waveMusters(): ReadonlyMap<string, MusterVerdict> {
     return this.musters;
+  }
+
+  /**
+   * **Finish every staging act in flight**, bounded by `timeoutMs`, and say how
+   * many were still running. Called once, before the run report is built.
+   *
+   * On vesperhold a Guard staged away on the death loop's walk back fired the
+   * drowned choir's muster; the stage then ended, the report was written, and
+   * the reading — 3 of 4, one chorister had drowned — was never recorded.
+   */
+  async settleStaging(timeoutMs: number): Promise<number> {
+    if (this.stagingTasks.size === 0) return 0;
+    const all = Promise.allSettled([...this.stagingTasks]);
+    await Promise.race([all, delay(timeoutMs)]);
+    return this.stagingTasks.size;
   }
 
   /** Every failure any muster reading of this run produced, never only the latest's. */

@@ -149,6 +149,9 @@ installCrashReporter({
   reportPath: () => reportPathFromEnv(),
 });
 
+/** How long the run waits for staging still in flight before building its report. */
+const STAGING_SETTLE_MS = 20_000;
+
 async function main(): Promise<number> {
   const pathArg = process.argv[2];
   if (pathArg === undefined || pathArg.length === 0) {
@@ -381,6 +384,18 @@ async function main(): Promise<number> {
       );
     } catch (err) {
       failure = err;
+    }
+    // Staging still in flight when the stages ended — a wave being read where its
+    // body stood — is finished before anything is judged, so a reading the run
+    // took is a reading the report carries.
+    const unsettled = await executor.settleStaging(STAGING_SETTLE_MS);
+    if (unsettled > 0) {
+      const lost =
+        `${unsettled} staging act(s) — a wave read where its body stood, then removed — were ` +
+        `still unfinished ${STAGING_SETTLE_MS}ms after the last stage, so whatever they read is ` +
+        `not in this report`;
+      process.stderr.write(`[staged] ${lost}\n`);
+      report.recordMusterFinding(lost);
     }
     const pathFailure = pathProven ? undefined : failure;
     const describe = (err: unknown): string => (err instanceof Error ? err.message : String(err));

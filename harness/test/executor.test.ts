@@ -1613,6 +1613,24 @@ test("the walk in opens a closed gate in its way — once, and never an open one
   assert.deepEqual(used, ["dark_oak_fence_gate"], "nor the same cell twice inside a second");
   await openGateAhead([35, 60, 80], new Set(), new Map(), "lethal/undertide");
   assert.deepEqual(used, ["dark_oak_fence_gate"], "only what the pathfinder's rule calls openable");
+
+  // …and the gate it opened is put back as it stood, as staging.
+  const restore = (
+    executor as unknown as { restoreOpenedGates: (v: string) => Promise<void> }
+  ).restoreOpenedGates.bind(executor);
+  await restore("lethal/undertide");
+  assert.ok(
+    bot.calls.includes("chat(/setblock 31 68 80 minecraft:dark_oak_fence_gate[open=false])"),
+    bot.calls.join(" | "),
+  );
+  const row = executor.stagedBodies().find((r) => r.kind === "world");
+  assert.ok(row && /put back as it stood/.test(row.why) && row.performed, JSON.stringify(row));
+  await restore("lethal/undertide");
+  assert.equal(
+    bot.calls.filter((c) => c.startsWith("chat(/setblock")).length,
+    1,
+    "a gate is put back once",
+  );
 });
 
 // --- executor tier: reach + timed gate + completion transport -----------------
@@ -2800,6 +2818,22 @@ test("a body of a wave the run has not read yet is read where it stands, then re
   const verdict = executor.waveMusters().get("wave/gate-assault")!;
   assert.deepEqual(verdict.failures, [], "the wave is verified whole");
   assert.equal(verdict.read, 2);
+});
+
+test("staging in flight when the stages end is finished before the report", async () => {
+  // vesperhold: a Guard staged away on the death loop's walk back fired the
+  // choir's muster, the stage ended, and the reading was never recorded.
+  const bot = new CombatFakeBot();
+  bot.seat(2);
+  const executor = attach(bot);
+  executor.useCampaign("the-drowned-bell");
+  executor.useCombatPlan(combatPlan(2, true), false);
+  const [attacker] = bot.waveIds();
+  bot.emit("entityHurt", bot.entity, bot.entities[attacker!]);
+  assert.equal(executor.waveMusters().size, 0, "nothing is read yet when the stage ends");
+  assert.equal(await executor.settleStaging(10_000), 0, "nothing is left unfinished");
+  assert.equal(executor.waveMusters().get("wave/gate-assault")?.read, 2, "the reading is recorded");
+  assert.deepEqual(bot.stagedBlows, [attacker], "and the removal was made");
 });
 
 test("a muster reading that failed stays failed when a later reading finds the wave whole", async () => {
