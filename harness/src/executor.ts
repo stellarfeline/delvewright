@@ -3173,12 +3173,17 @@ export class MineflayerExecutor implements StepExecutor {
    * is the climb-out-of-water impulse. The volume's own selector is what then
    * kills the body; nothing here moves it but the game.
    *
+   * A released body that lands on something outside the volume — the rim it
+   * overhung as it stepped down (measured on the gallery's west pit: released at
+   * y 69.92 mid-step, it came to rest at 69.00 on the lip's edge) — is standing
+   * again, and it walks on, as a player at the edge of a hole would.
+   *
    * Throws whatever the walk threw — including the {@link BotDeathError} that is
    * the whole point. It also RECORDS what it saw: the drive can run its deadline
    * out with the body still outside the box — a wall in the way, a cell no body
-   * fits in — and a released body can come to rest short of it, and it returns
-   * normally when either happens, so the only thing separating "the volume did
-   * not kill what was in it" from "nothing ever got in" is the flag.
+   * fits in — and it returns normally when it does, so the only thing separating
+   * "the volume did not kill what was in it" from "nothing ever got in" is the
+   * flag.
    */
   private async stepInto(box: Box, cell: Vec3Tuple, trial: LethalTrial): Promise<void> {
     const bot = this.requireBot();
@@ -3192,24 +3197,33 @@ export class MineflayerExecutor implements StepExecutor {
       const p = bot.entity.position;
       return !bot.entity.onGround && overFootprint([p.x, p.y, p.z], box);
     };
-    const deadline = Date.now() + LETHAL_DEATH_TIMEOUT_MS;
-    try {
-      while (Date.now() < deadline && !inside() && !released()) {
-        if (this.death) throw this.death;
-        const p = bot.entity.position;
-        try {
-          await bot.lookAt(p.offset(cell[0] + 0.5 - p.x, 0, cell[2] + 0.5 - p.z), true);
-        } catch {
-          // best effort — a look failure must not abort the step
+    // The drive's own deadline counts DRIVING time only: a body carried in by
+    // the game is on the sink's clock, not this one.
+    let driveLeft = LETHAL_DEATH_TIMEOUT_MS;
+    for (;;) {
+      const until = Date.now() + driveLeft;
+      try {
+        while (Date.now() < until && !inside() && !released()) {
+          if (this.death) throw this.death;
+          const p = bot.entity.position;
+          try {
+            await bot.lookAt(p.offset(cell[0] + 0.5 - p.x, 0, cell[2] + 0.5 - p.z), true);
+          } catch {
+            // best effort — a look failure must not abort the step
+          }
+          bot.setControlState("forward", true);
+          await delay(GATE_DASH_TICK_MS);
         }
-        bot.setControlState("forward", true);
-        await delay(GATE_DASH_TICK_MS);
+      } finally {
+        bot.clearControlStates();
       }
-    } finally {
-      bot.clearControlStates();
+      driveLeft = until - Date.now();
+      if (inside() || !released()) return;
+      // A body that lands on something outside the volume — a rim it overhung
+      // when it stepped down, a ledge in the shaft — is standing again, and a
+      // player standing at the edge of a hole walks on.
+      if (!(await this.sinkInto(box, trial, inside)) || driveLeft <= 0) return;
     }
-    if (inside() || !released()) return;
-    await this.sinkInto(box, trial, inside);
   }
 
   /**
@@ -3218,10 +3232,11 @@ export class MineflayerExecutor implements StepExecutor {
    * Every control is already released; this only watches. The wait is bounded by
    * the measured descent ({@link sinkBudgetMs}) over the distance from the feet to
    * the volume's top face, and it ends early when the body gets in, dies, or comes
-   * to rest on something outside the volume — a ledge, a floor over the hazard —
-   * which is a place this volume cannot reach and is reported as never entered.
+   * to rest on something outside the volume — the rim it overhung as it stepped
+   * down, a ledge, a floor over the hazard. Returns whether it came to rest, so
+   * the caller can walk on from there.
    */
-  private async sinkInto(box: Box, trial: LethalTrial, inside: () => boolean): Promise<void> {
+  private async sinkInto(box: Box, trial: LethalTrial, inside: () => boolean): Promise<boolean> {
     const bot = this.requireBot();
     const from = bot.entity.position.clone();
     const depth = from.y - (box.hi[1] + 1);
@@ -3235,16 +3250,19 @@ export class MineflayerExecutor implements StepExecutor {
     const deadline = Date.now() + budget;
     while (Date.now() < deadline) {
       if (this.death) throw this.death;
-      if (inside()) return;
+      if (inside()) return false;
       if (bot.entity.onGround) break;
       await delay(GATE_DASH_TICK_MS);
     }
     const p = bot.entity.position;
+    const rest = bot.entity.onGround;
     process.stderr.write(
       `[death-loop] ${trial.volume}: the released body ` +
-        `${bot.entity.onGround ? "came to rest" : "was still moving"} at ` +
-        `[${p.x.toFixed(2)}, ${p.y.toFixed(2)}, ${p.z.toFixed(2)}] without entering the volume\n`,
+        `${rest ? "came to rest" : "was still moving"} at ` +
+        `[${p.x.toFixed(2)}, ${p.y.toFixed(2)}, ${p.z.toFixed(2)}] without entering the volume` +
+        `${rest ? " — standing again, so it walks on" : ""}\n`,
     );
+    return rest;
   }
 
   /**
