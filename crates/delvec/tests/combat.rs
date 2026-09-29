@@ -1,5 +1,4 @@
-//! spec-0023 §2 — compile-time combat winnability (`DW0470`–`DW0475`), plus the
-//! floor-gate coverage ledger (`DW0477`).
+//! spec-0023 §2 — compile-time combat proofs (`DW0470`–`DW0473`, `DW0475`).
 //!
 //! Every case is the `souls-bonfire` fixture (a `kill` objective on
 //! `wave/guards`, behind a bonfire) with ONE field changed, so what the
@@ -184,6 +183,54 @@ fn health_beyond_the_swing_budget_is_dw0472() {
     assert_eq!(failure_code(tmp.path()), "DW0472");
 }
 
+/// Dress `wave/guards`' zombies as one body in a full netherite set (armour 20,
+/// toughness 12) with `max_health` `hp`. The party's best blow is the kit's iron
+/// sword: 1 (the fist) + 5 = 6, which that armour lands as
+/// `6 × (1 − clamp(20 − 6/(2 + 12/4), 4, 20)/25)` = `6 × (1 − 18.8/25)` = 1.488.
+fn netherite_guard(quests: &mut serde_json::Value, hp: f64) {
+    let mobs = quests["content"]["waves"][0]["mobs"]
+        .as_array_mut()
+        .unwrap();
+    mobs[0]["count"] = serde_json::json!(1);
+    mobs[0]["attributes"]["max_health"] = serde_json::json!(hp);
+    mobs[0]["equipment"] = serde_json::json!({
+        "head": "minecraft:netherite_helmet",
+        "chest": "minecraft:netherite_chestplate",
+        "legs": "minecraft:netherite_leggings",
+        "feet": "minecraft:netherite_boots",
+    });
+}
+
+/// 600 HP in netherite: `ceil(600 / 1.488)` = 404 swings, over the 400 budget.
+/// Unarmoured it is 100 swings (and the arithmetic that ignored armour and the
+/// fist said `600 / 5` = 120) — so only the armour term makes this red.
+#[test]
+fn an_armoured_body_past_the_budget_is_dw0472() {
+    let tmp = TempCampaign::new();
+    campaign_with(tmp.path(), |quests, _| netherite_guard(quests, 600.0));
+    match build(tmp.path()) {
+        Err(BuildFailure::Diagnostic { code, message }) => {
+            assert_eq!(code, "DW0472", "{message}");
+            assert!(message.contains("armour 20 toughness 12"), "{message}");
+            assert!(message.contains("= 404 swings a body"), "{message}");
+            assert!(
+                message.contains("6 = 1 (the player's base attack damage) + 5"),
+                "{message}"
+            );
+        }
+        other => panic!("expected DW0472, got {other:?}"),
+    }
+}
+
+/// 595 HP in the same set: `ceil(595 / 1.488)` = 400 swings — at the budget, not
+/// past it, so it builds.
+#[test]
+fn the_same_armoured_body_just_under_the_budget_builds() {
+    let tmp = TempCampaign::new();
+    campaign_with(tmp.path(), |quests, _| netherite_guard(quests, 595.0));
+    build(tmp.path()).expect("400 swings is the budget, not past it");
+}
+
 #[test]
 fn a_tuned_but_finite_elite_builds_and_needs_no_warning() {
     let tmp = TempCampaign::new();
@@ -245,22 +292,6 @@ fn a_hit_that_leaves_one_heart_builds() {
         bundle.push(serde_json::json!({"type": "damage-players", "amount": 19}));
     });
     build(tmp.path()).expect("19 of 20 HP is a beating, not a scripted death");
-}
-
-#[test]
-fn a_foodless_party_with_mandatory_combat_warns_dw0474() {
-    let tmp = TempCampaign::new();
-    campaign_with(tmp.path(), |_, classes| {
-        for class in classes["content"]["classes"].as_array_mut().unwrap() {
-            let kit = class["kit"].as_array_mut().unwrap();
-            kit.retain(|item| {
-                let id = item["item"].as_str().unwrap_or_default();
-                !id.contains("bread") && !id.contains("beef") && !id.contains("stew")
-            });
-        }
-    });
-    let (_, warnings) = build(tmp.path()).expect("no sustain is a warning, not a build failure");
-    assert!(has_code(&warnings, "DW0474"), "{warnings:#?}");
 }
 
 #[test]
@@ -402,255 +433,6 @@ fn build_with_actor(
 }
 
 #[test]
-fn an_unleashed_tiered_actor_is_a_covered_encounter() {
-    let tmp = TempCampaign::new();
-    let (json, diags, _) = build_with_actor(&tmp, barrow_warden(), vec![unleash_trigger()]);
-
-    // It is in the plan at all — the gap this closes.
-    let a = &json["actors"][0];
-    assert_eq!(a["actor"], "actor/barrow-warden");
-    assert_eq!(a["tier"], "elite");
-    assert_eq!(a["entity"], "minecraft:wither_skeleton");
-    assert_eq!(a["anchor"], "anchor/wave");
-    assert_eq!(a["tag"], "dw_actor_barrow_warden");
-    assert_eq!(a["attributes"]["max_health"], 60.0);
-    assert!(
-        a["pos"].is_array(),
-        "the harness needs somewhere to walk: {a}"
-    );
-
-    // …with the beat that starts the fight, named well enough to fire.
-    let unleash = &a["unleashed_by"][0];
-    assert_eq!(unleash["site"], "trigger");
-    assert_eq!(unleash["owner"], "trigger/warden-answers");
-    assert_eq!(unleash["on"], "strike-npc");
-    assert_eq!(unleash["npc"], "npc/keeper");
-    assert_eq!(a["spawned_by"][0]["owner"], "trigger/warden-answers");
-
-    // …and the floor gate says out loud that it covers it.
-    assert_eq!(a["floor_gate"]["covered"], true);
-    let covered = json["floor_gate"]["covered"].as_array().unwrap();
-    assert!(
-        covered
-            .iter()
-            .any(|e| e["kind"] == "actor" && e["id"] == "actor/barrow-warden"),
-        "{json}"
-    );
-    assert!(
-        json["floor_gate"]["not_covered"]
-            .as_array()
-            .unwrap()
-            .is_empty(),
-        "{json}"
-    );
-    assert!(!has_code(&diags, "DW0477"), "{diags:#?}");
-}
-
-#[test]
-fn a_tiered_actor_nobody_unleashes_is_dw0477_not_silence() {
-    // The defect this task kills: the actor is billed `elite`, the run report's
-    // finding list comes back empty, and nothing anywhere says the fight was
-    // never had.
-    let tmp = TempCampaign::new();
-    let (json, diags, _) = build_with_actor(&tmp, barrow_warden(), vec![]);
-
-    assert_eq!(json["actors"][0]["floor_gate"]["covered"], false);
-    let not_covered = &json["floor_gate"]["not_covered"][0];
-    assert_eq!(not_covered["id"], "actor/barrow-warden");
-    assert_eq!(not_covered["tier"], "elite");
-    assert!(
-        not_covered["reason"]
-            .as_str()
-            .unwrap()
-            .contains("no `spawn-actor` effect"),
-        "the reason must name the missing beat: {json}"
-    );
-
-    let d = diags
-        .iter()
-        .find(|d| d.code == "DW0477")
-        .unwrap_or_else(|| panic!("expected DW0477: {diags:#?}"));
-    assert_eq!(d.severity, delvewright_dsl::Severity::Warning);
-    assert_eq!(d.path, "/content/actors/0/tier");
-    assert!(d.message.contains("not covered"), "{}", d.message);
-}
-
-#[test]
-fn a_staged_but_never_unleashed_puppet_is_scenery_not_a_fight() {
-    let tmp = TempCampaign::new();
-    let spawn_only = serde_json::json!({
-        "id": "trigger/warden-kneels",
-        "on": { "on": "strike-npc", "npc": "npc/keeper" },
-        "once": true,
-        "effects": [{ "type": "spawn-actor", "actor": "actor/barrow-warden" }]
-    });
-    let (json, diags, _) = build_with_actor(&tmp, barrow_warden(), vec![spawn_only]);
-    let reason = json["floor_gate"]["not_covered"][0]["reason"]
-        .as_str()
-        .unwrap()
-        .to_string();
-    assert!(reason.contains("Invulnerable"), "{reason}");
-    assert!(has_code(&diags, "DW0477"), "{diags:#?}");
-
-    // …and the `vulnerable` variant gets its OWN reason: a NoAI creep cannot
-    // fight back, so a first-try win by the bot would be an artifact of the
-    // check rather than a finding about the encounter.
-    let tmp2 = TempCampaign::new();
-    let mut vulnerable = barrow_warden();
-    vulnerable["vulnerable"] = serde_json::json!(true);
-    let spawn_only2 = serde_json::json!({
-        "id": "trigger/warden-kneels",
-        "on": { "on": "strike-npc", "npc": "npc/keeper" },
-        "once": true,
-        "effects": [{ "type": "spawn-actor", "actor": "actor/barrow-warden" }]
-    });
-    let (json2, _, _) = build_with_actor(&tmp2, vulnerable, vec![spawn_only2]);
-    let reason2 = json2["floor_gate"]["not_covered"][0]["reason"]
-        .as_str()
-        .unwrap()
-        .to_string();
-    assert!(reason2.contains("never attacks"), "{reason2}");
-}
-
-#[test]
-fn an_untiered_hostile_actor_lands_in_not_covered() {
-    // The ledger's own blind spot. The campaign unleashes a real-AI
-    // body on the party and declares nothing about it, so before this it
-    // appeared on NEITHER side — and an empty ledger reads as "everything is
-    // covered" when it means "nothing was even assessed".
-    let tmp = TempCampaign::new();
-    let mut untiered = barrow_warden();
-    untiered.as_object_mut().unwrap().remove("tier");
-    let (json, diags, _) = build_with_actor(&tmp, untiered, vec![unleash_trigger()]);
-
-    // It is not a TIERED actor, so it stays out of the trial array…
-    assert!(json["actors"].as_array().unwrap().is_empty(), "{json}");
-    // …and it is not covered, with `tier: null` saying why in one field.
-    let not_covered = &json["floor_gate"]["not_covered"][0];
-    assert_eq!(not_covered["kind"], "actor");
-    assert_eq!(not_covered["id"], "actor/barrow-warden");
-    assert!(not_covered["tier"].is_null(), "{json}");
-    assert!(
-        not_covered["reason"].as_str().unwrap().contains("UNTIERED"),
-        "the reason must name the omission: {json}"
-    );
-    assert!(
-        json["floor_gate"]["covered"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .all(|e| e["id"] != "actor/barrow-warden"),
-        "{json}"
-    );
-    // DW0477 is about a BILLING the gate cannot hold; nothing was billed here,
-    // so the ledger line is the whole record and no warning is raised.
-    assert!(!has_code(&diags, "DW0477"), "{diags:#?}");
-}
-
-#[test]
-fn a_staged_untiered_puppet_is_not_a_hostile() {
-    // Hostility is "unleashed", the same rule the die-retry / assist machinery
-    // uses: a staged puppet is `NoAI` and knockback-immune, so it never attacks
-    // and there is nothing for the gate to have assessed. Scenery must not fill
-    // the ledger, or the ledger stops being readable.
-    let tmp = TempCampaign::new();
-    let mut untiered = barrow_warden();
-    untiered.as_object_mut().unwrap().remove("tier");
-    untiered["vulnerable"] = serde_json::json!(true);
-    let spawn_only = serde_json::json!({
-        "id": "trigger/warden-kneels",
-        "on": { "on": "strike-npc", "npc": "npc/keeper" },
-        "once": true,
-        "effects": [{ "type": "spawn-actor", "actor": "actor/barrow-warden" }]
-    });
-    let (json, _, _) = build_with_actor(&tmp, untiered, vec![spawn_only]);
-    assert!(
-        json["floor_gate"]["not_covered"]
-            .as_array()
-            .unwrap()
-            .is_empty(),
-        "{json}"
-    );
-}
-
-#[test]
-fn an_untiered_hostile_is_reason_enough_to_ship_a_ledger() {
-    // hello-world has no `kill` step and no tiered actor, so it emitted NO
-    // combat plan and the run report said `present: false` — "this build cannot
-    // tell you". Unleash one unbilled body in it and that answer becomes a lie
-    // by omission, so the ledger must ship. (The campaign with no fight at all
-    // still emits nothing — `a_combat_free_campaign_emits_no_combat_plan` — and
-    // that is what keeps `present: false` meaningful.)
-    let tmp = TempCampaign::new();
-    common::materialize_from(
-        &common::hello_world_dir(),
-        &serde_json::json!({}),
-        tmp.path(),
-    );
-    let quests_path = tmp.path().join("quests.json");
-    let mut quests: serde_json::Value =
-        serde_json::from_str(&std::fs::read_to_string(&quests_path).unwrap()).unwrap();
-    quests["dsl_version"] = serde_json::json!(DSL_VERSION);
-    quests["content"]["actors"] = serde_json::json!([{
-        "id": "actor/barrow-warden",
-        "entity": "minecraft:wither_skeleton",
-        "anchor": "anchor/exit",
-    }]);
-    quests["content"]["triggers"] = serde_json::json!([{
-        "id": "trigger/warden-answers",
-        "on": { "on": "strike-npc", "npc": "npc/keeper" },
-        "once": true,
-        "effects": [
-            { "type": "spawn-actor", "actor": "actor/barrow-warden" },
-            { "type": "unleash-actor", "actor": "actor/barrow-warden" }
-        ]
-    }]);
-    std::fs::write(&quests_path, serde_json::to_string_pretty(&quests).unwrap()).unwrap();
-
-    let (out, _) = build(tmp.path()).expect("an untiered hostile builds");
-    let json: serde_json::Value = serde_json::from_slice(
-        out.get("validation/combat-plan.json")
-            .expect("an untiered hostile is reason enough to ship the ledger"),
-    )
-    .unwrap();
-    assert_eq!(
-        json["floor_gate"]["not_covered"][0]["id"],
-        "actor/barrow-warden"
-    );
-    assert!(
-        json["floor_gate"]["not_covered"][0]["tier"].is_null(),
-        "{json}"
-    );
-}
-
-#[test]
-fn an_optional_tiered_wave_is_uncovered_too() {
-    // The same silence, on the shape that already had a `tier`: `wave/ambush`
-    // has no `kill` objective, so billing it `elite` claims something no proof
-    // ever measures.
-    let tmp = TempCampaign::new();
-    campaign_with(tmp.path(), |quests, _| {
-        quests["dsl_version"] = serde_json::json!(DSL_VERSION);
-        quests["content"]["waves"][1]["tier"] = serde_json::json!("elite");
-    });
-    let (out, diags) = build(tmp.path()).expect("an optional tiered wave builds");
-    let json: serde_json::Value =
-        serde_json::from_slice(out.get("validation/combat-plan.json").unwrap()).unwrap();
-    let not_covered = &json["floor_gate"]["not_covered"][0];
-    assert_eq!(not_covered["kind"], "wave");
-    assert_eq!(not_covered["id"], "wave/ambush");
-    assert!(
-        not_covered["reason"]
-            .as_str()
-            .unwrap()
-            .contains("no `kill` objective"),
-        "{json}"
-    );
-    let d = diags.iter().find(|d| d.code == "DW0477").unwrap();
-    assert_eq!(d.path, "/content/waves/1/tier");
-}
-
-#[test]
 fn declaring_an_actor_tier_moves_no_shipped_byte() {
     // A tier is pure validation metadata. Compile
     // the same campaign with and without the field and compare EVERY output
@@ -677,13 +459,26 @@ fn declaring_an_actor_tier_moves_no_shipped_byte() {
         shipped(&out_tiered),
         "an actor `tier` must not reach a shipped byte"
     );
-    // The untiered actor is also absent from the plan entirely — an untiered
-    // actor carries no floor expectation, exactly like an untiered wave.
+    // Tiered or not, the actor is a FIGHT, and the plan's binding count for the
+    // whole combat pass says so — which is the one thing an actor-only campaign
+    // needs the plan for now that nothing grades the fight.
     let plan_plain: serde_json::Value =
         serde_json::from_slice(out_plain.get("validation/combat-plan.json").unwrap()).unwrap();
     assert!(
-        plan_plain["actors"].as_array().unwrap().is_empty(),
+        plan_plain["fights"]["actors"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|a| a == "actor/barrow-warden"),
         "{plan_plain}"
+    );
+    assert!(
+        plan_plain["encounters"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|e| e["wave"] != "actor/barrow-warden"),
+        "an actor is a fight, never an `encounters[]` row: {plan_plain}"
     );
 }
 
@@ -692,100 +487,6 @@ fn declaring_an_actor_tier_moves_no_shipped_byte() {
 // objects must say so, additively, never by leaving `covered`/`not_covered`
 // (or `actors[]`) merely empty.
 // ---------------------------------------------------------------------------
-
-#[test]
-fn an_empty_floor_gate_and_actor_gate_state_their_own_zero() {
-    // The exact defect class rule 1 names: `souls-bonfire`, UNMODIFIED, has a
-    // real mandatory encounter (`wave/guards`, a `kill` step on the critical
-    // path) that nothing bills `elite`/`boss`, and no actor at all — the same
-    // shape `nobodys-cave-island` shipped green for nineteen rounds. Before
-    // this task, `floor_gate` was `{covered: [], not_covered: []}` with no way
-    // to tell "examined and found nothing wrong" from "examined nothing".
-    let tmp = TempCampaign::new();
-    campaign_with(tmp.path(), |_, _| {});
-    let (out, _) = build(tmp.path()).expect("the untouched fixture builds");
-    let json: serde_json::Value =
-        serde_json::from_slice(out.get("validation/combat-plan.json").unwrap()).unwrap();
-
-    assert_eq!(json["floor_gate"]["examined"], 0, "{json}");
-    assert_eq!(json["floor_gate"]["unbound"], true, "{json}");
-    assert!(
-        json["floor_gate"]["covered"].as_array().unwrap().is_empty(),
-        "{json}"
-    );
-    assert!(
-        json["floor_gate"]["not_covered"]
-            .as_array()
-            .unwrap()
-            .is_empty(),
-        "{json}"
-    );
-    let floor_reason = json["floor_gate"]["reason"].as_str().expect("{json}");
-    assert!(
-        floor_reason.contains("nothing to hold"),
-        "the reason must say what zero means: {floor_reason}"
-    );
-
-    assert_eq!(json["actors_gate"]["examined"], 0, "{json}");
-    assert_eq!(json["actors_gate"]["unbound"], true, "{json}");
-    let actors_reason = json["actors_gate"]["reason"].as_str().expect("{json}");
-    assert!(
-        actors_reason.contains("floor_gate.not_covered"),
-        "the reason must point a reader at the OTHER ledger untiered hostiles \
-         actually land in: {actors_reason}"
-    );
-}
-
-#[test]
-fn a_covered_floor_gate_states_its_nonzero_binding_and_carries_no_reason() {
-    // The green case, for contrast: an actual `elite` fight the gate covers
-    // reports `examined: 1`, `unbound: false`, and NO `reason` key at all — the
-    // key exists exactly to explain a zero, and its presence on a bound gate
-    // would be the same noise the ledger exists to avoid.
-    let tmp = TempCampaign::new();
-    let (json, _, _) = build_with_actor(&tmp, barrow_warden(), vec![unleash_trigger()]);
-
-    assert_eq!(json["floor_gate"]["examined"], 1, "{json}");
-    assert_eq!(json["floor_gate"]["unbound"], false, "{json}");
-    assert!(json["floor_gate"].get("reason").is_none(), "{json}");
-
-    assert_eq!(json["actors_gate"]["examined"], 1, "{json}");
-    assert_eq!(json["actors_gate"]["unbound"], false, "{json}");
-    assert!(json["actors_gate"].get("reason").is_none(), "{json}");
-}
-
-#[test]
-fn an_all_ordinary_actor_binds_the_actor_gate_but_not_the_floor_gate() {
-    // The two counts are DIFFERENT QUESTIONS, not two spellings of one fact.
-    // `actors[]` holds every actor that declares ANY tier, `ordinary` included;
-    // the floor gate only ever holds `elite`/`boss`. A tier declared
-    // `ordinary` is a statement (spec-0023) — it binds the actor ledger while
-    // leaving the floor gate with nothing to hold.
-    let tmp = TempCampaign::new();
-    let mut ordinary = barrow_warden();
-    ordinary["tier"] = serde_json::json!("ordinary");
-    let (json, diags, _) = build_with_actor(&tmp, ordinary, vec![unleash_trigger()]);
-
-    assert_eq!(json["actors_gate"]["examined"], 1, "{json}");
-    assert_eq!(json["actors_gate"]["unbound"], false, "{json}");
-
-    assert_eq!(json["floor_gate"]["examined"], 0, "{json}");
-    assert_eq!(json["floor_gate"]["unbound"], true, "{json}");
-    assert!(
-        json["floor_gate"]["covered"].as_array().unwrap().is_empty(),
-        "{json}"
-    );
-    assert!(
-        json["floor_gate"]["not_covered"]
-            .as_array()
-            .unwrap()
-            .is_empty(),
-        "{json}"
-    );
-    // An `ordinary`-billed actor is not a `DW0477` finding either — nothing was
-    // billed hard, so there is nothing the floor gate failed to hold.
-    assert!(!has_code(&diags, "DW0477"), "{diags:#?}");
-}
 
 // ---------------------------------------------------------------------------
 // The governing checkpoint, and the one coordinate system.
@@ -1013,6 +714,102 @@ fn the_combat_plan_names_the_census_probe() {
     assert_eq!(c["unbrand"], format!("{NS}:wave_unbrand_guards"));
 }
 
+/// The muster block: the probe, the staged functions, and the declaration phrased
+/// as questions the live bodies are asked.
+///
+/// Every field here is the one thing a combat step MEASURES, so the derivation is
+/// pinned rather than inferred from a run. `souls-bonfire`'s `wave/guards` seats
+/// two named zombies with `max_health`, `attack_damage` and `movement_speed`
+/// declared and no equipment.
+#[test]
+fn the_muster_states_what_the_wave_declares() {
+    let tmp = TempCampaign::new();
+    campaign_with(tmp.path(), |_, _| {});
+    let (out, _) = build(tmp.path()).expect("the reference campaign builds");
+    let json: serde_json::Value =
+        serde_json::from_slice(out.get("validation/combat-plan.json").unwrap()).unwrap();
+    let m = &json["encounters"][0]["muster"];
+    assert_eq!(m["probe"], format!("{NS}:wave_muster_guards"));
+    assert_eq!(m["strike"], format!("{NS}:wave_strike_guards"));
+    assert_eq!(m["chip"], format!("{NS}:wave_chip_guards"));
+    // Three decimal places, and a sentinel no attribute reading can be.
+    assert_eq!(m["scale"], 1000);
+    assert_eq!(m["unread"], -1);
+    assert_eq!(m["bodies"], 2);
+
+    // The identity facts name the declaration by ORDINAL, never by its text: the
+    // plan must be byte-identical between an `en` build and a `--lang` bake.
+    let t = &m["types"][0];
+    assert_eq!(t["entity"], "minecraft:zombie");
+    assert_eq!(t["facts"], serde_json::json!(["name=#0"]));
+    assert_eq!(t["dropped_facts"], serde_json::json!([]));
+    assert_eq!(t["reads_attack_damage"], true);
+
+    let p = &m["profiles"][0];
+    assert_eq!(p["type"], 0);
+    assert_eq!(p["count"], 2);
+    assert_eq!(p["mask"], 1, "one fact declared, so bit 0 and nothing else");
+    assert_eq!(p["label"], "2 × minecraft:zombie (stack 0)");
+    assert_eq!(p["max_health"], 12.0);
+    assert_eq!(p["attack_damage"], 3.0);
+    assert_eq!(p["movement_speed"], 0.2);
+    assert!(
+        p["follow_range"].is_null(),
+        "undeclared reads as null, never 0"
+    );
+    assert_eq!(p["armor_at_least"], 0.0, "no armour declared, so no floor");
+
+    // `checked` is the row's binding count, and it is COUNTED from the object:
+    // the seating, the one identity fact, and the three declared attributes.
+    assert_eq!(m["checked"], 5, "{m}");
+}
+
+/// The probe reads a DECLARED attribute as its base value and the effective
+/// numbers as totals — `attribute … get` is the total after a weapon's modifier
+/// and vanilla's own random spawn bonus, so a declaration compared against one
+/// fails on every correct body.
+#[test]
+fn the_muster_probe_reads_a_declared_attribute_at_its_base() {
+    let tmp = TempCampaign::new();
+    campaign_with(tmp.path(), |_, _| {});
+    let (out, _) = build(tmp.path()).expect("the reference campaign builds");
+    let body = String::from_utf8(
+        out.get(&format!(
+            "datapack/data/{NS}/function/wave_muster_one_guards_0.mcfunction"
+        ))
+        .expect("the per-kind muster function is emitted")
+        .clone(),
+    )
+    .unwrap();
+    for attr in ["max_health", "movement_speed", "attack_damage"] {
+        assert!(
+            body.contains(&format!("attribute @s minecraft:{attr} base get 1000")),
+            "a declared `{attr}` is read at its BASE: {body}"
+        );
+    }
+    for attr in ["armor", "armor_toughness"] {
+        assert!(
+            body.contains(&format!("attribute @s minecraft:{attr} get 1000")),
+            "armour is the EFFECTIVE total — it is what the declared gear adds up to: {body}"
+        );
+    }
+    // …and what the body actually swings with, beside what it was declared.
+    assert!(body.contains("#wmus_ade dw.sys run attribute @s minecraft:attack_damage get 1000"));
+
+    // The staged removal is an attributed player kill, never `kill`: `on_kill`,
+    // the countdown and a declared drop all pay on a PLAYER's kill.
+    let strike = String::from_utf8(
+        out.get(&format!(
+            "datapack/data/{NS}/function/wave_strike_guards.mcfunction"
+        ))
+        .expect("the staged strike is emitted")
+        .clone(),
+    )
+    .unwrap();
+    assert!(strike.contains("minecraft:player_attack by @p"), "{strike}");
+    assert!(!strike.contains("kill @s"), "{strike}");
+}
+
 // ---------------------------------------------------------------------------
 // `fights` — the binding count for the whole spec-0023 pass (staging-gate row
 // `bell-05`). The pass used to be gated on `kill`-a-wave, the VERB, so a delve
@@ -1037,22 +834,13 @@ fn no_mandatory_wave(quests: &mut serde_json::Value) {
     }
 }
 
-fn strip_food(classes: &mut serde_json::Value) {
-    for class in classes["content"]["classes"].as_array_mut().unwrap() {
-        class["kit"].as_array_mut().unwrap().retain(|item| {
-            let id = item["item"].as_str().unwrap_or_default();
-            !id.contains("bread") && !id.contains("beef") && !id.contains("stew")
-        });
-    }
-}
-
-/// **The red this round was built to produce.** A campaign whose only combat is
-/// an actor it turns loose, with no food anywhere, raised NOTHING before: the
-/// whole winnability pass was gated on `has_encounters`, which is zero here.
+/// A campaign whose only combat is an actor it turns loose publishes that fight
+/// in `fights`, although its wave half is empty — the pass is gated on every
+/// fight of either shape, never on `kill`-a-wave alone.
 #[test]
-fn a_foodless_party_fighting_only_actors_warns_dw0474() {
+fn an_actor_only_campaign_publishes_its_fight() {
     let tmp = TempCampaign::new();
-    campaign_with(tmp.path(), |quests, classes| {
+    campaign_with(tmp.path(), |quests, _| {
         quests["dsl_version"] = serde_json::json!(DSL_VERSION);
         no_mandatory_wave(quests);
         quests["content"]["actors"] = serde_json::json!([barrow_warden()]);
@@ -1060,9 +848,8 @@ fn a_foodless_party_fighting_only_actors_warns_dw0474() {
             .as_array_mut()
             .unwrap()
             .push(unleash_trigger());
-        strip_food(classes);
     });
-    let (out, warnings) = build(tmp.path()).expect("no sustain is a warning, not a failure");
+    let (out, _) = build(tmp.path()).expect("builds");
 
     let plan: serde_json::Value =
         serde_json::from_slice(out.get("validation/combat-plan.json").unwrap()).unwrap();
@@ -1076,29 +863,6 @@ fn a_foodless_party_fighting_only_actors_warns_dw0474() {
     assert_eq!(plan["fights"]["total"], 1);
     assert_eq!(plan["fights"]["unbound"], false);
     assert!(plan["fights"]["reason"].is_null());
-
-    assert!(
-        has_code(&warnings, "DW0474"),
-        "a delve with a fight and no food is DW0474 whichever shape the fight takes: {warnings:#?}"
-    );
-}
-
-/// The same campaign WITH food is green — so the warning above is about the
-/// sustain, not about the widening.
-#[test]
-fn the_same_actor_only_campaign_with_food_is_clean() {
-    let tmp = TempCampaign::new();
-    campaign_with(tmp.path(), |quests, _| {
-        quests["dsl_version"] = serde_json::json!(DSL_VERSION);
-        no_mandatory_wave(quests);
-        quests["content"]["actors"] = serde_json::json!([barrow_warden()]);
-        quests["content"]["triggers"]
-            .as_array_mut()
-            .unwrap()
-            .push(unleash_trigger());
-    });
-    let (_, warnings) = build(tmp.path()).expect("builds");
-    assert!(!has_code(&warnings, "DW0474"), "{warnings:#?}");
 }
 
 /// A combat-free campaign states its own zero rather than being silent about it.
@@ -1282,121 +1046,62 @@ fn a_campaign_with_no_npcs_states_its_own_zero() {
     );
 }
 
-#[test]
-fn every_encounter_states_its_bodies_and_their_melee_budget() {
-    // `wave/guards` declares `max_health`, so its budget is arithmetic:
-    // ceil(12 / best-hit) fully-charged swings, times the ladder margin, floored.
-    // The unbounded state is the sibling case below — souls-bonfire's one
-    // MANDATORY encounter is `wave/guards`, and a wave nothing requires killing
-    // is not an encounter at all.
-    let tmp = TempCampaign::new();
-    campaign_with(tmp.path(), |_, _| {});
-    let (out, _) = build(tmp.path()).expect("the reference campaign builds");
-    let (_, plan) = path_and_plan(&out);
-    let encounters = plan["encounters"].as_array().expect("encounters");
-    let mut seen_declared = false;
-    for e in encounters {
-        let bodies = e["bodies"]
-            .as_array()
-            .expect("every encounter states its bodies");
-        assert!(
-            !bodies.is_empty(),
-            "a wave with no bodies is not a wave: {e}"
-        );
-        for b in bodies {
-            assert!(b["kind"].as_str().is_some_and(|k| !k.contains(':')));
-            assert!(b["count"].as_u64().is_some_and(|c| c > 0));
-            match b["give_up_swings"].as_u64() {
-                Some(n) => {
-                    seen_declared = true;
-                    assert!(n >= 16, "the floor is the floor: {b}");
-                    assert!(
-                        b.get("reason").is_none(),
-                        "a bounded body carries no reason: {b}"
-                    );
-                }
-                None => {
-                    let why = b["reason"].as_str().expect("an unbounded body says why");
-                    assert!(why.contains("max_health"), "{why}");
-                }
-            }
-        }
-    }
-    assert!(
-        seen_declared,
-        "wave/guards declares health: {encounters:#?}"
-    );
+// ---------------------------------------------------------------------------
+// Run-backs (spec-0016 §1, spec-0023 §3): a cleared `respawns_on_rest` wave
+// that a rest the path performs puts back beside a leg the path walks
+// afterwards is an encounter, and the combat plan says so.
+// ---------------------------------------------------------------------------
+
+fn run_backs_of(out: &BuildOutput) -> Vec<serde_json::Value> {
+    let plan: serde_json::Value =
+        serde_json::from_slice(out.get("validation/combat-plan.json").unwrap()).unwrap();
+    plan["run_backs"]
+        .as_array()
+        .unwrap_or_else(|| panic!("the combat plan states its run-backs: {plan}"))
+        .clone()
 }
 
+/// `souls-bonfire`: `wave/guards` stands at the keeper's stand, is cleared by
+/// `obj/slay`, and `obj/slay` itself arms the bonfire the path then rests at —
+/// which re-seats the guards beside the walk on to the chest.
 #[test]
-fn a_tougher_body_of_the_same_kind_raises_the_kinds_budget() {
-    // The bot reads a NAME off a body, never its NBT, so two stacks of one entity
-    // are one budget — and it has to be the WORST of them. Giving up early on the
-    // tougher stack would fail a delve that is fine.
+fn a_rest_that_re_seats_a_cleared_wave_beside_the_next_leg_is_a_run_back() {
     let tmp = TempCampaign::new();
     campaign_with(tmp.path(), |quests, _| {
-        let waves = quests["content"]["waves"].as_array_mut().unwrap();
-        let guards = waves
-            .iter_mut()
-            .find(|w| w["id"] == "wave/guards")
-            .expect("wave/guards");
-        let mut tough = guards["mobs"][0].clone();
-        tough["attributes"]["max_health"] = serde_json::json!(120.0);
-        tough["count"] = serde_json::json!(1);
-        tough["name"] = serde_json::json!("Keep Captain");
-        guards["mobs"].as_array_mut().unwrap().push(tough);
+        quests["dsl_version"] = serde_json::json!(DSL_VERSION);
     });
-    let (out, _) = build(tmp.path()).expect("the mutated campaign builds");
-    let (_, plan) = path_and_plan(&out);
-    let guards = plan["encounters"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|e| e["wave"] == "wave/guards")
-        .expect("the guards encounter");
-    let bodies = guards["bodies"].as_array().unwrap();
-    assert_eq!(bodies.len(), 1, "one KIND, two stacks: {bodies:#?}");
-    assert_eq!(bodies[0]["kind"], "zombie");
-    assert_eq!(bodies[0]["count"], 3, "2 + 1: {bodies:#?}");
-    let ten_x = bodies[0]["give_up_swings"].as_u64().unwrap();
+    let (out, _) = build(tmp.path()).expect("souls-bonfire builds");
+    let rbs = run_backs_of(&out);
+    let guards: Vec<&serde_json::Value> =
+        rbs.iter().filter(|r| r["wave"] == "wave/guards").collect();
+    assert_eq!(guards.len(), 1, "one run-back for the guards: {rbs:#?}");
+    let rb = guards[0];
+    assert_eq!(rb["objective"], "obj/slay");
+    assert_eq!(rb["bonfire"], 0);
     assert!(
-        ten_x > 16,
-        "a 120-HP body cannot share the 12-HP body's floor: {bodies:#?}"
+        rb["before"].as_str().is_some_and(|b| b.starts_with("obj/")),
+        "keyed by the beat whose leg re-crosses it: {rb}"
     );
+    assert!(
+        rb["distance"].as_f64().unwrap() <= rb["radius"].as_f64().unwrap(),
+        "the crossing is inside the wave's own aggro radius: {rb}"
+    );
+    assert_eq!(rb["paths"], serde_json::json!(["critical-path"]));
 }
 
+/// A wave that does not come back after a rest is not met again.
 #[test]
-fn one_unproven_stack_makes_the_whole_kind_unproven() {
-    // Same grouping rule, the other direction: the bot cannot tell which zombie
-    // it is hitting, so a kind is only bounded when EVERY stack of it is.
+fn a_wave_that_stays_down_is_no_run_back() {
     let tmp = TempCampaign::new();
     campaign_with(tmp.path(), |quests, _| {
-        let waves = quests["content"]["waves"].as_array_mut().unwrap();
-        let guards = waves
-            .iter_mut()
-            .find(|w| w["id"] == "wave/guards")
-            .expect("wave/guards");
-        let mut vanilla = guards["mobs"][0].clone();
-        vanilla.as_object_mut().unwrap().remove("attributes");
-        vanilla["count"] = serde_json::json!(1);
-        vanilla["name"] = serde_json::json!("Keep Recruit");
-        guards["mobs"].as_array_mut().unwrap().push(vanilla);
+        quests["dsl_version"] = serde_json::json!(DSL_VERSION);
+        quests["content"]["waves"][0]["respawns_on_rest"] = serde_json::json!(false);
     });
-    let (out, _) = build(tmp.path()).expect("the mutated campaign builds");
-    let (_, plan) = path_and_plan(&out);
-    let guards = plan["encounters"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|e| e["wave"] == "wave/guards")
-        .expect("the guards encounter");
-    let bodies = guards["bodies"].as_array().unwrap();
-    assert_eq!(bodies.len(), 1);
-    assert!(bodies[0]["give_up_swings"].is_null(), "{bodies:#?}");
+    let (out, _) = build(tmp.path()).expect("souls-bonfire builds");
     assert!(
-        bodies[0]["reason"]
-            .as_str()
-            .is_some_and(|r| r.contains("max_health")),
-        "{bodies:#?}"
+        run_backs_of(&out)
+            .iter()
+            .all(|r| r["wave"] != "wave/guards"),
+        "the guards stay down"
     );
 }

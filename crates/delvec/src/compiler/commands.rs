@@ -108,6 +108,29 @@ impl CommandTree {
         Self { root }
     }
 
+    /// The **literal** children of the node a path of node names reaches, in
+    /// the tree's own (sorted) order — `None` when the path leaves the tree.
+    ///
+    /// A path segment names a child exactly as the tree does: a literal by its
+    /// text, an argument by its declared name. `["bossbar", "set", "id",
+    /// "color"]` answers the seven colours the pinned game draws. This is how a
+    /// rule that needs a vocabulary the game fixes reads it from the one
+    /// authority every emitted line is already held to, instead of keeping a
+    /// second copy that could drift from it.
+    pub fn literals_under(&self, path: &[&str]) -> Option<Vec<&str>> {
+        let mut node = &self.root;
+        for seg in path {
+            node = node.children.get(*seg)?;
+        }
+        Some(
+            node.children
+                .iter()
+                .filter(|(_, n)| n.node_type == "literal")
+                .map(|(k, _)| k.as_str())
+                .collect(),
+        )
+    }
+
     /// Validate a single command line. `Ok(())` if it is structurally valid, an
     /// [`CommandError`] otherwise. Blank lines and `#` comments are accepted.
     pub fn validate_line(&self, line: &str) -> Result<(), CommandError> {

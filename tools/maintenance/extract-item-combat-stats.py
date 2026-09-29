@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Regenerate `crates/delvec/data/item-combat-1.21.11.json` from the pinned MC
 1.21.11 item-components summary — the vendored `item id -> combat stats` table the
-spec-0023 winnability arithmetic reads (`DW0472`, `DW0473`).
+spec-0023 time-to-kill arithmetic reads (`DW0472`) and the muster's armour floor.
 
 Why it exists: the compiler has to answer "can this kit kill that hostile, and in
 how many swings" at build time. Every number it needs is already Mojang's own
@@ -29,15 +29,13 @@ Expected SHA-256 of that source (pinned in PROVENANCE.md):
 ## Transform
 
 For every item, sum the `add_value` modifiers of the four combat attribute types
-over the component list, take `minecraft:food`'s `nutrition` as the sustain term,
+over the component list, take `minecraft:food`'s `nutrition`,
 and emit an entry only when at least one number is non-zero:
 
     {"minecraft:<id>": {"attack_damage": f, "attack_speed": f,
                         "armor": f, "armor_toughness": f, "nutrition": f}}
 
-`nutrition` is here rather than in a table of its own because sustain is a combat
-stat: spec-0023 §2 requires the kit's healing to be non-zero, and "is this item
-food" is `minecraft:food`'s presence — Mojang's data, not a curated list.
+`nutrition` is extracted and read by no check.
 
 then `json.dumps(indent=2, sort_keys=True, ensure_ascii=False) + "\n"` — `delvec
 fmt` canonical form, because the output is a tracked file inside the

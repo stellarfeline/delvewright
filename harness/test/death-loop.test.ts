@@ -18,7 +18,11 @@ import {
   deathLoopBinding,
   deathLoopBindingFailures,
   datumsPromised,
+  dropOf,
   entryCellOf,
+  gateVerdict,
+  nearLip,
+  termClause,
   markerAt,
   markersAt,
   expectedForfeit,
@@ -33,6 +37,7 @@ import {
   stakesDropped,
   tableAnchor,
   type DeathPlan,
+  type GateTerm,
   type LethalTrial,
   type LethalVolume,
   type StakeRule,
@@ -56,7 +61,10 @@ function planDoc(): Record<string, unknown> {
         damage_type: "minecraft:fall",
       },
     ],
-    on_death: { effects: 1, drops_stake: ["stake/embers"] },
+    on_death: {
+      effects: 1,
+      drops_stake: [{ stake: "stake/embers", gates: [{ terms: [] }] }],
+    },
     stakes: [
       {
         id: "stake/embers",
@@ -204,7 +212,7 @@ test("the emitted plan parses, and every declaration survives the round trip", (
   assert.equal(p.campaignId, "economy");
   assert.equal(p.volumes.length, 1);
   assert.equal(p.volumes[0]!.message, "The stone floor gives way beneath you.");
-  assert.deepEqual(p.dropsStake, ["stake/embers"]);
+  assert.deepEqual(p.dropsStake, [{ stake: "stake/embers", gates: [{ terms: [] }] }]);
   assert.deepEqual(p.stakes[0]!.forfeit, { kind: "all" });
   assert.equal(p.stakes[0]!.currency.objective, "dw.s_embers");
   assert.equal(p.binding.unbound, false);
@@ -840,12 +848,182 @@ test("the binding counts what was really examined", () => {
     declaredVolumes: 1,
     volumesEntered: 1,
     deathsObserved: 1,
+    datumsPromised: 1,
     stakesExamined: 1,
     datumsExamined: 1,
+    datumsWithheld: 0,
     seatsMatched: 1,
     walksBack: 1,
   });
   assert.deepEqual(deathLoopBindingFailures(b), []);
+});
+
+// --- the gate on a `drop-stake`: a conditional promise, read as one ----------
+//
+// A `drop-stake` carries a `when` like every other effect, so "this death
+// forfeits this stake" is CONDITIONAL. The gallery declares two of its four drops
+// behind `flag/hall-sealed`, which is set long before the death-loop stage runs;
+// every run of the stage reported the engine's correct refusal to take those two
+// purses as "the death took the wrong amount for `stake/tokens`". The plan now
+// carries the gate and these are the rules that read it.
+
+/** A term, spelled the way the compiler emits one. */
+function term(over: Partial<GateTerm> = {}): GateTerm {
+  return {
+    objective: "dw.f_hall_sealed",
+    holder: "#party",
+    min: 1,
+    max: 1,
+    negate: false,
+    ...over,
+  };
+}
+
+test("a term is asked as the `execute` clause the compiler wrote, in every op shape", () => {
+  // The harness never reads a value and re-applies the rule: it puts the clause to
+  // the server, whose answer IS the rule. `death_plan_gate.rs` holds the plan's
+  // terms against the emitted guard from the other side, so these two renderings
+  // of one declaration cannot drift apart unnoticed.
+  assert.equal(termClause(term()), "if score #party dw.f_hall_sealed matches 1");
+  assert.equal(
+    termClause(term({ negate: true })),
+    "unless score #party dw.f_hall_sealed matches 1",
+  );
+  assert.equal(
+    termClause(term({ objective: "dw.s_labels_read", min: undefined, max: 9 })),
+    "if score #party dw.s_labels_read matches ..9",
+  );
+  assert.equal(
+    termClause(term({ objective: "dw.s_purse", holder: "@s", min: 500, max: undefined })),
+    "if score @s dw.s_purse matches 500..",
+  );
+  assert.equal(
+    termClause(term({ objective: "dw.s_rung", min: 2, max: 5 })),
+    "if score #party dw.s_rung matches 2..5",
+  );
+});
+
+test("a shut gate withholds the wager, and the verdict names the term that shut it", () => {
+  const drop = { stake: "stake/relics", gates: [{ terms: [term({ negate: true })] }] };
+  const v = gateVerdict(drop, () => false);
+  assert.equal(v.kind, "shut");
+  assert.match(v.kind === "shut" ? v.why : "", /dw\.f_hall_sealed/);
+});
+
+test("an open gate wagers, and an unconditional drop is one alternative with no terms", () => {
+  assert.equal(gateVerdict({ stake: "s", gates: [{ terms: [] }] }, () => undefined).kind, "open");
+  const gated = { stake: "s", gates: [{ terms: [term({ negate: true })] }] };
+  assert.equal(gateVerdict(gated, () => true).kind, "open");
+});
+
+test("one stake dropped by two effects is forfeited when EITHER gate is open", () => {
+  // The disjunction is the campaign's, not a convenience: two `drop-stake`
+  // effects naming one stake promise the forfeit under either condition, and a
+  // reading that took only the first would withhold a wager the death really makes.
+  const drop = {
+    stake: "stake/toll",
+    gates: [{ terms: [term()] }, { terms: [term({ objective: "dw.f_bell_rung" })] }],
+  };
+  const v = gateVerdict(drop, (t) => t.objective === "dw.f_bell_rung");
+  assert.equal(v.kind, "open");
+});
+
+test("a term the server never answered leaves the promise UNESTABLISHED, never quietly shut", () => {
+  // The direction that matters: treating it as shut would skip the forfeit
+  // assertion and report the run green over an assertion it never made.
+  const drop = { stake: "stake/relics", gates: [{ terms: [term()] }] };
+  const v = gateVerdict(drop, () => undefined);
+  assert.equal(v.kind, "unread");
+  assert.match(v.kind === "unread" ? v.why : "", /did not answer/);
+});
+
+test("…but an alternative that is plainly open settles it, whatever else went unanswered", () => {
+  const drop = {
+    stake: "stake/toll",
+    gates: [{ terms: [term()] }, { terms: [] }],
+  };
+  assert.equal(gateVerdict(drop, () => undefined).kind, "open");
+});
+
+test("a gate nobody could read is a FAILING trial, not a quieter one", () => {
+  const t = openLethalTrial(VOLUME, [5, 65, 8], []);
+  t.gateUnread.push({ stake: "stake/embers", why: "the ledger could not be read" });
+  const out = lethalTrialFailures(t);
+  assert.match(out.join("\n"), /could not be established/);
+});
+
+test("a death-loop that examined ZERO of the datums it promised is a finding", () => {
+  // The unrun vacuity mode, on the stake half's own denominator: a campaign whose
+  // every `drop-stake` is gated shut by the time this stage runs declares a
+  // recovery loop the bot tier never exercises.
+  const b = {
+    ...deathLoopBinding(plan(), [goodTrial()]),
+    datumsExamined: 0,
+    datumsWithheld: 1,
+  };
+  assert.match(deathLoopBindingFailures(b).join("\n"), /ZERO of the 1 datum/);
+});
+
+test("the plan's drops are addressed by stake, and an undropped stake has no gate", () => {
+  const p = plan();
+  assert.equal(dropOf(p, "stake/embers")?.gates.length, 1);
+  assert.equal(dropOf(p, "stake/nothing"), undefined);
+});
+
+test("a gate term with both ends open is refused — it gates nothing", () => {
+  const doc = planDoc();
+  (doc["on_death"] as Record<string, unknown>)["drops_stake"] = [
+    { stake: "stake/embers", gates: [{ terms: [{ ...term(), min: null, max: null }] }] },
+  ];
+  assert.throws(
+    () => parseDeathPlan(doc),
+    (err: unknown) => err instanceof DeathPlanParseError,
+  );
+});
+
+test("a drop with no alternatives at all is refused, never read as unconditional", () => {
+  const doc = planDoc();
+  (doc["on_death"] as Record<string, unknown>)["drops_stake"] = [
+    { stake: "stake/embers", gates: [] },
+  ];
+  assert.throws(
+    () => parseDeathPlan(doc),
+    (err: unknown) => err instanceof DeathPlanParseError && err.pointer.endsWith("/gates"),
+  );
+});
+
+// --- the near lip: the reachable cell NEAREST the volume ---------------------
+
+test("the near lip is the anchor nearest the volume, not the first row in the table", () => {
+  // vesperhold's numbers: `lethal/undertide` at [35,58,79]..[37,60,81] is anchored
+  // at [31,68,78] from three seats, [35,80,79] from another and [9,66,79] from the
+  // entry spawn — which is the row the table lists FIRST. Taking it sent the
+  // approach twenty-six blocks across the map, through live encounters, to a place
+  // that is not this volume's lip.
+  const p = plan();
+  const far: DeathPlan = {
+    ...p,
+    volumes: [{ ...p.volumes[0]!, region: { lo: [35, 58, 79], hi: [37, 60, 81] } }],
+    regions: [{ ...p.regions[0]!, region: { lo: [35, 58, 79], hi: [37, 60, 81] } }],
+    rows: [
+      { seat: 0, region: 0, anchor: [9, 66, 79] },
+      { seat: 1, region: 0, anchor: [31, 68, 78] },
+    ],
+  };
+  assert.deepEqual(nearLip(far, far.volumes[0]!.id), [31, 68, 78]);
+});
+
+test("the near lip ties break lexicographically, so a run is reproducible", () => {
+  const p = plan();
+  const box = p.volumes[0]!.region;
+  const tied: DeathPlan = {
+    ...p,
+    rows: [
+      { seat: 0, region: 0, anchor: [box.hi[0] + 2, box.lo[1], box.lo[2]] },
+      { seat: 1, region: 0, anchor: [box.lo[0] - 2, box.lo[1], box.lo[2]] },
+    ],
+  };
+  assert.deepEqual(nearLip(tied, p.volumes[0]!.id), [box.lo[0] - 2, box.lo[1], box.lo[2]]);
 });
 
 // --- the lethal exclusion, fed what the REAL pathfinder feeds it -------------

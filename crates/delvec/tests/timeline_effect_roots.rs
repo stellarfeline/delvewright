@@ -176,15 +176,7 @@ fn assert_validates(c: &Campaign) {
 
 fn try_build(campaign: &Campaign, prefabs: &PrefabRegistry) -> Result<BuildOutput, BuildFailure> {
     let plan = Plan::build(campaign, prefabs).expect("plan builds");
-    let mut structures: BTreeMap<String, Vec<u8>> = BTreeMap::new();
-    for area in &plan.areas {
-        for piece in &area.pieces {
-            for t in &piece.templates {
-                let bytes = std::fs::read(common::prefabs_dir().join(&t.structure_file)).unwrap();
-                structures.insert(t.structure_file.clone(), bytes);
-            }
-        }
-    }
+    let structures = common::plan_structures_with_trap_triggers(&plan, &common::prefabs_dir());
     let tree = CommandTree::v1_21_11();
     emit::build(
         &plan,

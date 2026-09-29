@@ -22,6 +22,12 @@ from delve_skin.catalog import catalog_card  # noqa: E402
 from delve_skin.cli import _entry_surface_help  # noqa: E402
 from delve_skin.compose import (  # noqa: E402
     ENTRY_KEYS,
+    FACE_BROW,
+    FACE_CHIN,
+    FACE_EYES,
+    FACE_HAIRLINE,
+    FACE_LIP,
+    FACE_MOUTH,
     PALETTE_KEYS,
     CastEntry,
     compose_png_bytes,
@@ -305,23 +311,89 @@ def test_nothing_painted_after_the_torso_erases_it():
 
 def test_facial_hair_none_leaves_the_chin_clean():
     skin = _read_back(_dressed(facial_hair="none"))
-    for y in range(0, 4):
+    for y in range(FACE_CHIN, FACE_EYES):
         assert not _near(_at(skin, "head", "front", 3, y), GUIDE_HAIR), f"hair at y={y}"
     assert _near(_at(skin, "head", "down", 3, 3), GUIDE_SKIN), "chin underside"
 
 
 def test_facial_hair_moustache_is_one_row():
     skin = _read_back(_dressed(facial_hair="moustache"))
-    assert _near(_at(skin, "head", "front", 3, 3), GUIDE_HAIR), "no moustache"
-    for y in (0, 1, 2):
+    assert _near(_at(skin, "head", "front", 3, FACE_LIP), GUIDE_HAIR), "no moustache"
+    for y in (FACE_CHIN, FACE_MOUTH):
         assert not _near(_at(skin, "head", "front", 3, y), GUIDE_HAIR), f"beard at y={y}"
 
 
 def test_facial_hair_beard_covers_chin_jaw_and_underside():
     skin = _read_back(_dressed(facial_hair="beard"))
-    for y in (0, 1, 2, 3):
+    for y in (FACE_CHIN, FACE_MOUTH, FACE_LIP):
         assert _near(_at(skin, "head", "front", 3, y), GUIDE_HAIR), f"no beard at y={y}"
     assert _near(_at(skin, "head", "down", 3, 3), GUIDE_HAIR, tol=9), "no underside"
+
+
+# --- the lower face, which a beard used to be the only thing on -------------
+#
+# The defect these pin: the composer painted a brow, eyes and a nose on the
+# upper rows and nothing at all below them, so half of every clean-shaven head
+# was the fill colour and read as an enormous jaw. A beard hid it by occupying
+# exactly those rows, which is why bearded characters looked right and
+# clean-shaven ones did not. The rows themselves are a measurement, recorded in
+# `docs/reference/face-craft.md`.
+
+#: The amount `_build_head` textures bare skin with. A pixel within this of the
+#: fill colour is fill, not modelling.
+SKIN_NOISE = 6
+
+
+def _face_row(skin: Skin, y: int):
+    return [_at(skin, "head", "front", x, y) for x in range(8)]
+
+
+def _lum(c) -> float:
+    return 0.299 * c[0] + 0.587 * c[1] + 0.114 * c[2]
+
+
+def test_a_clean_shaven_face_is_modelled_below_the_eyes():
+    """Every row under the eyes that is not the bare lip row carries a face."""
+    skin = _read_back(_dressed(facial_hair="none", hair="short"))
+    for y in (FACE_MOUTH, FACE_CHIN):
+        row = _face_row(skin, y)
+        modelled = [c for c in row if not _near(c, GUIDE_SKIN, tol=SKIN_NOISE + 2)]
+        assert modelled, f"row y={y} of a clean-shaven face is bare fill"
+    mouth = _face_row(skin, FACE_MOUTH)
+    for x in (3, 4):
+        assert not _near(mouth[x], GUIDE_SKIN, tol=SKIN_NOISE + 2), f"no mouth at x={x}"
+    for x in (0, 1, 2, 5, 6, 7):
+        assert _near(mouth[x], GUIDE_SKIN, tol=SKIN_NOISE + 2), (
+            f"the mouth is wider than the two pixels every default skin gives it "
+            f"(x={x})"
+        )
+
+
+def test_the_jaw_narrows_toward_the_chin():
+    """The taper, asked as a shape rather than as a list of colours."""
+    skin = _read_back(_dressed(facial_hair="none", hair="short"))
+    chin = _face_row(skin, FACE_CHIN)
+    centre = (_lum(chin[3]) + _lum(chin[4])) / 2
+    inner = (_lum(chin[1]) + _lum(chin[6])) / 2
+    outer = (_lum(chin[0]) + _lum(chin[7])) / 2
+    assert outer < inner < centre, (
+        "the chin row does not step down toward its corners: "
+        f"centre={centre:.1f} inner={inner:.1f} outer={outer:.1f}"
+    )
+    for side in ("left", "right"):
+        jaw = _lum(_at(skin, "head", side, 3, FACE_CHIN))
+        cheek = _lum(_at(skin, "head", side, 3, FACE_EYES))
+        assert jaw < cheek - 10, (
+            f"the {side} of the head does not taper: jaw={jaw:.1f} cheek={cheek:.1f}"
+        )
+
+
+def test_a_beard_covers_the_mouth_rather_than_sitting_beside_it():
+    beardless = _read_back(_dressed(facial_hair="none"))
+    bearded = _read_back(_dressed(facial_hair="beard"))
+    for x in (3, 4):
+        assert not _near(_at(beardless, "head", "front", x, FACE_MOUTH), GUIDE_HAIR)
+        assert _near(_at(bearded, "head", "front", x, FACE_MOUTH), GUIDE_HAIR)
 
 
 # --- the head: hair length, the face it frames, the collar, the grey --------
@@ -389,6 +461,29 @@ def test_hair_past_the_ear_frames_the_face_and_shorter_hair_does_not():
     assert _near(_at(framed, "head", "front", 3, 2), STEWARD_SKIN)
     cropped = _read_back(_steward(hair="short", greying="none"))
     assert _near(_at(cropped, "head", "front", 0, 2), STEWARD_SKIN), "short hair frames"
+
+
+def test_a_bald_head_gets_no_band_where_a_fringe_would_have_shadowed_it():
+    """A hairline shadow with no hairline over it is a headband."""
+    bald = _read_back(_steward(hair="bald", greying="none"))
+    for x in range(8):
+        assert _near(_at(bald, "head", "front", x, FACE_HAIRLINE), STEWARD_SKIN), (
+            f"a band across a bald forehead at x={x}"
+        )
+    cropped = _read_back(_steward(hair="crop", greying="none"))
+    assert not _near(_at(cropped, "head", "front", 3, FACE_HAIRLINE), STEWARD_SKIN), (
+        "a fringe with no shadow under it"
+    )
+
+
+def test_the_brow_is_a_pair_of_eyebrows_and_not_a_band():
+    """A full-width dark row across the face is a headband, not a brow."""
+    skin = _read_back(_steward(hair="crop", greying="none"))
+    brow = [_at(skin, "head", "front", x, FACE_BROW) for x in range(8)]
+    for x in (1, 2, 5, 6):
+        assert not _near(brow[x], STEWARD_SKIN), f"no eyebrow at x={x}"
+    for x in (0, 3, 4, 7):
+        assert _near(brow[x], STEWARD_SKIN), f"the brow runs across the face at x={x}"
 
 
 def test_hair_long_enough_to_show_an_edge_gets_a_cut_line():

@@ -157,6 +157,14 @@ pub const DW_CHECKPOINT_UNSTANDABLE: DwCode = DwCode::new("DW0316", ExitTier::Bu
 /// not a skill check, it is a slot machine, and no amount of learning the level
 /// makes it fair.
 pub const DW_TIMED_GATE_COIN_FLIP: DwCode = DwCode::new("DW0378", ExitTier::Build);
+/// `DW0918`: a `volley` (spec-0022) whose cadence is a coin flip rather than a
+/// timing read — a player standing anywhere in the kill zone when a salvo lands
+/// cannot leave the zone before the next salvo in at least **20% of the
+/// interval**. The volley's counterplay is LEAVING the zone (spec-0022: "a
+/// decision, not a lucky strafe"); an interval too short for the walk out makes
+/// that decision unavailable. The same body model and floor as
+/// [`DW_TIMED_GATE_COIN_FLIP`] (`DW0378`), through the one [`timing_read`].
+pub const DW_VOLLEY_COIN_FLIP: DwCode = DwCode::new("DW0918", ExitTier::Build);
 /// `DW0388`: a **timed hazard** (spec-0016 §4 addendum) the player cannot
 /// observe before committing to it — no standable cell exists that is clear of
 /// the hazard's lethal span, reachable without entering it, and has line of
@@ -889,6 +897,11 @@ pub struct World {
     /// standing in the sea's own band comes out of `/place template` waterlogged,
     /// which makes it a water source the block map does not contain.
     waterloggable: BTreeSet<[i32; 3]>,
+    /// The subset of `flooded` that is **lava** rather than water
+    /// ([`crate::compiler::assembled::Occupancy::lava`]). Read by exactly one
+    /// question, [`World::body_moves`]: a body that enters water floats at its
+    /// surface, and one that enters lava does not come out of it at all.
+    lava: BTreeSet<[i32; 3]>,
     /// Cells inside a declared **lethal volume** (DSL v0.10, spec-0031).
     ///
     /// A volume that kills whatever enters it is, for a route, a volume no route
@@ -1021,7 +1034,10 @@ pub struct World {
 /// fourth arm of the rule: it is the fallback hitbox [`npc_render_width`] hands
 /// [`step_vertices`], which shapes a step the router has **already** permitted
 /// and never re-decides whether it may be taken.
-use delvewright_dsl::metrics::{FULL_16, PLAYER_WIDTH, step_allowed};
+use delvewright_dsl::metrics::{
+    FULL_16, JUMP_REACH, PLAYER_WIDTH, WATER_CLIMB_OUT_RISE, jump_max_gap, step_allowed,
+    unarmoured_survivable_fall_blocks,
+};
 
 /// **Everything a [`World`] carries that is not a block** — the premises the
 /// campaign states about the world its geometry sits in: what the generator put
@@ -1270,6 +1286,7 @@ impl World {
             flooded: self.flooded.clone(),
             partial: self.partial.clone(),
             waterloggable: self.waterloggable.clone(),
+            lava: self.lava.clone(),
             objective_cells: self.objective_cells.clone(),
             lethal: self.lethal.clone(),
             lethal_regions: self.lethal_regions.clone(),
@@ -1443,6 +1460,7 @@ impl World {
             flooded: occ.flooded,
             partial: occ.partial,
             waterloggable: occ.waterloggable,
+            lava: occ.lava,
             lethal: premises
                 .lethal_regions
                 .iter()
@@ -1572,6 +1590,7 @@ impl World {
             flooded: self.flooded.clone(),
             partial,
             waterloggable: self.waterloggable.clone(),
+            lava: self.lava.clone(),
             objective_cells: self.objective_cells.clone(),
             lethal: self.lethal.clone(),
             lethal_regions: self.lethal_regions.clone(),
@@ -1614,6 +1633,7 @@ impl World {
             flooded: self.flooded.clone(),
             partial: self.partial.clone(),
             waterloggable: self.waterloggable.clone(),
+            lava: self.lava.clone(),
             objective_cells: self.objective_cells.clone(),
             lethal: self.lethal.clone(),
             lethal_regions: self.lethal_regions.clone(),
@@ -1664,6 +1684,7 @@ impl World {
             flooded: self.flooded.clone(),
             partial: self.partial.clone(),
             waterloggable: self.waterloggable.clone(),
+            lava: self.lava.clone(),
             objective_cells: self.objective_cells.clone(),
             lethal: self.lethal.clone(),
             lethal_regions: self.lethal_regions.clone(),
@@ -1717,6 +1738,7 @@ impl World {
             flooded: self.flooded.clone(),
             partial: self.partial.clone(),
             waterloggable: self.waterloggable.clone(),
+            lava: self.lava.clone(),
             objective_cells: self.objective_cells.clone(),
             lethal: self.lethal.clone(),
             lethal_regions: self.lethal_regions.clone(),
@@ -1794,6 +1816,7 @@ impl World {
             flooded: self.flooded.clone(),
             partial: self.partial.clone(),
             waterloggable: self.waterloggable.clone(),
+            lava: self.lava.clone(),
             objective_cells: self.objective_cells.clone(),
             lethal: self.lethal.clone(),
             lethal_regions: self.lethal_regions.clone(),
@@ -1865,6 +1888,7 @@ impl World {
             flooded: self.flooded.clone(),
             partial: self.partial.clone(),
             waterloggable: self.waterloggable.clone(),
+            lava: self.lava.clone(),
             objective_cells: self.objective_cells.clone(),
             lethal: self.lethal.clone(),
             lethal_regions: self.lethal_regions.clone(),
@@ -1915,6 +1939,7 @@ impl World {
                 flooded,
                 partial: BTreeMap::new(),
                 waterloggable: BTreeSet::new(),
+                lava: BTreeSet::new(),
             },
             Premises::geometry_only(),
         )
@@ -1939,6 +1964,15 @@ impl World {
     /// a completion volume against the body's AABB, and the AABB starts at the feet.
     pub fn feet_y(&self, c: [i32; 3]) -> f64 {
         self.feet_16_fp(c, &Footprint::player()) as f64 / FULL_16 as f64
+    }
+
+    /// Whether the model floods `c` — water (or lava) a walker cannot stand in
+    /// and a body can be put in. Public so the engagement proof
+    /// ([`crate::compiler::engage`], `DW0920`) can ask whether the party can put its
+    /// feet in water within a fight's reach; the one flood this model carries,
+    /// never a second reading of the block map.
+    pub fn is_flooded(&self, c: [i32; 3]) -> bool {
+        self.flooded.contains(&c)
     }
 
     /// Whether a cell is unoccupied — neither a solid block nor water-flooded, so a
@@ -2215,7 +2249,7 @@ impl World {
     /// mob eye height) crosses no camera-blocking geometry. Reuses the cutscene
     /// clip traversal, so "can this be seen through" has exactly one definition in
     /// the compiler.
-    fn has_line_of_sight(&self, a: [i32; 3], b: [i32; 3]) -> bool {
+    pub(crate) fn has_line_of_sight(&self, a: [i32; 3], b: [i32; 3]) -> bool {
         let eye = |c: [i32; 3]| {
             let p = cell_center(c);
             [p[0], p[1] + 1.5, p[2]]
@@ -2468,6 +2502,190 @@ impl World {
             }
         }
         out
+    }
+
+    /// **Everywhere a body in `c` can put itself in one movement** — the player's
+    /// own movement over the assembled model, cardinal, player footprint,
+    /// ordered and deduplicated (ADR-0006).
+    ///
+    /// A body is in one of two states, and `c` says which: **standing** in a
+    /// standable cell, or **afloat** in a surface cell of water (a water cell with
+    /// open air over it, [`World::is_water_surface`]).
+    ///
+    /// Standing, it can take the walk step ([`World::neighbors`]), and the two
+    /// movements a route proof never takes and a player always can:
+    ///
+    /// - **Fall.** The neighbouring column is clear at the body's feet and head;
+    ///   the body drops to the first thing that stops it. A floor counts when it
+    ///   is standable (a lethal volume, a fence top are not) and no deeper than
+    ///   the fall an unarmoured body survives; water catches it at any depth, and
+    ///   the body floats at the surface it fell into.
+    /// - **Jump.** The launch column is clear for the whole arc (feet to two cells
+    ///   up, the measured headroom); each gap column is clear from the lower of the
+    ///   launch and landing feet to that same top; the body lands on the first
+    ///   floor below the arc in the landing column, and the gap is inside
+    ///   [`delvewright_dsl::metrics::jump_max_gap`] for the rise. Requiring the whole band clear
+    ///   refuses some arcs a body clears, never admits one it cannot.
+    ///
+    /// Walking into water whose surface is at or above the body's feet puts it
+    /// afloat at that surface.
+    ///
+    /// Afloat, it can swim to a neighbouring surface cell at the same height, and
+    /// **climb out** onto a neighbouring standable cell no higher than
+    /// [`delvewright_dsl::metrics::WATER_CLIMB_OUT_RISE`] above the water it floats in — or step
+    /// over a lower rim and fall. It cannot jump, and it does not dive: water it
+    /// could leave only by swimming under something is water it cannot leave.
+    /// Lava is never a place a body floats.
+    ///
+    /// A route proof may not use any of this: it must never prove a way the bot
+    /// cannot walk on cue. A proof that asks **where a body can end up** must, or
+    /// it cannot see the places a player jumps, falls or wades into — which is
+    /// what [`DW_BODY_CANNOT_LEAVE`] asks, in both directions of the same relation.
+    ///
+    /// Diagonal jumps and climbing (ladders, vines) are not moves here: a place a
+    /// body reaches only by one of them is not seen, and a place it leaves only by
+    /// one is seen as unleavable.
+    pub fn body_moves(&self, c: [i32; 3]) -> Vec<[i32; 3]> {
+        const HORIZ: [(i32, i32); 4] = [(-1, 0), (1, 0), (0, -1), (0, 1)];
+        let fp = Footprint::player();
+        let deepest = unarmoured_survivable_fall_blocks() as i32;
+        let clear =
+            |x: i32, y0: i32, y1: i32, z: i32| (y0..=y1).all(|y| !self.is_occupied([x, y, z]));
+        // Where a body dropping down a column from `top` ends up: afloat at the
+        // first water it meets, or standing on the first floor, if that floor is
+        // standable and no deeper under `from` than a body survives. `None` when
+        // it lands in lava, a lethal volume, on something no body stands on, or
+        // nowhere at all.
+        let settle = |x: i32, z: i32, top: i32, from: i64| -> Option<[i32; 3]> {
+            // Nothing deeper than the survivable fall is a landing, and water
+            // that deep is not looked for: a fall that far into water is not
+            // counted as a way in.
+            let bottom = from.div_euclid(FULL_16) as i32 - deepest - 1;
+            let mut y = top;
+            while y >= bottom {
+                let cell = [x, y, z];
+                if self.is_occupied(cell) {
+                    if self.is_water_surface(cell) {
+                        return Some(cell);
+                    }
+                    let n = [x, y + 1, z];
+                    return (self.standable_fp(n, &fp)
+                        && jump_max_gap(self.feet_16_fp(n, &fp) - from).is_some())
+                    .then_some(n);
+                }
+                y -= 1;
+            }
+            None
+        };
+        let mut out = Vec::new();
+        if self.is_water_surface(c) {
+            for (dx, dz) in HORIZ {
+                let (x1, z1) = (c[0] + dx, c[2] + dz);
+                let n = [x1, c[1], z1];
+                if self.is_water_surface(n) {
+                    out.push(n);
+                    continue;
+                }
+                // Climb out onto a ledge in reach of the water's top.
+                for rise in (1..=WATER_CLIMB_OUT_RISE).rev() {
+                    let up = [x1, c[1] + rise, z1];
+                    if self.standable_fp(up, &fp) && clear(c[0], c[1] + 1, c[1] + rise + 1, c[2]) {
+                        out.push(up);
+                        break;
+                    }
+                }
+                // Or over a rim no higher than the water, and down whatever is there.
+                if clear(x1, c[1], c[1] + 1, z1) {
+                    let from = (i64::from(c[1]) + 1) * FULL_16;
+                    if let Some(n) = settle(x1, z1, c[1] - 1, from) {
+                        out.push(n);
+                    }
+                }
+            }
+            out.sort_unstable();
+            out.dedup();
+            return out;
+        }
+        out.extend(self.neighbors(c));
+        let here = self.feet_16_fp(c, &fp);
+        for (dx, dz) in HORIZ {
+            let (x1, z1) = (c[0] + dx, c[2] + dz);
+            // Wade in: water at the body's feet in the next column, rising to
+            // a surface with air over it.
+            if self.is_water([x1, c[1], z1])
+                && !self.solid_at([x1, c[1] + 1, z1])
+                && let Some(s) = self.surface_over([x1, c[1], z1])
+            {
+                out.push(s);
+            }
+            // Fall: step sideways into the next column and drop.
+            if clear(x1, c[1], c[1] + 1, z1)
+                && let Some(n) = settle(x1, z1, c[1] - 1, here)
+            {
+                out.push(n);
+            }
+            // Jump: launch headroom, then gaps of 1.. columns.
+            if !clear(c[0], c[1], c[1] + 2, c[2]) {
+                continue;
+            }
+            let widest = JUMP_REACH.iter().map(|(_, g)| *g).max().unwrap_or(0) as i32;
+            for gap in 1..=widest {
+                let (lx, lz) = (c[0] + dx * (gap + 1), c[2] + dz * (gap + 1));
+                // The arc crosses every gap column at launch height; one that is
+                // blocked there stops this jump and every longer one.
+                let (gx, gz) = (c[0] + dx * gap, c[2] + dz * gap);
+                if !clear(gx, c[1], c[1] + 2, gz) {
+                    break;
+                }
+                let Some(n) = settle(lx, lz, c[1] + 2, here) else {
+                    continue;
+                };
+                // A landing afloat is judged as landing on the water's top.
+                let landing_16 = if self.is_water_surface(n) {
+                    (i64::from(n[1]) + 1) * FULL_16
+                } else {
+                    self.feet_16_fp(n, &fp)
+                };
+                let Some(max_gap) = jump_max_gap(landing_16 - here) else {
+                    continue;
+                };
+                if gap as u32 > max_gap {
+                    continue;
+                }
+                let lo = n[1].min(c[1]);
+                if (1..=gap).all(|i| clear(c[0] + dx * i, lo, c[1] + 2, c[2] + dz * i)) {
+                    out.push(n);
+                }
+            }
+        }
+        out.sort_unstable();
+        out.dedup();
+        out
+    }
+
+    /// Water, not lava: a flooded cell a body could float in.
+    fn is_water(&self, c: [i32; 3]) -> bool {
+        self.flooded.contains(&c) && !self.lava.contains(&c) && !self.lethal.contains(&c)
+    }
+
+    /// A **surface cell** of water: water with open air over it, where a body
+    /// afloat keeps its head out.
+    fn is_water_surface(&self, c: [i32; 3]) -> bool {
+        self.is_water(c) && !self.is_occupied([c[0], c[1] + 1, c[2]])
+    }
+
+    /// The surface a body wading into the water at `c` rises to: up the column
+    /// through water to the first cell with air over it, or `None` when the
+    /// column is capped (water under a roof is water a body cannot breathe in).
+    fn surface_over(&self, c: [i32; 3]) -> Option<[i32; 3]> {
+        let mut y = c[1];
+        while self.is_water([c[0], y, c[2]]) {
+            if self.is_water_surface([c[0], y, c[2]]) {
+                return Some([c[0], y, c[2]]);
+            }
+            y += 1;
+        }
+        None
     }
 
     /// Whether a body may walk the **straight horizontal segment** between the
@@ -4269,15 +4487,9 @@ fn positions_of(
     }
     let mut transport_pending = false;
     for (i, step) in steps.iter().enumerate() {
-        let pos = match step {
-            Step::TalkTo { pos, .. }
-            | Step::Reach { pos, .. }
-            | Step::Kill { pos, .. }
-            | Step::Collect { pos, .. }
-            | Step::Interact { pos, .. } => Some(*pos),
-            Step::SelectClass { .. } | Step::AssertComplete { .. } => None,
-        };
-        if let Some(pos) = pos {
+        // A `trigger` step stands somewhere like an objective does: the party walks
+        // to what it strikes, so the leg to it is a leg the proof owes.
+        if let Some(pos) = step.pos() {
             out.push(VisitedPos {
                 pos,
                 transport_before: transport_pending,
@@ -5434,11 +5646,434 @@ fn verify_checkpoints(
     Ok(())
 }
 
-/// The minimum share of a `timed-gate` cycle that must admit a crossing
-/// (spec-0016 §4). Below this the gate stops being a
-/// timing read and becomes a coin flip. Expressed as a percentage so the
-/// arithmetic below stays in integers — no float rounding in a proof (ADR-0006).
-const TIMED_GATE_MIN_ADMIT_PERCENT: u32 = 20;
+/// `DW0921`: **a place a body can get into and not out of.** From a cell of the
+/// proven route, a body walking, falling and jumping ([`World::body_moves`]) can
+/// reach a cell from which no walk, fall or jump leads back to the route — a
+/// garden bed ringed by a hedge it jumped onto and dropped off, a pit it fell
+/// into. The player is soft-locked there: nothing but leaving the game gets
+/// them out.
+///
+/// It is judged once per quest configuration the critical path passes through
+/// ([`World::region_state_at`] over each leg's arrival), with that
+/// configuration's gates as they stand and that configuration's own route cells
+/// as the place a body must get back to. That is the whole of the author's
+/// control over it, and it needs no declaration of its own: a room the story
+/// shuts the party into holds the objective the story is waiting on, so the
+/// party standing in it stands among that configuration's route cells, and a
+/// room shut until a later beat opens it is only a trap when the beat is out of
+/// reach from inside — which is what this refuses.
+pub const DW_BODY_CANNOT_LEAVE: DwCode = DwCode::new("DW0921", ExitTier::Build);
+
+/// How many pockets a `DW0921` report names before summarising the rest.
+const POCKET_LIST_LIMIT: usize = 6;
+
+/// What [`check_bodies_can_leave`] measured, whether or not it refused: the
+/// population it judged, stated so a pass that judged nothing reads as that.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct LeaveBinding {
+    /// Distinct quest configurations judged.
+    pub configurations: usize,
+    /// Route cells the judgement was rooted at, summed over configurations.
+    pub route_cells: usize,
+    /// Cells a body can reach from them, summed over configurations.
+    pub reached: usize,
+    /// Of those, the cells where the body is afloat at the top of water — the
+    /// population the water half of the proof judges.
+    pub afloat: usize,
+    /// Of those, cells a body cannot leave.
+    pub trapped: usize,
+}
+
+impl LeaveBinding {
+    /// The one line a build prints about this proof.
+    pub fn line(&self) -> String {
+        format!(
+            "DW0921 binding: {} quest configuration(s), {} route cell(s), {} cell(s) a body can reach \
+             by walking, falling, jumping or swimming ({} of them afloat), {} it cannot leave",
+            self.configurations, self.route_cells, self.reached, self.afloat, self.trapped
+        )
+    }
+
+    /// The ledger `validation/leave-proof.json` carries: the same counts, so a
+    /// reader (and the staging gate) can see what the proof judged.
+    pub fn to_json(&self) -> serde_json::Value {
+        serde_json::json!({
+            "code": DW_BODY_CANNOT_LEAVE.id(),
+            "configurations": self.configurations,
+            "route_cells": self.route_cells,
+            "reached": self.reached,
+            "afloat": self.afloat,
+            "trapped": self.trapped,
+        })
+    }
+}
+
+/// How a body got from `from` to `to` in one [`World::body_moves`] movement, in
+/// words for a report.
+fn movement_words(world: &World, from: [i32; 3], to: [i32; 3]) -> String {
+    let run = (to[0] - from[0]).abs() + (to[2] - from[2]).abs();
+    let rise = to[1] - from[1];
+    if world.is_water_surface(from) {
+        return if world.is_water_surface(to) {
+            "swimming".to_string()
+        } else {
+            "climbing out of the water".to_string()
+        };
+    }
+    if world.is_water_surface(to) {
+        return if run == 1 && rise >= 0 {
+            "wading into water".to_string()
+        } else if run == 1 {
+            format!("a fall of {} block(s) into water", -rise)
+        } else {
+            format!("a jump across {} column(s) into water", run - 1)
+        };
+    }
+    if world.neighbors(from).contains(&to) {
+        "a walk".to_string()
+    } else if run == 1 {
+        format!("a fall of {} block(s)", -rise)
+    } else {
+        let height = match rise.cmp(&0) {
+            std::cmp::Ordering::Greater => format!(" up {rise}"),
+            std::cmp::Ordering::Less => format!(" down {}", -rise),
+            std::cmp::Ordering::Equal => String::new(),
+        };
+        format!("a jump across {} column(s){height}", run - 1)
+    }
+}
+
+/// [`DW_BODY_CANNOT_LEAVE`] over a campaign's critical path. Returns the binding
+/// beside the verdict so the caller can print it whichever way the verdict went.
+///
+/// `returned` is the campaign's playable region (`boundary`, spec-0013) as its
+/// inclusive `(min, max)` corners, or `None` when it declares none. A body
+/// standing outside it is carried back to the last checkpoint by the boundary
+/// clock, so a cell outside it is a way out like a route cell is.
+pub fn check_bodies_can_leave(
+    plan: &Plan,
+    world: &World,
+    returned: Option<([i32; 3], [i32; 3])>,
+) -> (LeaveBinding, Result<(), Failure>) {
+    let ancestor = |g: usize, s: usize| plan.gate_fired_before(g, s);
+    // One configuration per distinct region state, carrying the route cells of
+    // every leg that arrives under it and the first step that does.
+    let mut configs: Vec<(RegionState, usize, BTreeSet<[i32; 3]>)> = Vec::new();
+    for (step, cells) in critical_route_cells(plan, world) {
+        let st = world.region_state_at(&plan.region_events, step, &ancestor);
+        match configs.iter_mut().find(|(s, _, _)| *s == st) {
+            Some((_, first, seeds)) => {
+                *first = (*first).min(step);
+                seeds.extend(cells);
+            }
+            None => configs.push((st, step, cells.into_iter().collect())),
+        }
+    }
+    let owned: Vec<Option<World>> = configs
+        .iter()
+        .map(|(st, _, _)| (!st.is_empty()).then(|| world.with_region_state(st)))
+        .collect();
+    let worlds: Vec<(&World, String, Vec<[i32; 3]>)> = configs
+        .into_iter()
+        .zip(&owned)
+        .map(|((_, first, seeds), w)| {
+            let w = w.as_ref().unwrap_or(world);
+            let when = plan
+                .critical_path
+                .get(first)
+                .and_then(|s| s.objective())
+                .map(|o| format!("while `{o}` is next"))
+                .unwrap_or_else(|| format!("from critical step {first}"));
+            (w, when, seeds.into_iter().collect())
+        })
+        .collect();
+    verify_bodies_can_leave(&worlds, returned, &plan.shortcuts)
+}
+
+/// The pure core of [`check_bodies_can_leave`]: one `(world, when, route cells)`
+/// per quest configuration, where `when` names the configuration in words. Split
+/// out so it is unit-testable over a synthetic [`World`] without a [`Plan`].
+fn verify_bodies_can_leave(
+    worlds: &[(&World, String, Vec<[i32; 3]>)],
+    returned: Option<([i32; 3], [i32; 3])>,
+    shortcuts: &[crate::compiler::plan::ShortcutPlan],
+) -> (LeaveBinding, Result<(), Failure>) {
+    let mut binding = LeaveBinding {
+        configurations: worlds.len(),
+        ..LeaveBinding::default()
+    };
+    let mut pockets: Vec<String> = Vec::new();
+    let mut pocket_count = 0usize;
+    for (w, when, seeds) in worlds {
+        let seeds: Vec<[i32; 3]> = seeds
+            .iter()
+            .copied()
+            .filter(|c| w.is_standable(*c))
+            .collect();
+        binding.route_cells += seeds.len();
+        let (reached, trapped, preds) = w.cells_a_body_cannot_leave(&seeds, returned);
+        binding.reached += reached.len();
+        binding.afloat += reached.iter().filter(|c| w.is_water_surface(**c)).count();
+        // A shortcut is opened from its far side by whoever stands at its lever,
+        // and the completability model holds it shut. A pocket whose own reach
+        // takes a body to a lever, and through the door that lever opens back to
+        // the route, is not a pocket.
+        let seed_set: BTreeSet<[i32; 3]> = seeds.iter().copied().collect();
+        let kept: Vec<Vec<[i32; 3]>> = pockets_of(&trapped)
+            .into_iter()
+            .filter(|p| !w.leaves_by_a_shortcut(p, &seed_set, returned, shortcuts))
+            .collect();
+        let trapped: BTreeSet<[i32; 3]> = kept.iter().flatten().copied().collect();
+        binding.trapped += trapped.len();
+        for pocket in kept {
+            pocket_count += 1;
+            if pockets.len() >= POCKET_LIST_LIMIT {
+                continue;
+            }
+            let entry = pocket.iter().find_map(|c| {
+                preds
+                    .get(c)
+                    .and_then(|ps| ps.iter().find(|p| !trapped.contains(*p)))
+                    .map(|p| (*p, *c))
+            });
+            let how = match entry {
+                Some((from, to)) => format!(
+                    "a body gets in from {from:?} to {to:?} by {}",
+                    movement_words(w, from, to)
+                ),
+                None => "a body gets in".to_string(),
+            };
+            pockets.push(format!(
+                "{} cell(s) around {:?} ({when}): {how}, and no walk, fall, jump or swim leads \
+                 from any of them back to the route",
+                pocket.len(),
+                pocket[0]
+            ));
+        }
+    }
+    if pockets.is_empty() {
+        return (binding, Ok(()));
+    }
+    let more = pocket_count.saturating_sub(pockets.len());
+    let tail = if more > 0 {
+        format!("; and {more} more")
+    } else {
+        String::new()
+    };
+    let verdict = Err(Failure {
+        code: DW_BODY_CANNOT_LEAVE,
+        message: format!(
+            "{pocket_count} place(s) a body can get into and not out of — the player is \
+             soft-locked there: {}{tail}. Reshape the place so whoever gets in can walk, fall, \
+             jump or climb out of the water (lower the wall they are ringed by, give them a step, \
+             or take away what they jumped in from); do not fence walkable-looking ground with an \
+             invisible barrier. A body afloat climbs out only onto ground one cell above the \
+             water's top, and does not dive. A room the story is meant to shut the party into \
+             holds the objective the story waits on, and is not this. Moves are cardinal: a \
+             diagonal jump or a climb (ladder, vine) is not counted, so a place left only that way \
+             reads as a trap.",
+            pockets.join("; ")
+        ),
+    });
+    (binding, verdict)
+}
+
+/// Whether the boundary clock carries a body standing in `c` back to the last
+/// checkpoint: the body can stand clear of the region's box when the cell lies
+/// wholly outside it horizontally, or far enough under its floor that the head
+/// is below it.
+fn returned_from(returned: Option<([i32; 3], [i32; 3])>, c: [i32; 3]) -> bool {
+    returned.is_some_and(|(lo, hi)| {
+        c[0] < lo[0] || c[0] > hi[0] || c[2] < lo[2] || c[2] > hi[2] || c[1] + 2 < lo[1]
+    })
+}
+
+/// The cells of `trapped`, split into pockets that touch (26-neighbourhood),
+/// each sorted, in the order of their least cell.
+fn pockets_of(trapped: &BTreeSet<[i32; 3]>) -> Vec<Vec<[i32; 3]>> {
+    let mut left = trapped.clone();
+    let mut out = Vec::new();
+    while let Some(start) = left.pop_first() {
+        let mut pocket = vec![start];
+        let mut queue = vec![start];
+        while let Some(c) = queue.pop() {
+            for dx in -1..=1 {
+                for dy in -1..=1 {
+                    for dz in -1..=1 {
+                        let n = [c[0] + dx, c[1] + dy, c[2] + dz];
+                        if left.remove(&n) {
+                            pocket.push(n);
+                            queue.push(n);
+                        }
+                    }
+                }
+            }
+        }
+        pocket.sort_unstable();
+        out.push(pocket);
+    }
+    out
+}
+
+impl World {
+    /// Whether a body in `pocket` gets back to `seeds` once it opens every shortcut
+    /// whose lever its own reach stands it at — opened in rounds, since a door
+    /// one lever opens can lead to the next lever.
+    fn leaves_by_a_shortcut(
+        &self,
+        pocket: &[[i32; 3]],
+        seeds: &BTreeSet<[i32; 3]>,
+        returned: Option<([i32; 3], [i32; 3])>,
+        shortcuts: &[crate::compiler::plan::ShortcutPlan],
+    ) -> bool {
+        let levers: Vec<Option<[i32; 3]>> = shortcuts
+            .iter()
+            .map(|s| self.snap_standable(s.unlock, SNAP_RADIUS))
+            .collect();
+        let mut opened: BTreeSet<usize> = BTreeSet::new();
+        loop {
+            let owned;
+            let w: &World = if opened.is_empty() {
+                self
+            } else {
+                let cells: BTreeSet<[i32; 3]> = opened
+                    .iter()
+                    .flat_map(|&i| {
+                        let (lo, hi) = shortcuts[i].gate_region;
+                        crate::compiler::assembled::region_cells(lo, hi)
+                    })
+                    .collect();
+                owned = self.with_cleared(&cells);
+                &owned
+            };
+            let mut seen: BTreeSet<[i32; 3]> = pocket.iter().copied().collect();
+            let mut queue: std::collections::VecDeque<[i32; 3]> = seen.iter().copied().collect();
+            while let Some(cur) = queue.pop_front() {
+                if seeds.contains(&cur) || returned_from(returned, cur) {
+                    return true;
+                }
+                for n in w.body_moves(cur) {
+                    if seen.insert(n) {
+                        queue.push_back(n);
+                    }
+                }
+            }
+            let before = opened.len();
+            for (i, lever) in levers.iter().enumerate() {
+                if lever.is_some_and(|l| seen.contains(&l)) {
+                    opened.insert(i);
+                }
+            }
+            if opened.len() == before {
+                return false;
+            }
+        }
+    }
+
+    /// The body-movement closure of `seeds` ([`World::body_moves`]) and, within it,
+    /// the cells from which no movement sequence returns to a seed. Returns the
+    /// closure, the trapped cells, and every closure cell's predecessors (so a
+    /// report can say how a body got in).
+    ///
+    /// Exact over the closure: whatever a closure cell reaches is itself in the
+    /// closure, so walking the predecessor edges backwards from the seeds inside
+    /// it answers "can this cell get back" for every cell without leaving it.
+    #[allow(clippy::type_complexity)]
+    fn cells_a_body_cannot_leave(
+        &self,
+        seeds: &[[i32; 3]],
+        returned: Option<([i32; 3], [i32; 3])>,
+    ) -> (
+        BTreeSet<[i32; 3]>,
+        BTreeSet<[i32; 3]>,
+        BTreeMap<[i32; 3], Vec<[i32; 3]>>,
+    ) {
+        let mut preds: BTreeMap<[i32; 3], Vec<[i32; 3]>> = BTreeMap::new();
+        let mut seen: BTreeSet<[i32; 3]> = seeds.iter().copied().collect();
+        let mut queue: std::collections::VecDeque<[i32; 3]> = seen.iter().copied().collect();
+        while let Some(cur) = queue.pop_front() {
+            for n in self.body_moves(cur) {
+                preds.entry(n).or_default().push(cur);
+                if seen.insert(n) {
+                    queue.push_back(n);
+                }
+            }
+        }
+        // The ways out: the route itself, and every reached cell the boundary
+        // clock carries a body back from.
+        let mut back: BTreeSet<[i32; 3]> = seeds
+            .iter()
+            .copied()
+            .chain(seen.iter().copied().filter(|c| returned_from(returned, *c)))
+            .collect();
+        let mut queue: std::collections::VecDeque<[i32; 3]> = back.iter().copied().collect();
+        while let Some(cur) = queue.pop_front() {
+            if let Some(ps) = preds.get(&cur) {
+                for p in ps {
+                    if back.insert(*p) {
+                        queue.push_back(*p);
+                    }
+                }
+            }
+        }
+        let trapped = seen.difference(&back).copied().collect();
+        (seen, trapped, preds)
+    }
+}
+
+/// The minimum share of a timed hazard's cycle that must admit passage
+/// (spec-0016 §4). Below this the hazard stops being a timing read and becomes a
+/// coin flip. Expressed as a percentage so the arithmetic below stays in
+/// integers — no float rounding in a proof (ADR-0006). One floor for every timed
+/// hazard: a `timed-gate` (`DW0378`) and a `volley` (`DW0918`) are judged by
+/// [`timing_read`] against this same number.
+const TIMING_READ_MIN_ADMIT_PERCENT: u32 = 20;
+
+/// One timing read: a route of `moves` blocks that must be completed inside a
+/// window of `open_ticks` which recurs every `open_ticks + closed_ticks`.
+///
+/// **The one body model every timed-hazard proof is taken under.** The route is
+/// charged at [`SPRINT_TICKS_PER_BLOCK`]; a body that sets off `p` ticks into the
+/// window arrives in time iff `p + cross <= open_ticks`, so the admitting phases
+/// are `max(0, open_ticks - cross + 1)` of the cycle, and the share is an integer
+/// percentage rounded DOWN — the proof never credits a hazard with a share it
+/// does not have.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct TimingRead {
+    /// Blocks on the route the body must complete inside the window.
+    moves: u32,
+    /// `moves` charged at [`SPRINT_TICKS_PER_BLOCK`].
+    cross_ticks: u32,
+    /// Entry phases, of `cycle`, from which the route is completed in time.
+    admits: u32,
+    /// Ticks in one full cycle.
+    cycle: u32,
+    /// `admits` as a percentage of `cycle`, rounded down.
+    percent: u32,
+}
+
+impl TimingRead {
+    /// Below [`TIMING_READ_MIN_ADMIT_PERCENT`]: a coin flip, not a timing read.
+    fn is_coin_flip(&self) -> bool {
+        self.percent < TIMING_READ_MIN_ADMIT_PERCENT
+    }
+}
+
+/// Judge a route of `moves` blocks against a window of `open_ticks` recurring
+/// every `open_ticks + closed_ticks` — see [`TimingRead`].
+fn timing_read(moves: u32, open_ticks: u32, closed_ticks: u32) -> TimingRead {
+    let cross_ticks = moves * SPRINT_TICKS_PER_BLOCK;
+    let cycle = open_ticks + closed_ticks;
+    let admits = open_ticks.saturating_sub(cross_ticks) + u32::from(cross_ticks <= open_ticks);
+    let percent = admits.saturating_mul(100) / cycle.max(1);
+    TimingRead {
+        moves,
+        cross_ticks,
+        admits,
+        cycle,
+        percent,
+    }
+}
 
 /// Prove every `timed-gate` is readable — [`DW_TIMED_GATE_COIN_FLIP`] (`DW0378`).
 ///
@@ -5446,7 +6081,7 @@ const TIMED_GATE_MIN_ADMIT_PERCENT: u32 = 20;
 /// explicit that a gate which punishes bad timing is the entire point. What must
 /// hold is that the gate can be *read*: over one full cycle, the entry phases from
 /// which a walking player clears the span before it shuts must cover at least
-/// [`TIMED_GATE_MIN_ADMIT_PERCENT`] of the cycle.
+/// [`TIMING_READ_MIN_ADMIT_PERCENT`] of the cycle.
 ///
 /// The crossing cost comes from the same nav model every other proof uses: the A*
 /// step count from the footing on one side of the gate region to the footing on
@@ -5540,26 +6175,30 @@ fn verify_timed_gates(
             continue; // the open gate connects nothing — DW0311's business
         };
         // `path` includes both endpoints; the crossing is the moves between them.
-        let cross_ticks = (path.len().saturating_sub(1) as u32) * SPRINT_TICKS_PER_BLOCK;
-        let cycle = g.open_ticks + g.closed_ticks;
-        let admits =
-            g.open_ticks.saturating_sub(cross_ticks) + u32::from(cross_ticks <= g.open_ticks);
-        // Integer percentage, rounded DOWN — the proof never credits the gate with
-        // a share it does not have.
-        let percent = admits.saturating_mul(100) / cycle.max(1);
-        if percent < TIMED_GATE_MIN_ADMIT_PERCENT {
+        let read = timing_read(
+            path.len().saturating_sub(1) as u32,
+            g.open_ticks,
+            g.closed_ticks,
+        );
+        if read.is_coin_flip() {
+            let TimingRead {
+                moves,
+                cross_ticks,
+                admits,
+                cycle,
+                percent,
+            } = read;
             return Err(Failure {
                 code: DW_TIMED_GATE_COIN_FLIP,
                 message: format!(
                     "timed gate `{}` is a coin flip, not a timing read: crossing its span takes \
-                     {cross_ticks} ticks ({} blocks at {SPRINT_TICKS_PER_BLOCK} t/block), so only \
-                     {admits} of its {cycle}-tick cycle ({percent}%) admit a player who starts \
-                     walking then — under the {TIMED_GATE_MIN_ADMIT_PERCENT}% floor \
+                     {cross_ticks} ticks ({moves} blocks at {SPRINT_TICKS_PER_BLOCK} t/block), so \
+                     only {admits} of its {cycle}-tick cycle ({percent}%) admit a player who \
+                     starts walking then — under the {TIMING_READ_MIN_ADMIT_PERCENT}% floor \
                      (spec-0016 §4). Punishing bad timing is the point; punishing EVERY \
                      timing is a slot machine. Lengthen `open_ticks`, shorten `closed_ticks`, or \
                      narrow the span — never lower the floor.",
-                    g.id,
-                    path.len().saturating_sub(1)
+                    g.id
                 ),
             });
         }
@@ -5603,6 +6242,123 @@ fn gate_crossing_footings(
         }
     }
     None
+}
+
+/// Prove a `volley`'s cadence is a timing read — [`DW_VOLLEY_COIN_FLIP`]
+/// (`DW0918`).
+///
+/// **What must be readable is the way out.** spec-0022 defines a volley as
+/// saturation: every standable cell of the kill zone is fired on every salvo, so
+/// "escaping means LEAVING the zone, a decision, not a lucky strafe". A volley is
+/// finite and does not loop, so a body outside the zone is never forced through
+/// it — the chain ends, and a `rearm` trap fires again only when someone steps on
+/// its trigger. The one body a volley can trap is the one inside the zone when a
+/// salvo lands (the party's own step on a pressure plate fires salvo 0 the same
+/// tick), and the decision spec-0022 promises it is to walk out before the next
+/// salvo. So the route judged is the **escape**: from the standable kill-zone
+/// cell whose walk out is longest, the moves to the nearest standable cell
+/// outside the zone, by the same router and step rule every route proof uses.
+///
+/// The window is the interval between two salvos. The body sets off `p` ticks
+/// after a salvo and is clear iff it stands outside when the next one is
+/// summoned, so this is [`timing_read`] with `open_ticks = interval` and nothing
+/// shut: the admitting phases must cover [`TIMING_READ_MIN_ADMIT_PERCENT`] of the
+/// interval — a reaction window the player can read, not a sprint that has to
+/// start on the frame the plate clicks. Projectile flight is not credited as
+/// extra time (the proof never grants a share it does not have).
+///
+/// A volley with `salvos: 1` has no cadence — no next salvo exists to escape —
+/// and is not judged: its single salvo is the trap's consequence, the way a
+/// `collapse` is, and whether it can be watched before it is triggered is
+/// `DW0388`'s question. A zone with no standable cell is `DW0444`'s. A standable
+/// zone cell from which no standable cell outside the zone can be reached at all
+/// is the limit of this rule — no phase admits an escape — and is refused.
+pub fn check_volley_cadence(
+    world: &World,
+    region: ([i32; 3], [i32; 3]),
+    salvos: u32,
+    interval: u32,
+    label: &str,
+) -> Result<(), Failure> {
+    if salvos < 2 {
+        return Ok(());
+    }
+    let zone: BTreeSet<[i32; 3]> =
+        crate::compiler::assembled::region_cells(region.0, region.1).collect();
+    let cells: Vec<[i32; 3]> = zone
+        .iter()
+        .copied()
+        .filter(|c| world.is_standable(*c))
+        .collect();
+    // Every way out passes through a first cell outside the zone, and that cell
+    // is a step-rule neighbour of a zone cell — so these are all the exits.
+    let exits: BTreeSet<[i32; 3]> = cells
+        .iter()
+        .flat_map(|c| world.neighbors(*c))
+        .filter(|n| !zone.contains(n))
+        .collect();
+    // The worst cell: the longest shortest walk out. Ties keep the first cell in
+    // ascending order (ADR-0006).
+    let mut worst: Option<([i32; 3], Option<u32>)> = None;
+    for &cell in &cells {
+        let out = exits
+            .iter()
+            .filter_map(|&e| world.find_path(cell, e))
+            .map(|path| path.len().saturating_sub(1) as u32)
+            .min();
+        let worse = match (&worst, out) {
+            (None, _) => true,
+            (Some((_, Some(_))), None) => true,
+            (Some((_, Some(w))), Some(m)) => m > *w,
+            (Some((_, None)), _) => false,
+        };
+        if worse {
+            worst = Some((cell, out));
+        }
+    }
+    let Some((cell, moves)) = worst else {
+        return Ok(()); // no standable cell — DW0444's business
+    };
+    let Some(moves) = moves else {
+        return Err(Failure {
+            code: DW_VOLLEY_COIN_FLIP,
+            message: format!(
+                "{label}: a player standing on kill-zone cell [{}, {}, {}] cannot walk out of \
+                 the zone at all — no standable cell outside it is reachable — so every one of \
+                 the {salvos} salvos lands on them and no timing of theirs changes that. A \
+                 volley's counterplay is LEAVING the zone (spec-0022); give the zone an exit \
+                 a body can step onto, or shrink `kill_zone` to the floor that has one — never \
+                 lower the floor of the proof.",
+                cell[0], cell[1], cell[2]
+            ),
+        });
+    };
+    let read = timing_read(moves, interval, 0);
+    if read.is_coin_flip() {
+        let TimingRead {
+            moves,
+            cross_ticks,
+            admits,
+            cycle,
+            percent,
+        } = read;
+        return Err(Failure {
+            code: DW_VOLLEY_COIN_FLIP,
+            message: format!(
+                "{label} is a coin flip, not a timing read: from kill-zone cell [{}, {}, {}] \
+                 the walk out of the zone takes {cross_ticks} ticks ({moves} blocks at \
+                 {SPRINT_TICKS_PER_BLOCK} t/block), so only {admits} of its {cycle}-tick salvo \
+                 interval ({percent}%) admit a player who sets off then — under the \
+                 {TIMING_READ_MIN_ADMIT_PERCENT}% floor every timed hazard is held to \
+                 (spec-0016 §4). A volley's counterplay is LEAVING the zone (spec-0022); an \
+                 interval shorter than the walk out takes that decision away. Lengthen \
+                 `interval`, or shrink `kill_zone` so no cell is deep inside it — never lower \
+                 the floor.",
+                cell[0], cell[1], cell[2]
+            ),
+        });
+    }
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------
@@ -6537,7 +7293,7 @@ fn nearest_offending(
 
 /// Every hostile force in the campaign, in deterministic content order (waves
 /// then actors, each in declaration order).
-fn aggro_sources(
+pub(crate) fn aggro_sources(
     plan: &Plan,
     world: &World,
     placements: &BTreeMap<String, Vec<[i32; 3]>>,
@@ -7652,6 +8408,23 @@ impl LegRoute {
     /// route, rather than one answer per caller.
     fn proven_world(&self, world: &World) -> Option<World> {
         (!self.region_state.is_empty()).then(|| world.with_region_state(&self.region_state))
+    }
+
+    /// The same leg walked from somewhere else: an A* route from `from` (snapped
+    /// to standable footing) to this leg's own snapped destination, over the
+    /// world this leg was proven in. `None` when `from` has no footing or no
+    /// route — the caller keeps the proven leg.
+    ///
+    /// The critical path's legs run step to step, and a rest is not a step: the
+    /// party walks to the fire, rests, and sets off from the fire. The leg that
+    /// follows a rest therefore starts at the fire, which is what a question
+    /// about that leg (the run-back finder) has to route.
+    pub(crate) fn rerouted_from(&self, world: &World, from: [i32; 3]) -> Option<Vec<[i32; 3]>> {
+        let owned = self.proven_world(world);
+        let w: &World = owned.as_ref().unwrap_or(world);
+        let start = w.snap_standable(from, SNAP_RADIUS)?;
+        let goal = *self.cells.last()?;
+        w.find_path(start, goal)
     }
 }
 
@@ -9260,8 +10033,11 @@ mod tests {
         // (file, how many production call sites)
         const EXPECTED: &[(&str, usize)] = &[
             // `blockout.rs`: the stage-5 battery's `open` and `sealed` worlds,
-            // which carry their own sealing authority.
-            ("blockout.rs", 2),
+            // which carry their own sealing authority; and the stairwell pass,
+            // which asks only whether one step between two courses of a stair
+            // is a body move over the mass as laid — a question about geometry
+            // inside the stair's own box, with no campaign premise to consult.
+            ("blockout.rs", 3),
             // `edit.rs`: a `relight` verb's own darkness survey.
             ("edit.rs", 1),
             // `light.rs`: the relight pass's darkness survey.
@@ -9364,6 +10140,7 @@ mod tests {
                 partial: BTreeMap::new(),
                 // This world has no ambient water, so nothing reads it.
                 waterloggable: BTreeSet::new(),
+                lava: BTreeSet::new(),
             },
             // The premises spelled out rather than derived from
             // `Premises::geometry_only()`, for two reasons that both matter.
@@ -9411,6 +10188,7 @@ mod tests {
                 flooded: BTreeSet::new(),
                 partial: BTreeMap::new(),
                 waterloggable: BTreeSet::new(),
+                lava: BTreeSet::new(),
             },
             Premises {
                 ambient: Ambient::Void,
@@ -11894,6 +12672,7 @@ mod tests {
                 flooded: BTreeSet::new(),
                 partial: BTreeMap::new(),
                 waterloggable: BTreeSet::new(),
+                lava: BTreeSet::new(),
             },
             Premises::geometry_only(),
         )
@@ -13076,6 +13855,75 @@ mod tests {
         assert_eq!(err.code, DW_TIMED_GATE_COIN_FLIP); // DW0378
     }
 
+    // --- volley cadence (spec-0022, DW0918) ---
+
+    /// A kill zone five cells deep down a one-wide hall at x=0 (z=3..=7). The
+    /// middle cell is 3 blocks from the floor outside either end, so the walk out
+    /// costs 12 ticks at the sprint model.
+    fn volley_hall() -> (World, ([i32; 3], [i32; 3])) {
+        (carved(&run_z(0, 0, 12)), ([0, WY, 3], [0, WY, 7]))
+    }
+
+    /// 15 ticks between salvos against a 12-tick walk out: 4 of 15 phases (26%)
+    /// admit an escape. A readable cadence.
+    #[test]
+    fn volley_whose_interval_admits_the_walk_out_is_readable() {
+        let (world, zone) = volley_hall();
+        check_volley_cadence(&world, zone, 3, 15, "volley")
+            .expect("4 of 15 phases admit the walk out: a timing read");
+    }
+
+    /// The same zone with 13 ticks between salvos: 2 of 13 phases (15%) admit the
+    /// walk out — under the floor. `DW0918`, naming the cell it judged.
+    #[test]
+    fn volley_whose_interval_barely_admits_the_walk_out_is_dw0918() {
+        let (world, zone) = volley_hall();
+        let err = check_volley_cadence(&world, zone, 3, 13, "volley")
+            .expect_err("15% of the interval is a coin flip");
+        assert_eq!(err.code, DW_VOLLEY_COIN_FLIP); // DW0918
+        assert!(err.message.contains("coin flip"), "{}", err.message);
+        assert!(err.message.contains("[0, 65, 5]"), "{}", err.message);
+        assert!(err.message.contains("2 of its 13-tick"), "{}", err.message);
+    }
+
+    /// One salvo has no cadence: there is no next salvo to walk out ahead of, so
+    /// even an interval no escape fits in is not judged.
+    #[test]
+    fn a_single_salvo_volley_has_no_cadence_to_judge() {
+        let (world, zone) = volley_hall();
+        check_volley_cadence(&world, zone, 1, 1, "volley").expect("salvos: 1 is not judged");
+    }
+
+    /// A zone that fills a sealed chamber has no way out at all: every salvo lands
+    /// and no timing changes that — the limit of the same rule.
+    #[test]
+    fn a_volley_zone_with_no_way_out_is_dw0918() {
+        let world = carved(&run_z(0, 0, 4));
+        let err = check_volley_cadence(&world, ([0, WY, 0], [0, WY, 4]), 3, 200, "volley")
+            .expect_err("no exit admits no phase");
+        assert_eq!(err.code, DW_VOLLEY_COIN_FLIP); // DW0918
+        assert!(err.message.contains("cannot walk out"), "{}", err.message);
+    }
+
+    /// The window arithmetic is the one `DW0378` uses: a 2-move doorway inside a
+    /// 10-open / 190-shut gate admits 3 of 200 phases, the figure its own test
+    /// states.
+    #[test]
+    fn timing_read_is_the_gate_window_arithmetic() {
+        let r = timing_read(2, 10, 190);
+        assert_eq!(
+            (r.cross_ticks, r.admits, r.cycle, r.percent),
+            (8, 3, 200, 1)
+        );
+        assert!(r.is_coin_flip());
+        let v = timing_read(3, 15, 0);
+        assert_eq!(
+            (v.cross_ticks, v.admits, v.cycle, v.percent),
+            (12, 4, 15, 26)
+        );
+        assert!(!v.is_coin_flip());
+    }
+
     // --- hazard observability (spec-0016 §4 addendum, DW0388) ---
 
     /// The y every observability fixture walks on. Feet at `WY`, head at `WY + 1`.
@@ -14122,5 +14970,218 @@ mod tests {
         let err = route_visited(&world, &[a, b], std::slice::from_ref(&flood), &linear)
             .expect_err("a fluid fill takes the floor away whoever fires it");
         assert_eq!(err.code, DW_FLUID_FILL_ON_CRITICAL_PATH); // DW0544
+    }
+}
+
+/// `DW0921` and the body-movement relation it floods ([`World::body_moves`]).
+#[cfg(test)]
+mod leave_tests {
+    use super::*;
+
+    /// A flat yard, feet at y=1 over a stone floor at y=0, `w` × `d` cells.
+    fn yard(w: i32, d: i32) -> BTreeSet<[i32; 3]> {
+        let mut solid = BTreeSet::new();
+        for x in 0..w {
+            for z in 0..d {
+                solid.insert([x, 0, z]);
+            }
+        }
+        solid
+    }
+
+    /// A bed ringed by a hedge two high — the vesperhold round-2 garden — with
+    /// a boulder one high two cells north of it. `open_north` leaves the ring's
+    /// north row out, the repair the campaign took.
+    fn hedged_bed(open_north: bool) -> World {
+        let mut solid = yard(14, 14);
+        for x in 4..=8 {
+            for z in 4..=8 {
+                let ring = x == 4 || x == 8 || z == 4 || z == 8;
+                if ring && !(open_north && z == 4) {
+                    solid.insert([x, 1, z]);
+                    solid.insert([x, 2, z]);
+                }
+            }
+        }
+        solid.insert([6, 1, 2]); // the boulder
+        World::from_solid_cells(solid)
+    }
+
+    fn judge(w: &World, seeds: &[[i32; 3]]) -> (LeaveBinding, Result<(), Failure>) {
+        verify_bodies_can_leave(
+            &[(w, "from critical step 0".to_string(), seeds.to_vec())],
+            None,
+            &[],
+        )
+    }
+
+    #[test]
+    fn a_body_jumps_the_boulder_onto_the_hedge_and_drops_into_a_bed_it_cannot_leave_dw0921() {
+        let w = hedged_bed(false);
+        // Only a jump reaches the hedge's top: a gap of one column (z=3) at a
+        // rise of one, off the boulder. The walk step never does.
+        assert!(w.body_moves([6, 2, 2]).contains(&[6, 3, 4]));
+        assert!(!w.neighbors([6, 2, 2]).contains(&[6, 3, 4]));
+        let (binding, verdict) = judge(&w, &[[1, 1, 1]]);
+        let err = verdict.expect_err("the bed is a trap");
+        assert_eq!(err.code.id(), "DW0921");
+        assert!(err.message.contains("[5, 1, 5]"), "{}", err.message);
+        assert!(
+            err.message.contains("a fall of 2 block(s)"),
+            "{}",
+            err.message
+        );
+        assert_eq!(binding.trapped, 9, "the bed's 3x3 floor, and nothing else");
+    }
+
+    #[test]
+    fn a_bed_open_on_one_side_is_walked_out_of() {
+        let (binding, verdict) = judge(&hedged_bed(true), &[[1, 1, 1]]);
+        assert!(verdict.is_ok(), "{verdict:?}");
+        assert!(
+            binding.reached > 14 * 14 - 30,
+            "the proof judged the yard: {binding:?}"
+        );
+        assert_eq!(binding.trapped, 0);
+    }
+
+    /// A pool of water two deep inside a curb: the water's top cell is y=1 (the
+    /// yard's feet level), the curb's standing cell y=3. `curb` is its height in
+    /// blocks over the yard; `gap` leaves one curb cell out.
+    fn curbed_pool(curb: i32, gap: bool) -> World {
+        let mut solid = yard(14, 14);
+        let mut water = BTreeSet::new();
+        for x in 4..=8 {
+            for z in 4..=8 {
+                let ring = x == 4 || x == 8 || z == 4 || z == 8;
+                if ring {
+                    if gap && x == 4 && z == 6 {
+                        continue;
+                    }
+                    for y in 1..=curb {
+                        solid.insert([x, y, z]);
+                    }
+                } else {
+                    solid.remove(&[x, 0, z]);
+                    solid.insert([x, -1, z]);
+                    water.insert([x, 0, z]);
+                    water.insert([x, 1, z]);
+                }
+            }
+        }
+        World::from_solid_and_flooded(solid, water)
+    }
+
+    #[test]
+    fn a_body_that_goes_over_the_curb_into_the_water_cannot_climb_back_out_dw0921() {
+        // The curb stands one over the yard, so a body steps onto it and drops
+        // into the water; afloat at y=1, the curb's top (standing cell y=2) is
+        // one cell up — climbable. Two over: the standing cell is y=3, and the
+        // body is held.
+        let (_, low) = judge(&curbed_pool(1, false), &[[1, 1, 1]]);
+        assert!(low.is_ok(), "{low:?}");
+        let w = curbed_pool(2, false);
+        // Nothing reaches the water here: the curb is two over the yard.
+        let (b, walled) = judge(&w, &[[1, 1, 1]]);
+        assert!(walled.is_ok());
+        assert_eq!(b.afloat, 0, "no body gets over a two-high curb");
+        // Give the body a way up — a step one over the yard beside the curb —
+        // and it goes in and cannot come out.
+        let mut solid: BTreeSet<[i32; 3]> = (0..14)
+            .flat_map(|x| (0..14).map(move |z| [x, 0, z]))
+            .filter(|c| w.solid_at(*c))
+            .collect();
+        solid.extend(
+            (0..14)
+                .flat_map(|x| (0..14).flat_map(move |z| [[x, 1, z], [x, 2, z]]))
+                .filter(|c| w.solid_at(*c)),
+        );
+        solid.insert([6, 1, 3]);
+        let water: BTreeSet<[i32; 3]> = (5..=7)
+            .flat_map(|x| (5..=7).flat_map(move |z| [[x, 0, z], [x, 1, z]]))
+            .collect();
+        for c in &water {
+            solid.remove(c);
+        }
+        for x in 5..=7 {
+            for z in 5..=7 {
+                solid.insert([x, -1, z]);
+            }
+        }
+        let stepped = World::from_solid_and_flooded(solid, water);
+        let (b, verdict) = judge(&stepped, &[[1, 1, 1]]);
+        let err = verdict.expect_err("the pool holds a swimmer");
+        assert_eq!(err.code.id(), "DW0921");
+        assert!(err.message.contains("into water"), "{}", err.message);
+        assert_eq!(b.afloat, 9, "the pool's nine surface cells, all afloat");
+        assert_eq!(b.trapped, 9);
+    }
+
+    #[test]
+    fn a_gap_in_the_curb_is_a_way_out_of_the_water() {
+        // The curb two high with one cell left out: a body wades in through the
+        // gap and climbs back out through it (standing cell y=1, level with the
+        // water's top, which is inside the climb-out reach).
+        let (b, verdict) = judge(&curbed_pool(2, true), &[[1, 1, 1]]);
+        assert!(verdict.is_ok(), "{verdict:?}");
+        assert_eq!(b.afloat, 9);
+    }
+
+    #[test]
+    fn lava_is_never_a_place_a_body_floats() {
+        let mut solid = yard(6, 6);
+        solid.remove(&[3, 0, 3]);
+        solid.insert([3, -1, 3]);
+        let occ = crate::compiler::assembled::Occupancy {
+            solid,
+            tall: BTreeSet::new(),
+            use_gates: BTreeSet::new(),
+            flooded: [[3, 0, 3]].into_iter().collect(),
+            partial: BTreeMap::new(),
+            waterloggable: BTreeSet::new(),
+            lava: [[3, 0, 3]].into_iter().collect(),
+        };
+        let w = World::from_occupancy(occ, Premises::geometry_only());
+        assert!(!w.body_moves([2, 1, 3]).contains(&[3, 0, 3]));
+        assert!(!w.is_water_surface([3, 0, 3]));
+    }
+
+    #[test]
+    fn a_cell_the_boundary_carries_a_body_out_of_is_a_way_out() {
+        let w = hedged_bed(false);
+        // A region whose box ends at x=5: the bed's floor at x=5..7 has cells
+        // outside it, and the clock carries a body there back.
+        let (_, verdict) = verify_bodies_can_leave(
+            &[(&w, "from critical step 0".to_string(), vec![[1, 1, 1]])],
+            Some(([0, -8, 0], [5, 64, 13])),
+            &[],
+        );
+        assert!(verdict.is_ok(), "{verdict:?}");
+    }
+
+    #[test]
+    fn the_jump_reaches_as_far_as_the_measured_envelope_and_no_further() {
+        // Two platforms at feet y=1, a gap of `g` air columns between them.
+        let platforms = |g: i32| {
+            let mut solid = BTreeSet::new();
+            for x in 0..3 {
+                solid.insert([x, 0, 0]);
+            }
+            for x in (3 + g)..(6 + g) {
+                solid.insert([x, 0, 0]);
+            }
+            World::from_solid_cells(solid)
+        };
+        let flat = jump_max_gap(0).expect("a flat jump") as i32;
+        assert!(
+            platforms(flat)
+                .body_moves([2, 1, 0])
+                .contains(&[3 + flat, 1, 0])
+        );
+        assert!(
+            !platforms(flat + 1)
+                .body_moves([2, 1, 0])
+                .contains(&[4 + flat, 1, 0])
+        );
     }
 }

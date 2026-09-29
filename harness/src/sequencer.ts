@@ -14,6 +14,7 @@ import type {
   SelectClassStep,
   Step,
   TalkToStep,
+  TriggerStep,
 } from "./critical-path.ts";
 import { BotDeathError } from "./death.ts";
 
@@ -34,6 +35,10 @@ export interface StepExecutor {
    * under. Optional so existing fakes keep compiling; a path carrying a `rest`
    * step against an executor without it is a hard failure, never a silent skip. */
   rest?(step: RestStep): Promise<void>;
+  /** Perform an environment trigger the path depends on (strike, use, approach
+   * or strike-npc), then wait for its fired marker. Proves no objective — it
+   * opens what the steps after it walk through. */
+  fireTrigger(step: TriggerStep): Promise<void>;
   assertComplete(step: AssertCompleteStep): Promise<void>;
   /**
    * Optional (gap 8): after a step whose completion teleports the player to
@@ -74,6 +79,12 @@ export interface StepExecutor {
    * — the executor uses it to record which step a completion marker arrived during.
    */
   beginStep?(index: number): void;
+  /**
+   * Optional: anything the path owes BEFORE this step's own action — a run-back
+   * fight (spec-0016 §1) the leg to this step passes. Runs inside the step's
+   * retry loop, so a death during it is the step's death.
+   */
+  beforeStep?(step: Step): Promise<void>;
   /**
    * Optional (AUDIT-P0): assert the campaign has NOT completed yet. Called after
    * every step that still has an objective step ahead of it. Campaign completion
@@ -181,6 +192,8 @@ async function dispatch(executor: StepExecutor, step: Step): Promise<void> {
         );
       }
       return executor.rest(step);
+    case "trigger":
+      return executor.fireTrigger(step);
     case "assert-complete":
       return executor.assertComplete(step);
   }
@@ -203,12 +216,13 @@ export async function runSequence(
   // proves nothing itself, so it is the step before it (validateStepOrder has
   // already guaranteed exactly one assert-complete, last). Campaign completion is
   // due at this step and nowhere earlier.
-  // …and a `rest` step stands for no objective at all, so a fire
-  // rested at just before the finale must not be mistaken for the beat the campaign
-  // marker is due at.
+  // …and a `rest` or `trigger` step stands for no objective at all, so a fire
+  // rested at (or a wall struck) just before the finale must not be mistaken for
+  // the beat the campaign marker is due at.
   const finalObjectiveIndex = (() => {
     for (let i = path.steps.length - 2; i >= 0; i--) {
-      if (path.steps[i]!.action !== "rest") return i;
+      const action = path.steps[i]!.action;
+      if (action !== "rest" && action !== "trigger") return i;
     }
     return path.steps.length - 2;
   })();
@@ -219,6 +233,7 @@ export async function runSequence(
     // Retry loop: at most one re-attempt, and only after a bot death when opted in.
     for (;;) {
       try {
+        await executor.beforeStep?.(step);
         await dispatch(executor, step);
         // Endgame discipline (AUDIT-P0): the campaign must not already be complete
         // while objective steps remain. Checked before the transport/cutscene waits

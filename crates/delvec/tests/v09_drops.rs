@@ -114,13 +114,32 @@ fn build(campaign: &Campaign, prefabs: &PrefabRegistry) -> BuildOutput {
     .expect("every emitted command validates")
 }
 
+/// spec-0073: the one advisory a `boss`-billed fight with no `health_bar` owes
+/// (`DW0912`, warning tier). The fixture's diagnostics must be EXACTLY those —
+/// one per such fight, counted from the campaign itself — and nothing else.
+fn assert_only_boss_advisories(c: &Campaign, diags: &[delvewright_dsl::Diagnostic]) {
+    let owed = delvewright_dsl::fights(c)
+        .iter()
+        .filter(|(_, f)| {
+            f.tier() == Some(delvewright_dsl::EncounterTier::Boss) && f.health_bar().is_none()
+        })
+        .count();
+    assert!(
+        diags
+            .iter()
+            .all(|d| d.code == "DW0912" && d.severity == delvewright_dsl::Severity::Warning),
+        "the fixture must validate clean but for the boss advisory: {diags:#?}"
+    );
+    assert_eq!(diags.len(), owed, "{diags:#?}");
+}
+
 fn build_hw(mob: &str, actors: &str, collect: &str) -> BuildOutput {
     let c = parse_hw(&quests_doc(mob, actors, collect));
     let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
     let items = FullItemRegistry::v1_21_11();
     let entities = FullEntityRegistry::v1_21_11();
     let diags = validate_campaign_with(&c, &items, &prefabs, &entities);
-    assert!(diags.is_empty(), "campaign must validate clean: {diags:#?}");
+    assert_only_boss_advisories(&c, &diags);
     build(&c, &prefabs)
 }
 
@@ -234,7 +253,7 @@ fn actor_drops_ride_both_bodies() {
 }
 
 /// A removal the compiler performs is not a death the player earned: `unleash`
-/// strips the cage's declaration before killing it, so standing the elite up
+/// strips the cage's declaration before removing it, so standing the elite up
 /// never showers the party with its own helm.
 #[test]
 fn unleash_strips_the_cage_before_killing_it() {
@@ -251,11 +270,18 @@ fn unleash_strips_the_cage_before_killing_it() {
         .lines()
         .position(|l| l.contains("data merge entity @s") && l.contains("drop_chances"))
         .expect("the strip line is emitted");
-    let kill = unleash
+    // The strip selects the cage by its tag, so it must run while the cage still
+    // carries it: before the removal replaces every tag.
+    let retag = unleash
         .lines()
-        .position(|l| l.starts_with("kill @e[tag=dw_pup_warden]"))
-        .expect("the cage is killed");
-    assert!(strip < kill, "the strip must precede the kill:\n{unleash}");
+        .position(|l| {
+            l.starts_with("execute as @e[tag=dw_pup_warden] run data merge entity @s {Tags:[")
+        })
+        .expect("the cage is removed");
+    assert!(
+        strip < retag,
+        "the strip must precede the removal:\n{unleash}"
+    );
     let line = unleash.lines().nth(strip).unwrap();
     assert!(
         line.contains("mainhand:0.0f") && line.contains("head:0.0f"),

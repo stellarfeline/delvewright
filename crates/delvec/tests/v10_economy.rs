@@ -380,6 +380,141 @@ fn an_unnamed_datum_emits_no_readout() {
 }
 
 // ---------------------------------------------------------------------------
+// spec-0076 — a currency STANDS on screen between changes
+// ---------------------------------------------------------------------------
+
+/// `PURSE_AND_STAKE` with its purse declaring `display: sidebar`.
+fn standing_source() -> String {
+    let s = PURSE_AND_STAKE.replace(
+        r#""name": "Embers","#,
+        r#""name": "Embers", "display": "sidebar","#,
+    );
+    assert_ne!(s, PURSE_AND_STAKE, "the fixture really gained a `display`");
+    s
+}
+
+/// **A displayed datum stands on the sidebar from world init** (spec-0076 §4).
+///
+/// The announcement (`st_show_<datum>`, above) fades with the action bar; the
+/// standing half is three `setup` lines and nothing per tick: the objective is
+/// headed with the datum's translated `name` — the slot draws the display name,
+/// so the internal id `dw.s_embers` never reaches a screen — its value is painted
+/// the same gold the action bar paints it, and the objective is put in the
+/// `sidebar` slot. `setup` runs once, at world init, which is the slot's lifetime.
+///
+/// This is the carrier of finding `vh-08` (the party could not see its balance):
+/// the binding is every datum declaring `display: sidebar`, and the negative half
+/// below proves a datum without one emits none of it.
+#[test]
+fn a_displayed_datum_stands_on_the_sidebar() {
+    let c = parse_hw(&quests_doc(&standing_source(), ""));
+    let out = build(&c);
+    let setup = fnc(&out, "setup");
+    let key = delvewright_dsl::pack_key("hello-world", "state.embers.name");
+    let head = setup
+        .lines()
+        .find(|l| l.starts_with("scoreboard objectives modify dw.s_embers displayname "))
+        .unwrap_or_else(|| panic!("the objective is headed in setup:\n{setup}"));
+    assert!(
+        head.contains(&format!("\"translate\":\"{key}\""))
+            && head.contains("\"fallback\":\"Embers\""),
+        "the heading is the datum's translated name, never its id:\n{head}"
+    );
+    let want = [
+        head.to_string(),
+        "scoreboard objectives modify dw.s_embers numberformat styled {\"color\":\"gold\"}"
+            .to_string(),
+        "scoreboard objectives setdisplay sidebar dw.s_embers".to_string(),
+    ];
+    let lines: Vec<&str> = setup.lines().collect();
+    let at = lines
+        .iter()
+        .position(|l| *l == want[0])
+        .expect("heading line present");
+    assert_eq!(
+        &lines[at..at + 3],
+        &want.iter().map(String::as_str).collect::<Vec<_>>()[..],
+        "heading, number style and slot are three consecutive lines, in that order:\n{setup}"
+    );
+    assert!(
+        lines
+            .iter()
+            .position(|l| l.starts_with("scoreboard objectives add dw.s_embers "))
+            < Some(at),
+        "the objective exists before it is headed:\n{setup}"
+    );
+
+    // The slot is taken from exactly one place, and `dw.campaign` is on no slot.
+    let mut setdisplay = Vec::new();
+    for (path, bytes) in &out {
+        if !path.ends_with(".mcfunction") || path.starts_with("packtest-datapack/") {
+            continue;
+        }
+        for line in String::from_utf8(bytes.clone()).unwrap().lines() {
+            if line.starts_with("scoreboard objectives setdisplay") {
+                setdisplay.push((path.clone(), line.to_string()));
+            }
+        }
+    }
+    assert_eq!(
+        setdisplay,
+        vec![(
+            "datapack/data/hello-world/function/setup.mcfunction".to_string(),
+            want[2].clone()
+        )],
+        "one slot, taken once, by the displayed datum alone"
+    );
+
+    // Perturbation, byte-level: the same campaign with `display` off emits none of
+    // the three lines and is otherwise the same `setup`.
+    let plain = build(&purse_campaign());
+    let plain_setup = fnc(&plain, "setup");
+    for w in &want {
+        assert!(
+            !plain_setup.contains(w.as_str()),
+            "absent `display` emits no `{w}`"
+        );
+    }
+    let stripped: Vec<&str> = lines
+        .iter()
+        .copied()
+        .filter(|l| !want.iter().any(|w| w == l))
+        .collect();
+    assert_eq!(
+        stripped.join("\n"),
+        plain_setup.trim_end_matches('\n'),
+        "the three lines are the WHOLE difference a `display` makes to setup"
+    );
+
+    // ADR-0006: build twice, byte-equal.
+    let again = build(&parse_hw(&quests_doc(&standing_source(), "")));
+    assert_eq!(out, again, "a standing display is deterministic");
+}
+
+/// Renaming the datum moves the objective in all three lines — the slot is bound
+/// to the datum, not to a literal.
+#[test]
+fn a_displayed_datum_is_addressed_by_its_own_objective() {
+    let renamed = standing_source().replace("state/embers", "state/coals");
+    assert!(renamed.contains("state/coals"));
+    let out = build(&parse_hw(&quests_doc(&renamed, "")));
+    let setup = fnc(&out, "setup");
+    assert!(
+        setup.contains("scoreboard objectives modify dw.s_coals displayname "),
+        "{setup}"
+    );
+    assert!(
+        setup.contains("scoreboard objectives modify dw.s_coals numberformat styled "),
+        "{setup}"
+    );
+    assert!(
+        setup.contains("scoreboard objectives setdisplay sidebar dw.s_coals"),
+        "{setup}"
+    );
+    assert!(!setup.contains("dw.s_embers"), "{setup}");
+}
+
+// ---------------------------------------------------------------------------
 // AC2 — a price is the shared gate, and the shop adds NO comparison of its own
 // ---------------------------------------------------------------------------
 
@@ -1337,4 +1472,83 @@ fn the_ci_fixture_validates_and_emits_the_chain() {
     .unwrap();
     assert_eq!(ledger["unbound"], serde_json::json!(false), "{ledger}");
     assert_eq!(ledger["stakes_declared"], serde_json::json!(1));
+}
+
+// --- a shop sells enchanted things (spec-0075) ---------------------------
+
+/// A smithy that sells an enchanted sword and an enchanted book, priced in
+/// embers. The offer is the spelling spec-0032 prescribes — the price on the
+/// offer's own gate, the effects bare.
+const ENCHANTED_SHOP: &str = r#",
+    "state": [
+      { "id": "state/embers", "scope": "player", "initial": 5, "name": "Embers" }
+    ],
+    "shops": [
+      { "id": "shop/smithy", "anchor": "spawn", "title": "The smithy",
+        "offers": [
+          { "label": "A keen blade, three embers",
+            "requires_state": [ { "state": "state/embers", "op": "at-least", "value": 3 } ],
+            "effects": [
+              { "type": "give-item", "item": "minecraft:iron_sword", "count": 1,
+                "enchantments": { "minecraft:sharpness": 2 } },
+              { "type": "give-item", "item": "minecraft:enchanted_book", "count": 1,
+                "enchantments": { "minecraft:mending": 1 } },
+              { "type": "add-state", "state": "state/embers", "amount": -3 }
+            ] },
+          { "label": "Bread", "effects": [
+              { "type": "give-item", "item": "minecraft:bread", "count": 2, "name": "Loaf" } ] }
+        ] }
+    ]"#;
+
+/// **A purchase hands over the enchanted stack, and an enchanted book stores
+/// its enchantment.** The sword carries `minecraft:enchantments`; the book
+/// carries `minecraft:stored_enchantments`, the component an anvil applies —
+/// `minecraft:enchantments` on a book is a book that glints and does nothing.
+/// The generated PackTest buys it on the pinned server and asserts both stacks
+/// with exactly those components; an offer with no enchanted stack gets none.
+#[test]
+fn a_shop_sells_an_enchanted_sword_and_an_enchanted_book() {
+    let out = build(&parse_hw(&quests_doc(ENCHANTED_SHOP, "")));
+    let pick = fnc(&out, "shop_pick_0_0");
+    assert!(
+        pick.contains(r#"give @s minecraft:iron_sword[enchantments={"minecraft:sharpness":2}] 1"#),
+        "{pick}"
+    );
+    assert!(
+        pick.contains(
+            r#"give @s minecraft:enchanted_book[stored_enchantments={"minecraft:mending":1}] 1"#
+        ),
+        "{pick}"
+    );
+    // A named, unenchanted give is the pre-existing line, byte for byte.
+    let bread = fnc(&out, "shop_pick_0_1");
+    assert!(
+        bread.contains("give @s minecraft:bread[custom_name={") && !bread.contains("enchant"),
+        "{bread}"
+    );
+
+    let t = text(
+        &out,
+        "packtest-datapack/data/hello-world/test/shop_enchanted_stack_0_0.mcfunction",
+    );
+    for pred in [
+        r#"minecraft:iron_sword[minecraft:enchantments={"minecraft:sharpness":2}]"#,
+        r#"minecraft:enchanted_book[minecraft:stored_enchantments={"minecraft:mending":1}]"#,
+    ] {
+        assert_eq!(
+            t.matches(pred).count(),
+            2,
+            "probed before the purchase (must read 0) and after (must read 1): {pred}\n{t}"
+        );
+    }
+    assert!(t.contains("function hello-world:shop_pick_0_0"), "{t}");
+    assert!(
+        t.contains("scoreboard players set @s dw.s_embers 3"),
+        "the offer's price gate is driven open as the buyer:\n{t}"
+    );
+    assert!(
+        !out.keys()
+            .any(|k| k.ends_with("/test/shop_enchanted_stack_0_1.mcfunction")),
+        "an offer that hands over no enchanted stack has nothing to witness"
+    );
 }

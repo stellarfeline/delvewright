@@ -388,11 +388,14 @@ fn unleashed_warden_locks_onto_the_striker() {
         "and its UUID comes from the striker storage:\n{unleash}"
     );
     // Order matters: the puppet must be gone before the twin is addressed by the
-    // body tag, or `limit=1` could pick the puppet.
-    let kill = unleash.find("kill @e[tag=dw_pup_giant]").unwrap();
+    // body tag, or `limit=1` could pick the puppet. The unseen removal takes the
+    // puppet out of every selector the moment its tags are replaced.
+    let gone = unleash
+        .find("execute as @e[tag=dw_pup_giant] run data merge entity @s {Tags:[\"dw_unseen\"]")
+        .unwrap();
     let lock = unleash.find("anger.suspects").unwrap();
     assert!(
-        kill < lock,
+        gone < lock,
         "the lock addresses the twin, not the puppet:\n{unleash}"
     );
 }

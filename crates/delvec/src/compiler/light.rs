@@ -983,9 +983,10 @@ pub fn darkest_effective_sky(c: &Campaign) -> u8 {
 /// independent sets (they switch independently).
 ///
 /// The single scan behind both [`darkest_effective_sky`] (spec-0010's darkness
-/// gate, which takes the worst of them) and [`crate::compiler::daylight::daylight_is_pinned`]
-/// (`DW0496`, which asks whether they ALL burn). One reader of the campaign's
-/// clock, so the two proofs can never disagree about what hours a delve reaches.
+/// gate, which takes the worst of them) and `DW0496` ([`crate::compiler::daylight`],
+/// which meets every one of them at a beat with no place in the quest DAG). One
+/// reader of the campaign's clock, so the two proofs can never disagree about
+/// what hours a delve reaches.
 ///
 /// Deterministic (ADR-0006): collected through `BTreeSet`s keyed on a stable
 /// discriminant, so the returned order is the declaration order of the enums and

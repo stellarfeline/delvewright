@@ -38,14 +38,14 @@
               "obj/take-post"
             ],
             "happening": {
-              "text": "the party completes obj/break-drowned",
+              "text": "the party completes obj/break-husks",
               "verb": "survives"
             },
-            "hint": "The wave wave/drowned comes to you here.",
-            "id": "obj/break-drowned",
-            "title": "Fight: break-drowned",
+            "hint": "The wave wave/husks comes to you here.",
+            "id": "obj/break-husks",
+            "title": "Fight: break-husks",
             "type": "kill",
-            "wave": "wave/drowned"
+            "wave": "wave/husks"
           }
         ],
         "on_complete": [
@@ -69,11 +69,11 @@
             },
             {
               "happening": {
-                "text": "wave/drowned arrives",
+                "text": "wave/husks arrives",
                 "verb": "arrives"
               },
               "type": "spawn-wave",
-              "wave": "wave/drowned"
+              "wave": "wave/husks"
             }
           ]
         },
@@ -107,20 +107,20 @@
       },
       {
         "anchor": "anchor/keeper-stand",
-        "id": "wave/drowned",
+        "id": "wave/husks",
         "mobs": [
           {
             "attributes": {
               "follow_range": 12
             },
             "count": 2,
-            "entity": "minecraft:drowned"
+            "entity": "minecraft:husk"
           }
         ],
         "summon": "aggro-edge"
       }
     ]
   },
-  "dsl_version": "0.30.0",
+  "dsl_version": "0.34.0",
   "stage": "quests"
 }

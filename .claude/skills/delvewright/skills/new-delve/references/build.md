@@ -100,6 +100,18 @@ their absence there is the placement model, not a run that went wrong:
   looking for this line, and do not read its absence as a build that skipped
   something.
 
+**Every campaign: no place a player can get into and not out of.**
+The build moves a body the way a player does — walks, falls off edges, jumps
+gaps, wades or drops into water and floats — from every cell of the proven
+route, and refuses any cell from which no movement leads back. A garden bed
+ringed by a hedge the player can jump onto, a pool whose rim stands two over
+the water, a slot in a wall walk: each is named with the move that gets a body
+in. Repair the place — open a side, lower the rim, add a step, move what the
+player jumps in from — and never answer it with an invisible barrier. A room
+the story shuts the party into is not this: its objective is inside it. The
+build prints the leave-proof binding line either way; the counts are in
+`validation/leave-proof.json`.
+
 **There is no blockout document and nothing to author early.** A site-plan
 campaign's geometry is derived from the plan and the metrics table by this
 command, which then runs the battery over the bytes it laid: every seam built
@@ -109,7 +121,7 @@ where it was allocated (`DW0836`), every place reached from the entry
 
 **`--perturb <knob>` asks the derivation for a named defect and shows you the
 observer catching it** — `slide-openings`, `sink`, `short-walls`, `brick-up`,
-`low-ceiling`, `wall-contacts`, one per run, each printing which code it expects
+`low-ceiling`, `wall-contacts`, `open-stairwells`, one per run, each printing which code it expects
 (`sink`, `brick-up` and `low-ceiling` also take `--perturb-place`, and it is
 refused for the others). It writes nothing — `--out` is refused beside it and the
 exit is always non-zero — so a perturbed tree does not exist to be shipped,

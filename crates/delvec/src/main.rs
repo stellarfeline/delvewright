@@ -778,14 +778,22 @@ fn validate_loaded(
             // author needs, and printed as they were computed they arrived ahead
             // of the refusal. So they are collected here and emitted after
             // `print_diags`, under a heading, unchanged.
-            let mut examined: Vec<String> = Vec::new();
-            // spec-0067: what the equipment fit rule (`DW0898`, raised inside
-            // `validate_campaign_with` above) examined, zeroes included.
-            examined.push(delvewright_dsl::EquipmentBinding::of(&campaign, &items).line());
-            // spec-0071 §2: what the purchase rule (`DW0901`) examines — the
-            // charges it counts, the `(list, datum)` pairs they bind, and the
-            // effect lists walked as the denominator.
-            examined.push(delvewright_dsl::PurchaseBinding::of(&campaign).line());
+            let mut examined: Vec<String> = vec![
+                // spec-0067: what the equipment fit rule (`DW0898`, raised inside
+                // `validate_campaign_with` above) examined, zeroes included.
+                delvewright_dsl::EquipmentBinding::of(&campaign, &items).line(),
+                // spec-0071 §2: what the purchase rule (`DW0901`) examines — the
+                // charges it counts, the `(list, datum)` pairs they bind, and the
+                // effect lists walked as the denominator.
+                delvewright_dsl::PurchaseBinding::of(&campaign).line(),
+                // spec-0073: what the health-bar rules (`DW0909`/`DW0910`/`DW0912`,
+                // raised inside `validate_campaign_with` above) examined — fights
+                // carrying a bar over fights declared, zeroes included.
+                delvewright_dsl::HealthBarBinding::of(&campaign).line(),
+                // spec-0074: what the `on_kill` rules examine — fights carrying a
+                // bundle over fights declared, and how many of them come back.
+                delvec::compiler::onkill::OnKillBinding::of(&campaign).line(),
+            ];
             // Prefab-library load failures (DW0346): a metadata file that did
             // not parse (e.g. newer schema than this delvec) is a first-class
             // validation diagnostic, never a silent skip that resurfaces later
@@ -856,6 +864,19 @@ fn validate_loaded(
             // v0.8 seal answers (DW0423): one gate anchor, one `sealed_hint`
             // wording. No-op for a campaign that authors none.
             diags.extend(delvec::compiler::gates::check_seal_hints(&campaign));
+            // spec-0073 §8.3 (DW0911): a health bar's colour and style are the
+            // literals the pinned command tree lists, and that tree is this
+            // crate's data, so the check runs here (validation tier). No-op for a
+            // campaign that declares no bar.
+            diags.extend(delvec::compiler::healthbar::check_vocabulary(
+                &campaign,
+                &CommandTree::v1_21_11(),
+            ));
+            // spec-0074 §8.2/§8.3: `on_kill.fires` is owed where a fight comes back
+            // (DW0915) and inert where it does not (DW0914). Compiler-side because
+            // "comes back" reads the rest points; validation tier. No-op for a
+            // campaign that declares no `on_kill`.
+            diags.extend(delvec::compiler::onkill::check_on_kill_fires(&campaign));
             // NPC location-continuity lint (DW0351). Advisory tier — a warning
             // names a staging discontinuity (an NPC materializing or vanishing
             // away from where it was last staged) but never fails the run:

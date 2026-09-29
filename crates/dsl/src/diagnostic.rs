@@ -533,6 +533,39 @@ pub mod codes {
     /// field (spec-0032): it is written as gate terms and a charge, so the
     /// engine compares the copies. Validation-tier (exit 1).
     pub const PURCHASE_ARITHMETIC: DwCode = DwCode::new("DW0901", ExitTier::Build);
+    /// (spec-0073 §8.1) **A health bar over a body whose health cannot move**:
+    /// an actor declaring `health_bar` that is not `vulnerable` and that no
+    /// `unleash-actor` names, so the only body the bar could ever read is an
+    /// invulnerable puppet. Validation-tier (exit 1).
+    pub const HEALTH_BAR_STILL: DwCode = DwCode::new("DW0909", ExitTier::Build);
+    /// (spec-0073 §8.2) **A health bar with nothing to title it**: no `title`
+    /// (or a blank one), and the fight has no single name of its own — a wave of
+    /// two entries or more, or a body with no `name`. Validation-tier (exit 1).
+    pub const HEALTH_BAR_UNTITLED: DwCode = DwCode::new("DW0910", ExitTier::Build);
+    /// (spec-0073 §8.4) **Advisory: a fight billed `boss` declares no
+    /// `health_bar`.** Warning tier, never blocking — the build proceeds. Fires
+    /// for `boss` only, on a wave or an actor alike; `elite` and `ordinary` are
+    /// never named by it.
+    pub const HEALTH_BAR_ADVISED: DwCode = DwCode::new("DW0912", ExitTier::Build);
+    /// (spec-0074 §8.1) **An `on_kill` bundle on a body no player can be credited
+    /// with killing**: on a wave no beat spawns (it resolves no area, so it has
+    /// no bodies and no kill machinery), or on an actor no `unleash-actor` names
+    /// that is not `vulnerable` (its body is `Invulnerable` for the whole delve).
+    /// A declaration nothing can exercise is refused. Validation-tier (exit 1).
+    pub const ON_KILL_UNREACHABLE: DwCode = DwCode::new("DW0913", ExitTier::Build);
+    /// (spec-0076 §7) **A standing display the sidebar cannot draw as declared.**
+    /// A `state[]` datum declares `display: sidebar` and the slot cannot show
+    /// what it is handed: a second datum already asks for the one slot (the
+    /// sidebar holds one objective, and "first wins" would hide a decision the
+    /// creator has to make); the datum has no `name` (the slot's heading is the
+    /// display name, and without one the objective's id would stand on screen);
+    /// or the datum is `party`-scoped (its value lives on `#party`, and the
+    /// sidebar hides every `#`-prefixed holder, so the display would be an empty
+    /// heading). One rule about what the slot can draw, three ways to ask for
+    /// what it cannot — the `DW0520` shape. Validation-tier (exit 1).
+    /// Prescription: keep one `display`, give the datum a `name`, or declare it
+    /// `player`-scoped; a `party` purse keeps its announcement and stands nowhere.
+    pub const STATE_DISPLAY_UNDRAWABLE: DwCode = DwCode::new("DW0919", ExitTier::Build);
     /// A `collect` `dropped_by` is not backed by the wave it names:
     /// the wave declares no `{item}` drop of this objective's item, the count
     /// asks for more copies than the wave's mobs can yield, or the objective

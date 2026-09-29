@@ -41,15 +41,92 @@ eight engine PRs, and the "fix the twin, not just the instance the owner stood
 on" lesson was already written down in round 9. Both were in place while the
 churn continued.
 
+## What the ladder asserts at a combat encounter
+
+**The machine verifies mechanism. It does not fight, and it makes no claim about
+whether a fight can be won.** Whether a delve is too hard or too easy is the
+owner's hour: the gap between a skilled and an unskilled Minecraft fighter is
+design material, and a bot's fencing is not a measurement of it. Every earlier
+attempt to have the ladder hold an opinion here produced advisories that read as
+mechanism defects and were not.
+
+A `kill` step does three things, in order, and only the first is a measurement.
+
+1. **The muster.** `wave_muster_<wave>` is called and every live body of the wave
+   states its own `max_health`, `armor`, `armor_toughness`, `movement_speed`,
+   `attack_damage` and `follow_range`, plus a bitmask of the identity facts that
+   hold on it — its `CustomName` component and each declared `equipment.<slot>`
+   item, answered by the SERVER through `execute if data`. A declared attribute is
+   read with `attribute … base get`, because `attribute … get` is the total after
+   a weapon's modifier and vanilla's own random spawn bonus. The harness compares
+   the multiset of what it read against the multiset the plan declares. A
+   declaration the bodies CONTRADICT fails the `critical-path` stage; a muster
+   that found nothing standing is a finding, because the declaration is then
+   unverified rather than wrong.
+2. **The staged clear.** `wave_strike_<wave>` fells one body per call until the
+   census says nothing of the wave stands. This is staging and the run artifact
+   says so: every removal is in `staged_removals` with its reason. The blow is
+   `player_attack by @p` and never `kill`, because `on_kill`, the wave countdown
+   and a declared drop all pay on a PLAYER's kill.
+3. **The wiring the kill drives**, unchanged: the objective completing, `on_kill`
+   paying, the declared drops dropping, the health bar, the re-seat, and the walk
+   to the anchor that proves the route.
+
+spec-0023 §1's **die-retry** stage is untouched and is still the load-bearing bot
+proof: scripted deaths, respawn at the governing checkpoint, a walkable route
+back, an encounter that re-engages, no progression lost. It runs between the
+reading and the clear. A die-retry stage that cannot finish reds on its own
+coverage and does not end the run: suppressing every measurement behind one fight
+is how a ladder learns least from a red.
+
+**Outside a scripted death, a body never kills the bot.** A hostile that lands a
+hit the server attributes to it is an enemy and is removed by a staged blow. What
+the run must read before it removes the body is decided by which wave the body is
+of, and that is asked of the server — each candidate wave's census, by tag, matched
+to where the body stands — never guessed from a radius around an anchor:
+
+- a body of a wave whose current seating the run has not read (its step is ahead,
+  or a rest or respawn put a cleared wave back for a run-back) is read where it
+  stands — the muster's facts do not depend on position — and then removed; the
+  step's own muster does not read that seating a second time, because the second
+  reading would count the run's removal as a body the server never seated;
+- a body of the wave the die-retry stage is proving is removed when that wave
+  re-seats on respawn: the next scripted death brings it back whole, the fidelity
+  verdict is read at that landing, and a body the party fells after the landing is
+  counted (by the census's credit) as the fight re-engaging;
+- a body of a wave that does NOT re-seat is left standing while the die-retry stage
+  proves it — it persists across both lives and is the fight the next life must
+  find. This is the one place a body can still kill the bot outside a scripted
+  death, and the log says so each time it hits.
+
+A removed body's blows are refunded: the health the server named that body as
+taking is given back with instant health, rounded UP to vanilla's units
+(4 × 2^amplifier) — at most 3.9 points more than the body took, which is the
+whole of what a refund can hide — and named in `staged_removals`. Removal on the first blow alone
+let a return leg through three re-seated waves take one blow from each body until
+a later body's first swing killed the bot. Route falls and lethal volumes are
+mechanism, not bodies: nothing they take is refunded, and they still kill the bot.
+A scripted death waits out vanilla's 60-tick respawn protection (counted on the
+server's clock) and is taken at the fight: a stage that recovers from an
+unscripted death walks back before it scripts the next one. A walk back that ends
+in a death is reported as a death on the leg, never as unwalkable geometry.
+
+**The binding count.** `encounters[].declared_facts` is how many declared facts
+the muster put a question to, stated per encounter even when the muster never
+ran; `muster_findings` is what it could not establish. Zero declared facts over a
+campaign with waves is an unbound probe, and the run says so before it starts.
+
 ## Rule 1 — a green gate that binds to nothing must report VACUOUS, not pass
 
 Most of the early "green" was vacuous. Three distinct ways this happens, all
 observed on the island:
 
-- **Unbound** — the gate ran and matched zero objects. Before round 20 added one
-  `actors[].tier` field, `validation/combat-plan.json` had `floor_gate.covered`,
-  `floor_gate.not_covered` **and** `actors[]` all empty: the bot's combat floor
-  gate examined zero enemies for nineteen rounds and was green every time.
+- **Unbound** — the gate ran and matched zero objects. The island's combat
+  coverage ledger examined zero enemies for nineteen rounds and was green every
+  time, because every list it printed was empty at once and nothing stated a
+  count. (That ledger is gone — the ladder no longer grades a fight at all — and
+  its successor, the per-wave **muster**, states `declared_facts` per encounter
+  for exactly this reason.)
 - **Unfenced** — the campaign's `dsl_version` had not reached the surface the gate
   keys off, so the whole proof was inert. Branch reachability, the chronicle and
   the six branch proofs did not exist for this campaign until round 19 declared
@@ -66,8 +143,8 @@ observed on the island:
 **Obligation.** Every validation artifact states its binding count, and a zero
 binding is a finding. Reading a report is not enough — an empty coverage set and
 a clean coverage set look identical to a reader who is not counting. When a
-campaign has hostile bodies but no tiered actor or wave, the floor gate is
-unbound; say so in the round summary rather than reporting a pass.
+campaign has waves whose stacks declare nothing, the muster is unbound; say so in
+the round summary rather than reporting a pass.
 
 **Which zero it is decides what the finding says, and only one of them blocks.**
 A check binds where the object is. The zero above is the one that blocks: the
@@ -211,7 +288,7 @@ the class is HERE and nothing this build carries would catch the defect again.
 |---|---|---|
 | `NO-GENERAL-FORM` | the instance was fixed, the class never built | rule 2's `DW0489`, eleven rounds late |
 | `MISSING-CHECK` | the ledger names a check this engine no longer has (absent from source, undocumented, or asserted by no test), or a stage document the COMPILER read that this gate holds no parsed copy of | four rows in the ledger's own first run named invariants that did not exist under those names |
-| `UNBOUND` | the check matched zero objects, and objects that could have carried the defect are there — or nobody has measured whether they are | rule 1's floor gate, nineteen rounds |
+| `UNBOUND` | the check matched zero objects, and objects that could have carried the defect are there — or nobody has measured whether they are | rule 1's coverage ledger, nineteen rounds |
 | `UNFENCED` | the campaign's `dsl_version` never reached the surface the check keys off | rule 1's branch proofs before round 19 |
 | `NO-SOURCE` | the campaign has no stage JSON, so nothing can be measured | the drowned-bell remake today |
 
@@ -242,10 +319,10 @@ declared this one.
 declared `applies_when` probe, for a binding that counts a DECLARATION inside
 carriers that may exist anyway (a `has`/`has_any` predicate, a `contains`
 glob, an `artifact` or `out` probe over derived output) — that zero is
-genuinely ambiguous, it is the floor gate's shape, and a row of that shape
+genuinely ambiguous, it is the unbound ledger's shape, and a row of that shape
 owes a probe. Or the binding's OWN SHAPE, where the probe counts the object
 class itself and nothing stands one step behind it: a `dsl` predicate
-selecting by identity (`eq`/`in`/`prefix`, or an `any_of` every arm of which is
+selecting by identity (`eq`/`in`/`prefix`, with `not_in` excluding values, or an `any_of` every arm of which is
 one of those) across the declared design,
 and a `campaign` glob with no `contains`, where the file IS the object. Such a
 row may not declare an `applies_when` at all — it could only name its own
@@ -254,23 +331,21 @@ shape on every subject and reports the measured `INAPPLICABLE` rather than
 `UNBOUND`, whose whole content is that nobody looked.
 
 **A quantifier that names a population the object cannot belong to is not a
-check weakened, it is a check made true.** `bell-04` and `bell-05` carry the
-general form of two combat findings, and their preconditions counted every
-`spawn-wave`/`spawn-actor` effect and every `actor/` id — populations neither
-general form names. A guided tour whose only bodies are invulnerable puppets
-that walk out of a gate and are removed was therefore adjudicated as a campaign
-owing a combat plan, and refused for shipping none, while `emit.rs` was right
-not to write one. Both preconditions are now the class each row's own words
-name: mandatory combat is a `kill` objective or a body turned loose
-(`combat::mandatory_fights`), and a billed encounter is `elite`/`boss`
-(`EncounterTier::has_floor_expectation`). A general form can name a population
-the DSL spells more than one way — an `unleash-actor` effect and the
-`ambushes[]` entry the compiler expands into one are members of a single class
-— so the predicate language carries `any_of`, a disjunction of predicates, and
-a checker reads a document the way its consumer reads it. The narrowing is
-proved in both directions on one campaign in two states varying one variable:
-with one `unleash-actor` beat added to the ceremony and the build held fixed,
-both rows red `MISSING-CHECK` again.
+check weakened, it is a check made true.** A precondition for "mandatory
+combat" that counts every `spawn-wave`/`spawn-actor` effect and every `actor/`
+id counts populations the general form does not name: a guided tour whose only
+bodies are invulnerable puppets that walk out of a gate and are removed is
+adjudicated as a campaign owing a combat plan, and refused for shipping none,
+while `emit.rs` is right not to write one. The precondition is the class the
+row's own words name: mandatory combat is a `kill` objective or a body turned
+loose (`combat::mandatory_fights`). A general form can name a population the
+DSL spells more than one way — an `unleash-actor` effect and the `ambushes[]`
+entry the compiler expands into one are members of a single class — so the
+predicate language carries `any_of`, a disjunction of predicates, and a checker
+reads a document the way its consumer reads it. A narrowing is proved in both
+directions on one campaign in two states varying one variable: with one
+`unleash-actor` beat added to the ceremony and the build held fixed, the row
+reds `MISSING-CHECK` again.
 
 **And at least one of the two counts is taken over the campaign SOURCE.** That
 is the property the non-refusal is secured by, and it is one the defect cannot

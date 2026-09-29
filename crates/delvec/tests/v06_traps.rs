@@ -31,8 +31,12 @@ fn tmp(name: &str) -> PathBuf {
 }
 
 /// A private prefab copy whose `hello-room.json` gains an `anchor/trap` (trigger
-/// cell [5,1,6] on the spawn→exit path, dispenser socket at [4,1,6]) and an
-/// `anchor/lever` disarm affordance at [3,1,6].
+/// cell [5,1,7] on the spawn→exit path, dispenser socket at [4,1,7]) and an
+/// `anchor/lever` disarm affordance at [3,1,6]. The trap stands one cell past
+/// the doorway, not in it: the door is a gate region the compiler clears, so a
+/// trigger placed inside it would be erased by the open-gate (`DW0917` reads the
+/// world that results). The trigger block itself is written by
+/// `common::plan_structures_with_trap_triggers`.
 fn patched_prefabs(name: &str, trigger_block: Option<&str>) -> PathBuf {
     let dir = tmp(name);
     common::copy_dir_all(&common::prefabs_dir(), &dir);
@@ -43,7 +47,7 @@ fn patched_prefabs(name: &str, trigger_block: Option<&str>) -> PathBuf {
         .get_mut("anchors")
         .and_then(|a| a.as_object_mut())
         .unwrap();
-    let mut trap_anchor = serde_json::json!({ "pos": [5, 1, 6], "dispenser": [4, 1, 6] });
+    let mut trap_anchor = serde_json::json!({ "pos": [5, 1, 7], "dispenser": [4, 1, 7] });
     // The trigger hardware the prefab wired onto the trap cell, declared with its
     // blockstate exactly as a gate anchor declares its fill `block`. Only a
     // flag-gated trap needs it (`DW0363`), so it stays optional here.
@@ -114,6 +118,17 @@ fn build_with_trap_hw(
     trap: serde_json::Value,
     trigger_block: Option<&str>,
 ) -> Result<BuildOutput, BuildFailure> {
+    build_trap_world(name, trap, trigger_block, true)
+}
+
+/// The builder behind both: `place_trigger: false` builds the piece exactly as
+/// the library ships it, with no trigger block at the trap's cell.
+fn build_trap_world(
+    name: &str,
+    trap: serde_json::Value,
+    trigger_block: Option<&str>,
+    place_trigger: bool,
+) -> Result<BuildOutput, BuildFailure> {
     let camp_dir = tmp(&format!("{name}-camp"));
     let patch = serde_json::json!({
         "documents": { "world": world_v06(), "quests": quests_v06(trap) }
@@ -130,15 +145,20 @@ fn build_with_trap_hw(
     assert!(diags.is_empty(), "must validate clean: {diags:#?}");
 
     let plan = Plan::build(&campaign, &prefabs).expect("plan builds");
-    let mut structures: BTreeMap<String, Vec<u8>> = BTreeMap::new();
-    for area in &plan.areas {
-        for piece in &area.pieces {
-            for t in &piece.templates {
-                let bytes = std::fs::read(prefabs_dir.join(&t.structure_file)).unwrap();
-                structures.insert(t.structure_file.clone(), bytes);
+    let structures = if place_trigger {
+        common::plan_structures_with_trap_triggers(&plan, &prefabs_dir)
+    } else {
+        let mut raw: BTreeMap<String, Vec<u8>> = BTreeMap::new();
+        for area in &plan.areas {
+            for piece in &area.pieces {
+                for t in &piece.templates {
+                    let bytes = std::fs::read(prefabs_dir.join(&t.structure_file)).unwrap();
+                    raw.insert(t.structure_file.clone(), bytes);
+                }
             }
         }
-    }
+        raw
+    };
     let tree = CommandTree::v1_21_11();
     emit::build(
         &plan,
@@ -244,7 +264,7 @@ fn trap_dispense_and_disarm_emit_end_to_end() {
         &format!("datapack/data/{NS}/function/setup_finish.mcfunction"),
     );
     assert!(
-        setup_finish.contains("item replace block 4 65 6 container.0 with minecraft:arrow 8"),
+        setup_finish.contains("item replace block 4 65 7 container.0 with minecraft:arrow 8"),
         "dispenser payload fill missing:\n{setup_finish}"
     );
     // Disarm interaction affordance is summoned.
@@ -269,7 +289,7 @@ fn trap_dispense_and_disarm_emit_end_to_end() {
         &format!("datapack/data/{NS}/function/trap_disarm_dart_hall.mcfunction"),
     );
     assert!(
-        disarm.contains("data modify block 4 65 6 Items set value []"),
+        disarm.contains("data modify block 4 65 7 Items set value []"),
         "disarm must empty the dispenser:\n{disarm}"
     );
     assert!(
@@ -359,13 +379,13 @@ fn gated_trap() -> serde_json::Value {
 fn a_flag_gated_trap_removes_and_restores_its_trigger() {
     let out = build_with_trap("trap-gated", gated_trap()).expect("a gated trap builds");
 
-    // The trigger cell is [5,65,6] (local [5,1,6] at base y=64).
+    // The trigger cell is [5,65,7] (local [5,1,7] at base y=64).
     let on = text(
         &out,
         &format!("datapack/data/{NS}/function/trap_gate_on_dart_hall.mcfunction"),
     );
     assert!(
-        on.contains("setblock 5 65 6 minecraft:oak_pressure_plate[powered=false]"),
+        on.contains("setblock 5 65 7 minecraft:oak_pressure_plate[powered=false]"),
         "opening the gate must restore the AUTHORED trigger, blockstate and all:\n{on}"
     );
     assert!(
@@ -377,7 +397,7 @@ fn a_flag_gated_trap_removes_and_restores_its_trigger() {
         &format!("datapack/data/{NS}/function/trap_gate_off_dart_hall.mcfunction"),
     );
     assert!(
-        off.contains("setblock 5 65 6 minecraft:air"),
+        off.contains("setblock 5 65 7 minecraft:air"),
         "shutting the gate must take the trigger out of the world:\n{off}"
     );
 
@@ -444,7 +464,7 @@ fn a_requires_flags_gate_starts_shut() {
         "a requires-gate starts shut:\n{setup_finish}"
     );
     assert!(
-        setup_finish.contains("setblock 5 65 6 minecraft:air"),
+        setup_finish.contains("setblock 5 65 7 minecraft:air"),
         "a requires-gate must clear the trigger at setup:\n{setup_finish}"
     );
 }
@@ -507,4 +527,31 @@ fn a_gated_trapped_chest_is_dw0363() {
         }
         other => panic!("expected DW0363, got {other:?}"),
     }
+}
+
+/// **The false chest that shipped as empty air** (`DW0917`). A trapped-chest
+/// trap on an anchor whose piece places no trapped chest: the compiler's
+/// detection is an invisible interaction hitbox, so without this check the build
+/// succeeded and the player saw nothing to open. The same trap over the same
+/// piece with the chest placed builds.
+#[test]
+fn a_trapped_chest_trap_with_no_chest_is_dw0917() {
+    let trap = serde_json::json!({
+        "id": "trap/false-chest",
+        "at": "anchor/trap",
+        "trigger": "trapped-chest",
+        "payload": [ { "type": "narrate", "text": "The lid bites.", "style": "chat" } ],
+        "lethality": "nonlethal"
+    });
+    match build_trap_world("trap-no-chest", trap.clone(), None, false) {
+        Err(BuildFailure::Diagnostic { code, message }) => {
+            assert_eq!(code, "DW0917", "{message}");
+            assert!(message.contains("trap/false-chest"), "{message}");
+            assert!(message.contains("[5, 65, 7]"), "{message}");
+            assert!(message.contains("minecraft:trapped_chest"), "{message}");
+        }
+        Err(other) => panic!("expected DW0917, got {other:?}"),
+        Ok(_) => panic!("a trapped-chest trap over empty air built"),
+    }
+    build_trap_world("trap-with-chest", trap, None, true).expect("the placed chest builds");
 }

@@ -6,7 +6,7 @@
     "`carrier` names the CHECK that carries the finding's general form; `binding` is how many objects of the class that check quantifies over exist on the campaign being staged.",
     "`carrier: null` is a red unless `disposition` + a substantive `justification` declare why no machine form is possible (playtest-methodology.md rule 2's one escape).",
     "A row whose `binding` selects its object class by IDENTITY (`eq`/`in`/`prefix`, or an `any_of` every arm of which is one of those) declares its own applicability by shape: the gate measures the precondition off that binding (`staging-gate.py::probe_is_self_measuring`) and `load_ledger` refuses an `applies_when` that would restate it. Only a declaration-shaped binding (`has`/`has_any`, a `contains` glob, an `artifact` or `out` probe) owes one.",
-    "`any_of` is a disjunction of predicates, for a class the DSL spells more than one way (`bell-04`, `bell-05`); `has_any` is a disjunction of field names, which is a different question. A clause this matcher does not implement is refused at load: an unrecognised key restricts nothing, so the probe would count every node while describing itself as something narrower.",
+    "`any_of` is a disjunction of predicates, for a class the DSL spells more than one way (`bell-06`, `vh-05`); `has_any` is a disjunction of field names, which is a different question. A clause this matcher does not implement is refused at load: an unrecognised key restricts nothing, so the probe would count every node while describing itself as something narrower.",
     "APPEND, never rewrite. A row is removed only when the finding is shown never to have been a finding.",
     "Sources this ledger was reconstructed from are listed in docs/reference/playtest-methodology.md, rule 7, including what could NOT be recovered."
   ],
@@ -1628,7 +1628,7 @@
       "finding": "hostile bodies meant to fight the party by the shore ran out to sea instead",
       "general_form": "none: where a live-AI body chooses to go is vanilla's pathing, not the compiler's",
       "id": "isl-56",
-      "justification": "Once a body is unleashed its movement belongs to vanilla AI. The compiler seats it (DW0312/DW0387) and the bot ladder measures whether the fight happens (combat-plan floor gate); neither can predict a mob's target selection. This is exactly the class the bot playthrough exists to catch empirically. Standing content-QC item, with the bot run as its partial machine backstop.",
+      "justification": "Once a body is unleashed its movement belongs to vanilla AI. The compiler seats it (DW0312/DW0387) and the bot ladder reads the seated bodies against the declaration; neither can predict a mob's target selection. This is exactly the class the bot playthrough exists to catch empirically. Standing content-QC item, with the bot run as its partial machine backstop.",
       "round": 16,
       "triage": "content"
     },
@@ -1840,128 +1840,68 @@
       "triage": "capability"
     },
     {
-      "applies_when": {
+      "campaign": "the-drowned-bell",
+      "carrier": null,
+      "disposition": "no-machine-form",
+      "finding": "an encounter billed as an elite was trivially weak, and the compiler had no way to express its durability at all",
+      "general_form": "none: whether a fight is hard enough for its billing is a difficulty judgement the design makes",
+      "id": "bell-04",
+      "justification": "The ladder verifies mechanism and does not fight: at a combat step it reads the seated bodies against the declaration and removes them, so no bot result is evidence about how hard an encounter is. The row's former carrier, `DW0477`, and the inverted floor gate it reported for are removed for that reason. What the machine still bounds is a wrong number, not the feel: `DW0472` refuses a mandatory encounter whose declared health takes more than 400 ordinary swings of the best kit the party can field. Whether an encounter billed elite reads as one is judged on the playtest. Standing content-QC item.",
+      "note": "The row's former precondition and binding both probed the removed floor gate's own ledger; a `no-machine-form` row states no precondition, as `vh-01` and `bell-15` do not.",
+      "round": 2,
+      "triage": "capability"
+    },
+    {
+      "campaign": "the-drowned-bell",
+      "carrier": null,
+      "disposition": "no-machine-form",
+      "finding": "an encounter killed a full-health player in two hits",
+      "general_form": "none: whether a party survives an encounter's blows is a difficulty judgement the design makes",
+      "id": "bell-05",
+      "justification": "Whether a fight can be won, and how hard it is, is judged on the playtest, not by the machine. The row's former carrier, `DW0474` (a campaign with mandatory combat whose party carries no food at all), held the campaign to a winnability judgement and is removed for that reason. The ladder verifies mechanism and does not fight, so no bot result is evidence about how fast an encounter kills a player either. What the machine still bounds is a wrong number and a scripted death, neither of which is this finding's object: `DW0472` refuses a mandatory encounter whose declared health takes more than 400 ordinary swings of the best kit the party can field, and `DW0473` refuses an unavoidable scripted hit in a quest's own effect bundle that kills a full-health player — a quest effect, never an encounter's blows. Standing content-QC item.",
+      "note": "The row's former precondition and binding probed mandatory combat and `combat-plan.json`'s `fights` count for the removed `DW0474`; a `no-machine-form` row states no precondition, as `bell-04` and `vh-01` do not.",
+      "round": 2,
+      "triage": "capability"
+    },
+    {
+      "binding": {
         "files": [
-          "quests.json"
+          "quests.json",
+          "dialogue.json"
         ],
         "kind": "dsl",
         "match": {
           "any_of": [
             {
-              "in": {
-                "tier": [
-                  "elite",
-                  "boss"
+              "prefix": {
+                "id": "timed-gate/"
+              }
+            },
+            {
+              "eq": {
+                "type": "volley"
+              },
+              "not_in": {
+                "salvos": [
+                  1
                 ]
               }
-            },
-            {
-              "eq": {
-                "type": "unleash-actor"
-              }
-            },
-            {
-              "prefix": {
-                "id": "ambush/"
-              }
             }
           ]
         }
       },
-      "binding": {
-        "file": "combat-plan.json",
-        "kind": "artifact",
-        "path": "floor_gate.examined"
-      },
       "campaign": "the-drowned-bell",
       "carrier": {
-        "code": "DW0477",
-        "kind": "dw"
-      },
-      "finding": "an encounter billed as an elite was trivially weak, and the compiler had no way to express its durability at all",
-      "general_form": "a billed encounter's declared effective HP is bounded against the best kit the party can field, and anything billed elite or boss that the floor gate cannot measure is reported",
-      "id": "bell-04",
-      "note": "This is a NARROWING OF A PRECONDITION, declared as one. The probe counted every `spawn-wave`/`spawn-actor` effect — a population this general form does not name — so a ceremonial muster of invulnerable puppets that no floor gate could ever examine was adjudicated as a fight whose build owed a combat plan. The precondition is now exactly what `floor_gate.examined` counts, read off the author's own document: an encounter billed `elite`/`boss` (`waves[].tier` or `actors[].tier`, the two fields `EncounterTier::has_floor_expectation` selects), or a body the campaign turns loose on the party (an `unleash-actor` effect, or an `ambushes[]` entry, which is the sugar `Ambush::to_trigger` expands into one — a checker reads a document the way its consumer reads it). The narrowed class is a superset of `combat::floor_ledger`'s four groups, so a build that stopped emitting the ledger over declared objects still reds MISSING-CHECK. Binding count with the gate's own probe: 0 of the narrowed class on doune-castle-tour (7 of the old one), 6 on nobodys-cave-island, 6 on the gallery primary.",
-      "round": 2,
-      "triage": "capability"
-    },
-    {
-      "applies_when": {
-        "files": [
-          "quests.json"
+        "code": [
+          "DW0378",
+          "DW0918"
         ],
-        "kind": "dsl",
-        "match": {
-          "any_of": [
-            {
-              "eq": {
-                "type": "kill"
-              }
-            },
-            {
-              "eq": {
-                "type": "unleash-actor"
-              }
-            },
-            {
-              "prefix": {
-                "id": "ambush/"
-              }
-            }
-          ]
-        }
-      },
-      "binding": {
-        "file": "combat-plan.json",
-        "kind": "artifact",
-        "path": "fights.total"
-      },
-      "campaign": "the-drowned-bell",
-      "carrier": {
-        "code": "DW0474",
-        "kind": "dw"
-      },
-      "finding": "an encounter killed a full-health player in two hits",
-      "general_form": "a campaign with mandatory combat — a wave the party must kill OR a hostile it turns loose on them — is held to the whole spec-0023 winnability pass, sustain included; and no unavoidable scripted hit on that path one-shots a full-health player (DW0473)",
-      "id": "bell-05",
-      "note": "carrier + binding corrected 2026-08-11 (staging-gate UNBOUND audit), and the engine fixed with them. The row named DW0473 while probing combat-plan.json:encounters, which quantify over DIFFERENT collections — DW0473 walks unconditional `damage-players` bundles, `encounters` is `kill`-a-wave steps. Worse, the whole spec-0023 pass (DW0470-DW0475) was gated on `has_encounters`, the VERB, so a delve whose combat is entirely actors ran none of it: nobodys-cave-island unleashes three wardens, bills one elite, ships zero `kill` objectives, and reported `encounters: 0` for twenty-two owner rounds with nothing saying that was a coverage fact rather than a content fact. `combat::mandatory_fights` is now the object class — every fight of either shape — the pass is gated on it, DW0474 quantifies over it, and combat-plan.json publishes it as `fights`. Island binding 0 -> 3. The precondition has since had a NARROWING OF A PRECONDITION, declared as one: it counted every id under `actor/`, so a campaign that stages a body — a herald, a ferryman, a guard of honour — was adjudicated as a campaign with mandatory combat, and a guided tour of a castle was refused for shipping no combat plan. It now counts what this general form names in its own words, a wave the party must kill OR a hostile it turns loose on them: a `kill` objective, an `unleash-actor` effect, or an `ambushes[]` entry, the sugar `Ambush::to_trigger` expands into the second. A staged puppet is neither, which is `combat::hostile_actors`'s own rule — unleash or nothing. Binding count with the gate's own probe: 0 of the narrowed class on doune-castle-tour (7 of the old one), 5 on nobodys-cave-island, 3 on the gallery primary.",
-      "round": 2,
-      "triage": "capability"
-    },
-    {
-      "applies_when": {
-        "files": [
-          "quests.json"
-        ],
-        "kind": "dsl",
-        "match": {
-          "has_any": [
-            "open_ticks",
-            "closed_ticks",
-            "salvos"
-          ]
-        }
-      },
-      "binding": {
-        "files": [
-          "quests.json"
-        ],
-        "kind": "dsl",
-        "match": {
-          "prefix": {
-            "id": "timed-gate/"
-          }
-        }
-      },
-      "campaign": "the-drowned-bell",
-      "carrier": {
-        "code": "DW0378",
         "kind": "dw"
       },
       "finding": "a portcullis cycled too slowly to read as a hazard to time",
-      "general_form": "a timed gate is a timing read, not a coin flip: enough entry phases clear the span",
+      "general_form": "a timed hazard is a timing read, not a coin flip: enough entry phases clear a timed gate's span, and a body a volley's salvo lands on can walk out of its kill zone before the next salvo in enough phases of the interval",
       "id": "bell-06",
-      "note": "applies_when corrected 2026-08-11 (staging-gate UNBOUND audit). It named `type in {close-gate, open-gate}` — a claim that having any gate means the campaign could carry a timing-window defect. It cannot: close-gate/open-gate are one-shot permanent state changes fired by a quest beat, with no clock and so no window to be a coin flip. That precondition demanded CONTENT (add a portcullis) rather than COVERAGE, and would hold every campaign without one red forever. The precondition is now the object class that can carry a timing read: anything driven by a repeating clock the party must cross — a timed-gate's open_ticks/closed_ticks, or a volley payload's salvos. A campaign with a volley and no timed gate is then UNBOUND, correctly. nobodys-cave-island declares neither and is INAPPLICABLE — counted and named to the owner as a class this build cannot present to her, and not a refusal.",
+      "note": "The class is every hazard on a repeating clock the party must read: a `timed-gate` (its id), and a `volley` that fires more than once (`salvos` absent, which defaults to 3, or any value but 1 — `DW0443` owns the range the engine admits, so the ledger does not restate it). Both are judged by one body model, `nav::timing_read` (4 t/block sprint, admitting phases of the window, integer share against a 20% floor): `DW0378` charges the crossing of a gate's span against its open window; `DW0918` charges the walk out of a volley's kill zone, from its deepest standable cell, against the interval between salvos, because leaving the zone is the counterplay spec-0022 names and a finite volley never forces a body outside it through. A `volley` with `salvos: 1` has no cadence and is outside the class. `close-gate`/`open-gate` are one-shot state changes with no clock and are outside it too. The binding selects by identity, so its zero is the class measuring zero: a campaign with neither is INAPPLICABLE. This row carried an `applies_when` of `has_any [open_ticks, closed_ticks, salvos]` and a binding of timed gates only, which held every volley campaign UNBOUND; the precondition is removed because the binding now counts the class itself. That removal is a LOOSENING for one shape, declared as one: a campaign whose only volleys declare `salvos: 1` read UNBOUND and now reads INAPPLICABLE — there is no next salvo for a timing read to judge. It is also a tightening for another: a volley that omits `salvos` matched no `has_any` clause and is now counted.",
       "round": 2,
       "triage": "content"
     },
@@ -2219,7 +2159,7 @@
       "finding": "the delve's overall difficulty was an order of magnitude below what the design called for",
       "general_form": "none: how hard a delve should be is the design's own statement",
       "id": "bell-15",
-      "justification": "Absolute difficulty is a design target, not a derivable fact. The machine bounds the floor and the ceiling around it -- DW0472 time-to-kill, DW0473 one-shot deaths, DW0470/DW0471 winnability, and the bot's inverted floor gate for anything billed elite or boss -- but the band between them is the designer's. Standing content-QC item.",
+      "justification": "Absolute difficulty is a design target, not a derivable fact. The machine bounds the floor and the ceiling around it -- DW0472 time-to-kill, DW0473 one-shot deaths, DW0470/DW0471 winnability -- but the band between them is the designer's. Standing content-QC item.",
       "round": 6,
       "triage": "content"
     },
@@ -2710,6 +2650,386 @@
       "id": "doune-05",
       "note": "Re-measured on the tree this row lands on, the engine at `83916f66b03354034465f22b8f996fc79bb34c1c`: `delvec schema --stage all` exports 534011 bytes carrying the word `firework` 20 times, and the effect union's `oneOf` now names 38 verbs, counted off the exported schema by `the_effect_union_names_thirty_eight_verbs` rather than read out of a message. The verb is `firework` at a `Mark` — the same anchor-and-offset `play-sound` takes since spec-0066 — carrying the game's five explosion shapes, colours as `#rrggbb` packed to the integers the `minecraft:fireworks` component reads, and a flight of 1, 2 or 3. One `summon minecraft:firework_rocket` is emitted per effect and is walked against the pinned 1.21.11 command tree by the emitter like every other line it writes, which is what the carrier test reaches: it reads the command off a real build, so the build that produced it had already passed the tree. The emitter writes the entity's `LifeTime` at the floor of the game's randomised range so the burst height is a stated number, and `DW0899` refuses a rocket whose column to that height is roofed or whose burst lies within five blocks of a place the campaign posts a body. The binding counts `firework` effects by identity, so a campaign that declares none is INAPPLICABLE rather than unbound; the released `doune-castle-tour` is never edited and declares none, and the class is exercised by the gallery's valley-site court, which fires one rocket of five stars under open sky.",
       "round": 1,
+      "triage": "capability"
+    },
+    {
+      "campaign": "vesperhold",
+      "carrier": null,
+      "disposition": "no-machine-form",
+      "finding": "the bell-tower boss fight cannot be won: the party is ground down across retries by equipment that degrades with nothing in the delve that mends it, and by the walk back to the fight",
+      "general_form": "none: whether a fight can be won is a difficulty judgement the design makes",
+      "id": "vh-01",
+      "justification": "Absolute difficulty is the design's own statement, which is the class `bell-15` already records, and whether a fight can be won is judged on the playtest, never by the machine: what the machine bounds is a wrong number — `DW0472` refuses a mandatory encounter whose declared health takes more than 400 ordinary swings of the best kit the party can field — and nothing models ATTRITION ACROSS RETRIES, which is what makes this fight unwinnable rather than merely hard. The two attritions the engine does own are their own rows: `vh-03`, a rest mending what the party carries, which is carried; and `vh-04`, the walk back from a rest, which is a placement judgement. The remedy for this row is rest placement and equipment condition; lowering the fight is refused. Standing content-QC item.",
+      "round": 1,
+      "triage": "content"
+    },
+    {
+      "applies_when": {
+        "files": [
+          "world.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "prefix": {
+            "id": "area/"
+          }
+        }
+      },
+      "binding": {
+        "file": "leave-proof.json",
+        "kind": "artifact",
+        "path": "reached"
+      },
+      "campaign": "vesperhold",
+      "carrier": {
+        "code": "DW0921",
+        "kind": "dw"
+      },
+      "finding": "a pool the party can walk into is ringed with slabs no body can climb back over, so a body that enters it cannot leave: bodies accumulate on its floor and drown there",
+      "general_form": "a body of water a body can enter has a climb-out: from the water's surface, some standable cell outside the water is reachable by the moves a body afloat can make",
+      "id": "vh-02",
+      "note": "Carried by `DW0921`, the rule that no place a body can reach from the proven route is one it cannot leave (`vh-16`), over the one movement relation `nav::World::body_moves`: a body that walks, falls or jumps into water floats at its surface, swims from surface cell to surface cell, and climbs out onto ground no more than `dsl::metrics::WATER_CLIMB_OUT_RISE` (one cell) above the water's top -- measured with `tools/spike-jump-arc/simulate.mjs --water`, the harness's own physics: a ledge standing one cell over the top water cell is climbed, two is not. It does not dive and does not traverse water under a roof (spec-0038's non-goals stand). NARROWING, declared as one: the general form read `from every cell of the water's floor`; the check judges the water's SURFACE, and water with no open air over it is not entered at all, so a pool a body could leave only by swimming under a roof is not judged. A body on a pool's floor rises to a surface with open air over it, which the surface judgement covers. The binding is `reached`, every position the proof judged, and not `afloat`, the positions where the body is in water: a campaign with no enterable water measures `afloat` zero in the BUILD tree, and this gate reads a build-side zero as UNBOUND by rule, so an `afloat` binding would refuse every campaign without a pool. `leave-proof.json` carries `afloat` for a reader. The precondition is the placed areas, which every assembled campaign declares, so a missing ledger on a campaign with geometry reads MISSING-CHECK. Measured on this campaign at `dd4429c`: the Undertide well around `[32, 67, 80]`, still enterable over its curb from the choir stalls after the round-1 wall, is refused in three quest configurations (49 surface cells each, entered `by a fall of 3 block(s) into water`); on the fix, a gate in the curb gives the water a step out and the proof holds.",
+      "round": 1,
+      "triage": "capability"
+    },
+    {
+      "binding": {
+        "files": [
+          "quests.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "eq": {
+            "type": "bonfire"
+          }
+        }
+      },
+      "campaign": "vesperhold",
+      "carrier": {
+        "kind": "invariant",
+        "test": "a_rest_mends_every_carried_item_in_place"
+      },
+      "finding": "a shield wears out with nothing in the delve that mends it: a rest restores the resting body, refills the flask and leaves the condition of everything else the party carries untouched",
+      "general_form": "a rest restores the condition of what the party carries -- the declared kit is mended, never re-issued -- so a retry loop cannot exhaust equipment the campaign gives the party no way to replace",
+      "id": "vh-03",
+      "note": "`DW0476` holds a campaign that places a `bonfire` to the flask its class kits must declare, and the rest loop restores the resting player, refills the flask, moves the checkpoint, fires `on_rest[]` and re-seats every `respawns_on_rest` wave. The mend is the part this row is about, and it is closed by construction rather than by a diagnostic: `bonfire_restore` emits one guarded `item modify … bonfire_mend` per carried slot -- the four armour slots, the off-hand and the 36 inventory slots, 41 in all -- and the modifier is `minecraft:set_damage` to full, absolutely. The carrier asserts the whole set and asserts that the function modifies no other item and gives nothing, so a rest MENDS what the party carries and never re-kits it: gear earned in play is what gets repaired. `save only` grows no mend. The PackTest template `souls_bonfire_mend` damages gear in every kind of carried slot on the pinned server and reads the inventory back after a real rest. Measured on this campaign: 5 `bonfire` effects, of 869 nodes in `quests.json`.",
+      "round": 1,
+      "triage": "capability"
+    },
+    {
+      "campaign": "vesperhold",
+      "carrier": null,
+      "disposition": "no-machine-form",
+      "finding": "the walk back from the nearest rest to a scripted ambush costs more than the fight does, so dying to the ambush is a commute rather than a retry",
+      "general_form": "none: where a rest point goes, and how long a walk back the design wants, are the design's own statements",
+      "id": "vh-04",
+      "justification": "Where a rest goes is a placement judgement. The machine has the SHAPE of this check and not its number: `DW0379` charges the proven walk from a rest point to the first beat it can respawn the party into against a 60 s budget, and the diagnostics catalogue records that budget as roughly 300 blocks of walking, which no box-garden delve approaches -- so the lint is inert in practice and can name no walk in a delve of this size. The threshold is a design decision and not a compiler one. The ambush in this campaign sits around `[151, 92, 19]`. Until the design states a budget the lint can charge, this is a standing content-QC item, and re-tuning `DW0379` is a queued engine obligation rather than coverage this row may claim.",
+      "round": 1,
+      "triage": "content"
+    },
+    {
+      "binding": {
+        "files": [
+          "quests.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "any_of": [
+            {
+              "eq": {
+                "type": "despawn-npc"
+              }
+            },
+            {
+              "eq": {
+                "type": "despawn-actor"
+              },
+              "not_in": {
+                "style": [
+                  "kill"
+                ]
+              }
+            }
+          ]
+        }
+      },
+      "campaign": "vesperhold",
+      "carrier": {
+        "kind": "invariant",
+        "test": "no_story_removal_kills_a_body_in_place"
+      },
+      "finding": "a body the story removes from the scene dies on screen: the removal plays a death where the fiction needs only that the body be gone",
+      "general_form": "a body the story removes leaves unseen -- no death animation, no death sound, no death message -- whatever class of body it is and wherever the removal is authored; how a removal looks belongs to removal itself, and is never a choice one body class has and another lacks",
+      "id": "vh-05",
+      "note": "Closed by construction, over every removal and not over the verb that was noticed. An unseen removal moves the body down its own column to an unseen y, replaces every tag it wears with the sweep's, and schedules the sweep -- in that order, so the schedule is taken while the body can still be found -- and the sweep is the only thing that kills it, where nobody is. The carrier is a negative over the whole shipped datapack: it collects every `kill` whose selector names a body tag and requires the set to be empty, across a build carrying a `despawn-npc`, a `despawn-actor` `vanish`, an `unleash`, an actor re-stand and a wave re-seat, and then states its binding by requiring each of those five bodies to be removed somewhere in the tree. `despawn-actor` with `style: kill` is the one removal the story writes AS a death and it still dies on screen, which is why the binding excludes it rather than the carrier making an exception. Measured on this campaign: 3 `despawn-npc` and 7 `despawn-actor`, every one of the seven declaring `style: vanish`, so the class binds 10 of 869 nodes in `quests.json`.",
+      "round": 1,
+      "triage": "capability"
+    },
+    {
+      "campaign": "vesperhold",
+      "carrier": null,
+      "disposition": "no-machine-form",
+      "finding": "the drawn faces of the cast carry oversized jaws, so the bodies do not read as the people the fiction describes",
+      "general_form": "none: whether a drawn face reads as a face is a perceptual judgement no compiler makes",
+      "id": "vh-06",
+      "justification": "The machine bounds a skin's mechanics and not its drawing: `DW0309` proves a declared skin texture is baked and served, and refuses a mannequin naming a texture with no source file. What the face looks like is the authoring prompt's output. The defect is located in the SKIN-AUTHORING PROMPT and not in rendering and not in a design choice, and the observation that locates it is that bearded faces drawn through the same pipeline read correctly. The repair is a change to the prompt the skill hands the image model, confirmed on a demo skin set before it is trusted again. Standing content-QC item.",
+      "round": 1,
+      "triage": "content"
+    },
+    {
+      "binding": {
+        "files": [
+          "quests.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "eq": {
+            "type": "bonfire"
+          }
+        }
+      },
+      "campaign": "vesperhold",
+      "carrier": {
+        "kind": "invariant",
+        "test": "the_flask_takes_back_only_its_own_empties"
+      },
+      "finding": "spent bottles stay in the party's bag after a rest, so the inventory fills with empties the delve never takes back",
+      "general_form": "a rest returns the party's consumables to the state the class kit declares: what a spent consumable leaves behind is taken back, so the bag after a rest holds the declared kit and nothing the party has spent",
+      "id": "vh-07",
+      "note": "Closed by construction with `vh-03`'s mend, and scoped so that it takes back the flask's empties and no other bottle: the flask's `use_remainder` is overridden to carry a `dw_flask_empty` mark, and `bonfire_flask` clears exactly that marked bottle before it refills. The carrier asserts the mark on the kit's give and the clear at the head of the refill, and then sweeps EVERY emitted function for a `clear @s minecraft:glass_bottle` without the mark, so no rest can take a bottle the flask did not leave; it also drives the two shapes that must stay silent -- a kit potion that is not the flask keeps an unmarked remainder, and a flask whose item leaves nothing behind (a thrown splash potion) marks and clears nothing. Measured on this campaign: 5 `bonfire` effects, of 869 nodes in `quests.json`.",
+      "round": 1,
+      "triage": "capability"
+    },
+    {
+      "binding": {
+        "files": [
+          "quests.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "eq": {
+            "display": "sidebar"
+          }
+        }
+      },
+      "campaign": "vesperhold",
+      "carrier": {
+        "kind": "invariant",
+        "test": "a_displayed_datum_stands_on_the_sidebar"
+      },
+      "finding": "the party cannot see how much of the delve's currency it holds: the balance appears nowhere on screen",
+      "general_form": "a campaign that declares a named currency gives the party a standing way to read its balance, and not only an announcement at the moment the balance changes",
+      "id": "vh-08",
+      "note": "The capability is half here and the half that is missing is the one the finding names. A player-scoped `state` datum carrying a `name` IS a currency, and the engine already announces it: one tick driver keyed on the datum differing from its shadow score fires `st_show_<datum>`, which writes the balance to the actionbar as a live score component under the delve's own translation key, once per change and from exactly one place -- a readout inside a gated effect would be evaluated after the write it reports, so spending the last of something is the one change the player would never be told about. What has no carrier is a STANDING display: once the actionbar fades the balance is nowhere the party can consult, which is what was reported. The sidebar is not a free choice either -- the completion objective is deliberately kept off `scoreboard objectives setdisplay sidebar`, because that slot shows a raw internal id and the harness cannot decode the pinned game's score packets -- so the general form has to say what a standing display IS before a check can hold anything to it. Measured on this campaign: 1 named player-scoped datum (`state/tallow`), of 869 nodes in `quests.json`. CLOSED by spec-0076: a named datum may declare `display: sidebar`, and `setup` then heads its objective with the translated `name`, paints the value gold and puts the objective in the sidebar slot, once, at world init -- the standing half the finding named. The carrier is the emission invariant: the three lines are emitted, in order, from one place, and a datum without `display` emits none of them. The general form's `standing display` is answered in the spec's own words: the sidebar is the one vanilla slot that stands for the viewer; its heading is the display name, so the raw-id objection does not reach a named datum; the bot reads nothing from it, and the harness's ledger reads take team-coloured slots only. What the check quantifies over is every datum declaring `display: sidebar`, selected by identity, so a campaign whose named datum declares no display reads INAPPLICABLE rather than passing -- a creator who wants the party to read a balance between changes declares the display, and a `party`-scoped purse cannot (`DW0919`), which is the recorded gap. Measured on this campaign after the content change: 1 datum declaring `display: sidebar` (`state/tallow`), of the nodes in `quests.json` the gate counts.",
+      "round": 1,
+      "triage": "capability"
+    },
+    {
+      "applies_when": {
+        "files": [
+          "quests.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "has": [
+            "drops"
+          ]
+        }
+      },
+      "binding": {
+        "files": [
+          "quests.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "any_of": [
+            {
+              "eq": {
+                "type": "bonfire"
+              }
+            },
+            {
+              "eq": {
+                "type": "despawn-npc"
+              }
+            },
+            {
+              "eq": {
+                "type": "despawn-actor"
+              }
+            }
+          ]
+        }
+      },
+      "campaign": "vesperhold",
+      "carrier": {
+        "kind": "invariant",
+        "test": "every_compiler_removal_strips_declared_loot_first"
+      },
+      "finding": "the party ends the delve holding two copies of a unique key: a rest re-seats an undefeated elite, the re-seat removes the body still standing, and that body yields its declared drop as it goes",
+      "general_form": "a body the engine removes yields none of its declared drops, on every path by which the engine removes one -- a rest's re-seat included -- so no removal the party did not earn can put a second copy of a unique item into the world",
+      "id": "vh-09",
+      "note": "Refreshing an undefeated elite on a rest is INTENDED behaviour and is not the defect: spec-0016 section 1's undefeated re-seat is what `bell-10` and `DW0499` record, and `DW0499` refuses only the combination of a `boss` billing with rest respawning. The defect is the unstripped loot and nothing else. Closed by construction: a removal writes `drop_chances` to zero and `DeathLootTable` to `minecraft:empty` on the body before anything kills it. The carrier reads the loot-bearing set off the EMITTED SUMMONS rather than from a list, and enumerates removal sites from every emitted function, so a body a later change teaches to carry loot and a removal a later change adds are both covered without editing the test; it then requires that no removal of a loot-bearing body -- a `kill`, or the exit into the unseen sweep -- stands without a strip before it, and prints the site count it examined. The binding counts the bodies that can carry the defect (a declaration of `drops`) and the precondition counts the removal paths a campaign has, so a campaign with loot and no rest and no despawn is INAPPLICABLE rather than unbound. Measured on this campaign: 9 declarations of `drops` against 15 removal sites (5 bonfires, 3 `despawn-npc`, 7 `despawn-actor`), of 869 nodes in `quests.json`. NARROWING OF A PRECONDITION, declared as one: the precondition counted every removal site (`bonfire`, `despawn-npc`, `despawn-actor`), a population that cannot carry this defect unless some body declares `drops` — a gallery point with a bonfire and no drops read UNBOUND for a defect it cannot have. The precondition is now the object that carries the defect, a declared drop, and the binding counts the removal sites the carrier holds to it. A campaign with drops and no removal site reads UNBOUND, which is the one edge this shape leaves; on vesperhold both are present.",
+      "round": 1,
+      "triage": "capability"
+    },
+    {
+      "binding": {
+        "files": [
+          "quests.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "in": {
+            "trigger": [
+              "pressure-plate",
+              "tripwire",
+              "trapped-chest"
+            ]
+          }
+        }
+      },
+      "campaign": "vesperhold",
+      "carrier": {
+        "code": "DW0917",
+        "kind": "dw"
+      },
+      "finding": "an armoury designed as one real chest among false trapped chests is built as a row of fence gates, so nothing standing at the traps' cells reads as a chest at all",
+      "general_form": "the cell a trap arms holds the hardware the trap declares, so a trap declared as a trapped chest is a trapped chest in the built world and the party can tell it from scenery",
+      "id": "vh-10",
+      "note": "`DW0917` is the carrier: a `traps[]` entry's `trigger` names a kind of hardware -- `pressure-plate` (any `minecraft:*_pressure_plate`), `tripwire` (the string, not the hook), `trapped-chest` -- and the cell of its `at` anchor in the assembled world, the edited one where a stage-7 script exists, is refused at build tier when it holds something else. The prefab places the trigger and the compiler only detects it -- a plate or tripwire by a position test, a trapped chest by an invisible interaction hitbox -- and neither detection needs the block, so before this check a trap over the wrong block, or over empty air, compiled and passed its completability proofs while showing the player nothing of what it claimed to be. Design material this row carries, so a later round transcribes rather than re-invents it: among false chests the one real chest holds gear worth the search and is never empty. `DW0431` proves a declared loot fill lands in a real fillable container and says nothing about what a trap's own trigger is; `DW0435` refuses two fills of one container. Neither reaches this class. The binding counts a trap by the trigger kind it declares, which is the object itself, so a campaign with no trap is INAPPLICABLE. Measured on this campaign: 2 traps, of which `trap/false-chest` is the one declaring `trigger: trapped-chest`, beside 2 `loot` fills, of 869 nodes in `quests.json`.",
+      "round": 1,
+      "triage": "capability"
+    },
+    {
+      "campaign": "vesperhold",
+      "carrier": null,
+      "disposition": "no-machine-form",
+      "finding": "a wooden structure standing by the gate reads as no particular thing: a player in front of it cannot say what it is meant to be",
+      "general_form": "none: whether built geometry reads as the thing it depicts is a perceptual judgement",
+      "id": "vh-11",
+      "justification": "Same class as `isl-25` and `isl-26`: how a built thing reads to a person standing in front of it is perception, not geometry. The instrument is the review loop, which is a staging step and not a gate -- `DW0900` assembles the built world and the design set its gate approved into one comparison so a disagreement is visible, and a person judges it. The structure in this campaign is around `[90, 80, 147]`. Standing content-QC item.",
+      "round": 1,
+      "triage": "content"
+    },
+    {
+      "campaign": "vesperhold",
+      "carrier": null,
+      "disposition": "no-machine-form",
+      "finding": "a designed tree is too bare to read as a tree: its canopy carries too little leaf for the trunk under it",
+      "general_form": "none: how full a tree reads is a perceptual judgement",
+      "id": "vh-12",
+      "justification": "The machine asserts quantity over a DECLARED domain -- `DW0864` states what every placement verb declared and delivered and refuses an unambiguous shortfall, and the generators carry the same assertion, which is `hv-10` -- but a tree built block by block declares no count to fall short of, and 'full enough to read as a tree' is not a number. The tree in this campaign is around `[31, 80, 76]`. Judged on the review loop alongside `vh-11`. Standing content-QC item.",
+      "round": 1,
+      "triage": "content"
+    },
+    {
+      "campaign": "vesperhold",
+      "carrier": null,
+      "disposition": "no-machine-form",
+      "finding": "the areas off the main line hold nothing to find: a party that leaves the critical path is given no reason to have left it",
+      "general_form": "none: what a side area is worth is a design judgement",
+      "id": "vh-13",
+      "justification": "Same class as `isl-45`: whether a walk is worth making is a design judgement, and the machine can prove a route exists but never that anyone should take it. This row carries the design material that answers it, so a later round transcribes rather than re-invents: off-main-line exploration and combat are what a souls delve is made of, at a density referenced against the genre's own rather than chosen freshly; side areas carry bodies worth farming for currency and optional side bosses that drop high-tier gear; every set piece owes its own idea rather than a repeat of the last one -- for one example, a conspicuous body held in place by terrain, so a party fixed on it is taken from behind; and a merchant selling mid-tier weapons and enchanted books stands beside an anvil. Filler consumables are not content. Standing content-QC item.",
+      "round": 1,
+      "triage": "content"
+    },
+    {
+      "campaign": "vesperhold",
+      "carrier": null,
+      "disposition": "no-machine-form",
+      "finding": "a pocket off the main line stands empty where the ground around it is shaped for a set-piece fight",
+      "general_form": "none: where a set piece goes is a design statement",
+      "id": "vh-14",
+      "justification": "An instance of `vh-13`'s class, kept as its own row because it names a particular place rather than the class: the ground around `[153, 80, 135]` in this campaign is shaped for an optional boss and holds none. Where a set piece goes is the design's own statement and no compiler derives it. Standing content-QC item.",
+      "round": 1,
+      "triage": "content"
+    },
+    {
+      "binding": {
+        "files": [
+          "quests.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "eq": {
+            "entity": "minecraft:drowned"
+          }
+        }
+      },
+      "campaign": "vesperhold",
+      "carrier": {
+        "code": "DW0920",
+        "kind": "dw"
+      },
+      "finding": "the drowned in the undertide pool do not attack: they keep walking toward the well's water, and the curb that keeps them out of it keeps them there while the party cuts them down",
+      "general_form": "a body the pinned game's own AI will not set on the party, under the hour, weather and footing the fight can stand in, is not staged as a fight the party must win: a drowned takes no land target while the level is bright (day, noon or dusk, in clear or rain), so a drowned fight bright until its kill objective completes needs water for the party's feet within the body's reach",
+      "id": "vh-15",
+      "note": "Mirror of `DW0496`: that rule refuses a fight the sun settles, this one a fight the body walks away from. On the pinned 1.21.11 jar `Drowned.okTarget(t)` is `!level.isBrightOutside() || t.isInWater()` -- the predicate on its player-targeting goal and the gate on its melee goal -- and `DrownedGoToWaterGoal` walks it to water while bright; of the thirteen classes that call `Level.isBrightOutside()`, `Drowned` is the only target gate. `isBrightOutside` is `skyDarken < 4`: dusk in rain is sky light 11.005, `skyDarken` 3, bright by five thousandths of a light level. Measured a second way on the pinned server by `tools/maintenance/probe-drowned-engagement.py`: 20 of 20 cases agree with `engage::bright_outside` (14 engaged, 14 villagers slain by a drowned in the server log). The round-1 fix that walled the well, so the choir could no longer walk into its own lethal box, is what turned the choir toward the wall; the repair keeps the wall and stands the fight in water: every flag of the pool floor outside the well's ring is a waterlogged bottom slab, on which a drowned crossed 14 blocks to its target in about 20 s on the pinned server. The span is `DW0496`'s clock, ended at the wave's `kill` objective: vesperhold cuts to noon, night and dawn only in quests after the choir. The binding counts drowned stacks by entity id, the object class itself, so a campaign with no drowned is INAPPLICABLE. Measured on this campaign: 2 drowned stacks (three Drowned Choristers and the Drowned Precentor) in `wave/drowned-choir`; the build refuses content `dd4429c` with DW0920 on that wave (2 refused) and is silent on the repaired floor (2 of 2 with water within reach).",
+      "round": 2,
+      "triage": "capability"
+    },
+    {
+      "binding": {
+        "files": [
+          "quests.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "in": {
+            "entity": [
+              "minecraft:bogged",
+              "minecraft:drowned",
+              "minecraft:phantom",
+              "minecraft:skeleton",
+              "minecraft:stray",
+              "minecraft:zombie",
+              "minecraft:zombie_horse",
+              "minecraft:zombie_nautilus",
+              "minecraft:zombie_villager"
+            ]
+          }
+        }
+      },
+      "campaign": "vesperhold",
+      "carrier": {
+        "code": "DW0496",
+        "kind": "dw"
+      },
+      "finding": "undead the party fought under the declared dusk and rain burned in daylight: an ambush-woken zombie villager with nothing on its head burned beside the chandlery yard",
+      "general_form": "a body the pinned game burns is not staged for a fight in any hour and weather the fight can stand in that burn it: dusk is inside the pinned monsters_burn window, rain protects only where the biome at the cell rains (the_void never does), and a delve that cuts its clock is judged over each fight's span on the quest DAG rather than withheld",
+      "id": "vh-17",
+      "note": "Same class as `hv-08`, `isl-17` and `isl-40`, and the reason it recurred: `DW0496` held `dusk` non-burning, took declared `rain` as protection everywhere, and withheld on any campaign that cuts its time or weather, so it never looked at this campaign (declared `dusk` + `rain`, cut to `noon`/`clear` for two echoes and to `night` or `dawn` at the end). Measured on the pinned server in this campaign's own built world, bare-headed zombie at the note's cell for 20 s: `dusk` clear 20 -> 8 health, `night` clear 20 -> 20, `dusk` rain over `the_void` 20 -> 7, the same cell painted `minecraft:plains` 20 -> 20; after `tick sprint 60000` the declared time and weather still held. The body at the note is `actor/chandler` at [153, 80, 135]; the three hedge-lurkers around [143, 80, 113] are the same shape. The declared rain also never visibly falls over the play box, because its biome does not precipitate; that is recorded here as the cause of the burn and is not closed by this row.",
+      "round": 2,
+      "triage": "capability"
+    },
+    {
+      "applies_when": {
+        "files": [
+          "world.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "prefix": {
+            "id": "area/"
+          }
+        }
+      },
+      "binding": {
+        "file": "leave-proof.json",
+        "kind": "artifact",
+        "path": "reached"
+      },
+      "campaign": "vesperhold",
+      "carrier": {
+        "code": "DW0921",
+        "kind": "dw"
+      },
+      "finding": "a player can jump onto a hedge in the garden and drop into the bed it rings, and nothing gets them out",
+      "general_form": "no place a body can reach from the proven route, by walking, falling, jumping or swimming, is one it cannot leave",
+      "id": "vh-16",
+      "note": "The same class as `vh-02` on land. The route proofs could not see it: they take the walk step only, so a hedge top reached by a jump off a garden boulder was in no proof's reach. `DW0921` floods the player's own movement (`nav::World::body_moves`: the walk step, falls to the deepest an unarmoured body survives, and cardinal gap jumps inside `dsl::metrics::JUMP_REACH`, measured by `tools/spike-jump-arc/simulate.mjs`, which reproduces the live jump spike's 14 verdicts) from the critical path's route cells, once per quest configuration, and refuses every reached cell from which no movement leads back; a cell the boundary clock returns and a shortcut lever the pocket reaches are ways out. A room the story shuts the party into holds the objective the story waits on and is not refused, with no declaration. Measured on this campaign at `dd4429c`: 6 configurations, 316580 cells reached, 827 a body cannot leave, in 78 pockets over 5 configurations -- on land in each, the four hedge beds (the one at `[140, 82, 110]` among them: 25 cells, entered `by a fall of 2 block(s)` off the hedge top), a ruin hole in the curtain top, a tower slit one step under the wall walk and nine hollows in the east ditch between the crag and the field wall; and the Undertide well (`vh-02`) in three. At the fixed content: 0. Limits, named in the diagnostic: diagonal jumps, climbing, standing on a fence or wall top and diving are not moves.",
+      "round": 2,
       "triage": "capability"
     }
   ],

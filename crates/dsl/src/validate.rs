@@ -99,9 +99,13 @@ pub fn validate_campaign_with(
     ambush_checks(c, &mut d);
     timed_gate_checks(c, anchors, &mut d);
     loot_checks(c, items, anchors, &mut d);
+    give_item_enchantment_checks(c, &mut d);
     lane_checks(c, anchors, &mut d);
     difficulty_checks(c, &mut d);
     firework_checks(c, &mut d);
+    // spec-0073: a fight's health bar. The walk is over every wave and actor;
+    // a campaign that declares no bar and bills no fight `boss` gets nothing.
+    crate::healthbar::health_bar_checks(c, &mut d);
     // Stage 7 (spec-0017): the map-editor edit script. Structural
     // checks only — frame/region *resolution* happens at build time against the
     // solved layout (the compiler's `DW0323`).
@@ -163,6 +167,10 @@ pub fn validate_campaign_with(
     // here. Quantified over every effect list that charges a datum, never over
     // shops.
     crate::purchase::purchase_checks(c, &mut d);
+    // spec-0074 §8.1: an `on_kill` bundle a credited kill can never reach
+    // (`DW0913`), and an empty one (`DW0100`). The pair that needs the rest
+    // points (`DW0914`/`DW0915`) is compiler-side.
+    crate::onkill::on_kill_checks(c, &mut d);
     // spec-0061: the design record's own document-level refusals — an empty
     // `references`, a name that is not a path under `design/`, two rows for one
     // picture. The comparison against the world's reachable skies (`DW0890`) is
@@ -2697,6 +2705,65 @@ fn state_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
         }
     }
 
+    // --- the standing display (spec-0076): what the sidebar can draw -----------
+    //
+    // One slot, one objective, drawn holder by holder under the objective's
+    // display name. A declaration the slot cannot draw as written is refused
+    // where it is written (`DW0919`), never resolved by order: a silent "first
+    // wins" would hide the one decision this field exists to make explicit.
+    let mut standing: Option<&crate::stages::StateDecl> = None;
+    for (i, s) in decls.iter().enumerate() {
+        let Some(display) = s.display else {
+            continue;
+        };
+        let slot = display.slot();
+        let path = format!("/content/state/{i}/display");
+        if s.name.is_none() {
+            d.push(Diagnostic::error(
+                codes::STATE_DISPLAY_UNDRAWABLE,
+                "quests",
+                path.clone(),
+                format!(
+                    "`{}` asks to stand on the {slot} but has no `name`, and the {slot}'s \
+                     heading is the display name — without one the objective's internal id \
+                     would stand on every player's screen. Give the datum a `name`, or take \
+                     `display` off it",
+                    s.id.as_str()
+                ),
+            ));
+        }
+        if s.scope == crate::stages::StateScope::Party {
+            d.push(Diagnostic::error(
+                codes::STATE_DISPLAY_UNDRAWABLE,
+                "quests",
+                path.clone(),
+                format!(
+                    "`{}` is `party`-scoped and asks to stand on the {slot}, but a party \
+                     datum's value lives on the `#party` holder and the {slot} hides every \
+                     holder whose name starts with `#` — the display would be an empty \
+                     heading. Declare it `player`-scoped if each player holds their own, or \
+                     take `display` off it and keep the announcement",
+                    s.id.as_str()
+                ),
+            ));
+        }
+        match standing {
+            None => standing = Some(s),
+            Some(first) => d.push(Diagnostic::error(
+                codes::STATE_DISPLAY_UNDRAWABLE,
+                "quests",
+                path,
+                format!(
+                    "`{}` and `{}` both ask to stand on the {slot}, which holds one \
+                     objective. Keep `display` on the one datum the party reads between \
+                     changes and take it off the other — the engine does not pick for you",
+                    first.id.as_str(),
+                    s.id.as_str()
+                ),
+            )),
+        }
+    }
+
     // --- the reads: every gate's `requires_state`, from the closed set --------
     let mut read: BTreeSet<String> = BTreeSet::new();
     crate::gate::for_each_gate(c, &mut |site, gate| {
@@ -3047,6 +3114,32 @@ fn lighting_range_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
 /// ref nested in a timeline is caught, not shipped unvalidated (mirroring how the
 /// flag/wave *producer* scans and emission already descend). Top-level paths are
 /// unchanged, so a nesting-free campaign is validated identically.
+/// Does the campaign declare a `bonfire` — a rest point that re-seats fights
+/// (spec-0016 §1)? Read at the roots the compiler collects rest points from: a
+/// quest's bundles and an environment trigger's effects, at any nesting depth.
+/// The match over the site is exhaustive, so a new root answers here. `DW0370`
+/// asks it, and so does the compiler's `fight_comes_back` where no plan exists
+/// yet (`DW0914`/`DW0915`).
+pub fn declares_bonfire(c: &Campaign) -> bool {
+    use crate::stages::EffectSite;
+    let mut has_bonfire = false;
+    crate::stages::for_each_campaign_effect(c, &mut |_, site, eff| {
+        let collected = match site {
+            EffectSite::Objective { .. }
+            | EffectSite::QuestComplete { .. }
+            | EffectSite::Trigger { .. } => true,
+            EffectSite::Trap { .. }
+            | EffectSite::DialogueRespawn { .. }
+            | EffectSite::ShortcutUnlock { .. }
+            | EffectSite::ShopOffer { .. }
+            | EffectSite::OnDeath
+            | EffectSite::OnKill { .. } => false,
+        };
+        has_bonfire |= collected && eff.bonfire().is_some();
+    });
+    has_bonfire
+}
+
 fn for_each_effect_deep(q: &crate::stages::Quest, mut f: impl FnMut(String, &QuestEffect)) {
     fn descend(path: String, eff: &QuestEffect, f: &mut dyn FnMut(String, &QuestEffect)) {
         f(path.clone(), eff);
@@ -3419,17 +3512,7 @@ fn v06_checks(
     // `bonfire` anywhere in the campaign nothing can ever fire the re-seat, so
     // the field is a silent no-op — the class of defect this compiler always
     // turns loud (`DW0370`).
-    let mut has_bonfire = false;
-    for q in &c.quests.content.quests {
-        for_each_effect_deep(q, |_path, eff| {
-            has_bonfire |= eff.bonfire().is_some();
-        });
-    }
-    for t in &c.quests.content.triggers {
-        for_each_trigger_effect_deep(t, |_path, eff| {
-            has_bonfire |= eff.bonfire().is_some();
-        });
-    }
+    let has_bonfire = declares_bonfire(c);
     if !has_bonfire {
         for (i, w) in quests.waves.iter().enumerate() {
             if w.respawns_on_rest {
@@ -5161,8 +5244,9 @@ fn v06_trap_checks(
                     providers.anchor_remedy(
                         "bind the trap to a point anchor some area's prefab exposes, whatever \
                          that anchor is called (names come from prefab metadata; do NOT invent \
-                         one). A `payload` trap needs nothing of the piece but that one cell — \
-                         the compiler emits the detection; only a legacy `dispense` effect \
+                         one). A `payload` trap needs nothing of the piece but that one cell and \
+                         the trigger block standing in it (`DW0917`) — the compiler emits the \
+                         detection; only a legacy `dispense` effect \
                          needs the anchor's `dispenser` socket, and only a flag-gated trap \
                          needs its `trigger_block`"
                     ),
@@ -8089,11 +8173,49 @@ fn check_equipment(
         check_enchantments(
             piece.enchantments(),
             &format!("{what} equipment `{slot}`"),
+            "quests",
             &format!("{base_path}/{slot}/enchantments"),
             &ench_reg,
             d,
         );
     }
+}
+
+/// `give-item` enchantments (`DW0433`/`DW0434`) at **every effect root**, at
+/// any nesting depth: the same checks a `loot` stack and an equipped piece get,
+/// because it is the same field on the same object — an item stack.
+fn give_item_enchantment_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
+    let reg = crate::registry::VendoredEnchantmentRegistry::v1_21_11();
+    fn walk(
+        stage: &'static str,
+        path: &str,
+        list: &[QuestEffect],
+        reg: &dyn crate::registry::EnchantmentRegistry,
+        d: &mut Vec<Diagnostic>,
+    ) {
+        for (n, eff) in list.iter().enumerate() {
+            let p = format!("{path}/{n}");
+            if let Verb::GiveItem {
+                item, enchantments, ..
+            } = &eff.verb
+            {
+                check_enchantments(
+                    enchantments,
+                    &format!("`give-item` item `{item}`"),
+                    stage,
+                    &format!("{p}/enchantments"),
+                    reg,
+                    d,
+                );
+            }
+            for (seg, _key, inner) in eff.nested_effect_lists_labeled() {
+                walk(stage, &format!("{p}/{seg}"), inner, reg, d);
+            }
+        }
+    }
+    crate::effects::for_each_effect_root(c, &mut |site, list| {
+        walk(site.stage, &site.path, list, &reg, d);
+    });
 }
 
 /// Validate an enchantment map: known ids (`DW0433`), legal levels (`DW0434`).
@@ -8107,6 +8229,7 @@ fn check_equipment(
 fn check_enchantments(
     ench: &std::collections::BTreeMap<String, u32>,
     what: &str,
+    stage: &'static str,
     path: &str,
     reg: &dyn crate::registry::EnchantmentRegistry,
     d: &mut Vec<Diagnostic>,
@@ -8115,7 +8238,7 @@ fn check_enchantments(
         if !reg.contains(id) {
             d.push(Diagnostic::error(
                 codes::ENCHANTMENT_UNKNOWN,
-                "quests",
+                stage,
                 format!("{path}/{id}"),
                 format!(
                     "{what} enchantment `{id}` is not in the pinned 1.21.11 enchantment \
@@ -8129,7 +8252,7 @@ fn check_enchantments(
         if *level == 0 || *level > 255 {
             d.push(Diagnostic::error(
                 codes::ENCHANTMENT_LEVEL,
-                "quests",
+                stage,
                 format!("{path}/{id}"),
                 format!(
                     "{what} enchantment `{id}` has level {level}, outside the 1..=255 range \
@@ -8365,6 +8488,7 @@ fn loot_checks(
             check_enchantments(
                 &it.enchantments,
                 &format!("loot `{}` item `{}`", l.id, it.item),
+                "quests",
                 &format!("/content/loot/{i}/items/{k}/enchantments"),
                 &ench_reg,
                 d,

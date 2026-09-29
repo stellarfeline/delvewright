@@ -13,13 +13,15 @@
 //!   ([`DW_TTK_OVER_BUDGET`]), or the compiler says out loud that it could not
 //!   compute the bound ([`DW_TTK_UNPROVEN`]);
 //! - no **unavoidable single hit** on the critical path exceeds player max HP
-//!   ([`DW_UNAVOIDABLE_LETHAL`]);
-//! - the party carries **some** sustain ([`DW_NO_SUSTAIN`]).
+//!   ([`DW_UNAVOIDABLE_LETHAL`]).
+//!
+//! Whether a fight can be won, and how hard it is, is not among them: that is
+//! judged on a human playtest.
 //!
 //! # Every number comes from Mojang, or is refused
 //!
-//! Weapon damage, armour points and food nutrition are read from the vendored
-//! `minecraft:attribute_modifiers` / `minecraft:food` default components
+//! Weapon damage and armour points are read from the vendored
+//! `minecraft:attribute_modifiers` default components
 //! (`registry::ItemCombatRegistry`); whether a damage type is reduced by armour
 //! or scaled by difficulty comes from the vendored damage-type registry
 //! (`registry::DamageTypeRegistry`). Mojang publishes **no** per-entity default
@@ -57,13 +59,13 @@ use delvewright_dsl::Verb;
 use std::collections::{BTreeMap, BTreeSet};
 
 use delvewright_dsl::{
-    Actor, Campaign, Diagnostic, EffectSite, EncounterTier, QuestEffect, Wave, WaveMob,
-    WorldDifficulty, for_each_campaign_effect,
+    Actor, Campaign, Diagnostic, EncounterTier, EquipSlot, QuestEffect, Wave, WaveMob,
+    WorldDifficulty,
 };
 use serde_json::{Value, json};
 
 use crate::compiler::nav::{World, entity_dims};
-use crate::compiler::plan::{self, Plan, Step, safe_local};
+use crate::compiler::plan::{self, Plan, Step};
 use crate::compiler::registry::{DamageTypeRegistry, ItemCombatRegistry};
 use delvewright_dsl::{DwCode, ExitTier};
 
@@ -82,16 +84,8 @@ pub const DW_TTK_OVER_BUDGET: DwCode = DwCode::new("DW0472", ExitTier::Build);
 /// full-health player outright.
 pub const DW_UNAVOIDABLE_LETHAL: DwCode = DwCode::new("DW0473", ExitTier::Build);
 
-/// `DW0474`: a campaign with mandatory combat hands the party no sustain at all.
-pub const DW_NO_SUSTAIN: DwCode = DwCode::new("DW0474", ExitTier::Build);
-
 /// `DW0475`: (warning) the numeric time-to-kill bound could not be computed.
 pub const DW_TTK_UNPROVEN: DwCode = DwCode::new("DW0475", ExitTier::Build);
-
-/// `DW0477`: (warning) something the content bills `elite`/`boss` is one the
-/// inverted floor gate cannot measure — so its silence in the run report means
-/// "never fought", not "passed".
-pub const DW_FLOOR_UNCOVERED: DwCode = DwCode::new("DW0477", ExitTier::Build);
 
 /// The vanilla player's `minecraft:max_health` base value. The DSL exposes no
 /// player-attribute surface at all, so this is not a default — it is the only
@@ -101,20 +95,36 @@ pub const DW_FLOOR_UNCOVERED: DwCode = DwCode::new("DW0477", ExitTier::Build);
 /// survivable-fall figure derives from it.
 pub use delvewright_dsl::metrics::PLAYER_MAX_HEALTH;
 
+/// The vanilla player's `minecraft:attack_damage` base value: the fist. A held
+/// weapon's `attack_damage` modifier ADDS to it ([`ItemCombat::attack_damage`]
+/// is the modifier, not the total), so a blow with an iron sword is 1 + 5 = 6.
+///
+/// Read from the pinned 1.21.11 server's `Player.createAttributes`
+/// (`ATTACK_DAMAGE, 1.0`), and measured on that server by a second instrument
+/// that shares nothing with the first: a player holding an iron sword reads
+/// `attack_damage` 6.0 (`docs/notes/shield-and-guard-fight.md` §2). No DSL
+/// surface can change it.
+///
+/// [`ItemCombat::attack_damage`]: crate::compiler::registry::ItemCombat::attack_damage
+pub const PLAYER_BASE_ATTACK_DAMAGE: f64 = 1.0;
+
 /// The vanilla player's `minecraft:attack_speed` base value, which a held
 /// weapon's (negative) `attack_speed` modifier subtracts from. Used only to put
 /// an indicative *duration* next to the hit count in a diagnostic — never in the
 /// gate itself, which counts swings and therefore needs no timing model.
 pub const PLAYER_BASE_ATTACK_SPEED: f64 = 4.0;
 
-/// How many full-damage swings one player may need to clear a single mandatory
-/// encounter before the compiler calls the fight structurally unwinnable.
+/// How many swings one player may need to clear a single mandatory encounter
+/// before the compiler calls its numbers wrong.
 ///
-/// Deliberately enormous. An iron sword (5 damage) clearing eight 20-HP zombies
-/// is 32 swings; this bound is reached only around 2000 effective HP against the
-/// party's best weapon — i.e. a stack that is not a hard fight but an arithmetic
-/// mistake. spec-0023 asks for "a sanity bound, not a balance opinion", and the
-/// compiler is explicitly forbidden from having balance opinions.
+/// A swing is the ordinary blow: fully charged, not a critical hit, not a
+/// sweep — the one blow whose damage is a function of the kit alone (see
+/// [`landed_blow`]). Deliberately enormous. An iron sword's 6-point blow
+/// clearing eight bare 20-HP zombies is 4 swings each, 32 in all; this bound is
+/// reached only around 2400 HP of unarmoured health against that sword — a
+/// stack that is not a hard fight but a wrong number. spec-0023 asks for "a
+/// sanity bound, not a balance opinion", and whether a fight can be won is
+/// judged on a human playtest, never here.
 pub const TTK_BUDGET_HITS: u32 = 400;
 
 /// The `minecraft:resistance` amplifier at which incoming damage reduction
@@ -177,8 +187,8 @@ pub fn has_encounters(plan: &Plan) -> bool {
 ///
 /// The spec-0023 winnability pass — `DW0470` (a required hostile that cannot be
 /// damaged), `DW0471` (nowhere to fight it from), `DW0472`/`DW0475` (time to
-/// kill), `DW0473` (an unavoidable scripted one-shot), `DW0474` (the party
-/// carries some sustain) — was gated on [`has_encounters`], which is
+/// kill), `DW0473` (an unavoidable scripted one-shot) — was gated on
+/// [`has_encounters`], which is
 /// **`kill`-a-wave, the verb**. A campaign whose combat is *actors* therefore ran
 /// none of it: `nobodys-cave-island` turns five bodies loose on the party, bills
 /// one of them `elite`, ships zero `kill` objectives — and every one of those six
@@ -320,10 +330,16 @@ pub fn incoming_damage(
     }
 }
 
-/// The best single melee hit any one class can land, and the class/item it came
-/// from. `None` when no kit carries an item with an `attack_damage` attribute —
-/// which means *unknown*, not zero: a bow deals real damage and has no such
-/// attribute (its damage is projectile code, in no vanilla data at all).
+/// The best ordinary blow any one class can land — [`PLAYER_BASE_ATTACK_DAMAGE`]
+/// plus the largest weapon `attack_damage` modifier in its kit — and the
+/// class/item it came from. `None` when no kit carries an item with an
+/// `attack_damage` attribute — which means *unknown*, not zero: a bow deals real
+/// damage and has no such attribute (its damage is projectile code, in no
+/// vanilla data at all).
+///
+/// A kit item carries no enchantments (the `classes` schema has no such field),
+/// so no Sharpness term exists here. A weapon the party may find, be given or
+/// buy later is not the kit the party fields.
 fn best_melee_hit(c: &Campaign, items: &ItemCombatRegistry) -> Option<(f64, String, String)> {
     let mut best: Option<(f64, String, String)> = None;
     for class in &c.classes.content.classes {
@@ -346,7 +362,141 @@ fn best_melee_hit(c: &Campaign, items: &ItemCombatRegistry) -> Option<(f64, Stri
             }
         }
     }
-    best
+    best.map(|(modifier, class, item)| (PLAYER_BASE_ATTACK_DAMAGE + modifier, class, item))
+}
+
+/// A vanilla constant of `CombatRules` at 1.21.11: the armour value past which
+/// armour stops helping, and the divisor that turns armour points into a
+/// fraction of the blow (`MAX_ARMOR`, `ARMOR_PROTECTION_DIVIDER`).
+const ARMOR_CAP: f32 = 20.0;
+const ARMOR_DIVIDER: f32 = 25.0;
+
+/// The `minecraft:armor` / `minecraft:armor_toughness` attribute ceilings at
+/// 1.21.11 (`Attributes.ARMOR` 0..30, `Attributes.ARMOR_TOUGHNESS` 0..20). A
+/// sum of worn pieces past these is clamped by the attribute itself.
+const ARMOR_ATTRIBUTE_MAX: f64 = 30.0;
+const TOUGHNESS_ATTRIBUTE_MAX: f64 = 20.0;
+
+/// The enchantment the pinned game applies to a player's melee blow on a worn
+/// piece: `minecraft:protection`, whose `damage_protection` effect adds its level
+/// (`linear`, base 1, +1 per level above the first) for every damage type not in
+/// `#minecraft:bypasses_invulnerability`. The other protections carry a
+/// damage-type requirement `minecraft:player_attack` does not meet.
+const PROTECTION: &str = "minecraft:protection";
+
+/// What a mob's declared gear does to a blow landing on it: the armour,
+/// toughness and protection its worn pieces contribute.
+///
+/// **A floor, never an equality.** A species' own base armour — a zombie's 2 —
+/// is in no published data, so it is not counted, and a `body`-slot piece is
+/// not counted either (whether a body keeps it depends on the species). Every
+/// omission makes a blow land harder, so the swings computed from this are the
+/// fewest the fight can take and a refusal never rests on an assumption.
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct WornDefence {
+    /// Armour points of the pieces worn in their own slot, before the attribute
+    /// ceiling.
+    pub armor: f64,
+    /// Armour toughness of the same pieces.
+    pub toughness: f64,
+    /// Summed `minecraft:protection` levels on pieces in the four humanoid armour
+    /// slots.
+    pub protection: u32,
+}
+
+/// Does a piece in `slot` contribute its armour to the body wearing it?
+///
+/// Only in a humanoid armour slot, and only when that slot is the one the item's
+/// own `equippable` component names: an armour item's attribute modifiers are
+/// scoped to that slot, so an iron chestplate on a head gives the head nothing.
+/// The one rule for "what armour does this body wear" — the muster's armour
+/// floor and [`worn_defence`] both read it.
+pub(crate) fn worn_as_armour(slot: EquipSlot, item: &str) -> bool {
+    static EQUIPPABLE: std::sync::LazyLock<BTreeMap<String, delvewright_dsl::Equippable>> =
+        std::sync::LazyLock::new(|| {
+            crate::compiler::registry::ItemEquippableTable::v1_21_11().items
+        });
+    if !matches!(
+        slot,
+        EquipSlot::Head | EquipSlot::Chest | EquipSlot::Legs | EquipSlot::Feet
+    ) {
+        return false;
+    }
+    let id = if item.contains(':') {
+        item.to_string()
+    } else {
+        format!("minecraft:{item}")
+    };
+    EQUIPPABLE
+        .get(&id)
+        .and_then(delvewright_dsl::Equippable::declared_slot)
+        == Some(slot)
+}
+
+/// The [`WornDefence`] of one wave stack, over the equipment the `summon`
+/// actually writes (`emit::wave_equipment_slots`, the one resolution of what a
+/// stack wears).
+pub fn worn_defence(mob: &WaveMob, items: &ItemCombatRegistry) -> WornDefence {
+    let mut d = WornDefence::default();
+    for (slot, item, piece) in
+        crate::compiler::emit::wave_equipment_slots(&mob.entity, mob.equipment.as_ref())
+    {
+        if worn_as_armour(slot, item)
+            && let Some(stats) = items.get(item)
+        {
+            d.armor += stats.armor;
+            d.toughness += stats.armor_toughness;
+        }
+        // Vanilla applies an armour-slot enchantment to whatever stands in an
+        // armour slot, whatever the item is (`EnchantmentHelper`'s per-slot
+        // iteration checks the enchantment's slot group, never the item).
+        if matches!(
+            slot,
+            EquipSlot::Head | EquipSlot::Chest | EquipSlot::Legs | EquipSlot::Feet
+        ) && let Some(piece) = piece
+        {
+            for (id, level) in piece.enchantments() {
+                let full = if id.contains(':') {
+                    id.clone()
+                } else {
+                    format!("minecraft:{id}")
+                };
+                if full == PROTECTION {
+                    d.protection += *level;
+                }
+            }
+        }
+    }
+    d
+}
+
+/// What one ordinary blow of `hit` points lands as on a body with `defence` and
+/// the incoming-damage `resistance` multiplier — the pinned game's own
+/// arithmetic, in its own `f32`, in its own order (`LivingEntity.actuallyHurt`
+/// at 1.21.11):
+///
+/// 1. armour (`CombatRules.getDamageAfterAbsorb`): with `a` the floored armour
+///    value and `t` the toughness, the blow keeps
+///    `1 − clamp(a − hit / (2 + t/4), a/5, 20) / 25` of itself;
+/// 2. resistance (`getDamageAfterMagicAbsorb`): 20% per level;
+/// 3. protection (`CombatRules.getDamageAfterMagicAbsorb`): the blow keeps
+///    `1 − min(protection, 20) / 25` of itself.
+///
+/// Difficulty is not a term: the pinned game scales damage by difficulty only
+/// in `Player.hurtServer`, i.e. only damage a PLAYER takes. A player's blow on a
+/// mob lands the same on every difficulty.
+pub fn landed_blow(hit: f64, defence: WornDefence, resistance: f64) -> f64 {
+    let hit = hit as f32;
+    let armor = defence.armor.min(ARMOR_ATTRIBUTE_MAX).floor() as f32;
+    let toughness = defence.toughness.min(TOUGHNESS_ATTRIBUTE_MAX) as f32;
+    let per = (armor - hit / (2.0 + toughness / 4.0)).clamp(armor * 0.2, ARMOR_CAP);
+    let mut landed = hit * (1.0 - per / ARMOR_DIVIDER);
+    landed = (landed * resistance as f32).max(0.0);
+    let protection = (defence.protection as f32).min(ARMOR_CAP);
+    if protection > 0.0 {
+        landed *= 1.0 - protection / ARMOR_DIVIDER;
+    }
+    f64::from(landed)
 }
 
 /// Swings per second for a weapon: the player's base attack speed plus the
@@ -428,290 +578,223 @@ pub fn encounters(plan: &Plan) -> Vec<Encounter> {
     out
 }
 
+/// **A run-back** (spec-0016 §1, spec-0023 §3): a `respawns_on_rest` wave the
+/// path has already cleared, re-seated by a rest the path performs, standing
+/// within its own aggro radius of a leg the path walks afterwards.
+///
+/// For a player this is the souls run-back — the fight comes back and the way
+/// on goes past it. The bonfire does not retire the wave, so the leg is not
+/// empty: it is an encounter the party passes again, and a machine plan that
+/// exports it as a plain walk is claiming a leg that does not exist. spec-0023
+/// §3 says what the ladder does at an encounter — it runs it under a labelled
+/// assist, and runs everything BETWEEN fights clean — so a run-back is exported
+/// as an encounter of its own, and the ladder fights it before walking the leg.
+#[derive(Debug, Clone, PartialEq)]
+pub struct RunBack {
+    /// The re-seated wave.
+    pub wave_id: String,
+    /// The `kill` objective that cleared it the first time.
+    pub objective_id: String,
+    /// The bonfire (`CheckpointPlan::index`) whose rest re-seats it.
+    pub bonfire: usize,
+    /// The step the re-crossing leg walks TO, by its own token — an objective
+    /// id or a trigger id. A token rather than an index because the same beat
+    /// has a different index on every per-branch path, and every one of those
+    /// paths reads this one plan.
+    pub before: String,
+    /// The wave anchor cell — where the fight is fought.
+    pub pos: [i32; 3],
+    /// Total mob count, as re-seated (a re-seat is full count, full health).
+    pub count: i32,
+    /// What the content bills the fight as.
+    pub tier: EncounterTier,
+    /// The perception radius the crossing was measured at.
+    pub radius: f64,
+    /// The routed cell nearest the wave, and its distance: what makes the leg
+    /// a crossing.
+    pub crossing: [i32; 3],
+    /// How far `crossing` is from the nearest occupied cell of the wave.
+    pub distance: f64,
+    /// Which exported paths carry it (`critical-path`, or a branch slug).
+    pub paths: BTreeSet<String>,
+}
+
+/// One exported path as the run-back finder reads it: a label, its step list,
+/// and the proven routes of its walked legs (each leg's `to_step` indexes
+/// `steps`).
+pub struct PathLegs<'a> {
+    /// `critical-path` or a branch slug.
+    pub label: String,
+    /// The path's steps (the compiler's own coordinates, no rest splices).
+    pub steps: &'a [Step],
+    /// The routes DW0311 proved over those steps.
+    pub routes: &'a [crate::compiler::nav::LegRoute],
+}
+
+/// Every [`RunBack`] on every exported path, deduplicated by
+/// `(wave, bonfire, before)` with the paths that carry it unioned.
+///
+/// Per path: for each `respawns_on_rest` wave cleared by a `kill` step `k`,
+/// for each bonfire whose rest the path performs at or after `k` (the rest is
+/// spliced after the beat that arms it, `emit::rest_step_index`), the FIRST
+/// walked leg after that rest whose routed cells come within the wave's aggro
+/// radius (plus its reach margin) of any cell the wave occupies, in sight of it,
+/// is a run-back. Only the first: once fought, the wave stays down until the
+/// next rest. The first leg after the rest is routed from the fire
+/// ([`crate::compiler::nav::LegRoute::rerouted_from`]), where the party actually
+/// sets off from.
+///
+/// The aggro model is [`crate::compiler::nav::aggro_sources`], the one the
+/// respawn safe zone (`DW0478`) measures with — seated spawn cells and a lane's
+/// marched corridor, radius the declared `follow_range` or the documented
+/// default — plus the sight gate the aggro-edge ring already uses
+/// ([`World::has_line_of_sight`]): vanilla's nearest-attackable-target goal
+/// acquires only a target it can see, so a leg on the far side of a wall from
+/// the seat is not a meeting. The sight test runs over the assembled world with
+/// no runtime region state, the same world the ring is placed in.
+pub fn run_backs(
+    plan: &Plan,
+    world: &World,
+    paths: &[PathLegs<'_>],
+    sources: &[crate::compiler::nav::AggroSource],
+) -> Vec<RunBack> {
+    let mut out: Vec<RunBack> = Vec::new();
+    for path in paths {
+        for (k, step) in path.steps.iter().enumerate() {
+            let Step::Kill {
+                objective_id,
+                wave_id,
+                pos,
+                count,
+                ..
+            } = step
+            else {
+                continue;
+            };
+            let Some(wave) = plan::wave_of(plan.campaign, wave_id) else {
+                continue;
+            };
+            if !wave.respawns_on_rest {
+                continue;
+            }
+            let Some(src) = sources.iter().find(|s| s.id == *wave_id) else {
+                continue;
+            };
+            for b in plan.bonfires() {
+                // Where this path performs the rest: after the beat that arms
+                // the fire, translated through that beat's objective.
+                let rest_at = match plan
+                    .critical_path
+                    .get(b.fire_step)
+                    .and_then(Step::objective)
+                {
+                    None => (b.fire_step < path.steps.len()).then_some(b.fire_step),
+                    Some(obj) => path.steps.iter().position(|s| s.objective() == Some(obj)),
+                };
+                let Some(r) = rest_at else { continue };
+                if r < k {
+                    continue;
+                }
+                let mut legs: Vec<&crate::compiler::nav::LegRoute> =
+                    path.routes.iter().filter(|l| l.to_step > r).collect();
+                legs.sort_by_key(|l| l.to_step);
+                // The first leg after the rest sets off from the fire, not from the
+                // step before it: the party walked to the fire to rest.
+                let first = legs.first().map(|l| l.to_step);
+                let hit =
+                    legs.into_iter().find_map(|leg| {
+                        // The leg that walks to this wave's own kill again fights it
+                        // there; that is not a run-back.
+                        if path.steps.get(leg.to_step).is_some_and(
+                            |s| matches!(s, Step::Kill { wave_id: w, .. } if w == wave_id),
+                        ) {
+                            return None;
+                        }
+                        let from_fire;
+                        let cells: &[[i32; 3]] = if Some(leg.to_step) == first {
+                            from_fire = leg.rerouted_from(world, b.pos);
+                            from_fire.as_deref().unwrap_or(&leg.cells)
+                        } else {
+                            &leg.cells
+                        };
+                        let mut best: Option<([i32; 3], f64)> = None;
+                        for c in cells {
+                            for (_, cell, margin) in &src.cells {
+                                let d = (0..3)
+                                    .map(|i| f64::from(c[i] - cell[i]).powi(2))
+                                    .sum::<f64>()
+                                    .sqrt();
+                                if d <= src.radius + margin
+                                    && best.is_none_or(|(_, b)| d < b)
+                                    && world.has_line_of_sight(*cell, *c)
+                                {
+                                    best = Some((*c, d));
+                                }
+                            }
+                        }
+                        best.map(|(c, d)| (leg.to_step, c, d))
+                    });
+                let Some((to, crossing, distance)) = hit else {
+                    continue;
+                };
+                let Some(before) = path
+                    .steps
+                    .get(to)
+                    .and_then(|s| s.objective().or(s.trigger()))
+                else {
+                    continue;
+                };
+                if let Some(rb) = out
+                    .iter_mut()
+                    .find(|x| x.wave_id == *wave_id && x.bonfire == b.index && x.before == before)
+                {
+                    rb.paths.insert(path.label.clone());
+                    continue;
+                }
+                out.push(RunBack {
+                    wave_id: wave_id.clone(),
+                    objective_id: objective_id.clone(),
+                    bonfire: b.index,
+                    before: before.to_string(),
+                    pos: *pos,
+                    count: *count,
+                    tier: wave.tier.unwrap_or_default(),
+                    radius: src.radius,
+                    crossing,
+                    distance,
+                    paths: BTreeSet::from([path.label.clone()]),
+                });
+            }
+        }
+    }
+    out
+}
+
+/// The `run_backs` block of `combat-plan.json`.
+fn run_backs_json(run_backs: &[RunBack]) -> Value {
+    json!(
+        run_backs
+            .iter()
+            .map(|r| json!({
+                "wave": r.wave_id,
+                "objective": r.objective_id,
+                "bonfire": r.bonfire,
+                "before": r.before,
+                "tier": r.tier.token(),
+                "pos": [r.pos[0], r.pos[1], r.pos[2]],
+                "count": r.count,
+                "radius": r.radius,
+                "crossing": [r.crossing[0], r.crossing[1], r.crossing[2]],
+                "distance": (r.distance * 100.0).round() / 100.0,
+                "paths": r.paths,
+            }))
+            .collect::<Vec<_>>()
+    )
+}
+
 /// The mandatory-encounter wave ids, for the checks that walk waves directly.
 fn mandatory_waves(plan: &Plan) -> BTreeSet<String> {
     encounters(plan).into_iter().map(|e| e.wave_id).collect()
-}
-
-// ---------------------------------------------------------------------------
-// Tiered ACTORS — the other shape an elite takes (spec-0023 floor gate)
-// ---------------------------------------------------------------------------
-
-/// Whether the inverted floor gate can hold a billed encounter to its billing.
-///
-/// The whole point of naming this is that **silence must not read as a pass**.
-/// Before actors carried a tier, an elite implemented as an actor was
-/// structurally invisible to the gate: the run's finding list came back empty
-/// and the ladder called that green while having fought nothing.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum FloorCoverage {
-    /// The bot can engage it, so a first-try win is a real finding about the
-    /// fight.
-    Covered,
-    /// It cannot be measured, and this is why. Carried verbatim into
-    /// `combat-plan.json` and into [`DW_FLOOR_UNCOVERED`], so the run report
-    /// says "not covered (reason)" instead of nothing at all.
-    NotCovered(String),
-}
-
-impl FloorCoverage {
-    /// Is this encounter one the gate actually measures?
-    pub fn is_covered(&self) -> bool {
-        matches!(self, FloorCoverage::Covered)
-    }
-
-    /// The reason it is not, if it is not.
-    pub fn reason(&self) -> Option<&str> {
-        match self {
-            FloorCoverage::Covered => None,
-            FloorCoverage::NotCovered(why) => Some(why),
-        }
-    }
-}
-
-/// One beat that stages or unleashes an actor: where it fires from, and — for a
-/// trigger — what the player has to do to fire it.
-///
-/// This is what makes an actor fight *runnable* by the harness. A wave
-/// encounter has a `kill` step on the critical path, so the bot already knows
-/// how to start it; an actor fight starts because something got struck, used or
-/// walked into, and that "something" is only stated here.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct ActorBeat {
-    /// `trigger` / `quest` / `objective` / `trap` / `dialogue-respawn`.
-    pub site: &'static str,
-    /// The owning trigger / quest / trap id — or, for `dialogue-respawn`, the NPC
-    /// whose tree hosts the option.
-    pub owner: String,
-    /// The objective, when the site is a quest's `on_objective_complete`.
-    pub objective: Option<String>,
-    /// JSON pointer to the effect itself, so a diagnostic can name it exactly.
-    pub path: String,
-    /// Trigger sites only: the event kind (`approach` / `strike` / `use` /
-    /// `strike-npc`).
-    pub on: Option<&'static str>,
-    /// Trigger sites only: the anchor watched (absent for `strike-npc`, which
-    /// watches a character rather than a place).
-    pub at: Option<String>,
-    /// `strike-npc` triggers only: the NPC whose body is the target.
-    pub npc: Option<String>,
-}
-
-/// One tier-declaring stage-5 actor, as the validation ladder sees it.
-#[derive(Clone, Debug)]
-pub struct ActorEncounter {
-    /// The actor id (`actor/<kebab>`).
-    pub actor_id: String,
-    /// Index into `quests.content.actors`, for the diagnostic's pointer.
-    pub index: usize,
-    /// The vanilla entity puppeted (and unleashed).
-    pub entity: String,
-    /// The custom name shown above it, if any.
-    pub name: Option<String>,
-    /// What the content bills the fight as.
-    pub tier: EncounterTier,
-    /// The anchor it is summoned on.
-    pub anchor: String,
-    /// That anchor resolved to a world cell (always `Some` past `DW0325`).
-    pub pos: Option<[i32; 3]>,
-    /// The body tag both the puppet and the unleashed twin wear.
-    pub tag: String,
-    /// Is the staged puppet damageable at all?
-    pub vulnerable: bool,
-    /// Declared attribute overrides — the body the party actually fights.
-    pub attributes: Option<delvewright_dsl::MobAttributes>,
-    /// Every beat that summons the puppet, in traversal order.
-    pub spawned_by: Vec<ActorBeat>,
-    /// Every beat that gives it real AI, in traversal order.
-    pub unleashed_by: Vec<ActorBeat>,
-    /// Whether the floor gate can measure this fight, and why not if it cannot.
-    pub coverage: FloorCoverage,
-}
-
-/// Index every `spawn-actor` / `unleash-actor` beat in the campaign, by actor id.
-///
-/// Walks the one shared traversal ([`for_each_campaign_effect`]) rather than a
-/// private one, so nesting — `sequence` steps, `on_arrive` reactions, flag-gated
-/// bundles — is descended exactly as emission descends it, and an ambush (which
-/// desugars to a real trigger at parse time) is seen as the trigger it becomes.
-/// The dialogue **stage** is not exempt. `DialogueEffect` has no actor verb of
-/// its own, but a dialogue option's `set-checkpoint` carries an `on_respawn`
-/// bundle that is a `Vec<QuestEffect>`, so a `spawn-actor` there is a beat
-/// emission lowers, and `EffectSite` must be able to *represent* it. The type is
-/// wide enough for the walk to be wide; that is what carried roots 6 and 7
-/// (spec-0031) in on the day they were added, and it is the property the
-/// exhaustive match below exists to keep.
-fn actor_beats(c: &Campaign) -> BTreeMap<String, (Vec<ActorBeat>, Vec<ActorBeat>)> {
-    let triggers: BTreeMap<&str, &delvewright_dsl::EnvTrigger> = c
-        .quests
-        .content
-        .triggers
-        .iter()
-        .map(|t| (t.id.as_str(), t))
-        .collect();
-    let mut out: BTreeMap<String, (Vec<ActorBeat>, Vec<ActorBeat>)> = BTreeMap::new();
-    for_each_campaign_effect(c, &mut |path, site, eff| {
-        let (actor, unleash) = match &eff.verb {
-            Verb::SpawnActor { actor, .. } => (actor, false),
-            Verb::UnleashActor { actor, .. } => (actor, true),
-            _ => return,
-        };
-        let (kind, owner, objective) = match site {
-            EffectSite::Objective { quest, objective } => {
-                ("objective", quest.clone(), Some(objective.clone()))
-            }
-            EffectSite::QuestComplete { quest } => ("quest", quest.clone(), None),
-            EffectSite::Trigger { trigger } => ("trigger", trigger.clone(), None),
-            EffectSite::Trap { trap } => ("trap", trap.clone(), None),
-            // Effect root 5. A `spawn-actor`/`unleash-actor` nested in a dialogue
-            // option's `set-checkpoint` `on_respawn` bundle is lowered into
-            // `cp_on_respawn_<i>` and really does put a body in the world, so it is
-            // an actor beat like any other. It is ambient — re-run on death while
-            // that checkpoint is active — so, like a trigger and a trap, it has no
-            // DAG position.
-            EffectSite::DialogueRespawn { npc, .. } => ("dialogue-respawn", npc.clone(), None),
-            // Effect roots 6 and 7 (spec-0031). Both are ambient for the same
-            // reason the two above are: the party may earn the shortcut at any
-            // time or never, and nobody is forced to die. A body put in the world
-            // from either is a beat the floor gate must be able to name.
-            EffectSite::ShortcutUnlock { shortcut } => ("shortcut-unlock", shortcut.clone(), None),
-            EffectSite::OnDeath => ("on-death", "on_death".to_string(), None),
-            // Effect root 8 (spec-0032). Ambient like the four above: a shop
-            // offer fires when a player presses a button, which they may do at
-            // any time or never.
-            EffectSite::ShopOffer { shop, .. } => ("shop-offer", shop.clone(), None),
-        };
-        let t = (kind == "trigger")
-            .then(|| triggers.get(owner.as_str()))
-            .flatten();
-        let beat = ActorBeat {
-            site: kind,
-            owner,
-            objective,
-            path: path.to_string(),
-            on: t.map(|t| t.on.kind()),
-            at: t
-                .and_then(|t| t.at.as_ref())
-                .map(|a| a.as_str().to_string()),
-            npc: t
-                .and_then(|t| t.on.npc_target())
-                .map(|n| n.as_str().to_string()),
-        };
-        let slot = out.entry(actor.as_str().to_string()).or_default();
-        if unleash {
-            slot.1.push(beat);
-        } else {
-            slot.0.push(beat);
-        }
-    });
-    out
-}
-
-/// Can the unassisted bot be made to fight this actor at all — and if not, the
-/// one sentence that says why, in the words the author needs to fix it.
-///
-/// The rule is **unleash or nothing**, and that is a judgement worth stating.
-/// An `unleash-actor` beat replaces the puppet with a real-AI twin of the same
-/// body, and that twin is always killable (its summon carries no `Invulnerable`
-/// whatever the actor's `vulnerable` flag says — the same fact `DW0470` records).
-/// Everything short of that is not a fight:
-///
-/// - never summoned → the puppet never exists;
-/// - summoned but not `vulnerable` → it is `Invulnerable` scenery;
-/// - summoned and `vulnerable` but never unleashed → damageable, but `NoAI` and
-///   knockback-immune, so it never swings back. A target that cannot fight back
-///   is beaten cold by construction, and a floor warning derived from that would
-///   be an artifact of the check rather than a finding about the encounter.
-fn actor_coverage(a: &Actor, spawns: &[ActorBeat], unleashes: &[ActorBeat]) -> FloorCoverage {
-    if !unleashes.is_empty() {
-        return FloorCoverage::Covered;
-    }
-    let id = a.id.as_str();
-    if spawns.is_empty() {
-        return FloorCoverage::NotCovered(format!(
-            "no `spawn-actor` effect anywhere in the campaign summons `{id}`, so the puppet never \
-             exists and there is nothing for the bot to fight"
-        ));
-    }
-    if a.vulnerable {
-        FloorCoverage::NotCovered(format!(
-            "`{id}` is only ever staged as a `vulnerable` puppet: damageable, but `NoAI` and \
-             knockback-immune, so it never attacks. Anything that cannot fight back is beaten \
-             cold by construction, so a floor finding derived from it would say nothing about \
-             the encounter. Add an `unleash-actor` beat to make it a fight the gate can measure"
-        ))
-    } else {
-        FloorCoverage::NotCovered(format!(
-            "`{id}` is staged but never unleashed, and it is not `vulnerable` — the puppet is \
-             summoned `Invulnerable`, so it is scenery the party walks past, not a fight. Add an \
-             `unleash-actor` beat (or drop the tier)"
-        ))
-    }
-}
-
-/// Every tier-declaring actor, in declaration order, with its staging beats and
-/// its floor-gate coverage resolved.
-///
-/// Empty for every campaign that declares no actor `tier` — which is every
-/// campaign written before this field existed, so nothing an existing delve
-/// emits moves.
-pub fn actor_encounters(plan: &Plan) -> Vec<ActorEncounter> {
-    let c = plan.campaign;
-    let beats = actor_beats(c);
-    let mut out = Vec::new();
-    for (index, a) in c.quests.content.actors.iter().enumerate() {
-        let Some(tier) = a.tier else { continue };
-        let (spawns, unleashes) = beats.get(a.id.as_str()).cloned().unwrap_or_default();
-        let coverage = actor_coverage(a, &spawns, &unleashes);
-        out.push(ActorEncounter {
-            actor_id: a.id.as_str().to_string(),
-            index,
-            entity: a.entity.clone(),
-            name: a.name.clone(),
-            tier,
-            anchor: a.anchor.as_str().to_string(),
-            pos: plan.body_point(delvewright_dsl::BodyRef::Actor(a)),
-            tag: format!("dw_actor_{}", safe_local(a.id.as_str())),
-            vulnerable: a.vulnerable,
-            attributes: a.attributes,
-            spawned_by: spawns,
-            unleashed_by: unleashes,
-            coverage,
-        });
-    }
-    out
-}
-
-/// A tier-declaring wave that no critical-path `kill` step names.
-///
-/// The same silence, on the shape that already had a `tier`: `encounters()`
-/// collects only the MANDATORY waves, so an optional wave billed `elite` was as
-/// invisible to the floor gate as a tiered actor was. Found here rather than in
-/// a separate pass because it is one question — "what does the gate cover?" —
-/// and one question deserves one answer.
-fn uncovered_tiered_waves<'a>(plan: &Plan<'a>) -> Vec<(usize, &'a Wave, String)> {
-    let mandatory = mandatory_waves(plan);
-    plan.campaign
-        .quests
-        .content
-        .waves
-        .iter()
-        .enumerate()
-        .filter(|(_, w)| w.tier.is_some_and(EncounterTier::has_floor_expectation))
-        .filter(|(_, w)| !mandatory.contains(w.id.as_str()))
-        .map(|(i, w)| {
-            (
-                i,
-                w,
-                format!(
-                    "no `kill` objective on the compiled critical path names `{}`, so the bot \
-                     never fights it — a tier on an optional wave is a claim nothing measures. \
-                     Give the wave a `kill` objective on the path, or drop the tier",
-                    w.id.as_str()
-                ),
-            )
-        })
-        .collect()
 }
 
 /// Every actor the campaign turns loose on the party, in declaration order —
@@ -731,172 +814,13 @@ fn uncovered_tiered_waves<'a>(plan: &Plan<'a>) -> Vec<(usize, &'a Wave, String)>
 /// undefeated re-seat (spec-0016 §1) — which must refresh exactly the bodies the
 /// party can be fighting when they rest, and nothing that is scenery.
 pub fn hostile_actors(c: &Campaign) -> Vec<&Actor> {
-    let beats = actor_beats(c);
+    let unleashed = delvewright_dsl::unleashed_actors(c);
     c.quests
         .content
         .actors
         .iter()
-        .filter(|a| {
-            beats
-                .get(a.id.as_str())
-                .is_some_and(|(_, unleashes)| !unleashes.is_empty())
-        })
+        .filter(|a| unleashed.contains(a.id.as_str()))
         .collect()
-}
-
-/// Every actor the campaign turns loose on the party but never bills:
-/// `unleash-actor`ed somewhere, `tier` absent.
-///
-/// A tier declared `ordinary` is a *statement* — the author saying this fight is
-/// routine — and stays off the ledger like any other ordinary encounter. An
-/// ABSENT tier is not a statement, and that is the whole difference this
-/// function exists to keep.
-fn untiered_hostile_actors(c: &Campaign) -> Vec<&Actor> {
-    hostile_actors(c)
-        .into_iter()
-        .filter(|a| a.tier.is_none())
-        .collect()
-}
-
-/// Does this campaign turn any unbilled actor loose on the party? Emission asks,
-/// because a campaign whose only hostile is an untiered actor must still ship a
-/// ledger that says so — see [`untiered_hostile_actors`].
-pub fn has_untiered_hostile_actors(plan: &Plan) -> bool {
-    !untiered_hostile_actors(plan.campaign).is_empty()
-}
-
-/// One line of the floor-gate ledger: what the content declares, and whether the
-/// gate can hold it to that.
-struct FloorEntry {
-    kind: &'static str,
-    id: String,
-    /// The declared tier, or `None` for a hostile that declared none — which is
-    /// exactly why it is on the ledger.
-    tier: Option<EncounterTier>,
-    coverage: FloorCoverage,
-}
-
-/// The whole floor-gate ledger for a campaign, covered and uncovered together,
-/// in a fixed order: mandatory waves in critical-path order, then optional
-/// tiered waves in declaration order, then tiered actors in declaration order,
-/// then untiered hostile actors in declaration order.
-///
-/// The last group is why an EMPTY ledger cannot be trusted to mean "everything
-/// is covered": without it, an actor the campaign unleashes on the party
-/// without declaring a tier appears on neither side of the ledger, and the run
-/// report prints two empty lists over a delve full of fights. That reads as
-/// "everything is covered" when it means "nothing was even assessed".
-/// Silence must not read as a pass — and an
-/// unassessed fight is silence of exactly the kind [`FloorCoverage`] exists to
-/// break.
-fn floor_ledger(
-    plan: &Plan,
-    mandatory: &[Encounter],
-    actors: &[ActorEncounter],
-) -> Vec<FloorEntry> {
-    let mut out: Vec<FloorEntry> = mandatory
-        .iter()
-        .filter(|e| e.tier.has_floor_expectation())
-        .map(|e| FloorEntry {
-            kind: "wave",
-            id: e.wave_id.clone(),
-            tier: Some(e.tier),
-            coverage: FloorCoverage::Covered,
-        })
-        .collect();
-    for (_, w, why) in uncovered_tiered_waves(plan) {
-        out.push(FloorEntry {
-            kind: "wave",
-            id: w.id.as_str().to_string(),
-            tier: Some(w.tier.unwrap_or_default()),
-            coverage: FloorCoverage::NotCovered(why),
-        });
-    }
-    for a in actors.iter().filter(|a| a.tier.has_floor_expectation()) {
-        out.push(FloorEntry {
-            kind: "actor",
-            id: a.actor_id.clone(),
-            tier: Some(a.tier),
-            coverage: a.coverage.clone(),
-        });
-    }
-    for a in untiered_hostile_actors(plan.campaign) {
-        let id = a.id.as_str();
-        out.push(FloorEntry {
-            kind: "actor",
-            id: id.to_string(),
-            tier: None,
-            coverage: FloorCoverage::NotCovered(format!(
-                "`{id}` is UNTIERED: the campaign `unleash-actor`s it, so the party fights a \
-                 real-AI body that swings back, but nothing declares what that fight is worth — \
-                 so the inverted floor gate never assessed it at all. An untiered hostile is not \
-                 a covered fight and its absence from the findings is not a pass. Declare a \
-                 `tier`: `ordinary` if the fight is meant to be routine (which takes it off this \
-                 ledger as a statement rather than an omission), `elite`/`boss` if it is billed \
-                 hard and should be measured"
-            )),
-        });
-    }
-    out
-}
-
-/// `DW0477` — one warning per billed encounter the floor gate cannot measure.
-///
-/// Warning tier, one diagnostic per finding with its exact JSON pointer: an
-/// unmeasurable elite is a real gap in the verification, but it is a *design*
-/// statement (the author may genuinely want an `Invulnerable` set-dressing giant
-/// they also called a boss), and spec-0023 puts the floor gate itself at
-/// advisory tier. What is not negotiable is that it be said out loud.
-pub fn floor_coverage_warnings(
-    plan: &Plan,
-    mandatory: &[Encounter],
-    actors: &[ActorEncounter],
-) -> Vec<Diagnostic> {
-    let mut out = Vec::new();
-    let index_of: BTreeMap<&str, usize> = actors
-        .iter()
-        .map(|a| (a.actor_id.as_str(), a.index))
-        .collect();
-    let uncovered_wave_index: BTreeMap<String, usize> = uncovered_tiered_waves(plan)
-        .into_iter()
-        .map(|(i, w, _)| (w.id.as_str().to_string(), i))
-        .collect();
-    for e in floor_ledger(plan, mandatory, actors) {
-        let Some(why) = e.coverage.reason() else {
-            continue;
-        };
-        // An UNTIERED hostile is on the ledger but is not BILLED
-        // anything, and `DW0477` is by definition about a billing the gate
-        // cannot hold — its message, its pointer (`…/tier`, a field that does
-        // not exist here) and its prescription would all be wrong. The ledger
-        // line, which the run report prints verbatim, is the whole record.
-        let Some(tier) = e.tier else {
-            continue;
-        };
-        let path = match e.kind {
-            "actor" => format!("/content/actors/{}/tier", index_of[e.id.as_str()]),
-            _ => format!("/content/waves/{}/tier", uncovered_wave_index[&e.id]),
-        };
-        out.push(Diagnostic::warning(
-            DW_FLOOR_UNCOVERED,
-            "quests",
-            path,
-            format!(
-                "`{}` is billed `{}`, but the validation ladder's inverted floor gate cannot \
-                 measure it: {why}.\n\nThis matters because of how the gate reports: it emits a \
-                 warning when the UNASSISTED bot beats a billed elite on its first attempt, and \
-                 says nothing otherwise — so an encounter the bot never fought produces exactly \
-                 the same silence as one it fought and lost. `validation/combat-plan.json` \
-                 records this fight as `floor-gate: not covered`, with this reason, so the run \
-                 report cannot present the silence as a pass. Warning tier because an \
-                 unmeasurable elite is a legitimate design (set dressing the content also chose \
-                 to name) — what is not legitimate is nobody knowing.",
-                e.id,
-                tier.token()
-            ),
-        ));
-    }
-    out
 }
 
 /// Is there a cell a player could stand on and swing from, adjacent to this
@@ -1000,6 +924,106 @@ fn unreachable_hostiles(world: &World, seated: &[SeatedHostile]) -> Vec<String> 
         .collect()
 }
 
+/// One stack's share of an encounter's time to kill.
+#[derive(Debug, Clone, PartialEq)]
+pub struct StackTtk {
+    /// The stack's entity.
+    pub entity: String,
+    /// How many bodies.
+    pub count: u32,
+    /// Declared `attributes.max_health`.
+    pub max_health: f64,
+    /// What the gear counted for it.
+    pub defence: WornDefence,
+    /// The incoming-damage multiplier its `minecraft:resistance` gives.
+    pub resistance: f64,
+    /// What one ordinary blow lands as ([`landed_blow`]).
+    pub landed: f64,
+    /// `ceil(max_health / landed)`: swings for one body.
+    pub per_body: u64,
+}
+
+/// The `DW0472` arithmetic for one encounter against one blow, over the stacks
+/// that declare `attributes.max_health` (the rest are `DW0475`'s).
+#[derive(Debug, Clone, PartialEq)]
+pub struct EncounterTtk {
+    /// Every counted stack.
+    pub stacks: Vec<StackTtk>,
+    /// `Σ count × per_body` — the fewest ordinary swings that clear the
+    /// declared stacks.
+    pub swings: u64,
+}
+
+impl EncounterTtk {
+    /// One line per stack, showing the arithmetic.
+    pub fn lines(&self) -> Vec<String> {
+        self.stacks
+            .iter()
+            .map(|s| {
+                let resisted = if s.resistance < 1.0 {
+                    format!(" x resistance {}", s.resistance)
+                } else {
+                    String::new()
+                };
+                let protection = if s.defence.protection > 0 {
+                    format!(" x protection(1 - {}/25)", s.defence.protection.min(20))
+                } else {
+                    String::new()
+                };
+                format!(
+                    "  {} x{}: max_health {}, armour {} toughness {} (worn pieces; species \
+                     base not counted){resisted}{protection} -> each blow lands {:.4} -> \
+                     ceil({} / {:.4}) = {} swings a body, {} for the stack",
+                    s.entity,
+                    s.count,
+                    s.max_health,
+                    s.defence.armor.min(ARMOR_ATTRIBUTE_MAX).floor(),
+                    s.defence.toughness.min(TOUGHNESS_ATTRIBUTE_MAX),
+                    s.landed,
+                    s.max_health,
+                    s.landed,
+                    s.per_body,
+                    u64::from(s.count) * s.per_body,
+                )
+            })
+            .collect()
+    }
+}
+
+/// How many ordinary blows of `hit` clear the declared stacks of `wave`. Per
+/// body, not per pooled health: a blow that kills spends its excess on nobody,
+/// so pooling the stack's health first undercounts.
+pub fn time_to_kill(wave: &Wave, hit: f64, items: &ItemCombatRegistry) -> EncounterTtk {
+    let mut stacks = Vec::new();
+    let mut swings = 0u64;
+    for mob in &wave.mobs {
+        let Some(max_health) = mob.attributes.and_then(|a| a.max_health) else {
+            continue;
+        };
+        let defence = worn_defence(mob, items);
+        // Multiplier 0 was already refused as DW0470.
+        let (resistance, _) = mob_damage_multiplier(mob);
+        let landed = landed_blow(hit, defence, resistance);
+        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+        let per_body = if landed > 0.0 {
+            (max_health / landed).ceil() as u64
+        } else {
+            u64::MAX
+        };
+        swings = swings.saturating_add(u64::from(mob.count).saturating_mul(per_body));
+        stacks.push(StackTtk {
+            entity: mob.entity.clone(),
+            count: mob.count,
+            max_health,
+            defence,
+            resistance,
+            landed,
+            per_body,
+        });
+    }
+    EncounterTtk { stacks, swings }
+}
+
 /// The full winnability pass. Errors abort the build (exit 3); warnings ride
 /// along on a successful one.
 ///
@@ -1070,58 +1094,61 @@ pub fn check_winnability(
         let Some(wave) = plan::wave_of(c, &enc.wave_id) else {
             continue;
         };
-        let mut declared_ehp = 0.0_f64;
-        let mut undeclared: Vec<&WaveMob> = Vec::new();
-        for mob in &wave.mobs {
-            let Some(max_health) = mob.attributes.and_then(|a| a.max_health) else {
-                undeclared.push(mob);
-                continue;
-            };
-            let (multiplier, _) = mob_damage_multiplier(mob);
-            // A resistance-bearing mob soaks proportionally more of the same
-            // swings; multiplier 0 was already rejected as DW0470.
-            declared_ehp += f64::from(mob.count) * max_health / multiplier;
-        }
-        match (&best, declared_ehp > 0.0) {
-            (Some((hit, class, item)), true) => {
-                let hits = (declared_ehp / hit).ceil() as u64;
-                if hits > u64::from(TTK_BUDGET_HITS) {
+        let undeclared: Vec<&WaveMob> = wave
+            .mobs
+            .iter()
+            .filter(|m| m.attributes.and_then(|a| a.max_health).is_none())
+            .collect();
+        match &best {
+            Some((hit, class, item)) => {
+                let t = time_to_kill(wave, *hit, &items);
+                if t.swings > u64::from(TTK_BUDGET_HITS) {
                     let sps = swings_per_second(item, &items);
                     #[allow(clippy::cast_precision_loss)]
-                    let seconds = hits as f64 / sps;
+                    let seconds = t.swings as f64 / sps;
                     return Err(Failure {
                         code: DW_TTK_OVER_BUDGET,
                         message: format!(
-                            "encounter {} ({}) outlasts the best kit the party can field:\n\
-                             \n  declared effective HP  {declared_ehp}\n  \
-                             best single hit        {hit} ({item}, from {class})\n  \
-                             swings needed          ceil({declared_ehp} / {hit}) = {hits}\n  \
+                            "encounter {} ({}) outlasts the best kit the party can field:\n\n  \
+                             best ordinary blow     {hit} = {PLAYER_BASE_ATTACK_DAMAGE} (the \
+                             player's base attack damage) + {} ({item}'s `attack_damage`, \
+                             from {class})\n{}\n  swings needed          {} in all\n  \
                              budget                 {TTK_BUDGET_HITS} swings\n  \
-                             indicative duration    {hits} / {sps:.2} swings-per-second \
+                             indicative duration    {} / {sps:.2} swings-per-second \
                              = {seconds:.0}s of uninterrupted attacking, by ONE player\n\n\
-                             The gate counts SWINGS, not seconds, because swing damage is \
-                             Mojang's own item data while timing depends on charge discipline \
-                             the compiler cannot model; the duration line is context only. Only \
-                             the weapon's own `attack_damage` modifier is counted — the \
-                             player's base fist damage is deliberately excluded, so the real \
-                             fight is always at least this fast. Fix: lower \
-                             `attributes.max_health`, cut the stack `count`, or put a stronger \
-                             weapon in a kit. Do NOT raise the budget: {TTK_BUDGET_HITS} swings \
-                             is already far past any fight a human would sit through, so \
-                             crossing it means the numbers are wrong, not that the fight is \
-                             hard.",
-                            enc.wave_id, enc.objective_id
+                             A swing is the ordinary blow — fully charged, not critical, not a \
+                             sweep — landed through the pinned game's own arithmetic: armour \
+                             first (`1 - clamp(a - hit/(2 + t/4), a/5, 20)/25` of the blow is \
+                             kept), then resistance (20% per level), then `minecraft:protection` \
+                             on worn pieces (`1 - min(p, 20)/25`); each body takes \
+                             ceil(max_health / landed) swings. Difficulty does not enter: the \
+                             game scales only damage a player takes. The armour counted is the \
+                             declared pieces' alone — a species' base armour is in no published \
+                             data — so the real fight takes at least this many swings. The gate \
+                             counts SWINGS, not seconds, because the blow is Mojang's own data \
+                             while timing depends on charge discipline the compiler cannot \
+                             model; the duration line is context only. Fix: lower \
+                             `attributes.max_health`, cut the stack `count`, lighten the armour, \
+                             or put a stronger weapon in a kit. Do NOT raise the budget: \
+                             {TTK_BUDGET_HITS} swings is already far past any fight a human \
+                             would sit through, so crossing it means the numbers are wrong, not \
+                             that the fight is hard.",
+                            enc.wave_id,
+                            enc.objective_id,
+                            hit - PLAYER_BASE_ATTACK_DAMAGE,
+                            t.lines().join("\n"),
+                            t.swings,
+                            t.swings,
                         ),
                     });
                 }
             }
-            (None, _) => unproven.push(format!(
+            None => unproven.push(format!(
                 "  {}: no class kit carries an item with an `attack_damage` attribute, so the \
                  party's damage output is unknown (a bow's damage is projectile code and \
                  appears in no vanilla data — absence is not zero)",
                 enc.wave_id
             )),
-            (Some(_), false) => {}
         }
         if !undeclared.is_empty() && best.is_some() {
             let names: Vec<String> = undeclared
@@ -1211,36 +1238,6 @@ pub fn check_winnability(
         });
     }
 
-    // ---- DW0474: the party carries some sustain ----------------------------
-    //
-    // Over EVERY fight, not just the wave-shaped ones. "Does the party need food"
-    // is a question about how much fighting they have to do, and an actor the
-    // campaign unleashes on them is a fight by the campaign's own declaration —
-    // keying this to `encounters` alone made a delve whose combat is entirely
-    // actors structurally unable to raise it. See [`mandatory_fights`].
-    let fights = mandatory_fights(plan);
-    if fights.any() && !has_any_sustain(c, &items) {
-        warnings.push(Diagnostic::warning(
-            DW_NO_SUSTAIN,
-            "classes",
-            "/content/classes",
-            format!(
-                "this campaign has {total} mandatory fight(s) — {waves} wave encounter(s) and \
-                 {actors} actor(s) it turns loose on the party — and hands them no sustain at \
-                 all: no class kit, `give-item` effect or `loot` container anywhere carries an \
-                 item with a `minecraft:food` component. Natural regeneration stops the moment \
-                 the hunger bar drops below 18, so after the first fight the party's health only \
-                 ever goes down. Fix: put food in the kits, or stock a container on the route. \
-                 Warning tier because the fight budget a party actually needs depends on play \
-                 the compiler is forbidden to model (spec-0023 \"Out of scope\") — the finding \
-                 here is the literal zero, which is a design fact rather than a balance opinion.",
-                total = fights.total(),
-                waves = fights.waves.len(),
-                actors = fights.actors.len(),
-            ),
-        ));
-    }
-
     Ok(warnings)
 }
 
@@ -1287,211 +1284,9 @@ fn collect_unconditional_damage(
     }
 }
 
-/// Does anything the party can get its hands on carry a `minecraft:food`
-/// component? Kits, `give-item` effects (at any nesting depth) and `loot`
-/// containers all count.
-fn has_any_sustain(c: &Campaign, items: &ItemCombatRegistry) -> bool {
-    let is_food = |id: &str| items.get(id).is_some_and(|s| s.nutrition > 0.0);
-    if c.classes
-        .content
-        .classes
-        .iter()
-        .any(|class| class.kit.iter().any(|k| is_food(&k.item)))
-    {
-        return true;
-    }
-    if c.quests
-        .content
-        .loot
-        .iter()
-        .any(|l| l.items.iter().any(|i| is_food(&i.item)))
-    {
-        return true;
-    }
-    let mut given = false;
-    let mut walk = |effects: &[QuestEffect]| {
-        let mut stack: Vec<&QuestEffect> = effects.iter().collect();
-        while let Some(e) = stack.pop() {
-            match &e.verb {
-                Verb::GiveItem { item, .. } if is_food(item) => given = true,
-                Verb::Sequence { steps } => {
-                    stack.extend(steps.iter().flat_map(|s| s.effects.iter()));
-                }
-                _ => {}
-            }
-        }
-    };
-    for q in &c.quests.content.quests {
-        walk(&q.on_complete);
-        for effects in q.on_objective_complete.values() {
-            walk(effects);
-        }
-    }
-    for t in c.quests.content.all_triggers() {
-        walk(&t.effects);
-    }
-    given
-}
-
 // ---------------------------------------------------------------------------
 // When to stop swinging at one body (the per-encounter half)
 // ---------------------------------------------------------------------------
-
-/// How many times over the arithmetic's fully-charged swing count a single body
-/// may be meleed before the validation ladder stops swinging at it and says so.
-///
-/// **Authored, not cited.** Vanilla scales a swing's damage by the attack-cooldown
-/// progress, and the ladder's bot swings on a fixed cadence without ever waiting
-/// the cooldown out, so it lands well under full damage every time and needs
-/// several times the count this arithmetic produces for the same body. No source
-/// gives the right multiple for a bot's fencing, so this is a sanity margin in
-/// exactly the spirit of [`TTK_BUDGET_HITS`]: deliberately generous, crossed only
-/// by a body that is not dying at all rather than by one that is merely tanky.
-///
-/// It lives here, beside the arithmetic, and not in the harness, because the
-/// number it multiplies is a fact about the ENCOUNTER — a harness constant would
-/// be the same figure for a hall of rats and for a boss.
-pub const GIVE_UP_SWING_MARGIN: u32 = 8;
-
-/// The smallest melee budget any body gets, whatever the arithmetic says.
-///
-/// **Authored, not cited**, and for one reason: a mob the best kit fells in a
-/// single fully-charged swing would otherwise get eight, which a bot that misses
-/// twice while a mob backs away can spend without the body being unkillable at
-/// all. The floor keeps the budget a statement about "this body is not dying"
-/// rather than about the bot's aim.
-pub const GIVE_UP_SWING_FLOOR: u32 = 16;
-
-/// One kind of body standing at an encounter, with the melee budget the
-/// encounter's own arithmetic gives it.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct BodyBound {
-    /// Entity kind in the client's vocabulary (`zombie`), which is the only
-    /// identity the bot can read off a body.
-    pub kind: String,
-    /// How many of them the wave seats.
-    pub count: u32,
-    /// Swings after which this body is not being killed by the class kit —
-    /// `None` when the arithmetic could not be computed.
-    pub give_up_swings: Option<u32>,
-    /// Why there is no budget. Present exactly when `give_up_swings` is `None`.
-    pub reason: Option<String>,
-}
-
-/// The melee budgets for one encounter's bodies, worst-case per kind.
-///
-/// # What this replaces
-///
-/// The bot used to decide a body was unkillable by meleeing it for a fixed six
-/// seconds — a combat-targeting policy with no author, written in the harness,
-/// reasoned about in the comments of one campaign ("a `minecraft:warden` posing
-/// as Polyphemus"). Six seconds is not a fact about anything: it is too long for
-/// a rat and too short for an elite, and when it fires it silently blacklists the
-/// body and reports nothing.
-///
-/// The encounter already knows better. `attributes.max_health`, the mob's
-/// resistance, and the best weapon any class kit carries are the same three
-/// numbers [`check_winnability`] bounds the whole fight with; per body they give
-/// the swings that body should take. A body that outlives them is a **content
-/// defect the run report names** — not a blacklist the harness invents.
-///
-/// # Grouping
-///
-/// A wave may seat two stacks of one entity with different tuning, and the bot
-/// cannot tell them apart (it reads a name, not NBT). So kinds are grouped and
-/// the budget is the WORST of the stacks — and a single unproven stack makes the
-/// whole kind unproven. Never the other direction: giving up early on a body that
-/// was merely tougher than the stack beside it would fail a delve that is fine.
-pub fn encounter_bodies(c: &Campaign, wave: &Wave, items: &ItemCombatRegistry) -> Vec<BodyBound> {
-    let best = best_melee_hit(c, items);
-    // kind -> (count, worst swings so far, first reason it could not be bounded)
-    let mut by_kind: BTreeMap<&str, (u32, Option<u32>, Option<String>)> = BTreeMap::new();
-    for mob in &wave.mobs {
-        let kind = client_name(&mob.entity);
-        let entry = by_kind.entry(kind).or_insert((0, Some(0), None));
-        entry.0 += mob.count;
-        let bound = body_swings(mob, best.as_ref());
-        match bound {
-            Ok(swings) => {
-                if let Some(worst) = entry.1 {
-                    entry.1 = Some(worst.max(swings));
-                }
-            }
-            Err(why) => {
-                entry.1 = None;
-                if entry.2.is_none() {
-                    entry.2 = Some(why);
-                }
-            }
-        }
-    }
-    by_kind
-        .into_iter()
-        .map(|(kind, (count, swings, reason))| BodyBound {
-            kind: kind.to_string(),
-            count,
-            give_up_swings: swings,
-            reason: swings.is_none().then(|| {
-                reason.unwrap_or_else(|| "the arithmetic could not be computed".to_string())
-            }),
-        })
-        .collect()
-}
-
-/// The melee budget for ONE body of `mob`, or why there is none.
-fn body_swings(mob: &WaveMob, best: Option<&(f64, String, String)>) -> Result<u32, String> {
-    let Some((hit, class, item)) = best else {
-        return Err(
-            "no class kit carries an item with an `attack_damage` attribute, so the party's \
-             damage output is unknown (a bow's damage is projectile code and appears in no \
-             vanilla data — absence is not zero). Nothing here can say how long a body should \
-             take to fall."
-                .to_string(),
-        );
-    };
-    let Some(max_health) = mob.attributes.and_then(|a| a.max_health) else {
-        return Err(format!(
-            "{} declares no `attributes.max_health`, and Mojang publishes no per-entity default \
-             attributes — so its health is genuinely unknown at build time and this compiler \
-             refuses to invent a health table. Declare `attributes.max_health` on the stack to \
-             give the ladder a melee budget for this body (the same declaration `DW0475` asks \
-             for).",
-            mob.entity
-        ));
-    };
-    let (multiplier, _) = mob_damage_multiplier(mob);
-    // multiplier 0 (total immunity) is `DW0470`, refused long before here.
-    let effective = max_health / multiplier;
-    let charged = (effective / hit).ceil().max(1.0) as u64;
-    let budget = charged
-        .saturating_mul(u64::from(GIVE_UP_SWING_MARGIN))
-        .max(u64::from(GIVE_UP_SWING_FLOOR));
-    debug_assert!(
-        !class.is_empty() && !item.is_empty(),
-        "best_melee_hit names the kit it came from"
-    );
-    Ok(u32::try_from(budget).unwrap_or(u32::MAX))
-}
-
-/// `bodies` for one encounter, in the plan's vocabulary.
-fn bodies_json(bodies: &[BodyBound]) -> Value {
-    Value::Array(
-        bodies
-            .iter()
-            .map(|b| {
-                let mut o = json!({
-                    "kind": b.kind,
-                    "count": b.count,
-                    "give_up_swings": b.give_up_swings,
-                });
-                if let Some(why) = &b.reason {
-                    o["reason"] = json!(why);
-                }
-                o
-            })
-            .collect(),
-    )
-}
 
 // ---------------------------------------------------------------------------
 // Who is not a fight (the cast half of the targeting policy)
@@ -1674,64 +1469,6 @@ pub fn non_combatants_json(c: &Campaign) -> Value {
     o
 }
 
-/// One staging beat, as the plan states it.
-fn beat_json(b: &ActorBeat) -> Value {
-    let mut o = json!({ "site": b.site, "owner": b.owner, "path": b.path });
-    if let Some(objective) = &b.objective {
-        o["objective"] = json!(objective);
-    }
-    if let Some(on) = b.on {
-        o["on"] = json!(on);
-    }
-    if let Some(at) = &b.at {
-        o["at"] = json!(at);
-    }
-    if let Some(npc) = &b.npc {
-        o["npc"] = json!(npc);
-    }
-    o
-}
-
-/// One tiered actor, as the plan states it.
-fn actor_json(a: &ActorEncounter) -> Value {
-    let mut o = json!({
-        "actor": a.actor_id,
-        "entity": a.entity,
-        "tier": a.tier.token(),
-        "anchor": a.anchor,
-        "tag": a.tag,
-        "vulnerable": a.vulnerable,
-        "spawned_by": a.spawned_by.iter().map(beat_json).collect::<Vec<_>>(),
-        "unleashed_by": a.unleashed_by.iter().map(beat_json).collect::<Vec<_>>(),
-        "floor_gate": coverage_json(&a.coverage),
-    });
-    if let Some(name) = &a.name {
-        // spec-0029 named exclusion: `combat-plan.json` is the validation ladder's
-        // own artifact, read by the bot and by a maintainer, never rendered to a
-        // player — so the actor's name appears here as its English source, not as
-        // a translate key. (The name became translatable when `actors[].name`
-        // entered the l10n inventory; before that this line could not have carried
-        // a tag at all.)
-        o["name"] = json!(delvewright_dsl::l10n_plain(name));
-    }
-    if let Some(pos) = a.pos {
-        o["pos"] = json!([pos[0], pos[1], pos[2]]);
-    }
-    if let Some(attrs) = a.attributes {
-        o["attributes"] = serde_json::to_value(attrs).expect("MobAttributes serializes");
-    }
-    o
-}
-
-/// Coverage, spelled so that a reader who skips the prose still cannot mistake
-/// "not covered" for "passed".
-fn coverage_json(c: &FloorCoverage) -> Value {
-    match c {
-        FloorCoverage::Covered => json!({ "covered": true }),
-        FloorCoverage::NotCovered(why) => json!({ "covered": false, "reason": why }),
-    }
-}
-
 /// The validation-only combat plan the bot ladder reads (spec-0023 §1/§3/§4).
 ///
 /// Lives under `validation/` like the waypoint export — excluded from the
@@ -1784,19 +1521,12 @@ fn coverage_json(c: &FloorCoverage) -> Value {
 ///   is `floor_gate.not_covered` only), so `actors_gate.unbound`
 ///   does not by itself mean "no hostile actor in this campaign"; the reason
 ///   text says so and points at `floor_gate.not_covered`.
-pub fn combat_plan_json(plan: &Plan, encounters: &[Encounter], actors: &[ActorEncounter]) -> Value {
+pub fn combat_plan_json(plan: &Plan, encounters: &[Encounter], run_backs: &[RunBack]) -> Value {
     let difficulty = effective_difficulty(plan.campaign);
     let items = ItemCombatRegistry::v1_21_11();
     let entries: Vec<Value> = encounters
         .iter()
         .map(|e| {
-            // What stands at this encounter, and how long each body should take
-            // to fall. The bot picks its target by the name a client reports, so
-            // this is the encounter stating its own cast in that vocabulary —
-            // see `encounter_bodies` for what it replaces.
-            let bodies = plan::wave_of(plan.campaign, &e.wave_id)
-                .map(|w| encounter_bodies(plan.campaign, w, &items))
-                .unwrap_or_default();
             let mut o = json!({
                 "wave": e.wave_id,
                 "objective": e.objective_id,
@@ -1809,10 +1539,6 @@ pub fn combat_plan_json(plan: &Plan, encounters: &[Encounter], actors: &[ActorEn
                 "pos": [e.pos[0], e.pos[1], e.pos[2]],
                 "count": e.count,
                 "respawns_on_rest": e.respawns_on_rest,
-                // The encounter's own cast and melee budgets. `bodies[].kind` is
-                // what the bot MAY swing at here; `give_up_swings` is when it
-                // must stop and let the report name the body.
-                "bodies": bodies_json(&bodies),
                 // The tag-census probe surface for this wave. The
                 // harness calls what the plan NAMES — `safe_local` is a compiler
                 // naming rule, and a harness that re-derived it would be exactly
@@ -1826,58 +1552,33 @@ pub fn combat_plan_json(plan: &Plan, encounters: &[Encounter], actors: &[ActorEn
                                        safe = crate::compiler::plan::safe_local(&e.wave_id)),
                 },
             });
+            // What the wave DECLARES, phrased as questions the live bodies can be
+            // asked, plus the staged removal that follows the reading. Absent
+            // only when the wave itself cannot be resolved, which the harness
+            // reports rather than skipping.
+            if let Some(w) = plan::wave_of(plan.campaign, &e.wave_id) {
+                let m = crate::compiler::muster::muster(
+                    w,
+                    &|mob| {
+                        crate::compiler::emit::wave_equipment_slots(
+                            &mob.entity,
+                            mob.equipment.as_ref(),
+                        )
+                        .into_iter()
+                        .map(|(slot, item, _)| (slot, item.to_string()))
+                        .collect()
+                    },
+                    &items,
+                    &crate::compiler::emit::snbt_component,
+                );
+                o["muster"] = crate::compiler::muster::to_json(&plan.namespace, &m);
+            }
             if let Some(cp) = e.checkpoint {
                 o["checkpoint"] = json!([cp[0], cp[1], cp[2]]);
             }
             o
         })
         .collect();
-    let ledger = floor_ledger(plan, encounters, actors);
-    let (covered, not_covered): (Vec<&FloorEntry>, Vec<&FloorEntry>) =
-        ledger.iter().partition(|e| e.coverage.is_covered());
-    let floor_examined = covered.len() + not_covered.len();
-    let mut floor_gate = json!({
-        "covered": covered
-            .iter()
-            .map(|e| json!({
-                "kind": e.kind,
-                "id": e.id,
-                "tier": e.tier.map(EncounterTier::token),
-            }))
-            .collect::<Vec<_>>(),
-        // `tier: null` is the untiered hostile — an explicit
-        // null rather than an omitted key, because this document's entire
-        // job is to make an absence legible.
-        "not_covered": not_covered
-            .iter()
-            .map(|e| json!({
-                "kind": e.kind,
-                "id": e.id,
-                "tier": e.tier.map(EncounterTier::token),
-                "reason": e.coverage.reason().unwrap_or_default(),
-            }))
-            .collect::<Vec<_>>(),
-        // playtest-methodology.md rule 1: the binding count, stated out loud —
-        // additive, never a substitute for `covered`/`not_covered`. `unbound`
-        // is `examined == 0`; a `reason` accompanies it exactly then, because a
-        // reader must never have to notice an empty pair of arrays to learn
-        // this ledger matched nothing.
-        "examined": floor_examined,
-        "unbound": floor_examined == 0,
-    });
-    if floor_examined == 0 {
-        floor_gate["reason"] = json!(FLOOR_GATE_UNBOUND_REASON);
-    }
-
-    let actors_examined = actors.len();
-    let mut actors_gate = json!({
-        "examined": actors_examined,
-        "unbound": actors_examined == 0,
-    });
-    if actors_examined == 0 {
-        actors_gate["reason"] = json!(ACTORS_GATE_UNBOUND_REASON);
-    }
-
     json!({
         "version": plan.campaign.world.dsl_version,
         "campaign_id": plan.namespace,
@@ -1888,38 +1589,12 @@ pub fn combat_plan_json(plan: &Plan, encounters: &[Encounter], actors: &[ActorEn
         // this delve" is what let a five-hostile campaign look combat-free.
         "fights": mandatory_fights(plan).to_json(),
         "encounters": entries,
-        "actors": actors.iter().map(actor_json).collect::<Vec<_>>(),
-        // Sibling of `actors[]`, not a rename of anything: how many actors this
-        // build's tier machinery tracked at all. See the `combat_plan_json` doc
-        // comment for why this and `floor_gate.unbound` are different questions.
-        "actors_gate": actors_gate,
-        "floor_gate": floor_gate,
+        // Re-seated fights the path walks past again after a rest (spec-0016
+        // §1): each is an encounter the ladder reads and clears again before the
+        // leg it names. Always present — an empty list is a measurement.
+        "run_backs": run_backs_json(run_backs),
     })
 }
-
-/// `floor_gate`'s reason when `examined == 0`: the ledger holds every wave and
-/// actor billed `elite`/`boss` plus every untiered hostile actor,
-/// so an empty ledger means none of those three things exist in the campaign —
-/// a legitimate, common state (an all-`ordinary` delve) stated here so it is
-/// never mistaken for a ledger that ran and found nothing.
-const FLOOR_GATE_UNBOUND_REASON: &str = "no wave or actor in this campaign is billed \
-    `elite`/`boss`, and no hostile actor goes untiered — the floor gate's ledger has \
-    nothing to hold. This can be a legitimate build (e.g. an all-`ordinary` delve, or \
-    one whose combat never crosses this gate's weight); it is stated explicitly so an \
-    empty `covered`/`not_covered` pair is never read as a ledger that ran and passed.";
-
-/// `actors_gate`'s reason when `examined == 0`: `actors[]` holds every actor
-/// that declares ANY tier (`ordinary` included), so an empty array means no
-/// actor in the campaign declares one at all — which is not the same fact as
-/// "no hostile actor exists": an unleashed actor that never got a `tier` is
-/// invisible here BY DESIGN (it lives in `floor_gate.not_covered` instead),
-/// so this reason points a reader there rather than letting the
-/// empty array read as "no actor combat".
-const ACTORS_GATE_UNBOUND_REASON: &str = "no actor in this campaign declares a `tier` \
-    (not even `ordinary`), so this build's actor-tier machinery tracked none. This is \
-    NOT the same fact as \"no hostile actor exists\": an unleashed actor that declares \
-    no tier at all does not appear here by design — check `floor_gate.not_covered` for \
-    any UNTIERED hostile actor this may be masking.";
 
 #[cfg(test)]
 mod tests {
@@ -2038,6 +1713,7 @@ mod tests {
             flooded: BTreeSet::new(),
             partial: BTreeMap::new(),
             waterloggable: BTreeSet::new(),
+            lava: BTreeSet::new(),
         }
     }
 
@@ -2048,6 +1724,7 @@ mod tests {
         effects: Vec<delvewright_dsl::MobEffect>,
     ) -> delvewright_dsl::Wave {
         delvewright_dsl::Wave {
+            on_kill: None,
             id: delvewright_dsl::WaveId(id.to_string()),
             anchor: delvewright_dsl::AnchorId("anchor/pit".to_string()),
             mobs: vec![WaveMob {
@@ -2063,6 +1740,7 @@ mod tests {
             lane: None,
             summon: None,
             tier: None,
+            health_bar: None,
         }
     }
 
@@ -2130,6 +1808,111 @@ mod tests {
         assert_eq!(found.len(), 1, "{found:?}");
         assert!(found[0].contains("wave/required"), "{found:?}");
         assert_eq!(DW_UNDAMAGEABLE, "DW0470");
+    }
+
+    /// The pinned server, measured: an iron-sword blow (attack_damage 6.0) on a
+    /// body whose `armor` attribute reads 10.0 with toughness 0 lands
+    /// `6 × (1 − 7/25)` = 4.32, confirmed by `damage_dealt` and by the wave's
+    /// summed health (`docs/notes/shield-and-guard-fight.md` §2).
+    #[test]
+    fn the_blow_reproduces_the_measured_guard_swing() {
+        let d = WornDefence {
+            armor: 10.0,
+            toughness: 0.0,
+            protection: 0,
+        };
+        let landed = landed_blow(6.0, d, 1.0);
+        assert!((landed - 4.32).abs() < 1e-5, "{landed}");
+        // Unarmoured, the blow lands whole.
+        assert_eq!(landed_blow(6.0, WornDefence::default(), 1.0), 6.0);
+    }
+
+    #[test]
+    fn toughness_resistance_and_protection_each_take_their_share() {
+        // Toughness 8 widens the divisor to 4: 20 - 6/4 = 18.5 → keeps 6.5/25.
+        let d = WornDefence {
+            armor: 20.0,
+            toughness: 8.0,
+            protection: 0,
+        };
+        assert!((landed_blow(6.0, d, 1.0) - 6.0 * (1.0 - 18.5 / 25.0)).abs() < 1e-5);
+        // Light armour: 4 - 6/2 = 1, above the armour/5 floor of 0.8.
+        let light = WornDefence {
+            armor: 4.0,
+            toughness: 0.0,
+            protection: 0,
+        };
+        assert!((landed_blow(6.0, light, 1.0) - 6.0 * (1.0 - 1.0 / 25.0)).abs() < 1e-5);
+        // A heavy blow is floored at armour/5: 4 - 20/2 < 0.8 → keeps 1 - 0.8/25.
+        assert!((landed_blow(20.0, light, 1.0) - 20.0 * (1.0 - 0.8 / 25.0)).abs() < 1e-4);
+        // Resistance II keeps 60%, Protection IV on top keeps 84% of that.
+        let p = WornDefence {
+            armor: 0.0,
+            toughness: 0.0,
+            protection: 4,
+        };
+        assert!((landed_blow(6.0, p, 0.6) - 6.0 * 0.6 * 0.84).abs() < 1e-5);
+        // Protection past 20 is clamped to 20: 80% reduction, never more.
+        let capped = WornDefence {
+            protection: 32,
+            ..p
+        };
+        assert!((landed_blow(6.0, capped, 1.0) - 6.0 * 0.2).abs() < 1e-5);
+        // Armour past the attribute ceiling of 30 counts as 30, and the per-blow
+        // reduction still stops at 20 points.
+        let piled = WornDefence {
+            armor: 45.0,
+            toughness: 0.0,
+            protection: 0,
+        };
+        assert!((landed_blow(6.0, piled, 1.0) - 6.0 * (1.0 - 20.0 / 25.0)).abs() < 1e-5);
+    }
+
+    #[test]
+    fn armour_counts_only_in_the_slot_the_item_names() {
+        assert!(worn_as_armour(EquipSlot::Head, "minecraft:iron_helmet"));
+        assert!(worn_as_armour(EquipSlot::Chest, "iron_chestplate"));
+        assert!(!worn_as_armour(
+            EquipSlot::Head,
+            "minecraft:iron_chestplate"
+        ));
+        assert!(!worn_as_armour(
+            EquipSlot::MainHand,
+            "minecraft:iron_helmet"
+        ));
+        // A body-slot piece is left out of the floor on purpose.
+        assert!(!worn_as_armour(EquipSlot::Body, "minecraft:wolf_armor"));
+    }
+
+    #[test]
+    fn protection_on_a_worn_piece_is_counted_and_the_species_base_is_not() {
+        let mob: WaveMob = serde_json::from_value(serde_json::json!({
+            "entity": "minecraft:zombie",
+            "count": 1,
+            "equipment": {
+                "head": {"item": "minecraft:iron_helmet",
+                         "enchantments": {"minecraft:protection": 4}},
+                "chest": "minecraft:iron_chestplate",
+                "main_hand": {"item": "minecraft:iron_sword",
+                              "enchantments": {"minecraft:protection": 3}}
+            }
+        }))
+        .unwrap();
+        let d = worn_defence(&mob, &ItemCombatRegistry::v1_21_11());
+        // 2 + 6 from the pieces; a zombie's own base armour 2 is not in any
+        // published data, so the floor leaves it out.
+        assert_eq!(d.armor, 8.0);
+        assert_eq!(d.toughness, 0.0);
+        // Protection in a hand slot matches no armour slot group.
+        assert_eq!(d.protection, 4);
+    }
+
+    #[test]
+    fn a_kit_blow_is_the_fist_plus_the_weapon() {
+        let items = ItemCombatRegistry::v1_21_11();
+        let blow =
+            PLAYER_BASE_ATTACK_DAMAGE + items.get("minecraft:iron_sword").unwrap().attack_damage;
+        assert_eq!(blow, 6.0);
     }
 
     #[test]

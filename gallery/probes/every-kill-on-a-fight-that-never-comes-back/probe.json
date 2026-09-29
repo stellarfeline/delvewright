@@ -1,0 +1,13 @@
+{
+  "code": "DW0914",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "add",
+      "path": "/content/waves/2/on_kill/fires",
+      "value": "every-kill"
+    }
+  ],
+  "units": [],
+  "why": "`wave/edge` is spawned once, by one objective's completion, is not `respawns_on_rest` and is billed `ordinary`, so no rest re-seats it and nothing seats it twice: every kill of it is already a first kill. `fires: every-kill` there binds to nothing, and the engine refuses it rather than let a judgement stand that no play can observe — naming what the wave would need to come back. It declares no unit: `every-kill` is bound in the primary by `wave/muster`, which every rest re-seats."
+}

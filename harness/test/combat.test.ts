@@ -1,33 +1,22 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  ASSIST_AMPLIFIER,
-  ASSIST_TICKS,
-  AssistLedger,
   DEATH_PHASES,
   DIE_RETRY_DEATHS,
-  assistClearCommand,
-  assistCommand,
-  assistPolicy,
   deathPhases,
   dieRetryBinding,
   dieRetryCoverageFailures,
   dieRetryFindings,
   scriptedDeathRefusal,
-  floorFinding,
-  unmeasuredFloorFinding,
-  UNASSISTED_RESULTS,
-  type UnassistedOutcome,
-  giveUpBudgetFor,
   openTrial,
-  unboundedEncounterNote,
-  unkillableFinding,
   checkpointPrecondition,
   observationOf,
   CombatPlanParseError,
   parseCombatPlan,
   reseatFidelityFinding,
-  reseatFidelityUnjudged,
+  returnAttritionFinding,
+  returnHealthNote,
+  dieRetryFidelityGaps,
   respawnedAtCheckpoint,
   retryOutcome,
   scriptedDeathCommand,
@@ -35,6 +24,9 @@ import {
   waveAttribution,
   type DeathTrial,
   type Encounter,
+  dueRunBacks,
+  respawnReseats,
+  type RunBack,
 } from "../src/combat.ts";
 
 function encounter(over: Partial<Encounter> = {}): Encounter {
@@ -52,7 +44,35 @@ function encounter(over: Partial<Encounter> = {}): Encounter {
       brand: "the-drowned-bell:wave_brand_bellkeeper",
       unbrand: "the-drowned-bell:wave_unbrand_bellkeeper",
     },
-    bodies: [{ kind: "drowned", count: 1, giveUpSwings: 24 }],
+    muster: {
+      probe: "the-drowned-bell:wave_muster_bellkeeper",
+      strike: "the-drowned-bell:wave_strike_bellkeeper",
+      chip: "the-drowned-bell:wave_chip_bellkeeper",
+      scale: 1000,
+      unread: -1,
+      bodies: 1,
+      checked: 3,
+      types: [
+        {
+          entity: "minecraft:drowned",
+          facts: ["name=#0"],
+          droppedFacts: [],
+          readsAttackDamage: false,
+          readsFollowRange: false,
+        },
+      ],
+      profiles: [
+        {
+          typeIndex: 0,
+          count: 1,
+          mask: 1,
+          label: "1 × minecraft:drowned (stack 0)",
+          maxHealth: 30,
+          armorAtLeast: 0,
+          armorToughnessAtLeast: 0,
+        },
+      ],
+    },
     ...over,
   };
 }
@@ -76,9 +96,41 @@ const PLAN = {
         brand: "the-drowned-bell:wave_brand_gate_assault",
         unbrand: "the-drowned-bell:wave_unbrand_gate_assault",
       },
-      bodies: [{ kind: "drowned", count: 2, give_up_swings: 24 }],
+      muster: {
+        probe: "the-drowned-bell:wave_muster_gate_assault",
+        strike: "the-drowned-bell:wave_strike_gate_assault",
+        chip: "the-drowned-bell:wave_chip_gate_assault",
+        scale: 1000,
+        unread: -1,
+        bodies: 2,
+        checked: 4,
+        types: [
+          {
+            entity: "minecraft:drowned",
+            facts: ["name=#0", "equipment.mainhand=minecraft:trident"],
+            dropped_facts: [],
+            reads_attack_damage: false,
+            reads_follow_range: false,
+          },
+        ],
+        profiles: [
+          {
+            type: 0,
+            count: 2,
+            mask: 3,
+            label: "2 × minecraft:drowned (stack 0)",
+            max_health: 30,
+            attack_damage: null,
+            movement_speed: null,
+            follow_range: null,
+            armor_at_least: 0,
+            armor_toughness_at_least: 0,
+          },
+        ],
+      },
     },
   ],
+  run_backs: [],
 };
 
 // --- the plan ---------------------------------------------------------------
@@ -117,230 +169,17 @@ test("an unknown tier is a parse failure, never a silent 'ordinary'", () => {
   assert.throws(() => parseCombatPlan(raw), /tier/);
 });
 
-// --- binding counts (playtest-methodology.md rule 1) ------------------------
 
-test("a plan without floor_gate/actors_gate parses with no binding count", () => {
-  // A plan from a delvec older than this task carries neither field — that is
-  // a DIFFERENT fact from a present-but-zero binding, and must parse as
-  // `undefined`, never as a fabricated zero.
-  const plan = parseCombatPlan(PLAN);
-  assert.equal(plan.floorGate.present, false);
-  assert.equal(plan.floorGate.binding, undefined);
-  assert.equal(plan.actorsGate, undefined);
-});
 
-test("an unbound floor gate parses its examined count and reason", () => {
-  const raw = {
-    ...PLAN,
-    floor_gate: { covered: [], not_covered: [], examined: 0, unbound: true, reason: "nothing billed" },
-    actors_gate: { examined: 0, unbound: true, reason: "no actor declares a tier" },
-  };
-  const plan = parseCombatPlan(raw);
-  assert.equal(plan.floorGate.present, true);
-  assert.deepEqual(plan.floorGate.binding, { examined: 0, unbound: true, reason: "nothing billed" });
-  assert.deepEqual(plan.actorsGate, { examined: 0, unbound: true, reason: "no actor declares a tier" });
-});
 
-test("a bound floor gate carries no reason", () => {
-  const raw = {
-    ...PLAN,
-    floor_gate: {
-      covered: [{ kind: "wave", id: "wave/gate-assault", tier: "elite" }],
-      not_covered: [],
-      examined: 1,
-      unbound: false,
-    },
-  };
-  const plan = parseCombatPlan(raw);
-  assert.deepEqual(plan.floorGate.binding, { examined: 1, unbound: false });
-});
 
-test("an unbound gate missing its reason is a parse failure, never a silent zero", () => {
-  const raw = { ...PLAN, floor_gate: { covered: [], not_covered: [], examined: 0, unbound: true } };
-  assert.throws(() => parseCombatPlan(raw), /reason/);
-});
 
-test("`unbound` must agree with `examined === 0`, or the plan is refused", () => {
-  const raw = {
-    ...PLAN,
-    floor_gate: { covered: [], not_covered: [], examined: 1, unbound: true, reason: "wrong" },
-  };
-  assert.throws(() => parseCombatPlan(raw), /unbound/);
-});
 
-test("`examined` must equal covered.length + not_covered.length", () => {
-  const raw = {
-    ...PLAN,
-    floor_gate: {
-      covered: [{ kind: "wave", id: "wave/gate-assault", tier: "elite" }],
-      not_covered: [],
-      examined: 2,
-      unbound: false,
-    },
-  };
-  assert.throws(() => parseCombatPlan(raw), /examined/);
-});
 
-// --- combat assist (spec-0023 §3) -------------------------------------------
 
-test("the assist is Resistance III, not immunity", () => {
-  // Amplifier 4 would make the bot invulnerable, and an invulnerable bot cannot
-  // tell a wave that can hurt it from one that cannot.
-  assert.equal(ASSIST_AMPLIFIER, 2);
-  assert.match(assistCommand(), /^\/effect give @s minecraft:resistance 60 2 true$/);
-  assert.equal(assistClearCommand(), "/effect clear @s minecraft:resistance");
-});
 
-test("an ordinary encounter is assisted from the start; a billed one is not", () => {
-  assert.equal(assistPolicy(encounter()), "assisted");
-  assert.equal(assistPolicy(encounter({ tier: "elite" })), "unassisted-first");
-  assert.equal(assistPolicy(encounter({ tier: "boss" })), "unassisted-first");
-});
 
-test("every assist window is recorded with its encounter id and ticks", () => {
-  // spec-0023 §3 acceptance: "the run artifact names every assist window
-  // (encounter id, ticks)".
-  const ledger = new AssistLedger();
-  const w = ledger.open(encounter(), "policy: ordinary encounter", 1_000);
-  ledger.close(w, 4_000);
-  const [only] = ledger.windows();
-  assert.equal(only!.encounter, "obj/the-keeper");
-  assert.equal(only!.wave, "wave/bellkeeper");
-  assert.equal(only!.ticks, ASSIST_TICKS);
-  assert.equal(only!.closedAtMs, 4_000);
-  assert.equal(ledger.leaked().length, 0);
-});
 
-test("an assist window the harness never closed is reported, not swallowed", () => {
-  const ledger = new AssistLedger();
-  ledger.open(encounter(), "policy", 0);
-  assert.equal(ledger.leaked().length, 1);
-});
-
-// --- the inverted floor gate ------------------------------------------------
-
-/** One unassisted attempt, as the executor records it. */
-function attempt(over: Partial<UnassistedOutcome> = {}): UnassistedOutcome {
-  return { result: "won", healthAtStart: 20, maxHealth: 20, engaged: 3, killed: 3, ...over };
-}
-
-test("an elite the unassisted bot beats first try is a floor finding", () => {
-  const finding = floorFinding(encounter({ tier: "elite" }), attempt(), waveAttribution(2, 0, 2));
-  assert.ok(finding);
-  assert.match(finding, /billed `elite`/);
-  assert.match(finding, /Advisory/);
-  // The state the sample was taken at is IN the finding: two runs of one tree
-  // that disagree have to disagree somewhere a reader can see.
-  assert.match(finding, /20\.0\/20 health/);
-});
-
-test("an elite the unassisted bot LOSES to says nothing", () => {
-  for (const result of ["died", "held"] as const) {
-    assert.equal(
-      floorFinding(
-        encounter({ tier: "boss" }),
-        attempt({ result, engaged: 2, killed: 1 }),
-        waveAttribution(2, 2, 0),
-      ),
-      undefined,
-      result,
-    );
-  }
-});
-
-test("an ordinary encounter carries no floor expectation however easily it falls", () => {
-  assert.equal(floorFinding(encounter(), attempt(), waveAttribution(2, 0, 2)), undefined);
-});
-
-// **The defect.** The gallery seats `wave/muster`'s three bodies within a stride
-// of `lethal/east-pit` and a drop. On the ladder run that measured this, one
-// withered, one fell, the bot felled the third — and the gate advised the author
-// to make an `elite` HARDER because the unassisted bot had "beaten it cold".
-test("a cohort the world mostly killed is not a fight the bot beat", () => {
-  const finding = floorFinding(
-    encounter({ tier: "elite", count: 3 }),
-    attempt({ engaged: 3, killed: 1 }),
-    waveAttribution(3, 0, 1),
-  );
-  assert.ok(finding, "the encounter is still worth the author's attention");
-  assert.match(finding, /2 of its 3 bodies died with NO player credited/);
-  assert.match(finding, /does not measure the fight/);
-  assert.doesNotMatch(finding, /Advisory: raise the stack/);
-  // The two sides of this merge are ONE finding: the confound names who felled
-  // the cohort, and the observation names the state the sample was taken at.
-  assert.match(finding, /20\.0\/20 health/);
-});
-
-// The step can END without the wave being down: with nothing eligible left to
-// attack it returns having SAID the census still counts mobs alive, and
-// `attemptUnassisted` reads that as `won`. Nothing fell, so nothing was credited,
-// and the gate must not advise on it.
-test("an encounter cleared with the party credited for nothing draws no advisory", () => {
-  const finding = floorFinding(
-    encounter({ tier: "boss", count: 2 }),
-    attempt({ engaged: 2, killed: 0 }),
-    waveAttribution(2, 2, 0),
-  );
-  assert.match(String(finding), /credited with none of its 2 bodies/);
-  assert.doesNotMatch(String(finding), /Advisory: raise the stack/);
-});
-
-test("an attempt no census could attribute says so instead of claiming a clean win", () => {
-  const finding = floorFinding(encounter({ tier: "elite" }), attempt(), {
-    kind: "unattributed",
-    reason: "no wave census answered during the unassisted attempt",
-  });
-  assert.match(String(finding), /cannot say who felled it/);
-  assert.match(String(finding), /no wave census answered/);
-});
-
-test("the attribution floors at zero rather than reporting a negative body count", () => {
-  // The three numbers are read at slightly different instants; a body dying
-  // between them must not produce -1 uncredited.
-  const a = waveAttribution(3, 1, 3);
-  assert.equal(a.kind, "measured");
-  assert.equal(a.kind === "measured" ? a.uncredited : -1, 0);
-});
-
-/**
- * The gallery's intermittency, as a rule rather than as three ladder runs.
- *
- * The bot losing a souls fight and the bot never reaching one produced the SAME
- * silence, and silence reads as "the fight held". They are different facts with
- * different owners, so the gate says the second one out loud.
- */
-test("a billed fight the unassisted bot never engaged is an UNMEASURED floor, not a silence", () => {
-  const enc = encounter({ tier: "elite" });
-  const never = attempt({ result: "unengaged", engaged: 0, killed: 0, detail: "kill timed out" });
-  assert.equal(
-    floorFinding(enc, never, waveAttribution(1, 1, 0)),
-    undefined,
-    "it did not beat anything",
-  );
-  const finding = unmeasuredFloorFinding(enc, never);
-  assert.ok(finding);
-  assert.match(finding, /did NOT measure it/);
-  assert.match(finding, /0 of its bodies/);
-  assert.match(finding, /kill timed out/);
-  // …and a fight it DID reach and lose is a measurement: the gate stays quiet,
-  // which is what makes the line above mean something.
-  assert.equal(
-    unmeasuredFloorFinding(enc, attempt({ result: "died", engaged: 2, killed: 1 })),
-    undefined,
-  );
-  assert.equal(
-    unmeasuredFloorFinding(enc, attempt({ result: "held", engaged: 1, killed: 0 })),
-    undefined,
-  );
-  // An ordinary encounter is outside the gate in both directions.
-  assert.equal(unmeasuredFloorFinding(encounter(), never), undefined);
-});
-
-test("the gate names five endings, and the four not-won ones are not one bucket", () => {
-  assert.deepEqual([...UNASSISTED_RESULTS], ["won", "died", "held", "unengaged", "not-attempted"]);
-});
-
-// --- die-retry (spec-0023 §1) -----------------------------------------------
 
 test("the default is two scripted deaths, one per phase", () => {
   assert.equal(DIE_RETRY_DEATHS, 2);
@@ -377,9 +216,11 @@ function trial(over: Partial<DeathTrial> = {}): DeathTrial {
     atCheckpoint: true,
     kitKept: true,
     returned: true,
+    returnFailure: undefined,
     reEngaged: true,
     objectiveComplete: false,
     reseats: false,
+    reseat: undefined,
     reengage: undefined,
     objectivesIntact: true,
     lostObjectives: [],
@@ -654,22 +495,55 @@ test("credit corrects the count, it does not cover a shortfall it cannot reach",
   assert.match(String(reseatFidelityFinding("wave/x", 1, "first-contact", obs)), /came back SHORT/);
 });
 
-test("the health half is UNJUDGED, by name, over a cohort the party has fought", () => {
-  const obs = observationOf(census([mob({ health: 11 }), mob()], { credited: 1 }), 3, [...ANCHOR], 40);
-  assert.equal(
-    reseatFidelityFinding("wave/x", 1, "first-contact", obs),
-    undefined,
-    "not a failure: the wound may be the bot's own",
-  );
-  const gap = reseatFidelityUnjudged("wave/x", 1, "first-contact", obs);
-  assert.match(String(gap), /UNJUDGED/);
-  assert.match(String(gap), /credited with 1 of this wave since it was re-seated/);
-});
-
-test("an untouched cohort's health half is judged, and its gap is silent", () => {
+test("a wound read at the re-seat is red — nothing has touched the cohort yet", () => {
   const obs = observationOf(census([mob({ health: 11 }), mob()]), 2, [...ANCHOR], 40);
   assert.match(String(reseatFidelityFinding("wave/x", 1, "first-contact", obs)), /BELOW full/);
-  assert.equal(reseatFidelityUnjudged("wave/x", 1, "first-contact", obs), undefined);
+});
+
+// Vesperhold's choir, reproduced: the re-seat summoned four Drowned Choristers
+// whole, and two of them swam into the lethal well beside their seat ("Drowned
+// Chorister drowned") while the bot walked back. The census at the encounter read
+// 2 of 4 with nothing credited, and the stage said the RE-SEAT "came back SHORT".
+test("bodies lost between the re-seat and the return are the encounter's, not the re-seat's", () => {
+  const reseat = observationOf(census([mob(), mob(), mob(), mob()]), 4, [...ANCHOR], 150);
+  const back = observationOf(census([mob(), mob()]), 4, [...ANCHOR], 6_000);
+  assert.equal(reseatFidelityFinding("wave/x", 1, "first-contact", reseat), undefined);
+  const v = String(returnAttritionFinding("wave/x", 1, "first-contact", reseat, back));
+  assert.match(v, /re-seat brought back 4 of 4/);
+  assert.match(v, /2 died to something that is not the party/);
+  assert.doesNotMatch(v, /came back SHORT/);
+  const verdict = String(
+    trialVerdict(trial({ reseats: true, reseat, reengage: back, outcome: "re-engaged" })),
+  );
+  assert.match(verdict, /kills its own wave/);
+});
+
+test("a body the party felled on the way back is not attrition", () => {
+  const reseat = observationOf(census([mob(), mob(), mob()]), 3, [...ANCHOR], 150);
+  const back = observationOf(census([mob(), mob()], { credited: 1 }), 3, [...ANCHOR], 6_000);
+  assert.equal(returnAttritionFinding("wave/x", 1, "first-contact", reseat, back), undefined);
+});
+
+// Reproduced from the live fight: vesperhold's skeletons shot one another and its spear
+// zombies stabbed one another while the bot walked back, and the census read ~30 s
+// after the re-seat found them hurt with no swing by the bot.
+test("wounds found at the return are stated, never judged, once the re-seat was read whole", () => {
+  const reseat = observationOf(census([mob(), mob(), mob()]), 3, [...ANCHOR], 150);
+  const back = observationOf(census([mob({ health: 11 }), mob({ health: 14 }), mob()]), 3, [...ANCHOR], 250);
+  const t = trial({ reseats: true, reseat, reengage: back, outcome: "re-engaged" });
+  assert.equal(trialVerdict(t), undefined);
+  const notes = dieRetryFidelityGaps([t]);
+  assert.equal(notes.length, 1);
+  assert.match(notes[0]!, /2 of 3 readable wave mob\(s\) stood below full health/);
+  assert.equal(returnHealthNote("wave/x", 1, "first-contact", reseat), undefined);
+});
+
+test("a re-seating wave whose re-seat was never read is unproven, not passed", () => {
+  const back = observationOf(census([mob(), mob()]), 2, [...ANCHOR], 250);
+  assert.match(
+    String(trialVerdict(trial({ reseats: true, reengage: back, outcome: "re-engaged" }))),
+    /never read at the re-seat/,
+  );
 });
 
 test("only a re-seating wave owes fidelity — a persisting wave is judged by outcome alone", () => {
@@ -680,7 +554,9 @@ test("only a re-seating wave owes fidelity — a persisting wave is judged by ou
     "survivors ARE the design when the wave does not re-seat",
   );
   assert.match(
-    String(trialVerdict(trial({ reseats: true, reengage: wounded, outcome: "re-engaged" }))),
+    String(
+      trialVerdict(trial({ reseats: true, reseat: wounded, reengage: wounded, outcome: "re-engaged" })),
+    ),
     /previous life/,
   );
 });
@@ -787,81 +663,117 @@ test("a stage that took deaths is bound, and owes no reason", () => {
   assert.equal(b.engaged, 1);
 });
 
-// --- the encounter's own melee budgets (the census round) ---------------------
-//
-// What replaced a six-second timer in the executor. The compiler states, per
-// entity kind, how many swings that body should take; the ladder holds it to
-// that and NAMES the ones that outlive it.
+// --- the muster: what the wave DECLARES ---------------------------------------
 
-function planWithBodies(bodies: unknown): unknown {
+test("a plan whose encounter states no muster is refused, never silently unread", () => {
   const raw = JSON.parse(JSON.stringify(PLAN)) as Record<string, unknown>;
-  (raw["encounters"] as Record<string, unknown>[])[0]!["bodies"] = bodies;
-  return raw;
-}
-
-test("an encounter's bodies parse with their per-kind melee budget", () => {
-  const plan = parseCombatPlan(
-    planWithBodies([
-      { kind: "drowned", count: 3, give_up_swings: 24 },
-      { kind: "husk", count: 1, give_up_swings: null, reason: "declares no max_health" },
-    ]),
-  );
-  const bodies = plan.encounters[0]!.bodies;
-  assert.equal(bodies.length, 2);
-  assert.equal(giveUpBudgetFor(plan.encounters[0], "drowned"), 24);
-  assert.equal(giveUpBudgetFor(plan.encounters[0], "husk"), undefined);
-  // A kind the encounter does not seat has no budget here either — a
-  // retaliation target that wandered in from elsewhere is not this fight's
-  // arithmetic to judge.
-  assert.equal(giveUpBudgetFor(plan.encounters[0], "creeper"), undefined);
-  assert.equal(giveUpBudgetFor(undefined, "drowned"), undefined);
-});
-
-test("a plan whose encounter states no bodies is refused", () => {
-  const raw = JSON.parse(JSON.stringify(PLAN)) as Record<string, unknown>;
-  delete (raw["encounters"] as Record<string, unknown>[])[0]!["bodies"];
+  delete (raw["encounters"] as Record<string, unknown>[])[0]!["muster"];
   assert.throws(
     () => parseCombatPlan(raw),
-    (err: unknown) => err instanceof CombatPlanParseError && /bodies/.test(err.pointer),
+    (err: unknown) => err instanceof CombatPlanParseError && /muster/.test(err.pointer),
   );
 });
 
-test("a body with no budget must state why — silence would read as zero", () => {
+test("a muster profile pointing outside `types` is refused", () => {
+  const raw = JSON.parse(JSON.stringify(PLAN)) as Record<string, unknown>;
+  const m = (raw["encounters"] as Record<string, unknown>[])[0]!["muster"] as Record<
+    string,
+    unknown
+  >;
+  (m["profiles"] as Record<string, unknown>[])[0]!["type"] = 7;
   assert.throws(
-    () => parseCombatPlan(planWithBodies([{ kind: "drowned", count: 1, give_up_swings: null }])),
-    (err: unknown) =>
-      err instanceof CombatPlanParseError && err.pointer === "/encounters/0/bodies/0/reason",
+    () => parseCombatPlan(raw),
+    (err: unknown) => err instanceof CombatPlanParseError && /profiles\/0\/type/.test(err.pointer),
   );
 });
 
-test("two entries for one kind are refused — the lookup is by kind", () => {
-  // Not a style rule: with two entries the budget would depend on which came
-  // first, which is a silent wrong answer rather than an error.
+test("the muster's declared facts survive the parse in the compiler's own order", () => {
+  const plan = parseCombatPlan(PLAN);
+  const m = plan.encounters[0]!.muster;
+  assert.equal(m.probe, "the-drowned-bell:wave_muster_gate_assault");
+  assert.equal(m.strike, "the-drowned-bell:wave_strike_gate_assault");
+  assert.equal(m.chip, "the-drowned-bell:wave_chip_gate_assault");
+  assert.equal(m.checked, 4);
+  assert.deepEqual(m.types[0]!.facts, [
+    "name=#0",
+    "equipment.mainhand=minecraft:trident",
+  ]);
+  assert.equal(m.profiles[0]!.mask, 3);
+});
+
+// --- run-backs ----------------------------------------------------------------
+
+const RUN_BACK_RAW = {
+  wave: "wave/walk-ambush",
+  objective: "obj/survive-the-knives",
+  bonfire: 3,
+  before: "obj/enter-the-great-hall",
+  tier: "ordinary",
+  pos: [120, 92, 14],
+  count: 3,
+  radius: 16,
+  crossing: [118, 92, 14],
+  distance: 2.24,
+  paths: ["critical-path", "halvard-released+ring"],
+};
+
+test("a plan's run-backs parse, and a plan that states none is refused", () => {
+  const plan = parseCombatPlan({ ...PLAN, run_backs: [RUN_BACK_RAW] });
+  assert.deepEqual(plan.runBacks[0], {
+    wave: "wave/walk-ambush",
+    objective: "obj/survive-the-knives",
+    bonfire: 3,
+    before: "obj/enter-the-great-hall",
+    tier: "ordinary",
+    pos: [120, 92, 14],
+    count: 3,
+    radius: 16,
+    crossing: [118, 92, 14],
+    distance: 2.24,
+    paths: ["critical-path", "halvard-released+ring"],
+  });
+  // No default: a plan that cannot say whether a rest puts a fight back beside
+  // the path would have the ladder walk the leg as empty.
+  const { run_backs: _gone, ...without } = { ...PLAN };
+  assert.throws(() => parseCombatPlan(without), /run_backs/);
   assert.throws(
-    () =>
-      parseCombatPlan(
-        planWithBodies([
-          { kind: "drowned", count: 1, give_up_swings: 24 },
-          { kind: "drowned", count: 1, give_up_swings: 40 },
-        ]),
-      ),
-    (err: unknown) =>
-      err instanceof CombatPlanParseError && /duplicate kind/.test(err.message),
+    () => parseCombatPlan({ ...PLAN, run_backs: [{ ...RUN_BACK_RAW, paths: [] }] }),
+    /paths/,
   );
 });
 
-test("the unkillable finding names the body, the swings and the arithmetic", () => {
-  const line = unkillableFinding({ wave: "wave/muster", kind: "husk", swings: 24, budget: 24 });
-  assert.match(line, /wave\/muster/);
-  assert.match(line, /husk/);
-  assert.match(line, /24 swing/);
-  assert.match(line, /max_health/);
+test("a run-back is due only after this walk cleared the wave and then rested", () => {
+  const rb = parseCombatPlan({ ...PLAN, run_backs: [RUN_BACK_RAW] }).runBacks as RunBack[];
+  const before = "obj/enter-the-great-hall";
+  assert.deepEqual(dueRunBacks(rb, before, new Map(), new Map([[3, 30]])), [], "never cleared");
+  assert.deepEqual(dueRunBacks(rb, before, new Map([["wave/walk-ambush", 25]]), new Map()), [], "never rested");
+  assert.deepEqual(
+    dueRunBacks(rb, before, new Map([["wave/walk-ambush", 25]]), new Map([[3, 20]])),
+    [],
+    "the rest came before the clearance: the wave is down",
+  );
+  assert.equal(
+    dueRunBacks(rb, before, new Map([["wave/walk-ambush", 25]]), new Map([[3, 30]])).length,
+    1,
+  );
+  assert.deepEqual(
+    dueRunBacks(rb, "obj/elsewhere", new Map([["wave/walk-ambush", 25]]), new Map([[3, 30]])),
+    [],
+    "only before the step whose leg re-crosses it",
+  );
 });
 
-test("a timeout says which kinds the encounter could not budget, and stays silent otherwise", () => {
-  assert.equal(unboundedEncounterNote([]), "", "a fully budgeted encounter adds nothing");
-  const note = unboundedEncounterNote(["skeleton", "husk"]);
-  assert.match(note, /husk, skeleton/, "named in a stable order");
-  assert.match(note, /max_health/);
-  assert.match(note, /DW0475/);
+test("a death-respawn re-seats as the last rest did", () => {
+  const rested = new Map([
+    [1, 10],
+    [3, 30],
+  ]);
+  respawnReseats(rested, 41);
+  assert.deepEqual([...rested], [
+    [1, 10],
+    [3, 41],
+  ]);
+  const none = new Map<number, number>();
+  respawnReseats(none, 41);
+  assert.equal(none.size, 0, "no rest yet: the respawn is at world spawn");
 });

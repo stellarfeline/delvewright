@@ -13,8 +13,9 @@
 //
 //     [dw:complete <campaign-id> <token>]
 //
-// `<campaign-id>` is a bare kebab token, `<token>` is either `campaign` (the
-// campaign-completion marker) or the completing objective's own `obj/<kebab>` id.
+// `<campaign-id>` is a bare kebab token, `<token>` is `campaign` (the
+// campaign-completion marker), the completing objective's own `obj/<kebab>` id,
+// or — for a critical-path `trigger` step — the fired trigger's `trigger/<kebab>`.
 // Matching is whole-line and exact — never a substring of a longer line. Three
 // independent properties make it unforgeable:
 //   1. player chat reaches the client as `<name> …`, so no player utterance can
@@ -36,13 +37,13 @@ export const CAMPAIGN_TOKEN = "campaign";
  * syntax, so a lookalike with stray characters is rejected rather than accepted.
  */
 const MARKER_RE =
-  /^\[dw:complete ([a-z0-9]+(?:-[a-z0-9]+)*) (campaign|obj\/[a-z0-9]+(?:-[a-z0-9]+)*)\]$/;
+  /^\[dw:complete ([a-z0-9]+(?:-[a-z0-9]+)*) (campaign|(?:obj|trigger)\/[a-z0-9]+(?:-[a-z0-9]+)*)\]$/;
 
 /** A parsed completion marker: which campaign completed which thing. */
 export interface CompletionMarker {
   /** The campaign that emitted it (must match the critical path's `campaign_id`). */
   readonly campaignId: string;
-  /** `campaign`, or the completing objective's `obj/<id>`. */
+  /** `campaign`, the completing objective's `obj/<id>`, or a fired `trigger/<id>`. */
   readonly token: string;
 }
 

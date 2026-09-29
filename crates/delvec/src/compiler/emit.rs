@@ -401,7 +401,7 @@ pub fn build_with_warnings(
 
     // Gravity-despawn gate: before any downstream model
     // is built, reject a prefab whose gravity floor (sand/gravel/…) sits
-    // unsupported over the delve's `the_void` world and would despawn at placement,
+    // unsupported over the delve's void world and would despawn at placement,
     // silently deforming the shipped map. This is the authoritative direct gate —
     // it does not wait for a fall to happen to intersect the critical path (DW0311)
     // or a wave seat (DW0312). Analysis-tier (exit 2, mapped in main): a
@@ -449,7 +449,7 @@ pub fn build_with_warnings(
     // container is, so it is proven off the same assembled (or edited) world, in
     // the same pass, rather than by a second model that could disagree with this
     // one about what is in the room.
-    if !plan.loot.is_empty() || !plan.collect_fills.is_empty() {
+    if !plan.loot.is_empty() || !plan.collect_fills.is_empty() || !plan.traps.is_empty() {
         let blocks = match &edit_replay {
             Some(er) => er.assembled.blocks.clone(),
             None => crate::compiler::assembled::assembled_blocks(plan, structures),
@@ -477,6 +477,13 @@ pub fn build_with_warnings(
             code: e.code,
             message: e.message,
         })?;
+        // DW0917: a trap's trigger is prefab hardware on the same terms as a
+        // container, so it is proven off the same block map.
+        crate::compiler::trap_trigger::check_trap_triggers(&blocks, &plan.traps, &plan.anchors)
+            .map_err(|e| BuildFailure::Diagnostic {
+                code: e.code,
+                message: e.message,
+            })?;
     }
 
     // v0.4 navigation planning over the solved voxel grid (spec-0008 addendum):
@@ -662,6 +669,11 @@ pub fn build_with_warnings(
     // emitted alongside the branch paths. Empty for a campaign with no declared
     // branch points, so nothing moves for anybody who has not opted in.
     let mut branch_waypoints: Vec<(String, Value)> = Vec::new();
+    // Every exported path's steps and proven routes — the exported path and each
+    // reachable branch's — kept for the run-back finder, which needs the seated
+    // hostiles and the lanes that are only resolved further down.
+    let mut path_legs: Vec<(String, Vec<plan::Step>, Vec<crate::compiler::nav::LegRoute>)> =
+        Vec::new();
     // The traversal proof's binding ledger (`compiler::traversal`), filled inside
     // the world block below. `None` for a campaign that assembles no world —
     // which is not the same fact as "examined nothing", so the artifact is
@@ -1171,6 +1183,21 @@ pub fn build_with_warnings(
                 // DW0315/DW0316) and stealth-zone standable/reachable proofs
                 // (spec-0014, DW0327), re-rooting DW0311 reachability at each beat.
                 crate::compiler::nav::check_checkpoints(plan, &world)?;
+                // DW0921: no place a body can reach from the route by walking,
+                // falling or jumping is one it cannot leave. The binding is
+                // printed before the verdict is taken, like DW0891's.
+                let (leave_binding, leave_verdict) = crate::compiler::nav::check_bodies_can_leave(
+                    plan,
+                    &world,
+                    playable_region(plan).map(|r| (r.min, r.max)),
+                );
+                eprintln!("{}", leave_binding.line());
+                leave_verdict?;
+                put_json(
+                    &mut out,
+                    "validation/leave-proof.json",
+                    &leave_binding.to_json(),
+                );
                 if !plan.lethal_volumes.is_empty() {
                     lethal_gate = Some(crate::compiler::lethal::gate(
                         plan.campaign,
@@ -1339,6 +1366,11 @@ pub fn build_with_warnings(
                         &crate::compiler::waypoints::waypoints_json(plan, &routes),
                     );
                 }
+                path_legs.push((
+                    "critical-path".to_string(),
+                    plan.critical_path.clone(),
+                    routes.clone(),
+                ));
                 // Visual-tier POV cameras (spec-0003): one first-person shot per
                 // corner-thinned waypoint. Their eye cells are proven clear in the
                 // FINAL assembled world with every other kind's, at the one place
@@ -1406,6 +1438,7 @@ pub fn build_with_warnings(
                                 crate::compiler::waypoints::waypoints_json(plan, &branch_routes),
                             ));
                         }
+                        path_legs.push((r.branch.slug.clone(), cp.steps.clone(), branch_routes));
                     }
                 }
                 (m, am)
@@ -1461,6 +1494,20 @@ pub fn build_with_warnings(
                     code: e.code,
                     message: e.message,
                 })?;
+            // …and its mirror: prove the body will fight at all (DW0920). A
+            // drowned takes no land target while the level is bright, so a choir
+            // staged on dry ground under a bright hour walks to its water and
+            // leaves the party a fight nobody answers — vesperhold's Undertide
+            // Pool. Same seated cells, same reach, same population.
+            let (engage, refused) =
+                crate::compiler::engage::check_engagement(plan, &world, &blocks, &waves);
+            eprintln!("{}", engage.line());
+            if let Some(e) = refused {
+                return Err(BuildFailure::Diagnostic {
+                    code: e.code,
+                    message: e.message,
+                });
+            }
             // spec-0023 §2: the winnability arithmetic. Runs here because it
             // needs the SEATED spawn cells (the exact cells the datapack will
             // summon on) as well as the campaign's declarations — a hostile the
@@ -1482,41 +1529,49 @@ pub fn build_with_warnings(
                     )?,
                 );
             }
-            // The bot ladder's combat plan (spec-0023 §1/§3/§4): which
-            // encounters exist, what the content bills each as, and which
-            // checkpoint governs a death at it. Validation metadata only — it
-            // lives under `validation/`, which `Dockerfile.delve` excludes, so
-            // no shipped byte moves.
+            // The bot ladder's combat plan (spec-0023 §1): which encounters exist,
+            // what the content bills each as, which checkpoint governs a death at
+            // it, and — the muster — what each wave DECLARES its bodies to be, so
+            // the ladder can read the live ones against it. Validation metadata
+            // only: it lives under `validation/`, which `Dockerfile.delve`
+            // excludes, so no shipped byte moves.
             //
-            // A tier-declaring ACTOR is enough on its own to want
-            // this file: the set-piece souls fight is an actor, not a wave, and
-            // a campaign whose only billed elite is an actor would otherwise
-            // emit no plan at all — the exact silence spec-0023's floor gate
-            // must not be allowed to read as a pass. An UNTIERED hostile actor
-            // is enough for the same reason and one step further
-            // out: it is a fight nothing bills, so without the ledger line
-            // naming it there is no artifact anywhere that says it existed.
-            let tiered_actors = crate::compiler::combat::actor_encounters(plan);
-            if crate::compiler::combat::has_encounters(plan)
-                || !tiered_actors.is_empty()
-                || crate::compiler::combat::has_untiered_hostile_actors(plan)
-            {
-                let mandatory = crate::compiler::combat::encounters(plan);
-                warnings.extend(crate::compiler::combat::floor_coverage_warnings(
-                    plan,
-                    &mandatory,
-                    &tiered_actors,
-                ));
-                put_json(
-                    &mut out,
-                    "validation/combat-plan.json",
-                    &crate::compiler::combat::combat_plan_json(plan, &mandatory, &tiered_actors),
-                );
-            }
             // spec-0016 §6: resolve and prove each TD lane polyline (DW0386). The
             // proven cells are what `patrol_target` carries, so the squad is only
             // ever sent somewhere it can stand and walk to.
+            //
+            // Before the combat plan: a run-back is measured against where the
+            // hostiles actually are, and a lane wave is where it marches.
             let lanes = crate::compiler::nav::plan_lanes(plan, &world)?;
+            // A campaign whose only fight is an ACTOR still ships a plan. It has no
+            // `encounters[]` for the ladder to read or clear, but `fights` is the
+            // binding count for the whole combat pass — and a five-hostile campaign
+            // that emits no plan at all reads as combat-free, which is the silence
+            // the block was added for.
+            if crate::compiler::combat::has_encounters(plan)
+                || crate::compiler::combat::mandatory_fights(plan).any()
+            {
+                let mandatory = crate::compiler::combat::encounters(plan);
+                // Run-backs (spec-0016 §1): a cleared `respawns_on_rest` wave a
+                // rest re-seats beside a leg the path walks afterwards. Measured
+                // over every exported path, against the same aggro model the
+                // respawn safe zone uses.
+                let sources = crate::compiler::nav::aggro_sources(plan, &world, &waves, &lanes);
+                let legs: Vec<crate::compiler::combat::PathLegs<'_>> = path_legs
+                    .iter()
+                    .map(|(label, steps, routes)| crate::compiler::combat::PathLegs {
+                        label: label.clone(),
+                        steps,
+                        routes,
+                    })
+                    .collect();
+                let run_backs = crate::compiler::combat::run_backs(plan, &world, &legs, &sources);
+                put_json(
+                    &mut out,
+                    "validation/combat-plan.json",
+                    &crate::compiler::combat::combat_plan_json(plan, &mandatory, &run_backs),
+                );
+            }
             // spec-0016 §1: the RESPAWN-POINT safe zone
             // (DW0478). Runs here because it needs both halves of where the
             // hostiles actually are — the seated spawn cells above and the lane
@@ -1674,7 +1729,7 @@ pub fn build_with_warnings(
     }
 
     // advancements
-    for (name, value) in emit_advancements(plan, &chrome) {
+    for (name, value) in emit_advancements(plan, &chrome, &wave_placements) {
         insert_unique(
             &mut out,
             format!("datapack/data/{ns}/advancement/{name}.json"),
@@ -1693,6 +1748,18 @@ pub fn build_with_warnings(
             json_bytes(&value),
             "loot table",
             &name,
+        )?;
+    }
+
+    // item modifiers — the bonfire rest's mend (spec-0016 §1); a campaign with no
+    // bonfire emits none.
+    if plan.bonfires().next().is_some() {
+        insert_unique(
+            &mut out,
+            format!("datapack/data/{ns}/item_modifier/{BONFIRE_MEND}.json"),
+            json_bytes(&bonfire_mend_modifier()),
+            "item modifier",
+            BONFIRE_MEND,
         )?;
     }
 
@@ -1728,6 +1795,7 @@ pub fn build_with_warnings(
     crate::compiler::creator::emit_creator(plan, &mut out, &moves, &actor_moves);
 
     // ---- server ----
+    emit_ground_biome(plan, &mut out);
     emit_server(plan, &mut out);
 
     // ---- critical path ----
@@ -1864,6 +1932,7 @@ pub fn build_with_warnings(
         actor_watch_claim(plan),
         wave_census_watch_claim(plan),
         kill_reward_watch_claim(plan),
+        kill_pays_watch_claim(plan),
         objective_activation_watch_claim(plan),
         class_apply_watch_claim(plan),
         npc_talk_watch_claim(plan),
@@ -2453,8 +2522,14 @@ fn sealing_commands(
         // the player, which is what every other rule in this list exists to stop.
         // NOT version-gated: a campaign at any
         // `dsl_version` wants its dialogue to stop announcing its scoreboard.
-        // rcon replies to the caller regardless of this rule, so the harness and
-        // `validation/` are unaffected, and the creator overlay's log stamp is
+        // rcon replies to the caller regardless of this rule. The bot tier does NOT
+        // drive over rcon — it drives over chat as an opped player — so on that
+        // channel this rule silences every success reply it might have read, and
+        // only a refusal (always delivered) survives. A harness question the
+        // server has to ANSWER therefore goes out as `execute <condition> run
+        // tellraw @s`, which reaches its target whatever this rule says; reading
+        // `/scoreboard players get` there comes back empty on the success path,
+        // measured on the gallery. The creator overlay's log stamp is
         // `log_admin_commands`, a different rule. (The legacy camelCase spelling is
         // rejected outright by 1.21.11 — the compiler's own command validator caught
         // `sendCommandFeedback` here before it could reach a world.)
@@ -2584,7 +2659,7 @@ fn tr_with(s: &str, fields: &[(&str, Value)]) -> Value {
 /// SNBT compound, never the stringified-JSON form, for the same reason
 /// [`snbt_text_component`] always was: 1.21.11 renders `'{"text":…}'` above an
 /// entity's head verbatim.
-fn snbt_component(s: &str) -> String {
+pub(crate) fn snbt_component(s: &str) -> String {
     match delvewright_dsl::l10n_untag(s) {
         Some((key, english)) => snbt_translate(key, english),
         // An untagged string keeps the bare quoted-string component form 1.21.11
@@ -2629,13 +2704,17 @@ fn artifact_title(c: &delvewright_dsl::Campaign) -> &str {
 /// `minecraft:enchantments`, whose value is a map of enchantment id → level.
 /// Emission order is the `BTreeMap`'s id order, never hash order (ADR-0006).
 fn enchantment_components(piece: &EquipItem) -> String {
-    enchantment_component_tail(piece.enchantments())
+    enchantment_component_tail(piece.item(), piece.enchantments())
 }
 
 /// The shared `,components:{"minecraft:enchantments":{…}}` renderer — one
 /// implementation for equipped gear and for container loot, so the two cannot
-/// disagree about the component's shape.
-fn enchantment_component_tail(ench: &std::collections::BTreeMap<String, u32>) -> String {
+/// disagree about the component's shape. Which component is the item's
+/// ([`delvewright_dsl::enchantment_component`]): an enchanted book stores.
+fn enchantment_component_tail(
+    item: &str,
+    ench: &std::collections::BTreeMap<String, u32>,
+) -> String {
     if ench.is_empty() {
         return String::new();
     }
@@ -2644,7 +2723,10 @@ fn enchantment_component_tail(ench: &std::collections::BTreeMap<String, u32>) ->
         .map(|(id, lvl)| format!("\"{id}\":{lvl}"))
         .collect::<Vec<_>>()
         .join(",");
-    format!(",components:{{\"minecraft:enchantments\":{{{body}}}}}")
+    format!(
+        ",components:{{\"{}\":{{{body}}}}}",
+        delvewright_dsl::enchantment_component(item)
+    )
 }
 
 /// The default main-hand weapon for a summoned mob whose natural spawns are
@@ -2789,8 +2871,11 @@ fn has_item_drop(drops: &[delvewright_dsl::MobDrop]) -> bool {
 ///
 /// The invariant, stated once: a declared drop is what a *player's kill* yields.
 /// Every removal the compiler performs itself — the `unleash` that swaps a
-/// puppet for its twin, a `despawn-actor` (either style), a souls re-seat's
-/// re-caging — goes through `/kill`, and vanilla `/kill` is an ordinary death:
+/// puppet for its twin, a `despawn-actor` (either style), a bonfire's re-seat of
+/// a wave (`wave_reseat_<wave>`, both the `respawns_on_rest` and the undefeated
+/// billed kind) and of an unleashed actor (`actor_restand_<id>`) — is built by
+/// [`removal_lines`] and ends in `/kill`, in place or under the world for
+/// [`Exit::Unseen`], and vanilla `/kill` is an ordinary death:
 /// a preserved slot (chance > 1.0) drops **even when the killer is not a
 /// player**. Without this line an elite would shed its axe every time the story
 /// moved it, and a re-seat would turn the boss into a vending machine.
@@ -2812,6 +2897,122 @@ fn strip_drops_line(tag: &str) -> String {
     )
 }
 
+/// How a body the compiler removes leaves the scene.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Exit {
+    /// The body leaves where no player can see it go: no death animation, no
+    /// red flash, no death particles in the room. Every removal the story makes
+    /// that is not a death on screen — a `despawn-npc`, a `despawn-actor`
+    /// `vanish`, the puppet an `unleash` replaces, a bonfire's re-seat.
+    Unseen,
+    /// The body dies where it stands, with vanilla's death animation: a
+    /// `despawn-actor` the author wrote as `style: kill`, and nothing else.
+    OnScreen,
+}
+
+/// The tag an [`Exit::Unseen`] body carries, alone, from the moment it leaves
+/// until [`UNSEEN_SWEEP_FN`] removes it.
+const UNSEEN_TAG: &str = "dw_unseen";
+
+/// The function that removes every body waiting under [`UNSEEN_TAG`].
+const UNSEEN_SWEEP_FN: &str = "unseen_sweep";
+
+/// The Y an [`Exit::Unseen`] body is moved to, straight down its own column: the
+/// overworld's floor is `-64`, and vanilla's void damage starts below `-128`, so
+/// a body frozen here is under the world and takes no damage.
+const UNSEEN_Y: i32 = -128;
+
+/// Ticks between an [`Exit::Unseen`] body's departure and its removal. The
+/// server tells a client that a tracked entity moved within the entity type's
+/// update interval (at most 3 ticks for a living entity); the death that follows
+/// is sent only after that, so no client renders it where the body stood.
+const UNSEEN_DELAY_TICKS: u32 = 5;
+
+/// **The one way the compiler removes a body it placed.** Every removal of an
+/// NPC's body, an actor's puppet or twin, or a wave's mobs is built here, so a
+/// site cannot choose a removal that plays a death the story did not write, nor
+/// forget the strip in front of it.
+///
+/// [`Exit::OnScreen`] is vanilla `/kill` in place. [`Exit::Unseen`] composes
+/// intended primitives only: any passenger is set down (a rider is never carried
+/// out of the world), the body is moved straight down its own column to
+/// [`UNSEEN_Y`] and frozen there with every tag replaced by [`UNSEEN_TAG`] — so
+/// from that command on no selector the datapack writes can find it — and
+/// [`UNSEEN_SWEEP_FN`] kills it [`UNSEEN_DELAY_TICKS`] later, under the world.
+/// The sweep is scheduled with `replace`, and only when a body is really
+/// leaving, so every body waits at least the full delay. The move runs
+/// `execute as … at @s` because every path reaching a removal runs from the
+/// server source, where a bare `tp <targets> ~ Y ~` resolves `~ ~` at world
+/// spawn rather than down each body's own column.
+///
+/// `declares_drops` is the body's own declaration ([`wave_declares_drops`],
+/// [`actor_declares_drops`]) and puts [`strip_drops_line`] first: a declared
+/// drop is what a player's kill yields, never a removal's, and the sweep's
+/// `/kill` under the world is still an ordinary death.
+fn removal_lines(ns: &str, tag: &str, declares_drops: bool, exit: Exit) -> Vec<String> {
+    let mut out = Vec::new();
+    if declares_drops {
+        out.push(strip_drops_line(tag));
+    }
+    match exit {
+        Exit::OnScreen => out.push(format!("kill @e[tag={tag}]")),
+        Exit::Unseen => {
+            out.push(format!(
+                "execute if entity @e[tag={tag}] run schedule function {ns}:{UNSEEN_SWEEP_FN} {UNSEEN_DELAY_TICKS}t replace"
+            ));
+            out.push(format!(
+                "execute as @e[tag={tag}] on passengers run ride @s dismount"
+            ));
+            out.push(format!(
+                "execute as @e[tag={tag}] at @s run tp @s ~ {UNSEEN_Y} ~"
+            ));
+            out.push(format!(
+                "execute as @e[tag={tag}] run data merge entity @s {{Tags:[\"{UNSEEN_TAG}\"],NoGravity:1b,NoAI:1b,Silent:1b}}"
+            ));
+        }
+    }
+    out
+}
+
+/// **The one way a generated PackTest runs the unseen sweep in the tick it needs
+/// a removal's death**: a `kill` of the bodies waiting under [`UNSEEN_TAG`] in the
+/// column of the template's own dummy `sel`, at [`UNSEEN_Y`], and of no other.
+///
+/// The suite shares one world, and [`UNSEEN_SWEEP_FN`] kills every waiting body in
+/// it: a template that ran it would kill each body a sibling's removal parked in
+/// the same batch, inside the [`UNSEEN_DELAY_TICKS`] the removal promises it —
+/// the delay `v04_despawn_<npc>` watches, and which a sibling's direct sweep
+/// failed on the pinned server. A template that needs the death drags the bodies
+/// onto its dummy before the removal, so the removal parks them in the dummy's
+/// column, where this reaches them. The dummies of a batch stand apart, so no two
+/// templates' columns meet.
+fn unseen_sweep_under(sel: &str) -> String {
+    format!("execute at {sel} positioned ~ {UNSEEN_Y} ~ run kill @e[tag={UNSEEN_TAG},distance=..1]")
+}
+
+/// The [`UNSEEN_SWEEP_FN`] function, emitted exactly when some function
+/// schedules it.
+fn unseen_sweep_fn(fns: &[(String, String)], ns: &str) -> Option<(String, String)> {
+    let call = format!("schedule function {ns}:{UNSEEN_SWEEP_FN} ");
+    fns.iter().any(|(_, body)| body.contains(&call)).then(|| {
+        (
+            UNSEEN_SWEEP_FN.to_string(),
+            lines(&[format!("kill @e[tag={UNSEEN_TAG}]")]),
+        )
+    })
+}
+
+/// Whether any mob of this wave declares a drop — the wave's bodies share one
+/// tag, so the removal strips them all when one of them carries loot.
+fn wave_declares_drops(w: &delvewright_dsl::Wave) -> bool {
+    w.mobs.iter().any(|m| !m.drops.is_empty())
+}
+
+/// Whether this actor declares a drop (on either body: puppet or twin).
+fn actor_declares_drops(a: &delvewright_dsl::Actor) -> bool {
+    !a.drops.is_empty()
+}
+
 /// The `equipment`/`drop_chances` SNBT fragment for a wave mob (no leading
 /// comma), or `None` for a bare-handed mob. A mob without the v0.6 `equipment`
 /// field takes the [`default_equipment`] path **unchanged** (byte-identity for
@@ -2823,21 +3024,29 @@ fn strip_drops_line(tag: &str) -> String {
 /// form only — see [`default_equipment`] for why legacy `ArmorItems`/
 /// `HandItems` are silently ignored by 1.21.11 `/summon`. Slot order is
 /// [`EquipSlot::ALL`]'s, fixed for ADR-0006 determinism.
-fn wave_equipment(
+/// Which slot holds which item on a summoned wave mob, and the authored piece
+/// behind it where there is one — the ONE resolution of "what does this stack
+/// actually wear".
+///
+/// Two readers, and they must never disagree: [`wave_equipment`] writes the
+/// `summon` NBT from it, and [`crate::compiler::muster`] turns it into the
+/// questions the live body is asked. A second derivation here would be a probe
+/// that verifies its own copy of the declaration instead of the emitted one.
+///
+/// The main-hand slot is the one place a DEFAULT (a bare id, no enchantments) can
+/// stand in for an authored piece, so it carries an id plus an optional authored
+/// piece; every other slot is authored or absent.
+pub(crate) fn wave_equipment_slots<'a>(
     entity: &str,
-    eq: Option<&MobEquipment>,
-    drops: &[delvewright_dsl::MobDrop],
-) -> Option<String> {
-    let declared = declared_drop_slots(drops);
-    let mainhand = effective_mainhand(entity, eq);
+    eq: Option<&'a MobEquipment>,
+) -> Vec<(EquipSlot, &'a str, Option<&'a EquipItem>)> {
     let Some(eq) = eq else {
-        return default_equipment(entity);
+        return default_mainhand(entity)
+            .map(|it| vec![(EquipSlot::MainHand, it, None)])
+            .unwrap_or_default();
     };
-    // The main-hand slot is the one place a DEFAULT (a bare id, no enchantments)
-    // can stand in for an authored piece, so it carries an id plus an optional
-    // authored piece; every other slot is authored or absent.
-    let mut items: Vec<String> = Vec::new();
-    let mut chances: Vec<String> = Vec::new();
+    let mainhand = effective_mainhand(entity, Some(eq));
+    let mut out = Vec::new();
     for (slot, piece) in eq.pieces() {
         let item = if slot == EquipSlot::MainHand {
             mainhand
@@ -2845,11 +3054,31 @@ fn wave_equipment(
             piece.map(EquipItem::item)
         };
         if let Some(it) = item {
-            let key = slot.nbt();
-            let comps = piece.map(enchantment_components).unwrap_or_default();
-            items.push(format!("{key}:{{id:\"{it}\",count:1{comps}}}"));
-            chances.push(format!("{key}:{}", drop_chance_for(key, &declared)));
+            out.push((slot, it, piece));
         }
+    }
+    out
+}
+
+fn wave_equipment(
+    entity: &str,
+    eq: Option<&MobEquipment>,
+    drops: &[delvewright_dsl::MobDrop],
+) -> Option<String> {
+    let declared = declared_drop_slots(drops);
+    // A stack with no `equipment` field keeps the pre-v0.6 default path exactly:
+    // the armed-mob main-hand at drop chance 0, whatever `drops[]` says. Byte
+    // identity for every wave that predates the field.
+    if eq.is_none() {
+        return default_equipment(entity);
+    }
+    let mut items: Vec<String> = Vec::new();
+    let mut chances: Vec<String> = Vec::new();
+    for (slot, it, piece) in wave_equipment_slots(entity, eq) {
+        let key = slot.nbt();
+        let comps = piece.map(enchantment_components).unwrap_or_default();
+        items.push(format!("{key}:{{id:\"{it}\",count:1{comps}}}"));
+        chances.push(format!("{key}:{}", drop_chance_for(key, &declared)));
     }
     if items.is_empty() {
         return None;
@@ -3052,6 +3281,10 @@ fn emit_functions(
     // absence is a legitimate false; a `tellraw` has no such guard, so the holder
     // must exist from world init. Empty for a campaign with no waves, so v0.2
     // setup is byte-identical.
+    // The pinned item table the muster's armour floor is derived from. Hoisted
+    // out of the wave loop: it is an embedded parse, and every wave reads the
+    // same one.
+    let item_combat = crate::compiler::registry::ItemCombatRegistry::v1_21_11();
     for w in &c.quests.content.waves {
         if !wave_placements.contains_key(w.id.as_str()) {
             continue;
@@ -3059,6 +3292,20 @@ fn emit_functions(
         setup.push(format!(
             "scoreboard players set {} dw.sys 0",
             wave_credited_holder(w.id.as_str())
+        ));
+        // spec-0074: the wave's `on_kill` payment ledger, beside its credited
+        // ledger. Absent without a bundle → byte-identical.
+        if w.on_kill.is_some() {
+            setup.push(format!(
+                "scoreboard players set {} dw.sys 0",
+                kill_ledger(delvewright_dsl::Fight::Wave(w))
+            ));
+        }
+    }
+    for (a, _) in on_kill_actors(plan) {
+        setup.push(format!(
+            "scoreboard players set {} dw.sys 0",
+            kill_ledger(delvewright_dsl::Fight::Actor(a))
         ));
     }
     for flag in declared_flags(c) {
@@ -3089,6 +3336,31 @@ fn emit_functions(
             ));
         }
     }
+    // spec-0076: the one datum that STANDS. Its objective is headed with the
+    // datum's translated name (the slot shows the display name, never the id),
+    // its value is painted the gold the action bar already paints it, and the
+    // objective is put in the slot — once, at world init, which is the slot's
+    // lifetime. Nothing per tick: the sidebar reads the objective's own scores,
+    // which `state_seed` seeds and every state verb moves. `DW0919` has already
+    // refused a second occupant, an unnamed datum and a `party` one, so this
+    // loop runs at most once and never over a `#party` holder. Empty for a
+    // campaign that declares no `display` → byte-identical.
+    for (st, display) in standing_states(plan) {
+        let obj = plan::state_score(st.id.as_str());
+        let name = st.name.as_deref().unwrap_or_default();
+        setup.push(format!(
+            "scoreboard objectives modify {obj} displayname {}",
+            tr(name)
+        ));
+        setup.push(format!(
+            "scoreboard objectives modify {obj} numberformat styled {}",
+            json!({ "color": "gold" })
+        ));
+        setup.push(format!(
+            "scoreboard objectives setdisplay {} {obj}",
+            display.slot()
+        ));
+    }
     // spec-0032: a named datum's shadow score — the value it was last announced at.
     // Party-scoped ones are seeded here beside the datum itself, so a world that
     // has just loaded announces nothing.
@@ -3109,6 +3381,14 @@ fn emit_functions(
     // spec-0032: the economy's objectives and constants. Empty for a campaign that
     // declares neither a shop nor a stake → byte-identical.
     setup.extend(economy_setup(plan));
+    // spec-0073: every declared health bar is re-created from nothing at world
+    // init. Empty for a campaign that declares none → byte-identical.
+    let health_bars = crate::compiler::healthbar::bars(c);
+    setup.extend(crate::compiler::healthbar::setup_lines(
+        ns,
+        &health_bars,
+        &|t| tr(t).to_string(),
+    ));
     // v0.4: the per-player scratch bitmask used by display-gated dialogue choosers
     // (flag axis and/or objective-state axis). Declared only when a gated option
     // exists, so v0.2/v0.3 setup is unchanged.
@@ -3916,9 +4196,13 @@ fn emit_functions(
     // spec-0032: a named datum announces its new balance whenever it changes, from
     // ANY cause. Before the economy dispatch, so a purchase made in this tick is
     // announced in the next one rather than being missed entirely.
+    // spec-0073: refresh every health bar whose fight has a live body, hide the
+    // rest. Empty for a campaign that declares none → byte-identical.
+    tick.extend(crate::compiler::healthbar::tick_lines(ns, &health_bars));
     tick.extend(named_state_tick(plan));
     tick.extend(economy_tick(plan));
     fns.push(("tick".to_string(), lines(&tick)));
+    fns.extend(crate::compiler::healthbar::functions(ns, &health_bars));
 
     // --- v0.6 checkpoint respawn dispatch (spec-0012) ---
     fns.extend(emit_checkpoint_functions(plan));
@@ -4653,6 +4937,11 @@ fn emit_functions(
                 "schedule function {ns}:lane_tick_{safe} {LANE_PERIOD_TICKS}t"
             ));
         }
+        // spec-0073: the bar's max follows the bodies this function just put in
+        // the world. Absent without a bar → byte-identical.
+        if let Some(bar) = crate::compiler::healthbar::wave_bar(c, w.id.as_str()) {
+            body.push(bar.capture_call(ns));
+        }
         fns.push((
             format!("spawn_{}", plan::safe_local(w.id.as_str())),
             lines(&body),
@@ -4667,13 +4956,17 @@ fn emit_functions(
         // refresh), and for nothing else → byte-identical.
         if w.respawns_on_rest || plan.undefeated_reseat_waves().iter().any(|u| u.id == w.id) {
             let safe = plan::safe_local(w.id.as_str());
-            fns.push((
-                format!("wave_reseat_{safe}"),
-                lines(&[
-                    format!("kill @e[tag={}]", plan::wave_tag(w.id.as_str())),
-                    format!("function {ns}:spawn_{safe}"),
-                ]),
-            ));
+            // The standing bodies leave unseen through [`removal_lines`]: a
+            // re-seat is a reset, not a death the party watches at the fire, and
+            // not a kill the party earned — a declared drop is stripped first.
+            let mut reseat = removal_lines(
+                ns,
+                &plan::wave_tag(w.id.as_str()),
+                wave_declares_drops(w),
+                Exit::Unseen,
+            );
+            reseat.push(format!("function {ns}:spawn_{safe}"));
+            fns.push((format!("wave_reseat_{safe}"), lines(&reseat)));
         }
         // --- The wave CENSUS probe surface ---
         //
@@ -4760,28 +5053,74 @@ fn emit_functions(
                 ]),
             ));
         }
+        // --- The wave MUSTER probe, and the staged removal ---
+        //
+        // The census counts bodies; the muster READS them. Every number a wave
+        // declares — health, damage, armour, the gear it wears, the name over its
+        // head — is written into one `summon` line and, until this probe, never
+        // looked at again: 1.21.11 has twice silently dropped a field this
+        // compiler wrote (`HandItems`, the legacy `PatrolTarget`), and both times
+        // the delve booted green over a body that was not what the document said.
+        // `crate::compiler::muster` derives the questions from the same
+        // resolution the summon is written from, so the probe cannot verify a
+        // copy of the declaration instead of the emitted one.
+        //
+        // `wave_strike_*` and `wave_chip_*` ride with it: the ladder does not
+        // fight, it reads the bodies and then removes them, attributed to the
+        // party so the wiring the kill drives actually fires.
+        {
+            let m = crate::compiler::muster::muster(
+                w,
+                &|mob| {
+                    wave_equipment_slots(&mob.entity, mob.equipment.as_ref())
+                        .into_iter()
+                        .map(|(slot, item, _)| (slot, item.to_string()))
+                        .collect()
+                },
+                &item_combat,
+                &|name| snbt_component(name),
+            );
+            for (name, body) in crate::compiler::muster::functions(ns, &m) {
+                fns.push((name, lines(&body)));
+            }
+        }
         // kill reward: each slain wave mob decrements the countdown, records that
         // a PLAYER was credited with the death ([`wave_credited_holder`]), then
         // re-arms. The advancement's trigger is `player_killed_entity` over this
         // wave's tag, so reaching here IS the credit — nothing else can.
         fns.push((
             format!("k_reward_{}", plan::safe_local(w.id.as_str())),
-            lines(&[
-                format!(
-                    "scoreboard players remove {} {} 1",
-                    plan::wave_counter(w.id.as_str()),
-                    plan::WAVE_OBJECTIVE
-                ),
-                format!(
-                    "scoreboard players add {} dw.sys 1",
-                    wave_credited_holder(w.id.as_str())
-                ),
-                format!(
+            lines(
+                &[
+                    format!(
+                        "scoreboard players remove {} {} 1",
+                        plan::wave_counter(w.id.as_str()),
+                        plan::WAVE_OBJECTIVE
+                    ),
+                    format!(
+                        "scoreboard players add {} dw.sys 1",
+                        wave_credited_holder(w.id.as_str())
+                    ),
+                ]
+                .into_iter()
+                // spec-0074: the wave's `on_kill` pays between the ledger and the
+                // re-arm, as the credited player. Absent → byte-identical.
+                .chain(
+                    w.on_kill
+                        .as_ref()
+                        .map(|ok| on_kill_call(ns, delvewright_dsl::Fight::Wave(w), ok)),
+                )
+                .chain(std::iter::once(format!(
                     "advancement revoke @s only {ns}:k_{}",
                     plan::safe_local(w.id.as_str())
-                ),
-            ]),
+                )))
+                .collect::<Vec<_>>(),
+            ),
         ));
+        if let Some(ok) = &w.on_kill {
+            let fight = delvewright_dsl::Fight::Wave(w);
+            fns.push((on_kill_function(fight), on_kill_body(plan, fight, ok)));
+        }
     }
     for q in &c.quests.content.quests {
         let qa = quest_active_score(q.id.as_str());
@@ -4830,6 +5169,7 @@ fn emit_functions(
     // v0.4 generated functions: NPC moves, cutscene drivers, trigger effects.
     // Each is empty for a campaign that uses none (byte-identical v0.2/v0.3).
     fns.extend(spawn_npc_fns(plan));
+    fns.extend(despawn_npc_fns(plan));
     fns.extend(movenpc_fns(plan, moves));
     fns.extend(actor_fns(plan, actor_moves));
     fns.extend(sequence_fns(plan));
@@ -4845,6 +5185,11 @@ fn emit_functions(
     fns.extend(night_vision_fns(plan));
     // v0.8 seal answers. Empty for a campaign that seals no gate.
     fns.extend(seal_fns(plan, chrome));
+    // Last, over every function above: the sweep exists exactly when a removal
+    // schedules it.
+    if let Some(sweep) = unseen_sweep_fn(&fns, ns) {
+        fns.push(sweep);
+    }
 
     fns.sort_by(|a, b| a.0.cmp(&b.0));
     fns
@@ -5531,6 +5876,10 @@ fn root_audience(kind: delvewright_dsl::EffectRootKind) -> Audience {
         // The buying player's own beat: the handler is dispatched
         // `as @a[scores={…}]`, so `@s` is whoever pressed the button.
         K::ShopOffer => Audience::Solo,
+        // The credited killer's own beat (spec-0074): the kill advancement's
+        // reward runs as the player vanilla credited, so one kill is not
+        // narrated to the whole party.
+        K::OnKill => Audience::Solo,
         // Polled on the tick with no executor.
         K::Trigger | K::TrapPayload | K::ShortcutUnlock => Audience::Scheduled,
     }
@@ -5547,8 +5896,6 @@ fn root_audience(kind: delvewright_dsl::EffectRootKind) -> Audience {
 /// verbatim.
 fn emit_gated_effect(plan: &Plan, eff: &QuestEffect, aud: Audience, body: &mut Vec<String>) {
     let gate = eff.gate();
-    let flags = gate.requires_flags;
-    let forbids = gate.forbids_flags;
     let mut inner: Vec<String> = Vec::new();
     emit_quest_effect(plan, eff, aud, &mut inner);
     if gate.is_empty() {
@@ -5556,30 +5903,14 @@ fn emit_gated_effect(plan: &Plan, eff: &QuestEffect, aud: Audience, body: &mut V
         return;
     }
     // DSL v0.10: the numeric terms join the flag terms in one guard, in gate
-    // field order. `state_clauses` yields ` if score …` (leading space); this
-    // guard is built in the space-TERMINATED form, so the clauses are re-spaced
-    // rather than concatenated verbatim.
-    let guard: String = flags
+    // field order — `Plan::gate_terms`, the same reduction the death plan hands
+    // the bot tier. The clauses come back unspaced; this guard is built in the
+    // space-TERMINATED form, so each is re-spaced rather than concatenated
+    // verbatim.
+    let guard: String = plan
+        .gate_terms(gate)
         .iter()
-        .map(|f| {
-            format!(
-                "if score {} {} matches 1 ",
-                plan::PARTY,
-                plan::flag_score(f.as_str())
-            )
-        })
-        .chain(forbids.iter().map(|f| {
-            format!(
-                "unless score {} {} matches 1 ",
-                plan::PARTY,
-                plan::flag_score(f.as_str())
-            )
-        }))
-        .chain(
-            state_clauses(plan, gate.requires_state, false)
-                .into_iter()
-                .map(|c| format!("{c} ")),
-        )
+        .map(|t| format!("{} ", t.clause(false)))
         .collect();
     for line in inner {
         body.push(with_execute_prefix(&guard, line));
@@ -5652,23 +5983,12 @@ fn state_initial(plan: &Plan, id: &StateId) -> i32 {
 /// Empty for a gate with no comparison, which is every pre-0.10 campaign — so
 /// splicing this into an existing guard moves no existing command by a byte.
 fn state_clauses(plan: &Plan, cmps: &[StateCompare], negate: bool) -> Vec<String> {
-    cmps.iter()
-        .map(|c| {
-            let holder = state_holder(plan, &c.state);
-            let obj = plan::state_score(c.state.as_str());
-            // `equals`/`at-least`/`at-most` are `if … matches <range>`;
-            // `not-equals` is the same range under `unless`. Negation flips the
-            // keyword and nothing else, so the two readings can never disagree
-            // about what the range means.
-            let (positive, range) = match c.op {
-                CompareOp::Equals => (true, format!("{}", c.value)),
-                CompareOp::NotEquals => (false, format!("{}", c.value)),
-                CompareOp::AtLeast => (true, format!("{}..", c.value)),
-                CompareOp::AtMost => (true, format!("..{}", c.value)),
-            };
-            let kw = if positive != negate { "if" } else { "unless" };
-            format!("{kw} score {holder} {obj} matches {range}")
-        })
+    // `Plan::state_terms` decides the holder, the range and which keyword the
+    // comparison wants; `negate` flips that keyword and nothing else, so the two
+    // readings can never disagree about what the range means.
+    plan.state_terms(cmps)
+        .iter()
+        .map(|t| t.clause(negate))
         .collect()
 }
 
@@ -5687,23 +6007,10 @@ fn state_cond(plan: &Plan, cmps: &[StateCompare], negate: bool) -> String {
 /// Empty for an ungated site, so a caller that splices it in unconditionally
 /// emits exactly what it emitted before v0.10.
 fn gate_cond(plan: &Plan, gate: Gate<'_>) -> String {
-    let mut out = String::new();
-    for f in gate.requires_flags {
-        out.push_str(&format!(
-            " if score {} {} matches 1",
-            plan::PARTY,
-            plan::flag_score(f.as_str())
-        ));
-    }
-    for f in gate.forbids_flags {
-        out.push_str(&format!(
-            " unless score {} {} matches 1",
-            plan::PARTY,
-            plan::flag_score(f.as_str())
-        ));
-    }
-    out.push_str(&state_cond(plan, gate.requires_state, false));
-    out
+    plan.gate_terms(gate)
+        .iter()
+        .map(|t| format!(" {}", t.clause(false)))
+        .collect()
 }
 
 /// The commands that force a gate's numeric terms to be satisfied (`satisfy`) or
@@ -5837,12 +6144,16 @@ fn emit_quest_effect(plan: &Plan, eff: &QuestEffect, aud: Audience, body: &mut V
             body.push(format!("function {ns}:campaign_complete"));
         }
         Verb::GiveItem {
-            item, count, name, ..
+            item,
+            count,
+            name,
+            enchantments,
+            ..
         } => {
-            let comp = match name {
-                Some(n) => format!("[custom_name={}]", tr_with(n, &[("italic", json!(false))])),
-                None => String::new(),
-            };
+            // One renderer for every stack a command writes: a given stack is
+            // described exactly as a container fill's is, name and enchantments
+            // alike, so a `give-item` and a `loot` entry for one item agree.
+            let comp = container_stack_components(item, name.as_deref(), enchantments);
             // spec-0018: a quest beat arms the whole party (`@a`) unless the item
             // declares `carrier: "one"` — one quest prop, handed to the player
             // whose action earned it (`@s`), for the party to pass around. A
@@ -5962,12 +6273,7 @@ fn emit_quest_effect(plan: &Plan, eff: &QuestEffect, aud: Audience, body: &mut V
             }
         }
         Verb::DespawnNpc { npc, .. } => {
-            // Removes both the body and the interaction hitbox — both carry the
-            // per-npc id tag (spec-0008 §5).
-            body.push(format!(
-                "kill @e[tag=dw_npc_{}]",
-                plan::safe_local(npc.as_str())
-            ));
+            body.push(format!("function {ns}:{}", despawn_npc_fn(npc.as_str())));
         }
         Verb::MoveNpc { npc, to, .. } => {
             body.push(format!(
@@ -6082,8 +6388,8 @@ fn emit_quest_effect(plan: &Plan, eff: &QuestEffect, aud: Audience, body: &mut V
                 .content
                 .actors
                 .iter()
-                .any(|a| a.id.as_str() == actor.as_str() && !a.drops.is_empty());
-            emit_despawn_actor(actor.as_str(), *style, declares_drops, body);
+                .any(|a| a.id.as_str() == actor.as_str() && actor_declares_drops(a));
+            emit_despawn_actor(ns, actor.as_str(), *style, declares_drops, body);
         }
         Verb::MoveActor { actor, to, .. } => {
             body.push(format!(
@@ -6197,49 +6503,25 @@ fn effect_give_command(
     format!("effect give {selector} {effect} {seconds} {amplifier} {hide_particles}")
 }
 
-/// Emit a `despawn-actor` inline (spec-0014). Both styles target the actor body tag
-/// `dw_actor_<id>` (so a puppet **or** an unleashed twin is removed — re-caging is
-/// despawn + spawn). `kill` plays the vanilla death animation in place; `vanish`
-/// relocates the (Silent) body far below the floor first, so the death sequence
-/// plays entirely out of the players' view — a silent removal from two intended
-/// primitives (tp + kill).
-///
-/// **The relocation must be per-actor** (round-8 island QA, caught on a live
-/// server). `tp <targets> ~ -128 ~` resolves `~ ~` against the **command source**,
-/// not against each target, and every path that reaches a `despawn-actor` — a
-/// `move-actor`'s `on_arrive`, a `sequence` step, a trigger bundle — runs from the
-/// server source, whose position is world spawn. So `vanish` dropped the body at
-/// (spawn.x, -128, spawn.z) rather than straight down its own column: the island's
-/// herdsman, standing at `6.5, -55.5`, died at `10.0, -128.0, 9.0`. Invisible today
-/// only because the `kill` lands on the very next line — but the intent of the
-/// style is "out of sight, in place", and an actor that briefly exists at another
-/// area's coordinates is wrong data, not a detail. `execute as … at @s` is the same
-/// idiom [`emit_play_sound`] uses to make `~ ~ ~` resolve per entity.
+/// Emit a `despawn-actor` inline (spec-0014). Both styles target the actor body
+/// tag `dw_actor_<id>` (so a puppet **or** an unleashed twin is removed —
+/// re-caging is despawn + spawn) through [`removal_lines`]: `kill` is the
+/// author's on-screen death ([`Exit::OnScreen`]), `vanish` leaves unseen
+/// ([`Exit::Unseen`]).
 fn emit_despawn_actor(
+    ns: &str,
     actor: &str,
     style: delvewright_dsl::DespawnStyle,
     declares_drops: bool,
     body: &mut Vec<String>,
 ) {
     use delvewright_dsl::DespawnStyle;
-    let safe = plan::safe_local(actor);
-    // v0.9: a removal is not a death the player earned. Both styles
-    // end in `/kill`, and a preserved drop chance survives a non-player kill, so
-    // an elite the story re-cages (a souls re-seat) would shed its axe on every
-    // rest. Strip the declaration off the body first; emitted only when the
-    // actor declares drops, so every earlier campaign's despawn is byte-identical.
-    if declares_drops {
-        body.push(strip_drops_line(&format!("dw_actor_{safe}")));
-    }
-    match style {
-        DespawnStyle::Kill => body.push(format!("kill @e[tag=dw_actor_{safe}]")),
-        DespawnStyle::Vanish => {
-            body.push(format!(
-                "execute as @e[tag=dw_actor_{safe}] at @s run tp @s ~ -128 ~"
-            ));
-            body.push(format!("kill @e[tag=dw_actor_{safe}]"));
-        }
-    }
+    let exit = match style {
+        DespawnStyle::Kill => Exit::OnScreen,
+        DespawnStyle::Vanish => Exit::Unseen,
+    };
+    let tag = format!("dw_actor_{}", plan::safe_local(actor));
+    body.extend(removal_lines(ns, &tag, declares_drops, exit));
 }
 
 /// Emit a `play-sound` effect (DSL v0.6). `who` is the audience selector
@@ -7512,6 +7794,104 @@ fn wave_credited_holder(wave_id: &str) -> String {
     format!("#wcred_{}", plan::safe_local(wave_id))
 }
 
+/// The `on_kill` **payment ledger** of one fight (spec-0074 §4): `#kf_w_<wave>`
+/// or `#kf_a_<actor>` on `dw.sys`, counting how many times the fight's bundle
+/// has fired over the whole delve.
+///
+/// Seeded `0` by `setup` and incremented as the first line of the bundle
+/// function, so it counts firings and nothing else; no spawn, re-seat or rest
+/// resets it. It is what a `first-kill` guard reads, and it is not the census's
+/// `credited` ([`wave_credited_holder`]): that one counts credited kills per
+/// seating, this one counts payments per delve — two facts, two holders.
+fn kill_ledger(fight: delvewright_dsl::Fight<'_>) -> String {
+    match fight {
+        delvewright_dsl::Fight::Wave(w) => format!("#kf_w_{}", plan::safe_local(w.id.as_str())),
+        delvewright_dsl::Fight::Actor(a) => format!("#kf_a_{}", plan::safe_local(a.id.as_str())),
+    }
+}
+
+/// The function a fight's `on_kill` bundle is lowered into (spec-0074 §6):
+/// `on_kill_w_<wave>` or `on_kill_a_<actor>`.
+fn on_kill_function(fight: delvewright_dsl::Fight<'_>) -> String {
+    match fight {
+        delvewright_dsl::Fight::Wave(w) => {
+            format!("on_kill_w_{}", plan::safe_local(w.id.as_str()))
+        }
+        delvewright_dsl::Fight::Actor(a) => {
+            format!("on_kill_a_{}", plan::safe_local(a.id.as_str()))
+        }
+    }
+}
+
+/// How many bodies a fight seats: [`plan::wave_total`] for a wave, one for an
+/// actor. A `first-kill` bundle pays at most this many times over the delve.
+fn fight_bodies(fight: delvewright_dsl::Fight<'_>) -> i32 {
+    match fight {
+        delvewright_dsl::Fight::Wave(w) => plan::wave_total(w),
+        delvewright_dsl::Fight::Actor(_) => 1,
+    }
+}
+
+/// The line a kill reward runs to pay a fight's bundle (spec-0074 §6):
+/// unguarded for `every-kill`; for `first-kill` — and for an absent `fires`,
+/// which validation admits only on a fight that never comes back, where the two
+/// coincide — guarded on the ledger so the fight pays at most once per body it
+/// seats.
+fn on_kill_call(
+    ns: &str,
+    fight: delvewright_dsl::Fight<'_>,
+    ok: &delvewright_dsl::OnKill,
+) -> String {
+    let call = format!("function {ns}:{}", on_kill_function(fight));
+    match ok.fires {
+        Some(delvewright_dsl::KillFires::EveryKill) => call,
+        Some(delvewright_dsl::KillFires::FirstKill) | None => format!(
+            "execute if score {} dw.sys matches ..{} run {call}",
+            kill_ledger(fight),
+            fight_bodies(fight) - 1
+        ),
+    }
+}
+
+/// The body of a fight's bundle function (spec-0074 §6): the ledger increment
+/// first, then the effects under the root's audience — the credited killer's
+/// own (`Audience::Solo`).
+fn on_kill_body(
+    plan: &Plan,
+    fight: delvewright_dsl::Fight<'_>,
+    ok: &delvewright_dsl::OnKill,
+) -> String {
+    let mut body = vec![format!(
+        "scoreboard players add {} dw.sys 1",
+        kill_ledger(fight)
+    )];
+    body.extend(emit_effect_bundle(
+        plan,
+        &ok.effects,
+        root_audience(delvewright_dsl::EffectRootKind::OnKill),
+    ));
+    lines(&body)
+}
+
+/// The actors whose `on_kill` has machinery (spec-0074 §6): a declared bundle on
+/// an actor whose body resolves, in declaration order — the one walk the
+/// function emitter, the advancement emitter, `setup` and the PackTests read.
+fn on_kill_actors<'a>(
+    plan: &Plan<'a>,
+) -> Vec<(&'a delvewright_dsl::Actor, &'a delvewright_dsl::OnKill)> {
+    plan.campaign
+        .quests
+        .content
+        .actors
+        .iter()
+        .filter(|a| {
+            plan.body_point(delvewright_dsl::BodyRef::Actor(a))
+                .is_some()
+        })
+        .filter_map(|a| a.on_kill.as_ref().map(|ok| (a, ok)))
+        .collect()
+}
+
 /// The re-seat lines a bonfire runs on every rest and on every respawn at it
 /// (spec-0016 §1), in a fixed order: the `respawns_on_rest` waves, then the
 /// **undefeated** refresh — billed elite/boss waves, then hostile actors. Empty
@@ -7694,6 +8074,9 @@ fn kit_item_components(item: &delvewright_dsl::KitItem) -> String {
     if let Some(pc) = &item.contents {
         parts.push(format!("potion_contents={}", potion_contents_snbt(pc)));
     }
+    if let Some((id, count)) = flask_remainder(item) {
+        parts.push(format!("use_remainder={}", flask_remainder_snbt(id, count)));
+    }
     if parts.is_empty() {
         String::new()
     } else {
@@ -7720,8 +8103,70 @@ fn kit_item_predicate(item: &delvewright_dsl::KitItem) -> String {
     }
 }
 
+/// The items whose pinned 1.21.11 definition carries a default
+/// `minecraft:use_remainder` — what vanilla leaves in the hand once the item is
+/// consumed — with that remainder's id and count.
+///
+/// Read off the pinned 1.21.11 `item_components` summary (SHA-256
+/// `51b191e13f86813ca02f1498942e5bc235947edb71eb8105a78401670b3665c4`, the
+/// misode/mcmeta ref `crates/delvec/data/PROVENANCE.md` pins): exactly these
+/// seven of its 1505 items declare the component.
+const USE_REMAINDERS_1_21_11: &[(&str, &str, u32)] = &[
+    ("minecraft:beetroot_soup", "minecraft:bowl", 1),
+    ("minecraft:honey_bottle", "minecraft:glass_bottle", 1),
+    ("minecraft:milk_bucket", "minecraft:bucket", 1),
+    ("minecraft:mushroom_stew", "minecraft:bowl", 1),
+    ("minecraft:potion", "minecraft:glass_bottle", 1),
+    ("minecraft:rabbit_stew", "minecraft:bowl", 1),
+    ("minecraft:suspicious_stew", "minecraft:bowl", 1),
+];
+
+/// The `custom_data` key that marks a remainder as **the flask's own**: a flask
+/// is given with its vanilla `use_remainder` restated plus this mark, so the
+/// empty it leaves is told apart from the same item obtained any other way, and
+/// `bonfire_flask` takes back exactly those.
+const FLASK_EMPTY_MARK: &str = "dw_flask_empty";
+
+/// The flask's marked remainder as the `use_remainder` component value: vanilla's
+/// own remainder item and count, carrying the [`FLASK_EMPTY_MARK`].
+fn flask_remainder_snbt(id: &str, count: u32) -> String {
+    format!(
+        "{{id:\"{id}\",count:{count},components:{{\"minecraft:custom_data\":{{{FLASK_EMPTY_MARK}:1b}}}}}}"
+    )
+}
+
+/// The flask's empty as an item stack / predicate: the remainder item with the
+/// [`FLASK_EMPTY_MARK`] — what drinking the flask leaves, and all that the refill
+/// takes back.
+fn flask_empty_stack(id: &str) -> String {
+    format!("{id}[custom_data={{{FLASK_EMPTY_MARK}:1b}}]")
+}
+
+/// The flask's vanilla remainder (`(id, count)`), when this kit item is a flask
+/// whose item leaves one; `None` for every other kit item and for a flask that is
+/// thrown or eaten whole.
+fn flask_remainder(item: &delvewright_dsl::KitItem) -> Option<(&'static str, u32)> {
+    if !item.flask {
+        return None;
+    }
+    let norm = if item.item.contains(':') {
+        item.item.clone()
+    } else {
+        format!("minecraft:{}", item.item)
+    };
+    USE_REMAINDERS_1_21_11
+        .iter()
+        .find(|(it, _, _)| *it == norm)
+        .map(|&(_, id, count)| (id, count))
+}
+
 /// The `bonfire_flask` function: refill every declared flask to its declared
-/// count, for the player it runs as.
+/// count, for the player it runs as, and take back the empties the flask left.
+///
+/// The take-back clears the flask's MARKED remainder (see [`FLASK_EMPTY_MARK`])
+/// for every flask of every class, unguarded by class: an empty a party member
+/// handed over is still a flask's empty, and a bottle the player found or was
+/// given is never marked, so it is never taken.
 ///
 /// `clear` + `give` rather than `item replace`: a kit item has no fixed inventory
 /// slot (the player carries it wherever they moved it), and `item replace` needs
@@ -7743,6 +8188,14 @@ fn emit_flask_function(plan: &Plan) -> Option<(String, String)> {
     }
     let classes = &plan.campaign.classes.content.classes;
     let mut body: Vec<String> = Vec::new();
+    let empties: std::collections::BTreeSet<&str> = flasks
+        .iter()
+        .filter_map(|&(ci, ki)| flask_remainder(&classes[ci].kit[ki]))
+        .map(|(id, _)| id)
+        .collect();
+    for id in empties {
+        body.push(format!("clear @s {}", flask_empty_stack(id)));
+    }
     for (ci, ki) in flasks {
         let item = &classes[ci].kit[ki];
         let tag = class_tag(&plan.classes[ci].safe);
@@ -7775,6 +8228,15 @@ fn class_tag(class_safe: &str) -> String {
 /// these two effects ARE the primitive (CLAUDE.md no-hacks: use the intended one,
 /// do not invent a workaround). Both are instant/1-second and leave nothing
 /// behind.
+///
+/// **Mending** is vanilla's `set_damage` item modifier (`BONFIRE_MEND`, damage
+/// fraction 1.0 = full durability), applied with `item modify` to every slot the
+/// player carries ([`CARRIED_SLOTS`]) — in place, so the rest repairs what the
+/// player holds now, gear picked up in play included, and never re-kits them.
+/// `item modify` takes one slot, so it is one line per slot, each guarded on the
+/// slot holding a damaged item: an empty slot, a stack and an item with no
+/// durability are never handed to the modifier (unguarded, `set_damage` leaves
+/// them unchanged but logs a warning per slot per rest).
 fn emit_restore_function(plan: &Plan) -> Option<(String, String)> {
     plan.bonfires().next()?;
     let ns = &plan.namespace;
@@ -7791,10 +8253,73 @@ fn emit_restore_function(plan: &Plan) -> Option<(String, String)> {
             .iter()
             .map(|e| format!("effect clear @s {e}")),
     );
+    body.extend(CARRIED_SLOTS.iter().map(|slot| {
+        format!(
+            "execute if items entity @s {slot} *[damage~{{damage:{{min:1}}}}] \
+             run item modify entity @s {slot} {ns}:{BONFIRE_MEND}"
+        )
+    }));
     if !plan.flasks().is_empty() {
         body.push(format!("function {ns}:bonfire_flask"));
     }
     Some(("bonfire_restore".to_string(), lines(&body)))
+}
+
+/// The item modifier a rest mends with: `datapack/data/<ns>/item_modifier/<this>.json`.
+const BONFIRE_MEND: &str = "bonfire_mend";
+
+/// Every slot a player carries an item in, as `item modify` names it: the four
+/// armour slots, the off-hand, and the 36 hotbar (`container.0`–`8`) and
+/// inventory (`container.9`–`35`) slots. The main hand is one of the hotbar
+/// slots, so it is not named twice.
+const CARRIED_SLOTS: &[&str] = &[
+    "armor.head",
+    "armor.chest",
+    "armor.legs",
+    "armor.feet",
+    "weapon.offhand",
+    "container.0",
+    "container.1",
+    "container.2",
+    "container.3",
+    "container.4",
+    "container.5",
+    "container.6",
+    "container.7",
+    "container.8",
+    "container.9",
+    "container.10",
+    "container.11",
+    "container.12",
+    "container.13",
+    "container.14",
+    "container.15",
+    "container.16",
+    "container.17",
+    "container.18",
+    "container.19",
+    "container.20",
+    "container.21",
+    "container.22",
+    "container.23",
+    "container.24",
+    "container.25",
+    "container.26",
+    "container.27",
+    "container.28",
+    "container.29",
+    "container.30",
+    "container.31",
+    "container.32",
+    "container.33",
+    "container.34",
+    "container.35",
+];
+
+/// The `set_damage` modifier a rest applies: durability set to full, absolutely
+/// (`damage` is the fraction of durability REMAINING; `add` defaults to false).
+fn bonfire_mend_modifier() -> serde_json::Value {
+    json!({"function": "minecraft:set_damage", "damage": 1.0})
 }
 
 /// The `bonfire_rest_<i>` functions (spec-0016 §1). Resting is the party-wide
@@ -7995,6 +8520,21 @@ fn named_states<'a>(plan: &'a Plan) -> Vec<&'a delvewright_dsl::StateDecl> {
     declared_states(plan.campaign)
         .iter()
         .filter(|st| st.name.is_some())
+        .collect()
+}
+
+/// Every declared datum that **stands** on screen (spec-0076), paired with the
+/// slot it declares. At most one, by `DW0919`; empty for a campaign that declares
+/// none, which is what keeps a spec-0032 campaign byte-identical.
+fn standing_states<'a>(
+    plan: &'a Plan,
+) -> Vec<(
+    &'a delvewright_dsl::StateDecl,
+    delvewright_dsl::StateDisplay,
+)> {
+    declared_states(plan.campaign)
+        .iter()
+        .filter_map(|st| st.display.map(|d| (st, d)))
         .collect()
 }
 
@@ -9384,6 +9924,36 @@ fn spawn_npc_sites(c: &delvewright_dsl::Campaign) -> BTreeSet<String> {
     out
 }
 
+/// The generated function name for a `despawn-npc` effect.
+fn despawn_npc_fn(npc: &str) -> String {
+    format!("despawn_npc_{}", plan::safe_local(npc))
+}
+
+/// `despawn_npc_<id>` functions: one per NPC any `despawn-npc` effect removes,
+/// taken from the same effect walk ([`all_campaign_effects`]) that compiles the
+/// calls, so each call has its callee by construction (`DW0497`).
+/// The body and its interaction hitbox both carry the per-NPC id tag
+/// (spec-0008 §5) and leave together through [`removal_lines`] as
+/// [`Exit::Unseen`]: an NPC the story sends away is never seen to die.
+fn despawn_npc_fns(plan: &Plan) -> Vec<(String, String)> {
+    let ns = &plan.namespace;
+    let sites: BTreeSet<String> = all_campaign_effects(plan.campaign)
+        .into_iter()
+        .filter_map(|e| e.despawn_npc())
+        .map(|npc| npc.as_str().to_string())
+        .collect();
+    sites
+        .into_iter()
+        .map(|npc| {
+            let tag = format!("dw_npc_{}", plan::safe_local(&npc));
+            (
+                despawn_npc_fn(&npc),
+                lines(&removal_lines(ns, &tag, false, Exit::Unseen)),
+            )
+        })
+        .collect()
+}
+
 /// `spawn_npc_<id>` functions (DSL v0.6): one per NPC any `spawn-npc` effect
 /// summons, the scripted-entrance dual of `despawn-npc`. A campaign that fires
 /// none and defers none emits nothing here, so it is byte-identical to pre-0.6.
@@ -10390,29 +10960,48 @@ fn actor_fns(
             continue; // resolution guaranteed by check_actor_placement (DW0325)
         };
         let yaw = actor_facing_yaw(a);
-        out.push((
-            format!("spawn_actor_{safe}"),
-            lines(&[format!(
-                "execute unless entity @e[tag=dw_actor_{safe}] run {}",
-                actor_puppet_summon(ns, a, pos, yaw)
-            )]),
-        ));
+        // spec-0073: every function that summons this actor's bodies re-captures
+        // its bar's max. Absent without a bar → byte-identical.
+        let capture = crate::compiler::healthbar::actor_bar(plan.campaign, a.id.as_str())
+            .map(|b| b.capture_call(ns));
+        let mut spawn = vec![format!(
+            "execute unless entity @e[tag=dw_actor_{safe}] run {}",
+            actor_puppet_summon(ns, a, pos, yaw)
+        )];
+        spawn.extend(capture.clone());
+        out.push((format!("spawn_actor_{safe}"), lines(&spawn)));
         let mut unleash = vec![format!(
             "execute at @e[tag=dw_pup_{safe},limit=1] run {}",
             actor_twin_summon(ns, a, "~ ~ ~")
         )];
-        // The unleash removes the cage by killing it, and vanilla `/kill` is an
-        // ordinary death: a puppet carrying a declared drop would shed it the
-        // moment the elite stood up. Strip first — the twin standing beside it
-        // is the body that owes the player a prize.
-        if !a.drops.is_empty() {
-            unleash.push(strip_drops_line(&format!("dw_pup_{safe}")));
-        }
-        unleash.push(format!("kill @e[tag=dw_pup_{safe}]"));
+        // The cage leaves unseen: the elite standing up is the twin, and a
+        // puppet dying beside it is a death the story never wrote. A puppet
+        // carrying a declared drop is stripped first — the twin is the body
+        // that owes the player a prize.
+        unleash.extend(removal_lines(
+            ns,
+            &format!("dw_pup_{safe}"),
+            actor_declares_drops(a),
+            Exit::Unseen,
+        ));
         if campaign_captures_striker(plan.campaign) {
             unleash.extend(aggro_lock_lines(&a.entity, &safe));
         }
+        unleash.extend(capture.clone());
         out.push((format!("unleash_{safe}"), lines(&unleash)));
+        // spec-0074: an actor's `on_kill` — the kill advancement's reward (pay,
+        // then re-arm) and the bundle. Absent → byte-identical.
+        if let Some(ok) = &a.on_kill {
+            let fight = delvewright_dsl::Fight::Actor(a);
+            out.push((
+                format!("ka_reward_{safe}"),
+                lines(&[
+                    on_kill_call(ns, fight, ok),
+                    format!("advancement revoke @s only {ns}:ka_{safe}"),
+                ]),
+            ));
+            out.push((on_kill_function(fight), on_kill_body(plan, fight, ok)));
+        }
         // spec-0016 §1: the UNDEFEATED re-seat. A rest
         // (and a death-respawn at the same fire) deletes the elite the party is
         // still fighting and stands a FRESH body on its origin anchor: full
@@ -10436,13 +11025,19 @@ fn actor_fns(
         // bonfire ([`Plan::reseat_actors`]) → byte-identical everywhere else.
         if plan.reseat_actors().iter().any(|r| r.id == a.id) {
             let p = ent_xyz(pos);
-            out.push((
-                format!("actor_restand_{safe}"),
-                lines(&[
-                    format!("kill @e[tag=dw_actor_{safe}]"),
-                    actor_twin_summon(ns, a, &format!("{} {} {}", p[0], p[1], p[2])),
-                ]),
+            let mut restand = removal_lines(
+                ns,
+                &format!("dw_actor_{safe}"),
+                actor_declares_drops(a),
+                Exit::Unseen,
+            );
+            restand.push(actor_twin_summon(
+                ns,
+                a,
+                &format!("{} {} {}", p[0], p[1], p[2]),
             ));
+            restand.extend(capture.clone());
+            out.push((format!("actor_restand_{safe}"), lines(&restand)));
         }
     }
     // move-actor per-tick drivers.
@@ -11189,6 +11784,20 @@ fn env_trigger_fns(plan: &Plan, chrome: &delvewright_dsl::Chrome) -> Vec<(String
         }
         let mut body: Vec<String> = Vec::new();
         body.push(format!("scoreboard players set #trig_{id} dw.sys 1"));
+        // The fired marker a critical-path `trigger` step passes on — the same
+        // anchored channel an objective's completion uses, with the trigger's own
+        // id as the token, broadcast before any effect can teleport or end the
+        // delve. Only a trigger a path could perform carries one
+        // (`plan::trigger_may_be_performed`), so no other bundle moves a byte.
+        if plan::trigger_may_be_performed(t) {
+            body.push(format!(
+                "tellraw @a {}",
+                json!({
+                    "text": plan::marker_line(&plan.namespace, t.id.as_str()),
+                    "color": "dark_gray"
+                })
+            ));
+        }
         // Striker capture. The click record is still on
         // the hitbox here — `env_trigger_tick` clears every record only after every
         // trigger has been offered it — so this is the one place the acting player's
@@ -11475,7 +12084,7 @@ fn loot_setup(loot: &[crate::compiler::plan::LootPlan]) -> Vec<String> {
                 c[1],
                 c[2],
                 it.item,
-                container_stack_components(it.name.as_deref(), &it.enchantments),
+                container_stack_components(&it.item, it.name.as_deref(), &it.enchantments),
                 it.count
             ));
         }
@@ -11494,6 +12103,7 @@ fn loot_setup(loot: &[crate::compiler::plan::LootPlan]) -> Vec<String> {
 /// two places describing one stack, drifting apart the moment either moves.
 /// Enchantment order is the `BTreeMap`'s id order, never hash order (ADR-0006).
 fn container_stack_components(
+    item: &str,
     name: Option<&str>,
     ench: &std::collections::BTreeMap<String, u32>,
 ) -> String {
@@ -11510,7 +12120,12 @@ fn container_stack_components(
             .map(|(id, lvl)| format!("\"{id}\":{lvl}"))
             .collect::<Vec<_>>()
             .join(",");
-        comps.push(format!("enchantments={{{body}}}"));
+        // The component the item writes them to: an enchanted book stores them.
+        let comp = delvewright_dsl::enchantment_component(item);
+        comps.push(format!(
+            "{}={{{body}}}",
+            comp.strip_prefix("minecraft:").unwrap_or(comp)
+        ));
     }
     if comps.is_empty() {
         return String::new();
@@ -11522,8 +12137,8 @@ fn container_stack_components(
 /// when the objective declares none. A thin alias over
 /// [`container_stack_components`] — a collect stack is a container fill, and is
 /// rendered by the container fill's renderer.
-fn item_component_tail(name: Option<&str>) -> String {
-    container_stack_components(name, &std::collections::BTreeMap::new())
+fn item_component_tail(item: &str, name: Option<&str>) -> String {
+    container_stack_components(item, name, &std::collections::BTreeMap::new())
 }
 
 /// `setup_finish` commands for traps (spec-0011): fill each `dispense` trap's
@@ -11733,6 +12348,9 @@ fn plan_payload_verbs(
                 payload_anchor_failure(placement, &label, kill_zone.anchor.as_str())
             })?;
             let geom = crate::compiler::nav::plan_volley(world, from, region, &label)?;
+            // The cadence is a timing read (DW0918): a body a salvo lands on can
+            // walk out of the zone before the next one.
+            crate::compiler::nav::check_volley_cadence(world, region, salvos, interval, &label)?;
             out.volleys.push(VolleyEmit {
                 key,
                 geom,
@@ -12535,7 +13153,7 @@ fn activation_commands(plan: &Plan, area: &str, o: &Objective) -> Vec<String> {
             // byte.
             let stack = format!(
                 "{item}{} {count}",
-                item_component_tail(item_name.as_deref())
+                item_component_tail(item, item_name.as_deref())
             );
             for slot in 0..=*fill_count {
                 cmds.push(format!(
@@ -13396,7 +14014,11 @@ fn emit_drop_loot_tables(plan: &Plan) -> Vec<(String, Value)> {
     out
 }
 
-fn emit_advancements(plan: &Plan, chrome: &delvewright_dsl::Chrome) -> Vec<(String, Value)> {
+fn emit_advancements(
+    plan: &Plan,
+    chrome: &delvewright_dsl::Chrome,
+    wave_placements: &WavePlacements,
+) -> Vec<(String, Value)> {
     let ns = &plan.namespace;
     let c = plan.campaign;
     let mut advs = Vec::new();
@@ -13585,7 +14207,14 @@ fn emit_advancements(plan: &Plan, chrome: &delvewright_dsl::Chrome) -> Vec<(Stri
             }
         }
     }
+    // One kill advancement per wave that has kill machinery — the same gate
+    // `k_reward_<wave>` is emitted behind. A wave no beat seats resolves no
+    // spawn area and gets no reward function, so an advancement for it would
+    // name a function the pack never had (`DW0497` reads advancement rewards).
     for w in &c.quests.content.waves {
+        if !wave_placements.contains_key(w.id.as_str()) {
+            continue;
+        }
         let tag = plan::wave_tag(w.id.as_str());
         advs.push((
             format!("k_{}", plan::safe_local(w.id.as_str())),
@@ -13599,6 +14228,26 @@ fn emit_advancements(plan: &Plan, chrome: &delvewright_dsl::Chrome) -> Vec<(Stri
                     }
                 },
                 "rewards": { "function": format!("{ns}:k_reward_{}", plan::safe_local(w.id.as_str())) }
+            }),
+        ));
+    }
+    // spec-0074: an actor's kill advancement, emitted only for an actor that
+    // declares `on_kill` — the same `player_killed_entity` criterion a wave's
+    // `k_<wave>` uses, over the actor's own tag.
+    for (a, _) in on_kill_actors(plan) {
+        let safe = plan::safe_local(a.id.as_str());
+        advs.push((
+            format!("ka_{safe}"),
+            json!({
+                "criteria": {
+                    "slain": {
+                        "trigger": "minecraft:player_killed_entity",
+                        "conditions": {
+                            "entity": { "nbt": format!("{{Tags:[\"dw_actor_{safe}\"]}}") }
+                        }
+                    }
+                },
+                "rewards": { "function": format!("{ns}:ka_reward_{safe}") }
             }),
         ));
     }
@@ -13949,8 +14598,16 @@ fn emit_packtest(
     // one they finished stays finished. Emits nothing without a bonfire and a
     // hostile actor / billed wave.
     emit_reseat_undefeated_packtests(plan, out);
+    // A removal the compiler performs yields nothing: the unleash and every
+    // re-seat, on a body that declares a drop. Emits nothing without a bonfire
+    // and a re-seated body that declares one.
+    emit_reseat_yields_nothing_packtest(plan, out, waves.placements);
+    // spec-0073: every declared health bar, driven through its real refresh.
+    // Emits nothing for a campaign that declares no bar.
+    emit_health_bar_packtests(plan, out, waves.placements);
     // spec-0016 §1: rest and save-only really differ.
     emit_bonfire_option_packtest(plan, out);
+    emit_bonfire_mend_packtest(plan, out);
     // spec-0016 §2: the shortcut really opens, and opens exactly once.
     emit_shortcut_packtest(plan, out);
     // spec-0016 §4: the clock really alternates the gate region.
@@ -13960,6 +14617,10 @@ fn emit_packtest(
     // every declared class's own apply. Each emits nothing for a campaign that
     // declares none of its mechanic.
     emit_kill_reward_packtests(plan, out, waves.placements);
+    // spec-0074: every fight that declares an `on_kill` — a credited kill pays,
+    // an uncredited death and a compiler removal do not, and a rest tells the
+    // two `fires` values apart. Emits nothing for a campaign with no bundle.
+    emit_kill_pays_packtests(plan, out, waves.placements);
     emit_objective_activation_packtests(plan, out);
     emit_class_apply_packtests(plan, out);
     emit_npc_talk_packtests(plan, out);
@@ -16436,6 +17097,437 @@ fn emit_reseat_undefeated_packtests(plan: &Plan, out: &mut BuildOutput) {
     );
 }
 
+/// **A removal the compiler performs yields nothing.** A declared drop is what a
+/// player's kill yields ([`strip_drops_line`]); the unleash that kills a cage
+/// and the bonfire's re-seats kill bodies too, and vanilla `/kill` is an
+/// ordinary death that rolls a guaranteed slot and a death loot table whoever
+/// the killer was. A playtest found the re-seat half open: every rest dropped an
+/// undefeated elite's quest key where he stood.
+///
+/// Every such removal is [`Exit::Unseen`]: the body is moved to [`UNSEEN_Y`]
+/// down its own column and dies there when [`UNSEEN_SWEEP_FN`] runs, so its loot
+/// would land under the world, never at the party's feet — a count at the
+/// party binds nothing. The template therefore judges where the body dies.
+///
+/// For every re-seated body that declares a drop — each wave a rest re-seats
+/// (`respawns_on_rest` or billed-undefeated) and each hostile actor — the
+/// template meets it and drags it onto the party, runs the unleash, kills what
+/// the removal parked in the party's column in the same tick
+/// ([`unseen_sweep_under`]: a dropped item below the world is discarded on its
+/// own next tick, so the count cannot wait for the scheduled sweep), and
+/// demands no item entity at [`UNSEEN_Y`] in the party's column; then the same
+/// after the REAL `bonfire_rest_<i>`. The zero is then proven not to be vacuous
+/// at that same place: each fresh body is moved to [`UNSEEN_Y`] in the party's
+/// column and killed by a bare `kill`, which must yield at least one item there
+/// — the body really carries the loot the removal withheld, and the count sees
+/// loot where the removal's death happens.
+///
+/// Emits nothing without a bonfire and a drop-declaring re-seated body.
+fn emit_reseat_yields_nothing_packtest(
+    plan: &Plan,
+    out: &mut BuildOutput,
+    wave_placements: &WavePlacements,
+) {
+    let ns = &plan.namespace;
+    let Some(bf) = plan.bonfires().next() else {
+        return;
+    };
+    let i = bf.index;
+    let mut waves: Vec<&delvewright_dsl::Wave> = plan.reseat_waves();
+    waves.extend(plan.undefeated_reseat_waves());
+    waves.retain(|w| {
+        wave_declares_drops(w)
+            && plan::wave_total(w) >= 1
+            && wave_placements
+                .get(w.id.as_str())
+                .is_some_and(|c| !c.is_empty())
+    });
+    let actors: Vec<&delvewright_dsl::Actor> = plan
+        .reseat_actors()
+        .into_iter()
+        .filter(|a| {
+            actor_declares_drops(a)
+                && plan
+                    .body_point(delvewright_dsl::BodyRef::Actor(a))
+                    .is_some()
+        })
+        .collect();
+    if waves.is_empty() && actors.is_empty() {
+        return;
+    }
+    let (pin, sel) = pin_dummy("dw_rsyn");
+    // The loot of a `/kill` lands where the body dies, in the tick it dies;
+    // every body is dragged onto the party first, so an unseen removal kills it
+    // at `UNSEEN_Y` in the party's column, and this radius there is the whole
+    // claim.
+    let items = "@e[type=minecraft:item,distance=..3]";
+    let low = format!("execute at {sel} positioned ~ {UNSEEN_Y} ~");
+    let count = |score: &str| format!("{low} store result score {score} dw.sys if entity {items}");
+    let clear_items = format!("{low} run kill {items}");
+    let sweep = unseen_sweep_under(&sel);
+    let board: Vec<String> = plan
+        .reseat_waves()
+        .iter()
+        .flat_map(|r| {
+            [
+                format!("kill @e[tag={}]", plan::wave_tag(r.id.as_str())),
+                format!(
+                    "scoreboard players set {} dw.sys 0",
+                    wave_seated_holder(r.id.as_str())
+                ),
+            ]
+        })
+        .collect();
+    let mut tags: Vec<String> = waves
+        .iter()
+        .map(|w| plan::wave_tag(w.id.as_str()))
+        .collect();
+    tags.extend(
+        actors
+            .iter()
+            .map(|a| format!("dw_actor_{}", plan::safe_local(a.id.as_str()))),
+    );
+
+    let mut b = packtest_header(&format!(
+        "{}: a removal the compiler performs — the unleash and every bonfire re-seat — yields \
+         no declared drop where the body dies; only a kill does",
+        artifact_title(plan.campaign)
+    ));
+    b.push(format!("function {ns}:setup"));
+    b.push(pin);
+    b.extend(board.iter().cloned());
+    for t in &tags {
+        let k = format!("kill @e[tag={t}]");
+        if !board.contains(&k) {
+            b.push(k);
+        }
+    }
+    b.push(sweep.clone());
+    b.push(clear_items.clone());
+    // Meet every fight, on top of the party.
+    for w in &waves {
+        b.push(format!(
+            "function {ns}:spawn_{}",
+            plan::safe_local(w.id.as_str())
+        ));
+    }
+    for a in &actors {
+        let safe = plan::safe_local(a.id.as_str());
+        b.push(format!("function {ns}:spawn_actor_{safe}"));
+        b.push(format!(
+            "execute at {sel} run tp @e[tag=dw_pup_{safe}] ~ ~ ~"
+        ));
+        b.push(format!("function {ns}:unleash_{safe}"));
+    }
+    b.push(sweep.clone());
+    b.push(count("#u_rsyn"));
+    b.push("assert score #u_rsyn dw.sys matches 0".to_string());
+    for t in &tags {
+        b.push(format!("execute at {sel} run tp @e[tag={t}] ~ ~ ~"));
+    }
+    // The rest, through the REAL generated rest function, and the removals it
+    // makes, killed where the removal parked them.
+    b.push(format!("function {ns}:bonfire_rest_{i}"));
+    b.push(sweep.clone());
+    b.push(count("#r_rsyn"));
+    b.push("assert score #r_rsyn dw.sys matches 0".to_string());
+    // Not vacuous, body by body, at the same place: each fresh body carries the
+    // loot, and a bare kill where the removal kills yields it.
+    for t in &tags {
+        b.push(format!("{low} run tp @e[tag={t}] ~ ~ ~"));
+        b.push(format!("kill @e[tag={t}]"));
+        b.push(count("#p_rsyn"));
+        b.push("assert score #p_rsyn dw.sys matches 1..".to_string());
+        b.push(clear_items.clone());
+    }
+    b.extend(board.iter().cloned());
+    b.push(format!("tag {sel} remove dw_rsyn"));
+    out.insert(
+        format!("packtest-datapack/data/{ns}/test/souls_reseat_yields_nothing.mcfunction"),
+        lines(&b).into_bytes(),
+    );
+}
+
+/// spec-0073: **a fight shows its health**, proven on the pinned server with
+/// the real generated functions — one template per declared bar, plus one that
+/// proves several bars stand at once when the campaign declares more than one.
+///
+/// Per bar (`health_bar_<key>`):
+///
+/// 1. the fight is met exactly as the campaign meets it — `spawn_<wave>`, or
+///    `spawn_actor_<id>` and, for an actor the campaign unleashes,
+///    `unleash_<id>` — so the max is the one the real summon captured;
+/// 2. the dummy and the fight are lifted to a private altitude (one per bar,
+///    far enough apart that no two templates' ranges meet), because every
+///    template's dummy shares the server and a count of the audience is only
+///    exact where no sibling can stand;
+/// 3. in range, after the real `hb_<key>`: one player, visible, value equal to
+///    max, and max equal to the fight's summed `max_health` — the declared
+///    literal when every body declares it, otherwise the server's own
+///    `attribute … base get` summed by `scoreboard players operation`, a read
+///    that shares no function with the engine's `get`-and-accumulate;
+/// 4. one body's `Health` set to 1 (a PackTest dummy is immune to `/damage`, so
+///    health is moved with `data modify`, the `souls_reseat_undefeated`
+///    pattern): the value moved by exactly the difference;
+/// 5. the dummy lifted out of `range`: no player;
+/// 6. with a bonfire that re-seats this fight, the real `bonfire_rest_<i>`:
+///    value equals max again once the dummy stands back in range;
+/// 7. every body killed: hidden.
+///
+/// Emits nothing for a campaign that declares no bar → byte-identical.
+fn emit_health_bar_packtests(plan: &Plan, out: &mut BuildOutput, wave_placements: &WavePlacements) {
+    let ns = &plan.namespace;
+    let title = artifact_title(plan.campaign);
+    let bars = crate::compiler::healthbar::bars(plan.campaign);
+    if bars.is_empty() {
+        return;
+    }
+    let bonfire = plan.bonfires().next().map(|b| b.index);
+    let hostile: BTreeSet<String> = crate::compiler::combat::hostile_actors(plan.campaign)
+        .iter()
+        .map(|a| a.id.as_str().to_string())
+        .collect();
+    // A rest re-seats every met `respawns_on_rest` wave too, so a template that
+    // rests owns that whole board: cleared on entry and on exit (pin_dummy rule 4).
+    let board: Vec<String> = plan
+        .reseat_waves()
+        .iter()
+        .flat_map(|r| {
+            [
+                format!("kill @e[tag={}]", plan::wave_tag(r.id.as_str())),
+                format!(
+                    "scoreboard players set {} dw.sys 0",
+                    wave_seated_holder(r.id.as_str())
+                ),
+            ]
+        })
+        .collect();
+    for (k, bar) in bars.iter().enumerate() {
+        use delvewright_dsl::FightKind;
+        let safe = &bar.safe;
+        // How the fight is met, and whether a rest re-seats it.
+        let (meet, rests, clear) = match bar.fight.kind() {
+            FightKind::Wave => {
+                if !wave_placements.contains_key(bar.fight.id()) {
+                    continue; // never seated → no spawn function (DW0310 owns a dangling spawn)
+                }
+                let rests = plan
+                    .reseat_waves()
+                    .iter()
+                    .any(|w| w.id.as_str() == bar.fight.id())
+                    || plan
+                        .undefeated_reseat_waves()
+                        .iter()
+                        .any(|w| w.id.as_str() == bar.fight.id());
+                (
+                    vec![format!("function {ns}:spawn_{safe}")],
+                    rests,
+                    format!("kill @e[tag={}]", plan::wave_tag(bar.fight.id())),
+                )
+            }
+            FightKind::Actor => {
+                let Some(a) = plan
+                    .campaign
+                    .quests
+                    .content
+                    .actors
+                    .iter()
+                    .find(|a| a.id.as_str() == bar.fight.id())
+                else {
+                    continue;
+                };
+                if plan
+                    .body_point(delvewright_dsl::BodyRef::Actor(a))
+                    .is_none()
+                {
+                    continue; // never placed → no spawn function (DW0325)
+                }
+                let mut meet = vec![format!("function {ns}:spawn_actor_{safe}")];
+                if hostile.contains(bar.fight.id()) {
+                    meet.push(format!("function {ns}:unleash_{safe}"));
+                }
+                let rests = plan.reseat_actors().iter().any(|r| r.id == a.id);
+                (meet, rests, format!("kill @e[tag=dw_actor_{safe}]"))
+            }
+        };
+        let rest = bonfire.filter(|_| rests);
+        let id = bar.id(ns);
+        let live = bar.live();
+        let refresh = format!("function {ns}:{}", bar.refresh_fn());
+        let range = bar.bar.range;
+        let lift = 200 + 200 * k as i32;
+        let x = format!("hb{k}");
+        let (pin, sel) = pin_dummy(&format!("dw_{x}"));
+        let chip = format!("dw_{x}_chip");
+        let get = |what: &str, holder: &str| {
+            format!("execute store result score #{holder}_{x} dw.sys run bossbar get {id} {what}")
+        };
+        let mut b = packtest_header(&format!(
+            "{title}: the health bar over {} `{}` shows the fight to a player in range, follows \
+             its health, and hides when it is over (spec-0073)",
+            bar.fight.kind().word(),
+            bar.fight.id()
+        ));
+        b.push(format!("function {ns}:setup"));
+        b.push(pin);
+        b.extend(board.iter().cloned());
+        b.push(clear.clone());
+        b.push(format!("tag @e[tag={chip}] remove {chip}"));
+        b.extend(meet);
+        // A private stage: the dummy first, then the fight to it.
+        b.push(format!("execute at {sel} run tp {sel} ~ ~{lift} ~"));
+        b.push(format!("execute at {sel} run tp @e[{live}] ~ ~ ~"));
+        b.push(refresh.clone());
+        b.push(get("players", "p"));
+        b.push(format!("assert score #p_{x} dw.sys matches 1"));
+        b.push(get("visible", "s"));
+        b.push(format!("assert score #s_{x} dw.sys matches 1"));
+        b.push(get("value", "v"));
+        b.push(get("max", "m"));
+        b.push(format!("assert score #m_{x} dw.sys matches 1.."));
+        b.push(format!(
+            "scoreboard players operation #e_{x} dw.sys = #v_{x} dw.sys"
+        ));
+        b.push(format!(
+            "scoreboard players operation #e_{x} dw.sys -= #m_{x} dw.sys"
+        ));
+        b.push(format!("assert score #e_{x} dw.sys matches 0"));
+        match declared_max_health(plan.campaign, bar) {
+            Some(total) => b.push(format!("assert score #m_{x} dw.sys matches {total}")),
+            None => {
+                b.push(format!(
+                    "execute as @e[{live}] store result score @s dw.sys run attribute @s \
+                     minecraft:max_health base get 1"
+                ));
+                b.push(format!("scoreboard players set #x_{x} dw.sys 0"));
+                b.push(format!(
+                    "scoreboard players operation #x_{x} dw.sys += @e[{live}] dw.sys"
+                ));
+                b.push(format!("scoreboard players reset @e[{live}] dw.sys"));
+                b.push(format!(
+                    "scoreboard players operation #x_{x} dw.sys -= #m_{x} dw.sys"
+                ));
+                b.push(format!("assert score #x_{x} dw.sys matches 0"));
+            }
+        }
+        // Chip one body to 1 HP: the value moves by exactly what it lost.
+        b.push(format!("tag @e[{live},limit=1] add {chip}"));
+        b.push(format!(
+            "execute store result score #h_{x} dw.sys run data get entity @e[tag={chip},limit=1] \
+             Health 1"
+        ));
+        b.push(format!(
+            "data modify entity @e[tag={chip},limit=1] Health set value 1.0f"
+        ));
+        b.push(refresh.clone());
+        b.push(get("value", "w"));
+        b.push(format!(
+            "scoreboard players operation #d_{x} dw.sys = #v_{x} dw.sys"
+        ));
+        b.push(format!(
+            "scoreboard players operation #d_{x} dw.sys -= #w_{x} dw.sys"
+        ));
+        b.push(format!(
+            "scoreboard players operation #d_{x} dw.sys -= #h_{x} dw.sys"
+        ));
+        b.push(format!("scoreboard players add #d_{x} dw.sys 1"));
+        b.push(format!("assert score #d_{x} dw.sys matches 0"));
+        // Out of range: nobody sees it, and it is still standing.
+        b.push(format!("execute at {sel} run tp {sel} ~ ~{} ~", range + 8));
+        b.push(refresh.clone());
+        b.push(get("players", "q"));
+        b.push(format!("assert score #q_{x} dw.sys matches 0"));
+        b.push(get("visible", "t"));
+        b.push(format!("assert score #t_{x} dw.sys matches 1"));
+        // A rest re-seats the chipped fight whole: full again, through the REAL
+        // rest function and the capture its re-seat runs.
+        if let Some(i) = rest {
+            b.push(format!("function {ns}:bonfire_rest_{i}"));
+            b.push(format!("execute at @e[{live},limit=1] run tp {sel} ~ ~ ~"));
+            b.push(refresh.clone());
+            b.push(get("value", "r"));
+            b.push(get("max", "n"));
+            b.push(format!("assert score #n_{x} dw.sys matches 1.."));
+            b.push(format!(
+                "scoreboard players operation #r_{x} dw.sys -= #n_{x} dw.sys"
+            ));
+            b.push(format!("assert score #r_{x} dw.sys matches 0"));
+        }
+        // The last body falls: hidden, on the same refresh.
+        b.push(clear.clone());
+        b.push(refresh.clone());
+        b.push(get("visible", "u"));
+        b.push(format!("assert score #u_{x} dw.sys matches 0"));
+        b.push(format!("tag @e[tag={chip}] remove {chip}"));
+        b.push(clear);
+        b.extend(board.iter().cloned());
+        b.push(format!("tag {sel} remove dw_{x}"));
+        out.insert(
+            format!(
+                "packtest-datapack/data/{ns}/test/health_bar_{}.mcfunction",
+                bar.key
+            ),
+            lines(&b).into_bytes(),
+        );
+    }
+    // Several bars at once: world init leaves exactly the declared set, each by
+    // its own id — the several-bars-at-once behaviour proven where it is used.
+    if bars.len() >= 2 {
+        let mut b = packtest_header(&format!(
+            "{title}: world init stands exactly the {} declared health bars (spec-0073)",
+            bars.len()
+        ));
+        b.push(format!("function {ns}:setup"));
+        b.push("execute store result score #n_hbl dw.sys run bossbar list".to_string());
+        b.push(format!("assert score #n_hbl dw.sys matches {}", bars.len()));
+        for (k, bar) in bars.iter().enumerate() {
+            b.push(format!(
+                "execute store success score #e{k}_hbl dw.sys run bossbar get {} max",
+                bar.id(ns)
+            ));
+            b.push(format!("assert score #e{k}_hbl dw.sys matches 1"));
+        }
+        out.insert(
+            format!("packtest-datapack/data/{ns}/test/health_bar_several.mcfunction"),
+            lines(&b).into_bytes(),
+        );
+    }
+}
+
+/// The summed `max_health` a fight's bodies declare, when EVERY body declares
+/// it — a number the compiler can state without the server. `None` when any
+/// body leaves it to the game, and then the template asks the server instead.
+fn declared_max_health(
+    c: &delvewright_dsl::Campaign,
+    bar: &crate::compiler::healthbar::Bar<'_>,
+) -> Option<i64> {
+    use delvewright_dsl::FightKind;
+    let floor = |h: f64| h.floor() as i64;
+    match bar.fight.kind() {
+        FightKind::Wave => {
+            let w = c
+                .quests
+                .content
+                .waves
+                .iter()
+                .find(|w| w.id.as_str() == bar.fight.id())?;
+            w.mobs.iter().try_fold(0i64, |acc, m| {
+                let h = m.attributes.as_ref()?.max_health?;
+                Some(acc + floor(h) * i64::from(m.count))
+            })
+        }
+        FightKind::Actor => {
+            let a = c
+                .quests
+                .content
+                .actors
+                .iter()
+                .find(|a| a.id.as_str() == bar.fight.id())?;
+            Some(floor(a.attributes.as_ref()?.max_health?))
+        }
+    }
+}
+
 /// spec-0016 §1: the **two options really differ**.
 ///
 /// Right-clicking a bonfire offers exactly *rest and save* and *save only*, and
@@ -16533,6 +17625,163 @@ fn emit_bonfire_option_packtest(plan: &Plan, out: &mut BuildOutput) {
     b.push(format!("tag {sel} remove {ctag}"));
     out.insert(
         format!("packtest-datapack/data/{ns}/test/souls_bonfire_options.mcfunction"),
+        lines(&b).into_bytes(),
+    );
+}
+
+/// spec-0016 §1: **a rest mends what the player carries and takes back the
+/// flask's empties — and nothing else.**
+///
+/// Driven on the framework dummy (`@s`) through the real
+/// `bonfire_pick_rest_<i>`. Before the rest the dummy carries a damaged shield in
+/// the off-hand, a damaged chestplate in the armour slot, a damaged sword in the
+/// hotbar and a damaged bow in the last inventory slot (the four mends), an
+/// undamaged sword and a stack of bread (must be untouched), five glass bottles it
+/// "found" (must survive), a flask as the kit gives it (whose marked remainder is
+/// read back through the server's own component predicate) and two of the empties
+/// that remainder is.
+///
+/// **Why the dummy does not drink.** Drinking takes 32 ticks, so a drink is a
+/// multi-tick step in a batch that shares one server. Measured on the pinned
+/// toolserver: across 42 full-suite runs of this template with a real
+/// `dummy @s use item` (variants carrying diagnostics and the isolating
+/// perturbations tried: no cutscene sibling, the join teleport and the class
+/// dialog pre-empted), the potion was still undrunk in the hand at the read in
+/// 17 — cause not found — so a drink
+/// here would be an intermittent gate. That vanilla's consume hands back exactly
+/// the `use_remainder` stack is cited (the pinned `item_components` report gives
+/// `minecraft:potion` its bottle through that component) and was measured on the
+/// same server by a probe; see `docs/reference/compiler.md`, Stage 3 `flask`.
+///
+/// Unlike health (PackTest dummies are immune to `/damage`, see
+/// [`emit_bonfire_option_packtest`]), item durability is plain component state,
+/// so the repair is observable on a dummy.
+///
+/// Emits nothing without a bonfire and a flask (`DW0476` makes those the same).
+/// The empties half needs a flask whose item leaves a remainder; a flask that
+/// leaves none has no empties, so that half is not written.
+fn emit_bonfire_mend_packtest(plan: &Plan, out: &mut BuildOutput) {
+    let ns = &plan.namespace;
+    let title = artifact_title(plan.campaign);
+    let Some(bf) = plan.bonfires().next() else {
+        return;
+    };
+    let Some(&(ci, ki)) = plan.flasks().first() else {
+        return;
+    };
+    let i = bf.index;
+    let item = &plan.campaign.classes.content.classes[ci].kit[ki];
+    let ctag = class_tag(&plan.classes[ci].safe);
+    let pred = kit_item_predicate(item);
+    let comp = kit_item_components(item);
+    let remainder = flask_remainder(item);
+
+    let mut b = packtest_header(&format!(
+        "{title}: a rest mends every carried item in place and takes back only the \
+         flask's empties (spec-0016 §1)"
+    ));
+    b.push(format!("function {ns}:setup"));
+    b.push(format!("tag @s add {ctag}"));
+    b.push("clear @s".to_string());
+    // Gear to mend, one per kind of carried slot.
+    b.push("item replace entity @s weapon.offhand with minecraft:shield[damage=300]".to_string());
+    b.push(
+        "item replace entity @s armor.chest with minecraft:iron_chestplate[damage=100]".to_string(),
+    );
+    b.push("item replace entity @s container.1 with minecraft:iron_sword[damage=200]".to_string());
+    b.push("item replace entity @s container.35 with minecraft:bow[damage=50]".to_string());
+    // What the rest must not touch.
+    b.push("item replace entity @s container.2 with minecraft:iron_sword".to_string());
+    b.push("item replace entity @s container.3 with minecraft:bread 7".to_string());
+    b.push("item replace entity @s container.4 with minecraft:glass_bottle 5".to_string());
+    if let Some((id, count)) = remainder {
+        // The flask as the kit hands it out carries the marked remainder — read
+        // back through the server's own component predicate, so a mark the game
+        // parsed differently (or dropped) fails here…
+        b.push(format!(
+            "item replace entity @s container.5 with {}{comp}",
+            item.item
+        ));
+        b.push(format!(
+            "execute store result score #mark_bfmd dw.sys if items entity @s container.5 \
+             {}[use_remainder={}]",
+            item.item,
+            flask_remainder_snbt(id, count)
+        ));
+        b.push("assert score #mark_bfmd dw.sys matches 1".to_string());
+        // …and two of the empties that remainder is, as drinking leaves them.
+        b.push(format!(
+            "item replace entity @s container.6 with {} 2",
+            flask_empty_stack(id)
+        ));
+    }
+
+    b.push(format!("function {ns}:bonfire_pick_rest_{i}"));
+
+    // The four damaged items are whole again, in the slots they were in.
+    b.push("scoreboard players set #mend_bfmd dw.sys 0".to_string());
+    for (slot, it) in [
+        ("weapon.offhand", "minecraft:shield"),
+        ("armor.chest", "minecraft:iron_chestplate"),
+        ("container.1", "minecraft:iron_sword"),
+        ("container.35", "minecraft:bow"),
+    ] {
+        b.push(format!(
+            "execute if items entity @s {slot} {it}[damage=0] run scoreboard players add \
+             #mend_bfmd dw.sys 1"
+        ));
+    }
+    b.push("assert score #mend_bfmd dw.sys matches 4".to_string());
+    // Untouched: the whole sword, the stack, and nobody re-kitted the player
+    // (the kit's own sword would be a second one).
+    b.push("scoreboard players set #keep_bfmd dw.sys 0".to_string());
+    b.push(
+        "execute if items entity @s container.2 minecraft:iron_sword[damage=0] run \
+         scoreboard players add #keep_bfmd dw.sys 1"
+            .to_string(),
+    );
+    b.push(
+        "execute if items entity @s container.3 minecraft:bread run scoreboard players add \
+         #keep_bfmd dw.sys 1"
+            .to_string(),
+    );
+    b.push("assert score #keep_bfmd dw.sys matches 2".to_string());
+    b.push(
+        "execute store result score #bread_bfmd dw.sys run clear @s minecraft:bread 0".to_string(),
+    );
+    b.push("assert score #bread_bfmd dw.sys matches 7".to_string());
+    b.push(
+        "execute store result score #sword_bfmd dw.sys run clear @s minecraft:iron_sword 0"
+            .to_string(),
+    );
+    b.push("assert score #sword_bfmd dw.sys matches 2".to_string());
+    // The flask's empties are gone; the bottles found elsewhere are not.
+    if let Some((id, _)) = remainder {
+        b.push(format!(
+            "execute store result score #mine_bfmd dw.sys run clear @s {} 0",
+            flask_empty_stack(id)
+        ));
+        b.push("assert score #mine_bfmd dw.sys matches 0".to_string());
+    }
+    b.push(
+        "execute store result score #glass_bfmd dw.sys run clear @s minecraft:glass_bottle 0"
+            .to_string(),
+    );
+    b.push("assert score #glass_bfmd dw.sys matches 5".to_string());
+    // And the flask is back at its declared count.
+    b.push(format!(
+        "execute store result score #flask_bfmd dw.sys run clear @s {pred} 0"
+    ));
+    b.push(format!(
+        "assert score #flask_bfmd dw.sys matches {}",
+        item.count
+    ));
+
+    // Leave no residue for the shared batch (pin_dummy rule 4).
+    b.push("clear @s".to_string());
+    b.push(format!("tag @s remove {ctag}"));
+    out.insert(
+        format!("packtest-datapack/data/{ns}/test/souls_bonfire_mend.mcfunction"),
         lines(&b).into_bytes(),
     );
 }
@@ -16693,6 +17942,377 @@ fn emit_kill_reward_packtests(
             format!("packtest-datapack/data/{ns}/test/wave_kill_reward_{safe}.mcfunction"),
             lines(&b).into_bytes(),
         );
+    }
+}
+
+/// A kill pays (spec-0074 §6, acceptance criterion 3): one set of templates per
+/// fight that declares an `on_kill`, driven with the real generated functions
+/// and the template's own PackTest dummy.
+///
+/// **The credited blow is `damage … minecraft:player_attack by <dummy>`**, and
+/// that is a measurement, not an assumption: on the pinned 1.21.11 server, a
+/// fake player named as the `by` source of a lethal `damage` is granted
+/// `minecraft:player_killed_entity`, the kill advancement's reward runs as it on
+/// tick 0, and the same `damage` without `by` credits nobody. So every template
+/// reaches the bundle the way a player does — through vanilla's own credit and
+/// the real advancement — rather than by granting the advancement by hand.
+/// Every blow selects living bodies only (`nbt=!{Health:0.0f}`): a killed body
+/// stays in the world for its death animation, and a second blow at a corpse
+/// would be a blow at nothing.
+///
+/// Per fight `<f>` (`w_<wave>` or `a_<actor>`), ledger `#kf_<f>`:
+///
+/// * `kill_pays_<f>` — one credited blow pays once: the ledger is 1 and the
+///   bundle's first ungated `add-state` holder moved by its amount (the party's
+///   `#party`, or the dummy's own score for a `player` datum); then the bundle
+///   body driven directly (`DW0811`'s `kill-pays` claim) pays a second time;
+/// * `kill_pays_uncredited_<f>` — every body dies with nobody credited and the
+///   real `tick` runs: the ledger is still 0. (That the fight still clears is
+///   `verb_kill_uncredited`'s claim; asserting the countdown here would make every
+///   gate that can reach a spawn this template's business, `DW0807`.)
+/// * `kill_pays_removed_<f>` — every removal the compiler owns for this fight,
+///   run over standing bodies (a rest's re-seat through the real
+///   `bonfire_rest_<i>`, which runs `wave_reseat_<wave>` / `actor_restand_<actor>`;
+///   an actor's `unleash_<actor>` puppet swap; the `despawn-actor` lines of both
+///   styles): the ledger is still 0. Emitted where the fight has a removal to
+///   run;
+/// * `kill_pays_across_rest_<f>` — only where a rest brings the fight back:
+///   kill, run the real `bonfire_rest_<i>`, kill again, and the ledger tells the
+///   two `fires` values apart. A `respawns_on_rest` wave comes back whether it
+///   was beaten or not, so every body dies twice: `first-kill` pays N and
+///   `every-kill` 2N. A fight re-seated only while it still stands (an
+///   `elite`/`boss` wave, an unleashed actor) is left one body standing before
+///   the rest, or the rest brings back nothing: `first-kill` pays N and
+///   `every-kill` 2N − 1 — which for a one-body fight is 1 either way, the
+///   honest answer for a body that is never killed twice.
+fn emit_kill_pays_packtests(plan: &Plan, out: &mut BuildOutput, wave_placements: &WavePlacements) {
+    use crate::compiler::onkill::ComesBack;
+    use delvewright_dsl::Fight;
+    let ns = &plan.namespace;
+    let title = artifact_title(plan.campaign);
+    let mut fights: Vec<(Fight<'_>, &delvewright_dsl::OnKill)> =
+        wave_machinery_waves(plan, wave_placements)
+            .filter_map(|w| w.on_kill.as_ref().map(|ok| (Fight::Wave(w), ok)))
+            .collect();
+    fights.extend(
+        on_kill_actors(plan)
+            .into_iter()
+            .map(|(a, ok)| (Fight::Actor(a), ok)),
+    );
+    if fights.is_empty() {
+        return;
+    }
+    // Every fight a rest can re-seat, cleared on entry and exit by any template
+    // that runs a rest, so the rest re-seats this fight and nothing else
+    // (pin_dummy rule 4).
+    let mut board: Vec<String> = Vec::new();
+    for w in plan.reseat_waves() {
+        board.push(format!("kill @e[tag={}]", plan::wave_tag(w.id.as_str())));
+        board.push(format!(
+            "scoreboard players set {} dw.sys 0",
+            wave_seated_holder(w.id.as_str())
+        ));
+    }
+    for w in plan.undefeated_reseat_waves() {
+        board.push(format!("kill @e[tag={}]", plan::wave_tag(w.id.as_str())));
+    }
+    for a in plan.reseat_actors() {
+        board.push(format!(
+            "kill @e[tag=dw_actor_{}]",
+            plan::safe_local(a.id.as_str())
+        ));
+    }
+    let hostile: BTreeSet<&str> = delvewright_dsl::unleashed_actors(plan.campaign);
+    for (fight, ok) in fights {
+        let f = kill_ledger(fight).trim_start_matches("#kf_").to_string();
+        let ledger = kill_ledger(fight);
+        let bodies = fight_bodies(fight);
+        let (tag, seat): (String, Vec<String>) = match fight {
+            Fight::Wave(w) => {
+                let safe = plan::safe_local(w.id.as_str());
+                (
+                    plan::wave_tag(w.id.as_str()),
+                    vec![format!("function {ns}:spawn_{safe}")],
+                )
+            }
+            Fight::Actor(a) => {
+                let safe = plan::safe_local(a.id.as_str());
+                let mut seat = vec![format!("function {ns}:spawn_actor_{safe}")];
+                if hostile.contains(a.id.as_str()) {
+                    seat.push(format!("function {ns}:unleash_{safe}"));
+                }
+                (format!("dw_actor_{safe}"), seat)
+            }
+        };
+        let living = format!("@e[tag={tag},nbt=!{{Health:0.0f}}]");
+        let tpin = format!("dw_t_kp_{f}");
+        let (pin, sel) = pin_dummy(&tpin);
+        let credited = |limit: Option<i32>| {
+            let sel_bodies = match limit {
+                Some(n) => format!("@e[tag={tag},nbt=!{{Health:0.0f}},limit={n}]"),
+                None => living.clone(),
+            };
+            format!("execute as {sel_bodies} run damage @s 1000 minecraft:player_attack by {sel}")
+        };
+        // A wave's countdown is batch-global: handed back at the value a fresh
+        // spawn leaves (pin_dummy rule 4).
+        let restore: Vec<String> = match fight {
+            Fight::Wave(w) => vec![format!(
+                "scoreboard players set {} {} {}",
+                plan::wave_counter(w.id.as_str()),
+                plan::WAVE_OBJECTIVE,
+                plan::wave_total(w)
+            )],
+            Fight::Actor(_) => Vec::new(),
+        };
+        let write = |name: &str, b: Vec<String>, out: &mut BuildOutput| {
+            out.insert(
+                format!("packtest-datapack/data/{ns}/test/{name}.mcfunction"),
+                lines(&b).into_bytes(),
+            );
+        };
+
+        // --- kill_pays_<f>: one credited blow pays once ---
+        // The bundle's first ungated `add-state`, asserted beside the ledger.
+        let paid = ok.effects.iter().find_map(|e| match &e.verb {
+            Verb::AddState { state, amount, .. } if e.when.is_none() => {
+                let holder = match state_holder(plan, state).as_str() {
+                    "@s" => sel.clone(),
+                    h => h.to_string(),
+                };
+                Some((holder, plan::state_score(state.as_str()), *amount))
+            }
+            _ => None,
+        });
+        let mut b = packtest_header(&format!(
+            "{title}: a credited kill of {} `{}` pays its `on_kill` once (spec-0074)",
+            fight.word(),
+            fight.id()
+        ));
+        b.push(format!("function {ns}:setup"));
+        b.push(pin.clone());
+        b.push(format!("kill @e[tag={tag}]"));
+        b.push(format!("scoreboard players set {ledger} dw.sys 0"));
+        if let Some((holder, obj, _)) = &paid {
+            b.push(format!("scoreboard players set {holder} {obj} 0"));
+        }
+        b.extend(seat.iter().cloned());
+        b.push(credited(Some(1)));
+        b.push(format!("assert score {ledger} dw.sys matches 1"));
+        if let Some((holder, obj, amount)) = &paid {
+            b.push(format!("assert score {holder} {obj} matches {amount}"));
+        }
+        // The body driven directly — the per-object drive `DW0811` judges, and
+        // the half a credited blow cannot stand in for: it proves THIS fight's
+        // own bundle function increments THIS fight's own ledger.
+        b.push(format!(
+            "execute as {sel} run function {ns}:{}",
+            on_kill_function(fight)
+        ));
+        b.push(format!("assert score {ledger} dw.sys matches 2"));
+        b.push(format!("kill @e[tag={tag}]"));
+        b.push(format!("scoreboard players set {ledger} dw.sys 0"));
+        if let Some((holder, obj, _)) = &paid {
+            b.push(format!("scoreboard players set {holder} {obj} 0"));
+        }
+        b.extend(restore.iter().cloned());
+        b.push(format!("tag {sel} remove {tpin}"));
+        write(&format!("kill_pays_{f}"), b, out);
+
+        // --- kill_pays_uncredited_<f>: a death nobody is credited with ---
+        let mut b = packtest_header(&format!(
+            "{title}: {} `{}` dying with no player credited pays nothing, and the fight \
+             still clears (spec-0074 §3)",
+            fight.word(),
+            fight.id()
+        ));
+        b.push(format!("function {ns}:setup"));
+        b.push(pin.clone());
+        b.push(format!("kill @e[tag={tag}]"));
+        b.push(format!("scoreboard players set {ledger} dw.sys 0"));
+        b.extend(seat.iter().cloned());
+        b.push(format!(
+            "execute as {living} run damage @s 1000 minecraft:generic"
+        ));
+        b.push(format!("function {ns}:tick"));
+        // The ledger only. The countdown is deliberately NOT asserted after the
+        // real `tick`: `spawn_<wave>` writes it too, so asserting it would make
+        // every `#party` gate that can reach a spawn this template's business
+        // (`DW0807`) — the reason `verb_kill_uncredited` asserts its objective
+        // instead, which is where "the fight still clears" is proven.
+        b.push(format!("assert score {ledger} dw.sys matches 0"));
+        b.push(format!("kill @e[tag={tag}]"));
+        b.extend(restore.iter().cloned());
+        b.push(format!("tag {sel} remove {tpin}"));
+        write(&format!("kill_pays_uncredited_{f}"), b, out);
+
+        // --- kill_pays_removed_<f>: no compiler removal pays ---
+        // A rest's re-seat is reached through the real `bonfire_rest_<i>` — the
+        // one path that runs it in play — rather than by calling
+        // `wave_reseat_<wave>` / `actor_restand_<actor>` directly: a direct call
+        // would drive this fight's re-seat body and leave its un-bundled
+        // siblings undriven, which is `DW0810`'s finding against the suite.
+        let rest = plan.bonfires().next().map(|bf| bf.index);
+        let reseated = match fight {
+            Fight::Wave(w) => {
+                w.respawns_on_rest || plan.undefeated_reseat_waves().iter().any(|u| u.id == w.id)
+            }
+            Fight::Actor(a) => plan.reseat_actors().iter().any(|x| x.id == a.id),
+        };
+        let mut removals: Vec<Vec<String>> = Vec::new();
+        if let Some(i) = rest.filter(|_| reseated) {
+            removals.push(vec![format!("function {ns}:bonfire_rest_{i}")]);
+        }
+        if let Fight::Actor(a) = fight {
+            for style in [
+                delvewright_dsl::DespawnStyle::Kill,
+                delvewright_dsl::DespawnStyle::Vanish,
+            ] {
+                let mut lines_ = Vec::new();
+                emit_despawn_actor(
+                    ns,
+                    a.id.as_str(),
+                    style,
+                    actor_declares_drops(a),
+                    &mut lines_,
+                );
+                removals.push(lines_);
+            }
+        }
+        if !removals.is_empty() {
+            let mut b = packtest_header(&format!(
+                "{title}: no removal the compiler performs on {} `{}` pays its `on_kill` \
+                 (spec-0074 §3)",
+                fight.word(),
+                fight.id()
+            ));
+            b.push(format!("function {ns}:setup"));
+            b.push(pin.clone());
+            b.extend(board.iter().cloned());
+            b.push(format!("kill @e[tag={tag}]"));
+            b.push(format!("scoreboard players set {ledger} dw.sys 0"));
+            for removal in &removals {
+                // Every removal runs over bodies that stand: seated afresh first.
+                b.push(format!("kill @e[tag={tag}]"));
+                b.extend(seat.iter().cloned());
+                b.push(format!(
+                    "execute store result score #kpr_{f} dw.sys if entity {living}"
+                ));
+                b.push(format!("assert score #kpr_{f} dw.sys matches 1.."));
+                // Brand the standing bodies, so the template can see the removal
+                // really removed THEM — a removal that did nothing would also
+                // pay nothing.
+                b.push(format!("tag {living} add dw_kpr_{f}"));
+                // Onto the dummy, so an unseen removal parks them in its column.
+                b.push(format!("execute at {sel} run tp {living} ~ ~ ~"));
+                b.extend(removal.iter().cloned());
+                // An unseen removal ([`Exit::Unseen`]) only moves the body under
+                // the world and takes its tags, the brand with them; it dies when
+                // the sweep runs, a few ticks on. The bodies are counted waiting
+                // in the dummy's column, then killed there in the same tick
+                // ([`unseen_sweep_under`]), so the ledger is read after the
+                // removal's death and not before it — a removal whose death were
+                // credited would red this template.
+                let sweep = format!("schedule function {ns}:{UNSEEN_SWEEP_FN} ");
+                if removal
+                    .iter()
+                    .any(|l| l.contains(&sweep) || l.contains(":bonfire_rest_"))
+                {
+                    let waiting = format!("@e[tag={UNSEEN_TAG},distance=..1,nbt=!{{Health:0.0f}}]");
+                    let low = format!("execute at {sel} positioned ~ {UNSEEN_Y} ~");
+                    b.push(format!(
+                        "{low} store result score #kpu_{f} dw.sys if entity {waiting}"
+                    ));
+                    b.push(format!("assert score #kpu_{f} dw.sys matches 1.."));
+                    b.push(unseen_sweep_under(&sel));
+                    b.push(format!(
+                        "{low} store result score #kpu_{f} dw.sys if entity {waiting}"
+                    ));
+                    b.push(format!("assert score #kpu_{f} dw.sys matches 0"));
+                }
+                b.push(format!(
+                    "execute store result score #kpr_{f} dw.sys if entity \
+                     @e[tag=dw_kpr_{f},nbt=!{{Health:0.0f}}]"
+                ));
+                b.push(format!("assert score #kpr_{f} dw.sys matches 0"));
+                b.push(format!("assert score {ledger} dw.sys matches 0"));
+            }
+            b.push(format!("kill @e[tag={tag}]"));
+            b.extend(board.iter().cloned());
+            b.extend(restore.iter().cloned());
+            b.push(format!("tag {sel} remove {tpin}"));
+            write(&format!("kill_pays_removed_{f}"), b, out);
+        }
+
+        // --- kill_pays_across_rest_<f>: the two `fires` values, told apart ---
+        let back = plan.fight_comes_back(fight);
+        let Some(bf) = plan.bonfires().next() else {
+            continue;
+        };
+        let every = ok.fires == Some(delvewright_dsl::KillFires::EveryKill);
+        let (first_round, expect): (Option<i32>, i32) = match back {
+            Some(ComesBack::RespawnsOnRest) => (None, if every { 2 * bodies } else { bodies }),
+            Some(ComesBack::Undefeated(_)) | Some(ComesBack::Unleashed) => (
+                Some(bodies - 1),
+                if every { 2 * bodies - 1 } else { bodies },
+            ),
+            Some(ComesBack::Repeats { .. }) | None => continue,
+        };
+        let mut b = packtest_header(&format!(
+            "{title}: {} `{}` comes back after a rest and pays `{}` (spec-0074 §4)",
+            fight.word(),
+            fight.id(),
+            ok.fires
+                .map(delvewright_dsl::KillFires::token)
+                .unwrap_or("first-kill")
+        ));
+        b.push(format!("function {ns}:setup"));
+        b.push(pin.clone());
+        b.extend(board.iter().cloned());
+        b.push(format!("kill @e[tag={tag}]"));
+        b.push(format!("scoreboard players set {ledger} dw.sys 0"));
+        b.extend(seat.iter().cloned());
+        match first_round {
+            None => b.push(credited(None)),
+            Some(0) => {}
+            Some(n) => b.push(credited(Some(n))),
+        }
+        b.push(format!("function {ns}:bonfire_rest_{}", bf.index));
+        b.push(format!(
+            "execute store result score #kpa_{f} dw.sys if entity {living}"
+        ));
+        b.push(format!("assert score #kpa_{f} dw.sys matches {bodies}"));
+        b.push(credited(None));
+        b.push(format!("assert score {ledger} dw.sys matches {expect}"));
+        b.push(format!("kill @e[tag={tag}]"));
+        b.push(format!("scoreboard players set {ledger} dw.sys 0"));
+        b.extend(board.iter().cloned());
+        b.extend(restore.iter().cloned());
+        b.push(format!("tag {sel} remove {tpin}"));
+        write(&format!("kill_pays_across_rest_{f}"), b, out);
+    }
+}
+
+/// `DW0811`'s claim over the `on_kill` bundles (spec-0074): every fight that
+/// declares one has its own bundle body driven by its own `kill_pays_<f>`.
+fn kill_pays_watch_claim(plan: &Plan) -> crate::compiler::watch::Claim {
+    let content = &plan.campaign.quests.content;
+    crate::compiler::watch::Claim {
+        mechanic: "kill-pays",
+        families: vec!["on_kill_w_".to_string(), "on_kill_a_".to_string()],
+        declared: content
+            .waves
+            .iter()
+            .filter(|w| w.on_kill.is_some())
+            .map(|w| plan::safe_local(w.id.as_str()))
+            .chain(
+                content
+                    .actors
+                    .iter()
+                    .filter(|a| a.on_kill.is_some())
+                    .map(|a| plan::safe_local(a.id.as_str())),
+            )
+            .collect(),
     }
 }
 
@@ -18435,6 +20055,87 @@ fn emit_economy_packtests(plan: &Plan, out: &mut BuildOutput) {
         );
     }
 
+    // --- 1b. an offer's enchanted stack arrives enchanted -----------------
+    // Every offer that hands over an enchanted stack is bought once by a pinned
+    // dummy with an emptied inventory, and the dummy must then hold the item
+    // carrying exactly those enchantments in the component the item writes them
+    // to (`enchantment_component`: an enchanted book stores them). The same
+    // probe is run before the purchase and must read 0 there, so a green cannot
+    // come from a stack the dummy already had.
+    for (i, sh, _) in shops(plan) {
+        for (j, off) in sh.offers.iter().enumerate() {
+            let enchanted: Vec<(&QuestEffect, &str, &std::collections::BTreeMap<String, u32>)> =
+                off.effects
+                    .iter()
+                    .filter_map(|e| match &e.verb {
+                        Verb::GiveItem {
+                            item, enchantments, ..
+                        } if !enchantments.is_empty() => Some((e, item.as_str(), enchantments)),
+                        _ => None,
+                    })
+                    .collect();
+            if enchanted.is_empty() {
+                continue;
+            }
+            let (pin, me) = pin_dummy(&format!("dw_t_ench_{i}_{j}"));
+            let mut t = packtest_header(&format!(
+                "{title}: shop `{}` offer {j} hands over its stacks with their enchantments",
+                sh.id
+            ));
+            t.push(format!("function {ns}:setup"));
+            t.push(pin);
+            t.push(format!("clear {me}"));
+            // The offer's gate and each stack's own `when`, driven open as the
+            // buyer, so a player-scoped datum is written on the dummy.
+            for line in packtest_gate_drive(plan, off.gate(), true) {
+                t.push(format!("execute as {me} run {line}"));
+            }
+            for (e, _, _) in &enchanted {
+                for line in packtest_gate_drive(plan, e.gate(), true) {
+                    t.push(format!("execute as {me} run {line}"));
+                }
+            }
+            let probes: Vec<(String, String)> = enchanted
+                .iter()
+                .enumerate()
+                .map(|(k, (_, item, ench))| {
+                    let body = ench
+                        .iter()
+                        .map(|(id, lvl)| format!("\"{id}\":{lvl}"))
+                        .collect::<Vec<_>>()
+                        .join(",");
+                    let pred = format!(
+                        "{item}[{}={{{body}}}]",
+                        delvewright_dsl::enchantment_component(item)
+                    );
+                    (format!("#ench_{i}_{j}_{k}"), pred)
+                })
+                .collect();
+            for (holder, pred) in &probes {
+                t.push(format!("scoreboard players set {holder} dw.sys 0"));
+                t.push(format!(
+                    "execute as {me} if items entity @s container.* {pred} run scoreboard \
+                     players set {holder} dw.sys 1"
+                ));
+                t.push(format!("assert score {holder} dw.sys matches 0"));
+            }
+            t.push(format!(
+                "execute as {me} run function {ns}:shop_pick_{i}_{j}"
+            ));
+            for (holder, pred) in &probes {
+                t.push(format!(
+                    "execute as {me} if items entity @s container.* {pred} run scoreboard \
+                     players set {holder} dw.sys 1"
+                ));
+                t.push(format!("assert score {holder} dw.sys matches 1"));
+            }
+            out.insert(
+                format!("packtest-datapack/data/{ns}/test/shop_enchanted_stack_{i}_{j}.mcfunction"),
+                lines(&t).into_bytes(),
+            );
+        }
+    }
+
     // --- 2. the stake's drop → collect round trip -------------------------
     for (st, safe) in stakes(plan) {
         if st.max_live() == 0 {
@@ -19191,30 +20892,28 @@ fn emit_v04_packtests(
         }
     }
 
-    // despawn-npc removes body + interaction hitbox (both carry the id tag).
+    // despawn-npc removes body + interaction hitbox (both carry the id tag), and
+    // the body leaves unseen — one template per NPC a `despawn-npc` names, since
+    // each `despawn_npc_<id>` is that NPC's own function (`DW0810`).
     //
-    // Every root, every depth. This picked the first `despawn-npc` out of a
-    // hand-rolled three-of-five chain that was also shallow, so a campaign whose
-    // only `despawn-npc` sits in a `sequence` step, a trap payload or a dialogue
-    // `on_respawn` bundle generated no despawn PackTest at all — the verb shipped
-    // with nothing asserting it.
-    let first_despawn_npc = {
-        let mut found: Option<&delvewright_dsl::NpcId> = None;
-        crate::compiler::plan::for_each_effect_root(c, &mut |_site, effs| {
-            for e in effs {
-                e.visit_deep(&mut |x| {
-                    if found.is_none() {
-                        found = x.despawn_npc();
-                    }
-                });
-            }
-        });
-        found
-    };
-    if let Some(npc) = first_despawn_npc {
-        let safe = plan::safe_local(npc.as_str());
+    // Every root, every depth: a campaign whose only `despawn-npc` sits in a
+    // `sequence` step, a trap payload or a dialogue `on_respawn` bundle still
+    // gets its template.
+    let despawn_targets: BTreeSet<String> = all_campaign_effects(c)
+        .into_iter()
+        .filter_map(|e| e.despawn_npc())
+        .map(|npc| npc.as_str().to_string())
+        .collect();
+    for (i, npc) in despawn_targets.iter().enumerate() {
+        let watched_uuid = [
+            PT_WATCHED_UUID[0],
+            PT_WATCHED_UUID[1],
+            PT_WATCHED_UUID[2],
+            PT_WATCHED_UUID[3] + i as u32,
+        ];
+        let safe = plan::safe_local(npc);
         let mut b = packtest_header(&format!(
-            "{}: despawn-npc removes body + hitbox",
+            "{}: despawn-npc `{npc}` removes body + hitbox, unseen",
             artifact_title(c)
         ));
         b.push(format!("function {ns}:setup"));
@@ -19238,21 +20937,42 @@ fn emit_v04_packtests(
         if plan
             .npcs
             .iter()
-            .any(|n| n.npc_id == npc.as_str() && npc_is_deferred(c, &n.npc_id))
+            .any(|n| n.npc_id == *npc && npc_is_deferred(c, &n.npc_id))
         {
-            b.push(format!("function {ns}:{}", spawn_npc_fn(npc.as_str())));
+            b.push(format!("function {ns}:{}", spawn_npc_fn(npc)));
+        }
+        // The body the test watches: the NPC's own body summon (a mannequin or
+        // a villager — never the hitbox), re-issued with a fixed UUID. A selector never matches a dying body, so the UUID is how
+        // the test reads the body through its death.
+        let watched = plan
+            .npcs
+            .iter()
+            .find(|n| n.npc_id == *npc)
+            .and_then(|n| {
+                npc_summon_commands(c, plan, n).into_iter().find(|cmd| {
+                    cmd.starts_with("summon ") && !cmd.starts_with("summon minecraft:interaction ")
+                })
+            })
+            .and_then(|cmd| with_uuid(&cmd, watched_uuid));
+        if let Some(summon) = &watched {
+            b.push(format!("kill @e[tag=dw_npc,tag=dw_npc_{safe}]"));
+            b.push(summon.clone());
         }
         // body + interaction hitbox both carry `dw_npc_<npc>` → two entities.
         b.push(format!(
             "execute store result score #before_ndsp dw.sys if entity @e[tag=dw_npc_{safe}]"
         ));
         b.push("assert score #before_ndsp dw.sys matches 2".to_string());
-        b.push(format!("kill @e[tag=dw_npc_{safe}]"));
+        // The verb's own function — the one every `despawn-npc` site calls.
+        b.push(format!("function {ns}:{}", despawn_npc_fn(npc)));
         b.push(format!(
             "execute store result score #after_ndsp dw.sys if entity @e[tag=dw_npc_{safe}]"
         ));
         b.push("assert score #after_ndsp dw.sys matches 0".to_string());
-        write("v04_despawn", b);
+        if watched.is_some() {
+            b.extend(unseen_exit_samples(&uuid_hyphenated(watched_uuid), &safe));
+        }
+        write(&format!("v04_despawn_{safe}"), b);
     }
 
     // strike trigger on an NPC's anchor (round-4 island QA): the NPC's own
@@ -19945,6 +21665,70 @@ fn emit_shared_hitbox_packtest(plan: &Plan, out: &mut BuildOutput) {
 }
 
 /// The header lines shared by every generated PackTest (`# @dummy` + timeout).
+/// The UUID a generated PackTest gives a body it watches through its death.
+const PT_WATCHED_UUID: [u32; 4] = [0x4457_0000, 0x756e_7365, 0x656e_0000, 0x0000_0001];
+
+/// A UUID as the int array entity NBT stores.
+fn uuid_nbt(u: [u32; 4]) -> String {
+    format!(
+        "[I;{},{},{},{}]",
+        u[0] as i32, u[1] as i32, u[2] as i32, u[3] as i32
+    )
+}
+
+/// A UUID as the hyphenated form a command's entity argument takes.
+fn uuid_hyphenated(u: [u32; 4]) -> String {
+    format!(
+        "{:08x}-{:04x}-{:04x}-{:04x}-{:04x}{:08x}",
+        u[0],
+        u[1] >> 16,
+        u[1] & 0xffff,
+        u[2] >> 16,
+        u[2] & 0xffff,
+        u[3]
+    )
+}
+
+/// `summon <type> <x> <y> <z> {…}` with `UUID:<u>` written first into its NBT;
+/// `None` for a summon that carries no NBT compound.
+fn with_uuid(summon: &str, u: [u32; 4]) -> Option<String> {
+    let at = summon.find('{')?;
+    Some(format!(
+        "{}{{UUID:{},{}",
+        &summon[..at],
+        uuid_nbt(u),
+        &summon[at + 1..]
+    ))
+}
+
+/// The PackTest lines that watch a body leave through [`removal_lines`]'
+/// [`Exit::Unseen`], read by UUID (a selector never matches a dying body). A
+/// death is irreversible, so three readings cover the whole exit: the body is
+/// not dying on the removal's own tick, nor [`UNSEEN_DELAY_TICKS`]` - 1` ticks
+/// later (the client has been told where it went before any death is sent), and
+/// on the first tick it is dying — awaited — it is at [`UNSEEN_Y`], under the
+/// world. A removal that kills the body where it stands reds the first; one that
+/// kills it at once under the world reds the second; a body that never dies
+/// times the test out. `key` names the template's own score holders: templates
+/// in one batch share `dw.sys`.
+fn unseen_exit_samples(uuid: &str, key: &str) -> Vec<String> {
+    let floor = UNSEEN_Y + 1;
+    let y = format!("#usn_y_{key}");
+    let now = format!("#usn_now_{key}");
+    let dying =
+        format!("execute store success score {now} dw.sys if data entity {uuid} {{Health:0.0f}}");
+    vec![
+        dying.clone(),
+        format!("assert score {now} dw.sys matches 0"),
+        format!("await delay {}t", UNSEEN_DELAY_TICKS - 1),
+        dying,
+        format!("assert score {now} dw.sys matches 0"),
+        format!("await data entity {uuid} {{Health:0.0f}}"),
+        format!("execute store result score {y} dw.sys run data get entity {uuid} Pos[1]"),
+        format!("assert score {y} dw.sys matches ..{floor}"),
+    ]
+}
+
 fn packtest_header(title: &str) -> Vec<String> {
     vec![
         format!("#> {title}"),
@@ -20752,7 +22536,7 @@ fn emit_verb_packtests(plan: &Plan, out: &mut BuildOutput) {
         let party = plan::PARTY;
         let stack = format!(
             "{item}{} {count}",
-            item_component_tail(item_name.as_deref())
+            item_component_tail(item, item_name.as_deref())
         );
         let mut b = packtest_header(&format!(
             "{}: collect `{id}` fills the adopted container and completes on the named stack",
@@ -20855,6 +22639,30 @@ pub const DELVE_VIEW_DISTANCE: u32 = 10;
 /// backdrop nobody can see.
 pub const DELVE_SIMULATION_DISTANCE: u32 = 10;
 
+/// The ground biome's datapack definition, when the delve ships its own
+/// ([`crate::compiler::horizon::ground_biome`]), and its vanilla tag
+/// memberships ([`crate::compiler::horizon::VOID_BIOME_TAGS`]).
+fn emit_ground_biome(plan: &Plan, out: &mut BuildOutput) {
+    let ground = crate::compiler::horizon::ground_biome(plan.campaign, &plan.namespace);
+    let Some(definition) = &ground.definition else {
+        return;
+    };
+    let ns = &plan.namespace;
+    let path = crate::compiler::horizon::VOID_BIOME_PATH;
+    put_json(
+        out,
+        &format!("datapack/data/{ns}/worldgen/biome/{path}.json"),
+        definition,
+    );
+    for tag in crate::compiler::horizon::VOID_BIOME_TAGS {
+        put_json(
+            out,
+            &format!("datapack/data/minecraft/tags/worldgen/biome/{tag}.json"),
+            &json!({ "values": [ground.id] }),
+        );
+    }
+}
+
 fn emit_server(plan: &Plan, out: &mut BuildOutput) {
     // Difficulty. Declared (`world.difficulty`, v0.6) wins; absent falls back to
     // the historical derivation, which is what keeps every pre-0.6 campaign
@@ -20876,8 +22684,8 @@ fn emit_server(plan: &Plan, out: &mut BuildOutput) {
                 "easy"
             }
         });
-    // Horizon (DSL v0.6, spec-0013). `void` (default/absent) keeps the empty-layer
-    // superflat + `the_void` biome, byte-identical to v0.5. `ocean` swaps in a
+    // Horizon (DSL v0.6, spec-0013). `void` (default/absent) is the empty-layer
+    // superflat over the delve's own void biome. `ocean` swaps in a
     // pinned bedrock/stone/water superflat: from the -64 build floor, 1+118+8
     // layers top the water at y=62 (= sea level); areas are placed on that datum
     // (`plan::OCEAN_BASE_Y` = 60) so island pieces read as land ringed by the sea. No structures (generate-structures=false) or mobs (gamerule
@@ -20885,10 +22693,20 @@ fn emit_server(plan: &Plan, out: &mut BuildOutput) {
     // so both horizons stay deterministic (ADR-0006).
     let ocean = delvewright_dsl::horizon_base(&plan.campaign.world.content.horizon)
         == delvewright_dsl::HorizonBase::Ocean;
+    //
+    // The biome is [`crate::compiler::horizon::ground_biome`]'s: the play area
+    // stands in it, so a declared weather falls there. A void horizon lays the
+    // delve's own `<ns>:void` biome, which the datapack defines (emitted in
+    // [`emit_ground_biome`]) and which exists when the world is created, because
+    // every boot path installs the datapack before first boot.
+    let ground = crate::compiler::horizon::ground_biome(plan.campaign, &plan.namespace);
     let generator_settings = if ocean {
-        "{\"biome\":\"minecraft:ocean\",\"layers\":[{\"block\":\"minecraft:bedrock\",\"height\":1},{\"block\":\"minecraft:stone\",\"height\":118},{\"block\":\"minecraft:water\",\"height\":8}]}"
+        format!(
+            "{{\"biome\":\"{}\",\"layers\":[{{\"block\":\"minecraft:bedrock\",\"height\":1}},{{\"block\":\"minecraft:stone\",\"height\":118}},{{\"block\":\"minecraft:water\",\"height\":8}}]}}",
+            ground.id
+        )
     } else {
-        "{\"biome\":\"minecraft:the_void\",\"layers\":[]}"
+        format!("{{\"biome\":\"{}\",\"layers\":[]}}", ground.id)
     };
     // server.properties (keys sorted for determinism).
     //
@@ -20953,7 +22771,8 @@ The server jar is NOT shipped (ADR-0010); it is fetched by version at run time.\
   (sea level y=62, `minecraft:ocean` biome) ⇒ an island backdrop (spec-0013).\n"
     } else {
         "- `level-type=minecraft:flat` + `generator-settings` with an empty layer list and\n\
-  the `minecraft:the_void` biome ⇒ a void world.\n"
+  the datapack's own void biome (`minecraft:the_void`, except that it rains) ⇒ a\n\
+  void world in which a declared weather falls on the play area.\n"
     };
     out.insert(
         "server/README.md".to_string(),
@@ -21279,6 +23098,27 @@ fn critical_path_json(
                     "action": "interact", "objective": objective_id, "anchor": anchor_id,
                     "pos": pos, "command": command, "requires_item": requires_item
                 }),
+                // A path act that proves no objective: it passes on the trigger's
+                // own fired marker (`[dw:complete <campaign> trigger/<id>]`,
+                // broadcast from its bundle), never on the click landing. `anchor`
+                // / `npc` / `range` are present exactly when the kind has one.
+                Step::Trigger { trigger_id, on, anchor_id, npc_id, pos, range } => {
+                    let mut v = json!({
+                        "action": "trigger", "trigger": trigger_id, "on": on, "pos": pos
+                    });
+                    if let Some(obj) = v.as_object_mut() {
+                        if let Some(a) = anchor_id {
+                            obj.insert("anchor".to_string(), json!(a));
+                        }
+                        if let Some(n) = npc_id {
+                            obj.insert("npc".to_string(), json!(n));
+                        }
+                        if let Some(r) = range {
+                            obj.insert("range".to_string(), json!(r));
+                        }
+                    }
+                    v
+                }
                 Step::AssertComplete { objective, value } => {
                     let mut v = json!({
                         "action": "assert-complete", "scoreboard": { "objective": objective, "value": value }
@@ -21535,6 +23375,7 @@ mod tests {
 
     fn mk_actor(id: &str, entity: &str, vulnerable: bool) -> delvewright_dsl::Actor {
         delvewright_dsl::Actor {
+            on_kill: None,
             id: delvewright_dsl::ActorId(id.to_string()),
             entity: entity.to_string(),
             name: Some("Boss".to_string()),
@@ -21548,6 +23389,7 @@ mod tests {
             attributes: None,
             tier: None,
             traversal: None,
+            health_bar: None,
         }
     }
 
@@ -21684,6 +23526,7 @@ mod tests {
     fn despawn_strips_declared_drops_first() {
         let mut cmds = Vec::new();
         emit_despawn_actor(
+            "dw",
             "actor/giant",
             delvewright_dsl::DespawnStyle::Kill,
             true,
@@ -21704,6 +23547,7 @@ mod tests {
     fn despawn_styles_differ() {
         let mut kill = Vec::new();
         emit_despawn_actor(
+            "dw",
             "actor/giant",
             delvewright_dsl::DespawnStyle::Kill,
             false,
@@ -21712,19 +23556,40 @@ mod tests {
         assert_eq!(kill, vec!["kill @e[tag=dw_actor_giant]".to_string()]);
         let mut vanish = Vec::new();
         emit_despawn_actor(
+            "dw",
             "actor/giant",
             delvewright_dsl::DespawnStyle::Vanish,
             false,
             &mut vanish,
         );
-        // The drop is relative to each ACTOR, not to the command source — see
-        // `emit_despawn_actor` for the live-observed failure the bare `tp` caused.
+        // `vanish` leaves unseen: the body is moved down its OWN column (the
+        // `at @s` — a server-source `tp` resolves `~ ~` at world spawn), frozen
+        // under the world with every tag replaced, and killed there by the sweep
+        // a full delay later. Nothing in it kills the body where it stood.
         assert_eq!(
             vanish,
             vec![
+                "execute if entity @e[tag=dw_actor_giant] run schedule function dw:unseen_sweep 5t replace".to_string(),
+                "execute as @e[tag=dw_actor_giant] on passengers run ride @s dismount".to_string(),
                 "execute as @e[tag=dw_actor_giant] at @s run tp @s ~ -128 ~".to_string(),
-                "kill @e[tag=dw_actor_giant]".to_string(),
+                "execute as @e[tag=dw_actor_giant] run data merge entity @s {Tags:[\"dw_unseen\"],NoGravity:1b,NoAI:1b,Silent:1b}".to_string(),
             ]
+        );
+        assert!(!vanish.iter().any(|l| l.starts_with("kill ")), "{vanish:?}");
+    }
+
+    /// The watched body's UUID reaches the command in the form vanilla prints it
+    /// and the NBT in the form vanilla stores it — the same 128 bits.
+    #[test]
+    fn watched_uuid_forms_agree() {
+        let u = PT_WATCHED_UUID;
+        assert_eq!(uuid_hyphenated(u), "44570000-756e-7365-656e-000000000001");
+        assert_eq!(uuid_nbt(u), "[I;1146552320,1970172773,1701707776,1]");
+        assert_eq!(
+            with_uuid("summon minecraft:villager 1 2 3 {NoAI:1b}", u).as_deref(),
+            Some(
+                "summon minecraft:villager 1 2 3 {UUID:[I;1146552320,1970172773,1701707776,1],NoAI:1b}"
+            )
         );
     }
 
@@ -21760,7 +23625,7 @@ mod tests {
             delvewright_dsl::DespawnStyle::Vanish,
         ] {
             let mut cmds = Vec::new();
-            emit_despawn_actor("actor/giant", style, false, &mut cmds);
+            emit_despawn_actor("dw", "actor/giant", style, false, &mut cmds);
             assert!(!cmds.is_empty());
             for c in &cmds {
                 assert!(
@@ -21891,6 +23756,46 @@ mod loot_emit_tests {
         );
     }
 
+    /// An enchanted book STORES its enchantments, on every surface that writes
+    /// a stack: a `loot` fill and an equipped piece ask the same rule a
+    /// `give-item` does (`delvewright_dsl::enchantment_component`). Before it,
+    /// a book in a chest shipped `enchantments=` — a book that glints and that
+    /// an anvil ignores.
+    #[test]
+    fn an_enchanted_book_stores_its_enchantments_on_every_surface() {
+        let out = loot_setup(&plan_of(vec![item(
+            "minecraft:enchanted_book",
+            1,
+            None,
+            &[("minecraft:mending", 1)],
+        )]));
+        assert!(
+            out[0].contains(
+                r#"minecraft:enchanted_book[stored_enchantments={"minecraft:mending":1}] 1"#
+            ),
+            "{}",
+            out[0]
+        );
+        let mut ench = std::collections::BTreeMap::new();
+        ench.insert("minecraft:mending".to_string(), 1);
+        assert_eq!(
+            enchantment_component_tail("minecraft:enchanted_book", &ench),
+            r#",components:{"minecraft:stored_enchantments":{"minecraft:mending":1}}"#
+        );
+        assert_eq!(
+            enchantment_component_tail("minecraft:iron_sword", &ench),
+            r#",components:{"minecraft:enchantments":{"minecraft:mending":1}}"#
+        );
+        let tree = crate::compiler::commands::CommandTree::v1_21_11();
+        for line in &out {
+            assert!(
+                tree.validate_line(line).is_ok(),
+                "emitted command must validate: {line}\n{:?}",
+                tree.validate_line(line)
+            );
+        }
+    }
+
     /// The emitted fill must be a command 1.21.11 actually accepts — the item
     /// component brackets are new ground here, and a syntax error would only
     /// surface as a silently-skipped line on a live server.
@@ -21925,6 +23830,7 @@ mod loot_emit_tests {
 
     fn actor_with(eq: Option<delvewright_dsl::MobEquipment>) -> delvewright_dsl::Actor {
         delvewright_dsl::Actor {
+            on_kill: None,
             id: delvewright_dsl::ActorId("actor/elite".to_string()),
             entity: "minecraft:wither_skeleton".to_string(),
             name: None,
@@ -21938,6 +23844,7 @@ mod loot_emit_tests {
             tier: None,
             drops: Vec::new(),
             traversal: None,
+            health_bar: None,
         }
     }
 

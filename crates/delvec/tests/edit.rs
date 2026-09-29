@@ -1020,7 +1020,8 @@ fn quests_with(extra: serde_json::Value) -> serde_json::Value {
 
 /// A private prefab copy whose `hello-room.json` exposes an `anchor/trap` whose
 /// trigger cell is `[7, 1, 6]` and dispenser socket `[8, 1, 6]` — exactly the
-/// two cells the fixture's own `batch/hearth-nook` carves.
+/// two cells the fixture's own `batch/hearth-nook` carves — with a pressure
+/// plate and a dispenser wired into them.
 fn prefabs_with_trap(name: &str) -> PathBuf {
     use delvec::admit::structure::{PaletteEntry, Structure};
 
@@ -1049,6 +1050,13 @@ fn prefabs_with_trap(name: &str) -> PathBuf {
             .into_iter()
             .collect(),
         )),
+    );
+    // The trigger is hardware on the same terms (`DW0917`): the plate the
+    // `pressure-plate` trap names stands in its cell.
+    s.set_cell(
+        [7, 1, 6],
+        PaletteEntry::simple("minecraft:stone_pressure_plate"),
+        None,
     );
     std::fs::write(&nbt, s.write()).unwrap();
     dir

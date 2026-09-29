@@ -1,0 +1,18 @@
+{
+  "code": "DW0919",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "remove",
+      "path": "/content/state/1/display"
+    },
+    {
+      "doc": "quests.json",
+      "op": "add",
+      "path": "/content/state/5/display",
+      "value": "sidebar"
+    }
+  ],
+  "units": [],
+  "why": "The standing display moved from the tokens to the bounty, the party's shared purse, so exactly one datum asks to stand and it is `party`-scoped. A party datum's value lives on the `#party` holder, and the sidebar hides every holder whose name starts with `#`, so what the slot would draw is a heading over nothing. Refused with the scope named as the cause; the remedy is a `player` scope or no `display`, never a mirror onto a name a real player could carry. It declares no unit: `display` is bound by the primary; what must not compile is a display the pinned game cannot draw."
+}

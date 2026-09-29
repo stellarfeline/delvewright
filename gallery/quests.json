@@ -4,10 +4,29 @@
     "actors": [
       {
         "anchor": "anchor/east-bay",
+        "drops": [
+          {
+            "item": "minecraft:feather"
+          }
+        ],
         "entity": "minecraft:bat",
         "facing": "west",
+        "health_bar": {
+          "color": "red",
+          "range": 24
+        },
         "id": "actor/hall-moth",
         "name": "The Hall Moth",
+        "on_kill": {
+          "effects": [
+            {
+              "amount": 1,
+              "state": "state/keepsake",
+              "type": "add-state"
+            }
+          ],
+          "fires": "first-kill"
+        },
         "tier": "boss",
         "vulnerable": true
       },
@@ -2515,6 +2534,52 @@
                 "value": 0
               }
             ]
+          },
+          {
+            "effects": [
+              {
+                "count": 1,
+                "enchantments": {
+                  "minecraft:sharpness": 2
+                },
+                "item": "minecraft:iron_sword",
+                "type": "give-item",
+                "when": {
+                  "forbids_flags": [
+                    "flag/hall-sealed"
+                  ],
+                  "requires_state": [
+                    {
+                      "op": "at-most",
+                      "state": "state/labels-read",
+                      "value": 9
+                    }
+                  ]
+                }
+              },
+              {
+                "count": 1,
+                "enchantments": {
+                  "minecraft:mending": 1
+                },
+                "item": "minecraft:enchanted_book",
+                "type": "give-item",
+                "when": {
+                  "forbids_flags": [
+                    "flag/hall-sealed"
+                  ],
+                  "requires_state": [
+                    {
+                      "op": "at-most",
+                      "state": "state/labels-read",
+                      "value": 9
+                    }
+                  ]
+                }
+              }
+            ],
+            "label": "A keen blade and a mended page",
+            "tooltip": "The Factor sells what the case holds: an edge that stays sharp, and a page an anvil can read."
           }
         ],
         "title": "The Factor's Counter"
@@ -2606,10 +2671,11 @@
         "scope": "party"
       },
       {
+        "display": "sidebar",
         "id": "state/tokens",
         "initial": 0,
         "name": "Tokens",
-        "note": "The wager a stake carries. Player-scoped, because a stake is dropped by the body that died.",
+        "note": "The wager a stake carries. Player-scoped, because a stake is dropped by the body that died. It is the one purse that STANDS: `display: sidebar` heads the right-hand sidebar with its name and lists every player's balance, so a forfeit is seen without waiting for the action bar.",
         "scope": "player"
       },
       {
@@ -2632,6 +2698,13 @@
         "name": "Keepsake",
         "note": "A wager a death does not touch, which is what makes the other three legible.",
         "scope": "player"
+      },
+      {
+        "id": "state/bounty",
+        "initial": 0,
+        "name": "Bounty",
+        "note": "What the lane's kills pay into. Party-scoped, so one kill pays the party once, whoever lands it; the bay's kill rings when the bounty is already paid.",
+        "scope": "party"
       }
     ],
     "timed_gates": [
@@ -2747,7 +2820,7 @@
         "trigger": "tripwire"
       },
       {
-        "at": "anchor/east-bay",
+        "at": "anchor/strongbox",
         "id": "trap/chest",
         "lethality": "nonlethal",
         "payload": [
@@ -2960,6 +3033,11 @@
     "waves": [
       {
         "anchor": "anchor/muster",
+        "health_bar": {
+          "range": 12,
+          "style": "notched_6",
+          "title": "The Muster"
+        },
         "id": "wave/muster",
         "mobs": [
           {
@@ -2996,12 +3074,25 @@
             "name": "Muster Stray"
           }
         ],
+        "on_kill": {
+          "effects": [
+            {
+              "amount": 1,
+              "state": "state/tokens",
+              "type": "add-state"
+            }
+          ],
+          "fires": "every-kill"
+        },
         "respawns_on_rest": true,
         "summon": "anchor",
         "tier": "elite"
       },
       {
         "anchor": "anchor/lane-west",
+        "health_bar": {
+          "range": 16
+        },
         "id": "wave/lane",
         "lane": {
           "aggro_radius": 8,
@@ -3016,10 +3107,25 @@
               "follow_range": 8.0
             },
             "count": 2,
+            "drops": [
+              {
+                "item": "minecraft:arrow"
+              }
+            ],
             "entity": "minecraft:pillager",
             "name": "Lane Pillager"
           }
         ],
+        "on_kill": {
+          "effects": [
+            {
+              "amount": 1,
+              "state": "state/bounty",
+              "type": "add-state"
+            }
+          ],
+          "fires": "first-kill"
+        },
         "respawns_on_rest": false,
         "tier": "boss"
       },
@@ -3035,11 +3141,36 @@
             "entity": "minecraft:skeleton"
           }
         ],
+        "on_kill": {
+          "effects": [
+            {
+              "amount": 1,
+              "state": "state/relics",
+              "type": "add-state"
+            },
+            {
+              "at": {
+                "at": "players"
+              },
+              "sound": "minecraft:entity.experience_orb.pickup",
+              "type": "play-sound",
+              "when": {
+                "requires_state": [
+                  {
+                    "op": "at-least",
+                    "state": "state/bounty",
+                    "value": 1
+                  }
+                ]
+              }
+            }
+          ]
+        },
         "summon": "aggro-edge",
         "tier": "ordinary"
       }
     ]
   },
-  "dsl_version": "0.30.0",
+  "dsl_version": "0.34.0",
   "stage": "quests"
 }

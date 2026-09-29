@@ -51,6 +51,15 @@ this section is what they are *for* and the traps in each.
   anchor — **the compiler fills furniture, it never places it** (`DW0431`).
   Elites and set-piece actors take `equipment` in the same shape wave mobs use,
   enchantments included.
+- **A handed-over stack is described the same way.** `give-item {item, count,
+  name?, carrier?, enchantments?}` — so a shop offer can sell an iron sword with
+  `"enchantments": {"minecraft:sharpness": 2}`, and a quest can hand over a
+  `minecraft:enchanted_book` with `"enchantments": {"minecraft:mending": 1}`.
+  Write a book's enchantments in the same `enchantments` field: the compiler
+  stores them on the book (`stored_enchantments`), which is what an anvil
+  applies, and the same holds for a book in a `loot` chest. Ids and levels are
+  checked as everywhere else (`DW0433`, `DW0434`); a level above the survival
+  maximum is allowed.
 - **`equipment` has the game's eight slots, and a body shows only some of
   them.** `head`, `chest`, `legs`, `feet`, `main_hand`, `off_hand`, `body`
   (horse armour, wolf armour, a llama's carpet, a nautilus's armour, a happy
@@ -292,11 +301,17 @@ this section is what they are *for* and the traps in each.
   falling_block?, then_floor?}`, which deletes a region and buries whoever is
   under it, with the settled world re-run through the completability proof
   (`DW0445`). A trap that declares no consequence at all is `DW0440`.
-- **`at` is an ORDINARY POINT ANCHOR and the piece needs no hardware.** The
-  compiler owns the detection tick for a command payload: a plate or a tripwire
-  is a position test on that anchor's cell, and a trapped chest is the same
-  interaction-entity `use` a disarm lever rides. So any anchor carrying a `pos`
-  that some area's prefab provides will hold a trap — and on a site-plan
+- **`at` is an ORDINARY POINT ANCHOR, and its cell holds the trigger block.**
+  The compiler owns the detection tick for a command payload: a plate or a
+  tripwire is a position test on that anchor's cell, and a trapped chest is the
+  same interaction-entity `use` a disarm lever rides. The block the `trigger`
+  names — a `*_pressure_plate`, a `minecraft:tripwire`, a
+  `minecraft:trapped_chest` — is the piece's, standing in that cell: the party
+  has to see what springs, and the build refuses a trap whose cell holds
+  anything else, a plain chest included. Place it with the piece (a detail
+  program, an edit batch, or a piece of your own); never a runtime `set-block`.
+  So any anchor carrying a `pos` that some area's prefab provides, with the
+  trigger block in its cell, will hold a trap — and on a site-plan
   campaign that is `anchor/node-<place>`, which is exactly what a derived map
   has. `volley`'s `from_anchor` is another one, and all it owes is a clear cell.
   **The name `anchor/trap` is a convention from the redstone era and the check
@@ -307,7 +322,8 @@ this section is what they are *for* and the traps in each.
   anchor that does. Measured over the shipped library: **0 of 36 prefabs
   declares an `anchor/trap`**, or any anchor carrying `dispenser` or
   `trigger_block` metadata, out of 103 anchors in all — so the piece that
-  reading asks for does not exist here, and a command payload never wanted one.
+  reading asks for does not exist here, and a command payload never wanted one:
+  it wants the trigger block in an ordinary anchor's cell.
 - **Two things do want hardware in the piece, and neither of them is the
   payload.** The superseded `effect: {dispense: {…}}` fills a dispenser socket
   the prefab pre-wired, so it needs that metadata; and a trap carrying a gate
@@ -369,6 +385,40 @@ this section is what they are *for* and the traps in each.
   commands, so a gate written after the debit reads the balance the debit just
   produced — buy your last coin and you are charged and apologised to in the same
   breath.
+- **A purse can STAND on screen.** Give the named datum `"display": "sidebar"`
+  and its balance stands on the right of every player's screen at every moment,
+  headed by its `name`, one line per player showing that player's own balance —
+  the party reads who can afford what. Without it the purse is spoken on the
+  action bar only when it changes, and once the line fades nobody can check it
+  without spending or earning. One datum per campaign may stand (the sidebar
+  holds one objective), it must carry a `name`, and it must be `player`-scoped —
+  a `party` purse cannot stand, because the sidebar hides its holder. Each of
+  those is refused at `delvec validate`, naming the datum and the fix.
+- **A fight pays per body through `on_kill`.** `on_kill {fires?, effects[]}` is
+  **optional** on any `waves[]` or `actors[]` entry. Its effects run **once per
+  body a player is credited with killing**, as that player: a `player`-scoped
+  datum written there pays the killer, and a `party`-scoped datum pays the party
+  once. A body that dies with no player credited — a fall, a hazard, another mob
+  — pays nothing, and the fight still clears. Where the fight **comes back**
+  after the party has met it — a rest re-seats it, or the beat that seats it can
+  fire again — you **must** say `fires: "first-kill"` (the fight pays as many
+  kills as it has bodies, once, over the whole delve) or `fires: "every-kill"`
+  (every kill pays, so the fight can be farmed); where it does not come back,
+  leave `fires` off. Who is paid is the datum's scope, never a field on the
+  bundle:
+
+  | you want | write | with four players |
+  |---|---|---|
+  | the one who lands the blow keeps it | `add-state` on a `player` datum | the killer's purse moves; the others' do not |
+  | a shared purse | `add-state` on a `party` datum | one write to the party per kill |
+  | every player paid per kill, each into their own purse | — | not a shape this bundle has; pay a `party` datum and price from it |
+
+  The engine refuses a bundle no player can be credited with — on a wave no
+  beat spawns, or on an actor never unleashed and not `vulnerable` — and it
+  refuses `every-kill` on a fight that never comes back and a missing `fires`
+  on one that does, naming the fight each time. The bundle of the last body fires before the `kill` objective's
+  `on_objective_complete`, so a beat for the whole fight falling stays on the
+  objective.
 
 ## Bodies
 
@@ -445,6 +495,35 @@ this section is what they are *for* and the traps in each.
   of the same effect in the same bundle is `DW0540`. `clear-effect {effect?,
   in?}` exists for effects the campaign did NOT grant (a potion the player
   drank, a `wither` a mob applied); omit `effect` to clear everything.
+- **A fight can show its health: `health_bar`.** A health bar is
+  **optional** on any wave or actor: `"health_bar": { "range": 16 }`, with
+  `title`, `color` and `style` optional beside it. Declaring one draws a named
+  bar over the fight's total health for every player within `range` blocks of a
+  live body of the fight, from the moment they enter that range until the last
+  body falls. The compiler **warns** — an advisory, never a failure — only when a
+  fight billed `tier: "boss"` declares none, and says nothing about any other
+  tier — whether an `elite` or `ordinary` fight shows a bar is yours to decide.
+  - *The title is the fight's own name* unless you state `title`: an actor's
+    `name`, or the `name` of a wave's one mob entry, translated under that
+    name's own key. A wave of two entries or more, or a body with no name, has
+    no single name to draw, so it must state `title`, or the build is refused.
+  - *`range` is the size of the place the fight happens in*, in blocks (4–64),
+    not the body's `follow_range`: the bar should appear as a player crosses
+    into that place, before the body has noticed anyone. It disappears for a
+    player who leaves the range, dies or watches a cutscene.
+  - *Spell the shape with waves.* A named body with lesser bodies around it is
+    two waves spawned by the same beat, the bar on the named body's wave only;
+    a fight of several bodies (`count` above 1, or several entries) is one bar
+    over their summed health, dropping as they fall; two fights are two waves
+    with a bar each, drawn at once.
+  - *On an actor the bar reads the body that can be hurt*: the unleashed body,
+    or the puppet itself when the actor is `vulnerable`. A bar on an actor that
+    is neither is refused — it would sit full forever.
+  - `color` and `style` are the game's own boss-bar words (`red`, `purple`,
+    `notched_6`, `notched_20`, …); anything else is refused, and the refusal
+    lists the words the game accepts. Leave them out to keep the game's defaults.
+  - A rest that re-seats the fight re-seats the bar with it: it reads full
+    again when the party walks back in.
 
 ## Sealed things, and pacing
 

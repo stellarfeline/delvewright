@@ -1,5 +1,8 @@
 # NPC skins — the face toolchain
 
+- [Dress the character; do not hope the palette does it](#dress-the-character-do-not-hope-the-palette-does-it)
+- [The face is the composer's, not yours](#the-face-is-the-composers-not-yours)
+- [What the model cannot wear](#what-the-model-cannot-wear)
 
 **Every named character gets a face**, so this page is the ordinary path and not
 an exception: the default body is a player model wearing that character's own
@@ -56,8 +59,8 @@ said.
 | `sleeves` | `bare`, `short`, `long` | `long` reaches the wrist and leaves the hand; `short` covers the upper arm only, so the forearm is bare |
 | `legs` | `bare`, `short`, `full` | `full` is trousers to the ankle; `short` is a skirt over the upper thigh. Painted in `legwear`, which falls back to `tunic` |
 | `footwear` | `none`, `sandal`, `shoe`, `boot`, `tall_boot` | how far up the leg it reaches — barefoot, sandal, shoe, mid-calf, knee. Painted in `sandal` |
-| `hair` | `bald`, `crop`, `short`, `jaw`, `long` | how far hair comes down the sides of the head. Past the ear it frames the face and takes a cut line in `hair_shadow`; `long` also falls onto the shoulders. **A clean-shaven character left at `short` reads as a short-back-and-sides man** — set this whenever they are not one |
-| `facial_hair` | `none`, `moustache`, `beard` | painted in `beard` |
+| `hair` | `bald`, `crop`, `short`, `jaw`, `long` | how far hair comes down the sides of the head. Past the ear it frames the face and takes a cut line in `hair_shadow`; `long` also falls onto the shoulders. **`short` is a short back and sides** — set this whenever the character is not one |
+| `facial_hair` | `none`, `moustache`, `beard` | painted in `beard`. `moustache` is the lip row, `beard` the mouth and chin rows plus the sides of the jaw. **`none` is a face, not a blank** — the composer models the mouth, chin and jaw for everyone, so pick grooming for the character and nothing else |
 | `collar` | `open`, `closed` | `closed` is the only way to fasten a garment at the throat — the open V is painted from `skin`, so no colour can close it |
 | `greying` | `none`, `hair`, `beard`, `both` | streaks `hair_grey` / `beard_grey` through what it names. Keep those two colours **close together**: a wide gap reads as lichen on a rock, not as a greying head |
 
@@ -66,6 +69,21 @@ composing the default and saying nothing, so a refusal here is the tool telling
 you the character was about to be dressed wrong. `--help` on any subcommand
 prints the whole surface — every entry field, every palette colour, every
 wardrobe value, with the rows each one paints.
+
+## The face is the composer's, not yours
+
+You choose colours and grooming. **The composer paints the face**, on the rows a
+face is on: chin, mouth, lip, eyes, eyebrows, forehead, the shadow under the
+fringe, the fringe. Those rows are a measurement of the nine default player
+skins the pinned client ships, not a style — `docs/reference/face-craft.md` in
+the engine repository has the counts and their denominators.
+
+Two consequences for what you write. **A clean-shaven character is not a blank
+one**: everyone gets a mouth, a chin and a jaw that narrows toward it, so
+`facial_hair` is a fact about the character and never a fix for a head that
+looks wrong. And **there is no nose and no palette key for one** — at 8×8 a nose
+is two dark pixels immediately over the mouth and the pair merges into a muzzle,
+which is why no clean-shaven default skin has one either.
 
 ## What the model cannot wear
 

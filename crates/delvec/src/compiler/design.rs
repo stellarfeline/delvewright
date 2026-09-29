@@ -13,7 +13,7 @@
 //!    pictures themselves;
 //! 3. the **world's reachable skies** — [`crate::compiler::light::reachable_time_weather`],
 //!    the same scan `DW0210` reads to find the darkest hour and `DW0496` reads
-//!    to ask whether the sun always burns.
+//!    for a fight that can be met at any hour.
 //!
 //! # Why the reachable-state scan and not a private one
 //!

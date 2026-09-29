@@ -67,7 +67,7 @@ enumerated from the constants the parser validates against.
 
 | key | paints |
 |---|---|
-| `skin`, `skin_shadow` | the body; `skin_shadow` is the hand, the knee and the brow |
+| `skin`, `skin_shadow` | the body. `skin_shadow` is the hand, the knee, the eyebrows, the shadow under the fringe and the inner step of the jaw taper; the mouth and the chin's outer corners are half a step further along the same two colours, so a dark skin gets a shallow mouth from the same numbers |
 | `hair` | the crown, the back of the head, the fringe and however far down the sides the `hair` axis says |
 | `hair_shadow` | the cut line at the lower edge of hair long enough to show one |
 | `hair_grey` | the grey coming into the hair, when `greying` names it |
@@ -76,7 +76,7 @@ enumerated from the constants the parser validates against.
 | `belt` | a 2 px band low on the waist |
 | `legwear`, `legwear_shadow` | the leg garment, and its knee shadow. Defaults to `tunic` / `tunic_shadow`, so a skirt cut from the same cloth needs no colour of its own |
 | `sandal` | the footwear, whatever kind it is |
-| `eye` | the two eye pixels |
+| `eye` | the pupils — one pixel each, with a lightened `skin` pixel outboard standing in for the white |
 
 ### Wardrobe
 
@@ -92,7 +92,7 @@ composed before this block existed.
 | `legs` | `bare`, `short` (default), `full` | `bare` is a bare leg; `short` is a 2 px skirt over the upper thigh; `full` is trousers to the ankle |
 | `footwear` | `none`, `sandal` (default), `shoe`, `boot`, `tall_boot` | 0, 2, 3, 6 and 9 px up a 12 px leg — barefoot, sandal, shoe, mid-calf boot, knee boot |
 | `hair` | `bald`, `crop`, `short` (default), `jaw`, `long` | how far hair comes down the 8 px sides of the head: none, 2, 3, 6 and 8 rows. The crown, the back of the head and the brow fringe come with every length. Past the ear it also **frames the face** down its outer columns and takes a cut line in `hair_shadow`; `long` falls across the top of the torso back as well |
-| `facial_hair` | `none`, `moustache`, `beard` (default) | `moustache` is the single row under the nose; `beard` adds the chin, the jaw and the chin underside |
+| `facial_hair` | `none`, `moustache`, `beard` (default) | `moustache` is the lip row; `beard` adds the mouth and chin rows, the sides of the jaw and the chin underside. `none` is a modelled face, not a blank one — see [the face at 8×8](../../../docs/reference/face-craft.md) |
 | `collar` | `open` (default), `closed` | `open` leaves the V of bare skin a tunic or an unbuttoned shirt has at the throat; `closed` takes it away, which is the only way to get a jacket that fastens — the V is painted from `skin` itself, so no palette key can reach it |
 | `greying` | `none` (default), `hair`, `beard`, `both` | streaks `hair_grey` / `beard_grey` through whatever it names. `features.greying` is the older spelling of `beard` and still means exactly that; a sheet carrying **both** is refused rather than resolved by a precedence rule |
 
@@ -110,6 +110,21 @@ composed before this block existed.
   }
 }
 ```
+
+### The face
+
+The 8×8 front of the head is painted from the chin up, not from the crown down:
+chin `y=0`, mouth `y=1`, lip `y=2`, eyes `y=3`, eyebrows `y=4`, forehead `y=5`,
+the fringe's shadow `y=6`, the fringe `y=7`. Every row is a measurement of the
+nine default player skins the pinned client ships — the derivation, the counts
+and their denominators are in
+[the face at 8×8](../../../docs/reference/face-craft.md). Nothing here is a knob:
+a cast entry chooses colours and grooming, and the composer paints the face.
+
+There is no nose, because no clean-shaven default skin has one and at this size
+a nose merges with the mouth below it into a muzzle. A clean-shaven character
+gets a mouth, a chin and a jaw that narrows toward it — so a beard is a choice
+about the character and not the only thing keeping a head from reading as a jaw.
 
 ## Determinism (ADR-0006)
 

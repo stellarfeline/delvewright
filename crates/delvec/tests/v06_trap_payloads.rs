@@ -29,6 +29,9 @@ fn tmp(name: &str) -> PathBuf {
 /// A prefab copy exposing the spec-0022 surface: the `anchor/trap` trigger, a
 /// `anchor/gallery` firing slot, a `anchor/killzone` REGION over the floor the
 /// party crosses, and a `anchor/ceiling` region to bring down.
+/// The trap stands at `[5, 1, 7]`, one cell past the doorway: the door is a gate
+/// region the compiler clears, so a trigger inside it is erased (`DW0917`), and
+/// the trigger block is written by `common::plan_structures_with_trap_triggers`.
 fn payload_prefabs(name: &str, extra: &[(&str, serde_json::Value)]) -> PathBuf {
     let dir = tmp(name);
     common::copy_dir_all(&common::prefabs_dir(), &dir);
@@ -41,7 +44,7 @@ fn payload_prefabs(name: &str, extra: &[(&str, serde_json::Value)]) -> PathBuf {
         .unwrap();
     anchors.insert(
         "anchor/trap".to_string(),
-        serde_json::json!({ "pos": [5, 1, 6], "dispenser": [4, 1, 6] }),
+        serde_json::json!({ "pos": [5, 1, 7], "dispenser": [4, 1, 7] }),
     );
     anchors.insert(
         "anchor/lever".to_string(),
@@ -115,15 +118,7 @@ fn build_payload(
     assert!(diags.is_empty(), "must validate clean: {diags:#?}");
 
     let plan = Plan::build(&campaign, &prefabs).expect("plan builds");
-    let mut structures: BTreeMap<String, Vec<u8>> = BTreeMap::new();
-    for area in &plan.areas {
-        for piece in &area.pieces {
-            for t in &piece.templates {
-                let bytes = std::fs::read(prefabs_dir.join(&t.structure_file)).unwrap();
-                structures.insert(t.structure_file.clone(), bytes);
-            }
-        }
-    }
+    let structures = common::plan_structures_with_trap_triggers(&plan, &prefabs_dir);
     let tree = CommandTree::v1_21_11();
     emit::build(
         &plan,
@@ -343,14 +338,14 @@ fn a_payload_trap_emits_edge_triggered_detection() {
     assert!(
         tick.contains(
             "execute unless score #trapfire_stair_volley dw.sys matches 1 if entity \
-             @a[x=5,dx=0,y=65,dy=0,z=6,dz=0,tag=!dw_cutscene] run function \
+             @a[x=5,dx=0,y=65,dy=0,z=7,dz=0,tag=!dw_cutscene] run function \
              hello-world:trap_fire_stair_volley"
         ),
         "{tick}"
     );
     assert!(
         tick.contains(
-            "execute unless entity @a[x=5,dx=0,y=65,dy=0,z=6,dz=0,tag=!dw_cutscene] run \
+            "execute unless entity @a[x=5,dx=0,y=65,dy=0,z=7,dz=0,tag=!dw_cutscene] run \
              scoreboard players set #trapfire_stair_volley dw.sys 0"
         ),
         "rearm clause missing: {tick}"
@@ -391,6 +386,44 @@ fn volley_with_a_blocked_line_of_fire_is_dw0442() {
     assert!(msg.contains("no line of fire"), "{msg}");
     // It names the cell it cannot cover, so the author can fix the geometry.
     assert!(msg.contains("kill-zone cell ["), "{msg}");
+}
+
+/// `DW0918`: a volley's cadence is a timing read. A body the salvo lands on in
+/// the middle of the 3x3 zone is 2 blocks (8 ticks) from the floor outside it;
+/// with 8 ticks between salvos only 1 of 8 phases (12%) admits the walk out, so
+/// the build refuses. The spec's default 10 ticks admits 3 of 10 (30%) and the
+/// same geometry builds — every other volley test in this file is that build.
+#[test]
+fn volley_whose_interval_is_shorter_than_the_walk_out_is_dw0918() {
+    let e = build_payload(
+        "p-cadence",
+        volley_trap(serde_json::json!({
+            "type": "volley",
+            "from_anchor": "anchor/gallery",
+            "kill_zone": zone_json(),
+            "interval": 8
+        })),
+        &[gallery(), killzone()],
+    )
+    .expect_err("a volley no one can walk out of between salvos must not build");
+    let msg = err_code(&e);
+    assert!(msg.contains("DW0918"), "{msg}");
+    assert!(
+        msg.contains("1 of its 8-tick salvo interval (12%)"),
+        "{msg}"
+    );
+
+    build_payload(
+        "p-cadence-ok",
+        volley_trap(serde_json::json!({
+            "type": "volley",
+            "from_anchor": "anchor/gallery",
+            "kill_zone": zone_json(),
+            "interval": 10
+        })),
+        &[gallery(), killzone()],
+    )
+    .expect("10 ticks between salvos admits 30% of phases: a timing read");
 }
 
 /// `DW0446`: a firing slot buried in solid geometry never releases anything.
@@ -563,7 +596,7 @@ fn a_payload_free_trap_emits_no_new_machinery() {
     // The legacy dispenser fill is untouched.
     let setup = fn_body(&out, "setup_finish");
     assert!(
-        setup.contains("item replace block 4 65 6 container.0 with minecraft:arrow 8"),
+        setup.contains("item replace block 4 65 7 container.0 with minecraft:arrow 8"),
         "{setup}"
     );
 }

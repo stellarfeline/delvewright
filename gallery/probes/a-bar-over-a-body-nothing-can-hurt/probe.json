@@ -1,0 +1,16 @@
+{
+  "code": "DW0909",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "add",
+      "path": "/content/actors/4/health_bar",
+      "value": {
+        "range": 8,
+        "title": "The Usher"
+      }
+    }
+  ],
+  "units": [],
+  "why": "`actor/hall-usher` is a villager staged as scenery: it is not `vulnerable`, so its puppet is summoned `Invulnerable`, and no `unleash-actor` anywhere in the campaign names it, so no body that can be hurt ever stands in its place. A health bar over it would sit full for as long as it stands — a readout of a fight that is not one. The build names the actor and prescribes the three ways out: unleash it somewhere, mark it `vulnerable`, or remove the bar. It declares no unit: `health_bar` and all four of its fields are bound by the primary on `wave/lane`, `wave/muster` and `actor/hall-moth`; what the engine refuses here is a bar on a body whose health cannot move. The title is stated so that this document is refused for this reason and no other."
+}

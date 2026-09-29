@@ -7,13 +7,13 @@
         "act": 1,
         "area": "area/keep",
         "depends_on": [],
-        "goal": "Break the warband walking the hall, and the drowned they summon.",
+        "goal": "Break the warband walking the hall, and the husks they summon.",
         "id": "quest/hold-the-keep",
         "mandatory": true,
         "npcs": []
       }
     ]
   },
-  "dsl_version": "0.30.0",
+  "dsl_version": "0.34.0",
   "stage": "quest-plan"
 }

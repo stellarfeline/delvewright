@@ -447,6 +447,148 @@ fn a_stair_down_through_a_punched_floor_is_a_whole_run() {
     );
 }
 
+/// **A stair down through a punched floor can be climbed back OUT.**
+///
+/// The run starts under the hole and walks back under the floor it pierces, so
+/// its upper courses stand where the floor above would take a climbing body's
+/// head: a course whose feet are within a body's height of that floor is a step
+/// no body can stand on, and the stair is then a way down and never a way up —
+/// the place under it is a place a body falls into and cannot leave (`DW0921`).
+/// The hole the derivation cuts therefore clears the headroom over every course
+/// of the run, not just the cells the plan allocated.
+///
+/// Judged by the movement relation `DW0921` floods (`nav::World::body_moves`), from
+/// every standable cell of the lower place's walk plane — never a second model
+/// of how a body climbs.
+///
+/// The fixture's own cellar climbs four whole courses under a three-cell hole,
+/// and every course a head can reach is already under the hole, so it cannot
+/// tell the two derivations apart. The cellar is therefore lowered into the
+/// shape that can: a floor at `y` 60 under three cells of headroom, a climb of
+/// three that the gentle 1:2 standard fits in six half-block courses — the
+/// fourth of which stands one and a half blocks up, under the floor above. Its
+/// tunnel moves with it, so the walk between them stays a walk.
+#[test]
+fn a_stair_down_through_a_punched_floor_can_be_climbed_back_out() {
+    let mut loaded = delvec::compiler::load::load_campaign_dir(&fixture_dir())
+        .expect("the blockout fixture is readable");
+    let mut plan_doc: serde_json::Value = serde_json::from_str(
+        loaded
+            .raw
+            .site_plan
+            .as_deref()
+            .expect("the blockout fixture carries a site plan"),
+    )
+    .expect("the site plan is JSON");
+    let mut moved = 0;
+    for b in plan_doc["content"]["boxes"]
+        .as_array_mut()
+        .expect("a site plan has boxes")
+    {
+        if b["node"] == "node/undercroft" || b["node"] == "node/tunnel" {
+            b["floor"] = serde_json::json!({ "y": 60 });
+            b["ceiling"] = serde_json::json!({ "clearance": 3 });
+            moved += 1;
+        }
+    }
+    assert_eq!(moved, 2, "the cellar and its tunnel are both re-seated");
+    loaded.raw.site_plan = Some(plan_doc.to_string());
+    let c = delvewright_dsl::parse_campaign(&loaded.raw).expect("the re-seated fixture parses");
+    let plan = Plan::build(&c, &prefabs()).expect("the re-seated fixture plans");
+    let structures: BTreeMap<String, Vec<u8>> = BTreeMap::new();
+    let world = delvec::compiler::nav::World::from_plan(&plan, &structures);
+    let blockout = plan
+        .blockout
+        .as_ref()
+        .expect("a site plan derives a blockout");
+    assert!(
+        blockout.binding.stairwell_cells > 0,
+        "the re-seated cellar is the shape whose run reaches past its hole: {}",
+        blockout.binding.line()
+    );
+    let battery = blockout::check(
+        &plan,
+        &delvec::compiler::assembled::assembled_blocks(&plan, &structures),
+    )
+    .expect("a site-plan campaign has a blockout");
+    assert_eq!(
+        errors(&battery),
+        Vec::<String>::new(),
+        "the stairwell is a hole the observers accept"
+    );
+    let boxes = blockout.boxes.clone();
+    let under = box_of(&boxes, "node/undercroft");
+    let above = box_of(&boxes, "node/cell");
+    let (lo, hi) = under.space();
+    let (alo, ahi) = above.space();
+    let floor: Vec<[i32; 3]> = (lo[2]..=hi[2])
+        .flat_map(|z| (lo[0]..=hi[0]).map(move |x| [x, under.floor, z]))
+        .map(cell)
+        .filter(|c| world.is_standable(*c))
+        .collect();
+    assert!(
+        !floor.is_empty(),
+        "`node/undercroft` offers a walk plane to start from"
+    );
+    let in_above = |c: [i32; 3]| {
+        (0..3).all(|i| i64::from(c[i]) >= alo[i] && i64::from(c[i]) <= ahi[i])
+            && i64::from(c[1]) == above.floor
+    };
+    let mut seen: std::collections::BTreeSet<[i32; 3]> = floor.iter().copied().collect();
+    let mut queue: std::collections::VecDeque<[i32; 3]> = seen.iter().copied().collect();
+    let mut out = false;
+    while let Some(cur) = queue.pop_front() {
+        if in_above(cur) {
+            out = true;
+            break;
+        }
+        for n in world.body_moves(cur) {
+            if seen.insert(n) {
+                queue.push_back(n);
+            }
+        }
+    }
+    assert!(
+        out,
+        "no body on `node/undercroft`'s walk plane ({} standable cell(s)) can walk, \
+         fall, jump or swim onto `node/cell`'s floor: the stair it came down is not a \
+         way back up ({} cell(s) reached)",
+        floor.len(),
+        seen.len()
+    );
+}
+
+/// `DW0836`: a floor cut over a stair's whole run, and not only where a
+/// climbing body needs it, is a hole wider than the plan allocated.
+///
+/// Claim 2 admits a stair's stairwell — the open cells off its hole that a body
+/// on the stair stands in, puts its head in, or sweeps in a jump — and this is
+/// what shows that admission refuses anything. The fixture's cellar climbs
+/// inside its hole, so the unperturbed derivation cuts no stairwell at all and
+/// every cell the perturbation opens is a leak.
+#[test]
+fn an_open_stairwell_reddens_dw0836() {
+    let (clean, _) = battery_under(Perturb::none());
+    assert!(
+        !errors(&clean).contains(&"DW0836".to_string()),
+        "the measured stairwell is a hole the observer accepts"
+    );
+    let (b, _) = battery_under(Perturb {
+        open_stairwells: true,
+        ..Perturb::none()
+    });
+    assert_eq!(
+        errors(&b),
+        vec!["DW0836".to_string()],
+        "a floor opened over courses no head reaches is a wider hole and nothing else"
+    );
+    let m = message_for(&b, "DW0836");
+    assert!(
+        m.contains("edge/cell-undercroft"),
+        "the refusal names the stair's own wall: {m}"
+    );
+}
+
 /// The stair across a VERTICAL face is untouched, and the assertion is over the
 /// blocks rather than over a hash so a reader can see which stair and where.
 ///
@@ -707,8 +849,8 @@ fn every_perturb_field_has_a_knob() {
 
     let place = "node/exit";
     let mut seen = 0;
-    let (mut slid, mut sunk, mut short, mut bricked, mut low, mut walled) =
-        (false, false, false, false, false, false);
+    let (mut slid, mut sunk, mut short, mut bricked, mut low, mut walled, mut wells) =
+        (false, false, false, false, false, false, false);
     for knob in Knob::ALL {
         let p = knob
             .perturb(knob.takes_place().then_some(place))
@@ -726,6 +868,7 @@ fn every_perturb_field_has_a_knob() {
             brick_up,
             low_ceiling,
             wall_contacts,
+            open_stairwells,
         } = p;
         slid |= slide_openings != 0;
         sunk |= sink.is_some();
@@ -733,6 +876,7 @@ fn every_perturb_field_has_a_knob() {
         bricked |= brick_up.is_some();
         low |= low_ceiling.is_some();
         walled |= wall_contacts;
+        wells |= open_stairwells;
         seen += 1;
         assert!(
             knob.perturb(knob.takes_place().then_some("")).is_some(),
@@ -748,9 +892,9 @@ fn every_perturb_field_has_a_knob() {
     }
     assert_eq!(seen, Knob::ALL.len());
     assert!(
-        slid && sunk && short && bricked && low && walled,
-        "one of the six fields is never set by any knob: slid={slid} sunk={sunk} \
-         short={short} bricked={bricked} low={low} walled={walled}"
+        slid && sunk && short && bricked && low && walled && wells,
+        "one of the seven fields is never set by any knob: slid={slid} sunk={sunk} \
+         short={short} bricked={bricked} low={low} walled={walled} wells={wells}"
     );
     // The spellings a creator types are unique and kebab-case, since the value
     // set is resolved by name.

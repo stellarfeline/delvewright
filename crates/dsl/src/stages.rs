@@ -881,8 +881,7 @@ impl<'a> BodyRef<'a> {
     ///
     /// A stage-2 npc does unless it is `deferred`; a stage-5 actor never does —
     /// a puppet exists only from the `spawn-actor` that summons it, which is why
-    /// an actor no `spawn-actor` names never exists at all (`DW0477` says so of
-    /// a billed elite).
+    /// an actor no `spawn-actor` names never exists at all.
     pub fn at_world_init(self) -> bool {
         match self {
             BodyRef::Npc(n) => !n.deferred,
@@ -2254,6 +2253,46 @@ pub struct StateDecl {
     /// translated like any other authored line.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
+    /// Where this datum **stands** on screen between changes (spec-0076).
+    ///
+    /// The announcement `name` buys fades with the action bar; a datum that
+    /// declares `display` also occupies a vanilla display slot, so its balance is
+    /// on screen at every moment for every player. Declared, never automatic: a
+    /// creator may want a named tally that is spoken only when it moves, and the
+    /// engine does not decide which of two named datums is the purse.
+    ///
+    /// Present ⇒ `setup` heads the datum's objective with its translated `name`,
+    /// paints the value gold, and puts the objective in the slot. Requires `name`
+    /// (the slot's heading is the display name, and without one it would show the
+    /// objective's id) and a `player` scope (the sidebar hides `#`-prefixed
+    /// holders, which is what a `party` datum's value lives on); one datum per
+    /// campaign may stand, because the slot holds one objective — all three are
+    /// `DW0919`. Absent ⇒ the datum announces itself and stands nowhere.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub display: Option<StateDisplay>,
+}
+
+/// The vanilla display slot a named datum stands in (spec-0076).
+///
+/// One value, because vanilla has one slot that stands for the viewer: `list`
+/// shows only while the tab key is held and `below_name` draws under *other*
+/// players' name tags, never over the viewer's own body. A second variant is
+/// added when the pinned game offers a second standing surface, not before.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+pub enum StateDisplay {
+    /// The right-hand sidebar: a heading (the datum's `name`) and one line per
+    /// player, each showing that player's own balance.
+    Sidebar,
+}
+
+impl StateDisplay {
+    /// The `minecraft:scoreboard_slot` token the slot is addressed by.
+    pub fn slot(self) -> &'static str {
+        match self {
+            StateDisplay::Sidebar => "sidebar",
+        }
+    }
 }
 
 /// serde `skip_serializing_if` helper: skip a zero `i32` (`StateDecl.initial`).
@@ -2361,7 +2400,9 @@ pub struct LootItem {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
     /// Enchantments on this stack (`{"minecraft:sharpness": 3}`), emitted as the
-    /// 1.21 `minecraft:enchantments` item component.
+    /// 1.21 `minecraft:enchantments` item component — or, on a
+    /// `minecraft:enchanted_book`, `minecraft:stored_enchantments`
+    /// ([`enchantment_component`]).
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub enchantments: BTreeMap<String, u32>,
 }
@@ -2373,12 +2414,13 @@ fn one_u32() -> u32 {
 /// A stage-5 trap (DSL v0.6, spec-0011; command payloads spec-0022): an
 /// environmental hazard at one cell of a placed piece.
 ///
-/// **What the prefab has to provide is one point anchor, and for most traps that
-/// is all.** [`Trap::at`] names the trigger/hazard cell; the compiler models it
-/// as a hazard for the completability proofs (`DW0342`) and, for a disarmable
-/// trap, emits the disarm affordance. A [`payload`](Trap::payload) trap needs
-/// nothing else: **the compiler owns the detection**, emitting a per-tick,
-/// edge-latched `execute … if entity @a[<cell>]` and running the authored effect
+/// **What the prefab has to provide is one point anchor with the trigger block
+/// in its cell, and for most traps that is all.** [`Trap::at`] names the
+/// trigger/hazard cell; the piece places the plate, tripwire or trapped chest
+/// there (`DW0917`); the compiler models it as a hazard for the completability
+/// proofs (`DW0342`) and, for a disarmable trap, emits the disarm affordance. A
+/// [`payload`](Trap::payload) trap needs nothing else: **the compiler owns the
+/// detection**, emitting a per-tick, edge-latched `execute … if entity @a[<cell>]` and running the authored effect
 /// bundle from it.
 ///
 /// Two things a piece must pre-wire, each for one case and neither for the
@@ -2403,8 +2445,10 @@ pub struct Trap {
     pub id: TrapId,
     /// **The point anchor this trap sits on** — any anchor an area's prefab
     /// provides, whatever it is called. Its cell is the trigger/hazard cell the
-    /// compiler models, and for a `payload` trap that cell is the whole of what
-    /// the piece has to provide: detection is the compiler's.
+    /// compiler models, and for a `payload` trap that cell, holding the block
+    /// its [`trigger`](Trap::trigger) names, is the whole of what the piece has
+    /// to provide: detection is the compiler's, the block is the piece's
+    /// (`DW0917`).
     ///
     /// The anchor additionally needs a `dispenser` socket for a legacy
     /// [`effect`](Trap::effect) trap, and a `trigger_block` for a flag-gated one
@@ -2504,6 +2548,29 @@ impl TrapTrigger {
             TrapTrigger::PressurePlate => "pressure-plate",
             TrapTrigger::Tripwire => "tripwire",
             TrapTrigger::TrappedChest => "trapped-chest",
+        }
+    }
+
+    /// Whether `block` (an id, with or without its blockstate) is the hardware
+    /// this trigger kind names: the block the party sees and springs. A plate
+    /// is any `*_pressure_plate`, a tripwire is the string itself
+    /// (`minecraft:tripwire`, not the hook), a trapped chest is
+    /// `minecraft:trapped_chest`.
+    pub fn is_trigger_block(&self, block: &str) -> bool {
+        let id = block.split('[').next().unwrap_or(block);
+        match self {
+            TrapTrigger::PressurePlate => id.ends_with("_pressure_plate"),
+            TrapTrigger::Tripwire => id == "minecraft:tripwire",
+            TrapTrigger::TrappedChest => id == "minecraft:trapped_chest",
+        }
+    }
+
+    /// The block [`TrapTrigger::is_trigger_block`] accepts, as a refusal names it.
+    pub fn trigger_block_name(&self) -> &'static str {
+        match self {
+            TrapTrigger::PressurePlate => "a pressure plate (`minecraft:*_pressure_plate`)",
+            TrapTrigger::Tripwire => "a tripwire string (`minecraft:tripwire`)",
+            TrapTrigger::TrappedChest => "a trapped chest (`minecraft:trapped_chest`)",
         }
     }
 }
@@ -3020,6 +3087,57 @@ pub struct Wave {
     /// `respawns_on_rest` at once.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tier: Option<EncounterTier>,
+    /// A health bar over this wave's bodies (DSL v0.31, spec-0073): a named bar
+    /// over their total health, drawn for every player within `range` blocks of a
+    /// live one. Absent = no bar, byte-identical. Declared, never derived from
+    /// `tier`; a `boss`-billed wave without one is advised (`DW0912`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub health_bar: Option<crate::healthbar::HealthBar>,
+    /// What happens each time a player is credited with killing one of this
+    /// wave's bodies (spec-0074) — effect root R9, the same
+    /// [`OnKill`] an actor declares. Absent = no bundle, and the
+    /// wave's emission is byte-identical.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub on_kill: Option<OnKill>,
+}
+
+/// What happens each time a body of this fight is killed (spec-0074): the
+/// `on_kill` of a wave or an actor.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct OnKill {
+    /// Whether a body that comes back pays again. Required where the fight comes
+    /// back after the party has met it — a bonfire re-seats it, or the beat that
+    /// seats it can fire more than once (`DW0915`); left off where it does not,
+    /// and `every-kill` there is refused as inert (`DW0914`). No default: whether
+    /// an economy can be farmed is the creator's judgement.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fires: Option<KillFires>,
+    /// The effects, run as the credited player for each credited kill. Every verb
+    /// an `on_objective_complete` bundle accepts, each gated by its own `when`.
+    #[schemars(length(min = 1))]
+    pub effects: Vec<QuestEffect>,
+}
+
+/// Whether a body that comes back after a rest pays again (spec-0074 §4).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+pub enum KillFires {
+    /// Over the whole delve the fight pays at most once per body it seats — the
+    /// wave's body count, or once for an actor. A re-seat does not renew it.
+    FirstKill,
+    /// Every credited kill pays, however many times the fight is re-seated.
+    EveryKill,
+}
+
+impl KillFires {
+    /// The kebab token, as it appears in the DSL.
+    pub fn token(self) -> &'static str {
+        match self {
+            KillFires::FirstKill => "first-kill",
+            KillFires::EveryKill => "every-kill",
+        }
+    }
 }
 
 /// What a wave is billed as (DSL v0.7, spec-0023). Consumed by the validation
@@ -3427,6 +3545,25 @@ impl EquipItem {
             EquipItem::Plain(_) => &EMPTY,
             EquipItem::Enchanted(e) => &e.enchantments,
         }
+    }
+}
+
+/// **The item component a stack's enchantments are written to** — vanilla's own
+/// rule (`EnchantmentHelper.getComponentType` at 1.21.11): an enchanted book
+/// STORES its enchantments (`minecraft:stored_enchantments`, what an anvil
+/// applies to the item it is combined with), and every other item CARRIES them
+/// (`minecraft:enchantments`). Both are in the pinned 1.21.11
+/// `data_component_type` registry.
+///
+/// A property of the item, not of the surface that writes the stack: a book in
+/// a `loot` chest, a book handed over by `give-item` and a book on an equipped
+/// piece are one object, so every emitter asks this one function. An
+/// enchantment map written to the other component is a book that glints and
+/// an anvil ignores, which the game accepts without a word.
+pub fn enchantment_component(item: &str) -> &'static str {
+    match item.strip_prefix("minecraft:").unwrap_or(item) {
+        "enchanted_book" => "minecraft:stored_enchantments",
+        _ => "minecraft:enchantments",
     }
 }
 
@@ -4139,18 +4276,21 @@ pub struct Actor {
     /// the armoured thing kneeling among the graves that stands up when you hit
     /// it — is an **actor**: staged by `spawn-actor`, given AI by
     /// `unleash-actor`, killed by hand rather than by a `kill` objective. Before
-    /// this field the validation ladder's inverted floor gate could only see
-    /// `waves[].tier`, so such a boss was *structurally invisible* to it and an
-    /// empty finding list read as a pass while covering nothing.
+    /// this field nothing anywhere stated what such a fight was billed as.
     ///
     /// Like the wave field this is a **declaration, not a knob**: the compiler
     /// never scales an actor from it, and emission is unchanged whichever tier is
-    /// declared. What it buys is scrutiny — the actor enters
-    /// `validation/combat-plan.json`, and the compiler states, per tiered actor,
-    /// whether the floor gate can measure it and why not when it cannot
-    /// (`DW0477`).
+    /// declared. Its readers are the health-bar advisory (`DW0912`) and the drop
+    /// rule — only a billed fight leaves anything behind.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tier: Option<EncounterTier>,
+    /// A health bar over this actor's fight (DSL v0.31, spec-0073) — the same
+    /// [`HealthBar`](crate::healthbar::HealthBar) a [`Wave`] declares. It reads the
+    /// bodies whose health can move: the unleashed twin, or the puppet itself when
+    /// the actor is `vulnerable`. A bar on an actor that is neither is `DW0909`.
+    /// Absent = no bar, byte-identical.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub health_bar: Option<crate::healthbar::HealthBar>,
     /// What this actor leaves behind when a player kills it. Only an
     /// `elite`/`boss` actor may
     /// declare it (`DW0491`). Emitted into BOTH the staged puppet and the
@@ -4167,6 +4307,12 @@ pub struct Actor {
     /// is set).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub traversal: Option<BodyTraversal>,
+    /// What happens each time a player is credited with killing this actor's
+    /// body (spec-0074) — effect root R9, the same [`OnKill`] a
+    /// wave declares. Absent = no bundle, and the actor's emission is
+    /// byte-identical.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub on_kill: Option<OnKill>,
 }
 
 /// A cardinal facing keyword (DSL v0.6). Emitted as the puppet's spawn yaw
@@ -4200,11 +4346,11 @@ impl Facing {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "kebab-case")]
 pub enum DespawnStyle {
-    /// Silent removal (`kill @e` with no death animation is not possible; the
-    /// compiler removes the entity via `/kill` on an `Invulnerable` puppet, or a
-    /// data-driven removal — see the emitter — so no death particles/sound show).
+    /// The body leaves unseen: no death animation, red flash or death particles
+    /// where it stood. It is moved under the world and removed there.
     Vanish,
-    /// Plays the vanilla death animation (a cutscene death).
+    /// The body dies where it stands, with the vanilla death animation (a death
+    /// the player is meant to watch).
     Kill,
 }
 
@@ -4541,6 +4687,13 @@ pub enum Verb {
         /// has no acting player.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         carrier: Option<Carrier>,
+        /// Enchantments on the given stack (`{"minecraft:sharpness": 2}`) —
+        /// the field a `loot` stack and an equipped piece carry, under the same
+        /// checks (`DW0433`/`DW0434`) and written by the same rule
+        /// ([`enchantment_component`]): on a `minecraft:enchanted_book` they are
+        /// the book's stored enchantments, the ones an anvil applies.
+        #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+        enchantments: BTreeMap<String, u32>,
     },
     /// Sets a campaign flag, enabling flag-gated objectives (v0.3).
     SetFlag {
@@ -4701,7 +4854,8 @@ pub enum Verb {
         /// (`spatial_contract.edges[].way.region`).
         way: String,
     },
-    /// Despawns an NPC and its interaction hitbox (DSL v0.4, spec-0008 §5).
+    /// Despawns an NPC and its interaction hitbox (DSL v0.4, spec-0008 §5). The
+    /// NPC leaves unseen: no death animation, red flash or death particles.
     DespawnNpc {
         /// The NPC (stage-2 ref) to remove.
         npc: NpcId,
@@ -7575,6 +7729,12 @@ pub enum EffectSite {
     /// The campaign's `on_death` bundle (spec-0031) — ambient, no DAG position,
     /// and no owning object: there is one per campaign.
     OnDeath,
+    /// A wave's or an actor's `on_kill` bundle (spec-0074) — ambient, no DAG
+    /// position: nobody is forced to be credited with a kill.
+    OnKill {
+        /// The fight's id (`wave/<kebab>` or `actor/<kebab>`).
+        fight: String,
+    },
 }
 
 impl EffectSite {
@@ -7601,7 +7761,8 @@ impl EffectSite {
             | EffectSite::DialogueRespawn { .. }
             | EffectSite::ShortcutUnlock { .. }
             | EffectSite::ShopOffer { .. }
-            | EffectSite::OnDeath => None,
+            | EffectSite::OnDeath
+            | EffectSite::OnKill { .. } => None,
         }
     }
 }
@@ -7666,6 +7827,9 @@ pub fn for_each_campaign_effect<'a>(
                     .nth(5)
                     .and_then(|n| n.parse().ok())
                     .unwrap_or(0),
+            },
+            crate::effects::EffectRootOwner::OnKill(f) => EffectSite::OnKill {
+                fight: f.id().to_string(),
             },
         };
         for (i, eff) in list.iter().enumerate() {

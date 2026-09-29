@@ -34,6 +34,7 @@
 //! - [`eclipse`]: no body stands in front of an affordance the party clicks (`DW0359`), no affordance shares a cell with a sealed gate's hitboxes (`DW0422`), and no two affordances share a cell with each other (`DW0878`).
 //! - [`edit`]: the map editor's stage-7 edit-script replay.
 //! - [`emit`]: build the `<out>/` output tree (bytes), deterministically.
+//! - [`engage`]: a body staged as a fight is one its own vanilla AI will fight under the delve's hour, weather and footing (`DW0920`).
 //! - [`faces`]: does the piece next to this one answer the way out it declares?
 //! - [`failure`]: the one type a compiler pass fails with — a DW code and the message that goes with it.
 //! - [`firework`]: `DW0899` — a rocket bursts in open air, clear of every posted body (spec-0068).
@@ -41,6 +42,7 @@
 //! - [`gates`]: `close-gate` gate-block validation — the physical dual of `open-gate`.
 //! - [`guarantee`]: which anchors an area's binding guarantees, answered before anything is placed (`DW0889`).
 //! - [`gym`]: the metrics gym — a site-plan campaign generated from the metrics table.
+//! - [`healthbar`]: a fight's health bar — its emission, and the colour/style vocabulary read from the pinned command tree (`DW0911`).
 //! - [`horizon`]: the one place a resolved `horizon` becomes the physical facts the rest of the compiler reads.
 //! - [`integrity`]: the emitted call graph is closed — every `function` call points at a function the compiler wrote (`DW0497`).
 //! - [`lethal`]: lethal volumes — the proofs a box that kills owes the completability model.
@@ -49,7 +51,9 @@
 //! - [`loot`]: container-fill proofs over the assembled world (`DW0431`/`DW0438`).
 //! - [`mark`]: a mark stays in the room its anchor names — an offset that leaves its anchor's piece is refused (`DW0897`).
 //! - [`massing`]: the L2 massing verbs — declarative control of a pool area's solved jigsaw layout.
+//! - [`muster`]: what a wave declares, phrased as questions the live bodies are asked.
 //! - [`nav`]: compile-time navigation over the solved voxel grid.
+//! - [`onkill`]: whether a fight comes back, and the `on_kill.fires` judgement it owes (`DW0914`/`DW0915`).
 //! - [`plan`]: resolve a validated campaign into the placement + naming model emission reads.
 //! - [`png`]: the deterministic hand-rolled PNG writer.
 //! - [`pool`]: a pool draw that seats the same anchored prefab twice (`DW0498`).
@@ -73,6 +77,7 @@
 //! - [`teleport`]: the `teleport` verb's one compile-time obligation, and the ledger saying what it looked at.
 //! - [`textfit`]: on-screen text that does not fit what draws it (`DW0330`/`DW0331`).
 //! - [`timeline`]: per-effect-timeline gate state — the static half of the `close-gate` model (`DW0410`).
+//! - [`trap_trigger`]: a trap's trigger cell holds the block its trigger kind names (`DW0917`).
 //! - [`traversal`]: a walked leg may only contain moves the body walking it can make (`DW0452`/`DW0453`).
 //! - [`view`]: the CPU render surface — the visual channel that ships in the one binary a creator installs.
 //! - [`watch`]: runtime-watch coverage of per-object bodies, in two tiers.
@@ -107,6 +112,7 @@ pub mod detail;
 pub mod eclipse;
 pub mod edit;
 pub mod emit;
+pub mod engage;
 pub mod faces;
 pub mod failure;
 pub mod firework;
@@ -114,6 +120,7 @@ pub mod flow;
 pub mod gates;
 pub mod guarantee;
 pub mod gym;
+pub mod healthbar;
 pub mod horizon;
 pub mod integrity;
 pub mod lethal;
@@ -122,7 +129,9 @@ pub mod load;
 pub mod loot;
 pub mod mark;
 pub mod massing;
+pub mod muster;
 pub mod nav;
+pub mod onkill;
 pub mod plan;
 pub mod png;
 pub mod pool;
@@ -146,6 +155,7 @@ pub mod surround;
 pub mod teleport;
 pub mod textfit;
 pub mod timeline;
+pub mod trap_trigger;
 pub mod traversal;
 pub mod view;
 pub mod watch;

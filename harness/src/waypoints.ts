@@ -434,3 +434,21 @@ function describe(value: unknown): string {
   if (Array.isArray(value)) return "array";
   return typeof value;
 }
+
+/**
+ * The index of the waypoint nearest `target` (straight-line), ties to the
+ * earlier one — where along a proven leg a crossing the compiler measured lies.
+ * `0` for an empty list.
+ */
+export function nearestIndex(cells: readonly Vec3Tuple[], target: Vec3Tuple): number {
+  let best = 0;
+  let bestD = Number.POSITIVE_INFINITY;
+  cells.forEach((c, i) => {
+    const d = (c[0] - target[0]) ** 2 + (c[1] - target[1]) ** 2 + (c[2] - target[2]) ** 2;
+    if (d < bestD) {
+      best = i;
+      bestD = d;
+    }
+  });
+  return best;
+}

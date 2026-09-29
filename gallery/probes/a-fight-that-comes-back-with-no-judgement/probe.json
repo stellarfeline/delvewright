@@ -1,0 +1,12 @@
+{
+  "code": "DW0915",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "remove",
+      "path": "/content/waves/0/on_kill/fires"
+    }
+  ],
+  "units": [],
+  "why": "`wave/muster` declares `respawns_on_rest` in a campaign with a bonfire, so every rest re-seats it and its bodies die again. Whether a body that comes back pays again decides whether the fight can be farmed, and the engine does not decide that for a creator: with `fires` removed the bundle is refused, naming the bonfire and the field that bring the wave back and the two judgements to choose between. It declares no unit: `OnKill.fires` is bound in the primary by `wave/muster` itself."
+}

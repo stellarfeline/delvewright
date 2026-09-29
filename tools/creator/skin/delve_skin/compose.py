@@ -30,7 +30,15 @@ import numpy as np
 from PIL import Image
 from skinpy import Skin
 
-from delve_skin.palette import RGBA, jitter, parse_hex, rng_for, seed_from_id, shade
+from delve_skin.palette import (
+    RGBA,
+    deepen,
+    jitter,
+    parse_hex,
+    rng_for,
+    seed_from_id,
+    shade,
+)
 from delve_skin.wardrobe import SHOULDER_HAIR, Span, Wardrobe
 
 FACE_IDS = ("front", "back", "left", "right", "up", "down")
@@ -38,6 +46,29 @@ FACE_IDS = ("front", "back", "left", "right", "up", "down")
 #: The four faces a garment band wraps around. ``up``/``down`` are the caps and
 #: are painted on their own, because a hem is a band and a cap is not.
 SIDE_FACES = ("front", "back", "left", "right")
+
+# --- where a face sits on the 8x8 front of a head ---------------------------
+#
+# Measured, not chosen. The nine default player skins the pinned client ships
+# (1.21.11) agree: the eye row is the third row up from the chin in 9 of 9, and
+# a two-pixel mouth sits at x=3,4 on the first row up in 9 of 9. The bottom row
+# is darker at its outer columns than at its centre in 7 of the 9 -- and the
+# two that are not are the two whose bottom row is beard, so it is 7 of 7 among
+# the clean-shaven. The instrument, the second source and the whole derivation
+# are in `docs/reference/face-craft.md`.
+#
+# A face is therefore the LOWER FIVE rows, and what is above the brow is
+# forehead for the hair to come down onto. A face painted on the upper rows
+# instead leaves four rows of unmodelled fill under it -- half a head of flat
+# skin, which reads as an enormous jaw, and which a beard hides by occupying
+# exactly those rows.
+FACE_HAIRLINE = 6
+FACE_BROW = 4
+FACE_EYES = 3
+#: The upper lip: what a moustache is, and the top row of a beard.
+FACE_LIP = 2
+FACE_MOUTH = 1
+FACE_CHIN = 0
 
 # Palette keys a cast entry may provide. Missing keys fall back to a derived
 # shade so a sparse palette still yields a complete, coherent skin. A key that
@@ -300,21 +331,52 @@ def _build_head(c: _Canvas, p: Dict[str, RGBA], w: Wardrobe, feat: dict,
             if w.hair_reaches_the_shoulders():
                 c.streak("torso", "back", SHOULDER_HAIR, hair_grey, rng)
 
-    # Brow shadow just under the fringe, spanning whatever the hair leaves --
-    # a face with hair down its outer columns has the shadow between them.
-    bx0, bx1 = (1, 6) if framed else (0, 7)
-    for bx in range(bx0, bx1 + 1):
-        c.px("head", "front", bx, 6, sh)
+    # --- the face -----------------------------------------------------------
+    #
+    # A fringe has a shadow under it; a bare skull does not, and a band across
+    # a bald head is a headband.
+    if hair_span is not None:
+        bx0, bx1 = (1, 6) if framed else (0, 7)
+        for bx in range(bx0, bx1 + 1):
+            c.px("head", "front", bx, FACE_HAIRLINE, sh)
 
-    # Eyes at y=5: sockets + a faint highlight pixel to the outer side.
+    # Eyebrows, over each eye in the two columns that eye occupies.
+    for bx in (1, 2, 5, 6):
+        c.px("head", "front", bx, FACE_BROW, sh)
+
+    # Eyes: sockets + a faint highlight pixel to the outer side.
     eye = p["eye"]
     for ex in (2, 5):
-        c.px("head", "front", ex, 5, eye)
-    c.px("head", "front", 1, 5, shade(skin, 18))
-    c.px("head", "front", 6, 5, shade(skin, 18))
-    # Nose ridge shadow at mid-face.
-    c.px("head", "front", 3, 4, sh)
-    c.px("head", "front", 4, 4, sh)
+        c.px("head", "front", ex, FACE_EYES, eye)
+    c.px("head", "front", 1, FACE_EYES, shade(skin, 18))
+    c.px("head", "front", 6, FACE_EYES, shade(skin, 18))
+
+    # The lower face, which is the half of a head a beard used to be hiding.
+    # There is no nose: at this size a nose is two dark pixels immediately over
+    # the mouth, and all five clean-shaven default skins the pinned client
+    # ships leave that row bare -- the pair the bearded ones carry there is the
+    # moustache. The lip row is therefore where facial hair goes and nothing
+    # else. Painted before the facial hair, so a beard covers a mouth the way a
+    # beard covers a mouth, and consuming no rng, so a beard's own texture does
+    # not move for its being here.
+    dark = deepen(skin, sh)
+    for mx in (3, 4):
+        c.px("head", "front", mx, FACE_MOUTH, dark)
+    # The jaw narrows toward the chin: the two outermost columns of face the
+    # chin row still has step down, the outer one further than the inner. Asked
+    # of where the hair actually is rather than of its name, so a length that
+    # frames the face the whole way down keeps its frame and tapers inside it.
+    chin_bare = hair_span is None or hair_span[0] > FACE_CHIN
+    jx0, jx1 = (0, 7) if chin_bare or not framed else (1, 6)
+    for jx in (jx0, jx1):
+        c.px("head", "front", jx, FACE_CHIN, dark)
+    for jx in (jx0 + 1, jx1 - 1):
+        c.px("head", "front", jx, FACE_CHIN, sh)
+    # The same taper carried round the sides. A jaw that narrows only on the
+    # face is a mask, and the sides are most of what a player walking past sees.
+    if chin_bare:
+        c.rows("head", "left", FACE_CHIN, FACE_CHIN, sh)
+        c.rows("head", "right", FACE_CHIN, FACE_CHIN, sh)
 
     greys_beard = w.greys_beard()
 
@@ -324,21 +386,22 @@ def _build_head(c: _Canvas, p: Dict[str, RGBA], w: Wardrobe, feat: dict,
         return beard
 
     # Facial hair is a declared feature, not a region that is always there. A
-    # full beard is the chin and jaw (front y0..2), a centred moustache row
-    # (y3), the chin underside and the lower front of the side faces; a
-    # moustache is that one row and nothing else; clean-shaven paints nothing
-    # and the head keeps the skin it was filled with.
+    # full beard is the chin and the jaw (the mouth and chin rows), a centred
+    # moustache on the lip row above them, the chin underside and the lower
+    # front of the side faces; a moustache is that one row and nothing else.
+    # Clean-shaven paints nothing here, and what shows through is the face the
+    # lower-face block above has already modelled.
     if w.facial_hair == "beard":
         for x in range(1, 7):
-            for y in range(0, 3):
+            for y in (FACE_CHIN, FACE_MOUTH):
                 c.px("head", "front", x, y, jitter(rng, beardcol(x, y), 8))
     if w.facial_hair in ("beard", "moustache"):
         for x in range(2, 6):
-            c.px("head", "front", x, 3, jitter(rng, beard, 8))
+            c.px("head", "front", x, FACE_LIP, jitter(rng, beard, 8))
     if w.facial_hair == "beard":
         c.fill("head", "down", beard)  # chin underside
-        c.rows("head", "left", 0, 2, beard)
-        c.rows("head", "right", 0, 2, beard)
+        c.rows("head", "left", FACE_CHIN, FACE_LIP, beard)
+        c.rows("head", "right", FACE_CHIN, FACE_LIP, beard)
         c.noise("head", "down", beard, 8, rng)
 
 

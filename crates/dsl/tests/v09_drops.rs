@@ -46,6 +46,7 @@ static QUESTS_V09: LazyLock<String> = LazyLock::new(|| {
         "id": "wave/gate-boss",
         "anchor": "anchor/keeper-stand",
         "tier": "boss",
+        "health_bar": { "title": "The Gate Warden", "range": 12 },
         "mobs": [
           { "entity": "minecraft:zombie", "count": 1,
             "equipment": { "feet": "minecraft:leather_boots", "main_hand": "minecraft:iron_sword" },
