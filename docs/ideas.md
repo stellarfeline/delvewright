@@ -24,3 +24,5 @@ records `spec'd → spec-NNNN`; when it is scheduled, `queued → task/PR`.
 |---|---|---|---|---|
 | IDEA-0001 | 2026-08-12 | Idea-capture mechanism itself: lighter than a spec, mechanically un-losable, elaboration on demand | queued | this file + state-page section |
 | IDEA-0002 | 2026-08-12 | Stormveil-class castle: heavy shortcut-loop topology, dense rooms, partial ruination — M4 target, behind the three-clean-playtests density gate; Tidesend Citadel (bell-r2) is the on-ramp | captured | graduates to an M4 spec when the density gate's streak is built |
+| IDEA-0003 | 2026-09-29 | A non-linear (web) quest structure: the story and its objectives are strictly linear today, every checkpoint a gate the party must visit in order; research how established RPGs structure branching and parallel quests before designing one | captured | research round, after vesperhold ships |
+| IDEA-0004 | 2026-09-29 | Quest points as real placed blocks (lever, button, campfire, and the like) instead of the glowing `item_display` marker, which shows through walls and can spoil what lies behind a closed door | captured | feasibility + spec, after vesperhold ships |
