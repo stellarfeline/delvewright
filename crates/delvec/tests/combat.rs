@@ -1,4 +1,4 @@
-//! spec-0023 §2 — compile-time combat winnability (`DW0470`–`DW0475`).
+//! spec-0023 §2 — compile-time combat proofs (`DW0470`–`DW0473`, `DW0475`).
 //!
 //! Every case is the `souls-bonfire` fixture (a `kill` objective on
 //! `wave/guards`, behind a bonfire) with ONE field changed, so what the
@@ -183,6 +183,54 @@ fn health_beyond_the_swing_budget_is_dw0472() {
     assert_eq!(failure_code(tmp.path()), "DW0472");
 }
 
+/// Dress `wave/guards`' zombies as one body in a full netherite set (armour 20,
+/// toughness 12) with `max_health` `hp`. The party's best blow is the kit's iron
+/// sword: 1 (the fist) + 5 = 6, which that armour lands as
+/// `6 × (1 − clamp(20 − 6/(2 + 12/4), 4, 20)/25)` = `6 × (1 − 18.8/25)` = 1.488.
+fn netherite_guard(quests: &mut serde_json::Value, hp: f64) {
+    let mobs = quests["content"]["waves"][0]["mobs"]
+        .as_array_mut()
+        .unwrap();
+    mobs[0]["count"] = serde_json::json!(1);
+    mobs[0]["attributes"]["max_health"] = serde_json::json!(hp);
+    mobs[0]["equipment"] = serde_json::json!({
+        "head": "minecraft:netherite_helmet",
+        "chest": "minecraft:netherite_chestplate",
+        "legs": "minecraft:netherite_leggings",
+        "feet": "minecraft:netherite_boots",
+    });
+}
+
+/// 600 HP in netherite: `ceil(600 / 1.488)` = 404 swings, over the 400 budget.
+/// Unarmoured it is 100 swings (and the arithmetic that ignored armour and the
+/// fist said `600 / 5` = 120) — so only the armour term makes this red.
+#[test]
+fn an_armoured_body_past_the_budget_is_dw0472() {
+    let tmp = TempCampaign::new();
+    campaign_with(tmp.path(), |quests, _| netherite_guard(quests, 600.0));
+    match build(tmp.path()) {
+        Err(BuildFailure::Diagnostic { code, message }) => {
+            assert_eq!(code, "DW0472", "{message}");
+            assert!(message.contains("armour 20 toughness 12"), "{message}");
+            assert!(message.contains("= 404 swings a body"), "{message}");
+            assert!(
+                message.contains("6 = 1 (the player's base attack damage) + 5"),
+                "{message}"
+            );
+        }
+        other => panic!("expected DW0472, got {other:?}"),
+    }
+}
+
+/// 595 HP in the same set: `ceil(595 / 1.488)` = 400 swings — at the budget, not
+/// past it, so it builds.
+#[test]
+fn the_same_armoured_body_just_under_the_budget_builds() {
+    let tmp = TempCampaign::new();
+    campaign_with(tmp.path(), |quests, _| netherite_guard(quests, 595.0));
+    build(tmp.path()).expect("400 swings is the budget, not past it");
+}
+
 #[test]
 fn a_tuned_but_finite_elite_builds_and_needs_no_warning() {
     let tmp = TempCampaign::new();
@@ -244,22 +292,6 @@ fn a_hit_that_leaves_one_heart_builds() {
         bundle.push(serde_json::json!({"type": "damage-players", "amount": 19}));
     });
     build(tmp.path()).expect("19 of 20 HP is a beating, not a scripted death");
-}
-
-#[test]
-fn a_foodless_party_with_mandatory_combat_warns_dw0474() {
-    let tmp = TempCampaign::new();
-    campaign_with(tmp.path(), |_, classes| {
-        for class in classes["content"]["classes"].as_array_mut().unwrap() {
-            let kit = class["kit"].as_array_mut().unwrap();
-            kit.retain(|item| {
-                let id = item["item"].as_str().unwrap_or_default();
-                !id.contains("bread") && !id.contains("beef") && !id.contains("stew")
-            });
-        }
-    });
-    let (_, warnings) = build(tmp.path()).expect("no sustain is a warning, not a build failure");
-    assert!(has_code(&warnings, "DW0474"), "{warnings:#?}");
 }
 
 #[test]
@@ -802,22 +834,13 @@ fn no_mandatory_wave(quests: &mut serde_json::Value) {
     }
 }
 
-fn strip_food(classes: &mut serde_json::Value) {
-    for class in classes["content"]["classes"].as_array_mut().unwrap() {
-        class["kit"].as_array_mut().unwrap().retain(|item| {
-            let id = item["item"].as_str().unwrap_or_default();
-            !id.contains("bread") && !id.contains("beef") && !id.contains("stew")
-        });
-    }
-}
-
-/// **The red this round was built to produce.** A campaign whose only combat is
-/// an actor it turns loose, with no food anywhere, raised NOTHING before: the
-/// whole winnability pass was gated on `has_encounters`, which is zero here.
+/// A campaign whose only combat is an actor it turns loose publishes that fight
+/// in `fights`, although its wave half is empty — the pass is gated on every
+/// fight of either shape, never on `kill`-a-wave alone.
 #[test]
-fn a_foodless_party_fighting_only_actors_warns_dw0474() {
+fn an_actor_only_campaign_publishes_its_fight() {
     let tmp = TempCampaign::new();
-    campaign_with(tmp.path(), |quests, classes| {
+    campaign_with(tmp.path(), |quests, _| {
         quests["dsl_version"] = serde_json::json!(DSL_VERSION);
         no_mandatory_wave(quests);
         quests["content"]["actors"] = serde_json::json!([barrow_warden()]);
@@ -825,9 +848,8 @@ fn a_foodless_party_fighting_only_actors_warns_dw0474() {
             .as_array_mut()
             .unwrap()
             .push(unleash_trigger());
-        strip_food(classes);
     });
-    let (out, warnings) = build(tmp.path()).expect("no sustain is a warning, not a failure");
+    let (out, _) = build(tmp.path()).expect("builds");
 
     let plan: serde_json::Value =
         serde_json::from_slice(out.get("validation/combat-plan.json").unwrap()).unwrap();
@@ -841,29 +863,6 @@ fn a_foodless_party_fighting_only_actors_warns_dw0474() {
     assert_eq!(plan["fights"]["total"], 1);
     assert_eq!(plan["fights"]["unbound"], false);
     assert!(plan["fights"]["reason"].is_null());
-
-    assert!(
-        has_code(&warnings, "DW0474"),
-        "a delve with a fight and no food is DW0474 whichever shape the fight takes: {warnings:#?}"
-    );
-}
-
-/// The same campaign WITH food is green — so the warning above is about the
-/// sustain, not about the widening.
-#[test]
-fn the_same_actor_only_campaign_with_food_is_clean() {
-    let tmp = TempCampaign::new();
-    campaign_with(tmp.path(), |quests, _| {
-        quests["dsl_version"] = serde_json::json!(DSL_VERSION);
-        no_mandatory_wave(quests);
-        quests["content"]["actors"] = serde_json::json!([barrow_warden()]);
-        quests["content"]["triggers"]
-            .as_array_mut()
-            .unwrap()
-            .push(unleash_trigger());
-    });
-    let (_, warnings) = build(tmp.path()).expect("builds");
-    assert!(!has_code(&warnings, "DW0474"), "{warnings:#?}");
 }
 
 /// A combat-free campaign states its own zero rather than being silent about it.
