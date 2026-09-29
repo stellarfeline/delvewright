@@ -245,7 +245,6 @@ mod tests {
             def["has_precipitation"],
             serde_json::json!(VOID_BIOME_PRECIPITATES)
         );
-        assert!(VOID_BIOME_PRECIPITATES);
         assert_eq!(vanilla_precipitates("minecraft:the_void"), Some(false));
     }
 

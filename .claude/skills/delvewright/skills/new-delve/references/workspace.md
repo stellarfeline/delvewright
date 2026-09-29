@@ -200,6 +200,33 @@ fall on the play area and shelter a body standing in them — so declaring `nigh
 which is why *Reference: authoring pitfalls* forbids reaching for the hour to save
 a mob.
 
+### What a `thunder` beat does to the scene
+
+`rain` and `thunder` both fall on the play area; `thunder` also strikes it.
+Choose `rain` for a storm without strikes. Measured on the pinned server in a
+built void-horizon delve under the engine's own gamerules (difficulty `normal`,
+fire spread off): one player on the ground drew **7 natural strikes in 5
+minutes**, every one inside the play area. A
+bolt summoned onto each body showed what any one strike does to what it hits:
+
+- **A player** takes 5 damage (20 → 15) and is not left burning.
+- **A villager becomes a witch**: every villager body — including an NPC's
+  `NoAI`, `Invulnerable` body — turns into a witch that keeps its tags, `NoAI`
+  and `Invulnerable`. A villager NPC standing under open sky in a `thunder`
+  scene can end the scene as a witch. A mannequin NPC is untouched.
+- **A pig becomes a zombified piglin**, a red mooshroom turns brown, and a
+  creeper becomes charged (and takes 5 damage).
+- **Bodies that can be hurt** take damage: a vulnerable mannequin 20 → 10. An
+  `Invulnerable` body (a zombie puppet, a mannequin NPC) takes none.
+- **Unhurt**: an armour stand, and an item frame and the item in it.
+- **No block is set alight**: zero fire on stone and on oak planks, wool and hay,
+  in thunder and in clear weather. (The counter is not blind: with fire spread
+  turned on, the same strike lit 6 blocks and spread to 16 in 30 s.)
+- No skeleton-horse trap appears (natural spawning is off).
+
+Not measured: a villager NPC's name and dialogue after it turns, and species
+not listed here.
+
 ## Languages — ask, do not assume
 
 **Ask the user which languages the delve ships in, here, before any prose is
