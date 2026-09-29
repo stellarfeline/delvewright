@@ -401,7 +401,7 @@ pub fn build_with_warnings(
 
     // Gravity-despawn gate: before any downstream model
     // is built, reject a prefab whose gravity floor (sand/gravel/…) sits
-    // unsupported over the delve's `the_void` world and would despawn at placement,
+    // unsupported over the delve's void world and would despawn at placement,
     // silently deforming the shipped map. This is the authoritative direct gate —
     // it does not wait for a fall to happen to intersect the critical path (DW0311)
     // or a wave seat (DW0312). Analysis-tier (exit 2, mapped in main): a

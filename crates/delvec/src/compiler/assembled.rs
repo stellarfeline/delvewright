@@ -5,7 +5,7 @@
 //! `/place template <pos> <rotation>`, apply the solver's socket seals (air fill
 //! opens a mated socket; wall material seals an unused one), clear gate
 //! thresholds — **and then settle gravity-affected blocks**, because the delve
-//! ships into a `the_void` flat world (validation/compose.yaml) with no natural
+//! ships into a void flat world (validation/compose.yaml) with no natural
 //! floor, so an unsupported `sand`/`gravel`/… block placed by `/place template`
 //! immediately falls out of the world and leaves air.
 //!
@@ -216,7 +216,7 @@ pub fn is_waterloggable(name: &str) -> bool {
 }
 
 /// Whether a block falls under gravity when the cell below cannot support it
-/// (vanilla `FallingBlock`). In the delve's `the_void` world such a block, placed
+/// (vanilla `FallingBlock`). In the delve's void world such a block, placed
 /// unsupported by `/place template`, drops out of the world and leaves air — so
 /// the assembled-world model must not treat it as permanent floor.
 ///
@@ -927,7 +927,7 @@ pub struct Occupancy {
 /// free-fluid cell by [`is_fluid`] and both fluids land in `flooded`. Vanilla's two
 /// fluids differ only in *reach* — overworld lava decays over 3 cells rather than 7
 /// and forms no new sources — and the delve ships into an ordinary overworld
-/// (a superflat with the `minecraft:the_void` biome, not an ultrawarm dimension),
+/// (a void superflat, not an ultrawarm dimension),
 /// so running lava through the water flow above over-marks its spread. That is the
 /// permitted direction: the model may call a cell molten that the game leaves dry,
 /// and may never call a molten cell floor.
@@ -1184,7 +1184,7 @@ fn spread(solid: &BTreeSet<[i32; 3]>, sources: &BTreeSet<[i32; 3]>) -> BTreeSet<
 }
 
 /// `DW0313`: one or more placed gravity blocks despawn into the void at placement.
-/// A gravity floor (`sand`/`gravel`/…) laid unsupported over the delve's `the_void`
+/// A gravity floor (`sand`/`gravel`/…) laid unsupported over the delve's void
 /// world falls out of the world on the first block update, silently deforming the
 /// shipped map (holes, light leaks, visual damage) even where no critical path or
 /// wave seat happens to cross it — so DW0311/DW0312 alone would let it ship green.
@@ -1272,7 +1272,7 @@ fn despawn_message(settled: &[Settled], pieces: &[PieceBox]) -> Option<String> {
     Some(format!(
         "gravity settling: {total} placed gravity block(s) fall out of the world at placement and \
          despawn into the void, leaving holes in the assembled floor. The delve ships into a \
-         `the_void` world, so a gravity block ({kinds_hint}) with no solid block directly beneath it \
+         void world, so a gravity block ({kinds_hint}) with no solid block directly beneath it \
          is unsupported and drops away on the first block update. Affected: {summary}. \
          WHERE to fix: the prefab / tileset generator that produced these piece(s), not the compiler. \
          HOW: give every gravity floor cell a non-falling SUPPORT block directly beneath it — a \
