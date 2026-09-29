@@ -1566,6 +1566,55 @@ test("a drop on a walk leg is restored to full, whoever dealt it", async () => {
   assert.equal(bot.calls.filter((c) => c.startsWith("chat(/effect ")).length, 1);
 });
 
+// --- the walk into a lethal volume opens a closed gate, as a player would --------
+
+test("the walk in opens a closed gate in its way — once, and never an open one", async () => {
+  // vesperhold's well: its wall's one opening is a dark oak fence gate at
+  // [31, 68, 80], the cell the placement table names as the near lip, closed
+  // when the world starts. Driving at it pressed the bot against the gate at
+  // x 31.075 for the whole deadline.
+  const GATE = 777;
+  const bot = new InteractFakeBot();
+  bot.entity.position = new FakeVec3(30.5, 68, 80.5);
+  let open = false;
+  const used: string[] = [];
+  const gate = {
+    type: GATE,
+    name: "dark_oak_fence_gate",
+    position: { x: 31, y: 68, z: 80 },
+    getProperties: () => ({ open }),
+  };
+  const air = { type: 0, name: "air", position: { x: 0, y: 0, z: 0 }, getProperties: () => ({}) };
+  (bot as unknown as { blockAt: (p: FakeVec3) => unknown }).blockAt = (p) =>
+    Math.floor(p.x) === 31 && Math.floor(p.y) === 68 && Math.floor(p.z) === 80 ? gate : air;
+  (bot as unknown as { activateBlock: (b: typeof gate) => Promise<void> }).activateBlock = async (b) => {
+    used.push(b.name);
+    open = !open;
+  };
+  const executor = attach(bot);
+  const openGateAhead = (
+    executor as unknown as {
+      openGateAhead: (
+        cell: readonly [number, number, number],
+        openable: ReadonlySet<number>,
+        opened: Map<string, number>,
+        volume: string,
+      ) => Promise<void>;
+    }
+  ).openGateAhead.bind(executor);
+  const opened = new Map<string, number>();
+  await openGateAhead([35, 60, 80], new Set([GATE]), opened, "lethal/undertide");
+  assert.deepEqual(used, ["dark_oak_fence_gate"], "the closed gate is opened");
+  assert.equal(open, true);
+  await openGateAhead([35, 60, 80], new Set([GATE]), opened, "lethal/undertide");
+  assert.deepEqual(used, ["dark_oak_fence_gate"], "an open gate is never used — that would close it");
+  open = false;
+  await openGateAhead([35, 60, 80], new Set([GATE]), opened, "lethal/undertide");
+  assert.deepEqual(used, ["dark_oak_fence_gate"], "nor the same cell twice inside a second");
+  await openGateAhead([35, 60, 80], new Set(), new Map(), "lethal/undertide");
+  assert.deepEqual(used, ["dark_oak_fence_gate"], "only what the pathfinder's rule calls openable");
+});
+
 // --- executor tier: reach + timed gate + completion transport -----------------
 
 import type { ReachStep } from "../src/critical-path.ts";

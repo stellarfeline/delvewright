@@ -3197,6 +3197,10 @@ export class MineflayerExecutor implements StepExecutor {
       const p = bot.entity.position;
       return !bot.entity.onGround && overFootprint([p.x, p.y, p.z], box);
     };
+    // The pathfinder's own rule for what a walk may open (a non-iron gate), so the
+    // walk in and every other walk agree on it.
+    const openable = new Movements(bot).openable;
+    const opened = new Map<string, number>();
     // The drive's own deadline counts DRIVING time only: a body carried in by
     // the game is on the sink's clock, not this one.
     let driveLeft = LETHAL_DEATH_TIMEOUT_MS;
@@ -3205,6 +3209,7 @@ export class MineflayerExecutor implements StepExecutor {
       try {
         while (Date.now() < until && !inside() && !released()) {
           if (this.death) throw this.death;
+          await this.openGateAhead(cell, openable, opened, trial.volume);
           const p = bot.entity.position;
           try {
             await bot.lookAt(p.offset(cell[0] + 0.5 - p.x, 0, cell[2] + 0.5 - p.z), true);
@@ -3218,11 +3223,67 @@ export class MineflayerExecutor implements StepExecutor {
         bot.clearControlStates();
       }
       driveLeft = until - Date.now();
+      if (!inside() && !released()) {
+        const p = bot.entity.position;
+        process.stderr.write(
+          `[death-loop] ${trial.volume}: the walk in ended at ` +
+            `[${p.x.toFixed(2)}, ${p.y.toFixed(2)}, ${p.z.toFixed(2)}] ` +
+            `(${bot.entity.onGround ? "standing" : "off the ground"}) with the body neither in ` +
+            `the volume nor over it\n`,
+        );
+      }
       if (inside() || !released()) return;
       // A body that lands on something outside the volume — a rim it overhung
       // when it stepped down, a ledge in the shaft — is standing again, and a
       // player standing at the edge of a hole walks on.
       if (!(await this.sinkInto(box, trial, inside)) || driveLeft <= 0) return;
+    }
+  }
+
+  /**
+   * Open a closed gate standing between the body and `cell`, the way a player
+   * walking in does: a right-click, which adventure mode permits.
+   *
+   * vesperhold's well is ringed by a wall whose one opening is a dark oak fence
+   * gate — the very cell the placement table names as the well's near lip — and
+   * it stands closed when the world starts. The pathfinder opens a gate on a path
+   * it plans; the walk in is raw drive, so it has to do the same itself, by the
+   * same rule (`openable`: the pathfinder's own set). Each cell is used at most
+   * once a second, because using an open gate closes it again.
+   */
+  private async openGateAhead(
+    cell: Vec3Tuple,
+    openable: ReadonlySet<number>,
+    opened: Map<string, number>,
+    volume: string,
+  ): Promise<void> {
+    const bot = this.requireBot();
+    const p = bot.entity.position;
+    const dx = cell[0] + 0.5 - p.x;
+    const dz = cell[2] + 0.5 - p.z;
+    const len = Math.hypot(dx, dz);
+    if (len < 1e-6) return;
+    for (const reach of [0.5, 1.0]) {
+      for (const dy of [0, 1]) {
+        const block = bot.blockAt(p.offset((dx / len) * reach, dy, (dz / len) * reach));
+        if (!block || !openable.has(block.type)) continue;
+        if ((block.getProperties() as { open?: unknown }).open !== false) continue;
+        const key = `${block.position.x},${block.position.y},${block.position.z}`;
+        if (Date.now() - (opened.get(key) ?? 0) < 1_000) continue;
+        opened.set(key, Date.now());
+        try {
+          await bot.activateBlock(block);
+          process.stderr.write(
+            `[death-loop] ${volume}: opened the closed ${block.name} at [${key}] in the way in\n`,
+          );
+        } catch (err) {
+          process.stderr.write(
+            `[death-loop] ${volume}: could not open the ${block.name} at [${key}]: ` +
+              `${err instanceof Error ? err.message : String(err)}\n`,
+          );
+        }
+        return;
+      }
     }
   }
 
