@@ -30,7 +30,10 @@ import {
   inBox,
   lethalTrialFailures,
   openLethalTrial,
+  overFootprint,
   parseDeathPlan,
+  SINK_BLOCKS_PER_TICK,
+  sinkBudgetMs,
   volumeReachesCell,
   LETHAL_STEP_COST,
   lethalStepCost,
@@ -1158,4 +1161,33 @@ test("a finished stage is judged whole, and a disabled one carries its reason", 
   const off = deathLoopStage(stageInput({ enabled: false }));
   assert.equal(off.ran, false);
   assert.deepEqual(off.findings, ["skipped via DELVEWRIGHT_DEATH_LOOP=0"]);
+});
+
+// --- letting go over a submerged volume ------------------------------------
+
+/** vesperhold's well: the bottom three layers of a still column y=58..67. */
+const UNDERTIDE = { lo: [35, 58, 79] as const, hi: [37, 60, 81] as const };
+
+test("a body is over a volume's footprint exactly where the selector's region lies below it", () => {
+  // The continuous region is [lo, hi + 1] on x and z.
+  assert.equal(overFootprint([35.0, 66.9, 79.0], UNDERTIDE), true);
+  assert.equal(overFootprint([38.0, 66.9, 82.0], UNDERTIDE), true);
+  assert.equal(overFootprint([36.5, 120, 80.5], UNDERTIDE), true, "height is not the question");
+  assert.equal(overFootprint([34.99, 66.9, 80.5], UNDERTIDE), false);
+  assert.equal(overFootprint([36.5, 66.9, 82.01], UNDERTIDE), false);
+  // The lip the placement table proved nearest the well is not over it.
+  assert.equal(overFootprint([31.5, 68, 80.5], UNDERTIDE), false);
+});
+
+test("the sink budget is the measured descent, and it covers the descents that were measured", () => {
+  assert.equal(SINK_BLOCKS_PER_TICK, 0.025);
+  // Released at the surface (feet 66.97), the body is matched once its feet reach
+  // the region's top face, y = hi + 1 = 61: 5.97 blocks. The six measured
+  // descents took 12.13-12.27 s from release to death.
+  const depth = 66.97 - (UNDERTIDE.hi[1] + 1);
+  const budget = sinkBudgetMs(depth);
+  assert.ok(budget > 12_270, `budget ${budget}ms must cover the slowest measured descent`);
+  assert.ok(budget < 20_000, `budget ${budget}ms is a bound, not a guess`);
+  assert.equal(sinkBudgetMs(-2), 1_000, "a body already level with the volume waits only for the kill");
+  assert.ok(sinkBudgetMs(12) > sinkBudgetMs(6), "deeper is longer");
 });

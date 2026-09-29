@@ -81,6 +81,8 @@ import { isRejection } from "./rejection.ts";
 import {
   bodyInVolume,
   entryCellOf,
+  overFootprint,
+  sinkBudgetMs,
   volumeReachesCell,
   inBox,
   dropOf,
@@ -3156,19 +3158,27 @@ export class MineflayerExecutor implements StepExecutor {
   }
 
   /**
-   * Put the bot's feet inside `box`, having already walked to its lip.
+   * Put the bot into `box` the way a player meets it, having already walked to
+   * its lip: walk in until nothing is underfoot over the volume, then let go.
    *
    * The pathfinder cannot be asked for this: its nearest goal is a range of one
    * block, so it parks the bot beside a one-cell hazard and calls it arrived. Raw
    * forward drive is the mechanism this file already trusts against exact cells
    * (the timed-gate dash, the unstick burst) and it is what a player pressing W
-   * does. Throws whatever the walk threw — including the {@link BotDeathError}
-   * that is the whole point.
+   * does — **until the body is over the volume with nothing under it**
+   * ({@link overFootprint}, and not on the ground). From there a player who does
+   * nothing is carried in by the game: a pit is fallen into, and a submerged
+   * volume is sunk into, at {@link SINK_BLOCKS_PER_TICK}. Driving on is not what
+   * a player does, and in water it holds the body up: pressing into the far wall
+   * is the climb-out-of-water impulse. The volume's own selector is what then
+   * kills the body; nothing here moves it but the game.
    *
-   * It also RECORDS what it saw. The drive can run its deadline out with the body
-   * still outside the box — a wall in the way, a cell no body fits in — and it
-   * returns normally when it does, so the only thing separating "the volume did
-   * not kill what was in it" from "nothing ever got in" is this flag.
+   * Throws whatever the walk threw — including the {@link BotDeathError} that is
+   * the whole point. It also RECORDS what it saw: the drive can run its deadline
+   * out with the body still outside the box — a wall in the way, a cell no body
+   * fits in — and a released body can come to rest short of it, and it returns
+   * normally when either happens, so the only thing separating "the volume did
+   * not kill what was in it" from "nothing ever got in" is the flag.
    */
   private async stepInto(box: Box, cell: Vec3Tuple, trial: LethalTrial): Promise<void> {
     const bot = this.requireBot();
@@ -3178,9 +3188,13 @@ export class MineflayerExecutor implements StepExecutor {
       return true;
     };
     if (inside()) return;
+    const released = (): boolean => {
+      const p = bot.entity.position;
+      return !bot.entity.onGround && overFootprint([p.x, p.y, p.z], box);
+    };
     const deadline = Date.now() + LETHAL_DEATH_TIMEOUT_MS;
     try {
-      while (Date.now() < deadline && !inside()) {
+      while (Date.now() < deadline && !inside() && !released()) {
         if (this.death) throw this.death;
         const p = bot.entity.position;
         try {
@@ -3194,6 +3208,43 @@ export class MineflayerExecutor implements StepExecutor {
     } finally {
       bot.clearControlStates();
     }
+    if (inside() || !released()) return;
+    await this.sinkInto(box, trial, inside);
+  }
+
+  /**
+   * **Let go over the volume, and wait for the game to carry the body in.**
+   *
+   * Every control is already released; this only watches. The wait is bounded by
+   * the measured descent ({@link sinkBudgetMs}) over the distance from the feet to
+   * the volume's top face, and it ends early when the body gets in, dies, or comes
+   * to rest on something outside the volume — a ledge, a floor over the hazard —
+   * which is a place this volume cannot reach and is reported as never entered.
+   */
+  private async sinkInto(box: Box, trial: LethalTrial, inside: () => boolean): Promise<void> {
+    const bot = this.requireBot();
+    const from = bot.entity.position.clone();
+    const depth = from.y - (box.hi[1] + 1);
+    const budget = sinkBudgetMs(depth);
+    process.stderr.write(
+      `[death-loop] ${trial.volume}: released over the volume at ` +
+        `[${from.x.toFixed(2)}, ${from.y.toFixed(2)}, ${from.z.toFixed(2)}]` +
+        `${(bot.entity as { isInWater?: boolean }).isInWater ? " in water" : ""}, ${Math.max(0, depth).toFixed(2)} block(s) ` +
+        `above it; every control let go, allowing ${budget}ms for the game to carry the body in\n`,
+    );
+    const deadline = Date.now() + budget;
+    while (Date.now() < deadline) {
+      if (this.death) throw this.death;
+      if (inside()) return;
+      if (bot.entity.onGround) break;
+      await delay(GATE_DASH_TICK_MS);
+    }
+    const p = bot.entity.position;
+    process.stderr.write(
+      `[death-loop] ${trial.volume}: the released body ` +
+        `${bot.entity.onGround ? "came to rest" : "was still moving"} at ` +
+        `[${p.x.toFixed(2)}, ${p.y.toFixed(2)}, ${p.z.toFixed(2)}] without entering the volume\n`,
+    );
   }
 
   /**

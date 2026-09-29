@@ -680,6 +680,59 @@ export function bodyInVolume(
 }
 
 /**
+ * **Whether a body at `pos` stands over the volume's footprint**: its centre is
+ * inside the box's horizontal extent (`[lo, hi + 1]` on `x` and `z`, the same
+ * continuous region the selector matches), at any height.
+ *
+ * This is the moment a player who walks into a hazard stops choosing where to go.
+ * Over the footprint with nothing underfoot — falling into a pit, or afloat in
+ * the water that fills a well — a body that is left alone is carried into the
+ * volume by the game's own physics, and that is how a player meets a submerged
+ * hazard. Driving on from there is not: in water, pressing forward into the far
+ * wall is the climb-out-of-water impulse (a horizontal collision in water sets
+ * `vel.y` to `outOfLiquidImpulse`, 0.3, in the client physics the bot runs), which
+ * is how the stage once held a body at the surface of vesperhold's well for ten
+ * seconds and reported it had never got in.
+ */
+export function overFootprint(pos: Vec3Tuple, box: Box): boolean {
+  return [0, 2].every((i) => box.lo[i]! <= pos[i]! && pos[i]! <= box.hi[i]! + 1);
+}
+
+/**
+ * **How fast an idle player body sinks in still water, in blocks per tick.**
+ *
+ * Measured, not derived: a bot placed with its feet in the top block of
+ * vesperhold's well (`lethal/undertide`, a still column y=58..67) with every
+ * control released descended at 0.0250 blocks/tick on the client in every one of
+ * six trials over two runs, and at 0.493–0.502 blocks/s by the server's own
+ * `Pos[1]` read back over the same descents (`harness/probe/water-sink.ts`, pinned server 1.21.11,
+ * mineflayer 4.37.1 / prismarine-physics 1.11.1). It is also what the fluid
+ * branch of vanilla's movement gives from its constants — `0.8` drag per tick and
+ * `gravity / 16 = 0.005` per tick, terminal at `0.005 / (1 - 0.8)` — so the
+ * client, the server's record and the rule it copies agree. It is the SLOWEST
+ * way a released body enters a volume below it; a fall through air is faster.
+ */
+export const SINK_BLOCKS_PER_TICK = 0.025;
+
+/** Milliseconds per game tick. */
+const TICK_MS = 50;
+
+/**
+ * **How long a released body may take to reach a volume `depth` blocks below
+ * its feet**, bounded by {@link SINK_BLOCKS_PER_TICK}.
+ *
+ * The measured descent at the measured rate, with half again for a server or a
+ * client physics loop running behind wall time on a loaded host, plus one second
+ * for the body to reach terminal speed from rest and for the kill tick and the
+ * death packet that reports it. The six measured descents of 6.0 blocks took
+ * 12.13–12.27 s from release to death; this allows 19.0 s for them.
+ */
+export function sinkBudgetMs(depth: number): number {
+  const ticks = Math.max(0, depth) / SINK_BLOCKS_PER_TICK;
+  return Math.ceil(ticks * TICK_MS * 1.5) + 1_000;
+}
+
+/**
  * **Could this volume's selector reach a body standing anywhere in `cell`?**
  *
  * The cell-shaped question, asked of the SERVER's rule — not a second reading of
