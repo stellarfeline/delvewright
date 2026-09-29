@@ -121,9 +121,12 @@
   party is asked to fight. **Never `set-time`**; the delve's hour is a pacing
   decision, and moving it to save a mob spends a beat. The compiler enforces this
   (`DW0496`): a species in vanilla's `#minecraft:burn_in_daylight` staged for a
-  `kill`-adjudicated fight whose walkable ground reaches open sky, under a pinned
-  clear daytime hour, with an empty head slot, is a build error naming the sunlit
-  cell. Roofing the arena clears it too. One species the helmet does not save — a
+  `kill`-adjudicated fight (or an actor the party can hurt) whose walkable ground
+  reaches open sky, with an empty head slot, is a build error naming the sunlit
+  cell, whenever some hour the fight can stand in burns. `dusk` burns: the pinned
+  game keeps undead burning until tick 12542. Declared `rain` protects nobody in a
+  void delve: the play box's biome, `the_void`, never rains. Roofing the arena
+  clears it too. One species the helmet does not save — a
   phantom burns through it — so an open-air phantom fight has to be roofed or
   restaged. The mirror case: a drowned takes no land target while the level
   is bright — `day`, `noon` and `dusk` in `clear` or `rain` — and walks to water

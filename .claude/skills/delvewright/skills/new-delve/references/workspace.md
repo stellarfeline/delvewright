@@ -194,10 +194,11 @@ approved rows are not the same two sets. Two measurements also key off the
 declared hour: the dark-cell proof measures under the **darkest reachable**
 `(time, weather)` sky, so a space lit only by the sky is judged at the night floor
 once a night hour is declared (`DW0210`, and the lighting contract at 2A); and
-`DW0496`, the daylight-burning refusal, stands only while the hour is a pinned
-clear daytime one — so declaring `night` is a design decision that also switches
-that gate off, which is why *Reference: authoring pitfalls* forbids reaching for
-the hour to save a mob.
+`DW0496`, the daylight-burning refusal, fires for any fight that can stand in a
+burning hour (`day`, `noon` or `dusk`), and `rain` shelters nobody in a void delve —
+so declaring `night` is a design decision that also changes what that gate sees,
+which is why *Reference: authoring pitfalls* forbids reaching for the hour to save
+a mob.
 
 ## Languages — ask, do not assume
 

@@ -65,18 +65,15 @@
 //! 2. **It is a fight.** A `kill` objective adjudicates its wave, or it is an actor
 //!    the party can damage — the population `DW0496` reads
 //!    ([`crate::compiler::daylight::collect_staged`]), one definition of "a fight".
-//! 3. **The level is bright for as long as the fight is live.** Every state that
-//!    can be in effect before the wave's `kill` objective completes is
-//!    [`bright_outside`]: the declared state, and the target of every
-//!    `set-time` / `set-weather` except those under a root that can only fire once
-//!    that objective has completed — a later objective of its quest, or any
-//!    objective or completion of a quest that waits on its quest
-//!    ([`crate::compiler::flow::after_objective`]); dialogue outcomes and ambient
-//!    roots are always counted. An actor, which no objective dates, is read
-//!    against every state the delve reaches. This is where the rule parts from
-//!    `DW0496`'s whole-delve reading: vesperhold cuts to noon, night and dawn for
-//!    its echoes and endings, every one of them quests after the choir, and a
-//!    whole-delve reading is silent on the instance it exists for.
+//! 3. **The level is bright for as long as the fight is live.** Every state the
+//!    body can stand in from the beat that puts it in the world until the wave's
+//!    `kill` objective completes is [`bright_outside`] — read off `DW0496`'s
+//!    [`Clock`], the one model of which cuts a body can meet, with the span ended
+//!    at the `kill` whether or not a rest re-seats the wave (a body met again
+//!    after the party has won is no longer a fight it must win). An actor, which
+//!    no objective dates, runs to the end of the delve. Vesperhold cuts to noon,
+//!    night and dawn for its echoes and endings, every one of them in quests
+//!    after the choir, so the choir's span holds dusk in rain alone.
 //! 4. **The party cannot put its feet in water within its reach.** No cell a body
 //!    can stand in with its feet in water lies within the stack's aggro radius, on
 //!    ground walk-reachable from where the stack is seated ([`wet_footing_within_reach`]).
@@ -101,7 +98,7 @@ use std::collections::BTreeMap;
 
 use delvewright_dsl::{DwCode, ExitTier, WorldTime, WorldWeather};
 
-use crate::compiler::daylight::{Staged, collect_staged};
+use crate::compiler::daylight::{Clock, Sky, Staged, collect_staged, kill_objectives};
 use crate::compiler::failure::Failure;
 use crate::compiler::nav::World;
 use crate::compiler::plan::Plan;
@@ -132,58 +129,25 @@ pub fn bright_outside(time: WorldTime, weather: WorldWeather) -> bool {
         && matches!(weather, WorldWeather::Clear | WorldWeather::Rain)
 }
 
-/// The `(time, weather)` states that can be in effect while this body's fight
-/// is live, as the two independent sets the clock scan keeps.
-///
-/// A wave a `kill` objective adjudicates is live until that objective completes,
-/// so a `set-time` / `set-weather` under a root that can only fire afterwards
-/// ([`crate::compiler::flow::after_objective`]) cannot reach it. An actor has no
-/// objective that dates its fight, so it is read against every state the delve
-/// reaches. Over-approximating the states is the silent direction.
-fn states_while_live(
-    c: &delvewright_dsl::Campaign,
-    body: &Staged,
-) -> (Vec<WorldTime>, Vec<WorldWeather>) {
-    let kills: Vec<&str> = c
-        .quests
-        .content
-        .quests
-        .iter()
-        .flat_map(|q| q.objectives.iter())
-        .filter_map(|o| match o {
-            delvewright_dsl::Objective::Kill { id, wave, .. }
-                if body.kind == "wave" && wave.as_str() == body.owner =>
-            {
-                Some(id.as_str())
-            }
-            _ => None,
-        })
-        .collect();
-    if kills.is_empty() {
-        return crate::compiler::light::reachable_time_weather(c);
-    }
-    let after: Vec<_> = kills
-        .iter()
-        .map(|k| crate::compiler::flow::after_objective(c, k))
-        .collect();
-    // A root is out of reach only if it follows EVERY kill that adjudicates
-    // the wave: before the last of them completes, the fight may still be live.
-    crate::compiler::light::reachable_time_weather_where(c, &|site| {
-        !after.iter().all(|a| a.follows(site))
-    })
-}
-
 /// The states in effect while the fight is live, when every one of them is
 /// bright; `None` when any is dark.
-fn bright_while_live(
-    c: &delvewright_dsl::Campaign,
-    body: &Staged,
-) -> Option<(Vec<WorldTime>, Vec<WorldWeather>)> {
-    let (times, weathers) = states_while_live(c, body);
-    times
+///
+/// Read off `DW0496`'s [`Clock`]: from the beat that puts the body in the world
+/// until the fight is decided. For a wave, that is its `kill` objectives —
+/// whether or not a rest re-seats it, since a body met again after the party has
+/// won is no longer a fight the party must win. An actor, which no objective
+/// dates, runs to the end of the delve.
+fn bright_while_live(c: &delvewright_dsl::Campaign, clock: &Clock, body: &Staged) -> Option<Sky> {
+    let until = if body.kind == "wave" {
+        kill_objectives(c, &body.owner)
+    } else {
+        body.dead_after.clone()
+    };
+    let sky = clock.sky_for(c, &body.beats, &until);
+    sky.times
         .iter()
-        .all(|&t| weathers.iter().all(|&w| bright_outside(t, w)))
-        .then_some((times, weathers))
+        .all(|&t| sky.weathers.iter().all(|&w| bright_outside(t, w)))
+        .then_some(sky)
 }
 
 fn disengages_on_land(entity: &str) -> bool {
@@ -306,15 +270,16 @@ pub fn check_engagement(
     spawns: &BTreeMap<String, Vec<[i32; 3]>>,
 ) -> (EngageBinding, Option<Failure>) {
     let c = plan.campaign;
+    let clock = Clock::new(c);
     let mut b = EngageBinding::default();
     let mut first: Option<Failure> = None;
-    for body in collect_staged(plan, spawns) {
+    for body in collect_staged(plan, spawns, &clock) {
         b.fights += 1;
         if !disengages_on_land(&body.entity) {
             continue;
         }
         b.hour_reading += 1;
-        let Some(states) = bright_while_live(c, &body) else {
+        let Some(states) = bright_while_live(c, &clock, &body) else {
             continue;
         };
         b.bright += 1;
@@ -331,7 +296,7 @@ pub fn check_engagement(
     (b, first)
 }
 
-fn message(body: &Staged, (times, weathers): &(Vec<WorldTime>, Vec<WorldWeather>)) -> String {
+fn message(body: &Staged, Sky { times, weathers }: &Sky) -> String {
     let Staged {
         owner,
         kind,

@@ -983,32 +983,15 @@ pub fn darkest_effective_sky(c: &Campaign) -> u8 {
 /// independent sets (they switch independently).
 ///
 /// The single scan behind both [`darkest_effective_sky`] (spec-0010's darkness
-/// gate, which takes the worst of them) and [`crate::compiler::daylight::daylight_is_pinned`]
-/// (`DW0496`, which asks whether they ALL burn). One reader of the campaign's
-/// clock, so the two proofs can never disagree about what hours a delve reaches.
+/// gate, which takes the worst of them) and `DW0496` ([`crate::compiler::daylight`],
+/// which meets every one of them at a beat with no place in the quest DAG). One
+/// reader of the campaign's clock, so the two proofs can never disagree about
+/// what hours a delve reaches.
 ///
 /// Deterministic (ADR-0006): collected through `BTreeSet`s keyed on a stable
 /// discriminant, so the returned order is the declaration order of the enums and
 /// never hash order.
 pub fn reachable_time_weather(c: &Campaign) -> (Vec<WorldTime>, Vec<WorldWeather>) {
-    reachable_time_weather_where(c, &|_| true)
-}
-
-/// [`reachable_time_weather`] over the effect roots `keep` admits: the declared
-/// initial state, every `set-time` / `set-weather` under a kept root, and every
-/// dialogue outcome (a conversation has no DAG position, so it is never
-/// filtered out).
-///
-/// The same scan, narrowed: `DW0920` ([`crate::compiler::engage`]) asks which
-/// states can be in effect while a fight is live, and a root that can only fire
-/// after the fight's `kill` objective completes
-/// ([`crate::compiler::flow::after_objective`]) cannot touch it. A second scan
-/// of the clock would be a second reading of one fact; this is the one scan
-/// with a predicate.
-pub fn reachable_time_weather_where(
-    c: &Campaign,
-    keep: &dyn Fn(&delvewright_dsl::EffectSite) -> bool,
-) -> (Vec<WorldTime>, Vec<WorldWeather>) {
     let mut times: BTreeSet<u8> = BTreeSet::new(); // discriminant via token order
     let mut weathers: BTreeSet<u8> = BTreeSet::new();
     // Exhaustive both ways (no wildcard arm): adding a `WorldTime` variant fails to
@@ -1038,10 +1021,7 @@ pub fn reachable_time_weather_where(
     // `on_respawn` bundle was invisible to it. Under-reporting the reachable state
     // set is the direction that PASSES a delve that goes dark (spec-0010,
     // `DW0496`), which is why the shallow half mattered as much as the root half.
-    delvewright_dsl::for_each_campaign_effect(c, &mut |_path, site, e| {
-        if !keep(site) {
-            return;
-        }
+    delvewright_dsl::for_each_campaign_effect(c, &mut |_path, _site, e| {
         if let Some(t) = e.set_time() {
             add_t(t, &mut times);
         }

@@ -25,8 +25,10 @@
 //!    `#minecraft:burn_in_daylight` tag and is not fire-immune ([`burns_in_daylight`]).
 //! 2. **It is a fight.** A `kill` objective adjudicates its wave, or it is an
 //!    actor the party can actually damage ([`fightable_actor`]).
-//! 3. **The sun is up.** The delve's declared time/weather leave the burn tick
-//!    live for the whole delve ([`daylight_is_pinned`]).
+//! 3. **The sun can be up while it fights.** Some state the delve can be in
+//!    between the body's entering and its death runs the burn tick at a
+//!    sky-open cell — the pinned hour window, and no rain falling there
+//!    ([`Clock`], [`hour_burns`], [`precipitates_at`]).
 //! 4. **The sun can reach it.** Open sky stands on ground it can walk to, within
 //!    one aggro radius of where it is staged ([`sky_within_reach`]).
 //! 5. **Nothing on its head.** No `equipment.head` — except for a phantom, whose
@@ -100,14 +102,59 @@
 //!   column test spec-0010's relight seeds sky light with. One model of "the sky is
 //!   above this cell" in the compiler, not two.
 //!
-//! ### 3. Why the campaign-wide time reading is sound
+//! ### 3. Which hours and weathers burn, and when a fight stands in them
 //!
-//! The daylight cycle is **frozen** (`advance_time false`, spec-0010): the declared
-//! state persists until a `set-time` cuts to another. So a campaign that declares a
-//! burning hour and never cuts is burning at every beat — no per-quest timeline
-//! needed. A campaign that *does* cut its time or weather has a beat-by-beat
-//! schedule this proof does not model, and it stays silent there rather than guess
-//! (again: withhold, never invent). [`daylight_is_pinned`].
+//! **The hour is the pinned game's, never ours.** 1.21.11 moved the burn gate
+//! off `Level.isDay()` onto an environment attribute: `Mob.isSunBurnTick`
+//! first asks `minecraft:gameplay/monsters_burn` at the body's position, and
+//! the overworld's `minecraft:day` timeline (`data/minecraft/timeline/day.json`
+//! in the pinned server jar) keys it `false` at tick 12542 and `true` at tick
+//! 23460. So the burning hours are `[23460, 24000) ∪ [0, 12542)`, which holds
+//! `day` (1000), `noon` (6000) **and `dusk` (12000)**, and not `night`
+//! (13000), `midnight` (18000) or `dawn` (23000). [`hour_burns`] reads the
+//! window, never a keyword list, and the constants carry the jar they were read
+//! from. Measured on the pinned server in a built delve's own world: a
+//! bare-headed zombie at `dusk` under open sky lost 12 of 20 health in 20 s;
+//! the same body at `night` lost none.
+//!
+//! **Rain protects only where it falls.** The burn tick is skipped while
+//! `isInWaterOrRain`, and "in rain" is `Level.isRainingAt`: raining, sky
+//! visible, **and the biome at the cell precipitates rain**. A void delve's
+//! whole play box stands in `minecraft:the_void`, whose `has_precipitation` is
+//! `false`, so a declared `rain` darkens the sky and never reaches a body there
+//! ([`precipitates_at`]). Measured on the same world: `dusk` + `rain` over
+//! `the_void` burned (20 → 7 and 20 → 15 health in 20 s); the same cell painted
+//! `minecraft:plains` did not burn at all. An ocean delve stands in
+//! `minecraft:ocean`, which rains; a cell a surround paints is taken to rain
+//! whatever biome it names, which can only under-fire.
+//!
+//! **When the fight happens.** The daylight cycle is frozen (spec-0010), so the
+//! declared state holds until a `set-time` / `set-weather` cuts it. A body can
+//! burn in any state it stands in from the beat that puts it in the world —
+//! the `spawn-wave` that seats a wave, the `unleash-actor` that wakes an actor —
+//! until it dies, so the proof asks whether **some** state in that span burns
+//! ([`Clock`]). The span is read off the quest DAG, the only order the
+//! campaign declares:
+//!
+//! * the state **at** the beat: the last cut before it in its own bundle
+//!   (fire order is `(at_ticks, declaration)`, a `sequence` step at its offset);
+//!   else the final cut of every *latest* bundle that `depends_on` / `after`
+//!   put strictly before it; else the declared state;
+//! * every cut in a bundle **not** strictly before the beat — a concurrent
+//!   quest, a later one — except, for a wave a `kill` objective adjudicates and
+//!   no rest re-seats, the bundles at or after that objective, when the wave is
+//!   already dead;
+//! * every cut with no place in the DAG — a trigger, a trap, a dialogue option,
+//!   a reaction bundle, a walk's `on_arrive` — because it can fire at any time.
+//!
+//! A beat with no place in the DAG itself (an approach trigger, an ambush, a
+//! body standing from world init) can meet every reachable state. Time and
+//! weather are cut independently and are paired as two sets, as
+//! [`crate::compiler::light::reachable_time_weather`] pairs them. What is not
+//! modelled: ordering a `requires_flags` gate imposes beyond `depends_on` and
+//! `after` (a cut the flags put strictly before a beat is taken as concurrent),
+//! and the state of the first ticks after a bundle whose `sequence` has not yet
+//! reached its later steps.
 //!
 //! ## Prescription
 //!
@@ -125,7 +172,7 @@
 use crate::compiler::failure::Failure;
 use std::collections::{BTreeMap, BTreeSet};
 
-use delvewright_dsl::{Campaign, Objective, WorldTime, WorldWeather};
+use delvewright_dsl::{Campaign, Objective, QuestEffect, Verb, WorldTime, WorldWeather};
 
 use crate::compiler::light::LightModel;
 use crate::compiler::nav::{DEFAULT_FOLLOW_RANGE, World};
@@ -133,8 +180,8 @@ use crate::compiler::plan::Plan;
 use delvewright_dsl::{DwCode, ExitTier};
 
 /// `DW0496`: a body vanilla burns in daylight is staged for a fight whose ground
-/// reaches open sky, in a delve pinned to a burning hour, with nothing on its
-/// head.
+/// reaches open sky, in an hour and weather the fight can stand in that burn it,
+/// with nothing on its head.
 pub const DW_DAYLIGHT_BURNS_STAGING: DwCode = DwCode::new("DW0496", ExitTier::Build);
 
 /// Vanilla's built-in daylight-burn tag, vendored from Mojang's generated
@@ -184,38 +231,407 @@ fn head_piece_is_a_remedy(entity: &str) -> bool {
         && delvewright_dsl::equipment::shows_slot(entity, delvewright_dsl::EquipSlot::Head)
 }
 
-/// Whether a `(time, weather)` state runs the sun-burn tick at a sky-open cell.
-///
-/// * Time — only `day` and `noon` count. `dusk` (12000) is the sun already going
-///   down and `dawn` (23000) is still before sunrise; both sit at the night floor
-///   in [`crate::compiler::light::effective_sky`] for the same reason, and holding them
-///   non-burning is the conservative reading in both proofs.
-/// * Weather — only `clear` counts. Vanilla's `isSunBurnTick` is gated on the mob
-///   not being in water or rain, so a rained-on delve does not burn its undead at
-///   all.
-fn state_burns(time: WorldTime, weather: WorldWeather) -> bool {
-    matches!(time, WorldTime::Day | WorldTime::Noon) && matches!(weather, WorldWeather::Clear)
+/// Where the pinned `minecraft:day` timeline turns `minecraft:gameplay/monsters_burn`
+/// off: tick 12542 of the day. Read from `data/minecraft/timeline/day.json` in
+/// the pinned 1.21.11 server jar (`versions.toml` `[minecraft]`
+/// `server_jar_sha256` `f83b8e09…dd1726`, the bundled
+/// `META-INF/versions/1.21.11/server-1.21.11.jar`), keyframe
+/// `{"ticks": 12542, "value": false}`.
+const MONSTERS_BURN_OFF_AT: i64 = 12542;
+
+/// Where it turns back on: tick 23460, keyframe `{"ticks": 23460, "value": true}`
+/// of the same file.
+const MONSTERS_BURN_ON_AT: i64 = 23460;
+
+/// The one biome a delve's play box stands in whose `has_precipitation` is
+/// `false` in the pinned jar (`data/minecraft/worldgen/biome/the_void.json`):
+/// the generator biome of every horizon but `ocean`.
+const DRY_BIOME: &str = "minecraft:the_void";
+
+/// Whether the pinned game runs the sun-burn tick at this hour: the
+/// `monsters_burn` window of the `minecraft:day` timeline, read by tick.
+pub fn hour_burns(time: WorldTime) -> bool {
+    let tick = time.daytime_ticks().rem_euclid(24_000);
+    !(MONSTERS_BURN_OFF_AT..MONSTERS_BURN_ON_AT).contains(&tick)
 }
 
-/// Whether the delve is pinned to a burning hour for its whole length: the
-/// declared initial state burns, and so does every state a `set-time` /
-/// `set-weather` can reach.
+/// Whether declared rain falls on `cell`: the biome there precipitates.
 ///
-/// The daylight cycle is frozen (spec-0010), so the declared state IS the state
-/// until something cuts it — which makes the no-cut campaign decidable without a
-/// per-beat timeline. A campaign that DOES cut has such a timeline and this
-/// returns `false`: withhold rather than invent (the same direction every proof
-/// in this module takes).
-pub fn daylight_is_pinned(c: &Campaign) -> bool {
-    let (times, weathers) = crate::compiler::light::reachable_time_weather(c);
-    times
-        .iter()
-        .all(|&t| weathers.iter().all(|&w| state_burns(t, w)))
+/// The play box keeps the generator's biome — `minecraft:ocean` for an ocean
+/// horizon, [`DRY_BIOME`] for every other — unless a surround rectangle paints
+/// it. A painted cell is taken to rain whatever the painted biome is: a cold
+/// biome would snow instead, and snow does not protect, so this can only
+/// under-fire.
+pub fn precipitates_at(plan: &Plan, cell: [i32; 3]) -> bool {
+    if let Some(surround) = &plan.surround
+        && let Some(rect) = surround
+            .biome
+            .iter()
+            .find(|r| (0..3).all(|i| r.min[i] <= cell[i] && cell[i] <= r.max[i]))
+    {
+        return rect.biome != DRY_BIOME;
+    }
+    delvewright_dsl::horizon_base(&plan.campaign.world.content.horizon)
+        == delvewright_dsl::HorizonBase::Ocean
+}
+
+/// A place in the quest DAG an effect root has: an objective's completion
+/// bundle or a quest's.
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub(crate) enum Pos {
+    Objective { quest: String, objective: String },
+    QuestComplete { quest: String },
+}
+
+impl Pos {
+    fn quest(&self) -> &str {
+        match self {
+            Pos::Objective { quest, .. } | Pos::QuestComplete { quest } => quest,
+        }
+    }
+}
+
+/// When an effect fires inside its bundle: `(tick offset, pre-order index)`.
+type FireKey = (u64, usize);
+
+/// One cut of the delve's clock.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Cut {
+    Time(WorldTime),
+    Weather(WorldWeather),
+}
+
+/// One DAG-placed bundle: every cut in it that fires at a known offset, and
+/// every beat in it, each with its fire key.
+#[derive(Default)]
+struct Bundle {
+    cuts: Vec<(FireKey, Cut)>,
+    /// `(fire key, effect address)` for every effect in the bundle's timeline.
+    effects: Vec<(FireKey, usize)>,
+}
+
+/// Where a body enters the fight.
+#[derive(Clone, Debug)]
+pub(crate) enum Beat {
+    /// An effect in a DAG-placed bundle, at its fire key.
+    Placed(Pos, FireKey),
+    /// Anything with no place in the DAG: a trigger, an ambush, a trap, a
+    /// reaction bundle, world init.
+    Anywhere,
+}
+
+/// The states a delve's clock can be in, as two independent sets.
+#[derive(Default, Debug)]
+pub(crate) struct Sky {
+    pub(crate) times: Vec<WorldTime>,
+    pub(crate) weathers: Vec<WorldWeather>,
+}
+
+impl Sky {
+    fn add(&mut self, cut: Cut) {
+        match cut {
+            Cut::Time(t) if !self.times.contains(&t) => self.times.push(t),
+            Cut::Weather(w) if !self.weathers.contains(&w) => self.weathers.push(w),
+            _ => {}
+        }
+    }
+}
+
+/// The delve's clock over the quest DAG (module docs, §3). Shared with
+/// [`crate::compiler::engage`] (`DW0920`): one reading of which states a body
+/// can stand in between entering a fight and leaving it.
+pub(crate) struct Clock {
+    declared: (WorldTime, WorldWeather),
+    bundles: BTreeMap<Pos, Bundle>,
+    /// Cuts with no place in the DAG, or no known offset in their bundle.
+    anywhere: Vec<Cut>,
+    /// Every quest's transitive `depends_on`.
+    quest_ancestors: BTreeMap<String, BTreeSet<String>>,
+    /// Every objective's transitive intra-quest `after`, keyed `(quest, objective)`.
+    objective_ancestors: BTreeMap<(String, String), BTreeSet<String>>,
+    /// Every effect the DAG-placed timelines reach, by address, with its place.
+    placed: BTreeMap<usize, (Pos, FireKey)>,
+}
+
+fn cut_of(e: &QuestEffect) -> Option<Cut> {
+    e.set_time()
+        .map(Cut::Time)
+        .or_else(|| e.set_weather().map(Cut::Weather))
+}
+
+fn addr(e: &QuestEffect) -> usize {
+    e as *const QuestEffect as usize
+}
+
+/// Walk one bundle's timeline: direct effects at the bundle's own offset in
+/// order, a `sequence` step at its `at_ticks`. Every other nested list (a
+/// walk's `on_arrive`, a rest's `on_rest`, a checkpoint's `on_respawn`, a
+/// stealth beat's `on_caught`) fires at no offset the bundle knows, so it is
+/// left for the caller to classify as `anywhere`.
+fn walk_timeline<'a>(
+    list: &'a [QuestEffect],
+    tick: u64,
+    next: &mut usize,
+    out: &mut Vec<(FireKey, &'a QuestEffect)>,
+) {
+    for e in list {
+        out.push(((tick, *next), e));
+        *next += 1;
+        if let Verb::Sequence { steps } = &e.verb {
+            for step in steps {
+                walk_timeline(&step.effects, tick + u64::from(step.at_ticks), next, out);
+            }
+        }
+    }
+}
+
+impl Clock {
+    pub(crate) fn new(c: &Campaign) -> Self {
+        let mut bundles: BTreeMap<Pos, Bundle> = BTreeMap::new();
+        let mut anywhere: Vec<Cut> = Vec::new();
+        let mut placed: BTreeMap<usize, (Pos, FireKey)> = BTreeMap::new();
+        crate::compiler::plan::for_each_effect_root(c, &mut |site, effs| {
+            let pos = match &site.root {
+                crate::compiler::plan::EffectRoot::ObjectiveComplete { quest, objective } => {
+                    Some(Pos::Objective {
+                        quest: (*quest).to_string(),
+                        objective: (*objective).to_string(),
+                    })
+                }
+                crate::compiler::plan::EffectRoot::QuestComplete(quest) => {
+                    Some(Pos::QuestComplete {
+                        quest: quest.id.as_str().to_string(),
+                    })
+                }
+                _ => None,
+            };
+            let mut timed: Vec<(FireKey, &QuestEffect)> = Vec::new();
+            if pos.is_some() {
+                walk_timeline(effs, 0, &mut 0, &mut timed);
+            }
+            let timed_at: BTreeMap<usize, FireKey> =
+                timed.iter().map(|(k, e)| (addr(e), *k)).collect();
+            for root in effs {
+                root.visit_deep(&mut |e| {
+                    let Some(key) = timed_at.get(&addr(e)).copied() else {
+                        if let Some(cut) = cut_of(e) {
+                            anywhere.push(cut);
+                        }
+                        return;
+                    };
+                    let pos = pos.clone().expect("only a placed bundle is timed");
+                    let bundle = bundles.entry(pos.clone()).or_default();
+                    if let Some(cut) = cut_of(e) {
+                        bundle.cuts.push((key, cut));
+                    }
+                    bundle.effects.push((key, addr(e)));
+                    placed.insert(addr(e), (pos, key));
+                });
+            }
+        });
+        // Dialogue options cut the clock as flat outcomes of a conversation,
+        // never inside a quest bundle: they can fire whenever it is held.
+        for tree in &c.dialogue.content.dialogues {
+            for node in &tree.nodes {
+                for opt in &node.options {
+                    for e in &opt.effects {
+                        if let Some(t) = e.set_time() {
+                            anywhere.push(Cut::Time(t));
+                        }
+                        if let Some(w) = e.set_weather() {
+                            anywhere.push(Cut::Weather(w));
+                        }
+                    }
+                }
+            }
+        }
+        let depends: BTreeMap<&str, Vec<&str>> = c
+            .quest_plan
+            .content
+            .quests
+            .iter()
+            .map(|q| {
+                (
+                    q.id.as_str(),
+                    q.depends_on.iter().map(|d| d.as_str()).collect(),
+                )
+            })
+            .collect();
+        let quest_ancestors = depends
+            .keys()
+            .map(|q| (q.to_string(), closure(q, &depends)))
+            .collect();
+        let mut objective_ancestors = BTreeMap::new();
+        for q in &c.quests.content.quests {
+            let after: BTreeMap<&str, Vec<&str>> = q
+                .objectives
+                .iter()
+                .map(|o| {
+                    (
+                        o.id().as_str(),
+                        o.after().iter().map(|a| a.as_str()).collect(),
+                    )
+                })
+                .collect();
+            for o in after.keys() {
+                objective_ancestors.insert(
+                    (q.id.as_str().to_string(), o.to_string()),
+                    closure(o, &after),
+                );
+            }
+        }
+        Clock {
+            declared: (c.world.content.time, c.world.content.weather),
+            bundles,
+            anywhere,
+            quest_ancestors,
+            objective_ancestors,
+            placed,
+        }
+    }
+
+    /// Where an effect sits: its DAG place and fire key, or [`Beat::Anywhere`].
+    fn beat_of(&self, e: &QuestEffect) -> Beat {
+        match self.placed.get(&addr(e)) {
+            Some((pos, key)) => Beat::Placed(pos.clone(), *key),
+            None => Beat::Anywhere,
+        }
+    }
+
+    /// Whether bundle `x` has fired before bundle `p` can, by `depends_on`
+    /// and `after` alone.
+    fn strictly_before(&self, x: &Pos, p: &Pos) -> bool {
+        if self
+            .quest_ancestors
+            .get(p.quest())
+            .is_some_and(|a| a.contains(x.quest()))
+        {
+            return true;
+        }
+        if x.quest() != p.quest() {
+            return false;
+        }
+        match (x, p) {
+            (Pos::Objective { .. }, Pos::QuestComplete { .. }) => true,
+            (
+                Pos::Objective { objective: ox, .. },
+                Pos::Objective {
+                    quest,
+                    objective: op,
+                },
+            ) => self
+                .objective_ancestors
+                .get(&(quest.clone(), op.clone()))
+                .is_some_and(|a| a.contains(ox)),
+            _ => false,
+        }
+    }
+
+    /// Every state the delve can be in, whenever.
+    fn everything(&self, c: &Campaign) -> Sky {
+        let (times, weathers) = crate::compiler::light::reachable_time_weather(c);
+        Sky { times, weathers }
+    }
+
+    /// Every state a body entering at one of `beats` can stand in before it
+    /// dies. `dead_after`: the `kill` objectives that end a wave no rest
+    /// re-seats.
+    pub(crate) fn sky_for(&self, c: &Campaign, beats: &[Beat], dead_after: &[Pos]) -> Sky {
+        let mut sky = Sky::default();
+        for beat in beats {
+            let Beat::Placed(p, key) = beat else {
+                return self.everything(c);
+            };
+            for cut in &self.anywhere {
+                sky.add(*cut);
+            }
+            // At the beat, per dimension.
+            let own = self.bundles.get(p);
+            for time in [true, false] {
+                let same = |cut: &Cut| matches!(cut, Cut::Time(_)) == time;
+                let local = own.and_then(|b| {
+                    b.cuts
+                        .iter()
+                        .filter(|(k, cut)| k < key && same(cut))
+                        .max_by_key(|(k, _)| *k)
+                        .map(|(_, cut)| *cut)
+                });
+                if let Some(cut) = local {
+                    sky.add(cut);
+                    continue;
+                }
+                let before: Vec<&Pos> = self
+                    .bundles
+                    .iter()
+                    .filter(|(x, b)| {
+                        self.strictly_before(x, p) && b.cuts.iter().any(|(_, c)| same(c))
+                    })
+                    .map(|(x, _)| x)
+                    .collect();
+                let latest = before
+                    .iter()
+                    .filter(|x| !before.iter().any(|y| self.strictly_before(x, y)));
+                let mut any = false;
+                for x in latest {
+                    if let Some((_, cut)) = self.bundles[*x]
+                        .cuts
+                        .iter()
+                        .filter(|(_, c)| same(c))
+                        .max_by_key(|(k, _)| *k)
+                    {
+                        sky.add(*cut);
+                        any = true;
+                    }
+                }
+                if !any {
+                    sky.add(if time {
+                        Cut::Time(self.declared.0)
+                    } else {
+                        Cut::Weather(self.declared.1)
+                    });
+                }
+            }
+            // After the beat, until the body dies.
+            for (x, b) in &self.bundles {
+                if dead_after
+                    .iter()
+                    .any(|k| k == x || self.strictly_before(k, x))
+                {
+                    continue;
+                }
+                if x == p {
+                    for (k, cut) in &b.cuts {
+                        if k > key {
+                            sky.add(*cut);
+                        }
+                    }
+                } else if !self.strictly_before(x, p) {
+                    for (_, cut) in &b.cuts {
+                        sky.add(*cut);
+                    }
+                }
+            }
+        }
+        sky
+    }
+}
+
+/// The transitive closure of `start` over `edges` (not including `start`).
+fn closure(start: &str, edges: &BTreeMap<&str, Vec<&str>>) -> BTreeSet<String> {
+    let mut out = BTreeSet::new();
+    let mut stack: Vec<&str> = edges.get(start).cloned().unwrap_or_default();
+    while let Some(n) = stack.pop() {
+        if out.insert(n.to_string()) {
+            stack.extend(edges.get(n).cloned().unwrap_or_default());
+        }
+    }
+    out
 }
 
 /// The nearest sky-open cell within `radius` blocks of any cell in `from`, on
-/// ground walk-reachable from `from` — the shortest lure, the one worth naming
-/// in the diagnostic.
+/// ground walk-reachable from `from`, where `burns_here` says the weather does
+/// not protect the body — the shortest lure, the one worth naming in the
+/// diagnostic.
 ///
 /// Reachability is unbounded and the radius applies to the sky-open cell only —
 /// see the module docs: getting there is geometry, the radius is perception.
@@ -227,6 +643,7 @@ fn sky_within_reach(
     light: &LightModel,
     from: &[[i32; 3]],
     radius: u32,
+    burns_here: &dyn Fn([i32; 3]) -> bool,
 ) -> Option<[i32; 3]> {
     let r2 = i64::from(radius) * i64::from(radius);
     let d2 = |cell: [i32; 3]| {
@@ -242,7 +659,7 @@ fn sky_within_reach(
     world
         .reachable_walkable(from)
         .into_iter()
-        .filter(|&cell| d2(cell) <= r2 && light.sky_open(cell))
+        .filter(|&cell| d2(cell) <= r2 && light.sky_open(cell) && burns_here(cell))
         .min_by_key(|&cell| (d2(cell), cell))
 }
 
@@ -289,8 +706,9 @@ fn fightable_actor(c: &Campaign, actor: &delvewright_dsl::Actor) -> bool {
     unleashed
 }
 
-/// One staged body the proof looks at. Shared with [`crate::compiler::engage`]
-/// (`DW0920`), which asks a different question of the same population.
+/// One staged body the proof looks at. Shared with
+/// [`crate::compiler::engage`] (`DW0920`), which asks a different question of
+/// the same population.
 pub(crate) struct Staged {
     /// `wave/…` or `actor/…`, for the message.
     pub(crate) owner: String,
@@ -303,7 +721,20 @@ pub(crate) struct Staged {
     /// Its aggro radius in blocks.
     pub(crate) radius: u32,
     /// Does it already wear something on its head?
-    pub(crate) helmeted: bool,
+    helmeted: bool,
+    /// Where it enters the fight.
+    pub(crate) beats: Vec<Beat>,
+    /// The `kill` objectives after which it is dead for good.
+    pub(crate) dead_after: Vec<Pos>,
+}
+
+/// The state the sun reaches the body in, named in the message.
+struct Exposure {
+    cell: [i32; 3],
+    time: WorldTime,
+    weather: WorldWeather,
+    /// The cell stands in a biome no rain falls in.
+    dry: bool,
 }
 
 /// Prove no daylight-burning body is staged for a fight the sun can reach
@@ -319,10 +750,8 @@ pub fn check_daylight_staging(
     spawns: &BTreeMap<String, Vec<[i32; 3]>>,
 ) -> Result<(), Failure> {
     let c = plan.campaign;
-    if !daylight_is_pinned(c) {
-        return Ok(());
-    }
-    let staged = collect_staged(plan, spawns);
+    let clock = Clock::new(c);
+    let staged = collect_staged(plan, spawns, &clock);
     if staged.is_empty() {
         return Ok(());
     }
@@ -334,23 +763,79 @@ pub fn check_daylight_staging(
         if body.helmeted && helmet_helps(&body.entity) {
             continue;
         }
-        let Some(sunlit) = sky_within_reach(world, &light, &body.cells, body.radius) else {
+        let sky = clock.sky_for(c, &body.beats, &body.dead_after);
+        // The witness names the declared state when it is one the fight can
+        // burn in: that is the state the author wrote and the party plays in.
+        let declared = (c.world.content.time, c.world.content.weather);
+        let Some(&time) = (sky.times.contains(&declared.0) && hour_burns(declared.0))
+            .then_some(&declared.0)
+            .or_else(|| sky.times.iter().find(|&&t| hour_burns(t)))
+        else {
             continue;
+        };
+        let clear = sky.weathers.contains(&WorldWeather::Clear);
+        let Some(cell) = sky_within_reach(world, &light, &body.cells, body.radius, &|cell| {
+            clear || !precipitates_at(plan, cell)
+        }) else {
+            continue;
+        };
+        let dry = !precipitates_at(plan, cell);
+        let weather = if dry && sky.weathers.contains(&declared.1) {
+            declared.1
+        } else if clear {
+            WorldWeather::Clear
+        } else {
+            sky.weathers[0]
         };
         return Err(Failure {
             code: DW_DAYLIGHT_BURNS_STAGING,
-            message: burn_message(body, sunlit),
+            message: burn_message(
+                body,
+                &Exposure {
+                    cell,
+                    time,
+                    weather,
+                    dry: dry && weather != WorldWeather::Clear,
+                },
+            ),
         });
     }
     Ok(())
 }
 
 /// Every staged body worth proving: wave stacks a `kill` objective adjudicates,
-/// and actors the party can damage. Deterministic order (declaration order,
-/// waves then actors).
-pub(crate) fn collect_staged(plan: &Plan, spawns: &BTreeMap<String, Vec<[i32; 3]>>) -> Vec<Staged> {
+/// and actors the party can damage, each with the beats it enters the fight at.
+/// Deterministic order (declaration order, waves then actors).
+pub(crate) fn collect_staged(
+    plan: &Plan,
+    spawns: &BTreeMap<String, Vec<[i32; 3]>>,
+    clock: &Clock,
+) -> Vec<Staged> {
     let c = plan.campaign;
     let fought = killed_waves(c);
+    // Every beat that seats a wave, spawns an actor or wakes one.
+    let mut wave_beats: BTreeMap<&str, Vec<Beat>> = BTreeMap::new();
+    let mut spawn_beats: BTreeMap<&str, Vec<Beat>> = BTreeMap::new();
+    let mut unleash_beats: BTreeMap<&str, Vec<Beat>> = BTreeMap::new();
+    delvewright_dsl::for_each_campaign_effect(c, &mut |_, _, e| {
+        if let Some(w) = e.spawn_wave() {
+            wave_beats
+                .entry(w.as_str())
+                .or_default()
+                .push(clock.beat_of(e));
+        }
+        match &e.verb {
+            Verb::SpawnActor { actor } => spawn_beats
+                .entry(actor.as_str())
+                .or_default()
+                .push(clock.beat_of(e)),
+            Verb::UnleashActor { actor } => unleash_beats
+                .entry(actor.as_str())
+                .or_default()
+                .push(clock.beat_of(e)),
+            _ => {}
+        }
+    });
     let mut out: Vec<Staged> = Vec::new();
     for w in &c.quests.content.waves {
         if !fought.contains(w.id.as_str()) {
@@ -358,6 +843,15 @@ pub(crate) fn collect_staged(plan: &Plan, spawns: &BTreeMap<String, Vec<[i32; 3]
         }
         let Some(cells) = spawns.get(w.id.as_str()) else {
             continue;
+        };
+        let beats = wave_beats
+            .get(w.id.as_str())
+            .cloned()
+            .unwrap_or_else(|| vec![Beat::Anywhere]);
+        let dead_after = if w.respawns_on_rest {
+            Vec::new()
+        } else {
+            kill_objectives(c, w.id.as_str())
         };
         // The seated cells are one flat list in mob-stack order (`plan_wave_spawns`
         // takes `wave_total` of them, stack by stack), so walk them the same way.
@@ -376,6 +870,8 @@ pub(crate) fn collect_staged(plan: &Plan, spawns: &BTreeMap<String, Vec<[i32; 3]
                 cells: mine,
                 radius: stack_radius(m.attributes),
                 helmeted: m.equipment.as_ref().is_some_and(|e| e.head.is_some()),
+                beats: beats.clone(),
+                dead_after: dead_after.clone(),
             });
         }
     }
@@ -386,6 +882,23 @@ pub(crate) fn collect_staged(plan: &Plan, spawns: &BTreeMap<String, Vec<[i32; 3]
         let Some(pos) = plan.body_point(delvewright_dsl::BodyRef::Actor(a)) else {
             continue;
         };
+        let mut beats = unleash_beats
+            .get(a.id.as_str())
+            .cloned()
+            .unwrap_or_default();
+        if a.vulnerable {
+            // A damageable puppet is a fight from the moment it stands: from
+            // its `spawn-actor`, or from world init when nothing spawns it.
+            beats.extend(
+                spawn_beats
+                    .get(a.id.as_str())
+                    .cloned()
+                    .unwrap_or_else(|| vec![Beat::Anywhere]),
+            );
+        }
+        if beats.is_empty() {
+            beats.push(Beat::Anywhere);
+        }
         out.push(Staged {
             owner: a.id.as_str().to_string(),
             kind: "actor",
@@ -393,14 +906,34 @@ pub(crate) fn collect_staged(plan: &Plan, spawns: &BTreeMap<String, Vec<[i32; 3]
             cells: vec![pos],
             radius: stack_radius(a.attributes),
             helmeted: a.equipment.as_ref().is_some_and(|e| e.head.is_some()),
+            beats,
+            dead_after: Vec::new(),
         });
     }
     out
 }
 
-/// The diagnostic text: what is staged, where the sun gets in, and the two fixes
-/// — plus the one that is forbidden.
-fn burn_message(body: &Staged, sunlit: [i32; 3]) -> String {
+/// The `kill` objectives that adjudicate `wave`, as DAG places.
+pub(crate) fn kill_objectives(c: &Campaign, wave: &str) -> Vec<Pos> {
+    let mut out = Vec::new();
+    for q in &c.quests.content.quests {
+        for o in &q.objectives {
+            if let Objective::Kill { wave: w, .. } = o
+                && w.as_str() == wave
+            {
+                out.push(Pos::Objective {
+                    quest: q.id.as_str().to_string(),
+                    objective: o.id().as_str().to_string(),
+                });
+            }
+        }
+    }
+    out
+}
+
+/// The diagnostic text: what is staged, the state and cell the sun gets in at,
+/// and the two fixes — plus the one that is forbidden.
+fn burn_message(body: &Staged, exposure: &Exposure) -> String {
     let Staged {
         owner,
         kind,
@@ -410,6 +943,12 @@ fn burn_message(body: &Staged, sunlit: [i32; 3]) -> String {
         ..
     } = body;
     let at = cells[0];
+    let Exposure {
+        cell,
+        time,
+        weather,
+        dry,
+    } = exposure;
     let remedy = if head_piece_is_a_remedy(entity) {
         "Give this stack `equipment.head` (any head item — vanilla damages the helmet instead \
          of igniting the mob, and the compiler emits drop chance 0 so it can never be farmed), \
@@ -427,17 +966,35 @@ fn burn_message(body: &Staged, sunlit: [i32; 3]) -> String {
     } else {
         ""
     };
+    let rain = if *dry {
+        format!(
+            " The `{}` the delve declares does not protect it: no rain falls in `{DRY_BIOME}`, \
+             the biome this cell stands in, so the pinned game never counts the body as wet.",
+            weather.keyword()
+        )
+    } else {
+        String::new()
+    };
     format!(
         "{kind} `{owner}` stages `{entity}` at [{}, {}, {}], and vanilla burns that species in \
-         daylight (`#minecraft:burn_in_daylight`). This delve is pinned to a clear daytime hour \
-         for its whole length (the daylight cycle is frozen), and open sky stands at \
-         [{}, {}, {}] — walkable ground inside this stack's own {radius}-block aggro radius. A \
-         player retreating there is still its target, so the fight the party is meant to have \
-         is decided by the sun instead: this is the Barrowmere gate yard, where two of three \
-         footmen died to sunlight in under twenty seconds with every proof green. Fix the \
-         content: {remedy} Do NOT use `set-time` — the delve's hour is a pacing decision the \
-         author made, and moving it to save a mob spends a beat{sanctioned}.",
-        at[0], at[1], at[2], sunlit[0], sunlit[1], sunlit[2],
+         daylight (`#minecraft:burn_in_daylight`). The fight can stand in `{}` with `{}`, an \
+         hour the pinned game burns undead in (its `minecraft:day` timeline keeps \
+         `monsters_burn` on from tick {MONSTERS_BURN_ON_AT} to tick {MONSTERS_BURN_OFF_AT}), \
+         and open sky stands at [{}, {}, {}] — walkable ground inside this stack's own \
+         {radius}-block aggro radius.{rain} A player retreating there is still its target, so \
+         the fight the party is meant to have is decided by the sun instead: this is the \
+         Barrowmere gate yard, where two of three footmen died to sunlight in under twenty \
+         seconds with every proof green. Fix the content: {remedy} Do NOT use `set-time` — the \
+         delve's hour is a pacing decision the author made, and moving it to save a mob spends \
+         a beat{sanctioned}.",
+        at[0],
+        at[1],
+        at[2],
+        time.keyword(),
+        weather.keyword(),
+        cell[0],
+        cell[1],
+        cell[2],
     )
 }
 
@@ -474,18 +1031,16 @@ mod tests {
         assert!(!helmet_helps("minecraft:phantom"));
     }
 
-    /// The burning hours, and the two that are not.
+    /// The burning hours are the pinned timeline's `monsters_burn` window, and
+    /// `dusk` is inside it.
     #[test]
-    fn only_clear_daytime_burns() {
-        assert!(state_burns(WorldTime::Noon, WorldWeather::Clear));
-        assert!(state_burns(WorldTime::Day, WorldWeather::Clear));
-        assert!(!state_burns(WorldTime::Dusk, WorldWeather::Clear));
-        assert!(!state_burns(WorldTime::Dawn, WorldWeather::Clear));
-        assert!(!state_burns(WorldTime::Night, WorldWeather::Clear));
-        assert!(!state_burns(WorldTime::Midnight, WorldWeather::Clear));
-        // Rain and thunder gate `isSunBurnTick` off entirely.
-        assert!(!state_burns(WorldTime::Noon, WorldWeather::Rain));
-        assert!(!state_burns(WorldTime::Noon, WorldWeather::Thunder));
+    fn the_burning_hours_are_the_pinned_timeline_window() {
+        assert!(hour_burns(WorldTime::Day));
+        assert!(hour_burns(WorldTime::Noon));
+        assert!(hour_burns(WorldTime::Dusk));
+        assert!(!hour_burns(WorldTime::Night));
+        assert!(!hour_burns(WorldTime::Midnight));
+        assert!(!hour_burns(WorldTime::Dawn));
     }
 
     /// The radius is the declared `follow_range` or the one documented default —
