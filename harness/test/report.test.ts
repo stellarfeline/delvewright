@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { RunReport, STAGES, reportPathFromEnv } from "../src/report.ts";
+import { RunReport, STAGES, redRunMessage, reportPathFromEnv } from "../src/report.ts";
 import {
   waveAttribution,
   type DeathTrial,
@@ -377,4 +377,32 @@ test("spec-0029: the name-preference binding is always reported, zero included",
     named_candidates: 4,
     unbound: false,
   });
+});
+
+// --- a failed row is a failed run ------------------------------------------
+
+test("a stage row that failed is a red run — the muster's included — and a skipped one is not", () => {
+  // vesperhold, kept-oath+silence: the critical-path row carried two muster
+  // failures while the run printed PASSED and exited 0.
+  const r = new RunReport("vesperhold", "hard");
+  r.stage({
+    stage: "critical-path",
+    ran: true,
+    passed: false,
+    findings: [],
+    failures: ["wave/drowned-choir: wave seating: the campaign declares 4 body/bodies and the muster read 3"],
+  });
+  r.stage({ stage: "die-retry", ran: true, passed: true, findings: [], failures: [] });
+  r.stage({ stage: "death-loop", ran: false, passed: false, findings: ["skipped"], failures: [] });
+  const red = r.redStages();
+  assert.deepEqual(red.map((s) => s.stage), ["critical-path"]);
+  assert.match(redRunMessage(red), /^critical-path stage FAILED \(1 finding\(s\)\):\n  wave\/drowned-choir/);
+
+  // A row that lists a failure is red whatever its `passed` says.
+  r.stage({ stage: "die-retry", ran: true, passed: true, findings: [], failures: ["x"] });
+  assert.deepEqual(r.redStages().map((s) => s.stage), ["critical-path", "die-retry"]);
+
+  const green = new RunReport("gallery", "normal");
+  for (const stage of STAGES) green.stage({ stage, ran: true, passed: true, findings: [], failures: [] });
+  assert.deepEqual(green.redStages(), []);
 });

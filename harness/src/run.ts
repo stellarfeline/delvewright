@@ -33,6 +33,7 @@ import {
 } from "./death-loop.ts";
 import {
   RunReport,
+  redRunMessage,
   reportPathFromEnv,
   writeRunReport,
   type BranchOutcome,
@@ -463,57 +464,6 @@ async function main(): Promise<number> {
       for (const f of verdict.failures) musterFailures.push(`${verdict.wave}: ${f}`);
       for (const f of verdict.findings) report.recordMusterFinding(`${verdict.wave}: ${f}`);
     }
-    // spec-0025 §3: every enumerated branch appears here — the one this session
-    // walked with its result, and each of the others with the reason it did not.
-    // A skipped branch is named, never silent.
-    if (branchPlan && selection) {
-      const outcomes: BranchOutcome[] = branchPlan.branches.map((b): BranchOutcome => {
-        if (driven !== undefined && b.id === driven.id) {
-          return {
-            branch: b.id,
-            ran: true,
-            passed: pathFailure === undefined,
-            pathFile: b.pathFile,
-            chronicle: b.chronicle,
-            entryCommands,
-            endings: b.endings,
-          };
-        }
-        const skipped = selection.skipped.find((s) => s.branch === b.id);
-        const reason =
-          skipped?.reason ??
-          (driven === undefined
-            ? `selected by this tier, but no branch was driven (DELVEWRIGHT_BRANCH unset): ` +
-              `this session walked the exported critical path`
-            : `selected by this tier; a branch run needs a fresh world, so it runs in its ` +
-              `own session (validation/branch-runs.sh)`);
-        return {
-          branch: b.id,
-          ran: false,
-          passed: false,
-          reason,
-          chronicle: b.chronicle,
-          entryCommands: [],
-          endings: b.endings,
-        };
-      });
-      report.recordBranches(selection.tier, driven?.id, outcomes);
-      report.stage({
-        stage: "branch-run",
-        ran: driven !== undefined,
-        passed: driven !== undefined && pathFailure === undefined,
-        findings: [
-          ...(waypointFinding === undefined ? [] : [waypointFinding]),
-          ...(driven === undefined
-            ? [
-                "this build declares narrative branches and none was driven " +
-                  "(DELVEWRIGHT_BRANCH unset) — the run proves the exported path only",
-              ]
-            : []),
-        ],
-        failures: [],
-      });
-    }
     report.stage({
       stage: "critical-path",
       ran: true,
@@ -550,7 +500,6 @@ async function main(): Promise<number> {
       trials: lethalTrials,
       trialsFinished: executor.deathLoopTrialsFinished(),
     });
-    const deathLoopFailures = deathStage.failures;
     if (deathBinding) report.recordDeathLoop(deathBinding, lethalTrials);
     report.stage(deathStage);
     report.recordDieRetryBinding(retryBinding);
@@ -591,6 +540,62 @@ async function main(): Promise<number> {
       failures: dieRetryFailures,
     });
 
+    // spec-0025 §3: every enumerated branch appears here — the one this session
+    // walked with its result, and each of the others with the reason it did not.
+    // A skipped branch is named, never silent.
+    //
+    // Recorded after every other stage, because a branch's verdict IS the run's:
+    // `branch-runs.sh` files this row as the branch's RAN/passed, and a branch
+    // whose walk completed while a stage beside it redded is a failed branch.
+    if (branchPlan && selection) {
+      const branchGreen = pathFailure === undefined && report.redStages().length === 0;
+      const outcomes: BranchOutcome[] = branchPlan.branches.map((b): BranchOutcome => {
+        if (driven !== undefined && b.id === driven.id) {
+          return {
+            branch: b.id,
+            ran: true,
+            passed: branchGreen,
+            pathFile: b.pathFile,
+            chronicle: b.chronicle,
+            entryCommands,
+            endings: b.endings,
+          };
+        }
+        const skipped = selection.skipped.find((s) => s.branch === b.id);
+        const reason =
+          skipped?.reason ??
+          (driven === undefined
+            ? `selected by this tier, but no branch was driven (DELVEWRIGHT_BRANCH unset): ` +
+              `this session walked the exported critical path`
+            : `selected by this tier; a branch run needs a fresh world, so it runs in its ` +
+              `own session (validation/branch-runs.sh)`);
+        return {
+          branch: b.id,
+          ran: false,
+          passed: false,
+          reason,
+          chronicle: b.chronicle,
+          entryCommands: [],
+          endings: b.endings,
+        };
+      });
+      report.recordBranches(selection.tier, driven?.id, outcomes);
+      report.stage({
+        stage: "branch-run",
+        ran: driven !== undefined,
+        passed: driven !== undefined && branchGreen,
+        findings: [
+          ...(waypointFinding === undefined ? [] : [waypointFinding]),
+          ...(driven === undefined
+            ? [
+                "this build declares narrative branches and none was driven " +
+                  "(DELVEWRIGHT_BRANCH unset) — the run proves the exported path only",
+              ]
+            : []),
+        ],
+        failures: [],
+      });
+    }
     const reportPath = reportPathFromEnv();
     if (reportPath) {
       await writeRunReport(reportPath, report);
@@ -601,23 +606,12 @@ async function main(): Promise<number> {
     }
 
     if (failure !== undefined) throw failure;
-    // A die-retry failure is a red run in its own right: the delve may be
-    // completable and still ship a broken retry loop, which is the one thing a
-    // souls delve cannot do.
-    if (dieRetryFailures.length > 0) {
-      throw new Error(
-        `die-retry stage FAILED (${dieRetryFailures.length} finding(s)):\n` +
-          dieRetryFailures.map((f) => `  ${f}`).join("\n"),
-      );
-    }
-    // A delve can be completable and still ship a broken death loop —
-    // which, for a souls-shaped delve, is the whole game. Red in its own right.
-    if (deathLoopFailures.length > 0) {
-      throw new Error(
-        `death-loop stage FAILED (${deathLoopFailures.length} finding(s)):\n` +
-          deathLoopFailures.map((f) => `  ${f}`).join("\n"),
-      );
-    }
+    // EVERY red stage ends the run red — the critical path's muster, a die-retry
+    // loop, the death loop, a branch — from the one place the rows are judged
+    // (`RunReport.redStages`). A delve can be completable and still ship a wave
+    // that is not what it declares, a broken retry loop or a broken death loop.
+    const red = report.redStages();
+    if (red.length > 0) throw new Error(redRunMessage(red));
     process.stderr.write(
       `${driven === undefined ? "critical path" : `branch ${driven.id}`} ` +
         `'${criticalPath.campaignId}' PASSED (${criticalPath.steps.length} steps` +
