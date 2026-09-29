@@ -94,6 +94,7 @@ import {
   openLethalTrial,
   openWager,
   seatAtRespawn,
+  stagedBalance,
   stakesDropped,
   tableAnchor,
   termClause,
@@ -2917,14 +2918,10 @@ export class MineflayerExecutor implements StepExecutor {
     );
 
     // --- the ledger before, for EVERY datum this death takes ----------------
-    for (const w of trial.wagers) {
-      if (await this.trackScore(w.objective)) {
-        w.balanceBefore = this.myScore(w.objective);
-      }
-      if (w.balanceBefore !== undefined) {
-        w.expectedForfeit = expectedForfeit(w.forfeit, w.balanceBefore);
-      }
-    }
+    // Staged to a known balance, so the forfeit takes something (see
+    // `stagedBalance`), and staged again at the lip below: a body the approach
+    // stages away pays its bounty into the same purse.
+    await this.stageWagers(plan, trial);
 
     // --- the walk toward the volume ----------------------------------------
     // Armed BEFORE the approach, not between the approach and the step in. The
@@ -2952,6 +2949,9 @@ export class MineflayerExecutor implements StepExecutor {
       }
     }
     if (this.bodyInside(volume.region)) trial.enteredVolume = true;
+    if (navFault === undefined && this.deathSeq === deathsBefore) {
+      await this.stageWagers(plan, trial);
+    }
     // The one leg of the whole run that is ALLOWED into the hazard — skipped when
     // the approach already delivered the death.
     if (navFault === undefined && this.deathSeq === deathsBefore) {
@@ -3155,6 +3155,53 @@ export class MineflayerExecutor implements StepExecutor {
         .map((w) => `${w.stake} ${w.balanceAfterDeath ?? "?"} → ${w.balanceAfterCollect ?? "?"}`)
         .join("; ")}; marker ${trial.markerRetired ? "retired" : "STILL STANDING"}\n`,
     );
+  }
+
+  /**
+   * **Give every wagered datum a known, non-zero balance, and read it back.**
+   *
+   * Staging, like the health restores, and named in `staged_removals` as a
+   * `player` row. The value is `stagedBalance` of the datum's own forfeit rule, so
+   * the forfeit, the stake it leaves and the collection are all asserted against
+   * a purse that held something; a datum this cannot stage (not a per-player
+   * ledger, or the server refused) keeps whatever it held, and a trial whose
+   * forfeit is then observable only at zero is refused as UNBOUND by
+   * `lethalTrialFailures`.
+   */
+  private async stageWagers(plan: DeathPlan, trial: LethalTrial): Promise<void> {
+    const bot = this.requireBot();
+    for (const w of trial.wagers) {
+      if (!(await this.trackScore(w.objective))) continue;
+      const stake = plan.stakes.find((s) => s.id === w.stake);
+      const scope = stake?.currency.scope ?? "player";
+      const want = stagedBalance(w.forfeit);
+      if (scope === "player") {
+        const from = this.chatMark();
+        bot.chat(`/scoreboard players set @s ${w.objective} ${want}`);
+        await delay(STAGED_REPLY_MS);
+        const refusal = this.chatSince(from).lines.find((line) => isRejection(line));
+        this.stagedRemovals.push({
+          kind: "player",
+          why:
+            `stake datum staged for ${trial.volume}: \`${w.objective}\` (\`${w.stake}\`) set to ` +
+            `${want}, so the declared forfeit (${w.forfeit.kind}) takes ` +
+            `${expectedForfeit(w.forfeit, want)}`,
+          performed: refusal === undefined,
+          detail: refusal,
+        });
+        w.balanceBefore = await this.settledScore(w.objective, want);
+      } else {
+        w.balanceBefore = this.myScore(w.objective);
+      }
+      if (w.balanceBefore !== undefined) {
+        w.expectedForfeit = expectedForfeit(w.forfeit, w.balanceBefore);
+      }
+      process.stderr.write(
+        `[death-loop] ${trial.volume}: \`${w.objective}\` holds ${w.balanceBefore ?? "?"} ` +
+          `${scope === "player" ? `(staged to ${want})` : `(a ${scope} ledger — not staged)`}; ` +
+          `the death should take ${w.expectedForfeit ?? "?"}\n`,
+      );
+    }
   }
 
   /**

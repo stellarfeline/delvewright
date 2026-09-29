@@ -629,6 +629,45 @@ export function expectedForfeit(rule: ForfeitRule, balance: number): number {
   }
 }
 
+/**
+ * **The balance the stage gives a datum before its death**, so that the declared
+ * forfeit takes something a reader can see.
+ *
+ * The death loop runs after the critical path, and whatever the path left in the
+ * purse is what it wagers: on vesperhold that was 0 on every branch — the
+ * die-retry stage's eighteen deaths had each forfeited the lot — so the forfeit,
+ * the stake and the collection were all asserted at `0 → 0 → 0`, which a working
+ * forfeit and a missing one produce alike. The value is chosen per rule so the
+ * forfeit is non-zero and distinguishable from "all": a fixed forfeit gets twice
+ * its amount (a cap that took everything would show), a proportion gets 100 (the
+ * forfeit is the percentage itself), and `all` and `none` get 10. `none` is
+ * staged too: "nothing is taken" is only an assertion over a purse holding
+ * something.
+ */
+export function stagedBalance(rule: ForfeitRule): number {
+  switch (rule.kind) {
+    case "fixed":
+      return rule.amount > 0 ? rule.amount * 2 : 10;
+    case "proportion":
+      return 100;
+    case "all":
+    case "none":
+      return 10;
+  }
+}
+
+/**
+ * Whether this wager's forfeit could be observed at all: the purse held something
+ * when the death was taken, and the rule, applied to it, takes something — or is
+ * `none`, whose whole promise is that a non-empty purse is left alone. Any other
+ * wager is UNBOUND: a forfeit asserted at zero cannot tell a working forfeit from
+ * a missing one.
+ */
+export function forfeitObservable(w: TrialWager): boolean {
+  if (w.balanceBefore === undefined || w.balanceBefore <= 0) return false;
+  return w.forfeit.kind === "none" || expectedForfeit(w.forfeit, w.balanceBefore) > 0;
+}
+
 /** Whether `cell` lies inside `box` (inclusive). */
 export function inBox(cell: Vec3Tuple, box: Box): boolean {
   return [0, 1, 2].every((i) => box.lo[i]! <= cell[i]! && cell[i]! <= box.hi[i]!);
@@ -1219,6 +1258,16 @@ export function lethalTrialFailures(t: LethalTrial, markerTolerance = 0.75): str
   // EVERY datum this death forfeits, not the first one declared. A death that
   // takes four things promises four things.
   for (const w of t.wagers) {
+    if (w.balanceBefore !== undefined && !forfeitObservable(w)) {
+      out.push(
+        `${t.volume}: the forfeit of \`${w.stake}\` was UNBOUND — \`${w.objective}\` held ` +
+          `${w.balanceBefore} when the death was taken, so the declared forfeit ` +
+          `(${w.forfeit.kind}) could only be observed as ${expectedForfeit(w.forfeit, w.balanceBefore)}. ` +
+          `A forfeit, a stake and a collection asserted over an empty purse read the same ` +
+          `whether the engine took anything or not; the stage stages a known balance before ` +
+          `the death, and a trial where that did not hold is not a pass`,
+      );
+    }
     if (w.balanceBefore === undefined || w.balanceAfterDeath === undefined) {
       out.push(
         `${t.volume}: the currency ledger \`${w.objective}\` (stake \`${w.stake}\`) could not be ` +

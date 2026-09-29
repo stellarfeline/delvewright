@@ -32,6 +32,7 @@ import {
   openLethalTrial,
   overFootprint,
   parseDeathPlan,
+  stagedBalance,
   SINK_BLOCKS_PER_TICK,
   sinkBudgetMs,
   volumeReachesCell,
@@ -1190,4 +1191,42 @@ test("the sink budget is the measured descent, and it covers the descents that w
   assert.ok(budget < 20_000, `budget ${budget}ms is a bound, not a guess`);
   assert.equal(sinkBudgetMs(-2), 1_000, "a body already level with the volume waits only for the kill");
   assert.ok(sinkBudgetMs(12) > sinkBudgetMs(6), "deeper is longer");
+});
+
+// --- a forfeit is asserted over a purse that holds something ------------------
+
+test("a trial whose forfeit could only be observed at zero is refused as unbound", () => {
+  // vesperhold, every branch: tallow 0 before, 0 after the death, 0 after the
+  // collection — and the stage passed, over an assertion a missing forfeit
+  // satisfies exactly as well as a working one.
+  const t = goodTrial();
+  const w = wager(t, "stake/embers");
+  w.balanceBefore = 0;
+  w.expectedForfeit = 0;
+  w.balanceAfterDeath = 0;
+  w.balanceAfterCollect = 0;
+  const failures = lethalTrialFailures(t);
+  assert.ok(
+    failures.some((f) => /forfeit of `stake\/embers` was UNBOUND/.test(f)),
+    JSON.stringify(failures),
+  );
+  // The same trial over a purse of 5 is bound and passes.
+  assert.deepEqual(lethalTrialFailures(goodTrial()), []);
+});
+
+test("the staged balance makes every rule's forfeit observable, and none's too", () => {
+  const rules = [
+    { kind: "all" },
+    { kind: "fixed", amount: 2 },
+    { kind: "fixed", amount: 7 },
+    { kind: "proportion", percent: 50 },
+    { kind: "proportion", percent: 1 },
+  ] as const;
+  for (const rule of rules) {
+    const v = stagedBalance(rule);
+    const taken = expectedForfeit(rule, v);
+    assert.ok(taken > 0, `${JSON.stringify(rule)} takes ${taken} of ${v}`);
+    if (rule.kind !== "all") assert.ok(taken < v, `${JSON.stringify(rule)} is not "all" at ${v}`);
+  }
+  assert.ok(stagedBalance({ kind: "none" }) > 0, "none is asserted over a purse holding something");
 });
