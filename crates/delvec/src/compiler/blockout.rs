@@ -254,6 +254,11 @@ pub struct Binding {
     /// derivation laid**. A stair hosted in a bound box is the piece's to build,
     /// so it is not counted here — the count means what it says.
     pub stairs: usize,
+    /// Cells of a floor cut over a through-floor stair's run beyond the hole the
+    /// plan allocated — the stairwell [`stairwell`] measured the climb to need.
+    /// Zero on a plan whose every through-floor run already climbs inside its
+    /// hole, and on one with no through-floor stair at all.
+    pub stairwell_cells: u64,
     /// Of those, connections sealed at world load.
     pub barred: usize,
     /// Whole-owned masses written.
@@ -278,13 +283,14 @@ impl Binding {
     pub fn line(&self) -> String {
         format!(
             "blockout binding: {b} place(s) massed ({de} detailed, so {un} massed by the \
-             derivation), {s} seam(s) cut ({st} stair, {ba} barred), {v} whole-owned volume(s), \
-             {a} anchor(s) synthesized, {f} region write(s) over {c} cell(s).",
+             derivation), {s} seam(s) cut ({st} stair, {ba} barred), {sw} stairwell cell(s) cut \
+             over through-floor runs, {v} whole-owned volume(s), {a} anchor(s) synthesized, {f} region write(s) over {c} cell(s).",
             de = self.detailed,
             un = self.boxes.saturating_sub(self.detailed),
             b = self.boxes,
             s = self.seams,
             st = self.stairs,
+            sw = self.stairwell_cells,
             ba = self.barred,
             v = self.volumes,
             a = self.anchors,
@@ -463,6 +469,40 @@ impl Mass {
                     out.remove(&c);
                 } else {
                     out.insert(c);
+                }
+            }
+        }
+        out
+    }
+}
+
+impl Mass {
+    /// The blocks this mass leaves in `lo..=hi`, by replaying every write in
+    /// order — what the assembled world will hold there, for a question the
+    /// derivation must ask the engine's own movement model rather than answer
+    /// with arithmetic of its own ([`stairwell`]).
+    fn blocks_in(&self, lo: [i64; 3], hi: [i64; 3]) -> BTreeMap<[i32; 3], String> {
+        let mut out: BTreeMap<[i32; 3], String> = BTreeMap::new();
+        for f in &self.fills {
+            let flo = [
+                i64::from(f.from[0]).max(lo[0]),
+                i64::from(f.from[1]).max(lo[1]),
+                i64::from(f.from[2]).max(lo[2]),
+            ];
+            let fhi = [
+                i64::from(f.to[0]).min(hi[0]),
+                i64::from(f.to[1]).min(hi[1]),
+                i64::from(f.to[2]).min(hi[2]),
+            ];
+            if (0..3).any(|i| flo[i] > fhi[i]) {
+                continue;
+            }
+            let air = f.block == palette::AIR;
+            for c in cells_of(flo, fhi) {
+                if air {
+                    out.remove(&narrow(c));
+                } else {
+                    out.insert(narrow(c), f.block.clone());
                 }
             }
         }
@@ -686,6 +726,7 @@ fn derive_bound(
     // doc says "connections whose massing includes a stair". The climb is the
     // piece's to build (spec-0050 §3) and the bytes battery proves it was built.
     let mut stairs = 0usize;
+    let mut runs: Vec<(&PlacedSeam, &PlacedBox, LaidRun)> = Vec::new();
     for s in &seams {
         let Some(host_id) = &s.stair_in else { continue };
         if bound.contains(host_id.0.as_str()) {
@@ -694,8 +735,9 @@ fn derive_bound(
         let Some(host) = by_node.get(host_id.0.as_str()).copied() else {
             continue;
         };
-        if tread(&mut mass, s, host, &table, reads) {
+        if let Some(run) = tread(&mut mass, s, host, &table, reads) {
             stairs += 1;
+            runs.push((s, host, run));
         }
     }
 
@@ -723,6 +765,17 @@ fn derive_bound(
         } else {
             mass.write(olo, ohi, palette::AIR);
         }
+    }
+
+    // (7) **The stairwell over every through-floor run.** A stair up through a
+    // floor starts under the hole and walks back under the floor it pierces, so
+    // its upper courses stand where that floor takes a climbing body's head. The
+    // hole the plan allocated is where the stair ARRIVES; the stairwell is what
+    // lets a body get there. It is cut after the openings because it is measured
+    // over them — see [`stairwell`].
+    let mut stairwell_cells = 0u64;
+    for (s, host, run) in &runs {
+        stairwell_cells += stairwell(&mut mass, s, host, run, perturb.open_stairwells);
     }
 
     // The synthesized spatial vocabulary (spec-0049 §5.2), read off the mass
@@ -832,6 +885,7 @@ fn derive_bound(
         detailed,
         seams: seams.len(),
         stairs,
+        stairwell_cells,
         barred: seams.iter().filter(|s| s.class == "barred").count(),
         volumes: plan.volumes.len(),
         anchors: anchors.len(),
@@ -1042,7 +1096,7 @@ fn station_cell(mass: &Mass, b: &PlacedBox, taken: &BTreeSet<[i64; 3]>) -> [i64;
 
 /// Build one stair's treads inside the place the plan said hosts them.
 ///
-/// Returns whether anything was laid: a seam whose two places are on one plane
+/// Returns the run it laid, or `None` when it laid nothing: a seam whose two places are on one plane
 /// has no climb (`DW0830` refuses that as a mislabelled walk), and a seam the
 /// plan could not resolve a host for is a `DW0824`.
 ///
@@ -1073,9 +1127,9 @@ fn tread(
     host: &PlacedBox,
     table: &Metrics,
     reads: &mut Reads,
-) -> bool {
+) -> Option<LaidRun> {
     if s.rise == 0 {
-        return false;
+        return None;
     }
     let (lo, hi) = host.space();
     let (olo, ohi) = s.opening;
@@ -1087,22 +1141,18 @@ fn tread(
     // build, by construction rather than by two arithmetics agreeing. `None` is
     // a plan `DW0830` has already refused — a host at or above what the stair
     // reaches, or a hole that is not over this host (`DW0828`).
-    let Some(run) = delvewright_dsl::siteplan::stair_run(
+    let run = delvewright_dsl::siteplan::stair_run(
         host.floor,
         host.foot,
         s.normal_axis,
         s.plane,
         (olo, ohi),
-    ) else {
-        return false;
-    };
+    )?;
     let (climb, run_axis, start, step, available) =
         (run.climb, run.run_axis, run.start, run.step, run.available);
 
-    let Some(pitch) = delvewright_dsl::siteplan::gentlest_pitch(table, reads, climb, available)
-    else {
-        return false; // `DW0830` refused this plan; there is no standard to build.
-    };
+    // `None` is a plan `DW0830` refused; there is no standard to build.
+    let pitch = delvewright_dsl::siteplan::gentlest_pitch(table, reads, climb, available)?;
     let courses = delvewright_dsl::siteplan::run_of(&pitch, climb).max(1);
 
     // **A run is laid whole or not at all.** `gentlest_pitch` was asked for a
@@ -1116,7 +1166,7 @@ fn tread(
     // instead leaves the climb unbuilt, which is a state the observer can see —
     // an unreached place is `DW0837`.
     if courses > available {
-        return false;
+        return None;
     }
 
     // Which cells across the run the treads occupy: the opening's own width,
@@ -1125,7 +1175,7 @@ fn tread(
     let cross = if run_axis == 0 { 2 } else { 0 };
     let (clo, chi) = (olo[cross].max(lo[cross]), ohi[cross].min(hi[cross]));
     if clo > chi {
-        return false;
+        return None;
     }
 
     // Course `k` counts back from the seam: `k = 0` is the course the body steps
@@ -1166,7 +1216,147 @@ fn tread(
             laid = true;
         }
     }
-    laid
+    laid.then_some(LaidRun {
+        run_axis,
+        cross,
+        start,
+        step,
+        courses,
+        clo,
+        chi,
+    })
+}
+
+/// Where one stair's courses were laid — what [`tread`] built, handed to
+/// [`stairwell`] so the stairwell is cut over exactly those courses.
+struct LaidRun {
+    /// The horizontal axis the run walks: 0 = x, 2 = z.
+    run_axis: usize,
+    /// The horizontal axis across the run.
+    cross: usize,
+    /// Where course 0, the one the body steps off at the top, stands on `run_axis`.
+    start: i64,
+    /// Which way the run walks back into the host, down the climb: `+1` or `-1`.
+    step: i64,
+    /// How many courses were laid.
+    courses: i64,
+    /// The span across the run the treads occupy, inclusive.
+    clo: i64,
+    chi: i64,
+}
+
+/// **Cut the floor over a through-floor run wherever a body climbing it cannot
+/// pass**, and return how many cells were cut.
+///
+/// A stair up through a floor starts under the hole the plan allocated and walks
+/// back under the floor that hole pierces ([`delvewright_dsl::siteplan::stair_run`]),
+/// so every course but the top few stands under that floor. A course close
+/// enough to it puts a standing body's head in it, and a course a body cannot
+/// stand on is a course nobody climbs: the stair is then a way down and never a
+/// way up, and the place under it is one a body falls into and cannot leave
+/// (`DW0921`). Stairwell headroom is measured vertically over each tread, and
+/// the floor opening is sized to the run for exactly that reason — that is
+/// established practice, not this engine's invention.
+///
+/// **Measured, not computed.** Which courses need the floor cut away is not
+/// answered by arithmetic over a body's height here: that would be a second
+/// model of how a body climbs, and the first is the one `DW0921` floods —
+/// [`crate::compiler::nav::World::body_moves`], over the engine's occupancy
+/// model of these very blocks. So, from the foot of the run to its head, each
+/// step from one course (or the floor beyond the run) onto the next is asked of
+/// that relation over the mass as laid; where it is not a move, the floor over
+/// the course being stepped onto is cut, and if it is still not a move (a jump
+/// sweeps the head through the cell over the course it leaves), the floor over
+/// that one too. What is cut is only the course between the host's play space
+/// and the plan's hole plane, over the columns the treads occupy — the floor
+/// the plan put there, never the room above it.
+///
+/// A step still refused with both cut is left as it stands: nothing further up
+/// the floor is the derivation's to remove, and the observers over the built
+/// bytes (`DW0837`, `DW0921`) say so rather than this function guessing.
+fn stairwell(
+    mass: &mut Mass,
+    s: &PlacedSeam,
+    host: &PlacedBox,
+    run: &LaidRun,
+    every_course: bool,
+) -> u64 {
+    if s.normal_axis != 1 {
+        return 0; // a stair across a wall has no floor over its run
+    }
+    let (lo, hi) = host.space();
+    // The floor between the host's play space and the plane the hole is in.
+    let (slab_lo, slab_hi) = (hi[1] + 1, s.plane);
+    if slab_lo > slab_hi {
+        return 0;
+    }
+    // The world the question is asked over: the host, its shell and the course
+    // over the floor, which is all a step between two of its courses can touch.
+    let wlo = [lo[0] - 1, host.floor - 1, lo[2] - 1];
+    let whi = [hi[0] + 1, slab_hi + 3, hi[2] + 1];
+    let world_of = |mass: &Mass| {
+        crate::compiler::nav::World::from_occupancy(
+            crate::compiler::assembled::occupancy_of(mass.blocks_in(wlo, whi), &BTreeSet::new()),
+            crate::compiler::nav::Premises::geometry_only(),
+        )
+    };
+    // Where a body stands in one column of the run: the first clear cell over
+    // the host's walk plane — on the tread, whatever the tread is.
+    let feet = |world: &crate::compiler::nav::World, along: i64, across: i64| -> [i32; 3] {
+        let mut c = [0i64; 3];
+        c[run.run_axis] = along;
+        c[run.cross] = across;
+        c[1] = host.floor;
+        while c[1] <= slab_hi && !world.is_clear(narrow(c)) {
+            c[1] += 1;
+        }
+        narrow(c)
+    };
+    let mut cut = 0u64;
+    let cut_over = |mass: &mut Mass, along: i64| {
+        let mut a = [0i64; 3];
+        let mut b = [0i64; 3];
+        a[run.run_axis] = along;
+        b[run.run_axis] = along;
+        a[run.cross] = run.clo;
+        b[run.cross] = run.chi;
+        a[1] = slab_lo;
+        b[1] = slab_hi;
+        let solid = mass.solid_in(a, b).len() as u64;
+        if solid > 0 {
+            mass.write(a, b, palette::AIR);
+        }
+        solid
+    };
+    if every_course {
+        // `Perturb::open_stairwells`: the floor over the whole run, unmeasured.
+        return (0..run.courses)
+            .map(|k| cut_over(mass, run.start + run.step * k))
+            .sum();
+    }
+    let inside = |along: i64| along >= lo[run.run_axis] && along <= hi[run.run_axis];
+    // From the foot of the run to its head: the step onto course `k` is taken
+    // from course `k + 1`, or from the floor beyond the run when `k` is the last.
+    for k in (0..run.courses).rev() {
+        let onto = run.start + run.step * k;
+        let from = run.start + run.step * (k + 1);
+        if !inside(from) {
+            continue; // the run meets the far wall; its foot is stepped onto from beside it
+        }
+        for across in run.clo..=run.chi {
+            for column in [onto, from] {
+                let world = world_of(mass);
+                if world
+                    .body_moves(feet(&world, from, across))
+                    .contains(&feet(&world, onto, across))
+                {
+                    break;
+                }
+                cut += cut_over(mass, column);
+            }
+        }
+    }
+    cut
 }
 
 /// Every cell a set of region writes covers, for a caller that needs the whole
@@ -1259,6 +1449,10 @@ pub struct BatteryBinding {
     pub contact_columns: usize,
     /// Shared walls examined for a wider or misplaced hole — `DW0836`.
     pub walls: usize,
+    /// Open cells of those walls outside every allocation that claim 2 admitted
+    /// as a stair's stairwell rather than refusing as a leak — see
+    /// `stairwell_of`. Stated so that an admission is never silent.
+    pub stairwell_cells: usize,
     /// Places proven reached — `DW0837`.
     pub nodes: usize,
     /// Standable cells classified by owner — `DW0838`.
@@ -1282,7 +1476,8 @@ impl BatteryBinding {
     pub fn line(&self) -> String {
         format!(
             "blockout battery binding: {s} seam(s) proven over {w} shared wall(s) (of them \
-             {ct} contact(s), {cc} crossable column(s) measured), {n} place(s) \
+             {ct} contact(s), {cc} crossable column(s) measured; {sw} unallocated open cell(s) \
+             admitted as a stair's stairwell), {n} place(s) \
              proven reached, {c} standable cell(s) classified over {p} place pair(s), \
              {sl} sightline(s) walked, {i} identity(ies) re-measured ({d} declaration-only), \
              {l} critical-path leg(s) measured.",
@@ -1290,6 +1485,7 @@ impl BatteryBinding {
             ct = self.contacts,
             cc = self.contact_columns,
             w = self.walls,
+            sw = self.stairwell_cells,
             n = self.nodes,
             c = self.standable,
             p = self.pairs,
@@ -1786,9 +1982,12 @@ fn seams_built(
             .iter()
             .flat_map(|s| cells_of(s.opening.0, s.opening.1))
             .collect();
-        let leaks: Vec<[i64; 3]> = cells_of(*slo, *shi)
+        let open: Vec<[i64; 3]> = cells_of(*slo, *shi)
             .filter(|c| !allowed.contains(c) && world.is_clear(narrow(*c)))
             .collect();
+        let well = stairwell_of(&b.boxes, group, &open, world);
+        binding.stairwell_cells += well.len();
+        let leaks: Vec<[i64; 3]> = open.into_iter().filter(|c| !well.contains(c)).collect();
         if leaks.is_empty() {
             continue;
         }
@@ -1821,6 +2020,72 @@ fn seams_built(
             ),
         );
     }
+}
+
+/// **The part of a floor's unallocated opening that is a stair's stairwell** —
+/// claim 2's one admission, read off the bytes.
+///
+/// A stair up through a floor walks back under the floor it pierces, so the
+/// derivation cuts that floor wherever a body climbing the run needs it gone
+/// (`blockout::stairwell`). Those cells are outside the hole the plan allocated
+/// and they are the same way, not a second one. This is **not** a replay of the
+/// derivation: it does not know where the treads are or which pitch was chosen.
+/// It admits an open cell of the wall only when both hold over the built world:
+///
+/// - **a body on the stair uses it**: a body stands with its feet in it, or its
+///   head, or it is the cell a body standing on a raised tread two under it
+///   sweeps when it jumps. The raised-tread condition is what keeps a hole over
+///   bare floor a leak: a cell two over a place's walk plane is ceiling, not
+///   headroom.
+/// - **it opens off a stair's own hole**: it is joined, across the wall, through
+///   cells that also hold the first condition, to the opening of a seam in this
+///   wall that the plan hosts a stair for.
+///
+/// A floor cut wider than the climb needs — over a course a body's head never
+/// reaches — holds neither, and stays a leak.
+fn stairwell_of(
+    boxes: &[PlacedBox],
+    group: &[&PlacedSeam],
+    open: &[[i64; 3]],
+    world: &crate::compiler::nav::World,
+) -> BTreeSet<[i64; 3]> {
+    let wells: Vec<&PlacedSeam> = group
+        .iter()
+        .copied()
+        .filter(|s| s.normal_axis == 1 && s.stair_in.is_some())
+        .collect();
+    if wells.is_empty() {
+        return BTreeSet::new();
+    }
+    // The walk plane of the place under the floor: the plan's, not the
+    // derivation's — a body standing above it is standing on something raised.
+    let under: BTreeMap<&str, i64> = boxes.iter().map(|b| (b.node.0.as_str(), b.floor)).collect();
+    let plane = wells
+        .iter()
+        .filter_map(|s| s.stair_in.as_ref().and_then(|h| under.get(h.0.as_str())))
+        .copied()
+        .min();
+    let used = |c: [i64; 3]| -> bool {
+        let at = |dy: i64| narrow([c[0], c[1] - dy, c[2]]);
+        world.is_standable(at(0))
+            || world.is_standable(at(1))
+            || (world.is_standable(at(2)) && plane.is_some_and(|p| c[1] - 2 > p))
+    };
+    let candidates: BTreeSet<[i64; 3]> = open.iter().copied().filter(|c| used(*c)).collect();
+    let mut well: BTreeSet<[i64; 3]> = BTreeSet::new();
+    let mut frontier: Vec<[i64; 3]> = wells
+        .iter()
+        .flat_map(|s| cells_of(s.opening.0, s.opening.1))
+        .collect();
+    while let Some(c) = frontier.pop() {
+        for (dx, dz) in [(-1, 0), (1, 0), (0, -1), (0, 1)] {
+            let n = [c[0] + dx, c[1], c[2] + dz];
+            if candidates.contains(&n) && well.insert(n) {
+                frontier.push(n);
+            }
+        }
+    }
+    well
 }
 
 /// **A place's walk plane, as built** — the byte-side reading of where a body's
@@ -2779,6 +3044,13 @@ pub struct Perturb {
     /// is the sole way into a place — which is a fact about the fixture, not
     /// about the knob, and the test that uses it says which.
     pub wall_contacts: bool,
+    /// Cut the floor over **every** course of every through-floor run, whether a
+    /// climbing body needs it gone or not. Reddens `DW0836`'s claim 2: the
+    /// cells over the low courses are a hole no body on the stair uses, so they
+    /// are a floor opened wider than the plan allocated and not a stairwell.
+    /// It is what shows the stairwell admission refuses something — a claim 2
+    /// that admitted any hole over a stair would pass it.
+    pub open_stairwells: bool,
 }
 
 impl Perturb {
@@ -2792,6 +3064,7 @@ impl Perturb {
             brick_up: None,
             low_ceiling: None,
             wall_contacts: false,
+            open_stairwells: false,
         }
     }
 
@@ -2842,17 +3115,20 @@ pub enum Knob {
     LowCeiling,
     /// [`Perturb::wall_contacts`].
     WallContacts,
+    /// [`Perturb::open_stairwells`].
+    OpenStairwells,
 }
 
 impl Knob {
     /// Every knob, in declaration order.
-    pub const ALL: [Knob; 6] = [
+    pub const ALL: [Knob; 7] = [
         Knob::SlideOpenings,
         Knob::Sink,
         Knob::ShortWalls,
         Knob::BrickUp,
         Knob::LowCeiling,
         Knob::WallContacts,
+        Knob::OpenStairwells,
     ];
 
     /// The kebab-case name a creator types.
@@ -2865,6 +3141,7 @@ impl Knob {
             Knob::BrickUp => "brick-up",
             Knob::LowCeiling => "low-ceiling",
             Knob::WallContacts => "wall-contacts",
+            Knob::OpenStairwells => "open-stairwells",
         }
     }
 
@@ -2878,6 +3155,7 @@ impl Knob {
             Knob::BrickUp => "leave one place's interior solid",
             Knob::LowCeiling => "close one place a course under its plan's ceiling",
             Knob::WallContacts => "wall every contact's span the plan allocated",
+            Knob::OpenStairwells => "cut the floor over every course of a through-floor stair",
         }
     }
 
@@ -2906,6 +3184,7 @@ impl Knob {
             Knob::BrickUp => "DW0837",
             Knob::LowCeiling => "DW0833",
             Knob::WallContacts => "DW0877",
+            Knob::OpenStairwells => "DW0836",
         }
     }
 
@@ -2942,6 +3221,10 @@ impl Knob {
             },
             Knob::WallContacts => Perturb {
                 wall_contacts: true,
+                ..Perturb::none()
+            },
+            Knob::OpenStairwells => Perturb {
+                open_stairwells: true,
                 ..Perturb::none()
             },
         })

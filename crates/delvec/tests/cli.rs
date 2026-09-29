@@ -3186,6 +3186,7 @@ fn the_perturbation_flag_refuses_what_it_cannot_attribute() {
         "brick-up",
         "low-ceiling",
         "wall-contacts",
+        "open-stairwells",
     ] {
         assert!(err.contains(knob), "`{knob}` is not offered: {err}");
     }
