@@ -1494,6 +1494,20 @@ pub fn build_with_warnings(
                     code: e.code,
                     message: e.message,
                 })?;
+            // …and its mirror: prove the body will fight at all (DW0920). A
+            // drowned takes no land target while the level is bright, so a choir
+            // staged on dry ground under a bright hour walks to its water and
+            // leaves the party a fight nobody answers — vesperhold's Undertide
+            // Pool. Same seated cells, same reach, same population.
+            let (engage, refused) =
+                crate::compiler::engage::check_engagement(plan, &world, &blocks, &waves);
+            eprintln!("{}", engage.line());
+            if let Some(e) = refused {
+                return Err(BuildFailure::Diagnostic {
+                    code: e.code,
+                    message: e.message,
+                });
+            }
             // spec-0023 §2: the winnability arithmetic. Runs here because it
             // needs the SEATED spawn cells (the exact cells the datapack will
             // summon on) as well as the campaign's declarations — a hostile the

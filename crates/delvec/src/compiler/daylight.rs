@@ -278,7 +278,7 @@ pub fn precipitates_at(plan: &Plan, cell: [i32; 3]) -> bool {
 /// A place in the quest DAG an effect root has: an objective's completion
 /// bundle or a quest's.
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
-enum Pos {
+pub(crate) enum Pos {
     Objective { quest: String, objective: String },
     QuestComplete { quest: String },
 }
@@ -312,7 +312,7 @@ struct Bundle {
 
 /// Where a body enters the fight.
 #[derive(Clone, Debug)]
-enum Beat {
+pub(crate) enum Beat {
     /// An effect in a DAG-placed bundle, at its fire key.
     Placed(Pos, FireKey),
     /// Anything with no place in the DAG: a trigger, an ambush, a trap, a
@@ -322,9 +322,9 @@ enum Beat {
 
 /// The states a delve's clock can be in, as two independent sets.
 #[derive(Default, Debug)]
-struct Sky {
-    times: Vec<WorldTime>,
-    weathers: Vec<WorldWeather>,
+pub(crate) struct Sky {
+    pub(crate) times: Vec<WorldTime>,
+    pub(crate) weathers: Vec<WorldWeather>,
 }
 
 impl Sky {
@@ -337,8 +337,10 @@ impl Sky {
     }
 }
 
-/// The delve's clock over the quest DAG (module docs, §3).
-struct Clock {
+/// The delve's clock over the quest DAG (module docs, §3). Shared with
+/// [`crate::compiler::engage`] (`DW0920`): one reading of which states a body
+/// can stand in between entering a fight and leaving it.
+pub(crate) struct Clock {
     declared: (WorldTime, WorldWeather),
     bundles: BTreeMap<Pos, Bundle>,
     /// Cuts with no place in the DAG, or no known offset in their bundle.
@@ -384,7 +386,7 @@ fn walk_timeline<'a>(
 }
 
 impl Clock {
-    fn new(c: &Campaign) -> Self {
+    pub(crate) fn new(c: &Campaign) -> Self {
         let mut bundles: BTreeMap<Pos, Bundle> = BTreeMap::new();
         let mut anywhere: Vec<Cut> = Vec::new();
         let mut placed: BTreeMap<usize, (Pos, FireKey)> = BTreeMap::new();
@@ -534,7 +536,7 @@ impl Clock {
     /// Every state a body entering at one of `beats` can stand in before it
     /// dies. `dead_after`: the `kill` objectives that end a wave no rest
     /// re-seats.
-    fn sky_for(&self, c: &Campaign, beats: &[Beat], dead_after: &[Pos]) -> Sky {
+    pub(crate) fn sky_for(&self, c: &Campaign, beats: &[Beat], dead_after: &[Pos]) -> Sky {
         let mut sky = Sky::default();
         for beat in beats {
             let Beat::Placed(p, key) = beat else {
@@ -704,24 +706,26 @@ fn fightable_actor(c: &Campaign, actor: &delvewright_dsl::Actor) -> bool {
     unleashed
 }
 
-/// One staged body the proof looks at.
-struct Staged {
+/// One staged body the proof looks at. Shared with
+/// [`crate::compiler::engage`] (`DW0920`), which asks a different question of
+/// the same population.
+pub(crate) struct Staged {
     /// `wave/…` or `actor/…`, for the message.
-    owner: String,
+    pub(crate) owner: String,
     /// What the campaign calls the encounter (`wave` / `actor`).
-    kind: &'static str,
+    pub(crate) kind: &'static str,
     /// The vanilla entity id as authored.
-    entity: String,
+    pub(crate) entity: String,
     /// Cells the body is staged on.
-    cells: Vec<[i32; 3]>,
+    pub(crate) cells: Vec<[i32; 3]>,
     /// Its aggro radius in blocks.
-    radius: u32,
+    pub(crate) radius: u32,
     /// Does it already wear something on its head?
     helmeted: bool,
     /// Where it enters the fight.
-    beats: Vec<Beat>,
+    pub(crate) beats: Vec<Beat>,
     /// The `kill` objectives after which it is dead for good.
-    dead_after: Vec<Pos>,
+    pub(crate) dead_after: Vec<Pos>,
 }
 
 /// The state the sun reaches the body in, named in the message.
@@ -802,7 +806,7 @@ pub fn check_daylight_staging(
 /// Every staged body worth proving: wave stacks a `kill` objective adjudicates,
 /// and actors the party can damage, each with the beats it enters the fight at.
 /// Deterministic order (declaration order, waves then actors).
-fn collect_staged(
+pub(crate) fn collect_staged(
     plan: &Plan,
     spawns: &BTreeMap<String, Vec<[i32; 3]>>,
     clock: &Clock,
@@ -910,7 +914,7 @@ fn collect_staged(
 }
 
 /// The `kill` objectives that adjudicate `wave`, as DAG places.
-fn kill_objectives(c: &Campaign, wave: &str) -> Vec<Pos> {
+pub(crate) fn kill_objectives(c: &Campaign, wave: &str) -> Vec<Pos> {
     let mut out = Vec::new();
     for q in &c.quests.content.quests {
         for o in &q.objectives {

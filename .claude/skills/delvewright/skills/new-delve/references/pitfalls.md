@@ -129,7 +129,13 @@
   void delve: the play box's biome, `the_void`, never rains. Roofing the arena
   clears it too. One species the helmet does not save — a
   phantom burns through it — so an open-air phantom fight has to be roofed or
-  restaged. Never route wave mobs like actors: waves are native AI; if a beat
+  restaged. The mirror case: a drowned takes no land target while the level
+  is bright — `day`, `noon` and `dusk` in `clear` or `rain` — and walks to water
+  instead, so a drowned fight on dry ground at those hours is a fight nobody
+  answers. Stand the fight in water (a floor of waterlogged bottom
+  slabs is walkable and wet), use a species that fights on land, or play it in
+  thunder or at night; never wall the drowned away from its water to keep it
+  alive. Never route wave mobs like actors: waves are native AI; if a beat
   needs lane-then-fight movement, that is the routed-then-feral primitive, which
   does not exist — not a `follow_range` trick.
 ## Open air by default

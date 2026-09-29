@@ -1,6 +1,6 @@
 //! spec-0016 §6 (TD raider lanes + aggro-edge summoning) end-to-end tests,
 //! driven by the `souls-td-lanes` fixture: a ruined keep where an illager
-//! warband walks a three-waypoint circuit of the halls, while the drowned are
+//! warband walks a three-waypoint circuit of the halls, while husks are
 //! spirit-summoned at the edge of their own perception around the post the
 //! party holds.
 //!
@@ -10,7 +10,7 @@
 //! them), and it is the layout real campaigns use.
 //!
 //! A clean build is itself the DW0386 proof (every lane leg resolves, stands,
-//! walks and is longer than 10 blocks) and the DW0387 proof (both drowned find
+//! walks and is longer than 10 blocks) and the DW0387 proof (both husks find
 //! a standable, reachable, line-of-sight cell on their ring).
 
 mod common;
@@ -315,7 +315,7 @@ fn spawn_starts_the_lane_clock_at_waypoint_zero() {
 #[test]
 fn aggro_edge_mobs_spawn_on_the_perception_ring() {
     let out = build_fixture();
-    let spawn = fn_body(&out, "spawn_drowned");
+    let spawn = fn_body(&out, "spawn_husks");
     let ring = template(&out, "souls_td_aggro_edge");
     // The PackTest's ring band is derived from the same centre the placement
     // used, so parse the centre out of it and check the emitted summons against
@@ -343,12 +343,12 @@ fn aggro_edge_mobs_spawn_on_the_perception_ring() {
                 .sqrt();
         assert!(
             (11.0..=12.0).contains(&d),
-            "a drowned materialized {d:.2} blocks from the defended point, outside \
+            "a husk materialized {d:.2} blocks from the defended point, outside \
              the one-sided ring [follow_range-1, follow_range] = [11, 12]: {line}"
         );
         seen += 1;
     }
-    assert_eq!(seen, 2, "both drowned are summoned: {spawn}");
+    assert_eq!(seen, 2, "both husks are summoned: {spawn}");
     // No patrol NBT: species without patrol AI never march a lane.
     assert!(
         !spawn.contains("Patrolling"),

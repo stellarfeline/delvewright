@@ -1966,6 +1966,15 @@ impl World {
         self.feet_16_fp(c, &Footprint::player()) as f64 / FULL_16 as f64
     }
 
+    /// Whether the model floods `c` — water (or lava) a walker cannot stand in
+    /// and a body can be put in. Public so the engagement proof
+    /// ([`crate::compiler::engage`], `DW0920`) can ask whether the party can put its
+    /// feet in water within a fight's reach; the one flood this model carries,
+    /// never a second reading of the block map.
+    pub fn is_flooded(&self, c: [i32; 3]) -> bool {
+        self.flooded.contains(&c)
+    }
+
     /// Whether a cell is unoccupied — neither a solid block nor water-flooded, so a
     /// camera eye placed in it sees open air rather than the inside of a block.
     /// Public wrapper for the visual-tier clear-eye self-check

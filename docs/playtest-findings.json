@@ -2952,6 +2952,30 @@
         ],
         "kind": "dsl",
         "match": {
+          "eq": {
+            "entity": "minecraft:drowned"
+          }
+        }
+      },
+      "campaign": "vesperhold",
+      "carrier": {
+        "code": "DW0920",
+        "kind": "dw"
+      },
+      "finding": "the drowned in the undertide pool do not attack: they keep walking toward the well's water, and the curb that keeps them out of it keeps them there while the party cuts them down",
+      "general_form": "a body the pinned game's own AI will not set on the party, under the hour, weather and footing the fight can stand in, is not staged as a fight the party must win: a drowned takes no land target while the level is bright (day, noon or dusk, in clear or rain), so a drowned fight bright until its kill objective completes needs water for the party's feet within the body's reach",
+      "id": "vh-15",
+      "note": "Mirror of `DW0496`: that rule refuses a fight the sun settles, this one a fight the body walks away from. On the pinned 1.21.11 jar `Drowned.okTarget(t)` is `!level.isBrightOutside() || t.isInWater()` -- the predicate on its player-targeting goal and the gate on its melee goal -- and `DrownedGoToWaterGoal` walks it to water while bright; of the thirteen classes that call `Level.isBrightOutside()`, `Drowned` is the only target gate. `isBrightOutside` is `skyDarken < 4`: dusk in rain is sky light 11.005, `skyDarken` 3, bright by five thousandths of a light level. Measured a second way on the pinned server by `tools/maintenance/probe-drowned-engagement.py`: 20 of 20 cases agree with `engage::bright_outside` (14 engaged, 14 villagers slain by a drowned in the server log). The round-1 fix that walled the well, so the choir could no longer walk into its own lethal box, is what turned the choir toward the wall; the repair keeps the wall and stands the fight in water: every flag of the pool floor outside the well's ring is a waterlogged bottom slab, on which a drowned crossed 14 blocks to its target in about 20 s on the pinned server. The span is `DW0496`'s clock, ended at the wave's `kill` objective: vesperhold cuts to noon, night and dawn only in quests after the choir. The binding counts drowned stacks by entity id, the object class itself, so a campaign with no drowned is INAPPLICABLE. Measured on this campaign: 2 drowned stacks (three Drowned Choristers and the Drowned Precentor) in `wave/drowned-choir`; the build refuses content `dd4429c` with DW0920 on that wave (2 refused) and is silent on the repaired floor (2 of 2 with water within reach).",
+      "round": 2,
+      "triage": "capability"
+    },
+    {
+      "binding": {
+        "files": [
+          "quests.json"
+        ],
+        "kind": "dsl",
+        "match": {
           "in": {
             "entity": [
               "minecraft:bogged",
