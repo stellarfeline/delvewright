@@ -958,6 +958,7 @@ mod tests {
                 flooded: BTreeSet::new(),
                 partial: BTreeMap::new(),
                 waterloggable: BTreeSet::new(),
+                lava: BTreeSet::new(),
             },
             crate::compiler::nav::Premises::geometry_only(),
         )
@@ -1158,6 +1159,7 @@ mod tests {
             flooded: BTreeSet::new(),
             partial: BTreeMap::new(),
             waterloggable: BTreeSet::new(),
+            lava: BTreeSet::new(),
         };
         occ.partial.insert([4, 63, 3], 8);
         let w = World::from_occupancy(occ, crate::compiler::nav::Premises::geometry_only());

@@ -251,6 +251,21 @@ pub const JUMP_REACH: [(i64, u32); 24] = [
     (-22, 9),
 ];
 
+/// **How high a body afloat climbs out**, in whole cells above the top water
+/// cell it floats in: a ledge whose standing cell is at most this far above that
+/// cell is one a swimmer pressing into it gets onto; one higher is a wall.
+///
+/// Measured with the same instrument as [`JUMP_REACH`]:
+/// `tools/spike-jump-arc/simulate.mjs --water` floats a body in a three-deep
+/// pool of source water beside a ledge and holds forward and jump, walking and
+/// sprinting. A ledge standing one cell over the top water cell (its top block
+/// flush with the water's) is climbed; two cells over is not. What lifts the
+/// body is the water branch of the player's travel: pressed into a wall with
+/// room 0.6 above, it gets a 0.3 upward impulse (`outOfLiquidImpulse` in the
+/// harness's physics). It is the same relationship an `ocean` world's walk
+/// plane keeps with its sea, one block above it.
+pub const WATER_CLIMB_OUT_RISE: i32 = 1;
+
 /// The widest gap [`JUMP_REACH`] admits for a rise measured in sixteenths, or
 /// `None` when no jump makes it: past [`MAX_JUMP_RISE_16`] upward, or deeper than
 /// [`unarmoured_survivable_fall_blocks`] downward (a body that lands there is

@@ -880,6 +880,11 @@ pub struct Occupancy {
     /// them into a source (`crate::compiler::nav::measure_sea_seepage`, `DW0851`).
     /// Under a horizon with no ambient water nothing reads it.
     pub waterloggable: BTreeSet<[i32; 3]>,
+    /// The subset of `flooded` that lava reaches rather than water — the same
+    /// flood run from the lava sources alone. A body stands on neither, which is
+    /// why every other reader takes `flooded` whole; the one that asks where a
+    /// body can FLOAT has to tell them apart.
+    pub lava: BTreeSet<[i32; 3]>,
 }
 
 /// The nav occupancy of the settled assembled world — see
@@ -955,6 +960,7 @@ pub fn occupancy_of(
     let mut use_gates: BTreeSet<[i32; 3]> = BTreeSet::new();
     let mut barriers: BTreeSet<[i32; 3]> = BTreeSet::new();
     let mut sources: BTreeSet<[i32; 3]> = BTreeSet::new();
+    let mut lava_sources: BTreeSet<[i32; 3]> = BTreeSet::new();
     let mut partial: BTreeMap<[i32; 3], u8> = BTreeMap::new();
     let mut waterloggable: BTreeSet<[i32; 3]> = BTreeSet::new();
     for (cell, name) in &blocks {
@@ -978,6 +984,9 @@ pub fn occupancy_of(
                 // A water-only test dropped lava through to the default and made
                 // a lava surface into floor a route proof walks.
                 sources.insert(*cell);
+                if delvewright_dsl::blockshape::bare_id(name) == "lava" {
+                    lava_sources.insert(*cell);
+                }
             }
             // A pressure plate / tripwire / carpet / candle / torch / thin snow
             // drift is walkable floor decoration, not an obstacle — leave its
@@ -1009,6 +1018,14 @@ pub fn occupancy_of(
     // free water — `flooded` means "a walker would be in open water here".
     let mut flooded = flood(&barriers, &sources);
     flooded.retain(|c| !barriers.contains(c));
+    let lava: BTreeSet<[i32; 3]> = if lava_sources.is_empty() {
+        BTreeSet::new()
+    } else {
+        flood(&barriers, &lava_sources)
+            .into_iter()
+            .filter(|c| flooded.contains(c))
+            .collect()
+    };
     Occupancy {
         solid,
         tall,
@@ -1016,6 +1033,7 @@ pub fn occupancy_of(
         flooded,
         partial,
         waterloggable,
+        lava,
     }
 }
 

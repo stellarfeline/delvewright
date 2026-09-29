@@ -1193,6 +1193,11 @@ pub fn build_with_warnings(
                 );
                 eprintln!("{}", leave_binding.line());
                 leave_verdict?;
+                put_json(
+                    &mut out,
+                    "validation/leave-proof.json",
+                    &leave_binding.to_json(),
+                );
                 if !plan.lethal_volumes.is_empty() {
                     lethal_gate = Some(crate::compiler::lethal::gate(
                         plan.campaign,

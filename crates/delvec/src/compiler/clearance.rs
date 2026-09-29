@@ -606,6 +606,7 @@ mod tests {
             flooded: BTreeSet::new(),
             partial: std::collections::BTreeMap::new(),
             waterloggable: std::collections::BTreeSet::new(),
+            lava: std::collections::BTreeSet::new(),
         }
     }
 

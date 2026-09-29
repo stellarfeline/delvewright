@@ -897,6 +897,11 @@ pub struct World {
     /// standing in the sea's own band comes out of `/place template` waterlogged,
     /// which makes it a water source the block map does not contain.
     waterloggable: BTreeSet<[i32; 3]>,
+    /// The subset of `flooded` that is **lava** rather than water
+    /// ([`crate::compiler::assembled::Occupancy::lava`]). Read by exactly one
+    /// question, [`World::body_moves`]: a body that enters water floats at its
+    /// surface, and one that enters lava does not come out of it at all.
+    lava: BTreeSet<[i32; 3]>,
     /// Cells inside a declared **lethal volume** (DSL v0.10, spec-0031).
     ///
     /// A volume that kills whatever enters it is, for a route, a volume no route
@@ -1030,7 +1035,7 @@ pub struct World {
 /// [`step_vertices`], which shapes a step the router has **already** permitted
 /// and never re-decides whether it may be taken.
 use delvewright_dsl::metrics::{
-    FULL_16, JUMP_REACH, PLAYER_WIDTH, jump_max_gap, step_allowed,
+    FULL_16, JUMP_REACH, PLAYER_WIDTH, WATER_CLIMB_OUT_RISE, jump_max_gap, step_allowed,
     unarmoured_survivable_fall_blocks,
 };
 
@@ -1281,6 +1286,7 @@ impl World {
             flooded: self.flooded.clone(),
             partial: self.partial.clone(),
             waterloggable: self.waterloggable.clone(),
+            lava: self.lava.clone(),
             objective_cells: self.objective_cells.clone(),
             lethal: self.lethal.clone(),
             lethal_regions: self.lethal_regions.clone(),
@@ -1454,6 +1460,7 @@ impl World {
             flooded: occ.flooded,
             partial: occ.partial,
             waterloggable: occ.waterloggable,
+            lava: occ.lava,
             lethal: premises
                 .lethal_regions
                 .iter()
@@ -1583,6 +1590,7 @@ impl World {
             flooded: self.flooded.clone(),
             partial,
             waterloggable: self.waterloggable.clone(),
+            lava: self.lava.clone(),
             objective_cells: self.objective_cells.clone(),
             lethal: self.lethal.clone(),
             lethal_regions: self.lethal_regions.clone(),
@@ -1625,6 +1633,7 @@ impl World {
             flooded: self.flooded.clone(),
             partial: self.partial.clone(),
             waterloggable: self.waterloggable.clone(),
+            lava: self.lava.clone(),
             objective_cells: self.objective_cells.clone(),
             lethal: self.lethal.clone(),
             lethal_regions: self.lethal_regions.clone(),
@@ -1675,6 +1684,7 @@ impl World {
             flooded: self.flooded.clone(),
             partial: self.partial.clone(),
             waterloggable: self.waterloggable.clone(),
+            lava: self.lava.clone(),
             objective_cells: self.objective_cells.clone(),
             lethal: self.lethal.clone(),
             lethal_regions: self.lethal_regions.clone(),
@@ -1728,6 +1738,7 @@ impl World {
             flooded: self.flooded.clone(),
             partial: self.partial.clone(),
             waterloggable: self.waterloggable.clone(),
+            lava: self.lava.clone(),
             objective_cells: self.objective_cells.clone(),
             lethal: self.lethal.clone(),
             lethal_regions: self.lethal_regions.clone(),
@@ -1805,6 +1816,7 @@ impl World {
             flooded: self.flooded.clone(),
             partial: self.partial.clone(),
             waterloggable: self.waterloggable.clone(),
+            lava: self.lava.clone(),
             objective_cells: self.objective_cells.clone(),
             lethal: self.lethal.clone(),
             lethal_regions: self.lethal_regions.clone(),
@@ -1876,6 +1888,7 @@ impl World {
             flooded: self.flooded.clone(),
             partial: self.partial.clone(),
             waterloggable: self.waterloggable.clone(),
+            lava: self.lava.clone(),
             objective_cells: self.objective_cells.clone(),
             lethal: self.lethal.clone(),
             lethal_regions: self.lethal_regions.clone(),
@@ -1926,6 +1939,7 @@ impl World {
                 flooded,
                 partial: BTreeMap::new(),
                 waterloggable: BTreeSet::new(),
+                lava: BTreeSet::new(),
             },
             Premises::geometry_only(),
         )
@@ -2481,27 +2495,43 @@ impl World {
         out
     }
 
-    /// **Everywhere a body standing in `c` can put itself in one movement**: the
-    /// walk step ([`World::neighbors`]), plus the two movements a route proof never
-    /// takes and a player always can — stepping off an edge and falling, and
-    /// jumping a gap. Cardinal, player footprint, ordered and deduplicated
-    /// (ADR-0006).
+    /// **Everywhere a body in `c` can put itself in one movement** — the player's
+    /// own movement over the assembled model, cardinal, player footprint,
+    /// ordered and deduplicated (ADR-0006).
     ///
-    /// A route proof may not use these: it must never prove a way the bot cannot
-    /// walk on cue. A proof that asks **where a body can end up** must use them,
-    /// or it cannot see the places a player jumps into — which is what
-    /// [`DW_BODY_CANNOT_LEAVE`] asks, in both directions of the same relation.
+    /// A body is in one of two states, and `c` says which: **standing** in a
+    /// standable cell, or **afloat** in a surface cell of water (a water cell with
+    /// open air over it, [`World::is_water_surface`]).
+    ///
+    /// Standing, it can take the walk step ([`World::neighbors`]), and the two
+    /// movements a route proof never takes and a player always can:
     ///
     /// - **Fall.** The neighbouring column is clear at the body's feet and head;
-    ///   the body drops to the first thing that stops it. That landing counts only
-    ///   when it is standable (water, a lethal volume, a fence top are not) and no
-    ///   deeper than the fall an unarmoured body survives.
+    ///   the body drops to the first thing that stops it. A floor counts when it
+    ///   is standable (a lethal volume, a fence top are not) and no deeper than
+    ///   the fall an unarmoured body survives; water catches it at any depth, and
+    ///   the body floats at the surface it fell into.
     /// - **Jump.** The launch column is clear for the whole arc (feet to two cells
     ///   up, the measured headroom); each gap column is clear from the lower of the
     ///   launch and landing feet to that same top; the body lands on the first
     ///   floor below the arc in the landing column, and the gap is inside
-    ///   [`delvewright_dsl::metrics::jump_max_gap`] for the rise. Requiring the whole band
-    ///   clear refuses some arcs a body clears, never admits one it cannot.
+    ///   [`delvewright_dsl::metrics::jump_max_gap`] for the rise. Requiring the whole band clear
+    ///   refuses some arcs a body clears, never admits one it cannot.
+    ///
+    /// Walking into water whose surface is at or above the body's feet puts it
+    /// afloat at that surface.
+    ///
+    /// Afloat, it can swim to a neighbouring surface cell at the same height, and
+    /// **climb out** onto a neighbouring standable cell no higher than
+    /// [`delvewright_dsl::metrics::WATER_CLIMB_OUT_RISE`] above the water it floats in — or step
+    /// over a lower rim and fall. It cannot jump, and it does not dive: water it
+    /// could leave only by swimming under something is water it cannot leave.
+    /// Lava is never a place a body floats.
+    ///
+    /// A route proof may not use any of this: it must never prove a way the bot
+    /// cannot walk on cue. A proof that asks **where a body can end up** must, or
+    /// it cannot see the places a player jumps, falls or wades into — which is
+    /// what [`DW_BODY_CANNOT_LEAVE`] asks, in both directions of the same relation.
     ///
     /// Diagonal jumps and climbing (ladders, vines) are not moves here: a place a
     /// body reaches only by one of them is not seen, and a place it leaves only by
@@ -2509,31 +2539,78 @@ impl World {
     pub fn body_moves(&self, c: [i32; 3]) -> Vec<[i32; 3]> {
         const HORIZ: [(i32, i32); 4] = [(-1, 0), (1, 0), (0, -1), (0, 1)];
         let fp = Footprint::player();
-        let mut out = self.neighbors(c);
-        let here = self.feet_16_fp(c, &fp);
         let deepest = unarmoured_survivable_fall_blocks() as i32;
-        let clear =
-            |x: i32, y0: i32, y1: i32, z: i32| (y0..=y1).all(|y| !self.is_occupied([x, y, z]));
-        // The first floor under a column, scanning down from `top`: the feet cell
-        // above the first occupied cell, if it is standable and no deeper than a
-        // body survives.
-        let land = |x: i32, z: i32, top: i32| -> Option<[i32; 3]> {
+        let clear = |x: i32, y0: i32, y1: i32, z: i32| (y0..=y1).all(|y| !self.is_occupied([x, y, z]));
+        // Where a body dropping down a column from `top` ends up: afloat at the
+        // first water it meets, or standing on the first floor, if that floor is
+        // standable and no deeper under `from` than a body survives. `None` when
+        // it lands in lava, a lethal volume, on something no body stands on, or
+        // nowhere at all.
+        let settle = |x: i32, z: i32, top: i32, from: i64| -> Option<[i32; 3]> {
+            // Nothing deeper than the survivable fall is a landing, and water
+            // that deep is not looked for: a fall that far into water is not
+            // counted as a way in.
+            let bottom = from.div_euclid(FULL_16) as i32 - deepest - 1;
             let mut y = top;
-            while y >= c[1] - deepest - 1 {
-                if self.is_occupied([x, y, z]) {
+            while y >= bottom {
+                let cell = [x, y, z];
+                if self.is_occupied(cell) {
+                    if self.is_water_surface(cell) {
+                        return Some(cell);
+                    }
                     let n = [x, y + 1, z];
-                    return self.standable_fp(n, &fp).then_some(n);
+                    return (self.standable_fp(n, &fp)
+                        && jump_max_gap(self.feet_16_fp(n, &fp) - from).is_some())
+                    .then_some(n);
                 }
                 y -= 1;
             }
             None
         };
+        let mut out = Vec::new();
+        if self.is_water_surface(c) {
+            for (dx, dz) in HORIZ {
+                let (x1, z1) = (c[0] + dx, c[2] + dz);
+                let n = [x1, c[1], z1];
+                if self.is_water_surface(n) {
+                    out.push(n);
+                    continue;
+                }
+                // Climb out onto a ledge in reach of the water's top.
+                for rise in (1..=WATER_CLIMB_OUT_RISE).rev() {
+                    let up = [x1, c[1] + rise, z1];
+                    if self.standable_fp(up, &fp) && clear(c[0], c[1] + 1, c[1] + rise + 1, c[2]) {
+                        out.push(up);
+                        break;
+                    }
+                }
+                // Or over a rim no higher than the water, and down whatever is there.
+                if clear(x1, c[1], c[1] + 1, z1) {
+                    let from = (i64::from(c[1]) + 1) * FULL_16;
+                    if let Some(n) = settle(x1, z1, c[1] - 1, from) {
+                        out.push(n);
+                    }
+                }
+            }
+            out.sort_unstable();
+            out.dedup();
+            return out;
+        }
+        out.extend(self.neighbors(c));
+        let here = self.feet_16_fp(c, &fp);
         for (dx, dz) in HORIZ {
-            // Fall: step sideways into the next column and drop.
             let (x1, z1) = (c[0] + dx, c[2] + dz);
+            // Wade in: water at the body's feet in the next column, rising to
+            // a surface with air over it.
+            if self.is_water([x1, c[1], z1])
+                && !self.solid_at([x1, c[1] + 1, z1])
+                && let Some(s) = self.surface_over([x1, c[1], z1])
+            {
+                out.push(s);
+            }
+            // Fall: step sideways into the next column and drop.
             if clear(x1, c[1], c[1] + 1, z1)
-                && let Some(n) = land(x1, z1, c[1] - 1)
-                && jump_max_gap(self.feet_16_fp(n, &fp) - here).is_some()
+                && let Some(n) = settle(x1, z1, c[1] - 1, here)
             {
                 out.push(n);
             }
@@ -2550,10 +2627,16 @@ impl World {
                 if !clear(gx, c[1], c[1] + 2, gz) {
                     break;
                 }
-                let Some(n) = land(lx, lz, c[1] + 2) else {
+                let Some(n) = settle(lx, lz, c[1] + 2, here) else {
                     continue;
                 };
-                let Some(max_gap) = jump_max_gap(self.feet_16_fp(n, &fp) - here) else {
+                // A landing afloat is judged as landing on the water's top.
+                let landing_16 = if self.is_water_surface(n) {
+                    (i64::from(n[1]) + 1) * FULL_16
+                } else {
+                    self.feet_16_fp(n, &fp)
+                };
+                let Some(max_gap) = jump_max_gap(landing_16 - here) else {
                     continue;
                 };
                 if gap as u32 > max_gap {
@@ -2568,6 +2651,31 @@ impl World {
         out.sort_unstable();
         out.dedup();
         out
+    }
+
+    /// Water, not lava: a flooded cell a body could float in.
+    fn is_water(&self, c: [i32; 3]) -> bool {
+        self.flooded.contains(&c) && !self.lava.contains(&c) && !self.lethal.contains(&c)
+    }
+
+    /// A **surface cell** of water: water with open air over it, where a body
+    /// afloat keeps its head out.
+    fn is_water_surface(&self, c: [i32; 3]) -> bool {
+        self.is_water(c) && !self.is_occupied([c[0], c[1] + 1, c[2]])
+    }
+
+    /// The surface a body wading into the water at `c` rises to: up the column
+    /// through water to the first cell with air over it, or `None` when the
+    /// column is capped (water under a roof is water a body cannot breathe in).
+    fn surface_over(&self, c: [i32; 3]) -> Option<[i32; 3]> {
+        let mut y = c[1];
+        while self.is_water([c[0], y, c[2]]) {
+            if self.is_water_surface([c[0], y, c[2]]) {
+                return Some([c[0], y, c[2]]);
+            }
+            y += 1;
+        }
+        None
     }
 
     /// Whether a body may walk the **straight horizontal segment** between the
@@ -5559,6 +5667,9 @@ pub struct LeaveBinding {
     pub route_cells: usize,
     /// Cells a body can reach from them, summed over configurations.
     pub reached: usize,
+    /// Of those, the cells where the body is afloat at the top of water — the
+    /// population the water half of the proof judges.
+    pub afloat: usize,
     /// Of those, cells a body cannot leave.
     pub trapped: usize,
 }
@@ -5568,9 +5679,22 @@ impl LeaveBinding {
     pub fn line(&self) -> String {
         format!(
             "DW0921 binding: {} quest configuration(s), {} route cell(s), {} cell(s) a body can reach \
-             by walking, falling or jumping, {} it cannot leave",
-            self.configurations, self.route_cells, self.reached, self.trapped
+             by walking, falling, jumping or swimming ({} of them afloat), {} it cannot leave",
+            self.configurations, self.route_cells, self.reached, self.afloat, self.trapped
         )
+    }
+
+    /// The ledger `validation/leave-proof.json` carries: the same counts, so a
+    /// reader (and the staging gate) can see what the proof judged.
+    pub fn to_json(&self) -> serde_json::Value {
+        serde_json::json!({
+            "code": DW_BODY_CANNOT_LEAVE.id(),
+            "configurations": self.configurations,
+            "route_cells": self.route_cells,
+            "reached": self.reached,
+            "afloat": self.afloat,
+            "trapped": self.trapped,
+        })
     }
 }
 
@@ -5579,6 +5703,22 @@ impl LeaveBinding {
 fn movement_words(world: &World, from: [i32; 3], to: [i32; 3]) -> String {
     let run = (to[0] - from[0]).abs() + (to[2] - from[2]).abs();
     let rise = to[1] - from[1];
+    if world.is_water_surface(from) {
+        return if world.is_water_surface(to) {
+            "swimming".to_string()
+        } else {
+            "climbing out of the water".to_string()
+        };
+    }
+    if world.is_water_surface(to) {
+        return if run == 1 && rise >= 0 {
+            "wading into water".to_string()
+        } else if run == 1 {
+            format!("a fall of {} block(s) into water", -rise)
+        } else {
+            format!("a jump across {} column(s) into water", run - 1)
+        };
+    }
     if world.neighbors(from).contains(&to) {
         "a walk".to_string()
     } else if run == 1 {
@@ -5640,7 +5780,8 @@ pub fn check_bodies_can_leave(
             .collect();
         binding.route_cells += seeds.len();
         let (reached, trapped, preds) = w.cells_a_body_cannot_leave(&seeds, returned);
-        binding.reached += reached;
+        binding.reached += reached.len();
+        binding.afloat += reached.iter().filter(|c| w.is_water_surface(**c)).count();
         // A shortcut is opened from its far side by whoever stands at its lever,
         // and the completability model holds it shut. A pocket whose own reach
         // takes a body to a lever, and through the door that lever opens back to
@@ -5803,8 +5944,8 @@ impl World {
 
     /// The body-movement closure of `seeds` ([`World::body_moves`]) and, within it,
     /// the cells from which no movement sequence returns to a seed. Returns the
-    /// closure's size, the trapped cells, and every closure cell's predecessors
-    /// (so a report can say how a body got in).
+    /// closure, the trapped cells, and every closure cell's predecessors (so a
+    /// report can say how a body got in).
     ///
     /// Exact over the closure: whatever a closure cell reaches is itself in the
     /// closure, so walking the predecessor edges backwards from the seeds inside
@@ -5814,7 +5955,7 @@ impl World {
         &self,
         seeds: &[[i32; 3]],
         returned: Option<([i32; 3], [i32; 3])>,
-    ) -> (usize, BTreeSet<[i32; 3]>, BTreeMap<[i32; 3], Vec<[i32; 3]>>) {
+    ) -> (BTreeSet<[i32; 3]>, BTreeSet<[i32; 3]>, BTreeMap<[i32; 3], Vec<[i32; 3]>>) {
         let mut preds: BTreeMap<[i32; 3], Vec<[i32; 3]>> = BTreeMap::new();
         let mut seen: BTreeSet<[i32; 3]> = seeds.iter().copied().collect();
         let mut queue: std::collections::VecDeque<[i32; 3]> = seen.iter().copied().collect();
@@ -5844,7 +5985,7 @@ impl World {
             }
         }
         let trapped = seen.difference(&back).copied().collect();
-        (seen.len(), trapped, preds)
+        (seen, trapped, preds)
     }
 }
 
@@ -9964,6 +10105,7 @@ mod tests {
                 partial: BTreeMap::new(),
                 // This world has no ambient water, so nothing reads it.
                 waterloggable: BTreeSet::new(),
+                lava: BTreeSet::new(),
             },
             // The premises spelled out rather than derived from
             // `Premises::geometry_only()`, for two reasons that both matter.
@@ -10011,6 +10153,7 @@ mod tests {
                 flooded: BTreeSet::new(),
                 partial: BTreeMap::new(),
                 waterloggable: BTreeSet::new(),
+                lava: BTreeSet::new(),
             },
             Premises {
                 ambient: Ambient::Void,
@@ -12494,6 +12637,7 @@ mod tests {
                 flooded: BTreeSet::new(),
                 partial: BTreeMap::new(),
                 waterloggable: BTreeSet::new(),
+                lava: BTreeSet::new(),
             },
             Premises::geometry_only(),
         )

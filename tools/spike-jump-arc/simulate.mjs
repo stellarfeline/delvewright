@@ -140,6 +140,74 @@ function reachable(cfg) {
   return null;
 }
 
+// ---------------------------------------------------------------------------
+// --water: how high a ledge a body afloat climbs out onto.
+//
+// A pool of source water three deep, x -4..0, its top water cell at Y-1, and a
+// ledge column at x=1 whose standing surface is `rise` cells above the top
+// water cell (rise 1: the ledge's top block sits beside the top water cell,
+// flush with it; rise 2: one course above it). The body starts afloat in the
+// middle of the pool, holds forward and jump (and sprint, or not) toward the
+// ledge, and the run counts when it ends standing on the ledge. The movement
+// that decides it is the water branch of the player's travel — pressing into a
+// wall with room 0.6 above gives an upward impulse — which prismarine-physics
+// carries as `outOfLiquidImpulse`.
+const WATER = mcData.blocksByName.water.id;
+function pool(rise) {
+  const top = Y - 1; // the top water cell
+  const kind = (x, y, z) => {
+    if (z < -2 || z > 2) return STONE;
+    if (x < -5) return STONE;
+    if (x >= -4 && x <= 0) {
+      if (y <= top - 3) return STONE;
+      if (y <= top) return WATER;
+      return AIR;
+    }
+    if (x === -5) return y <= top + 3 ? STONE : AIR;
+    // the ledge and the ground beyond it: standing surface at top + rise
+    return y <= top + rise - 1 ? STONE : AIR;
+  };
+  return {
+    getBlock(pos) {
+      const id = kind(Math.floor(pos.x), Math.floor(pos.y), Math.floor(pos.z));
+      const b = Block.fromStateId(mcData.blocks[id].defaultState, 0);
+      b.position = pos.floored();
+      return b;
+    },
+  };
+}
+
+function climbOut(rise, sprint) {
+  const world = pool(rise);
+  const physics = Physics(mcData, world);
+  const bot = body(-2.5);
+  bot.entity.position = new Vec3(-2.5, Y - 1, 0.5);
+  bot.entity.onGround = false;
+  bot.entity.isCollidedVertically = false;
+  const controls = { forward: false, back: false, left: false, right: false, jump: false, sprint: false, sneak: false };
+  // settle afloat first: 60 ticks of holding jump in place, as a swimmer treads water
+  controls.jump = true;
+  for (let t = 0; t < 60; t++) physics.simulatePlayer(new PlayerState(bot, controls), world).apply(bot);
+  controls.forward = true;
+  controls.sprint = sprint;
+  const stand = Y - 1 + rise;
+  for (let t = 0; t < 400; t++) {
+    physics.simulatePlayer(new PlayerState(bot, controls), world).apply(bot);
+    const q = bot.entity.position;
+    if (bot.entity.onGround && q.x >= 1 - 0.299 && Math.abs(q.y - stand) < 0.01) return { out: true, ticks: t };
+  }
+  return { out: false, y: bot.entity.position.y, x: bot.entity.position.x };
+}
+
+if (process.argv.includes("--water")) {
+  for (let rise = 0; rise <= 3; rise++) {
+    const walk = climbOut(rise, false);
+    const sprint = climbOut(rise, true);
+    console.log(`ledge rise ${rise} over the top water cell: walk ${walk.out ? "out" : "stuck"}, sprint ${sprint.out ? "out" : "stuck"}`);
+  }
+  process.exit(0);
+}
+
 const why = process.argv.indexOf("--why");
 if (why > 0) {
   // `--why runway,gap,rise`: the first policy that lands the config, tick by tick.
