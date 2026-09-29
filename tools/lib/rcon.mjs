@@ -57,7 +57,15 @@ export const REJECTION = new RegExp(
     "|^Unknown or incomplete command|^Incorrect argument|^Expected |^Invalid |^Unknown " +
     "|^That position is not loaded|^Cannot place blocks outside of the world" +
     "|^No blocks were filled|^Could not set the block|^No entity was found" +
-    "|^No targets matched|^Malformed |^Failed to )",
+    "|^No targets matched|^Malformed |^Failed to " +
+    // Vanilla refuses `/data merge|modify entity` when the target is a PLAYER
+    // ("Unable to modify player data", measured on the pinned 1.21.11 server
+    // against a bot at 14 of 20 health). `crates/delvec/src/compiler/emit.rs`
+    // already knew it and worked around it; this rule did not, so a rig that
+    // healed its bot between blows with that command healed nothing and said
+    // nothing — eighteen rows of shield readings were taken on a bot that had
+    // died on its fourth blow and respawned stripped of its shield.
+    "|^Unable to modify player data)",
 );
 
 /** True when `reply` is the server saying it refused or could not parse `cmd`. */

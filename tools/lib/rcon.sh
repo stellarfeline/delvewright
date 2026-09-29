@@ -33,6 +33,8 @@ dw_rcon_rejected() {
     "That position is not loaded"*|"Cannot place blocks outside of the world"*) return 0 ;;
     "No blocks were filled"*|"Could not set the block"*|"No entity was found"*) return 0 ;;
     "No targets matched"*|"Malformed "*|"Failed to "*) return 0 ;;
+    # `/data merge|modify entity` naming a PLAYER (measured on the pinned server).
+    "Unable to modify player data"*) return 0 ;;
   esac
   return 1
 }
