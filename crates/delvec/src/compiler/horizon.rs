@@ -120,6 +120,115 @@ pub fn walk_ref_y(base: HorizonBase) -> Option<i32> {
 /// silently become a re-seeding of a different one.
 pub const VALLEY_STREAM: &str = "horizon/valley";
 
+/// The path, under the delve's own namespace, of the biome a non-ocean
+/// generator lays under every column: `<ns>:void`, emitted at
+/// `data/<ns>/worldgen/biome/void.json`.
+pub const VOID_BIOME_PATH: &str = "void";
+
+/// Whether declared rain falls in the delve's own void biome. It does: this is
+/// the one field that biome exists to change.
+///
+/// **A declared weather is the weather the party stands in.** Vanilla draws
+/// rain, counts a body as "in rain" and aims lightning only where
+/// `Level.isRainingAt` holds — raining, sky visible, **and the biome at the cell
+/// precipitates rain**. Vanilla's `minecraft:the_void` has
+/// `has_precipitation: false`, so a void delve generated in it kept a declared
+/// `rain`/`thunder` in its level data and never let it reach the ground the
+/// party plays on: undead at `dusk` under declared rain burned, and the sky
+/// only rained over a painted horizon.
+///
+/// The fix is a datapack biome — a first-class vanilla primitive — that is
+/// `minecraft:the_void` field for field, read from the pinned 1.21.11 jar
+/// (`data/minecraft/worldgen/biome/the_void.json`), except for this one flag.
+/// [`crate::compiler::daylight`] reads the same constant, so the weather the
+/// build proves against and the biome the build ships are one fact.
+pub const VOID_BIOME_PRECIPITATES: bool = true;
+
+/// The vanilla biome tag `minecraft:the_void` belongs to, and so the delve's
+/// own void biome joins it: the only tag membership of `the_void` in the
+/// pinned jar (`data/minecraft/tags/worldgen/biome/`), and the only runtime
+/// reference to it by identity besides the flat generator's default-biome
+/// fallback. Without it a wandering trader could be offered the play area.
+pub const VOID_BIOME_TAGS: [&str; 1] = ["without_wandering_trader_spawns"];
+
+/// `has_precipitation` of every vanilla biome the compiler lays under a
+/// column or paints over one, read from the pinned 1.21.11 server jar
+/// (`data/minecraft/worldgen/biome/<name>.json`, `versions.toml` `[minecraft]`
+/// `server_jar_sha256` `f83b8e09…dd1726`).
+const VANILLA_PRECIPITATION: [(&str, bool); 4] = [
+    ("minecraft:cherry_grove", true),
+    ("minecraft:ocean", true),
+    ("minecraft:the_void", false),
+    ("minecraft:windswept_forest", true),
+];
+
+/// Whether declared rain (or snow) falls in a vanilla biome the compiler
+/// names; `None` for a biome it does not name.
+pub fn vanilla_precipitates(biome: &str) -> Option<bool> {
+    VANILLA_PRECIPITATION
+        .iter()
+        .find(|(id, _)| *id == biome)
+        .map(|&(_, p)| p)
+}
+
+/// The biome every column a surround does not paint stands in: the one the
+/// `generator-settings` lays, and so the one the play area stands in.
+pub struct GroundBiome {
+    /// The namespaced biome id `generator-settings` names.
+    pub id: String,
+    /// Whether declared rain falls in it.
+    pub precipitates: bool,
+    /// The biome's datapack definition, when the delve ships its own.
+    pub definition: Option<serde_json::Value>,
+}
+
+/// The ground biome of a campaign whose datapack namespace is `ns`.
+///
+/// `ocean` keeps vanilla's `minecraft:ocean`, which rains. Every other base
+/// generates void, and lays the delve's own void biome ([`VOID_BIOME_PATH`]):
+/// `minecraft:the_void` with [`VOID_BIOME_PRECIPITATES`].
+pub fn ground_biome(campaign: &Campaign, ns: &str) -> GroundBiome {
+    if base_of(campaign) == HorizonBase::Ocean {
+        let id = "minecraft:ocean";
+        return GroundBiome {
+            id: id.to_string(),
+            precipitates: vanilla_precipitates(id).expect("ocean is a named biome"),
+            definition: None,
+        };
+    }
+    GroundBiome {
+        id: format!("{ns}:{VOID_BIOME_PATH}"),
+        precipitates: VOID_BIOME_PRECIPITATES,
+        definition: Some(void_biome_definition()),
+    }
+}
+
+/// `minecraft:the_void` as the pinned jar defines it, with `has_precipitation`
+/// set to [`VOID_BIOME_PRECIPITATES`]. Temperature 0.5 never falls below the
+/// 0.15 snow line inside the build height, so what falls is rain.
+fn void_biome_definition() -> serde_json::Value {
+    serde_json::json!({
+        "attributes": { "minecraft:visual/sky_color": "#7ba4ff" },
+        "carvers": [],
+        "downfall": 0.5,
+        "effects": { "water_color": "#3f76e4" },
+        "features": [[], [], [], [], [], [], [], [], [], [], ["minecraft:void_start_platform"]],
+        "has_precipitation": VOID_BIOME_PRECIPITATES,
+        "spawn_costs": {},
+        "spawners": {
+            "ambient": [],
+            "axolotls": [],
+            "creature": [],
+            "misc": [],
+            "monster": [],
+            "underground_water_creature": [],
+            "water_ambient": [],
+            "water_creature": []
+        },
+        "temperature": 0.5
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -127,6 +236,18 @@ mod tests {
     /// The relationship the module doc claims, asserted rather than described:
     /// a valley's gap floor tops exactly one block under the void datum, so a
     /// piece placed at `BASE_Y` stands on it.
+    /// The void biome's shipped definition and the fact the proofs read are
+    /// one value, and it rains.
+    #[test]
+    fn the_void_biome_ships_the_precipitation_the_proofs_read() {
+        let def = void_biome_definition();
+        assert_eq!(
+            def["has_precipitation"],
+            serde_json::json!(VOID_BIOME_PRECIPITATES)
+        );
+        assert_eq!(vanilla_precipitates("minecraft:the_void"), Some(false));
+    }
+
     #[test]
     fn a_valley_relocates_nothing() {
         assert_eq!(VALLEY_GAP_FLOOR_TOP_Y + 1, crate::compiler::plan::BASE_Y);

@@ -119,14 +119,17 @@
 //!
 //! **Rain protects only where it falls.** The burn tick is skipped while
 //! `isInWaterOrRain`, and "in rain" is `Level.isRainingAt`: raining, sky
-//! visible, **and the biome at the cell precipitates rain**. A void delve's
-//! whole play box stands in `minecraft:the_void`, whose `has_precipitation` is
-//! `false`, so a declared `rain` darkens the sky and never reaches a body there
-//! ([`precipitates_at`]). Measured on the same world: `dusk` + `rain` over
-//! `the_void` burned (20 → 7 and 20 → 15 health in 20 s); the same cell painted
-//! `minecraft:plains` did not burn at all. An ocean delve stands in
-//! `minecraft:ocean`, which rains; a cell a surround paints is taken to rain
-//! whatever biome it names, which can only under-fire.
+//! visible, **and the biome at the cell precipitates rain** ([`precipitates_at`]).
+//! Which biome a cell stands in, and whether it rains, is
+//! [`crate::compiler::horizon`]'s one answer — the same one emission lays in
+//! `generator-settings` — so the weather this proof reasons about is the weather
+//! the build ships. Vanilla's `minecraft:the_void` never rains: measured on the
+//! pinned server in a built delve's own world, `dusk` + `rain` over `the_void`
+//! burned (20 → 7 and 20 → 15 health in 20 s) while the same cell painted
+//! `minecraft:plains` did not burn at all. That is why a void delve lays its own
+//! void biome, which rains; an ocean delve stands in `minecraft:ocean`, which
+//! rains; a surround paints biomes that rain. A painted biome cold enough to
+//! snow would not protect, and is taken to rain, which can only under-fire.
 //!
 //! **When the fight happens.** The daylight cycle is frozen (spec-0010), so the
 //! declared state holds until a `set-time` / `set-weather` cuts it. A body can
@@ -243,11 +246,6 @@ const MONSTERS_BURN_OFF_AT: i64 = 12542;
 /// of the same file.
 const MONSTERS_BURN_ON_AT: i64 = 23460;
 
-/// The one biome a delve's play box stands in whose `has_precipitation` is
-/// `false` in the pinned jar (`data/minecraft/worldgen/biome/the_void.json`):
-/// the generator biome of every horizon but `ocean`.
-const DRY_BIOME: &str = "minecraft:the_void";
-
 /// Whether the pinned game runs the sun-burn tick at this hour: the
 /// `monsters_burn` window of the `minecraft:day` timeline, read by tick.
 pub fn hour_burns(time: WorldTime) -> bool {
@@ -255,24 +253,31 @@ pub fn hour_burns(time: WorldTime) -> bool {
     !(MONSTERS_BURN_OFF_AT..MONSTERS_BURN_ON_AT).contains(&tick)
 }
 
-/// Whether declared rain falls on `cell`: the biome there precipitates.
-///
-/// The play box keeps the generator's biome — `minecraft:ocean` for an ocean
-/// horizon, [`DRY_BIOME`] for every other — unless a surround rectangle paints
-/// it. A painted cell is taken to rain whatever the painted biome is: a cold
-/// biome would snow instead, and snow does not protect, so this can only
-/// under-fire.
-pub fn precipitates_at(plan: &Plan, cell: [i32; 3]) -> bool {
+/// The biome `cell` stands in: the surround rectangle painting it, else the
+/// ground biome the generator lays ([`crate::compiler::horizon::ground_biome`]).
+fn biome_at(plan: &Plan, cell: [i32; 3]) -> (String, bool) {
     if let Some(surround) = &plan.surround
         && let Some(rect) = surround
             .biome
             .iter()
             .find(|r| (0..3).all(|i| r.min[i] <= cell[i] && cell[i] <= r.max[i]))
     {
-        return rect.biome != DRY_BIOME;
+        let rains =
+            crate::compiler::horizon::vanilla_precipitates(rect.biome).unwrap_or_else(|| {
+                panic!(
+                    "the surround paints `{}`, whose precipitation is unrecorded",
+                    rect.biome
+                )
+            });
+        return (rect.biome.to_string(), rains);
     }
-    delvewright_dsl::horizon_base(&plan.campaign.world.content.horizon)
-        == delvewright_dsl::HorizonBase::Ocean
+    let ground = crate::compiler::horizon::ground_biome(plan.campaign, &plan.namespace);
+    (ground.id, ground.precipitates)
+}
+
+/// Whether declared rain falls on `cell`: the biome there precipitates.
+pub fn precipitates_at(plan: &Plan, cell: [i32; 3]) -> bool {
+    biome_at(plan, cell).1
 }
 
 /// A place in the quest DAG an effect root has: an objective's completion
@@ -733,8 +738,8 @@ struct Exposure {
     cell: [i32; 3],
     time: WorldTime,
     weather: WorldWeather,
-    /// The cell stands in a biome no rain falls in.
-    dry: bool,
+    /// The biome the cell stands in, when no rain falls in it.
+    dry: Option<String>,
 }
 
 /// Prove no daylight-burning body is staged for a fight the sun can reach
@@ -779,7 +784,8 @@ pub fn check_daylight_staging(
         }) else {
             continue;
         };
-        let dry = !precipitates_at(plan, cell);
+        let (biome, rains) = biome_at(plan, cell);
+        let dry = !rains;
         let weather = if dry && sky.weathers.contains(&declared.1) {
             declared.1
         } else if clear {
@@ -795,7 +801,7 @@ pub fn check_daylight_staging(
                     cell,
                     time,
                     weather,
-                    dry: dry && weather != WorldWeather::Clear,
+                    dry: (dry && weather != WorldWeather::Clear).then_some(biome),
                 },
             ),
         });
@@ -966,14 +972,13 @@ fn burn_message(body: &Staged, exposure: &Exposure) -> String {
     } else {
         ""
     };
-    let rain = if *dry {
-        format!(
-            " The `{}` the delve declares does not protect it: no rain falls in `{DRY_BIOME}`, \
+    let rain = match dry {
+        Some(biome) => format!(
+            " The `{}` the delve declares does not protect it: no rain falls in `{biome}`, \
              the biome this cell stands in, so the pinned game never counts the body as wet.",
             weather.keyword()
-        )
-    } else {
-        String::new()
+        ),
+        None => String::new(),
     };
     format!(
         "{kind} `{owner}` stages `{entity}` at [{}, {}, {}], and vanilla burns that species in \

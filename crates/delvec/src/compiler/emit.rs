@@ -401,7 +401,7 @@ pub fn build_with_warnings(
 
     // Gravity-despawn gate: before any downstream model
     // is built, reject a prefab whose gravity floor (sand/gravel/…) sits
-    // unsupported over the delve's `the_void` world and would despawn at placement,
+    // unsupported over the delve's void world and would despawn at placement,
     // silently deforming the shipped map. This is the authoritative direct gate —
     // it does not wait for a fall to happen to intersect the critical path (DW0311)
     // or a wave seat (DW0312). Analysis-tier (exit 2, mapped in main): a
@@ -1795,6 +1795,7 @@ pub fn build_with_warnings(
     crate::compiler::creator::emit_creator(plan, &mut out, &moves, &actor_moves);
 
     // ---- server ----
+    emit_ground_biome(plan, &mut out);
     emit_server(plan, &mut out);
 
     // ---- critical path ----
@@ -22638,6 +22639,30 @@ pub const DELVE_VIEW_DISTANCE: u32 = 10;
 /// backdrop nobody can see.
 pub const DELVE_SIMULATION_DISTANCE: u32 = 10;
 
+/// The ground biome's datapack definition, when the delve ships its own
+/// ([`crate::compiler::horizon::ground_biome`]), and its vanilla tag
+/// memberships ([`crate::compiler::horizon::VOID_BIOME_TAGS`]).
+fn emit_ground_biome(plan: &Plan, out: &mut BuildOutput) {
+    let ground = crate::compiler::horizon::ground_biome(plan.campaign, &plan.namespace);
+    let Some(definition) = &ground.definition else {
+        return;
+    };
+    let ns = &plan.namespace;
+    let path = crate::compiler::horizon::VOID_BIOME_PATH;
+    put_json(
+        out,
+        &format!("datapack/data/{ns}/worldgen/biome/{path}.json"),
+        definition,
+    );
+    for tag in crate::compiler::horizon::VOID_BIOME_TAGS {
+        put_json(
+            out,
+            &format!("datapack/data/minecraft/tags/worldgen/biome/{tag}.json"),
+            &json!({ "values": [ground.id] }),
+        );
+    }
+}
+
 fn emit_server(plan: &Plan, out: &mut BuildOutput) {
     // Difficulty. Declared (`world.difficulty`, v0.6) wins; absent falls back to
     // the historical derivation, which is what keeps every pre-0.6 campaign
@@ -22659,8 +22684,8 @@ fn emit_server(plan: &Plan, out: &mut BuildOutput) {
                 "easy"
             }
         });
-    // Horizon (DSL v0.6, spec-0013). `void` (default/absent) keeps the empty-layer
-    // superflat + `the_void` biome, byte-identical to v0.5. `ocean` swaps in a
+    // Horizon (DSL v0.6, spec-0013). `void` (default/absent) is the empty-layer
+    // superflat over the delve's own void biome. `ocean` swaps in a
     // pinned bedrock/stone/water superflat: from the -64 build floor, 1+118+8
     // layers top the water at y=62 (= sea level); areas are placed on that datum
     // (`plan::OCEAN_BASE_Y` = 60) so island pieces read as land ringed by the sea. No structures (generate-structures=false) or mobs (gamerule
@@ -22668,10 +22693,20 @@ fn emit_server(plan: &Plan, out: &mut BuildOutput) {
     // so both horizons stay deterministic (ADR-0006).
     let ocean = delvewright_dsl::horizon_base(&plan.campaign.world.content.horizon)
         == delvewright_dsl::HorizonBase::Ocean;
+    //
+    // The biome is [`crate::compiler::horizon::ground_biome`]'s: the play area
+    // stands in it, so a declared weather falls there. A void horizon lays the
+    // delve's own `<ns>:void` biome, which the datapack defines (emitted in
+    // [`emit_ground_biome`]) and which exists when the world is created, because
+    // every boot path installs the datapack before first boot.
+    let ground = crate::compiler::horizon::ground_biome(plan.campaign, &plan.namespace);
     let generator_settings = if ocean {
-        "{\"biome\":\"minecraft:ocean\",\"layers\":[{\"block\":\"minecraft:bedrock\",\"height\":1},{\"block\":\"minecraft:stone\",\"height\":118},{\"block\":\"minecraft:water\",\"height\":8}]}"
+        format!(
+            "{{\"biome\":\"{}\",\"layers\":[{{\"block\":\"minecraft:bedrock\",\"height\":1}},{{\"block\":\"minecraft:stone\",\"height\":118}},{{\"block\":\"minecraft:water\",\"height\":8}}]}}",
+            ground.id
+        )
     } else {
-        "{\"biome\":\"minecraft:the_void\",\"layers\":[]}"
+        format!("{{\"biome\":\"{}\",\"layers\":[]}}", ground.id)
     };
     // server.properties (keys sorted for determinism).
     //
@@ -22736,7 +22771,8 @@ The server jar is NOT shipped (ADR-0010); it is fetched by version at run time.\
   (sea level y=62, `minecraft:ocean` biome) ⇒ an island backdrop (spec-0013).\n"
     } else {
         "- `level-type=minecraft:flat` + `generator-settings` with an empty layer list and\n\
-  the `minecraft:the_void` biome ⇒ a void world.\n"
+  the datapack's own void biome (`minecraft:the_void`, except that it rains) ⇒ a\n\
+  void world in which a declared weather falls on the play area.\n"
     };
     out.insert(
         "server/README.md".to_string(),
