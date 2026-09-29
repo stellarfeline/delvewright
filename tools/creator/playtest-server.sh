@@ -607,7 +607,8 @@ done
 # thing the pack was supposed to put in the world is in it.
 OBJECTIVES="$(rcon "scoreboard objectives list")"
 if [ "$SUBJECT_KIND" = "campaign" ]; then
-  # campaign objectives present, at least one campaign NPC, sidebar cleared.
+  # campaign objectives present, at least one campaign NPC. Display slots are the
+  # campaign's: nothing here sets or clears one (tools/tests/test_playtest_server_leaves_the_display_slots.py).
   [[ $OBJECTIVES == *"dw."* ]] || die_or_oom "no dw.* objectives — datapack not loaded"
   NPC_PROBE="$(rcon "execute if entity @e[tag=dw_npc]")"
   [[ $NPC_PROBE == *"Test passed"* ]] || die_or_oom "no dw_npc entities found"
@@ -637,7 +638,6 @@ else
     "the browse world has $LABELS labelled exhibit(s) where the layout declares $EXPECTED_EXHIBITS — the datapack did not finish placing"
   echo "browse world binding: $LABELS of $EXPECTED_EXHIBITS exhibit(s) placed and labelled"
 fi
-rcon_raw "scoreboard objectives setdisplay sidebar" >/dev/null || true
 
 PACK_NOTE="no resource pack in this build"
 if [ -f "$OUT_DIR/resourcepack.zip" ]; then
