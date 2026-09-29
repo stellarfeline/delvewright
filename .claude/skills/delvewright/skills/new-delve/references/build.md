@@ -121,7 +121,7 @@ where it was allocated (`DW0836`), every place reached from the entry
 
 **`--perturb <knob>` asks the derivation for a named defect and shows you the
 observer catching it** — `slide-openings`, `sink`, `short-walls`, `brick-up`,
-`low-ceiling`, `wall-contacts`, one per run, each printing which code it expects
+`low-ceiling`, `wall-contacts`, `open-stairwells`, one per run, each printing which code it expects
 (`sink`, `brick-up` and `low-ceiling` also take `--perturb-place`, and it is
 refused for the others). It writes nothing — `--out` is refused beside it and the
 exit is always non-zero — so a perturbed tree does not exist to be shipped,
