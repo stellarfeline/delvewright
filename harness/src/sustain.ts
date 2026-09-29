@@ -123,3 +123,18 @@ export function pickFood<T extends FoodItem>(items: readonly T[]): T | undefined
   }
   return best;
 }
+
+/** What one level of vanilla's instant health gives back, in health points. */
+export const INSTANT_HEALTH_UNIT = 4;
+
+/**
+ * The instant-health amplifier that fills a `deficit` in ONE effect: the least `a`
+ * with `4 × 2^a ≥ deficit` (`0` for a deficit of four or less). Health over the
+ * maximum is discarded by vanilla, so rounding up costs nothing and one command
+ * closes the gap however low the bot was.
+ */
+export function restoreAmplifier(deficit: number): number {
+  let amp = 0;
+  while (INSTANT_HEALTH_UNIT << amp < deficit) amp += 1;
+  return amp;
+}

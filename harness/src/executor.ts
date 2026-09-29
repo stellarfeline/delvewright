@@ -150,9 +150,11 @@ import {
 import {
   EAT_COOLDOWN_MS,
   EAT_SAFE_RANGE,
+  INSTANT_HEALTH_UNIT,
   eatDecision,
   isSafeFood,
   pickFood,
+  restoreAmplifier,
 } from "./sustain.ts";
 
 import {
@@ -190,11 +192,6 @@ const STAGED_BLOW = 100_000;
  */
 const STAGED_REPLY_MS = 400;
 
-/**
- * What one level of vanilla's instant health restores, in health points:
- * `4 << amplifier` for a living body that is not undead.
- */
-const INSTANT_HEALTH_UNIT = 4;
 
 /**
  * Consecutive unanswered censuses that end a staged clear.
@@ -1753,6 +1750,12 @@ export class MineflayerExecutor implements StepExecutor {
   private readonly damageBy = new Map<number, number>();
   /** Last observed bot health, for the health-drop attribution fallback. */
   private lastHealth: number | undefined;
+  /** Walk legs in progress — while non-zero, the bot is held at full health. */
+  private walkLegs = 0;
+  /** The label of the walk leg in progress, for the staging record. */
+  private walkLabel = "";
+  /** The full-health restoration in flight, so a burst of drops issues one. */
+  private restoringHealth: Promise<void> | undefined;
   /** Timestamp (ms) of the last eat attempt, throttling both the action and its log. */
   private lastEatAt = 0;
 
@@ -2050,6 +2053,7 @@ export class MineflayerExecutor implements StepExecutor {
     const previous = this.lastHealth;
     this.lastHealth = bot.health;
     if (previous === undefined || bot.health >= previous) return;
+    if (this.walkLegs > 0) void this.holdFullHealth(`a drop to ${bot.health.toFixed(1)} on it`);
     // A drop inside the grace of a NAMED hit is that body's blow — what a staged
     // removal of it refunds (see `refundBlows`).
     const hit = this.lastNamedHit;
@@ -2193,7 +2197,7 @@ export class MineflayerExecutor implements StepExecutor {
     }
     for (let round = 0; round < DEFENSE_ROUNDS_PER_HOP; round++) {
       await this.maybeEat(label);
-      const before = this.stagedRemovals.length;
+      const before = this.bodiesStaged();
       try {
         await this.runGoto(spec, label);
         return;
@@ -2202,10 +2206,10 @@ export class MineflayerExecutor implements StepExecutor {
         // A hop can fail because a body is standing in the path; the damage
         // handlers stage away anything that hits the bot, so a retry is only
         // worth taking when one of them actually went.
-        if (this.stagedRemovals.length === before) throw err;
+        if (this.bodiesStaged() === before) throw err;
         process.stderr.write(
           `[staged] ${label} failed with a body on the bot; ` +
-            `${this.stagedRemovals.length - before} removed since the hop opened — retrying\n`,
+            `${this.bodiesStaged() - before} removed since the hop opened — retrying\n`,
         );
       }
     }
@@ -3434,8 +3438,33 @@ export class MineflayerExecutor implements StepExecutor {
     completion?: StepCompletion,
     explicitWaypoints?: readonly Vec3Tuple[],
   ): Promise<void> {
-    const bot = this.requireBot();
+    this.requireBot();
     const r = Math.max(1, Math.floor(range));
+    // Every walk leg starts at full health and is held there (see
+    // `holdFullHealth`): whether the bot survives the walk is not what a walk
+    // leg is for.
+    this.walkLegs += 1;
+    const outerLabel = this.walkLabel;
+    this.walkLabel = label;
+    try {
+      await this.holdFullHealth("its start");
+      await this.walkLeg(pos, r, label, sneak, completion, explicitWaypoints);
+    } finally {
+      this.walkLegs -= 1;
+      this.walkLabel = outerLabel;
+    }
+  }
+
+  /** The body of {@link walkTo}, run with the bot held at full health. */
+  private async walkLeg(
+    pos: readonly [number, number, number],
+    r: number,
+    label: string,
+    sneak: boolean,
+    completion: StepCompletion | undefined,
+    explicitWaypoints: readonly Vec3Tuple[] | undefined,
+  ): Promise<void> {
+    const bot = this.requireBot();
     const movements = new Movements(bot);
     const restoreControls = configureLeg(bot, movements, sneak);
     // No cave-specific Movements override is needed — the compiler-proven
@@ -4788,6 +4817,74 @@ export class MineflayerExecutor implements StepExecutor {
   }
 
   /**
+   * Staging rows that act on a body of the delve — not the ones that act on the
+   * bot's own health (`kind: "player"`: a refund, or {@link holdFullHealth}).
+   */
+  private bodiesStaged(): number {
+    return this.stagedRemovals.filter((r) => r.kind !== "player").length;
+  }
+
+  /**
+   * **Hold the bot at full health for the walk leg in progress.**
+   *
+   * The ladder verifies mechanism; whether the bot survives a walk is not part of
+   * what any walk leg is for. Yet a hostile's FIRST blow lands before the body can
+   * be staged away, and it lands on whatever health the bot has: a bot that
+   * arrives at 4.4 is killed by a blow a player at full health shrugs off, and
+   * that death is the harness's, not the delve's. Two were measured on vesperhold
+   * — an Unremembered Guard on the die-retry return leg, which had begun at the
+   * respawn's full 20 and bled to 14.8 on blows the per-body refund never
+   * attributed, and a mob on the death-loop approach, which began where the
+   * critical path left the bot. So the rule is not "refund what each body took"
+   * but "full health, at the start of every walk leg and after every drop on
+   * one": {@link walkTo} calls this on entry, and {@link onHealthUpdate} on every
+   * drop while a leg is in progress.
+   *
+   * One instant-health effect of the amplifier that covers the whole deficit
+   * ({@link restoreAmplifier}), read by the shared rejection rule and named in
+   * `staged_removals` as staging, like every other act of the harness on the
+   * world. A lethal volume, a crush gate or any single blow of 20 or more still
+   * kills: nothing here can undo a death, and the delve's own hazards keep their
+   * reach.
+   */
+  private holdFullHealth(when: string): Promise<void> {
+    if (this.restoringHealth) return this.restoringHealth;
+    const run = async (): Promise<void> => {
+      // Bounded: a drop that lands while one effect is in flight is closed by
+      // the next round, and a server that keeps refusing is recorded, not retried.
+      for (let round = 0; round < 3; round++) {
+        const bot = this.bot;
+        if (!bot?.entity || this.death || !(bot.health > 0)) return;
+        const before = bot.health;
+        const deficit = PLAYER_MAX_HEALTH - before;
+        if (deficit <= 0) return;
+        const amp = restoreAmplifier(deficit);
+        const from = this.chatMark();
+        bot.chat(`/effect give @s minecraft:instant_health 1 ${amp} true`);
+        await delay(STAGED_REPLY_MS);
+        const refusal = this.chatSince(from).lines.find((line) => isRejection(line));
+        this.stagedRemovals.push({
+          kind: "player",
+          why:
+            `full health for walk leg '${this.walkLabel}' (${when}): ${before.toFixed(1)} of ` +
+            `${PLAYER_MAX_HEALTH}, restored with instant health ${amp + 1}`,
+          performed: refusal === undefined,
+          detail: refusal,
+        });
+        process.stderr.write(
+          `[staged] walk leg '${this.walkLabel}' (${when}): health ${before.toFixed(1)} → ` +
+            `${refusal === undefined ? bot.health.toFixed(1) : `unchanged, refused — ${refusal}`}\n`,
+        );
+        if (refusal !== undefined) return;
+      }
+    };
+    this.restoringHealth = run().finally(() => {
+      this.restoringHealth = undefined;
+    });
+    return this.restoringHealth;
+  }
+
+  /**
    * Undo what a body the run has just removed did to the bot.
    *
    * Removing a body on its first blow is not enough on its own: a leg through
@@ -4815,6 +4912,9 @@ export class MineflayerExecutor implements StepExecutor {
     const bot = this.bot;
     if (!bot || this.death) return;
     if (dealt <= 0) return;
+    // On a walk leg the bot is already held at full health, whoever dealt the
+    // blow — a refund on top of that gives back nothing and would read as if it had.
+    if (this.walkLegs > 0) return;
     const refunded = Math.ceil(dealt / INSTANT_HEALTH_UNIT);
     let units = refunded;
     for (let amp = 0; units > 0; amp += 1, units >>= 1) {

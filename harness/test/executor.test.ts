@@ -1467,6 +1467,99 @@ test("interact leaves the hand alone when the step requires no item", async () =
   assert.deepEqual(bot.calls, ["chat(/trigger dw.i.unbar)"]);
 });
 
+// --- a walk leg is walked at full health --------------------------------------
+
+/**
+ * An interact bot whose server answers instant health the way vanilla does, and
+ * whose walk takes `blow` health on the way — a hit the server named no body for,
+ * which is exactly the kind no per-body refund ever gives back.
+ */
+class HealingWalkBot extends InteractFakeBot {
+  blow = 0;
+  override chat(message: string): void {
+    super.chat(message);
+    const m = /^\/effect give @s minecraft:instant_health 1 (\d+) true$/.exec(message);
+    if (m) {
+      this.health = Math.min(20, this.health + (4 << Number(m[1])));
+      this.emit("health");
+    }
+  }
+  override pathfinder = {
+    stop: (): void => {
+      this.pathfinderStops += 1;
+      this.pathfinderCalls.push("stop");
+    },
+    setGoal: (goal: unknown): void => {
+      this.pathfinderCalls.push(goal === null ? "setGoal(null)" : "setGoal");
+    },
+    setMovements: (): void => {},
+    thinkTimeout: 0,
+    goto: async (): Promise<void> => {
+      this.calls.push("goto");
+      this.entity.position = new FakeVec3(0.5, 64, 0.5); // arrived at the anchor
+      if (this.blow > 0) {
+        this.health -= this.blow;
+        this.emit("health");
+        await delay(900); // the hop is still walking when the drop is answered
+      }
+    },
+  };
+}
+
+test("a walk leg starts at full health: one effect covers the whole deficit, named as staging", async () => {
+  // vesperhold, the death-loop approach: the critical path left the bot at 4.4 and
+  // the approach walked it past a mob whose first blow was lethal at that health.
+  const bot = new HealingWalkBot();
+  bot.carried = [{ name: "stone_sword", type: 1 }];
+  bot.health = 4.4;
+  const executor = attach(bot);
+  executor.useCampaign("keep-trial");
+  executor.beginStep(3);
+  setTimeout(() => bot.emit("messagestr", "[dw:complete keep-trial obj/unbar]"), 700);
+  await executor.interact(interactStep(null));
+  const effects = bot.calls.filter((c) => c.startsWith("chat(/effect "));
+  assert.deepEqual(effects, ["chat(/effect give @s minecraft:instant_health 1 2 true)"]);
+  assert.ok(
+    bot.calls.indexOf(effects[0]!) < bot.calls.indexOf("chat(/trigger dw.i.unbar)"),
+    `restored BEFORE the leg's business: ${bot.calls.join(" | ")}`,
+  );
+  assert.equal(bot.health, 20);
+  const row = executor.stagedBodies().find((r) => /full health for walk leg/.test(r.why));
+  assert.ok(row, "the restoration is named in the run artifact as staging");
+  assert.equal(row.kind, "player");
+  assert.equal(row.performed, true);
+  assert.match(row.why, /4\.4 of 20/);
+});
+
+test("a drop on a walk leg is restored to full, whoever dealt it", async () => {
+  // vesperhold, the die-retry return leg: it began at the respawn's full 20, bled
+  // to 14.8 on blows the per-body refund never attributed, and an Unremembered
+  // Guard's first swing then killed the bot. Held at full, every first blow lands
+  // on 20.
+  const bot = new HealingWalkBot();
+  bot.carried = [{ name: "stone_sword", type: 1 }];
+  bot.blow = 5.2;
+  bot.entity.position = new FakeVec3(12.5, 64, 0.5); // a leg to walk, not a step on the spot
+  const executor = attach(bot);
+  bot.emit("health"); // the baseline a drop is measured from
+  executor.useCampaign("keep-trial");
+  executor.beginStep(3);
+  setTimeout(() => bot.emit("messagestr", "[dw:complete keep-trial obj/unbar]"), 1_200);
+  await executor.interact(interactStep(null));
+  assert.deepEqual(
+    bot.calls.filter((c) => c.startsWith("chat(/effect ")),
+    ["chat(/effect give @s minecraft:instant_health 1 1 true)"],
+    "a 5.2-point deficit is one instant health II",
+  );
+  assert.equal(bot.health, 20);
+
+  // Off the leg, the delve's own damage keeps its reach: nothing restores it.
+  bot.health = 3;
+  bot.emit("health");
+  await delay(600);
+  assert.equal(bot.calls.filter((c) => c.startsWith("chat(/effect ")).length, 1);
+});
+
 // --- executor tier: reach + timed gate + completion transport -----------------
 
 import type { ReachStep } from "../src/critical-path.ts";

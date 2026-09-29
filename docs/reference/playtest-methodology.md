@@ -106,6 +106,17 @@ whole of what a refund can hide — and named in `staged_removals`. Removal on t
 let a return leg through three re-seated waves take one blow from each body until
 a later body's first swing killed the bot. Route falls and lethal volumes are
 mechanism, not bodies: nothing they take is refunded, and they still kill the bot.
+
+On a walk leg the bot is held at full health: it is restored on entry to every
+walk and after every drop while the walk is in progress, whatever dealt the drop,
+by one instant-health effect that covers the whole deficit, named in
+`staged_removals`. A hostile's first blow lands before its body can be removed and
+lands on whatever health the bot has, and a per-body refund only gives back what
+it could attribute: a die-retry return leg began at the respawn's full 20, bled to
+14.8 on blows no refund covered, and a Guard's first swing killed the bot. Whether
+the bot survives a walk is not what a walk leg is for. Off a walk the refund rule
+above applies; on one no refund is added. A single blow of 20 or more, a lethal
+volume and a crush gate still kill.
 A scripted death waits out vanilla's 60-tick respawn protection (counted on the
 server's clock) and is taken at the fight: a stage that recovers from an
 unscripted death walks back before it scripts the next one. A walk back that ends
