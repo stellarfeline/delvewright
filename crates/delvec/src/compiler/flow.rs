@@ -2778,6 +2778,86 @@ fn dag_order(c: &Campaign, keep: &BTreeSet<String>) -> (Vec<String>, bool) {
     (order, cyclic)
 }
 
+/// The effect roots that cannot fire before objective `k` completes.
+///
+/// `objectives` holds `k` itself and every objective of its quest whose `after`
+/// chain reaches `k`, plus every objective of every quest whose activation
+/// transitively waits on `k`'s quest completing (a quest completes only when all
+/// of its objectives have, and a `quest-complete` trigger starts nothing
+/// before). `quests` holds `k`'s quest and those quests, whose `on_complete`
+/// bundles fire later still. Everything else — any other objective, every
+/// ambient root, every dialogue outcome — is taken to be able to fire first,
+/// which is the conservative direction for a caller asking what may already have
+/// happened. An objective the campaign does not declare yields empty sets.
+#[derive(Debug, Default)]
+pub struct AfterObjective {
+    /// Objectives whose completion cannot precede `k`'s.
+    pub objectives: BTreeSet<String>,
+    /// Quests whose completion cannot precede `k`'s.
+    pub quests: BTreeSet<String>,
+}
+
+impl AfterObjective {
+    /// Whether an effect under `site` can only fire once `k` has completed.
+    pub fn follows(&self, site: &delvewright_dsl::EffectSite) -> bool {
+        match site {
+            delvewright_dsl::EffectSite::Objective { objective, .. } => {
+                self.objectives.contains(objective)
+            }
+            delvewright_dsl::EffectSite::QuestComplete { quest } => self.quests.contains(quest),
+            _ => false,
+        }
+    }
+}
+
+/// See [`AfterObjective`].
+pub fn after_objective(c: &Campaign, k: &str) -> AfterObjective {
+    let mut out = AfterObjective::default();
+    let quests = &c.quests.content.quests;
+    let Some(home) = quests
+        .iter()
+        .find(|q| q.objectives.iter().any(|o| o.id().as_str() == k))
+    else {
+        return out;
+    };
+    out.objectives.insert(k.to_string());
+    loop {
+        let before = out.objectives.len();
+        for o in &home.objectives {
+            if o.after()
+                .iter()
+                .any(|a| out.objectives.contains(a.as_str()))
+            {
+                out.objectives.insert(o.id().as_str().to_string());
+            }
+        }
+        if out.objectives.len() == before {
+            break;
+        }
+    }
+    out.quests.insert(home.id.as_str().to_string());
+    loop {
+        let before = out.quests.len();
+        for q in quests {
+            if let Trigger::QuestComplete { quest } = &q.trigger
+                && out.quests.contains(quest.as_str())
+            {
+                out.quests.insert(q.id.as_str().to_string());
+            }
+        }
+        if out.quests.len() == before {
+            break;
+        }
+    }
+    for q in quests {
+        if q.id.as_str() != home.id.as_str() && out.quests.contains(q.id.as_str()) {
+            out.objectives
+                .extend(q.objectives.iter().map(|o| o.id().as_str().to_string()));
+        }
+    }
+    out
+}
+
 /// Order a quest's objectives by their intra-quest `after` DAG (Kahn); a cycle
 /// (rejected elsewhere by `DW0140`) falls back to declaration order.
 pub fn objectives_in_order(objectives: &[Objective]) -> Vec<&Objective> {

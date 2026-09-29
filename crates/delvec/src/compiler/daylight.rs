@@ -289,20 +289,21 @@ fn fightable_actor(c: &Campaign, actor: &delvewright_dsl::Actor) -> bool {
     unleashed
 }
 
-/// One staged body the proof looks at.
-struct Staged {
+/// One staged body the proof looks at. Shared with [`crate::compiler::engage`]
+/// (`DW0920`), which asks a different question of the same population.
+pub(crate) struct Staged {
     /// `wave/…` or `actor/…`, for the message.
-    owner: String,
+    pub(crate) owner: String,
     /// What the campaign calls the encounter (`wave` / `actor`).
-    kind: &'static str,
+    pub(crate) kind: &'static str,
     /// The vanilla entity id as authored.
-    entity: String,
+    pub(crate) entity: String,
     /// Cells the body is staged on.
-    cells: Vec<[i32; 3]>,
+    pub(crate) cells: Vec<[i32; 3]>,
     /// Its aggro radius in blocks.
-    radius: u32,
+    pub(crate) radius: u32,
     /// Does it already wear something on its head?
-    helmeted: bool,
+    pub(crate) helmeted: bool,
 }
 
 /// Prove no daylight-burning body is staged for a fight the sun can reach
@@ -347,7 +348,7 @@ pub fn check_daylight_staging(
 /// Every staged body worth proving: wave stacks a `kill` objective adjudicates,
 /// and actors the party can damage. Deterministic order (declaration order,
 /// waves then actors).
-fn collect_staged(plan: &Plan, spawns: &BTreeMap<String, Vec<[i32; 3]>>) -> Vec<Staged> {
+pub(crate) fn collect_staged(plan: &Plan, spawns: &BTreeMap<String, Vec<[i32; 3]>>) -> Vec<Staged> {
     let c = plan.campaign;
     let fought = killed_waves(c);
     let mut out: Vec<Staged> = Vec::new();
