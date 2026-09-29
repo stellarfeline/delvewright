@@ -17,6 +17,7 @@ import {
   boxCells,
   deathLoopBinding,
   deathLoopBindingFailures,
+  deathLoopStage,
   datumsPromised,
   dropOf,
   entryCellOf,
@@ -1072,4 +1073,89 @@ test("a loaded cell the volume reaches is walled, and one it does not is free", 
   assert.equal(lethalStepCost({ position: { x: 6, y: 65, z: 8 } }, [box]), LETHAL_STEP_COST);
   assert.equal(lethalStepCost({ position: { x: 9, y: 65, z: 8 } }, [box]), 0);
   assert.ok(LETHAL_STEP_COST > 100, "the library treats only a cost above 100 as no move");
+});
+
+// --- the stage row: a report that says a stage was not reached must be true ---
+
+/** The death-loop stage's input for a run whose path was proven. */
+function stageInput(over: Partial<Parameters<typeof deathLoopStage>[0]> = {}) {
+  const trials = [goodTrial()];
+  return {
+    enabled: true,
+    disabledReason: "skipped via DELVEWRIGHT_DEATH_LOOP=0",
+    pathProven: true,
+    interruption: undefined,
+    skipReason: undefined,
+    binding: deathLoopBinding(plan(), trials),
+    trials,
+    trialsFinished: trials.length,
+    ...over,
+  };
+}
+
+test("a death loop the run's budget cut off is reported as entered and unfinished, never as unreached", () => {
+  // The local ladder that motivated this: the critical path passed, the stage
+  // walked the bot to the well, and the wall-clock budget expired mid-trial. The
+  // report then said the critical path had failed and the stage was never
+  // reached, beside its own `death_loop` block recording `volumes_entered: 1`.
+  const t = openLethalTrial(VOLUME, [5, 65, 8], [stakeRule()]);
+  const row = deathLoopStage(
+    stageInput({
+      interruption: "run exceeded wall-clock budget of 2700000ms",
+      trials: [t],
+      binding: deathLoopBinding(plan(), [t]),
+      trialsFinished: 0,
+    }),
+  );
+  assert.equal(row.ran, true, "the stage was entered, so it ran");
+  assert.equal(row.passed, false);
+  assert.ok(
+    row.findings.every((f) => !/never reached/.test(f)) &&
+      row.failures.every((f) => !/never reached/.test(f)),
+    `nothing may say the stage was never reached: ${JSON.stringify(row)}`,
+  );
+  assert.equal(row.failures.length, 1, JSON.stringify(row.failures));
+  assert.match(row.failures[0]!, /did not finish/);
+  assert.match(row.failures[0]!, /run exceeded wall-clock budget of 2700000ms/);
+  assert.match(row.failures[0]!, /1 of 1 declared lethal volume/);
+});
+
+test("an interrupted stage still judges the trials it finished, and only those", () => {
+  const finished = goodTrial();
+  finished.markerRetired = false; // a real verdict the finished trial owes
+  const cut = openLethalTrial(VOLUME, [5, 65, 8], [stakeRule()]);
+  const row = deathLoopStage(
+    stageInput({
+      interruption: "run exceeded wall-clock budget of 2700000ms",
+      trials: [finished, cut],
+      binding: deathLoopBinding(plan(), [finished, cut]),
+      trialsFinished: 1,
+    }),
+  );
+  assert.equal(row.failures.length, 2, JSON.stringify(row.failures));
+  assert.match(row.failures[1]!, /still standing/);
+  assert.ok(!row.failures.some((f) => /never OBSERVED/.test(f)), "the cut trial is not judged");
+});
+
+test("a critical path that failed leaves the stage unreached, and says exactly that", () => {
+  const row = deathLoopStage(
+    stageInput({ pathProven: false, trials: [], binding: deathLoopBinding(plan(), []), trialsFinished: 0 }),
+  );
+  assert.equal(row.ran, false);
+  assert.equal(row.passed, false);
+  assert.deepEqual(row.failures, []);
+  assert.match(row.findings[0]!, /critical path failed, so the death loop was never reached/);
+});
+
+test("a finished stage is judged whole, and a disabled one carries its reason", () => {
+  assert.deepEqual(deathLoopStage(stageInput()), {
+    stage: "death-loop",
+    ran: true,
+    passed: true,
+    findings: [],
+    failures: [],
+  });
+  const off = deathLoopStage(stageInput({ enabled: false }));
+  assert.equal(off.ran, false);
+  assert.deepEqual(off.findings, ["skipped via DELVEWRIGHT_DEATH_LOOP=0"]);
 });

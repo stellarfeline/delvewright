@@ -1552,6 +1552,8 @@ export class MineflayerExecutor implements StepExecutor {
   private readonly lethalTrials: LethalTrial[] = [];
   /** Why the death-loop stage did not run, when it did not. */
   private deathLoopSkip: string | undefined;
+  /** Trials of the death loop that ran to their own end — not cut off mid-way. */
+  private lethalTrialsFinished = 0;
   /** Serial number of the last gate term asked — see {@link askTerm}. */
   private gateAsks = 0;
   /**
@@ -2537,6 +2539,11 @@ export class MineflayerExecutor implements StepExecutor {
     return this.lethalTrials;
   }
 
+  /** How many of {@link deathLoopTrials} ran to their own end. */
+  deathLoopTrialsFinished(): number {
+    return this.lethalTrialsFinished;
+  }
+
   /** Why the stage did not run, when it did not. `undefined` means it ran. */
   deathLoopSkipReason(): string | undefined {
     return this.deathLoopSkip;
@@ -2829,6 +2836,7 @@ export class MineflayerExecutor implements StepExecutor {
     try {
       for (const volume of plan.volumes) {
         await this.lethalTrial(plan, volume);
+        this.lethalTrialsFinished += 1;
       }
     } finally {
       this.clearScoreDisplay();

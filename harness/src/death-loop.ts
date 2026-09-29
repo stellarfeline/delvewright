@@ -26,6 +26,7 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import type { Vec3Tuple } from "./critical-path.ts";
+import type { StageResult } from "./report.ts";
 
 /** Where the death plan sits relative to `critical-path.json`. */
 const DEATH_PLAN_SUBPATH = ["validation", "death-plan.json"] as const;
@@ -1397,4 +1398,82 @@ export function deathLoopBindingFailures(b: DeathLoopBinding): string[] {
  */
 export function datumsPromised(plan: DeathPlan): number {
   return plan.volumes.length * stakesDropped(plan).length;
+}
+
+/** What the run knows about the death-loop stage when it writes the report. */
+export interface DeathLoopStageInput {
+  /** Whether this run meant to run the stage at all. */
+  readonly enabled: boolean;
+  /** Why not, when it did not mean to. */
+  readonly disabledReason: string;
+  /** Whether the critical path completed, which is what the stage runs after. */
+  readonly pathProven: boolean;
+  /** What ended the run once the path was proven, if anything did. */
+  readonly interruption: string | undefined;
+  /** {@link Executor.deathLoopSkipReason}: why the stage entered nothing. */
+  readonly skipReason: string | undefined;
+  readonly binding: DeathLoopBinding | undefined;
+  readonly trials: readonly LethalTrial[];
+  /** How many of {@link trials} ran to their own end. */
+  readonly trialsFinished: number;
+}
+
+/**
+ * **The death-loop stage's row of the run report**, which says what happened.
+ *
+ * Three different runs, and a row for each that is true of it:
+ *
+ *   * the critical path did not complete — the stage runs after it, so it was
+ *     never reached, and nothing about dying is proven either way;
+ *   * the path completed and something ended the run DURING the stage — the
+ *     wall-clock budget, a crash. The stage was entered, so it ran, and it did
+ *     not finish: that is its failure, stated with how far it had got. The trials
+ *     it finished are judged; the one the interruption cut off is not, because a
+ *     verdict about a trial that was stopped halfway (the bot "never got in", the
+ *     stake "was never walked back to") is a verdict about the interruption.
+ *     Reporting this run as "the critical path failed" put a sentence in the
+ *     report its own `death_loop` block contradicted;
+ *   * the path completed and the stage ran to its end — judged whole.
+ */
+export function deathLoopStage(i: DeathLoopStageInput): StageResult {
+  if (!i.enabled) {
+    return { stage: "death-loop", ran: false, passed: false, findings: [i.disabledReason], failures: [] };
+  }
+  if (!i.pathProven) {
+    return {
+      stage: "death-loop",
+      ran: false,
+      passed: false,
+      findings: [
+        "the critical path failed, so the death loop was never reached — nothing " +
+          "about dying is proven or disproven by this run",
+      ],
+      failures: [],
+    };
+  }
+  const finished = i.interruption === undefined ? i.trials : i.trials.slice(0, i.trialsFinished);
+  const failures = [
+    ...(i.interruption === undefined
+      ? i.binding
+        ? deathLoopBindingFailures(i.binding)
+        : []
+      : [
+          `the death-loop stage was entered and did not finish: ${i.interruption}. It had ` +
+            `entered ${i.binding?.volumesEntered ?? i.trials.length} of ` +
+            `${i.binding?.declaredVolumes ?? "?"} declared lethal volume(s) and finished ` +
+            `${finished.length} trial(s) when it stopped; nothing about a trial it did not ` +
+            `finish is asserted either way`,
+        ]),
+    ...finished.flatMap((t) => lethalTrialFailures(t)),
+  ];
+  return {
+    stage: "death-loop",
+    ran: true,
+    passed: failures.length === 0,
+    findings:
+      i.skipReason === undefined
+        ? []
+        : [`the stage stopped before entering any volume — ${i.skipReason}`],
+    failures,
+  };
 }

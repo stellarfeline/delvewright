@@ -28,8 +28,7 @@ import {
 } from "./combat.ts";
 import {
   deathLoopBinding,
-  deathLoopBindingFailures,
-  lethalTrialFailures,
+  deathLoopStage,
   loadDeathPlanForCriticalPath,
 } from "./death-loop.ts";
 import {
@@ -356,6 +355,10 @@ async function main(): Promise<number> {
 
   try {
     let failure: unknown;
+    // Whether the critical path completed. A failure after it is the death-loop
+    // stage's — the budget running out mid-trial, a crash inside it — and must be
+    // reported there, never as the path that had already passed.
+    let pathProven = false;
     try {
       await withTimeout(
         (async () => {
@@ -366,6 +369,7 @@ async function main(): Promise<number> {
           await runSequence(criticalPath, executor, {
             retryOnDeath: retryOnDeathFromEnv(),
           });
+          pathProven = true;
           // Only after the path is proven. The death loop deliberately
           // kills the player, so running it earlier would leave every later step
           // walking out of a grave — and a delve whose critical path is broken
@@ -377,6 +381,8 @@ async function main(): Promise<number> {
     } catch (err) {
       failure = err;
     }
+    const pathFailure = pathProven ? undefined : failure;
+    const describe = (err: unknown): string => (err instanceof Error ? err.message : String(err));
 
     // The report is written whether the run passed or failed: a red run's assist
     // windows and death trials are exactly what a reader needs to see.
@@ -466,7 +472,7 @@ async function main(): Promise<number> {
           return {
             branch: b.id,
             ran: true,
-            passed: failure === undefined,
+            passed: pathFailure === undefined,
             pathFile: b.pathFile,
             chronicle: b.chronicle,
             entryCommands,
@@ -495,7 +501,7 @@ async function main(): Promise<number> {
       report.stage({
         stage: "branch-run",
         ran: driven !== undefined,
-        passed: driven !== undefined && failure === undefined,
+        passed: driven !== undefined && pathFailure === undefined,
         findings: [
           ...(waypointFinding === undefined ? [] : [waypointFinding]),
           ...(driven === undefined
@@ -511,12 +517,10 @@ async function main(): Promise<number> {
     report.stage({
       stage: "critical-path",
       ran: true,
-      passed: failure === undefined && musterFailures.length === 0,
+      passed: pathFailure === undefined && musterFailures.length === 0,
       findings: report.musterFindings(),
       failures: [
-        ...(failure === undefined
-          ? []
-          : [failure instanceof Error ? failure.message : String(failure)]),
+        ...(pathFailure === undefined ? [] : [describe(pathFailure)]),
         ...musterFailures,
       ],
     });
@@ -527,41 +531,28 @@ async function main(): Promise<number> {
     const lethalTrials = executor.deathLoopTrials();
     const deathBinding = deathPlan ? deathLoopBinding(deathPlan, lethalTrials) : undefined;
     // The stage runs only AFTER the path is proven, so a run that died on the path
-    // never reached it. Reporting that as a death-loop failure would blame this
-    // stage for a fault upstream of it — the mirror of the "skipped read as
-    // passed" error, and just as misleading to whoever reads the report.
-    const deathLoopRan = deathLoop && failure === undefined;
-    const deathLoopFailures = deathLoopRan
-      ? [
-          ...(deathBinding ? deathLoopBindingFailures(deathBinding) : []),
-          ...lethalTrials.flatMap((t) => lethalTrialFailures(t)),
-        ]
-      : [];
-    if (deathBinding) report.recordDeathLoop(deathBinding, lethalTrials);
-    report.stage({
-      stage: "death-loop",
-      ran: deathLoopRan,
-      passed: deathLoopRan && deathLoopFailures.length === 0,
-      findings: deathLoopRan
-        ? executor.deathLoopSkipReason() === undefined
-          ? []
-          : [`the stage stopped before entering any volume — ${executor.deathLoopSkipReason()}`]
-        : deathLoop
-          ? [
-              "the critical path failed, so the death loop was never reached — nothing " +
-                "about dying is proven or disproven by this run",
-            ]
-          : [
-            deathPlan === undefined
-              ? "no death plan in this build — the campaign declares no lethal volume, no " +
-                "`on_death` and no recovery stake, so there is no death loop to prove"
-              : deathPlan.binding.unbound
-                ? `this build's death plan is UNBOUND (${deathPlan.binding.reason ?? "no reason given"}) ` +
-                  `— nothing about dying is proven at runtime by this run`
-                : "skipped via DELVEWRIGHT_DEATH_LOOP=0",
-          ],
-      failures: deathLoopFailures,
+    // never reached it — and a run whose path was proven and that then ended
+    // mid-stage DID reach it. Each is reported as what it was; see `deathLoopStage`.
+    const deathStage = deathLoopStage({
+      enabled: deathLoop,
+      disabledReason:
+        deathPlan === undefined
+          ? "no death plan in this build — the campaign declares no lethal volume, no " +
+            "`on_death` and no recovery stake, so there is no death loop to prove"
+          : deathPlan.binding.unbound
+            ? `this build's death plan is UNBOUND (${deathPlan.binding.reason ?? "no reason given"}) ` +
+              `— nothing about dying is proven at runtime by this run`
+            : "skipped via DELVEWRIGHT_DEATH_LOOP=0",
+      pathProven,
+      interruption: pathProven && failure !== undefined ? describe(failure) : undefined,
+      skipReason: executor.deathLoopSkipReason(),
+      binding: deathBinding,
+      trials: lethalTrials,
+      trialsFinished: executor.deathLoopTrialsFinished(),
     });
+    const deathLoopFailures = deathStage.failures;
+    if (deathBinding) report.recordDeathLoop(deathBinding, lethalTrials);
+    report.stage(deathStage);
     report.recordDieRetryBinding(retryBinding);
     report.stage({
       stage: "die-retry",
