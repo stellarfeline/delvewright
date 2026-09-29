@@ -3169,9 +3169,9 @@ export class MineflayerExecutor implements StepExecutor {
    * ({@link overFootprint}, and not on the ground). From there a player who does
    * nothing is carried in by the game: a pit is fallen into, and a submerged
    * volume is sunk into, at {@link SINK_BLOCKS_PER_TICK}. Driving on is not what
-   * a player does, and in water it holds the body up: pressing into the far wall
-   * is the climb-out-of-water impulse. The volume's own selector is what then
-   * kills the body; nothing here moves it but the game.
+   * a player does, and in water it can lift the body: a horizontal collision is
+   * the climb-out-of-water impulse. The volume's own selector is what then kills
+   * the body; nothing here moves it but the game.
    *
    * A released body that lands on something outside the volume — the rim it
    * overhung as it stepped down (measured on the gallery's west pit: released at

@@ -688,11 +688,10 @@ export function bodyInVolume(
  * Over the footprint with nothing underfoot — falling into a pit, or afloat in
  * the water that fills a well — a body that is left alone is carried into the
  * volume by the game's own physics, and that is how a player meets a submerged
- * hazard. Driving on from there is not: in water, pressing forward into the far
- * wall is the climb-out-of-water impulse (a horizontal collision in water sets
- * `vel.y` to `outOfLiquidImpulse`, 0.3, in the client physics the bot runs), which
- * is how the stage once held a body at the surface of vesperhold's well for ten
- * seconds and reported it had never got in.
+ * hazard. Driving on from there is not, and it is not neutral: in water, a
+ * horizontal collision is the climb-out-of-water impulse (it sets `vel.y` to
+ * `outOfLiquidImpulse`, 0.3, in the client physics the bot runs), so a body
+ * pressed against the far wall of a flooded shaft is lifted, not lowered.
  */
 export function overFootprint(pos: Vec3Tuple, box: Box): boolean {
   return [0, 2].every((i) => box.lo[i]! <= pos[i]! && pos[i]! <= box.hi[i]! + 1);
