@@ -249,9 +249,10 @@ not third-party reconstructions.
 - **`item-combat-1.21.11.json`** — every item's `attack_damage` / `attack_speed` /
   `armor` / `armor_toughness` contribution, summed from the `add_value` modifiers of
   its `minecraft:attribute_modifiers` default component, plus its `minecraft:food`
-  `nutrition` (the sustain term `DW0474` reads), from the same
+  `nutrition`, from the same
   `item_components/data.min.json`. 127 entries (only items with a non-zero number).
-  Feeds the spec-0023 winnability arithmetic (`DW0472`). **Absence is
+  Feeds the spec-0023 time-to-kill arithmetic (`DW0472`) and the muster's armour
+  floor. **Absence is
   a fact, not a gap**: an item missing here has no combat *attribute*, which is not
   the same as dealing no damage — a bow's damage is projectile code and appears in no
   vanilla data at all, which is exactly why `combat.rs` treats a projectile kit as

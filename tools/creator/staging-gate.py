@@ -559,8 +559,8 @@ def _matches(node: dict, pred: dict) -> bool:
     # can name a population the DSL spells in more than one way, and a language
     # that can only AND forces such a row to quantify over a wider class than
     # its own general form is about — the shape this clause was added to
-    # repair. `bell-05`'s general form says *a wave the party must kill OR a
-    # hostile it turns loose on them*, and the compiler reads a `kill`
+    # repair. A general form that says *a wave the party must kill OR a
+    # hostile it turns loose on them* names one class: the compiler reads a `kill`
     # objective, an `unleash-actor` effect and an `ambushes[]` entry (sugar
     # that expands to the second) as members of one class; a checker reads a
     # document the way its consumer reads it, so the predicate has to be able

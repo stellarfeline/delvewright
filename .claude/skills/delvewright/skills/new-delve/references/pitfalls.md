@@ -25,10 +25,11 @@
 - **The machine proves the LOOP, not the win.** Three things are checked about
   every mandatory encounter, and it is worth authoring toward them rather than
   discovering them as red builds:
-  1. *Winnability arithmetic* (`DW0470`–`DW0473`): a required hostile must be
+  1. *Combat arithmetic* (`DW0470`–`DW0473`): a required hostile must be
      damageable (Resistance amplifier 4 is total immunity — use at most 3, or put
      the durability in `attributes.max_health`), must have a standable cell beside
-     it to be fought from, must fall inside the time-to-kill budget, and no
+     it to be fought from, must fall within 400 ordinary swings of the best kit
+     weapon once its worn armour, resistance and protection are counted, and no
      `damage-players` in a quest bundle may land ≥ 20 (a full-health player) —
      that is a scripted death, not difficulty. A hit the party can dodge (a trap
      payload, a stealth `on_caught`, a `damage-players` with a `within` zone) is

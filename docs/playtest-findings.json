@@ -6,7 +6,7 @@
     "`carrier` names the CHECK that carries the finding's general form; `binding` is how many objects of the class that check quantifies over exist on the campaign being staged.",
     "`carrier: null` is a red unless `disposition` + a substantive `justification` declare why no machine form is possible (playtest-methodology.md rule 2's one escape).",
     "A row whose `binding` selects its object class by IDENTITY (`eq`/`in`/`prefix`, or an `any_of` every arm of which is one of those) declares its own applicability by shape: the gate measures the precondition off that binding (`staging-gate.py::probe_is_self_measuring`) and `load_ledger` refuses an `applies_when` that would restate it. Only a declaration-shaped binding (`has`/`has_any`, a `contains` glob, an `artifact` or `out` probe) owes one.",
-    "`any_of` is a disjunction of predicates, for a class the DSL spells more than one way (`bell-04`, `bell-05`); `has_any` is a disjunction of field names, which is a different question. A clause this matcher does not implement is refused at load: an unrecognised key restricts nothing, so the probe would count every node while describing itself as something narrower.",
+    "`any_of` is a disjunction of predicates, for a class the DSL spells more than one way (`bell-06`, `vh-05`); `has_any` is a disjunction of field names, which is a different question. A clause this matcher does not implement is refused at load: an unrecognised key restricts nothing, so the probe would count every node while describing itself as something narrower.",
     "APPEND, never rewrite. A row is removed only when the finding is shown never to have been a finding.",
     "Sources this ledger was reconstructed from are listed in docs/reference/playtest-methodology.md, rule 7, including what could NOT be recovered."
   ],
@@ -1846,51 +1846,20 @@
       "finding": "an encounter billed as an elite was trivially weak, and the compiler had no way to express its durability at all",
       "general_form": "none: whether a fight is hard enough for its billing is a difficulty judgement the design makes",
       "id": "bell-04",
-      "justification": "The ladder verifies mechanism and does not fight: at a combat step it reads the seated bodies against the declaration and removes them, so no bot result is evidence about how hard an encounter is. The row's former carrier, `DW0477`, and the inverted floor gate it reported for are removed for that reason. What the machine still bounds is the arithmetic, not the feel: `DW0472` refuses a mandatory encounter whose declared effective HP outlasts the best kit the party can field, and `DW0474` holds mandatory combat to the spec-0023 winnability pass. Whether an encounter billed elite reads as one is judged on the playtest. Standing content-QC item.",
+      "justification": "The ladder verifies mechanism and does not fight: at a combat step it reads the seated bodies against the declaration and removes them, so no bot result is evidence about how hard an encounter is. The row's former carrier, `DW0477`, and the inverted floor gate it reported for are removed for that reason. What the machine still bounds is a wrong number, not the feel: `DW0472` refuses a mandatory encounter whose declared health takes more than 400 ordinary swings of the best kit the party can field. Whether an encounter billed elite reads as one is judged on the playtest. Standing content-QC item.",
       "note": "The row's former precondition and binding both probed the removed floor gate's own ledger; a `no-machine-form` row states no precondition, as `vh-01` and `bell-15` do not.",
       "round": 2,
       "triage": "capability"
     },
     {
-      "applies_when": {
-        "files": [
-          "quests.json"
-        ],
-        "kind": "dsl",
-        "match": {
-          "any_of": [
-            {
-              "eq": {
-                "type": "kill"
-              }
-            },
-            {
-              "eq": {
-                "type": "unleash-actor"
-              }
-            },
-            {
-              "prefix": {
-                "id": "ambush/"
-              }
-            }
-          ]
-        }
-      },
-      "binding": {
-        "file": "combat-plan.json",
-        "kind": "artifact",
-        "path": "fights.total"
-      },
       "campaign": "the-drowned-bell",
-      "carrier": {
-        "code": "DW0474",
-        "kind": "dw"
-      },
+      "carrier": null,
+      "disposition": "no-machine-form",
       "finding": "an encounter killed a full-health player in two hits",
-      "general_form": "a campaign with mandatory combat — a wave the party must kill OR a hostile it turns loose on them — is held to the whole spec-0023 winnability pass, sustain included; and no unavoidable scripted hit on that path one-shots a full-health player (DW0473)",
+      "general_form": "none: whether a party survives an encounter's blows is a difficulty judgement the design makes",
       "id": "bell-05",
-      "note": "carrier + binding corrected 2026-08-11 (staging-gate UNBOUND audit), and the engine fixed with them. The row named DW0473 while probing combat-plan.json:encounters, which quantify over DIFFERENT collections — DW0473 walks unconditional `damage-players` bundles, `encounters` is `kill`-a-wave steps. Worse, the whole spec-0023 pass (DW0470-DW0475) was gated on `has_encounters`, the VERB, so a delve whose combat is entirely actors ran none of it: nobodys-cave-island unleashes three wardens, bills one elite, ships zero `kill` objectives, and reported `encounters: 0` for twenty-two owner rounds with nothing saying that was a coverage fact rather than a content fact. `combat::mandatory_fights` is now the object class — every fight of either shape — the pass is gated on it, DW0474 quantifies over it, and combat-plan.json publishes it as `fights`. Island binding 0 -> 3. The precondition has since had a NARROWING OF A PRECONDITION, declared as one: it counted every id under `actor/`, so a campaign that stages a body — a herald, a ferryman, a guard of honour — was adjudicated as a campaign with mandatory combat, and a guided tour of a castle was refused for shipping no combat plan. It now counts what this general form names in its own words, a wave the party must kill OR a hostile it turns loose on them: a `kill` objective, an `unleash-actor` effect, or an `ambushes[]` entry, the sugar `Ambush::to_trigger` expands into the second. A staged puppet is neither, which is `combat::hostile_actors`'s own rule — unleash or nothing. Binding count with the gate's own probe: 0 of the narrowed class on doune-castle-tour (7 of the old one), 5 on nobodys-cave-island, 3 on the gallery primary.",
+      "justification": "Whether a fight can be won, and how hard it is, is judged on the playtest, not by the machine. The row's former carrier, `DW0474` (a campaign with mandatory combat whose party carries no food at all), held the campaign to a winnability judgement and is removed for that reason. The ladder verifies mechanism and does not fight, so no bot result is evidence about how fast an encounter kills a player either. What the machine still bounds is a wrong number and a scripted death, neither of which is this finding's object: `DW0472` refuses a mandatory encounter whose declared health takes more than 400 ordinary swings of the best kit the party can field, and `DW0473` refuses an unavoidable scripted hit in a quest's own effect bundle that kills a full-health player — a quest effect, never an encounter's blows. Standing content-QC item.",
+      "note": "The row's former precondition and binding probed mandatory combat and `combat-plan.json`'s `fights` count for the removed `DW0474`; a `no-machine-form` row states no precondition, as `bell-04` and `vh-01` do not.",
       "round": 2,
       "triage": "capability"
     },
@@ -2690,7 +2659,7 @@
       "finding": "the bell-tower boss fight cannot be won: the party is ground down across retries by equipment that degrades with nothing in the delve that mends it, and by the walk back to the fight",
       "general_form": "none: whether a fight can be won is a difficulty judgement the design makes",
       "id": "vh-01",
-      "justification": "Absolute difficulty is the design's own statement, which is the class `bell-15` already records, and the machine bounds the SINGLE fight from both sides: `DW0474` holds a campaign with mandatory combat to the whole spec-0023 winnability pass against the best kit the party can field. Neither models ATTRITION ACROSS RETRIES, which is what makes this fight unwinnable rather than merely hard. The two attritions the engine does own are their own rows: `vh-03`, a rest mending what the party carries, which is carried; and `vh-04`, the walk back from a rest, which is a placement judgement. The remedy for this row is rest placement and equipment condition; lowering the fight is refused. Standing content-QC item.",
+      "justification": "Absolute difficulty is the design's own statement, which is the class `bell-15` already records, and whether a fight can be won is judged on the playtest, never by the machine: what the machine bounds is a wrong number — `DW0472` refuses a mandatory encounter whose declared health takes more than 400 ordinary swings of the best kit the party can field — and nothing models ATTRITION ACROSS RETRIES, which is what makes this fight unwinnable rather than merely hard. The two attritions the engine does own are their own rows: `vh-03`, a rest mending what the party carries, which is carried; and `vh-04`, the walk back from a rest, which is a placement judgement. The remedy for this row is rest placement and equipment condition; lowering the fight is refused. Standing content-QC item.",
       "round": 1,
       "triage": "content"
     },
