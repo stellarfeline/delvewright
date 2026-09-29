@@ -3197,9 +3197,12 @@ export class MineflayerExecutor implements StepExecutor {
       const p = bot.entity.position;
       return !bot.entity.onGround && overFootprint([p.x, p.y, p.z], box);
     };
-    // The pathfinder's own rule for what a walk may open (a non-iron gate), so the
-    // walk in and every other walk agree on it.
-    const openable = new Movements(bot).openable;
+    // The pathfinder's own rule for what a walk may open (a non-iron gate), read
+    // off the Movements the approach just walked with, so the walk in and every
+    // other walk agree on it.
+    const openable: ReadonlySet<number> =
+      (bot.pathfinder as { movements?: { openable?: ReadonlySet<number> } }).movements
+        ?.openable ?? new Set<number>();
     const opened = new Map<string, number>();
     // The drive's own deadline counts DRIVING time only: a body carried in by
     // the game is on the sink's clock, not this one.
