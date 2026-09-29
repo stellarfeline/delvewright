@@ -1654,6 +1654,13 @@ export class MineflayerExecutor implements StepExecutor {
   /** What each wave's muster established — the encounter rows' evidence. */
   private readonly musters = new Map<string, MusterVerdict>();
   /**
+   * Every failure ANY muster reading produced, in order, `<wave>: <failure>`.
+   * `musters` holds each wave's latest reading, and a later reading that found
+   * the seating whole used to replace an earlier one that did not — the failure
+   * then reached neither the report nor the exit code.
+   */
+  private readonly musterFailureLog: string[] = [];
+  /**
    * Every body the run took out of the delve by command, and why.
    *
    * Named loudly and separately from anything the delve did, because it is the one
@@ -5164,6 +5171,7 @@ export class MineflayerExecutor implements StepExecutor {
           credited,
         );
         this.musters.set(enc.wave, verdict);
+        for (const f of verdict.failures) this.musterFailureLog.push(`${enc.wave}: ${f}`);
         this.musteredEpoch.set(enc.wave, epoch);
         process.stderr.write(
           `[muster] ${enc.wave}: read ${verdict.read}/${verdict.declared} declared body/bodies, ` +
@@ -5326,6 +5334,11 @@ export class MineflayerExecutor implements StepExecutor {
   /** What each wave's muster established. Read by the run report. */
   waveMusters(): ReadonlyMap<string, MusterVerdict> {
     return this.musters;
+  }
+
+  /** Every failure any muster reading of this run produced, never only the latest's. */
+  musterFailures(): readonly string[] {
+    return this.musterFailureLog;
   }
 
   /** Every body this run took out of the delve by command. */

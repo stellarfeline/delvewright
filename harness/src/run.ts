@@ -456,12 +456,13 @@ async function main(): Promise<number> {
     // What the muster found. A declared number that never reached a body is a
     // defect in the shipped delve, and it is a finding of the critical-path stage
     // — the only stage that ever stands in front of the wave.
-    const musterFailures: string[] = [];
+    // A declaration the live bodies CONTRADICT reds the run; one the probe could
+    // not establish is a finding. Both reach the artifact, and only the first is
+    // a statement about the shipped delve being wrong. The failures are EVERY
+    // reading's, not each wave's latest: a later reading that found a seating
+    // whole does not un-fail an earlier one that did not.
+    const musterFailures = [...executor.musterFailures()];
     for (const verdict of musters.values()) {
-      // A declaration the live bodies CONTRADICT reds the run; one the probe
-      // could not establish is a finding. Both reach the artifact, and only the
-      // first is a statement about the shipped delve being wrong.
-      for (const f of verdict.failures) musterFailures.push(`${verdict.wave}: ${f}`);
       for (const f of verdict.findings) report.recordMusterFinding(`${verdict.wave}: ${f}`);
     }
     report.stage({

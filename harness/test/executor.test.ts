@@ -2802,6 +2802,31 @@ test("a body of a wave the run has not read yet is read where it stands, then re
   assert.equal(verdict.read, 2);
 });
 
+test("a muster reading that failed stays failed when a later reading finds the wave whole", async () => {
+  // vesperhold, released+ring: the choir read 3 of 4 on the death-loop approach
+  // (one had drowned in the well) and 4 of 4 after the next re-seat; the report
+  // kept only the latest reading, and the run printed PASSED.
+  const bot = new CombatFakeBot();
+  const executor = attach(bot);
+  executor.useCampaign("the-drowned-bell");
+  const plan = combatPlan(2, true);
+  executor.useCombatPlan(plan, false);
+  const enc = plan.encounters[0]!;
+  const muster = (
+    executor as unknown as { musterWave: (e: typeof enc) => Promise<void> }
+  ).musterWave.bind(executor);
+  bot.seat(1); // one of two declared
+  await muster(enc);
+  assert.equal(executor.waveMusters().get(enc.wave)?.failures.length! > 0, true);
+  bot.seat(2); // the next seating is whole
+  await muster(enc);
+  assert.deepEqual(executor.waveMusters().get(enc.wave)?.failures, [], "the latest reading is whole");
+  assert.ok(
+    executor.musterFailures().some((f) => f.startsWith(`${enc.wave}: wave seating:`)),
+    `the earlier failure is kept: ${JSON.stringify(executor.musterFailures())}`,
+  );
+});
+
 test("a removed body's blows are refunded — its own, named ones only, rounded up", async () => {
   // vesperhold's die-retry return leg, measured on the fix above: a Hired Knife,
   // a pillager, a Wall Archer and a Guard each landed one blow before each was
