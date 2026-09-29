@@ -80,8 +80,11 @@ jobs:
           # and the previous tag of this line is read for the notes: both need
           # the history and the tags.
           fetch-depth: 0
+      # A job that packages a crate saves no cache: `cargo package`/`cargo publish` leave
+      # a half-unpacked `target/package/` the cache's post-job cleanup cannot walk, and it
+      # reports that as errors on a run that published correctly.
       - uses: Swatinem/rust-cache@v2
-        with: { key: "dsl-crate-publish" }
+        with: { key: "dsl-crate-publish", save-if: "false" }
       # versions.toml is the single source of truth (spec-0005), and the version
       # about to be published is read out of it. A tree that disagrees with
       # itself about the dsl_version must not reach the registry with either
@@ -199,8 +202,11 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: bash tools/ci/assert-run-approved.sh crates-io
+      # A job that packages a crate saves no cache: `cargo package`/`cargo publish` leave
+      # a half-unpacked `target/package/` the cache's post-job cleanup cannot walk, and it
+      # reports that as errors on a run that published correctly.
       - uses: Swatinem/rust-cache@v2
-        with: { key: "dsl-crate-publish" }
+        with: { key: "dsl-crate-publish", save-if: "false" }
       # Packages the crate itself, compares its sha256 with the registry's,
       # uploads only what is absent, and polls until the index serves our exact
       # bytes. Re-running it after a half-finished run is safe by construction.
