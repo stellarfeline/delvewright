@@ -1500,7 +1500,7 @@ class HealingWalkBot extends InteractFakeBot {
       if (this.blow > 0) {
         this.health -= this.blow;
         this.emit("health");
-        await delay(900); // the hop is still walking when the drop is answered
+        await delay(100); // the leg ends before the effect's reply is read
       }
     },
   };
@@ -1552,6 +1552,12 @@ test("a drop on a walk leg is restored to full, whoever dealt it", async () => {
     "a 5.2-point deficit is one instant health II",
   );
   assert.equal(bot.health, 20);
+  // Named for the leg it happened on, even though the leg ended while the
+  // effect's reply was awaited.
+  assert.ok(
+    executor.stagedBodies().some((r) => r.why.startsWith("full health for walk leg 'interact anchor/gate")),
+    JSON.stringify(executor.stagedBodies()),
+  );
 
   // Off the leg, the delve's own damage keeps its reach: nothing restores it.
   bot.health = 3;

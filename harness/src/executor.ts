@@ -4908,6 +4908,8 @@ export class MineflayerExecutor implements StepExecutor {
    */
   private holdFullHealth(when: string): Promise<void> {
     if (this.restoringHealth) return this.restoringHealth;
+    // Read now: the effect's reply is awaited, and the leg can end meanwhile.
+    const leg = this.walkLabel;
     const run = async (): Promise<void> => {
       // Bounded: a drop that lands while one effect is in flight is closed by
       // the next round, and a server that keeps refusing is recorded, not retried.
@@ -4925,13 +4927,13 @@ export class MineflayerExecutor implements StepExecutor {
         this.stagedRemovals.push({
           kind: "player",
           why:
-            `full health for walk leg '${this.walkLabel}' (${when}): ${before.toFixed(1)} of ` +
+            `full health for walk leg '${leg}' (${when}): ${before.toFixed(1)} of ` +
             `${PLAYER_MAX_HEALTH}, restored with instant health ${amp + 1}`,
           performed: refusal === undefined,
           detail: refusal,
         });
         process.stderr.write(
-          `[staged] walk leg '${this.walkLabel}' (${when}): health ${before.toFixed(1)} → ` +
+          `[staged] walk leg '${leg}' (${when}): health ${before.toFixed(1)} → ` +
             `${refusal === undefined ? bot.health.toFixed(1) : `unchanged, refused — ${refusal}`}\n`,
         );
         if (refusal !== undefined) return;
