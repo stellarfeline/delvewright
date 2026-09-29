@@ -251,22 +251,26 @@ fn a_night_world_is_silent() {
 
 /// Rain protects only where it falls. The burn tick skips a body that is "in
 /// rain", and the pinned game counts a body in rain only where the biome at its
-/// cell precipitates. A void delve's play box stands in `minecraft:the_void`,
-/// which never does, so a declared `rain` there darkens the sky and saves no
-/// one.
+/// cell precipitates. A void delve's play box stands in the delve's own void
+/// biome, which rains (vanilla's `minecraft:the_void` does not), so a declared
+/// `rain` reaches the garrison and it does not burn.
 #[test]
-fn rain_does_not_protect_where_it_does_not_fall() {
+fn rain_protects_a_void_delve() {
     let tmp = TempCampaign::new("rain-void");
     campaign_with(tmp.path(), true, |world, _| {
         world["content"]["weather"] = serde_json::json!("rain");
     });
-    let err = build(tmp.path()).expect_err("rain never falls on the_void, so the garrison burns");
-    assert_eq!(code_of(&err), "DW0496", "{}", message_of(&err));
-    let message = message_of(&err);
-    assert!(
-        message.contains("minecraft:the_void") && message.contains("`rain`"),
-        "names the declared rain and the dry biome: {message}"
-    );
+    build(tmp.path()).expect("rain falls on the delve's own void biome, so the garrison stays wet");
+}
+
+/// The same holds for `thunder`: vanilla thunder is rain with strikes.
+#[test]
+fn thunder_protects_a_void_delve() {
+    let tmp = TempCampaign::new("thunder-void");
+    campaign_with(tmp.path(), true, |world, _| {
+        world["content"]["weather"] = serde_json::json!("thunder");
+    });
+    build(tmp.path()).expect("thunder rains on the delve's own void biome");
 }
 
 /// The dual: over an ocean horizon the play box stands in `minecraft:ocean`,

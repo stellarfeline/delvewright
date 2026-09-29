@@ -195,8 +195,8 @@ declared hour: the dark-cell proof measures under the **darkest reachable**
 `(time, weather)` sky, so a space lit only by the sky is judged at the night floor
 once a night hour is declared (`DW0210`, and the lighting contract at 2A); and
 `DW0496`, the daylight-burning refusal, fires for any fight that can stand in a
-burning hour (`day`, `noon` or `dusk`), and `rain` shelters nobody in a void delve —
-so declaring `night` is a design decision that also changes what that gate sees,
+burning hour (`day`, `noon` or `dusk`) under a clear sky — `rain` and `thunder`
+fall on the play area and shelter a body standing in them — so declaring `night` is a design decision that also changes what that gate sees,
 which is why *Reference: authoring pitfalls* forbids reaching for the hour to save
 a mob.
 

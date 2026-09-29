@@ -2134,6 +2134,17 @@ mod tests {
     }
 
     #[test]
+    fn every_painted_biome_has_a_recorded_precipitation() {
+        for flora in [Flora::Oak, Flora::Cherry] {
+            let biome = flora_table(flora).biome;
+            assert!(
+                crate::compiler::horizon::vanilla_precipitates(biome).is_some(),
+                "{biome} is painted but its precipitation is unrecorded"
+            );
+        }
+    }
+
+    #[test]
     fn cherry_differs_from_oak_only_in_flora_block_and_biome_ids() {
         let oak = generate_valley(
             13,

@@ -124,9 +124,9 @@
   `kill`-adjudicated fight (or an actor the party can hurt) whose walkable ground
   reaches open sky, with an empty head slot, is a build error naming the sunlit
   cell, whenever some hour the fight can stand in burns. `dusk` burns: the pinned
-  game keeps undead burning until tick 12542. Declared `rain` protects nobody in a
-  void delve: the play box's biome, `the_void`, never rains. Roofing the arena
-  clears it too. One species the helmet does not save — a
+  game keeps undead burning until tick 12542. Declared `rain` or `thunder`
+  falls on the play area and protects every body standing in it. Roofing the
+  arena clears it too. One species the helmet does not save — a
   phantom burns through it — so an open-air phantom fight has to be roofed or
   restaged. Never route wave mobs like actors: waves are native AI; if a beat
   needs lane-then-fight movement, that is the routed-then-feral primitive, which

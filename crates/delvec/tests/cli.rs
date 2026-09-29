@@ -1556,9 +1556,9 @@ fn v06_ocean_boundary_builds_byte_identical_and_wires_return() {
     );
 }
 
-/// spec-0013: absent `horizon`/`boundary` keeps a v0.5 campaign byte-identical to
-/// its pre-v0.6 output — the void generator-settings is unchanged and no boundary
-/// wiring leaks in. Guards the additive-superset promise.
+/// spec-0013: absent `horizon`/`boundary` builds the void world — the empty-layer
+/// generator over the delve's own raining void biome — and no boundary wiring
+/// leaks in.
 #[test]
 fn v06_absent_fields_keep_void_output_unchanged() {
     let pf = common::prefabs_dir();
@@ -1580,9 +1580,20 @@ fn v06_absent_fields_keep_void_output_unchanged() {
     let tree = read_tree(&out);
     let props = String::from_utf8(tree["server/server.properties"].clone()).unwrap();
     assert!(
-        props.contains("generator-settings={\"biome\":\"minecraft:the_void\",\"layers\":[]}"),
-        "void generator-settings must be unchanged: {props}"
+        props.contains("generator-settings={\"biome\":\"hello-world:void\",\"layers\":[]}"),
+        "void generator-settings lays the delve's own void biome: {props}"
     );
+    // A declared weather is the weather the party stands in: the biome the
+    // generator lays is one the datapack defines, and it precipitates.
+    let biome: serde_json::Value =
+        serde_json::from_slice(&tree["datapack/data/hello-world/worldgen/biome/void.json"])
+            .expect("the generator's biome is defined by the datapack");
+    assert_eq!(biome["has_precipitation"], serde_json::json!(true));
+    let tag: serde_json::Value = serde_json::from_slice(
+        &tree["datapack/data/minecraft/tags/worldgen/biome/without_wandering_trader_spawns.json"],
+    )
+    .unwrap();
+    assert_eq!(tag["values"], serde_json::json!(["hello-world:void"]));
     assert!(
         !tree.contains_key("datapack/data/hello-world/function/boundary_tick.mcfunction"),
         "no boundary function without a declared boundary"
