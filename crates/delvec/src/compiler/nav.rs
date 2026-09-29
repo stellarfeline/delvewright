@@ -10033,8 +10033,11 @@ mod tests {
         // (file, how many production call sites)
         const EXPECTED: &[(&str, usize)] = &[
             // `blockout.rs`: the stage-5 battery's `open` and `sealed` worlds,
-            // which carry their own sealing authority.
-            ("blockout.rs", 2),
+            // which carry their own sealing authority; and the stairwell pass,
+            // which asks only whether one step between two courses of a stair
+            // is a body move over the mass as laid — a question about geometry
+            // inside the stair's own box, with no campaign premise to consult.
+            ("blockout.rs", 3),
             // `edit.rs`: a `relight` verb's own darkness survey.
             ("edit.rs", 1),
             // `light.rs`: the relight pass's darkness survey.

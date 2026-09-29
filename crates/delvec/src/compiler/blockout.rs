@@ -1292,6 +1292,9 @@ fn stairwell(
     }
     // The world the question is asked over: the host, its shell and the course
     // over the floor, which is all a step between two of its courses can touch.
+    // It declines the campaign's premises: whether one tread can be stepped onto
+    // from the one below is a fact of the laid blocks, and no gate, horizon or
+    // declared hazard inside a stair's own box can change the answer.
     let wlo = [lo[0] - 1, host.floor - 1, lo[2] - 1];
     let whi = [hi[0] + 1, slab_hi + 3, hi[2] + 1];
     let world_of = |mass: &Mass| {
