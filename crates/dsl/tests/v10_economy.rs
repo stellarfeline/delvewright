@@ -145,10 +145,7 @@ fn dw0919_two_purses_cannot_share_the_sidebar() {
         "the second purse is in the fixture"
     );
     let diags = validate_campaign(&campaign(&two));
-    let hit: Vec<_> = diags
-        .iter()
-        .filter(|d| d.code == "DW0919")
-        .collect();
+    let hit: Vec<_> = diags.iter().filter(|d| d.code == "DW0919").collect();
     assert_eq!(
         hit.len(),
         1,
@@ -173,10 +170,7 @@ fn dw0919_a_party_purse_cannot_stand() {
     let party = displayed().replace(r#""scope": "player""#, r#""scope": "party""#);
     assert!(party.contains(r#""scope": "party""#));
     let diags = validate_campaign(&campaign(&party));
-    let hit: Vec<_> = diags
-        .iter()
-        .filter(|d| d.code == "DW0919")
-        .collect();
+    let hit: Vec<_> = diags.iter().filter(|d| d.code == "DW0919").collect();
     assert_eq!(hit.len(), 1, "{diags:#?}");
     assert!(
         hit[0].message.contains("state/embers") && hit[0].message.contains("`#party`"),
@@ -194,10 +188,7 @@ fn dw0919_an_unnamed_datum_cannot_stand() {
     let unnamed = displayed().replace(r#""name": "Embers", "#, "");
     assert!(!unnamed.contains("Embers"), "the name really came off");
     let diags = validate_campaign(&campaign(&unnamed));
-    let hit: Vec<_> = diags
-        .iter()
-        .filter(|d| d.code == "DW0919")
-        .collect();
+    let hit: Vec<_> = diags.iter().filter(|d| d.code == "DW0919").collect();
     assert_eq!(hit.len(), 1, "{diags:#?}");
     assert!(
         hit[0].message.contains("state/embers") && hit[0].message.contains("`name`"),

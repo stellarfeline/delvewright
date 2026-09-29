@@ -1029,7 +1029,10 @@ pub struct World {
 /// fourth arm of the rule: it is the fallback hitbox [`npc_render_width`] hands
 /// [`step_vertices`], which shapes a step the router has **already** permitted
 /// and never re-decides whether it may be taken.
-use delvewright_dsl::metrics::{FULL_16, PLAYER_WIDTH, step_allowed};
+use delvewright_dsl::metrics::{
+    FULL_16, JUMP_REACH, PLAYER_WIDTH, jump_max_gap, step_allowed,
+    unarmoured_survivable_fall_blocks,
+};
 
 /// **Everything a [`World`] carries that is not a block** — the premises the
 /// campaign states about the world its geometry sits in: what the generator put
@@ -2475,6 +2478,95 @@ impl World {
                 out.push(n);
             }
         }
+        out
+    }
+
+    /// **Everywhere a body standing in `c` can put itself in one movement**: the
+    /// walk step ([`World::neighbors`]), plus the two movements a route proof never
+    /// takes and a player always can — stepping off an edge and falling, and
+    /// jumping a gap. Cardinal, player footprint, ordered and deduplicated
+    /// (ADR-0006).
+    ///
+    /// A route proof may not use these: it must never prove a way the bot cannot
+    /// walk on cue. A proof that asks **where a body can end up** must use them,
+    /// or it cannot see the places a player jumps into — which is what
+    /// [`DW_BODY_CANNOT_LEAVE`] asks, in both directions of the same relation.
+    ///
+    /// - **Fall.** The neighbouring column is clear at the body's feet and head;
+    ///   the body drops to the first thing that stops it. That landing counts only
+    ///   when it is standable (water, a lethal volume, a fence top are not) and no
+    ///   deeper than the fall an unarmoured body survives.
+    /// - **Jump.** The launch column is clear for the whole arc (feet to two cells
+    ///   up, the measured headroom); each gap column is clear from the lower of the
+    ///   launch and landing feet to that same top; the body lands on the first
+    ///   floor below the arc in the landing column, and the gap is inside
+    ///   [`delvewright_dsl::metrics::jump_max_gap`] for the rise. Requiring the whole band
+    ///   clear refuses some arcs a body clears, never admits one it cannot.
+    ///
+    /// Diagonal jumps and climbing (ladders, vines) are not moves here: a place a
+    /// body reaches only by one of them is not seen, and a place it leaves only by
+    /// one is seen as unleavable.
+    pub fn body_moves(&self, c: [i32; 3]) -> Vec<[i32; 3]> {
+        const HORIZ: [(i32, i32); 4] = [(-1, 0), (1, 0), (0, -1), (0, 1)];
+        let fp = Footprint::player();
+        let mut out = self.neighbors(c);
+        let here = self.feet_16_fp(c, &fp);
+        let deepest = unarmoured_survivable_fall_blocks() as i32;
+        let clear =
+            |x: i32, y0: i32, y1: i32, z: i32| (y0..=y1).all(|y| !self.is_occupied([x, y, z]));
+        // The first floor under a column, scanning down from `top`: the feet cell
+        // above the first occupied cell, if it is standable and no deeper than a
+        // body survives.
+        let land = |x: i32, z: i32, top: i32| -> Option<[i32; 3]> {
+            let mut y = top;
+            while y >= c[1] - deepest - 1 {
+                if self.is_occupied([x, y, z]) {
+                    let n = [x, y + 1, z];
+                    return self.standable_fp(n, &fp).then_some(n);
+                }
+                y -= 1;
+            }
+            None
+        };
+        for (dx, dz) in HORIZ {
+            // Fall: step sideways into the next column and drop.
+            let (x1, z1) = (c[0] + dx, c[2] + dz);
+            if clear(x1, c[1], c[1] + 1, z1)
+                && let Some(n) = land(x1, z1, c[1] - 1)
+                && jump_max_gap(self.feet_16_fp(n, &fp) - here).is_some()
+            {
+                out.push(n);
+            }
+            // Jump: launch headroom, then gaps of 1.. columns.
+            if !clear(c[0], c[1], c[1] + 2, c[2]) {
+                continue;
+            }
+            let widest = JUMP_REACH.iter().map(|(_, g)| *g).max().unwrap_or(0) as i32;
+            for gap in 1..=widest {
+                let (lx, lz) = (c[0] + dx * (gap + 1), c[2] + dz * (gap + 1));
+                // The arc crosses every gap column at launch height; one that is
+                // blocked there stops this jump and every longer one.
+                let (gx, gz) = (c[0] + dx * gap, c[2] + dz * gap);
+                if !clear(gx, c[1], c[1] + 2, gz) {
+                    break;
+                }
+                let Some(n) = land(lx, lz, c[1] + 2) else {
+                    continue;
+                };
+                let Some(max_gap) = jump_max_gap(self.feet_16_fp(n, &fp) - here) else {
+                    continue;
+                };
+                if gap as u32 > max_gap {
+                    continue;
+                }
+                let lo = n[1].min(c[1]);
+                if (1..=gap).all(|i| clear(c[0] + dx * i, lo, c[1] + 2, c[2] + dz * i)) {
+                    out.push(n);
+                }
+            }
+        }
+        out.sort_unstable();
+        out.dedup();
         out
     }
 
@@ -5434,6 +5526,326 @@ fn verify_checkpoints(
         }
     }
     Ok(())
+}
+
+/// `DW0921`: **a place a body can get into and not out of.** From a cell of the
+/// proven route, a body walking, falling and jumping ([`World::body_moves`]) can
+/// reach a cell from which no walk, fall or jump leads back to the route — a
+/// garden bed ringed by a hedge it jumped onto and dropped off, a pit it fell
+/// into. The player is soft-locked there: nothing but leaving the game gets
+/// them out.
+///
+/// It is judged once per quest configuration the critical path passes through
+/// ([`World::region_state_at`] over each leg's arrival), with that
+/// configuration's gates as they stand and that configuration's own route cells
+/// as the place a body must get back to. That is the whole of the author's
+/// control over it, and it needs no declaration of its own: a room the story
+/// shuts the party into holds the objective the story is waiting on, so the
+/// party standing in it stands among that configuration's route cells, and a
+/// room shut until a later beat opens it is only a trap when the beat is out of
+/// reach from inside — which is what this refuses.
+pub const DW_BODY_CANNOT_LEAVE: DwCode = DwCode::new("DW0921", ExitTier::Build);
+
+/// How many pockets a `DW0921` report names before summarising the rest.
+const POCKET_LIST_LIMIT: usize = 6;
+
+/// What [`check_bodies_can_leave`] measured, whether or not it refused: the
+/// population it judged, stated so a pass that judged nothing reads as that.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct LeaveBinding {
+    /// Distinct quest configurations judged.
+    pub configurations: usize,
+    /// Route cells the judgement was rooted at, summed over configurations.
+    pub route_cells: usize,
+    /// Cells a body can reach from them, summed over configurations.
+    pub reached: usize,
+    /// Of those, cells a body cannot leave.
+    pub trapped: usize,
+}
+
+impl LeaveBinding {
+    /// The one line a build prints about this proof.
+    pub fn line(&self) -> String {
+        format!(
+            "DW0921 binding: {} quest configuration(s), {} route cell(s), {} cell(s) a body can reach \
+             by walking, falling or jumping, {} it cannot leave",
+            self.configurations, self.route_cells, self.reached, self.trapped
+        )
+    }
+}
+
+/// How a body got from `from` to `to` in one [`World::body_moves`] movement, in
+/// words for a report.
+fn movement_words(world: &World, from: [i32; 3], to: [i32; 3]) -> String {
+    let run = (to[0] - from[0]).abs() + (to[2] - from[2]).abs();
+    let rise = to[1] - from[1];
+    if world.neighbors(from).contains(&to) {
+        "a walk".to_string()
+    } else if run == 1 {
+        format!("a fall of {} block(s)", -rise)
+    } else {
+        let height = match rise.cmp(&0) {
+            std::cmp::Ordering::Greater => format!(" up {rise}"),
+            std::cmp::Ordering::Less => format!(" down {}", -rise),
+            std::cmp::Ordering::Equal => String::new(),
+        };
+        format!("a jump across {} column(s){height}", run - 1)
+    }
+}
+
+/// [`DW_BODY_CANNOT_LEAVE`] over a campaign's critical path. Returns the binding
+/// beside the verdict so the caller can print it whichever way the verdict went.
+///
+/// `returned` is the campaign's playable region (`boundary`, spec-0013) as its
+/// inclusive `(min, max)` corners, or `None` when it declares none. A body
+/// standing outside it is carried back to the last checkpoint by the boundary
+/// clock, so a cell outside it is a way out like a route cell is.
+pub fn check_bodies_can_leave(
+    plan: &Plan,
+    world: &World,
+    returned: Option<([i32; 3], [i32; 3])>,
+) -> (LeaveBinding, Result<(), Failure>) {
+    let ancestor = |g: usize, s: usize| plan.gate_fired_before(g, s);
+    // One configuration per distinct region state, carrying the route cells of
+    // every leg that arrives under it and the first step that does.
+    let mut configs: Vec<(RegionState, usize, BTreeSet<[i32; 3]>)> = Vec::new();
+    for (step, cells) in critical_route_cells(plan, world) {
+        let st = world.region_state_at(&plan.region_events, step, &ancestor);
+        match configs.iter_mut().find(|(s, _, _)| *s == st) {
+            Some((_, first, seeds)) => {
+                *first = (*first).min(step);
+                seeds.extend(cells);
+            }
+            None => configs.push((st, step, cells.into_iter().collect())),
+        }
+    }
+    let mut binding = LeaveBinding {
+        configurations: configs.len(),
+        ..LeaveBinding::default()
+    };
+    let mut pockets: Vec<String> = Vec::new();
+    let mut pocket_count = 0usize;
+    for (st, first, seeds) in &configs {
+        let owned;
+        let w: &World = if st.is_empty() {
+            world
+        } else {
+            owned = world.with_region_state(st);
+            &owned
+        };
+        let seeds: Vec<[i32; 3]> = seeds
+            .iter()
+            .copied()
+            .filter(|c| w.is_standable(*c))
+            .collect();
+        binding.route_cells += seeds.len();
+        let (reached, trapped, preds) = w.cells_a_body_cannot_leave(&seeds, returned);
+        binding.reached += reached;
+        // A shortcut is opened from its far side by whoever stands at its lever,
+        // and the completability model holds it shut. A pocket whose own reach
+        // takes a body to a lever, and through the door that lever opens back to
+        // the route, is not a pocket.
+        let seed_set: BTreeSet<[i32; 3]> = seeds.iter().copied().collect();
+        let kept: Vec<Vec<[i32; 3]>> = pockets_of(&trapped)
+            .into_iter()
+            .filter(|p| !w.leaves_by_a_shortcut(p, &seed_set, returned, &plan.shortcuts))
+            .collect();
+        let trapped: BTreeSet<[i32; 3]> = kept.iter().flatten().copied().collect();
+        binding.trapped += trapped.len();
+        for pocket in kept {
+            pocket_count += 1;
+            if pockets.len() >= POCKET_LIST_LIMIT {
+                continue;
+            }
+            let entry = pocket.iter().find_map(|c| {
+                preds
+                    .get(c)
+                    .and_then(|ps| ps.iter().find(|p| !trapped.contains(*p)))
+                    .map(|p| (*p, *c))
+            });
+            let objective = plan
+                .critical_path
+                .get(*first)
+                .and_then(|s| s.objective())
+                .map(|o| format!("while `{o}` is next"))
+                .unwrap_or_else(|| format!("from critical step {first}"));
+            let how = match entry {
+                Some((from, to)) => format!(
+                    "a body gets in from {from:?} to {to:?} by {}",
+                    movement_words(w, from, to)
+                ),
+                None => "a body gets in".to_string(),
+            };
+            pockets.push(format!(
+                "{} cell(s) around {:?} ({objective}): {how}, and no walk, fall or jump leads \
+                 from any of them back to the route",
+                pocket.len(),
+                pocket[0]
+            ));
+        }
+    }
+    if pockets.is_empty() {
+        return (binding, Ok(()));
+    }
+    let more = pocket_count.saturating_sub(pockets.len());
+    let tail = if more > 0 {
+        format!("; and {more} more")
+    } else {
+        String::new()
+    };
+    let verdict = Err(Failure {
+        code: DW_BODY_CANNOT_LEAVE,
+        message: format!(
+            "{pocket_count} place(s) a body can get into and not out of — the player is \
+             soft-locked there: {}{tail}. Reshape the place so whoever gets in can walk, fall or \
+             jump out (lower the wall they are ringed by, give them a step, or take away what they \
+             jumped in from); do not fence walkable-looking ground with an invisible barrier. A \
+             room the story is meant to shut the party into holds the objective the story waits \
+             on, and is not this. Moves are cardinal: a diagonal jump or a climb (ladder, vine) \
+             is not counted, so a place left only that way reads as a trap.",
+            pockets.join("; ")
+        ),
+    });
+    (binding, verdict)
+}
+
+/// Whether the boundary clock carries a body standing in `c` back to the last
+/// checkpoint: the body can stand clear of the region's box when the cell lies
+/// wholly outside it horizontally, or far enough under its floor that the head
+/// is below it.
+fn returned_from(returned: Option<([i32; 3], [i32; 3])>, c: [i32; 3]) -> bool {
+    returned.is_some_and(|(lo, hi)| {
+        c[0] < lo[0] || c[0] > hi[0] || c[2] < lo[2] || c[2] > hi[2] || c[1] + 2 < lo[1]
+    })
+}
+
+/// The cells of `trapped`, split into pockets that touch (26-neighbourhood),
+/// each sorted, in the order of their least cell.
+fn pockets_of(trapped: &BTreeSet<[i32; 3]>) -> Vec<Vec<[i32; 3]>> {
+    let mut left = trapped.clone();
+    let mut out = Vec::new();
+    while let Some(start) = left.pop_first() {
+        let mut pocket = vec![start];
+        let mut queue = vec![start];
+        while let Some(c) = queue.pop() {
+            for dx in -1..=1 {
+                for dy in -1..=1 {
+                    for dz in -1..=1 {
+                        let n = [c[0] + dx, c[1] + dy, c[2] + dz];
+                        if left.remove(&n) {
+                            pocket.push(n);
+                            queue.push(n);
+                        }
+                    }
+                }
+            }
+        }
+        pocket.sort_unstable();
+        out.push(pocket);
+    }
+    out
+}
+
+impl World {
+    /// Whether a body in `pocket` gets back to `seeds` once it opens every shortcut
+    /// whose lever its own reach stands it at — opened in rounds, since a door
+    /// one lever opens can lead to the next lever.
+    fn leaves_by_a_shortcut(
+        &self,
+        pocket: &[[i32; 3]],
+        seeds: &BTreeSet<[i32; 3]>,
+        returned: Option<([i32; 3], [i32; 3])>,
+        shortcuts: &[crate::compiler::plan::ShortcutPlan],
+    ) -> bool {
+        let levers: Vec<Option<[i32; 3]>> = shortcuts
+            .iter()
+            .map(|s| self.snap_standable(s.unlock, SNAP_RADIUS))
+            .collect();
+        let mut opened: BTreeSet<usize> = BTreeSet::new();
+        loop {
+            let owned;
+            let w: &World = if opened.is_empty() {
+                self
+            } else {
+                let cells: BTreeSet<[i32; 3]> = opened
+                    .iter()
+                    .flat_map(|&i| {
+                        let (lo, hi) = shortcuts[i].gate_region;
+                        crate::compiler::assembled::region_cells(lo, hi)
+                    })
+                    .collect();
+                owned = self.with_cleared(&cells);
+                &owned
+            };
+            let mut seen: BTreeSet<[i32; 3]> = pocket.iter().copied().collect();
+            let mut queue: std::collections::VecDeque<[i32; 3]> = seen.iter().copied().collect();
+            while let Some(cur) = queue.pop_front() {
+                if seeds.contains(&cur) || returned_from(returned, cur) {
+                    return true;
+                }
+                for n in w.body_moves(cur) {
+                    if seen.insert(n) {
+                        queue.push_back(n);
+                    }
+                }
+            }
+            let before = opened.len();
+            for (i, lever) in levers.iter().enumerate() {
+                if lever.is_some_and(|l| seen.contains(&l)) {
+                    opened.insert(i);
+                }
+            }
+            if opened.len() == before {
+                return false;
+            }
+        }
+    }
+
+    /// The body-movement closure of `seeds` ([`World::body_moves`]) and, within it,
+    /// the cells from which no movement sequence returns to a seed. Returns the
+    /// closure's size, the trapped cells, and every closure cell's predecessors
+    /// (so a report can say how a body got in).
+    ///
+    /// Exact over the closure: whatever a closure cell reaches is itself in the
+    /// closure, so walking the predecessor edges backwards from the seeds inside
+    /// it answers "can this cell get back" for every cell without leaving it.
+    #[allow(clippy::type_complexity)]
+    fn cells_a_body_cannot_leave(
+        &self,
+        seeds: &[[i32; 3]],
+        returned: Option<([i32; 3], [i32; 3])>,
+    ) -> (usize, BTreeSet<[i32; 3]>, BTreeMap<[i32; 3], Vec<[i32; 3]>>) {
+        let mut preds: BTreeMap<[i32; 3], Vec<[i32; 3]>> = BTreeMap::new();
+        let mut seen: BTreeSet<[i32; 3]> = seeds.iter().copied().collect();
+        let mut queue: std::collections::VecDeque<[i32; 3]> = seen.iter().copied().collect();
+        while let Some(cur) = queue.pop_front() {
+            for n in self.body_moves(cur) {
+                preds.entry(n).or_default().push(cur);
+                if seen.insert(n) {
+                    queue.push_back(n);
+                }
+            }
+        }
+        // The ways out: the route itself, and every reached cell the boundary
+        // clock carries a body back from.
+        let mut back: BTreeSet<[i32; 3]> = seeds
+            .iter()
+            .copied()
+            .chain(seen.iter().copied().filter(|c| returned_from(returned, *c)))
+            .collect();
+        let mut queue: std::collections::VecDeque<[i32; 3]> = back.iter().copied().collect();
+        while let Some(cur) = queue.pop_front() {
+            if let Some(ps) = preds.get(&cur) {
+                for p in ps {
+                    if back.insert(*p) {
+                        queue.push_back(*p);
+                    }
+                }
+            }
+        }
+        let trapped = seen.difference(&back).copied().collect();
+        (seen.len(), trapped, preds)
+    }
 }
 
 /// The minimum share of a timed hazard's cycle that must admit passage
