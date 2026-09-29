@@ -412,7 +412,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with: { ref: "${{ needs.identity.outputs.commit }}" }
+      # A job that packages a crate saves no cache: `cargo package`/`cargo publish` leave
+      # a half-unpacked `target/package/` the cache's post-job cleanup cannot walk, and it
+      # reports that as errors on a run that published correctly.
       - uses: Swatinem/rust-cache@v2
+        with: { save-if: "false" }
       # FIRST: the format crate `delvec` pins with `=` is already served, as the
       # same crate this tree packages. This release never uploads it (ADR-0028
       # §6) — the format crate's own workflow publishes it together with its tag
@@ -508,7 +512,11 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: bash tools/ci/assert-run-approved.sh crates-io
+      # A job that packages a crate saves no cache: `cargo package`/`cargo publish` leave
+      # a half-unpacked `target/package/` the cache's post-job cleanup cannot walk, and it
+      # reports that as errors on a run that published correctly.
       - uses: Swatinem/rust-cache@v2
+        with: { save-if: "false" }
       # Re-prove publishability inside this job, from the released tree, not from
       # artifacts handed over from another job.
       - name: re-prove publishability from the released tree
