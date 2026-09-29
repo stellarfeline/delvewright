@@ -2540,7 +2540,8 @@ impl World {
         const HORIZ: [(i32, i32); 4] = [(-1, 0), (1, 0), (0, -1), (0, 1)];
         let fp = Footprint::player();
         let deepest = unarmoured_survivable_fall_blocks() as i32;
-        let clear = |x: i32, y0: i32, y1: i32, z: i32| (y0..=y1).all(|y| !self.is_occupied([x, y, z]));
+        let clear =
+            |x: i32, y0: i32, y1: i32, z: i32| (y0..=y1).all(|y| !self.is_occupied([x, y, z]));
         // Where a body dropping down a column from `top` ends up: afloat at the
         // first water it meets, or standing on the first floor, if that floor is
         // standable and no deeper under `from` than a body survives. `None` when
@@ -5759,20 +5760,42 @@ pub fn check_bodies_can_leave(
             None => configs.push((st, step, cells.into_iter().collect())),
         }
     }
+    let owned: Vec<Option<World>> = configs
+        .iter()
+        .map(|(st, _, _)| (!st.is_empty()).then(|| world.with_region_state(st)))
+        .collect();
+    let worlds: Vec<(&World, String, Vec<[i32; 3]>)> = configs
+        .into_iter()
+        .zip(&owned)
+        .map(|((_, first, seeds), w)| {
+            let w = w.as_ref().unwrap_or(world);
+            let when = plan
+                .critical_path
+                .get(first)
+                .and_then(|s| s.objective())
+                .map(|o| format!("while `{o}` is next"))
+                .unwrap_or_else(|| format!("from critical step {first}"));
+            (w, when, seeds.into_iter().collect())
+        })
+        .collect();
+    verify_bodies_can_leave(&worlds, returned, &plan.shortcuts)
+}
+
+/// The pure core of [`check_bodies_can_leave`]: one `(world, when, route cells)`
+/// per quest configuration, where `when` names the configuration in words. Split
+/// out so it is unit-testable over a synthetic [`World`] without a [`Plan`].
+fn verify_bodies_can_leave(
+    worlds: &[(&World, String, Vec<[i32; 3]>)],
+    returned: Option<([i32; 3], [i32; 3])>,
+    shortcuts: &[crate::compiler::plan::ShortcutPlan],
+) -> (LeaveBinding, Result<(), Failure>) {
     let mut binding = LeaveBinding {
-        configurations: configs.len(),
+        configurations: worlds.len(),
         ..LeaveBinding::default()
     };
     let mut pockets: Vec<String> = Vec::new();
     let mut pocket_count = 0usize;
-    for (st, first, seeds) in &configs {
-        let owned;
-        let w: &World = if st.is_empty() {
-            world
-        } else {
-            owned = world.with_region_state(st);
-            &owned
-        };
+    for (w, when, seeds) in worlds {
         let seeds: Vec<[i32; 3]> = seeds
             .iter()
             .copied()
@@ -5789,7 +5812,7 @@ pub fn check_bodies_can_leave(
         let seed_set: BTreeSet<[i32; 3]> = seeds.iter().copied().collect();
         let kept: Vec<Vec<[i32; 3]>> = pockets_of(&trapped)
             .into_iter()
-            .filter(|p| !w.leaves_by_a_shortcut(p, &seed_set, returned, &plan.shortcuts))
+            .filter(|p| !w.leaves_by_a_shortcut(p, &seed_set, returned, shortcuts))
             .collect();
         let trapped: BTreeSet<[i32; 3]> = kept.iter().flatten().copied().collect();
         binding.trapped += trapped.len();
@@ -5804,12 +5827,6 @@ pub fn check_bodies_can_leave(
                     .and_then(|ps| ps.iter().find(|p| !trapped.contains(*p)))
                     .map(|p| (*p, *c))
             });
-            let objective = plan
-                .critical_path
-                .get(*first)
-                .and_then(|s| s.objective())
-                .map(|o| format!("while `{o}` is next"))
-                .unwrap_or_else(|| format!("from critical step {first}"));
             let how = match entry {
                 Some((from, to)) => format!(
                     "a body gets in from {from:?} to {to:?} by {}",
@@ -5818,7 +5835,7 @@ pub fn check_bodies_can_leave(
                 None => "a body gets in".to_string(),
             };
             pockets.push(format!(
-                "{} cell(s) around {:?} ({objective}): {how}, and no walk, fall or jump leads \
+                "{} cell(s) around {:?} ({when}): {how}, and no walk, fall, jump or swim leads \
                  from any of them back to the route",
                 pocket.len(),
                 pocket[0]
@@ -5838,12 +5855,14 @@ pub fn check_bodies_can_leave(
         code: DW_BODY_CANNOT_LEAVE,
         message: format!(
             "{pocket_count} place(s) a body can get into and not out of — the player is \
-             soft-locked there: {}{tail}. Reshape the place so whoever gets in can walk, fall or \
-             jump out (lower the wall they are ringed by, give them a step, or take away what they \
-             jumped in from); do not fence walkable-looking ground with an invisible barrier. A \
-             room the story is meant to shut the party into holds the objective the story waits \
-             on, and is not this. Moves are cardinal: a diagonal jump or a climb (ladder, vine) \
-             is not counted, so a place left only that way reads as a trap.",
+             soft-locked there: {}{tail}. Reshape the place so whoever gets in can walk, fall, \
+             jump or climb out of the water (lower the wall they are ringed by, give them a step, \
+             or take away what they jumped in from); do not fence walkable-looking ground with an \
+             invisible barrier. A body afloat climbs out only onto ground one cell above the \
+             water's top, and does not dive. A room the story is meant to shut the party into \
+             holds the objective the story waits on, and is not this. Moves are cardinal: a \
+             diagonal jump or a climb (ladder, vine) is not counted, so a place left only that way \
+             reads as a trap.",
             pockets.join("; ")
         ),
     });
@@ -5955,7 +5974,11 @@ impl World {
         &self,
         seeds: &[[i32; 3]],
         returned: Option<([i32; 3], [i32; 3])>,
-    ) -> (BTreeSet<[i32; 3]>, BTreeSet<[i32; 3]>, BTreeMap<[i32; 3], Vec<[i32; 3]>>) {
+    ) -> (
+        BTreeSet<[i32; 3]>,
+        BTreeSet<[i32; 3]>,
+        BTreeMap<[i32; 3], Vec<[i32; 3]>>,
+    ) {
         let mut preds: BTreeMap<[i32; 3], Vec<[i32; 3]>> = BTreeMap::new();
         let mut seen: BTreeSet<[i32; 3]> = seeds.iter().copied().collect();
         let mut queue: std::collections::VecDeque<[i32; 3]> = seen.iter().copied().collect();
@@ -14935,5 +14958,218 @@ mod tests {
         let err = route_visited(&world, &[a, b], std::slice::from_ref(&flood), &linear)
             .expect_err("a fluid fill takes the floor away whoever fires it");
         assert_eq!(err.code, DW_FLUID_FILL_ON_CRITICAL_PATH); // DW0544
+    }
+}
+
+/// `DW0921` and the body-movement relation it floods ([`World::body_moves`]).
+#[cfg(test)]
+mod leave_tests {
+    use super::*;
+
+    /// A flat yard, feet at y=1 over a stone floor at y=0, `w` × `d` cells.
+    fn yard(w: i32, d: i32) -> BTreeSet<[i32; 3]> {
+        let mut solid = BTreeSet::new();
+        for x in 0..w {
+            for z in 0..d {
+                solid.insert([x, 0, z]);
+            }
+        }
+        solid
+    }
+
+    /// A bed ringed by a hedge two high — the vesperhold round-2 garden — with
+    /// a boulder one high two cells north of it. `open_north` leaves the ring's
+    /// north row out, the repair the campaign took.
+    fn hedged_bed(open_north: bool) -> World {
+        let mut solid = yard(14, 14);
+        for x in 4..=8 {
+            for z in 4..=8 {
+                let ring = x == 4 || x == 8 || z == 4 || z == 8;
+                if ring && !(open_north && z == 4) {
+                    solid.insert([x, 1, z]);
+                    solid.insert([x, 2, z]);
+                }
+            }
+        }
+        solid.insert([6, 1, 2]); // the boulder
+        World::from_solid_cells(solid)
+    }
+
+    fn judge(w: &World, seeds: &[[i32; 3]]) -> (LeaveBinding, Result<(), Failure>) {
+        verify_bodies_can_leave(
+            &[(w, "from critical step 0".to_string(), seeds.to_vec())],
+            None,
+            &[],
+        )
+    }
+
+    #[test]
+    fn a_body_jumps_the_boulder_onto_the_hedge_and_drops_into_a_bed_it_cannot_leave_dw0921() {
+        let w = hedged_bed(false);
+        // Only a jump reaches the hedge's top: a gap of one column (z=3) at a
+        // rise of one, off the boulder. The walk step never does.
+        assert!(w.body_moves([6, 2, 2]).contains(&[6, 3, 4]));
+        assert!(!w.neighbors([6, 2, 2]).contains(&[6, 3, 4]));
+        let (binding, verdict) = judge(&w, &[[1, 1, 1]]);
+        let err = verdict.expect_err("the bed is a trap");
+        assert_eq!(err.code.id(), "DW0921");
+        assert!(err.message.contains("[5, 1, 5]"), "{}", err.message);
+        assert!(
+            err.message.contains("a fall of 2 block(s)"),
+            "{}",
+            err.message
+        );
+        assert_eq!(binding.trapped, 9, "the bed's 3x3 floor, and nothing else");
+    }
+
+    #[test]
+    fn a_bed_open_on_one_side_is_walked_out_of() {
+        let (binding, verdict) = judge(&hedged_bed(true), &[[1, 1, 1]]);
+        assert!(verdict.is_ok(), "{verdict:?}");
+        assert!(
+            binding.reached > 14 * 14 - 30,
+            "the proof judged the yard: {binding:?}"
+        );
+        assert_eq!(binding.trapped, 0);
+    }
+
+    /// A pool of water two deep inside a curb: the water's top cell is y=1 (the
+    /// yard's feet level), the curb's standing cell y=3. `curb` is its height in
+    /// blocks over the yard; `gap` leaves one curb cell out.
+    fn curbed_pool(curb: i32, gap: bool) -> World {
+        let mut solid = yard(14, 14);
+        let mut water = BTreeSet::new();
+        for x in 4..=8 {
+            for z in 4..=8 {
+                let ring = x == 4 || x == 8 || z == 4 || z == 8;
+                if ring {
+                    if gap && x == 4 && z == 6 {
+                        continue;
+                    }
+                    for y in 1..=curb {
+                        solid.insert([x, y, z]);
+                    }
+                } else {
+                    solid.remove(&[x, 0, z]);
+                    solid.insert([x, -1, z]);
+                    water.insert([x, 0, z]);
+                    water.insert([x, 1, z]);
+                }
+            }
+        }
+        World::from_solid_and_flooded(solid, water)
+    }
+
+    #[test]
+    fn a_body_that_goes_over_the_curb_into_the_water_cannot_climb_back_out_dw0921() {
+        // The curb stands one over the yard, so a body steps onto it and drops
+        // into the water; afloat at y=1, the curb's top (standing cell y=2) is
+        // one cell up — climbable. Two over: the standing cell is y=3, and the
+        // body is held.
+        let (_, low) = judge(&curbed_pool(1, false), &[[1, 1, 1]]);
+        assert!(low.is_ok(), "{low:?}");
+        let w = curbed_pool(2, false);
+        // Nothing reaches the water here: the curb is two over the yard.
+        let (b, walled) = judge(&w, &[[1, 1, 1]]);
+        assert!(walled.is_ok());
+        assert_eq!(b.afloat, 0, "no body gets over a two-high curb");
+        // Give the body a way up — a step one over the yard beside the curb —
+        // and it goes in and cannot come out.
+        let mut solid: BTreeSet<[i32; 3]> = (0..14)
+            .flat_map(|x| (0..14).map(move |z| [x, 0, z]))
+            .filter(|c| w.solid_at(*c))
+            .collect();
+        solid.extend(
+            (0..14)
+                .flat_map(|x| (0..14).flat_map(move |z| [[x, 1, z], [x, 2, z]]))
+                .filter(|c| w.solid_at(*c)),
+        );
+        solid.insert([6, 1, 3]);
+        let water: BTreeSet<[i32; 3]> = (5..=7)
+            .flat_map(|x| (5..=7).flat_map(move |z| [[x, 0, z], [x, 1, z]]))
+            .collect();
+        for c in &water {
+            solid.remove(c);
+        }
+        for x in 5..=7 {
+            for z in 5..=7 {
+                solid.insert([x, -1, z]);
+            }
+        }
+        let stepped = World::from_solid_and_flooded(solid, water);
+        let (b, verdict) = judge(&stepped, &[[1, 1, 1]]);
+        let err = verdict.expect_err("the pool holds a swimmer");
+        assert_eq!(err.code.id(), "DW0921");
+        assert!(err.message.contains("into water"), "{}", err.message);
+        assert_eq!(b.afloat, 9, "the pool's nine surface cells, all afloat");
+        assert_eq!(b.trapped, 9);
+    }
+
+    #[test]
+    fn a_gap_in_the_curb_is_a_way_out_of_the_water() {
+        // The curb two high with one cell left out: a body wades in through the
+        // gap and climbs back out through it (standing cell y=1, level with the
+        // water's top, which is inside the climb-out reach).
+        let (b, verdict) = judge(&curbed_pool(2, true), &[[1, 1, 1]]);
+        assert!(verdict.is_ok(), "{verdict:?}");
+        assert_eq!(b.afloat, 9);
+    }
+
+    #[test]
+    fn lava_is_never_a_place_a_body_floats() {
+        let mut solid = yard(6, 6);
+        solid.remove(&[3, 0, 3]);
+        solid.insert([3, -1, 3]);
+        let occ = crate::compiler::assembled::Occupancy {
+            solid,
+            tall: BTreeSet::new(),
+            use_gates: BTreeSet::new(),
+            flooded: [[3, 0, 3]].into_iter().collect(),
+            partial: BTreeMap::new(),
+            waterloggable: BTreeSet::new(),
+            lava: [[3, 0, 3]].into_iter().collect(),
+        };
+        let w = World::from_occupancy(occ, Premises::geometry_only());
+        assert!(!w.body_moves([2, 1, 3]).contains(&[3, 0, 3]));
+        assert!(!w.is_water_surface([3, 0, 3]));
+    }
+
+    #[test]
+    fn a_cell_the_boundary_carries_a_body_out_of_is_a_way_out() {
+        let w = hedged_bed(false);
+        // A region whose box ends at x=5: the bed's floor at x=5..7 has cells
+        // outside it, and the clock carries a body there back.
+        let (_, verdict) = verify_bodies_can_leave(
+            &[(&w, "from critical step 0".to_string(), vec![[1, 1, 1]])],
+            Some(([0, -8, 0], [5, 64, 13])),
+            &[],
+        );
+        assert!(verdict.is_ok(), "{verdict:?}");
+    }
+
+    #[test]
+    fn the_jump_reaches_as_far_as_the_measured_envelope_and_no_further() {
+        // Two platforms at feet y=1, a gap of `g` air columns between them.
+        let platforms = |g: i32| {
+            let mut solid = BTreeSet::new();
+            for x in 0..3 {
+                solid.insert([x, 0, 0]);
+            }
+            for x in (3 + g)..(6 + g) {
+                solid.insert([x, 0, 0]);
+            }
+            World::from_solid_cells(solid)
+        };
+        let flat = jump_max_gap(0).expect("a flat jump") as i32;
+        assert!(
+            platforms(flat)
+                .body_moves([2, 1, 0])
+                .contains(&[3 + flat, 1, 0])
+        );
+        assert!(
+            !platforms(flat + 1)
+                .body_moves([2, 1, 0])
+                .contains(&[4 + flat, 1, 0])
+        );
     }
 }

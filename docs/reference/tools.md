@@ -1949,6 +1949,20 @@ two land as a pair.
 `docs/notes/jump-arc-model.md`. The compiler consumes the resulting **model**,
 never this rig. Do not wire spikes into a skill.
 
+`tools/spike-jump-arc/simulate.mjs` (`node tools/spike-jump-arc/simulate.mjs`,
+after `npm ci` in `harness/`) is the rig's offline twin: the same geometry,
+driven through prismarine-physics (the movement code the harness bot runs)
+against an in-memory world, with no server. It adds the runway as a variable
+and searches every control a body has (walk or sprint, the jump pressed on any
+tick), and prints the widest gap landed per rise, minimum over runways — the
+table `dsl::metrics::JUMP_REACH` holds (`--json` prints it as rows). `--check`
+re-runs the live spike's own configurations under its own policy and prints
+landed/missed beside `landX` and apex for comparison with the note's §2;
+`--water` floats a body in a pool beside a ledge and prints which ledge heights
+it climbs out onto (`dsl::metrics::WATER_CLIMB_OUT_RISE`); `--why
+runway,gap,rise` prints the first policy that lands one configuration. Both
+constants feed `DW0921`.
+
 `tools/spike-death-teleport/run.sh` (`EULA=TRUE tools/spike-death-teleport/run.sh
 [--out <path>]`) measures, on the same throwaway pinned server, (a) which
 pre-respawn death signals exist per death cause — `deathCount`, the
