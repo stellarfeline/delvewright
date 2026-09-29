@@ -1183,6 +1183,21 @@ pub fn build_with_warnings(
                 // DW0315/DW0316) and stealth-zone standable/reachable proofs
                 // (spec-0014, DW0327), re-rooting DW0311 reachability at each beat.
                 crate::compiler::nav::check_checkpoints(plan, &world)?;
+                // DW0921: no place a body can reach from the route by walking,
+                // falling or jumping is one it cannot leave. The binding is
+                // printed before the verdict is taken, like DW0891's.
+                let (leave_binding, leave_verdict) = crate::compiler::nav::check_bodies_can_leave(
+                    plan,
+                    &world,
+                    playable_region(plan).map(|r| (r.min, r.max)),
+                );
+                eprintln!("{}", leave_binding.line());
+                leave_verdict?;
+                put_json(
+                    &mut out,
+                    "validation/leave-proof.json",
+                    &leave_binding.to_json(),
+                );
                 if !plan.lethal_volumes.is_empty() {
                     lethal_gate = Some(crate::compiler::lethal::gate(
                         plan.campaign,

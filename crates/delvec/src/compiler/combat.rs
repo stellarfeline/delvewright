@@ -1530,6 +1530,7 @@ mod tests {
             flooded: BTreeSet::new(),
             partial: BTreeMap::new(),
             waterloggable: BTreeSet::new(),
+            lava: BTreeSet::new(),
         }
     }
 

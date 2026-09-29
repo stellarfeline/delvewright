@@ -98,6 +98,7 @@ fn two_ledges(rise: i64) -> (World, [i32; 3], [i32; 3]) {
             flooded: BTreeSet::new(),
             partial,
             waterloggable: BTreeSet::new(),
+            lava: BTreeSet::new(),
         },
         Premises::geometry_only(),
     );
