@@ -8435,6 +8435,19 @@ const STK_GOT: &str = "#stk_got";
 /// The `dw.sys` fake player holding the constant `100`, for a proportional forfeit.
 const STK_HUNDRED: &str = "#stk_100";
 
+/// The tag `stk_collect` puts on the player who clicked, for `stk_pick` to find.
+const STK_CLICKER: &str = "dw_stk_clicker";
+/// The tag `stk_pick` leaves on the box that player clicked.
+const STK_HIT: &str = "dw_stk_hit";
+/// `dw.sys` scratch: the latest `interaction.timestamp` of a box the clicker used.
+const STK_BEST: &str = "#stk_best";
+/// `dw.sys` scratch: one box's `interaction.timestamp`.
+const STK_T: &str = "#stk_t";
+/// `dw.sys` scratch: whether the clicker is the box's last user (`on target`).
+const STK_MINE: &str = "#stk_mine";
+/// Run as each stake box: which one the player who fired `stk_collect` clicked.
+const STK_PICK_FN: &str = "stk_pick";
+
 /// The one function that summons a marker: **the place**, made once however many
 /// wagers a death leaves there.
 const STK_PLACE_FN: &str = "stk_place";
@@ -9043,17 +9056,57 @@ fn emit_stake_functions(
         // The right-click. One advancement fires it, because there is one box to
         // click; the place is located once and then offered to every stake, so a
         // death that left three datums here gives all three back in one press.
-        let mut collect: Vec<String> =
-            vec![format!("advancement revoke @s only {ns}:{STK_COLLECT_FN}")];
+        //
+        // **The place is the box this player CLICKED, never the one nearest them.**
+        // The advancement says only that the player interacted with some `dw_stk`
+        // box; which one is the interaction entity's own record — `on target` is
+        // the last player to use it, and `interaction.timestamp` the tick they did.
+        // Of the boxes this player has used, the most recent is the one just
+        // clicked (`stk_pick`, one pass keeping the greatest timestamp). Taking the
+        // `dw_stk` nearest the player instead offered the wagers at whatever place
+        // stood closest: a player reaching past one stake to click another took
+        // the purse at the near one — another player's, under `collect_by: anyone`
+        // — and left their own standing.
+        let mut collect: Vec<String> = vec![
+            format!("advancement revoke @s only {ns}:{STK_COLLECT_FN}"),
+            format!("tag @s add {STK_CLICKER}"),
+            format!("scoreboard players set {STK_BEST} dw.sys -1"),
+            format!(
+                "execute as @e[type=minecraft:interaction,tag={tag}] run function {ns}:{STK_PICK_FN}"
+            ),
+            format!("tag @s remove {STK_CLICKER}"),
+            format!("execute unless entity @e[tag={STK_HIT},limit=1] run return fail"),
+        ];
         for (axis, s) in [STK_X, STK_Y, STK_Z].iter().enumerate() {
             collect.push(format!(
-                "execute at @s store result score {s} dw.sys run data get entity @e[tag={tag},limit=1,sort=nearest] Pos[{axis}]"
+                "execute store result score {s} dw.sys run data get entity @e[tag={STK_HIT},limit=1] Pos[{axis}]"
             ));
         }
+        collect.push(format!("tag @e[tag={STK_HIT}] remove {STK_HIT}"));
         for (_, safe) in &marking {
             collect.push(format!("function {ns}:stk_collect_{safe}"));
         }
         fns.push((STK_COLLECT_FN.to_string(), lines(&collect)));
+
+        // Run AS each `dw_stk` box: keep it if the clicker used it, and used it
+        // later than every box kept so far.
+        fns.push((
+            STK_PICK_FN.to_string(),
+            lines(&[
+                format!("scoreboard players set {STK_MINE} dw.sys 0"),
+                format!(
+                    "execute store success score {STK_MINE} dw.sys on target if entity @s[tag={STK_CLICKER}]"
+                ),
+                format!("execute unless score {STK_MINE} dw.sys matches 1 run return 0"),
+                format!(
+                    "execute store result score {STK_T} dw.sys run data get entity @s interaction.timestamp"
+                ),
+                format!("execute unless score {STK_T} dw.sys > {STK_BEST} dw.sys run return 0"),
+                format!("scoreboard players operation {STK_BEST} dw.sys = {STK_T} dw.sys"),
+                format!("tag @e[tag={STK_HIT}] remove {STK_HIT}"),
+                format!("tag @s add {STK_HIT}"),
+            ]),
+        ));
 
         // Who still has a wager here — over every stake, because one live wager in
         // any datum is what keeps this place a place.

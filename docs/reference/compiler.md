@@ -6124,7 +6124,15 @@ which is exactly what `DW0878` refuses between two authored affordances.
 So the place holds one box, and what was left there is counted in the per-player
 ledger — where a wager always lived. One advancement fires one `stk_collect`,
 which locates the place and offers it to every declared stake in turn, so one
-right-click returns every datum that death left; `stk_ref` counts live wagers at
+right-click returns every datum that death left. **The place is the box the
+player clicked**: the advancement only says some `dw_stk` box was used, so
+`stk_collect` tags the player and runs `stk_pick` as every `dw_stk` interaction,
+which keeps the one whose last user (`on target`) is that player with the latest
+`interaction.timestamp` — the click just made — and the place's position is read
+off it; no box, no collection. Choosing the box nearest the player instead
+offered the wagers at whatever place stood closest, so a player reaching past
+one stake to click another collected the near one (under `collect_by: anyone`,
+another player's purse) and left their own standing. `stk_ref` counts live wagers at
 that position across every stake, and `stk_gc` — the one function permitted to
 retire the hardware (`DW0421`) — deletes a place nobody has a wager at. Each
 stake keeps its own forfeit rule, retention policy, collect rule, slots and
