@@ -2843,6 +2843,17 @@
         ],
         "kind": "dsl",
         "match": {
+          "has": [
+            "drops"
+          ]
+        }
+      },
+      "binding": {
+        "files": [
+          "quests.json"
+        ],
+        "kind": "dsl",
+        "match": {
           "any_of": [
             {
               "eq": {
@@ -2862,17 +2873,6 @@
           ]
         }
       },
-      "binding": {
-        "files": [
-          "quests.json"
-        ],
-        "kind": "dsl",
-        "match": {
-          "has": [
-            "drops"
-          ]
-        }
-      },
       "campaign": "vesperhold",
       "carrier": {
         "kind": "invariant",
@@ -2881,7 +2881,7 @@
       "finding": "the party ends the delve holding two copies of a unique key: a rest re-seats an undefeated elite, the re-seat removes the body still standing, and that body yields its declared drop as it goes",
       "general_form": "a body the engine removes yields none of its declared drops, on every path by which the engine removes one -- a rest's re-seat included -- so no removal the party did not earn can put a second copy of a unique item into the world",
       "id": "vh-09",
-      "note": "Refreshing an undefeated elite on a rest is INTENDED behaviour and is not the defect: spec-0016 section 1's undefeated re-seat is what `bell-10` and `DW0499` record, and `DW0499` refuses only the combination of a `boss` billing with rest respawning. The defect is the unstripped loot and nothing else. Closed by construction: a removal writes `drop_chances` to zero and `DeathLootTable` to `minecraft:empty` on the body before anything kills it. The carrier reads the loot-bearing set off the EMITTED SUMMONS rather than from a list, and enumerates removal sites from every emitted function, so a body a later change teaches to carry loot and a removal a later change adds are both covered without editing the test; it then requires that no removal of a loot-bearing body -- a `kill`, or the exit into the unseen sweep -- stands without a strip before it, and prints the site count it examined. The binding counts the bodies that can carry the defect (a declaration of `drops`) and the precondition counts the removal paths a campaign has, so a campaign with loot and no rest and no despawn is INAPPLICABLE rather than unbound. Measured on this campaign: 9 declarations of `drops` against 15 removal sites (5 bonfires, 3 `despawn-npc`, 7 `despawn-actor`), of 869 nodes in `quests.json`.",
+      "note": "Refreshing an undefeated elite on a rest is INTENDED behaviour and is not the defect: spec-0016 section 1's undefeated re-seat is what `bell-10` and `DW0499` record, and `DW0499` refuses only the combination of a `boss` billing with rest respawning. The defect is the unstripped loot and nothing else. Closed by construction: a removal writes `drop_chances` to zero and `DeathLootTable` to `minecraft:empty` on the body before anything kills it. The carrier reads the loot-bearing set off the EMITTED SUMMONS rather than from a list, and enumerates removal sites from every emitted function, so a body a later change teaches to carry loot and a removal a later change adds are both covered without editing the test; it then requires that no removal of a loot-bearing body -- a `kill`, or the exit into the unseen sweep -- stands without a strip before it, and prints the site count it examined. The binding counts the bodies that can carry the defect (a declaration of `drops`) and the precondition counts the removal paths a campaign has, so a campaign with loot and no rest and no despawn is INAPPLICABLE rather than unbound. Measured on this campaign: 9 declarations of `drops` against 15 removal sites (5 bonfires, 3 `despawn-npc`, 7 `despawn-actor`), of 869 nodes in `quests.json`. NARROWING OF A PRECONDITION, declared as one: the precondition counted every removal site (`bonfire`, `despawn-npc`, `despawn-actor`), a population that cannot carry this defect unless some body declares `drops` — a gallery point with a bonfire and no drops read UNBOUND for a defect it cannot have. The precondition is now the object that carries the defect, a declared drop, and the binding counts the removal sites the carrier holds to it. A campaign with drops and no removal site reads UNBOUND, which is the one edge this shape leaves; on vesperhold both are present.",
       "round": 1,
       "triage": "capability"
     },
