@@ -100,7 +100,7 @@ their absence there is the placement model, not a run that went wrong:
   looking for this line, and do not read its absence as a build that skipped
   something.
 
-**Every campaign: no place a player can get into and not out of** (`DW0921`).
+**Every campaign: no place a player can get into and not out of.**
 The build moves a body the way a player does — walks, falls off edges, jumps
 gaps, wades or drops into water and floats — from every cell of the proven
 route, and refuses any cell from which no movement leads back. A garden bed
@@ -109,7 +109,7 @@ the water, a slot in a wall walk: each is named with the move that gets a body
 in. Repair the place — open a side, lower the rim, add a step, move what the
 player jumps in from — and never answer it with an invisible barrier. A room
 the story shuts the party into is not this: its objective is inside it. The
-build prints `DW0921 binding: …` either way; the counts are in
+build prints the leave-proof binding line either way; the counts are in
 `validation/leave-proof.json`.
 
 **There is no blockout document and nothing to author early.** A site-plan

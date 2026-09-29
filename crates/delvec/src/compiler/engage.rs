@@ -360,6 +360,7 @@ mod tests {
             tall: std::collections::BTreeSet::new(),
             use_gates: std::collections::BTreeSet::new(),
             flooded: std::collections::BTreeSet::new(),
+            lava: std::collections::BTreeSet::new(),
             partial: BTreeMap::new(),
             waterloggable: std::collections::BTreeSet::new(),
         };
