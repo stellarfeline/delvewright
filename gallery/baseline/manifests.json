@@ -1,7 +1,7 @@
 {
   "easy.en": {
     "campaign_id": "gallery",
-    "delvec_version": "1.6.0",
+    "delvec_version": "1.7.0",
     "dsl_version": "0.34.0",
     "inputs": {
       "classes.json": "f2983ad1ebcc18818fd992a3f12d0f8810858f6550f93127b5c585212b2afc77",
@@ -655,7 +655,7 @@
   },
   "hard.en": {
     "campaign_id": "gallery",
-    "delvec_version": "1.6.0",
+    "delvec_version": "1.7.0",
     "dsl_version": "0.34.0",
     "inputs": {
       "classes.json": "f2983ad1ebcc18818fd992a3f12d0f8810858f6550f93127b5c585212b2afc77",
@@ -1309,7 +1309,7 @@
   },
   "ocean-horizon.en": {
     "campaign_id": "gallery",
-    "delvec_version": "1.6.0",
+    "delvec_version": "1.7.0",
     "dsl_version": "0.34.0",
     "inputs": {
       "classes.json": "f2983ad1ebcc18818fd992a3f12d0f8810858f6550f93127b5c585212b2afc77",
@@ -1962,7 +1962,7 @@
   },
   "primary.en": {
     "campaign_id": "gallery",
-    "delvec_version": "1.6.0",
+    "delvec_version": "1.7.0",
     "dsl_version": "0.34.0",
     "inputs": {
       "classes.json": "f2983ad1ebcc18818fd992a3f12d0f8810858f6550f93127b5c585212b2afc77",
@@ -2616,7 +2616,7 @@
   },
   "primary.zh-cn": {
     "campaign_id": "gallery",
-    "delvec_version": "1.6.0",
+    "delvec_version": "1.7.0",
     "dsl_version": "0.34.0",
     "inputs": {
       "classes.json": "f2983ad1ebcc18818fd992a3f12d0f8810858f6550f93127b5c585212b2afc77",
@@ -3271,7 +3271,7 @@
   },
   "site-plan.en": {
     "campaign_id": "gallery",
-    "delvec_version": "1.6.0",
+    "delvec_version": "1.7.0",
     "dsl_version": "0.34.0",
     "inputs": {
       "classes.json": "f2983ad1ebcc18818fd992a3f12d0f8810858f6550f93127b5c585212b2afc77",
@@ -3627,7 +3627,7 @@
   },
   "valley-site.en": {
     "campaign_id": "gallery",
-    "delvec_version": "1.6.0",
+    "delvec_version": "1.7.0",
     "dsl_version": "0.34.0",
     "inputs": {
       "classes.json": "2a31804e1487fbc3799b173c5aaea4f793579f2767584ef628b434e750400a4b",
@@ -3769,7 +3769,7 @@
   },
   "void-horizon.en": {
     "campaign_id": "gallery",
-    "delvec_version": "1.6.0",
+    "delvec_version": "1.7.0",
     "dsl_version": "0.34.0",
     "inputs": {
       "classes.json": "f2983ad1ebcc18818fd992a3f12d0f8810858f6550f93127b5c585212b2afc77",
