@@ -2956,6 +2956,40 @@
       "justification": "An instance of `vh-13`'s class, kept as its own row because it names a particular place rather than the class: the ground around `[153, 80, 135]` in this campaign is shaped for an optional boss and holds none. Where a set piece goes is the design's own statement and no compiler derives it. Standing content-QC item.",
       "round": 1,
       "triage": "content"
+    },
+    {
+      "binding": {
+        "files": [
+          "quests.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "in": {
+            "entity": [
+              "minecraft:bogged",
+              "minecraft:drowned",
+              "minecraft:phantom",
+              "minecraft:skeleton",
+              "minecraft:stray",
+              "minecraft:zombie",
+              "minecraft:zombie_horse",
+              "minecraft:zombie_nautilus",
+              "minecraft:zombie_villager"
+            ]
+          }
+        }
+      },
+      "campaign": "vesperhold",
+      "carrier": {
+        "code": "DW0496",
+        "kind": "dw"
+      },
+      "finding": "undead the party fought under the declared dusk and rain burned in daylight: an ambush-woken zombie villager with nothing on its head burned beside the chandlery yard",
+      "general_form": "a body the pinned game burns is not staged for a fight in any hour and weather the fight can stand in that burn it: dusk is inside the pinned monsters_burn window, rain protects only where the biome at the cell rains (the_void never does), and a delve that cuts its clock is judged over each fight's span on the quest DAG rather than withheld",
+      "id": "vh-17",
+      "note": "Same class as `hv-08`, `isl-17` and `isl-40`, and the reason it recurred: `DW0496` held `dusk` non-burning, took declared `rain` as protection everywhere, and withheld on any campaign that cuts its time or weather, so it never looked at this campaign (declared `dusk` + `rain`, cut to `noon`/`clear` for two echoes and to `night` or `dawn` at the end). Measured on the pinned server in this campaign's own built world, bare-headed zombie at the note's cell for 20 s: `dusk` clear 20 -> 8 health, `night` clear 20 -> 20, `dusk` rain over `the_void` 20 -> 7, the same cell painted `minecraft:plains` 20 -> 20; after `tick sprint 60000` the declared time and weather still held. The body at the note is `actor/chandler` at [153, 80, 135]; the three hedge-lurkers around [143, 80, 113] are the same shape. The declared rain also never visibly falls over the play box, because its biome does not precipitate; that is recorded here as the cause of the burn and is not closed by this row.",
+      "round": 2,
+      "triage": "capability"
     }
   ],
   "ledger_version": "2026-08-11"
