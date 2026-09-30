@@ -1453,9 +1453,37 @@ Operational facts, paid for in a debugging session (2026-08-06):
    layout inside a 16x16 chunk still shows the ring; a layout that fills its
    chunks shows none). Emission handles all of it from the plan's `horizon` fact;
    nothing to set by hand.
-3. **The progress counter `(N of <image height>)` counts scanlines, not
-   samples** — a 1024px render reads `(512 of 1,024)` at half a *pass*. Watch
-   `spp` / the target, not that number.
+3. **`Rendering: … (N of M)` counts samples per pixel against the target;
+   the other counters count pixels or rows.** On the pinned core a 128-sample
+   draft ends at `Rendering: 101.6% (130 of 128)` and a 1600 × 900 frame at a
+   1024 target reads `(750 of 1,024)` three quarters through; `Saving render
+   dump: (N of 90,000)` counts the pixels of a 400 × 225 frame and `Writing PNG:
+   (224 of 225)` its rows. The log carries every intermediate counter on one
+   carriage-returned line: read it with `tr '\r' '\n' < log | grep Rendering: |
+   tail -1`, never `tail` the raw file.
+4. **`-snapshot` re-exposes a finished render without rendering again.** Edit
+   the scene's `exposure`, then `validation/chunky.sh -scene-dir <dir> -snapshot
+   <scene> out.png` writes the frame from the accumulated `.dump` at the new
+   exposure: a candle-lit hall at 512 spp gave mean luma 31.5, 37.0 and 42.3 at
+   exposure 12, 24 and 40 from one render. Exposure is a post-process; bracket
+   it this way, never with a second render.
+5. **`emitterSamplingStrategy` stays `NONE`.** On a candle-lit hall at 400 × 225
+   and 128 spp: `NONE` 35 s, `ONE` 47 s, `ALL` 20 min 59 s, and the three
+   frames carry the same sparks ([`showcase-shots.md`](showcase-shots.md)
+   §3.9). Sample count is the only lever.
+6. **The sky, the fog and the sun are scene keys a partial object may set.**
+   `sky` (`mode`, `color`, `skyLight`, `apparentSkyLight`, `gradient`), `fog`
+   (`mode` `UNIFORM`/`LAYERED`, `uniformDensity`, `skyFogDensity`, `color`,
+   `layers[]` of `y`/`breadth`/`density`) and `sun` (`intensity`, `color`,
+   `drawTexture`, `altitude`, `azimuth`) merge with Chunky's defaults on load,
+   and Chunky re-saves the whole object; an emitted scene carries only the
+   sun's position. Set them before the first render of a scene name, or delete
+   its `.dump` — a changed sky over an old dump averages into the old samples.
+   The values a picture is taken under are
+   [`showcase-shots.md`](showcase-shots.md) §2b.
+7. **`delvec snapshot --camera` with a negative first number needs `=`.**
+   `--camera -40,160,320,221,21,48` is parsed as an unknown flag and exits 2;
+   `--camera=-40,160,320,221,21,48` draws the frame.
 
 Speed doctrine: the core is **CPU-only** — the official OpenCL plugin is WIP and
 effectively unavailable on Apple Silicon, so there is no GPU path; do not wait for
