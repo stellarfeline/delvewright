@@ -33,6 +33,7 @@ import {
   overFootprint,
   parseDeathPlan,
   stagedBalance,
+  wayInCandidates,
   SINK_BLOCKS_PER_TICK,
   sinkBudgetMs,
   volumeReachesCell,
@@ -1229,4 +1230,15 @@ test("the staged balance makes every rule's forfeit observable, and none's too",
     if (rule.kind !== "all") assert.ok(taken < v, `${JSON.stringify(rule)} is not "all" at ${v}`);
   }
   assert.ok(stagedBalance({ kind: "none" }) > 0, "none is asserted over a purse holding something");
+});
+
+test("a blocked walk in asks for the sill a player jumps to, nearest the volume first", () => {
+  // vesperhold's well after the choir fix: the lip is the floor of a dry cut at
+  // [30, 67, 79]; the sill of the curb's opening stands at [31, 68, 80]; the
+  // floor west of the cut at [29, 68, 80]. The volume is the shaft's bottom.
+  const standable = new Set(["31,68,80", "29,68,80", "29,68,79", "30,67,80", "31,70,81"]);
+  const got = wayInCandidates([30, 67, 79], UNDERTIDE, (c) => standable.has(c.join(",")));
+  assert.deepEqual(got[0], [31, 68, 80], "the sill first: nearest the volume, the smallest climb");
+  assert.ok(!got.some((c) => c[0] <= 30), "nothing no nearer the volume than the body already is");
+  assert.deepEqual(wayInCandidates([30, 67, 79], UNDERTIDE, () => false), []);
 });

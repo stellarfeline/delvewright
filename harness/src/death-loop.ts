@@ -737,6 +737,51 @@ export function overFootprint(pos: Vec3Tuple, box: Box): boolean {
 }
 
 /**
+ * **The cells a body could jump to that are nearer the volume than `feet`**:
+ * within four columns and one down to two up, outside what the volume can reach
+ * ({@link volumeReachesCell}), where a body can stand (`canStand`, the caller's
+ * reading of the world), ordered nearest the volume's footprint first, then by
+ * the smallest climb, then lexicographically (ADR-0006).
+ *
+ * What the walk in asks the pathfinder for when driving straight at the volume
+ * is blocked — vesperhold's well is entered over a dry cut, onto a sill a
+ * block and a half above the cut's floor, which is where the placement table's
+ * lip lies.
+ */
+export function wayInCandidates(
+  feet: Vec3Tuple,
+  box: Box,
+  canStand: (cell: Vec3Tuple) => boolean,
+): Vec3Tuple[] {
+  const toFootprint = (c: Vec3Tuple): number =>
+    Math.hypot(
+      Math.max(box.lo[0] - c[0], 0, c[0] - box.hi[0]),
+      Math.max(box.lo[2] - c[2], 0, c[2] - box.hi[2]),
+    );
+  const here = toFootprint(feet);
+  const out: Vec3Tuple[] = [];
+  for (let dx = -4; dx <= 4; dx++) {
+    for (let dz = -4; dz <= 4; dz++) {
+      for (let dy = -1; dy <= 2; dy++) {
+        const c: Vec3Tuple = [feet[0] + dx, feet[1] + dy, feet[2] + dz];
+        if (toFootprint(c) >= here) continue;
+        if (volumeReachesCell(c, box)) continue;
+        if (!canStand(c)) continue;
+        out.push(c);
+      }
+    }
+  }
+  return out.sort(
+    (a, b) =>
+      toFootprint(a) - toFootprint(b) ||
+      Math.abs(a[1] - feet[1]) - Math.abs(b[1] - feet[1]) ||
+      a[0] - b[0] ||
+      a[1] - b[1] ||
+      a[2] - b[2],
+  );
+}
+
+/**
  * **How fast an idle player body sinks in still water, in blocks per tick.**
  *
  * Measured, not derived: a bot placed with its feet in the top block of

@@ -84,6 +84,7 @@ import {
   overFootprint,
   sinkBudgetMs,
   volumeReachesCell,
+  wayInCandidates,
   inBox,
   dropOf,
   gateVerdict,
@@ -2983,7 +2984,20 @@ export class MineflayerExecutor implements StepExecutor {
     if (navFault === undefined && this.deathSeq === deathsBefore) {
       this.lethalExclusionSuspended = true;
       try {
-        await this.stepInto(volume.region, entryCell, trial);
+        let walkIn = await this.stepInto(volume.region, entryCell, trial);
+        if (walkIn === "blocked" && this.deathSeq === deathsBefore) {
+          // The walk to the way in is an ordinary walk: the hazard is not in it.
+          this.lethalExclusionSuspended = false;
+          let from: Vec3Tuple | undefined;
+          try {
+            from = await this.jumpInApproach(volume.region, volume.id);
+          } finally {
+            this.lethalExclusionSuspended = true;
+          }
+          if (from !== undefined && this.deathSeq === deathsBefore) {
+            walkIn = await this.stepInto(volume.region, entryCell, trial);
+          }
+        }
       } catch (err) {
         if (!(err instanceof BotDeathError)) {
           navFault =
@@ -3260,14 +3274,18 @@ export class MineflayerExecutor implements StepExecutor {
    * "the volume did not kill what was in it" from "nothing ever got in" is the
    * flag.
    */
-  private async stepInto(box: Box, cell: Vec3Tuple, trial: LethalTrial): Promise<void> {
+  private async stepInto(
+    box: Box,
+    cell: Vec3Tuple,
+    trial: LethalTrial,
+  ): Promise<"entered" | "released" | "blocked"> {
     const bot = this.requireBot();
     const inside = (): boolean => {
       if (!this.bodyInside(box)) return false;
       trial.enteredVolume = true;
       return true;
     };
-    if (inside()) return;
+    if (inside()) return "entered";
     const released = (): boolean => {
       const p = bot.entity.position;
       return !bot.entity.onGround && overFootprint([p.x, p.y, p.z], box);
@@ -3310,12 +3328,57 @@ export class MineflayerExecutor implements StepExecutor {
             `the volume nor over it\n`,
         );
       }
-      if (inside() || !released()) return;
+      if (inside()) return "entered";
+      if (!released()) return "blocked";
       // A body that lands on something outside the volume — a rim it overhung
       // when it stepped down, a ledge in the shaft — is standing again, and a
       // player standing at the edge of a hole walks on.
-      if (!(await this.sinkInto(box, trial, inside)) || driveLeft <= 0) return;
+      if (!(await this.sinkInto(box, trial, inside))) return inside() ? "entered" : "released";
+      if (driveLeft <= 0) return "blocked";
     }
+  }
+
+  /**
+   * **When walking straight in is blocked, get to a place a player jumps to.**
+   *
+   * The placement table's lip is the reachable cell nearest the volume by
+   * WALKING, and a hazard can be one a player reaches only with a jump:
+   * vesperhold's well is entered over a dry cut in front of its curb, onto a
+   * sill the choir cannot reach, and the lip is the floor of that cut. From
+   * there a straight drive meets a sill a block and a half up. A player climbs
+   * back out and jumps across; the pathfinder, which jumps gaps the way a
+   * player does, is asked for that: the standable cells within a few blocks
+   * that are nearer the volume than the body is, outside what the volume can
+   * reach, nearest the volume first, tried in turn. `undefined` when none can
+   * be reached.
+   */
+  private async jumpInApproach(box: Box, volume: string): Promise<Vec3Tuple | undefined> {
+    const bot = this.requireBot();
+    const feet = this.feetCell();
+    if (!feet) return undefined;
+    const candidates = wayInCandidates(feet, box, (c) => {
+      if (!this.bodyCanOccupy(c)) return false;
+      const p = bot.entity.position;
+      const below = bot.blockAt(p.offset(c[0] - p.x, c[1] - 1 - p.y, c[2] - p.z));
+      return below !== null && below.boundingBox === "block";
+    });
+    for (const c of candidates.slice(0, 3)) {
+      process.stderr.write(
+        `[death-loop] ${volume}: the walk in is blocked at [${feet.join(", ")}]; asking the ` +
+          `pathfinder for [${c.join(", ")}], nearer the volume\n`,
+      );
+      try {
+        await this.walkTo(c, 1, `death-loop way in to ${volume}`);
+        return c;
+      } catch (err) {
+        if (err instanceof BotDeathError) throw err;
+        process.stderr.write(
+          `[death-loop] ${volume}: [${c.join(", ")}] could not be reached: ` +
+            `${err instanceof Error ? err.message : String(err)}\n`,
+        );
+      }
+    }
+    return undefined;
   }
 
   /**
