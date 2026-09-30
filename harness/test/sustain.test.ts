@@ -7,6 +7,8 @@ import {
   eatDecision,
   isSafeFood,
   pickFood,
+  INSTANT_HEALTH_UNIT,
+  restoreAmplifier,
 } from "../src/sustain.ts";
 
 const BASE = {
@@ -112,4 +114,17 @@ test("the harmful-food rule reads namespaced ids too", () => {
   assert.equal(isSafeFood("cooked_cod"), true);
   // Every entry of the published set is actually refused (no typo'd member).
   for (const name of HARMFUL_FOODS) assert.equal(isSafeFood(name), false);
+});
+
+test("one instant-health effect covers any deficit a walk leg starts with", () => {
+  assert.equal(restoreAmplifier(0.1), 0);
+  assert.equal(restoreAmplifier(4), 0);
+  assert.equal(restoreAmplifier(4.1), 1);
+  assert.equal(restoreAmplifier(8), 1);
+  assert.equal(restoreAmplifier(15.6), 2);
+  assert.equal(restoreAmplifier(16.1), 3);
+  // Every deficit a 20-health body can carry is closed by one effect.
+  for (let d = 0.5; d <= 20; d += 0.5) {
+    assert.ok(INSTANT_HEALTH_UNIT << restoreAmplifier(d) >= d, `deficit ${d}`);
+  }
 });

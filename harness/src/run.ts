@@ -28,12 +28,12 @@ import {
 } from "./combat.ts";
 import {
   deathLoopBinding,
-  deathLoopBindingFailures,
-  lethalTrialFailures,
+  deathLoopStage,
   loadDeathPlanForCriticalPath,
 } from "./death-loop.ts";
 import {
   RunReport,
+  redRunMessage,
   reportPathFromEnv,
   writeRunReport,
   type BranchOutcome,
@@ -148,6 +148,9 @@ installCrashReporter({
   report: () => (liveReport ??= new RunReport("unknown", "unknown")),
   reportPath: () => reportPathFromEnv(),
 });
+
+/** How long the run waits for staging still in flight before building its report. */
+const STAGING_SETTLE_MS = 20_000;
 
 async function main(): Promise<number> {
   const pathArg = process.argv[2];
@@ -356,6 +359,10 @@ async function main(): Promise<number> {
 
   try {
     let failure: unknown;
+    // Whether the critical path completed. A failure after it is the death-loop
+    // stage's — the budget running out mid-trial, a crash inside it — and must be
+    // reported there, never as the path that had already passed.
+    let pathProven = false;
     try {
       await withTimeout(
         (async () => {
@@ -366,6 +373,7 @@ async function main(): Promise<number> {
           await runSequence(criticalPath, executor, {
             retryOnDeath: retryOnDeathFromEnv(),
           });
+          pathProven = true;
           // Only after the path is proven. The death loop deliberately
           // kills the player, so running it earlier would leave every later step
           // walking out of a grave — and a delve whose critical path is broken
@@ -377,6 +385,21 @@ async function main(): Promise<number> {
     } catch (err) {
       failure = err;
     }
+    // Staging still in flight when the stages ended — a wave being read where its
+    // body stood — is finished before anything is judged, so a reading the run
+    // took is a reading the report carries.
+    // A reading still unfinished is a verdict the run cannot state, so it is a
+    // failure of the critical path, not an advisory.
+    const settled = await executor.settleStaging(STAGING_SETTLE_MS);
+    const stagingLost =
+      settled.unfinished > 0
+        ? `${settled.unfinished} staging act(s) — a wave read where its body stood, then ` +
+          `removed — were still unfinished ${settled.waitedMs}ms after the last stage ended, so ` +
+          `whatever they would have read is not in this report`
+        : undefined;
+    if (stagingLost !== undefined) process.stderr.write(`[staged] ${stagingLost}\n`);
+    const pathFailure = pathProven ? undefined : failure;
+    const describe = (err: unknown): string => (err instanceof Error ? err.message : String(err));
 
     // The report is written whether the run passed or failed: a red run's assist
     // windows and death trials are exactly what a reader needs to see.
@@ -449,74 +472,25 @@ async function main(): Promise<number> {
     // What the muster found. A declared number that never reached a body is a
     // defect in the shipped delve, and it is a finding of the critical-path stage
     // — the only stage that ever stands in front of the wave.
-    const musterFailures: string[] = [];
+    // A declaration the live bodies CONTRADICT reds the run; one the probe could
+    // not establish is a finding. Both reach the artifact, and only the first is
+    // a statement about the shipped delve being wrong. The failures are EVERY
+    // reading's, not each wave's latest: a later reading that found a seating
+    // whole does not un-fail an earlier one that did not.
+    const musterFailures = [
+      ...executor.musterFailures(),
+      ...(stagingLost === undefined ? [] : [stagingLost]),
+    ];
     for (const verdict of musters.values()) {
-      // A declaration the live bodies CONTRADICT reds the run; one the probe
-      // could not establish is a finding. Both reach the artifact, and only the
-      // first is a statement about the shipped delve being wrong.
-      for (const f of verdict.failures) musterFailures.push(`${verdict.wave}: ${f}`);
       for (const f of verdict.findings) report.recordMusterFinding(`${verdict.wave}: ${f}`);
-    }
-    // spec-0025 §3: every enumerated branch appears here — the one this session
-    // walked with its result, and each of the others with the reason it did not.
-    // A skipped branch is named, never silent.
-    if (branchPlan && selection) {
-      const outcomes: BranchOutcome[] = branchPlan.branches.map((b): BranchOutcome => {
-        if (driven !== undefined && b.id === driven.id) {
-          return {
-            branch: b.id,
-            ran: true,
-            passed: failure === undefined,
-            pathFile: b.pathFile,
-            chronicle: b.chronicle,
-            entryCommands,
-            endings: b.endings,
-          };
-        }
-        const skipped = selection.skipped.find((s) => s.branch === b.id);
-        const reason =
-          skipped?.reason ??
-          (driven === undefined
-            ? `selected by this tier, but no branch was driven (DELVEWRIGHT_BRANCH unset): ` +
-              `this session walked the exported critical path`
-            : `selected by this tier; a branch run needs a fresh world, so it runs in its ` +
-              `own session (validation/branch-runs.sh)`);
-        return {
-          branch: b.id,
-          ran: false,
-          passed: false,
-          reason,
-          chronicle: b.chronicle,
-          entryCommands: [],
-          endings: b.endings,
-        };
-      });
-      report.recordBranches(selection.tier, driven?.id, outcomes);
-      report.stage({
-        stage: "branch-run",
-        ran: driven !== undefined,
-        passed: driven !== undefined && failure === undefined,
-        findings: [
-          ...(waypointFinding === undefined ? [] : [waypointFinding]),
-          ...(driven === undefined
-            ? [
-                "this build declares narrative branches and none was driven " +
-                  "(DELVEWRIGHT_BRANCH unset) — the run proves the exported path only",
-              ]
-            : []),
-        ],
-        failures: [],
-      });
     }
     report.stage({
       stage: "critical-path",
       ran: true,
-      passed: failure === undefined && musterFailures.length === 0,
+      passed: pathFailure === undefined && musterFailures.length === 0,
       findings: report.musterFindings(),
       failures: [
-        ...(failure === undefined
-          ? []
-          : [failure instanceof Error ? failure.message : String(failure)]),
+        ...(pathFailure === undefined ? [] : [describe(pathFailure)]),
         ...musterFailures,
       ],
     });
@@ -527,41 +501,27 @@ async function main(): Promise<number> {
     const lethalTrials = executor.deathLoopTrials();
     const deathBinding = deathPlan ? deathLoopBinding(deathPlan, lethalTrials) : undefined;
     // The stage runs only AFTER the path is proven, so a run that died on the path
-    // never reached it. Reporting that as a death-loop failure would blame this
-    // stage for a fault upstream of it — the mirror of the "skipped read as
-    // passed" error, and just as misleading to whoever reads the report.
-    const deathLoopRan = deathLoop && failure === undefined;
-    const deathLoopFailures = deathLoopRan
-      ? [
-          ...(deathBinding ? deathLoopBindingFailures(deathBinding) : []),
-          ...lethalTrials.flatMap((t) => lethalTrialFailures(t)),
-        ]
-      : [];
-    if (deathBinding) report.recordDeathLoop(deathBinding, lethalTrials);
-    report.stage({
-      stage: "death-loop",
-      ran: deathLoopRan,
-      passed: deathLoopRan && deathLoopFailures.length === 0,
-      findings: deathLoopRan
-        ? executor.deathLoopSkipReason() === undefined
-          ? []
-          : [`the stage stopped before entering any volume — ${executor.deathLoopSkipReason()}`]
-        : deathLoop
-          ? [
-              "the critical path failed, so the death loop was never reached — nothing " +
-                "about dying is proven or disproven by this run",
-            ]
-          : [
-            deathPlan === undefined
-              ? "no death plan in this build — the campaign declares no lethal volume, no " +
-                "`on_death` and no recovery stake, so there is no death loop to prove"
-              : deathPlan.binding.unbound
-                ? `this build's death plan is UNBOUND (${deathPlan.binding.reason ?? "no reason given"}) ` +
-                  `— nothing about dying is proven at runtime by this run`
-                : "skipped via DELVEWRIGHT_DEATH_LOOP=0",
-          ],
-      failures: deathLoopFailures,
+    // never reached it — and a run whose path was proven and that then ended
+    // mid-stage DID reach it. Each is reported as what it was; see `deathLoopStage`.
+    const deathStage = deathLoopStage({
+      enabled: deathLoop,
+      disabledReason:
+        deathPlan === undefined
+          ? "no death plan in this build — the campaign declares no lethal volume, no " +
+            "`on_death` and no recovery stake, so there is no death loop to prove"
+          : deathPlan.binding.unbound
+            ? `this build's death plan is UNBOUND (${deathPlan.binding.reason ?? "no reason given"}) ` +
+              `— nothing about dying is proven at runtime by this run`
+            : "skipped via DELVEWRIGHT_DEATH_LOOP=0",
+      pathProven,
+      interruption: pathProven && failure !== undefined ? describe(failure) : undefined,
+      skipReason: executor.deathLoopSkipReason(),
+      binding: deathBinding,
+      trials: lethalTrials,
+      trialsFinished: executor.deathLoopTrialsFinished(),
     });
+    if (deathBinding) report.recordDeathLoop(deathBinding, lethalTrials);
+    report.stage(deathStage);
     report.recordDieRetryBinding(retryBinding);
     report.stage({
       stage: "die-retry",
@@ -600,6 +560,62 @@ async function main(): Promise<number> {
       failures: dieRetryFailures,
     });
 
+    // spec-0025 §3: every enumerated branch appears here — the one this session
+    // walked with its result, and each of the others with the reason it did not.
+    // A skipped branch is named, never silent.
+    //
+    // Recorded after every other stage, because a branch's verdict IS the run's:
+    // `branch-runs.sh` files this row as the branch's RAN/passed, and a branch
+    // whose walk completed while a stage beside it redded is a failed branch.
+    if (branchPlan && selection) {
+      const branchGreen = pathFailure === undefined && report.redStages().length === 0;
+      const outcomes: BranchOutcome[] = branchPlan.branches.map((b): BranchOutcome => {
+        if (driven !== undefined && b.id === driven.id) {
+          return {
+            branch: b.id,
+            ran: true,
+            passed: branchGreen,
+            pathFile: b.pathFile,
+            chronicle: b.chronicle,
+            entryCommands,
+            endings: b.endings,
+          };
+        }
+        const skipped = selection.skipped.find((s) => s.branch === b.id);
+        const reason =
+          skipped?.reason ??
+          (driven === undefined
+            ? `selected by this tier, but no branch was driven (DELVEWRIGHT_BRANCH unset): ` +
+              `this session walked the exported critical path`
+            : `selected by this tier; a branch run needs a fresh world, so it runs in its ` +
+              `own session (validation/branch-runs.sh)`);
+        return {
+          branch: b.id,
+          ran: false,
+          passed: false,
+          reason,
+          chronicle: b.chronicle,
+          entryCommands: [],
+          endings: b.endings,
+        };
+      });
+      report.recordBranches(selection.tier, driven?.id, outcomes);
+      report.stage({
+        stage: "branch-run",
+        ran: driven !== undefined,
+        passed: driven !== undefined && branchGreen,
+        findings: [
+          ...(waypointFinding === undefined ? [] : [waypointFinding]),
+          ...(driven === undefined
+            ? [
+                "this build declares narrative branches and none was driven " +
+                  "(DELVEWRIGHT_BRANCH unset) — the run proves the exported path only",
+              ]
+            : []),
+        ],
+        failures: [],
+      });
+    }
     const reportPath = reportPathFromEnv();
     if (reportPath) {
       await writeRunReport(reportPath, report);
@@ -610,23 +626,12 @@ async function main(): Promise<number> {
     }
 
     if (failure !== undefined) throw failure;
-    // A die-retry failure is a red run in its own right: the delve may be
-    // completable and still ship a broken retry loop, which is the one thing a
-    // souls delve cannot do.
-    if (dieRetryFailures.length > 0) {
-      throw new Error(
-        `die-retry stage FAILED (${dieRetryFailures.length} finding(s)):\n` +
-          dieRetryFailures.map((f) => `  ${f}`).join("\n"),
-      );
-    }
-    // A delve can be completable and still ship a broken death loop —
-    // which, for a souls-shaped delve, is the whole game. Red in its own right.
-    if (deathLoopFailures.length > 0) {
-      throw new Error(
-        `death-loop stage FAILED (${deathLoopFailures.length} finding(s)):\n` +
-          deathLoopFailures.map((f) => `  ${f}`).join("\n"),
-      );
-    }
+    // EVERY red stage ends the run red — the critical path's muster, a die-retry
+    // loop, the death loop, a branch — from the one place the rows are judged
+    // (`RunReport.redStages`). A delve can be completable and still ship a wave
+    // that is not what it declares, a broken retry loop or a broken death loop.
+    const red = report.redStages();
+    if (red.length > 0) throw new Error(redRunMessage(red));
     process.stderr.write(
       `${driven === undefined ? "critical path" : `branch ${driven.id}`} ` +
         `'${criticalPath.campaignId}' PASSED (${criticalPath.steps.length} steps` +
