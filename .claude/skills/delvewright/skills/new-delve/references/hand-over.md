@@ -17,6 +17,7 @@ image with `$DELVEWRIGHT_ENGINE/validation/chunky.sh` from
 <dir>` for the whole-map hero shot every release owes (`--bearing` picks the
 corner). Never hand-edit a scene JSON: if the frame you want is not emittable,
 that is a `delvec render` gap to report, not a file to patch.
+The whole-map hero's distance and the sky: `$DELVEWRIGHT_ENGINE/docs/reference/showcase-shots.md` §2a–§2b.
 
 **Every edition opens with the engine-version marker**, on its own line directly
 under the title. This is the one piece of internal machinery a storybook carries
