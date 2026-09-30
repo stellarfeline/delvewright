@@ -2,7 +2,7 @@
 
 # Delvewright
 
-![Delvewright 建成的 Doune 城堡，从东北方越过来路望去](docs/media/doune/01-hero-castle-northeast.jpg)
+![Delvewright 建成的 Vesperhold：从西南高处望去，整座要塞立在峭岩上，堤道一路延伸到路边神龛](docs/media/vesperhold/01-hero-whole-map-southwest.jpg)
 
 **Delvewright 把一个创意提示变成一张供一到四位朋友游玩的、由故事驱动的 Minecraft 冒险地图，并在交付之前由机器证明它能被通关。**
 
@@ -54,11 +54,9 @@ flowchart TD
 
 ## 地图
 
-![从东南上空俯瞰 Doune 城堡：庭院、幕墙与城墙步道](docs/media/doune/02-castle-from-above-southeast.jpg)
-
 地图有两种摆放方式。`areas[]` 从 piece 库中取 prefab，由原版 jigsaw 按编译器控制的种子拼装。site plan 先整体后局部——先是 geometry brief，再是 layout graph，然后是每个部分的包围盒、基准面和接缝——并在任何地点细化之前先作为 blockout 走一遍。库里没有的 piece，由 box-split 语法根据规则程序写出：Doune 就是一个 area 里放着一个这样的 piece，整座城堡，104 × 56 × 120 格。光照在设计房间时就放好，构建会拒绝测得昏暗的可到达地面（`DW0210`）。每个场景都用 Chunky 渲染，并对照它所回应的概念图进行审查。
 
-**[城堡内部](docs/media/doune/README.md)** —— 庭院、各个大厅、厨房、城墙步道。
+**[走进 Vesperhold](docs/media/vesperhold/README.md)** —— 来路、外庭、花园、回廊、礼拜堂、礼拜堂下的水池、钟楼、大厅与王座厅。
 
 延伸阅读：[选择摆放方式](.claude/skills/delvewright/skills/new-delve/references/placement.md) · [地图先规划后建造](docs/adr/0022-the-map-is-planned-before-it-is-built.md) · [语法](docs/reference/grammar.md) · [收录一个 piece](docs/reference/prefab-procedure.md) · [室内照明](docs/reference/interior-lighting.md) · [视觉审查](.claude/skills/delvewright/skills/new-delve/references/visual-review.md)
 

@@ -2,7 +2,7 @@ English · [简体中文](README.zh-CN.md)
 
 # Delvewright
 
-![Doune Castle as Delvewright built it, seen from the north-east across its approach](docs/media/doune/01-hero-castle-northeast.jpg)
+![Vesperhold as Delvewright built it: the whole hold on its crag from high in the south-west, the causeway running down to the wayside shrine](docs/media/vesperhold/01-hero-whole-map-southwest.jpg)
 
 **Delvewright turns a creative prompt into a story-driven Minecraft adventure map for one to four friends, and proves by machine that it can be finished before it is handed over.**
 
@@ -54,11 +54,9 @@ What each rung proves, and what it does not: [what each gate actually proves](do
 
 ## The map
 
-![Doune Castle from above the south-east: the courtyard, the curtain wall and the wall-walk](docs/media/doune/02-castle-from-above-southeast.jpg)
-
 A map is placed one of two ways. `areas[]` seats prefabs from a piece library, assembled by vanilla jigsaw from a compiler-controlled seed. A site plan goes whole-first — a geometry brief, a layout graph, then every part's box, datum and seams — and is walked as a blockout before any place is detailed. A piece the library does not have is written by the box-split grammar from a rule program: Doune is one area holding one such piece, the whole castle, 104 × 56 × 120 blocks. Light is placed while a room is designed, and the build refuses reachable floor that measures dark (`DW0210`). Every scene is rendered with Chunky and reviewed against the concept image it answers.
 
-**[Inside the castle](docs/media/doune/README.md)** — the courtyard, the halls, the kitchen, the wall-walk.
+**[Inside Vesperhold](docs/media/vesperhold/README.md)** — the approach, the ward, the garden, the cloister, the chapel, the pool under it, the bell tower, the great hall and the throne hall.
 
 Read on: [choosing a placement](.claude/skills/delvewright/skills/new-delve/references/placement.md) · [the map is planned before it is built](docs/adr/0022-the-map-is-planned-before-it-is-built.md) · [the grammar](docs/reference/grammar.md) · [admitting a piece](docs/reference/prefab-procedure.md) · [interior lighting](docs/reference/interior-lighting.md) · [visual review](.claude/skills/delvewright/skills/new-delve/references/visual-review.md)
 
