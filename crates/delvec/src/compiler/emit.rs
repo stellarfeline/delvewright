@@ -20256,18 +20256,28 @@ fn emit_economy_packtests(plan: &Plan, out: &mut BuildOutput) {
         // through the REAL right-click handler — the one the one advancement on
         // the one marker tag fires — never through this stake's own half of it,
         // so a collector that stopped offering the place to every stake reds here.
-        t.push(format!(
-            "execute as {me} run function {ns}:{STK_COLLECT_FN}"
-        ));
+        //
+        // The handler collects the box the player CLICKED, read off the box
+        // (`stk_pick`: its last user and when), so the press is a real click
+        // first: the dummy uses the box, which records it, and then the handler
+        // runs as that player — what the advancement's reward does. The dummy's
+        // use does not fire the advancement (vanilla triggers it in the packet
+        // handler, which a dummy's use does not go through), so the handler is
+        // called here as the reward would call it; the click is what it reads.
+        let press = [
+            format!(
+                "execute at {me} run dummy {me} use entity @e[tag={tag},distance=..1,limit=1,sort=nearest]"
+            ),
+            format!("execute as {me} run function {ns}:{STK_COLLECT_FN}"),
+        ];
+        t.extend(press.iter().cloned());
         t.push(format!(
             "execute store result score #stk_back_{safe} dw.sys run scoreboard players get {me} {obj}"
         ));
         t.push(format!("assert score #stk_back_{safe} dw.sys matches 40"));
         // A second press in the same breath is a no-op — the slot went dead as part
         // of being taken, so idempotence is structural rather than timed (AC6).
-        t.push(format!(
-            "execute as {me} run function {ns}:{STK_COLLECT_FN}"
-        ));
+        t.extend(press);
         t.push(format!(
             "execute store result score #stk_twice_{safe} dw.sys run scoreboard players get {me} {obj}"
         ));
@@ -20366,7 +20376,11 @@ fn emit_economy_packtests(plan: &Plan, out: &mut BuildOutput) {
             "execute store result score #stkpair_lost_b dw.sys run scoreboard players get {me} {ob}"
         ));
         t.push("assert score #stkpair_lost_b dw.sys matches ..39".to_string());
-        // One press on the one place gives BOTH datums back.
+        // One press on the one place gives BOTH datums back: a real click on the
+        // box, then the handler as that player, as above.
+        t.push(format!(
+            "execute at {me} run dummy {me} use entity @e[tag={tag},distance=..1,limit=1,sort=nearest]"
+        ));
         t.push(format!(
             "execute as {me} run function {ns}:{STK_COLLECT_FN}"
         ));
