@@ -1706,6 +1706,8 @@ export class MineflayerExecutor implements StepExecutor {
    * the last stage ended was a reading the run took and then never recorded.
    */
   private readonly stagingTasks = new Set<Promise<void>>();
+  /** Set by {@link settleStaging}: the stages are over, and no new staging starts. */
+  private stagingClosed = false;
   /** Gates the walk into a lethal volume opened, with the state each stood in. */
   private readonly gatesOpenedByTrial: { pos: Vec3Tuple; state: string }[] = [];
   /** When the latest respawn landed: wall clock, and the server's world age as the
@@ -2059,6 +2061,9 @@ export class MineflayerExecutor implements StepExecutor {
       );
       return;
     }
+    // The stages are over: a body that hits the bot now is outside every stage,
+    // and a reading started now would be of a world no stage observed.
+    if (this.stagingClosed) return;
     const task: Promise<void> = this.stageAway(
       attacker,
       "it hit the bot (the server named it)",
@@ -5409,11 +5414,18 @@ export class MineflayerExecutor implements StepExecutor {
    * drowned choir's muster; the stage then ended, the report was written, and
    * the reading — 3 of 4, one chorister had drowned — was never recorded.
    */
-  async settleStaging(timeoutMs: number): Promise<number> {
-    if (this.stagingTasks.size === 0) return 0;
-    const all = Promise.allSettled([...this.stagingTasks]);
-    await Promise.race([all, delay(timeoutMs)]);
-    return this.stagingTasks.size;
+  async settleStaging(timeoutMs: number): Promise<{ unfinished: number; waitedMs: number }> {
+    // Closed FIRST, so the set can only shrink: before this, a body that hit the
+    // bot while the wait was running started a task the wait had not
+    // snapshotted — the wait returned when the snapshot settled (about a second,
+    // on vesperhold) and reported the late task as "still unfinished 20000ms
+    // after the last stage", which it was not.
+    this.stagingClosed = true;
+    const start = Date.now();
+    while (this.stagingTasks.size > 0 && Date.now() - start < timeoutMs) {
+      await Promise.race([Promise.allSettled([...this.stagingTasks]), delay(timeoutMs - (Date.now() - start))]);
+    }
+    return { unfinished: this.stagingTasks.size, waitedMs: Date.now() - start };
   }
 
   /** Every failure any muster reading of this run produced, never only the latest's. */

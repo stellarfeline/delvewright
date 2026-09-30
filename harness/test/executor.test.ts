@@ -2831,9 +2831,28 @@ test("staging in flight when the stages end is finished before the report", asyn
   const [attacker] = bot.waveIds();
   bot.emit("entityHurt", bot.entity, bot.entities[attacker!]);
   assert.equal(executor.waveMusters().size, 0, "nothing is read yet when the stage ends");
-  assert.equal(await executor.settleStaging(10_000), 0, "nothing is left unfinished");
+  assert.equal((await executor.settleStaging(10_000)).unfinished, 0, "nothing is left unfinished");
   assert.equal(executor.waveMusters().get("wave/gate-assault")?.read, 2, "the reading is recorded");
   assert.deepEqual(bot.stagedBlows, [attacker], "and the removal was made");
+});
+
+test("a body that hits the bot once the stages are over starts no staging", async () => {
+  // vesperhold, kept-oath+silence: a hit landed while the report was being
+  // prepared, started a task the settle had not snapshotted, and the run then
+  // reported it as "still unfinished 20000ms after the last stage" about one
+  // second after the stage ended.
+  const bot = new CombatFakeBot();
+  bot.seat(2);
+  const executor = attach(bot);
+  executor.useCampaign("the-drowned-bell");
+  executor.useCombatPlan(combatPlan(2, true), false);
+  const [first, second] = bot.waveIds();
+  bot.emit("entityHurt", bot.entity, bot.entities[first!]);
+  const settling = executor.settleStaging(10_000);
+  bot.emit("entityHurt", bot.entity, bot.entities[second!]); // lands during the wait
+  const settled = await settling;
+  assert.equal(settled.unfinished, 0);
+  assert.deepEqual(bot.stagedBlows, [first], "only the body that hit during the stages was staged");
 });
 
 test("a muster reading that failed stays failed when a later reading finds the wave whole", async () => {

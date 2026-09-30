@@ -388,15 +388,16 @@ async function main(): Promise<number> {
     // Staging still in flight when the stages ended — a wave being read where its
     // body stood — is finished before anything is judged, so a reading the run
     // took is a reading the report carries.
-    const unsettled = await executor.settleStaging(STAGING_SETTLE_MS);
-    if (unsettled > 0) {
-      const lost =
-        `${unsettled} staging act(s) — a wave read where its body stood, then removed — were ` +
-        `still unfinished ${STAGING_SETTLE_MS}ms after the last stage, so whatever they read is ` +
-        `not in this report`;
-      process.stderr.write(`[staged] ${lost}\n`);
-      report.recordMusterFinding(lost);
-    }
+    // A reading still unfinished is a verdict the run cannot state, so it is a
+    // failure of the critical path, not an advisory.
+    const settled = await executor.settleStaging(STAGING_SETTLE_MS);
+    const stagingLost =
+      settled.unfinished > 0
+        ? `${settled.unfinished} staging act(s) — a wave read where its body stood, then ` +
+          `removed — were still unfinished ${settled.waitedMs}ms after the last stage ended, so ` +
+          `whatever they would have read is not in this report`
+        : undefined;
+    if (stagingLost !== undefined) process.stderr.write(`[staged] ${stagingLost}\n`);
     const pathFailure = pathProven ? undefined : failure;
     const describe = (err: unknown): string => (err instanceof Error ? err.message : String(err));
 
@@ -476,7 +477,10 @@ async function main(): Promise<number> {
     // a statement about the shipped delve being wrong. The failures are EVERY
     // reading's, not each wave's latest: a later reading that found a seating
     // whole does not un-fail an earlier one that did not.
-    const musterFailures = [...executor.musterFailures()];
+    const musterFailures = [
+      ...executor.musterFailures(),
+      ...(stagingLost === undefined ? [] : [stagingLost]),
+    ];
     for (const verdict of musters.values()) {
       for (const f of verdict.findings) report.recordMusterFinding(`${verdict.wave}: ${f}`);
     }
