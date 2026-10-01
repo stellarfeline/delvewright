@@ -97,7 +97,8 @@
   0 = level I. Anything vanilla cannot pour is `DW0486`. The bonfire's three
   dialog strings default to canonical English; author `prompt`/`rest_label`/
   `save_label` only when the fiction wants its own words, and keep the two labels
-  button captions (`DW0331`).
+  button captions (`DW0331`); what a button does in a sentence goes in its
+  optional `rest_tooltip` / `save_tooltip`.
 ## Where a bonfire may stand
 
 - **Place a bonfire OUT of every hostile's reach.** A rest point is where the
