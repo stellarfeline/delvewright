@@ -73,6 +73,7 @@
 //! - [`stairs`]: the stair-orientation proof over the assembled world (`DW0430`).
 //! - [`stake`]: the recovery stake's compile-time placement table and the proofs it owes.
 //! - [`statepath`]: a numeric gate judged against the writes the path performs before it (`DW0879`).
+//! - [`strand`]: a fight the party must win stays where the party can strike it (`DW0924`).
 //! - [`surround`]: horizon surround generation — the tiles that dress the world outside the placed pieces.
 //! - [`teleport`]: the `teleport` verb's one compile-time obligation, and the ledger saying what it looked at.
 //! - [`textfit`]: on-screen text that does not fit what draws it (`DW0330`/`DW0331`).
