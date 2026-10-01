@@ -70,7 +70,19 @@ impl Structure {
         flate2::read::GzDecoder::new(bytes)
             .read_to_end(&mut raw)
             .map_err(|e| format!("gzip decode: {e}"))?;
-        let value: fastnbt::Value = fastnbt::from_bytes(&raw).map_err(|e| format!("nbt: {e}"))?;
+        // The typed decoding first; it accepts only a file the walk below reads
+        // without error, and gives the same `Structure` for it. Anything else —
+        // every refusal included — is walked, so the walk's message is the one
+        // returned.
+        match Self::read_typed(&raw) {
+            Some(s) => Ok(s),
+            None => Self::read_walk(&raw),
+        }
+    }
+
+    /// [`Structure::read`] over the dynamic [`fastnbt::Value`] tree.
+    fn read_walk(raw: &[u8]) -> Result<Structure, String> {
+        let value: fastnbt::Value = fastnbt::from_bytes(raw).map_err(|e| format!("nbt: {e}"))?;
         let root = Nbt::from(value);
         let root = root.as_compound().ok_or("root not compound")?;
 
@@ -109,6 +121,52 @@ impl Structure {
         }
 
         Ok(Structure {
+            data_version,
+            size,
+            palette,
+            blocks,
+            index,
+        })
+    }
+
+    /// [`Structure::read`] over [`crate::compiler::nbtread`]'s strict typed
+    /// decoding, or `None` when the file is not exactly the shape that
+    /// decoding and this reader's checks accept.
+    fn read_typed(raw: &[u8]) -> Option<Structure> {
+        let root = crate::compiler::nbtread::root(raw)?;
+        let fastnbt::Value::Int(data_version) = root.data_version? else {
+            return None;
+        };
+        let size = crate::compiler::nbtread::size_of(root.size.as_ref())?;
+        let palette = root
+            .palette?
+            .into_iter()
+            .map(|e| {
+                let name = e.name?;
+                let mut properties = BTreeMap::new();
+                if let Some(p) = e.properties.map(Nbt::from)
+                    && let Some(p) = p.as_compound()
+                {
+                    for (k, val) in p {
+                        properties.insert(k.clone(), val.as_str().unwrap_or("").to_string());
+                    }
+                }
+                Some(PaletteEntry { name, properties })
+            })
+            .collect::<Option<Vec<_>>>()?;
+        let mut blocks = Vec::new();
+        let mut index = BTreeMap::new();
+        for (i, b) in root.blocks?.into_iter().enumerate() {
+            let pos = b.pos3()?;
+            let state = b.state.as_ref()?.0;
+            if state < 0 || state as usize >= palette.len() {
+                return None;
+            }
+            let nbt = b.nbt().cloned().map(Nbt::from);
+            index.insert(pos, i);
+            blocks.push(Block { pos, state, nbt });
+        }
+        Some(Structure {
             data_version,
             size,
             palette,
@@ -315,3 +373,148 @@ pub fn roundtrip(s: &Structure) -> Result<Structure, String> {
 // Re-export the convert-side readback so callers verifying against the schem
 // reader can, without a second dependency edge.
 pub use convert::read_structure as read_structure_view;
+
+#[cfg(test)]
+mod typed_read_tests {
+    use super::Structure;
+    use fastnbt::Value;
+    use std::collections::HashMap;
+
+    fn compound(entries: Vec<(&str, Value)>) -> Value {
+        Value::Compound(
+            entries
+                .into_iter()
+                .map(|(k, v)| (k.to_string(), v))
+                .collect::<HashMap<_, _>>(),
+        )
+    }
+
+    fn ints(v: &[i32]) -> Value {
+        Value::List(v.iter().map(|&n| Value::Int(n)).collect())
+    }
+
+    fn root(data_version: Value, blocks: Vec<Value>, extra: Vec<(&str, Value)>) -> Value {
+        let palette = Value::List(vec![
+            compound(vec![("Name", Value::String("minecraft:air".into()))]),
+            compound(vec![
+                ("Name", Value::String("minecraft:oak_stairs".into())),
+                (
+                    "Properties",
+                    compound(vec![
+                        ("facing", Value::String("east".into())),
+                        ("half", Value::String("top".into())),
+                        ("odd", Value::Int(1)),
+                    ]),
+                ),
+            ]),
+            compound(vec![
+                ("Name", Value::String("minecraft:chest".into())),
+                ("Properties", Value::Int(3)),
+            ]),
+        ]);
+        let mut r = vec![
+            ("DataVersion", data_version),
+            ("size", ints(&[2, 2, 2])),
+            ("palette", palette),
+            ("blocks", Value::List(blocks)),
+            ("entities", Value::List(vec![])),
+        ];
+        r.extend(extra);
+        compound(r)
+    }
+
+    fn block(pos: Value, state: Value) -> Value {
+        compound(vec![("pos", pos), ("state", state)])
+    }
+
+    fn ordinary() -> Vec<Value> {
+        vec![
+            block(ints(&[0, 0, 0]), Value::Int(0)),
+            block(ints(&[1, 0, 0]), Value::Int(1)),
+            compound(vec![
+                ("pos", ints(&[1, 1, 1])),
+                ("state", Value::Int(2)),
+                (
+                    "nbt",
+                    compound(vec![
+                        ("id", Value::String("minecraft:chest".into())),
+                        ("Items", Value::List(vec![])),
+                    ]),
+                ),
+            ]),
+        ]
+    }
+
+    /// Whatever the typed decoding accepts, it reads exactly as the walk does;
+    /// everything else, every refusal included, is the walk's answer. The
+    /// ordinary file must take the typed path, or the comparison binds to
+    /// nothing.
+    #[test]
+    fn the_typed_read_agrees_with_the_walk_or_refuses() {
+        let cases: Vec<(&str, Value, bool)> = vec![
+            ("ordinary", root(Value::Int(4671), ordinary(), vec![]), true),
+            (
+                "short data version",
+                root(Value::Short(7), ordinary(), vec![]),
+                false,
+            ),
+            (
+                "byte state",
+                root(
+                    Value::Int(1),
+                    vec![block(ints(&[0, 0, 0]), Value::Byte(1))],
+                    vec![],
+                ),
+                false,
+            ),
+            (
+                "state out of range",
+                root(
+                    Value::Int(1),
+                    vec![block(ints(&[0, 0, 0]), Value::Int(9))],
+                    vec![],
+                ),
+                false,
+            ),
+            (
+                "two-element position",
+                root(
+                    Value::Int(1),
+                    vec![block(ints(&[0, 0]), Value::Int(1))],
+                    vec![],
+                ),
+                false,
+            ),
+            (
+                "unknown root key",
+                root(
+                    Value::Int(1),
+                    ordinary(),
+                    vec![("author", Value::String("a".into()))],
+                ),
+                false,
+            ),
+            (
+                "no blocks",
+                compound(vec![("DataVersion", Value::Int(1))]),
+                false,
+            ),
+        ];
+        for (what, value, typed) in cases {
+            let raw = fastnbt::to_bytes(&value).expect("serialize NBT");
+            let fast = Structure::read_typed(&raw);
+            assert_eq!(fast.is_some(), typed, "{what}: typed path taken");
+            let walked = Structure::read_walk(&raw);
+            if let Some(fast) = fast {
+                assert_eq!(
+                    format!("{fast:?}"),
+                    format!(
+                        "{:?}",
+                        walked.expect("the walk reads what the typed path reads")
+                    ),
+                    "{what}"
+                );
+            }
+        }
+    }
+}

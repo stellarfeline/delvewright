@@ -69,7 +69,6 @@ pub(crate) struct PaletteEntry {
 pub(crate) struct Block {
     pos: Option<Pos>,
     pub state: Option<StrictInt>,
-    #[allow(dead_code)]
     nbt: Option<Box<fastnbt::Value>>,
 }
 
@@ -78,6 +77,11 @@ impl Block {
     /// only shape the dynamic walk accepts.
     pub fn pos3(&self) -> Option<[i32; 3]> {
         self.pos.as_ref().and_then(|p| p.0)
+    }
+
+    /// The block's `nbt` compound, when it carries one.
+    pub fn nbt(&self) -> Option<&fastnbt::Value> {
+        self.nbt.as_deref()
     }
 }
 
