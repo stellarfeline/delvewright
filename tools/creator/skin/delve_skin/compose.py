@@ -13,7 +13,7 @@ What a character *wears* is declared, not hardcoded: a cast entry carries a
 ``wardrobe`` block (see :mod:`delve_skin.wardrobe`) and every garment here paints
 a span read off one of its axes. The defaults are the one costume this composer
 used to be able to make, so a sheet that declares no wardrobe composes the same
-bytes it always did.
+pixels it always did.
 
 Composition targets the classic **wide** player model. ``slim`` is recorded and
 emitted (it is mandatory metadata -- an omitted model renders slim and distorts a
