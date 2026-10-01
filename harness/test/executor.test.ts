@@ -4117,7 +4117,7 @@ test("a leg matched from far away is consumed but is not that walk's proof", () 
   assert.equal(far.cursor, 1);
   assert.equal(far.startsOnLeg, false);
   assert.deepEqual(
-    gatesBindingWalk(far.matched && far.startsOnLeg, far.timedGates, wp.timedGates).gates.map(
+    gatesBindingWalk(far.matched, far.timedGates, wp.timedGates, far.startsOnLeg).gates.map(
       (g) => g.id,
     ),
     ["timed-gate/side-door", "timed-gate/mid-door"],

@@ -3894,9 +3894,10 @@ export class MineflayerExecutor implements StepExecutor {
         // a walk that starts elsewhere (a die-retry return from the respawn seat) is
         // not that route, and takes the declared table.
         const binding = gatesBindingWalk(
-          match.matched && match.startsOnLeg,
+          match.matched,
           match.timedGates,
           declaredGates,
+          match.startsOnLeg,
         );
         if (match.matched && match.startOffset !== undefined) {
           process.stderr.write(
