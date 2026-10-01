@@ -197,6 +197,7 @@ from __future__ import annotations
 
 import argparse
 import ast
+import functools
 import importlib.util
 import json
 import os
@@ -1355,9 +1356,13 @@ def refimg_probe(
     return run
 
 
-def refimg_rule(rep: Report, engine: pathlib.Path) -> None:
-    """Rule 15: a flag some provider refuses is named beside that provider."""
-    refimg = engine / "tools" / REFIMG
+@functools.cache
+def refimg_providers(refimg: pathlib.Path) -> dict[str, dict]:
+    """`PROVIDERS`, read out of the engine's `refimg.py` — once per materialised engine.
+
+    The engine is the instrument: it is materialised once at the pin and nothing
+    writes to its sources, so the table it carries is a function of its path.
+    """
     if not refimg.is_file():
         raise Unusable(
             f"the engine at the pin carries no tools/{REFIMG}. It is the page's "
@@ -1377,6 +1382,45 @@ def refimg_rule(rep: Report, engine: pathlib.Path) -> None:
             f"could not read `PROVIDERS` out of tools/{REFIMG} at the pin — the "
             f"table rule 15 enumerates has moved or changed shape."
         )
+    return providers
+
+
+@functools.cache
+def refimg_refusing(refimg: pathlib.Path, flag: str) -> frozenset[str]:
+    """The providers the engine's `refimg.py` refuses `flag` for, asked of the tool.
+
+    One `--dry-run` per provider, which calls nothing. Memoised per (engine, flag):
+    the answer is the tool's, the tool is the materialised engine's, and the
+    engine is never written but for the provider config this function selects
+    with — so a second ask of the same engine is the same question.
+    """
+    providers = refimg_providers(refimg)
+    refusing: set[str] = set()
+    with tempfile.TemporaryDirectory() as tmp:
+        work = pathlib.Path(tmp)
+        (work / "tools").mkdir()
+        probe_image = work / "tools" / "style-ref.png"
+        probe_image.write_bytes(b"\x89PNG\r\n\x1a\n")
+        values = dict(REFIMG_PROBE_VALUES, **{"--style-ref": str(probe_image)})
+        for provider, spec in sorted(providers.items()):
+            frame = "\n".join(
+                f'{k} = "{values["--" + kebab(k)]}"'
+                for k in spec.get("frame", ())
+                if "--" + kebab(k) in values
+            )
+            run = refimg_probe(
+                refimg, work, provider, str(spec.get("model") or provider), frame
+            )
+            _code, output = run(flag, values[flag])
+            if CAPABILITY_REFUSAL.format(provider=provider) in output and flag in output:
+                refusing.add(provider)
+    return frozenset(refusing)
+
+
+def refimg_rule(rep: Report, engine: pathlib.Path) -> None:
+    """Rule 15: a flag some provider refuses is named beside that provider."""
+    refimg = engine / "tools" / REFIMG
+    refimg_providers(refimg)
 
     # Every refimg flag the page NAMES, in a command or in a sentence about one.
     # The defect lived in prose — two pages teaching a method, not running it — so
@@ -1393,27 +1437,7 @@ def refimg_rule(rep: Report, engine: pathlib.Path) -> None:
     mentioned = {f for flags in named.values() for f in flags}
 
     # Ask the tool, once per (provider, flag). Free: `--dry-run` calls nothing.
-    with tempfile.TemporaryDirectory() as tmp:
-        work = pathlib.Path(tmp)
-        (work / "tools").mkdir()
-        probe_image = work / "tools" / "style-ref.png"
-        probe_image.write_bytes(b"\x89PNG\r\n\x1a\n")
-        values = dict(REFIMG_PROBE_VALUES, **{"--style-ref": str(probe_image)})
-        refuses: dict[str, set[str]] = {f: set() for f in sorted(mentioned)}
-        for provider, spec in sorted(providers.items()):
-            frame = "\n".join(
-                f'{k} = "{values["--" + kebab(k)]}"'
-                for k in spec.get("frame", ())
-                if "--" + kebab(k) in values
-            )
-            run = refimg_probe(
-                refimg, work, provider, str(spec.get("model") or provider), frame
-            )
-            sentence = CAPABILITY_REFUSAL.format(provider=provider)
-            for flag in sorted(mentioned):
-                _code, output = run(flag, values[flag])
-                if sentence in output and flag in output:
-                    refuses[flag].add(provider)
+    refuses = {flag: refimg_refusing(refimg, flag) for flag in sorted(mentioned)}
 
     checked = covered = 0
     for where, flags in sorted(named.items()):
@@ -1616,6 +1640,21 @@ def page_dw_codes() -> dict[str, list[str]]:
     return named
 
 
+@functools.cache
+def engine_dw_declarations(engine: pathlib.Path) -> frozenset[str]:
+    """Every DW code declared under the materialised engine's `crates/`.
+
+    Memoised per engine path: the engine is the instrument, materialised once at
+    the pin and never written, so its declarations are a function of its path.
+    """
+    dw = dw_codes_module()
+    declared: set[str] = set()
+    for rs in sorted((engine / "crates").rglob("*.rs")):
+        text = dw.strip_comments(rs.read_text(encoding="utf-8"))
+        declared |= {code for _name, code in dw.CONST_RE.findall(text)}
+    return frozenset(declared)
+
+
 def dw_code_rule(rep: Report, engine: pathlib.Path, ref: str) -> None:
     """Rule 17: every DW code the plugin names is declared by the engine at `ref`.
 
@@ -1623,11 +1662,7 @@ def dw_code_rule(rep: Report, engine: pathlib.Path, ref: str) -> None:
     the engine carries. The declaration shape is `check-dw-codes.py`'s own
     `CONST_RE`, run over comment-stripped source by its own `strip_comments`.
     """
-    dw = dw_codes_module()
-    declared: set[str] = set()
-    for rs in sorted((engine / "crates").rglob("*.rs")):
-        text = dw.strip_comments(rs.read_text(encoding="utf-8"))
-        declared |= {code for _name, code in dw.CONST_RE.findall(text)}
+    declared = engine_dw_declarations(engine)
     if not declared:
         raise Unusable(
             f"read 0 DW declarations from crates/ at {ref}; the diagnostic "
