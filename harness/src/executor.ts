@@ -66,6 +66,7 @@ import {
   type FightAttribution,
   type PerformedRest,
   type ReengageObservation,
+  type RespawnReading,
   type RunBack,
   type WaveCensus,
 } from "./combat.ts";
@@ -1505,6 +1506,9 @@ export class MineflayerExecutor implements StepExecutor {
   /** {@link spawnSeq} at the moment of the last death — the respawn wait watches
    * for a spawn NEWER than this, so a respawn that beats the wait is never lost. */
   private spawnSeqAtDeath = 0;
+  /** `respawn` packets this run has received, and the count at the last death. */
+  private respawnPackets = 0;
+  private respawnPacketsAtDeath = 0;
   /** One-shot callbacks armed by {@link raceDeath}, fired on death. */
   private readonly deathWaiters = new Set<(err: BotDeathError) => void>();
   /** Ring buffer of recent chat lines, mined for the death-cause message. */
@@ -1957,6 +1961,9 @@ export class MineflayerExecutor implements StepExecutor {
     bot.on("entityDead", (entity: Entity) => this.onNamedEntityDeath(entity));
     // Counted from connect, so a respawn is never missed by a listener armed too
     // late (see recoverFromDeath).
+    bot.on("respawn", () => {
+      this.respawnPackets += 1;
+    });
     bot.on("spawn", () => {
       this.spawnSeq += 1;
       // A respawn after the first join is a death-respawn at the last-rested
@@ -2422,6 +2429,7 @@ export class MineflayerExecutor implements StepExecutor {
     this.death = err;
     this.deathSeq += 1;
     this.spawnSeqAtDeath = this.spawnSeq;
+    this.respawnPacketsAtDeath = this.respawnPackets;
     this.stopPathfinding();
     for (const waiter of this.deathWaiters) {
       waiter(err);
@@ -4934,6 +4942,19 @@ export class MineflayerExecutor implements StepExecutor {
           `[die-retry] ${step.wave} death ${attempt}: ${trial.outcome}` +
             `${trial.outcome === "cleared-before-retry" ? ` (\`${enc.objective}\` was already complete — the death cost no progress)` : ""}\n`,
         );
+        const reading = await respawn.reading;
+        trial.respawnReading = reading;
+        process.stderr.write(
+          `[die-retry] ${step.wave} death ${attempt}: respawn readings — client ` +
+            `${JSON.stringify(reading.client.pos)} at world age ` +
+            `${reading.client.age ?? "unknown"} after ` +
+            `${reading.client.respawnPackets} respawn packet(s); server ` +
+            ("pos" in reading.server
+              ? `${JSON.stringify(reading.server.pos)} between ticks ` +
+                `${reading.server.tickFrom} and ${reading.server.tickTo}`
+              : `unread (${reading.server.unread})`) +
+            `\n`,
+        );
         trial.completed = true;
       } catch (err) {
         trial.abortedWith ??= err instanceof Error ? err.message : String(err);
@@ -5940,14 +5961,71 @@ export class MineflayerExecutor implements StepExecutor {
    * So: measure the position, then re-equip what the player kept. Nothing here may
    * move the bot — the respawn point IS the thing under test.
    */
-  private async respawnAndRearm(): Promise<{ pos: Vec3Tuple | undefined; kitKept: boolean }> {
+  private async respawnAndRearm(): Promise<{
+    pos: Vec3Tuple | undefined;
+    kitKept: boolean;
+    /** Settles once the server has answered; sent at the client reading, awaited
+     * by whoever records it, so asking never delays the bot. */
+    reading: Promise<RespawnReading>;
+  }> {
     const bot = this.requireBot();
     await this.recoverFromDeath();
     const p = bot.entity?.position;
     const pos: Vec3Tuple | undefined =
       p === undefined ? undefined : [Math.floor(p.x), Math.floor(p.y), Math.floor(p.z)];
+    const client = {
+      pos,
+      age: serverAge(bot),
+      respawnPackets: this.respawnPackets - this.respawnPacketsAtDeath,
+    };
+    const reading = this.readServerPos().then((server) => ({ client, server }));
     const kitKept = await this.rearmAfterRespawn();
-    return { pos, kitKept };
+    return { pos, kitKept, reading };
+  }
+
+  /**
+   * The server's own `Pos` for the bot, bracketed by two `time query gametime`
+   * replies so the reading carries the ticks it was taken between. Every reply is
+   * judged by the shared rejection rule; a refused or missing answer is recorded
+   * as unread, never guessed.
+   */
+  private async readServerPos(): Promise<RespawnReading["server"]> {
+    const bot = this.requireBot();
+    const from = this.chatMark();
+    bot.chat("/time query gametime");
+    bot.chat(`/data get entity ${bot.username} Pos`);
+    bot.chat("/time query gametime");
+    let ticks: number[] = [];
+    let pos: Vec3Tuple | undefined;
+    let refused: string | undefined;
+    // Not `waitFor`: a death after the commands were sent is not this reading's
+    // business, and the answer about the respawn it was sent for still arrives.
+    const answered = (): boolean => {
+      const lines = this.chatSince(from).lines;
+      refused = lines.find((l) => isRejection(l));
+      ticks = lines
+        .map((l) => /^The time is (\d+)$/.exec(l.trim()))
+        .filter((m): m is RegExpExecArray => m !== null)
+        .map((m) => Number(m[1]));
+      const at = lines
+        .map((l) =>
+          /has the following entity data: \[(-?[\d.]+)d, (-?[\d.]+)d, (-?[\d.]+)d\]/.exec(l),
+        )
+        .find((m) => m !== null);
+      if (at) pos = [Number(at[1]), Number(at[2]), Number(at[3])];
+      return refused !== undefined || (ticks.length >= 2 && pos !== undefined);
+    };
+    const deadline = Date.now() + SCORE_TRACK_TIMEOUT_MS;
+    while (!answered() && Date.now() < deadline) await delay(LEDGER_POLL_MS);
+    if (refused !== undefined) return { unread: `refused: ${refused}` };
+    if (pos === undefined || ticks.length < 2) {
+      return {
+        unread:
+          `no complete answer in ${SCORE_TRACK_TIMEOUT_MS}ms: ` +
+          JSON.stringify(this.chatSince(from).lines),
+      };
+    }
+    return { pos, tickFrom: ticks[0]!, tickTo: ticks[ticks.length - 1]! };
   }
 
   /**
