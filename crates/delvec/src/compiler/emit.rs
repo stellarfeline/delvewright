@@ -1165,17 +1165,34 @@ pub fn build_with_warnings(
                         Some(er) => er.assembled.blocks.clone(),
                         None => crate::compiler::assembled::assembled_blocks(plan, structures),
                     };
-                    let (binding, verdict) = crate::compiler::lethal::check_danger_is_visible(
+                    // `DW0922` / `DW0923`: where each seated wave's members can
+                    // get to by the movement a mob has. Measured before `DW0891`,
+                    // because a volume only a mob can enter is a volume a
+                    // modelled body reaches and `DW0891`'s zero-binding finding
+                    // has to know it; judged after `DW0891`, so a volume the
+                    // player cannot see is named for that first.
+                    let wave_lethal =
+                        crate::compiler::lethal::wave_reach(plan, &world, &blocks, &waves);
+                    let (mut binding, verdict) = crate::compiler::lethal::check_danger_is_visible(
                         plan,
                         &world,
                         &blocks,
                         campaign_spawn(plan),
                     );
+                    binding.credit_waves(&wave_lethal);
                     // Stated whether it found anything or not, and before the
                     // verdict is taken: a refusal owes its reader the population
                     // it was measured against as much as a pass does.
                     eprintln!("{}", binding.line());
+                    eprintln!("{}", wave_lethal.line());
                     verdict?;
+                    warnings.extend(binding.findings());
+                    wave_lethal.verdict()?;
+                    put_json(
+                        &mut out,
+                        "validation/wave-lethal.json",
+                        &wave_lethal.to_json(),
+                    );
                     binding
                 };
                 crate::compiler::nav::check_critical_path(plan, &world)?;

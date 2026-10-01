@@ -3069,6 +3069,9 @@
             "name": "Muster Hand"
           },
           {
+            "attributes": {
+              "follow_range": 10.0
+            },
             "count": 1,
             "entity": "minecraft:spider",
             "name": "Muster Stray"
@@ -3135,7 +3138,7 @@
         "mobs": [
           {
             "attributes": {
-              "follow_range": 12.0
+              "follow_range": 6.0
             },
             "count": 1,
             "entity": "minecraft:skeleton"

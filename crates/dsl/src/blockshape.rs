@@ -237,6 +237,18 @@ pub fn is_fence_gate(name: &str) -> bool {
     bare_id(name).ends_with("_fence_gate")
 }
 
+/// Whether a player can open this block by hand, in adventure mode — every
+/// fence gate, door and trapdoor except the two iron ones, which open only to
+/// redstone. A player who opens one can leave it open, so a proof about where a
+/// mob can walk once the party has been through asks this (`DW0923`).
+pub fn is_player_openable(name: &str) -> bool {
+    let id = bare_id(name);
+    if id == "iron_door" || id == "iron_trapdoor" {
+        return false;
+    }
+    is_fence_gate(name) || id.ends_with("_door") || id.ends_with("_trapdoor")
+}
+
 /// Thin, walkable trap-trigger blocks (spec-0011) a player steps *onto* rather
 /// than being blocked by: pressure plates and tripwire.
 ///

@@ -159,6 +159,12 @@ pub struct VolumeVisibility {
     pub shown: Vec<[i32; 3]>,
     /// The blocks the volume declares as showing it, as declared.
     pub shown_by: Vec<String>,
+    /// The first body the engine models that can get its hitbox into the
+    /// volume, in words — a player moving from where the campaign puts the
+    /// party, else a wave member ([`DangerVisibility::credit_waves`]). `None`
+    /// is a zero binding: no modelled body can be caught here, so an empty
+    /// [`Self::caught`] says nothing about the floor.
+    pub reached_by: Option<String>,
 }
 
 impl VolumeVisibility {
@@ -171,6 +177,7 @@ impl VolumeVisibility {
             "caught_cells": self.caught,
             "shown": self.shown.len(),
             "shown_by": self.shown_by,
+            "reached_by": self.reached_by,
         })
     }
 }
@@ -204,12 +211,20 @@ impl DangerVisibility {
         self.volumes.iter().map(|v| v.shown.len()).sum()
     }
 
+    /// Volumes no body the engine models can get into.
+    pub fn unreached(&self) -> usize {
+        self.volumes
+            .iter()
+            .filter(|v| v.reached_by.is_none())
+            .count()
+    }
+
     /// The one line this proof owes its reader.
     pub fn line(&self) -> String {
         format!(
             "danger-visibility binding: {} volume(s) examined against a walked population of {} \
              cell(s); {} cell(s) caught, {} shown, {} read as safe floor; {} declaration(s) of {} \
-             borne out by the bytes.",
+             borne out by the bytes; {} of {} volume(s) reached by a body the engine models.",
             self.volumes.len(),
             self.population,
             self.caught(),
@@ -217,7 +232,61 @@ impl DangerVisibility {
             self.caught() - self.shown(),
             self.borne_out,
             self.declarations,
+            self.volumes.len() - self.unreached(),
+            self.volumes.len(),
         )
+    }
+
+    /// Credit every volume no player reaches with the first wave member that
+    /// does (`DW0922` / `DW0923`'s findings). A body is a body: a volume only a
+    /// mob can enter is bound.
+    pub fn credit_waves(&mut self, waves: &WaveLethalBinding) {
+        for v in &mut self.volumes {
+            if v.reached_by.is_some() {
+                continue;
+            }
+            v.reached_by = waves
+                .as_built
+                .iter()
+                .chain(&waves.opened)
+                .find(|f| f.volume == v.id)
+                .map(|f| format!("wave `{}`'s `{}`", f.wave, f.entity));
+        }
+    }
+
+    /// The finding a zero binding owes its reader: one warning per volume no
+    /// modelled body can get into (`DW0891`'s vacuity half).
+    ///
+    /// Not a refusal. The usual cause is a movement the engine does not model —
+    /// a player diving to the bottom of a flooded shaft — and refusing would
+    /// reject a legitimate design for an engine limitation. What it may not be is
+    /// silent: an empty catch over a volume nothing can enter looks exactly like
+    /// an empty catch over a volume that is clear of the floor.
+    pub fn findings(&self) -> Vec<delvewright_dsl::Diagnostic> {
+        self.volumes
+            .iter()
+            .filter(|v| v.reached_by.is_none())
+            .map(|v| {
+                delvewright_dsl::Diagnostic::warning(
+                    DW_LETHAL_INVISIBLE,
+                    "build",
+                    "danger-visibility binding",
+                    format!(
+                        "lethal volume `{}` is reached by no body the engine models: no cell a \
+                         player can walk, fall, jump or swim to from where the campaign puts the \
+                         party, and no cell a wave member can walk, fall or sink to within its \
+                         follow range, holds a body the volume catches. So the visibility proof \
+                         caught nothing here because nothing can be caught, not because the \
+                         volume is clear of the floor — this is a zero binding. A body may still \
+                         get in by a movement the model does not make (diving, a diagonal jump, \
+                         climbing), or nothing ever will. If a player is meant to be able to die \
+                         here, the engine has not proven they can get in, and the bot cannot be \
+                         sent there; if nothing is, delete the volume.",
+                        v.id
+                    ),
+                )
+            })
+            .collect()
     }
 
     /// The ledger's `danger_visibility` object.
@@ -228,6 +297,7 @@ impl DangerVisibility {
             "shown": self.shown(),
             "reads_as_safe_floor": self.caught() - self.shown(),
             "declarations": { "examined": self.declarations, "borne_out": self.borne_out },
+            "unreached": self.unreached(),
             "volumes": self.volumes.iter().map(VolumeVisibility::to_json).collect::<Vec<_>>(),
         })
     }
@@ -334,8 +404,20 @@ pub fn check_danger_is_visible(
     let open = world.without_exclusions();
     let population = open.reachable_walkable(&population_roots(plan, entry));
     binding.population = population.len();
+    // The zero-binding question: can any player body get into each volume at
+    // all — by walking, falling, jumping or swimming from the walked
+    // population, or by a fall through it at any depth?
+    let roots: Vec<[i32; 3]> = population.iter().copied().collect();
+    let vols: Vec<([i32; 3], [i32; 3])> = plan.lethal_volumes.iter().map(|v| v.region).collect();
+    let body_reach = open.reach_into_volumes(
+        &roots,
+        &crate::compiler::nav::Footprint::player(),
+        false,
+        None,
+        &vols,
+    );
 
-    for v in &plan.lethal_volumes {
+    for (i, v) in plan.lethal_volumes.iter().enumerate() {
         let (klo, khi) = delvewright_dsl::metrics::keep_out_box(body, v.region.0, v.region.1);
         let caught: Vec<[i32; 3]> = population
             .iter()
@@ -363,6 +445,13 @@ pub fn check_danger_is_visible(
             caught,
             shown,
             shown_by: v.shown_by.clone(),
+            reached_by: body_reach.hits[i].as_ref().map(|h| {
+                format!(
+                    "a player, by {} from {:?}",
+                    h.how,
+                    h.path.last().copied().unwrap_or(klo)
+                )
+            }),
         });
     }
 
@@ -721,4 +810,369 @@ pub fn gate(
         packtests,
         visibility,
     }
+}
+
+// ---------------------------------------------------------------------------
+// A wave does not walk into a killing volume (DW0922, DW0923)
+// ---------------------------------------------------------------------------
+
+/// `DW0922`: **a seated wave whose members can reach a lethal volume.**
+///
+/// A volume's entity sweep kills every body that is not a player, wave members
+/// included — the mechanism working, when the party leads a mob there. The
+/// defect is a wave seated so that its own members get there unled: by the
+/// movement a mob has ([`crate::compiler::nav::World::mob_moves`] — walking, a
+/// step or jump onto a block at most one higher, a drop off any edge, sinking in
+/// water, and never a gap jump), within its follow range of its seat
+/// ([`crate::compiler::nav::World::reach_into_volumes`]). The wave thins itself
+/// before the party touches it, on every life, and anything a member drops lands
+/// inside the box.
+///
+/// Judged over the world as built, every fence gate shut — a mob cannot open
+/// one. The same reach through a barrier a player can open is `DW0923`.
+pub const DW_WAVE_REACHES_LETHAL: DwCode = DwCode::new("DW0922", ExitTier::Build);
+
+/// `DW0923`: **a seated wave that reaches a lethal volume through a barrier the
+/// party can leave open.** Every fence gate, door and trapdoor a player opens by
+/// hand ([`delvewright_dsl::blockshape::is_player_openable`]) is judged in its
+/// open state: a player who opens one may leave it open and die, and the wave
+/// re-seated after that death walks through it. Raised only where `DW0922` is
+/// not: the as-built reach is clear, and the opened one is not.
+pub const DW_WAVE_REACHES_LETHAL_OPENED: DwCode = DwCode::new("DW0923", ExitTier::Build);
+
+/// One way a wave member gets into a lethal volume.
+#[derive(Clone, Debug)]
+pub struct WaveLethalFinding {
+    /// The wave's id.
+    pub wave: String,
+    /// The member's entity id.
+    pub entity: String,
+    /// The follow range its reach was bounded by, in blocks.
+    pub radius: f64,
+    /// The volume's id.
+    pub volume: String,
+    /// How it got in.
+    pub hit: crate::compiler::nav::VolumeHit,
+    /// For `DW0923`, the barriers left open on the way, as `(cell, block)`.
+    pub opened: Vec<([i32; 3], String)>,
+}
+
+impl WaveLethalFinding {
+    fn route(&self) -> String {
+        let seat = self.hit.path.first().copied().unwrap_or([0, 0, 0]);
+        let from = self.hit.path.last().copied().unwrap_or(seat);
+        let at = self.hit.entry.last().copied().unwrap_or(from);
+        // The turns of the way, so a reader can find the doorway it took.
+        let turns: Vec<String> = self
+            .hit
+            .path
+            .iter()
+            .enumerate()
+            .filter(|(i, c)| {
+                let (i, c) = (*i, **c);
+                if i == 0 || i + 1 == self.hit.path.len() {
+                    return false;
+                }
+                let (a, b) = (self.hit.path[i - 1], self.hit.path[i + 1]);
+                (0..3).any(|k| c[k] - a[k] != b[k] - c[k])
+            })
+            .map(|(_, c)| format!("{c:?}"))
+            .collect();
+        let by_way = if turns.is_empty() {
+            String::new()
+        } else {
+            format!(" by way of {}", turns.join(", "))
+        };
+        format!(
+            "wave `{}`'s `{}` seated at {seat:?} walks {} move(s){by_way} to {from:?} and gets \
+             into lethal volume `{}` by {} at {at:?}, inside its follow range of {} block(s)",
+            self.wave,
+            self.entity,
+            self.hit.path.len().saturating_sub(1),
+            self.volume,
+            self.hit.how,
+            self.radius,
+        )
+    }
+}
+
+/// What `DW0922` and `DW0923` examined, whether or not they refused.
+#[derive(Clone, Debug, Default)]
+pub struct WaveLethalBinding {
+    /// Waves the seating pass seated.
+    pub waves: usize,
+    /// Mob stacks with at least one seat.
+    pub stacks: usize,
+    /// Seats flooded from.
+    pub seats: usize,
+    /// Lethal volumes judged against.
+    pub volumes: usize,
+    /// Cells a member can reach as built, summed over stacks.
+    pub reached: usize,
+    /// Player-openable barrier cells in the assembled world.
+    pub openable: usize,
+    /// Cells a member can reach with every one of those open, summed over stacks.
+    pub reached_open: usize,
+    /// `DW0922`: reach as built, first per `(wave, volume)`.
+    pub as_built: Vec<WaveLethalFinding>,
+    /// `DW0923`: reach only with the barriers open, first per `(wave, volume)`.
+    pub opened: Vec<WaveLethalFinding>,
+}
+
+impl WaveLethalBinding {
+    /// The one line a build prints about these proofs.
+    pub fn line(&self) -> String {
+        format!(
+            "wave-lethal binding: {} seated wave(s), {} stack(s) over {} seat(s), flooded by the \
+             movement a mob has within its follow range against {} lethal volume(s): {} cell(s) a \
+             member can reach as built, {} with all {} barrier cell(s) a player can open left \
+             open; {} (wave, volume) pair(s) reached as built (DW0922), {} only through an open \
+             barrier (DW0923)",
+            self.waves,
+            self.stacks,
+            self.seats,
+            self.volumes,
+            self.reached,
+            self.reached_open,
+            self.openable,
+            self.as_built.len(),
+            self.opened.len(),
+        )
+    }
+
+    /// The same counts as `validation/wave-lethal.json`.
+    pub fn to_json(&self) -> serde_json::Value {
+        let row = |f: &WaveLethalFinding| {
+            serde_json::json!({
+                "wave": f.wave,
+                "entity": f.entity,
+                "volume": f.volume,
+                "how": f.hit.how,
+                "path": f.hit.path,
+                "entry": f.hit.entry,
+                "opened": f.opened.iter().map(|(c, b)| serde_json::json!({"cell": c, "block": b})).collect::<Vec<_>>(),
+            })
+        };
+        serde_json::json!({
+            "codes": [DW_WAVE_REACHES_LETHAL.id(), DW_WAVE_REACHES_LETHAL_OPENED.id()],
+            "waves": self.waves,
+            "stacks": self.stacks,
+            "seats": self.seats,
+            "volumes": self.volumes,
+            "reached": self.reached,
+            "openable": self.openable,
+            "reached_open": self.reached_open,
+            "as_built": self.as_built.iter().map(row).collect::<Vec<_>>(),
+            "opened": self.opened.iter().map(row).collect::<Vec<_>>(),
+        })
+    }
+
+    /// The verdict: the first `DW0922`, else the first `DW0923`.
+    pub fn verdict(&self) -> Result<(), Failure> {
+        let tail = |list: &[WaveLethalFinding]| {
+            if list.len() < 2 {
+                return String::new();
+            }
+            let rest: Vec<String> = list[1..]
+                .iter()
+                .map(|f| format!("wave `{}`'s `{}` into `{}`", f.wave, f.entity, f.volume))
+                .collect();
+            format!("; the same holds for {}", rest.join(", "))
+        };
+        if let Some(f) = self.as_built.first() {
+            return Err(Failure {
+                code: DW_WAVE_REACHES_LETHAL,
+                message: format!(
+                    "{}{}. A lethal volume kills every body that is not a player, wave members \
+                     included, so this wave thins itself before the party touches it, on every \
+                     life, and whatever a member drops lands in the box. A mob walks, steps or \
+                     jumps onto a block at most one higher, drops off any edge and sinks in \
+                     water; it never jumps a gap. Move the wave's `anchor` so no member's reach \
+                     meets the volume; declare a shorter `follow_range` on the stack, which is \
+                     how far it pursues and so how far this proof lets it roam; or move the \
+                     volume where this wave cannot walk, fall or sink into it — behind a rise of \
+                     two blocks, or across a gap of open air. Do not ring the hazard with blocks \
+                     nobody can see, and do not delete the volume to silence this.",
+                    f.route(),
+                    tail(&self.as_built),
+                ),
+            });
+        }
+        if let Some(f) = self.opened.first() {
+            let barriers = if f.opened.is_empty() {
+                "a barrier a player can open".to_string()
+            } else {
+                f.opened
+                    .iter()
+                    .map(|(c, b)| format!("`{b}` at {c:?}"))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            };
+            return Err(Failure {
+                code: DW_WAVE_REACHES_LETHAL_OPENED,
+                message: format!(
+                    "{} — once the party leaves open {barriers}{}. Shut, it keeps the wave out; \
+                     open, it lets the wave in. Every fence gate, door and trapdoor a player \
+                     opens by hand is judged open, because a player who opens one may leave it \
+                     open and die, and the wave re-seated after that death walks through. Take \
+                     the opening away rather than trust it to be shut: replace the barrier with \
+                     a crossing the party makes and a mob does not — a jump across a dry cut, a \
+                     gap of open air a player jumps and a mob never does — or move the wave's \
+                     `anchor` or the volume so the opened way does not join them.",
+                    f.route(),
+                    tail(&self.opened),
+                ),
+            });
+        }
+        Ok(())
+    }
+}
+
+/// `DW0922` and `DW0923` over every seated wave: flood each mob stack's
+/// movement from its seats, within its follow range, over the world with no
+/// lethal exclusion — once with the world as built (every fence gate shut, as a
+/// mob finds it) and once with every barrier a player can open standing open —
+/// and record the first way each wave gets into each volume.
+///
+/// The follow range is a lane's `aggro_radius` (which the compiler emits as each
+/// lane mob's `follow_range`), else the stack's declared `follow_range`, else
+/// [`crate::compiler::nav::DEFAULT_FOLLOW_RANGE`] — the radius `DW0478` reads.
+/// The roots are the seats the seating pass chose, so `wave_seats` is that
+/// pass's answer, handed over as `DW0511` takes it.
+pub fn wave_reach(
+    plan: &Plan,
+    world: &crate::compiler::nav::World,
+    blocks: &std::collections::BTreeMap<[i32; 3], String>,
+    wave_seats: &std::collections::BTreeMap<String, Vec<[i32; 3]>>,
+) -> WaveLethalBinding {
+    use crate::compiler::nav::World;
+    let mut b = WaveLethalBinding {
+        volumes: plan.lethal_volumes.len(),
+        ..WaveLethalBinding::default()
+    };
+    if plan.lethal_volumes.is_empty() {
+        return b;
+    }
+    let vols: Vec<([i32; 3], [i32; 3])> = plan.lethal_volumes.iter().map(|v| v.region).collect();
+    let open = world.without_exclusions();
+    let shut_owned;
+    let shut: &World = if open.has_use_gates() {
+        shut_owned = open.without_gate_use();
+        &shut_owned
+    } else {
+        &open
+    };
+    let openable: std::collections::BTreeSet<[i32; 3]> = blocks
+        .iter()
+        .filter(|(_, n)| delvewright_dsl::blockshape::is_player_openable(n))
+        .map(|(c, _)| *c)
+        .collect();
+    b.openable = openable.len();
+    let opened_owned = (!openable.is_empty()).then(|| open.with_openings_open(&openable));
+    for w in &plan.campaign.quests.content.waves {
+        let Some(cells) = wave_seats.get(w.id.as_str()) else {
+            continue;
+        };
+        b.waves += 1;
+        let mut seat = 0usize;
+        for mob in &w.mobs {
+            let roots: Vec<[i32; 3]> = (0..mob.count as usize)
+                .filter_map(|i| cells.get(seat + i).copied())
+                .collect();
+            seat += mob.count as usize;
+            if roots.is_empty() {
+                continue;
+            }
+            b.stacks += 1;
+            b.seats += roots.len();
+            let radius = match &w.lane {
+                Some(l) => f64::from(l.aggro_radius),
+                None => mob
+                    .attributes
+                    .and_then(|a| a.follow_range)
+                    .unwrap_or(f64::from(crate::compiler::nav::DEFAULT_FOLLOW_RANGE)),
+            };
+            let fp = crate::compiler::nav::entity_footprint(&mob.entity);
+            let built = shut.reach_into_volumes(&roots, &fp, true, Some(radius), &vols);
+            b.reached += built.reached.len();
+            let opened = opened_owned
+                .as_ref()
+                .map(|o| o.reach_into_volumes(&roots, &fp, true, Some(radius), &vols));
+            b.reached_open += opened
+                .as_ref()
+                .map_or(built.reached.len(), |r| r.reached.len());
+            for (i, v) in plan.lethal_volumes.iter().enumerate() {
+                let seen = |list: &[WaveLethalFinding]| {
+                    list.iter()
+                        .any(|f| f.wave == w.id.as_str() && f.volume == v.id)
+                };
+                let finding = |hit: &crate::compiler::nav::VolumeHit, opened| WaveLethalFinding {
+                    wave: w.id.as_str().to_string(),
+                    entity: mob.entity.clone(),
+                    radius,
+                    volume: v.id.clone(),
+                    hit: hit.clone(),
+                    opened,
+                };
+                if let Some(hit) = &built.hits[i] {
+                    if !seen(&b.as_built) {
+                        b.as_built.push(finding(hit, Vec::new()));
+                    }
+                    continue;
+                }
+                let Some(hit) = opened.as_ref().and_then(|r| r.hits[i].as_ref()) else {
+                    continue;
+                };
+                if seen(&b.opened) || seen(&b.as_built) {
+                    continue;
+                }
+                b.opened
+                    .push(finding(hit, barriers_on(hit, &openable, blocks)));
+            }
+        }
+    }
+    // A pair first opened by one stack and then reached as built by another is
+    // the as-built finding.
+    let built: Vec<(String, String)> = b
+        .as_built
+        .iter()
+        .map(|f| (f.wave.clone(), f.volume.clone()))
+        .collect();
+    b.opened
+        .retain(|f| !built.contains(&(f.wave.clone(), f.volume.clone())));
+    b
+}
+
+/// The player-openable barriers a way into a volume passes: the cells the body
+/// occupies on its way (feet and head) and the cells it falls or sinks through,
+/// else any barrier beside them.
+fn barriers_on(
+    hit: &crate::compiler::nav::VolumeHit,
+    openable: &std::collections::BTreeSet<[i32; 3]>,
+    blocks: &std::collections::BTreeMap<[i32; 3], String>,
+) -> Vec<([i32; 3], String)> {
+    let mut on: std::collections::BTreeSet<[i32; 3]> = std::collections::BTreeSet::new();
+    for c in hit.path.iter().chain(&hit.entry) {
+        for dy in [0, 1] {
+            let cell = [c[0], c[1] + dy, c[2]];
+            if openable.contains(&cell) {
+                on.insert(cell);
+            }
+        }
+    }
+    if on.is_empty() {
+        for c in hit.path.iter().chain(&hit.entry) {
+            for d in [[-1, 0], [1, 0], [0, -1], [0, 1]] {
+                for dy in [-1, 0, 1] {
+                    let cell = [c[0] + d[0], c[1] + dy, c[2] + d[1]];
+                    if openable.contains(&cell) {
+                        on.insert(cell);
+                    }
+                }
+            }
+        }
+    }
+    on.into_iter()
+        .map(|c| (c, blocks.get(&c).cloned().unwrap_or_default()))
+        .collect()
 }
