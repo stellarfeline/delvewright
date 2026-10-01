@@ -446,12 +446,11 @@ fn the_leg_into_a_trigger_step_sees_what_its_objective_inherits() {
 // ---------------------------------------------------------------------------
 // The refusals the ordering makes possible.
 //
-// A leg whose start is not an ancestor of its arrival is judged over the OPEN
-// world (`World::leg_region_state`: a lineariser artifact the party never walks
-// is not sealed). So a trigger step with no place in the ancestry is a step whose
-// legs are never judged against a shut gate at all — the direction that ships.
 // Each fixture below crosses a door nothing opens, on a leg only the trigger
-// ordering makes causal, and must be refused.
+// ordering makes causal, and must be refused. Without that ordering the leg is
+// still judged (`World::leg_region_state` credits what the leg's start has
+// fired, the world-load seals included), so these fixtures bind the trigger rows
+// together with that rule.
 // ---------------------------------------------------------------------------
 
 /// The talk arms a stone on the keeper's side; the stone pays the exit's flag;
@@ -522,9 +521,9 @@ fn lamp_beyond_a_barred_door_doc() -> String {
 }
 
 /// **The sweep.** The leg out of the trigger step, from the stone to the exit,
-/// crosses a door nothing opens. It is judged only because the stone precedes
-/// the exit in the ancestry; without that the leg is read over the open world
-/// and the delve builds with a path that walks into iron bars.
+/// crosses a door nothing opens. The stone precedes the exit in the ancestry,
+/// so the leg is causal and judged under the exit's state, where the door's
+/// world-load seal stands.
 #[test]
 fn the_leg_out_of_a_trigger_step_is_judged_against_a_shut_door() {
     let p = prefabs();
@@ -535,9 +534,9 @@ fn the_leg_out_of_a_trigger_step_is_judged_against_a_shut_door() {
 }
 
 /// **The trigger step's own row.** The leg INTO the press, from the keeper to
-/// the lamp beyond the door, crosses a door nothing opens. It is judged only
-/// because the press inherits the talk beat as a predecessor; without that row
-/// the leg is read over the open world and the delve builds.
+/// the lamp beyond the door, crosses a door nothing opens. The press inherits
+/// the talk beat as a predecessor, so the leg is causal and judged under the
+/// press's state, where the door's world-load seal stands.
 #[test]
 fn the_leg_into_a_trigger_step_is_judged_against_a_shut_door() {
     let p = prefabs();

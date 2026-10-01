@@ -2430,9 +2430,9 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
     (read through `QuestEffect::nested_effect_lists`, so a `sequence` is
     counted), and `drops_stake[]`: per stake the bundle can forfeit, **the gate
     that decides whether this death forfeits it**. A `drop-stake` carries a
-    `when` like every other effect, so the promise is conditional; stated
-    unconditionally, the bot would assert a forfeit the campaign never promised
-    under the state in force. Each entry is `{stake, gates[]}`:
+    `when` like every other effect, so the promise is conditional: the death
+    forfeits the stake when a gate is open and keeps it whole when every gate
+    is shut, and the bot tier asserts both halves. Each entry is `{stake, gates[]}`:
     the gates are alternatives — one stake dropped by two effects is forfeited
     when either fires — and each alternative's `terms[]` is the conjunction of
     its own effect's gate with every enclosing effect's, so a gated `sequence`
@@ -2443,8 +2443,10 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
     ends that `matches` spells, and whether the gate wants the range to fail.
     The terms are `Plan::gate_terms`' — the same reduction the emitter renders
     into the `execute` guard, so the datapack and the contract cannot disagree
-    about when a death takes a purse. An unconditional drop is one alternative
-    with no terms.
+    about when a death takes a purse; `tests/death_plan_gate.rs` holds every
+    emitted `stk_drop_<stake>` guard in `on_death_fire` equal to one of the
+    plan's alternatives, term for term, in both directions. An unconditional
+    drop is one alternative with no terms.
   - `stakes[]` — the declared `forfeit` rule (`all` / `proportion` /
     `fixed` / `none`), `max_live`, `on_full`, `collect_by`, the
     `collected_message` and the `marker_item`, plus the wagered `currency`: its
@@ -3871,10 +3873,14 @@ seal is the conservative answer. The ordering is **DAG-causal, not linear**
 whose objective is a true causal descendant of the gate's firing objective, so a
 gate on a **parallel quest branch** the lineariser merely interleaves ahead of a leg
 does not falsely seal it (island `take-the-cheese` flee legs are not sealed by the
-`hide` branch's boulder). The seal is applied only to a **causal leg** (its start
-objective is itself a DAG ancestor of the arrival) — the lineariser concatenates
-sibling branches into artifact "legs" the player never walks under the arrival's
-gate state, and base `DW0311` already proved every leg walkable in the open world. A
+`hide` branch's boulder). A walked leg `from → to` credits exactly the writes the
+party has necessarily fired while walking it (`World::leg_region_state`): those that
+precede the arrival, the start step's own, and those that precede the start. For a
+**causal leg** (the start is itself a DAG ancestor of the arrival) that is the
+arrival's state. A leg the ancestry does not connect — the lineariser concatenating
+sibling branches, or an ordering the relation fails to record — is judged by the
+same rule and never over the open world: a write that neither end inherits does not
+seal it, while the world-load seals and every write of the start's own branch do. A
 genuinely-forced re-crossing (a causal leg whose sealed gate is never reopened
 before it) still fails `DW0311` (`DW0315` from a checkpoint) with a message naming
 the sealed gate — the "point of no return by geometry" the staging wants,
