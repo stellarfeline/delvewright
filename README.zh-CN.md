@@ -8,7 +8,7 @@
 
 它自动化的是繁琐的劳动和验证，而不是设计：它会停下来，等你认可设计、等你亲自走一遍构建出的地图；当它拒绝某样东西时，它会指明该改什么，而不是替你去改。
 
-**走进这座城堡：** 用 Minecraft Java 1.21.11 客户端加入 `minecraft.stellarfeline.ca`，进入时接受资源包提示。
+**现在就来玩：** 用 Minecraft Java 1.21.11 客户端加入 `minecraft.stellarfeline.ca:25565`，进入时接受资源包提示。服务器上运行的是 Vesperhold，也就是图中这座城堡。
 
 ## 开始使用
 
@@ -41,20 +41,20 @@ flowchart TD
 
 ## 为什么可以信任它
 
-下面每一级都在 **Doune Castle: A Guided Tour v1.0.0**——图中这座城堡——的 [release 运行](https://github.com/stellarfeline/delvewright-campaigns/actions/runs/34797937184)中跑过（`delvec` 1.5.0，引擎修订 `70eea629`，Minecraft 1.21.11）。每一级打印的内容原样引用。
+下面每一级都在 **Vesperhold**——图中这座城堡——上跑过：由 `delvec` 1.7.1 从内容修订 `a3568c2` 构建，面向 Minecraft 1.21.11；只有 release 才会打印的几级来自它的 release 运行，`<vesperhold release>`。每一级打印的内容原样引用。
 
-- **静态分析。** 在 `delvec build` 内部、写出任何字节之前：每份文档都按其 schema 校验，每条任务与对话路径都被走一遍，失败即拒绝，并给出具名的 `DW` 代码。Doune：构建以 0 退出，走过了 2 条状态路径、共 18 步，检查了 9 个目标，有一条提示——`DW0781`，拼接检查无可判定，因为整座城堡是一个 piece。
+- **静态分析。** 在 `delvec build` 内部、写出任何字节之前：每份文档都按其 schema 校验，每条任务与对话路径都被走一遍，失败即拒绝，并给出具名的 `DW` 代码。Vesperhold：构建以 0 退出，走过了 5 条状态路径、共 185 步，检查了 37 个目标，有五条提示——三条 `DW0351`，某个角色出现或离开时没有被看到移动；`DW0781`，拼接检查无可判定，因为整座城堡是一个 piece；以及 `DW0810`，生成的 PackTest 套件只驱动了一组对象中的一个成员，没有驱动它的同组成员。
 - **每条命令都被检查。** 每一行生成的 `.mcfunction` 都在同一次构建中按固定版本 1.21.11 的命令树解析。它不打印计数。
-- **PackTest。** 在真实服务器上测试 datapack 的各项机制：`63 GAME TESTS COMPLETE IN 8.994 s` —— `All 63 required tests passed :)`。
-- **机器人通关。** 一个 mineflayer 机器人加入发布的服务器，把关键路径玩到结束：`critical path 'doune-castle-tour' PASSED (11 steps, 2 advisory finding(s))`。这两条提示说明没有战斗、也没有死亡可供测试。
-- **服务器日志。** `shipped server log is error-free.`
-- **确定性。** 同样的文档、同样的种子，输出逐字节相同。发布的镜像带有其 datapack 摘要作为标签，`datapack-sha256=dba45276efbaabea53ee261489921ead3925d2b3363cf0155ed0a8548b5666e0`，任何重新构建的人都可以比对。对本仓库的每个 pull request，CI 都会在 Linux 和 macOS 上构建一个生成的 campaign，只要有一个字节不同就拒绝。
+- **PackTest。** 在真实服务器上测试 datapack 的各项机制：`<vesperhold release>`。
+- **机器人通关。** 一个 mineflayer 机器人加入发布的服务器，把四条故事分支各自玩到结局，每条都在全新的世界里，在每场战斗中故意死亡、再从篝火走回去：`branch branch/halvard-kept-oath+branch/ring 'vesperhold' PASSED (45 steps, 18 scripted death(s) survived)`。另外三条分支打印了同样的 45 步和 18 次死亡，分别带有一条、两条和一条提示：机器人走回去时，发现敌群成员已经受伤。
+- **服务器日志。** `<vesperhold release>`
+- **确定性。** 同样的文档、同样的种子，输出逐字节相同。发布的镜像带有其 datapack 摘要作为标签，`datapack-sha256=<vesperhold release>`，任何重新构建的人都可以比对。对本仓库的每个 pull request，CI 都会在 Linux 和 macOS 上构建一个生成的 campaign，只要有一个字节不同就拒绝。
 
 每一级证明了什么、没有证明什么：[每道关卡实际证明了什么](docs/reference/skill-workflow.md#4-what-each-gate-actually-proves)。
 
 ## 地图
 
-地图有两种摆放方式。`areas[]` 从 piece 库中取 prefab，由原版 jigsaw 按编译器控制的种子拼装。site plan 先整体后局部——先是 geometry brief，再是 layout graph，然后是每个部分的包围盒、基准面和接缝——并在任何地点细化之前先作为 blockout 走一遍。库里没有的 piece，由 box-split 语法根据规则程序写出：Doune 就是一个 area 里放着一个这样的 piece，整座城堡，104 × 56 × 120 格。光照在设计房间时就放好，构建会拒绝测得昏暗的可到达地面（`DW0210`）。每个场景都用 Chunky 渲染，并对照它所回应的概念图进行审查。
+地图有两种摆放方式。`areas[]` 从 piece 库中取 prefab，由原版 jigsaw 按编译器控制的种子拼装。site plan 先整体后局部——先是 geometry brief，再是 layout graph，然后是每个部分的包围盒、基准面和接缝——并在任何地点细化之前先作为 blockout 走一遍。库里没有的 piece，由 box-split 语法根据规则程序写出：Vesperhold 就是一个 area 里放着一个这样的 piece，整片场地，172 × 104 × 292 格。光照在设计房间时就放好，构建会拒绝测得昏暗的可到达地面（`DW0210`）。每个场景都用 Chunky 渲染，并对照它所回应的概念图进行审查。
 
 **[走进 Vesperhold](docs/media/vesperhold/README.md)** —— 来路、外庭、花园、回廊、礼拜堂、礼拜堂下的水池、钟楼与王座厅。
 
