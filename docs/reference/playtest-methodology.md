@@ -1,8 +1,8 @@
 # Playtest methodology — how an owner round is run
 
 The owner's playtest hour is the scarcest resource in the pipeline. This document
-records what 22 rounds on `nobodys-cave-island` (2026-08-01 → 2026-08-06) actually
-taught about spending it, derived from that campaign's findings ledger and round
+records what 22 rounds on `nobodys-cave-island` actually taught about spending
+it, derived from that campaign's findings ledger and round
 records (content repo, `campaigns/nobodys-cave-island/GENERATION.md`).
 
 Audience: agents. It governs every campaign iteration round; `/new-delve` carries
@@ -72,8 +72,7 @@ A `kill` step does three things, in order, and only the first is a measurement.
    paying, the declared drops dropping, the health bar, the re-seat, and the walk
    to the anchor that proves the route.
 
-spec-0023 §1's **die-retry** stage is untouched and is still the load-bearing bot
-proof: scripted deaths, respawn at the governing checkpoint, a walkable route
+spec-0023 §1's **die-retry** stage is the load-bearing bot proof: scripted deaths, respawn at the governing checkpoint, a walkable route
 back, an encounter that re-engages, no progression lost. It runs between the
 reading and the clear. A die-retry stage that cannot finish reds on its own
 coverage and does not end the run: suppressing every measurement behind one fight
@@ -102,9 +101,7 @@ to where the body stands — never guessed from a radius around an anchor:
 A removed body's blows are refunded: the health the server named that body as
 taking is given back with instant health, rounded UP to vanilla's units
 (4 × 2^amplifier) — at most 3.9 points more than the body took, which is the
-whole of what a refund can hide — and named in `staged_removals`. Removal on the first blow alone
-let a return leg through three re-seated waves take one blow from each body until
-a later body's first swing killed the bot. Route falls and lethal volumes are
+whole of what a refund can hide — and named in `staged_removals`. Route falls and lethal volumes are
 mechanism, not bodies: nothing they take is refunded, and they still kill the bot.
 
 On a walk leg the bot is held at full health: it is restored on entry to every
@@ -112,8 +109,7 @@ walk and after every drop while the walk is in progress, whatever dealt the drop
 by one instant-health effect that covers the whole deficit, named in
 `staged_removals`. A hostile's first blow lands before its body can be removed and
 lands on whatever health the bot has, and a per-body refund only gives back what
-it could attribute: a die-retry return leg began at the respawn's full 20, bled to
-14.8 on blows no refund covered, and a Guard's first swing killed the bot. Whether
+it could attribute. Whether
 the bot survives a walk is not what a walk leg is for. Off a walk the refund rule
 above applies; on one no refund is added. A single blow of 20 or more, a lethal
 volume and a crush gate still kill.
@@ -135,15 +131,13 @@ observed on the island:
 - **Unbound** — the gate ran and matched zero objects. The island's combat
   coverage ledger examined zero enemies for nineteen rounds and was green every
   time, because every list it printed was empty at once and nothing stated a
-  count. (That ledger is gone — the ladder no longer grades a fight at all — and
-  its successor, the per-wave **muster**, states `declared_facts` per encounter
-  for exactly this reason.)
+  count. The per-wave **muster** states `declared_facts` per encounter for
+  exactly this reason.
 - **Unfenced** — the campaign's `dsl_version` had not reached the surface the gate
   keys off, so the whole proof was inert. Branch reachability, the chronicle and
   the six branch proofs did not exist for this campaign until round 19 declared
   `branch_points`. "All four branch runs green" was physically impossible before
-  then. This is the failure mode CLAUDE.md's **version-adoption discipline**
-  already forbids; the island quantifies its cost.
+  then.
 - **Unemitted** — declared, compiled green, and never emitted. `wave/storm-shore`
   and `wave/storm-fire` silently never spawned until a wave-machinery emission
   gap in the engine was closed; the round-22 bot run was the first time that fight
@@ -279,7 +273,7 @@ not an inference to make silently.
 Rules 2 and 4 were written down and obeyed by hand, which meant they were obeyed
 exactly as well as whoever remembered them. Both are now enforced:
 `docs/playtest-findings.json` is the ledger — **every finding reported on any
-campaign, from the first M2 dress rehearsal (2026-07-30) onward** — and
+campaign** — and
 `tools/creator/staging-gate.py` refuses to stage a build while any row's
 general form is not a live, binding check on THAT build.
 
@@ -291,8 +285,8 @@ mechanical bug" are different claims and only the first was ever measurable.
 The gate re-runs nothing. Per row it asks: does a general-form check exist, and
 does it BIND — non-zero — here.
 
-**Five reds, one per way a green has really lied**, because folding them together
-would be the sixth. Each says the same thing in a different voice: an object of
+**Four reds, one per way a green has really lied**, because folding them together
+would be the fifth. Each says the same thing in a different voice: an object of
 the class is HERE and nothing this build carries would catch the defect again.
 
 | Verdict | What it means | Its real instance |
@@ -300,8 +294,7 @@ the class is HERE and nothing this build carries would catch the defect again.
 | `NO-GENERAL-FORM` | the instance was fixed, the class never built | rule 2's `DW0489`, eleven rounds late |
 | `MISSING-CHECK` | the ledger names a check this engine no longer has (absent from source, undocumented, or asserted by no test), or a stage document the COMPILER read that this gate holds no parsed copy of | four rows in the ledger's own first run named invariants that did not exist under those names |
 | `UNBOUND` | the check matched zero objects, and objects that could have carried the defect are there — or nobody has measured whether they are | rule 1's coverage ledger, nineteen rounds |
-| `UNFENCED` | the campaign's `dsl_version` never reached the surface the check keys off | rule 1's branch proofs before round 19 |
-| `NO-SOURCE` | the campaign has no stage JSON, so nothing can be measured | the drowned-bell remake today |
+| `NO-SOURCE` | the campaign has no stage JSON, so nothing can be measured | a campaign directory holding design records and no stage documents |
 
 **The refusal is on presence, not on absence.** `INAPPLICABLE` — zero binding
 **and** a MEASURED zero precondition, so the campaign declares none of the
@@ -313,8 +306,7 @@ build that compiled, so every zero the gate can see is an optional one. What the
 gate still refuses is the mirror: the class is present and no check binds to it.
 
 This is what makes it a general engine's gate rather than one campaign's. The
-ledger records defects found on particular campaigns — today's rows come from
-six of them, most from one — so a creator's first delve contains almost none of
+ledger records defects found on particular campaigns, most from one — so a creator's first delve contains almost none of
 those object classes. A pass condition of "resemble the campaigns we happened to
 test" would hold every new delve unstageable forever.
 
@@ -366,12 +358,12 @@ whose campaign still declares it. A `dsl` predicate reads the stage documents
 the author wrote and a `campaign` glob reads the campaign directory; only the
 author can move either number, and moving it is the design choice the whole rule
 is about. A double zero counted only in derived output stays `UNBOUND` and
-refuses. No live ledger row is of that shape today; the demand binds against the
+refuses. No live ledger row is of that shape; the demand binds against the
 row nobody has written yet, and both directions are driven from fixtures.
 
 **The first non-red a row can DECLARE** is rule 2's own escape, no wider: a row may close
 `DECLARED-UNCOVERABLE` with a `disposition` (`no-machine-form` / `not-a-defect`)
-**and** a substantive justification. Sixteen island rows qualify and every one is
+**and** a substantive justification. The island rows that qualify are every one
 a judgement — prose register, pacing, whether a space reads as open. A bare
 label buys nothing; the gate checks the justification is there and says
 something. Their count is in the headline because rule 4 makes each a standing
@@ -424,14 +416,15 @@ what a reviewer at the floor wants re-examined.
 
 One consequence, stated because it is measured rather than hidden: an
 unemitted validation artifact whose row declares an `applies_when` that
-measures zero now reads `INAPPLICABLE` on an assembled campaign instead of
+measures zero reads `INAPPLICABLE` on an assembled campaign, not
 `MISSING-CHECK` — "the compiler emits this ledger over zero objects" is a
 different fact from "the check no longer exists", and the remedy differs.
 
 ### An ABSENT optional stage document is a count, not a shrug
 
-Five of the eleven stage documents are optional (`compiler::load`):
-`world-edits.json` and the four map-pipeline documents. A campaign that ships
+The optional stage documents are `compiler::load::OPTIONAL_FILES` that the
+build reads as inputs: `world-edits.json`, the four map-pipeline documents and
+`design.json`. A campaign that ships
 none of them is not a campaign missing a document — it declares no such stage,
 and a probe over one is measuring an object class the campaign has zero of.
 
@@ -460,13 +453,10 @@ otherwise measure zero on every campaign forever.
 
 ### The gate is wired to the staging EVENT, not to a doc line
 
-The first cut of this rule ended at "no build is handed to the owner until the
-gate has been run". That is a process obligation, and a process obligation is
-what **UNRUN** is made of: a correct gate — right verdicts, fails in the
-direction that drifts — that nothing calls. This project has shipped that shape
-five times, most recently `bin/lab-audit.py`, whose own commit message promised
-staleness would be "measured not remembered" and then shipped a script that had
-to be remembered. The record went stale twice more.
+"No build is handed to the owner until the gate has been run" is a process
+obligation, and a process obligation is what **UNRUN** is made of: a correct
+gate — right verdicts, fails in the direction that drifts — that nothing
+calls.
 
 **A doc line is not an invocation.** So the staging surface requires the gate's
 output rather than asking for it. The surface is exactly the set of paths that
@@ -475,7 +465,7 @@ put a build in front of the owner:
 | Staging path | How the gate is bound to it |
 |---|---|
 | `tools/creator/playtest-server.sh up` (throwaway `docker run`, binds 25565 — the one she actually runs) | runs the gate itself between `delvec build` and `docker run`; a refusal dies before any container exists |
-| `docker compose -f compose.yaml -f validation/owner-play.yaml --profile play\|playtest up` (the other sanctioned 25565 binder) | `owner-play.yaml` adds a `staging-admission` service that both port-publishing services `depends_on: service_completed_successfully` |
+| `docker compose -f validation/compose.yaml -f validation/owner-play.yaml --profile play\|playtest up` (the other sanctioned 25565 binder) | `owner-play.yaml` adds a `staging-admission` service that both port-publishing services `depends_on: service_completed_successfully` |
 | The content repository's `release` workflow (`stellarfeline/delvewright-campaigns`, on a `release/<campaign>/v<semver>` tag, spec-0024 §1) → multi-arch delve image to GHCR + a GitHub Release (she runs the image on the Pi) | **NOT BOUND.** That workflow runs its own ladder and publishes without ever calling this gate. To bind it, add a step in the content repository between `delvec build` and its `docker/login-action` that runs `python3 <engine checkout>/tools/creator/staging-gate.py --campaign <campaign dir> --build <build tree>` — the engine is already checked out there, at the revision `versions.toml` pins |
 
 The compose path cannot run the gate itself — the gate needs the campaign
@@ -512,7 +502,7 @@ summary item by item — a red is not permission to stop, it is the list of
 classes she is not protected from — and so is its `INAPPLICABLE` list, which is
 the list of classes this build cannot present to her at all. The gate over a
 CONTENT campaign is deliberately **not** a CI status check: the ledger is red on
-those today by design, and making an honest red list blocking would force the one
+those by design, and making an honest red list blocking would force the one
 move CLAUDE.md forbids. Its falsification suite is in CI instead
 (`tools/tests/test_staging_gate.py`), including a tripwire asserting that both
 owner-facing paths still require admission — so the UNRUN shape reds here rather
@@ -540,9 +530,7 @@ token that step mints goes to its work directory, never into a build tree, and a
 `staging-admission.json` found inside one is a red naming the point.
 
 What it makes true on every push: *the engine's own campaign declares nothing it
-has no live, binding check for.* Its first run found the gallery's site-plan point
-offering a `flask` recovery kit with no `bonfire` to refill it at — `bell-01`,
-`UNBOUND`, correct by construction and unseen for as long as nothing ran the gate.
+has no live, binding check for.*
 
 ### What this ledger is reconstructed from, and what is missing
 
@@ -552,7 +540,7 @@ and round records (`GENERATION.md`, rounds 3–22); the private notes (gitignore
 `docs/notes/private/`) — the island ledger audit and the evidence log, read end
 to end — and the two session handoffs; `hollow-vigil`'s `GENERATION.md`; the bell's
 records on `campaign/the-drowned-bell-r3` and `REMAKE.md`, the on-disk task
-archive (`~/.claude/tasks/`, 281 cards, 2026-07-30 → 2026-08-10), and the
+archive (`~/.claude/tasks/`), and the
 diagnostics catalogue in `compiler.md`, which is the closest thing the repo has
 to a finding→diagnostic index.
 
