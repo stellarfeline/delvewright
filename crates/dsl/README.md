@@ -6,10 +6,8 @@ export for the staged JSON documents that describe a **Minecraft Java Edition
 1.21.11** adventure map.
 
 A campaign is six documents — `world`, `npcs`, `classes`, `quest-plan`,
-`quests`, `dialogue` — plus an optional `world-edits` script, the optional
-map-pipeline documents (`geometry-brief`, `layout-graph`, `site-plan`,
-`detail-plan`), an optional `design` record, and one `l10n/<code>.json`
-sidecar per translated language. Each is an envelope
+`quests`, `dialogue` — plus an optional `world-edits` script and one
+`l10n/<code>.json` sidecar per translated language. Each is an envelope
 `{ dsl_version, campaign_id, stage, content }` wrapping that stage's payload.
 Later stages reference earlier ones and never the other way round, so a campaign
 can be written and checked one stage at a time.
@@ -28,11 +26,7 @@ delvewright-dsl = "0.34"
 use delvewright_dsl::{RawCampaign, check_campaign, parse_campaign, stage_schema};
 
 // Six JSON strings in, diagnostics out.
-let raw = RawCampaign {
-    world, npcs, classes, quest_plan, quests, dialogue,
-    world_edits: None, geometry_brief: None, layout_graph: None,
-    site_plan: None, detail_plan: None, design: None,
-};
+let raw = RawCampaign { world, npcs, classes, quest_plan, quests, dialogue, world_edits: None };
 let diagnostics = check_campaign(&raw);   // parse, then validate
 
 // Or in two steps.
@@ -62,7 +56,7 @@ let schema = stage_schema(delvewright_dsl::Stage::World);
 - **JSON Schema** — `stage_schema` exports one full-envelope draft 2020-12
   schema per stage.
 - **Registries** — `ItemRegistry`, `EntityRegistry`, `BlockRegistry`,
-  `EffectRegistry`, `EnchantmentRegistry` and `AnchorRegistry` traits, with small vendored
+  `EffectRegistry` and `AnchorRegistry` traits, with small vendored
   implementations so the crate validates standalone, and injection points for
   the full ones.
 
