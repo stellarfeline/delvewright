@@ -1,13 +1,20 @@
 //! A fight the party must win stays where the party can strike it (`DW0924`).
 //!
-//! ## The defect this exists for (`vesperhold`)
+//! ## The shape it guards against
 //!
-//! The Cliff Watchmen are a wave a `kill` objective adjudicates, seated on a
-//! shelf over the valley. On a campaign ladder the party's blows knocked them
-//! off its open edge: six of the falls killed, and two did not — two bodies at
-//! 1.1/20 health sixteen blocks below the shelf, where no route leads. The kill
-//! objective then waited on bodies nobody could reach. Every rung was green:
-//! the wave had footing, the shelf was reachable, the fight was winnable.
+//! A wave a `kill` objective adjudicates, seated on a ledge with an open edge.
+//! A blow knocks a body off the edge exactly as it walks off one, and a body
+//! that survives the fall where the party cannot follow leaves the objective
+//! waiting forever. Every other rung stays green: the wave has footing, the
+//! ledge is reachable, the fight is winnable.
+//!
+//! `vesperhold`'s Cliff Watchmen, before its shelf carried a parapet, are an
+//! instance this rule does not refuse, and rightly: the two that survived a
+//! knock-off landed on the valley floor sixteen blocks down, which the party
+//! reaches by the postern, the causeway and its stair. That route was walked
+//! live from the shelf to both landing cells, and both bodies were struck
+//! there. The ladder that reported them unreachable had its bot stalled on the
+//! stair's balustrade, on the way down.
 //!
 //! ## The rule
 //!
