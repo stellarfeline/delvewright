@@ -770,8 +770,8 @@ policy = "immutable"
 bound_by = "validation/check-versions.sh"
 bound_key = "pytest_version"
 why = """
-The test runner both Python suites are judged by — `skin toolchain (pytest)` and
-`i18n translation tool (pytest)`, each a required status check.
+The test runner the Python suites are judged by — `skin toolchain (pytest)` and
+the two `tool tests (pytest, …)` jobs, each a required status check.
 
 WHY IT IS AN INSTRUMENT and not a detail: a runner decides what gets COLLECTED
 and how an assertion is reported, so a runner that changes either moves a
