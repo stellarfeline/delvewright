@@ -2,8 +2,9 @@
 //
 //   node harness/probe/respawn-wait.ts <host> <port> <container>
 //
-// Two mineflayer clients, auto-respawn off, `player_loaded` sent after every
-// spawn (without it the server holds a player invulnerable and nothing dies).
+// Two `createHarnessBot` clients, auto-respawn off, `player_loaded` sent after
+// the join and every respawn (without it the server holds a player invulnerable
+// and nothing dies).
 // Each reading is printed with the command that produced it; nothing is judged,
 // because the subject is what vanilla does, not what the engine emits.
 //
@@ -15,9 +16,10 @@
 //   M4  `spectate` binds a spectator's body to its target, and sneaking releases it;
 //   M5  a waiting spectator who disconnects: the stat does not count offline, and
 //       on a delve server (`force-gamemode=true`) the player rejoins in adventure.
-import mineflayer, { type Bot } from "mineflayer";
+import type { Bot } from "mineflayer";
 // @ts-expect-error — a plain ES module shared with the shell half, no types.
 import { rconChannel } from "../../tools/lib/rcon.mjs";
+import { createHarnessBot } from "../src/client-loaded.ts";
 
 const [host, portText, container] = process.argv.slice(2);
 if (!host || !portText || !container) {
@@ -26,14 +28,11 @@ if (!host || !portText || !container) {
 }
 const rcon = rconChannel(container) as { probe(cmd: string): Promise<string> };
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-const loaded = (bot: Bot) =>
-  (bot as unknown as { _client: { write(n: string, d: object): void } })._client.write(
-    "player_loaded",
-    {},
-  );
+// `createHarnessBot` reports `player_loaded` after the join and every respawn, as
+// the vanilla client does.
 const join = (username: string) =>
   new Promise<Bot>((resolve) => {
-    const bot = mineflayer.createBot({
+    const { bot } = createHarnessBot({
       host,
       port: Number(portText),
       username,
@@ -41,7 +40,6 @@ const join = (username: string) =>
       auth: "offline",
       respawn: false,
     });
-    bot.on("spawn", () => loaded(bot));
     bot.once("spawn", () => resolve(bot));
   });
 const q = async (cmd: string) => {
