@@ -511,13 +511,13 @@ all_stated "node -> ci.yml"      'node-version: *"[^"]*"' "node-version: \"$NODE
 py_total="$( { grep -oE 'python-version: *"[^"]*"' "$CI_WF" || true; } | wc -l | tr -d ' ')"
 py_tools="$( { grep -oF "python-version: \"$PYTHON_TOOLS_VERSION\"" "$CI_WF" || true; } | wc -l | tr -d ' ')"
 py_mecha="$( { grep -oF "python-version: \"$PYTHON_MECHA_VERSION\"" "$CI_WF" || true; } | wc -l | tr -d ' ')"
-# 3 x tools: skin toolchain, i18n translation tool, engine-shelf (the cross-
+# 4 x tools: skin toolchain, the two tool-test jobs, engine-shelf (the cross-
 # build shelf gate needs the same >= 3.11 tomllib floor build-release-binaries.sh
 # does).
-if [ "$py_tools" = "3" ] && [ "$py_mecha" = "1" ] && [ "$py_total" = "4" ]; then
-  pass "python lines -> ci.yml (3 x $PYTHON_TOOLS_VERSION + 1 x $PYTHON_MECHA_VERSION = $py_total, none other)"
+if [ "$py_tools" = "4" ] && [ "$py_mecha" = "1" ] && [ "$py_total" = "5" ]; then
+  pass "python lines -> ci.yml (4 x $PYTHON_TOOLS_VERSION + 1 x $PYTHON_MECHA_VERSION = $py_total, none other)"
 else
-  fail "python lines -> ci.yml: $py_total selection(s), of which $py_tools at '$PYTHON_TOOLS_VERSION' and $py_mecha at '$PYTHON_MECHA_VERSION' — versions.toml declares 3 and 1 and nothing else"
+  fail "python lines -> ci.yml: $py_total selection(s), of which $py_tools at '$PYTHON_TOOLS_VERSION' and $py_mecha at '$PYTHON_MECHA_VERSION' — versions.toml declares 4 and 1 and nothing else"
 fi
 
 # engine-release.yml's shelf job reads the same manifest through the same
@@ -563,7 +563,7 @@ done <<< "$floor_report"
 # required status check and so each named literally rather than resolved.
 all_stated "mecha -> ci.yml"  'mecha==[0-9A-Za-z.*+!-]*'  "mecha==$MECHA_VERSION"   1 "$CI_WF"
 all_stated "beet -> ci.yml"   'beet==[0-9A-Za-z.*+!-]*'   "beet==$BEET_VERSION"     1 "$CI_WF"
-all_stated "pytest -> ci.yml" 'pytest==[0-9A-Za-z.*+!-]*' "pytest==$PYTEST_VERSION" 2 "$CI_WF"
+all_stated "pytest -> ci.yml" 'pytest==[0-9A-Za-z.*+!-]*' "pytest==$PYTEST_VERSION" 3 "$CI_WF"
 
 echo "== Skin toolchain ([skin], spec-0009) =="
 # Four statements of one library version, and the fourth is the one that matters

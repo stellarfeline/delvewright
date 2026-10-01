@@ -88,7 +88,7 @@ def test_a_readme_change_reaches_only_the_whole_tree_readers():
     assert on(ci_reach.decide(table, "pull_request", ["README.md"])) == {
         "manifest",
         "dsl-crate-version",
-        "i18n-tool",
+        "tool-tests-tree",
         "docs",
         "line-endings",
     }
@@ -97,8 +97,52 @@ def test_a_readme_change_reaches_only_the_whole_tree_readers():
 def test_a_compiler_source_change_reaches_everything_that_builds_the_crates():
     table = ci_reach.load_table()
     got = on(ci_reach.decide(table, "pull_request", ["crates/delvec/src/main.rs"]))
-    assert {"rust", "engine-shelf", "mecha-crosscheck", "content-pin", "gallery", "tier2-validation"} <= got
+    assert {"rust", "publishable", "engine-shelf", "mecha-crosscheck", "zone-audit", "tool-tests", "gallery", "tier2-validation"} <= got
     assert got.isdisjoint({"harness", "skin-tool", "storybook-version", "prefab-generators"})
+
+
+WHOLE_TREE_READERS = {"manifest", "dsl-crate-version", "tool-tests-tree", "docs", "line-endings"}
+
+
+@pytest.mark.parametrize(
+    "path",
+    ["docs/reference/tools.md", "docs/ROADMAP.md", "docs/specs/README.md", "README.zh-CN.md"],
+)
+def test_a_document_no_narrow_job_reads_reaches_only_the_whole_tree_readers(path):
+    """The docs-only pull request: no compile, and not the narrow tool tests."""
+    table = ci_reach.load_table()
+    assert on(ci_reach.decide(table, "pull_request", [path])) == WHOLE_TREE_READERS
+
+
+def test_a_skill_page_change_asks_the_release_and_builds_nothing():
+    table = ci_reach.load_table()
+    page = ".claude/skills/delvewright/skills/new-delve/SKILL.md"
+    assert on(ci_reach.decide(table, "pull_request", [page])) == WHOLE_TREE_READERS | {"pin-drift"}
+
+
+def test_a_planner_tool_change_runs_its_tests_and_no_engine_build():
+    table = ci_reach.load_table()
+    got = on(ci_reach.decide(table, "pull_request", ["tools/planner/worktree-new.sh"]))
+    assert {"tool-tests", "tool-tests-tree"} <= got
+    assert got.isdisjoint({"rust", "publishable", "zone-audit", "mecha-crosscheck", "tier2-validation", "pin-drift"})
+
+
+@pytest.mark.parametrize(
+    "path, group",
+    [
+        ("docs/reference/compiler.md", "rust"),  # crates/delvec/tests/hand_camera.rs
+        ("docs/reference/compiler.md", "tool-tests"),  # test_check_dw_codes.py, test_staging_gate.py
+        ("docs/playtest-findings.json", "tool-tests"),  # test_staging_gate.py
+        ("tools/maintenance/probe-drowned-engagement.py", "rust"),  # engage.rs
+        ("tools/creator/i18n-translate.py", "rust"),  # i18n_sidecar.rs, through write_sidecar.py
+        ("tools/ci/check-publishable.sh", "publishable"),
+        (".claude/skills/delvewright/skills/new-delve/versions.toml", "pin-drift"),
+        ("crates/delvec/src/grammar/mod.rs", "zone-audit"),
+    ],
+)
+def test_a_path_a_job_reads_reaches_it(path, group):
+    table = ci_reach.load_table()
+    assert ci_reach.decide(table, "pull_request", [path])[group] == path
 
 
 @pytest.mark.parametrize("path", [".github/workflows/ci.yml", ".github/ci-reach.toml", "versions.toml", "Cargo.lock", "tools/lib/ci_reach.py"])
