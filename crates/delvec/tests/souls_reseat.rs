@@ -223,7 +223,8 @@ fn unseen_removal(tag: &str) -> Vec<String> {
 
 /// **Both rest paths dispatch the elite.** A bonfire owes the same scene reset to
 /// a party that rested and to a party that died and woke there, so the re-seat
-/// line has to appear in `bonfire_rest_<i>` AND in `cp_on_respawn_<i>` — this is
+/// line has to appear in `bonfire_rest_<i>` AND in `party_reseat` (the respawn
+/// path's re-seat after a party wipe) — this is
 /// the hook the actor was missing from entirely.
 #[test]
 fn rest_and_death_respawn_both_reseat_the_undefeated_elite() {
@@ -232,7 +233,7 @@ fn rest_and_death_respawn_both_reseat_the_undefeated_elite() {
         "execute unless entity @e[tag=dw_pup_{ELITE_SAFE}] if entity \
          @e[tag=dw_actor_{ELITE_SAFE}] run function {NS}:actor_restand_{ELITE_SAFE}"
     );
-    for f in ["bonfire_rest_0", "cp_on_respawn_0"] {
+    for f in ["bonfire_rest_0", "party_reseat"] {
         let body = func(&out, f);
         assert!(
             body.contains(&want),
@@ -361,7 +362,7 @@ fn an_undefeated_boss_wave_is_reseated_on_its_own_bodies() {
     let out = build(&fixture_campaign(true));
     let want =
         format!("execute if entity @e[tag=dw_wave_ambush] run function {NS}:wave_reseat_ambush");
-    for f in ["bonfire_rest_0", "cp_on_respawn_0"] {
+    for f in ["bonfire_rest_0", "party_reseat"] {
         let body = func(&out, f);
         assert!(
             body.contains(&want),
