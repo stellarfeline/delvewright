@@ -264,17 +264,36 @@ export interface WalkGateBinding {
  * Withholding leaves such a crossing exactly as unguarded as it is today (the walk
  * gets no assist at all now); closing it needs a proven route for these walks, which
  * only the compiler can supply.
+ *
+ * **A walk that matches a leg but starts off it** (`startsOnLeg === false`: a
+ * die-retry return from the respawn seat, the walk out of a bonfire, which the
+ * leg was proven from the step before) is two walks: an unproven hop from where
+ * the bot stands to the leg's first proven cell, then the proven leg itself,
+ * replayed cell by cell. The leg's own gates, crush gates included, bind the
+ * proven part from its compiler-pinned mouths; the declared non-crush gates bind
+ * the unproven hop. Only a crush gate the leg does not cross is withheld.
  */
 export function gatesBindingWalk(
   legMatched: boolean,
   legGates: readonly TimedGate[],
   declared: readonly TimedGate[],
+  startsOnLeg = true,
 ): WalkGateBinding {
-  if (legMatched) {
+  if (legMatched && startsOnLeg) {
     return {
       gates: legGates,
       withheld: [],
       source: "the compiler's proven route for this leg",
+    };
+  }
+  if (legMatched) {
+    const own = new Set(legGates.map((g) => g.id));
+    return {
+      gates: declared.filter((g) => own.has(g.id) || !g.crush),
+      withheld: declared.filter((g) => g.crush && !own.has(g.id)),
+      source:
+        "this leg's own gates and the campaign's declared table (the walk starts off " +
+        "the leg, so the hop onto it is unproven)",
     };
   }
   return {
@@ -282,6 +301,21 @@ export function gatesBindingWalk(
     withheld: declared.filter((g) => g.crush),
     source: "the campaign's declared gate table (this walk has no proven leg)",
   };
+}
+
+/**
+ * The regions of every declared crush gate a walk does NOT bind, as boxes the
+ * navigator costs like a lethal volume. Such a gate has no staging on this walk,
+ * so a pathfinder cutting through it between two proven cells meets the closing
+ * edge blind; the gallery's walk to the east bay died that way at the inner door.
+ */
+export function unstagedCrushBoxes(
+  declared: readonly TimedGate[],
+  bound: readonly TimedGate[],
+): { lo: Vec3Tuple; hi: Vec3Tuple }[] {
+  return declared
+    .filter((g) => g.crush && !bound.some((b) => b.id === g.id))
+    .map((g) => ({ lo: g.min, hi: g.max }));
 }
 
 /** Human-readable gate summary for a failure message: id and cycle, per gate. */

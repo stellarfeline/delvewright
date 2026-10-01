@@ -39,8 +39,11 @@ import {
   type BranchOutcome,
   type CrashStage,
   type EncounterReport,
+  type StageName,
 } from "./report.ts";
 import { installCrashReporter } from "./crash.ts";
+import { CLIENT_WAIT_TIMEOUT_MS, SERVER_LOAD_TIMEOUT_TICKS } from "./client-loaded.ts";
+import { unreportedWindows } from "./load-window.ts";
 import {
   assertEntryChoicesOnPath,
   branchTierFromEnv,
@@ -464,6 +467,14 @@ async function main(): Promise<number> {
     // spec-0029: the name-preference binding, always recorded — including a zero.
     report.recordNamePreference(executor.namePreference());
     report.recordRests(executor.performedRests());
+    report.recordLoadWindows(executor.loadWindows());
+    for (const w of executor.loadWindows()) {
+      process.stderr.write(
+        `[load-window] ${w.cause} in ${w.stage} at step ${w.step}: ${w.lengthMs ?? "open"}ms, ` +
+          `closed by ${w.closedBy ?? "nothing"}, ${w.absorbed.length} absorbed` +
+          `${w.absorbed.map((a) => ` [${a.kind} +${a.atMs}ms ${a.detail}]`).join("")}\n`,
+      );
+    }
     // Reclassify, never suppress (2026-08-06 island triage): a `despawn-actor
     // style: vanish` broadcasts the same "<name> died" line a real combat loss
     // does, and this run has no wired `min_y` to derive an exact depth cutoff
@@ -559,6 +570,20 @@ async function main(): Promise<number> {
           ],
       failures: dieRetryFailures,
     });
+
+    // The bot told the server it had loaded after every join and respawn, or the
+    // stretch after it was walked by a body nothing could hurt — and every stage
+    // that inferred "this did not kill the party" from the bot surviving there
+    // inferred it from nothing (load-window.ts).
+    for (const w of unreportedWindows(executor.loadWindows(), Date.now(), CLIENT_WAIT_TIMEOUT_MS)) {
+      report.appendFailures(w.stage as StageName, [
+        `the bot never sent \`player_loaded\` after its ${w.cause} at step ${w.step}, so the ` +
+          `server held it unhurtable for its ${SERVER_LOAD_TIMEOUT_TICKS}-tick fallback ` +
+          `(${w.absorbed.length} damage event(s) absorbed) — a harness bot not made by ` +
+          `createHarnessBot, or a tracker that never fired; nothing this stage proved in that ` +
+          `stretch was proved on a body that could be hurt`,
+      ]);
+    }
 
     // spec-0025 §3: every enumerated branch appears here — the one this session
     // walked with its result, and each of the others with the reason it did not.

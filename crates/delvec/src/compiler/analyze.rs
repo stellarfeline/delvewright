@@ -218,6 +218,27 @@ pub fn analyze_campaign(c: &Campaign, prefabs: &dyn AnchorRegistry) -> Vec<Diagn
                 ));
             }
         }
+        // DW0204 quantifies over every path the build exports. Each reachable
+        // branch's own path (`validation/branch-path-<slug>.json`) is walked by the
+        // branch runs exactly as the critical path is walked by the bot ladder, so
+        // it replays under the same rule: every step legal at its position and
+        // `campaign-complete` at its final step, never with objective steps ahead.
+        // The worlds are the ones the export walks: `branch::realize` over the same
+        // deterministic `Flow`.
+        for r in crate::compiler::branch::realize(c) {
+            let Some(w) = r.world else { continue };
+            if let Err(f) = flow.replay(&flow.playthrough_in(w)) {
+                diags.push(Diagnostic::error(
+                    codes::PATH_INCOHERENT,
+                    "quests",
+                    "/content/quests".to_string(),
+                    f.message_on(&format!(
+                        "branch `{}`'s exported path (`validation/branch-path-{}.json`)",
+                        r.branch.id, r.branch.slug
+                    )),
+                ));
+            }
+        }
     }
 
     // DW0210 is no longer computed here (spec-0010): the lighting gate moved to the

@@ -27,10 +27,9 @@ Surfaces do fail when something first reaches them, which is the whole reason
 this campaign exists: an ambush and a named mob drop could not compile at all, a
 generated flag-gate test could not pass, and a one-waypoint lane emitted a march
 test asserting an index it had no way to reach — each found here, by binding it.
-Three are still open: the build's render plan and the one `delvec snapshot`
-derives disagree whenever a world-edit blocks the route, nothing refuses a wave
-seated inside a killing volume, and nothing refuses an objective gated on a
-state an earlier forced beat clears.
+Two are still open: the build's render plan and the one `delvec snapshot`
+derives disagree whenever a world-edit blocks the route, and nothing refuses an
+objective gated on a state an earlier forced beat clears.
 
 ## Reading it
 
@@ -162,6 +161,8 @@ holding them at once.
 | `a-fight-that-comes-back-with-no-judgement` | `DW0915` | `validate` | removing `fires` from the muster's bundle, when every rest brings the muster back |
 | `a-second-purse-on-the-one-sidebar` | `DW0919` | `validate` | asking the relics to stand on the sidebar beside the tokens, when the slot holds one objective |
 | `a-party-purse-the-sidebar-cannot-draw` | `DW0919` | `validate` | moving the standing display onto the party's bounty, whose `#party` holder the sidebar hides |
+| `an-archer-seated-beside-the-burning-corner` | `DW0922` | `build` | summoning the edge skeleton around the east bay, so its ring stands it in the near hall within its pursuit of the burning corner in the barrier pocket |
+| `a-hatch-the-party-leaves-open` | `DW0923` | `build` | seating the muster at the hearth beside the terrace and laying a trapdoor shut over the west well: a player can open it and leave it open, and the muster then falls in |
 
 **A probe is the primary plus one declared edit.** It carries no copy of any
 document the primary already holds; what it perturbs is written out in its own

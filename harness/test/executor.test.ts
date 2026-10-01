@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
 import { setTimeout as delay } from "node:timers/promises";
 import type { Bot } from "mineflayer";
-import { MineflayerExecutor, completionWindowMs, type BotConfig } from "../src/executor.ts";
+import { MineflayerExecutor, completionWindowMs, respawnLanded, type BotConfig } from "../src/executor.ts";
 import { BotDeathError } from "../src/death.ts";
 import type { AssertCompleteStep } from "../src/critical-path.ts";
 import {
@@ -4076,6 +4076,68 @@ test("a walk with NO proven leg waits out a shut declared gate instead of failin
   // was filled and was retried only after the region read clear.
   assert.ok(bot.gotoStates.includes("shut"), bot.gotoStates.join(","));
   assert.ok(bot.gotoStates.includes("open"), bot.gotoStates.join(","));
+});
+
+test("a walk that reaches a leg's destination from somewhere else takes the declared gates", async () => {
+  // The gallery branch ladder's red: a die-retry return from the respawn seat
+  // [5, 67, 9] matched the proven leg ending at the muster [15, 67, 19] by its
+  // destination alone. That leg was proven from the marshal's stance and crosses no
+  // gate, so the walk bound none, and `timed-gate/mid-door` — shut 60 ticks of
+  // every 100, between the seat and the fight — answered `No path to the goal!`.
+  // Here the same shape on the death-loop approach: the next leg ends at the lip,
+  // but it was proven from [40, 65, 40], nowhere near where this walk starts.
+  const bot = new GatedApproachBot();
+  bot.entity.position = new FakeVec3(9.5, 65.0, 17.5);
+  const executor = attach(bot);
+  executor.useDeathPlan(westPitPlanWithLip());
+  executor.useWaypoints(
+    parseWaypoints({
+      ...GALLERY_DOORS,
+      legs: [{ from: [40, 65, 40], to: [1, 65, 6], waypoints: [[1, 65, 6]], timed_gates: [] }],
+    }),
+  );
+
+  await executor.runDeathLoop();
+
+  const t = executor.deathLoopTrials()[0]!;
+  assert.ok(
+    !(t.abandoned ?? "").includes("could not be reached"),
+    `the approach crossed the door: ${t.abandoned ?? "(no fault)"}`,
+  );
+  // The gate rule carried it: the walk was refused while the door was filled and
+  // retried once it read clear, which only a walk bound to the door does.
+  assert.ok(bot.gotoStates.includes("shut"), bot.gotoStates.join(","));
+  assert.ok(bot.gotoStates.includes("open"), bot.gotoStates.join(","));
+});
+
+test("a respawn has landed only when the respawn packet came and the client reported loaded", () => {
+  const closed = { cause: "respawn" as const, openedAt: 1, sentAt: 2, reason: "chunk" as const };
+  const open = { cause: "respawn" as const, openedAt: 1, sentAt: undefined, reason: undefined };
+  // A health update above zero on the corpse makes mineflayer say `spawn`; no
+  // respawn packet has come, so the body is still where it died.
+  assert.equal(respawnLanded(true, 0, []), false);
+  assert.equal(respawnLanded(true, 1, [open]), false, "the new life's position is not in yet");
+  assert.equal(respawnLanded(true, 1, [closed]), true);
+  assert.equal(respawnLanded(false, 1, [closed]), true, "the packets say so even if `spawn` lags");
+  // A bot with no wire tracker has only the `spawn` count.
+  assert.equal(respawnLanded(true, 0, undefined), true);
+  assert.equal(respawnLanded(false, 0, undefined), false);
+});
+
+test("a leg matched from far away is consumed but is not that walk's proof", () => {
+  const wp = parseWaypoints(GALLERY_DOORS);
+  const far = nextLegWaypoints(wp.legs, 0, [40, 65, 40], [30, 65, 30]);
+  assert.equal(far.matched, true, "the lockstep order is unchanged: the leg is consumed");
+  assert.equal(far.cursor, 1);
+  assert.equal(far.startsOnLeg, false);
+  assert.deepEqual(
+    gatesBindingWalk(far.matched, far.timedGates, wp.timedGates, far.startsOnLeg).gates.map(
+      (g) => g.id,
+    ),
+    ["timed-gate/side-door", "timed-gate/mid-door"],
+  );
+  const near = nextLegWaypoints(wp.legs, 0, [40, 65, 40], [3, 65, 4]);
+  assert.equal(near.startsOnLeg, true, `5 blocks from [0, 65, 0]: ${near.startOffset}`);
 });
 
 test("a matched leg still binds only the gates the compiler proved it crosses", async () => {
