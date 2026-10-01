@@ -19,7 +19,7 @@
     },
     "mc_version": "1.21.11",
     "outputs": {
-      "SKINS.md": "f74918c5ce0999b18339a19be4e4efaffd3e1517e93b36db9ac10bdcfa99a134",
+      "SKINS.md": "b96519c1ba2189e0e4de447c7e85ba47d5f2ccaec0e9542baaee1ffa31315b21",
       "creator-datapack/data/gallery/function/creator/camera/cam.mcfunction": "48f8f0f1b2f1755fb77d6f96add3a224b38160e1358de60e90b75e46a38858f8",
       "creator-datapack/data/gallery/function/creator/camera/free.mcfunction": "41b364d2dd54d6c580e0ab528bcac4faed47e0da987cd18dd7128337196a240e",
       "creator-datapack/data/gallery/function/creator/camera/free_back.mcfunction": "f331b4fa0faf8048aac131197e42594761b7a4e1178ff72c1ec4e33cff19647c",
@@ -621,7 +621,7 @@
       "packtest-datapack/data/gallery/test/wave_kill_reward_muster.mcfunction": "28b061d6227ef949258649bb54e3efc12dfdf4111266600c135f02667b8f39f0",
       "packtest-datapack/pack.mcmeta": "549482756b33bacc8910abe034e55837ccb4df3029ce38065c59c9ce5754f76b",
       "render-plan.json": "32fc6560f4bf50385387647fcb5d60a43358bfecca1c136da8479a098c03357e",
-      "resourcepack.zip": "03059662822e15accfab2bbf9638c05de79f093a12020e79a95b6951b5de00a6",
+      "resourcepack.zip": "aac0423a981b3514d511c18ed85713e292ca3d12a60afd970533a37ab9b33e74",
       "server/README.md": "e2e0fba7370cb987d7bdbc8798cdf527c25de7ca657e5518a415c62bca6cdc48",
       "server/eula-note.txt": "2490937c526ded0804802b6b9076c936f44260715afb64af26dd8f8cce02a7aa",
       "server/server.properties": "b19bcf858e4d8c9a9a6151c508c0c4789f2c2912128881a2a0d3cdc6836d68a3",
@@ -659,7 +659,7 @@
       "validation/wave-lethal.json": "1e81d1e9ee58b135b101fe9c615b653ae7adf868df87a39d3fd79c8378d58295",
       "validation/ways.json": "7a5f47e7e2a2a66ba527df3a155eb52cce06e559cdc846dfcdb00506d33f7f33"
     },
-    "resource_pack_sha1": "9692fd522b95f8e40b17026837274e4f78fd8693"
+    "resource_pack_sha1": "3122b559b558472a30d33f4da439cac897694764"
   },
   "hard.en": {
     "campaign_id": "gallery",
@@ -681,7 +681,7 @@
     },
     "mc_version": "1.21.11",
     "outputs": {
-      "SKINS.md": "f74918c5ce0999b18339a19be4e4efaffd3e1517e93b36db9ac10bdcfa99a134",
+      "SKINS.md": "b96519c1ba2189e0e4de447c7e85ba47d5f2ccaec0e9542baaee1ffa31315b21",
       "creator-datapack/data/gallery/function/creator/camera/cam.mcfunction": "48f8f0f1b2f1755fb77d6f96add3a224b38160e1358de60e90b75e46a38858f8",
       "creator-datapack/data/gallery/function/creator/camera/free.mcfunction": "41b364d2dd54d6c580e0ab528bcac4faed47e0da987cd18dd7128337196a240e",
       "creator-datapack/data/gallery/function/creator/camera/free_back.mcfunction": "f331b4fa0faf8048aac131197e42594761b7a4e1178ff72c1ec4e33cff19647c",
@@ -1283,7 +1283,7 @@
       "packtest-datapack/data/gallery/test/wave_kill_reward_muster.mcfunction": "28b061d6227ef949258649bb54e3efc12dfdf4111266600c135f02667b8f39f0",
       "packtest-datapack/pack.mcmeta": "549482756b33bacc8910abe034e55837ccb4df3029ce38065c59c9ce5754f76b",
       "render-plan.json": "32fc6560f4bf50385387647fcb5d60a43358bfecca1c136da8479a098c03357e",
-      "resourcepack.zip": "03059662822e15accfab2bbf9638c05de79f093a12020e79a95b6951b5de00a6",
+      "resourcepack.zip": "aac0423a981b3514d511c18ed85713e292ca3d12a60afd970533a37ab9b33e74",
       "server/README.md": "cc5b21c0c9dbb526724e0661fecc449a93ef744c78b08c25f460932b598f9764",
       "server/eula-note.txt": "2490937c526ded0804802b6b9076c936f44260715afb64af26dd8f8cce02a7aa",
       "server/server.properties": "07439e66da267af221200a131d8fb8d3f117dbd1d7b30634dc1c1a7b47114d1a",
@@ -1321,7 +1321,7 @@
       "validation/wave-lethal.json": "1e81d1e9ee58b135b101fe9c615b653ae7adf868df87a39d3fd79c8378d58295",
       "validation/ways.json": "7a5f47e7e2a2a66ba527df3a155eb52cce06e559cdc846dfcdb00506d33f7f33"
     },
-    "resource_pack_sha1": "9692fd522b95f8e40b17026837274e4f78fd8693"
+    "resource_pack_sha1": "3122b559b558472a30d33f4da439cac897694764"
   },
   "ocean-horizon.en": {
     "campaign_id": "gallery",
@@ -1343,7 +1343,7 @@
     },
     "mc_version": "1.21.11",
     "outputs": {
-      "SKINS.md": "619befecbd92b4581f52147b94feaf2d20086787a78ddb9d791859319f859dda",
+      "SKINS.md": "32580f466d2d91e4845f8804ce0d613c944cbf4d3a740f5a2d42052054e072bd",
       "creator-datapack/data/gallery/function/creator/camera/cam.mcfunction": "48f8f0f1b2f1755fb77d6f96add3a224b38160e1358de60e90b75e46a38858f8",
       "creator-datapack/data/gallery/function/creator/camera/free.mcfunction": "41b364d2dd54d6c580e0ab528bcac4faed47e0da987cd18dd7128337196a240e",
       "creator-datapack/data/gallery/function/creator/camera/free_back.mcfunction": "f331b4fa0faf8048aac131197e42594761b7a4e1178ff72c1ec4e33cff19647c",
@@ -1944,7 +1944,7 @@
       "packtest-datapack/data/gallery/test/wave_kill_reward_muster.mcfunction": "28b061d6227ef949258649bb54e3efc12dfdf4111266600c135f02667b8f39f0",
       "packtest-datapack/pack.mcmeta": "549482756b33bacc8910abe034e55837ccb4df3029ce38065c59c9ce5754f76b",
       "render-plan.json": "90a107e67999843dd256feaab7da4e00cde237a7c280fc63bb08cd9f5ddecf45",
-      "resourcepack.zip": "b660fbd9bff29741381c2c48a40e713a2af4ba825b90af0a671f668e76e36a7f",
+      "resourcepack.zip": "7598d7113d24548282d01bf709c51a1086ab500851786727de1054e41f045ba6",
       "server/README.md": "9d4727af37f574888ca3c22b23732ba132ed0bccef7b46a441d62c60661fe047",
       "server/eula-note.txt": "2490937c526ded0804802b6b9076c936f44260715afb64af26dd8f8cce02a7aa",
       "server/server.properties": "2ef540fa1c58c4f8c6fad3e078ee6ca869e38143845c8a11d92d49dad4af0831",
@@ -1982,7 +1982,7 @@
       "validation/wave-lethal.json": "1e81d1e9ee58b135b101fe9c615b653ae7adf868df87a39d3fd79c8378d58295",
       "validation/ways.json": "5543152fdde10ba41c96d647c908bf91d4291aada57137efa640f56249feb8f1"
     },
-    "resource_pack_sha1": "7787f9426a70feafbab4164d6b044eb77ef9920e"
+    "resource_pack_sha1": "a9c33ed3269355fdddf094b01b40fad74ca4d5bc"
   },
   "primary.en": {
     "campaign_id": "gallery",
@@ -2000,11 +2000,11 @@
       "quest-plan.json": "1b02b5ccca7611174065cce270ae8aef17aefeb33b5432ebeab5852517c27055",
       "quests.json": "238f11f6d8393faf3c657c4928e5bf6fb86455af78a15df123aee15c254e537e",
       "world-edits.json": "152077f470b0f84161a87621d5ecbe92fe16c12cedd9ef4c2b8cbba4c92e2066",
-      "world.json": "c27c2ef93a02c4c22e097e229080b09d640c9f64a7e0727cba329ad2c690b6ab"
+      "world.json": "63cdd6d49aefe2b0878ae674440c2faad322df5caa2441bb1d7dede0b7424272"
     },
     "mc_version": "1.21.11",
     "outputs": {
-      "SKINS.md": "f74918c5ce0999b18339a19be4e4efaffd3e1517e93b36db9ac10bdcfa99a134",
+      "SKINS.md": "b96519c1ba2189e0e4de447c7e85ba47d5f2ccaec0e9542baaee1ffa31315b21",
       "creator-datapack/data/gallery/function/creator/camera/cam.mcfunction": "48f8f0f1b2f1755fb77d6f96add3a224b38160e1358de60e90b75e46a38858f8",
       "creator-datapack/data/gallery/function/creator/camera/free.mcfunction": "41b364d2dd54d6c580e0ab528bcac4faed47e0da987cd18dd7128337196a240e",
       "creator-datapack/data/gallery/function/creator/camera/free_back.mcfunction": "f331b4fa0faf8048aac131197e42594761b7a4e1178ff72c1ec4e33cff19647c",
@@ -2155,7 +2155,7 @@
       "datapack/data/gallery/function/cp_on_respawn_2.mcfunction": "76c038fcaf4cf2e559bba35e3e534d672769ceda7f59d7af8aaa528fe7aeebc2",
       "datapack/data/gallery/function/cp_on_respawn_3.mcfunction": "695c8841b5671ed863fc8dbc53f695ed713856aa72a982d76b309fcaa9a6d915",
       "datapack/data/gallery/function/cp_reset_0.mcfunction": "e2612011c5d9d62667b817af071db3a890ebf791f884d9a4d0734e64b0027d3c",
-      "datapack/data/gallery/function/cp_respawn_check.mcfunction": "a904122408b2617e3fc6b5877f10676d19a12d9cd0ae9cacfc1d888157d6268f",
+      "datapack/data/gallery/function/cp_respawn_check.mcfunction": "0de8fd48d8881b9e668eca55f620435b0d69f25cc6b68ef45deeafc51c5d2947",
       "datapack/data/gallery/function/cp_respawn_fire.mcfunction": "7f9b964377e534f14169f5ddcadd916ed67f25e34ddf15959f75baa49b5f7812",
       "datapack/data/gallery/function/cp_seat_0.mcfunction": "81509dafb7a79e993d08cb4b2f844efd5d6dff04c5f4970a7fd98c26963871c0",
       "datapack/data/gallery/function/cp_seat_1.mcfunction": "d2ac5173786262c43dbba5e3be4ad65c91a7fb3b0d1c3beb05933dc5cccf5f0a",
@@ -2163,8 +2163,8 @@
       "datapack/data/gallery/function/cp_seat_3.mcfunction": "81509dafb7a79e993d08cb4b2f844efd5d6dff04c5f4970a7fd98c26963871c0",
       "datapack/data/gallery/function/cs_end_muster_3_2_12687a8f.mcfunction": "0a07723fc620de964eef31e48edeba92f95112c16917a91b126e8b595c99ae90",
       "datapack/data/gallery/function/cs_end_muster_4_2_509f3025.mcfunction": "1304834a096f0860facc1695208eefa358162fbe58464ef5c979269d8ef1f46b",
-      "datapack/data/gallery/function/cs_muster_3_2_12687a8f.mcfunction": "03a1f868670255e21a3e462cb3cec78115d323558a9eb4a00311b0dfa3504b23",
-      "datapack/data/gallery/function/cs_muster_4_2_509f3025.mcfunction": "446651be96cfd628b7d07268958367a1b56bfc24470a71bf73eabd5d5ba8460c",
+      "datapack/data/gallery/function/cs_muster_3_2_12687a8f.mcfunction": "4f578e363cfb76612d4b98bed507c0a907ff17f106b53c137a6f99e45a5c85ab",
+      "datapack/data/gallery/function/cs_muster_4_2_509f3025.mcfunction": "48c48322dcc62ae19153c87764cf5a8f7411d3b4e160a76f7d6e7830b424d4e2",
       "datapack/data/gallery/function/cs_repair.mcfunction": "8050ca99fbb10d2cad79147dbad56da366e6c7a9fa84ad2628c3451a76674d6f",
       "datapack/data/gallery/function/cs_repair_tp.mcfunction": "0a37736e666bc8e768d3a5cdf2d3aaf52a38768b81bae6bbedf4a482a507823c",
       "datapack/data/gallery/function/cs_tick_muster_3_2_12687a8f.mcfunction": "f6b92d130ca3c3a46c003dfbf72d761b70a6c75da953712fe450c387b1717846",
@@ -2203,7 +2203,7 @@
       "datapack/data/gallery/function/k_reward_lane.mcfunction": "149cdbf6a57649d83ce512bf607a881ed5146cf3f1227ffe9a74b7b2806c9d1e",
       "datapack/data/gallery/function/k_reward_muster.mcfunction": "b58e33fa8e9250b4d09ab989883869dd527708d7f0ce9a401f6f9155340403d2",
       "datapack/data/gallery/function/ka_reward_hall_moth.mcfunction": "d49cebf127ec4f224eb93b84a76aec4ce9f2c96898f79986de1e01bce221c967",
-      "datapack/data/gallery/function/lane_tick_lane.mcfunction": "17e895c0404c0afe5083a83987135e3d0286a3561c800af757c81f90f2b75614",
+      "datapack/data/gallery/function/lane_tick_lane.mcfunction": "98073a27b91fc2627cf80db8070035422a396e943dfb3c6b7a34c4b870587fe2",
       "datapack/data/gallery/function/lethal_east_pit.mcfunction": "6b5c9c5fdfde923c871d75996680c647630e5a5e5081582cbfb13d3f7ed2479e",
       "datapack/data/gallery/function/lethal_east_pit_kill.mcfunction": "afa31a41f6285ab5be7cda1db68c927d38bab263dd00822a13357b75fa1cc96b",
       "datapack/data/gallery/function/lethal_west_pit.mcfunction": "0f42c7d2b772ea7f62573d373f6148a798f0c3a0ef7f5d6fb5787d4896132430",
@@ -2233,6 +2233,10 @@
       "datapack/data/gallery/function/press_dw_press_seal_gate_main.mcfunction": "abfb62b3545b6e1030bde807e8b93fa636bf3a4a04fee2f04dc2d39e6e74792d",
       "datapack/data/gallery/function/press_read_the_label.mcfunction": "92a27dbdece34239be18c73984d22c237fee74804689b05a269c01347ce51963",
       "datapack/data/gallery/function/press_shortcut_door_barred.mcfunction": "8de697a4706316279822819b533989a6f41d5d6dabf5b198e753dca3286f3bc7",
+      "datapack/data/gallery/function/rw_begin.mcfunction": "7f61ae514eeeb90dd8c52cfbd60a193ea17ce6f03947fc511e4aa57305ba0c2a",
+      "datapack/data/gallery/function/rw_release.mcfunction": "77971201aa3e1c726f1ed954b5a35db8137c66d49ecd9f31b0d2722e52579f54",
+      "datapack/data/gallery/function/rw_start.mcfunction": "f40bad218b15ab7c047c1b503628c5aa90080fbaecd12e4af7d611a9bcf2c53d",
+      "datapack/data/gallery/function/rw_tick.mcfunction": "f70d40cd63b7fd6edfe3b8c5b16497ef7372caca7a2ebd757cef0fd6e6f6aae8",
       "datapack/data/gallery/function/seal_arm_gate_main.mcfunction": "bc13ce8a68ff5558279b73171a6aee689ce1bc8113ec987a12573f3b9374de41",
       "datapack/data/gallery/function/seq_near_hall_oc_take_the_emeralds_0.mcfunction": "bded15c2d65ed706d9bb2c6d8f4887dd2c1c67292da52c3ac26ffd7960a12a0b",
       "datapack/data/gallery/function/seq_near_hall_oc_take_the_emeralds_0_0.mcfunction": "d880e6ee54c3a242a4e430b4dd01aa02a2ace0f34068610ad0f2557b93e6997e",
@@ -2240,7 +2244,7 @@
       "datapack/data/gallery/function/seq_near_hall_oc_take_the_emeralds_0_2.mcfunction": "a936fb8a78eab2e07d3bdebff0b2ae69a32090136a39fc396057a235b2900c1f",
       "datapack/data/gallery/function/seq_near_hall_oc_take_the_emeralds_0_3.mcfunction": "87970865a203bc438820c4ed9c99b545d16ed83fc92238bf52421f7a95c98f7e",
       "datapack/data/gallery/function/seq_near_hall_oc_take_the_emeralds_0_4.mcfunction": "82878f47dc08e542f7af7fc506aa90529c684b6584b12fb7576691ddc0da81c7",
-      "datapack/data/gallery/function/setup.mcfunction": "25e6acdb402342b62da824c4ddc3974dc3319f8a94149260544edeab06966e7a",
+      "datapack/data/gallery/function/setup.mcfunction": "213073fd361a5db02469883ca208d685315e8bfc3ce6c7c1143416e4e1aa2725",
       "datapack/data/gallery/function/setup_finish.mcfunction": "7923e8388cd7e5536d19d36621fe91330d2c8511c3e689e149f66a7767c4d831",
       "datapack/data/gallery/function/shop_open_0.mcfunction": "6c8558fe4278f93d5998638a2156a9579272dc62c05824df81b6e9083df460c9",
       "datapack/data/gallery/function/shop_pick_0_0.mcfunction": "7fa6c64c1b9037786bc8e9a6f0014656ef7a480f5dcb1b44fbbec823c4021ad0",
@@ -2372,7 +2376,7 @@
       "datapack/data/gallery/function/tgate_open_inner_door.mcfunction": "37add30a3b27844272bbc3420294e500f7b32722f6c95d26fa05933273b7d487",
       "datapack/data/gallery/function/tgate_open_mid_door.mcfunction": "7a3698c7a4ddf74d50126eedc68de622bc11f705a0b45fef80a9503dd7fa3b03",
       "datapack/data/gallery/function/tgate_open_side_door.mcfunction": "c49a6eb1d6358303bd74ad6e711c52a7366d8ea14917aa05e2bd1f400930ce21",
-      "datapack/data/gallery/function/tick.mcfunction": "d5484c1430bc86951d6f4aae5b1bda77e39878d82130e9748c047a93baa14dee",
+      "datapack/data/gallery/function/tick.mcfunction": "66ce722d98f88647d948bcbbd0f4ef6e0a4016867b2c3a5765f68f7df9a5ed77",
       "datapack/data/gallery/function/trap_disarm_plate.mcfunction": "ae76d00565d41a4b788287b5d460da31d41e6208d77e056189a6c4252301477b",
       "datapack/data/gallery/function/trap_fire_chest.mcfunction": "f19a4c4d79afc9c2ac63a2169b088f61a92f39f3e7e5670e4f6b7bc4dfa64e19",
       "datapack/data/gallery/function/trap_fire_plate.mcfunction": "9955c949fb22b03c7396f295969587c7943504bdc9cdd2708bf5f6ff5ac8e0be",
@@ -2551,8 +2555,9 @@
       "packtest-datapack/data/gallery/test/v06_actor_equipment_minecraft_zombie.mcfunction": "c4c14bb4b2435d78c9ba2991a52a54cf420ca1edf7b31acd49de1d34880b6d33",
       "packtest-datapack/data/gallery/test/v06_boundary_inside.mcfunction": "8b88ef9e2873a6cdcebea2ba7f92907ea86a7685b4360d26bb773f3570a9edea",
       "packtest-datapack/data/gallery/test/v06_boundary_return.mcfunction": "45098c0fcb4f67a26684a44bed126625d809eec6b46e44ee938ba7884dfbb5d0",
-      "packtest-datapack/data/gallery/test/v06_checkpoint_reseat.mcfunction": "ce974051ac5fce1cebe6805df218d62b3f9843e6f36bbf725fde92fd50eb1f39",
+      "packtest-datapack/data/gallery/test/v06_checkpoint_reseat.mcfunction": "1911d19ae2d3d12d58205808531d417e134b1c112c7820efc68dd205665834a1",
       "packtest-datapack/data/gallery/test/v06_checkpoint_respawn.mcfunction": "a76be01bb648cada130278494b1295cfe372310c640493ae54a9cdab4b15a10a",
+      "packtest-datapack/data/gallery/test/v06_checkpoint_wait.mcfunction": "8ceebdbd8cb93021f57b334ba988b0ffd98969f7159b120f1b738cf23dd048ad",
       "packtest-datapack/data/gallery/test/v06_collapse.mcfunction": "491c4667bd942f64c32c8e4c358874adec924495e2f05a729092688ed9a176b4",
       "packtest-datapack/data/gallery/test/v06_cutscene_freeze.mcfunction": "60e833d92aba1870e8da95593ba8f09bf4994c79722b305ade163455bb95b2fa",
       "packtest-datapack/data/gallery/test/v06_damage.mcfunction": "f4bc0ef06958cd68d2ec462792d30e1afba08b744e25e75059982d369c81e35a",
@@ -2606,7 +2611,7 @@
       "packtest-datapack/data/gallery/test/wave_kill_reward_muster.mcfunction": "28b061d6227ef949258649bb54e3efc12dfdf4111266600c135f02667b8f39f0",
       "packtest-datapack/pack.mcmeta": "549482756b33bacc8910abe034e55837ccb4df3029ce38065c59c9ce5754f76b",
       "render-plan.json": "32fc6560f4bf50385387647fcb5d60a43358bfecca1c136da8479a098c03357e",
-      "resourcepack.zip": "03059662822e15accfab2bbf9638c05de79f093a12020e79a95b6951b5de00a6",
+      "resourcepack.zip": "aac0423a981b3514d511c18ed85713e292ca3d12a60afd970533a37ab9b33e74",
       "server/README.md": "fd94c22c24e68da9907efad1108174b38bc7847ae890534286e1fed42e7be442",
       "server/eula-note.txt": "2490937c526ded0804802b6b9076c936f44260715afb64af26dd8f8cce02a7aa",
       "server/server.properties": "fdfd8ee49290d9de87bc2bf4a8f4c8fbb9114c51b307cb485899f5812c3a3664",
@@ -2628,6 +2633,7 @@
       "validation/gate-seal.json": "30c2c05897dfbab74841ce7763990f47d99516f13e6199dc29aadd99f5a0f073",
       "validation/leave-proof.json": "c152f988b10e2f4cfcee99aa6672c7e90467e2aae4b2fdaf60fff33c9eeac132",
       "validation/lethal-gate.json": "2b24f676c1ab133f7e04d264e0de262823b1e8dac59fba45257460816d74c99d",
+      "validation/observer-census.json": "f8d4e6e6d7ca1fda3e68a9beb5cae485c7e95743c06124d2dc19bbff623b47fe",
       "validation/piece-exposure.json": "ce458c44578d6c75bb62aba30945da44e0f6aa10e8bd7a4c1a011e5818c799b5",
       "validation/piece-mating.json": "87a8fed2ac5625a1509fb0ca595a7c5d08494c878751c1468098b7d4752b551c",
       "validation/placement-gate.json": "6499c550748a491de1f228b4f057b3aa2f278600fa2e054ef6329bd48bafd172",
@@ -2640,11 +2646,11 @@
       "validation/teleport-gate.json": "f461e69c52da82d6df98e7aff7bd1080d2fbebb6ed72edcb3f4a9030811494aa",
       "validation/traversal-gate.json": "285bd008dbde332b8f5f3dbdd771e16f483390e106e6eb35f27976815dc38a4e",
       "validation/watch-claims.json": "0f298a5f8d39a1a681ecb27f19ca9080888692c133c506df80cf10e829e36b8e",
-      "validation/watch-ledger.json": "c20351015dfd78602e4375861ac912a4f42937ebf27a6ada17c9685875bb5587",
+      "validation/watch-ledger.json": "77b6a1d5ef3fbdd71f1eca53364d689589134b7542b3e8d9dc7ce205371be5a9",
       "validation/wave-lethal.json": "1e81d1e9ee58b135b101fe9c615b653ae7adf868df87a39d3fd79c8378d58295",
       "validation/ways.json": "7a5f47e7e2a2a66ba527df3a155eb52cce06e559cdc846dfcdb00506d33f7f33"
     },
-    "resource_pack_sha1": "9692fd522b95f8e40b17026837274e4f78fd8693"
+    "resource_pack_sha1": "3122b559b558472a30d33f4da439cac897694764"
   },
   "primary.zh-cn": {
     "campaign_id": "gallery",
@@ -2662,7 +2668,7 @@
       "quest-plan.json": "1b02b5ccca7611174065cce270ae8aef17aefeb33b5432ebeab5852517c27055",
       "quests.json": "238f11f6d8393faf3c657c4928e5bf6fb86455af78a15df123aee15c254e537e",
       "world-edits.json": "152077f470b0f84161a87621d5ecbe92fe16c12cedd9ef4c2b8cbba4c92e2066",
-      "world.json": "c27c2ef93a02c4c22e097e229080b09d640c9f64a7e0727cba329ad2c690b6ab"
+      "world.json": "63cdd6d49aefe2b0878ae674440c2faad322df5caa2441bb1d7dede0b7424272"
     },
     "language": "zh-cn",
     "mc_version": "1.21.11",
@@ -2818,7 +2824,7 @@
       "datapack/data/gallery/function/cp_on_respawn_2.mcfunction": "6730dca138dea39c331db54ba38039e1fd93fa020542848e9926202f9d5df107",
       "datapack/data/gallery/function/cp_on_respawn_3.mcfunction": "6730dca138dea39c331db54ba38039e1fd93fa020542848e9926202f9d5df107",
       "datapack/data/gallery/function/cp_reset_0.mcfunction": "105795a804ddceaa310acc96d6b39bdec71ec7951b2c79b8a39e5005b084ccda",
-      "datapack/data/gallery/function/cp_respawn_check.mcfunction": "a904122408b2617e3fc6b5877f10676d19a12d9cd0ae9cacfc1d888157d6268f",
+      "datapack/data/gallery/function/cp_respawn_check.mcfunction": "0de8fd48d8881b9e668eca55f620435b0d69f25cc6b68ef45deeafc51c5d2947",
       "datapack/data/gallery/function/cp_respawn_fire.mcfunction": "7f9b964377e534f14169f5ddcadd916ed67f25e34ddf15959f75baa49b5f7812",
       "datapack/data/gallery/function/cp_seat_0.mcfunction": "81509dafb7a79e993d08cb4b2f844efd5d6dff04c5f4970a7fd98c26963871c0",
       "datapack/data/gallery/function/cp_seat_1.mcfunction": "d2ac5173786262c43dbba5e3be4ad65c91a7fb3b0d1c3beb05933dc5cccf5f0a",
@@ -2826,8 +2832,8 @@
       "datapack/data/gallery/function/cp_seat_3.mcfunction": "81509dafb7a79e993d08cb4b2f844efd5d6dff04c5f4970a7fd98c26963871c0",
       "datapack/data/gallery/function/cs_end_muster_3_2_12687a8f.mcfunction": "0a07723fc620de964eef31e48edeba92f95112c16917a91b126e8b595c99ae90",
       "datapack/data/gallery/function/cs_end_muster_4_2_509f3025.mcfunction": "1304834a096f0860facc1695208eefa358162fbe58464ef5c979269d8ef1f46b",
-      "datapack/data/gallery/function/cs_muster_3_2_12687a8f.mcfunction": "03a1f868670255e21a3e462cb3cec78115d323558a9eb4a00311b0dfa3504b23",
-      "datapack/data/gallery/function/cs_muster_4_2_509f3025.mcfunction": "446651be96cfd628b7d07268958367a1b56bfc24470a71bf73eabd5d5ba8460c",
+      "datapack/data/gallery/function/cs_muster_3_2_12687a8f.mcfunction": "4f578e363cfb76612d4b98bed507c0a907ff17f106b53c137a6f99e45a5c85ab",
+      "datapack/data/gallery/function/cs_muster_4_2_509f3025.mcfunction": "48c48322dcc62ae19153c87764cf5a8f7411d3b4e160a76f7d6e7830b424d4e2",
       "datapack/data/gallery/function/cs_repair.mcfunction": "8050ca99fbb10d2cad79147dbad56da366e6c7a9fa84ad2628c3451a76674d6f",
       "datapack/data/gallery/function/cs_repair_tp.mcfunction": "0a37736e666bc8e768d3a5cdf2d3aaf52a38768b81bae6bbedf4a482a507823c",
       "datapack/data/gallery/function/cs_tick_muster_3_2_12687a8f.mcfunction": "f6b92d130ca3c3a46c003dfbf72d761b70a6c75da953712fe450c387b1717846",
@@ -2866,7 +2872,7 @@
       "datapack/data/gallery/function/k_reward_lane.mcfunction": "149cdbf6a57649d83ce512bf607a881ed5146cf3f1227ffe9a74b7b2806c9d1e",
       "datapack/data/gallery/function/k_reward_muster.mcfunction": "b58e33fa8e9250b4d09ab989883869dd527708d7f0ce9a401f6f9155340403d2",
       "datapack/data/gallery/function/ka_reward_hall_moth.mcfunction": "d49cebf127ec4f224eb93b84a76aec4ce9f2c96898f79986de1e01bce221c967",
-      "datapack/data/gallery/function/lane_tick_lane.mcfunction": "17e895c0404c0afe5083a83987135e3d0286a3561c800af757c81f90f2b75614",
+      "datapack/data/gallery/function/lane_tick_lane.mcfunction": "98073a27b91fc2627cf80db8070035422a396e943dfb3c6b7a34c4b870587fe2",
       "datapack/data/gallery/function/lethal_east_pit.mcfunction": "6b5c9c5fdfde923c871d75996680c647630e5a5e5081582cbfb13d3f7ed2479e",
       "datapack/data/gallery/function/lethal_east_pit_kill.mcfunction": "c96fb5e88e7a8d8f843e819dee9c28461abb5301bd95bd32d807e0a1bfbba40e",
       "datapack/data/gallery/function/lethal_west_pit.mcfunction": "0f42c7d2b772ea7f62573d373f6148a798f0c3a0ef7f5d6fb5787d4896132430",
@@ -2896,6 +2902,10 @@
       "datapack/data/gallery/function/press_dw_press_seal_gate_main.mcfunction": "abfb62b3545b6e1030bde807e8b93fa636bf3a4a04fee2f04dc2d39e6e74792d",
       "datapack/data/gallery/function/press_read_the_label.mcfunction": "92a27dbdece34239be18c73984d22c237fee74804689b05a269c01347ce51963",
       "datapack/data/gallery/function/press_shortcut_door_barred.mcfunction": "8de697a4706316279822819b533989a6f41d5d6dabf5b198e753dca3286f3bc7",
+      "datapack/data/gallery/function/rw_begin.mcfunction": "7f61ae514eeeb90dd8c52cfbd60a193ea17ce6f03947fc511e4aa57305ba0c2a",
+      "datapack/data/gallery/function/rw_release.mcfunction": "77971201aa3e1c726f1ed954b5a35db8137c66d49ecd9f31b0d2722e52579f54",
+      "datapack/data/gallery/function/rw_start.mcfunction": "f40bad218b15ab7c047c1b503628c5aa90080fbaecd12e4af7d611a9bcf2c53d",
+      "datapack/data/gallery/function/rw_tick.mcfunction": "70ad047ad54bfa00e0a6fc77800d75c8b1579d15604e19eb97112d58b7a4597c",
       "datapack/data/gallery/function/seal_arm_gate_main.mcfunction": "bc13ce8a68ff5558279b73171a6aee689ce1bc8113ec987a12573f3b9374de41",
       "datapack/data/gallery/function/seq_near_hall_oc_take_the_emeralds_0.mcfunction": "bded15c2d65ed706d9bb2c6d8f4887dd2c1c67292da52c3ac26ffd7960a12a0b",
       "datapack/data/gallery/function/seq_near_hall_oc_take_the_emeralds_0_0.mcfunction": "4ac8c8a2bcd0bedea837c9a188d14e46e333ceb0890a5812efcc13ffff4304df",
@@ -2903,7 +2913,7 @@
       "datapack/data/gallery/function/seq_near_hall_oc_take_the_emeralds_0_2.mcfunction": "a936fb8a78eab2e07d3bdebff0b2ae69a32090136a39fc396057a235b2900c1f",
       "datapack/data/gallery/function/seq_near_hall_oc_take_the_emeralds_0_3.mcfunction": "87970865a203bc438820c4ed9c99b545d16ed83fc92238bf52421f7a95c98f7e",
       "datapack/data/gallery/function/seq_near_hall_oc_take_the_emeralds_0_4.mcfunction": "82878f47dc08e542f7af7fc506aa90529c684b6584b12fb7576691ddc0da81c7",
-      "datapack/data/gallery/function/setup.mcfunction": "759600a79be44c161164110e7909a2184bcd3cf1031b64424d396ff0d4402cf9",
+      "datapack/data/gallery/function/setup.mcfunction": "083843faa9738eaf44baf83b68284a4dfb18bfd61bbf9f59adc3b37ebe02b8b3",
       "datapack/data/gallery/function/setup_finish.mcfunction": "2bd6074ed56e34c7478d6fe85ff8dd65653a16b9f03febee21d61d7c3cfccb7d",
       "datapack/data/gallery/function/shop_open_0.mcfunction": "6c8558fe4278f93d5998638a2156a9579272dc62c05824df81b6e9083df460c9",
       "datapack/data/gallery/function/shop_pick_0_0.mcfunction": "fb9915a1c987e38d1d17797deff26ccc04144ae2cfcfa7507867d63dff97705d",
@@ -3035,7 +3045,7 @@
       "datapack/data/gallery/function/tgate_open_inner_door.mcfunction": "37add30a3b27844272bbc3420294e500f7b32722f6c95d26fa05933273b7d487",
       "datapack/data/gallery/function/tgate_open_mid_door.mcfunction": "7a3698c7a4ddf74d50126eedc68de622bc11f705a0b45fef80a9503dd7fa3b03",
       "datapack/data/gallery/function/tgate_open_side_door.mcfunction": "c49a6eb1d6358303bd74ad6e711c52a7366d8ea14917aa05e2bd1f400930ce21",
-      "datapack/data/gallery/function/tick.mcfunction": "ddf5bcc926a41e1c4581ce3158fb892e1e36c79324ea6b370229400ab6a311f3",
+      "datapack/data/gallery/function/tick.mcfunction": "3d88d543f208941858bbfce85fe0a2a420456b6b127dbad3bdd09b8b1ff83dd3",
       "datapack/data/gallery/function/trap_disarm_plate.mcfunction": "ae76d00565d41a4b788287b5d460da31d41e6208d77e056189a6c4252301477b",
       "datapack/data/gallery/function/trap_fire_chest.mcfunction": "c813e9f1a46aa6070107125553393d00734dd7e34b173aabdfdb4e2484999758",
       "datapack/data/gallery/function/trap_fire_plate.mcfunction": "28643e888ddee06bf91d393e1121b5fc43f9ee6f3ad8992b71c58599a29ad76f",
@@ -3214,8 +3224,9 @@
       "packtest-datapack/data/gallery/test/v06_actor_equipment_minecraft_zombie.mcfunction": "f7718ed2d56811b710087c0a63beb571dcb985dfc1f630513358e157f17bc76c",
       "packtest-datapack/data/gallery/test/v06_boundary_inside.mcfunction": "b48121ff9296a87973b8f6fa82d9699f13d88989716ca83f031261a913dc1d5e",
       "packtest-datapack/data/gallery/test/v06_boundary_return.mcfunction": "874ae6dc403a8915352bae17dbedbaaf8e8cd9420aa2a70aeef9ca40f0855fb4",
-      "packtest-datapack/data/gallery/test/v06_checkpoint_reseat.mcfunction": "60276988759197c48c1bd5215050db7c803c64937f970e709951d83aa17afd0d",
+      "packtest-datapack/data/gallery/test/v06_checkpoint_reseat.mcfunction": "a1b2284e8647db4e724e9fec73997080ee5a9da5ea99476b9f343751802065b1",
       "packtest-datapack/data/gallery/test/v06_checkpoint_respawn.mcfunction": "ece556dc7ea65212d60529c59a2a284cb556e2e03825c5fc6421d1c6d683cf8f",
+      "packtest-datapack/data/gallery/test/v06_checkpoint_wait.mcfunction": "48aa1963235eb9917ed770923d970c618ea91a4ac427b0994c4fefa1519300a7",
       "packtest-datapack/data/gallery/test/v06_collapse.mcfunction": "de3785f64004e9e5ce9ede831431233b1eb3cabe34eb4cfaff3f4b4df5085446",
       "packtest-datapack/data/gallery/test/v06_cutscene_freeze.mcfunction": "e8c2373893e0c9fbf43184ffcf9774d59aa40973af355245a93f30e30f900073",
       "packtest-datapack/data/gallery/test/v06_damage.mcfunction": "db596ffd1728fdc0f810b1bcca09467ca8f2dbec1e4d54274521c05e73e062c2",
@@ -3291,6 +3302,7 @@
       "validation/gate-seal.json": "30c2c05897dfbab74841ce7763990f47d99516f13e6199dc29aadd99f5a0f073",
       "validation/leave-proof.json": "c152f988b10e2f4cfcee99aa6672c7e90467e2aae4b2fdaf60fff33c9eeac132",
       "validation/lethal-gate.json": "2b24f676c1ab133f7e04d264e0de262823b1e8dac59fba45257460816d74c99d",
+      "validation/observer-census.json": "f8d4e6e6d7ca1fda3e68a9beb5cae485c7e95743c06124d2dc19bbff623b47fe",
       "validation/piece-exposure.json": "ce458c44578d6c75bb62aba30945da44e0f6aa10e8bd7a4c1a011e5818c799b5",
       "validation/piece-mating.json": "87a8fed2ac5625a1509fb0ca595a7c5d08494c878751c1468098b7d4752b551c",
       "validation/placement-gate.json": "6499c550748a491de1f228b4f057b3aa2f278600fa2e054ef6329bd48bafd172",
@@ -3303,7 +3315,7 @@
       "validation/teleport-gate.json": "f461e69c52da82d6df98e7aff7bd1080d2fbebb6ed72edcb3f4a9030811494aa",
       "validation/traversal-gate.json": "285bd008dbde332b8f5f3dbdd771e16f483390e106e6eb35f27976815dc38a4e",
       "validation/watch-claims.json": "0f298a5f8d39a1a681ecb27f19ca9080888692c133c506df80cf10e829e36b8e",
-      "validation/watch-ledger.json": "c20351015dfd78602e4375861ac912a4f42937ebf27a6ada17c9685875bb5587",
+      "validation/watch-ledger.json": "77b6a1d5ef3fbdd71f1eca53364d689589134b7542b3e8d9dc7ce205371be5a9",
       "validation/wave-lethal.json": "1e81d1e9ee58b135b101fe9c615b653ae7adf868df87a39d3fd79c8378d58295",
       "validation/ways.json": "7a5f47e7e2a2a66ba527df3a155eb52cce06e559cdc846dfcdb00506d33f7f33"
     },
@@ -3331,7 +3343,7 @@
     },
     "mc_version": "1.21.11",
     "outputs": {
-      "SKINS.md": "0d563240c39d66c539ebc8cabd2a011f5b586d797dcaf2933293d93150ba9278",
+      "SKINS.md": "aba0a87e76dfa8d4212e025ada6ff6e811473f46720b4230263412bb2f7733f1",
       "creator-datapack/data/gallery/function/creator/camera/cam.mcfunction": "48f8f0f1b2f1755fb77d6f96add3a224b38160e1358de60e90b75e46a38858f8",
       "creator-datapack/data/gallery/function/creator/camera/free.mcfunction": "41b364d2dd54d6c580e0ab528bcac4faed47e0da987cd18dd7128337196a240e",
       "creator-datapack/data/gallery/function/creator/camera/free_back.mcfunction": "f331b4fa0faf8048aac131197e42594761b7a4e1178ff72c1ec4e33cff19647c",
@@ -3642,7 +3654,7 @@
       "packtest-datapack/data/gallery/test/wave_kill_reward_muster.mcfunction": "4be5cfedc5d6673e0bb0ad9db364712c34e7b5ef82d964f318bc110c1df9290c",
       "packtest-datapack/pack.mcmeta": "549482756b33bacc8910abe034e55837ccb4df3029ce38065c59c9ce5754f76b",
       "render-plan.json": "dcf2a2ddf1084a7a030f88bd0af591332b9fc6e961b52b075b77fed24fdbd19d",
-      "resourcepack.zip": "9506bb9d0f34965b8cc5e368f65d8db3b2db811cbd57ab575d5a3ee59ab204f4",
+      "resourcepack.zip": "c3417823ddb231760365e225fc82732620337173508ede483961a755d8075b03",
       "server/README.md": "fd94c22c24e68da9907efad1108174b38bc7847ae890534286e1fed42e7be442",
       "server/eula-note.txt": "2490937c526ded0804802b6b9076c936f44260715afb64af26dd8f8cce02a7aa",
       "server/server.properties": "fdfd8ee49290d9de87bc2bf4a8f4c8fbb9114c51b307cb485899f5812c3a3664",
@@ -3666,7 +3678,7 @@
       "validation/watch-claims.json": "8689e64be9597d5efc7eea551ccb255ddcac20b706c5c9c04b78b32898d737a8",
       "validation/watch-ledger.json": "7f058bfd00c928b6c6a1958aa05babcdb745fe4d284fbb09a6ab80e6890bd2f7"
     },
-    "resource_pack_sha1": "91a4a890e95df8a8adbf4b5b1cea9fea2f4c50de"
+    "resource_pack_sha1": "b6914a07e410a17525b49a2708cfe6d3c158ce7a"
   },
   "valley-site.en": {
     "campaign_id": "gallery",
@@ -3830,7 +3842,7 @@
     },
     "mc_version": "1.21.11",
     "outputs": {
-      "SKINS.md": "f74918c5ce0999b18339a19be4e4efaffd3e1517e93b36db9ac10bdcfa99a134",
+      "SKINS.md": "b96519c1ba2189e0e4de447c7e85ba47d5f2ccaec0e9542baaee1ffa31315b21",
       "creator-datapack/data/gallery/function/creator/camera/cam.mcfunction": "48f8f0f1b2f1755fb77d6f96add3a224b38160e1358de60e90b75e46a38858f8",
       "creator-datapack/data/gallery/function/creator/camera/free.mcfunction": "41b364d2dd54d6c580e0ab528bcac4faed47e0da987cd18dd7128337196a240e",
       "creator-datapack/data/gallery/function/creator/camera/free_back.mcfunction": "f331b4fa0faf8048aac131197e42594761b7a4e1178ff72c1ec4e33cff19647c",
@@ -4432,7 +4444,7 @@
       "packtest-datapack/data/gallery/test/wave_kill_reward_muster.mcfunction": "28b061d6227ef949258649bb54e3efc12dfdf4111266600c135f02667b8f39f0",
       "packtest-datapack/pack.mcmeta": "549482756b33bacc8910abe034e55837ccb4df3029ce38065c59c9ce5754f76b",
       "render-plan.json": "32fc6560f4bf50385387647fcb5d60a43358bfecca1c136da8479a098c03357e",
-      "resourcepack.zip": "03059662822e15accfab2bbf9638c05de79f093a12020e79a95b6951b5de00a6",
+      "resourcepack.zip": "aac0423a981b3514d511c18ed85713e292ca3d12a60afd970533a37ab9b33e74",
       "server/README.md": "fd94c22c24e68da9907efad1108174b38bc7847ae890534286e1fed42e7be442",
       "server/eula-note.txt": "2490937c526ded0804802b6b9076c936f44260715afb64af26dd8f8cce02a7aa",
       "server/server.properties": "fdfd8ee49290d9de87bc2bf4a8f4c8fbb9114c51b307cb485899f5812c3a3664",
@@ -4470,6 +4482,6 @@
       "validation/wave-lethal.json": "1e81d1e9ee58b135b101fe9c615b653ae7adf868df87a39d3fd79c8378d58295",
       "validation/ways.json": "7a5f47e7e2a2a66ba527df3a155eb52cce06e559cdc846dfcdb00506d33f7f33"
     },
-    "resource_pack_sha1": "9692fd522b95f8e40b17026837274e4f78fd8693"
+    "resource_pack_sha1": "3122b559b558472a30d33f4da439cac897694764"
   }
 }
