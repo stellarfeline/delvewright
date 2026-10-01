@@ -1646,7 +1646,7 @@ fn the_search_finds_what_walking_every_order_finds() {
     );
 }
 
-/// A branch with more play states than the search walks is **refused as
+/// `DW0927`: a branch with more play states than the search walks is **refused as
 /// unproven, by name** — never called clean. Six optional strands opened by the
 /// fork, each one beat that opens the gate the watch seals on the hold branch:
 /// no order clashes, and a player may walk the six in any interleaving with the
@@ -1654,7 +1654,7 @@ fn the_search_finds_what_walking_every_order_finds() {
 /// clean; under a bound of ten states the same branch is refused, and the
 /// refusal says why.
 #[test]
-fn a_branch_past_the_bound_is_refused_as_unproven() {
+fn a_branch_past_the_bound_is_dw0927() {
     let c = campaign_with(|plan, quests, _| {
         quest(quests, "quest/hold")["on_objective_complete"]["obj/watch"][0] = serde_json::json!({
             "type": "close-gate",
@@ -1721,7 +1721,11 @@ fn a_branch_past_the_bound_is_refused_as_unproven() {
         bind.unproven, 1,
         "the hold branch stops at the bound: {bind:?}"
     );
-    let d = find(diags, "DW0485");
+    assert!(
+        !diags.iter().any(|d| d.code == "DW0485"),
+        "an unproven branch is not a clash: {diags:#?}"
+    );
+    let d = find(diags, "DW0927");
     assert!(d.message.contains("UNPROVEN"), "{}", d.message);
     assert!(d.message.contains("branch/hold"), "{}", d.message);
     assert!(
@@ -1731,7 +1735,7 @@ fn a_branch_past_the_bound_is_refused_as_unproven() {
     );
     assert!(
         bind.line()
-            .contains("1 branch(es) unproven at the bound of 10"),
+            .contains("1 branch(es) unproven at the bound of 10 state(s) per branch (DW0927)"),
         "{}",
         bind.line()
     );

@@ -44,6 +44,7 @@
 //! | `DW0483` | **Cast continuity** — the `dw.cast` selector resolves to no cast, or to more than one, at some quest after the fork on some branch. spec-0020 proof 4 extended over the whole post-fork suffix. |
 //! | `DW0484` | **Exclusive-content leakage** — content gated on branch A's flags is reachable under branch B's assignment. |
 //! | `DW0485` | **Hard event contradiction** — `dies` then acts, `departs` then acts, `seals` then traversed, `loses` then spent, on one branch, in any play order the branch admits, with both chronicle lines shown. |
+//! | `DW0927` | **Unproven contradiction question** — the every-order search behind `DW0485` reached its bound on a branch, so the branch is refused rather than called clean. |
 //!
 //! Everything here is validation metadata: nothing this module computes reaches
 //! the shipped datapack.
@@ -75,6 +76,9 @@ pub const DW_BRANCH_CAST: DwCode = DwCode::new("DW0483", ExitTier::Build);
 pub const DW_BRANCH_LEAKAGE: DwCode = DwCode::new("DW0484", ExitTier::Build);
 /// Two chronicle lines on one branch contradict each other.
 pub const DW_BRANCH_CONTRADICTION: DwCode = DwCode::new("DW0485", ExitTier::Build);
+/// Whether any play order of a branch shows a `DW0485` clash is unproven: the
+/// every-order search reached [`MAX_ORDER_STATES`].
+pub const DW_BRANCH_CONTRADICTION_UNPROVEN: DwCode = DwCode::new("DW0927", ExitTier::Build);
 
 // ---------------------------------------------------------------------------
 // enumeration
@@ -701,8 +705,8 @@ impl ContradictionBinding {
         format!(
             "contradiction binding: {b} branch(es) read in their exported order over {l} dated \
              line(s); every legal order searched over {st} step(s) ({q} quiet), {s} distinct \
-             play state(s) walked; {r} refused beyond the exported order; {u} branch(es) \
-             unproven at the bound of {n} state(s) per branch (DW0485)",
+             play state(s) walked; {r} refused beyond the exported order (DW0485); {u} \
+             branch(es) unproven at the bound of {n} state(s) per branch (DW0927)",
             b = self.branches,
             l = self.lines,
             st = self.steps,
@@ -1492,8 +1496,8 @@ pub const MAX_ORDER_STATES: usize = 50_000;
 /// flag and carried-line variants they produce — exponential in how many of
 /// them a player may interleave freely, linear in the rest. The search stops at
 /// [`MAX_ORDER_STATES`] distinct states, and a branch that reaches the bound is
-/// refused under `DW0485` as **unproven**, naming the bound: a bound hit is
-/// never a pass.
+/// refused as **unproven** (`DW0927`), naming the bound: a bound hit is never a
+/// pass.
 ///
 /// Every order a refusal prints is one the search walked, so it is a play order
 /// a player can walk.
@@ -1642,10 +1646,10 @@ pub fn clashes_by_search_and_by_enumeration(c: &Campaign) -> (BTreeSet<String>, 
     (searched, enumerated)
 }
 
-/// `DW0485`, refused as unproven: the search reached its bound.
+/// `DW0927`: the branch is refused as unproven — the search reached its bound.
 fn unproven_diagnostic(r: &RealizedBranch, bound: usize, steps: usize, quiet: usize) -> Diagnostic {
     Diagnostic::error(
-        DW_BRANCH_CONTRADICTION,
+        DW_BRANCH_CONTRADICTION_UNPROVEN,
         "quests",
         format!("/content/quests#branch/{}", r.branch.id),
         format!(
