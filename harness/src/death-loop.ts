@@ -1189,6 +1189,13 @@ export interface LethalTrial {
    * read as a sentence about the volume.
    */
   approachFailure: string | undefined;
+  /**
+   * **Why the walk BACK to the stake ended before it arrived because of what it
+   * met** — a death on the way, or a re-seated wave that could not be staged away.
+   * Not a verdict on where the stake was placed, which is what a walk back that
+   * simply could not be made is.
+   */
+  walkBackFailure: string | undefined;
 }
 
 /** A fresh trial record for a walk into `volume`. */
@@ -1216,6 +1223,7 @@ export function openLethalTrial(
     gateUnread: [],
     abandoned: undefined,
     approachFailure: undefined,
+    walkBackFailure: undefined,
   };
 }
 
@@ -1437,6 +1445,14 @@ export function lethalTrialFailures(t: LethalTrial, markerTolerance = 0.75): str
         `${anchor} — the anchor the compile-time placement table proved reachable and safe. ` +
         `Every proof about where a stake may stand is about that cell, not this one`,
     );
+  }
+  if (!t.walkedBack && t.walkBackFailure !== undefined) {
+    out.push(
+      `${t.volume}: the WALK BACK to the stake at ${anchor} failed on what it met, so the ` +
+        `collection was never judged — ${t.walkBackFailure}. This is a verdict on the walk ` +
+        `back, never on where the stake was placed`,
+    );
+    return out;
   }
   if (!t.walkedBack) {
     out.push(

@@ -2966,25 +2966,28 @@ export class MineflayerExecutor implements StepExecutor {
   }
 
   /**
-   * **The walk to a volume's near lip, meeting what stands on the way the critical
-   * path meets an encounter.**
+   * **A death-loop walk — the approach to a volume's near lip, or the walk back
+   * to the place a death left — meeting what stands on the way the critical path
+   * meets an encounter.**
    *
-   * Every wave the delve has put back since this run cleared it ({@link
-   * reseatedWaves} — the die-retry stage's own deaths re-seat every
-   * `respawns_on_rest` wave) is read if its seating is owed a reading and staged
-   * away, by {@link meetReseatedWaves}, BEFORE the walk: the damage handlers alone
-   * meet a body only once it has hit, and on vesperhold `wave/unremembered-guard`
-   * killed the bot on this walk on both runs that measured it.
+   * Neither is a leg the compiler measured, and the deaths before each (the
+   * die-retry stage's before the approach, the trial's own before the walk back)
+   * re-seat every `respawns_on_rest` wave. Every wave the delve has put back since
+   * this run cleared it ({@link reseatedWaves}) is read if its seating is owed a
+   * reading and staged away, by {@link meetReseatedWaves}, BEFORE the walk: the
+   * damage handlers alone meet a body only once it has hit, and on vesperhold
+   * `wave/unremembered-guard` killed the bot on the approach and took it to 6.3
+   * health on the walk back.
    *
    * A death on the way is returned as nothing — the caller counts deaths and
    * judges where it happened. A wave that could not be staged away is
-   * `staging`; a lip the pathfinder could not reach is `walk`.
+   * `staging`; a destination the pathfinder could not reach is `walk`.
    */
-  private async approachVolume(
-    volume: string,
-    lip: Vec3Tuple | undefined,
+  private async walkPastReseated(
+    label: string,
+    dest: Vec3Tuple | undefined,
+    destName: string,
   ): Promise<{ readonly kind: "staging" | "walk"; readonly why: string } | undefined> {
-    const label = `death-loop approach to ${volume}`;
     const deaths = this.deathSeq;
     try {
       await this.meetReseatedWaves(label);
@@ -2997,20 +3000,60 @@ export class MineflayerExecutor implements StepExecutor {
           `${err instanceof Error ? err.message : String(err)}`,
       };
     }
-    if (this.deathSeq !== deaths || lip === undefined) return undefined;
+    if (this.deathSeq !== deaths || dest === undefined) return undefined;
     try {
-      await this.walkTo(lip, 1, label);
+      await this.walkTo(dest, 1, label);
     } catch (err) {
       if (!(err instanceof BotDeathError)) {
         return {
           kind: "walk",
           why:
-            `the near lip [${lip.join(", ")}] could not be reached: ` +
+            `${destName} [${dest.join(", ")}] could not be reached: ` +
             `${err instanceof Error ? err.message : String(err)}`,
         };
       }
     }
     return undefined;
+  }
+
+  /**
+   * The walk back from the respawn seat to the place a death left, through
+   * {@link walkPastReseated} — the death that respawned the bot re-seated every
+   * `respawns_on_rest` wave. `false` when it did not arrive; a death on the way or
+   * a wave it could not stage away is the trial's `walkBackFailure`.
+   */
+  private async walkBackToStake(
+    volume: string,
+    trial: LethalTrial,
+    anchor: Vec3Tuple,
+  ): Promise<boolean> {
+    const deathsBack = this.deathSeq;
+    const back = await this.walkPastReseated(
+      `death-loop walk back to the place at the near lip`,
+      anchor,
+      "the place at the near lip",
+    );
+    if (back !== undefined || this.deathSeq !== deathsBack) {
+      const died = this.deathSeq !== deathsBack ? this.lastDeath : undefined;
+      if (died !== undefined || back?.kind === "staging") {
+        // The walk back met something on the way, which says nothing about where
+        // the stake was placed: its own failure, never "the walk back could not
+        // be made".
+        trial.walkBackFailure =
+          died !== undefined
+            ? `the bot died at ${formatDeathPos(died.position)} on the walk back from the ` +
+              `respawn seat to [${anchor.join(", ")}]` +
+              `${died.likelyCause ? ` (${died.likelyCause})` : ""}`
+            : back!.why;
+      }
+      process.stderr.write(
+        `[death-loop] ${volume}: the walk back to [${anchor.join(", ")}] failed: ` +
+          `${trial.walkBackFailure ?? back?.why ?? "?"}\n`,
+      );
+      return false;
+    }
+    trial.walkedBack = true;
+    return true;
   }
 
   /**
@@ -3163,7 +3206,11 @@ export class MineflayerExecutor implements StepExecutor {
     this.wordWatch = { needle: volume.message, seen: false };
     const deathsBefore = this.deathSeq;
     let navFault: string | undefined;
-    const fault = await this.approachVolume(volume.id, lip);
+    const fault = await this.walkPastReseated(
+      `death-loop approach to ${volume.id}`,
+      lip,
+      "the near lip",
+    );
     if (fault?.kind === "staging") {
       // A wave on the way that could not be removed: walking on into it is how the
       // bot died here before, so the trial stops and says why.
@@ -3321,16 +3368,7 @@ export class MineflayerExecutor implements StepExecutor {
     // --- the walk back, and the stake at the end of it ----------------------
     const anchor = trial.expectedAnchor;
     if (anchor === undefined) return;
-    try {
-      await this.walkTo(anchor, 1, `death-loop walk back to the place at the near lip`);
-      trial.walkedBack = true;
-    } catch (err) {
-      process.stderr.write(
-        `[death-loop] ${volume.id}: the walk back to [${anchor.join(", ")}] failed: ` +
-          `${err instanceof Error ? err.message : String(err)}\n`,
-      );
-      return;
-    }
+    if (!(await this.walkBackToStake(volume.id, trial, anchor))) return;
     await this.awaitEntitySettle();
     // Wait for the hardware this death PROMISED, not for the client to go quiet.
     // See {@link MARKER_PLACE_TIMEOUT_MS}: the settle is a proxy and it can be

@@ -844,6 +844,18 @@ test("a death on the approach is reported as the approach's, never as a verdict 
   assert.doesNotMatch(out[0]!, /could not be exercised|did NOT die|OUTSIDE the reach/);
 });
 
+test("a death on the walk back is the walk's, never a verdict on where the stake was placed", () => {
+  const t = goodTrial([stakeRule()]);
+  t.walkedBack = false;
+  t.walkBackFailure =
+    "the bot died at [60.20, 80.00, 70.10] on the walk back from the respawn seat to [7, 65, 18]";
+  const out = lethalTrialFailures(t);
+  assert.equal(out.length, 1, out.join(" | "));
+  assert.match(out[0]!, /WALK BACK to the stake .* failed on what it met/);
+  assert.match(out[0]!, /never on where the stake was placed/);
+  assert.doesNotMatch(out[0]!, /placement rule's whole premise/);
+});
+
 // --- binding ---------------------------------------------------------------
 
 test("a stage that entered no volume reports VACUOUS, not pass", () => {
