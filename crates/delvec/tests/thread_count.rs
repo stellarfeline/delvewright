@@ -25,7 +25,10 @@ fn tmp(name: &str) -> PathBuf {
     p
 }
 
-fn read_tree(root: &Path) -> BTreeMap<String, Vec<u8>> {
+/// An output tree: relative path to bytes.
+type Tree = BTreeMap<String, Vec<u8>>;
+
+fn read_tree(root: &Path) -> Tree {
     fn walk(base: &Path, dir: &Path, map: &mut BTreeMap<String, Vec<u8>>) {
         for entry in std::fs::read_dir(dir).unwrap() {
             let path = entry.unwrap().path();
@@ -91,7 +94,7 @@ fn the_output_is_the_same_at_every_thread_count() {
     });
 
     let runs: Vec<(&str, Option<&str>)> = vec![("1", Some("1")), ("3", Some("3")), ("host", None)];
-    let mut built: Vec<(&str, BTreeMap<String, Vec<u8>>, Vec<u8>)> = Vec::new();
+    let mut built: Vec<(&str, Tree, Vec<u8>)> = Vec::new();
     for (name, threads) in runs {
         let out = root.join(format!("out-{name}"));
         let r = build(&campaign, &prefabs, &out, threads);
