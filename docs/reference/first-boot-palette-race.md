@@ -45,18 +45,18 @@ The indices thrown vary run to run (2, 5, 7, 13 first). On arm64 the hardware ma
 
 ## 3. Reproduction by boot
 
-**Measured.** Fresh boots of the released image on this workstation (10 cores, Docker VM 12 GiB + swap), "fresh" meaning what the image's own reset loop does: `/data/world` and `/data/usercache.json` removed, the jar and libraries kept. Each boot is watched until the server logs `Server empty for 60 seconds, pausing` (placement finished, then 60 s idle) or the container exits.
+**Measured.** Fresh boots of the released image on an Apple-silicon workstation (10 cores, Docker VM 12 GiB + swap), "fresh" meaning what the image's own reset loop does: `/data/world` and `/data/usercache.json` removed, the jar and libraries kept. Each boot is watched until the server logs `Server empty for 60 seconds, pausing` (placement finished, then 60 s idle) or the container exits.
 
-| config | platform | boots | crashes | 95% upper bound on per-boot rate |
-|---|---|---|---|---|
-| `MEMORY=4G` | arm64 | 40 | 0 | 7.2% |
-| `MEMORY=2G`, `--cpus=4` | arm64 | 30 | 0 | 9.5% |
-| `MEMORY=4G`, `--cpus=4`, `--memory=2560m` (≈1.6 GiB of the heap in swap, sampled from the cgroup) | arm64 | 20 | 0 | 13.9% |
-| `MEMORY=4G` | amd64 under Rosetta | 10 | 0 | 25.9% |
+| platform and config | boots | crashes | 95% upper bound on per-boot rate |
+|---|---|---|---|
+| arm64, `MEMORY=4G` | 40 | 0 | 7.2% |
+| arm64, `MEMORY=2G`, `--cpus=4` | 30 | 0 | 9.5% |
+| arm64, `MEMORY=4G`, `--cpus=4`, `--memory=2560m` (≈1.6 GiB of the heap in swap, sampled from the cgroup) | 20 | 0 | 13.9% |
+| amd64 under Rosetta, `MEMORY=4G` | 10 | 0 | 25.9% |
 
-Pooled arm64: 0 crashes in 90 boots bounds the per-boot rate below 3.3% at 95% on this hardware. Every boot logged zero `ERROR` lines. The placement tick ran 15.3–40.0 s behind on arm64 and 29.2–44.5 s under Rosetta.
+Pooled arm64: 0 crashes in 90 boots bounds the per-boot rate below 3.3% at 95% on that hardware. Every boot logged zero `ERROR` lines. The placement tick ran 15.3–40.0 s behind on arm64 and 29.2–44.5 s under Rosetta.
 
-**The defect is unreproduced by boot.** It is reproduced as a mechanism (§2): the pinned jar's own section palette throws this exception under a concurrent unlocked read on arm64 and not under x86 ordering. A host that is slower than this workstation (fewer cores, swapping) lengthens the placement tick, which is the window in which the light worker reads sections the main thread is filling; whether memory pressure raises the rate is not established by these boots.
+**The defect is unreproduced by boot.** It is reproduced as a mechanism (§2): the pinned jar's own section palette throws this exception under a concurrent unlocked read on arm64 and not under x86 ordering. A host slower than that workstation (fewer cores, swapping) lengthens the placement tick, which is the window in which the light worker reads sections the main thread is filling; whether memory pressure raises the rate is not established by these boots.
 
 ## 4. What it means for the engine
 
