@@ -126,6 +126,23 @@ def pytest_ignore_collect(collection_path, config):
     return not listed if group == TREE_GROUP else listed
 
 
+def pytest_collection_modifyitems(config, items):
+    # A file named on the command line is collected without asking
+    # `pytest_ignore_collect`; the split still decides whether it runs.
+    group = _group(config)
+    if group is None:
+        return
+    keep, drop = [], []
+    for item in items:
+        path = pathlib.Path(str(item.path))
+        listed = path.name in WHOLE_TREE
+        mine = listed if group == TREE_GROUP else not listed
+        (keep if path.parent != TESTS or mine else drop).append(item)
+    if drop:
+        config.hook.pytest_deselected(items=drop)
+        items[:] = keep
+
+
 _GUARD: dict = {"active": False}
 _WATCHED = frozenset({"open", "os.listdir", "os.scandir", "subprocess.Popen"})
 _TREE_WIDE_GIT = frozenset({"ls-files", "ls-tree", "grep", "archive"})
