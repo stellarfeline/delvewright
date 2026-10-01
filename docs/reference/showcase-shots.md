@@ -48,6 +48,7 @@ The design states a time and a weather per picture; the renderer carries the tim
 2. **Expose a dusk exterior at 2.0 under that sky.** At 1.0 the castle's walls sink into one dark tone; the drafts at 1.5–1.8 read, and the final frames take 2.0. **[authored]** — measured on vesperhold.
 3. **1024 spp for an overcast dusk exterior.** Seven 1600 × 900 frames took 13 min 52 s to 17 min 57 s each at 9 threads and show no grain at full size; a lower count was not tried. **[authored]** — measured on vesperhold.
 4. **One sky for the whole set.** Every picture of one delve takes the same block, so the set reads as one place at one hour; in a candle-lit room it changes nothing visible, and a window or a broken roof shows the same sky. **[authored]**
+5. **A frame may take a different sky when the declared one leaves the room unreadable, and its caption says so.** **[authored]** — vesperhold's chapel is shown at a clear noon (Chunky's default simulated sky, sun altitude π/2, fog 0), exposure 10, 1024 spp plus BM3D: against a 4096-spp reference of the same 400 × 225 frame the rms error was 7.9 at 300 spp, 5.3 at 300 plus BM3D, 4.7 at 1024 plus BM3D and 4.5 at 4096 plus BM3D.
 
 ## 3. Interiors
 

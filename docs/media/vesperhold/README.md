@@ -1,6 +1,6 @@
 # Inside Vesperhold
 
-Renders of **Vesperhold**, a delve built with Delvewright: a Gothic hold on a crag, at dusk, under rain. One picture for each part of the map, roughly in the order a party reaches them. [Back to the front page](../../../README.md).
+Renders of **Vesperhold**, a delve built with Delvewright: a Gothic hold on a crag, at dusk, under rain; one room is shown by day, and its caption says so. One picture for each part of the map, roughly in the order a party reaches them. [Back to the front page](../../../README.md).
 
 ![The approach](02-approach.jpg)
 
@@ -24,7 +24,7 @@ The cloister from above: one tree in the garth, the arcades around it, the well-
 
 ![The Chapel of Hours](07-chapel-of-hours.jpg)
 
-The Chapel of Hours: pews between tall pillars down the nave, and a candle-lit altar under the east window.
+The Chapel of Hours, shown by day: noon light falling through the broken roof onto the pews, and the rose window glowing in the west front.
 
 ![The undertide pool](08-undertide-pool.jpg)
 
