@@ -106,33 +106,6 @@ this gate a binding for it, never to write the number.
 Per-stage `dsl_version` DISAGREEMENT inside one campaign is not this gate's
 business — `delvec validate` owns it (DW0102). This gate only reads the max.
 
-## Allowlist
-
-`ALLOWLIST` names campaigns that are temporarily exempt. Every entry states the
-PR that blocks the marker and the condition for removing the entry, and every
-entry is PRINTED on each run — an exemption nobody can see is an exemption
-nobody removes. An allowlisted campaign that would now PASS is an error: drop
-it. Keep this list empty whenever the repo lets you.
-
-**An entry is a fact about the CONTENT REPOSITORY, so it is only applied and
-only audited against it.** This script is not run only here: `/new-delve`'s
-step 14 runs it on a creator's machine, over the creator's own `campaigns/`,
-which never holds this repository's campaigns. Judging a repo-local exemption
-against that directory made the whole gate red on every creator machine **by
-construction** — `hollow-vigil: ALLOWLIST entry names a campaign that is not
-under campaigns`, exit 1, before a single storybook was read — so the creator
-learned nothing about their own storybook, not even that it had been looked at.
-The exemption was a fact about this repo being enforced against everyone else's.
-
-So the allowlist binds to ONE tree: `DEFAULT_CAMPAIGNS_ROOT`, the content
-sources this engine checkout names. When `--campaigns` resolves to that tree
-(a dev run over the content symlink) the allowlist exempts and the
-staleness audit runs, exactly as before. When it resolves anywhere else the
-allowlist is OUT OF SCOPE: nothing is exempted, nothing is audited, every entry
-is printed saying so and where it *is* judged. The discriminator is path
-identity after `resolve()`, not a flag anyone can pass: `--campaigns
-campaigns/campaigns` still audits.
-
 Deterministic, offline, no dependencies (Python 3 stdlib). Run from the repo
 root:
 
@@ -181,18 +154,6 @@ STAGE_FILES = (
 # How far into the README the marker may sit. Enough for `# Title` + blank line
 # + an optional badge/image line, not enough to bury it below the fold.
 MARKER_WITHIN_LINES = 10
-
-# Campaigns temporarily exempt from the marker requirement. EVERY entry names
-# what blocks it and the condition for deleting the entry. Entries are
-# printed on every run (see module docstring). Keep empty when possible.
-ALLOWLIST: dict[str, str] = {
-    "hollow-vigil": (
-        "an open content round (dsl 0.9.0 adoption + cherry-valley horizon) is "
-        "rewriting every stage document of this campaign, so a marker written "
-        "against main's 0.3.0 would be stale on merge — the marker lands in that "
-        "round. REMOVE this entry when that round merges."
-    ),
-}
 
 _MARKER_TEMPLATE = (
     "> **Requires delve engine {dsl} or newer** — last verified with delvec "
@@ -468,18 +429,6 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     root: pathlib.Path = args.campaigns
 
-    # The allowlist is a fact about THIS repository's content sources, so it
-    # binds to that one tree and to no other (module docstring). Resolved paths,
-    # never spellings: `--campaigns campaigns/campaigns` is the same tree.
-    def _resolved(p: pathlib.Path) -> pathlib.Path:
-        try:
-            return p.resolve()
-        except OSError:  # pragma: no cover - a path the OS refuses to resolve
-            return p
-
-    allowlist_applies = _resolved(root) == _resolved(DEFAULT_CAMPAIGNS_ROOT)
-    allowlist = ALLOWLIST if allowlist_applies else {}
-
     if not root.is_dir():
         print(
             f"campaign sources not found at {root} — check out the content repo "
@@ -500,57 +449,23 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 1
 
-    ids = {c.name for c in campaigns}
     failures: list[str] = []
     checked: list[str] = []
-    skipped: list[str] = []
     # The literal clauses' binding count: storybook files actually read. A gate
     # that examined zero of them is vacuous, not a pass (CLAUDE.md).
     scanned = 0
 
     for campaign in campaigns:
         errors = check_campaign(campaign, engine_delvec, engine_mc)
-        if campaign.name in allowlist:
-            skipped.append(campaign.name)
-            if not errors:
-                failures.append(
-                    f"{campaign.name}: ALLOWLISTED but its storybook marker is now "
-                    "correct — delete its entry from ALLOWLIST in "
-                    "tools/creator/check-storybook-version.py"
-                )
-            continue
         checked.append(campaign.name)
         scanned += sum(1 for r in expected_readmes(campaign) if r.is_file())
         failures.extend(f"{campaign.name}: {e}" for e in errors)
 
-    for stale in sorted(set(allowlist) - ids):
-        failures.append(
-            f"{stale}: ALLOWLIST entry names a campaign that is not under {root} — "
-            "remove it (a stale exemption hides the next real one)"
-        )
-
     if not scanned:
         failures.append(
             f"ZERO storybook files were read under {root} — every campaign here is "
-            "allowlisted or storybook-less, so the version-literal clauses examined "
-            "nothing. A gate that binds to nothing is vacuous, not a pass "
-            "(CLAUDE.md): shrink the ALLOWLIST or fix the path"
-        )
-
-    # Exemptions are announced on every run, pass or fail (module docstring).
-    for name in skipped:
-        print(f"TEMPORARILY ALLOWLISTED (no marker required yet): {name}")
-        print(f"  reason: {ALLOWLIST[name]}")
-    if not allowlist_applies:
-        for name in sorted(ALLOWLIST):
-            print(
-                f"ALLOWLIST ENTRY OUT OF SCOPE HERE (neither applied nor audited): "
-                f"{name}"
-            )
-        print(
-            f"  {len(ALLOWLIST)} entry(s) name campaigns of {DEFAULT_CAMPAIGNS_ROOT}, "
-            f"and this run reads {root}. An exemption belongs to the repository it "
-            f"names; it is judged where that repository is."
+            "storybook-less, so the version-literal clauses examined nothing. A gate "
+            "that binds to nothing is vacuous, not a pass (CLAUDE.md): fix the path"
         )
 
     # The binding count is printed on EVERY path, including the refusing one: a
@@ -558,7 +473,7 @@ def main(argv: list[str] | None = None) -> int:
     # broken storybook from a gate that never reached theirs (CLAUDE.md).
     summary = (
         f"{len(checked)} campaign(s) checked against delvec {engine_delvec} and "
-        f"Minecraft Java {engine_mc}, {len(skipped)} allowlisted; {scanned} "
+        f"Minecraft Java {engine_mc}; {scanned} "
         f"storybook file(s) scanned for unbound version literals."
     )
 
