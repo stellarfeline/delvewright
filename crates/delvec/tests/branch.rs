@@ -672,6 +672,79 @@ fn a_strand_the_seal_must_wait_for_is_clean() {
     assert!(bind.orders < open.orders, "{bind:?} vs {open:?}");
 }
 
+/// The clash carried by the strand's OWN line: `quest/look-back` is about the
+/// gate, its two beats are not, and they may be walked in either order. The
+/// quest's line plays at whichever of them comes first, so the order that shows
+/// the clash has neither of them before the seal — an order the proof builds by
+/// withholding the strand's other beat, since walking it early would carry the
+/// quest's line before the seal.
+#[test]
+fn a_strand_s_own_line_after_a_seal_is_dw0485() {
+    let c = optional_strand_fixture(|quests| {
+        let q = quest(quests, "quest/look-back");
+        q["happening"] = serde_json::json!({
+            "verb": "arrives",
+            "text": "The party goes back in through the gate.",
+            "subject": "anchor/door"
+        });
+        q["objectives"][0]["happening"] = serde_json::json!({
+            "verb": "learns",
+            "text": "The yard is empty."
+        });
+        q["objectives"]
+            .as_array_mut()
+            .unwrap()
+            .push(serde_json::json!({
+                "id": "obj/look-up",
+                "type": "reach-anchor",
+                "anchor": "anchor/exit",
+                "radius": 2,
+                "happening": {"verb": "learns", "text": "The wall-walk is empty too."}
+            }));
+    });
+    let d = find(branch::check_branches(&c), "DW0485");
+    assert!(d.message.contains("after it is sealed"), "{}", d.message);
+    assert!(d.message.contains("quest/look-back"), "{}", d.message);
+}
+
+/// The clash carried by the strand's COMPLETION: its two beats say nothing
+/// about the gate and may be walked in either order, and finishing the strand
+/// walks the party back in through it. Whichever beat is walked last completes the
+/// strand, so the order that shows the clash walks the other one first —
+/// after the seal as well as before it.
+#[test]
+fn a_strand_completed_after_a_seal_is_dw0485() {
+    let c = optional_strand_fixture(|quests| {
+        let q = quest(quests, "quest/look-back");
+        q["objectives"][0]["happening"] = serde_json::json!({
+            "verb": "learns",
+            "text": "The yard is empty."
+        });
+        q["objectives"]
+            .as_array_mut()
+            .unwrap()
+            .push(serde_json::json!({
+                "id": "obj/look-up",
+                "type": "reach-anchor",
+                "anchor": "anchor/exit",
+                "radius": 2,
+                "happening": {"verb": "learns", "text": "The wall-walk is empty too."}
+            }));
+        q["on_complete"] = serde_json::json!([{
+            "type": "narrate",
+            "text": "Nothing left to see out here.",
+            "happening": {
+                "verb": "arrives",
+                "text": "The party comes back in through the gate.",
+                "subject": "anchor/door"
+            }
+        }]);
+    });
+    let d = find(branch::check_branches(&c), "DW0485");
+    assert!(d.message.contains("after it is sealed"), "{}", d.message);
+    assert!(d.message.contains("/on_complete/0"), "{}", d.message);
+}
+
 // --- the derived subject (spec-0071 §3) ------------------------------------
 
 /// The hold branch's gate is **sealed** by an effect that states no
