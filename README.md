@@ -2,13 +2,15 @@ English · [简体中文](README.zh-CN.md)
 
 # Delvewright
 
-![Doune Castle as Delvewright built it, seen from the north-east across its approach](docs/media/doune/01-hero-castle-northeast.jpg)
+![Vesperhold as Delvewright built it: the whole hold on its crag from high in the south-west, the causeway running down to the wayside shrine](docs/media/vesperhold/01-hero-whole-map-southwest.jpg)
+
+**[Inside Vesperhold](docs/media/vesperhold/README.md)** — the approach, the ward, the garden, the cloister, the chapel, the pool under it, the bell tower and the throne hall.
 
 **Delvewright turns a creative prompt into a story-driven Minecraft adventure map for one to four friends, and proves by machine that it can be finished before it is handed over.**
 
 It automates the tedium and the verification, not the design: it stops and waits for you to approve the design and to walk the build, and when it refuses something it names what to change instead of changing it.
 
-**Walk this castle:** join `minecraft.stellarfeline.ca` from a Minecraft Java 1.21.11 client, and accept the resource-pack prompt when you join.
+**Play it now:** join `minecraft.stellarfeline.ca` from a Minecraft Java 1.21.11 client, and accept the resource-pack prompt when you join. The server runs Vesperhold, the castle in the picture.
 
 ## Get started
 
@@ -41,24 +43,20 @@ The agent writes documents, never commands: every line of the datapack comes fro
 
 ## Why you can trust it
 
-Every rung below ran on **Doune Castle: A Guided Tour v1.0.0**, the castle in the picture, in its [release run](https://github.com/stellarfeline/delvewright-campaigns/actions/runs/34797937184) (`delvec` 1.5.0, engine revision `70eea629`, Minecraft 1.21.11). What each printed is quoted.
+Every rung below ran on **[Vesperhold v1.0.0](https://github.com/stellarfeline/delvewright-campaigns/releases/tag/release/vesperhold/v1.0.0)**, the castle in the picture, in its [release run](https://github.com/stellarfeline/delvewright-campaigns/actions/runs/36809299799) (`delvec` 1.7.1, engine revision `90433f2`, Minecraft 1.21.11). What each printed is quoted.
 
-- **Static analysis.** Inside `delvec build`, before a byte is written: every document validates against its schema, every quest and dialogue path is walked, and a failure is a refusal with a named `DW` code. Doune: the build exited 0, having walked 2 state paths over 18 steps and examined 9 objectives, with one advisory — `DW0781`, the piece-mating check had nothing to judge, because the whole castle is one piece.
+- **Static analysis.** Inside `delvec build`, before a byte is written: every document validates against its schema, every quest and dialogue path is walked, and a failure is a refusal with a named `DW` code. Vesperhold: the build exited 0, having walked 5 state paths over 185 steps and examined 37 objectives, with five advisories — three `DW0351`, a character who appears or leaves without being seen to move; `DW0781`, the piece-mating check had nothing to judge, because the whole castle is one piece; and `DW0810`, the generated PackTest suite drives one member of a family of objects and not its siblings.
 - **Every command checked.** Every emitted `.mcfunction` line is parsed against the pinned 1.21.11 command tree inside the same build. It prints no count.
-- **PackTest.** The datapack's mechanisms, tested on a real server: `63 GAME TESTS COMPLETE IN 8.994 s` — `All 63 required tests passed :)`.
-- **A bot plays it.** A mineflayer bot joins the shipped server and plays the critical path to the end: `critical path 'doune-castle-tour' PASSED (11 steps, 2 advisory finding(s))`. The two advisories say there is no combat and no death to test.
+- **PackTest.** The datapack's mechanisms, tested on a real server: `338 GAME TESTS COMPLETE IN 1.586 min` — `All 338 required tests passed :)`.
+- **A bot plays it.** A mineflayer bot joins the shipped server and plays the critical path to the end, dying on purpose at every fight and walking back from the fire: `critical path 'vesperhold' PASSED (45 steps, 18 scripted death(s) survived, 2 advisory finding(s))`. One advisory is wave members found already wounded when the bot walked back; the other says this run drove no story branch. Before the release, on the same compiler, each of the four story branches was played to its ending in a fresh world: `branch branch/halvard-kept-oath+branch/ring 'vesperhold' PASSED (45 steps, 18 scripted death(s) survived)`, and the other three printed the same 45 steps and 18 deaths.
 - **The server log.** `shipped server log is error-free.`
-- **Determinism.** Same documents and same seed, byte-identical output. The published image carries its datapack's digest as a label, `datapack-sha256=dba45276efbaabea53ee261489921ead3925d2b3363cf0155ed0a8548b5666e0`, so anyone who rebuilds can compare. On every pull request to this repository, CI builds a generated campaign on Linux and on macOS and refuses if one byte differs.
+- **Determinism.** Same documents and same seed, byte-identical output. The published image, `ghcr.io/stellarfeline/delve-vesperhold:v1.0.0`, carries its datapack's digest as a label, `datapack-sha256=e0f79e0522708526cea976e735547042567b032abe87dbb425f8495365f796ec`, so anyone who rebuilds can compare. On every pull request to this repository, CI builds a generated campaign on Linux and on macOS and refuses if one byte differs.
 
 What each rung proves, and what it does not: [what each gate actually proves](docs/reference/skill-workflow.md#4-what-each-gate-actually-proves).
 
 ## The map
 
-![Doune Castle from above the south-east: the courtyard, the curtain wall and the wall-walk](docs/media/doune/02-castle-from-above-southeast.jpg)
-
-A map is placed one of two ways. `areas[]` seats prefabs from a piece library, assembled by vanilla jigsaw from a compiler-controlled seed. A site plan goes whole-first — a geometry brief, a layout graph, then every part's box, datum and seams — and is walked as a blockout before any place is detailed. A piece the library does not have is written by the box-split grammar from a rule program: Doune is one area holding one such piece, the whole castle, 104 × 56 × 120 blocks. Light is placed while a room is designed, and the build refuses reachable floor that measures dark (`DW0210`). Every scene is rendered with Chunky and reviewed against the concept image it answers.
-
-**[Inside the castle](docs/media/doune/README.md)** — the courtyard, the halls, the kitchen, the wall-walk.
+A map is placed one of two ways. `areas[]` seats prefabs from a piece library, assembled by vanilla jigsaw from a compiler-controlled seed. A site plan goes whole-first — a geometry brief, a layout graph, then every part's box, datum and seams — and is walked as a blockout before any place is detailed. A piece the library does not have is written by the box-split grammar from a rule program: Vesperhold is one area holding one such piece, the whole site, 172 × 104 × 292 blocks. Light is placed while a room is designed, and the build refuses reachable floor that measures dark (`DW0210`). Every scene is rendered with Chunky and reviewed against the concept image it answers.
 
 Read on: [choosing a placement](.claude/skills/delvewright/skills/new-delve/references/placement.md) · [the map is planned before it is built](docs/adr/0022-the-map-is-planned-before-it-is-built.md) · [the grammar](docs/reference/grammar.md) · [admitting a piece](docs/reference/prefab-procedure.md) · [interior lighting](docs/reference/interior-lighting.md) · [visual review](.claude/skills/delvewright/skills/new-delve/references/visual-review.md)
 
