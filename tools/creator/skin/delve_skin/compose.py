@@ -39,6 +39,7 @@ from delve_skin.palette import (
     seed_from_id,
     shade,
 )
+from delve_skin.png import encode_rgba
 from delve_skin.wardrobe import SHOULDER_HAIR, Span, Wardrobe
 
 FACE_IDS = ("front", "back", "left", "right", "up", "down")
@@ -497,27 +498,15 @@ def compose_skin(entry: CastEntry) -> Image.Image:
 
 
 def compose_png_bytes(entry: CastEntry) -> bytes:
-    """Compose and serialise. The IMAGE is portable; the FILE is not.
+    """Compose and serialise: the same cast entry is the same FILE on any machine.
 
-    ``compose_skin`` is deterministic everywhere -- the same cast entry yields
-    the same 64x64 pixels on any machine. Serialisation adds a dependency this
-    tool does not control: Pillow hands the scanlines to whatever zlib it is
-    linked against, and deflate output differs between zlib builds. Measured
-    with the same Pillow 12.3.0 and numpy 2.5.3 on both sides, varying only
-    zlib -- macOS (1.2.12) and Linux (1.3.1) compose identical pixels and write
-    different files at compress_level 1, 6 and 9 alike. Only compress_level 0
-    agreed, at 16516 bytes against 1902: a portable serialisation exists and
-    costs 8.7x the file.
-
-    So a skin composed on two machines is one picture in two files. That does
-    not move a delve's bytes -- the compiler bakes the PNG a creator COMMITTED
-    rather than recomposing it -- but a regeneration cannot be compared across
-    machines byte for byte, and pixels are what to compare.
+    The bytes are those :func:`delve_skin.png.encode_rgba` writes for the
+    composed pixels -- stored deflate, no compressor -- so they depend on the
+    pixels alone and not on which zlib the machine links. That is the
+    comparison this tool promises: bytes, by sha256, across machines.
     """
-    import io
-
     img = compose_skin(entry)
-    buf = io.BytesIO()
-    # Fixed encoder options -> byte-stable output within one zlib build.
-    img.save(buf, format="PNG", optimize=False, compress_level=9)
-    return buf.getvalue()
+    if img.mode != "RGBA":
+        raise ValueError(f"composed skin is {img.mode}, not RGBA")
+    width, height = img.size
+    return encode_rgba(width, height, img.tobytes())
