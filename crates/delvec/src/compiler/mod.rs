@@ -132,6 +132,7 @@ pub mod mark;
 pub mod massing;
 pub mod muster;
 pub mod nav;
+pub(crate) mod nbtread;
 pub mod onkill;
 pub mod plan;
 pub mod png;

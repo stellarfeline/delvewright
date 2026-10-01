@@ -113,6 +113,51 @@ fn structure_sentinel(bytes: &[u8]) -> Option<([i32; 3], String)> {
     use std::io::Read;
     let mut raw = Vec::new();
     GzDecoder::new(bytes).read_to_end(&mut raw).ok()?;
+    let is_air = |name: &str| {
+        matches!(
+            name,
+            "minecraft:air" | "minecraft:cave_air" | "minecraft:void_air"
+        )
+    };
+    // The lowest `(y, z, x)` non-air cell; `best` is replaced only by a
+    // strictly lower key, so the first such cell in file order wins a tie.
+    let pick = |best: &mut Option<([i32; 3], String)>, pos: [i32; 3], name: &String| {
+        if is_air(name) {
+            return;
+        }
+        let key = (pos[1], pos[2], pos[0]);
+        let better = match &best {
+            None => true,
+            Some((bp, _)) => key < (bp[1], bp[2], bp[0]),
+        };
+        if better {
+            *best = Some((pos, name.clone()));
+        }
+    };
+    // The typed decoding first ([`crate::compiler::nbtread`]); anything it
+    // refuses is walked as before.
+    if let Some(root) = crate::compiler::nbtread::root(&raw) {
+        let palette: Vec<Option<&String>> = root
+            .palette
+            .as_ref()?
+            .iter()
+            .map(|e| e.name.as_ref())
+            .collect();
+        let mut best: Option<([i32; 3], String)> = None;
+        for b in root.blocks.iter().flatten() {
+            let Some(pos) = b.pos3() else {
+                continue;
+            };
+            let Some(state) = &b.state else {
+                continue;
+            };
+            let Some(Some(name)) = palette.get(state.0 as usize) else {
+                continue;
+            };
+            pick(&mut best, pos, name);
+        }
+        return best;
+    }
     let root: fastnbt::Value = fastnbt::from_bytes(&raw).ok()?;
     let fastnbt::Value::Compound(root) = root else {
         return None;
@@ -129,12 +174,6 @@ fn structure_sentinel(bytes: &[u8]) -> Option<([i32; 3], String)> {
             })
             .collect(),
         _ => return None,
-    };
-    let is_air = |name: &str| {
-        matches!(
-            name,
-            "minecraft:air" | "minecraft:cave_air" | "minecraft:void_air"
-        )
     };
     let mut best: Option<([i32; 3], String)> = None;
     if let Some(fastnbt::Value::List(blocks)) = root.get("blocks") {
@@ -166,17 +205,7 @@ fn structure_sentinel(bytes: &[u8]) -> Option<([i32; 3], String)> {
             let Some(Some(name)) = palette.get(state) else {
                 continue;
             };
-            if is_air(name) {
-                continue;
-            }
-            let key = (pos[1], pos[2], pos[0]);
-            let better = match &best {
-                None => true,
-                Some((bp, _)) => key < (bp[1], bp[2], bp[0]),
-            };
-            if better {
-                best = Some((pos, name.clone()));
-            }
+            pick(&mut best, pos, name);
         }
     }
     best

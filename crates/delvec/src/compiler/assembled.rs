@@ -258,23 +258,13 @@ pub fn structure_size(bytes: &[u8]) -> Option<[i32; 3]> {
     flate2::read::GzDecoder::new(bytes)
         .read_to_end(&mut raw)
         .ok()?;
+    if let Some(root) = crate::compiler::nbtread::root(&raw) {
+        return crate::compiler::nbtread::size_of(root.size.as_ref());
+    }
     let fastnbt::Value::Compound(root) = fastnbt::from_bytes::<fastnbt::Value>(&raw).ok()? else {
         return None;
     };
-    let fastnbt::Value::List(size) = root.get("size")? else {
-        return None;
-    };
-    if size.len() != 3 {
-        return None;
-    }
-    let mut out = [0i32; 3];
-    for (i, v) in size.iter().enumerate() {
-        match v {
-            fastnbt::Value::Int(n) => out[i] = *n,
-            _ => return None,
-        }
-    }
-    Some(out)
+    crate::compiler::nbtread::size_of(root.get("size"))
 }
 
 /// Parse a gzipped vanilla structure `.nbt`, returning its non-air block cells as
@@ -321,7 +311,52 @@ fn structure_cells_inner(bytes: &[u8], stateful: bool) -> Vec<([i32; 3], String,
     {
         return Vec::new();
     }
-    let Ok(fastnbt::Value::Compound(root)) = fastnbt::from_bytes::<fastnbt::Value>(&raw) else {
+    // The typed decoding first; it reads exactly the shape the walk reads, and
+    // anything it refuses is walked as before ([`crate::compiler::nbtread`]).
+    cells_typed(&raw, stateful).unwrap_or_else(|| cells_walk(&raw, stateful))
+}
+
+/// [`structure_cells_inner`] over the typed decoding, or `None` when the bytes
+/// do not have its strict shape.
+/// One placed cell as the structure readers return it: local position, block
+/// id, and the `open` property.
+type TemplateCell = ([i32; 3], String, Option<bool>);
+
+fn cells_typed(raw: &[u8], stateful: bool) -> Option<Vec<TemplateCell>> {
+    let root = crate::compiler::nbtread::root(raw)?;
+    let Some(entries) = root.palette else {
+        return Some(Vec::new());
+    };
+    let palette: Vec<Option<(String, Option<bool>)>> = entries
+        .iter()
+        .map(|e| {
+            let props = match &e.properties {
+                Some(fastnbt::Value::Compound(p)) => Some(p),
+                _ => None,
+            };
+            e.name.as_ref().map(|s| palette_state(s, props, stateful))
+        })
+        .collect();
+    let mut out = Vec::new();
+    for b in root.blocks.iter().flatten() {
+        let Some(pos) = b.pos3() else {
+            continue;
+        };
+        let Some(state) = &b.state else {
+            continue;
+        };
+        if let Some(Some((name, open))) = palette.get(state.0 as usize)
+            && !is_air(name.split('[').next().unwrap_or(name))
+        {
+            out.push((pos, name.clone(), *open));
+        }
+    }
+    Some(out)
+}
+
+/// [`structure_cells_inner`] over the dynamic [`fastnbt::Value`] tree.
+fn cells_walk(raw: &[u8], stateful: bool) -> Vec<TemplateCell> {
+    let Ok(fastnbt::Value::Compound(root)) = fastnbt::from_bytes::<fastnbt::Value>(raw) else {
         return Vec::new();
     };
     let palette: Vec<Option<(String, Option<bool>)>> = match root.get("palette") {
@@ -334,37 +369,7 @@ fn structure_cells_inner(bytes: &[u8], stateful: bool) -> Vec<([i32; 3], String,
                             Some(fastnbt::Value::Compound(p)) => Some(p),
                             _ => None,
                         };
-                        let open = match props.and_then(|p| p.get("open")) {
-                            Some(fastnbt::Value::String(v)) => Some(v == "true"),
-                            _ => None,
-                        };
-                        // `fastnbt`'s compound is a `HashMap`, so the property
-                        // order it yields is hash order — collect through a
-                        // `BTreeMap` before rendering (ADR-0006: no hash-order
-                        // iteration in the compiler).
-                        let name = match (stateful, props) {
-                            (true, Some(p)) if !p.is_empty() => {
-                                let sorted: std::collections::BTreeMap<&String, String> = p
-                                    .iter()
-                                    .filter_map(|(k, v)| match v {
-                                        fastnbt::Value::String(sv) => Some((k, sv.clone())),
-                                        _ => None,
-                                    })
-                                    .collect();
-                                let body = sorted
-                                    .iter()
-                                    .map(|(k, v)| format!("{k}={v}"))
-                                    .collect::<Vec<_>>()
-                                    .join(",");
-                                if body.is_empty() {
-                                    s.clone()
-                                } else {
-                                    format!("{s}[{body}]")
-                                }
-                            }
-                            _ => s.clone(),
-                        };
-                        Some((name, open))
+                        Some(palette_state(s, props, stateful))
                     }
                     _ => None,
                 },
@@ -408,6 +413,45 @@ fn structure_cells_inner(bytes: &[u8], stateful: bool) -> Vec<([i32; 3], String,
         }
     }
     out
+}
+
+/// One palette entry as the structure readers render it: the block id (with
+/// its properties in sorted key order when `stateful`) and its `open` property.
+fn palette_state(
+    name: &String,
+    props: Option<&std::collections::HashMap<String, fastnbt::Value>>,
+    stateful: bool,
+) -> (String, Option<bool>) {
+    let open = match props.and_then(|p| p.get("open")) {
+        Some(fastnbt::Value::String(v)) => Some(v == "true"),
+        _ => None,
+    };
+    // `fastnbt`'s compound is a `HashMap`, so the property order it yields is
+    // hash order — collect through a `BTreeMap` before rendering (ADR-0006: no
+    // hash-order iteration in the compiler).
+    let name = match (stateful, props) {
+        (true, Some(p)) if !p.is_empty() => {
+            let sorted: std::collections::BTreeMap<&String, String> = p
+                .iter()
+                .filter_map(|(k, v)| match v {
+                    fastnbt::Value::String(sv) => Some((k, sv.clone())),
+                    _ => None,
+                })
+                .collect();
+            let body = sorted
+                .iter()
+                .map(|(k, v)| format!("{k}={v}"))
+                .collect::<Vec<_>>()
+                .join(",");
+            if body.is_empty() {
+                name.clone()
+            } else {
+                format!("{name}[{body}]")
+            }
+        }
+        _ => name.clone(),
+    };
+    (name, open)
 }
 
 /// **What the assembled world puts inside one gate anchor's region at world-load.**
@@ -2510,6 +2554,160 @@ mod rotate_state_tests {
                     "{key} changed in {r}"
                 );
             }
+        }
+    }
+}
+
+#[cfg(test)]
+mod typed_read_tests {
+    use super::{cells_typed, cells_walk, structure_size};
+    use fastnbt::Value;
+    use std::collections::HashMap;
+
+    fn compound(entries: Vec<(&str, Value)>) -> Value {
+        Value::Compound(
+            entries
+                .into_iter()
+                .map(|(k, v)| (k.to_string(), v))
+                .collect::<HashMap<_, _>>(),
+        )
+    }
+
+    fn ints(v: &[i32]) -> Value {
+        Value::List(v.iter().map(|&n| Value::Int(n)).collect())
+    }
+
+    fn block(pos: Value, state: Value) -> Value {
+        compound(vec![("pos", pos), ("state", state)])
+    }
+
+    /// A template with every part a vanilla file carries.
+    fn full(blocks: Vec<Value>, extra_root: Vec<(&str, Value)>) -> Value {
+        let palette = Value::List(vec![
+            compound(vec![("Name", Value::String("minecraft:air".into()))]),
+            compound(vec![
+                ("Name", Value::String("minecraft:oak_fence_gate".into())),
+                (
+                    "Properties",
+                    compound(vec![
+                        ("open", Value::String("true".into())),
+                        ("facing", Value::String("north".into())),
+                        ("powered", Value::String("false".into())),
+                    ]),
+                ),
+            ]),
+            compound(vec![("Name", Value::String("minecraft:stone".into()))]),
+            compound(vec![]),
+            compound(vec![
+                ("Name", Value::String("minecraft:lantern".into())),
+                ("Properties", Value::Int(3)),
+            ]),
+        ]);
+        let mut root = vec![
+            ("DataVersion", Value::Int(4671)),
+            ("size", ints(&[4, 2, 3])),
+            ("palette", palette),
+            ("blocks", Value::List(blocks)),
+            ("entities", Value::List(vec![])),
+        ];
+        root.extend(extra_root);
+        compound(root)
+    }
+
+    fn ordinary_blocks() -> Vec<Value> {
+        vec![
+            block(ints(&[0, 0, 0]), Value::Int(0)),
+            block(ints(&[1, 0, 0]), Value::Int(1)),
+            block(ints(&[2, 1, 0]), Value::Int(2)),
+            block(ints(&[3, 1, 2]), Value::Int(3)),
+            block(ints(&[3, 0, 2]), Value::Int(4)),
+            block(ints(&[3, 0, 1]), Value::Int(-1)),
+            block(ints(&[3, 0, 0]), Value::Int(99)),
+            block(ints(&[1, 1]), Value::Int(2)),
+            compound(vec![
+                ("pos", ints(&[0, 1, 2])),
+                ("state", Value::Int(2)),
+                ("nbt", compound(vec![("id", Value::String("x".into()))])),
+            ]),
+        ]
+    }
+
+    /// Whatever the typed decoding accepts, it reads exactly as the dynamic
+    /// walk does; whatever it refuses falls through to the walk. The ordinary
+    /// file must take the typed path, or the comparison binds to nothing.
+    #[test]
+    fn the_typed_read_agrees_with_the_walk_or_refuses() {
+        let cases: Vec<(&str, Value, bool)> = vec![
+            ("ordinary", full(ordinary_blocks(), vec![]), true),
+            (
+                "byte state",
+                full(vec![block(ints(&[0, 0, 0]), Value::Byte(2))], vec![]),
+                false,
+            ),
+            (
+                "long position",
+                full(
+                    vec![block(
+                        Value::List(vec![Value::Long(0), Value::Long(0), Value::Long(0)]),
+                        Value::Int(2),
+                    )],
+                    vec![],
+                ),
+                false,
+            ),
+            (
+                "int-array position",
+                full(
+                    vec![block(
+                        Value::IntArray(fastnbt::IntArray::new(vec![0, 0, 0])),
+                        Value::Int(2),
+                    )],
+                    vec![],
+                ),
+                false,
+            ),
+            (
+                "unknown root key",
+                full(
+                    ordinary_blocks(),
+                    vec![("author", Value::String("a".into()))],
+                ),
+                false,
+            ),
+            (
+                "non-compound block",
+                full(
+                    vec![Value::Int(7), block(ints(&[0, 0, 0]), Value::Int(2))],
+                    vec![],
+                ),
+                false,
+            ),
+            (
+                "no palette",
+                compound(vec![("blocks", Value::List(ordinary_blocks()))]),
+                true,
+            ),
+        ];
+        for (what, root, typed) in cases {
+            let raw = fastnbt::to_bytes(&root).expect("serialize NBT");
+            for stateful in [false, true] {
+                let fast = cells_typed(&raw, stateful);
+                assert_eq!(fast.is_some(), typed, "{what}: typed path taken");
+                let walked = cells_walk(&raw, stateful);
+                assert_eq!(
+                    fast.unwrap_or_else(|| walked.clone()),
+                    walked,
+                    "{what} (stateful {stateful})"
+                );
+            }
+            let mut gz = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::fast());
+            std::io::Write::write_all(&mut gz, &raw).expect("gzip");
+            let bytes = gz.finish().expect("gzip finish");
+            let walked_size = match fastnbt::from_bytes::<Value>(&raw) {
+                Ok(Value::Compound(r)) => crate::compiler::nbtread::size_of(r.get("size")),
+                _ => None,
+            };
+            assert_eq!(structure_size(&bytes), walked_size, "{what}: size");
         }
     }
 }
