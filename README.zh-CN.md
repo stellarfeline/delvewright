@@ -2,13 +2,15 @@
 
 # Delvewright
 
-![Delvewright 建成的 Doune 城堡，从东北方越过来路望去](docs/media/doune/01-hero-castle-northeast.jpg)
+![Delvewright 建成的 Vesperhold：从西南高处望去，整座要塞立在峭岩上，堤道一路延伸到路边神龛](docs/media/vesperhold/01-hero-whole-map-southwest.jpg)
+
+**[走进 Vesperhold](docs/media/vesperhold/README.md)** —— 来路、外庭、花园、回廊、礼拜堂、礼拜堂下的水池、钟楼与王座厅。
 
 **Delvewright 把一个创意提示变成一张供一到四位朋友游玩的、由故事驱动的 Minecraft 冒险地图，并在交付之前由机器证明它能被通关。**
 
 它自动化的是繁琐的劳动和验证，而不是设计：它会停下来，等你认可设计、等你亲自走一遍构建出的地图；当它拒绝某样东西时，它会指明该改什么，而不是替你去改。
 
-**走进这座城堡：** 用 Minecraft Java 1.21.11 客户端加入 `minecraft.stellarfeline.ca`，进入时接受资源包提示。
+**现在就来玩：** 用 Minecraft Java 1.21.11 客户端加入 `minecraft.stellarfeline.ca`，进入时接受资源包提示。服务器上运行的是 Vesperhold，也就是图中这座城堡。
 
 ## 开始使用
 
@@ -37,28 +39,26 @@ flowchart TD
     L --> I(["一个 delve 镜像<br/>一次 docker run，朋友们即可加入"])
 ```
 
+整条流水线逐个方框展开、点名它运行的每一个工具：[从头到尾如何运作](docs/how-it-works.zh-CN.md)。
+
 智能体只写文档，从不写命令：datapack 的每一行都来自编译器，没有人会编辑它的输出。文档是记录在案的产物——同样的文档加同样的种子，重新构建出同样的字节。[每项检查为上面这座城堡打印了什么](#为什么可以信任它)。
 
 ## 为什么可以信任它
 
-下面每一级都在 **Doune Castle: A Guided Tour v1.0.0**——图中这座城堡——的 [release 运行](https://github.com/stellarfeline/delvewright-campaigns/actions/runs/34797937184)中跑过（`delvec` 1.5.0，引擎修订 `70eea629`，Minecraft 1.21.11）。每一级打印的内容原样引用。
+下面每一级都在 **[Vesperhold v1.0.0](https://github.com/stellarfeline/delvewright-campaigns/releases/tag/release/vesperhold/v1.0.0)**——图中这座城堡——的 [release 运行](https://github.com/stellarfeline/delvewright-campaigns/actions/runs/36809299799)中跑过（`delvec` 1.7.1，引擎修订 `90433f2`，Minecraft 1.21.11）。每一级打印的内容原样引用。
 
-- **静态分析。** 在 `delvec build` 内部、写出任何字节之前：每份文档都按其 schema 校验，每条任务与对话路径都被走一遍，失败即拒绝，并给出具名的 `DW` 代码。Doune：构建以 0 退出，走过了 2 条状态路径、共 18 步，检查了 9 个目标，有一条提示——`DW0781`，拼接检查无可判定，因为整座城堡是一个 piece。
+- **静态分析。** 在 `delvec build` 内部、写出任何字节之前：每份文档都按其 schema 校验，每条任务与对话路径都被走一遍，失败即拒绝，并给出具名的 `DW` 代码。Vesperhold：构建以 0 退出，走过了 5 条状态路径、共 185 步，检查了 37 个目标，有五条提示——三条 `DW0351`，某个角色出现或离开时没有被看到移动；`DW0781`，拼接检查无可判定，因为整座城堡是一个 piece；以及 `DW0810`，生成的 PackTest 套件只驱动了一组对象中的一个成员，没有驱动它的同组成员。
 - **每条命令都被检查。** 每一行生成的 `.mcfunction` 都在同一次构建中按固定版本 1.21.11 的命令树解析。它不打印计数。
-- **PackTest。** 在真实服务器上测试 datapack 的各项机制：`63 GAME TESTS COMPLETE IN 8.994 s` —— `All 63 required tests passed :)`。
-- **机器人通关。** 一个 mineflayer 机器人加入发布的服务器，把关键路径玩到结束：`critical path 'doune-castle-tour' PASSED (11 steps, 2 advisory finding(s))`。这两条提示说明没有战斗、也没有死亡可供测试。
+- **PackTest。** 在真实服务器上测试 datapack 的各项机制：`338 GAME TESTS COMPLETE IN 1.586 min` —— `All 338 required tests passed :)`。
+- **机器人通关。** 一个 mineflayer 机器人加入发布的服务器，把关键路径玩到结束，在每场战斗中故意死亡、再从篝火走回去：`critical path 'vesperhold' PASSED (45 steps, 18 scripted death(s) survived, 2 advisory finding(s))`。一条提示是机器人走回去时发现敌群成员已经受伤；另一条说明这次运行没有驱动任何故事分支。发布之前，在同一个编译器上，四条故事分支各自在全新的世界里被玩到结局：`branch branch/halvard-kept-oath+branch/ring 'vesperhold' PASSED (45 steps, 18 scripted death(s) survived)`，另外三条打印了同样的 45 步和 18 次死亡。
 - **服务器日志。** `shipped server log is error-free.`
-- **确定性。** 同样的文档、同样的种子，输出逐字节相同。发布的镜像带有其 datapack 摘要作为标签，`datapack-sha256=dba45276efbaabea53ee261489921ead3925d2b3363cf0155ed0a8548b5666e0`，任何重新构建的人都可以比对。对本仓库的每个 pull request，CI 都会在 Linux 和 macOS 上构建一个生成的 campaign，只要有一个字节不同就拒绝。
+- **确定性。** 同样的文档、同样的种子，输出逐字节相同。发布的镜像 `ghcr.io/stellarfeline/delve-vesperhold:v1.0.0` 带有其 datapack 摘要作为标签，`datapack-sha256=e0f79e0522708526cea976e735547042567b032abe87dbb425f8495365f796ec`，任何重新构建的人都可以比对。对本仓库的每个 pull request，CI 都会在 Linux 和 macOS 上构建一个生成的 campaign，只要有一个字节不同就拒绝。
 
 每一级证明了什么、没有证明什么：[每道关卡实际证明了什么](docs/reference/skill-workflow.md#4-what-each-gate-actually-proves)。
 
 ## 地图
 
-![从东南上空俯瞰 Doune 城堡：庭院、幕墙与城墙步道](docs/media/doune/02-castle-from-above-southeast.jpg)
-
-地图有两种摆放方式。`areas[]` 从 piece 库中取 prefab，由原版 jigsaw 按编译器控制的种子拼装。site plan 先整体后局部——先是 geometry brief，再是 layout graph，然后是每个部分的包围盒、基准面和接缝——并在任何地点细化之前先作为 blockout 走一遍。库里没有的 piece，由 box-split 语法根据规则程序写出：Doune 就是一个 area 里放着一个这样的 piece，整座城堡，104 × 56 × 120 格。光照在设计房间时就放好，构建会拒绝测得昏暗的可到达地面（`DW0210`）。每个场景都用 Chunky 渲染，并对照它所回应的概念图进行审查。
-
-**[城堡内部](docs/media/doune/README.md)** —— 庭院、各个大厅、厨房、城墙步道。
+地图有两种摆放方式。`areas[]` 从 piece 库中取 prefab，由原版 jigsaw 按编译器控制的种子拼装。site plan 先整体后局部——先是 geometry brief，再是 layout graph，然后是每个部分的包围盒、基准面和接缝——并在任何地点细化之前先作为 blockout 走一遍。库里没有的 piece，由 box-split 语法根据规则程序写出：Vesperhold 就是一个 area 里放着一个这样的 piece，整片场地，172 × 104 × 292 格。光照在设计房间时就放好，构建会拒绝测得昏暗的可到达地面（`DW0210`）。每个场景都用 Chunky 渲染，并对照它所回应的概念图进行审查。
 
 延伸阅读：[选择摆放方式](.claude/skills/delvewright/skills/new-delve/references/placement.md) · [地图先规划后建造](docs/adr/0022-the-map-is-planned-before-it-is-built.md) · [语法](docs/reference/grammar.md) · [收录一个 piece](docs/reference/prefab-procedure.md) · [室内照明](docs/reference/interior-lighting.md) · [视觉审查](.claude/skills/delvewright/skills/new-delve/references/visual-review.md)
 
