@@ -4,11 +4,13 @@
     "primary.en:datapack/data/gallery/function/rw_release.mcfunction",
     "primary.en:datapack/data/gallery/function/rw_start.mcfunction",
     "primary.en:datapack/data/gallery/function/rw_tick.mcfunction",
+    "primary.en:packtest-datapack/data/gallery/test/v06_checkpoint_wait.mcfunction",
     "primary.en:validation/observer-census.json",
     "primary.zh-cn:datapack/data/gallery/function/rw_begin.mcfunction",
     "primary.zh-cn:datapack/data/gallery/function/rw_release.mcfunction",
     "primary.zh-cn:datapack/data/gallery/function/rw_start.mcfunction",
     "primary.zh-cn:datapack/data/gallery/function/rw_tick.mcfunction",
+    "primary.zh-cn:packtest-datapack/data/gallery/test/v06_checkpoint_wait.mcfunction",
     "primary.zh-cn:validation/observer-census.json"
   ],
   "base_commit": "cadc32974a7d51483426ae8dd0bebbdcbe190a65",
@@ -26,6 +28,7 @@
     "primary.en:datapack/data/gallery/function/lane_tick_lane.mcfunction",
     "primary.en:datapack/data/gallery/function/setup.mcfunction",
     "primary.en:datapack/data/gallery/function/tick.mcfunction",
+    "primary.en:packtest-datapack/data/gallery/test/v06_checkpoint_reseat.mcfunction",
     "primary.en:resourcepack.zip",
     "primary.en:validation/watch-ledger.json",
     "primary.zh-cn:datapack/data/gallery/function/cp_respawn_check.mcfunction",
@@ -34,6 +37,7 @@
     "primary.zh-cn:datapack/data/gallery/function/lane_tick_lane.mcfunction",
     "primary.zh-cn:datapack/data/gallery/function/setup.mcfunction",
     "primary.zh-cn:datapack/data/gallery/function/tick.mcfunction",
+    "primary.zh-cn:packtest-datapack/data/gallery/test/v06_checkpoint_reseat.mcfunction",
     "primary.zh-cn:validation/watch-ledger.json",
     "site-plan.en:SKINS.md",
     "site-plan.en:resourcepack.zip",
@@ -41,6 +45,7 @@
     "void-horizon.en:resourcepack.zip"
   ],
   "classes": {
+    "PackTest": 4,
     "datapack function": 20,
     "other": 12,
     "validation ledger": 4
