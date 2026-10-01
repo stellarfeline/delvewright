@@ -38,11 +38,12 @@ use delvec::admit::structure::Structure;
 use delvec::schem::blocks::{BlockRegistry, StateJudgement};
 use delvec::schem::convert::DATA_VERSION as PINNED_DATA_VERSION;
 
-/// The shipped prefab library. Lives in the content repo
-/// (`delvewright-campaigns`), reached at `campaigns/prefabs` — the `campaigns/`
-/// symlink locally, a content-repo checkout at the pinned SHA in CI.
+mod common;
+
+/// The shipped prefab library at the pinned content commit, read out of the
+/// content repository's object store (`common::pinned`), never a working tree.
 fn prefabs_dir() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../campaigns/prefabs")
+    common::pinned::prefabs()
 }
 
 /// Every `.nbt` in the library, as `(file name, structure)`.
@@ -51,8 +52,8 @@ fn library() -> Vec<(String, Structure)> {
     let mut out = Vec::new();
     let Ok(entries) = std::fs::read_dir(&dir) else {
         panic!(
-            "the prefab library is not at {} — the `campaigns/` content checkout is missing, so \
-             this sweep would examine nothing and pass",
+            "the pinned content carries no prefab library at {}, so this sweep would \
+             examine nothing and pass",
             dir.display()
         );
     };
@@ -285,8 +286,8 @@ fn the_second_door_is_opened_on_every_shipped_prefab() {
     let mut paths: Vec<PathBuf> = std::fs::read_dir(&dir)
         .unwrap_or_else(|_| {
             panic!(
-                "the prefab library is not at {} — the `campaigns/` content checkout is missing, \
-                 so this sweep would examine nothing and pass",
+                "the pinned content carries no prefab library at {}, so this sweep would \
+                 examine nothing and pass",
                 dir.display()
             )
         })

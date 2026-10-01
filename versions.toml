@@ -245,10 +245,13 @@ aarch64-unknown-linux-gnu = "ubuntu-22.04-arm"
 #     ladder checks the content repo out at this exact `sha` and passes
 #     `--prefabs <checkout>/prefabs`.
 #   - validation/check-versions.sh: asserts `repo`/`sha` shape here.
+#   - every Rust test that judges the content (crates/delvec/tests/common/pinned.rs):
+#     reads this commit out of the content repository's object store, never a
+#     working tree, on every machine.
 #
-# Local dev resolves the library through the `campaigns/` symlink instead
-# (compiler default `--prefabs campaigns/prefabs`), so day-to-day work does not
-# depend on this pin — only reproducible/CI builds do.
+# A `delvec` run by hand resolves the library through the `campaigns/` symlink's
+# working tree instead (compiler default `--prefabs campaigns/prefabs`), so
+# authoring does not depend on this pin — tests and CI builds do.
 #
 # RE-PIN CONVENTION: after a content-repo PR merges, update `sha` to the new
 # content `main` tip in a normal follow-up PR — and restate the ZONE INVENTORY at
