@@ -3975,10 +3975,14 @@ seal is the conservative answer. The ordering is **DAG-causal, not linear**
 whose objective is a true causal descendant of the gate's firing objective, so a
 gate on a **parallel quest branch** the lineariser merely interleaves ahead of a leg
 does not falsely seal it (island `take-the-cheese` flee legs are not sealed by the
-`hide` branch's boulder). The seal is applied only to a **causal leg** (its start
-objective is itself a DAG ancestor of the arrival) — the lineariser concatenates
-sibling branches into artifact "legs" the player never walks under the arrival's
-gate state, and base `DW0311` already proved every leg walkable in the open world. A
+`hide` branch's boulder). A walked leg `from → to` credits exactly the writes the
+party has necessarily fired while walking it (`World::leg_region_state`): those that
+precede the arrival, the start step's own, and those that precede the start. For a
+**causal leg** (the start is itself a DAG ancestor of the arrival) that is the
+arrival's state. A leg the ancestry does not connect — the lineariser concatenating
+sibling branches, or an ordering the relation fails to record — is judged by the
+same rule and never over the open world: a write that neither end inherits does not
+seal it, while the world-load seals and every write of the start's own branch do. A
 genuinely-forced re-crossing (a causal leg whose sealed gate is never reopened
 before it) still fails `DW0311` (`DW0315` from a checkpoint) with a message naming
 the sealed gate — the "point of no return by geometry" the owner's staging vision
