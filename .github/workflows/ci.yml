@@ -55,16 +55,19 @@ jobs:
       manifest: ${{ steps.reach.outputs.manifest }}
       dsl-crate-version: ${{ steps.reach.outputs.dsl-crate-version }}
       rust: ${{ steps.reach.outputs.rust }}
+      publishable: ${{ steps.reach.outputs.publishable }}
       engine-shelf: ${{ steps.reach.outputs.engine-shelf }}
       prefab-generators: ${{ steps.reach.outputs.prefab-generators }}
       harness: ${{ steps.reach.outputs.harness }}
       skin-tool: ${{ steps.reach.outputs.skin-tool }}
-      i18n-tool: ${{ steps.reach.outputs.i18n-tool }}
+      tool-tests-tree: ${{ steps.reach.outputs.tool-tests-tree }}
+      tool-tests: ${{ steps.reach.outputs.tool-tests }}
       mecha-crosscheck: ${{ steps.reach.outputs.mecha-crosscheck }}
       docs: ${{ steps.reach.outputs.docs }}
       line-endings: ${{ steps.reach.outputs.line-endings }}
       storybook-version: ${{ steps.reach.outputs.storybook-version }}
-      content-pin: ${{ steps.reach.outputs.content-pin }}
+      pin-drift: ${{ steps.reach.outputs.pin-drift }}
+      zone-audit: ${{ steps.reach.outputs.zone-audit }}
       gallery: ${{ steps.reach.outputs.gallery }}
       tier2-validation: ${{ steps.reach.outputs.tier2-validation }}
     steps:
@@ -299,39 +302,6 @@ jobs:
       # binding count against that population on every run.
       - name: every JSON document this repository holds is canonical
         run: python3 tools/ci/check-json-canonical.py
-      # ADR-0017: `cargo install delvec` has to keep working, and `cargo publish`
-      # is a ONE-WAY DOOR — a version can never be reused and a name never freed
-      # — so the packaging contract is proven on every push from a tree nobody
-      # has published from. This packages both publishable crates, asserts the
-      # manifest crates.io will actually serve carries no `path` dependency, and
-      # rebuilds the packaged tarball OUTSIDE the workspace with the DSL crate
-      # supplied from its own packaged tarball. That last part is what stops the
-      # gate being vacuous: a dry run that quietly satisfied the dependency from
-      # `crates/dsl` on disk would prove nothing about a stranger's download.
-      # A STEP, not a job: every job name here is a required status context.
-      - name: the published crates would build standing alone
-        run: bash tools/ci/check-publishable.sh
-      # The same crates ship a FRONT PAGE, and it is the only document in this
-      # repo whose reader has never seen this repo. `crates/delvec/README.md`
-      # and `crates/dsl/README.md` are rendered verbatim on crates.io; the
-      # `delvec` page may not open with "The deterministic compiler (spec-0002,
-      # ADR-0001/0006/0011)", a citation a visitor cannot resolve. This gate is
-      # what holds that; the rule behind it (CLAUDE.md *Audience separation in
-      # docs*) is otherwise held by memory alone. Six unambiguous
-      # patterns only: spec-NNNN, ADR-NNNN, DWNNNN, `task #N`, `PR #N`, and a
-      # repo-relative markdown link (crates.io serves the markdown with no
-      # repository around it). It deliberately does NOT check the present-tense
-      # half of the rule — "now"/"still"/"since" are ordinary English and a
-      # checker for them would red on honest prose, which is worse than no
-      # checker. The file set is DERIVED from the manifests (every crate whose
-      # `publish` is not false, through its `readme` key), so a crate that
-      # becomes publishable inherits this with no edit; examining zero pages is
-      # a red. It rides HERE because this is the job that already owns what
-      # crates.io receives. A STEP, not a job: every job name here is a required
-      # status context. Deterministic, offline, stdlib-only python3.
-      - name: no internal reference reaches a crates.io front page
-        run: python3 tools/ci/check-crates-io-readmes.py
-
       # ADR-0006's LINUX HALF. The determinism promise is "same DSL + same seed
       # -> byte-identical datapack and world", and until this step every gate
       # holding it ran on one machine: the double-build gate inside `cargo test`
@@ -359,6 +329,49 @@ jobs:
           name: determinism-digest-linux
           path: determinism-linux.txt
           if-no-files-found: error
+
+  # What crates.io would receive, built the way a stranger's `cargo install`
+  # builds it. Its own job rather than steps of `rust`: it shares no build with
+  # that job (its verify builds get an emptied target directory of their own and
+  # the standalone build sits outside the workspace), so the two run side by
+  # side instead of one after the other.
+  publishable:
+    name: published crates (package + standalone build)
+    needs: changes
+    if: github.event_name != 'pull_request' || needs.changes.outputs.publishable == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # ADR-0017: `cargo install delvec` has to keep working, and `cargo publish`
+      # is a ONE-WAY DOOR — a version can never be reused and a name never freed
+      # — so the packaging contract is proven on every push from a tree nobody
+      # has published from. This packages both publishable crates, asserts the
+      # manifest crates.io will actually serve carries no `path` dependency, and
+      # rebuilds the packaged tarball OUTSIDE the workspace with the DSL crate
+      # supplied from its own packaged tarball. That last part is what stops the
+      # gate being vacuous: a dry run that quietly satisfied the dependency from
+      # `crates/dsl` on disk would prove nothing about a stranger's download.
+      - name: the published crates would build standing alone
+        run: bash tools/ci/check-publishable.sh
+      # The same crates ship a FRONT PAGE, and it is the only document in this
+      # repo whose reader has never seen this repo. `crates/delvec/README.md`
+      # and `crates/dsl/README.md` are rendered verbatim on crates.io; the
+      # `delvec` page may not open with "The deterministic compiler (spec-0002,
+      # ADR-0001/0006/0011)", a citation a visitor cannot resolve. This gate is
+      # what holds that; the rule behind it (CLAUDE.md *Audience separation in
+      # docs*) is otherwise held by memory alone. Six unambiguous
+      # patterns only: spec-NNNN, ADR-NNNN, DWNNNN, `task #N`, `PR #N`, and a
+      # repo-relative markdown link (crates.io serves the markdown with no
+      # repository around it). It deliberately does NOT check the present-tense
+      # half of the rule — "now"/"still"/"since" are ordinary English and a
+      # checker for them would red on honest prose, which is worse than no
+      # checker. The file set is DERIVED from the manifests (every crate whose
+      # `publish` is not false, through its `readme` key), so a crate that
+      # becomes publishable inherits this with no edit; examining zero pages is
+      # a red. It rides HERE because this is the job that owns what crates.io
+      # receives. Deterministic, offline, stdlib-only python3.
+      - name: no internal reference reaches a crates.io front page
+        run: python3 tools/ci/check-crates-io-readmes.py
 
   # ADR-0006's other half, and the only place in CI that builds on a second
   # operating system. It was measured by hand once — macOS/Apple-libm against
@@ -565,32 +578,48 @@ jobs:
       - name: pytest (composition determinism + model-required contract)
         run: PYTHONPATH=. python -m pytest -q
 
-  i18n-tool:
-    name: i18n translation tool (pytest)
-    # docs/reference/i18n.md: tools/creator/i18n-translate.py drives an external
-    # OpenAI-compatible LLM API at generation time. The suite proves the request it
-    # would build, config resolution incl. the not-configured fallback, and that the
-    # API key never leaves the named env var — with the network blocked at
-    # `urlopen` (tools/tests/conftest.py), so no test can reach a real provider.
+  # `tools/tests`, split by what each file reads (`tools/tests/conftest.py`).
+  # The files that read the whole tracked tree, the creator plugin, or a
+  # document outside the compiler reference run in the first job, which every
+  # change reaches; every other file runs in the second, which only the paths
+  # its group lists reach, and a test there that opens a tracked path outside
+  # them fails (the conftest's reach guard). Both block the network at
+  # `urlopen` (tools/tests/conftest.py), so no test can reach a real provider.
+  tool-tests-tree:
+    name: tool tests (pytest, whole-tree readers)
     needs: changes
-    if: github.event_name != 'pull_request' || needs.changes.outputs.i18n-tool == 'true'
+    if: github.event_name != 'pull_request' || needs.changes.outputs.tool-tests-tree == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      # This job's NAME says i18n and its step runs the WHOLE `tools/tests`
-      # suite, `test_check_skill_page.py` among them — so it needs the same two
-      # objects `check-skill-page.py` does, and on a shallow checkout it fails
-      # with 2 failed and 27 errors that name an engine revision rather than
-      # anything about i18n.
+      # `test_check_skill_page.py` judges the plugin against the engine at its
+      # pin and the pre-split page's blob, which a shallow checkout lacks.
       - uses: ./.github/actions/skill-page-objects
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      # Stdlib-only tool (tomllib needs >=3.11); pytest is the only test dep,
+      # Stdlib-only tools (tomllib needs >=3.11); pytest is the only test dep,
       # and it is an INSTRUMENT of a required check, so it is named literally
       # (versions.toml [ci].pytest_version).
       - run: pip install "pytest==9.1.1"
       - run: python -m pytest -q tools/tests
+        env:
+          DW_CI_REACH_GROUP: tool-tests-tree
+
+  tool-tests:
+    name: tool tests (pytest, tool + engine readers)
+    needs: changes
+    if: github.event_name != 'pull_request' || needs.changes.outputs.tool-tests == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install "pytest==9.1.1"
+      - run: python -m pytest -q tools/tests
+        env:
+          DW_CI_REACH_GROUP: tool-tests
 
   mecha-crosscheck:
     name: mecha cross-check (emitted mcfunction)
@@ -1156,40 +1185,31 @@ jobs:
   # job — the engine's OWN campaign, built fresh by every engine revision in
   # the `gallery` job below.
   #
-  # What this job DOES check, against the pinned content checkout: the pin
-  # itself is measured against what it names (has content `main` moved past
-  # it unnoticed), and every zone program in the pinned library still expands
-  # and judges green. Neither reads or builds a campaign's `world.json`.
-  #
-  # Its own job, not a step in `rust`: the deepening fetch and the zone-program
-  # audit are content-repo concerns, and burying them inside the fmt/clippy/test
-  # job would make one status answer two unrelated questions. On every push,
-  # not PR-only — pin drift or a broken zone program must not be able to sit on
+  # What this job checks: each pin into our own history is measured against
+  # what it names — has content `main` moved past the content pin unnoticed,
+  # and does the engine release the plugin ships at exist with a full shelf.
+  # Nothing here builds the engine; the zone-program audit, which does, is the
+  # `zone-audit` job below, so a change only these checks read runs no compile.
+  # Its own job, not a step in `rust`: the deepening fetch is a content-repo
+  # concern. On every push, not PR-only — pin drift must not be able to sit on
   # a green board for the window between push and PR.
-  content-pin:
-    # Name must stay exactly "content pin (drift + zone-program audit)" — it is
-    # a required status context in branch protection; renaming it deadlocks
-    # every PR (see .github/required-status-checks.txt).
-    name: content pin (drift + zone-program audit)
+  pin-drift:
+    name: pin drift (content repo + plugin release)
     needs: changes
-    if: github.event_name != 'pull_request' || needs.changes.outputs.content-pin == 'true'
+    if: github.event_name != 'pull_request' || needs.changes.outputs.pin-drift == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      # `check-skill-page.py --online` below is the third caller, and it reads
+      # `check-skill-page.py --online` below is a caller, and it reads
       # the same two objects the offline run does. Without them it refuses at
       # exit 2 before it ever reaches the remote, so the online half would be a
       # step that has never once asked its question.
       - uses: ./.github/actions/skill-page-objects
-      # LFS off: neither step below reads a prefab `.nbt` BODY — the pin check
-      # is git history, and the zone-program audit expands the IR geometrically
-      # (`crates/delvec/src/grammar`'s `expand`), never touching a file under
-      # `prefabs/`. Text-only gate, same reasoning as `campaign storybooks`.
+      # LFS off: the pin check is git history and reads no prefab `.nbt` BODY.
+      # Text-only gate, same reasoning as `campaign storybooks`.
       - uses: ./.github/actions/checkout-content
         with:
           lfs: "false"
-      - uses: Swatinem/rust-cache@v2
-        with: { key: content-pin }
       # The pin's other half, judged where the pinned repository's history
       # already is. This job checks the content repo out for its own reasons, so
       # the drift measurement costs one deepening fetch and no new host: a
@@ -1240,11 +1260,30 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: python3 tools/ci/check-skill-page.py --online --base origin/main
+
+  # Every zone program in the rule library and the pinned campaigns still
+  # expands and judges green. Its own job because it builds the engine and the
+  # pin checks above do not. On every push as well as on a pull request that
+  # reaches it.
+  zone-audit:
+    name: zone programs (expand + judge)
+    needs: changes
+    if: github.event_name != 'pull_request' || needs.changes.outputs.zone-audit == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # LFS off: the audit expands the IR geometrically (`crates/delvec/src/
+      # grammar`'s `expand`), never touching a file under `prefabs/`.
+      - uses: ./.github/actions/checkout-content
+        with:
+          lfs: "false"
+      - uses: Swatinem/rust-cache@v2
+        with: { key: zone-audit }
       # A campaign's ZONE PROGRAMS are the grammar IR a zone's prefab is
       # expanded from; they live under `design/programs/`, and a campaign that
       # has them may carry no `world.json` at all yet (the drowned-bell remake
-      # is exactly that). This is bound to the same event as the pin-drift
-      # check above: a content re-pin cannot land without it.
+      # is exactly that). A content re-pin moves `versions.toml`, which every
+      # job reads, so a re-pin cannot land without this.
       #
       # `--library` in the same call because the vocabulary and the zones that
       # compose it fail together, and one command means one thing to remember.
@@ -1260,7 +1299,7 @@ jobs:
   # spec-0039: the engine's OWN campaign, and its only test surface. A released
   # campaign is never edited and is built only by the engine revision it pins —
   # the engine never builds an old campaign to prove compatibility with a new
-  # one, and `content-pin` above does not try. The gallery is engine-owned and
+  # one, and `zone-audit` above does not try. The gallery is engine-owned and
   # same-repo, so it is built fresh by every engine revision, and the element
   # lands in the same pull request as the surface it covers.
   #

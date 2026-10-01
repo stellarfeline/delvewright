@@ -117,8 +117,9 @@ it could attribute: a die-retry return leg began at the respawn's full 20, bled 
 the bot survives a walk is not what a walk leg is for. Off a walk the refund rule
 above applies; on one no refund is added. A single blow of 20 or more, a lethal
 volume and a crush gate still kill.
-A scripted death waits out vanilla's 60-tick respawn protection (counted on the
-server's clock) and is taken at the fight: a stage that recovers from an
+A scripted death waits until the respawned bot has sent `player_loaded`, which
+ends the server's client-load window (at most 60 ticks, counted on the server's
+clock, for a bot that cannot be asked), and is taken at the fight: a stage that recovers from an
 unscripted death walks back before it scripts the next one. A walk back that ends
 in a death is reported as a death on the leg, never as unwalkable geometry.
 

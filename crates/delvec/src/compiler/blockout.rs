@@ -1591,7 +1591,7 @@ fn raise(d: &mut Vec<(DwCode, Diagnostic)>, code: DwCode, diag: Diagnostic) {
 #[must_use]
 pub fn check(
     plan: &crate::compiler::plan::Plan,
-    blocks: &BTreeMap<[i32; 3], String>,
+    blocks: &crate::compiler::blockstate::BlockMap,
 ) -> Option<Battery> {
     let b = plan.blockout.as_ref()?;
     let c = plan.campaign;
@@ -1617,7 +1617,7 @@ pub fn check(
     // `DW0838` are questions about GEOMETRY — is the hole the hole the plan cut,
     // and is there a second one — so they are asked with nothing shut.
     let open = crate::compiler::nav::World::from_occupancy(
-        crate::compiler::assembled::occupancy_of(blocks.clone(), &BTreeSet::new()),
+        crate::compiler::assembled::occupancy_over(blocks, &BTreeSet::new()),
         crate::compiler::nav::Premises::geometry_only(),
     );
     // The world with every way the graph's own gating closure never opens sealed
@@ -1625,7 +1625,7 @@ pub fn check(
     // regions open (`crate::compiler::assembled`), so a reachability proof taken over it
     // would walk through a door nothing in the campaign ever unlocks.
     let sealed = crate::compiler::nav::World::from_occupancy(
-        crate::compiler::assembled::occupancy_of(seal_unopened(c, b, blocks), &BTreeSet::new()),
+        crate::compiler::assembled::occupancy_over(&seal_unopened(c, b, blocks), &BTreeSet::new()),
         crate::compiler::nav::Premises::geometry_only(),
     );
 
@@ -1647,8 +1647,8 @@ pub fn check(
 fn seal_unopened(
     c: &Campaign,
     b: &Blockout,
-    blocks: &BTreeMap<[i32; 3], String>,
-) -> BTreeMap<[i32; 3], String> {
+    blocks: &crate::compiler::blockstate::BlockMap,
+) -> crate::compiler::blockstate::BlockMap {
     let mut out = blocks.clone();
     let Some(graph) = c.layout_graph.as_ref().map(|g| &g.content) else {
         return out;
@@ -1667,7 +1667,10 @@ fn seal_unopened(
         }
         let (lo, hi) = s.opening;
         for cell in cells_of(lo, hi) {
-            out.insert(narrow(cell), palette::BAR.to_string());
+            out.insert(
+                narrow(cell),
+                crate::compiler::blockstate::BlockState::new(palette::BAR),
+            );
         }
     }
     out

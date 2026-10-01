@@ -223,9 +223,9 @@
         "region": {
           "anchor": "anchor/east-pit",
           "extent": [
-            1,
+            0,
             2,
-            1
+            0
           ]
         },
         "shown_by": [
@@ -3132,7 +3132,7 @@
         "tier": "boss"
       },
       {
-        "anchor": "anchor/east-bay",
+        "anchor": "anchor/lane-east",
         "id": "wave/edge",
         "mobs": [
           {

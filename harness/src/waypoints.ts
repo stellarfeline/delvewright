@@ -351,7 +351,29 @@ export interface LegMatch {
    * campaign's declared table with). */
   readonly timedGates: readonly TimedGate[];
   readonly cursor: number;
+  /**
+   * Whether the walk starts where the matched leg was proven from: within
+   * {@link LEG_START_REACH} blocks of the leg's `from`. A leg's waypoints and its
+   * `timed_gates` are a proof about the route FROM `from`; a walk that reaches the
+   * same destination from somewhere else (a die-retry return from a respawn seat, a
+   * walk after a body dragged the bot across the map) crosses whatever lies between
+   * ITS start and the leg, and the leg's gate subset says nothing about that. Such a
+   * walk still consumes the leg (the lockstep order is unchanged), but its gates come
+   * from the declared table. `true` when no start was given or no leg matched.
+   */
+  readonly startsOnLeg: boolean;
+  /** The walk's start distance from the matched leg's `from`, when both are known. */
+  readonly startOffset: number | undefined;
 }
+
+/**
+ * How far from a leg's proven `from` a walk may start and still be the walk that
+ * leg proved, in blocks (Euclidean, feet cells). A step walk starts where the
+ * previous step left the bot: within that walk's final range of its destination
+ * (at most 3 for an NPC, a chest, an interaction, a wave) and then moved by at most
+ * a 3-block stance search, so 6. A respawn seat is not on the leg, and is refused.
+ */
+export const LEG_START_REACH = 6;
 
 /**
  * Lockstep leg matcher (pure). If the leg at `cursor` targets `pos`, return its
@@ -370,17 +392,32 @@ export function nextLegWaypoints(
   legs: readonly WaypointLeg[],
   cursor: number,
   pos: Vec3Tuple,
+  start?: Vec3Tuple,
 ): LegMatch {
   const leg = legs[cursor];
   if (leg && samePos(leg.to, pos)) {
+    const startOffset = start === undefined ? undefined : distance(start, leg.from);
     return {
       matched: true,
       waypoints: leg.waypoints,
       timedGates: leg.timedGates,
       cursor: cursor + 1,
+      startsOnLeg: startOffset === undefined || startOffset <= LEG_START_REACH,
+      startOffset,
     };
   }
-  return { matched: false, waypoints: undefined, timedGates: [], cursor };
+  return {
+    matched: false,
+    waypoints: undefined,
+    timedGates: [],
+    cursor,
+    startsOnLeg: true,
+    startOffset: undefined,
+  };
+}
+
+function distance(a: Vec3Tuple, b: Vec3Tuple): number {
+  return Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
 }
 
 /**

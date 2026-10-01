@@ -259,11 +259,17 @@ impl PieceFacts {
         // move is to re-export. Measuring the blocks anyway would judge a shape
         // the piece does not have and send an author to the wrong document, so
         // such a piece is unreadable here and is left to the rule that owns it.
-        for t in meta.templates() {
-            let Ok(raw) = std::fs::read(dir.join(t.file)) else {
+        let templates = meta.templates();
+        let sizes = crate::par::map(&templates, |t| {
+            std::fs::read(dir.join(t.file))
+                .ok()
+                .map(|raw| crate::compiler::assembled::structure_size(&raw))
+        });
+        for (t, size) in templates.iter().zip(sizes) {
+            let Some(read) = size else {
                 continue;
             };
-            if let Some(actual) = crate::compiler::assembled::structure_size(&raw)
+            if let Some(actual) = read
                 && actual != t.size
             {
                 return Err(format!(

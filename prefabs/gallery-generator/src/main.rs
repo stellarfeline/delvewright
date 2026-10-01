@@ -110,10 +110,17 @@ const TERRACE_STEPS: [(i32, i32); 2] = [(7, 1), (6, 2)];
 /// — the block IS the signal — so the floor course under every cell it catches
 /// is molten stone, and `lethal/east-pit` declares `shown_by`. The span is the
 /// volume's keep-out at the walk plane, one cell wider than the volume on every
-/// side, because that is exactly how far a body's hitbox reaches into it.
+/// side the walls leave open, because that is exactly how far a body's hitbox
+/// reaches into it.
+///
+/// It lies in the far corner of the barrier pocket, and the corner is the point:
+/// a killing volume kills every body that is not a player, so no wave may be
+/// seated within its pursuit of one (`DW0922`). The pocket's corner is the floor
+/// of the near hall furthest from every place the hall seats a fight — more than
+/// a sixteen-block pursuit from the muster — and the party still walks onto it.
 ///
 /// `(x0, x1, z0, z1)` inclusive, in room space.
-const BURNING_STRIP: (i32, i32, i32, i32) = (18, 22, 1, 4);
+const BURNING_STRIP: (i32, i32, i32, i32) = (28, 29, 1, 2);
 
 /// What the burning strip is made of — one of the blocks vanilla hurts a body
 /// with ([`delvewright_dsl::blockshape::HURTING_BLOCKS_1_21_11`], reached here
@@ -422,14 +429,14 @@ const ANCHORS: &[Anchor] = &[
     },
     Anchor {
         name: "anchor/east-pit",
-        pos: [20, 1, 2],
+        pos: [29, 1, 1],
         facing: None,
         trigger_block: None,
-        note: "the second killing volume, so the two never share a box: a strip \
-               against the near hall's north wall, east of the arrival, off every \
-               route the piece's own bodies are teleported along. Its `extent` is \
-               0 on z, so it is one cell deep and the wall behind it is not part \
-               of it",
+        note: "the second killing volume, so the two never share a box: one \
+               column in the barrier pocket's north-east corner, off every route \
+               the piece's own bodies walk or are teleported along, and beyond the \
+               pursuit of every fight the hall seats (DW0922). Its `extent` is 0 on \
+               x and z, so the walls behind it are not part of it",
         role: None,
     },
     Anchor {

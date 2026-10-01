@@ -104,7 +104,7 @@ fn piece_at(plan: Option<&Plan>, cell: [i32; 3]) -> Option<String> {
 
 /// Check one riser and every stair laterally beside it, recording defects.
 fn check_riser(
-    blocks: &BTreeMap<[i32; 3], String>,
+    blocks: &crate::compiler::blockstate::BlockMap,
     plan: Option<&Plan>,
     floor: [i32; 3],
     up: Facing,
@@ -164,7 +164,7 @@ fn check_riser(
         if found != want {
             out.push(ReversedStair {
                 cell,
-                block: block.clone(),
+                block: block.to_string(),
                 found: found.to_string(),
                 expected: want.to_string(),
                 piece: piece_at(plan, cell),
@@ -176,7 +176,7 @@ fn check_riser(
 /// Every reversed stair under the given proven routes, in deterministic world
 /// order. `routes` are integer cell polylines already proven walkable.
 pub fn reversed_stairs(
-    blocks: &BTreeMap<[i32; 3], String>,
+    blocks: &crate::compiler::blockstate::BlockMap,
     plan: Option<&Plan>,
     routes: &[Vec<[i32; 3]>],
 ) -> Vec<ReversedStair> {
@@ -209,7 +209,7 @@ pub fn reversed_stairs(
 
 /// Build-tier proof: no stair on a proven route may face away from its climb.
 pub fn check_stair_orientation(
-    blocks: &BTreeMap<[i32; 3], String>,
+    blocks: &crate::compiler::blockstate::BlockMap,
     plan: Option<&Plan>,
     routes: &[Vec<[i32; 3]>],
 ) -> Result<(), Failure> {
@@ -307,20 +307,43 @@ mod tests {
     #[test]
     fn correct_staircase_is_silent() {
         let b = staircase(1, 3, "north");
-        assert_eq!(reversed_stairs(&b, None, &climb_route(3)), vec![]);
-        assert!(check_stair_orientation(&b, None, &climb_route(3)).is_ok());
+        assert_eq!(
+            reversed_stairs(
+                &crate::compiler::blockstate::interned(b.clone()),
+                None,
+                &climb_route(3)
+            ),
+            vec![]
+        );
+        assert!(
+            check_stair_orientation(
+                &crate::compiler::blockstate::interned(b.clone()),
+                None,
+                &climb_route(3)
+            )
+            .is_ok()
+        );
     }
 
     #[test]
     fn reversed_staircase_is_an_error_naming_cell_and_expected_facing() {
         let b = staircase(1, 3, "south");
-        let bad = reversed_stairs(&b, None, &climb_route(3));
+        let bad = reversed_stairs(
+            &crate::compiler::blockstate::interned(b.clone()),
+            None,
+            &climb_route(3),
+        );
         assert_eq!(bad.len(), 3, "every tread of the run is reported");
         assert!(
             bad.iter()
                 .all(|r| r.found == "south" && r.expected == "north")
         );
-        let err = check_stair_orientation(&b, None, &climb_route(3)).unwrap_err();
+        let err = check_stair_orientation(
+            &crate::compiler::blockstate::interned(b.clone()),
+            None,
+            &climb_route(3),
+        )
+        .unwrap_err();
         assert_eq!(err.code, "DW0430");
         // The message must name a world cell so the content layer can find it.
         assert!(err.message.contains("[0, 0, 3]"), "{}", err.message);
@@ -331,7 +354,11 @@ mod tests {
     fn widening_covers_lanes_the_route_never_walks() {
         // The route walks lane x=0 only; a 3-wide run must still be proven whole.
         let b = staircase(3, 3, "south");
-        let bad = reversed_stairs(&b, None, &climb_route(3));
+        let bad = reversed_stairs(
+            &crate::compiler::blockstate::interned(b.clone()),
+            None,
+            &climb_route(3),
+        );
         assert_eq!(bad.len(), 9, "3 treads x 3 lanes");
         assert!(bad.iter().any(|r| r.cell[0] == 2));
     }
@@ -346,7 +373,14 @@ mod tests {
                 "minecraft:stone_stairs[facing=south,half=bottom,shape=straight]".to_string(),
             );
         }
-        assert_eq!(reversed_stairs(&b, None, &climb_route(3)), vec![]);
+        assert_eq!(
+            reversed_stairs(
+                &crate::compiler::blockstate::interned(b.clone()),
+                None,
+                &climb_route(3)
+            ),
+            vec![]
+        );
     }
 
     #[test]
@@ -355,7 +389,14 @@ mod tests {
             .into_iter()
             .map(|(k, v)| (k, v.replace("half=bottom", "half=top")))
             .collect::<BTreeMap<_, _>>();
-        assert_eq!(reversed_stairs(&b, None, &climb_route(3)), vec![]);
+        assert_eq!(
+            reversed_stairs(
+                &crate::compiler::blockstate::interned(b.clone()),
+                None,
+                &climb_route(3)
+            ),
+            vec![]
+        );
     }
 
     /// The false positive the "higher cell's floor" rule exists to avoid: where a
@@ -375,7 +416,14 @@ mod tests {
             "minecraft:stone_stairs[facing=east,half=bottom,shape=straight]".to_string(),
         );
         let route = vec![vec![[0, 1, 4], [0, 1, 3], [1, 2, 3]]];
-        assert_eq!(reversed_stairs(&b, None, &route), vec![]);
+        assert_eq!(
+            reversed_stairs(
+                &crate::compiler::blockstate::interned(b.clone()),
+                None,
+                &route
+            ),
+            vec![]
+        );
     }
 
     #[test]
@@ -389,7 +437,14 @@ mod tests {
             "minecraft:stone_stairs[facing=west,half=bottom,shape=straight]".to_string(),
         );
         let route = vec![vec![[0, 1, 0], [0, 1, 1], [0, 1, 2], [0, 1, 3]]];
-        assert_eq!(reversed_stairs(&b, None, &route), vec![]);
+        assert_eq!(
+            reversed_stairs(
+                &crate::compiler::blockstate::interned(b.clone()),
+                None,
+                &route
+            ),
+            vec![]
+        );
     }
 
     #[test]
@@ -397,8 +452,16 @@ mod tests {
         let b = staircase(1, 3, "south");
         let mut down = climb_route(3);
         down[0].reverse();
-        let up = reversed_stairs(&b, None, &climb_route(3));
-        let dn = reversed_stairs(&b, None, &down);
+        let up = reversed_stairs(
+            &crate::compiler::blockstate::interned(b.clone()),
+            None,
+            &climb_route(3),
+        );
+        let dn = reversed_stairs(
+            &crate::compiler::blockstate::interned(b.clone()),
+            None,
+            &down,
+        );
         assert_eq!(up, dn, "the rule is symmetric in travel direction");
     }
 }

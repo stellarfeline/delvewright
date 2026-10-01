@@ -593,3 +593,18 @@ fn set_checkpoint_nested_in_sequence_binds_its_own_index() {
         "cp_on_respawn_1 runs the nested checkpoint's own on_respawn hook"
     );
 }
+
+/// A campaign with plain checkpoints and no bonfire has no scene reset to gate,
+/// so the party-wipe latch (spec-0016 §1, multiplayer) is absent: no detector in
+/// the tick, no `#wipe`, no `dw_wiped`, no `party_reseat`.
+#[test]
+fn a_campaign_without_a_bonfire_carries_no_party_wipe_latch() {
+    let out = build_fixture();
+    let all = all_functions(&out);
+    for absent in ["#wipe", "#alive", "dw_wiped", "party_reseat", "cp_reset_"] {
+        assert!(
+            !all.contains(absent),
+            "`{absent}` belongs to bonfire campaigns only"
+        );
+    }
+}

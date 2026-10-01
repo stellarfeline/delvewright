@@ -237,6 +237,18 @@ pub fn is_fence_gate(name: &str) -> bool {
     bare_id(name).ends_with("_fence_gate")
 }
 
+/// Whether a player can open this block by hand, in adventure mode — every
+/// fence gate, door and trapdoor except the two iron ones, which open only to
+/// redstone. A player who opens one can leave it open, so a proof about where a
+/// mob can walk once the party has been through asks this (`DW0923`).
+pub fn is_player_openable(name: &str) -> bool {
+    let id = bare_id(name);
+    if id == "iron_door" || id == "iron_trapdoor" {
+        return false;
+    }
+    is_fence_gate(name) || id.ends_with("_door") || id.ends_with("_trapdoor")
+}
+
 /// Thin, walkable trap-trigger blocks (spec-0011) a player steps *onto* rather
 /// than being blocked by: pressure plates and tripwire.
 ///
@@ -459,6 +471,18 @@ pub fn collision_top_16(name: &str) -> u8 {
     }
     if matches!(id, "dirt_path" | "farmland") {
         return 15;
+    }
+    // A lantern's collision is two stacked boxes, the cap's top at 9/16 standing
+    // and 10/16 hanging (one sixteenth lower and higher). Measured standing on
+    // the pinned server: a mob on a floor lantern stood at its cell floor plus
+    // 0.5625. A full cube here made the step onto one a 1.5-block rise from a
+    // bottom slab, where in game it is a jump a mob takes.
+    if matches!(id, "lantern" | "soul_lantern") || id.ends_with("copper_lantern") {
+        return if state_value(name, "hanging") == Some("true") {
+            10
+        } else {
+            9
+        };
     }
     if is_air(name)
         || is_passable_trap_trigger(name)
@@ -780,7 +804,6 @@ mod tests {
             "minecraft:oak_stairs[facing=north]",
             "minecraft:oak_door[half=lower]",
             "minecraft:ladder",
-            "minecraft:lantern",
             "minecraft:chain",
             "minecraft:end_rod",
             "minecraft:iron_bars",
@@ -943,5 +966,54 @@ mod tests {
             HURTING_BLOCKS_1_21_11.windows(2).all(|w| w[0] < w[1]),
             "the hurting-block table is not sorted, so its printed set is not deterministic"
         );
+    }
+
+    /// A lantern is two stacked boxes, not a cube: its cap tops out at 9/16
+    /// standing and 10/16 hanging, for every lantern the pinned version has, and
+    /// the full-cube lanterns that only share the name stay full cubes.
+    #[test]
+    fn a_lantern_is_a_partial_floor() {
+        for id in [
+            "minecraft:lantern",
+            "minecraft:soul_lantern",
+            "minecraft:copper_lantern",
+            "minecraft:waxed_oxidized_copper_lantern",
+        ] {
+            assert!(!passes_body(id), "{id} still stops a body");
+            assert_eq!(collision_top_16(id), 9, "{id}");
+            assert_eq!(collision_class(id), Collision::PartialFloor(9), "{id}");
+            assert_eq!(
+                collision_top_16(&format!("{id}[hanging=true,waterlogged=false]")),
+                10,
+                "{id}"
+            );
+        }
+        for id in ["minecraft:sea_lantern", "minecraft:jack_o_lantern"] {
+            assert_eq!(collision_top_16(id), FULL_HEIGHT_16, "{id}");
+        }
+    }
+
+    /// The barriers a hand opens: every fence gate, door and trapdoor except the
+    /// two iron ones.
+    #[test]
+    fn the_player_opens_wood_and_copper_and_not_iron() {
+        for id in [
+            "minecraft:oak_fence_gate[open=false]",
+            "minecraft:spruce_door[half=lower]",
+            "minecraft:copper_door",
+            "minecraft:dark_oak_trapdoor",
+            "minecraft:waxed_copper_trapdoor",
+        ] {
+            assert!(is_player_openable(id), "{id}");
+        }
+        for id in [
+            "minecraft:iron_door",
+            "minecraft:iron_trapdoor",
+            "minecraft:oak_fence",
+            "minecraft:iron_bars",
+            "minecraft:stone",
+        ] {
+            assert!(!is_player_openable(id), "{id}");
+        }
     }
 }

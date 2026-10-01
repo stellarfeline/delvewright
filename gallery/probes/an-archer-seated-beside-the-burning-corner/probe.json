@@ -1,0 +1,13 @@
+{
+  "code": "DW0922",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "replace",
+      "path": "/content/waves/2/anchor",
+      "value": "anchor/east-bay"
+    }
+  ],
+  "units": [],
+  "why": "The edge skeleton summoned around the east bay rather than the lane end. Its ring of perception reaches through the open timed door, so the summon stands it in the near hall a few blocks from the barrier pocket, and inside its twelve-block pursuit it can step over the pocket course and walk onto the burning corner under `lethal/east-pit`. A killing volume kills every body that is not a player, so the archer burns before the party ever meets it, on every life. Nothing about the hazard is wrong — it shows itself and the party walks onto it at will — and nothing about the follow range is wrong either: shrinking it would retune the fight to hide the placement. What must not compile is a wave seated where its own members can get into a killing volume unled. The repair is the seat: the gallery summons this wave around the lane end, beyond the pursuit."
+}

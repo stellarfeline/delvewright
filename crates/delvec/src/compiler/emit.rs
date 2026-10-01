@@ -113,6 +113,51 @@ fn structure_sentinel(bytes: &[u8]) -> Option<([i32; 3], String)> {
     use std::io::Read;
     let mut raw = Vec::new();
     GzDecoder::new(bytes).read_to_end(&mut raw).ok()?;
+    let is_air = |name: &str| {
+        matches!(
+            name,
+            "minecraft:air" | "minecraft:cave_air" | "minecraft:void_air"
+        )
+    };
+    // The lowest `(y, z, x)` non-air cell; `best` is replaced only by a
+    // strictly lower key, so the first such cell in file order wins a tie.
+    let pick = |best: &mut Option<([i32; 3], String)>, pos: [i32; 3], name: &String| {
+        if is_air(name) {
+            return;
+        }
+        let key = (pos[1], pos[2], pos[0]);
+        let better = match &best {
+            None => true,
+            Some((bp, _)) => key < (bp[1], bp[2], bp[0]),
+        };
+        if better {
+            *best = Some((pos, name.clone()));
+        }
+    };
+    // The typed decoding first ([`crate::compiler::nbtread`]); anything it
+    // refuses is walked as before.
+    if let Some(root) = crate::compiler::nbtread::root(&raw) {
+        let palette: Vec<Option<&String>> = root
+            .palette
+            .as_ref()?
+            .iter()
+            .map(|e| e.name.as_ref())
+            .collect();
+        let mut best: Option<([i32; 3], String)> = None;
+        for b in root.blocks.iter().flatten() {
+            let Some(pos) = b.pos3() else {
+                continue;
+            };
+            let Some(state) = &b.state else {
+                continue;
+            };
+            let Some(Some(name)) = palette.get(state.0 as usize) else {
+                continue;
+            };
+            pick(&mut best, pos, name);
+        }
+        return best;
+    }
     let root: fastnbt::Value = fastnbt::from_bytes(&raw).ok()?;
     let fastnbt::Value::Compound(root) = root else {
         return None;
@@ -129,12 +174,6 @@ fn structure_sentinel(bytes: &[u8]) -> Option<([i32; 3], String)> {
             })
             .collect(),
         _ => return None,
-    };
-    let is_air = |name: &str| {
-        matches!(
-            name,
-            "minecraft:air" | "minecraft:cave_air" | "minecraft:void_air"
-        )
     };
     let mut best: Option<([i32; 3], String)> = None;
     if let Some(fastnbt::Value::List(blocks)) = root.get("blocks") {
@@ -166,17 +205,7 @@ fn structure_sentinel(bytes: &[u8]) -> Option<([i32; 3], String)> {
             let Some(Some(name)) = palette.get(state) else {
                 continue;
             };
-            if is_air(name) {
-                continue;
-            }
-            let key = (pos[1], pos[2], pos[0]);
-            let better = match &best {
-                None => true,
-                Some((bp, _)) => key < (bp[1], bp[2], bp[0]),
-            };
-            if better {
-                best = Some((pos, name.clone()));
-            }
+            pick(&mut best, pos, name);
         }
     }
     best
@@ -252,16 +281,24 @@ pub fn check_template_extents(
         placed: 0,
         checked: 0,
     };
-    for (piece, template) in plan
+    let placed: Vec<_> = plan
         .placed_pieces()
         .flat_map(|p| p.templates.iter().map(move |t| (p, t)))
-    {
+        .collect();
+    // Each template's own size, read in parallel; judged below in placement
+    // order, so the first mismatch named is the one the loop would name.
+    let sizes = crate::par::map(&placed, |(_, template)| {
+        structures
+            .get(&template.structure_file)
+            .map(|bytes| crate::compiler::assembled::structure_size(bytes))
+    });
+    for ((piece, template), size) in placed.into_iter().zip(sizes) {
         {
             binding.placed += 1;
-            let Some(bytes) = structures.get(&template.structure_file) else {
+            let Some(read) = size else {
                 continue;
             };
-            let Some(actual) = crate::compiler::assembled::structure_size(bytes) else {
+            let Some(actual) = read else {
                 continue;
             };
             binding.checked += 1;
@@ -407,7 +444,14 @@ pub fn build_with_warnings(
     // or a wave seat (DW0312). Analysis-tier (exit 2, mapped in main): a
     // prefab/generator defect the author fixes by adding a substrate. No-op for any
     // campaign whose prefabs have no gravity blocks (byte-identical output).
-    if let Some(message) = crate::compiler::assembled::gravity_despawn_error(plan, structures) {
+    //
+    // The world is assembled here, once, and every model below is derived from
+    // this one assembly (or from the edit replay's edited copy of it).
+    let mut pristine = Some(crate::compiler::assembled::assemble(plan, structures));
+    if let Some(message) = crate::compiler::assembled::gravity_despawn_error_of(
+        plan,
+        pristine.as_ref().expect("assembled above"),
+    ) {
         return Err(BuildFailure::Diagnostic {
             code: crate::compiler::assembled::DW_GRAVITY_DESPAWN,
             message,
@@ -419,12 +463,21 @@ pub fn build_with_warnings(
     // (gravity, relight, walkability, boundary safety — each failure names its
     // batch). `None` for a campaign without an edit script — every downstream
     // pass then takes its exact pre-stage-7 path, byte-identically.
-    let edit_replay = crate::compiler::edit::replay(plan, prefabs, structures).map_err(|e| {
-        BuildFailure::Diagnostic {
-            code: e.code,
-            message: e.message,
-        }
-    })?;
+    let edit_replay =
+        crate::compiler::edit::replay_taking(plan, prefabs, structures, &mut pristine).map_err(
+            |e| BuildFailure::Diagnostic {
+                code: e.code,
+                message: e.message,
+            },
+        )?;
+    // The one assembled world every pass below reads: the edited copy when the
+    // campaign has an edit script, the pristine assembly otherwise.
+    let assembled: &crate::compiler::assembled::Assembled = match &edit_replay {
+        Some(er) => &er.assembled,
+        None => pristine
+            .as_ref()
+            .expect("an assembly the replay did not take"),
+    };
     // Advisory findings the replay raised (`DW0353` gate-region collisions,
     // `DW0354` broken block support) — reported by the caller, never fatal.
     // Advisory findings the PLACEMENT stage raised (`DW0498`: a pool draw that
@@ -450,10 +503,7 @@ pub fn build_with_warnings(
     // the same pass, rather than by a second model that could disagree with this
     // one about what is in the room.
     if !plan.loot.is_empty() || !plan.collect_fills.is_empty() || !plan.traps.is_empty() {
-        let blocks = match &edit_replay {
-            Some(er) => er.assembled.blocks.clone(),
-            None => crate::compiler::assembled::assembled_blocks(plan, structures),
-        };
+        let blocks = &assembled.blocks;
         // What the world actually HAS, computed once and handed to both proofs.
         // A refusal that tells an author to point at "an anchor whose cell
         // already has one" owes the list, and it is the same list for both:
@@ -461,25 +511,25 @@ pub fn build_with_warnings(
         // two doors, so a second derivation here would be a second answer able
         // to disagree with the first.
         let available = crate::compiler::loot::container_anchors(
-            &blocks,
+            blocks,
             &plan.anchors,
             &plan.loot,
             &plan.collect_fills,
         );
-        crate::compiler::loot::check_loot_containers(&blocks, &plan.loot, &available).map_err(
+        crate::compiler::loot::check_loot_containers(blocks, &plan.loot, &available).map_err(
             |e| BuildFailure::Diagnostic {
                 code: e.code,
                 message: e.message,
             },
         )?;
-        crate::compiler::loot::check_collect_containers(&blocks, &plan.collect_fills, &available)
+        crate::compiler::loot::check_collect_containers(blocks, &plan.collect_fills, &available)
             .map_err(|e| BuildFailure::Diagnostic {
-            code: e.code,
-            message: e.message,
-        })?;
+                code: e.code,
+                message: e.message,
+            })?;
         // DW0917: a trap's trigger is prefab hardware on the same terms as a
         // container, so it is proven off the same block map.
-        crate::compiler::trap_trigger::check_trap_triggers(&blocks, &plan.traps, &plan.anchors)
+        crate::compiler::trap_trigger::check_trap_triggers(blocks, &plan.traps, &plan.anchors)
             .map_err(|e| BuildFailure::Diagnostic {
                 code: e.code,
                 message: e.message,
@@ -500,10 +550,10 @@ pub fn build_with_warnings(
     // adds are re-verified for walkability below. A `DW0210`/`DW0211` diagnostic
     // fails the build (exit 2, mapped in main). Empty for a campaign with no dark
     // reachable cells and no `lighting` declaration → output byte-identical.
-    let relight = match &edit_replay {
-        Some(er) => crate::compiler::light::relight_over(plan, &er.assembled),
-        None => crate::compiler::light::relight(plan, structures),
-    };
+    // The geometry is classified once: relight surveys it as it stands, and the
+    // campaign's world below is the same cells under the campaign's premises.
+    let geometry = crate::compiler::light::geometry_world(assembled);
+    let relight = crate::compiler::light::relight_with(plan, assembled, &geometry);
     if let Some(diag) = relight.diagnostics.first() {
         return Err(BuildFailure::Diagnostic {
             code: diag.code,
@@ -524,39 +574,17 @@ pub fn build_with_warnings(
     // campaign with no walked leg deriving seven kinds of camera against no world
     // at all — a zero binding wearing a pass's clothes, which is precisely the
     // shape that let a camera stand inside a ceiling lantern for as long as it did.
-    let world = match &edit_replay {
-        Some(er) => {
-            let mut occ = crate::compiler::assembled::occupancy_of(
-                er.assembled.blocks.clone(),
-                &er.assembled.open_gates,
-            );
-            occ.solid.extend(relight.extra_solid.iter().copied());
-            // The campaign's premises about this world — the generator
-            // ambient, the built extent, the declared LETHAL VOLUMES, the
-            // measured world-load gate seals, the clocked gate regions and
-            // the teleport sources — travel as one value, so this arm and
-            // its `from_plan` sibling below carry the identical set by
-            // construction rather than by two authors agreeing.
-            //
-            // They did not, and the cost was the whole point of the model:
-            // this arm applied the ambient and the seals and not the lethal
-            // volumes, so every campaign declaring `world-edits.json` proved
-            // its completability over a world with no kill boxes in it. The
-            // gallery's exported critical path walked six waypoints through
-            // its two declared lethal volumes, `validation/lethal-gate.json`
-            // reported `"cells": 0` beside them, and the bot withered to
-            // death at step 10 of the ladder.
-            crate::compiler::nav::World::from_occupancy(
-                occ,
-                crate::compiler::nav::Premises::of_plan(plan, er.assembled.gate_seals.clone()),
-            )
-        }
-        None => crate::compiler::nav::World::from_plan_with_extra(
+    // The campaign's premises about this world — the generator ambient, the
+    // built extent, the declared lethal volumes, the measured world-load gate
+    // seals, the clocked gate regions and the teleport sources — travel as one
+    // value, [`crate::compiler::nav::Premises`], so an edited world and a
+    // pristine one carry the identical set.
+    let world = geometry
+        .with_premises(crate::compiler::nav::Premises::of_plan(
             plan,
-            structures,
-            &relight.extra_solid,
-        ),
-    };
+            assembled.gate_seals.clone(),
+        ))
+        .with_extra_solid(&relight.extra_solid);
 
     // ---- the stage-5 blockout battery (spec-0049 §5.3) ----
     //
@@ -574,10 +602,7 @@ pub fn build_with_warnings(
     // are advisories that travel to the walk sheet, and the binding line is
     // stated whether anything was found or not.
     {
-        let blocks = match &edit_replay {
-            Some(er) => er.assembled.blocks.clone(),
-            None => crate::compiler::assembled::assembled_blocks(plan, structures),
-        };
+        let blocks = &assembled.blocks;
         // What the DERIVATION bound to, beside what its observer did. Printing
         // only the battery's line stated what was examined and never what was
         // built — and at stage 6 the difference is the whole reading: `detailed`
@@ -607,7 +632,7 @@ pub fn build_with_warnings(
                 );
             }
         }
-        if let Some(battery) = crate::compiler::blockout::check(plan, &blocks) {
+        if let Some(battery) = crate::compiler::blockout::check(plan, blocks) {
             eprintln!("{}", battery.binding.line());
             let refusals: Vec<&(delvewright_dsl::DwCode, delvewright_dsl::Diagnostic)> =
                 battery.refusals().collect();
@@ -869,10 +894,7 @@ pub fn build_with_warnings(
         {
             // spec-0022 payload verbs need the block map (a `collapse` settles
             // real blocks), not just the occupancy view.
-            let blocks: BTreeMap<[i32; 3], String> = match &edit_replay {
-                Some(er) => er.assembled.blocks.clone(),
-                None => crate::compiler::assembled::assembled_blocks(plan, structures),
-            };
+            let blocks: &crate::compiler::blockstate::BlockMap = &assembled.blocks;
             if world.has_gate_anchors() {
                 gate_seal_ledger = Some(world.gate_seal_ledger());
             }
@@ -1010,7 +1032,7 @@ pub fn build_with_warnings(
             let (exposure, findings) = crate::compiler::burial::check(
                 plan,
                 prefabs,
-                &blocks,
+                blocks,
                 structures,
                 &world,
                 &party_walk,
@@ -1109,7 +1131,7 @@ pub fn build_with_warnings(
             // denominators a pass does.
             {
                 let (binding, findings) =
-                    crate::compiler::firework::check(plan, &blocks, campaign_spawn(plan), &waves);
+                    crate::compiler::firework::check(plan, blocks, campaign_spawn(plan), &waves);
                 eprintln!("{}", binding.line());
                 firework_gate = Some(binding);
                 if let Some((first, rest)) = findings.split_first() {
@@ -1161,21 +1183,35 @@ pub fn build_with_warnings(
                 let danger = if plan.lethal_volumes.is_empty() {
                     crate::compiler::lethal::DangerVisibility::default()
                 } else {
-                    let blocks = match &edit_replay {
-                        Some(er) => er.assembled.blocks.clone(),
-                        None => crate::compiler::assembled::assembled_blocks(plan, structures),
-                    };
-                    let (binding, verdict) = crate::compiler::lethal::check_danger_is_visible(
+                    let blocks = &assembled.blocks;
+                    // `DW0922` / `DW0923`: where each seated wave's members can
+                    // get to by the movement a mob has. Measured before `DW0891`,
+                    // because a volume only a mob can enter is a volume a
+                    // modelled body reaches and `DW0891`'s zero-binding finding
+                    // has to know it; judged after `DW0891`, so a volume the
+                    // player cannot see is named for that first.
+                    let wave_lethal =
+                        crate::compiler::lethal::wave_reach(plan, &world, blocks, &waves);
+                    let (mut binding, verdict) = crate::compiler::lethal::check_danger_is_visible(
                         plan,
                         &world,
-                        &blocks,
+                        blocks,
                         campaign_spawn(plan),
                     );
+                    binding.credit_waves(&wave_lethal);
                     // Stated whether it found anything or not, and before the
                     // verdict is taken: a refusal owes its reader the population
                     // it was measured against as much as a pass does.
                     eprintln!("{}", binding.line());
+                    eprintln!("{}", wave_lethal.line());
                     verdict?;
+                    warnings.extend(binding.findings());
+                    wave_lethal.verdict()?;
+                    put_json(
+                        &mut out,
+                        "validation/wave-lethal.json",
+                        &wave_lethal.to_json(),
+                    );
                     binding
                 };
                 crate::compiler::nav::check_critical_path(plan, &world)?;
@@ -1198,6 +1234,26 @@ pub fn build_with_warnings(
                     "validation/leave-proof.json",
                     &leave_binding.to_json(),
                 );
+                // DW0924: a body a `kill` objective waits on cannot get to a
+                // place it survives and the party cannot strike it from. After
+                // DW0921 because it reads the same playable region and a party
+                // that can be trapped is the worse finding.
+                {
+                    let strand = crate::compiler::strand::check(
+                        plan,
+                        &world,
+                        &waves,
+                        &crate::compiler::lethal::population_roots(plan, campaign_spawn(plan)),
+                        playable_region(plan).map(|r| (r.min, r.max)),
+                    );
+                    if strand.waves > 0 {
+                        eprintln!("{}", strand.line());
+                    }
+                    strand.verdict()?;
+                    if strand.waves > 0 {
+                        put_json(&mut out, "validation/strand.json", &strand.to_json());
+                    }
+                }
                 if !plan.lethal_volumes.is_empty() {
                     lethal_gate = Some(crate::compiler::lethal::gate(
                         plan.campaign,
@@ -1349,12 +1405,9 @@ pub fn build_with_warnings(
                 if !routes.is_empty() {
                     let route_cells: Vec<Vec<[i32; 3]>> =
                         routes.iter().map(|r| r.cells.clone()).collect();
-                    let blocks = match &edit_replay {
-                        Some(er) => er.assembled.blocks.clone(),
-                        None => crate::compiler::assembled::assembled_blocks(plan, structures),
-                    };
+                    let blocks = &assembled.blocks;
                     crate::compiler::stairs::check_stair_orientation(
-                        &blocks,
+                        blocks,
                         Some(plan),
                         &route_cells,
                     )?;
@@ -1489,18 +1542,23 @@ pub fn build_with_warnings(
             // motivating case: roof and two walls carved off, noon pinned, and
             // two of three footmen dead to sunlight before the party could
             // engage them, with every other proof green.
-            crate::compiler::daylight::check_daylight_staging(plan, &world, &blocks, &waves)
-                .map_err(|e| BuildFailure::Diagnostic {
-                    code: e.code,
-                    message: e.message,
-                })?;
+            crate::compiler::daylight::check_daylight_staging(
+                plan,
+                &world,
+                &assembled.blocks,
+                &waves,
+            )
+            .map_err(|e| BuildFailure::Diagnostic {
+                code: e.code,
+                message: e.message,
+            })?;
             // …and its mirror: prove the body will fight at all (DW0920). A
             // drowned takes no land target while the level is bright, so a choir
             // staged on dry ground under a bright hour walks to its water and
             // leaves the party a fight nobody answers — vesperhold's Undertide
             // Pool. Same seated cells, same reach, same population.
             let (engage, refused) =
-                crate::compiler::engage::check_engagement(plan, &world, &blocks, &waves);
+                crate::compiler::engage::check_engagement(plan, &world, blocks, &waves);
             eprintln!("{}", engage.line());
             if let Some(e) = refused {
                 return Err(BuildFailure::Diagnostic {
@@ -1594,7 +1652,7 @@ pub fn build_with_warnings(
             // kill-zone cell, or DW0442 naming the cell it cannot reach), and a
             // collapse must leave the critical path completable in its SPRUNG
             // state (DW0445).
-            let payloads = plan_payload_verbs(plan, &world, &blocks)?;
+            let payloads = plan_payload_verbs(plan, &world, blocks)?;
             (moves, actor_moves, waves, rings, lanes, payloads)
         }
     } else {
@@ -1652,10 +1710,14 @@ pub fn build_with_warnings(
     // Placement sentinels: one known block per distinct structure, so the
     // runtime can verify each `place template` landed (see `setup` emission).
     let mut sentinels: Sentinels = BTreeMap::new();
-    for template in plan.placed_pieces().flat_map(|p| &p.templates) {
-        if let Some(bytes) = structures.get(&template.structure_file)
-            && let Some(s) = structure_sentinel(bytes)
-        {
+    let placed: Vec<_> = plan.placed_pieces().flat_map(|p| &p.templates).collect();
+    let picked = crate::par::map(&placed, |template| {
+        structures
+            .get(&template.structure_file)
+            .and_then(|bytes| structure_sentinel(bytes))
+    });
+    for (template, picked) in placed.into_iter().zip(picked) {
+        if let Some(s) = picked {
             sentinels.insert(template.structure_file.clone(), s);
         }
     }
@@ -3435,6 +3497,10 @@ fn emit_functions(
         setup.push("scoreboard players set #cp dw.sys -1".to_string());
         setup.push("scoreboard objectives add dw.deaths deathCount".to_string());
         setup.push("scoreboard objectives add dw.death_ack dummy".to_string());
+        // spec-0016 §1: the party-wipe latch a bonfire respawn's scene reset waits on.
+        if plan.bonfires().next().is_some() {
+            setup.push(format!("scoreboard players set {WIPE} dw.sys 0"));
+        }
     } else if !plan.on_death().is_empty() {
         // v0.10 `on_death` (spec-0031) rides the SAME detector, so a campaign that
         // declares a death beat and no checkpoint still needs `deathCount` — but
@@ -4177,6 +4243,7 @@ fn emit_functions(
     // is no second detector, and this is the only place the whole delve asks
     // whether anyone has died.
     if plan.any_checkpoint() || !plan.on_death().is_empty() {
+        tick.extend(party_wipe_tick(plan));
         tick.push(format!("execute as @a run function {ns}:cp_respawn_check"));
     }
     // spec-0031: lethal volumes. One driver line per declared volume; empty for a
@@ -6797,6 +6864,42 @@ fn death_position_capture() -> Vec<String> {
     Vec::new()
 }
 
+/// The `dw.sys` latch a party wipe sets and the first respawn after it spends.
+const WIPE: &str = "#wipe";
+/// The `dw.sys` scratch counting the players alive this tick.
+const ALIVE: &str = "#alive";
+/// The tag every player dead at a party wipe carries until they respawn.
+const WIPED: &str = "dw_wiped";
+
+/// **The party-wipe detector** (spec-0016 §1, multiplayer): the tick lines that
+/// latch `#wipe` and tag every body when no player in the party is alive.
+///
+/// "Alive" is the very predicate the death edge already uses
+/// (`unless data entity @s {Health:0.0f}`), so the pack has one meaning of dead.
+/// `@a` matches a corpse on its death screen and never a disconnected player, so
+/// the wipe is "every player present is dead", the state in which a party
+/// can no longer recover by itself. A wipe stays latched until the first respawn
+/// spends it (`cp_respawn_fire`), and `dw_wiped` stays on each body until that
+/// body respawns, so a player who dies after a teammate has already come back
+/// is not part of the wipe. Empty for a campaign with no bonfire.
+fn party_wipe_tick(plan: &Plan) -> Vec<String> {
+    if plan.bonfires().next().is_none() {
+        return Vec::new();
+    }
+    vec![
+        format!("scoreboard players set {ALIVE} dw.sys 0"),
+        format!(
+            "execute as @a unless data entity @s {{Health:0.0f}} run scoreboard players add \
+             {ALIVE} dw.sys 1"
+        ),
+        format!(
+            "execute if score {ALIVE} dw.sys matches 0 if entity @a run scoreboard players set \
+             {WIPE} dw.sys 1"
+        ),
+        format!("execute if score {ALIVE} dw.sys matches 0 run tag @a add {WIPED}"),
+    ]
+}
+
 /// Generate the death-edge functions: the campaign's `on_death` beat (DSL v0.10,
 /// spec-0031) and the checkpoint respawn dispatch (DSL v0.6, spec-0012).
 ///
@@ -6968,7 +7071,18 @@ fn emit_checkpoint_functions(plan: &Plan) -> Vec<(String, String)> {
             c.index, c.index
         ));
     }
+    // The wipe is spent by the first respawn after it, whatever checkpoint
+    // reigns, and each respawning player's own claim on it is spent with them.
+    let wipes = plan.bonfires().next().is_some();
+    if wipes {
+        fire.push(format!("scoreboard players set {WIPE} dw.sys 0"));
+        fire.push(format!("tag @s remove {WIPED}"));
+    }
     fns.push(("cp_respawn_fire".to_string(), lines(&fire)));
+    // party_reseat: the bonfire scene reset's party half — every re-seat, once.
+    if wipes && !reseat.is_empty() {
+        fns.push(("party_reseat".to_string(), lines(&reseat)));
+    }
     // cp_on_respawn_<idx> (as @s): the per-player scene-reset effects.
     for c in &plan.checkpoints {
         if !dispatches(c) {
@@ -6978,13 +7092,38 @@ fn emit_checkpoint_functions(plan: &Plan) -> Vec<(String, String)> {
         // its `on_respawn` belongs to the ONE player who just died — re-broadcasting
         // it would re-narrate and re-gift every survivor on each death.
         //
-        // A bonfire's wave re-seat (spec-0016 §1) is party state and is emitted
-        // BEFORE the bundle: it names no player, so it fires exactly once for the
-        // death, and it must restore the scene before the dying player's own
-        // `on_rest` beats read it.
+        // A bonfire's re-seat (spec-0016 §1) is party state, runs before the
+        // bundle so the respawning player's own `on_rest` beats read the restored
+        // scene, and runs at most once per party wipe.
         let mut body: Vec<String> = Vec::new();
         if c.rest {
-            body.extend(reseat.iter().cloned());
+            // **A respawn resets the scene only after a party wipe** (spec-0016
+            // §1, multiplayer). One player's death in a party that is still
+            // fighting re-seats nothing and runs no `on_rest`: the survivors'
+            // fight is left exactly as it stands. When every player was dead at
+            // once ([`party_wipe_tick`]), each of them respawns tagged
+            // `dw_wiped`; the first one through re-seats the map (`#wipe`
+            // is spent in `cp_respawn_fire`), and each runs the fire's `on_rest`
+            // as their own. Alone, every death is a wipe, so solo play is the
+            // reset-on-every-death loop it always was.
+            let mut reset: Vec<String> = Vec::new();
+            if !reseat.is_empty() {
+                reset.push(format!(
+                    "execute if score {WIPE} dw.sys matches 1 run function {ns}:party_reseat"
+                ));
+            }
+            reset.extend(emit_effect_bundle(
+                plan,
+                &c.on_respawn,
+                root_audience(delvewright_dsl::EffectRootKind::DialogueRespawn),
+            ));
+            if !reset.is_empty() {
+                body.push(format!(
+                    "execute if entity @s[tag={WIPED}] run function {ns}:cp_reset_{}",
+                    c.index
+                ));
+                fns.push((format!("cp_reset_{}", c.index), lines(&reset)));
+            }
             // spec-0016 §1, read forward: death respawns
             // the party at the last-rested bonfire with the same hooks, and vanilla
             // already returns the dead player at full health and hunger. What it
@@ -6995,12 +7134,13 @@ fn emit_checkpoint_functions(plan: &Plan) -> Vec<(String, String)> {
             if !plan.flasks().is_empty() {
                 body.push(format!("function {ns}:bonfire_flask"));
             }
+        } else {
+            body.extend(emit_effect_bundle(
+                plan,
+                &c.on_respawn,
+                root_audience(delvewright_dsl::EffectRootKind::DialogueRespawn),
+            ));
         }
-        body.extend(emit_effect_bundle(
-            plan,
-            &c.on_respawn,
-            root_audience(delvewright_dsl::EffectRootKind::DialogueRespawn),
-        ));
         fns.push((format!("cp_on_respawn_{}", c.index), lines(&body)));
     }
     fns
@@ -8390,7 +8530,14 @@ fn emit_bonfire_functions(plan: &Plan) -> Vec<(String, String)> {
             format!("bonfire_pick_rest_{i}"),
             lines(&[
                 "scoreboard players reset @s dw.rest".to_string(),
-                format!("function {ns}:bonfire_restore"),
+                // A rest restores the WHOLE party, whoever sat down
+                // (spec-0016 §1): every living player is healed, fed, cleansed,
+                // mended and refilled. A body on its death screen is skipped; it
+                // comes back at this fire with its flask refilled by the respawn.
+                format!(
+                    "execute as @a unless data entity @s {{Health:0.0f}} run function \
+                     {ns}:bonfire_restore"
+                ),
                 format!("function {ns}:bonfire_rest_{i}"),
             ]),
         ));
@@ -12023,63 +12170,89 @@ fn trap_is_gated(t: &plan::TrapPlan) -> bool {
     !t.requires_flags.is_empty() || !t.forbids_flags.is_empty() || !t.requires_state.is_empty()
 }
 
-/// The `tick` clauses that open and shut every gated trap's hardware.
+/// The authored gate of a planned trap, read off its DSL declaration so every
+/// emission site reads the gate through [`Plan::gate_terms`] — the one rule that
+/// says which holder a term lives on.
+fn trap_gate_of<'a>(plan: &Plan<'a>, t: &plan::TrapPlan) -> Gate<'a> {
+    plan.campaign
+        .quests
+        .content
+        .traps
+        .iter()
+        .find(|d| d.id.as_str() == t.id)
+        .map_or(Gate::OPEN, delvewright_dsl::Trap::gate)
+}
+
+/// The clauses of `trap_gate_tick`, which the tick calls: open and shut every
+/// gated trap's hardware.
 ///
 /// Edge-triggered on a per-trap sentinel `#trapgate_<safe>` (1 = armed, i.e. the
 /// trigger block is in the world) so the `setblock` fires only on a transition —
 /// a per-tick unconditional write would be both wasteful and wrong (it would also
 /// fight the disarm path).
 ///
-/// The gate is **campaign state, not per-player state**: flags are set by whoever
-/// reaches the beat, and a trap does not become live for one player and dead for
-/// another. So the guards use the same any-player form the environment triggers
-/// use — `if entity @a[scores={dw.f_x=1..}]` — rather than `score @s`.
+/// The gate is **campaign state**, so every term is read where the campaign
+/// writes it: [`Plan::gate_terms`] — a flag on the party holder, a datum on its
+/// declared holder (party-scoped here by `DW0503`). A trap reads its gate through
+/// the same rule every other gate consumer uses; a selector asking whether some
+/// player carries a flag score matches nobody, because no flag is written on a
+/// player.
 ///
-/// Shutting is one clause per gating flag because "not (all required set and no
-/// forbidden set)" is a disjunction: any single unmet requirement, or any single
-/// forbidden flag, shuts the gate on its own. Each is idempotent behind the
-/// sentinel.
+/// Shutting is one clause per term because "not (every term holds)" is a
+/// disjunction: any single term failing shuts the gate on its own. Each is
+/// idempotent behind the sentinel. Opening is one clause carrying the whole
+/// conjunction.
 fn trap_gate_tick(plan: &Plan) -> Vec<String> {
     let ns = &plan.namespace;
     let mut out = Vec::new();
     for t in plan.traps.iter().filter(|t| trap_is_gated(t)) {
         let id = &t.safe;
-        for f in &t.requires_flags {
-            out.push(format!(
-                "execute if score #trapgate_{id} dw.sys matches 1 unless entity @a[scores={{{}=1..}}] run function {ns}:trap_gate_off_{id}",
-                plan::flag_score(f)
-            ));
+        let gate = trap_gate_of(plan, t);
+        out.extend(trap_gate_shut_clauses(plan, t));
+        out.push(format!(
+            "execute unless score #trapgate_{id} dw.sys matches 1{} run function {ns}:trap_gate_on_{id}",
+            gate_cond(plan, gate)
+        ));
+    }
+    out
+}
+
+/// One shutting clause per term of `t`'s gate, each guarded by the armed
+/// sentinel: "not (every term holds)" is a disjunction, so any single term
+/// failing disarms the trap on its own. The tick and the world-start seed read
+/// the gate through these same clauses.
+fn trap_gate_shut_clauses(plan: &Plan, t: &plan::TrapPlan) -> Vec<String> {
+    let ns = &plan.namespace;
+    let id = &t.safe;
+    plan.gate_terms(trap_gate_of(plan, t))
+        .iter()
+        .map(|term| {
+            format!(
+                "execute if score #trapgate_{id} dw.sys matches 1 {} run function {ns}:trap_gate_off_{id}",
+                term.clause(true)
+            )
+        })
+        .collect()
+}
+
+/// The body of `trap_gate_init`, which `setup_finish` calls once, before the
+/// first tick: put every gated trap's hardware in the state its gate says.
+///
+/// Arm the trap (`trap_gate_on`), then run the gate's shutting clauses — the
+/// same ones the tick runs — so any term that fails in the world the campaign
+/// starts in (a required flag nothing has set, a datum whose declared initial
+/// fails its comparison) takes the trigger straight back out. Reading only
+/// `requires_flags` here left a trap gated by a failing `requires_state` term
+/// armed for the first tick.
+fn trap_gate_init(plan: &Plan, hardware: &BTreeMap<String, String>) -> Vec<String> {
+    let ns = &plan.namespace;
+    let mut out = Vec::new();
+    for t in plan.traps.iter().filter(|t| trap_is_gated(t)) {
+        if !hardware.contains_key(&t.safe) {
+            continue;
         }
-        for f in &t.forbids_flags {
-            out.push(format!(
-                "execute if score #trapgate_{id} dw.sys matches 1 if entity @a[scores={{{}=1..}}] run function {ns}:trap_gate_off_{id}",
-                plan::flag_score(f)
-            ));
-        }
-        // DSL v0.10 (spec-0031): one shut clause per numeric term — any single
-        // term ceasing to hold disarms the trap, which is what `negate` spells.
-        // The datum is party-scoped by construction here (`DW0503`).
-        for clause in state_clauses(plan, &t.requires_state, true) {
-            out.push(format!(
-                "execute if score #trapgate_{id} dw.sys matches 1 {clause} run function {ns}:trap_gate_off_{id}"
-            ));
-        }
-        let mut on = format!("execute unless score #trapgate_{id} dw.sys matches 1");
-        for f in &t.requires_flags {
-            on.push_str(&format!(
-                " if entity @a[scores={{{}=1..}}]",
-                plan::flag_score(f)
-            ));
-        }
-        for f in &t.forbids_flags {
-            on.push_str(&format!(
-                " unless entity @a[scores={{{}=1..}}]",
-                plan::flag_score(f)
-            ));
-        }
-        on.push_str(&state_cond(plan, &t.requires_state, false));
-        on.push_str(&format!(" run function {ns}:trap_gate_on_{id}"));
-        out.push(on);
+        out.push(format!("function {ns}:trap_gate_on_{}", t.safe));
+        out.extend(trap_gate_shut_clauses(plan, t));
     }
     out
 }
@@ -12203,24 +12376,6 @@ fn item_component_tail(item: &str, name: Option<&str>) -> String {
 fn trap_setup(plan: &Plan, gate_hardware: &BTreeMap<String, String>) -> Vec<String> {
     let mut out = Vec::new();
     for t in &plan.traps {
-        // Seed a gated trap's hardware sentinel to match the world it starts in.
-        // Flags are unset at world start, so a `requires_flags` gate is shut and the
-        // authored trigger comes straight back out; a `forbids_flags`-only gate is
-        // open and the prefab's own block stands. Doing this at setup (rather than
-        // letting the tick converge) means there is never a tick in which the trap
-        // is live before its gate has been read.
-        if trap_is_gated(t) && gate_hardware.contains_key(&t.safe) {
-            let armed = t.requires_flags.is_empty();
-            out.push(format!(
-                "scoreboard players set #trapgate_{} dw.sys {}",
-                t.safe,
-                u8::from(armed)
-            ));
-            if !armed {
-                let c = t.trigger_cell;
-                out.push(format!("setblock {} {} {} minecraft:air", c[0], c[1], c[2]));
-            }
-        }
         // Fill the pre-wired dispenser with the declared payload.
         if let (Some(disp), Some((item, count))) = (t.dispenser, &t.payload) {
             out.push(format!(
@@ -12264,6 +12419,15 @@ fn trap_setup(plan: &Plan, gate_hardware: &BTreeMap<String, String>) -> Vec<Stri
             ));
         }
     }
+    // A gated trap's hardware is seeded once, here, so there is never a tick in
+    // which the trap is live before its gate has been read.
+    if plan
+        .traps
+        .iter()
+        .any(|t| trap_is_gated(t) && gate_hardware.contains_key(&t.safe))
+    {
+        out.push(format!("function {}:trap_gate_init", plan.namespace));
+    }
     out
 }
 
@@ -12294,7 +12458,11 @@ fn trap_tick(plan: &Plan) -> Vec<String> {
             "execute as @e[tag=dw_trapdis_{id}] run data remove entity @s interaction"
         ));
     }
-    out.extend(trap_gate_tick(plan));
+    // The gate clauses live in their own function so the generated PackTest can
+    // run exactly the clauses the tick runs, and nothing else the tick does.
+    if plan.traps.iter().any(trap_is_gated) {
+        out.push(format!("function {ns}:trap_gate_tick"));
+    }
     out
 }
 
@@ -12336,6 +12504,14 @@ fn trap_fns(plan: &Plan, gate_hardware: &BTreeMap<String, String>) -> Vec<(Strin
     }
     out.extend(trap_payload_fns(plan));
     out.extend(trap_gate_fns(plan, gate_hardware));
+    let gate_tick = trap_gate_tick(plan);
+    if !gate_tick.is_empty() {
+        out.push(("trap_gate_tick".to_string(), lines(&gate_tick)));
+    }
+    let gate_init = trap_gate_init(plan, gate_hardware);
+    if !gate_init.is_empty() {
+        out.push(("trap_gate_init".to_string(), lines(&gate_init)));
+    }
     out
 }
 
@@ -12382,7 +12558,7 @@ struct PayloadPlans {
 fn plan_payload_verbs(
     plan: &Plan,
     world: &crate::compiler::nav::World,
-    blocks: &BTreeMap<[i32; 3], String>,
+    blocks: &crate::compiler::blockstate::BlockMap,
 ) -> Result<PayloadPlans, BuildFailure> {
     let mut out = PayloadPlans::default();
     let placement = delvewright_dsl::Placement::of(plan.campaign);
@@ -14655,6 +14831,9 @@ fn emit_packtest(
     // v0.6: trap payload loads into the dispenser; a disarm empties it (spec-0011).
     // Emits nothing when the campaign declares no traps.
     emit_trap_packtests(plan, out);
+    // The gate's own template, independent of the dispenser one: a campaign
+    // whose gated trap carries a command payload and no dispenser still owes it.
+    emit_trap_gate_packtest(plan, out);
     emit_payload_packtests(plan, out, payloads);
     // spec-0016 §1: resting at a bonfire moves the party respawn point and
     // re-seats its `respawns_on_rest` waves. Emits nothing without a bonfire.
@@ -16084,7 +16263,6 @@ fn emit_trap_packtests(plan: &Plan, out: &mut BuildOutput) {
         format!("packtest-datapack/data/{ns}/test/v06_trap.mcfunction"),
         lines(&b).into_bytes(),
     );
-    emit_trap_gate_packtest(plan, out);
 }
 
 /// spec-0022 PackTests: the **saturation contract** and the collapse, asserted
@@ -16238,53 +16416,84 @@ fn emit_payload_packtests(plan: &Plan, out: &mut BuildOutput, payloads: &Payload
     }
 }
 
-/// v0.6 trap **flag-gate** PackTest (spec-0011): the gate physically removes and
+/// v0.6 trap **gate** PackTest (spec-0011): the gate physically removes and
 /// restores the trigger hardware, so the machine-checkable contract is the block
 /// itself — while the gate is shut the trigger cell is air (a player stepping there
-/// touches nothing), and when it opens the authored trigger is back, verbatim.
+/// touches nothing), and when it opens the authored trigger is back.
 ///
-/// This is the assertion the feature never had: `requires_flags`/`forbids_flags`
-/// were validated and planned but read by no emission site at all, so the
-/// documented "inactive while the flag is set" behaviour simply did not exist.
+/// It drives the gate through the state the campaign really writes — every term on
+/// the holder [`Plan::gate_terms`] names, via [`packtest_gate_drive`] — and runs
+/// the emitted `trap_gate_tick`, never `trap_gate_on`/`trap_gate_off` directly: a
+/// template that calls the two halves itself proves the halves and never the
+/// clauses that decide between them, which is how a gate reading a score no
+/// player carries shipped behind a green suite.
+///
+/// Every term is shown able to shut the gate on its own: open it, break exactly
+/// that term, tick, assert air; repair it, tick, assert the trigger is back. The
+/// first gated trap is the subject, whichever axes it uses.
 fn emit_trap_gate_packtest(plan: &Plan, out: &mut BuildOutput) {
     let ns = &plan.namespace;
     let title = artifact_title(plan.campaign);
-    // The first trap gated by a single forbidding flag, which is the shape that can
-    // be driven from a test: set the flag → shut, clear it → open.
-    let Some(t) = plan
-        .traps
-        .iter()
-        .find(|t| t.requires_flags.is_empty() && t.forbids_flags.len() == 1)
-    else {
+    let Some(t) = plan.traps.iter().find(|t| trap_is_gated(t)) else {
         return;
     };
-    let flag = plan::flag_score(&t.forbids_flags[0]);
+    let gate = trap_gate_of(plan, t);
     let c = t.trigger_cell;
-    let (pin, sel) = pin_dummy("dw_t_tgate");
+    let party = plan::PARTY;
     let mut b = packtest_header(&format!(
-        "{title}: trap `{}` is physically disarmed while `{}` is set (spec-0011)",
-        t.id, t.forbids_flags[0]
+        "{title}: trap `{}` is physically disarmed while its gate is shut, on every term (spec-0011)",
+        t.id
     ));
     b.push(format!("function {ns}:setup"));
-    b.push(pin);
-    // Start from the armed world the setup leaves behind, then shut the gate by
-    // setting the flag and running the real emitted tick clause path.
-    b.push(format!("function {ns}:trap_gate_on_{}", t.safe));
-    b.push(format!("scoreboard players set {sel} {flag} 1"));
-    b.push(format!("function {ns}:trap_gate_off_{}", t.safe));
-    b.push(format!(
-        "execute store success score #tgate dw.sys if block {} {} {} minecraft:air",
-        c[0], c[1], c[2]
-    ));
-    b.push("assert score #tgate dw.sys matches 1".to_string());
-    // Clear the flag and re-open: the authored trigger must be back in the world.
-    b.push(format!("scoreboard players set {sel} {flag} 0"));
-    b.push(format!("function {ns}:trap_gate_on_{}", t.safe));
-    b.push(format!(
-        "execute store success score #tgate dw.sys if block {} {} {} minecraft:air",
-        c[0], c[1], c[2]
-    ));
-    b.push("assert score #tgate dw.sys matches 0".to_string());
+    // One holder per assert (`#tgate_<n>`), so a red names the step that failed
+    // rather than a line number the runner counts its own way.
+    let mut step = 0u32;
+    let mut run_and_assert = |b: &mut Vec<String>, function: &str, shut: bool| {
+        step += 1;
+        b.push(format!("function {ns}:{function}"));
+        b.push(format!(
+            "execute store success score #tgate_{step} dw.sys if block {} {} {} minecraft:air",
+            c[0], c[1], c[2]
+        ));
+        b.push(format!(
+            "assert score #tgate_{step} dw.sys matches {}",
+            u8::from(shut)
+        ));
+    };
+    // The same truth table twice: once through `trap_gate_init` (what
+    // `setup_finish` runs before the first tick) and once through
+    // `trap_gate_tick`. The first pass is what sees the world the campaign
+    // starts in: a trap whose gate is shut must start disarmed, whichever axis
+    // shuts it.
+    for function in ["trap_gate_init", "trap_gate_tick"] {
+        if function == "trap_gate_tick" {
+            // Start shut, so the first open is a transition the tick has to make.
+            b.push(format!("function {ns}:trap_gate_off_{}", t.safe));
+        }
+        b.extend(packtest_gate_drive(plan, gate, true));
+        run_and_assert(&mut b, function, false);
+        for f in gate.requires_flags {
+            let s = plan::flag_score(f.as_str());
+            b.push(format!("scoreboard players set {party} {s} 0"));
+            run_and_assert(&mut b, function, true);
+            b.push(format!("scoreboard players set {party} {s} 1"));
+            run_and_assert(&mut b, function, false);
+        }
+        for f in gate.forbids_flags {
+            let s = plan::flag_score(f.as_str());
+            b.push(format!("scoreboard players set {party} {s} 1"));
+            run_and_assert(&mut b, function, true);
+            b.push(format!("scoreboard players set {party} {s} 0"));
+            run_and_assert(&mut b, function, false);
+        }
+        for cmp in gate.requires_state {
+            let one = std::slice::from_ref(cmp);
+            b.extend(state_drive_lines(plan, one, false));
+            run_and_assert(&mut b, function, true);
+            b.extend(state_drive_lines(plan, one, true));
+            run_and_assert(&mut b, function, false);
+        }
+    }
     out.insert(
         format!("packtest-datapack/data/{ns}/test/v06_trap_gate.mcfunction"),
         lines(&b).into_bytes(),

@@ -31,12 +31,12 @@ pub const DW_TRAP_TRIGGER_MISSING: DwCode = DwCode::new("DW0917", ExitTier::Buil
 /// names. `anchors` is only read for the remedy: the anchors of this world
 /// whose cell already holds a matching block.
 pub fn check_trap_triggers(
-    blocks: &BTreeMap<[i32; 3], String>,
+    blocks: &crate::compiler::blockstate::BlockMap,
     traps: &[TrapPlan],
     anchors: &BTreeMap<(String, String), ResolvedAnchor>,
 ) -> Result<(), Failure> {
     let at =
-        |c: &[i32; 3]| -> &str { blocks.get(c).map(String::as_str).unwrap_or("minecraft:air") };
+        |c: &[i32; 3]| -> &str { blocks.get(c).map(|s| s.as_str()).unwrap_or("minecraft:air") };
     let mut bad: Vec<String> = Vec::new();
     for t in traps {
         let c = t.trigger_cell;
@@ -139,7 +139,10 @@ mod tests {
     #[test]
     fn a_plain_chest_is_not_a_trapped_chest() {
         let e = check_trap_triggers(
-            &world([0, 0, 0], "minecraft:chest[facing=north]"),
+            &crate::compiler::blockstate::interned(world(
+                [0, 0, 0],
+                "minecraft:chest[facing=north]",
+            )),
             &[trap(TrapTrigger::TrappedChest, [0, 0, 0])],
             &BTreeMap::new(),
         )
@@ -163,7 +166,7 @@ mod tests {
         ] {
             assert!(
                 check_trap_triggers(
-                    &world([1, 2, 3], block),
+                    &crate::compiler::blockstate::interned(world([1, 2, 3], block)),
                     &[trap(kind, [1, 2, 3])],
                     &BTreeMap::new()
                 )
@@ -178,7 +181,7 @@ mod tests {
     #[test]
     fn a_plate_trap_on_a_tripwire_is_dw0917() {
         let e = check_trap_triggers(
-            &world([1, 2, 3], "minecraft:tripwire"),
+            &crate::compiler::blockstate::interned(world([1, 2, 3], "minecraft:tripwire")),
             &[trap(TrapTrigger::PressurePlate, [1, 2, 3])],
             &BTreeMap::new(),
         )

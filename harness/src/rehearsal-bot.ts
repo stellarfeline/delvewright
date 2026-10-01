@@ -18,7 +18,7 @@
 // Env (reuses the executor's connection config): DELVEWRIGHT_MC_HOST/PORT/
 // VERSION/AUTH + DELVEWRIGHT_BOT_USERNAME.
 
-import { createBot } from "mineflayer";
+import { createHarnessBot } from "./client-loaded.ts";
 import { botConfigFromEnv } from "./executor.ts";
 
 /** Standing eye height the overlay adds before flooring to a cell (vanilla). */
@@ -50,7 +50,7 @@ async function main(): Promise<number> {
     `rehearsal-bot connecting to ${config.host}:${config.port} as ${config.username}\n`,
   );
 
-  const bot = createBot({
+  const { bot } = createHarnessBot({
     host: config.host,
     port: config.port,
     username: config.username,
