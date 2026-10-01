@@ -987,12 +987,12 @@ impl WaveLethalBinding {
                      included, so this wave thins itself before the party touches it, on every \
                      life, and whatever a member drops lands in the box. A mob walks, steps or \
                      jumps onto a block at most one higher, drops off any edge and sinks in \
-                     water; it never jumps a gap. Move the wave's `anchor` so no member's reach \
-                     meets the volume; declare a shorter `follow_range` on the stack, which is \
-                     how far it pursues and so how far this proof lets it roam; or move the \
-                     volume where this wave cannot walk, fall or sink into it — behind a rise of \
-                     two blocks, or across a gap of open air. Do not ring the hazard with blocks \
-                     nobody can see, and do not delete the volume to silence this.",
+                     water; it never jumps a gap. Move the seat — the wave's `anchor` — so no \
+                     member's reach meets the volume, or move the hazard where this wave cannot \
+                     walk, fall or sink into it: behind a rise of two blocks, or across a gap of \
+                     open air. Never buy the distance by shrinking `follow_range`, which retunes \
+                     the fight to hide the placement; do not ring the hazard with blocks nobody \
+                     can see, and do not delete the volume to silence this.",
                     f.route(),
                     tail(&self.as_built),
                 ),

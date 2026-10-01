@@ -223,9 +223,9 @@
         "region": {
           "anchor": "anchor/east-pit",
           "extent": [
-            1,
+            0,
             2,
-            1
+            0
           ]
         },
         "shown_by": [
@@ -3069,9 +3069,6 @@
             "name": "Muster Hand"
           },
           {
-            "attributes": {
-              "follow_range": 10.0
-            },
             "count": 1,
             "entity": "minecraft:spider",
             "name": "Muster Stray"
@@ -3133,12 +3130,12 @@
         "tier": "boss"
       },
       {
-        "anchor": "anchor/east-bay",
+        "anchor": "anchor/lane-east",
         "id": "wave/edge",
         "mobs": [
           {
             "attributes": {
-              "follow_range": 6.0
+              "follow_range": 12.0
             },
             "count": 1,
             "entity": "minecraft:skeleton"
