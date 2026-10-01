@@ -78,6 +78,18 @@ reading and the clear. A die-retry stage that cannot finish reds on its own
 coverage and does not end the run: suppressing every measurement behind one fight
 is how a ladder learns least from a red.
 
+**A walk off the path meets a re-seated wave before it starts.** The death loop's
+approach to a volume and its walk back to the stake are no legs the compiler
+measured, and the deaths before each (the die-retry stage's, then the trial's own)
+have put back every `respawns_on_rest` wave. Before either walks, every such wave this
+run cleared in an earlier seating than the one in force, nearest the bot first and
+with the anchor's chunk held, is asked of its census; one something of which
+stands is read (1) and cleared (2) by the same code the kill step runs. The anchor
+walk (3) is the kill step's and is not taken. A death on that walk outside the
+volume's reach is the approach's failure (`approach_failure`), never a verdict on
+the volume; a death on the walk back is `walk_back_failure`, never a verdict on
+where the stake was placed.
+
 **Outside a scripted death, a body never kills the bot.** A hostile that lands a
 hit the server attributes to it is an enemy and is removed by a staged blow. What
 the run must read before it removes the body is decided by which wave the body is
