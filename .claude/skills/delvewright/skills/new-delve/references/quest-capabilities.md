@@ -411,7 +411,7 @@ this section is what they are *for* and the traps in each.
   without spending or earning. One datum per campaign may stand (the sidebar
   holds one objective), it must carry a `name`, and it must be `player`-scoped —
   a `party` purse cannot stand, because the sidebar hides its holder. Each of
-  those is refused at `delvec validate`, naming the datum and the fix.
+  those is refused at `delvec validate` as `DW0919`, naming the datum and the fix.
 - **A fight pays per body through `on_kill`.** `on_kill {fires?, effects[]}` is
   **optional** on any `waves[]` or `actors[]` entry. Its effects run **once per
   body a player is credited with killing**, as that player: a `player`-scoped
