@@ -23,8 +23,16 @@
                 "prefab": "prefab/gallery-hall"
               },
               "kind": "box",
-              "max": [2, 5, 3],
-              "min": [2, 5, 3]
+              "max": [
+                2,
+                5,
+                3
+              ],
+              "min": [
+                2,
+                5,
+                3
+              ]
             },
             "verb": "select"
           },
