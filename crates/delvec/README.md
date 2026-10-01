@@ -39,7 +39,10 @@ delvec viewer   <prefab.nbt>   -o page.html   # look at a room before you ship i
 `build` implies `analyze`, which implies `validate`. `<campaign-dir>` holds one
 JSON file per stage (`world.json`, `npcs.json`, `classes.json`,
 `quest-plan.json`, `quests.json`, `dialogue.json`), optionally a `world-edits.json`
-edit script and an `l10n/<code>.json` sidecar per translated language.
+edit script, the map-pipeline documents (`geometry-brief.json`,
+`layout-graph.json`, `site-plan.json`, `detail-plan.json`), a `design.json`
+design record, a `walk-record.json`, and an `l10n/<code>.json` sidecar per
+translated language.
 
 Rooms come from a prefab library — Minecraft structure `.nbt` files plus JSON
 metadata declaring their anchors, jigsaw sockets and lighting. Point `delvec` at
@@ -48,11 +51,15 @@ one with `--prefabs <dir>`.
 | Command | What it does |
 |---|---|
 | `validate` | Schema and referential checks over all stages. |
-| `analyze` | Reachability, dialogue deadlocks, unlit rooms. |
+| `analyze` | Reachability and dialogue deadlocks. |
 | `build` | The full deterministic build. |
 | `fmt` | Rewrite authored JSON in canonical form; `--check` reports instead. |
-| `schema` | Export a stage's JSON Schema (`--stage` takes `1`–`7` or `all`). |
+| `schema` | Export a document's JSON Schema (`--stage` takes `1`–`7`, `geometry-brief`, `layout-graph`, `site-plan`, `detail-plan`, `walk-record`, `prefab-metadata`, or `all`). |
 | `l10n-inventory` | The translatable-string inventory as JSON. |
+| `l10n-apply` | Write a language sidecar from a table of English → translation. |
+| `metrics` | The metrics standard — player facts and building standards — as JSON. |
+| `allocation` | The frame, datum, seams and owed anchors a site plan hands one place. |
+| `detail` | Detail a place inside its allocation: bind, expand, gate and freeze its piece. |
 | `snapshot` | Render one frame of the assembled world plus a scene manifest. |
 | `blocking-chart` | Per-elevation cutaway floor plans of every area. |
 | `edit` | Replay the world-edit script, re-proving the invariants per batch. |
@@ -61,12 +68,14 @@ one with `--prefabs <dir>`.
 | `palette` | The per-blockstate colour and shape table a room is built from, as JSON. |
 | `scene` | Chunky scene descriptions for every planned shot of a build. |
 | `panorama` | One oblique exterior scene framed on the placed areas — the storybook shot. |
+| `cameras` | A Chunky scene per showcase camera the campaign's `design/cameras.json` states. |
+| `place-camera` | Write one row of `design/cameras.json`: a hand-placed pose, an estimate, or a deletion. |
 | `contact-sheet` | Many candidate renders laid out on one page to choose from. |
 | `index` | The shot list as (image, expectation) pairs, for review. |
 | `grammar` | Prefab authoring from a rule program: `list`, `show`, `check`, `expand`, `coverage`, `audit`. |
-| `prefab` | Prefab admission: `audit`, `socket`, `anchor`, `lighting`, `catalog`, `gallery`, `curate`. |
+| `prefab` | Prefab admission: `audit`, `seating`, `anchors`, `socket`, `resolve-jigsaw`, `anchor`, `planes`, `lighting`, `catalog`, `gallery`, `curate`, `curate-merge`. |
 | `schem` | `convert` a Sponge schematic into a structure template. |
-| `harvest` | Turn a playtest server log into `playtest-report.json`. |
+| `harvest` | Turn a playtest server log into `playtest-report.json`, plus the rehearsal and camera reports its stamps carry. |
 | `render` | GPU renders through your own GPU: `piece`, `batch`, and the texture `fidelity-gate`. |
 
 The render commands read textures from your own Minecraft client jar, which is

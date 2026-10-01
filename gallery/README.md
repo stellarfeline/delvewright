@@ -42,10 +42,10 @@ order a player would:
 | `world.json` | the hall, its lighting and mitigation, the boundary, the declared languages |
 | `npcs.json` | four speaking parts — a quest-giver, a gatekeeper, a counter, a drill officer |
 | `classes.json` | two kits, one carrying a flask (what a bonfire rest refills) |
-| `quest-plan.json` | two quests and the branch point the fork opens |
+| `quest-plan.json` | three quests and the branch point the fork opens |
 | `quests.json` | the bulk: objectives, effects, waves, actors (a barded and saddled horse among them), traps, triggers, a shop, a shortcut, a stake, a timed gate, two killing volumes, and six named datums of which one — the tokens — stands on the sidebar (`display: sidebar`, spec-0076) |
 | `dialogue.json` | one tree per NPC; the Curator's carries the fork, and the Marshal's carries the two scenes it leads to — a pair of nodes no option leads to, reached only because the quest's `cast` ledger opens one of them per branch |
-| `world-edits.json` | four batches that dress the floor, lay the hearth, thin the vault and rough the lane |
+| `world-edits.json` | the annex's piece-verb batches, the shards stamped by `fragment`, the barrier course, and the batches that dress the floor, lay the hearth, open the vault and rough the lane |
 | `geometry-brief.json` | four numbers out of the hall's own brief, the kind a site plan is later held to |
 | `layout-graph.json` | the same hall stated as six places and twelve connections, before any coordinate — three barred doors through the wall because the hall really has three, a stair and a drop that close a loop, a sightline to the loft, and one place deliberately off the mandatory spine |
 | `overlays/site-plan/` | the same places given geometry, and then a whole map DERIVED from it: a region, a box each stating only its extent and plane, ONE pinned corner, a seam per connection stating which face of its `a` box it sits on and where along it (the compiler derives every other corner and every sill — spec-0059; `delvec validate` prints the corners), the rock and the sky the whole owns, and eight comparisons holding all of it to its own written brief. It carries its own world, cast, quest layer and translations, because a campaign has ONE placement authority and the primary's is `areas[]` — so at this point of the campaign nothing describes a block, and everything a body meets is derived: the floors it walks, the doors it is stopped by, the stair it climbs, the anchors the quests bind to |
@@ -100,8 +100,9 @@ name only.
 Each probe is a committed document that a creator might reasonably write and that
 the engine says no to, with the diagnostic it says no with. Most are refused by
 `delvec validate`, which reads the documents; a rule about GEOMETRY has no verdict
-until the anchors resolve, so those are refused by `delvec build` instead and the
-table says which. Some name no surface at all, and that is the point of them: both
+until the anchors resolve, so those are refused by `delvec build` instead, and a
+probe that ships a program is refused by `delvec detail`, where the program is
+entered. The table says which. Some name no surface at all, and that is the point of them: both
 halves of what they write are perfectly legal, and what the engine refuses is
 holding them at once.
 
@@ -122,6 +123,34 @@ holding them at once.
 | `a-barrel-in-a-row-of-barrels` | `DW0861` | `validate` | adopting a container the piece placed without naming what is in it |
 | `a-prompt-nobody-sees` | `DW0862` | `validate` | writing a hint on an objective with no title to carry it |
 | `a-fight-nobody-points-at` | `DW0863` | `validate` | requiring a fight and saying nothing about where it happens |
+| `a-bar-in-a-colour-the-game-lacks` | `DW0911` | `validate` | drawing a boss bar in `crimson`, a colour the pinned game's `bossbar` command does not list |
+| `a-bar-over-a-body-nothing-can-hurt` | `DW0909` | `validate` | hanging a health bar over the usher, a body nothing unleashes and nothing can hurt |
+| `a-bar-with-nothing-to-draw` | `DW0910` | `validate` | removing the muster's bar `title`, when the wave fields two kinds of body and no one name is the fight's |
+| `a-body-two-areas-answer-for` | `DW0884` | `validate` | casting the curator at `anchor/lectern` when the annex is bound to the hall's piece and both areas answer to that name |
+| `a-face-nothing-stands-in-front-of` | `DW0886` | `validate` | placing the open-topped yard as its own area under `horizon: void`, with sides nothing buries and nothing declares shown |
+| `a-floor-carved-down-to-the-sea` | `DW0344` | `build` | a world edit cutting a three-by-three hole in the hall's plinth course down to the sea's own plane, under `horizon: ocean` |
+| `a-gate-the-party-walks-back-through-after-it-is-sealed` | `DW0485` | `validate` | giving a later beat the main gate as its subject, twenty beats after that gate is sealed |
+| `a-key-that-charges-more-than-it-asks` | `DW0901` | `validate` | charging five tokens at the counter that gates on four |
+| `a-lane-beside-a-killing-volume` | `DW0891` | `build` | setting the west pit on the near hall's floor beside the chest, so it kills the walked ring around it |
+| `a-number-this-engine-does-not-implement` | `DW0102` | `validate` | declaring a `dsl_version` other than the one this engine accepts |
+| `a-picture-nobody-looks-at` | `DW0900` | `build` | re-aiming the only camera that answers `concept/morning-quay` at a picture two other cameras already answer |
+| `a-picture-nobody-recorded` | `DW0890` | `validate` | deleting the night row from `design.json` while its image stays under `design/concept/` |
+| `a-piece-with-no-walk-plane` | `DW0886` | `validate` | seating the shard, which declares no walk plane, on an `ocean` horizon |
+| `a-place-cut-below-the-sea` | `DW0886` | `validate` | standing a site-plan place two courses under the sea plane, under `horizon: ocean` |
+| `a-pool-of-two-walk-planes` | `DW0886` | `validate` | seating a pool whose members declare two different walk planes on the base that derives an origin from it |
+| `a-program-asking-for-a-seam-the-whole-does-not-hand` | `DW0882` | `detail` | declaring a `handed/` parameter for a seam the allocation does not hand |
+| `a-program-that-marks-no-place-to-stand` | `DW0845` | `detail` | removing the program's one `mark`, so nothing answers the anchor the quests bound to the place |
+| `a-program-whose-arch-misses-its-seam` | `DW0844` | `detail` | carving the annex arch one cell along the wall from the seam the plan handed it |
+| `a-reach-that-completes-from-the-floor-below` | `DW0881` | `build` | widening the loft's completion radius to 2, so it completes from the hall floor three courses below |
+| `a-record-that-says-nobody-walked` | `DW0841` | `validate` | detailing against a fresh walk record whose verdict says nobody walked |
+| `a-rim-one-radius-out-of-reach` | `DW0850` | `build` | narrowing the well's completion radius to 2, so no walked cell on the rim reaches it |
+| `a-rocket-under-a-roof` | `DW0899` | `build` | firing a rocket at `anchor/exit`, under the hall's stone ceiling |
+| `a-row-with-no-picture` | `DW0890` | `validate` | pointing a `design.json` row at a stem no file under `design/concept/` answers |
+| `a-signal-the-floor-does-not-carry` | `DW0891` | `build` | declaring the east strip `shown_by` a cactus that stands in none of its cells |
+| `a-sky-no-picture-shows` | `DW0890` | `validate` | moving the midnight row to `night`, leaving an hour the world reaches that no approved picture shows |
+| `a-walk-plane-the-void-still-owes` | `DW0886` | `validate` | seating the shard, which declares no walk plane, on a `void` horizon |
+| `nothing-places-the-whole` | `DW0883` | `validate` | deleting the entry box's pinned `min`, so nothing places the site plan |
+| `two-faces-at-one-place` | `DW0880` | `build` | giving two recovery stakes that share a place two different marker items |
 | `two-presses-on-one-cell` | `DW0878` | `build` | hanging an `interact` objective and a click trigger on one anchor |
 | `a-gate-the-path-already-cleared` | `DW0879` | `validate` | clearing a counter between the beat that fills it and the gate that reads it |
 | `two-bodies-on-one-mark` | `DW0896` | `build` | taking the page's offset away, so it is summoned onto the usher's own cell while the usher is still standing on it |
@@ -153,9 +182,9 @@ no longer has is a red naming the probe and the pointer, rather than a probe
 quietly changing what it is about; `add` and `replace` are separate verbs so
 that a key the primary GAINS is that same red rather than a silent overwrite.
 
-A probe may ship a whole document, and four of them do: `site-plan.json`,
-`detail-plan.json` and `walk-record.json` are documents the primary cannot carry
-at all — `DW0839` refuses a campaign holding both `areas[]` and a site plan — so
+A probe may ship a whole document, and several do: `site-plan.json`,
+`detail-plan.json`, `walk-record.json` and a `programs/` directory are documents
+the primary cannot carry at all — `DW0839` refuses a campaign holding both `areas[]` and a site plan — so
 there is nothing for them to be a copy of. A file that shadows a primary
 document is refused. A probe may instead declare its edit against an
 **overlay's** document, naming it by its path (`overlays/site-plan/site-plan.json`):
@@ -231,65 +260,6 @@ two authorities on one question, and is refused in review. A setting that cannot
 coexist with the primary becomes an overlay under `overlays/`, declaring exactly
 what it reaches.
 
-## What writing it turned up
-
-Four engine defects, each invisible for the same reason: the surface had never
-been written by anything, so nothing had ever compiled it. Each is attributed by
-a differential, because that is the only honest way to say "this one thing is
-responsible".
-
-**An `ambushes[]` entry cannot compile.**
-`Ambush::to_trigger` desugars an ambush into a trigger whose effects are the
-telegraph, then a `spawn-actor` and an `unleash-actor` per actor — constructing
-both with `happening: None`. `DW0481` requires a `happening` on every beat, and
-`Ambush` carries no field an author could supply one through. The
-surface is declared, schema-valid, and refused at validation on effects the author
-never wrote and cannot reach. *Attribution:* removing the gallery's one ambush
-takes the `DW0481` count from 2 to 0 with nothing else changed, and `to_trigger`
-visibly hard-codes both `None`s. *State:* not fixed, and deliberately **not
-exempted** — the five `Ambush.*` units are reported unaccounted, because a
-capability gap is not a fence, and dressing one as an exemption is how a gate
-stops being able to see it.
-
-**A mob drop's `name` ships as an untranslatable literal.** `ItemDrop.name` is
-lowered into `loot_table/dw_drop/*.json` as a raw `"text"` still carrying the
-l10n marker sigil, and `DW0185` refuses the build. It is unconditional — it does
-not need a second declared language — so every campaign that ever wanted to name
-what a mob leaves behind would have hit it. *Attribution:* the diagnostic still
-fires with the sidecar removed, and goes to zero with the drop names removed and
-the sidecar restored. *State:* not fixed; the drops stay and only the name they
-cannot carry is dropped. The fix is one call site — lower it through `emit::tr`
-like every other player-visible string.
-
-**A `traversal` declaration may be unbindable by construction.** `DW0454`
-correctly refuses a `locomotion` that restates what the entity id already implies.
-The consequence is that `Locomotion::ground` cannot be written on a ground mob at
-all: binding one needs a body whose derived class differs *and* a route that makes
-the claim non-inert. That is a question for the spec, which assumes any legal
-combination is expressible by some overlay — these four may need geometry (a
-climb, a wall to fly over) rather than a declaration. The hall's one vertical
-route is the mezzanine's broken flight, and no body walks it — the climb is a
-player's, so it settles nothing about a declared locomotion.
-
-**A wave nothing fires still got its kill advancement.** All of a wave's
-machinery — `spawn_<wave>`, the census probe, the brand, the kill reward — is
-gated on the wave resolving a spawn AREA, which it does only through an effect
-that fires it. `advancement/k_<wave>.json` was not: it was emitted for every
-declared wave, and its `rewards.function` named the `k_reward_<wave>` a wave
-nothing fires never gets. *Attribution:* the gallery's `wave/edge` was declared
-and fired by nothing, and the build shipped `k_edge.json` pointing at a
-function that was not in the pack; arming the wave produced the function and
-five more beside it. *State:* fixed. `DW0497` reads an advancement's reward as
-a call site, and `k_<wave>` is emitted behind the same gate as its reward;
-`call_graph_integrity`'s `every_reward_names_a_function_that_exists` builds a
-wave nothing seats and asserts no kill advancement ships for it. The gallery no
-longer holds the shape, which is why arming `wave/edge` rather than deleting it
-was the fix — the element now exercises `WaveSummon::aggro-edge` instead of
-merely naming it.
-
-None of the four was found by reading code. Each was found by trying to write the
-surface down.
-
 ## The annex, and what a socket is worth looking at
 
 `area/annex` is a three-tile chain assembled from `pool/gallery-annex`. It is
@@ -324,9 +294,8 @@ doorway bricked up on the far side and open on the near one.
 **The chain is what binds the piece-mating check.** A socket is one of the two
 places a prefab document says what a side of it is — the other is
 `spatial_contract.faces`, which the hall carries and no annex tile does — and
-`DW0780` reads both. Before it did, this chain was the shape that made the check
-report `0 with a spatial contract` and pass: three tiles mated end to end, four
-socket faces meeting across two seams, and nothing examining any of them. The
+`DW0780` reads both, so the chain's three tiles, mated end to end with four
+socket faces meeting across two seams, are examined rather than passed over. The
 build's binding line states it on every run, and the count is a fraction of the
 placement rather than of the declarations, so a world whose pieces stop touching
 reads as a zero rather than as a silence. What no campaign document here can
@@ -371,14 +340,12 @@ is that a creator reading this campaign learns the constraint before spending a
 build, and `delvec prefab anchors --pool pool/gallery-annex` states the same set
 with no campaign at all.
 
-**One camera derivation is unguarded, and this tileset guards itself against it.**
-`DW0724` refuses a **player-POV** camera whose eye cell is occupied — "fix the
-camera derivation" — and nothing checks the same thing for the interior and seam
-cameras `render_plan` derives beside them. A seam eye stands four blocks along
-the seal's axis, one cell under the ceiling, on the tile's centre column; a
-lantern hung there is a camera inside a block. The generator asserts those cells
-are clear on every run (`ANNEX_SEAM_EYE_CELLS`), which is strictly weaker than the
-diagnostic would be, because it can only speak for these four tiles.
+**The seam cameras stand in open air.** `DW0724` refuses any render-plan
+camera whose eye cell is occupied, over every shot kind the plan holds — seam and
+interior as well as player-POV. A seam eye stands four blocks along the seal's
+axis, one cell under the ceiling, on the tile's centre column, so a lantern hung
+there would be a camera inside a block; the generator also asserts those cells
+are clear on every run (`ANNEX_SEAM_EYE_CELLS`).
 
 ## The broken flight, and what a way costs to declare
 
@@ -525,23 +492,22 @@ gallery-hall: muster clearance bound — 2 killing volume(s), both across the wa
 gallery-hall: lane clearance bound — the patrol line passes `anchor/muster` at [15, 1, 29], 10.00 block(s) away (floor 10.0)
 ```
 
-## Three findings still open
+## Open findings
 
 **The build's render plan and `snapshot`'s disagree when an edit blocks the
 route.** One is computed after world-edits and the other before them, so solid
 geometry on the critical path makes the build's legs longer than the ones
-`snapshot` can resolve, and declared views become unproducible by name. Seen
-twice: first with four shards stamped across the far hall, then with a
-full-width barrier line. Both times the instance fix was to move the geometry off
-the route; the divergence itself is untouched.
+`snapshot` can resolve, and declared views become unproducible by name. The
+gallery keeps its blocking geometry (the shards, the barrier course) off the
+route; the divergence itself has no diagnostic.
 
 **An objective can be gated on a state an earlier forced beat clears, and
 nothing says so.** `obj/reach-the-end` requires `state/labels-read` `at-least`
 1; `obj/clear-the-muster`, four objectives ahead of it on the mandatory spine,
 clears that state to zero. Every static proof passes — the reachability model
 walks objectives and flags, not the arithmetic of the states their `requires_state`
-compares — and the delve is simply unfinishable, which is what the bot found by
-standing inside the finale's own completion box while no marker arrived.
+compares — and the delve is unfinishable: the bot stands inside the finale's
+own completion box and no marker arrives.
 `DW0527` sees the same write and says nothing about this, because it is a rule
 about one bundle and these are two. The gallery lives with it by setting the
 count again on the bone's beat, LAST in its bundle so no reader follows the
