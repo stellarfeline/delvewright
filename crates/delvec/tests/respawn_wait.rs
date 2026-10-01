@@ -247,8 +247,9 @@ fn every_positional_player_selector_is_guarded_or_allowed() {
     assert_eq!(ledger["positional_player_selectors"], c.selectors);
 }
 
-/// The census reds when a guard is taken away: the perturbation only this gate
-/// could catch.
+/// `DW0926`: the census reds when a guard is taken away — the perturbation
+/// only this gate could catch — and the build-tier refusal says it is the
+/// engine's defect.
 #[test]
 fn the_census_finds_a_selector_whose_guard_is_removed() {
     let mut out = build(&with_wait(10, false));
@@ -267,6 +268,13 @@ fn the_census_finds_a_selector_whose_guard_is_removed() {
     );
     let c = observer::census(&out);
     assert_eq!(c.unguarded.len(), 1, "{:?}", c.unguarded);
+    let refusal = observer::check(&out).expect_err("an unguarded selector is refused");
+    assert_eq!(refusal.code.to_string(), "DW0926");
+    assert!(
+        refusal.message.contains("ENGINE SELF-CHECK"),
+        "{}",
+        refusal.message
+    );
 }
 
 /// `DW0925`: `seconds` outside `1..=120`.

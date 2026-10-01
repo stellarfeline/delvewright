@@ -880,7 +880,8 @@ pub mod codes {
     /// declares a `respawn_wait` and no `set-checkpoint` or `bonfire` for a
     /// fallen player to come back to (the wait hangs off the checkpoint respawn
     /// edge, so with none it is a silently dead declaration). One rule about what
-    /// a wait needs, two ways to break it. Validation-tier (exit 1).
+    /// a wait needs, two ways to break it. Validation-tier (exit 1). The build's
+    /// own self-check that a shipped selector cannot read a waiter is `DW0926`.
     /// Prescription: a value in `1..=120`, or a checkpoint, or drop the field.
     pub const RESPAWN_WAIT_INVALID: DwCode = DwCode::new("DW0925", ExitTier::Build);
     /// (v0.6, spec-0018) A `carrier: "one"` `give-item` sits in a bundle that is

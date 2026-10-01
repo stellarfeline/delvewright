@@ -4,7 +4,7 @@
 - **Ground**: written against engine `b09fbe5f` (`fix/party-wipe-reseat`: the party-wipe latch `#wipe`, `dw_wiped`, `party_wipe_tick`, `cp_respawn_check`, `cp_respawn_fire`, `cp_on_respawn_<i>`, `cp_reset_<i>` in `crates/delvec/src/compiler/emit.rs`), the cutscene observation state (`CUTSCENE_TAG`, `SNEAK_HELD_PREDICATE` and the two-camera `spectate` bounce in the same file), `WorldContent` in `crates/dsl/src/stages.rs`, and the pinned command tree `crates/delvec/data/commands-1.21.11.json`.
 - **What it is for**: in a party, a player who falls is out of the fight for a while, so the rest of the party fights short-handed and a wipe — everyone down at once — is a state the party can still avoid by holding on. Today a fallen player is back at the fire the moment they click *Respawn*, which makes a wipe almost unreachable while two players trade deaths.
 - **Research**: §2 is this spec's research record, measured on the pinned server. Each rule below is marked **cited** (a measurement, the record, or a constitution rule requires it) or **authored** (this spec chooses).
-- **Numbers**: no ADR. **No DW code** is consumed by this text (§7 names the one refusal it needs and leaves the number to allocation). **`dsl_version` moves by one minor step** over the base it lands on (ADR-0024: §3 adds a field to the world stage); the number is allocated, not chosen here.
+- **Numbers**: no ADR. **`DW0925`** (§7's creator refusals) and **`DW0926`** (§5's engine self-check), allocated at implementation. `dsl_version` stays **0.35.0**: the base already carries that unpublished version, and the field lands in it.
 - **Non-goals**: holding the death screen (§2 shows vanilla has no way to); a wait in a party of one unless the creator asks for it (§3); a free-roaming spectator (§4); any change to what a wipe re-seats (spec-0016 §1, multiplayer addendum).
 
 ## 1. The ruling this serves
@@ -37,23 +37,23 @@ Found while measuring: until a client sends `player_loaded`, the server holds th
 
 - `seconds` — how long a fallen player waits after clicking *Respawn*, `1..=120`.
 - `alone` — whether a player who dies with nobody else present also waits. Default `false`: a party of one never waits. **Cited** (§8 decision 1: off alone by default, configured by the creator for a party).
-- Absent — no wait, and emission is byte-identical to the base.
+- Absent — no wait, and the datapack is byte-identical to the base. The resource pack's lang files gain the chrome row of §4.3 whether or not the field is declared.
 
 It is a world-level declaration because it is a rule of the delve, not of any fire or checkpoint: the same wait applies wherever the player falls. **Cited** (CLAUDE.md, *This is a general engine*: the creator states the number; a primitive does not choose it).
 
 ## 4. The waiting state
 
-**Authored, on cited parts.** A player waits when they come back from a death (the respawn edge `cp_respawn_check` already detects) and either another player is present or `alone` is true. While waiting the player:
+**Authored, on cited parts.** A player waits when they come back from a death (the respawn edge `cp_respawn_check` already detects) and either a second player is present, somebody else is in play, and they were not part of a party wipe; or nobody else is present and `alone` is true. While waiting the player:
 
 1. is in spectator mode and carries the observation tag (§5);
-2. has their view bound to a living teammate in play, re-attached by the cutscene bounce, which leaves a player alone while they hold sneak (**cited**: the shipped bounce and its `sneak_held` predicate). With no teammate in play to watch, they are not waiting: see 4.
+2. has their view bound to a living teammate in play, re-attached by the cutscene bounce, which leaves a player alone while they hold sneak (**cited**: the shipped bounce and its `sneak_held` predicate). In a party, with no teammate left in play they are released: see 4. Alone (`alone: true`), with nobody to watch, they are held on the active checkpoint cell.
 3. sees the seconds left on the action bar, as engine chrome localised through the chrome tables (`delvewright.ui.respawn.wait`, one `%s`);
-4. is released when `seconds × 20` ticks of their own wait clock have run, **or at once when no player is left in play**. The second case is a party wipe (spec-0016 §1): every waiting body is released, and the first one back re-seats the scene exactly as the first respawn after a wipe does today;
+4. is released when `seconds × 20` ticks of their own wait clock have run, **or at once when no player is left in play** (with `alone: true`, only when a second player is present, since alone nobody is in play by construction). The second case is a party wipe (spec-0016 §1): every waiting body is released, and the first one back re-seats the scene exactly as the first respawn after a wipe does today;
 5. on release: mode back to the delve's mode, the tag removed, seated on the active checkpoint cell (`cp_seat_<i>`), and the fire's per-player respawn half run (flask refill), as for any respawn.
 
 The wait clock is a `dummy` objective the tick increments for each waiting player. The stat measured in M3 would also work, but a dummy counter has no second meaning, and it pauses offline because the tick only reaches online players (**authored**). A waiting player who disconnects keeps the tag, rejoins in adventure (M5), and the tick puts them back in spectator; their clock resumes where it stopped.
 
-**For the wipe, waiting counts as down.** The party-wipe detector counts "in play" as alive and not waiting. Without that rule, a party of two where one waits and one dies would never wipe.
+**For the wipe, waiting counts as down.** The party-wipe detector counts "in play" as alive and not waiting. Without that rule, a party of two where one waits and one dies would never wipe. "Waiting" is read off the wait clock, not the observation tag: a cutscene tags every player and would otherwise latch a wipe.
 
 ## 5. A waiting player is out of play everywhere
 
@@ -73,7 +73,7 @@ Measured on the base gallery build: 110 positional player selectors (`@a[...]` w
 
 ## 7. Refusal
 
-`seconds` outside `1..=120`, or a `respawn_wait` in a campaign that declares no checkpoint or bonfire to come back to. **Authored.** One DW code, allocated at implementation.
+`seconds` outside `1..=120`, or a `respawn_wait` in a campaign that declares no checkpoint or bonfire to come back to: `DW0925`. **Authored.** §5's census refuses a build whose shipped selector would read a waiter with `DW0926`, an engine self-check the campaign can neither cause nor repair.
 
 ## 8. Decisions for the owner
 
@@ -86,10 +86,10 @@ Measured on the base gallery build: 110 positional player selectors (`@a[...]` w
 
 ## Acceptance criteria
 
-1. `delvec schema --stage world` exports `respawn_wait` with `seconds` (integer) and `alone` (boolean, default `false`); a campaign without it builds byte-identically to the base (gallery baseline: no emitted path moves for a domain point that does not declare it).
+1. `delvec schema --stage world` exports `respawn_wait` with `seconds` (integer) and `alone` (boolean, default `false`); a campaign without it builds a byte-identical datapack to the base (gallery baseline: no datapack path moves for a domain point that does not declare it). **Loosening:** this criterion asserted every emitted path; `resourcepack.zip` and `SKINS.md` move on every point, because the chrome row is in every pack.
 2. A gallery point declares `respawn_wait`, and perturbing `seconds` moves an emitted byte (the coverage gate's acceptance rule).
-3. `cargo test`: the respawn edge of a campaign declaring `respawn_wait` puts the respawning player in spectator, tags them with the observation tag, and starts their clock; the release line compares the clock against `seconds × 20`; the party-wipe detector counts a tagged player as down; with `alone: false` the wait is gated on a second present player.
+3. `cargo test`: the respawn edge of a campaign declaring `respawn_wait` puts the respawning player in spectator, tags them with the observation tag, and starts their clock; the release line compares the clock against `seconds × 20`; the party-wipe detector counts a waiting (clocked) player as down — a change from "a tagged player", which would have counted every cutscene viewer; with `alone: false` the wait is gated on a second present player.
 4. `cargo test`: every positional player selector in the gallery build either excludes the observation tag or is named in a committed allowlist with its reason; the count of each is printed and asserted non-zero.
 5. The two-body probe of §6 passes 100% of its assertions on a live server with the gallery build, and fails at least the "does not fire" and "both released" assertions on a build with the wait removed.
 6. `docs/reference/compiler.md` carries the `respawn_wait` row; the skill's pitfalls page says what a party feels and when to declare it.
-7. The refusal of §7 has a test for each shape.
+7. The refusals of §7 have a test for each shape, `DW0926` included.

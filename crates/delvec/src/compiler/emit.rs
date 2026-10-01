@@ -1926,32 +1926,21 @@ pub fn build_with_warnings(
         &fixture_gate.to_json(),
     );
 
-    // ---- a watcher is out of play everywhere (spec-0077 §5, DW0925) ----
+    // ---- a watcher is out of play everywhere (spec-0077 §5, DW0926) ----
     // A respawn wait holds one player in the observation state while the rest
     // play on, so a watcher can stand anywhere. Every positional player selector
     // in the shipped tree must exclude the observation tag or stand at a site
-    // `crate::compiler::observer::ALLOWED` names with its reason; one that does
-    // neither would let a waiting spectator fire a trigger or halt a patrol, so
-    // the wait the campaign declared is not one this build can honour.
-    // Feature-blind and read off the shipped bytes. Only with a declared wait,
-    // so every other campaign's tree is untouched.
+    // `crate::compiler::observer::ALLOWED` names with its reason (an engine
+    // self-check: see `crate::compiler::observer::check`). Feature-blind and read
+    // off the shipped bytes. Only with a declared wait, so every other
+    // campaign's tree is untouched.
     if respawn_wait(plan).is_some() {
-        let census = crate::compiler::observer::census(&out);
+        let census =
+            crate::compiler::observer::check(&out).map_err(|e| BuildFailure::Diagnostic {
+                code: e.code,
+                message: e.message,
+            })?;
         eprintln!("{}", census.binding());
-        if let Some((name, sel, line)) = census.unguarded.first() {
-            return Err(BuildFailure::Diagnostic {
-                code: delvewright_dsl::codes::RESPAWN_WAIT_INVALID,
-                message: format!(
-                    "this build cannot honour `world.respawn_wait`: {} positional player \
-                     selector(s) would read a waiting player, who is a spectator and can stand \
-                     anywhere. The first is `{sel}` in `{name}`: `{line}`. This is an ENGINE \
-                     defect, not the campaign's — the emitter that wrote it must add \
-                     `tag=!{CUTSCENE_TAG}` (or the site must be named, with its reason, in \
-                     `observer::ALLOWED`). Report it; do not drop `respawn_wait` to get green.",
-                    census.unguarded.len()
-                ),
-            });
-        }
         put_json(
             &mut out,
             "validation/observer-census.json",

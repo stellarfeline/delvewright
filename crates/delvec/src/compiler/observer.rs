@@ -13,7 +13,7 @@
 //! [`census`] reads the shipped datapack and puts every positional player
 //! selector in one of three states: it excludes the observation tag; it stands
 //! at a site [`ALLOWED`] names, with the reason a watcher may be seen there; or
-//! it is unguarded, which refuses the build. It runs only when the campaign
+//! it is unguarded, which refuses the build (`DW0926`). It runs only when the campaign
 //! declares `world.respawn_wait`, the state that puts a watcher outside a
 //! cutscene, and it is feature-blind: an emitter written later is judged by
 //! existing.
@@ -24,10 +24,48 @@
 
 use std::collections::BTreeMap;
 
+use delvewright_dsl::{DwCode, ExitTier};
+
 use crate::compiler::affordance::{
     matching_bracket, selector_has_term, selector_terms, shipped_functions,
 };
 use crate::compiler::emit::{BuildOutput, CUTSCENE_TAG};
+
+/// `DW0926`: a shipped positional player selector would read a player who is
+/// only watching. An **engine self-check**: the campaign cannot cause or repair
+/// it; the emitter that wrote the selector owes the guard.
+pub const DW_OBSERVER_UNGUARDED: DwCode = DwCode::new("DW0926", ExitTier::Build);
+
+/// A coded refusal of [`check`].
+#[derive(Debug, Clone)]
+pub struct ObserverRefusal {
+    /// Always [`DW_OBSERVER_UNGUARDED`].
+    pub code: DwCode,
+    /// What was found, and that it is the engine's to fix.
+    pub message: String,
+}
+
+/// [`census`], refusing a tree with an unguarded selector (`DW0926`).
+pub fn check(out: &BuildOutput) -> Result<ObserverCensus, ObserverRefusal> {
+    let c = census(out);
+    if let Some((name, sel, line)) = c.unguarded.first() {
+        return Err(ObserverRefusal {
+            code: DW_OBSERVER_UNGUARDED,
+            message: format!(
+                "ENGINE SELF-CHECK FAILED — this is a defect in delvec, not in the campaign; \
+                 report it. The campaign declares `world.respawn_wait`, so a waiting player is a \
+                 spectator who can stand anywhere, and {} positional player selector(s) this \
+                 build ships would read them (fire a trigger, halt a patrol, judge them). The \
+                 first is `{sel}` in `{name}`: `{line}`. The emitter that wrote it must add \
+                 `tag=!{CUTSCENE_TAG}`, or the site must be named with its reason in \
+                 `observer::ALLOWED`. Nothing in the campaign repairs this; do not drop \
+                 `respawn_wait` to get a build.",
+                c.unguarded.len()
+            ),
+        });
+    }
+    Ok(c)
+}
 
 /// A site where a positional player selector may see a watcher, with why.
 pub struct AllowedSite {
@@ -96,7 +134,7 @@ impl ObserverCensus {
         let allowed: usize = self.allowed.values().sum();
         format!(
             "observer binding: {} positional player selector(s) over {} shipped function(s); {} \
-             exclude `{CUTSCENE_TAG}`, {} at an allowed site, {} unguarded (DW0925).",
+             exclude `{CUTSCENE_TAG}`, {} at an allowed site, {} unguarded (DW0926).",
             self.selectors,
             self.functions,
             self.guarded,
