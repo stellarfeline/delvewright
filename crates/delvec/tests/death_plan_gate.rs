@@ -293,5 +293,8 @@ fn every_emitted_drop_guard_is_exactly_one_of_the_plan_s_alternatives() {
         );
         bound += emitted.len();
     }
-    assert_eq!(bound, 3, "every one of the three drop effects is bound: {fire}");
+    assert_eq!(
+        bound, 3,
+        "every one of the three drop effects is bound: {fire}"
+    );
 }
