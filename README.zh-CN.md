@@ -41,14 +41,14 @@ flowchart TD
 
 ## 为什么可以信任它
 
-下面每一级都在 **Vesperhold**——图中这座城堡——上跑过：由 `delvec` 1.7.1 从内容修订 `a3568c2` 构建，面向 Minecraft 1.21.11；只有 release 才会打印的几级来自它的 release 运行，`<vesperhold release>`。每一级打印的内容原样引用。
+下面每一级都在 **[Vesperhold v1.0.0](https://github.com/stellarfeline/delvewright-campaigns/releases/tag/release/vesperhold/v1.0.0)**——图中这座城堡——的 [release 运行](https://github.com/stellarfeline/delvewright-campaigns/actions/runs/36809299799)中跑过（`delvec` 1.7.1，引擎修订 `90433f2`，Minecraft 1.21.11）。每一级打印的内容原样引用。
 
 - **静态分析。** 在 `delvec build` 内部、写出任何字节之前：每份文档都按其 schema 校验，每条任务与对话路径都被走一遍，失败即拒绝，并给出具名的 `DW` 代码。Vesperhold：构建以 0 退出，走过了 5 条状态路径、共 185 步，检查了 37 个目标，有五条提示——三条 `DW0351`，某个角色出现或离开时没有被看到移动；`DW0781`，拼接检查无可判定，因为整座城堡是一个 piece；以及 `DW0810`，生成的 PackTest 套件只驱动了一组对象中的一个成员，没有驱动它的同组成员。
 - **每条命令都被检查。** 每一行生成的 `.mcfunction` 都在同一次构建中按固定版本 1.21.11 的命令树解析。它不打印计数。
-- **PackTest。** 在真实服务器上测试 datapack 的各项机制：`<vesperhold release>`。
-- **机器人通关。** 一个 mineflayer 机器人加入发布的服务器，把四条故事分支各自玩到结局，每条都在全新的世界里，在每场战斗中故意死亡、再从篝火走回去：`branch branch/halvard-kept-oath+branch/ring 'vesperhold' PASSED (45 steps, 18 scripted death(s) survived)`。另外三条分支打印了同样的 45 步和 18 次死亡，分别带有一条、两条和一条提示：机器人走回去时，发现敌群成员已经受伤。
-- **服务器日志。** `<vesperhold release>`
-- **确定性。** 同样的文档、同样的种子，输出逐字节相同。发布的镜像带有其 datapack 摘要作为标签，`datapack-sha256=<vesperhold release>`，任何重新构建的人都可以比对。对本仓库的每个 pull request，CI 都会在 Linux 和 macOS 上构建一个生成的 campaign，只要有一个字节不同就拒绝。
+- **PackTest。** 在真实服务器上测试 datapack 的各项机制：`338 GAME TESTS COMPLETE IN 1.586 min` —— `All 338 required tests passed :)`。
+- **机器人通关。** 一个 mineflayer 机器人加入发布的服务器，把关键路径玩到结束，在每场战斗中故意死亡、再从篝火走回去：`critical path 'vesperhold' PASSED (45 steps, 18 scripted death(s) survived, 2 advisory finding(s))`。一条提示是机器人走回去时发现敌群成员已经受伤；另一条说明这次运行没有驱动任何故事分支。发布之前，在同一个编译器上，四条故事分支各自在全新的世界里被玩到结局：`branch branch/halvard-kept-oath+branch/ring 'vesperhold' PASSED (45 steps, 18 scripted death(s) survived)`，另外三条打印了同样的 45 步和 18 次死亡。
+- **服务器日志。** `shipped server log is error-free.`
+- **确定性。** 同样的文档、同样的种子，输出逐字节相同。发布的镜像 `ghcr.io/stellarfeline/delve-vesperhold:v1.0.0` 带有其 datapack 摘要作为标签，`datapack-sha256=e0f79e0522708526cea976e735547042567b032abe87dbb425f8495365f796ec`，任何重新构建的人都可以比对。对本仓库的每个 pull request，CI 都会在 Linux 和 macOS 上构建一个生成的 campaign，只要有一个字节不同就拒绝。
 
 每一级证明了什么、没有证明什么：[每道关卡实际证明了什么](docs/reference/skill-workflow.md#4-what-each-gate-actually-proves)。
 
