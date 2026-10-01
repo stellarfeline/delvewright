@@ -65,21 +65,20 @@ under two conditions:
    first.
 
 2. **Every area a beat crosses into declares an entry point.** That is an
-   anchor carrying `"role": "entry"` in the piece's metadata, or — for pieces
-   admitted before the role existed — an anchor literally named `spawn` or
-   `entry`. **Very few pieces have one**, and a pool usually holds exactly one
+   anchor carrying `"role": "entry"` in the piece's metadata, or an anchor
+   literally named `spawn` or `entry`. **Very few pieces have one**, and a pool usually holds exactly one
    that does, so a multi-area campaign is a constraint on which piece each area
    may bind rather than a free narrative move. How few is a fact about the
    library and not about this page, so read it rather than taking a number from
    here — the library is a separate artifact on its own cadence:
 
 ```sh
-python3 - <<'EOF'
+"$DELVEWRIGHT_PYTHON" - <<'EOF'
 import json, glob, os
 LIB = os.environ["DELVEWRIGHT_PREFABS"]
 n = 0
 for f in sorted(glob.glob(f"{LIB}/*.json")):
-    if os.path.basename(f) == "pools.json": continue
+    if os.path.basename(f) == "pools.json" or f.endswith(".report.json"): continue
     n += 1
     a = json.load(open(f)).get("anchors") or {}
     if any(v.get("role") == "entry" for v in a.values()) or {"spawn","entry"} & set(a):
@@ -115,8 +114,7 @@ seats it.
 
 **Read what it prints; do not carry a number off this page.**
 
-**Three ways to design against that, and the second is the one this page used to
-omit.** Design against the entry member's anchors. Or *require* the anchor you
+**Three ways to design against that.** Design against the entry member's anchors. Or *require* the anchor you
 want, at a site the solver must honour — an objective, an NPC stand, a wave
 spawn, a lane waypoint, or an anchor-bearing effect in that area — which forces
 its carrier to be seated, and everything else that carrier declares with it. Or
@@ -195,7 +193,7 @@ form and the commands are in *Reference: drawing the map's reference*.
    authority: an identity binds to a number, never to a picture.
 
 2. **`layout-graph.json`** — the space as a graph, **before any coordinate
-   exists**. `nodes[]` are places (`{id, intent, size_class | way_class, note?}`);
+   exists**. `nodes[]` are places (`{id, intent, size_class | way_class, stations?, note?}`);
    `edges[]` are connections (`walk | stair | drop | barred | vision`, with
    `gating`, `one_way`, `shortcut`, `opens_from`). Plus `entry`, `goal`, an
    authored `critical_path[]`, and `beats[]` binding every place-bound quest beat
@@ -302,8 +300,8 @@ form and the commands are in *Reference: drawing the map's reference*.
 it; `world.json`'s `areas[]` is empty, and declaring both authorities is
 `DW0839`.
 
-**The anchors are synthesized, and these are the only names there are** — there
-are no prefabs to read anchor names out of:
+**The anchors are synthesized**, plus whatever a node's `stations[]` declares —
+there are no prefabs to read anchor names out of:
 
 | Anchor | Where |
 | --- | --- |
@@ -311,11 +309,14 @@ are no prefabs to read anchor names out of:
 | `anchor/node-<place>` | the floor centre of each place — where NPCs, waves and `reach-anchor` objectives go |
 | `anchor/seam-<edge>` | the gate region over a `barred` seam: what `open-gate` or a `shortcut` names |
 | `anchor/unlock-<edge>` | the far-side affordance of a one-sided `barred` seam, where a `shortcut`'s `unlock` stands. Present only when `opens_from` is `a` or `b` |
+| a `stations[]` entry's `anchor` | a station a layout-graph node declares; it may not take a derived name (`DW0869`) |
 
 `<place>` and `<edge>` are the part of the id after the `/` — `node/near-hall`
-becomes `anchor/node-near-hall`. Every barred way must be opened by something
-naming its own seam (`DW0818`), and a sealed door a player can push on owes an
-answer (`DW0429`) — a `use` trigger anchored on the gate.
+becomes `anchor/node-near-hall`. A `barred` way declares a non-empty `gating` —
+one with none is passable from world load and is refused (`DW0818`) — and is
+opened by an `open-gate` or `shortcut` naming its own `anchor/seam-<edge>`; a
+sealed door a player can push on owes an answer (`DW0429`) — a `use` trigger
+anchored on the gate.
 
 **The numbers the whole thing is built to are provisional** until the metrics
 gym has been walked, and every build says so (`DW0813`). That is the gym's

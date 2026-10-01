@@ -28,7 +28,8 @@ and the two points are hundreds of blocks apart.** They are in different areas,
 and the crossing between them was never emitted. The message's own suggestions —
 a wedged doorway seam, a void gap, a fence ring, a `close-gate` to reopen — are
 about the same-area case and will not apply. Read step 2A: **the destination
-area's piece must declare an entry point**, and only 5 of 36 shipped prefabs do.
+area's piece must declare an entry point**, and few shipped prefabs do — step
+2A's probe lists them.
 Bind that area to one of them, or make a piece that has one.
 
 **The build is green, PackTest is green, and the bot fails its FIRST step with
@@ -62,10 +63,10 @@ answered …* means the command never got there and the failure is the harness's
 not the delve's.
 
 **`failed to read dockerfile: open Dockerfile.delve`.** The build tree is
-outside the engine's `validation/`, on one of the paths that resolves the
-Dockerfile against the tree: `branch-runs.sh`, or a bare `docker compose` on the
-`play` or `playtest` profile. `packtest-run.sh` and `bot-run.sh` pass an
-absolute path and never raise it. Build into
+outside the engine's `validation/`, on the one path that resolves the
+Dockerfile against the tree: a bare `docker compose` on the `play` or
+`playtest` profile with no `DELVE_DOCKERFILE` exported. `packtest-run.sh`,
+`bot-run.sh` and `branch-runs.sh` pass an absolute path and never raise it. Build into
 `$DELVEWRIGHT_ENGINE/validation/delve-output`, or copy the tree there — see step 8.
 
 **`refimg: no delvewright.local.toml` (exit 2).** Init I7, path B — and it
