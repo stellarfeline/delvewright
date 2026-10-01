@@ -4078,6 +4078,54 @@ test("a walk with NO proven leg waits out a shut declared gate instead of failin
   assert.ok(bot.gotoStates.includes("open"), bot.gotoStates.join(","));
 });
 
+test("a walk that reaches a leg's destination from somewhere else takes the declared gates", async () => {
+  // The gallery branch ladder's red: a die-retry return from the respawn seat
+  // [5, 67, 9] matched the proven leg ending at the muster [15, 67, 19] by its
+  // destination alone. That leg was proven from the marshal's stance and crosses no
+  // gate, so the walk bound none, and `timed-gate/mid-door` — shut 60 ticks of
+  // every 100, between the seat and the fight — answered `No path to the goal!`.
+  // Here the same shape on the death-loop approach: the next leg ends at the lip,
+  // but it was proven from [40, 65, 40], nowhere near where this walk starts.
+  const bot = new GatedApproachBot();
+  bot.entity.position = new FakeVec3(9.5, 65.0, 17.5);
+  const executor = attach(bot);
+  executor.useDeathPlan(westPitPlanWithLip());
+  executor.useWaypoints(
+    parseWaypoints({
+      ...GALLERY_DOORS,
+      legs: [{ from: [40, 65, 40], to: [1, 65, 6], waypoints: [[1, 65, 6]], timed_gates: [] }],
+    }),
+  );
+
+  await executor.runDeathLoop();
+
+  const t = executor.deathLoopTrials()[0]!;
+  assert.ok(
+    !(t.abandoned ?? "").includes("could not be reached"),
+    `the approach crossed the door: ${t.abandoned ?? "(no fault)"}`,
+  );
+  // The gate rule carried it: the walk was refused while the door was filled and
+  // retried once it read clear, which only a walk bound to the door does.
+  assert.ok(bot.gotoStates.includes("shut"), bot.gotoStates.join(","));
+  assert.ok(bot.gotoStates.includes("open"), bot.gotoStates.join(","));
+});
+
+test("a leg matched from far away is consumed but is not that walk's proof", () => {
+  const wp = parseWaypoints(GALLERY_DOORS);
+  const far = nextLegWaypoints(wp.legs, 0, [40, 65, 40], [30, 65, 30]);
+  assert.equal(far.matched, true, "the lockstep order is unchanged: the leg is consumed");
+  assert.equal(far.cursor, 1);
+  assert.equal(far.startsOnLeg, false);
+  assert.deepEqual(
+    gatesBindingWalk(far.matched && far.startsOnLeg, far.timedGates, wp.timedGates).gates.map(
+      (g) => g.id,
+    ),
+    ["timed-gate/side-door", "timed-gate/mid-door"],
+  );
+  const near = nextLegWaypoints(wp.legs, 0, [40, 65, 40], [3, 65, 4]);
+  assert.equal(near.startsOnLeg, true, `5 blocks from [0, 65, 0]: ${near.startOffset}`);
+});
+
 test("a matched leg still binds only the gates the compiler proved it crosses", async () => {
   // The narrowing survives: the declared table is the authority only where there is
   // no proven route. A leg the compiler marked keeps its own subset, so a walk is

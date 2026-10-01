@@ -135,6 +135,7 @@ import {
 import {
   nearestIndex,
   nextLegWaypoints,
+  LEG_START_REACH,
   retainStandableWaypoints,
   walkGoals,
   type GoalSpec,
@@ -3869,18 +3870,34 @@ export class MineflayerExecutor implements StepExecutor {
         // the proven cells itself; it consumes no leg.
         legWaypoints = explicitWaypoints;
       } else if (this.waypoints) {
-        const match = nextLegWaypoints(this.waypoints.legs, this.legCursor, [
-          pos[0],
-          pos[1],
-          pos[2],
-        ]);
+        const match = nextLegWaypoints(
+          this.waypoints.legs,
+          this.legCursor,
+          [pos[0], pos[1], pos[2]],
+          this.feetCell(),
+        );
         legWaypoints = match.waypoints;
         if (match.matched && legWaypoints && this.legResume?.leg === this.legCursor) {
           legWaypoints = legWaypoints.slice(this.legResume.from);
           this.legResume = undefined;
         }
         this.legCursor = match.cursor;
-        const binding = gatesBindingWalk(match.matched, match.timedGates, declaredGates);
+        // A leg's gate subset is a proof about the route from where the leg starts;
+        // a walk that starts elsewhere (a die-retry return from the respawn seat) is
+        // not that route, and takes the declared table.
+        const binding = gatesBindingWalk(
+          match.matched && match.startsOnLeg,
+          match.timedGates,
+          declaredGates,
+        );
+        if (match.matched && match.startOffset !== undefined) {
+          process.stderr.write(
+            `[leg] ${label}: starts ${match.startOffset.toFixed(1)} block(s) from where its ` +
+              `leg was proven` +
+              (match.startsOnLeg ? "" : ` — beyond ${LEG_START_REACH}, so not that leg's route`) +
+              `\n`,
+          );
+        }
         walkGates = binding.gates;
         // Stated binding count, once per walk, for every campaign that declares a
         // gate at all: how many of the declared gates bind this walk, which they
