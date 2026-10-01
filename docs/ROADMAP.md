@@ -39,7 +39,7 @@ Shipping Vesperhold surfaced defects in the engine's mechanisms, its proofs and 
 
 ## Block 2 — quests beyond a line
 
-Both ideas are recorded for the [idea ledger](ideas.md) in an open [pull request](https://github.com/stellarfeline/delvewright/pull/831).
+Both ideas are recorded for the [idea ledger](ideas.md) in an open [pull request](https://github.com/stellarfeline/delvewright/issues/831).
 
 - **A non-linear quest system.** A campaign's objectives form one line today, each checkpoint a gate the party visits in order. A web of parallel and branching quests is researched against established RPG practice, and the research lands under `docs/reference/` before a spec is written.
 - **Quest points that are placed blocks.** An objective is marked by a real block the player uses (a lever, a button, a campfire) instead of a glowing item display, which shows through walls.
