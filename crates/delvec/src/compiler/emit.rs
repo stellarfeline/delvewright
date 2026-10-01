@@ -20001,6 +20001,16 @@ fn emit_v06_packtests(plan: &Plan, out: &mut BuildOutput) {
                 entry[1],
                 center(entry[2])
             ));
+            // With a declared respawn wait (spec-0077) the edge first asks
+            // whether this player waits, from the counts the tick took. The
+            // template states the premise in which nobody waits: a party of two
+            // whose other member is not in play, and this player not wiped.
+            // `v06_checkpoint_wait` proves the other premise.
+            if respawn_wait(plan).is_some() {
+                t.push(format!("scoreboard players set {RW_PRESENT} dw.sys 2"));
+                t.push(format!("scoreboard players set {ALIVE} dw.sys 1"));
+                t.push(format!("tag {sel} remove {WIPED}"));
+            }
             t.push(format!(
                 "execute as {sel} run function {ns}:cp_respawn_check"
             ));
@@ -20044,6 +20054,78 @@ fn emit_v06_packtests(plan: &Plan, out: &mut BuildOutput) {
                 format!("packtest-datapack/data/{ns}/test/v06_checkpoint_reseat.mcfunction"),
                 lines(&t).into_bytes(),
             );
+
+            // --- spec-0077: the respawn wait, on the same edge ---
+            //
+            // A party of two with the other member in play: the death edge puts
+            // the player in spectator under the observation tag with the clock
+            // at 1, and does NOT seat them; the release then seats them on the
+            // checkpoint cell in adventure, untagged and unclocked.
+            if respawn_wait(plan).is_some() {
+                let (pin, sel) = pin_dummy("dw_t_cpwait");
+                let mut t = packtest_header(&format!(
+                    "{title}: a death in a party with somebody in play waits, and the \
+                     release seats the player on the checkpoint (spec-0077)"
+                ));
+                t.push(format!("function {ns}:setup"));
+                t.push(pin);
+                t.push(format!("scoreboard players set #cp dw.sys {}", cp.index));
+                t.push(format!("scoreboard players set {sel} dw.death_ack 0"));
+                t.push(format!("scoreboard players set {sel} dw.deaths 1"));
+                t.push(format!("tag {sel} remove {WIPED}"));
+                t.push(format!(
+                    "tp {sel} {} {} {}",
+                    center(entry[0]),
+                    entry[1],
+                    center(entry[2])
+                ));
+                t.push(format!("scoreboard players set {RW_PRESENT} dw.sys 2"));
+                t.push(format!("scoreboard players set {ALIVE} dw.sys 2"));
+                t.push(format!(
+                    "execute as {sel} run function {ns}:cp_respawn_check"
+                ));
+                t.push(format!(
+                    "execute store success score #w_cpwait dw.sys if entity \
+                     @a[tag=dw_t_cpwait,limit=1,gamemode=spectator,tag={CUTSCENE_TAG},scores={{{RW_CLOCK}=1}}]"
+                ));
+                t.push("assert score #w_cpwait dw.sys matches 1".to_string());
+                t.push(format!(
+                    "execute store result score #x_cpwait dw.sys run data get entity {sel} Pos[0] 100"
+                ));
+                t.push(format!(
+                    "assert score #x_cpwait dw.sys matches {}",
+                    entry[0] * 100 + 50
+                ));
+                t.push(format!("execute as {sel} run function {ns}:rw_release"));
+                t.push(format!(
+                    "execute store success score #r_cpwait dw.sys if entity \
+                     @a[tag=dw_t_cpwait,limit=1,gamemode=adventure,tag=!{CUTSCENE_TAG}]"
+                ));
+                t.push("assert score #r_cpwait dw.sys matches 1".to_string());
+                t.push(format!(
+                    "execute store success score #c_cpwait dw.sys if score {sel} {RW_CLOCK} matches 1.."
+                ));
+                t.push("assert score #c_cpwait dw.sys matches 0".to_string());
+                for (i, axis) in ["x", "z"].iter().enumerate() {
+                    t.push(format!(
+                        "execute store result score #{axis}s_cpwait dw.sys run data get entity {sel} \
+                         Pos[{}] 100",
+                        i * 2
+                    ));
+                }
+                t.push(format!(
+                    "assert score #xs_cpwait dw.sys matches {}",
+                    cp.pos[0] * 100 + 50
+                ));
+                t.push(format!(
+                    "assert score #zs_cpwait dw.sys matches {}",
+                    cp.pos[2] * 100 + 50
+                ));
+                out.insert(
+                    format!("packtest-datapack/data/{ns}/test/v06_checkpoint_wait.mcfunction"),
+                    lines(&t).into_bytes(),
+                );
+            }
         }
     }
 
