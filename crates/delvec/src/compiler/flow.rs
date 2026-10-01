@@ -281,6 +281,9 @@ struct ReplayState {
     /// Their presence is what withholds a refusal, so they are recorded rather
     /// than dropped.
     unapplied: BTreeSet<String>,
+    /// The JSON pointer of every effect the last step fired — its gate held
+    /// where the replay reached it — in firing order. Cleared at each step.
+    fired: Vec<String>,
 }
 
 /// One datum's value during a replay.
@@ -453,6 +456,11 @@ pub struct JournalStep {
     pub flags_before: BTreeSet<String>,
     /// Flags held once the step's bundles have fired.
     pub flags_after: BTreeSet<String>,
+    /// The JSON pointer of every effect this step fired — the objective's
+    /// bundle and the `on_complete` of every quest it completed, nested lists
+    /// included — read by the replay's own gate test where it reached each one.
+    /// The one answer to "did this beat play", which the chronicle reads.
+    pub fired: BTreeSet<String>,
 }
 
 /// One play order under construction ([`Flow::walk`]): the replay state
@@ -495,6 +503,7 @@ impl Walk<'_, '_> {
                 .collect(),
             flags_before: before.flags,
             flags_after: self.st.flags.clone(),
+            fired: self.st.fired.iter().cloned().collect(),
         }
     }
 
@@ -506,6 +515,27 @@ impl Walk<'_, '_> {
     /// Has `objective` been completed on this walk?
     pub fn done(&self, objective: &str) -> bool {
         self.st.done_obj.contains(objective)
+    }
+
+    /// The flags held now.
+    pub fn flags(&self) -> &BTreeSet<String> {
+        &self.st.flags
+    }
+
+    /// Every declared datum's value now, by id — `None` where no ordered walk
+    /// can name it ([`Flow::undatable`]).
+    pub fn data(&self) -> Vec<(&str, Option<i64>)> {
+        self.st
+            .state
+            .iter()
+            .map(|(id, d)| {
+                let v = match d {
+                    Datum::Known(v) => Some(*v),
+                    Datum::Undatable => None,
+                };
+                (id.as_str(), v)
+            })
+            .collect()
     }
 }
 
@@ -1240,6 +1270,15 @@ impl<'a> Flow<'a> {
         None
     }
 
+    /// Every ambient producer (environment trigger, trap payload, trap disarm):
+    /// the flag it sets and the flags the chain that sets it requires. The
+    /// replay credits each one the moment its requirements hold.
+    pub fn ambient_producers(&self) -> impl Iterator<Item = (&str, &[String])> {
+        self.ambient
+            .iter()
+            .map(|g| (g.flag.as_str(), g.requires.as_slice()))
+    }
+
     /// A walk from the start of the delve, one step at a time, through the
     /// replay state machine — for a caller that chooses the order itself rather
     /// than replaying a [`Playthrough`] (spec-0025: `DW0485` asks its question
@@ -1835,6 +1874,7 @@ impl<'a> Flow<'a> {
         allow: &dyn Fn(&GatedFlag) -> bool,
     ) {
         st.done_obj.insert(step.objective.clone());
+        st.fired.clear();
         if let Some(n) = step.talk_option {
             for f in self.option_sets(&step.objective, n) {
                 st.flags.insert(f);
@@ -1846,7 +1886,12 @@ impl<'a> Flow<'a> {
                 .get(&delvewright_dsl::ObjectiveId(step.objective.clone()))
         {
             let beat = Beat::Objective(step.objective.clone());
-            self.fire(effs, st, complete_at, pos, &step.objective, &beat);
+            let base = format!(
+                "/content/quests/{}/on_objective_complete/{}",
+                self.quest_index(&step.quest),
+                step.objective
+            );
+            self.fire(effs, &base, st, complete_at, pos, &step.objective, &beat);
         }
         // Quest completion cascade.
         loop {
@@ -1865,7 +1910,16 @@ impl<'a> Flow<'a> {
                 }
                 st.done_quest.insert(qid.to_string());
                 let beat = Beat::QuestComplete(qid.to_string());
-                self.fire(&q.on_complete, st, complete_at, pos, &step.objective, &beat);
+                let base = format!("/content/quests/{}/on_complete", self.quest_index(qid));
+                self.fire(
+                    &q.on_complete,
+                    &base,
+                    st,
+                    complete_at,
+                    pos,
+                    &step.objective,
+                    &beat,
+                );
                 for other in &self.c.quests.content.quests {
                     if let Trigger::QuestComplete { quest } = &other.trigger
                         && quest.as_str() == qid
@@ -2026,6 +2080,18 @@ impl<'a> Flow<'a> {
         }
     }
 
+    /// The position of quest `id` in the quests document — the index its JSON
+    /// pointers carry.
+    fn quest_index(&self, id: &str) -> usize {
+        self.c
+            .quests
+            .content
+            .quests
+            .iter()
+            .position(|q| q.id.as_str() == id)
+            .unwrap_or(usize::MAX)
+    }
+
     fn quest(&self, id: &str) -> Option<&'a delvewright_dsl::Quest> {
         self.c
             .quests
@@ -2163,16 +2229,18 @@ impl<'a> Flow<'a> {
     /// [`Datum::Undatable`]) is treated as OPEN: withholding a producer would be
     /// the unsound direction, and it is the same conservative stance the flag
     /// half already takes for `forbids_flags`.
+    #[allow(clippy::too_many_arguments)]
     fn fire(
         &self,
         effs: &[QuestEffect],
+        base: &str,
         st: &mut ReplayState,
         complete_at: &mut Option<(usize, String)>,
         pos: usize,
         objective: &str,
         beat: &Beat,
     ) {
-        for e in effs {
+        for (i, e) in effs.iter().enumerate() {
             let gated = !e
                 .requires_flags()
                 .iter()
@@ -2199,6 +2267,8 @@ impl<'a> Flow<'a> {
                 }
                 continue;
             }
+            let path = format!("{base}/{i}");
+            st.fired.push(path.clone());
             match &e.verb {
                 Verb::SetFlag { flag, .. } => {
                     st.flags.insert(flag.as_str().to_string());
@@ -2226,8 +2296,9 @@ impl<'a> Flow<'a> {
                     after,
                 });
             }
-            for list in e.nested_effect_lists() {
-                self.fire(list, st, complete_at, pos, objective, beat);
+            for (pseg, _, list) in e.nested_effect_lists_labeled() {
+                let nested = format!("{path}/{pseg}");
+                self.fire(list, &nested, st, complete_at, pos, objective, beat);
             }
         }
     }
