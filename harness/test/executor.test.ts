@@ -4628,3 +4628,37 @@ test("the death-loop approach reads and stages away a wave the delve put back, b
     "the new seating was read before it was removed",
   );
 });
+
+test("a respawn that put nothing back is not read as a seating on the approach", async () => {
+  // The gallery's death loop respawns at `anchor/lectern`, a checkpoint that is no
+  // fire, so nothing re-seats; a muster taken there read 0 of 3 and filed the
+  // wave's declaration as unverified.
+  const bot = new CombatFakeBot();
+  bot.seat(2);
+  const executor = attach(bot);
+  executor.useCampaign("the-drowned-bell");
+  executor.useCombatPlan(combatPlan(2, true), false);
+  await executor.kill({ ...KILL_STEP, count: 2 });
+  bot.emit("spawn");
+  bot.emit("spawn");
+  bot.moveOnGoto = true;
+  const musters = functionsCalled(bot).filter((f) => f.startsWith("wave_muster_")).length;
+  const approach = (
+    executor as unknown as {
+      approachVolume: (
+        volume: string,
+        lip: readonly [number, number, number] | undefined,
+      ) => Promise<{ kind: string; why: string } | undefined>;
+    }
+  ).approachVolume.bind(executor);
+  assert.equal(await approach("lethal/undertide", [31, 68, 78]), undefined);
+  assert.equal(
+    functionsCalled(bot).filter((f) => f.startsWith("wave_muster_")).length,
+    musters,
+    "no muster of a seating the census says is empty",
+  );
+  assert.ok(
+    functionsCalled(bot).some((f) => f.startsWith("wave_census_")),
+    "the census was asked",
+  );
+});

@@ -3017,7 +3017,9 @@ export class MineflayerExecutor implements StepExecutor {
    * Read and stage away every wave the delve has put back since this run cleared
    * it — the critical path's own acts on an encounter ({@link musterUnlessRead},
    * then {@link stageClear}), with the anchor's chunk held as the kill step holds
-   * it, because these anchors are not where the bot stands. Returns the waves met.
+   * it, because these anchors are not where the bot stands. A wave whose census
+   * answers that nothing of it stands is recorded as down and not read. Returns
+   * the waves met.
    */
   private async meetReseatedWaves(label: string): Promise<string[]> {
     const plan = this.combatPlan;
@@ -3038,13 +3040,25 @@ export class MineflayerExecutor implements StepExecutor {
       };
       await this.holdChunk(enc.pos, true);
       try {
-        await this.musterUnlessRead(enc);
-        await this.stageClear(fight, enc);
+        // The seating count says a respawn COULD have put the wave back, and a
+        // respawn at a checkpoint that is no fire puts back nothing: the gallery's
+        // death loop respawns at `anchor/lectern`, and a muster taken there read
+        // 0 of 3 and filed the declaration as unverified. The census asks the
+        // server whether anything of the wave stands before anything is read.
+        const standing = (await this.census(enc))?.summary.present;
+        if (standing === 0) {
+          process.stderr.write(
+            `[staged] ${label}: nothing of \`${enc.wave}\` stands — no seating to read or stage\n`,
+          );
+        } else {
+          await this.musterUnlessRead(enc);
+          await this.stageClear(fight, enc);
+          met.push(enc.wave);
+        }
       } finally {
         await this.holdChunk(enc.pos, false);
       }
       this.recordCleared(enc.wave);
-      met.push(enc.wave);
     }
     return met;
   }
