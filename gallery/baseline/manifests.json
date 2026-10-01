@@ -9,17 +9,17 @@
       "design/cameras.json": "d9d1fe487d93ad886e03047eee2014b9081c3f3e132c9489f8f8ac6315f4bc70",
       "dialogue.json": "64abd676cde19918559d9c56102cd2132650ccee543196928dae1cea3121188f",
       "geometry-brief.json": "cc5e476a40c30ffc0a43847eea07a7671792a2fe1867abad3efc4267042e0457",
-      "l10n/zh-cn.json": "ebe6a87943d2e58692b98d033ede579f7fa4f9d3721a243844a3097736c61349",
+      "l10n/zh-cn.json": "9339979ea266ff2f206faf02a0a0d6ee83ff4fda3b7eb249a9258b746ab4bcc8",
       "layout-graph.json": "de257677de45f7a0619bb6059d91d438b602d9c862c3c83b028e824f3d018d7c",
       "npcs.json": "ebc813bdc5a4bb2028613f5bcf012b126131a34eb74ff7f7975d09861b2f1527",
       "quest-plan.json": "1b02b5ccca7611174065cce270ae8aef17aefeb33b5432ebeab5852517c27055",
-      "quests.json": "238f11f6d8393faf3c657c4928e5bf6fb86455af78a15df123aee15c254e537e",
+      "quests.json": "051ba6b541a47366e5b328ac4444ef0db1ec225ec920761bbeb90ceb5c049848",
       "world-edits.json": "152077f470b0f84161a87621d5ecbe92fe16c12cedd9ef4c2b8cbba4c92e2066",
       "world.json": "c1deecf2ad3bc5c5bd898b144c2d0f76c293eb5b698a645515bccf43fb6e618f"
     },
     "mc_version": "1.21.11",
     "outputs": {
-      "SKINS.md": "f74918c5ce0999b18339a19be4e4efaffd3e1517e93b36db9ac10bdcfa99a134",
+      "SKINS.md": "6fff86208fa81f628efd9d5a6483fa38c837c8e7a96a467a57162ae66612ecb7",
       "creator-datapack/data/gallery/function/creator/camera/cam.mcfunction": "48f8f0f1b2f1755fb77d6f96add3a224b38160e1358de60e90b75e46a38858f8",
       "creator-datapack/data/gallery/function/creator/camera/free.mcfunction": "41b364d2dd54d6c580e0ab528bcac4faed47e0da987cd18dd7128337196a240e",
       "creator-datapack/data/gallery/function/creator/camera/free_back.mcfunction": "f331b4fa0faf8048aac131197e42594761b7a4e1178ff72c1ec4e33cff19647c",
@@ -86,7 +86,7 @@
       "datapack/data/gallery/advancement/shop_0.json": "e3a7fc59f9c437b11593e7f1014d8a5b985d216233889d6e89192b687acdf480",
       "datapack/data/gallery/advancement/stk_collect.json": "06fffbf7b9f4a897f2d9b3d7b75d35d1a505964b70888f277d94b14173f27723",
       "datapack/data/gallery/advancement/warden_interact.json": "a21d690cf7990055c0c34be933bad5c232657969a8c57349f541153a802f2910",
-      "datapack/data/gallery/dialog/bonfire_0.json": "a6dbec3e9bae81c122253118f4eb091fbcee11d6dc59289ab7c73b046eb16f56",
+      "datapack/data/gallery/dialog/bonfire_0.json": "41ba4b41fa6e8a02d9a5574f8bf2b40c8e64b199b6dac59984348b52f4630d2d",
       "datapack/data/gallery/dialog/class_select.json": "03d734c27e8b260625e1a691de6ba66369f750328885d63f7bf2f2f998b66c10",
       "datapack/data/gallery/dialog/curator_curator_root__m0.json": "189270efcd430791abc12211191c978a07e871b7ce822fe7974e85d17b7154a6",
       "datapack/data/gallery/dialog/curator_curator_root__m1.json": "01573bb46ab02970e74581fa387829dea88e6379c9a0374698fb0a126e173587",
@@ -621,7 +621,7 @@
       "packtest-datapack/data/gallery/test/wave_kill_reward_muster.mcfunction": "28b061d6227ef949258649bb54e3efc12dfdf4111266600c135f02667b8f39f0",
       "packtest-datapack/pack.mcmeta": "549482756b33bacc8910abe034e55837ccb4df3029ce38065c59c9ce5754f76b",
       "render-plan.json": "32fc6560f4bf50385387647fcb5d60a43358bfecca1c136da8479a098c03357e",
-      "resourcepack.zip": "03059662822e15accfab2bbf9638c05de79f093a12020e79a95b6951b5de00a6",
+      "resourcepack.zip": "191872e16ef33403149a961eeee159323d9e1b05ffffcbd2870299c1bbf1b1e2",
       "server/README.md": "e2e0fba7370cb987d7bdbc8798cdf527c25de7ca657e5518a415c62bca6cdc48",
       "server/eula-note.txt": "2490937c526ded0804802b6b9076c936f44260715afb64af26dd8f8cce02a7aa",
       "server/server.properties": "b19bcf858e4d8c9a9a6151c508c0c4789f2c2912128881a2a0d3cdc6836d68a3",
@@ -659,7 +659,7 @@
       "validation/wave-lethal.json": "1e81d1e9ee58b135b101fe9c615b653ae7adf868df87a39d3fd79c8378d58295",
       "validation/ways.json": "7a5f47e7e2a2a66ba527df3a155eb52cce06e559cdc846dfcdb00506d33f7f33"
     },
-    "resource_pack_sha1": "9692fd522b95f8e40b17026837274e4f78fd8693"
+    "resource_pack_sha1": "63b9711dca82e731986378c95105c7d14e08816b"
   },
   "hard.en": {
     "campaign_id": "gallery",
@@ -671,17 +671,17 @@
       "design/cameras.json": "d9d1fe487d93ad886e03047eee2014b9081c3f3e132c9489f8f8ac6315f4bc70",
       "dialogue.json": "64abd676cde19918559d9c56102cd2132650ccee543196928dae1cea3121188f",
       "geometry-brief.json": "cc5e476a40c30ffc0a43847eea07a7671792a2fe1867abad3efc4267042e0457",
-      "l10n/zh-cn.json": "ebe6a87943d2e58692b98d033ede579f7fa4f9d3721a243844a3097736c61349",
+      "l10n/zh-cn.json": "9339979ea266ff2f206faf02a0a0d6ee83ff4fda3b7eb249a9258b746ab4bcc8",
       "layout-graph.json": "de257677de45f7a0619bb6059d91d438b602d9c862c3c83b028e824f3d018d7c",
       "npcs.json": "ebc813bdc5a4bb2028613f5bcf012b126131a34eb74ff7f7975d09861b2f1527",
       "quest-plan.json": "1b02b5ccca7611174065cce270ae8aef17aefeb33b5432ebeab5852517c27055",
-      "quests.json": "238f11f6d8393faf3c657c4928e5bf6fb86455af78a15df123aee15c254e537e",
+      "quests.json": "051ba6b541a47366e5b328ac4444ef0db1ec225ec920761bbeb90ceb5c049848",
       "world-edits.json": "152077f470b0f84161a87621d5ecbe92fe16c12cedd9ef4c2b8cbba4c92e2066",
       "world.json": "8db5a1fd7a532030186d4f4f3ec21497e87a35b4939bf772e004920d098b104f"
     },
     "mc_version": "1.21.11",
     "outputs": {
-      "SKINS.md": "f74918c5ce0999b18339a19be4e4efaffd3e1517e93b36db9ac10bdcfa99a134",
+      "SKINS.md": "6fff86208fa81f628efd9d5a6483fa38c837c8e7a96a467a57162ae66612ecb7",
       "creator-datapack/data/gallery/function/creator/camera/cam.mcfunction": "48f8f0f1b2f1755fb77d6f96add3a224b38160e1358de60e90b75e46a38858f8",
       "creator-datapack/data/gallery/function/creator/camera/free.mcfunction": "41b364d2dd54d6c580e0ab528bcac4faed47e0da987cd18dd7128337196a240e",
       "creator-datapack/data/gallery/function/creator/camera/free_back.mcfunction": "f331b4fa0faf8048aac131197e42594761b7a4e1178ff72c1ec4e33cff19647c",
@@ -748,7 +748,7 @@
       "datapack/data/gallery/advancement/shop_0.json": "e3a7fc59f9c437b11593e7f1014d8a5b985d216233889d6e89192b687acdf480",
       "datapack/data/gallery/advancement/stk_collect.json": "06fffbf7b9f4a897f2d9b3d7b75d35d1a505964b70888f277d94b14173f27723",
       "datapack/data/gallery/advancement/warden_interact.json": "a21d690cf7990055c0c34be933bad5c232657969a8c57349f541153a802f2910",
-      "datapack/data/gallery/dialog/bonfire_0.json": "a6dbec3e9bae81c122253118f4eb091fbcee11d6dc59289ab7c73b046eb16f56",
+      "datapack/data/gallery/dialog/bonfire_0.json": "41ba4b41fa6e8a02d9a5574f8bf2b40c8e64b199b6dac59984348b52f4630d2d",
       "datapack/data/gallery/dialog/class_select.json": "03d734c27e8b260625e1a691de6ba66369f750328885d63f7bf2f2f998b66c10",
       "datapack/data/gallery/dialog/curator_curator_root__m0.json": "189270efcd430791abc12211191c978a07e871b7ce822fe7974e85d17b7154a6",
       "datapack/data/gallery/dialog/curator_curator_root__m1.json": "01573bb46ab02970e74581fa387829dea88e6379c9a0374698fb0a126e173587",
@@ -1283,7 +1283,7 @@
       "packtest-datapack/data/gallery/test/wave_kill_reward_muster.mcfunction": "28b061d6227ef949258649bb54e3efc12dfdf4111266600c135f02667b8f39f0",
       "packtest-datapack/pack.mcmeta": "549482756b33bacc8910abe034e55837ccb4df3029ce38065c59c9ce5754f76b",
       "render-plan.json": "32fc6560f4bf50385387647fcb5d60a43358bfecca1c136da8479a098c03357e",
-      "resourcepack.zip": "03059662822e15accfab2bbf9638c05de79f093a12020e79a95b6951b5de00a6",
+      "resourcepack.zip": "191872e16ef33403149a961eeee159323d9e1b05ffffcbd2870299c1bbf1b1e2",
       "server/README.md": "cc5b21c0c9dbb526724e0661fecc449a93ef744c78b08c25f460932b598f9764",
       "server/eula-note.txt": "2490937c526ded0804802b6b9076c936f44260715afb64af26dd8f8cce02a7aa",
       "server/server.properties": "07439e66da267af221200a131d8fb8d3f117dbd1d7b30634dc1c1a7b47114d1a",
@@ -1321,7 +1321,7 @@
       "validation/wave-lethal.json": "1e81d1e9ee58b135b101fe9c615b653ae7adf868df87a39d3fd79c8378d58295",
       "validation/ways.json": "7a5f47e7e2a2a66ba527df3a155eb52cce06e559cdc846dfcdb00506d33f7f33"
     },
-    "resource_pack_sha1": "9692fd522b95f8e40b17026837274e4f78fd8693"
+    "resource_pack_sha1": "63b9711dca82e731986378c95105c7d14e08816b"
   },
   "ocean-horizon.en": {
     "campaign_id": "gallery",
@@ -1333,17 +1333,17 @@
       "design/cameras.json": "f09600929a01cabb485d2695daf00cbec054560f30fcfd39c41c044c0efc3fa8",
       "dialogue.json": "64abd676cde19918559d9c56102cd2132650ccee543196928dae1cea3121188f",
       "geometry-brief.json": "cc5e476a40c30ffc0a43847eea07a7671792a2fe1867abad3efc4267042e0457",
-      "l10n/zh-cn.json": "449f156271e760fe79e0fe2de4e8be8cf827cdaed77e445f05dcb2ba50d44e7d",
+      "l10n/zh-cn.json": "eee6b75c69056276ba40e42ff895d32f4a85f607d4f4f3c61c8c05a6d646dee4",
       "layout-graph.json": "de257677de45f7a0619bb6059d91d438b602d9c862c3c83b028e824f3d018d7c",
       "npcs.json": "ebc813bdc5a4bb2028613f5bcf012b126131a34eb74ff7f7975d09861b2f1527",
       "quest-plan.json": "1b02b5ccca7611174065cce270ae8aef17aefeb33b5432ebeab5852517c27055",
-      "quests.json": "238f11f6d8393faf3c657c4928e5bf6fb86455af78a15df123aee15c254e537e",
+      "quests.json": "051ba6b541a47366e5b328ac4444ef0db1ec225ec920761bbeb90ceb5c049848",
       "world-edits.json": "152077f470b0f84161a87621d5ecbe92fe16c12cedd9ef4c2b8cbba4c92e2066",
       "world.json": "b05693696f126869cf3a2921612865838ab9a86f33128fa7542c21c4aaee37e4"
     },
     "mc_version": "1.21.11",
     "outputs": {
-      "SKINS.md": "619befecbd92b4581f52147b94feaf2d20086787a78ddb9d791859319f859dda",
+      "SKINS.md": "d4d4ae6012d6f628545c425a3b9da56dcaaa1738d17c175319060fc9a83b5c05",
       "creator-datapack/data/gallery/function/creator/camera/cam.mcfunction": "48f8f0f1b2f1755fb77d6f96add3a224b38160e1358de60e90b75e46a38858f8",
       "creator-datapack/data/gallery/function/creator/camera/free.mcfunction": "41b364d2dd54d6c580e0ab528bcac4faed47e0da987cd18dd7128337196a240e",
       "creator-datapack/data/gallery/function/creator/camera/free_back.mcfunction": "f331b4fa0faf8048aac131197e42594761b7a4e1178ff72c1ec4e33cff19647c",
@@ -1410,7 +1410,7 @@
       "datapack/data/gallery/advancement/shop_0.json": "e3a7fc59f9c437b11593e7f1014d8a5b985d216233889d6e89192b687acdf480",
       "datapack/data/gallery/advancement/stk_collect.json": "06fffbf7b9f4a897f2d9b3d7b75d35d1a505964b70888f277d94b14173f27723",
       "datapack/data/gallery/advancement/warden_interact.json": "a21d690cf7990055c0c34be933bad5c232657969a8c57349f541153a802f2910",
-      "datapack/data/gallery/dialog/bonfire_0.json": "a6dbec3e9bae81c122253118f4eb091fbcee11d6dc59289ab7c73b046eb16f56",
+      "datapack/data/gallery/dialog/bonfire_0.json": "41ba4b41fa6e8a02d9a5574f8bf2b40c8e64b199b6dac59984348b52f4630d2d",
       "datapack/data/gallery/dialog/class_select.json": "03d734c27e8b260625e1a691de6ba66369f750328885d63f7bf2f2f998b66c10",
       "datapack/data/gallery/dialog/curator_curator_root__m0.json": "189270efcd430791abc12211191c978a07e871b7ce822fe7974e85d17b7154a6",
       "datapack/data/gallery/dialog/curator_curator_root__m1.json": "01573bb46ab02970e74581fa387829dea88e6379c9a0374698fb0a126e173587",
@@ -1944,7 +1944,7 @@
       "packtest-datapack/data/gallery/test/wave_kill_reward_muster.mcfunction": "28b061d6227ef949258649bb54e3efc12dfdf4111266600c135f02667b8f39f0",
       "packtest-datapack/pack.mcmeta": "549482756b33bacc8910abe034e55837ccb4df3029ce38065c59c9ce5754f76b",
       "render-plan.json": "90a107e67999843dd256feaab7da4e00cde237a7c280fc63bb08cd9f5ddecf45",
-      "resourcepack.zip": "b660fbd9bff29741381c2c48a40e713a2af4ba825b90af0a671f668e76e36a7f",
+      "resourcepack.zip": "8e2125c128bdfef4ef15024c9585e7d4abff6a03dbc1dbab615f53ad89be2599",
       "server/README.md": "9d4727af37f574888ca3c22b23732ba132ed0bccef7b46a441d62c60661fe047",
       "server/eula-note.txt": "2490937c526ded0804802b6b9076c936f44260715afb64af26dd8f8cce02a7aa",
       "server/server.properties": "2ef540fa1c58c4f8c6fad3e078ee6ca869e38143845c8a11d92d49dad4af0831",
@@ -1982,7 +1982,7 @@
       "validation/wave-lethal.json": "1e81d1e9ee58b135b101fe9c615b653ae7adf868df87a39d3fd79c8378d58295",
       "validation/ways.json": "5543152fdde10ba41c96d647c908bf91d4291aada57137efa640f56249feb8f1"
     },
-    "resource_pack_sha1": "7787f9426a70feafbab4164d6b044eb77ef9920e"
+    "resource_pack_sha1": "c61c18d6c8c2cd3c6f5567ab6310a510ecea6e68"
   },
   "primary.en": {
     "campaign_id": "gallery",
@@ -1994,17 +1994,17 @@
       "design/cameras.json": "d9d1fe487d93ad886e03047eee2014b9081c3f3e132c9489f8f8ac6315f4bc70",
       "dialogue.json": "64abd676cde19918559d9c56102cd2132650ccee543196928dae1cea3121188f",
       "geometry-brief.json": "cc5e476a40c30ffc0a43847eea07a7671792a2fe1867abad3efc4267042e0457",
-      "l10n/zh-cn.json": "ebe6a87943d2e58692b98d033ede579f7fa4f9d3721a243844a3097736c61349",
+      "l10n/zh-cn.json": "9339979ea266ff2f206faf02a0a0d6ee83ff4fda3b7eb249a9258b746ab4bcc8",
       "layout-graph.json": "de257677de45f7a0619bb6059d91d438b602d9c862c3c83b028e824f3d018d7c",
       "npcs.json": "ebc813bdc5a4bb2028613f5bcf012b126131a34eb74ff7f7975d09861b2f1527",
       "quest-plan.json": "1b02b5ccca7611174065cce270ae8aef17aefeb33b5432ebeab5852517c27055",
-      "quests.json": "238f11f6d8393faf3c657c4928e5bf6fb86455af78a15df123aee15c254e537e",
+      "quests.json": "051ba6b541a47366e5b328ac4444ef0db1ec225ec920761bbeb90ceb5c049848",
       "world-edits.json": "152077f470b0f84161a87621d5ecbe92fe16c12cedd9ef4c2b8cbba4c92e2066",
       "world.json": "c27c2ef93a02c4c22e097e229080b09d640c9f64a7e0727cba329ad2c690b6ab"
     },
     "mc_version": "1.21.11",
     "outputs": {
-      "SKINS.md": "f74918c5ce0999b18339a19be4e4efaffd3e1517e93b36db9ac10bdcfa99a134",
+      "SKINS.md": "6fff86208fa81f628efd9d5a6483fa38c837c8e7a96a467a57162ae66612ecb7",
       "creator-datapack/data/gallery/function/creator/camera/cam.mcfunction": "48f8f0f1b2f1755fb77d6f96add3a224b38160e1358de60e90b75e46a38858f8",
       "creator-datapack/data/gallery/function/creator/camera/free.mcfunction": "41b364d2dd54d6c580e0ab528bcac4faed47e0da987cd18dd7128337196a240e",
       "creator-datapack/data/gallery/function/creator/camera/free_back.mcfunction": "f331b4fa0faf8048aac131197e42594761b7a4e1178ff72c1ec4e33cff19647c",
@@ -2071,7 +2071,7 @@
       "datapack/data/gallery/advancement/shop_0.json": "e3a7fc59f9c437b11593e7f1014d8a5b985d216233889d6e89192b687acdf480",
       "datapack/data/gallery/advancement/stk_collect.json": "06fffbf7b9f4a897f2d9b3d7b75d35d1a505964b70888f277d94b14173f27723",
       "datapack/data/gallery/advancement/warden_interact.json": "a21d690cf7990055c0c34be933bad5c232657969a8c57349f541153a802f2910",
-      "datapack/data/gallery/dialog/bonfire_0.json": "a6dbec3e9bae81c122253118f4eb091fbcee11d6dc59289ab7c73b046eb16f56",
+      "datapack/data/gallery/dialog/bonfire_0.json": "41ba4b41fa6e8a02d9a5574f8bf2b40c8e64b199b6dac59984348b52f4630d2d",
       "datapack/data/gallery/dialog/class_select.json": "03d734c27e8b260625e1a691de6ba66369f750328885d63f7bf2f2f998b66c10",
       "datapack/data/gallery/dialog/curator_curator_root__m0.json": "189270efcd430791abc12211191c978a07e871b7ce822fe7974e85d17b7154a6",
       "datapack/data/gallery/dialog/curator_curator_root__m1.json": "01573bb46ab02970e74581fa387829dea88e6379c9a0374698fb0a126e173587",
@@ -2606,7 +2606,7 @@
       "packtest-datapack/data/gallery/test/wave_kill_reward_muster.mcfunction": "28b061d6227ef949258649bb54e3efc12dfdf4111266600c135f02667b8f39f0",
       "packtest-datapack/pack.mcmeta": "549482756b33bacc8910abe034e55837ccb4df3029ce38065c59c9ce5754f76b",
       "render-plan.json": "32fc6560f4bf50385387647fcb5d60a43358bfecca1c136da8479a098c03357e",
-      "resourcepack.zip": "03059662822e15accfab2bbf9638c05de79f093a12020e79a95b6951b5de00a6",
+      "resourcepack.zip": "191872e16ef33403149a961eeee159323d9e1b05ffffcbd2870299c1bbf1b1e2",
       "server/README.md": "fd94c22c24e68da9907efad1108174b38bc7847ae890534286e1fed42e7be442",
       "server/eula-note.txt": "2490937c526ded0804802b6b9076c936f44260715afb64af26dd8f8cce02a7aa",
       "server/server.properties": "fdfd8ee49290d9de87bc2bf4a8f4c8fbb9114c51b307cb485899f5812c3a3664",
@@ -2644,7 +2644,7 @@
       "validation/wave-lethal.json": "1e81d1e9ee58b135b101fe9c615b653ae7adf868df87a39d3fd79c8378d58295",
       "validation/ways.json": "7a5f47e7e2a2a66ba527df3a155eb52cce06e559cdc846dfcdb00506d33f7f33"
     },
-    "resource_pack_sha1": "9692fd522b95f8e40b17026837274e4f78fd8693"
+    "resource_pack_sha1": "63b9711dca82e731986378c95105c7d14e08816b"
   },
   "primary.zh-cn": {
     "campaign_id": "gallery",
@@ -2656,11 +2656,11 @@
       "design/cameras.json": "d9d1fe487d93ad886e03047eee2014b9081c3f3e132c9489f8f8ac6315f4bc70",
       "dialogue.json": "64abd676cde19918559d9c56102cd2132650ccee543196928dae1cea3121188f",
       "geometry-brief.json": "cc5e476a40c30ffc0a43847eea07a7671792a2fe1867abad3efc4267042e0457",
-      "l10n/zh-cn.json": "ebe6a87943d2e58692b98d033ede579f7fa4f9d3721a243844a3097736c61349",
+      "l10n/zh-cn.json": "9339979ea266ff2f206faf02a0a0d6ee83ff4fda3b7eb249a9258b746ab4bcc8",
       "layout-graph.json": "de257677de45f7a0619bb6059d91d438b602d9c862c3c83b028e824f3d018d7c",
       "npcs.json": "ebc813bdc5a4bb2028613f5bcf012b126131a34eb74ff7f7975d09861b2f1527",
       "quest-plan.json": "1b02b5ccca7611174065cce270ae8aef17aefeb33b5432ebeab5852517c27055",
-      "quests.json": "238f11f6d8393faf3c657c4928e5bf6fb86455af78a15df123aee15c254e537e",
+      "quests.json": "051ba6b541a47366e5b328ac4444ef0db1ec225ec920761bbeb90ceb5c049848",
       "world-edits.json": "152077f470b0f84161a87621d5ecbe92fe16c12cedd9ef4c2b8cbba4c92e2066",
       "world.json": "c27c2ef93a02c4c22e097e229080b09d640c9f64a7e0727cba329ad2c690b6ab"
     },
@@ -2734,7 +2734,7 @@
       "datapack/data/gallery/advancement/shop_0.json": "e3a7fc59f9c437b11593e7f1014d8a5b985d216233889d6e89192b687acdf480",
       "datapack/data/gallery/advancement/stk_collect.json": "06fffbf7b9f4a897f2d9b3d7b75d35d1a505964b70888f277d94b14173f27723",
       "datapack/data/gallery/advancement/warden_interact.json": "a21d690cf7990055c0c34be933bad5c232657969a8c57349f541153a802f2910",
-      "datapack/data/gallery/dialog/bonfire_0.json": "dc13fd6f933b5d4903480450148d1bc13607339234327bae0aa54e2b998d5fc3",
+      "datapack/data/gallery/dialog/bonfire_0.json": "0bfd13bab40d6b93c005fa3ba671219bd262275bd189d3a50143ef60af53bf8e",
       "datapack/data/gallery/dialog/class_select.json": "424691fe9de2ccce9d5dcf7ca641826b3f4c43047fd56391caceb2fe2fc786e0",
       "datapack/data/gallery/dialog/curator_curator_root__m0.json": "3e3b3ad9287873d06c884803d8c3287820454e46eb64971a5471c550e5300da4",
       "datapack/data/gallery/dialog/curator_curator_root__m1.json": "493f9f1d2e13ae93de750e2fbba2d2adbf88f8963f8c7f7d3b708a61eb56c7f1",
@@ -3678,7 +3678,7 @@
       "design/cameras.json": "06dbafa3f106d1b94d28a73656dcaebcba434b060d4bad32f2b0714e908cb6cf",
       "dialogue.json": "0255bdc4adc2df815b0d57294c77ec4374d7afd7e06ab09b46995449a5075dd8",
       "geometry-brief.json": "cc5e476a40c30ffc0a43847eea07a7671792a2fe1867abad3efc4267042e0457",
-      "l10n/zh-cn.json": "ebe6a87943d2e58692b98d033ede579f7fa4f9d3721a243844a3097736c61349",
+      "l10n/zh-cn.json": "9339979ea266ff2f206faf02a0a0d6ee83ff4fda3b7eb249a9258b746ab4bcc8",
       "layout-graph.json": "41fe0c7089fd70c9a2a70964a91112e0f0f1fd487b4d10c714e44c507ddfb074",
       "npcs.json": "a7fa5b1dcb77cc32350a1070b75e3174be2aab995326a5510bf9d6f7404ec82b",
       "quest-plan.json": "37e520981a093d069bdb5934fa5afee7f8a1e2552002e8f9b8d1a9d9da00e8f1",
@@ -3820,17 +3820,17 @@
       "design/cameras.json": "d9d1fe487d93ad886e03047eee2014b9081c3f3e132c9489f8f8ac6315f4bc70",
       "dialogue.json": "64abd676cde19918559d9c56102cd2132650ccee543196928dae1cea3121188f",
       "geometry-brief.json": "cc5e476a40c30ffc0a43847eea07a7671792a2fe1867abad3efc4267042e0457",
-      "l10n/zh-cn.json": "ebe6a87943d2e58692b98d033ede579f7fa4f9d3721a243844a3097736c61349",
+      "l10n/zh-cn.json": "9339979ea266ff2f206faf02a0a0d6ee83ff4fda3b7eb249a9258b746ab4bcc8",
       "layout-graph.json": "de257677de45f7a0619bb6059d91d438b602d9c862c3c83b028e824f3d018d7c",
       "npcs.json": "ebc813bdc5a4bb2028613f5bcf012b126131a34eb74ff7f7975d09861b2f1527",
       "quest-plan.json": "1b02b5ccca7611174065cce270ae8aef17aefeb33b5432ebeab5852517c27055",
-      "quests.json": "238f11f6d8393faf3c657c4928e5bf6fb86455af78a15df123aee15c254e537e",
+      "quests.json": "051ba6b541a47366e5b328ac4444ef0db1ec225ec920761bbeb90ceb5c049848",
       "world-edits.json": "152077f470b0f84161a87621d5ecbe92fe16c12cedd9ef4c2b8cbba4c92e2066",
       "world.json": "7bcc64aee98c98736ee746c101667c77a5deb42db928700666571119cbb6cdae"
     },
     "mc_version": "1.21.11",
     "outputs": {
-      "SKINS.md": "f74918c5ce0999b18339a19be4e4efaffd3e1517e93b36db9ac10bdcfa99a134",
+      "SKINS.md": "6fff86208fa81f628efd9d5a6483fa38c837c8e7a96a467a57162ae66612ecb7",
       "creator-datapack/data/gallery/function/creator/camera/cam.mcfunction": "48f8f0f1b2f1755fb77d6f96add3a224b38160e1358de60e90b75e46a38858f8",
       "creator-datapack/data/gallery/function/creator/camera/free.mcfunction": "41b364d2dd54d6c580e0ab528bcac4faed47e0da987cd18dd7128337196a240e",
       "creator-datapack/data/gallery/function/creator/camera/free_back.mcfunction": "f331b4fa0faf8048aac131197e42594761b7a4e1178ff72c1ec4e33cff19647c",
@@ -3897,7 +3897,7 @@
       "datapack/data/gallery/advancement/shop_0.json": "e3a7fc59f9c437b11593e7f1014d8a5b985d216233889d6e89192b687acdf480",
       "datapack/data/gallery/advancement/stk_collect.json": "06fffbf7b9f4a897f2d9b3d7b75d35d1a505964b70888f277d94b14173f27723",
       "datapack/data/gallery/advancement/warden_interact.json": "a21d690cf7990055c0c34be933bad5c232657969a8c57349f541153a802f2910",
-      "datapack/data/gallery/dialog/bonfire_0.json": "a6dbec3e9bae81c122253118f4eb091fbcee11d6dc59289ab7c73b046eb16f56",
+      "datapack/data/gallery/dialog/bonfire_0.json": "41ba4b41fa6e8a02d9a5574f8bf2b40c8e64b199b6dac59984348b52f4630d2d",
       "datapack/data/gallery/dialog/class_select.json": "03d734c27e8b260625e1a691de6ba66369f750328885d63f7bf2f2f998b66c10",
       "datapack/data/gallery/dialog/curator_curator_root__m0.json": "189270efcd430791abc12211191c978a07e871b7ce822fe7974e85d17b7154a6",
       "datapack/data/gallery/dialog/curator_curator_root__m1.json": "01573bb46ab02970e74581fa387829dea88e6379c9a0374698fb0a126e173587",
@@ -4432,7 +4432,7 @@
       "packtest-datapack/data/gallery/test/wave_kill_reward_muster.mcfunction": "28b061d6227ef949258649bb54e3efc12dfdf4111266600c135f02667b8f39f0",
       "packtest-datapack/pack.mcmeta": "549482756b33bacc8910abe034e55837ccb4df3029ce38065c59c9ce5754f76b",
       "render-plan.json": "32fc6560f4bf50385387647fcb5d60a43358bfecca1c136da8479a098c03357e",
-      "resourcepack.zip": "03059662822e15accfab2bbf9638c05de79f093a12020e79a95b6951b5de00a6",
+      "resourcepack.zip": "191872e16ef33403149a961eeee159323d9e1b05ffffcbd2870299c1bbf1b1e2",
       "server/README.md": "fd94c22c24e68da9907efad1108174b38bc7847ae890534286e1fed42e7be442",
       "server/eula-note.txt": "2490937c526ded0804802b6b9076c936f44260715afb64af26dd8f8cce02a7aa",
       "server/server.properties": "fdfd8ee49290d9de87bc2bf4a8f4c8fbb9114c51b307cb485899f5812c3a3664",
@@ -4470,6 +4470,6 @@
       "validation/wave-lethal.json": "1e81d1e9ee58b135b101fe9c615b653ae7adf868df87a39d3fd79c8378d58295",
       "validation/ways.json": "7a5f47e7e2a2a66ba527df3a155eb52cce06e559cdc846dfcdb00506d33f7f33"
     },
-    "resource_pack_sha1": "9692fd522b95f8e40b17026837274e4f78fd8693"
+    "resource_pack_sha1": "63b9711dca82e731986378c95105c7d14e08816b"
   }
 }
