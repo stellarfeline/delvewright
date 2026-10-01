@@ -102,19 +102,13 @@ pub enum GrammarCommand {
     },
     /// Expand and judge **every** program of a corpus, and say what bound.
     ///
-    /// `expand` judges one program an operator names. That leaves the corpus
-    /// itself unjudged unless somebody remembers to walk it, and a campaign's
-    /// zone programs — the artifacts of record — had nothing walking them at
-    /// all. This is the walk: it enumerates a corpus, expands every member at
-    /// the expansion the corpus itself declares, runs the same `gates::judge`
-    /// `expand` runs, and reds if any gate fails or if the corpus it was
-    /// pointed at was empty.
+    /// Enumerates a corpus, expands every member at the expansion the corpus
+    /// itself declares, runs the same `gates::judge` `expand` runs, and reds if
+    /// any gate fails or if the corpus it was pointed at was empty.
     ///
-    /// A gate that bound to zero reds here too — but as an ordinary gate
-    /// failure, decided by `gates::seal_zero_bindings` before the report
-    /// reaches this command, and therefore identically through `expand`. This
-    /// command used to apply its own zero-binding rule on top, which made it a
-    /// second authority that disagreed with the creator's own door.
+    /// A gate that bound to zero reds as an ordinary gate failure, decided by
+    /// `gates::seal_zero_bindings` before the report reaches this command, and
+    /// therefore identically through `expand`.
     ///
     /// It never writes a prefab. Judging is the whole job.
     Audit {

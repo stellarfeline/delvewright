@@ -62,6 +62,9 @@ pub enum RenderCommand {
         /// Repeatable. `key=value,…` — `face=north|south|east|west|up|down`
         /// (square-on at that face of the subject box) or `yaw=<deg>`; plus
         /// `name=`, `pitch=`, `fov=`, `zoom=`, `of=model|<anchor>`, `cutaway=`.
+        /// A standing view replaces the orbit keys: `stand=anchor/<name>`
+        /// (a body at that anchor, along its facing) with `look=north|south|east|west`,
+        /// `name=`, `pitch=`, `fov=`.
         #[arg(long = "view", value_name = "SPEC")]
         views: Vec<String>,
     },

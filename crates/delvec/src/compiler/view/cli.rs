@@ -23,7 +23,7 @@ use clap::Subcommand;
 
 use crate::compiler::view::assets::Assets;
 use crate::compiler::view::blockcolor::Deriver;
-use crate::compiler::view::camera::{self, Bracket, EmitOptions};
+use crate::compiler::view::camera::{self, Bracket, DRAFT_DIVISOR, DRAFT_SPP, EmitOptions};
 use crate::compiler::view::diag::{
     DW_BINDING, DW_INPUT, DW_OUTPUT, DW_RANK_ORDER, DW_RENDER, DW_UNDERSPECIFIED_STATE,
     DW_UNRESOLVED_BLOCK, DW_VIEWER_RESOURCES, Diagnostic, exit,
@@ -92,14 +92,16 @@ pub enum ViewCommand {
         #[arg(long)]
         only: Vec<String>,
         /// Emit, beside each camera, the camera moved each way by each step —
-        /// `yaw=8,pitch=4,fov=10,dolly=6,rise=3`, any subset — and write every
+        /// `yaw=8,pitch=4,fov=10,dolly=6,truck=3,rise=3`, any subset — and write every
         /// candidate to `candidates.json` in the output directory, in the record
         /// format.
         #[arg(long, value_parser = Bracket::parse)]
         bracket: Option<Bracket>,
-        /// Emit each frame at a quarter of its width and height and 16 samples,
-        /// under its own `_draft` scene name: for judging what is in frame.
-        #[arg(long, conflicts_with = "preview")]
+        // The numbers are the draft constants' own, so the help cannot drift from them.
+        #[arg(long, conflicts_with = "preview", help = format!(
+            "Emit each frame at 1/{DRAFT_DIVISOR} of its width and height and at most \
+             {DRAFT_SPP} samples, under its own `_draft` scene name: for judging what is in frame."
+        ))]
         draft: bool,
         /// Write no scene: draw each camera (and candidate) on the CPU, flat-lit,
         /// at half its width and height, as `<stem>_preview.png` — seconds per
@@ -473,6 +475,22 @@ pub fn resolve_textures(textures: Option<&str>) -> Result<String, Diagnostic> {
 pub fn fail(d: Diagnostic, json: bool, code: u8) -> ExitCode {
     d.print(json);
     ExitCode::from(code)
+}
+
+/// Create the parent directory of an output file, so `-o dir/new/file` works
+/// the same on every subcommand that writes one file.
+fn create_parent_dir(out: &Path, json: bool) -> Result<(), ExitCode> {
+    if let Some(parent) = out.parent()
+        && !parent.as_os_str().is_empty()
+        && let Err(e) = std::fs::create_dir_all(parent)
+    {
+        return Err(fail(
+            Diagnostic::error(DW_OUTPUT, format!("mkdir {}: {e}", parent.display())),
+            json,
+            exit::OUTPUT,
+        ));
+    }
+    Ok(())
 }
 
 /// Union block palette (block-state strings, sorted, deduped) of every shipped
@@ -1036,15 +1054,8 @@ fn run_index(build_dir: &Path, out: &Path, vopts: &ViewOpts) -> ExitCode {
         Ok(b) => b,
         Err(d) => return fail(d, vopts.json, exit::INPUT),
     };
-    if let Some(parent) = out.parent()
-        && !parent.as_os_str().is_empty()
-        && let Err(e) = std::fs::create_dir_all(parent)
-    {
-        return fail(
-            Diagnostic::error(DW_OUTPUT, format!("mkdir {}: {e}", parent.display())),
-            vopts.json,
-            exit::OUTPUT,
-        );
+    if let Err(code) = create_parent_dir(out, vopts.json) {
+        return code;
     }
     if let Err(e) = std::fs::write(out, &idx) {
         return fail(
@@ -1121,15 +1132,8 @@ fn run_contact_sheet(
     for d in &built.diagnostics {
         d.print(vopts.json);
     }
-    if let Some(parent) = out.parent()
-        && !parent.as_os_str().is_empty()
-        && let Err(e) = std::fs::create_dir_all(parent)
-    {
-        return fail(
-            Diagnostic::error(DW_OUTPUT, format!("mkdir {}: {e}", parent.display())),
-            vopts.json,
-            exit::OUTPUT,
-        );
+    if let Err(code) = create_parent_dir(out, vopts.json) {
+        return code;
     }
     if let Err(e) = built.image.save(out) {
         return fail(
@@ -1432,15 +1436,8 @@ fn run_viewer(inputs: &[PathBuf], out: &Path, title: Option<&str>, vopts: &ViewO
             );
         }
     };
-    if let Some(parent) = out.parent()
-        && !parent.as_os_str().is_empty()
-        && let Err(e) = std::fs::create_dir_all(parent)
-    {
-        return fail(
-            Diagnostic::error(DW_OUTPUT, format!("create {}: {e}", parent.display())),
-            vopts.json,
-            exit::OUTPUT,
-        );
+    if let Err(code) = create_parent_dir(out, vopts.json) {
+        return code;
     }
     if let Err(e) = std::fs::write(out, &html) {
         return fail(
@@ -1506,6 +1503,9 @@ fn run_palette(inputs: &[PathBuf], out: &Path, biome: &str, vopts: &ViewOpts) ->
         }
     };
     json.push('\n');
+    if let Err(code) = create_parent_dir(out, vopts.json) {
+        return code;
+    }
     if let Err(e) = std::fs::write(out, &json) {
         return fail(
             Diagnostic::error(DW_OUTPUT, format!("write {}: {e}", out.display())),
