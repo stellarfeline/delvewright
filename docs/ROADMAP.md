@@ -67,4 +67,5 @@ A denser campaign tier (a castle with a heavy shortcut-loop topology and dense r
 - **A modpack production line.** The same pipeline one scale up: a curated modpack and an adventure-designed open world, with story pockets set in natural terrain and the journey between them composed rather than searched.
 - **A survival hub.** A vanilla survival world connected to delve instances with `/transfer`; nothing in the engine may assume a single-server topology in a way that blocks it.
 - **Community campaigns.** The content repository accepts campaign-source pull requests (DSL only, rebuilt by trusted CI), and community prefabs enter through the audited admission pipeline (spec-0007).
+- **Bedrock players.** GeyserMC, which lets Bedrock clients join a Java server, is the candidate for cross-platform reach without a stack switch (ADR-0019).
 - **Other agent runtimes.** The DSL, compiler and validation contract are runtime-agnostic, so another hosted agent runtime can be adopted as a front end without touching `crates/` (ADR-0012). Building an agent runtime is out of scope.
