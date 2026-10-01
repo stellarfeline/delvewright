@@ -89,7 +89,7 @@ After the yes comes the long step: quests and dialogue. Dialogue is written as b
 flowchart TD
     DJ(["the approved design"]) --> C5["5 · quests.json · dialogue.json<br/>NPC faces: tools/creator/skin<br/>other languages: delvec l10n-inventory · l10n-apply<br/>or tools/creator/i18n-translate.py"]
     C5 --> FMT["6 · delvec fmt<br/>canonical JSON, every campaign"]
-    FMT --> AN["7 · delvec analyze<br/>quest-graph reachability · deadlocks · dark rooms"]
+    FMT --> AN["7 · delvec analyze<br/>quest-graph reachability · deadlocks"]
     AN -.->|"red: a DW code"| C5
     AN --> BUILD
 
@@ -256,7 +256,7 @@ flowchart TD
 | PackTest on Fabric | mechanism tests on a tool server; never in a shipped delve | 4, 6 | the agent and CI |
 | `harness/` | the mineflayer bot (TypeScript): critical path, die-retry, death-loop, branch runs | 4, 6 | the agent and CI |
 | Chunky | every picture that has to look like Minecraft | 5 | the agent |
-| GitHub Actions | `ci.yml`, `engine-release.yml`, `dsl-crate-publish.yml`, `plugin-release.yml`, `infra-images.yml` here; `release.yml` in the content repository | engine line, 6 | CI, dispatched by a human |
+| GitHub Actions | `ci.yml`, `engine-release.yml`, `dsl-crate-publish.yml`, `plugin-release.yml`, `infra-images.yml`, `gpu-probe.yml` here; `release.yml` in the content repository | engine line, 6 | CI, dispatched by a human |
 | GHCR | multi-arch delve images, the mirrored server base and the tool server | 6, 7 | CI |
 | crates.io and GitHub Releases | `delvec` and `delvewright-dsl`; the per-platform archives | engine line, 1 | CI |
 | the production host | a single-board computer that runs the delve image | 7 | the operator |

@@ -16,8 +16,8 @@ languages are delivered as sidecars.
    `[i18n]` section AND the environment variable it names (`api_key_env`) is set:
 
    ```sh
-   python3 "$DELVEWRIGHT_ENGINE/tools/creator/i18n-translate.py" "$PWD/campaigns/<id>" \
-       --lang <code> --reflect
+   "$DELVEWRIGHT_PYTHON" "$DELVEWRIGHT_ENGINE/tools/creator/i18n-translate.py" "$PWD/campaigns/<id>" \
+       --lang <code> --reflect --delvec "$(command -v delvec)"
    ```
 
    `--reflect` is the three-step translate → critique → revise pass and is where

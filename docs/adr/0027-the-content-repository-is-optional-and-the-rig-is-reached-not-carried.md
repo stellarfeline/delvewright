@@ -1,6 +1,6 @@
 # ADR-0027: The content repository is an optional clone, and the plugin reaches the engine tree instead of carrying pieces of it
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-09-09
 - **Source**: two constraints on the creator-facing front end, settled while
   spec-0063 was designed against ADR-0014: the shipped prefab library is of

@@ -1,8 +1,8 @@
 # What `DW0379` measures on shipping content
 
-`DW0379` is the retry-cost lint: the proven walk from a rest point to the deepest beat it can respawn the party into, warned when it exceeds `RETRY_BUDGET_TICKS` (1200 ticks = 60 s = 300 blocks at the 4 t/block sprint model `DW0355` uses). Its catalogue row in `compiler.md` says the budget is a design decision rather than a compiler one, and that no box-garden delve approaches it. This page is the measurement that decision is made against. It recommends no threshold.
+`DW0379` is the retry-cost lint: the proven walk from a rest point to the deepest beat it can respawn the party into, warned when it exceeds `RETRY_BUDGET_TICKS` (1200 ticks = 60 s = 300 blocks at the 4 t/block sprint model `DW0355` uses). Its catalogue row in `compiler.md` says the budget is a design decision rather than a compiler one. This page is the measurement that decision is made against. It recommends no threshold.
 
-It was taken while the lint measured to the FIRST beat after each rest point, and it is what changed the quantity: the lint now takes the deepest beat, column **B** below, at the same unchanged budget. Both columns are kept — the pair is the argument. Every reading here was taken at the instrument below, and `campaigns/vesperhold` at that content revision declares a `health_bar` the engine's `main` has no field for, so the vesperhold half is not reproducible on `main` and the gallery half is.
+Column **A** below is the walk to the first beat after each rest point; column **B**, the deepest beat it covers, is what `DW0379` computes. Both are kept — the pair is the argument. Every reading here was taken at the instrument below; the engine's `main` refuses `campaigns/vesperhold` at that content revision (its documents state another `dsl_version`, `DW0102`), so the vesperhold half reproduces only at the engine revision named, and the gallery half reproduces on `main`.
 
 ## Instrument
 
@@ -39,7 +39,7 @@ Maximum 106 blocks, 21.2 s. The budget is 300 blocks, 60 s. Nothing fires.
 
 ## Vesperhold: the deepest beat each rest point covers
 
-The target in the table above is the **first** beat after the rest point, which is what the lint selected when this was read. A player does not die at the first beat; they die anywhere in the stretch the rest point is the checkpoint for. So the same nav model, over the same rest points, measured to every beat from the rest point up to and including the next rest point's own firing step. This second measure is **authored**, not cited: no spec names it, and it is here because the first measure cannot answer the question a human asks after a death. It is the quantity `DW0379` now computes; spec-0016 §7 says *point of failure*, which the first measure was never a reading of.
+The target in the table above is the **first** beat after the rest point. A player does not die at the first beat; they die anywhere in the stretch the rest point is the checkpoint for. So the same nav model, over the same rest points, measured to every beat from the rest point up to and including the next rest point's own firing step. This second measure is **authored**, not cited: no spec names it, and it is here because the first measure cannot answer the question a human asks after a death. It is the quantity `DW0379` computes; spec-0016 §7 says *point of failure*, which the first measure was never a reading of.
 
 Denominator: 5 rest points, 37 beat-walks computed, 0 refused for want of a path.
 
@@ -106,11 +106,11 @@ Nothing, on every campaign that builds. Read from the diagnostic stream, not ass
 | `campaigns/vesperhold` | 5 warnings (`DW0351` ×3, `DW0781`, `DW0810`) | 0 of 5 |
 | `gallery` | 37 warnings (`DW0527` ×24, `DW0477` ×3, and one each of `DW0330`, `DW0351`, `DW0353`, `DW0453`, `DW0467`, `DW0475`, `DW0498`, `DW0813`, `DW0822`, `DW0889`) | 0 of 37 |
 
-The emission count is confirmed as stated, on the two campaigns that can test it, and it is unchanged by the switch to column **B**: the deepest walk of the eight is 53.2 s against a 60 s budget. The claim beside it in the catalogue — that no box-garden delve approaches 300 blocks — held comfortably for the first-beat quantity (peak 106) and is close to false for what a player walks (peak 266), which is what the lint now measures.
+The emission count holds on both columns, on the two campaigns that can test it: the deepest walk of the eight is 53.2 s against a 60 s budget. On column **A** the peak is 106 blocks; on column **B**, what a player walks, it is 266, close to the 300-block budget.
 
 ## Where a threshold would have to sit
 
-Arithmetic over the tables above, not a recommendation. Denominator: 8 measured rest points — 5 vesperhold, 3 gallery. Column **A** is the quantity `DW0379` computes today; column **B** is the deepest-beat quantity.
+Arithmetic over the tables above, not a recommendation. Denominator: 8 measured rest points — 5 vesperhold, 3 gallery. Column **A** is the first-beat quantity; column **B**, the deepest-beat quantity, is what `DW0379` computes.
 
 | threshold | blocks | A fires | which | B fires | which |
 |---|---|---|---|---|---|

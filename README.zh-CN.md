@@ -52,7 +52,7 @@ flowchart TD
 - **PackTest。** 在真实服务器上测试 datapack 的各项机制：`338 GAME TESTS COMPLETE IN 1.586 min` —— `All 338 required tests passed :)`。
 - **机器人通关。** 一个 mineflayer 机器人加入发布的服务器，把关键路径玩到结束，在每场战斗中故意死亡、再从篝火走回去：`critical path 'vesperhold' PASSED (45 steps, 18 scripted death(s) survived, 2 advisory finding(s))`。一条提示是机器人走回去时发现敌群成员已经受伤；另一条说明这次运行没有驱动任何故事分支。发布之前，在同一个编译器上，四条故事分支各自在全新的世界里被玩到结局：`branch branch/halvard-kept-oath+branch/ring 'vesperhold' PASSED (45 steps, 18 scripted death(s) survived)`，另外三条打印了同样的 45 步和 18 次死亡。
 - **服务器日志。** `shipped server log is error-free.`
-- **确定性。** 同样的文档、同样的种子，输出逐字节相同。发布的镜像 `ghcr.io/stellarfeline/delve-vesperhold:v1.0.0` 带有其 datapack 摘要作为标签，`datapack-sha256=e0f79e0522708526cea976e735547042567b032abe87dbb425f8495365f796ec`，任何重新构建的人都可以比对。对本仓库的每个 pull request，CI 都会在 Linux 和 macOS 上构建一个生成的 campaign，只要有一个字节不同就拒绝。
+- **确定性。** 同样的文档、同样的种子，输出逐字节相同。发布的镜像 `ghcr.io/stellarfeline/delve-vesperhold:v1.0.0` 带有其 datapack 摘要作为标签，`datapack-sha256=e0f79e0522708526cea976e735547042567b032abe87dbb425f8495365f796ec`，任何重新构建的人都可以比对。对本仓库每个改动引擎的 pull request，CI 都会在 Linux 和 macOS 上构建一个生成的 campaign，只要有一个字节不同就拒绝。
 
 每一级证明了什么、没有证明什么：[每道关卡实际证明了什么](docs/reference/skill-workflow.md#4-what-each-gate-actually-proves)。
 
@@ -73,7 +73,7 @@ campaign 分阶段编写，每个阶段都是一份经过 schema 检查、以前
 - [架构决策记录](docs/adr/README.md) —— 一切为何如此。
 - [规格](docs/specs/README.md) —— 每个功能一份，每份都带可机器检查的验收标准。
 - [宪章](CLAUDE.md) —— 对本仓库的每次改动都要遵守的规则。
-- [画廊](gallery/README.md) —— 引擎自己的 campaign：DSL 声明的每种能力各有一个实例，每个 pull request 都会构建。
+- [画廊](gallery/README.md) —— 引擎自己的 campaign：DSL 声明的每种能力各有一个实例，每个能触及它的 pull request 都会构建。
 - [工具清单](docs/reference/tools.md) · [编译器参考](docs/reference/compiler.md) · [路线图](docs/ROADMAP.md)
 
 | 路径 | 内容 |

@@ -88,16 +88,12 @@ this section is what they are *for* and the traps in each.
      be there in the piece (`DW0438`) and must not also be filled by a `loot`
      entry or another `collect` (`DW0435`).
 
-     **Measured over the shipped library: exactly 1 of 36 prefabs can satisfy
-     this** — `island-mountain`, through its four `anchor/cheese-barrel*`
-     anchors. Five pieces contain a chest or barrel anywhere
-     (`hero-galleon-oak`, `hero-standing-monolith`, `island-beach-camp`,
-     `island-galley`, `island-mountain`), and only that one stands an anchor on
-     one. **Two pieces declare an anchor literally named `anchor/chest` whose
-     cell is air** (`cave-room-small`, `keep-room-small-a`) — the obvious thing
-     to reach for, and it is `DW0438` every time. In `pool/stone-keep` there is
-     no piece that can carry a `container` at all. Check rather than assume; the
-     library moves.
+     **Few shipped pieces stand an anchor on a container**, and an anchor's
+     name is no evidence of one: **two pieces declare an anchor literally named
+     `anchor/chest` whose cell is air** (`cave-room-small`, `keep-room-small-a`)
+     — the obvious thing to reach for, and it is `DW0438` every time. In
+     `pool/stone-keep` there is no piece that can carry a `container` at all.
+     Check rather than assume; the library moves.
   2. **`dropped_by: <wave>`** — the item comes off a body instead of out of a
      box. The compiler places no container and PROVES the chain: that the wave
      really yields the item (`DW0492`) and that its `kill` objective runs first
@@ -314,18 +310,16 @@ this section is what they are *for* and the traps in each.
   trigger block in its cell, will hold a trap — and on a site-plan
   campaign that is `anchor/node-<place>`, which is exactly what a derived map
   has. `volley`'s `from_anchor` is another one, and all it owes is a clear cell.
-  **The name `anchor/trap` is a convention from the redstone era and the check
-  does not read it**: what is required is a point anchor that resolves, not one
+  **The check does not read the name `anchor/trap`**: what is required is a point anchor that resolves, not one
   called that. Read any text telling you to "bind the trap to an `anchor/trap`
   marker" — the refusal's remedy line and the schema's own field description
   both say it — as saying *that anchor does not resolve*, and answer it with an
-  anchor that does. Measured over the shipped library: **0 of 36 prefabs
-  declares an `anchor/trap`**, or any anchor carrying `dispenser` or
-  `trigger_block` metadata, out of 103 anchors in all — so the piece that
+  anchor that does. **No shipped piece declares an `anchor/trap`**, or any
+  anchor carrying `dispenser` or `trigger_block` metadata — so the piece that
   reading asks for does not exist here, and a command payload never wanted one:
   it wants the trigger block in an ordinary anchor's cell.
 - **Two things do want hardware in the piece, and neither of them is the
-  payload.** The superseded `effect: {dispense: {…}}` fills a dispenser socket
+  payload.** The dispenser `effect: {dispense: {…}}` fills a dispenser socket
   the prefab pre-wired, so it needs that metadata; and a trap carrying a gate
   (`requires_flags` / `forbids_flags` / `requires_state`) is gated *physically* —
   the compiler takes the trigger block out of the world while the gate is shut

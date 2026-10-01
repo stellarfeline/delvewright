@@ -27,7 +27,7 @@ observer's left. Most external sources count `y` downward from the top of the fa
 **A face is the lower five rows and the hair takes the upper three.** **[cited]** A face painted
 on the upper rows instead leaves four rows of unmodelled fill below it — half a head of flat
 skin, which reads at playing distance as an enormous jaw, and which a full beard hides by
-occupying exactly those rows. That is the failure this page exists to prevent, and it shipped.
+occupying exactly those rows. That is the failure this page exists to prevent.
 
 ## 2. The measurement
 
