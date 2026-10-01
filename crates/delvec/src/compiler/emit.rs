@@ -12100,6 +12100,28 @@ fn trap_gate_tick(plan: &Plan) -> Vec<String> {
     out
 }
 
+/// The body of `trap_gate_init`, which `setup_finish` calls once: put every
+/// gated trap's hardware in the state the world starts in.
+fn trap_gate_init(plan: &Plan, hardware: &BTreeMap<String, String>) -> Vec<String> {
+    let mut out = Vec::new();
+    for t in plan.traps.iter().filter(|t| trap_is_gated(t)) {
+        if !hardware.contains_key(&t.safe) {
+            continue;
+        }
+        let armed = t.requires_flags.is_empty();
+        out.push(format!(
+            "scoreboard players set #trapgate_{} dw.sys {}",
+            t.safe,
+            u8::from(armed)
+        ));
+        if !armed {
+            let c = t.trigger_cell;
+            out.push(format!("setblock {} {} {} minecraft:air", c[0], c[1], c[2]));
+        }
+    }
+    out
+}
+
 /// The `trap_gate_on_<safe>` / `trap_gate_off_<safe>` pair per gated trap: flip the
 /// sentinel and write the trigger cell. `on` restores the authored block verbatim
 /// (state and all); `off` clears it to air, which is what the plate/tripwire cell
@@ -12219,24 +12241,6 @@ fn item_component_tail(item: &str, name: Option<&str>) -> String {
 fn trap_setup(plan: &Plan, gate_hardware: &BTreeMap<String, String>) -> Vec<String> {
     let mut out = Vec::new();
     for t in &plan.traps {
-        // Seed a gated trap's hardware sentinel to match the world it starts in.
-        // Flags are unset at world start, so a `requires_flags` gate is shut and the
-        // authored trigger comes straight back out; a `forbids_flags`-only gate is
-        // open and the prefab's own block stands. Doing this at setup (rather than
-        // letting the tick converge) means there is never a tick in which the trap
-        // is live before its gate has been read.
-        if trap_is_gated(t) && gate_hardware.contains_key(&t.safe) {
-            let armed = t.requires_flags.is_empty();
-            out.push(format!(
-                "scoreboard players set #trapgate_{} dw.sys {}",
-                t.safe,
-                u8::from(armed)
-            ));
-            if !armed {
-                let c = t.trigger_cell;
-                out.push(format!("setblock {} {} {} minecraft:air", c[0], c[1], c[2]));
-            }
-        }
         // Fill the pre-wired dispenser with the declared payload.
         if let (Some(disp), Some((item, count))) = (t.dispenser, &t.payload) {
             out.push(format!(
@@ -12279,6 +12283,15 @@ fn trap_setup(plan: &Plan, gate_hardware: &BTreeMap<String, String>) -> Vec<Stri
                 "minecraft:lever",
             ));
         }
+    }
+    // A gated trap's hardware is seeded once, here, so there is never a tick in
+    // which the trap is live before its gate has been read.
+    if plan
+        .traps
+        .iter()
+        .any(|t| trap_is_gated(t) && gate_hardware.contains_key(&t.safe))
+    {
+        out.push(format!("function {}:trap_gate_init", plan.namespace));
     }
     out
 }
@@ -12359,6 +12372,10 @@ fn trap_fns(plan: &Plan, gate_hardware: &BTreeMap<String, String>) -> Vec<(Strin
     let gate_tick = trap_gate_tick(plan);
     if !gate_tick.is_empty() {
         out.push(("trap_gate_tick".to_string(), lines(&gate_tick)));
+    }
+    let gate_init = trap_gate_init(plan, gate_hardware);
+    if !gate_init.is_empty() {
+        out.push(("trap_gate_init".to_string(), lines(&gate_init)));
     }
     out
 }
@@ -16276,9 +16293,9 @@ fn emit_trap_gate_packtest(plan: &Plan, out: &mut BuildOutput) {
     // One holder per assert (`#tgate_<n>`), so a red names the step that failed
     // rather than a line number the runner counts its own way.
     let mut step = 0u32;
-    let mut tick_and_assert = |b: &mut Vec<String>, shut: bool| {
+    let mut run_and_assert = |b: &mut Vec<String>, function: &str, shut: bool| {
         step += 1;
-        b.push(format!("function {ns}:trap_gate_tick"));
+        b.push(format!("function {ns}:{function}"));
         b.push(format!(
             "execute store success score #tgate_{step} dw.sys if block {} {} {} minecraft:air",
             c[0], c[1], c[2]
@@ -16288,30 +16305,39 @@ fn emit_trap_gate_packtest(plan: &Plan, out: &mut BuildOutput) {
             u8::from(shut)
         ));
     };
-    // Start shut, so the first open is a transition the tick has to make.
-    b.push(format!("function {ns}:trap_gate_off_{}", t.safe));
-    b.extend(packtest_gate_drive(plan, gate, true));
-    tick_and_assert(&mut b, false);
-    for f in gate.requires_flags {
-        let s = plan::flag_score(f.as_str());
-        b.push(format!("scoreboard players set {party} {s} 0"));
-        tick_and_assert(&mut b, true);
-        b.push(format!("scoreboard players set {party} {s} 1"));
-        tick_and_assert(&mut b, false);
-    }
-    for f in gate.forbids_flags {
-        let s = plan::flag_score(f.as_str());
-        b.push(format!("scoreboard players set {party} {s} 1"));
-        tick_and_assert(&mut b, true);
-        b.push(format!("scoreboard players set {party} {s} 0"));
-        tick_and_assert(&mut b, false);
-    }
-    for cmp in gate.requires_state {
-        let one = std::slice::from_ref(cmp);
-        b.extend(state_drive_lines(plan, one, false));
-        tick_and_assert(&mut b, true);
-        b.extend(state_drive_lines(plan, one, true));
-        tick_and_assert(&mut b, false);
+    // The same truth table twice: once through `trap_gate_init` (what
+    // `setup_finish` runs before the first tick) and once through
+    // `trap_gate_tick`. The first pass is what sees the world the campaign
+    // starts in: a trap whose gate is shut must start disarmed, whichever axis
+    // shuts it.
+    for function in ["trap_gate_init", "trap_gate_tick"] {
+        if function == "trap_gate_tick" {
+            // Start shut, so the first open is a transition the tick has to make.
+            b.push(format!("function {ns}:trap_gate_off_{}", t.safe));
+        }
+        b.extend(packtest_gate_drive(plan, gate, true));
+        run_and_assert(&mut b, function, false);
+        for f in gate.requires_flags {
+            let s = plan::flag_score(f.as_str());
+            b.push(format!("scoreboard players set {party} {s} 0"));
+            run_and_assert(&mut b, function, true);
+            b.push(format!("scoreboard players set {party} {s} 1"));
+            run_and_assert(&mut b, function, false);
+        }
+        for f in gate.forbids_flags {
+            let s = plan::flag_score(f.as_str());
+            b.push(format!("scoreboard players set {party} {s} 1"));
+            run_and_assert(&mut b, function, true);
+            b.push(format!("scoreboard players set {party} {s} 0"));
+            run_and_assert(&mut b, function, false);
+        }
+        for cmp in gate.requires_state {
+            let one = std::slice::from_ref(cmp);
+            b.extend(state_drive_lines(plan, one, false));
+            run_and_assert(&mut b, function, true);
+            b.extend(state_drive_lines(plan, one, true));
+            run_and_assert(&mut b, function, false);
+        }
     }
     out.insert(
         format!("packtest-datapack/data/{ns}/test/v06_trap_gate.mcfunction"),

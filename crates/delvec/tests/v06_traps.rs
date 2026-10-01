@@ -435,7 +435,7 @@ fn a_flag_gated_trap_removes_and_restores_its_trigger() {
     // setup arms the sentinel and leaves the prefab's own block alone.
     let setup_finish = text(
         &out,
-        &format!("datapack/data/{NS}/function/setup_finish.mcfunction"),
+        &format!("datapack/data/{NS}/function/trap_gate_init.mcfunction"),
     );
     assert!(
         setup_finish.contains("scoreboard players set #trapgate_dart_hall dw.sys 1"),
@@ -469,7 +469,7 @@ fn a_requires_flags_gate_starts_shut() {
     let out = build_with_trap("trap-gated-req", trap).expect("a gated trap builds");
     let setup_finish = text(
         &out,
-        &format!("datapack/data/{NS}/function/setup_finish.mcfunction"),
+        &format!("datapack/data/{NS}/function/trap_gate_init.mcfunction"),
     );
     assert!(
         setup_finish.contains("scoreboard players set #trapgate_dart_hall dw.sys 0"),
