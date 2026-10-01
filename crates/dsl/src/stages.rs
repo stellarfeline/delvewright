@@ -6783,7 +6783,7 @@ impl QuestEffect {
     ///
     /// Not recursive: pair it with [`Self::visit_deep`] to sweep a whole effect
     /// tree. Every consumer that must resolve an anchor — the DSL's `DW0142`
-    /// reference scan, the compiler's build-time resolution seal (`DW0355`) —
+    /// reference scan, the compiler's build-time resolution seal (`DW0360`) —
     /// goes through here, so a new anchor-bearing variant (or a new anchor field
     /// on an existing one) is picked up by all of them at once. That closes the
     /// silent-drop class of bug: an anchor-bearing effect whose anchor is typo'd
@@ -6924,7 +6924,7 @@ impl QuestEffect {
             }
             // The v0.10 region writes: the box's anchor is load-bearing for both
             // the emission and the completability model, so a typo'd one must be a
-            // dangling-reference error (`DW0142`/`DW0355`), never a silently
+            // dangling-reference error (`DW0142`/`DW0360`), never a silently
             // unwritten — and therefore vacuously proven — region.
             Verb::FillRegion { region, .. } | Verb::ClearRegion { region, .. } => {
                 vec![("region/anchor".to_string(), &region.anchor, None)]

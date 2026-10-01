@@ -6310,7 +6310,7 @@ fn emit_quest_effect(plan: &Plan, eff: &QuestEffect, aud: Audience, body: &mut V
         // --- DSL v0.10 region writes (spec-0031) ---
         // The general spelling of what `open-gate`/`close-gate` do to a gate
         // anchor's box, through the same one command builder. An unresolvable box
-        // emits nothing — a dangling `region/anchor` is `DW0142`/`DW0355` at
+        // emits nothing — a dangling `region/anchor` is `DW0142`/`DW0360` at
         // validation, not a silently mis-aimed fill here.
         Verb::FillRegion { .. } | Verb::ClearRegion { .. } => {
             if let Some((zone, block)) = eff.region_write()

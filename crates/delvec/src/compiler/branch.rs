@@ -39,7 +39,7 @@
 //! | Code | Proof |
 //! |------|-------|
 //! | `DW0480` | **Undeclared story fork** — a flag that gates casts/staging/structure and is set on some playthroughs and not others, belonging to no declared branch point. |
-//! | `DW0481` | **Missing `happening`** — a story node that never said what it does to the story (0.8.0+). The forcing function. |
+//! | `DW0481` | **Missing `happening`** — a story node that never said what it does to the story. The forcing function. |
 //! | `DW0482` | **Terminality** — a branch that reaches no ending (or not the ending it declares, or not the convergence it declares). |
 //! | `DW0483` | **Cast continuity** — the `dw.cast` selector resolves to no cast, or to more than one, at some quest after the fork on some branch. spec-0020 proof 4 extended over the whole post-fork suffix. |
 //! | `DW0484` | **Exclusive-content leakage** — content gated on branch A's flags is reachable under branch B's assignment. |
@@ -586,7 +586,7 @@ fn fired_into<'a>(
 }
 
 /// Is this effect a **story node** — one of the eleven verbs that must declare a
-/// `happening` at 0.8.0?
+/// `happening`?
 fn is_story_node(eff: &QuestEffect) -> bool {
     matches!(
         &eff.verb,
@@ -744,7 +744,7 @@ fn check_happenings(c: &Campaign, d: &mut Vec<Diagnostic>) {
         // `unleash-actor` pairs it desugars into are that one beat lowered. The
         // author never wrote them and has no surface to reach them, so demanding
         // a `happening` from each is an obligation nobody can discharge — which
-        // is what made `ambushes[]` uncompilable at 0.8.0 and above for as long
+        // is what made `ambushes[]` uncompilable for as long
         // as the surface had existed. The declaration is checked here, once, on
         // the object that owns it.
         for (i, a) in c.quests.content.ambushes.iter().enumerate() {

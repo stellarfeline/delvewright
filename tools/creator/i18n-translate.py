@@ -41,6 +41,7 @@ import dataclasses
 import json
 import os
 import shlex
+import shutil
 import subprocess
 import sys
 import time
@@ -722,12 +723,53 @@ def write_sidecar(
 # ------------------------------------------------------------------------ cli --
 
 
+class NoDelvec(RuntimeError):
+    """No `delvec` of the pinned engine is available to run."""
+
+
+def _delvec_version(binary: str) -> str | None:
+    """The engine version a `delvec` answers (`delvec <engine>, dsl …`), or None."""
+    try:
+        out = subprocess.run(
+            [binary, "--version"], capture_output=True, text=True, check=False
+        ).stdout.split()
+    except OSError:
+        return None
+    if len(out) >= 2 and out[0] == "delvec":
+        return out[1].rstrip(",")
+    return None
+
+
 def delvec_command(explicit: str | None) -> list[str]:
-    """How to invoke `delvec`: `--delvec`, then `$DELVEC`, else a cargo run."""
+    """How to invoke `delvec`: `--delvec`, then `$DELVEC`, then the engine the
+    creator has — the `delvec` on `PATH`, then the tree's `target/release/delvec`
+    — each taken only when its `--version` is the engine `versions.toml` pins
+    (the rule `tools/lib/delvec-bin.sh` applies). Never a source build: a creator
+    has the release binary and no toolchain. Raises `NoDelvec` when none answers.
+    """
     cmd = explicit or os.environ.get("DELVEC")
     if cmd:
         return shlex.split(cmd)
-    return ["cargo", "run", "-q", "-p", "delvec", "--bin", "delvec", "--"]
+    sys.path.insert(0, str(REPO_ROOT / "tools" / "lib"))
+    try:
+        import versions  # type: ignore[import-not-found]
+
+        pin = versions.engine_version()
+    finally:
+        sys.path.pop(0)
+    seen: list[str] = []
+    for found in (shutil.which("delvec"), str(REPO_ROOT / "target" / "release" / "delvec")):
+        if not found or not Path(found).is_file():
+            continue
+        version = _delvec_version(found)
+        if version == pin:
+            return [found]
+        seen.append(f"{found} answers {version or '<no version line>'}")
+    raise NoDelvec(
+        f"no delvec of engine {pin} is available ({'; '.join(seen) or 'none on PATH'}). "
+        "Install the release archive for that version (the skill's Init does this) "
+        "or pass --delvec <binary>."
+    )
 
 
 def run_delvec(args: Sequence[str], delvec: Sequence[str]) -> subprocess.CompletedProcess[str]:
@@ -808,7 +850,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     p.add_argument("campaign_dir", type=Path, help="campaign directory (holds world.json)")
     p.add_argument("--lang", required=True, help="target language code, e.g. zh-cn")
     p.add_argument("--config", type=Path, default=None, help="config file (default: delvewright.toml + .local)")
-    p.add_argument("--delvec", default=None, help="delvec invocation (default: $DELVEC or cargo run)")
+    p.add_argument("--delvec", default=None, help="delvec invocation (default: $DELVEC, then the pinned-version delvec on PATH)")
     p.add_argument("--batch-size", type=int, default=None, help="override [i18n] batch_size")
     p.add_argument("--dry-run", action="store_true", help="print prompts and keys; make no API call")
     p.add_argument(
@@ -855,7 +897,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
         return 2
 
-    delvec = delvec_command(args.delvec)
+    try:
+        delvec = delvec_command(args.delvec)
+    except NoDelvec as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
     try:
         inv = fetch_inventory(args.campaign_dir, args.lang, delvec)
     except (TranslateError, json.JSONDecodeError, OSError) as exc:
