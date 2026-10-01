@@ -466,10 +466,12 @@ export class RunReport {
                 // death that forfeits four datums leaves one place, so a run
                 // reporting one of each has asserted a quarter of the promise.
                 datums_examined: this.deathLoopBinding.datumsExamined,
-                // …and the ones the campaign's own gate said this death does not
-                // promise. Stated, because a smaller `datums_examined` with no
-                // reason beside it reads as a stage that quietly checked less.
-                datums_withheld: this.deathLoopBinding.datumsWithheld,
+                // …of which the campaign's own gate said this death KEEPS these:
+                // each is asserted unchanged across the death, not forfeited.
+                datums_kept: this.deathLoopBinding.datumsKept,
+                // Forfeited datums read across death, walk back and collection —
+                // the recovery half's own count; zero is a finding.
+                forfeits_examined: this.deathLoopBinding.forfeitsExamined,
                 seats_matched: this.deathLoopBinding.seatsMatched,
                 walks_back: this.deathLoopBinding.walksBack,
                 unbound: this.deathLoopBinding.deathsObserved === 0,
@@ -482,9 +484,14 @@ export class RunReport {
           wagers: t.wagers.map((w) => ({
             stake: w.stake,
             objective: w.objective,
+            // Whether the death forfeits it (its `on_death` gate read open) or
+            // keeps it (read shut, with the term that shut it).
+            forfeits: w.forfeits,
+            kept_because: w.keptBecause ?? null,
             balance_before: w.balanceBefore ?? null,
             balance_after_death: w.balanceAfterDeath ?? null,
-            // Computed from the DECLARED forfeit rule, never from the emission.
+            // Computed from the DECLARED forfeit rule and the gate the server
+            // answered, never from the emission.
             expected_forfeit: w.expectedForfeit ?? null,
             balance_after_collect: w.balanceAfterCollect ?? null,
           })),

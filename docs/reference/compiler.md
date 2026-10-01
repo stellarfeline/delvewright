@@ -2430,9 +2430,9 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
     (read through `QuestEffect::nested_effect_lists`, so a `sequence` is
     counted), and `drops_stake[]`: per stake the bundle can forfeit, **the gate
     that decides whether this death forfeits it**. A `drop-stake` carries a
-    `when` like every other effect, so the promise is conditional; stated
-    unconditionally, the bot would assert a forfeit the campaign never promised
-    under the state in force. Each entry is `{stake, gates[]}`:
+    `when` like every other effect, so the promise is conditional: the death
+    forfeits the stake when a gate is open and keeps it whole when every gate
+    is shut, and the bot tier asserts both halves. Each entry is `{stake, gates[]}`:
     the gates are alternatives — one stake dropped by two effects is forfeited
     when either fires — and each alternative's `terms[]` is the conjunction of
     its own effect's gate with every enclosing effect's, so a gated `sequence`
@@ -2443,8 +2443,10 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
     ends that `matches` spells, and whether the gate wants the range to fail.
     The terms are `Plan::gate_terms`' — the same reduction the emitter renders
     into the `execute` guard, so the datapack and the contract cannot disagree
-    about when a death takes a purse. An unconditional drop is one alternative
-    with no terms.
+    about when a death takes a purse; `tests/death_plan_gate.rs` holds every
+    emitted `stk_drop_<stake>` guard in `on_death_fire` equal to one of the
+    plan's alternatives, term for term, in both directions. An unconditional
+    drop is one alternative with no terms.
   - `stakes[]` — the declared `forfeit` rule (`all` / `proportion` /
     `fixed` / `none`), `max_live`, `on_full`, `collect_by`, the
     `collected_message` and the `marker_item`, plus the wagered `currency`: its

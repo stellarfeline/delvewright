@@ -41,13 +41,16 @@ rather than a silence (playtest-methodology rule 1):
 ```json
 { "declared_volumes": 1, "volumes_entered": 1, "deaths_observed": 1,
   "datums_promised": 1, "stakes_examined": 1, "datums_examined": 1,
-  "datums_withheld": 0, "seats_matched": 1, "walks_back": 1, "unbound": false }
+  "datums_kept": 0, "forfeits_examined": 1, "seats_matched": 1, "walks_back": 1,
+  "unbound": false }
 ```
 
-`datums_withheld` counts the datums this campaign's own `on_death` gate said the
-death does not promise — a `drop-stake` carries a `when` like every other effect.
-The economy fixture gates none of its one drop, so it is zero here; on the gallery
-it is 4 of 8, and each withheld stake is named on a `[death-loop]` line with the
+`datums_kept` counts the datums this campaign's own `on_death` gate said the
+death KEEPS — a `drop-stake` carries a `when` like every other effect — and each
+is asserted unchanged across the death, as a forfeited datum is asserted against
+its rule; `forfeits_examined` counts the forfeited datums read across the whole
+loop. The economy fixture gates none of its one drop, so `datums_kept` is zero
+here; on the gallery each kept stake is named on a `[death-loop]` line with the
 term that shut it.
 
 ## The stale-build trap — read this before mutating anything

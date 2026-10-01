@@ -657,14 +657,28 @@ export function stagedBalance(rule: ForfeitRule): number {
 }
 
 /**
- * Whether this wager's forfeit could be observed at all: the purse held something
- * when the death was taken, and the rule, applied to it, takes something — or is
- * `none`, whose whole promise is that a non-empty purse is left alone. Any other
- * wager is UNBOUND: a forfeit asserted at zero cannot tell a working forfeit from
- * a missing one.
+ * **What this death takes from this datum: the declared rule when its `on_death`
+ * gate read open, nothing when it read shut.**
+ *
+ * The one place the gate verdict meets the forfeit rule. A shut gate is a promise
+ * too — the campaign said this death KEEPS the purse — so a kept datum is asserted
+ * against a forfeit of zero, never left out of the assertion.
+ */
+export function promisedForfeit(w: TrialWager, balance: number): number {
+  return w.forfeits ? expectedForfeit(w.forfeit, balance) : 0;
+}
+
+/**
+ * Whether this wager's outcome could be observed at all: the purse held something
+ * when the death was taken, and — for a datum the death forfeits — the rule,
+ * applied to it, takes something, or is `none`, whose whole promise is that a
+ * non-empty purse is left alone. A datum the death KEEPS is the same promise as
+ * `none`: it is observable over any non-empty purse. Any other wager is UNBOUND:
+ * an outcome asserted at zero cannot tell a working engine from a broken one.
  */
 export function forfeitObservable(w: TrialWager): boolean {
   if (w.balanceBefore === undefined || w.balanceBefore <= 0) return false;
+  if (!w.forfeits) return true;
   return w.forfeit.kind === "none" || expectedForfeit(w.forfeit, w.balanceBefore) > 0;
 }
 
@@ -1062,33 +1076,50 @@ export function tableAnchor(
 }
 
 /**
- * **One datum this death forfeits**, and the ledger read across the whole loop.
+ * **One datum this death names**, and the ledger read across the whole loop.
  *
  * There is one of these per stake the campaign's own `on_death` drops, not one
  * per trial: a death that forfeits four datums promises four things, and asserting
  * the first stake declared is asserting a quarter of the promise while reporting
  * on all of it. Which quarter is not even decidable from the campaign — it is
  * whichever the plan happens to list first.
+ *
+ * A stake whose `drop-stake` gate read SHUT is a wager too, with
+ * {@link TrialWager.forfeits} false: the campaign promised this death keeps it,
+ * and that promise is asserted (the ledger is unchanged across the death) exactly
+ * as a forfeit is. Neither half of a conditional promise is a skip.
  */
 export interface TrialWager {
   /** The stake id, as the campaign declares it. */
   readonly stake: string;
   /** The currency objective this datum's ledger is kept in. */
   readonly objective: string;
-  /** The forfeit rule the campaign promised for it. */
+  /** The forfeit rule the campaign declared for it. */
   readonly forfeit: ForfeitRule;
+  /**
+   * Whether this death forfeits it: its `on_death` gate read OPEN on the server
+   * before the death. `false` means the gate read shut and the death keeps it.
+   */
+  readonly forfeits: boolean;
+  /** For a kept datum, the gate term that shut it (from {@link gateVerdict}). */
+  readonly keptBecause: string | undefined;
   balanceBefore: number | undefined;
   balanceAfterDeath: number | undefined;
   expectedForfeit: number | undefined;
   balanceAfterCollect: number | undefined;
 }
 
-/** A fresh wager record for one stake the death drops. */
-export function openWager(stake: StakeRule): TrialWager {
+/**
+ * A fresh wager record for one stake the death names. `keptBecause` is the shut
+ * gate's reason when the death keeps it; absent, the death forfeits it.
+ */
+export function openWager(stake: StakeRule, keptBecause?: string): TrialWager {
   return {
     stake: stake.id,
     objective: stake.currency.objective,
     forfeit: stake.forfeit,
+    forfeits: keptBecause === undefined,
+    keptBecause,
     balanceBefore: undefined,
     balanceAfterDeath: undefined,
     expectedForfeit: undefined,
@@ -1102,8 +1133,9 @@ export interface LethalTrial {
   /** The cell the bot walked into. */
   readonly entryCell: Vec3Tuple;
   /**
-   * Every datum this death forfeits — one per stake the campaign's `on_death`
-   * drops, in the plan's own order. Empty for a death that promises no wager.
+   * Every datum this death names — one per stake the campaign's `on_death`
+   * drops whose gate could be read, in the plan's own order, each forfeited or
+   * kept as its gate read. Empty for a death that names no stake.
    */
   readonly wagers: TrialWager[];
   /**
@@ -1141,16 +1173,6 @@ export interface LethalTrial {
   collectClicks: number;
   markerRetired: boolean;
   /**
-   * **Stakes this death does NOT promise**, because the campaign's own `on_death`
-   * gate is shut — with the term that shut it.
-   *
-   * Recorded rather than dropped silently. A gated `drop-stake` is a real
-   * declaration, and a run that examines fewer datums than the campaign declares
-   * has to say which ones and why, or the stage looks exactly as green as one
-   * that examined all of them.
-   */
-  readonly withheld: { stake: string; why: string }[];
-  /**
    * Stakes whose gate could not be READ. Each is a failure: nothing was
    * established about whether the forfeit was promised, so nothing may be
    * asserted about whether it happened.
@@ -1169,7 +1191,7 @@ export function openLethalTrial(
   return {
     volume: volume.id,
     entryCell,
-    wagers: stakes.map(openWager),
+    wagers: stakes.map((s) => openWager(s)),
     enteredVolume: false,
     died: false,
     deathPos: undefined,
@@ -1182,7 +1204,6 @@ export function openLethalTrial(
     walkedBack: false,
     collectClicks: 0,
     markerRetired: false,
-    withheld: [],
     gateUnread: [],
     abandoned: undefined,
   };
@@ -1300,14 +1321,15 @@ export function lethalTrialFailures(t: LethalTrial, markerTolerance = 0.75): str
         `required field precisely because there is no default that could be right`,
     );
   }
-  // EVERY datum this death forfeits, not the first one declared. A death that
-  // takes four things promises four things.
+  // EVERY datum this death names, not the first one declared. A death that
+  // takes four things promises four things, and a death whose gate keeps a datum
+  // promises that too.
   for (const w of t.wagers) {
     if (w.balanceBefore !== undefined && !forfeitObservable(w)) {
       out.push(
         `${t.volume}: the forfeit of \`${w.stake}\` was UNBOUND — \`${w.objective}\` held ` +
-          `${w.balanceBefore} when the death was taken, so the declared forfeit ` +
-          `(${w.forfeit.kind}) could only be observed as ${expectedForfeit(w.forfeit, w.balanceBefore)}. ` +
+          `${w.balanceBefore} when the death was taken, so the promised forfeit ` +
+          `(${w.forfeits ? w.forfeit.kind : "kept"}) could only be observed as ${promisedForfeit(w, w.balanceBefore)}. ` +
           `A forfeit, a stake and a collection asserted over an empty purse read the same ` +
           `whether the engine took anything or not; the stage stages a known balance before ` +
           `the death, and a trial where that did not hold is not a pass`,
@@ -1324,9 +1346,14 @@ export function lethalTrialFailures(t: LethalTrial, markerTolerance = 0.75): str
     const expected = w.balanceBefore - (w.expectedForfeit ?? 0);
     if (w.balanceAfterDeath !== expected) {
       out.push(
-        `${t.volume}: the death took the wrong amount for \`${w.stake}\`. \`${w.objective}\` was ` +
-          `${w.balanceBefore} before and ${w.balanceAfterDeath} after; the campaign's declared ` +
-          `forfeit rule says it should be ${expected} (a forfeit of ${w.expectedForfeit ?? 0})`,
+        w.forfeits
+          ? `${t.volume}: the death took the wrong amount for \`${w.stake}\`. \`${w.objective}\` was ` +
+              `${w.balanceBefore} before and ${w.balanceAfterDeath} after; the campaign's declared ` +
+              `forfeit rule says it should be ${expected} (a forfeit of ${w.expectedForfeit ?? 0})`
+          : `${t.volume}: the death took from \`${w.stake}\`, which its \`on_death\` gate keeps — ` +
+              `${w.keptBecause ?? "the gate read shut"}. \`${w.objective}\` was ${w.balanceBefore} ` +
+              `before and ${w.balanceAfterDeath} after; a death whose \`drop-stake\` gate is shut ` +
+              `promises to leave the purse at ${expected}`,
       );
     }
   }
@@ -1339,7 +1366,10 @@ export function lethalTrialFailures(t: LethalTrial, markerTolerance = 0.75): str
         `re-seat exists to prevent`,
     );
   }
-  if (t.wagers.length === 0) return out;
+  // The place half of the loop belongs to the datums this death FORFEITS: a
+  // death that keeps every datum leaves nothing anywhere.
+  const forfeited = t.wagers.filter((w) => w.forfeits);
+  if (forfeited.length === 0) return out;
   if (t.expectedAnchor === undefined) {
     out.push(
       `${t.volume}: the placement table has NO row for this (death region, respawn seat) pair, ` +
@@ -1372,7 +1402,7 @@ export function lethalTrialFailures(t: LethalTrial, markerTolerance = 0.75): str
         `centre and therefore coincident: every pick ray enters them at the same distance, the ` +
         `client resolves the tie by entity iteration order, and which of them answers a ` +
         `right-click is not decidable from the campaign at all. The player presses their purse ` +
-        `and gets whichever wager the tie fell to. The ${t.wagers.length} datum(s) this death ` +
+        `and gets whichever wager the tie fell to. The ${forfeited.length} datum(s) this death ` +
         `forfeited belong in the per-player ledger at one marker, not in a marker each`,
     );
   }
@@ -1444,14 +1474,15 @@ export interface DeathLoopBinding {
    * **Datums the campaign promised across these trials** — one per stake every
    * declared volume's death can drop, before any gate is read. The denominator
    * {@link DeathLoopBinding.datumsExamined} and
-   * {@link DeathLoopBinding.datumsWithheld} are read against.
+   * {@link DeathLoopBinding.datumsKept} are read against.
    */
   readonly datumsPromised: number;
   /** Recovery stakes this run examined at a table anchor. */
   readonly stakesExamined: number;
   /**
-   * **Datums this run read across a whole death loop** — the count of wagers whose
-   * ledger was read both after the death and after the collection.
+   * **Datums this run read across a whole death loop** — a forfeited datum whose
+   * ledger was read both after the death and after the collection, or a kept one
+   * whose ledger was read after the death.
    *
    * Distinct from {@link stakesExamined}, which counts PLACES. A death that
    * forfeits four datums leaves one place, so a run reporting one examined stake
@@ -1460,18 +1491,31 @@ export interface DeathLoopBinding {
    */
   readonly datumsExamined: number;
   /**
-   * **Datums the campaign's own `on_death` gate withheld** across these trials.
-   *
-   * A conditional `drop-stake` whose gate is shut promises nothing, so its
-   * forfeit is not asserted — and a run that says so is a run whose reader can
-   * see the difference between "four datums proved" and "two proved and two the
-   * campaign never promised here".
+   * **Datums the campaign's own `on_death` gate KEPT** across these trials — a
+   * conditional `drop-stake` whose gate read shut. Each is asserted unchanged
+   * across its death; counted apart so a reader can tell "four forfeits proved"
+   * from "two forfeits and two keeps proved".
    */
-  readonly datumsWithheld: number;
+  readonly datumsKept: number;
+  /**
+   * **Forfeited datums read across the whole loop** — death, walk back and
+   * collection. The recovery half's own count: a run that only ever saw kept
+   * datums has proved no forfeit, no placement and no collection.
+   */
+  readonly forfeitsExamined: number;
   /** Respawns matched to a declared seat. */
   readonly seatsMatched: number;
   /** Walk-back legs completed. */
   readonly walksBack: number;
+}
+
+/**
+ * Whether a wager's promise was read through: a forfeited datum across the death
+ * AND the collection, a kept one across the death (nothing was left to collect).
+ */
+export function wagerExamined(w: TrialWager): boolean {
+  if (w.balanceAfterDeath === undefined) return false;
+  return !w.forfeits || w.balanceAfterCollect !== undefined;
 }
 
 /** Count what a set of trials examined. */
@@ -1485,11 +1529,11 @@ export function deathLoopBinding(
     deathsObserved: trials.filter((t) => t.died).length,
     datumsPromised: datumsPromised(plan),
     stakesExamined: trials.filter((t) => t.markerPos !== undefined).length,
-    datumsExamined: trials
+    datumsExamined: trials.flatMap((t) => t.wagers).filter(wagerExamined).length,
+    datumsKept: trials.flatMap((t) => t.wagers).filter((w) => !w.forfeits).length,
+    forfeitsExamined: trials
       .flatMap((t) => t.wagers)
-      .filter((w) => w.balanceAfterDeath !== undefined && w.balanceAfterCollect !== undefined)
-      .length,
-    datumsWithheld: trials.reduce((n, t) => n + t.withheld.length, 0),
+      .filter((w) => w.forfeits && wagerExamined(w)).length,
     seatsMatched: trials.filter((t) => t.respawnSeat !== undefined).length,
     walksBack: trials.filter((t) => t.walkedBack).length,
   };
@@ -1523,10 +1567,10 @@ export function deathLoopBindingFailures(b: DeathLoopBinding): string[] {
   // tier never exercises — the unrun vacuity mode, and it is a finding about the
   // campaign, never a quiet pass. The gate that withheld each one is named in the
   // trials, so the reader is not left to guess which.
-  if (b.datumsPromised > 0 && b.datumsExamined === 0) {
+  if (b.datumsPromised > 0 && b.forfeitsExamined === 0) {
     out.push(
       `the death-loop stage examined ZERO of the ${b.datumsPromised} datum(s) this campaign's ` +
-        `deaths can forfeit (${b.datumsWithheld} withheld by their own \`on_death\` gate): the ` +
+        `deaths can forfeit as a forfeit (${b.datumsKept} kept by their own \`on_death\` gate): the ` +
         `whole recovery-stake half of the loop — forfeit, placement, walk back, collection — was ` +
         `never exercised, and an empty examination is a finding, never a pass`,
     );
