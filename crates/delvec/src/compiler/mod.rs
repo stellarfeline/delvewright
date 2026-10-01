@@ -92,6 +92,7 @@ pub mod atmos;
 pub mod batchstate;
 pub mod blocking;
 pub mod blockout;
+pub mod blockstate;
 pub mod branch;
 pub mod burial;
 pub mod calibrate;

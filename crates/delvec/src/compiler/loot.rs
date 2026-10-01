@@ -86,7 +86,7 @@ pub struct ContainerAnchor {
 /// map's, a `BTreeMap` over `(area, name)`, so the offered list is deterministic
 /// (ADR-0006) and reads in area order.
 pub fn container_anchors(
-    blocks: &BTreeMap<[i32; 3], String>,
+    blocks: &crate::compiler::blockstate::BlockMap,
     anchors: &BTreeMap<(String, String), crate::compiler::plan::ResolvedAnchor>,
     loot: &[LootPlan],
     fills: &[CollectFillPlan],
@@ -118,7 +118,7 @@ pub fn container_anchors(
         };
         let found = blocks
             .get(&cell)
-            .map(String::as_str)
+            .map(|s| s.as_str())
             .unwrap_or("minecraft:air");
         let Some(slots) = container_slots(found) else {
             continue;
@@ -222,7 +222,7 @@ fn container_remedy(available: &[ContainerAnchor], what: &str) -> String {
 /// Build-tier proof: every `loot` anchor resolves to a cell that really holds a
 /// container in the assembled world, and no fill overflows that container.
 pub fn check_loot_containers(
-    blocks: &BTreeMap<[i32; 3], String>,
+    blocks: &crate::compiler::blockstate::BlockMap,
     loot: &[LootPlan],
     available: &[ContainerAnchor],
 ) -> Result<(), Failure> {
@@ -231,7 +231,7 @@ pub fn check_loot_containers(
         let c = l.cell;
         let found = blocks
             .get(&c)
-            .map(String::as_str)
+            .map(|s| s.as_str())
             .unwrap_or("minecraft:air");
         match container_slots(found) {
             None => bad.push(format!(
@@ -286,7 +286,7 @@ pub fn check_loot_containers(
 /// world, and the answer "no" must be a build error rather than a barrel-shaped
 /// hole the player discovers by finding an empty room where the quest item was.
 pub fn check_collect_containers(
-    blocks: &BTreeMap<[i32; 3], String>,
+    blocks: &crate::compiler::blockstate::BlockMap,
     fills: &[CollectFillPlan],
     available: &[ContainerAnchor],
 ) -> Result<(), Failure> {
@@ -295,7 +295,7 @@ pub fn check_collect_containers(
         let c = f.cell;
         let found = blocks
             .get(&c)
-            .map(String::as_str)
+            .map(|s| s.as_str())
             .unwrap_or("minecraft:air");
         match container_slots(found) {
             None => bad.push(format!(
@@ -386,14 +386,26 @@ mod tests {
     fn a_real_container_passes() {
         let mut b = BTreeMap::new();
         b.insert([1, 2, 3], "minecraft:barrel[facing=up]".to_string());
-        assert!(check_loot_containers(&b, &[mk("stores", [1, 2, 3], 5)], &[]).is_ok());
+        assert!(
+            check_loot_containers(
+                &crate::compiler::blockstate::interned(b.clone()),
+                &[mk("stores", [1, 2, 3], 5)],
+                &[]
+            )
+            .is_ok()
+        );
     }
 
     #[test]
     fn a_non_container_cell_is_dw0431_naming_the_block_it_found() {
         let mut b = BTreeMap::new();
         b.insert([1, 2, 3], "minecraft:stone_bricks".to_string());
-        let e = check_loot_containers(&b, &[mk("stores", [1, 2, 3], 1)], &[]).unwrap_err();
+        let e = check_loot_containers(
+            &crate::compiler::blockstate::interned(b.clone()),
+            &[mk("stores", [1, 2, 3], 1)],
+            &[],
+        )
+        .unwrap_err();
         assert_eq!(e.code, "DW0431");
         assert!(
             e.message.contains("minecraft:stone_bricks"),
@@ -415,7 +427,12 @@ mod tests {
     fn overflowing_the_container_is_dw0431() {
         let mut b = BTreeMap::new();
         b.insert([1, 2, 3], "minecraft:chest".to_string());
-        let e = check_loot_containers(&b, &[mk("stores", [1, 2, 3], 28)], &[]).unwrap_err();
+        let e = check_loot_containers(
+            &crate::compiler::blockstate::interned(b.clone()),
+            &[mk("stores", [1, 2, 3], 28)],
+            &[],
+        )
+        .unwrap_err();
         assert_eq!(e.code, "DW0431");
         assert!(e.message.contains("27 slots"), "{}", e.message);
     }
@@ -436,14 +453,26 @@ mod tests {
             [4, 5, 6],
             "minecraft:barrel[facing=up,open=false]".to_string(),
         );
-        assert!(check_collect_containers(&b, &[fill([4, 5, 6], 9)], &[]).is_ok());
+        assert!(
+            check_collect_containers(
+                &crate::compiler::blockstate::interned(b.clone()),
+                &[fill([4, 5, 6], 9)],
+                &[]
+            )
+            .is_ok()
+        );
     }
 
     #[test]
     fn adopting_a_cell_that_holds_no_container_is_dw0438() {
         let mut b = BTreeMap::new();
         b.insert([4, 5, 6], "minecraft:oak_planks".to_string());
-        let e = check_collect_containers(&b, &[fill([4, 5, 6], 1)], &[]).unwrap_err();
+        let e = check_collect_containers(
+            &crate::compiler::blockstate::interned(b.clone()),
+            &[fill([4, 5, 6], 1)],
+            &[],
+        )
+        .unwrap_err();
         assert_eq!(e.code, "DW0438");
         assert!(e.message.contains("minecraft:oak_planks"), "{}", e.message);
         assert!(e.message.contains("obj/take-cheese"), "{}", e.message);
@@ -462,7 +491,12 @@ mod tests {
     fn padding_past_the_containers_slots_is_dw0438() {
         let mut b = BTreeMap::new();
         b.insert([4, 5, 6], "minecraft:barrel".to_string());
-        let e = check_collect_containers(&b, &[fill([4, 5, 6], 28)], &[]).unwrap_err();
+        let e = check_collect_containers(
+            &crate::compiler::blockstate::interned(b.clone()),
+            &[fill([4, 5, 6], 28)],
+            &[],
+        )
+        .unwrap_err();
         assert_eq!(e.code, "DW0438");
         assert!(e.message.contains("27 slots"), "{}", e.message);
     }
@@ -595,7 +629,7 @@ mod tests {
         let mut claimant = mk("stores", [4, 5, 6], 1);
         claimant.anchor = "anchor/reliquary".to_string();
         let got = container_anchors(
-            &blocks,
+            &crate::compiler::blockstate::interned(blocks.clone()),
             &at,
             &[claimant],
             &[CollectFillPlan {

@@ -694,7 +694,7 @@ fn the_ci_fixture_validates_and_emits_its_template() {
 /// The `lethal-volume` fixture, planned, with the world and the block map the
 /// build judges it over — everything `check_danger_is_visible` takes.
 fn with_fixture<R>(
-    f: impl FnOnce(&Plan, &delvec::compiler::nav::World, &BTreeMap<[i32; 3], String>) -> R,
+    f: impl FnOnce(&Plan, &delvec::compiler::nav::World, &delvec::compiler::blockstate::BlockMap) -> R,
 ) -> R {
     with_fixture_in(&common::prefabs_dir(), f)
 }
@@ -702,7 +702,7 @@ fn with_fixture<R>(
 /// [`with_fixture`] over the prefab library at `library`.
 fn with_fixture_in<R>(
     library: &std::path::Path,
-    f: impl FnOnce(&Plan, &delvec::compiler::nav::World, &BTreeMap<[i32; 3], String>) -> R,
+    f: impl FnOnce(&Plan, &delvec::compiler::nav::World, &delvec::compiler::blockstate::BlockMap) -> R,
 ) -> R {
     let dir = common::repo_root().join("crates/delvec/tests/fixtures/lethal-volume");
     let raw = delvewright_dsl::RawCampaign {

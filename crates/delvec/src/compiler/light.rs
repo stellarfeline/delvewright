@@ -495,7 +495,7 @@ pub fn passes_light(name: &str) -> bool {
 pub struct LightModel {
     /// Non-air cells → block id: the assembled world's map, shared, plus the
     /// fixtures this model has placed.
-    blocks: crate::compiler::cellset::CellMap<String>,
+    blocks: crate::compiler::cellset::CellMap<crate::compiler::blockstate::BlockState>,
     /// Inclusive world AABB of all cells (for the sky-column scan).
     min: [i32; 3],
     max: [i32; 3],
@@ -528,8 +528,8 @@ impl LightModel {
     /// therefore evaluates opacity/emission over the same world the game assembles,
     /// so a `sand` floor that fell into the void is air here, not phantom rock.
     pub fn from_plan(plan: &Plan, structures: &BTreeMap<String, Vec<u8>>) -> Self {
-        Self::from_blocks(crate::compiler::assembled::assembled_blocks(
-            plan, structures,
+        Self::from_shared(std::sync::Arc::new(
+            crate::compiler::assembled::assembled_blocks(plan, structures),
         ))
     }
 
@@ -559,7 +559,7 @@ impl LightModel {
         max: [i32; 3],
     ) -> Self {
         LightModel {
-            blocks: blocks.into(),
+            blocks: crate::compiler::blockstate::interned(blocks).into(),
             min,
             max,
         }
@@ -567,7 +567,7 @@ impl LightModel {
 
     /// [`Self::from_blocks`] over a shared map, without copying it; the box is
     /// the one its cells occupy.
-    pub fn from_shared(blocks: std::sync::Arc<BTreeMap<[i32; 3], String>>) -> Self {
+    pub fn from_shared(blocks: std::sync::Arc<crate::compiler::blockstate::BlockMap>) -> Self {
         let (min, max) = occupied_box(blocks.keys());
         LightModel {
             blocks: crate::compiler::cellset::CellMap::from_shared(blocks),
@@ -580,7 +580,7 @@ impl LightModel {
     fn block_at(&self, c: [i32; 3]) -> &str {
         self.blocks
             .get(&c)
-            .map(String::as_str)
+            .map(|s| s.as_str())
             .unwrap_or("minecraft:air")
     }
 
@@ -618,7 +618,8 @@ impl LightModel {
 
     /// Place / replace a block at a cell (relight fixture emission).
     fn set(&mut self, c: [i32; 3], block: &str) {
-        self.blocks.insert(c, block.to_string());
+        self.blocks
+            .insert(c, crate::compiler::blockstate::BlockState::new(block));
     }
 
     /// Flood the assembled light field and return per-cell light within the AABB.

@@ -9910,9 +9910,9 @@ pub struct CollapseGeometry {
 /// the first solid cell beneath it, stacking within its own column — so the
 /// post-collapse world the proof reasons over is the world the server will
 /// actually have.
-pub fn plan_collapse(
+pub fn plan_collapse<V>(
     world: &World,
-    blocks: &BTreeMap<[i32; 3], String>,
+    blocks: &BTreeMap<[i32; 3], V>,
     region: ([i32; 3], [i32; 3]),
     label: &str,
 ) -> Result<CollapseGeometry, Failure> {

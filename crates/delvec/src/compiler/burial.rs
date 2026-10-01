@@ -302,7 +302,7 @@ fn moves(horizon: &str) -> String {
 pub fn check(
     plan: &Plan,
     prefabs: &PrefabRegistry,
-    blocks: &BTreeMap<[i32; 3], String>,
+    blocks: &crate::compiler::blockstate::BlockMap,
     structures: &BTreeMap<String, Vec<u8>>,
     world: &World,
     reachable: &BTreeSet<[i32; 3]>,
@@ -534,7 +534,7 @@ fn declared_phrase(piece: &Piece) -> String {
 }
 
 /// Is there a block in this cell?
-fn is_solid(blocks: &BTreeMap<[i32; 3], String>, c: [i32; 3]) -> bool {
+fn is_solid(blocks: &crate::compiler::blockstate::BlockMap, c: [i32; 3]) -> bool {
     blocks.get(&c).is_some_and(|b| b != "minecraft:air")
 }
 
@@ -542,7 +542,7 @@ fn is_solid(blocks: &BTreeMap<[i32; 3], String>, c: [i32; 3]) -> bool {
 /// build writes, with the three things that can answer given equal standing.
 fn covered(
     pieces: &[Piece],
-    blocks: &BTreeMap<[i32; 3], String>,
+    blocks: &crate::compiler::blockstate::BlockMap,
     ambient: &Ambient,
     c: [i32; 3],
 ) -> bool {
@@ -652,7 +652,7 @@ fn own_solid_sides(
 /// reaches the rim has not been contained, it has been cut off.
 fn party_air(
     pieces: &[Piece],
-    blocks: &BTreeMap<[i32; 3], String>,
+    blocks: &crate::compiler::blockstate::BlockMap,
     ambient: &Ambient,
     reachable: &BTreeSet<[i32; 3]>,
 ) -> (BTreeSet<[i32; 3]>, bool) {

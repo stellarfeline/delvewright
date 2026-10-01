@@ -894,7 +894,7 @@ pub fn build_with_warnings(
         {
             // spec-0022 payload verbs need the block map (a `collapse` settles
             // real blocks), not just the occupancy view.
-            let blocks: &BTreeMap<[i32; 3], String> = &assembled.blocks;
+            let blocks: &crate::compiler::blockstate::BlockMap = &assembled.blocks;
             if world.has_gate_anchors() {
                 gate_seal_ledger = Some(world.gate_seal_ledger());
             }
@@ -12407,7 +12407,7 @@ struct PayloadPlans {
 fn plan_payload_verbs(
     plan: &Plan,
     world: &crate::compiler::nav::World,
-    blocks: &BTreeMap<[i32; 3], String>,
+    blocks: &crate::compiler::blockstate::BlockMap,
 ) -> Result<PayloadPlans, BuildFailure> {
     let mut out = PayloadPlans::default();
     let placement = delvewright_dsl::Placement::of(plan.campaign);

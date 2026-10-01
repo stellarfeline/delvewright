@@ -247,7 +247,7 @@ impl DangerVisibility {
 /// `minecraft:campfire` declaration — the same reading
 /// [`delvewright_dsl::blockshape::hurts_body`] takes.
 fn cell_shows(
-    blocks: &std::collections::BTreeMap<[i32; 3], String>,
+    blocks: &crate::compiler::blockstate::BlockMap,
     cell: [i32; 3],
     shown_by: &[String],
 ) -> bool {
@@ -322,7 +322,7 @@ fn population_roots(plan: &Plan, entry: Option<[i32; 3]>) -> Vec<[i32; 3]> {
 pub fn check_danger_is_visible(
     plan: &Plan,
     world: &crate::compiler::nav::World,
-    blocks: &std::collections::BTreeMap<[i32; 3], String>,
+    blocks: &crate::compiler::blockstate::BlockMap,
     entry: Option<[i32; 3]>,
 ) -> (DangerVisibility, Result<(), Failure>) {
     let mut binding = DangerVisibility::default();

@@ -751,7 +751,7 @@ struct Exposure {
 pub fn check_daylight_staging(
     plan: &Plan,
     world: &World,
-    blocks: &std::sync::Arc<BTreeMap<[i32; 3], String>>,
+    blocks: &std::sync::Arc<crate::compiler::blockstate::BlockMap>,
     spawns: &BTreeMap<String, Vec<[i32; 3]>>,
 ) -> Result<(), Failure> {
     let c = plan.campaign;

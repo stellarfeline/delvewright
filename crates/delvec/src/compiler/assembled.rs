@@ -33,6 +33,7 @@
 //! iterates `BTreeMap`-ordered columns and stacks with a fixed tie-break — same
 //! DSL + seed → identical map.
 
+use crate::compiler::blockstate::{BlockMap, BlockState};
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::Read;
 
@@ -303,41 +304,104 @@ pub fn structure_cells_stateful(bytes: &[u8]) -> Vec<([i32; 3], String, Option<b
     structure_cells_inner(bytes, true)
 }
 
-fn structure_cells_inner(bytes: &[u8], stateful: bool) -> Vec<([i32; 3], String, Option<bool>)> {
+fn structure_cells_inner(bytes: &[u8], stateful: bool) -> Vec<TemplateCell> {
+    let decoded = decode_template(bytes, stateful);
+    decoded
+        .cells
+        .iter()
+        .map(|&(pos, i)| {
+            let (name, open) = decoded.palette[i].as_ref().expect("a kept entry");
+            (pos, name.clone(), *open)
+        })
+        .collect()
+}
+
+/// [`structure_cells_stateful`] with each block state interned once per
+/// palette entry rather than copied once per cell — the form the assembled
+/// world stores.
+pub(crate) fn structure_cells_interned(bytes: &[u8]) -> Vec<([i32; 3], BlockState, Option<bool>)> {
+    let decoded = decode_template(bytes, true);
+    let states: Vec<Option<(BlockState, Option<bool>)>> = decoded
+        .palette
+        .iter()
+        .map(|e| {
+            e.as_ref()
+                .map(|(name, open)| (BlockState::new(name), *open))
+        })
+        .collect();
+    decoded
+        .cells
+        .iter()
+        .map(|&(pos, i)| {
+            let (state, open) = states[i].expect("a kept entry");
+            (pos, state, open)
+        })
+        .collect()
+}
+
+/// One placed cell as the structure readers return it: local position, block
+/// id, and the `open` property.
+type TemplateCell = ([i32; 3], String, Option<bool>);
+
+/// A decoded template: its palette as the readers render it, and every
+/// non-air block as `(local position, palette index)` in file order.
+struct Decoded {
+    palette: Vec<Option<(String, Option<bool>)>>,
+    cells: Vec<([i32; 3], usize)>,
+}
+
+impl Decoded {
+    fn empty() -> Self {
+        Decoded {
+            palette: Vec::new(),
+            cells: Vec::new(),
+        }
+    }
+
+    /// Keep a block whose state indexes a named, non-air palette entry.
+    fn keep(&mut self, pos: [i32; 3], state: usize) {
+        if let Some(Some((name, _))) = self.palette.get(state)
+            && !is_air(name.split('[').next().unwrap_or(name))
+        {
+            self.cells.push((pos, state));
+        }
+    }
+}
+
+/// Decode a gzipped template; unparseable bytes decode to nothing. The typed
+/// decoding first; it reads exactly the shape the walk reads, and anything it
+/// refuses is walked as before ([`crate::compiler::nbtread`]).
+fn decode_template(bytes: &[u8], stateful: bool) -> Decoded {
     let mut raw = Vec::new();
     if flate2::read::GzDecoder::new(bytes)
         .read_to_end(&mut raw)
         .is_err()
     {
-        return Vec::new();
+        return Decoded::empty();
     }
-    // The typed decoding first; it reads exactly the shape the walk reads, and
-    // anything it refuses is walked as before ([`crate::compiler::nbtread`]).
-    cells_typed(&raw, stateful).unwrap_or_else(|| cells_walk(&raw, stateful))
+    decode_typed(&raw, stateful).unwrap_or_else(|| decode_walk(&raw, stateful))
 }
 
-/// [`structure_cells_inner`] over the typed decoding, or `None` when the bytes
-/// do not have its strict shape.
-/// One placed cell as the structure readers return it: local position, block
-/// id, and the `open` property.
-type TemplateCell = ([i32; 3], String, Option<bool>);
-
-fn cells_typed(raw: &[u8], stateful: bool) -> Option<Vec<TemplateCell>> {
+/// [`decode_template`] over the typed decoding, or `None` when the bytes do
+/// not have its strict shape.
+fn decode_typed(raw: &[u8], stateful: bool) -> Option<Decoded> {
     let root = crate::compiler::nbtread::root(raw)?;
     let Some(entries) = root.palette else {
-        return Some(Vec::new());
+        return Some(Decoded::empty());
     };
-    let palette: Vec<Option<(String, Option<bool>)>> = entries
-        .iter()
-        .map(|e| {
-            let props = match &e.properties {
-                Some(fastnbt::Value::Compound(p)) => Some(p),
-                _ => None,
-            };
-            e.name.as_ref().map(|s| palette_state(s, props, stateful))
-        })
-        .collect();
-    let mut out = Vec::new();
+    let mut out = Decoded {
+        palette: entries
+            .iter()
+            .map(|e| {
+                let props = match &e.properties {
+                    Some(fastnbt::Value::Compound(p)) => Some(p),
+                    _ => None,
+                };
+                e.name.as_ref().map(|s| palette_state(s, props, stateful))
+            })
+            .collect(),
+        cells: Vec::new(),
+    };
     for b in root.blocks.iter().flatten() {
         let Some(pos) = b.pos3() else {
             continue;
@@ -345,19 +409,15 @@ fn cells_typed(raw: &[u8], stateful: bool) -> Option<Vec<TemplateCell>> {
         let Some(state) = &b.state else {
             continue;
         };
-        if let Some(Some((name, open))) = palette.get(state.0 as usize)
-            && !is_air(name.split('[').next().unwrap_or(name))
-        {
-            out.push((pos, name.clone(), *open));
-        }
+        out.keep(pos, state.0 as usize);
     }
     Some(out)
 }
 
-/// [`structure_cells_inner`] over the dynamic [`fastnbt::Value`] tree.
-fn cells_walk(raw: &[u8], stateful: bool) -> Vec<TemplateCell> {
+/// [`decode_template`] over the dynamic [`fastnbt::Value`] tree.
+fn decode_walk(raw: &[u8], stateful: bool) -> Decoded {
     let Ok(fastnbt::Value::Compound(root)) = fastnbt::from_bytes::<fastnbt::Value>(raw) else {
-        return Vec::new();
+        return Decoded::empty();
     };
     let palette: Vec<Option<(String, Option<bool>)>> = match root.get("palette") {
         Some(fastnbt::Value::List(entries)) => entries
@@ -376,9 +436,12 @@ fn cells_walk(raw: &[u8], stateful: bool) -> Vec<TemplateCell> {
                 _ => None,
             })
             .collect(),
-        _ => return Vec::new(),
+        _ => return Decoded::empty(),
     };
-    let mut out = Vec::new();
+    let mut out = Decoded {
+        palette,
+        cells: Vec::new(),
+    };
     if let Some(fastnbt::Value::List(blocks)) = root.get("blocks") {
         for b in blocks {
             let fastnbt::Value::Compound(b) = b else {
@@ -405,14 +468,23 @@ fn cells_walk(raw: &[u8], stateful: bool) -> Vec<TemplateCell> {
                 Some(fastnbt::Value::Int(n)) => *n as usize,
                 _ => continue,
             };
-            if let Some(Some((name, open))) = palette.get(state)
-                && !is_air(name.split('[').next().unwrap_or(name))
-            {
-                out.push((pos, name.clone(), *open));
-            }
+            out.keep(pos, state);
         }
     }
     out
+}
+
+/// The cells a decoded template yields, as [`structure_cells_inner`] returns
+/// them.
+#[cfg(test)]
+fn cells_of(d: &Decoded) -> Vec<TemplateCell> {
+    d.cells
+        .iter()
+        .map(|&(pos, i)| {
+            let (name, open) = d.palette[i].as_ref().expect("a kept entry");
+            (pos, name.clone(), *open)
+        })
+        .collect()
 }
 
 /// One palette entry as the structure readers render it: the block id (with
@@ -532,7 +604,7 @@ pub fn gate_seal_ledger(seals: &[GateSeal], modelled: usize) -> serde_json::Valu
 /// the ledger is emitted in `(area, anchor)` order.
 pub(crate) fn measure_gate_seals(
     anchors: &BTreeMap<(String, String), ResolvedAnchor>,
-    blocks: &BTreeMap<[i32; 3], String>,
+    blocks: &BlockMap,
 ) -> Vec<GateSeal> {
     let mut out = Vec::new();
     for ((area, anchor), resolved) in anchors {
@@ -570,7 +642,7 @@ pub(crate) fn measure_gate_seals(
 /// it that survive gravity settling unchanged.
 struct Placed {
     /// The un-settled cell→block map.
-    blocks: BTreeMap<[i32; 3], String>,
+    blocks: BlockMap,
     /// Fence-gate cells authored `open=true` ([`Assembled::open_gates`]).
     open_gates: BTreeSet<[i32; 3]>,
     /// The per-gate world-load measurement ([`Assembled::gate_seals`]).
@@ -584,7 +656,7 @@ struct Placed {
 /// measurement ([`GateSeal`]) taken immediately before the gate clear. Kept
 /// separate from settling so unit tests can exercise each half.
 fn placed_blocks(plan: &Plan, structures: &BTreeMap<String, Vec<u8>>) -> Placed {
-    let mut blocks: BTreeMap<[i32; 3], String> = BTreeMap::new();
+    let mut blocks: BlockMap = BTreeMap::new();
     let mut open_gates: BTreeSet<[i32; 3]> = BTreeSet::new();
     for area in &plan.areas {
         // The area's own mass, before its templates: a derived blockout's blocks
@@ -602,8 +674,9 @@ fn placed_blocks(plan: &Plan, structures: &BTreeMap<String, Vec<u8>>) -> Placed 
                     open_gates.remove(&cell);
                 }
             } else {
+                let state = BlockState::new(&m.block);
                 for cell in region_cells(m.from, m.to) {
-                    blocks.insert(cell, m.block.clone());
+                    blocks.insert(cell, state);
                     open_gates.remove(&cell);
                 }
             }
@@ -625,12 +698,16 @@ fn placed_blocks(plan: &Plan, structures: &BTreeMap<String, Vec<u8>>) -> Placed 
                 // snow-layer counts are block STATE, and the fluid/step models
                 // below are wrong without them. Every classifier matches on
                 // [`base_id`].
-                structure_cells_stateful(bytes)
+                // Each distinct state is rotated once per template.
+                let mut rotated: BTreeMap<BlockState, BlockState> = BTreeMap::new();
+                structure_cells_interned(bytes)
                     .into_iter()
                     .map(|(local, name, open)| {
                         // Vanilla rotates blockstates as well as positions during
                         // `/place template … <rotation>` — see [`rotate_state`].
-                        let name = rotate_state(&name, piece.rotation);
+                        let name = *rotated.entry(name).or_insert_with(|| {
+                            BlockState::new(&rotate_state(&name, piece.rotation))
+                        });
                         let t = piece.rotation.transform(local);
                         let cell = [
                             template.pos[0] + t[0],
@@ -663,8 +740,9 @@ fn placed_blocks(plan: &Plan, structures: &BTreeMap<String, Vec<u8>>) -> Placed 
                     open_gates.remove(&cell);
                 }
             } else {
+                let state = BlockState::new(&s.block);
                 for cell in region_cells(s.from, s.to) {
-                    blocks.insert(cell, s.block.clone());
+                    blocks.insert(cell, state);
                     open_gates.remove(&cell);
                 }
             }
@@ -689,7 +767,7 @@ fn placed_blocks(plan: &Plan, structures: &BTreeMap<String, Vec<u8>>) -> Placed 
                 let Some(bytes) = structures.get(&template.structure_file) else {
                     return Vec::new();
                 };
-                structure_cells_stateful(bytes)
+                structure_cells_interned(bytes)
                     .into_iter()
                     .map(|(local, name, open)| {
                         let cell = [
@@ -776,7 +854,7 @@ pub struct Settled {
 ///
 /// Deterministic (ADR-0006): columns iterate in `BTreeMap` order and blocks stack
 /// bottom-up.
-fn settle(blocks: &mut BTreeMap<[i32; 3], String>) -> Vec<Settled> {
+fn settle(blocks: &mut BlockMap) -> Vec<Settled> {
     // Group cell y's by column.
     let mut columns: BTreeMap<(i32, i32), Vec<i32>> = BTreeMap::new();
     for c in blocks.keys() {
@@ -789,12 +867,12 @@ fn settle(blocks: &mut BTreeMap<[i32; 3], String>) -> Vec<Settled> {
         // A liquid cell is NEITHER: it does not hold a falling block up, and a
         // block that lands in it replaces it.
         let mut fixed: Vec<i32> = Vec::new();
-        let mut falling: Vec<(i32, String)> = Vec::new();
+        let mut falling: Vec<(i32, BlockState)> = Vec::new();
         for y in &ys {
-            let name = &blocks[&[x, *y, z]];
-            if is_falling_block(name) {
-                falling.push((*y, name.clone()));
-            } else if !is_fluid(name) {
+            let name = blocks[&[x, *y, z]];
+            if is_falling_block(&name) {
+                falling.push((*y, name));
+            } else if !is_fluid(&name) {
                 fixed.push(*y);
             }
         }
@@ -807,14 +885,14 @@ fn settle(blocks: &mut BTreeMap<[i32; 3], String>) -> Vec<Settled> {
         }
         // Group falling blocks by the nearest immovable support strictly below
         // them; a group has no support → those blocks despawned into the void.
-        let mut by_base: BTreeMap<i32, Vec<(i32, String)>> = BTreeMap::new();
+        let mut by_base: BTreeMap<i32, Vec<(i32, BlockState)>> = BTreeMap::new();
         for (y, name) in falling {
             if let Some(base) = fixed.iter().copied().filter(|&f| f < y).max() {
                 by_base.entry(base).or_default().push((y, name));
             } else {
                 // No support anywhere below → despawns into the void.
                 outcomes.push(Settled {
-                    block: name,
+                    block: name.to_string(),
                     from: [x, y, z],
                     to: None,
                 });
@@ -832,7 +910,7 @@ fn settle(blocks: &mut BTreeMap<[i32; 3], String>) -> Vec<Settled> {
                     yy += 1;
                 }
                 outcomes.push(Settled {
-                    block: name.clone(),
+                    block: name.to_string(),
                     from: [x, from_y, z],
                     to: Some([x, yy, z]),
                 });
@@ -849,7 +927,7 @@ fn settle(blocks: &mut BTreeMap<[i32; 3], String>) -> Vec<Settled> {
 /// block falls exactly like a template-placed one, so after every edit batch
 /// the model re-settles and the same despawn rule applies. Same algorithm,
 /// same determinism as the assembly-time [`settle`].
-pub(crate) fn resettle(blocks: &mut BTreeMap<[i32; 3], String>) -> Vec<Settled> {
+pub(crate) fn resettle(blocks: &mut BlockMap) -> Vec<Settled> {
     settle(blocks)
 }
 
@@ -861,7 +939,7 @@ pub struct Assembled {
     /// Shared rather than owned so a model that reads it whole (the light
     /// model) holds it without a copy; the edit replay, its one writer,
     /// mutates its own copy through `Arc::make_mut`.
-    pub blocks: std::sync::Arc<BTreeMap<[i32; 3], String>>,
+    pub blocks: std::sync::Arc<BlockMap>,
     /// One outcome per falling block: where it came to rest, or `None` if it
     /// despawned into the void.
     pub settled: Vec<Settled>,
@@ -896,10 +974,7 @@ pub fn assemble(plan: &Plan, structures: &BTreeMap<String, Vec<u8>>) -> Assemble
 /// seals + gate clears, **then gravity-settled**. Cells absent from the map are
 /// air. Shared by the nav occupancy model and the relight light model so a single
 /// gravity-faithful world feeds every consumer.
-pub fn assembled_blocks(
-    plan: &Plan,
-    structures: &BTreeMap<String, Vec<u8>>,
-) -> BTreeMap<[i32; 3], String> {
+pub fn assembled_blocks(plan: &Plan, structures: &BTreeMap<String, Vec<u8>>) -> BlockMap {
     std::sync::Arc::unwrap_or_clone(assemble(plan, structures).blocks)
 }
 
@@ -1031,14 +1106,11 @@ pub fn occupancy_of(
     blocks: BTreeMap<[i32; 3], String>,
     open_gates: &BTreeSet<[i32; 3]>,
 ) -> Occupancy {
-    occupancy_over(&blocks, open_gates)
+    occupancy_over(&crate::compiler::blockstate::interned(blocks), open_gates)
 }
 
 /// [`occupancy_of`] over a borrowed cell→block map.
-pub fn occupancy_over(
-    blocks: &BTreeMap<[i32; 3], String>,
-    open_gates: &BTreeSet<[i32; 3]>,
-) -> Occupancy {
+pub fn occupancy_over(blocks: &BlockMap, open_gates: &BTreeSet<[i32; 3]>) -> Occupancy {
     let mut solid: BTreeSet<[i32; 3]> = BTreeSet::new();
     let mut tall: BTreeSet<[i32; 3]> = BTreeSet::new();
     let mut use_gates: BTreeSet<[i32; 3]> = BTreeSet::new();
@@ -1377,6 +1449,14 @@ fn despawn_message(settled: &[Settled], pieces: &[PieceBox]) -> Option<String> {
 mod tests {
     use super::*;
 
+    /// [`settle`] over a map of owned strings, as the fixtures here write them.
+    fn settle_strings(blocks: &mut BTreeMap<[i32; 3], String>) -> Vec<Settled> {
+        let mut map = crate::compiler::blockstate::interned(std::mem::take(blocks));
+        let out = settle(&mut map);
+        *blocks = map.into_iter().map(|(c, s)| (c, s.to_string())).collect();
+        out
+    }
+
     /// A one-cell-thick gate anchor at `z`, spanning x 0..=1, y 64..=65.
     fn gate_anchors(block: &str) -> BTreeMap<(String, String), ResolvedAnchor> {
         let mut a = BTreeMap::new();
@@ -1408,7 +1488,10 @@ mod tests {
         for cell in region_cells([0, 64, 6], [1, 65, 6]) {
             blocks.insert(cell, "minecraft:iron_bars".to_string());
         }
-        let shut = measure_gate_seals(&anchors, &blocks);
+        let shut = measure_gate_seals(
+            &anchors,
+            &crate::compiler::blockstate::interned(blocks.clone()),
+        );
         assert_eq!(shut[0].blocked, 4);
         assert!(shut[0].sealed(), "a filled gate region is authored SHUT");
         assert_eq!(shut[0].foreign, 0);
@@ -1428,7 +1511,10 @@ mod tests {
             [0, 65, 6],
             "minecraft:iron_bars[east=true,west=true]".to_string(),
         );
-        let m = measure_gate_seals(&anchors, &blocks);
+        let m = measure_gate_seals(
+            &anchors,
+            &crate::compiler::blockstate::interned(blocks.clone()),
+        );
         assert_eq!(m[0].blocked, 1, "only the bars count");
         assert_eq!(
             m[0].foreign, 0,
@@ -1447,7 +1533,10 @@ mod tests {
         let mut blocks = BTreeMap::new();
         blocks.insert([0, 64, 6], "minecraft:cobblestone".to_string());
         blocks.insert([1, 64, 6], "minecraft:mossy_cobblestone".to_string());
-        let m = measure_gate_seals(&anchors, &blocks);
+        let m = measure_gate_seals(
+            &anchors,
+            &crate::compiler::blockstate::interned(blocks.clone()),
+        );
         assert_eq!(m[0].blocked, 2);
         assert_eq!(m[0].foreign, 1);
     }
@@ -1471,7 +1560,7 @@ mod tests {
         let mut blocks = BTreeMap::new();
         blocks.insert([0, 64, 0], "minecraft:sand".to_string());
         blocks.insert([1, 64, 0], "minecraft:sand".to_string());
-        settle(&mut blocks);
+        settle_strings(&mut blocks);
         assert!(
             blocks.is_empty(),
             "unsupported sand must despawn: {blocks:?}"
@@ -1484,7 +1573,7 @@ mod tests {
         let mut blocks = BTreeMap::new();
         blocks.insert([0, 64, 0], "minecraft:stone".to_string());
         blocks.insert([0, 66, 0], "minecraft:sand".to_string());
-        settle(&mut blocks);
+        settle_strings(&mut blocks);
         assert_eq!(
             blocks.get(&[0, 64, 0]).map(String::as_str),
             Some("minecraft:stone")
@@ -1506,7 +1595,7 @@ mod tests {
         blocks.insert([0, 64, 0], "minecraft:stone".to_string());
         blocks.insert([0, 66, 0], "minecraft:sand".to_string());
         blocks.insert([0, 68, 0], "minecraft:gravel".to_string());
-        settle(&mut blocks);
+        settle_strings(&mut blocks);
         assert!(blocks.contains_key(&[0, 64, 0]));
         assert!(blocks.contains_key(&[0, 65, 0]));
         assert!(blocks.contains_key(&[0, 66, 0]));
@@ -1605,7 +1694,7 @@ mod tests {
         let mut b = walled_corridor(64, 0, 10);
         b.insert([0, 65, 0], "minecraft:water".to_string()); // source
         b.insert([3, 66, 0], "minecraft:sand".to_string()); // authored high; air at [3,65,0]
-        settle(&mut b); // sand falls from 66 → 65 (onto the floor at 64)
+        settle_strings(&mut b); // sand falls from 66 → 65 (onto the floor at 64)
         assert_eq!(
             b.get(&[3, 65, 0]).map(String::as_str),
             Some("minecraft:sand"),
@@ -1628,7 +1717,7 @@ mod tests {
         b.remove(&[5, 64, 0]); // a hole in the floor at x=5
         b.insert([0, 65, 0], "minecraft:water".to_string()); // source
         b.insert([5, 66, 0], "minecraft:sand".to_string()); // over the hole → despawns
-        settle(&mut b);
+        settle_strings(&mut b);
         assert!(!b.contains_key(&[5, 66, 0]), "sand over the hole despawned");
         assert!(
             !b.contains_key(&[5, 65, 0]),
@@ -1879,7 +1968,7 @@ mod tests {
         blocks.insert([0, 64, 0], "minecraft:andesite".to_string());
         blocks.insert([1, 64, 0], "minecraft:coarse_dirt".to_string());
         let before = blocks.clone();
-        settle(&mut blocks);
+        settle_strings(&mut blocks);
         assert_eq!(blocks, before);
     }
 
@@ -1899,7 +1988,7 @@ mod tests {
             };
             blocks.insert([x, 64, 0], name.to_string());
         }
-        settle(&mut blocks);
+        settle_strings(&mut blocks);
         for x in 0..3 {
             assert!(
                 !blocks.contains_key(&[x, 64, 0]),
@@ -2102,7 +2191,7 @@ mod tests {
         blocks.insert([0, 64, 0], "minecraft:sand".to_string());
         blocks.insert([1, 64, 0], "minecraft:stone".to_string());
         blocks.insert([1, 66, 0], "minecraft:sand".to_string());
-        let outcomes = settle(&mut blocks);
+        let outcomes = settle_strings(&mut blocks);
         let despawned: Vec<_> = outcomes.iter().filter(|s| s.to.is_none()).collect();
         let landed: Vec<_> = outcomes.iter().filter(|s| s.to.is_some()).collect();
         assert_eq!(despawned.len(), 1, "one sand cell despawns: {outcomes:?}");
@@ -2120,7 +2209,7 @@ mod tests {
         for x in 0..5 {
             blocks.insert([x, 64, 0], "minecraft:sand".to_string());
         }
-        let settled = settle(&mut blocks);
+        let settled = settle_strings(&mut blocks);
         let pieces = [("prefab/test-den", ([0, 64, 0], [4, 64, 0]))];
         let msg = despawn_message(&settled, &pieces).expect("despawn must be flagged");
         // WHAT: count + kind; WHERE: the piece; HOW + anti-dodge clause.
@@ -2141,7 +2230,7 @@ mod tests {
             ok.insert([x, 63, 0], "minecraft:stone".to_string());
             ok.insert([x, 64, 0], "minecraft:sand".to_string());
         }
-        let ok_settled = settle(&mut ok);
+        let ok_settled = settle_strings(&mut ok);
         assert!(
             despawn_message(&ok_settled, &pieces).is_none(),
             "supported floor is clean"
@@ -2205,7 +2294,7 @@ mod tests {
         b.insert([0, 64, 0], "minecraft:water".to_string()); // 2-deep water
         b.insert([0, 65, 0], "minecraft:water".to_string());
         b.insert([0, 67, 0], "minecraft:sand".to_string()); // dropped in
-        let outcomes = settle(&mut b);
+        let outcomes = settle_strings(&mut b);
         assert_eq!(
             b.get(&[0, 64, 0]).map(String::as_str),
             Some("minecraft:sand"),
@@ -2232,7 +2321,7 @@ mod tests {
         let mut b = BTreeMap::new();
         b.insert([0, 64, 0], "minecraft:water".to_string());
         b.insert([0, 66, 0], "minecraft:sand".to_string());
-        let outcomes = settle(&mut b);
+        let outcomes = settle_strings(&mut b);
         assert!(!b.contains_key(&[0, 66, 0]));
         assert!(!b.contains_key(&[0, 65, 0]));
         assert_eq!(outcomes.len(), 1);
@@ -2433,7 +2522,7 @@ mod tests {
             blocks.insert([x, 63, 0], "minecraft:stone".to_string()); // substrate
             blocks.insert([x, 64, 0], "minecraft:sand".to_string()); // surface
         }
-        let outcomes = settle(&mut blocks);
+        let outcomes = settle_strings(&mut blocks);
         assert!(
             outcomes.iter().all(|s| s.to == Some(s.from)),
             "every supported gravity cell stays put: {outcomes:?}"
@@ -2592,7 +2681,7 @@ mod rotate_state_tests {
 
 #[cfg(test)]
 mod typed_read_tests {
-    use super::{cells_typed, cells_walk, structure_size};
+    use super::{cells_of, decode_typed, decode_walk, structure_size};
     use fastnbt::Value;
     use std::collections::HashMap;
 
@@ -2723,9 +2812,9 @@ mod typed_read_tests {
         for (what, root, typed) in cases {
             let raw = fastnbt::to_bytes(&root).expect("serialize NBT");
             for stateful in [false, true] {
-                let fast = cells_typed(&raw, stateful);
+                let fast = decode_typed(&raw, stateful).map(|d| cells_of(&d));
                 assert_eq!(fast.is_some(), typed, "{what}: typed path taken");
-                let walked = cells_walk(&raw, stateful);
+                let walked = cells_of(&decode_walk(&raw, stateful));
                 assert_eq!(
                     fast.unwrap_or_else(|| walked.clone()),
                     walked,

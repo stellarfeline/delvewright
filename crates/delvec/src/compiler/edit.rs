@@ -1068,7 +1068,8 @@ fn write_cell(
     if assembled::is_air(block) {
         std::sync::Arc::make_mut(&mut assembled.blocks).remove(&cell);
     } else {
-        std::sync::Arc::make_mut(&mut assembled.blocks).insert(cell, block.to_string());
+        std::sync::Arc::make_mut(&mut assembled.blocks)
+            .insert(cell, crate::compiler::blockstate::BlockState::new(block));
     }
     if assembled::is_fence_gate(block) && assembled::state_value(block, "open") == Some("true") {
         assembled.open_gates.insert(cell);
@@ -2292,7 +2293,7 @@ mod tests {
             }
         }
         Assembled {
-            blocks: std::sync::Arc::new(blocks),
+            blocks: std::sync::Arc::new(crate::compiler::blockstate::interned(blocks)),
             settled: Vec::new(),
             open_gates: BTreeSet::new(),
             gate_seals: Vec::new(),
