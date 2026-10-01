@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
 import { setTimeout as delay } from "node:timers/promises";
 import type { Bot } from "mineflayer";
-import { MineflayerExecutor, completionWindowMs, type BotConfig } from "../src/executor.ts";
+import { MineflayerExecutor, completionWindowMs, respawnLanded, type BotConfig } from "../src/executor.ts";
 import { BotDeathError } from "../src/death.ts";
 import type { AssertCompleteStep } from "../src/critical-path.ts";
 import {
@@ -4108,6 +4108,20 @@ test("a walk that reaches a leg's destination from somewhere else takes the decl
   // retried once it read clear, which only a walk bound to the door does.
   assert.ok(bot.gotoStates.includes("shut"), bot.gotoStates.join(","));
   assert.ok(bot.gotoStates.includes("open"), bot.gotoStates.join(","));
+});
+
+test("a respawn has landed only when the respawn packet came and the client reported loaded", () => {
+  const closed = { cause: "respawn" as const, openedAt: 1, sentAt: 2, reason: "chunk" as const };
+  const open = { cause: "respawn" as const, openedAt: 1, sentAt: undefined, reason: undefined };
+  // A health update above zero on the corpse makes mineflayer say `spawn`; no
+  // respawn packet has come, so the body is still where it died.
+  assert.equal(respawnLanded(true, 0, []), false);
+  assert.equal(respawnLanded(true, 1, [open]), false, "the new life's position is not in yet");
+  assert.equal(respawnLanded(true, 1, [closed]), true);
+  assert.equal(respawnLanded(false, 1, [closed]), true, "the packets say so even if `spawn` lags");
+  // A bot with no wire tracker has only the `spawn` count.
+  assert.equal(respawnLanded(true, 0, undefined), true);
+  assert.equal(respawnLanded(false, 0, undefined), false);
 });
 
 test("a leg matched from far away is consumed but is not that walk's proof", () => {

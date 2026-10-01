@@ -112,6 +112,7 @@ import {
   createHarnessBot,
   SERVER_LOAD_TIMEOUT_TICKS,
   type ClientLoadedState,
+  type LoadWindow,
 } from "./client-loaded.ts";
 import {
   traceLoadWindows,
@@ -153,6 +154,7 @@ import {
   gateWindowWaitMs,
   gatesBindingWalk,
   gatesCrossedByHop,
+  unstagedCrushBoxes,
   insideGate,
   nearCell,
   needsStandoff,
@@ -1124,6 +1126,34 @@ export const RESPAWN_PROTECTION_TICKS = SERVER_LOAD_TIMEOUT_TICKS;
  */
 const TIME_PACKET_TICKS = 20;
 
+/**
+ * Whether the respawn after a death has LANDED, the way a real client knows it:
+ * the server's `respawn` packet has arrived, and the client has since reported
+ * `player_loaded` for that respawn — which it does only once the server's
+ * position for the new life has arrived and the chunk under it is loaded. That
+ * is the first moment a player sees where the respawn put them.
+ *
+ * mineflayer's `spawn` is not that moment. It fires on the first health update
+ * above zero after the client last thought itself dead, and nothing ties that
+ * update to a respawn. The gallery once read a die-retry respawn at [15,69,21],
+ * by the muster where the bot died, with the checkpoint at [5,67,9]; the
+ * respawn reading carries the server's own `Pos` beside the client's, so a
+ * recurrence names its side. With no wire
+ * tracker (a bot adopted by `attachBot`) there is no packet to wait for, and the
+ * `spawn` count is all there is.
+ */
+export function respawnLanded(
+  spawned: boolean,
+  respawnPacketsSinceDeath: number,
+  windowsSinceDeath: readonly LoadWindow[] | undefined,
+): boolean {
+  if (windowsSinceDeath === undefined) return spawned;
+  return (
+    respawnPacketsSinceDeath > 0 &&
+    windowsSinceDeath.some((w) => w.cause === "respawn" && w.sentAt !== undefined)
+  );
+}
+
 /** Where {@link MineflayerExecutor.readServerPos} parks the game time it reads (harness-owned). */
 const POS_READ_STORAGE = "dw_harness:pos_read";
 
@@ -1512,6 +1542,8 @@ export class MineflayerExecutor implements StepExecutor {
   /** `respawn` packets this run has received, and the count at the last death. */
   private respawnPackets = 0;
   private respawnPacketsAtDeath = 0;
+  /** How many load windows the wire tracker had opened at the last death. */
+  private windowsAtDeath = 0;
   /** Serial for {@link readServerPos}'s answer markers. */
   private posReads = 0;
   /** One-shot callbacks armed by {@link raceDeath}, fired on death. */
@@ -2435,6 +2467,7 @@ export class MineflayerExecutor implements StepExecutor {
     this.deathSeq += 1;
     this.spawnSeqAtDeath = this.spawnSeq;
     this.respawnPacketsAtDeath = this.respawnPackets;
+    this.windowsAtDeath = this.clientLoaded?.windows().length ?? 0;
     this.stopPathfinding();
     for (const waiter of this.deathWaiters) {
       waiter(err);
@@ -2446,7 +2479,16 @@ export class MineflayerExecutor implements StepExecutor {
     // edge lives.
     const takeRespawn = (): void => {
       try {
-        bot?.respawn();
+        // The death screen's button, pressed once the respawn has not already
+        // happened. mineflayer's own `respawn()` refuses whenever it believes the
+        // bot alive, and a health update above zero on the corpse is enough to make
+        // it believe that — so a bot with a wire asks the packet count instead.
+        if (this.clientLoaded === undefined) {
+          bot?.respawn();
+        } else if (this.respawnPackets === this.respawnPacketsAtDeath && bot) {
+          const payload = bot.supportFeature("respawnIsPayload") ? { payload: 0 } : { actionId: 0 };
+          bot._client.write("client_command", payload);
+        }
       } catch {
         // A failed respawn is not lost: `recoverFromDeath` bounds its own wait and
         // reports a missing respawn loudly.
@@ -2558,7 +2600,13 @@ export class MineflayerExecutor implements StepExecutor {
     const deadline = Date.now() + RESPAWN_TIMEOUT_MS;
     let respawned = false;
     while (Date.now() < deadline) {
-      if (this.spawnSeq > this.spawnSeqAtDeath) {
+      if (
+        respawnLanded(
+          this.spawnSeq > this.spawnSeqAtDeath,
+          this.respawnPackets - this.respawnPacketsAtDeath,
+          this.clientLoaded?.windows().slice(this.windowsAtDeath),
+        )
+      ) {
         respawned = true;
         break;
       }
@@ -3913,6 +3961,15 @@ export class MineflayerExecutor implements StepExecutor {
           );
         }
         walkGates = binding.gates;
+        // A crush gate this walk does not bind has no staging on it, so its region
+        // costs what a lethal volume costs: a pathfinder that cuts through it
+        // between two proven cells meets the closing edge blind, which is how a
+        // gallery walk to the east bay died at the inner door. A walk that binds
+        // the gate stages it at its proven mouth instead.
+        const unstaged = unstagedCrushBoxes(declaredGates, walkGates);
+        if (unstaged.length > 0) {
+          movements.exclusionAreasStep.push((block): number => lethalStepCost(block, unstaged));
+        }
         // Stated binding count, once per walk, for every campaign that declares a
         // gate at all: how many of the declared gates bind this walk, which they
         // are, what said so, and what was withheld. A zero here is a reader's
@@ -6039,7 +6096,7 @@ export class MineflayerExecutor implements StepExecutor {
       for (const l of lines) {
         if (l.includes(before)) {
           const m =
-            /\[dw:pos \d+ at (\d+) \[(-?[\d.]+)d, (-?[\d.]+)d, (-?[\d.]+)d\]\]/.exec(l);
+            /\[dw:pos \d+ at (\d+) \[(-?[\d.]+)d,\s*(-?[\d.]+)d,\s*(-?[\d.]+)d\]\]/.exec(l);
           if (m) {
             tickFrom = Number(m[1]);
             pos = [Number(m[2]), Number(m[3]), Number(m[4])];

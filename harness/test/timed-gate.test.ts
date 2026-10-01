@@ -16,6 +16,7 @@ import {
   gateRetryBudgetMs,
   gateWindowWaitMs,
   gatesBindingWalk,
+  unstagedCrushBoxes,
   gatesCrossedByHop,
   hopCrossesGate,
   insideGate,
@@ -223,6 +224,14 @@ test("a walk that starts off its leg keeps the leg's crush gate and adds the dec
   const c = gatesBindingWalk(true, [], [portcullis, tide], false);
   assert.deepEqual(c.gates, [portcullis]);
   assert.deepEqual(c.withheld, [tide]);
+});
+
+test("a crush gate a walk does not bind is a region the navigator avoids", () => {
+  assert.deepEqual(unstagedCrushBoxes([portcullis, tide], [portcullis]), [
+    { lo: tide.min, hi: tide.max },
+  ]);
+  assert.deepEqual(unstagedCrushBoxes([portcullis, tide], [portcullis, tide]), []);
+  assert.deepEqual(unstagedCrushBoxes([portcullis], []), [], "a non-crush gate is only waited out");
 });
 
 test("a campaign declaring no gate binds nothing, matched or not", () => {

@@ -303,6 +303,21 @@ export function gatesBindingWalk(
   };
 }
 
+/**
+ * The regions of every declared crush gate a walk does NOT bind, as boxes the
+ * navigator costs like a lethal volume. Such a gate has no staging on this walk,
+ * so a pathfinder cutting through it between two proven cells meets the closing
+ * edge blind; the gallery's walk to the east bay died that way at the inner door.
+ */
+export function unstagedCrushBoxes(
+  declared: readonly TimedGate[],
+  bound: readonly TimedGate[],
+): { lo: Vec3Tuple; hi: Vec3Tuple }[] {
+  return declared
+    .filter((g) => g.crush && !bound.some((b) => b.id === g.id))
+    .map((g) => ({ lo: g.min, hi: g.max }));
+}
+
 /** Human-readable gate summary for a failure message: id and cycle, per gate. */
 export function describeGates(gates: readonly TimedGate[]): string {
   return gates
