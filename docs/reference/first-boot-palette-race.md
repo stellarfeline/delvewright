@@ -52,8 +52,9 @@ The indices thrown vary run to run (2, 5, 7, 13 first). On arm64 the hardware ma
 | `MEMORY=4G` | arm64 | 40 | 0 | 7.2% |
 | `MEMORY=2G`, `--cpus=4` | arm64 | 30 | 0 | 9.5% |
 | `MEMORY=4G`, `--cpus=4`, `--memory=2560m` (≈1.6 GiB of the heap in swap, sampled from the cgroup) | arm64 | 20 | 0 | 13.9% |
+| `MEMORY=4G` | amd64 under Rosetta | 10 | 0 | 25.9% |
 
-Pooled arm64: 0 crashes in 90 boots bounds the per-boot rate below 3.3% at 95% on this hardware. Every boot logged zero `ERROR` lines. The placement tick ran 17.6–40.0 s behind.
+Pooled arm64: 0 crashes in 90 boots bounds the per-boot rate below 3.3% at 95% on this hardware. Every boot logged zero `ERROR` lines. The placement tick ran 15.3–40.0 s behind on arm64 and 29.2–44.5 s under Rosetta.
 
 **The defect is unreproduced by boot.** It is reproduced as a mechanism (§2): the pinned jar's own section palette throws this exception under a concurrent unlocked read on arm64 and not under x86 ordering. A host that is slower than this workstation (fewer cores, swapping) lengthens the placement tick, which is the window in which the light worker reads sections the main thread is filling; whether memory pressure raises the rate is not established by these boots.
 
