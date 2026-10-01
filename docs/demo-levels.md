@@ -32,6 +32,7 @@ Rules of the queue:
 | Ambush (0016 §3) | covered by the-drowned-bell (wall-watch, rafters) | covered |
 | Timed gate (0016 §4) | **Tide Mill** — a mill race where the water gate cycles; the whole level is timing runs through 3 gates, escalating windows | pending |
 | TD lanes + aggro-edge (0016 §6) | **Hold the Causeway** — pure defense: three waves down two lanes at a barricade the party pre-walks | pending |
+| Respawn wait (0077) | **Hold the Line** — a two-player arena fight at one bonfire: whoever falls watches the other hold alone for the declared seconds, and a second fall is a wipe that resets the arena | pending |
 | Party division of labor (0018) | **Two Keys** — a 2-player vault where progression is provably split (carrier:one items, AND-join objectives); solo-completable per DW0356 floor | pending |
 | Point of no return: close-gate + inter-area transport | covered by nobodys-cave-island (the boulder) | covered |
 | strike-npc + vanilla-warden combat consequence | covered by nobodys-cave-island (round 11) | covered |

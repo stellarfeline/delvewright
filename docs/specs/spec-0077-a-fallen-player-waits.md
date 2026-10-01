@@ -1,6 +1,6 @@
 # spec-0077: A fallen player waits — a declared respawn wait in a party
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Ground**: written against engine `b09fbe5f` (`fix/party-wipe-reseat`: the party-wipe latch `#wipe`, `dw_wiped`, `party_wipe_tick`, `cp_respawn_check`, `cp_respawn_fire`, `cp_on_respawn_<i>`, `cp_reset_<i>` in `crates/delvec/src/compiler/emit.rs`), the cutscene observation state (`CUTSCENE_TAG`, `SNEAK_HELD_PREDICATE` and the two-camera `spectate` bounce in the same file), `WorldContent` in `crates/dsl/src/stages.rs`, and the pinned command tree `crates/delvec/data/commands-1.21.11.json`.
 - **What it is for**: in a party, a player who falls is out of the fight for a while, so the rest of the party fights short-handed and a wipe — everyone down at once — is a state the party can still avoid by holding on. Today a fallen player is back at the fire the moment they click *Respawn*, which makes a wipe almost unreachable while two players trade deaths.
 - **Research**: §2 is this spec's research record, measured on the pinned server. Each rule below is marked **cited** (a measurement, the record, or a constitution rule requires it) or **authored** (this spec chooses).
