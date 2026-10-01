@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
 import { setTimeout as delay } from "node:timers/promises";
 import type { Bot } from "mineflayer";
+import { within } from "./bounded.ts";
 import { MineflayerExecutor, completionWindowMs, respawnLanded, type BotConfig } from "../src/executor.ts";
 import { BotDeathError } from "../src/death.ts";
 import type { AssertCompleteStep } from "../src/critical-path.ts";
@@ -146,10 +147,10 @@ test("a death fails an in-flight assert-complete fast with the death diagnostic"
   // full settle window. The death makes it reject promptly instead.
   bot.emit("messagestr", "delve-bot fell from a high place");
   bot.emit("death");
-  await assert.rejects(
+  await within("executor.assertComplete(step) to reject", assert.rejects(
     () => executor.assertComplete(step),
     (err: unknown) => err instanceof BotDeathError && /high place/.test(err.message),
-  );
+  ));
 });
 
 test("a respawn that lands before the wait is armed is still observed", async () => {
@@ -163,7 +164,7 @@ test("a respawn that lands before the wait is armed is still observed", async ()
   bot.emit("death");
   bot.emit("spawn"); // the server respawned it before anyone was listening
   const started = Date.now();
-  await executor.recoverFromDeath();
+  await within("executor.recoverFromDeath()", executor.recoverFromDeath());
   assert.ok(
     Date.now() - started < 1_000,
     "the spawn counter cannot miss an event that already fired",
@@ -204,7 +205,7 @@ test("awaitEntitySettle resolves once the non-player entity count holds steady",
   bot.entities[100] = fakeEntity(100);
   bot.entities[101] = fakeEntity(101);
   const started = Date.now();
-  await executor.awaitEntitySettle();
+  await within("executor.awaitEntitySettle()", executor.awaitEntitySettle());
   assert.ok(
     Date.now() - started < 2_000,
     "settles well inside the default poll budget once the count stops changing",
@@ -224,7 +225,7 @@ test("awaitEntitySettle does not settle on a count that is still growing from la
     bot.entities[202] = fakeEntity(202);
   }, 350);
   const started = Date.now();
-  await executor.awaitEntitySettle();
+  await within("executor.awaitEntitySettle()", executor.awaitEntitySettle());
   const elapsed = Date.now() - started;
   assert.equal(Object.keys(bot.entities).length, 3, "waited for every packet, not just the first");
   assert.ok(elapsed > 350, `resolved at ${elapsed}ms — before the last packet even landed`);
@@ -235,7 +236,7 @@ test("awaitEntitySettle gives up after its bounded timeout when nothing ever pop
   const bot = new EntityTrackingFakeBot(); // entities stays empty — a legitimately quiet spawn
   const executor = attach(bot, { DELVEWRIGHT_ENTITY_SETTLE_TIMEOUT_MS: "250" });
   const started = Date.now();
-  await executor.awaitEntitySettle(); // must not hang the run
+  await within("executor.awaitEntitySettle()", executor.awaitEntitySettle()); // must not hang the run
   const elapsed = Date.now() - started;
   assert.ok(elapsed >= 250 && elapsed < 1_500, `gave up near the 250ms bound (took ${elapsed}ms)`);
 });
@@ -300,7 +301,7 @@ test("awaitCutscene waits out the cutscene and returns once control is restored"
     bot.entity.position = new FakeVec3(8, 65, 8); // teleported back, then still
   }, 150);
   const startedInSpectator = bot.game.gameMode;
-  await executor.awaitCutscene(0);
+  await within("executor.awaitCutscene(0)", executor.awaitCutscene(0));
   assert.equal(startedInSpectator, "spectator");
   assert.equal(bot.game.gameMode, "adventure"); // control confirmed returned
 });
@@ -310,7 +311,7 @@ test("awaitCutscene is bounded: it continues (does not hang) if control never re
   bot.game.gameMode = "spectator"; // never restored
   // Small grace so the bounded give-up path resolves quickly.
   const executor = attach(bot, { DELVEWRIGHT_CUTSCENE_GRACE_MS: "150" });
-  await executor.awaitCutscene(0); // resolves (logs + continues), never throws/hangs
+  await within("executor.awaitCutscene(0)", executor.awaitCutscene(0)); // resolves (logs + continues), never throws/hangs
   assert.equal(bot.game.gameMode, "spectator");
 });
 
@@ -321,10 +322,10 @@ test("awaitCutscene aborts fast if the bot dies during the cutscene", async () =
     bot.emit("messagestr", "delve-bot was slain by Warden");
     bot.emit("death");
   }, 50);
-  await assert.rejects(
+  await within("executor.awaitCutscene(5) to reject", assert.rejects(
     () => executor.awaitCutscene(5), // would otherwise sleep ~5s
     (err: unknown) => err instanceof BotDeathError && /Warden/.test(err.message),
-  );
+  ));
 });
 
 // --- gap 8: cross-area transport hardening ------------------------
@@ -343,7 +344,7 @@ test("awaitTransport waits for the position jump before returning", async () => 
   // The server teleport lands: mineflayer sets the position, then emits forcedMove.
   bot.entity.position = new FakeVec3(260.5, 65, 4.5);
   bot.emit("forcedMove");
-  await done;
+  await within("executor.awaitTransport([260, 65, 4]) after the teleport landed", done);
   assert.equal(resolved, true);
 });
 
@@ -362,7 +363,7 @@ test("awaitTransport holds until the destination chunk is loaded (footing)", asy
   await new Promise((r) => setTimeout(r, 150));
   assert.equal(resolved, false); // still waiting for the chunk to load
   bot.chunkLoaded = true; // chunk finishes loading
-  await done;
+  await within("executor.awaitTransport([260, 65, 4]) after the chunk loaded", done);
   assert.equal(resolved, true);
 });
 
@@ -370,7 +371,7 @@ test("awaitTransport resets the pathfinder as the jump lands", async () => {
   const bot = new FakeBot();
   bot.entity.position = new FakeVec3(260.5, 65, 4.5); // already arrived
   const executor = attach(bot);
-  await executor.awaitTransport([260, 65, 4]);
+  await within("executor.awaitTransport([260, 65, 4])", executor.awaitTransport([260, 65, 4]));
   assert.ok(bot.pathfinderStops >= 1); // stale cross-area path dropped
 });
 
@@ -382,10 +383,10 @@ test("awaitTransport aborts fast if the bot dies mid-transport", async () => {
     bot.emit("messagestr", "delve-bot fell out of the world");
     bot.emit("death");
   }, 50);
-  await assert.rejects(
+  await within("executor.awaitTransport([260, 65, 4]) to reject", assert.rejects(
     () => executor.awaitTransport([260, 65, 4]), // would otherwise wait ~15s
     (err: unknown) => err instanceof BotDeathError && /out of the world/.test(err.message),
-  );
+  ));
 });
 
 test("forcedMove resets the pathfinder only on a large cross-area jump", () => {
@@ -436,7 +437,7 @@ const G = (x: number, y: number, z: number, range = 1): GoalSpec => ({ x, y, z, 
 
 test("replayLegWithRecovery walks a clean leg with no recovery", async () => {
   const { calls, goto } = recorder(() => false);
-  await replayLegWithRecovery([G(0, 65, 0), G(0, 65, 3), G(0, 65, 6, 3)], "npc x", goto);
+  await within("replayLegWithRecovery([G(0, 65, 0), G(0, 65, 3), G(0, 65, 6, 3)], \"npc x\", goto)", replayLegWithRecovery([G(0, 65, 0), G(0, 65, 3), G(0, 65, 6, 3)], "npc x", goto));
   assert.equal(calls.length, 3); // one goto per goal, no recovery
   assert.ok(!calls.some((c) => c.label.includes("recovery")));
 });
@@ -445,7 +446,7 @@ test("replayLegWithRecovery re-centers on the last proven cell then retries a st
   // Stall on the SECOND hop (the wp8->wp9 pocket-wedge shape). Recovery must go to
   // the FIRST hop's exact cell at range 0, then the retry succeeds.
   const { calls, goto } = recorder((_spec, label) => label.includes("waypoint 2/3"));
-  await replayLegWithRecovery([G(1, 65, -3), G(1, 65, 0), G(2, 66, 1, 3)], "npc perimedes", goto);
+  await within("replayLegWithRecovery([G(1, 65, -3), G(1, 65, 0), G(2, 66, 1, 3)], \"npc perim...", replayLegWithRecovery([G(1, 65, -3), G(1, 65, 0), G(2, 66, 1, 3)], "npc perimedes", goto));
   // Sequence: hop1 ok, hop2 stall, recovery→[1,65,-3] range 0, hop2 retry ok, hop3 ok.
   const labels = calls.map((c) => c.label);
   assert.deepEqual(labels, [
@@ -462,10 +463,10 @@ test("replayLegWithRecovery re-centers on the last proven cell then retries a st
 
 test("replayLegWithRecovery rethrows a first-hop stall (nothing proven yet)", async () => {
   const { calls, goto } = recorder((_spec, label) => label.includes("waypoint 1/2"));
-  await assert.rejects(
+  await within("replayLegWithRecovery([G(0, 65, 0), G(0, 65, 3, 3)], \"npc x\", goto) to reject", assert.rejects(
     () => replayLegWithRecovery([G(0, 65, 0), G(0, 65, 3, 3)], "npc x", goto),
     /stall at/,
-  );
+  ));
   // No recovery attempted for a first-hop stall.
   assert.ok(!calls.some((c) => c.label.includes("recovery")));
 });
@@ -479,10 +480,10 @@ test("replayLegWithRecovery rethrows if the hop is still unwalkable after recove
       throw new Error(`persistent stall at ${label}`);
     }
   };
-  await assert.rejects(
+  await within("replayLegWithRecovery([G(0, 65, 0), G(3, 65, 0), G(6, 65, 0, 3)], \"npc x\", al... to reject", assert.rejects(
     () => replayLegWithRecovery([G(0, 65, 0), G(3, 65, 0), G(6, 65, 0, 3)], "npc x", alwaysFail),
     /persistent stall/,
-  );
+  ));
 });
 
 test("replayLegWithRecovery escalates to a physics unstick when the recovery pathfind also stalls", async () => {
@@ -507,7 +508,7 @@ test("replayLegWithRecovery escalates to a physics unstick when the recovery pat
     unstuck = true; // one burst frees the bot
     return 1; // moved a block
   };
-  await replayLegWithRecovery([G(1, 65, -3), G(1, 65, 0), G(2, 66, 1, 3)], "npc x", goto, unstick);
+  await within("replayLegWithRecovery([G(1, 65, -3), G(1, 65, 0), G(2, 66, 1, 3)], \"npc x\", g...", replayLegWithRecovery([G(1, 65, -3), G(1, 65, 0), G(2, 66, 1, 3)], "npc x", goto, unstick));
   assert.equal(unstickTargets.length, 1, "one physics-unstick burst was enough");
   const t = unstickTargets[0]!;
   // First burst aims at the GOAL (forward progress); the hop's goal is waypoint 2.
@@ -535,7 +536,7 @@ test("replayLegWithRecovery unstick falls back to the proven cell after a zero-p
     if (!towardGoal) freed = true; // a proven-direction burst escapes the pocket
     return towardGoal ? 0 : 1; // goal-direction is wall-blocked → 0 progress
   };
-  await replayLegWithRecovery([G(1, 65, -3), G(1, 65, 0), G(2, 66, 1, 3)], "npc x", goto, unstick);
+  await within("replayLegWithRecovery([G(1, 65, -3), G(1, 65, 0), G(2, 66, 1, 3)], \"npc x\", g...", replayLegWithRecovery([G(1, 65, -3), G(1, 65, 0), G(2, 66, 1, 3)], "npc x", goto, unstick));
   assert.equal(aims[0]!.z, 0, "burst 1 aims at the goal");
   assert.equal(aims[1]!.z, -3, "burst 2 falls back to the proven cell after zero progress");
 });
@@ -551,11 +552,11 @@ test("replayLegWithRecovery bounds the physics unstick then fails loudly", async
     bursts += 1;
     return 0;
   };
-  await assert.rejects(
+  await within("replayLegWithRecovery([G(1, 65, -3), G(1, 65, 0), G(2, 66, 1, 3)], \"npc x\", g... to reject", assert.rejects(
     () =>
       replayLegWithRecovery([G(1, 65, -3), G(1, 65, 0), G(2, 66, 1, 3)], "npc x", goto, unstick),
     /permanently wedged/,
-  );
+  ));
   assert.equal(bursts, 3, "bounded to UNSTICK_ATTEMPTS bursts before failing");
 });
 
@@ -666,7 +667,7 @@ test("assert-complete passes only on the anchored campaign marker for THIS campa
   const executor = attach(bot);
   executor.useCampaign("hello-world");
   bot.emit("messagestr", "[dw:complete hello-world campaign]");
-  await executor.assertComplete(COMPLETE); // resolves
+  await within("executor.assertComplete(COMPLETE)", executor.assertComplete(COMPLETE)); // resolves
 });
 
 test("assert-complete ignores a lookalike line and another campaign's marker", async () => {
@@ -682,10 +683,10 @@ test("assert-complete ignores a lookalike line and another campaign's marker", a
   // none of the lines above satisfied the assertion.
   bot.emit("messagestr", "delve-bot fell out of the world");
   bot.emit("death");
-  await assert.rejects(
+  await within("executor.assertComplete(COMPLETE) to reject", assert.rejects(
     () => executor.assertComplete(COMPLETE),
     (err: unknown) => err instanceof BotDeathError,
-  );
+  ));
 });
 
 test("assertEndgameNotReached passes while the campaign is unfinished", () => {
@@ -739,7 +740,7 @@ test("requireObjective resolves on that objective's own marker, not another's", 
     bot.emit("messagestr", "Objective complete: Leave the hall");
     bot.emit("messagestr", "[dw:complete hello-world obj/exit]");
   }, 50);
-  await executor.requireObjective("obj/exit", "reach anchor/exit");
+  await within("executor.requireObjective(\"obj/exit\", \"reach anchor/exit\")", executor.requireObjective("obj/exit", "reach anchor/exit"));
 });
 
 test("requireObjective fails the step when its objective never completes", async () => {
@@ -751,10 +752,10 @@ test("requireObjective fails the step when its objective never completes", async
   // (otherwise 30s) wait promptly and proves the wait was still running.
   bot.emit("messagestr", "delve-bot fell out of the world");
   bot.emit("death");
-  await assert.rejects(
+  await within("executor.requireObjective(\"obj/exit\", \"reach anchor/exit\") to reject", assert.rejects(
     () => executor.requireObjective("obj/exit", "reach anchor/exit"),
     (err: unknown) => err instanceof BotDeathError,
-  );
+  ));
 });
 
 test("requireObjective accepts a marker that arrived before the step started", async () => {
@@ -767,7 +768,7 @@ test("requireObjective accepts a marker that arrived before the step started", a
   executor.beginStep(1);
   bot.emit("messagestr", "[dw:complete hello-world obj/exit]");
   executor.beginStep(2);
-  await executor.requireObjective("obj/exit", "reach anchor/exit");
+  await within("executor.requireObjective(\"obj/exit\", \"reach anchor/exit\")", executor.requireObjective("obj/exit", "reach anchor/exit"));
 });
 
 // --- timed-gate crossings (spec-0016 §4) --------------------------
@@ -846,13 +847,13 @@ test("a gate-crossing hop waits for the window and retries instead of failing", 
       throw new Error("Path was stopped before it could be completed!");
     }
   };
-  await replayLegWithRecovery(
+  await within("replayLegWithRecovery([G(24, 63, -14), G(24, 63, -14, 3)], \"anchor anchor/l1a...", replayLegWithRecovery(
     [G(24, 63, -14), G(24, 63, -14, 3)],
     "anchor anchor/l1a-ward",
     goto,
     undefined,
     gate,
-  );
+  ));
   assert.equal(gate.waits, 1, "waited for exactly one window");
   assert.ok(
     labels.some((l) => l.includes("gate attempt 1")),
@@ -873,13 +874,13 @@ test("a gate-crossing hop does not retreat when the bot is already clear of the 
       throw new Error("Path was stopped before it could be completed!");
     }
   };
-  await replayLegWithRecovery(
+  await within("replayLegWithRecovery([G(24, 63, 4), G(24, 63, -14), G(24, 63, -14, 3)], \"anc...", replayLegWithRecovery(
     [G(24, 63, 4), G(24, 63, -14), G(24, 63, -14, 3)],
     "anchor anchor/l1a-ward",
     goto,
     undefined,
     gate,
-  );
+  ));
   assert.ok(!labels.some((l) => l.includes("standoff")), labels.join(" | "));
 });
 
@@ -894,13 +895,13 @@ test("a gate-crossing hop retreats to the last proven cell when caught inside th
       throw new Error("Path was stopped before it could be completed!");
     }
   };
-  await replayLegWithRecovery(
+  await within("replayLegWithRecovery([G(24, 63, 4), G(24, 63, -14), G(24, 63, -14, 3)], \"anc...", replayLegWithRecovery(
     [G(24, 63, 4), G(24, 63, -14), G(24, 63, -14, 3)],
     "anchor anchor/l1a-ward",
     goto,
     undefined,
     gate,
-  );
+  ));
   const standoff = specs.find((s) => s.label.includes("standoff"));
   assert.ok(standoff, "stood off out of the fill");
   assert.deepEqual(
@@ -918,7 +919,7 @@ test("a genuinely unwalkable gate leg still fails, naming the gate and its cycle
       throw new Error("No path to the goal!");
     }
   };
-  await assert.rejects(
+  await within("replayLegWithRecovery([G(24, 63, -14), G(24, 63, -14, 3)], \"anchor anchor/l1a... to reject", assert.rejects(
     () =>
       replayLegWithRecovery(
         [G(24, 63, -14), G(24, 63, -14, 3)],
@@ -934,7 +935,7 @@ test("a genuinely unwalkable gate leg still fails, naming the gate and its cycle
       assert.match(err.message, /real \s*navigation failure|No path to the goal/);
       return true;
     },
-  );
+  ));
   assert.ok(gate.waits >= GATE_MIN_ATTEMPTS, `at least ${GATE_MIN_ATTEMPTS} attempts`);
   assert.ok(
     gate.clock.t > 2 * (gateRetryBudgetMs([PORTCULLIS]) / 3),
@@ -954,7 +955,7 @@ test("a walk with no gates bound gets no gate retries — a real regression stil
       throw new Error("Path was stopped before it could be completed!");
     }
   };
-  await assert.rejects(
+  await within("replayLegWithRecovery([G(0, 65, 0), G(0, 65, 3), G(0, 65, 6, 3)], \"anchor anc... to reject", assert.rejects(
     () =>
       replayLegWithRecovery(
         [G(0, 65, 0), G(0, 65, 3), G(0, 65, 6, 3)],
@@ -962,7 +963,7 @@ test("a walk with no gates bound gets no gate retries — a real regression stil
         goto,
       ),
     /Path was stopped/,
-  );
+  ));
   // One initial try plus the single stall-recovery retry — no window loop.
   assert.equal(attempts, 2, "no blanket retry on an unmarked leg");
 });
@@ -985,13 +986,13 @@ test("a gate crossing the pathfinder cannot hold is finished by walking, inside 
     freed = true; // one burst walks the span
     return 1;
   };
-  await replayLegWithRecovery(
+  await within("replayLegWithRecovery([G(24, 63, -9), G(24, 63, -11), G(24, 63, -14, 3)], \"an...", replayLegWithRecovery(
     [G(24, 63, -9), G(24, 63, -11), G(24, 63, -14, 3)],
     "anchor anchor/l1a-ward",
     goto,
     unstick,
     gate,
-  );
+  ));
   assert.equal(bursts.length, 1, "one physical crossing burst was enough");
   assert.equal(gate.waits, 1, "and it happened inside the FIRST window, not after the budget");
 });
@@ -1034,7 +1035,7 @@ test("a crush-gate crossing is staged: fresh window observed BEFORE any entry", 
   const goto = async (_spec: GoalSpec, label: string): Promise<void> => {
     events.push(label);
   };
-  await replayLegWithRecovery(TIDE_GOALS, "interact anchor/objective", goto, undefined, gate);
+  await within("replayLegWithRecovery(TIDE_GOALS, \"interact anchor/objective\", goto, undefine...", replayLegWithRecovery(TIDE_GOALS, "interact anchor/objective", goto, undefined, gate));
   assert.equal(gate.waits, 1, "one fresh window for the one crossing hop");
   const wait = events.indexOf("wait");
   const entry = events.findIndex((e) => e.includes("waypoint 2/3"));
@@ -1074,7 +1075,7 @@ test("a crush entry crosses RAW: the dash runs mouth-to-mouth before any pathfin
   const goto = async (_spec: GoalSpec, label: string): Promise<void> => {
     events.push(label);
   };
-  await replayLegWithRecovery(TIDE_GOALS, "interact anchor/objective", goto, undefined, gate);
+  await within("replayLegWithRecovery(TIDE_GOALS, \"interact anchor/objective\", goto, undefine...", replayLegWithRecovery(TIDE_GOALS, "interact anchor/objective", goto, undefined, gate));
   const dash = events.findIndex((e) => e.startsWith("dash "));
   const entry = events.findIndex((e) => e.includes("gate attempt"));
   assert.ok(dash >= 0, `the raw dash ran: ${events.join(" | ")}`);
@@ -1102,7 +1103,7 @@ test("a dash that cannot clear fails its attempt and takes the NEXT window — n
   const goto = async (_spec: GoalSpec, label: string): Promise<void> => {
     labels.push(label);
   };
-  await replayLegWithRecovery(TIDE_GOALS, "interact anchor/objective", goto, undefined, gate);
+  await within("replayLegWithRecovery(TIDE_GOALS, \"interact anchor/objective\", goto, undefine...", replayLegWithRecovery(TIDE_GOALS, "interact anchor/objective", goto, undefined, gate));
   assert.equal(dashes, 2, "one failed dash, one clean one");
   assert.equal(gate.waits, 2, "the retry waited for its own fresh window");
   assert.ok(
@@ -1135,7 +1136,7 @@ test("a bot the current carried off the mouth is re-staged, never margin-failed 
     labels.push(label);
     if (label.includes("re-stage")) feet = [260, 61, 12]; // walked back to the mouth
   };
-  await replayLegWithRecovery(TIDE_GOALS, "interact anchor/objective", goto, undefined, gate);
+  await within("replayLegWithRecovery(TIDE_GOALS, \"interact anchor/objective\", goto, undefine...", replayLegWithRecovery(TIDE_GOALS, "interact anchor/objective", goto, undefined, gate));
   assert.ok(
     labels.some((l) => l.includes("gate re-stage")),
     `the drifted bot was walked back to the mouth: ${labels.join(" | ")}`,
@@ -1160,7 +1161,7 @@ test("a crush gate whose window edge cannot be observed is never entered blind",
   const goto = async (_spec: GoalSpec, label: string): Promise<void> => {
     if (label.includes("waypoint 2/3")) attempts.push(label);
   };
-  await assert.rejects(
+  await within("replayLegWithRecovery(TIDE_GOALS, \"interact anchor/objective\", goto, undefine... to reject", assert.rejects(
     () => replayLegWithRecovery(TIDE_GOALS, "interact anchor/objective", goto, undefined, gate),
     (err: unknown) => {
       assert.ok(err instanceof Error);
@@ -1168,7 +1169,7 @@ test("a crush gate whose window edge cannot be observed is never entered blind",
       assert.match(err.message, /refusing blind entry/);
       return true;
     },
-  );
+  ));
   assert.equal(attempts.length, 0, `no entry was ever attempted: ${attempts.join(" | ")}`);
   assert.ok(gate.waits >= GATE_MIN_ATTEMPTS, "the refusal still burned the bounded budget");
 });
@@ -1189,7 +1190,7 @@ test("a bot caught inside a crush gate's cells stands off BEFORE waiting — no 
     if (label.includes("waypoint 1/3")) feet = [260, 61, 13]; // drifted into the fill
     if (label.includes("standoff")) feet = [260, 61, 12]; // the standoff pulls it out
   };
-  await replayLegWithRecovery(TIDE_GOALS, "interact anchor/objective", goto, undefined, gate);
+  await within("replayLegWithRecovery(TIDE_GOALS, \"interact anchor/objective\", goto, undefine...", replayLegWithRecovery(TIDE_GOALS, "interact anchor/objective", goto, undefined, gate));
   const standoff = events.findIndex((e) => e.includes("standoff"));
   const wait = events.indexOf("wait");
   const entry = events.findIndex((e) => e.includes("gate attempt"));
@@ -1207,7 +1208,7 @@ test("a fresh window too short for the crossing is refused loudly, not gambled",
   const goto = async (_spec: GoalSpec, label: string): Promise<void> => {
     if (label.includes("waypoint 2/3")) entries.push(label);
   };
-  await assert.rejects(
+  await within("replayLegWithRecovery(TIDE_GOALS, \"interact anchor/objective\", goto, undefine... to reject", assert.rejects(
     () => replayLegWithRecovery(TIDE_GOALS, "interact anchor/objective", goto, undefined, gate),
     (err: unknown) => {
       assert.ok(err instanceof Error);
@@ -1215,7 +1216,7 @@ test("a fresh window too short for the crossing is refused loudly, not gambled",
       assert.match(err.message, /full margin/);
       return true;
     },
-  );
+  ));
   assert.equal(entries.length, 0, "the too-short window was never entered");
 });
 
@@ -1235,7 +1236,7 @@ test("a failed crush entry does not escalate into a stale window — it takes th
       throw new Error("Path was stopped before it could be completed!");
     }
   };
-  await replayLegWithRecovery(TIDE_GOALS, "interact anchor/objective", goto, undefined, gate);
+  await within("replayLegWithRecovery(TIDE_GOALS, \"interact anchor/objective\", goto, undefine...", replayLegWithRecovery(TIDE_GOALS, "interact anchor/objective", goto, undefined, gate));
   assert.equal(gate.waits, 2, "the retry waited for the NEXT fresh window");
   assert.ok(
     !labels.some((l) => l.includes("recovery")),
@@ -1264,7 +1265,7 @@ test("a gate-leg hop failure is SUCCESS when the step settled mid-crossing (tide
       throw new Error("Path was stopped before it could be completed!");
     }
   };
-  await replayLegWithRecovery(
+  await within("replayLegWithRecovery([G(24, 63, 4), G(24, 63, -11), G(24, 63, -14, 3)], \"anc...", replayLegWithRecovery(
     [G(24, 63, 4), G(24, 63, -11), G(24, 63, -14, 3)],
     "anchor anchor/wheelpit",
     goto,
@@ -1273,7 +1274,7 @@ test("a gate-leg hop failure is SUCCESS when the step settled mid-crossing (tide
     // The oracle already reports the step settled (marker arrived / transport
     // landed) by the time the failure is judged.
     () => "objective obj/wheelpit is complete (its marker arrived)",
-  );
+  ));
   assert.equal(gate.waits, 0, "no window wait: there is no crossing left to make");
   assert.ok(!calls.some((l) => l.includes("gate attempt")), calls.join(" | "));
   assert.ok(!calls.some((l) => l.includes("standoff")), calls.join(" | "));
@@ -1295,7 +1296,7 @@ test("a settle signal landing during the window wait ends the crossing before re
   const gate: GateAssist = {
     gates: inner.gates,
     waitForWindow: async (gates) => {
-      const observed = await inner.waitForWindow(gates);
+      const observed = await within("inner.waitForWindow(gates)", inner.waitForWindow(gates));
       settledNow = true;
       return observed;
     },
@@ -1309,14 +1310,14 @@ test("a settle signal landing during the window wait ends the crossing before re
       throw new Error("Path was stopped before it could be completed!");
     }
   };
-  await replayLegWithRecovery(
+  await within("replayLegWithRecovery([G(24, 63, 4), G(24, 63, -11), G(24, 63, -14, 3)], \"anc...", replayLegWithRecovery(
     [G(24, 63, 4), G(24, 63, -11), G(24, 63, -14, 3)],
     "anchor anchor/wheelpit",
     goto,
     undefined,
     gate,
     () => (settledNow ? "objective obj/wheelpit is complete (its marker arrived)" : undefined),
-  );
+  ));
   assert.equal(inner.waits, 1, "one window wait, then the settle signal ended the crossing");
   assert.ok(!calls.some((l) => l.includes("gate attempt")), calls.join(" | "));
   assert.ok(
@@ -1333,14 +1334,14 @@ test("a non-gate leg hop failure is SUCCESS when the completion transport alread
       throw new Error("No path to the goal!");
     }
   };
-  await replayLegWithRecovery(
+  await within("replayLegWithRecovery([G(0, 65, 0), G(0, 65, 3), G(0, 65, 6, 3)], \"anchor anc...", replayLegWithRecovery(
     [G(0, 65, 0), G(0, 65, 3), G(0, 65, 6, 3)],
     "anchor anchor/next-area",
     goto,
     undefined,
     undefined,
     () => "the step's completion transport landed the bot at its exported destination [260, 61, 4]",
-  );
+  ));
   // No re-center toward the unreachable old-area cell, and no goal beyond the leg.
   assert.ok(!calls.some((l) => l.includes("recovery")), calls.join(" | "));
   assert.ok(
@@ -1358,7 +1359,7 @@ test("a settle oracle that never fires leaves the gate failure verdict untouched
       throw new Error("No path to the goal!");
     }
   };
-  await assert.rejects(
+  await within("replayLegWithRecovery([G(24, 63, -14), G(24, 63, -14, 3)], \"anchor anchor/l1a... to reject", assert.rejects(
     () =>
       replayLegWithRecovery(
         [G(24, 63, -14), G(24, 63, -14, 3)],
@@ -1369,7 +1370,7 @@ test("a settle oracle that never fires leaves the gate failure verdict untouched
         () => undefined,
       ),
     /timed-gate\/portcullis/,
-  );
+  ));
   assert.ok(gate.waits >= GATE_MIN_ATTEMPTS, "the full retry discipline still ran");
 });
 
@@ -1447,7 +1448,7 @@ test("interact equips the required item BEFORE chatting the trigger", async () =
   executor.useCampaign("keep-trial");
   executor.beginStep(3);
   setTimeout(() => bot.emit("messagestr", "[dw:complete keep-trial obj/unbar]"), 20);
-  await executor.interact(interactStep("minecraft:trial_key"));
+  await within("executor.interact(interactStep(\"minecraft:trial_key\"))", executor.interact(interactStep("minecraft:trial_key")));
   assert.deepEqual(bot.calls, ["equip(trial_key,hand)", "chat(/trigger dw.i.unbar)"]);
 });
 
@@ -1463,7 +1464,7 @@ test("interact leaves the hand alone when the step requires no item", async () =
   executor.useCampaign("keep-trial");
   executor.beginStep(3);
   setTimeout(() => bot.emit("messagestr", "[dw:complete keep-trial obj/unbar]"), 20);
-  await executor.interact(interactStep(null));
+  await within("executor.interact(interactStep(null))", executor.interact(interactStep(null)));
   assert.deepEqual(bot.calls, ["chat(/trigger dw.i.unbar)"]);
 });
 
@@ -1516,7 +1517,7 @@ test("a walk leg starts at full health: one effect covers the whole deficit, nam
   executor.useCampaign("keep-trial");
   executor.beginStep(3);
   setTimeout(() => bot.emit("messagestr", "[dw:complete keep-trial obj/unbar]"), 700);
-  await executor.interact(interactStep(null));
+  await within("executor.interact(interactStep(null))", executor.interact(interactStep(null)));
   const effects = bot.calls.filter((c) => c.startsWith("chat(/effect "));
   assert.deepEqual(effects, ["chat(/effect give @s minecraft:instant_health 1 2 true)"]);
   assert.ok(
@@ -1545,7 +1546,7 @@ test("a drop on a walk leg is restored to full, whoever dealt it", async () => {
   executor.useCampaign("keep-trial");
   executor.beginStep(3);
   setTimeout(() => bot.emit("messagestr", "[dw:complete keep-trial obj/unbar]"), 1_200);
-  await executor.interact(interactStep(null));
+  await within("executor.interact(interactStep(null))", executor.interact(interactStep(null)));
   assert.deepEqual(
     bot.calls.filter((c) => c.startsWith("chat(/effect ")),
     ["chat(/effect give @s minecraft:instant_health 1 1 true)"],
@@ -1603,29 +1604,29 @@ test("the walk in opens a closed gate in its way — once, and never an open one
     }
   ).openGateAhead.bind(executor);
   const opened = new Map<string, number>();
-  await openGateAhead([35, 60, 80], new Set([GATE]), opened, "lethal/undertide");
+  await within("openGateAhead([35, 60, 80], new Set([GATE]), opened, \"lethal/undertide\")", openGateAhead([35, 60, 80], new Set([GATE]), opened, "lethal/undertide"));
   assert.deepEqual(used, ["dark_oak_fence_gate"], "the closed gate is opened");
   assert.equal(open, true);
-  await openGateAhead([35, 60, 80], new Set([GATE]), opened, "lethal/undertide");
+  await within("openGateAhead([35, 60, 80], new Set([GATE]), opened, \"lethal/undertide\")", openGateAhead([35, 60, 80], new Set([GATE]), opened, "lethal/undertide"));
   assert.deepEqual(used, ["dark_oak_fence_gate"], "an open gate is never used — that would close it");
   open = false;
-  await openGateAhead([35, 60, 80], new Set([GATE]), opened, "lethal/undertide");
+  await within("openGateAhead([35, 60, 80], new Set([GATE]), opened, \"lethal/undertide\")", openGateAhead([35, 60, 80], new Set([GATE]), opened, "lethal/undertide"));
   assert.deepEqual(used, ["dark_oak_fence_gate"], "nor the same cell twice inside a second");
-  await openGateAhead([35, 60, 80], new Set(), new Map(), "lethal/undertide");
+  await within("openGateAhead([35, 60, 80], new Set(), new Map(), \"lethal/undertide\")", openGateAhead([35, 60, 80], new Set(), new Map(), "lethal/undertide"));
   assert.deepEqual(used, ["dark_oak_fence_gate"], "only what the pathfinder's rule calls openable");
 
   // …and the gate it opened is put back as it stood, as staging.
   const restore = (
     executor as unknown as { restoreOpenedGates: (v: string) => Promise<void> }
   ).restoreOpenedGates.bind(executor);
-  await restore("lethal/undertide");
+  await within("restore(\"lethal/undertide\")", restore("lethal/undertide"));
   assert.ok(
     bot.calls.includes("chat(/setblock 31 68 80 minecraft:dark_oak_fence_gate[open=false])"),
     bot.calls.join(" | "),
   );
   const row = executor.stagedBodies().find((r) => r.kind === "world");
   assert.ok(row && /put back as it stood/.test(row.why) && row.performed, JSON.stringify(row));
-  await restore("lethal/undertide");
+  await within("restore(\"lethal/undertide\")", restore("lethal/undertide"));
   assert.equal(
     bot.calls.filter((c) => c.startsWith("chat(/setblock")).length,
     1,
@@ -1723,7 +1724,7 @@ test("reach: a completion transport landing mid-gate-leg is step success, not a 
     transport: [260, 61, 4],
   };
   const started = Date.now();
-  await executor.reach(step); // resolves — before the fix this looped gate retries and threw
+  await within("executor.reach(step)", executor.reach(step)); // resolves — before the fix this looped gate retries and threw
   // One hop, retried once by runGoto's own transient-retry — never the gate loop's
   // window waits (each up to a full cycle + 15s margin) or its re-center recovery.
   assert.ok(bot.gotoCalls <= 2, `no gate-loop retries: ${bot.gotoCalls} pathfinds`);
@@ -2348,7 +2349,7 @@ test("a cutscene's spectator window cannot eat a scripted death", async () => {
     bot.game.gameMode = "adventure";
   }, 400);
 
-  await executor.kill({ ...KILL_STEP, cutsceneSeconds: 1 });
+  await within("executor.kill({ ...KILL_STEP, cutsceneSeconds: 1 })", executor.kill({ ...KILL_STEP, cutsceneSeconds: 1 }));
 
   const trials = executor.deathTrials();
   assert.equal(trials.length, 2, "both scripted deaths were taken");
@@ -2375,7 +2376,7 @@ test("a death that never lands says what it SAW, not what it assumed", async () 
 
   // The STEP still completes: the die-retry stage reds on its own coverage, and
   // ending the run here would suppress the muster of every wave behind this one.
-  await executor.kill({ ...KILL_STEP, cutsceneSeconds: 1 });
+  await within("executor.kill({ ...KILL_STEP, cutsceneSeconds: 1 })", executor.kill({ ...KILL_STEP, cutsceneSeconds: 1 }));
 
   const t = executor.deathTrials()[0]!;
   assert.equal(t.completed, false, "the trial says its loop reached no verdict");
@@ -2404,7 +2405,7 @@ test("the die-retry stage survives its OWN scripted death and records both trial
   const executor = attach(bot);
   executor.useCampaign("the-drowned-bell");
   executor.useCombatPlan(combatPlan(), true);
-  await executor.kill(KILL_STEP);
+  await within("executor.kill(KILL_STEP)", executor.kill(KILL_STEP));
 
   const trials = executor.deathTrials();
   assert.equal(trials.length, 2, "spec-0023 takes two scripted deaths per encounter");
@@ -2447,8 +2448,8 @@ test("a scripted death re-arms the bot WITHOUT re-selecting the class", async ()
   const executor = attach(bot);
   executor.useCampaign("the-drowned-bell");
   executor.useCombatPlan(combatPlan(), true);
-  await executor.selectClass(SELECT_CLASS_STEP);
-  await executor.kill(KILL_STEP);
+  await within("executor.selectClass(SELECT_CLASS_STEP)", executor.selectClass(SELECT_CLASS_STEP));
+  await within("executor.kill(KILL_STEP)", executor.kill(KILL_STEP));
 
   assert.equal(
     bot.calls.filter((c) => c === `chat(${SELECT_CLASS_STEP.command})`).length,
@@ -2474,8 +2475,8 @@ test("a kit lost across a death reds the trial — keep_inventory is the seal", 
   const executor = attach(bot);
   executor.useCampaign("the-drowned-bell");
   executor.useCombatPlan(combatPlan(), true);
-  await executor.selectClass(SELECT_CLASS_STEP);
-  await executor.kill(KILL_STEP);
+  await within("executor.selectClass(SELECT_CLASS_STEP)", executor.selectClass(SELECT_CLASS_STEP));
+  await within("executor.kill(KILL_STEP)", executor.kill(KILL_STEP));
 
   const trials = executor.deathTrials();
   assert.ok(trials.length > 0);
@@ -2501,7 +2502,7 @@ test("a trial that never walked back reports NO re-engagement observation", asyn
   const plan = combatPlan();
   const encounter = { ...plan.encounters[0]!, checkpoint: [60, 64, 0] as [number, number, number] };
   executor.useCombatPlan({ ...plan, encounters: [encounter] }, true);
-  await assert.rejects(() => executor.kill(KILL_STEP));
+  await within("executor.kill(KILL_STEP) to reject", assert.rejects(() => executor.kill(KILL_STEP)));
 
   const trials = executor.deathTrials();
   assert.ok(trials.length > 0);
@@ -2535,7 +2536,7 @@ test("a loop abandoned after the death still carries the death in the artifact",
   // The die-retry stage aborts; the STEP still fails, because the same silent
   // probe is what the staged clear's terminal condition reads and a census that
   // never answered is not a cleared wave.
-  await assert.rejects(() => executor.kill(KILL_STEP), /did not answer/);
+  await within("executor.kill(KILL_STEP) to reject", assert.rejects(() => executor.kill(KILL_STEP), /did not answer/));
 
   const trials = executor.deathTrials();
   assert.equal(trials.length, 1, "the death that happened is recorded");
@@ -2567,7 +2568,7 @@ test("an encounter the stage entered but never died at is engaged, not silent", 
   executor.useCombatPlan(plan, true);
   const far: KillStep = { ...KILL_STEP, pos: [400, 64, 400] };
 
-  await assert.rejects(() => executor.kill(far));
+  await within("executor.kill(far) to reject", assert.rejects(() => executor.kill(far)));
 
   assert.equal(executor.deathTrials().length, 0);
   assert.ok(executor.dieRetryEngagements().has("wave/gate-assault"));
@@ -2596,7 +2597,7 @@ test("a wave already beaten before the death records cleared-before-retry, and p
   executor.useCombatPlan(combatPlan(1, false), true);
   bot.emit("messagestr", "[dw:complete the-drowned-bell obj/hold-the-gate]");
 
-  await executor.kill(KILL_STEP);
+  await within("executor.kill(KILL_STEP)", executor.kill(KILL_STEP));
 
   const trials = executor.deathTrials();
   assert.equal(trials.length, 2);
@@ -2629,7 +2630,7 @@ test("a wave that vanishes with its objective UNFINISHED is a soft lock, loudly"
   executor.useCombatPlan(combatPlan(1, false), true);
   // …and no completion marker for obj/hold-the-gate ever arrives.
 
-  await executor.kill(KILL_STEP);
+  await within("executor.kill(KILL_STEP)", executor.kill(KILL_STEP));
 
   const trials = executor.deathTrials();
   assert.deepEqual(
@@ -2649,7 +2650,7 @@ async function dieRetryAgainst(bot: CombatFakeBot, count: number): Promise<Minef
   const executor = attach(bot);
   executor.useCampaign("the-drowned-bell");
   executor.useCombatPlan(combatPlan(count, true), true);
-  await executor.kill({ ...KILL_STEP, count });
+  await within("executor.kill({ ...KILL_STEP, count })", executor.kill({ ...KILL_STEP, count }));
   return executor;
 }
 
@@ -2657,7 +2658,7 @@ test("a wave that re-seats whole — fresh entities, full health, authored count
   const bot = new CombatFakeBot();
   bot.seat(3);
   bot.reSeat = { count: 3 };
-  const executor = await dieRetryAgainst(bot, 3);
+  const executor = await within("dieRetryAgainst(bot, 3)", dieRetryAgainst(bot, 3));
 
   const trials = executor.deathTrials();
   assert.deepEqual(
@@ -2677,7 +2678,7 @@ test("a re-seat that comes back SHORT is red", async () => {
   const bot = new CombatFakeBot();
   bot.seat(3);
   bot.reSeat = { count: 2 }; // one mob never came back
-  const executor = await dieRetryAgainst(bot, 3);
+  const executor = await within("dieRetryAgainst(bot, 3)", dieRetryAgainst(bot, 3));
 
   const findings = dieRetryFindings(executor.deathTrials());
   assert.equal(findings.length, 2);
@@ -2689,7 +2690,7 @@ test("a cohort the world thins AFTER a whole re-seat is the encounter's finding,
   const bot = new CombatFakeBot();
   bot.seat(4);
   bot.reSeat = { count: 4, worldKillsOnReturn: 2 };
-  const executor = await dieRetryAgainst(bot, 4);
+  const executor = await within("dieRetryAgainst(bot, 4)", dieRetryAgainst(bot, 4));
 
   const t = executor.deathTrials()[0]!;
   assert.equal(t.reseat!.present, 4, "the re-seat was read whole the moment it landed");
@@ -2711,10 +2712,10 @@ test("a server kick is named as the cause, and no scripted death is chatted to a
     type: "compound",
     value: { translate: { type: "string", value: "multiplayer.disconnect.invalid_entity_attacked" } },
   });
-  await assert.rejects(
+  await within("executor.kill({ ...KILL_STEP, count: 2 }) to reject", assert.rejects(
     executor.kill({ ...KILL_STEP, count: 2 }),
     /disconnected the bot \(kicked: multiplayer\.disconnect\.invalid_entity_attacked\)/,
-  );
+  ));
   assert.equal(
     bot.calls.filter((c) => c.startsWith("chat(/damage")).length,
     0,
@@ -2730,7 +2731,7 @@ test("a damaged survivor carried across a life is red — the owner's grind rule
   bot.seat(3);
   const survivor = Object.values(bot.entities as Record<number, { id: number }>)[0]!.id;
   bot.reSeat = { count: 3, keepIds: [survivor], survivorHealth: 6 };
-  const executor = await dieRetryAgainst(bot, 3);
+  const executor = await within("dieRetryAgainst(bot, 3)", dieRetryAgainst(bot, 3));
 
   const trials = executor.deathTrials();
   const findings = dieRetryFindings(trials);
@@ -2747,7 +2748,7 @@ test("a wave that comes back whole but WOUNDED is red", async () => {
   const bot = new CombatFakeBot();
   bot.seat(3);
   bot.reSeat = { count: 3, health: 11 };
-  const executor = await dieRetryAgainst(bot, 3);
+  const executor = await within("dieRetryAgainst(bot, 3)", dieRetryAgainst(bot, 3));
 
   const findings = dieRetryFindings(executor.deathTrials());
   assert.equal(findings.length, 2);
@@ -2764,7 +2765,7 @@ test("wave mobs that WANDERED off the anchor are re-engaged, never stranded", as
   const bot = new CombatFakeBot();
   bot.seat(3, { distance: 60 });
   bot.reSeat = { count: 3, distance: 60 };
-  const executor = await dieRetryAgainst(bot, 3);
+  const executor = await within("dieRetryAgainst(bot, 3)", dieRetryAgainst(bot, 3));
 
   const trials = executor.deathTrials();
   assert.deepEqual(
@@ -2803,7 +2804,7 @@ test("a body of a wave the run has not read yet is read where it stands, then re
   executor.useCombatPlan(combatPlan(2, true), false);
   const [attacker] = bot.waveIds();
   bot.emit("entityHurt", bot.entity, bot.entities[attacker!]);
-  await settleStaging();
+  await within("settleStaging()", settleStaging());
 
   assert.deepEqual(bot.stagedBlows, [attacker], "the body that hit the bot was removed");
   const muster = bot.calls.findIndex((c) => c.includes(":wave_muster_"));
@@ -2813,7 +2814,7 @@ test("a body of a wave the run has not read yet is read where it stands, then re
 
   // The step then reads nothing twice: the seating is already read, and a second
   // muster would count the run's own removal as a body the server never seated.
-  await executor.kill({ ...KILL_STEP, count: 2 });
+  await within("executor.kill({ ...KILL_STEP, count: 2 })", executor.kill({ ...KILL_STEP, count: 2 }));
   assert.equal(functionsCalled(bot).filter((f) => f.startsWith("wave_muster_")).length, 1);
   const verdict = executor.waveMusters().get("wave/gate-assault")!;
   assert.deepEqual(verdict.failures, [], "the wave is verified whole");
@@ -2831,7 +2832,7 @@ test("staging in flight when the stages end is finished before the report", asyn
   const [attacker] = bot.waveIds();
   bot.emit("entityHurt", bot.entity, bot.entities[attacker!]);
   assert.equal(executor.waveMusters().size, 0, "nothing is read yet when the stage ends");
-  assert.equal((await executor.settleStaging(10_000)).unfinished, 0, "nothing is left unfinished");
+  assert.equal((await within("executor.settleStaging(10000)", executor.settleStaging(10_000))).unfinished, 0, "nothing is left unfinished");
   assert.equal(executor.waveMusters().get("wave/gate-assault")?.read, 2, "the reading is recorded");
   assert.deepEqual(bot.stagedBlows, [attacker], "and the removal was made");
 });
@@ -2850,7 +2851,7 @@ test("a body that hits the bot once the stages are over starts no staging", asyn
   bot.emit("entityHurt", bot.entity, bot.entities[first!]);
   const settling = executor.settleStaging(10_000);
   bot.emit("entityHurt", bot.entity, bot.entities[second!]); // lands during the wait
-  const settled = await settling;
+  const settled = await within("executor.settleStaging(10_000)", settling);
   assert.equal(settled.unfinished, 0);
   assert.deepEqual(bot.stagedBlows, [first], "only the body that hit during the stages was staged");
 });
@@ -2869,10 +2870,10 @@ test("a muster reading that failed stays failed when a later reading finds the w
     executor as unknown as { musterWave: (e: typeof enc) => Promise<void> }
   ).musterWave.bind(executor);
   bot.seat(1); // one of two declared
-  await muster(enc);
+  await within("muster(enc)", muster(enc));
   assert.equal(executor.waveMusters().get(enc.wave)?.failures.length! > 0, true);
   bot.seat(2); // the next seating is whole
-  await muster(enc);
+  await within("muster(enc)", muster(enc));
   assert.deepEqual(executor.waveMusters().get(enc.wave)?.failures, [], "the latest reading is whole");
   assert.ok(
     executor.musterFailures().some((f) => f.startsWith(`${enc.wave}: wave seating:`)),
@@ -2895,7 +2896,7 @@ test("a removed body's blows are refunded — its own, named ones only, rounded 
   bot.emit("entityHurt", bot.entity, bot.entities[attacker!]);
   bot.health = 9; // an 11-point blow
   bot.emit("health");
-  await settleStaging();
+  await within("settleStaging()", settleStaging());
 
   assert.deepEqual(bot.stagedBlows, [attacker]);
   const effects = bot.calls.filter((c) => c.startsWith("chat(/effect "));
@@ -2915,7 +2916,7 @@ test("a removed body's blows are refunded — its own, named ones only, rounded 
   // A drop the server named no body for — a fall, a lethal volume — is never refunded.
   bot.health = 3;
   bot.emit("health");
-  await settleStaging();
+  await within("settleStaging()", settleStaging());
   assert.equal(bot.calls.filter((c) => c.startsWith("chat(/effect ")).length, 2, "no refund was added");
 });
 
@@ -2931,8 +2932,8 @@ test("which wave a body is of is the server's tag, not a radius around the ancho
   executor.useCombatPlan(combatPlan(2, true), false);
   const [attacker] = bot.waveIds();
   bot.emit("entityHurt", bot.entity, bot.entities[attacker!]);
-  await settleStaging();
-  await executor.kill({ ...KILL_STEP, count: 2 });
+  await within("settleStaging()", settleStaging());
+  await within("executor.kill({ ...KILL_STEP, count: 2 })", executor.kill({ ...KILL_STEP, count: 2 }));
 
   const verdict = executor.waveMusters().get("wave/gate-assault")!;
   assert.deepEqual(verdict.failures, [], `read before it was removed: ${verdict.failures.join(" | ")}`);
@@ -2957,7 +2958,7 @@ test("a re-seated body that meets the bot on the way back is removed, and is the
   const plan = combatPlan(1, true);
   const encounter = { ...plan.encounters[0]!, checkpoint: [10, 64, 0] as [number, number, number] };
   executor.useCombatPlan({ ...plan, encounters: [encounter] }, true);
-  await executor.kill(KILL_STEP);
+  await within("executor.kill(KILL_STEP)", executor.kill(KILL_STEP));
 
   const trials = executor.deathTrials();
   assert.ok(bot.stagedBlows.length >= 2, `each return's attacker was removed: ${bot.stagedBlows}`);
@@ -2987,7 +2988,7 @@ test("a wave that does not re-seat keeps its bodies through the die-retry stage"
   const plan = combatPlan(1, false);
   const encounter = { ...plan.encounters[0]!, checkpoint: [10, 64, 0] as [number, number, number] };
   executor.useCombatPlan({ ...plan, encounters: [encounter] }, true);
-  await executor.kill(KILL_STEP);
+  await within("executor.kill(KILL_STEP)", executor.kill(KILL_STEP));
 
   assert.deepEqual(bot.stagedBlows, [], "no body of the subject was staged during the stage");
   assert.deepEqual(
@@ -3023,7 +3024,7 @@ test("a walk back that ends in a death reads as one, and the next death waits ou
     }
     chat(message);
   };
-  await executor.kill(KILL_STEP);
+  await within("executor.kill(KILL_STEP)", executor.kill(KILL_STEP));
 
   const [first, second] = executor.deathTrials();
   const verdict = String(trialVerdict(first!));
@@ -3043,7 +3044,7 @@ test("the re-engage probe SETTLES instead of sampling the instant it arrives", a
   bot.seat(2);
   bot.reSeat = { count: 2 };
   bot.reSeatVisibleAfterMs = 900; // tracking catches up well after the walk back
-  const executor = await dieRetryAgainst(bot, 2);
+  const executor = await within("dieRetryAgainst(bot, 2)", dieRetryAgainst(bot, 2));
 
   const trials = executor.deathTrials();
   assert.deepEqual(
@@ -3121,7 +3122,7 @@ test("a rest CLICKS the bonfire affordance before it chats the trigger", async (
   const executor = attach(bot);
   executor.useCampaign("the-drowned-bell");
 
-  await executor.rest(REST_STEP);
+  await within("executor.rest(REST_STEP)", executor.rest(REST_STEP));
 
   assert.deepEqual(bot.calls.filter((c) => c.startsWith("activateEntity") || c.startsWith("chat")), [
     "activateEntity(55)",
@@ -3138,7 +3139,7 @@ test("a bonfire with no affordance to click fails the step loudly", async () => 
   const executor = attach(bot);
   executor.useCampaign("the-drowned-bell");
 
-  await assert.rejects(() => executor.rest(REST_STEP), /nothing to right-click/);
+  await within("executor.rest(REST_STEP) to reject", assert.rejects(() => executor.rest(REST_STEP), /nothing to right-click/));
   assert.deepEqual(bot.activated, []);
 });
 
@@ -3158,9 +3159,9 @@ test("the die-retry precondition proceeds once the governing bonfire has been re
   executor.useCombatPlan(withCp, true);
 
   executor.beginStep(3);
-  await executor.rest(REST_STEP); // the party rests at the fire…
+  await within("executor.rest(REST_STEP)", executor.rest(REST_STEP)); // the party rests at the fire…
   executor.beginStep(9);
-  await executor.kill(KILL_STEP); // …so the death loop measures something real
+  await within("executor.kill(KILL_STEP)", executor.kill(KILL_STEP)); // …so the death loop measures something real
 
   assert.equal(executor.deathTrials().length, 2, "both scripted deaths were taken");
   assert.deepEqual(executor.dieRetryPreconditionFindings(), []);
@@ -3185,7 +3186,7 @@ test("an unrested bonfire skips the scripted death and reports the gap", async (
   );
 
   executor.beginStep(9); // …and the rest step at index 2 was never performed
-  await executor.kill(KILL_STEP);
+  await within("executor.kill(KILL_STEP)", executor.kill(KILL_STEP));
 
   assert.equal(executor.deathTrials().length, 0, "no death was scripted");
   assert.equal(
@@ -3259,7 +3260,7 @@ test("an encounter with NO governing checkpoint skips the death as an ADVISORY, 
   );
 
   executor.beginStep(9);
-  await executor.kill(KILL_STEP);
+  await within("executor.kill(KILL_STEP)", executor.kill(KILL_STEP));
 
   assert.equal(executor.deathTrials().length, 0, "no death was scripted");
   assert.equal(
@@ -3310,7 +3311,7 @@ test("a cohort the world finished is cleared by the SERVER's answer, not the bot
   executor.useCombatPlan(combatPlan(3, false), false);
 
   const started = Date.now();
-  await executor.kill({ ...KILL_STEP, count: 3 });
+  await within("executor.kill({ ...KILL_STEP, count: 3 })", executor.kill({ ...KILL_STEP, count: 3 }));
   assert.ok(
     Date.now() - started < 30_000,
     "the step ends when the server says the wave is down, not when the budget runs out",
@@ -3335,7 +3336,7 @@ test("a re-seat resets what the SERVER says, and the step follows the server", a
   executor.useCombatPlan(combatPlan(3, true, "elite"), true);
 
   const started = Date.now();
-  await executor.kill({ ...KILL_STEP, count: 3 });
+  await within("executor.kill({ ...KILL_STEP, count: 3 })", executor.kill({ ...KILL_STEP, count: 3 }));
   assert.ok(
     Date.now() - started < 60_000,
     "the re-seated cohort is judged by the census, not by a counter that restarted",
@@ -3421,7 +3422,7 @@ test("talk-to walks to the NPC, THEN chats the dialog trigger", async () => {
     20,
   );
 
-  await executor.talkTo(talkToStep());
+  await within("executor.talkTo(talkToStep())", executor.talkTo(talkToStep()));
 
   assert.deepEqual(bot.calls, [
     "goto(7,63,9)",
@@ -3477,7 +3478,7 @@ test("a talk-to fires its dialog trigger however the walk ended", async () => {
     }
   };
 
-  await executor.talkTo(talkToStep({ transport: [260, 61, 4] }));
+  await within("executor.talkTo(talkToStep({ transport: [260, 61, 4] }))", executor.talkTo(talkToStep({ transport: [260, 61, 4] })));
 
   assert.ok(
     bot.calls.includes("chat(/trigger dw.dlg_eurylochus set 4)"),
@@ -3530,7 +3531,7 @@ test("a talk-to that times out says whether its trigger reached the delve", asyn
     setTimeout(() => bot.emit("messagestr", "Triggered [dw.dlg_eurylochus] (set value to 4)"), 10);
   };
 
-  await assert.rejects(
+  await within("executor.talkTo(talkToStep()) to reject", assert.rejects(
     () => executor.talkTo(talkToStep()),
     (err: Error) => {
       assert.match(err.message, /objective obj\/muster did not complete/);
@@ -3539,7 +3540,7 @@ test("a talk-to that times out says whether its trigger reached the delve", asyn
       assert.match(err.message, /fresh-volumes\.sh --project/);
       return true;
     },
-  );
+  ));
 });
 
 test("the verdict tells a swallowed trigger from an undelivered one", () => {
@@ -3587,11 +3588,11 @@ test("a trigger echo never leaks into the next step's failure", async () => {
       20,
     );
   };
-  await executor.talkTo(talkToStep());
+  await within("executor.talkTo(talkToStep())", executor.talkTo(talkToStep()));
 
   // The next step sends no trigger of its own — so its message carries no verdict.
   executor.beginStep(2);
-  await assert.rejects(
+  await within("executor.requireObjective(\"obj/surf\", \"reach anchor/surf\") to reject", assert.rejects(
     () => executor.requireObjective("obj/surf", "reach anchor/surf"),
     (err: Error) => {
       assert.match(err.message, /objective obj\/surf did not complete/);
@@ -3599,7 +3600,7 @@ test("a trigger echo never leaks into the next step's failure", async () => {
       assert.doesNotMatch(err.message, /the server (ANSWERED|never answered)/);
       return true;
     },
-  );
+  ));
 });
 
 // --- die-retry: the re-approach must not take the process down ----------------
@@ -3796,7 +3797,7 @@ test("a lethal trial that opens over an unrecovered death is not credited to the
     setTimeout(() => bot.emit("spawn"), 100);
   }, 300);
 
-  await executor.runDeathLoop();
+  await within("executor.runDeathLoop()", executor.runDeathLoop());
 
   const trials = executor.deathLoopTrials();
   assert.equal(trials.length, 1);
@@ -3822,7 +3823,7 @@ test("a volume whose every cell is filled by a block is a finding, not a ten-sec
   bot.blockAt = () => ({ name: "stone", boundingBox: "block" });
   executor.useDeathPlan(oneVolumePlan());
 
-  await executor.runDeathLoop();
+  await within("executor.runDeathLoop()", executor.runDeathLoop());
 
   const t = executor.deathLoopTrials()[0]!;
   assert.equal(t.enteredVolume, false);
@@ -3851,7 +3852,7 @@ test("a kill the volume's own selector made is credited, whatever cell the body'
     setTimeout(() => bot.emit("spawn"), 100);
   }, 200);
 
-  await executor.runDeathLoop();
+  await within("executor.runDeathLoop()", executor.runDeathLoop());
 
   const t = executor.deathLoopTrials()[0]!;
   assert.equal(t.abandoned, undefined, "a kill by this volume is not an abandoned trial");
@@ -3876,7 +3877,7 @@ test("a death beyond the volume's reach is still refused, and the refusal says r
     setTimeout(() => bot.emit("spawn"), 100);
   }, 200);
 
-  await executor.runDeathLoop();
+  await within("executor.runDeathLoop()", executor.runDeathLoop());
 
   const t = executor.deathLoopTrials()[0]!;
   assert.equal(t.died, false);
@@ -4064,7 +4065,7 @@ test("a walk with NO proven leg waits out a shut declared gate instead of failin
   executor.useDeathPlan(westPitPlanWithLip());
   executor.useWaypoints(parseWaypoints(GALLERY_DOORS));
 
-  await executor.runDeathLoop();
+  await within("executor.runDeathLoop()", executor.runDeathLoop());
 
   const t = executor.deathLoopTrials()[0]!;
   assert.ok(
@@ -4097,7 +4098,7 @@ test("a walk that reaches a leg's destination from somewhere else takes the decl
     }),
   );
 
-  await executor.runDeathLoop();
+  await within("executor.runDeathLoop()", executor.runDeathLoop());
 
   const t = executor.deathLoopTrials()[0]!;
   assert.ok(
@@ -4222,7 +4223,7 @@ test("a drop-gated collect walks onto the drop where the body fell, not to the a
   const executor = attach(bot);
   executor.useCampaign("vesperhold");
   executor.beginStep(5);
-  await executor.collect(DROP_STEP);
+  await within("executor.collect(DROP_STEP)", executor.collect(DROP_STEP));
   // The last goal is the drop's own cell; before the fix the walk ended at the
   // anchor and the step timed out beside a key seven blocks away.
   assert.deepEqual(bot.goals.at(-1), [94, 80, 161]);
@@ -4238,7 +4239,7 @@ test("a drop beyond the fight's radius is not this fight's drop", async () => {
   // Nothing within reach of the fight: the step waits on its objective and says so.
   setTimeout(() => bot.emit("messagestr", "delve-bot fell out of the world"), 300);
   setTimeout(() => bot.emit("death"), 310);
-  await assert.rejects(() => executor.collect(DROP_STEP));
+  await within("executor.collect(DROP_STEP) to reject", assert.rejects(() => executor.collect(DROP_STEP)));
   assert.ok(
     bot.goals.every((g) => Math.abs(g[0] - 127) > 2),
     `never walked to the far item: ${JSON.stringify(bot.goals)}`,
@@ -4307,7 +4308,7 @@ test("a strike trigger step ATTACKS the target's hitbox and passes on the fired 
   const executor = attach(bot);
   executor.useCampaign("vesperhold");
   executor.beginStep(16);
-  await executor.fireTrigger(STRIKE_STEP);
+  await within("executor.fireTrigger(STRIKE_STEP)", executor.fireTrigger(STRIKE_STEP));
   assert.deepEqual(
     bot.calls.filter((c) => c !== "goto"),
     ["lookAt", "attack(77)"],
@@ -4320,7 +4321,7 @@ test("a use trigger step RIGHT-CLICKS the hitbox instead of hitting it", async (
   bot.watches = "interaction";
   const executor = attach(bot);
   executor.useCampaign("vesperhold");
-  await executor.fireTrigger({ ...STRIKE_STEP, on: "use" });
+  await within("executor.fireTrigger({ ...STRIKE_STEP, on: \"use\" })", executor.fireTrigger({ ...STRIKE_STEP, on: "use" }));
   assert.deepEqual(
     bot.calls.filter((c) => c !== "goto"),
     ["lookAt", "activateEntity(77)"],
@@ -4332,7 +4333,7 @@ test("a strike-npc trigger step hits the NPC's own hitbox at its station", async
   const executor = attach(bot);
   executor.useCampaign("vesperhold");
   const { anchor: _anchor, ...rest } = STRIKE_STEP;
-  await executor.fireTrigger({ ...rest, on: "strike-npc", npc: "npc/giant" });
+  await within("executor.fireTrigger({ ...rest, on: \"strike-npc\", npc: \"npc/giant\" })", executor.fireTrigger({ ...rest, on: "strike-npc", npc: "npc/giant" }));
   assert.ok(bot.calls.includes("attack(77)"), bot.calls.join(", "));
 });
 
@@ -4343,7 +4344,7 @@ test("an approach trigger step walks into range and clicks nothing", async () =>
   // The fake server fires an approach on proximity; the bot already stands there.
   setTimeout(() => bot.emit("messagestr", "[dw:complete vesperhold trigger/psalter-wall]"), 10);
   const { anchor, ...rest } = STRIKE_STEP;
-  await executor.fireTrigger({ ...rest, anchor, on: "approach", range: 6 });
+  await within("executor.fireTrigger({ ...rest, anchor, on: \"approach\", range: 6 })", executor.fireTrigger({ ...rest, anchor, on: "approach", range: 6 }));
   assert.deepEqual(
     bot.calls.filter((c) => c !== "goto"),
     [],
@@ -4356,7 +4357,7 @@ test("a strike with no hitbox at the target fails the step loudly, before any wa
   delete bot.entities[77];
   const executor = attach(bot);
   executor.useCampaign("vesperhold");
-  await assert.rejects(() => executor.fireTrigger(STRIKE_STEP), /nothing to hit/);
+  await within("executor.fireTrigger(STRIKE_STEP) to reject", assert.rejects(() => executor.fireTrigger(STRIKE_STEP), /nothing to hit/));
   assert.ok(!bot.calls.some((c) => c.startsWith("attack")), bot.calls.join(", "));
 });
 
@@ -4372,7 +4373,7 @@ test("the kill step hunts only what the census calls the wave, never a bystander
   executor.useCampaign("the-drowned-bell");
   executor.useCombatPlan(combatPlan(1, true), false);
 
-  await executor.kill(KILL_STEP);
+  await within("executor.kill(KILL_STEP)", executor.kill(KILL_STEP));
 
   assert.equal(bot.hitsOn(77), 0, "no swing at the bystander");
   assert.deepEqual(bot.waveIds(), [], "the wave body was");
@@ -4417,13 +4418,13 @@ test("a run-back the rest re-seated is fought under a named assist before the le
   executor.useCombatPlan({ ...combatPlan(1, true), runBacks: [RUN_BACK] }, false);
 
   executor.beginStep(9);
-  await executor.kill(KILL_STEP); // cleared once…
+  await within("executor.kill(KILL_STEP)", executor.kill(KILL_STEP)); // cleared once…
   executor.beginStep(12);
-  await executor.rest(REST_STEP); // …the rest puts it back…
+  await within("executor.rest(REST_STEP)", executor.rest(REST_STEP)); // …the rest puts it back…
   bot.seat(1);
   executor.beginStep(14);
   const strikesBefore = bot.calls.filter((c) => c.includes(":wave_strike_")).length;
-  await executor.beforeStep(GREAT_HALL); // …so the leg to the hall meets it
+  await within("executor.beforeStep(GREAT_HALL)", executor.beforeStep(GREAT_HALL)); // …so the leg to the hall meets it
 
   assert.ok(
     bot.calls.filter((c) => c.includes(":wave_strike_")).length > strikesBefore,
@@ -4445,18 +4446,18 @@ test("no run-back is fought before the rest that re-seats it, nor twice after on
   executor.useCombatPlan({ ...combatPlan(1, true), runBacks: [RUN_BACK] }, false);
 
   executor.beginStep(9);
-  await executor.kill(KILL_STEP);
+  await within("executor.kill(KILL_STEP)", executor.kill(KILL_STEP));
   executor.beginStep(10);
-  await executor.beforeStep(GREAT_HALL); // cleared, not rested: the leg is empty
+  await within("executor.beforeStep(GREAT_HALL)", executor.beforeStep(GREAT_HALL)); // cleared, not rested: the leg is empty
   assert.equal(executor.runBacks().length, 0);
 
   executor.beginStep(12);
-  await executor.rest(REST_STEP);
+  await within("executor.rest(REST_STEP)", executor.rest(REST_STEP));
   bot.seat(1);
   executor.beginStep(14);
-  await executor.beforeStep(GREAT_HALL);
+  await within("executor.beforeStep(GREAT_HALL)", executor.beforeStep(GREAT_HALL));
   executor.beginStep(15);
-  await executor.beforeStep(GREAT_HALL); // fought once; down until the next rest
+  await within("executor.beforeStep(GREAT_HALL)", executor.beforeStep(GREAT_HALL)); // fought once; down until the next rest
   assert.equal(executor.runBacks().length, 1);
 });
 
@@ -4471,14 +4472,14 @@ test("a wave two rests put back beside one leg is fought once", async () => {
     false,
   );
   executor.beginStep(9);
-  await executor.kill(KILL_STEP);
+  await within("executor.kill(KILL_STEP)", executor.kill(KILL_STEP));
   executor.beginStep(12);
-  await executor.rest(REST_STEP);
+  await within("executor.rest(REST_STEP)", executor.rest(REST_STEP));
   executor.beginStep(13);
-  await executor.rest({ ...REST_STEP, bonfire: 2 });
+  await within("executor.rest({ ...REST_STEP, bonfire: 2 })", executor.rest({ ...REST_STEP, bonfire: 2 }));
   bot.seat(1);
   executor.beginStep(14);
-  await executor.beforeStep(GREAT_HALL);
+  await within("executor.beforeStep(GREAT_HALL)", executor.beforeStep(GREAT_HALL));
   assert.equal(executor.runBacks().length, 1);
 });
 
@@ -4526,7 +4527,7 @@ test("a run-back is met along the leg's own proven cells, and the leg resumes fr
   // The kill's own walk would consume the leg in lockstep; this test is about the
   // leg the NEXT step walks, so the kill is fought without waypoints first.
   executor.useWaypoints(parseWaypoints({ version: "0.6.0", campaign_id: "x", legs: [] }));
-  await executor.kill(KILL_STEP);
+  await within("executor.kill(KILL_STEP)", executor.kill(KILL_STEP));
   executor.useWaypoints(
     parseWaypoints({
       version: "0.6.0",
@@ -4547,17 +4548,17 @@ test("a run-back is met along the leg's own proven cells, and the leg resumes fr
     }),
   );
   executor.beginStep(12);
-  await executor.rest(REST_STEP);
+  await within("executor.rest(REST_STEP)", executor.rest(REST_STEP));
   bot.seat(1);
   executor.beginStep(14);
   const gotos = (): number => bot.calls.filter((c) => c === "goto").length;
   const before = gotos();
-  await executor.beforeStep(HALL_FAR);
+  await within("executor.beforeStep(HALL_FAR)", executor.beforeStep(HALL_FAR));
   assert.equal(executor.runBacks().length, 1);
   const afterFight = gotos();
   assert.ok(afterFight - before >= 4, "walked the leg's cells up to the crossing");
   setTimeout(() => bot.emit("messagestr", "[dw:complete the-drowned-bell obj/great-hall]"), 20);
-  await executor.reach(HALL_FAR);
+  await within("executor.reach(HALL_FAR)", executor.reach(HALL_FAR));
   assert.equal(
     gotos() - afterFight,
     3,

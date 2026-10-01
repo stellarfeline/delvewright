@@ -1751,9 +1751,11 @@ the spec-0019 shot-calibration bot. It contains zero campaign logic — it reads
 
 ```
 npm --prefix harness run typecheck      # tsc --noEmit
-npm --prefix harness test               # node --test 'test/**/*.test.ts'
+npm --prefix harness test               # node --test --test-timeout=150000 'test/**/*.test.ts'
 npm --prefix harness start              # node src/run.ts <critical-path.json>  (compose does this)
 ```
+
+Every test is bounded by `--test-timeout`; a test's wait on the code under test goes through `within` (`harness/test/bounded.ts`), which fails it naming the wait, and refuses a per-test bound at or below its own.
 
 `harness/src/note-bot.ts` is driven by `validation/playtest-note-flow.sh` and
 `harness/src/rehearsal-bot.ts` by `validation/rehearsal-flow.sh`, never by hand.

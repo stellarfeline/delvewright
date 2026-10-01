@@ -13,7 +13,7 @@
   "private": true,
   "scripts": {
     "start": "node src/run.ts",
-    "test": "node --test 'test/**/*.test.ts'",
+    "test": "node --test --test-timeout=150000 'test/**/*.test.ts'",
     "typecheck": "tsc --noEmit"
   },
   "type": "module",
