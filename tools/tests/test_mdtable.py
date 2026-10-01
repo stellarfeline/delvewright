@@ -11,6 +11,8 @@ when pandoc is absent rather than passing quietly about nothing.
 
 from __future__ import annotations
 
+import concurrent.futures
+import os
 import re
 import shutil
 import subprocess
@@ -125,17 +127,24 @@ def test_the_row_count_agrees_with_pandocs_gfm_reader():
         text=True,
         check=True,
     ).stdout.split()
-    disagreements = []
-    mine = theirs = 0
-    for rel in files:
-        rows, _ = mdtable.read((REPO / rel).read_text(encoding="utf-8", errors="replace"))
-        html = subprocess.run(
+    def pandoc(rel: str) -> str:
+        return subprocess.run(
             ["pandoc", "-f", "gfm", "-t", "html", rel],
             cwd=REPO,
             capture_output=True,
             text=True,
             check=True,
         ).stdout
+
+    # One pandoc process per file, run side by side: each reads one document
+    # and shares nothing, and `map` hands the answers back in `files` order.
+    with concurrent.futures.ThreadPoolExecutor(max_workers=os.cpu_count() or 4) as pool:
+        htmls = list(pool.map(pandoc, files))
+    assert len(htmls) == len(files)
+    disagreements = []
+    mine = theirs = 0
+    for rel, html in zip(files, htmls, strict=True):
+        rows, _ = mdtable.read((REPO / rel).read_text(encoding="utf-8", errors="replace"))
         n = sum(b.count("<tr") for b in re.findall(r"<tbody>(.*?)</tbody>", html, re.S))
         mine += len(rows)
         theirs += n
