@@ -10,7 +10,7 @@
 // select-class / talk-to therefore just send `step.command`; talk-to walks to the
 // NPC first (realism + reach mechanics that some dialogs gate on).
 
-import { createBot, type Bot } from "mineflayer";
+import type { Bot } from "mineflayer";
 import type { Entity } from "prismarine-entity";
 // mineflayer-pathfinder is CommonJS; import the default and destructure (the only
 // harness dependency added for v0.3 — replaces the naive "face + hold forward"
@@ -107,6 +107,11 @@ import {
   type StakeRule,
 } from "./death-loop.ts";
 import { presentAndTrigger } from "./held-item.ts";
+import {
+  createHarnessBot,
+  SERVER_LOAD_TIMEOUT_TICKS,
+  type ClientLoadedState,
+} from "./client-loaded.ts";
 import {
   traceLoadWindows,
   type LoadWindowRecord,
@@ -1098,18 +1103,17 @@ const CUTSCENE_STEADY_EPS = 0.05;
 const CUTSCENE_POLL_MS = 250;
 
 /**
- * How long a respawned player cannot be hurt, in server ticks.
+ * The longest a respawned player cannot be hurt, in server ticks.
  *
- * Vanilla's own number, stated rather than tuned: a freshly respawned
- * `ServerPlayer` refuses non-bypassing damage for 60 ticks, and on this version
- * it is also held invulnerable until the client reports it has loaded the world
- * — which mineflayer never does, so the server's own 60-tick timeout ends that
- * too. `/damage` against a body inside the window answers "Target is invulnerable
- * to the given damage type", which is exactly what vesperhold's die-retry stage
- * received when it scripted a death one second after recovering from an
- * unscripted one.
+ * On this version the only post-respawn protection is the client-load window
+ * (`client-loaded.ts`): the server refuses every damage source until the client
+ * sends `player_loaded`, or for {@link SERVER_LOAD_TIMEOUT_TICKS} if it never
+ * does. The harness bot sends it when its chunk is loaded, which closes the
+ * window within a few ticks (measured: `probe/client-loaded.ts`); this bound is
+ * what the wait falls back to when it cannot see that send. `/damage` inside the
+ * window answers "Target is invulnerable to the given damage type".
  */
-export const RESPAWN_PROTECTION_TICKS = 60;
+export const RESPAWN_PROTECTION_TICKS = SERVER_LOAD_TIMEOUT_TICKS;
 
 /**
  * How often the server sends its world age (`update_time`): every 20 ticks. The
@@ -1327,9 +1331,8 @@ const MARKER_PAIR_RADIUS = 0.5;
  * `if data entity @s {Health:0.0f}`, and it is where `on_death` fires. A vanilla
  * player has to click Respawn, so a corpse always exists for many ticks.
  *
- * Kept small enough that the 15 s respawn budget is untouched, and comfortably
- * inside the 59-tick post-respawn invulnerability window that spec-0032 records —
- * nothing here forces a second death.
+ * Kept small enough that the 15 s respawn budget is untouched. The body is dead
+ * for the whole hold, so nothing here forces a second death.
  */
 const DEATH_SCREEN_HOLD_MS = 1_000;
 /**
@@ -1494,6 +1497,8 @@ export class MineflayerExecutor implements StepExecutor {
   private deathSeq = 0;
   /** Every stretch the server held the bot unhurtable (see load-window.ts). */
   private loadTracer: LoadWindowTracer | undefined;
+  /** The bot's `player_loaded` tracker; `undefined` for a bot adopted by {@link attachBot}. */
+  private clientLoaded: ClientLoadedState | undefined;
   /** How many `spawn` events this run has seen (login, then every respawn). */
   private spawnSeq = 0;
   /** {@link spawnSeq} at the moment of the last death — the respawn wait watches
@@ -1814,7 +1819,7 @@ export class MineflayerExecutor implements StepExecutor {
 
   /** Connect and resolve once the bot has spawned into the world. */
   async connect(): Promise<void> {
-    const bot = createBot({
+    const { bot, loaded } = createHarnessBot({
       host: this.config.host,
       port: this.config.port,
       username: this.config.username,
@@ -1836,6 +1841,7 @@ export class MineflayerExecutor implements StepExecutor {
       respawn: false,
     });
     this.bot = bot;
+    this.clientLoaded = loaded;
     // Installed in the turn the bot is created, before its `login` can arrive:
     // the join is the first window it has to see.
     this.loadTracer = traceLoadWindows(bot as unknown as TracedBot, {
@@ -4986,10 +4992,12 @@ export class MineflayerExecutor implements StepExecutor {
 
   /**
    * Hold until a respawned body can be hurt again, so a scripted death is not
-   * refused by vanilla's respawn protection (see {@link RESPAWN_PROTECTION_TICKS}).
+   * refused inside the client-load window (see {@link RESPAWN_PROTECTION_TICKS}).
    *
-   * Counted in SERVER ticks, from the world age the time packets carry: the window
-   * is the server's, and a lagging server stretches it in wall-clock time. The
+   * The window ends when the bot has sent `player_loaded` for this life. Without
+   * a tracker to ask (a bot adopted by {@link attachBot}), it is counted in SERVER
+   * ticks to the server's own fallback, from the world age the time packets carry:
+   * the window is the server's, and a lagging server stretches it in wall-clock time. The
    * respawn's age reading can be up to one time-packet interval stale, so the wait
    * runs until the age has moved the window plus that interval past it. A bot that
    * never heard a time packet waits the window at the nominal 20 ticks a second
@@ -5003,6 +5011,7 @@ export class MineflayerExecutor implements StepExecutor {
     const from = this.lastSpawnAge;
     const deadline = Date.now() + RESPAWN_PROTECTION_TIMEOUT_MS;
     const closed = (): boolean => {
+      if (this.clientLoaded?.phase() === "loaded") return true;
       const now = serverAge(bot);
       if (from !== undefined && now !== undefined) return now - from >= needTicks;
       return Date.now() - this.lastSpawnAt! >= needTicks * 50;
@@ -5010,7 +5019,7 @@ export class MineflayerExecutor implements StepExecutor {
     if (closed()) return;
     process.stderr.write(
       `[die-retry] ${enc.wave}: the bot respawned ${Date.now() - this.lastSpawnAt}ms ago and is ` +
-        `inside vanilla's ${RESPAWN_PROTECTION_TICKS}-tick respawn protection — waiting it out ` +
+        `inside the client-load window (at most ${RESPAWN_PROTECTION_TICKS} ticks) — waiting it out ` +
         `before scripting a death` +
         `${from === undefined ? " (no time packet heard yet, so counted at 20 ticks a second)" : ""}\n`,
     );

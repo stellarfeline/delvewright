@@ -30,8 +30,7 @@
 
 import { bodyInVolume, type Box } from "./death-loop.ts";
 
-/** Ticks the server waits for `player_loaded` before it counts the player loaded anyway. */
-export const SERVER_LOAD_TIMEOUT_TICKS = 60;
+import { SERVER_LOAD_TIMEOUT_TICKS } from "./client-loaded.ts";
 const TICK_MS = 50;
 const MELEE_REACH = 4.5;
 const BLAST_RADIUS = 8;
@@ -70,6 +69,13 @@ export interface LoadWindowRecord {
   lengthMs: number | undefined;
   /** What ended it: the bot's own `player_loaded`, or the server's 60-tick fallback. */
   closedBy: "player_loaded" | "server-timeout" | undefined;
+  /**
+   * ms after the open at which the bot sent `player_loaded` for this window —
+   * also when that was after the server's fallback had already closed it (a
+   * chunk that took longer than 60 ticks to arrive; a real client does the
+   * same). `undefined` is a bot that never reported loaded at all.
+   */
+  reportedAtMs: number | undefined;
   readonly absorbed: AbsorbedEvent[];
 }
 
@@ -127,6 +133,7 @@ export function traceLoadWindows(
   };
   const close = (by: "player_loaded" | "server-timeout"): void => {
     if (!open) return;
+    if (by === "player_loaded") open.reportedAtMs = now() - open.openedAt;
     open.lengthMs = by === "server-timeout" ? SERVER_LOAD_TIMEOUT_TICKS * TICK_MS : now() - open.openedAt;
     open.closedBy = by;
     open = undefined;
@@ -140,6 +147,7 @@ export function traceLoadWindows(
       openedAt: now(),
       lengthMs: undefined,
       closedBy: undefined,
+      reportedAtMs: undefined,
       absorbed: [],
     };
     windows.push(open);
@@ -152,7 +160,11 @@ export function traceLoadWindows(
   // The observer on the socket: every packet the bot sends passes here.
   const write = bot._client.write.bind(bot._client);
   bot._client.write = (name: string, params: object): void => {
-    if (name === "player_loaded") close("player_loaded");
+    if (name === "player_loaded") {
+      const last = windows[windows.length - 1];
+      if (open) close("player_loaded");
+      else if (last && last.reportedAtMs === undefined) last.reportedAtMs = now() - last.openedAt;
+    }
     write(name, params);
   };
 
@@ -221,7 +233,28 @@ export function loadWindowSummary(windows: readonly LoadWindowRecord[]): Record<
       step: w.step,
       length_ms: w.lengthMs ?? null,
       closed_by: w.closedBy ?? null,
+      reported_loaded_at_ms: w.reportedAtMs ?? null,
       absorbed: w.absorbed.map((a) => ({ kind: a.kind, at_ms: a.atMs, detail: a.detail })),
     })),
   };
+}
+
+/**
+ * The windows in which the bot never told the server it had loaded, although
+ * the vanilla client's own 30-second wait had long run out — a bot built
+ * without `createHarnessBot`, or a tracker that never fired. `endedAt` is when
+ * the run stopped watching, so a respawn in the run's last seconds is not
+ * counted against it.
+ */
+export function unreportedWindows(
+  windows: readonly LoadWindowRecord[],
+  endedAt: number,
+  clientWaitMs: number,
+): LoadWindowRecord[] {
+  return windows.filter((w, i) => {
+    if (w.reportedAtMs !== undefined) return false;
+    const next = windows[i + 1];
+    const watchedUntil = next ? next.openedAt : endedAt;
+    return watchedUntil - w.openedAt > clientWaitMs;
+  });
 }

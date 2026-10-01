@@ -10,7 +10,7 @@
 // than P2's), looks at P2's box and right-clicks IT. The probe prints both
 // players' ledgers and live slots, and which boxes still stand. The setup
 // (`/tp`, `/kill`, `/scoreboard`) is the probe's; the click is a client's.
-import mineflayer from "mineflayer";
+import { createHarnessBot } from "../src/client-loaded.ts";
 
 const [host, portText, p1Text, p2Text, objective] = process.argv.slice(2);
 if (!host || !portText || !p1Text || !p2Text || !objective) {
@@ -23,7 +23,7 @@ const P2 = cell(p2Text);
 const port = Number(portText);
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const join = (username: string) =>
-  mineflayer.createBot({ host, port, username, version: "1.21.11", auth: "offline" });
+  createHarnessBot({ host, port, username, version: "1.21.11", auth: "offline" }).bot;
 
 const a = join("delve-bot");
 const b = join("delve-bot2");

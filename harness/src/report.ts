@@ -166,6 +166,20 @@ export class RunReport {
    * process down is the one worth reading, and a cascade of follow-on rejections
    * must not overwrite it.
    */
+  /**
+   * Add failures to a stage row already recorded — for a judgement made over the
+   * whole run (a load window) that belongs to the stage it happened in. A stage
+   * with no row yet is not invented: the failures go to the critical path, the
+   * stage every run has.
+   */
+  appendFailures(stage: StageName, failures: readonly string[]): void {
+    if (failures.length === 0) return;
+    const target = this.stages.has(stage) ? stage : "critical-path";
+    const row = this.stages.get(target);
+    if (!row) throw new Error(`no ${target} row to append ${failures.length} failure(s) to`);
+    this.stages.set(target, { ...row, failures: [...row.failures, ...failures] });
+  }
+
   recordHarnessCrash(crash: HarnessCrash): void {
     this.harnessCrash ??= crash;
   }
