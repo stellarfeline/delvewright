@@ -175,7 +175,7 @@ pub fn declares_one(plan: &Plan) -> bool {
 }
 
 /// Whether a cell's block stops a rocket. Absent from the map = air = open sky.
-fn blocks_a_rocket(blocks: &BTreeMap<[i32; 3], String>, cell: [i32; 3]) -> bool {
+fn blocks_a_rocket(blocks: &crate::compiler::blockstate::BlockMap, cell: [i32; 3]) -> bool {
     blocks
         .get(&cell)
         .is_some_and(|b| !delvewright_dsl::blockshape::passes_body(b))
@@ -203,7 +203,7 @@ pub struct Launch {
 /// where the rule lives.
 pub fn check(
     plan: &Plan,
-    blocks: &BTreeMap<[i32; 3], String>,
+    blocks: &crate::compiler::blockstate::BlockMap,
     entry: Option<[i32; 3]>,
     wave_seats: &BTreeMap<String, Vec<[i32; 3]>>,
 ) -> (FireworkGate, Vec<Failure>) {
@@ -246,7 +246,7 @@ pub fn check(
 pub fn judge(
     launches: &[Launch],
     posts: &[crate::compiler::lethal::PostedPlace],
-    blocks: &BTreeMap<[i32; 3], String>,
+    blocks: &crate::compiler::blockstate::BlockMap,
 ) -> (FireworkGate, Vec<Failure>) {
     use delvewright_dsl::firework;
     let mut gate = FireworkGate {

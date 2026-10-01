@@ -176,6 +176,12 @@ Global flags: `--json` (one JSON diagnostic object per line), `--prefabs <dir>`
 (default `campaigns/prefabs`), `--lang <code>` (default `en`; affects `build`
 only — `validate`/`analyze` are language-independent apart from coverage).
 
+**Threads.** `DELVEC_THREADS=<n>` (a positive integer) sets how many threads
+`delvec` spreads independent work over; unset or unparseable, it is the host's
+available parallelism. `DELVEC_THREADS=1` runs everything on the calling
+thread. The count changes how long a build takes and never a byte it emits
+(§4 "Determinism").
+
 **Exit codes**: `0` ok · `1` validation failure · `2` analysis failure · `3`
 build failure · `≥10` internal error. Undeclared `--lang` is a validation-class
 rejection (exit 1). Codes are stable API; the CI fixture matrix asserts them.
@@ -1776,6 +1782,24 @@ CI-enforced over every fixture family by `tests/packtest_batch.rs`):
   invisible to it.
 - Only randomness = stage-1 `seed` → named splitmix64 per-area streams. Solver
   retry (≤32 attempts) is seed-deterministic; attempt 0 reproduces pre-M2 growth.
+- **Parallel work merges in a fixed order.** Every multi-core site goes through
+  `delvec::par` (`map`, and `try_for_each_ordered` for large results, which
+  holds at most `2 × threads` results at once). Each result is computed from
+  its own item alone and the results are folded sequentially in item order, so
+  the output is the sequential loop's at any thread count. The sites: each
+  placed template's decode (`assembled::placed_blocks`, applied in template
+  order — a later template still wins a cell), its size (`DW0803`, judged in
+  placement order), its placement sentinel, `burial`'s per-piece sides,
+  `seating`'s and `settling::piece_bytes`'s per-template reads (the first
+  failing template is the one named), the valley horizon's tile stacks (built
+  per footprint, numbered `horizon/valley/t{n}` in footprint order), and the
+  `DW0921` proof's quest configurations (counts summed and pockets listed in
+  configuration order). Gated by `tests/thread_count.rs`, which builds one
+  subject at `DELVEC_THREADS=1`, `3` and unset and compares trees and stderr.
+- **A block state is interned, and reads as its text.** The assembled world's
+  map holds `blockstate::BlockState` handles (one interned copy per distinct
+  state for the life of the process); equality, order, hashing and both
+  formats are the text's, so interning moves no comparison, sort or message.
 
 ### Environment sealing (bootstrap `#minecraft:load`, idempotent, `#init`-guarded)
 
@@ -2920,6 +2944,21 @@ declared size against the bytes' own `size` tag.
 `crate::assembled` builds the one authoritative cell→block map of the world the
 shipped delve actually assembles — placed prefab structures (`/place template`),
 socket seals, gate clears — **then settles gravity-affected blocks**.
+
+**One assembly per build.** `emit::build` assembles the world once, before the
+gravity check (`DW0313`), and every later pass borrows that `Assembled`; a
+campaign with an edit script hands it to the replay (`edit::replay_taking`),
+which edits it in place, and every pass after reads the edited copy. The map is
+`Arc<BlockMap>` (`blockstate::BlockMap`, interned values) so a reader that needs
+it whole — the light model — shares it instead of copying it; the replay is its
+only writer. The geometry is classified once too: `light::geometry_world` is
+the premise-free nav world relight surveys, and the campaign's own world is that
+world's cells under `nav::Premises::of_plan` (`World::with_premises`) plus
+relight's colliding fixtures. The nav `World`'s cell sets are copy-on-write
+(`cellset::CellSet`/`CellMap`): a derived view — a quest configuration, a sealed
+gate, a counterfactual — shares the bulk and stores only its own edits, and a
+set that fills its bounding box is held as a bitset. Iteration over either is in
+`[i32; 3]` order, as a `BTreeSet` iterates.
 
 **Socket sealing is a property of a placed piece, not of the layout solver.**
 `solver::seal_layout` runs over the placed pieces of **every** area, pool or

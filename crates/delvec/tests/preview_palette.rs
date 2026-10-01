@@ -230,7 +230,7 @@ fn a_room_of_deepslate_draws_with_no_missing_texture_pixel() {
     for x in -3..=3 {
         blocks.insert([x, 64, -7], DRESS.to_string());
     }
-    let grid = VoxelGrid::build(&blocks);
+    let grid = VoxelGrid::build(&delvec::compiler::blockstate::interned(blocks.clone()));
     assert!(
         grid.unpainted().is_empty(),
         "unpainted: {:?}",
@@ -300,7 +300,7 @@ fn a_wall_shows_its_material_and_a_rough_one_from_a_smooth_one() {
                 blocks.insert([10, y, z], block.to_string());
             }
         }
-        let grid = VoxelGrid::build(&blocks);
+        let grid = VoxelGrid::build(&delvec::compiler::blockstate::interned(blocks.clone()));
         let frame = render_frame(
             &grid,
             &Camera {

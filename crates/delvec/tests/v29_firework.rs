@@ -333,7 +333,11 @@ fn stone_at(cells: &[[i32; 3]]) -> BTreeMap<[i32; 3], String> {
 #[test]
 fn the_roof_rule_reads_the_column_the_flight_needs() {
     let roofed = stone_at(&[[0, 70, 0]]);
-    let (gate, findings) = judge(&[launch(1)], &[], &roofed);
+    let (gate, findings) = judge(
+        &[launch(1)],
+        &[],
+        &delvec::compiler::blockstate::interned(roofed.clone()),
+    );
     assert_eq!(gate.cells(), 8, "flight 1 walks eight cells");
     assert_eq!(findings.len(), 1, "a roof six blocks up is refused");
     assert!(
@@ -354,7 +358,11 @@ fn the_roof_rule_reads_the_column_the_flight_needs() {
 
     // Eight cells of air and then the world's own stone: flight 2 needs eighteen.
     let eight_then_stone = stone_at(&[[0, 73, 0]]);
-    let (gate, findings) = judge(&[launch(2)], &[], &eight_then_stone);
+    let (gate, findings) = judge(
+        &[launch(2)],
+        &[],
+        &delvec::compiler::blockstate::interned(eight_then_stone.clone()),
+    );
     assert_eq!(gate.cells(), 18, "flight 2 walks eighteen cells");
     assert_eq!(findings.len(), 1);
     assert!(
@@ -423,7 +431,11 @@ fn a_post_on_the_launch_plane_is_never_in_reach() {
 fn a_wall_between_the_burst_and_the_post_is_not_credited() {
     let post = npc_post([4, 72, 0]);
     let wall = stone_at(&[[2, 72, 0]]);
-    let (_, findings) = judge(&[launch(1)], std::slice::from_ref(&post), &wall);
+    let (_, findings) = judge(
+        &[launch(1)],
+        std::slice::from_ref(&post),
+        &delvec::compiler::blockstate::interned(wall.clone()),
+    );
     assert_eq!(
         findings.len(),
         1,

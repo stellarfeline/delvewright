@@ -751,7 +751,7 @@ struct Exposure {
 pub fn check_daylight_staging(
     plan: &Plan,
     world: &World,
-    blocks: &BTreeMap<[i32; 3], String>,
+    blocks: &std::sync::Arc<crate::compiler::blockstate::BlockMap>,
     spawns: &BTreeMap<String, Vec<[i32; 3]>>,
 ) -> Result<(), Failure> {
     let c = plan.campaign;
@@ -760,7 +760,7 @@ pub fn check_daylight_staging(
     if staged.is_empty() {
         return Ok(());
     }
-    let light = LightModel::from_blocks(blocks.clone());
+    let light = LightModel::from_shared(std::sync::Arc::clone(blocks));
     for body in &staged {
         if !burns_in_daylight(&body.entity) {
             continue;

@@ -1506,7 +1506,7 @@ fn run_snapshot(
     // open air, not at a wall. The campaign's premises are about what a body may
     // walk through, which is not what this command asks.
     let world = delvec::compiler::nav::World::from_occupancy(
-        delvec::compiler::assembled::occupancy_of(assembled.blocks.clone(), &assembled.open_gates),
+        delvec::compiler::assembled::occupancy_over(&assembled.blocks, &assembled.open_gates),
         delvec::compiler::nav::Premises::geometry_only(),
     );
     let blocks = assembled.blocks;
@@ -2135,7 +2135,7 @@ fn run_blocking_chart(
     // declared lethal volume was exactly that: a line on the blocking chart the
     // author could read as cleared.
     let world = delvec::compiler::nav::World::from_occupancy(
-        delvec::compiler::assembled::occupancy_of(assembled.blocks.clone(), &assembled.open_gates),
+        delvec::compiler::assembled::occupancy_over(&assembled.blocks, &assembled.open_gates),
         delvec::compiler::nav::Premises::of_plan(&plan, assembled.gate_seals.clone()),
     );
     let blocks = assembled.blocks;
