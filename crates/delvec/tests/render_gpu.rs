@@ -26,6 +26,8 @@ use delvec::render::fidelity;
 use delvec::render::gpu::{self, RenderParams};
 use delvec::render::shots;
 
+mod common;
+
 /// Resolve textures the way the CLI does; `None` → skip the test.
 fn textures() -> Option<String> {
     if let Ok(t) = std::env::var("DELVEWRIGHT_CLIENT_JAR")
@@ -42,10 +44,15 @@ fn textures() -> Option<String> {
     None
 }
 
+/// A prefab from the library at the pinned content commit (`common::pinned`).
 fn prefab(name: &str) -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../campaigns/prefabs")
-        .join(name)
+    let p = common::pinned::prefabs().join(name);
+    assert!(
+        p.is_file(),
+        "{} is not in the pinned prefab library",
+        p.display()
+    );
+    p
 }
 
 #[test]
@@ -265,10 +272,6 @@ fn piece_double_render_is_stable() {
     };
     let pack = gpu::load_pack(&tex).expect("load pack");
     let p = prefab("keep-gate-room.nbt");
-    if !p.exists() {
-        eprintln!("skip: {} absent (no content symlink)", p.display());
-        return;
-    }
     let st = nbt::parse_structure(&p).expect("parse");
     let meta = delvec::compiler::view::meta::PrefabMeta::beside_nbt(&p).expect("meta");
     let plan = shots::plan_piece(&st, meta.as_ref(), &[]).unwrap();

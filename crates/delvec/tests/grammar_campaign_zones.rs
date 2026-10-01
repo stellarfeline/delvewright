@@ -25,15 +25,19 @@
 //! author, so the two lists are not a choice between a strong obligation and a
 //! weak one.
 //!
-//! The content checkout is read through the `campaigns/` symlink the repo uses
-//! everywhere else (CI materialises it with `./.github/actions/checkout-content`
-//! at the pinned SHA). A missing checkout is a **failure**, never a skip.
+//! The campaign corpus is read at the pinned commit out of the content
+//! repository's object store (`common::pinned`), never out of the `campaigns/`
+//! working tree, so the verdict is the same on every machine whatever revision
+//! a content checkout sits on. A missing content repository is a **failure**,
+//! never a skip.
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use delvec::grammar::ir::Program;
 use delvec::grammar::{Box3, ExpandOptions, expand};
+
+mod common;
 
 // ---------------------------------------------------------------------------
 // the enumerated inventory
@@ -67,12 +71,8 @@ struct Record {
     off_pin: Vec<OffPin>,
 }
 
-fn repo_root() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
-}
-
 fn record_path() -> PathBuf {
-    repo_root().join(".github/content-zone-corpus.json")
+    common::repo_root().join(".github/content-zone-corpus.json")
 }
 
 fn record() -> Record {
@@ -87,59 +87,28 @@ fn record() -> Record {
     serde_json::from_slice(&bytes).unwrap_or_else(|e| panic!("{}: {e}", path.display()))
 }
 
-/// `versions.toml` `[content].sha` — the commit CI checks the content repo out
-/// at. A plain line scan of the one key we need, the same way the compiler reads
-/// it for `manifest.json` (`crates/delvec/src/main.rs`): no TOML dependency,
-/// and the value read is the one pinned in the repo rather than live git state.
-fn pinned_content_sha() -> String {
-    let path = repo_root().join("versions.toml");
-    let text = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
-    let mut in_content = false;
-    for raw in text.lines() {
-        let line = raw.trim();
-        if line.starts_with('#') || line.is_empty() {
-            continue;
-        }
-        if line.starts_with('[') {
-            in_content = line == "[content]";
-            continue;
-        }
-        if in_content
-            && let Some(rest) = line.strip_prefix("sha")
-            && let Some(rest) = rest.trim_start().strip_prefix('=')
-        {
-            let val = rest.split('#').next().unwrap_or(rest).trim();
-            let val = val.trim_matches('"');
-            if !val.is_empty() {
-                return val.to_string();
-            }
-        }
-    }
-    panic!("{}: no [content].sha", path.display())
-}
-
 // ---------------------------------------------------------------------------
 // the tree
 // ---------------------------------------------------------------------------
 
 fn content_campaigns() -> PathBuf {
-    let root = repo_root().join("campaigns/campaigns");
+    let root = common::pinned::campaigns();
     assert!(
         root.is_dir(),
-        "{} is not a directory — the content checkout is missing. This test is about the \
-         campaign's own files, so an absent checkout is a failure and never a skip.",
+        "{} is not a directory — the pinned content carries no `campaigns/`. This test is \
+         about the campaign's own files, so an absent corpus is a failure and never a skip.",
         root.display()
     );
     root
 }
 
-/// Every campaign-shaped directory in the content checkout.
+/// Every campaign-shaped directory in the pinned content.
 ///
 /// A campaign is a directory holding a `world.json` (a campaign whose world is
 /// authored) or a `design/` (one whose world is not yet). Anything else under
-/// `campaigns/` is not a campaign — a working checkout accumulates build-output
-/// directories and stray design pages there, and calling one a campaign would red
-/// every local run for a reason with nothing to do with content.
+/// `campaigns/` is not a campaign — the tree carries a `README.md` there, and
+/// calling a non-campaign entry a campaign would red for a reason with nothing to
+/// do with content.
 ///
 /// **The discriminator cannot hide a zone program**, which is the property that
 /// matters: zone programs live at `design/programs/`, so a directory holding one
@@ -251,7 +220,7 @@ fn state_binding(gate: &str, bound: usize) {
     println!(
         "  {gate:<48} campaign corpus: bound {bound} of {expected} zone program(s) at content \
          pin {}{}",
-        pinned_content_sha(),
+        common::pinned::sha(),
         if expected == 0 {
             " — ZERO BINDING: the pinned content declares no zone program. That is a \
              fact of the pin, enumerated per campaign in .github/content-zone-corpus.json \
@@ -279,7 +248,7 @@ fn state_binding(gate: &str, bound: usize) {
 #[test]
 fn the_record_names_the_pin_versions_toml_declares() {
     let record = record();
-    let pin = pinned_content_sha();
+    let pin = common::pinned::sha();
     assert_eq!(
         record.content_sha,
         pin,
@@ -354,7 +323,7 @@ fn the_pinned_tree_decides_which_list_each_campaign_is_in() {
     let unnamed: Vec<&String> = disk.difference(&on_pin).collect();
     assert!(
         unnamed.is_empty(),
-        "the content checkout carries campaign(s) the inventory does not name: {unnamed:?}. \
+        "the pinned content carries campaign(s) the inventory does not name: {unnamed:?}. \
          Add each to on_pin in {} with the number of zone programs it declares — an unnamed \
          campaign sweeps as zero and says nothing.",
         record_path().display()
@@ -362,11 +331,9 @@ fn the_pinned_tree_decides_which_list_each_campaign_is_in() {
     let missing: Vec<&String> = on_pin.difference(&disk).collect();
     assert!(
         missing.is_empty(),
-        "the inventory names campaign(s) the content checkout does not carry: {missing:?}. \
-         Either the checkout is not at content pin {} (CI checks it out there; a local \
-         `campaigns/` symlink points wherever it points), or the campaign left the pin and \
-         its entry must move.",
-        pinned_content_sha()
+        "the inventory names campaign(s) the content at pin {} does not carry: {missing:?}. \
+         The campaign left the pin and its entry must move.",
+        common::pinned::sha()
     );
     for c in &record.off_pin {
         assert!(
@@ -453,7 +420,7 @@ fn the_declared_zone_corpus_is_the_size_the_record_names() {
     assert_eq!(
         zones.len(),
         expected_zone_programs(),
-        "the content checkout declares {} zone(s) and .github/content-zone-corpus.json \
+        "the pinned content declares {} zone(s) and .github/content-zone-corpus.json \
          enumerates {}: {:?}",
         zones.len(),
         expected_zone_programs(),

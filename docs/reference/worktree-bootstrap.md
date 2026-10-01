@@ -5,19 +5,29 @@ of local state live outside version control and do not follow worktrees.
 
 ## 1. `campaigns` symlink (untracked)
 
-`crates/delvec/tests/analyze.rs` (via `common::prefabs_dir()`) and every
-campaign build resolve content through the `campaigns` symlink at the repo
-root (target: a `delvewright-campaigns` checkout). A worktree without it fails
-every test that reaches the prefab library or the content campaigns, and the
-failures look like a broken compiler.
+The `campaigns` symlink at the repo root (target: a `delvewright-campaigns`
+clone) is how this repository finds the content repository. Two kinds of
+reader use it, and they read different things:
 
-**The symlink is the only mechanism.** There is no environment-variable
-override — `$DELVEWRIGHT_CAMPAIGNS_DIR` is read by no code, so exporting it
-produces exactly the failures this file exists to prevent. The path is
-constructed literally in five places (`crates/delvec/tests/common/mod.rs`,
-`crates/delvec/src/main.rs`'s `--prefabs` default, `crates/delvec/src/compiler/view/nbt.rs`,
-`crates/delvec/tests/render_gpu.rs`, `crates/delvec/tests/grammar_campaign_zones.rs`);
-making an override real means all five sites or none.
+- **Tests read the content at the pin, never the working tree.** Every test
+  that judges the prefab library or the campaign corpus resolves it through
+  `crates/delvec/tests/common/pinned.rs`: it takes `versions.toml`
+  `[content].sha`, reads that commit out of the clone's git object store
+  (git-lfs objects out of its own LFS store), and materialises it once into
+  `target/tmp/pinned-content/<sha>/`. The revision the clone's working tree
+  sits on never reaches a test, so a test run is a property of this
+  repository's revision alone. The clone must hold the pinned commit and its
+  LFS objects (`git -C campaigns fetch origin && git -C campaigns lfs fetch
+  origin <sha>`); a test that cannot read them fails with that command and
+  never skips.
+- **The CLI reads the working tree.** `delvec`'s `--prefabs` default is
+  `campaigns/prefabs`, so a build, an audit or a render run by hand judges
+  whatever the clone has checked out. That is the creator's own content, by
+  design.
+
+A worktree without the symlink fails every test that reaches the pinned
+content. There is no environment-variable override; `$DELVEWRIGHT_CAMPAIGNS_DIR`
+is read by no code.
 
 `tools/planner/worktree-new.sh` creates the link, resolved to an absolute path.
 For a worktree made any other way, from the new worktree root:
@@ -25,10 +35,6 @@ For a worktree made any other way, from the new worktree root:
 ```sh
 ln -s <path-to-delvewright-campaigns-checkout> campaigns
 ```
-
-For reproducible test runs, pin the content checkout to the SHA in
-`versions.toml` (the engine CI does); a moving content branch can turn
-engine tests red for content reasons.
 
 ## 2. `delvewright.local.toml` (gitignored)
 

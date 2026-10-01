@@ -9,19 +9,13 @@
 
 use delvewright_dsl::{Campaign, DSL_VERSION, RawCampaign, parse_campaign, validate_campaign};
 
+/// A stage document of this crate's own hello-world fixture.
 fn hw(name: &str) -> String {
     std::fs::read_to_string(
         std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../campaigns/campaigns/hello-world")
+            .join("fixtures/valid/hello-world")
             .join(name),
     )
-    .or_else(|_| {
-        std::fs::read_to_string(
-            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-                .join("fixtures/valid/hello-world")
-                .join(name),
-        )
-    })
     .unwrap_or_else(|e| panic!("hello-world/{name}: {e}"))
 }
 

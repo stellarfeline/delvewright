@@ -7,6 +7,8 @@
 
 use std::path::{Path, PathBuf};
 
+pub mod pinned;
+
 /// The six stage filenames (matching `delvec::compiler::load::STAGE_FILES`).
 pub const STAGE_FILES: [&str; 6] = [
     "world.json",
@@ -105,26 +107,18 @@ pub fn copy_l10n_dir(base: &Path, dst: &Path) {
     }
 }
 
-/// The prefab library directory. The library lives in the content repo
-/// (`delvewright-campaigns`), reached at `campaigns/prefabs` — the `campaigns/`
-/// symlink locally, and a content-repo checkout at that path in CI (spec-0007
-/// Step 0). Mirrors the compiler's default `--prefabs campaigns/prefabs`.
-///
-/// **A fixture may only bind prefabs that exist at the PINNED content SHA**
-/// (`versions.toml` `[content].sha`, which `.github/actions/checkout-content`
-/// checks out). The local `campaigns/` symlink usually points at a working
-/// checkout that is far AHEAD of the pin, so a fixture written against a newer
-/// prefab passes locally and fails CI with `DW0300` ("no matching prefab
-/// metadata") — the classic works-on-my-machine shape, and the reason this note
-/// exists. To reproduce CI exactly, point the symlink at a clone checked out at
-/// the pinned SHA. Bumping the pin to make a fixture build is a content-repo
-/// decision, never a fix for a test.
+/// The prefab library at the pinned content commit (`versions.toml`
+/// `[content].sha`), read out of the content repository's object store by
+/// [`pinned`] — never the `campaigns/` working tree, so a local run judges the
+/// same bytes CI does whatever revision the developer's content checkout sits
+/// on. A fixture may only bind prefabs that exist at the pin; one that binds a
+/// newer prefab reds here exactly as it reds in CI. Bumping the pin to make a
+/// fixture build is a content-repo decision, never a fix for a test.
 ///
 /// # This asserts the library PARSES, and that is not decoration
 ///
-/// The note above documented the hazard and the hazard kept happening — three
-/// separate rounds lost to it on 2026-08-08 alone — because the failure does
-/// not look like what it is. `PrefabRegistry::load_dir` reports a metadata file
+/// A library file this `delvec` cannot parse fails in a shape that does not
+/// look like what it is. `PrefabRegistry::load_dir` reports a metadata file
 /// this `delvec` cannot parse as `DW0346` in `load_diagnostics()`, and **the
 /// CLI drains that list** (`main::validate_loaded`) so `delvec` users get the
 /// real message. Integration tests build a `Plan` directly and never drain it,
@@ -144,7 +138,7 @@ pub fn copy_l10n_dir(base: &Path, dst: &Path) {
 /// call sites already go through.
 pub fn prefabs_dir() -> PathBuf {
     static CHECKED: std::sync::OnceLock<()> = std::sync::OnceLock::new();
-    let dir = repo_root().join("campaigns/prefabs");
+    let dir = pinned::prefabs();
     CHECKED.get_or_init(|| {
         let Ok(reg) = delvec::compiler::registry::PrefabRegistry::load_dir(&dir) else {
             // An unreadable directory is the caller's own problem and every call
@@ -168,10 +162,9 @@ pub fn prefabs_dir() -> PathBuf {
             "the prefab library at {} has {} file(s) this delvec cannot parse, so those \
              prefabs are ABSENT from the registry and every fixture binding one will fail \
              as DW0300 \"no matching prefab metadata\" — which is not what went wrong.\n\n\
-             Look first at whether the `campaigns/` symlink points at a content checkout \
+             This is the library at the pinned content commit, so the pin carries a file \
              this engine cannot read: a wrong-typed value or an absent required block \
-             drops the whole file. Point it at the SHA `versions.toml` [content].sha \
-             pins, which is what CI builds against.\n\n{}",
+             drops the whole file.\n\n{}",
             dir.display(),
             diags.len(),
             diags
@@ -195,9 +188,9 @@ pub fn compiler_fixtures_dir() -> PathBuf {
 }
 
 /// Recursively copy a directory tree (used to make a private, mutable copy of
-/// `prefabs_dir()` for tests that corrupt prefab metadata/structures — the real
-/// `campaigns/prefabs` is a checkout of the separate content repo and must never
-/// be written to by a test).
+/// `prefabs_dir()` for tests that corrupt prefab metadata/structures — the
+/// pinned library is one materialised copy shared by every test, and
+/// [`pinned`] reds when a test has written into it).
 pub fn copy_dir_all(src: &Path, dst: &Path) {
     std::fs::create_dir_all(dst).unwrap();
     for entry in std::fs::read_dir(src).unwrap() {

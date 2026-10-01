@@ -1676,7 +1676,9 @@ world literals says so in numbers rather than by silence.
 `.github/content-zone-corpus.json` names the campaigns the pinned content repo
 carries and how many zone programs each declares.
 `crates/delvec/tests/grammar_campaign_zones.rs` checks every number in it against the
-content checkout, inside `cargo test`.
+content at that commit, read out of the content repository's object store
+(`crates/delvec/tests/common/pinned.rs`, [`worktree-bootstrap.md`](worktree-bootstrap.md) §1)
+and never out of a working tree, inside `cargo test`.
 
 It exists because the campaign corpus is not this repo's to produce. An
 in-progress campaign lives on its own content-repo development branch and reaches

@@ -151,32 +151,6 @@ pub fn parse_structure_bytes(raw: &[u8]) -> Result<Structure, NbtError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::PathBuf;
-
-    fn prefab(name: &str) -> PathBuf {
-        // Local dev resolves the library through the `campaigns/` symlink
-        // (spec-0007 Step 0). Tests that need real prefab bytes skip when it is
-        // absent (fresh CI checkout without the content repo).
-        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("../../campaigns/prefabs")
-            .join(name)
-    }
-
-    #[test]
-    fn parses_keep_gate_room() {
-        let p = prefab("keep-gate-room.nbt");
-        if !p.exists() {
-            eprintln!("skip: {} absent (no content symlink)", p.display());
-            return;
-        }
-        let st = parse_structure(&p).expect("parse");
-        assert_eq!(st.size, [7, 5, 9], "keep-gate-room metadata size");
-        assert!(!st.palette.is_empty());
-        assert!(st.palette.iter().any(|s| s.starts_with("minecraft:")));
-        assert!(!st.blocks.is_empty());
-        // Every block references a valid palette index.
-        assert!(st.blocks.iter().all(|(_, i)| *i < st.palette.len()));
-    }
 
     #[test]
     fn palette_props_are_sorted() {

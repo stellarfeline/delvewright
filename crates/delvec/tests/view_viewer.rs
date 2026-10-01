@@ -12,6 +12,8 @@ use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+mod common;
+
 const BIN: &str = env!("CARGO_BIN_EXE_delvec");
 
 fn tmp(tag: &str) -> PathBuf {
@@ -21,12 +23,29 @@ fn tmp(tag: &str) -> PathBuf {
     dir
 }
 
-/// A prefab from the content repo, or `None` on a checkout without the symlink.
-fn prefab(name: &str) -> Option<PathBuf> {
-    let p = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../campaigns/prefabs")
-        .join(name);
-    p.exists().then_some(p)
+/// A prefab from the library at the pinned content commit (`common::pinned`).
+/// A piece the pin does not carry is a failure, never a skip.
+fn prefab(name: &str) -> PathBuf {
+    let p = common::pinned::prefabs().join(name);
+    assert!(
+        p.is_file(),
+        "{} is not in the pinned prefab library",
+        p.display()
+    );
+    p
+}
+
+/// The structure reader parses a real library piece: the size its metadata
+/// declares, a namespaced palette, and every block indexing into it.
+#[test]
+fn parses_keep_gate_room() {
+    let p = prefab("keep-gate-room.nbt");
+    let st = delvec::compiler::view::nbt::parse_structure(&p).expect("parse");
+    assert_eq!(st.size, [7, 5, 9], "keep-gate-room metadata size");
+    assert!(!st.palette.is_empty());
+    assert!(st.palette.iter().any(|s| s.starts_with("minecraft:")));
+    assert!(!st.blocks.is_empty());
+    assert!(st.blocks.iter().all(|(_, i)| *i < st.palette.len()));
 }
 
 /// One 16×16 opaque PNG, written once and shared by every fake texture. The
@@ -159,10 +178,7 @@ fn viewer(nbt: &Path, out: &Path, pack: &Path) -> std::process::Output {
 
 #[test]
 fn a_page_is_self_contained_and_names_its_prefab() {
-    let Some(nbt) = prefab("keep-gate-room.nbt") else {
-        eprintln!("skip: no content symlink");
-        return;
-    };
+    let nbt = prefab("keep-gate-room.nbt");
     let dir = tmp("selfcontained");
     let pack = pack_for(&dir, &nbt, &[]);
     let out = dir.join("page.html");
@@ -204,10 +220,7 @@ fn a_page_is_self_contained_and_names_its_prefab() {
 /// ADR-0006 applies to everything the pipeline emits, this page included.
 #[test]
 fn the_same_prefab_produces_a_byte_identical_page() {
-    let Some(nbt) = prefab("keep-gate-room.nbt") else {
-        eprintln!("skip: no content symlink");
-        return;
-    };
+    let nbt = prefab("keep-gate-room.nbt");
     let dir = tmp("determinism");
     let pack = pack_for(&dir, &nbt, &[]);
     let mut pages = Vec::new();
@@ -225,10 +238,7 @@ fn the_same_prefab_produces_a_byte_identical_page() {
 /// filesystem happened to hand them back.
 #[test]
 fn a_directory_of_prefabs_is_one_page_in_a_stable_order() {
-    let Some(one) = prefab("keep-gate-room.nbt") else {
-        eprintln!("skip: no content symlink");
-        return;
-    };
+    let one = prefab("keep-gate-room.nbt");
     let src = one.parent().unwrap().to_path_buf();
     let dir = tmp("library");
     let mut all: BTreeSet<String> = BTreeSet::new();
@@ -282,10 +292,7 @@ fn a_directory_of_prefabs_is_one_page_in_a_stable_order() {
 /// general form of the `minecraft:chain` case.
 #[test]
 fn an_unresolvable_blockstate_is_dw0790_with_its_cell_count() {
-    let Some(nbt) = prefab("keep-gate-room.nbt") else {
-        eprintln!("skip: no content symlink");
-        return;
-    };
+    let nbt = prefab("keep-gate-room.nbt");
     let dir = tmp("unresolved");
     let pack = pack_for(&dir, &nbt, &["minecraft:glowstone"]);
     let out = dir.join("page.html");
@@ -381,10 +388,7 @@ fn an_under_specified_state_is_dw0791_and_names_what_gets_filled_in() {
 /// nothing must not read like a page that examined everything and found nothing.
 #[test]
 fn the_run_states_what_each_check_examined() {
-    let Some(nbt) = prefab("keep-gate-room.nbt") else {
-        eprintln!("skip: no content symlink");
-        return;
-    };
+    let nbt = prefab("keep-gate-room.nbt");
     let dir = tmp("binding");
     let pack = pack_for(&dir, &nbt, &[]);
     let out = dir.join("page.html");
@@ -416,10 +420,7 @@ fn the_run_states_what_each_check_examined() {
 /// a page — and say that the binding was zero rather than pass quietly.
 #[test]
 fn a_prefab_with_no_anchors_still_renders_and_reports_zero_binding() {
-    let Some(src) = prefab("keep-alcove.nbt") else {
-        eprintln!("skip: no content symlink");
-        return;
-    };
+    let src = prefab("keep-alcove.nbt");
     let dir = tmp("no-anchors");
     // Copy the `.nbt` and give it a document that declares a measured light and
     // no anchors. Copying it with NO document at all is a different fixture and
@@ -466,10 +467,7 @@ fn a_missing_prefab_is_dw0721_exit2() {
 /// up here long before a reviewer hit a page that would not load.
 #[test]
 fn a_real_prefab_page_is_small() {
-    let Some(nbt) = prefab("island-mountain.nbt") else {
-        eprintln!("skip: no content symlink");
-        return;
-    };
+    let nbt = prefab("island-mountain.nbt");
     let dir = tmp("size");
     let pack = pack_for(&dir, &nbt, &[]);
     let out = dir.join("page.html");
@@ -643,10 +641,7 @@ fn a_tiled_zone_is_one_building_on_the_page() {
 /// Both verdicts, over the same prefab and the same missing texture.
 #[test]
 fn a_block_entity_texture_the_pinned_version_lacks_is_dw0792() {
-    let Some(nbt) = prefab("hero-galleon-oak.nbt") else {
-        eprintln!("skip: no content symlink");
-        return;
-    };
+    let nbt = prefab("hero-galleon-oak.nbt");
     let dir = tmp("special");
     let pack = pack_for(&dir, &nbt, &[]);
 
@@ -700,10 +695,7 @@ fn a_block_entity_texture_the_pinned_version_lacks_is_dw0792() {
 /// the unemitted kind of vacuous.
 #[test]
 fn the_page_carries_the_shared_control_table_and_only_that_one() {
-    let Some(nbt) = prefab("keep-gate-room.nbt") else {
-        eprintln!("skip: no content symlink");
-        return;
-    };
+    let nbt = prefab("keep-gate-room.nbt");
     let dir = tmp("controls");
     let pack = pack_for(&dir, &nbt, &[]);
     let out = dir.join("page.html");
@@ -814,10 +806,7 @@ fn ci_runs_every_javascript_test_beside_this_one() {
 /// document at all.
 #[test]
 fn a_piece_whose_light_nobody_measured_is_not_shown() {
-    let Some(src) = prefab("keep-alcove.nbt") else {
-        eprintln!("skip: no content symlink");
-        return;
-    };
+    let src = prefab("keep-alcove.nbt");
     let dir = tmp("unmeasured");
     let pack = pack_for(&dir, &src, &[]);
 
@@ -858,10 +847,7 @@ fn a_piece_whose_light_nobody_measured_is_not_shown() {
 /// refused it here would be deciding one it was not asked.
 #[test]
 fn a_measured_dark_piece_is_still_drawn() {
-    let Some(src) = prefab("keep-alcove.nbt") else {
-        eprintln!("skip: no content symlink");
-        return;
-    };
+    let src = prefab("keep-alcove.nbt");
     let dir = tmp("measured-dark");
     let pack = pack_for(&dir, &src, &[]);
     let nbt = dir.join("crypt.nbt");
@@ -888,10 +874,7 @@ fn a_measured_dark_piece_is_still_drawn() {
 /// binding is not written down cannot be told from one that matched nothing.
 #[test]
 fn the_showing_gate_states_both_of_its_bindings() {
-    let Some(nbt) = prefab("keep-gate-room.nbt") else {
-        eprintln!("skip: no content symlink");
-        return;
-    };
+    let nbt = prefab("keep-gate-room.nbt");
     let dir = tmp("showing-binding");
     let pack = pack_for(&dir, &nbt, &[]);
     let out = dir.join("page.html");
@@ -921,10 +904,7 @@ fn the_showing_gate_states_both_of_its_bindings() {
 /// carries the room camera for the same anchor either way.
 #[test]
 fn a_blind_point_of_view_is_reported_and_the_page_offers_the_room() {
-    let Some(src) = prefab("keep-gate-room.nbt") else {
-        eprintln!("skip: no content symlink");
-        return;
-    };
+    let src = prefab("keep-gate-room.nbt");
     let dir = tmp("blind-pov");
     let pack = pack_for(&dir, &src, &[]);
     let doc: serde_json::Value =
@@ -988,10 +968,7 @@ fn a_blind_point_of_view_is_reported_and_the_page_offers_the_room() {
 /// (`DW0894`) to `5` (renderer/textures) and this reddens.
 #[test]
 fn the_render_arms_refuse_an_unmeasured_piece_before_they_resolve_textures() {
-    let Some(src) = prefab("keep-alcove.nbt") else {
-        eprintln!("skip: no content symlink");
-        return;
-    };
+    let src = prefab("keep-alcove.nbt");
     let dir = tmp("render-order");
     let nbt = dir.join("unmeasured.nbt");
     std::fs::copy(&src, &nbt).unwrap();
