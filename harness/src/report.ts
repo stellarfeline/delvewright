@@ -266,6 +266,20 @@ export class RunReport {
     this.branches = [...outcomes];
   }
 
+  /**
+   * **Every stage that ran and did not pass, in ladder order — each one a red
+   * run.** The one place a stage row reaches the exit code: `run.ts` fails the
+   * run on any stage this returns, so a row the report writes as failed can never
+   * sit beside an exit status of 0. A row with any failure listed is red whatever
+   * its `passed` says; a stage that did not run is not red here (its row carries
+   * the reason it did not).
+   */
+  redStages(): StageResult[] {
+    return STAGES.map((s) => this.stages.get(s)).filter(
+      (r): r is StageResult => r !== undefined && r.ran && (!r.passed || r.failures.length > 0),
+    );
+  }
+
   /** Every advisory the run produced, for the one-line stderr summary. */
   findings(): string[] {
     return [
@@ -565,4 +579,15 @@ export function reportPathFromEnv(env = process.env): string | undefined {
 
 export async function writeRunReport(path: string, report: RunReport): Promise<void> {
   await writeFile(path, `${JSON.stringify(report.toJSON(), null, 2)}\n`, "utf8");
+}
+
+/** The error a run with red stages ends on: every red stage, with its failures. */
+export function redRunMessage(red: readonly StageResult[]): string {
+  return red
+    .map(
+      (r) =>
+        `${r.stage} stage FAILED (${r.failures.length} finding(s))` +
+        (r.failures.length > 0 ? `:\n${r.failures.map((f) => `  ${f}`).join("\n")}` : ""),
+    )
+    .join("\n");
 }

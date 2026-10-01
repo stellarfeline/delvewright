@@ -17,6 +17,7 @@ import {
   boxCells,
   deathLoopBinding,
   deathLoopBindingFailures,
+  deathLoopStage,
   datumsPromised,
   dropOf,
   entryCellOf,
@@ -29,7 +30,12 @@ import {
   inBox,
   lethalTrialFailures,
   openLethalTrial,
+  overFootprint,
   parseDeathPlan,
+  stagedBalance,
+  wayInCandidates,
+  SINK_BLOCKS_PER_TICK,
+  sinkBudgetMs,
   volumeReachesCell,
   LETHAL_STEP_COST,
   lethalStepCost,
@@ -1072,4 +1078,167 @@ test("a loaded cell the volume reaches is walled, and one it does not is free", 
   assert.equal(lethalStepCost({ position: { x: 6, y: 65, z: 8 } }, [box]), LETHAL_STEP_COST);
   assert.equal(lethalStepCost({ position: { x: 9, y: 65, z: 8 } }, [box]), 0);
   assert.ok(LETHAL_STEP_COST > 100, "the library treats only a cost above 100 as no move");
+});
+
+// --- the stage row: a report that says a stage was not reached must be true ---
+
+/** The death-loop stage's input for a run whose path was proven. */
+function stageInput(over: Partial<Parameters<typeof deathLoopStage>[0]> = {}) {
+  const trials = [goodTrial()];
+  return {
+    enabled: true,
+    disabledReason: "skipped via DELVEWRIGHT_DEATH_LOOP=0",
+    pathProven: true,
+    interruption: undefined,
+    skipReason: undefined,
+    binding: deathLoopBinding(plan(), trials),
+    trials,
+    trialsFinished: trials.length,
+    ...over,
+  };
+}
+
+test("a death loop the run's budget cut off is reported as entered and unfinished, never as unreached", () => {
+  // The local ladder that motivated this: the critical path passed, the stage
+  // walked the bot to the well, and the wall-clock budget expired mid-trial. The
+  // report then said the critical path had failed and the stage was never
+  // reached, beside its own `death_loop` block recording `volumes_entered: 1`.
+  const t = openLethalTrial(VOLUME, [5, 65, 8], [stakeRule()]);
+  const row = deathLoopStage(
+    stageInput({
+      interruption: "run exceeded wall-clock budget of 2700000ms",
+      trials: [t],
+      binding: deathLoopBinding(plan(), [t]),
+      trialsFinished: 0,
+    }),
+  );
+  assert.equal(row.ran, true, "the stage was entered, so it ran");
+  assert.equal(row.passed, false);
+  assert.ok(
+    row.findings.every((f) => !/never reached/.test(f)) &&
+      row.failures.every((f) => !/never reached/.test(f)),
+    `nothing may say the stage was never reached: ${JSON.stringify(row)}`,
+  );
+  assert.equal(row.failures.length, 1, JSON.stringify(row.failures));
+  assert.match(row.failures[0]!, /did not finish/);
+  assert.match(row.failures[0]!, /run exceeded wall-clock budget of 2700000ms/);
+  assert.match(row.failures[0]!, /1 of 1 declared lethal volume/);
+});
+
+test("an interrupted stage still judges the trials it finished, and only those", () => {
+  const finished = goodTrial();
+  finished.markerRetired = false; // a real verdict the finished trial owes
+  const cut = openLethalTrial(VOLUME, [5, 65, 8], [stakeRule()]);
+  const row = deathLoopStage(
+    stageInput({
+      interruption: "run exceeded wall-clock budget of 2700000ms",
+      trials: [finished, cut],
+      binding: deathLoopBinding(plan(), [finished, cut]),
+      trialsFinished: 1,
+    }),
+  );
+  assert.equal(row.failures.length, 2, JSON.stringify(row.failures));
+  assert.match(row.failures[1]!, /still standing/);
+  assert.ok(!row.failures.some((f) => /never OBSERVED/.test(f)), "the cut trial is not judged");
+});
+
+test("a critical path that failed leaves the stage unreached, and says exactly that", () => {
+  const row = deathLoopStage(
+    stageInput({ pathProven: false, trials: [], binding: deathLoopBinding(plan(), []), trialsFinished: 0 }),
+  );
+  assert.equal(row.ran, false);
+  assert.equal(row.passed, false);
+  assert.deepEqual(row.failures, []);
+  assert.match(row.findings[0]!, /critical path failed, so the death loop was never reached/);
+});
+
+test("a finished stage is judged whole, and a disabled one carries its reason", () => {
+  assert.deepEqual(deathLoopStage(stageInput()), {
+    stage: "death-loop",
+    ran: true,
+    passed: true,
+    findings: [],
+    failures: [],
+  });
+  const off = deathLoopStage(stageInput({ enabled: false }));
+  assert.equal(off.ran, false);
+  assert.deepEqual(off.findings, ["skipped via DELVEWRIGHT_DEATH_LOOP=0"]);
+});
+
+// --- letting go over a submerged volume ------------------------------------
+
+/** vesperhold's well: the bottom three layers of a still column y=58..67. */
+const UNDERTIDE = { lo: [35, 58, 79] as const, hi: [37, 60, 81] as const };
+
+test("a body is over a volume's footprint exactly where the selector's region lies below it", () => {
+  // The continuous region is [lo, hi + 1] on x and z.
+  assert.equal(overFootprint([35.0, 66.9, 79.0], UNDERTIDE), true);
+  assert.equal(overFootprint([38.0, 66.9, 82.0], UNDERTIDE), true);
+  assert.equal(overFootprint([36.5, 120, 80.5], UNDERTIDE), true, "height is not the question");
+  assert.equal(overFootprint([34.99, 66.9, 80.5], UNDERTIDE), false);
+  assert.equal(overFootprint([36.5, 66.9, 82.01], UNDERTIDE), false);
+  // The lip the placement table proved nearest the well is not over it.
+  assert.equal(overFootprint([31.5, 68, 80.5], UNDERTIDE), false);
+});
+
+test("the sink budget is the measured descent, and it covers the descents that were measured", () => {
+  assert.equal(SINK_BLOCKS_PER_TICK, 0.025);
+  // Released at the surface (feet 66.97), the body is matched once its feet reach
+  // the region's top face, y = hi + 1 = 61: 5.97 blocks. The six measured
+  // descents took 12.13-12.27 s from release to death.
+  const depth = 66.97 - (UNDERTIDE.hi[1] + 1);
+  const budget = sinkBudgetMs(depth);
+  assert.ok(budget > 12_270, `budget ${budget}ms must cover the slowest measured descent`);
+  assert.ok(budget < 20_000, `budget ${budget}ms is a bound, not a guess`);
+  assert.equal(sinkBudgetMs(-2), 1_000, "a body already level with the volume waits only for the kill");
+  assert.ok(sinkBudgetMs(12) > sinkBudgetMs(6), "deeper is longer");
+});
+
+// --- a forfeit is asserted over a purse that holds something ------------------
+
+test("a trial whose forfeit could only be observed at zero is refused as unbound", () => {
+  // vesperhold, every branch: tallow 0 before, 0 after the death, 0 after the
+  // collection — and the stage passed, over an assertion a missing forfeit
+  // satisfies exactly as well as a working one.
+  const t = goodTrial();
+  const w = wager(t, "stake/embers");
+  w.balanceBefore = 0;
+  w.expectedForfeit = 0;
+  w.balanceAfterDeath = 0;
+  w.balanceAfterCollect = 0;
+  const failures = lethalTrialFailures(t);
+  assert.ok(
+    failures.some((f) => /forfeit of `stake\/embers` was UNBOUND/.test(f)),
+    JSON.stringify(failures),
+  );
+  // The same trial over a purse of 5 is bound and passes.
+  assert.deepEqual(lethalTrialFailures(goodTrial()), []);
+});
+
+test("the staged balance makes every rule's forfeit observable, and none's too", () => {
+  const rules = [
+    { kind: "all" },
+    { kind: "fixed", amount: 2 },
+    { kind: "fixed", amount: 7 },
+    { kind: "proportion", percent: 50 },
+    { kind: "proportion", percent: 1 },
+  ] as const;
+  for (const rule of rules) {
+    const v = stagedBalance(rule);
+    const taken = expectedForfeit(rule, v);
+    assert.ok(taken > 0, `${JSON.stringify(rule)} takes ${taken} of ${v}`);
+    if (rule.kind !== "all") assert.ok(taken < v, `${JSON.stringify(rule)} is not "all" at ${v}`);
+  }
+  assert.ok(stagedBalance({ kind: "none" }) > 0, "none is asserted over a purse holding something");
+});
+
+test("a blocked walk in asks for the sill a player jumps to, nearest the volume first", () => {
+  // vesperhold's well after the choir fix: the lip is the floor of a dry cut at
+  // [30, 67, 79]; the sill of the curb's opening stands at [31, 68, 80]; the
+  // floor west of the cut at [29, 68, 80]. The volume is the shaft's bottom.
+  const standable = new Set(["31,68,80", "29,68,80", "29,68,79", "30,67,80", "31,70,81"]);
+  const got = wayInCandidates([30, 67, 79], UNDERTIDE, (c) => standable.has(c.join(",")));
+  assert.deepEqual(got[0], [31, 68, 80], "the sill first: nearest the volume, the smallest climb");
+  assert.ok(!got.some((c) => c[0] <= 30), "nothing no nearer the volume than the body already is");
+  assert.deepEqual(wayInCandidates([30, 67, 79], UNDERTIDE, () => false), []);
 });

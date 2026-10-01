@@ -8435,6 +8435,19 @@ const STK_GOT: &str = "#stk_got";
 /// The `dw.sys` fake player holding the constant `100`, for a proportional forfeit.
 const STK_HUNDRED: &str = "#stk_100";
 
+/// The tag `stk_collect` puts on the player who clicked, for `stk_pick` to find.
+const STK_CLICKER: &str = "dw_stk_clicker";
+/// The tag `stk_pick` leaves on the box that player clicked.
+const STK_HIT: &str = "dw_stk_hit";
+/// `dw.sys` scratch: the latest `interaction.timestamp` of a box the clicker used.
+const STK_BEST: &str = "#stk_best";
+/// `dw.sys` scratch: one box's `interaction.timestamp`.
+const STK_T: &str = "#stk_t";
+/// `dw.sys` scratch: whether the clicker is the box's last user (`on target`).
+const STK_MINE: &str = "#stk_mine";
+/// Run as each stake box: which one the player who fired `stk_collect` clicked.
+const STK_PICK_FN: &str = "stk_pick";
+
 /// The one function that summons a marker: **the place**, made once however many
 /// wagers a death leaves there.
 const STK_PLACE_FN: &str = "stk_place";
@@ -9043,17 +9056,57 @@ fn emit_stake_functions(
         // The right-click. One advancement fires it, because there is one box to
         // click; the place is located once and then offered to every stake, so a
         // death that left three datums here gives all three back in one press.
-        let mut collect: Vec<String> =
-            vec![format!("advancement revoke @s only {ns}:{STK_COLLECT_FN}")];
+        //
+        // **The place is the box this player CLICKED, never the one nearest them.**
+        // The advancement says only that the player interacted with some `dw_stk`
+        // box; which one is the interaction entity's own record — `on target` is
+        // the last player to use it, and `interaction.timestamp` the tick they did.
+        // Of the boxes this player has used, the most recent is the one just
+        // clicked (`stk_pick`, one pass keeping the greatest timestamp). Taking the
+        // `dw_stk` nearest the player instead offered the wagers at whatever place
+        // stood closest: a player reaching past one stake to click another took
+        // the purse at the near one — another player's, under `collect_by: anyone`
+        // — and left their own standing.
+        let mut collect: Vec<String> = vec![
+            format!("advancement revoke @s only {ns}:{STK_COLLECT_FN}"),
+            format!("tag @s add {STK_CLICKER}"),
+            format!("scoreboard players set {STK_BEST} dw.sys -1"),
+            format!(
+                "execute as @e[type=minecraft:interaction,tag={tag}] run function {ns}:{STK_PICK_FN}"
+            ),
+            format!("tag @s remove {STK_CLICKER}"),
+            format!("execute unless entity @e[tag={STK_HIT},limit=1] run return fail"),
+        ];
         for (axis, s) in [STK_X, STK_Y, STK_Z].iter().enumerate() {
             collect.push(format!(
-                "execute at @s store result score {s} dw.sys run data get entity @e[tag={tag},limit=1,sort=nearest] Pos[{axis}]"
+                "execute store result score {s} dw.sys run data get entity @e[tag={STK_HIT},limit=1] Pos[{axis}]"
             ));
         }
+        collect.push(format!("tag @e[tag={STK_HIT}] remove {STK_HIT}"));
         for (_, safe) in &marking {
             collect.push(format!("function {ns}:stk_collect_{safe}"));
         }
         fns.push((STK_COLLECT_FN.to_string(), lines(&collect)));
+
+        // Run AS each `dw_stk` box: keep it if the clicker used it, and used it
+        // later than every box kept so far.
+        fns.push((
+            STK_PICK_FN.to_string(),
+            lines(&[
+                format!("scoreboard players set {STK_MINE} dw.sys 0"),
+                format!(
+                    "execute store success score {STK_MINE} dw.sys on target if entity @s[tag={STK_CLICKER}]"
+                ),
+                format!("execute unless score {STK_MINE} dw.sys matches 1 run return 0"),
+                format!(
+                    "execute store result score {STK_T} dw.sys run data get entity @s interaction.timestamp"
+                ),
+                format!("execute unless score {STK_T} dw.sys > {STK_BEST} dw.sys run return 0"),
+                format!("scoreboard players operation {STK_BEST} dw.sys = {STK_T} dw.sys"),
+                format!("tag @e[tag={STK_HIT}] remove {STK_HIT}"),
+                format!("tag @s add {STK_HIT}"),
+            ]),
+        ));
 
         // Who still has a wager here — over every stake, because one live wager in
         // any datum is what keeps this place a place.
@@ -20203,18 +20256,28 @@ fn emit_economy_packtests(plan: &Plan, out: &mut BuildOutput) {
         // through the REAL right-click handler — the one the one advancement on
         // the one marker tag fires — never through this stake's own half of it,
         // so a collector that stopped offering the place to every stake reds here.
-        t.push(format!(
-            "execute as {me} run function {ns}:{STK_COLLECT_FN}"
-        ));
+        //
+        // The handler collects the box the player CLICKED, read off the box
+        // (`stk_pick`: its last user and when), so the press is a real click
+        // first: the dummy uses the box, which records it, and then the handler
+        // runs as that player — what the advancement's reward does. The dummy's
+        // use does not fire the advancement (vanilla triggers it in the packet
+        // handler, which a dummy's use does not go through), so the handler is
+        // called here as the reward would call it; the click is what it reads.
+        let press = [
+            format!(
+                "execute at {me} run dummy {me} use entity @e[tag={tag},distance=..1,limit=1,sort=nearest]"
+            ),
+            format!("execute as {me} run function {ns}:{STK_COLLECT_FN}"),
+        ];
+        t.extend(press.iter().cloned());
         t.push(format!(
             "execute store result score #stk_back_{safe} dw.sys run scoreboard players get {me} {obj}"
         ));
         t.push(format!("assert score #stk_back_{safe} dw.sys matches 40"));
         // A second press in the same breath is a no-op — the slot went dead as part
         // of being taken, so idempotence is structural rather than timed (AC6).
-        t.push(format!(
-            "execute as {me} run function {ns}:{STK_COLLECT_FN}"
-        ));
+        t.extend(press);
         t.push(format!(
             "execute store result score #stk_twice_{safe} dw.sys run scoreboard players get {me} {obj}"
         ));
@@ -20313,7 +20376,11 @@ fn emit_economy_packtests(plan: &Plan, out: &mut BuildOutput) {
             "execute store result score #stkpair_lost_b dw.sys run scoreboard players get {me} {ob}"
         ));
         t.push("assert score #stkpair_lost_b dw.sys matches ..39".to_string());
-        // One press on the one place gives BOTH datums back.
+        // One press on the one place gives BOTH datums back: a real click on the
+        // box, then the handler as that player, as above.
+        t.push(format!(
+            "execute at {me} run dummy {me} use entity @e[tag={tag},distance=..1,limit=1,sort=nearest]"
+        ));
         t.push(format!(
             "execute as {me} run function {ns}:{STK_COLLECT_FN}"
         ));

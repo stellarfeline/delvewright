@@ -81,7 +81,10 @@ import { isRejection } from "./rejection.ts";
 import {
   bodyInVolume,
   entryCellOf,
+  overFootprint,
+  sinkBudgetMs,
   volumeReachesCell,
+  wayInCandidates,
   inBox,
   dropOf,
   gateVerdict,
@@ -92,6 +95,7 @@ import {
   openLethalTrial,
   openWager,
   seatAtRespawn,
+  stagedBalance,
   stakesDropped,
   tableAnchor,
   termClause,
@@ -150,9 +154,11 @@ import {
 import {
   EAT_COOLDOWN_MS,
   EAT_SAFE_RANGE,
+  INSTANT_HEALTH_UNIT,
   eatDecision,
   isSafeFood,
   pickFood,
+  restoreAmplifier,
 } from "./sustain.ts";
 
 import {
@@ -190,11 +196,6 @@ const STAGED_BLOW = 100_000;
  */
 const STAGED_REPLY_MS = 400;
 
-/**
- * What one level of vanilla's instant health restores, in health points:
- * `4 << amplifier` for a living body that is not undead.
- */
-const INSTANT_HEALTH_UNIT = 4;
 
 /**
  * Consecutive unanswered censuses that end a staged clear.
@@ -1555,6 +1556,8 @@ export class MineflayerExecutor implements StepExecutor {
   private readonly lethalTrials: LethalTrial[] = [];
   /** Why the death-loop stage did not run, when it did not. */
   private deathLoopSkip: string | undefined;
+  /** Trials of the death loop that ran to their own end — not cut off mid-way. */
+  private lethalTrialsFinished = 0;
   /** Serial number of the last gate term asked — see {@link askTerm}. */
   private gateAsks = 0;
   /**
@@ -1652,6 +1655,13 @@ export class MineflayerExecutor implements StepExecutor {
   /** What each wave's muster established — the encounter rows' evidence. */
   private readonly musters = new Map<string, MusterVerdict>();
   /**
+   * Every failure ANY muster reading produced, in order, `<wave>: <failure>`.
+   * `musters` holds each wave's latest reading, and a later reading that found
+   * the seating whole used to replace an earlier one that did not — the failure
+   * then reached neither the report nor the exit code.
+   */
+  private readonly musterFailureLog: string[] = [];
+  /**
    * Every body the run took out of the delve by command, and why.
    *
    * Named loudly and separately from anything the delve did, because it is the one
@@ -1690,6 +1700,17 @@ export class MineflayerExecutor implements StepExecutor {
   /** A muster already in flight per wave — a step's or a damage handler's — so
    * two readers of one seating share one reading. */
   private readonly earlyMusters = new Map<string, Promise<void>>();
+  /**
+   * Every staging act a damage handler started and has not finished — a reading
+   * of the body's wave, its removal, the refund. Awaited by {@link settleStaging}
+   * before the run report is built: a muster the server was still answering when
+   * the last stage ended was a reading the run took and then never recorded.
+   */
+  private readonly stagingTasks = new Set<Promise<void>>();
+  /** Set by {@link settleStaging}: the stages are over, and no new staging starts. */
+  private stagingClosed = false;
+  /** Gates the walk into a lethal volume opened, with the state each stood in. */
+  private readonly gatesOpenedByTrial: { pos: Vec3Tuple; state: string }[] = [];
   /** When the latest respawn landed: wall clock, and the server's world age as the
    * last time packet before it reported it. The respawn-protection wait reads both. */
   private lastSpawnAt: number | undefined;
@@ -1753,6 +1774,12 @@ export class MineflayerExecutor implements StepExecutor {
   private readonly damageBy = new Map<number, number>();
   /** Last observed bot health, for the health-drop attribution fallback. */
   private lastHealth: number | undefined;
+  /** Walk legs in progress — while non-zero, the bot is held at full health. */
+  private walkLegs = 0;
+  /** The label of the walk leg in progress, for the staging record. */
+  private walkLabel = "";
+  /** The full-health restoration in flight, so a burst of drops issues one. */
+  private restoringHealth: Promise<void> | undefined;
   /** Timestamp (ms) of the last eat attempt, throttling both the action and its log. */
   private lastEatAt = 0;
 
@@ -2035,7 +2062,15 @@ export class MineflayerExecutor implements StepExecutor {
       );
       return;
     }
-    void this.stageAway(attacker, "it hit the bot (the server named it)", byId.get(attacker)?.name);
+    // The stages are over: a body that hits the bot now is outside every stage,
+    // and a reading started now would be of a world no stage observed.
+    if (this.stagingClosed) return;
+    const task: Promise<void> = this.stageAway(
+      attacker,
+      "it hit the bot (the server named it)",
+      byId.get(attacker)?.name,
+    ).finally(() => this.stagingTasks.delete(task));
+    this.stagingTasks.add(task);
   }
 
   /**
@@ -2050,6 +2085,7 @@ export class MineflayerExecutor implements StepExecutor {
     const previous = this.lastHealth;
     this.lastHealth = bot.health;
     if (previous === undefined || bot.health >= previous) return;
+    if (this.walkLegs > 0) void this.holdFullHealth(`a drop to ${bot.health.toFixed(1)} on it`);
     // A drop inside the grace of a NAMED hit is that body's blow — what a staged
     // removal of it refunds (see `refundBlows`).
     const hit = this.lastNamedHit;
@@ -2193,7 +2229,7 @@ export class MineflayerExecutor implements StepExecutor {
     }
     for (let round = 0; round < DEFENSE_ROUNDS_PER_HOP; round++) {
       await this.maybeEat(label);
-      const before = this.stagedRemovals.length;
+      const before = this.bodiesStaged();
       try {
         await this.runGoto(spec, label);
         return;
@@ -2202,10 +2238,10 @@ export class MineflayerExecutor implements StepExecutor {
         // A hop can fail because a body is standing in the path; the damage
         // handlers stage away anything that hits the bot, so a retry is only
         // worth taking when one of them actually went.
-        if (this.stagedRemovals.length === before) throw err;
+        if (this.bodiesStaged() === before) throw err;
         process.stderr.write(
           `[staged] ${label} failed with a body on the bot; ` +
-            `${this.stagedRemovals.length - before} removed since the hop opened — retrying\n`,
+            `${this.bodiesStaged() - before} removed since the hop opened — retrying\n`,
         );
       }
     }
@@ -2533,6 +2569,11 @@ export class MineflayerExecutor implements StepExecutor {
     return this.lethalTrials;
   }
 
+  /** How many of {@link deathLoopTrials} ran to their own end. */
+  deathLoopTrialsFinished(): number {
+    return this.lethalTrialsFinished;
+  }
+
   /** Why the stage did not run, when it did not. `undefined` means it ran. */
   deathLoopSkipReason(): string | undefined {
     return this.deathLoopSkip;
@@ -2825,6 +2866,7 @@ export class MineflayerExecutor implements StepExecutor {
     try {
       for (const volume of plan.volumes) {
         await this.lethalTrial(plan, volume);
+        this.lethalTrialsFinished += 1;
       }
     } finally {
       this.clearScoreDisplay();
@@ -2903,14 +2945,10 @@ export class MineflayerExecutor implements StepExecutor {
     );
 
     // --- the ledger before, for EVERY datum this death takes ----------------
-    for (const w of trial.wagers) {
-      if (await this.trackScore(w.objective)) {
-        w.balanceBefore = this.myScore(w.objective);
-      }
-      if (w.balanceBefore !== undefined) {
-        w.expectedForfeit = expectedForfeit(w.forfeit, w.balanceBefore);
-      }
-    }
+    // Staged to a known balance, so the forfeit takes something (see
+    // `stagedBalance`), and staged again at the lip below: a body the approach
+    // stages away pays its bounty into the same purse.
+    await this.stageWagers(plan, trial);
 
     // --- the walk toward the volume ----------------------------------------
     // Armed BEFORE the approach, not between the approach and the step in. The
@@ -2938,12 +2976,28 @@ export class MineflayerExecutor implements StepExecutor {
       }
     }
     if (this.bodyInside(volume.region)) trial.enteredVolume = true;
+    if (navFault === undefined && this.deathSeq === deathsBefore) {
+      await this.stageWagers(plan, trial);
+    }
     // The one leg of the whole run that is ALLOWED into the hazard — skipped when
     // the approach already delivered the death.
     if (navFault === undefined && this.deathSeq === deathsBefore) {
       this.lethalExclusionSuspended = true;
       try {
-        await this.stepInto(volume.region, entryCell, trial);
+        let walkIn = await this.stepInto(volume.region, entryCell, trial);
+        if (walkIn === "blocked" && this.deathSeq === deathsBefore) {
+          // The walk to the way in is an ordinary walk: the hazard is not in it.
+          this.lethalExclusionSuspended = false;
+          let from: Vec3Tuple | undefined;
+          try {
+            from = await this.jumpInApproach(volume.region, volume.id);
+          } finally {
+            this.lethalExclusionSuspended = true;
+          }
+          if (from !== undefined && this.deathSeq === deathsBefore) {
+            walkIn = await this.stepInto(volume.region, entryCell, trial);
+          }
+        }
       } catch (err) {
         if (!(err instanceof BotDeathError)) {
           navFault =
@@ -2952,6 +3006,8 @@ export class MineflayerExecutor implements StepExecutor {
         }
       } finally {
         this.lethalExclusionSuspended = false;
+        // Whatever ended the walk in, a gate it opened does not stay open.
+        await this.restoreOpenedGates(volume.id);
       }
     }
 
@@ -3144,44 +3200,320 @@ export class MineflayerExecutor implements StepExecutor {
   }
 
   /**
-   * Put the bot's feet inside `box`, having already walked to its lip.
+   * **Give every wagered datum a known, non-zero balance, and read it back.**
+   *
+   * Staging, like the health restores, and named in `staged_removals` as a
+   * `player` row. The value is `stagedBalance` of the datum's own forfeit rule, so
+   * the forfeit, the stake it leaves and the collection are all asserted against
+   * a purse that held something; a datum this cannot stage (not a per-player
+   * ledger, or the server refused) keeps whatever it held, and a trial whose
+   * forfeit is then observable only at zero is refused as UNBOUND by
+   * `lethalTrialFailures`.
+   */
+  private async stageWagers(plan: DeathPlan, trial: LethalTrial): Promise<void> {
+    const bot = this.requireBot();
+    for (const w of trial.wagers) {
+      if (!(await this.trackScore(w.objective))) continue;
+      const stake = plan.stakes.find((s) => s.id === w.stake);
+      const scope = stake?.currency.scope ?? "player";
+      const want = stagedBalance(w.forfeit);
+      if (scope === "player") {
+        const from = this.chatMark();
+        bot.chat(`/scoreboard players set @s ${w.objective} ${want}`);
+        await delay(STAGED_REPLY_MS);
+        const refusal = this.chatSince(from).lines.find((line) => isRejection(line));
+        this.stagedRemovals.push({
+          kind: "player",
+          why:
+            `stake datum staged for ${trial.volume}: \`${w.objective}\` (\`${w.stake}\`) set to ` +
+            `${want}, so the declared forfeit (${w.forfeit.kind}) takes ` +
+            `${expectedForfeit(w.forfeit, want)}`,
+          performed: refusal === undefined,
+          detail: refusal,
+        });
+        w.balanceBefore = await this.settledScore(w.objective, want);
+      } else {
+        w.balanceBefore = this.myScore(w.objective);
+      }
+      if (w.balanceBefore !== undefined) {
+        w.expectedForfeit = expectedForfeit(w.forfeit, w.balanceBefore);
+      }
+      process.stderr.write(
+        `[death-loop] ${trial.volume}: \`${w.objective}\` holds ${w.balanceBefore ?? "?"} ` +
+          `${scope === "player" ? `(staged to ${want})` : `(a ${scope} ledger — not staged)`}; ` +
+          `the death should take ${w.expectedForfeit ?? "?"}\n`,
+      );
+    }
+  }
+
+  /**
+   * Put the bot into `box` the way a player meets it, having already walked to
+   * its lip: walk in until nothing is underfoot over the volume, then let go.
    *
    * The pathfinder cannot be asked for this: its nearest goal is a range of one
    * block, so it parks the bot beside a one-cell hazard and calls it arrived. Raw
    * forward drive is the mechanism this file already trusts against exact cells
    * (the timed-gate dash, the unstick burst) and it is what a player pressing W
-   * does. Throws whatever the walk threw — including the {@link BotDeathError}
-   * that is the whole point.
+   * does — **until the body is over the volume with nothing under it**
+   * ({@link overFootprint}, and not on the ground). From there a player who does
+   * nothing is carried in by the game: a pit is fallen into, and a submerged
+   * volume is sunk into, at {@link SINK_BLOCKS_PER_TICK}. Driving on is not what
+   * a player does, and in water it can lift the body: a horizontal collision is
+   * the climb-out-of-water impulse. The volume's own selector is what then kills
+   * the body; nothing here moves it but the game.
    *
-   * It also RECORDS what it saw. The drive can run its deadline out with the body
-   * still outside the box — a wall in the way, a cell no body fits in — and it
-   * returns normally when it does, so the only thing separating "the volume did
-   * not kill what was in it" from "nothing ever got in" is this flag.
+   * A released body that lands on something outside the volume — the rim it
+   * overhung as it stepped down (measured on the gallery's west pit: released at
+   * y 69.92 mid-step, it came to rest at 69.00 on the lip's edge) — is standing
+   * again, and it walks on, as a player at the edge of a hole would.
+   *
+   * Throws whatever the walk threw — including the {@link BotDeathError} that is
+   * the whole point. It also RECORDS what it saw: the drive can run its deadline
+   * out with the body still outside the box — a wall in the way, a cell no body
+   * fits in — and it returns normally when it does, so the only thing separating
+   * "the volume did not kill what was in it" from "nothing ever got in" is the
+   * flag.
    */
-  private async stepInto(box: Box, cell: Vec3Tuple, trial: LethalTrial): Promise<void> {
+  private async stepInto(
+    box: Box,
+    cell: Vec3Tuple,
+    trial: LethalTrial,
+  ): Promise<"entered" | "released" | "blocked"> {
     const bot = this.requireBot();
     const inside = (): boolean => {
       if (!this.bodyInside(box)) return false;
       trial.enteredVolume = true;
       return true;
     };
-    if (inside()) return;
-    const deadline = Date.now() + LETHAL_DEATH_TIMEOUT_MS;
-    try {
-      while (Date.now() < deadline && !inside()) {
-        if (this.death) throw this.death;
-        const p = bot.entity.position;
-        try {
-          await bot.lookAt(p.offset(cell[0] + 0.5 - p.x, 0, cell[2] + 0.5 - p.z), true);
-        } catch {
-          // best effort — a look failure must not abort the step
+    if (inside()) return "entered";
+    const released = (): boolean => {
+      const p = bot.entity.position;
+      return !bot.entity.onGround && overFootprint([p.x, p.y, p.z], box);
+    };
+    // The pathfinder's own rule for what a walk may open (a non-iron gate), read
+    // off the Movements the approach just walked with, so the walk in and every
+    // other walk agree on it.
+    const openable: ReadonlySet<number> =
+      (bot.pathfinder as { movements?: { openable?: ReadonlySet<number> } }).movements
+        ?.openable ?? new Set<number>();
+    const opened = new Map<string, number>();
+    // The drive's own deadline counts DRIVING time only: a body carried in by
+    // the game is on the sink's clock, not this one.
+    let driveLeft = LETHAL_DEATH_TIMEOUT_MS;
+    for (;;) {
+      const until = Date.now() + driveLeft;
+      try {
+        while (Date.now() < until && !inside() && !released()) {
+          if (this.death) throw this.death;
+          await this.openGateAhead(cell, openable, opened, trial.volume);
+          const p = bot.entity.position;
+          try {
+            await bot.lookAt(p.offset(cell[0] + 0.5 - p.x, 0, cell[2] + 0.5 - p.z), true);
+          } catch {
+            // best effort — a look failure must not abort the step
+          }
+          bot.setControlState("forward", true);
+          await delay(GATE_DASH_TICK_MS);
         }
-        bot.setControlState("forward", true);
-        await delay(GATE_DASH_TICK_MS);
+      } finally {
+        bot.clearControlStates();
       }
-    } finally {
-      bot.clearControlStates();
+      driveLeft = until - Date.now();
+      if (!inside() && !released()) {
+        const p = bot.entity.position;
+        process.stderr.write(
+          `[death-loop] ${trial.volume}: the walk in ended at ` +
+            `[${p.x.toFixed(2)}, ${p.y.toFixed(2)}, ${p.z.toFixed(2)}] ` +
+            `(${bot.entity.onGround ? "standing" : "off the ground"}) with the body neither in ` +
+            `the volume nor over it\n`,
+        );
+      }
+      if (inside()) return "entered";
+      if (!released()) return "blocked";
+      // A body that lands on something outside the volume — a rim it overhung
+      // when it stepped down, a ledge in the shaft — is standing again, and a
+      // player standing at the edge of a hole walks on.
+      if (!(await this.sinkInto(box, trial, inside))) return inside() ? "entered" : "released";
+      if (driveLeft <= 0) return "blocked";
     }
+  }
+
+  /**
+   * **When walking straight in is blocked, get to a place a player jumps to.**
+   *
+   * The placement table's lip is the reachable cell nearest the volume by
+   * WALKING, and a hazard can be one a player reaches only with a jump:
+   * vesperhold's well is entered over a dry cut in front of its curb, onto a
+   * sill the choir cannot reach, and the lip is the floor of that cut. From
+   * there a straight drive meets a sill a block and a half up. A player climbs
+   * back out and jumps across; the pathfinder, which jumps gaps the way a
+   * player does, is asked for that: the standable cells within a few blocks
+   * that are nearer the volume than the body is, outside what the volume can
+   * reach, nearest the volume first, tried in turn. `undefined` when none can
+   * be reached.
+   */
+  private async jumpInApproach(box: Box, volume: string): Promise<Vec3Tuple | undefined> {
+    const bot = this.requireBot();
+    const feet = this.feetCell();
+    if (!feet) return undefined;
+    const candidates = wayInCandidates(feet, box, (c) => {
+      if (!this.bodyCanOccupy(c)) return false;
+      const p = bot.entity.position;
+      const below = bot.blockAt(p.offset(c[0] - p.x, c[1] - 1 - p.y, c[2] - p.z));
+      return below !== null && below.boundingBox === "block";
+    });
+    for (const c of candidates.slice(0, 3)) {
+      process.stderr.write(
+        `[death-loop] ${volume}: the walk in is blocked at [${feet.join(", ")}]; asking the ` +
+          `pathfinder for [${c.join(", ")}], nearer the volume\n`,
+      );
+      try {
+        await this.walkTo(c, 1, `death-loop way in to ${volume}`);
+        return c;
+      } catch (err) {
+        if (err instanceof BotDeathError) throw err;
+        process.stderr.write(
+          `[death-loop] ${volume}: [${c.join(", ")}] could not be reached: ` +
+            `${err instanceof Error ? err.message : String(err)}\n`,
+        );
+      }
+    }
+    return undefined;
+  }
+
+  /**
+   * Open a closed gate standing between the body and `cell`, the way a player
+   * walking in does: a right-click, which adventure mode permits.
+   *
+   * vesperhold's well is ringed by a wall whose one opening is a dark oak fence
+   * gate — the very cell the placement table names as the well's near lip — and
+   * it stands closed when the world starts. The pathfinder opens a gate on a path
+   * it plans; the walk in is raw drive, so it has to do the same itself, by the
+   * same rule (`openable`: the pathfinder's own set). Each cell is used at most
+   * once a second, because using an open gate closes it again.
+   */
+  private async openGateAhead(
+    cell: Vec3Tuple,
+    openable: ReadonlySet<number>,
+    opened: Map<string, number>,
+    volume: string,
+  ): Promise<void> {
+    const bot = this.requireBot();
+    const p = bot.entity.position;
+    const dx = cell[0] + 0.5 - p.x;
+    const dz = cell[2] + 0.5 - p.z;
+    const len = Math.hypot(dx, dz);
+    if (len < 1e-6) return;
+    for (const reach of [0.5, 1.0]) {
+      for (const dy of [0, 1]) {
+        const block = bot.blockAt(p.offset((dx / len) * reach, dy, (dz / len) * reach));
+        if (!block || !openable.has(block.type)) continue;
+        if ((block.getProperties() as { open?: unknown }).open !== false) continue;
+        const key = `${block.position.x},${block.position.y},${block.position.z}`;
+        if (Date.now() - (opened.get(key) ?? 0) < 1_000) continue;
+        opened.set(key, Date.now());
+        const before = block.getProperties() as Record<string, unknown>;
+        try {
+          await bot.activateBlock(block);
+          this.gatesOpenedByTrial.push({
+            pos: [block.position.x, block.position.y, block.position.z],
+            state:
+              `minecraft:${block.name}[` +
+              Object.entries(before)
+                .map(([k, v]) => `${k}=${String(v)}`)
+                .join(",") +
+              `]`,
+          });
+          process.stderr.write(
+            `[death-loop] ${volume}: opened the closed ${block.name} at [${key}] in the way in\n`,
+          );
+        } catch (err) {
+          process.stderr.write(
+            `[death-loop] ${volume}: could not open the ${block.name} at [${key}]: ` +
+              `${err instanceof Error ? err.message : String(err)}\n`,
+          );
+        }
+        return;
+      }
+    }
+  }
+
+  /**
+   * **Put back every gate the walk in opened**, in the state it stood in — by
+   * command, named in `staged_removals` as staging, read by the shared rejection
+   * rule.
+   *
+   * The walk in opens a closed gate the way a player does, and a player who then
+   * dies in the hazard leaves it open. That is the harness changing the world on
+   * its own account: on vesperhold the well's gate, left open by the death loop,
+   * let the drowned choir — re-seated by the bot's own death — walk into the
+   * lethal well it cannot otherwise reach (a chorister drowned 23 s after the
+   * trial's death, and the choir's next reading would have read 3 of 4). Called
+   * the moment the body is released over the volume, when the gate is already
+   * behind it, and again when the trial ends however it ends.
+   */
+  private async restoreOpenedGates(volume: string): Promise<void> {
+    const bot = this.bot;
+    if (!bot) return;
+    while (this.gatesOpenedByTrial.length > 0) {
+      const g = this.gatesOpenedByTrial.shift()!;
+      const from = this.chatMark();
+      bot.chat(`/setblock ${g.pos[0]} ${g.pos[1]} ${g.pos[2]} ${g.state}`);
+      await delay(STAGED_REPLY_MS);
+      const refusal = this.chatSince(from).lines.find((line) => isRejection(line));
+      this.stagedRemovals.push({
+        kind: "world",
+        why:
+          `${volume}: the gate the walk in opened at [${g.pos.join(", ")}] put back as it stood ` +
+          `(${g.state})`,
+        performed: refusal === undefined,
+        detail: refusal,
+      });
+      process.stderr.write(
+        `[death-loop] ${volume}: put back the gate at [${g.pos.join(", ")}] as it stood` +
+          `${refusal === undefined ? "" : ` — REFUSED: ${refusal}`}\n`,
+      );
+    }
+  }
+
+  /**
+   * **Let go over the volume, and wait for the game to carry the body in.**
+   *
+   * Every control is already released; this only watches. The wait is bounded by
+   * the measured descent ({@link sinkBudgetMs}) over the distance from the feet to
+   * the volume's top face, and it ends early when the body gets in, dies, or comes
+   * to rest on something outside the volume — the rim it overhung as it stepped
+   * down, a ledge, a floor over the hazard. Returns whether it came to rest, so
+   * the caller can walk on from there.
+   */
+  private async sinkInto(box: Box, trial: LethalTrial, inside: () => boolean): Promise<boolean> {
+    const bot = this.requireBot();
+    const from = bot.entity.position.clone();
+    await this.restoreOpenedGates(trial.volume);
+    const depth = from.y - (box.hi[1] + 1);
+    const budget = sinkBudgetMs(depth);
+    process.stderr.write(
+      `[death-loop] ${trial.volume}: released over the volume at ` +
+        `[${from.x.toFixed(2)}, ${from.y.toFixed(2)}, ${from.z.toFixed(2)}]` +
+        `${(bot.entity as { isInWater?: boolean }).isInWater ? " in water" : ""}, ${Math.max(0, depth).toFixed(2)} block(s) ` +
+        `above it; every control let go, allowing ${budget}ms for the game to carry the body in\n`,
+    );
+    const deadline = Date.now() + budget;
+    while (Date.now() < deadline) {
+      if (this.death) throw this.death;
+      if (inside()) return false;
+      if (bot.entity.onGround) break;
+      await delay(GATE_DASH_TICK_MS);
+    }
+    const p = bot.entity.position;
+    const rest = bot.entity.onGround;
+    process.stderr.write(
+      `[death-loop] ${trial.volume}: the released body ` +
+        `${rest ? "came to rest" : "was still moving"} at ` +
+        `[${p.x.toFixed(2)}, ${p.y.toFixed(2)}, ${p.z.toFixed(2)}] without entering the volume` +
+        `${rest ? " — standing again, so it walks on" : ""}\n`,
+    );
+    return rest;
   }
 
   /**
@@ -3434,8 +3766,33 @@ export class MineflayerExecutor implements StepExecutor {
     completion?: StepCompletion,
     explicitWaypoints?: readonly Vec3Tuple[],
   ): Promise<void> {
-    const bot = this.requireBot();
+    this.requireBot();
     const r = Math.max(1, Math.floor(range));
+    // Every walk leg starts at full health and is held there (see
+    // `holdFullHealth`): whether the bot survives the walk is not what a walk
+    // leg is for.
+    this.walkLegs += 1;
+    const outerLabel = this.walkLabel;
+    this.walkLabel = label;
+    try {
+      await this.holdFullHealth("its start");
+      await this.walkLeg(pos, r, label, sneak, completion, explicitWaypoints);
+    } finally {
+      this.walkLegs -= 1;
+      this.walkLabel = outerLabel;
+    }
+  }
+
+  /** The body of {@link walkTo}, run with the bot held at full health. */
+  private async walkLeg(
+    pos: readonly [number, number, number],
+    r: number,
+    label: string,
+    sneak: boolean,
+    completion: StepCompletion | undefined,
+    explicitWaypoints: readonly Vec3Tuple[] | undefined,
+  ): Promise<void> {
+    const bot = this.requireBot();
     const movements = new Movements(bot);
     const restoreControls = configureLeg(bot, movements, sneak);
     // No cave-specific Movements override is needed — the compiler-proven
@@ -4788,6 +5145,76 @@ export class MineflayerExecutor implements StepExecutor {
   }
 
   /**
+   * Staging rows that act on a body of the delve — not the ones that act on the
+   * bot's own health (`kind: "player"`: a refund, or {@link holdFullHealth}).
+   */
+  private bodiesStaged(): number {
+    return this.stagedRemovals.filter((r) => r.kind !== "player").length;
+  }
+
+  /**
+   * **Hold the bot at full health for the walk leg in progress.**
+   *
+   * The ladder verifies mechanism; whether the bot survives a walk is not part of
+   * what any walk leg is for. Yet a hostile's FIRST blow lands before the body can
+   * be staged away, and it lands on whatever health the bot has: a bot that
+   * arrives at 4.4 is killed by a blow a player at full health shrugs off, and
+   * that death is the harness's, not the delve's. Two were measured on vesperhold
+   * — an Unremembered Guard on the die-retry return leg, which had begun at the
+   * respawn's full 20 and bled to 14.8 on blows the per-body refund never
+   * attributed, and a mob on the death-loop approach, which began where the
+   * critical path left the bot. So the rule is not "refund what each body took"
+   * but "full health, at the start of every walk leg and after every drop on
+   * one": {@link walkTo} calls this on entry, and {@link onHealthUpdate} on every
+   * drop while a leg is in progress.
+   *
+   * One instant-health effect of the amplifier that covers the whole deficit
+   * ({@link restoreAmplifier}), read by the shared rejection rule and named in
+   * `staged_removals` as staging, like every other act of the harness on the
+   * world. A lethal volume, a crush gate or any single blow of 20 or more still
+   * kills: nothing here can undo a death, and the delve's own hazards keep their
+   * reach.
+   */
+  private holdFullHealth(when: string): Promise<void> {
+    if (this.restoringHealth) return this.restoringHealth;
+    // Read now: the effect's reply is awaited, and the leg can end meanwhile.
+    const leg = this.walkLabel;
+    const run = async (): Promise<void> => {
+      // Bounded: a drop that lands while one effect is in flight is closed by
+      // the next round, and a server that keeps refusing is recorded, not retried.
+      for (let round = 0; round < 3; round++) {
+        const bot = this.bot;
+        if (!bot?.entity || this.death || !(bot.health > 0)) return;
+        const before = bot.health;
+        const deficit = PLAYER_MAX_HEALTH - before;
+        if (deficit <= 0) return;
+        const amp = restoreAmplifier(deficit);
+        const from = this.chatMark();
+        bot.chat(`/effect give @s minecraft:instant_health 1 ${amp} true`);
+        await delay(STAGED_REPLY_MS);
+        const refusal = this.chatSince(from).lines.find((line) => isRejection(line));
+        this.stagedRemovals.push({
+          kind: "player",
+          why:
+            `full health for walk leg '${leg}' (${when}): ${before.toFixed(1)} of ` +
+            `${PLAYER_MAX_HEALTH}, restored with instant health ${amp + 1}`,
+          performed: refusal === undefined,
+          detail: refusal,
+        });
+        process.stderr.write(
+          `[staged] walk leg '${leg}' (${when}): health ${before.toFixed(1)} → ` +
+            `${refusal === undefined ? bot.health.toFixed(1) : `unchanged, refused — ${refusal}`}\n`,
+        );
+        if (refusal !== undefined) return;
+      }
+    };
+    this.restoringHealth = run().finally(() => {
+      this.restoringHealth = undefined;
+    });
+    return this.restoringHealth;
+  }
+
+  /**
    * Undo what a body the run has just removed did to the bot.
    *
    * Removing a body on its first blow is not enough on its own: a leg through
@@ -4815,6 +5242,9 @@ export class MineflayerExecutor implements StepExecutor {
     const bot = this.bot;
     if (!bot || this.death) return;
     if (dealt <= 0) return;
+    // On a walk leg the bot is already held at full health, whoever dealt the
+    // blow — a refund on top of that gives back nothing and would read as if it had.
+    if (this.walkLegs > 0) return;
     const refunded = Math.ceil(dealt / INSTANT_HEALTH_UNIT);
     let units = refunded;
     for (let amp = 0; units > 0; amp += 1, units >>= 1) {
@@ -4874,6 +5304,7 @@ export class MineflayerExecutor implements StepExecutor {
           credited,
         );
         this.musters.set(enc.wave, verdict);
+        for (const f of verdict.failures) this.musterFailureLog.push(`${enc.wave}: ${f}`);
         this.musteredEpoch.set(enc.wave, epoch);
         process.stderr.write(
           `[muster] ${enc.wave}: read ${verdict.read}/${verdict.declared} declared body/bodies, ` +
@@ -5036,6 +5467,33 @@ export class MineflayerExecutor implements StepExecutor {
   /** What each wave's muster established. Read by the run report. */
   waveMusters(): ReadonlyMap<string, MusterVerdict> {
     return this.musters;
+  }
+
+  /**
+   * **Finish every staging act in flight**, bounded by `timeoutMs`, and say how
+   * many were still running. Called once, before the run report is built.
+   *
+   * On vesperhold a Guard staged away on the death loop's walk back fired the
+   * drowned choir's muster; the stage then ended, the report was written, and
+   * the reading — 3 of 4, one chorister had drowned — was never recorded.
+   */
+  async settleStaging(timeoutMs: number): Promise<{ unfinished: number; waitedMs: number }> {
+    // Closed FIRST, so the set can only shrink: before this, a body that hit the
+    // bot while the wait was running started a task the wait had not
+    // snapshotted — the wait returned when the snapshot settled (about a second,
+    // on vesperhold) and reported the late task as "still unfinished 20000ms
+    // after the last stage", which it was not.
+    this.stagingClosed = true;
+    const start = Date.now();
+    while (this.stagingTasks.size > 0 && Date.now() - start < timeoutMs) {
+      await Promise.race([Promise.allSettled([...this.stagingTasks]), delay(timeoutMs - (Date.now() - start))]);
+    }
+    return { unfinished: this.stagingTasks.size, waitedMs: Date.now() - start };
+  }
+
+  /** Every failure any muster reading of this run produced, never only the latest's. */
+  musterFailures(): readonly string[] {
+    return this.musterFailureLog;
   }
 
   /** Every body this run took out of the delve by command. */

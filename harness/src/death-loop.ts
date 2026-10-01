@@ -26,6 +26,7 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import type { Vec3Tuple } from "./critical-path.ts";
+import type { StageResult } from "./report.ts";
 
 /** Where the death plan sits relative to `critical-path.json`. */
 const DEATH_PLAN_SUBPATH = ["validation", "death-plan.json"] as const;
@@ -628,6 +629,45 @@ export function expectedForfeit(rule: ForfeitRule, balance: number): number {
   }
 }
 
+/**
+ * **The balance the stage gives a datum before its death**, so that the declared
+ * forfeit takes something a reader can see.
+ *
+ * The death loop runs after the critical path, and whatever the path left in the
+ * purse is what it wagers: on vesperhold that was 0 on every branch — the
+ * die-retry stage's eighteen deaths had each forfeited the lot — so the forfeit,
+ * the stake and the collection were all asserted at `0 → 0 → 0`, which a working
+ * forfeit and a missing one produce alike. The value is chosen per rule so the
+ * forfeit is non-zero and distinguishable from "all": a fixed forfeit gets twice
+ * its amount (a cap that took everything would show), a proportion gets 100 (the
+ * forfeit is the percentage itself), and `all` and `none` get 10. `none` is
+ * staged too: "nothing is taken" is only an assertion over a purse holding
+ * something.
+ */
+export function stagedBalance(rule: ForfeitRule): number {
+  switch (rule.kind) {
+    case "fixed":
+      return rule.amount > 0 ? rule.amount * 2 : 10;
+    case "proportion":
+      return 100;
+    case "all":
+    case "none":
+      return 10;
+  }
+}
+
+/**
+ * Whether this wager's forfeit could be observed at all: the purse held something
+ * when the death was taken, and the rule, applied to it, takes something — or is
+ * `none`, whose whole promise is that a non-empty purse is left alone. Any other
+ * wager is UNBOUND: a forfeit asserted at zero cannot tell a working forfeit from
+ * a missing one.
+ */
+export function forfeitObservable(w: TrialWager): boolean {
+  if (w.balanceBefore === undefined || w.balanceBefore <= 0) return false;
+  return w.forfeit.kind === "none" || expectedForfeit(w.forfeit, w.balanceBefore) > 0;
+}
+
 /** Whether `cell` lies inside `box` (inclusive). */
 export function inBox(cell: Vec3Tuple, box: Box): boolean {
   return [0, 1, 2].every((i) => box.lo[i]! <= cell[i]! && cell[i]! <= box.hi[i]!);
@@ -676,6 +716,103 @@ export function bodyInVolume(
     [pos[2] - half, pos[2] + half],
   ];
   return spans.every(([min, max], i) => min <= box.hi[i]! + 1 && max >= box.lo[i]!);
+}
+
+/**
+ * **Whether a body at `pos` stands over the volume's footprint**: its centre is
+ * inside the box's horizontal extent (`[lo, hi + 1]` on `x` and `z`, the same
+ * continuous region the selector matches), at any height.
+ *
+ * This is the moment a player who walks into a hazard stops choosing where to go.
+ * Over the footprint with nothing underfoot — falling into a pit, or afloat in
+ * the water that fills a well — a body that is left alone is carried into the
+ * volume by the game's own physics, and that is how a player meets a submerged
+ * hazard. Driving on from there is not, and it is not neutral: in water, a
+ * horizontal collision is the climb-out-of-water impulse (it sets `vel.y` to
+ * `outOfLiquidImpulse`, 0.3, in the client physics the bot runs), so a body
+ * pressed against the far wall of a flooded shaft is lifted, not lowered.
+ */
+export function overFootprint(pos: Vec3Tuple, box: Box): boolean {
+  return [0, 2].every((i) => box.lo[i]! <= pos[i]! && pos[i]! <= box.hi[i]! + 1);
+}
+
+/**
+ * **The cells a body could jump to that are nearer the volume than `feet`**:
+ * within four columns and one down to two up, outside what the volume can reach
+ * ({@link volumeReachesCell}), where a body can stand (`canStand`, the caller's
+ * reading of the world), ordered nearest the volume's footprint first, then by
+ * the smallest climb, then lexicographically (ADR-0006).
+ *
+ * What the walk in asks the pathfinder for when driving straight at the volume
+ * is blocked — vesperhold's well is entered over a dry cut, onto a sill a
+ * block and a half above the cut's floor, which is where the placement table's
+ * lip lies.
+ */
+export function wayInCandidates(
+  feet: Vec3Tuple,
+  box: Box,
+  canStand: (cell: Vec3Tuple) => boolean,
+): Vec3Tuple[] {
+  const toFootprint = (c: Vec3Tuple): number =>
+    Math.hypot(
+      Math.max(box.lo[0] - c[0], 0, c[0] - box.hi[0]),
+      Math.max(box.lo[2] - c[2], 0, c[2] - box.hi[2]),
+    );
+  const here = toFootprint(feet);
+  const out: Vec3Tuple[] = [];
+  for (let dx = -4; dx <= 4; dx++) {
+    for (let dz = -4; dz <= 4; dz++) {
+      for (let dy = -1; dy <= 2; dy++) {
+        const c: Vec3Tuple = [feet[0] + dx, feet[1] + dy, feet[2] + dz];
+        if (toFootprint(c) >= here) continue;
+        if (volumeReachesCell(c, box)) continue;
+        if (!canStand(c)) continue;
+        out.push(c);
+      }
+    }
+  }
+  return out.sort(
+    (a, b) =>
+      toFootprint(a) - toFootprint(b) ||
+      Math.abs(a[1] - feet[1]) - Math.abs(b[1] - feet[1]) ||
+      a[0] - b[0] ||
+      a[1] - b[1] ||
+      a[2] - b[2],
+  );
+}
+
+/**
+ * **How fast an idle player body sinks in still water, in blocks per tick.**
+ *
+ * Measured, not derived: a bot placed with its feet in the top block of
+ * vesperhold's well (`lethal/undertide`, a still column y=58..67) with every
+ * control released descended at 0.0250 blocks/tick on the client in every one of
+ * six trials over two runs, and at 0.493–0.502 blocks/s by the server's own
+ * `Pos[1]` read back over the same descents (`harness/probe/water-sink.ts`, pinned server 1.21.11,
+ * mineflayer 4.37.1 / prismarine-physics 1.11.1). It is also what the fluid
+ * branch of vanilla's movement gives from its constants — `0.8` drag per tick and
+ * `gravity / 16 = 0.005` per tick, terminal at `0.005 / (1 - 0.8)` — so the
+ * client, the server's record and the rule it copies agree. It is the SLOWEST
+ * way a released body enters a volume below it; a fall through air is faster.
+ */
+export const SINK_BLOCKS_PER_TICK = 0.025;
+
+/** Milliseconds per game tick. */
+const TICK_MS = 50;
+
+/**
+ * **How long a released body may take to reach a volume `depth` blocks below
+ * its feet**, bounded by {@link SINK_BLOCKS_PER_TICK}.
+ *
+ * The measured descent at the measured rate, with half again for a server or a
+ * client physics loop running behind wall time on a loaded host, plus one second
+ * for the body to reach terminal speed from rest and for the kill tick and the
+ * death packet that reports it. The six measured descents of 6.0 blocks took
+ * 12.13–12.27 s from release to death; this allows 19.0 s for them.
+ */
+export function sinkBudgetMs(depth: number): number {
+  const ticks = Math.max(0, depth) / SINK_BLOCKS_PER_TICK;
+  return Math.ceil(ticks * TICK_MS * 1.5) + 1_000;
 }
 
 /**
@@ -1166,6 +1303,16 @@ export function lethalTrialFailures(t: LethalTrial, markerTolerance = 0.75): str
   // EVERY datum this death forfeits, not the first one declared. A death that
   // takes four things promises four things.
   for (const w of t.wagers) {
+    if (w.balanceBefore !== undefined && !forfeitObservable(w)) {
+      out.push(
+        `${t.volume}: the forfeit of \`${w.stake}\` was UNBOUND — \`${w.objective}\` held ` +
+          `${w.balanceBefore} when the death was taken, so the declared forfeit ` +
+          `(${w.forfeit.kind}) could only be observed as ${expectedForfeit(w.forfeit, w.balanceBefore)}. ` +
+          `A forfeit, a stake and a collection asserted over an empty purse read the same ` +
+          `whether the engine took anything or not; the stage stages a known balance before ` +
+          `the death, and a trial where that did not hold is not a pass`,
+      );
+    }
     if (w.balanceBefore === undefined || w.balanceAfterDeath === undefined) {
       out.push(
         `${t.volume}: the currency ledger \`${w.objective}\` (stake \`${w.stake}\`) could not be ` +
@@ -1397,4 +1544,82 @@ export function deathLoopBindingFailures(b: DeathLoopBinding): string[] {
  */
 export function datumsPromised(plan: DeathPlan): number {
   return plan.volumes.length * stakesDropped(plan).length;
+}
+
+/** What the run knows about the death-loop stage when it writes the report. */
+export interface DeathLoopStageInput {
+  /** Whether this run meant to run the stage at all. */
+  readonly enabled: boolean;
+  /** Why not, when it did not mean to. */
+  readonly disabledReason: string;
+  /** Whether the critical path completed, which is what the stage runs after. */
+  readonly pathProven: boolean;
+  /** What ended the run once the path was proven, if anything did. */
+  readonly interruption: string | undefined;
+  /** {@link Executor.deathLoopSkipReason}: why the stage entered nothing. */
+  readonly skipReason: string | undefined;
+  readonly binding: DeathLoopBinding | undefined;
+  readonly trials: readonly LethalTrial[];
+  /** How many of {@link trials} ran to their own end. */
+  readonly trialsFinished: number;
+}
+
+/**
+ * **The death-loop stage's row of the run report**, which says what happened.
+ *
+ * Three different runs, and a row for each that is true of it:
+ *
+ *   * the critical path did not complete — the stage runs after it, so it was
+ *     never reached, and nothing about dying is proven either way;
+ *   * the path completed and something ended the run DURING the stage — the
+ *     wall-clock budget, a crash. The stage was entered, so it ran, and it did
+ *     not finish: that is its failure, stated with how far it had got. The trials
+ *     it finished are judged; the one the interruption cut off is not, because a
+ *     verdict about a trial that was stopped halfway (the bot "never got in", the
+ *     stake "was never walked back to") is a verdict about the interruption.
+ *     Reporting this run as "the critical path failed" put a sentence in the
+ *     report its own `death_loop` block contradicted;
+ *   * the path completed and the stage ran to its end — judged whole.
+ */
+export function deathLoopStage(i: DeathLoopStageInput): StageResult {
+  if (!i.enabled) {
+    return { stage: "death-loop", ran: false, passed: false, findings: [i.disabledReason], failures: [] };
+  }
+  if (!i.pathProven) {
+    return {
+      stage: "death-loop",
+      ran: false,
+      passed: false,
+      findings: [
+        "the critical path failed, so the death loop was never reached — nothing " +
+          "about dying is proven or disproven by this run",
+      ],
+      failures: [],
+    };
+  }
+  const finished = i.interruption === undefined ? i.trials : i.trials.slice(0, i.trialsFinished);
+  const failures = [
+    ...(i.interruption === undefined
+      ? i.binding
+        ? deathLoopBindingFailures(i.binding)
+        : []
+      : [
+          `the death-loop stage was entered and did not finish: ${i.interruption}. It had ` +
+            `entered ${i.binding?.volumesEntered ?? i.trials.length} of ` +
+            `${i.binding?.declaredVolumes ?? "?"} declared lethal volume(s) and finished ` +
+            `${finished.length} trial(s) when it stopped; nothing about a trial it did not ` +
+            `finish is asserted either way`,
+        ]),
+    ...finished.flatMap((t) => lethalTrialFailures(t)),
+  ];
+  return {
+    stage: "death-loop",
+    ran: true,
+    passed: failures.length === 0,
+    findings:
+      i.skipReason === undefined
+        ? []
+        : [`the stage stopped before entering any volume — ${i.skipReason}`],
+    failures,
+  };
 }

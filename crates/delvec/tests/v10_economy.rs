@@ -1174,6 +1174,57 @@ fn dw0880_refuses_two_faces_at_one_place() {
 // AC6 / AC7 — collection and retention
 // ---------------------------------------------------------------------------
 
+/// **The place a right-click collects is the box that player clicked**, never the
+/// `dw_stk` box nearest them. The advancement says only that SOME stake box was
+/// used; which one is the interaction entity's own record — `on target` (its last
+/// user) and `interaction.timestamp` (when). Reading the nearest box offered the
+/// wagers at whatever place stood closest: a player reaching past one stake to
+/// click another collected the near one — under `collect_by: anyone`, someone
+/// else's purse — and left their own standing (reproduced on the gallery with two
+/// players and two places three blocks apart).
+#[test]
+fn the_place_collected_is_the_box_that_was_clicked() {
+    let out = build(&purse_campaign());
+    let collect = fnc(&out, "stk_collect");
+    assert!(
+        !collect.contains("sort=nearest"),
+        "nothing about the place may be chosen by nearness to the player:\n{collect}"
+    );
+    assert!(
+        collect.contains(
+            "execute as @e[type=minecraft:interaction,tag=dw_stk] run function hello-world:stk_pick"
+        ),
+        "every stake box is asked whether it is the one this player clicked:\n{collect}"
+    );
+    for axis in 0..3 {
+        assert!(
+            collect.contains(&format!(
+                "run data get entity @e[tag=dw_stk_hit,limit=1] Pos[{axis}]"
+            )),
+            "the place is read off the clicked box:\n{collect}"
+        );
+    }
+    let hit_read = collect.find("Pos[0]").expect("the place is read");
+    let offered = collect
+        .find("function hello-world:stk_collect_embers")
+        .expect("the place is offered");
+    let refused = collect
+        .find("execute unless entity @e[tag=dw_stk_hit,limit=1] run return fail")
+        .expect("no clicked box, no collection");
+    assert!(refused < hit_read && hit_read < offered, "{collect}");
+
+    let pick = fnc(&out, "stk_pick");
+    assert!(
+        pick.contains("on target if entity @s[tag=dw_stk_clicker]"),
+        "a box is the clicked one only if this player is its last user:\n{pick}"
+    );
+    assert!(
+        pick.contains("run data get entity @s interaction.timestamp")
+            && pick.contains("execute unless score #stk_t dw.sys > #stk_best dw.sys run return 0"),
+        "…and, of the boxes they used, the latest:\n{pick}"
+    );
+}
+
 /// Collecting restores exactly the amount recorded, retires the hardware through
 /// the ONE function allowed to (`DW0421`), and is idempotent under a double
 /// right-click in one tick — structurally, because taking a slot clears its live

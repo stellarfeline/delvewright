@@ -1467,6 +1467,172 @@ test("interact leaves the hand alone when the step requires no item", async () =
   assert.deepEqual(bot.calls, ["chat(/trigger dw.i.unbar)"]);
 });
 
+// --- a walk leg is walked at full health --------------------------------------
+
+/**
+ * An interact bot whose server answers instant health the way vanilla does, and
+ * whose walk takes `blow` health on the way — a hit the server named no body for,
+ * which is exactly the kind no per-body refund ever gives back.
+ */
+class HealingWalkBot extends InteractFakeBot {
+  blow = 0;
+  override chat(message: string): void {
+    super.chat(message);
+    const m = /^\/effect give @s minecraft:instant_health 1 (\d+) true$/.exec(message);
+    if (m) {
+      this.health = Math.min(20, this.health + (4 << Number(m[1])));
+      this.emit("health");
+    }
+  }
+  override pathfinder = {
+    stop: (): void => {
+      this.pathfinderStops += 1;
+      this.pathfinderCalls.push("stop");
+    },
+    setGoal: (goal: unknown): void => {
+      this.pathfinderCalls.push(goal === null ? "setGoal(null)" : "setGoal");
+    },
+    setMovements: (): void => {},
+    thinkTimeout: 0,
+    goto: async (): Promise<void> => {
+      this.calls.push("goto");
+      this.entity.position = new FakeVec3(0.5, 64, 0.5); // arrived at the anchor
+      if (this.blow > 0) {
+        this.health -= this.blow;
+        this.emit("health");
+        await delay(100); // the leg ends before the effect's reply is read
+      }
+    },
+  };
+}
+
+test("a walk leg starts at full health: one effect covers the whole deficit, named as staging", async () => {
+  // vesperhold, the death-loop approach: the critical path left the bot at 4.4 and
+  // the approach walked it past a mob whose first blow was lethal at that health.
+  const bot = new HealingWalkBot();
+  bot.carried = [{ name: "stone_sword", type: 1 }];
+  bot.health = 4.4;
+  const executor = attach(bot);
+  executor.useCampaign("keep-trial");
+  executor.beginStep(3);
+  setTimeout(() => bot.emit("messagestr", "[dw:complete keep-trial obj/unbar]"), 700);
+  await executor.interact(interactStep(null));
+  const effects = bot.calls.filter((c) => c.startsWith("chat(/effect "));
+  assert.deepEqual(effects, ["chat(/effect give @s minecraft:instant_health 1 2 true)"]);
+  assert.ok(
+    bot.calls.indexOf(effects[0]!) < bot.calls.indexOf("chat(/trigger dw.i.unbar)"),
+    `restored BEFORE the leg's business: ${bot.calls.join(" | ")}`,
+  );
+  assert.equal(bot.health, 20);
+  const row = executor.stagedBodies().find((r) => /full health for walk leg/.test(r.why));
+  assert.ok(row, "the restoration is named in the run artifact as staging");
+  assert.equal(row.kind, "player");
+  assert.equal(row.performed, true);
+  assert.match(row.why, /4\.4 of 20/);
+});
+
+test("a drop on a walk leg is restored to full, whoever dealt it", async () => {
+  // vesperhold, the die-retry return leg: it began at the respawn's full 20, bled
+  // to 14.8 on blows the per-body refund never attributed, and an Unremembered
+  // Guard's first swing then killed the bot. Held at full, every first blow lands
+  // on 20.
+  const bot = new HealingWalkBot();
+  bot.carried = [{ name: "stone_sword", type: 1 }];
+  bot.blow = 5.2;
+  bot.entity.position = new FakeVec3(12.5, 64, 0.5); // a leg to walk, not a step on the spot
+  const executor = attach(bot);
+  bot.emit("health"); // the baseline a drop is measured from
+  executor.useCampaign("keep-trial");
+  executor.beginStep(3);
+  setTimeout(() => bot.emit("messagestr", "[dw:complete keep-trial obj/unbar]"), 1_200);
+  await executor.interact(interactStep(null));
+  assert.deepEqual(
+    bot.calls.filter((c) => c.startsWith("chat(/effect ")),
+    ["chat(/effect give @s minecraft:instant_health 1 1 true)"],
+    "a 5.2-point deficit is one instant health II",
+  );
+  assert.equal(bot.health, 20);
+  // Named for the leg it happened on, even though the leg ended while the
+  // effect's reply was awaited.
+  assert.ok(
+    executor.stagedBodies().some((r) => r.why.startsWith("full health for walk leg 'interact anchor/gate")),
+    JSON.stringify(executor.stagedBodies()),
+  );
+
+  // Off the leg, the delve's own damage keeps its reach: nothing restores it.
+  bot.health = 3;
+  bot.emit("health");
+  await delay(600);
+  assert.equal(bot.calls.filter((c) => c.startsWith("chat(/effect ")).length, 1);
+});
+
+// --- the walk into a lethal volume opens a closed gate, as a player would --------
+
+test("the walk in opens a closed gate in its way — once, and never an open one", async () => {
+  // vesperhold's well: its wall's one opening is a dark oak fence gate at
+  // [31, 68, 80], the cell the placement table names as the near lip, closed
+  // when the world starts. Driving at it pressed the bot against the gate at
+  // x 31.075 for the whole deadline.
+  const GATE = 777;
+  const bot = new InteractFakeBot();
+  bot.entity.position = new FakeVec3(30.5, 68, 80.5);
+  let open = false;
+  const used: string[] = [];
+  const gate = {
+    type: GATE,
+    name: "dark_oak_fence_gate",
+    position: { x: 31, y: 68, z: 80 },
+    getProperties: () => ({ open }),
+  };
+  const air = { type: 0, name: "air", position: { x: 0, y: 0, z: 0 }, getProperties: () => ({}) };
+  (bot as unknown as { blockAt: (p: FakeVec3) => unknown }).blockAt = (p) =>
+    Math.floor(p.x) === 31 && Math.floor(p.y) === 68 && Math.floor(p.z) === 80 ? gate : air;
+  (bot as unknown as { activateBlock: (b: typeof gate) => Promise<void> }).activateBlock = async (b) => {
+    used.push(b.name);
+    open = !open;
+  };
+  const executor = attach(bot);
+  const openGateAhead = (
+    executor as unknown as {
+      openGateAhead: (
+        cell: readonly [number, number, number],
+        openable: ReadonlySet<number>,
+        opened: Map<string, number>,
+        volume: string,
+      ) => Promise<void>;
+    }
+  ).openGateAhead.bind(executor);
+  const opened = new Map<string, number>();
+  await openGateAhead([35, 60, 80], new Set([GATE]), opened, "lethal/undertide");
+  assert.deepEqual(used, ["dark_oak_fence_gate"], "the closed gate is opened");
+  assert.equal(open, true);
+  await openGateAhead([35, 60, 80], new Set([GATE]), opened, "lethal/undertide");
+  assert.deepEqual(used, ["dark_oak_fence_gate"], "an open gate is never used — that would close it");
+  open = false;
+  await openGateAhead([35, 60, 80], new Set([GATE]), opened, "lethal/undertide");
+  assert.deepEqual(used, ["dark_oak_fence_gate"], "nor the same cell twice inside a second");
+  await openGateAhead([35, 60, 80], new Set(), new Map(), "lethal/undertide");
+  assert.deepEqual(used, ["dark_oak_fence_gate"], "only what the pathfinder's rule calls openable");
+
+  // …and the gate it opened is put back as it stood, as staging.
+  const restore = (
+    executor as unknown as { restoreOpenedGates: (v: string) => Promise<void> }
+  ).restoreOpenedGates.bind(executor);
+  await restore("lethal/undertide");
+  assert.ok(
+    bot.calls.includes("chat(/setblock 31 68 80 minecraft:dark_oak_fence_gate[open=false])"),
+    bot.calls.join(" | "),
+  );
+  const row = executor.stagedBodies().find((r) => r.kind === "world");
+  assert.ok(row && /put back as it stood/.test(row.why) && row.performed, JSON.stringify(row));
+  await restore("lethal/undertide");
+  assert.equal(
+    bot.calls.filter((c) => c.startsWith("chat(/setblock")).length,
+    1,
+    "a gate is put back once",
+  );
+});
+
 // --- executor tier: reach + timed gate + completion transport -----------------
 
 import type { ReachStep } from "../src/critical-path.ts";
@@ -2652,6 +2818,66 @@ test("a body of a wave the run has not read yet is read where it stands, then re
   const verdict = executor.waveMusters().get("wave/gate-assault")!;
   assert.deepEqual(verdict.failures, [], "the wave is verified whole");
   assert.equal(verdict.read, 2);
+});
+
+test("staging in flight when the stages end is finished before the report", async () => {
+  // vesperhold: a Guard staged away on the death loop's walk back fired the
+  // choir's muster, the stage ended, and the reading was never recorded.
+  const bot = new CombatFakeBot();
+  bot.seat(2);
+  const executor = attach(bot);
+  executor.useCampaign("the-drowned-bell");
+  executor.useCombatPlan(combatPlan(2, true), false);
+  const [attacker] = bot.waveIds();
+  bot.emit("entityHurt", bot.entity, bot.entities[attacker!]);
+  assert.equal(executor.waveMusters().size, 0, "nothing is read yet when the stage ends");
+  assert.equal((await executor.settleStaging(10_000)).unfinished, 0, "nothing is left unfinished");
+  assert.equal(executor.waveMusters().get("wave/gate-assault")?.read, 2, "the reading is recorded");
+  assert.deepEqual(bot.stagedBlows, [attacker], "and the removal was made");
+});
+
+test("a body that hits the bot once the stages are over starts no staging", async () => {
+  // vesperhold, kept-oath+silence: a hit landed while the report was being
+  // prepared, started a task the settle had not snapshotted, and the run then
+  // reported it as "still unfinished 20000ms after the last stage" about one
+  // second after the stage ended.
+  const bot = new CombatFakeBot();
+  bot.seat(2);
+  const executor = attach(bot);
+  executor.useCampaign("the-drowned-bell");
+  executor.useCombatPlan(combatPlan(2, true), false);
+  const [first, second] = bot.waveIds();
+  bot.emit("entityHurt", bot.entity, bot.entities[first!]);
+  const settling = executor.settleStaging(10_000);
+  bot.emit("entityHurt", bot.entity, bot.entities[second!]); // lands during the wait
+  const settled = await settling;
+  assert.equal(settled.unfinished, 0);
+  assert.deepEqual(bot.stagedBlows, [first], "only the body that hit during the stages was staged");
+});
+
+test("a muster reading that failed stays failed when a later reading finds the wave whole", async () => {
+  // vesperhold, released+ring: the choir read 3 of 4 on the death-loop approach
+  // (one had drowned in the well) and 4 of 4 after the next re-seat; the report
+  // kept only the latest reading, and the run printed PASSED.
+  const bot = new CombatFakeBot();
+  const executor = attach(bot);
+  executor.useCampaign("the-drowned-bell");
+  const plan = combatPlan(2, true);
+  executor.useCombatPlan(plan, false);
+  const enc = plan.encounters[0]!;
+  const muster = (
+    executor as unknown as { musterWave: (e: typeof enc) => Promise<void> }
+  ).musterWave.bind(executor);
+  bot.seat(1); // one of two declared
+  await muster(enc);
+  assert.equal(executor.waveMusters().get(enc.wave)?.failures.length! > 0, true);
+  bot.seat(2); // the next seating is whole
+  await muster(enc);
+  assert.deepEqual(executor.waveMusters().get(enc.wave)?.failures, [], "the latest reading is whole");
+  assert.ok(
+    executor.musterFailures().some((f) => f.startsWith(`${enc.wave}: wave seating:`)),
+    `the earlier failure is kept: ${JSON.stringify(executor.musterFailures())}`,
+  );
 });
 
 test("a removed body's blows are refunded — its own, named ones only, rounded up", async () => {
