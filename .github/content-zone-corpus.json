@@ -51,9 +51,14 @@
     "here unchallenged. `validation/check-versions.sh` does not read `off_pin`",
     "either; it only compares `content_sha` against `versions.toml`."
   ],
-  "content_sha": "8e09c30c17c78538ac0b6c36fa5edc5f681a45eb",
+  "content_sha": "ff73411a1d7feabad57a4537e1384402a2b096d0",
   "off_pin": [],
   "on_pin": [
+    {
+      "campaign": "doune-castle-tour",
+      "note": "Its `design/programs/` holds one `.json`, `castle.json`: the grammar program its one library piece `prefab/doune-castle` is expanded from (104 x 56 x 120, seed 1, stated in that piece's `license.generated_by`). The directory carries no `zones.json`, so nothing this repo reads states the region and seed it is built at as a zone.",
+      "zone_programs": 1
+    },
     {
       "campaign": "hollow-vigil",
       "note": "A prefab-and-jigsaw campaign. Its geometry comes from the .nbt library, not from the grammar back end, so it declares no zone program.",
@@ -63,6 +68,11 @@
       "campaign": "nobodys-cave-island",
       "note": "Predates the grammar back end (ADR-0018); its world is authored as prefabs and world edits, so it declares no zone program.",
       "zone_programs": 0
+    },
+    {
+      "campaign": "vesperhold",
+      "note": "Its `design/programs/` holds two `.json`: `vesperhold.json`, the grammar program its one library piece `prefab/vesperhold` is expanded from (172 x 104 x 292, seed 1, stated in that piece's `license.generated_by`), and `gates.json`, the six gate regions `finish.py` writes into the piece's manifest, which is not a grammar program. The directory carries no `zones.json`.",
+      "zone_programs": 2
     }
   ]
 }

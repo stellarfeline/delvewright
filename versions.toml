@@ -261,60 +261,36 @@ aarch64-unknown-linux-gnu = "ubuntu-22.04-arm"
 # reds on a count instead of sweeping as a silent zero. Moving this `sha` without
 # it is a tier-1 red (validation/check-versions.sh).
 repo = "stellarfeline/delvewright-campaigns"
-# Content `main` tip at which every piece in the library declares the plane it
-# stands a body on, and declares a waterline only where its own bytes hold
-# water. `walk_y` has no default — an ocean area's origin is derived from it
-# (spec-0060 §3.2) — and `DW0887` holds a declared `waterline_y` to the `.nbt`
-# beside it, so a library this engine is pointed at has to answer both. At the
-# previous pin it answered neither.
+# Content `main` tip carrying the two campaigns released since the previous pin,
+# `doune-castle-tour` and `vesperhold`, and the library pieces they are built
+# on, so every test and CI job that judges "the pinned content" judges the
+# library and corpus the creator is actually handed.
 #
-# What moves under `prefabs/`, cross-checked by parsing both trees rather than
-# by reading the line diff: every leaf of every document, compared by path. The
-# library carries 37 documents at both pins — 36 pieces and `pools.json` — and
-# none is added, removed or renamed. Three keys change, and nothing else:
+# What moves under `prefabs/`, counted from `git ls-tree` at both pins and
+# cross-checked against `delvec prefab seating`'s own binding line at this one:
+# 37 `.json` before, 40 after; 36 `.nbt` before, 138 after. Prefab DOCUMENTS
+# (`compiler::registry::is_prefab_document`) go from 36 to 38: two tile-set
+# manifests are added, `doune-castle` (18 tiles) and `vesperhold` (84 tiles),
+# each one grammar-built piece whose `license.generated_by` states the program
+# hash, region and seed it was expanded at. The third new `.json` is
+# `vesperhold.report.json`, a gate report and not a document. `pools.json` and
+# all 36 existing `.nbt` are unchanged (no `M` on either in
+# `git diff --name-status`). Three existing documents change one key each,
+# `shown_faces`: `island-beach-camp` gains `[east, north, south, west]`, and
+# `island-greenfield` and `island-greenfield-bend` widen theirs to all four
+# sides. `vesperhold` declares the one new `waterline_y` (11); the seating
+# command reports every declaration it examines borne out by the bytes.
+# `seating-limits.toml`, `README.md` and `LICENSE-ASSETS.md` are the content
+# repository's own records, not inputs `--prefabs` hands the compiler.
 #
-#   `walk_y`      — declared on 0 of the 36 pieces before, 36 of 36 after. 31 of
-#                   them come from the four document-writing generators (keep
-#                   13, cave 13, island 2, terrain 3 — enumerated by running
-#                   each generator into a scratch directory and listing what it
-#                   emitted, not by grepping for its name), and 5 from the
-#                   pieces no generator writes: `hello-room` and the four
-#                   `hero-*`.
-#   `waterline_y` — 5 declarations before, 3 after. Deleted from
-#                   `island-greenfield`, `island-greenfield-bend` and
-#                   `island-mountain`, which author no water at all; gained by
-#                   `cave-shore`, whose 16 water cells all stand at local y=1.
-#                   Read straight out of the gzip stream by a standalone NBT
-#                   reader sharing no configuration with `delvec`: 2 of the 5
-#                   declarations were borne out before, 3 of 3 are after, and 0
-#                   stand over no water.
-#   `shown_faces` — 0 documents before, 4 after: `island-galley`,
-#                   `island-greenfield`, `island-greenfield-bend` and
-#                   `island-mountain`. The 13 cave pieces and the 13 keep pieces
-#                   declare none on purpose — sealed interiors and cut edges,
-#                   the case `DW0885`'s own message names — so their absence is
-#                   a judgement about the asset, not a gap.
+# Under `campaigns/`, `hollow-vigil` and `nobodys-cave-island` are unchanged
+# (`git diff --name-only` over both is empty). The two new campaigns each keep
+# the grammar program of their one piece under `design/programs/` with no
+# `zones.json`; the inventory restated in `.github/content-zone-corpus.json`
+# names what each directory holds.
 #
-# Three VALUES change, each a fact about bytes that moved with them:
-# `island-greenfield` and `island-greenfield-bend` grow one course
-# (`structure.size` [17,10,15] -> [17,11,15]), and `cave-shore`'s connector
-# `local_pos` follows its jigsaw block from (6,1,0) to (6,2,0) — the old cell
-# holds andesite in the new bytes, so the committed value named solid rock.
-# Exactly 3 of the 36 `.nbt` move, by sha256 over both sets, `cave-shore` from
-# 2537 to 2539 bytes; every document's `structure.size` agrees with its own
-# bytes, 36 of 36, at both pins. No anchor, facing, contract, lighting or
-# licence value differs anywhere.
-#
-# Nothing under `campaigns/` moves at all in this interval (`git diff
-# --name-only a8c3f988 8e09c30c -- campaigns/` is empty), so neither
-# `hollow-vigil` nor `nobodys-cave-island` gained, lost or moved a build input;
-# `git ls-tree -r --name-only` over the new tip holds no `design/programs/` path
-# anywhere, so the zone inventory restated in
-# `.github/content-zone-corpus.json` stays at zero for both.
-#
-# The rest of the batch is the content repository's own CI, skill page and
-# authoring-pin tooling, upstream of everything this repo reads: no file it
-# touches is an input the compiler is handed through `--prefabs`.
+# The rest of the interval is the content repository's own CI, skill and
+# pin tooling, upstream of everything this repo reads.
 #
 # WHAT CARRIES EACH CLAIM. `validation/check-versions.sh` holds this `sha` equal
 # to `content_sha` in `.github/content-zone-corpus.json`, and
@@ -327,7 +303,7 @@ repo = "stellarfeline/delvewright-campaigns"
 # the property assembles; the library sweep (`crates/delvec/tests/admit_library.rs`)
 # asks it of every admitted piece on every run and prints its own binding count
 # there, which is where that number belongs.
-sha = "8e09c30c17c78538ac0b6c36fa5edc5f681a45eb"
+sha = "ff73411a1d7feabad57a4537e1384402a2b096d0"
 
 [render]
 # The render layer (spec-0007 rendering infra / spec-0003 visual tier). Renders
