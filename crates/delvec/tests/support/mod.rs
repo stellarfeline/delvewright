@@ -6,11 +6,6 @@
 //! cells exempt (`crates/delvec/src/compiler/nav.rs`, which `DW0388` uses). The
 //! generator's idea of a sightline and the compiler's must not drift apart, so
 //! the shape is copied rather than reinvented.
-//!
-//! `tests/staging.rs` carries its own copy of these helpers: it landed first,
-//! and two more vocabulary families are in review against that file right now.
-//! Folding it onto this module is a follow-up that costs nothing to do later and
-//! would cost every one of those PRs a conflict to do now.
 
 #![allow(dead_code)]
 

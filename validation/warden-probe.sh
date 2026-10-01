@@ -19,8 +19,7 @@
 #     ghcr.io/stellarfeline/delvewright-base@sha256:<versions.toml [images.base].digest>
 #
 # Output: a TSV row per poll — trial, elapsed seconds, alive, anger, brain
-# memories. Findings are written up in docs/notes/warden-behavior.md; this script
-# is the reproduction.
+# memories. This script is the reproduction.
 set -uo pipefail
 
 # Even though this spike runs on its OWN throwaway container and port, it still

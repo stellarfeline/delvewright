@@ -29,6 +29,13 @@ def _load():
 
 t = _load()
 
+
+@pytest.fixture(autouse=True)
+def _named_delvec(monkeypatch):
+    """`main` resolves a `delvec` before it fetches anything; tests that are not
+    about resolution name one, as a creator would with `--delvec`."""
+    monkeypatch.setenv("DELVEC", "delvec")
+
 INVENTORY_DOC = {
     "campaign_id": "keep-trial",
     "dsl_version": "0.6.0",
@@ -841,3 +848,34 @@ def test_rerunning_over_an_old_sidecar_adopts_provenance_without_retranslating(t
     doc = json.loads(path.read_text("utf-8"))
     assert doc["content"] == {"world.title": "\u8981\u585e"}, "no retranslation"
     assert doc["source"] == {"world.title": "Trial of the Keep"}, "provenance adopted"
+
+
+# ----------------------------------------------------------- delvec resolution
+
+
+def _fake_delvec(tmp_path, version):
+    path = tmp_path / "delvec"
+    path.write_text(f"#!/bin/sh\necho 'delvec {version}, dsl 0.0.0, mc 1.21.11'\n")
+    path.chmod(0o755)
+    return path
+
+
+def test_delvec_on_path_is_used_when_it_answers_the_pinned_version(tmp_path, monkeypatch):
+    sys.path.insert(0, str(TOOL.parents[1] / "lib"))
+    import versions
+
+    fake = _fake_delvec(tmp_path, versions.engine_version())
+    monkeypatch.delenv("DELVEC", raising=False)
+    monkeypatch.setenv("PATH", str(tmp_path))
+    assert t.delvec_command(None) == [str(fake)]
+
+
+def test_no_delvec_of_the_pinned_version_is_a_named_failure_never_a_cargo_run(
+    tmp_path, monkeypatch
+):
+    _fake_delvec(tmp_path, "0.0.0-not-the-pin")
+    monkeypatch.delenv("DELVEC", raising=False)
+    monkeypatch.setenv("PATH", str(tmp_path))
+    monkeypatch.setattr(t, "REPO_ROOT", tmp_path / "no-tree")
+    with pytest.raises(t.NoDelvec, match="0.0.0-not-the-pin"):
+        t.delvec_command(None)

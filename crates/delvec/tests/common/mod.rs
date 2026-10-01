@@ -134,8 +134,8 @@ pub fn copy_l10n_dir(base: &Path, dst: &Path) {
 ///
 /// So this checks it once and says what actually happened. Docs are the weakest
 /// form a lesson can take (CLAUDE.md debug doctrine); a tooling default that
-/// makes the pitfall impossible is stronger, and this is the one place all 72
-/// call sites already go through.
+/// makes the pitfall impossible is stronger, and this is the one place every
+/// call site already goes through.
 pub fn prefabs_dir() -> PathBuf {
     static CHECKED: std::sync::OnceLock<()> = std::sync::OnceLock::new();
     let dir = pinned::prefabs();

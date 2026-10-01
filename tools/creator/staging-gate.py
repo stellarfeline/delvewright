@@ -633,8 +633,8 @@ def _absent_stage_docs(files: list, pred: dict, subj: Subject) -> tuple[int | No
     Is that "I could not look", or is it "this campaign declares none"?
 
     Both readings are live, and telling them apart is this tool's whole job.
-    Five of the eleven stage documents are OPTIONAL (`compiler::load`:
-    `world-edits.json`, and the four map-pipeline documents), so a campaign
+    Six of the twelve stage documents are OPTIONAL (`compiler::load`:
+    `world-edits.json`, the four map-pipeline documents and `design.json`), so a campaign
     that ships none of them is not a campaign missing a document — it is a
     campaign that declares no such stage. A probe over `world-edits.json` on
     such a campaign was reading `MISSING-CHECK`: the ledger names a check the
