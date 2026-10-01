@@ -342,6 +342,11 @@ impl BlockRegistry {
         self.blocks.len()
     }
 
+    /// Every block id in the pinned version, namespaced, in sorted order.
+    pub fn ids(&self) -> impl Iterator<Item = &str> {
+        self.blocks.keys().map(String::as_str)
+    }
+
     /// Never true for the pinned registry; present because `len` is public.
     pub fn is_empty(&self) -> bool {
         self.blocks.is_empty()

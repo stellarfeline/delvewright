@@ -247,6 +247,11 @@ static DIALOGUE: LazyLock<String> = LazyLock::new(|| {
 
 /// Materialize the campaign and build it, returning `(output, binding ledger)`.
 fn build(who: &str) -> (BuildOutput, delvewright_dsl::GateBinding) {
+    build_from(who, QUESTS.as_str())
+}
+
+/// [`build`] with the quests document given.
+fn build_from(who: &str, quests: &str) -> (BuildOutput, delvewright_dsl::GateBinding) {
     let dir = tmp(&format!("v10-state-campaign-{who}"));
     for f in common::STAGE_FILES {
         std::fs::copy(
@@ -256,7 +261,7 @@ fn build(who: &str) -> (BuildOutput, delvewright_dsl::GateBinding) {
         .unwrap();
     }
     std::fs::write(dir.join("world.json"), WORLD.as_str()).unwrap();
-    std::fs::write(dir.join("quests.json"), QUESTS.as_str()).unwrap();
+    std::fs::write(dir.join("quests.json"), quests).unwrap();
     std::fs::write(dir.join("dialogue.json"), DIALOGUE.as_str()).unwrap();
 
     let prefab_dir = patched_prefabs();
@@ -456,5 +461,37 @@ fn a_shut_condition_is_the_same_range_negated() {
         all.contains("if score #party dw.s_toll matches 1..")
             && all.contains("unless score #party dw.s_toll matches 1.."),
         "both readings of `at-least 1` must be the same range:\n{all}"
+    );
+}
+
+/// A trap gated only by a numeric term whose declared initial FAILS the gate
+/// starts disarmed: `trap_gate_init`, which `setup_finish` runs before the
+/// first tick, reads the same terms the tick does. Seeding the sentinel from
+/// `requires_flags` alone armed it, and the trap was live for the first tick.
+#[test]
+fn a_trap_whose_state_gate_fails_at_world_start_starts_disarmed() {
+    let trap_gate = r#""requires_state": [ { "state": "state/toll", "op": "at-least", "value": 1 } ],
+        "payload": [ { "type": "narrate", "text": "The plate clicks under your boot." } ]"#;
+    assert_eq!(
+        QUESTS.matches(trap_gate).count(),
+        1,
+        "the trap's gate is in the fixture"
+    );
+    // `state/toll` starts at 3; the trap now wants 5 or more.
+    let quests = QUESTS.replace(
+        trap_gate,
+        &trap_gate.replace(r#""value": 1 }"#, r#""value": 5 }"#),
+    );
+    let (out, _) = build_from("trap-init-shut", &quests);
+    assert!(
+        body(&out, "setup_finish").contains("function cast-ledger:trap_gate_init"),
+        "setup must seed the gate"
+    );
+    let init = body(&out, "trap_gate_init");
+    assert!(
+        init.lines().any(|l| l.trim()
+            == "execute if score #trapgate_step dw.sys matches 1 unless score #party dw.s_toll matches 5.. run function cast-ledger:trap_gate_off_step"),
+        "the world-start seed must shut a trap whose state term fails at the declared \
+         initial:\n{init}"
     );
 }
