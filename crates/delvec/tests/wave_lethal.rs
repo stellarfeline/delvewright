@@ -35,7 +35,7 @@ fn read_hw(name: &str) -> String {
 
 /// The hello-world quest with the sentries seated at the entry once the keeper
 /// is spoken to, and the burning floor at the exit.
-fn quests(follow_range: Option<f64>) -> String {
+fn quests(volume: bool) -> String {
     let mut doc: serde_json::Value = serde_json::from_str(&read_hw("quests.json")).unwrap();
     doc["dsl_version"] = serde_json::json!(DSL_VERSION);
     let c = &mut doc["content"];
@@ -44,9 +44,6 @@ fn quests(follow_range: Option<f64>) -> String {
         "anchor": "spawn",
         "mobs": [{ "entity": "minecraft:zombie", "count": 2, "name": "Sentry" }]
     }]);
-    if let Some(r) = follow_range {
-        c["waves"][0]["mobs"][0]["attributes"] = serde_json::json!({ "follow_range": r });
-    }
     c["quests"][0]["on_objective_complete"]["obj/talk"]
         .as_array_mut()
         .expect("obj/talk carries effects")
@@ -55,6 +52,9 @@ fn quests(follow_range: Option<f64>) -> String {
             "wave": "wave/sentries",
             "happening": { "text": "wave/sentries arrives", "verb": "arrives" }
         }));
+    if !volume {
+        return doc.to_string();
+    }
     c["lethal_volumes"] = serde_json::json!([{
         "id": "lethal/the-burn",
         "region": { "anchor": "anchor/exit", "extent": [0, 0, 0] },
@@ -112,19 +112,19 @@ fn edits(middle: &str) -> String {
 }
 
 fn build(middle: &str) -> Result<(emit::BuildOutput, Vec<Diagnostic>), BuildFailure> {
-    build_with(middle, None)
+    build_quests(quests(true), middle)
 }
 
-fn build_with(
+fn build_quests(
+    quests: String,
     middle: &str,
-    follow_range: Option<f64>,
 ) -> Result<(emit::BuildOutput, Vec<Diagnostic>), BuildFailure> {
     let raw = RawCampaign {
         world: read_hw("world.json"),
         npcs: read_hw("npcs.json"),
         classes: read_hw("classes.json"),
         quest_plan: read_hw("quest-plan.json"),
-        quests: quests(follow_range),
+        quests,
         dialogue: read_hw("dialogue.json"),
         world_edits: Some(edits(middle)),
         geometry_brief: None,
@@ -199,30 +199,36 @@ fn a_gate_authored_open_is_the_as_built_reach() {
     assert_eq!(code, "DW0922", "{message}");
 }
 
-/// The same gate, with the sentries' pursuit declared short enough that even
-/// through it they cannot reach the burn: the build holds, and the ledger shows
-/// the opened flood was taken — one barrier a player can open, and more cells
-/// reached with it open than shut.
+/// The sentries made a fight the party must win, with the burning floor taken
+/// away: `DW0924` judges them, and on this keep every cell they can reach is
+/// within a strike of floor the party walks while the fight is next.
 #[test]
-fn a_wave_held_short_of_the_volume_builds_and_states_its_binding() {
-    let (out, _) = build_with(
+fn a_kill_objective_wave_is_judged_for_reach() {
+    let mut quests: serde_json::Value = serde_json::from_str(&quests(false)).unwrap();
+    quests["content"]["quests"][0]["objectives"]
+        .as_array_mut()
+        .unwrap()
+        .push(serde_json::json!({
+            "type": "kill", "id": "obj/sentries", "wave": "wave/sentries",
+            "after": ["obj/talk"],
+            "title": "Put the sentries down",
+            "hint": "They wait by the door you came in by.",
+            "happening": { "text": "the party completes obj/sentries", "verb": "survives" }
+        }));
+    let (out, _) = build_quests(
+        quests.to_string(),
         "minecraft:oak_fence_gate[facing=north,open=false]",
-        Some(3.0),
     )
-    .expect("the sentries pursue three blocks and the burn is further");
+    .expect("the sentries stand where the party walks");
     let ledger: serde_json::Value = serde_json::from_slice(
-        out.get("validation/wave-lethal.json")
-            .expect("the wave-lethal ledger is emitted"),
+        out.get("validation/strand.json")
+            .expect("the strand ledger is emitted for a kill-objective wave"),
     )
     .unwrap();
-    assert_eq!(ledger["waves"], 1, "{ledger}");
+    assert_eq!(ledger["code"], "DW0924", "{ledger}");
+    assert_eq!(ledger["stacks"], 1, "{ledger}");
     assert_eq!(ledger["seats"], 2, "{ledger}");
-    assert_eq!(ledger["volumes"], 1, "{ledger}");
-    assert_eq!(ledger["openable"], 1, "{ledger}");
-    assert!(
-        ledger["reached_open"].as_u64() > ledger["reached"].as_u64(),
-        "the opened gate lets the flood further: {ledger}"
-    );
-    assert_eq!(ledger["as_built"], serde_json::json!([]), "{ledger}");
-    assert_eq!(ledger["opened"], serde_json::json!([]), "{ledger}");
+    assert!(ledger["reached"].as_u64() > Some(0), "{ledger}");
+    assert_eq!(ledger["reached"], ledger["in_reach"], "{ledger}");
+    assert_eq!(ledger["stranded"], serde_json::json!([]), "{ledger}");
 }
