@@ -2598,37 +2598,125 @@ impl World {
     /// body reaches only by one of them is not seen, and a place it leaves only by
     /// one is seen as unleavable.
     pub fn body_moves(&self, c: [i32; 3]) -> Vec<[i32; 3]> {
+        self.moves_of(c, &Footprint::player(), true)
+    }
+
+    /// **Everywhere a mob in `c` can put itself in one movement** — the
+    /// relation `DW0922` and `DW0923` flood from a wave's seats. It differs from
+    /// [`World::body_moves`] in one respect only: a mob makes no gap jumps.
+    /// Vanilla's ground pathfinder steps and jumps onto a neighbouring block up
+    /// to one block higher and drops off edges, and never plans a leap across
+    /// open air; so this is `body_moves` with the jump arc taken away, asked of
+    /// the mob's own footprint instead of the player's. The walk, the fall and
+    /// the afloat arms are the same arms.
+    ///
+    /// And one thing a mob does that the player relation leaves out: it stands
+    /// on a **barrier top** ([`World::perch_feet_16`]) when it can step or jump
+    /// up to one from where it is, walks along it, steps down off it and drops
+    /// off it into the next column. Observed on the pinned server: a drowned
+    /// stepped onto a floor lantern, jumped from its top onto a well's curb
+    /// wall, walked along the curb over a shut fence gate and dropped into the
+    /// water.
+    pub fn mob_moves(&self, c: [i32; 3], fp: &Footprint) -> Vec<[i32; 3]> {
         const HORIZ: [(i32, i32); 4] = [(-1, 0), (1, 0), (0, -1), (0, 1)];
-        let fp = Footprint::player();
+        let perched = self.perch_feet_16(c, fp);
+        let mut out = match perched {
+            Some(_) => Vec::new(),
+            None => self.moves_of(c, fp, false),
+        };
+        if self.is_water_surface(c) || (perched.is_none() && !self.standable_fp(c, fp)) {
+            return out;
+        }
+        let here = perched.unwrap_or_else(|| self.feet_16_fp(c, fp));
+        // The head sweeps the cells over the body's top at the source for a jump.
+        let top = c[1] + fp.height + i32::from(perched.is_some());
+        let head_clear = || {
+            fp.cols
+                .iter()
+                .all(|&[dx, dz]| !self.is_occupied([c[0] + dx, top, c[2] + dz]))
+        };
+        for (dx, dz) in HORIZ {
+            for dy in [0i32, -1, 1] {
+                let n = [c[0] + dx, c[1] + dy, c[2] + dz];
+                if let Some(feet) = self.perch_feet_16(n, fp)
+                    && step_allowed(feet - here, head_clear)
+                {
+                    out.push(n);
+                }
+                if perched.is_some()
+                    && self.standable_fp(n, fp)
+                    && step_allowed(self.feet_16_fp(n, fp) - here, head_clear)
+                {
+                    out.push(n);
+                }
+            }
+            if perched.is_some() {
+                let (x1, z1) = (c[0] + dx, c[2] + dz);
+                if (c[1]..=c[1] + 1).all(|y| !self.is_occupied([x1, y, z1]))
+                    && let Some(n) = self.settle_fp(x1, z1, c[1] - 1, here, fp)
+                {
+                    out.push(n);
+                }
+            }
+        }
+        out.sort_unstable();
+        out.dedup();
+        out
+    }
+
+    /// Where a body dropping down column `(x, z)` from `top` ends up: afloat at
+    /// the first water it meets, or standing on the first floor, if that floor is
+    /// standable and no deeper under `from` (its feet, in sixteenths) than a body
+    /// survives. `None` when it lands in lava, a lethal volume, on something no
+    /// body stands on, or nowhere at all. Nothing deeper than the survivable fall
+    /// is a landing, and water that deep is not looked for: a fall that far into
+    /// water is not counted as a way in.
+    fn settle_fp(&self, x: i32, z: i32, top: i32, from: i64, fp: &Footprint) -> Option<[i32; 3]> {
         let deepest = unarmoured_survivable_fall_blocks() as i32;
+        let bottom = from.div_euclid(FULL_16) as i32 - deepest - 1;
+        let mut y = top;
+        while y >= bottom {
+            let cell = [x, y, z];
+            if self.is_occupied(cell) {
+                if self.is_water_surface(cell) {
+                    return Some(cell);
+                }
+                let n = [x, y + 1, z];
+                return (self.standable_fp(n, fp)
+                    && jump_max_gap(self.feet_16_fp(n, fp) - from).is_some())
+                .then_some(n);
+            }
+            y -= 1;
+        }
+        None
+    }
+
+    /// The feet of a body **perched on a barrier top** in `p` — standing on the
+    /// fence, wall or shut gate in the cell under it, half a block into `p`, with
+    /// room for its whole height over that — in sixteenths; `None` when `p` is
+    /// not such a place. No body walks or jumps onto a barrier top from the floor
+    /// beside it (a 1.5-block rise is beyond the jump), and no route proof stands
+    /// one there; but a body that is already higher — on a lantern, a step, a
+    /// crate — jumps onto one and walks along it, which is how a wave climbs a
+    /// well's curb (`DW0922`). Only the feet column's support is asked: a wider
+    /// body overhangs a one-cell wall as it does in game.
+    fn perch_feet_16(&self, p: [i32; 3], fp: &Footprint) -> Option<i64> {
+        if !self.tall.contains(&[p[0], p[1] - 1, p[2]]) {
+            return None;
+        }
+        let room = fp.cols.iter().all(|&[dx, dz]| {
+            (0..=fp.height).all(|dy| !self.is_occupied([p[0] + dx, p[1] + dy, p[2] + dz]))
+        });
+        room.then(|| (i64::from(p[1]) - 1) * FULL_16 + (BARRIER_HEIGHT * FULL_16 as f64) as i64)
+    }
+
+    /// The one movement relation behind [`World::body_moves`] and
+    /// [`World::mob_moves`]; `gap_jumps` is the only thing that differs.
+    fn moves_of(&self, c: [i32; 3], fp: &Footprint, gap_jumps: bool) -> Vec<[i32; 3]> {
+        const HORIZ: [(i32, i32); 4] = [(-1, 0), (1, 0), (0, -1), (0, 1)];
         let clear =
             |x: i32, y0: i32, y1: i32, z: i32| (y0..=y1).all(|y| !self.is_occupied([x, y, z]));
-        // Where a body dropping down a column from `top` ends up: afloat at the
-        // first water it meets, or standing on the first floor, if that floor is
-        // standable and no deeper under `from` than a body survives. `None` when
-        // it lands in lava, a lethal volume, on something no body stands on, or
-        // nowhere at all.
-        let settle = |x: i32, z: i32, top: i32, from: i64| -> Option<[i32; 3]> {
-            // Nothing deeper than the survivable fall is a landing, and water
-            // that deep is not looked for: a fall that far into water is not
-            // counted as a way in.
-            let bottom = from.div_euclid(FULL_16) as i32 - deepest - 1;
-            let mut y = top;
-            while y >= bottom {
-                let cell = [x, y, z];
-                if self.is_occupied(cell) {
-                    if self.is_water_surface(cell) {
-                        return Some(cell);
-                    }
-                    let n = [x, y + 1, z];
-                    return (self.standable_fp(n, &fp)
-                        && jump_max_gap(self.feet_16_fp(n, &fp) - from).is_some())
-                    .then_some(n);
-                }
-                y -= 1;
-            }
-            None
-        };
+        let settle = |x: i32, z: i32, top: i32, from: i64| self.settle_fp(x, z, top, from, fp);
         let mut out = Vec::new();
         if self.is_water_surface(c) {
             for (dx, dz) in HORIZ {
@@ -2641,7 +2729,7 @@ impl World {
                 // Climb out onto a ledge in reach of the water's top.
                 for rise in (1..=WATER_CLIMB_OUT_RISE).rev() {
                     let up = [x1, c[1] + rise, z1];
-                    if self.standable_fp(up, &fp) && clear(c[0], c[1] + 1, c[1] + rise + 1, c[2]) {
+                    if self.standable_fp(up, fp) && clear(c[0], c[1] + 1, c[1] + rise + 1, c[2]) {
                         out.push(up);
                         break;
                     }
@@ -2658,8 +2746,8 @@ impl World {
             out.dedup();
             return out;
         }
-        out.extend(self.neighbors(c));
-        let here = self.feet_16_fp(c, &fp);
+        out.extend(self.neighbors_fp(c, fp));
+        let here = self.feet_16_fp(c, fp);
         for (dx, dz) in HORIZ {
             let (x1, z1) = (c[0] + dx, c[2] + dz);
             // Wade in: water at the body's feet in the next column, rising to
@@ -2676,8 +2764,8 @@ impl World {
             {
                 out.push(n);
             }
-            // Jump: launch headroom, then gaps of 1.. columns.
-            if !clear(c[0], c[1], c[1] + 2, c[2]) {
+            // Jump: launch headroom, then gaps of 1.. columns. A mob makes none.
+            if !gap_jumps || !clear(c[0], c[1], c[1] + 2, c[2]) {
                 continue;
             }
             let widest = JUMP_REACH.iter().map(|(_, g)| *g).max().unwrap_or(0) as i32;
@@ -2696,7 +2784,7 @@ impl World {
                 let landing_16 = if self.is_water_surface(n) {
                     (i64::from(n[1]) + 1) * FULL_16
                 } else {
-                    self.feet_16_fp(n, &fp)
+                    self.feet_16_fp(n, fp)
                 };
                 let Some(max_gap) = jump_max_gap(landing_16 - here) else {
                     continue;
@@ -5795,6 +5883,19 @@ fn movement_words(world: &World, from: [i32; 3], to: [i32; 3]) -> String {
     }
 }
 
+/// This world as the quest configuration stands when critical step `step` is
+/// next — its gates as `DW0921` judges that configuration — or `None` when that
+/// configuration writes nothing, so the caller keeps the world it has.
+///
+/// Public for `DW0924`, which asks where the party can walk while a fight is the
+/// beat the story waits on: a gate a later beat opens is shut until the fight
+/// is won, so it is no way to the fight.
+pub fn world_while_next(plan: &Plan, world: &World, step: usize) -> Option<World> {
+    let ancestor = |g: usize, s: usize| plan.gate_fired_before(g, s);
+    let st = world.region_state_at(&plan.region_events, step, &ancestor);
+    (!st.is_empty()).then(|| world.with_region_state(&st))
+}
+
 /// [`DW_BODY_CANNOT_LEAVE`] over a campaign's critical path. Returns the binding
 /// beside the verdict so the caller can print it whichever way the verdict went.
 ///
@@ -5945,7 +6046,7 @@ fn verify_bodies_can_leave(
 /// checkpoint: the body can stand clear of the region's box when the cell lies
 /// wholly outside it horizontally, or far enough under its floor that the head
 /// is below it.
-fn returned_from(returned: Option<([i32; 3], [i32; 3])>, c: [i32; 3]) -> bool {
+pub(crate) fn returned_from(returned: Option<([i32; 3], [i32; 3])>, c: [i32; 3]) -> bool {
     returned.is_some_and(|(lo, hi)| {
         c[0] < lo[0] || c[0] > hi[0] || c[2] < lo[2] || c[2] > hi[2] || c[1] + 2 < lo[1]
     })
@@ -6081,6 +6182,229 @@ impl World {
         }
         let trapped = seen.difference(&back).copied().collect();
         (seen, trapped, preds)
+    }
+}
+
+/// How a body first got its hitbox into a declared volume, as
+/// [`World::reach_into_volumes`] found it: the reached cell it set off from,
+/// the cells it passed through on the way in, and the movement in words.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct VolumeHit {
+    /// The root the body started from and every reached cell after it, ending
+    /// at the cell it moved into the volume from.
+    pub path: Vec<[i32; 3]>,
+    /// The cells it moved through on the way in, ending in the first one whose
+    /// occupant the volume catches. One cell when it stood or floated there.
+    pub way_in: Vec<[i32; 3]>,
+    /// How it got in, in words for a report.
+    pub how: &'static str,
+}
+
+/// What [`World::reach_into_volumes`] measured: how many cells the body could
+/// reach, and per volume (in the order the caller listed them) the first way in.
+#[derive(Clone, Debug, Default)]
+pub struct VolumeReach {
+    /// Cells the body can stand or float in, roots included.
+    pub reached: BTreeSet<[i32; 3]>,
+    /// One entry per volume asked about: `None` when nothing reached it.
+    pub hits: Vec<Option<VolumeHit>>,
+}
+
+impl World {
+    /// A copy of this world with every cell of `cells` made empty — the
+    /// counterfactual in which a player has opened the barrier standing there and
+    /// left it open (`DW0923`). A door, a trapdoor or a fence gate stands open
+    /// with no collision a body is stopped by, so its cell leaves every
+    /// collision set; nothing else about the world moves.
+    pub fn with_openings_open(&self, cells: &BTreeSet<[i32; 3]>) -> World {
+        let mut w = self.clone_world();
+        for c in cells {
+            w.solid.remove(c);
+            w.tall.remove(c);
+            w.use_gates.remove(c);
+            w.partial.remove(c);
+        }
+        w
+    }
+
+    /// **Can a body moving from `roots` get its hitbox into any of `volumes`?**
+    ///
+    /// Floods the body's own movement — [`World::mob_moves`] when `mob`,
+    /// [`World::body_moves`] otherwise — from `roots`, and asks of every place it
+    /// reaches whether its hitbox meets a volume there
+    /// ([`delvewright_dsl::metrics::cell_can_meet_volume`], the test the router's
+    /// keep-out is written against). Two ways in a flood of standing places cannot
+    /// see are asked as well:
+    ///
+    /// - **A fall through the volume.** From every place it stands, the body can
+    ///   step off into a neighbouring column clear at its feet and head and drop
+    ///   until something stops it. Every cell of that drop is asked, at any
+    ///   depth: a body that falls through a killing box dies in it, however far
+    ///   below the floor it would have landed.
+    /// - **Sinking**, for a mob only. A mob that enters water is taken to reach
+    ///   every cell of that water: the undead sink and walk the bottom, and a
+    ///   drowned swims down. Not every mob sinks, so for the ones that float this
+    ///   is wider than the truth; it can only refuse a wave, never pass one. A
+    ///   player body does not dive here, which is [`World::body_moves`]'s own
+    ///   rule.
+    ///
+    /// `radius`, when given, bounds the flood: a reached place lies within that
+    /// many blocks of some root. Asked of a world with no lethal exclusion
+    /// ([`World::without_exclusions`]) — on the world the router walks, a
+    /// volume's keep-out stops every movement before it, and this would find
+    /// nothing.
+    ///
+    /// Deterministic: breadth-first in `roots` order, each place's moves in
+    /// [`World::body_moves`]'s fixed order, the first way into each volume kept
+    /// (ADR-0006).
+    pub fn reach_into_volumes(
+        &self,
+        roots: &[[i32; 3]],
+        fp: &Footprint,
+        mob: bool,
+        radius: Option<f64>,
+        volumes: &[([i32; 3], [i32; 3])],
+    ) -> VolumeReach {
+        const HORIZ: [(i32, i32); 4] = [(-1, 0), (1, 0), (0, -1), (0, 1)];
+        debug_assert!(self.lethal.is_empty(), "asked of a lethal-applied world");
+        let body = fp.body();
+        let keep_outs: Vec<([i32; 3], [i32; 3])> = volumes
+            .iter()
+            .map(|(lo, hi)| delvewright_dsl::metrics::keep_out_box(body, *lo, *hi))
+            .collect();
+        let meets = |c: [i32; 3]| -> Option<usize> {
+            keep_outs
+                .iter()
+                .position(|(lo, hi)| (0..3).all(|i| lo[i] <= c[i] && c[i] <= hi[i]))
+        };
+        // Below this a drop is in no volume's keep-out, so it is not followed.
+        let bottom = keep_outs.iter().map(|(lo, _)| lo[1]).min().unwrap_or(0);
+        let column_near = |x: i32, z: i32| {
+            keep_outs
+                .iter()
+                .any(|(lo, hi)| lo[0] <= x && x <= hi[0] && lo[2] <= z && z <= hi[2])
+        };
+        let within = |c: [i32; 3]| {
+            radius.is_none_or(|r| {
+                roots
+                    .iter()
+                    .any(|s| (0..3).map(|i| f64::from(c[i] - s[i]).powi(2)).sum::<f64>() <= r * r)
+            })
+        };
+        let mut out = VolumeReach {
+            reached: roots.iter().copied().collect(),
+            hits: vec![None; volumes.len()],
+        };
+        let mut pred: BTreeMap<[i32; 3], [i32; 3]> = BTreeMap::new();
+        let mut sunk: BTreeSet<[i32; 3]> = BTreeSet::new();
+        // Ways in found from the cell being expanded: (volume, way in, how).
+        let mut found: Vec<(usize, Vec<[i32; 3]>, &'static str)> = Vec::new();
+        let mut queue: std::collections::VecDeque<[i32; 3]> = roots.iter().copied().collect();
+        let clear = |c: [i32; 3]| !self.is_occupied(c);
+        while let Some(cur) = queue.pop_front() {
+            let afloat = self.is_water_surface(cur);
+            if let Some(v) = meets(cur) {
+                found.push((
+                    v,
+                    vec![cur],
+                    if afloat { "floating in" } else { "walking in" },
+                ));
+            }
+            // Every water cell this one opens onto, for a body that sinks.
+            let mut sink_from: Vec<([i32; 3], Vec<[i32; 3]>)> = Vec::new();
+            if mob && afloat {
+                sink_from.push((cur, Vec::new()));
+            }
+            if !afloat {
+                for (dx, dz) in HORIZ {
+                    let (x, z) = (cur[0] + dx, cur[2] + dz);
+                    if !column_near(x, z) && !mob {
+                        continue;
+                    }
+                    if !within([x, cur[1], z])
+                        || !clear([x, cur[1], z])
+                        || !clear([x, cur[1] + 1, z])
+                    {
+                        continue;
+                    }
+                    let mut trace: Vec<[i32; 3]> = Vec::new();
+                    let mut y = cur[1];
+                    while y >= bottom {
+                        let c = [x, y, z];
+                        if !clear(c) {
+                            if mob && self.is_water(c) {
+                                sink_from.push((c, trace.clone()));
+                            }
+                            break;
+                        }
+                        trace.push(c);
+                        if let Some(v) = meets(c) {
+                            let how = if trace.len() == 1 {
+                                "stepping in"
+                            } else {
+                                "a fall"
+                            };
+                            found.push((v, trace.clone(), how));
+                            break;
+                        }
+                        y -= 1;
+                    }
+                }
+            }
+            for (start, lead) in sink_from {
+                if !sunk.insert(start) {
+                    continue;
+                }
+                let mut water: std::collections::VecDeque<([i32; 3], Vec<[i32; 3]>)> =
+                    std::collections::VecDeque::new();
+                let mut first = lead;
+                first.push(start);
+                water.push_back((start, first));
+                while let Some((w, trace)) = water.pop_front() {
+                    if let Some(v) = meets(w) {
+                        found.push((v, trace.clone(), "sinking in water"));
+                    }
+                    for d in [
+                        [0, -1, 0],
+                        [-1, 0, 0],
+                        [1, 0, 0],
+                        [0, 0, -1],
+                        [0, 0, 1],
+                        [0, 1, 0],
+                    ] {
+                        let n = [w[0] + d[0], w[1] + d[1], w[2] + d[2]];
+                        if self.is_water(n) && within(n) && sunk.insert(n) {
+                            let mut t = trace.clone();
+                            t.push(n);
+                            water.push_back((n, t));
+                        }
+                    }
+                }
+            }
+            for (v, way_in, how) in found.drain(..) {
+                if out.hits[v].is_some() {
+                    continue;
+                }
+                let mut path = vec![cur];
+                while let Some(p) = pred.get(path.last().unwrap_or(&cur)) {
+                    path.push(*p);
+                }
+                path.reverse();
+                out.hits[v] = Some(VolumeHit { path, way_in, how });
+            }
+            let next = if mob {
+                self.mob_moves(cur, fp)
+            } else {
+                self.body_moves(cur)
+            };
+            for n in next {
+                if within(n) && out.reached.insert(n) {
+                    pred.insert(n, cur);
+                    queue.push_back(n);
+                }
+            }
+        }
+        out
     }
 }
 
@@ -15244,5 +15568,154 @@ mod leave_tests {
                 .body_moves([2, 1, 0])
                 .contains(&[4 + flat, 1, 0])
         );
+    }
+}
+
+#[cfg(test)]
+mod mob_reach_tests {
+    use super::*;
+
+    /// A flat yard, feet at y=1 over a stone floor at y=0, `w` × `d` cells.
+    fn yard(w: i32, d: i32) -> BTreeSet<[i32; 3]> {
+        let mut solid = BTreeSet::new();
+        for x in 0..w {
+            for z in 0..d {
+                solid.insert([x, 0, z]);
+            }
+        }
+        solid
+    }
+
+    fn world(
+        solid: BTreeSet<[i32; 3]>,
+        tall: BTreeSet<[i32; 3]>,
+        flooded: BTreeSet<[i32; 3]>,
+        partial: BTreeMap<[i32; 3], u8>,
+    ) -> World {
+        World::from_occupancy(
+            crate::compiler::assembled::Occupancy {
+                solid,
+                tall,
+                use_gates: BTreeSet::new(),
+                flooded,
+                partial,
+                waterloggable: BTreeSet::new(),
+                lava: BTreeSet::new(),
+            },
+            Premises::geometry_only(),
+        )
+    }
+
+    fn zombie() -> Footprint {
+        entity_footprint("minecraft:zombie")
+    }
+
+    /// The jump arc is the one movement a mob does not have: across a one-column
+    /// gap a player body lands, a mob does not.
+    #[test]
+    fn a_mob_makes_no_gap_jump() {
+        let mut solid = BTreeSet::new();
+        for x in [0, 1, 2, 4, 5, 6] {
+            solid.insert([x, 0, 0]);
+        }
+        // Deep under the gap, so the fall is not a way across either.
+        let w = World::from_solid_cells(solid);
+        assert!(w.body_moves([2, 1, 0]).contains(&[4, 1, 0]));
+        assert!(!w.mob_moves([2, 1, 0], &zombie()).contains(&[4, 1, 0]));
+    }
+
+    /// The vesperhold climb, in miniature: a lantern one course high beside a wall
+    /// two courses high. A mob steps onto the lantern, jumps from its top onto the
+    /// wall's top, and walks along it; the player relation never stands a body on
+    /// a wall, and from the floor the wall's top is a 1.5-block rise.
+    #[test]
+    fn a_mob_climbs_a_lantern_onto_a_wall_top() {
+        let mut solid = yard(6, 3);
+        solid.insert([1, 1, 1]); // the lantern
+        let partial: BTreeMap<[i32; 3], u8> = [([1, 1, 1], 9u8)].into_iter().collect();
+        let tall: BTreeSet<[i32; 3]> = [[2, 1, 1], [3, 1, 1]].into_iter().collect();
+        let w = world(solid, tall, BTreeSet::new(), partial);
+        let fp = zombie();
+        assert!(
+            w.mob_moves([0, 1, 1], &fp).contains(&[1, 2, 1]),
+            "onto the lantern"
+        );
+        assert!(
+            w.mob_moves([1, 2, 1], &fp).contains(&[2, 2, 1]),
+            "onto the wall"
+        );
+        assert!(w.mob_moves([2, 2, 1], &fp).contains(&[3, 2, 1]), "along it");
+        assert!(
+            !w.mob_moves([2, 1, 0], &fp).contains(&[2, 2, 1]),
+            "never from the floor beside it"
+        );
+        assert!(!w.body_moves([1, 2, 1]).contains(&[2, 2, 1]));
+    }
+
+    /// A drop through a volume at any depth is a way in, however far below the
+    /// floor the body would have landed — and only a fall finds it.
+    #[test]
+    fn a_fall_through_a_volume_is_a_way_in_at_any_depth() {
+        let mut solid = yard(3, 3);
+        solid.remove(&[2, 0, 1]);
+        solid.insert([2, -40, 1]);
+        let w = World::from_solid_cells(solid);
+        let vol = ([2, -30, 1], [2, -30, 1]);
+        let r = w.reach_into_volumes(&[[0, 1, 1]], &zombie(), true, Some(16.0), &[vol]);
+        let hit = r.hits[0].as_ref().expect("the shaft's volume is reached");
+        assert_eq!(hit.how, "a fall");
+        assert_eq!(hit.way_in.last(), Some(&[2, -30, 1]));
+    }
+
+    /// Water over a volume: a mob sinks to it, a player body (which does not
+    /// dive) does not — the zero-binding shape `DW0891` reports.
+    #[test]
+    fn a_mob_sinks_to_a_volume_under_water_and_a_player_does_not() {
+        let mut solid = yard(5, 3);
+        let mut flooded = BTreeSet::new();
+        for y in -4..=0 {
+            solid.remove(&[3, y, 1]);
+            flooded.insert([3, y, 1]);
+            solid.insert([2, y, 1]);
+            solid.insert([4, y, 1]);
+            solid.insert([3, y, 0]);
+            solid.insert([3, y, 2]);
+        }
+        solid.remove(&[2, 0, 1]);
+        flooded.insert([2, 0, 1]);
+        solid.insert([2, -1, 1]);
+        solid.insert([3, -5, 1]);
+        let w = world(solid, BTreeSet::new(), flooded, BTreeMap::new());
+        let vol = ([3, -4, 1], [3, -4, 1]);
+        let mob = w.reach_into_volumes(&[[0, 1, 1]], &zombie(), true, Some(16.0), &[vol]);
+        assert_eq!(
+            mob.hits[0].as_ref().map(|h| h.how),
+            Some("sinking in water")
+        );
+        let player = w.reach_into_volumes(&[[0, 1, 1]], &Footprint::player(), false, None, &[vol]);
+        assert!(player.hits[0].is_none(), "{:?}", player.hits[0]);
+    }
+
+    /// The follow range bounds the flood: a volume one cell past it is not
+    /// reached.
+    #[test]
+    fn the_follow_range_bounds_the_reach() {
+        let w = World::from_solid_cells(yard(20, 1));
+        let vol = ([12, 1, 0], [12, 1, 0]);
+        let near = w.reach_into_volumes(&[[0, 1, 0]], &zombie(), true, Some(12.0), &[vol]);
+        let far = w.reach_into_volumes(&[[0, 1, 0]], &zombie(), true, Some(10.0), &[vol]);
+        assert!(near.hits[0].is_some());
+        assert!(far.hits[0].is_none());
+    }
+
+    /// A barrier a player opens, removed: the cell is passable to every body.
+    #[test]
+    fn an_opened_barrier_is_an_empty_cell() {
+        let solid = yard(5, 1);
+        let tall: BTreeSet<[i32; 3]> = [[2, 1, 0]].into_iter().collect();
+        let w = world(solid, tall.clone(), BTreeSet::new(), BTreeMap::new());
+        assert!(!w.mob_moves([1, 1, 0], &zombie()).contains(&[2, 1, 0]));
+        let opened = w.with_openings_open(&tall);
+        assert!(opened.mob_moves([1, 1, 0], &zombie()).contains(&[2, 1, 0]));
     }
 }

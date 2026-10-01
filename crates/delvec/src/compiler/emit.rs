@@ -1184,17 +1184,34 @@ pub fn build_with_warnings(
                     crate::compiler::lethal::DangerVisibility::default()
                 } else {
                     let blocks = &assembled.blocks;
-                    let (binding, verdict) = crate::compiler::lethal::check_danger_is_visible(
+                    // `DW0922` / `DW0923`: where each seated wave's members can
+                    // get to by the movement a mob has. Measured before `DW0891`,
+                    // because a volume only a mob can enter is a volume a
+                    // modelled body reaches and `DW0891`'s zero-binding finding
+                    // has to know it; judged after `DW0891`, so a volume the
+                    // player cannot see is named for that first.
+                    let wave_lethal =
+                        crate::compiler::lethal::wave_reach(plan, &world, blocks, &waves);
+                    let (mut binding, verdict) = crate::compiler::lethal::check_danger_is_visible(
                         plan,
                         &world,
                         blocks,
                         campaign_spawn(plan),
                     );
+                    binding.credit_waves(&wave_lethal);
                     // Stated whether it found anything or not, and before the
                     // verdict is taken: a refusal owes its reader the population
                     // it was measured against as much as a pass does.
                     eprintln!("{}", binding.line());
+                    eprintln!("{}", wave_lethal.line());
                     verdict?;
+                    warnings.extend(binding.findings());
+                    wave_lethal.verdict()?;
+                    put_json(
+                        &mut out,
+                        "validation/wave-lethal.json",
+                        &wave_lethal.to_json(),
+                    );
                     binding
                 };
                 crate::compiler::nav::check_critical_path(plan, &world)?;
@@ -1217,6 +1234,26 @@ pub fn build_with_warnings(
                     "validation/leave-proof.json",
                     &leave_binding.to_json(),
                 );
+                // DW0924: a body a `kill` objective waits on cannot get to a
+                // place it survives and the party cannot strike it from. After
+                // DW0921 because it reads the same playable region and a party
+                // that can be trapped is the worse finding.
+                {
+                    let strand = crate::compiler::strand::check(
+                        plan,
+                        &world,
+                        &waves,
+                        &crate::compiler::lethal::population_roots(plan, campaign_spawn(plan)),
+                        playable_region(plan).map(|r| (r.min, r.max)),
+                    );
+                    if strand.waves > 0 {
+                        eprintln!("{}", strand.line());
+                    }
+                    strand.verdict()?;
+                    if strand.waves > 0 {
+                        put_json(&mut out, "validation/strand.json", &strand.to_json());
+                    }
+                }
                 if !plan.lethal_volumes.is_empty() {
                     lethal_gate = Some(crate::compiler::lethal::gate(
                         plan.campaign,

@@ -223,9 +223,9 @@
         "region": {
           "anchor": "anchor/east-pit",
           "extent": [
-            1,
+            0,
             2,
-            1
+            0
           ]
         },
         "shown_by": [
@@ -3130,7 +3130,7 @@
         "tier": "boss"
       },
       {
-        "anchor": "anchor/east-bay",
+        "anchor": "anchor/lane-east",
         "id": "wave/edge",
         "mobs": [
           {
@@ -3171,6 +3171,6 @@
       }
     ]
   },
-  "dsl_version": "0.34.0",
+  "dsl_version": "0.35.0",
   "stage": "quests"
 }
