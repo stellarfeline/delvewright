@@ -376,112 +376,86 @@ fn lit(name: &str, default_lit: &str, bright: u8) -> u8 {
 /// blocks are treated as opaque (conservative — never overestimates light),
 /// matching the cave-generator's estimator.
 ///
-/// ## The occupancy-coupling invariant (task: trap-trigger false dark)
+/// ## Two halves, and the first is not this module's
 ///
-/// The conservative-opaque default is safe for a block **nav also treats as
-/// impassable**: over-blocking light can only make `DW0210`/`DW0211` stricter.
-/// It is *not* safe for a block [`crate::compiler::assembled::occupancy_of`] deliberately
-/// leaves **passable**, because then a cell a player really stands in is measured
-/// at light 0 while the game lights it normally — a manufactured `DW0210` that no
-/// amount of relighting can clear. Hence the invariant, asserted by
-/// `every_nav_passable_block_passes_light`:
+/// **Every cell a body can occupy passes light**, and which cells those are is
+/// decided by the one collision table, [`delvewright_dsl::blockshape::collision_class`],
+/// the same answer [`crate::compiler::assembled::occupancy_of`] builds the nav
+/// model from. So a block nav leaves walkable — air, a thin decoration, a
+/// no-collision plant or fixture, a fence gate — is light-passing here by
+/// construction, and a class the collision table gains later is light-passing
+/// the day it is added. A **fluid** cell passes too: water and lava are lit
+/// volumes, whatever a body does in them.
 ///
-/// > **every block class whose cell `occupancy_of` leaves player-occupiable must
-/// > be light-passing here.**
+/// Why it has to be one rule: the conservative-opaque default is safe for a
+/// block nav also treats as impassable — over-blocking light can only make
+/// `DW0210`/`DW0211` stricter. It is not safe for a cell a body walks through:
+/// that cell is measured at light 0 while the game lights it, a `DW0210` no
+/// relighting can clear. A second list of walkable ids kept here went stale
+/// against the collision table (signs, banners, buttons, levers, rails,
+/// redstone dust, `light`, `structure_void` and several torch variants were
+/// walkable and opaque), so the list is gone. `every_nav_passable_block_passes_light`
+/// asserts the implication over every block the pinned registry names.
 ///
-/// The classes that are player-occupiable by construction are pressure plates /
-/// tripwire / tripwire hooks ([`crate::compiler::assembled::is_passable_trap_trigger`] —
-/// load-bearing for the `DW0342` trap-avoidability proof, which needs nav to route
-/// a player *onto* the trigger), thin decoration ([`crate::compiler::assembled::is_thin_decoration`]
-/// — carpets and 1–4-layer snow), and fence gates (open = a passable threshold,
-/// closed = passable-with-use). All of them are listed below.
+/// The second half is this module's own: blocks a body **cannot** occupy that
+/// still pass light — glass and panes, bars, chains, lanterns, campfires, end
+/// rods, ladders, scaffolding, dripstone, cobweb, lily pads, sea pickles, the
+/// snow layers too deep to step over, and `oak_fence`.
 ///
 /// ## Vanilla evidence (Minecraft Java 1.21.11)
 ///
 /// A block's light opacity is its `lightBlock` / "filter light" value: 15 for a
 /// full solid-render cube, 0 for anything that is neither solid-render nor a full
-/// collision cube. Verified against the pinned `minecraft-data` block table
+/// collision cube. Every empty-collision and thin block is in the second group;
+/// verified against the pinned `minecraft-data` block table
 /// (`harness/node_modules/minecraft-data/.../pc/1.21.9/blocks.json`, the newest
-/// vendored dump; block light opacity is unchanged across 1.21.x):
-/// `filterLight = 0` for all 16 `*_pressure_plate`, `tripwire`, `tripwire_hook`,
-/// all 20 carpets, `snow` (the layer block), and all 12 `*_fence_gate` — against
-/// `filterLight = 15` for the control set `stone` / `dirt` / `oak_planks` /
-/// `cobblestone` / `deepslate` / `sand` / `gravel` / `obsidian` / `snow_block`.
+/// vendored dump; block light opacity is unchanged across 1.21.x) for all 16
+/// `*_pressure_plate`, `tripwire`, `tripwire_hook`, all 20 carpets, `snow` (the
+/// layer block) and all 12 `*_fence_gate`, against `filterLight = 15` for the
+/// control set `stone` / `dirt` / `oak_planks` / `cobblestone` / `deepslate` /
+/// `sand` / `gravel` / `obsidian` / `snow_block`.
 ///
 /// ## Deliberately still opaque
 ///
-/// Vanilla also reports `filterLight = 0` for fences, walls, buttons, levers,
-/// rails, slabs, stairs, doors, trapdoors, chests, signs and banners — but
-/// `occupancy_of` classifies every one of them **solid or tall**, i.e. impassable
-/// and never a player-occupiable cell. Their opacity can therefore only make the
-/// light gate stricter, never manufacture a false *pass*, so correcting them is a
-/// gate-loosening accuracy change that belongs in its own reviewed PR rather than
-/// riding along with this false-failure fix. (`oak_fence` predates this rule and
-/// is left as-is for the same reason: removing it would tighten the gate, adding
-/// its siblings would loosen it — neither is this PR's concern.)
+/// Vanilla also reports `filterLight = 0` for fences, walls, slabs, stairs,
+/// doors, trapdoors and chests — but the collision table calls every one of them
+/// solid or tall, so no body occupies their cell. Their opacity can only make the
+/// light gate stricter, never manufacture a false pass; correcting them is a
+/// gate-loosening accuracy change of its own. (`oak_fence` predates this rule and
+/// is left as it is.)
 pub fn passes_light(name: &str) -> bool {
-    let id = base_id(name);
-    matches!(
-        id,
-        "air"
-            | "cave_air"
-            | "void_air"
-            | "water"
-            | "lava"
-            | "glass"
-            | "tinted_glass"
-            | "iron_bars"
-            | "chain"
-            | "iron_chain"
-            | "campfire"
-            | "soul_campfire"
-            | "lantern"
-            | "soul_lantern"
-            | "torch"
-            | "wall_torch"
-            | "soul_torch"
-            | "soul_wall_torch"
-            | "redstone_torch"
-            | "end_rod"
-            | "oak_fence"
-            | "glow_lichen"
-            | "vine"
-            | "ladder"
-            | "scaffolding"
-            | "pointed_dripstone"
-            | "seagrass"
-            | "tall_seagrass"
-            | "kelp"
-            | "kelp_plant"
-            | "dead_bush"
-            | "short_grass"
-            | "fern"
-            | "sea_pickle"
-            | "cobweb"
-            | "sugar_cane"
-            | "lily_pad"
-            // --- nav-passable classes (the occupancy-coupling invariant) ---
-            // Trap triggers: thin, non-collidable, `filterLight = 0`.
-            | "tripwire"
-            | "tripwire_hook"
-            // Thin decoration: the snow *layer* block (`snow_block` is a full
-            // opaque cube and is deliberately NOT here). Every carpet — dyed,
-            // `moss_carpet`, `pale_moss_carpet` — is caught by the `_carpet`
-            // suffix below.
-            | "snow"
-    ) || id.ends_with("_stained_glass")
-        || id.ends_with("_stained_glass_pane")
-        || id == "glass_pane"
-        || id.ends_with("_pressure_plate")
-        || id.ends_with("_carpet")
-        || id.ends_with("_fence_gate")
-        // The occupancy-coupling invariant, at the class level: every
-        // no-collision plant is nav-passable — a walker's FEET can occupy a
-        // tuft/flower/crop cell — so the light model must not call it opaque
-        // (vanilla: filterLight = 0 for the whole class). An opaque flower
-        // measures light 0 in a cell a body may legally stand in, which is a
-        // DW0210 darkness that is not there.
-        || crate::compiler::assembled::is_no_collision_plant(id)
+    use delvewright_dsl::blockshape::{Collision, collision_class};
+    match collision_class(name) {
+        Collision::Air | Collision::Thin(_) | Collision::FenceGate | Collision::Fluid => true,
+        Collision::TallBarrier | Collision::PartialFloor(_) | Collision::FullCube => {
+            let id = base_id(name);
+            matches!(
+                id,
+                "glass"
+                    | "tinted_glass"
+                    | "iron_bars"
+                    | "chain"
+                    | "iron_chain"
+                    | "campfire"
+                    | "soul_campfire"
+                    | "lantern"
+                    | "soul_lantern"
+                    | "end_rod"
+                    | "oak_fence"
+                    | "ladder"
+                    | "scaffolding"
+                    | "pointed_dripstone"
+                    | "sea_pickle"
+                    | "cobweb"
+                    | "lily_pad"
+                    // The snow layers too deep to step over (5–8); the shallow
+                    // ones are thin and pass above.
+                    | "snow"
+            ) || id.ends_with("_stained_glass")
+                || id.ends_with("_stained_glass_pane")
+                || id == "glass_pane"
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -3030,55 +3004,94 @@ mod tests {
     /// fence gate — then that block MUST pass light, or the gate measures a cell
     /// the player really stands in at light 0 and manufactures a `DW0210`.
     ///
-    /// Driven through the real classifier over a one-cell world, so a future
-    /// passability change (a new thin-decoration class, say) that forgets the light
-    /// table fails here instead of in a campaign.
+    /// The candidates are **every state of every block the pinned registry
+    /// names**, each driven through the real classifier over a one-cell world, so
+    /// a passability change that forgets the light model fails here rather than
+    /// in a campaign. A hand-picked candidate list is how signs, banners, buttons,
+    /// levers, rails, redstone dust, `light`, `structure_void` and several torch
+    /// variants stayed walkable and opaque while this test passed.
     #[test]
     fn every_nav_passable_block_passes_light() {
-        let candidates = [
-            // trap triggers
-            "minecraft:oak_pressure_plate[powered=false]",
-            "minecraft:stone_pressure_plate",
-            "minecraft:polished_blackstone_pressure_plate",
-            "minecraft:heavy_weighted_pressure_plate",
-            "minecraft:tripwire",
-            "minecraft:tripwire_hook",
-            // thin decoration
-            "minecraft:white_carpet",
-            "minecraft:moss_carpet",
-            "minecraft:pale_moss_carpet",
-            "minecraft:snow[layers=1]",
-            "minecraft:snow[layers=4]",
-            // fence gates (closed = use-gate, open = free threshold)
-            "minecraft:oak_fence_gate",
-            "minecraft:spruce_fence_gate",
-            "minecraft:crimson_fence_gate",
-            // controls that must stay impassable AND may stay opaque
-            "minecraft:stone",
-            "minecraft:oak_slab",
-            "minecraft:snow_block",
-            "minecraft:cobblestone_wall",
-            "minecraft:oak_fence",
-        ];
+        let registry = delvewright_dsl::blocks::BlockRegistry::v1_21_11();
         let cell = [0, 0, 0];
-        for id in candidates {
-            let mut map = BTreeMap::new();
-            map.insert(cell, id.to_string());
-            let occ = crate::compiler::assembled::occupancy_of(map, &BTreeSet::new());
-            // Player-occupiable: nothing a walker is blocked by lives here. A
-            // closed fence gate is in `use_gates`, which the player walks through.
-            let blocked = occ.solid.contains(&cell)
-                || occ.tall.contains(&cell)
-                || occ.flooded.contains(&cell);
-            if !blocked {
-                assert!(
-                    passes_light(id),
-                    "occupancy leaves `{id}` player-occupiable, so the light model \
-                     must not call it opaque — a player standing there would be \
-                     measured at light 0 and trip a false DW0210"
-                );
+        let (mut states, mut passable) = (0usize, 0usize);
+        let mut passable_ids: BTreeSet<&str> = BTreeSet::new();
+        let mut offenders: Vec<String> = Vec::new();
+        for id in registry.ids() {
+            let props = registry.properties(id).cloned().unwrap_or_default();
+            let mut names = vec![String::new()];
+            for (k, values) in &props {
+                names = names
+                    .iter()
+                    .flat_map(|n| {
+                        values.iter().map(move |v| {
+                            let sep = if n.is_empty() { "" } else { "," };
+                            format!("{n}{sep}{k}={v}")
+                        })
+                    })
+                    .collect();
+            }
+            for state in names {
+                let name = if state.is_empty() {
+                    id.to_string()
+                } else {
+                    format!("{id}[{state}]")
+                };
+                states += 1;
+                let mut map = BTreeMap::new();
+                map.insert(cell, name.clone());
+                let occ = crate::compiler::assembled::occupancy_of(map, &BTreeSet::new());
+                // Player-occupiable: nothing a walker is blocked by lives here. A
+                // closed fence gate is in `use_gates`, which the player walks through.
+                let blocked = occ.solid.contains(&cell)
+                    || occ.tall.contains(&cell)
+                    || occ.flooded.contains(&cell);
+                if blocked {
+                    continue;
+                }
+                passable += 1;
+                passable_ids.insert(id);
+                if !passes_light(&name) {
+                    offenders.push(name);
+                }
             }
         }
+        println!(
+            "nav-passable ⇒ light-passing: {passable} passable state(s) of {} block(s), \
+             out of {states} state(s) of {} block(s) in the pinned registry",
+            passable_ids.len(),
+            registry.len()
+        );
+        assert!(
+            !registry.is_empty() && states >= registry.len(),
+            "the enumeration bound {states} state(s) over {} block(s)",
+            registry.len()
+        );
+        // The classes this test once could not see are among the candidates.
+        for id in [
+            "minecraft:oak_sign",
+            "minecraft:white_wall_banner",
+            "minecraft:stone_button",
+            "minecraft:lever",
+            "minecraft:rail",
+            "minecraft:redstone_wire",
+            "minecraft:light",
+            "minecraft:structure_void",
+            "minecraft:copper_wall_torch",
+        ] {
+            assert!(
+                passable_ids.contains(id),
+                "`{id}` must be a nav-passable candidate here"
+            );
+        }
+        assert!(
+            offenders.is_empty(),
+            "occupancy leaves {} state(s) player-occupiable that the light model calls \
+             opaque — a player standing there is measured at light 0 and trips a false \
+             DW0210. First ten: {:?}",
+            offenders.len(),
+            &offenders[..offenders.len().min(10)]
+        );
     }
 
     /// Red-before / green-after: a **roofed, lit** room whose floor carries a
@@ -3191,6 +3204,57 @@ mod tests {
                 got.get(&cell).copied().unwrap_or(0),
                 bare.get(&cell).copied().unwrap_or(0),
                 "{block} is filterLight=0 in vanilla; its cell must measure real light"
+            );
+        }
+    }
+
+    /// A no-collision fixture on a lit room's floor is a cell a body walks
+    /// through, so it must measure the room's real light: a sign, a banner, a
+    /// button, a lever, a rail, redstone dust, a `light` block, a structure void
+    /// and every torch variant. Each one is placed where a player stands, the area
+    /// is surveyed exactly as the build surveys it, and `DW0210` must not fire.
+    #[test]
+    fn a_no_collision_fixture_on_a_lit_floor_is_not_dw0210() {
+        for block in [
+            "minecraft:oak_sign[rotation=0]",
+            "minecraft:oak_wall_sign[facing=north]",
+            "minecraft:white_banner",
+            "minecraft:stone_button[face=floor]",
+            "minecraft:lever[face=floor]",
+            "minecraft:rail",
+            "minecraft:powered_rail",
+            "minecraft:redstone_wire",
+            "minecraft:light[level=0]",
+            "minecraft:structure_void",
+            "minecraft:redstone_wall_torch[lit=false]",
+            "minecraft:copper_torch",
+            "minecraft:copper_wall_torch",
+        ] {
+            let cell = [2, 1, 2];
+            let mut map = room(9, 5, 9, false); // roofed: no sky light
+            map.insert([4, 3, 4], "minecraft:glowstone".to_string());
+            map.insert(cell, block.to_string());
+            let reachable = reachable_occ_of(&map, [4, 1, 4]);
+            assert!(
+                reachable.contains(&cell),
+                "{block}: the nav model must leave its cell walkable"
+            );
+            let nav = nav_occ_of(&map);
+            let model = LightModel::from_blocks(map);
+            let diag = undeclared_diag(
+                &model,
+                &nav,
+                &reachable,
+                0,
+                false,
+                "area/hall",
+                delvewright_dsl::Placement::Prefabs,
+            );
+            assert!(
+                diag.is_none(),
+                "{block}: a lit room with this fixture on its floor reported \
+                 dark:\n{}",
+                diag.map(|d| d.message).unwrap_or_default()
             );
         }
     }

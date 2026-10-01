@@ -347,6 +347,24 @@ this section is what they are *for* and the traps in each.
   sit inside one (`DW0511`). Put the volume where a player can SEE what will
   happen before they commit to it; a killing box nobody can read is 初见杀 with
   no lesson in it.
+- **A volume kills your own waves too, so seat no wave where it can walk into
+  one.** A member that can get into a lethal volume by walking, stepping or
+  jumping up one block (a floor lantern is a step), climbing onto a wall or curb
+  from something higher, dropping off an edge or sinking in water, within its
+  stack's follow range of its seat, drowns itself before the party arrives;
+  mobs make no gap jumps. A fence gate, door or trapdoor the party can open
+  counts as open, because a player who opens one may leave it open and die.
+  Repair by placement: seat the wave elsewhere, put the volume behind a rise of
+  two blocks, or replace the gate with a jump across a dry cut, which the party
+  makes and a mob does not. Never ring the hazard with blocks nobody can see.
+- **A fight the party must win stays where the party can strike it.** A body a
+  `kill` objective waits on is knocked by every blow; on a shelf with an open
+  edge it goes over, and if it survives the fall somewhere the party cannot
+  follow — below the playable region's edge, down a drop with no way back —
+  the objective waits forever. Close the edge with a parapet a body is knocked
+  into and not over (a wall course, 1.5 high), give the party a way down, or
+  seat the fight away from the drop. Never fence the shelf with blocks nobody
+  can see, and never shrink `follow_range` to hide the placement.
 - **What happens when a player dies is content, not engine behaviour.** The
   quests document takes a campaign-wide `on_death`: a bundle of ordinary effects
   that runs at the moment a player dies, for that player. One per campaign — it
