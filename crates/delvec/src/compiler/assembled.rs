@@ -1092,10 +1092,10 @@ pub fn assembled_occupancy(plan: &Plan, structures: &BTreeMap<String, Vec<u8>>) 
 /// (they are passable; closed gates become `use_gates`). Split out so the flood
 /// and the collision classes are unit-testable without a [`Plan`].
 ///
-/// Vanilla water flows only into **air** cells, so *every* non-air block dams the
-/// flood — fences, walls, and gates (open or closed) included, exactly as the
-/// pre-classification full-solid model had it. The flood barrier set is therefore
-/// the union of every classified block cell, keeping the water model byte-stable.
+/// Vanilla water flows only into **air** cells, so every block that occupies its
+/// cell dams the flood — full cubes, partial floors, fences, walls, and gates
+/// (open or closed). The flood barrier set is the union of those cells. Air, thin
+/// walkable decoration (carpet, torch, plate) and free fluid are not barriers.
 ///
 /// A free fluid is deliberately **not** in that barrier set: it is a flood source
 /// instead, so water spreads through a lava cell rather than being dammed by one.

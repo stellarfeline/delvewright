@@ -1116,3 +1116,24 @@ fn the_render_arms_refuse_an_unmeasured_piece_before_they_resolve_textures() {
         );
     }
 }
+
+/// `palette -o` creates the output's parent directory, as `grammar expand` and
+/// `render` do for theirs.
+#[test]
+fn palette_creates_the_parent_of_its_output() {
+    let nbt = prefab("keep-gate-room.nbt");
+    let dir = tmp("palette-parent");
+    let pack = pack_for(&dir, &nbt, &[]);
+    let out = dir.join("not").join("yet").join("palette.json");
+    let r = Command::new(BIN)
+        .arg("palette")
+        .arg("--textures")
+        .arg(&pack)
+        .arg(&nbt)
+        .arg("-o")
+        .arg(&out)
+        .output()
+        .unwrap();
+    assert_eq!(r.status.code(), Some(0), "{r:?}");
+    assert!(out.is_file(), "palette wrote nothing at {}", out.display());
+}

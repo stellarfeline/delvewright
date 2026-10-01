@@ -70,7 +70,7 @@ docker run -d --name "${CONTAINER}" \
 echo "[spike] waiting for RCON ..."
 READY=0
 for _ in $(seq 1 120); do
-  if [ -n "$(dw_rcon_probe "${CONTAINER}" list)" ]; then READY=1; break; fi
+  if dw_rcon_ready "${CONTAINER}"; then READY=1; break; fi
   sleep 5
 done
 [ "${READY}" = 1 ] || { echo "[spike] server did not become ready in 10m" >&2; docker logs --tail 50 "${CONTAINER}" >&2; exit 1; }

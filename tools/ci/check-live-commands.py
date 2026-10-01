@@ -231,6 +231,43 @@ def check_rule_parity() -> tuple[list[str], int]:
     return lines, bound
 
 
+# A readiness poll waits on the server's own answer. `dw_rcon_probe` folds stderr
+# into its reply, so "the probe printed something" is satisfied by its own error
+# text (`Failed to connect to RCON server`) on the first attempt, always.
+# Two shapes are refused outside the shared rule: a NON-EMPTY test over a probe,
+# and a probe/`.probe` of `list` (the one command a poll asks).
+NONEMPTY_PROBE = re.compile(r'-n\s+"\$\(\s*dw_rcon_probe\b')
+PROBE_OF_LIST = re.compile(r'(?:dw_rcon_probe\s+\S+\s+"?list"?\s*[)|;\s]|\.probe\(\s*["\'`]list["\'`])')
+READY_CALL = re.compile(r"\bdw_rcon_ready\b|\.ready\(\)")
+
+
+def check_readiness(files: list[str]) -> tuple[list[str], int]:
+    """Every readiness poll goes through `dw_rcon_ready` / `.ready()`."""
+    findings: list[str] = []
+    bound = 0
+    for path in files:
+        suffix = Path(path).suffix
+        if path in CHANNELS or suffix not in (".sh", ".mjs", ".js", ".ts", ".bash"):
+            continue
+        if allowed(path):
+            continue
+        text = (ROOT / path).read_text(errors="replace")
+        for n, raw in enumerate(text.splitlines(), 1):
+            line = strip_comment(raw, suffix)
+            if READY_CALL.search(line):
+                bound += 1
+            if NONEMPTY_PROBE.search(line) or PROBE_OF_LIST.search(line):
+                findings.append(
+                    f"{path}:{n}: a readiness poll that reads the probe's bytes, not the server's answer\n"
+                    f"    {raw.strip()}\n"
+                    f"    `dw_rcon_probe` folds stderr into its reply, so its own error text "
+                    f"satisfies a non-empty test on the first attempt. Wait with "
+                    f"`dw_rcon_ready <container>` (shell) or `rconChannel(c).ready()` (node), "
+                    f"which succeed only on the vanilla `list` answer."
+                )
+    return findings, bound
+
+
 def main() -> int:
     files = tracked_files()
     registry = gamerule_registry()
@@ -245,16 +282,18 @@ def main() -> int:
     channel_findings, channel_bound = check_channels(files)
     gamerule_findings, gamerule_bound, exemptions = check_gamerules(files, registry)
     parity_findings, parity_bound = check_rule_parity()
+    ready_findings, ready_bound = check_readiness(files)
 
     print(
         f"check-live-commands: {channel_bound} file(s) invoke rcon-cli; "
         f"{gamerule_bound} `gamerule` line(s) checked against "
         f"{len(registry)} pinned identifiers; "
-        f"{parity_bound} refusal shape(s) compared across the two rule halves"
+        f"{parity_bound} refusal shape(s) compared across the two rule halves; "
+        f"{ready_bound} readiness call site(s) on the shared rule"
     )
     for e in exemptions:
         print(f"check-live-commands: exempt — {e}")
-    if channel_bound == 0 or gamerule_bound == 0 or parity_bound == 0:
+    if channel_bound == 0 or gamerule_bound == 0 or parity_bound == 0 or ready_bound == 0:
         print(
             "check-live-commands: a check that binds to nothing is vacuous — "
             "expected live command sites, gamerule lines and refusal shapes to exist",
@@ -262,7 +301,7 @@ def main() -> int:
         )
         return 1
 
-    findings = channel_findings + gamerule_findings + parity_findings
+    findings = channel_findings + gamerule_findings + parity_findings + ready_findings
     for f in findings:
         print(f"check-live-commands: {f}", file=sys.stderr)
     if findings:

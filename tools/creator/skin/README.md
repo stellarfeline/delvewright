@@ -30,7 +30,7 @@ campaign names the file, and the delve that ships it decides where it lands.
 
 ```shell
 python -m venv .venv && . .venv/bin/activate
-pip install -r requirements.txt         # pinned skinpy-extended==1.0.1 (MIT)
+pip install -r requirements.txt         # pinned skinpy-extended, numpy, Pillow
 
 # compose + preview + catalog card for every entry in a cast sheet
 python -m delve_skin all cast.json \
@@ -128,22 +128,30 @@ about the character and not the only thing keeping a head from reading as a jaw.
 
 ## Determinism (ADR-0006)
 
-Same cast entry → **the same 64×64 image, on any machine**. All randomness flows
-through one seeded `numpy` generator; Python's salted builtin `hash` is never
-used. `tests/fixtures/golden/` pins the composed pixels of every fixture sheet.
+Same cast entry → **the same skin PNG file, byte for byte, on any machine**.
+Compare skins by **file sha256**; that is the comparison this tool promises.
 
-**The image is portable; the PNG file is not**, and that difference is not this
-tool's to close. Pillow hands the scanlines to whatever zlib it is linked
-against, and deflate output differs between zlib builds. Measured with the same
-Pillow 12.3.0 and numpy 2.5.3 on both sides, varying only zlib: macOS (1.2.12)
-and Linux (1.3.1) compose **identical pixels** and write **different files** at
-`compress_level` 1, 6 and 9 alike. Only `compress_level=0` agreed — 16516 bytes
-against 1902, so a portable serialisation exists at 8.7× the file size.
+- **Pixels.** All randomness flows through one seeded `numpy` generator; Python's
+  salted builtin `hash` is never used. numpy is pinned beside skinpy-extended,
+  because NEP 19 does not hold a `Generator` method's stream stable across
+  numpy versions.
+- **File.** `delve_skin/png.py` writes the PNG itself: IHDR, one IDAT, IEND, no
+  ancillary chunk, filter 0 on every row, and a zlib stream of **stored**
+  deflate blocks. Every byte is fixed by the PNG specification and RFCs
+  1950/1951 given the pixels; no compressor is called, so the machine's zlib
+  never reaches the file. A 64×64 skin is 16516 bytes.
+- **Why not Pillow's encoder.** Pillow's manylinux wheels link the system
+  `libz.so.1`, and its macOS and Windows wheels carry zlib-ng: the same Pillow
+  12.3.0 writes one picture as different files on macOS and on Linux, so pinning
+  Pillow cannot make the file portable.
 
-This does not move a delve's bytes: the compiler bakes the PNG a creator
-**committed**, and never recomposes it. It does mean two machines regenerating
-one cast sheet produce one picture in two files, so compare **pixels**, not a
-file hash.
+`tests/fixtures/golden/` holds the composed file of every fixture entry, and the
+suite compares it as bytes (and as pixels, so a red says which moved). The
+compiler bakes the committed PNG into the resource pack as it is, so the
+committed bytes are the shipped bytes.
+
+**Previews are review images, not artifacts**: they are written by Pillow and
+their bytes are stable on one machine only. Nothing commits or ships them.
 
 ## Why not headless skinview3d for previews?
 

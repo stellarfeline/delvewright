@@ -440,3 +440,13 @@ claude_code_version = "2.1.265"
 # provenance record — the fourth statement of one value, and the one that would
 # have gone on claiming the old version in shipped metadata.
 skinpy_extended = "1.0.1"
+# skinpy-extended's two runtime dependencies that the committed PNG's bytes
+# depend on, pinned beside it. numpy: the composer's texture is drawn from
+# numpy's seeded Generator, whose method streams NEP 19 does not hold stable
+# across versions, so numpy decides pixels; 2.4.6 is the newest line installable
+# on the creator skill's Python floor (3.11). Pillow: carries the composed image
+# (skinpy's `to_image`) and renders previews; it does NOT encode the committed
+# PNG, which `tools/creator/skin/delve_skin/png.py` writes without a compressor.
+# Consumed by: tools/creator/skin/requirements.txt, tools/creator/skin/pyproject.toml.
+numpy = "2.4.6"
+pillow = "12.3.0"

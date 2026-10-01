@@ -62,10 +62,10 @@ docker run -d --name "${CONTAINER}" \
   "${IMAGE}" >/dev/null
 
 echo "[spike] waiting for RCON ..."
-# Liveness poll: the unjudged channel on purpose (tools/lib/rcon.sh) — a refusal
-# here is "not up yet", which is the one time a rejection is the expected answer.
+# Readiness is the server's own `list` answer (tools/lib/rcon.sh), never "the
+# probe printed something": its error text is output too.
 for _ in $(seq 1 120); do
-  if [ -n "$(dw_rcon_probe "${CONTAINER}" list)" ]; then
+  if dw_rcon_ready "${CONTAINER}"; then
     READY=1
     break
   fi

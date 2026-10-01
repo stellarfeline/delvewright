@@ -1180,6 +1180,22 @@ export interface LethalTrial {
   readonly gateUnread: { stake: string; why: string }[];
   /** A step that could not be attempted at all, with the reason. */
   abandoned: string | undefined;
+  /**
+   * **Why the walk TO the volume ended the trial before the volume was judged** —
+   * a death on the way, or a wave met on the way that could not be staged away.
+   *
+   * Its own field because it is its own finding: a death on the approach is a
+   * verdict on the walk, and reported as a death "outside the volume's reach" it
+   * read as a sentence about the volume.
+   */
+  approachFailure: string | undefined;
+  /**
+   * **Why the walk BACK to the stake ended before it arrived because of what it
+   * met** — a death on the way, or a re-seated wave that could not be staged away.
+   * Not a verdict on where the stake was placed, which is what a walk back that
+   * simply could not be made is.
+   */
+  walkBackFailure: string | undefined;
 }
 
 /** A fresh trial record for a walk into `volume`. */
@@ -1206,6 +1222,8 @@ export function openLethalTrial(
     markerRetired: false,
     gateUnread: [],
     abandoned: undefined,
+    approachFailure: undefined,
+    walkBackFailure: undefined,
   };
 }
 
@@ -1296,6 +1314,13 @@ export function lethalTrialFailures(t: LethalTrial, markerTolerance = 0.75): str
       `${t.volume}: whether this death forfeits \`${g.stake}\` could not be established — ${g.why}. ` +
         `Nothing may be asserted about a forfeit whose own promise was never read`,
     );
+  }
+  if (t.approachFailure !== undefined) {
+    out.push(
+      `${t.volume}: the APPROACH to the volume failed, so the volume was never judged — ` +
+        `${t.approachFailure}. This is a verdict on the walk to the volume, never on the volume`,
+    );
+    return out;
   }
   if (t.abandoned !== undefined) {
     out.push(`${t.volume}: the death loop could not be exercised — ${t.abandoned}`);
@@ -1420,6 +1445,14 @@ export function lethalTrialFailures(t: LethalTrial, markerTolerance = 0.75): str
         `${anchor} — the anchor the compile-time placement table proved reachable and safe. ` +
         `Every proof about where a stake may stand is about that cell, not this one`,
     );
+  }
+  if (!t.walkedBack && t.walkBackFailure !== undefined) {
+    out.push(
+      `${t.volume}: the WALK BACK to the stake at ${anchor} failed on what it met, so the ` +
+        `collection was never judged — ${t.walkBackFailure}. This is a verdict on the walk ` +
+        `back, never on where the stake was placed`,
+    );
+    return out;
   }
   if (!t.walkedBack) {
     out.push(

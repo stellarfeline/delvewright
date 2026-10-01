@@ -924,8 +924,8 @@ fn surmount_advisory(
          Prescription: build the line out of ONE material so the model's barrier and the player's \
          eye agree, and let the route use the opening. If instead this body really is meant to go \
          over walls — a spider-sheep, a thing that climbs in your fiction whatever its entity id \
-         says — DECLARE it: `\"traversal\": {{\"locomotion\": \"climber\"}}` on the body \
-         (dsl_version 0.11.0). That is not a way to switch this line off: the build then requires \
+         says — DECLARE it: `\"traversal\": {{\"locomotion\": \"climber\"}}` on the body. \
+         That is not a way to switch this line off: the build then requires \
          the route to really make the move, and refuses a declaration that buys nothing \
          ({DW_TRAVERSAL_DECLARATION_INERT})."
     );

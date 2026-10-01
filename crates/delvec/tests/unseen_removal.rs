@@ -283,7 +283,7 @@ fn a_despawn_written_as_a_kill_still_dies_on_screen() {
 
 /// `campaign("vanish")` with a fight whose PackTests need a removal's death in the
 /// tick it happens: the unleashed elite, billed, carrying a declared drop (so
-/// `souls_reseat_yields_nothing` meets it) and an `on_kill` (so
+/// `souls_unleash_yields_nothing` and `souls_reseat_yields_nothing` meet it) and an `on_kill` (so
 /// `kill_pays_removed_<f>` removes it every way the compiler can).
 fn campaign_with_fights() -> Campaign {
     let mut c = campaign("vanish");
@@ -365,6 +365,7 @@ fn no_template_runs_the_sweep() {
     );
     for t in [
         "souls_reseat_yields_nothing",
+        "souls_unleash_yields_nothing",
         "kill_pays_removed_a_barrow_warden",
     ] {
         assert!(

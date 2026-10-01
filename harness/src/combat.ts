@@ -290,6 +290,28 @@ export function dueRunBacks(
 }
 
 /**
+ * **The waves the delve has put back since this run cleared them**, in the plan's
+ * own order: a `respawns_on_rest` encounter this run cleared in an earlier
+ * seating than the one in force (`clearedEpoch` maps a wave to the seating it was
+ * last cleared in; `seatEpoch` is the seating now).
+ *
+ * What a walk the compiler never measured — the death loop's approach — meets
+ * standing. A wave this run never cleared is not in it: nothing this run did
+ * says it stands, and a body of one that comes to the bot is still met by the
+ * damage handlers. A wave that does not re-seat stays down once cleared.
+ */
+export function reseatedWaves(
+  encounters: readonly Encounter[],
+  clearedEpoch: ReadonlyMap<string, number>,
+  seatEpoch: number,
+): Encounter[] {
+  return encounters.filter((e) => {
+    const cleared = clearedEpoch.get(e.wave);
+    return e.respawnsOnRest && cleared !== undefined && cleared !== seatEpoch;
+  });
+}
+
+/**
  * A death-respawn at a bonfire fires that fire's rest hooks (spec-0016 §1), so
  * it re-seats every `respawns_on_rest` wave exactly as a rest does. The party
  * returns to the fire it last rested at — the latest entry of `restedAt` — so

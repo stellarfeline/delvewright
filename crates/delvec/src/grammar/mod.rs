@@ -94,9 +94,9 @@
 //!
 //! The craft-rule diagnostics of spec-0027 §4, jigsaw connector emission, and
 //! the JSON *schema* stage that will sit in front of [`ir::Program`] (which
-//! already serialises) are later phases of the same spec. Nothing here is
-//! reachable from `delvec`, and nothing here ships in a delve — it is
-//! generation-time tooling (ADR-0003).
+//! already serialises) are later phases of the same spec. Nothing here ships
+//! in a delve — it is generation-time tooling, run through `delvec grammar`
+//! (ADR-0003).
 
 #![deny(missing_docs)]
 
