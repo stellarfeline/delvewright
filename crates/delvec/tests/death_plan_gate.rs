@@ -196,3 +196,105 @@ fn a_nested_drop_inherits_the_gate_of_every_effect_that_encloses_it() {
     assert_eq!(terms[0]["objective"], "dw.s_embers");
     assert_eq!(terms[0]["min"], 3);
 }
+
+/// Every `drop-stake` shape the gallery uses, at once: a forbidden flag beside a
+/// numeric ceiling, a lone forbidden flag, a two-term numeric gate, and one stake
+/// dropped by more than one effect (a disjunction).
+const EVERY_SHAPE: &str = r#"[
+  { "type": "drop-stake", "stake": "stake/embers",
+    "when": { "forbids_flags": [ "flag/hall-sealed" ],
+              "requires_state": [ { "state": "state/embers", "op": "at-most", "value": 9 } ] } },
+  { "type": "drop-stake", "stake": "stake/embers",
+    "when": { "requires_state": [ { "state": "state/embers", "op": "not-equals", "value": 4 },
+                                  { "state": "state/embers", "op": "at-least", "value": 2 } ] } },
+  { "type": "drop-stake", "stake": "stake/embers",
+    "when": { "forbids_flags": [ "flag/hall-sealed" ] } }
+]"#;
+
+/// One plan term as the `execute` sub-clause the bot puts to the server — the
+/// harness's `termClause`, written from the plan's fields alone.
+fn term_clause(t: &serde_json::Value) -> String {
+    let range = match (t["min"].as_i64(), t["max"].as_i64()) {
+        (Some(a), Some(b)) if a == b => format!("{a}"),
+        (Some(a), Some(b)) => format!("{a}..{b}"),
+        (Some(a), None) => format!("{a}.."),
+        (None, Some(b)) => format!("..{b}"),
+        (None, None) => String::new(),
+    };
+    let kw = if t["negate"].as_bool().unwrap() {
+        "unless"
+    } else {
+        "if"
+    };
+    format!(
+        "{kw} score {} {} matches {range}",
+        t["holder"].as_str().unwrap(),
+        t["objective"].as_str().unwrap(),
+    )
+}
+
+/// **The whole guard, both ways, for every alternative.** The guards the emitted
+/// `on_death_fire` puts on each `stk_drop_<stake>` line are exactly the plan's
+/// alternatives for that stake, each rendered term by term in order — nothing the
+/// plan states is missing from the emission, and nothing the emission guards on
+/// is missing from the plan. A `contains` over one term would pass a plan that
+/// dropped a second term, and that plan is the one that makes the death loop
+/// assert a forfeit under a gate the datapack holds shut.
+#[test]
+fn every_emitted_drop_guard_is_exactly_one_of_the_plan_s_alternatives() {
+    let loaded = load();
+    let out = build(&loaded, &campaign(&loaded, EVERY_SHAPE));
+    let fire = text(
+        &out,
+        &format!("datapack/data/{NS}/function/on_death_fire.mcfunction"),
+    );
+    let plan = death_plan(&out);
+    let drops = plan["on_death"]["drops_stake"].as_array().unwrap();
+    assert_eq!(drops.len(), 1, "one stake, dropped three ways: {drops:?}");
+    let mut bound = 0usize;
+    for d in drops {
+        let stake = d["stake"].as_str().unwrap();
+        let call = format!(
+            "function {NS}:stk_drop_{}",
+            stake.rsplit('/').next().unwrap().replace('-', "_")
+        );
+        let tail = format!(" run {call}");
+        let mut emitted: Vec<String> = fire
+            .lines()
+            .filter_map(|l| {
+                if l == call {
+                    Some(String::new())
+                } else {
+                    l.strip_suffix(tail.as_str())
+                        .and_then(|g| g.strip_prefix("execute "))
+                        .map(str::to_string)
+                }
+            })
+            .collect();
+        let mut planned: Vec<String> = d["gates"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|g| {
+                g["terms"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(term_clause)
+                    .collect::<Vec<_>>()
+                    .join(" ")
+            })
+            .collect();
+        emitted.sort();
+        planned.sort();
+        assert_eq!(
+            planned, emitted,
+            "{stake}: the plan's gates and the emitted guards disagree\n{fire}"
+        );
+        bound += emitted.len();
+    }
+    assert_eq!(
+        bound, 3,
+        "every one of the three drop effects is bound: {fire}"
+    );
+}

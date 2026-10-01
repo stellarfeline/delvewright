@@ -92,9 +92,9 @@ import {
   lethalStepCost,
   markersAt,
   nearLip,
-  expectedForfeit,
   openLethalTrial,
   openWager,
+  promisedForfeit,
   seatAtRespawn,
   stagedBalance,
   stakesDropped,
@@ -2855,8 +2855,8 @@ export class MineflayerExecutor implements StepExecutor {
   }
 
   /**
-   * **Which stakes this death actually promises to forfeit**, read from the
-   * campaign's own `on_death` gates against the state in force.
+   * **What this death promises each stake it names**, read from the campaign's
+   * own `on_death` gates against the state in force.
    *
    * A `drop-stake` carries a `when` like every other effect, so the promise is
    * conditional and the bot has to read the condition before it can assert the
@@ -2864,16 +2864,17 @@ export class MineflayerExecutor implements StepExecutor {
    * last moment before the death that a client can observe.
    *
    * Three outcomes, and each is written into the trial rather than folded away: a
-   * gate that is open yields a wager, one the campaign has shut is `withheld`
-   * with the term that shut it, and one that could not be read is `gateUnread`
-   * and is a FAILURE — nothing was established about what this death promised, so
+   * gate that is open yields a wager the death FORFEITS, one the campaign has
+   * shut yields a wager the death KEEPS (with the term that shut it) — both are
+   * asserted against the ledger — and one that could not be read is `gateUnread`
+   * and is a FAILURE: nothing was established about what this death promised, so
    * nothing may be asserted about what it took.
    */
-  private async wageredStakes(
+  private async wagerStakes(
     plan: DeathPlan,
     trial: LethalTrial,
     candidates: readonly StakeRule[],
-  ): Promise<StakeRule[]> {
+  ): Promise<void> {
     const answers = new Map<string, boolean | undefined>();
     for (const stake of candidates) {
       for (const gate of dropOf(plan, stake.id)?.gates ?? []) {
@@ -2884,16 +2885,14 @@ export class MineflayerExecutor implements StepExecutor {
       }
     }
     const read = (t: GateTerm): boolean | undefined => answers.get(termKey(t));
-    const open: StakeRule[] = [];
     for (const stake of candidates) {
       const drop = dropOf(plan, stake.id);
       if (drop === undefined) continue;
       const verdict = gateVerdict(drop, read);
-      if (verdict.kind === "open") open.push(stake);
-      else if (verdict.kind === "shut") trial.withheld.push({ stake: stake.id, why: verdict.why });
+      if (verdict.kind === "open") trial.wagers.push(openWager(stake));
+      else if (verdict.kind === "shut") trial.wagers.push(openWager(stake, verdict.why));
       else trial.gateUnread.push({ stake: stake.id, why: verdict.why });
     }
-    return open;
   }
 
   /** The bot's own value in a tracked ledger, or `undefined` if it has none. */
@@ -2998,15 +2997,14 @@ export class MineflayerExecutor implements StepExecutor {
     }
     const trial = openLethalTrial(volume, entryCell, []);
     this.lethalTrials.push(trial);
-    // The wagers this death PROMISES, not the stakes the bundle names: each
-    // `drop-stake` carries its own `when`, and a forfeit asserted under a shut
-    // gate is an assertion the campaign never made.
-    for (const stake of await this.wageredStakes(plan, trial, candidates)) {
-      trial.wagers.push(openWager(stake));
-    }
-    for (const w of trial.withheld) {
+    // What this death PROMISES each stake: each `drop-stake` carries its own
+    // `when`, so a stake under an open gate is forfeited and one under a shut gate
+    // is kept — and both are asserted.
+    await this.wagerStakes(plan, trial, candidates);
+    for (const w of trial.wagers.filter((x) => !x.forfeits)) {
       process.stderr.write(
-        `[death-loop] ${volume.id}: \`${w.stake}\` is not wagered by this death — ${w.why}\n`,
+        `[death-loop] ${volume.id}: \`${w.stake}\` is KEPT by this death — ${w.keptBecause}; ` +
+          `its ledger is asserted unchanged across the death\n`,
       );
     }
     for (const g of trial.gateUnread) {
@@ -3026,7 +3024,7 @@ export class MineflayerExecutor implements StepExecutor {
         `${
           trial.wagers.length > 0
             ? `; expecting ${trial.wagers.length} wager(s): ${trial.wagers
-                .map((w) => `${w.stake} on ${w.objective}`)
+                .map((w) => `${w.stake} on ${w.objective} (${w.forfeits ? "forfeit" : "kept"})`)
                 .join(", ")}`
             : ""
         }\n`,
@@ -3184,7 +3182,7 @@ export class MineflayerExecutor implements StepExecutor {
 
     if (trial.wagers.length === 0) return;
 
-    // --- the forfeit, for every datum ---------------------------------------
+    // --- the forfeit, for every datum — and the keep, for every kept one -----
     for (const w of trial.wagers) {
       if (w.balanceBefore !== undefined) {
         w.balanceAfterDeath = await this.settledScore(
@@ -3193,6 +3191,9 @@ export class MineflayerExecutor implements StepExecutor {
         );
       }
     }
+    // A death that keeps every datum leaves no stake anywhere: nothing to walk
+    // back to, and nothing to collect.
+    if (!trial.wagers.some((w) => w.forfeits)) return;
 
     // --- the walk back, and the stake at the end of it ----------------------
     const anchor = trial.expectedAnchor;
@@ -3314,8 +3315,8 @@ export class MineflayerExecutor implements StepExecutor {
           kind: "player",
           why:
             `stake datum staged for ${trial.volume}: \`${w.objective}\` (\`${w.stake}\`) set to ` +
-            `${want}, so the declared forfeit (${w.forfeit.kind}) takes ` +
-            `${expectedForfeit(w.forfeit, want)}`,
+            `${want}, so the ${w.forfeits ? `declared forfeit (${w.forfeit.kind})` : "death, whose gate keeps it,"} ` +
+            `takes ${promisedForfeit(w, want)}`,
           performed: refusal === undefined,
           detail: refusal,
         });
@@ -3324,7 +3325,7 @@ export class MineflayerExecutor implements StepExecutor {
         w.balanceBefore = this.myScore(w.objective);
       }
       if (w.balanceBefore !== undefined) {
-        w.expectedForfeit = expectedForfeit(w.forfeit, w.balanceBefore);
+        w.expectedForfeit = promisedForfeit(w, w.balanceBefore);
       }
       process.stderr.write(
         `[death-loop] ${trial.volume}: \`${w.objective}\` holds ${w.balanceBefore ?? "?"} ` +
