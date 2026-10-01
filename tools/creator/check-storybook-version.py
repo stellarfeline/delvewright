@@ -126,7 +126,7 @@ The exemption was a fact about this repo being enforced against everyone else's.
 
 So the allowlist binds to ONE tree: `DEFAULT_CAMPAIGNS_ROOT`, the content
 sources this engine checkout names. When `--campaigns` resolves to that tree
-(CI, and any dev run over the content symlink) the allowlist exempts and the
+(a dev run over the content symlink) the allowlist exempts and the
 staleness audit runs, exactly as before. When it resolves anywhere else the
 allowlist is OUT OF SCOPE: nothing is exempted, nothing is audited, every entry
 is printed saying so and where it *is* judged. The discriminator is path
@@ -139,11 +139,10 @@ root:
     python3 tools/creator/check-storybook-version.py [--campaigns <dir>]
 
 `--campaigns` defaults to `campaigns/campaigns` — the content-repo sources, as
-they resolve through the local `campaigns` symlink and through CI's
-`.github/actions/checkout-content`. The content repo's own campaign CI can run
-this same script against a pinned engine checkout, exactly as
-`.github/workflows/prefab-audit.yml` there already builds `delvec prefab` from
-one; the only engine state read here is the root `Cargo.toml`'s
+they resolve through the local `campaigns` symlink. The engine's CI does not run
+this over content campaigns: a campaign is judged at its own release, where the
+content repo's release workflow runs this script from the engine checkout the
+campaign pins, scoped to that one campaign. The only engine state read here is the root `Cargo.toml`'s
 `[workspace.package] version` (== `DELVEC_VERSION`) and `versions.toml` `[minecraft]
 version`, both of them from the engine checkout the script is run out of.
 

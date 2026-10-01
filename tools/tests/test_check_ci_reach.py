@@ -98,7 +98,7 @@ def test_a_compiler_source_change_reaches_everything_that_builds_the_crates():
     table = ci_reach.load_table()
     got = on(ci_reach.decide(table, "pull_request", ["crates/delvec/src/main.rs"]))
     assert {"rust", "publishable", "engine-shelf", "mecha-crosscheck", "zone-audit", "tool-tests", "gallery", "tier2-validation"} <= got
-    assert got.isdisjoint({"harness", "skin-tool", "storybook-version", "prefab-generators"})
+    assert got.isdisjoint({"harness", "skin-tool", "prefab-generators"})
 
 
 WHOLE_TREE_READERS = {"manifest", "dsl-crate-version", "tool-tests-tree", "docs", "line-endings"}

@@ -245,7 +245,7 @@ aarch64-unknown-linux-gnu = "ubuntu-22.04-arm"
 #     ladder checks the content repo out at this exact `sha` and passes
 #     `--prefabs <checkout>/prefabs`.
 #   - validation/check-versions.sh: asserts `repo`/`sha` shape here.
-#   - every Rust test that judges the content (crates/delvec/tests/common/pinned.rs):
+#   - every Rust test that judges the prefab library (crates/delvec/tests/common/pinned.rs):
 #     reads this commit out of the content repository's object store, never a
 #     working tree, on every machine.
 #
@@ -254,17 +254,14 @@ aarch64-unknown-linux-gnu = "ubuntu-22.04-arm"
 # authoring does not depend on this pin — tests and CI builds do.
 #
 # RE-PIN CONVENTION: after a content-repo PR merges, update `sha` to the new
-# content `main` tip in a normal follow-up PR — and restate the ZONE INVENTORY at
-# the new pin in `.github/content-zone-corpus.json`, which names the campaigns the
-# pin carries and how many zone programs each declares. Every number there is
-# checked against the content checkout, so a campaign that lost its zone programs
-# reds on a count instead of sweeping as a silent zero. Moving this `sha` without
-# it is a tier-1 red (validation/check-versions.sh).
+# content `main` tip in a normal follow-up PR. The engine judges the prefab
+# library at the pin and nothing else in the checkout: a campaign is judged at
+# its own release, by the engine revision it pins.
 repo = "stellarfeline/delvewright-campaigns"
 # Content `main` tip carrying the two campaigns released since the previous pin,
 # `doune-castle-tour` and `vesperhold`, and the library pieces they are built
-# on, so every test and CI job that judges "the pinned content" judges the
-# library and corpus the creator is actually handed.
+# on, so every test and CI job that judges the pinned library judges the one
+# the creator is actually handed.
 #
 # What moves under `prefabs/`, counted from `git ls-tree` at both pins and
 # cross-checked against `delvec prefab seating`'s own binding line at this one:
@@ -283,20 +280,12 @@ repo = "stellarfeline/delvewright-campaigns"
 # `seating-limits.toml`, `README.md` and `LICENSE-ASSETS.md` are the content
 # repository's own records, not inputs `--prefabs` hands the compiler.
 #
-# Under `campaigns/`, `hollow-vigil` and `nobodys-cave-island` are unchanged
-# (`git diff --name-only` over both is empty). The two new campaigns each keep
-# the grammar program of their one piece under `design/programs/` with no
-# `zones.json`; the inventory restated in `.github/content-zone-corpus.json`
-# names what each directory holds.
+# The rest of the interval — the two campaigns under `campaigns/`, and the
+# content repository's own CI, skill and pin tooling — is nothing this repo
+# reads.
 #
-# The rest of the interval is the content repository's own CI, skill and
-# pin tooling, upstream of everything this repo reads.
-#
-# WHAT CARRIES EACH CLAIM. `validation/check-versions.sh` holds this `sha` equal
-# to `content_sha` in `.github/content-zone-corpus.json`, and
-# `tools/ci/check-pins.py` holds it equal to the `content-repo` entry in
-# `.github/pins.toml`. `crates/delvec/tests/grammar_campaign_zones.rs` checks
-# the restated inventory against the checkout and prints what it bound.
+# WHAT CARRIES EACH CLAIM. `tools/ci/check-pins.py` holds this `sha` equal to
+# the `content-repo` entry in `.github/pins.toml`.
 # `crates/delvec/tests/registry_load.rs` reads every document at the pin and
 # DERIVES how many declare `waterline_y`, so that count is never retyped here.
 # `DW0735` says a state that omits a shape-carrying property drops the geometry

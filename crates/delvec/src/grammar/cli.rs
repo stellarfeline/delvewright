@@ -1173,11 +1173,10 @@ fn run_audit(
             "corpus: campaign {campaign_count} program(s) over {} root(s){}",
             campaign_roots.len(),
             if campaign_count == 0 {
-                " — FINDING: zero binding, no campaign zone program was examined. Which \
-                 campaigns a checkout is expected to carry, and how many zone programs each \
-                 declares, is enumerated per pin in the pipeline repo's \
-                 .github/content-zone-corpus.json and checked against the tree there; this \
-                 command judges programs, not whether the right ones are present"
+                " — FINDING: zero binding, no campaign zone program was examined. This \
+                 command judges the programs it finds, not whether the right ones are \
+                 present: a campaign whose programs are absent from its own \
+                 `design/programs/` reads here as this zero"
             } else {
                 ""
             }

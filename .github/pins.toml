@@ -176,9 +176,8 @@ The content commit every reproducible build resolves the prefab library and
 campaign sources from (versions.toml [content], spec-0007). Nothing is BUILT out
 of this checkout — the engine is built from this tree and the content arrives as
 data — so no source directory is watched and drift is reported rather than red.
-The re-pin convention and the zone-inventory restatement that goes with it are
-enforced separately by validation/check-versions.sh and
-.github/content-zone-corpus.json.
+The engine reads the prefab library from this checkout and judges nothing else
+in it: a campaign is judged at its own release, by the engine it pins.
 """
 
 [[pin]]

@@ -12,11 +12,10 @@
     "engine, and it names that capability in words a later session can act on. A defect a",
     "session could fix today is fixed today; it does not become a record.",
     "",
-    "Ids are audit labels, so both corpora are recordable here: `library/<program>` for the",
-    "rule library this repo owns, `<campaign>/<zone>` for a campaign's zone programs.",
+    "Ids are audit labels, `library/<program>`: the engine's CI audits only the rule library this",
+    "repo owns. A campaign's zone programs are judged at that campaign's release, by its pinned engine.",
     "",
-    "Every campaign zone program of every campaign expands and judges green. The rule",
-    "library holds one recorded red."
+    "The rule library holds one recorded red."
   ],
   "exclusion": [
     {

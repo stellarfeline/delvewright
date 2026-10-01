@@ -206,7 +206,7 @@ this needs are subcommands of the one binary Init I3 installed.
    `zones.json` there with the region, seed and gate claims it is built at
    (`traversable`, `allow_falls`, `reachable_floor`, `symmetric`).
    `delvec --prefabs "$DELVEWRIGHT_PREFABS" grammar audit --campaign-root .` judges every zone a
-   campaign declares, and the engine's CI runs it over the pinned content — a program that
+   campaign declares — run it before release, because nothing else will; a program that
    directory carries and the manifest does not name is a red.
 
    **One design the gate cannot be told about: a one-way descent.** A level a body
