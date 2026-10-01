@@ -166,7 +166,7 @@ Drafts come from the CPU renderers (`delvec snapshot`, `delvec viewer`, `delvec 
 
 ## 6 · Release — GitHub Actions and GHCR
 
-A campaign lives in the [content repository](https://github.com/stellarfeline/delvewright-campaigns), never in this one ([ADR-0007](adr/0007-monorepo-licensing.md)). It merges there once a human has played it, and a tag releases it. The release job runs the whole ladder again, on the engine revision the content repository pins, and publishes nothing unless every rung is green.
+A campaign lives in the [content repository](https://github.com/stellarfeline/delvewright-campaigns), never in this one ([ADR-0007](adr/0007-monorepo-licensing.md)). It merges there once a human has played it, and a tag releases it. The release job builds it again and runs PackTest and the bot again, on the engine revision the content repository pins, and publishes nothing unless every rung is green.
 
 ```mermaid
 flowchart TD

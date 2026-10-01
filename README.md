@@ -37,6 +37,8 @@ flowchart TD
     L --> I(["a delve image<br/>one docker run, and friends join"])
 ```
 
+The whole line, box by box, with every tool it runs: [how it works, end to end](docs/how-it-works.md).
+
 The agent writes documents, never commands: every line of the datapack comes from the compiler, and nobody edits its output. The documents are the artifact of record — the same documents and the same seed rebuild the same bytes. [What each check printed for the castle above](#why-you-can-trust-it).
 
 ## Why you can trust it
