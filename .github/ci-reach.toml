@@ -44,10 +44,29 @@ inputs = [
   { glob = "Cargo.toml", why = "the root workspace manifest and `[workspace.package]` version" },
   { glob = "**/Cargo.toml", why = "`tools/ci/fmt-workspaces.sh --check` derives every workspace from `git ls-files`" },
   { glob = "**/*.rs", why = "`tools/ci/fmt-workspaces.sh --check` formats every workspace's sources" },
-  { glob = "prefabs/**", why = "the prefab workspace is swept by `fmt-workspaces.sh`; `tools/lib/publishable.py` cross-checks the excluded nested workspace" },
+  { glob = "prefabs/**", why = "the prefab workspace, which `fmt-workspaces.sh` formats as one of the tree's workspaces" },
   { glob = "gallery/**", why = "crate tests read the gallery (`detail.rs`, `remedy_reachability.rs`, `site_plan_edit_script.rs`, `prefab_*` tests)" },
-  { glob = "tools/**", why = "the scripts this job runs (`fmt-workspaces.sh`, `check-json-canonical.py`, `check-publishable.sh`, `check-crates-io-readmes.py`, `determinism-subject.sh`, `tree-digest.py`, `tools/lib/*`) and files crate tests read (`tools/creator/refscore.py`, `tools/tests/fixtures/i18n-sidecar`, `tools/spike-block-settling/observations.json`)" },
-  { glob = "**/*.json", why = "`tools/ci/check-json-canonical.py` judges every tracked JSON document" },
+  { glob = "tools/ci/fmt-workspaces.sh", why = "the formatting sweep this job runs" },
+  { glob = "tools/ci/check-json-canonical.py", why = "the JSON sweep this job runs" },
+  { glob = "tools/ci/determinism-subject.sh", why = "the Linux digest step runs it" },
+  { glob = "tools/ci/tree-digest.py", why = "`determinism-subject.sh` runs it to write the digest" },
+  { glob = "tools/creator/refscore.py", why = "`crates/delvec/tests/view_sheet.rs` runs it" },
+  { glob = "tools/creator/i18n-translate.py", why = "`crates/delvec/tests/i18n_sidecar.rs` runs the fixture driver, which loads this tool's writer" },
+  { glob = "tools/tests/fixtures/i18n-sidecar/**", why = "`crates/delvec/tests/i18n_sidecar.rs` runs `write_sidecar.py`" },
+  { glob = "tools/spike-block-settling/**", why = "`crates/delvec/tests/schem_stair_shape_measured.rs` reads `observations.json`" },
+  { glob = "tools/maintenance/probe-drowned-engagement.py", why = "`crates/delvec/src/compiler/engage.rs`'s `the_probe_measures_this_table` reads it" },
+  { glob = "docs/reference/compiler.md", why = "`crates/delvec/tests/hand_camera.rs` reads the walk-record field paragraph" },
+  { glob = "**/*.json", why = "`tools/ci/check-json-canonical.py` judges every tracked JSON document, and `crates/delvec/tests/fmt.rs` formats every one `git ls-files '*.json'` lists" },
+]
+
+[[group]]
+name = "publishable"
+inputs = [
+  { glob = "crates/**", why = "`check-publishable.sh` packages `crates/dsl` and `crates/delvec` and builds the packaged tarball standing alone; `check-crates-io-readmes.py` reads each published crate's README" },
+  { glob = "**/Cargo.toml", why = "the root manifest's `[workspace.package]` and members, the crate manifests `cargo package` rewrites, and the nested-workspace manifests `tools/lib/publishable.py` globs" },
+  { glob = "tools/ci/check-publishable.sh", why = "the packaging gate this job runs" },
+  { glob = "tools/ci/check-crates-io-readmes.py", why = "the front-page gate this job runs" },
+  { glob = "tools/lib/**", why = "`checksum.sh` and `package-verify.sh`, which `check-publishable.sh` sources, and `publishable.py`, which the README gate imports" },
 ]
 
 [[group]]
@@ -83,9 +102,23 @@ inputs = [
 ]
 
 [[group]]
-name = "i18n-tool"
+name = "tool-tests-tree"
 inputs = [
-  { glob = "**", why = "`pytest tools/tests` reads the live tree: every tracked `*.md` (`test_mdtable.py`), every tracked JSON (`test_check_json_canonical.py`), every shell and workflow file (`test_check_shell_bash32.py`), the plugin and the engine at its pin (`test_check_skill_page.py`), crate data, prefabs and the gallery" },
+  { glob = "**", why = "the files `tools/tests/conftest.py` lists in `WHOLE_TREE` read the whole tracked tree: `git ls-files` sweeps (`test_check_ci_reach.py`, `test_check_eol_attributes.py`, `test_check_release_publish_gate.py`, `test_server_heap.py`, `test_version_sites.py`, `test_check_pins.py`, `test_check_shell_bash32.py`, the shell-newline and redirect sweeps), every tracked `*.md` (`test_mdtable.py`, `test_check_doc_dupes.py`), every tracked JSON (`test_check_json_canonical.py`), the plugin under `.claude/` and every engine path the page names (`test_check_skill_page.py`, `test_check_toolchain.py`, `test_fetch_delvec.py`, `test_release_tags.py`), and documents outside the compiler reference (`test_check_stated_counts.py`, `test_check_demo_levels.py`, `test_check_numbered_doc_index.py`)" },
+]
+
+[[group]]
+name = "tool-tests"
+inputs = [
+  { glob = "tools/**", why = "every file this job runs tests a tool under `tools/`, with its fixtures under `tools/tests/`" },
+  { glob = "crates/**", why = "`test_check_dw_codes.py` and `test_check_source_dupes.py` scan the crate sources; `test_staging_gate.py`'s `Engine` reads every DW declaration and test; `test_block_appearance.py` reads crate data; the publish-gate tests copy the crate manifests the version-site rows name" },
+  { glob = "Cargo.toml", why = "the publish-gate tests copy the root manifest into their scratch tree" },
+  { glob = "prefabs/**", why = "`test_check_generator_preservation.py`; `test_check_source_dupes.py`; `test_staging_gate.py` reads generator invariants as carriers" },
+  { glob = "gallery/**", why = "the gallery tests (`test_gallery_coverage.py`, `test_gallery_domain.py`, `test_gallery_not_shippable.py`, `test_check_gallery_stageable.py`) read the gallery campaign" },
+  { glob = "harness/**", why = "`test_check_source_dupes.py` scans the harness; `test_staging_gate.py` reads harness carriers" },
+  { glob = "validation/**", why = "`test_reclaim_ladder_images.py`, `test_render_shots_*.py`, `test_delvec_bin_sh.py`, `test_mutex_lock_dir_default.py` and `test_staging_gate.py` run or read scripts under `validation/`" },
+  { glob = "docs/reference/compiler.md", why = "`test_check_dw_codes.py` and `test_staging_gate.py` read the DW catalogue; the publish-gate tests copy it as a version site" },
+  { glob = "docs/playtest-findings.json", why = "`test_staging_gate.py` reads the live findings ledger" },
 ]
 
 [[group]]
@@ -115,16 +148,30 @@ inputs = [
   { glob = "Cargo.toml", why = "the compiler's release version, read from `[workspace.package]`" },
 ]
 
+# `check-pins.py --online` and `check-skill-page.py --online` also run their
+# offline rules, which read the whole tree (a fetch verb in any tracked file, any
+# engine path the page names). Those rules are `manifest`'s steps, run there on
+# `**` by the same scripts without `--online`; this group lists what the online
+# half reads.
 [[group]]
-name = "content-pin"
+name = "pin-drift"
 inputs = [
-  { glob = "crates/**", why = "`delvec grammar audit` builds and runs the engine; the pin's `judged_by` includes `crates/delvec/Cargo.toml`" },
+  { glob = ".claude/**", why = "`check-skill-page.py --online` reads the pin and asks the release binary about every name the plugin's shipped files give it (rule 18)" },
+  { glob = ".claude-plugin/**", why = "the marketplace manifest, a site of the `skill-page-engine` pin both scripts read" },
+  { glob = "Cargo.toml", why = "the engine version `check-skill-page.py --online` reads from the engine tree, which is this tree while the pinned tag is unborn" },
+  { glob = "tools/ci/check-pins.py", why = "the drift check this job runs" },
+  { glob = "tools/ci/check-skill-page.py", why = "the release-shelf check this job runs" },
+  { glob = "tools/ci/check-stated-counts.py", why = "`check-skill-page.py` loads it" },
+  { glob = "tools/ci/check-dw-codes.py", why = "`check-skill-page.py` loads it" },
+  { glob = "tools/ci/data/**", why = "`check-skill-page.py` reads its heading census" },
+  { glob = "tools/lib/**", why = "the modules both scripts import" },
+]
+
+[[group]]
+name = "zone-audit"
+inputs = [
+  { glob = "crates/**", why = "`delvec grammar audit` builds and runs the engine over the rule library and the pinned campaigns' zone programs" },
   { glob = "Cargo.toml", why = "the workspace manifest the build resolves" },
-  { glob = ".claude/**", why = "`check-skill-page.py --online` judges the plugin tree" },
-  { glob = ".claude-plugin/**", why = "`check-skill-page.py` reads the marketplace manifest" },
-  { glob = "tools/**", why = "`check-pins.py`, `check-skill-page.py` and the modules it loads (`check-stated-counts.py`, `check-dw-codes.py`), `tools/ci/data/skill-page-headings.json`, `tools/lib/*`, and the `extract-*.py` pins are judged by" },
-  { glob = "validation/**", why = "pins judged by `validation/check-versions.sh`, `validation/Dockerfile.toolserver` and `validation/compose.yaml`" },
-  { glob = "docs/reference/**", why = "the documents `check-stated-counts.py` and `check-dw-codes.py` read when `check-skill-page.py` loads them" },
 ]
 
 [[group]]
