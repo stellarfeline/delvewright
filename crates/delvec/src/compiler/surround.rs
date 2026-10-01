@@ -1349,8 +1349,8 @@ fn build_tiles(
     decor_cells: &BTreeMap<[i32; 3], &'static str>,
 ) -> Vec<SurroundTile> {
     let outer = outer_rect(scene, params.ratio);
-    let mut tiles = Vec::new();
-    let mut n = 0usize;
+    // Every footprint, in the order the tiles are numbered.
+    let mut footprints: Vec<[i32; 4]> = Vec::new();
     for band in annulus_bands(scene, &outer) {
         let mut x0 = band.min_x;
         while x0 <= band.max_x {
@@ -1358,26 +1358,37 @@ fn build_tiles(
             let mut z0 = band.min_z;
             while z0 <= band.max_z {
                 let z1 = (z0 + TILE_XZ - 1).min(band.max_z);
-                for tile in tile_stack(
-                    seed,
-                    scene,
-                    params,
-                    floor_top_y,
-                    columns,
-                    tree_cells,
-                    decor_cells,
-                    x0,
-                    x1,
-                    z0,
-                    z1,
-                    &mut n,
-                ) {
-                    tiles.push(tile);
-                }
+                footprints.push([x0, x1, z0, z1]);
                 z0 = z1 + 1;
             }
             x0 = x1 + 1;
         }
+    }
+    // Each footprint's stack is built from the shared inputs alone, so the
+    // stacks are built in parallel and numbered here, in footprint order.
+    let stacks = crate::par::map(&footprints, |&[x0, x1, z0, z1]| {
+        tile_stack(
+            seed,
+            scene,
+            params,
+            floor_top_y,
+            columns,
+            tree_cells,
+            decor_cells,
+            x0,
+            x1,
+            z0,
+            z1,
+        )
+    });
+    let mut tiles = Vec::new();
+    for (bytes, pos, size) in stacks.into_iter().flatten() {
+        tiles.push(SurroundTile {
+            structure_id: format!("horizon/valley/t{}", tiles.len()),
+            bytes,
+            pos,
+            size,
+        });
     }
     tiles
 }
@@ -1396,8 +1407,7 @@ fn tile_stack(
     x1: i32,
     z0: i32,
     z1: i32,
-    n: &mut usize,
-) -> Vec<SurroundTile> {
+) -> Vec<(Vec<u8>, [i32; 3], [i32; 3])> {
     // Vertical span: solid skirt under the lowest surface, headroom over the
     // tallest surface or tree cell in the footprint.
     let mut min_surf = i32::MAX;
@@ -1469,14 +1479,11 @@ fn tile_stack(
     while sy <= y_max {
         let sy1 = (sy + TILE_Y - 1).min(y_max);
         let size = [x1 - x0 + 1, sy1 - sy + 1, z1 - z0 + 1];
-        let bytes = serialize_tile(&cells, [x0, sy, z0], size);
-        out.push(SurroundTile {
-            structure_id: format!("horizon/valley/t{n}"),
-            bytes,
-            pos: [x0, sy, z0],
+        out.push((
+            serialize_tile(&cells, [x0, sy, z0], size),
+            [x0, sy, z0],
             size,
-        });
-        *n += 1;
+        ));
         sy = sy1 + 1;
     }
     out

@@ -188,13 +188,25 @@ pub fn piece_bytes(
         size[2].max(0) as u32,
     ]));
     let mut read: Vec<([i32; 3], Structure)> = Vec::new();
-    for t in meta.templates() {
-        let path = dir.join(t.file);
-        let bytes = std::fs::read(&path).map_err(|e| format!("read {}: {e}", path.display()))?;
-        let s = Structure::read(&bytes).map_err(|e| format!("{}: {e}", path.display()))?;
-        blit(&mut model, &s, t.offset);
-        read.push((t.offset, s));
-    }
+    // Each template read and decoded on its own (in parallel), blitted in
+    // template order; the first template that fails is the one named.
+    let templates = meta.templates();
+    crate::par::try_for_each_ordered(
+        &templates,
+        |t| {
+            let path = dir.join(t.file);
+            let bytes =
+                std::fs::read(&path).map_err(|e| format!("read {}: {e}", path.display()))?;
+            let s = Structure::read(&bytes).map_err(|e| format!("{}: {e}", path.display()))?;
+            Ok::<_, String>((t.offset, s))
+        },
+        |r| {
+            let (offset, s) = r?;
+            blit(&mut model, &s, offset);
+            read.push((offset, s));
+            Ok::<(), String>(())
+        },
+    )?;
     let borrowed: Vec<([i32; 3], &Structure)> = read.iter().map(|(o, s)| (*o, s)).collect();
     Ok((model, ByteFacts::of(&borrowed)))
 }

@@ -274,7 +274,7 @@ fn chunk_of(v: i32) -> i32 {
 
 impl VoxelGrid {
     /// Flatten an assembled cell→block map into the raycasting grid.
-    pub fn build(blocks: &BTreeMap<[i32; 3], String>) -> VoxelGrid {
+    pub fn build(blocks: &crate::compiler::blockstate::BlockMap) -> VoxelGrid {
         let mut palette: Vec<String> = vec!["minecraft:air".to_string()];
         let mut index: BTreeMap<&str, u16> = BTreeMap::new();
         let mut lo = [i32::MAX; 3];
@@ -282,7 +282,7 @@ impl VoxelGrid {
         for (cell, name) in blocks {
             if !index.contains_key(name.as_str()) {
                 index.insert(name.as_str(), palette.len() as u16);
-                palette.push(name.clone());
+                palette.push(name.to_string());
             }
             for a in 0..3 {
                 lo[a] = lo[a].min(cell[a]);
@@ -1632,7 +1632,7 @@ mod tests {
     fn one_block(name: &str) -> VoxelGrid {
         let mut m = BTreeMap::new();
         m.insert([0, 0, 0], name.to_string());
-        VoxelGrid::build(&m)
+        VoxelGrid::build(&crate::compiler::blockstate::interned(m.clone()))
     }
 
     #[test]
@@ -1641,7 +1641,7 @@ mod tests {
         m.insert([0, 64, 0], "minecraft:stone".to_string());
         m.insert([-33, -5, -17], "minecraft:sand".to_string());
         m.insert([200, 70, 120], "minecraft:water".to_string());
-        let g = VoxelGrid::build(&m);
+        let g = VoxelGrid::build(&crate::compiler::blockstate::interned(m.clone()));
         assert_eq!(g.name(g.at([0, 64, 0])), "minecraft:stone");
         assert_eq!(g.name(g.at([-33, -5, -17])), "minecraft:sand");
         assert_eq!(g.name(g.at([200, 70, 120])), "minecraft:water");
@@ -1690,7 +1690,7 @@ mod tests {
                 m.insert([x, y, 0], "minecraft:stone".to_string());
             }
         }
-        let g = VoxelGrid::build(&m);
+        let g = VoxelGrid::build(&crate::compiler::blockstate::interned(m.clone()));
         for k in 0..64 {
             let a = k as f64 * 0.09;
             let dir = normalize([a.sin() * 0.4, a.cos() * 0.4, 1.0]);
@@ -1805,7 +1805,7 @@ mod tests {
                 m.insert([x, 0, z], "minecraft:stone".to_string());
             }
         }
-        let g = VoxelGrid::build(&m);
+        let g = VoxelGrid::build(&crate::compiler::blockstate::interned(m.clone()));
         let eye = [0.5, 3.0, 0.5];
         let at = |c: [i32; 3]| Target::point("t".into(), "anchor", String::new(), c);
         // Behind the wall → occluded.
@@ -1844,7 +1844,7 @@ mod tests {
         // excluded, so it reads visible — and a block in front of it still hides it.
         let mut m = BTreeMap::new();
         m.insert([0, 0, 10], "minecraft:campfire".to_string());
-        let g = VoxelGrid::build(&m);
+        let g = VoxelGrid::build(&crate::compiler::blockstate::interned(m.clone()));
         let fire = Target::point(
             "anchor/fire-pit".into(),
             "anchor",
@@ -1857,7 +1857,7 @@ mod tests {
             "the marker's own block must not occlude it"
         );
         m.insert([0, 0, 5], "minecraft:stone".to_string());
-        let g2 = VoxelGrid::build(&m);
+        let g2 = VoxelGrid::build(&crate::compiler::blockstate::interned(m.clone()));
         assert!(
             g2.occluded_target(eye, &fire),
             "a block in front of it must occlude it"
@@ -1909,7 +1909,7 @@ mod tests {
         let mut m = BTreeMap::new();
         m.insert([0, 0, 0], "minecraft:chain".to_string());
         m.insert([0, 1, 0], "minecraft:stone".to_string());
-        let g = VoxelGrid::build(&m);
+        let g = VoxelGrid::build(&crate::compiler::blockstate::interned(m.clone()));
         assert_eq!(g.unpainted(), ["minecraft:chain".to_string()]);
         let said = super::unpainted_report(&g).expect("the grid says what it could not paint");
         assert!(said.contains("1 of 2 block kind(s)"), "{said}");
@@ -1917,7 +1917,12 @@ mod tests {
         assert!(said.contains("1.21.11"), "{said}");
         // A grid with nothing to report says nothing.
         m.remove(&[0, 0, 0]);
-        assert!(super::unpainted_report(&VoxelGrid::build(&m)).is_none());
+        assert!(
+            super::unpainted_report(&VoxelGrid::build(&crate::compiler::blockstate::interned(
+                m.clone()
+            )))
+            .is_none()
+        );
     }
 
     #[test]
@@ -1994,7 +1999,7 @@ mod tests {
             }
         }
         m.insert([0, 1, 0], "minecraft:glowstone".to_string());
-        let g = VoxelGrid::build(&m);
+        let g = VoxelGrid::build(&crate::compiler::blockstate::interned(m.clone()));
         // yaw 315 aims +X/+Z (north-west corner looking south-east), so the
         // camera at (−8, −8) actually faces the patch of ground it renders.
         let cam = Camera {

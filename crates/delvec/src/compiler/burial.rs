@@ -302,7 +302,7 @@ fn moves(horizon: &str) -> String {
 pub fn check(
     plan: &Plan,
     prefabs: &PrefabRegistry,
-    blocks: &BTreeMap<[i32; 3], String>,
+    blocks: &crate::compiler::blockstate::BlockMap,
     structures: &BTreeMap<String, Vec<u8>>,
     world: &World,
     reachable: &BTreeSet<[i32; 3]>,
@@ -534,7 +534,7 @@ fn declared_phrase(piece: &Piece) -> String {
 }
 
 /// Is there a block in this cell?
-fn is_solid(blocks: &BTreeMap<[i32; 3], String>, c: [i32; 3]) -> bool {
+fn is_solid(blocks: &crate::compiler::blockstate::BlockMap, c: [i32; 3]) -> bool {
     blocks.get(&c).is_some_and(|b| b != "minecraft:air")
 }
 
@@ -542,7 +542,7 @@ fn is_solid(blocks: &BTreeMap<[i32; 3], String>, c: [i32; 3]) -> bool {
 /// build writes, with the three things that can answer given equal standing.
 fn covered(
     pieces: &[Piece],
-    blocks: &BTreeMap<[i32; 3], String>,
+    blocks: &crate::compiler::blockstate::BlockMap,
     ambient: &Ambient,
     c: [i32; 3],
 ) -> bool {
@@ -614,22 +614,32 @@ fn own_solid_sides(
     max: [i32; 3],
 ) -> BTreeSet<[i32; 3]> {
     let mut cells: Vec<[i32; 3]> = Vec::new();
-    for template in &placement.templates {
-        let Some(bytes) = structures.get(&template.structure_file) else {
-            continue;
-        };
-        for (local, name) in crate::compiler::assembled::structure_named_cells(bytes) {
-            if name == "minecraft:air" {
-                continue;
-            }
-            let t = placement.rotation.transform(local);
-            cells.push([
-                template.pos[0] + t[0],
-                template.pos[1] + t[1],
-                template.pos[2] + t[2],
-            ]);
-        }
-    }
+    // Each template decoded on its own (in parallel), its cells appended in
+    // template order.
+    let _: Result<(), std::convert::Infallible> = crate::par::try_for_each_ordered(
+        &placement.templates,
+        |template| {
+            let Some(bytes) = structures.get(&template.structure_file) else {
+                return Vec::new();
+            };
+            crate::compiler::assembled::structure_named_cells(bytes)
+                .into_iter()
+                .filter(|(_, name)| name != "minecraft:air")
+                .map(|(local, _)| {
+                    let t = placement.rotation.transform(local);
+                    [
+                        template.pos[0] + t[0],
+                        template.pos[1] + t[1],
+                        template.pos[2] + t[2],
+                    ]
+                })
+                .collect::<Vec<_>>()
+        },
+        |placed| {
+            cells.extend(placed);
+            Ok(())
+        },
+    );
     solid_sides(cells, min, max).into_keys().collect()
 }
 
@@ -642,10 +652,10 @@ fn own_solid_sides(
 /// reaches the rim has not been contained, it has been cut off.
 fn party_air(
     pieces: &[Piece],
-    blocks: &BTreeMap<[i32; 3], String>,
+    blocks: &crate::compiler::blockstate::BlockMap,
     ambient: &Ambient,
     reachable: &BTreeSet<[i32; 3]>,
-) -> (BTreeSet<[i32; 3]>, bool) {
+) -> (crate::compiler::cellset::VisitSet, bool) {
     let distance = |c: [i32; 3]| {
         pieces
             .iter()
@@ -662,7 +672,17 @@ fn party_air(
             Ambient::Void => true,
         }
     };
-    let mut seen: BTreeSet<[i32; 3]> = BTreeSet::new();
+    // Every cell the flood admits lies within `SKIN` of a piece, so it lies in
+    // the pieces' joint box grown by `SKIN`; the set is dense over that box.
+    let mut lo = [i32::MAX; 3];
+    let mut hi = [i32::MIN; 3];
+    for p in pieces {
+        for a in 0..3 {
+            lo[a] = lo[a].min(p.min[a].saturating_sub(SKIN));
+            hi[a] = hi[a].max(p.max[a].saturating_add(SKIN));
+        }
+    }
+    let mut seen = crate::compiler::cellset::VisitSet::within(lo, hi);
     let mut queue: VecDeque<[i32; 3]> = VecDeque::new();
     let mut cut_off = false;
     // The body, not the foot: a standing cell is where the feet are, and what a
