@@ -12086,12 +12086,7 @@ fn trap_gate_tick(plan: &Plan) -> Vec<String> {
     for t in plan.traps.iter().filter(|t| trap_is_gated(t)) {
         let id = &t.safe;
         let gate = trap_gate_of(plan, t);
-        for term in plan.gate_terms(gate) {
-            out.push(format!(
-                "execute if score #trapgate_{id} dw.sys matches 1 {} run function {ns}:trap_gate_off_{id}",
-                term.clause(true)
-            ));
-        }
+        out.extend(trap_gate_shut_clauses(plan, t));
         out.push(format!(
             "execute unless score #trapgate_{id} dw.sys matches 1{} run function {ns}:trap_gate_on_{id}",
             gate_cond(plan, gate)
@@ -12100,24 +12095,42 @@ fn trap_gate_tick(plan: &Plan) -> Vec<String> {
     out
 }
 
-/// The body of `trap_gate_init`, which `setup_finish` calls once: put every
-/// gated trap's hardware in the state the world starts in.
+/// One shutting clause per term of `t`'s gate, each guarded by the armed
+/// sentinel: "not (every term holds)" is a disjunction, so any single term
+/// failing disarms the trap on its own. The tick and the world-start seed read
+/// the gate through these same clauses.
+fn trap_gate_shut_clauses(plan: &Plan, t: &plan::TrapPlan) -> Vec<String> {
+    let ns = &plan.namespace;
+    let id = &t.safe;
+    plan.gate_terms(trap_gate_of(plan, t))
+        .iter()
+        .map(|term| {
+            format!(
+                "execute if score #trapgate_{id} dw.sys matches 1 {} run function {ns}:trap_gate_off_{id}",
+                term.clause(true)
+            )
+        })
+        .collect()
+}
+
+/// The body of `trap_gate_init`, which `setup_finish` calls once, before the
+/// first tick: put every gated trap's hardware in the state its gate says.
+///
+/// Arm the trap (`trap_gate_on`), then run the gate's shutting clauses — the
+/// same ones the tick runs — so any term that fails in the world the campaign
+/// starts in (a required flag nothing has set, a datum whose declared initial
+/// fails its comparison) takes the trigger straight back out. Reading only
+/// `requires_flags` here left a trap gated by a failing `requires_state` term
+/// armed for the first tick.
 fn trap_gate_init(plan: &Plan, hardware: &BTreeMap<String, String>) -> Vec<String> {
+    let ns = &plan.namespace;
     let mut out = Vec::new();
     for t in plan.traps.iter().filter(|t| trap_is_gated(t)) {
         if !hardware.contains_key(&t.safe) {
             continue;
         }
-        let armed = t.requires_flags.is_empty();
-        out.push(format!(
-            "scoreboard players set #trapgate_{} dw.sys {}",
-            t.safe,
-            u8::from(armed)
-        ));
-        if !armed {
-            let c = t.trigger_cell;
-            out.push(format!("setblock {} {} {} minecraft:air", c[0], c[1], c[2]));
-        }
+        out.push(format!("function {ns}:trap_gate_on_{}", t.safe));
+        out.extend(trap_gate_shut_clauses(plan, t));
     }
     out
 }

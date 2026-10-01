@@ -431,15 +431,25 @@ fn a_flag_gated_trap_removes_and_restores_its_trigger() {
         );
     }
 
-    // A `forbids_flags`-only gate starts OPEN (no flag is set at world start), so
-    // setup arms the sentinel and leaves the prefab's own block alone.
+    // The world-start seed arms the trap and then reads the gate through the
+    // tick's own shutting clauses, so it starts in the state its gate says.
     let setup_finish = text(
+        &out,
+        &format!("datapack/data/{NS}/function/setup_finish.mcfunction"),
+    );
+    assert!(
+        setup_finish.contains("function hello-world:trap_gate_init"),
+        "setup must seed the gate:\n{setup_finish}"
+    );
+    let init = text(
         &out,
         &format!("datapack/data/{NS}/function/trap_gate_init.mcfunction"),
     );
-    assert!(
-        setup_finish.contains("scoreboard players set #trapgate_dart_hall dw.sys 1"),
-        "setup must seed the gate sentinel to the world it starts in:\n{setup_finish}"
+    let init_lines: Vec<&str> = init.lines().map(str::trim).collect();
+    assert_eq!(
+        init_lines,
+        ["function hello-world:trap_gate_on_dart_hall", shut],
+        "the seed arms, then runs the tick's shutting clauses:\n{init}"
     );
 
     // And the behaviour is asserted in-game, not just in the emitted text.
@@ -467,17 +477,14 @@ fn a_requires_flags_gate_starts_shut() {
     trap["forbids_flags"] = serde_json::json!([]);
     trap["requires_flags"] = serde_json::json!(["flag/darts-off"]);
     let out = build_with_trap("trap-gated-req", trap).expect("a gated trap builds");
-    let setup_finish = text(
+    let init = text(
         &out,
         &format!("datapack/data/{NS}/function/trap_gate_init.mcfunction"),
     );
     assert!(
-        setup_finish.contains("scoreboard players set #trapgate_dart_hall dw.sys 0"),
-        "a requires-gate starts shut:\n{setup_finish}"
-    );
-    assert!(
-        setup_finish.contains("setblock 5 65 7 minecraft:air"),
-        "a requires-gate must clear the trigger at setup:\n{setup_finish}"
+        init.lines().any(|l| l.trim()
+            == "execute if score #trapgate_dart_hall dw.sys matches 1 unless score #party dw.f_darts_off matches 1 run function hello-world:trap_gate_off_dart_hall"),
+        "a requires-gate starts shut: the seed must read the unset flag and disarm:\n{init}"
     );
 
     // ...and it OPENS when the flag is set where the campaign writes it. Flags
