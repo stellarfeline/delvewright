@@ -65,6 +65,8 @@ emit("PYTEST_VERSION",       d["ci"]["pytest_version"])
 emit("SKILLS_REF_VERSION",   d["ci"]["skills_ref_version"])
 emit("CLAUDE_CODE_VERSION",  d["ci"]["claude_code_version"])
 emit("SKINPY_EXTENDED",      d["skin"]["skinpy_extended"])
+emit("SKIN_NUMPY",           d["skin"]["numpy"])
+emit("SKIN_PILLOW",          d["skin"]["pillow"])
 PY
 )"
 
@@ -572,6 +574,11 @@ echo "== Skin toolchain ([skin], spec-0009) =="
 all_stated "skinpy -> tools/creator/skin/requirements.txt" 'skinpy-extended==[0-9A-Za-z.*+!-]*' "skinpy-extended==$SKINPY_EXTENDED" 1 "$SKIN_REQ"
 all_stated "skinpy -> tools/creator/skin/pyproject.toml"   'skinpy-extended==[0-9A-Za-z.*+!-]*' "skinpy-extended==$SKINPY_EXTENDED" 1 "$SKIN_PYPROJECT"
 all_stated "skinpy -> tools/creator/skin/delve_skin/catalog.py" '"version": "[^"]*", "license"' "\"version\": \"$SKINPY_EXTENDED\", \"license\"" 1 "$SKIN_CATALOG"
+# Its two runtime dependencies the committed bytes depend on, in both manifests.
+all_stated "numpy -> tools/creator/skin/requirements.txt"  'numpy==[0-9A-Za-z.*+!-]*' "numpy==$SKIN_NUMPY" 1 "$SKIN_REQ"
+all_stated "numpy -> tools/creator/skin/pyproject.toml"    'numpy==[0-9A-Za-z.*+!-]*' "numpy==$SKIN_NUMPY" 1 "$SKIN_PYPROJECT"
+all_stated "pillow -> tools/creator/skin/requirements.txt" '[Pp]illow==[0-9A-Za-z.*+!-]*' "pillow==$SKIN_PILLOW" 1 "$SKIN_REQ"
+all_stated "pillow -> tools/creator/skin/pyproject.toml"   '[Pp]illow==[0-9A-Za-z.*+!-]*' "pillow==$SKIN_PILLOW" 1 "$SKIN_PYPROJECT"
 
 echo "== Server-jar bootstrap =="
 # `server_jar_url` / `server_jar_sha256` stopped being provenance-only on 2026-08-05:

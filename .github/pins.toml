@@ -653,7 +653,7 @@ HELD FOR one interpreter across every one of these, which is what makes a
 determinism result from one month comparable to the next — the same argument
 the Rust toolchain pin makes, one language over. The floor is real and lower:
 every consumer needs >= 3.11 for stdlib `tomllib`, and `tools/creator/skin`'s own
-manifest declares `requires-python >= 3.10`.
+manifest declares `requires-python >= 3.11` (its pinned numpy's floor).
 
 WHY IT DIFFERS from `ci-python-mecha`, since two interpreter lines in one
 workflow reads as drift and this pair is not: they carry disjoint dependency
@@ -875,4 +875,57 @@ a record of when something was checked.
 POLICY `immutable`, on the same published-artifact argument as `mecha`. Its
 currency is a supply-chain question with a different owner, and this gate
 declines it rather than passing silently.
+"""
+
+[[pin]]
+id = "skin-numpy"
+value = "2.4.6"
+sites = [
+    "tools/creator/skin/pyproject.toml",
+    "tools/creator/skin/requirements.txt",
+    "versions.toml",
+]
+policy = "immutable"
+bound_by = "validation/check-versions.sh"
+bound_key = "numpy"
+why = """
+numpy (BSD-3-Clause), a runtime dependency of skinpy-extended that the committed
+skin's BYTES depend on. The composer draws its cloth, skin and beard texture from
+numpy's seeded `Generator` (`delve_skin/palette.py`), and NEP 19 holds the bit
+generators' raw streams stable while promising nothing about a `Generator`
+method's stream across versions — so a different numpy may be a different
+picture under the same cast sheet.
+
+CHOSEN AS the newest line installable on the creator skill's Python floor (3.11):
+numpy 2.5 declares `Requires-Python >= 3.12`. Composing the three fixture
+entries under 2.4.6 gives the same pixels as under the 2.5.3 the unpinned line
+resolved to.
+
+POLICY `immutable`, on the same argument as `skinpy-extended`.
+"""
+
+[[pin]]
+id = "skin-pillow"
+value = "12.3.0"
+sites = [
+    "tools/creator/skin/pyproject.toml",
+    "tools/creator/skin/requirements.txt",
+    "versions.toml",
+]
+policy = "immutable"
+bound_by = "validation/check-versions.sh"
+bound_key = "pillow"
+why = """
+Pillow (MIT-CMU), a runtime dependency of skinpy-extended: it carries the
+composed image (`Skin.to_image`) the encoder reads the pixels from, and renders
+the review previews.
+
+WHAT IT IS NOT: the committed PNG's encoder. Pinning Pillow could not make the
+file portable — its manylinux wheels link the system `libz.so.1` (auditwheel's
+manylinux policy whitelists it) while its macOS and Windows wheels carry zlib-ng
+2.3.3, and the same 12.3.0 wrote different files for the same pixels on macOS
+and on Linux. `tools/creator/skin/delve_skin/png.py` writes the file with stored
+deflate instead, and a test makes `Image.save` raise to keep it that way.
+
+CHOSEN AS the version the unpinned line already resolved to. POLICY `immutable`.
 """
