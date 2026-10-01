@@ -157,7 +157,11 @@ fn disengages_on_land(entity: &str) -> bool {
 
 /// Whether a body standing in `cell` has its feet in the water of the
 /// waterlogged block it stands on.
-fn stands_in_water(world: &World, blocks: &BTreeMap<[i32; 3], String>, cell: [i32; 3]) -> bool {
+fn stands_in_water(
+    world: &World,
+    blocks: &crate::compiler::blockstate::BlockMap,
+    cell: [i32; 3],
+) -> bool {
     let support = [cell[0], cell[1] - 1, cell[2]];
     let Some(name) = blocks.get(&support) else {
         return false;
@@ -193,7 +197,7 @@ fn water_off_the_edge(world: &World, from: [i32; 3], x: i32, z: i32) -> Option<[
 /// `BTreeSet` and ties break on `(d², cell)`.
 fn wet_footing_within_reach(
     world: &World,
-    blocks: &BTreeMap<[i32; 3], String>,
+    blocks: &crate::compiler::blockstate::BlockMap,
     from: &[[i32; 3]],
     radius: u32,
 ) -> Option<[i32; 3]> {
@@ -266,7 +270,7 @@ impl EngageBinding {
 pub fn check_engagement(
     plan: &Plan,
     world: &World,
-    blocks: &BTreeMap<[i32; 3], String>,
+    blocks: &crate::compiler::blockstate::BlockMap,
     spawns: &BTreeMap<String, Vec<[i32; 3]>>,
 ) -> (EngageBinding, Option<Failure>) {
     let c = plan.campaign;
@@ -383,7 +387,15 @@ mod tests {
     #[test]
     fn dry_stone_is_dry() {
         let (w, b) = yard(|_, _| {});
-        assert_eq!(wet_footing_within_reach(&w, &b, &FROM, 16), None);
+        assert_eq!(
+            wet_footing_within_reach(
+                &w,
+                &crate::compiler::blockstate::interned(b.clone()),
+                &FROM,
+                16
+            ),
+            None
+        );
     }
 
     /// A waterlogged bottom slab stands the feet in its water; the same slab dry,
@@ -403,16 +415,48 @@ mod tests {
             "minecraft:tuff_slab[type=bottom,waterlogged=true]",
             Some(8),
         ));
-        assert_eq!(wet_footing_within_reach(&w, &b, &FROM, 16), Some([7, 1, 4]));
+        assert_eq!(
+            wet_footing_within_reach(
+                &w,
+                &crate::compiler::blockstate::interned(b.clone()),
+                &FROM,
+                16
+            ),
+            Some([7, 1, 4])
+        );
         // Out of perception: the same cell beyond the radius.
-        assert_eq!(wet_footing_within_reach(&w, &b, &FROM, 2), None);
+        assert_eq!(
+            wet_footing_within_reach(
+                &w,
+                &crate::compiler::blockstate::interned(b.clone()),
+                &FROM,
+                2
+            ),
+            None
+        );
         let (w, b) = yard(slab(
             "minecraft:tuff_slab[type=bottom,waterlogged=false]",
             Some(8),
         ));
-        assert_eq!(wet_footing_within_reach(&w, &b, &FROM, 16), None);
+        assert_eq!(
+            wet_footing_within_reach(
+                &w,
+                &crate::compiler::blockstate::interned(b.clone()),
+                &FROM,
+                16
+            ),
+            None
+        );
         let (w, b) = yard(slab("minecraft:tuff_slab[type=top,waterlogged=true]", None));
-        assert_eq!(wet_footing_within_reach(&w, &b, &FROM, 16), None);
+        assert_eq!(
+            wet_footing_within_reach(
+                &w,
+                &crate::compiler::blockstate::interned(b.clone()),
+                &FROM,
+                16
+            ),
+            None
+        );
     }
 
     /// Open water a body can step or drop into from walkable ground counts; the
@@ -427,14 +471,27 @@ mod tests {
         };
         let (w, b) = yard(pit);
         assert_eq!(
-            wet_footing_within_reach(&w, &b, &FROM, 16),
+            wet_footing_within_reach(
+                &w,
+                &crate::compiler::blockstate::interned(b.clone()),
+                &FROM,
+                16
+            ),
             Some([4, -2, 8])
         );
         let (w, b) = yard(|occ, blocks| {
             pit(occ, blocks);
             occ.tall.insert([4, 1, 8]);
         });
-        assert_eq!(wet_footing_within_reach(&w, &b, &FROM, 16), None);
+        assert_eq!(
+            wet_footing_within_reach(
+                &w,
+                &crate::compiler::blockstate::interned(b.clone()),
+                &FROM,
+                16
+            ),
+            None
+        );
     }
 
     /// The live-game instrument holds the same table this module does: its

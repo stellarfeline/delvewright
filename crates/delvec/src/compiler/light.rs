@@ -493,11 +493,32 @@ pub fn passes_light(name: &str) -> bool {
 /// but keeping block *identity* so opacity and emission can be evaluated. Cells
 /// absent from `blocks` are air.
 pub struct LightModel {
-    /// Non-air cells → block id.
-    blocks: BTreeMap<[i32; 3], String>,
+    /// Non-air cells → block id: the assembled world's map, shared, plus the
+    /// fixtures this model has placed.
+    blocks: crate::compiler::cellset::CellMap<crate::compiler::blockstate::BlockState>,
     /// Inclusive world AABB of all cells (for the sky-column scan).
     min: [i32; 3],
     max: [i32; 3],
+}
+
+/// The inclusive box `cells` occupy, or the unit box at the origin when there
+/// are none.
+fn occupied_box<'a>(cells: impl Iterator<Item = &'a [i32; 3]>) -> ([i32; 3], [i32; 3]) {
+    let mut min = [i32::MAX; 3];
+    let mut max = [i32::MIN; 3];
+    let mut any = false;
+    for c in cells {
+        any = true;
+        for a in 0..3 {
+            min[a] = min[a].min(c[a]);
+            max[a] = max[a].max(c[a]);
+        }
+    }
+    if any {
+        (min, max)
+    } else {
+        ([0, 0, 0], [0, 0, 0])
+    }
 }
 
 impl LightModel {
@@ -507,26 +528,15 @@ impl LightModel {
     /// therefore evaluates opacity/emission over the same world the game assembles,
     /// so a `sand` floor that fell into the void is air here, not phantom rock.
     pub fn from_plan(plan: &Plan, structures: &BTreeMap<String, Vec<u8>>) -> Self {
-        Self::from_blocks(crate::compiler::assembled::assembled_blocks(
-            plan, structures,
+        Self::from_shared(std::sync::Arc::new(
+            crate::compiler::assembled::assembled_blocks(plan, structures),
         ))
     }
 
     /// Build directly from a cell→block map (test entry point; no plan needed),
     /// over the box the given cells occupy.
     pub fn from_blocks(blocks: BTreeMap<[i32; 3], String>) -> Self {
-        let mut min = [i32::MAX; 3];
-        let mut max = [i32::MIN; 3];
-        for c in blocks.keys() {
-            for a in 0..3 {
-                min[a] = min[a].min(c[a]);
-                max[a] = max[a].max(c[a]);
-            }
-        }
-        if blocks.is_empty() {
-            min = [0, 0, 0];
-            max = [0, 0, 0];
-        }
+        let (min, max) = occupied_box(blocks.keys());
         LightModel::from_blocks_within(blocks, min, max)
     }
 
@@ -548,14 +558,29 @@ impl LightModel {
         min: [i32; 3],
         max: [i32; 3],
     ) -> Self {
-        LightModel { blocks, min, max }
+        LightModel {
+            blocks: crate::compiler::blockstate::interned(blocks).into(),
+            min,
+            max,
+        }
+    }
+
+    /// [`Self::from_blocks`] over a shared map, without copying it; the box is
+    /// the one its cells occupy.
+    pub fn from_shared(blocks: std::sync::Arc<crate::compiler::blockstate::BlockMap>) -> Self {
+        let (min, max) = occupied_box(blocks.keys());
+        LightModel {
+            blocks: crate::compiler::cellset::CellMap::from_shared(blocks),
+            min,
+            max,
+        }
     }
 
     /// The block id at a cell (`"minecraft:air"` if absent).
     fn block_at(&self, c: [i32; 3]) -> &str {
         self.blocks
             .get(&c)
-            .map(String::as_str)
+            .map(|s| s.as_str())
             .unwrap_or("minecraft:air")
     }
 
@@ -593,7 +618,8 @@ impl LightModel {
 
     /// Place / replace a block at a cell (relight fixture emission).
     fn set(&mut self, c: [i32; 3], block: &str) {
-        self.blocks.insert(c, block.to_string());
+        self.blocks
+            .insert(c, crate::compiler::blockstate::BlockState::new(block));
     }
 
     /// Flood the assembled light field and return per-cell light within the AABB.
@@ -703,7 +729,7 @@ impl LightField {
         // Resolve each DISTINCT block id once. The assembled world is overwhelmingly
         // repeated ids, and `emission`/`passes_light` are a pair of string matches.
         let mut resolved: BTreeMap<&str, u8> = BTreeMap::new();
-        for (c, name) in &model.blocks {
+        for (c, name) in model.blocks.iter() {
             let Some(i) = f.index(*c) else { continue };
             let packed = *resolved
                 .entry(name.as_str())
@@ -1119,6 +1145,27 @@ pub fn relight(plan: &Plan, structures: &BTreeMap<String, Vec<u8>>) -> Relight {
 /// [`relight`] for an unedited world (both derive from the same
 /// [`crate::compiler::assembled::Assembled`]).
 pub fn relight_over(plan: &Plan, assembled: &crate::compiler::assembled::Assembled) -> Relight {
+    relight_with(plan, assembled, &geometry_world(assembled))
+}
+
+/// The nav model of `assembled`'s geometry alone, with no campaign premise —
+/// the world [`relight_with`] surveys (see the note there on why it declines
+/// the premises). A caller that also needs the campaign's own world derives it
+/// from this one with [`World::with_premises`] instead of classifying the
+/// blocks a second time.
+pub fn geometry_world(assembled: &crate::compiler::assembled::Assembled) -> World {
+    World::from_occupancy(
+        crate::compiler::assembled::occupancy_over(&assembled.blocks, &assembled.open_gates),
+        crate::compiler::nav::Premises::geometry_only(),
+    )
+}
+
+/// [`relight_over`] over `nav`, the [`geometry_world`] of `assembled`.
+pub fn relight_with(
+    plan: &Plan,
+    assembled: &crate::compiler::assembled::Assembled,
+    nav: &World,
+) -> Relight {
     let c = plan.campaign;
     let sky = darkest_effective_sky(c);
     // Which surfaces this campaign HAS to declare lighting on, asked once. A
@@ -1137,17 +1184,13 @@ pub fn relight_over(plan: &Plan, assembled: &crate::compiler::assembled::Assembl
     // a silent coverage loss, in the direction that reads as a clean pass. A pit
     // that kills is also a pit the player has to be able to see before stepping
     // into it, so its own cells stay in the survey too.
-    let nav = World::from_occupancy(
-        crate::compiler::assembled::occupancy_of(assembled.blocks.clone(), &assembled.open_gates),
-        crate::compiler::nav::Premises::geometry_only(),
-    );
     // move-npc waypoint cells are part of the required paths; plan them on the base
     // world (an unroutable move is a separate DW0307 handled by emit — here we
     // just collect paths, ignoring routing errors).
-    let moves = crate::compiler::nav::plan_moves(plan, &nav).unwrap_or_default();
+    let moves = crate::compiler::nav::plan_moves(plan, nav).unwrap_or_default();
     let required = nav.required_path_cells(plan, &moves);
 
-    let mut model = LightModel::from_blocks(assembled.blocks.clone());
+    let mut model = LightModel::from_shared(std::sync::Arc::clone(&assembled.blocks));
     let mut out = Relight::default();
     // The dark set of the whole build, kept per SITE and reported once at the end
     // (`dark_diagnostic`). Accumulated rather than raised per area because the
@@ -1262,7 +1305,7 @@ pub fn relight_over(plan: &Plan, assembled: &crate::compiler::assembled::Assembl
                 Some(spec) => {
                     relight_area(
                         &mut model,
-                        &nav,
+                        nav,
                         &reachable,
                         &required,
                         &area.area_id,
@@ -1313,7 +1356,7 @@ pub fn relight_over(plan: &Plan, assembled: &crate::compiler::assembled::Assembl
         }
     }
 
-    if let Some(diag) = dark_diagnostic(&dark, &nav, sky, placement) {
+    if let Some(diag) = dark_diagnostic(&dark, nav, sky, placement) {
         out.diagnostics.push(diag);
     }
 

@@ -227,7 +227,7 @@ pub struct Chart {
 /// elevation band.
 pub fn chart(
     plan: &Plan,
-    blocks: &BTreeMap<[i32; 3], String>,
+    blocks: &crate::compiler::blockstate::BlockMap,
     world: &World,
     targets: &[Target],
     corridor: &BTreeSet<[i32; 3]>,
@@ -328,7 +328,7 @@ fn view_bounds(
     y_hi: i32,
     min: [i32; 3],
     max: [i32; 3],
-    blocks: &BTreeMap<[i32; 3], String>,
+    blocks: &crate::compiler::blockstate::BlockMap,
     walkable: &BTreeSet<[i32; 3]>,
     targets: &[Target],
 ) -> ([i32; 2], [i32; 2]) {
@@ -390,7 +390,7 @@ fn render_slice(
     band: &Band,
     min: [i32; 3],
     max: [i32; 3],
-    blocks: &BTreeMap<[i32; 3], String>,
+    blocks: &crate::compiler::blockstate::BlockMap,
     walkable: &BTreeSet<[i32; 3]>,
     targets: &[Target],
     corridor: &BTreeSet<[i32; 3]>,

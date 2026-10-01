@@ -126,7 +126,7 @@ pub fn grid_of(st: &Structure) -> VoxelGrid {
         if let Some(name) = st.palette.get(*state)
             && !blockcolor::is_air(name)
         {
-            blocks.insert(*pos, name.clone());
+            blocks.insert(*pos, crate::compiler::blockstate::BlockState::new(name));
         }
     }
     VoxelGrid::build(&blocks)
