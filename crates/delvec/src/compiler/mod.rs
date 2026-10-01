@@ -97,6 +97,7 @@ pub mod burial;
 pub mod calibrate;
 pub mod camera;
 pub mod cast;
+pub mod cellset;
 pub mod claims;
 pub mod clearance;
 pub mod cohabit;

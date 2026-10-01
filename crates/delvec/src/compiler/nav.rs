@@ -26,6 +26,7 @@
 //! ties on `(f, g, cell)` in a fixed order, and neighbour expansion order is
 //! fixed — same DSL + seed → identical waypoints.
 
+use crate::compiler::cellset::{CellMap, CellSet};
 use crate::compiler::failure::Failure;
 use delvewright_dsl::Verb;
 use std::cmp::Reverse;
@@ -883,25 +884,25 @@ use crate::compiler::plan::FurnitureRegion;
 pub type BuiltPiece = (String, ([i32; 3], [i32; 3]));
 
 pub struct World {
-    solid: BTreeSet<[i32; 3]>,
-    tall: BTreeSet<[i32; 3]>,
-    use_gates: BTreeSet<[i32; 3]>,
-    flooded: BTreeSet<[i32; 3]>,
+    solid: CellSet,
+    tall: CellSet,
+    use_gates: CellSet,
+    flooded: CellSet,
     /// For each `solid` cell whose walkable top face sits **below** the cell
     /// top, that height in sixteenths. Absent = a full cube. Feeds
     /// the physical step rule in [`World::neighbors_fp`].
-    partial: BTreeMap<[i32; 3], u8>,
+    partial: CellMap<u8>,
     /// Cells whose block **can** hold water
     /// ([`crate::compiler::assembled::is_waterloggable`]). Read by exactly one
     /// proof, [`measure_sea_seepage`]: under an ocean ambient every one of these
     /// standing in the sea's own band comes out of `/place template` waterlogged,
     /// which makes it a water source the block map does not contain.
-    waterloggable: BTreeSet<[i32; 3]>,
+    waterloggable: CellSet,
     /// The subset of `flooded` that is **lava** rather than water
     /// ([`crate::compiler::assembled::Occupancy::lava`]). Read by exactly one
     /// question, [`World::body_moves`]: a body that enters water floats at its
     /// surface, and one that enters lava does not come out of it at all.
-    lava: BTreeSet<[i32; 3]>,
+    lava: CellSet,
     /// Cells inside a declared **lethal volume** (DSL v0.10, spec-0031).
     ///
     /// A volume that kills whatever enters it is, for a route, a volume no route
@@ -911,7 +912,7 @@ pub struct World {
     /// not floor, so nothing may stand on top of one either. Empty for every
     /// campaign that declares no volume, which is what keeps routing, standability
     /// and every downstream proof byte-identical.
-    lethal: BTreeSet<[i32; 3]>,
+    lethal: CellSet,
     /// The declared volumes behind `lethal`, as `(id, box)`, in declaration
     /// order. Carried so a route failure can NAME the volume that caused it
     /// rather than report an unroutable leg over geometry that looks open — the
@@ -927,7 +928,7 @@ pub struct World {
     /// is a solid furniture cell, so no route, snap, flood, seat or export stands
     /// a body on a table. Empty for every campaign whose pieces declare none,
     /// which keeps every proof byte-identical.
-    furniture: BTreeSet<[i32; 3]>,
+    furniture: CellSet,
     /// The regions behind `furniture`, as `(anchor, box)`, in the plan's order
     /// ([`Plan::furniture`]). Carried so a route that exists only over a table
     /// names the table (`DW0510`).
@@ -942,7 +943,7 @@ pub struct World {
     /// laid over a collapse's rubble would delete the rubble from that proof's
     /// world and `DW0445` would go quietly green — a new verb weakening an existing
     /// check, which is the one thing a new verb may never do.
-    pinned: BTreeSet<[i32; 3]>,
+    pinned: CellSet,
     /// **What the world authors shut at world-load**: one entry per gate anchor
     /// whose region the placed prefabs fill with a block
     /// ([`crate::compiler::assembled::GateSeal`]), as a world-load `Fill` at step 0.
@@ -978,7 +979,7 @@ pub struct World {
     /// back and no others. Empty on the base world and on every campaign that never
     /// fills a region with a fluid, which is what keeps every other campaign's
     /// proofs byte-identical.
-    flood_written: BTreeSet<[i32; 3]>,
+    flood_written: CellSet,
     /// The boxes behind `flood_written`, in region order — who to blame for a route
     /// that only exists when a fluid is mistaken for floor. Same job as
     /// `lethal_regions`, for the same reason: without it the author gets "no
@@ -1258,9 +1259,9 @@ impl World {
     /// walks through.
     pub fn without_exclusions(&self) -> World {
         let mut w = self.clone_world();
-        w.lethal = BTreeSet::new();
+        w.lethal = CellSet::new();
         w.lethal_regions = Vec::new();
-        w.furniture = BTreeSet::new();
+        w.furniture = CellSet::new();
         w.furniture_regions = Vec::new();
         w
     }
@@ -1272,7 +1273,7 @@ impl World {
     /// report a route through a kill box as a table's fault.
     pub fn without_furniture(&self) -> World {
         let mut w = self.clone_world();
-        w.furniture = BTreeSet::new();
+        w.furniture = CellSet::new();
         w.furniture_regions = Vec::new();
         w
     }
@@ -1454,13 +1455,13 @@ impl World {
     /// without says [`Premises::geometry_only`] and means it.
     pub fn from_occupancy(occ: crate::compiler::assembled::Occupancy, premises: Premises) -> Self {
         World {
-            solid: occ.solid,
-            tall: occ.tall,
-            use_gates: occ.use_gates,
-            flooded: occ.flooded,
-            partial: occ.partial,
-            waterloggable: occ.waterloggable,
-            lava: occ.lava,
+            solid: occ.solid.into(),
+            tall: occ.tall.into(),
+            use_gates: occ.use_gates.into(),
+            flooded: occ.flooded.into(),
+            partial: occ.partial.into(),
+            waterloggable: occ.waterloggable.into(),
+            lava: occ.lava.into(),
             lethal: premises
                 .lethal_regions
                 .iter()
@@ -1473,11 +1474,11 @@ impl World {
                 .flat_map(|(_, (lo, hi))| crate::compiler::assembled::region_cells(*lo, *hi))
                 .collect(),
             furniture_regions: premises.furniture_regions,
-            pinned: BTreeSet::new(),
+            pinned: CellSet::new(),
             world_load_seals: premises.world_load_seals,
             clocked_gates: premises.clocked_gates,
             transit_teleports: premises.transit_teleports,
-            flood_written: BTreeSet::new(),
+            flood_written: CellSet::new(),
             flood_regions: Vec::new(),
             ambient: premises.ambient,
             base: premises.base,
@@ -1525,7 +1526,7 @@ impl World {
     /// the premise type exists to prevent.
     #[cfg(test)]
     pub fn with_waterloggable(mut self, cells: BTreeSet<[i32; 3]>) -> Self {
-        self.waterloggable = cells;
+        self.waterloggable = cells.into();
         self
     }
 
@@ -1559,6 +1560,7 @@ impl World {
     ) -> Self {
         let mut world = Self::from_plan(plan, structures);
         world.solid.extend(extra_solid.iter().copied());
+        world.solid.compact();
         world
     }
 
@@ -1826,7 +1828,7 @@ impl World {
             world_load_seals: self.world_load_seals.clone(),
             clocked_gates: self.clocked_gates.clone(),
             transit_teleports: self.transit_teleports.clone(),
-            flood_written: BTreeSet::new(),
+            flood_written: CellSet::new(),
             flood_regions: Vec::new(),
             ambient: self.ambient.clone(),
             base: self.base,
@@ -1884,7 +1886,7 @@ impl World {
         World {
             solid: self.solid.clone(),
             tall,
-            use_gates: BTreeSet::new(),
+            use_gates: CellSet::new(),
             flooded: self.flooded.clone(),
             partial: self.partial.clone(),
             waterloggable: self.waterloggable.clone(),
