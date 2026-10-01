@@ -113,6 +113,51 @@ fn structure_sentinel(bytes: &[u8]) -> Option<([i32; 3], String)> {
     use std::io::Read;
     let mut raw = Vec::new();
     GzDecoder::new(bytes).read_to_end(&mut raw).ok()?;
+    let is_air = |name: &str| {
+        matches!(
+            name,
+            "minecraft:air" | "minecraft:cave_air" | "minecraft:void_air"
+        )
+    };
+    // The lowest `(y, z, x)` non-air cell; `best` is replaced only by a
+    // strictly lower key, so the first such cell in file order wins a tie.
+    let pick = |best: &mut Option<([i32; 3], String)>, pos: [i32; 3], name: &String| {
+        if is_air(name) {
+            return;
+        }
+        let key = (pos[1], pos[2], pos[0]);
+        let better = match &best {
+            None => true,
+            Some((bp, _)) => key < (bp[1], bp[2], bp[0]),
+        };
+        if better {
+            *best = Some((pos, name.clone()));
+        }
+    };
+    // The typed decoding first ([`crate::compiler::nbtread`]); anything it
+    // refuses is walked as before.
+    if let Some(root) = crate::compiler::nbtread::root(&raw) {
+        let palette: Vec<Option<&String>> = root
+            .palette
+            .as_ref()?
+            .iter()
+            .map(|e| e.name.as_ref())
+            .collect();
+        let mut best: Option<([i32; 3], String)> = None;
+        for b in root.blocks.iter().flatten() {
+            let Some(pos) = b.pos3() else {
+                continue;
+            };
+            let Some(state) = &b.state else {
+                continue;
+            };
+            let Some(Some(name)) = palette.get(state.0 as usize) else {
+                continue;
+            };
+            pick(&mut best, pos, name);
+        }
+        return best;
+    }
     let root: fastnbt::Value = fastnbt::from_bytes(&raw).ok()?;
     let fastnbt::Value::Compound(root) = root else {
         return None;
@@ -129,12 +174,6 @@ fn structure_sentinel(bytes: &[u8]) -> Option<([i32; 3], String)> {
             })
             .collect(),
         _ => return None,
-    };
-    let is_air = |name: &str| {
-        matches!(
-            name,
-            "minecraft:air" | "minecraft:cave_air" | "minecraft:void_air"
-        )
     };
     let mut best: Option<([i32; 3], String)> = None;
     if let Some(fastnbt::Value::List(blocks)) = root.get("blocks") {
@@ -166,17 +205,7 @@ fn structure_sentinel(bytes: &[u8]) -> Option<([i32; 3], String)> {
             let Some(Some(name)) = palette.get(state) else {
                 continue;
             };
-            if is_air(name) {
-                continue;
-            }
-            let key = (pos[1], pos[2], pos[0]);
-            let better = match &best {
-                None => true,
-                Some((bp, _)) => key < (bp[1], bp[2], bp[0]),
-            };
-            if better {
-                best = Some((pos, name.clone()));
-            }
+            pick(&mut best, pos, name);
         }
     }
     best
@@ -252,16 +281,24 @@ pub fn check_template_extents(
         placed: 0,
         checked: 0,
     };
-    for (piece, template) in plan
+    let placed: Vec<_> = plan
         .placed_pieces()
         .flat_map(|p| p.templates.iter().map(move |t| (p, t)))
-    {
+        .collect();
+    // Each template's own size, read in parallel; judged below in placement
+    // order, so the first mismatch named is the one the loop would name.
+    let sizes = crate::par::map(&placed, |(_, template)| {
+        structures
+            .get(&template.structure_file)
+            .map(|bytes| crate::compiler::assembled::structure_size(bytes))
+    });
+    for ((piece, template), size) in placed.into_iter().zip(sizes) {
         {
             binding.placed += 1;
-            let Some(bytes) = structures.get(&template.structure_file) else {
+            let Some(read) = size else {
                 continue;
             };
-            let Some(actual) = crate::compiler::assembled::structure_size(bytes) else {
+            let Some(actual) = read else {
                 continue;
             };
             binding.checked += 1;
@@ -407,7 +444,14 @@ pub fn build_with_warnings(
     // or a wave seat (DW0312). Analysis-tier (exit 2, mapped in main): a
     // prefab/generator defect the author fixes by adding a substrate. No-op for any
     // campaign whose prefabs have no gravity blocks (byte-identical output).
-    if let Some(message) = crate::compiler::assembled::gravity_despawn_error(plan, structures) {
+    //
+    // The world is assembled here, once, and every model below is derived from
+    // this one assembly (or from the edit replay's edited copy of it).
+    let mut pristine = Some(crate::compiler::assembled::assemble(plan, structures));
+    if let Some(message) = crate::compiler::assembled::gravity_despawn_error_of(
+        plan,
+        pristine.as_ref().expect("assembled above"),
+    ) {
         return Err(BuildFailure::Diagnostic {
             code: crate::compiler::assembled::DW_GRAVITY_DESPAWN,
             message,
@@ -419,12 +463,21 @@ pub fn build_with_warnings(
     // (gravity, relight, walkability, boundary safety — each failure names its
     // batch). `None` for a campaign without an edit script — every downstream
     // pass then takes its exact pre-stage-7 path, byte-identically.
-    let edit_replay = crate::compiler::edit::replay(plan, prefabs, structures).map_err(|e| {
-        BuildFailure::Diagnostic {
-            code: e.code,
-            message: e.message,
-        }
-    })?;
+    let edit_replay =
+        crate::compiler::edit::replay_taking(plan, prefabs, structures, &mut pristine).map_err(
+            |e| BuildFailure::Diagnostic {
+                code: e.code,
+                message: e.message,
+            },
+        )?;
+    // The one assembled world every pass below reads: the edited copy when the
+    // campaign has an edit script, the pristine assembly otherwise.
+    let assembled: &crate::compiler::assembled::Assembled = match &edit_replay {
+        Some(er) => &er.assembled,
+        None => pristine
+            .as_ref()
+            .expect("an assembly the replay did not take"),
+    };
     // Advisory findings the replay raised (`DW0353` gate-region collisions,
     // `DW0354` broken block support) — reported by the caller, never fatal.
     // Advisory findings the PLACEMENT stage raised (`DW0498`: a pool draw that
@@ -450,10 +503,7 @@ pub fn build_with_warnings(
     // the same pass, rather than by a second model that could disagree with this
     // one about what is in the room.
     if !plan.loot.is_empty() || !plan.collect_fills.is_empty() || !plan.traps.is_empty() {
-        let blocks = match &edit_replay {
-            Some(er) => er.assembled.blocks.clone(),
-            None => crate::compiler::assembled::assembled_blocks(plan, structures),
-        };
+        let blocks = &assembled.blocks;
         // What the world actually HAS, computed once and handed to both proofs.
         // A refusal that tells an author to point at "an anchor whose cell
         // already has one" owes the list, and it is the same list for both:
@@ -461,25 +511,25 @@ pub fn build_with_warnings(
         // two doors, so a second derivation here would be a second answer able
         // to disagree with the first.
         let available = crate::compiler::loot::container_anchors(
-            &blocks,
+            blocks,
             &plan.anchors,
             &plan.loot,
             &plan.collect_fills,
         );
-        crate::compiler::loot::check_loot_containers(&blocks, &plan.loot, &available).map_err(
+        crate::compiler::loot::check_loot_containers(blocks, &plan.loot, &available).map_err(
             |e| BuildFailure::Diagnostic {
                 code: e.code,
                 message: e.message,
             },
         )?;
-        crate::compiler::loot::check_collect_containers(&blocks, &plan.collect_fills, &available)
+        crate::compiler::loot::check_collect_containers(blocks, &plan.collect_fills, &available)
             .map_err(|e| BuildFailure::Diagnostic {
-            code: e.code,
-            message: e.message,
-        })?;
+                code: e.code,
+                message: e.message,
+            })?;
         // DW0917: a trap's trigger is prefab hardware on the same terms as a
         // container, so it is proven off the same block map.
-        crate::compiler::trap_trigger::check_trap_triggers(&blocks, &plan.traps, &plan.anchors)
+        crate::compiler::trap_trigger::check_trap_triggers(blocks, &plan.traps, &plan.anchors)
             .map_err(|e| BuildFailure::Diagnostic {
                 code: e.code,
                 message: e.message,
@@ -500,10 +550,10 @@ pub fn build_with_warnings(
     // adds are re-verified for walkability below. A `DW0210`/`DW0211` diagnostic
     // fails the build (exit 2, mapped in main). Empty for a campaign with no dark
     // reachable cells and no `lighting` declaration → output byte-identical.
-    let relight = match &edit_replay {
-        Some(er) => crate::compiler::light::relight_over(plan, &er.assembled),
-        None => crate::compiler::light::relight(plan, structures),
-    };
+    // The geometry is classified once: relight surveys it as it stands, and the
+    // campaign's world below is the same cells under the campaign's premises.
+    let geometry = crate::compiler::light::geometry_world(assembled);
+    let relight = crate::compiler::light::relight_with(plan, assembled, &geometry);
     if let Some(diag) = relight.diagnostics.first() {
         return Err(BuildFailure::Diagnostic {
             code: diag.code,
@@ -524,39 +574,17 @@ pub fn build_with_warnings(
     // campaign with no walked leg deriving seven kinds of camera against no world
     // at all — a zero binding wearing a pass's clothes, which is precisely the
     // shape that let a camera stand inside a ceiling lantern for as long as it did.
-    let world = match &edit_replay {
-        Some(er) => {
-            let mut occ = crate::compiler::assembled::occupancy_of(
-                er.assembled.blocks.clone(),
-                &er.assembled.open_gates,
-            );
-            occ.solid.extend(relight.extra_solid.iter().copied());
-            // The campaign's premises about this world — the generator
-            // ambient, the built extent, the declared LETHAL VOLUMES, the
-            // measured world-load gate seals, the clocked gate regions and
-            // the teleport sources — travel as one value, so this arm and
-            // its `from_plan` sibling below carry the identical set by
-            // construction rather than by two authors agreeing.
-            //
-            // They did not, and the cost was the whole point of the model:
-            // this arm applied the ambient and the seals and not the lethal
-            // volumes, so every campaign declaring `world-edits.json` proved
-            // its completability over a world with no kill boxes in it. The
-            // gallery's exported critical path walked six waypoints through
-            // its two declared lethal volumes, `validation/lethal-gate.json`
-            // reported `"cells": 0` beside them, and the bot withered to
-            // death at step 10 of the ladder.
-            crate::compiler::nav::World::from_occupancy(
-                occ,
-                crate::compiler::nav::Premises::of_plan(plan, er.assembled.gate_seals.clone()),
-            )
-        }
-        None => crate::compiler::nav::World::from_plan_with_extra(
+    // The campaign's premises about this world — the generator ambient, the
+    // built extent, the declared lethal volumes, the measured world-load gate
+    // seals, the clocked gate regions and the teleport sources — travel as one
+    // value, [`crate::compiler::nav::Premises`], so an edited world and a
+    // pristine one carry the identical set.
+    let world = geometry
+        .with_premises(crate::compiler::nav::Premises::of_plan(
             plan,
-            structures,
-            &relight.extra_solid,
-        ),
-    };
+            assembled.gate_seals.clone(),
+        ))
+        .with_extra_solid(&relight.extra_solid);
 
     // ---- the stage-5 blockout battery (spec-0049 §5.3) ----
     //
@@ -574,10 +602,7 @@ pub fn build_with_warnings(
     // are advisories that travel to the walk sheet, and the binding line is
     // stated whether anything was found or not.
     {
-        let blocks = match &edit_replay {
-            Some(er) => er.assembled.blocks.clone(),
-            None => crate::compiler::assembled::assembled_blocks(plan, structures),
-        };
+        let blocks = &assembled.blocks;
         // What the DERIVATION bound to, beside what its observer did. Printing
         // only the battery's line stated what was examined and never what was
         // built — and at stage 6 the difference is the whole reading: `detailed`
@@ -607,7 +632,7 @@ pub fn build_with_warnings(
                 );
             }
         }
-        if let Some(battery) = crate::compiler::blockout::check(plan, &blocks) {
+        if let Some(battery) = crate::compiler::blockout::check(plan, blocks) {
             eprintln!("{}", battery.binding.line());
             let refusals: Vec<&(delvewright_dsl::DwCode, delvewright_dsl::Diagnostic)> =
                 battery.refusals().collect();
@@ -869,10 +894,7 @@ pub fn build_with_warnings(
         {
             // spec-0022 payload verbs need the block map (a `collapse` settles
             // real blocks), not just the occupancy view.
-            let blocks: BTreeMap<[i32; 3], String> = match &edit_replay {
-                Some(er) => er.assembled.blocks.clone(),
-                None => crate::compiler::assembled::assembled_blocks(plan, structures),
-            };
+            let blocks: &crate::compiler::blockstate::BlockMap = &assembled.blocks;
             if world.has_gate_anchors() {
                 gate_seal_ledger = Some(world.gate_seal_ledger());
             }
@@ -1010,7 +1032,7 @@ pub fn build_with_warnings(
             let (exposure, findings) = crate::compiler::burial::check(
                 plan,
                 prefabs,
-                &blocks,
+                blocks,
                 structures,
                 &world,
                 &party_walk,
@@ -1109,7 +1131,7 @@ pub fn build_with_warnings(
             // denominators a pass does.
             {
                 let (binding, findings) =
-                    crate::compiler::firework::check(plan, &blocks, campaign_spawn(plan), &waves);
+                    crate::compiler::firework::check(plan, blocks, campaign_spawn(plan), &waves);
                 eprintln!("{}", binding.line());
                 firework_gate = Some(binding);
                 if let Some((first, rest)) = findings.split_first() {
@@ -1161,10 +1183,7 @@ pub fn build_with_warnings(
                 let danger = if plan.lethal_volumes.is_empty() {
                     crate::compiler::lethal::DangerVisibility::default()
                 } else {
-                    let blocks = match &edit_replay {
-                        Some(er) => er.assembled.blocks.clone(),
-                        None => crate::compiler::assembled::assembled_blocks(plan, structures),
-                    };
+                    let blocks = &assembled.blocks;
                     // `DW0922` / `DW0923`: where each seated wave's members can
                     // get to by the movement a mob has. Measured before `DW0891`,
                     // because a volume only a mob can enter is a volume a
@@ -1172,11 +1191,11 @@ pub fn build_with_warnings(
                     // has to know it; judged after `DW0891`, so a volume the
                     // player cannot see is named for that first.
                     let wave_lethal =
-                        crate::compiler::lethal::wave_reach(plan, &world, &blocks, &waves);
+                        crate::compiler::lethal::wave_reach(plan, &world, blocks, &waves);
                     let (mut binding, verdict) = crate::compiler::lethal::check_danger_is_visible(
                         plan,
                         &world,
-                        &blocks,
+                        blocks,
                         campaign_spawn(plan),
                     );
                     binding.credit_waves(&wave_lethal);
@@ -1386,12 +1405,9 @@ pub fn build_with_warnings(
                 if !routes.is_empty() {
                     let route_cells: Vec<Vec<[i32; 3]>> =
                         routes.iter().map(|r| r.cells.clone()).collect();
-                    let blocks = match &edit_replay {
-                        Some(er) => er.assembled.blocks.clone(),
-                        None => crate::compiler::assembled::assembled_blocks(plan, structures),
-                    };
+                    let blocks = &assembled.blocks;
                     crate::compiler::stairs::check_stair_orientation(
-                        &blocks,
+                        blocks,
                         Some(plan),
                         &route_cells,
                     )?;
@@ -1526,18 +1542,23 @@ pub fn build_with_warnings(
             // motivating case: roof and two walls carved off, noon pinned, and
             // two of three footmen dead to sunlight before the party could
             // engage them, with every other proof green.
-            crate::compiler::daylight::check_daylight_staging(plan, &world, &blocks, &waves)
-                .map_err(|e| BuildFailure::Diagnostic {
-                    code: e.code,
-                    message: e.message,
-                })?;
+            crate::compiler::daylight::check_daylight_staging(
+                plan,
+                &world,
+                &assembled.blocks,
+                &waves,
+            )
+            .map_err(|e| BuildFailure::Diagnostic {
+                code: e.code,
+                message: e.message,
+            })?;
             // …and its mirror: prove the body will fight at all (DW0920). A
             // drowned takes no land target while the level is bright, so a choir
             // staged on dry ground under a bright hour walks to its water and
             // leaves the party a fight nobody answers — vesperhold's Undertide
             // Pool. Same seated cells, same reach, same population.
             let (engage, refused) =
-                crate::compiler::engage::check_engagement(plan, &world, &blocks, &waves);
+                crate::compiler::engage::check_engagement(plan, &world, blocks, &waves);
             eprintln!("{}", engage.line());
             if let Some(e) = refused {
                 return Err(BuildFailure::Diagnostic {
@@ -1631,7 +1652,7 @@ pub fn build_with_warnings(
             // kill-zone cell, or DW0442 naming the cell it cannot reach), and a
             // collapse must leave the critical path completable in its SPRUNG
             // state (DW0445).
-            let payloads = plan_payload_verbs(plan, &world, &blocks)?;
+            let payloads = plan_payload_verbs(plan, &world, blocks)?;
             (moves, actor_moves, waves, rings, lanes, payloads)
         }
     } else {
@@ -1689,10 +1710,14 @@ pub fn build_with_warnings(
     // Placement sentinels: one known block per distinct structure, so the
     // runtime can verify each `place template` landed (see `setup` emission).
     let mut sentinels: Sentinels = BTreeMap::new();
-    for template in plan.placed_pieces().flat_map(|p| &p.templates) {
-        if let Some(bytes) = structures.get(&template.structure_file)
-            && let Some(s) = structure_sentinel(bytes)
-        {
+    let placed: Vec<_> = plan.placed_pieces().flat_map(|p| &p.templates).collect();
+    let picked = crate::par::map(&placed, |template| {
+        structures
+            .get(&template.structure_file)
+            .and_then(|bytes| structure_sentinel(bytes))
+    });
+    for (template, picked) in placed.into_iter().zip(picked) {
+        if let Some(s) = picked {
             sentinels.insert(template.structure_file.clone(), s);
         }
     }
@@ -3472,6 +3497,10 @@ fn emit_functions(
         setup.push("scoreboard players set #cp dw.sys -1".to_string());
         setup.push("scoreboard objectives add dw.deaths deathCount".to_string());
         setup.push("scoreboard objectives add dw.death_ack dummy".to_string());
+        // spec-0016 §1: the party-wipe latch a bonfire respawn's scene reset waits on.
+        if plan.bonfires().next().is_some() {
+            setup.push(format!("scoreboard players set {WIPE} dw.sys 0"));
+        }
     } else if !plan.on_death().is_empty() {
         // v0.10 `on_death` (spec-0031) rides the SAME detector, so a campaign that
         // declares a death beat and no checkpoint still needs `deathCount` — but
@@ -4214,6 +4243,7 @@ fn emit_functions(
     // is no second detector, and this is the only place the whole delve asks
     // whether anyone has died.
     if plan.any_checkpoint() || !plan.on_death().is_empty() {
+        tick.extend(party_wipe_tick(plan));
         tick.push(format!("execute as @a run function {ns}:cp_respawn_check"));
     }
     // spec-0031: lethal volumes. One driver line per declared volume; empty for a
@@ -6834,6 +6864,42 @@ fn death_position_capture() -> Vec<String> {
     Vec::new()
 }
 
+/// The `dw.sys` latch a party wipe sets and the first respawn after it spends.
+const WIPE: &str = "#wipe";
+/// The `dw.sys` scratch counting the players alive this tick.
+const ALIVE: &str = "#alive";
+/// The tag every player dead at a party wipe carries until they respawn.
+const WIPED: &str = "dw_wiped";
+
+/// **The party-wipe detector** (spec-0016 §1, multiplayer): the tick lines that
+/// latch `#wipe` and tag every body when no player in the party is alive.
+///
+/// "Alive" is the very predicate the death edge already uses
+/// (`unless data entity @s {Health:0.0f}`), so the pack has one meaning of dead.
+/// `@a` matches a corpse on its death screen and never a disconnected player, so
+/// the wipe is "every player present is dead", the state in which a party
+/// can no longer recover by itself. A wipe stays latched until the first respawn
+/// spends it (`cp_respawn_fire`), and `dw_wiped` stays on each body until that
+/// body respawns, so a player who dies after a teammate has already come back
+/// is not part of the wipe. Empty for a campaign with no bonfire.
+fn party_wipe_tick(plan: &Plan) -> Vec<String> {
+    if plan.bonfires().next().is_none() {
+        return Vec::new();
+    }
+    vec![
+        format!("scoreboard players set {ALIVE} dw.sys 0"),
+        format!(
+            "execute as @a unless data entity @s {{Health:0.0f}} run scoreboard players add \
+             {ALIVE} dw.sys 1"
+        ),
+        format!(
+            "execute if score {ALIVE} dw.sys matches 0 if entity @a run scoreboard players set \
+             {WIPE} dw.sys 1"
+        ),
+        format!("execute if score {ALIVE} dw.sys matches 0 run tag @a add {WIPED}"),
+    ]
+}
+
 /// Generate the death-edge functions: the campaign's `on_death` beat (DSL v0.10,
 /// spec-0031) and the checkpoint respawn dispatch (DSL v0.6, spec-0012).
 ///
@@ -7005,7 +7071,18 @@ fn emit_checkpoint_functions(plan: &Plan) -> Vec<(String, String)> {
             c.index, c.index
         ));
     }
+    // The wipe is spent by the first respawn after it, whatever checkpoint
+    // reigns, and each respawning player's own claim on it is spent with them.
+    let wipes = plan.bonfires().next().is_some();
+    if wipes {
+        fire.push(format!("scoreboard players set {WIPE} dw.sys 0"));
+        fire.push(format!("tag @s remove {WIPED}"));
+    }
     fns.push(("cp_respawn_fire".to_string(), lines(&fire)));
+    // party_reseat: the bonfire scene reset's party half — every re-seat, once.
+    if wipes && !reseat.is_empty() {
+        fns.push(("party_reseat".to_string(), lines(&reseat)));
+    }
     // cp_on_respawn_<idx> (as @s): the per-player scene-reset effects.
     for c in &plan.checkpoints {
         if !dispatches(c) {
@@ -7015,13 +7092,38 @@ fn emit_checkpoint_functions(plan: &Plan) -> Vec<(String, String)> {
         // its `on_respawn` belongs to the ONE player who just died — re-broadcasting
         // it would re-narrate and re-gift every survivor on each death.
         //
-        // A bonfire's wave re-seat (spec-0016 §1) is party state and is emitted
-        // BEFORE the bundle: it names no player, so it fires exactly once for the
-        // death, and it must restore the scene before the dying player's own
-        // `on_rest` beats read it.
+        // A bonfire's re-seat (spec-0016 §1) is party state, runs before the
+        // bundle so the respawning player's own `on_rest` beats read the restored
+        // scene, and runs at most once per party wipe.
         let mut body: Vec<String> = Vec::new();
         if c.rest {
-            body.extend(reseat.iter().cloned());
+            // **A respawn resets the scene only after a party wipe** (spec-0016
+            // §1, multiplayer). One player's death in a party that is still
+            // fighting re-seats nothing and runs no `on_rest`: the survivors'
+            // fight is left exactly as it stands. When every player was dead at
+            // once ([`party_wipe_tick`]), each of them respawns tagged
+            // `dw_wiped`; the first one through re-seats the map (`#wipe`
+            // is spent in `cp_respawn_fire`), and each runs the fire's `on_rest`
+            // as their own. Alone, every death is a wipe, so solo play is the
+            // reset-on-every-death loop it always was.
+            let mut reset: Vec<String> = Vec::new();
+            if !reseat.is_empty() {
+                reset.push(format!(
+                    "execute if score {WIPE} dw.sys matches 1 run function {ns}:party_reseat"
+                ));
+            }
+            reset.extend(emit_effect_bundle(
+                plan,
+                &c.on_respawn,
+                root_audience(delvewright_dsl::EffectRootKind::DialogueRespawn),
+            ));
+            if !reset.is_empty() {
+                body.push(format!(
+                    "execute if entity @s[tag={WIPED}] run function {ns}:cp_reset_{}",
+                    c.index
+                ));
+                fns.push((format!("cp_reset_{}", c.index), lines(&reset)));
+            }
             // spec-0016 §1, read forward: death respawns
             // the party at the last-rested bonfire with the same hooks, and vanilla
             // already returns the dead player at full health and hunger. What it
@@ -7032,12 +7134,13 @@ fn emit_checkpoint_functions(plan: &Plan) -> Vec<(String, String)> {
             if !plan.flasks().is_empty() {
                 body.push(format!("function {ns}:bonfire_flask"));
             }
+        } else {
+            body.extend(emit_effect_bundle(
+                plan,
+                &c.on_respawn,
+                root_audience(delvewright_dsl::EffectRootKind::DialogueRespawn),
+            ));
         }
-        body.extend(emit_effect_bundle(
-            plan,
-            &c.on_respawn,
-            root_audience(delvewright_dsl::EffectRootKind::DialogueRespawn),
-        ));
         fns.push((format!("cp_on_respawn_{}", c.index), lines(&body)));
     }
     fns
@@ -8427,7 +8530,14 @@ fn emit_bonfire_functions(plan: &Plan) -> Vec<(String, String)> {
             format!("bonfire_pick_rest_{i}"),
             lines(&[
                 "scoreboard players reset @s dw.rest".to_string(),
-                format!("function {ns}:bonfire_restore"),
+                // A rest restores the WHOLE party, whoever sat down
+                // (spec-0016 §1): every living player is healed, fed, cleansed,
+                // mended and refilled. A body on its death screen is skipped; it
+                // comes back at this fire with its flask refilled by the respawn.
+                format!(
+                    "execute as @a unless data entity @s {{Health:0.0f}} run function \
+                     {ns}:bonfire_restore"
+                ),
                 format!("function {ns}:bonfire_rest_{i}"),
             ]),
         ));
@@ -12419,7 +12529,7 @@ struct PayloadPlans {
 fn plan_payload_verbs(
     plan: &Plan,
     world: &crate::compiler::nav::World,
-    blocks: &BTreeMap<[i32; 3], String>,
+    blocks: &crate::compiler::blockstate::BlockMap,
 ) -> Result<PayloadPlans, BuildFailure> {
     let mut out = PayloadPlans::default();
     let placement = delvewright_dsl::Placement::of(plan.campaign);

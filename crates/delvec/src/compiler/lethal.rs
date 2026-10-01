@@ -317,7 +317,7 @@ impl DangerVisibility {
 /// `minecraft:campfire` declaration — the same reading
 /// [`delvewright_dsl::blockshape::hurts_body`] takes.
 fn cell_shows(
-    blocks: &std::collections::BTreeMap<[i32; 3], String>,
+    blocks: &crate::compiler::blockstate::BlockMap,
     cell: [i32; 3],
     shown_by: &[String],
 ) -> bool {
@@ -392,7 +392,7 @@ pub(crate) fn population_roots(plan: &Plan, entry: Option<[i32; 3]>) -> Vec<[i32
 pub fn check_danger_is_visible(
     plan: &Plan,
     world: &crate::compiler::nav::World,
-    blocks: &std::collections::BTreeMap<[i32; 3], String>,
+    blocks: &crate::compiler::blockstate::BlockMap,
     entry: Option<[i32; 3]>,
 ) -> (DangerVisibility, Result<(), Failure>) {
     let mut binding = DangerVisibility::default();
@@ -1042,7 +1042,7 @@ impl WaveLethalBinding {
 pub fn wave_reach(
     plan: &Plan,
     world: &crate::compiler::nav::World,
-    blocks: &std::collections::BTreeMap<[i32; 3], String>,
+    blocks: &crate::compiler::blockstate::BlockMap,
     wave_seats: &std::collections::BTreeMap<String, Vec<[i32; 3]>>,
 ) -> WaveLethalBinding {
     use crate::compiler::nav::World;
@@ -1064,7 +1064,7 @@ pub fn wave_reach(
     };
     let openable: std::collections::BTreeSet<[i32; 3]> = blocks
         .iter()
-        .filter(|(_, n)| delvewright_dsl::blockshape::is_player_openable(n))
+        .filter(|(_, n)| delvewright_dsl::blockshape::is_player_openable(n.as_str()))
         .map(|(c, _)| *c)
         .collect();
     b.openable = openable.len();
@@ -1149,7 +1149,7 @@ pub fn wave_reach(
 fn barriers_on(
     hit: &crate::compiler::nav::VolumeHit,
     openable: &std::collections::BTreeSet<[i32; 3]>,
-    blocks: &std::collections::BTreeMap<[i32; 3], String>,
+    blocks: &crate::compiler::blockstate::BlockMap,
 ) -> Vec<([i32; 3], String)> {
     let mut on: std::collections::BTreeSet<[i32; 3]> = std::collections::BTreeSet::new();
     for c in hit.path.iter().chain(&hit.way_in) {
@@ -1173,7 +1173,15 @@ fn barriers_on(
         }
     }
     on.into_iter()
-        .map(|c| (c, blocks.get(&c).cloned().unwrap_or_default()))
+        .map(|c| {
+            (
+                c,
+                blocks
+                    .get(&c)
+                    .map(|b| b.as_str().to_string())
+                    .unwrap_or_default(),
+            )
+        })
         .collect()
 }
 

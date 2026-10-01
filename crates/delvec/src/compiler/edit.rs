@@ -348,7 +348,19 @@ pub fn replay(
     prefabs: &crate::compiler::registry::PrefabRegistry,
     structures: &BTreeMap<String, Vec<u8>>,
 ) -> Result<Option<EditReplay>, Failure> {
-    replay_with(plan, prefabs, structures, true)
+    replay_with(plan, prefabs, structures, true, &mut None)
+}
+
+/// [`replay`] starting from the pristine assembly the caller already holds in
+/// `pristine`. When the campaign has edits the assembly is taken out of
+/// `pristine` and edited in place; otherwise `pristine` is left as it was.
+pub fn replay_taking(
+    plan: &Plan,
+    prefabs: &crate::compiler::registry::PrefabRegistry,
+    structures: &BTreeMap<String, Vec<u8>>,
+    pristine: &mut Option<Assembled>,
+) -> Result<Option<EditReplay>, Failure> {
+    replay_with(plan, prefabs, structures, true, pristine)
 }
 
 /// [`replay`] for **view** commands (`delvec snapshot` / `blocking-chart`): the
@@ -361,7 +373,7 @@ pub fn replay_view(
     prefabs: &crate::compiler::registry::PrefabRegistry,
     structures: &BTreeMap<String, Vec<u8>>,
 ) -> Result<Option<EditReplay>, Failure> {
-    replay_with(plan, prefabs, structures, false)
+    replay_with(plan, prefabs, structures, false, &mut None)
 }
 
 fn replay_with(
@@ -369,6 +381,7 @@ fn replay_with(
     prefabs: &crate::compiler::registry::PrefabRegistry,
     structures: &BTreeMap<String, Vec<u8>>,
     enforce: bool,
+    pristine: &mut Option<Assembled>,
 ) -> Result<Option<EditReplay>, Failure> {
     if !has_edits(plan.campaign) {
         return Ok(None);
@@ -379,7 +392,9 @@ fn replay_with(
         .as_ref()
         .expect("has_edits checked");
 
-    let mut assembled = assembled::assemble(plan, structures);
+    let mut assembled = pristine
+        .take()
+        .unwrap_or_else(|| assembled::assemble(plan, structures));
     let mut commands: Vec<String> = Vec::new();
     let mut batches: Vec<BatchOutcome> = Vec::new();
     let mut warnings: Vec<Diagnostic> = Vec::new();
@@ -568,7 +583,7 @@ fn replay_with(
         // `setblock`/`fill` on a live world — a falling block placed unsupported
         // falls, exactly like placement). A despawn is always a defect (DW0313's
         // rule), attributed to this batch.
-        let settled = assembled::resettle(&mut assembled.blocks);
+        let settled = assembled::resettle(std::sync::Arc::make_mut(&mut assembled.blocks));
         if enforce && let Some(lost) = settled.iter().find(|s| s.to.is_none()) {
             return Err(Failure {
                 code: assembled::DW_GRAVITY_DESPAWN,
@@ -640,7 +655,8 @@ fn check_batch_invariants(
     // proofs below can never see (they model walkability and light, not whether
     // a dispenser is still a dispenser).
     check_trap_hardware(plan, bid, batch_writes)?;
-    let relight = crate::compiler::light::relight_over(plan, assembled);
+    let geometry = crate::compiler::light::geometry_world(assembled);
+    let relight = crate::compiler::light::relight_with(plan, assembled, &geometry);
     if let Some(diag) = relight.diagnostics.first() {
         return Err(Failure {
             code: diag.code,
@@ -659,11 +675,9 @@ fn check_batch_invariants(
     // declared lethal volumes are another, and were missing here exactly as they
     // were missing from `emit::build`'s edit arm.
     let premises = crate::compiler::nav::Premises::of_plan(plan, assembled.gate_seals.clone());
-    let with_fixtures = {
-        let mut occ = assembled::occupancy_of(assembled.blocks.clone(), &assembled.open_gates);
-        occ.solid.extend(relight.extra_solid.iter().copied());
-        crate::compiler::nav::World::from_occupancy(occ, premises)
-    };
+    let with_fixtures = geometry
+        .with_premises(premises)
+        .with_extra_solid(&relight.extra_solid);
     let ctx = |e: Failure| Failure {
         code: e.code,
         message: format!("after world-edits batch `{bid}`: {}", e.message),
@@ -1051,9 +1065,10 @@ fn write_cell(
     block: &str,
 ) {
     if assembled::is_air(block) {
-        assembled.blocks.remove(&cell);
+        std::sync::Arc::make_mut(&mut assembled.blocks).remove(&cell);
     } else {
-        assembled.blocks.insert(cell, block.to_string());
+        std::sync::Arc::make_mut(&mut assembled.blocks)
+            .insert(cell, crate::compiler::blockstate::BlockState::new(block));
     }
     if assembled::is_fence_gate(block) && assembled::state_value(block, "open") == Some("true") {
         assembled.open_gates.insert(cell);
@@ -1868,7 +1883,7 @@ fn relight_region(
     // two passes are the same question asked over one area, so they are answered
     // over the same kind of world.
     let nav = crate::compiler::nav::World::from_occupancy(
-        assembled::occupancy_of(assembled.blocks.clone(), &assembled.open_gates),
+        assembled::occupancy_over(&assembled.blocks, &assembled.open_gates),
         crate::compiler::nav::Premises::geometry_only(),
     );
     let moves = crate::compiler::nav::plan_moves(plan, &nav).unwrap_or_default();
@@ -1893,7 +1908,8 @@ fn relight_region(
             ),
         });
     }
-    let mut model = crate::compiler::light::LightModel::from_blocks(assembled.blocks.clone());
+    let mut model =
+        crate::compiler::light::LightModel::from_shared(std::sync::Arc::clone(&assembled.blocks));
     let mut out = crate::compiler::light::Relight::default();
     crate::compiler::light::relight_area(
         &mut model,
@@ -2276,7 +2292,7 @@ mod tests {
             }
         }
         Assembled {
-            blocks,
+            blocks: std::sync::Arc::new(crate::compiler::blockstate::interned(blocks)),
             settled: Vec::new(),
             open_gates: BTreeSet::new(),
             gate_seals: Vec::new(),

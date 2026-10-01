@@ -14,11 +14,13 @@
 //! - [`batchstate`]: a generated PackTest that drives an outcome owns every `#party` term the gates on it read (`DW0807`).
 //! - [`blocking`]: `delvec blocking-chart` — per-elevation cutaway floor plans.
 //! - [`blockout`]: the derived blockout — the map pipeline's stage nobody authors.
+//! - [`blockstate`]: interned block states — the assembled world's block map holds one handle per cell, not one string.
 //! - [`branch`]: branch-complete narrative verification (`DW0480`–`DW0485`).
 //! - [`burial`]: is a placed piece's outward solid boundary buried, or declared (`DW0885`)?
 //! - [`calibrate`]: `delvec calibrate` — a harvested rehearsal report turned back into anchor + offset patches.
 //! - [`camera`]: cutscene camera geometry: the eased dolly and the `shot_style` expansion, shared by emission and validation.
 //! - [`cast`]: the NPC scene ledger (`DW0460`–`DW0467`).
+//! - [`cellset`]: copy-on-write cell sets and maps for the nav model, a bitset when dense, and a flood's visited set.
 //! - [`claims`]: a prefab document says nothing its own bytes deny — every byte-asserting key of the document, one rule (`DW0888`).
 //! - [`clearance`]: the body-vs-block proof — no body occupies the same space as block geometry (`DW0450`/`DW0451`).
 //! - [`cohabit`]: one mark, one body — two bodies whose lifetimes overlap may not be declared on one cell (`DW0896`).
@@ -93,11 +95,13 @@ pub mod atmos;
 pub mod batchstate;
 pub mod blocking;
 pub mod blockout;
+pub mod blockstate;
 pub mod branch;
 pub mod burial;
 pub mod calibrate;
 pub mod camera;
 pub mod cast;
+pub mod cellset;
 pub mod claims;
 pub mod clearance;
 pub mod cohabit;
@@ -132,6 +136,7 @@ pub mod mark;
 pub mod massing;
 pub mod muster;
 pub mod nav;
+pub(crate) mod nbtread;
 pub mod onkill;
 pub mod plan;
 pub mod png;
