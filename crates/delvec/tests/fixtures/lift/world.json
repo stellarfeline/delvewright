@@ -17,6 +17,6 @@
     "title": "The Hoist",
     "weather": "clear"
   },
-  "dsl_version": "0.34.0",
+  "dsl_version": "0.35.0",
   "stage": "world"
 }
