@@ -8,7 +8,7 @@ English · [简体中文](README.zh-CN.md)
 
 It automates the tedium and the verification, not the design: it stops and waits for you to approve the design and to walk the build, and when it refuses something it names what to change instead of changing it.
 
-**Play it now:** join `minecraft.stellarfeline.ca:25565` from a Minecraft Java 1.21.11 client, and accept the resource-pack prompt when you join. The server runs Vesperhold, the castle in the picture.
+**Play it now:** join `minecraft.stellarfeline.ca` from a Minecraft Java 1.21.11 client, and accept the resource-pack prompt when you join. The server runs Vesperhold, the castle in the picture.
 
 ## Get started
 

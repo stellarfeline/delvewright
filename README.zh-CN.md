@@ -8,7 +8,7 @@
 
 它自动化的是繁琐的劳动和验证，而不是设计：它会停下来，等你认可设计、等你亲自走一遍构建出的地图；当它拒绝某样东西时，它会指明该改什么，而不是替你去改。
 
-**现在就来玩：** 用 Minecraft Java 1.21.11 客户端加入 `minecraft.stellarfeline.ca:25565`，进入时接受资源包提示。服务器上运行的是 Vesperhold，也就是图中这座城堡。
+**现在就来玩：** 用 Minecraft Java 1.21.11 客户端加入 `minecraft.stellarfeline.ca`，进入时接受资源包提示。服务器上运行的是 Vesperhold，也就是图中这座城堡。
 
 ## 开始使用
 
