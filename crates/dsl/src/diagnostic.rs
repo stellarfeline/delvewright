@@ -875,6 +875,14 @@ pub mod codes {
     /// played by ONE party of 1–4 (ADR/CLAUDE.md product definition), so a declared
     /// mandatory party size can never sit outside it. Validation-tier (exit 1).
     pub const PARTY_SIZE: DwCode = DwCode::new("DW0356", ExitTier::Build);
+    /// (spec-0077 §7) **A respawn wait that cannot be honoured.**
+    /// `world.respawn_wait.seconds` lies outside `1..=120`, or the campaign
+    /// declares a `respawn_wait` and no `set-checkpoint` or `bonfire` for a
+    /// fallen player to come back to (the wait hangs off the checkpoint respawn
+    /// edge, so with none it is a silently dead declaration). One rule about what
+    /// a wait needs, two ways to break it. Validation-tier (exit 1).
+    /// Prescription: a value in `1..=120`, or a checkpoint, or drop the field.
+    pub const RESPAWN_WAIT_INVALID: DwCode = DwCode::new("DW0925", ExitTier::Build);
     /// (v0.6, spec-0018) A `carrier: "one"` `give-item` sits in a bundle that is
     /// only ever reached from the **scheduler** (`move-npc`/`move-actor`
     /// `on_arrive`, a `sequence` step). `carrier: "one"` means "hand this single

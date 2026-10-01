@@ -137,6 +137,7 @@ pub mod massing;
 pub mod muster;
 pub mod nav;
 pub(crate) mod nbtread;
+pub mod observer;
 pub mod onkill;
 pub mod plan;
 pub mod png;
