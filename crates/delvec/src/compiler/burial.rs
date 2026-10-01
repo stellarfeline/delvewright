@@ -655,7 +655,7 @@ fn party_air(
     blocks: &crate::compiler::blockstate::BlockMap,
     ambient: &Ambient,
     reachable: &BTreeSet<[i32; 3]>,
-) -> (BTreeSet<[i32; 3]>, bool) {
+) -> (crate::compiler::cellset::VisitSet, bool) {
     let distance = |c: [i32; 3]| {
         pieces
             .iter()
@@ -672,7 +672,17 @@ fn party_air(
             Ambient::Void => true,
         }
     };
-    let mut seen: BTreeSet<[i32; 3]> = BTreeSet::new();
+    // Every cell the flood admits lies within `SKIN` of a piece, so it lies in
+    // the pieces' joint box grown by `SKIN`; the set is dense over that box.
+    let mut lo = [i32::MAX; 3];
+    let mut hi = [i32::MIN; 3];
+    for p in pieces {
+        for a in 0..3 {
+            lo[a] = lo[a].min(p.min[a].saturating_sub(SKIN));
+            hi[a] = hi[a].max(p.max[a].saturating_add(SKIN));
+        }
+    }
+    let mut seen = crate::compiler::cellset::VisitSet::within(lo, hi);
     let mut queue: VecDeque<[i32; 3]> = VecDeque::new();
     let mut cut_off = false;
     // The body, not the foot: a standing cell is where the feet are, and what a

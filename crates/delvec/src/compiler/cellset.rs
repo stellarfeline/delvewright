@@ -517,6 +517,81 @@ impl<'a> IntoIterator for &'a CellSet {
     }
 }
 
+/// A set of visited cells for a flood whose reach is known to lie inside a
+/// box: a bitset over the box, with any cell outside it kept in a `BTreeSet`,
+/// so membership is exact wherever the flood goes. The box only decides the
+/// cost.
+#[derive(Debug)]
+pub struct VisitSet {
+    dense: Option<Bits>,
+    outside: BTreeSet<Cell>,
+    len: usize,
+}
+
+/// The largest box (in cells) a [`VisitSet`] holds as a bitset: 32 MiB of bits.
+const VISIT_DENSE_LIMIT: u64 = 1 << 28;
+
+impl VisitSet {
+    /// An empty set, dense over the inclusive box `lo..=hi` when the box is no
+    /// larger than [`VISIT_DENSE_LIMIT`] cells.
+    pub fn within(lo: Cell, hi: Cell) -> VisitSet {
+        let dims = [0, 1, 2].map(|a| (i64::from(hi[a]) - i64::from(lo[a]) + 1).max(0) as u64);
+        let volume = dims[0]
+            .checked_mul(dims[1])
+            .and_then(|v| v.checked_mul(dims[2]));
+        let dense = match volume {
+            Some(v) if v > 0 && v <= VISIT_DENSE_LIMIT => Some(Bits {
+                lo,
+                dims: dims.map(|d| d as usize),
+                words: vec![0u64; (v as usize).div_ceil(64)],
+            }),
+            _ => None,
+        };
+        VisitSet {
+            dense,
+            outside: BTreeSet::new(),
+            len: 0,
+        }
+    }
+
+    /// Add `c`; whether it was absent.
+    pub fn insert(&mut self, c: Cell) -> bool {
+        let fresh = match self
+            .dense
+            .as_mut()
+            .and_then(|b| b.index(&c).map(|i| (b, i)))
+        {
+            Some((b, i)) => {
+                let (w, bit) = (i / 64, 1u64 << (i % 64));
+                let fresh = b.words[w] & bit == 0;
+                b.words[w] |= bit;
+                fresh
+            }
+            None => self.outside.insert(c),
+        };
+        self.len += usize::from(fresh);
+        fresh
+    }
+
+    /// Whether the set holds `c`.
+    pub fn contains(&self, c: &Cell) -> bool {
+        match self.dense.as_ref().and_then(|b| b.index(c).map(|i| (b, i))) {
+            Some((b, i)) => b.words[i / 64] & (1u64 << (i % 64)) != 0,
+            None => self.outside.contains(c),
+        }
+    }
+
+    /// The number of cells held.
+    pub fn len(&self) -> usize {
+        self.len
+    }
+
+    /// Whether no cell is held.
+    pub fn is_empty(&self) -> bool {
+        self.len == 0
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -554,6 +629,44 @@ mod tests {
             assert_eq!(b.contains(c), want_b.contains(c));
             assert_eq!(a.contains(c), base.contains(c));
         }
+    }
+
+    /// A visit set answers as a `BTreeSet` would, inside its box and outside
+    /// it, and with a box too large to hold densely.
+    #[test]
+    fn a_visit_set_answers_as_a_set_wherever_the_flood_goes() {
+        for (lo, hi) in [
+            ([0, 0, 0], [4, 3, 5]),
+            ([0, 0, 0], [1 << 20, 1 << 20, 1 << 20]),
+        ] {
+            let mut v = VisitSet::within(lo, hi);
+            let mut want: BTreeSet<Cell> = BTreeSet::new();
+            for c in [
+                [0, 0, 0],
+                [4, 3, 5],
+                [2, 1, 1],
+                [-1, 0, 0],
+                [5, 0, 0],
+                [2, 1, 1],
+                [-1, 0, 0],
+            ] {
+                assert_eq!(v.insert(c), want.insert(c), "{c:?}");
+            }
+            assert_eq!(v.len(), want.len());
+            for x in -2..7 {
+                for y in -1..5 {
+                    for z in -1..7 {
+                        assert_eq!(v.contains(&[x, y, z]), want.contains(&[x, y, z]));
+                    }
+                }
+            }
+        }
+        assert!(VisitSet::within([0, 0, 0], [4, 3, 5]).dense.is_some());
+        assert!(
+            VisitSet::within([0, 0, 0], [1 << 20, 1 << 20, 1 << 20])
+                .dense
+                .is_none()
+        );
     }
 
     /// A map overlay holds a changed value, and restating the shared value
