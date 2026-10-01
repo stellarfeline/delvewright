@@ -36,7 +36,7 @@ Found while measuring: until a client sends `player_loaded`, the server holds th
 ```
 
 - `seconds` — how long a fallen player waits after clicking *Respawn*, `1..=120`.
-- `alone` — whether a player who dies with nobody else present also waits. Default `false`: a party of one never waits. **Cited** (the owner's ruling: disabled alone by default, configured by the creator in a party).
+- `alone` — whether a player who dies with nobody else present also waits. Default `false`: a party of one never waits. **Cited** (§8 decision 1: off alone by default, configured by the creator for a party).
 - Absent — no wait, and emission is byte-identical to the base.
 
 It is a world-level declaration because it is a rule of the delve, not of any fire or checkpoint: the same wait applies wherever the player falls. **Cited** (CLAUDE.md, *This is a general engine*: the creator states the number; a primitive does not choose it).
@@ -77,7 +77,7 @@ Measured on the base gallery build: 110 positional player selectors (`@a[...]` w
 
 ## 8. Decisions for the owner
 
-1. **A party of one never waits unless the creator says `alone: true`.** (The owner's ruling, restated as the surface.)
+1. **A party of one never waits unless the creator says `alone: true`.** (Off alone by default, stated as the surface.)
 2. **A waiting player watches a teammate, not the map.** The free spectator view would let a waiting player fly ahead through walls and spoil every first-encounter kill the party has not reached yet. The cost: the view is a teammate's, and sneaking frees it while the key is held, exactly as in a cutscene.
 3. **A wipe ends every wait at once.** A party in which nobody is left in play is wiped, and the scene re-seats on the first return.
 4. **The wait counts from the *Respawn* click, not from the death.** M3: the death screen cannot be timed by vanilla's own clock, and a player who leaves the death screen open is already waiting.
