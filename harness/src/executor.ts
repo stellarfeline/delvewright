@@ -2987,10 +2987,15 @@ export class MineflayerExecutor implements StepExecutor {
     label: string,
     dest: Vec3Tuple | undefined,
     destName: string,
+    purse?: { readonly plan: DeathPlan; readonly trial: LethalTrial },
   ): Promise<{ readonly kind: "staging" | "walk"; readonly why: string } | undefined> {
     const deaths = this.deathSeq;
+    const ledger = new Map(
+      (purse?.trial.wagers ?? []).map((w) => [w.objective, this.myScore(w.objective)] as const),
+    );
     try {
       await this.meetReseatedWaves(label);
+      if (purse !== undefined) await this.takeBackBounties(purse.plan, purse.trial, ledger);
     } catch (err) {
       if (err instanceof BotDeathError) return undefined;
       return {
@@ -3023,6 +3028,7 @@ export class MineflayerExecutor implements StepExecutor {
    * a wave it could not stage away is the trial's `walkBackFailure`.
    */
   private async walkBackToStake(
+    plan: DeathPlan,
     volume: string,
     trial: LethalTrial,
     anchor: Vec3Tuple,
@@ -3032,6 +3038,7 @@ export class MineflayerExecutor implements StepExecutor {
       `death-loop walk back to the place at the near lip`,
       anchor,
       "the place at the near lip",
+      { plan, trial },
     );
     if (back !== undefined || this.deathSeq !== deathsBack) {
       const died = this.deathSeq !== deathsBack ? this.lastDeath : undefined;
@@ -3368,7 +3375,7 @@ export class MineflayerExecutor implements StepExecutor {
     // --- the walk back, and the stake at the end of it ----------------------
     const anchor = trial.expectedAnchor;
     if (anchor === undefined) return;
-    if (!(await this.walkBackToStake(volume.id, trial, anchor))) return;
+    if (!(await this.walkBackToStake(plan, volume.id, trial, anchor))) return;
     await this.awaitEntitySettle();
     // Wait for the hardware this death PROMISED, not for the client to go quiet.
     // See {@link MARKER_PLACE_TIMEOUT_MS}: the settle is a proxy and it can be
@@ -3460,6 +3467,48 @@ export class MineflayerExecutor implements StepExecutor {
    * forfeit is then observable only at zero is refused as UNBOUND by
    * `lethalTrialFailures`.
    */
+  /**
+   * **Take back the bounties a staged clear paid into a wagered purse.**
+   *
+   * {@link meetReseatedWaves} removes bodies by attributed blows, and a kill pays
+   * its bounty: on vesperhold the walk back's six re-seated waves paid 26 tallow
+   * into the purse the death had emptied, and the collection then read `0 → 36`
+   * for a stake of 10. Every per-player wager whose ledger moved while the waves
+   * were met — and nothing else moves it then, because the bot has not taken a
+   * step — is set back to what it read before, named in `staged_removals` as a
+   * `player` row.
+   */
+  private async takeBackBounties(
+    plan: DeathPlan,
+    trial: LethalTrial,
+    before: ReadonlyMap<string, number | undefined>,
+  ): Promise<void> {
+    const bot = this.requireBot();
+    for (const w of trial.wagers) {
+      const want = before.get(w.objective);
+      const scope = plan.stakes.find((s) => s.id === w.stake)?.currency.scope ?? "player";
+      const now = this.myScore(w.objective);
+      if (want === undefined || scope !== "player" || now === want) continue;
+      const from = this.chatMark();
+      bot.chat(`/scoreboard players set @s ${w.objective} ${want}`);
+      await delay(STAGED_REPLY_MS);
+      const refusal = this.chatSince(from).lines.find((line) => isRejection(line));
+      this.stagedRemovals.push({
+        kind: "player",
+        why:
+          `stake datum restored for ${trial.volume}: \`${w.objective}\` (\`${w.stake}\`) set ` +
+          `back from ${now ?? "?"} to ${want} — the bounties the staged clears paid into it`,
+        performed: refusal === undefined,
+        detail: refusal,
+      });
+      await this.settledScore(w.objective, want);
+      process.stderr.write(
+        `[death-loop] ${trial.volume}: \`${w.objective}\` read ${now ?? "?"} after the staged ` +
+          `clears; set back to ${want}\n`,
+      );
+    }
+  }
+
   private async stageWagers(plan: DeathPlan, trial: LethalTrial): Promise<void> {
     const bot = this.requireBot();
     for (const w of trial.wagers) {

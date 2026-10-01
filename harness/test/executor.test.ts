@@ -4705,17 +4705,82 @@ test("the death-loop walk back stages away a wave the death put back, before it 
   const walkBack = (
     executor as unknown as {
       walkBackToStake: (
+        plan: unknown,
         volume: string,
         trial: unknown,
         anchor: readonly [number, number, number],
       ) => Promise<boolean>;
     }
   ).walkBackToStake.bind(executor);
-  const arrived = await walkBack("lethal/undertide", trial, [31, 68, 78]);
+  const arrived = await walkBack({ stakes: [] }, "lethal/undertide", trial, [31, 68, 78]);
 
   assert.equal(executor.deathDiagnostic(), undefined, "the walk back did not die");
   assert.equal(arrived, true, trial.walkBackFailure);
   assert.equal(trial.walkedBack, true);
   assert.equal(trial.walkBackFailure, undefined);
   assert.deepEqual(bot.waveIds(), [], "the re-seated wave was staged away");
+});
+
+test("the bounties a staged clear pays into a wagered purse are taken back before the walk", async () => {
+  // vesperhold: the walk back's six re-seated waves paid 26 tallow into the purse
+  // the death had emptied, and the collection read `0 → 36` for a stake of 10.
+  const bot = new CombatFakeBot();
+  const executor = attach(bot);
+  const scores = (executor as unknown as { scores: Map<string, Map<string, number>> }).scores;
+  scores.set("dw.s_tallow", new Map([["delve-bot", 26]]));
+  const chat = bot.chat.bind(bot);
+  bot.chat = (message: string): void => {
+    chat(message);
+    const set = /^\/scoreboard players set @s (\S+) (-?\d+)$/.exec(message);
+    if (set) scores.get(set[1]!)!.set("delve-bot", Number(set[2]));
+  };
+  const trial = openLethalTrial(
+    {
+      id: "lethal/undertide",
+      region: { lo: [35, 58, 79], hi: [37, 60, 81] },
+      keepOut: { lo: [34, 58, 78], hi: [38, 60, 82] },
+      message: "The undertide took you.",
+      messageKey: undefined,
+      damageType: "minecraft:drown",
+    },
+    [37, 60, 79],
+    [
+      {
+        id: "stake/tallow",
+        currency: {
+          state: "tallow",
+          objective: "dw.s_tallow",
+          initial: 0,
+          scope: "player",
+          name: undefined,
+          nameKey: undefined,
+        },
+        forfeit: { kind: "all" },
+        maxLive: 1,
+        onFull: "replace",
+        collectBy: "interact",
+        collectedMessage: "You take back your tallow.",
+        markerItem: "minecraft:candle",
+      },
+    ],
+  );
+  const takeBack = (
+    executor as unknown as {
+      takeBackBounties: (
+        plan: unknown,
+        trial: unknown,
+        before: ReadonlyMap<string, number | undefined>,
+      ) => Promise<void>;
+    }
+  ).takeBackBounties.bind(executor);
+  await takeBack(
+    { stakes: [{ id: "stake/tallow", currency: { scope: "player" } }] },
+    trial,
+    new Map([["dw.s_tallow", 0]]),
+  );
+  assert.ok(bot.calls.includes("chat(/scoreboard players set @s dw.s_tallow 0)"), bot.calls.join(" | "));
+  assert.equal(scores.get("dw.s_tallow")!.get("delve-bot"), 0);
+  assert.ok(
+    executor.stagedBodies().some((r) => r.kind === "player" && /set back from 26 to 0/.test(r.why)),
+  );
 });
