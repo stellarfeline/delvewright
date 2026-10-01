@@ -1124,6 +1124,9 @@ export const RESPAWN_PROTECTION_TICKS = SERVER_LOAD_TIMEOUT_TICKS;
  */
 const TIME_PACKET_TICKS = 20;
 
+/** Where {@link MineflayerExecutor.readServerPos} parks the game time it reads (harness-owned). */
+const POS_READ_STORAGE = "dw_harness:pos_read";
+
 /** Bound on the respawn-protection wait, however slowly the server ticks. */
 const RESPAWN_PROTECTION_TIMEOUT_MS = 15_000;
 
@@ -1509,6 +1512,8 @@ export class MineflayerExecutor implements StepExecutor {
   /** `respawn` packets this run has received, and the count at the last death. */
   private respawnPackets = 0;
   private respawnPacketsAtDeath = 0;
+  /** Serial for {@link readServerPos}'s answer markers. */
+  private posReads = 0;
   /** One-shot callbacks armed by {@link raceDeath}, fired on death. */
   private readonly deathWaiters = new Set<(err: BotDeathError) => void>();
   /** Ring buffer of recent chat lines, mined for the death-cause message. */
@@ -5985,48 +5990,79 @@ export class MineflayerExecutor implements StepExecutor {
   }
 
   /**
-   * The server's own `Pos` for the bot, bracketed by two `time query gametime`
-   * replies so the reading carries the ticks it was taken between. Every reply is
-   * judged by the shared rejection rule; a refused or missing answer is recorded
-   * as unread, never guessed.
+   * The server's own `Pos` for the bot, with the game time it was read at.
+   *
+   * The delve seals `send_command_feedback false`, so a `data get` or `time query`
+   * reply never reaches the bot. The answer is therefore spoken by `tellraw`: the
+   * game time is stored first (`execute store … run time query gametime`) and the
+   * same `tellraw` prints that tick and the bot's `Pos` NBT, then a second store
+   * and `tellraw` print the tick after, so the reading carries the ticks it was
+   * taken between. A refusal still reaches the sender with feedback off, and every
+   * line is judged by the shared rejection rule; a refused or missing answer is
+   * recorded as unread, never guessed.
    */
   private async readServerPos(): Promise<RespawnReading["server"]> {
     const bot = this.requireBot();
+    const serial = ++this.posReads;
+    const before = `[dw:pos ${serial} at `;
+    const after = `[dw:pos ${serial} after `;
     const from = this.chatMark();
-    bot.chat("/time query gametime");
-    bot.chat(`/data get entity ${bot.username} Pos`);
-    bot.chat("/time query gametime");
-    let ticks: number[] = [];
+    const store = (key: string): string =>
+      `/execute store result storage ${POS_READ_STORAGE} ${key} int 1 run time query gametime`;
+    bot.chat(store("t0"));
+    bot.chat(
+      `/tellraw @s ${JSON.stringify([
+        { text: before },
+        { nbt: "t0", storage: POS_READ_STORAGE },
+        { text: " " },
+        { nbt: "Pos", entity: "@s" },
+        { text: "]" },
+      ])}`,
+    );
+    bot.chat(store("t1"));
+    bot.chat(
+      `/tellraw @s ${JSON.stringify([
+        { text: after },
+        { nbt: "t1", storage: POS_READ_STORAGE },
+        { text: "]" },
+      ])}`,
+    );
     let pos: Vec3Tuple | undefined;
+    let tickFrom: number | undefined;
+    let tickTo: number | undefined;
     let refused: string | undefined;
     // Not `waitFor`: a death after the commands were sent is not this reading's
     // business, and the answer about the respawn it was sent for still arrives.
     const answered = (): boolean => {
       const lines = this.chatSince(from).lines;
       refused = lines.find((l) => isRejection(l));
-      ticks = lines
-        .map((l) => /^The time is (\d+)$/.exec(l.trim()))
-        .filter((m): m is RegExpExecArray => m !== null)
-        .map((m) => Number(m[1]));
-      const at = lines
-        .map((l) =>
-          /has the following entity data: \[(-?[\d.]+)d, (-?[\d.]+)d, (-?[\d.]+)d\]/.exec(l),
-        )
-        .find((m) => m !== null);
-      if (at) pos = [Number(at[1]), Number(at[2]), Number(at[3])];
-      return refused !== undefined || (ticks.length >= 2 && pos !== undefined);
+      for (const l of lines) {
+        if (l.includes(before)) {
+          const m =
+            /\[dw:pos \d+ at (\d+) \[(-?[\d.]+)d, (-?[\d.]+)d, (-?[\d.]+)d\]\]/.exec(l);
+          if (m) {
+            tickFrom = Number(m[1]);
+            pos = [Number(m[2]), Number(m[3]), Number(m[4])];
+          }
+        }
+        if (l.includes(after)) {
+          const m = /\[dw:pos \d+ after (\d+)\]/.exec(l);
+          if (m) tickTo = Number(m[1]);
+        }
+      }
+      return refused !== undefined || (pos !== undefined && tickTo !== undefined);
     };
     const deadline = Date.now() + SCORE_TRACK_TIMEOUT_MS;
     while (!answered() && Date.now() < deadline) await delay(LEDGER_POLL_MS);
     if (refused !== undefined) return { unread: `refused: ${refused}` };
-    if (pos === undefined || ticks.length < 2) {
+    if (pos === undefined || tickFrom === undefined || tickTo === undefined) {
       return {
         unread:
           `no complete answer in ${SCORE_TRACK_TIMEOUT_MS}ms: ` +
-          JSON.stringify(this.chatSince(from).lines),
+          JSON.stringify(this.chatSince(from).lines.filter((l) => l.includes("[dw:pos "))),
       };
     }
-    return { pos, tickFrom: ticks[0]!, tickTo: ticks[ticks.length - 1]! };
+    return { pos, tickFrom, tickTo };
   }
 
   /**
