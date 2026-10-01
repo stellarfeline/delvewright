@@ -190,8 +190,183 @@ impl<'a, V> Iterator for Iter<'a, V> {
 }
 
 /// A cell set whose bulk is shared between copies; see the module docs.
-#[derive(Debug, Clone, Default, PartialEq)]
-pub struct CellSet(CellMap<()>);
+///
+/// The shared part is a bitset over its cells' bounding box when the cells
+/// fill enough of that box ([`DENSE_CELLS_PER_BIT`]), and a `BTreeSet`
+/// otherwise. Either way it iterates in cell order: a bit's index within the
+/// box is `((x - x0) * ny + (y - y0)) * nz + (z - z0)`, which orders cells
+/// exactly as `[i32; 3]` compares.
+#[derive(Debug, Clone)]
+pub struct CellSet {
+    base: Arc<Base>,
+    /// This copy's edits: `true` adds a cell `base` lacks, `false` removes one
+    /// `base` holds. A key whose edit would restate `base` is not stored.
+    over: BTreeMap<Cell, bool>,
+    len: usize,
+}
+
+/// The shared part of a [`CellSet`].
+#[derive(Debug)]
+enum Base {
+    Sparse(BTreeSet<Cell>),
+    Dense(Bits),
+}
+
+/// A set takes the dense form when its bounding box holds at most this many
+/// cells per member: at one bit per box cell that is a quarter of the 32
+/// bytes a `BTreeSet` spends per member before its node overhead.
+const DENSE_CELLS_PER_BIT: usize = 64;
+
+/// A bitset over an inclusive box.
+#[derive(Debug)]
+struct Bits {
+    lo: Cell,
+    /// Box extent along x, y, z.
+    dims: [usize; 3],
+    words: Vec<u64>,
+}
+
+impl Bits {
+    /// The bit index of `c`, or `None` outside the box.
+    #[inline]
+    fn index(&self, c: &Cell) -> Option<usize> {
+        let mut idx = 0usize;
+        for ((&v, &lo), &dim) in c.iter().zip(&self.lo).zip(&self.dims) {
+            let d = i64::from(v) - i64::from(lo);
+            if d < 0 || d as u64 >= dim as u64 {
+                return None;
+            }
+            idx = idx * dim + d as usize;
+        }
+        Some(idx)
+    }
+
+    #[inline]
+    fn contains(&self, c: &Cell) -> bool {
+        self.index(c)
+            .is_some_and(|i| self.words[i / 64] & (1u64 << (i % 64)) != 0)
+    }
+
+    fn cell(&self, idx: usize) -> Cell {
+        let z = idx % self.dims[2];
+        let rest = idx / self.dims[2];
+        let y = rest % self.dims[1];
+        let x = rest / self.dims[1];
+        [
+            self.lo[0] + x as i32,
+            self.lo[1] + y as i32,
+            self.lo[2] + z as i32,
+        ]
+    }
+}
+
+impl Base {
+    fn of(set: BTreeSet<Cell>) -> Base {
+        let (Some(first), Some(last)) = (set.first(), set.last()) else {
+            return Base::Sparse(set);
+        };
+        // x is the leading key, so the first and last cells bound x; y and z
+        // need the whole scan.
+        let mut lo = [first[0], i32::MAX, i32::MAX];
+        let mut hi = [last[0], i32::MIN, i32::MIN];
+        for c in &set {
+            for a in 1..3 {
+                lo[a] = lo[a].min(c[a]);
+                hi[a] = hi[a].max(c[a]);
+            }
+        }
+        let dims = [0, 1, 2].map(|a| (i64::from(hi[a]) - i64::from(lo[a]) + 1) as u64);
+        let volume = dims[0]
+            .checked_mul(dims[1])
+            .and_then(|v| v.checked_mul(dims[2]));
+        match volume {
+            Some(v) if v <= (set.len() as u64).saturating_mul(DENSE_CELLS_PER_BIT as u64) => {
+                let mut bits = Bits {
+                    lo,
+                    dims: dims.map(|d| d as usize),
+                    words: vec![0u64; (v as usize).div_ceil(64)],
+                };
+                for c in &set {
+                    let i = bits.index(c).expect("inside its own bounding box");
+                    bits.words[i / 64] |= 1u64 << (i % 64);
+                }
+                Base::Dense(bits)
+            }
+            _ => Base::Sparse(set),
+        }
+    }
+
+    #[inline]
+    fn contains(&self, c: &Cell) -> bool {
+        match self {
+            Base::Sparse(s) => s.contains(c),
+            Base::Dense(b) => b.contains(c),
+        }
+    }
+
+    fn len(&self) -> usize {
+        match self {
+            Base::Sparse(s) => s.len(),
+            Base::Dense(b) => b.words.iter().map(|w| w.count_ones() as usize).sum(),
+        }
+    }
+
+    fn iter(&self) -> BaseIter<'_> {
+        match self {
+            Base::Sparse(s) => BaseIter::Sparse(s.iter()),
+            Base::Dense(b) => BaseIter::Dense {
+                bits: b,
+                word: 0,
+                cur: b.words.first().copied().unwrap_or(0),
+            },
+        }
+    }
+}
+
+/// The cell-ordered iterator of a [`Base`].
+enum BaseIter<'a> {
+    Sparse(std::collections::btree_set::Iter<'a, Cell>),
+    Dense {
+        bits: &'a Bits,
+        word: usize,
+        cur: u64,
+    },
+}
+
+impl Iterator for BaseIter<'_> {
+    type Item = Cell;
+
+    fn next(&mut self) -> Option<Cell> {
+        match self {
+            BaseIter::Sparse(it) => it.next().copied(),
+            BaseIter::Dense { bits, word, cur } => {
+                while *cur == 0 {
+                    *word += 1;
+                    *cur = *bits.words.get(*word)?;
+                }
+                let bit = cur.trailing_zeros() as usize;
+                *cur &= *cur - 1;
+                Some(bits.cell(*word * 64 + bit))
+            }
+        }
+    }
+}
+
+impl Default for CellSet {
+    fn default() -> Self {
+        CellSet {
+            base: Arc::new(Base::Sparse(BTreeSet::new())),
+            over: BTreeMap::new(),
+            len: 0,
+        }
+    }
+}
+
+impl PartialEq for CellSet {
+    fn eq(&self, other: &Self) -> bool {
+        self.len == other.len && self.iter().eq(other.iter())
+    }
+}
 
 impl CellSet {
     /// An empty set.
@@ -200,48 +375,111 @@ impl CellSet {
     }
 
     /// Whether the set holds `c`.
+    #[inline]
     pub fn contains(&self, c: &Cell) -> bool {
-        self.0.contains_key(c)
+        if !self.over.is_empty()
+            && let Some(present) = self.over.get(c)
+        {
+            return *present;
+        }
+        self.base.contains(c)
     }
 
     /// Add `c`; whether it was absent.
     pub fn insert(&mut self, c: Cell) -> bool {
-        self.0.insert(c, ()).is_none()
+        if self.contains(&c) {
+            return false;
+        }
+        if self.base.contains(&c) {
+            self.over.remove(&c);
+        } else {
+            self.over.insert(c, true);
+        }
+        self.len += 1;
+        true
     }
 
     /// Remove `c`; whether it was present.
     pub fn remove(&mut self, c: &Cell) -> bool {
-        self.0.remove(c).is_some()
+        if !self.contains(c) {
+            return false;
+        }
+        if self.base.contains(c) {
+            self.over.insert(*c, false);
+        } else {
+            self.over.remove(c);
+        }
+        self.len -= 1;
+        true
     }
 
     /// The number of cells held.
     pub fn len(&self) -> usize {
-        self.0.len()
+        self.len
     }
 
     /// Whether no cell is held.
     pub fn is_empty(&self) -> bool {
-        self.0.is_empty()
+        self.len == 0
     }
 
     /// Every cell, in cell order.
-    pub fn iter(&self) -> impl Iterator<Item = &Cell> {
-        self.0.keys()
+    pub fn iter(&self) -> SetIter<'_> {
+        SetIter {
+            base: self.base.iter().peekable(),
+            over: self.over.iter().peekable(),
+        }
     }
 
-    /// See [`CellMap::compact`].
+    /// Fold this copy's edits into a shared part of its own, so later copies
+    /// share them instead of each carrying them in its overlay.
     pub fn compact(&mut self) {
-        self.0.compact();
+        if self.over.is_empty() {
+            return;
+        }
+        *self = CellSet::from(self.iter().collect::<BTreeSet<Cell>>());
+    }
+}
+
+/// The merged, cell-ordered iterator of a [`CellSet`].
+pub struct SetIter<'a> {
+    base: Peekable<BaseIter<'a>>,
+    over: Peekable<btree_map::Iter<'a, Cell, bool>>,
+}
+
+impl Iterator for SetIter<'_> {
+    type Item = Cell;
+
+    fn next(&mut self) -> Option<Cell> {
+        loop {
+            let order = match (self.base.peek(), self.over.peek()) {
+                (None, None) => return None,
+                (Some(_), None) => Ordering::Less,
+                (None, Some(_)) => Ordering::Greater,
+                (Some(b), Some((o, _))) => b.cmp(o),
+            };
+            if order == Ordering::Less {
+                return self.base.next();
+            }
+            if order == Ordering::Equal {
+                self.base.next(); // shadowed by the overlay
+            }
+            let (c, present) = self.over.next().expect("peeked");
+            if *present {
+                return Some(*c);
+            }
+        }
     }
 }
 
 impl From<BTreeSet<Cell>> for CellSet {
     fn from(set: BTreeSet<Cell>) -> Self {
-        CellSet(CellMap::from(
-            set.into_iter()
-                .map(|c| (c, ()))
-                .collect::<BTreeMap<Cell, ()>>(),
-        ))
+        let base = Base::of(set);
+        CellSet {
+            len: base.len(),
+            base: Arc::new(base),
+            over: BTreeMap::new(),
+        }
     }
 }
 
@@ -260,14 +498,11 @@ impl Extend<Cell> for CellSet {
 }
 
 impl<'a> IntoIterator for &'a CellSet {
-    type Item = &'a Cell;
-    type IntoIter = std::iter::Map<Iter<'a, ()>, fn((&'a Cell, &'a ())) -> &'a Cell>;
+    type Item = Cell;
+    type IntoIter = SetIter<'a>;
 
-    fn into_iter(self) -> Self::IntoIter {
-        fn key<'b>((c, _): (&'b Cell, &'b ())) -> &'b Cell {
-            c
-        }
-        self.0.iter().map(key as fn((&'a Cell, &'a ())) -> &'a Cell)
+    fn into_iter(self) -> SetIter<'a> {
+        self.iter()
     }
 }
 
@@ -295,11 +530,11 @@ mod tests {
         want_b.extend([[1, 0, 0], [9, 9, 9], [-1, 0, 0]]);
 
         assert_eq!(
-            a.iter().copied().collect::<Vec<_>>(),
+            a.iter().collect::<Vec<_>>(),
             base.iter().copied().collect::<Vec<_>>()
         );
         assert_eq!(
-            b.iter().copied().collect::<Vec<_>>(),
+            b.iter().collect::<Vec<_>>(),
             want_b.iter().copied().collect::<Vec<_>>()
         );
         assert_eq!(b.len(), want_b.len());
@@ -328,5 +563,61 @@ mod tests {
             vec![([0, 0, 0], 8)]
         );
         assert!(m != n);
+    }
+
+    /// A set that fills its box takes the dense form, and a copy of it with
+    /// edits iterates, counts and answers membership exactly as a `BTreeSet`
+    /// holding the same cells, including at the box edges and outside it.
+    #[test]
+    fn the_dense_form_reads_as_the_set_it_holds() {
+        let mut want: BTreeSet<Cell> = BTreeSet::new();
+        for x in -3..4 {
+            for y in -2..3 {
+                for z in 60..66 {
+                    if (x * 7 + y * 3 + z) % 5 != 0 {
+                        want.insert([x, y, z]);
+                    }
+                }
+            }
+        }
+        let set = CellSet::from(want.clone());
+        assert!(matches!(*set.base, Base::Dense(_)), "dense form taken");
+        let sparse = CellSet::from(BTreeSet::from([[0, 0, 0], [1000, 1000, 1000]]));
+        assert!(matches!(*sparse.base, Base::Sparse(_)), "sparse form kept");
+
+        let mut copy = set.clone();
+        let mut want_copy = want.clone();
+        for c in [
+            [-3, -2, 60],
+            [3, 2, 65],
+            [0, 0, 62],
+            [9, 9, 9],
+            [-9, 0, 61],
+            [0, 0, 60],
+        ] {
+            assert_eq!(copy.remove(&c), want_copy.remove(&c), "remove {c:?}");
+            assert_eq!(
+                copy.insert([c[0], c[1] + 10, c[2]]),
+                want_copy.insert([c[0], c[1] + 10, c[2]])
+            );
+        }
+        for (s, w) in [(&set, &want), (&copy, &want_copy)] {
+            assert_eq!(
+                s.iter().collect::<Vec<_>>(),
+                w.iter().copied().collect::<Vec<_>>()
+            );
+            assert_eq!(s.len(), w.len());
+            for x in -5..6 {
+                for y in -4..15 {
+                    for z in 58..68 {
+                        assert_eq!(s.contains(&[x, y, z]), w.contains(&[x, y, z]));
+                    }
+                }
+            }
+        }
+        let mut compacted = copy.clone();
+        compacted.compact();
+        assert!(compacted.over.is_empty());
+        assert!(compacted == copy);
     }
 }

@@ -1357,7 +1357,6 @@ impl World {
         let solid: Vec<[i32; 3]> = self
             .furniture
             .iter()
-            .copied()
             .filter(|c| self.is_solid(*c))
             .collect();
         let open = self.without_furniture();
@@ -1835,8 +1834,8 @@ impl World {
             built: self.built.clone(),
         };
         for c in &self.flood_written {
-            w.flooded.remove(c);
-            w.solid.insert(*c);
+            w.flooded.remove(&c);
+            w.solid.insert(c);
         }
         w
     }
@@ -1882,7 +1881,7 @@ impl World {
     /// [`World::has_use_gates`]).
     pub fn without_gate_use(&self) -> World {
         let mut tall = self.tall.clone();
-        tall.extend(self.use_gates.iter().copied());
+        tall.extend(self.use_gates.iter());
         World {
             solid: self.solid.clone(),
             tall,
@@ -9140,7 +9139,6 @@ pub fn measure_fluid_escape(world: &World) -> FluidEscape {
     let outside: Vec<[i32; 3]> = world
         .flooded
         .iter()
-        .copied()
         .filter(|&c| !world.is_built(c))
         .collect();
     // Attribution: the piece an escaped cell is 6-adjacent to. Deterministic —
@@ -9439,7 +9437,7 @@ pub fn measure_sea_seepage(world: &World, reachable: &BTreeSet<[i32; 3]>) -> Sea
     // deliberately absent: authored water is water, and the sea flows through it.
     let mut barriers: BTreeSet<[i32; 3]> = BTreeSet::new();
     for set in [&world.solid, &world.tall, &world.use_gates] {
-        barriers.extend(set.iter().copied());
+        barriers.extend(set.iter());
     }
     // Confinement (model step 3): the one-cell skin of NON-built cells around the
     // built volume becomes barrier, so the flow cannot leave the content. Without
@@ -9495,7 +9493,6 @@ pub fn measure_sea_seepage(world: &World, reachable: &BTreeSet<[i32; 3]>) -> Sea
     let waterlogged: BTreeSet<[i32; 3]> = world
         .waterloggable
         .iter()
-        .copied()
         .filter(|c| c[1] > sea.floor_top && c[1] <= sea.level && world.is_built(*c))
         .collect();
     let mut seeds = contact.clone();
