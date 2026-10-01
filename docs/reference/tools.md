@@ -324,9 +324,12 @@ and no zone program composes is still a red. The surface is fenced at program
 document version `1.5.0`, and a document below it is refused by name rather than
 built with its includes dropped.
 
-`expand -o <dir>` writes `<id>.report.json` beside the piece, and the compiler's
-prefab registry skips a `*.report.json` by name, as it reads `pools.json` by name
-— so an expander's output directory is a prefab directory.
+`expand -o <dir>` writes `<id>.report.json` beside the piece. Which `*.json` in a
+prefab directory is a prefab document is one rule,
+`compiler::registry::is_prefab_document`: every one but `pools.json` and a
+`*.report.json`, both told apart by name. The registry, `delvec viewer <dir>` and
+`delvec render batch` all read it — so an expander's output directory is a prefab
+directory to every one of them.
 
 **There is no maximum region.** A vanilla structure template holds 48 blocks per
 axis; an expansion past that is written as a set of `≤48` tiles plus one

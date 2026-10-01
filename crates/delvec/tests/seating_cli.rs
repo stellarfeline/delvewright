@@ -32,6 +32,8 @@
 use std::path::{Path, PathBuf};
 use std::process::{Command as Proc, Output};
 
+use delvec::compiler::registry::is_prefab_document;
+
 mod common;
 
 fn delvec(args: &[&str]) -> Output {
@@ -92,30 +94,40 @@ fn collect_horizon_bases(schema: &serde_json::Value, out: &mut Vec<String>) {
 
 /// What the library holds, counted by this file rather than by the tool.
 ///
-/// A second reader sharing no configuration with the engine's registry — plain
-/// JSON off the disk — so "the tool agrees with the directory" is a comparison
-/// rather than a restatement of one reading.
+/// Which files ARE documents is the library's one naming rule
+/// (`registry::is_prefab_document`: every `*.json` but `pools.json` and a gate
+/// report `<id>.report.json`), shared rather than restated so this count and the
+/// tool's cannot disagree about what a document is. Everything counted from
+/// there — templates, waterlines, pools, members — is read by this file's own
+/// plain JSON off the disk, sharing no configuration with the engine's
+/// registry, so "the tool agrees with the directory" is a comparison rather
+/// than a restatement of one reading.
 struct Enumerated {
     pools: usize,
     members: usize,
     documents: usize,
+    /// The `.nbt` the documents name: one per piece, and one per tile of a
+    /// tile set (`structure_set.parts`), whose manifest is one document over
+    /// many templates.
+    templates: usize,
     waterlines: usize,
 }
 
 fn enumerate(dir: &Path) -> Enumerated {
     let mut documents = 0usize;
+    let mut templates = 0usize;
     let mut waterlines = 0usize;
-    for entry in std::fs::read_dir(dir).expect("the prefab library is a directory") {
-        let path = entry.unwrap().path();
-        if path.extension().and_then(|e| e.to_str()) != Some("json") {
-            continue;
-        }
-        if path.file_name().and_then(|f| f.to_str()) == Some("pools.json") {
-            continue;
-        }
+    for path in documents_in(dir) {
         documents += 1;
         let doc: serde_json::Value =
             serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        templates += match doc.get("structure_set") {
+            Some(set) if !set.is_null() => set["parts"]
+                .as_array()
+                .expect("a tile set lists its parts")
+                .len(),
+            _ => 1,
+        };
         if doc.get("waterline_y").is_some_and(|v| !v.is_null()) {
             waterlines += 1;
         }
@@ -141,6 +153,7 @@ fn enumerate(dir: &Path) -> Enumerated {
         pools: table.len(),
         members,
         documents,
+        templates,
         waterlines,
     }
 }
@@ -177,15 +190,13 @@ fn copy_of_library(tag: &str) -> PathBuf {
     dir
 }
 
-/// Every prefab document in a library directory, `pools.json` excluded.
+/// Every prefab document in a library directory, by the library's one naming
+/// rule.
 fn documents_in(dir: &Path) -> Vec<PathBuf> {
     let mut out: Vec<PathBuf> = std::fs::read_dir(dir)
-        .unwrap()
+        .expect("the prefab library is a directory")
         .filter_map(|e| e.ok().map(|e| e.path()))
-        .filter(|p| {
-            p.extension().and_then(|e| e.to_str()) == Some("json")
-                && p.file_name().and_then(|f| f.to_str()) != Some("pools.json")
-        })
+        .filter(|p| is_prefab_document(p))
         .collect();
     out.sort();
     out
@@ -234,7 +245,7 @@ fn the_seating_verdict_states_the_librarys_own_denominators_on_every_base() {
             format!("examined over {} member(s)", lib.members),
             format!(
                 "{} document(s) read, {} `.nbt` opened",
-                lib.documents, lib.documents
+                lib.documents, lib.templates
             ),
             format!("{} waterline declaration(s) examined", lib.waterlines),
         ] {
@@ -425,7 +436,7 @@ fn the_library_audit_and_the_seating_verdict_are_one_implementation() {
     assert_eq!(report["verdict"], "fail");
     // The denominators are the directory's, counted by this file.
     assert_eq!(n(&report, "documents_read"), lib.documents);
-    assert_eq!(n(&report, "nbt_opened"), lib.documents);
+    assert_eq!(n(&report, "nbt_opened"), lib.templates);
     // And the numerators moved by exactly the perturbation.
     assert_eq!(
         n(&report, "waterlines_declared"),
@@ -580,7 +591,7 @@ fn the_json_verdict_carries_what_the_table_carries() {
     assert_eq!(doc["binding"]["pools"], lib.pools);
     assert_eq!(doc["binding"]["members"], lib.members);
     assert_eq!(doc["binding"]["documents_read"], lib.documents);
-    assert_eq!(doc["binding"]["nbt_opened"], lib.documents);
+    assert_eq!(doc["binding"]["nbt_opened"], lib.templates);
     assert_eq!(doc["binding"]["waterlines_declared"], lib.waterlines);
     let pools = doc["pools"].as_array().expect("a verdict per pool");
     assert_eq!(pools.len(), lib.pools);
