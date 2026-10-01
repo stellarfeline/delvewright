@@ -4953,15 +4953,21 @@ impl World {
     /// cell set the trap proof reasons about, and the exported harness
     /// waypoints.
     ///
-    /// Only a **causal** leg is written — one whose start objective is a DAG
-    /// ancestor of the arrival objective, i.e. a step the player is genuinely
-    /// forced to walk to reach the arrival. The lineariser concatenates parallel
-    /// quest branches, producing artifact "legs" between objectives with no causal
-    /// order (e.g. a `take-the-cheese` beat followed by a `nobody` beat on a
-    /// sibling branch); the player never actually walks that pairing under the
-    /// arrival's region state, so sealing it would falsely fail. A genuinely-forced
-    /// re-crossing (start IS a causal ancestor) is still sealed, preserving the
-    /// proof. Base DW0311 (open world) already checked every leg.
+    /// A write is credited when the party has **necessarily** fired it by the time
+    /// it walks this leg: it precedes the arrival (`ancestor(g, to_step)`), or it
+    /// is the start step's own firing, or it precedes the start
+    /// (`ancestor(g, from_step)`). The party stands at the start having done the
+    /// start and everything before it, and walks toward an arrival whose
+    /// predecessors are done; nothing else is guaranteed. Latest-write-wins then
+    /// runs over that set exactly as it does at an arrival.
+    ///
+    /// For a causal leg — the start is itself an ancestor of the arrival — the
+    /// start and its ancestors are already the arrival's, so this is the arrival's
+    /// state. A leg the ancestry does not connect (the lineariser concatenating two
+    /// sibling branches, or an ordering the relation fails to record) is judged
+    /// over the same rule, never over the open world: a close a sibling branch
+    /// fires that neither end inherits does not seal it, while the world-load
+    /// seals (step `0`) and every write the start's own branch made do.
     fn leg_region_state(
         &self,
         region_events: &[RegionEvent],
@@ -4969,11 +4975,8 @@ impl World {
         from_step: usize,
         to_step: usize,
     ) -> RegionState {
-        if ancestor(from_step, to_step) {
-            self.region_state_at(region_events, to_step, ancestor)
-        } else {
-            RegionState::default()
-        }
+        let fired = leg_fired(ancestor, from_step, to_step);
+        self.region_state_at(region_events, to_step, &fired)
     }
 
     /// The same leg with the world-load gate seals lifted — see
@@ -4985,11 +4988,8 @@ impl World {
         from_step: usize,
         to_step: usize,
     ) -> RegionState {
-        if ancestor(from_step, to_step) {
-            self.region_state_without_world_load(region_events, to_step, ancestor)
-        } else {
-            RegionState::default()
-        }
+        let fired = leg_fired(ancestor, from_step, to_step);
+        self.region_state_without_world_load(region_events, to_step, &fired)
     }
 
     /// [`World::leg_region_state`] for a leg the player is asked to WALK, with the
@@ -5018,6 +5018,18 @@ impl World {
             self.leg_region_state(region_events, ancestor, from_step, to_step)
         }
     }
+}
+
+/// The "has the party fired step `g`" predicate for the walked leg
+/// `from_step → to_step` ([`World::leg_region_state`]), in the
+/// `(fire_step, arrival)` shape [`World::region_state_at`] asks it in. The
+/// arrival argument is ignored: the leg's own two ends decide.
+fn leg_fired(
+    ancestor: &dyn Fn(usize, usize) -> bool,
+    from_step: usize,
+    to_step: usize,
+) -> impl Fn(usize, usize) -> bool + '_ {
+    move |g, _| ancestor(g, to_step) || g == from_step || ancestor(g, from_step)
 }
 
 /// Render the [`DW_GATE_NEVER_OPENED`] blame clause for the gates a counterfactual
@@ -13712,8 +13724,8 @@ mod tests {
     }
 
     /// The seal is **DAG-causal**, not linear: a `close-gate` fired on a parallel
-    /// quest branch (not a causal ancestor of the leg) must NOT seal it, even though
-    /// its `fire_step` is numerically earlier — the fix for the lineariser
+    /// quest branch (an ancestor of neither end of the leg) must NOT seal it, even
+    /// though its `fire_step` is numerically earlier — the fix for the lineariser
     /// interleaving a sibling branch ahead of a sealed leg (island `take-the-cheese`
     /// vs `hide`). A genuinely-forced causal re-crossing is still sealed.
     #[test]
@@ -13722,9 +13734,9 @@ mod tests {
         let close = RegionEvent::forced(([2, 65, 0], [2, 65, 0]), RegionWrite::Fill, 8);
         let a = at_step([0, 65, 0], 9);
         let b = at_step([4, 65, 0], 10);
-        // Parallel: neither the close (step 8) nor the prior position (step 9) is a
-        // causal ancestor of the arrival (step 10) — a cross-branch artifact leg.
-        let parallel = |g: usize, s: usize| !((g == 8 || g == 9) && s == 10) && g < s;
+        // Parallel: the close (step 8), the prior position (step 9) and the arrival
+        // (step 10) are three sibling branches — nothing at either end inherits it.
+        let parallel = |g: usize, s: usize| !((g == 8 || g == 9) && (s == 9 || s == 10)) && g < s;
         assert!(
             route_visited(&world, &[a, b], std::slice::from_ref(&close), &parallel).is_ok(),
             "a close on a parallel branch must not seal a non-causal leg"
@@ -13734,6 +13746,40 @@ mod tests {
         let err = route_visited(&world, &[a, b], std::slice::from_ref(&close), &linear)
             .expect_err("a forced causal re-crossing of a sealed gate must fail");
         assert_eq!(err.code, DW_CRITICAL_UNROUTABLE);
+    }
+
+    /// **A leg the ancestry does not connect is still judged.** The start (step
+    /// 9) is not an ancestor of the arrival (step 10), but the close (step 8)
+    /// precedes the start: the party standing at the start has shut the gate it
+    /// is about to cross. Read over the open world, this leg built clean.
+    #[test]
+    fn an_unconnected_leg_is_sealed_by_what_its_start_has_fired() {
+        let world = floored(5, 1, 65, &[]);
+        let close = RegionEvent::forced(([2, 65, 0], [2, 65, 0]), RegionWrite::Fill, 8);
+        let a = at_step([0, 65, 0], 9);
+        let b = at_step([4, 65, 0], 10);
+        // The close is the start's ancestor; neither it nor the start is the
+        // arrival's.
+        let unconnected = |g: usize, s: usize| !((g == 8 || g == 9) && s == 10) && g < s;
+        let err = route_visited(&world, &[a, b], std::slice::from_ref(&close), &unconnected)
+            .expect_err("the start's own close shuts the leg");
+        assert_eq!(err.code, DW_CRITICAL_UNROUTABLE);
+        // The start's own firing counts too: the close fires AT step 9.
+        let at_start = RegionEvent::forced(([2, 65, 0], [2, 65, 0]), RegionWrite::Fill, 9);
+        let err = route_visited(
+            &world,
+            &[a, b],
+            std::slice::from_ref(&at_start),
+            &unconnected,
+        )
+        .expect_err("the close the start step fires shuts the leg");
+        assert_eq!(err.code, DW_CRITICAL_UNROUTABLE);
+        // And the exported route agrees with the proof: no leg is routed.
+        assert!(
+            route_walked_legs(&world, &[a, b], std::slice::from_ref(&close), &unconnected)
+                .is_empty(),
+            "the harness is never handed a route the proof refused"
+        );
     }
 
     /// A `close-gate` that walls off the forward path from a checkpoint strands the

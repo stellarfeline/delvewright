@@ -30,6 +30,8 @@ import {
   inBox,
   lethalTrialFailures,
   openLethalTrial,
+  openWager,
+  promisedForfeit,
   overFootprint,
   parseDeathPlan,
   stagedBalance,
@@ -871,7 +873,8 @@ test("the binding counts what was really examined", () => {
     datumsPromised: 1,
     stakesExamined: 1,
     datumsExamined: 1,
-    datumsWithheld: 0,
+    datumsKept: 0,
+    forfeitsExamined: 1,
     seatsMatched: 1,
     walksBack: 1,
   });
@@ -972,16 +975,103 @@ test("a gate nobody could read is a FAILING trial, not a quieter one", () => {
   assert.match(out.join("\n"), /could not be established/);
 });
 
-test("a death-loop that examined ZERO of the datums it promised is a finding", () => {
+test("a death-loop that examined ZERO forfeits is a finding, however many keeps it proved", () => {
   // The unrun vacuity mode, on the stake half's own denominator: a campaign whose
   // every `drop-stake` is gated shut by the time this stage runs declares a
-  // recovery loop the bot tier never exercises.
-  const b = {
-    ...deathLoopBinding(plan(), [goodTrial()]),
-    datumsExamined: 0,
-    datumsWithheld: 1,
-  };
+  // recovery loop the bot tier never exercises. Its keeps are asserted, and they
+  // prove nothing about placement, the walk back or the collection.
+  const t = goodTrial();
+  t.wagers.length = 0;
+  t.wagers.push(keptWager(stakeRule()));
+  const b = deathLoopBinding(plan(), [t]);
+  assert.equal(b.datumsKept, 1);
+  assert.equal(b.datumsExamined, 1, "the keep was read across the death, so it was examined");
+  assert.equal(b.forfeitsExamined, 0);
   assert.match(deathLoopBindingFailures(b).join("\n"), /ZERO of the 1 datum/);
+});
+
+// --- a shut gate is a promise too: the death KEEPS the datum -----------------
+//
+// The death plan carries each `drop-stake`'s gate exactly as the emitter guards
+// it (`Plan::gate_terms`, the one reduction). The gallery seals its hall long
+// before the death loop runs, so `stake/relics` (`forbids_flags: [hall-sealed]`)
+// is KEPT there: the plan stating it unconditional made the stage expect 1 → 0
+// and see 1 → 1. Reading the gate, the stage must assert 1 → 1 — not skip it,
+// because a skip is green over an engine that took the relics anyway.
+
+/** A kept wager — its gate read shut — over a purse of 10, unchanged by the death. */
+function keptWager(rule: StakeRule) {
+  const w = openWager(rule, "the campaign gates it on `dw.f_hall_sealed` for #party NOT in 1, which does not hold");
+  w.balanceBefore = 10;
+  w.expectedForfeit = promisedForfeit(w, 10);
+  w.balanceAfterDeath = 10;
+  return w;
+}
+
+test("the promised forfeit is the rule under an open gate and nothing under a shut one", () => {
+  const open = openWager(relicsRule());
+  const kept = openWager(relicsRule(), "shut");
+  assert.equal(open.forfeits, true);
+  assert.equal(kept.forfeits, false);
+  assert.equal(promisedForfeit(open, 10), 2, "fixed 2 of 10");
+  assert.equal(promisedForfeit(kept, 10), 0, "a shut gate keeps the purse whole");
+});
+
+test("a kept datum left whole is a pass, and a death that keeps everything needs no stake", () => {
+  const t = goodTrial();
+  t.wagers.length = 0;
+  t.wagers.push(keptWager(relicsRule()));
+  // Nothing was forfeited, so nothing stands anywhere and nothing is walked to.
+  t.markerPos = undefined;
+  t.markersFound = 0;
+  t.walkedBack = false;
+  t.markerRetired = false;
+  t.expectedAnchor = undefined;
+  assert.deepEqual(lethalTrialFailures(t), []);
+});
+
+test("a death that takes a datum its gate keeps is a failure, naming the gate", () => {
+  // The direction a skip could never see: the engine forfeits `stake/relics`
+  // although `hall-sealed` shuts its `drop-stake`.
+  const t = goodTrial();
+  t.wagers.length = 0;
+  const w = keptWager(relicsRule());
+  w.balanceAfterDeath = 0;
+  t.wagers.push(w);
+  const out = lethalTrialFailures(t).join("\n");
+  assert.match(out, /the death took from `stake\/relics`, which its `on_death` gate keeps/);
+  assert.match(out, /dw\.f_hall_sealed/);
+  assert.match(out, /was 10 before and 0 after/);
+  assert.match(out, /leave the purse at 10/);
+});
+
+test("a kept datum beside a forfeited one is asserted on both sides of the collection", () => {
+  const t = goodTrial([stakeRule()]);
+  t.wagers.push(keptWager(relicsRule()));
+  wager(t, "stake/relics").balanceAfterCollect = 10;
+  assert.deepEqual(lethalTrialFailures(t), [], "one forfeit and one keep, both kept");
+
+  // The collection may not hand back what was never taken.
+  const paid = goodTrial([stakeRule()]);
+  paid.wagers.push(keptWager(relicsRule()));
+  wager(paid, "stake/relics").balanceAfterCollect = 12;
+  assert.match(lethalTrialFailures(paid).join("\n"), /`stake\/relics`/);
+
+  const b = deathLoopBinding(plan(), [t]);
+  assert.equal(b.datumsKept, 1);
+  assert.equal(b.forfeitsExamined, 1);
+  assert.equal(b.datumsExamined, 2);
+});
+
+test("a keep asserted over an empty purse is UNBOUND, as a forfeit is", () => {
+  const t = goodTrial();
+  t.wagers.length = 0;
+  const w = keptWager(relicsRule());
+  w.balanceBefore = 0;
+  w.expectedForfeit = 0;
+  w.balanceAfterDeath = 0;
+  t.wagers.push(w);
+  assert.match(lethalTrialFailures(t).join("\n"), /`stake\/relics` was UNBOUND/);
 });
 
 test("the plan's drops are addressed by stake, and an undropped stake has no gate", () => {
