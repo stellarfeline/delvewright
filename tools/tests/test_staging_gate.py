@@ -33,6 +33,23 @@ def gate():
     return mod
 
 
+_ENGINES: dict[int, object] = {}
+
+
+def engine_of(gate):
+    """The one `Engine` this module judges against, built once.
+
+    `Engine()` reads the live tree — every DW declaration, test and catalogue row
+    under `crates/` and `docs/` — which costs seconds and is the instrument, not
+    the subject: no test here writes to the repository, so every construction
+    would read the same facts. The campaign and build each test perturbs are the
+    `Subject`, and those are built fresh per test.
+    """
+    if id(gate) not in _ENGINES:
+        _ENGINES[id(gate)] = gate.Engine()
+    return _ENGINES[id(gate)]
+
+
 # A DW code that certainly exists, is documented and is asserted by a test.
 # DW0100 is the stage-schema conformance error — the oldest rule in the
 # compiler; if it ever stops existing the whole DSL has been replaced.
@@ -79,7 +96,7 @@ def run(gate, tmp_path, row, *, objectives=None, dsl_version="0.10.0", validatio
     )
     build = make_build(tmp_path, validation=validation)
     subj = gate.Subject(camp, build)
-    return gate.adjudicate(row, gate.Engine(), subj)
+    return gate.adjudicate(row, engine_of(gate), subj)
 
 
 BOUND_ROW = {
@@ -312,7 +329,7 @@ IDENTITY_ZERO_ROW = {
 
 
 def adjudicate_on(gate, camp, build, row):
-    return gate.adjudicate(row, gate.Engine(), gate.Subject(camp, build))
+    return gate.adjudicate(row, engine_of(gate), gate.Subject(camp, build))
 
 
 def test_an_identity_zero_on_a_blockout_is_out_of_stage_not_red(gate, tmp_path):
@@ -1475,7 +1492,7 @@ def test_the_live_timing_read_row_binds_a_volley_with_a_cadence(gate, tmp_path):
     }
     verdicts = {
         k: (lambda r: (r["verdict"], r["binding"]))(
-            gate.adjudicate(row, gate.Engine(), gate.Subject(d, build))
+            gate.adjudicate(row, engine_of(gate), gate.Subject(d, build))
         )
         for k, d in camps.items()
     }
@@ -1562,7 +1579,7 @@ def test_a_campaign_with_no_dsl_source_never_passes(gate, tmp_path):
     empty = tmp_path / "nosrc"
     empty.mkdir()
     subj = gate.Subject(empty, make_build(tmp_path))
-    r = gate.adjudicate(BOUND_ROW, gate.Engine(), subj)
+    r = gate.adjudicate(BOUND_ROW, engine_of(gate), subj)
     assert r["verdict"] == "NO-SOURCE"
 
 
@@ -2086,7 +2103,7 @@ def test_a_campaign_with_no_approved_design_is_refused_at_staging(gate, tmp_path
     present — every campaign owes a design gate — and nothing binds to it, so
     the gate refuses rather than calling the zero a design choice."""
     subj = design_subject(gate, tmp_path, references=0)
-    r = gate.adjudicate(DESIGN_ROW, gate.Engine(), subj)
+    r = gate.adjudicate(DESIGN_ROW, engine_of(gate), subj)
     assert r["verdict"] == "UNBOUND", r
     assert r["binding"] == 0
     assert r["precondition"] == 1, "every campaign is a member of the class"
@@ -2094,7 +2111,7 @@ def test_a_campaign_with_no_approved_design_is_refused_at_staging(gate, tmp_path
 
 def test_one_approved_reference_image_binds_the_design_gate(gate, tmp_path):
     subj = design_subject(gate, tmp_path, references=1)
-    r = gate.adjudicate(DESIGN_ROW, gate.Engine(), subj)
+    r = gate.adjudicate(DESIGN_ROW, engine_of(gate), subj)
     assert r["verdict"] == "BOUND", r
     assert r["binding"] == 1
 
@@ -2103,7 +2120,7 @@ def test_a_design_record_the_gate_cannot_parse_is_missing_check(gate, tmp_path):
     """Format rot, not a design finding: the gate says it could not read the
     document rather than reporting a zero it never measured."""
     subj = design_subject(gate, tmp_path, references=0, unparseable=True)
-    r = gate.adjudicate(DESIGN_ROW, gate.Engine(), subj)
+    r = gate.adjudicate(DESIGN_ROW, engine_of(gate), subj)
     assert r["verdict"] == "MISSING-CHECK", r
 
 
@@ -2111,7 +2128,7 @@ def test_a_build_that_wrote_no_design_record_is_missing_check(gate, tmp_path):
     """The ledger is written by every build, so its absence is the engine
     failing to look — never a campaign with no approved design."""
     subj = design_subject(gate, tmp_path, references=0, record=False)
-    r = gate.adjudicate(DESIGN_ROW, gate.Engine(), subj)
+    r = gate.adjudicate(DESIGN_ROW, engine_of(gate), subj)
     assert r["verdict"] == "MISSING-CHECK", r
 
 
@@ -2154,7 +2171,7 @@ def test_approved_pictures_with_no_camera_are_refused_at_staging(gate, tmp_path)
     walk is refused. This is the half of the rule the build deliberately does
     not hold."""
     subj = answered_subject(gate, tmp_path, references=6, answered=0)
-    r = gate.adjudicate(ANSWERED_ROW, gate.Engine(), subj)
+    r = gate.adjudicate(ANSWERED_ROW, engine_of(gate), subj)
     assert r["verdict"] == "UNBOUND", r
     assert r["binding"] == 0
     assert r["precondition"] == 1, "every campaign is a member of the class"
@@ -2162,7 +2179,7 @@ def test_approved_pictures_with_no_camera_are_refused_at_staging(gate, tmp_path)
 
 def test_every_approved_picture_answered_binds_the_row(gate, tmp_path):
     subj = answered_subject(gate, tmp_path, references=6, answered=6)
-    r = gate.adjudicate(ANSWERED_ROW, gate.Engine(), subj)
+    r = gate.adjudicate(ANSWERED_ROW, engine_of(gate), subj)
     assert r["verdict"] == "BOUND", r
     assert r["binding"] == 6
 
@@ -2171,7 +2188,7 @@ def test_a_ledger_with_no_answered_key_is_missing_check(gate, tmp_path):
     """An engine that stopped writing the count is format rot, not a campaign
     that answered nothing."""
     subj = answered_subject(gate, tmp_path, references=6, answered=6, key=False)
-    r = gate.adjudicate(ANSWERED_ROW, gate.Engine(), subj)
+    r = gate.adjudicate(ANSWERED_ROW, engine_of(gate), subj)
     assert r["verdict"] == "MISSING-CHECK", r
 
 
@@ -2290,7 +2307,7 @@ def test_the_gates_own_token_is_not_counted_as_evidence_about_the_build(gate, tm
         json.dumps({gate.GATE_ARTIFACT_KEY: True, "reds": ["selfhit"]})
     )
     subj = gate.Subject(camp, build)
-    r = gate.adjudicate(SELF_HIT_ROW, gate.Engine(), subj)
+    r = gate.adjudicate(SELF_HIT_ROW, engine_of(gate), subj)
     assert r["binding"] == 0, r
     assert "1 gate artifact(s) excluded" in r["detail"], r["detail"]
 
@@ -2307,13 +2324,13 @@ def test_a_report_planted_in_the_tree_by_hand_is_skipped_too(gate, tmp_path):
     camp = make_campaign(tmp_path, objectives=[{"type": "narrate"}])
     build = make_build(tmp_path)
     subj = gate.Subject(camp, build)
-    clean = gate.adjudicate(SELF_HIT_ROW, gate.Engine(), subj)
+    clean = gate.adjudicate(SELF_HIT_ROW, engine_of(gate), subj)
     assert clean["binding"] == 0, clean
 
     (build / "whatever-someone-called-it.md").write_text(
         gate.render_report({"ledger_version": "x"}, subj, [clean], False)
     )
-    planted = gate.adjudicate(SELF_HIT_ROW, gate.Engine(), gate.Subject(camp, build))
+    planted = gate.adjudicate(SELF_HIT_ROW, engine_of(gate), gate.Subject(camp, build))
     assert planted["binding"] == 0, (
         "the count does not move when the gate's own report is in the tree: "
         + str(planted)
@@ -2334,7 +2351,7 @@ def test_and_the_same_report_with_its_marker_stripped_is_counted(gate, tmp_path)
     report = gate.render_report(
         {"ledger_version": "x"},
         subj,
-        [gate.adjudicate(SELF_HIT_ROW, gate.Engine(), subj)],
+        [gate.adjudicate(SELF_HIT_ROW, engine_of(gate), subj)],
         False,
     )
     stripped = "\n".join(
@@ -2342,7 +2359,7 @@ def test_and_the_same_report_with_its_marker_stripped_is_counted(gate, tmp_path)
     )
     assert gate.GATE_ARTIFACT_MARKER not in stripped
     (build / "whatever-someone-called-it.md").write_text(stripped)
-    r = gate.adjudicate(SELF_HIT_ROW, gate.Engine(), gate.Subject(camp, build))
+    r = gate.adjudicate(SELF_HIT_ROW, engine_of(gate), gate.Subject(camp, build))
     assert r["binding"] == 1, r
 
 
@@ -2498,7 +2515,7 @@ def test_before_the_first_walk_the_row_is_out_of_stage_not_unbound(gate, tmp_pat
     refusal a creator has no act that could clear."""
     subj = walk_subject(gate, tmp_path, record=False, pre_detail=True)
     assert subj.pre_detail is True
-    r = gate.adjudicate(WALK_RECORD_ROW, gate.Engine(), subj)
+    r = gate.adjudicate(WALK_RECORD_ROW, engine_of(gate), subj)
     assert r["verdict"] == "OUT-OF-STAGE", r
     assert r["binding"] == 0 and r["precondition"] == 0
     assert "this build does not claim to be the build that could" in r["detail"]
@@ -2509,7 +2526,7 @@ def test_after_the_walk_the_same_row_binds(gate, tmp_path):
     live. The blockout allowance is a statement about one staging of one stage,
     never about this row."""
     subj = walk_subject(gate, tmp_path, record=True, pre_detail=True)
-    r = gate.adjudicate(WALK_RECORD_ROW, gate.Engine(), subj)
+    r = gate.adjudicate(WALK_RECORD_ROW, engine_of(gate), subj)
     assert r["verdict"] == "BOUND", r
     assert r["binding"] == 1
 
@@ -2520,7 +2537,7 @@ def test_off_the_blockout_a_missing_record_is_not_out_of_stage(gate, tmp_path):
     wording, and `--strict`'s floor stops treating it as a stage claim."""
     subj = walk_subject(gate, tmp_path, record=False, pre_detail=False)
     assert subj.pre_detail is False
-    r = gate.adjudicate(WALK_RECORD_ROW, gate.Engine(), subj)
+    r = gate.adjudicate(WALK_RECORD_ROW, engine_of(gate), subj)
     assert r["verdict"] == "INAPPLICABLE", r
 
 

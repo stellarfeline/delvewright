@@ -402,12 +402,12 @@ textures = "minecraft-client-1.21.11.jar"
 # has a lockfile, so what this selects is the runtime, not the dependency set.
 # Consumed by: .github/workflows/ci.yml.
 node_version = "24"
-# The interpreter for the two Python tool suites (`tools/creator/skin`, `tools/tests`),
+# The interpreter for the Python tool suites (`tools/creator/skin`, `tools/tests`),
 # and for every inline python `tools/ci/build-release-binaries.sh` runs to read
 # `versions.toml` (stdlib `tomllib`, floor >= 3.11) — the shelf's build step
 # needs the same floor the tool suites do, for the same reason.
 # A MINOR line, resolved by actions/setup-python to its newest patch.
-# Consumed by: .github/workflows/ci.yml (skin toolchain, i18n translation tool,
+# Consumed by: .github/workflows/ci.yml (skin toolchain, both tool-test jobs,
 # engine-shelf), .github/workflows/engine-release.yml (shelf build).
 python_tools_version = "3.12"
 # The interpreter for the mecha cross-check, and it is a DIFFERENT line from the
@@ -430,10 +430,10 @@ mecha_version = "0.104.1"
 mecha_requires_python = "3.14"
 mecha_requires_beet = "0.116.0"
 beet_version = "0.116.0"
-# The test runner both Python suites are judged by. Same argument as beet: an
+# The test runner the Python suites are judged by. Same argument as beet: an
 # unpinned runner is an unpinned instrument, and a runner that changes its
 # collection or assertion behaviour moves a required check's verdict.
-# Consumed by: .github/workflows/ci.yml (skin toolchain, i18n translation tool).
+# Consumed by: .github/workflows/ci.yml (skin toolchain, both tool-test jobs).
 pytest_version = "9.1.1"
 
 # The two READINGS OF THE PLUGIN BY THE FORMAT'S OWN IMPLEMENTATIONS
