@@ -668,7 +668,7 @@ fn a_strand_completed_after_a_seal_is_dw0485() {
     assert!(d.message.contains("/on_complete/0"), "{}", d.message);
 }
 
-// --- DW0485 where gates do not only grow with the state (issue #865) ------
+// --- DW0485 where gates do not only grow with the state ---------------------
 
 /// [`optional_strand_fixture`], plus a second optional strand, `quest/linger`,
 /// also opened by the fork: one beat that says nothing about the gate and sets
