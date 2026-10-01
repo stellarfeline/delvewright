@@ -940,6 +940,14 @@ export interface DeathTrial {
    * longer replays `select-class` (`class_apply_*` teleports).
    */
   readonly respawnPos: Vec3Tuple | undefined;
+  /**
+   * Both readings of where the respawn put the body, taken together: the client's
+   * (`respawnPos`, with the world age the client last heard and how many respawn
+   * packets arrived since the death) and the server's own `Pos`, asked by command
+   * between two `time query gametime` replies. Two observers that share nothing
+   * but the body: when they disagree, the reading is the defect, not the delve.
+   */
+  readonly respawnReading?: RespawnReading;
   /** Did it respawn at the governing checkpoint? Derived from {@link respawnPos}. */
   readonly atCheckpoint: boolean;
   /** Did the kit survive the death? The delve seals `gamerule keep_inventory true`,
@@ -997,6 +1005,20 @@ export interface DeathTrial {
  * `passed: true` beside a log line naming the death it had just taken.
  */
 export type DeathTrialRecord = { -readonly [K in keyof DeathTrial]: DeathTrial[K] };
+
+/** The client's and the server's reading of one respawn (see `DeathTrial.respawnReading`). */
+export interface RespawnReading {
+  readonly client: {
+    readonly pos: Vec3Tuple | undefined;
+    /** The world age the client last heard from a time packet (it lags by up to a second). */
+    readonly age: number | undefined;
+    /** `respawn` packets received between the death and this reading. */
+    readonly respawnPackets: number;
+  };
+  readonly server:
+    | { readonly pos: Vec3Tuple; readonly tickFrom: number; readonly tickTo: number }
+    | { readonly unread: string };
+}
 
 /** Open a trial: the record as it exists between the death command and the first
  * fact learned about the loop. Nothing is assumed proved — every verdict field

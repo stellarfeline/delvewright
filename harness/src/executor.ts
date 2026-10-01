@@ -66,6 +66,7 @@ import {
   type FightAttribution,
   type PerformedRest,
   type ReengageObservation,
+  type RespawnReading,
   type RunBack,
   type WaveCensus,
 } from "./combat.ts";
@@ -111,6 +112,7 @@ import {
   createHarnessBot,
   SERVER_LOAD_TIMEOUT_TICKS,
   type ClientLoadedState,
+  type LoadWindow,
 } from "./client-loaded.ts";
 import {
   traceLoadWindows,
@@ -135,6 +137,7 @@ import {
 import {
   nearestIndex,
   nextLegWaypoints,
+  LEG_START_REACH,
   retainStandableWaypoints,
   walkGoals,
   type GoalSpec,
@@ -151,6 +154,7 @@ import {
   gateWindowWaitMs,
   gatesBindingWalk,
   gatesCrossedByHop,
+  unstagedCrushBoxes,
   insideGate,
   nearCell,
   needsStandoff,
@@ -1122,6 +1126,37 @@ export const RESPAWN_PROTECTION_TICKS = SERVER_LOAD_TIMEOUT_TICKS;
  */
 const TIME_PACKET_TICKS = 20;
 
+/**
+ * Whether the respawn after a death has LANDED, the way a real client knows it:
+ * the server's `respawn` packet has arrived, and the client has since reported
+ * `player_loaded` for that respawn — which it does only once the server's
+ * position for the new life has arrived and the chunk under it is loaded. That
+ * is the first moment a player sees where the respawn put them.
+ *
+ * mineflayer's `spawn` is not that moment. It fires on the first health update
+ * above zero after the client last thought itself dead, and nothing ties that
+ * update to a respawn. The gallery once read a die-retry respawn at [15,69,21],
+ * by the muster where the bot died, with the checkpoint at [5,67,9]; the
+ * respawn reading carries the server's own `Pos` beside the client's, so a
+ * recurrence names its side. With no wire
+ * tracker (a bot adopted by `attachBot`) there is no packet to wait for, and the
+ * `spawn` count is all there is.
+ */
+export function respawnLanded(
+  spawned: boolean,
+  respawnPacketsSinceDeath: number,
+  windowsSinceDeath: readonly LoadWindow[] | undefined,
+): boolean {
+  if (windowsSinceDeath === undefined) return spawned;
+  return (
+    respawnPacketsSinceDeath > 0 &&
+    windowsSinceDeath.some((w) => w.cause === "respawn" && w.sentAt !== undefined)
+  );
+}
+
+/** Where {@link MineflayerExecutor.readServerPos} parks the game time it reads (harness-owned). */
+const POS_READ_STORAGE = "dw_harness:pos_read";
+
 /** Bound on the respawn-protection wait, however slowly the server ticks. */
 const RESPAWN_PROTECTION_TIMEOUT_MS = 15_000;
 
@@ -1504,6 +1539,13 @@ export class MineflayerExecutor implements StepExecutor {
   /** {@link spawnSeq} at the moment of the last death — the respawn wait watches
    * for a spawn NEWER than this, so a respawn that beats the wait is never lost. */
   private spawnSeqAtDeath = 0;
+  /** `respawn` packets this run has received, and the count at the last death. */
+  private respawnPackets = 0;
+  private respawnPacketsAtDeath = 0;
+  /** How many load windows the wire tracker had opened at the last death. */
+  private windowsAtDeath = 0;
+  /** Serial for {@link readServerPos}'s answer markers. */
+  private posReads = 0;
   /** One-shot callbacks armed by {@link raceDeath}, fired on death. */
   private readonly deathWaiters = new Set<(err: BotDeathError) => void>();
   /** Ring buffer of recent chat lines, mined for the death-cause message. */
@@ -1956,6 +1998,9 @@ export class MineflayerExecutor implements StepExecutor {
     bot.on("entityDead", (entity: Entity) => this.onNamedEntityDeath(entity));
     // Counted from connect, so a respawn is never missed by a listener armed too
     // late (see recoverFromDeath).
+    bot.on("respawn", () => {
+      this.respawnPackets += 1;
+    });
     bot.on("spawn", () => {
       this.spawnSeq += 1;
       // A respawn after the first join is a death-respawn at the last-rested
@@ -2421,6 +2466,8 @@ export class MineflayerExecutor implements StepExecutor {
     this.death = err;
     this.deathSeq += 1;
     this.spawnSeqAtDeath = this.spawnSeq;
+    this.respawnPacketsAtDeath = this.respawnPackets;
+    this.windowsAtDeath = this.clientLoaded?.windows().length ?? 0;
     this.stopPathfinding();
     for (const waiter of this.deathWaiters) {
       waiter(err);
@@ -2432,7 +2479,16 @@ export class MineflayerExecutor implements StepExecutor {
     // edge lives.
     const takeRespawn = (): void => {
       try {
-        bot?.respawn();
+        // The death screen's button, pressed once the respawn has not already
+        // happened. mineflayer's own `respawn()` refuses whenever it believes the
+        // bot alive, and a health update above zero on the corpse is enough to make
+        // it believe that — so a bot with a wire asks the packet count instead.
+        if (this.clientLoaded === undefined) {
+          bot?.respawn();
+        } else if (this.respawnPackets === this.respawnPacketsAtDeath && bot) {
+          const payload = bot.supportFeature("respawnIsPayload") ? { payload: 0 } : { actionId: 0 };
+          bot._client.write("client_command", payload);
+        }
       } catch {
         // A failed respawn is not lost: `recoverFromDeath` bounds its own wait and
         // reports a missing respawn loudly.
@@ -2544,7 +2600,13 @@ export class MineflayerExecutor implements StepExecutor {
     const deadline = Date.now() + RESPAWN_TIMEOUT_MS;
     let respawned = false;
     while (Date.now() < deadline) {
-      if (this.spawnSeq > this.spawnSeqAtDeath) {
+      if (
+        respawnLanded(
+          this.spawnSeq > this.spawnSeqAtDeath,
+          this.respawnPackets - this.respawnPacketsAtDeath,
+          this.clientLoaded?.windows().slice(this.windowsAtDeath),
+        )
+      ) {
         respawned = true;
         break;
       }
@@ -3869,19 +3931,45 @@ export class MineflayerExecutor implements StepExecutor {
         // the proven cells itself; it consumes no leg.
         legWaypoints = explicitWaypoints;
       } else if (this.waypoints) {
-        const match = nextLegWaypoints(this.waypoints.legs, this.legCursor, [
-          pos[0],
-          pos[1],
-          pos[2],
-        ]);
+        const match = nextLegWaypoints(
+          this.waypoints.legs,
+          this.legCursor,
+          [pos[0], pos[1], pos[2]],
+          this.feetCell(),
+        );
         legWaypoints = match.waypoints;
         if (match.matched && legWaypoints && this.legResume?.leg === this.legCursor) {
           legWaypoints = legWaypoints.slice(this.legResume.from);
           this.legResume = undefined;
         }
         this.legCursor = match.cursor;
-        const binding = gatesBindingWalk(match.matched, match.timedGates, declaredGates);
+        // A leg's gate subset is a proof about the route from where the leg starts;
+        // a walk that starts elsewhere (a die-retry return from the respawn seat) is
+        // not that route, and takes the declared table.
+        const binding = gatesBindingWalk(
+          match.matched,
+          match.timedGates,
+          declaredGates,
+          match.startsOnLeg,
+        );
+        if (match.matched && match.startOffset !== undefined) {
+          process.stderr.write(
+            `[leg] ${label}: starts ${match.startOffset.toFixed(1)} block(s) from where its ` +
+              `leg was proven` +
+              (match.startsOnLeg ? "" : ` — beyond ${LEG_START_REACH}, so not that leg's route`) +
+              `\n`,
+          );
+        }
         walkGates = binding.gates;
+        // A crush gate this walk does not bind has no staging on it, so its region
+        // costs what a lethal volume costs: a pathfinder that cuts through it
+        // between two proven cells meets the closing edge blind, which is how a
+        // gallery walk to the east bay died at the inner door. A walk that binds
+        // the gate stages it at its proven mouth instead.
+        const unstaged = unstagedCrushBoxes(declaredGates, walkGates);
+        if (unstaged.length > 0) {
+          movements.exclusionAreasStep.push((block): number => lethalStepCost(block, unstaged));
+        }
         // Stated binding count, once per walk, for every campaign that declares a
         // gate at all: how many of the declared gates bind this walk, which they
         // are, what said so, and what was withheld. A zero here is a reader's
@@ -4917,6 +5005,19 @@ export class MineflayerExecutor implements StepExecutor {
           `[die-retry] ${step.wave} death ${attempt}: ${trial.outcome}` +
             `${trial.outcome === "cleared-before-retry" ? ` (\`${enc.objective}\` was already complete — the death cost no progress)` : ""}\n`,
         );
+        const reading = await respawn.reading;
+        trial.respawnReading = reading;
+        process.stderr.write(
+          `[die-retry] ${step.wave} death ${attempt}: respawn readings — client ` +
+            `${JSON.stringify(reading.client.pos)} at world age ` +
+            `${reading.client.age ?? "unknown"} after ` +
+            `${reading.client.respawnPackets} respawn packet(s); server ` +
+            ("pos" in reading.server
+              ? `${JSON.stringify(reading.server.pos)} between ticks ` +
+                `${reading.server.tickFrom} and ${reading.server.tickTo}`
+              : `unread (${reading.server.unread})`) +
+            `\n`,
+        );
         trial.completed = true;
       } catch (err) {
         trial.abortedWith ??= err instanceof Error ? err.message : String(err);
@@ -5923,14 +6024,102 @@ export class MineflayerExecutor implements StepExecutor {
    * So: measure the position, then re-equip what the player kept. Nothing here may
    * move the bot — the respawn point IS the thing under test.
    */
-  private async respawnAndRearm(): Promise<{ pos: Vec3Tuple | undefined; kitKept: boolean }> {
+  private async respawnAndRearm(): Promise<{
+    pos: Vec3Tuple | undefined;
+    kitKept: boolean;
+    /** Settles once the server has answered; sent at the client reading, awaited
+     * by whoever records it, so asking never delays the bot. */
+    reading: Promise<RespawnReading>;
+  }> {
     const bot = this.requireBot();
     await this.recoverFromDeath();
     const p = bot.entity?.position;
     const pos: Vec3Tuple | undefined =
       p === undefined ? undefined : [Math.floor(p.x), Math.floor(p.y), Math.floor(p.z)];
+    const client = {
+      pos,
+      age: serverAge(bot),
+      respawnPackets: this.respawnPackets - this.respawnPacketsAtDeath,
+    };
+    const reading = this.readServerPos().then((server) => ({ client, server }));
     const kitKept = await this.rearmAfterRespawn();
-    return { pos, kitKept };
+    return { pos, kitKept, reading };
+  }
+
+  /**
+   * The server's own `Pos` for the bot, with the game time it was read at.
+   *
+   * The delve seals `send_command_feedback false`, so a `data get` or `time query`
+   * reply never reaches the bot. The answer is therefore spoken by `tellraw`: the
+   * game time is stored first (`execute store … run time query gametime`) and the
+   * same `tellraw` prints that tick and the bot's `Pos` NBT, then a second store
+   * and `tellraw` print the tick after, so the reading carries the ticks it was
+   * taken between. A refusal still reaches the sender with feedback off, and every
+   * line is judged by the shared rejection rule; a refused or missing answer is
+   * recorded as unread, never guessed.
+   */
+  private async readServerPos(): Promise<RespawnReading["server"]> {
+    const bot = this.requireBot();
+    const serial = ++this.posReads;
+    const before = `[dw:pos ${serial} at `;
+    const after = `[dw:pos ${serial} after `;
+    const from = this.chatMark();
+    const store = (key: string): string =>
+      `/execute store result storage ${POS_READ_STORAGE} ${key} int 1 run time query gametime`;
+    bot.chat(store("t0"));
+    bot.chat(
+      `/tellraw @s ${JSON.stringify([
+        { text: before },
+        { nbt: "t0", storage: POS_READ_STORAGE },
+        { text: " " },
+        { nbt: "Pos", entity: "@s" },
+        { text: "]" },
+      ])}`,
+    );
+    bot.chat(store("t1"));
+    bot.chat(
+      `/tellraw @s ${JSON.stringify([
+        { text: after },
+        { nbt: "t1", storage: POS_READ_STORAGE },
+        { text: "]" },
+      ])}`,
+    );
+    let pos: Vec3Tuple | undefined;
+    let tickFrom: number | undefined;
+    let tickTo: number | undefined;
+    let refused: string | undefined;
+    // Not `waitFor`: a death after the commands were sent is not this reading's
+    // business, and the answer about the respawn it was sent for still arrives.
+    const answered = (): boolean => {
+      const lines = this.chatSince(from).lines;
+      refused = lines.find((l) => isRejection(l));
+      for (const l of lines) {
+        if (l.includes(before)) {
+          const m =
+            /\[dw:pos \d+ at (\d+) \[(-?[\d.]+)d,\s*(-?[\d.]+)d,\s*(-?[\d.]+)d\]\]/.exec(l);
+          if (m) {
+            tickFrom = Number(m[1]);
+            pos = [Number(m[2]), Number(m[3]), Number(m[4])];
+          }
+        }
+        if (l.includes(after)) {
+          const m = /\[dw:pos \d+ after (\d+)\]/.exec(l);
+          if (m) tickTo = Number(m[1]);
+        }
+      }
+      return refused !== undefined || (pos !== undefined && tickTo !== undefined);
+    };
+    const deadline = Date.now() + SCORE_TRACK_TIMEOUT_MS;
+    while (!answered() && Date.now() < deadline) await delay(LEDGER_POLL_MS);
+    if (refused !== undefined) return { unread: `refused: ${refused}` };
+    if (pos === undefined || tickFrom === undefined || tickTo === undefined) {
+      return {
+        unread:
+          `no complete answer in ${SCORE_TRACK_TIMEOUT_MS}ms: ` +
+          JSON.stringify(this.chatSince(from).lines.filter((l) => l.includes("[dw:pos "))),
+      };
+    }
+    return { pos, tickFrom, tickTo };
   }
 
   /**
