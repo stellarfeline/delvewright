@@ -1012,6 +1012,18 @@ pub struct World {
     objective_cells: Vec<(String, [i32; 3])>,
 }
 
+/// The block-derived cell sets of a [`World`], as [`World::from_occupancy`]
+/// takes them from an occupancy.
+struct Cells {
+    solid: CellSet,
+    tall: CellSet,
+    use_gates: CellSet,
+    flooded: CellSet,
+    partial: CellMap<u8>,
+    waterloggable: CellSet,
+    lava: CellSet,
+}
+
 /// The step rule's three constants, taken from the metrics table (spec-0049 §2)
 /// rather than declared here.
 ///
@@ -1453,14 +1465,56 @@ impl World {
     /// A call site with a campaign in hand writes [`Premises::of_plan`]; one
     /// without says [`Premises::geometry_only`] and means it.
     pub fn from_occupancy(occ: crate::compiler::assembled::Occupancy, premises: Premises) -> Self {
+        Self::from_cells(
+            Cells {
+                solid: occ.solid.into(),
+                tall: occ.tall.into(),
+                use_gates: occ.use_gates.into(),
+                flooded: occ.flooded.into(),
+                partial: occ.partial.into(),
+                waterloggable: occ.waterloggable.into(),
+                lava: occ.lava.into(),
+            },
+            premises,
+        )
+    }
+
+    /// This world's block-derived cells under `premises` instead of its own —
+    /// what [`World::from_occupancy`] would build from the same occupancy.
+    /// The cells are shared, not copied; anything a proof has derived on top
+    /// of this world (pinned cells, runtime floods) is not carried.
+    pub fn with_premises(&self, premises: Premises) -> World {
+        Self::from_cells(
+            Cells {
+                solid: self.solid.clone(),
+                tall: self.tall.clone(),
+                use_gates: self.use_gates.clone(),
+                flooded: self.flooded.clone(),
+                partial: self.partial.clone(),
+                waterloggable: self.waterloggable.clone(),
+                lava: self.lava.clone(),
+            },
+            premises,
+        )
+    }
+
+    /// This world with `extra` cells added to its solid set — the relight
+    /// pass's colliding fixtures ([`World::from_plan_with_extra`]).
+    pub fn with_extra_solid(mut self, extra: &BTreeSet<[i32; 3]>) -> World {
+        self.solid.extend(extra.iter().copied());
+        self.solid.compact();
+        self
+    }
+
+    fn from_cells(cells: Cells, premises: Premises) -> Self {
         World {
-            solid: occ.solid.into(),
-            tall: occ.tall.into(),
-            use_gates: occ.use_gates.into(),
-            flooded: occ.flooded.into(),
-            partial: occ.partial.into(),
-            waterloggable: occ.waterloggable.into(),
-            lava: occ.lava.into(),
+            solid: cells.solid,
+            tall: cells.tall,
+            use_gates: cells.use_gates,
+            flooded: cells.flooded,
+            partial: cells.partial,
+            waterloggable: cells.waterloggable,
+            lava: cells.lava,
             lethal: premises
                 .lethal_regions
                 .iter()
@@ -1557,10 +1611,7 @@ impl World {
         structures: &BTreeMap<String, Vec<u8>>,
         extra_solid: &BTreeSet<[i32; 3]>,
     ) -> Self {
-        let mut world = Self::from_plan(plan, structures);
-        world.solid.extend(extra_solid.iter().copied());
-        world.solid.compact();
-        world
+        Self::from_plan(plan, structures).with_extra_solid(extra_solid)
     }
 
     /// Whether a cell is occupied by a solid block in the assembled world.

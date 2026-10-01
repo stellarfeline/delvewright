@@ -550,7 +550,10 @@ pub fn build_with_warnings(
     // adds are re-verified for walkability below. A `DW0210`/`DW0211` diagnostic
     // fails the build (exit 2, mapped in main). Empty for a campaign with no dark
     // reachable cells and no `lighting` declaration → output byte-identical.
-    let relight = crate::compiler::light::relight_over(plan, assembled);
+    // The geometry is classified once: relight surveys it as it stands, and the
+    // campaign's world below is the same cells under the campaign's premises.
+    let geometry = crate::compiler::light::geometry_world(assembled);
+    let relight = crate::compiler::light::relight_with(plan, assembled, &geometry);
     if let Some(diag) = relight.diagnostics.first() {
         return Err(BuildFailure::Diagnostic {
             code: diag.code,
@@ -571,20 +574,17 @@ pub fn build_with_warnings(
     // campaign with no walked leg deriving seven kinds of camera against no world
     // at all — a zero binding wearing a pass's clothes, which is precisely the
     // shape that let a camera stand inside a ceiling lantern for as long as it did.
-    let world = {
-        let mut occ =
-            crate::compiler::assembled::occupancy_over(&assembled.blocks, &assembled.open_gates);
-        occ.solid.extend(relight.extra_solid.iter().copied());
-        // The campaign's premises about this world — the generator ambient,
-        // the built extent, the declared lethal volumes, the measured
-        // world-load gate seals, the clocked gate regions and the teleport
-        // sources — travel as one value, [`crate::compiler::nav::Premises`],
-        // so an edited world and a pristine one carry the identical set.
-        crate::compiler::nav::World::from_occupancy(
-            occ,
-            crate::compiler::nav::Premises::of_plan(plan, assembled.gate_seals.clone()),
-        )
-    };
+    // The campaign's premises about this world — the generator ambient, the
+    // built extent, the declared lethal volumes, the measured world-load gate
+    // seals, the clocked gate regions and the teleport sources — travel as one
+    // value, [`crate::compiler::nav::Premises`], so an edited world and a
+    // pristine one carry the identical set.
+    let world = geometry
+        .with_premises(crate::compiler::nav::Premises::of_plan(
+            plan,
+            assembled.gate_seals.clone(),
+        ))
+        .with_extra_solid(&relight.extra_solid);
 
     // ---- the stage-5 blockout battery (spec-0049 §5.3) ----
     //

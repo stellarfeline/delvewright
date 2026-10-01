@@ -655,7 +655,8 @@ fn check_batch_invariants(
     // proofs below can never see (they model walkability and light, not whether
     // a dispenser is still a dispenser).
     check_trap_hardware(plan, bid, batch_writes)?;
-    let relight = crate::compiler::light::relight_over(plan, assembled);
+    let geometry = crate::compiler::light::geometry_world(assembled);
+    let relight = crate::compiler::light::relight_with(plan, assembled, &geometry);
     if let Some(diag) = relight.diagnostics.first() {
         return Err(Failure {
             code: diag.code,
@@ -674,11 +675,9 @@ fn check_batch_invariants(
     // declared lethal volumes are another, and were missing here exactly as they
     // were missing from `emit::build`'s edit arm.
     let premises = crate::compiler::nav::Premises::of_plan(plan, assembled.gate_seals.clone());
-    let with_fixtures = {
-        let mut occ = assembled::occupancy_over(&assembled.blocks, &assembled.open_gates);
-        occ.solid.extend(relight.extra_solid.iter().copied());
-        crate::compiler::nav::World::from_occupancy(occ, premises)
-    };
+    let with_fixtures = geometry
+        .with_premises(premises)
+        .with_extra_solid(&relight.extra_solid);
     let ctx = |e: Failure| Failure {
         code: e.code,
         message: format!("after world-edits batch `{bid}`: {}", e.message),

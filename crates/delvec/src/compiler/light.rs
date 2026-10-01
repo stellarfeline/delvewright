@@ -1145,6 +1145,27 @@ pub fn relight(plan: &Plan, structures: &BTreeMap<String, Vec<u8>>) -> Relight {
 /// [`relight`] for an unedited world (both derive from the same
 /// [`crate::compiler::assembled::Assembled`]).
 pub fn relight_over(plan: &Plan, assembled: &crate::compiler::assembled::Assembled) -> Relight {
+    relight_with(plan, assembled, &geometry_world(assembled))
+}
+
+/// The nav model of `assembled`'s geometry alone, with no campaign premise —
+/// the world [`relight_with`] surveys (see the note there on why it declines
+/// the premises). A caller that also needs the campaign's own world derives it
+/// from this one with [`World::with_premises`] instead of classifying the
+/// blocks a second time.
+pub fn geometry_world(assembled: &crate::compiler::assembled::Assembled) -> World {
+    World::from_occupancy(
+        crate::compiler::assembled::occupancy_over(&assembled.blocks, &assembled.open_gates),
+        crate::compiler::nav::Premises::geometry_only(),
+    )
+}
+
+/// [`relight_over`] over `nav`, the [`geometry_world`] of `assembled`.
+pub fn relight_with(
+    plan: &Plan,
+    assembled: &crate::compiler::assembled::Assembled,
+    nav: &World,
+) -> Relight {
     let c = plan.campaign;
     let sky = darkest_effective_sky(c);
     // Which surfaces this campaign HAS to declare lighting on, asked once. A
@@ -1163,14 +1184,10 @@ pub fn relight_over(plan: &Plan, assembled: &crate::compiler::assembled::Assembl
     // a silent coverage loss, in the direction that reads as a clean pass. A pit
     // that kills is also a pit the player has to be able to see before stepping
     // into it, so its own cells stay in the survey too.
-    let nav = World::from_occupancy(
-        crate::compiler::assembled::occupancy_over(&assembled.blocks, &assembled.open_gates),
-        crate::compiler::nav::Premises::geometry_only(),
-    );
     // move-npc waypoint cells are part of the required paths; plan them on the base
     // world (an unroutable move is a separate DW0307 handled by emit — here we
     // just collect paths, ignoring routing errors).
-    let moves = crate::compiler::nav::plan_moves(plan, &nav).unwrap_or_default();
+    let moves = crate::compiler::nav::plan_moves(plan, nav).unwrap_or_default();
     let required = nav.required_path_cells(plan, &moves);
 
     let mut model = LightModel::from_shared(std::sync::Arc::clone(&assembled.blocks));
@@ -1288,7 +1305,7 @@ pub fn relight_over(plan: &Plan, assembled: &crate::compiler::assembled::Assembl
                 Some(spec) => {
                     relight_area(
                         &mut model,
-                        &nav,
+                        nav,
                         &reachable,
                         &required,
                         &area.area_id,
@@ -1339,7 +1356,7 @@ pub fn relight_over(plan: &Plan, assembled: &crate::compiler::assembled::Assembl
         }
     }
 
-    if let Some(diag) = dark_diagnostic(&dark, &nav, sky, placement) {
+    if let Some(diag) = dark_diagnostic(&dark, nav, sky, placement) {
         out.diagnostics.push(diag);
     }
 
