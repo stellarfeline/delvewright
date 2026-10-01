@@ -1,7 +1,37 @@
 {
-  "added": [],
-  "base_commit": "7777cf5dd2dd8a14d131e020f7c22cadb7f9a951",
-  "changed": [],
-  "classes": {},
+  "added": [
+    "easy.en:datapack/data/gallery/function/trap_gate_tick.mcfunction",
+    "easy.en:packtest-datapack/data/gallery/test/v06_trap_gate.mcfunction",
+    "hard.en:datapack/data/gallery/function/trap_gate_tick.mcfunction",
+    "hard.en:packtest-datapack/data/gallery/test/v06_trap_gate.mcfunction",
+    "ocean-horizon.en:datapack/data/gallery/function/trap_gate_tick.mcfunction",
+    "ocean-horizon.en:packtest-datapack/data/gallery/test/v06_trap_gate.mcfunction",
+    "primary.en:datapack/data/gallery/function/trap_gate_tick.mcfunction",
+    "primary.en:packtest-datapack/data/gallery/test/v06_trap_gate.mcfunction",
+    "primary.zh-cn:datapack/data/gallery/function/trap_gate_tick.mcfunction",
+    "primary.zh-cn:packtest-datapack/data/gallery/test/v06_trap_gate.mcfunction",
+    "void-horizon.en:datapack/data/gallery/function/trap_gate_tick.mcfunction",
+    "void-horizon.en:packtest-datapack/data/gallery/test/v06_trap_gate.mcfunction"
+  ],
+  "base_commit": "34f4df6d41192671b69a0970f6c4a9b2aa63e163",
+  "changed": [
+    "easy.en:datapack/data/gallery/function/tick.mcfunction",
+    "easy.en:validation/watch-ledger.json",
+    "hard.en:datapack/data/gallery/function/tick.mcfunction",
+    "hard.en:validation/watch-ledger.json",
+    "ocean-horizon.en:datapack/data/gallery/function/tick.mcfunction",
+    "ocean-horizon.en:validation/watch-ledger.json",
+    "primary.en:datapack/data/gallery/function/tick.mcfunction",
+    "primary.en:validation/watch-ledger.json",
+    "primary.zh-cn:datapack/data/gallery/function/tick.mcfunction",
+    "primary.zh-cn:validation/watch-ledger.json",
+    "void-horizon.en:datapack/data/gallery/function/tick.mcfunction",
+    "void-horizon.en:validation/watch-ledger.json"
+  ],
+  "classes": {
+    "PackTest": 6,
+    "datapack function": 12,
+    "validation ledger": 6
+  },
   "removed": []
 }
