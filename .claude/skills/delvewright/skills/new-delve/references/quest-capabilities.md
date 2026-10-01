@@ -347,6 +347,19 @@ this section is what they are *for* and the traps in each.
   sit inside one (`DW0511`). Put the volume where a player can SEE what will
   happen before they commit to it; a killing box nobody can read is 初见杀 with
   no lesson in it.
+- **A volume kills your own waves too, so a wave may not be able to walk into
+  one.** A seated wave whose members can get into a lethal volume by walking,
+  stepping or jumping up one block (a floor lantern is a step), climbing onto a
+  wall or curb from something higher, dropping off an edge or sinking in water,
+  within the stack's follow range of its seats, is `DW0922`; mobs make no gap
+  jumps. The same reach through a fence gate, door or trapdoor the party can
+  open is `DW0923`, because a player who opens one may leave it open and die.
+  Repair by placement: seat the wave elsewhere, put the volume behind a rise of
+  two blocks, or replace the gate with a jump across a dry cut, which the party
+  makes and a mob does not. Never ring the hazard with blocks nobody can see.
+  A volume no modelled body can reach at all (water over it that only a diver
+  could cross) builds with a `DW0891` warning: the engine has not proven anyone
+  can die there, so the bot cannot be sent to.
 - **What happens when a player dies is content, not engine behaviour.** The
   quests document takes a campaign-wide `on_death`: a bundle of ordinary effects
   that runs at the moment a player dies, for that player. One per campaign — it

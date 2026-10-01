@@ -1,0 +1,12 @@
+{
+  "code": "DW0922",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "remove",
+      "path": "/content/waves/0/mobs/1/attributes"
+    }
+  ],
+  "units": [],
+  "why": "The muster's spider without the `follow_range` the gallery gives it, so it pursues as far as vanilla's default sixteen blocks. From its seat in the far hall that is far enough to walk north through the shortcut door, along the near hall and onto the burning strip under `lethal/east-pit`. A killing volume kills every body that is not a player, so the muster loses its spider before the party touches it, on every life, and whatever it drops lands in the box. Nothing here is the hazard's fault — the strip shows itself and the party can see it — and nothing is the seat's: the seat is the room's own floor. What must not compile is a wave seated where its own members can get into a killing volume by walking, stepping, dropping or sinking, unled. The repair the gallery takes is the pursuit the stack declares; moving the anchor or the volume answers it as well."
+}

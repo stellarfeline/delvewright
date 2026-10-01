@@ -1,0 +1,51 @@
+{
+  "code": "DW0923",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "replace",
+      "path": "/content/waves/0/anchor",
+      "value": "anchor/hearth"
+    },
+    {
+      "doc": "world-edits.json",
+      "op": "add",
+      "path": "/content/batches/-",
+      "value": {
+        "area": "area/hall",
+        "edits": [
+          {
+            "name": "region/well-mouth",
+            "shape": {
+              "frame": {
+                "kind": "piece-local",
+                "piece": 0,
+                "prefab": "prefab/gallery-hall"
+              },
+              "kind": "box",
+              "max": [2, 5, 3],
+              "min": [2, 5, 3]
+            },
+            "verb": "select"
+          },
+          {
+            "recipe": {
+              "blocks": [
+                {
+                  "block": "minecraft:oak_trapdoor[half=top,open=false]",
+                  "weight": 1.0
+                }
+              ]
+            },
+            "region": "region/well-mouth",
+            "verb": "fill"
+          }
+        ],
+        "id": "batch/hatch-the-well",
+        "note": "A trapdoor laid shut over the west well's mouth, flush with the terrace rim."
+      }
+    }
+  ],
+  "units": [],
+  "why": "The muster seated at the hearth, beside the terrace, and an oak trapdoor laid shut over the west well's mouth, flush with the rim. Shut, the hatch is floor: the muster climbs the terrace's treads and walks over it, and the well's killing bottom is out of every member's reach. But a player opens a trapdoor by hand, and a player who opens this one to look down the well may leave it open and die; the muster re-seated after that death walks the rim, steps into the open mouth and falls onto `lethal/west-pit`. A mob cannot open the hatch, and it does not have to. What must not compile is a barrier the party can leave open standing between a wave and a killing volume, judged in its open state. The repair is to take the opening away — a jump across a dry cut, which the party makes and a mob never does — not to trust the hatch to be shut."
+}
