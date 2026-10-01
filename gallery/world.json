@@ -39,7 +39,7 @@
     "premise": "One hall, every surface the DSL declares, written once and built on every pull request.",
     "respawn_wait": {
       "alone": false,
-      "seconds": 5
+      "seconds": 20
     },
     "seed": 20260819,
     "target_minutes": 5,
