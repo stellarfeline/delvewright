@@ -89,6 +89,24 @@ wave that also declares `respawns_on_rest` is a contradiction and is `DW0489`.
 Generated PackTests `souls_reseat_actor` and `souls_reseat_undefeated` drive the
 real rest function over a chipped, branded, dragged-off-its-ground elite.
 
+From a multiplayer playtest — one player's death re-seated the waves the rest of
+the party was still fighting, and a rest restored only the player who sat down:
+
+- **A respawn re-seats only after a party wipe.** "Death = respawn at the
+  last-rested bonfire with the same hooks" is read per party, not per player: the
+  scene reset (every re-seat above and `on_rest[]`) runs on a respawn only when
+  every player present was dead at once and none had respawned yet. A death in a
+  party that is still fighting resets nothing for anyone; the fallen player comes
+  back at the fire with their own flask refilled. Alone, every death is a wipe.
+- **A rest resets the map and every player.** Whoever sits down, a rest re-seats
+  the enemies and restores every living player — health, hunger, cures, mending,
+  flask — not only the one who chose to rest.
+
+Proofs: the emitted gating is pinned by `souls_bonfire`
+(`a_respawn_resets_the_scene_only_after_a_party_wipe`,
+`a_rest_restores_every_living_player`); a live two-body run proves one death
+does not re-seat, both dead re-seats, and one rest re-seats and restores both.
+
 ### 2. Shortcut doors ("the door does not open from this side")
 The pattern this section is built around: between two bonfires there are
 TWO routes — a **short

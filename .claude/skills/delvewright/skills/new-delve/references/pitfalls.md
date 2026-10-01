@@ -60,9 +60,13 @@
 ## Bonfires, flasks and potions
 
 - **Bonfires owe the party a flask.** Right-clicking a `bonfire` opens exactly two
-  options — *rest and save* (full restore: health, hunger, negative effects
-  cleared, flask refilled, checkpoint moved, `respawns_on_rest` waves re-seated,
-  `on_rest[]` fired) and *save only* (the checkpoint, nothing else). The
+  options — *rest and save* (full restore of EVERY living player, whoever sat
+  down: health, hunger, negative effects cleared, flask refilled; checkpoint
+  moved, `respawns_on_rest` waves re-seated, `on_rest[]` fired) and *save only*
+  (the checkpoint, nothing else). In a party, a respawn resets the scene only
+  after a wipe — every player dead at once; one fallen player comes back to the
+  fight the others are still in, with only their own flask refilled. Write
+  `on_rest[]` lines for the party that rests or wipes, not for one death. The
   replenished item is a class-kit entry marked `"flask": true`, and **every class
   kit in a campaign that places a bonfire must declare one** — a bonfire campaign
   with a flaskless kit is the build error `DW0476`. Author it as a real recovery

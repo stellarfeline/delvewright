@@ -324,10 +324,13 @@ fn rest_restores_the_player_then_saves_the_party() {
         pick.lines().collect::<Vec<_>>(),
         vec![
             "scoreboard players reset @s dw.rest",
-            &format!("function {NS}:bonfire_restore"),
+            &format!(
+                "execute as @a unless data entity @s {{Health:0.0f}} run function \
+                 {NS}:bonfire_restore"
+            ),
             &format!("function {NS}:bonfire_rest_0"),
         ],
-        "restore the resting player, then run the party-wide rest: {pick}"
+        "restore every living player, then run the party-wide rest: {pick}"
     );
     let restore = fn_body(&out, "bonfire_restore");
     assert!(
@@ -572,7 +575,9 @@ fn the_mend_is_packtested() {
 fn on_rest_runs_at_the_right_audience_on_both_paths() {
     let out = build_fixture();
     let rest = fn_body(&out, "bonfire_rest_0");
-    let respawn = fn_body(&out, "cp_on_respawn_0");
+    // The respawn path's bundle runs from `cp_reset_0`, which only a body that
+    // was dead at a party wipe enters (`a_respawn_resets_the_scene_only_after_a_party_wipe`).
+    let respawn = fn_body(&out, "cp_reset_0");
     assert!(
         rest.contains("tellraw @a {\"text\":\"You rest at the shrine fire.\"}"),
         "the whole party sees the rest: {rest}"
@@ -630,8 +635,8 @@ fn respawns_on_rest_wave_is_reseated_by_rest_and_respawn() {
         "a rest re-seats the wave"
     );
     assert!(
-        fn_body(&out, "cp_on_respawn_0").contains(&guard),
-        "a respawn at the bonfire re-seats it too"
+        fn_body(&out, "party_reseat").contains(&guard),
+        "a respawn at the bonfire after a party wipe re-seats it too"
     );
     // An unmarked wave is never re-seated.
     assert!(
@@ -1039,5 +1044,104 @@ fn an_equipped_actor_coexists_with_affordance_hardware() {
     assert!(
         all.contains("dw_hw_dw_bonfire_"),
         "the bonfire's compiler-owned hardware must still be summoned"
+    );
+}
+
+/// **A respawn resets the scene only after a party wipe** (spec-0016 §1,
+/// multiplayer). The tick latches `#wipe` and tags every body only when no
+/// player present is alive; the respawning player runs the fire's reset only if
+/// it was one of those bodies; the re-seat inside that reset runs only while the
+/// latch is up, and the first respawn spends it. One player's death in a party
+/// still fighting therefore re-seats nothing.
+#[test]
+fn a_respawn_resets_the_scene_only_after_a_party_wipe() {
+    let out = build_fixture();
+    let tick = fn_body(&out, "tick");
+    let detector = [
+        "scoreboard players set #alive dw.sys 0",
+        "execute as @a unless data entity @s {Health:0.0f} run scoreboard players add #alive dw.sys 1",
+        "execute if score #alive dw.sys matches 0 if entity @a run scoreboard players set #wipe dw.sys 1",
+        "execute if score #alive dw.sys matches 0 run tag @a add dw_wiped",
+    ];
+    let check = format!("execute as @a run function {NS}:cp_respawn_check");
+    let at = |l: &str| {
+        tick.lines()
+            .position(|t| t == l)
+            .unwrap_or_else(|| panic!("tick lacks `{l}`:\n{tick}"))
+    };
+    for pair in detector.windows(2) {
+        assert_eq!(
+            at(pair[0]) + 1,
+            at(pair[1]),
+            "the detector is one block, in order:\n{tick}"
+        );
+    }
+    assert!(
+        at(detector[3]) < at(&check),
+        "the wipe is latched before the respawn edge reads it:\n{tick}"
+    );
+
+    let on_respawn = fn_body(&out, "cp_on_respawn_0");
+    assert_eq!(
+        on_respawn.lines().collect::<Vec<_>>(),
+        vec![
+            format!("execute if entity @s[tag=dw_wiped] run function {NS}:cp_reset_0").as_str(),
+            &format!("function {NS}:bonfire_flask"),
+        ],
+        "a respawn at the fire refills the player's own flask, and resets the scene only for a \
+         body that was dead at a wipe:\n{on_respawn}"
+    );
+    assert!(
+        !on_respawn.contains("wave_reseat_") && !on_respawn.contains("tellraw"),
+        "nothing of the scene reset runs unguarded on a respawn:\n{on_respawn}"
+    );
+    let reset = fn_body(&out, "cp_reset_0");
+    assert_eq!(
+        reset.lines().next(),
+        Some(
+            format!("execute if score #wipe dw.sys matches 1 run function {NS}:party_reseat")
+                .as_str()
+        ),
+        "the re-seat runs first and only while the wipe is latched:\n{reset}"
+    );
+    assert!(
+        !reset.contains("wave_reseat_"),
+        "the re-seat lines live only behind the latch:\n{reset}"
+    );
+    let fire = fn_body(&out, "cp_respawn_fire");
+    let lines: Vec<&str> = fire.lines().collect();
+    assert_eq!(
+        &lines[lines.len() - 2..],
+        &[
+            "scoreboard players set #wipe dw.sys 0",
+            "tag @s remove dw_wiped"
+        ],
+        "the first respawn spends the wipe, after its own dispatch:\n{fire}"
+    );
+    let setup = all_functions(&out);
+    assert!(
+        setup.contains("scoreboard players set #wipe dw.sys 0"),
+        "the latch is seeded at setup"
+    );
+}
+
+/// **A rest restores the whole party, whoever sat down** (spec-0016 §1): the
+/// restore runs as every living player; a body on its death screen is skipped
+/// and comes back through the respawn's own flask refill.
+#[test]
+fn a_rest_restores_every_living_player() {
+    let out = build_fixture();
+    let pick = fn_body(&out, "bonfire_pick_rest_0");
+    assert!(
+        pick.contains(&format!(
+            "execute as @a unless data entity @s {{Health:0.0f}} run function {NS}:bonfire_restore"
+        )),
+        "the restore is party-wide:\n{pick}"
+    );
+    assert!(
+        !pick
+            .lines()
+            .any(|l| l == format!("function {NS}:bonfire_restore")),
+        "no restore of the resting player alone remains:\n{pick}"
     );
 }
