@@ -12048,63 +12048,54 @@ fn trap_is_gated(t: &plan::TrapPlan) -> bool {
     !t.requires_flags.is_empty() || !t.forbids_flags.is_empty() || !t.requires_state.is_empty()
 }
 
-/// The `tick` clauses that open and shut every gated trap's hardware.
+/// The authored gate of a planned trap, read off its DSL declaration so every
+/// emission site reads the gate through [`Plan::gate_terms`] — the one rule that
+/// says which holder a term lives on.
+fn trap_gate_of<'a>(plan: &Plan<'a>, t: &plan::TrapPlan) -> Gate<'a> {
+    plan.campaign
+        .quests
+        .content
+        .traps
+        .iter()
+        .find(|d| d.id.as_str() == t.id)
+        .map_or(Gate::OPEN, delvewright_dsl::Trap::gate)
+}
+
+/// The clauses of `trap_gate_tick`, which the tick calls: open and shut every
+/// gated trap's hardware.
 ///
 /// Edge-triggered on a per-trap sentinel `#trapgate_<safe>` (1 = armed, i.e. the
 /// trigger block is in the world) so the `setblock` fires only on a transition —
 /// a per-tick unconditional write would be both wasteful and wrong (it would also
 /// fight the disarm path).
 ///
-/// The gate is **campaign state, not per-player state**: flags are set by whoever
-/// reaches the beat, and a trap does not become live for one player and dead for
-/// another. So the guards use the same any-player form the environment triggers
-/// use — `if entity @a[scores={dw.f_x=1..}]` — rather than `score @s`.
+/// The gate is **campaign state**, so every term is read where the campaign
+/// writes it: [`Plan::gate_terms`] — a flag on the party holder, a datum on its
+/// declared holder (party-scoped here by `DW0503`). A trap reads its gate through
+/// the same rule every other gate consumer uses; a selector asking whether some
+/// player carries a flag score matches nobody, because no flag is written on a
+/// player.
 ///
-/// Shutting is one clause per gating flag because "not (all required set and no
-/// forbidden set)" is a disjunction: any single unmet requirement, or any single
-/// forbidden flag, shuts the gate on its own. Each is idempotent behind the
-/// sentinel.
+/// Shutting is one clause per term because "not (every term holds)" is a
+/// disjunction: any single term failing shuts the gate on its own. Each is
+/// idempotent behind the sentinel. Opening is one clause carrying the whole
+/// conjunction.
 fn trap_gate_tick(plan: &Plan) -> Vec<String> {
     let ns = &plan.namespace;
     let mut out = Vec::new();
     for t in plan.traps.iter().filter(|t| trap_is_gated(t)) {
         let id = &t.safe;
-        for f in &t.requires_flags {
+        let gate = trap_gate_of(plan, t);
+        for term in plan.gate_terms(gate) {
             out.push(format!(
-                "execute if score #trapgate_{id} dw.sys matches 1 unless entity @a[scores={{{}=1..}}] run function {ns}:trap_gate_off_{id}",
-                plan::flag_score(f)
+                "execute if score #trapgate_{id} dw.sys matches 1 {} run function {ns}:trap_gate_off_{id}",
+                term.clause(true)
             ));
         }
-        for f in &t.forbids_flags {
-            out.push(format!(
-                "execute if score #trapgate_{id} dw.sys matches 1 if entity @a[scores={{{}=1..}}] run function {ns}:trap_gate_off_{id}",
-                plan::flag_score(f)
-            ));
-        }
-        // DSL v0.10 (spec-0031): one shut clause per numeric term — any single
-        // term ceasing to hold disarms the trap, which is what `negate` spells.
-        // The datum is party-scoped by construction here (`DW0503`).
-        for clause in state_clauses(plan, &t.requires_state, true) {
-            out.push(format!(
-                "execute if score #trapgate_{id} dw.sys matches 1 {clause} run function {ns}:trap_gate_off_{id}"
-            ));
-        }
-        let mut on = format!("execute unless score #trapgate_{id} dw.sys matches 1");
-        for f in &t.requires_flags {
-            on.push_str(&format!(
-                " if entity @a[scores={{{}=1..}}]",
-                plan::flag_score(f)
-            ));
-        }
-        for f in &t.forbids_flags {
-            on.push_str(&format!(
-                " unless entity @a[scores={{{}=1..}}]",
-                plan::flag_score(f)
-            ));
-        }
-        on.push_str(&state_cond(plan, &t.requires_state, false));
-        on.push_str(&format!(" run function {ns}:trap_gate_on_{id}"));
-        out.push(on);
+        out.push(format!(
+            "execute unless score #trapgate_{id} dw.sys matches 1{} run function {ns}:trap_gate_on_{id}",
+            gate_cond(plan, gate)
+        ));
     }
     out
 }
@@ -16271,22 +16262,10 @@ fn emit_payload_packtests(plan: &Plan, out: &mut BuildOutput, payloads: &Payload
 fn emit_trap_gate_packtest(plan: &Plan, out: &mut BuildOutput) {
     let ns = &plan.namespace;
     let title = artifact_title(plan.campaign);
-    let Some((t, gate)) = plan
-        .traps
-        .iter()
-        .filter(|t| trap_is_gated(t))
-        .find_map(|t| {
-            plan.campaign
-                .quests
-                .content
-                .traps
-                .iter()
-                .find(|d| d.id.as_str() == t.id)
-                .map(|d| (t, d.gate()))
-        })
-    else {
+    let Some(t) = plan.traps.iter().find(|t| trap_is_gated(t)) else {
         return;
     };
+    let gate = trap_gate_of(plan, t);
     let c = t.trigger_cell;
     let party = plan::PARTY;
     let mut b = packtest_header(&format!(
@@ -16294,14 +16273,18 @@ fn emit_trap_gate_packtest(plan: &Plan, out: &mut BuildOutput) {
         t.id
     ));
     b.push(format!("function {ns}:setup"));
-    let tick_and_assert = |b: &mut Vec<String>, shut: bool| {
+    // One holder per assert (`#tgate_<n>`), so a red names the step that failed
+    // rather than a line number the runner counts its own way.
+    let mut step = 0u32;
+    let mut tick_and_assert = |b: &mut Vec<String>, shut: bool| {
+        step += 1;
         b.push(format!("function {ns}:trap_gate_tick"));
         b.push(format!(
-            "execute store success score #tgate dw.sys if block {} {} {} minecraft:air",
+            "execute store success score #tgate_{step} dw.sys if block {} {} {} minecraft:air",
             c[0], c[1], c[2]
         ));
         b.push(format!(
-            "assert score #tgate dw.sys matches {}",
+            "assert score #tgate_{step} dw.sys matches {}",
             u8::from(shut)
         ));
     };
