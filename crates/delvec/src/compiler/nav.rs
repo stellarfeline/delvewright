@@ -2557,43 +2557,114 @@ impl World {
     /// open air; so this is `body_moves` with the jump arc taken away, asked of
     /// the mob's own footprint instead of the player's. The walk, the fall and
     /// the afloat arms are the same arms.
+    ///
+    /// And one thing a mob does that the player relation leaves out: it stands
+    /// on a **barrier top** ([`World::perch_feet_16`]) when it can step or jump
+    /// up to one from where it is, walks along it, steps down off it and drops
+    /// off it into the next column. Observed on the pinned server: a drowned
+    /// stepped onto a floor lantern, jumped from its top onto a well's curb
+    /// wall, walked along the curb over a shut fence gate and dropped into the
+    /// water.
     pub fn mob_moves(&self, c: [i32; 3], fp: &Footprint) -> Vec<[i32; 3]> {
-        self.moves_of(c, fp, false)
+        const HORIZ: [(i32, i32); 4] = [(-1, 0), (1, 0), (0, -1), (0, 1)];
+        let perched = self.perch_feet_16(c, fp);
+        let mut out = match perched {
+            Some(_) => Vec::new(),
+            None => self.moves_of(c, fp, false),
+        };
+        if self.is_water_surface(c) || (perched.is_none() && !self.standable_fp(c, fp)) {
+            return out;
+        }
+        let here = perched.unwrap_or_else(|| self.feet_16_fp(c, fp));
+        // The head sweeps the cells over the body's top at the source for a jump.
+        let top = c[1] + fp.height + i32::from(perched.is_some());
+        let head_clear = || {
+            fp.cols
+                .iter()
+                .all(|&[dx, dz]| !self.is_occupied([c[0] + dx, top, c[2] + dz]))
+        };
+        for (dx, dz) in HORIZ {
+            for dy in [0i32, -1, 1] {
+                let n = [c[0] + dx, c[1] + dy, c[2] + dz];
+                if let Some(feet) = self.perch_feet_16(n, fp)
+                    && step_allowed(feet - here, head_clear)
+                {
+                    out.push(n);
+                }
+                if perched.is_some()
+                    && self.standable_fp(n, fp)
+                    && step_allowed(self.feet_16_fp(n, fp) - here, head_clear)
+                {
+                    out.push(n);
+                }
+            }
+            if perched.is_some() {
+                let (x1, z1) = (c[0] + dx, c[2] + dz);
+                if (c[1]..=c[1] + 1).all(|y| !self.is_occupied([x1, y, z1]))
+                    && let Some(n) = self.settle_fp(x1, z1, c[1] - 1, here, fp)
+                {
+                    out.push(n);
+                }
+            }
+        }
+        out.sort_unstable();
+        out.dedup();
+        out
+    }
+
+    /// Where a body dropping down column `(x, z)` from `top` ends up: afloat at
+    /// the first water it meets, or standing on the first floor, if that floor is
+    /// standable and no deeper under `from` (its feet, in sixteenths) than a body
+    /// survives. `None` when it lands in lava, a lethal volume, on something no
+    /// body stands on, or nowhere at all. Nothing deeper than the survivable fall
+    /// is a landing, and water that deep is not looked for: a fall that far into
+    /// water is not counted as a way in.
+    fn settle_fp(&self, x: i32, z: i32, top: i32, from: i64, fp: &Footprint) -> Option<[i32; 3]> {
+        let deepest = unarmoured_survivable_fall_blocks() as i32;
+        let bottom = from.div_euclid(FULL_16) as i32 - deepest - 1;
+        let mut y = top;
+        while y >= bottom {
+            let cell = [x, y, z];
+            if self.is_occupied(cell) {
+                if self.is_water_surface(cell) {
+                    return Some(cell);
+                }
+                let n = [x, y + 1, z];
+                return (self.standable_fp(n, fp)
+                    && jump_max_gap(self.feet_16_fp(n, fp) - from).is_some())
+                .then_some(n);
+            }
+            y -= 1;
+        }
+        None
+    }
+
+    /// The feet of a body **perched on a barrier top** in `p` — standing on the
+    /// fence, wall or shut gate in the cell under it, half a block into `p`, with
+    /// room for its whole height over that — in sixteenths; `None` when `p` is
+    /// not such a place. No body walks or jumps onto a barrier top from the floor
+    /// beside it (a 1.5-block rise is beyond the jump), and no route proof stands
+    /// one there; but a body that is already higher — on a lantern, a step, a
+    /// crate — jumps onto one and walks along it, which is how a wave climbs a
+    /// well's curb (`DW0922`). Only the feet column's support is asked: a wider
+    /// body overhangs a one-cell wall as it does in game.
+    fn perch_feet_16(&self, p: [i32; 3], fp: &Footprint) -> Option<i64> {
+        if !self.tall.contains(&[p[0], p[1] - 1, p[2]]) {
+            return None;
+        }
+        let room = fp.cols.iter().all(|&[dx, dz]| {
+            (0..=fp.height).all(|dy| !self.is_occupied([p[0] + dx, p[1] + dy, p[2] + dz]))
+        });
+        room.then(|| (i64::from(p[1]) - 1) * FULL_16 + (BARRIER_HEIGHT * FULL_16 as f64) as i64)
     }
 
     /// The one movement relation behind [`World::body_moves`] and
     /// [`World::mob_moves`]; `gap_jumps` is the only thing that differs.
     fn moves_of(&self, c: [i32; 3], fp: &Footprint, gap_jumps: bool) -> Vec<[i32; 3]> {
         const HORIZ: [(i32, i32); 4] = [(-1, 0), (1, 0), (0, -1), (0, 1)];
-        let deepest = unarmoured_survivable_fall_blocks() as i32;
         let clear =
             |x: i32, y0: i32, y1: i32, z: i32| (y0..=y1).all(|y| !self.is_occupied([x, y, z]));
-        // Where a body dropping down a column from `top` ends up: afloat at the
-        // first water it meets, or standing on the first floor, if that floor is
-        // standable and no deeper under `from` than a body survives. `None` when
-        // it lands in lava, a lethal volume, on something no body stands on, or
-        // nowhere at all.
-        let settle = |x: i32, z: i32, top: i32, from: i64| -> Option<[i32; 3]> {
-            // Nothing deeper than the survivable fall is a landing, and water
-            // that deep is not looked for: a fall that far into water is not
-            // counted as a way in.
-            let bottom = from.div_euclid(FULL_16) as i32 - deepest - 1;
-            let mut y = top;
-            while y >= bottom {
-                let cell = [x, y, z];
-                if self.is_occupied(cell) {
-                    if self.is_water_surface(cell) {
-                        return Some(cell);
-                    }
-                    let n = [x, y + 1, z];
-                    return (self.standable_fp(n, fp)
-                        && jump_max_gap(self.feet_16_fp(n, fp) - from).is_some())
-                    .then_some(n);
-                }
-                y -= 1;
-            }
-            None
-        };
+        let settle = |x: i32, z: i32, top: i32, from: i64| self.settle_fp(x, z, top, from, fp);
         let mut out = Vec::new();
         if self.is_water_surface(c) {
             for (dx, dz) in HORIZ {

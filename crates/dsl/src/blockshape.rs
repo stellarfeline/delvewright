@@ -472,6 +472,18 @@ pub fn collision_top_16(name: &str) -> u8 {
     if matches!(id, "dirt_path" | "farmland") {
         return 15;
     }
+    // A lantern's collision is two stacked boxes, the cap's top at 9/16 standing
+    // and 10/16 hanging (one sixteenth lower and higher). Measured standing on
+    // the pinned server: a mob on a floor lantern stood at its cell floor plus
+    // 0.5625. A full cube here made the step onto one a 1.5-block rise from a
+    // bottom slab, where in game it is a jump a mob takes.
+    if matches!(id, "lantern" | "soul_lantern") || id.ends_with("copper_lantern") {
+        return if state_value(name, "hanging") == Some("true") {
+            10
+        } else {
+            9
+        };
+    }
     if is_air(name)
         || is_passable_trap_trigger(name)
         || is_no_collision_plant(id)
