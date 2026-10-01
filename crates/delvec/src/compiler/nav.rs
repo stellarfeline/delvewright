@@ -5803,18 +5803,16 @@ fn verify_bodies_can_leave(
         configurations: worlds.len(),
         ..LeaveBinding::default()
     };
-    let mut pockets: Vec<String> = Vec::new();
-    let mut pocket_count = 0usize;
-    for (w, when, seeds) in worlds {
+    // Each configuration is judged over its own world alone, so they are
+    // judged in parallel and folded below in configuration order.
+    let judged = crate::par::map(worlds, |(w, when, seeds)| {
         let seeds: Vec<[i32; 3]> = seeds
             .iter()
             .copied()
             .filter(|c| w.is_standable(*c))
             .collect();
-        binding.route_cells += seeds.len();
         let (reached, trapped, preds) = w.cells_a_body_cannot_leave(&seeds, returned);
-        binding.reached += reached.len();
-        binding.afloat += reached.iter().filter(|c| w.is_water_surface(**c)).count();
+        let afloat = reached.iter().filter(|c| w.is_water_surface(**c)).count();
         // A shortcut is opened from its far side by whoever stands at its lever,
         // and the completability model holds it shut. A pocket whose own reach
         // takes a body to a lever, and through the door that lever opens back to
@@ -5825,31 +5823,44 @@ fn verify_bodies_can_leave(
             .filter(|p| !w.leaves_by_a_shortcut(p, &seed_set, returned, shortcuts))
             .collect();
         let trapped: BTreeSet<[i32; 3]> = kept.iter().flatten().copied().collect();
-        binding.trapped += trapped.len();
-        for pocket in kept {
+        let described: Vec<String> = kept
+            .iter()
+            .map(|pocket| {
+                let entry = pocket.iter().find_map(|c| {
+                    preds
+                        .get(c)
+                        .and_then(|ps| ps.iter().find(|p| !trapped.contains(*p)))
+                        .map(|p| (*p, *c))
+                });
+                let how = match entry {
+                    Some((from, to)) => format!(
+                        "a body gets in from {from:?} to {to:?} by {}",
+                        movement_words(w, from, to)
+                    ),
+                    None => "a body gets in".to_string(),
+                };
+                format!(
+                    "{} cell(s) around {:?} ({when}): {how}, and no walk, fall, jump or swim \
+                     leads from any of them back to the route",
+                    pocket.len(),
+                    pocket[0]
+                )
+            })
+            .collect();
+        (seeds.len(), reached.len(), afloat, trapped.len(), described)
+    });
+    let mut pockets: Vec<String> = Vec::new();
+    let mut pocket_count = 0usize;
+    for (route_cells, reached, afloat, trapped, described) in judged {
+        binding.route_cells += route_cells;
+        binding.reached += reached;
+        binding.afloat += afloat;
+        binding.trapped += trapped;
+        for pocket in described {
             pocket_count += 1;
-            if pockets.len() >= POCKET_LIST_LIMIT {
-                continue;
+            if pockets.len() < POCKET_LIST_LIMIT {
+                pockets.push(pocket);
             }
-            let entry = pocket.iter().find_map(|c| {
-                preds
-                    .get(c)
-                    .and_then(|ps| ps.iter().find(|p| !trapped.contains(*p)))
-                    .map(|p| (*p, *c))
-            });
-            let how = match entry {
-                Some((from, to)) => format!(
-                    "a body gets in from {from:?} to {to:?} by {}",
-                    movement_words(w, from, to)
-                ),
-                None => "a body gets in".to_string(),
-            };
-            pockets.push(format!(
-                "{} cell(s) around {:?} ({when}): {how}, and no walk, fall, jump or swim leads \
-                 from any of them back to the route",
-                pocket.len(),
-                pocket[0]
-            ));
         }
     }
     if pockets.is_empty() {
