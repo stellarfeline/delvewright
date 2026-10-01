@@ -474,25 +474,25 @@ pub fn build_with_warnings(
         // two doors, so a second derivation here would be a second answer able
         // to disagree with the first.
         let available = crate::compiler::loot::container_anchors(
-            &blocks,
+            blocks,
             &plan.anchors,
             &plan.loot,
             &plan.collect_fills,
         );
-        crate::compiler::loot::check_loot_containers(&blocks, &plan.loot, &available).map_err(
+        crate::compiler::loot::check_loot_containers(blocks, &plan.loot, &available).map_err(
             |e| BuildFailure::Diagnostic {
                 code: e.code,
                 message: e.message,
             },
         )?;
-        crate::compiler::loot::check_collect_containers(&blocks, &plan.collect_fills, &available)
+        crate::compiler::loot::check_collect_containers(blocks, &plan.collect_fills, &available)
             .map_err(|e| BuildFailure::Diagnostic {
-            code: e.code,
-            message: e.message,
-        })?;
+                code: e.code,
+                message: e.message,
+            })?;
         // DW0917: a trap's trigger is prefab hardware on the same terms as a
         // container, so it is proven off the same block map.
-        crate::compiler::trap_trigger::check_trap_triggers(&blocks, &plan.traps, &plan.anchors)
+        crate::compiler::trap_trigger::check_trap_triggers(blocks, &plan.traps, &plan.anchors)
             .map_err(|e| BuildFailure::Diagnostic {
                 code: e.code,
                 message: e.message,
@@ -595,7 +595,7 @@ pub fn build_with_warnings(
                 );
             }
         }
-        if let Some(battery) = crate::compiler::blockout::check(plan, &blocks) {
+        if let Some(battery) = crate::compiler::blockout::check(plan, blocks) {
             eprintln!("{}", battery.binding.line());
             let refusals: Vec<&(delvewright_dsl::DwCode, delvewright_dsl::Diagnostic)> =
                 battery.refusals().collect();
@@ -995,7 +995,7 @@ pub fn build_with_warnings(
             let (exposure, findings) = crate::compiler::burial::check(
                 plan,
                 prefabs,
-                &blocks,
+                blocks,
                 structures,
                 &world,
                 &party_walk,
@@ -1094,7 +1094,7 @@ pub fn build_with_warnings(
             // denominators a pass does.
             {
                 let (binding, findings) =
-                    crate::compiler::firework::check(plan, &blocks, campaign_spawn(plan), &waves);
+                    crate::compiler::firework::check(plan, blocks, campaign_spawn(plan), &waves);
                 eprintln!("{}", binding.line());
                 firework_gate = Some(binding);
                 if let Some((first, rest)) = findings.split_first() {
@@ -1150,7 +1150,7 @@ pub fn build_with_warnings(
                     let (binding, verdict) = crate::compiler::lethal::check_danger_is_visible(
                         plan,
                         &world,
-                        &blocks,
+                        blocks,
                         campaign_spawn(plan),
                     );
                     // Stated whether it found anything or not, and before the
@@ -1333,7 +1333,7 @@ pub fn build_with_warnings(
                         routes.iter().map(|r| r.cells.clone()).collect();
                     let blocks = &assembled.blocks;
                     crate::compiler::stairs::check_stair_orientation(
-                        &blocks,
+                        blocks,
                         Some(plan),
                         &route_cells,
                     )?;
@@ -1468,7 +1468,7 @@ pub fn build_with_warnings(
             // motivating case: roof and two walls carved off, noon pinned, and
             // two of three footmen dead to sunlight before the party could
             // engage them, with every other proof green.
-            crate::compiler::daylight::check_daylight_staging(plan, &world, &blocks, &waves)
+            crate::compiler::daylight::check_daylight_staging(plan, &world, blocks, &waves)
                 .map_err(|e| BuildFailure::Diagnostic {
                     code: e.code,
                     message: e.message,
@@ -1479,7 +1479,7 @@ pub fn build_with_warnings(
             // leaves the party a fight nobody answers — vesperhold's Undertide
             // Pool. Same seated cells, same reach, same population.
             let (engage, refused) =
-                crate::compiler::engage::check_engagement(plan, &world, &blocks, &waves);
+                crate::compiler::engage::check_engagement(plan, &world, blocks, &waves);
             eprintln!("{}", engage.line());
             if let Some(e) = refused {
                 return Err(BuildFailure::Diagnostic {
@@ -1573,7 +1573,7 @@ pub fn build_with_warnings(
             // kill-zone cell, or DW0442 naming the cell it cannot reach), and a
             // collapse must leave the critical path completable in its SPRUNG
             // state (DW0445).
-            let payloads = plan_payload_verbs(plan, &world, &blocks)?;
+            let payloads = plan_payload_verbs(plan, &world, blocks)?;
             (moves, actor_moves, waves, rings, lanes, payloads)
         }
     } else {
