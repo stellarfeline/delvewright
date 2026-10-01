@@ -2,12 +2,17 @@
 name = "delve-skin"
 version = "0.1.0"
 description = "Delvewright NPC skin toolchain (spec-0009): deterministic original 64x64 skin composition + headless multi-angle previews."
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 dependencies = [
     # Part/face-addressable 64x64 skin composition + deterministic isometric
     # player-model preview renderer. MIT (ADR-0013 allowlist). Pinned exactly for
     # reproducibility (ADR-0006). Pulls numpy + Pillow transitively.
     "skinpy-extended==1.0.1",
+    # Pinned beside it because the committed bytes depend on them: numpy's
+    # Generator decides pixels (NEP 19 promises no stream stability across
+    # versions); Pillow carries the image. See requirements.txt.
+    "numpy==2.4.6",
+    "pillow==12.3.0",
 ]
 
 [project.scripts]
