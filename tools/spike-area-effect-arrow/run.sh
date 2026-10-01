@@ -75,13 +75,13 @@ start_server() {
 wait_ready() {
   echo "[spike] waiting for RCON ..."
   for _ in $(seq 1 120); do
-    # Liveness poll: the deliberately unjudged channel (tools/lib/rcon.sh) — a
-    # refusal here means "not up yet". Readiness is the REPLY, never the exit
-    # status of a discarded pipe: a `>/dev/null` probe cannot tell a server
-    # that answered from one that answered an error, and the sibling idiom
-    # (`| grep -q` under pipefail) read as flakiness for months and cost two
-    # owner playtest stagings.
-    if [ -n "$(dw_rcon_probe "${CONTAINER}" list)" ]; then return 0; fi
+    # Readiness is the server's own `list` answer (tools/lib/rcon.sh), never
+    # the exit status of a discarded pipe and never "the probe printed
+    # something": a `>/dev/null` probe cannot tell a server that answered from
+    # one that answered an error, and the sibling idiom (`| grep -q` under
+    # pipefail) read as flakiness for months and cost two owner playtest
+    # stagings.
+    if dw_rcon_ready "${CONTAINER}"; then return 0; fi
     sleep 5
   done
   echo "[spike] server did not become ready in 10m" >&2

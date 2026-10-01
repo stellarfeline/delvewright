@@ -130,9 +130,9 @@ ATTRIBUTION_WINDOW = 120
 # The two lists carry plurals and `ATTRIBUTION_CUE` above does not, which is a
 # measured difference rather than an oversight: bound, `owner decisions` is an
 # attribution; unbound, the word `decisions` reaches any date within 120
-# characters, and CLAUDE.md's own `Founding decisions live in docs/adr/ … the
-# kickoff handoff (docs/handoff-2026-07-29.md)` is then a dated attribution on
-# the strength of a date inside a path a reader can open. The binding is what
+# characters, and a sentence like `Founding decisions live in docs/adr/ … the
+# handoff (docs/handoff-2026-07-29.md)` is then a dated attribution on the
+# strength of a date inside a path a reader can open. The binding is what
 # makes the wider list safe.
 PERSON_CUE = r"(?:owners?|she|hers?|his|reviewers?)"
 DECISION_CUE = r"(?:rulings?|ruled|decisions?|decided|directives?)"

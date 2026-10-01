@@ -6310,7 +6310,7 @@ fn emit_quest_effect(plan: &Plan, eff: &QuestEffect, aud: Audience, body: &mut V
         // --- DSL v0.10 region writes (spec-0031) ---
         // The general spelling of what `open-gate`/`close-gate` do to a gate
         // anchor's box, through the same one command builder. An unresolvable box
-        // emits nothing — a dangling `region/anchor` is `DW0142`/`DW0355` at
+        // emits nothing — a dangling `region/anchor` is `DW0142`/`DW0360` at
         // validation, not a silently mis-aimed fill here.
         Verb::FillRegion { .. } | Verb::ClearRegion { .. } => {
             if let Some((zone, block)) = eff.region_write()
@@ -17369,21 +17369,30 @@ fn emit_reseat_undefeated_packtests(plan: &Plan, out: &mut BuildOutput) {
 /// Every such removal is [`Exit::Unseen`]: the body is moved to [`UNSEEN_Y`]
 /// down its own column and dies there when [`UNSEEN_SWEEP_FN`] runs, so its loot
 /// would land under the world, never at the party's feet — a count at the
-/// party binds nothing. The template therefore judges where the body dies.
+/// party binds nothing. The templates therefore judge where the body dies: each
+/// body is dragged onto the party first, the removal runs, what it parked in the
+/// party's column is killed in the same tick ([`unseen_sweep_under`]: a dropped
+/// item below the world is discarded on its own next tick, so the count cannot
+/// wait for the scheduled sweep), and no item entity may lie at [`UNSEEN_Y`] in
+/// the party's column.
 ///
-/// For every re-seated body that declares a drop — each wave a rest re-seats
-/// (`respawns_on_rest` or billed-undefeated) and each hostile actor — the
-/// template meets it and drags it onto the party, runs the unleash, kills what
-/// the removal parked in the party's column in the same tick
-/// ([`unseen_sweep_under`]: a dropped item below the world is discarded on its
-/// own next tick, so the count cannot wait for the scheduled sweep), and
-/// demands no item entity at [`UNSEEN_Y`] in the party's column; then the same
-/// after the REAL `bonfire_rest_<i>`. The zero is then proven not to be vacuous
-/// at that same place: each fresh body is moved to [`UNSEEN_Y`] in the party's
-/// column and killed by a bare `kill`, which must yield at least one item there
-/// — the body really carries the loot the removal withheld, and the count sees
-/// loot where the removal's death happens.
+/// Two templates, one per removal, because a PackTest `assert` does not abort
+/// the template and the log names only the LAST failing line: one template
+/// holding both removals reported a leaking unleash as the rest's failure, or
+/// not at all when the rest also leaked.
 ///
+/// - `souls_unleash_yields_nothing`: each drop-declaring hostile actor is
+///   staged, its puppet dragged onto the party and the REAL `unleash_<id>` run.
+///   The control: a fresh puppet — the body the unleash removes — moved to that
+///   same place and killed by a bare `kill` must yield at least one item there.
+/// - `souls_reseat_yields_nothing`: every re-seated body that declares a drop —
+///   each wave a rest re-seats (`respawns_on_rest` or billed-undefeated) and
+///   each hostile actor, met as the unleashed twin a rest re-stands — is dragged
+///   onto the party and the REAL `bonfire_rest_<i>` run. What the unleash left
+///   is swept and cleared first, so the count is the rest's alone. The control:
+///   each fresh body killed by a bare `kill` at that place yields there.
+///
+/// Each template's title states its binding: how many bodies it meets, by id.
 /// Emits nothing without a bonfire and a drop-declaring re-seated body.
 fn emit_reseat_yields_nothing_packtest(
     plan: &Plan,
@@ -17417,15 +17426,83 @@ fn emit_reseat_yields_nothing_packtest(
     if waves.is_empty() && actors.is_empty() {
         return;
     }
-    let (pin, sel) = pin_dummy("dw_rsyn");
     // The loot of a `/kill` lands where the body dies, in the tick it dies;
     // every body is dragged onto the party first, so an unseen removal kills it
     // at `UNSEEN_Y` in the party's column, and this radius there is the whole
     // claim.
     let items = "@e[type=minecraft:item,distance=..3]";
-    let low = format!("execute at {sel} positioned ~ {UNSEEN_Y} ~");
-    let count = |score: &str| format!("{low} store result score {score} dw.sys if entity {items}");
-    let clear_items = format!("{low} run kill {items}");
+    // Per template: the place under its own dummy, the count there, and the
+    // clear there.
+    let place = |sel: &str| {
+        let low = format!("execute at {sel} positioned ~ {UNSEEN_Y} ~");
+        let count = {
+            let low = low.clone();
+            move |score: &str| format!("{low} store result score {score} dw.sys if entity {items}")
+        };
+        let clear = format!("{low} run kill {items}");
+        (low, count, clear)
+    };
+    let actor_safe: Vec<String> = actors
+        .iter()
+        .map(|a| plan::safe_local(a.id.as_str()))
+        .collect();
+
+    if !actors.is_empty() {
+        let (pin, sel) = pin_dummy("dw_usyn");
+        let (low, count, clear_items) = place(&sel);
+        let sweep = unseen_sweep_under(&sel);
+        let mut b = packtest_header(&format!(
+            "{}: the unleash yields no declared drop where the caged body dies; only a kill \
+             does — binds {} unleashed bod{}: {}",
+            artifact_title(plan.campaign),
+            actors.len(),
+            if actors.len() == 1 { "y" } else { "ies" },
+            actors
+                .iter()
+                .map(|a| a.id.as_str())
+                .collect::<Vec<_>>()
+                .join(", ")
+        ));
+        b.push(format!("function {ns}:setup"));
+        b.push(pin);
+        for safe in &actor_safe {
+            b.push(format!("kill @e[tag=dw_actor_{safe}]"));
+        }
+        b.push(sweep.clone());
+        b.push(clear_items.clone());
+        for safe in &actor_safe {
+            b.push(format!("function {ns}:spawn_actor_{safe}"));
+            b.push(format!(
+                "execute at {sel} run tp @e[tag=dw_pup_{safe}] ~ ~ ~"
+            ));
+            b.push(format!("function {ns}:unleash_{safe}"));
+        }
+        b.push(sweep.clone());
+        b.push(count("#u_usyn"));
+        b.push("assert score #u_usyn dw.sys matches 0".to_string());
+        // Not vacuous, body by body, at the same place: the twin is put away
+        // uncounted, and a fresh puppet — the body the unleash removes —
+        // yields its loot to a bare kill where the removal kills.
+        for safe in &actor_safe {
+            b.push(format!("{low} run tp @e[tag=dw_actor_{safe}] ~ ~ ~"));
+            b.push(format!("kill @e[tag=dw_actor_{safe}]"));
+            b.push(clear_items.clone());
+            b.push(format!("function {ns}:spawn_actor_{safe}"));
+            b.push(format!("{low} run tp @e[tag=dw_pup_{safe}] ~ ~ ~"));
+            b.push(format!("kill @e[tag=dw_pup_{safe}]"));
+            b.push(count("#p_usyn"));
+            b.push("assert score #p_usyn dw.sys matches 1..".to_string());
+            b.push(clear_items.clone());
+        }
+        b.push(format!("tag {sel} remove dw_usyn"));
+        out.insert(
+            format!("packtest-datapack/data/{ns}/test/souls_unleash_yields_nothing.mcfunction"),
+            lines(&b).into_bytes(),
+        );
+    }
+
+    let (pin, sel) = pin_dummy("dw_rsyn");
+    let (low, count, clear_items) = place(&sel);
     let sweep = unseen_sweep_under(&sel);
     let board: Vec<String> = plan
         .reseat_waves()
@@ -17444,16 +17521,17 @@ fn emit_reseat_yields_nothing_packtest(
         .iter()
         .map(|w| plan::wave_tag(w.id.as_str()))
         .collect();
-    tags.extend(
-        actors
-            .iter()
-            .map(|a| format!("dw_actor_{}", plan::safe_local(a.id.as_str()))),
-    );
+    tags.extend(actor_safe.iter().map(|safe| format!("dw_actor_{safe}")));
+    let mut bound: Vec<&str> = waves.iter().map(|w| w.id.as_str()).collect();
+    bound.extend(actors.iter().map(|a| a.id.as_str()));
 
     let mut b = packtest_header(&format!(
-        "{}: a removal the compiler performs — the unleash and every bonfire re-seat — yields \
-         no declared drop where the body dies; only a kill does",
-        artifact_title(plan.campaign)
+        "{}: a bonfire re-seat yields no declared drop where the body dies; only a kill \
+         does — binds {} re-seated bod{}: {}",
+        artifact_title(plan.campaign),
+        bound.len(),
+        if bound.len() == 1 { "y" } else { "ies" },
+        bound.join(", ")
     ));
     b.push(format!("function {ns}:setup"));
     b.push(pin);
@@ -17466,24 +17544,25 @@ fn emit_reseat_yields_nothing_packtest(
     }
     b.push(sweep.clone());
     b.push(clear_items.clone());
-    // Meet every fight, on top of the party.
+    // Meet every fight, on top of the party; a hostile actor is met as the
+    // unleashed twin a rest re-stands.
     for w in &waves {
         b.push(format!(
             "function {ns}:spawn_{}",
             plan::safe_local(w.id.as_str())
         ));
     }
-    for a in &actors {
-        let safe = plan::safe_local(a.id.as_str());
+    for safe in &actor_safe {
         b.push(format!("function {ns}:spawn_actor_{safe}"));
         b.push(format!(
             "execute at {sel} run tp @e[tag=dw_pup_{safe}] ~ ~ ~"
         ));
         b.push(format!("function {ns}:unleash_{safe}"));
     }
+    // What the unleash parked is its own template's claim: put it away
+    // uncounted, so this count is the rest's alone.
     b.push(sweep.clone());
-    b.push(count("#u_rsyn"));
-    b.push("assert score #u_rsyn dw.sys matches 0".to_string());
+    b.push(clear_items.clone());
     for t in &tags {
         b.push(format!("execute at {sel} run tp @e[tag={t}] ~ ~ ~"));
     }

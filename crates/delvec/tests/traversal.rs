@@ -328,6 +328,13 @@ fn a_walk_over_a_full_cube_course_of_a_wall_is_dw0453() {
         "the message must name the barrier the course belongs to: {}",
         w.message
     );
+    assert!(
+        w.message
+            .contains("`\"traversal\": {\"locomotion\": \"climber\"}` on the body.")
+            && !w.message.contains("dsl_version"),
+        "the prescription states the declaration without a version fence: {}",
+        w.message
+    );
 }
 
 /// …and the same line pierced by an ordinary **opening** is silent: the rule is

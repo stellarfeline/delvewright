@@ -12,6 +12,8 @@
 use std::path::PathBuf;
 use std::process::Command;
 
+mod common;
+
 /// `delvec render …`: the one binary, entered at the GPU-render surface.
 fn render() -> Command {
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_delvec"));
@@ -26,12 +28,16 @@ fn tmp(tag: &str) -> PathBuf {
     dir
 }
 
-/// A prefab from the content repo, or `None` on a checkout without the symlink.
-fn prefab(name: &str) -> Option<PathBuf> {
-    let p = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../campaigns/prefabs")
-        .join(name);
-    p.exists().then_some(p)
+/// A prefab from the library at the pinned content commit (`common::pinned`).
+/// A piece the pin does not carry is a failure, never a skip.
+fn prefab(name: &str) -> PathBuf {
+    let p = common::pinned::prefabs().join(name);
+    assert!(
+        p.is_file(),
+        "{} is not in the pinned prefab library",
+        p.display()
+    );
+    p
 }
 
 #[test]
@@ -50,10 +56,7 @@ fn piece_without_textures_is_dw0723_exit5() {
     // So the piece is one that passes both, and what is left for this test to
     // assert is exactly what it always asserted: with no textures anywhere, the
     // arm exits 5 on `DW0723`.
-    let Some(nbt) = prefab("keep-gate-room.nbt") else {
-        eprintln!("skip: no content symlink");
-        return;
-    };
+    let nbt = prefab("keep-gate-room.nbt");
     let empty_home = tmp("piece-no-textures-home");
     let out = tmp("piece-no-textures-out");
 

@@ -14,6 +14,7 @@
 #   . "$REPO_ROOT/tools/lib/rcon.sh"
 #   dw_rcon "$CONTAINER" "fill 0 64 0 4 64 4 minecraft:stone"   # dies on refusal
 #   reply="$(dw_rcon_probe "$CONTAINER" "gamerule fallDamage")" # asks, judges nothing
+#   until dw_rcon_ready "$CONTAINER"; do sleep 5; done          # the server's own `list` answer
 #
 # `dw_rcon` prints the reply on stdout and returns non-zero (with the reason on
 # stderr) when the server refused. Under `set -e` that ends the run, which is the
@@ -35,6 +36,9 @@ dw_rcon_rejected() {
     "No targets matched"*|"Malformed "*|"Failed to "*) return 0 ;;
     # `/data merge|modify entity` naming a PLAYER (measured on the pinned server).
     "Unable to modify player data"*) return 0 ;;
+    # `/damage` at a target that cannot take that damage type (measured on the
+    # pinned server against an invulnerable bot).
+    "Target is invulnerable to the given damage type"*) return 0 ;;
   esac
   return 1
 }
@@ -109,4 +113,35 @@ dw_rcon_probe() {
       "split the query." >&2
     return 1
   fi
+}
+
+# The server's own answer to `list`, and the ONLY thing a readiness poll may wait
+# on. The vanilla reply is "There are N of a max of M players online: <names>".
+# A poll that waits for "any bytes" is satisfied by the probe's own error text
+# (`Failed to connect to RCON server`, `No such container`), because
+# `dw_rcon_probe` folds stderr into its reply: such a poll reads ready on its
+# first attempt whatever the server is doing. Must stay identical to
+# `isListAnswer` in rcon.mjs.
+dw_rcon_is_list_answer() {
+  case "$1" in
+    "There are "*" of a max of "*" players online"*) ;;
+    *) return 1 ;;
+  esac
+  # Both numbers are digits — not "There are of a max of players online".
+  local rest="${1#There are }" n m
+  n="${rest%% of a max of *}"
+  m="${rest#* of a max of }"
+  m="${m%% players online*}"
+  case "$n" in ""|*[!0-9]*) return 1 ;; esac
+  case "$m" in ""|*[!0-9]*) return 1 ;; esac
+  return 0
+}
+
+# dw_rcon_ready <container> — succeeds only when the server answered `list` with
+# its own answer. Silent: the caller is a poll, and "not yet" is the expected
+# state. The one readiness rule; a poll site never writes its own.
+dw_rcon_ready() {
+  local reply
+  reply="$(dw_rcon_probe "$1" list 2>/dev/null)" || return 1
+  dw_rcon_is_list_answer "$reply"
 }

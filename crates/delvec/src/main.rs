@@ -159,13 +159,8 @@ enum Command {
     },
     /// Export a campaign document's JSON Schema (LLM authoring aid).
     Schema {
-        /// Which document. A numbered stage `1..7`; a named map-pipeline stage
-        /// document `geometry-brief` | `layout-graph` | `site-plan` |
-        /// `detail-plan`; `walk-record` for the hand-written walk record
-        /// (a campaign artifact, not a stage document); `prefab-metadata` for a
-        /// prefab library asset's sibling `<prefab-id>.json` (a library asset,
-        /// not a stage document); or `all` for every stage document at once.
-        #[arg(long)]
+        // Names come from `Stage::ALL`, so a stage added later is listed the day it exists.
+        #[arg(long, help = schema_stage_help())]
         stage: String,
     },
     /// Export the metrics standard as JSON (spec-0049 §2) — the player half
@@ -994,8 +989,12 @@ fn validate_loaded(
             // declared branch is enumerated and every static proof re-run under
             // its flag assignment — terminality, cast continuity, exclusive-content
             // leakage, hard event contradictions — plus the forcing function that
-            // every story node says what it does to the story. No-op below 0.8.0.
-            diags.extend(delvec::compiler::branch::check_branches(&campaign));
+            // every story node says what it does to the story.
+            {
+                let (bd, bbind) = delvec::compiler::branch::check_branches_bound(&campaign);
+                examined.push(bbind.line());
+                diags.extend(bd);
+            }
             // spec-0031 (DSL v0.10): a numeric gate is judged against the writes
             // the path performs before it (DW0879). The reachability model walks
             // objectives and flags; the arithmetic a `requires_state` compares
@@ -3179,6 +3178,21 @@ fn run_allocation(campaign_dir: &Path, place: Option<&str>, all: bool, json: boo
         serde_json::to_string_pretty(&out.expect("an allocation serializes")).unwrap()
     );
     ExitCode::SUCCESS
+}
+
+/// The `--stage` help: every document `delvec schema` answers to.
+fn schema_stage_help() -> String {
+    let names: Vec<String> = Stage::ALL
+        .iter()
+        .map(|s| format!("`{}`", s.name()))
+        .collect();
+    format!(
+        "Which document: a campaign stage `1`..`7` or any stage by name ({}); `walk-record` \
+         for the hand-written walk record (a campaign artifact, not a stage document); \
+         `prefab-metadata` for a prefab library asset's sibling `<prefab-id>.json` (a \
+         library asset, not a stage document); or `all` for every stage document at once.",
+        names.join(", ")
+    )
 }
 
 fn run_schema(stage: &str) -> ExitCode {

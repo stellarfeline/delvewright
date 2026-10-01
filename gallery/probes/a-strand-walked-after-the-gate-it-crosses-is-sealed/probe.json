@@ -1,0 +1,17 @@
+{
+  "code": "DW0485",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "replace",
+      "path": "/content/quests/2/objectives/0/happening",
+      "value": {
+        "subject": "anchor/gate-main",
+        "text": "They come back down the hall and in through the main gate.",
+        "verb": "arrives"
+      }
+    }
+  ],
+  "units": [],
+  "why": "The reliquary is an optional strand: it opens when the near hall is done and nothing the delve's ending depends on waits for it. This probe gives its first beat, `obj/look-in-the-east-bay`, the main gate as its subject. The exported path walks the reliquary before the far hall, so the gate is still standing open in that order and its chronicle shows no clash. A player is not bound to that order: they may put the muster down first, which seals the gate (`obj/clear-the-muster`), and only then go and look in the east bay, walking in through a gate that came down. The contradiction proof asks every order the branch admits, builds that one, and names it. It declares no unit: `happening` and every one of its fields are bound in the gallery proper; what it demonstrates is the quantifier, not a surface."
+}
