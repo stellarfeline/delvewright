@@ -78,9 +78,9 @@ echo "[spike] ephemeral host port: 127.0.0.1:${PORT}"
 echo "[spike] waiting for RCON ..."
 READY=0
 for _ in $(seq 1 120); do
-  # Liveness poll: the unjudged channel on purpose (tools/lib/rcon.sh) — a
-  # refusal here means "not up yet".
-  if [ -n "$(dw_rcon_probe "${CONTAINER}" list)" ]; then READY=1; break; fi
+  # Readiness is the server's own `list` answer (tools/lib/rcon.sh), never
+  # "the probe printed something": its error text is output too.
+  if dw_rcon_ready "${CONTAINER}"; then READY=1; break; fi
   sleep 5
 done
 [ "${READY}" = 1 ] || { echo "[spike] server did not become ready in 10m" >&2; docker logs --tail 50 "${CONTAINER}" >&2; exit 1; }
