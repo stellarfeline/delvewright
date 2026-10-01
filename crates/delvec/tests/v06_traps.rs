@@ -402,16 +402,27 @@ fn a_flag_gated_trap_removes_and_restores_its_trigger() {
     );
 
     // The tick drives both directions, keyed on the sentinel so the `setblock`
-    // fires on a transition rather than every tick.
-    let tick = text(
+    // fires on a transition rather than every tick. The clauses live in their
+    // own function, which the tick calls, so the PackTest can run exactly them.
+    let main_tick = text(
         &out,
         &format!("datapack/data/{NS}/function/tick.mcfunction"),
     );
+    assert!(
+        main_tick
+            .lines()
+            .any(|l| l.trim() == "function hello-world:trap_gate_tick"),
+        "the tick must run the gate clauses:\n{main_tick}"
+    );
+    let tick = text(
+        &out,
+        &format!("datapack/data/{NS}/function/trap_gate_tick.mcfunction"),
+    );
     let shut = "execute if score #trapgate_dart_hall dw.sys matches 1 \
-                if entity @a[scores={dw.f_darts_off=1..}] \
+                if score #party dw.f_darts_off matches 1 \
                 run function hello-world:trap_gate_off_dart_hall";
     let open = "execute unless score #trapgate_dart_hall dw.sys matches 1 \
-                unless entity @a[scores={dw.f_darts_off=1..}] \
+                unless score #party dw.f_darts_off matches 1 \
                 run function hello-world:trap_gate_on_dart_hall";
     for expected in [shut, open] {
         assert!(
@@ -420,15 +431,25 @@ fn a_flag_gated_trap_removes_and_restores_its_trigger() {
         );
     }
 
-    // A `forbids_flags`-only gate starts OPEN (no flag is set at world start), so
-    // setup arms the sentinel and leaves the prefab's own block alone.
+    // The world-start seed arms the trap and then reads the gate through the
+    // tick's own shutting clauses, so it starts in the state its gate says.
     let setup_finish = text(
         &out,
         &format!("datapack/data/{NS}/function/setup_finish.mcfunction"),
     );
     assert!(
-        setup_finish.contains("scoreboard players set #trapgate_dart_hall dw.sys 1"),
-        "setup must seed the gate sentinel to the world it starts in:\n{setup_finish}"
+        setup_finish.contains("function hello-world:trap_gate_init"),
+        "setup must seed the gate:\n{setup_finish}"
+    );
+    let init = text(
+        &out,
+        &format!("datapack/data/{NS}/function/trap_gate_init.mcfunction"),
+    );
+    let init_lines: Vec<&str> = init.lines().map(str::trim).collect();
+    assert_eq!(
+        init_lines,
+        ["function hello-world:trap_gate_on_dart_hall", shut],
+        "the seed arms, then runs the tick's shutting clauses:\n{init}"
     );
 
     // And the behaviour is asserted in-game, not just in the emitted text.
@@ -444,6 +465,7 @@ fn a_flag_gated_trap_removes_and_restores_its_trigger() {
         errors.is_empty(),
         "emitted trap-gate commands must validate: {errors:#?}"
     );
+    assert_flags_read_where_written(&out);
 }
 
 /// A `requires_flags` gate starts SHUT — no flag is set at world start — so setup
@@ -455,18 +477,71 @@ fn a_requires_flags_gate_starts_shut() {
     trap["forbids_flags"] = serde_json::json!([]);
     trap["requires_flags"] = serde_json::json!(["flag/darts-off"]);
     let out = build_with_trap("trap-gated-req", trap).expect("a gated trap builds");
-    let setup_finish = text(
+    let init = text(
         &out,
-        &format!("datapack/data/{NS}/function/setup_finish.mcfunction"),
+        &format!("datapack/data/{NS}/function/trap_gate_init.mcfunction"),
     );
     assert!(
-        setup_finish.contains("scoreboard players set #trapgate_dart_hall dw.sys 0"),
-        "a requires-gate starts shut:\n{setup_finish}"
+        init.lines().any(|l| l.trim()
+            == "execute if score #trapgate_dart_hall dw.sys matches 1 unless score #party dw.f_darts_off matches 1 run function hello-world:trap_gate_off_dart_hall"),
+        "a requires-gate starts shut: the seed must read the unset flag and disarm:\n{init}"
+    );
+
+    // ...and it OPENS when the flag is set where the campaign writes it. Flags
+    // live on the party holder only; a gate that asks whether some player
+    // carries the score never opens.
+    let gate_tick = text(
+        &out,
+        &format!("datapack/data/{NS}/function/trap_gate_tick.mcfunction"),
+    );
+    let open = "execute unless score #trapgate_dart_hall dw.sys matches 1 \
+                if score #party dw.f_darts_off matches 1 \
+                run function hello-world:trap_gate_on_dart_hall";
+    let shut = "execute if score #trapgate_dart_hall dw.sys matches 1 \
+                unless score #party dw.f_darts_off matches 1 \
+                run function hello-world:trap_gate_off_dart_hall";
+    for expected in [open, shut] {
+        assert!(
+            gate_tick.lines().any(|l| l.trim() == expected),
+            "the gate tick must carry `{expected}`:\n{gate_tick}"
+        );
+    }
+
+    // The PackTest binds this trap too, drives the flag on the party holder,
+    // and runs the real gate clauses rather than the two halves.
+    let pt = text(
+        &out,
+        &format!("packtest-datapack/data/{NS}/test/v06_trap_gate.mcfunction"),
     );
     assert!(
-        setup_finish.contains("setblock 5 65 7 minecraft:air"),
-        "a requires-gate must clear the trigger at setup:\n{setup_finish}"
+        pt.contains("scoreboard players set #party dw.f_darts_off 1")
+            && pt.contains("function hello-world:trap_gate_tick")
+            && !pt.contains("function hello-world:trap_gate_on_dart_hall"),
+        "the gate PackTest must drive `#party` and run `trap_gate_tick`:\n{pt}"
     );
+    assert_flags_read_where_written(&out);
+}
+
+/// The general form of the trap-gate defect: a flag is written on the party
+/// holder and nowhere else, so no emitted command may read a flag objective off
+/// a player selector. Such a read matches nobody, whatever the campaign does.
+fn assert_flags_read_where_written(out: &BuildOutput) {
+    let mut functions = 0;
+    for (path, bytes) in out {
+        if !path.starts_with("datapack/") || !path.ends_with(".mcfunction") {
+            continue;
+        }
+        functions += 1;
+        let body = std::str::from_utf8(bytes).expect("utf-8 function");
+        for line in body.lines() {
+            assert!(
+                !line.contains("scores={dw.f_"),
+                "`{path}` reads a flag off a player selector, but flags are written \
+                 only on the party holder:\n{line}"
+            );
+        }
+    }
+    assert!(functions > 0, "the scan bound no emitted function");
 }
 
 /// An **ungated** trap emits none of the gate machinery, so every campaign that

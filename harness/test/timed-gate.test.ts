@@ -16,6 +16,7 @@ import {
   gateRetryBudgetMs,
   gateWindowWaitMs,
   gatesBindingWalk,
+  unstagedCrushBoxes,
   gatesCrossedByHop,
   hopCrossesGate,
   insideGate,
@@ -208,6 +209,29 @@ test("a crush gate is withheld from an unproven walk, and named as withheld", ()
   const b = gatesBindingWalk(false, [], [portcullis, tide]);
   assert.deepEqual(b.gates, [portcullis]);
   assert.deepEqual(b.withheld, [tide]);
+});
+
+test("a walk that starts off its leg keeps the leg's crush gate and adds the declared table", () => {
+  // The gallery's marshal walk sets off from the hearth after a rest, but its leg
+  // was proven from the counter and crosses the crush door. The walk replays that
+  // leg's cells, mouths included, so the crush gate still binds the proven part;
+  // the declared non-crush gates bind the unproven hop onto the leg.
+  const b = gatesBindingWalk(true, [tide], [portcullis, tide], false);
+  assert.deepEqual(b.gates, [portcullis, tide]);
+  assert.deepEqual(b.withheld, []);
+  assert.match(b.source, /starts off the leg/);
+  // A crush gate the leg does not cross has no proven mouth on this walk.
+  const c = gatesBindingWalk(true, [], [portcullis, tide], false);
+  assert.deepEqual(c.gates, [portcullis]);
+  assert.deepEqual(c.withheld, [tide]);
+});
+
+test("a crush gate a walk does not bind is a region the navigator avoids", () => {
+  assert.deepEqual(unstagedCrushBoxes([portcullis, tide], [portcullis]), [
+    { lo: tide.min, hi: tide.max },
+  ]);
+  assert.deepEqual(unstagedCrushBoxes([portcullis, tide], [portcullis, tide]), []);
+  assert.deepEqual(unstagedCrushBoxes([portcullis], []), [], "a non-crush gate is only waited out");
 });
 
 test("a campaign declaring no gate binds nothing, matched or not", () => {

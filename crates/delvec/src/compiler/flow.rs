@@ -468,10 +468,17 @@ pub struct ReplayFailure {
 }
 
 impl ReplayFailure {
-    /// The `DW0204` diagnostic message.
+    /// The `DW0204` diagnostic message, about the exported critical path.
     pub fn message(&self) -> String {
+        self.message_on("the exported critical path")
+    }
+
+    /// The `DW0204` diagnostic message about `path`: the critical path, or one
+    /// branch's exported path. Every path the build exports is walked, so every
+    /// one of them answers to the same rule.
+    pub fn message_on(&self, path: &str) -> String {
         format!(
-            "the exported critical path is not a playthrough any player can walk: at path step \
+            "{path} is not a playthrough any player can walk: at path step \
              #{} (objective `{}`), {}. Every step of the critical path must be activatable and \
              completable at its position, and `campaign-complete` must fire exactly at the final \
              step — split mutually exclusive endings behind flags so exactly one of them lies on \
@@ -2756,26 +2763,62 @@ fn dag_order(c: &Campaign, keep: &BTreeSet<String>) -> (Vec<String>, bool) {
             }
         }
     }
-    let mut queue: VecDeque<&str> = indeg
+    // A quest that can end the delve is walked as late as its dependants allow:
+    // `campaign-complete` belongs to the path's last step, so every other quest
+    // this world completes (an optional strand included) is walked before it.
+    // Without this the tie between a ready ending and a ready strand fell to the
+    // id order, and a strand whose id sorts after the ending was exported past
+    // the end of the delve, where no player can walk it.
+    let ending: BTreeSet<&str> = c
+        .quests
+        .content
+        .quests
         .iter()
-        .filter(|&(_, &d)| d == 0)
-        .map(|(q, _)| *q)
+        .filter(|q| quest_can_end_the_delve(q))
+        .map(|q| q.id.as_str())
         .collect();
+    let mut ready: VecDeque<&str> = VecDeque::new();
+    let mut held: VecDeque<&str> = VecDeque::new();
+    for (q, _) in indeg.iter().filter(|&(_, &d)| d == 0) {
+        if ending.contains(q) {
+            held.push_back(q);
+        } else {
+            ready.push_back(q);
+        }
+    }
     let mut order = Vec::new();
-    while let Some(q) = queue.pop_front() {
+    while let Some(q) = ready.pop_front().or_else(|| held.pop_front()) {
         order.push(q.to_string());
         for r in &needed {
             if deps.get(r).is_some_and(|ds| ds.contains(&q)) {
                 let e = indeg.get_mut(*r).unwrap();
                 *e -= 1;
                 if *e == 0 {
-                    queue.push_back(r);
+                    if ending.contains(r) {
+                        held.push_back(r);
+                    } else {
+                        ready.push_back(r);
+                    }
                 }
             }
         }
     }
     let cyclic = order.len() != needed.len();
     (order, cyclic)
+}
+
+/// Whether any effect list `q` declares (its own `on_complete`, any objective's
+/// `on_objective_complete`, and every list nested inside them) carries a
+/// `campaign-complete`. Syntactic: a gated ending still counts, which only
+/// moves a quest later in a branch walk.
+fn quest_can_end_the_delve(q: &delvewright_dsl::Quest) -> bool {
+    fn ends(effs: &[QuestEffect]) -> bool {
+        effs.iter().any(|e| {
+            matches!(e.verb, Verb::CampaignComplete { .. })
+                || e.nested_effect_lists().into_iter().any(ends)
+        })
+    }
+    ends(&q.on_complete) || q.on_objective_complete.values().any(|l| ends(l))
 }
 
 /// Order a quest's objectives by their intra-quest `after` DAG (Kahn); a cycle

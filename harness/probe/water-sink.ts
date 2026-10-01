@@ -14,7 +14,7 @@
 // It prints one line per sample and a summary per trial: the water column read
 // from the world, the terminal descent rate each observer saw, and the time from
 // release to death (when the column ends in something that kills) or to rest.
-import mineflayer from "mineflayer";
+import { createHarnessBot } from "../src/client-loaded.ts";
 
 const [host, portText, xText, zText, trialsText] = process.argv.slice(2);
 if (!host || !portText || !xText || !zText) {
@@ -24,7 +24,7 @@ if (!host || !portText || !xText || !zText) {
 const X = Number(xText);
 const Z = Number(zText);
 const TRIALS = Number(trialsText ?? "3");
-const bot = mineflayer.createBot({
+const { bot } = createHarnessBot({
   host,
   port: Number(portText),
   username: process.env.DELVEWRIGHT_BOT_USERNAME ?? "delve-bot",
