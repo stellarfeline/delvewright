@@ -128,7 +128,8 @@ holding them at once.
 | `a-body-two-areas-answer-for` | `DW0884` | `validate` | casting the curator at `anchor/lectern` when the annex is bound to the hall's piece and both areas answer to that name |
 | `a-face-nothing-stands-in-front-of` | `DW0886` | `validate` | placing the open-topped yard as its own area under `horizon: void`, with sides nothing buries and nothing declares shown |
 | `a-floor-carved-down-to-the-sea` | `DW0344` | `build` | a world edit cutting a three-by-three hole in the hall's plinth course down to the sea's own plane, under `horizon: ocean` |
-| `a-gate-the-party-walks-back-through-after-it-is-sealed` | `DW0485` | `validate` | giving a later beat the main gate as its subject, twenty beats after that gate is sealed |
+| `a-gate-the-party-walks-back-through-after-it-is-sealed` | `DW0485` | `validate` | giving the last mainline beat the main gate as its subject, three beats after that gate is sealed |
+| `a-strand-walked-after-the-gate-it-crosses-is-sealed` | `DW0485` | `validate` | giving the optional reliquary's first beat the main gate as its subject: the exported path walks it before the seal, and a player may walk it after |
 | `a-key-that-charges-more-than-it-asks` | `DW0901` | `validate` | charging five tokens at the counter that gates on four |
 | `a-lane-beside-a-killing-volume` | `DW0891` | `build` | setting the west pit on the near hall's floor beside the chest, so it kills the walked ring around it |
 | `a-number-this-engine-does-not-implement` | `DW0102` | `validate` | declaring a `dsl_version` other than the one this engine accepts |

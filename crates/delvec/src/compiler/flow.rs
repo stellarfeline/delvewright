@@ -455,6 +455,60 @@ pub struct JournalStep {
     pub flags_after: BTreeSet<String>,
 }
 
+/// One play order under construction ([`Flow::walk`]): the replay state
+/// machine, advanced one chosen step at a time. Cloning it is how a caller
+/// looks one step ahead.
+#[derive(Clone)]
+pub struct Walk<'f, 'a> {
+    flow: &'f Flow<'a>,
+    st: ReplayState,
+    complete_at: Option<(usize, String)>,
+    /// Steps taken so far.
+    taken: usize,
+}
+
+impl Walk<'_, '_> {
+    /// Can `step` be completed now — the replay's own per-step test, and not
+    /// already done.
+    pub fn legal(&self, step: &PathStep) -> bool {
+        !self.st.done_obj.contains(&step.objective)
+            && self.flow.step_blocked(&self.st, step).is_none()
+    }
+
+    /// Complete `step` (its guards are the caller's to have checked) and
+    /// return the journal entry for the transition.
+    pub fn take(&mut self, step: &PathStep) -> JournalStep {
+        let before = self.st.clone();
+        self.taken += 1;
+        self.flow
+            .advance(&mut self.st, step, self.taken, &mut self.complete_at);
+        JournalStep {
+            quest: step.quest.clone(),
+            objective: step.objective.clone(),
+            talk_option: step.talk_option,
+            opened: self.st.active.difference(&before.active).cloned().collect(),
+            completed: self
+                .st
+                .done_quest
+                .difference(&before.done_quest)
+                .cloned()
+                .collect(),
+            flags_before: before.flags,
+            flags_after: self.st.flags.clone(),
+        }
+    }
+
+    /// Has `campaign-complete` fired? Nothing is walked after it.
+    pub fn ended(&self) -> bool {
+        self.complete_at.is_some()
+    }
+
+    /// Has `objective` been completed on this walk?
+    pub fn done(&self, objective: &str) -> bool {
+        self.st.done_obj.contains(objective)
+    }
+}
+
 /// Why a playthrough's step sequence is not a legal playthrough.
 #[derive(Clone, Debug)]
 pub struct ReplayFailure {
@@ -997,27 +1051,8 @@ impl<'a> Flow<'a> {
     /// (one [`Self::advance`], one [`Self::fire`]), so the chronicle can never
     /// describe an order the replay does not admit.
     pub fn journal(&self, p: &Playthrough) -> Vec<JournalStep> {
-        let mut st = self.initial_state();
-        let mut complete_at: Option<(usize, String)> = None;
-        let mut out: Vec<JournalStep> = Vec::new();
-        for (i, step) in p.steps.iter().enumerate() {
-            let before = st.clone();
-            self.advance(&mut st, step, i + 1, &mut complete_at);
-            out.push(JournalStep {
-                quest: step.quest.clone(),
-                objective: step.objective.clone(),
-                talk_option: step.talk_option,
-                opened: st.active.difference(&before.active).cloned().collect(),
-                completed: st
-                    .done_quest
-                    .difference(&before.done_quest)
-                    .cloned()
-                    .collect(),
-                flags_before: before.flags,
-                flags_after: st.flags.clone(),
-            });
-        }
-        out
+        let mut w = self.walk();
+        p.steps.iter().map(|step| w.take(step)).collect()
     }
 
     /// **The flags `p` owes to an environment trigger, and which trigger pays
@@ -1101,71 +1136,13 @@ impl<'a> Flow<'a> {
 
         for (i, st) in p.steps.iter().enumerate() {
             let pos = i + 1;
-            let fail = |reason: String| {
-                Err(ReplayFailure {
+            if let Some(reason) = self.step_blocked(&st8, st) {
+                return Err(ReplayFailure {
                     position: pos,
                     objective: st.objective.clone(),
                     reason,
-                })
-            };
-            let Some(quest) = self.quest(&st.quest) else {
-                return fail(format!("its quest `{}` does not exist", st.quest));
-            };
-            let Some(obj) = quest
-                .objectives
-                .iter()
-                .find(|o| o.id().as_str() == st.objective)
-            else {
-                return fail("it is not an objective of its quest".to_string());
-            };
-            if !st8.active.contains(&st.quest) {
-                return fail(format!(
-                    "its quest `{}` is not active yet — nothing earlier on the path completes the \
-                     quest its trigger names",
-                    st.quest
-                ));
+                });
             }
-            for a in obj.after() {
-                if !st8.done_obj.contains(a.as_str()) {
-                    return fail(format!(
-                        "its `after` prerequisite `{}` has not been completed at this point",
-                        a.as_str()
-                    ));
-                }
-            }
-            for f in obj.requires_flags() {
-                if !st8.flags.contains(f.as_str()) {
-                    return fail(format!(
-                        "it requires `{}`, which nothing earlier on the path sets (a mutually \
-                         exclusive branch produces it)",
-                        f.as_str()
-                    ));
-                }
-            }
-            for f in obj.forbids_flags() {
-                if st8.flags.contains(f.as_str()) {
-                    return fail(format!(
-                        "it forbids `{}`, which an earlier step on the path has already set",
-                        f.as_str()
-                    ));
-                }
-            }
-            if let Objective::TalkTo { npc, .. } = obj {
-                let Some(n) = st.talk_option else {
-                    return fail(format!(
-                        "no dialogue option of `{}` completes it in the chosen branch",
-                        npc.as_str()
-                    ));
-                };
-                if !self.option_takeable_now(npc.as_str(), n, &st8) {
-                    return fail(format!(
-                        "the completing dialogue option of `{}` is not reachable at this point — \
-                         a node or option on the way to it is still flag-gated",
-                        npc.as_str()
-                    ));
-                }
-            }
-
             self.advance(&mut st8, st, pos, &mut complete_at);
         }
 
@@ -1193,6 +1170,86 @@ impl<'a> Flow<'a> {
                          ends the delve"
                     .to_string(),
             }),
+        }
+    }
+
+    /// **The replay's per-step test**: why `step` cannot be completed at `st8`,
+    /// or `None` when it can — its quest active, its `after` prerequisites done,
+    /// its `requires_flags` held and its `forbids_flags` clear, and for a
+    /// `talk-to` the completing option this world takes reachable now. The one
+    /// definition of "legal at this position", read by [`Self::replay`] and by
+    /// every [`Walk`].
+    fn step_blocked(&self, st8: &ReplayState, st: &PathStep) -> Option<String> {
+        let Some(quest) = self.quest(&st.quest) else {
+            return Some(format!("its quest `{}` does not exist", st.quest));
+        };
+        let Some(obj) = quest
+            .objectives
+            .iter()
+            .find(|o| o.id().as_str() == st.objective)
+        else {
+            return Some("it is not an objective of its quest".to_string());
+        };
+        if !st8.active.contains(&st.quest) {
+            return Some(format!(
+                "its quest `{}` is not active yet — nothing earlier on the path completes the \
+                 quest its trigger names",
+                st.quest
+            ));
+        }
+        for a in obj.after() {
+            if !st8.done_obj.contains(a.as_str()) {
+                return Some(format!(
+                    "its `after` prerequisite `{}` has not been completed at this point",
+                    a.as_str()
+                ));
+            }
+        }
+        for f in obj.requires_flags() {
+            if !st8.flags.contains(f.as_str()) {
+                return Some(format!(
+                    "it requires `{}`, which nothing earlier on the path sets (a mutually \
+                     exclusive branch produces it)",
+                    f.as_str()
+                ));
+            }
+        }
+        for f in obj.forbids_flags() {
+            if st8.flags.contains(f.as_str()) {
+                return Some(format!(
+                    "it forbids `{}`, which an earlier step on the path has already set",
+                    f.as_str()
+                ));
+            }
+        }
+        if let Objective::TalkTo { npc, .. } = obj {
+            let Some(n) = st.talk_option else {
+                return Some(format!(
+                    "no dialogue option of `{}` completes it in the chosen branch",
+                    npc.as_str()
+                ));
+            };
+            if !self.option_takeable_now(npc.as_str(), n, st8) {
+                return Some(format!(
+                    "the completing dialogue option of `{}` is not reachable at this point — \
+                     a node or option on the way to it is still flag-gated",
+                    npc.as_str()
+                ));
+            }
+        }
+        None
+    }
+
+    /// A walk from the start of the delve, one step at a time, through the
+    /// replay state machine — for a caller that chooses the order itself rather
+    /// than replaying a [`Playthrough`] (spec-0025: `DW0485` asks its question
+    /// over every order a branch admits, not only the exported one).
+    pub fn walk(&self) -> Walk<'_, 'a> {
+        Walk {
+            flow: self,
+            st: self.initial_state(),
+            complete_at: None,
+            taken: 0,
         }
     }
 

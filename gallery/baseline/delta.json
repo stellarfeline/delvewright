@@ -1,14 +1,7 @@
 {
   "added": [],
-  "base_commit": "cadc32974a7d51483426ae8dd0bebbdcbe190a65",
-  "changed": [
-    "site-plan.en:render-plan.json",
-    "site-plan.en:validation/critical-path-waypoints.json",
-    "site-plan.en:validation/leave-proof.json"
-  ],
-  "classes": {
-    "other": 1,
-    "validation ledger": 2
-  },
+  "base_commit": "2f1aaab626277fb3e19975c856b763ffce5fafa6",
+  "changed": [],
+  "classes": {},
   "removed": []
 }
