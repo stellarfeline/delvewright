@@ -563,54 +563,59 @@ fn departs_then_arrives_then_acts_is_clean() {
 /// once the strand is in it.
 fn optional_strand_fixture(then: impl Fn(&mut Value)) -> Campaign {
     campaign_with(|plan, quests, _| {
-        plan["content"]["quests"]
-            .as_array_mut()
-            .unwrap()
-            .push(serde_json::json!({
-                "act": 2,
-                "area": "area/keep",
-                "depends_on": ["quest/decide"],
-                "goal": "Go back for a last look at the gate on the way out.",
-                "id": "quest/look-back",
-                "mandatory": false,
-                "npcs": []
-            }));
-        quest(quests, "quest/hold")["on_objective_complete"]["obj/watch"][0] = serde_json::json!({
-            "type": "close-gate",
-            "anchor": "anchor/door",
-            "happening": {
-                "verb": "seals",
-                "text": "The Keeper drops the bar across the gate for good.",
-                "subject": "anchor/door"
-            }
-        });
-        let objective = serde_json::json!({
-            "id": "obj/look-back",
-            "type": "reach-anchor",
-            "anchor": "anchor/exit",
-            "radius": 2,
-            "happening": {
-                "verb": "arrives",
-                "text": "The party slips back in through the gate for one last look.",
-                "subject": "anchor/door"
-            }
-        });
-        quests["content"]["quests"]
-            .as_array_mut()
-            .unwrap()
-            .push(serde_json::json!({
-                "id": "quest/look-back",
-                "trigger": {"type": "quest-complete", "quest": "quest/decide"},
-                "happening": {
-                    "verb": "learns",
-                    "text": "The party turns back toward the gate."
-                },
-                "objectives": [objective],
-                "on_objective_complete": {},
-                "on_complete": []
-            }));
+        add_optional_strand(plan, quests);
         then(quests);
     })
+}
+
+/// The documents half of [`optional_strand_fixture`].
+fn add_optional_strand(plan: &mut Value, quests: &mut Value) {
+    plan["content"]["quests"]
+        .as_array_mut()
+        .unwrap()
+        .push(serde_json::json!({
+            "act": 2,
+            "area": "area/keep",
+            "depends_on": ["quest/decide"],
+            "goal": "Go back for a last look at the gate on the way out.",
+            "id": "quest/look-back",
+            "mandatory": false,
+            "npcs": []
+        }));
+    quest(quests, "quest/hold")["on_objective_complete"]["obj/watch"][0] = serde_json::json!({
+        "type": "close-gate",
+        "anchor": "anchor/door",
+        "happening": {
+            "verb": "seals",
+            "text": "The Keeper drops the bar across the gate for good.",
+            "subject": "anchor/door"
+        }
+    });
+    let objective = serde_json::json!({
+        "id": "obj/look-back",
+        "type": "reach-anchor",
+        "anchor": "anchor/exit",
+        "radius": 2,
+        "happening": {
+            "verb": "arrives",
+            "text": "The party slips back in through the gate for one last look.",
+            "subject": "anchor/door"
+        }
+    });
+    quests["content"]["quests"]
+        .as_array_mut()
+        .unwrap()
+        .push(serde_json::json!({
+            "id": "quest/look-back",
+            "trigger": {"type": "quest-complete", "quest": "quest/decide"},
+            "happening": {
+                "verb": "learns",
+                "text": "The party turns back toward the gate."
+            },
+            "objectives": [objective],
+            "on_objective_complete": {},
+            "on_complete": []
+        }));
 }
 
 /// **The reproduction.** The exported order does not show the clash — the
@@ -743,6 +748,310 @@ fn a_strand_completed_after_a_seal_is_dw0485() {
     let d = find(branch::check_branches(&c), "DW0485");
     assert!(d.message.contains("after it is sealed"), "{}", d.message);
     assert!(d.message.contains("/on_complete/0"), "{}", d.message);
+}
+
+// --- DW0485 where gates do not only grow with the state (issue #865) ------
+
+/// [`optional_strand_fixture`], plus a second optional strand, `quest/linger`,
+/// also opened by the fork: one beat that says nothing about the gate and sets
+/// `flag/lingered`. On its own it changes nothing about the clash; each test
+/// below makes the first strand read the flag, so that walking `quest/linger`
+/// early closes the clash an order that skips it shows. `then` patches
+/// `quests.json` once both strands are in it.
+fn lingering_strand_fixture(then: impl Fn(&mut Value)) -> Campaign {
+    campaign_with(|plan, quests, _| {
+        add_optional_strand(plan, quests);
+        plan["content"]["quests"]
+            .as_array_mut()
+            .unwrap()
+            .push(serde_json::json!({
+                "act": 2,
+                "area": "area/keep",
+                "depends_on": ["quest/decide"],
+                "goal": "Linger in the yard a while.",
+                "id": "quest/linger",
+                "mandatory": false,
+                "npcs": []
+            }));
+        quests["content"]["quests"]
+            .as_array_mut()
+            .unwrap()
+            .push(serde_json::json!({
+                "id": "quest/linger",
+                "trigger": {"type": "quest-complete", "quest": "quest/decide"},
+                "happening": {"verb": "learns", "text": "The party lingers in the yard."},
+                "objectives": [{
+                    "id": "obj/linger",
+                    "type": "reach-anchor",
+                    "anchor": "anchor/exit",
+                    "radius": 2,
+                    "happening": {"verb": "learns", "text": "Nothing moves on the moor."}
+                }],
+                "on_objective_complete": {
+                    "obj/linger": [{"type": "set-flag", "flag": "flag/lingered"}]
+                },
+                "on_complete": []
+            }));
+        then(quests);
+    })
+}
+
+/// The objectives of the play order a beyond-the-exported-order `DW0485`
+/// prints, in walk order.
+fn printed_order(message: &str) -> Vec<String> {
+    let start = message
+        .find("other than the exported one (")
+        .unwrap_or_else(|| panic!("no order printed: {message}"))
+        + "other than the exported one (".len();
+    let end = start + message[start..].find(')').unwrap();
+    message[start..end]
+        .split(" → ")
+        .map(|s| s.trim_matches('`').to_string())
+        .collect()
+}
+
+/// No realized branch's exported order shows a clash: whatever `DW0485` finds
+/// is found beyond it.
+fn assert_exported_orders_clean(c: &Campaign) {
+    let mut one_order = Vec::new();
+    for r in &branch::realize(c) {
+        branch::check_contradictions(r, &mut one_order);
+    }
+    assert!(
+        one_order.is_empty(),
+        "the premise: no exported order shows a clash: {one_order:#?}"
+    );
+}
+
+/// The strand's beat **forbids** the flag the other strand sets. Every order
+/// that walks `quest/linger` first shuts the strand, and an order that takes
+/// every step it can before the seal walks it first; a player who stands the
+/// watch, goes back, and never lingers walks in through a sealed gate.
+#[test]
+fn a_strand_another_strand_shuts_is_judged_in_the_order_that_skips_it() {
+    let c = lingering_strand_fixture(|quests| {
+        quest(quests, "quest/look-back")["objectives"][0]["forbids_flags"] =
+            serde_json::json!(["flag/lingered"]);
+    });
+    assert_exported_orders_clean(&c);
+    let diags = branch::check_branches(&c);
+    let d = find(diags, "DW0485");
+    assert!(d.message.contains("after it is sealed"), "{}", d.message);
+    assert!(d.message.contains("branch/hold"), "{}", d.message);
+    let order = printed_order(&d.message);
+    let at = |o: &str| order.iter().position(|x| x == o);
+    assert!(
+        at("obj/watch") < at("obj/look-back")
+            && at("obj/linger").is_none_or(|l| l > at("obj/look-back").unwrap()),
+        "the printed order walks the seal, then the strand, without lingering first: {order:?}"
+    );
+}
+
+/// The same shape carried by a beat's **effect gate**: the strand's beat says
+/// nothing about the gate itself, and its bundle walks the party in through it
+/// unless `flag/lingered` holds.
+#[test]
+fn a_beat_a_forbids_gate_withholds_in_one_order_is_judged_in_the_order_that_fires_it() {
+    let c = lingering_strand_fixture(|quests| {
+        let q = quest(quests, "quest/look-back");
+        q["objectives"][0]["happening"] =
+            serde_json::json!({"verb": "learns", "text": "The yard is empty."});
+        q["on_objective_complete"]["obj/look-back"] = serde_json::json!([{
+            "type": "narrate",
+            "text": "You slip back in.",
+            "when": {"forbids_flags": ["flag/lingered"]},
+            "happening": {
+                "verb": "arrives",
+                "text": "The party slips back in through the gate.",
+                "subject": "anchor/door"
+            }
+        }]);
+    });
+    assert_exported_orders_clean(&c);
+    let d = find(branch::check_branches(&c), "DW0485");
+    assert!(d.message.contains("after it is sealed"), "{}", d.message);
+    assert!(
+        d.message.contains("/on_objective_complete/obj/look-back/0"),
+        "{}",
+        d.message
+    );
+}
+
+/// A **requires** gate, no `forbids_flags` anywhere: the strand's bundle lifts
+/// the bar before it walks in, but only once `flag/lingered` holds. An order
+/// that has done everything it can before the seal has lingered, so the bar is
+/// lifted and nothing clashes; an order that never lingers walks in through the
+/// sealed gate.
+#[test]
+fn a_beat_a_requires_gate_opens_in_one_order_is_judged_in_the_order_that_does_not() {
+    let c = lingering_strand_fixture(|quests| {
+        let q = quest(quests, "quest/look-back");
+        q["objectives"][0]["happening"] =
+            serde_json::json!({"verb": "learns", "text": "The yard is empty."});
+        q["on_objective_complete"]["obj/look-back"] = serde_json::json!([
+            {
+                "type": "open-gate",
+                "anchor": "anchor/door",
+                "when": {"requires_flags": ["flag/lingered"]},
+                "happening": {
+                    "verb": "opens",
+                    "text": "Having lingered, the party finds the bar loose and lifts it.",
+                    "subject": "anchor/door"
+                }
+            },
+            {
+                "type": "narrate",
+                "text": "You slip back in.",
+                "happening": {
+                    "verb": "arrives",
+                    "text": "The party slips back in through the gate.",
+                    "subject": "anchor/door"
+                }
+            }
+        ]);
+    });
+    assert_exported_orders_clean(&c);
+    let d = find(branch::check_branches(&c), "DW0485");
+    assert!(d.message.contains("after it is sealed"), "{}", d.message);
+    assert!(
+        d.message.contains("/on_objective_complete/obj/look-back/1"),
+        "{}",
+        d.message
+    );
+    let order = printed_order(&d.message);
+    assert!(
+        !order.iter().any(|o| o == "obj/linger"),
+        "the order that shows it never lingers: {order:?}"
+    );
+}
+
+/// The control: the seal itself waits for the lingering (`obj/watch` requires
+/// `flag/lingered`), so every legal order has shut the strand before the gate is
+/// sealed. A proof that judged a permutation rather than a legal order would
+/// refuse this.
+#[test]
+fn a_strand_shut_before_the_seal_in_every_order_is_clean() {
+    let c = lingering_strand_fixture(|quests| {
+        quest(quests, "quest/look-back")["objectives"][0]["forbids_flags"] =
+            serde_json::json!(["flag/lingered"]);
+        quest(quests, "quest/hold")["objectives"][0]["requires_flags"] =
+            serde_json::json!(["flag/wait", "flag/lingered"]);
+    });
+    let diags = branch::check_branches(&c);
+    assert!(!diags.iter().any(|d| d.code == "DW0485"), "{diags:#?}");
+}
+
+/// **Between the two beats, everything that can be walked is walked.** The seal
+/// is a quest of its own (`quest/bar`); it opens `quest/yard`, whose two beats
+/// say nothing about the gate, and whose completion walks the party back in
+/// through it; and `quest/lift`, whose beat lifts the bar. The exported order
+/// lifts the bar before `quest/yard` completes. Another legal order walks
+/// both of `quest/yard`'s beats straight after the seal and never lifts it.
+///
+/// Neither of `quest/yard`'s beats is legal before the seal, so whichever is
+/// the later beat of the clash, the other is legal only after the seal too —
+/// and the clash plays only when both are done. A proof that stopped walking
+/// the steps between the two beats as soon as the later one was legal would
+/// take the later beat with its quest still open, and see nothing.
+#[test]
+fn a_clash_that_needs_every_step_between_its_beats_is_dw0485() {
+    let c = campaign_with(|plan, quests, _| {
+        let pq = plan["content"]["quests"].as_array_mut().unwrap();
+        for (id, deps) in [
+            ("quest/bar", vec!["quest/decide"]),
+            ("quest/lift", vec!["quest/bar"]),
+            ("quest/yard", vec!["quest/bar"]),
+        ] {
+            pq.push(serde_json::json!({
+                "act": 2,
+                "area": "area/keep",
+                "depends_on": deps,
+                "goal": "A beat of the night.",
+                "id": id,
+                "mandatory": true,
+                "npcs": []
+            }));
+        }
+        for q in pq.iter_mut() {
+            if q["id"] == "quest/hold" {
+                q["depends_on"] =
+                    serde_json::json!(["quest/decide", "quest/bolt", "quest/lift", "quest/yard"]);
+            }
+        }
+        let beat = |id: &str, text: &str| {
+            serde_json::json!({
+                "id": id,
+                "type": "reach-anchor",
+                "anchor": "anchor/exit",
+                "radius": 2,
+                "happening": {"verb": "learns", "text": text}
+            })
+        };
+        let qs = quests["content"]["quests"].as_array_mut().unwrap();
+        qs.push(serde_json::json!({
+            "id": "quest/bar",
+            "trigger": {"type": "quest-complete", "quest": "quest/decide"},
+            "happening": {"verb": "learns", "text": "Night falls on the keep."},
+            "objectives": [beat("obj/bar", "The party bars the gate.")],
+            "on_objective_complete": {"obj/bar": [{
+                "type": "close-gate",
+                "anchor": "anchor/door",
+                "happening": {
+                    "verb": "seals",
+                    "text": "The bar drops across the gate.",
+                    "subject": "anchor/door"
+                }
+            }]},
+            "on_complete": []
+        }));
+        qs.push(serde_json::json!({
+            "id": "quest/lift",
+            "trigger": {"type": "quest-complete", "quest": "quest/bar"},
+            "happening": {"verb": "learns", "text": "Someone knocks at the gate."},
+            "objectives": [beat("obj/lift", "The party goes to the gate.")],
+            "on_objective_complete": {"obj/lift": [{
+                "type": "open-gate",
+                "anchor": "anchor/door",
+                "happening": {
+                    "verb": "opens",
+                    "text": "The party lifts the bar again.",
+                    "subject": "anchor/door"
+                }
+            }]},
+            "on_complete": []
+        }));
+        qs.push(serde_json::json!({
+            "id": "quest/yard",
+            "trigger": {"type": "quest-complete", "quest": "quest/bar"},
+            "happening": {"verb": "learns", "text": "The yard needs checking."},
+            "objectives": [
+                beat("obj/yard-a", "The well is empty."),
+                beat("obj/yard-b", "The stable is empty.")
+            ],
+            "on_objective_complete": {},
+            "on_complete": [{
+                "type": "narrate",
+                "text": "Back inside.",
+                "happening": {
+                    "verb": "arrives",
+                    "text": "The party comes back in through the gate.",
+                    "subject": "anchor/door"
+                }
+            }]
+        }));
+    });
+    assert_exported_orders_clean(&c);
+    let d = find(branch::check_branches(&c), "DW0485");
+    assert!(d.message.contains("after it is sealed"), "{}", d.message);
+    assert!(d.message.contains("/on_complete/0"), "{}", d.message);
+    let order = printed_order(&d.message);
+    let at = |o: &str| order.iter().position(|x| x == o);
+    assert!(
+        at("obj/bar") < at("obj/yard-a")
+            && at("obj/bar") < at("obj/yard-b")
+            && at("obj/lift").is_none(),
+        "the order seals, walks both of the strand's beats, and never lifts the bar: {order:?}"
+    );
 }
 
 // --- the derived subject (spec-0071 §3) ------------------------------------
