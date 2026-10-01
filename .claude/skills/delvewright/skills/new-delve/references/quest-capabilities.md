@@ -357,6 +357,14 @@ this section is what they are *for* and the traps in each.
   Repair by placement: seat the wave elsewhere, put the volume behind a rise of
   two blocks, or replace the gate with a jump across a dry cut, which the party
   makes and a mob does not. Never ring the hazard with blocks nobody can see.
+- **A fight the party must win stays where the party can strike it.** A body a
+  `kill` objective waits on is knocked by every blow; on a shelf with an open
+  edge it goes over, and if it survives the fall somewhere the party cannot
+  follow — below the playable region's edge, down a drop with no way back —
+  the objective waits forever. Close the edge with a parapet a body is knocked
+  into and not over (a wall course, 1.5 high), give the party a way down, or
+  seat the fight away from the drop. Never fence the shelf with blocks nobody
+  can see, and never shrink `follow_range` to hide the placement.
 - **What happens when a player dies is content, not engine behaviour.** The
   quests document takes a campaign-wide `on_death`: a bundle of ordinary effects
   that runs at the moment a player dies, for that player. One per campaign — it

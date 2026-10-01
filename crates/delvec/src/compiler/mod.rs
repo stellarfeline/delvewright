@@ -151,6 +151,7 @@ pub mod solver;
 pub mod stairs;
 pub mod stake;
 pub mod statepath;
+pub mod strand;
 pub mod surround;
 pub mod teleport;
 pub mod textfit;

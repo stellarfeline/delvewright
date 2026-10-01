@@ -1215,6 +1215,26 @@ pub fn build_with_warnings(
                     "validation/leave-proof.json",
                     &leave_binding.to_json(),
                 );
+                // DW0924: a body a `kill` objective waits on cannot get to a
+                // place it survives and the party cannot strike it from. After
+                // DW0921 because it reads the same playable region and a party
+                // that can be trapped is the worse finding.
+                {
+                    let strand = crate::compiler::strand::check(
+                        plan,
+                        &world,
+                        &waves,
+                        &crate::compiler::lethal::population_roots(plan, campaign_spawn(plan)),
+                        playable_region(plan).map(|r| (r.min, r.max)),
+                    );
+                    if strand.waves > 0 {
+                        eprintln!("{}", strand.line());
+                    }
+                    strand.verdict()?;
+                    if strand.waves > 0 {
+                        put_json(&mut out, "validation/strand.json", &strand.to_json());
+                    }
+                }
                 if !plan.lethal_volumes.is_empty() {
                     lethal_gate = Some(crate::compiler::lethal::gate(
                         plan.campaign,

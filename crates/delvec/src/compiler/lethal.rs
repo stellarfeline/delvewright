@@ -343,7 +343,7 @@ fn cell_shows(
 ///
 /// Deterministic: entry, then checkpoints in content order, then teleports in
 /// declaration order (ADR-0006).
-fn population_roots(plan: &Plan, entry: Option<[i32; 3]>) -> Vec<[i32; 3]> {
+pub(crate) fn population_roots(plan: &Plan, entry: Option<[i32; 3]>) -> Vec<[i32; 3]> {
     let mut out: Vec<[i32; 3]> = Vec::new();
     out.extend(entry);
     out.extend(plan.checkpoints.iter().map(|cp| cp.pos));

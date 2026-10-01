@@ -5831,6 +5831,19 @@ fn movement_words(world: &World, from: [i32; 3], to: [i32; 3]) -> String {
     }
 }
 
+/// This world as the quest configuration stands when critical step `step` is
+/// next — its gates as `DW0921` judges that configuration — or `None` when that
+/// configuration writes nothing, so the caller keeps the world it has.
+///
+/// Public for `DW0924`, which asks where the party can walk while a fight is the
+/// beat the story waits on: a gate a later beat opens is shut until the fight
+/// is won, so it is no way to the fight.
+pub fn world_while_next(plan: &Plan, world: &World, step: usize) -> Option<World> {
+    let ancestor = |g: usize, s: usize| plan.gate_fired_before(g, s);
+    let st = world.region_state_at(&plan.region_events, step, &ancestor);
+    (!st.is_empty()).then(|| world.with_region_state(&st))
+}
+
 /// [`DW_BODY_CANNOT_LEAVE`] over a campaign's critical path. Returns the binding
 /// beside the verdict so the caller can print it whichever way the verdict went.
 ///
@@ -5970,7 +5983,7 @@ fn verify_bodies_can_leave(
 /// checkpoint: the body can stand clear of the region's box when the cell lies
 /// wholly outside it horizontally, or far enough under its floor that the head
 /// is below it.
-fn returned_from(returned: Option<([i32; 3], [i32; 3])>, c: [i32; 3]) -> bool {
+pub(crate) fn returned_from(returned: Option<([i32; 3], [i32; 3])>, c: [i32; 3]) -> bool {
     returned.is_some_and(|(lo, hi)| {
         c[0] < lo[0] || c[0] > hi[0] || c[2] < lo[2] || c[2] > hi[2] || c[1] + 2 < lo[1]
     })
