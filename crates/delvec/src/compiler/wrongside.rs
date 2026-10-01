@@ -8,9 +8,8 @@
 //! the door in fact said nothing: the docs, the code and the player each believed
 //! something different. A shortcut door's wrong-side answer is an ordinary
 //! `EnvTrigger{on: use, audience: presser}` carrying a `narrate{style: actionbar}`,
-//! anchored on the `gate`, exactly like every other pressable object's — and from
-//! `dsl_version` 0.11.0 the campaign must write it or the build refuses
-//! (`DW0429`). What lives here is only the geometry: WHERE that trigger's body
+//! anchored on the `gate`, exactly like every other pressable object's — and the
+//! campaign must write it or the build refuses (`DW0429`). What lives here is only the geometry: WHERE that trigger's body
 //! stands, and therefore from which side it can be pressed.
 //!
 //! ## The gap this closes
@@ -50,8 +49,8 @@
 //! This module supplies the body, and with it both layers:
 //!
 //! * the right-click half is a press answer — the campaign's own `use` trigger at
-//!   the `gate`, on the presser's actionbar, re-armed every press. From
-//!   `dsl_version` 0.11.0 the campaign **must** write it: the compiler does not
+//!   the `gate`, on the presser's actionbar, re-armed every press. The
+//!   campaign **must** write it: the compiler does not
 //!   word a sealed thing for its author, and one with nothing to say is `DW0429`
 //!   — the same rule a `close-gate` wall is held to, because they are two
 //!   objects of one class ([`crate::compiler::plan::press_answer_bodies`]);

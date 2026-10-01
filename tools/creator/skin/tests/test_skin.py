@@ -8,8 +8,11 @@ composed skin at the part/face level, at the rows it is supposed to occupy and
 at the rows it is supposed to leave alone.
 """
 
+import io
 import json
+import struct
 import sys
+import zlib
 from pathlib import Path
 
 import pytest
@@ -19,6 +22,7 @@ from skinpy import Skin
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from delve_skin.catalog import catalog_card  # noqa: E402
+from delve_skin import png as png_mod  # noqa: E402
 from delve_skin.cli import _entry_surface_help  # noqa: E402
 from delve_skin.compose import (  # noqa: E402
     ENTRY_KEYS,
@@ -139,20 +143,15 @@ def test_slim_not_silently_distorted():
 # --- the pixels every fixture sheet composes are pinned ---------------------
 
 
-def test_every_fixture_sheet_composes_its_golden_pixels():
-    """The anchor: a composer change that moves one pixel reds here by name.
+def test_every_fixture_sheet_composes_its_golden_file():
+    """The anchor: the committed golden is the composed FILE, byte for byte.
 
-    The golden is compared as PIXELS, not as file bytes, because those are two
-    different questions and only one of them is about this tool. Composition is
-    deterministic and portable: the same cast entry yields the same 64x64 image
-    everywhere. PNG *serialisation* is not. Pillow hands the scanlines to
-    whatever zlib it is linked against, and deflate output differs between zlib
-    builds -- measured with the same Pillow 12.3.0 and numpy 2.5.3 on either
-    side, varying only zlib: macOS (1.2.12) and Linux (1.3.1) agree on every
-    pixel of both fixtures and disagree on the file at compress_level 1, 6 and 9
-    alike. Pinning file bytes therefore pins the zlib build of whoever last
-    regenerated and reds on every other machine while the composer is innocent,
-    which is exactly what it did.
+    The PNG is written by `delve_skin.png` (stored deflate, no compressor), so
+    its bytes are a function of the pixels alone and this comparison holds on
+    every machine -- CI composes on Linux what was committed from wherever it
+    was regenerated. The pixels are asserted on their own as well, so a red
+    says which of the two moved: a composer change moves both, an encoder
+    change moves only the file.
 
     Regenerate deliberately, never to get green:
         python -m delve_skin build tests/fixtures/<name>.cast.json \
@@ -170,21 +169,101 @@ def test_every_fixture_sheet_composes_its_golden_pixels():
             assert got == want, (
                 f"{sheet.name}:{entry.texture_id} no longer composes its golden pixels"
             )
+            assert compose_png_bytes(entry) == golden.read_bytes(), (
+                f"{sheet.name}:{entry.texture_id} composes its golden pixels into "
+                "a different file -- the encoder moved"
+            )
             checked += 1
     assert checked == 3, f"expected 3 pinned entries, pinned {checked}"
 
 
-def test_the_png_file_is_byte_stable_within_one_build():
-    """The half of determinism that IS a property of the file, stated on its own.
-
-    Within one zlib build the same entry serialises to the same bytes, and an
-    intervening composition of a different entry does not move them. Across
-    builds only the pixels carry -- see the golden test.
-    """
+def test_the_png_file_is_byte_stable_within_one_run():
+    """An intervening composition of a different entry does not move the bytes."""
     first = compose_png_bytes(_entry())
     other = compose_png_bytes(_entries(WARDROBE_FIXTURE)[0])
     assert compose_png_bytes(_entry()) == first, "an intervening entry moved the bytes"
     assert other != first
+
+
+def test_no_linked_compressor_writes_the_committed_file(monkeypatch):
+    """The committed file reaches neither zlib's deflate nor Pillow's encoder.
+
+    Either one would put the machine's zlib build back into the bytes, so both
+    are made to raise and the composition must still produce the golden file.
+    """
+    import zlib
+
+    def refuse(*_a, **_k):
+        raise AssertionError("a linked compressor was reached")
+
+    monkeypatch.setattr(zlib, "compress", refuse)
+    monkeypatch.setattr(zlib, "compressobj", refuse)
+    monkeypatch.setattr(Image.Image, "save", refuse)
+    entry = _entry()
+    assert compose_png_bytes(entry) == (GOLDEN / f"{entry.texture_id}.png").read_bytes()
+
+
+def _stored_blocks(stream: bytes):
+    """Walk a zlib stream that claims to be stored blocks; yield (bfinal, len)."""
+    assert stream[:2] == b"\x78\x01"
+    i = 2
+    while True:
+        header = stream[i]
+        assert header & 0b110 == 0, f"block at {i} is not stored (BTYPE 00)"
+        length, nlength = struct.unpack("<HH", stream[i + 1 : i + 5])
+        assert length ^ 0xFFFF == nlength
+        yield header & 1, length
+        i += 5 + length
+        if header & 1:
+            break
+    assert len(stream) == i + 4, "trailing bytes after the Adler-32"
+
+
+def _idat(png: bytes) -> bytes:
+    assert png[:8] == png_mod.SIGNATURE
+    i, kinds, idat = 8, [], b""
+    while i < len(png):
+        (n,) = struct.unpack(">I", png[i : i + 4])
+        kind, data = png[i + 4 : i + 8], png[i + 8 : i + 8 + n]
+        (crc,) = struct.unpack(">I", png[i + 8 + n : i + 12 + n])
+        assert crc == zlib.crc32(kind + data) & 0xFFFFFFFF, f"{kind} CRC"
+        kinds.append(kind)
+        if kind == b"IDAT":
+            idat += data
+        i += 12 + n
+    assert kinds == [b"IHDR", b"IDAT", b"IEND"], kinds
+    return idat
+
+
+@pytest.mark.parametrize(
+    "size, block_lengths",
+    [((64, 64), [16448]), ((1, 1), [5]), ((200, 90), [65535, 6555])],
+)
+def test_the_encoder_is_read_back_by_two_independent_decoders(size, block_lengths):
+    """Pillow and the stdlib's zlib, neither of which wrote it, read the pixels.
+
+    (200, 90) is 72090 scanline bytes -- two stored blocks, so the block split
+    and the BFINAL flag on the last one are exercised, not just the one-block
+    case a skin needs.
+    """
+    w, h = size
+    rgba = bytes((x * 7 + y * 13 + c * 31) % 256 for y in range(h) for x in range(w) for c in range(4))
+    png = png_mod.encode_rgba(w, h, rgba)
+    with Image.open(io.BytesIO(png)) as im:
+        assert im.mode == "RGBA" and im.size == (w, h)
+        assert im.tobytes() == rgba
+    stream = _idat(png)
+    raw = zlib.decompress(stream)
+    assert raw == b"".join(b"\x00" + rgba[y * w * 4 : (y + 1) * w * 4] for y in range(h))
+    blocks = list(_stored_blocks(stream))
+    assert [f for f, _ in blocks] == [0] * (len(blocks) - 1) + [1]
+    assert [n for _, n in blocks] == block_lengths, "blocks are filled to 65535 bytes"
+    assert png_mod.adler32(raw) == zlib.adler32(raw)
+
+
+def test_the_encoder_refuses_a_buffer_that_is_not_the_image_it_names():
+    with pytest.raises(ValueError, match="RGBA"):
+        png_mod.encode_rgba(2, 2, b"\x00" * 15)
 
 
 def test_a_sheet_that_names_no_wardrobe_gets_the_default_one():

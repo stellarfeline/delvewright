@@ -830,6 +830,32 @@ test("a trial that could not be exercised is a failure, never a quiet pass", () 
   assert.match(out[0]!, /could not be exercised/);
 });
 
+test("a death on the approach is reported as the approach's, never as a verdict on the volume", () => {
+  // vesperhold: `wave/unremembered-guard` killed the bot on the walk to
+  // `lethal/undertide`'s lip, and the stage reported a death "outside the reach of
+  // the declared volume" — a sentence about the volume.
+  const t = openLethalTrial(VOLUME, [5, 65, 8], [stakeRule()]);
+  t.approachFailure =
+    "the bot died at [60.20, 80.00, 70.10] on its way to the near lip [31, 68, 78]";
+  const out = lethalTrialFailures(t);
+  assert.equal(out.length, 1);
+  assert.match(out[0]!, /APPROACH to the volume failed/);
+  assert.match(out[0]!, /never on the volume/);
+  assert.doesNotMatch(out[0]!, /could not be exercised|did NOT die|OUTSIDE the reach/);
+});
+
+test("a death on the walk back is the walk's, never a verdict on where the stake was placed", () => {
+  const t = goodTrial([stakeRule()]);
+  t.walkedBack = false;
+  t.walkBackFailure =
+    "the bot died at [60.20, 80.00, 70.10] on the walk back from the respawn seat to [7, 65, 18]";
+  const out = lethalTrialFailures(t);
+  assert.equal(out.length, 1, out.join(" | "));
+  assert.match(out[0]!, /WALK BACK to the stake .* failed on what it met/);
+  assert.match(out[0]!, /never on where the stake was placed/);
+  assert.doesNotMatch(out[0]!, /placement rule's whole premise/);
+});
+
 // --- binding ---------------------------------------------------------------
 
 test("a stage that entered no volume reports VACUOUS, not pass", () => {

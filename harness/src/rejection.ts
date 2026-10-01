@@ -27,7 +27,8 @@ export const REJECTION = new RegExp(
     "|^That position is not loaded|^Cannot place blocks outside of the world" +
     "|^No blocks were filled|^Could not set the block|^No entity was found" +
     "|^No targets matched|^Malformed |^Failed to " +
-    "|^Unable to modify player data)",
+    "|^Unable to modify player data" +
+    "|^Target is invulnerable to the given damage type)",
 );
 
 /** True when `reply` is the server saying it refused or could not parse a command. */

@@ -138,6 +138,7 @@ def test_a_planner_tool_change_runs_its_tests_and_no_engine_build():
         ("tools/ci/check-publishable.sh", "publishable"),
         (".claude/skills/delvewright/skills/new-delve/versions.toml", "pin-drift"),
         ("crates/delvec/src/grammar/mod.rs", "zone-audit"),
+        ("tools/lib/rcon.mjs", "harness"),  # harness/test/rejection.test.ts
     ],
 )
 def test_a_path_a_job_reads_reaches_it(path, group):

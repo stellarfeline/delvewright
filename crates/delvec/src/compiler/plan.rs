@@ -552,20 +552,6 @@ impl LethalVolumePlan {
     }
 }
 
-/// The compiler's own answer a sealed gate gives a right-click when the
-/// `close-gate` authors no `sealed_hint`.
-///
-/// There is no such thing as a seal with nothing to say: a sealed boulder that
-/// answers a right-click with SILENCE is a defect. The answer is therefore the
-/// compiler's obligation, and the authored line is only the wording.
-///
-/// It is **chrome** (`dsl::chrome::GATE_SEALED`): compiler-owned, translated with
-/// the compiler, and not l10n-inventoried — a campaign that wants its own wording
-/// authors `sealed_hint`, which is inventoried like any other line. The plan
-/// carries the chrome default in its tagged form; `emit` rebinds it to the build's
-/// language.
-pub const SEAL_HINT_DEFAULT: &str = delvewright_dsl::chrome::GATE_SEALED.en;
-
 /// A gate anchor that some `close-gate` seals, and the line the seal answers a
 /// right-click with (DSL v0.8). One entry per **anchor**: the seal is
 /// a place, not an event, so two `close-gate`s on one anchor share its hitboxes
@@ -581,13 +567,10 @@ pub struct SealHintPlan {
     /// The block the region is filled with while sealed (the generated PackTest
     /// stages and un-stages the seal with it).
     pub block: String,
-    /// The line the seal answers with — authored, or [`SEAL_HINT_DEFAULT`].
-    pub text: String,
-    /// Whether [`Self::text`] came from a `sealed_hint` the campaign wrote.
-    /// `false` means it is the compiler's chrome fallback, which above
-    /// `dsl_version` 0.11.0 the compiler is no longer allowed to supply
+    /// The line the seal answers with: the campaign's `sealed_hint`. `None`
+    /// when the `close-gate` states none; the compiler never supplies one
     /// (`DW0429`).
-    pub authored: bool,
+    pub text: Option<String>,
 }
 
 impl SealHintPlan {
@@ -5512,11 +5495,7 @@ fn collect_seal_hints(
             safe: safe_local(name),
             region: (from, to),
             block,
-            text: match e.close_gate_sealed_hint() {
-                Some(h) => h.to_string(),
-                None => delvewright_dsl::chrome::GATE_SEALED.tagged(),
-            },
-            authored: e.close_gate_sealed_hint().is_some(),
+            text: e.close_gate_sealed_hint().map(str::to_string),
         });
     });
     out
@@ -5563,21 +5542,10 @@ pub struct PressAnswer {
     pub trigger_id: String,
     /// What owns the body (`close-gate seal` / `shortcut door`), for diagnostics.
     pub owner: &'static str,
-    /// The line, l10n-tagged: an authored `sealed_hint`'s campaign key, or the
-    /// compiler's own `delvewright.ui.gate.sealed` chrome. Chrome is rebound to
-    /// the build language at emission ([`delvewright_dsl::Chrome::rebind`]); an
-    /// authored line passes through untouched and keeps its campaign key, so the
-    /// l10n inventory is exactly what it was.
+    /// The campaign's own wording: an authored `sealed_hint`, l10n-tagged with
+    /// its campaign key. A `close-gate` with none has said nothing, and that is
+    /// `DW0429`, never a line the compiler supplies.
     pub text: String,
-    /// Whether [`Self::text`] is the **campaign's** wording rather than the
-    /// compiler's chrome fallback.
-    ///
-    /// This is the distinction the rule turns on. A `close-gate`
-    /// with an authored `sealed_hint` has said what its seal says, and the
-    /// compiler lowering that onto the general path is not the compiler putting
-    /// words in a player's mouth. A `close-gate` with none has said nothing, and
-    /// above the fence that is `DW0429` rather than `The way is sealed.`
-    pub authored: bool,
 }
 
 /// The `trigger/<local>` id a press answer is synthesized under.
@@ -5640,15 +5608,14 @@ impl PressAnswer {
 fn press_answer_sites<'p>(
     seal_hints: &'p [SealHintPlan],
     shortcuts: &'p [ShortcutPlan],
-) -> Vec<PressAnswer> {
-    let mut out: Vec<PressAnswer> = seal_hints
+) -> Vec<PressSite> {
+    let mut out: Vec<PressSite> = seal_hints
         .iter()
-        .map(|s| PressAnswer {
+        .map(|s| PressSite {
             anchor: s.anchor.clone(),
             trigger_id: press_answer_trigger_id("seal", local_of(&s.anchor)),
             owner: "close-gate seal",
             text: s.text.clone(),
-            authored: s.authored,
         })
         .collect();
     out.extend(shortcuts.iter().filter_map(|sc| {
@@ -5656,17 +5623,24 @@ fn press_answer_sites<'p>(
         // an answer on; `emit::check_shortcut_sides` (`DW0425`) fails the build
         // before this could matter.
         sc.sealed_side.as_ref()?;
-        Some(PressAnswer {
+        Some(PressSite {
             anchor: sc.gate_anchor.clone(),
             trigger_id: press_answer_trigger_id("door", local_of(&sc.id)),
             owner: "shortcut door",
             // A shortcut carries no wording field, so there is never an
             // authored wording to lower: its answer is always a trigger.
-            text: delvewright_dsl::chrome::GATE_SEALED.tagged(),
-            authored: false,
+            text: None,
         })
     }));
     out
+}
+
+/// One pressable body and the wording its campaign gave it, if any.
+struct PressSite {
+    anchor: String,
+    trigger_id: String,
+    owner: &'static str,
+    text: Option<String>,
 }
 
 /// **The pressable-body ledger**: every pressable body in the campaign and what
@@ -5678,7 +5652,7 @@ fn press_answer_sites<'p>(
 pub fn press_answer_bodies(plan: &Plan) -> Vec<(&'static str, String)> {
     press_answer_sites(&plan.seal_hints, &plan.shortcuts)
         .into_iter()
-        .map(|a| (a.owner, a.anchor))
+        .map(|s| (s.owner, s.anchor))
         .collect()
 }
 
@@ -5703,7 +5677,14 @@ fn collect_press_answers(
         .into_iter()
         // The compiler lowers a wording it was GIVEN (an authored `sealed_hint`)
         // and never invents one.
-        .filter(|a| a.authored)
+        .filter_map(|site| {
+            Some(PressAnswer {
+                anchor: site.anchor,
+                trigger_id: site.trigger_id,
+                owner: site.owner,
+                text: site.text?,
+            })
+        })
         // …and stands down entirely where the campaign answers the press itself.
         .filter(|a| !quests.answers_press_at(&a.anchor))
         .collect()
@@ -6157,7 +6138,7 @@ fn collect_region_events(
                 _ => return,
             };
         if resolved.is_empty() {
-            return; // an unresolvable anchor is DW0142/DW0343/DW0355's finding
+            return; // an unresolvable anchor is DW0142/DW0343/DW0360's finding
         }
         for (region, write) in resolved {
             // A trigger's FILL keeps the treatment it has always had — fired at

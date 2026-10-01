@@ -173,3 +173,48 @@ fn every_arm_a_workflow_runs_parses_through_the_binary() {
         );
     }
 }
+
+fn help_of(args: &[&str]) -> String {
+    let out = delvec(args);
+    assert_no_panic(args, &out);
+    String::from_utf8_lossy(&out.stdout).into_owned()
+}
+
+/// Help says what the code does: the numbers come from the constants the code
+/// reads, and every key a parser accepts is named.
+#[test]
+fn help_names_what_the_code_does() {
+    let cameras = help_of(&["cameras", "--help"]);
+    let cameras = cameras.split_whitespace().collect::<Vec<_>>().join(" ");
+    assert!(
+        cameras.contains(&format!(
+            "at most {} samples",
+            delvec::compiler::view::camera::DRAFT_SPP
+        )),
+        "--draft help states the sample count the code uses: {cameras}"
+    );
+    assert!(
+        cameras.contains("truck=3"),
+        "--bracket help names truck: {cameras}"
+    );
+
+    let piece = help_of(&["render", "piece", "--help"]);
+    assert!(
+        piece.contains("stand=") && piece.contains("look="),
+        "render piece --view help names the standing view: {piece}"
+    );
+
+    let schema = help_of(&["schema", "--help"]);
+    assert!(
+        delvewright_dsl::Stage::ALL
+            .iter()
+            .all(|s| schema.contains(&format!("`{}`", s.name()))),
+        "schema --help names every stage document: {schema}"
+    );
+
+    let audit = help_of(&["grammar", "audit", "--help"]);
+    assert!(
+        !audit.contains("used to"),
+        "grammar audit --help states what it does, not what it was: {audit}"
+    );
+}

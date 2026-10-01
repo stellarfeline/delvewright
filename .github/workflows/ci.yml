@@ -560,8 +560,9 @@ jobs:
   skin-tool:
     name: skin toolchain (pytest)
     # spec-0009: deterministic original 64x64 skin composition + headless preview
-    # renderer. Proves same cast entry -> byte-identical PNG (ADR-0006) and that a
-    # cast entry without `model` is rejected.
+    # renderer. Proves same cast entry -> the committed golden PNG byte for byte on
+    # this runner, whatever machine wrote it (ADR-0006), and that a cast entry
+    # without `model` is rejected.
     needs: changes
     if: github.event_name != 'pull_request' || needs.changes.outputs.skin-tool == 'true'
     runs-on: ubuntu-latest

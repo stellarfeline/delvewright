@@ -39,11 +39,12 @@
 //! | Code | Proof |
 //! |------|-------|
 //! | `DW0480` | **Undeclared story fork** — a flag that gates casts/staging/structure and is set on some playthroughs and not others, belonging to no declared branch point. |
-//! | `DW0481` | **Missing `happening`** — a story node that never said what it does to the story (0.8.0+). The forcing function. |
+//! | `DW0481` | **Missing `happening`** — a story node that never said what it does to the story. The forcing function. |
 //! | `DW0482` | **Terminality** — a branch that reaches no ending (or not the ending it declares, or not the convergence it declares). |
 //! | `DW0483` | **Cast continuity** — the `dw.cast` selector resolves to no cast, or to more than one, at some quest after the fork on some branch. spec-0020 proof 4 extended over the whole post-fork suffix. |
 //! | `DW0484` | **Exclusive-content leakage** — content gated on branch A's flags is reachable under branch B's assignment. |
 //! | `DW0485` | **Hard event contradiction** — `dies` then acts, `departs` then acts, `seals` then traversed, `loses` then spent, on one branch, in any play order the branch admits, with both chronicle lines shown. |
+//! | `DW0927` | **Unproven contradiction question** — the every-order search behind `DW0485` reached its bound on a branch, so the branch is refused rather than called clean. |
 //!
 //! Everything here is validation metadata: nothing this module computes reaches
 //! the shipped datapack.
@@ -75,6 +76,9 @@ pub const DW_BRANCH_CAST: DwCode = DwCode::new("DW0483", ExitTier::Build);
 pub const DW_BRANCH_LEAKAGE: DwCode = DwCode::new("DW0484", ExitTier::Build);
 /// Two chronicle lines on one branch contradict each other.
 pub const DW_BRANCH_CONTRADICTION: DwCode = DwCode::new("DW0485", ExitTier::Build);
+/// Whether any play order of a branch shows a `DW0485` clash is unproven: the
+/// every-order search reached [`MAX_ORDER_STATES`].
+pub const DW_BRANCH_CONTRADICTION_UNPROVEN: DwCode = DwCode::new("DW0927", ExitTier::Build);
 
 // ---------------------------------------------------------------------------
 // enumeration
@@ -354,8 +358,11 @@ fn chronicle_of(c: &Campaign, journal: &[JournalStep]) -> (Vec<ChronicleLine>, V
 #[derive(Clone)]
 struct Chronicler<'c> {
     c: &'c Campaign,
-    quest_index: BTreeMap<&'c str, usize>,
+    quest_index: std::rc::Rc<BTreeMap<&'c str, usize>>,
+    /// The lines written and not yet taken ([`Chronicler::take_lines`]).
     lines: Vec<ChronicleLine>,
+    /// How many lines have been written in all — the next line's number.
+    written: usize,
     endings: Vec<String>,
     /// The quests whose own line has been written.
     announced: BTreeSet<&'c str>,
@@ -365,15 +372,17 @@ impl<'c> Chronicler<'c> {
     fn new(c: &'c Campaign) -> Self {
         Chronicler {
             c,
-            quest_index: c
-                .quests
-                .content
-                .quests
-                .iter()
-                .enumerate()
-                .map(|(i, q)| (q.id.as_str(), i))
-                .collect(),
+            quest_index: std::rc::Rc::new(
+                c.quests
+                    .content
+                    .quests
+                    .iter()
+                    .enumerate()
+                    .map(|(i, q)| (q.id.as_str(), i))
+                    .collect(),
+            ),
             lines: Vec::new(),
+            written: 0,
             endings: Vec::new(),
             announced: BTreeSet::new(),
         }
@@ -386,8 +395,9 @@ impl<'c> Chronicler<'c> {
     /// already answers — the beat would be about one thing for the proof and
     /// another for the reader.
     fn push(&mut self, kind: &'static str, node: String, h: &Happening, subject: Option<String>) {
+        self.written += 1;
         self.lines.push(ChronicleLine {
-            n: self.lines.len() + 1,
+            n: self.written,
             kind,
             node,
             verb: h.verb,
@@ -444,7 +454,7 @@ impl<'c> Chronicler<'c> {
                 "/content/quests/{qi}/on_objective_complete/{}",
                 step.objective
             );
-            for (path, eff) in fired(effs, &base, &step.flags_after) {
+            for (path, eff) in fired(effs, &base, &step.fired) {
                 self.record_effect(&path, eff);
             }
         }
@@ -460,7 +470,7 @@ impl<'c> Chronicler<'c> {
             };
             let ci = self.quest_index[qid.as_str()];
             let base = format!("/content/quests/{ci}/on_complete");
-            for (path, eff) in fired(&cq.on_complete, &base, &step.flags_after) {
+            for (path, eff) in fired(&cq.on_complete, &base, &step.fired) {
                 self.record_effect(&path, eff);
             }
         }
@@ -483,6 +493,12 @@ impl<'c> Chronicler<'c> {
         }
     }
 
+    /// The lines written since the last call, handed over: a walk that only
+    /// reads each step's new lines keeps none, so cloning it is cheap.
+    fn take_lines(&mut self) -> Vec<ChronicleLine> {
+        std::mem::take(&mut self.lines)
+    }
+
     /// The dated account, with the ambient lines listed after it.
     fn finish(mut self) -> (Vec<ChronicleLine>, Vec<String>) {
         // Ambient producers (environment triggers, trap payloads) have no DAG
@@ -490,13 +506,15 @@ impl<'c> Chronicler<'c> {
         // are listed after the dated account, and the contradiction proof
         // deliberately does not order them against it.
         let lines = &mut self.lines;
+        let written = &mut self.written;
         for_each_campaign_effect(self.c, &mut |path, site, eff| {
             if !matches!(site, EffectSite::Trigger { .. } | EffectSite::Trap { .. }) {
                 return;
             }
             if let Some(h) = eff.happening.as_ref() {
+                *written += 1;
                 lines.push(ChronicleLine {
-                    n: lines.len() + 1,
+                    n: *written,
                     kind: "ambient",
                     node: path.to_string(),
                     verb: h.verb,
@@ -541,52 +559,41 @@ fn option_at<'a>(
     None
 }
 
-/// The effects of `effs` that fire under `flags`, with their JSON pointers —
-/// the same gate rule and the same nesting descent [`Flow::fire`] uses, so the
-/// chronicle can never claim a beat the replay would have skipped.
+/// The effects of `effs` (rooted at `base`) the replay fired at this step,
+/// with their JSON pointers, in firing order. Whether a beat played is the
+/// replay's answer ([`JournalStep::fired`], recorded by [`Flow`]'s one gate
+/// test where the replay reached the effect), never a second reading of the
+/// gate here — so the chronicle can never claim a beat the replay skipped, nor
+/// skip one it played.
 fn fired<'a>(
     effs: &'a [QuestEffect],
     base: &str,
-    flags: &BTreeSet<String>,
+    played: &BTreeSet<String>,
 ) -> Vec<(String, &'a QuestEffect)> {
+    fn walk<'a>(
+        effs: &'a [QuestEffect],
+        base: &str,
+        played: &BTreeSet<String>,
+        out: &mut Vec<(String, &'a QuestEffect)>,
+    ) {
+        for (i, e) in effs.iter().enumerate() {
+            let path = format!("{base}/{i}");
+            if !played.contains(&path) {
+                continue;
+            }
+            out.push((path.clone(), e));
+            for (pseg, _k, list) in e.nested_effect_lists_labeled() {
+                walk(list, &format!("{path}/{pseg}"), played, out);
+            }
+        }
+    }
     let mut out = Vec::new();
-    fired_into(effs, base, flags, &mut out);
+    walk(effs, base, played, &mut out);
     out
 }
 
-fn fired_into<'a>(
-    effs: &'a [QuestEffect],
-    base: &str,
-    flags: &BTreeSet<String>,
-    out: &mut Vec<(String, &'a QuestEffect)>,
-) {
-    for (i, e) in effs.iter().enumerate() {
-        let gated = !e
-            .requires_flags()
-            .iter()
-            .all(|f| flags.contains(f.as_str()))
-            || e.forbids_flags().iter().any(|f| flags.contains(f.as_str()));
-        if gated {
-            continue;
-        }
-        let path = format!("{base}/{i}");
-        out.push((path.clone(), e));
-        match &e.verb {
-            // Reaction bundles fire at statically unknowable times — the
-            // conservative stance `flow` and `continuity` already take.
-            Verb::SetCheckpoint { .. } | Verb::Bonfire { .. } | Verb::BeginStealth { .. } => {
-                continue;
-            }
-            _ => {}
-        }
-        for (pseg, _k, list) in e.nested_effect_lists_labeled() {
-            fired_into(list, &format!("{path}/{pseg}"), flags, out);
-        }
-    }
-}
-
 /// Is this effect a **story node** — one of the eleven verbs that must declare a
-/// `happening` at 0.8.0?
+/// `happening`?
 fn is_story_node(eff: &QuestEffect) -> bool {
     matches!(
         &eff.verb,
@@ -613,9 +620,21 @@ pub fn check_branches(c: &Campaign) -> Vec<Diagnostic> {
     check_branches_bound(c).0
 }
 
-/// [`check_branches`], with what `DW0485`'s every-order walk examined.
+/// [`check_branches`], with what `DW0485`'s every-order search examined.
 pub fn check_branches_bound(c: &Campaign) -> (Vec<Diagnostic>, ContradictionBinding) {
-    let mut bind = ContradictionBinding::default();
+    check_branches_within(c, MAX_ORDER_STATES)
+}
+
+/// [`check_branches_bound`], with the every-order search stopped at `bound`
+/// distinct play states per branch instead of [`MAX_ORDER_STATES`].
+pub fn check_branches_within(
+    c: &Campaign,
+    bound: usize,
+) -> (Vec<Diagnostic>, ContradictionBinding) {
+    let mut bind = ContradictionBinding {
+        bound,
+        ..ContradictionBinding::default()
+    };
     let mut d = Vec::new();
     check_happenings(c, &mut d);
     let flow = Flow::new(c);
@@ -645,10 +664,12 @@ pub fn check_branches_bound(c: &Campaign) -> (Vec<Diagnostic>, ContradictionBind
             bind.branches += 1;
             bind.lines += r.chronicle.iter().filter(|l| l.kind != "ambient").count();
         }
-        let walked = check_every_order(c, &flow, &r, &mut d);
-        bind.candidates += walked.candidates;
-        bind.orders += walked.orders;
+        let walked = check_every_order(c, &flow, &r, bound, &mut d);
+        bind.steps += walked.steps;
+        bind.quiet += walked.quiet;
+        bind.states += walked.states;
         bind.refused += walked.refused;
+        bind.unproven += usize::from(walked.unproven);
         check_branch_skips(c, &flow, &r, &on_main, &mut d);
     }
     d.sort_by(|a, b| (&a.code, &a.path, &a.message).cmp(&(&b.code, &b.path, &b.message)));
@@ -664,12 +685,18 @@ pub struct ContradictionBinding {
     pub branches: usize,
     /// Dated chronicle lines across those exported orders.
     pub lines: usize,
-    /// `(X, Y, subject)` candidates the every-order walk asked about.
-    pub candidates: usize,
-    /// Of those, the ones a legal order was built for.
-    pub orders: usize,
+    /// Steps on those branches' paths, summed.
+    pub steps: usize,
+    /// Of those, the quiet ones the search takes first.
+    pub quiet: usize,
+    /// Distinct play states the every-order search walked, summed.
+    pub states: usize,
     /// Clashes those orders show that the exported orders do not.
     pub refused: usize,
+    /// Branches whose search reached the bound — refused as unproven.
+    pub unproven: usize,
+    /// The bound, in distinct play states per branch.
+    pub bound: usize,
 }
 
 impl ContradictionBinding {
@@ -677,14 +704,17 @@ impl ContradictionBinding {
     pub fn line(&self) -> String {
         format!(
             "contradiction binding: {b} branch(es) read in their exported order over {l} dated \
-             line(s); {k} candidate clash(es) between two steps asked of every legal order, \
-             {o} of them walked in an order built for them; {r} refused beyond the exported \
-             order (DW0485)",
+             line(s); every legal order searched over {st} step(s) ({q} quiet), {s} distinct \
+             play state(s) walked; {r} refused beyond the exported order (DW0485); {u} \
+             branch(es) unproven at the bound of {n} state(s) per branch (DW0927)",
             b = self.branches,
             l = self.lines,
-            k = self.candidates,
-            o = self.orders,
+            st = self.steps,
+            q = self.quiet,
+            s = self.states,
             r = self.refused,
+            u = self.unproven,
+            n = self.bound,
         )
     }
 }
@@ -744,7 +774,7 @@ fn check_happenings(c: &Campaign, d: &mut Vec<Diagnostic>) {
         // `unleash-actor` pairs it desugars into are that one beat lowered. The
         // author never wrote them and has no surface to reach them, so demanding
         // a `happening` from each is an obligation nobody can discharge — which
-        // is what made `ambushes[]` uncompilable at 0.8.0 and above for as long
+        // is what made `ambushes[]` uncompilable for as long
         // as the surface had existed. The declaration is checked here, once, on
         // the object that owns it.
         for (i, a) in c.quests.content.ambushes.iter().enumerate() {
@@ -1250,19 +1280,19 @@ pub fn check_contradictions(r: &RealizedBranch, d: &mut Vec<Diagnostic>) {
 
 /// One clash the four rules find in one chronicle: the earlier line, the later
 /// one, and what the later one does wrong.
-struct Contradiction<'l> {
-    subject: &'l str,
+struct Contradiction {
+    subject: String,
     why: &'static str,
-    prev: &'l ChronicleLine,
-    line: &'l ChronicleLine,
+    prev: ChronicleLine,
+    line: ChronicleLine,
 }
 
-impl Contradiction<'_> {
+impl Contradiction {
     /// The clash itself, independent of where in an order it was seen: the
     /// subject, the rule, and the two nodes.
     fn key(&self) -> (String, &'static str, String, String) {
         (
-            self.subject.to_string(),
+            self.subject.clone(),
             self.why,
             self.prev.line_node(),
             self.line.line_node(),
@@ -1309,34 +1339,45 @@ fn clash(prev: HappeningVerb, next: HappeningVerb) -> Option<&'static str> {
     }
 }
 
-/// The four rules over one chronicle, in its order.
-fn contradictions(chronicle: &[ChronicleLine]) -> Vec<Contradiction<'_>> {
-    let mut out = Vec::new();
-    let mut state: BTreeMap<&str, &ChronicleLine> = BTreeMap::new();
-    for l in chronicle.iter().filter(|l| l.kind != "ambient") {
-        let Some(subject) = l.subject.as_deref() else {
-            continue;
-        };
-        if !acts(l.verb) {
-            continue;
+/// The four rules, read one line at a time — the one reading both the exported
+/// chronicle ([`contradictions`]) and every order the search walks
+/// ([`check_every_order`]) go through. Per subject it holds the last acting
+/// line about it, when that line leaves the subject in a state a later line
+/// can contradict.
+#[derive(Clone, Default)]
+struct ClashTracker {
+    last: BTreeMap<String, ChronicleLine>,
+}
+
+impl ClashTracker {
+    /// Read `l`, the next line of the chronicle: the clash it completes, if it
+    /// completes one.
+    fn read(&mut self, l: &ChronicleLine) -> Option<Contradiction> {
+        if l.kind == "ambient" || !acts(l.verb) {
+            return None;
         }
-        if let Some(prev) = state.get(subject)
-            && let Some(why) = clash(prev.verb, l.verb)
-        {
-            out.push(Contradiction {
-                subject,
+        let subject = l.subject.as_deref()?;
+        let hit = self.last.get(subject).and_then(|prev| {
+            clash(prev.verb, l.verb).map(|why| Contradiction {
+                subject: subject.to_string(),
                 why,
-                prev,
-                line: l,
-            });
-        }
+                prev: prev.clone(),
+                line: l.clone(),
+            })
+        });
         if carries(l.verb) {
-            state.insert(subject, l);
+            self.last.insert(subject.to_string(), l.clone());
         } else {
-            state.remove(subject);
+            self.last.remove(subject);
         }
+        hit
     }
-    out
+}
+
+/// The four rules over one chronicle, in its order.
+fn contradictions(chronicle: &[ChronicleLine]) -> Vec<Contradiction> {
+    let mut t = ClashTracker::default();
+    chronicle.iter().filter_map(|l| t.read(l)).collect()
 }
 
 /// The `DW0485` diagnostic for one clash. `order` is `None` when the clash is in
@@ -1344,7 +1385,7 @@ fn contradictions(chronicle: &[ChronicleLine]) -> Vec<Contradiction<'_>> {
 /// order it was found in, in walk order.
 fn contradiction_diagnostic(
     r: &RealizedBranch,
-    x: &Contradiction<'_>,
+    x: &Contradiction,
     order: Option<&[String]>,
 ) -> Diagnostic {
     let (on, prescription) = match order {
@@ -1357,11 +1398,7 @@ fn contradiction_diagnostic(
         Some(order) => (
             format!(
                 ", in a play order the branch admits other than the exported one ({})",
-                order
-                    .iter()
-                    .map(|o| format!("`{o}`"))
-                    .collect::<Vec<_>>()
-                    .join(" → ")
+                render_order(order)
             ),
             "The exported order does not show it, and a player is not bound to the exported \
              order: every step of that order is legal where it stands. Prescription: make the \
@@ -1396,6 +1433,21 @@ fn contradiction_diagnostic(
     )
 }
 
+fn render_order(order: &[String]) -> String {
+    order
+        .iter()
+        .map(|o| format!("`{o}`"))
+        .collect::<Vec<_>>()
+        .join(" → ")
+}
+
+/// The most distinct play states [`check_every_order`] walks on one branch. A
+/// branch whose legal orders reach more is refused as unproven, by name — never
+/// called clean. Sized to time: measured on a branch of twenty freely
+/// interleaved strands (45 steps, 20 quiet), a 100 000-state run took 9.4 s on
+/// the dev profile, so this bound costs a refused branch about five seconds.
+pub const MAX_ORDER_STATES: usize = 50_000;
+
 /// `DW0485` over **every order the branch admits**, not only the exported one.
 ///
 /// **The quantifier.** A *legal order* of a branch is a sequence of distinct
@@ -1405,103 +1457,493 @@ fn contradiction_diagnostic(
 /// active, `after` done, `requires_flags` held, `forbids_flags` clear, the
 /// completing option reachable) and no step follows the one that fires
 /// `campaign-complete`. Its chronicle is written by the same [`Chronicler`] the
-/// exported chronicle is. The branch is refused when the four rules
-/// ([`contradictions`]) refuse the chronicle of ANY legal order — any prefix of
-/// one, since a player sees a clash the moment the second line plays.
+/// exported chronicle is, every effect gate read against the state that order
+/// has reached. The branch is refused when the four rules ([`ClashTracker`])
+/// refuse the chronicle of ANY legal order — any prefix of one, since a player
+/// sees a clash the moment the second line plays.
 ///
-/// **Why this is not a permutation sweep.** Every clash is two beats about one
-/// subject, `a` at step `X` and `b` at step `Y`, with no acting beat about that
-/// subject between them. For each such candidate the proof builds an order
-/// ([`witness`]): every step the replay admits without `X`, `Y` or the ending,
-/// to fixpoint (the most any order can have done before `X`); then `X`; then
-/// every step whose own lines say nothing acting about the subject, to
-/// fixpoint; then `Y`. A quest's own line plays at its first step, so where
-/// `a` or `b` may be one, the order is also built with that quest's other steps
-/// withheld from the first phase ([`withholdings`]).
+/// **The search is exact.** It walks every legal order from the start of the
+/// delve, depth first, and merges two orders that reach the same *play state*:
+/// the objectives done, the flags held, the value of every datum an effect gate
+/// compares, and, per subject some step can leave in a carried state, the last
+/// acting line about it while that line carries. Everything a later step's
+/// legality, its fired effects and its lines' verdict depends on is in that
+/// state (quest activity and completion are functions of the objectives done,
+/// a quest's own line plays at its first step done), so two orders that reach
+/// one state have the same continuations, with the same clashes. Nothing about
+/// `forbids_flags` or effect gates is assumed: each order reads every gate where
+/// it stands.
 ///
-/// When step legality only grows with the state (no `forbids_flags` on an
-/// objective or on the dialogue path to its option) and every effect a step
-/// fires, it fires in every legal order (no effect gate two legal orders read
-/// differently), any legal order `O` showing the clash leaves this construction
-/// able to show it: what `O` did before `X` is contained in the first phase,
-/// what it did between `X` and `Y` is admissible in the second, so `X` and `Y`
-/// are legal where the construction reaches them and fire the lines they fire
-/// in `O`, and nothing between them speaks about the subject. Where a campaign
-/// carries such a gate, the construction can take a step that closes the
-/// clash, and a clash only an order withholding that step shows is not built.
-/// Every order this builds is legal by construction, so a refusal always names
-/// a play order a player can walk; the order is printed in the message.
+/// **One reduction, and why it loses nothing.** A step is *quiet*
+/// ([`quiet_steps`]) when it fires the same effects whenever it is taken (no
+/// gated effect in its bundle or its quest's `on_complete`), sets no flag any
+/// `forbids_flags` or effect gate reads and writes no datum any effect gate
+/// compares, does not end the delve, and has no acting line about a subject
+/// some step can leave in a carried state. Where a quiet step is legal, the
+/// search walks only it. Take any legal order `O` from that state. The order
+/// that takes the quiet step first and then `O` without it is legal: the quiet
+/// step only adds objectives, active quests and flags that only `requires`
+/// gates read, so no step of `O` is shut by it. Every other step fires what it
+/// fires in `O`, since no gate it reads moved. The lines the rules read come in
+/// the same order, since the quiet step's own lines — and its quest's line and
+/// completion lines, which may now play at a different step — act on no subject
+/// a rule tracks. So any clash `O` shows, that order shows too. Whether other
+/// steps can shut the quiet step does not matter: it is taken while it is open.
+///
+/// **Cost.** Every visited state checks every step's legality once:
+/// `O(states × steps)` legality tests, plus one chronicle clone per edge.
+/// `states` is bounded by the downsets of the steps that are not quiet times the
+/// flag and carried-line variants they produce — exponential in how many of
+/// them a player may interleave freely, linear in the rest. The search stops at
+/// [`MAX_ORDER_STATES`] distinct states, and a branch that reaches the bound is
+/// refused as **unproven** (`DW0927`), naming the bound: a bound hit is never a
+/// pass.
+///
+/// Every order a refusal prints is one the search walked, so it is a play order
+/// a player can walk.
 fn check_every_order(
     c: &Campaign,
     flow: &Flow<'_>,
     r: &RealizedBranch,
+    bound: usize,
     d: &mut Vec<Diagnostic>,
 ) -> OrderWalk {
-    let mut stats = OrderWalk::default();
-    let Some(w) = r.world else { return stats };
-    let steps = flow.playthrough_in(w).steps;
-    let mut seen: BTreeSet<(String, &'static str, String, String)> = contradictions(&r.chronicle)
-        .iter()
-        .map(Contradiction::key)
-        .collect();
-    let beats: Vec<Vec<(HappeningVerb, String)>> =
-        steps.iter().map(|s| possible_beats(c, s)).collect();
-    for (xi, xb) in beats.iter().enumerate() {
-        for (yi, yb) in beats.iter().enumerate() {
-            if xi == yi {
-                continue;
-            }
-            let subjects: BTreeSet<&str> = xb
-                .iter()
-                .filter(|(v, _)| carries(*v))
-                .filter(|(v, s)| {
-                    yb.iter()
-                        .any(|(w, t)| t == s && acts(*w) && clash(*v, *w).is_some())
-                })
-                .map(|(_, s)| s.as_str())
-                .collect();
-            for subject in subjects {
-                stats.candidates += 1;
-                let mut built = false;
-                for (hold_x, hold_y) in withholdings(c, &steps, xi, yi, subject) {
-                    let Some((order, chronicle)) =
-                        witness(c, flow, &steps, xi, yi, subject, hold_x, hold_y)
-                    else {
-                        continue;
-                    };
-                    built = true;
-                    for x in contradictions(&chronicle) {
-                        if seen.insert(x.key()) {
-                            stats.refused += 1;
-                            d.push(contradiction_diagnostic(r, &x, Some(&order)));
-                        }
-                    }
-                }
-                if built {
-                    stats.orders += 1;
-                }
-            }
-        }
+    let (found, stats) = search_orders(c, flow, r, bound);
+    for (x, order) in &found {
+        d.push(contradiction_diagnostic(r, x, Some(order)));
+    }
+    if stats.unproven {
+        d.push(unproven_diagnostic(r, bound, stats.steps, stats.quiet));
     }
     stats
+}
+
+/// The search [`check_every_order`] runs: every clash a legal order shows that
+/// the exported order does not, each with the first order found showing it.
+fn search_orders(
+    c: &Campaign,
+    flow: &Flow<'_>,
+    r: &RealizedBranch,
+    bound: usize,
+) -> (Vec<(Contradiction, Vec<String>)>, OrderWalk) {
+    let mut stats = OrderWalk::default();
+    let Some(w) = r.world else {
+        return (Vec::new(), stats);
+    };
+    let steps = flow.playthrough_in(w).steps;
+    let beats: Vec<Vec<(HappeningVerb, String)>> =
+        steps.iter().map(|s| possible_beats(c, s)).collect();
+    let carried: BTreeSet<String> = beats
+        .iter()
+        .flatten()
+        .filter(|(v, _)| carries(*v))
+        .map(|(_, s)| s.clone())
+        .collect();
+    let quiet = quiet_steps(c, flow, &steps, &beats, &carried);
+    let read = data_gates_read(c);
+    let mut search = OrderSearch {
+        steps: &steps,
+        quiet: &quiet,
+        carried: &carried,
+        read: &read,
+        bound,
+        visited: BTreeSet::new(),
+        flag_ids: BTreeMap::new(),
+        line_ids: BTreeMap::new(),
+        seen: contradictions(&r.chronicle)
+            .iter()
+            .map(Contradiction::key)
+            .collect(),
+        found: Vec::new(),
+        hit: false,
+    };
+    search.explore(&OrderNode {
+        walk: flow.walk(),
+        ch: Chronicler::new(c),
+        tracker: ClashTracker::default(),
+        order: Vec::new(),
+    });
+    stats.states = search.visited.len();
+    stats.quiet = quiet.iter().filter(|q| **q).count();
+    stats.steps = steps.len();
+    stats.refused = search.found.len();
+    stats.unproven = search.hit;
+    (search.found, stats)
+}
+
+/// **The second method, for tests.** Per realized branch, every clash some
+/// legal order shows, two ways: what `DW0485` reads (the exported order, then
+/// [`search_orders`]), and every legal order walked one at a time with no
+/// merged states and no quiet steps — the two things the search does that
+/// could lose an order. Each clash reads `branch | subject | rule | earlier
+/// line | later line`. The enumeration is exponential in the steps: a
+/// fixture's handful only.
+#[doc(hidden)]
+pub fn clashes_by_search_and_by_enumeration(c: &Campaign) -> (BTreeSet<String>, BTreeSet<String>) {
+    fn named(branch: &str, k: (String, &'static str, String, String)) -> String {
+        format!("{branch} | {} | {} | {} | {}", k.0, k.1, k.2, k.3)
+    }
+    fn every<'f, 'a, 'c>(
+        steps: &[PathStep],
+        n: &OrderNode<'f, 'a, 'c>,
+        out: &mut BTreeSet<(String, &'static str, String, String)>,
+    ) {
+        for step in steps {
+            if !n.walk.legal(step) {
+                continue;
+            }
+            let mut walk = n.walk.clone();
+            let j = walk.take(step);
+            let mut ch = n.ch.clone();
+            ch.push_step(&j);
+            let mut tracker = n.tracker.clone();
+            for l in &ch.take_lines() {
+                if let Some(x) = tracker.read(l) {
+                    out.insert(x.key());
+                }
+            }
+            if walk.ended() {
+                continue;
+            }
+            every(
+                steps,
+                &OrderNode {
+                    walk,
+                    ch,
+                    tracker,
+                    order: Vec::new(),
+                },
+                out,
+            );
+        }
+    }
+    let flow = Flow::new(c);
+    let (mut searched, mut enumerated) = (BTreeSet::new(), BTreeSet::new());
+    for b in enumerate(c) {
+        let r = realize_one(c, &flow, b);
+        let Some(w) = r.world else { continue };
+        let id = r.branch.id.clone();
+        for x in contradictions(&r.chronicle) {
+            searched.insert(named(&id, x.key()));
+        }
+        for (x, _) in search_orders(c, &flow, &r, MAX_ORDER_STATES).0 {
+            searched.insert(named(&id, x.key()));
+        }
+        let steps = flow.playthrough_in(w).steps;
+        let mut all = BTreeSet::new();
+        every(
+            &steps,
+            &OrderNode {
+                walk: flow.walk(),
+                ch: Chronicler::new(c),
+                tracker: ClashTracker::default(),
+                order: Vec::new(),
+            },
+            &mut all,
+        );
+        enumerated.extend(all.into_iter().map(|k| named(&id, k)));
+    }
+    (searched, enumerated)
+}
+
+/// `DW0927`: the branch is refused as unproven — the search reached its bound.
+fn unproven_diagnostic(r: &RealizedBranch, bound: usize, steps: usize, quiet: usize) -> Diagnostic {
+    Diagnostic::error(
+        DW_BRANCH_CONTRADICTION_UNPROVEN,
+        "quests",
+        format!("/content/quests#branch/{}", r.branch.id),
+        format!(
+            "on branch `{}`, whether any play order shows a hard event contradiction is \
+             UNPROVEN: the every-order search reached its bound of {bound} distinct play states \
+             before it had walked every legal order ({steps} step(s) on the branch's path, \
+             {quiet} of them quiet). The branch is refused rather than called clean — an order \
+             the search never reached may carry a clash. Branch assignment: {}. Prescription: \
+             cut the number of orders a player can interleave — chain strands that need not run \
+             side by side (an `after` edge, a quest-complete trigger), or drop a gate that makes \
+             a beat's effects depend on the order (a `forbids_flags`, or an effect gate on a \
+             flag several strands set). Do NOT raise the bound to get green",
+            r.branch.id,
+            assignment(&r.branch),
+        ),
+    )
 }
 
 /// What [`check_every_order`] examined on one branch.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct OrderWalk {
-    /// `(X, Y, subject)` candidates: a step that can leave a subject in a state a
-    /// beat of another step can contradict.
-    pub candidates: usize,
-    /// Of those, the ones at least one legal order was built for.
-    pub orders: usize,
-    /// Clashes found in those orders that the exported order does not show.
+    /// Steps on the branch's path.
+    pub steps: usize,
+    /// Of those, the quiet ones ([`quiet_steps`]).
+    pub quiet: usize,
+    /// Distinct play states the search walked.
+    pub states: usize,
+    /// Clashes found in other legal orders that the exported order does not show.
     pub refused: usize,
+    /// The search reached its bound.
+    pub unproven: bool,
+}
+
+/// One node of the every-order search: a legal order so far, its walk and its
+/// chronicle.
+#[derive(Clone)]
+struct OrderNode<'f, 'a, 'c> {
+    walk: crate::compiler::flow::Walk<'f, 'a>,
+    ch: Chronicler<'c>,
+    tracker: ClashTracker,
+    order: Vec<String>,
+}
+
+/// The play state two orders are merged on ([`check_every_order`]): the steps
+/// done, the flags held (interned), the value of every datum a gate reads, and
+/// per carried subject the last carrying line about it (interned).
+type PlayState = (Vec<u64>, Vec<usize>, Vec<Option<i64>>, Vec<(usize, usize)>);
+
+struct OrderSearch<'s> {
+    steps: &'s [PathStep],
+    quiet: &'s [bool],
+    carried: &'s BTreeSet<String>,
+    read: &'s BTreeSet<String>,
+    bound: usize,
+    visited: BTreeSet<PlayState>,
+    flag_ids: BTreeMap<String, usize>,
+    line_ids: BTreeMap<String, usize>,
+    seen: BTreeSet<(String, &'static str, String, String)>,
+    found: Vec<(Contradiction, Vec<String>)>,
+    hit: bool,
+}
+
+impl OrderSearch<'_> {
+    fn state(&mut self, n: &OrderNode<'_, '_, '_>) -> PlayState {
+        let mut done = vec![0u64; self.steps.len().div_ceil(64)];
+        for (i, s) in self.steps.iter().enumerate() {
+            if n.walk.done(&s.objective) {
+                done[i / 64] |= 1 << (i % 64);
+            }
+        }
+        let mut flags: Vec<usize> = Vec::new();
+        for f in n.walk.flags() {
+            let next = self.flag_ids.len();
+            flags.push(*self.flag_ids.entry(f.clone()).or_insert(next));
+        }
+        flags.sort_unstable();
+        let data: Vec<Option<i64>> = n
+            .walk
+            .data()
+            .into_iter()
+            .filter(|(id, _)| self.read.contains(*id))
+            .map(|(_, v)| v)
+            .collect();
+        let mut lines: Vec<(usize, usize)> = Vec::new();
+        for (subject, l) in &n.tracker.last {
+            if !self.carried.contains(subject) {
+                continue;
+            }
+            let s = {
+                let next = self.line_ids.len();
+                *self
+                    .line_ids
+                    .entry(format!("subject {subject}"))
+                    .or_insert(next)
+            };
+            let k = {
+                let next = self.line_ids.len();
+                *self.line_ids.entry(l.line_node()).or_insert(next)
+            };
+            lines.push((s, k));
+        }
+        (done, flags, data, lines)
+    }
+
+    /// `n` with step `i` taken, its new lines read by the rules; every clash
+    /// they complete that no earlier order showed is kept with this order.
+    fn child<'f, 'a, 'c>(&mut self, n: &OrderNode<'f, 'a, 'c>, i: usize) -> OrderNode<'f, 'a, 'c> {
+        let mut walk = n.walk.clone();
+        let j = walk.take(&self.steps[i]);
+        let mut ch = n.ch.clone();
+        ch.push_step(&j);
+        let mut tracker = n.tracker.clone();
+        let mut order = n.order.clone();
+        order.push(self.steps[i].objective.clone());
+        for l in &ch.take_lines() {
+            if let Some(x) = tracker.read(l)
+                && self.seen.insert(x.key())
+            {
+                self.found.push((x, order.clone()));
+            }
+        }
+        OrderNode {
+            walk,
+            ch,
+            tracker,
+            order,
+        }
+    }
+
+    fn explore(&mut self, n: &OrderNode<'_, '_, '_>) {
+        if self.hit {
+            return;
+        }
+        let key = self.state(n);
+        if !self.visited.insert(key) {
+            return;
+        }
+        if self.visited.len() > self.bound {
+            self.hit = true;
+            return;
+        }
+        if let Some(i) =
+            (0..self.steps.len()).find(|&i| self.quiet[i] && n.walk.legal(&self.steps[i]))
+        {
+            let next = self.child(n, i);
+            self.explore(&next);
+            return;
+        }
+        for i in 0..self.steps.len() {
+            if !n.walk.legal(&self.steps[i]) {
+                continue;
+            }
+            let next = self.child(n, i);
+            if next.walk.ended() {
+                continue;
+            }
+            self.explore(&next);
+        }
+    }
+}
+
+/// Every effect of `effs`, nested lists included, gated or not.
+fn each_effect<'e>(effs: &'e [QuestEffect], f: &mut dyn FnMut(&'e QuestEffect)) {
+    for e in effs {
+        f(e);
+        for list in e.nested_effect_lists() {
+            each_effect(list, f);
+        }
+    }
+}
+
+/// The data some effect gate compares (`requires_state`): the only reason a
+/// datum's value can change what a step fires.
+fn data_gates_read(c: &Campaign) -> BTreeSet<String> {
+    let mut out = BTreeSet::new();
+    for_each_campaign_effect(c, &mut |_, _, e| {
+        for cmp in e.requires_state() {
+            out.insert(cmp.state.as_str().to_string());
+        }
+    });
+    out
+}
+
+/// Which steps are **quiet** — the steps [`check_every_order`] may take first
+/// without losing an order. A step is quiet when all of these hold:
+///
+/// - it fires the same effects whenever it is taken: no effect in its
+///   objective's bundle or its quest's `on_complete` carries a flag or numeric
+///   gate;
+/// - it changes no gate another step reads: it sets no flag (by its option,
+///   its bundle, its quest's `on_complete`) that any `forbids_flags` anywhere or
+///   any effect's `requires_flags` reads, directly or through an ambient
+///   producer, and writes no datum any effect gate compares;
+/// - it does not end the delve;
+/// - none of its possible lines acts on a subject some step of the path can
+///   leave in a carried state (`carried`).
+fn quiet_steps(
+    c: &Campaign,
+    flow: &Flow<'_>,
+    steps: &[PathStep],
+    beats: &[Vec<(HappeningVerb, String)>],
+    carried: &BTreeSet<String>,
+) -> Vec<bool> {
+    // Flags whose value some gate reads in a way that is not "more is more".
+    let mut gates: BTreeSet<String> = BTreeSet::new();
+    for q in &c.quests.content.quests {
+        for o in &q.objectives {
+            gates.extend(o.forbids_flags().iter().map(|f| f.as_str().to_string()));
+        }
+    }
+    for t in &c.dialogue.content.dialogues {
+        for n in &t.nodes {
+            for o in &n.options {
+                gates.extend(o.forbids_flags.iter().map(|f| f.as_str().to_string()));
+            }
+        }
+    }
+    for_each_campaign_effect(c, &mut |_, _, e| {
+        gates.extend(e.requires_flags().iter().map(|f| f.as_str().to_string()));
+        gates.extend(e.forbids_flags().iter().map(|f| f.as_str().to_string()));
+    });
+    // A flag that lets an ambient producer set a gate flag reaches the gate.
+    loop {
+        let mut changed = false;
+        for (flag, requires) in flow.ambient_producers() {
+            if gates.contains(flag) {
+                for r in requires {
+                    changed |= gates.insert(r.clone());
+                }
+            }
+        }
+        if !changed {
+            break;
+        }
+    }
+    let read = data_gates_read(c);
+    steps
+        .iter()
+        .zip(beats)
+        .map(|(step, beats)| {
+            let Some(q) = c
+                .quests
+                .content
+                .quests
+                .iter()
+                .find(|q| q.id.as_str() == step.quest)
+            else {
+                return false;
+            };
+            let mut sets: Vec<String> = Vec::new();
+            if let Some(n) = step.talk_option
+                && let Some(npc) = talk_to_npc(c, &step.objective)
+                && let Some((_, opt)) = option_at(c, npc, n)
+            {
+                for e in &opt.effects {
+                    if let delvewright_dsl::DialogueEffect::SetFlag { flag } = e {
+                        sets.push(flag.as_str().to_string());
+                    }
+                }
+            }
+            let mut steady = true;
+            let mut bundle = |e: &QuestEffect| {
+                if !e.requires_flags().is_empty()
+                    || !e.forbids_flags().is_empty()
+                    || !e.requires_state().is_empty()
+                    || matches!(e.verb, Verb::CampaignComplete { .. })
+                    || e.writes_state()
+                        .is_some_and(|(id, _)| read.contains(id.as_str()))
+                {
+                    steady = false;
+                }
+                if let Verb::SetFlag { flag, .. } = &e.verb {
+                    sets.push(flag.as_str().to_string());
+                }
+            };
+            if let Some(effs) = q
+                .on_objective_complete
+                .get(&delvewright_dsl::ObjectiveId(step.objective.clone()))
+            {
+                each_effect(effs, &mut bundle);
+            }
+            each_effect(&q.on_complete, &mut bundle);
+            steady
+                && !sets.iter().any(|f| gates.contains(f))
+                && !beats.iter().any(|(v, s)| acts(*v) && carried.contains(s))
+        })
+        .collect()
 }
 
 /// Every `(verb, subject)` a step can put in the dated chronicle, whatever the
 /// order: its quest's own line, its objective's, the option it takes, and every
 /// effect its objective bundle or its quest's `on_complete` declares, gated or
-/// not. A superset, which only widens the candidates [`witness`] is asked about.
+/// not. A superset: it decides which subjects the rules track and which steps
+/// are quiet ([`quiet_steps`]), and a superset can only make fewer steps quiet.
 fn possible_beats(c: &Campaign, step: &PathStep) -> Vec<(HappeningVerb, String)> {
     let mut out = Vec::new();
     let Some(q) = c
@@ -1556,144 +1998,6 @@ fn possible_beats(c: &Campaign, step: &PathStep) -> Vec<(HappeningVerb, String)>
     out.sort();
     out.dedup();
     out
-}
-
-/// Which quests the first phase of [`witness`] withholds, per order it builds.
-///
-/// A quest's own line plays at whichever of its steps plays first, so a clash
-/// whose earlier line is `X`'s quest line needs an order in which no other step
-/// of that quest precedes `X`, and one whose later line is `Y`'s quest line
-/// needs one in which no other step of that quest precedes `Y`. The plain
-/// order is always tried; the withholding ones only where that quest's own line
-/// is about the subject.
-fn withholdings(
-    c: &Campaign,
-    steps: &[PathStep],
-    x: usize,
-    y: usize,
-    subject: &str,
-) -> Vec<(Option<String>, Option<String>)> {
-    let speaks = |quest: &str| {
-        c.quests
-            .content
-            .quests
-            .iter()
-            .find(|q| q.id.as_str() == quest)
-            .and_then(|q| q.happening.as_ref())
-            .is_some_and(|h| h.subject.as_ref().is_some_and(|s| s.as_str() == subject))
-    };
-    let qx = &steps[x].quest;
-    let qy = &steps[y].quest;
-    let xs: Vec<Option<String>> = if speaks(qx) {
-        vec![None, Some(qx.clone())]
-    } else {
-        vec![None]
-    };
-    let ys: Vec<Option<String>> = if speaks(qy) {
-        vec![None, Some(qy.clone())]
-    } else {
-        vec![None]
-    };
-    let mut out = Vec::new();
-    for hx in &xs {
-        for hy in &ys {
-            out.push((hx.clone(), hy.clone()));
-        }
-    }
-    out
-}
-
-/// The legal order [`check_every_order`] builds for one candidate. Phase one:
-/// every step the replay admits without `x`, `y`, the ending, or a step of a
-/// withheld quest, to fixpoint. Then `x`. Phase two: every step that says
-/// nothing acting about `subject` and does not end the delve, to fixpoint —
-/// so a quest `y` completes has every other step of it done. Then `y`. Returns
-/// the objectives in walk order and the dated chronicle, or `None` when no such
-/// order exists from this construction.
-#[allow(clippy::too_many_arguments)]
-fn witness(
-    c: &Campaign,
-    flow: &Flow<'_>,
-    steps: &[PathStep],
-    x: usize,
-    y: usize,
-    subject: &str,
-    hold_x: Option<String>,
-    hold_y: Option<String>,
-) -> Option<(Vec<String>, Vec<ChronicleLine>)> {
-    let mut walk = flow.walk();
-    let mut ch = Chronicler::new(c);
-    let mut order: Vec<String> = Vec::new();
-    let held = |s: &PathStep| {
-        hold_x.as_deref() == Some(s.quest.as_str()) || hold_y.as_deref() == Some(s.quest.as_str())
-    };
-    // Phase one: the most any order of this shape can have done before `x`.
-    loop {
-        let mut progressed = false;
-        for (i, s) in steps.iter().enumerate() {
-            if i == x || i == y || held(s) || !walk.legal(s) {
-                continue;
-            }
-            let mut ahead = walk.clone();
-            let j = ahead.take(s);
-            if ahead.ended() {
-                continue;
-            }
-            walk = ahead;
-            ch.push_step(&j);
-            order.push(s.objective.clone());
-            progressed = true;
-        }
-        if !progressed {
-            break;
-        }
-    }
-    if !walk.legal(&steps[x]) {
-        return None;
-    }
-    let j = walk.take(&steps[x]);
-    ch.push_step(&j);
-    order.push(steps[x].objective.clone());
-    if walk.ended() {
-        return None;
-    }
-    // Phase two: everything that says nothing acting about `subject`.
-    loop {
-        let mut progressed = false;
-        for (i, s) in steps.iter().enumerate() {
-            if i == y || !walk.legal(s) {
-                continue;
-            }
-            let mut ahead = walk.clone();
-            let j = ahead.take(s);
-            if ahead.ended() {
-                continue;
-            }
-            let mut chead = ch.clone();
-            let from = chead.lines.len();
-            chead.push_step(&j);
-            if chead.lines[from..]
-                .iter()
-                .any(|l| acts(l.verb) && l.subject.as_deref() == Some(subject))
-            {
-                continue;
-            }
-            walk = ahead;
-            ch = chead;
-            order.push(s.objective.clone());
-            progressed = true;
-        }
-        if !progressed {
-            break;
-        }
-    }
-    if !walk.legal(&steps[y]) {
-        return None;
-    }
-    let j = walk.take(&steps[y]);
-    ch.push_step(&j);
-    order.push(steps[y].objective.clone());
-    Some((order, ch.lines))
 }
 
 /// The name of the branch point a branch belongs to (single-point campaigns

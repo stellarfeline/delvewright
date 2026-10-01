@@ -2175,7 +2175,7 @@ impl World {
     }
 
     /// [`World::walked_legs`], each leg paired with the gate cells sealed while the
-    /// player walks it ([`leg_seal`]). The trap proof needs the seal itself, not
+    /// player walks it ([`World::walked_leg_region_state`]). The trap proof needs the seal itself, not
     /// just the route: a disarm affordance is only genuinely reachable "before the
     /// trap" if it is reachable under the gate state in force at that point.
     fn walked_legs_sealed(&self, plan: &Plan) -> Vec<(LegRoute, BTreeSet<[i32; 3]>)> {
@@ -5169,7 +5169,7 @@ pub fn reachable_under_every_quest_state(
 }
 
 /// Route every walked leg between consecutive visited positions over its
-/// causally-sealed world ([`leg_seal`]), returning the proven cell routes. The
+/// causally-sealed world ([`World::walked_leg_region_state`]), returning the proven cell routes. The
 /// shared core of [`World::walked_legs`] and [`critical_path_routes`]; a leg whose
 /// endpoints do not snap or that does not route is omitted (that is exactly the
 /// [`route_visited`] failure, reported there as `DW0311`).
@@ -5235,7 +5235,7 @@ fn route_walked_legs(
 /// [`check_critical_path`], split out so it is unit-testable without a full
 /// [`Plan`]). A `transport_before` leg is a teleport ride and is skipped. Each leg
 /// is routed over the world with any gate sealed by an earlier `close-gate`
-/// ([`leg_seal`]) forced solid, so a forced path that must re-cross a sealed gate
+/// ([`World::walked_leg_region_state`]) forced solid, so a forced path that must re-cross a sealed gate
 /// fails [`DW_CRITICAL_UNROUTABLE`].
 /// Render a blamed-volume list for a `DW0510` message: backticked ids joined by
 /// `, `, or the honest `(none — the volume set is empty)` when the counterfactual

@@ -93,6 +93,7 @@ inputs = [
 name = "harness"
 inputs = [
   { glob = "harness/**", why = "`npm ci`, `tsc --noEmit` and `node --test` inside `harness/`" },
+  { glob = "tools/lib/rcon.mjs", why = "`harness/test/rejection.test.ts` reads it and asserts `harness/src/rejection.ts` carries the same refusal rule; it is the only file outside `harness/` the job reads" },
 ]
 
 [[group]]
