@@ -861,7 +861,7 @@ impl WaveLethalFinding {
     fn route(&self) -> String {
         let seat = self.hit.path.first().copied().unwrap_or([0, 0, 0]);
         let from = self.hit.path.last().copied().unwrap_or(seat);
-        let at = self.hit.entry.last().copied().unwrap_or(from);
+        let at = self.hit.way_in.last().copied().unwrap_or(from);
         // The turns of the way, so a reader can find the doorway it took.
         let turns: Vec<String> = self
             .hit
@@ -949,7 +949,7 @@ impl WaveLethalBinding {
                 "volume": f.volume,
                 "how": f.hit.how,
                 "path": f.hit.path,
-                "entry": f.hit.entry,
+                "way_in": f.hit.way_in,
                 "opened": f.opened.iter().map(|(c, b)| serde_json::json!({"cell": c, "block": b})).collect::<Vec<_>>(),
             })
         };
@@ -1152,7 +1152,7 @@ fn barriers_on(
     blocks: &std::collections::BTreeMap<[i32; 3], String>,
 ) -> Vec<([i32; 3], String)> {
     let mut on: std::collections::BTreeSet<[i32; 3]> = std::collections::BTreeSet::new();
-    for c in hit.path.iter().chain(&hit.entry) {
+    for c in hit.path.iter().chain(&hit.way_in) {
         for dy in [0, 1] {
             let cell = [c[0], c[1] + dy, c[2]];
             if openable.contains(&cell) {
@@ -1161,7 +1161,7 @@ fn barriers_on(
         }
     }
     if on.is_empty() {
-        for c in hit.path.iter().chain(&hit.entry) {
+        for c in hit.path.iter().chain(&hit.way_in) {
             for d in [[-1, 0], [1, 0], [0, -1], [0, 1]] {
                 for dy in [-1, 0, 1] {
                     let cell = [c[0] + d[0], c[1] + dy, c[2] + d[1]];
@@ -1195,7 +1195,7 @@ mod tests {
     fn hit() -> crate::compiler::nav::VolumeHit {
         crate::compiler::nav::VolumeHit {
             path: vec![[0, 1, 0], [1, 1, 0]],
-            entry: vec![[2, 1, 0]],
+            way_in: vec![[2, 1, 0]],
             how: "stepping in",
         }
     }

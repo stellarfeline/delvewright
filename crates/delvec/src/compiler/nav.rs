@@ -6119,7 +6119,7 @@ pub struct VolumeHit {
     pub path: Vec<[i32; 3]>,
     /// The cells it moved through on the way in, ending in the first one whose
     /// occupant the volume catches. One cell when it stood or floated there.
-    pub entry: Vec<[i32; 3]>,
+    pub way_in: Vec<[i32; 3]>,
     /// How it got in, in words for a report.
     pub how: &'static str,
 }
@@ -6221,7 +6221,7 @@ impl World {
         };
         let mut pred: BTreeMap<[i32; 3], [i32; 3]> = BTreeMap::new();
         let mut sunk: BTreeSet<[i32; 3]> = BTreeSet::new();
-        // Ways in found from the cell being expanded: (volume, entry, how).
+        // Ways in found from the cell being expanded: (volume, way in, how).
         let mut found: Vec<(usize, Vec<[i32; 3]>, &'static str)> = Vec::new();
         let mut queue: std::collections::VecDeque<[i32; 3]> = roots.iter().copied().collect();
         let clear = |c: [i32; 3]| !self.is_occupied(c);
@@ -6305,7 +6305,7 @@ impl World {
                     }
                 }
             }
-            for (v, entry, how) in found.drain(..) {
+            for (v, way_in, how) in found.drain(..) {
                 if out.hits[v].is_some() {
                     continue;
                 }
@@ -6314,7 +6314,7 @@ impl World {
                     path.push(*p);
                 }
                 path.reverse();
-                out.hits[v] = Some(VolumeHit { path, entry, how });
+                out.hits[v] = Some(VolumeHit { path, way_in, how });
             }
             let next = if mob {
                 self.mob_moves(cur, fp)
@@ -15590,7 +15590,7 @@ mod mob_reach_tests {
         let r = w.reach_into_volumes(&[[0, 1, 1]], &zombie(), true, Some(16.0), &[vol]);
         let hit = r.hits[0].as_ref().expect("the shaft's volume is reached");
         assert_eq!(hit.how, "a fall");
-        assert_eq!(hit.entry.last(), Some(&[2, -30, 1]));
+        assert_eq!(hit.way_in.last(), Some(&[2, -30, 1]));
     }
 
     /// Water over a volume: a mob sinks to it, a player body (which does not
