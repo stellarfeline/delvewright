@@ -6,10 +6,12 @@ Companion to [`tools.md`](tools.md) (*what* the tools are) and ADR-0023 (*how*
 they are distributed and what is a declared prerequisite).
 
 Every number below carries the command that produced it, so a later session
-**re-measures instead of re-litigating**. Unless stated otherwise, measurements
-are from this tree on macOS 26.6 / `aarch64-apple-darwin` / rustc 1.97.1 (the
-pin in `rust-toolchain.toml`), with the engine at `versions.toml
-[engine].version` 1.1.0.
+**re-measures instead of re-litigating**. Unless stated otherwise, the binary,
+toolchain and image figures are frozen measurements taken at engine 1.1.0
+(`delvec 1.1.0, dsl 0.19.0, mc 1.21.11`) on macOS 26.6 / `aarch64-apple-darwin`
+/ rustc 1.97.1; re-measure them with [§Re-measuring](#re-measuring) before
+quoting them for a later engine. The plugin figures in §2 are counted from the
+committed tree.
 
 ---
 
@@ -46,15 +48,17 @@ cache and copies the plugin out, and their own filesystem gets no working tree.
 
 | item | download | on disk | how it is obtained |
 |---|---|---|---|
-| the plugin (30 files) | 264,683 B | same | `/plugin install delvewright@delvewright` |
-| — of which `SKILL.md`, the spine | 23,539 B | same | always in context once the skill loads |
-| — of which `references/` (24 files) | 214,119 B | same | level 3: costs nothing until a step reads one |
-| — of which `scripts/` (3 files) | 25,455 B | same | level 3: run through bash, only the output enters context |
+| the plugin (31 files) | 341,303 B | same | `/plugin install delvewright@delvewright` |
+| — of which `SKILL.md`, the spine | 27,922 B | same | always in context once the skill loads |
+| — of which `references/` (24 files) | 274,171 B | same | level 3: costs nothing until a step reads one |
+| — of which `scripts/` (4 files) | 37,237 B | same | level 3: run through bash, only the output enters context |
 | `delvec` binary | 9,256,047 B | 24,489,840 B | release shelf (default), `cargo install`, or a checkout (ADR-0023 §1–§2) |
 | `LICENSE` (travels in every archive) | — | 35,149 B | inside the archive |
 | prefab library (`campaigns/prefabs`) | 95,355 B | 479,232 B, 74 files | the content repo — **OPTIONAL** (ADR-0027 §1): taken at step 2 by a campaign that seats shipped pieces, and by no other |
 
 ```
+git ls-tree -r -l HEAD -- .claude/skills/delvewright | awk '{n++; s+=$4} END{print n, s}'
+                                                             → 31 341303 (plugin; same per subdirectory)
 bash tools/ci/build-release-binaries.sh --target aarch64-apple-darwin
 ls -l dist/delvec-v1.1.0-aarch64-apple-darwin.tar.gz        → 9,256,047 B
 ls -l target/aarch64-apple-darwin/release/delvec             → 24,489,840 B
@@ -88,9 +92,16 @@ that guarantees every capability on every machine (§2 there). This is the 2.1 G
   Linux, a Vulkan loader the binary opens when asked). `delvec snapshot`,
   `blocking-chart`, `viewer` and the rest of the CPU surface need none.
 
-### NOT needed by the authoring loop
+### Required by the page's later steps, sized in §5
 
-- **Docker, a JDK, a Minecraft server jar, Chunky.** All validation-tier (§5).
+- **Docker with Compose v2, and a JDK 21+.** The page's Init I1 requires both:
+  step 9's play server and step 10's ladder run in Docker, and the Minecraft
+  server jar is fetched at run time.
+- **Chunky, and a JDK 17 to build it.** Init I7 names them; step 12 installs the
+  pinned core.
+
+None of these is part of the binary or the plugin, and none is needed to author,
+validate statically, compile or look at a delve.
 
 ---
 
@@ -129,7 +140,8 @@ docker images --format '{{.Repository}}:{{.Tag}}\t{{.Size}}'
 → dw-*-bot:latest          1.04GB     (the mineflayer harness image)
 
 docker manifest inspect ghcr.io/stellarfeline/delvewright-toolserver@sha256:bce98718…
-→ 28 layers, 341,537,417 B compressed (amd64 pull)
+→ 28 layers, 341,537,417 B compressed (amd64 pull; the digest pinned at engine 1.1.0 —
+  the current pin is versions.toml [images.toolserver].digest)
 ```
 
 A creator never obtains any of these to *author*; a player obtains only the delve
@@ -138,9 +150,9 @@ image, and that is the product, not the toolchain.
 ### `cargo install`'s own disk cost
 
 A fresh `CARGO_HOME` after installing the published crate held 35,212 KB of
-registry index plus crate sources when the binary resolved 50 packages; it now
-resolves 202 (§4) and that figure is **not re-measured** in this round — it is
-a one-time, shared-across-all-Rust-work cost either way, not a per-delve one.
+registry index plus crate sources when the binary resolved 50 packages; at 202
+packages (§4) the figure is **not measured** — it is a one-time,
+shared-across-all-Rust-work cost either way, not a per-delve one.
 
 ---
 
@@ -172,15 +184,15 @@ Panic/unwind machinery (`__eh_frame` + `__gcc_except_tab` + `__unwind_info`) is
 
 ### 4.2 The GPU render stack is the growth, and it is deliberate
 
-The same script on the same host produced an 8,053,424 B binary (3,251,645 B
-archived) when the shelf carried the compiler and the CPU render surface alone
-and the GPU arms were a second binary built from a checkout. Carrying the whole
+The same script on the same host produces an 8,053,424 B binary (3,251,645 B
+archived) from the compiler and the CPU render surface alone, with the GPU arms
+left to a second binary built from a checkout. Carrying the whole
 creator in one binary (ADR-0023 §3) costs **+16,436,416 B on disk and
 +6,004,402 B to download**: Nucleation's mesher and block tables, wgpu and its
 per-platform backends (Metal here; Vulkan and GL on Linux; DX12 on Windows),
 naga, and the image and hashing crates they bring. That is a **record, not a
 budget**: binary size under 100 MB is not a decision input (ADR-0023 §1), and
-the alternative it replaces was a second binary a creator had to find, build
+the alternative is a second binary a creator has to find, build
 and keep in step.
 
 ### 4.3 Embedded harvested registry data: 1,280,075 B
@@ -242,14 +254,14 @@ flag sits where it does; the 26% gap is recorded, not hidden.
 
 ---
 
-## 5. Validation tiers (never part of the authoring loop)
+## 5. Validation tiers (the page's later steps, never the authoring loop)
 
 Listed so the split is unambiguous: none of this is needed to author, validate
 statically, compile, or look at a delve.
 
 | artifact | tier | size | command / note |
 |---|---|---|---|
-| `delvewright-toolserver` image | PackTest + bot ladder | 341,537,417 B pull, ~865 MB on disk | `docker manifest inspect ghcr.io/…/delvewright-toolserver@sha256:bce98718…` |
+| `delvewright-toolserver` image | PackTest + bot ladder | 341,537,417 B pull, ~865 MB on disk | `docker manifest inspect ghcr.io/…/delvewright-toolserver@sha256:bce98718…` (the digest pinned at engine 1.1.0) |
 | built delve image | PackTest + bot ladder | 863–865 MB | `docker images` |
 | harness bot image | bot ladder | 1.04 GB | `docker images` |
 | Minecraft server jar | any server boot | 56,327,581 B | `versions.toml [minecraft].server_jar_size` — fetched at run time, never baked (EULA) |
@@ -261,7 +273,7 @@ statically, compile, or look at a delve.
 
 ```bash
 # the shelf, as a user fetches it
-gh release download v<version> -R stellarfeline/delvewright -p '*.tar.gz' -p SHA256SUMS
+gh release download delvec--v<version> -R stellarfeline/delvewright -p '*.tar.gz' -p SHA256SUMS
 shasum -a 256 -c SHA256SUMS
 tar -xzf delvec-v<version>-<target>.tar.gz && ls -l delvec
 

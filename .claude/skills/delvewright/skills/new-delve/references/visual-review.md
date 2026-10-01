@@ -130,8 +130,8 @@ Turning them into pictures needs Chunky, and **this is the step that installs
 it**: Init named it and deliberately did not fetch it. Every scene is written for
 one core, the pin in the engine's `versions.toml`, and the install builds exactly
 that core from Chunky's source at the pinned revision — once per machine, with
-the network, in about a minute. Chunky's own build runs under JDK 17 and no
-other, so find one first; none on the machine is a stop, and installing it is the
+the network, in about a minute. Chunky's own build runs under the JDK
+`[render].chunky_build_java` names and no other, so find one first; none on the machine is a stop, and installing it is the
 user's action:
 
 ```sh
@@ -216,8 +216,8 @@ delvec --prefabs "$DELVEWRIGHT_PREFABS" render piece "$DELVEWRIGHT_PREFABS/<piec
 delvec --prefabs "$DELVEWRIGHT_PREFABS" render fidelity-gate
 ```
 
-`delvec --prefabs "$DELVEWRIGHT_PREFABS" render batch <dir>` renders every prefab in a directory — 36 pieces and
-435 shots for the shipped library — which is a library-curation tool, not a
+`delvec --prefabs "$DELVEWRIGHT_PREFABS" render batch <dir>` renders every prefab in a directory — the whole
+shipped library — which is a library-curation tool, not a
 campaign-review one. A site-plan campaign has no prefabs at this step at all.
 
 **A piece with floor in it whose light nobody has measured is refused here**

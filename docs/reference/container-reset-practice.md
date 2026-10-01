@@ -114,7 +114,6 @@ forgotten one fails silently.
 
 ## 4. What was not researched
 
-The public-server threat model (which keys of the 15-key pinned set and the
-55 host-decided keys a public host must read); what a player's client shows
+The public-server threat model (which keys of the pinned set and the host-decided keys (`compiler.md`, *Unpinned keys*) a public host must read); what a player's client shows
 during the dead time on each client version; the reset's cost on the prod
 host. Each is out of spec-0064's scope and is named there.

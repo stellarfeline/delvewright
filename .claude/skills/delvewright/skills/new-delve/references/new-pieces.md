@@ -29,7 +29,7 @@ this needs are subcommands of the one binary Init I3 installed.
    **Screen** the shelf by constraints rather than by a guessed hex:
 
    ```sh
-   python3 "$DELVEWRIGHT_ENGINE/tools/creator/block-appearance.py" --screen --where full_cube --where 'L>=0.75' \
+   "$DELVEWRIGHT_PYTHON" "$DELVEWRIGHT_ENGINE/tools/creator/block-appearance.py" --screen --where full_cube --where 'L>=0.75' \
        --where 'C_mean<0.02' --where 'texture_range<=0.30'
    ```
 
@@ -148,8 +148,7 @@ this needs are subcommands of the one binary Init I3 installed.
    For a hand-built or ingested piece, where no `mark` ever ran, the same role
    is given after the fact with `delvec --prefabs "$DELVEWRIGHT_PREFABS" prefab anchor --role <term>` /
    `--no-role`
-   (step 6) — run `--help` on the authoring pin's own binary before trusting this
-   route name, since a later engine may fold it under a different command.
+   (step 6).
 
 ## 4. Expand, and let the machine judge
 
@@ -207,7 +206,7 @@ this needs are subcommands of the one binary Init I3 installed.
    `zones.json` there with the region, seed and gate claims it is built at
    (`traversable`, `allow_falls`, `reachable_floor`, `symmetric`).
    `delvec --prefabs "$DELVEWRIGHT_PREFABS" grammar audit --campaign-root .` judges every zone a
-   campaign declares, and CI in both repositories runs it — a program that
+   campaign declares, and the engine's CI runs it over the pinned content — a program that
    directory carries and the manifest does not name is a red.
 
    **One design the gate cannot be told about: a one-way descent.** A level a body
