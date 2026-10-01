@@ -583,7 +583,7 @@ fn replay_with(
         // `setblock`/`fill` on a live world — a falling block placed unsupported
         // falls, exactly like placement). A despawn is always a defect (DW0313's
         // rule), attributed to this batch.
-        let settled = assembled::resettle(&mut assembled.blocks);
+        let settled = assembled::resettle(std::sync::Arc::make_mut(&mut assembled.blocks));
         if enforce && let Some(lost) = settled.iter().find(|s| s.to.is_none()) {
             return Err(Failure {
                 code: assembled::DW_GRAVITY_DESPAWN,
@@ -675,7 +675,7 @@ fn check_batch_invariants(
     // were missing from `emit::build`'s edit arm.
     let premises = crate::compiler::nav::Premises::of_plan(plan, assembled.gate_seals.clone());
     let with_fixtures = {
-        let mut occ = assembled::occupancy_of(assembled.blocks.clone(), &assembled.open_gates);
+        let mut occ = assembled::occupancy_over(&assembled.blocks, &assembled.open_gates);
         occ.solid.extend(relight.extra_solid.iter().copied());
         crate::compiler::nav::World::from_occupancy(occ, premises)
     };
@@ -1066,9 +1066,9 @@ fn write_cell(
     block: &str,
 ) {
     if assembled::is_air(block) {
-        assembled.blocks.remove(&cell);
+        std::sync::Arc::make_mut(&mut assembled.blocks).remove(&cell);
     } else {
-        assembled.blocks.insert(cell, block.to_string());
+        std::sync::Arc::make_mut(&mut assembled.blocks).insert(cell, block.to_string());
     }
     if assembled::is_fence_gate(block) && assembled::state_value(block, "open") == Some("true") {
         assembled.open_gates.insert(cell);
@@ -1883,7 +1883,7 @@ fn relight_region(
     // two passes are the same question asked over one area, so they are answered
     // over the same kind of world.
     let nav = crate::compiler::nav::World::from_occupancy(
-        assembled::occupancy_of(assembled.blocks.clone(), &assembled.open_gates),
+        assembled::occupancy_over(&assembled.blocks, &assembled.open_gates),
         crate::compiler::nav::Premises::geometry_only(),
     );
     let moves = crate::compiler::nav::plan_moves(plan, &nav).unwrap_or_default();
@@ -1908,7 +1908,8 @@ fn relight_region(
             ),
         });
     }
-    let mut model = crate::compiler::light::LightModel::from_blocks(assembled.blocks.clone());
+    let mut model =
+        crate::compiler::light::LightModel::from_shared(std::sync::Arc::clone(&assembled.blocks));
     let mut out = crate::compiler::light::Relight::default();
     crate::compiler::light::relight_area(
         &mut model,
@@ -2291,7 +2292,7 @@ mod tests {
             }
         }
         Assembled {
-            blocks,
+            blocks: std::sync::Arc::new(blocks),
             settled: Vec::new(),
             open_gates: BTreeSet::new(),
             gate_seals: Vec::new(),

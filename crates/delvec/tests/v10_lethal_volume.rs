@@ -731,8 +731,8 @@ fn with_fixture_in<R>(
     let replay = delvec::compiler::edit::replay(&plan, &prefabs, &s)
         .expect("the edit script replays")
         .expect("the fixture declares world-edits");
-    let occ = delvec::compiler::assembled::occupancy_of(
-        replay.assembled.blocks.clone(),
+    let occ = delvec::compiler::assembled::occupancy_over(
+        &replay.assembled.blocks,
         &replay.assembled.open_gates,
     );
     let world = delvec::compiler::nav::World::from_occupancy(

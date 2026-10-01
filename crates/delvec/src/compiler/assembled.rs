@@ -857,7 +857,11 @@ pub(crate) fn resettle(blocks: &mut BTreeMap<[i32; 3], String>) -> Vec<Settled> 
 /// per-falling-block settle outcomes (for the gravity-despawn diagnostic).
 pub struct Assembled {
     /// The gravity-settled cell→block map (cells absent from it are air).
-    pub blocks: BTreeMap<[i32; 3], String>,
+    ///
+    /// Shared rather than owned so a model that reads it whole (the light
+    /// model) holds it without a copy; the edit replay, its one writer,
+    /// mutates its own copy through `Arc::make_mut`.
+    pub blocks: std::sync::Arc<BTreeMap<[i32; 3], String>>,
     /// One outcome per falling block: where it came to rest, or `None` if it
     /// despawned into the void.
     pub settled: Vec<Settled>,
@@ -881,7 +885,7 @@ pub fn assemble(plan: &Plan, structures: &BTreeMap<String, Vec<u8>>) -> Assemble
     let mut placed = placed_blocks(plan, structures);
     let settled = settle(&mut placed.blocks);
     Assembled {
-        blocks: placed.blocks,
+        blocks: std::sync::Arc::new(placed.blocks),
         settled,
         open_gates: placed.open_gates,
         gate_seals: placed.gate_seals,
@@ -896,7 +900,7 @@ pub fn assembled_blocks(
     plan: &Plan,
     structures: &BTreeMap<String, Vec<u8>>,
 ) -> BTreeMap<[i32; 3], String> {
-    assemble(plan, structures).blocks
+    std::sync::Arc::unwrap_or_clone(assemble(plan, structures).blocks)
 }
 
 /// The standard vanilla horizontal flow decay: a water source spreads at most this

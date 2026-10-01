@@ -493,11 +493,32 @@ pub fn passes_light(name: &str) -> bool {
 /// but keeping block *identity* so opacity and emission can be evaluated. Cells
 /// absent from `blocks` are air.
 pub struct LightModel {
-    /// Non-air cells → block id.
-    blocks: BTreeMap<[i32; 3], String>,
+    /// Non-air cells → block id: the assembled world's map, shared, plus the
+    /// fixtures this model has placed.
+    blocks: crate::compiler::cellset::CellMap<String>,
     /// Inclusive world AABB of all cells (for the sky-column scan).
     min: [i32; 3],
     max: [i32; 3],
+}
+
+/// The inclusive box `cells` occupy, or the unit box at the origin when there
+/// are none.
+fn occupied_box<'a>(cells: impl Iterator<Item = &'a [i32; 3]>) -> ([i32; 3], [i32; 3]) {
+    let mut min = [i32::MAX; 3];
+    let mut max = [i32::MIN; 3];
+    let mut any = false;
+    for c in cells {
+        any = true;
+        for a in 0..3 {
+            min[a] = min[a].min(c[a]);
+            max[a] = max[a].max(c[a]);
+        }
+    }
+    if any {
+        (min, max)
+    } else {
+        ([0, 0, 0], [0, 0, 0])
+    }
 }
 
 impl LightModel {
@@ -515,18 +536,7 @@ impl LightModel {
     /// Build directly from a cell→block map (test entry point; no plan needed),
     /// over the box the given cells occupy.
     pub fn from_blocks(blocks: BTreeMap<[i32; 3], String>) -> Self {
-        let mut min = [i32::MAX; 3];
-        let mut max = [i32::MIN; 3];
-        for c in blocks.keys() {
-            for a in 0..3 {
-                min[a] = min[a].min(c[a]);
-                max[a] = max[a].max(c[a]);
-            }
-        }
-        if blocks.is_empty() {
-            min = [0, 0, 0];
-            max = [0, 0, 0];
-        }
+        let (min, max) = occupied_box(blocks.keys());
         LightModel::from_blocks_within(blocks, min, max)
     }
 
@@ -548,7 +558,22 @@ impl LightModel {
         min: [i32; 3],
         max: [i32; 3],
     ) -> Self {
-        LightModel { blocks, min, max }
+        LightModel {
+            blocks: blocks.into(),
+            min,
+            max,
+        }
+    }
+
+    /// [`Self::from_blocks`] over a shared map, without copying it; the box is
+    /// the one its cells occupy.
+    pub fn from_shared(blocks: std::sync::Arc<BTreeMap<[i32; 3], String>>) -> Self {
+        let (min, max) = occupied_box(blocks.keys());
+        LightModel {
+            blocks: crate::compiler::cellset::CellMap::from_shared(blocks),
+            min,
+            max,
+        }
     }
 
     /// The block id at a cell (`"minecraft:air"` if absent).
@@ -703,7 +728,7 @@ impl LightField {
         // Resolve each DISTINCT block id once. The assembled world is overwhelmingly
         // repeated ids, and `emission`/`passes_light` are a pair of string matches.
         let mut resolved: BTreeMap<&str, u8> = BTreeMap::new();
-        for (c, name) in &model.blocks {
+        for (c, name) in model.blocks.iter() {
             let Some(i) = f.index(*c) else { continue };
             let packed = *resolved
                 .entry(name.as_str())
@@ -1147,7 +1172,7 @@ pub fn relight_over(plan: &Plan, assembled: &crate::compiler::assembled::Assembl
     let moves = crate::compiler::nav::plan_moves(plan, &nav).unwrap_or_default();
     let required = nav.required_path_cells(plan, &moves);
 
-    let mut model = LightModel::from_blocks(assembled.blocks.clone());
+    let mut model = LightModel::from_shared(std::sync::Arc::clone(&assembled.blocks));
     let mut out = Relight::default();
     // The dark set of the whole build, kept per SITE and reported once at the end
     // (`dark_diagnostic`). Accumulated rather than raised per area because the

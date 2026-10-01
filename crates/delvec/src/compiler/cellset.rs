@@ -65,6 +65,17 @@ impl<V> From<BTreeMap<Cell, V>> for CellMap<V> {
     }
 }
 
+impl<V> CellMap<V> {
+    /// A map whose shared part is `base`, with no edits of its own.
+    pub fn from_shared(base: Arc<BTreeMap<Cell, V>>) -> Self {
+        CellMap {
+            len: base.len(),
+            base,
+            over: BTreeMap::new(),
+        }
+    }
+}
+
 impl<V> CellMap<V>
 where
     V: Clone + PartialEq,

@@ -1505,11 +1505,16 @@ pub fn build_with_warnings(
             // motivating case: roof and two walls carved off, noon pinned, and
             // two of three footmen dead to sunlight before the party could
             // engage them, with every other proof green.
-            crate::compiler::daylight::check_daylight_staging(plan, &world, blocks, &waves)
-                .map_err(|e| BuildFailure::Diagnostic {
-                    code: e.code,
-                    message: e.message,
-                })?;
+            crate::compiler::daylight::check_daylight_staging(
+                plan,
+                &world,
+                &assembled.blocks,
+                &waves,
+            )
+            .map_err(|e| BuildFailure::Diagnostic {
+                code: e.code,
+                message: e.message,
+            })?;
             // …and its mirror: prove the body will fight at all (DW0920). A
             // drowned takes no land target while the level is bright, so a choir
             // staged on dry ground under a bright hour walks to its water and

@@ -1168,7 +1168,7 @@ impl World {
         let assembled = crate::compiler::assembled::assemble(plan, structures);
         let seals = assembled.gate_seals.clone();
         Self::from_occupancy(
-            crate::compiler::assembled::occupancy_of(assembled.blocks, &assembled.open_gates),
+            crate::compiler::assembled::occupancy_over(&assembled.blocks, &assembled.open_gates),
             Premises::of_plan(plan, seals),
         )
     }
