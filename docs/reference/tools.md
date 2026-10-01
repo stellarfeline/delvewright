@@ -1055,7 +1055,7 @@ under. Every byte is inline.
 
 ```sh
 delvec viewer campaigns/prefabs/island-mountain.nbt -o .sheets/mountain.html
-delvec viewer campaigns/prefabs -o .sheets/library.html      # all 36, one page
+delvec viewer campaigns/prefabs -o .sheets/library.html      # all 38, one page
 ```
 
 **The blocks are real blocks.** The page carries the pinned client jar's own
@@ -1163,12 +1163,12 @@ count, on the page and on stderr:
   property matches no case at all: a `cobblestone_wall` with nothing written drew
   a **solid cube** where a wall post stands, and every tool reported it resolved.
   Measured over the library at the pinned content SHA: **15 palette entries
-  across 7 of the 36 prefabs**, which is 7 distinct blockstates — a barrel's
+  across 7 of the 38 prefabs**, which is 7 distinct blockstates — a barrel's
   `open`, a grass block's and a podzol's `snowy`, a button's `powered`, a fence
   gate's `in_wall`. No connection class is among them: an omitted connection is
   `DW0735`, and the generators write those states from the piece's own
   neighbours. Counting every unwritten property instead of only the selecting
-  ones gives 84 entries across 20 prefabs; the difference is `waterlogged` and
+  ones gives 84 entries across 20 prefabs at content `8e09c30c`; the difference is `waterlogged` and
   the non-selecting residue beside it (a trapdoor's `powered`, `signal_fire`,
   `cracked`, `facing`, `distance`) — real, and invisible.
 - **drawn as nothing, or drawn as the missing-texture checker** — measured in the
@@ -1194,8 +1194,8 @@ a resource pack is entitled to be partial and gets `DW0790` instead.
 complicated the building is rather than how big its box is, and only exposed
 faces become triangles — in the browser, from that grid, rebuilt through the
 renderer's own `addBlock`. Measured: `keep-gate-room` **368 KiB**;
-`island-mountain` (36×28×42, 42,336 cells) **464 KiB**; all 36 committed prefabs
-on one page **656 KiB**, of which **281 KiB** is the vendored renderer, present
+`island-mountain` (36×28×42, 42,336 cells) **464 KiB**; all 38 committed prefabs
+on one page **3639 KiB**, of which **281 KiB** is the vendored renderer, present
 once however many prefabs a page holds. The ceiling is 16 MB.
 
 Two runs over the same input produce the same page byte for byte (ADR-0006).

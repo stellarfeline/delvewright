@@ -1656,7 +1656,9 @@ one more. An entry belongs there only while the engine is missing a capability
 the program needs. Ids are audit labels, so both corpora are recordable:
 `library/<program>` and `<campaign>/<zone>`.
 
-The pinned campaign corpus carries no zone program (§4f;
+The pinned campaign corpus declares no zone in a `zones.json`, and two of its
+campaigns, `doune-castle-tour` and `vesperhold`, carry program files under
+`design/programs/` that no `zones.json` names, which this sweep refuses (§4f;
 `.github/content-zone-corpus.json` holds the inventory). The rule library holds
 one recorded red: `library/causeway` (`DW0800`) floods its ward floor to
 ceiling on both flanks of its spine, and that body of water is not contained —
