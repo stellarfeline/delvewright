@@ -145,7 +145,7 @@
   restaged. The mirror case: a drowned takes no land target while the level
   is bright — `day`, `noon` and `dusk` in `clear` or `rain` — and walks to water
   instead, so a drowned fight on dry ground at those hours is a fight nobody
-  answers. Stand the fight in water (a floor of waterlogged bottom
+  answers (`DW0920`). Stand the fight in water (a floor of waterlogged bottom
   slabs is walkable and wet), use a species that fights on land, or play it in
   thunder or at night; never wall the drowned away from its water to keep it
   alive. Never route wave mobs like actors: waves are native AI; if a beat

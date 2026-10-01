@@ -22,19 +22,17 @@ relation to each other, so a number taken from one says nothing about the other.
 **The box-split grammar back end** (`crates/delvec/src/grammar`, spec-0027). It is the
 default and this procedure is written for it.
 
-When the scene is not a grammar scene, the route is decided by this table —
-derived from the full technique survey (every approach this project researched,
-probed, or rejected, with its tested evidence), not from recollection. A scene
-that matches no row is **escalated, not improvised**.
+When the scene is not a grammar scene, the route is decided by this table. A
+scene that matches no row is **escalated, not improvised**.
 
 | The scene is… | Route | Why this route — and what is proven about it |
 |---|---|---|
 | a new structural piece — a building, room, passage, stair; generic (T1) **or** a specific named referent (T2) | **grammar program** (this procedure, §1–§8) | The adopted production route for both tiers. T2 is an input-modality property — the program is authored *against the referent* from the rule library's corpus; named referents are proven recognizable this way, and the grammar's IR is what makes iteration converge where freehand geometry regresses. |
-| a variation inside an existing hand-built tileset (another keep room in the keep's own conventions) | **grammar program**, matching the tileset's palette/conventions | The Rust generators are maintained, not extended (§9). A generator's conventions are data to imitate, not a surface to grow. |
+| a variation inside an existing hand-built tileset (another keep room in the keep's own conventions) | **grammar program**, matching the tileset's palette/conventions | The Rust generators are maintained, not extended (§10). A generator's conventions are data to imitate, not a surface to grow. |
 | a named referent that plausibly exists as a **community build** | check licence-gated ingestion first (`delvec schem` + `delvec prefab`, spec-0007); fall back to grammar | Availability is luck — the corpus audit found most schematic sources unverifiable or NC-tainted, so ingestion is an opportunistic shortcut, never the plan of record. Everything ingested passes the same audit/socket/lighting admission as generated pieces. |
 | genuinely un-statable by axis-aligned boxes: a **smooth** curve, a diagonal, a profile whose step varies independently of the box, a vault bending on two axes at once, or noise/terrain (§6) | **in-house generator work** (Rust: value-noise fields, 4-5-rule cellular automata, the ported craft passes) — an engine task, not an authoring step | The grammar has no smooth curve, no diagonal, no noise, no terrain, by design. This route costs a worker dispatch and says so up front; it is the one row where "make a prefab" becomes "extend the engine". **Check §6 and `grammar.md` §2c before taking it** — a stepped arch, a gable, a spire, a batter and a tapered vault are all one recursion (idiom 3), two roofs meeting in a valley are that recursion peeling a ring (idiom 3), and any shape with a mirror plane is a rule body written mirrored (idiom 7). All three were mistaken for this row. |
-| terrain or backdrop *around* the playable scene | **surround layer** (`horizon` — ocean/void today; the spec-0026 library when it lands), never a prefab | A surround is analytically known so the proofs can read it; modelling vanilla worldgen was evaluated and rejected (the compiler cannot see server terrain without re-implementing its noise — a folklore hack). |
-| an atmosphere-tier set-piece whose power is composition — scale contrast, approach framing, lighting (T3) | **no current route — escalate to the owner** | Measured, not assumed: the landmark probe showed T3's missing layer is presentation (lighting/fog/camera), not geometry. Composition is art direction and is M4 design work. Attempting it through any row above produces the geometry and loses the scene. |
+| terrain or backdrop *around* the playable scene | **surround layer** (`horizon`: `void`, `ocean`, or the `valley` surround of the spec-0026 library), never a prefab | A surround is analytically known so the proofs can read it; modelling vanilla worldgen was evaluated and rejected (the compiler cannot see server terrain without re-implementing its noise — a folklore hack). |
+| an atmosphere-tier set-piece whose power is composition — scale contrast, approach framing, lighting (T3) | **no current route — escalate to the owner** | T3's missing layer is presentation (lighting/fog/camera), not geometry. Composition is art direction and is design work. Attempting it through any row above produces the geometry and loses the scene. |
 
 And the composition rules — how the routes combine into an area:
 
@@ -43,10 +41,10 @@ And the composition rules — how the routes combine into an area:
   jigsaw; sockets are a connectivity vocabulary, not runtime mechanics) →
   edit scripts for L2/L3 fixes → relight → validation renders. There is no
   second chain.
-- **Grammar pieces enter areas by direct placement only, today**: the export
+- **Grammar pieces enter areas by direct placement only**: the export
   emits no jigsaw connectors, so a grammar prefab cannot join a
   `prefab_pool` until a socket is carved (§7) — and connector *emission* is an
-  open design, flagged, not improvised.
+  open design, not improvised.
 - **Intent flows one way**: a reference image (`tools/creator/refimg.py`) conditions
   the human and the program; a similarity score (`tools/creator/refscore.py`) RANKS
   candidate expansions on the contact sheet and can never gate or veto —
@@ -70,7 +68,7 @@ invented after the render is a description of the render.
 is chosen from what the scene needs and from nothing else: there is no size a
 design has to stay under, and a zone of any extent exports (§6). Record the
 chosen region and seed **where the next person will look**, since the program
-JSON does not carry its own region (queued engine surface). Which place that is
+JSON does not carry its own region. Which place that is
 depends on what the piece is for, and one of them is written for you:
 
 - **A campaign's zone** names them in that campaign's `zones.json`, beside the
@@ -411,7 +409,7 @@ A program that becomes one of a campaign's zones goes to
 `campaigns/<campaign>/design/programs/`, and is named in `zones.json` beside it
 with the region, the seed and the optional gates it claims. `delvec grammar audit
 --campaign-root <content repo>` then expands and judges every zone there, and
-both repos' CI run it. A program file that directory carries and the manifest
+the engine's CI runs it over the pinned content checkout. A program file that directory carries and the manifest
 does not name is a finding — without that, a zone nothing checks and a zone
 nobody wrote look the same.
 
@@ -439,13 +437,11 @@ of zero and not a building full of stranded rooms. Read the numbers before the
 shots: 42% is a picture that renders perfectly.
 
 If the region is wrong the tool refuses. A refusal is the correct outcome — a
-region too small never yields a smaller building. Two refusal shapes today:
-a **sized** rule that does not fit names itself and its requirement; a
-**guard-exhaustion** refusal (`no alternative of rule "…" applies`) names only
-the rule — the guards it tried are read from the program, not from the error.
-Making that refusal print each alternative's failed inequality with its
-evaluated operands is queued engine work; until it lands, budget one
-read-the-rule round-trip per guard refusal.
+region too small never yields a smaller building. A **sized** rule that does not
+fit names itself and its requirement; a **guard-exhaustion** refusal
+(`no alternative of rule "…" applies`) names every rejected alternative's
+failed conditions with both operands as evaluated at that scope, the scope's
+own dimensions, and the derivation path that reached it (`grammar.md` §4).
 
 ## 5. See it before believing it
 
@@ -479,8 +475,9 @@ building sliced at a packaging plane.
 The planned cameras are fixed: yaw, pitch and field of view are properties of
 the shot kind, and `--size` and `--textures` change the pixels, not the
 viewpoint. So without asking you get four corner three-quarters, a plan from
-straight overhead, one view down at each socket and each anchor, and one level
-view out of each anchor — and **no square-on elevation of any face**. Every
+straight overhead, one view down at each socket and each anchor, one level
+view out of each anchor and one room shot stood back along its facing — and
+**no square-on elevation of any face**. Every
 planned exterior camera sits on a corner bearing, and the only planned level
 camera stands inside the piece. A west front, a gable end, a facade with a rose
 window in it: nothing in the planned set photographs one flat-on, and a facade
@@ -505,9 +502,9 @@ rather than an elevation — a passage, a junction, a stair — it is the only
 planned camera that sees the route at all. `<id>-top.png` is marked
 `"cutaway": true` in the manifest: the roof comes off, so what is in the frame is
 the floor. **A hand-aimed `--view name=…,face=up` is not the same shot** — it is
-`"cutaway": false` at the same pitch, so it photographs the roof. Reaching for
-"let me look down at it" with `--view` gets the one picture `top` already
-replaced.
+`"cutaway": false` at the same pitch unless the view says `cutaway=true`, so by
+default it photographs the roof. Reaching for "let me look down at it" with
+`--view` gets the one picture `top` already replaced.
 
 How well a plan reads off it is a question about the palette, not about the
 camera: a piece in one flat material shows its corridors as clean voids, and a
@@ -651,7 +648,7 @@ Each of these was established by running it, except the two marked otherwise:
 - **No terrain** — no noise, no heightfield; height variation comes from splits
   and recursion. *Same source.*
 - **No craft gate.** spec-0027 §4's palette-role budget, gradient and depth rules
-  are still not built, and what blocks them is named in
+  are not built, and what blocks them is named in
   `crates/delvec/src/grammar/gates.rs`: the budget is defined per *material family* and
   nothing here can decide what family a block is in. Until it exists, monoculture
   and flatness are caught by looking (§5), not by the machine.
@@ -713,7 +710,7 @@ A tiled zone has no `out/<id>.nbt` at all — its blocks are the
 `out/<id>.x<i>y<j>z<k>.nbt` files and `out/<id>.json` is the manifest — so on such
 a zone every line above names `out/<id>.json`, for the reason spelled out three
 paragraphs down. `socket` is the exception: a socket is carved into one tile's
-bytes, so it is the one step a tiled zone still does not have.
+bytes, so it is the one step a tiled zone does not have.
 
 `audit` is the gate that runs on the bytes rather than on the expansion:
 hard-forbidden blocks (`DW0731`), blocks the pinned version does not have
@@ -857,12 +854,15 @@ use.
 | Key | Required | What it is |
 | --- | --- | --- |
 | `prefab_id` | yes | `prefab/<id>` — the id a campaign binds. |
-| `structure` | yes | `{file, id, size[3], data_version, generator?}` — the `.nbt` half. |
+| `structure` | one of the two | `{file, id, size[3], data_version, generator?}` — the `.nbt` half, for a piece whose blocks fit one template. Exactly one of `structure` and `structure_set` is present. |
+| `structure_set` | one of the two | The tile set, for a zone past the 48-per-axis cap: several `.nbt` files plus this manifest. Packaging, not authoring — everything else in the document means what it means for a single template. |
 | `anchors` | no (`{}`) | Named places, keyed by DSL anchor name. |
 | `connectors` | no (`[]`) | Jigsaw sockets `{name, target, local_pos[3], facing, opening[2], joint}`. |
 | `lighting` | no | `{profile, measured_min_light?, measured?, rationale?, method?}`. |
 | `license` | no | `{source, spdx, note, provenance, generated_by?}`. |
-| `waterline_y` | no | Local y of the piece's top authored water block. Checked against the ocean datum by `DW0344`; an ocean world where no placed piece declares one is reported by `DW0344` rather than passing on an empty check, and there is no exemption for a piece that "needs none". |
+| `walk_y` | no (owed where seated) | Local y of the piece's own walk plane — the cell a body's feet occupy on its principal floor (spec-0060 §4). An area's origin is derived from it on a horizon whose datum is a walk plane. It has no default; a piece a campaign seats without one is `DW0886`. A measurement, written by the generator or by `delvec prefab planes --write`, never typed. |
+| `waterline_y` | no | Local y of the piece's top authored water block. `DW0887` asks whether the bytes bear it out; `DW0344` asks whether the placement honours it in a `horizon: ocean` world. Absent for a piece that authors no sea. |
+| `shown_faces` | no (`[]`) | The sides the player is meant to see, as local side names (`east` `west` `up` `down` `south` `north`) that turn with the placement. Absent means no side is shown — the strict answer for a piece authored to be buried; `DW0885` reads it. |
 | `spatial_contract` | no | The piece's declared spaces, out-of-walk regions, edges and faces (ADR-0020). |
 | `footprint_class` | no | The metrics-table size class this piece claims to serve (`size-class.*`). Judged against the piece's own structure size at `delvec prefab audit` and again wherever a `detail-plan` row consumes the piece (`DW0848`; an unknown name is `DW0812`). Absent means the claim is not made — a piece bound by a `details[]` row is held to exact frame equality (`DW0843`) either way. |
 
@@ -962,8 +962,9 @@ order of the table above, which is the order the checked-in prefab library alrea
 
 A key the reading version does not model is **kept** and written back out. That
 matters because these files are read-modify-written: `delvec prefab socket` edits
-`connectors`, `lighting` edits `lighting`, `anchor` edits the four place fields
-(`pos`, `facing`, `region`, `block`) of the one anchor it names, and each leaves
+`connectors`, `lighting` edits `lighting`, `anchor` edits the place fields
+(`pos`, `facing`, `region`, `block`) and the `role` of the one anchor it names,
+and `planes` edits `walk_y` and `waterline_y`; each leaves
 the rest of the document as it found it. A type that models fewer fields than the
 document has deletes the rest on the way out, silently, while every test it has
 passes.
@@ -989,14 +990,12 @@ a subcommand it has never been told about.
   failure at the layer with the least context.
 - **Unknown keys are reported, not ignored**: `delvec` warns `DW0543`, naming
   every key it does not model, at the document root and per anchor. That is the
-  typo-catching the attribute used to do, at a severity that does not stop a
-  build.
+  typo-catching, at a severity that does not stop a build.
 
 Capture is at those same two levels — the document root and each anchor — which
 are where this document has grown every time (`waterline_y`, `spatial_contract`;
 `resolves_to`, `dispenser`, `trigger_block`). A key added *inside* a connector,
-a licence block or a spatial contract is accepted and ignored, not preserved; the
-day one is added, it is captured at that level too.
+a licence block or a spatial contract is accepted and ignored, not preserved.
 
 **The `lighting` block is the one exception, and it is a known cost.** Its type
 is the DSL's own `Lighting`, which is a closed schema because its job is a rule
@@ -1016,13 +1015,15 @@ edit.
 | `delvec grammar` | writes it (single template) and the tile-set manifest (several) |
 | `delvec render` | a narrow view — `anchors`, `connectors`, `lighting` — built from the document's own leaf types, because it must also read a tile-set manifest, which names `structure_set` instead of `structure` |
 | `delvec::schem::split` | one key, `structure_set`, to tell the two shapes apart |
-| `prefabs/*-generator` | write it, serialize-only (their own workspace, outside the engine's; they never read a prefab back) |
+| `prefabs/generator`, `prefabs/*-generator` | write it, serialize-only (their own workspace, outside the engine's; they never read a prefab back) |
 
 ## 10. Hand-written Rust generators
 
-`prefabs/*-generator` are members of the `prefabs/` workspace and predate the
-grammar back end. They are maintained, not extended: a new piece is a grammar
-program. Running one is `cargo run --release --manifest-path
+`prefabs/generator` (the keep) and `prefabs/*-generator` are members of the
+`prefabs/` workspace. A campaign tileset generator is maintained, not extended:
+a new piece is a grammar program. `prefabs/gallery-generator` is the exception —
+it builds the gallery, which owes an element for every engine surface. Running
+one is `cargo run --release --manifest-path
 prefabs/<gen>/Cargo.toml -- campaigns/prefabs/`, and every piece it emits goes
 through `prefabs/invariants/src/invariants.rs` — including the block-registry check, so the
 `DW0733` class is refused at that emitter too.

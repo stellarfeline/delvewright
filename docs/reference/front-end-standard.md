@@ -10,18 +10,20 @@ Code plugin distributed through a plugin marketplace, that the plugin carries th
 compose rig and bootstraps pinned, checksum-verified binaries from GitHub
 Releases, that the content repository is the creator's working directory rather
 than the skill's home, and that the skill is dual-mode — engine checkout uses
-`cargo run`, content-repo workdir uses plugin-managed binaries. Implementation
-was deferred. So this page does not ask what form to take: it records **what the
-standard requires of the form already chosen**, which makes each requirement a
-work item. ADR-0014 names three; the first, multi-platform binary releases, is
-closed by ADR-0023 and the release archives, and the two live ones are
-**dual-mode skill path resolution** and **plugin + marketplace + content-repo
-recommendation config**. A finding that bears on one names it.
+`cargo run`, content-repo workdir uses plugin-managed binaries. So this page
+does not ask what form to take: it records **what the standard requires of the
+form already chosen**. ADR-0014 names three requirements, and all three are
+implemented: multi-platform binary releases by ADR-0023 and the release
+archives; **dual-mode skill path resolution** by the page's Init (spec-0063
+§7); and **plugin + marketplace + content-repo recommendation config** by
+`.claude-plugin/marketplace.json`, `.claude/skills/delvewright/.claude-plugin/plugin.json`
+and the content repository's `.claude/settings.json` (spec-0063 §3–§4,
+ADR-0029). A finding that bears on one names it.
 
 Every finding below is marked **CITED** (the source states it) or **AUTHORED**
 (a judgement made here from what the sources state). Where the documentation
 does not answer a question this project depends on, the finding says **SILENT**
-and stops there. Sources are listed in §7 and cited inline by short name.
+and stops there. Sources are listed in §6 and cited inline by short name.
 
 Two standards are in play and they are not the same document. The **Agent Skills
 specification** is the cross-vendor open format. **Claude Code** implements it
@@ -116,19 +118,17 @@ rejected. Anything asserted about it is an observation of one build, not a
 contract.
 
 **AUTHORED, and this is the measurement that matters for `/new-delve`.** The
-page's frontmatter carries `version`, `requires` (a map, with `delvec` inside)
-and `verified_with`. None of the three is a spec field, and none is in Claude
-Code's table. Under the rules above they are legal on the Claude Code path and
-each one is a hard error on the claude.ai / Skills API / `package_skill.py`
-path. The format's own place for all three is `metadata`. The content
-repository enforces them with its own gate, `tools/check-skill-version.py`.
+page's frontmatter carries `name`, `description` and `metadata`, whose one key
+is `requires_delvec` (a `>=X.Y.Z <A.B.C` window). All three are spec fields, so
+the page is legal on both paths: the Claude Code path a plugin takes, and the
+claude.ai / Skills API / `package_skill.py` path where a non-spec field is a
+hard error. `tools/ci/check-skill-page.py` holds the frontmatter.
 
-**Work item: plugin + marketplace + content-repo recommendation config.** Under
-the form ADR-0014 chose — a plugin installed from a marketplace — the Claude
-Code path is the one taken, so the three fields stay legal exactly as written
-and the hard-error path is never reached. The requirement the standard places
-here is not that they move, but that anything published to claude.ai, the Skills
-API or `package_skill.py` cannot carry them.
+**Plugin + marketplace + content-repo recommendation config.** Under the form
+ADR-0014 chose — a plugin installed from a marketplace — the Claude Code path is
+the one taken. The requirement the standard places here is that anything
+published to claude.ai, the Skills API or `package_skill.py` carries only spec
+fields, which the page's `metadata`-only frontmatter meets.
 
 ### 1d. Length
 
@@ -477,8 +477,8 @@ settable per entry in managed settings.
 marketplace is the shape the standard is built for, and it replaces `git pull`
 with `/plugin marketplace update` — or with nothing, once auto-update is on.
 
-**Work item: plugin + marketplace + content-repo recommendation config.** What
-the standard requires of it, in full: a `.claude-plugin/marketplace.json` at a
+**Plugin + marketplace + content-repo recommendation config.** What the
+standard requires of it, in full: a `.claude-plugin/marketplace.json` at a
 repository root naming `name`, `owner` and the plugin's `source`; a
 `.claude-plugin/plugin.json` whose `name` becomes the invocation namespace
 (`/<plugin>:new-delve`); the page at `skills/new-delve/SKILL.md` under the
@@ -538,14 +538,14 @@ may populate.
 page to be told where a creator's asset library is, if they have one. It asks;
 it does not install, version or update anything.
 
-**Work item: dual-mode skill path resolution.** `userConfig` is also the
-standard's answer to the mode question ADR-0014 defers. It prompts at enable
-time for a typed value with a `default`, and a non-sensitive value substitutes
-into skill content as `${user_config.KEY}` — so "which checkout is this, and
-where does the prefab library sit" is a declared, creator-supplied `directory`
-rather than something the page detects at run time. **CITED** (*Plugins
-reference*). Whether the page should ask or detect is not a question the
-documentation answers, and this record does not answer it either.
+**Dual-mode skill path resolution.** `userConfig` is one answer the standard
+offers to the mode question ADR-0014 raises. It prompts at enable time for a
+typed value with a `default`, and a non-sensitive value substitutes into skill
+content as `${user_config.KEY}` — so "which checkout is this, and where does the
+prefab library sit" could be a declared, creator-supplied `directory`. **CITED**
+(*Plugins reference*). Whether a page should ask or detect is not a question the
+documentation answers. `/new-delve` detects: the mode is a property of the
+working directory, read at Init (spec-0063 §7).
 
 ### 4c. Installing a native binary
 
@@ -579,30 +579,29 @@ requirement is a sentence in the body that the agent reads and enforces, or a
 script the agent runs — which is what `/new-delve` already does in its Init
 section.
 
-**Work items: dual-mode skill path resolution, and plugin + marketplace +
-content-repo recommendation config.** ADR-0014's clause that the skill
+**Binary bootstrap.** ADR-0014's clause that the skill
 "bootstraps pinned, checksum-verified multi-platform binaries from GitHub
 Releases" has no manifest surface of its own. The standard offers three places to
 put it and no fourth: bundled in `bin/`, fetched by a `SessionStart` hook into
-`${CLAUDE_PLUGIN_DATA}`, or done by the page's own Init steps. Whichever is
-chosen, the version check remains the plugin's own work — nothing in the
+`${CLAUDE_PLUGIN_DATA}`, or done by the page's own Init steps. `/new-delve`
+takes the third: its Init downloads the release archive the page's
+`versions.toml` pins. The version check is the page's own work — nothing in the
 manifest declares or verifies it.
 
 ---
-</content>
 
 ## 5. Our page, measured
 
 Measured by a parse that tracks fenced code blocks so that a `#` inside a shell
-block is not counted as a heading, over the page at the one revision spec-0063
-moved it from: `.claude/skills/new-delve/SKILL.md` in the content repository at
-`ee25912f`. It is the measurement that decided the split, and it is frozen at
-that revision on purpose — the page's current shape is measured by
+block is not counted as a heading, over the page before spec-0063 moved it:
+`.claude/skills/new-delve/SKILL.md` in the content repository at `892a80a`. It
+is the measurement that decided the split, and it is frozen at that revision on
+purpose — the page's current shape is measured by
 `tools/ci/check-skill-page.py` on every push, and a second hand-written census
 here would be a second authority for it.
 
-**The skill directory holds exactly one file.** There is no `scripts/`, no
-`references/`, no `assets/` — no level-3 content at all.
+**At that revision the skill directory held exactly one file.** There was no
+`scripts/`, no `references/`, no `assets/` — no level-3 content at all.
 
 | | measured | what the standard says |
 |---|---|---|
@@ -684,32 +683,12 @@ which, in a single file, is what happens anyway.
 
 ---
 
-## 6. One record disagrees with the decision
-
-**CITED**, from this tree. `docs/reference/skill-workflow.md` line 11 gives the
-reason the page lives in the content repository as "because a creator clones that
-repository and no other (ADR-0014)". ADR-0014's Decision section decides the
-skill "ships as a Claude Code plugin distributed via a plugin marketplace under
-this GitHub account", with the content repository as the creator's working
-directory and its Claude Code settings merely recommending the plugin. The
-citation carries a decision the ADR does not make: living in the content
-repository is what ADR-0014 replaces, not what it authorises.
-
-Fixed by the restructure that moved the page (spec-0063 §10). `skill-workflow.md`
-now says the page lives in this repository, and gives ADR-0014's form and
-ADR-0027 §2 as the reason. The measurements in §5 above are of the page as it
-stood at that move and are not re-taken here: this record's subject is what the
-standard requires, and the page's own shape is measured by
-`tools/ci/check-skill-page.py` on every push.
-
----
-
-## 7. Sources
+## 6. Sources
 
 Anthropic's own documentation is the primary source for the standard throughout.
 No secondary source is cited on this page; where a claim rests on something not
-read verbatim, the finding says so. ADR-0014, ADR-0023 and
-`docs/reference/skill-workflow.md` are cited from this tree.
+read verbatim, the finding says so. ADR-0014, ADR-0023, ADR-0029 and
+spec-0063 are cited from this tree.
 
 - *Specification* — Agent Skills, "Specification", <https://agentskills.io/specification>
 - *Overview* — Claude Docs, "Agent Skills", <https://platform.claude.com/docs/en/agents-and-tools/agent-skills/overview>
@@ -720,5 +699,3 @@ read verbatim, the finding says so. ADR-0014, ADR-0023 and
 - *Plugin marketplaces* — Claude Code Docs, "Create and distribute a plugin marketplace", <https://code.claude.com/docs/en/plugin-marketplaces>
 - *Discover plugins* — Claude Code Docs, "Discover and install prebuilt plugins through marketplaces", <https://code.claude.com/docs/en/discover-plugins>
 - *Plugin dependencies* — Claude Code Docs, "Constrain plugin dependency versions", <https://code.claude.com/docs/en/plugin-dependencies>
-</content>
-</invoke>

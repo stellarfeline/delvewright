@@ -16,8 +16,8 @@ languages are delivered as sidecars.
    `[i18n]` section AND the environment variable it names (`api_key_env`) is set:
 
    ```sh
-   python3 "$DELVEWRIGHT_ENGINE/tools/creator/i18n-translate.py" "$PWD/campaigns/<id>" \
-       --lang <code> --reflect
+   "$DELVEWRIGHT_PYTHON" "$DELVEWRIGHT_ENGINE/tools/creator/i18n-translate.py" "$PWD/campaigns/<id>" \
+       --lang <code> --reflect --delvec "$(command -v delvec)"
    ```
 
    `--reflect` is the three-step translate → critique → revise pass and is where
@@ -30,6 +30,11 @@ languages are delivered as sidecars.
    `curl -H "Authorization: Bearer $KEY" <base_url>/models` lists what it offers.
 3. Yourself: `delvec --prefabs "$DELVEWRIGHT_PREFABS" l10n-inventory <campaign-dir> --lang <code>` gives the exact
    key inventory as JSON (key, English, speaking NPC, existing translation).
+   Hand the translations back with `delvec --prefabs "$DELVEWRIGHT_PREFABS" l10n-apply <campaign-dir> --lang <code> --table <file>`:
+   a table of canonical English → your translation, from which the tool writes
+   `l10n/<code>.json` — it addresses the keys, so an inserted effect that shifts
+   an `fx.` key cannot re-attach a line to the wrong English. It prints `N of M rows
+   translated` and every English still missing; exit 1 until none is.
    **Translate FROM the finished English** — never author a language natively —
    honour each NPC's `persona.speech_style`, keep a Minecraft-appropriate
    register, cover the inventory **exactly**. Run the **same three-step pass the

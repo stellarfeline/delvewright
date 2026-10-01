@@ -68,8 +68,8 @@ without it.
 | | why | check |
 |---|---|---|
 | `git` | I2 clones the engine tree, in creator mode | `git --version` |
-| **Python 3.11+** | `tomllib` is stdlib from 3.11, and I3a's selector reads the pin with it. The three scripts in the skill root are stdlib Python | see below |
-| **Java 21+** | **the pinned game's own requirement** — 1.21.11 declares `javaVersion.majorVersion: 21` in Mojang's version manifest, and every jar-reading checker runs under it. Chunky is not where this number comes from: its core runs under it, and its build at step 12 wants a JDK 17 of its own | `java -version` |
+| **Python 3.11+** | `tomllib` is stdlib from 3.11, and I3a's selector reads the pin with it. The four scripts in the skill root are stdlib Python | see below |
+| **Java 21+** | **the pinned game's own requirement** — 1.21.11 declares `javaVersion.majorVersion: 21` in Mojang's version manifest, and every jar-reading checker runs under it. Chunky is not where this number comes from: its core runs under it, and its build at step 12 wants the JDK `[render].chunky_build_java` names | `java -version` |
 | Docker | the play server at step 9, which drives `docker run` directly | `docker info` |
 | **Compose v2** | **a second install, and the whole of step 10 needs it** — every ladder entry point builds a `docker compose -p …` command line | `docker compose version` |
 
@@ -98,7 +98,7 @@ done
 machine, and there is no version of this page that runs without `tomllib`.
 
 **The skill root is named here, because everything bundled is addressed from
-it.** `versions.toml` and the three `scripts/` this page runs live beside
+it.** `versions.toml` and the four `scripts/` this page runs live beside
 `SKILL.md`, in the **skill root** — which is *not* the working directory, and is
 not any directory this page can assume you are standing in. It is recorded once,
 as `DELVEWRIGHT_SKILL`, and every bundled path below is written
@@ -126,7 +126,7 @@ PY
 )"
 ```
 
-**This one algorithm is inline and the other three are files**, and that is not
+**This one algorithm is inline and the other four are files**, and that is not
 an inconsistency: this is the algorithm that *finds* `scripts/`, so it is the one
 thing that cannot live there. In dev mode it is the path I0 already tested for.
 In creator mode it reads Claude Code's own install register — the file that
@@ -295,12 +295,13 @@ verifies the bytes, unpacks, and asserts `delvec --version` **equals** the
 version the tag states. It prints what it
 bound: the target, the archive, the digest and the version.
 
-Its exit code is the whole failure table, and none of the four means the same
+Its exit code is the whole failure table, and none of the five means the same
 thing:
 
 | exit | what it means | what to do |
 |---|---|---|
 | `0` | the pinned engine is unpacked and answering | continue |
+| `2` unusable | the pin, the engine checkout or a flag cannot be read | **stop**, and say what it printed |
 | `3` no target for this host | the shelf carries no archive for this platform | **I3b**, the floor. That is the answer ADR-0023 §2 gives for exactly this machine |
 | `4` download failed | the transfer never completed | **I3b**, the floor |
 | `5` checksum mismatch | the bytes are not the bytes the release published | **a refusal.** Never the floor, never a retry, never extract what you have. The published `SHA256SUMS` is the only thing binding those bytes to that release |
@@ -372,8 +373,9 @@ The subcommand tree is the whole surface, and this page uses all of it:
 | subcommand | what it is |
 |---|---|
 | `delvec validate` / `analyze` / `build` / `fmt` / `schema` / `metrics` | the compiler proper |
-| `delvec snapshot` / `blocking-chart` / `allocation` / `edit` / `calibrate` | the layout loop |
+| `delvec snapshot` / `blocking-chart` / `allocation` / `detail` / `edit` / `calibrate` | the layout loop |
 | `delvec viewer` / `palette` / `scene` / `panorama` / `contact-sheet` / `index` | the CPU render arms |
+| `delvec cameras` / `place-camera` | the showcase cameras, and the one writer of their record |
 | `delvec render` | the GPU arms (`piece`, `batch`, `fidelity-gate`) |
 | `delvec grammar` | writes a new prefab from a rule program |
 | `delvec prefab` | admits a prefab into the library |
@@ -536,8 +538,14 @@ git ls-remote --exit-code "$("$DELVEWRIGHT_PYTHON" "$DELVEWRIGHT_ENGINE/tools/li
 Exit 0 means step 12 will be able to fetch the source. **A non-zero is not a
 stop** — it blocks no authoring step — but say it out loud here, because it *is*
 a stop at step 12. Step 12 also needs a JDK 17, which Chunky's own build runs
-under: say now whether `scripts/find-jdk.py --major 17` finds one. The 21 in I1 is
-the pinned game's own number.
+under: say here whether a JDK of the major the engine pins for that build is
+found —
+
+```sh
+"$DELVEWRIGHT_PYTHON" "$DELVEWRIGHT_SKILL/scripts/find-jdk.py" --major "$("$DELVEWRIGHT_PYTHON" "$DELVEWRIGHT_ENGINE/tools/lib/versions.py" render.chunky_build_java)"
+```
+
+The 21 in I1 is the pinned game's own number.
 
 **Reference images, and only on the drawing path.** The design gate at step 4 is
 confirmed on pictures of the design, and there are two ways to have them.
@@ -688,11 +696,11 @@ a named library all at once, and no earlier step has all three. Run every line
 through `env.sh`, so that a line failing because the environment was lost cannot
 be mistaken for a missing tool.
 
-`mkdir -p .out` before the last two is not decoration: `delvec … -o` writes the
-file and does **not** create its parent, so a missing directory comes back as
+`mkdir -p .out` before the last two is not decoration: `palette` writes its
+`-o` file and does **not** create its parent, so a missing directory comes back as
 `DW0722 … No such file or directory` at exit 3 — a write error that reads like a
-missing prefab. (`delvec render` does create its output tree; the two are not
-consistent.)
+missing prefab. (`delvec grammar expand` and `delvec render` do create their
+output trees; the subcommands are not consistent.)
 
 | the line | a non-zero, and what it actually means |
 |---|---|
@@ -703,7 +711,7 @@ consistent.)
 | `delvec grammar list` | the binary answers about itself but its compiled-in corpus does not load: a broken archive. Re-run I3a; a second failure is a refusal, not a retry |
 | `delvec render fidelity-gate` | **this is the GPU-arms proof, and by here it means what it says.** `DW0723 no textures found` means I5 did not land the jar — go back to I5, this is not a verdict on the machine. Any other `DW0723` (`gpu init: …`) is the GPU arms failing on this hardware: **stop**, because the visual half of the run cannot be reviewed and nothing downstream would say so. `DW0720` at exit 4 is a third thing again — the fixture rendered and a block came out untextured, which is a jar that is not 1.21.11 |
 | `grammar expand` then `palette` | the texture ladder. A `DW0723` here says the same thing it says on the line above; a `DW0722` says `.out/` is missing |
-| the Chunky probe | not a stop — said out loud at I7, and a stop at step 12, as is a missing JDK 17 |
+| the Chunky probe | not a stop — said out loud at I7, and a stop at step 12, as is a missing JDK of the `[render].chunky_build_java` major |
 | `docker info` | steps 9 and 10 cannot run. Halt |
 | `docker compose version` | the daemon is fine and the **Compose plugin** is not installed for this user — `docker info` above already passed and says nothing about it. Step 10 cannot run: halt for it. `docker: unknown command: docker compose` is the whole message you get |
 
@@ -717,17 +725,17 @@ continues authors against a half-built toolchain.
 
 Three ladder entries can boot a tree anywhere: `bot-run.sh` and
 `packtest-run.sh` take `--output <tree>`, and `branch-runs.sh` takes the same
-tree from `DELVE_OUTPUT` — give that one an absolute path, because
-`branch-runs.sh` resolves a relative value against the engine root while compose
-resolves it against `validation/`, so one relative value names two trees.
+tree from `DELVE_OUTPUT`. All three resolve a relative value against
+`validation/` and export it absolute, together with an absolute
+`DELVE_DOCKERFILE`, so compose cannot resolve it a second way.
 
-**Two paths still need the tree one level inside the engine's `validation/`,**
-and for two different reasons. A bare `docker compose … --profile play` sets no
-`DELVE_DOCKERFILE`, so `../Dockerfile.delve` is resolved against the build
-context and only a tree beside `validation/` finds it. `--profile playtest` is
-narrower still: that service's build block hardcodes `context: ./delve-output`,
-so it cannot be pointed outside `validation/` at all. Anywhere else they fail
-with `failed to read dockerfile`, which reads as a broken harness and is not one.
+**A hand-written compose command still needs the tree one level inside the
+engine's `validation/`.** A bare `docker compose … --profile play` or `--profile
+playtest` with no `DELVE_OUTPUT` and no `DELVE_DOCKERFILE` exported builds
+`./delve-output` and resolves `../Dockerfile.delve` against that build context,
+so only a tree beside `validation/` finds it. Pointed elsewhere without both
+variables, it fails with `failed to read dockerfile`, which reads as a broken
+harness and is not one.
 
 So every step that names a build output writes to
 `"$DELVEWRIGHT_ENGINE/validation/delve-output"` — the one tree every path can

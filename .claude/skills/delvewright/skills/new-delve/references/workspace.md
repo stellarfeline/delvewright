@@ -213,7 +213,8 @@ bolt summoned onto each body showed what any one strike does to what it hits:
 - **A villager becomes a witch**: every villager body — including an NPC's
   `NoAI`, `Invulnerable` body — turns into a witch that keeps its tags, `NoAI`
   and `Invulnerable`. A villager NPC standing under open sky in a `thunder`
-  scene can end the scene as a witch. A mannequin NPC is untouched.
+  scene can end the scene as a witch: declare `rain`, or roof the NPC. A mannequin NPC
+  is untouched.
 - **A pig becomes a zombified piglin**, a red mooshroom turns brown, and a
   creeper becomes charged (and takes 5 damage).
 - **Bodies that can be hurt** take damage: a vulnerable mannequin 20 → 10. An
@@ -302,7 +303,7 @@ last player-visible sentence of the run, absent = the finale quest's `goal`.
   you take `ocean`:
 
   ```sh
-  python3 - <<'EOF'
+  "$DELVEWRIGHT_PYTHON" - <<'EOF'
   import json, os
   LIB = os.environ["DELVEWRIGHT_PREFABS"]
   pools = json.load(open(f"{LIB}/pools.json"))["pools"]

@@ -89,7 +89,7 @@ flowchart TD
 flowchart TD
     DJ(["认可的设计"]) --> C5["5 · quests.json · dialogue.json<br/>NPC 面孔：tools/creator/skin<br/>其他语言：delvec l10n-inventory · l10n-apply<br/>或 tools/creator/i18n-translate.py"]
     C5 --> FMT["6 · delvec fmt<br/>规范化 JSON，每个 campaign 都要"]
-    FMT --> AN["7 · delvec analyze<br/>任务图可达性 · 死锁 · 暗房间"]
+    FMT --> AN["7 · delvec analyze<br/>任务图可达性 · 死锁"]
     AN -.->|"红灯：一个 DW 代码"| C5
     AN --> BUILD
 
@@ -256,7 +256,7 @@ flowchart TD
 | Fabric 上的 PackTest | 在工具服务器上的机制测试；从不出现在发布的 delve 里 | 4、6 | 智能体和 CI |
 | `harness/` | mineflayer 机器人（TypeScript）：关键路径、die-retry、death-loop、分支运行 | 4、6 | 智能体和 CI |
 | Chunky | 每一张必须看起来像 Minecraft 的图 | 5 | 智能体 |
-| GitHub Actions | 本仓库的 `ci.yml`、`engine-release.yml`、`dsl-crate-publish.yml`、`plugin-release.yml`、`infra-images.yml`；内容仓库的 `release.yml` | 引擎流水线、6 | CI，由人触发 |
+| GitHub Actions | 本仓库的 `ci.yml`、`engine-release.yml`、`dsl-crate-publish.yml`、`plugin-release.yml`、`infra-images.yml`、`gpu-probe.yml`；内容仓库的 `release.yml` | 引擎流水线、6 | CI，由人触发 |
 | GHCR | 多架构 delve 镜像、镜像的服务器基础镜像和工具服务器 | 6、7 | CI |
 | crates.io 与 GitHub Releases | `delvec` 和 `delvewright-dsl`；各平台的归档 | 引擎流水线、1 | CI |
 | 生产主机 | 运行 delve 镜像的一台单板计算机 | 7 | 运营者 |
