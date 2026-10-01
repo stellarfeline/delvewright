@@ -464,6 +464,14 @@ async function main(): Promise<number> {
     // spec-0029: the name-preference binding, always recorded — including a zero.
     report.recordNamePreference(executor.namePreference());
     report.recordRests(executor.performedRests());
+    report.recordLoadWindows(executor.loadWindows());
+    for (const w of executor.loadWindows()) {
+      process.stderr.write(
+        `[load-window] ${w.cause} in ${w.stage} at step ${w.step}: ${w.lengthMs ?? "open"}ms, ` +
+          `closed by ${w.closedBy ?? "nothing"}, ${w.absorbed.length} absorbed` +
+          `${w.absorbed.map((a) => ` [${a.kind} +${a.atMs}ms ${a.detail}]`).join("")}\n`,
+      );
+    }
     // Reclassify, never suppress (2026-08-06 island triage): a `despawn-actor
     // style: vanish` broadcasts the same "<name> died" line a real combat loss
     // does, and this run has no wired `min_y` to derive an exact depth cutoff
