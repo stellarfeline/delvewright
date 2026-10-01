@@ -38,7 +38,7 @@ order a player would:
 
 | Where | What it holds |
 | --- | --- |
-| `world.json` | the hall, its lighting and mitigation, the boundary, the declared languages |
+| `world.json` | the hall, its lighting and mitigation, the boundary, the declared languages, and the seconds a fallen player waits before rejoining the party |
 | `npcs.json` | four speaking parts — a quest-giver, a gatekeeper, a counter, a drill officer |
 | `classes.json` | two kits, one carrying a flask (what a bonfire rest refills) |
 | `quest-plan.json` | three quests and the branch point the fork opens |
@@ -163,6 +163,7 @@ holding them at once.
 | `a-party-purse-the-sidebar-cannot-draw` | `DW0919` | `validate` | moving the standing display onto the party's bounty, whose `#party` holder the sidebar hides |
 | `an-archer-seated-beside-the-burning-corner` | `DW0922` | `build` | summoning the edge skeleton around the east bay, so its ring stands it in the near hall within its pursuit of the burning corner in the barrier pocket |
 | `a-hatch-the-party-leaves-open` | `DW0923` | `build` | seating the muster at the hearth beside the terrace and laying a trapdoor shut over the west well: a player can open it and leave it open, and the muster then falls in |
+| `a-wait-longer-than-two-minutes` | `DW0925` | `validate` | making a fallen player wait 121 seconds before rejoining, one past the two minutes a wait may last |
 
 **A probe is the primary plus one declared edit.** It carries no copy of any
 document the primary already holds; what it perturbs is written out in its own

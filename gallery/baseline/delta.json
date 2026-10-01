@@ -1,14 +1,54 @@
 {
-  "added": [],
-  "base_commit": "cadc32974a7d51483426ae8dd0bebbdcbe190a65",
+  "added": [
+    "primary.en:datapack/data/gallery/function/rw_begin.mcfunction",
+    "primary.en:datapack/data/gallery/function/rw_release.mcfunction",
+    "primary.en:datapack/data/gallery/function/rw_start.mcfunction",
+    "primary.en:datapack/data/gallery/function/rw_tick.mcfunction",
+    "primary.en:packtest-datapack/data/gallery/test/v06_checkpoint_wait.mcfunction",
+    "primary.en:validation/observer-census.json",
+    "primary.zh-cn:datapack/data/gallery/function/rw_begin.mcfunction",
+    "primary.zh-cn:datapack/data/gallery/function/rw_release.mcfunction",
+    "primary.zh-cn:datapack/data/gallery/function/rw_start.mcfunction",
+    "primary.zh-cn:datapack/data/gallery/function/rw_tick.mcfunction",
+    "primary.zh-cn:packtest-datapack/data/gallery/test/v06_checkpoint_wait.mcfunction",
+    "primary.zh-cn:validation/observer-census.json"
+  ],
+  "base_commit": "0ea7a5ce6a740b83b33674a553eeb5e3c97bd06d",
   "changed": [
-    "site-plan.en:render-plan.json",
-    "site-plan.en:validation/critical-path-waypoints.json",
-    "site-plan.en:validation/leave-proof.json"
+    "easy.en:SKINS.md",
+    "easy.en:resourcepack.zip",
+    "hard.en:SKINS.md",
+    "hard.en:resourcepack.zip",
+    "ocean-horizon.en:SKINS.md",
+    "ocean-horizon.en:resourcepack.zip",
+    "primary.en:SKINS.md",
+    "primary.en:datapack/data/gallery/function/cp_respawn_check.mcfunction",
+    "primary.en:datapack/data/gallery/function/cs_muster_3_2_12687a8f.mcfunction",
+    "primary.en:datapack/data/gallery/function/cs_muster_4_2_509f3025.mcfunction",
+    "primary.en:datapack/data/gallery/function/lane_tick_lane.mcfunction",
+    "primary.en:datapack/data/gallery/function/setup.mcfunction",
+    "primary.en:datapack/data/gallery/function/tick.mcfunction",
+    "primary.en:packtest-datapack/data/gallery/test/v06_checkpoint_reseat.mcfunction",
+    "primary.en:resourcepack.zip",
+    "primary.en:validation/watch-ledger.json",
+    "primary.zh-cn:datapack/data/gallery/function/cp_respawn_check.mcfunction",
+    "primary.zh-cn:datapack/data/gallery/function/cs_muster_3_2_12687a8f.mcfunction",
+    "primary.zh-cn:datapack/data/gallery/function/cs_muster_4_2_509f3025.mcfunction",
+    "primary.zh-cn:datapack/data/gallery/function/lane_tick_lane.mcfunction",
+    "primary.zh-cn:datapack/data/gallery/function/setup.mcfunction",
+    "primary.zh-cn:datapack/data/gallery/function/tick.mcfunction",
+    "primary.zh-cn:packtest-datapack/data/gallery/test/v06_checkpoint_reseat.mcfunction",
+    "primary.zh-cn:validation/watch-ledger.json",
+    "site-plan.en:SKINS.md",
+    "site-plan.en:resourcepack.zip",
+    "void-horizon.en:SKINS.md",
+    "void-horizon.en:resourcepack.zip"
   ],
   "classes": {
-    "other": 1,
-    "validation ledger": 2
+    "PackTest": 4,
+    "datapack function": 20,
+    "other": 12,
+    "validation ledger": 4
   },
   "removed": []
 }

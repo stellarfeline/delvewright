@@ -1,0 +1,13 @@
+{
+  "code": "DW0925",
+  "patch": [
+    {
+      "doc": "world.json",
+      "op": "replace",
+      "path": "/content/respawn_wait/seconds",
+      "value": 121
+    }
+  ],
+  "units": [],
+  "why": "The hall's respawn wait, stretched one second past two minutes. A fallen player who waits that long has stopped being part of the fight the party is having and is only watching it, which is past the range a wait may take (1 to 120 seconds). It declares no unit: `respawn_wait`, its `seconds` and its `alone` are each written by the gallery proper. What must not compile is a wait outside the range; the refusal names the field and the range. The other half of the same rule, a wait with no checkpoint to come back to, is refused by the same code and is pinned in `crates/delvec/tests/respawn_wait.rs`, because the gallery cannot lose its bonfires without losing half of what it binds."
+}

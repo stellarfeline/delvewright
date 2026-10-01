@@ -259,6 +259,13 @@ last player-visible sentence of the run, absent = the finale quest's `goal`.
   with the quest plan at step 3, not with the world at step 1: a brief that says
   "for two players" is a brief that has asked for a mechanism, and the design
   gains one or the number comes down.
+- **`respawn_wait`.** Absent = no wait. `{ "seconds": n, "alone": false }`
+  makes a fallen player in a party watch a teammate as a spectator for `n`
+  seconds (1–120) after *Respawn* before rejoining, and count as down while
+  they wait — see *Reference: authoring pitfalls* for what a party feels. The
+  build refuses it without a `set-checkpoint` or `bonfire` to come back to, so
+  decide it with the quest plan's checkpoints in front of you. `alone: true`
+  makes a party of one wait too.
 - **`horizon`.** Absent = `void`, and that is the right answer unless the
   ground around the map is part of the design. `void` keeps the area datum where
   every piece was authored for it and puts nothing outside them.
