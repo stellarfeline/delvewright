@@ -3025,7 +3025,17 @@ export class MineflayerExecutor implements StepExecutor {
     const plan = this.combatPlan;
     if (!plan) return [];
     const met: string[] = [];
-    for (const enc of reseatedWaves(plan.encounters, this.clearedEpoch, this.seatEpoch)) {
+    // Nearest the bot first: a wave is staged while the bot stands still, and the
+    // nearest one is the one that walks to it meanwhile — on vesperhold a Guard hit
+    // the bot while five farther waves were staged ahead of it in plan order.
+    // `sort` is stable, so equal distances keep the plan's order (ADR-0006).
+    const here = this.feetCell() ?? [0, 0, 0];
+    const dist = (e: Encounter): number =>
+      Math.hypot(e.pos[0] - here[0], e.pos[1] - here[1], e.pos[2] - here[2]);
+    const waves = reseatedWaves(plan.encounters, this.clearedEpoch, this.seatEpoch).sort(
+      (a, b) => dist(a) - dist(b),
+    );
+    for (const enc of waves) {
       process.stderr.write(
         `[staged] ${label}: \`${enc.wave}\` has been put back since this run cleared it — ` +
           `reading it and staging it away before the walk\n`,
