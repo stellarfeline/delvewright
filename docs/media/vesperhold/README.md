@@ -34,10 +34,6 @@ The undertide pool, under the cloister: the grey well in its stone curb, lantern
 
 The bell tower from above the north-west corner: the open belfry under its spire, the high walk along the north wall, and the chapel's round window.
 
-![The great hall](10-great-hall.jpg)
-
-The great hall from high in its north-east corner: candles scattered across the floor, the long tables, a coloured round window high in the far wall, and a hole broken through the roof.
-
 ![The throne hall](11-throne-hall.jpg)
 
 The throne hall: the throne on its stepped dais between two dark banners, candles on the floor, and tall narrow windows behind the pillars.
