@@ -1138,7 +1138,7 @@ pub fn relight_over(plan: &Plan, assembled: &crate::compiler::assembled::Assembl
     // that kills is also a pit the player has to be able to see before stepping
     // into it, so its own cells stay in the survey too.
     let nav = World::from_occupancy(
-        crate::compiler::assembled::occupancy_of(assembled.blocks.clone(), &assembled.open_gates),
+        crate::compiler::assembled::occupancy_over(&assembled.blocks, &assembled.open_gates),
         crate::compiler::nav::Premises::geometry_only(),
     );
     // move-npc waypoint cells are part of the required paths; plan them on the base

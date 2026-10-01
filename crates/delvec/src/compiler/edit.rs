@@ -348,7 +348,19 @@ pub fn replay(
     prefabs: &crate::compiler::registry::PrefabRegistry,
     structures: &BTreeMap<String, Vec<u8>>,
 ) -> Result<Option<EditReplay>, Failure> {
-    replay_with(plan, prefabs, structures, true)
+    replay_with(plan, prefabs, structures, true, &mut None)
+}
+
+/// [`replay`] starting from the pristine assembly the caller already holds in
+/// `pristine`. When the campaign has edits the assembly is taken out of
+/// `pristine` and edited in place; otherwise `pristine` is left as it was.
+pub fn replay_taking(
+    plan: &Plan,
+    prefabs: &crate::compiler::registry::PrefabRegistry,
+    structures: &BTreeMap<String, Vec<u8>>,
+    pristine: &mut Option<Assembled>,
+) -> Result<Option<EditReplay>, Failure> {
+    replay_with(plan, prefabs, structures, true, pristine)
 }
 
 /// [`replay`] for **view** commands (`delvec snapshot` / `blocking-chart`): the
@@ -361,7 +373,7 @@ pub fn replay_view(
     prefabs: &crate::compiler::registry::PrefabRegistry,
     structures: &BTreeMap<String, Vec<u8>>,
 ) -> Result<Option<EditReplay>, Failure> {
-    replay_with(plan, prefabs, structures, false)
+    replay_with(plan, prefabs, structures, false, &mut None)
 }
 
 fn replay_with(
@@ -369,6 +381,7 @@ fn replay_with(
     prefabs: &crate::compiler::registry::PrefabRegistry,
     structures: &BTreeMap<String, Vec<u8>>,
     enforce: bool,
+    pristine: &mut Option<Assembled>,
 ) -> Result<Option<EditReplay>, Failure> {
     if !has_edits(plan.campaign) {
         return Ok(None);
@@ -379,7 +392,9 @@ fn replay_with(
         .as_ref()
         .expect("has_edits checked");
 
-    let mut assembled = assembled::assemble(plan, structures);
+    let mut assembled = pristine
+        .take()
+        .unwrap_or_else(|| assembled::assemble(plan, structures));
     let mut commands: Vec<String> = Vec::new();
     let mut batches: Vec<BatchOutcome> = Vec::new();
     let mut warnings: Vec<Diagnostic> = Vec::new();

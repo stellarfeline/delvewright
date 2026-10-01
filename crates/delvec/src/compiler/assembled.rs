@@ -933,7 +933,7 @@ pub struct Occupancy {
 /// and may never call a molten cell floor.
 pub fn assembled_occupancy(plan: &Plan, structures: &BTreeMap<String, Vec<u8>>) -> Occupancy {
     let assembled = assemble(plan, structures);
-    occupancy_of(assembled.blocks, &assembled.open_gates)
+    occupancy_over(&assembled.blocks, &assembled.open_gates)
 }
 
 /// Pure core of [`assembled_occupancy`]: classify a settled cell→block map into an
@@ -955,6 +955,14 @@ pub fn occupancy_of(
     blocks: BTreeMap<[i32; 3], String>,
     open_gates: &BTreeSet<[i32; 3]>,
 ) -> Occupancy {
+    occupancy_over(&blocks, open_gates)
+}
+
+/// [`occupancy_of`] over a borrowed cell→block map.
+pub fn occupancy_over(
+    blocks: &BTreeMap<[i32; 3], String>,
+    open_gates: &BTreeSet<[i32; 3]>,
+) -> Occupancy {
     let mut solid: BTreeSet<[i32; 3]> = BTreeSet::new();
     let mut tall: BTreeSet<[i32; 3]> = BTreeSet::new();
     let mut use_gates: BTreeSet<[i32; 3]> = BTreeSet::new();
@@ -963,7 +971,7 @@ pub fn occupancy_of(
     let mut lava_sources: BTreeSet<[i32; 3]> = BTreeSet::new();
     let mut partial: BTreeMap<[i32; 3], u8> = BTreeMap::new();
     let mut waterloggable: BTreeSet<[i32; 3]> = BTreeSet::new();
-    for (cell, name) in &blocks {
+    for (cell, name) in blocks {
         if is_waterloggable(name) {
             waterloggable.insert(*cell);
         }
@@ -1209,7 +1217,11 @@ pub fn gravity_despawn_error(
     plan: &Plan,
     structures: &BTreeMap<String, Vec<u8>>,
 ) -> Option<String> {
-    let assembled = assemble(plan, structures);
+    gravity_despawn_error_of(plan, &assemble(plan, structures))
+}
+
+/// [`gravity_despawn_error`] over a world the caller has already assembled.
+pub fn gravity_despawn_error_of(plan: &Plan, assembled: &Assembled) -> Option<String> {
     // (prefab_id, world AABB) for every placed piece, for despawn attribution.
     let pieces: Vec<PieceBox> = plan
         .areas

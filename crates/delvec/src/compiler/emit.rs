@@ -407,7 +407,14 @@ pub fn build_with_warnings(
     // or a wave seat (DW0312). Analysis-tier (exit 2, mapped in main): a
     // prefab/generator defect the author fixes by adding a substrate. No-op for any
     // campaign whose prefabs have no gravity blocks (byte-identical output).
-    if let Some(message) = crate::compiler::assembled::gravity_despawn_error(plan, structures) {
+    //
+    // The world is assembled here, once, and every model below is derived from
+    // this one assembly (or from the edit replay's edited copy of it).
+    let mut pristine = Some(crate::compiler::assembled::assemble(plan, structures));
+    if let Some(message) = crate::compiler::assembled::gravity_despawn_error_of(
+        plan,
+        pristine.as_ref().expect("assembled above"),
+    ) {
         return Err(BuildFailure::Diagnostic {
             code: crate::compiler::assembled::DW_GRAVITY_DESPAWN,
             message,
@@ -419,12 +426,21 @@ pub fn build_with_warnings(
     // (gravity, relight, walkability, boundary safety — each failure names its
     // batch). `None` for a campaign without an edit script — every downstream
     // pass then takes its exact pre-stage-7 path, byte-identically.
-    let edit_replay = crate::compiler::edit::replay(plan, prefabs, structures).map_err(|e| {
-        BuildFailure::Diagnostic {
-            code: e.code,
-            message: e.message,
-        }
-    })?;
+    let edit_replay =
+        crate::compiler::edit::replay_taking(plan, prefabs, structures, &mut pristine).map_err(
+            |e| BuildFailure::Diagnostic {
+                code: e.code,
+                message: e.message,
+            },
+        )?;
+    // The one assembled world every pass below reads: the edited copy when the
+    // campaign has an edit script, the pristine assembly otherwise.
+    let assembled: &crate::compiler::assembled::Assembled = match &edit_replay {
+        Some(er) => &er.assembled,
+        None => pristine
+            .as_ref()
+            .expect("an assembly the replay did not take"),
+    };
     // Advisory findings the replay raised (`DW0353` gate-region collisions,
     // `DW0354` broken block support) — reported by the caller, never fatal.
     // Advisory findings the PLACEMENT stage raised (`DW0498`: a pool draw that
@@ -450,10 +466,7 @@ pub fn build_with_warnings(
     // the same pass, rather than by a second model that could disagree with this
     // one about what is in the room.
     if !plan.loot.is_empty() || !plan.collect_fills.is_empty() || !plan.traps.is_empty() {
-        let blocks = match &edit_replay {
-            Some(er) => er.assembled.blocks.clone(),
-            None => crate::compiler::assembled::assembled_blocks(plan, structures),
-        };
+        let blocks = &assembled.blocks;
         // What the world actually HAS, computed once and handed to both proofs.
         // A refusal that tells an author to point at "an anchor whose cell
         // already has one" owes the list, and it is the same list for both:
@@ -500,10 +513,7 @@ pub fn build_with_warnings(
     // adds are re-verified for walkability below. A `DW0210`/`DW0211` diagnostic
     // fails the build (exit 2, mapped in main). Empty for a campaign with no dark
     // reachable cells and no `lighting` declaration → output byte-identical.
-    let relight = match &edit_replay {
-        Some(er) => crate::compiler::light::relight_over(plan, &er.assembled),
-        None => crate::compiler::light::relight(plan, structures),
-    };
+    let relight = crate::compiler::light::relight_over(plan, assembled);
     if let Some(diag) = relight.diagnostics.first() {
         return Err(BuildFailure::Diagnostic {
             code: diag.code,
@@ -524,38 +534,19 @@ pub fn build_with_warnings(
     // campaign with no walked leg deriving seven kinds of camera against no world
     // at all — a zero binding wearing a pass's clothes, which is precisely the
     // shape that let a camera stand inside a ceiling lantern for as long as it did.
-    let world = match &edit_replay {
-        Some(er) => {
-            let mut occ = crate::compiler::assembled::occupancy_of(
-                er.assembled.blocks.clone(),
-                &er.assembled.open_gates,
-            );
-            occ.solid.extend(relight.extra_solid.iter().copied());
-            // The campaign's premises about this world — the generator
-            // ambient, the built extent, the declared LETHAL VOLUMES, the
-            // measured world-load gate seals, the clocked gate regions and
-            // the teleport sources — travel as one value, so this arm and
-            // its `from_plan` sibling below carry the identical set by
-            // construction rather than by two authors agreeing.
-            //
-            // They did not, and the cost was the whole point of the model:
-            // this arm applied the ambient and the seals and not the lethal
-            // volumes, so every campaign declaring `world-edits.json` proved
-            // its completability over a world with no kill boxes in it. The
-            // gallery's exported critical path walked six waypoints through
-            // its two declared lethal volumes, `validation/lethal-gate.json`
-            // reported `"cells": 0` beside them, and the bot withered to
-            // death at step 10 of the ladder.
-            crate::compiler::nav::World::from_occupancy(
-                occ,
-                crate::compiler::nav::Premises::of_plan(plan, er.assembled.gate_seals.clone()),
-            )
-        }
-        None => crate::compiler::nav::World::from_plan_with_extra(
-            plan,
-            structures,
-            &relight.extra_solid,
-        ),
+    let world = {
+        let mut occ =
+            crate::compiler::assembled::occupancy_over(&assembled.blocks, &assembled.open_gates);
+        occ.solid.extend(relight.extra_solid.iter().copied());
+        // The campaign's premises about this world — the generator ambient,
+        // the built extent, the declared lethal volumes, the measured
+        // world-load gate seals, the clocked gate regions and the teleport
+        // sources — travel as one value, [`crate::compiler::nav::Premises`],
+        // so an edited world and a pristine one carry the identical set.
+        crate::compiler::nav::World::from_occupancy(
+            occ,
+            crate::compiler::nav::Premises::of_plan(plan, assembled.gate_seals.clone()),
+        )
     };
 
     // ---- the stage-5 blockout battery (spec-0049 §5.3) ----
@@ -574,10 +565,7 @@ pub fn build_with_warnings(
     // are advisories that travel to the walk sheet, and the binding line is
     // stated whether anything was found or not.
     {
-        let blocks = match &edit_replay {
-            Some(er) => er.assembled.blocks.clone(),
-            None => crate::compiler::assembled::assembled_blocks(plan, structures),
-        };
+        let blocks = &assembled.blocks;
         // What the DERIVATION bound to, beside what its observer did. Printing
         // only the battery's line stated what was examined and never what was
         // built — and at stage 6 the difference is the whole reading: `detailed`
@@ -869,10 +857,7 @@ pub fn build_with_warnings(
         {
             // spec-0022 payload verbs need the block map (a `collapse` settles
             // real blocks), not just the occupancy view.
-            let blocks: BTreeMap<[i32; 3], String> = match &edit_replay {
-                Some(er) => er.assembled.blocks.clone(),
-                None => crate::compiler::assembled::assembled_blocks(plan, structures),
-            };
+            let blocks: &BTreeMap<[i32; 3], String> = &assembled.blocks;
             if world.has_gate_anchors() {
                 gate_seal_ledger = Some(world.gate_seal_ledger());
             }
@@ -1161,10 +1146,7 @@ pub fn build_with_warnings(
                 let danger = if plan.lethal_volumes.is_empty() {
                     crate::compiler::lethal::DangerVisibility::default()
                 } else {
-                    let blocks = match &edit_replay {
-                        Some(er) => er.assembled.blocks.clone(),
-                        None => crate::compiler::assembled::assembled_blocks(plan, structures),
-                    };
+                    let blocks = &assembled.blocks;
                     let (binding, verdict) = crate::compiler::lethal::check_danger_is_visible(
                         plan,
                         &world,
@@ -1349,10 +1331,7 @@ pub fn build_with_warnings(
                 if !routes.is_empty() {
                     let route_cells: Vec<Vec<[i32; 3]>> =
                         routes.iter().map(|r| r.cells.clone()).collect();
-                    let blocks = match &edit_replay {
-                        Some(er) => er.assembled.blocks.clone(),
-                        None => crate::compiler::assembled::assembled_blocks(plan, structures),
-                    };
+                    let blocks = &assembled.blocks;
                     crate::compiler::stairs::check_stair_orientation(
                         &blocks,
                         Some(plan),
