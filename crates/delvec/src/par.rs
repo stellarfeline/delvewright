@@ -76,6 +76,30 @@ where
         .collect()
 }
 
+/// Compute `f` over `items` on up to [`threads`] threads and hand each result
+/// to `sink` on the calling thread, **in item order**, stopping at the first
+/// `Err` the sink returns.
+///
+/// Unlike [`map`], at most a few results per thread are held at once: the
+/// items are taken in windows, each window computed in parallel and drained
+/// into `sink` before the next starts. This is the form for results that are
+/// large, such as a decoded template's cells.
+pub fn try_for_each_ordered<T, R, E, F, S>(items: &[T], f: F, mut sink: S) -> Result<(), E>
+where
+    T: Sync,
+    R: Send,
+    F: Fn(&T) -> R + Sync,
+    S: FnMut(R) -> Result<(), E>,
+{
+    let window = (threads() * 2).max(1);
+    for chunk in items.chunks(window) {
+        for r in map(chunk, &f) {
+            sink(r)?;
+        }
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     /// The results come back in item order however the work was scheduled:
@@ -101,5 +125,26 @@ mod tests {
             })
             .collect();
         assert_eq!(got, want);
+    }
+
+    /// The sink sees every result in item order and nothing after its first
+    /// refusal.
+    #[test]
+    fn the_sink_sees_results_in_order_and_stops_at_its_refusal() {
+        let items: Vec<usize> = (0..97).collect();
+        let mut seen = Vec::new();
+        let r = super::try_for_each_ordered(
+            &items,
+            |&i| i * 3,
+            |v| {
+                if v == 150 {
+                    return Err(v);
+                }
+                seen.push(v);
+                Ok(())
+            },
+        );
+        assert_eq!(r, Err(150));
+        assert_eq!(seen, (0..50).map(|i| i * 3).collect::<Vec<_>>());
     }
 }

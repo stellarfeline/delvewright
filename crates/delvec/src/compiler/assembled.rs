@@ -608,35 +608,51 @@ fn placed_blocks(plan: &Plan, structures: &BTreeMap<String, Vec<u8>>) -> Placed 
                 }
             }
         }
-        for (piece, template) in area
+        let placed: Vec<_> = area
             .pieces
             .iter()
             .flat_map(|p| p.templates.iter().map(move |t| (p, t)))
-        {
-            let Some(bytes) = structures.get(&template.structure_file) else {
-                continue;
-            };
-            // Blockstate-preserving read: waterlogging, slab halves and
-            // snow-layer counts are block STATE, and the fluid/step models below
-            // are wrong without them. Every classifier matches on [`base_id`].
-            for (local, name, open) in structure_cells_stateful(bytes) {
-                // Vanilla rotates blockstates as well as positions during
-                // `/place template … <rotation>` — see [`rotate_state`].
-                let name = rotate_state(&name, piece.rotation);
-                let t = piece.rotation.transform(local);
-                let cell = [
-                    template.pos[0] + t[0],
-                    template.pos[1] + t[1],
-                    template.pos[2] + t[2],
-                ];
-                if is_fence_gate(&name) && open == Some(true) {
-                    open_gates.insert(cell);
-                } else {
-                    open_gates.remove(&cell); // a later block overwrites the cell
+            .collect();
+        // Each template is decoded on its own (in parallel); the cells are
+        // written in template order, so a later template still wins a cell.
+        let _: Result<(), std::convert::Infallible> = crate::par::try_for_each_ordered(
+            &placed,
+            |(piece, template)| {
+                let Some(bytes) = structures.get(&template.structure_file) else {
+                    return Vec::new();
+                };
+                // Blockstate-preserving read: waterlogging, slab halves and
+                // snow-layer counts are block STATE, and the fluid/step models
+                // below are wrong without them. Every classifier matches on
+                // [`base_id`].
+                structure_cells_stateful(bytes)
+                    .into_iter()
+                    .map(|(local, name, open)| {
+                        // Vanilla rotates blockstates as well as positions during
+                        // `/place template … <rotation>` — see [`rotate_state`].
+                        let name = rotate_state(&name, piece.rotation);
+                        let t = piece.rotation.transform(local);
+                        let cell = [
+                            template.pos[0] + t[0],
+                            template.pos[1] + t[1],
+                            template.pos[2] + t[2],
+                        ];
+                        (cell, name, open)
+                    })
+                    .collect::<Vec<_>>()
+            },
+            |cells| {
+                for (cell, name, open) in cells {
+                    if is_fence_gate(&name) && open == Some(true) {
+                        open_gates.insert(cell);
+                    } else {
+                        open_gates.remove(&cell); // a later block overwrites the cell
+                    }
+                    blocks.insert(cell, name);
                 }
-                blocks.insert(cell, name);
-            }
-        }
+                Ok(())
+            },
+        );
         // Seals land after placement: an air fill opens a mated socket; anything
         // else seals an unused one. Either way the sealed cell is no longer an
         // authored open gate.
@@ -667,24 +683,36 @@ fn placed_blocks(plan: &Plan, structures: &BTreeMap<String, Vec<u8>>) -> Placed 
     // campaign is about. `None` for a base with no surround, so this runs zero
     // times and such a world is byte-identical.
     if let Some(surround) = &plan.surround {
-        for template in &surround.piece.templates {
-            let Some(bytes) = structures.get(&template.structure_file) else {
-                continue;
-            };
-            for (local, name, open) in structure_cells_stateful(bytes) {
-                let cell = [
-                    template.pos[0] + local[0],
-                    template.pos[1] + local[1],
-                    template.pos[2] + local[2],
-                ];
-                if is_fence_gate(&name) && open == Some(true) {
-                    open_gates.insert(cell);
-                } else {
-                    open_gates.remove(&cell);
+        let _: Result<(), std::convert::Infallible> = crate::par::try_for_each_ordered(
+            &surround.piece.templates,
+            |template| {
+                let Some(bytes) = structures.get(&template.structure_file) else {
+                    return Vec::new();
+                };
+                structure_cells_stateful(bytes)
+                    .into_iter()
+                    .map(|(local, name, open)| {
+                        let cell = [
+                            template.pos[0] + local[0],
+                            template.pos[1] + local[1],
+                            template.pos[2] + local[2],
+                        ];
+                        (cell, name, open)
+                    })
+                    .collect::<Vec<_>>()
+            },
+            |cells| {
+                for (cell, name, open) in cells {
+                    if is_fence_gate(&name) && open == Some(true) {
+                        open_gates.insert(cell);
+                    } else {
+                        open_gates.remove(&cell);
+                    }
+                    blocks.insert(cell, name);
                 }
-                blocks.insert(cell, name);
-            }
-        }
+                Ok(())
+            },
+        );
     }
     // **The base world holds every gate threshold open, and that is a choice about
     // the BASE world only.**

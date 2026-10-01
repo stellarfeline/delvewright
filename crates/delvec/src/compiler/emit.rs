@@ -281,16 +281,24 @@ pub fn check_template_extents(
         placed: 0,
         checked: 0,
     };
-    for (piece, template) in plan
+    let placed: Vec<_> = plan
         .placed_pieces()
         .flat_map(|p| p.templates.iter().map(move |t| (p, t)))
-    {
+        .collect();
+    // Each template's own size, read in parallel; judged below in placement
+    // order, so the first mismatch named is the one the loop would name.
+    let sizes = crate::par::map(&placed, |(_, template)| {
+        structures
+            .get(&template.structure_file)
+            .map(|bytes| crate::compiler::assembled::structure_size(bytes))
+    });
+    for ((piece, template), size) in placed.into_iter().zip(sizes) {
         {
             binding.placed += 1;
-            let Some(bytes) = structures.get(&template.structure_file) else {
+            let Some(read) = size else {
                 continue;
             };
-            let Some(actual) = crate::compiler::assembled::structure_size(bytes) else {
+            let Some(actual) = read else {
                 continue;
             };
             binding.checked += 1;
@@ -1660,10 +1668,14 @@ pub fn build_with_warnings(
     // Placement sentinels: one known block per distinct structure, so the
     // runtime can verify each `place template` landed (see `setup` emission).
     let mut sentinels: Sentinels = BTreeMap::new();
-    for template in plan.placed_pieces().flat_map(|p| &p.templates) {
-        if let Some(bytes) = structures.get(&template.structure_file)
-            && let Some(s) = structure_sentinel(bytes)
-        {
+    let placed: Vec<_> = plan.placed_pieces().flat_map(|p| &p.templates).collect();
+    let picked = crate::par::map(&placed, |template| {
+        structures
+            .get(&template.structure_file)
+            .and_then(|bytes| structure_sentinel(bytes))
+    });
+    for (template, picked) in placed.into_iter().zip(picked) {
+        if let Some(s) = picked {
             sentinels.insert(template.structure_file.clone(), s);
         }
     }

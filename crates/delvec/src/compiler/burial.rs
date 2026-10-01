@@ -614,22 +614,32 @@ fn own_solid_sides(
     max: [i32; 3],
 ) -> BTreeSet<[i32; 3]> {
     let mut cells: Vec<[i32; 3]> = Vec::new();
-    for template in &placement.templates {
-        let Some(bytes) = structures.get(&template.structure_file) else {
-            continue;
-        };
-        for (local, name) in crate::compiler::assembled::structure_named_cells(bytes) {
-            if name == "minecraft:air" {
-                continue;
-            }
-            let t = placement.rotation.transform(local);
-            cells.push([
-                template.pos[0] + t[0],
-                template.pos[1] + t[1],
-                template.pos[2] + t[2],
-            ]);
-        }
-    }
+    // Each template decoded on its own (in parallel), its cells appended in
+    // template order.
+    let _: Result<(), std::convert::Infallible> = crate::par::try_for_each_ordered(
+        &placement.templates,
+        |template| {
+            let Some(bytes) = structures.get(&template.structure_file) else {
+                return Vec::new();
+            };
+            crate::compiler::assembled::structure_named_cells(bytes)
+                .into_iter()
+                .filter(|(_, name)| name != "minecraft:air")
+                .map(|(local, _)| {
+                    let t = placement.rotation.transform(local);
+                    [
+                        template.pos[0] + t[0],
+                        template.pos[1] + t[1],
+                        template.pos[2] + t[2],
+                    ]
+                })
+                .collect::<Vec<_>>()
+        },
+        |placed| {
+            cells.extend(placed);
+            Ok(())
+        },
+    );
     solid_sides(cells, min, max).into_keys().collect()
 }
 
