@@ -2,25 +2,25 @@
 
 A fresh `git worktree` of the engine repo is NOT self-sufficient: two pieces
 of local state live outside version control and do not follow worktrees.
-Every worker that skips them hits the same two failures.
 
 ## 1. `campaigns` symlink (untracked)
 
 `crates/delvec/tests/analyze.rs` (via `common::prefabs_dir()`) and every
 campaign build resolve content through the `campaigns` symlink at the repo
-root (target: a `delvewright-campaigns` checkout). A fresh worktree lacks it —
-symptom: exactly two `analyze.rs` test failures that look like a broken
-compiler.
+root (target: a `delvewright-campaigns` checkout). A worktree without it fails
+every test that reaches the prefab library or the content campaigns, and the
+failures look like a broken compiler.
 
 **The symlink is the only mechanism.** There is no environment-variable
 override — `$DELVEWRIGHT_CAMPAIGNS_DIR` is read by no code, so exporting it
-produces exactly the two failures this file exists to prevent. The path is
-constructed literally in four places (`crates/delvec/tests/common/mod.rs`,
+produces exactly the failures this file exists to prevent. The path is
+constructed literally in five places (`crates/delvec/tests/common/mod.rs`,
 `crates/delvec/src/main.rs`'s `--prefabs` default, `crates/delvec/src/compiler/view/nbt.rs`,
-`crates/delvec/tests/render_gpu.rs`); making an override real means all four sites
-or none.
+`crates/delvec/tests/render_gpu.rs`, `crates/delvec/tests/grammar_campaign_zones.rs`);
+making an override real means all five sites or none.
 
-Fix, from the new worktree root:
+`tools/planner/worktree-new.sh` creates the link, resolved to an absolute path.
+For a worktree made any other way, from the new worktree root:
 
 ```sh
 ln -s <path-to-delvewright-campaigns-checkout> campaigns
@@ -39,8 +39,9 @@ root and is gitignored. Copy it from the main checkout when present:
 cp <main-checkout>/delvewright.local.toml .
 ```
 
-**Exactly two tools read it**, both Python, and only for their own section:
-`tools/creator/i18n-translate.py` (`[i18n]`) and `tools/creator/refimg.py` (`[refimg]`). No
+**Exactly three tools read it**, all Python, and only for their own section:
+`tools/creator/i18n-translate.py` (`[i18n]`), `tools/creator/refimg.py` (`[refimg]`)
+and `tools/creator/refscore.py` (`[refscore]`). No
 shell script, no compose file and no Rust crate reads it — grep the tree before
 believing otherwise.
 
@@ -50,9 +51,9 @@ and its pins from `versions.toml`. A red ladder run is never caused by a missing
 `delvewright.local.toml` — same shape as `$DELVEWRIGHT_CAMPAIGNS_DIR` above, a
 plausible mechanism nothing implements.
 
-So absence is not fatal to any ladder run; it is fatal only to `i18n-translate`
-and `refimg`, which exit non-zero saying what to add. Copy it anyway if you may
-touch either.
+So absence is not fatal to any ladder run; it matters only to `i18n-translate`,
+`refimg` and `refscore`, which say what to add. Copy it anyway if you may touch
+any of them.
 
 ## 3. Scratch space is NOT isolated between workers
 
@@ -76,7 +77,7 @@ there.
 
 ### Why this is not a tidiness rule
 
-Measured, 2026-08-09: four workers ran concurrently and **all four**
+Measured: four workers ran concurrently and **all four**
 independently built before/after trees in that one namespace — `base`/`after`,
 `out-base`/`out-new`, `zh-base`/`zh-new`, `out/base-<campaign>`/`out/new-<campaign>`.
 One worker's `base/` was replaced mid-run by another's repo checkout, and its
@@ -113,6 +114,5 @@ piece of before/after evidence, not just the ones in a shared directory.
 
 ## Status
 
-Documented stopgap. The sanctioned ladder runner is expected to
-automate the first two checks with a hard preflight; until then, treat this file
-as the checklist for any worker dispatched into a fresh worktree.
+`tools/planner/worktree-new.sh` makes §1's link. §2's copy and §3's scratch
+directory are made by hand, and this file is the checklist for them.
