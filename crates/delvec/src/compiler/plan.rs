@@ -475,6 +475,11 @@ pub struct CheckpointPlan {
     pub rest_label: String,
     /// The **save only** button label.
     pub save_label: String,
+    /// The **rest and save** button's hover tooltip, as authored (spec-0078);
+    /// `None` emits no tooltip.
+    pub rest_tooltip: Option<String>,
+    /// The **save only** button's hover tooltip, as authored (spec-0078).
+    pub save_tooltip: Option<String>,
 }
 
 /// A resolved stage-5 `shortcut` (spec-0016 §2), collected in deterministic
@@ -6696,6 +6701,8 @@ impl V06Collector<'_> {
                 prompt: None,
                 rest_label: None,
                 save_label: None,
+                rest_tooltip: None,
+                save_tooltip: None,
             });
             self.checkpoints.push(CheckpointPlan {
                 index: self.checkpoints.len(),
@@ -6719,6 +6726,8 @@ impl V06Collector<'_> {
                     .save_label
                     .map(str::to_string)
                     .unwrap_or_else(|| delvewright_dsl::chrome::BONFIRE_SAVE.tagged()),
+                rest_tooltip: labels.rest_tooltip.map(str::to_string),
+                save_tooltip: labels.save_tooltip.map(str::to_string),
             });
         }
     }

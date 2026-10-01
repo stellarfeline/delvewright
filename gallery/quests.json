@@ -531,7 +531,9 @@
             ],
             "prompt": "Rest at the hearth",
             "rest_label": "Rest",
+            "rest_tooltip": "The hearth keeps you, and the hall sets itself back up.",
             "save_label": "Save and quit",
+            "save_tooltip": "The hearth keeps you; nothing in the hall is reset.",
             "type": "bonfire"
           },
           {
