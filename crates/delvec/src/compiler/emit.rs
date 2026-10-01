@@ -12319,7 +12319,11 @@ fn trap_tick(plan: &Plan) -> Vec<String> {
             "execute as @e[tag=dw_trapdis_{id}] run data remove entity @s interaction"
         ));
     }
-    out.extend(trap_gate_tick(plan));
+    // The gate clauses live in their own function so the generated PackTest can
+    // run exactly the clauses the tick runs, and nothing else the tick does.
+    if plan.traps.iter().any(trap_is_gated) {
+        out.push(format!("function {ns}:trap_gate_tick"));
+    }
     out
 }
 
@@ -12361,6 +12365,10 @@ fn trap_fns(plan: &Plan, gate_hardware: &BTreeMap<String, String>) -> Vec<(Strin
     }
     out.extend(trap_payload_fns(plan));
     out.extend(trap_gate_fns(plan, gate_hardware));
+    let gate_tick = trap_gate_tick(plan);
+    if !gate_tick.is_empty() {
+        out.push(("trap_gate_tick".to_string(), lines(&gate_tick)));
+    }
     out
 }
 
@@ -14660,6 +14668,9 @@ fn emit_packtest(
     // v0.6: trap payload loads into the dispenser; a disarm empties it (spec-0011).
     // Emits nothing when the campaign declares no traps.
     emit_trap_packtests(plan, out);
+    // The gate's own template, independent of the dispenser one: a campaign
+    // whose gated trap carries a command payload and no dispenser still owes it.
+    emit_trap_gate_packtest(plan, out);
     emit_payload_packtests(plan, out, payloads);
     // spec-0016 §1: resting at a bonfire moves the party respawn point and
     // re-seats its `respawns_on_rest` waves. Emits nothing without a bonfire.
@@ -16089,7 +16100,6 @@ fn emit_trap_packtests(plan: &Plan, out: &mut BuildOutput) {
         format!("packtest-datapack/data/{ns}/test/v06_trap.mcfunction"),
         lines(&b).into_bytes(),
     );
-    emit_trap_gate_packtest(plan, out);
 }
 
 /// spec-0022 PackTests: the **saturation contract** and the collapse, asserted
@@ -16243,53 +16253,83 @@ fn emit_payload_packtests(plan: &Plan, out: &mut BuildOutput, payloads: &Payload
     }
 }
 
-/// v0.6 trap **flag-gate** PackTest (spec-0011): the gate physically removes and
+/// v0.6 trap **gate** PackTest (spec-0011): the gate physically removes and
 /// restores the trigger hardware, so the machine-checkable contract is the block
 /// itself — while the gate is shut the trigger cell is air (a player stepping there
-/// touches nothing), and when it opens the authored trigger is back, verbatim.
+/// touches nothing), and when it opens the authored trigger is back.
 ///
-/// This is the assertion the feature never had: `requires_flags`/`forbids_flags`
-/// were validated and planned but read by no emission site at all, so the
-/// documented "inactive while the flag is set" behaviour simply did not exist.
+/// It drives the gate through the state the campaign really writes — every term on
+/// the holder [`Plan::gate_terms`] names, via [`packtest_gate_drive`] — and runs
+/// the emitted `trap_gate_tick`, never `trap_gate_on`/`trap_gate_off` directly: a
+/// template that calls the two halves itself proves the halves and never the
+/// clauses that decide between them, which is how a gate reading a score no
+/// player carries shipped behind a green suite.
+///
+/// Every term is shown able to shut the gate on its own: open it, break exactly
+/// that term, tick, assert air; repair it, tick, assert the trigger is back. The
+/// first gated trap is the subject, whichever axes it uses.
 fn emit_trap_gate_packtest(plan: &Plan, out: &mut BuildOutput) {
     let ns = &plan.namespace;
     let title = artifact_title(plan.campaign);
-    // The first trap gated by a single forbidding flag, which is the shape that can
-    // be driven from a test: set the flag → shut, clear it → open.
-    let Some(t) = plan
+    let Some((t, gate)) = plan
         .traps
         .iter()
-        .find(|t| t.requires_flags.is_empty() && t.forbids_flags.len() == 1)
+        .filter(|t| trap_is_gated(t))
+        .find_map(|t| {
+            plan.campaign
+                .quests
+                .content
+                .traps
+                .iter()
+                .find(|d| d.id.as_str() == t.id)
+                .map(|d| (t, d.gate()))
+        })
     else {
         return;
     };
-    let flag = plan::flag_score(&t.forbids_flags[0]);
     let c = t.trigger_cell;
-    let (pin, sel) = pin_dummy("dw_t_tgate");
+    let party = plan::PARTY;
     let mut b = packtest_header(&format!(
-        "{title}: trap `{}` is physically disarmed while `{}` is set (spec-0011)",
-        t.id, t.forbids_flags[0]
+        "{title}: trap `{}` is physically disarmed while its gate is shut, on every term (spec-0011)",
+        t.id
     ));
     b.push(format!("function {ns}:setup"));
-    b.push(pin);
-    // Start from the armed world the setup leaves behind, then shut the gate by
-    // setting the flag and running the real emitted tick clause path.
-    b.push(format!("function {ns}:trap_gate_on_{}", t.safe));
-    b.push(format!("scoreboard players set {sel} {flag} 1"));
+    let tick_and_assert = |b: &mut Vec<String>, shut: bool| {
+        b.push(format!("function {ns}:trap_gate_tick"));
+        b.push(format!(
+            "execute store success score #tgate dw.sys if block {} {} {} minecraft:air",
+            c[0], c[1], c[2]
+        ));
+        b.push(format!(
+            "assert score #tgate dw.sys matches {}",
+            u8::from(shut)
+        ));
+    };
+    // Start shut, so the first open is a transition the tick has to make.
     b.push(format!("function {ns}:trap_gate_off_{}", t.safe));
-    b.push(format!(
-        "execute store success score #tgate dw.sys if block {} {} {} minecraft:air",
-        c[0], c[1], c[2]
-    ));
-    b.push("assert score #tgate dw.sys matches 1".to_string());
-    // Clear the flag and re-open: the authored trigger must be back in the world.
-    b.push(format!("scoreboard players set {sel} {flag} 0"));
-    b.push(format!("function {ns}:trap_gate_on_{}", t.safe));
-    b.push(format!(
-        "execute store success score #tgate dw.sys if block {} {} {} minecraft:air",
-        c[0], c[1], c[2]
-    ));
-    b.push("assert score #tgate dw.sys matches 0".to_string());
+    b.extend(packtest_gate_drive(plan, gate, true));
+    tick_and_assert(&mut b, false);
+    for f in gate.requires_flags {
+        let s = plan::flag_score(f.as_str());
+        b.push(format!("scoreboard players set {party} {s} 0"));
+        tick_and_assert(&mut b, true);
+        b.push(format!("scoreboard players set {party} {s} 1"));
+        tick_and_assert(&mut b, false);
+    }
+    for f in gate.forbids_flags {
+        let s = plan::flag_score(f.as_str());
+        b.push(format!("scoreboard players set {party} {s} 1"));
+        tick_and_assert(&mut b, true);
+        b.push(format!("scoreboard players set {party} {s} 0"));
+        tick_and_assert(&mut b, false);
+    }
+    for cmp in gate.requires_state {
+        let one = std::slice::from_ref(cmp);
+        b.extend(state_drive_lines(plan, one, false));
+        tick_and_assert(&mut b, true);
+        b.extend(state_drive_lines(plan, one, true));
+        tick_and_assert(&mut b, false);
+    }
     out.insert(
         format!("packtest-datapack/data/{ns}/test/v06_trap_gate.mcfunction"),
         lines(&b).into_bytes(),

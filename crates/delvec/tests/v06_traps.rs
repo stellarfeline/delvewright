@@ -402,10 +402,21 @@ fn a_flag_gated_trap_removes_and_restores_its_trigger() {
     );
 
     // The tick drives both directions, keyed on the sentinel so the `setblock`
-    // fires on a transition rather than every tick.
-    let tick = text(
+    // fires on a transition rather than every tick. The clauses live in their
+    // own function, which the tick calls, so the PackTest can run exactly them.
+    let main_tick = text(
         &out,
         &format!("datapack/data/{NS}/function/tick.mcfunction"),
+    );
+    assert!(
+        main_tick
+            .lines()
+            .any(|l| l.trim() == "function hello-world:trap_gate_tick"),
+        "the tick must run the gate clauses:\n{main_tick}"
+    );
+    let tick = text(
+        &out,
+        &format!("datapack/data/{NS}/function/trap_gate_tick.mcfunction"),
     );
     let shut = "execute if score #trapgate_dart_hall dw.sys matches 1 \
                 if entity @a[scores={dw.f_darts_off=1..}] \
