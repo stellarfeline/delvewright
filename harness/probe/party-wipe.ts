@@ -21,9 +21,10 @@
 //   3. Both hurt, one rests: the wave re-seats and BOTH are back at full health.
 //
 // Exit 0 only when every assertion holds; every assertion prints its reading.
-import mineflayer, { type Bot } from "mineflayer";
+import type { Bot } from "mineflayer";
 // @ts-expect-error — a plain ES module shared with the shell half, no types.
 import { rconChannel } from "../../tools/lib/rcon.mjs";
+import { createHarnessBot } from "../src/client-loaded.ts";
 
 const [host, portText, container, ns, bonfireText, wave] = process.argv.slice(2);
 if (!host || !portText || !container || !ns || !bonfireText || !wave) {
@@ -41,24 +42,12 @@ function check(label: string, ok: boolean, reading: string): void {
   if (!ok) failures.push(label);
 }
 
-/**
- * Tell the server this client has loaded the world, as the vanilla client does
- * after joining and after every respawn. Until it does, the pinned server holds
- * the player invulnerable — measured: `kill` answers `Killed <name>` while the
- * body keeps 20 health and `deathCount` stays 0 — and mineflayer 4.37.1 never
- * sends it, so without this every death below would be a death that never
- * happened.
- */
-function loaded(bot: Bot): void {
-  (bot as unknown as { _client: { write(name: string, data: object): void } })._client.write(
-    "player_loaded",
-    {},
-  );
-}
-
 function join(username: string): Promise<Bot> {
   return new Promise((resolve, reject) => {
-    const bot = mineflayer.createBot({
+    // `createHarnessBot` reports `player_loaded` after the join and every respawn,
+    // as the vanilla client does; without it the server holds each body
+    // unhurtable for 60 ticks and `kill` answers `Killed <name>` with nothing dead.
+    const { bot } = createHarnessBot({
       host,
       port: Number(portText),
       username,
@@ -66,7 +55,6 @@ function join(username: string): Promise<Bot> {
       auth: "offline",
       respawn: false,
     });
-    bot.on("spawn", () => loaded(bot));
     bot.once("spawn", () => resolve(bot));
     bot.once("error", reject);
     bot.once("kicked", (r) => reject(new Error(`${username} kicked: ${JSON.stringify(r)}`)));

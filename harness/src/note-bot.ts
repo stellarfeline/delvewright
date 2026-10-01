@@ -12,7 +12,7 @@
 // AUTH + DELVEWRIGHT_BOT_USERNAME. The note text is DELVEWRIGHT_NOTE_TEXT (default a
 // Chinese string, to exercise multilingual capture end-to-end).
 
-import { createBot } from "mineflayer";
+import { createHarnessBot } from "./client-loaded.ts";
 import { botConfigFromEnv } from "./executor.ts";
 
 /** Default fixture note — Chinese, matching the spec-0006 example. */
@@ -30,7 +30,7 @@ async function main(): Promise<number> {
     `note-bot connecting to ${config.host}:${config.port} as ${config.username}\n`,
   );
 
-  const bot = createBot({
+  const { bot } = createHarnessBot({
     host: config.host,
     port: config.port,
     username: config.username,

@@ -31,6 +31,7 @@ import type { MusterVerdict } from "./muster.ts";
 import type { StagedRemoval } from "./executor.ts";
 import type { DeathLoopBinding, LethalTrial } from "./death-loop.ts";
 import type { ClassifiedDeath } from "./teardown.ts";
+import { loadWindowSummary, type LoadWindowRecord } from "./load-window.ts";
 import type { NamePreference } from "./executor.ts";
 
 /**
@@ -149,6 +150,8 @@ export class RunReport {
     namedCandidates: 0,
   };
 
+  private loadWindows: LoadWindowRecord[] = [];
+
   constructor(campaignId: string, difficulty: string) {
     this.campaignId = campaignId;
     this.difficulty = difficulty;
@@ -163,6 +166,20 @@ export class RunReport {
    * process down is the one worth reading, and a cascade of follow-on rejections
    * must not overwrite it.
    */
+  /**
+   * Add failures to a stage row already recorded — for a judgement made over the
+   * whole run (a load window) that belongs to the stage it happened in. A stage
+   * with no row yet is not invented: the failures go to the critical path, the
+   * stage every run has.
+   */
+  appendFailures(stage: StageName, failures: readonly string[]): void {
+    if (failures.length === 0) return;
+    const target = this.stages.has(stage) ? stage : "critical-path";
+    const row = this.stages.get(target);
+    if (!row) throw new Error(`no ${target} row to append ${failures.length} failure(s) to`);
+    this.stages.set(target, { ...row, failures: [...row.failures, ...failures] });
+  }
+
   recordHarnessCrash(crash: HarnessCrash): void {
     this.harnessCrash ??= crash;
   }
@@ -260,6 +277,11 @@ export class RunReport {
     this.namePreference = binding;
   }
 
+  /** Every stretch the server held the bot unhurtable, with what each absorbed. */
+  recordLoadWindows(windows: readonly LoadWindowRecord[]): void {
+    this.loadWindows = [...windows];
+  }
+
   recordBranches(tier: string, driven: string | undefined, outcomes: readonly BranchOutcome[]): void {
     this.branchTier = tier;
     this.drivenBranch = driven;
@@ -340,6 +362,9 @@ export class RunReport {
           failures: [...r.failures],
         };
       }),
+      // Every stretch after a join or a respawn in which the server would not let
+      // the bot be hurt, what closed it, and every damage event it absorbed.
+      load_windows: loadWindowSummary(this.loadWindows),
       // The bonfires the bot actually RESTED at. A bonfire only
       // arms an affordance; the respawn point moves when the party rests, so this
       // list is what makes every `at_checkpoint` below mean anything.
