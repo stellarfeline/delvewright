@@ -1176,3 +1176,106 @@ fn barriers_on(
         .map(|c| (c, blocks.get(&c).cloned().unwrap_or_default()))
         .collect()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn row(id: &str, reached_by: Option<&str>) -> VolumeVisibility {
+        VolumeVisibility {
+            id: id.to_string(),
+            keep_out: ([0, 0, 0], [0, 0, 0]),
+            caught: Vec::new(),
+            shown: Vec::new(),
+            shown_by: Vec::new(),
+            reached_by: reached_by.map(str::to_string),
+        }
+    }
+
+    fn hit() -> crate::compiler::nav::VolumeHit {
+        crate::compiler::nav::VolumeHit {
+            path: vec![[0, 1, 0], [1, 1, 0]],
+            entry: vec![[2, 1, 0]],
+            how: "stepping in",
+        }
+    }
+
+    fn finding(volume: &str, opened: Vec<([i32; 3], String)>) -> WaveLethalFinding {
+        WaveLethalFinding {
+            wave: "wave/choir".to_string(),
+            entity: "minecraft:drowned".to_string(),
+            radius: 16.0,
+            volume: volume.to_string(),
+            hit: hit(),
+            opened,
+        }
+    }
+
+    /// A volume no modelled body gets into is a zero binding, and it is said:
+    /// one `DW0891` warning per such volume, none for a reached one.
+    #[test]
+    fn a_volume_no_body_reaches_is_a_dw0891_warning() {
+        let d = DangerVisibility {
+            population: 10,
+            volumes: vec![
+                row("lethal/well", None),
+                row("lethal/pit", Some("a player")),
+            ],
+            declarations: 0,
+            borne_out: 0,
+        };
+        let f = d.findings();
+        assert_eq!(f.len(), 1);
+        assert_eq!(f[0].code, "DW0891");
+        assert_eq!(f[0].severity, delvewright_dsl::Severity::Warning);
+        assert!(f[0].message.contains("lethal/well"), "{}", f[0].message);
+        assert!(
+            d.line().contains("1 of 2 volume(s) reached"),
+            "{}",
+            d.line()
+        );
+    }
+
+    /// A volume only a wave member gets into is bound: a body is a body.
+    #[test]
+    fn a_wave_member_binds_a_volume_no_player_reaches() {
+        let mut d = DangerVisibility {
+            population: 10,
+            volumes: vec![row("lethal/well", None)],
+            declarations: 0,
+            borne_out: 0,
+        };
+        let waves = WaveLethalBinding {
+            opened: vec![finding("lethal/well", Vec::new())],
+            ..WaveLethalBinding::default()
+        };
+        d.credit_waves(&waves);
+        assert!(d.findings().is_empty());
+        assert_eq!(d.unreached(), 0);
+    }
+
+    /// As-built reach is `DW0922` and outranks a reach through an opened barrier;
+    /// the opened one alone is `DW0923`, naming the barrier.
+    #[test]
+    fn the_verdict_is_dw0922_before_dw0923() {
+        let gate = vec![([1, 1, 0], "minecraft:oak_fence_gate".to_string())];
+        let both = WaveLethalBinding {
+            as_built: vec![finding("lethal/a", Vec::new())],
+            opened: vec![finding("lethal/b", gate.clone())],
+            ..WaveLethalBinding::default()
+        };
+        assert_eq!(both.verdict().unwrap_err().code.id(), "DW0922");
+        let opened = WaveLethalBinding {
+            opened: vec![finding("lethal/b", gate)],
+            ..WaveLethalBinding::default()
+        };
+        let err = opened.verdict().unwrap_err();
+        assert_eq!(err.code.id(), "DW0923");
+        assert!(
+            err.message.contains("minecraft:oak_fence_gate"),
+            "{}",
+            err.message
+        );
+        assert!(WaveLethalBinding::default().verdict().is_ok());
+    }
+}

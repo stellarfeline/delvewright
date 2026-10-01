@@ -6245,7 +6245,10 @@ impl World {
                     if !column_near(x, z) && !mob {
                         continue;
                     }
-                    if !clear([x, cur[1], z]) || !clear([x, cur[1] + 1, z]) {
+                    if !within([x, cur[1], z])
+                        || !clear([x, cur[1], z])
+                        || !clear([x, cur[1] + 1, z])
+                    {
                         continue;
                     }
                     let mut trace: Vec<[i32; 3]> = Vec::new();
@@ -15491,5 +15494,154 @@ mod leave_tests {
                 .body_moves([2, 1, 0])
                 .contains(&[4 + flat, 1, 0])
         );
+    }
+}
+
+#[cfg(test)]
+mod mob_reach_tests {
+    use super::*;
+
+    /// A flat yard, feet at y=1 over a stone floor at y=0, `w` × `d` cells.
+    fn yard(w: i32, d: i32) -> BTreeSet<[i32; 3]> {
+        let mut solid = BTreeSet::new();
+        for x in 0..w {
+            for z in 0..d {
+                solid.insert([x, 0, z]);
+            }
+        }
+        solid
+    }
+
+    fn world(
+        solid: BTreeSet<[i32; 3]>,
+        tall: BTreeSet<[i32; 3]>,
+        flooded: BTreeSet<[i32; 3]>,
+        partial: BTreeMap<[i32; 3], u8>,
+    ) -> World {
+        World::from_occupancy(
+            crate::compiler::assembled::Occupancy {
+                solid,
+                tall,
+                use_gates: BTreeSet::new(),
+                flooded,
+                partial,
+                waterloggable: BTreeSet::new(),
+                lava: BTreeSet::new(),
+            },
+            Premises::geometry_only(),
+        )
+    }
+
+    fn zombie() -> Footprint {
+        entity_footprint("minecraft:zombie")
+    }
+
+    /// The jump arc is the one movement a mob does not have: across a one-column
+    /// gap a player body lands, a mob does not.
+    #[test]
+    fn a_mob_makes_no_gap_jump() {
+        let mut solid = BTreeSet::new();
+        for x in [0, 1, 2, 4, 5, 6] {
+            solid.insert([x, 0, 0]);
+        }
+        // Deep under the gap, so the fall is not a way across either.
+        let w = World::from_solid_cells(solid);
+        assert!(w.body_moves([2, 1, 0]).contains(&[4, 1, 0]));
+        assert!(!w.mob_moves([2, 1, 0], &zombie()).contains(&[4, 1, 0]));
+    }
+
+    /// The vesperhold climb, in miniature: a lantern one course high beside a wall
+    /// two courses high. A mob steps onto the lantern, jumps from its top onto the
+    /// wall's top, and walks along it; the player relation never stands a body on
+    /// a wall, and from the floor the wall's top is a 1.5-block rise.
+    #[test]
+    fn a_mob_climbs_a_lantern_onto_a_wall_top() {
+        let mut solid = yard(6, 3);
+        solid.insert([1, 1, 1]); // the lantern
+        let partial: BTreeMap<[i32; 3], u8> = [([1, 1, 1], 9u8)].into_iter().collect();
+        let tall: BTreeSet<[i32; 3]> = [[2, 1, 1], [3, 1, 1]].into_iter().collect();
+        let w = world(solid, tall, BTreeSet::new(), partial);
+        let fp = zombie();
+        assert!(
+            w.mob_moves([0, 1, 1], &fp).contains(&[1, 2, 1]),
+            "onto the lantern"
+        );
+        assert!(
+            w.mob_moves([1, 2, 1], &fp).contains(&[2, 2, 1]),
+            "onto the wall"
+        );
+        assert!(w.mob_moves([2, 2, 1], &fp).contains(&[3, 2, 1]), "along it");
+        assert!(
+            !w.mob_moves([2, 1, 0], &fp).contains(&[2, 2, 1]),
+            "never from the floor beside it"
+        );
+        assert!(!w.body_moves([1, 2, 1]).contains(&[2, 2, 1]));
+    }
+
+    /// A drop through a volume at any depth is a way in, however far below the
+    /// floor the body would have landed — and only a fall finds it.
+    #[test]
+    fn a_fall_through_a_volume_is_a_way_in_at_any_depth() {
+        let mut solid = yard(3, 3);
+        solid.remove(&[2, 0, 1]);
+        solid.insert([2, -40, 1]);
+        let w = World::from_solid_cells(solid);
+        let vol = ([2, -30, 1], [2, -30, 1]);
+        let r = w.reach_into_volumes(&[[0, 1, 1]], &zombie(), true, Some(16.0), &[vol]);
+        let hit = r.hits[0].as_ref().expect("the shaft's volume is reached");
+        assert_eq!(hit.how, "a fall");
+        assert_eq!(hit.entry.last(), Some(&[2, -30, 1]));
+    }
+
+    /// Water over a volume: a mob sinks to it, a player body (which does not
+    /// dive) does not — the zero-binding shape `DW0891` reports.
+    #[test]
+    fn a_mob_sinks_to_a_volume_under_water_and_a_player_does_not() {
+        let mut solid = yard(5, 3);
+        let mut flooded = BTreeSet::new();
+        for y in -4..=0 {
+            solid.remove(&[3, y, 1]);
+            flooded.insert([3, y, 1]);
+            solid.insert([2, y, 1]);
+            solid.insert([4, y, 1]);
+            solid.insert([3, y, 0]);
+            solid.insert([3, y, 2]);
+        }
+        solid.remove(&[2, 0, 1]);
+        flooded.insert([2, 0, 1]);
+        solid.insert([2, -1, 1]);
+        solid.insert([3, -5, 1]);
+        let w = world(solid, BTreeSet::new(), flooded, BTreeMap::new());
+        let vol = ([3, -4, 1], [3, -4, 1]);
+        let mob = w.reach_into_volumes(&[[0, 1, 1]], &zombie(), true, Some(16.0), &[vol]);
+        assert_eq!(
+            mob.hits[0].as_ref().map(|h| h.how),
+            Some("sinking in water")
+        );
+        let player = w.reach_into_volumes(&[[0, 1, 1]], &Footprint::player(), false, None, &[vol]);
+        assert!(player.hits[0].is_none(), "{:?}", player.hits[0]);
+    }
+
+    /// The follow range bounds the flood: a volume one cell past it is not
+    /// reached.
+    #[test]
+    fn the_follow_range_bounds_the_reach() {
+        let w = World::from_solid_cells(yard(20, 1));
+        let vol = ([12, 1, 0], [12, 1, 0]);
+        let near = w.reach_into_volumes(&[[0, 1, 0]], &zombie(), true, Some(12.0), &[vol]);
+        let far = w.reach_into_volumes(&[[0, 1, 0]], &zombie(), true, Some(10.0), &[vol]);
+        assert!(near.hits[0].is_some());
+        assert!(far.hits[0].is_none());
+    }
+
+    /// A barrier a player opens, removed: the cell is passable to every body.
+    #[test]
+    fn an_opened_barrier_is_an_empty_cell() {
+        let solid = yard(5, 1);
+        let tall: BTreeSet<[i32; 3]> = [[2, 1, 0]].into_iter().collect();
+        let w = world(solid, tall.clone(), BTreeSet::new(), BTreeMap::new());
+        assert!(!w.mob_moves([1, 1, 0], &zombie()).contains(&[2, 1, 0]));
+        let opened = w.with_openings_open(&tall);
+        assert!(opened.mob_moves([1, 1, 0], &zombie()).contains(&[2, 1, 0]));
     }
 }
