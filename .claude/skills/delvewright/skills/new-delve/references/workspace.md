@@ -295,7 +295,7 @@ last player-visible sentence of the run, absent = the finale quest's `goal`.
   you take `ocean`:
 
   ```sh
-  python3 - <<'EOF'
+  "$DELVEWRIGHT_PYTHON" - <<'EOF'
   import json, os
   LIB = os.environ["DELVEWRIGHT_PREFABS"]
   pools = json.load(open(f"{LIB}/pools.json"))["pools"]

@@ -72,16 +72,16 @@ edge: never a sheet, never a grid, never a panel, never an inset or a caption."
 # --- on gemini-native ------------------------------------------------------
 
 # view 1 — from the prompt alone, framed as an elevation
-python3 "$DELVEWRIGHT_ENGINE/tools/creator/refimg.py" --prompt-file v1-front.txt --style-note "$STYLE" \
+"$DELVEWRIGHT_PYTHON" "$DELVEWRIGHT_ENGINE/tools/creator/refimg.py" --prompt-file v1-front.txt --style-note "$STYLE" \
     --aspect-ratio 16:9 --out .refimg/map-view1-front
 
 # read view 1's interaction id out of its sidecar — this is the series anchor
-V1=$(python3 -c 'import json;print(json.load(open(".refimg/map-view1-front.json"))["id"])')
+V1=$("$DELVEWRIGHT_PYTHON" -c 'import json;print(json.load(open(".refimg/map-view1-front.json"))["id"])')
 
 # every later view: the same anchor, its own prompt, its own frame
-python3 "$DELVEWRIGHT_ENGINE/tools/creator/refimg.py" --prompt-file v2-west.txt  --style-note "$STYLE" \
+"$DELVEWRIGHT_PYTHON" "$DELVEWRIGHT_ENGINE/tools/creator/refimg.py" --prompt-file v2-west.txt  --style-note "$STYLE" \
     --chain-from "$V1" --aspect-ratio 16:9 --out .refimg/map-view2-west
-python3 "$DELVEWRIGHT_ENGINE/tools/creator/refimg.py" --prompt-file v3-plan.txt  --style-note "$STYLE" \
+"$DELVEWRIGHT_PYTHON" "$DELVEWRIGHT_ENGINE/tools/creator/refimg.py" --prompt-file v3-plan.txt  --style-note "$STYLE" \
     --chain-from "$V1" --aspect-ratio 1:1  --out .refimg/map-view3-plan
 
 # --- on ideogram-v3 --------------------------------------------------------
@@ -89,11 +89,11 @@ python3 "$DELVEWRIGHT_ENGINE/tools/creator/refimg.py" --prompt-file v3-plan.txt 
 # view 1's IMAGE is the anchor, and the frame is named in pixels.
 
 cat style.txt v1-front.txt > .refimg/v1-prompt.txt
-python3 "$DELVEWRIGHT_ENGINE/tools/creator/refimg.py" --prompt-file .refimg/v1-prompt.txt \
+"$DELVEWRIGHT_PYTHON" "$DELVEWRIGHT_ENGINE/tools/creator/refimg.py" --prompt-file .refimg/v1-prompt.txt \
     --resolution 1344x768 --out .refimg/map-view1-front
 
 cat style.txt v2-west.txt > .refimg/v2-prompt.txt
-python3 "$DELVEWRIGHT_ENGINE/tools/creator/refimg.py" --prompt-file .refimg/v2-prompt.txt \
+"$DELVEWRIGHT_PYTHON" "$DELVEWRIGHT_ENGINE/tools/creator/refimg.py" --prompt-file .refimg/v2-prompt.txt \
     --style-ref .refimg/map-view1-front.png --resolution 1344x768 --out .refimg/map-view2-west
 ```
 
@@ -118,11 +118,11 @@ is, and why reference imagery is style authority and never dimensional
 authority. Read each view against the brief's facts, not against your memory of
 the last picture.
 
-The check this exists to make possible: a zone program once exported as a flat
-chain of rooms with no climb, no belfry and no bell, under the name of the tower
-its campaign was named after, and it survived until somebody held it against the
-zone's own image. A silhouette drawn from three sides is legible enough that the
-same collapse cannot pass.
+The check this exists to make possible: a zone program can export as a flat
+chain of rooms with no climb, no belfry and no bell under the name of the tower
+its campaign is named after, and nothing catches it until somebody holds it
+against the zone's own image. A silhouette drawn from three sides is legible
+enough that this collapse cannot pass.
 
 ## Confirmed views become campaign files
 

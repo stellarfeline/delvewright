@@ -1,9 +1,9 @@
-# `/new-delve` — the workflow as it exists today
+# `/new-delve` — the workflow
 
 **Audience: internal (agents, planner).** Model tiers, subagent dispatch and
-pipeline plumbing are in scope here and nowhere player-facing (CLAUDE.md,
-audience separation). This is a **current-state record**, the same class as
-`compiler.md` — it describes the skill as it is checked in today, not the one we
+pipeline plumbing are in scope here and nowhere player-facing (CLAUDE.md: one
+reader per document). This is a **current-state record**, the same class as
+`compiler.md` — it describes the skill as it is checked in, not the one we
 intend to build.
 
 The page itself lives in THIS repository, inside the Claude Code plugin a
@@ -12,8 +12,8 @@ creator installs from a marketplace: the spine at
 its bundled `references/` and `scripts/`, and `versions.toml` beside it naming
 the one engine it is proven on. That is ADR-0014's form executed by spec-0063,
 and ADR-0027 §2 is why it lives here rather than in the content repository: the
-page reaches thirty-seven paths under the engine tree, and a copy of any of them
-would be a second authority for a file sitting on the same disk. A creator
+page reaches dozens of paths under the engine tree (`check-skill-page.py` prints
+the count), and a copy of any of them would be a second authority for a file sitting on the same disk. A creator
 clones nothing to get it — `/plugin marketplace add` and `/plugin install` put
 it in Claude Code's own cache. `tools/ci/check-skill-page.py` is the one gate over
 it, in this repository, judging it against the engine at `[engine].ref`.
@@ -119,7 +119,8 @@ flowchart TD
     C --> F["6 · delvec fmt — EVERY campaign"]
     F --> A["7 · delvec analyze<br/>reachability / deadlock / dark mitigation"]
     A --> B["8 · delvec build -o validation/delve-output<br/>must exit 0"]
-    B --> W{{"9 · WALK IT<br/>staging gate, then localhost:25565"}}
+    B --> CAM["8b · showcase cameras<br/>one per approved image"]
+    CAM --> W{{"9 · WALK IT<br/>staging gate, then localhost:25565"}}
     W --> G8{{"10 · MACHINE LADDER<br/>PackTest / bot / branch runs"}}
     G8 --> G7{{"11 · BRANCH CHRONICLE<br/>only when branch_points exist"}}
     G7 --> G9{{"12 · VISUAL REVIEW<br/>POV sequence first"}}
@@ -210,13 +211,13 @@ something it does not check is how a green run ships a broken delve.
 
 | # | Gate | Proves | Does **not** prove |
 |---|---|---|---|
-| 4 | design gate | that the owner has seen the design **in the medium she reviews in** — the whole story, every scene, near view and far — and said yes. The images at *this* gate are **reference images**: concept art drawn from the scene description before any prefab exists, optionally by `tools/creator/refimg.py`. A render is a candidate prefab imaged by `delvec render`, and belongs to curation later. **The approved images are then committed to `campaigns/<id>/design/`** with the approval date and the approved names. Since spec-0061 the engine also reads that approval: `design.json` records one row per approved image with the `time` and `weather` it was drawn under, and `DW0890` refuses at the next `delvec validate` when the skies the built world reaches and the skies the rows state are not equal, or when a row and a file do not answer to each other. **The page's own half is not written yet** — spec-0061 §10 names it, and until it lands nothing tells a creator to write the row at the moment of approving | nothing, if it was built from orbit renders. "Is the set pretty" is a different question from "what does a player walking in experience". And **nothing at all in a later session, if the approval was never persisted**: `refimg` writes to a gitignored directory, so an approval left in a published page is unreachable by every round that follows it — which is how a whole campaign round got authored against no design and had to be abandoned |
+| 4 | design gate | that the owner has seen the design **in the medium she reviews in** — the whole story, every scene, near view and far — and said yes. The images at *this* gate are **reference images**: concept art drawn from the scene description before any prefab exists, optionally by `tools/creator/refimg.py`. A render is a candidate prefab imaged by `delvec render`, and belongs to curation later. **The approved images are then committed to `campaigns/<id>/design/`** with the approval date and the approved names. The engine also reads that approval (spec-0061): `design.json` records one row per approved image with the `time` and `weather` it was drawn under, written in the same act as the approval (`references/design-gate.md`), and `DW0890` refuses at the next `delvec validate` when the skies the built world reaches and the skies the rows state are not equal, or when a row and a file do not answer to each other | nothing, if it was built from orbit renders. "Is the set pretty" is a different question from "what does a player walking in experience". And **nothing at all in a later session, if the approval was never persisted**: `refimg` writes to a gitignored directory, so an approval left in a published page is unreachable by every round that follows it |
 | 7 | `delvec analyze` | the quest graph is reachable, no deadlock, darkness is mitigated | that any of it is *good* |
 | 8 | `delvec build` | the DSL compiles to a datapack | nothing about play |
 | 9 | the walk | somebody has stood in the world — scale, route legibility, silhouette; and the staging gate has run, because `owner-play.yaml` is the only file publishing 25565 and it refuses a build with no admission token minted for that exact tree | nothing mechanical. A red gate is the list of defect classes the playtester is unprotected from, drawn from every finding ever reported on any campaign; it refuses only where an object of the class is PRESENT and nothing binds to it. A campaign that contains none of a class's objects reads `INAPPLICABLE` — counted, named in the token, announced at boot, and not a refusal: absence of an optional surface is a design choice, and a required one cannot be absent from a build that compiled |
 | 11 | branch chronicle | every branch's storyline is coherent **in sequence**, and every branch-divergent dialogue line is licensed by a chronicle line, cited by number in `GENERATION.md` | anything on a branch with no rows — an empty table is a **fail**, not a pass |
 | 10 | machine ladder | PackTest green; the bot completes the critical path; it survives `die-retry`; every declared branch was walked | that a wave IS what the document says — read `encounters[].declared_facts` and `muster_findings` in the run report. `declared_facts: 0` over a campaign with waves means the muster asked nothing of any body, which is not a pass; an empty `muster_findings` beside a non-zero count is. The ladder asserts nothing about whether a fight can be won — that is the owner's hour |
-| 12 | visual review | the frame matches the shot's `expect` — **read the POV sequence in route order first**, orbit renders second | `DW0308` proves a camera path is air, not that the shot points at the subject — round 6 shipped an inside-out cinematic that was fully DW-green |
+| 12 | visual review | the frame matches the shot's `expect` — **read the POV sequence in route order first**, orbit renders second | `DW0308` proves a camera path is air, not that the shot points at the subject — an inside-out cinematic is fully DW-green |
 | 14 | storybook marker | the host is told which engine they need, and the player which Minecraft to install | verified by `tools/creator/check-storybook-version.py`, which is the thing that stops a stale marker |
 
 Step 11 exists because of the **decompilation principle** (spec-0025): the
@@ -244,11 +245,11 @@ a capability gap, reported as one.
 ## 5. Artifacts of record
 
 Generated campaigns live in the **content repo**, never here (CLAUDE.md
-forbidden zone). `campaigns/` is a symlink to `../delvewright-campaigns/`.
+forbidden zone). `campaigns/` is a symlink to a `delvewright-campaigns` checkout.
 
 | File | What it is |
 |---|---|
-| six stage JSONs — plus the optional stage-7 `world-edits.json` whenever the map editor was used (the island ships one), and the optional map-pipeline documents a campaign planned as a whole map carries (`geometry-brief.json`, `layout-graph.json`, `site-plan.json`); `delvec validate` covers every stage document a campaign directory holds | **the artifact of record** — the delve must rebuild byte-identically from them with no LLM (ADR-0006/0012) |
+| six stage JSONs — plus the optional stage-7 `world-edits.json` whenever the map editor was used (the island ships one), the optional map-pipeline documents a campaign planned as a whole map carries (`geometry-brief.json`, `layout-graph.json`, `site-plan.json`, and `detail-plan.json` after the walk), and `design.json` once a design is approved; `delvec validate` covers every stage document a campaign directory holds | **the artifact of record** — the delve must rebuild byte-identically from them with no LLM (ADR-0006/0012) |
 | `DESIGN.md` | the single authoritative design document; every round conformance-reviews against it |
 | `GENERATION.md` | prompt verbatim, date, `dsl_version`, decisions, the **posture note**, the chronicle citation table, the **findings ledger** |
 | `README.md` | the storybook — reader-facing, background only, opens with the engine-version marker |
@@ -280,12 +281,11 @@ validates only against a graph and a brief, and there is no blockout document at
 all, so no later stage can reach green first. The geometry is derived by
 `delvec build`, which also runs the battery over the bytes it laid.
 
-The campaigns repository's `tools/check-skill-version.py` binds this in the
-direction that actually drifts: every campaign stage document the engine defines
-must be named in the skill, with `Stage::name` as the denominator — read out of
-the engine at `versions.toml` `[engine].authoring_ref`, the revision an author's
-Init step 2 builds. Every other gate on that pair asks whether the
-skill's claims are real; this one asks whether the engine's surfaces are driven,
+`tools/ci/check-skill-page.py` binds this in the direction that actually
+drifts: every campaign stage document the engine defines must be named in the
+skill, with `Stage::name` as the denominator — read out of the engine at the
+page's `versions.toml` `[engine].ref`, the tag an author's Init I2 checks out.
+Every other gate on that pair asks whether the skill's claims are real; this one asks whether the engine's surfaces are driven,
 which is the question a skill written once and an engine that keeps moving needs
 somebody to ask.
 
@@ -354,15 +354,12 @@ from the last round only.
 
 ## 8. Where this workflow is still hand-carried
 
-Recorded now, while the bell remake is running the loop for the second time,
-because that is what the rewrite will consume. Not a proposal — an inventory.
+Not a proposal — an inventory.
 
 1. **Steps 7 and 9 are judgment, and the skill can only tell an agent to look.**
    Everything else has a machine behind it. These two have a checklist.
-2. ~~**The Artifact gate is not in the skill yet.**~~ **Closed 2026-08-06** — it
-   is step 4b, mandatory, and it does not relax in e2e mode. What remains
-   hand-carried is the *building* of the Artifact: assembling the story and the
-   near/far frames is still the authoring agent's own composition, with no
+2. **The step-4 walkthrough is composed by hand.** Assembling the story and the
+   near/far frames is the authoring agent's own composition, with no
    template and nothing checking that every scene actually got a pair of images.
    `tools/creator/refimg.py` draws the individual reference image, and the multi-view
    sequence a whole subject needs is a workflow step with its anchor and its
@@ -377,7 +374,7 @@ because that is what the rewrite will consume. Not a proposal — an inventory.
    Chunky home that does not hold the pin (`docs/reference/tools.md` §4a).
 4. **The ladder's project id is chosen by hand** (`dw-<campaign>-r<round>`).
    Required everywhere, defaulted nowhere — deliberately, since a shared default
-   is what the mutex used to paper over.
+   is a collision between ladders.
 
 4a. **The inter-area crossing rule lives in prose and in nothing a document can
    state.** A crossing is emitted on the earlier objective of a consecutive pair
@@ -386,43 +383,19 @@ because that is what the rewrite will consume. Not a proposal — an inventory.
    in. The live schema export contains **zero** occurrences of `transport` or
    `inter-area` across every stage, so an author told to generate against the
    schema has no spelling for the concept and no way to be refused by one. The
-   skill page states the rule as an authoring constraint, with the measured
-   rarity of the pieces that satisfy it (5 of 36 in the shipped library, 1 of the
-   12 members of `pool/stone-keep`), because a promise that reads as free is the
+   skill page states the rule as an authoring constraint, and has the agent
+   measure how few pieces satisfy it, because a promise that reads as free is the
    half a reader believes.
 
-4a-bis. **What a pool area guarantees is now an engine answer, and the page's
-   inline script for it is superseded.** The page asks the library which anchors
-   an area can be designed against by running a `python3 - <<'EOF'` snippet over
-   `prefabs/pools.json` that prints each pool's `entry`-role member's anchors.
-   `delvec prefab anchors [--pool <id>]` answers the same question from the
-   engine's own implementation — the same one `DW0889` reports from — so the
-   answer and the build cannot disagree, and it states the rest of the
-   vocabulary with the carrier and role each name would have to arrive on. It
-   also states the half a snippet over `pools.json` cannot: an anchor a campaign
-   REQUIRES (an objective, an NPC stand, a wave spawn, a lane waypoint, an
-   anchor-bearing effect) forces the solver to seat its carrier, so the
-   guaranteed set for an area is the entry member's anchors plus everything
-   those forced carriers declare — which is why `hollow-vigil` guarantees all
-   ten of `pool/vertical-keep`'s names and the library-only answer is two.
-
-4b. **`collect` + `container` is satisfiable by one piece in the shipped
-   library.** Exactly 1 of 36 prefabs stands an anchor on a chest or barrel
-   (`island-mountain`), five contain one anywhere, and two declare an anchor
-   named `anchor/chest` over air. The page therefore names the three shapes a
+4b. **`collect` + `container` is satisfiable by very few pieces in the shipped
+   library.** Few prefabs stand an anchor on a chest or barrel, fewer than
+   contain one anywhere, and some declare an anchor named `anchor/chest` over
+   air; the library is read, not counted here. The page therefore names the three shapes a
    `collect` can take rather than prescribing the one the library mostly cannot
    satisfy. Nothing in the engine reports this shape at authoring time; it
    arrives as `DW0438` at build.
-5. ~~**ADR-0016's third version line is undelivered.**~~ **Closed** — the
-   frontmatter carries `version:`, `requires: delvec:` and `verified_with:`, and
-   the campaigns repository's `tools/check-skill-version.py` binds all three: the
-   window must contain the engine at `[engine].authoring_ref`, `verified_with`
-   must equal that engine's root `Cargo.toml` `[workspace.package] version` in **both**
-   directions, and every subcommand and long flag the skill names must exist in
-   its clap CLI. The values and the counts are not copied
-   here — the checker prints its own binding count on every run, and a literal
-   restated in prose is false the moment the thing it names moves, with nothing
-   anywhere to notice. What is still hand-carried is a
-   floor that has become **too low** — the gate tests the skill against the
-   CURRENT CLI, so a subcommand introduced after the declared floor still
-   passes, and this repo has only one engine to test against.
+5. **The engine-version floor is too low.** The frontmatter carries
+   `metadata.requires_delvec`, and `tools/ci/check-skill-page.py` tests every
+   subcommand and long flag the page names against the engine at the pin, so a
+   subcommand introduced after the declared floor still passes; this repo has
+   only one engine to test against.

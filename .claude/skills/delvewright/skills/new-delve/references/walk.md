@@ -26,7 +26,7 @@ datapack actually loaded before it says READY:
     --prefabs "$DELVEWRIGHT_PREFABS" --delvec "$(command -v delvec)" --out "$PWD/.out/delve"
 ```
 
-**`--delvec` is optional now; this prints it so the command is exact.** Without
+**`--delvec` is optional; this prints it so the command is exact.** Without
 it the script uses the `delvec` already on `PATH` when that binary IS this
 engine — its `--version` equal to the engine checkout's `versions.toml`
 `[engine].version`, which is what Init I3a installed — and otherwise builds
@@ -57,7 +57,7 @@ and the ladder is coming next anyway — it serves that tree instead of building
 a fresh one:
 
 ```sh
-python3 "$DELVEWRIGHT_ENGINE/tools/creator/staging-gate.py" --campaign campaigns/<id> \
+"$DELVEWRIGHT_PYTHON" "$DELVEWRIGHT_ENGINE/tools/creator/staging-gate.py" --campaign campaigns/<id> \
     --build "$DELVEWRIGHT_ENGINE/validation/delve-output" \
     --report .out/round-1-gate.md
 EULA=TRUE docker compose -f "$DELVEWRIGHT_ENGINE/validation/compose.yaml" \
@@ -141,7 +141,7 @@ expected; a row in the RED list is not, and is worth stopping for.
 To go in anyway on a build you know is red:
 
 ```sh
-python3 "$DELVEWRIGHT_ENGINE/tools/creator/staging-gate.py" --campaign <dir> --build <out> \
+"$DELVEWRIGHT_PYTHON" "$DELVEWRIGHT_ENGINE/tools/creator/staging-gate.py" --campaign <dir> --build <out> \
     --stage-anyway "<why this session needs a red build>" --acknowledge-red <N>
 ```
 

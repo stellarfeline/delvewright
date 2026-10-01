@@ -58,7 +58,7 @@ above names: Multiplayer → Direct Connect → `localhost:25565`.
 from a version. Then prove it:
 
 ```sh
-python3 "$DELVEWRIGHT_ENGINE/tools/creator/check-storybook-version.py" --campaigns campaigns
+"$DELVEWRIGHT_PYTHON" "$DELVEWRIGHT_ENGINE/tools/creator/check-storybook-version.py" --campaigns campaigns
 ```
 
 Green before you report. A stale marker waves a host on an old engine straight

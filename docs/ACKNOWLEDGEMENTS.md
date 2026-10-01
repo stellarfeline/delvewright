@@ -27,13 +27,13 @@ attributions (prefabs, campaign media) live in the content repo
 | [pako](https://github.com/nodeca/pako) · [md5](https://github.com/pvorb/node-md5) · [charenc](https://github.com/pvorb/node-charenc) · [crypt](https://github.com/pvorb/node-crypt) · [is-buffer](https://github.com/feross/is-buffer) | MIT AND Zlib · BSD-3-Clause · BSD-3-Clause · BSD-3-Clause · MIT | deepslate's own runtime dependencies, and therefore bytes of the vendored bundle rather than separate adoptions. Licences verified 2026-08-14 from each package's `LICENSE` file or, where none ships (`charenc`, `crypt`), its `package.json` `license` field; all are in the ADR-0013 allowlist and one-way compatible into GPL-3.0-or-later. `tools/maintenance/build-deepslate-bundle.sh` prints this list from the lockfile on every rebuild, so a new transitive dependency cannot arrive unnamed |
 | [esbuild](https://github.com/evanw/esbuild) | MIT | Bundles the above into the single file the page embeds (`tools/maintenance/build-deepslate-bundle.sh`). A build-time tool only: pinned by exact version, installed into a scratch directory, and no esbuild code is in the output. Licence verified 2026-08-14 from the npm metadata for `esbuild` 0.28.2 |
 | [fastnbt](https://github.com/owengage/fastnbt) | MIT | NBT read/write throughout the compiler and generators |
-| [misode/mcmeta](https://github.com/misode/mcmeta) | **No license declared** — used as a MIRROR only, nothing of its own authorship taken | Where this repo's pinned 1.21.11 game data is fetched from: the Brigadier command tree, the item/entity/sound registries, and — added by the PR that records this row — the **block-state registry** `crates/dsl/data/blocks-1.21.11.json` (1166 blocks, every property and legal value), which `delvec::schem::blocks` and `prefabs/invariants/src/invariants.rs` check every emitted block against. Checked 2026-08-11: the repository has **no `LICENSE` file and no license metadata on any branch**, so under this project's own rule (unlicensed source = ideas only) nothing authored by it may be taken — and nothing is. What is vendored is Mojang's own `--reports` generator output, republished verbatim; mcmeta contributes the mirroring, not the content, and the content is a factual description of the pinned game version this project already targets (ADR-0009). The transform applied on top (namespacing, sorting, and splitting each source entry's legal values and its default state into the two tables that answer the two questions) is this repo's, in `tools/extract-*.py`, each pinning its source SHA-256. The alternative route — running Mojang's data generator locally — needs a JDK the build host did not have, and is recorded in `crates/delvec/data/PROVENANCE.md` as the route to take if this mirror ever disagrees with it. Earlier vendored files predate this ledger's coverage of the data layer and are covered by this row for completeness rather than newly adopted |
+| [misode/mcmeta](https://github.com/misode/mcmeta) | **No license declared** — used as a MIRROR only, nothing of its own authorship taken | Where this repo's pinned 1.21.11 game data is fetched from: the Brigadier command tree, the item/entity/sound registries, and — added by the PR that records this row — the **block-state registry** `crates/dsl/data/blocks-1.21.11.json` (1166 blocks, every property and legal value), which `delvec::schem::blocks` and `prefabs/invariants/src/invariants.rs` check every emitted block against. Checked 2026-08-11: the repository has **no `LICENSE` file and no license metadata on any branch**, so under this project's own rule (unlicensed source = ideas only) nothing authored by it may be taken — and nothing is. What is vendored is Mojang's own `--reports` generator output, republished verbatim; mcmeta contributes the mirroring, not the content, and the content is a factual description of the pinned game version this project already targets (ADR-0009). The transform applied on top (namespacing, sorting, and splitting each source entry's legal values and its default state into the two tables that answer the two questions) is this repo's, in `tools/maintenance/extract-*.py`, each pinning its source SHA-256. The alternative route — running Mojang's data generator locally — needs a JDK the build host did not have, and is recorded in `crates/delvec/data/PROVENANCE.md` as the route to take if this mirror ever disagrees with it. Earlier vendored files predate this ledger's coverage of the data layer and are covered by this row for completeness rather than newly adopted |
 | [clap](https://github.com/clap-rs/clap) | MIT/Apache-2.0 | Argument parsing for every binary this repo ships or runs — `delvec`, `delvec schem`, `delvec prefab`, `delvec render`, and `delvec grammar` (added by the PR that records this row). Predates this ledger's coverage of the CLI layer; recorded now rather than left implicit |
 | [mineflayer](https://github.com/PrismarineJS/mineflayer) (+ mineflayer-pathfinder) | MIT | The bot that plays every delve before humans do (`harness/`) |
 | [PackTest](https://github.com/misode/packtest) | MIT | Datapack mechanism assertions (validation only, never ships) |
 | [itzg/docker-minecraft-server](https://github.com/itzg/docker-minecraft-server) | Apache-2.0 | Server container base for validation and shipped delves |
 | [beet](https://github.com/mcbeet/beet) / [mecha](https://github.com/mcbeet/mecha) | MIT | Independent CI cross-check of emitted mcfunction (ADR-0011) |
-| [zip](https://github.com/zip-rs/zip2) | MIT | Reading the pinned client jar / resource-pack archive by name for the viewer's derived block-colour table (`crates/delvec/src/compiler`, `src/view/assets.rs`). A direct dependency of the published `delvec` since the CPU render surface moved into it (ADR-0021 §1); it is a direct one because the derivation needs `data/**/worldgen/biome/*.json` for grass, foliage and water tint, which Nucleation's resource-pack loader does not expose. Licence verified 2026-08-11 from the upstream `LICENSE` file ("MIT License", Copyright (c) 2014 Mathijs van de Nes) and the crates.io metadata for `zip` 2.4.2 (`license = "MIT"`). Not vendored, not ported |
+| [zip](https://github.com/zip-rs/zip2) | MIT | Reading the pinned client jar / resource-pack archive by name for the viewer's derived block-colour table (`crates/delvec/src/compiler/view/assets.rs`). A direct dependency of the published `delvec` since the CPU render surface moved into it (ADR-0021 §1); it is a direct one because the derivation needs `data/**/worldgen/biome/*.json` for grass, foliage and water tint, which Nucleation's resource-pack loader does not expose. Licence verified 2026-08-11 from the upstream `LICENSE` file ("MIT License", Copyright (c) 2014 Mathijs van de Nes) and the crates.io metadata for `zip` 2.4.2 (`license = "MIT"`). Not vendored, not ported |
 | [image](https://github.com/image-rs/image) | MIT/Apache-2.0 | PNG decode and composite for the CPU render arms the published `delvec` carries (ADR-0021 §1): block textures out of the client jar for the derived colour table, and the contact sheet's tiled, labelled cells. Default features are off — the surface reads and writes PNG only, and the rest of the crate's decoders would be shipped for nothing. Not vendored, not ported |
 | [crc32fast](https://github.com/srijs/rust-crc32fast) | MIT/Apache-2.0 | CRC-32 for the deterministic NPC-skin resource-pack zip (spec-0009) |
 | [schemars](https://github.com/GREsau/schemars) | MIT | Derives every JSON Schema this engine exports from the Rust type it describes, so the authoring aid a campaign author reads and the type the compiler parses cannot be two different forms. Long a dependency of `delvewright-dsl` (every stage schema); recorded now because it became a direct dependency of the **published** `delvec` crate as well, when `walk-record.json` — the one hand-authored document that is not a stage document, and so has no `Stage` to reach `dsl::schema` through — gained the schema its author needs. Licence verified from the upstream `LICENSE` file of `schemars` 1.2.2, the version this workspace locks ("MIT License", Copyright (c) 2019 Graham Esau), cross-checked against that crate's own `Cargo.toml` (`license = "MIT"`). Not vendored, not ported |
@@ -47,14 +47,13 @@ attributions (prefabs, campaign media) live in the content repo
 Plus ordinary Rust/TypeScript dependencies as declared in `Cargo.lock` /
 `package-lock.json` under their respective licenses.
 
-## Ported algorithms (prefab generation — M3)
+## Ported algorithms (prefab generation)
 
 Ideas only: the algorithmic *techniques* are re-implemented in our own Rust from
 their published description. No third-party source files are read or copied —
-algorithms are not copyrightable, only their concrete expression. Extraction
-dossier: internal research, 2026-07-31.
+algorithms are not copyrightable, only their concrete expression.
 
-### Implemented — cave/shore tileset round 2 (`prefabs/cave-generator`)
+### Implemented — cave/shore tileset (`prefabs/cave-generator`)
 
 | Source | License (verified) | Technique we re-implemented |
 |---|---|---|
@@ -73,7 +72,7 @@ work as **ideas-only** and re-implement the algorithms from their description at
 distance — which sidesteps §7 entirely, since techniques are uncopyrightable. No
 upstream code was ingested. Attribution recorded here and in each prefab's metadata.
 
-### Planned — not yet implemented (dossier Phase 3)
+### Evaluated, not implemented
 
 | Source | License | Technique |
 |---|---|---|
@@ -108,7 +107,7 @@ Upstream credits the framework to Eger with contributions by Nicholas Baron and
 an Amulet port by Kevin Kwik and Antoine Si; the temple and castle grammars are
 Eger's, the church grammar is Janista Gitbumrungsin's.
 
-**Where the port has since diverged, so the row above is not read as a claim
+**Where the port differs from upstream, so the row above is not read as a claim
 about the current code.** Upstream's orientation is an unsigned axis
 permutation. Ours carries a sign per local axis — the 48 signed axis maps rather
 than the 6 permutations — so a piece can be turned *round* as well as turned 90°
@@ -155,7 +154,7 @@ from "we took nothing because we did not look".
 
 | Source | License (verified) | What we use |
 |---|---|---|
-| [Oklab](https://bottosson.github.io/posts/oklab/) — Björn Ottosson, 23 Dec 2020 | **Public domain**, with MIT offered as an alternative: "The code is available in public domain, feel free to use it any way you please. It is also available under an MIT licensee if you for some reason can't or don't want to use public domain software." (verified 2026-08-13 from the post itself) | The sRGB → Oklab transform in `tools/creator/block-appearance.py`, written from the published LMS matrices and cube-root pipeline. It is the whole reason a block's "how coloured is it" is ONE number comparable across 1146 blocks: Oklab's lightness axis is perceptually uniform and its chroma is a plain Euclidean radius in (a, b), which sRGB and HSL do not give. No implementation is reproduced — the constants are the published ones and the surrounding code is ours. |
+| [Oklab](https://bottosson.github.io/posts/oklab/) — Björn Ottosson, 23 Dec 2020 | **Public domain**, with MIT offered as an alternative: "The code is available in public domain, feel free to use it any way you please. It is also available under an MIT licensee if you for some reason can't or don't want to use public domain software." (verified 2026-08-13 from the post itself) | The sRGB → Oklab transform in `tools/creator/block-appearance.py`, written from the published LMS matrices and cube-root pipeline. It is the whole reason a block's "how coloured is it" is ONE number comparable across every block the appearance table measures: Oklab's lightness axis is perceptually uniform and its chroma is a plain Euclidean radius in (a, b), which sRGB and HSL do not give. No implementation is reproduced — the constants are the published ones and the surrounding code is ours. |
 
 ### Surveyed, nothing ported — and why
 
@@ -219,7 +218,7 @@ prohibition is a wrong record.
 - BLOCK character-to-skin generation — [arXiv:2603.03964](https://arxiv.org/abs/2603.03964) (CC BY 4.0).
 - StoryScope: Investigating idiosyncrasies in AI fiction — [arXiv:2604.03136](https://arxiv.org/abs/2604.03136) (Russell, Rajendhran, Pham, Iyyer, Wieting). Human-vs-AI separation at 93.2% macro-F1 from **narrative structure alone**, robust to style editing, with per-model fingerprints. It is the evidence behind the `/new-delve` skill's convergence section: the tell is a shared narrative posture, not a vocabulary, and Claude's measured signature is the flattest event escalation of the models tested. Cited only — no code or text used.
 
-### Souls design-language dossier (`docs/notes/souls-design-language.md`, M4)
+### Souls design-language dossier (`docs/notes/souls-design-language.md`)
 
 Design study only — no text ported, no asset used, no game content
 reproduced. FromSoftware titles are referenced as published works for
