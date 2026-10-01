@@ -65,12 +65,26 @@ export const REJECTION = new RegExp(
     // healed its bot between blows with that command healed nothing and said
     // nothing — eighteen rows of shield readings were taken on a bot that had
     // died on its fourth blow and respawned stripped of its shield.
-    "|^Unable to modify player data)",
+    "|^Unable to modify player data" +
+    // `/damage` at a target that cannot take that damage type (measured on the
+    // pinned server against an invulnerable bot).
+    "|^Target is invulnerable to the given damage type)",
 );
 
 /** True when `reply` is the server saying it refused or could not parse `cmd`. */
 export function isRejection(reply) {
   return REJECTION.test(String(reply).trim());
+}
+
+/**
+ * True when `reply` is the server's own answer to `list` ("There are N of a max
+ * of M players online"), which is the ONLY thing a readiness poll may wait on.
+ * "Any bytes came back" is satisfied by the transport's own error text (`docker
+ * exec` on a stopped container, `Failed to connect to RCON server`). Must stay
+ * identical to `dw_rcon_is_list_answer` in rcon.sh.
+ */
+export function isListAnswer(reply) {
+  return /^There are [0-9]+ of a max of [0-9]+ players online/.test(String(reply).trim());
 }
 
 /**
@@ -157,6 +171,15 @@ export function rconChannel(container) {
     async probe(cmd) {
       const { raw, reply } = await send(cmd);
       return refuseTruncated(cmd, raw, reply);
+    },
+    /** Resolves true only when the server answered `list` itself; never throws. */
+    async ready() {
+      try {
+        const { reply } = await send("list");
+        return isListAnswer(reply);
+      } catch {
+        return false;
+      }
     },
   };
 }

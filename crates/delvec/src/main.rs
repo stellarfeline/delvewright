@@ -995,7 +995,11 @@ fn validate_loaded(
             // its flag assignment — terminality, cast continuity, exclusive-content
             // leakage, hard event contradictions — plus the forcing function that
             // every story node says what it does to the story. No-op below 0.8.0.
-            diags.extend(delvec::compiler::branch::check_branches(&campaign));
+            {
+                let (bd, bbind) = delvec::compiler::branch::check_branches_bound(&campaign);
+                examined.push(bbind.line());
+                diags.extend(bd);
+            }
             // spec-0031 (DSL v0.10): a numeric gate is judged against the writes
             // the path performs before it (DW0879). The reachability model walks
             // objectives and flags; the arithmetic a `requires_state` compares
