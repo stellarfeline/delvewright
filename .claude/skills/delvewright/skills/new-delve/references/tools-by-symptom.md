@@ -37,13 +37,13 @@ The full inventory — every binary, script and flag that exists today — is
   at all still builds — the first build is what a camera is estimated against —
   and is stopped at the staging gate instead. Workflow, at step 8b; the craft is
   `$DELVEWRIGHT_ENGINE/docs/reference/showcase-shots.md` §4.
-- **A render camera nobody is satisfied with**: stop estimating and let her
-  stand where the shot is. Five steps, in this order. **(1)** The server she is
-  in already has the overlay — it is step 9's command, and when it is not up,
+- **A render camera nobody is satisfied with**: stop estimating and let the
+  user stand where the shot is. Five steps, in this order. **(1)** The server
+  they are in already has the overlay — it is step 9's command, and when it is not up,
   that command again; `owner-play.yaml` publishes `localhost:25565` and nothing
-  else does. **(2)** Tell her the two triggers: `/trigger dw.free` to fly and to
+  else does. **(2)** Tell them the two triggers: `/trigger dw.free` to fly and to
   come back, and `/trigger dw.cam set <n>` when the frame is right, `<n>` the
-  slot you give her in chat. FOV Effects off; ask her slider's number. **(3)**
+  slot you give them in chat. FOV Effects off; ask their FOV slider's number. **(3)**
   Read the log before `down`: `docker logs dw-playtest > <file>` on the
   `$DELVEWRIGHT_ENGINE/tools/creator/playtest-server.sh` path, or `docker compose …
   --profile playtest logs --no-color > <file>` on the compose path. **(4)**
@@ -51,10 +51,10 @@ The full inventory — every binary, script and flag that exists today — is
   <out>/creator-datapack/layout.json --camera-out camera-report.json`, `<out>`
   the build the server runs. **(5)** Write the row with `delvec --prefabs
   "$DELVEWRIGHT_PREFABS" place-camera <campaign-dir> --name <row> --report
-  camera-report.json --slot <n> --fov <her slider>`, show her the draft
+  camera-report.json --slot <n> --fov <their slider>`, show them the draft
   (`cameras --draft`) and render that one scene (`cameras --only <row>`). A hand pose replaces the estimate in its own row and
-  the writer refuses to put an estimate back over it; deleting the row is her
-  call, asked in chat. Human-in-the-loop, at step 12 and at step 14; the full
+  the writer refuses to put an estimate back over it; deleting the row is the
+  user's call, asked in chat. Human-in-the-loop, at step 12 and at step 14; the full
   procedure is `$DELVEWRIGHT_ENGINE/docs/reference/tools.md` §4a.
 - **NPCs never spawn, or a large build dies partway**: an OOM, not a content bug — `up` checks and says so; raise `--memory` past the default heap ceiling `up` prints.
 - **Handing a build to a playtester**: the playtest note flow — `/trigger dw.note`

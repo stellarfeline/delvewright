@@ -22,8 +22,7 @@ declaration. `DW0211` is its declared-relight sibling.
 
 The model is `crates/delvec/src/compiler/light.rs` — the **one** authority for emission, opacity and the
 flood. `crates/delvec/src/admit`'s prefab probe and spec-0010's assembled gate both read it rather than
-keeping a copy; a private second copy is what once left the prefab probe with no sky term at all
-and reported daylit colonnades as pitch black.
+keeping a copy.
 
 Three facts follow, and they decide how much light a room actually needs. **[authored]** —
 measured at engine `86944766` by reading `effective_sky`, `DARK_THRESHOLD` and `flood`.
@@ -75,35 +74,34 @@ and hang something.
 The same rule reaches the piece one stage earlier: `delvec prefab lighting` measures a piece whose
 spatial contract declares every space `enclosed` under **no sky**, because such a piece will stand
 inside a plan's box under the whole's roof and meets none. A piece declaring an `open` or
-`open_top` space, or no contract at all, is measured standing in open air as before. Without that,
-an emitterless detail piece was written `lit` on the strength of the night sky floor and then red
-`DW0210` the moment it was built.
+`open_top` space, or no contract at all, is measured standing in open air.
 
 ## 2. Where a lamp may physically go
 
-`crates/delvec/src/grammar/nav.rs` decides passability as **air, or a `*_skull`**. Every other block is
-a full solid cube to the zone-program walk proof. A lantern, torch, candle or campfire dropped
-into a cell a body walks through therefore *removes that cell from the walk*, and a bed of a
-non-collidable block on a floor reads as a **new floor level**.
+Passability is one table, `delvewright_dsl::blockshape` (spec-0056;
+`crates/dsl/src/blockshape.rs:1-11`), read by the grammar walk
+(`crates/delvec/src/grammar/nav.rs:44-61`, `:96-102`), the prefab light probe
+(`crates/delvec/src/admit/light.rs:342-352`) and the compiler's occupancy model
+(`crates/delvec/src/compiler/assembled.rs:39-45`). It classifies a block state by its collision
+box (`crates/dsl/src/blockshape.rs:498-534`): a torch, a carpet, a candle, a pressure plate or
+a tuft of grass is **thin** — a body passes through its cell, and it is not a floor level; a full
+cube or a partial floor (a bottom slab, a snow drift) is stood on; a fence or a wall is a tall
+barrier a body neither passes nor stands on. The grammar walk adds one convention of its own: a
+skull on a floor cell is passable (`crates/delvec/src/grammar/nav.rs:56-61`).
 
-So a lamp never occupies a cell a body stands in. It goes in one of:
+So a thin emitter on a floor does not sever a walk, and a full-cube emitter — glowstone, a sea
+lantern, a froglight — is a wall or a floor like any other block. Where a lamp goes is a craft
+decision, and the placements architecture uses keep it off the cells a body crosses:
 
-| placement | how | why it is safe |
+| placement | how | what it keeps clear |
 |---|---|---|
-| **into the wall face** | replace one course of a masonry column with the lamp role, masonry above and below | the cell was solid and stays solid — no walk proof moves |
+| **into the wall face** | replace one course of a masonry column with the lamp role, masonry above and below | the cell was solid and stays solid |
 | **under the ceiling** | hanging lantern in the air course above head height | body needs its own cell and the one above; the ceiling course is neither |
 | **in a niche** | recess cut into the wall, lamp inside it | the niche is not on the walk |
 | **on a ledge, sill or shelf** | standing lantern on a solid block above floor level | the supporting block is not floor a body uses |
 
-This constraint and the craft agree, which is the useful part: architecture puts light in sconces,
-brackets, hanging chains and window recesses for its own reasons. **[authored]**, from the three
-predicates read at `86944766`.
-
-Note that the engine carries **three** different passability predicates — `grammar::nav`
-(air-or-skull, strictest, governs zone programs), `admit::light::is_passable` (air plus torches,
-water, vine, glow lichen, rail, light block), and `compiler::assembled::occupancy_of` (air plus
-trap triggers, thin decoration, fence gates). A design that satisfies the grammar's satisfies all
-three.
+Architecture puts light in sconces, brackets, hanging chains and window recesses for its own
+reasons.
 
 ## 3. The craft rules
 
@@ -296,7 +294,7 @@ the proof, so it cannot clear `DW0210` however bright it is in game — see §4.
 | [copper bulb](https://minecraft.wiki/w/Copper_Bulb)** | **15/12/8/4** by oxidation | yes | yes | no | ordinary; toggles on a redstone **pulse** |
 | [copper lantern](https://minecraft.wiki/w/Copper_Lantern)** | **15** | yes | no | yes | as lantern. Added 1.21.9 |
 | [copper torch](https://minecraft.wiki/w/Copper_Torch)** | **14** | yes | no | yes | as torch. Added 1.21.9 |
-| [redstone lamp](https://minecraft.wiki/w/Redstone_Lamp) (lit)** | **15** | yes | yes | no | ordinary; instant on, 0.2 s off |
+| [redstone lamp](https://minecraft.wiki/w/Redstone_Lamp) (lit)** | **15** in game | **0** (§4.1) | yes | no | ordinary; instant on, 0.2 s off |
 | [sculk catalyst](https://minecraft.wiki/w/Sculk_Catalyst)** | **6** | yes | yes | no | ordinary |
 | [firefly bush](https://minecraft.wiki/w/Firefly_Bush)** | **2** | yes | no | — | added 1.21.5 |
 
@@ -374,10 +372,9 @@ stained glass — cove lighting, in effect. The wiki's own
 tutorial recommends "redstone lamps or sea lanterns and glowstone **instead of torches**", plus
 chandeliers and a ceiling-hung beacon.
 
-**Caution for this engine [authored]:** carpets and slabs are exactly the thin non-collidable
-decorations `grammar::nav` treats as **full solid cubes** (§2). The concealment tricks that work
-in survival will move a zone program's walk proof. Concealment here means **recessing the emitter
-into the wall or ceiling**, not covering it with a thin block.
+**Caution for this engine [authored]:** the covering block is classified by the shared collision
+table like any other (§2) — a carpet is thin and not a floor level, a bottom slab is a partial
+floor. Recessing the emitter into the wall or ceiling keeps it off the walk entirely.
 
 ### 6.2 The light block is the adventure-map tool **[cited]**
 
@@ -450,8 +447,8 @@ strength (no wiki statement found).
 |---|---|---|
 | sky reaches two cells deep at night | 1 | **authored** — measured at `86944766` |
 | emitter radius `E − 3`; the gate is a minimum | 1 | **authored** — measured |
-| `DW0210` names one cell of one area | 1 | **authored** — measured |
-| a lamp never occupies a walkable cell | 2 | **authored** — measured, three predicates |
+| `DW0210` reports the build's whole dark set, split by whose cells are dark | 1 | **authored** — measured |
+| passability is one shared collision table | 2 | **authored** — read from `crates/dsl/src/blockshape.rs` |
 | motivated light | 3.1 | **cited** — Level Design Book, StudioBinder; dissent from Theodore |
 | strong lights need a source, fills do not | 3.1 | **authored** — from Theodore's refinement |
 | key / fill / rim; focal point and frame | 3.2 | **cited** — Level Design Book, Yang |

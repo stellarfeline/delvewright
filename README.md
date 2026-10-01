@@ -52,7 +52,7 @@ Every rung below ran on **[Vesperhold v1.0.0](https://github.com/stellarfeline/d
 - **PackTest.** The datapack's mechanisms, tested on a real server: `338 GAME TESTS COMPLETE IN 1.586 min` — `All 338 required tests passed :)`.
 - **A bot plays it.** A mineflayer bot joins the shipped server and plays the critical path to the end, dying on purpose at every fight and walking back from the fire: `critical path 'vesperhold' PASSED (45 steps, 18 scripted death(s) survived, 2 advisory finding(s))`. One advisory is wave members found already wounded when the bot walked back; the other says this run drove no story branch. Before the release, on the same compiler, each of the four story branches was played to its ending in a fresh world: `branch branch/halvard-kept-oath+branch/ring 'vesperhold' PASSED (45 steps, 18 scripted death(s) survived)`, and the other three printed the same 45 steps and 18 deaths.
 - **The server log.** `shipped server log is error-free.`
-- **Determinism.** Same documents and same seed, byte-identical output. The published image, `ghcr.io/stellarfeline/delve-vesperhold:v1.0.0`, carries its datapack's digest as a label, `datapack-sha256=e0f79e0522708526cea976e735547042567b032abe87dbb425f8495365f796ec`, so anyone who rebuilds can compare. On every pull request to this repository, CI builds a generated campaign on Linux and on macOS and refuses if one byte differs.
+- **Determinism.** Same documents and same seed, byte-identical output. The published image, `ghcr.io/stellarfeline/delve-vesperhold:v1.0.0`, carries its datapack's digest as a label, `datapack-sha256=e0f79e0522708526cea976e735547042567b032abe87dbb425f8495365f796ec`, so anyone who rebuilds can compare. On every pull request that changes the engine, CI builds a generated campaign on Linux and on macOS and refuses if one byte differs.
 
 What each rung proves, and what it does not: [what each gate actually proves](docs/reference/skill-workflow.md#4-what-each-gate-actually-proves).
 
@@ -73,7 +73,7 @@ Read on: [the DSL, stage by stage](docs/reference/compiler.md) · [writing the s
 - [Architecture decision records](docs/adr/README.md) — why everything is the way it is.
 - [Specs](docs/specs/README.md) — one per feature, each with machine-checkable acceptance criteria.
 - [The constitution](CLAUDE.md) — the rules every change to this repository obeys.
-- [The gallery](gallery/README.md) — the engine's own campaign: one instance of every surface the DSL declares, built on every pull request.
+- [The gallery](gallery/README.md) — the engine's own campaign: one instance of every surface the DSL declares, built on every pull request that can reach it.
 - [The tool inventory](docs/reference/tools.md) · [the compiler reference](docs/reference/compiler.md) · [the roadmap](docs/ROADMAP.md)
 
 | path | what lives there |

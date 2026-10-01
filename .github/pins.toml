@@ -183,7 +183,7 @@ enforced separately by validation/check-versions.sh and
 
 [[pin]]
 id = "skill-page-engine"
-value = "delvec--v1.6.0"
+value = "delvec--v1.7.1"
 sites = [
     ".claude-plugin/marketplace.json",
     ".claude/skills/delvewright/skills/new-delve/versions.toml",

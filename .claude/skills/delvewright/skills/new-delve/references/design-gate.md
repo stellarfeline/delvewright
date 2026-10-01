@@ -118,10 +118,12 @@ to: *author from the image, judge against it, present every choice beside it.*
 **No date and no approver** — this file is a repository artifact under the same
 rule `GENERATION.md` is; what it records is that this set is the approved one,
 not when or by whom.
-Commit them with the campaign. Everything under `design/` is tracked with
-git-lfs (`.gitattributes`), so an approved image commits as a small pointer and
-its bytes travel out of band — `git lfs install` in that clone is all this
-needs, and it is why carrying a campaign's whole design set in the repository
+Commit them with the campaign. Approved images under `design/` (`*.jpg`,
+`*.jpeg`, `*.png`, `*.webp`) are tracked with git-lfs by the content
+repository's `.gitattributes`; in a repository you `git init`ed, add those four
+patterns to its `.gitattributes` before the first image commit. An approved
+image then commits as a small pointer and its bytes travel out of band —
+`git lfs install` in that clone is all this needs, and it is why carrying a campaign's whole design set in the repository
 does not make the next person's clone of it a several-hundred-megabyte download. `$DELVEWRIGHT_ENGINE/tools/creator/refimg.py` writes to a gitignored working
 directory, which is right for a draft and wrong for an approved one — **an
 approval that lives only in a published page is bound to nothing.** The sidecar

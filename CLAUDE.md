@@ -49,7 +49,7 @@ docs/specs/          # approved specs, one per feature
 docs/reference/      # live behavior records: compiler.md, tools.md, i18n.md, grammar.md,
                      #   playtest-methodology.md, skill-workflow.md, prefab-procedure.md,
                      #   worktree-bootstrap.md, distribution-size.md
-docs/ROADMAP.md      # milestones
+docs/ROADMAP.md      # where the line stands, and the next blocks
 crates/              # Rust workspace: dsl / delvec
 gallery/             # the ENGINE's own campaign: one instance of every surface the DSL
                      #   declares, built on every PR, never released or staged
