@@ -1,179 +1,70 @@
 # Roadmap
 
-Everything before content quality is about **proving the loop**. Milestones are
-sequential; each has a machine-verifiable exit criterion. Dates are omitted on
-purpose — the goal is on-demand generation (a new delve whenever the group wants
-one), and it matures at M4, not before.
+Where the production line stands, and the blocks of work that come next, in order. Each block ends on an exit criterion a machine can check. A block is done when its criterion holds.
 
-## M0 — Repo scaffolding *(first PR)*
+## Where the line stands
 
-CLAUDE.md + ADRs + spec skeletons + CI skeleton (cargo fmt/clippy/test + markdown
-lint). No feature code.
+- **The engine** is `delvec` 1.7.1 with the DSL crate `delvewright-dsl` 0.34.0, pinned to Minecraft Java 1.21.11, published as [GitHub releases](https://github.com/stellarfeline/delvewright/releases) and to crates.io.
+- **The front end** is the `/new-delve` Claude Code plugin in `.claude/skills/delvewright/`. Its Init fetches the pinned, checksum-verified `delvec` release archive for the creator's platform, with a source build as the floor ([`init.md`](../.claude/skills/delvewright/skills/new-delve/references/init.md)).
+- **The proof** is the validation ladder: static quest-graph and command checks at compile time, PackTest on every pull request, and a mineflayer bot walking the critical path on release candidates ([`playtest-methodology.md`](reference/playtest-methodology.md)). The engine's own surface is exercised by the [gallery](../gallery/README.md), and each mechanic is demonstrated on a [demo level](demo-levels.md).
+- **Released campaigns** live in [delvewright-campaigns](https://github.com/stellarfeline/delvewright-campaigns/releases): Nobody's Isle, Doune Castle: A Guided Tour, and Vesperhold.
 
-**Exit**: repo public on GitHub, CI green on an empty Rust workspace, branch
-protection requires green CI. **Status: COMPLETE (2026-07-29).**
+## Block 1 — what shipping Vesperhold found (now)
 
-## M1 — Hello-world delve *(the loop, proven)*
+Shipping Vesperhold surfaced defects in the engine's mechanisms, its proofs and its release plumbing. This block closes them.
 
-A trivially small **hand-written** DSL instance (one room, one NPC, one quest:
-"talk to the keeper, open the door, touch the exit") that exercises every pipeline
-stage end-to-end:
+**Build performance**
+- `delvec build` peak memory and multi-core build time ([#837](https://github.com/stellarfeline/delvewright/issues/837)).
 
-1. DSL validates against v0 schemas.
-2. Compiler emits a datapack + world **deterministically** (double-compile,
-   hash-compare — in CI from this milestone on).
-3. Datapack loads on a headless pinned-version server with zero errors.
-4. One PackTest assertion passes via `-Dpacktest.auto` (exit code checked).
-5. A mineflayer bot joins, selects a class, walks the critical path, and reaches the
-   end — in CI, using the `validation/` compose image.
-6. The result is packaged as an OCI image; `docker run` locally yields a joinable
-   world.
-7. **Owner playtest path**: one command (the `validation/` compose `play` profile,
-   see spec-0003) starts the current delve server on the workstation; the owner joins
-   from their vanilla Minecraft client at `localhost` to see the result first-hand.
-   This stays the standing verify-progress entrypoint for every later milestone.
+**Mechanism and proof defects**
+- A wave seated within reach of a lethal volume kills itself ([#815](https://github.com/stellarfeline/delvewright/issues/815)), and a new check for a door the party leaves open.
+- `DW0891` passes a lethal volume no modelled body can reach ([#828](https://github.com/stellarfeline/delvewright/issues/828)).
+- A kill-objective body knocked off a ledge can survive where the party cannot reach ([#811](https://github.com/stellarfeline/delvewright/issues/811)).
+- The death-loop approach walks through live encounters ([#829](https://github.com/stellarfeline/delvewright/issues/829)).
+- The death loop's relics forfeit is gated in emission but stated unconditional in the plan ([#810](https://github.com/stellarfeline/delvewright/issues/810)).
+- The reseat proof's unleash half binds nothing live ([#803](https://github.com/stellarfeline/delvewright/issues/803)).
+- Navigation judges a leg the ancestry does not connect over the open world ([#813](https://github.com/stellarfeline/delvewright/issues/813)).
+- A readiness poll that the probe's own error message satisfies ([#823](https://github.com/stellarfeline/delvewright/issues/823)).
+- A test that says "the pinned tree" reads the dev symlink's working tree ([#817](https://github.com/stellarfeline/delvewright/issues/817)).
+- The ladder's mineflayer bot may run invulnerable because it never sends `player_loaded` ([#844](https://github.com/stellarfeline/delvewright/issues/844)).
+- Death and rest in a party: a respawn resets the scene only after a wipe, and a rest restores everyone ([#843](https://github.com/stellarfeline/delvewright/pull/843)).
+- A committed NPC skin's bytes are reproducible, not only its pixels ([#821](https://github.com/stellarfeline/delvewright/issues/821)).
 
-**Exit**: a single CI workflow run shows steps 1–6 green, and the owner has joined
-the hello-world delve from Minecraft via the one-command playtest path. This is the
-project's heartbeat; everything later just makes the delve bigger.
+**Creator-facing surface**
+- A creator warning for a villager-bodied NPC under open sky on a thunder beat, which can turn into a witch ([#832](https://github.com/stellarfeline/delvewright/issues/832)).
+- The sky is a per-camera parameter of `delvec` cameras ([#838](https://github.com/stellarfeline/delvewright/issues/838)).
+- Every dialogue button carries a tooltip (spec-0078).
+- A fallen player waits before respawning (spec-0077, awaiting approval).
 
-**Status: COMPLETE (2026-07-30).** All machine steps green in CI, and the
-hello-world delve was played end-to-end. QA findings feeding M2: (1) the
-hello-room shipped **unlit** — the bot navigates by protocol data, not vision, so darkness is
-invisible to machine validation; lighting is now a prefab authoring requirement
-(spec-0001). (2) Natural hostile spawns are currently uncontrolled — environment
-sealing (spec-0002) added as an M2 emission requirement.
+**Content repository**
+- Vesperhold's program file moves to Git LFS ([content#158](https://github.com/stellarfeline/delvewright-campaigns/issues/158)).
+- Pre-releases are published through the release workflow ([content#160](https://github.com/stellarfeline/delvewright-campaigns/issues/160)).
+- Vesperhold 1.1, built on the engine that carries this block.
 
-## M2 — Real DSL + prefab library seed
+**Exit:** every issue and pull request linked above is closed by a merged change (`gh issue view <n> --json state` reads `CLOSED`); spec-0077 and spec-0078 are each merged with their implementation or declined; and a `release/vesperhold/v1.1.0` release exists in the content repository, published by its release workflow.
 
-- Full staged schemas (spec-0001) implemented with cross-stage referential validation.
-- Static quest-graph reachability analysis (spec-0003's static half) with fixture
-  campaigns that must pass/fail correctly.
-- Prefab library seeded (~10–20 pieces) with metadata + license provenance; jigsaw
-  assembly from DSL with seed-controlled reproducible layout.
-- First LLM-generated (not hand-written) campaign compiles and passes validation —
-  produced through the embryonic `/new-delve` skill (ADR-0012), so the product form
-  is exercised by real use from M2 onward.
-- Creator playtest loop core (spec-0006): `playtest` compose profile, in-game
-  `/trigger dw.note` marks, harvester → DSL-addressable `playtest-report.json`.
+## Block 2 — quests beyond a line
 
-**Exit** (two gates in order):
+Both ideas are recorded for the [idea ledger](ideas.md) in [#831](https://github.com/stellarfeline/delvewright/pull/831).
 
-1. **Dress rehearsal**: the planning agent itself generates a *relatively complex*
-   delve via `/new-delve` (multiple areas/quests/NPCs), takes it through the full
-   validation ladder green, and the owner **plays it** to judge the result.
-2. **Acceptance**: after the rehearsal passes that play-check, the owner opens a
-   **fresh session** and produces a complete, playable delve end-to-end via
-   `/new-delve` — no hand edits to compiler output, joinable via the play profile.
+- **A non-linear quest system.** A campaign's objectives form one line today, each checkpoint a gate the party visits in order. A web of parallel and branching quests is researched against established RPG practice, and the research lands under `docs/reference/` before a spec is written.
+- **Quest points that are placed blocks.** An objective is marked by a real block the player uses (a lever, a button, a campfire) instead of a glowing item display, which shows through walls.
 
-## M3 — First real delve
+**Exit:** each idea has an approved spec in `docs/specs/` and its implementation merged, every new DSL unit is bound in the gallery (`tools/ci/check-gallery-coverage.py` green), and each has a built row in [`demo-levels.md`](demo-levels.md).
 
-- Compiler features for actual play: classes/gear provisioning, NPC dialogue,
-  multi-quest campaigns, boss/finale mechanics, completion → credits.
-- Multi-player validation via Carpet fake players.
-- Owner QA hour on a release candidate; the findings become specs/issues.
+## Block 3 — the drill
 
-**Exit**: the owner and friends play a generated delve for 2–3 hours and finish it.
+Once every known engine-side obstacle is closed, the owner re-makes a campaign from zero through `/new-delve` alone, starting from an empty directory. Each step must be walkable as written; an obstacle found becomes a fix in the engine or the skill, and the drill restarts.
 
-## M4 — Production line
+**Exit:** a campaign authored only through `/new-delve`, with no hand edit to compiler output and no engine change made during the drill, passes the release validation ladder and is published by the content repository's release workflow.
 
-- Skills mature into **the product itself** (ADR-0012): `/new-delve` takes a prompt —
-  a bare theme or a detailed level-and-plot brief — and delivers a validated,
-  playable delve end-to-end; `/validate` and `/release` complete the set.
-- **Creator distribution** (ADR-0014, executed by spec-0063; refined by ADR-0027): **done for the front end.** The page ships as a
-  Claude Code plugin from a marketplace in this repository, bootstraps pinned
-  checksum-verified binaries from the release shelf, and runs dual-mode off the
-  working directory (dev = this checkout, creator = anywhere). The content
-  repository is an OPTIONAL clone, taken only for the shipped prefab library or
-  to publish a campaign. Still owed: the GHCR image half, and the drill that
-  walks the whole thing from an empty directory on a machine with no clone.
-- Release automation: RC → full bot playthrough → multi-arch OCI publish → GitHub
-  Release with content license.
-- On-demand generation: producing a fresh delve is a routine, low-effort act, not a
-  project.
+## Gating rule: density
 
-**Exit**: two delves produced on demand back-to-back, each with < 1 owner-day of
-non-QA effort.
+A denser campaign tier (a castle with a heavy shortcut-loop topology and dense rooms) waits until three consecutive playtests have produced zero mechanical findings. The count of consecutive clean playtests is not yet recorded in the repository.
 
-## M5 — Genre breadth & polish
+## Recorded directions, not scheduled
 
-- **Demo levels** (`docs/demo-levels.md`): every mechanic gets a small
-  first-party level that verifies it and shows it off. That file is the queue and the planning agent's standing idle work.
-- **M5 theme suite** (five levels — mystery, horror, tower defense, heist,
-  pastoral): genre-diverse levels beyond the Greek-myth and
-  souls lines, each exercising a distinct authoring register. Listed in
-  `docs/demo-levels.md`.
-- **Map editor layers 2+3** (spec-0017): declarative massing of the jigsaw layout,
-  and block-level detailing via deterministic edit scripts.
-- **GeyserMC evaluation** — Bedrock clients joining a Java server, the
-  cross-platform distribution win without a stack switch (ADR-0019).
-
-## M6 — Modpack production line *(recorded, not committed)*
-
-The thesis: an LLM-driven production line for **[curated modpack +
-adventure-designed open world]** — the survival-challenge
-genre where designed story pockets are 大号箱庭 embedded in free natural terrain,
-so no effort is spent where no story lives. Market gap: the industry's "dungeons"
-are chest+spawner+boss structures; nobody can produce directed adventure-mode
-content at pack scale. The moat is machine-proven completability plus area-scoped
-rule enforcement.
-
-- **Trial gates** answer gear trivialization: entering a story pocket stashes the
-  survival loadout and issues the pocket's designed kit (Zelda-shrine model), so
-  stealth stays stealth at any progression stage.
-- Self-produced mods demote to an internal capability — thin glue only where
-  vanilla plus library mods cannot express something.
-- **De-risking spikes before commitment**: (1) proofs over real region files (the
-  assembled model reads chunks, not only prefabs); (2) a Carpet fake-player
-  validation ladder (mineflayer breaks under content mods; Carpet is already
-  tooling-whitelisted); (3) a packwiz-as-code pipeline with ADR-0013 license
-  vetting.
-
-**Macro-terrain is composed, not searched.** No filler
-between story areas — the macro-journey is authored (village tutorial → river
-ride → colossi strait → grassland → lone mountain, white city at its foot).
-Architecture is the delve pipeline one scale up: landform-scale terrain prefabs,
-a journey-graph layout solver, seamless blending (gradient-domain/Poisson,
-Laplacian pyramids, graph-cut seams, example-based synthesis, a unifying erosion
-pass), and rivers **carved** along the narrative path rather than found. L1
-siting — terrain-feature query over real region files, the LLM picking build
-sites like a player — demotes to garnish. MC 1.18+ worldgen is data-driven
-(density functions in datapack JSON), a possibly mod-free route for macro
-terrain; its ceiling was measured and rejected for single-scene surrounds in
-`docs/notes/horizon-library-dossier.md` §2.5, and is unresolved at journey scale.
-
-Sequenced after M5 polish.
-
-## Runtime portability (post-v1)
-
-Once the first genuinely usable version exists, we may evaluate other agent runtimes
-(e.g. Codex) as alternative front-ends. The skill layer is deliberately thin
-(ADR-0012): the DSL + compiler + validation contract is runtime-agnostic, so a port
-must never require touching `crates/`. **Writing an agent runtime from scratch is
-out of scope for this project** — the front-end is always a hosted runtime we adopt,
-never one we build.
-
-## M3 content tracks (queued 2026-07-30)
-
-- External asset pipeline (spec-0007): schem→nbt converter, curation gallery,
-  release gate for user-local assets, ATTRIBUTION aggregation, first scouted batch.
-- Aesthetic upgrade: hero pieces hand-built/curated, generator vocabulary growth.
-
-## v2 horizon *(recorded, not designed — do not preclude)*
-
-Vanilla survival hub world connected to delve instances via `/transfer` (why the
-pinned version must be ≥1.20.5); instances on a remote host. Nothing in M0–M4 may
-assume single-server topology in a way that blocks this.
-
-**Community phase** (post-v1, contract recorded in spec-0007): the separate
-`delvewright-campaigns` repo accepts campaign-source PRs (DSL only, deterministic
-rebuild by trusted CI, never images/binaries); community prefabs enter via the
-audited admission pipeline.
-
-## Skills backlog (the product surface, per ADR-0012)
-
-- `/new-delve <prompt>` — staged generation with the validation ladder as its inner
-  loop; interactive mode (owner checkpoint between stages) and e2e mode; always
-  persists the generated DSL as the artifact of record
-- `/validate` — full local validation ladder (static → PackTest → bot) via compose
-- `/release` — RC branch, release validation tier, OCI publish, GitHub Release
+- **A modpack production line.** The same pipeline one scale up: a curated modpack and an adventure-designed open world, with story pockets set in natural terrain and the journey between them composed rather than searched.
+- **A survival hub.** A vanilla survival world connected to delve instances with `/transfer`; nothing in the engine may assume a single-server topology in a way that blocks it.
+- **Community campaigns.** The content repository accepts campaign-source pull requests (DSL only, rebuilt by trusted CI), and community prefabs enter through the audited admission pipeline (spec-0007).
+- **Other agent runtimes.** The DSL, compiler and validation contract are runtime-agnostic, so another hosted agent runtime can be adopted as a front end without touching `crates/` (ADR-0012). Building an agent runtime is out of scope.
