@@ -309,7 +309,7 @@ there are no prefabs to read anchor names out of:
 | `anchor/node-<place>` | the floor centre of each place — where NPCs, waves and `reach-anchor` objectives go |
 | `anchor/seam-<edge>` | the gate region over a `barred` seam: what `open-gate` or a `shortcut` names |
 | `anchor/unlock-<edge>` | the far-side affordance of a one-sided `barred` seam, where a `shortcut`'s `unlock` stands. Present only when `opens_from` is `a` or `b` |
-| a `stations[]` entry's `anchor` | a station a layout-graph node declares; it may not take a derived name (`DW0869`) |
+| a `stations[]` entry's `anchor` | a station a layout-graph node declares; it may not take a derived name |
 
 `<place>` and `<edge>` are the part of the id after the `/` — `node/near-hall`
 becomes `anchor/node-near-hall`. A `barred` way declares a non-empty `gating` —

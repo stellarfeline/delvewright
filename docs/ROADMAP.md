@@ -4,7 +4,7 @@ Where the production line stands, and the blocks of work that come next, in orde
 
 ## Where the line stands
 
-- **The engine** is `delvec` 1.7.1 with the DSL crate `delvewright-dsl` 0.34.0, pinned to Minecraft Java 1.21.11, published as [GitHub releases](https://github.com/stellarfeline/delvewright/releases) and to crates.io.
+- **The engine** is `delvec` with the DSL crate `delvewright-dsl`, pinned to one Minecraft Java version (`versions.toml` holds every pin), published as [GitHub releases](https://github.com/stellarfeline/delvewright/releases) and to crates.io.
 - **The front end** is the `/new-delve` Claude Code plugin in `.claude/skills/delvewright/`. Its Init fetches the pinned, checksum-verified `delvec` release archive for the creator's platform, with a source build as the floor ([`init.md`](../.claude/skills/delvewright/skills/new-delve/references/init.md)).
 - **The proof** is the validation ladder: static quest-graph and command checks at compile time, PackTest on every pull request, and a mineflayer bot walking the critical path on release candidates ([`playtest-methodology.md`](reference/playtest-methodology.md)). The engine's own surface is exercised by the [gallery](../gallery/README.md), and each mechanic is demonstrated on a [demo level](demo-levels.md).
 - **Released campaigns** live in [delvewright-campaigns](https://github.com/stellarfeline/delvewright-campaigns/releases): Nobody's Isle, Doune Castle: A Guided Tour, and Vesperhold.
