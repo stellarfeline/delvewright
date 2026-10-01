@@ -668,30 +668,67 @@ fn every_compiler_removal_strips_declared_loot_first() {
     );
 }
 
-/// The runtime half ships as a generated PackTest: every drop-declaring body a
-/// rest re-seats is met, dragged onto the party, unleashed and rested through
-/// the REAL functions, each followed by a kill of the bodies the removal parked in
-/// the party's column (never the world-wide `unseen_sweep`, which would reach
-/// every sibling's waiting bodies too), and no item may
-/// lie where the removed bodies die (Y −128 in the party's column) after either
-/// — then a bare `kill` of each fresh body at that same place must yield one, so
-/// the zero is a measurement and not an empty room. Absent when no re-seated body declares a
-/// drop.
+/// The runtime half ships as two generated PackTests, one per removal, because
+/// a PackTest `assert` does not abort the template and the log names only the
+/// LAST failing line: one template holding both removals reported a leaking
+/// unleash as the rest's failure. Each body is dragged onto the party, the REAL
+/// removal runs, the bodies it parked in the party's column are killed (never
+/// the world-wide `unseen_sweep`, which would reach every sibling's waiting
+/// bodies too), and no item may lie where they die (Y −128 in the party's
+/// column) — then a bare `kill` of the body that removal takes, fresh, at that
+/// same place must yield one, so the zero is a measurement and not an empty
+/// room. The re-seat template clears what the unleash left before the rest, so
+/// its count is the rest's alone. Each title states its binding count. Absent
+/// when no re-seated body declares a drop.
 #[test]
 fn the_removal_rule_ships_its_packtest() {
     let out = build(&fixture_campaign_with_drops());
+    let low = "execute at @a[tag=dw_usyn,limit=1] positioned ~ -128 ~";
+    let u = packtest(&out, "souls_unleash_yields_nothing");
+    for want in [
+        "binds 1 unleashed body: actor/barrow-warden\n".to_string(),
+        format!(
+            "function {NS}:unleash_{ELITE_SAFE}\n{low} run kill @e[tag=dw_unseen,distance=..1]\n\
+             {low} store result score #u_usyn dw.sys if entity @e[type=minecraft:item,distance=..3]\n\
+             assert score #u_usyn dw.sys matches 0\n"
+        ),
+        // The control is on the body the unleash removes: a fresh puppet.
+        format!(
+            "function {NS}:spawn_actor_{ELITE_SAFE}\n\
+             {low} run tp @e[tag=dw_pup_{ELITE_SAFE}] ~ ~ ~\n\
+             kill @e[tag=dw_pup_{ELITE_SAFE}]\n\
+             {low} store result score #p_usyn dw.sys if entity @e[type=minecraft:item,distance=..3]\n\
+             assert score #p_usyn dw.sys matches 1..\n"
+        ),
+    ] {
+        assert!(u.contains(&want), "`{want}` in the unleash template:\n{u}");
+    }
+    assert!(
+        !u.contains("bonfire_rest_"),
+        "the unleash template judges the unleash alone:\n{u}"
+    );
+
+    let low = "execute at @a[tag=dw_rsyn,limit=1] positioned ~ -128 ~";
     let t = packtest(&out, "souls_reseat_yields_nothing");
     for want in [
-        format!("function {NS}:unleash_{ELITE_SAFE}"),
+        "binds 3 re-seated bodies: wave/guards, wave/ambush, actor/barrow-warden\n".to_string(),
+        // What the unleash parked is put away uncounted before the rest.
         format!(
-            "function {NS}:bonfire_rest_0\nexecute at @a[tag=dw_rsyn,limit=1] positioned ~ -128 ~ \
-             run kill @e[tag=dw_unseen,distance=..1]\n"
+            "function {NS}:unleash_{ELITE_SAFE}\n{low} run kill @e[tag=dw_unseen,distance=..1]\n\
+             {low} run kill @e[type=minecraft:item,distance=..3]\n"
         ),
-        "assert score #u_rsyn dw.sys matches 0".to_string(),
-        "assert score #r_rsyn dw.sys matches 0".to_string(),
+        format!(
+            "function {NS}:bonfire_rest_0\n{low} run kill @e[tag=dw_unseen,distance=..1]\n\
+             {low} store result score #r_rsyn dw.sys if entity @e[type=minecraft:item,distance=..3]\n\
+             assert score #r_rsyn dw.sys matches 0\n"
+        ),
     ] {
-        assert!(t.contains(&want), "`{want}` in the template:\n{t}");
+        assert!(t.contains(&want), "`{want}` in the re-seat template:\n{t}");
     }
+    assert!(
+        !t.contains("#u_"),
+        "the re-seat template does not judge the unleash:\n{t}"
+    );
     for tag in [
         format!("dw_actor_{ELITE_SAFE}"),
         "dw_wave_ambush".to_string(),
@@ -699,18 +736,23 @@ fn the_removal_rule_ships_its_packtest() {
     ] {
         assert!(
             t.contains(&format!(
-                "execute at @a[tag=dw_rsyn,limit=1] positioned ~ -128 ~ run tp @e[tag={tag}] ~ ~ ~\n\
+                "{low} run tp @e[tag={tag}] ~ ~ ~\n\
                  kill @e[tag={tag}]\n\
-                 execute at @a[tag=dw_rsyn,limit=1] positioned ~ -128 ~ store result score #p_rsyn"
+                 {low} store result score #p_rsyn"
             )),
             "each re-seated body `{tag}` owes its own non-vacuity control:\n{t}"
         );
     }
     let bare = build(&fixture_campaign(true));
-    assert!(
-        !bare.contains_key(&format!(
-            "packtest-datapack/data/{NS}/test/souls_reseat_yields_nothing.mcfunction"
-        )),
-        "no drop-declaring re-seated body, no template"
-    );
+    for name in [
+        "souls_reseat_yields_nothing",
+        "souls_unleash_yields_nothing",
+    ] {
+        assert!(
+            !bare.contains_key(&format!(
+                "packtest-datapack/data/{NS}/test/{name}.mcfunction"
+            )),
+            "no drop-declaring re-seated body, no `{name}`"
+        );
+    }
 }
