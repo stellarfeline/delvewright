@@ -1,6 +1,6 @@
 # spec-0078: Every dialog button has a tooltip — one optional hover box on every button the player sees
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Ground**: written against engine `c9e87fae`, read only — `emit_dialogs` and `build_node_dialog` in `crates/delvec/src/compiler/emit.rs`; `Verb::Bonfire`, `BonfireLabels`, `DialogueOption`, `ShopOffer`, `Class` in `crates/dsl/src/stages.rs`; `effect_strings` and the key table in `crates/dsl/src/l10n.rs`; `CheckpointPlan` in `crates/delvec/src/compiler/plan.rs`; `crates/delvec/tests/v08_option_tooltip.rs`; `crates/dsl/tests/l10n_surface.rs`; the gallery's bonfire (`gallery/quests.json`) and sidecars (`gallery/l10n/`, `gallery/overlays/ocean-horizon/l10n/`).
 - **What it is for**: a button's caption is a few words on a fixed 150-GUI-px face. What pressing it does often needs a sentence. The engine already lets a dialogue option and a shop offer carry that sentence in a hover tooltip; the bonfire's two buttons cannot. The capability belongs to the object class *a dialog button the player sees*, not to the verb that first needed it (CLAUDE.md, *This is a general engine* — **cited**), so every button gets it, in one shape, from one emitter.
 - **Numbers**: no ADR, no DW code. **`dsl_version` moves one minor step over the base's** (ADR-0024 Decision 4 — **cited**): §3 adds two fields to the `bonfire` effect. The value is typed in `crates/dsl/Cargo.toml` and nowhere else.
