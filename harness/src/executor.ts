@@ -48,6 +48,7 @@ import {
   CONTROLLED_GAMEMODE,
   deathPhases,
   dueRunBacks,
+  reseatedWaves,
   respawnReseats,
   checkpointPrecondition,
   observationOf,
@@ -1530,6 +1531,9 @@ export class MineflayerExecutor implements StepExecutor {
    * scripted death and credited as a trial that never happened.
    */
   private deathSeq = 0;
+  /** The most recent death, kept after its recovery clears {@link death}: what a
+   * caller that counts deaths with {@link deathSeq} reads to say where one was. */
+  private lastDeath: BotDeathError | undefined;
   /** Every stretch the server held the bot unhurtable (see load-window.ts). */
   private loadTracer: LoadWindowTracer | undefined;
   /** The bot's `player_loaded` tracker; `undefined` for a bot adopted by {@link attachBot}. */
@@ -2464,6 +2468,7 @@ export class MineflayerExecutor implements StepExecutor {
     const cause = likelyDeathCause(this.recentChat, bot?.username ?? "");
     const err = new BotDeathError(position, cause);
     this.death = err;
+    this.lastDeath = err;
     this.deathSeq += 1;
     this.spawnSeqAtDeath = this.spawnSeq;
     this.respawnPacketsAtDeath = this.respawnPackets;
@@ -2961,6 +2966,90 @@ export class MineflayerExecutor implements StepExecutor {
     }
   }
 
+  /**
+   * **The walk to a volume's near lip, meeting what stands on the way the critical
+   * path meets an encounter.**
+   *
+   * Every wave the delve has put back since this run cleared it ({@link
+   * reseatedWaves} — the die-retry stage's own deaths re-seat every
+   * `respawns_on_rest` wave) is read if its seating is owed a reading and staged
+   * away, by {@link meetReseatedWaves}, BEFORE the walk: the damage handlers alone
+   * meet a body only once it has hit, and on vesperhold `wave/unremembered-guard`
+   * killed the bot on this walk on both runs that measured it.
+   *
+   * A death on the way is returned as nothing — the caller counts deaths and
+   * judges where it happened. A wave that could not be staged away is
+   * `staging`; a lip the pathfinder could not reach is `walk`.
+   */
+  private async approachVolume(
+    volume: string,
+    lip: Vec3Tuple | undefined,
+  ): Promise<{ readonly kind: "staging" | "walk"; readonly why: string } | undefined> {
+    const label = `death-loop approach to ${volume}`;
+    const deaths = this.deathSeq;
+    try {
+      await this.meetReseatedWaves(label);
+    } catch (err) {
+      if (err instanceof BotDeathError) return undefined;
+      return {
+        kind: "staging",
+        why:
+          `a wave the delve put back could not be staged away before the walk: ` +
+          `${err instanceof Error ? err.message : String(err)}`,
+      };
+    }
+    if (this.deathSeq !== deaths || lip === undefined) return undefined;
+    try {
+      await this.walkTo(lip, 1, label);
+    } catch (err) {
+      if (!(err instanceof BotDeathError)) {
+        return {
+          kind: "walk",
+          why:
+            `the near lip [${lip.join(", ")}] could not be reached: ` +
+            `${err instanceof Error ? err.message : String(err)}`,
+        };
+      }
+    }
+    return undefined;
+  }
+
+  /**
+   * Read and stage away every wave the delve has put back since this run cleared
+   * it — the critical path's own acts on an encounter ({@link musterUnlessRead},
+   * then {@link stageClear}), with the anchor's chunk held as the kill step holds
+   * it, because these anchors are not where the bot stands. Returns the waves met.
+   */
+  private async meetReseatedWaves(label: string): Promise<string[]> {
+    const plan = this.combatPlan;
+    if (!plan) return [];
+    const met: string[] = [];
+    for (const enc of reseatedWaves(plan.encounters, this.clearedEpoch, this.seatEpoch)) {
+      process.stderr.write(
+        `[staged] ${label}: \`${enc.wave}\` has been put back since this run cleared it — ` +
+          `reading it and staging it away before the walk\n`,
+      );
+      const fight: KillStep = {
+        action: "kill",
+        objective: enc.objective,
+        wave: enc.wave,
+        pos: enc.pos,
+        tag: "",
+        count: enc.count,
+      };
+      await this.holdChunk(enc.pos, true);
+      try {
+        await this.musterUnlessRead(enc);
+        await this.stageClear(fight, enc);
+      } finally {
+        await this.holdChunk(enc.pos, false);
+      }
+      this.recordCleared(enc.wave);
+      met.push(enc.wave);
+    }
+    return met;
+  }
+
   /** One volume: approach, step in, die, and assert the aftermath. */
   private async lethalTrial(plan: DeathPlan, volume: DeathPlan["volumes"][number]): Promise<void> {
     const bot = this.requireBot();
@@ -3052,17 +3141,18 @@ export class MineflayerExecutor implements StepExecutor {
     this.wordWatch = { needle: volume.message, seen: false };
     const deathsBefore = this.deathSeq;
     let navFault: string | undefined;
-    if (lip) {
-      try {
-        await this.walkTo(lip, 1, `death-loop approach to ${volume.id}`);
-      } catch (err) {
-        if (!(err instanceof BotDeathError)) {
-          navFault =
-            `the near lip [${lip.join(", ")}] could not be reached: ` +
-            `${err instanceof Error ? err.message : String(err)}`;
-        }
-      }
+    const fault = await this.approachVolume(volume.id, lip);
+    if (fault?.kind === "staging") {
+      // A wave on the way that could not be removed: walking on into it is how the
+      // bot died here before, so the trial stops and says why.
+      this.wordWatch = undefined;
+      trial.approachFailure = fault.why;
+      return;
     }
+    if (fault?.kind === "walk") navFault = fault.why;
+    // Every death from here to the step in is the approach's — unless the body is
+    // in the volume's reach, which is the event under test (see above).
+    const approachDeaths = this.deathSeq;
     if (this.bodyInside(volume.region)) trial.enteredVolume = true;
     if (navFault === undefined && this.deathSeq === deathsBefore) {
       await this.stageWagers(plan, trial);
@@ -3140,6 +3230,15 @@ export class MineflayerExecutor implements StepExecutor {
     trial.died = observed && inside;
     if (navFault !== undefined) {
       trial.abandoned = navFault;
+      return;
+    }
+    if (observed && !inside && approachDeaths > deathsBefore) {
+      const died = this.lastDeath;
+      trial.approachFailure =
+        `the bot died at ${formatDeathPos(died?.position)} on its way to ` +
+        `${lip ? `the near lip [${lip.join(", ")}]` : "the volume"}, outside the reach of the ` +
+        `declared volume [${volume.region.lo.join(", ")}]..[${volume.region.hi.join(", ")}]` +
+        `${died?.likelyCause ? ` (${died.likelyCause})` : ""}`;
       return;
     }
     if (observed && !inside) {
@@ -4574,8 +4673,16 @@ export class MineflayerExecutor implements StepExecutor {
    */
   async kill(step: KillStep): Promise<void> {
     await this.killStep(step);
-    this.waveClearedAt.set(step.wave, this.currentStep);
-    this.clearedEpoch.set(step.wave, this.seatEpoch);
+    this.recordCleared(step.wave);
+  }
+
+  /**
+   * This wave is down in the seating in force — what {@link dueRunBacks} and
+   * {@link reseatedWaves} read. One place, for every act that clears a wave.
+   */
+  private recordCleared(wave: string): void {
+    this.waveClearedAt.set(wave, this.currentStep);
+    this.clearedEpoch.set(wave, this.seatEpoch);
   }
 
   /**
@@ -4653,8 +4760,7 @@ export class MineflayerExecutor implements StepExecutor {
       await this.musterUnlessRead(enc);
       await this.clearWave(fight, enc);
       this.runBacksFought.push(rb);
-      this.waveClearedAt.set(rb.wave, this.currentStep);
-      this.clearedEpoch.set(rb.wave, this.seatEpoch);
+      this.recordCleared(rb.wave);
     }
   }
 
@@ -5659,6 +5765,28 @@ export class MineflayerExecutor implements StepExecutor {
    * campaign says they should be.
    */
   private async clearWave(step: KillStep, enc: Encounter): Promise<void> {
+    await this.stageClear(step, enc);
+    // The route to the encounter is a mechanism the step owes, and it is read with
+    // the wave gone: what it reports on is then the route, not what was standing in
+    // it. A run-back walks its own leg and passes no objective here.
+    await this.walkTo(
+      step.pos,
+      3,
+      `wave ${step.wave} anchor`,
+      step.sneak,
+      { objective: step.objective, transport: step.transport },
+    );
+  }
+
+  /**
+   * **The staged clear on its own**: one attributed blow per standing body until
+   * the census answers that none stands, refusing a census that never answered and
+   * a wave that outlasts {@link KILL_TIMEOUT_MS}. What every act that removes a
+   * read wave shares — the kill step, the run-back, the death loop's approach —
+   * and nothing else: the walk to the anchor is the kill step's route proof, which
+   * a walk that is not that step does not owe.
+   */
+  private async stageClear(step: KillStep, enc: Encounter): Promise<void> {
     const bot = this.requireBot();
     const watch = beginCensusWatch();
     const deadline = Date.now() + KILL_TIMEOUT_MS;
@@ -5748,16 +5876,6 @@ export class MineflayerExecutor implements StepExecutor {
           `answer(s)${watch.seen ? "" : ", and never once saw the wave exist"}`,
       );
     }
-    // The route to the encounter is a mechanism the step owes, and it is read with
-    // the wave gone: what it reports on is then the route, not what was standing in
-    // it. A run-back walks its own leg and passes no objective here.
-    await this.walkTo(
-      step.pos,
-      3,
-      `wave ${step.wave} anchor`,
-      step.sneak,
-      { objective: step.objective, transport: step.transport },
-    );
   }
 
   /**

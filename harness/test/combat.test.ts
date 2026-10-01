@@ -25,6 +25,7 @@ import {
   type DeathTrial,
   type Encounter,
   dueRunBacks,
+  reseatedWaves,
   respawnReseats,
   type RunBack,
 } from "../src/combat.ts";
@@ -760,6 +761,23 @@ test("a run-back is due only after this walk cleared the wave and then rested", 
     dueRunBacks(rb, "obj/elsewhere", new Map([["wave/walk-ambush", 25]]), new Map([[3, 30]])),
     [],
     "only before the step whose leg re-crosses it",
+  );
+});
+
+test("the waves a walk off the path meets are the re-seating ones put back since this run cleared them", () => {
+  const guard = encounter({ wave: "wave/unremembered-guard", respawnsOnRest: true });
+  const king = encounter({ wave: "wave/king", respawnsOnRest: false });
+  const choir = encounter({ wave: "wave/drowned-choir", respawnsOnRest: true });
+  const cleared = new Map([
+    ["wave/unremembered-guard", 3],
+    ["wave/king", 3],
+  ]);
+  assert.deepEqual(reseatedWaves([guard, king, choir], cleared, 3), [], "nothing put back yet");
+  assert.deepEqual(
+    reseatedWaves([guard, king, choir], cleared, 4).map((e) => e.wave),
+    ["wave/unremembered-guard"],
+    "a re-seat puts back the wave that re-seats; one that does not stays down, and one " +
+      "this run never cleared is not claimed",
   );
 });
 

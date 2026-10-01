@@ -509,6 +509,7 @@ export class RunReport {
           collect_clicks_sent: t.collectClicks,
           marker_retired: t.markerRetired,
           abandoned: t.abandoned ?? null,
+          approach_failure: t.approachFailure ?? null,
         })),
       },
       // What the die-retry stage EXAMINED, beside what it found. `unbound: true`

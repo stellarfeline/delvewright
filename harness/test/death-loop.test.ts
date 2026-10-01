@@ -828,6 +828,20 @@ test("a trial that could not be exercised is a failure, never a quiet pass", () 
   assert.match(out[0]!, /could not be exercised/);
 });
 
+test("a death on the approach is reported as the approach's, never as a verdict on the volume", () => {
+  // vesperhold: `wave/unremembered-guard` killed the bot on the walk to
+  // `lethal/undertide`'s lip, and the stage reported a death "outside the reach of
+  // the declared volume" — a sentence about the volume.
+  const t = openLethalTrial(VOLUME, [5, 65, 8], [stakeRule()]);
+  t.approachFailure =
+    "the bot died at [60.20, 80.00, 70.10] on its way to the near lip [31, 68, 78]";
+  const out = lethalTrialFailures(t);
+  assert.equal(out.length, 1);
+  assert.match(out[0]!, /APPROACH to the volume failed/);
+  assert.match(out[0]!, /never on the volume/);
+  assert.doesNotMatch(out[0]!, /could not be exercised|did NOT die|OUTSIDE the reach/);
+});
+
 // --- binding ---------------------------------------------------------------
 
 test("a stage that entered no volume reports VACUOUS, not pass", () => {

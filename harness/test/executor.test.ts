@@ -4565,3 +4565,66 @@ test("a run-back is met along the leg's own proven cells, and the leg resumes fr
   );
 });
 
+
+// --- the death loop's approach meets a re-seated wave the way the path does ---
+
+test("the death-loop approach reads and stages away a wave the delve put back, before it walks", async () => {
+  // vesperhold: the die-retry deaths re-seat `wave/unremembered-guard`, and the
+  // approach from [86,84,38] to `lethal/undertide`'s lip walked into it and was
+  // killed on both runs that measured it. The fake walk dies to any wave body
+  // standing when it starts — so a walk that does not first meet the wave the way
+  // the critical path does (muster, then the staged clear) dies here.
+  const bot = new CombatFakeBot();
+  bot.seat(2);
+  const executor = attach(bot);
+  executor.useCampaign("the-drowned-bell");
+  executor.useCombatPlan(combatPlan(2, true), false);
+  await executor.kill({ ...KILL_STEP, count: 2 });
+  assert.deepEqual(bot.waveIds(), [], "the critical path cleared the wave");
+
+  // A respawn puts it back: the second `spawn` is a death-respawn, which fires the
+  // rest's hooks and re-seats every `respawns_on_rest` wave.
+  bot.seat(2);
+  bot.emit("spawn");
+  bot.emit("spawn");
+  const reseated = bot.waveIds();
+  assert.equal(reseated.length, 2);
+
+  bot.moveOnGoto = true;
+  const walk = bot.pathfinder.goto;
+  let walkedPast = 0;
+  bot.pathfinder.goto = async (goal?: { x?: number; y?: number; z?: number }): Promise<void> => {
+    if (bot.waveIds().length > 0) {
+      bot.emit("messagestr", "delve-bot was slain by Unremembered Guard");
+      bot.emit("death");
+      throw new Error("Path was stopped before it could be completed!");
+    }
+    walkedPast += 1;
+    await walk(goal);
+  };
+  const strikesBefore = functionsCalled(bot).filter((f) => f.startsWith("wave_strike_")).length;
+  const approach = (
+    executor as unknown as {
+      approachVolume: (
+        volume: string,
+        lip: readonly [number, number, number] | undefined,
+      ) => Promise<{ kind: string; why: string } | undefined>;
+    }
+  ).approachVolume.bind(executor);
+  const fault = await approach("lethal/undertide", [31, 68, 78]);
+
+  assert.equal(fault, undefined, JSON.stringify(fault));
+  assert.equal(executor.deathDiagnostic(), undefined, "the approach did not die");
+  assert.ok(walkedPast > 0, "and it walked, with the wave gone");
+  assert.deepEqual(bot.waveIds(), [], "the re-seated wave was staged away");
+  assert.equal(
+    functionsCalled(bot).filter((f) => f.startsWith("wave_strike_")).length - strikesBefore,
+    2,
+    "one attributed blow per re-seated body — the critical path's own staged clear",
+  );
+  assert.equal(
+    functionsCalled(bot).filter((f) => f.startsWith("wave_muster_")).length,
+    2,
+    "the new seating was read before it was removed",
+  );
+});
