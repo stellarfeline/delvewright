@@ -278,9 +278,39 @@ this section is what they are *for* and the traps in each.
   the pinned server: **a teleport is not a rescue** — accumulated fall distance
   carries across it unchanged and is charged in full at the destination, so a
   platform arriving under a falling player past ~20 blocks is the surface they
-  die on; and **nav does not know about it** — a route that exists only through
-  a teleport still fails the completability proof, so keep a walked route to
-  anything the critical path needs.
+  die on; and **the proof leans only on a link** (next item) — every other
+  teleport is a gather, so a route that exists only through one fails the
+  completability proof.
+- **A crossing inside one area is a link — mandatory shape (spec-0083).** When
+  the only way onward between two places of ONE area is a carry (a boat at each
+  shore, a lift, a portal), author it as:
+  1. an **objective** that puts the party in the carry's volume (*board the
+     boat* — a `reach` on the hull) whose completion sets a flag;
+  2. a **`triggers[]` entry declared `"once": false`** (`use`, `strike` or
+     `approach`), gated on that flag, hosting the `teleport` — so a straggler
+     left on the jetty presses it again and follows. A teleport in an
+     objective's or quest's bundle, a `once` trigger, a trap payload, an offer,
+     a death bundle or a shortcut is a **gather**: the first body through it
+     travels, the rest are left behind, and the proof refuses the leg (`DW0311`,
+     naming that teleport and this remedy);
+  3. the trigger's body (a lever, a tiller) **just outside the volume and
+     within a strike of a cell inside it** — the party stands inside to press
+     it. The build refuses a link with no such cell, a `to` inside the volume,
+     a `to` with no floor at the teleport's tick, or a `to` in another area
+     (that is a crossing — put the next beat there instead);
+  4. **cutscene first, teleport after**: a crossing played as a cutscene is one
+     `sequence` — the `cutscene` at tick 0, the `teleport` at a tick past the
+     cutscene's end (the refusal names the first tick that holds; a teleport
+     under the open bracket is undone when the camera returns);
+  5. a `to` at least **8 blocks** (horizontally) from the volume, or the bot
+     cannot see the carry happen (the harness refuses the path);
+  6. with a layout graph, a **`carry` edge** between the two places, gated on
+     the same flag, each direction it allows realised by a link — the build
+     refuses either without the other; the volume's anchor a station of the
+     near place and `to`'s anchor a station of the far one.
+  The build then takes the link only where a walk fails, splices the press
+  into `critical-path.json` (`stand`, `transport`) and counts it on the
+  `DW0311 binding:` line (`N carried by a link`) — read that line to confirm.
 
 ## Danger, death and money
 

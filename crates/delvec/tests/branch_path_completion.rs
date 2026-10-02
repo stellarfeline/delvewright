@@ -95,7 +95,7 @@ fn every_gallery_branch_path_ends_where_the_delve_ends() {
         let objs = objectives(p);
         assert_eq!(
             objs.last().copied(),
-            Some("obj/reach-the-end"),
+            Some("obj/cross-the-strait"),
             "branch `{id}` must end on the finale's last objective: {objs:?}"
         );
         let strand = objs.iter().filter(|o| o.starts_with("obj/look-in")).count();
@@ -125,7 +125,7 @@ fn a_branch_path_that_runs_past_the_ending_does_not_replay() {
     let err = flow
         .replay(&p)
         .expect_err("a path with objective steps past `campaign-complete` must not replay");
-    assert_eq!(err.objective, "obj/reach-the-end");
+    assert_eq!(err.objective, "obj/cross-the-strait");
     assert!(
         err.reason.contains("3 step(s) before the end of the path"),
         "{}",

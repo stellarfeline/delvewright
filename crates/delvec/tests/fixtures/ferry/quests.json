@@ -1,0 +1,99 @@
+{
+  "campaign_id": "ferry",
+  "content": {
+    "quests": [
+      {
+        "happening": {
+          "subject": "anchor/boat",
+          "text": "The party crosses the strait in the ferry.",
+          "verb": "departs"
+        },
+        "id": "quest/cross",
+        "objectives": [
+          {
+            "anchor": "anchor/boat",
+            "happening": {
+              "subject": "anchor/boat",
+              "text": "They step down into the near hull.",
+              "verb": "arrives"
+            },
+            "id": "obj/board",
+            "radius": 1,
+            "type": "reach-anchor"
+          },
+          {
+            "after": [
+              "obj/board"
+            ],
+            "anchor": "anchor/far-shore",
+            "happening": {
+              "subject": "anchor/far-shore",
+              "text": "They climb out onto the far shore.",
+              "verb": "arrives"
+            },
+            "id": "obj/far-shore",
+            "radius": 1,
+            "type": "reach-anchor"
+          }
+        ],
+        "on_complete": [
+          {
+            "happening": {
+              "subject": "anchor/far-shore",
+              "text": "The crossing is made.",
+              "verb": "arrives"
+            },
+            "type": "campaign-complete"
+          }
+        ],
+        "on_objective_complete": {
+          "obj/board": [
+            {
+              "flag": "flag/boarded",
+              "happening": {
+                "subject": "anchor/boat",
+                "text": "The ferryman's tiller answers anyone aboard.",
+                "verb": "gains"
+              },
+              "type": "set-flag"
+            }
+          ]
+        },
+        "trigger": {
+          "type": "campaign-start"
+        }
+      }
+    ],
+    "triggers": [
+      {
+        "at": "anchor/tiller",
+        "effects": [
+          {
+            "from": {
+              "anchor": "anchor/boat",
+              "extent": [
+                1,
+                1,
+                1
+              ]
+            },
+            "to": {
+              "anchor": "anchor/far-landing"
+            },
+            "type": "teleport"
+          }
+        ],
+        "id": "trigger/tiller",
+        "on": {
+          "on": "use"
+        },
+        "once": false,
+        "requires_flags": [
+          "flag/boarded"
+        ]
+      }
+    ]
+  },
+  "dsl_version": "0.35.0",
+  "stage": "quests"
+}

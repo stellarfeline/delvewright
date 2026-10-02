@@ -258,7 +258,26 @@ export interface TriggerStep {
   readonly pos: Vec3Tuple;
   /** An `approach` trigger's radius; present exactly for `approach`. */
   readonly range?: number;
+  /**
+   * spec-0083 §4: where the party stands to be carried — a cell inside the
+   * link's volume the act reaches the body from. Present exactly when the step
+   * carries the party, together with {@link transport}.
+   */
+  readonly stand?: Vec3Tuple;
+  /** The link's `to`: where performing this trigger puts the party. */
+  readonly transport?: Vec3Tuple;
 }
+
+/**
+ * gap 8: how close (blocks, per horizontal axis) counts as "arrived at a
+ * transport's destination" — the tolerance the executor's arrival predicate
+ * (`atTransportDest`) reads, held here so the parser can refuse a hop that
+ * predicate could not observe (spec-0083 §4).
+ */
+export const TRANSPORT_NEAR = 4;
+
+/** The vertical tolerance of the same arrival predicate. */
+export const TRANSPORT_NEAR_Y = 4;
 
 /** Assert the campaign-completion scoreboard objective holds `value` (terminal step). */
 export interface AssertCompleteStep {
@@ -785,7 +804,11 @@ function parseStep(value: unknown, pointer: string): Step {
       };
     }
     case "trigger": {
-      rejectUnknownKeys(obj, ["action", "trigger", "on", "anchor", "npc", "pos", "range"], pointer);
+      rejectUnknownKeys(
+        obj,
+        ["action", "trigger", "on", "anchor", "npc", "pos", "range", "stand", "transport"],
+        pointer,
+      );
       const trigger = requireString(obj, "trigger", pointer);
       if (!/^trigger\/[a-z0-9]+(?:-[a-z0-9]+)*$/.test(trigger)) {
         fail(`${pointer}/trigger`, `must be a \`trigger/<kebab>\` id, got ${JSON.stringify(trigger)}`);
@@ -819,6 +842,36 @@ function parseStep(value: unknown, pointer: string): Step {
       } else if (range !== undefined) {
         fail(`${pointer}/range`, `a ${kind} trigger has no range`);
       }
+      // spec-0083 §4: a trigger that carries the party says where to stand and
+      // where it lands — both, or neither.
+      const carried = transportFields(obj, pointer);
+      const stand = obj["stand"] === undefined ? undefined : requireVec3(obj, "stand", pointer);
+      if ((stand === undefined) !== (carried.transport === undefined)) {
+        fail(
+          `${pointer}/${stand === undefined ? "stand" : "transport"}`,
+          "a trigger that carries the party names both where to stand (`stand`) and where it " +
+            "lands (`transport`)",
+        );
+      }
+      if (stand !== undefined && carried.transport !== undefined) {
+        const to = carried.transport;
+        // Observability: a landing the arrival predicate would already accept
+        // with the bot still on `stand` cannot be told apart from no carry at all.
+        if (
+          Math.abs(to[0] - stand[0]) < 2 * TRANSPORT_NEAR &&
+          Math.abs(to[2] - stand[2]) < 2 * TRANSPORT_NEAR &&
+          Math.abs(to[1] - stand[1]) <= TRANSPORT_NEAR_Y
+        ) {
+          fail(
+            `${pointer}/transport`,
+            `the hop from stand [${stand.join(", ")}] to [${to.join(", ")}] is shorter than ` +
+              `2 x TRANSPORT_NEAR (${2 * TRANSPORT_NEAR}) blocks on both horizontal axes and ` +
+              `within ${TRANSPORT_NEAR_Y} vertically — the bot's arrival check would accept the ` +
+              `landing before the press, so the carry cannot be observed. Move the link's \`to\` ` +
+              `further from its volume`,
+          );
+        }
+      }
       return {
         action: "trigger",
         trigger,
@@ -827,6 +880,8 @@ function parseStep(value: unknown, pointer: string): Step {
         ...(typeof npc === "string" ? { npc } : {}),
         pos: requirePos(obj, pointer),
         ...(kind === "approach" ? { range: range as number } : {}),
+        ...(stand === undefined ? {} : { stand }),
+        ...carried,
       };
     }
     case "assert-complete": {

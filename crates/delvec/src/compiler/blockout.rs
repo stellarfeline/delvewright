@@ -2196,9 +2196,17 @@ fn nodes_reached(
     let bound = delvewright_dsl::bound_places(c);
     let seat = |x: &PlacedBox| seat_in(x, b, world, &bound);
     let mut seeds: Vec<[i32; 3]> = vec![seat(entry)];
+    // What the graph's monotone closure grants — the same reading
+    // `seal_unopened` takes of which barred ways ever open — decides which
+    // carries are ever live.
+    let carry_grants = {
+        let grants = delvewright_dsl::layout::Grants::of(c, graph);
+        delvewright_dsl::layout::Closure::run(graph, &grants).obtained
+    };
     let mut reached: BTreeSet<[i32; 3]> = BTreeSet::new();
     loop {
         let before = reached.len();
+        let seeded = seeds.len();
         reached.extend(world.reachable_walkable(&seeds));
         // Every declared fall whose near side is now stood in hands the far side
         // a starting cell.
@@ -2231,8 +2239,44 @@ fn nodes_reached(
                 seeds.push(landing);
             }
         }
-        if reached.len() == before {
-            break; // fixpoint: no walk and no declared fall added anything.
+        // Every declared carry (spec-0083 §7) whose near side is stood in, and
+        // whose gating the graph's own closure grants, hands the far side a
+        // starting cell — the same seeding a declared fall gets. A carry has
+        // no geometry for this battery to judge: the link that realises it is
+        // the route proof's (`DW0932`), and that the graph and the links agree
+        // is `DW0934`'s.
+        for e in &graph.edges {
+            let delvewright_dsl::layout::Edge::Carry { a, b: far, .. } = e else {
+                continue;
+            };
+            if !delvewright_dsl::layout::Closure::satisfied(e.gating(), &carry_grants) {
+                continue;
+            }
+            let mut ways = Vec::new();
+            if e.direction() != Some(delvewright_dsl::layout::Direction::BToA) {
+                ways.push((a, far));
+            }
+            if e.direction() != Some(delvewright_dsl::layout::Direction::AToB) {
+                ways.push((far, a));
+            }
+            for (from, to) in ways {
+                let (Some(from), Some(to)) = (
+                    by_node.get(from.0.as_str()).copied(),
+                    by_node.get(to.0.as_str()).copied(),
+                ) else {
+                    continue;
+                };
+                if !stands_in(from, &b.boxes, world, &reached) {
+                    continue;
+                }
+                let landing = seat(to);
+                if !reached.contains(&landing) && !seeds.contains(&landing) {
+                    seeds.push(landing);
+                }
+            }
+        }
+        if reached.len() == before && seeds.len() == seeded {
+            break; // fixpoint: no walk, no declared fall and no carry added anything.
         }
     }
 

@@ -1,0 +1,19 @@
+{
+  "campaign_id": "ferry-site",
+  "content": {
+    "finale": "quest/the-crossing",
+    "quests": [
+      {
+        "act": 1,
+        "area": "area/site",
+        "depends_on": [],
+        "goal": "Cross the strait on the ferry, reach the far boathouse, and ride the far ferry home.",
+        "id": "quest/the-crossing",
+        "mandatory": true,
+        "npcs": []
+      }
+    ]
+  },
+  "dsl_version": "0.35.0",
+  "stage": "quest-plan"
+}

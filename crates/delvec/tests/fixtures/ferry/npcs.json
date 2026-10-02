@@ -1,0 +1,8 @@
+{
+  "campaign_id": "ferry",
+  "content": {
+    "npcs": []
+  },
+  "dsl_version": "0.35.0",
+  "stage": "npcs"
+}

@@ -521,7 +521,7 @@ fn quests_doc(opening: Opening, tower: bool) -> String {
           "id": "quest/cross",
           "trigger": { "type": "campaign-start" },
           "objectives": [
-            { "type": "reach-anchor", "id": "obj/goal", "anchor": "anchor/goal", "radius": 2 }
+            { "type": "reach-anchor", "id": "obj/goal", "anchor": "anchor/goal", "radius": 1 }
           ],
           "on_objective_complete": { "obj/goal": cross },
           "on_complete": [ { "type": "campaign-complete" } ]
