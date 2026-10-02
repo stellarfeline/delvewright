@@ -367,6 +367,17 @@ directions on one campaign in two states varying one variable: with one
 `unleash-actor` beat added to the ceremony and the build held fixed, the row
 reds `MISSING-CHECK` again.
 
+The precondition counts the objects that can carry the DEFECT, never the
+objects that can carry the DECLARATION. An `interact` with no `requires_item`
+completes on any click, so it carries no item-gate defect: the item-gate rows
+count the held-item tests the build emits, the server's own adjudication of an
+item gate, beside a binding counted over the source, and a held-item test the
+source binding does not count reds `UNBOUND`. A cast ledger is keyed by NPC id,
+so a campaign with no NPC carries no cast-ledger defect: the cast rows count
+NPCs. A demo level is a campaign and is judged by its own objects like any
+other; one that skipped the design gate is refused by the design-gate rows
+exactly as a campaign is.
+
 **And at least one of the two counts is taken over the campaign SOURCE.** That
 is the property the non-refusal is secured by, and it is one the defect cannot
 supply: a zero counted in the build tree is exactly what an emission defect
