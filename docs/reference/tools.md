@@ -2049,6 +2049,19 @@ politely and change nothing), and every sample batch is fenced by a `#sync`
 scoreboard round-trip so a desynchronised read aborts instead of shifting every
 later value by one.
 
+`tools/spike-celestial-time/run.sh` (`EULA=TRUE tools/spike-celestial-time/run.sh
+[--out <path>]`) measures, on the same throwaway pinned server, what `/time set`
+does to the world clock and to a connected client — the facts spec-0081 rests
+on: an absolute tick count above one day sets `time query day` and `daytime`
+and leaves `gametime` alone; a keyword (`time set night`) is absolute too and
+resets the day count, and with it the moon phase, to 0; the `update_time`
+packet carrying the new `dayTime` reaches a mineflayer client within the same
+second; a `time_check` predicate over `period: 192000` (the two in `spikepack/`)
+reads the phase on the server; the set state holds under `advance_time false`.
+Every reply goes through `tools/lib/rcon.mjs`; the raw packets and every reply
+are committed beside the rig (`tools/spike-celestial-time/observations.json`).
+Ephemeral port, no 25565 mutex.
+
 `tools/spike-fluid-plane/run.sh` (`EULA=TRUE tools/spike-fluid-plane/run.sh
 [--out <path>]`) measures, on the same throwaway pinned server booted with the
 delve ocean-superflat generator literal, the fluid physics spec-0038 rests on:

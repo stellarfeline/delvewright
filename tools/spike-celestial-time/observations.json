@@ -1,0 +1,272 @@
+{
+  "instrument": {
+    "server": "itzg/minecraft-server@sha256:3e7db256… (versions.toml [images.base]), vanilla 1.21.11",
+    "bot": "mineflayer 4.37.1 (harness pin)",
+    "note": "every reply read through tools/lib/rcon.mjs; packets are the raw update_time (ClientboundSetTimePacket: gameTime, dayTime, tickDayTime)"
+  },
+  "replies": {
+    "freeze": "Gamerule advance_time is now set to: false",
+    "freeze_readback": "Gamerule advance_time is currently set to: false"
+  },
+  "steps": [
+    {
+      "step": "baseline (frozen cycle)",
+      "clock": {
+        "day": 0,
+        "daytime": 140,
+        "gametime": 170
+      }
+    },
+    {
+      "step": "time set 109000",
+      "reply": "Set the time to 109000",
+      "before": {
+        "day": 0,
+        "daytime": 140,
+        "gametime": 173
+      },
+      "after": {
+        "day": 4,
+        "daytime": 13000,
+        "gametime": 177
+      },
+      "gametime_moved_by": 4,
+      "client_packet": {
+        "ms": 4122,
+        "gametime": 174,
+        "daytime": 109000,
+        "tickDayTime": false
+      },
+      "client_latency_ms": 41,
+      "client_packets_in_window": 3,
+      "server_predicate_new_moon": true,
+      "server_predicate_full_moon": false,
+      "mineflayer_derived": {
+        "day": 4,
+        "timeOfDay": 13000,
+        "moonPhase": 4,
+        "doDaylightCycle": false
+      }
+    },
+    {
+      "step": "hold 2.5 s under advance_time false",
+      "first": {
+        "day": 4,
+        "daytime": 13000,
+        "gametime": 214
+      },
+      "second": {
+        "day": 4,
+        "daytime": 13000,
+        "gametime": 268
+      },
+      "held": true
+    },
+    {
+      "step": "time set night (keyword) after day 4",
+      "reply": "Set the time to 13000",
+      "before": {
+        "day": 4,
+        "daytime": 13000,
+        "gametime": 270
+      },
+      "after": {
+        "day": 0,
+        "daytime": 13000,
+        "gametime": 274
+      },
+      "day_reset_to_zero": true,
+      "client_packet": {
+        "ms": 8990,
+        "gametime": 271,
+        "daytime": 13000,
+        "tickDayTime": false
+      },
+      "server_predicate_new_moon": false,
+      "server_predicate_full_moon": true,
+      "mineflayer_derived": {
+        "day": 0,
+        "moonPhase": 0
+      }
+    },
+    {
+      "step": "time set 192000",
+      "reply": "Set the time to 192000",
+      "after": {
+        "day": 8,
+        "daytime": 0,
+        "gametime": 305
+      },
+      "client_packet": {
+        "ms": 10513,
+        "gametime": 302,
+        "daytime": 192000,
+        "tickDayTime": false
+      },
+      "server_predicate_full_moon": true,
+      "server_predicate_new_moon": false,
+      "mineflayer_derived": {
+        "day": 8,
+        "moonPhase": 0
+      }
+    },
+    {
+      "step": "time set 96000; time add 13000",
+      "reply": "Set the time to 13000",
+      "before": {
+        "day": 4,
+        "daytime": 0,
+        "gametime": 336
+      },
+      "after": {
+        "day": 4,
+        "daytime": 13000,
+        "gametime": 340
+      }
+    },
+    {
+      "step": "time set -1 (expect a parse refusal)",
+      "reply": "The tick count must not be less than 0: found -1...ime set -1<--[HERE]"
+    },
+    {
+      "step": "time set 4d",
+      "reply": "Set the time to 96000",
+      "after": {
+        "day": 4,
+        "daytime": 0,
+        "gametime": 344
+      }
+    },
+    {
+      "step": "time set 1s",
+      "reply": "Set the time to 20",
+      "after": {
+        "day": 0,
+        "daytime": 20,
+        "gametime": 347
+      }
+    }
+  ],
+  "all_packets": [
+    {
+      "ms": 842,
+      "gametime": 106,
+      "daytime": 106,
+      "tickDayTime": true
+    },
+    {
+      "ms": 1406,
+      "gametime": 119,
+      "daytime": 119,
+      "tickDayTime": true
+    },
+    {
+      "ms": 2408,
+      "gametime": 139,
+      "daytime": 139,
+      "tickDayTime": true
+    },
+    {
+      "ms": 3411,
+      "gametime": 159,
+      "daytime": 140,
+      "tickDayTime": false
+    },
+    {
+      "ms": 4122,
+      "gametime": 174,
+      "daytime": 109000,
+      "tickDayTime": false
+    },
+    {
+      "ms": 4407,
+      "gametime": 179,
+      "daytime": 109000,
+      "tickDayTime": false
+    },
+    {
+      "ms": 5414,
+      "gametime": 199,
+      "daytime": 109000,
+      "tickDayTime": false
+    },
+    {
+      "ms": 6414,
+      "gametime": 219,
+      "daytime": 109000,
+      "tickDayTime": false
+    },
+    {
+      "ms": 7414,
+      "gametime": 239,
+      "daytime": 109000,
+      "tickDayTime": false
+    },
+    {
+      "ms": 8408,
+      "gametime": 259,
+      "daytime": 109000,
+      "tickDayTime": false
+    },
+    {
+      "ms": 8990,
+      "gametime": 271,
+      "daytime": 13000,
+      "tickDayTime": false
+    },
+    {
+      "ms": 9414,
+      "gametime": 279,
+      "daytime": 13000,
+      "tickDayTime": false
+    },
+    {
+      "ms": 10404,
+      "gametime": 299,
+      "daytime": 13000,
+      "tickDayTime": false
+    },
+    {
+      "ms": 10513,
+      "gametime": 302,
+      "daytime": 192000,
+      "tickDayTime": false
+    },
+    {
+      "ms": 11414,
+      "gametime": 319,
+      "daytime": 192000,
+      "tickDayTime": false
+    },
+    {
+      "ms": 12098,
+      "gametime": 333,
+      "daytime": 96000,
+      "tickDayTime": false
+    },
+    {
+      "ms": 12279,
+      "gametime": 337,
+      "daytime": 109000,
+      "tickDayTime": false
+    },
+    {
+      "ms": 12403,
+      "gametime": 339,
+      "daytime": 109000,
+      "tickDayTime": false
+    },
+    {
+      "ms": 12490,
+      "gametime": 341,
+      "daytime": 96000,
+      "tickDayTime": false
+    },
+    {
+      "ms": 12659,
+      "gametime": 345,
+      "daytime": 20,
+      "tickDayTime": false
+    }
+  ]
+}
