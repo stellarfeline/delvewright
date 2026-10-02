@@ -60,17 +60,45 @@ INVENTORY_DOC = {
         },
     ],
     "entries": [
-        {"key": "npc.keeper.name", "en": "The Keeper", "speaker": "keeper", "existing": "守关人"},
-        {"key": "world.title", "en": "The Stone Keep", "existing": "石垒要塞"},
-        {"key": "dlg.keeper.greet.text", "en": "You came. Good.", "speaker": "keeper"},
-        {"key": "dlg.keeper.greet.opt.0.label", "en": "Who are you?", "speaker": "keeper"},
-        {"key": "quest.greet.goal", "en": "Meet the Keeper."},
+        {
+            "key": "npc.keeper.name",
+            "en": "The Keeper",
+            "kind": "name",
+            "speaker": "keeper",
+            "existing": "守关人",
+        },
+        {"key": "world.title", "en": "The Stone Keep", "kind": "title", "existing": "石垒要塞"},
+        {
+            "key": "dlg.keeper.greet.text",
+            "en": "You came. Good.",
+            "kind": "dialogue",
+            "speaker": "keeper",
+            "situation": ["The player can answer: Who are you?"],
+        },
+        {
+            "key": "dlg.keeper.greet.opt.0.label",
+            "en": "Who are you?",
+            "kind": "option-label",
+            "speaker": "keeper",
+            "situation": ["Answers the NPC line: You came. Good."],
+        },
+        {
+            "key": "quest.greet.goal",
+            "en": "Meet the Keeper.",
+            "kind": "objective",
+            "situation": ["What the quest does to the story: The party reaches the gate."],
+        },
     ],
 }
 
 
 def inventory():
     return t.parse_inventory(json.loads(json.dumps(INVENTORY_DOC)))
+
+
+def sent_rows(body):
+    """The rows a transcreate request sends: the JSON list after its instruction."""
+    return json.loads(body["messages"][1]["content"].split("key -> line:\n")[1])
 
 
 #: A step whose reply is free text — the critique's shape, reduced to what the
@@ -184,10 +212,12 @@ def test_pending_skips_translated_keys_unless_forced():
 
 
 def test_glossary_pins_names_only_not_prose():
-    assert inventory().glossary() == {"The Keeper": "守关人", "The Stone Keep": "石垒要塞"}
-    assert t.is_glossary_key("class.warden.name")
-    assert not t.is_glossary_key("class.warden.blurb"), "a blurb is prose, not a term"
-    assert not t.is_glossary_key("dlg.keeper.greet.text")
+    inv = inventory()
+    assert inv.glossary() == {"The Keeper": "守关人", "The Stone Keep": "石垒要塞"}
+    assert [e.key for e in inv.entries if e.is_name] == ["npc.keeper.name", "world.title"]
+    # A name this run redoes is not settled, so it pins nothing.
+    keeper = [e for e in inv.entries if e.key == "npc.keeper.name"]
+    assert inv.glossary(redo=keeper) == {"The Stone Keep": "石垒要塞"}
 
 
 def test_batches_preserve_order_and_size():
@@ -211,14 +241,18 @@ def test_messages_carry_persona_glossary_and_keys():
     assert "zh-cn" in system
     assert "clipped, soldierly" in user, "the speaker's speech style must reach the model"
     assert "warm, rambling" not in user, "only speakers in this batch are described"
-    assert "守关人" in user, "glossary keeps proper nouns stable across batches"
+    assert "守关人" not in user, "the batch's English mentions no glossary name"
     for e in batch:
         assert e.key in user and e.en in user
+    goal = [e for e in inv.entries if e.key == "quest.greet.goal"]
+    assert "守关人" in t.translate_step(inv, goal, "zh-cn").messages[1]["content"], (
+        "a batch is handed the rendering of every name its English mentions"
+    )
 
 
 def test_system_prompt_states_the_player_reply_rule():
     msgs = t.translate_step(inventory(), inventory().entries[:1], "zh-cn").messages
-    assert ".opt." in msgs[0]["content"]
+    assert "`option-label`: the PLAYER's own reply" in msgs[0]["content"]
     assert "JSON" in msgs[0]["content"]
 
 
@@ -271,7 +305,7 @@ def test_reflection_step_does_not_ask_for_json():
     step = t.critique_step(inventory(), inventory().pending(), "zh-cn", {})
     system = step.messages[0]["content"]
     assert "only diagnoses" in system
-    assert "corrected translation" in system
+    assert "corrected line" in system
     # The prompt asking for prose and the request asking for a JSON object is the
     # pairing a provider rejects, and asserting only the prompt text is what let
     # `--reflect` ship unrunnable: the reply shape is asserted here too.
@@ -317,10 +351,10 @@ def test_translate_batch_single_pass_makes_one_call(tmp_path, monkeypatch):
 
     monkeypatch.setattr(t, "post_json", poster)
     chunk = [e for e in inv.entries if e.key == "quest.greet.goal"]
-    assert t.translate_batch(cfg, inv, chunk, "zh-cn", "secret-value") == {
-        "quest.greet.goal": "去见守关人。"
-    }
-    assert len(calls) == 1
+    result = t.translate_batch(cfg, inv, chunk, "zh-cn", "secret-value")
+    assert result.accepted == {"quest.greet.goal": "去见守关人。"}
+    assert result.refused == {}
+    assert len(calls) == 1, "a line that passes the fact check costs no second call"
 
 
 def test_translate_batch_reflect_runs_three_steps_and_keeps_the_revision(tmp_path, monkeypatch):
@@ -340,9 +374,9 @@ def test_translate_batch_reflect_runs_three_steps_and_keeps_the_revision(tmp_pat
     chunk = [e for e in inv.entries if e.key == "quest.greet.goal"]
     out = t.translate_batch(cfg, inv, chunk, "zh-cn", "secret-value", reflect=True)
 
-    assert out == {"quest.greet.goal": "去和守关人对话。"}
+    assert out.accepted == {"quest.greet.goal": "去和守关人对话。"}
     assert len(seen) == 3, "translate -> reflect -> improve"
-    assert "professional video-game localizer" in seen[0]
+    assert "You\ntranscreate" in seen[0] or "transcreate" in seen[0]
     assert "senior localization editor" in seen[1]
     assert "revising your own draft" in seen[2]
 
@@ -620,7 +654,7 @@ def test_dry_run_prints_the_prompt_and_calls_nothing(tmp_path, monkeypatch, caps
     rc = t.main([str(tmp_path), "--lang", "zh-cn", "--config", str(cfg_path), "--dry-run"])
     out = capsys.readouterr().out
     assert rc == 0
-    assert "3 to translate" in out
+    assert "3 to transcreate" in out
     assert "dlg.keeper.greet.text" in out
     assert "clipped, soldierly" in out
     assert "TEST_I18N_KEY" in out, "dry run names the env var it would read"
@@ -665,13 +699,10 @@ def test_full_run_writes_only_missing_keys_then_validates(tmp_path, monkeypatch,
     seen = []
 
     def poster(url, body, headers, timeout):
-        sent = json.loads(body["messages"][1]["content"].split("key -> translation:\n")[1])
+        sent = sent_rows(body)
         seen.append([i["key"] for i in sent])
-        return {
-            "choices": [
-                {"message": {"content": json.dumps({i["key"]: "译:" + i["en"] for i in sent})}}
-            ]
-        }
+        reply = {i["key"]: "译:" + i["en"].replace("the Keeper", "守关人") for i in sent}
+        return {"choices": [{"message": {"content": json.dumps(reply, ensure_ascii=False)}}]}
 
     monkeypatch.setattr(t, "post_json", poster)
     validated = []
@@ -757,7 +788,9 @@ def test_full_reflect_run_writes_the_revised_text(tmp_path, monkeypatch, capsys)
         stage = "improve" if "revising your own draft" in system else "translate"
         steps.append(stage)
         prefix = "终:" if stage == "improve" else "初:"
-        return {"choices": [{"message": {"content": json.dumps({k: prefix + k for k in keys})}}]}
+        # Every line names the Keeper's rendering, so the fact check passes it.
+        reply = {k: prefix + k + " 守关人" for k in keys}
+        return {"choices": [{"message": {"content": json.dumps(reply, ensure_ascii=False)}}]}
 
     monkeypatch.setattr(t, "post_json", poster)
     monkeypatch.setattr(
@@ -771,7 +804,7 @@ def test_full_reflect_run_writes_the_revised_text(tmp_path, monkeypatch, capsys)
     assert steps == ["translate", "reflect", "improve"]
 
     content = json.loads(t.sidecar_path(tmp_path, "zh-cn").read_text("utf-8"))["content"]
-    assert content["dlg.keeper.greet.text"] == "终:dlg.keeper.greet.text", "the revision ships"
+    assert content["dlg.keeper.greet.text"] == "终:dlg.keeper.greet.text 守关人", "the revision ships"
     assert content["npc.keeper.name"] == "守关人", "existing translations are still untouched"
     assert "translate -> reflect -> improve" in capsys.readouterr().out
 
@@ -879,3 +912,232 @@ def test_no_delvec_of_the_pinned_version_is_a_named_failure_never_a_cargo_run(
     monkeypatch.setattr(t, "REPO_ROOT", tmp_path / "no-tree")
     with pytest.raises(t.NoDelvec, match="0.0.0-not-the-pin"):
         t.delvec_command(None)
+
+
+# ------------------------------------------------------------ transcreation --
+
+
+def test_every_row_sent_carries_its_intent():
+    """Transcreation writes from intent: each row the model sees carries the kind
+    of text, the speaker and the situation the inventory derived — not just the
+    English."""
+    inv = inventory()
+    rows = sent_rows({"messages": t.translate_step(inv, inv.pending(), "zh-cn").messages})
+    by_key = {r["key"]: r for r in rows}
+    assert by_key["dlg.keeper.greet.text"]["kind"] == "dialogue"
+    assert by_key["dlg.keeper.greet.text"]["speaker"] == "keeper"
+    assert by_key["dlg.keeper.greet.opt.0.label"]["kind"] == "option-label"
+    assert by_key["dlg.keeper.greet.opt.0.label"]["situation"] == [
+        "Answers the NPC line: You came. Good."
+    ]
+    assert by_key["quest.greet.goal"]["kind"] == "objective"
+    assert "speaker" not in by_key["quest.greet.goal"], "absent intent is omitted, not null"
+    assert by_key["quest.greet.goal"]["situation"][0].startswith("What the quest does")
+
+
+def test_the_critique_and_revision_see_the_intent_too():
+    inv = inventory()
+    batch = inv.pending()
+    for step in (
+        t.critique_step(inv, batch, "zh-cn", {}),
+        t.revise_step(inv, batch, "zh-cn", {}, "fine"),
+    ):
+        user = step.messages[1]["content"]
+        assert '"kind": "option-label"' in user
+        assert "Answers the NPC line: You came. Good." in user
+
+
+def test_writing_rules_come_from_game_writing_md():
+    """One source: the zh rules in the prompt are the `## 4. Chinese` section of
+    the writing guide, read at call time, each rule cut before its provenance."""
+    rules = t.writing_rules("zh-cn")
+    doc = t.GAME_WRITING.read_text("utf-8")
+    for n in range(1, 6):
+        assert f"**C{n} — " in rules and f"**C{n} — " in doc
+    assert "Cited" not in rules and "Authored" not in rules
+    assert "N4 — " not in rules, "only the target language's section"
+    system = t.translate_step(inventory(), inventory().pending(), "zh-cn").messages[0]["content"]
+    assert rules in system
+    assert t.writing_rules("ja") == "", "a language with no section gets the general rules"
+
+
+def test_writing_rules_follow_the_file_and_refuse_when_the_section_moves(tmp_path):
+    guide = tmp_path / "game-writing.md"
+    guide.write_text(
+        "# x\n\n## 4. Chinese\n\n- **C1 — Say it plainly.** Body text.\n  **Cited:** a source.\n"
+        "- **C2 — Second rule.** More. **Authored.**\n\n## 5. Next\n\n- **N — not this.**\n",
+        "utf-8",
+    )
+    rules = t.writing_rules("zh-cn", guide)
+    assert "**C1 — Say it plainly.** Body text." in rules
+    assert "**C2 — Second rule.** More." in rules
+    assert "a source" not in rules and "not this" not in rules
+    guide.write_text("# x\n\n## 4. Japanese\n\n- **J1 — x.**\n", "utf-8")
+    with pytest.raises(t.TranslateError, match="Chinese"):
+        t.writing_rules("zh-cn", guide)
+
+
+def test_names_are_sent_first_in_batches_of_their_own():
+    inv = inventory()
+    chunks = t.plan_batches(inv.pending(force=True), 3)
+    assert [[e.key for e in c] for c in chunks] == [
+        ["npc.keeper.name", "world.title"],
+        ["dlg.keeper.greet.text", "dlg.keeper.greet.opt.0.label", "quest.greet.goal"],
+    ]
+
+
+def _stale_inventory():
+    doc = json.loads(json.dumps(INVENTORY_DOC))
+    doc["entries"][2]["existing"] = "旧的译文"
+    doc["entries"][2]["stale"] = True
+    return t.parse_inventory(doc)
+
+
+def test_a_stale_row_is_sent_again_and_dropped_if_not_redone():
+    """A translation made from English the line no longer reads is wrong: it is
+    redone, and if this run does not redo it, it is dropped rather than kept
+    under a `source` that would claim it matches (DW0187)."""
+    inv = _stale_inventory()
+    assert "dlg.keeper.greet.text" in [e.key for e in inv.pending()]
+    content = t.merge_content(inv, {})
+    assert "dlg.keeper.greet.text" not in content
+    assert content["npc.keeper.name"] == "守关人"
+    assert t.merge_content(inv, {"dlg.keeper.greet.text": "新"})["dlg.keeper.greet.text"] == "新"
+
+
+# ---------------------------------------------------------------- fact check --
+
+NAMES = {"The Keeper": "守关人", "The Stone Keep": "石垒要塞"}
+
+
+def _row(key, en, kind="dialogue"):
+    return t.Entry(key=key, en=en, kind=kind)
+
+
+def test_fact_check_passes_a_faithful_line():
+    row = _row("dlg.a.b.text", "The Keeper waited 40 days at the Stone Keep, %s.")
+    assert t.check_row(row, "守关人在石垒要塞等了40天，%s。", NAMES, "zh-cn") == []
+
+
+def test_fact_check_refuses_a_name_rendered_another_way():
+    row = _row("dlg.a.b.text", "Ask the Keeper.")
+    failures = t.check_row(row, "去问守门人。", NAMES, "zh-cn")
+    assert failures == ["the name `The Keeper` must be written `守关人`"]
+
+
+def test_fact_check_refuses_a_lost_placeholder():
+    row = _row("obj.q.o.hint", "%s has the key.", kind="objective")
+    failures = t.check_row(row, "钥匙在他手上。", NAMES, "zh-cn")
+    assert any("placeholders" in f for f in failures), failures
+
+
+@pytest.mark.parametrize(
+    ("en", "zh", "lost"),
+    [
+        ("Montrose quartered here in 1645.", "蒙特罗斯1646年在这里驻扎。", "1645"),
+        ("Sixteen arrows.", "十五支箭。", "16"),
+        ("Forty strokes cut into the lectern.", "讲台上刻着五十道。", "40"),
+    ],
+)
+def test_fact_check_refuses_a_changed_number(en, zh, lost):
+    failures = t.check_row(_row("fx.q.done.0.narrate", en, "narration"), zh, NAMES, "zh-cn")
+    assert any(lost in f for f in failures), failures
+
+
+@pytest.mark.parametrize(
+    ("en", "zh"),
+    [
+        ("Day 10,811. Rang the Vesper.", "第10811天。敲响了晚祷钟。"),
+        ("Sixteen arrows.", "十六支箭。"),
+        ("Forty-two steps.", "四十二级台阶。"),
+        ("Two of you, then.", "那就你们俩。"),
+        ("A hundred years.", "一百年。"),
+        ("No one came back.", "没人回来。"),
+    ],
+)
+def test_number_words_accept_the_chinese_forms(en, zh):
+    assert t.check_row(_row("fx.q.done.0.narrate", en, "narration"), zh, NAMES, "zh-cn") == []
+
+
+def test_a_name_inside_a_longer_name_is_held_to_the_longer_one():
+    names = {"The Warden": "守钟人", "The Warden's Door": "北门"}
+    row = _row("obj.q.o.title", "Open the Warden's Door", "objective")
+    assert t.check_row(row, "打开北门", names, "zh-cn") == []
+    assert t.check_row(_row("x", "The Warden is gone."), "守钟人走了。", names, "zh-cn") == []
+
+
+def test_one_name_one_rendering_and_no_two_names_share_one():
+    batch = [
+        t.Entry(key="npc.porter.name", en="The Porter", kind="name"),
+        t.Entry(key="actor.gw.name", en="Gate-warden", kind="name"),
+        t.Entry(key="npc.keeper.name", en="The Keeper", kind="name"),
+    ]
+    got = {"npc.porter.name": "门卫", "actor.gw.name": "门卫", "npc.keeper.name": "看门人"}
+    failures = t.check_names(batch, got, {"The Keeper": "守关人"})
+    assert set(failures) == {"actor.gw.name", "npc.keeper.name"}
+    assert "already names `The Porter`" in failures["actor.gw.name"][0]
+    assert "already written `守关人`" in failures["npc.keeper.name"][0]
+
+
+def test_a_refused_row_is_sent_back_once_then_refused_by_name(tmp_path, monkeypatch):
+    cfg = config(tmp_path)
+    inv = inventory()
+    steps = []
+
+    def poster(url, body, headers, timeout):
+        system = body["messages"][0]["content"]
+        steps.append("fix" if "mechanical check refused" in system else "translate")
+        if steps[-1] == "fix":
+            assert "must be written `守关人`" in body["messages"][1]["content"], (
+                "the corrective step names the failure"
+            )
+        return {"choices": [{"message": {"content": '{"quest.greet.goal": "去见守门人。"}'}}]}
+
+    monkeypatch.setattr(t, "post_json", poster)
+    chunk = [e for e in inv.entries if e.key == "quest.greet.goal"]
+    result = t.translate_batch(cfg, inv, chunk, "zh-cn", "secret-value")
+    assert steps == ["translate", "fix"]
+    assert result.accepted == {}
+    assert list(result.refused) == ["quest.greet.goal"]
+
+
+def test_a_corrected_row_is_accepted(tmp_path, monkeypatch):
+    cfg = config(tmp_path)
+    inv = inventory()
+    replies = ['{"quest.greet.goal": "去见守门人。"}', '{"quest.greet.goal": "去见守关人。"}']
+
+    def poster(url, body, headers, timeout):
+        return {"choices": [{"message": {"content": replies.pop(0)}}]}
+
+    monkeypatch.setattr(t, "post_json", poster)
+    chunk = [e for e in inv.entries if e.key == "quest.greet.goal"]
+    result = t.translate_batch(cfg, inv, chunk, "zh-cn", "secret-value")
+    assert result.accepted == {"quest.greet.goal": "去见守关人。"}
+    assert result.fixed == ["quest.greet.goal"] and result.refused == {}
+
+
+def test_a_run_with_a_refused_row_leaves_it_out_and_fails(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(t, "fetch_inventory", lambda *a, **k: inventory())
+    monkeypatch.setenv("TEST_I18N_KEY", "secret-value")
+    cfg_path = write_config(tmp_path / "cfg.toml", CONFIG)
+
+    def poster(url, body, headers, timeout):
+        if "mechanical check refused" in body["messages"][0]["content"]:
+            return {"choices": [{"message": {"content": '{"quest.greet.goal": "去见守门人。"}'}}]}
+        reply = {i["key"]: "译" for i in sent_rows(body)}
+        reply["quest.greet.goal"] = "去见守门人。"
+        return {"choices": [{"message": {"content": json.dumps(reply, ensure_ascii=False)}}]}
+
+    monkeypatch.setattr(t, "post_json", poster)
+    monkeypatch.setattr(
+        t, "run_delvec", lambda args, delvec: subprocess.CompletedProcess(args, 0, "", "")
+    )
+    rc = t.main([str(tmp_path), "--lang", "zh-cn", "--config", str(cfg_path)])
+    out = capsys.readouterr().out
+    assert rc == 1, "a refused row fails the run even when validate is satisfied"
+    assert "REFUSED quest.greet.goal" in out
+    assert "the name `The Keeper` must be written `守关人`" in out
+    assert "1 refused" in out
+    content = json.loads(t.sidecar_path(tmp_path, "zh-cn").read_text("utf-8"))["content"]
+    assert "quest.greet.goal" not in content, "a refused line never lands"
+    assert content["dlg.keeper.greet.text"] == "译"

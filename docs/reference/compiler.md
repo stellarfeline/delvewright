@@ -158,7 +158,7 @@ delvec fmt      <path>… [--check]          # canonical form for authored JSON 
 delvec schema   --stage <1..7|name|all>    # export JSON Schema (named documents: §2)
 delvec metrics  [--gym <dir>]              # export the metrics standard as JSON (§10)
 delvec prefab anchors [--pool <id>]        # which anchors does a pool guarantee (library only)
-delvec l10n-inventory <dir> [--lang <c>]   # l10n key inventory as JSON (translation input)
+delvec l10n-inventory <dir> [--lang <c>]   # l10n key inventory as JSON (transcreation input)
 delvec l10n-apply <dir> --lang <c> --table <f>
                                            # write the sidecar from an English → translation table
 delvec allocation <dir> [<place>|--all]    # the handed allocation for a site-plan place
@@ -1031,14 +1031,26 @@ writing an empty sidecar and reading the coverage diagnostics back:
 ```
 { campaign_id, dsl_version, lang, declared, sidecar_present, world_title,
   npcs:    [{id, name, archetype, speech_style, demeanor?, motivation}],
-  entries: [{key, en, speaker?, existing?}] }
+  entries: [{key, en, kind, speaker?, situation?, existing?, stale?}] }
 ```
 
 `entries` is the inventory itself (a CLI test asserts the key set equals what
 `DW0180` demands, so the two cannot drift). `speaker` is the NPC whose dialogue
 tree the key belongs to (`dlg.<npc>.…`, `npc.<npc>.name`; a `.opt.<i>.label` is the
 player's reply *inside* that tree); `existing` is what `l10n/<lang>.json` already
-translates, so a re-run fills only the gaps. Persona rows carry voice, never plot
+translates, so a re-run fills only the gaps; `stale: true` marks an `existing`
+translation whose recorded `source` differs from the English the line reads now
+(the `DW0187` condition), so a re-run redoes it rather than re-recording the new
+English against the old translation. `kind` (`dsl::key_kind`, from the key alone)
+is the class of text — `name`, `title`, `description`, `objective`, `refusal`,
+`dialogue`, `bark`, `option-label`, `button-tooltip`, `item-name`,
+`item-tooltip`, `prompt`, `narration` — and a CLI test over the gallery asserts
+every row has one. `situation` (`dsl::key_situations`) is the campaign context the
+line is said in, derived from the stage documents: the quest goal and its
+`happening`, the objective and what completing it does, a cast placement's
+`doing`, the NPC line a dialogue option answers and what choosing it does, the
+shop an offer sits in, and the nearest enclosing effect's `happening`. Together
+they are the intent a transcreator writes from. Persona rows carry voice, never plot
 (`secret`/`backstory`/`relationships` are excluded). Runs **before** validation
 gating — an incomplete sidecar is the normal state when you ask — and needs no
 prefab library; only an unparseable campaign fails (exit 1). See

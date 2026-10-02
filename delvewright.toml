@@ -9,8 +9,10 @@
 # back to its built-in behavior.
 
 # ---------------------------------------------------------------------------
-# [i18n] — translate l10n sidecars with an external OpenAI-compatible LLM API
-# instead of having the /new-delve agent translate in-agent.
+# [i18n] — transcreate l10n sidecars with an external OpenAI-compatible LLM API
+# instead of having the /new-delve agent write them in-agent. RECOMMENDED for
+# Chinese: in a blind trial a native reader preferred DeepSeek's transcreation
+# over Claude's own Chinese (docs/reference/game-writing-evidence.md §7).
 #
 #   consumed by: tools/creator/i18n-translate.py   ·   docs: docs/reference/i18n.md
 #
@@ -23,8 +25,9 @@
 #
 # [i18n]
 # provider = "openai-compatible"                # only supported value
-# base_url = "https://api.deepseek.com/v1"      # DeepSeek; Kimi: https://api.moonshot.cn/v1
-# model = "deepseek-flash"                      # Kimi: kimi-k2-0905-preview
+# base_url = "https://api.deepseek.com/v1"      # DeepSeek (recommended for zh)
+# model = "deepseek-v4-pro"                     # the model the trial measured;
+#                                               # `/models` also lists deepseek-flash.
 #                                               # ids ROTATE, and a retired one dies
 #                                               # HTTP 400 before a string is sent:
 #                                               # GET <base_url>/models to see them
