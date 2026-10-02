@@ -424,7 +424,7 @@ fn box_narrowed_entity_selectors(line: &str) -> Vec<String> {
 /// character count from the start: a `tellraw` component elsewhere on the line
 /// may hold a translated string, and slicing a byte offset produced by counting
 /// characters would land mid-codepoint and panic.
-fn matching_bracket(line: &str, open: usize) -> Option<usize> {
+pub(crate) fn matching_bracket(line: &str, open: usize) -> Option<usize> {
     let mut depth = 0usize;
     for (off, c) in line.get(open..)?.char_indices() {
         let i = open + off;
@@ -441,7 +441,7 @@ fn matching_bracket(line: &str, open: usize) -> Option<usize> {
 
 /// A selector's top-level `key=value` terms, splitting on commas that are not
 /// inside a nested `[…]` or `{…}`.
-fn selector_terms(args: &str) -> impl Iterator<Item = &str> {
+pub(crate) fn selector_terms(args: &str) -> impl Iterator<Item = &str> {
     let mut depth = 0usize;
     let mut start = 0usize;
     let mut out: Vec<&str> = Vec::new();
@@ -463,13 +463,13 @@ fn selector_terms(args: &str) -> impl Iterator<Item = &str> {
 }
 
 /// Whether a selector's argument list carries `term` as a whole top-level term.
-fn selector_has_term(args: &str, term: &str) -> bool {
+pub(crate) fn selector_has_term(args: &str, term: &str) -> bool {
     selector_terms(args).any(|t| t == term)
 }
 
 /// The shipped delve's `.mcfunction` bodies as `(unqualified name, body)`, in
 /// deterministic path order. Excludes `packtest-datapack/` (tooling, ADR-0003).
-fn shipped_functions(out: &BuildOutput) -> Vec<(String, String)> {
+pub(crate) fn shipped_functions(out: &BuildOutput) -> Vec<(String, String)> {
     out.iter()
         .filter(|(p, _)| {
             p.starts_with("datapack/") && p.ends_with(".mcfunction") && p.contains("/function/")

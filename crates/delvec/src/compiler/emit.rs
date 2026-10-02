@@ -1825,9 +1825,10 @@ pub fn build_with_warnings(
         )?;
     }
 
-    // predicates — currently only the cutscene bounce's sneak-held gate (see
-    // SNEAK_HELD_PREDICATE); a cutscene-less campaign emits none.
-    if campaign_has_cutscene(plan.campaign) {
+    // predicates — currently only the sneak-held gate (see
+    // SNEAK_HELD_PREDICATE) the cutscene bounce and the respawn wait's view
+    // binding read; a campaign with neither emits none.
+    if campaign_has_cutscene(plan.campaign) || respawn_wait(plan).is_some() {
         put_json(
             &mut out,
             &format!("datapack/data/{ns}/predicate/{SNEAK_HELD_PREDICATE}.json"),
@@ -1924,6 +1925,28 @@ pub fn build_with_warnings(
         "validation/fixture-gate.json",
         &fixture_gate.to_json(),
     );
+
+    // ---- a watcher is out of play everywhere (spec-0077 §5, DW0926) ----
+    // A respawn wait holds one player in the observation state while the rest
+    // play on, so a watcher can stand anywhere. Every positional player selector
+    // in the shipped tree must exclude the observation tag or stand at a site
+    // `crate::compiler::observer::ALLOWED` names with its reason (an engine
+    // self-check: see `crate::compiler::observer::check`). Feature-blind and read
+    // off the shipped bytes. Only with a declared wait, so every other
+    // campaign's tree is untouched.
+    if respawn_wait(plan).is_some() {
+        let census =
+            crate::compiler::observer::check(&out).map_err(|e| BuildFailure::Diagnostic {
+                code: e.code,
+                message: e.message,
+            })?;
+        eprintln!("{}", census.binding());
+        put_json(
+            &mut out,
+            "validation/observer-census.json",
+            &census.to_json(),
+        );
+    }
 
     // ---- the effect-root walk's own binding ledger ----
     // Every other proof in this compiler publishes its binding as a
@@ -3498,8 +3521,12 @@ fn emit_functions(
         setup.push("scoreboard objectives add dw.deaths deathCount".to_string());
         setup.push("scoreboard objectives add dw.death_ack dummy".to_string());
         // spec-0016 §1: the party-wipe latch a bonfire respawn's scene reset waits on.
-        if plan.bonfires().next().is_some() {
+        if wipes(plan) {
             setup.push(format!("scoreboard players set {WIPE} dw.sys 0"));
+        }
+        // spec-0077: each waiting player's own clock.
+        if respawn_wait(plan).is_some() {
+            setup.push(format!("scoreboard objectives add {RW_CLOCK} dummy"));
         }
     } else if !plan.on_death().is_empty() {
         // v0.10 `on_death` (spec-0031) rides the SAME detector, so a campaign that
@@ -4244,6 +4271,7 @@ fn emit_functions(
     // whether anyone has died.
     if plan.any_checkpoint() || !plan.on_death().is_empty() {
         tick.extend(party_wipe_tick(plan));
+        tick.extend(respawn_wait_tick(plan));
         tick.push(format!("execute as @a run function {ns}:cp_respawn_check"));
     }
     // spec-0031: lethal volumes. One driver line per declared volume; empty for a
@@ -4273,6 +4301,8 @@ fn emit_functions(
 
     // --- v0.6 checkpoint respawn dispatch (spec-0012) ---
     fns.extend(emit_checkpoint_functions(plan));
+    // --- spec-0077 respawn wait ---
+    fns.extend(emit_respawn_wait_functions(plan, chrome));
     // --- spec-0016 §1 bonfire rest functions ---
     fns.extend(emit_bonfire_functions(plan));
     // --- spec-0016 §2 shortcut unlock functions ---
@@ -5014,7 +5044,7 @@ fn emit_functions(
             lines(&body),
         ));
         if let Some((l, wps)) = lane {
-            fns.push(lane_tick_fn(ns, w, l, wps));
+            fns.push(lane_tick_fn(ns, w, l, wps, &observer_guard(plan)));
         }
         // spec-0016 §1: the re-seat — clear survivors, then re-run the wave's own
         // spawn (same authored composition, same proven cells). Emitted for a
@@ -5360,6 +5390,7 @@ fn lane_tick_fn(
     w: &delvewright_dsl::Wave,
     lane: &delvewright_dsl::WaveLane,
     wps: &[[i32; 3]],
+    guard: &str,
 ) -> (String, String) {
     let safe = plan::safe_local(w.id.as_str());
     let tag = plan::wave_tag(w.id.as_str());
@@ -5379,13 +5410,13 @@ fn lane_tick_fn(
         ));
     }
     body.push(format!(
-        "execute as @e[tag={tag}] at @s if entity @a[distance=..{r}] run data merge entity @s \
+        "execute as @e[tag={tag}] at @s if entity @a[distance=..{r}{guard}] run data merge entity @s \
          {{Patrolling:0b}}"
     ));
     for (i, t) in wps.iter().enumerate() {
         body.push(format!(
             "execute if score {idx} dw.sys matches {i} as @e[tag={tag}] at @s unless entity \
-             @a[distance=..{r}] run data merge entity @s {{Patrolling:1b,patrol_target:[I;{},{},{}]}}",
+             @a[distance=..{r}{guard}] run data merge entity @s {{Patrolling:1b,patrol_target:[I;{},{},{}]}}",
             t[0], t[1], t[2]
         ));
     }
@@ -6871,6 +6902,197 @@ const ALIVE: &str = "#alive";
 /// The tag every player dead at a party wipe carries until they respawn.
 const WIPED: &str = "dw_wiped";
 
+/// spec-0077: each waiting player's wait clock, in ticks. It runs from 1, and a
+/// score is held exactly while the player waits, so `matches 1..` is "is
+/// waiting" and a player who never waited (no entry) reads the same as one who
+/// was released (entry reset) — `DW0495`'s rule. The tick only reaches online
+/// players, so the clock pauses while its player is away.
+const RW_CLOCK: &str = "dw.rwait";
+/// The `dw.sys` scratch counting the players present this tick.
+const RW_PRESENT: &str = "#present";
+/// The `dw.sys` scratch the respawn edge reads: players in play other than the
+/// one coming back.
+const RW_OTHERS: &str = "#rw_others";
+/// The `dw.sys` scratch holding a waiting player's whole seconds left.
+const RW_LEFT: &str = "#rw_left";
+/// The `dw.sys` constant the seconds-left division divides by.
+const RW_TPS: &str = "#rw_tps";
+
+/// The campaign's declared respawn wait (spec-0077), if any.
+fn respawn_wait(plan: &Plan) -> Option<delvewright_dsl::RespawnWait> {
+    plan.campaign.world.content.respawn_wait
+}
+
+/// Does this campaign latch party wipes? A bonfire re-seats on one (spec-0016
+/// §1) and a respawn wait ends on one (spec-0077 §4).
+fn wipes(plan: &Plan) -> bool {
+    plan.bonfires().next().is_some() || respawn_wait(plan).is_some()
+}
+
+/// The selector argument that keeps a player who is only watching out of a
+/// positional or health rule ([`CUTSCENE_TAG`]'s staging invariant). Spliced
+/// into the selectors that do not already carry it when the campaign declares a
+/// respawn wait, the one state in which a watcher can stand anywhere outside a
+/// cutscene; empty otherwise, so such a campaign stays byte-identical.
+fn observer_guard(plan: &Plan) -> String {
+    if respawn_wait(plan).is_some() {
+        format!(",tag=!{CUTSCENE_TAG}")
+    } else {
+        String::new()
+    }
+}
+
+/// The selector of the living teammate in play a waiting player watches
+/// (spec-0077 §4.2): the nearest player not in the observation state and not on
+/// a death screen. The watcher stands where its target stands, so the nearest
+/// is the one it already watches and the binding is stable.
+fn rw_watch_target() -> String {
+    format!("@p[tag=!{CUTSCENE_TAG},nbt=!{{Health:0.0f}}]")
+}
+
+/// **The respawn wait's tick** (spec-0077 §4): the lines that end every wait at
+/// a party wipe and drive each waiting player's own clock. Placed after
+/// [`party_wipe_tick`], whose counts they read, and before the respawn edge.
+/// Empty without a declared wait.
+///
+/// A wipe is no player in play. With `alone: true` a player alone in the delve
+/// waits with nobody in play by construction, so there the wipe that ends a wait
+/// is one with a second player present. While a cutscene plays the wait is held
+/// whole: the cutscene owns every camera and its end restores every mode, so the
+/// clock resumes, and the state is re-applied, when it is over.
+fn respawn_wait_tick(plan: &Plan) -> Vec<String> {
+    let Some(w) = respawn_wait(plan) else {
+        return Vec::new();
+    };
+    let ns = &plan.namespace;
+    let party = if w.alone {
+        format!("if score {RW_PRESENT} dw.sys matches 2.. ")
+    } else {
+        String::new()
+    };
+    let held = if campaign_has_cutscene(plan.campaign) {
+        format!("unless score {CS_LIVE} dw.sys matches 1.. ")
+    } else {
+        String::new()
+    };
+    vec![
+        format!(
+            "execute if score {ALIVE} dw.sys matches 0 {party}as @a if score @s {RW_CLOCK} \
+             matches 1.. run function {ns}:rw_release"
+        ),
+        format!("execute {held}as @a if score @s {RW_CLOCK} matches 1.. run function {ns}:rw_tick"),
+    ]
+}
+
+/// The respawn wait's functions (spec-0077 §4). Empty without a declared wait.
+///
+/// * `rw_begin` (as the player coming back, on the respawn edge) decides: in a
+///   party (a second player present) the player waits when somebody else is in
+///   play and they were not part of a wipe; alone, they wait only with `alone:
+///   true`. Otherwise the respawn fires at once, exactly as without a wait.
+/// * `rw_start` enters the state: clock at 0, counted out of play for the rest
+///   of this tick, the observation tag, spectator.
+/// * `rw_tick` holds the state (a relog comes back in adventure and a cutscene's
+///   end restores adventure, so mode and tag are re-applied), runs the clock,
+///   shows the seconds left, and binds the view to a teammate in play unless the
+///   player holds sneak — the cutscene bounce's rule. Alone, with nobody to
+///   watch, the player watches from the active checkpoint.
+/// * `rw_release` leaves the state and fires the respawn the edge held back:
+///   the seat on the checkpoint cell, the fire's per-player half, the wipe.
+fn emit_respawn_wait_functions(
+    plan: &Plan,
+    chrome: &delvewright_dsl::Chrome,
+) -> Vec<(String, String)> {
+    let Some(w) = respawn_wait(plan) else {
+        return Vec::new();
+    };
+    let ns = &plan.namespace;
+    let ticks = u32::from(w.seconds) * 20;
+    let target = rw_watch_target();
+    let mut begin = vec![
+        format!("scoreboard players operation {RW_OTHERS} dw.sys = {ALIVE} dw.sys"),
+        format!("scoreboard players remove {RW_OTHERS} dw.sys 1"),
+        format!(
+            "execute if score {RW_PRESENT} dw.sys matches 2.. if entity @s[tag=!{WIPED}] if score \
+             {RW_OTHERS} dw.sys matches 1.. run return run function {ns}:rw_start"
+        ),
+    ];
+    if w.alone {
+        begin.push(format!(
+            "execute if score {RW_PRESENT} dw.sys matches ..1 run return run function {ns}:rw_start"
+        ));
+    }
+    begin.push(format!("function {ns}:cp_respawn_fire"));
+    let start = vec![
+        format!("scoreboard players set @s {RW_CLOCK} 1"),
+        format!("scoreboard players remove {ALIVE} dw.sys 1"),
+        format!("tag @s add {CUTSCENE_TAG}"),
+        "gamemode spectator @s".to_string(),
+    ];
+    let countdown = tr_with(
+        &chrome.get(delvewright_dsl::chrome::RESPAWN_WAIT),
+        &[
+            ("color", json!("gray")),
+            (
+                "with",
+                json!([{ "score": { "name": RW_LEFT, "objective": "dw.sys" }, "color": "white" }]),
+            ),
+        ],
+    )
+    .to_string();
+    let mut tick = vec![
+        "gamemode spectator @s[gamemode=!spectator]".to_string(),
+        format!("tag @s add {CUTSCENE_TAG}"),
+        format!(
+            "execute if score @s {RW_CLOCK} matches {ticks}.. run return run function {ns}:rw_release"
+        ),
+        format!("scoreboard players set {RW_LEFT} dw.sys {}", ticks + 19),
+        format!("scoreboard players operation {RW_LEFT} dw.sys -= @s {RW_CLOCK}"),
+        format!("scoreboard players set {RW_TPS} dw.sys 20"),
+        format!("scoreboard players operation {RW_LEFT} dw.sys /= {RW_TPS} dw.sys"),
+        format!("title @s actionbar {countdown}"),
+        format!("scoreboard players add @s {RW_CLOCK} 1"),
+        format!(
+            "execute at @s unless predicate {ns}:{SNEAK_HELD_PREDICATE} run spectate {target} @s"
+        ),
+    ];
+    if w.alone {
+        tick.push(format!(
+            "execute unless entity {target} run function {ns}:rw_watch_fire"
+        ));
+    }
+    let release = vec![
+        format!("scoreboard players reset @s {RW_CLOCK}"),
+        format!("tag @s remove {CUTSCENE_TAG}"),
+        "gamemode adventure @s".to_string(),
+        format!("function {ns}:cp_respawn_fire"),
+    ];
+    let mut fns = vec![
+        ("rw_begin".to_string(), lines(&begin)),
+        ("rw_start".to_string(), lines(&start)),
+        ("rw_tick".to_string(), lines(&tick)),
+        ("rw_release".to_string(), lines(&release)),
+    ];
+    if w.alone {
+        fns.push(("rw_watch_fire".to_string(), lines(&cp_seat_dispatch(plan))));
+    }
+    fns
+}
+
+/// One line per checkpoint: seat `@s` on the active checkpoint's cell.
+fn cp_seat_dispatch(plan: &Plan) -> Vec<String> {
+    let ns = &plan.namespace;
+    plan.checkpoints
+        .iter()
+        .map(|c| {
+            format!(
+                "execute if score #cp dw.sys matches {} run function {ns}:cp_seat_{}",
+                c.index, c.index
+            )
+        })
+        .collect()
+}
+
 /// **The party-wipe detector** (spec-0016 §1, multiplayer): the tick lines that
 /// latch `#wipe` and tag every body when no player in the party is alive.
 ///
@@ -6882,22 +7104,42 @@ const WIPED: &str = "dw_wiped";
 /// spends it (`cp_respawn_fire`), and `dw_wiped` stays on each body until that
 /// body respawns, so a player who dies after a teammate has already come back
 /// is not part of the wipe. Empty for a campaign with no bonfire.
+///
+/// With a declared respawn wait (spec-0077 §4) "alive" is "in play": a player
+/// who is waiting ([`RW_CLOCK`] holds a score) counts as down, so a party of
+/// two where one waits and the other dies is wiped. The tick also counts the
+/// players present, which is what decides whether a fallen player is alone.
+/// The wait is read off its clock, not off [`CUTSCENE_TAG`], because a cutscene
+/// tags every player and would otherwise latch a wipe.
 fn party_wipe_tick(plan: &Plan) -> Vec<String> {
-    if plan.bonfires().next().is_none() {
+    if !wipes(plan) {
         return Vec::new();
     }
-    vec![
+    let in_play = if respawn_wait(plan).is_some() {
+        format!("unless score @s {RW_CLOCK} matches 1.. ")
+    } else {
+        String::new()
+    };
+    let mut out = vec![
         format!("scoreboard players set {ALIVE} dw.sys 0"),
         format!(
-            "execute as @a unless data entity @s {{Health:0.0f}} run scoreboard players add \
-             {ALIVE} dw.sys 1"
+            "execute as @a unless data entity @s {{Health:0.0f}} {in_play}run scoreboard players \
+             add {ALIVE} dw.sys 1"
         ),
+    ];
+    if respawn_wait(plan).is_some() {
+        out.push(format!(
+            "execute store result score {RW_PRESENT} dw.sys if entity @a"
+        ));
+    }
+    out.extend([
         format!(
             "execute if score {ALIVE} dw.sys matches 0 if entity @a run scoreboard players set \
              {WIPE} dw.sys 1"
         ),
         format!("execute if score {ALIVE} dw.sys matches 0 run tag @a add {WIPED}"),
-    ]
+    ]);
+    out
 }
 
 /// Generate the death-edge functions: the campaign's `on_death` beat (DSL v0.10,
@@ -6989,9 +7231,16 @@ fn emit_checkpoint_functions(plan: &Plan) -> Vec<(String, String)> {
         ));
     }
     if plan.any_checkpoint() {
+        // spec-0077: with a declared wait the edge asks `rw_begin` whether this
+        // player waits; it fires `cp_respawn_fire` itself when they do not.
+        let on_edge = if respawn_wait(plan).is_some() {
+            "rw_begin"
+        } else {
+            "cp_respawn_fire"
+        };
         check.push(format!(
             "execute {alive} if score @s dw.deaths > @s dw.death_ack run function \
-             {ns}:cp_respawn_fire"
+             {ns}:{on_edge}"
         ));
         check.push(format!(
             "execute {alive} run scoreboard players operation @s dw.death_ack = @s dw.deaths"
@@ -7053,15 +7302,9 @@ fn emit_checkpoint_functions(plan: &Plan) -> Vec<(String, String)> {
     let dispatches = |c: &crate::compiler::plan::CheckpointPlan| {
         !c.on_respawn.is_empty() || (c.rest && !reseat.is_empty())
     };
-    let mut fire: Vec<String> = Vec::new();
     // The re-seat runs FIRST and for every checkpoint: an `on_respawn` beat that
     // narrates "you wake at the mark" must be read by a player who is on it.
-    for c in &plan.checkpoints {
-        fire.push(format!(
-            "execute if score #cp dw.sys matches {} run function {ns}:cp_seat_{}",
-            c.index, c.index
-        ));
-    }
+    let mut fire: Vec<String> = cp_seat_dispatch(plan);
     for c in &plan.checkpoints {
         if !dispatches(c) {
             continue;
@@ -7073,7 +7316,7 @@ fn emit_checkpoint_functions(plan: &Plan) -> Vec<(String, String)> {
     }
     // The wipe is spent by the first respawn after it, whatever checkpoint
     // reigns, and each respawning player's own claim on it is spent with them.
-    let wipes = plan.bonfires().next().is_some();
+    let wipes = wipes(plan);
     if wipes {
         fire.push(format!("scoreboard players set {WIPE} dw.sys 0"));
         fire.push(format!("tag @s remove {WIPED}"));
@@ -11387,7 +11630,7 @@ fn sequence_fns(plan: &Plan) -> Vec<(String, String)> {
 ///
 /// Added by the cutscene `start` alongside `gamemode spectator`, removed by the
 /// `end`/restore, so the state has exactly the cinematic's lifetime.
-const CUTSCENE_TAG: &str = "dw_cutscene";
+pub(crate) const CUTSCENE_TAG: &str = "dw_cutscene";
 
 /// Datapack predicate id (under the campaign namespace) matching a player whose
 /// sneak key is HELD this tick — the vanilla `minecraft:player` `input`
@@ -11444,8 +11687,15 @@ fn cutscene_repair_tick(plan: &Plan) -> Vec<String> {
         return Vec::new();
     }
     let ns = &plan.namespace;
+    // A player waiting out a respawn (spec-0077) carries the tag outside any
+    // cutscene on purpose; the wait releases them, not this repair.
+    let waiting = if respawn_wait(plan).is_some() {
+        format!("unless score @s {RW_CLOCK} matches 1.. ")
+    } else {
+        String::new()
+    };
     vec![format!(
-        "execute unless score {CS_LIVE} dw.sys matches 1.. as @a[tag={CUTSCENE_TAG}] run function {ns}:cs_repair"
+        "execute unless score {CS_LIVE} dw.sys matches 1.. as @a[tag={CUTSCENE_TAG}] {waiting}run function {ns}:cs_repair"
     )]
 }
 
@@ -11590,8 +11840,14 @@ fn cutscene_fns(
         start.push(format!("scoreboard players add {CS_LIVE} dw.sys 1"));
         start.push(format!("scoreboard players set #t_{bare} dw.sys 0"));
         start.push(format!("scoreboard players set #p_{bare} dw.sys 1"));
+        // The return point is a player in play: a waiting player (spec-0077)
+        // already carries the observation tag and may be anywhere.
+        let marker_at = match observer_guard(plan).strip_prefix(',') {
+            Some(g) => format!("@p[{g}]"),
+            None => "@p".to_string(),
+        };
         start.push(format!(
-            "execute at @p run summon minecraft:marker ~ ~ ~ {{Tags:[{FIXTURE_NBT}\"dw_csmark_{bare}\"]}}"
+            "execute at {marker_at} run summon minecraft:marker ~ ~ ~ {{Tags:[{FIXTURE_NBT}\"dw_csmark_{bare}\"]}}"
         ));
         // The cutscene state marker. `gamemode spectator` already takes the
         // players' bodies out of the world; the tag is what campaign machinery
@@ -11938,8 +12194,8 @@ fn env_trigger_tick(plan: &Plan, chrome: &delvewright_dsl::Chrome) -> Vec<String
                     // party member walked in); the flag gate is a party read
                     // alongside it, no longer merged into the selector.
                     out.push(format!(
-                        "execute {once_guard}{forbid_guard}positioned {} {} {} if entity @a[distance=..{range}]{} run function {ns}:trig_{id}",
-                        p[0], p[1], p[2], flag_guard
+                        "execute {once_guard}{forbid_guard}positioned {} {} {} if entity @a[distance=..{range}{}]{} run function {ns}:trig_{id}",
+                        p[0], p[1], p[2], observer_guard(plan), flag_guard
                     ));
                 }
             }
@@ -19833,6 +20089,16 @@ fn emit_v06_packtests(plan: &Plan, out: &mut BuildOutput) {
                 entry[1],
                 center(entry[2])
             ));
+            // With a declared respawn wait (spec-0077) the edge first asks
+            // whether this player waits, from the counts the tick took. The
+            // template states the premise in which nobody waits: a party of two
+            // whose other member is not in play, and this player not wiped.
+            // `v06_checkpoint_wait` proves the other premise.
+            if respawn_wait(plan).is_some() {
+                t.push(format!("scoreboard players set {RW_PRESENT} dw.sys 2"));
+                t.push(format!("scoreboard players set {ALIVE} dw.sys 1"));
+                t.push(format!("tag {sel} remove {WIPED}"));
+            }
             t.push(format!(
                 "execute as {sel} run function {ns}:cp_respawn_check"
             ));
@@ -19876,6 +20142,78 @@ fn emit_v06_packtests(plan: &Plan, out: &mut BuildOutput) {
                 format!("packtest-datapack/data/{ns}/test/v06_checkpoint_reseat.mcfunction"),
                 lines(&t).into_bytes(),
             );
+
+            // --- spec-0077: the respawn wait, on the same edge ---
+            //
+            // A party of two with the other member in play: the death edge puts
+            // the player in spectator under the observation tag with the clock
+            // at 1, and does NOT seat them; the release then seats them on the
+            // checkpoint cell in adventure, untagged and unclocked.
+            if respawn_wait(plan).is_some() {
+                let (pin, sel) = pin_dummy("dw_t_cpwait");
+                let mut t = packtest_header(&format!(
+                    "{title}: a death in a party with somebody in play waits, and the \
+                     release seats the player on the checkpoint (spec-0077)"
+                ));
+                t.push(format!("function {ns}:setup"));
+                t.push(pin);
+                t.push(format!("scoreboard players set #cp dw.sys {}", cp.index));
+                t.push(format!("scoreboard players set {sel} dw.death_ack 0"));
+                t.push(format!("scoreboard players set {sel} dw.deaths 1"));
+                t.push(format!("tag {sel} remove {WIPED}"));
+                t.push(format!(
+                    "tp {sel} {} {} {}",
+                    center(entry[0]),
+                    entry[1],
+                    center(entry[2])
+                ));
+                t.push(format!("scoreboard players set {RW_PRESENT} dw.sys 2"));
+                t.push(format!("scoreboard players set {ALIVE} dw.sys 2"));
+                t.push(format!(
+                    "execute as {sel} run function {ns}:cp_respawn_check"
+                ));
+                t.push(format!(
+                    "execute store success score #w_cpwait dw.sys if entity \
+                     @a[tag=dw_t_cpwait,limit=1,gamemode=spectator,tag={CUTSCENE_TAG},scores={{{RW_CLOCK}=1}}]"
+                ));
+                t.push("assert score #w_cpwait dw.sys matches 1".to_string());
+                t.push(format!(
+                    "execute store result score #x_cpwait dw.sys run data get entity {sel} Pos[0] 100"
+                ));
+                t.push(format!(
+                    "assert score #x_cpwait dw.sys matches {}",
+                    entry[0] * 100 + 50
+                ));
+                t.push(format!("execute as {sel} run function {ns}:rw_release"));
+                t.push(format!(
+                    "execute store success score #r_cpwait dw.sys if entity \
+                     @a[tag=dw_t_cpwait,limit=1,gamemode=adventure,tag=!{CUTSCENE_TAG}]"
+                ));
+                t.push("assert score #r_cpwait dw.sys matches 1".to_string());
+                t.push(format!(
+                    "execute store success score #c_cpwait dw.sys if score {sel} {RW_CLOCK} matches 1.."
+                ));
+                t.push("assert score #c_cpwait dw.sys matches 0".to_string());
+                for (i, axis) in ["x", "z"].iter().enumerate() {
+                    t.push(format!(
+                        "execute store result score #{axis}s_cpwait dw.sys run data get entity {sel} \
+                         Pos[{}] 100",
+                        i * 2
+                    ));
+                }
+                t.push(format!(
+                    "assert score #xs_cpwait dw.sys matches {}",
+                    cp.pos[0] * 100 + 50
+                ));
+                t.push(format!(
+                    "assert score #zs_cpwait dw.sys matches {}",
+                    cp.pos[2] * 100 + 50
+                ));
+                out.insert(
+                    format!("packtest-datapack/data/{ns}/test/v06_checkpoint_wait.mcfunction"),
+                    lines(&t).into_bytes(),
+                );
+            }
         }
     }
 
