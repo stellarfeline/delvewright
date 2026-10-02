@@ -1232,11 +1232,14 @@ def test_the_live_sight_precondition_counts_grants_not_cameras(gate, tmp_path):
     bare forms `give-effect` normalises. A wave mob's `effects[]` entry names an
     effect on a MOB and carries no `type`, so it is not counted.
 
-    Driven toward the vacuous shape: add one night-vision `give-effect` to the
-    camera-only campaign and the row reds — its `seconds` is the author's, and
-    no check measures it against the camera."""
+    The row's binding IS the class (spec-0085 gave the `give-effect` half its
+    check, `DW0944`, carried with the derived mitigation lease by one invariant
+    test), so a grant binds and a camera alone is INAPPLICABLE. Driven toward
+    the vacuous shape — the binding narrowed back to `mitigation` alone — the
+    author-timed grants go UNBOUND again, which is the state before the check
+    existed."""
     row = live_rows(gate, {"isl-52"})["isl-52"]
-    aw = row["applies_when"]
+    aw = row["binding"]
     nv = {"type": "give-effect", "effect": "minecraft:night_vision", "seconds": 5}
     build = make_build(tmp_path / "out")
     camps = {
@@ -1275,14 +1278,23 @@ def test_the_live_sight_precondition_counts_grants_not_cameras(gate, tmp_path):
     }, counts
 
     only = adjudicate_on(gate, camps["camera-only"], build, row)
-    assert (only["verdict"], only["precondition"]) == ("INAPPLICABLE", 0), only
-    # The planted defect-carrying shape: an author-timed sight grant beside a
-    # camera, with no mitigation for the check to bind to.
-    for name in ("give-nv", "bare-blindness-in-dialogue"):
+    assert only["verdict"] == "INAPPLICABLE", only
+    for name in ("give-nv", "bare-blindness-in-dialogue", "mitigated"):
         r = adjudicate_on(gate, camps[name], build, row)
+        assert (r["verdict"], r["binding"]) == ("BOUND", 1), (name, r)
+
+    # The vacuous shape: the binding narrowed to `mitigation`, with the grants
+    # kept as the precondition — what the row was before `DW0944`.
+    narrowed = dict(row)
+    narrowed["binding"] = {
+        "files": ["world.json"],
+        "kind": "dsl",
+        "match": {"has": ["mitigation"]},
+    }
+    narrowed["applies_when"] = aw
+    for name in ("give-nv", "bare-blindness-in-dialogue"):
+        r = adjudicate_on(gate, camps[name], build, narrowed)
         assert r["verdict"] == "UNBOUND", (name, r)
-    mitigated = adjudicate_on(gate, camps["mitigated"], build, row)
-    assert (mitigated["verdict"], mitigated["binding"]) == ("BOUND", 1), mitigated
 
 
 def test_describe_names_an_absent_field_in_words(gate):

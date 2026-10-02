@@ -35,7 +35,7 @@
 - **Numbers**: no ADR. **Four new DW codes** — `DW0941` (§4.3, an unknown
   particle), `DW0942` (§3.3, an audience on a party fact), `DW0943` (§6, the
   blind reach), `DW0944` (§5.3, a sight under a camera); `DW0503` gains a
-  fourth shape and no number (§3.3). **`dsl_version` stays `0.35.0`**: the
+  fourth shape and no number (§3.3). **`dsl_version` does not move**: the
   envelope gains two fields, the vocabulary gains a verb, a sound origin
   gains an offset, under the number the surface already carries.
 - **Non-goals**: a `perception` verb (§2 says why there is none); a particle
@@ -672,7 +672,7 @@ against the tree at `c0f22c51` before being written and is recorded as a
   open general form, given its `give-effect` half here rather than in a spec
   of its own.
 - **Falls that hurt but do not kill are not caught**, and the record says so.
-- **`dsl_version` stays `0.35.0`**; four codes, `DW0941`–`DW0944`; no ADR.
+- **`dsl_version` does not move**; four codes, `DW0941`–`DW0944`; no ADR.
 
 **Settled under the danger-is-visible rule, not put to the owner.** A
 blinding whose reach meets a killing volume is refused (one new code), with

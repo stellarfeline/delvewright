@@ -1479,9 +1479,9 @@
         "match": {
           "any_of": [
             {
-              "has": [
-                "mitigation"
-              ]
+              "eq": {
+                "mitigation": "night-vision"
+              }
             },
             {
               "eq": {
