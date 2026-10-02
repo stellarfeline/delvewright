@@ -650,7 +650,7 @@ mod tests {
     fn rotation_and_scale_move_the_cell_set() {
         let s = std::f64::consts::FRAC_1_SQRT_2;
         let t = Transform {
-            translation: [0.0, 0.0, -0.5],
+            translation: [-0.5, 0.0, -0.5],
             // +90° about z: +y turns toward -x.
             left_rotation: [0.0, 0.0, s, s],
             scale: [1.0, 3.0, 1.0],

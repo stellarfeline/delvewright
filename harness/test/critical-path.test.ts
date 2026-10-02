@@ -791,12 +791,34 @@ test("an approach trigger carries its range and a strike-npc its npc", () => {
   assert.equal(npc!.action === "trigger" && npc!.npc, "npc/giant");
 });
 
+test("a strike-assembly trigger names its assembly and watches no anchor (spec-0082)", () => {
+  const step = parseCriticalPath(
+    withStep({
+      action: "trigger",
+      trigger: "trigger/limb-struck",
+      on: "strike-assembly",
+      assembly: "assembly/pit-limb",
+      pos: [4, 64, 9],
+    }),
+  ).steps[2];
+  assert.deepEqual(step, {
+    action: "trigger",
+    trigger: "trigger/limb-struck",
+    on: "strike-assembly",
+    assembly: "assembly/pit-limb",
+    pos: [4, 64, 9],
+  });
+});
+
 test("a trigger step's fields are present exactly when its kind has them", () => {
   const base = { action: "trigger", trigger: "trigger/t", pos: [0, 64, 0] };
   for (const [bad, pointer] of [
     [{ ...base, on: "strike" }, "/steps/2/anchor"], // a click on nothing
     [{ ...base, on: "strike-npc", anchor: "anchor/a", npc: "npc/n" }, "/steps/2/anchor"],
     [{ ...base, on: "strike-npc" }, "/steps/2/npc"],
+    [{ ...base, on: "strike-assembly", anchor: "anchor/a", assembly: "assembly/x" }, "/steps/2/anchor"],
+    [{ ...base, on: "strike-assembly" }, "/steps/2/assembly"],
+    [{ ...base, on: "strike", anchor: "anchor/a", assembly: "assembly/x" }, "/steps/2/assembly"],
     [{ ...base, on: "approach", anchor: "anchor/a" }, "/steps/2/range"],
     [{ ...base, on: "use", anchor: "anchor/a", range: 3 }, "/steps/2/range"],
     [{ ...base, on: "kick", anchor: "anchor/a" }, "/steps/2/on"],

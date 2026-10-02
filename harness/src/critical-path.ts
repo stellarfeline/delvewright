@@ -232,7 +232,7 @@ export interface RestStep extends PresentationMarkers {
 }
 
 /** The environment-trigger events a `trigger` step performs — the DSL's `on` tags. */
-export const TRIGGER_KINDS = ["strike", "use", "approach", "strike-npc"] as const;
+export const TRIGGER_KINDS = ["strike", "use", "approach", "strike-npc", "strike-assembly"] as const;
 
 export type TriggerKind = (typeof TRIGGER_KINDS)[number];
 
@@ -242,19 +242,26 @@ export type TriggerKind = (typeof TRIGGER_KINDS)[number];
  * flag a later step reads, because nothing on the quest DAG makes anybody fire
  * it. The bot does what a player does — a `strike` is a real attack on the
  * target's hitbox, a `use` a real right-click, an `approach` a walk into range,
- * a `strike-npc` an attack on the NPC's own hitbox — and the step passes only on
- * the trigger's own fired marker, never on the click landing.
+ * a `strike-npc` an attack on the NPC's own hitbox, a `strike-assembly` an attack
+ * on the assembly's own hitbox — and the step passes only on the trigger's own
+ * fired marker, never on the click landing. A hit count is N such steps, each
+ * owed its own marker.
  */
 export interface TriggerStep {
   readonly action: "trigger";
   /** The `trigger/<id>` performed — also the marker token the step passes on. */
   readonly trigger: string;
   readonly on: TriggerKind;
-  /** The watched anchor; absent exactly for `strike-npc`. */
+  /** The watched anchor; absent exactly for `strike-npc` and `strike-assembly`. */
   readonly anchor?: string;
   /** The watched NPC; present exactly for `strike-npc`. */
   readonly npc?: string;
-  /** The cell the target stands on: the anchor, or the NPC's body at this beat. */
+  /** The struck assembly; present exactly for `strike-assembly`. */
+  readonly assembly?: string;
+  /**
+   * The cell the target stands on: the anchor, the NPC's body at this beat, or
+   * the cell the assembly's hitbox stands in.
+   */
   readonly pos: Vec3Tuple;
   /** An `approach` trigger's radius; present exactly for `approach`. */
   readonly range?: number;
@@ -785,7 +792,7 @@ function parseStep(value: unknown, pointer: string): Step {
       };
     }
     case "trigger": {
-      rejectUnknownKeys(obj, ["action", "trigger", "on", "anchor", "npc", "pos", "range"], pointer);
+      rejectUnknownKeys(obj, ["action", "trigger", "on", "anchor", "npc", "assembly", "pos", "range"], pointer);
       const trigger = requireString(obj, "trigger", pointer);
       if (!/^trigger\/[a-z0-9]+(?:-[a-z0-9]+)*$/.test(trigger)) {
         fail(`${pointer}/trigger`, `must be a \`trigger/<kebab>\` id, got ${JSON.stringify(trigger)}`);
@@ -796,10 +803,12 @@ function parseStep(value: unknown, pointer: string): Step {
       }
       const kind = on as TriggerKind;
       // Each field is present exactly when the kind has one: a strike-npc watches
-      // a character and no cell, an approach has a radius and a click does not.
+      // a character and no cell, a strike-assembly an assembly and no cell, an
+      // approach has a radius and a click does not.
       const anchor = obj["anchor"];
-      if (kind === "strike-npc") {
-        if (anchor !== undefined) fail(`${pointer}/anchor`, "a strike-npc trigger watches no anchor");
+      const object = kind === "strike-npc" || kind === "strike-assembly";
+      if (object) {
+        if (anchor !== undefined) fail(`${pointer}/anchor`, `a ${kind} trigger watches no anchor`);
       } else if (typeof anchor !== "string" || anchor.length === 0) {
         fail(`${pointer}/anchor`, `a ${kind} trigger must name its anchor, got ${describe(anchor)}`);
       }
@@ -810,6 +819,14 @@ function parseStep(value: unknown, pointer: string): Step {
         }
       } else if (npc !== undefined) {
         fail(`${pointer}/npc`, `a ${kind} trigger watches no npc`);
+      }
+      const assembly = obj["assembly"];
+      if (kind === "strike-assembly") {
+        if (typeof assembly !== "string" || assembly.length === 0) {
+          fail(`${pointer}/assembly`, `a strike-assembly trigger must name its assembly, got ${describe(assembly)}`);
+        }
+      } else if (assembly !== undefined) {
+        fail(`${pointer}/assembly`, `a ${kind} trigger watches no assembly`);
       }
       const range = obj["range"];
       if (kind === "approach") {
@@ -825,6 +842,7 @@ function parseStep(value: unknown, pointer: string): Step {
         on: kind,
         ...(typeof anchor === "string" ? { anchor } : {}),
         ...(typeof npc === "string" ? { npc } : {}),
+        ...(typeof assembly === "string" ? { assembly } : {}),
         pos: requirePos(obj, pointer),
         ...(kind === "approach" ? { range: range as number } : {}),
       };

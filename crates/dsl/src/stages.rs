@@ -8371,6 +8371,23 @@ mod happening_subject_tests {
                 serde_json::json!({"type":"firework","at":{"anchor":"anchor/court"},"explosions":[{"shape":"star","colors":["#ffd700"]}]}),
                 Some("anchor/court"),
             ),
+            // spec-0082: an assembly is not a story subject (no `happening` is
+            // demanded of its verbs), so none of the three resolves one.
+            (
+                "spawn-assembly",
+                serde_json::json!({"type":"spawn-assembly","assembly":"assembly/limb"}),
+                None,
+            ),
+            (
+                "despawn-assembly",
+                serde_json::json!({"type":"despawn-assembly","assembly":"assembly/limb"}),
+                None,
+            ),
+            (
+                "play-clip",
+                serde_json::json!({"type":"play-clip","assembly":"assembly/limb","clip":"idle"}),
+                None,
+            ),
         ];
         // The binding: the table answers for every verb the schema declares, and
         // for no name the schema does not.
