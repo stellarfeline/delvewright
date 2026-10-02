@@ -1,0 +1,130 @@
+{
+  "generator": "tools/spike-display-assembly/gen.py",
+  "ax": 4096,
+  "az": 4116,
+  "wy": 64,
+  "fy": 63,
+  "asm_dx": 14,
+  "n_asm": 10,
+  "n_seg": 34,
+  "lane": [
+    4136,
+    4152,
+    4160,
+    4168,
+    4176,
+    4192,
+    4208,
+    4224,
+    4240,
+    4256,
+    4272,
+    4288
+  ],
+  "hitbox": {
+    "width": 3.0,
+    "height": 8.0,
+    "aabb": [
+      4095.0,
+      64,
+      4115.0,
+      4098.0,
+      72.0,
+      4118.0
+    ]
+  },
+  "trigger_box": {
+    "x": 4090,
+    "y": 63,
+    "z": 4090,
+    "dx": 12,
+    "dy": 4,
+    "dz": 22
+  },
+  "strike_box": {
+    "x": 4095,
+    "y": 63,
+    "z": 4096,
+    "dx": 4,
+    "dy": 3,
+    "dz": 4
+  },
+  "landing_tip_rel": [
+    0.803,
+    0.111,
+    -17.872
+  ],
+  "landing_cell": [
+    4097,
+    63,
+    4098
+  ],
+  "hold_ticks": 20,
+  "strike_damage": 6,
+  "retract_at_hits": 5,
+  "interpolation_duration": 5,
+  "clips": {
+    "idle": {
+      "index": 0,
+      "frames": 60,
+      "loop": true
+    },
+    "rise": {
+      "index": 1,
+      "frames": 36,
+      "loop": false
+    },
+    "retract": {
+      "index": 2,
+      "frames": 36,
+      "loop": false
+    },
+    "windup": {
+      "index": 3,
+      "frames": 8,
+      "loop": false
+    },
+    "strike": {
+      "index": 4,
+      "frames": 10,
+      "loop": false
+    }
+  },
+  "positions": {
+    "attack": [
+      4096.5,
+      64,
+      4119.5
+    ],
+    "bow": [
+      4096.5,
+      64,
+      4122.5
+    ],
+    "bow_aim": [
+      4096.5,
+      67,
+      4116.5
+    ],
+    "arrow_summon": [
+      4096.5,
+      67,
+      4121.0
+    ],
+    "in_strike": [
+      4097.5,
+      64,
+      4098.5
+    ],
+    "in_trigger_only": [
+      4091.5,
+      64,
+      4111.5
+    ],
+    "outside": [
+      4096.5,
+      64,
+      4124.5
+    ]
+  }
+}
