@@ -3071,6 +3071,7 @@ impl<'a> Plan<'a> {
         let (checkpoints, stealth_beats) = collect_v06_effects(campaign, &anchors, &cp.obj_step);
         let objective_steps = cp.obj_step;
         let trigger_steps = cp.trigger_step;
+        let path_quests = cp.quests;
 
         // ---- v0.6 traps (spec-0011) ----
         let traps = collect_traps(campaign, &anchors, &dispenser_cells);
@@ -3143,8 +3144,14 @@ impl<'a> Plan<'a> {
         ways.seal().map_err(|e| e.with_warnings(warnings.clone()))?;
 
         // ---- v0.6 gate open/close firings (drives the close-gate nav proof) ----
-        let mut region_events =
-            collect_region_events(campaign, &anchors, &objective_steps, &trigger_steps, &ways);
+        let mut region_events = collect_region_events(
+            campaign,
+            &anchors,
+            &objective_steps,
+            &trigger_steps,
+            &path_quests,
+            &ways,
+        );
         // A shortcut gate is sealed from world-load and is opened only by an
         // OPTIONAL far-side interaction no proof can order (spec-0016 §2). Seal it
         // for the whole completability model — `fire_step: 0` precedes every leg —
@@ -3187,7 +3194,8 @@ impl<'a> Plan<'a> {
         // staged ways alone would skip in silence, which is how an effect comes to
         // emit nothing and be reported by nobody (the class `DW0360` exists for).
         let mut way_gate = None;
-        let openings = collect_way_openings(campaign, &objective_steps, &trigger_steps);
+        let openings =
+            collect_way_openings(campaign, &objective_steps, &trigger_steps, &path_quests);
         if !ways.ways.is_empty() || !openings.is_empty() {
             let elements = collect_required_elements(campaign, &anchors, &objective_steps);
             let precedes = |g: usize, s: usize| {
@@ -3357,6 +3365,7 @@ impl<'a> Plan<'a> {
             &self.anchors,
             &cp.obj_step,
             &cp.trigger_step,
+            &cp.quests,
             &self.ways,
         );
         region_events.extend(self.shortcuts.iter().map(|sc| {
@@ -4339,6 +4348,11 @@ pub struct CriticalPath {
     /// region-write model fires a trigger's openings at this step and at no
     /// other; a trigger absent here opens nothing any proof may lean on.
     pub(crate) trigger_step: BTreeMap<String, usize>,
+    /// The quests this path completes. A quest's `on_complete` fires on this
+    /// path exactly when its quest is here; one absent here is never forced on
+    /// the path ([`firing_of`]) — `obj_step` cannot answer that for a quest
+    /// with no objectives.
+    pub(crate) quests: BTreeSet<String>,
 }
 
 /// Build the critical path: select first class, then each objective of the
@@ -4938,6 +4952,7 @@ fn build_critical_path(
         cutscene_by_step,
         obj_step,
         trigger_step,
+        quests: path.quests.iter().cloned().collect(),
     })
 }
 
@@ -6018,6 +6033,7 @@ fn collect_region_events(
     anchors: &BTreeMap<(String, String), ResolvedAnchor>,
     obj_step: &BTreeMap<String, usize>,
     trigger_step: &BTreeMap<String, usize>,
+    path_quests: &BTreeSet<String>,
     ways: &crate::compiler::ways::WayStaging,
 ) -> Vec<RegionEvent> {
     // spec-0051 §8.6: the skippable-root class, widened. A bundle rooted in an
@@ -6065,15 +6081,25 @@ fn collect_region_events(
                 f.word(),
                 f.id()
             ),
-            // The two DAG roots reach this arm only when their owning quest is
-            // OPTIONAL (spec-0051 §8.6) — while it is mandatory they are forced
-            // and a forced event carries no blame. Naming the quest is the whole
-            // value: "a beat nobody has to play" is unactionable, and "the
-            // completion of optional quest `quest/crypt`" sends the author to
-            // the strand that laid the footing.
+            // The two DAG roots reach this arm when their owning quest is
+            // OPTIONAL (spec-0051 §8.6), or when this path never plays the beat
+            // at all (a branch the path does not take) — on a path that plays a
+            // mandatory beat it is forced and a forced event carries no blame.
+            // Naming the quest is the whole value: "a beat nobody has to play" is
+            // unactionable, and "the completion of optional quest `quest/crypt`"
+            // sends the author to the strand that laid the footing.
+            EffectRoot::ObjectiveComplete { quest, objective }
+                if !obj_step.contains_key(objective) =>
+            {
+                format!("the `{objective}` bundle of quest `{quest}`, which this path never plays")
+            }
             EffectRoot::ObjectiveComplete { quest, objective } => format!(
                 "the `{objective}` bundle of optional quest `{quest}`, which the party may \
                  never play"
+            ),
+            EffectRoot::QuestComplete(q) if !path_quests.contains(q.id.as_str()) => format!(
+                "the completion of quest `{}`, which this path never plays",
+                q.id
             ),
             EffectRoot::QuestComplete(q) => format!(
                 "the completion of optional quest `{}`, which the party may never play",
@@ -6087,7 +6113,8 @@ fn collect_region_events(
                 t.id
             ),
         };
-        let (fire_step, forced) = firing_of(&site.root, obj_step, trigger_step, &optional);
+        let (fire_step, forced) =
+            firing_of(&site.root, obj_step, trigger_step, path_quests, &optional);
         // The three spellings of one write. A gate names a prefab gate anchor and
         // takes that anchor's box and its `replace`-filtered clear; a
         // `fill-region`/`clear-region` names its own anchor-centred box and clears
@@ -6193,17 +6220,25 @@ fn firing_of(
     root: &EffectRoot<'_>,
     obj_step: &BTreeMap<String, usize>,
     trigger_step: &BTreeMap<String, usize>,
+    path_quests: &BTreeSet<String>,
     optional: &BTreeSet<&str>,
 ) -> (usize, bool) {
     match root {
-        EffectRoot::ObjectiveComplete { quest, objective } => (
-            obj_step.get(*objective).copied().unwrap_or(0),
-            !optional.contains(*quest),
-        ),
-        EffectRoot::QuestComplete(q) => (
+        // Fired at the objective's own step on a path that performs it. A path
+        // that never performs the objective never fires its bundle, so it is
+        // unforced there — exactly a trigger the path never performs — whatever
+        // the quest's optionality says about the paths that do.
+        EffectRoot::ObjectiveComplete { quest, objective } => match obj_step.get(*objective) {
+            Some(&s) => (s, !optional.contains(*quest)),
+            None => (0, false),
+        },
+        // The same rule over the quest: its completion fires on a path that
+        // completes it, and on no other.
+        EffectRoot::QuestComplete(q) if path_quests.contains(q.id.as_str()) => (
             quest_complete_step(q, obj_step),
             !optional.contains(q.id.as_str()),
         ),
+        EffectRoot::QuestComplete(_) => (0, false),
         // Performed by the path at its own `trigger` step, or not at all: a
         // trigger nobody on the path fires is as optional as a trap nobody
         // springs.
@@ -6231,6 +6266,7 @@ pub(crate) fn collect_way_openings(
     campaign: &Campaign,
     obj_step: &BTreeMap<String, usize>,
     trigger_step: &BTreeMap<String, usize>,
+    path_quests: &BTreeSet<String>,
 ) -> Vec<crate::compiler::ways::WayOpening> {
     // The same widening as `collect_region_events`, for the same reason: an
     // `open-way` fired from an optional quest is a way the party may never open.
@@ -6240,7 +6276,8 @@ pub(crate) fn collect_way_openings(
         let Some((piece, name)) = e.way_write() else {
             return;
         };
-        let (fire_step, forced) = firing_of(&site.root, obj_step, trigger_step, &optional);
+        let (fire_step, forced) =
+            firing_of(&site.root, obj_step, trigger_step, path_quests, &optional);
         out.push(crate::compiler::ways::WayOpening {
             prefab_id: piece.as_str().to_string(),
             way: name.to_string(),

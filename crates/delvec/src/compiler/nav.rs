@@ -5064,15 +5064,17 @@ fn gate_blame(
                 .collect();
             let fate = if openers.is_empty() {
                 // Either the campaign declares no `open-gate` on this anchor at
-                // all, or every one it declares hangs off an OPTIONAL bundle and
-                // was never credited (`plan::collect_region_events`: an optional
-                // firing may seal a region and may never open one). One sentence
-                // for both, because the repair is the same — put the opening on a
-                // beat the party cannot skip.
+                // all, or every one it declares hangs off an OPTIONAL bundle, or
+                // off a beat this path never plays, and was never credited
+                // (`plan::collect_region_events`: an unforced firing may seal a
+                // region and may never open one). One sentence for all three,
+                // because the repair is the same — put the opening on a beat the
+                // party cannot skip on this path.
                 "no firing the party is forced to make ever opens it (an `open-gate` in an \
                  optional bundle — a shop purchase, a sprung trap, a death beat, a shortcut \
-                 taken from the far side — is not credited, by the same rule that keeps every \
-                 shortcut gate sealed so the delve is finishable the long way)"
+                 taken from the far side, a beat of a branch this path does not take — is not \
+                 credited, by the same rule that keeps every shortcut gate sealed so the delve \
+                 is finishable the long way)"
                     .to_string()
             } else if openers.iter().any(|&s| ancestor(s, arrival)) {
                 // Unreachable while this is the blamed gate — an opener that is a

@@ -347,8 +347,9 @@ fn a_campaign_without_branch_only_crossings_gets_an_empty_overlay() {
 /// bolt branch's own `open-gate` (the flee-gated one on `obj/decide`), so the
 /// door to `anchor/exit` opens only at `obj/watch` — a hold-branch objective the
 /// bolt path never performs. The bolt branch must then fail its walk to
-/// `anchor/exit` (`DW0311`), because nothing on its path opens the door; a
-/// bundle whose objective is absent from a path is never forced on that path.
+/// `anchor/exit` with `DW0317` (a gate nothing forced opens), because nothing on
+/// its path opens the door; a bundle whose objective is absent from a path is
+/// never forced on that path.
 #[test]
 fn a_branch_cannot_cross_a_door_only_another_branch_opens() {
     let tmp = TempCampaign::new("hold-only-door");
@@ -367,15 +368,21 @@ fn a_branch_cannot_cross_a_door_only_another_branch_opens() {
 
     match try_build_campaign(tmp.path()) {
         Err(BuildFailure::Diagnostic { code, message }) => {
-            assert_eq!(code, "DW0311", "wrong diagnostic: {message}");
+            assert_eq!(code, "DW0317", "wrong diagnostic: {message}");
             assert!(
-                message.contains("branch `branch/bolt`"),
+                message.starts_with("branch `branch/bolt`: "),
                 "the diagnostic must name the branch that cannot walk: {message}"
             );
+            assert!(
+                message.contains("`anchor/door`")
+                    && message.contains("no firing the party is forced to make ever opens it")
+                    && message.contains("a beat of a branch this path does not take"),
+                "the diagnostic must name the door and why nothing opens it: {message}"
+            );
         }
-        Err(other) => panic!("expected DW0311, got {other:?}"),
-        Ok(_) => panic!(
-            "expected DW0311: the bolt branch crosses a door only the hold branch opens"
-        ),
+        Err(other) => panic!("expected DW0317, got {other:?}"),
+        Ok(_) => {
+            panic!("expected DW0317: the bolt branch crosses a door only the hold branch opens")
+        }
     }
 }
