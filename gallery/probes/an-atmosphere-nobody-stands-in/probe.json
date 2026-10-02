@@ -1,0 +1,16 @@
+{
+  "code": "DW0930",
+  "patch": [
+    {
+      "doc": "world.json",
+      "op": "add",
+      "path": "/content/atmospheres/-",
+      "value": {
+        "id": "atmosphere/forgotten",
+        "precipitation": "none"
+      }
+    }
+  ],
+  "units": [],
+  "why": "A third sky, declared and never used: no area carries it and no `set-atmosphere` paints it. It would ship as a biome no cell is ever painted with — a declaration that binds to nothing, which this engine refuses rather than prints green. It declares no unit."
+}
