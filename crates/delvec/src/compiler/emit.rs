@@ -1214,6 +1214,14 @@ pub fn build_with_warnings(
                     );
                     binding
                 };
+                // spec-0085: `DW0943`, **a blinding beside a drop** — after
+                // `DW0891`, so every volume it reasons about is one the player
+                // could see, and before the route proofs. The binding is printed
+                // whether or not the campaign grants a blinding, zeroes included.
+                let (blind, blind_verdict) =
+                    crate::compiler::blind::check(plan, &world, campaign_spawn(plan));
+                eprintln!("{}", blind.line());
+                blind_verdict?;
                 crate::compiler::nav::check_critical_path(plan, &world)?;
                 // v0.6 checkpoint no-stranding + placement proofs (spec-0012,
                 // DW0315/DW0316) and stealth-zone standable/reachable proofs
@@ -1265,6 +1273,9 @@ pub fn build_with_warnings(
                         plan.lethal_volumes.len(),
                         danger,
                     ));
+                    if let Some(g) = lethal_gate.as_mut() {
+                        g.blind = blind;
+                    }
                 }
                 // spec-0032: the recovery stake's placement table and its proofs
                 // (`DW0525` no route back, `DW0526` no safe footing). Placed after
@@ -11234,6 +11245,37 @@ fn sequence_fn(plan: &Plan, eff: &QuestEffect, aud: Audience) -> String {
         .expect("every `sequence` emission lowers is one the campaign declares")
 }
 
+/// **Whether a timeline started under `aud` uses its actor at all** — whether
+/// any step's body, emitted under `aud`, says something it would not say from
+/// the server command source (an `@s` an `actor` audience or a solo root
+/// addresses), or any step effect hands a `carrier: "one"` prop or reads or
+/// writes a `player`-scoped datum, whose holder is `@s` under every audience.
+///
+/// A timeline that does not is emitted in the untagged form under every root:
+/// its steps then run from the scheduler whether or not the player who started
+/// it is still on the server, so a timeline of world facts — a spawn, a flag, a
+/// gate — never waits on one player's connection.
+fn timeline_needs_actor(
+    plan: &Plan,
+    steps: &[delvewright_dsl::SequenceStep],
+    aud: Audience,
+) -> bool {
+    let player_state = |e: &QuestEffect| {
+        let is_player =
+            |id: &StateId| state_decl(plan, id).is_some_and(|d| d.scope == StateScope::Player);
+        e.writes_state().is_some_and(|(id, _)| is_player(id))
+            || e.requires_state().iter().any(|c| is_player(&c.state))
+    };
+    steps.iter().any(|st| {
+        emit_effect_bundle(plan, &st.effects, aud)
+            != emit_effect_bundle(plan, &st.effects, Audience::Scheduled)
+            || st
+                .effects
+                .iter()
+                .any(|e| e.gives_to_one() || player_state(e))
+    })
+}
+
 /// **The tag a timeline carries its actor by** (spec-0085 §3.2): `dw_` and the
 /// timeline's own function name, so two timelines never share one.
 fn sequence_tag(base: &str) -> String {
@@ -11558,7 +11600,7 @@ fn sequence_fns(plan: &Plan) -> Vec<(String, String)> {
         let Verb::Sequence { steps } = verb else {
             unreachable!("sequence_sites yields only `sequence` timelines");
         };
-        let carries = aud.has_actor();
+        let carries = aud.has_actor() && timeline_needs_actor(plan, steps, aud);
         let tag = sequence_tag(&base);
         let last = steps
             .iter()

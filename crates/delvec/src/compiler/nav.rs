@@ -2601,6 +2601,46 @@ impl World {
         self.moves_of(c, &Footprint::player(), true)
     }
 
+    /// **Where a body standing in `c` can step off into a fall it does not
+    /// survive** (spec-0085 §6.2): the first neighbouring column, in the fixed
+    /// cardinal order, whose feet and head cells beside `c` are clear, whose cell
+    /// under them is no floor, and under which nothing arrests the fall within
+    /// [`unarmoured_survivable_fall_blocks`] — or the first thing that does is
+    /// lava. Water at any depth in range arrests it; so does any solid, tall
+    /// barrier or use-gate block, a floor or not, because the question is whether
+    /// the body survives the drop, never whether it can stand where it lands.
+    ///
+    /// `None` when every side of `c` is wall, floor, or a survivable drop. Asked
+    /// of a world with its exclusions lifted, so a declared killing volume is not
+    /// what this finds — the keep-out answers for those.
+    pub fn fatal_step_off(&self, c: [i32; 3]) -> Option<[i32; 3]> {
+        const HORIZ: [(i32, i32); 4] = [(-1, 0), (1, 0), (0, -1), (0, 1)];
+        let deepest = unarmoured_survivable_fall_blocks() as i32;
+        for (dx, dz) in HORIZ {
+            let side = [c[0] + dx, c[1], c[2] + dz];
+            let head = [side[0], side[1] + 1, side[2]];
+            if self.is_occupied(side) || self.is_occupied(head) || self.use_gates.contains(&side) {
+                continue;
+            }
+            let arrests = |y: i32| {
+                let cell = [side[0], y, side[2]];
+                self.is_occupied(cell) || self.use_gates.contains(&cell)
+            };
+            if arrests(c[1] - 1) {
+                continue; // level ground beside: a walk, not a drop
+            }
+            // The body's feet are at `c[1]`; a landing at cell y puts them at y + 1.
+            let landing = ((c[1] - 1 - deepest)..=(c[1] - 2))
+                .rev()
+                .find(|&y| arrests(y));
+            match landing {
+                Some(y) if !self.lava.contains(&[side[0], y, side[2]]) => continue,
+                _ => return Some(side),
+            }
+        }
+        None
+    }
+
     /// **Everywhere a mob in `c` can put itself in one movement** — the
     /// relation `DW0922` and `DW0923` flood from a wave's seats. It differs from
     /// [`World::body_moves`] in one respect only: a mob makes no gap jumps.

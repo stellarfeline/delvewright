@@ -93,6 +93,7 @@ pub mod analyze;
 pub mod assembled;
 pub mod atmos;
 pub mod batchstate;
+pub mod blind;
 pub mod blocking;
 pub mod blockout;
 pub mod blockstate;
