@@ -40,6 +40,8 @@
 //! a part, and the space a plan reserved and did not fill stays reserved
 //! instead of being eaten by terrain.
 
+use std::collections::BTreeMap;
+
 use delvewright_dsl::{Campaign, HorizonBase, ResolvedHorizon, horizon_base, resolved_horizon};
 
 /// The resolved horizon of a campaign — defaults applied, `void` when absent.
@@ -187,7 +189,7 @@ pub struct GroundBiome {
 /// `ocean` keeps vanilla's `minecraft:ocean`, which rains. Every other base
 /// generates void, and lays the delve's own void biome ([`VOID_BIOME_PATH`]):
 /// `minecraft:the_void` with [`VOID_BIOME_PRECIPITATES`].
-pub fn ground_biome(campaign: &Campaign, ns: &str) -> GroundBiome {
+fn ground_biome(campaign: &Campaign, ns: &str) -> GroundBiome {
     if base_of(campaign) == HorizonBase::Ocean {
         let id = "minecraft:ocean";
         return GroundBiome {
@@ -281,8 +283,13 @@ impl Paint {
 pub struct BiomeMap {
     /// The paints, in bootstrap order.
     pub paints: Vec<Paint>,
-    /// The biome every unpainted column stands in.
+    /// The biome every unpainted column stands in — the one the
+    /// `generator-settings` lays.
     pub ground: GroundBiome,
+    /// Every declared atmosphere's biome id, and whether rain falls in it.
+    atmospheres: BTreeMap<String, bool>,
+    /// The delve's datapack namespace.
+    namespace: String,
 }
 
 impl BiomeMap {
@@ -306,36 +313,31 @@ impl BiomeMap {
     }
 }
 
-/// Whether declared rain falls in `biome`: a vanilla biome the compiler names,
-/// an atmosphere the campaign declares, or the ground biome. **The one
-/// function** every precipitation question goes through.
-pub fn precipitates(campaign: &Campaign, ns: &str, biome: &str) -> bool {
-    if let Some(p) = vanilla_precipitates(biome) {
-        return p;
+impl BiomeMap {
+    /// Whether declared rain falls in `biome`: a vanilla biome the compiler
+    /// names, an atmosphere the campaign declares, or the ground biome. **The
+    /// one function** every precipitation question goes through.
+    pub fn precipitates(&self, biome: &str) -> bool {
+        if let Some(p) = vanilla_precipitates(biome) {
+            return p;
+        }
+        if let Some(p) = self.atmospheres.get(biome) {
+            return *p;
+        }
+        assert_eq!(
+            self.ground.id, biome,
+            "the compiler paints `{biome}`, whose precipitation is unrecorded"
+        );
+        self.ground.precipitates
     }
-    if let Some(a) = campaign
-        .world
-        .content
-        .atmospheres
-        .iter()
-        .find(|a| crate::compiler::atmosphere::biome_id(ns, a.id.as_str()) == biome)
-    {
-        return crate::compiler::atmosphere::precipitates(a);
-    }
-    let ground = ground_biome(campaign, ns);
-    assert_eq!(
-        ground.id, biome,
-        "the compiler paints `{biome}`, whose precipitation is unrecorded"
-    );
-    ground.precipitates
-}
 
-/// The biome an atmosphere reference paints: the declared atmosphere's, or the
-/// ground biome for `None` (`atmosphere: null`).
-pub fn biome_of(plan: &crate::compiler::plan::Plan, atmosphere: Option<&str>) -> String {
-    match atmosphere {
-        Some(id) => crate::compiler::atmosphere::biome_id(&plan.namespace, id),
-        None => ground_biome(plan.campaign, &plan.namespace).id,
+    /// The biome an atmosphere reference paints: the declared atmosphere's, or
+    /// the ground biome for `None` (`atmosphere: null`).
+    pub fn biome_of(&self, atmosphere: Option<&str>) -> String {
+        match atmosphere {
+            Some(id) => crate::compiler::atmosphere::biome_id(&self.namespace, id),
+            None => self.ground.id.clone(),
+        }
     }
 }
 
@@ -417,6 +419,23 @@ pub fn carried_places(campaign: &Campaign) -> Vec<(String, Option<String>)> {
 pub fn biome_map(plan: &crate::compiler::plan::Plan) -> BiomeMap {
     let c = plan.campaign;
     let ns = &plan.namespace;
+    let mut map = BiomeMap {
+        paints: Vec::new(),
+        ground: ground_biome(c, ns),
+        atmospheres: c
+            .world
+            .content
+            .atmospheres
+            .iter()
+            .map(|a| {
+                (
+                    crate::compiler::atmosphere::biome_id(ns, a.id.as_str()),
+                    crate::compiler::atmosphere::precipitates(a),
+                )
+            })
+            .collect(),
+        namespace: ns.clone(),
+    };
     let mut paints: Vec<Paint> = Vec::new();
     if let Some(surround) = &plan.surround {
         for r in &surround.biome {
@@ -424,7 +443,7 @@ pub fn biome_map(plan: &crate::compiler::plan::Plan) -> BiomeMap {
                 fill: (r.min, r.max),
                 cells: crate::compiler::atmosphere::painted_box(r.min, r.max),
                 biome: r.biome.to_string(),
-                precipitates: precipitates(c, ns, r.biome),
+                precipitates: map.precipitates(r.biome),
                 source: PaintSource::Band,
             });
         }
@@ -440,15 +459,13 @@ pub fn biome_map(plan: &crate::compiler::plan::Plan) -> BiomeMap {
         paints.push(Paint {
             fill: (min, max),
             cells: crate::compiler::atmosphere::painted_box(min, max),
-            precipitates: precipitates(c, ns, &biome),
+            precipitates: map.precipitates(&biome),
             biome,
             source: PaintSource::Place { place, atmosphere },
         });
     }
-    BiomeMap {
-        paints,
-        ground: ground_biome(c, ns),
-    }
+    map.paints = paints;
+    map
 }
 
 /// The lowest and highest block a `fillbiome` can reach: the overworld's
@@ -476,6 +493,21 @@ fn extent_columns(plan: &crate::compiler::plan::Plan) -> Vec<[i32; 4]> {
         .collect()
 }
 
+/// The first two carried places whose painted 4-cells meet under different
+/// biomes, in bootstrap order.
+fn meeting_places(map: &BiomeMap) -> Option<(&Paint, &Paint)> {
+    let places: Vec<&Paint> = map.places().collect();
+    for (i, a) in places.iter().enumerate() {
+        for b in &places[i + 1..] {
+            let meet = (0..3).all(|k| a.cells.0[k] <= b.cells.1[k] && b.cells.0[k] <= a.cells.1[k]);
+            if meet && a.biome != b.biome {
+                return Some((a, b));
+            }
+        }
+    }
+    None
+}
+
 /// `DW0929`'s build arms: two carried places whose painted cells meet with
 /// different atmospheres, and a repaint volume with a cell outside the map's
 /// extent.
@@ -484,24 +516,17 @@ pub fn check_paints(
     map: &BiomeMap,
 ) -> Result<(), crate::compiler::failure::Failure> {
     let code = crate::compiler::atmosphere::DW_ATMOSPHERE_PAINT;
-    let places: Vec<&Paint> = map.places().collect();
-    for (i, a) in places.iter().enumerate() {
-        for b in &places[i + 1..] {
-            let meet = (0..3).all(|k| a.cells.0[k] <= b.cells.1[k] && b.cells.0[k] <= a.cells.1[k]);
-            if meet && a.biome != b.biome {
-                let (PaintSource::Place { place: pa, .. }, PaintSource::Place { place: pb, .. }) =
-                    (&a.source, &b.source)
-                else {
-                    continue;
-                };
-                return Err(crate::compiler::failure::Failure {
-                    code,
-                    message: format!(
-                        "`{pa}` carries `{}` and `{pb}` carries `{}`, and the 4-cells they paint                          meet ({:?}..{:?} and {:?}..{:?}). A biome cell is 4×4×4, so a cell they                          share would belong to whichever `fillbiome` ran last — an order, not a                          declaration. Give the two places one atmosphere, or move them apart so                          that a whole 4-cell separates them.",
-                        a.biome, b.biome, a.cells.0, a.cells.1, b.cells.0, b.cells.1
-                    ),
-                });
-            }
+    if let Some((a, b)) = meeting_places(map) {
+        if let (PaintSource::Place { place: pa, .. }, PaintSource::Place { place: pb, .. }) =
+            (&a.source, &b.source)
+        {
+            return Err(crate::compiler::failure::Failure {
+                code,
+                message: format!(
+                    "`{pa}` carries `{}` and `{pb}` carries `{}`, and the 4-cells they paint meet ({:?}..{:?} and {:?}..{:?}). A biome cell is 4×4×4, so a cell they share would belong to whichever `fillbiome` ran last — an order, not a declaration. Give the two places one atmosphere, or move them apart so that a whole 4-cell separates them.",
+                    a.biome, b.biome, a.cells.0, a.cells.1, b.cells.0, b.cells.1
+                ),
+            });
         }
     }
     let columns = extent_columns(plan);
@@ -526,7 +551,7 @@ pub fn check_paints(
             return Err(crate::compiler::failure::Failure {
                 code,
                 message: format!(
-                    "the `set-atmosphere` at quests {path} repaints {min:?}..{max:?} (the 4-cells                      {lo:?}..{hi:?}), which reaches past the map's extent {}. `fillbiome` into a                      chunk nothing loads is a silent no-op, so part of the volume would keep its                      old sky with every proof green. Shrink the region's `extent`, or move its                      anchor, so the whole volume stands inside the map.",
+                    "the `set-atmosphere` at quests {path} repaints {min:?}..{max:?} (the 4-cells {lo:?}..{hi:?}), which reaches past the map's extent {}. `fillbiome` into a chunk nothing loads is a silent no-op, so part of the volume would keep its old sky with every proof green. Shrink the region's `extent`, or move its anchor, so the whole volume stands inside the map.",
                     if y_out {
                         format!("(the build height, y {BUILD_MIN_Y}..{BUILD_MAX_Y})")
                     } else {

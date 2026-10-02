@@ -268,6 +268,7 @@ struct Ground {
 impl Ground {
     fn of(plan: &Plan) -> Self {
         let c = plan.campaign;
+        let map = crate::compiler::horizon::biome_map(plan);
         let repaints = crate::compiler::atmosphere::set_atmospheres(c)
             .into_iter()
             .filter_map(|(_, _, e)| {
@@ -275,11 +276,8 @@ impl Ground {
                 let Verb::SetAtmosphere { atmosphere, .. } = &e.verb else {
                     return None;
                 };
-                let biome = crate::compiler::horizon::biome_of(
-                    plan,
-                    atmosphere.as_ref().map(|a| a.as_str()),
-                );
-                let rains = crate::compiler::horizon::precipitates(c, &plan.namespace, &biome);
+                let biome = map.biome_of(atmosphere.as_ref().map(|a| a.as_str()));
+                let rains = map.precipitates(&biome);
                 Some((
                     addr(e),
                     (
@@ -290,10 +288,7 @@ impl Ground {
                 ))
             })
             .collect();
-        Ground {
-            map: crate::compiler::horizon::biome_map(plan),
-            repaints,
-        }
+        Ground { map, repaints }
     }
 
     /// The first biome `cell` can stand in, among the states `sky` reaches,

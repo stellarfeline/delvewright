@@ -8196,6 +8196,11 @@ mod happening_subject_tests {
                 Some("anchor/pit"),
             ),
             (
+                "set-atmosphere",
+                serde_json::json!({"type":"set-atmosphere","atmosphere":"atmosphere/wrong","region":{"anchor":"anchor/hall","extent":[4,2,4]}}),
+                Some("anchor/hall"),
+            ),
+            (
                 "clear-region",
                 serde_json::json!({"type":"clear-region","region":{"anchor":"anchor/pit","extent":[2,2,2]}}),
                 Some("anchor/pit"),
