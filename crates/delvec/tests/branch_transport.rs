@@ -386,3 +386,51 @@ fn a_branch_cannot_cross_a_door_only_another_branch_opens() {
         }
     }
 }
+
+/// A path proof credits only the lines its own flag state fires. The variant
+/// drops the hold branch's own `open-gate` (on `obj/watch`), so the only opening
+/// of the door left is the one on `obj/decide` guarded `when: requires_flags
+/// [flag/flee]` — an objective the hold path DOES play, under a guard that never
+/// holds on it. The hold path must then fail its walk out through the door with
+/// `DW0317`: a guarded effect is forced only where the path satisfies its guard.
+#[test]
+fn a_path_cannot_cross_a_door_opened_only_under_another_branchs_flag() {
+    let tmp = TempCampaign::new("flee-guarded-door");
+    tmp.patch("quests", |q| {
+        let bundle = quest(q, "quest/hold")["on_objective_complete"]["obj/watch"]
+            .as_array_mut()
+            .unwrap();
+        let before = bundle.len();
+        bundle.retain(|e| e["type"] != "open-gate");
+        assert_eq!(
+            before - bundle.len(),
+            1,
+            "fixture drift: obj/watch must carry exactly one open-gate"
+        );
+        let decide = &quest(q, "quest/decide")["on_objective_complete"]["obj/decide"];
+        assert!(
+            decide
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|e| e["type"] == "open-gate"
+                    && e["when"]["requires_flags"] == json!(["flag/flee"])),
+            "fixture drift: obj/decide must carry the flee-guarded open-gate"
+        );
+    });
+
+    match try_build_campaign(tmp.path()) {
+        Err(BuildFailure::Diagnostic { code, message }) => {
+            assert_eq!(code, "DW0317", "wrong diagnostic: {message}");
+            assert!(
+                message.contains("`anchor/door`")
+                    && message.contains("no firing the party is forced to make ever opens it"),
+                "the diagnostic must name the door and why nothing opens it: {message}"
+            );
+        }
+        Err(other) => panic!("expected DW0317, got {other:?}"),
+        Ok(_) => panic!(
+            "expected DW0317: the hold path crosses a door opened only under the bolt branch's flag"
+        ),
+    }
+}
