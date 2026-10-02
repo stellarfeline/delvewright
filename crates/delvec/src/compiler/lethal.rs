@@ -335,8 +335,9 @@ fn cell_shows(
 /// **Every cell the party is PUT at** — the roots of the population `P`
 /// (spec-0062 §2 decision 1).
 ///
-/// The entry spawn, every `set-checkpoint` and `bonfire` seat, and every
-/// transit-teleport destination. Rooted at all of them and not at the entry
+/// The entry spawn, every `set-checkpoint` and `bonfire` seat, every
+/// transit-teleport destination, every cell of a loop's landing slab and every
+/// exercise step's landing (spec-0086 §5.3). Rooted at all of them and not at the entry
 /// alone, as `DW0881`'s population is: a party teleported into an area stands on
 /// that area's floor, and a rule that judged only what walks from the door would
 /// be silent about every area reached by a teleport.
@@ -348,6 +349,23 @@ pub(crate) fn population_roots(plan: &Plan, entry: Option<[i32; 3]>) -> Vec<[i32
     out.extend(entry);
     out.extend(plan.checkpoints.iter().map(|cp| cp.pos));
     out.extend(plan.transit_teleports.iter().map(|(_, to)| *to));
+    // spec-0086 §5.3: a loop puts a body down on every cell of its landing slab,
+    // and the party stands at each exercise step's landing.
+    for l in &plan.loops {
+        let (lo, hi) = l.landing();
+        for x in lo[0]..=hi[0] {
+            for y in lo[1]..=hi[1] {
+                for z in lo[2]..=hi[2] {
+                    out.push([x, y, z]);
+                }
+            }
+        }
+    }
+    for s in &plan.critical_path {
+        if let crate::compiler::plan::Step::Loop { transport, .. } = s {
+            out.push(*transport);
+        }
+    }
     out
 }
 

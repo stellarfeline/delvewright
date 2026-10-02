@@ -154,10 +154,21 @@ impl LoopPlan {
         inside(self.slab, cell)
     }
 
-    /// The landing cell the exercise step names: where the slab's anchor cell
-    /// is put down.
+    /// The slab cell the exercise step crosses at: the slab's lowest course in
+    /// its anchor's column — the feet cell of a slab drawn over a passage's
+    /// open cross-section — for a horizontal crossing, and the anchor cell for a
+    /// vertical one.
+    pub fn cross(&self) -> [i32; 3] {
+        match self.axis() {
+            Some(1) | None => self.anchor_cell,
+            Some(_) => [self.anchor_cell[0], self.slab.0[1], self.anchor_cell[2]],
+        }
+    }
+
+    /// The landing cell the exercise step names: where every crossing at
+    /// [`Self::cross`] puts the body down.
     pub fn transport(&self) -> [i32; 3] {
-        shift(self.anchor_cell, self.offset)
+        shift(self.cross(), self.offset)
     }
 
     /// The side of the slab a body approaches from, along the crossing axis:
@@ -823,7 +834,7 @@ impl LoopSplice {
             steps.push(crate::compiler::plan::Step::Loop {
                 loop_id: l.id.clone(),
                 pos: l.transport(),
-                cross: l.anchor_cell,
+                cross: l.cross(),
                 offset: l.offset,
                 times: ex.times,
                 transport: l.transport(),
@@ -859,4 +870,989 @@ impl LoopSplice {
         }
         self.spliced
     }
+}
+
+// ---------------------------------------------------------------------------
+// The world half: the slab, the span, the tiling, the bodies (spec-0086 §4)
+// ---------------------------------------------------------------------------
+
+/// What one loop's world proof examined — one row of `validation/loop-gate.json`.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct LoopRow {
+    /// The loop.
+    pub id: String,
+    /// Its offset `d`.
+    pub offset: [i32; 3],
+    /// The crossing axis (`x`, `y`, `z`), when the slab is one.
+    pub axis: Option<usize>,
+    /// The slab's cells.
+    pub slab_cells: usize,
+    /// The eyes the span was grown from.
+    pub eyes: usize,
+    /// The least and greatest fog end an eye reads.
+    pub fog: (f64, f64),
+    /// The grown periodic span, when it closed.
+    pub span: Option<([i32; 3], [i32; 3])>,
+    /// Its cells.
+    pub span_cells: usize,
+    /// Growth steps to a closed view.
+    pub steps: usize,
+    /// Boundary cells of the final span closed by geometry.
+    pub closed_geometry: usize,
+    /// Boundary cells closed by fog.
+    pub closed_fog: usize,
+    /// Faces left open: zero on a pass, the refusal's count otherwise.
+    pub open_faces: usize,
+    /// Cells in sight of an eye inside the span.
+    pub visible: usize,
+    /// Configurations the block and light comparison ran over.
+    pub configurations: usize,
+    /// Declared volumes intersecting the span.
+    pub volumes: usize,
+    /// Compiler-placed bodies found in the span.
+    pub bodies: usize,
+    /// Exercise steps on the default path, with their `times` and step index.
+    pub exercises: Vec<(usize, u32)>,
+}
+
+/// What the loop proofs examined, over every loop (spec-0086 §8).
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct LoopBinding {
+    /// One row per resolved loop, declaration order.
+    pub rows: Vec<LoopRow>,
+}
+
+impl LoopBinding {
+    fn sum(&self, f: impl Fn(&LoopRow) -> usize) -> usize {
+        self.rows.iter().map(f).sum()
+    }
+
+    /// The binding line, printed on every build that declares a loop.
+    pub fn line(&self) -> String {
+        let (lo, hi) = self.rows.iter().fold((f64::INFINITY, 0.0f64), |(a, b), r| {
+            if r.eyes == 0 {
+                (a, b)
+            } else {
+                (a.min(r.fog.0), b.max(r.fog.1))
+            }
+        });
+        let fog = if lo.is_finite() {
+            format!("{lo}..{hi}")
+        } else {
+            "none".to_string()
+        };
+        let met = self.rows.iter().filter(|r| !r.exercises.is_empty()).count();
+        format!(
+            "loop binding: {} loop(s); slab cells {}; eyes {} (fog end {fog} blocks as the kernel \
+             reads it); span {} cells grown to a closed view in {} steps, boundary cells closed by \
+             geometry {} and by fog {}, open faces {}; visible cells {} compared as blocks and as \
+             light at 2 skies over {} configuration(s); volumes in span {}, bodies in span {}; \
+             forced route meets {} of {} holding, exercise steps {}",
+            self.rows.len(),
+            self.sum(|r| r.slab_cells),
+            self.sum(|r| r.eyes),
+            self.sum(|r| r.span_cells),
+            self.sum(|r| r.steps),
+            self.sum(|r| r.closed_geometry),
+            self.sum(|r| r.closed_fog),
+            self.sum(|r| r.open_faces),
+            self.sum(|r| r.visible),
+            self.sum(|r| r.configurations),
+            self.sum(|r| r.volumes),
+            self.sum(|r| r.bodies),
+            met,
+            self.rows.len(),
+            self.sum(|r| r.exercises.len()),
+        )
+    }
+
+    /// `validation/loop-gate.json`.
+    pub fn to_json(&self) -> serde_json::Value {
+        let axis = |a: Option<usize>| a.map(|a| ["x", "y", "z"][a]);
+        serde_json::json!({
+            "spec": "spec-0086",
+            "loops": self.rows.len(),
+            "span_reach": SPAN_REACH,
+            "rows": self.rows.iter().map(|r| serde_json::json!({
+                "id": r.id,
+                "offset": r.offset,
+                "axis": axis(r.axis),
+                "slab_cells": r.slab_cells,
+                "eyes": r.eyes,
+                "fog_end": [r.fog.0, r.fog.1],
+                "span": r.span.map(|(a, b)| [a, b]),
+                "span_cells": r.span_cells,
+                "steps": r.steps,
+                "closed_by_geometry": r.closed_geometry,
+                "closed_by_fog": r.closed_fog,
+                "open_faces": r.open_faces,
+                "visible": r.visible,
+                "skies": 2,
+                "configurations": r.configurations,
+                "volumes_in_span": r.volumes,
+                "bodies_in_span": r.bodies,
+                "exercise": r.exercises.iter().map(|(step, times)| serde_json::json!({
+                    "step": step, "times": times
+                })).collect::<Vec<_>>(),
+            })).collect::<Vec<_>>(),
+            "unchecked": [
+                "a client frame: whether a client shows anything at the seam is a client fact; \
+                 the engine proves the packet relative and the view identical",
+                "particles and positional sounds alive in the span at the move",
+                "items on the ground and projectiles",
+                "a witness: a second player in sight of the mover sees the body jump",
+                "chunk streaming at the far ring, and a client render distance below the server's",
+            ],
+        })
+    }
+}
+
+/// The eye points of every landing cell a body can stand in (spec-0086 §4.3):
+/// the player's eye over its feet at the cell centre and toward each horizontal
+/// corner of the hitbox.
+fn eyes(l: &LoopPlan, world: &crate::compiler::nav::World) -> Vec<[f64; 3]> {
+    let (lo, hi) = l.landing();
+    let half = delvewright_dsl::metrics::PLAYER_WIDTH / 2.0;
+    let mut out = Vec::new();
+    for x in lo[0]..=hi[0] {
+        for y in lo[1]..=hi[1] {
+            for z in lo[2]..=hi[2] {
+                let c = [x, y, z];
+                if !world.is_standable(c) {
+                    continue;
+                }
+                let ey = world.feet_y(c) + delvewright_dsl::metrics::PLAYER_EYE_HEIGHT;
+                let (cx, cz) = (f64::from(x) + 0.5, f64::from(z) + 0.5);
+                out.push([cx, ey, cz]);
+                for (dx, dz) in [(-half, -half), (-half, half), (half, -half), (half, half)] {
+                    out.push([cx + dx, ey, cz + dz]);
+                }
+            }
+        }
+    }
+    out
+}
+
+/// The nine points of `c` a sightline may end on: its centre and its eight
+/// corners, each drawn a hair inside the cell so the segment ends in `c`.
+fn targets(c: [i32; 3]) -> [[f64; 3]; 9] {
+    let m = [
+        f64::from(c[0]) + 0.5,
+        f64::from(c[1]) + 0.5,
+        f64::from(c[2]) + 0.5,
+    ];
+    let mut out = [m; 9];
+    let e = 1e-3;
+    let mut k = 1;
+    for dx in [e, 1.0 - e] {
+        for dy in [e, 1.0 - e] {
+            for dz in [e, 1.0 - e] {
+                out[k] = [
+                    f64::from(c[0]) + dx,
+                    f64::from(c[1]) + dy,
+                    f64::from(c[2]) + dz,
+                ];
+                k += 1;
+            }
+        }
+    }
+    out
+}
+
+fn dist(a: [f64; 3], b: [f64; 3]) -> f64 {
+    ((a[0] - b[0]).powi(2) + (a[1] - b[1]).powi(2) + (a[2] - b[2]).powi(2)).sqrt()
+}
+
+/// How an eye sees a cell.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum Sight {
+    /// No sightline reaches it.
+    Hidden,
+    /// A sightline reaches it, past the eye's fog end.
+    Fogged,
+    /// A sightline reaches it inside the fog.
+    Seen,
+}
+
+/// Whether any eye sees `c` (spec-0086 §4.3): a segment from the eye to `c`'s
+/// centre or a corner, walked by [`crate::compiler::nav::walk_cells`], meets no
+/// cell [`crate::compiler::nav::World::blocks_camera`] holds for before `c`.
+/// Returns the best answer over every eye, and the eye that gave it.
+fn sight(
+    world: &crate::compiler::nav::World,
+    eyes: &[[f64; 3]],
+    c: [i32; 3],
+) -> (Sight, Option<[f64; 3]>) {
+    let mut best = (Sight::Hidden, None);
+    for &eye in eyes {
+        let fog = fog_end_at(eye);
+        for t in targets(c) {
+            let blocked = crate::compiler::nav::walk_cells(eye, t, |cell| {
+                cell != c && world.blocks_camera(cell)
+            })
+            .is_some();
+            if blocked {
+                continue;
+            }
+            if dist(eye, t) < fog {
+                return (Sight::Seen, Some(eye));
+            }
+            best = (Sight::Fogged, Some(eye));
+        }
+    }
+    best
+}
+
+/// The cells on one face of box `b`: face `2a` is the low side of axis `a`,
+/// `2a + 1` the high side.
+fn face_cells(b: ([i32; 3], [i32; 3]), face: usize) -> Vec<[i32; 3]> {
+    let a = face / 2;
+    let v = if face % 2 == 0 { b.0[a] } else { b.1[a] };
+    let mut out = Vec::new();
+    for x in b.0[0]..=b.1[0] {
+        for y in b.0[1]..=b.1[1] {
+            for z in b.0[2]..=b.1[2] {
+                let c = [x, y, z];
+                if c[a] == v {
+                    out.push(c);
+                }
+            }
+        }
+    }
+    out
+}
+
+const FACE_WORDS: [&str; 6] = ["west", "east", "down", "up", "north", "south"];
+
+/// The grown span, or why it did not close.
+struct Span {
+    b: ([i32; 3], [i32; 3]),
+    steps: usize,
+    closed_geometry: usize,
+    closed_fog: usize,
+}
+
+/// Grow the periodic span from the slab and its landing until no open boundary
+/// cell is in sight of an eye inside its fog (spec-0086 §4.3).
+fn grow(
+    l: &LoopPlan,
+    world: &crate::compiler::nav::World,
+    eyes: &[[f64; 3]],
+    built: &[([i32; 3], [i32; 3])],
+) -> Result<Span, String> {
+    let (llo, lhi) = l.landing();
+    let mut b = (
+        [
+            l.slab.0[0].min(llo[0]),
+            l.slab.0[1].min(llo[1]),
+            l.slab.0[2].min(llo[2]),
+        ],
+        [
+            l.slab.1[0].max(lhi[0]),
+            l.slab.1[1].max(lhi[1]),
+            l.slab.1[2].max(lhi[2]),
+        ],
+    );
+    let in_built = |c: [i32; 3]| built.iter().any(|bx| inside(*bx, c));
+    let mut steps = 0usize;
+    loop {
+        steps += 1;
+        let mut grew = false;
+        for face in 0..6 {
+            for c in face_cells(b, face) {
+                if world.blocks_camera(c) {
+                    continue;
+                }
+                let (s, eye) = sight(world, eyes, c);
+                if s != Sight::Seen {
+                    continue;
+                }
+                let eye = eye.expect("a seen cell names its eye");
+                if !in_built(c) {
+                    let word = if face == 3 {
+                        "up, into open sky"
+                    } else {
+                        FACE_WORDS[face]
+                    };
+                    return Err(format!(
+                        "the eye at [{:.2}, {:.2}, {:.2}] (fog end {} blocks) sees the open cell \
+                         [{}, {}, {}] on the span's {word} face, outside every placed piece — the \
+                         view leaves the built volume, and nothing outside it moves with the body",
+                        eye[0],
+                        eye[1],
+                        eye[2],
+                        fog_end_at(eye),
+                        c[0],
+                        c[1],
+                        c[2]
+                    ));
+                }
+                let a = face / 2;
+                if face % 2 == 0 {
+                    b.0[a] -= 1;
+                } else {
+                    b.1[a] += 1;
+                }
+                if b.0[a] < llo[a] - SPAN_REACH || b.1[a] > lhi[a] + SPAN_REACH {
+                    return Err(format!(
+                        "the eye at [{:.2}, {:.2}, {:.2}] (fog end {} blocks) sees the open cell \
+                         [{}, {}, {}] on the span's {} face, and the span has grown {SPAN_REACH} \
+                         cells past the landing slab without the view closing",
+                        eye[0],
+                        eye[1],
+                        eye[2],
+                        fog_end_at(eye),
+                        c[0],
+                        c[1],
+                        c[2],
+                        FACE_WORDS[face]
+                    ));
+                }
+                grew = true;
+                break;
+            }
+        }
+        if !grew {
+            break;
+        }
+    }
+    // What closed each boundary cell of the final span.
+    let mut shell: BTreeSet<[i32; 3]> = BTreeSet::new();
+    for face in 0..6 {
+        shell.extend(face_cells(b, face));
+    }
+    let (mut geo, mut fog) = (0usize, 0usize);
+    for c in shell {
+        if world.blocks_camera(c) {
+            geo += 1;
+            continue;
+        }
+        match sight(world, eyes, c).0 {
+            Sight::Fogged => fog += 1,
+            _ => geo += 1,
+        }
+    }
+    Ok(Span {
+        b,
+        steps,
+        closed_geometry: geo,
+        closed_fog: fog,
+    })
+}
+
+/// One configuration of the comparison world: the writes applied, and what to
+/// call it.
+struct Config {
+    label: String,
+    writes: Vec<(([i32; 3], [i32; 3]), String)>,
+}
+
+/// Every runtime write a configuration may apply, in path order, as
+/// `(step, label, region, block)` — air for a clear.
+fn block_writes(
+    plan: &crate::compiler::plan::Plan,
+) -> Vec<(usize, String, ([i32; 3], [i32; 3]), String)> {
+    let mut out: Vec<(usize, String, ([i32; 3], [i32; 3]), String)> = Vec::new();
+    let air = "minecraft:air".to_string();
+    crate::compiler::plan::for_each_gate_effect(plan.campaign, &mut |site, e| {
+        let step = crate::compiler::plan::root_step(plan, &site.root);
+        let label = format!("`{}` at `{}`", e.verb.tag(), site.path);
+        match &e.verb {
+            Verb::FillRegion { region, block, .. } => {
+                if let Some(r) = plan.zone_box(region) {
+                    out.push((step, label, r, block.clone()));
+                }
+            }
+            Verb::ClearRegion { region, .. } => {
+                if let Some(r) = plan.zone_box(region) {
+                    out.push((step, label, r, air.clone()));
+                }
+            }
+            Verb::SetBlock { anchor, block, .. } => {
+                if let Some(p) = plan.point_any(anchor.as_str()) {
+                    out.push((step, label, (p, p), block.clone()));
+                }
+            }
+            Verb::CloseGate { anchor, .. } | Verb::OpenGate { anchor, .. } => {
+                if let Some((from, to, block)) =
+                    crate::compiler::plan::gate_region_block_any(&plan.anchors, anchor.as_str())
+                {
+                    let fills = matches!(e.verb, Verb::CloseGate { .. });
+                    out.push((
+                        step,
+                        label,
+                        (from, to),
+                        if fills { block } else { air.clone() },
+                    ));
+                }
+            }
+            _ => {}
+        }
+    });
+    // A timed gate's two phases are two configurations of its region.
+    for g in &plan.timed_gates {
+        out.push((
+            0,
+            format!("timed gate `{}` closed", g.id),
+            g.gate_region,
+            g.gate_block.clone(),
+        ));
+        out.push((
+            0,
+            format!("timed gate `{}` open", g.id),
+            g.gate_region,
+            air.clone(),
+        ));
+    }
+    out.sort_by_key(|w| w.0);
+    out
+}
+
+/// The world as shipped, before any runtime write: the assembled blocks, the
+/// relight fixtures, and every gate the placed world authors shut.
+fn shipped(
+    plan: &crate::compiler::plan::Plan,
+    blocks: &crate::compiler::blockstate::BlockMap,
+    placements: &[crate::compiler::light::Placement],
+    seals: &[crate::compiler::assembled::GateSeal],
+    clip: ([i32; 3], [i32; 3]),
+) -> BTreeMap<[i32; 3], String> {
+    let mut m: BTreeMap<[i32; 3], String> = blocks
+        .range(clip.0..=clip.1)
+        .filter(|(c, _)| inside(clip, **c))
+        .map(|(c, b)| (*c, b.as_str().to_string()))
+        .collect();
+    for p in placements {
+        if inside(clip, p.pos) {
+            m.insert(p.pos, p.block.clone());
+        }
+    }
+    for s in seals.iter().filter(|s| s.sealed()) {
+        if let Some((from, to, block)) =
+            crate::compiler::plan::gate_region_block_any(&plan.anchors, &s.anchor)
+        {
+            write_box(&mut m, (from, to), &block, clip);
+        }
+    }
+    m
+}
+
+fn write_box(
+    m: &mut BTreeMap<[i32; 3], String>,
+    r: ([i32; 3], [i32; 3]),
+    block: &str,
+    clip: ([i32; 3], [i32; 3]),
+) {
+    for x in r.0[0].min(r.1[0])..=r.0[0].max(r.1[0]) {
+        for y in r.0[1].min(r.1[1])..=r.0[1].max(r.1[1]) {
+            for z in r.0[2].min(r.1[2])..=r.0[2].max(r.1[2]) {
+                let c = [x, y, z];
+                if !inside(clip, c) {
+                    continue;
+                }
+                if block == "minecraft:air" {
+                    m.remove(&c);
+                } else {
+                    m.insert(c, block.to_string());
+                }
+            }
+        }
+    }
+}
+
+/// Everything [`check`] reads.
+pub struct Inputs<'a> {
+    /// The plan.
+    pub plan: &'a crate::compiler::plan::Plan<'a>,
+    /// The campaign's nav world (premises applied).
+    pub world: &'a crate::compiler::nav::World,
+    /// The assembled (edited) block map.
+    pub blocks: &'a crate::compiler::blockstate::BlockMap,
+    /// The relight pass's fixtures.
+    pub placements: &'a [crate::compiler::light::Placement],
+    /// The world-load gate seals.
+    pub seals: &'a [crate::compiler::assembled::GateSeal],
+    /// Where the seating pass put each wave's bodies.
+    pub wave_seats: &'a BTreeMap<String, Vec<[i32; 3]>>,
+}
+
+/// **The loop's world proofs** (spec-0086 §4): the slab (`DW0945`), the closed
+/// view (`DW0947`), the bodies (`DW0948`) and the tiling (`DW0946`), loop by
+/// loop. The binding is returned beside the first refusal so the caller prints
+/// it either way.
+pub fn check(i: &Inputs<'_>) -> (LoopBinding, Option<crate::compiler::failure::Failure>) {
+    use crate::compiler::failure::Failure;
+    let plan = i.plan;
+    let mut binding = LoopBinding::default();
+    let built: Vec<([i32; 3], [i32; 3])> = plan.placed_pieces().map(|p| p.bbox()).collect();
+    let writes = block_writes(plan);
+    let (times, weathers) = crate::compiler::light::reachable_time_weather(plan.campaign);
+    let dark = crate::compiler::light::darkest_effective_sky(plan.campaign);
+    let mut bright = 0u8;
+    for &t in &times {
+        for &w in &weathers {
+            bright = bright.max(crate::compiler::light::effective_sky(t, w));
+        }
+    }
+    let skies = [("darkest", dark), ("brightest", bright)];
+    let mut refusal: Option<Failure> = None;
+    for l in &plan.loops {
+        let mut row = LoopRow {
+            id: l.id.clone(),
+            offset: l.offset,
+            axis: l.axis(),
+            slab_cells: box_cells(l.slab),
+            exercises: plan
+                .loop_exercises
+                .iter()
+                .filter(|e| e.r#loop == l.id)
+                .map(|e| (e.step, e.times))
+                .collect(),
+            ..LoopRow::default()
+        };
+        let result = check_one(i, l, &built, &writes, &skies, &mut row);
+        binding.rows.push(row);
+        if let Err(f) = result
+            && refusal.is_none()
+        {
+            refusal = Some(f);
+        }
+    }
+    (binding, refusal)
+}
+
+fn box_cells(b: ([i32; 3], [i32; 3])) -> usize {
+    (0..3)
+        .map(|a| (b.1[a] - b.0[a] + 1).max(0) as usize)
+        .product()
+}
+
+fn cell_words(c: [i32; 3]) -> String {
+    format!("[{}, {}, {}]", c[0], c[1], c[2])
+}
+
+fn box_words(b: ([i32; 3], [i32; 3])) -> String {
+    format!("{}..{}", cell_words(b.0), cell_words(b.1))
+}
+
+fn check_one(
+    i: &Inputs<'_>,
+    l: &LoopPlan,
+    built: &[([i32; 3], [i32; 3])],
+    writes: &[(usize, String, ([i32; 3], [i32; 3]), String)],
+    skies: &[(&str, u8); 2],
+    row: &mut LoopRow,
+) -> Result<(), crate::compiler::failure::Failure> {
+    use crate::compiler::failure::Failure;
+    let plan = i.plan;
+    let world = i.world;
+    let slab_fault = |fault: String| Failure {
+        code: DW_LOOP_SLAB,
+        message: format!(
+            "loop `{}`: its slab {} with offset [{}, {}, {}] is not a slab the engine can poll — \
+             {fault}. Reshape the slab or move the landing (`to`).",
+            l.id,
+            box_words(l.slab),
+            l.offset[0],
+            l.offset[1],
+            l.offset[2]
+        ),
+    };
+    // ---- §4.2 the slab ----
+    let Some(a) = l.axis() else {
+        return Err(slab_fault(if l.offset == [0, 0, 0] {
+            "the offset is zero (`to` names the slab's own anchor cell), so the body would be \
+             moved nowhere: d[a] = 0 on every axis"
+                .to_string()
+        } else {
+            "the offset moves along more than one axis, so a body is not returned through the \
+             plane it crossed: a slab is crossed along one axis, and the landing lies straight \
+             back along it"
+                .to_string()
+        }));
+    };
+    let t = l.thickness(a);
+    if l.offset[a].abs() < t {
+        return Err(slab_fault(format!(
+            "the move does not clear the slab: |d[{ax}]| = {} is less than the slab's thickness \
+             t = {t} along {ax}, so a moved body is still in the slab next tick and is moved again \
+             every tick it stands there",
+            l.offset[a].abs(),
+            ax = ["x", "y", "z"][a]
+        )));
+    }
+    let (speed, reach, what) = if a == 1 {
+        (
+            delvewright_dsl::metrics::POLL_FALL_BLOCKS_PER_TICK,
+            delvewright_dsl::metrics::PLAYER_HEIGHT,
+            "a falling body's limit speed (`metrics::POLL_FALL_BLOCKS_PER_TICK`, the fall law's \
+             fixed point)",
+        )
+    } else {
+        (
+            delvewright_dsl::metrics::POLL_HORIZONTAL_BLOCKS_PER_TICK,
+            delvewright_dsl::metrics::PLAYER_WIDTH,
+            "the fastest horizontal tick a body has (`metrics::POLL_HORIZONTAL_BLOCKS_PER_TICK`, \
+             sprint-jumping)",
+        )
+    };
+    if speed >= f64::from(t) + reach {
+        return Err(slab_fault(format!(
+            "it is too thin to catch a crossing along {ax}: a one-tick poll sees a body in the \
+             slab for a window of t + reach = {t} + {reach} = {window} blocks, and {what} is \
+             {speed} blocks a tick, so a body can pass through between two polls. Thicken the \
+             slab to at least {need} cells along {ax}",
+            ax = ["x", "y", "z"][a],
+            window = f64::from(t) + reach,
+            need = (speed - reach).floor() as i32 + 1,
+        )));
+    }
+    for other in &plan.loops {
+        if other.id == l.id {
+            continue;
+        }
+        if boxes_meet(l.slab, other.slab) || boxes_meet(l.slab, other.landing()) {
+            return Err(slab_fault(format!(
+                "it overlaps loop `{}`'s slab or landing ({} / {}), so one crossing would be \
+                 answered by two loops",
+                other.id,
+                box_words(other.slab),
+                box_words(other.landing())
+            )));
+        }
+    }
+    for tp in &plan.transit_teleports {
+        if boxes_meet(l.slab, *tp) {
+            return Err(slab_fault(format!(
+                "it overlaps a `teleport` volume {}, so a body in it would be carried twice",
+                box_words(*tp)
+            )));
+        }
+    }
+    for v in &plan.lethal_volumes {
+        let k = delvewright_dsl::metrics::keep_out_box(
+            delvewright_dsl::metrics::Body::PLAYER,
+            v.region.0,
+            v.region.1,
+        );
+        if boxes_meet(l.slab, k) {
+            return Err(slab_fault(format!(
+                "it overlaps lethal volume `{}`'s keep-out {}, so a body crossing it may be \
+                 killed and moved in one tick",
+                v.id,
+                box_words(k)
+            )));
+        }
+    }
+    for x in l.slab.0[0]..=l.slab.1[0] {
+        for y in l.slab.0[1]..=l.slab.1[1] {
+            for z in l.slab.0[2]..=l.slab.1[2] {
+                if !world.is_clear([x, y, z]) {
+                    return Err(slab_fault(format!(
+                        "its cell {} is not passable (a block or water stands there), and every \
+                         cell of a slab is one a body can be in — draw the slab over the open \
+                         cross-section of the passage and no further",
+                        cell_words([x, y, z])
+                    )));
+                }
+            }
+        }
+    }
+    if !world.is_standable(l.cross()) {
+        return Err(slab_fault(format!(
+            "its lowest course in its anchor's column, {}, is not a cell a body stands in, and \
+             the exercise step crosses the slab there — draw the slab down to the passage floor",
+            cell_words(l.cross())
+        )));
+    }
+
+    // ---- §4.3 the periodic span ----
+    let eyes = eyes(l, world);
+    row.eyes = eyes.len();
+    let fogs: Vec<f64> = eyes.iter().map(|e| fog_end_at(*e)).collect();
+    row.fog = (
+        fogs.iter().copied().fold(f64::INFINITY, f64::min),
+        fogs.iter().copied().fold(0.0, f64::max),
+    );
+    if eyes.is_empty() {
+        row.open_faces = 1;
+        return Err(Failure {
+            code: DW_LOOP_OPEN_VIEW,
+            message: format!(
+                "loop `{}`: no cell of its landing slab {} is one a body can stand in, so there is \
+                 no eye the landing can be proven seamless from. Put the landing (`to`) on the \
+                 passage floor, the same distance back as the corridor repeats",
+                l.id,
+                box_words(l.landing())
+            ),
+        });
+    }
+    let span = match grow(l, world, &eyes, built) {
+        Ok(s) => s,
+        Err(why) => {
+            row.open_faces = 1;
+            return Err(Failure {
+                code: DW_LOOP_OPEN_VIEW,
+                message: format!(
+                    "loop `{}`: the view out of its landing is open — {why}. A body moved by \
+                     [{}, {}, {}] would see that cell stand {} blocks nearer. Close the view \
+                     inside the span: turn or jog the corridor, or put a door, a grille or a \
+                     pillar across the line — or give the place an atmosphere whose fog end the \
+                     eye reads whole",
+                    l.id,
+                    l.offset[0],
+                    l.offset[1],
+                    l.offset[2],
+                    l.offset[a].abs()
+                ),
+            });
+        }
+    };
+    row.span = Some(span.b);
+    row.span_cells = box_cells(span.b);
+    row.steps = span.steps;
+    row.closed_geometry = span.closed_geometry;
+    row.closed_fog = span.closed_fog;
+    let mut visible: Vec<[i32; 3]> = Vec::new();
+    for x in span.b.0[0]..=span.b.1[0] {
+        for y in span.b.0[1]..=span.b.1[1] {
+            for z in span.b.0[2]..=span.b.1[2] {
+                let c = [x, y, z];
+                if sight(world, &eyes, c).0 == Sight::Seen {
+                    visible.push(c);
+                }
+            }
+        }
+    }
+    row.visible = visible.len();
+
+    // ---- §4.6 bodies ----
+    let mut bodies: Vec<(String, [i32; 3])> =
+        crate::compiler::lethal::posted_places(plan, None, i.wave_seats)
+            .into_iter()
+            .map(|p| (p.label, p.cell))
+            .collect();
+    bodies.extend(
+        crate::compiler::eclipse::affordances(plan)
+            .into_iter()
+            .map(|a| {
+                (
+                    format!("the {} `{}` at anchor `{}`", a.kind, a.id, a.anchor),
+                    a.pos,
+                )
+            }),
+    );
+    let inside_span: Vec<&(String, [i32; 3])> =
+        bodies.iter().filter(|(_, c)| inside(span.b, *c)).collect();
+    row.bodies = inside_span.len();
+    if let Some((label, c)) = inside_span.first() {
+        return Err(Failure {
+            code: DW_LOOP_BODY,
+            message: format!(
+                "loop `{}`: {label} stands at {}, inside the loop's periodic span {} — a body has an \
+                 identity the move cannot repeat, so a body moved a bay back would see the same \
+                 figure twice, or none. Move the body out of the span; a figure that appears \
+                 mid-loop is placed by an `on_cross` effect outside the visible cells, or summoned \
+                 after the release",
+                l.id,
+                cell_words(*c),
+                box_words(span.b)
+            ),
+        });
+    }
+
+    // ---- §4.4–§4.6 the tiling, in every configuration ----
+    let d = l.offset;
+    let image = |c: [i32; 3]| [c[0] - d[0], c[1] - d[1], c[2] - d[2]];
+    let both = (
+        [
+            span.b.0[0].min(span.b.0[0] - d[0]),
+            span.b.0[1].min(span.b.0[1] - d[1]),
+            span.b.0[2].min(span.b.0[2] - d[2]),
+        ],
+        [
+            span.b.1[0].max(span.b.1[0] - d[0]),
+            span.b.1[1].max(span.b.1[1] - d[1]),
+            span.b.1[2].max(span.b.1[2] - d[2]),
+        ],
+    );
+    let top = built.iter().map(|b| b.1[1]).max().unwrap_or(both.1[1]);
+    let clip = (
+        [both.0[0] - 16, both.0[1] - 16, both.0[2] - 16],
+        [both.1[0] + 16, top.max(both.1[1] + 16), both.1[2] + 16],
+    );
+    // Volumes in the span tile or are refused.
+    let mut volumes: Vec<(String, ([i32; 3], [i32; 3]))> = plan
+        .lethal_volumes
+        .iter()
+        .map(|v| {
+            (
+                format!("lethal volume `{}`'s keep-out", v.id),
+                delvewright_dsl::metrics::keep_out_box(
+                    delvewright_dsl::metrics::Body::PLAYER,
+                    v.region.0,
+                    v.region.1,
+                ),
+            )
+        })
+        .collect();
+    volumes.extend(
+        plan.transit_teleports
+            .iter()
+            .map(|b| ("a `teleport` volume".to_string(), *b)),
+    );
+    volumes.retain(|(_, b)| boxes_meet(*b, both));
+    row.volumes = volumes.len();
+    for (label, b) in &volumes {
+        let in_vol = |c: [i32; 3]| volumes.iter().any(|(_, v)| inside(*v, c));
+        if let Some(c) = visible.iter().find(|c| in_vol(**c) != in_vol(image(**c))) {
+            return Err(Failure {
+                code: DW_LOOP_TILING,
+                message: format!(
+                    "loop `{}`: {label} {} lies in the periodic span without its image under the \
+                     offset — the visible cell {} is {} and the cell it is seen as from the slab, \
+                     {}, is {}. A pit the player sees in one bay and not the next is the frame \
+                     jump by other means. Make the sections the same: put the same volume under \
+                     the other bay, or move it out of the span",
+                    l.id,
+                    box_words(*b),
+                    cell_words(*c),
+                    if in_vol(*c) {
+                        "inside it"
+                    } else {
+                        "outside it"
+                    },
+                    cell_words(image(*c)),
+                    if in_vol(image(*c)) {
+                        "inside it"
+                    } else {
+                        "outside it"
+                    },
+                ),
+            });
+        }
+    }
+    let base = shipped(plan, i.blocks, i.placements, i.seals, clip);
+    let mut configs: Vec<Config> = vec![Config {
+        label: "the world as it is placed, before any runtime write".to_string(),
+        writes: Vec::new(),
+    }];
+    let mut acc: Vec<(([i32; 3], [i32; 3]), String)> = Vec::new();
+    for (step, label, r, block) in writes {
+        if !boxes_meet(*r, clip) {
+            continue;
+        }
+        acc.push((*r, block.clone()));
+        configs.push(Config {
+            label: format!("after {label} (critical-path step {step})"),
+            writes: acc.clone(),
+        });
+    }
+    // The exercise's own writes, crossing by crossing (spec-0086 §4.6).
+    for e in plan.loop_exercises.iter().filter(|e| e.r#loop == l.id) {
+        for (n, fired) in e.fired.iter().enumerate() {
+            let mut any = false;
+            for &fi in fired {
+                let Some(eff) = l.on_cross.get(fi) else {
+                    continue;
+                };
+                let w = match &eff.verb {
+                    Verb::FillRegion { region, block, .. } => {
+                        plan.zone_box(region).map(|r| (r, block.clone()))
+                    }
+                    Verb::ClearRegion { region, .. } => plan
+                        .zone_box(region)
+                        .map(|r| (r, "minecraft:air".to_string())),
+                    Verb::SetBlock { anchor, block, .. } => plan
+                        .point_any(anchor.as_str())
+                        .map(|p| ((p, p), block.clone())),
+                    _ => None,
+                };
+                if let Some(w) = w
+                    && boxes_meet(w.0, clip)
+                {
+                    acc.push(w);
+                    any = true;
+                }
+            }
+            if any {
+                configs.push(Config {
+                    label: format!(
+                        "after crossing {} of the exercise step (critical-path step {}), whose \
+                         `on_cross` writes from root `/content/loops/../on_cross`",
+                        n + 1,
+                        e.step
+                    ),
+                    writes: acc.clone(),
+                });
+            }
+        }
+    }
+    row.configurations = configs.len();
+    for cfg in &configs {
+        let mut m = base.clone();
+        for (r, b) in &cfg.writes {
+            write_box(&mut m, *r, b, clip);
+        }
+        let block_at = |c: [i32; 3]| m.get(&c).map(String::as_str).unwrap_or("minecraft:air");
+        let diffs: Vec<[i32; 3]> = visible
+            .iter()
+            .copied()
+            .filter(|c| block_at(*c) != block_at(image(*c)))
+            .collect();
+        if let Some(first) = diffs.first() {
+            let shown: Vec<String> = diffs
+                .iter()
+                .take(6)
+                .map(|c| {
+                    format!(
+                        "{} holds `{}` and {} holds `{}`",
+                        cell_words(*c),
+                        block_at(*c),
+                        cell_words(image(*c)),
+                        block_at(image(*c))
+                    )
+                })
+                .collect();
+            let _ = first;
+            return Err(Failure {
+                code: DW_LOOP_TILING,
+                message: format!(
+                    "loop `{}`: {} visible cell(s) of the periodic span differ from the cell \
+                     each is seen as from the slab, in the configuration {} — {}. The view from \
+                     the landing would not be the view from the slab. Make the two sections the \
+                     same; never shorten the view to hide the difference",
+                    l.id,
+                    diffs.len(),
+                    cfg.label,
+                    shown.join("; ")
+                ),
+            });
+        }
+        let model =
+            crate::compiler::light::LightModel::from_blocks_within(m.clone(), clip.0, clip.1);
+        for (sky_word, sky) in skies {
+            let lit = model.flood(*sky);
+            let at = |c: [i32; 3]| lit.get(&c).copied().unwrap_or(0);
+            if let Some(c) = visible.iter().find(|c| at(**c) != at(image(**c))) {
+                return Err(Failure {
+                    code: DW_LOOP_TILING,
+                    message: format!(
+                        "loop `{}`: the visible cell {} is lit {} and the cell it is seen as from \
+                         the slab, {}, is lit {}, at the campaign's {sky_word} reachable sky \
+                         ({sky}), in the configuration {} — something outside the visible cells \
+                         lights two sections differently, a lamp round a corner or a hole in the \
+                         roof over the next bay. Make the sections the same",
+                        l.id,
+                        cell_words(*c),
+                        at(*c),
+                        cell_words(image(*c)),
+                        at(image(*c)),
+                        cfg.label
+                    ),
+                });
+            }
+        }
+    }
+    Ok(())
 }

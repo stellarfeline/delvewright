@@ -6431,6 +6431,20 @@ fn firing_of(
     }
 }
 
+/// The critical-path step an effect root's bundle fires at on the default path,
+/// for a reader that orders writes along it (spec-0086 §4.6): an objective's
+/// step, a quest's completion step, and step `0` — preceding everything — for
+/// every root with no step of its own.
+pub(crate) fn root_step(plan: &Plan, root: &EffectRoot<'_>) -> usize {
+    match root {
+        EffectRoot::ObjectiveComplete { objective, .. } => {
+            plan.objective_steps.get(*objective).copied().unwrap_or(0)
+        }
+        EffectRoot::QuestComplete(q) => quest_complete_step(q, &plan.objective_steps),
+        _ => 0,
+    }
+}
+
 /// Every `open-way` the campaign writes, with the quest-DAG point it fires at and
 /// whether the party is forced to cause it (spec-0042 §2.5).
 ///

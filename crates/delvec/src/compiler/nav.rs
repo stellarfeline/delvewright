@@ -4472,6 +4472,9 @@ pub fn needs_world(plan: &Plan) -> bool {
     // the assembled occupancy model too, as does the trap proof (DW0342, spec-0011).
         || !plan.checkpoints.is_empty()
         || !plan.stealth_beats.is_empty()
+    // A loop's slab, span and tiling are judged over the assembled world
+    // (spec-0086 §4).
+        || !plan.loops.is_empty()
         || !plan.traps.is_empty()
 }
 
@@ -6044,14 +6047,24 @@ pub fn check_bodies_can_leave(
     let worlds: Vec<(&World, String, Vec<[i32; 3]>)> = configs
         .into_iter()
         .zip(&owned)
-        .map(|((_, first, seeds), w)| {
+        .map(|((st, first, seeds), w)| {
             let w = w.as_ref().unwrap_or(world);
-            let when = plan
+            let mut when = plan
                 .critical_path
                 .get(first)
                 .and_then(|s| s.objective())
                 .map(|o| format!("while `{o}` is next"))
                 .unwrap_or_else(|| format!("from critical step {first}"));
+            // spec-0086 §5.3: the configuration names every loop's slab as it
+            // has it — a holding slab is a wall a body is returned from.
+            for l in &plan.loops {
+                let held = st.held_regions.iter().any(|(r, _)| *r == l.slab);
+                when.push_str(&format!(
+                    ", with the slab of loop `{}` {}",
+                    l.id,
+                    if held { "holding" } else { "clear" }
+                ));
+            }
             (w, when, seeds.into_iter().collect())
         })
         .collect();

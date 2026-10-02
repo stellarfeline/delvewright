@@ -734,6 +734,10 @@ pub fn build_with_warnings(
     // the world block below. `None` for a campaign that declares no volume — no
     // ledger, no artifact, no byte moved for anybody who has not opted in.
     let mut lethal_gate: Option<crate::compiler::lethal::LethalGate> = None;
+    // The loop proofs' binding ledger (`compiler::loop`, spec-0086 §8). `None`
+    // for a campaign that declares no loop — no line, no artifact; a ledger that
+    // exists and reports zero is a finding.
+    let mut loop_gate: Option<crate::compiler::r#loop::LoopBinding> = None;
     // The firework proofs' binding ledger (`compiler::firework`, spec-0068 §5),
     // filled inside the world block below. `None` for a campaign that declares no
     // firework — no ledger, no artifact, no byte moved for anybody who has not
@@ -1214,6 +1218,30 @@ pub fn build_with_warnings(
                     );
                     binding
                 };
+                // spec-0086 §4: a loop's slab, its closed view, the bodies in its
+                // span and its tiling, over the world as shipped (relight
+                // fixtures and world-load seals included). Before the route
+                // proofs, because a loop that cannot be polled or seen through is
+                // the cause, and a route closed by its slab is the consequence.
+                if !plan.loops.is_empty() {
+                    let (binding, refusal) =
+                        crate::compiler::r#loop::check(&crate::compiler::r#loop::Inputs {
+                            plan,
+                            world: &world,
+                            blocks: &assembled.blocks,
+                            placements: &relight.placements,
+                            seals: &assembled.gate_seals,
+                            wave_seats: &waves,
+                        });
+                    eprintln!("{}", binding.line());
+                    loop_gate = Some(binding);
+                    if let Some(f) = refusal {
+                        return Err(BuildFailure::Diagnostic {
+                            code: f.code,
+                            message: f.message,
+                        });
+                    }
+                }
                 crate::compiler::nav::check_critical_path(plan, &world)?;
                 // v0.6 checkpoint no-stranding + placement proofs (spec-0012,
                 // DW0315/DW0316) and stealth-zone standable/reachable proofs
@@ -2204,6 +2232,9 @@ pub fn build_with_warnings(
     }
     if let Some(gate) = &lethal_gate {
         put_json(&mut out, "validation/lethal-gate.json", &gate.to_json());
+    }
+    if let Some(gate) = &loop_gate {
+        put_json(&mut out, "validation/loop-gate.json", &gate.to_json());
     }
     if let Some(gate) = firework_gate.as_ref().filter(|g| g.declared > 0) {
         put_json(&mut out, "validation/firework-gate.json", &gate.to_json());
@@ -20442,7 +20473,7 @@ fn emit_loop_packtests(plan: &Plan, out: &mut BuildOutput) {
         };
         let tag = format!("dw_looptest_{}", l.safe);
         let sel = format!("@e[tag={tag},limit=1]");
-        let at = l.anchor_cell;
+        let at = l.cross();
         let summon = format!(
             "summon minecraft:zombie {} {} {} \
              {{Tags:[\"{tag}\"],NoAI:1b,Silent:1b,PersistenceRequired:1b,Invulnerable:1b}}",
