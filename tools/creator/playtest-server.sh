@@ -177,7 +177,7 @@ dw_playtest_docker_run_argv() {
 dw_playtest_pack_run_argv() {
   local name="$1" image="$2" port="$3" out="$4"
   printf '%s\n' docker run -d --name "$name-pack" -p "127.0.0.1:$port:8000" \
-    -v "$out:/srv:ro" "$image" httpd -f -p 8000 -h /srv
+    -v "$out:/srv:ro" --entrypoint httpd "$image" -f -p 8000 -h /srv
 }
 
 # The three properties that serve the pack, appended to the staged
@@ -381,7 +381,7 @@ if [ "$cmd" = "down" ]; then
   if dw_playtest_container_exists "$NAME-pack"; then
     docker rm -f "$NAME-pack" >/dev/null 2>&1 && echo "$NAME-pack removed" || echo "$NAME-pack existed but could not be removed"
   else
-    echo "$NAME-pack was not running"
+    echo "no $NAME-pack sidecar to remove"
   fi
   # The staged world. This is `up`'s own copy — a server.properties, the campaign
   # datapack and whatever the server then generated on top — so nothing outside
