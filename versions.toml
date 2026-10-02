@@ -95,6 +95,16 @@ repo = "ghcr.io/stellarfeline/delvewright-toolserver"
 tag = "1.21.11-packtest2.4.0"
 digest = "sha256:31ed5d5a5c50158470bfee8c7197a75e6f586a25c950bf25b69b533f88e0ba0b"
 
+[images.pack_server]
+# busybox httpd — the sidecar that SERVES a delve's resourcepack.zip to clients
+# (spec-0009's verified pattern; spec-0084 §11: a pack is served, never
+# installed). Pinned by its multi-arch OCI index digest (linux/amd64 +
+# linux/arm64 among its manifests).
+# Consumed by: validation/compose.yaml (`pack` service), tools/creator/playtest-server.sh.
+repo = "busybox"
+tag = "1.37"
+digest = "sha256:9532d8c39891ca2ecde4d30d7710e01fb739c87a8b9299685c63704296b16028"
+
 [fabric]
 # Fabric loader (pre-baked into the toolserver at build time; ADR-0003 tooling only).
 # Consumed by: validation/Dockerfile.toolserver (ARG FABRIC_LOADER_VERSION).

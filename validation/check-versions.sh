@@ -39,6 +39,8 @@ emit("SERVER_SHA256",     d["minecraft"]["server_jar_sha256"])
 emit("BASE_DIGEST",       d["images"]["base"]["digest"])          # sha256:...
 emit("TOOL_DIGEST",       d["images"]["toolserver"]["digest"])
 emit("TOOL_TAG",          d["images"]["toolserver"]["tag"])
+emit("PACK_SERVER_REF",   d["images"]["pack_server"]["repo"] + ":" + d["images"]["pack_server"]["tag"] + "@" + d["images"]["pack_server"]["digest"])
+emit("PACK_SERVER_DIGEST", d["images"]["pack_server"]["digest"])
 emit("FABRIC_LOADER",     d["fabric"]["loader_version"])
 emit("FABRIC_LAUNCHER",   d["fabric"]["launcher_version"])
 emit("FABRIC_API_SHA1",   d["fabric"]["api_sha1"])
@@ -100,7 +102,7 @@ no_conflict "MC version (no drift)" '1\.21\.[0-9]+' "$MC_VERSION" "$DELVE_DF" "$
 echo "== Image digests =="
 # Every sha256:<64hex> literal in the image consumers must be a manifest digest
 # (base or toolserver) — anything else is drift.
-stray="$(grep -hoE 'sha256:[0-9a-f]{64}' "$DELVE_DF" "$TOOL_DF" "$COMPOSE" 2>/dev/null | grep -vxF "$BASE_DIGEST" | grep -vxF "$TOOL_DIGEST" | sort -u || true)"
+stray="$(grep -hoE 'sha256:[0-9a-f]{64}' "$DELVE_DF" "$TOOL_DF" "$COMPOSE" 2>/dev/null | grep -vxF "$BASE_DIGEST" | grep -vxF "$TOOL_DIGEST" | grep -vxF "$PACK_SERVER_DIGEST" | sort -u || true)"
 if [ -n "$stray" ]; then fail "image digests (no stray digest): unknown digest(s): $(echo "$stray" | tr '\n' ' ')"
 else pass "image digests (no stray digest)"; fi
 want_in "base digest -> Dockerfile.delve"      "$BASE_DIGEST" "$DELVE_DF"
@@ -112,6 +114,10 @@ want_in "fabric API sha1 -> Dockerfile.toolserver" "$FABRIC_API_SHA1" "$TOOL_DF"
 want_in "packtest sha1 -> Dockerfile.toolserver"   "$PACKTEST_SHA1"   "$TOOL_DF"
 # compose pins the toolserver by its manifest digest (spec-0005).
 want_in "toolserver digest -> compose" "$TOOL_DIGEST" "$COMPOSE"
+# The pack sidecar (spec-0084 §11) by its full pinned reference, in both places
+# a server is started beside it.
+want_in "pack server -> compose" "$PACK_SERVER_REF" "$COMPOSE"
+want_in "pack server -> playtest-server.sh" "$PACK_SERVER_REF" "$ROOT/tools/creator/playtest-server.sh"
 # ...and the Fabric LAUNCHER by name. Left at itzg's `LATEST` default this
 # is a meta.fabricmc.net request on every boot of an already-provisioned image — six
 # per `tier 2` run, each its own chance to red a required check.
