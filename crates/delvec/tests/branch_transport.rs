@@ -342,3 +342,40 @@ fn a_campaign_without_branch_only_crossings_gets_an_empty_overlay() {
         );
     }
 }
+
+/// A branch proof credits only what its own path fires. The variant drops the
+/// bolt branch's own `open-gate` (the flee-gated one on `obj/decide`), so the
+/// door to `anchor/exit` opens only at `obj/watch` — a hold-branch objective the
+/// bolt path never performs. The bolt branch must then fail its walk to
+/// `anchor/exit` (`DW0311`), because nothing on its path opens the door; a
+/// bundle whose objective is absent from a path is never forced on that path.
+#[test]
+fn a_branch_cannot_cross_a_door_only_another_branch_opens() {
+    let tmp = TempCampaign::new("hold-only-door");
+    tmp.patch("quests", |q| {
+        let bundle = quest(q, "quest/decide")["on_objective_complete"]["obj/decide"]
+            .as_array_mut()
+            .unwrap();
+        let before = bundle.len();
+        bundle.retain(|e| e["type"] != "open-gate");
+        assert_eq!(
+            before - bundle.len(),
+            1,
+            "fixture drift: obj/decide must carry exactly one open-gate"
+        );
+    });
+
+    match try_build_campaign(tmp.path()) {
+        Err(BuildFailure::Diagnostic { code, message }) => {
+            assert_eq!(code, "DW0311", "wrong diagnostic: {message}");
+            assert!(
+                message.contains("branch `branch/bolt`"),
+                "the diagnostic must name the branch that cannot walk: {message}"
+            );
+        }
+        Err(other) => panic!("expected DW0311, got {other:?}"),
+        Ok(_) => panic!(
+            "expected DW0311: the bolt branch crosses a door only the hold branch opens"
+        ),
+    }
+}
