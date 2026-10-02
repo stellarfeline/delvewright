@@ -781,6 +781,12 @@ fn a_sight_grant_that_ends_under_a_camera_is_dw0944() {
         let c = at_talk(vec![sight_timeline(s)]);
         assert_eq!(has(&c, "DW0944"), red, "{s} s: {:#?}", codes(&c));
     }
+    // A bundle fires all at once: a timeline of one step at tick 0.
+    let bundle = at_talk(vec![
+        json!({"type":"give-effect","effect":"minecraft:night_vision","seconds":3}),
+        json!({"type":"cutscene","seconds":10,"path":[{"anchor":"anchor/exit","offset":[0,2,0]}]}),
+    ]);
+    assert!(has(&bundle, "DW0944"), "{:#?}", codes(&bundle));
     // No cutscene in the timeline: not examined.
     let alone = at_talk(vec![
         json!({"type":"sequence","steps":[{"at_ticks":0,"effects":[
@@ -993,4 +999,52 @@ fn the_binding_line_prints_zeroes() {
     let gate: Value =
         serde_json::from_slice(&out["validation/lethal-gate.json"]).expect("the ledger is JSON");
     assert_eq!(gate["blind_reach"]["grants_examined"], 0);
+}
+
+/// **A granted sight effect outlasts every authored camera it can overlap, plus
+/// its wind-down** — the general form of the findings-ledger row `isl-52`, both
+/// halves in one test so the row's one carrier carries both.
+///
+/// * The `mitigation` half is structural: the compiler derives the area grant's
+///   lease from the campaign's longest camera, so a fifteen-second cutscene
+///   lifts the lease to at least 15 + 10 (night vision's wind-down) seconds.
+/// * The `give-effect` half is `DW0944`: an author-chosen `seconds` that ends
+///   under a camera in its own timeline is refused.
+#[test]
+fn a_granted_sight_effect_outlasts_every_camera_it_overlaps() {
+    // The mitigation half.
+    let q = quests(|d| {
+        common::objective_effects(d, 0, "obj/talk").push(
+            json!({"type":"cutscene","seconds":15,"path":[{"anchor":"anchor/exit","offset":[0,2,0]}]}),
+        );
+    });
+    let mut c = campaign(&q);
+    c.world.content.areas[0].mitigation = Some(delvewright_dsl::AreaMitigation::NightVision);
+    let prefabs = prefabs();
+    let plan = Plan::build(&c, &prefabs).expect("plan builds");
+    let out = emit::build(
+        &plan,
+        &BTreeMap::new(),
+        &structures(&plan),
+        &CommandTree::v1_21_11(),
+        &prefabs,
+        None,
+        &BTreeMap::new(),
+    )
+    .expect("builds");
+    let tick = function(&out, "night_vision_tick");
+    let lease: u32 = tick
+        .split("minecraft:night_vision ")
+        .nth(1)
+        .and_then(|t| t.split(' ').next())
+        .and_then(|n| n.parse().ok())
+        .expect("the clock grants night vision with a lease");
+    let wind = delvewright_dsl::perception::sight_wind_down_ticks("night_vision").unwrap() / 20;
+    assert!(
+        lease >= 15 + wind,
+        "the lease {lease} s outlasts a 15 s camera plus {wind} s"
+    );
+    // The give-effect half.
+    assert!(has(&at_talk(vec![sight_timeline(3)]), "DW0944"));
+    assert!(!has(&at_talk(vec![sight_timeline(20)]), "DW0944"));
 }

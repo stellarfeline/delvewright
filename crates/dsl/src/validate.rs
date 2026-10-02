@@ -3851,12 +3851,18 @@ fn perception_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
     fn descend(stage: &'static str, path: String, eff: &QuestEffect, d: &mut Vec<Diagnostic>) {
         perception_one(stage, &path, eff, d);
         for (pseg, _kseg, list) in eff.nested_effect_lists_labeled() {
+            if !matches!(eff.verb, Verb::Sequence { .. }) {
+                // A nested bundle is a timeline of one step, at tick 0.
+                sight_under_camera(stage, &[(0, format!("{path}/{pseg}"), list)], d);
+            }
             for (j, inner) in list.iter().enumerate() {
                 descend(stage, format!("{path}/{pseg}/{j}"), inner, d);
             }
         }
     }
     crate::effects::for_each_effect_root(c, &mut |site, effs| {
+        // A root's bundle fires all at once: a timeline of one step, at tick 0.
+        sight_under_camera(site.stage, &[(0, site.path.clone(), effs)], d);
         for (i, eff) in effs.iter().enumerate() {
             descend(site.stage, format!("{}/{i}", site.path), eff, d);
         }
@@ -3932,12 +3938,25 @@ fn perception_one(stage: &'static str, path: &str, eff: &QuestEffect, d: &mut Ve
         }
     }
     if let Verb::Sequence { steps } = &eff.verb {
-        sight_under_camera(stage, path, steps, d);
+        let groups: Vec<(u32, String, &[QuestEffect])> = steps
+            .iter()
+            .enumerate()
+            .map(|(si, st)| {
+                (
+                    st.at_ticks,
+                    format!("{path}/steps/{si}/effects"),
+                    st.effects.as_slice(),
+                )
+            })
+            .collect();
+        sight_under_camera(stage, &groups, d);
     }
 }
 
 /// `DW0944`: in one timeline, a sight grant that ends under a camera
-/// (spec-0085 §5.3).
+/// (spec-0085 §5.3). A bundle — a root's list or a nested one — fires all at
+/// once, so it is judged as a timeline of one step at tick 0; a `sequence` is
+/// judged step by step.
 ///
 /// A grant's window is `[at_ticks, at_ticks + 20 × seconds)`; a cutscene step's
 /// is `[at_ticks, at_ticks + 20 × Σ shot seconds)`. A grant that overlaps a
@@ -3947,48 +3966,48 @@ fn perception_one(stage: &'static str, path: &str, eff: &QuestEffect, d: &mut Ve
 /// with no cutscene in its timeline is not this rule's business.
 fn sight_under_camera(
     stage: &'static str,
-    path: &str,
-    steps: &[crate::stages::SequenceStep],
+    groups: &[(u32, String, &[QuestEffect])],
     d: &mut Vec<Diagnostic>,
 ) {
-    let mut shots: Vec<(usize, usize, u32, u32)> = Vec::new();
-    for (si, st) in steps.iter().enumerate() {
-        for (ei, e) in st.effects.iter().enumerate() {
+    let mut shots: Vec<(String, u32, u32)> = Vec::new();
+    for (at, list_path, effects) in groups {
+        for (ei, e) in effects.iter().enumerate() {
             if let Some(list) = e.cutscene_shots().filter(|l| !l.is_empty()) {
                 let len: u32 = list.iter().map(|s| s.resolved_seconds() * 20).sum();
-                shots.push((si, ei, st.at_ticks, st.at_ticks + len));
+                shots.push((format!("{list_path}/{ei}"), *at, at + len));
             }
         }
     }
     if shots.is_empty() {
         return;
     }
-    for (si, st) in steps.iter().enumerate() {
-        for (ei, e) in st.effects.iter().enumerate() {
+    for (at, list_path, effects) in groups {
+        for (ei, e) in effects.iter().enumerate() {
             let Some((effect, seconds, _, _, _)) = e.give_effect() else {
                 continue;
             };
             let Some(wind) = crate::perception::sight_wind_down_ticks(effect) else {
                 continue;
             };
-            let begin = st.at_ticks;
+            let begin = *at;
             let end = begin + seconds * 20;
-            for &(ci, cj, c0, c1) in &shots {
+            for (shot, c0, c1) in &shots {
+                let (c0, c1) = (*c0, *c1);
                 let overlaps = begin < c1 && end > c0;
-                if overlaps && end >= c0 && end < c1 + wind {
+                if overlaps && end < c1 + wind {
                     d.push(Diagnostic::error(
                         codes::PERCEPTION_SIGHT_UNDER_A_CAMERA,
                         stage,
-                        format!("{path}/steps/{si}/effects/{ei}"),
+                        format!("{list_path}/{ei}"),
                         format!(
-                            "`give-effect` `{effect}` runs from tick {begin} to tick {end} of this \
-                             timeline, and the cutscene at `steps/{ci}/effects/{cj}` holds the \
-                             camera from tick {c0} to tick {c1}. The grant ends at tick {end}, \
-                             inside the shot or within {wind} tick(s) of its end — the effect's \
-                             wind-down — so it starts ramping down on screen. A granted sight \
-                             effect outlasts any authored camera it overlaps, plus its \
-                             wind-down: write a `seconds` of at least {need}, or start it after \
-                             the shot (a later `at_ticks`)",
+                            "`give-effect` `{effect}` runs from tick {begin} to tick {end} of \
+                             this timeline, and the cutscene at `{shot}` holds the camera from \
+                             tick {c0} to tick {c1}. The grant ends at tick {end}, inside the \
+                             shot or within {wind} tick(s) of its end — the effect's wind-down \
+                             — so it starts ramping down on screen. A granted sight effect \
+                             outlasts any authored camera it overlaps, plus its wind-down: write \
+                             a `seconds` of at least {need}, or start it after the shot (a later \
+                             `at_ticks`)",
                             need = (c1 + wind - begin).div_ceil(20),
                         ),
                     ));
