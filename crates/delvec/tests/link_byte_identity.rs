@@ -2,7 +2,7 @@
 //! where a walk fails is what keeps every campaign without one byte-identical,
 //! and this file holds the build to it.
 //!
-//! `tests/golden/link-byte-identity.json` is a frozen measurement: every
+//! `tests/fixtures/link-byte-identity.json` is a frozen measurement: every
 //! fixture directory under `tests/fixtures/` built by the engine at revision
 //! `e3a6dd36` (the instrument is named in the document), its output tree
 //! digested. Here every fixture is built again by this engine through the same
@@ -58,7 +58,7 @@ fn tree_digest(files: &BTreeMap<String, String>) -> String {
 fn every_fixture_builds_as_it_did_before_links_and_the_teleport_ledgers_only_gain_keys() {
     let golden: Value = serde_json::from_str(
         &std::fs::read_to_string(
-            common::repo_root().join("crates/delvec/tests/golden/link-byte-identity.json"),
+            common::repo_root().join("crates/delvec/tests/fixtures/link-byte-identity.json"),
         )
         .unwrap(),
     )

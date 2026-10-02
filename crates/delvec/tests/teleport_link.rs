@@ -434,7 +434,7 @@ fn the_binding_line_partitions_every_leg() {
 /// one `carry` edge gated on the flag boarding sets — and by nothing else.
 fn ferry_graph(edges: Value) -> Value {
     json!({
-        "campaign_id": "ferry", "dsl_version": "0.35.0", "stage": "layout-graph",
+        "campaign_id": "ferry", "dsl_version": delvewright_dsl::DSL_VERSION, "stage": "layout-graph",
         "content": {
             "nodes": [
                 {"id": "node/west-shore", "intent": "jetty", "size_class": "room",

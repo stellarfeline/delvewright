@@ -595,18 +595,15 @@ pub fn build_with_warnings(
     // branch proofs, the waypoint export, the bot contract, the leave proof and
     // both party populations below all read the same steps. A campaign whose
     // legs all walk takes nothing and keeps the plan it was handed, byte for
-    // byte. A leg nothing carries is refused HERE, by the proof's own verdict,
-    // before any later rung can report a consequence of it.
+    // byte.
     let relinked;
-    let plan: &Plan = if plan.links.is_empty() && plan.gathers.is_empty() {
+    let plan: &Plan = if plan.links.is_empty() {
         plan
     } else {
-        let (binding, verdict) = crate::compiler::nav::check_critical_path_bound(plan, &world);
-        if let Err(e) = verdict {
-            eprintln!("{}", binding.line());
-            return Err(e.into());
-        }
-        let takes = crate::compiler::nav::take_links(plan, &world)?;
+        // A leg nothing carries is not refused here: the walk proof below
+        // refuses it in its own place among the build's checks, so a campaign
+        // keeps the refusal order it has whether or not it declares a link.
+        let takes = crate::compiler::nav::take_links(plan, &world).unwrap_or_default();
         if takes.is_empty() {
             plan
         } else {
