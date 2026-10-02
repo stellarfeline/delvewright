@@ -1,32 +1,47 @@
 #!/usr/bin/env python3
-"""Translate a campaign's l10n sidecar with an external OpenAI-compatible LLM API.
+"""Transcreate a campaign's l10n sidecar with an external OpenAI-compatible LLM API.
 
 Generation-time tooling only. Shipped delves never call an LLM (CLAUDE.md
 forbidden zones): this writes `l10n/<code>.json` into the campaign source, the
 compiler bakes those strings at build time, and the running server talks to
 nothing. See `docs/reference/i18n.md`.
 
+Another language is transcreated from the English, never translated line by
+line (CLAUDE.md, Conventions): each line is rewritten from its intent, with the
+facts, names and keys taken from the English. So every row the model is sent
+carries that intent beside its English — derived by `delvec`, never typed.
+
 Pipeline:
 
 1. `delvec l10n-inventory <campaign-dir> --lang <code>` — the authoritative key
    inventory (exactly the key set `DW0180`/`DW0181` enforce), each row carrying its
-   canonical English, the NPC whose dialogue tree it belongs to, and whatever the
-   current sidecar already translates.
-2. Batch the untranslated rows into persona-aware chat-completions requests
-   (temperature low, a glossary of already-translated proper nouns for
-   cross-batch consistency). Each request is a `Step` carrying the reply shape
+   canonical English, its `kind` of text, the NPC whose voice it is, the
+   `situation` it is said in (quest, objective, beat, what the speaker is doing,
+   the line an option answers), whatever the current sidecar already holds, and
+   whether that is `stale` (translated from English the line no longer reads).
+2. Names first: rows of kind `name`/`title` are sent before everything else, so
+   every later batch is handed the rendering of each name its English mentions.
+3. Batch the pending rows into chat-completions requests: the system prompt
+   carries the target language's writing rules, read from
+   `docs/reference/game-writing.md` (one source; never a copy here), plus the
+   translationese checklist. Each request is a `Step` carrying the reply shape
    its own prompt asks for — JSON object, or free text.
-3. With `--reflect`, run each batch as three steps — translate, criticise the
-   draft on accuracy / fluency / style-register / terminology (plus the target
-   language's translationese checklist), then revise with the critique in hand,
-   returning already-good lines byte-identical.
-4. Merge, write the sidecar (exactly the inventory, so no orphans) and hand it to
+4. With `--reflect`, run each batch as three steps — transcreate, criticise the
+   draft, revise with the critique in hand, returning already-good lines
+   byte-identical.
+5. Fact-check every answer mechanically: placeholders and formatting codes kept,
+   numbers kept, every declared name rendered the one way the campaign renders it
+   and no two names sharing a rendering. A failing row is sent back once with
+   its failures named; a row that still fails is refused — left out of the
+   sidecar and named in the report, so the closing `delvec validate` says it is
+   missing rather than a wrong line shipping.
+6. Merge, write the sidecar (exactly the inventory, so no orphans) and hand it to
    `delvec fmt` for canonical form, then run `delvec validate` and report
    coverage.
 
-Idempotent: a re-run translates only the keys the sidecar is missing (`--force`
-retranslates everything). `--dry-run` prints the exact prompts and key lists and
-makes no network call.
+Idempotent: a re-run sends only the keys the sidecar is missing or holds stale
+(`--force` redoes everything). `--dry-run` prints the exact prompts and key lists
+and makes no network call.
 
 The API key is read from the environment variable *named* in the config
 (`api_key_env`) at call time, and is never stored, echoed, or logged.
@@ -40,6 +55,7 @@ import argparse
 import dataclasses
 import json
 import os
+import re
 import shlex
 import shutil
 import subprocess
@@ -73,17 +89,19 @@ DEFAULT_MAX_RETRIES = 3
 #: standing behaviour for a repo. See `docs/reference/i18n.md`.
 DEFAULT_REFLECT = False
 
-#: Keys whose translations are proper nouns worth pinning across batches: the
-#: world title, NPC and area names, class names (never blurbs or prose).
-GLOSSARY_PREFIXES = ("npc.", "area.")
-GLOSSARY_LIMIT = 40
+#: The kinds of row (`delvec l10n-inventory`'s `kind`, `dsl::key_kind`) that name
+#: a thing rather than say something about it. They are sent first, and their
+#: renderings are the campaign's name map: the glossary every later batch is
+#: handed and the fact check holds every row to.
+NAME_KINDS = ("name", "title")
 
+#: Where the writing rules live. The system prompt reads them from here at call
+#: time — one source, never a copy in this file.
+GAME_WRITING = REPO_ROOT / "docs" / "reference" / "game-writing.md"
 
-def is_glossary_key(key: str) -> bool:
-    """Whether a key names a thing (rather than saying something about it)."""
-    if key == "world.title" or key.startswith(GLOSSARY_PREFIXES):
-        return True
-    return key.startswith("class.") and key.endswith(".name")
+#: The `game-writing.md` section holding a target language's writing rules, by
+#: primary subtag. A language with no section gets the general rules only.
+WRITING_SECTION_BY_LANG = {"zh": "Chinese"}
 
 
 class ConfigError(Exception):
@@ -190,8 +208,18 @@ class Entry:
 
     key: str
     en: str
+    #: The class of text (`dsl::key_kind`): `dialogue`, `option-label`, …
+    kind: str | None = None
     speaker: str | None = None
+    #: The campaign context the line is said in (`dsl::key_situations`).
+    situation: tuple[str, ...] = ()
     existing: str | None = None
+    #: `existing` was made from English the line no longer reads (DW0187).
+    stale: bool = False
+
+    @property
+    def is_name(self) -> bool:
+        return self.kind in NAME_KINDS
 
 
 @dataclass(frozen=True)
@@ -208,18 +236,33 @@ class Inventory:
     entries: list[Entry] = field(default_factory=list)
 
     def pending(self, force: bool = False) -> list[Entry]:
-        """Rows still needing a translation (all of them under `--force`)."""
-        return [e for e in self.entries if force or e.existing is None]
+        """Rows to send (all of them under `--force`): untranslated or stale,
+        names and titles first so every later batch has their renderings."""
+        rows = [e for e in self.entries if force or e.existing is None or e.stale]
+        return sorted(rows, key=lambda e: not e.is_name)
 
-    def glossary(self) -> dict[str, str]:
-        """Already-translated proper nouns, to keep names stable across batches."""
-        out: dict[str, str] = {}
-        for e in self.entries:
-            if e.existing and is_glossary_key(e.key):
-                out[e.en] = e.existing
-            if len(out) >= GLOSSARY_LIMIT:
-                break
-        return out
+    def glossary(self, redo: Iterable[Entry] = ()) -> dict[str, str]:
+        """The names the sidecar already renders, English to rendering — the
+        first rendering of a name wins. Stale rows and the rows `redo` names (this
+        run's pending rows) are excluded: a name being rewritten is not settled."""
+        skip = {e.key for e in redo}
+        return name_map((e for e in self.entries if e.key not in skip), {})
+
+
+def name_map(entries: Iterable[Entry], translated: dict[str, str]) -> dict[str, str]:
+    """English name -> its one rendering, from every `name`/`title` row: this
+    run's rendering where it made one, else the sidecar's (when not stale). The
+    first row to render a name fixes it; later rows are held to it."""
+    out: dict[str, str] = {}
+    for e in entries:
+        if not e.is_name:
+            continue
+        value = translated.get(e.key)
+        if value is None and not e.stale:
+            value = e.existing
+        if value is not None:
+            out.setdefault(e.en, value)
+    return out
 
 
 def parse_inventory(doc: dict[str, Any]) -> Inventory:
@@ -229,8 +272,11 @@ def parse_inventory(doc: dict[str, Any]) -> Inventory:
             Entry(
                 key=e["key"],
                 en=e["en"],
+                kind=e.get("kind"),
                 speaker=e.get("speaker"),
+                situation=tuple(e.get("situation", ())),
                 existing=e.get("existing"),
+                stale=bool(e.get("stale", False)),
             )
             for e in doc["entries"]
         ]
@@ -259,32 +305,39 @@ def batches(entries: Sequence[Entry], size: int) -> list[list[Entry]]:
 # --------------------------------------------------------------------- prompt --
 
 SYSTEM_PROMPT = """\
-You are a professional video-game localizer working on a Minecraft adventure map.
-You translate player-facing strings from English into {lang}.
+You are a native {lang} game writer localizing a Minecraft adventure map. You
+transcreate: you do not translate sentence by sentence. For every line you are
+given its English, the kind of text it is, who says it, and the situation it is
+said in. Write the line a native {lang} writer would write for that moment, for
+that speaker, doing that job. The English is the fact source: keep every fact,
+name, number and direction it states, and add none.
 
 Rules:
-- Reply with ONE JSON object mapping every given key to its translated string.
-  No prose, no explanation, no markdown fences, no extra or missing keys.
-- Translate meaning and voice, not words. Keep the register of a hand-made
-  fantasy adventure map; avoid machine-literal phrasing.
-- Each item may name a `speaker`: that NPC's persona and speech style are given
-  below — the translation must sound like that character.
-- Keys ending in `.opt.<n>.label` are the PLAYER's reply inside that NPC's
-  dialogue tree, drawn on a FIXED-WIDTH BUTTON: keep them short, first-person,
-  and selectable at a glance. A label too wide for the button scrolls, which is
-  a broken-looking UI — so a label is a caption, never a sentence. Budget: about
-  146 font pixels, i.e. roughly 20 Latin characters or 12 Han characters. Being
-  shorter than the English here is correct, not a loss.
-- Keys ending in `.opt.<n>.tooltip` are the FULL line that same reply is a
-  caption of, shown in a hover box: translate it as a whole spoken sentence,
-  and make sure it reads as the longer form of its sibling `.label`.
-- Keys under `obj.` are objective titles/hints, `quest.` are goals, `class.` are
-  class names/blurbs, `npc.`/`area.`/`world.` are proper nouns and headings.
-- Reuse the glossary translations verbatim wherever those names appear.
-- Preserve any placeholder, symbol, or formatting sequence exactly as given.
+- Reply with ONE JSON object mapping every given key to its string. No prose, no
+  explanation, no markdown fences, no extra or missing keys.
+- `kind` says what the line is for:
+  - `objective`, `refusal`, `prompt`: functional text. Say the action, the object
+    and the place plainly; a refusal says what is wrong and what fixes it.
+  - `dialogue`, `bark`: an NPC speaking. `speaker` names them; their persona and
+    speech style are in the context. Make it sound like that person talking now.
+  - `narration`: what happened, said plainly.
+  - `option-label`: the PLAYER's own reply, drawn on a FIXED-WIDTH BUTTON. A label
+    too wide for the button scrolls, which is a broken-looking UI — so a label is
+    a caption, never a sentence. Budget: about 146 font pixels, i.e. roughly
+    20 Latin characters or 12 Han characters. Being shorter than the English here
+    is correct, not a loss.
+  - `button-tooltip`: the full line or consequence that button stands for, shown
+    in a hover box; it reads as the longer form of its sibling label.
+  - `item-name`, `item-tooltip`: an item's name, and what the item does first.
+  - `name`, `title`, `description`: proper names, headings, a class's role.
+- `situation` is context, never text to render: use it to understand what the
+  line must do, then write only the line.
+- Every name in the glossary is written exactly as the glossary renders it, every
+  time it appears. One name, one rendering; two names never share one.
+- Preserve every placeholder (`%s`, `%1$s`), formatting code and digit exactly.
 - Keep strings roughly as short as the English: they render in chat lines,
   item names, and title cards.
-{translationese}"""
+{writing_rules}{translationese}"""
 
 #: Target-language-specific translationese guidance, appended to every prompt in
 #: the three-step pass. Re-derived in our own words from the standard Chinese
@@ -312,6 +365,41 @@ ZH_TRANSLATIONESE = """\
 TRANSLATIONESE_BY_LANG = {"zh": ZH_TRANSLATIONESE}
 
 
+def writing_rules(lang: str, path: Path | None = None) -> str:
+    """The target language's writing rules, read from `game-writing.md`.
+
+    The section is the one `WRITING_SECTION_BY_LANG` names (`## 4. Chinese` for
+    `zh-*`); each rule is taken up to its `**Cited**`/`**Authored**` tail, which
+    is provenance for a human reader, not instruction. A language with no
+    section gets `""`. A language that HAS one whose section cannot be found is
+    an error: the rules moved, and a prompt silently without them would be the
+    old line-by-line translation again.
+    """
+    title = WRITING_SECTION_BY_LANG.get(lang.split("-")[0].lower())
+    if title is None:
+        return ""
+    path = GAME_WRITING if path is None else path
+    try:
+        text = path.read_text("utf-8")
+    except OSError as exc:
+        raise TranslateError(f"cannot read the writing rules at {path}: {exc}") from exc
+    match = re.search(
+        rf"^## (?:\d+\. )?{re.escape(title)}\s*$(.*?)(?=^## |\Z)", text, re.M | re.S
+    )
+    if match is None:
+        raise TranslateError(f"{path} has no `## {title}` section — the {lang} writing rules moved")
+    rules: list[str] = []
+    for block in re.split(r"\n(?=- \*\*)", match.group(1).strip()):
+        if not block.startswith("- **"):
+            continue
+        body = " ".join(block.split())
+        body = re.split(r"\s\*\*(?:Cited|Authored)\b", body, maxsplit=1)[0]
+        rules.append(body.rstrip())
+    if not rules:
+        raise TranslateError(f"{path} `## {title}` holds no rules")
+    return f"\nWriting rules for {lang} (from the project's writing guide):\n" + "\n".join(rules) + "\n"
+
+
 def translationese_guidance(lang: str) -> str:
     """Language-specific translationese guidance, or `""` when we have none.
 
@@ -327,55 +415,81 @@ def translationese_guidance(lang: str) -> str:
 #: (MIT, (c) 2024 Andrew Ng); the axes are extended with our own domain criteria
 #: (persona, key-kind conventions, render width) and the translationese block.
 REFLECTION_PROMPT = """\
-You are a senior localization editor reviewing a draft translation of a Minecraft
-adventure map's player-facing strings, English into {lang}.
+You are a senior localization editor reviewing a draft of a Minecraft adventure
+map's player-facing strings, transcreated from English into {lang}.
 
-Read the source and the draft side by side and write specific, constructive
-criticism. One suggestion per problem, each naming the key it applies to. Do NOT
-write a corrected translation — this step only diagnoses.
+Read each row's English, kind, speaker and situation beside the draft and write
+specific, constructive criticism. One suggestion per problem, each naming the
+key it applies to. Do NOT write a corrected line — this step only diagnoses.
 
 Judge on four axes:
-1. ACCURACY — additions, mistranslations, omissions, untranslated leftovers;
-   placeholders, symbols and formatting sequences altered or dropped.
-2. FLUENCY — grammar, punctuation and idiom of {lang}; unnecessary repetition;
-   anything a native reader would have to re-read.
-3. STYLE / REGISTER — does the line sound like the speaking NPC's persona and
-   speech style, and like a hand-made fantasy adventure map rather than a
-   product manual? Does the string still fit a chat line, item name or title
-   card? `.opt.<n>.label` lines are drawn on a fixed-width button and SCROLL if
-   they overrun — flag any that exceed roughly 20 Latin or 12 Han characters,
-   and say how to cut it to a caption.
-4. TERMINOLOGY — glossary proper nouns reproduced verbatim; one English term
-   rendered the same way at every key; consistent with the source's domain.
+1. ACCURACY — every fact, name, number and direction of the English kept; nothing
+   added; placeholders, symbols and formatting sequences unaltered.
+2. FLUENCY — would a native {lang} writer have written this line for this moment?
+   Grammar, punctuation and idiom; anything a native reader would have to re-read;
+   English sentence structure carried across.
+3. STYLE / REGISTER — does the line do its kind's job and sound like the speaking
+   NPC's persona and speech style? Does the string still fit a chat line, item
+   name or title card? `option-label` lines are drawn on a fixed-width button and
+   SCROLL if they overrun — flag any that exceed roughly 20 Latin or 12 Han
+   characters, and say how to cut it to a caption.
+4. TERMINOLOGY — glossary names reproduced exactly; one English term rendered the
+   same way at every key.
 
 Say so plainly when a line is already accurate and natural — "no change" is a
 valid and expected verdict, and most lines should get it. Do not invent
 improvements to lines that do not need any.
-{translationese}"""
+{writing_rules}{translationese}"""
 
 #: Step 3: apply the critique. Same output contract as step 1, plus an explicit
 #: anti-churn rule — an unconditional rewrite pass degrades text that was fine.
 IMPROVEMENT_PROMPT = """\
-You are the localizer again, revising your own draft with an editor's critique in
+You are the writer again, revising your own draft with an editor's critique in
 hand. Target language: {lang}.
 
 - Reply with ONE JSON object mapping EVERY given key to its final string. No
   prose, no explanation, no markdown fences, no extra or missing keys.
 - Apply the critique where it is right. Where you judge it wrong, keep your draft
-  — you are the translator, not a patch applier.
+  — you are the writer, not a patch applier.
 - Where a draft line is already accurate and natural, return it BYTE-IDENTICAL.
   Rewriting a good line for the sake of motion is a defect, not an improvement.
-- Every rule from the original brief still binds: persona voice, glossary
-  verbatim, placeholders preserved, lengths close to the English, and the
-  `.opt.<n>.label` keys are the player's own reply.
-{translationese}"""
+- Every rule from the original brief still binds: the kind's job, persona voice,
+  glossary names exactly, placeholders and digits preserved, lengths close to the
+  English, and `option-label` rows are the player's own reply on a narrow button.
+{writing_rules}{translationese}"""
+
+#: The corrective step: rows the fact check refused, sent back once with each
+#: failure named. Same output contract as step 1.
+FIX_PROMPT = """\
+You are the writer again. A mechanical check refused some of your lines in
+{lang}; each row names what failed. Rewrite only those lines so the check
+passes, changing nothing else about them that does not need to change.
+
+- Reply with ONE JSON object mapping EVERY given key to its corrected string. No
+  prose, no explanation, no markdown fences, no extra or missing keys.
+- A glossary name must appear exactly as the glossary renders it. A placeholder,
+  formatting code or number must appear exactly as in the English.
+{writing_rules}"""
 
 
-def _context(inv: Inventory, batch: Sequence[Entry], lang: str) -> dict[str, Any]:
+def batch_glossary(batch: Sequence[Entry], names: dict[str, str]) -> dict[str, str]:
+    """The slice of the name map a batch needs: every name its English mentions,
+    and every name the batch itself renders (so a second rendering is visible)."""
+    texts = [e.en for e in batch]
+    return {
+        en: target
+        for en, target in sorted(names.items())
+        if any(e.en == en for e in batch) or any(mentions(t, en) for t in texts)
+    }
+
+
+def _context(
+    inv: Inventory, batch: Sequence[Entry], lang: str, names: dict[str, str] | None = None
+) -> dict[str, Any]:
     """Campaign, speaking personas and glossary for one batch."""
     speakers = {e.speaker for e in batch if e.speaker}
     personas = [n for n in inv.npcs if n.get("id") in speakers]
-    glossary = inv.glossary()
+    glossary = batch_glossary(batch, inv.glossary() if names is None else names)
 
     context: dict[str, Any] = {
         "campaign": inv.campaign_id,
@@ -389,28 +503,36 @@ def _context(inv: Inventory, batch: Sequence[Entry], lang: str) -> dict[str, Any
     return context
 
 
-def _draft_rows(batch: Sequence[Entry], draft: dict[str, str]) -> list[dict[str, str]]:
-    """Source and draft side by side — what steps 2 and 3 reason over."""
-    rows = []
-    for e in batch:
-        row = {"key": e.key, "en": e.en, "draft": draft.get(e.key, "")}
-        if e.speaker:
-            row["speaker"] = e.speaker
-        rows.append(row)
-    return rows
+def _intent(e: Entry) -> dict[str, Any]:
+    """One row as the model sees it: the English and its intent — kind, speaker,
+    situation — each present only when the inventory carries it."""
+    row: dict[str, Any] = {"key": e.key, "en": e.en}
+    if e.kind:
+        row["kind"] = e.kind
+    if e.speaker:
+        row["speaker"] = e.speaker
+    if e.situation:
+        row["situation"] = list(e.situation)
+    return row
 
 
-def _items(batch: Sequence[Entry]) -> list[dict[str, str]]:
-    return [
-        {k: v for k, v in (("key", e.key), ("en", e.en), ("speaker", e.speaker)) if v}
-        for e in batch
-    ]
+def _draft_rows(batch: Sequence[Entry], draft: dict[str, str]) -> list[dict[str, Any]]:
+    """Source, intent and draft side by side — what steps 2 and 3 reason over."""
+    return [{**_intent(e), "draft": draft.get(e.key, "")} for e in batch]
+
+
+def _items(batch: Sequence[Entry]) -> list[dict[str, Any]]:
+    return [_intent(e) for e in batch]
 
 
 def _system(prompt: str, lang: str) -> dict[str, str]:
     return {
         "role": "system",
-        "content": prompt.format(lang=lang, translationese=translationese_guidance(lang)),
+        "content": prompt.format(
+            lang=lang,
+            writing_rules=writing_rules(lang),
+            translationese=translationese_guidance(lang),
+        ),
     }
 
 
@@ -445,14 +567,21 @@ class Step:
         return any(JSON_TOKEN in m.get("content", "").lower() for m in self.messages)
 
 
-def translate_step(inv: Inventory, batch: Sequence[Entry], lang: str) -> Step:
-    """Step 1 — translate. Rules, campaign/persona context, keys. JSON object."""
+def _ctx_json(inv: Inventory, batch: Sequence[Entry], lang: str, names: dict[str, str] | None) -> str:
+    return json.dumps(_context(inv, batch, lang, names), ensure_ascii=False, indent=2, sort_keys=True)
+
+
+def translate_step(
+    inv: Inventory, batch: Sequence[Entry], lang: str, names: dict[str, str] | None = None
+) -> Step:
+    """Step 1 — transcreate. Rules, campaign/persona/glossary context, and each
+    row's English with its intent. JSON object."""
     user = (
         "Context:\n"
-        + json.dumps(_context(inv, batch, lang), ensure_ascii=False, indent=2, sort_keys=True)
-        + "\n\nTranslate these strings into "
+        + _ctx_json(inv, batch, lang, names)
+        + "\n\nWrite these lines in "
         + lang
-        + " and reply with the JSON object of key -> translation:\n"
+        + " from their intent and reply with the JSON object of key -> line:\n"
         + json.dumps(_items(batch), ensure_ascii=False, indent=2)
     )
     return Step(
@@ -463,17 +592,20 @@ def translate_step(inv: Inventory, batch: Sequence[Entry], lang: str) -> Step:
 
 
 def critique_step(
-    inv: Inventory, batch: Sequence[Entry], lang: str, draft: dict[str, str]
+    inv: Inventory,
+    batch: Sequence[Entry],
+    lang: str,
+    draft: dict[str, str],
+    names: dict[str, str] | None = None,
 ) -> Step:
     """Step 2 — critique the draft. Free text, deliberately: making the model
     *write the defect down* is what stops step 3 being a second roll of the dice.
     So this step asks for no JSON and must not send `response_format`."""
-    rows = _draft_rows(batch, draft)
     user = (
         "Context:\n"
-        + json.dumps(_context(inv, batch, lang), ensure_ascii=False, indent=2, sort_keys=True)
-        + "\n\nSource and draft translation:\n"
-        + json.dumps(rows, ensure_ascii=False, indent=2)
+        + _ctx_json(inv, batch, lang, names)
+        + "\n\nSource, intent and draft:\n"
+        + json.dumps(_draft_rows(batch, draft), ensure_ascii=False, indent=2)
         + "\n\nWrite your critique."
     )
     return Step(
@@ -489,22 +621,52 @@ def revise_step(
     lang: str,
     draft: dict[str, str],
     critique: str,
+    names: dict[str, str] | None = None,
 ) -> Step:
     """Step 3 — apply the critique and emit the final JSON object."""
     rows = _draft_rows(batch, draft)
     user = (
         "Context:\n"
-        + json.dumps(_context(inv, batch, lang), ensure_ascii=False, indent=2, sort_keys=True)
-        + "\n\nSource and draft translation:\n"
+        + _ctx_json(inv, batch, lang, names)
+        + "\n\nSource, intent and draft:\n"
         + json.dumps(rows, ensure_ascii=False, indent=2)
         + "\n\nEditor's critique:\n"
         + critique.strip()
-        + "\n\nReply with the JSON object of key -> final translation:\n"
+        + "\n\nReply with the JSON object of key -> final line:\n"
         + json.dumps([r["key"] for r in rows], ensure_ascii=False)
     )
     return Step(
         name="improve",
         messages=[_system(IMPROVEMENT_PROMPT, lang), {"role": "user", "content": user}],
+        json_object=True,
+    )
+
+
+def fix_step(
+    inv: Inventory,
+    batch: Sequence[Entry],
+    lang: str,
+    draft: dict[str, str],
+    failures: dict[str, list[str]],
+    names: dict[str, str] | None = None,
+) -> Step:
+    """The corrective step: the refused rows, each with its draft and the
+    failures the fact check named. JSON object."""
+    rows = [
+        {**_intent(e), "draft": draft.get(e.key, ""), "failed": failures[e.key]}
+        for e in batch
+        if e.key in failures
+    ]
+    user = (
+        "Context:\n"
+        + _ctx_json(inv, batch, lang, names)
+        + "\n\nRefused lines:\n"
+        + json.dumps(rows, ensure_ascii=False, indent=2)
+        + "\n\nReply with the JSON object of key -> corrected line."
+    )
+    return Step(
+        name="fix",
+        messages=[_system(FIX_PROMPT, lang), {"role": "user", "content": user}],
         json_object=True,
     )
 
@@ -657,16 +819,210 @@ def chat_once(
     raise last or TranslateError("translation request failed")
 
 
+# ----------------------------------------------------------------- fact check --
+#
+# Transcreation licenses the model to rewrite a line, and freer writing loses
+# facts (docs/reference/game-writing.md §7). These checks are the mechanical
+# half of "the facts, names and keys taken from the English": what a machine can
+# decide without reading for meaning. A row that fails is sent back once with
+# its failures named, and refused if it still fails.
+
+#: A placeholder or formatting code the client substitutes or interprets.
+PLACEHOLDER_RE = re.compile(r"%(?:\d+\$)?[sd]|%%|§[0-9a-fk-or]")
+DIGITS_RE = re.compile(r"\d+")
+
+#: English number words the check reads. `one` is excluded: it is a pronoun far
+#: more often than a count ("no one", "the one true thing").
+_UNITS = {
+    "two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7, "eight": 8,
+    "nine": 9, "ten": 10, "eleven": 11, "twelve": 12, "thirteen": 13,
+    "fourteen": 14, "fifteen": 15, "sixteen": 16, "seventeen": 17,
+    "eighteen": 18, "nineteen": 19,
+}
+_TENS = {
+    "twenty": 20, "thirty": 30, "forty": 40, "fifty": 50, "sixty": 60,
+    "seventy": 70, "eighty": 80, "ninety": 90,
+}
+_UNIT_DIGITS = {"one": 1, **{k: v for k, v in _UNITS.items() if v < 10}}
+_NUMBER_WORD_RE = re.compile(
+    r"\b(?:(?P<tens>" + "|".join(_TENS) + r")(?:-(?P<unit>" + "|".join(_UNIT_DIGITS) + r"))?"
+    r"|(?P<small>" + "|".join(_UNITS) + r"))"
+    r"(?:\s+(?P<scale>hundred|thousand))?\b",
+    re.I,
+)
+
+
+def english_numbers(text: str) -> list[int]:
+    """Every count the English states in words (`two` … `ninety-nine`, optionally
+    `hundred`/`thousand`). Digits are checked separately, as digits."""
+    out = []
+    for m in _NUMBER_WORD_RE.finditer(text):
+        if m.group("tens"):
+            n = _TENS[m.group("tens").lower()] + _UNIT_DIGITS.get((m.group("unit") or "").lower(), 0)
+        else:
+            n = _UNITS[m.group("small").lower()]
+        scale = (m.group("scale") or "").lower()
+        n *= {"hundred": 100, "thousand": 1000}.get(scale, 1)
+        out.append(n)
+    return out
+
+
+_ZH_DIGITS = "零一二三四五六七八九"
+
+
+def zh_numerals(n: int) -> set[str]:
+    """The ways Chinese writes a count below ten thousand: 十六, 四十, 一百零五, and
+    the 两/俩/双 forms of two."""
+    def render(n: int) -> str:
+        if n < 10:
+            return _ZH_DIGITS[n]
+        if n < 20:
+            return "十" + (_ZH_DIGITS[n % 10] if n % 10 else "")
+        parts, zero = [], False
+        for value, unit in ((1000, "千"), (100, "百"), (10, "十"), (1, "")):
+            d = n // value % 10
+            if d:
+                if zero and parts:
+                    parts.append("零")
+                parts.append(_ZH_DIGITS[d] + unit)
+                zero = False
+            elif parts:
+                zero = True
+        return "".join(parts)
+
+    forms = {render(n), str(n)}
+    if n == 2:
+        forms |= {"两", "俩", "双"}
+    if n in (200, 2000):
+        forms.add("两" + render(n)[1:])
+    if 100 <= n < 200 or 1000 <= n < 2000:
+        forms.add(render(n)[1:])  # 百, 千: the leading 一 is optional
+    return forms
+
+
+def _name_core(name: str) -> str:
+    """The part of a name a sentence repeats: `The Keeper` is mentioned as `the
+    Keeper`, so the article is not part of the match."""
+    return re.sub(r"^(?:the|a|an)\s+", "", name, flags=re.I)
+
+
+def mentions(text: str, name: str) -> bool:
+    """Whether English `text` mentions the declared `name` (case-sensitive, on word
+    boundaries, article-insensitive)."""
+    core = _name_core(name)
+    return bool(core) and re.search(rf"(?<!\w){re.escape(core)}(?!\w)", text) is not None
+
+
+def mentioned_names(text: str, names: Iterable[str]) -> list[str]:
+    """The declared names `text` mentions, dropping a name whose every mention
+    sits inside a longer name's (`Warden` inside `Warden's Door`)."""
+    spans: dict[str, list[tuple[int, int]]] = {}
+    for name in names:
+        core = _name_core(name)
+        if not core:
+            continue
+        found = [m.span() for m in re.finditer(rf"(?<!\w){re.escape(core)}(?!\w)", text)]
+        if found:
+            spans[name] = found
+    out = []
+    for name, own in spans.items():
+        covered = all(
+            any(s <= a and b <= e and (e - s) > (b - a) for other, os_ in spans.items() if other != name for s, e in os_)
+            for a, b in own
+        )
+        if not covered:
+            out.append(name)
+    return sorted(out)
+
+
+def check_row(e: Entry, text: str, names: dict[str, str], lang: str) -> list[str]:
+    """Every mechanical fact `text` (the target-language line for `e`) loses."""
+    failures: list[str] = []
+    if not text.strip():
+        return ["the line is empty"]
+    want, got = sorted(PLACEHOLDER_RE.findall(e.en)), sorted(PLACEHOLDER_RE.findall(text))
+    if want != got:
+        failures.append(f"placeholders/formatting codes {want} became {got}")
+    have = DIGITS_RE.findall(text)
+    for d in DIGITS_RE.findall(e.en):
+        if d in have:
+            have.remove(d)
+        else:
+            failures.append(f"the number {d} is missing")
+    if lang.split("-")[0].lower() == "zh":
+        for n in english_numbers(e.en):
+            if not any(form in text for form in zh_numerals(n)):
+                failures.append(f"the number {n} (written in words in the English) is missing")
+    if not e.is_name:
+        for name in mentioned_names(e.en, names):
+            if names[name] not in text:
+                failures.append(f"the name `{name}` must be written `{names[name]}`")
+    return failures
+
+
+def check_names(
+    batch: Sequence[Entry], got: dict[str, str], names: dict[str, str]
+) -> dict[str, list[str]]:
+    """One name, one rendering; one rendering, one name — for the `name`/`title`
+    rows of this batch against the campaign's name map (which holds every name
+    already settled, the sidecar's and this run's)."""
+    failures: dict[str, list[str]] = {}
+    seen = dict(names)
+    owner = {v: k for k, v in reversed(list(seen.items()))}
+    for e in batch:
+        if not e.is_name or e.key not in got:
+            continue
+        rendering = got[e.key]
+        settled = seen.get(e.en)
+        if settled is not None and settled != rendering:
+            failures.setdefault(e.key, []).append(
+                f"`{e.en}` is already written `{settled}` elsewhere in this campaign"
+            )
+            continue
+        other = owner.get(rendering)
+        if other is not None and other != e.en:
+            failures.setdefault(e.key, []).append(
+                f"`{rendering}` already names `{other}`; two names may not share one rendering"
+            )
+            continue
+        seen.setdefault(e.en, rendering)
+        owner.setdefault(rendering, e.en)
+    return failures
+
+
+def fact_check(
+    batch: Sequence[Entry], got: dict[str, str], names: dict[str, str], lang: str
+) -> dict[str, list[str]]:
+    """Every row of `batch` whose line in `got` fails a mechanical check, with
+    the failures named. `names` is the name map as settled before this batch;
+    the batch's own accepted names join it for the non-name rows."""
+    failures = check_names(batch, got, names)
+    merged = dict(names)
+    for e in batch:
+        if e.is_name and e.key in got and e.key not in failures:
+            merged.setdefault(e.en, got[e.key])
+    for e in batch:
+        if e.key not in got:
+            continue
+        found = check_row(e, got[e.key], merged, lang)
+        if found:
+            failures.setdefault(e.key, []).extend(found)
+    return failures
+
+
 # --------------------------------------------------------------------- sidecar --
 
 
 def merge_content(inv: Inventory, translated: dict[str, str]) -> dict[str, str]:
     """The sidecar `content`: exactly the inventory keys, existing translations
-    kept unless replaced. Orphans cannot survive — the map is built from the
+    kept unless replaced or stale. Orphans cannot survive — the map is built from the
     inventory, so `DW0181` is unreachable by construction."""
     out: dict[str, str] = {}
     for e in inv.entries:
-        value = translated.get(e.key, e.existing)
+        # A stale row this run did not redo (it was refused) is dropped, never
+        # kept: its translation says a line the English no longer says, and
+        # recording today's English as its `source` would hide that (DW0187).
+        value = translated.get(e.key, None if e.stale else e.existing)
         if value is not None:
             out[e.key] = value
     return out
@@ -787,12 +1143,13 @@ def fetch_inventory(campaign_dir: Path, lang: str, delvec: Sequence[str]) -> Inv
     return parse_inventory(json.loads(proc.stdout))
 
 
-def _iter_batches(
-    inv: Inventory, pending: Sequence[Entry], cfg: I18nConfig, lang: str
-) -> Iterable[tuple[int, list[Entry], Step]]:
-    chunks = batches(pending, cfg.batch_size)
-    for i, chunk in enumerate(chunks, start=1):
-        yield i, chunk, translate_step(inv, chunk, lang)
+def plan_batches(pending: Sequence[Entry], size: int) -> list[list[Entry]]:
+    """Request-sized batches: every `name`/`title` row first, in batches of
+    their own, so every later batch is handed the rendering of each name its
+    English mentions; then the rest in inventory order."""
+    names = [e for e in pending if e.is_name]
+    rest = [e for e in pending if not e.is_name]
+    return batches(names, size) + batches(rest, size)
 
 
 def require_keys(got: dict[str, str], chunk: Sequence[Entry], label: str) -> dict[str, str]:
@@ -807,6 +1164,19 @@ def require_keys(got: dict[str, str], chunk: Sequence[Entry], label: str) -> dic
     return {k: v for k, v in got.items() if k in wanted}
 
 
+@dataclass
+class BatchResult:
+    """One batch's answer, after the fact check: the lines accepted, and the
+    rows refused with what failed."""
+
+    accepted: dict[str, str]
+    refused: dict[str, list[str]]
+    #: The refused rows' last answer, for the report.
+    rejected_text: dict[str, str] = field(default_factory=dict)
+    #: Rows that failed the first check and passed after the corrective step.
+    fixed: list[str] = field(default_factory=list)
+
+
 def translate_batch(
     cfg: I18nConfig,
     inv: Inventory,
@@ -815,36 +1185,87 @@ def translate_batch(
     api_key: str,
     reflect: bool = False,
     label: str = "batch",
-) -> dict[str, str]:
-    """One batch, translated. With `reflect`, the three-step pass:
+    names: dict[str, str] | None = None,
+) -> BatchResult:
+    """One batch, transcreated and fact-checked. With `reflect`, the three-step
+    pass:
 
-    1. translate,
+    1. transcreate,
     2. criticise the draft against accuracy / fluency / style / terminology
-       (plus the language's translationese checklist),
+       (plus the language's writing rules and translationese checklist),
     3. revise with the critique in hand — returning unrevised lines unchanged.
 
     Step 2's reply is free text on purpose: forcing the model to *write the
     defect down* is what makes step 3 more than a second roll of the dice. That
     is why the reply shape is per step — see [`Step`].
+
+    Then the fact check ([`fact_check`]); rows that fail go back once through
+    [`fix_step`] with their failures named, and rows that still fail are refused.
     """
-    draft = require_keys(
-        parse_translations(chat_once(cfg, translate_step(inv, chunk, lang), api_key)),
+    names = inv.glossary() if names is None else names
+    got = require_keys(
+        parse_translations(chat_once(cfg, translate_step(inv, chunk, lang, names), api_key)),
         chunk,
         label,
     )
-    if not reflect:
-        return draft
-    critique = chat_once(cfg, critique_step(inv, chunk, lang, draft), api_key)
-    final = parse_translations(
-        chat_once(cfg, revise_step(inv, chunk, lang, draft, critique), api_key)
+    if reflect:
+        critique = chat_once(cfg, critique_step(inv, chunk, lang, got, names), api_key)
+        got = require_keys(
+            parse_translations(
+                chat_once(cfg, revise_step(inv, chunk, lang, got, critique, names), api_key)
+            ),
+            chunk,
+            f"{label} (improve)",
+        )
+    failures = fact_check(chunk, got, names, lang)
+    fixed: list[str] = []
+    if failures:
+        retry = [e for e in chunk if e.key in failures]
+        answer = require_keys(
+            parse_translations(
+                chat_once(cfg, fix_step(inv, chunk, lang, got, failures, names), api_key)
+            ),
+            retry,
+            f"{label} (fix)",
+        )
+        got.update(answer)
+        again = fact_check(chunk, got, names, lang)
+        fixed = sorted(k for k in failures if k not in again)
+        failures = again
+    return BatchResult(
+        accepted={k: v for k, v in got.items() if k not in failures},
+        refused=failures,
+        rejected_text={k: got[k] for k in failures},
+        fixed=fixed,
     )
-    return require_keys(final, chunk, f"{label} (improve)")
+
+
+def settle_names(names: dict[str, str], chunk: Sequence[Entry], accepted: dict[str, str]) -> None:
+    """Add a batch's accepted `name`/`title` rows to the running name map."""
+    for e in chunk:
+        if e.is_name and e.key in accepted:
+            names.setdefault(e.en, accepted[e.key])
+
+
+def report_refusals(
+    refused: dict[str, list[str]], rejected: dict[str, str], inv: Inventory, out=None
+) -> None:
+    """Name every refused row: its English, the line refused, and what failed.
+    `out` resolves at call time, so a redirected `sys.stdout` is honoured."""
+    out = sys.stdout if out is None else out
+    en = {e.key: e.en for e in inv.entries}
+    for key in sorted(refused):
+        print(f"  REFUSED {key}", file=out)
+        print(f"    en:   {en.get(key, '')}", file=out)
+        print(f"    got:  {rejected.get(key, '')}", file=out)
+        for why in refused[key]:
+            print(f"    fail: {why}", file=out)
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     p = argparse.ArgumentParser(
         prog="i18n-translate.py",
-        description="Translate a campaign's l10n sidecar with an external OpenAI-compatible LLM API "
+        description="Transcreate a campaign's l10n sidecar with an external OpenAI-compatible LLM API "
         "(generation-time only; shipped delves never call an LLM).",
     )
     p.add_argument("campaign_dir", type=Path, help="campaign directory (holds world.json)")
@@ -856,12 +1277,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     p.add_argument(
         "--reflect",
         action="store_true",
-        help="three-step pass: translate, critique the draft, revise (3x the requests)",
+        help="three-step pass: transcreate, critique the draft, revise (3x the requests)",
     )
     p.add_argument(
-        "--no-reflect", action="store_true", help="single-pass translation, overriding [i18n] reflect"
+        "--no-reflect", action="store_true", help="single pass, overriding [i18n] reflect"
     )
-    p.add_argument("--force", action="store_true", help="retranslate keys that already have a translation")
+    p.add_argument("--force", action="store_true", help="redo keys that already have a current translation")
     p.add_argument("--no-validate", action="store_true", help="skip the closing `delvec validate`")
     args = p.parse_args(argv)
 
@@ -917,22 +1338,31 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 1
 
     pending = inv.pending(force=args.force)
+    stale = sum(1 for e in pending if e.stale)
     print(
         f"{inv.campaign_id} -> {args.lang}: {len(inv.entries)} inventory keys, "
-        f"{len(pending)} to translate ({len(inv.entries) - len(pending)} already present)"
+        f"{len(pending)} to transcreate ({stale} stale), "
+        f"{len(inv.entries) - len(pending)} already present"
     )
+    try:
+        writing_rules(args.lang)
+    except TranslateError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
 
+    chunks = plan_batches(pending, cfg.batch_size)
     if args.dry_run:
-        for i, chunk, first in _iter_batches(inv, pending, cfg, args.lang):
+        names = inv.glossary(redo=pending)
+        for i, chunk in enumerate(chunks, start=1):
             print(f"\n===== batch {i} ({len(chunk)} keys) -> {cfg.endpoint} model={cfg.model} "
                   f"temperature={cfg.temperature} reflect={reflect} =====")
-            steps = [first]
+            steps = [translate_step(inv, chunk, args.lang, names)]
             if reflect:
                 sample = {e.key: "<step-1 draft, filled at call time>" for e in chunk}
-                steps.append(critique_step(inv, chunk, args.lang, sample))
+                steps.append(critique_step(inv, chunk, args.lang, sample, names))
                 steps.append(
                     revise_step(
-                        inv, chunk, args.lang, sample, "<step-2 critique, filled at call time>"
+                        inv, chunk, args.lang, sample, "<step-2 critique, filled at call time>", names
                     )
                 )
             for step in steps:
@@ -940,22 +1370,44 @@ def main(argv: Sequence[str] | None = None) -> int:
                 print(f"\n----- batch {i} step: {step.name} (reply: {shape}) -----")
                 for m in step.messages:
                     print(f"--- {m['role']} ---\n{m['content']}")
+        print(
+            "\n(names settled by earlier batches join the glossary of later ones at call "
+            "time; a row the fact check refuses is sent back once through a `fix` step)"
+        )
         print(f"\ndry run: no request sent (key would come from ${cfg.api_key_env})")
         return 0
 
     translated: dict[str, str] = {}
+    refused: dict[str, list[str]] = {}
+    rejected: dict[str, str] = {}
+    fixed: list[str] = []
+    names = inv.glossary(redo=pending)
     assert api_key is not None
     steps = "translate -> reflect -> improve" if reflect else "translate"
-    for i, chunk, _first in _iter_batches(inv, pending, cfg, args.lang):
+    for i, chunk in enumerate(chunks, start=1):
         print(f"batch {i}: {len(chunk)} keys -> {cfg.model} ({steps}) ...", flush=True)
         try:
-            got = translate_batch(
-                cfg, inv, chunk, args.lang, api_key, reflect=reflect, label=f"batch {i}"
+            result = translate_batch(
+                cfg, inv, chunk, args.lang, api_key, reflect=reflect, label=f"batch {i}",
+                names=names,
             )
         except TranslateError as exc:
             print(f"error: {exc}", file=sys.stderr)
             return 1
-        translated.update(got)
+        translated.update(result.accepted)
+        refused.update(result.refused)
+        rejected.update(result.rejected_text)
+        fixed.extend(result.fixed)
+        settle_names(names, chunk, result.accepted)
+
+    print(
+        f"fact check: {len(pending)} rows checked against {len(names)} names; "
+        f"{len(pending) - len(refused)} accepted ({len(fixed)} after one correction), "
+        f"{len(refused)} refused"
+    )
+    for key in fixed:
+        print(f"  fixed {key}")
+    report_refusals(refused, rejected, inv)
 
     path = sidecar_path(args.campaign_dir, args.lang)
     try:
@@ -963,10 +1415,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     except TranslateError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
-    print(f"wrote {path} ({len(inv.entries)} keys, {len(translated)} newly translated)")
+    print(f"wrote {path} ({len(inv.entries)} keys, {len(translated)} newly written)")
 
     if args.no_validate:
-        return 0
+        return 1 if refused else 0
     proc = run_delvec(["validate", str(args.campaign_dir)], delvec)
     sys.stdout.write(proc.stdout)
     sys.stderr.write(proc.stderr)
@@ -974,6 +1426,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         "coverage: `delvec validate` "
         + ("passed — sidecar covers the inventory exactly" if proc.returncode == 0 else "FAILED")
     )
+    if refused:
+        print(
+            f"{len(refused)} row(s) refused by the fact check are missing from the sidecar — "
+            "write them by hand (or re-run) and validate again",
+            file=sys.stderr,
+        )
+        return proc.returncode or 1
     return proc.returncode
 
 
