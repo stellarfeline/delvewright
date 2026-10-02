@@ -13,9 +13,10 @@ use crate::firework::FireworkExplosion;
 use crate::layout::StationKind;
 
 use crate::ids::{
-    ActorId, AmbushId, AnchorId, AreaId, BranchId, BranchPointId, ClassId, DialogueId, EditBatchId,
-    EndingId, FlagId, LethalVolumeId, LootId, NpcId, ObjectiveId, PoolId, PrefabId, QuestId,
-    RegionId, ShopId, ShortcutId, StakeId, StateId, TimedGateId, TrapId, TriggerId, WaveId,
+    ActorId, AmbushId, AnchorId, AreaId, AtmosphereId, BranchId, BranchPointId, ClassId,
+    DialogueId, EditBatchId, EndingId, FlagId, LethalVolumeId, LootId, NpcId, ObjectiveId, PoolId,
+    PrefabId, QuestId, RegionId, ShopId, ShortcutId, StakeId, StateId, TimedGateId, TrapId,
+    TriggerId, WaveId,
 };
 
 /// serde default helper: `true` (used by DSL v0.4 `trigger.once`).
@@ -112,6 +113,17 @@ pub struct WorldContent {
     /// `{base, …params}`; see [`Horizon`].
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub horizon: Option<Horizon>,
+    /// **The skies a place can stand under** (spec-0080). Each one is declared
+    /// once, here, beside `time`, `weather` and `horizon` — the other
+    /// statements about the sky the party stands under — and ships as a
+    /// datapack biome (`<ns>:atmosphere/<kebab>`) built from the pinned game's
+    /// environment attributes. A place carries one from the first tick
+    /// ([`Area::atmosphere`], `boxes[].atmosphere`), and a beat repaints a
+    /// volume with another ([`Verb::SetAtmosphere`]). Absent or empty: every
+    /// cell stands in the horizon's biome. One no place carries and no beat
+    /// paints is refused (`DW0930`).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub atmospheres: Vec<Atmosphere>,
     /// Playable-region boundary (DSL v0.6, spec-0013). When present, the compiler
     /// derives a region from the placed geometry and a per-second clock returns any
     /// player who leaves it to the last checkpoint. Required when `horizon` is
@@ -139,6 +151,89 @@ pub struct WorldContent {
     /// proof. Out of `1..=4` is `DW0370`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub min_players: Option<u8>,
+}
+
+/// One declared sky (spec-0080 §3.1): what the party sees and hears while it
+/// stands in a cell painted with this atmosphere's biome.
+///
+/// The biome is vanilla's one channel for sky colour, fog, clouds, sky-light
+/// tint, stars, ambient particles, music, ambience, grass, foliage and water
+/// tint, and precipitation. In the overworld the day cycle stacks over it: it
+/// multiplies the colours (a biome's value survives, darkened at night), takes
+/// the maximum of `star_brightness`, and replaces the sun, moon and star
+/// angles, the sunrise colour and the moon phase outright — which is why those
+/// five ids are refused (`DW0928`) and the sun cannot be moved from a place.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct Atmosphere {
+    /// `atmosphere/<kebab>`, unique.
+    pub id: AtmosphereId,
+    /// Environment attributes, keyed by id (`visual/sky_color`; the
+    /// `minecraft:` prefix is optional). Which ids a campaign may set, the
+    /// shape of each value and the range the pinned codec accepts are vendored
+    /// data (`crates/delvec/data/environment-attributes-1.21.11.json`), not
+    /// DSL surface: a value outside them is `DW0928`. A float attribute may
+    /// also be written in vanilla's modifier form, `{"argument": 0.85,
+    /// "modifier": "multiply"}`.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub attributes: BTreeMap<String, serde_json::Value>,
+    /// Grass, foliage, dry-foliage and water tint (`#rrggbb`), each optional.
+    /// Absent, vanilla derives grass and foliage from the climate and water is
+    /// the void biome's `#3f76e4`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tint: Option<AtmosphereTint>,
+    /// What falls here when the world's weather is rain or thunder. The
+    /// compiler derives the three vanilla fields that must agree from it
+    /// (`has_precipitation`, `temperature`, `downfall`), and it is the fact
+    /// `DW0496` reads at a cell: `none` under a rainy world means the undead
+    /// burn here.
+    pub precipitation: Precipitation,
+    /// Overrides the derived `temperature` / `downfall`, for vanilla's own
+    /// grass colormap at a named point. Must agree with `precipitation`
+    /// (`DW0930`): snow below 0.15, rain at or above it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub climate: Option<Climate>,
+}
+
+/// An atmosphere's tint (spec-0080 §3.1.3): the biome `effects` colours the
+/// pinned data writes, each `#rrggbb`.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct AtmosphereTint {
+    /// `grass_color`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub grass: Option<String>,
+    /// `foliage_color`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub foliage: Option<String>,
+    /// `dry_foliage_color`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dry_foliage: Option<String>,
+    /// `water_color`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub water: Option<String>,
+}
+
+/// What an atmosphere's biome lets fall (spec-0080 §3.1.4).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+pub enum Precipitation {
+    /// Nothing falls: `has_precipitation: false`.
+    None,
+    /// Rain falls: `has_precipitation: true`, temperature 0.5.
+    Rain,
+    /// Snow falls: `has_precipitation: true`, temperature 0.0.
+    Snow,
+}
+
+/// A biome's climate pair (spec-0080 §3.1.4).
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct Climate {
+    /// `temperature`: vanilla snows below 0.15.
+    pub temperature: f64,
+    /// `downfall`.
+    pub downfall: f64,
 }
 
 /// Who a granted item goes to (DSL v0.6, spec-0018).
@@ -671,6 +766,12 @@ pub struct Area {
     /// effect), either, or neither.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mitigation: Option<AreaMitigation>,
+    /// **The sky this place stands under from the first tick** (spec-0080
+    /// §3.2): one of `world.atmospheres[]`, painted over the area's placed
+    /// bounds at world setup. The volume is the placement's, never typed.
+    /// Absent: the horizon's biome.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub atmosphere: Option<AtmosphereId>,
 }
 
 /// Inclusive piece-count bounds for a jigsaw `prefab_pool` area.
@@ -4817,6 +4918,34 @@ pub enum Verb {
         /// the same object class [`Verb::FillRegion`] fills.
         region: StealthZone,
     },
+    /// **Repaint a volume's sky** (spec-0080 §3.3): `/fillbiome` over the
+    /// volume with the named atmosphere's biome, while the party stands in it.
+    ///
+    /// A runtime edit of the world keyed to a volume, so it is a verb of the
+    /// physical-edit family [`Verb::FillRegion`] / [`Verb::ClearRegion`] form.
+    /// Exactly one of `region` / `place` (`DW0929`): a volume inside a place is
+    /// the creator's judgement, a whole place's bounds are a derivation the
+    /// creator never types. Painting back is this verb naming the place's own
+    /// atmosphere, or `atmosphere: null` for the horizon's biome.
+    ///
+    /// A hard cut: the client blends fog over its biome-blend radius and grass
+    /// not at all, and biome cells are 4×4×4, so the painted volume is the
+    /// enclosing 4-aligned box, up to three blocks past each face.
+    SetAtmosphere {
+        /// One of `world.atmospheres[]`, or `null` for the horizon's biome.
+        #[serde(default)]
+        atmosphere: Option<AtmosphereId>,
+        /// The volume, as an anchor-centred box (`anchor ± extent`) — the same
+        /// object class [`Verb::FillRegion`] fills, resolved through the same
+        /// `Plan::zone_box`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        region: Option<StealthZone>,
+        /// A whole place: an `area/…` id, or a site-plan box's `node/…`. Its
+        /// volume is the place's own bounds, the same the place's
+        /// `atmosphere` paints at setup.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        place: Option<String>,
+    },
     /// **Opens a placed piece's contingent way** (DSL v0.12, spec-0042 §2.4): the
     /// broken flight a beat repairs, the bridge a beat lowers, the rubble a beat
     /// clears.
@@ -6176,6 +6305,7 @@ impl Verb {
             Verb::SetBlock { .. } => "set-block",
             Verb::FillRegion { .. } => "fill-region",
             Verb::ClearRegion { .. } => "clear-region",
+            Verb::SetAtmosphere { .. } => "set-atmosphere",
             Verb::OpenWay { .. } => "open-way",
             Verb::DespawnNpc { .. } => "despawn-npc",
             Verb::MoveNpc { .. } => "move-npc",
@@ -6344,6 +6474,7 @@ impl QuestEffect {
             | Verb::ClearState { .. }
             | Verb::FillRegion { .. }
             | Verb::ClearRegion { .. }
+            | Verb::SetAtmosphere { .. }
             // spec-0042's `open-way` is v0.12 — it reports via `v12_effect`.
             | Verb::OpenWay { .. }
             | Verb::GiveEffect { .. }
@@ -6929,6 +7060,12 @@ impl QuestEffect {
             Verb::FillRegion { region, .. } | Verb::ClearRegion { region, .. } => {
                 vec![("region/anchor".to_string(), &region.anchor, None)]
             }
+            // A repaint's box centre names a location, exactly as a region
+            // write's does.
+            Verb::SetAtmosphere {
+                region: Some(region),
+                ..
+            } => vec![("region/anchor".to_string(), &region.anchor, None)],
             // Both cutscene spellings (`DW0199` polices mixing them): the v0.6
             // multi-shot list, or the v0.4 single-shot fields flattened at the
             // effect's own level.

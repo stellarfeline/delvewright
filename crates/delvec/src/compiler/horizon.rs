@@ -206,7 +206,7 @@ pub fn ground_biome(campaign: &Campaign, ns: &str) -> GroundBiome {
 /// `minecraft:the_void` as the pinned jar defines it, with `has_precipitation`
 /// set to [`VOID_BIOME_PRECIPITATES`]. Temperature 0.5 never falls below the
 /// 0.15 snow line inside the build height, so what falls is rain.
-fn void_biome_definition() -> serde_json::Value {
+pub(crate) fn void_biome_definition() -> serde_json::Value {
     serde_json::json!({
         "attributes": { "minecraft:visual/sky_color": "#7ba4ff" },
         "carvers": [],
@@ -227,6 +227,316 @@ fn void_biome_definition() -> serde_json::Value {
         },
         "temperature": 0.5
     })
+}
+
+// ---------------------------------------------------------------------------
+// The biome map (spec-0080 §4): the one answer to which biome is where
+// ---------------------------------------------------------------------------
+
+/// What laid a paint in the [`BiomeMap`].
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum PaintSource {
+    /// A valley surround's band (spec-0026), outside the map by construction.
+    Band,
+    /// A place carrying an atmosphere (spec-0080 §3.2): an `area/…` or a
+    /// site-plan box's `node/…`, and the atmosphere it carries.
+    Place {
+        /// The place id.
+        place: String,
+        /// The atmosphere id.
+        atmosphere: String,
+    },
+}
+
+/// One paint over the ground biome.
+#[derive(Clone, Debug)]
+pub struct Paint {
+    /// The block box the bootstrap `fillbiome` names.
+    pub fill: ([i32; 3], [i32; 3]),
+    /// The cells it paints: the enclosing 4-aligned box.
+    pub cells: ([i32; 3], [i32; 3]),
+    /// The namespaced biome id.
+    pub biome: String,
+    /// Whether declared rain or snow falls in it.
+    pub precipitates: bool,
+    /// What laid it.
+    pub source: PaintSource,
+}
+
+impl Paint {
+    fn covers(&self, cell: [i32; 3]) -> bool {
+        (0..3).all(|i| self.cells.0[i] <= cell[i] && cell[i] <= self.cells.1[i])
+    }
+}
+
+/// **Which biome every cell stands in at the first tick**: the paints in the
+/// order the bootstrap runs them — the valley's bands, then every carried place
+/// in declaration order — over the ground biome. A later paint wins a cell, as
+/// a later `fillbiome` does.
+///
+/// A cell is answered by the 4-cell it lies in. Vanilla's own reading
+/// (`BiomeManager.getBiome`) jitters the sample point, so a block within two of
+/// a 4-cell face may read its neighbour; a block whose coordinates are all 2
+/// mod 4 always reads its own cell, which is where the runtime proofs sample.
+pub struct BiomeMap {
+    /// The paints, in bootstrap order.
+    pub paints: Vec<Paint>,
+    /// The biome every unpainted column stands in.
+    pub ground: GroundBiome,
+}
+
+impl BiomeMap {
+    /// The biome `cell` stands in at the first tick, and whether rain falls
+    /// there.
+    pub fn at(&self, cell: [i32; 3]) -> (&str, bool) {
+        self.paints
+            .iter()
+            .rev()
+            .find(|p| p.covers(cell))
+            .map_or((self.ground.id.as_str(), self.ground.precipitates), |p| {
+                (p.biome.as_str(), p.precipitates)
+            })
+    }
+
+    /// The paints a carried place laid, in bootstrap order.
+    pub fn places(&self) -> impl Iterator<Item = &Paint> {
+        self.paints
+            .iter()
+            .filter(|p| matches!(p.source, PaintSource::Place { .. }))
+    }
+}
+
+/// Whether declared rain falls in `biome`: a vanilla biome the compiler names,
+/// an atmosphere the campaign declares, or the ground biome. **The one
+/// function** every precipitation question goes through.
+pub fn precipitates(campaign: &Campaign, ns: &str, biome: &str) -> bool {
+    if let Some(p) = vanilla_precipitates(biome) {
+        return p;
+    }
+    if let Some(a) = campaign
+        .world
+        .content
+        .atmospheres
+        .iter()
+        .find(|a| crate::compiler::atmosphere::biome_id(ns, a.id.as_str()) == biome)
+    {
+        return crate::compiler::atmosphere::precipitates(a);
+    }
+    let ground = ground_biome(campaign, ns);
+    assert_eq!(
+        ground.id, biome,
+        "the compiler paints `{biome}`, whose precipitation is unrecorded"
+    );
+    ground.precipitates
+}
+
+/// The biome an atmosphere reference paints: the declared atmosphere's, or the
+/// ground biome for `None` (`atmosphere: null`).
+pub fn biome_of(plan: &crate::compiler::plan::Plan, atmosphere: Option<&str>) -> String {
+    match atmosphere {
+        Some(id) => crate::compiler::atmosphere::biome_id(&plan.namespace, id),
+        None => ground_biome(plan.campaign, &plan.namespace).id,
+    }
+}
+
+/// A place's world box: an area's placed bounds, or a site-plan box's play
+/// space — the volume its `atmosphere` paints at setup and a `set-atmosphere`
+/// with `place` repaints. Handed by the placement, typed by nobody.
+pub fn place_bounds(
+    plan: &crate::compiler::plan::Plan,
+    place: &str,
+) -> Option<([i32; 3], [i32; 3])> {
+    if let Some(a) = plan.areas.iter().find(|a| a.area_id == place) {
+        return Some(a.bounds());
+    }
+    let mut reads = delvewright_dsl::metrics::Reads::new();
+    delvewright_dsl::placed_boxes(plan.campaign, &mut reads)
+        .iter()
+        .find(|b| b.node.as_str() == place)
+        .map(|b| {
+            let (lo, hi) = b.space();
+            (
+                [lo[0] as i32, lo[1] as i32, lo[2] as i32],
+                [hi[0] as i32, hi[1] as i32, hi[2] as i32],
+            )
+        })
+}
+
+/// The block box a `set-atmosphere` repaints: its `region` through
+/// [`crate::compiler::plan::Plan::zone_box`], or its `place`'s bounds.
+pub fn repaint_volume(
+    plan: &crate::compiler::plan::Plan,
+    eff: &delvewright_dsl::QuestEffect,
+) -> Option<([i32; 3], [i32; 3])> {
+    match &eff.verb {
+        delvewright_dsl::Verb::SetAtmosphere {
+            region: Some(zone),
+            place: None,
+            ..
+        } => plan.zone_box(zone),
+        delvewright_dsl::Verb::SetAtmosphere {
+            region: None,
+            place: Some(place),
+            ..
+        } => place_bounds(plan, place),
+        _ => None,
+    }
+}
+
+/// The places of a campaign that can carry an atmosphere, in declaration
+/// order: `(place id, atmosphere)` for each area, or each site-plan box.
+pub fn carried_places(campaign: &Campaign) -> Vec<(String, Option<String>)> {
+    if let Some(sp) = &campaign.site_plan {
+        return sp
+            .content
+            .boxes
+            .iter()
+            .map(|b| {
+                (
+                    b.node.as_str().to_string(),
+                    b.atmosphere.as_ref().map(|a| a.as_str().to_string()),
+                )
+            })
+            .collect();
+    }
+    campaign
+        .world
+        .content
+        .areas
+        .iter()
+        .map(|a| {
+            (
+                a.id.as_str().to_string(),
+                a.atmosphere.as_ref().map(|a| a.as_str().to_string()),
+            )
+        })
+        .collect()
+}
+
+/// The biome map of a planned campaign (spec-0080 §4.1).
+pub fn biome_map(plan: &crate::compiler::plan::Plan) -> BiomeMap {
+    let c = plan.campaign;
+    let ns = &plan.namespace;
+    let mut paints: Vec<Paint> = Vec::new();
+    if let Some(surround) = &plan.surround {
+        for r in &surround.biome {
+            paints.push(Paint {
+                fill: (r.min, r.max),
+                cells: crate::compiler::atmosphere::painted_box(r.min, r.max),
+                biome: r.biome.to_string(),
+                precipitates: precipitates(c, ns, r.biome),
+                source: PaintSource::Band,
+            });
+        }
+    }
+    for (place, atmosphere) in carried_places(c) {
+        let Some(atmosphere) = atmosphere else {
+            continue;
+        };
+        let Some((min, max)) = place_bounds(plan, &place) else {
+            continue;
+        };
+        let biome = crate::compiler::atmosphere::biome_id(ns, &atmosphere);
+        paints.push(Paint {
+            fill: (min, max),
+            cells: crate::compiler::atmosphere::painted_box(min, max),
+            precipitates: precipitates(c, ns, &biome),
+            biome,
+            source: PaintSource::Place { place, atmosphere },
+        });
+    }
+    BiomeMap {
+        paints,
+        ground: ground_biome(c, ns),
+    }
+}
+
+/// The lowest and highest block a `fillbiome` can reach: the overworld's
+/// build height (`dimension_type/overworld.json`, `min_y` −64, `height` 384).
+pub const BUILD_MIN_Y: i32 = -64;
+/// See [`BUILD_MIN_Y`].
+pub const BUILD_MAX_Y: i32 = 319;
+
+/// The map's extent in columns: the rectangle a surround rings when the
+/// campaign states one ([`crate::compiler::plan::surround_rect`]), else the
+/// union of the placed pieces' footprints — the columns world setup
+/// force-loads. A `fillbiome` outside it reaches a chunk nothing loads, which
+/// is the same silent no-op an unloaded `place template` is.
+fn extent_columns(plan: &crate::compiler::plan::Plan) -> Vec<[i32; 4]> {
+    if let Some((r, _)) = crate::compiler::plan::surround_rect(plan.campaign, &plan.areas) {
+        return vec![[r.min_x, r.min_z, r.max_x, r.max_z]];
+    }
+    plan.areas
+        .iter()
+        .flat_map(|a| a.pieces.iter())
+        .map(|p| {
+            let (lo, hi) = p.bbox();
+            [lo[0], lo[2], hi[0], hi[2]]
+        })
+        .collect()
+}
+
+/// `DW0929`'s build arms: two carried places whose painted cells meet with
+/// different atmospheres, and a repaint volume with a cell outside the map's
+/// extent.
+pub fn check_paints(
+    plan: &crate::compiler::plan::Plan,
+    map: &BiomeMap,
+) -> Result<(), crate::compiler::failure::Failure> {
+    let code = crate::compiler::atmosphere::DW_ATMOSPHERE_PAINT;
+    let places: Vec<&Paint> = map.places().collect();
+    for (i, a) in places.iter().enumerate() {
+        for b in &places[i + 1..] {
+            let meet = (0..3).all(|k| a.cells.0[k] <= b.cells.1[k] && b.cells.0[k] <= a.cells.1[k]);
+            if meet && a.biome != b.biome {
+                let (PaintSource::Place { place: pa, .. }, PaintSource::Place { place: pb, .. }) =
+                    (&a.source, &b.source)
+                else {
+                    continue;
+                };
+                return Err(crate::compiler::failure::Failure {
+                    code,
+                    message: format!(
+                        "`{pa}` carries `{}` and `{pb}` carries `{}`, and the 4-cells they paint                          meet ({:?}..{:?} and {:?}..{:?}). A biome cell is 4×4×4, so a cell they                          share would belong to whichever `fillbiome` ran last — an order, not a                          declaration. Give the two places one atmosphere, or move them apart so                          that a whole 4-cell separates them.",
+                        a.biome, b.biome, a.cells.0, a.cells.1, b.cells.0, b.cells.1
+                    ),
+                });
+            }
+        }
+    }
+    let columns = extent_columns(plan);
+    for (_, path, eff) in crate::compiler::atmosphere::set_atmospheres(plan.campaign) {
+        let Some((min, max)) = repaint_volume(plan, eff) else {
+            continue;
+        };
+        let (lo, hi) = crate::compiler::atmosphere::painted_box(min, max);
+        let inside = |x: i32, z: i32| {
+            columns
+                .iter()
+                .any(|r| r[0] <= x && x <= r[2] && r[1] <= z && z <= r[3])
+        };
+        // Every column of the volume, sampled on a 4-block grid and at its far
+        // faces: a statement of extent is a union of rectangles, so no corner
+        // test alone answers it.
+        let xs: Vec<i32> = (min[0]..=max[0]).step_by(4).chain([max[0]]).collect();
+        let zs: Vec<i32> = (min[2]..=max[2]).step_by(4).chain([max[2]]).collect();
+        let column_out = xs.iter().any(|&x| zs.iter().any(|&z| !inside(x, z)));
+        let y_out = min[1] < BUILD_MIN_Y || max[1] > BUILD_MAX_Y;
+        if column_out || y_out {
+            return Err(crate::compiler::failure::Failure {
+                code,
+                message: format!(
+                    "the `set-atmosphere` at quests {path} repaints {min:?}..{max:?} (the 4-cells                      {lo:?}..{hi:?}), which reaches past the map's extent {}. `fillbiome` into a                      chunk nothing loads is a silent no-op, so part of the volume would keep its                      old sky with every proof green. Shrink the region's `extent`, or move its                      anchor, so the whole volume stands inside the map.",
+                    if y_out {
+                        format!("(the build height, y {BUILD_MIN_Y}..{BUILD_MAX_Y})")
+                    } else {
+                        format!("(columns {columns:?})")
+                    }
+                ),
+            });
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]

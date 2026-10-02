@@ -300,7 +300,12 @@ pub fn check_engagement(
     (b, first)
 }
 
-fn message(body: &Staged, Sky { times, weathers }: &Sky) -> String {
+fn message(
+    body: &Staged,
+    Sky {
+        times, weathers, ..
+    }: &Sky,
+) -> String {
     let Staged {
         owner,
         kind,

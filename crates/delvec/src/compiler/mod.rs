@@ -92,6 +92,7 @@ pub mod affordance;
 pub mod analyze;
 pub mod assembled;
 pub mod atmos;
+pub mod atmosphere;
 pub mod batchstate;
 pub mod blocking;
 pub mod blockout;
