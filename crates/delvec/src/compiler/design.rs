@@ -437,6 +437,33 @@ pub fn check(c: &Campaign, files: &DesignFiles) -> (Vec<Diagnostic>, DesignBindi
         .collect();
 
     let mut d = Vec::new();
+    // spec-0081 §6: a camera's celestial sky is held to the same shape rules
+    // as every other time the campaign states (`DW0931`), here because the
+    // camera record is read beside the campaign only by this gate.
+    if let Some(bytes) = &files.cameras
+        && let Ok(sheet) = crate::compiler::view::camera::parse_sheet(bytes)
+    {
+        for (i, cam) in sheet.cameras.iter().enumerate() {
+            let Some(ct) = cam.sky.and_then(|s| s.time.celestial()) else {
+                continue;
+            };
+            for m in delvewright_dsl::celestial::shape_findings(
+                ct,
+                delvewright_dsl::celestial::CelestialSite::Camera,
+                c.world.content.time,
+            ) {
+                d.push(Diagnostic::error(
+                    delvewright_dsl::diagnostic::codes::CELESTIAL_TIME,
+                    "design",
+                    format!(
+                        "{}/cameras/{i}/sky/time",
+                        crate::compiler::view::camera::CAMERAS_FILE
+                    ),
+                    format!("camera `{}`: {m}", cam.name),
+                ));
+            }
+        }
+    }
     let mut findings = Findings {
         unanswered_rows: binding.cameras.unanswered(rows),
         ..Findings::default()

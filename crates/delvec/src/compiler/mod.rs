@@ -104,6 +104,7 @@ pub mod cast;
 pub mod cellset;
 pub mod claims;
 pub mod clearance;
+pub mod clock;
 pub mod cohabit;
 pub mod combat;
 pub mod commands;
