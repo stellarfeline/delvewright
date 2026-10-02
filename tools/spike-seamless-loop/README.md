@@ -26,3 +26,4 @@ What a client **renders** between two frames is not measurable here. Spec-0086 Â
 
 - Edit `gen.py`, then `python3 gen.py`; it rewrites `dw-loop-spike/` wholesale.
 - `EULA=TRUE tools/spike-seamless-loop/run.sh [--out <path>]` re-measures (needs `harness/node_modules`; uses an ephemeral port, removes its container on exit).
+- After a run, `cargo run -q -p delvec --bin delvec -- fmt tools/spike-seamless-loop/observations.json` puts the readings in the repository's canonical JSON form (`tools/ci/check-json-canonical.py` refuses them otherwise).
