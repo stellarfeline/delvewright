@@ -329,9 +329,9 @@ deterministic, and the same function `delvec rig describe` prints from.
 ### 5.4 The strike — danger is visible, or the engine refuses it
 
 The operating rule and spec-0062 say a killing volume never reaches a cell
-that reads as safe floor. A strike is not a volume: it is a blow a player
-watches coming. What makes its danger visible is three things, and each is a
-check (`DW_ASSEMBLY_STRIKE`, one code, three shapes, build tier):
+that reads as safe floor. A strike is not a volume: it is a blow from a thing
+the player can see. What makes its danger visible is **where** it lands, and
+that is two checks (`DW_ASSEMBLY_STRIKE`, one code, two shapes, build tier):
 
 1. **It lands only where it was announced.** Every `damage-players.in` box in
    an `on_land`, grown to its keep-out (`metrics::keep_out_box(Body::PLAYER,
@@ -345,17 +345,16 @@ check (`DW_ASSEMBLY_STRIKE`, one code, three shapes, build tier):
    above its floor and no more than 3 cells above it. The thing the player
    saw come down is the thing that hurt them; a box the limb never reaches is
    refused naming the cells.
-3. **The telegraph is long enough to read.** The windup clip's duration in
-   ticks (frames × cadence) plus `hold` is at least **10 ticks** (500 ms).
-   Authored from the cited reaction figures in §9: the average reaction to a
-   single clear stimulus is about 265 ms, and an animation whose early frames
-   barely move cannot be reacted to at all; the floor is set at roughly
-   double the average, applied to the whole telegraph, and the demo level is
-   where it is felt.
 
-Not checked, stated rather than implied: how much a strike hurts. `amount` is
-the creator's; a full body is 20; a strike of 20 or more kills an unhurt
-player who stood in it. §11 asks whether that is refused, advised or allowed.
+**Not checked, by a standing ruling** [cited — spec-0016 §3: the
+un-telegraphed first-encounter kill is core design vocabulary, and *there is
+deliberately no telegraph rule*]: **when** the blow lands and **how hard**. The
+windup clip's length and `hold` are the creator's judgement, down to a windup
+of one frame and a hold of zero, with no refusal and no warning; `amount` is
+the creator's, a full body is 20, and a strike of 20 or more that kills an
+unhurt player who stood in it is legal and silent. The staging record states
+each step's windup ticks, hold and `amount` beside its caught cells, so the
+round summary can say what the level does; the engine does not judge it.
 
 ### 5.5 Clip references and the plan
 
@@ -445,8 +444,8 @@ raw readings in `observations.json`, coordinates in `site.json` written by
   the floor has to bend the knees first; a golfer making a swing has to swing
   the club back first."* [cited — Thomas & Johnston, *The Illusion of Life:
   Disney Animation* (1981), as summarised on Wikipedia, *Twelve basic
-  principles of animation*]. The windup clip is the anticipation; a strike
-  with no windup is refused by §5.4 (3).
+  principles of animation*]. The windup clip is where a creator puts the
+  anticipation; whether to give a strike one is the creator's call (§5.4).
 - **Reaction time.** *"The average human reaction time, if asked to simply
   press a button on reaction to exactly one easily-identifiable stimulus, is
   around 265 milliseconds"*, *"265 milliseconds converts to approximately 16
@@ -454,8 +453,9 @@ raw readings in `observations.json`, coordinates in `site.json` written by
   of startup or more quite consistently"*, and *"Even if the frame data for a
   move indicates it has 30 frames of startup, if the first 20 frames has very
   little movement, then it will be impossible to react"* [cited — Infil, *The
-  Complete Killer Instinct Guide*, *On Reaction Times*]. The 10-tick floor is
-  authored from these.
+  Complete Killer Instinct Guide*, *On Reaction Times*]. Recorded for the
+  creator's page as the number a readable wind-up clears; no rule rests on
+  it, by the ruling §5.4 cites.
 - **Triggers and killing volumes.** `docs/reference/reach-and-hazard-volumes.md`
   §1–§2 [cited]: a trigger is a volume the body enters; a killing volume sits
   under the playable area. §5.4 (1) is the first applied to the arming
@@ -488,8 +488,8 @@ raw readings in `observations.json`, coordinates in `site.json` written by
 - **The probes** (primary plus one edit, refused by the named code): a
   hitbox of width 7 (`DW_ASSEMBLY_HITBOX`); a landing box outside
   `while_in` (`DW_ASSEMBLY_STRIKE`, shape 1); a landing box under a corner the
-  strike clip never reaches (shape 2); a windup of 3 ticks and a hold of 0
-  (shape 3); a `play-clip` naming `fly` (`DW_ASSEMBLY_RIG`); a required
+  strike clip never reaches (shape 2); a `play-clip` naming `fly`
+  (`DW_ASSEMBLY_RIG`); a required
   `strike-assembly` whose hitbox stands over the hall's pit beyond reach
   (`DW_ASSEMBLY_REACH`).
 - **The record.** `docs/reference/compiler.md`: the class's surface rows, the
@@ -501,8 +501,8 @@ raw readings in `observations.json`, coordinates in `site.json` written by
 - **The skill.** `references/quest-capabilities.md` gains an assembly
   paragraph under *Bodies*: what it is, that it is struck in melee only, that
   a hit count is a `state`, that the strike region is declared from `delvec
-  rig describe`'s printed footprint, and the three refusals in the creator's
-  words. The harness gains `strike-assembly` in `TRIGGER_KINDS`
+  rig describe`'s printed footprint, the two strike refusals in the creator's
+  words, and that wind-up length and damage are theirs to set. The harness gains `strike-assembly` in `TRIGGER_KINDS`
   (`harness/src/critical-path.ts`) — an allowlist change the planner hands
   to the implementing round, not consumed here.
 - **The bot.** A `trigger` step of kind `strike-assembly` is performed as a
@@ -532,15 +532,9 @@ raw readings in `observations.json`, coordinates in `site.json` written by
   only and say so on the creator's page; a ranged class stands back while a
   melee class does the hitting, which is a party division spec-0018 already
   values.
-- **A strike that can kill an unhurt player in one landing** (`amount` ≥ 20)
-  — refused, advised or allowed? Recommendation: **advised** (a warning
-  naming the step), because the blow is telegraphed and lands only where the
-  limb is seen, and the souls line wants hard hits; a refusal would make the
-  heaviest attack unauthorable, an allowance would let a one-shot ship
-  silently.
-- **The telegraph floor of 10 ticks** — authored from a 265 ms average; the
-  alternative is no floor, which lets a strike land before anyone could have
-  moved.
+- **Settled, not asked**: a strike's wind-up length and a strike that kills
+  an unhurt player in one blow are the creator's, with no refusal and no
+  advisory — spec-0016 §3's ruling, applied in §5.4.
 - **`dsl_version` moves**; no ADR.
 
 ## 12. Acceptance criteria
@@ -582,13 +576,14 @@ tree's own build; the gallery builds from `prefabs/gallery-generator`.
    `STRIKE_REACH` from every populated standable cell is `DW_ASSEMBLY_REACH`;
    moving the mark one cell toward the floor greens it; the test reads the
    same constant `strand` reads.
-7. **The strike, three shapes.** A landing box one cell outside `while_in`'s
-   keep-out is refused (shape 1) and the same box one cell inside is green; a
-   landing box under a column the strike clip's last frame never reaches is
-   refused naming the cells (shape 2) and the same box under the footprint is
-   green; windup 5 ticks + hold 4 is refused and + hold 5 is green (shape 3).
-   Each over `compiler::assembly::judge`, plus one end-to-end build per
-   shape.
+7. **The strike, two shapes, and what is left alone.** A landing box one
+   cell outside `while_in`'s keep-out is refused (shape 1) and the same box
+   one cell inside is green; a landing box under a column the strike clip's
+   last frame never reaches is refused naming the cells (shape 2) and the same
+   box under the footprint is green; a step with a one-frame windup, `hold:
+   0` and `amount: 40` builds green with **no** warning row (the perturbation
+   that proves no telegraph or damage rule crept in). Each over
+   `compiler::assembly::judge`, plus one end-to-end build per shape.
 8. **The footprint arithmetic.** A unit test rotates and scales one part and
    asserts its cell set; the same function serves `rig describe` and the
    strike check (one symbol, asserted by call-graph test in the family
