@@ -908,9 +908,14 @@ impl<'a> Flow<'a> {
             // when a player is CREDITED with a body, and a body may fall, burn or
             // be cut down by another mob with nobody credited, so no kill is
             // forced and nothing inside is a producer.
+            //
+            // An assembly's `on_land` (spec-0082) is the same shape again: a blow
+            // lands only on a player who chose to stand where it reaches, so no
+            // landing is forced and nothing inside is a producer.
             crate::compiler::plan::EffectRoot::DialogueRespawn
             | crate::compiler::plan::EffectRoot::OnDeath
-            | crate::compiler::plan::EffectRoot::OnKill(_) => {}
+            | crate::compiler::plan::EffectRoot::OnKill(_)
+            | crate::compiler::plan::EffectRoot::AssemblyLand(_) => {}
         });
         // `disarm.sets_flag` is a field, not an effect list, so it has no root of
         // its own; same ambient reasoning, same gate.

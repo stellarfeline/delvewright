@@ -191,6 +191,24 @@ fn prefabs_with_trap() -> PathBuf {
             serde_json::json!({ "pos": [7, 1, 8] }),
         );
         std::fs::write(&path, serde_json::to_string_pretty(&meta).unwrap()).unwrap();
+        // …and the one-part rig the assembly probe (root 10) names.
+        let rig = dir.join("rigs").join("probe");
+        std::fs::create_dir_all(&rig).unwrap();
+        let cube = serde_json::json!({ "translation": [-0.5, 0.0, -0.5],
+            "left_rotation": [0.0, 0.0, 0.0, 1.0], "scale": [1.0, 1.0, 1.0],
+            "right_rotation": [0.0, 0.0, 0.0, 1.0] });
+        std::fs::write(
+            rig.join("rig.json"),
+            serde_json::to_string_pretty(&serde_json::json!({
+                "rig_version": 1,
+                "parts": [ { "id": "block", "kind": "block", "block": "minecraft:stone" } ],
+                "clips": { "idle": { "ticks_per_frame": 5, "loop": false, "frames": [[cube]] } },
+                "provenance": { "generator": "crates/delvec/tests/effect_root_walkers.rs",
+                                "source": "original", "spdx": "GPL-3.0-or-later" }
+            }))
+            .unwrap(),
+        )
+        .unwrap();
         dir
     })
     .clone()
@@ -286,6 +304,23 @@ fn probe_at(loaded: &LoadedCampaign, k: EffectRootKind, bundle_json: &str) -> Ca
             // on the tick it spawns.
             c.world.content.difficulty =
                 Some(serde_json::from_str("\"easy\"").expect("difficulty parses"));
+        }
+        // Root 10 (spec-0082). The smallest assembly with a strike step: the
+        // probe library's one-part rig on the probe's free anchor, armed over
+        // that anchor, whose one step's `on_land` IS the probe bundle. The
+        // bundle carries no `damage-players`, so there is no landing for
+        // `DW0938` to judge — the probe is about the root, not the blow.
+        EffectRootKind::AssemblyLand => {
+            let mut a: delvewright_dsl::Assembly = serde_json::from_str(
+                r#"{ "id": "assembly/probe", "rig": "rig/probe",
+                     "at": { "anchor": "anchor/shop" },
+                     "strikes": {
+                       "while_in": { "anchor": "anchor/shop", "extent": [1, 1, 1] },
+                       "pattern": [ { "windup": "idle", "hold": 0, "strike": "idle" } ] } }"#,
+            )
+            .expect("probe assembly parses");
+            a.strikes.as_mut().expect("declared above").pattern[0].on_land = bundle;
+            c.quests.content.assemblies.push(a);
         }
     }
     c
@@ -484,6 +519,7 @@ fn site_kind(site: &EffectSite) -> EffectRootKind {
         EffectSite::OnDeath => EffectRootKind::OnDeath,
         EffectSite::ShopOffer { .. } => EffectRootKind::ShopOffer,
         EffectSite::OnKill { .. } => EffectRootKind::OnKill,
+        EffectSite::AssemblyLand { .. } => EffectRootKind::AssemblyLand,
     }
 }
 

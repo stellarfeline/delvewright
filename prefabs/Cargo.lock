@@ -94,6 +94,7 @@ dependencies = [
 name = "gallery-prefab-gen"
 version = "0.0.0"
 dependencies = [
+ "delvewright-dsl",
  "fastnbt",
  "flate2",
  "prefab-invariants",
@@ -228,6 +229,14 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn",
+]
+
+[[package]]
+name = "rig-gen"
+version = "0.0.0"
+dependencies = [
+ "delvewright-dsl",
+ "serde_json",
 ]
 
 [[package]]

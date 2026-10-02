@@ -1,0 +1,13 @@
+{
+  "code": "DW0938",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "replace",
+      "path": "/content/assemblies/0/strikes/pattern/0/strike",
+      "value": "windup"
+    }
+  ],
+  "units": [],
+  "why": "The sentinel's strike step plays `strike`, whose last frame lays the stone hammer flat over the 3 x 3 round the plinth, and the blow lands on exactly the cells that slab covers. This edit makes the step strike with `windup` instead, a clip whose last frame holds the hammer overhead: the damage still lands on the ring round the plinth, and nothing of the statue comes down on eight of those nine cells. It declares no unit: every field involved is bound by the primary, and what the engine refuses is a blow that lands where the limb is not (shape 2 of the strike rule) — the thing the player saw come down must be the thing that hurt them. The refusal names the cells the clip never reaches and the footprint it does cover."
+}

@@ -202,6 +202,65 @@
         }
       }
     ],
+    "assemblies": [
+      {
+        "at": {
+          "anchor": "anchor/plinth"
+        },
+        "facing": "west",
+        "hitbox": {
+          "height": 2.5,
+          "offset": [
+            0,
+            1,
+            0
+          ],
+          "width": 1.5
+        },
+        "id": "assembly/sentinel",
+        "initial": "idle",
+        "rig": "rig/gallery-sentinel",
+        "strikes": {
+          "pattern": [
+            {
+              "hold": 20,
+              "on_land": [
+                {
+                  "amount": 2,
+                  "in": {
+                    "anchor": "anchor/plinth",
+                    "extent": [
+                      0,
+                      0,
+                      0
+                    ]
+                  },
+                  "type": "damage-players"
+                },
+                {
+                  "at": {
+                    "anchor": "anchor/plinth",
+                    "at": "anchor"
+                  },
+                  "sound": "minecraft:block.anvil.land",
+                  "type": "play-sound"
+                }
+              ],
+              "strike": "strike",
+              "windup": "windup"
+            }
+          ],
+          "while_in": {
+            "anchor": "anchor/plinth",
+            "extent": [
+              0,
+              0,
+              0
+            ]
+          }
+        }
+      }
+    ],
     "lethal_volumes": [
       {
         "damage_type": "fall",
@@ -468,7 +527,9 @@
             "hint": "The Factor keeps the counter on the east side of the near hall.",
             "id": "obj/reach-the-counter",
             "radius": 3,
-            "requires_flags": [],
+            "requires_flags": [
+              "flag/sentinel-sunk"
+            ],
             "requires_state": [
               {
                 "op": "at-most",
@@ -659,6 +720,10 @@
                   }
                 ]
               }
+            },
+            {
+              "assembly": "assembly/sentinel",
+              "type": "spawn-assembly"
             }
           ],
           "obj/press-the-case": [
@@ -2250,6 +2315,10 @@
                   "flag/hall-open"
                 ]
               }
+            },
+            {
+              "assembly": "assembly/sentinel",
+              "type": "despawn-assembly"
             }
           ],
           "obj/take-the-bone": [
@@ -2705,6 +2774,12 @@
         "name": "Bounty",
         "note": "What the lane's kills pay into. Party-scoped, so one kill pays the party once, whoever lands it; the bay's kill rings when the bounty is already paid.",
         "scope": "party"
+      },
+      {
+        "id": "state/sentinel-hits",
+        "initial": 0,
+        "note": "How many times the party has struck the sentinel. Three blows send it back into the floor.",
+        "scope": "party"
       }
     ],
     "timed_gates": [
@@ -3028,6 +3103,51 @@
           "on": "approach",
           "range": 3
         }
+      },
+      {
+        "effects": [
+          {
+            "amount": 1,
+            "state": "state/sentinel-hits",
+            "type": "add-state"
+          },
+          {
+            "assembly": "assembly/sentinel",
+            "clip": "retract",
+            "type": "play-clip",
+            "when": {
+              "requires_state": [
+                {
+                  "op": "at-least",
+                  "state": "state/sentinel-hits",
+                  "value": 3
+                }
+              ]
+            }
+          },
+          {
+            "flag": "flag/sentinel-sunk",
+            "type": "set-flag",
+            "when": {
+              "requires_state": [
+                {
+                  "op": "at-least",
+                  "state": "state/sentinel-hits",
+                  "value": 3
+                }
+              ]
+            }
+          }
+        ],
+        "forbids_flags": [
+          "flag/sentinel-sunk"
+        ],
+        "id": "trigger/strike-the-sentinel",
+        "on": {
+          "assembly": "assembly/sentinel",
+          "on": "strike-assembly"
+        },
+        "once": false
       }
     ],
     "waves": [

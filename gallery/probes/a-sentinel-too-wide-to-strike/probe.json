@@ -1,0 +1,13 @@
+{
+  "code": "DW0936",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "replace",
+      "path": "/content/assemblies/0/hitbox/width",
+      "value": 7
+    }
+  ],
+  "units": [],
+  "why": "The hall's `assembly/sentinel` declares a hitbox 1.5 blocks wide. This edit makes it 7. Vanilla registers an attack on a `minecraft:interaction` only within 3.3 blocks of its position toward -X and -Z (Minecraft Wiki, Interaction), so a box more than 6 wide has a slab along its west and north faces that no swing ever lands on: the player strikes the statue, sees the blow connect, and the count does not move. It declares no unit: `AssemblyHitbox.width` is bound by the primary, and what the engine refuses is a width outside what vanilla detects. The remedy the refusal names is a width over 0 and at most 6."
+}

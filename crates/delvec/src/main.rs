@@ -322,6 +322,49 @@ enum Command {
     /// GPU renders through Nucleation/wgpu: one piece's shot set, a whole
     /// library, or the missing-texture fidelity gate.
     Render(delvec::render::cli::RenderArgs),
+    /// An assembly's rig (spec-0082): the parts and clips a generator wrote
+    /// beside the prefab library, at `<prefabs>/rigs/<name>/rig.json`.
+    Rig {
+        #[command(subcommand)]
+        action: RigAction,
+    },
+}
+
+#[derive(Subcommand)]
+enum RigAction {
+    /// Check a rig and print it: the part count, every clip with its length in
+    /// ticks, and per clip the footprint of its last frame — the cells its
+    /// parts stand in relative to the assembly's mark, which is the number a
+    /// strike's landing box is declared from (`DW0938`). A rig that breaks a
+    /// rule is refused with `DW0935`, naming the field. Two runs over one rig
+    /// are byte-identical.
+    Describe {
+        /// The rig id, `rig/<name>`, resolved in the `--prefabs` library.
+        rig: String,
+        /// The facing the footprint is printed at — the assembly's `facing`.
+        #[arg(long, value_enum, default_value = "south")]
+        facing: FacingArg,
+    },
+}
+
+/// The four cardinals an assembly can face, for `delvec rig describe`.
+#[derive(Clone, Copy, clap::ValueEnum)]
+enum FacingArg {
+    South,
+    North,
+    West,
+    East,
+}
+
+impl FacingArg {
+    fn facing(self) -> delvewright_dsl::Facing {
+        match self {
+            FacingArg::South => delvewright_dsl::Facing::South,
+            FacingArg::North => delvewright_dsl::Facing::North,
+            FacingArg::West => delvewright_dsl::Facing::West,
+            FacingArg::East => delvewright_dsl::Facing::East,
+        }
+    }
 }
 
 #[derive(Subcommand)]
@@ -500,7 +543,117 @@ fn main() -> ExitCode {
         Command::Schem(args) => delvec::schem::cli::run(args.clone(), cli.json),
         Command::Harvest(args) => delvec::orchestrator::cli::run(args.clone()),
         Command::Render(args) => delvec::render::cli::run(args.clone(), cli.json),
+        Command::Rig {
+            action: RigAction::Describe { rig, facing },
+        } => run_rig_describe(rig, facing.facing(), &cli.prefabs, cli.json),
     }
+}
+
+/// `delvec rig describe` (spec-0082 §3.1): check one library rig and print
+/// what it is, from the one footprint function the strike check judges by.
+///
+/// Exit codes: `0` printed · `1` the rig is missing, malformed or breaks a rig
+/// rule (`DW0935`), or the id is not `rig/<kebab>` · `10` the library cannot
+/// be read.
+fn run_rig_describe(
+    rig: &str,
+    facing: delvewright_dsl::Facing,
+    prefabs_dir: &Path,
+    json: bool,
+) -> ExitCode {
+    use delvewright_dsl::rig::{self, RigLookup};
+    let id = delvewright_dsl::RigId(rig.to_string());
+    let refuse = |message: String| {
+        let d = Diagnostic::error(
+            delvewright_dsl::codes::ASSEMBLY_RIG,
+            "rig",
+            rig.to_string(),
+            message,
+        );
+        print_diags(std::slice::from_ref(&d), json);
+        ExitCode::from(1)
+    };
+    if !id.is_valid_syntax() {
+        return refuse(format!(
+            "`{rig}` is not a rig id — a rig is named {}",
+            id.syntax_form()
+        ));
+    }
+    let prefabs = match PrefabRegistry::load_dir(prefabs_dir) {
+        Ok(p) => p,
+        Err(e) => {
+            eprintln!(
+                "internal error: cannot read prefabs dir {}: {e}",
+                prefabs_dir.display()
+            );
+            return ExitCode::from(EXIT_INTERNAL);
+        }
+    };
+    let found = match delvewright_dsl::AnchorRegistry::rig(&prefabs, &id) {
+        RigLookup::Found(r) => r,
+        RigLookup::Missing | RigLookup::Unknown => {
+            return refuse(format!(
+                "the library at {} holds no `{}/{}/{}`",
+                prefabs_dir.display(),
+                rig::RIGS_DIR,
+                delvewright_dsl::local_id(rig),
+                rig::RIG_FILE
+            ));
+        }
+        RigLookup::Malformed(e) => {
+            return refuse(format!(
+                "`{}` does not parse as a rig document: {e}",
+                rig::RIG_FILE
+            ));
+        }
+    };
+    let issues = rig::check(found);
+    if !issues.is_empty() {
+        let diags: Vec<Diagnostic> = issues
+            .iter()
+            .map(|i| {
+                Diagnostic::error(
+                    delvewright_dsl::codes::ASSEMBLY_RIG,
+                    "rig",
+                    format!("{rig}{}", i.field),
+                    format!(
+                        "rig `{rig}` breaks a rig rule at `{}`: {}",
+                        i.field, i.message
+                    ),
+                )
+            })
+            .collect();
+        print_diags(&diags, json);
+        return ExitCode::from(1);
+    }
+    if json {
+        let clips: Vec<serde_json::Value> = found
+            .clips
+            .iter()
+            .map(|(name, c)| {
+                serde_json::json!({
+                    "clip": name,
+                    "frames": c.frames.len(),
+                    "ticks_per_frame": c.ticks_per_frame,
+                    "length_ticks": c.length_ticks(),
+                    "loop": c.looping,
+                    "last_frame_footprint": rig::last_frame_footprint(c, facing),
+                })
+            })
+            .collect();
+        println!(
+            "{}",
+            serde_json::json!({
+                "rig": rig,
+                "facing": facing.token(),
+                "parts": found.parts.len(),
+                "clips": clips,
+            })
+        );
+    } else {
+        print!("{}", rig::describe(rig, found, facing));
+    }
+    ExitCode::SUCCESS
 }
 
 /// `delvec calibrate` (spec-0019 §4): the write-back half of the rehearsal loop.
