@@ -2185,3 +2185,101 @@ fn dw0721_removing_a_restated_sky_builds() {
         );
     }
 }
+
+/// A hello-world campaign whose world states `time` and whose first objective
+/// cuts to each of `cuts`.
+fn celestial_campaign(tag: &str, time: serde_json::Value, cuts: &[serde_json::Value]) -> PathBuf {
+    let camp = tmp(&format!("camp-{tag}"));
+    common::copy_dir_all(&common::hello_world_dir(), &camp);
+    common::patch_file(&camp.join("world.json"), |v| {
+        v["content"]["time"] = time;
+    });
+    if !cuts.is_empty() {
+        common::patch_file(&camp.join("quests.json"), |v| {
+            let q = &mut v["content"]["quests"][0];
+            let id = q["objectives"][0]["id"].as_str().unwrap().to_string();
+            let bundle = q["on_objective_complete"][&id]
+                .as_array_mut()
+                .expect("hello-world fires an effect on its first objective");
+            for t in cuts {
+                bundle.push(serde_json::json!({ "type": "set-time", "time": t }));
+            }
+        });
+    }
+    camp
+}
+
+/// `delvec validate`, as an exit code and everything it said.
+fn validate_at(camp: &Path, prefabs: &Path) -> (i32, String) {
+    let r = delvec(&[
+        "validate",
+        camp.to_str().unwrap(),
+        "--prefabs",
+        prefabs.to_str().unwrap(),
+    ]);
+    (r.status.code().unwrap_or(-1), log(&r))
+}
+
+/// `DW0931`, every move its four shapes name (spec-0081 §6): **NAME ONE
+/// BODY**, **REMOVE `phase`** where the moon is below, **STATE `phase`** where
+/// the world's moon is up, and **REMOVE `phase`** where a cut restates the
+/// world's. Each red meets the refusal and the move's edit validates green.
+#[test]
+fn dw0931_every_named_move_validates() {
+    let dir = common::prefabs_dir();
+    let cases: [(
+        &str,
+        serde_json::Value,
+        Vec<serde_json::Value>,
+        &str,
+        serde_json::Value,
+        Vec<serde_json::Value>,
+    ); 4] = [
+        (
+            "two-bodies",
+            serde_json::json!({"sun": "high", "moon": "below"}),
+            vec![],
+            "NAME ONE BODY",
+            serde_json::json!({"sun": "high"}),
+            vec![],
+        ),
+        (
+            "phase-under-noon",
+            serde_json::json!({"sun": "high", "phase": "new-moon"}),
+            vec![],
+            "REMOVE `phase` from this time",
+            serde_json::json!({"sun": "high"}),
+            vec![],
+        ),
+        (
+            "unnamed-moon",
+            serde_json::json!({"sun": "just-set"}),
+            vec![],
+            "STATE `phase`",
+            serde_json::json!({"sun": "just-set", "phase": "first-quarter"}),
+            vec![],
+        ),
+        (
+            "restated-phase",
+            serde_json::json!({"moon": "high", "phase": "new-moon"}),
+            vec![serde_json::json!({"moon": "rising", "phase": "new-moon"})],
+            "REMOVE `phase` from this time",
+            serde_json::json!({"moon": "high", "phase": "new-moon"}),
+            vec![serde_json::json!({"moon": "rising"})],
+        ),
+    ];
+    for (tag, red_time, red_cuts, says, green_time, green_cuts) in cases {
+        let red = celestial_campaign(&format!("dw0931-{tag}-red"), red_time, &red_cuts);
+        let (code, before) = validate_at(&red, &dir);
+        assert_eq!(code, 1, "{tag} is refused:\n{before}");
+        assert!(before.contains("DW0931"), "{tag}:\n{before}");
+        assert!(
+            before.contains(says),
+            "{tag}: the message names the move:\n{before}"
+        );
+        let green = celestial_campaign(&format!("dw0931-{tag}-green"), green_time, &green_cuts);
+        let (code, after) = validate_at(&green, &dir);
+        assert_eq!(code, 0, "{tag}: the move validates:\n{after}");
+        assert!(!after.contains("DW0931"), "{tag}:\n{after}");
+    }
+}

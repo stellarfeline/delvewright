@@ -75,7 +75,12 @@ a row that belongs to a later beat.
 
 **A delve declared at `night` or `midnight` renders dark, and that is the
 frame.** The sun is below the horizon at those hours, exactly as it is in the
-game. Declared-dark areas with a `night-vision` mitigation are the one thing the
+game. A celestial `time` renders under the sun its position names. **No frame
+shows the moon**: the pinned renderer draws none, so a night frame says nothing
+about the phase, and every `sky:` line whose moon is up says *moon not drawn by
+the renderer*. A time is a keyword or a body, a position and a phase, and a
+keyword night is a full moon; the phase the brief asked for is confirmed in the
+game, never on a render. Declared-dark areas with a `night-vision` mitigation are the one thing the
 scene emitter makes legible, and it marks those frames as emulations; everything
 else you read as the player will see it. Never raise a budget, an exposure or an
 hour to make a picture come out.

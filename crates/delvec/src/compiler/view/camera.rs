@@ -218,7 +218,7 @@ impl CameraSky {
         } else {
             serde_json::from_value(serde_json::Value::from(time)).map_err(|e| e.to_string())
         };
-        let time = parsed.map_err(|e| format!("`{time}` is not a time: {e}. {shape}"))?;
+        let time = parsed.map_err(|e| format!("`{time}` is not a time of day: {e}. {shape}"))?;
         let weather: WorldWeather = serde_json::from_value(serde_json::Value::from(weather.trim()))
             .map_err(|_| format!("`{weather}` is not a weather: {shape}"))?;
         Ok(CameraSky { time, weather })

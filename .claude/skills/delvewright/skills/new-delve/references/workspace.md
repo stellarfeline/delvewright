@@ -174,9 +174,22 @@ campaign, where the plan is the placement authority and declaring both is
 ## The hour the delve is played at
 
 **`time` and `weather` are the delve's hour, and the engine will not choose it
-for you.** `time` takes `day`, `noon`, `dusk`, `night`, `midnight` or `dawn`
-(`sunrise` is accepted as a synonym of `dawn`); `weather` takes `clear`, `rain`
-or `thunder`. Neither has a default: "this delve is played at noon" is a design
+for you.** `time` is a keyword or a body, a position and a phase. A keyword —
+`day`, `noon`, `dusk`, `night`, `midnight` or `dawn` (`sunrise` is accepted as a
+synonym of `dawn`) — is vanilla's hour on day 0, so **a keyword night is a full
+moon**. A designer's sentence about the sky is written as the body it is about,
+where it stands, and the moon's phase: *a new moon just above the horizon* is
+`{"moon": "just-risen", "phase": "new-moon"}`, *the sun just set* is
+`{"sun": "just-set", "phase": …}`. The positions are `rising`, `just-risen`,
+`high`, `setting`, `just-set` and `below`; the phases are the pinned game's eight
+names, kebab-cased (`full-moon`, `waning-gibbous`, `third-quarter`,
+`waning-crescent`, `new-moon`, `waxing-crescent`, `first-quarter`,
+`waxing-gibbous`). On `world.time`, `phase` is required wherever the moon is up
+and refused wherever it is down (`DW0931` names which); a `set-time`, a design
+row or a camera that leaves it out takes the world's. The engine computes the
+tick count, day included, and every build prints a `clock:` line per stated time
+saying where the sun and moon stand and which phase shows — read it. `weather`
+takes `clear`, `rain` or `thunder`. Neither has a default: "this delve is played at noon" is a design
 decision, not a mechanism, so a `world.json` that omits either is `DW0100` like
 any other missing required field. `DW0874`'s stub recipe is "its envelope, and a
 `content` carrying only the fields its schema requires", so a stubbed
