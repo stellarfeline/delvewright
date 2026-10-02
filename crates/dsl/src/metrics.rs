@@ -357,6 +357,16 @@ pub const JUMP_AIRBORNE_TICKS: f64 = 12.0;
 /// Player walking speed on the flat, in blocks per second (not sprinting).
 pub const WALK_SPEED_BLOCKS_PER_SECOND: f64 = 4.317;
 
+/// Player sprinting speed on the flat, in blocks per second [cited — Minecraft
+/// Wiki, *Sprinting*: "around 5.612 meters/second, which is 30 percent faster
+/// than the normal walking speed of around 4.317 m/s"]. The reach a `darkness`
+/// grant owes the blind-reach proof is taken at this speed, because darkness,
+/// unlike blindness, does not forbid the sprint (spec-0085 §6.2).
+pub const SPRINT_SPEED_BLOCKS_PER_SECOND: f64 = 5.612;
+
+/// The wiki page [`SPRINT_SPEED_BLOCKS_PER_SECOND`] is read from.
+pub const SPRINT_SPEED_PAGE: &str = "Sprinting";
+
 /// Server ticks per second.
 pub const TICKS_PER_SECOND: f64 = 20.0;
 
@@ -1119,6 +1129,18 @@ impl Metrics {
                     "A walking player covers 4.317 blocks a second on the flat; \
                      sprinting is faster and is not the pacing basis, because a route \
                      nobody has learnt is walked.",
+                ),
+            ),
+            (
+                "sprint.speed",
+                player(
+                    MetricValue::Number(SPRINT_SPEED_BLOCKS_PER_SECOND),
+                    "blocks/second",
+                    Provenance::VanillaRule,
+                    "A sprinting player covers 5.612 blocks a second on the flat (the \
+                     wiki's Sprinting page). Not a pacing basis; it is how far a body can \
+                     carry itself under a darkness grant, which leaves the sprint, in the \
+                     blind-reach proof.",
                 ),
             ),
             (

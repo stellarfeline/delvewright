@@ -6156,10 +6156,50 @@ fn fill_region_command(region: ([i32; 3], [i32; 3]), block: &str, only: Option<&
 /// The block a cleared region is written with. Named because three verbs share it.
 const AIR: &str = "minecraft:air";
 
+/// **The audience one effect is emitted under** (spec-0085 §3.2): the
+/// envelope's `audience` where it states one, else the bundle's own.
+///
+/// `actor` is `@s`, so it maps to [`Audience::Solo`]; `party` is `@a`, which
+/// keeps the bundle's acting player where it has one ([`Audience::Party`]) and
+/// stays [`Audience::Scheduled`] where it has none. An `actor` where the bundle
+/// has no acting player is refused at validation (`DW0503`) and emitted under
+/// the bundle's own audience rather than as an `@s` with nobody behind it.
+///
+/// Byte impact: none for an effect that states no `audience`.
+fn effect_audience(eff: &QuestEffect, aud: Audience) -> Audience {
+    use delvewright_dsl::EffectAudience;
+    match eff.audience {
+        None => aud,
+        Some(EffectAudience::Actor) if aud.has_actor() => Audience::Solo,
+        Some(EffectAudience::Actor) => aud,
+        Some(EffectAudience::Party) if aud.has_actor() => Audience::Party,
+        Some(EffectAudience::Party) => Audience::Scheduled,
+    }
+}
+
 /// Emit a quest effect's commands into `body`, addressing `aud`.
+///
+/// The envelope's `audience` and `in` (spec-0085 §3.2) are resolved here, once,
+/// for every verb the emitter addresses to players: `who` is the audience's
+/// selector narrowed by the `in` box. `damage-players` takes the box apart from
+/// the selector, because its own filter carries the cutscene guard beside it.
 fn emit_quest_effect(plan: &Plan, eff: &QuestEffect, aud: Audience, body: &mut Vec<String>) {
     let ns = &plan.namespace;
-    let who = aud.selector();
+    let aud = effect_audience(eff, aud);
+    let narrowed: String = match eff.within.as_ref() {
+        Some(zone)
+            if eff.addresses_players() && !matches!(eff.verb, Verb::DamagePlayers { .. }) =>
+        {
+            // An unresolved box is `DW0142` at validation; emitting a selector with
+            // a blank box would be an invalid command rather than a diagnosis.
+            match effect_selector(plan, aud.selector(), Some(zone)) {
+                Some(sel) => sel,
+                None => return,
+            }
+        }
+        _ => aud.selector().to_string(),
+    };
+    let who = narrowed.as_str();
     match &eff.verb {
         Verb::OpenGate { anchor, .. } => {
             // Find the gate anchor across areas (first match).
@@ -6227,8 +6267,15 @@ fn emit_quest_effect(plan: &Plan, eff: &QuestEffect, aud: Audience, body: &mut V
             // `carrier: "one"` in a scheduler-only bundle has no acting player and
             // is rejected at validate time (`DW0357`), so `has_actor` can only be
             // false here for the party-wide default.
+            let one;
             let target = if eff.gives_to_one() && aud.has_actor() {
-                "@s"
+                // The one player, narrowed by the same box when the envelope
+                // draws one.
+                one = match effect_selector(plan, "@s", eff.within.as_ref()) {
+                    Some(sel) => sel,
+                    None => return,
+                };
+                one.as_str()
             } else {
                 who
             };
@@ -6378,11 +6425,17 @@ fn emit_quest_effect(plan: &Plan, eff: &QuestEffect, aud: Audience, body: &mut V
         }
         Verb::DamagePlayers {
             amount,
-            within,
             damage_type,
             ..
         } => {
-            emit_damage_players(plan, *amount, within.as_ref(), *damage_type, who, body);
+            emit_damage_players(
+                plan,
+                *amount,
+                eff.within.as_ref(),
+                *damage_type,
+                aud.selector(),
+                body,
+            );
         }
         // --- DSL v0.29 (spec-0068): a firework is an effect ---
         Verb::Firework {
@@ -6391,6 +6444,16 @@ fn emit_quest_effect(plan: &Plan, eff: &QuestEffect, aud: Audience, body: &mut V
             explosions,
         } => {
             emit_firework(plan, at, *flight, explosions, body);
+        }
+        // --- spec-0085: a particle is an effect ---
+        Verb::Particle {
+            particle,
+            at,
+            count,
+            spread,
+            speed,
+        } => {
+            emit_particle(plan, particle, at, *count, *spread, *speed, who, body);
         }
         Verb::SetCheckpoint { anchor, on_respawn } => {
             emit_set_checkpoint(plan, anchor.as_str(), on_respawn, body);
@@ -6471,7 +6534,10 @@ fn emit_quest_effect(plan: &Plan, eff: &QuestEffect, aud: Audience, body: &mut V
             ));
         }
         Verb::Sequence { .. } => {
-            body.push(format!("function {ns}:{}", sequence_fn(plan, eff)));
+            // The timeline keeps its actor (spec-0085 §3.2): keyed by the
+            // audience it is started under, so the tag form (whose start
+            // function tags `@s`) and the party form never share a body.
+            body.push(format!("function {ns}:{}", sequence_fn(plan, eff, aud)));
         }
         Verb::SpawnNpc { npc, .. } => {
             body.push(format!("function {ns}:{}", spawn_npc_fn(npc.as_str())));
@@ -6488,18 +6554,14 @@ fn emit_quest_effect(plan: &Plan, eff: &QuestEffect, aud: Audience, body: &mut V
         // wants a beat to spare an observer, the `in` filter and the effect gate
         // both say so explicitly.
         Verb::GiveEffect { .. } => {
-            if let Some((effect, seconds, amplifier, hide, within)) = eff.give_effect() {
-                let Some(sel) = effect_selector(plan, who, within) else {
-                    return;
-                };
-                body.push(effect_give_command(&sel, effect, seconds, amplifier, hide));
+            // `who` already carries the envelope's `in` box.
+            if let Some((effect, seconds, amplifier, hide, _)) = eff.give_effect() {
+                body.push(effect_give_command(who, effect, seconds, amplifier, hide));
             }
         }
         Verb::ClearEffect { .. } => {
-            if let Some((effect, within)) = eff.clear_effect() {
-                let Some(sel) = effect_selector(plan, who, within) else {
-                    return;
-                };
+            if let Some((effect, _)) = eff.clear_effect() {
+                let sel = who;
                 // Vanilla's own two spellings: with an id, or bare for "all".
                 body.push(match effect {
                     Some(id) => format!("effect clear {sel} {id}"),
@@ -6617,6 +6679,25 @@ fn emit_play_sound(
     } else {
         format!("minecraft:{sound}")
     };
+    // spec-0085 §4.4: a sound in the listener's own frame. The listener inside the
+    // loop is `@s`, never the audience selector — `<who>` there would play each
+    // sound once per listener at every listener's behind.
+    if let Some(SoundAt::Players { offset }) = at
+        && *offset != [0, 0, 0]
+    {
+        let mut cmd = format!(
+            "execute as {who} at @s rotated ~ 0 positioned ^{} ^{} ^{} run playsound {sound} master @s ~ ~ ~",
+            offset[0], offset[1], offset[2]
+        );
+        if volume.is_some() || pitch.is_some() {
+            cmd.push_str(&format!(" {}", volume.unwrap_or(1.0)));
+            if let Some(pt) = pitch {
+                cmd.push_str(&format!(" {pt}"));
+            }
+        }
+        body.push(cmd);
+        return;
+    }
     let pos = match at {
         Some(SoundAt::Anchor { anchor, offset }) => match anchor_point_any(plan, anchor.as_str()) {
             Some(p) => {
@@ -6649,6 +6730,62 @@ fn emit_play_sound(
         cmd = format!("execute as {who} at @s run {cmd}");
     }
     body.push(cmd);
+}
+
+/// Emit a `particle` effect (spec-0085 §4.3): one vanilla `particle` command,
+/// always in `force` mode, its viewers the effect's audience.
+///
+/// At `players` the particle is spawned at each addressed player — `execute as
+/// <who> at @s run particle <id> ~ ~ ~ … force @s`, the viewer being the player
+/// it is spawned at, so a full-screen `elder_guardian` is drawn for that player
+/// alone. At a mark it is spawned at the cell's horizontal centre on the mark's
+/// plane and shown to `<who>`.
+///
+/// `force` is written, never chosen: in `normal` mode the game sends a particle
+/// 32 blocks and the client may drop it at the Minimal particle setting; in
+/// `force` mode it is sent 512 blocks and drawn at every setting [cited —
+/// *Commands/particle*]. An authored beat is meant to be seen.
+///
+/// An unresolved mark emits nothing and is `DW0360` long before here.
+#[allow(clippy::too_many_arguments)]
+fn emit_particle(
+    plan: &Plan,
+    particle: &str,
+    at: &delvewright_dsl::ParticleAt,
+    count: Option<u32>,
+    spread: Option<[f64; 3]>,
+    speed: Option<f64>,
+    who: &str,
+    body: &mut Vec<String>,
+) {
+    use delvewright_dsl::ParticleAt;
+    let id = if particle.contains(':') {
+        particle.to_string()
+    } else {
+        format!("minecraft:{particle}")
+    };
+    let [dx, dy, dz] = spread.unwrap_or([0.0, 0.0, 0.0]);
+    let tail = format!(
+        "{dx} {dy} {dz} {} {} force",
+        speed.unwrap_or(0.0),
+        count.unwrap_or(1)
+    );
+    match at {
+        ParticleAt::Players(_) => {
+            body.push(format!(
+                "execute as {who} at @s run particle {id} ~ ~ ~ {tail} @s"
+            ));
+        }
+        ParticleAt::Mark(mark) => {
+            let Some(anchor) = anchor_point_any(plan, mark.anchor.as_str()) else {
+                return; // unresolved anchor (`DW0360` owns it)
+            };
+            let c = mark.cell(anchor);
+            let x = f64::from(c[0]) + 0.5;
+            let z = f64::from(c[2]) + 0.5;
+            body.push(format!("particle {id} {x} {} {z} {tail} {who}", c[1]));
+        }
+    }
 }
 
 /// Emit a `firework` effect (DSL v0.29, spec-0068): one `summon` of a
@@ -10987,27 +11124,28 @@ fn moveactor_bare(actor: &str, to: &delvewright_dsl::Mark, gate_key: &str) -> St
 ///
 /// Determinism (ADR-0006): the root walk's order is contractual and the deep walk
 /// is declaration order; no hashing, no address, no wall clock.
-fn sequence_sites(c: &delvewright_dsl::Campaign) -> Vec<(&Verb, String)> {
-    let mut out: Vec<(&Verb, String)> = Vec::new();
+fn sequence_sites(c: &delvewright_dsl::Campaign) -> Vec<(&Verb, Audience, String)> {
+    let mut out: Vec<(&Verb, Audience, String)> = Vec::new();
     plan::for_each_effect_root(c, &mut |site, effs| {
         let root = fn_safe(site.key.strip_prefix("fx.").unwrap_or(&site.key));
-        let mut n = 0usize;
-        let mut here: Vec<&QuestEffect> = Vec::new();
+        let aud = site_audience(&site.root);
+        let mut here: Vec<(&QuestEffect, Audience)> = Vec::new();
         for e in effs {
-            push_effect_deep(e, &mut here);
+            push_effect_deep_audience(e, aud, &mut here);
         }
-        for e in here {
+        let mut n = 0usize;
+        for (e, a) in here {
             if !matches!(e.verb, Verb::Sequence { .. }) {
                 continue;
             }
-            if out.iter().any(|(v, _)| **v == e.verb) {
+            if out.iter().any(|(v, x, _)| **v == e.verb && *x == a) {
                 continue;
             }
-            out.push((&e.verb, format!("seq_{root}_{n}")));
+            out.push((&e.verb, a, format!("seq_{root}_{n}")));
             n += 1;
         }
     });
-    let mut names: Vec<&str> = out.iter().map(|(_, n)| n.as_str()).collect();
+    let mut names: Vec<&str> = out.iter().map(|(_, _, n)| n.as_str()).collect();
     names.sort_unstable();
     let before = names.len();
     names.dedup();
@@ -11019,6 +11157,57 @@ fn sequence_sites(c: &delvewright_dsl::Campaign) -> Vec<(&Verb, String)> {
     out
 }
 
+/// **The audience a root's bundle is emitted under**, per site: a trigger's own
+/// declaration ([`trigger_audience`]), else the root class's ([`root_audience`]).
+fn site_audience(root: &plan::EffectRoot<'_>) -> Audience {
+    use delvewright_dsl::EffectRootKind as K;
+    use plan::EffectRoot as R;
+    match root {
+        R::Trigger(t) => trigger_audience(t),
+        R::ObjectiveComplete { .. } => root_audience(K::ObjectiveComplete),
+        R::QuestComplete(_) => root_audience(K::QuestComplete),
+        R::TrapPayload(_) => root_audience(K::TrapPayload),
+        R::DialogueRespawn => root_audience(K::DialogueRespawn),
+        R::ShortcutUnlock => root_audience(K::ShortcutUnlock),
+        R::OnDeath => root_audience(K::OnDeath),
+        R::ShopOffer => root_audience(K::ShopOffer),
+        R::OnKill(_) => root_audience(K::OnKill),
+    }
+}
+
+/// Every effect under `e` with the audience the emitter lowers it under —
+/// [`push_effect_deep`] carrying the command source down each nesting site by
+/// the DSL's own [`delvewright_dsl::NestedDispatch`].
+///
+/// One nesting site is lowered twice, and both readings are pushed: a
+/// `bonfire`'s `on_rest` runs under [`Audience::Scheduled`] in
+/// `bonfire_rest_<i>` and under [`Audience::Solo`] in the respawn path's
+/// `cp_on_respawn_<i>` (see `emit_bonfire_functions`), so a timeline inside it
+/// is called from both and owes a body for both.
+fn push_effect_deep_audience<'a>(
+    e: &'a QuestEffect,
+    aud: Audience,
+    out: &mut Vec<(&'a QuestEffect, Audience)>,
+) {
+    use delvewright_dsl::NestedDispatch;
+    out.push((e, aud));
+    for (list, how) in e.nested_effect_dispatch() {
+        let inner: &[Audience] = match how {
+            NestedDispatch::Inherit => &[aud],
+            NestedDispatch::Player => &[Audience::Solo],
+            NestedDispatch::Server if matches!(e.verb, Verb::Bonfire { .. }) => {
+                &[Audience::Scheduled, Audience::Solo]
+            }
+            NestedDispatch::Server => &[Audience::Scheduled],
+        };
+        for &a in inner {
+            for x in list {
+                push_effect_deep_audience(x, a, out);
+            }
+        }
+    }
+}
+
 /// A campaign id fragment as a datapack function-name segment: ids are
 /// `[a-z0-9]+(-[a-z0-9]+)*` and a root key joins them with `.`, so both
 /// separators become `_` and nothing else can appear.
@@ -11026,22 +11215,29 @@ fn fn_safe(s: &str) -> String {
     s.replace(['-', '.', '/'], "_")
 }
 
-/// The generated start-function name for one `sequence` effect: its positional
-/// name from [`sequence_sites`].
+/// The generated start-function name for one `sequence` effect started under
+/// `aud`: its positional name from [`sequence_sites`].
 ///
 /// # Panics
 ///
-/// If the timeline is not one the campaign declares. Emission synthesizes effects
-/// (the scheduled-probe `set-flag`, a chrome `narrate`) but never a timeline, and
-/// a synthesized one would emit a call to a function `sequence_fns` never
-/// generated — the dangling-call failure `DW0497` exists for, asserted here at
-/// the seam that would create it rather than found downstream.
-fn sequence_fn(plan: &Plan, eff: &QuestEffect) -> String {
+/// If the timeline is not one the campaign declares under that audience.
+/// Emission synthesizes effects (the scheduled-probe `set-flag`, a chrome
+/// `narrate`) but never a timeline, and a synthesized one would emit a call to a
+/// function `sequence_fns` never generated — the dangling-call failure `DW0497`
+/// exists for, asserted here at the seam that would create it rather than found
+/// downstream.
+fn sequence_fn(plan: &Plan, eff: &QuestEffect, aud: Audience) -> String {
     sequence_sites(plan.campaign)
         .into_iter()
-        .find(|(v, _)| **v == eff.verb)
-        .map(|(_, name)| name)
+        .find(|(v, a, _)| **v == eff.verb && *a == aud)
+        .map(|(_, _, name)| name)
         .expect("every `sequence` emission lowers is one the campaign declares")
+}
+
+/// **The tag a timeline carries its actor by** (spec-0085 §3.2): `dw_` and the
+/// timeline's own function name, so two timelines never share one.
+fn sequence_tag(base: &str) -> String {
+    format!("dw_{base}")
 }
 
 /// The content key naming a spec-0022 trap-payload verb's generated function.
@@ -11339,37 +11535,76 @@ fn actor_fns(
 
 /// `sequence` timeline functions (spec-0014): one start function that schedules each
 /// step's effect-group at its exact `at_ticks` offset, plus one function per step.
-/// Named by position ([`sequence_sites`]) — one function per declared timeline, so
-/// a reader of the pack can see which bundle each came from. Empty for a campaign
-/// with no sequences.
+/// Named by position ([`sequence_sites`]) — one function per declared timeline and
+/// audience, so a reader of the pack can see which bundle each came from. Empty for
+/// a campaign with no sequences.
+///
+/// **A timeline keeps its actor** (spec-0085 §3.2). Started where there is an
+/// acting player ([`Audience::Party`] or [`Audience::Solo`]), the start function
+/// tags `@s` with [`sequence_tag`]; every step is dispatched `execute as
+/// @a[tag=…] at @s run function …`, so inside it `@s` is the actor — standing
+/// where the actor stands, so a listener-relative `~ ~ ~` resolves at them — and
+/// its body is emitted under the audience the timeline was started under; the
+/// last step removes the tag. `schedule` is replace-mode, so a second start
+/// before the first ends re-times the chain for every tagged player: the
+/// timeline stays global, with a tag on it. Started from the server command
+/// source ([`Audience::Scheduled`]) there is nobody to carry, and the timeline
+/// is emitted exactly as before: steps called and scheduled directly, bodies
+/// addressing the party.
 fn sequence_fns(plan: &Plan) -> Vec<(String, String)> {
     let ns = &plan.namespace;
     let mut out = Vec::new();
-    for (verb, base) in sequence_sites(plan.campaign) {
+    for (verb, aud, base) in sequence_sites(plan.campaign) {
         let Verb::Sequence { steps } = verb else {
             unreachable!("sequence_sites yields only `sequence` timelines");
         };
+        let carries = aud.has_actor();
+        let tag = sequence_tag(&base);
+        let last = steps
+            .iter()
+            .enumerate()
+            .max_by_key(|(i, s)| (s.at_ticks, *i))
+            .map(|(i, _)| i);
         let mut start: Vec<String> = Vec::new();
+        if carries {
+            start.push(format!("tag @s add {tag}"));
+        }
         for (i, step) in steps.iter().enumerate() {
+            // The step itself, or — carrying an actor — the dispatch that runs it
+            // as every tagged player.
+            let target = if carries {
+                format!("{base}_{i}_as")
+            } else {
+                format!("{base}_{i}")
+            };
             if step.at_ticks == 0 {
-                start.push(format!("function {ns}:{base}_{i}"));
+                start.push(format!("function {ns}:{target}"));
             } else {
                 start.push(format!(
-                    "schedule function {ns}:{base}_{i} {}t",
+                    "schedule function {ns}:{target} {}t",
                     step.at_ticks
                 ));
             }
         }
         out.push((base.clone(), lines(&start)));
         for (i, step) in steps.iter().enumerate() {
-            // EVERY step is emitted server-source-safe, not just the scheduled
-            // ones: a timeline whose `at_ticks: 0` step behaved differently from
-            // its `at_ticks: 20` step would be a trap, and the start function is
-            // itself reachable from a scheduled bundle (a `sequence` nested in an
-            // `on_arrive`). Uniformity is what makes a `seq_…` a *global*
-            // effect everywhere (see `effect_is_player_scoped`): its per-player
-            // beats address the party, never one acting player.
-            let b = emit_effect_bundle(plan, &step.effects, Audience::Scheduled);
+            if carries {
+                // The scheduler re-invokes with the server source; this puts the
+                // actor back as `@s`, at the actor.
+                out.push((
+                    format!("{base}_{i}_as"),
+                    lines(&[format!(
+                        "execute as @a[tag={tag}] at @s run function {ns}:{base}_{i}"
+                    )]),
+                ));
+            }
+            // EVERY step under one audience, not just the scheduled ones: a
+            // timeline whose `at_ticks: 0` step behaved differently from its
+            // `at_ticks: 20` step would be a trap.
+            let mut b = emit_effect_bundle(plan, &step.effects, aud);
+            if carries && Some(i) == last {
+                b.push(format!("tag @s remove {tag}"));
+            }
             out.push((format!("{base}_{i}"), lines(&b)));
         }
     }
@@ -13015,8 +13250,13 @@ const NIGHT_VISION_SECONDS: u32 = 12;
 /// Vanilla's night-vision wind-down, in **seconds**. `GameRenderer` ramps the
 /// brightness down once the remaining duration drops below 200 ticks, so an
 /// effect that has less than this left is *already* visibly flickering even
-/// though it has not expired.
-const NIGHT_VISION_FLICKER_SECONDS: u32 = 10;
+/// though it has not expired. Read from the one sight table
+/// ([`delvewright_dsl::perception::SIGHT`]), which `DW0944` reads too.
+fn night_vision_flicker_seconds() -> u32 {
+    delvewright_dsl::perception::sight_wind_down_ticks("minecraft:night_vision")
+        .expect("night vision is a sight effect")
+        .div_ceil(20)
+}
 
 /// The lease every `effect give` hands out, in seconds.
 ///
@@ -13069,8 +13309,9 @@ fn night_vision_seconds(plan: &Plan) -> u32 {
         .max()
         .unwrap_or(0);
     let longest_camera = (longest_camera_ticks.max(0) as u32).div_ceil(20);
-    NIGHT_VISION_SECONDS
-        .max(longest_camera + NIGHT_VISION_FLICKER_SECONDS + NIGHT_VISION_PERIOD_TICKS.div_ceil(20))
+    NIGHT_VISION_SECONDS.max(
+        longest_camera + night_vision_flicker_seconds() + NIGHT_VISION_PERIOD_TICKS.div_ceil(20),
+    )
 }
 
 /// The v0.6 night-vision mitigation clock: for every area declaring

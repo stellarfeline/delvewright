@@ -14003,7 +14003,6 @@ mod tests {
             beat(vec![
                 Verb::DamagePlayers {
                     amount: 40,
-                    within: None,
                     damage_type: None,
                 }
                 .into(),

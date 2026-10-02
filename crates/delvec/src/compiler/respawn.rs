@@ -850,6 +850,8 @@ mod tests {
                 ..Default::default()
             }),
             happening: None,
+            audience: None,
+            within: None,
             verb: Verb::MoveNpc {
                 npc: NpcId("npc/keeper".into()),
                 to: delvewright_dsl::Mark::at(AnchorId("anchor/door".into())),

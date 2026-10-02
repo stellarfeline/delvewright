@@ -1258,11 +1258,10 @@ fn collect_unconditional_damage(
         match &e.verb {
             Verb::DamagePlayers {
                 amount,
-                within,
                 damage_type,
                 ..
             } => {
-                if within.is_some() {
+                if e.within.is_some() {
                     continue;
                 }
                 let id = damage_type
