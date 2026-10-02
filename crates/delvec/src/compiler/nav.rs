@@ -15659,8 +15659,14 @@ mod leave_tests {
     fn a_drop_past_the_survivable_fall_is_fatal_and_one_inside_it_is_not() {
         let deepest = unarmoured_survivable_fall_blocks() as i32;
         let ledge_over = |depth: i32| {
+            // A one-cell ledge walled on three sides, open to the east.
             let mut solid = BTreeSet::new();
             solid.insert([0, 0, 0]);
+            for wall in [[-1, 0], [0, -1], [0, 1]] {
+                for y in 1..=2 {
+                    solid.insert([wall[0], y, wall[1]]);
+                }
+            }
             solid.insert([1, -depth, 0]);
             World::from_solid_cells(solid)
         };
