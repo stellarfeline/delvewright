@@ -5828,9 +5828,11 @@ fn route_with_links(
                 b.carried += 1;
                 taken.insert(format!("{}{:?}", l.trigger_id, l.to));
                 takes.performed.insert(next.src_step, (li, stand));
+                // The next leg starts here; whether a leg is a ride is read off
+                // its END, so this start marks nothing.
                 cur = VisitedPos {
                     pos: l.to,
-                    transport_before: true,
+                    transport_before: false,
                     talk_to: false,
                     src_step: next.src_step,
                     by_link: true,
@@ -6624,7 +6626,15 @@ fn verify_bodies_can_leave(
             .filter(|c| w.is_standable(*c))
             .collect();
         let (reached, trapped, preds) = w.cells_a_body_cannot_leave(&seeds, returned, exits);
-        let link_exits = reached.iter().filter(|c| exits.contains(*c)).count();
+        // A stand cell SERVES as a way out where, without the links, a body
+        // standing in it could not get back — counted against the same closure
+        // judged with no link at all, and only when this configuration has one.
+        let link_exits = if exits.is_empty() {
+            0
+        } else {
+            let (_, stuck, _) = w.cells_a_body_cannot_leave(&seeds, returned, &BTreeSet::new());
+            stuck.iter().filter(|c| exits.contains(*c)).count()
+        };
         let afloat = reached.iter().filter(|c| w.is_water_surface(**c)).count();
         // A shortcut is opened from its far side by whoever stands at its lever,
         // and the completability model holds it shut. A pocket whose own reach

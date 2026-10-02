@@ -20,20 +20,34 @@ use std::process::Command;
 
 use serde_json::{Value, json};
 
-/// The synthesised strait: `21 x 6 x 9`, two sealed rooms side by side with a
-/// solid wall at `x = 8` and nothing — no door, no gap — between them.
-const SIZE: [i32; 3] = [21, 6, 9];
+/// The synthesised strait: `21 x 8 x 9`, two sealed rooms side by side with a
+/// solid wall at `x = 8` and nothing — no door, no gap — between them. The
+/// floor is three blocks thick (y 0..2), so a body stands at y 3, and a hole can
+/// be cut into it.
+const SIZE: [i32; 3] = [21, 8, 9];
 
-/// Every non-air cell of the strait.
-fn strait_cells() -> Vec<([i32; 3], &'static str)> {
+/// The one-cell pit [`strait_cells`] cuts when asked: two blocks deep at local
+/// `(17, 1..=2, 2)`, in the east room beside the far shore and off its route. A
+/// body that walks into it lands at y 1 and cannot climb the two blocks out.
+const PIT: [i32; 3] = [17, 1, 2];
+
+/// Every non-air cell of the strait, with or without [`PIT`].
+fn strait_cells(pit: bool) -> Vec<([i32; 3], &'static str)> {
     let [sx, sy, sz] = SIZE;
     let mut cells = Vec::new();
     for x in 0..sx {
         for y in 0..sy {
             for z in 0..sz {
-                let shell = x == 0 || x == sx - 1 || y == 0 || y == sy - 1 || z == 0 || z == sz - 1;
+                let shell = x == 0 || x == sx - 1 || y <= 2 || y == sy - 1 || z == 0 || z == sz - 1;
                 let wall = x == 8;
+                let hole = pit && x == PIT[0] && z == PIT[2] && (1..=2).contains(&y);
+                if hole {
+                    continue;
+                }
                 if y == sy - 1 && z % 3 == 1 && x % 3 == 1 && x != 8 {
+                    cells.push(([x, y, z], "minecraft:glowstone"));
+                } else if pit && x == PIT[0] && z == PIT[2] && y == 0 {
+                    // The pit's floor, lit: the light gate is not what this is about.
                     cells.push(([x, y, z], "minecraft:glowstone"));
                 } else if shell || wall {
                     cells.push(([x, y, z], "minecraft:stone"));
@@ -51,31 +65,31 @@ fn strait_cells() -> Vec<([i32; 3], &'static str)> {
 /// holds no stand cell. The far landing is nine blocks east of the stand cell,
 /// past the harness's observability floor (`2 x TRANSPORT_NEAR`). `far-air`
 /// hangs one block over the east floor, and `far-deck` is the cell under it.
+/// `pit` is [`PIT`]'s floor cell and `rescue` a lever on the floor beside it.
 fn strait_anchors() -> Value {
     json!({
-        "spawn": { "pos": [1, 1, 1], "facing": "south", "role": "entry" },
-        "anchor/boat": { "pos": [3, 1, 4] },
-        "anchor/tiller": { "pos": [7, 1, 4] },
-        "anchor/far-landing": { "pos": [13, 1, 4] },
-        "anchor/far-shore": { "pos": [18, 1, 6] },
-        "anchor/far-tiller": { "pos": [9, 1, 4] },
-        "anchor/far-air": { "pos": [15, 2, 4] },
-        "anchor/far-deck": { "pos": [15, 1, 4] },
+        "spawn": { "pos": [1, 3, 1], "facing": "south", "role": "entry" },
+        "anchor/boat": { "pos": [3, 3, 4] },
+        "anchor/tiller": { "pos": [7, 3, 4] },
+        "anchor/far-landing": { "pos": [13, 3, 4] },
+        "anchor/far-shore": { "pos": [18, 3, 6] },
+        "anchor/far-tiller": { "pos": [9, 3, 4] },
+        "anchor/far-air": { "pos": [15, 4, 4] },
+        "anchor/far-deck": { "pos": [15, 3, 4] },
+        "anchor/pit": { "pos": PIT },
+        "anchor/rescue": { "pos": [17, 3, 1] },
     })
 }
 
 /// A private prefab library: the pinned one, with every piece declaring its own
-/// outside, plus the strait.
+/// outside, plus the strait (`prefab/ferry-strait`) and the strait with its pit
+/// cut (`prefab/ferry-strait-pit`).
 fn ferry_prefabs() -> PathBuf {
     let dir = common::shown_prefabs_dir("ferry");
-    common::write_single_prefab(
-        &dir,
-        "ferry-strait",
-        SIZE,
-        &strait_cells(),
-        strait_anchors(),
-    );
-    common::declare_shown_faces(&dir, "ferry-strait");
+    for (id, pit) in [("ferry-strait", false), ("ferry-strait-pit", true)] {
+        common::write_single_prefab(&dir, id, SIZE, &strait_cells(pit), strait_anchors());
+        common::declare_shown_faces(&dir, id);
+    }
     dir
 }
 
@@ -480,4 +494,302 @@ fn the_binding_line_partitions_every_leg() {
         t["links"].as_u64().unwrap() + t["gathers"].as_u64().unwrap(),
         t["declared"].as_u64().unwrap()
     );
+}
+
+// ---------------------------------------------------------------------------
+// Criterion 12 — the graph draws the carry.
+// ---------------------------------------------------------------------------
+
+/// The ferry's layout graph: the west shore and the east shore, the hull a
+/// station of the west and the far landing a station of the east, joined by
+/// one `carry` edge gated on the flag boarding sets — and by nothing else.
+fn ferry_graph(edges: Value) -> Value {
+    json!({
+        "campaign_id": "ferry", "dsl_version": "0.35.0", "stage": "layout-graph",
+        "content": {
+            "nodes": [
+                {"id": "node/west-shore", "intent": "jetty", "size_class": "room",
+                 "stations": [{"anchor": "anchor/boat", "kind": "point"}]},
+                {"id": "node/east-shore", "intent": "landing", "size_class": "room",
+                 "stations": [{"anchor": "anchor/far-landing", "kind": "point"}]}
+            ],
+            "edges": edges,
+            "entry": "node/west-shore",
+            "goal": "node/east-shore",
+            "critical_path": ["node/west-shore", "node/east-shore"],
+            "beats": [
+                {"quest": "quest/cross", "objective": "obj/board", "node": "node/west-shore"},
+                {"quest": "quest/cross", "objective": "obj/far-shore", "node": "node/east-shore"}
+            ]
+        }
+    })
+}
+
+fn carry_edge() -> Value {
+    json!({"class": "carry", "id": "edge/strait", "a": "node/west-shore",
+           "b": "node/east-shore", "one_way": "a-to-b",
+           "gating": {"flags": ["flag/boarded"]}})
+}
+
+fn with_graph(who: &str, graph: Value, patch: impl FnOnce(&mut Value)) -> PathBuf {
+    let dir = campaign(who, patch);
+    std::fs::write(
+        dir.join("layout-graph.json"),
+        serde_json::to_string_pretty(&graph).unwrap(),
+    )
+    .unwrap();
+    dir
+}
+
+#[test]
+fn a_carry_edge_the_link_realises_is_green() {
+    let run = build(&with_graph(
+        "graph-green",
+        ferry_graph(json!([carry_edge()])),
+        |_| {},
+    ));
+    run.green();
+    assert!(run.stderr.contains("1 carry)"), "{}", run.stderr);
+}
+
+#[test]
+fn a_link_no_carry_edge_joins_is_dw0934_naming_both_places() {
+    // The only edge left joins the shores by a walk the quests never take —
+    // the link's direction has no carry.
+    let run = build(&with_graph(
+        "graph-no-edge",
+        ferry_graph(json!([{"class": "vision", "id": "edge/across",
+                            "a": "node/west-shore", "b": "node/east-shore"}])),
+        |_| {},
+    ));
+    let line = run.refused("DW0934");
+    assert!(
+        line.contains("node/west-shore") && line.contains("node/east-shore"),
+        "{line}"
+    );
+}
+
+#[test]
+fn a_carry_edge_no_link_realises_is_dw0934_naming_both_places() {
+    // Both directions owed; only west → east is a link.
+    let mut edge = carry_edge();
+    edge.as_object_mut().unwrap().remove("one_way");
+    let run = build(&with_graph(
+        "graph-no-link",
+        ferry_graph(json!([edge])),
+        |_| {},
+    ));
+    let line = run.refused("DW0934");
+    assert!(
+        line.contains("from `node/east-shore` to `node/west-shore`"),
+        "{line}"
+    );
+}
+
+#[test]
+fn the_schema_exports_carry_with_one_way_and_a_required_gating() {
+    let o = Command::new(env!("CARGO_BIN_EXE_delvec"))
+        .args(["schema", "--stage", "all"])
+        .output()
+        .expect("delvec runs");
+    assert!(o.status.success());
+    let text = String::from_utf8_lossy(&o.stdout);
+    let schema: Value = serde_json::from_str(&text).unwrap();
+    // Find the `carry` variant wherever the export put the edge union.
+    fn find(v: &Value) -> Option<&Value> {
+        match v {
+            Value::Object(m) => {
+                let is_carry = m
+                    .get("properties")
+                    .and_then(|p| p.get("class"))
+                    .and_then(|c| c.get("const").or_else(|| c.get("enum")))
+                    .is_some_and(|c| c == "carry" || c == &json!(["carry"]));
+                if is_carry {
+                    return Some(v);
+                }
+                m.values().find_map(find)
+            }
+            Value::Array(a) => a.iter().find_map(find),
+            _ => None,
+        }
+    }
+    let carry = find(&schema).expect("the schema exports a `carry` edge");
+    assert!(carry["properties"].get("one_way").is_some(), "{carry}");
+    let required: Vec<&str> = carry["required"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|r| r.as_str().unwrap())
+        .collect();
+    assert!(required.contains(&"gating"), "{carry}");
+    assert!(!required.contains(&"one_way"), "{carry}");
+}
+
+// ---------------------------------------------------------------------------
+// Criterion 5 — one enumeration.
+// ---------------------------------------------------------------------------
+
+/// Every `.rs` file under `crates/delvec/src/`, with its text.
+fn sources() -> Vec<(PathBuf, String)> {
+    fn walk(dir: &Path, out: &mut Vec<(PathBuf, String)>) {
+        let mut entries: Vec<_> = std::fs::read_dir(dir)
+            .unwrap()
+            .map(|e| e.unwrap().path())
+            .collect();
+        entries.sort();
+        for p in entries {
+            if p.is_dir() {
+                walk(&p, out);
+            } else if p.extension().is_some_and(|e| e == "rs") {
+                let text = std::fs::read_to_string(&p).unwrap();
+                out.push((p, text));
+            }
+        }
+    }
+    let mut out = Vec::new();
+    walk(&common::repo_root().join("crates/delvec/src"), &mut out);
+    out
+}
+
+#[test]
+fn the_seal_lifting_list_is_gone_and_one_function_marks_a_ride() {
+    let all = sources();
+    assert!(all.len() > 50, "the walk read {} file(s)", all.len());
+    for (p, text) in &all {
+        for gone in ["transit_teleports", "is_teleport_source"] {
+            assert!(!text.contains(gone), "{} still names `{gone}`", p.display());
+        }
+    }
+    // Every place a visited position is MARKED as arrived at by a ride — a
+    // `transport_before:` field set to anything but `false` — is inside
+    // `positions_of`, in the non-test half of `nav.rs`.
+    let (_, nav) = all
+        .iter()
+        .find(|(p, _)| p.ends_with("compiler/nav.rs"))
+        .expect("nav.rs");
+    let body = nav.split("#[cfg(test)]\nmod tests").next().unwrap();
+    let start = body.find("\nfn positions_of(").expect("positions_of");
+    let end = start + body[start..].find("\n}\n").expect("its end");
+    let mut marks = 0usize;
+    for (i, _) in body.match_indices("transport_before:") {
+        let rest = &body[i + "transport_before:".len()..];
+        let value = rest.trim_start().split([',', '\n']).next().unwrap().trim();
+        if value == "false" || value == "bool" {
+            continue;
+        }
+        marks += 1;
+        assert!(
+            (start..end).contains(&i),
+            "a ride is marked outside `positions_of`: `transport_before: {value}`"
+        );
+    }
+    assert!(
+        marks >= 2,
+        "positions_of marks a crossing and a link ({marks} found)"
+    );
+    // The four readers all enumerate through it.
+    for reader in [
+        "pub fn check_critical_path_bound(",
+        "pub fn check_branch_path(",
+        "pub fn branch_path_routes(",
+        "fn critical_positions(",
+    ] {
+        let at = body.find(reader).unwrap_or_else(|| panic!("{reader}"));
+        let f = &body[at..at + body[at..].find("\n}\n").unwrap()];
+        assert!(
+            f.contains("positions_of(") || f.contains("critical_positions("),
+            "{reader} does not read positions_of"
+        );
+    }
+}
+
+#[test]
+fn the_waypoints_skip_the_carried_leg_and_export_its_two_walked_halves() {
+    let run = build(&campaign("waypoints", |_| {}));
+    run.green();
+    let step = carrying_step(&run.json("critical-path.json")).unwrap();
+    let (stand, to) = (step["stand"].clone(), step["transport"].clone());
+    let wp = run.json("validation/critical-path-waypoints.json");
+    let legs = wp["legs"].as_array().unwrap();
+    assert!(
+        !legs.iter().any(|l| l["from"] == stand && l["to"] == to),
+        "the carried leg is exported as a walk: {legs:?}"
+    );
+    assert!(
+        legs.iter().any(|l| l["to"] == stand),
+        "no leg walks into the stand cell"
+    );
+    assert!(
+        legs.iter().any(|l| l["from"] == to),
+        "no leg walks on from the landing"
+    );
+    // Perturbed so the link is never taken — the far shore moved into the
+    // west room, where a walk reaches it — the export walks every leg and the
+    // carried pair is gone with the link.
+    let dir = campaign("waypoints-walked", |q| {
+        q["content"]["quests"][0]["objectives"][1]["anchor"] = json!("spawn");
+    });
+    let walked = build(&dir);
+    walked.green();
+    assert!(carrying_step(&walked.json("critical-path.json")).is_none());
+    let wp = walked.json("validation/critical-path-waypoints.json");
+    assert!(
+        !wp["legs"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|l| l["from"] == to)
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Criterion 8 — a way out.
+// ---------------------------------------------------------------------------
+
+/// The strait with its pit cut, and a rescue lever beside the pit whose
+/// repeatable `teleport` lifts whoever stands in the pit onto the far landing,
+/// gated on `gate`.
+fn pit_campaign(who: &str, gate: &str) -> PathBuf {
+    let gate = gate.to_string();
+    let dir =
+        campaign(who, move |q| {
+            q["content"]["triggers"].as_array_mut().unwrap().push(json!({
+            "id": "trigger/rescue", "at": "anchor/rescue", "on": {"on": "use"}, "once": false,
+            "requires_flags": [gate],
+            "effects": [{"type": "teleport",
+                         "from": {"anchor": "anchor/pit", "extent": [0, 0, 0]},
+                         "to": {"anchor": "anchor/far-landing"}}]
+        }));
+            q["content"]["quests"][0]["on_objective_complete"]["obj/far-shore"] = json!([{
+                "type": "set-flag", "flag": "flag/landed",
+                "happening": {"verb": "gains", "subject": "anchor/far-shore",
+                              "text": "The far shore is reached."}
+            }]);
+        });
+    common::patch_file(&dir.join("world.json"), |w| {
+        w["content"]["areas"][0]["prefab"] = json!("prefab/ferry-strait-pit");
+    });
+    dir
+}
+
+#[test]
+fn a_pocket_whose_only_exit_is_a_live_links_stand_cell_is_not_a_trap() {
+    // Live while the far shore is next: `flag/boarded` is held from the
+    // boarding on.
+    let run = build(&pit_campaign("pit-live", "flag/boarded"));
+    run.green();
+    let line = run
+        .stderr
+        .lines()
+        .find(|l| l.starts_with("DW0921 binding:"))
+        .expect("the leave proof states its binding");
+    assert!(
+        line.ends_with("1 link stand cell(s) served as a way out"),
+        "{line}"
+    );
+    // Shut in that configuration — `flag/landed` is set only once the far
+    // shore is reached — the pit is a place a body gets into and not out of.
+    let run = build(&pit_campaign("pit-shut", "flag/landed"));
+    let line = run.refused("DW0921");
+    assert!(line.contains("[17, "), "{line}");
 }
