@@ -566,6 +566,17 @@ pub mod codes {
     /// Prescription: keep one `display`, give the datum a `name`, or declare it
     /// `player`-scoped; a `party` purse keeps its announcement and stands nowhere.
     pub const STATE_DISPLAY_UNDRAWABLE: DwCode = DwCode::new("DW0919", ExitTier::Build);
+    /// (spec-0082 §5.1, §5.5) **An assembly's rig cannot be emitted as
+    /// declared.** The library holds no `rigs/<name>/rig.json` for the
+    /// assembly's `rig`, or the file does not parse, or it breaks a structural
+    /// rule (no part, an unknown block, a clip with no frame, a frame short a
+    /// part, a cadence outside `1..=20`, a non-finite transform, a zero scale);
+    /// or an `initial`, a strike step's `windup`/`strike`, or a `play-clip`
+    /// names a clip the rig lacks — the message lists the rig's clips.
+    /// Validation-tier (exit 1). Prescription: regenerate the rig with its
+    /// generator, or name a clip the rig declares (`delvec rig describe`
+    /// prints them).
+    pub const ASSEMBLY_RIG: DwCode = DwCode::new("DW0935", ExitTier::Build);
     /// A `collect` `dropped_by` is not backed by the wave it names:
     /// the wave declares no `{item}` drop of this objective's item, the count
     /// asks for more copies than the wave's mobs can yield, or the objective

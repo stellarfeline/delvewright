@@ -586,6 +586,50 @@ pub fn build_with_warnings(
         ))
         .with_extra_solid(&relight.extra_solid);
 
+    // ---- spec-0082: the assemblies (`DW0936`–`DW0938`) ----
+    //
+    // Asked over the world the other proofs read, before any route is derived:
+    // a hitbox, its reach and where a blow lands are facts about cells, and
+    // nothing below changes them. The binding and the cost the host meets are
+    // printed on every build, zeroes included, before the verdict is taken.
+    {
+        let entry = campaign_spawn(plan);
+        let open = world.without_exclusions();
+        let population = crate::compiler::lethal::walked_population(plan, &open, entry);
+        let roots = crate::compiler::lethal::population_roots(plan, entry);
+        let returned = playable_region(plan).map(|r| (r.min, r.max));
+        // Where the party can walk while each performed trigger is the next
+        // beat — `DW0924`'s reading: a gate a later beat opens is shut.
+        let reaches = |trigger: &str, lo: [f64; 3], hi: [f64; 3]| {
+            let step = plan.critical_path.iter().position(
+                |s| matches!(s, Step::Trigger { trigger_id, .. } if trigger_id == trigger),
+            );
+            let config = step.and_then(|s| crate::compiler::nav::world_while_next(plan, &world, s));
+            let ground = config.as_ref().unwrap_or(&world);
+            ground
+                .reachable_walkable(&roots)
+                .into_iter()
+                .filter(|p| !crate::compiler::nav::returned_from(returned, *p))
+                .any(|p| crate::compiler::strand::eye_reaches_box(ground, p, lo, hi))
+        };
+        let (binding, findings) =
+            crate::compiler::assembly::check(plan, &|c| population.contains(&c), &reaches);
+        eprintln!("{}", binding.line());
+        eprintln!("{}", binding.cost_line());
+        if let Some((first, rest)) = findings.split_first() {
+            for extra in rest {
+                eprintln!("{} [error] build: {}", extra.code, extra.message);
+            }
+            return Err(BuildFailure::Diagnostic {
+                code: first.code,
+                message: first.message.clone(),
+            });
+        }
+        if binding.declared > 0 {
+            put_json(&mut out, "validation/assembly.json", &binding.to_json());
+        }
+    }
+
     // ---- the stage-5 blockout battery (spec-0049 §5.3) ----
     //
     // **Bound here, and here is the only door.** This is the one function that
@@ -4266,10 +4310,23 @@ fn emit_functions(
     // spec-0073: refresh every health bar whose fight has a live body, hide the
     // rest. Empty for a campaign that declares none → byte-identical.
     tick.extend(crate::compiler::healthbar::tick_lines(ns, &health_bars));
+    // spec-0082: every live assembly's clip driver and strike machine. Empty
+    // for a campaign that declares none → byte-identical.
+    tick.extend(crate::compiler::assembly::tick_lines(plan));
     tick.extend(named_state_tick(plan));
     tick.extend(economy_tick(plan));
     fns.push(("tick".to_string(), lines(&tick)));
     fns.extend(crate::compiler::healthbar::functions(ns, &health_bars));
+    // spec-0082: the assemblies' bodies, clips, drivers and landings. A landing
+    // is an ordinary effect bundle, lowered here under its root's audience.
+    fns.extend(crate::compiler::assembly::functions(plan, &|e, body| {
+        emit_gated_effect(
+            plan,
+            e,
+            root_audience(delvewright_dsl::EffectRootKind::AssemblyLand),
+            body,
+        )
+    }));
 
     // --- v0.6 checkpoint respawn dispatch (spec-0012) ---
     fns.extend(emit_checkpoint_functions(plan));
@@ -5812,6 +5869,23 @@ fn check_effect_anchors(plan: &Plan) -> Result<(), BuildFailure> {
             );
         }
     });
+    // spec-0082: an assembly's mark and its arming region are anchor-bearing
+    // declarations like every other, and an unresolved one would place nothing
+    // and judge nothing.
+    for (i, a) in c.quests.content.assemblies.iter().enumerate() {
+        refs.push((
+            format!("/content/assemblies/{i}/at/anchor"),
+            "assembly",
+            a.at.anchor.as_str().to_string(),
+        ));
+        if let Some(st) = &a.strikes {
+            refs.push((
+                format!("/content/assemblies/{i}/strikes/while_in/anchor"),
+                "assembly",
+                st.while_in.anchor.as_str().to_string(),
+            ));
+        }
+    }
     for (path, verb, anchor) in refs {
         if anchor_point_any(plan, &anchor).is_some() {
             continue;
@@ -5949,6 +6023,9 @@ fn root_audience(kind: delvewright_dsl::EffectRootKind) -> Audience {
         K::OnKill => Audience::Solo,
         // Polled on the tick with no executor.
         K::Trigger | K::TrapPayload | K::ShortcutUnlock => Audience::Scheduled,
+        // A blow lands from the per-assembly strike machine on the tick, with
+        // no executor (spec-0082 §4.3).
+        K::AssemblyLand => Audience::Scheduled,
     }
 }
 
@@ -6475,6 +6552,11 @@ fn emit_quest_effect(plan: &Plan, eff: &QuestEffect, aud: Audience, body: &mut V
         }
         Verb::SpawnNpc { npc, .. } => {
             body.push(format!("function {ns}:{}", spawn_npc_fn(npc.as_str())));
+        }
+        // --- spec-0082 assembly verbs: a call into the assembly's own
+        // functions (`compiler::assembly`). ---
+        Verb::SpawnAssembly { .. } | Verb::DespawnAssembly { .. } | Verb::PlayClip { .. } => {
+            body.extend(crate::compiler::assembly::verb_lines(plan, &eff.verb).unwrap_or_default());
         }
         // --- DSL v0.10 status effects (spec-0031) -----------------------------
         // Vanilla `effect give` / `effect clear`, through the SAME formatter the
@@ -10861,8 +10943,23 @@ fn trigger_is_click(t: &delvewright_dsl::EnvTrigger) -> bool {
     use delvewright_dsl::TriggerOn;
     matches!(
         t.on,
-        TriggerOn::Strike | TriggerOn::Use | TriggerOn::StrikeNpc { .. }
+        TriggerOn::Strike
+            | TriggerOn::Use
+            | TriggerOn::StrikeNpc { .. }
+            | TriggerOn::StrikeAssembly { .. }
     )
+}
+
+/// The tag of the `minecraft:interaction` a click trigger's record is read off:
+/// the trigger's own `dw_trig_<id>` (worn by the box it summons, or added to the
+/// NPC hitbox or press body it rides), or — for a `strike-assembly`
+/// (spec-0082) — the assembly's own hitbox, which the trigger rides without
+/// tagging it, since the assembly summons and kills that box itself.
+fn trigger_carrier_tag(t: &delvewright_dsl::EnvTrigger) -> String {
+    match t.on.assembly_target() {
+        Some(a) => crate::compiler::assembly::hit_tag(&plan::safe_local(a.as_str())),
+        None => format!("dw_trig_{}", plan::safe_local(t.id.as_str())),
+    }
 }
 
 /// The NBT record a click trigger reads off its interaction entity: a left-click
@@ -11387,7 +11484,7 @@ fn sequence_fns(plan: &Plan) -> Vec<(String, String)> {
 ///
 /// Added by the cutscene `start` alongside `gamemode spectator`, removed by the
 /// `end`/restore, so the state has exactly the cinematic's lifetime.
-const CUTSCENE_TAG: &str = "dw_cutscene";
+pub(crate) const CUTSCENE_TAG: &str = "dw_cutscene";
 
 /// Datapack predicate id (under the campaign namespace) matching a player whose
 /// sneak key is HELD this tick — the vanilla `minecraft:player` `input`
@@ -11907,7 +12004,10 @@ fn env_trigger_tick(plan: &Plan, chrome: &delvewright_dsl::Chrome) -> Vec<String
             })
             .collect();
         match &t.on {
-            TriggerOn::Strike | TriggerOn::Use | TriggerOn::StrikeNpc { .. } => {
+            TriggerOn::Strike
+            | TriggerOn::Use
+            | TriggerOn::StrikeNpc { .. }
+            | TriggerOn::StrikeAssembly { .. } => {
                 // The two click streams are separate NBT fields on ONE
                 // `minecraft:interaction`: a left-click writes `attack`, a
                 // right-click writes `interaction`. That is what lets a
@@ -11925,12 +12025,18 @@ fn env_trigger_tick(plan: &Plan, chrome: &delvewright_dsl::Chrome) -> Vec<String
                 } else {
                     format!("{} ", flag_guard.trim_start())
                 };
+                // The carrier: the trigger's own tag, or — for a
+                // `strike-assembly` — the assembly's hitbox (spec-0082 §4.3).
+                let carrier = trigger_carrier_tag(t);
                 out.push(format!(
-                    "execute {once_guard}{forbid_guard}if entity @e[tag=dw_trig_{id},nbt={{{rec}:{{}}}}] {flag_cond}run function {ns}:trig_{id}"
+                    "execute {once_guard}{forbid_guard}if entity @e[tag={carrier},nbt={{{rec}:{{}}}}] {flag_cond}run function {ns}:trig_{id}"
                 ));
-                clears.push(format!(
-                    "execute as @e[tag=dw_trig_{id}] run data remove entity @s {rec}"
-                ));
+                let clear = format!("execute as @e[tag={carrier}] run data remove entity @s {rec}");
+                // Several triggers may ride one assembly's hitbox; it is
+                // cleared once, after every one of them has been offered it.
+                if !clears.contains(&clear) {
+                    clears.push(clear);
+                }
             }
             TriggerOn::Approach { range } => {
                 if let Some(p) = t.at_anchor().and_then(|at| anchor_point_any(plan, at)) {
@@ -12008,7 +12114,8 @@ fn env_trigger_fns(plan: &Plan, chrome: &delvewright_dsl::Chrome) -> Vec<(String
         if capture {
             let rec = trigger_record(t);
             body.push(format!(
-                "data modify storage {STRIKER_STORAGE} {STRIKER_PATH} set from entity @e[tag=dw_trig_{id},limit=1] {rec}.player"
+                "data modify storage {STRIKER_STORAGE} {STRIKER_PATH} set from entity @e[tag={},limit=1] {rec}.player",
+                trigger_carrier_tag(t)
             ));
         }
         // The trigger's own flag gate is already proven by `env_trigger_tick`
@@ -23457,7 +23564,7 @@ fn critical_path_json(
                 // own fired marker (`[dw:complete <campaign> trigger/<id>]`,
                 // broadcast from its bundle), never on the click landing. `anchor`
                 // / `npc` / `range` are present exactly when the kind has one.
-                Step::Trigger { trigger_id, on, anchor_id, npc_id, pos, range } => {
+                Step::Trigger { trigger_id, on, anchor_id, npc_id, assembly_id, pos, range } => {
                     let mut v = json!({
                         "action": "trigger", "trigger": trigger_id, "on": on, "pos": pos
                     });
@@ -23467,6 +23574,9 @@ fn critical_path_json(
                         }
                         if let Some(n) = npc_id {
                             obj.insert("npc".to_string(), json!(n));
+                        }
+                        if let Some(m) = assembly_id {
+                            obj.insert("assembly".to_string(), json!(m));
                         }
                         if let Some(r) = range {
                             obj.insert("range".to_string(), json!(r));

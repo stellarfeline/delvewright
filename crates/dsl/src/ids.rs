@@ -128,6 +128,17 @@ prefixed_id!(
     /// is tagged `dw_actor_<kebab>`.
     ActorId, "actor");
 prefixed_id!(
+    /// Assembly id: `assembly/<kebab>` (stage-5 `assemblies` section, spec-0082).
+    /// A fixed thing built of display entities that plays clips, can be struck
+    /// and strikes back. Its root, parts and hitbox are tagged `dw_asm_<kebab>`.
+    AssemblyId, "assembly");
+prefixed_id!(
+    /// Rig id: `rig/<kebab>` (spec-0082 §3.1). Resolved against the library's
+    /// `rigs/<kebab>/rig.json`, the way `prefab/<kebab>` resolves against a
+    /// piece's metadata: a rig is a library artefact a generator writes, never
+    /// campaign JSON.
+    RigId, "rig");
+prefixed_id!(
     /// Trap id: `trap/<kebab>` (stage-5 `traps` section, DSL v0.6, spec-0011).
     /// Unique within the stage-5 traps namespace.
     TrapId, "trap");

@@ -10,6 +10,7 @@
 //! - [`affordance`]: affordance hardware — the visible half of every right-click target the compiler owns (`DW0420`/`DW0421`).
 //! - [`analyze`]: deep quest/objective reachability (`DW02xx`, exit 2).
 //! - [`assembled`]: the shared assembled-world block model every geometric proof reads.
+//! - [`assembly`]: an assembly's hitbox, reach and strike judgements, and its emission (spec-0082).
 //! - [`atmos`]: sound-event validation (`DW0326`), the refused `play-sound at: actor` (`DW0335`), and the `delve:art` banner font (`DW0328`).
 //! - [`batchstate`]: a generated PackTest that drives an outcome owns every `#party` term the gates on it read (`DW0807`).
 //! - [`blocking`]: `delvec blocking-chart` — per-elevation cutaway floor plans.
@@ -91,6 +92,7 @@
 pub mod affordance;
 pub mod analyze;
 pub mod assembled;
+pub mod assembly;
 pub mod atmos;
 pub mod batchstate;
 pub mod blocking;

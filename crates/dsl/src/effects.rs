@@ -66,7 +66,7 @@
 
 use crate::envelope::Campaign;
 use crate::fight::Fight;
-use crate::stages::{EnvTrigger, Quest, QuestEffect, Shop, Shortcut, Trap};
+use crate::stages::{Assembly, EnvTrigger, Quest, QuestEffect, Shop, Shortcut, Trap};
 
 /// The local part of a type-prefixed id (`npc/keeper` → `keeper`), the segment
 /// every l10n key is built from. Duplicated from `l10n::local` deliberately: this
@@ -125,12 +125,20 @@ pub enum EffectRootKind {
     /// advancement over the fight's tag). Visited only where declared, so
     /// `unbound_roots` tells the truth about a campaign with none.
     OnKill,
+    /// An assembly's `strikes.pattern[].on_land` bundle (spec-0082) — what a
+    /// blow does, run on the tick the strike clip's last frame is applied. A
+    /// root rather than sugar because it hangs off an object with runtime
+    /// machinery of its own (the per-assembly strike state machine). Polled on
+    /// the tick with no executor, like a trigger's bundle. Visited only where a
+    /// step declares one, so `unbound_roots` tells the truth about a campaign
+    /// with none.
+    AssemblyLand,
 }
 
 impl EffectRootKind {
     /// Every root, in enumeration order. Not the *visit* order — see
     /// [`for_each_effect_root`], which interleaves R1/R2 per quest.
-    pub const ALL: [EffectRootKind; 9] = [
+    pub const ALL: [EffectRootKind; 10] = [
         EffectRootKind::ObjectiveComplete,
         EffectRootKind::QuestComplete,
         EffectRootKind::Trigger,
@@ -140,6 +148,7 @@ impl EffectRootKind {
         EffectRootKind::OnDeath,
         EffectRootKind::ShopOffer,
         EffectRootKind::OnKill,
+        EffectRootKind::AssemblyLand,
     ];
 
     /// How many roots there are. The binding ledger reports coverage against this.
@@ -155,7 +164,8 @@ impl EffectRootKind {
             | EffectRootKind::ShortcutUnlock
             | EffectRootKind::OnDeath
             | EffectRootKind::ShopOffer
-            | EffectRootKind::OnKill => "quests",
+            | EffectRootKind::OnKill
+            | EffectRootKind::AssemblyLand => "quests",
             EffectRootKind::DialogueRespawn => "dialogue",
         }
     }
@@ -203,7 +213,9 @@ impl EffectRootKind {
             | EffectRootKind::OnKill => true,
             EffectRootKind::Trigger
             | EffectRootKind::TrapPayload
-            | EffectRootKind::ShortcutUnlock => false,
+            | EffectRootKind::ShortcutUnlock
+            // A blow lands from the strike machine on the tick, with no executor.
+            | EffectRootKind::AssemblyLand => false,
         }
     }
 
@@ -220,6 +232,7 @@ impl EffectRootKind {
             EffectRootKind::OnDeath => "campaign on_death",
             EffectRootKind::ShopOffer => "shop offer effects",
             EffectRootKind::OnKill => "fight on_kill",
+            EffectRootKind::AssemblyLand => "assembly strike on_land",
         }
     }
 }
@@ -278,6 +291,11 @@ pub enum EffectRootOwner<'a> {
     /// nobody is forced to be credited with a kill (a body may fall, burn or be
     /// cut down by another mob). Carries the fight.
     OnKill(Fight<'a>),
+    /// An assembly's strike step `on_land` (spec-0082) — fired by the strike
+    /// machine while a player stands in the arming region, so it has no step
+    /// of its own and is **optional**: nobody is forced to stand where a blow
+    /// lands. Carries the assembly; the step index is in the site's `path`.
+    AssemblyLand(&'a Assembly),
 }
 
 impl<'a> EffectRootOwner<'a> {
@@ -293,6 +311,7 @@ impl<'a> EffectRootOwner<'a> {
             EffectRootOwner::OnDeath => EffectRootKind::OnDeath,
             EffectRootOwner::ShopOffer(_) => EffectRootKind::ShopOffer,
             EffectRootOwner::OnKill(_) => EffectRootKind::OnKill,
+            EffectRootOwner::AssemblyLand(_) => EffectRootKind::AssemblyLand,
         }
     }
 
@@ -325,7 +344,8 @@ impl<'a> EffectRootOwner<'a> {
             | EffectRootOwner::ShortcutUnlock(_)
             | EffectRootOwner::OnDeath
             | EffectRootOwner::ShopOffer(_)
-            | EffectRootOwner::OnKill(_) => None,
+            | EffectRootOwner::OnKill(_)
+            | EffectRootOwner::AssemblyLand(_) => None,
         }
     }
 }
@@ -478,6 +498,7 @@ macro_rules! effect_root_walk {
         opt: $opt:ident,
         wave_owner: |$w:ident| $ownw:expr,
         actor_owner: |$a:ident| $owna:expr,
+        assembly_owner: |$m:ident| $ownm:expr,
     ) => {{
         #[allow(unused_mut)]
         let mut visit = $visit;
@@ -642,6 +663,27 @@ macro_rules! effect_root_walk {
                 );
             }
         }
+        // R10 `assemblies[].strikes.pattern[].on_land` (spec-0082) — appended
+        // after R9, visited only where a step declares a bundle, keyed by the
+        // assembly and the step (`assembly.<id>.strike.<step>`).
+        note(EffectRootKind::AssemblyLand);
+        for (mi, $m) in $c.quests.content.assemblies.$iter().enumerate() {
+            let ml = local($m.id.as_str()).to_string();
+            let owner = $ownm;
+            if let Some(strikes) = $m.strikes.$opt() {
+                for (si, step) in strikes.pattern.$iter().enumerate() {
+                    if step.on_land.is_empty() {
+                        continue;
+                    }
+                    visit(
+                        (EffectRootKind::AssemblyLand, owner, None),
+                        format!("/content/assemblies/{mi}/strikes/pattern/{si}/on_land"),
+                        format!("assembly.{ml}.strike.{si}"),
+                        step.on_land.$slice(),
+                    );
+                }
+            }
+        }
     }};
 }
 
@@ -657,6 +699,7 @@ enum RawOwner<'a> {
     Death,
     Shop(&'a Shop),
     Fight(Fight<'a>),
+    Assembly(&'a Assembly),
 }
 
 impl<'a> RawOwner<'a> {
@@ -683,6 +726,9 @@ impl<'a> RawOwner<'a> {
             (RawOwner::Death, EffectRootKind::OnDeath) => EffectRootOwner::OnDeath,
             (RawOwner::Shop(h), EffectRootKind::ShopOffer) => EffectRootOwner::ShopOffer(h),
             (RawOwner::Fight(f), EffectRootKind::OnKill) => EffectRootOwner::OnKill(f),
+            (RawOwner::Assembly(m), EffectRootKind::AssemblyLand) => {
+                EffectRootOwner::AssemblyLand(m)
+            }
             (owner, kind) => unreachable!(
                 "effect root {kind:?} was handed an owner of the wrong shape ({})",
                 match owner {
@@ -694,6 +740,7 @@ impl<'a> RawOwner<'a> {
                     RawOwner::Death => "on_death",
                     RawOwner::Shop(_) => "shop",
                     RawOwner::Fight(_) => "fight",
+                    RawOwner::Assembly(_) => "assembly",
                 }
             ),
         }
@@ -746,6 +793,7 @@ pub fn for_each_effect_root<'a>(
         (EffectRootKind::OnDeath, 0usize),
         (EffectRootKind::ShopOffer, 0usize),
         (EffectRootKind::OnKill, 0usize),
+        (EffectRootKind::AssemblyLand, 0usize),
     ];
     debug_assert_eq!(
         sites.map(|(k, _)| k),
@@ -800,6 +848,7 @@ pub fn for_each_effect_root<'a>(
         opt: as_ref,
         wave_owner: |w| RawOwner::Fight(Fight::Wave(w)),
         actor_owner: |a| RawOwner::Fight(Fight::Actor(a)),
+        assembly_owner: |m| RawOwner::Assembly(m),
     );
 
     let missed: Vec<&str> = EffectRootKind::ALL
@@ -864,6 +913,7 @@ pub fn for_each_effect_root_mut<'a>(c: &'a mut Campaign, f: &mut RootVisitorMut<
         opt: as_mut,
         wave_owner: |_w| (),
         actor_owner: |_a| (),
+        assembly_owner: |_m| (),
     );
 }
 
@@ -887,6 +937,7 @@ mod tests {
                 (EffectRootKind::OnDeath, 0),
                 (EffectRootKind::ShopOffer, 0),
                 (EffectRootKind::OnKill, 0),
+                (EffectRootKind::AssemblyLand, 0),
             ],
             effects: 0,
         };

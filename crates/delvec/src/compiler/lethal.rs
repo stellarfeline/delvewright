@@ -351,6 +351,19 @@ pub(crate) fn population_roots(plan: &Plan, entry: Option<[i32; 3]>) -> Vec<[i32
     out
 }
 
+/// **The population `P`** (spec-0062 §2): every cell a player can walk to from
+/// the cells the campaign puts the party at ([`population_roots`]), over `open`
+/// — which `DW0891` passes as the lethality-free counterfactual
+/// ([`crate::compiler::nav::World::without_exclusions`]). The one derivation,
+/// read by `DW0891` and by `DW0938`'s caught cells (`compiler::assembly`).
+pub(crate) fn walked_population(
+    plan: &Plan,
+    open: &crate::compiler::nav::World,
+    entry: Option<[i32; 3]>,
+) -> std::collections::BTreeSet<[i32; 3]> {
+    open.reachable_walkable(&population_roots(plan, entry))
+}
+
 /// `DW0891`: **prove no killing volume reaches a cell the player would read as
 /// safe floor** (spec-0062).
 ///
@@ -402,7 +415,7 @@ pub fn check_danger_is_visible(
     let body = delvewright_dsl::metrics::Body::PLAYER;
     // The counterfactual, not the world the router walks. See the note above.
     let open = world.without_exclusions();
-    let population = open.reachable_walkable(&population_roots(plan, entry));
+    let population = walked_population(plan, &open, entry);
     binding.population = population.len();
     // The zero-binding question: can any player body get into each volume at
     // all — by walking, falling, jumping or swimming from the walked
