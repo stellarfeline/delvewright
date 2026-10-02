@@ -776,9 +776,21 @@ delvec contact-sheet <dir> -o <sheet.png> [--scores scores.json] [--shot ext-se]
 delvec viewer <nbt|dir|manifest.json>... -o <page.html> [--title T] [--textures <jar>]
                                              # ONE interactive page: a camera the reviewer drives,
                                              # every block drawn from the pinned version's own model
-delvec palette <nbt|dir>... -o <palette.json> [--biome minecraft:plains] [--textures <jar>]
+delvec palette <nbt|dir>... -o <palette.json> [--biome minecraft:plains | --build <out> --place <id>] [--textures <jar>]
                                              # the derived per-blockstate colour/shape table
 ```
+
+**A scene inside a place is tinted under that place's own sky** (spec-0080
+§5.3). `--build <out> --place <id>` reads the biome the build's map says the
+place stands in at the first tick (`validation/biome-map.json`; a build with no
+carried atmosphere has none, and every place stands in the ground biome its
+`generator-settings` lays), and reads that biome's definition from the build's
+own datapack when the build ships it — an atmosphere the pinned jar has never
+heard of — so its `effects` colour grass, foliage and water. One line on stderr
+names the biome and where its definition was read.
+
+**What a Chunky frame does with an atmosphere** is recorded in §4a: Chunky
+draws its own sky and has no table for a datapack biome.
 
 The same derivation over the whole pinned block registry is what
 `crates/delvec/data/block-appearance-1.21.11.json` holds — the table the CPU
@@ -1285,6 +1297,26 @@ after the scene's own Chunky `name`, campaign-qualified — `hello-world_spawn`,
 `hello-world_pov_leg0_wp1`, `hello-world_panorama_se_45` — and that same stem names
 its caches and its rendered `.png`.
 
+### What the pinned core does with an atmosphere (spec-0080 §5.3)
+
+**Chunky draws its own sky, and an atmosphere's never reaches it.** Measured
+once, on the gallery hall under `atmosphere/frost-hall` (sky `#9fb8d8`, fog
+`#c8d4e0`, grass `#8fa8a0`): the gallery built at engine `feat/area-atmosphere`,
+its world stamped by `validation/world-save.sh` (4 region files), the scene
+`gallery_interior_hall_0` written by `validation/render-shots.sh` (emitted
+scene sha256 `e119cad3caffbb6f7ebb4b09e233bc7fd130717fc35a76ce086f2bc5007cf242`),
+rendered by `validation/chunky.sh` on `chunky-core-2.5.0-SNAPSHOT.474.g156e2bb`
+(content digest verified) at `-target 64` and snapshotted to a 1024×1024 frame,
+sha256 `87afb2ba40e3f3c29c19585c69109a43d9d76c85f0b57322249dcfa51bd17de8`. The
+frame shows the hall's stone shell under Chunky's own daylight gradient, not
+the atmosphere's sky colour: a scene's sky is the one spec-0079 keys by hour
+and weather, and the core reads nothing of a biome's environment attributes.
+What it does with the grass and foliage tint of a biome id it has no table for
+is **not measured by this frame** — the hall holds no tinted block — and stays
+open until a frame of a tinted block inside an atmosphere is rendered. The look
+of an atmosphere is confirmed in a client, on the demo level, never in a
+render.
+
 ### `cameras` — the showcase cameras · agent places them, owner judges the pictures
 
 **A showcase camera is one record**: `design/cameras.json` in the campaign,
@@ -1686,6 +1718,7 @@ say what they do instead. `blocklight/BlockLightDump.java` and
 | `tools/maintenance/extract-item-stack-sizes.py` | maintenance | `python3 tools/maintenance/extract-item-stack-sizes.py <item_components/data.min.json> <out.json>` — regenerates `crates/delvec/data/item-stack-sizes-1.21.11.json`, the item→`max_stack_size` table `DW0436` reads, for a new MC pin (positional args only). Pins and checks the source SHA-256; refuses to default a missing component rather than assuming 64 |
 | `tools/maintenance/extract-item-combat-stats.py` | maintenance | `python3 tools/maintenance/extract-item-combat-stats.py <item_components/data.min.json> <out.json>` — regenerates `crates/delvec/data/item-combat-1.21.11.json`, the item→`attack_damage`/`attack_speed`/`armor`/`armor_toughness`/`nutrition` table `DW0472` and the muster's armour floor read (`nutrition` has no reader), for a new MC pin (positional args only). Pins the source SHA-256 and refuses any non-`add_value` modifier rather than mis-summing it |
 | `tools/maintenance/extract-damage-types.py` | maintenance | `python3 tools/maintenance/extract-damage-types.py <damage_type/data.min.json> <tag/damage_type/data.min.json> <out.json>` — regenerates `crates/delvec/data/damage-types-1.21.11.json`, the damage-type→`{bypasses_armor, scaling}` table `DW0473` reads (positional args only). The finding it pins: `damage-players` emits `/damage` with no attacker, so an Easy campaign's scripted hits are NOT halved — only `scaling: always` types scale |
+| `tools/maintenance/extract-environment-attributes.py` | maintenance | `python3 tools/maintenance/extract-environment-attributes.py --server-jar <server.jar> --client-jar <client.jar> --mappings <server.txt> --out-attributes crates/delvec/data/environment-attributes-1.21.11.json --out-particles crates/delvec/data/particle-types-1.21.11.json` — regenerates the environment-attribute registry `DW0928` holds an atmosphere to (spec-0080) and the particle table, out of the pinned jars' bytecode through Mojang's official server mappings (needs `javap`). Refuses a jar or mapping whose hash is not the pin's; refuses when the two jars' attribute strings (every `.class` scanned for `(visual\|audio\|gameplay)/[a-z_]+`, minus loot-table ids) disagree, or when `EnvironmentAttributes.<clinit>` registers a different set. Types and ranges are read from `<clinit>` (`AttributeRange`), record fields and their ranges from the record codecs, scope from the overworld's timelines (`override` → `overridden`, `gameplay/` → out of scope), particle simplicity from `ParticleTypes.<clinit>`. Prints `45 attribute(s): 20 admitted, 5 overridden, 20 gameplay; 115 particle type(s), 97 simple` at 1.21.11 |
 | `tools/maintenance/extract-entity-tags.py` | maintenance | `python3 tools/maintenance/extract-entity-tags.py <tag/entity_type/data.min.json> <out.json>` — regenerates `crates/dsl/data/entity-tags-1.21.11.json`, vanilla's built-in `entity_type` tags, for a new MC pin (positional args only). Pins and checks the source SHA-256. These are Mojang's own answers to "which entity types do X", which is the only acceptable source for such a question here: `DW0496` reads `#minecraft:burn_in_daylight` from it and `DW0382` reads `#minecraft:raiders`, rather than either shipping a hand-written species table. It lives in the DSL crate because `DW0382` is a validation-tier rule and that crate cannot `include_str!` a file it does not ship |
 | `tools/maintenance/probe-drowned-engagement.py` | maintenance | `python3 tools/maintenance/probe-drowned-engagement.py --jar SERVER_JAR --work DIR [--java JAVA]` — **measures on the pinned server the hour table `DW0920` reads** (`compiler::engage::bright_outside`): per declared `(time, weather)` it builds a roofed stone cell, summons a villager and a bare-handed drowned, waits, and reads whether the villager was struck, then repeats the tightest bright state (`dusk` in `rain`) on a flooded floor and on waterlogged bottom slabs. Refuses a jar whose sha256 is not the `versions.toml` pin; a tick witness (an item's `Age`) refuses a cell that did not tick; exits 1 on any disagreement with the committed table. Needs a JDK ≥ 21 and a free local port 25995/25996; `--work` must not exist. Run when the MC pin moves. |
 | `tools/maintenance/check-patrol-types.py` | maintenance | `python3 tools/maintenance/check-patrol-types.py [--print] [--work DIR]` — **checks the tag `DW0382` reads against the pinned server jar.** `DW0382` admits a lane species iff it is in `#minecraft:raiders`; that choice of tag is a claim about the game, and this is what falsifies it. Asks the jar three ways and requires all three to name the same species — the vendored tag, the entity types whose constructed class is a `PatrollingMonster`, and the entity types whose class is a `Raider` — reading each type's class off the generic signature of its `EntityType` field and refusing outright if any signature has been stripped, since an unmapped type shrinks the answer in the direction that reads as a pass. It also scans **every** class file in the jar for `Patrolling` / `PatrolLeader` / `patrol_target` as string constants and requires that exactly one carrier stands in some entity's superclass chain: that is what makes the class test the complete answer rather than a plausible one, and it is structural rather than an allowlist of names — a carrier no entity is built from cannot be a body that patrols, whatever it is called (1.21.11 has one such carrier, the datafixer that renamed `PatrolTarget` to `patrol_target`). Fetches the jar `versions.toml` names and **refuses any jar whose sha256 is not the pin**, plus the sha1-verified Mojang mappings, so no obfuscated name is written down anywhere. **What it pins**: the pinned game names six raiders, so a hand-written species list that drops one (`minecraft:illusioner`) refuses a march the game would walk and tells the author to give the capability up. Needs a JDK and network access; CI reads the committed tag table and never runs this |
@@ -1793,6 +1826,8 @@ npm --prefix harness start              # node src/run.ts <critical-path.json>  
 ```
 
 Every test is bounded by `--test-timeout`; a test's wait on the code under test goes through `within` (`harness/test/bounded.ts`), which fails it naming the wait, and refuses a per-test bound at or below its own.
+
+**A repaint reaches the client (`harness/src/repaint.ts`, spec-0080 §5.2).** When the build ships `validation/atmosphere-repaints.json`, the executor feeds every `chunk_biomes`, `map_chunk` and `unload_chunk` packet and every completion marker into a ledger; for each repaint whose bundle's marker arrived it asserts a `chunk_biomes` naming every chunk of the painted volume the client held at that moment, within 10 s, and no `map_chunk` resending one, and reds a repaint over chunks the client held none of (a zero binding). The verdicts join the `critical-path` stage's failures, and the run prints `atmosphere repaints: R in the build, K with a marker, P performed; T of H held chunk(s) told by chunk_biomes, M resent by map_chunk`. A repaint whose firing no marker announces (`after: null`) is counted and not judged.
 
 `harness/src/note-bot.ts` is driven by `validation/playtest-note-flow.sh` and
 `harness/src/rehearsal-bot.ts` by `validation/rehearsal-flow.sh`, never by hand.

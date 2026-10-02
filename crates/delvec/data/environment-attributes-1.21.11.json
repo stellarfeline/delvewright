@@ -1,0 +1,506 @@
+{
+  "attributes": [
+    {
+      "id": "audio/ambient_sounds",
+      "overworld_timeline": null,
+      "range": null,
+      "scope": "admitted",
+      "shape": "ambient_sounds",
+      "type": "AMBIENT_SOUNDS"
+    },
+    {
+      "id": "audio/background_music",
+      "overworld_timeline": null,
+      "range": null,
+      "scope": "admitted",
+      "shape": "background_music",
+      "type": "BACKGROUND_MUSIC"
+    },
+    {
+      "id": "audio/firefly_bush_sounds",
+      "overworld_timeline": "or",
+      "range": null,
+      "scope": "admitted",
+      "shape": "boolean",
+      "type": "BOOLEAN"
+    },
+    {
+      "id": "audio/music_volume",
+      "overworld_timeline": null,
+      "range": [
+        0.0,
+        1.0
+      ],
+      "scope": "admitted",
+      "shape": "float",
+      "type": "FLOAT"
+    },
+    {
+      "id": "gameplay/baby_villager_activity",
+      "overworld_timeline": "override",
+      "range": null,
+      "scope": "gameplay",
+      "shape": null,
+      "type": "ACTIVITY"
+    },
+    {
+      "id": "gameplay/bed_rule",
+      "overworld_timeline": null,
+      "range": null,
+      "scope": "gameplay",
+      "shape": null,
+      "type": "BED_RULE"
+    },
+    {
+      "id": "gameplay/bees_stay_in_hive",
+      "overworld_timeline": "or",
+      "range": null,
+      "scope": "gameplay",
+      "shape": null,
+      "type": "BOOLEAN"
+    },
+    {
+      "id": "gameplay/can_pillager_patrol_spawn",
+      "overworld_timeline": "and",
+      "range": null,
+      "scope": "gameplay",
+      "shape": null,
+      "type": "BOOLEAN"
+    },
+    {
+      "id": "gameplay/can_start_raid",
+      "overworld_timeline": null,
+      "range": null,
+      "scope": "gameplay",
+      "shape": null,
+      "type": "BOOLEAN"
+    },
+    {
+      "id": "gameplay/cat_waking_up_gift_chance",
+      "overworld_timeline": "maximum",
+      "range": [
+        0.0,
+        1.0
+      ],
+      "scope": "gameplay",
+      "shape": null,
+      "type": "FLOAT"
+    },
+    {
+      "id": "gameplay/creaking_active",
+      "overworld_timeline": "or",
+      "range": null,
+      "scope": "gameplay",
+      "shape": null,
+      "type": "BOOLEAN"
+    },
+    {
+      "id": "gameplay/eyeblossom_open",
+      "overworld_timeline": "override",
+      "range": null,
+      "scope": "gameplay",
+      "shape": null,
+      "type": "TRI_STATE"
+    },
+    {
+      "id": "gameplay/fast_lava",
+      "overworld_timeline": null,
+      "range": null,
+      "scope": "gameplay",
+      "shape": null,
+      "type": "BOOLEAN"
+    },
+    {
+      "id": "gameplay/increased_fire_burnout",
+      "overworld_timeline": null,
+      "range": null,
+      "scope": "gameplay",
+      "shape": null,
+      "type": "BOOLEAN"
+    },
+    {
+      "id": "gameplay/monsters_burn",
+      "overworld_timeline": "or",
+      "range": null,
+      "scope": "gameplay",
+      "shape": null,
+      "type": "BOOLEAN"
+    },
+    {
+      "id": "gameplay/nether_portal_spawns_piglin",
+      "overworld_timeline": null,
+      "range": null,
+      "scope": "gameplay",
+      "shape": null,
+      "type": "BOOLEAN"
+    },
+    {
+      "id": "gameplay/piglins_zombify",
+      "overworld_timeline": null,
+      "range": null,
+      "scope": "gameplay",
+      "shape": null,
+      "type": "BOOLEAN"
+    },
+    {
+      "id": "gameplay/respawn_anchor_works",
+      "overworld_timeline": null,
+      "range": null,
+      "scope": "gameplay",
+      "shape": null,
+      "type": "BOOLEAN"
+    },
+    {
+      "id": "gameplay/sky_light_level",
+      "overworld_timeline": "multiply",
+      "range": [
+        0.0,
+        15.0
+      ],
+      "scope": "gameplay",
+      "shape": null,
+      "type": "FLOAT"
+    },
+    {
+      "id": "gameplay/snow_golem_melts",
+      "overworld_timeline": null,
+      "range": null,
+      "scope": "gameplay",
+      "shape": null,
+      "type": "BOOLEAN"
+    },
+    {
+      "id": "gameplay/surface_slime_spawn_chance",
+      "overworld_timeline": "maximum",
+      "range": [
+        0.0,
+        1.0
+      ],
+      "scope": "gameplay",
+      "shape": null,
+      "type": "FLOAT"
+    },
+    {
+      "id": "gameplay/turtle_egg_hatch_chance",
+      "overworld_timeline": "maximum",
+      "range": [
+        0.0,
+        1.0
+      ],
+      "scope": "gameplay",
+      "shape": null,
+      "type": "FLOAT"
+    },
+    {
+      "id": "gameplay/villager_activity",
+      "overworld_timeline": "override",
+      "range": null,
+      "scope": "gameplay",
+      "shape": null,
+      "type": "ACTIVITY"
+    },
+    {
+      "id": "gameplay/water_evaporates",
+      "overworld_timeline": null,
+      "range": null,
+      "scope": "gameplay",
+      "shape": null,
+      "type": "BOOLEAN"
+    },
+    {
+      "id": "visual/ambient_particles",
+      "overworld_timeline": null,
+      "range": null,
+      "scope": "admitted",
+      "shape": "ambient_particles",
+      "type": "AMBIENT_PARTICLES"
+    },
+    {
+      "id": "visual/cloud_color",
+      "overworld_timeline": "multiply",
+      "range": null,
+      "scope": "admitted",
+      "shape": "argb",
+      "type": "ARGB_COLOR"
+    },
+    {
+      "id": "visual/cloud_fog_end_distance",
+      "overworld_timeline": null,
+      "range": [
+        0.0,
+        null
+      ],
+      "scope": "admitted",
+      "shape": "float",
+      "type": "FLOAT"
+    },
+    {
+      "id": "visual/cloud_height",
+      "overworld_timeline": null,
+      "range": null,
+      "scope": "admitted",
+      "shape": "float",
+      "type": "FLOAT"
+    },
+    {
+      "id": "visual/default_dripstone_particle",
+      "overworld_timeline": null,
+      "range": null,
+      "scope": "admitted",
+      "shape": "particle",
+      "type": "PARTICLE"
+    },
+    {
+      "id": "visual/fog_color",
+      "overworld_timeline": "multiply",
+      "range": null,
+      "scope": "admitted",
+      "shape": "rgb",
+      "type": "RGB_COLOR"
+    },
+    {
+      "id": "visual/fog_end_distance",
+      "overworld_timeline": null,
+      "range": [
+        0.0,
+        null
+      ],
+      "scope": "admitted",
+      "shape": "float",
+      "type": "FLOAT"
+    },
+    {
+      "id": "visual/fog_start_distance",
+      "overworld_timeline": null,
+      "range": null,
+      "scope": "admitted",
+      "shape": "float",
+      "type": "FLOAT"
+    },
+    {
+      "id": "visual/moon_angle",
+      "overworld_timeline": "override",
+      "range": null,
+      "scope": "overridden",
+      "shape": null,
+      "type": "ANGLE_DEGREES"
+    },
+    {
+      "id": "visual/moon_phase",
+      "overworld_timeline": "override",
+      "range": null,
+      "scope": "overridden",
+      "shape": null,
+      "type": "MOON_PHASE"
+    },
+    {
+      "id": "visual/sky_color",
+      "overworld_timeline": "multiply",
+      "range": null,
+      "scope": "admitted",
+      "shape": "rgb",
+      "type": "RGB_COLOR"
+    },
+    {
+      "id": "visual/sky_fog_end_distance",
+      "overworld_timeline": null,
+      "range": [
+        0.0,
+        null
+      ],
+      "scope": "admitted",
+      "shape": "float",
+      "type": "FLOAT"
+    },
+    {
+      "id": "visual/sky_light_color",
+      "overworld_timeline": "multiply",
+      "range": null,
+      "scope": "admitted",
+      "shape": "rgb",
+      "type": "RGB_COLOR"
+    },
+    {
+      "id": "visual/sky_light_factor",
+      "overworld_timeline": "multiply",
+      "range": [
+        0.0,
+        1.0
+      ],
+      "scope": "admitted",
+      "shape": "float",
+      "type": "FLOAT"
+    },
+    {
+      "id": "visual/star_angle",
+      "overworld_timeline": "override",
+      "range": null,
+      "scope": "overridden",
+      "shape": null,
+      "type": "ANGLE_DEGREES"
+    },
+    {
+      "id": "visual/star_brightness",
+      "overworld_timeline": "maximum",
+      "range": [
+        0.0,
+        1.0
+      ],
+      "scope": "admitted",
+      "shape": "float",
+      "type": "FLOAT"
+    },
+    {
+      "id": "visual/sun_angle",
+      "overworld_timeline": "override",
+      "range": null,
+      "scope": "overridden",
+      "shape": null,
+      "type": "ANGLE_DEGREES"
+    },
+    {
+      "id": "visual/sunrise_sunset_color",
+      "overworld_timeline": "override",
+      "range": null,
+      "scope": "overridden",
+      "shape": null,
+      "type": "ARGB_COLOR"
+    },
+    {
+      "id": "visual/water_fog_color",
+      "overworld_timeline": null,
+      "range": null,
+      "scope": "admitted",
+      "shape": "rgb",
+      "type": "RGB_COLOR"
+    },
+    {
+      "id": "visual/water_fog_end_distance",
+      "overworld_timeline": null,
+      "range": [
+        0.0,
+        null
+      ],
+      "scope": "admitted",
+      "shape": "float",
+      "type": "FLOAT"
+    },
+    {
+      "id": "visual/water_fog_start_distance",
+      "overworld_timeline": null,
+      "range": null,
+      "scope": "admitted",
+      "shape": "float",
+      "type": "FLOAT"
+    }
+  ],
+  "counts": {
+    "admitted": 20,
+    "gameplay": 20,
+    "overridden": 5
+  },
+  "minecraft": "1.21.11",
+  "records": {
+    "ambient_additions": {
+      "sound": {
+        "range": null,
+        "required": true
+      },
+      "tick_chance": {
+        "range": null,
+        "required": true
+      }
+    },
+    "ambient_mood": {
+      "block_search_extent": {
+        "range": null,
+        "required": true
+      },
+      "offset": {
+        "range": null,
+        "required": true
+      },
+      "sound": {
+        "range": null,
+        "required": true
+      },
+      "tick_delay": {
+        "range": null,
+        "required": true
+      }
+    },
+    "ambient_particle": {
+      "particle": {
+        "range": null,
+        "required": true
+      },
+      "probability": {
+        "range": [
+          0.0,
+          1.0
+        ],
+        "required": true
+      }
+    },
+    "ambient_sounds": {
+      "additions": {
+        "range": null,
+        "required": false
+      },
+      "loop": {
+        "range": null,
+        "required": false
+      },
+      "mood": {
+        "range": null,
+        "required": false
+      }
+    },
+    "background_music": {
+      "creative": {
+        "range": null,
+        "required": false
+      },
+      "default": {
+        "range": null,
+        "required": false
+      },
+      "underwater": {
+        "range": null,
+        "required": false
+      }
+    },
+    "music": {
+      "max_delay": {
+        "range": [
+          0,
+          null
+        ],
+        "required": true
+      },
+      "min_delay": {
+        "range": [
+          0,
+          null
+        ],
+        "required": true
+      },
+      "replace_current_music": {
+        "range": null,
+        "required": false
+      },
+      "sound": {
+        "range": null,
+        "required": true
+      }
+    }
+  },
+  "source": {
+    "client_jar_sha256": "1473c9489ac50fda3c435049a76a70d61a10b8610db27f5ba9d8756b686cd3bd",
+    "ranges": "net.minecraft.world.attribute.AttributeRange (validated by EnvironmentAttribute.valueCodec)",
+    "registry": "net.minecraft.world.attribute.EnvironmentAttributes.<clinit>",
+    "scope": "data/minecraft/dimension_type/overworld.json timelines, expanded",
+    "server_jar_sha256": "f83b8e093865806f931c7e34aae41b177d4c076335263dd124c75d6d65dd1726",
+    "server_mappings_sha1": "5621e9253f05fd57872bbe7f8ddf5f9a7d525955"
+  }
+}

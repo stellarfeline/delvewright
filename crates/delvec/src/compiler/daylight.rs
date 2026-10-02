@@ -28,7 +28,7 @@
 //! 3. **The sun can be up while it fights.** Some state the delve can be in
 //!    between the body's entering and its death runs the burn tick at a
 //!    sky-open cell — the pinned hour window, and no rain falling there
-//!    ([`Clock`], [`hour_burns`], [`precipitates_at`]).
+//!    ([`Clock`], [`hour_burns`], the biome map).
 //! 4. **The sun can reach it.** Open sky stands on ground it can walk to, within
 //!    one aggro radius of where it is staged ([`sky_within_reach`]).
 //! 5. **Nothing on its head.** No `equipment.head` — except for a phantom, whose
@@ -119,7 +119,9 @@
 //!
 //! **Rain protects only where it falls.** The burn tick is skipped while
 //! `isInWaterOrRain`, and "in rain" is `Level.isRainingAt`: raining, sky
-//! visible, **and the biome at the cell precipitates rain** ([`precipitates_at`]).
+//! visible, **and the biome at the cell precipitates rain**
+//! ([`crate::compiler::horizon::biome_map`], and any repaint the fight can stand
+//! under — spec-0080 §4.2).
 //! Which biome a cell stands in, and whether it rains, is
 //! [`crate::compiler::horizon`]'s one answer — the same one emission lays in
 //! `generator-settings` — so the weather this proof reasons about is the weather
@@ -253,31 +255,59 @@ pub fn hour_burns(time: WorldTime) -> bool {
     !(MONSTERS_BURN_OFF_AT..MONSTERS_BURN_ON_AT).contains(&tick)
 }
 
-/// The biome `cell` stands in: the surround rectangle painting it, else the
-/// ground biome the generator lays ([`crate::compiler::horizon::ground_biome`]).
-fn biome_at(plan: &Plan, cell: [i32; 3]) -> (String, bool) {
-    if let Some(surround) = &plan.surround
-        && let Some(rect) = surround
-            .biome
-            .iter()
-            .find(|r| (0..3).all(|i| r.min[i] <= cell[i] && cell[i] <= r.max[i]))
-    {
-        let rains =
-            crate::compiler::horizon::vanilla_precipitates(rect.biome).unwrap_or_else(|| {
-                panic!(
-                    "the surround paints `{}`, whose precipitation is unrecorded",
-                    rect.biome
-                )
-            });
-        return (rect.biome.to_string(), rains);
-    }
-    let ground = crate::compiler::horizon::ground_biome(plan.campaign, &plan.namespace);
-    (ground.id, ground.precipitates)
+/// One state a cell's sky can be in while a fight stands on it: the biome
+/// there at the first tick ([`crate::compiler::horizon::biome_map`]), or a
+/// repaint that reaches it (spec-0080 §4.2).
+struct Ground {
+    map: crate::compiler::horizon::BiomeMap,
+    /// Every `set-atmosphere` with a resolvable volume, by effect address.
+    repaints: BTreeMap<usize, Repaint>,
 }
 
-/// Whether declared rain falls on `cell`: the biome there precipitates.
-pub fn precipitates_at(plan: &Plan, cell: [i32; 3]) -> bool {
-    biome_at(plan, cell).1
+/// One repaint as the proof reads it: the 4-cells it paints, its biome, and
+/// whether rain falls in it.
+type Repaint = (([i32; 3], [i32; 3]), String, bool);
+
+impl Ground {
+    fn of(plan: &Plan) -> Self {
+        let c = plan.campaign;
+        let map = crate::compiler::horizon::biome_map(plan);
+        let repaints = crate::compiler::atmosphere::set_atmospheres(c)
+            .into_iter()
+            .filter_map(|(_, _, e)| {
+                let (min, max) = crate::compiler::horizon::repaint_volume(plan, e)?;
+                let Verb::SetAtmosphere { atmosphere, .. } = &e.verb else {
+                    return None;
+                };
+                let biome = map.biome_of(atmosphere.as_ref().map(|a| a.as_str()));
+                let rains = map.precipitates(&biome);
+                Some((
+                    addr(e),
+                    (
+                        crate::compiler::atmosphere::painted_box(min, max),
+                        biome,
+                        rains,
+                    ),
+                ))
+            })
+            .collect();
+        Ground { map, repaints }
+    }
+
+    /// The first biome `cell` can stand in, among the states `sky` reaches,
+    /// in which no rain falls — the first tick's biome, then each reachable
+    /// repaint that covers the cell, in effect order.
+    fn dry_biome(&self, sky: &Sky, cell: [i32; 3]) -> Option<String> {
+        let (first, rains) = self.map.at(cell);
+        if !rains {
+            return Some(first.to_string());
+        }
+        sky.paints.iter().find_map(|a| {
+            let ((lo, hi), biome, rains) = self.repaints.get(a)?;
+            let covers = (0..3).all(|i| lo[i] <= cell[i] && cell[i] <= hi[i]);
+            (covers && !rains).then(|| biome.clone())
+        })
+    }
 }
 
 /// A place in the quest DAG an effect root has: an objective's completion
@@ -304,6 +334,9 @@ type FireKey = (u64, usize);
 enum Cut {
     Time(WorldTime),
     Weather(WorldWeather),
+    /// A `set-atmosphere` (spec-0080 §4.2), by effect address: a cut of the
+    /// same kind as the other two, except that it reaches only its own volume.
+    Paint(usize),
 }
 
 /// One DAG-placed bundle: every cut in it that fires at a known offset, and
@@ -330,6 +363,9 @@ pub(crate) enum Beat {
 pub(crate) struct Sky {
     pub(crate) times: Vec<WorldTime>,
     pub(crate) weathers: Vec<WorldWeather>,
+    /// The `set-atmosphere` effects (by address) whose repaint the body can
+    /// stand under.
+    pub(crate) paints: Vec<usize>,
 }
 
 impl Sky {
@@ -337,6 +373,7 @@ impl Sky {
         match cut {
             Cut::Time(t) if !self.times.contains(&t) => self.times.push(t),
             Cut::Weather(w) if !self.weathers.contains(&w) => self.weathers.push(w),
+            Cut::Paint(a) if !self.paints.contains(&a) => self.paints.push(a),
             _ => {}
         }
     }
@@ -362,6 +399,7 @@ fn cut_of(e: &QuestEffect) -> Option<Cut> {
     e.set_time()
         .map(Cut::Time)
         .or_else(|| e.set_weather().map(Cut::Weather))
+        .or_else(|| matches!(e.verb, Verb::SetAtmosphere { .. }).then(|| Cut::Paint(addr(e))))
 }
 
 fn addr(e: &QuestEffect) -> usize {
@@ -535,7 +573,21 @@ impl Clock {
     /// Every state the delve can be in, whenever.
     fn everything(&self, c: &Campaign) -> Sky {
         let (times, weathers) = crate::compiler::light::reachable_time_weather(c);
-        Sky { times, weathers }
+        let mut sky = Sky {
+            times,
+            weathers,
+            paints: Vec::new(),
+        };
+        for cut in self.anywhere.iter().chain(
+            self.bundles
+                .values()
+                .flat_map(|b| b.cuts.iter().map(|(_, c)| c)),
+        ) {
+            if let Cut::Paint(_) = cut {
+                sky.add(*cut);
+            }
+        }
+        sky
     }
 
     /// Every state a body entering at one of `beats` can stand in before it
@@ -552,8 +604,24 @@ impl Clock {
             }
             // At the beat, per dimension.
             let own = self.bundles.get(p);
+            // A repaint is kept whichever side of the beat it falls: one that
+            // ran before still stands over its volume, and the first tick's
+            // biome is kept beside it — which can only over-report.
+            for (x, b) in &self.bundles {
+                for (k, cut) in &b.cuts {
+                    if matches!(cut, Cut::Paint(_))
+                        && ((x == p && k < key) || self.strictly_before(x, p))
+                    {
+                        sky.add(*cut);
+                    }
+                }
+            }
             for time in [true, false] {
-                let same = |cut: &Cut| matches!(cut, Cut::Time(_)) == time;
+                let same = |cut: &Cut| match cut {
+                    Cut::Time(_) => time,
+                    Cut::Weather(_) => !time,
+                    Cut::Paint(_) => false,
+                };
                 let local = own.and_then(|b| {
                     b.cuts
                         .iter()
@@ -761,6 +829,7 @@ pub fn check_daylight_staging(
         return Ok(());
     }
     let light = LightModel::from_shared(std::sync::Arc::clone(blocks));
+    let ground = Ground::of(plan);
     for body in &staged {
         if !burns_in_daylight(&body.entity) {
             continue;
@@ -780,12 +849,13 @@ pub fn check_daylight_staging(
         };
         let clear = sky.weathers.contains(&WorldWeather::Clear);
         let Some(cell) = sky_within_reach(world, &light, &body.cells, body.radius, &|cell| {
-            clear || !precipitates_at(plan, cell)
+            clear || ground.dry_biome(&sky, cell).is_some()
         }) else {
             continue;
         };
-        let (biome, rains) = biome_at(plan, cell);
-        let dry = !rains;
+        let dry_biome = ground.dry_biome(&sky, cell);
+        let dry = dry_biome.is_some();
+        let biome = dry_biome.unwrap_or_default();
         let weather = if dry && sky.weathers.contains(&declared.1) {
             declared.1
         } else if clear {

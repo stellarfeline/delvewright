@@ -1,0 +1,27 @@
+{
+  "campaign_id": "the-threshold",
+  "content": {
+    "facts": [
+      {
+        "id": "fact/site-span",
+        "note": "Thirty-two blocks east to west: the hall and its walls, with room to stand outside neither.",
+        "unit": "blocks",
+        "value": 32.0
+      },
+      {
+        "id": "fact/site-depth",
+        "note": "Fifty-six blocks north to south: two halves of twenty and the door between them.",
+        "unit": "blocks",
+        "value": 56.0
+      },
+      {
+        "id": "fact/half-length",
+        "note": "Each half is twenty blocks long, so the door is the middle of the walk.",
+        "unit": "blocks",
+        "value": 20.0
+      }
+    ]
+  },
+  "dsl_version": "0.35.0",
+  "stage": "geometry-brief"
+}

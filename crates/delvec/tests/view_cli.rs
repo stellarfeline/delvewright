@@ -7,6 +7,8 @@
 //! rendering is attempted, and `--view` spec parsing — stayed with the binary
 //! that has them, in `crates/delvec/tests/render_cli.rs`.
 
+mod common;
+
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -655,4 +657,76 @@ fn panorama_frames_the_building_its_anchors_name() {
     );
     let refused = run("anchor/nowhere");
     assert_eq!(refused.status.code(), Some(2), "{refused:?}");
+}
+
+/// spec-0080 §5.3: a palette for a scene inside a place is derived under the
+/// biome the build's map says that place stands in, read from the build's own
+/// datapack — and a place no atmosphere reaches stands in the ground biome.
+#[test]
+fn a_palette_inside_a_place_is_derived_under_that_places_biome() {
+    let build = tmp("palette-place");
+    std::fs::create_dir_all(build.join("validation")).unwrap();
+    std::fs::write(
+        build.join("validation/biome-map.json"),
+        serde_json::to_string(&serde_json::json!({
+            "ground": "demo:void",
+            "places": [{ "place": "node/far", "atmosphere": "atmosphere/wrong-place",
+                         "biome": "demo:atmosphere/wrong-place", "precipitates": false,
+                         "cells": [[0, 64, 0], [7, 71, 7]] }]
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+    let biomes = build.join("datapack/data/demo/worldgen/biome");
+    std::fs::create_dir_all(biomes.join("atmosphere")).unwrap();
+    std::fs::write(
+        biomes.join("atmosphere/wrong-place.json"),
+        r##"{"effects":{"grass_color":"#6b6a2a"},"temperature":0.8,"downfall":0.4}"##,
+    )
+    .unwrap();
+    std::fs::write(
+        biomes.join("void.json"),
+        r##"{"effects":{"water_color":"#3f76e4"}}"##,
+    )
+    .unwrap();
+    // An empty asset source: the table's biome is what is asserted, not a texture.
+    let textures = tmp("palette-place-textures");
+    let piece = common_prefab();
+    let run = |place: &str, out: &Path| {
+        Command::new(BIN)
+            .arg("palette")
+            .arg(&piece)
+            .arg("-o")
+            .arg(out)
+            .arg("--build")
+            .arg(&build)
+            .arg("--place")
+            .arg(place)
+            .arg("--textures")
+            .arg(&textures)
+            .output()
+            .unwrap()
+    };
+    let far = build.join("far.json");
+    let o = run("node/far", &far);
+    let stderr = String::from_utf8_lossy(&o.stderr);
+    assert!(o.status.success(), "{stderr}");
+    assert!(
+        stderr.contains("read from the build's datapack"),
+        "{stderr}"
+    );
+    assert_eq!(scene_json(&far)["biome"], "demo:atmosphere/wrong-place");
+    let near = build.join("near.json");
+    let o = run("node/near", &near);
+    assert!(o.status.success(), "{}", String::from_utf8_lossy(&o.stderr));
+    assert_eq!(
+        scene_json(&near)["biome"],
+        "demo:void",
+        "a place no atmosphere reaches"
+    );
+}
+
+/// The hello-room piece every fixture binds, from the pinned library.
+fn common_prefab() -> PathBuf {
+    common::prefabs_dir().join("hello-room.nbt")
 }

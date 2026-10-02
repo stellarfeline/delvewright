@@ -326,3 +326,18 @@ bounds, one way per class at each width the kit grid lets a plan draw it at,
 every standard opening, both stair pitches, a designed fall at the drop policy's
 cap. It reports what the table defines that it could not instantiate
 (`DW0840`) — read that line, not just the green.
+
+**A place's own sky** (spec-0080). A campaign declares its skies once, in
+`world.atmospheres[]`; a place carries one from the first tick
+(`areas[].atmosphere`, `boxes[].atmosphere`); a beat repaints with
+`set-atmosphere`, naming a `place` (the tool hands its cells) or a `region` you
+size yourself. The sun, moon and stars keep the overworld's course whatever a
+place says. **Fog and sky are blended by the client over twelve blocks round the
+camera, up and down included**, so a carried place is painted that far past its
+own bounds and the sky is whole only where every cell within twelve blocks is
+painted: the first twelve blocks past the line are a gradient, and a place
+narrower than the blend never shows its fog at all. Every build prints
+`atmosphere reach: <place> — W of E standing eye(s) read <biome> whole` per
+carried site-plan box — read it: where the sky's look matters, most eyes should
+read it whole, and when few do, widen the place. A `region` repaint is painted
+exactly as sized, so size it past the blend the same way.
