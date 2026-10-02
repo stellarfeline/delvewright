@@ -3,8 +3,9 @@
 
 This is the long step. **What the DSL can express is in *Reference: what a quest
 can do*** — read it before writing, not after a refusal. **How the prose has to
-be written is in *Reference: writing craft*** — run its section A over every
-line before calling this step done.
+be written is in *Reference: writing craft*** — apply its section F as each
+line is written, and run its section A over every line before calling this step
+done.
 
 The order inside `quests.json` matters: **write the `cast` block first, before
 the objectives.** Every quest declares, for every NPC live in it,
