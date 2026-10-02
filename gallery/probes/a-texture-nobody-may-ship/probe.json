@@ -1,0 +1,24 @@
+{
+  "code": "DW0741",
+  "patch": [
+    {
+      "doc": "world.json",
+      "op": "replace",
+      "path": "/content/textures/0/license",
+      "value": {
+        "archived_proof": "https://web.archive.org/web/2026/https://example.org/a-licence-page",
+        "attribution": "An Artist — A Title",
+        "note": "A third-party image under a NonCommercial licence.",
+        "source": "a texture site",
+        "spdx": "CC-BY-NC-4.0",
+        "url": "https://example.org/a-licence-page"
+      }
+    }
+  ],
+  "units": [
+    "LicenseEvidence.archived_proof",
+    "LicenseEvidence.attribution",
+    "LicenseEvidence.url"
+  ],
+  "why": "This edit records the `hall-stone` image as a third-party image under CC BY-NC 4.0, with its licence page, an archived copy and a credit line — every field a third-party record carries. A NonCommercial licence is outside the ADR-0013 allowlist whatever else the record says, and `DW0741` is the allowlist's own code: the same rule a prefab catalog card is judged by. The three fields the primary does not write (an original image has no licence page, archive or credit to record) are written here."
+}

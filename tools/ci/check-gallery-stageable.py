@@ -260,7 +260,7 @@ def main() -> int:
         die(
             f"no prefab directory at `{prefabs}`. The gallery's piece is GENERATED: `cargo run "
             "--manifest-path prefabs/gallery-generator/Cargo.toml -- <dir> --skins gallery/skins "
-            "--design gallery/design`."
+            "--design gallery/design --textures gallery/textures`."
         )
     if not args.ledger.is_file():
         die(f"no findings ledger at `{args.ledger}`")
