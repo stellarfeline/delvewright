@@ -165,6 +165,9 @@ They hold at every step by their nature, and nothing below repeats them.
   of a document or sidecar is `delvec fmt <campaign-dir>`; CI runs
   `delvec fmt --check`. A diff that rewrites a file nobody edited is the defect
   this closes.
+- **Design for what the player experiences, never for the host.** A far view,
+  a large map or a crowd is not cut to fit a server's memory or CPU; the
+  hosting side is sized to the delve.
 - Homages: original text only. Cultural reference, never asset ingestion.
 - If a mechanic the brief wants has no DSL verb, do NOT fake it with adjacent
   verbs silently — say what is missing and offer the closest authorable
