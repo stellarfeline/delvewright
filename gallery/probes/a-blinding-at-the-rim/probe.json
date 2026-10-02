@@ -1,0 +1,26 @@
+{
+  "code": "DW0943",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "add",
+      "path": "/content/quests/0/on_objective_complete/obj~1press-the-case/-",
+      "value": {
+        "effect": "minecraft:blindness",
+        "hide_particles": true,
+        "in": {
+          "anchor": "anchor/west-pit",
+          "extent": [
+            2,
+            1,
+            2
+          ]
+        },
+        "seconds": 2,
+        "type": "give-effect"
+      }
+    }
+  ],
+  "units": [],
+  "why": "A two-second blindness granted to whoever stands within two cells of the west pit — the terrace well whose killing volume `lethal/west-pit` the gallery already declares. With the floor hidden, a player who walks takes up to nine steps at walking speed (blindness forbids the sprint), and from the rim nine steps reach the pit's keep-out. Danger is visible, or the engine refuses it: the build names the grant, its standing set, its reach and the pit's keep-out that catches it. It declares no unit: `give-effect` and the envelope's `in` are bound elsewhere in the gallery; what the engine refuses is a blinding beside a drop. Perturbing toward the vacuous shape goes green with a non-zero standing set on the binding line: the same grant as `minecraft:nausea`, which hides nothing, or the same box drawn on `anchor/lane-west`, nine moves clear of both pits (a standing set of 15 cells, 0 caught). The remedy is a shorter `seconds`, an `in` box farther from the hazard, `nausea`, or moving the volume — never removing a cell from the walk."
+}

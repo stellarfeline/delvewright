@@ -1,0 +1,13 @@
+{
+  "code": "DW0942",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "add",
+      "path": "/content/quests/0/on_objective_complete/obj~1press-the-case/1/audience",
+      "value": "actor"
+    }
+  ],
+  "units": [],
+  "why": "The case-opening bundle's `set-block` lights the pedestal with a sea lantern: one block, changed once, for the whole world. Giving it `audience: actor` asks the emitter to address a world fact to one player, and there is no player in a `setblock` to address — the field would change nothing, silently. Validation refuses `audience` (and `in`) on every verb the emitter classifies as a party fact, naming the verb and the field. It declares no unit: the envelope's `audience` and `in` are bound on the same bundle's `particle`, `give-effect` and `play-sound`. The remedy is to remove the field, or move it onto the effects a player sees, hears or receives."
+}
