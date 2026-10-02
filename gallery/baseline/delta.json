@@ -229,6 +229,7 @@
     "easy.en:validation/furniture-gate.json",
     "easy.en:validation/leave-proof.json",
     "easy.en:validation/lethal-gate.json",
+    "easy.en:validation/press-bodies.json",
     "easy.en:validation/respawn-safety.json",
     "easy.en:validation/teleport-gate.json",
     "easy.en:validation/watch-claims.json",
@@ -256,6 +257,7 @@
     "hard.en:validation/furniture-gate.json",
     "hard.en:validation/leave-proof.json",
     "hard.en:validation/lethal-gate.json",
+    "hard.en:validation/press-bodies.json",
     "hard.en:validation/respawn-safety.json",
     "hard.en:validation/teleport-gate.json",
     "hard.en:validation/watch-claims.json",
@@ -283,6 +285,7 @@
     "ocean-horizon.en:validation/furniture-gate.json",
     "ocean-horizon.en:validation/leave-proof.json",
     "ocean-horizon.en:validation/lethal-gate.json",
+    "ocean-horizon.en:validation/press-bodies.json",
     "ocean-horizon.en:validation/respawn-safety.json",
     "ocean-horizon.en:validation/teleport-gate.json",
     "ocean-horizon.en:validation/watch-claims.json",
@@ -310,6 +313,7 @@
     "primary.en:validation/furniture-gate.json",
     "primary.en:validation/leave-proof.json",
     "primary.en:validation/lethal-gate.json",
+    "primary.en:validation/press-bodies.json",
     "primary.en:validation/respawn-safety.json",
     "primary.en:validation/teleport-gate.json",
     "primary.en:validation/watch-claims.json",
@@ -337,6 +341,7 @@
     "primary.zh-cn:validation/furniture-gate.json",
     "primary.zh-cn:validation/leave-proof.json",
     "primary.zh-cn:validation/lethal-gate.json",
+    "primary.zh-cn:validation/press-bodies.json",
     "primary.zh-cn:validation/respawn-safety.json",
     "primary.zh-cn:validation/teleport-gate.json",
     "primary.zh-cn:validation/watch-claims.json",
@@ -366,6 +371,7 @@
     "void-horizon.en:validation/furniture-gate.json",
     "void-horizon.en:validation/leave-proof.json",
     "void-horizon.en:validation/lethal-gate.json",
+    "void-horizon.en:validation/press-bodies.json",
     "void-horizon.en:validation/respawn-safety.json",
     "void-horizon.en:validation/teleport-gate.json",
     "void-horizon.en:validation/watch-claims.json",
@@ -377,7 +383,7 @@
     "creator overlay": 6,
     "datapack function": 198,
     "other": 12,
-    "validation ledger": 116
+    "validation ledger": 122
   },
   "removed": []
 }
