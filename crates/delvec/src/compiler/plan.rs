@@ -1553,7 +1553,7 @@ pub enum Step {
         /// The struck assembly (`strike-assembly` only, spec-0082).
         assembly_id: Option<String>,
         /// The cell the target stands on: the anchor, the NPC's body at this
-        /// beat, or the cell an assembly's hitbox stands in.
+        /// beat, or an assembly's mark.
         pos: [i32; 3],
         /// An `approach` trigger's radius; `None` for a click.
         range: Option<u32>,
@@ -5055,7 +5055,7 @@ fn path_triggers(
         };
         // Where the target stands when the party is at step `si`: the area the
         // emitter summoned its body in, the NPC's body at this beat, or the
-        // cell the struck assembly's hitbox stands in (spec-0082).
+        // struck assembly's mark (spec-0082).
         // An assembly stands only from the path step whose completion bundle
         // spawns it: struck before then, there is nothing there to strike.
         let spawned_at: Option<usize> = t.on.assembly_target().and_then(|a| {
@@ -5099,7 +5099,6 @@ fn path_triggers(
                     return None;
                 }
                 let decl = campaign.quests.content.assembly_decl(a.as_str())?;
-                let off = decl.hitbox.as_ref().map(|h| h.offset).unwrap_or([0; 3]);
                 let (area, cell) = anchors
                     .iter()
                     .find(|((_, n), _)| n == decl.at.anchor.as_str())
@@ -5112,7 +5111,10 @@ fn path_triggers(
                             },
                         )
                     })?;
-                return Some((area, delvewright_dsl::offset_cell(decl.at.cell(cell), off)));
+                // The mark: where the thing stands, the cell a party walks up to.
+                // Whether its hitbox is within a strike of anywhere the party
+                // can stand is `DW0937`'s question, asked of the box itself.
+                return Some((area, decl.at.cell(cell)));
             }
             match t.on.npc_target() {
                 Some(npc) => npc_beat_cell(

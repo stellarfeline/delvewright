@@ -357,6 +357,29 @@ pub fn judge(
                     ),
                 ));
             }
+            let cell = delvewright_dsl::offset_cell(s.mark, h.offset);
+            let (lo, hi) = hitbox_box(cell, h);
+            // ---- DW0937: reach, for the strikes the path performs ----
+            // Asked before the mark rule: a box no swing can reach is the
+            // first thing wrong with it, wherever its parts stand.
+            for t in &s.performed {
+                if !reaches(t, lo, hi) {
+                    out.push(Failure::new(
+                        DW_ASSEMBLY_REACH,
+                        format!(
+                            "the critical path performs trigger `{t}`, a `strike-assembly` on \
+                             assembly `{}`, and no cell the party can walk to holds an eye within \
+                             a strike ({} blocks, the player's interaction range) of its hitbox \
+                             at {lo:?}..{hi:?}. The beat can never happen: the party walks up and \
+                             cannot reach the thing. Lower the mark or the hitbox's `offset` \
+                             toward a floor the party stands on, or give the party footing \
+                             within reach",
+                            s.id,
+                            crate::compiler::strand::STRIKE_REACH
+                        ),
+                    ));
+                }
+            }
             let pose = s
                 .initial
                 .and_then(|c| s.rig.clips.get(c))
@@ -364,8 +387,6 @@ pub fn judge(
                 .or_else(|| s.rig.rest_pose())
                 .unwrap_or_default();
             let seen = offset_all(&rig::frame_footprint(&pose, s.facing), s.mark);
-            let cell = delvewright_dsl::offset_cell(s.mark, h.offset);
-            let (lo, hi) = hitbox_box(cell, h);
             if !seen.iter().any(|c| cell_meets(*c, lo, hi)) {
                 out.push(Failure::new(
                     DW_ASSEMBLY_HITBOX,
@@ -385,25 +406,6 @@ pub fn judge(
                         rig::cells_line(&seen)
                     ),
                 ));
-            }
-            // ---- DW0937: reach, for the strikes the path performs ----
-            for t in &s.performed {
-                if !reaches(t, lo, hi) {
-                    out.push(Failure::new(
-                        DW_ASSEMBLY_REACH,
-                        format!(
-                            "the critical path performs trigger `{t}`, a `strike-assembly` on \
-                             assembly `{}`, and no cell the party can walk to holds an eye within \
-                             a strike ({} blocks, the player's interaction range) of its hitbox \
-                             at {lo:?}..{hi:?}. The beat can never happen: the party walks up and \
-                             cannot reach the thing. Lower the mark or the hitbox's `offset` \
-                             toward a floor the party stands on, or give the party footing \
-                             within reach",
-                            s.id,
-                            crate::compiler::strand::STRIKE_REACH
-                        ),
-                    ));
-                }
             }
         }
     }

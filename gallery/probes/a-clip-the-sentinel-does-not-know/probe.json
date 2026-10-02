@@ -1,0 +1,13 @@
+{
+  "code": "DW0935",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "replace",
+      "path": "/content/triggers/6/effects/1/clip",
+      "value": "fly"
+    }
+  ],
+  "units": [],
+  "why": "The third blow on the sentinel plays its `retract` clip. This edit asks it to play `fly`, which the rig `rig/gallery-sentinel` does not declare: the emitter would have no frame function to dispatch to, and the statue would stand where it was while the story moved on. It declares no unit: `play-clip`'s `clip` is bound by the primary, and what the engine refuses is a clip name the assembly's rig lacks. The refusal lists the rig's clips, which `delvec rig describe rig/gallery-sentinel` also prints."
+}

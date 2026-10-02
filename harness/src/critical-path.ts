@@ -260,7 +260,7 @@ export interface TriggerStep {
   readonly assembly?: string;
   /**
    * The cell the target stands on: the anchor, the NPC's body at this beat, or
-   * the cell the assembly's hitbox stands in.
+   * the assembly's mark (its hitbox is the interaction nearest it).
    */
   readonly pos: Vec3Tuple;
   /** An `approach` trigger's radius; present exactly for `approach`. */

@@ -440,6 +440,20 @@ const ANCHORS: &[Anchor] = &[
         role: None,
     },
     Anchor {
+        name: "anchor/plinth",
+        pos: [23, 1, 12],
+        facing: Some("west"),
+        trigger_block: None,
+        note: "where the sentinel stands — the gallery's assembly (spec-0082): a \
+               statue of display entities that sways, can be struck, and stamps \
+               the 3 x 3 of floor round its own feet. Its arming region and its \
+               landing box are this one cell, so a body is caught only from the \
+               ring of cells beside it. Three cells east of the walk through the \
+               near hall and two north of the counter, so the critical path never \
+               stands where it stamps",
+        role: None,
+    },
+    Anchor {
         name: "anchor/vantage",
         pos: [15, 1, 27],
         facing: Some("north"),

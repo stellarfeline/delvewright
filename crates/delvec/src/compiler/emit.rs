@@ -599,11 +599,22 @@ pub fn build_with_warnings(
         let roots = crate::compiler::lethal::population_roots(plan, entry);
         let returned = playable_region(plan).map(|r| (r.min, r.max));
         // Where the party can walk while each performed trigger is the next
-        // beat — `DW0924`'s reading: a gate a later beat opens is shut.
+        // beat — `DW0924`'s reading: a gate a later beat opens is shut. A
+        // trigger step proves no objective, so the configuration is the one
+        // the next objective step stands under: the strike is made on the way
+        // to it, after every beat before it.
         let reaches = |trigger: &str, lo: [f64; 3], hi: [f64; 3]| {
-            let step = plan.critical_path.iter().position(
-                |s| matches!(s, Step::Trigger { trigger_id, .. } if trigger_id == trigger),
-            );
+            let step = plan
+                .critical_path
+                .iter()
+                .position(
+                    |s| matches!(s, Step::Trigger { trigger_id, .. } if trigger_id == trigger),
+                )
+                .map(|t| {
+                    (t..plan.critical_path.len())
+                        .find(|&i| plan.critical_path[i].objective().is_some())
+                        .unwrap_or(t)
+                });
             let config = step.and_then(|s| crate::compiler::nav::world_while_next(plan, &world, s));
             let ground = config.as_ref().unwrap_or(&world);
             ground
@@ -14859,6 +14870,10 @@ fn emit_packtest(
         );
     }
 
+    // spec-0082: per assembly, the body it spawns, every hit counter that rides
+    // its hitbox, and its landing. Emits nothing for a campaign with none.
+    emit_assembly_packtests(plan, out);
+
     // v0.3: one focused mechanism test per gameplay verb present in the campaign,
     // plus a flag-gate test. Each drives the compiler-generated mechanic functions
     // on a dummy player (no real combat / advancement events needed) and asserts
@@ -18390,6 +18405,248 @@ fn emit_kill_reward_packtests(
             format!("packtest-datapack/data/{ns}/test/wave_kill_reward_{safe}.mcfunction"),
             lines(&b).into_bytes(),
         );
+    }
+}
+
+/// **The assembly's generated PackTests** (spec-0082 §10), per placed
+/// assembly `<s>`:
+///
+/// * `asm_spawn_<s>` — the real `asm_spawn_<s>` stands one root with every
+///   rig part riding it (counted off the root's passengers, one
+///   `scoreboard players add` each — a forked `store result` counts one
+///   branch, spec-0082 §8 row 2) and one hitbox when declared; the real
+///   `asm_despawn_<s>` leaves no entity of the assembly behind.
+/// * `asm_hits_<s>_<trigger>` — per `strike-assembly` trigger whose bundle
+///   counts a `party` datum with an ungated `add-state`: an `attack` record
+///   written onto the hitbox and the real `tick` move the datum by the amount;
+///   and where a `play-clip` in the bundle waits on that datum at a count, the
+///   blow that reaches the count makes that clip the one the assembly plays.
+/// * `asm_land_<s>` — per assembly with a strike pattern, the real landing
+///   function run with step 0 in flight: the landing counter moves by one, the
+///   machine returns to idle and the step index advances.
+///
+/// A PackTest dummy is permanently undamageable (see `lethal_<id>`'s own
+/// note), so what a landing does to a player's health is the bot tier's to
+/// witness; this suite proves the machine that delivers it.
+fn emit_assembly_packtests(plan: &Plan, out: &mut BuildOutput) {
+    use crate::compiler::assembly as asm;
+    let ns = &plan.namespace;
+    let title = artifact_title(plan.campaign);
+    // The completion objective the progression baseline zeroes beside the rest.
+    let comp_obj = plan
+        .critical_path
+        .iter()
+        .find_map(|s| match s {
+            Step::AssertComplete { objective, .. } => Some(objective.clone()),
+            _ => None,
+        })
+        .unwrap_or_else(|| "dw.campaign".to_string());
+    let write = |name: &str, b: Vec<String>, out: &mut BuildOutput| {
+        out.insert(
+            format!("packtest-datapack/data/{ns}/test/{name}.mcfunction"),
+            lines(&b).into_bytes(),
+        );
+    };
+    for p in asm::placed(plan) {
+        let s = p.safe.clone();
+        let id = p.decl.id.as_str();
+        let reset = vec![
+            format!("kill @e[tag={}]", asm::tag(&s)),
+            format!(
+                "scoreboard players set {} dw.sys 0",
+                asm::holder(&s, "live")
+            ),
+        ];
+
+        // --- asm_spawn_<s> ---
+        let mut b = packtest_header(&format!(
+            "{title}: assembly `{id}` spawns its root, {} part(s) riding it and its hitbox, and \
+             leaves nothing behind when it despawns (spec-0082)",
+            p.rig.parts.len()
+        ));
+        b.push(format!("function {ns}:setup"));
+        b.extend(reset.iter().cloned());
+        b.push(format!("function {ns}:{}", asm::spawn_fn(&s)));
+        let n = format!("#asmn_{s}");
+        b.push(format!("scoreboard players set {n} dw.sys 0"));
+        b.push(format!(
+            "execute as @e[tag={},limit=1] on passengers run scoreboard players add {n} dw.sys 1",
+            asm::root_tag(&s)
+        ));
+        b.push(format!(
+            "assert score {n} dw.sys matches {}",
+            p.rig.parts.len()
+        ));
+        let h = format!("#asmh_{s}");
+        b.push(format!(
+            "execute store result score {h} dw.sys if entity @e[type=minecraft:interaction,tag={}]",
+            asm::hit_tag(&s)
+        ));
+        b.push(format!(
+            "assert score {h} dw.sys matches {}",
+            usize::from(p.decl.hitbox.is_some())
+        ));
+        b.push(format!("function {ns}:{}", asm::despawn_fn(&s)));
+        let left = format!("#asme_{s}");
+        b.push(format!(
+            "execute store result score {left} dw.sys if entity @e[tag={}]",
+            asm::tag(&s)
+        ));
+        b.push(format!("assert score {left} dw.sys matches 0"));
+        write(&format!("asm_spawn_{s}"), b, out);
+
+        // --- asm_hits_<s>_<trigger> ---
+        for t in &plan.campaign.quests.content.triggers {
+            if t.on.assembly_target().map(|a| a.as_str()) != Some(id) || p.decl.hitbox.is_none() {
+                continue;
+            }
+            // The counted datum: the bundle's first ungated `add-state` on a
+            // party datum.
+            let Some((datum, amount)) = t.effects.iter().find_map(|e| match &e.verb {
+                Verb::AddState { state, amount }
+                    if e.when.is_none()
+                        && plan
+                            .campaign
+                            .quests
+                            .content
+                            .state_decl(state.as_str())
+                            .is_some_and(|d| d.scope == StateScope::Party) =>
+                {
+                    Some((state, *amount))
+                }
+                _ => None,
+            }) else {
+                continue;
+            };
+            let score = plan::state_score(datum.as_str());
+            let tsafe = plan::safe_local(t.id.as_str());
+            let initial = plan
+                .campaign
+                .quests
+                .content
+                .state_decl(datum.as_str())
+                .map(|d| d.initial)
+                .unwrap_or(0);
+            // The trigger's own gate, owned by the template (`DW0807`).
+            let mut own: Vec<String> = Vec::new();
+            for f in &t.requires_flags {
+                own.push(format!(
+                    "scoreboard players set {} {} 1",
+                    plan::PARTY,
+                    plan::flag_score(f.as_str())
+                ));
+            }
+            for f in &t.forbids_flags {
+                own.push(format!(
+                    "scoreboard players set {} {} 0",
+                    plan::PARTY,
+                    plan::flag_score(f.as_str())
+                ));
+            }
+            own.push(format!("scoreboard players set #trig_{tsafe} dw.sys 0"));
+            let hit = format!(
+                "data merge entity @e[tag={},limit=1] {{attack:{{player:[I;0,0,0,1],timestamp:0L}}}}",
+                asm::hit_tag(&s)
+            );
+            let mut b = packtest_header(&format!(
+                "{title}: a blow on assembly `{id}`'s hitbox fires `{}` and moves `{}` by {amount} \
+                 (spec-0082)",
+                t.id, datum
+            ));
+            b.push(format!("function {ns}:setup"));
+            // The real `tick` runs below, so every `#party` term a gate on it
+            // reads is the template's own: the whole progression ledger at the
+            // campaign's start state (`DW0807`), then the trigger's own gate.
+            b.extend(campaign_progression_baseline(plan.campaign, &comp_obj));
+            b.extend(reset.iter().cloned());
+            b.push(format!("function {ns}:{}", asm::spawn_fn(&s)));
+            b.extend(own.iter().cloned());
+            b.push(format!(
+                "scoreboard players set {} {score} {initial}",
+                plan::PARTY
+            ));
+            b.push(hit.clone());
+            b.push(format!("function {ns}:tick"));
+            b.push(format!(
+                "assert score {} {score} matches {}",
+                plan::PARTY,
+                i64::from(initial) + i64::from(amount)
+            ));
+            // The clip the count plays, where the bundle waits on the datum.
+            let counted = t.effects.iter().find_map(|e| match &e.verb {
+                Verb::PlayClip { assembly, clip } if assembly.as_str() == id => e
+                    .requires_state()
+                    .iter()
+                    .find(|c| c.state == *datum && c.op == delvewright_dsl::CompareOp::AtLeast)
+                    .and_then(|c| p.rig.clip_index(clip).map(|k| (c.value, k))),
+                _ => None,
+            });
+            if let Some((at, k)) = counted {
+                b.extend(own.iter().cloned());
+                b.push(format!(
+                    "scoreboard players set {} dw.sys 0",
+                    asm::holder(&s, "sm")
+                ));
+                b.push(format!(
+                    "scoreboard players set {} {score} {}",
+                    plan::PARTY,
+                    i64::from(at) - i64::from(amount)
+                ));
+                b.push(hit.clone());
+                b.push(format!("function {ns}:tick"));
+                b.push(format!("assert score {} {score} matches {at}", plan::PARTY));
+                b.push(format!(
+                    "assert score {} dw.sys matches {k}",
+                    asm::holder(&s, "base")
+                ));
+                b.push(format!(
+                    "assert score {} dw.sys matches {k}",
+                    asm::holder(&s, "clip")
+                ));
+            }
+            b.push(format!("function {ns}:{}", asm::despawn_fn(&s)));
+            b.extend(own.iter().cloned());
+            b.push(format!(
+                "scoreboard players set {} {score} {initial}",
+                plan::PARTY
+            ));
+            write(&format!("asm_hits_{s}_{tsafe}"), b, out);
+        }
+
+        // --- asm_land_<s> ---
+        let Some(st) = p.decl.strikes.as_ref().filter(|st| !st.pattern.is_empty()) else {
+            continue;
+        };
+        let lands = asm::holder(&s, "lands");
+        let mut b = packtest_header(&format!(
+            "{title}: assembly `{id}`'s strike lands, counts the landing, and returns the machine \
+             to idle (spec-0082)"
+        ));
+        b.push(format!("function {ns}:setup"));
+        b.extend(reset.iter().cloned());
+        b.push(format!("function {ns}:{}", asm::spawn_fn(&s)));
+        b.push(format!("scoreboard players set {lands} dw.sys 0"));
+        b.push(format!(
+            "scoreboard players set {} dw.sys 3",
+            asm::holder(&s, "sm")
+        ));
+        b.push(format!(
+            "scoreboard players set {} dw.sys 0",
+            asm::holder(&s, "step")
+        ));
+        b.push(format!("function {ns}:{}", asm::land_fn(&s)));
+        b.push(format!("assert score {lands} dw.sys matches 1"));
+        b.push(format!(
+            "assert score {} dw.sys matches 0",
+            asm::holder(&s, "sm")
+        ));
+        b.push(format!(
+            "assert score {} dw.sys matches {}",
+            asm::holder(&s, "step"),
+            usize::from(st.pattern.len() > 1)
+        ));
+        b.push(format!("function {ns}:{}", asm::despawn_fn(&s)));
+        write(&format!("asm_land_{s}"), b, out);
     }
 }
 
