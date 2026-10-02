@@ -12,6 +12,10 @@
         82.0,
         44.5
       ],
+      "sky": {
+        "time": "dusk",
+        "weather": "clear"
+      },
       "source": "estimated",
       "spp": 300,
       "width": 1600,

@@ -337,3 +337,117 @@ fn place_camera_writes_a_stated_sky_and_refuses_one_that_is_not() {
         serde_json::json!({"time": "noon", "weather": "clear"})
     );
 }
+
+/// **Criterion 7 — the gallery reaches every weather and every class.** Every
+/// camera of `gallery/design/cameras.json` is emitted in process against the
+/// rows of `gallery/design.json`, under a render plan carrying the gallery's own
+/// declared sky (`gallery/world.json`); the weathers emitted are `{clear, rain,
+/// thunder}` and the daylight classes `{high, low, below}`, read off each
+/// emitted scene, and exactly one camera states its own sky. Changing the stated
+/// sky's weather from `clear` to `rain`, and the answered row's weather of a
+/// derived camera, each moves that camera's scene bytes.
+///
+/// The plan is not the gallery's BUILT `render-plan.json`: a cargo test cannot
+/// build the gallery, whose pieces the gallery job generates. A camera's sky
+/// reads no byte of the plan but its campaign id; the built-plan half is
+/// `tools/ci/check-whole-map-render.py`, which runs `delvec cameras` over the
+/// gallery's build and asserts the same two sets.
+#[test]
+fn the_gallery_reaches_every_weather_and_every_class() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../gallery");
+    let record = std::fs::read(root.join("design/cameras.json")).unwrap();
+    let sheet = camera::parse_sheet(&record).unwrap();
+    let design = std::fs::read(root.join("design.json")).unwrap();
+    let rows = camera::reference_rows(&design).unwrap();
+    let world: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(root.join("world.json")).unwrap()).unwrap();
+    let time: WorldTime = serde_json::from_value(world["content"]["time"].clone()).unwrap();
+    let plan = serde_json::to_vec(&serde_json::json!({
+        "campaign_id": sheet.campaign_id,
+        "layout_aabb": {"min": [0, 60, 0], "max": [64, 90, 64]},
+        "sky": {
+            "time": time.keyword(),
+            "daytime_ticks": time.daytime_ticks(),
+            "weather": world["content"]["weather"],
+        },
+        "shots": [],
+    }))
+    .unwrap();
+
+    let emission = camera::emit(&plan, &sheet, &rows, &EmitOptions::default()).unwrap();
+    assert_eq!(emission.scenes.len(), sheet.cameras.len());
+    let mut weathers = std::collections::BTreeMap::<&str, usize>::new();
+    let mut classes = std::collections::BTreeMap::<&str, usize>::new();
+    for (c, (_, bytes)) in sheet.cameras.iter().zip(&emission.scenes) {
+        let v: serde_json::Value = serde_json::from_slice(bytes).unwrap();
+        let resolved = camera::resolve_sky(c, &rows).unwrap();
+        // Read off the scene: the overcast cell names its weather by its values.
+        let weather = match v["sky"]["skyLight"].as_f64() {
+            None => "clear",
+            Some(light) => {
+                let class = resolved.class;
+                let rain = scene::overcast_cell(class, WorldWeather::Rain).unwrap();
+                let thunder = scene::overcast_cell(class, WorldWeather::Thunder).unwrap();
+                if light == rain.sky_light {
+                    "rain"
+                } else {
+                    assert_eq!(light, thunder.sky_light, "{}", c.name);
+                    "thunder"
+                }
+            }
+        };
+        assert_eq!(weather, resolved.sky.weather.keyword(), "{}", c.name);
+        let altitude = v["sun"]["altitude"].as_f64().unwrap().to_degrees();
+        let class = if altitude >= 20.0 {
+            "high"
+        } else if altitude >= 0.0 {
+            "low"
+        } else {
+            "below"
+        };
+        *weathers.entry(weather).or_default() += 1;
+        *classes.entry(class).or_default() += 1;
+    }
+    let stated = sheet.cameras.iter().filter(|c| c.sky.is_some()).count();
+    eprintln!(
+        "gallery skies: {} camera(s); weathers {weathers:?}; classes {classes:?}; {stated} stated",
+        sheet.cameras.len()
+    );
+    assert_eq!(
+        weathers.keys().copied().collect::<Vec<_>>(),
+        ["clear", "rain", "thunder"]
+    );
+    assert_eq!(
+        classes.keys().copied().collect::<Vec<_>>(),
+        ["below", "high", "low"]
+    );
+    assert_eq!(stated, 1, "one gallery camera states its own sky");
+
+    // Perturbation: the stated sky's weather `clear` -> `rain` moves its bytes.
+    let i = sheet.cameras.iter().position(|c| c.sky.is_some()).unwrap();
+    let mut moved = sheet.clone();
+    moved.cameras[i].sky.as_mut().unwrap().weather = WorldWeather::Rain;
+    let after = camera::emit(&plan, &moved, &rows, &EmitOptions::default()).unwrap();
+    assert_ne!(
+        after.scenes[i], emission.scenes[i],
+        "the stated sky reaches a byte"
+    );
+    // …and so does the answered row's weather, for a derived camera.
+    let j = sheet.cameras.iter().position(|c| c.sky.is_none()).unwrap();
+    let mut rows2 = rows.clone();
+    let r = rows2
+        .iter_mut()
+        .find(|r| r.name == sheet.cameras[j].answers)
+        .unwrap();
+    let s = r.sky.as_mut().unwrap();
+    s.weather = if s.weather == WorldWeather::Clear {
+        WorldWeather::Rain
+    } else {
+        WorldWeather::Clear
+    };
+    let after = camera::emit(&plan, &sheet, &rows2, &EmitOptions::default()).unwrap();
+    assert_ne!(
+        after.scenes[j], emission.scenes[j],
+        "the row's sky reaches a byte"
+    );
+}
