@@ -1297,6 +1297,26 @@ after the scene's own Chunky `name`, campaign-qualified — `hello-world_spawn`,
 `hello-world_pov_leg0_wp1`, `hello-world_panorama_se_45` — and that same stem names
 its caches and its rendered `.png`.
 
+### What the pinned core does with an atmosphere (spec-0080 §5.3)
+
+**Chunky draws its own sky, and an atmosphere's never reaches it.** Measured
+once, on the gallery hall under `atmosphere/frost-hall` (sky `#9fb8d8`, fog
+`#c8d4e0`, grass `#8fa8a0`): the gallery built at engine `feat/area-atmosphere`,
+its world stamped by `validation/world-save.sh` (4 region files), the scene
+`gallery_interior_hall_0` written by `validation/render-shots.sh` (emitted
+scene sha256 `e119cad3caffbb6f7ebb4b09e233bc7fd130717fc35a76ce086f2bc5007cf242`),
+rendered by `validation/chunky.sh` on `chunky-core-2.5.0-SNAPSHOT.474.g156e2bb`
+(content digest verified) at `-target 64` and snapshotted to a 1024×1024 frame,
+sha256 `87afb2ba40e3f3c29c19585c69109a43d9d76c85f0b57322249dcfa51bd17de8`. The
+frame shows the hall's stone shell under Chunky's own daylight gradient, not
+the atmosphere's sky colour: a scene's sky is the one spec-0079 keys by hour
+and weather, and the core reads nothing of a biome's environment attributes.
+What it does with the grass and foliage tint of a biome id it has no table for
+is **not measured by this frame** — the hall holds no tinted block — and stays
+open until a frame of a tinted block inside an atmosphere is rendered. The look
+of an atmosphere is confirmed in a client, on the demo level, never in a
+render.
+
 ### `cameras` — the showcase cameras · agent places them, owner judges the pictures
 
 **A showcase camera is one record**: `design/cameras.json` in the campaign,
