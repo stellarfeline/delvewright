@@ -2227,14 +2227,17 @@ fn validate_at(camp: &Path, prefabs: &Path) -> (i32, String) {
 #[test]
 fn dw0931_every_named_move_validates() {
     let dir = common::prefabs_dir();
-    let cases: [(
-        &str,
+    // (tag, red world time, red cuts, the move the message names, green world
+    // time, green cuts)
+    type Case = (
+        &'static str,
         serde_json::Value,
         Vec<serde_json::Value>,
-        &str,
+        &'static str,
         serde_json::Value,
         Vec<serde_json::Value>,
-    ); 4] = [
+    );
+    let cases: [Case; 4] = [
         (
             "two-bodies",
             serde_json::json!({"sun": "high", "moon": "below"}),
