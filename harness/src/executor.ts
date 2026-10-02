@@ -80,6 +80,7 @@ import {
   type MusterVerdict,
 } from "./muster.ts";
 import { isRejection } from "./rejection.ts";
+import { echoCommand, ReplyBrackets } from "./command-reply.ts";
 import {
   bodyInVolume,
   entryCellOf,
@@ -211,6 +212,12 @@ const STAGED_BLOW = 100_000;
  * a buffered window, not a single line, so a slow reply is still seen.
  */
 const STAGED_REPLY_MS = 400;
+
+/**
+ * How long a bracketed command's closing marker may take before its reply is
+ * reported as never observed. See `command-reply.ts`.
+ */
+const BRACKET_TIMEOUT_MS = 5_000;
 
 
 /**
@@ -1548,6 +1555,14 @@ export class MineflayerExecutor implements StepExecutor {
   private respawnPacketsAtDeath = 0;
   /** How many load windows the wire tracker had opened at the last death. */
   private windowsAtDeath = 0;
+  /** Which reply belongs to which command. See {@link refusalOf}. */
+  private readonly brackets = new ReplyBrackets();
+  /**
+   * Every entity the server has announced dead (the entity-event death status),
+   * by id. A body in its death throes is still in the client's entity table, and a
+   * shot it loosed before it fell can still land on the bot.
+   */
+  private readonly deadBodies = new Set<number>();
   /** Serial for {@link readServerPos}'s answer markers. */
   private posReads = 0;
   /** One-shot callbacks armed by {@link raceDeath}, fired on death. */
@@ -1960,6 +1975,8 @@ export class MineflayerExecutor implements StepExecutor {
     // the last objective step, so both must be buffered as they arrive. The same
     // stream feeds the recent-chat ring the death diagnostic mines for a cause.
     bot.on("messagestr", (message: string) => {
+      // A bracket marker is protocol, not speech: nothing else reads it.
+      if (this.brackets.observe(message)) return;
       this.observeMarker(message);
       this.observeCensus(message);
       this.observeMuster(message);
@@ -1999,7 +2016,10 @@ export class MineflayerExecutor implements StepExecutor {
     // ordinary despawn (out of render distance, dimension change) and says nothing
     // about a death. Only named bodies are actors the compiler ever tears down or a
     // story fight ever names; an unnamed mob's death is not this run report's concern.
-    bot.on("entityDead", (entity: Entity) => this.onNamedEntityDeath(entity));
+    bot.on("entityDead", (entity: Entity) => {
+      if (entity) this.deadBodies.add(entity.id);
+      this.onNamedEntityDeath(entity);
+    });
     // Counted from connect, so a respawn is never missed by a listener armed too
     // late (see recoverFromDeath).
     bot.on("respawn", () => {
@@ -2685,6 +2705,35 @@ export class MineflayerExecutor implements StepExecutor {
    */
   private chatSince(mark: number): ChatWindow {
     return linesSince(this.recentChat, this.chatSeen, mark);
+  }
+
+  /**
+   * **Send `command` and return the server's refusal of it, or `undefined`.**
+   *
+   * The command is bracketed (`command-reply.ts`), so the refusal read is this
+   * command's and no other's, whatever else is in flight. It waits at least
+   * `settleMs` — the pace the callers were written to — and at most until the
+   * closing marker. A reply that never closed was not observed, and is returned as
+   * a refusal saying so: silence is never read as consent.
+   */
+  private async refusalOf(command: string, settleMs = STAGED_REPLY_MS): Promise<string | undefined> {
+    const bot = this.requireBot();
+    const bracket = this.brackets.begin();
+    // One synchronous turn: nothing else can reach the socket between these.
+    bot.chat(echoCommand(bracket.open));
+    bot.chat(command);
+    bot.chat(echoCommand(bracket.close));
+    const [reply] = await Promise.all([
+      this.brackets.reply(bracket, BRACKET_TIMEOUT_MS),
+      delay(settleMs),
+    ]);
+    if (!reply.answered) {
+      return (
+        `no reply observed: the closing marker of \`${command}\` did not arrive within ` +
+        `${BRACKET_TIMEOUT_MS}ms`
+      );
+    }
+    return reply.lines.find((line) => isRejection(line));
   }
 
   /**
@@ -3489,10 +3538,7 @@ export class MineflayerExecutor implements StepExecutor {
       const scope = plan.stakes.find((s) => s.id === w.stake)?.currency.scope ?? "player";
       const now = this.myScore(w.objective);
       if (want === undefined || scope !== "player" || now === want) continue;
-      const from = this.chatMark();
-      bot.chat(`/scoreboard players set @s ${w.objective} ${want}`);
-      await delay(STAGED_REPLY_MS);
-      const refusal = this.chatSince(from).lines.find((line) => isRejection(line));
+      const refusal = await this.refusalOf(`/scoreboard players set @s ${w.objective} ${want}`);
       this.stagedRemovals.push({
         kind: "player",
         why:
@@ -3517,10 +3563,7 @@ export class MineflayerExecutor implements StepExecutor {
       const scope = stake?.currency.scope ?? "player";
       const want = stagedBalance(w.forfeit);
       if (scope === "player") {
-        const from = this.chatMark();
-        bot.chat(`/scoreboard players set @s ${w.objective} ${want}`);
-        await delay(STAGED_REPLY_MS);
-        const refusal = this.chatSince(from).lines.find((line) => isRejection(line));
+        const refusal = await this.refusalOf(`/scoreboard players set @s ${w.objective} ${want}`);
         this.stagedRemovals.push({
           kind: "player",
           why:
@@ -3756,10 +3799,7 @@ export class MineflayerExecutor implements StepExecutor {
     if (!bot) return;
     while (this.gatesOpenedByTrial.length > 0) {
       const g = this.gatesOpenedByTrial.shift()!;
-      const from = this.chatMark();
-      bot.chat(`/setblock ${g.pos[0]} ${g.pos[1]} ${g.pos[2]} ${g.state}`);
-      await delay(STAGED_REPLY_MS);
-      const refusal = this.chatSince(from).lines.find((line) => isRejection(line));
+      const refusal = await this.refusalOf(`/setblock ${g.pos[0]} ${g.pos[1]} ${g.pos[2]} ${g.state}`);
       this.stagedRemovals.push({
         kind: "world",
         why:
@@ -4985,10 +5025,7 @@ export class MineflayerExecutor implements StepExecutor {
       this.chunkHolds.delete(key);
     }
     const verb = hold ? "add" : "remove";
-    const from = this.chatMark();
-    bot.chat(`/forceload ${verb} ${pos[0]} ${pos[2]}`);
-    await delay(STAGED_REPLY_MS);
-    const refusal = this.chatSince(from).lines.find((line) => isRejection(line));
+    const refusal = await this.refusalOf(`/forceload ${verb} ${pos[0]} ${pos[2]}`);
     if (refusal !== undefined) {
       process.stderr.write(
         `[kill] forceload ${verb} ${pos[0]} ${pos[2]} was refused — ${refusal}\n`,
@@ -5462,6 +5499,19 @@ export class MineflayerExecutor implements StepExecutor {
       );
       return;
     }
+    // A body the server has already announced dead is not standing, so there is
+    // nothing to remove: what hit the bot was a shot it loosed before it fell.
+    // `/damage` on it is refused ("Target is invulnerable to the given damage
+    // type": a dying body takes no damage), and that refusal is not the body
+    // standing. Its blow is still refunded.
+    if (this.deadBodies.has(id)) {
+      process.stderr.write(
+        `[staged] ${kind}#${id}: ${why}, but the server had already announced its death — ` +
+          `nothing to remove\n`,
+      );
+      await this.refundBlows(kind, id);
+      return;
+    }
     this.stagedIds.add(id);
     if (!uuid) {
       this.stagedRemovals.push({ kind, why, performed: false, detail: "the client has no UUID for it" });
@@ -5471,20 +5521,28 @@ export class MineflayerExecutor implements StepExecutor {
       );
       return;
     }
-    const from = this.chatMark();
     const command = `/damage ${uuid} ${STAGED_BLOW} minecraft:player_attack by ${bot.username}`;
-    bot.chat(command);
     process.stderr.write(`[staged] ${kind}#${id} removed: ${why}\n`);
     // Every command's response is read (CLAUDE.md). A refused `/damage` leaves the
     // body standing, and a run that did not look would report the removal anyway.
-    await delay(STAGED_REPLY_MS);
-    const refusal = this.chatSince(from).lines.find((line) => isRejection(line));
+    const refusal = await this.refusalOf(command);
+    // The body fell between the hit and the blow. The server announces a death
+    // before it answers any later command, so by the time this refusal is read the
+    // announcement has arrived if the death is why the blow was refused.
+    const fellFirst = refusal !== undefined && this.deadBodies.has(id);
     this.stagedRemovals.push({
       kind,
       why,
       performed: refusal === undefined,
-      detail: refusal,
+      detail: fellFirst ? `the body died before the blow landed — ${refusal}` : refusal,
     });
+    if (fellFirst) {
+      process.stderr.write(
+        `[staged] ${kind}#${id}: the blow was refused because the body had already died — ${refusal}\n`,
+      );
+      await this.refundBlows(kind, id);
+      return;
+    }
     if (refusal !== undefined) {
       process.stderr.write(`[staged] ${kind}#${id}: the server refused the blow — ${refusal}\n`);
       return;
@@ -5537,10 +5595,7 @@ export class MineflayerExecutor implements StepExecutor {
         const deficit = PLAYER_MAX_HEALTH - before;
         if (deficit <= 0) return;
         const amp = restoreAmplifier(deficit);
-        const from = this.chatMark();
-        bot.chat(`/effect give @s minecraft:instant_health 1 ${amp} true`);
-        await delay(STAGED_REPLY_MS);
-        const refusal = this.chatSince(from).lines.find((line) => isRejection(line));
+        const refusal = await this.refusalOf(`/effect give @s minecraft:instant_health 1 ${amp} true`);
         this.stagedRemovals.push({
           kind: "player",
           why:
@@ -5597,10 +5652,7 @@ export class MineflayerExecutor implements StepExecutor {
     let units = refunded;
     for (let amp = 0; units > 0; amp += 1, units >>= 1) {
       if ((units & 1) === 0) continue;
-      const from = this.chatMark();
-      bot.chat(`/effect give @s minecraft:instant_health 1 ${amp} true`);
-      await delay(STAGED_REPLY_MS);
-      const refusal = this.chatSince(from).lines.find((line) => isRejection(line));
+      const refusal = await this.refusalOf(`/effect give @s minecraft:instant_health 1 ${amp} true`);
       const heal = INSTANT_HEALTH_UNIT << amp;
       this.stagedRemovals.push({
         kind: "player",
@@ -5941,11 +5993,8 @@ export class MineflayerExecutor implements StepExecutor {
         );
         break;
       }
-      const from = this.chatMark();
-      bot.chat(`/function ${enc.muster.strike}`);
+      const refusal = await this.refusalOf(`/function ${enc.muster.strike}`);
       struck += 1;
-      await delay(STAGED_REPLY_MS);
-      const refusal = this.chatSince(from).lines.find((line) => isRejection(line));
       if (refusal !== undefined) {
         throw new Error(
           `kill ${step.wave}: the staged blow was refused by the server — ${refusal} ` +

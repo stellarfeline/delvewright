@@ -116,6 +116,10 @@ taking is given back with instant health, rounded UP to vanilla's units
 whole of what a refund can hide — and named in `staged_removals`. Route falls and lethal volumes are
 mechanism, not bodies: nothing they take is refunded, and they still kill the bot.
 
+A body the server has already announced dead is not standing and is never struck: what hit the bot is a shot it loosed as it fell, and `/damage` on a dying body is refused (`Target is invulnerable to the given damage type`). Its blow is still refunded. A blow refused because the body died between the hit and the blow is named in `staged_removals` as `the body died before the blow landed`.
+
+Every command whose refusal the harness reads is sent between two `/tellraw @s` markers written in one synchronous turn (`harness/src/command-reply.ts`). The server answers one player's commands in arrival order, so the lines between a command's markers are its reply and never the reply of another command in flight. A reply whose closing marker does not arrive within 5 s is reported as unobserved, never as accepted.
+
 On a walk leg the bot is held at full health: it is restored on entry to every
 walk and after every drop while the walk is in progress, whatever dealt the drop,
 by one instant-health effect that covers the whole deficit, named in
