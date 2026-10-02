@@ -1,6 +1,6 @@
 # spec-0082: A fixed thing that can be hit and hits back — the animated display-entity assembly
 
-- **Status**: Proposed
+- **Status**: Approved
 - **Ground**: written against engine `e3a6dd36` (`origin/main`), read only, with
   the instrument `delvec 1.7.1, dsl 0.35.0, mc 1.21.11` built from that tree
   (`cargo build --release -p delvec`, exit 0): `delvec schema --stage all` is
@@ -31,12 +31,12 @@
 - **Research**: §9 is this spec's research record. Every rule below is marked
   **cited** (a vanilla behaviour measured on the pinned server, a page named,
   or a constitution rule) or **authored** (this spec chooses).
-- **Numbers**: spec `0082`. DW codes are **placeholders** here
-  (`DW_ASSEMBLY_*`, §6) and are allocated by the planner at implementation. No
-  ADR: no settled decision moves. **`dsl_version` moves by one minor step**:
-  the quests stage gains an object class, three verbs and a trigger kind.
+- **Numbers**: spec `0082`; DW codes `DW0935`–`DW0938` (§6), allocated by
+  the planner. No ADR: no settled decision moves. `dsl_version` stays at the
+  number the crate manifest states (`0.35.0`): the quests stage gains an object
+  class, three verbs and a trigger kind under it.
 - **Non-goals**: a thing that walks (step 2, §7, planned and not specified
-  here); a hitbox that is a living body (§3.4 says why, §11 asks); health,
+  here); a hitbox that is a living body (§3.4 says why, §11 records the ruling); health,
   equipment, traversal, a health bar or a kill credit on an assembly — it is
   not a fight class and never dies; a clip authored by hand in campaign JSON
   (§3.1: a clip is a procedural derivation and lives in a rig file the tool
@@ -237,7 +237,7 @@ therefore struck in melee only, and the creator's page says so (§10). The
 alternative — an invisible living body as the hitbox, so `player_hurt_entity`
 would credit arrows — is a *fight class* with health, knockback and a death,
 and is the thing §2 declined to make an assembly into; §11 puts the question
-to the owner once, with that cost.
+to the owner with that cost and records the ruling: melee only.
 
 ## 4. Emission
 
@@ -295,7 +295,7 @@ nothing here teleports.
 
 Part count, block ids, every clip non-empty with one transform per part per
 frame, `ticks_per_frame` in bounds, a finite transform (no NaN, a scale that
-is not zero on any axis). Refused at validation (`DW_ASSEMBLY_RIG`).
+is not zero on any axis). Refused at validation (`DW0935`).
 
 ### 5.2 Footprints — what the compiler computes from a frame
 
@@ -309,7 +309,7 @@ deterministic, and the same function `delvec rig describe` prints from.
 
 - **It is marked.** The hitbox's box intersects the initial clip's first
   frame footprint — the player hits what the player sees — else
-  `DW_ASSEMBLY_HITBOX`. The `DW0420` rule, on this hardware.
+  `DW0936`. The `DW0420` rule, on this hardware.
 - **Its reach is real.** Vanilla detects attacks on an `interaction` only
   within 3.3 blocks of its position toward −X/−Z, 19.3 toward +X/+Z and 22.6
   above it [cited — Minecraft Wiki, *Interaction*, *Usage*]. A `width` over
@@ -324,14 +324,14 @@ deterministic, and the same function `delvec rig describe` prints from.
   already states), some standable cell of the party's population lies within
   `compiler::strand::STRIKE_REACH` (3.0 blocks, the attribute's default) of
   the hitbox's box, eye-to-box as `strand` measures it. Else
-  `DW_ASSEMBLY_REACH`, the `DW0426` class: a beat that can never happen.
+  `DW0937`, the `DW0426` class: a beat that can never happen.
 
 ### 5.4 The strike — danger is visible, or the engine refuses it
 
 The operating rule and spec-0062 say a killing volume never reaches a cell
 that reads as safe floor. A strike is not a volume: it is a blow from a thing
 the player can see. What makes its danger visible is **where** it lands, and
-that is two checks (`DW_ASSEMBLY_STRIKE`, one code, two shapes, build tier):
+that is two checks (`DW0938`, one code, two shapes, build tier):
 
 1. **It lands only where it was announced.** Every `damage-players.in` box in
    an `on_land`, grown to its keep-out (`metrics::keep_out_box(Body::PLAYER,
@@ -359,8 +359,8 @@ round summary can say what the level does; the engine does not judge it.
 ### 5.5 Clip references and the plan
 
 A `play-clip`, `initial`, `windup` or `strike` naming a clip the rig lacks is
-`DW_ASSEMBLY_RIG` at validation, the message listing the rig's clips. A
-`strike-assembly` on an assembly with no `hitbox` is `DW_ASSEMBLY_HITBOX`. An
+`DW0935` at validation, the message listing the rig's clips. A
+`strike-assembly` on an assembly with no `hitbox` is `DW0936`. An
 assembly's `at` is a `DW0360` site like every anchor-bearing declaration and
 a `DW0897` site like every mark.
 
@@ -373,13 +373,12 @@ cost the host meets: the total part count and the keyframe writes per tick
 the declared cadences add up to, beside §8 row 7's measured rate. A host is
 never a cap on the capability; the engine states the number.
 
-## 6. Placeholder codes
+## 6. Codes
 
-`DW_ASSEMBLY_RIG` (validation, exit 1), `DW_ASSEMBLY_HITBOX` (build, exit 3),
-`DW_ASSEMBLY_REACH` (build, exit 3), `DW_ASSEMBLY_STRIKE` (build, exit 3).
-Four codes, allocated by the planner across every remote ref at
-implementation; each owes a red fixture and its row in
-`docs/reference/compiler.md` (`check-dw-codes.py`).
+`DW0935` (the rig, validation, exit 1), `DW0936` (the hitbox, build, exit 3),
+`DW0937` (reach, build, exit 3), `DW0938` (the strike, build, exit 3). Each
+owes a red fixture and its row in `docs/reference/compiler.md`
+(`check-dw-codes.py`).
 
 ## 7. Step 2, planned: the assembly worn by a mob
 
@@ -486,12 +485,12 @@ raw readings in `observations.json`, coordinates in `site.json` written by
   `data merge` line; changing `hold` moves the driver. Units: the object
   class and each of its properties, the three verbs, the trigger kind.
 - **The probes** (primary plus one edit, refused by the named code): a
-  hitbox of width 7 (`DW_ASSEMBLY_HITBOX`); a landing box outside
-  `while_in` (`DW_ASSEMBLY_STRIKE`, shape 1); a landing box under a corner the
+  hitbox of width 7 (`DW0936`); a landing box outside
+  `while_in` (`DW0938`, shape 1); a landing box under a corner the
   strike clip never reaches (shape 2); a `play-clip` naming `fly`
-  (`DW_ASSEMBLY_RIG`); a required
+  (`DW0935`); a required
   `strike-assembly` whose hitbox stands over the hall's pit beyond reach
-  (`DW_ASSEMBLY_REACH`).
+  (`DW0937`).
 - **The record.** `docs/reference/compiler.md`: the class's surface rows, the
   three verbs' and the trigger kind's emission rows, the four codes, the
   binding line, and the measured rows of §8 that emission depends on (a
@@ -525,17 +524,17 @@ raw readings in `observations.json`, coordinates in `site.json` written by
 - **A new object class, `assemblies[]`, with the rig as a library file** —
   the alternative is a shape of `actors[]`, declined in §2 because eleven of
   an actor's fields would mean nothing on it.
-- **Struck in melee only.** Measured (§8): an arrow does not write the
-  `interaction`'s `attack` record. The alternative is a living invisible body
-  as the hitbox, which is a fight class (health, knockback, death, a kill
-  credit) and a second hitbox kind on one object. Recommendation: ship melee
-  only and say so on the creator's page; a ranged class stands back while a
-  melee class does the hitting, which is a party division spec-0018 already
-  values.
+- **Settled: struck in melee only.** Measured (§8): an arrow does not write
+  the `interaction`'s `attack` record. The hitbox is an `interaction`; the
+  living invisible body (a fight class: health, knockback, death, a kill
+  credit, and a second hitbox kind on one object) is not built. The creator's
+  skill page states that an assembly is struck in melee only and that arrows
+  pass through it; a ranged class stands back while a melee class does the
+  hitting, a party division spec-0018 already values.
 - **Settled, not asked**: a strike's wind-up length and a strike that kills
   an unhurt player in one blow are the creator's, with no refusal and no
   advisory — spec-0016 §3's ruling, applied in §5.4.
-- **`dsl_version` moves**; no ADR.
+- No ADR; `dsl_version` stays `0.35.0`.
 
 ## 12. Acceptance criteria
 
@@ -551,7 +550,7 @@ tree's own build; the gallery builds from `prefabs/gallery-generator`.
    `crates/dsl/tests/` test over the export.*
 2. **The rig.** A rig with a part count, clip set and frame shape is parsed;
    a missing clip, an unknown block, a frame short one part, a zero scale and
-   a cadence of 0 or 21 are each `DW_ASSEMBLY_RIG` naming the field.
+   a cadence of 0 or 21 are each `DW0935` naming the field.
    `delvec rig describe` prints parts, clips with tick lengths, and the
    last-frame footprint per clip; two runs are byte-identical. *Instrument:
    `crates/delvec/tests/`.*
@@ -567,13 +566,13 @@ tree's own build; the gallery builds from `prefabs/gallery-generator`.
    against `dw_asm_<id>_hit`; `once: false` with `add-state` and a gated
    `play-clip` emits the three lines in declared order in one function;
    `audience: presser` on it is `DW0427`; a trigger naming an assembly with no
-   hitbox is `DW_ASSEMBLY_HITBOX`; `at` on it is `DW0194`.
-5. **The hitbox.** Width 7 and height 23 are `DW_ASSEMBLY_HITBOX`; width 6 and
+   hitbox is `DW0936`; `at` on it is `DW0194`.
+5. **The hitbox.** Width 7 and height 23 are `DW0936`; width 6 and
    height 22 are green; a hitbox disjoint from the initial frame footprint is
    refused naming the footprint's cells; an assembly's hitbox appears in
    `compiler::eclipse`'s enumeration (a body posted on its cell is `DW0359`).
 6. **Reach.** A critical-path `strike-assembly` whose hitbox lies more than
-   `STRIKE_REACH` from every populated standable cell is `DW_ASSEMBLY_REACH`;
+   `STRIKE_REACH` from every populated standable cell is `DW0937`;
    moving the mark one cell toward the floor greens it; the test reads the
    same constant `strand` reads.
 7. **The strike, two shapes, and what is left alone.** A landing box one
