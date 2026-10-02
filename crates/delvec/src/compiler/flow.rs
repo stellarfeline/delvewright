@@ -284,6 +284,11 @@ struct ReplayState {
     /// The JSON pointer of every effect the last step fired — its gate held
     /// where the replay reached it — in firing order. Cleared at each step.
     fired: Vec<String>,
+    /// The subset of `fired` whose gate held only because a numeric term read
+    /// an undatable datum: the replay walks on through it (withholding a
+    /// producer is the unsound direction there), and a proof that asks whether
+    /// the line is FORCED must not read it as such. Cleared at each step.
+    undecided: Vec<String>,
 }
 
 /// One datum's value during a replay.
@@ -368,6 +373,9 @@ enum Beat {
     /// A quest's `on_complete` bundle — after every objective of that quest, and
     /// before every beat of every quest it triggers.
     QuestComplete(String),
+    /// An environment trigger's `effects`, fired where the path performs it
+    /// ([`Walk::probe`]).
+    Trigger(String),
 }
 
 impl Beat {
@@ -376,6 +384,7 @@ impl Beat {
         match self {
             Beat::Objective(o) => format!("`{o}`'s completion bundle"),
             Beat::QuestComplete(q) => format!("`{q}`'s `on_complete` bundle"),
+            Beat::Trigger(t) => format!("trigger `{t}`'s effects"),
         }
     }
 }
@@ -461,6 +470,9 @@ pub struct JournalStep {
     /// included — read by the replay's own gate test where it reached each one.
     /// The one answer to "did this beat play", which the chronicle reads.
     pub fired: BTreeSet<String>,
+    /// The members of `fired` whose gate held only on an undatable numeric
+    /// term — played by the replay, never forced (`plan::firing_of`).
+    pub undecided: BTreeSet<String>,
 }
 
 /// One play order under construction ([`Flow::walk`]): the replay state
@@ -504,7 +516,39 @@ impl Walk<'_, '_> {
             flags_before: before.flags,
             flags_after: self.st.flags.clone(),
             fired: self.st.fired.iter().cloned().collect(),
+            undecided: self.st.undecided.iter().cloned().collect(),
         }
+    }
+
+    /// Fire `effs` — an environment trigger's `effects`, whose root pointer is
+    /// `base` — against the state this walk holds NOW, without advancing it, and
+    /// return what fired and which of those held only on an undatable term.
+    ///
+    /// The same [`Flow::fire`] every quest bundle goes through, so a trigger's
+    /// line is judged by the one gate test the replay applies everywhere.
+    pub fn probe(
+        &self,
+        trigger: &str,
+        effs: &[QuestEffect],
+        base: &str,
+    ) -> (BTreeSet<String>, BTreeSet<String>) {
+        let mut st = self.st.clone();
+        st.fired.clear();
+        st.undecided.clear();
+        let mut complete_at = self.complete_at.clone();
+        self.flow.fire(
+            effs,
+            base,
+            &mut st,
+            &mut complete_at,
+            self.taken,
+            "",
+            &Beat::Trigger(trigger.to_string()),
+        );
+        (
+            st.fired.into_iter().collect(),
+            st.undecided.into_iter().collect(),
+        )
     }
 
     /// Has `campaign-complete` fired? Nothing is walked after it.
@@ -1457,6 +1501,9 @@ impl<'a> Flow<'a> {
                 self.objective_quest(y).is_some_and(|qy| ancestor(q, qy))
             }
             (Beat::QuestComplete(p), Beat::QuestComplete(q)) => ancestor(p, q),
+            // A trigger is a party act the quest DAG does not order: nothing
+            // provably precedes or follows it.
+            (Beat::Trigger(_), _) | (_, Beat::Trigger(_)) => false,
         }
     }
 
@@ -1875,6 +1922,7 @@ impl<'a> Flow<'a> {
     ) {
         st.done_obj.insert(step.objective.clone());
         st.fired.clear();
+        st.undecided.clear();
         if let Some(n) = step.talk_option {
             for f in self.option_sets(&step.objective, n) {
                 st.flags.insert(f);
@@ -2268,6 +2316,17 @@ impl<'a> Flow<'a> {
                 continue;
             }
             let path = format!("{base}/{i}");
+            // Open, but only because a term could not be dated: the walk goes
+            // on through it, and the line is recorded as not decided.
+            let undatable = e.requires_state().iter().any(|cmp| {
+                st.state
+                    .get(cmp.state.as_str())
+                    .and_then(|d| d.satisfies(cmp))
+                    .is_none()
+            });
+            if undatable {
+                st.undecided.push(path.clone());
+            }
             st.fired.push(path.clone());
             match &e.verb {
                 Verb::SetFlag { flag, .. } => {

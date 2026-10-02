@@ -424,7 +424,8 @@ fn a_path_cannot_cross_a_door_opened_only_under_another_branchs_flag() {
             assert_eq!(code, "DW0317", "wrong diagnostic: {message}");
             assert!(
                 message.contains("`anchor/door`")
-                    && message.contains("no firing the party is forced to make ever opens it"),
+                    && message.contains("no firing the party is forced to make ever opens it")
+                    && message.contains("a line whose gate does not hold where this path plays it"),
                 "the diagnostic must name the door and why nothing opens it: {message}"
             );
         }
@@ -432,5 +433,60 @@ fn a_path_cannot_cross_a_door_opened_only_under_another_branchs_flag() {
         Ok(_) => panic!(
             "expected DW0317: the hold path crosses a door opened only under the bolt branch's flag"
         ),
+    }
+}
+
+/// A line whose gate holds only on a value no ordered walk can date is played by
+/// the replay and never forced. The hold path's own `open-gate` (on `obj/watch`)
+/// is gated `state/tally at-least 0` — true from the declared initial value.
+/// Control: with nothing else writing the datum the walk dates it, the line is
+/// forced, and the campaign builds. Variant: the campaign's `on_death` also
+/// writes it, so its value at `obj/watch` is not a function of the path; the
+/// opening is then not credited and the hold path's walk out is `DW0317`.
+#[test]
+fn a_door_opened_behind_an_undatable_gate_is_not_credited() {
+    let tally = |tmp: &TempCampaign, on_death: bool| {
+        tmp.patch("quests", |q| {
+            q["content"]["state"] = json!([{
+                "id": "state/tally",
+                "initial": 0,
+                "scope": "party",
+                "note": "A count the watch keeps; only its datability is under test."
+            }]);
+            let bundle = quest(q, "quest/hold")["on_objective_complete"]["obj/watch"]
+                .as_array_mut()
+                .unwrap();
+            let gate = bundle
+                .iter_mut()
+                .find(|e| e["type"] == "open-gate")
+                .expect("fixture drift: obj/watch must carry the hold branch's open-gate");
+            gate["when"] = json!({
+                "requires_state": [{ "state": "state/tally", "op": "at-least", "value": 0 }]
+            });
+            if on_death {
+                q["content"]["on_death"] =
+                    json!([{ "type": "add-state", "state": "state/tally", "amount": 1 }]);
+            }
+        });
+    };
+
+    let control = TempCampaign::new("datable-gate");
+    tally(&control, false);
+    try_build_campaign(control.path()).unwrap_or_else(|e| {
+        panic!("a gate the walk can date and that holds must carry the route: {e:?}")
+    });
+
+    let tmp = TempCampaign::new("undatable-gate");
+    tally(&tmp, true);
+    match try_build_campaign(tmp.path()) {
+        Err(BuildFailure::Diagnostic { code, message }) => {
+            assert_eq!(code, "DW0317", "wrong diagnostic: {message}");
+            assert!(
+                message.contains("`anchor/door`"),
+                "the diagnostic must name the door: {message}"
+            );
+        }
+        Err(other) => panic!("expected DW0317, got {other:?}"),
+        Ok(_) => panic!("expected DW0317: the door opens behind a gate no ordered walk can decide"),
     }
 }
