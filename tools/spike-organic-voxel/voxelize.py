@@ -78,6 +78,8 @@ SLAB = {f: f"{f}_slab" for f in ("smooth_sandstone", "diorite", "andesite", "mos
 STAIR = {f: f"{f}_stairs" for f in ("smooth_sandstone", "diorite", "andesite", "mossy_cobblestone")}
 PALETTE = PALETTES["weathered"]
 
+SCHEM_MAX_CELLS = 9_900_000
+
 # kinds
 AIR, FULL, SLAB_B, SLAB_T, STAIR_K = 0, 1, 2, 3, 4
 
@@ -295,10 +297,7 @@ def sha256_file(path):
     return h.hexdigest()
 
 
-def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--stl", required=True)
-    ap.add_argument("--length", type=int, required=True, help="body length in blocks (z)")
+def add_fit_args(ap):
     ap.add_argument("--sub", type=int, default=4, help="sub-voxels per block per axis (even)")
     ap.add_argument("--seed", type=int, default=1)
     ap.add_argument("--palette", choices=sorted(PALETTES), default="weathered")
@@ -309,27 +308,13 @@ def main():
     ap.add_argument("--out", required=True, help="output .schem")
     ap.add_argument("--report", required=True)
     ap.add_argument("--grid-out", help="write the block-kind grid (.npy) for views.py")
-    a = ap.parse_args()
-    assert a.sub % 2 == 0
+
+
+def blocks_from_solid(solid, a, rep):
+    """The shared back half: a solid sub-voxel grid -> fitted, shaded blocks ->
+    .schem + report. `rep` carries the front end's own provenance fields."""
     global PALETTE
     PALETTE = PALETTES[a.palette]
-    chunk = 1_000_000
-
-    m = load_mesh(a.stl)
-    lo, hi = mesh_bounds(m, chunk)
-    ext = hi - lo
-    s = a.length / ext[2]  # blocks per metre
-    k = s * a.sub  # sub-voxels per metre
-    pad_b = 2
-    pad = pad_b * a.sub
-    dims_b = np.ceil(ext * s).astype(int) + 2 * pad_b
-    occ = np.zeros(dims_b * a.sub, dtype=bool)
-    print(f"blocks {dims_b.tolist()} sub-grid {occ.shape} ({occ.size / 1e6:.0f} M)", flush=True)
-    mark_surface(m, occ, lo, k, pad, chunk)
-    print(f"surface sub-voxels {int(occ.sum())}", flush=True)
-    solid = solidify(occ)
-    del occ
-    print(f"solid sub-voxels {int(solid.sum())}", flush=True)
     bias = {SLAB_B: a.slab_bias, SLAB_T: a.slab_bias, STAIR_K: a.stair_bias}
     frac = octant_fractions(solid, a.sub)
     kind, facing, half = fit_shapes(frac, bias)
@@ -373,7 +358,26 @@ def main():
             j = seen[st] = len(palette)
             palette.append(st)
         ids[i] = j
-    write_schem(a.out, (X, Y, Z), palette, ids.tolist())
+    # `delvec schem convert` refuses an NBT array over 10,000,000 entries
+    # (DW0710 "greater than max sequence length"), so a large piece is written
+    # as z-slabs on 48-block boundaries; the converter's 48-tiling of each slab
+    # is then the tiling of the whole.
+    zstep = Z if X * Y * Z <= SCHEM_MAX_CELLS else (SCHEM_MAX_CELLS // (X * Y) // 48) * 48
+    parts = []
+    for z0 in range(0, Z, zstep):
+        z1 = min(Z, z0 + zstep)
+        sub = states[:, :, z0:z1].transpose(1, 2, 0).ravel()
+        pal, idx = [], {}
+        out_ids = []
+        for st in sub:
+            j = idx.get(st)
+            if j is None:
+                j = idx[st] = len(pal)
+                pal.append(st)
+            out_ids.append(j)
+        path = a.out if zstep == Z else a.out[: -len(".schem")] + f".z{z0}.schem"
+        write_schem(path, (X, Y, z1 - z0), pal, out_ids)
+        parts.append({"file": os.path.basename(path), "z0": z0, "sha256": sha256_file(path)})
 
     counts = {}
     for st in flat:
@@ -385,23 +389,55 @@ def main():
     stair_shapes = {}
     for v in shapes.values():
         stair_shapes[v] = stair_shapes.get(v, 0) + 1
-    rep = {
-        "mesh_sha256": sha256_file(a.stl),
-        "mesh_triangles": int(len(m)),
-        "mesh_extent_m_mc_xyz": [round(float(v), 4) for v in ext],
-        "length_blocks": a.length, "blocks_per_metre": round(float(s), 3), "sub": a.sub,
-        "seed": a.seed, "palette": a.palette, "size_xyz": [int(X), int(Y), int(Z)],
+    rep.update({
+        "sub": a.sub, "seed": a.seed, "palette": a.palette, "size_xyz": [int(X), int(Y), int(Z)],
         "filled": int((kind != AIR).sum()), "kinds": kinds, "stair_shapes": dict(sorted(stair_shapes.items())),
         "components_kept": comps, "thin_plate_blocks_filled": thin_filled,
         "shape_bias": {"stair": a.stair_bias, "slab": a.slab_bias}, "island_blocks_dropped": dropped,
         "tone_share": {str(t): int(((tone == t) & (kind != AIR)).sum()) for t in range(4)},
         "block_counts": dict(sorted(counts.items(), key=lambda kv: -kv[1])),
-        "schem_sha256": sha256_file(a.out),
-    }
+        "schem_parts": parts,
+        "schem_sha256": parts[0]["sha256"] if len(parts) == 1 else
+        hashlib.sha256("".join(p["sha256"] for p in parts).encode()).hexdigest(),
+    })
     with open(a.report, "w") as f:
         json.dump(rep, f, indent=2, sort_keys=True)
         f.write("\n")
     print(json.dumps({k: rep[k] for k in ("size_xyz", "filled", "kinds", "schem_sha256")}))
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--stl", required=True)
+    ap.add_argument("--length", type=int, required=True, help="body length in blocks (z)")
+    add_fit_args(ap)
+    a = ap.parse_args()
+    assert a.sub % 2 == 0
+    chunk = 1_000_000
+
+    m = load_mesh(a.stl)
+    lo, hi = mesh_bounds(m, chunk)
+    ext = hi - lo
+    s = a.length / ext[2]  # blocks per metre
+    k = s * a.sub  # sub-voxels per metre
+    pad_b = 2
+    pad = pad_b * a.sub
+    dims_b = np.ceil(ext * s).astype(int) + 2 * pad_b
+    occ = np.zeros(dims_b * a.sub, dtype=bool)
+    print(f"blocks {dims_b.tolist()} sub-grid {occ.shape} ({occ.size / 1e6:.0f} M)", flush=True)
+    mark_surface(m, occ, lo, k, pad, chunk)
+    print(f"surface sub-voxels {int(occ.sum())}", flush=True)
+    solid = solidify(occ)
+    del occ
+    print(f"solid sub-voxels {int(solid.sum())}", flush=True)
+    rep = {
+        "source": "mesh",
+        "mesh_sha256": sha256_file(a.stl),
+        "mesh_triangles": int(len(m)),
+        "mesh_extent_m_mc_xyz": [round(float(v), 4) for v in ext],
+        "length_blocks": a.length, "blocks_per_metre": round(float(s), 3),
+    }
+    blocks_from_solid(solid, a, rep)
 
 
 if __name__ == "__main__":

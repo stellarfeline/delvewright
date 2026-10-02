@@ -254,6 +254,35 @@ ported, and nothing below is licensed for porting.
 | Obbe Vermeij (ex-Rockstar North technical director) on the GTA cinematic camera's origin, relayed by [TheGamer](https://www.thegamer.com/grand-theft-auto-cinematic-cam-origins-rockstar-trains/) (fetched, quotes verified; a GamesRadar+ retelling exists but was never successfully fetched — not cited as independent confirmation); community shot names via GTAForums player threads ([1](https://gtaforums.com/topic/672360-cinematic-view-while-driving/), [2](https://gtaforums.com/topic/960102-cinematic-cameras/)) — NOT any wiki (the fandom wiki page was unreachable and the mirror's content is generic); the *Father/Son* camera-rig datamine via [PCGamesN](https://www.pcgamesn.com/grand-theft-auto-v/invisible-truck-camera) and the [rage.re teardown](https://rage.re/t/using-a-truck-as-a-cinematic-camera-in-father-son/269) | Unlicensed web content — ideas-only | Confirms the core architecture: a small bag of discrete shot templates, selected per shot. The *Father/Son* teardown supports the `side_track` preset — Rockstar mounted the camera on phantom vehicles running the chase's own motion recording, because a camera animation cannot retime itself to stay with a subject that changes speed. Note what these sources do **not** support: no public source gives GTA/RDR2 shot durations or cut triggers, so those numbers came from the editing literature above, not from Rockstar. |
 | [`shibomb/whole-minecraft-cameraman`](https://github.com/shibomb/whole-minecraft-cameraman) | MIT | **Not adoptable** — a Paper plugin, which ADR-0003 forbids on the player-facing server. Cited only as independent confirmation that "spectate a proxy entity with a smooth teleport duration" is the established technique. Surveyed datapack alternatives were rejected on licence: Cutscene Engine (Modrinth) is All-Rights-Reserved, the PlanetMinecraft camera packs state no licence at all. |
 
+## Organic structures (`tools/spike-organic-voxel`, research spike)
+
+This is a research spike, not an engine surface. The record is
+[`reference/organic-structures.md`](reference/organic-structures.md). Nothing
+here ships in a delve.
+
+### Adopted for the organic spike
+
+| Source | License (verified) | What we use |
+|---|---|---|
+| *Cetotherium riabinini* skeleton 3D scans and digital reconstruction, by Davydenko, Kovalchuk, Otriazhyi and Gol'din; [figshare doi:10.6084/m9.figshare.29644028](https://doi.org/10.6084/m9.figshare.29644028) | **CC0**. Verified 2026-10-02 from the figshare API's `license` field: `{"name": "CC0", "url": "https://creativecommons.org/publicdomain/zero/1.0/"}`. The paper that describes it ([*Scientific Data*, 2025](https://www.nature.com/articles/s41597-025-06086-2)) is CC BY-NC-ND, and none of its text or figures are used. | The mesh that `fetch-mesh.sh` downloads: file 58189099, "Skeleton reconstruction.zip". The download is checked against figshare's own MD5, and the extracted STL against a SHA-256 measured on extraction. The STL is never committed. Voxelised pieces carry it in their `license` block. |
+| [NumPy](https://github.com/numpy/numpy) 2.3.3 · [SciPy](https://github.com/scipy/scipy) 1.16.2 | BSD-3-Clause. For SciPy, the GitHub API returns the SPDX id. For NumPy, the API returns NOASSERTION, so the PyPI classifier "BSD License" and the project's `LICENSE` text were read. The wheels also bundle runtime libraries under their own licences. | Array maths, connected-component labelling and filters for the spike's voxeliser. They are fetched by `uv run --with` at the pinned versions, never vendored. |
+| [Pillow](https://github.com/python-pillow/Pillow) | MIT-CMU (from the PyPI `license_expression`) | Contact sheets (`sheet.py`) |
+
+### Surveyed for the organic spike, nothing ported
+
+| Source | License (verified) | Disposition |
+|---|---|---|
+| [ObjToSchematic](https://github.com/LucasDower/ObjToSchematic) | BSD-3-Clause (GitHub API; `LICENSE` at `b611b52`) | **Ideas-only by choice.** It is the strongest open mesh-to-schematic tool, but it places full blocks only: `grep -i "stair\|slab"` over `src/` at `b611b52` matches nothing. Sub-block fitting is the whole problem. Its `random` dither uses `Math.random`, which ADR-0006 excludes. The spike's octant fitter is authored. |
+| VoxelVision / BlockBlender (Blender add-on) | Paid, closed source | Ineligible. Cited as evidence that stair and slab fitting is what reaches quality. |
+| Bloxelizer | No licence found | Ineligible |
+| Amulet Editor | "All rights reserved" (`LICENSE`) | Ineligible |
+| binvox | Binary only, no source | Ineligible |
+| [SDFGen](https://github.com/christopherbatty/SDFGen) | MIT (README) | Not needed. The spike solidifies meshes by labelling the exterior. |
+| WorldEdit, FastAsyncWorldEdit, FastAsyncVoxelSniper, goPaint / VoxelSniper (TVPT) | GPL-3.0 / MIT (`LICENSE` files) | Concepts only. They are server plugins, which ADR-0003 forbids on the player-facing server. Arceon has no public source, so its licence is unknown and it is excluded. |
+| NHM blue whale skeleton scan (Sketchfab) | CC BY-NC-SA (from the model page) | **Forbidden** (ADR-0013) |
+| Pisa *Balaenoptera acutorostrata* scan (Wikimedia Commons) | CC BY-SA 4.0 (from the file page) | **Not admissible.** CC BY-SA is Track-2 for prefabs (ADR-0013). |
+| Ingenium North Atlantic right whale skeleton (Sketchfab) | CC BY (from the model page) | Not fetched, because Sketchfab downloads need an account. It is the CC BY candidate for a real large baleen whale. |
+
 ## Minecraft
 
 Minecraft is a trademark of Mojang Synergies AB. Delvewright is an independent

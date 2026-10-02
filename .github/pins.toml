@@ -928,3 +928,17 @@ deflate instead, and a test makes `Image.save` raise to keep it that way.
 
 CHOSEN AS the version the unpinned line already resolved to. POLICY `immutable`.
 """
+
+[[pin]]
+id = "organic-spike-whale-mesh"
+value = "57657cfb04e7ce01ade43af9be36e76bb665012b6cc83b8a85d1091ac77dcc71"
+sites = ["tools/spike-organic-voxel/fetch-mesh.sh"]
+policy = "immutable"
+why = """
+SHA-256 of the STL inside the CC0 Cetotherium riabinini skeleton reconstruction
+(figshare doi:10.6084/m9.figshare.29644028, file 58189099), the source mesh of
+the organic-voxel research spike. A figshare file id names fixed bytes, and the
+zip is also held to figshare's own MD5; the spike's readings are hashes of what
+this mesh voxelises to, so the mesh must not move. Spike tooling only: nothing
+fetched here ships in a delve.
+"""

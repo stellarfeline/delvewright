@@ -15,7 +15,8 @@ uv run -q --with numpy==2.3.3 python "$here/views.py" --chunky "$scratch/world-$
     "$scratch/out/$base.npy" "$scratch/scenes-$base" "$base" "$spp"
 for v in far spine ribcage skull; do
   "$here/../../validation/chunky.sh" -scene-dir "$scratch/scenes-$base" -render "$base-$v" -threads 4 -f >"$scratch/scenes-$base/$v.log" 2>&1
-  png=$(ls -t "$scratch/scenes-$base/snapshots/$base-$v-"*.png | head -1)
+  snaps=("$scratch/scenes-$base/snapshots/$base-$v-"*.png)
+  png="${snaps[${#snaps[@]}-1]}"  # one render per run: the scene directory is fresh
   cp "$png" "$scratch/renders/$base-$v-chunky.png"
   echo "$v: $scratch/renders/$base-$v-chunky.png (from $(basename "$png"))"
 done

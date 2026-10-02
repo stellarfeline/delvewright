@@ -13,21 +13,29 @@ set -euo pipefail
 gallery="$(cd "$1" && pwd)"; out="$2"; name="owv-$3"
 : "${EULA:?set EULA=TRUE to accept the Mojang EULA (https://aka.ms/MinecraftEULA)}"
 here="$(cd "$(dirname "$0")" && pwd)"
+. "$here/../lib/rcon.sh"
+. "$here/../lib/server-heap.sh"
+HEAP_ENV="$(dw_server_heap_env)"
 base=$(sed -n 's/^ARG DELVE_BASE_IMAGE=//p' "$here/../../validation/Dockerfile.delve")
 docker rm -f "$name" >/dev/null 2>&1 || true
 docker run -d --name "$name" -e EULA="$EULA" -e TYPE=VANILLA -e VERSION=1.21.11 \
   -e DATAPACKS=/delve/datapack -v "$gallery/datapack:/delve/datapack:ro" \
   -e LEVEL_TYPE=minecraft:flat -e 'GENERATOR_SETTINGS={"biome":"minecraft:the_void","layers":[]}' \
   -e GENERATE_STRUCTURES=false -e SPAWN_MONSTERS=false -e MODE=adventure -e DIFFICULTY=peaceful \
-  -e ONLINE_MODE=FALSE -e MAX_MEMORY=4G "$base" >/dev/null
+  -e ONLINE_MODE=FALSE -e "$HEAP_ENV" "$base" >/dev/null
 trap 'docker rm -f "$name" >/dev/null 2>&1 || true' EXIT
+# The gallery datapack counts #t admit.sys to 7 once it has placed every tile.
+# Unjudged until it converges (every reply is a refusal until the pack loads);
+# the judged read follows.
 for _ in $(seq 1 120); do
-  r=$(docker exec "$name" rcon-cli "scoreboard players get #t admit.sys" 2>/dev/null || true)
+  r="$(dw_rcon_probe "$name" "scoreboard players get #t admit.sys" || true)"
   case "$r" in *"has 7 "*) break ;; esac
   sleep 5
 done
 case "$r" in *"has 7 "*) echo "placed: $r" ;; *) echo "refusing: gallery never finished placing ($r)" >&2; docker logs "$name" | tail -20 >&2; exit 1 ;; esac
-docker exec "$name" rcon-cli "save-all flush"
+r="$(dw_rcon "$name" "scoreboard players get #t admit.sys")"
+echo "judged: $r"
+dw_rcon "$name" "save-all flush"
 docker stop -t 60 "$name" >/dev/null
 rm -rf "$out"; mkdir -p "$out"
 docker cp "$name:/data/world/." "$out/"

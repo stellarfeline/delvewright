@@ -9,10 +9,14 @@ usage: views.py <delvec> <prefabs-dir> <campaign-dir> <grid.npy> <out-dir> <tag>
          validation/chunky.sh to render
 
 Cameras are computed from the block grid, so they scale with the piece:
-  far      the reference's establishing view: west of and ahead of the skull, above
-  spine    a body's eye standing on the neural spines mid-back, looking to the tail
-  ribcage  a body's eye inside the widest rib section, looking up and toward the skull
-  skull    an oblique close view of the skull from the front-left, above
+  far      the reference's establishing bearing (west of and ahead of the skull,
+           above), stood back until the whole skeleton's box fits the frame
+  spine    a body's eye in the lane beside the midline at 47% of the length,
+           standing on the highest bone there, looking to the tail
+  ribcage  inside the widest section of the body band (flippers excluded),
+           looking forward and up the cage toward the skull
+  skull    the first third of the length, fitted from front-left, above, then
+           pulled in to 0.6 of the fitted distance
 """
 
 import json
@@ -69,30 +73,69 @@ def chunky_scene(name, c, world_dir, spp, size):
     }
 
 
-def spine_top(z):
-    cols = k[int(cx) - 2:int(cx) + 3, :, z]
-    ys = np.nonzero(cols.any(0))[0]
-    return int(ys.max())
+def clear(eye):
+    """Step the eye down, then sideways, until it and the cell above are air:
+    a lens inside bone renders black."""
+    x, y, z = (int(math.floor(v)) for v in eye)
+    y -= OY
+    for dy in range(0, 40):
+        for dx in (0, 2, -2, 4, -4, 6, -6):
+            xx, yy = x + dx, y - dy
+            if 0 <= xx < X and 1 <= yy < Y - 2 and not k[xx, yy, z] and not k[xx, yy + 1, z]:
+                return (xx + 0.5, yy + OY + 0.62, eye[2])
+    return eye
 
 
-# the widest rib section between 30% and 60% of the length
-zs = range(int(0.30 * Z), int(0.60 * Z))
-width = [np.ptp(np.nonzero(k[:, :, z].any(1))[0]) if k[:, :, z].any() else 0 for z in zs]
-zr = list(zs)[int(np.argmax(width))]
-ring_y = np.nonzero(k[:, :, zr].any(0))[0]
-# skull: the first 28% of the length
-sk = k[:, :, : int(0.28 * Z)]
-sk_y = np.nonzero(sk.any((0, 2)))[0]
+def fit(direction, box_lo, box_hi, fov, margin=0.92, pull=1.0):
+    """Stand back along `direction` from the box centre until every corner of
+    the box is inside the frame (vertical fov, 1200x669)."""
+    lo, hi = np.array(box_lo, float), np.array(box_hi, float)
+    tgt = (lo + hi) / 2
+    d = np.array(direction, float) / np.linalg.norm(direction)
+    f = -d
+    r = np.cross(f, [0, 1, 0]); r /= np.linalg.norm(r)
+    u = np.cross(r, f)
+    tv = math.tan(math.radians(fov) / 2) * margin
+    th = tv * 1200 / 669
+    corners = np.array([[x, y, z] for x in (lo[0], hi[0]) for y in (lo[1], hi[1]) for z in (lo[2], hi[2])])
+    a, b = 1.0, 4000.0
+    for _ in range(60):
+        m = (a + b) / 2
+        q = corners - (tgt + m * d)
+        zc = q @ f
+        ok = np.all(zc > 0) and np.all(np.abs(q @ r) <= th * zc) and np.all(np.abs(q @ u) <= tv * zc)
+        a, b = (a, m) if ok else (m, b)
+    return cam(tuple(tgt + pull * b * d), tuple(tgt), fov)
 
+
+nz = np.nonzero(k)
+lo = np.array([nz[0].min(), nz[1].min() + OY, nz[2].min()], float)
+hi = np.array([nz[0].max() + 1, nz[1].max() + 1 + OY, nz[2].max() + 1], float)
+
+# spine: stand in the lane beside the midline, on the highest bone there
 zsp = int(0.47 * Z)
-ty = spine_top(zsp)
+xl = int(round(cx + max(2, 0.035 * X)))
+ty = int(np.nonzero(k[xl, :, zsp])[0].max())
+
+# ribcage: the widest section of the body band (flippers excluded) in 30-60%
+band = k[int(cx - 0.2 * X):int(cx + 0.2 * X)]
+zs = list(range(int(0.30 * Z), int(0.60 * Z)))
+width = [np.ptp(np.nonzero(band[:, :, z].any(1))[0]) if band[:, :, z].any() else 0 for z in zs]
+zr = zs[int(np.argmax(width))]
+ring_y = np.nonzero(band[:, :, zr].any(0))[0]
+ring_mid = (ring_y.min() + ring_y.max()) / 2
+ring_h = ring_y.max() - ring_y.min()
+# skull: the first third of the length
+skz = int(0.33 * Z)
+sk = np.nonzero(k[:, :, :skz])
+
 views = {
-    "far": cam((cx - 0.62 * Z, OY + 0.5 * Y + 0.12 * Z, 0.0 * Z), (cx, OY + 0.40 * Y, 0.37 * Z), 50),
-    "spine": cam((cx, OY + ty + 1 + 1.62, zsp), (cx, OY + ty - 6, zsp + 40), 70),
-    "ribcage": cam((cx, OY + (ring_y.min() + ring_y.max()) / 2 - 2, zr + 4),
-                   (cx, OY + ring_y.max() + 10, zr - 18), 80),
-    "skull": cam((cx - 0.17 * Z, OY + sk_y.max() + 0.07 * Z, 0.02 * Z),
-                 (cx, OY + (sk_y.min() + sk_y.max()) / 2, 0.16 * Z), 60),
+    "far": fit((-0.62, 0.20, -0.37), lo, hi, 45),
+    "spine": cam((xl, OY + ty + 1 + 1.62, zsp), (xl, OY + ty - 4, zsp + 40), 70),
+    "ribcage": cam(clear((cx, OY + ring_mid - 0.2 * ring_h, zr + 0.06 * Z)),
+                   (cx, OY + ring_y.max(), zr - 0.10 * Z), 80),
+    "skull": fit((-0.55, 0.45, -0.55), (sk[0].min(), sk[1].min() + OY, sk[2].min()),
+                 (sk[0].max() + 1, sk[1].max() + 1 + OY, sk[2].max() + 1), 45, pull=0.6),
 }
 if CHUNKY:
     for name, c in views.items():
