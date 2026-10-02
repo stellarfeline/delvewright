@@ -92,7 +92,7 @@ validation/          # docker compose: headless server + bot, same image as CI &
 
 ## Conventions
 
-- **English-first** for every repo artifact; i18n translates from English.
+- **English-first** for every repo artifact. Another language is transcreated from the English, never translated line by line: a native writer rewrites each line from its intent, with the facts, names and keys taken from the English.
 - Rust: workspace at `crates/`, edition 2024, `cargo fmt` + `clippy -D warnings` clean. `prefabs/*-generator` are their own workspaces.
 - TypeScript (harness only): strict mode; assertions and navigation, never game logic.
 - ADRs: sequential, status field, cite sources; never edit an Accepted decision — supersede it. Specs: `spec-NNNN-<slug>.md` with a machine-checkable "Acceptance criteria" section. Numbers (spec, ADR, DW code, `dsl_version`) are allocated by the planner across every remote ref, never picked by a round.
