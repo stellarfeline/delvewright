@@ -10,7 +10,8 @@ clone) is how this repository finds the content repository. Two kinds of
 reader use it, and they read different things:
 
 - **Tests read the content at the pin, never the working tree.** Every test
-  that judges the prefab library or the campaign corpus resolves it through
+  that judges the prefab library — the only part of the content the engine
+  judges; a campaign is judged at its own release — resolves it through
   `crates/delvec/tests/common/pinned.rs`: it takes `versions.toml`
   `[content].sha`, reads that commit out of the clone's git object store
   (git-lfs objects out of its own LFS store), and materialises it once into

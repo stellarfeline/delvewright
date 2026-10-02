@@ -15,7 +15,7 @@ marker, and these tests hold each of those three shapes red.
 
 These tests drive the gate over synthetic campaign trees rather than the live
 content repo, so they keep failing for the right reason as real campaigns come
-and go (and while the real ones are still allowlisted behind their open PRs).
+and go.
 """
 
 import importlib.util
@@ -50,7 +50,6 @@ def gate(tmp_path, monkeypatch):
     monkeypatch.setattr(module, "REPO_ROOT", tmp_path)
     monkeypatch.setattr(module, "ROOT_CARGO_TOML", cargo_toml)
     monkeypatch.setattr(module, "DEFAULT_CAMPAIGNS_ROOT", root)
-    monkeypatch.setattr(module, "ALLOWLIST", {})
     # The Minecraft pin is engine state exactly as `DELVEC_VERSION` is, and the
     # synthetic repo above has no `versions.toml`; substituting the reader keeps
     # these tests about the gate rather than about this repository's own pin.
@@ -466,58 +465,13 @@ def test_a_malformed_marker_attempt_is_not_ALSO_an_unbound_literal(gate, capsys)
     assert "carries the version literal" not in err
 
 
-# --- the allowlist ----------------------------------------------------------
-
-
-def test_an_allowlisted_campaign_is_skipped_and_ANNOUNCED(gate, capsys, monkeypatch):
-    """A temporary exemption nobody can see is an exemption nobody removes."""
-    monkeypatch.setattr(gate, "ALLOWLIST", {"blocked": "blocked by an open content round"})
-    make_campaign(gate, "blocked", readmes={"README.md": storybook(None)})
-    make_campaign(
-        gate,
-        "fine",
-        readmes={"README.md": storybook(gate.marker_line("0.9.0", ENGINE_DELVEC, ENGINE_MC))},
-    )
-    assert run(gate) == 0
-    out = capsys.readouterr().out
-    assert "TEMPORARILY ALLOWLISTED (no marker required yet): blocked" in out
-    assert "blocked by an open content round" in out
-    assert "1 campaign(s) checked" in out and "1 allowlisted" in out
-
-
-def test_an_allowlisted_campaign_that_now_PASSES_is_RED(gate, capsys, monkeypatch):
-    """The exemption's own expiry: once the marker is right, the entry must go."""
-    monkeypatch.setattr(gate, "ALLOWLIST", {"fixed": "blocked by an open content round"})
-    make_campaign(
-        gate,
-        "fixed",
-        readmes={"README.md": storybook(gate.marker_line("0.9.0", ENGINE_DELVEC, ENGINE_MC))},
-    )
-    assert run(gate) == 1
-    assert "delete its entry from ALLOWLIST" in capsys.readouterr().err
-
-
-def test_an_allowlist_entry_for_an_absent_campaign_is_RED(gate, capsys, monkeypatch):
-    monkeypatch.setattr(gate, "ALLOWLIST", {"ghost": "blocked by an open content round"})
-    make_campaign(
-        gate,
-        "fine",
-        readmes={"README.md": storybook(gate.marker_line("0.9.0", ENGINE_DELVEC, ENGINE_MC))},
-    )
-    assert run(gate) == 1
-    assert "names a campaign that is not under" in capsys.readouterr().err
-
-
 # --- the gate may never pass vacuously --------------------------------------
 
 
-def test_zero_storybook_files_scanned_is_RED_even_with_campaigns_present(
-    gate, capsys, monkeypatch
-):
-    """The literal clauses' own binding count. Allowlist the only campaign that
-    ships a storybook and they examine nothing — green, and proving nothing."""
-    monkeypatch.setattr(gate, "ALLOWLIST", {"only": "blocked by an open content round"})
-    make_campaign(gate, "only", readmes={"README.md": storybook(None)})
+def test_zero_storybook_files_scanned_is_RED_even_with_campaigns_present(gate, capsys):
+    """The literal clauses' own binding count: a campaign with no storybook at
+    all leaves them examining nothing, which is named, never a quiet pass."""
+    make_campaign(gate, "only", readmes={})
     assert run(gate) == 1
     assert "ZERO storybook files were read" in capsys.readouterr().err
 
@@ -546,73 +500,6 @@ def test_a_directory_without_stage_documents_is_not_a_campaign(gate):
 def test_the_engine_delvec_version_comes_from_the_compiler_crate(gate):
     """One source for the number — never a second copy in this script."""
     assert gate.delvec_version() == ENGINE_DELVEC
-
-
-# --- the allowlist belongs to ONE tree --------------------------------------
-#
-# `/new-delve` step 14 runs this script on a creator's machine over the
-# creator's own `campaigns/`, which never holds this repository's campaigns. An
-# entry judged against that directory is stale there by construction, and made
-# the whole gate red before it read a single storybook — the creator learned
-# nothing about their own. These four hold the corrected binding in both
-# directions.
-
-
-def creator_tree(gate, name: str = "elsewhere") -> pathlib.Path:
-    """A campaigns root that is NOT this repository's content sources."""
-    root = gate.REPO_ROOT / name / "campaigns"
-    root.mkdir(parents=True, exist_ok=True)
-    return root
-
-
-def test_the_allowlist_is_OUT_OF_SCOPE_over_a_tree_that_is_not_the_content_root(
-    gate, capsys, monkeypatch
-):
-    """The creator's machine: the entry names no campaign here and must not red."""
-    monkeypatch.setattr(gate, "ALLOWLIST", {"ghost": "blocked by an open content round"})
-    other = creator_tree(gate)
-    monkeypatch.setattr(gate, "ROOT", other, raising=False)
-    make_campaign(
-        gate,
-        "theirs",
-        readmes={"README.md": storybook(gate.marker_line("0.9.0", ENGINE_DELVEC, ENGINE_MC))},
-    )
-    assert gate.main(["--campaigns", str(other)]) == 0
-    out = capsys.readouterr().out
-    assert "ALLOWLIST ENTRY OUT OF SCOPE HERE" in out and "ghost" in out
-    # And the creator is told what WAS examined — the whole cost of the defect.
-    assert "1 campaign(s) checked" in out and "1 storybook file(s) scanned" in out
-
-
-def test_an_allowlisted_NAME_is_not_exempt_over_someone_elses_tree(
-    gate, capsys, monkeypatch
-):
-    """The exemption is a fact about the content repo, not about a name."""
-    monkeypatch.setattr(gate, "ALLOWLIST", {"blocked": "blocked by an open content round"})
-    other = creator_tree(gate)
-    monkeypatch.setattr(gate, "ROOT", other, raising=False)
-    make_campaign(gate, "blocked", readmes={"README.md": storybook(None)})
-    assert gate.main(["--campaigns", str(other)]) == 1
-    captured = capsys.readouterr()
-    assert "blocked: README.md carries NO engine-version marker" in captured.err
-    assert "0 allowlisted" in captured.err
-    assert "TEMPORARILY ALLOWLISTED" not in captured.out
-
-
-def test_the_staleness_audit_still_REDS_over_the_content_root_by_any_spelling(
-    gate, capsys, monkeypatch
-):
-    """The perturbation only this rule can catch: the audit is bound to the tree,
-    not to whether `--campaigns` was passed."""
-    monkeypatch.setattr(gate, "ALLOWLIST", {"ghost": "blocked by an open content round"})
-    make_campaign(
-        gate,
-        "fine",
-        readmes={"README.md": storybook(gate.marker_line("0.9.0", ENGINE_DELVEC, ENGINE_MC))},
-    )
-    spelling = gate.ROOT.parent / gate.ROOT.name / "." / ".."
-    assert gate.main(["--campaigns", str(spelling / gate.ROOT.name)]) == 1
-    assert "names a campaign that is not under" in capsys.readouterr().err
 
 
 def test_a_REFUSING_run_states_what_it_examined(gate, capsys):

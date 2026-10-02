@@ -267,14 +267,51 @@ fn a_directory_of_prefabs_is_one_page_in_a_stable_order() {
     assert_eq!(r.status.code(), Some(0), "{r:?}");
     let html = std::fs::read_to_string(&out).unwrap();
 
-    // Every prefab in the directory is on the page, in the order the tool
+    // Every PIECE in the directory is on the page, in the order the tool
     // promises: sorted by PATH, which is not the same as sorted by id
     // (`island-greenfield-bend.nbt` precedes `island-greenfield.nbt`, because
     // `-` sorts before `.`). The property under test is that the order is fixed
     // and derived from the input, not that it reads alphabetically.
-    assert!(paths.len() > 1, "fixture library has one prefab");
+    //
+    // A piece is a template standing on its own, or a tile set, which is one
+    // piece over many templates and is shown through its manifest: a tile is
+    // never on the page as if it were a prefab (`collect_pieces`). Which `.json`
+    // is a document is the library's one rule; which templates a manifest
+    // claims is read here off the document's own `structure_set.parts`.
+    let mut claimed: BTreeSet<PathBuf> = BTreeSet::new();
+    let mut pieces: Vec<PathBuf> = Vec::new();
+    for entry in std::fs::read_dir(&src).unwrap() {
+        let doc_path = entry.unwrap().path();
+        if !delvec::compiler::registry::is_prefab_document(&doc_path) {
+            continue;
+        }
+        let doc: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&doc_path).unwrap()).unwrap();
+        if let Some(parts) = doc["structure_set"]["parts"].as_array() {
+            for part in parts {
+                claimed.insert(src.join(part["file"].as_str().expect("a part names its file")));
+            }
+            pieces.push(doc_path);
+        }
+    }
+    pieces.extend(paths.iter().filter(|p| !claimed.contains(*p)).cloned());
+    pieces.sort();
+    println!(
+        "  library page: {} piece(s) expected from {} template(s), {} of them claimed by a tile set",
+        pieces.len(),
+        paths.len(),
+        claimed.len()
+    );
+    for tile in &claimed {
+        let id = tile.file_stem().unwrap().to_string_lossy().to_string();
+        assert!(
+            !html.contains(&format!("\"id\":\"{id}\"")),
+            "{id} is a tile of a set and is on the page as a prefab"
+        );
+    }
+    assert!(pieces.len() > 1, "fixture library has one prefab");
     let mut last: Option<usize> = None;
-    for p in &paths {
+    for p in &pieces {
         let id = p.file_stem().unwrap().to_string_lossy().to_string();
         let needle = format!("\"id\":\"{id}\"");
         let at = html
@@ -285,6 +322,48 @@ fn a_directory_of_prefabs_is_one_page_in_a_stable_order() {
         }
         last = Some(at);
     }
+}
+
+/// A gate report beside a piece (`<id>.report.json`, written by `grammar
+/// expand` and `delvec detail`) is not prefab metadata, by the library's one
+/// naming rule — so a directory holding one is a page, not a `DW0721` on a file
+/// the compiler itself skips. Planted here rather than found in the pinned
+/// library, so the property holds at every pin.
+#[test]
+fn a_gate_report_beside_a_piece_is_not_read_as_a_prefab() {
+    let nbt = prefab("keep-gate-room.nbt");
+    let dir = tmp("gate-report");
+    let lib = dir.join("library");
+    std::fs::create_dir_all(&lib).unwrap();
+    std::fs::copy(&nbt, lib.join("keep-gate-room.nbt")).unwrap();
+    std::fs::copy(nbt.with_extension("json"), lib.join("keep-gate-room.json")).unwrap();
+    // A body no prefab document parses as: a report's own shape.
+    std::fs::write(
+        lib.join("keep-gate-room.report.json"),
+        "{\"verdict\": \"pass\", \"anchors\": [[1, 2, 3]]}\n",
+    )
+    .unwrap();
+    let pack = pack_for(&dir, &nbt, &[]);
+    let out = dir.join("library.html");
+    let r = Command::new(BIN)
+        .arg("viewer")
+        .arg("--textures")
+        .arg(&pack)
+        .arg(&lib)
+        .arg("-o")
+        .arg(&out)
+        .output()
+        .unwrap();
+    assert_eq!(r.status.code(), Some(0), "{r:?}");
+    let html = std::fs::read_to_string(&out).unwrap();
+    assert!(
+        html.contains("\"id\":\"keep-gate-room\""),
+        "the piece is on the page"
+    );
+    assert!(
+        !html.contains("keep-gate-room.report"),
+        "the report is not on the page as a piece"
+    );
 }
 
 /// A blockstate the pinned version does not have is a finding, reported with a

@@ -65,7 +65,6 @@ jobs:
       mecha-crosscheck: ${{ steps.reach.outputs.mecha-crosscheck }}
       docs: ${{ steps.reach.outputs.docs }}
       line-endings: ${{ steps.reach.outputs.line-endings }}
-      storybook-version: ${{ steps.reach.outputs.storybook-version }}
       pin-drift: ${{ steps.reach.outputs.pin-drift }}
       zone-audit: ${{ steps.reach.outputs.zone-audit }}
       gallery: ${{ steps.reach.outputs.gallery }}
@@ -1152,33 +1151,6 @@ jobs:
           python --version
           python tools/ci/check-eol-attributes.py --working-tree
 
-  storybook-version:
-    # A campaign's storybook is what a server host reads before running the
-    # delve, and the ONE piece of internal machinery it may carry is which
-    # engine the delve needs. That is a hand-typed number, so
-    # it goes stale the moment the campaign adopts a new `dsl_version` — and a
-    # stale one is worse than none: it waves a host on an old engine through.
-    # This gate re-derives it from the campaign's own stage documents.
-    #
-    # Its own job, not a step in `docs`: `docs` runs lychee over `./**/*.md`, and
-    # checking the content repo out into that job's tree would silently widen the
-    # link check to content-repo markdown (and `docs (local link check)` is a
-    # required status context — its name may not move).
-    name: campaign storybooks (engine-version marker)
-    needs: changes
-    if: github.event_name != 'pull_request' || needs.changes.outputs.storybook-version == 'true'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      # Text-only gate — the campaign JSON and the storybooks, never the .nbt
-      # bodies, so LFS stays off and the checkout is a few hundred KB.
-      - uses: ./.github/actions/checkout-content
-        with:
-          lfs: "false"
-      # Deterministic, offline, stdlib-only python3.
-      - name: every campaign storybook carries a TRUE engine-version marker
-        run: python3 tools/creator/check-storybook-version.py
-
   # A released campaign is never edited and is built only by the engine
   # revision it pins (spec-0039): the engine never builds old campaigns to
   # prove compatibility, and no gate, exclusion list or migration exists for
@@ -1207,7 +1179,6 @@ jobs:
       # step that has never once asked its question.
       - uses: ./.github/actions/skill-page-objects
       # LFS off: the pin check is git history and reads no prefab `.nbt` BODY.
-      # Text-only gate, same reasoning as `campaign storybooks`.
       - uses: ./.github/actions/checkout-content
         with:
           lfs: "false"
@@ -1273,34 +1244,29 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      # LFS off: the audit expands the IR geometrically (`crates/delvec/src/
-      # grammar`'s `expand`), never touching a file under `prefabs/`.
-      - uses: ./.github/actions/checkout-content
-        with:
-          lfs: "false"
       - uses: Swatinem/rust-cache@v2
         with: { key: zone-audit }
-      # A campaign's ZONE PROGRAMS are the grammar IR a zone's prefab is
-      # expanded from; they live under `design/programs/`, and a campaign that
-      # has them may carry no `world.json` at all yet (the drowned-bell remake
-      # is exactly that). A content re-pin moves `versions.toml`, which every
-      # job reads, so a re-pin cannot land without this.
+      # The engine judges what it owns: the grammar RULE LIBRARY
+      # (`library::PROGRAMS`), which lives in this tree, so the job needs no
+      # content checkout. A content campaign's own zone programs are judged at
+      # that campaign's release, by the engine revision it pins — never swept
+      # here (docs/reference/grammar.md §4f). No engine-owned campaign declares
+      # zone programs: the gallery and the test fixtures carry no
+      # `design/programs/`.
       #
-      # `--library` in the same call because the vocabulary and the zones that
-      # compose it fail together, and one command means one thing to remember.
-      # The exclusions file INVERTS the assertion for zones that are known red;
-      # see its header for why that is not a skip.
-      - name: every zone program expands and judges green
+      # The exclusions file INVERTS the assertion for programs that are known
+      # red; see its header for why that is not a skip.
+      - name: every rule-library program expands and judges green
         run: |
           cargo run --locked -q -p delvec --bin delvec -- \
-            grammar audit --library --campaign-root campaigns \
+            grammar audit --library \
             --exclusions .github/zone-audit-exclusions.json
 
   # ----------------------------------------------------------------- gallery --
   # spec-0039: the engine's OWN campaign, and its only test surface. A released
   # campaign is never edited and is built only by the engine revision it pins —
   # the engine never builds an old campaign to prove compatibility with a new
-  # one, and `zone-audit` above does not try. The gallery is engine-owned and
+  # one, and `zone-audit` above judges only the engine's own rule library. The gallery is engine-owned and
   # same-repo, so it is built fresh by every engine revision, and the element
   # lands in the same pull request as the surface it covers.
   #

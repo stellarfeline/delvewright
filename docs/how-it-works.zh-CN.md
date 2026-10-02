@@ -251,7 +251,7 @@ flowchart TD
 | `tools/creator/staging-gate.py` + `docs/playtest-findings.json` | 基于问题台账的关卡；游玩端口唯一的钥匙 | 4 | 智能体 |
 | `tools/creator/playtest-server.sh` | `localhost:25565` 上一个用完即弃的本地 itzg 服务器 | 4、5 | 智能体启动；人来走 |
 | `tools/creator/skin`、`i18n-translate.py`、`block-appearance.py`、`refscore.py` | NPC 面孔、翻译、按外观选方块、候选评分 | 3、5 | 智能体 |
-| `tools/creator/check-storybook-version.py` | storybook 的引擎版本标记 | 5、6 | 智能体和 CI |
+| `tools/creator/check-storybook-version.py` | storybook 的引擎版本标记 | 5、6 | 智能体和该战役的发布流程 |
 | `validation/` Docker Compose 装置 | 带 `play`、`playtest`、`validate`、`packtest` profile 的 `compose.yaml`；`owner-play.yaml` | 4–6 | 智能体和 CI |
 | Fabric 上的 PackTest | 在工具服务器上的机制测试；从不出现在发布的 delve 里 | 4、6 | 智能体和 CI |
 | `harness/` | mineflayer 机器人（TypeScript）：关键路径、die-retry、death-loop、分支运行 | 4、6 | 智能体和 CI |

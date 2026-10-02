@@ -144,24 +144,25 @@ fn every_shipped_prefab_document_round_trips_without_losing_a_key() {
 
     let dir = common::prefabs_dir();
     let mut checked = 0usize;
-    let mut skipped: Vec<String> = Vec::new();
+    let mut tile_sets = 0usize;
+    // Which files are documents is the library's one naming rule: not
+    // `pools.json`, not a gate report. A tile-set manifest IS a document — the
+    // one definition with `structure_set` in place of `structure` — and is
+    // round-tripped like every other.
     let mut paths: Vec<std::path::PathBuf> = std::fs::read_dir(&dir)
         .unwrap()
         .map(|e| e.unwrap().path())
-        .filter(|p| p.extension().and_then(|e| e.to_str()) == Some("json"))
+        .filter(|p| delvec::compiler::registry::is_prefab_document(p))
         .collect();
     paths.sort();
+    let documents = paths.len();
 
-    for path in paths {
+    for path in &paths {
         let name = path.file_name().unwrap().to_str().unwrap().to_string();
-        let text = std::fs::read_to_string(&path).unwrap();
+        let text = std::fs::read_to_string(path).unwrap();
         let before: serde_json::Value = serde_json::from_str(&text).unwrap();
-        // `pools.json` is a different document, and a tile-set manifest names
-        // `structure_set` instead of `structure`. Neither is this shape; both
-        // are named rather than silently passed over.
-        if name == "pools.json" || before.get("structure_set").is_some() {
-            skipped.push(name);
-            continue;
+        if before.get("structure_set").is_some() {
+            tile_sets += 1;
         }
         let meta = PrefabMeta::from_json(&text)
             .unwrap_or_else(|e| panic!("{name} must parse as prefab metadata: {e}"));
@@ -189,16 +190,16 @@ fn every_shipped_prefab_document_round_trips_without_losing_a_key() {
     }
 
     // Binding count: a green here over zero documents would prove nothing.
+    assert_eq!(checked, documents);
     assert!(
         checked >= 30,
-        "only {checked} prefab document(s) were round-tripped of the {} the pinned library \
-         carries (skipped: {skipped:?}), so this gate is examining almost nothing",
-        checked + skipped.len()
+        "only {checked} prefab document(s) were round-tripped, so this gate is examining \
+         almost nothing"
     );
     // And the field the loss was live on is really present to be checked.
-    let with_waterline = std::fs::read_dir(&dir)
-        .unwrap()
-        .filter_map(|e| std::fs::read_to_string(e.unwrap().path()).ok())
+    let with_waterline = paths
+        .iter()
+        .filter_map(|p| std::fs::read_to_string(p).ok())
         .filter(|t| t.contains("\"waterline_y\""))
         .count();
     assert!(
@@ -207,9 +208,8 @@ fn every_shipped_prefab_document_round_trips_without_losing_a_key() {
          field this gate exists for"
     );
     eprintln!(
-        "round-tripped {checked} prefab document(s), {with_waterline} of them declaring \
-         `waterline_y`; skipped {} non-prefab document(s): {skipped:?}",
-        skipped.len()
+        "round-tripped {checked} of {documents} prefab document(s) ({tile_sets} tile-set \
+         manifest(s)), {with_waterline} of them declaring `waterline_y`"
     );
 }
 

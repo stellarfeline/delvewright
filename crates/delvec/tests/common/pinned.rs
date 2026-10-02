@@ -1,8 +1,8 @@
 //! **The content repository at `versions.toml` `[content].sha`**, read out of
 //! its object store and never out of a working tree.
 //!
-//! Every test that judges "the pinned content" — the prefab library, the
-//! campaign corpus — resolves it here and nowhere else. The `campaigns/` path
+//! Every test that judges "the pinned content" — the prefab library, the only
+//! part of it the engine judges — resolves it here and nowhere else. The `campaigns/` path
 //! beside this repository (a dev symlink locally, a checkout in CI) is used only
 //! to FIND the content repository's git object store; which revision of it a
 //! working tree happens to sit on never reaches a test. So a test's answer is a
@@ -78,11 +78,6 @@ pub fn root() -> PathBuf {
 /// The prefab library at the pin (`prefabs/`).
 pub fn prefabs() -> PathBuf {
     root().join("prefabs")
-}
-
-/// The campaign sources at the pin (`campaigns/`).
-pub fn campaigns() -> PathBuf {
-    root().join("campaigns")
 }
 
 fn git(repo: &Path, args: &[&str]) -> std::process::Output {
