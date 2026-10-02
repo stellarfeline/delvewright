@@ -54,7 +54,7 @@
     "void-horizon.en:validation/atmosphere-repaints.json",
     "void-horizon.en:validation/biome-map.json"
   ],
-  "base_commit": "4c0fb85e998104951d21f466871da46d677d5f71",
+  "base_commit": "e3a6dd36f4a1498cf20ad31b09a1c66418ea24b4",
   "changed": [
     "easy.en:datapack/data/gallery/function/complete_o_reach_the_counter.mcfunction",
     "easy.en:datapack/data/gallery/function/setup_finish.mcfunction",
