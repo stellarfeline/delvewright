@@ -345,6 +345,14 @@ fn each_broken_shape_is_dw0931_with_its_remedy() {
         )
         .is_empty()
     );
+    // A world refused for an unnamed moon has no phase a cut can restate: the
+    // cut's own phase is not a second finding.
+    let m = dw0931(
+        serde_json::json!({"moon": "just-risen"}),
+        &[serde_json::json!({"moon": "high", "phase": "full-moon"})],
+    );
+    assert_eq!(m.len(), 1, "only the world's own refusal: {m:?}");
+    assert!(m[0].contains("STATE `phase`"), "{m:?}");
     // Shape 4: a cut restating the world's phase.
     let m = dw0931(
         serde_json::json!({"moon": "high", "phase": "new-moon"}),

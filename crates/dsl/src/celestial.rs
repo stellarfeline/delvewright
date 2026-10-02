@@ -640,7 +640,15 @@ pub fn shape_findings(
             MoonPhase::names_line(),
         ));
     }
+    // The world's phase is only a fact when the world's own time is well formed:
+    // a world refused for naming no body, or for leaving a visible moon
+    // unnamed, has no phase for a cut to restate, and its own refusal says so.
+    let world_phase_known = match world.celestial() {
+        None => true,
+        Some(w) => w.stated().is_some() && (w.phase.is_some() || !w.moon_shows()),
+    };
     if site != CelestialSite::World
+        && world_phase_known
         && let Some(p) = t.phase
         && t.moon_shows()
         && p == MoonPhase::of_day(world.world_day())
