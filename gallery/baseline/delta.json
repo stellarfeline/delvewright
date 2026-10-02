@@ -1,12 +1,14 @@
 {
   "added": [
     "primary.en:datapack/data/gallery/function/rw_begin.mcfunction",
+    "primary.en:datapack/data/gallery/function/rw_lock.mcfunction",
     "primary.en:datapack/data/gallery/function/rw_release.mcfunction",
     "primary.en:datapack/data/gallery/function/rw_start.mcfunction",
     "primary.en:datapack/data/gallery/function/rw_tick.mcfunction",
     "primary.en:packtest-datapack/data/gallery/test/v06_checkpoint_wait.mcfunction",
     "primary.en:validation/observer-census.json",
     "primary.zh-cn:datapack/data/gallery/function/rw_begin.mcfunction",
+    "primary.zh-cn:datapack/data/gallery/function/rw_lock.mcfunction",
     "primary.zh-cn:datapack/data/gallery/function/rw_release.mcfunction",
     "primary.zh-cn:datapack/data/gallery/function/rw_start.mcfunction",
     "primary.zh-cn:datapack/data/gallery/function/rw_tick.mcfunction",
@@ -46,7 +48,7 @@
   ],
   "classes": {
     "PackTest": 4,
-    "datapack function": 20,
+    "datapack function": 22,
     "other": 12,
     "validation ledger": 4
   },
