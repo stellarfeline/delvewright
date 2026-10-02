@@ -344,7 +344,7 @@ fn carried_and_repainted() -> Campaign {
                 "precipitation": "none",
                 "climate": { "temperature": 0.8, "downfall": 0.4 }
             },
-            atmosphere("atmosphere/still", "rain", json!({ "visual/sky_color": "#123456" }))
+            atmosphere("atmosphere/still", "rain", json!({ "visual/sky_color": "#12345a" }))
         ]),
         Some("atmosphere/wrong-place"),
         vec![

@@ -29,7 +29,7 @@
 
 | Track | Modifier | Keyframes | What a biome's value becomes |
 |---|---|---|---|
-| `visual/sky_color`, `visual/fog_color`, `visual/sky_light_color` | `multiply` | `#ffffff` 133–11867, dark (`#000000`, `#0f0f16`, `#000000`) 13670–22330 | survives, darkened at night |
+| `visual/sky_color`, `visual/fog_color`, `visual/sky_light_color` | `multiply` | `#ffffff` 133–11867, dark (black, `#0f0f16`, black) 13670–22330 | survives, darkened at night |
 | `visual/cloud_color` | `multiply` | −1 (white) by day, −15132378 by night | survives, darkened at night |
 | `visual/sky_light_factor` | `multiply` | 1.0 730–11270, 0.24 13140–22860 | survives, darkened at night |
 | `visual/star_brightness` | `maximum` | 0.0 by day, 0.5 at night (12 keys) | **a biome can force stars at noon** |
