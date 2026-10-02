@@ -170,7 +170,7 @@ Exactly one of `region` (a `StealthZone`, resolved through `Plan::zone_box` — 
 
 ## 7. The gallery, and the demo level
 
-**Authored**, against `gallery/` at `4c0fb85e` (two areas, `horizon` void, `day` + `clear`, `dsl_version` 0.35.0).
+**Authored**, against `gallery/` at `4c0fb85e` (two areas, `horizon` void, `day` + `clear`, at that tree's `dsl_version`).
 
 1. **Bound.** `world.json` declares two atmospheres: one setting **all 20** admitted attributes (one per shape, including a modifier-object distance), a full `tint`, `precipitation: snow` — carried by `area/hall`; one with `precipitation: none` and two attributes, painted by a `set-atmosphere` with a `region` from an approach trigger and painted back with `place` from an objective. Every unit — `atmospheres[].{id, attributes, tint.*, precipitation, climate}`, `areas[].atmosphere`, the verb's three fields — is written, and the coverage gate (`delvec schema --stage all`) binds them. The site-plan `boxes[].atmosphere` is bound in the gallery's site-plan overlay, which is where `PlanBox` is already written.
 2. **Refusal-proven**, one probe each, the primary plus a declared `patch`: `a-sky-the-sun-does-not-obey` (`visual/sun_angle`) and `an-attribute-the-game-never-heard-of` → `DW_ATTR`; `a-colour-that-is-a-number` → `DW_ATTR`; `a-snow-at-summer-heat` → `DW_DECL`; `an-atmosphere-nobody-stands-in` → `DW_DECL`; `a-repaint-past-the-edge-of-the-world` → `DW_PAINT`; `a-repaint-that-names-both-a-box-and-a-place` → `DW_PAINT`.

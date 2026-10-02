@@ -319,12 +319,37 @@ this digest is restated here and in versions.toml together.
 [[pin]]
 id = "server-jar"
 value = "f83b8e093865806f931c7e34aae41b177d4c076335263dd124c75d6d65dd1726"
-sites = ["versions.toml"]
+sites = ["tools/maintenance/extract-environment-attributes.py", "versions.toml"]
 policy = "immutable"
 why = """
 sha256 of the pinned Minecraft 1.21.11 server jar. The bootstrap cache refuses
 any download whose bytes are not this (versions.toml [minecraft]). Moving it is
 moving the pinned Minecraft version, which is ADR-0009's long-term constant.
+"""
+
+[[pin]]
+id = "client-jar-sha256"
+value = "1473c9489ac50fda3c435049a76a70d61a10b8610db27f5ba9d8756b686cd3bd"
+sites = ["tools/maintenance/extract-environment-attributes.py"]
+policy = "immutable"
+why = """
+sha256 of the pinned Minecraft 1.21.11 client jar (piston-meta downloads.client,
+sha1 ba2df812...). The environment-attribute regenerator (spec-0080) reads the
+attribute strings out of it as the second instrument beside the server jar and
+refuses any other bytes. Moving it is moving the pinned Minecraft version
+(ADR-0009).
+"""
+
+[[pin]]
+id = "server-mappings-sha1"
+value = "5621e9253f05fd57872bbe7f8ddf5f9a7d525955"
+sites = ["tools/maintenance/extract-environment-attributes.py"]
+policy = "immutable"
+why = """
+The sha1 piston-meta publishes for Mojang's official 1.21.11 server mappings
+(downloads.server_mappings). The environment-attribute regenerator resolves the
+obfuscated `EnvironmentAttributes`, `AttributeRange` and record codecs through
+them and refuses any other file. Moves only with the pinned Minecraft version.
 """
 
 [[pin]]
