@@ -829,7 +829,14 @@ def chat_once(
 
 #: A placeholder or formatting code the client substitutes or interprets.
 PLACEHOLDER_RE = re.compile(r"%(?:\d+\$)?[sd]|%%|§[0-9a-fk-or]")
-DIGITS_RE = re.compile(r"\d+")
+#: A number written in digits, thousands separators included (`10,811`); its
+#: value is compared with the separators removed, so `10811` keeps it.
+DIGITS_RE = re.compile(r"\d{1,3}(?:,\d{3})+|\d+")
+
+
+def digit_numbers(text: str) -> list[str]:
+    """Every number `text` writes in digits, separators removed."""
+    return [m.replace(",", "") for m in DIGITS_RE.findall(text)]
 
 #: English number words the check reads. `one` is excluded: it is a pronoun far
 #: more often than a count ("no one", "the one true thing").
@@ -943,8 +950,8 @@ def check_row(e: Entry, text: str, names: dict[str, str], lang: str) -> list[str
     want, got = sorted(PLACEHOLDER_RE.findall(e.en)), sorted(PLACEHOLDER_RE.findall(text))
     if want != got:
         failures.append(f"placeholders/formatting codes {want} became {got}")
-    have = DIGITS_RE.findall(text)
-    for d in DIGITS_RE.findall(e.en):
+    have = digit_numbers(text)
+    for d in digit_numbers(e.en):
         if d in have:
             have.remove(d)
         else:

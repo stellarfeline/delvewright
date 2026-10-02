@@ -1047,6 +1047,7 @@ def test_fact_check_refuses_a_changed_number(en, zh, lost):
 @pytest.mark.parametrize(
     ("en", "zh"),
     [
+        ("Day 10,811. Rang the Vesper.", "第10811天。敲响了晚祷钟。"),
         ("Sixteen arrows.", "十六支箭。"),
         ("Forty-two steps.", "四十二级台阶。"),
         ("Two of you, then.", "那就你们俩。"),

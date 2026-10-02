@@ -120,6 +120,7 @@ inputs = [
   { glob = "validation/**", why = "`test_reclaim_ladder_images.py`, `test_render_shots_*.py`, `test_delvec_bin_sh.py`, `test_mutex_lock_dir_default.py` and `test_staging_gate.py` run or read scripts under `validation/`" },
   { glob = "docs/reference/compiler.md", why = "`test_check_dw_codes.py` and `test_staging_gate.py` read the DW catalogue; the publish-gate tests copy it as a version site" },
   { glob = "docs/playtest-findings.json", why = "`test_staging_gate.py` reads the live findings ledger" },
+  { glob = "docs/reference/game-writing.md", why = "`tools/creator/i18n-translate.py` reads its target-language writing rules into every prompt, and `test_i18n_translate.py` builds those prompts" },
 ]
 
 [[group]]
