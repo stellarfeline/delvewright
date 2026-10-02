@@ -1,6 +1,6 @@
 # spec-0085: A perception bundle — timed screen and sound effects played to an audience: the audience belongs to every player-facing effect, a timeline keeps its actor, a particle is an effect, and a sound stands where the listener's body says
 
-- **Status**: Proposed
+- **Status**: Approved
 - **Ground**: written against engine `c0f22c51` (`origin/main`), read only —
   the stage-5 effect vocabulary (`Verb`, 38 variants by `delvec schema --stage
   all` built from this tree, 542968 bytes), the effect envelope
@@ -32,12 +32,12 @@
   **cited** where used; the spike's `observations.json` is cited as a
   measurement; everything built on them is **authored**. One claim is from
   memory and is named as such (§7.3, the particle setting).
-- **Numbers**: no ADR. **Four new DW codes**, written here as placeholders
-  for the planner to allocate — `DW_PERCEPTION_UNKNOWN_PARTICLE` (§4.3),
-  `DW_PERCEPTION_AUDIENCE_ON_A_PARTY_FACT` (§3.3), `DW_PERCEPTION_BLIND_REACH`
-  (§6), `DW_PERCEPTION_SIGHT_UNDER_A_CAMERA` (§5.3); `DW0503` gains a fourth
-  shape and no number (§3.3). **`dsl_version` moves**: the envelope gains two
-  fields, the vocabulary gains a verb, a sound origin gains an offset.
+- **Numbers**: no ADR. **Four new DW codes** — `DW0941` (§4.3, an unknown
+  particle), `DW0942` (§3.3, an audience on a party fact), `DW0943` (§6, the
+  blind reach), `DW0944` (§5.3, a sight under a camera); `DW0503` gains a
+  fourth shape and no number (§3.3). **`dsl_version` stays `0.35.0`**: the
+  envelope gains two fields, the vocabulary gains a verb, a sound origin
+  gains an offset, under the number the surface already carries.
 - **Non-goals**: a `perception` verb (§2 says why there is none); a particle
   that takes options (`dust`, `block`, `item`, …, §4.3); a sound category
   other than `master` (§4.4); the player's own volume and video settings,
@@ -187,7 +187,7 @@ carries an actor, so the two forms never share a body.
   NPCs, `cutscene`, time and weather, `set-checkpoint`, `bonfire`, stealth,
   `sequence` itself, `campaign-complete` — and the verbs that joined the class
   after it was written: the volume-selected `teleport`, `volley`, `collapse`,
-  `firework`) — is `DW_PERCEPTION_AUDIENCE_ON_A_PARTY_FACT`,
+  `firework`) — is `DW0942`,
   validation tier (exit 1), `dsl::validate`, naming the verb and the field.
   A box has no party and a world fact has no audience; a `sequence` carries
   none because its steps each state their own. The classification is read
@@ -259,7 +259,7 @@ command, a proof about what the primitive reaches.*
   `item`, `sculk_charge`, `shriek`, `vibration`, `trail`, `tinted_leaves`,
   `block_crumble` — authored from memory, pinned from the wiki by the test
   that lands the registry, which marks each entry), is
-  `DW_PERCEPTION_UNKNOWN_PARTICLE`, validation tier (exit 1), `dsl::validate`.
+  `DW0941`, validation tier (exit 1), `dsl::validate`.
   A particle with options is excluded until the registry says what each
   takes; none of this spec's needs has one.
 - `at` — the mark the particle is spawned at (spec-0066's `Mark`, the same
@@ -373,7 +373,7 @@ derives, and states that *a `give-effect` sight grant's author-chosen
 
 **Authored.** This spec gives the row its `give-effect` half, because a
 perception bundle is exactly a sight grant timed beside a camera.
-`DW_PERCEPTION_SIGHT_UNDER_A_CAMERA`, validation tier (exit 1),
+`DW0944`, validation tier (exit 1),
 `dsl::validate`: in one timeline, a `give-effect` of a sight effect
 (`night_vision`, `blindness`, `darkness` — the set the ledger row names, held
 as one list in `crates/dsl` beside the blinding set of §6) whose window
@@ -437,7 +437,7 @@ box when the effect declares one:
 | on a respawn (`on_respawn`, `on_death`) | the active checkpoint's or bonfire's seat |
 | anywhere else (a quest's `on_complete`, `talk-to`, `kill`, `collect`, `interact`, `on_kill`, `on_unlock`, campaign start) | the walked population `P` of spec-0062 §2 |
 
-A grant whose `R` is caught is **`DW_PERCEPTION_BLIND_REACH`**, build tier
+A grant whose `R` is caught is **`DW0943`**, build tier
 (exit 3), `compiler::lethal`'s neighbour, asked after `DW0891` (so every
 volume it reasons about is one the player could see) and before the route
 proofs. The message names the grant, `|S|`, `n`, the first caught cell by
@@ -528,14 +528,14 @@ a fact; until then the skill says *written in force mode* and no more.
   volumes (`DW0891`'s own fixtures) and a blinding there is the probe, not
   the element; a vanilla effect id is data, never a unit, so no unit is lost.
 - **The probes.** Five, each the primary plus a declared edit:
-  `a-particle-the-game-does-not-draw` (`DW_PERCEPTION_UNKNOWN_PARTICLE`, an
+  `a-particle-the-game-does-not-draw` (`DW0941`, an
   unknown id); `a-face-shown-to-nobody-in-particular`
-  (`DW_PERCEPTION_AUDIENCE_ON_A_PARTY_FACT`, `audience` on a `set-block`);
+  (`DW0942`, `audience` on a `set-block`);
   `an-actor-the-tick-does-not-have` (`DW0503`, `audience: actor` inside a
   `party` trigger's bundle); `a-blinding-at-the-rim`
-  (`DW_PERCEPTION_BLIND_REACH`, a two-second `blindness` `in` a box at the
+  (`DW0943`, a two-second `blindness` `in` a box at the
   west pit's rim — the refusal names the pit's keep-out); and
-  `a-sight-that-fades-under-the-camera` (`DW_PERCEPTION_SIGHT_UNDER_A_CAMERA`,
+  `a-sight-that-fades-under-the-camera` (`DW0944`,
   a timeline holding a `night_vision` of 3 seconds and a 10-second cutscene
   shot, both at tick 0 — the hall's cutscenes are top-level effects today, so
   the probe adds the timeline).
@@ -605,13 +605,13 @@ against the tree at `c0f22c51` before being written and is recorded as a
 4. **`DW0503`'s fourth shape and the party-fact refusal.** `audience: actor`
    inside a `party` trigger's bundle is `DW0503`; `audience` or `in` on
    each verb the emitter classifies as a party fact is
-   `DW_PERCEPTION_AUDIENCE_ON_A_PARTY_FACT`, and the set of verbs it refuses
+   `DW0942`, and the set of verbs it refuses
    is read from the emitter's classification by one test that adds a verb to
    neither side and fails. *Tree: debt.*
 5. **The particle.** A test declares both `at` forms and reads the emitted
    lines: `force` on both, `@s` as viewers inside `execute as <who> at @s`
    for `players`, the mark's `.5` centre and `<who>` for a mark; an unknown
-   id and an options-taking id are `DW_PERCEPTION_UNKNOWN_PARTICLE`; the
+   id and an options-taking id are `DW0941`; the
    registry file exists with its `PROVENANCE.md` entry and every entry
    states whether it takes options. *Tree: debt — no registry, no verb.*
 6. **The listener's frame.** A `players` sound with `offset [0, 0, -3]` emits
@@ -620,7 +620,7 @@ against the tree at `c0f22c51` before being written and is recorded as a
    *Tree: debt — `SoundAt::Players` is a unit variant.*
 7. **A sight effect outlasts the camera.** A timeline with a 3-second
    `night_vision` at tick 0 and a 10-second cutscene shot at tick 0 is
-   `DW_PERCEPTION_SIGHT_UNDER_A_CAMERA`; at 15 seconds it is green; the
+   `DW0944`; at 15 seconds it is green; the
    sight set and each wind-down are one table in `crates/dsl` with the wiki
    page per row; the ledger row whose general form is *a granted sight
    effect outlasts any authored camera it can overlap, plus vanilla's
@@ -628,7 +628,7 @@ against the tree at `c0f22c51` before being written and is recorded as a
    `give-effect` binding and names this code as its general form. *Tree:
    debt — the row is open and binds only `mitigation`.*
 8. **The blind reach.** On the gallery, a two-second `blindness` `in` a box
-   at the west pit's rim is `DW_PERCEPTION_BLIND_REACH` naming the pit; the
+   at the west pit's rim is `DW0943` naming the pit; the
    same grant as `nausea` is green; the same `blindness` thirty cells from
    both pits is green with `|S| > 0`; an `in` box over no standable cell is
    refused with a count of zero; the reach uses `body_moves` over
@@ -672,7 +672,7 @@ against the tree at `c0f22c51` before being written and is recorded as a
   open general form, given its `give-effect` half here rather than in a spec
   of its own.
 - **Falls that hurt but do not kill are not caught**, and the record says so.
-- **`dsl_version` moves**; four codes to allocate; no ADR.
+- **`dsl_version` stays `0.35.0`**; four codes, `DW0941`–`DW0944`; no ADR.
 
 **Settled under the danger-is-visible rule, not put to the owner.** A
 blinding whose reach meets a killing volume is refused (one new code), with
