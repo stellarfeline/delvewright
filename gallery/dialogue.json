@@ -55,7 +55,9 @@
                     "type": "set-checkpoint"
                   },
                   {
-                    "time": "noon",
+                    "time": {
+                      "sun": "rising"
+                    },
                     "type": "set-time"
                   },
                   {

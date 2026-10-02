@@ -1,0 +1,17 @@
+{
+  "code": "DW0931",
+  "patch": [
+    {
+      "doc": "world.json",
+      "op": "replace",
+      "path": "/content/time",
+      "value": {
+        "moon": "just-risen",
+        "phase": "new-moon",
+        "sun": "setting"
+      }
+    }
+  ],
+  "units": [],
+  "why": "The world's time naming both bodies: the moon just risen and the sun setting. The moon stands exactly opposite the sun, so two bodies are either one hour written twice or two hours at once — here two (12959 and 12782 ticks), and nothing could say which the delve is played at. `DW0931` refuses it at validation with the remedy: name one body. It declares no unit: `CelestialTime.sun` and `CelestialTime.moon` are both bound by the primary."
+}

@@ -343,6 +343,27 @@ not third-party reconstructions.
   **Reproduce it**: `python3 tools/maintenance/extract-entity-tags.py
   <data/tag/entity_type/data.min.json> crates/dsl/data/entity-tags-1.21.11.json`.
 
+- **`timeline-day-1.21.11.json`** and **`timeline-moon-1.21.11.json`** (in
+  `crates/dsl/data/`) — **not** from the misode summary: read straight out of the
+  pinned server jar, `versions.toml` `[minecraft]` `server_jar_sha256`
+  `f83b8e093865806f931c7e34aae41b177d4c076335263dd124c75d6d65dd1726`, whose
+  bundled `META-INF/versions/1.21.11/server-1.21.11.jar` (sha256
+  `ec47239a8de246335e1d54f6ac319bd35641778eb4b6a6da06372840d02fcebc`) holds them
+  at `data/minecraft/timeline/day.json` (sha256
+  `6b6a64255d75579e0d3777d37174860c52899e01d77ea80a2daac87dd41719bf`) and
+  `data/minecraft/timeline/moon.json` (sha256
+  `947352a0fec398da6d227ab8becd32d5cbf35aa8ec47b0071de2d1273b35ccd3`). Copied byte
+  for byte with **one trailing newline appended** — the jar's files end at `}`,
+  and that newline is the only edit `delvec fmt --check` asks of a tracked JSON
+  file. Feeds `delvewright_dsl::celestial` (spec-0081): the moon's eight phase
+  names and their order, the `visual/sun_angle` keyframes and cubic-bezier ease
+  the scenes' sun and the celestial position table read, the
+  `gameplay/sky_light_level` ramp the light model judges, and the
+  `gameplay/monsters_burn` window `DW0496` reads.
+  **Check or reproduce it**: `python3 tools/maintenance/extract-timelines.py
+  <server.jar> [--write]` — refuses a jar off the pin, and without `--write`
+  refuses any difference between the jar's bytes and the committed ones.
+
 - **`item-equippable-1.21.11.json`** — every item that carries the
   `minecraft:equippable` default component (84), from `item_components/data.min.json`
   above, with its declared `slot`, its `asset_id`, its `allowed_entities` (always a

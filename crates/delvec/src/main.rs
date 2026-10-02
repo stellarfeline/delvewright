@@ -1029,6 +1029,9 @@ fn validate_loaded(
                 examined.push(dbind.line());
                 diags.extend(dd);
             }
+            // spec-0081 §5.5: every time value the campaign states, as the clock
+            // it resolves to — printed on every run, zeroes included.
+            examined.extend(delvec::compiler::clock::binding_lines(&campaign));
             print_diags(&diags, json);
             report_binding_notes(&campaign, &examined);
             Ok(Validated {

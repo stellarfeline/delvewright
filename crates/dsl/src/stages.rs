@@ -9,6 +9,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+use crate::celestial::{CelestialTime, Clock, MoonPhase};
 use crate::firework::FireworkExplosion;
 use crate::layout::StationKind;
 
@@ -158,17 +159,24 @@ pub enum Carrier {
     One,
 }
 
-/// A declared world time state (DSL v0.5, spec-0010). The sole difference from
-/// vanilla is that the daylight cycle is frozen (`advance_time false`), so a set
-/// state persists for the whole delve until a `set-time` effect cuts to another.
+/// A declared world time state (DSL v0.5, spec-0010; the celestial spelling
+/// spec-0081). The sole difference from vanilla is that the daylight cycle is
+/// frozen (`advance_time false`), so a set state persists for the whole delve
+/// until a `set-time` effect cuts to another.
+///
+/// **Two spellings of one clock.** A keyword — `day`, `noon`, `dusk`, `night`,
+/// `midnight`, `dawn` — states vanilla's word with vanilla's meaning: the hour,
+/// on day 0, so a keyword night shows a full moon. A celestial statement
+/// ([`CelestialTime`], `{"moon": "just-risen", "phase": "new-moon"}`) names one
+/// body, where it stands and, where the moon shows, its phase, and the engine
+/// computes the tick count, day included. Both resolve to one [`Clock`]
+/// ([`WorldTime::clock`]); two values are equal when their clocks are.
 ///
 /// Vanilla's `/time set` primitive takes **either** one of four keywords or a raw
-/// tick count, and the tick form is the general one — so the states worth naming
-/// for a delve's pacing are not limited to the four keywords. `dusk` and `dawn`
-/// are the tick form exposed first-class, per the
-/// no-hack rule: the DSL names the beat, the compiler emits `/time set <ticks>`.
-/// Every keyword-to-tick mapping lives in exactly one table ([`WorldTime::spec`]),
-/// and the four vanilla keywords still emit their keyword verbatim, so existing
+/// tick count, and the tick form is the general one. `dusk` and `dawn` are the
+/// tick form exposed first-class, per the no-hack rule; a celestial statement is
+/// the same primitive reached from a designer's sentence. A keyword on day 0
+/// still emits its keyword verbatim ([`WorldTime::token`]), so existing
 /// campaigns are byte-identical.
 ///
 /// **There is no `Default`** (spec-0061 §4). A default hour is a design decision
@@ -177,9 +185,29 @@ pub enum Carrier {
 /// sky. Removing the impl is what makes that unwritable rather than merely
 /// discouraged: `WorldContent::time` is required, and nothing can supply an hour
 /// the author did not.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum WorldTime {
+    /// Morning daylight (`/time set day`, 1000 ticks).
+    Day,
+    /// Midday, brightest (`/time set noon`, 6000 ticks).
+    Noon,
+    /// Sunset onset (`/time set 12000`).
+    Dusk,
+    /// Night, sun fully down (`/time set night`, 13000 ticks).
+    Night,
+    /// Deep night, darkest (`/time set midnight`, 18000 ticks).
+    Midnight,
+    /// First light, just before sunrise (`/time set 23000`).
+    Dawn,
+    /// A sky stated in a designer's words (spec-0081).
+    Celestial(CelestialTime),
+}
+
+/// The six keyword spellings of a [`WorldTime`] — the wire and schema form of
+/// its keyword half.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "kebab-case")]
-pub enum WorldTime {
+pub enum TimeKeyword {
     /// Morning daylight (`/time set day`, 1000 ticks).
     Day,
     /// Midday, brightest (`/time set noon`, 6000 ticks).
@@ -199,52 +227,201 @@ pub enum WorldTime {
     Dawn,
 }
 
+impl From<TimeKeyword> for WorldTime {
+    fn from(k: TimeKeyword) -> WorldTime {
+        match k {
+            TimeKeyword::Day => WorldTime::Day,
+            TimeKeyword::Noon => WorldTime::Noon,
+            TimeKeyword::Dusk => WorldTime::Dusk,
+            TimeKeyword::Night => WorldTime::Night,
+            TimeKeyword::Midnight => WorldTime::Midnight,
+            TimeKeyword::Dawn => WorldTime::Dawn,
+        }
+    }
+}
+
+impl Serialize for WorldTime {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        match self {
+            WorldTime::Celestial(c) => c.serialize(s),
+            kw => s.serialize_str(kw.keyword_str().expect("a keyword")),
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for WorldTime {
+    fn deserialize<D: serde::Deserializer<'de>>(de: D) -> Result<WorldTime, D::Error> {
+        struct V;
+        impl<'de> serde::de::Visitor<'de> for V {
+            type Value = WorldTime;
+            fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+                f.write_str(
+                    "a time: a keyword (day, noon, dusk, night, midnight, dawn) or an object \
+                     naming one body, where it stands and its phase \
+                     ({\"moon\": \"just-risen\", \"phase\": \"new-moon\"})",
+                )
+            }
+            fn visit_str<E: serde::de::Error>(self, v: &str) -> Result<WorldTime, E> {
+                use serde::de::IntoDeserializer;
+                TimeKeyword::deserialize(v.into_deserializer()).map(WorldTime::from)
+            }
+            fn visit_map<A: serde::de::MapAccess<'de>>(
+                self,
+                map: A,
+            ) -> Result<WorldTime, A::Error> {
+                CelestialTime::deserialize(serde::de::value::MapAccessDeserializer::new(map))
+                    .map(WorldTime::Celestial)
+            }
+        }
+        de.deserialize_any(V)
+    }
+}
+
+impl JsonSchema for WorldTime {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "WorldTime".into()
+    }
+
+    fn json_schema(g: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        schemars::json_schema!({
+            "description": "A time: a keyword, vanilla's hour on day 0 (a keyword night is a full \
+                            moon), or a celestial statement naming one body, where it stands and, \
+                            where the moon shows, its phase (spec-0081).",
+            "anyOf": [g.subschema_for::<TimeKeyword>(), g.subschema_for::<CelestialTime>()],
+        })
+    }
+}
+
 impl WorldTime {
-    /// The single keyword/tick table: `(the /time set argument, daytime ticks)`.
+    /// The keyword table: `(the /time set argument, daytime ticks)`, or `None`
+    /// for a celestial statement.
     ///
     /// A state vanilla names keeps its keyword — the argument the compiler has
     /// always emitted — so no shipped campaign's bytes move. A state vanilla does
     /// not name emits the equivalent tick count, which is the same primitive.
-    const fn spec(self) -> (&'static str, i64) {
+    const fn spec(self) -> Option<(&'static str, i64)> {
         match self {
-            WorldTime::Day => ("day", 1000),
-            WorldTime::Noon => ("noon", 6000),
-            WorldTime::Dusk => ("12000", 12000),
-            WorldTime::Night => ("night", 13000),
-            WorldTime::Midnight => ("midnight", 18000),
-            WorldTime::Dawn => ("23000", 23000),
+            WorldTime::Day => Some(("day", 1000)),
+            WorldTime::Noon => Some(("noon", 6000)),
+            WorldTime::Dusk => Some(("12000", 12000)),
+            WorldTime::Night => Some(("night", 13000)),
+            WorldTime::Midnight => Some(("midnight", 18000)),
+            WorldTime::Dawn => Some(("23000", 23000)),
+            WorldTime::Celestial(_) => None,
         }
     }
 
-    /// The vanilla `/time set` argument — a keyword for the four states vanilla
-    /// names, a tick count otherwise.
-    pub fn token(self) -> &'static str {
-        self.spec().0
+    /// Whether this is one of the six keywords.
+    pub fn is_keyword(self) -> bool {
+        !matches!(self, WorldTime::Celestial(_))
+    }
+
+    /// The celestial statement, if this is one.
+    pub fn celestial(self) -> Option<CelestialTime> {
+        match self {
+            WorldTime::Celestial(c) => Some(c),
+            _ => None,
+        }
+    }
+
+    /// The phase this value states, if any.
+    pub fn stated_phase(self) -> Option<MoonPhase> {
+        self.celestial().and_then(|c| c.phase)
     }
 
     /// The `daytime` tick value this state sets (the `time query daytime`
-    /// read-back). Vanilla constants: day=1000, noon=6000, dusk=12000 (sunset
-    /// onset), night=13000, midnight=18000, dawn=23000.
+    /// read-back). Keywords: day=1000, noon=6000, dusk=12000 (sunset onset),
+    /// night=13000, midnight=18000, dawn=23000; a celestial statement its
+    /// position's tick ([`crate::celestial::position_tick`]).
     pub fn daytime_ticks(self) -> i64 {
-        self.spec().1
-    }
-
-    /// **The word an author writes** — this state's spelling in a document.
-    ///
-    /// Not [`WorldTime::token`], which is the `/time set` argument and is a raw
-    /// tick count for the two states vanilla does not name. A diagnostic that
-    /// asks an author to declare an hour has to say `dusk`, not `12000`: the
-    /// number is what the compiler emits and is not writable in `world.json`.
-    pub fn keyword(self) -> &'static str {
-        match self {
-            WorldTime::Day => "day",
-            WorldTime::Noon => "noon",
-            WorldTime::Dusk => "dusk",
-            WorldTime::Night => "night",
-            WorldTime::Midnight => "midnight",
-            WorldTime::Dawn => "dawn",
+        match self.spec() {
+            Some((_, t)) => t,
+            None => self.celestial().expect("celestial").daytime(),
         }
     }
+
+    /// The day this value names as **the world's own time**: a keyword is day 0;
+    /// a celestial statement the day its `phase` names, or day 0 where it names
+    /// none (the moon is below the horizon, so no phase is stated).
+    pub fn world_day(self) -> i64 {
+        self.stated_phase().map(MoonPhase::index).unwrap_or(0)
+    }
+
+    /// **The clock this value sets**, at a site whose world declares `world`
+    /// (spec-0081 §3.3).
+    ///
+    /// - A celestial statement is its position's tick on the day its `phase`
+    ///   names, or the world's day where it states none — a cut changes the
+    ///   hour, and the moon keeps the phase the world declared.
+    /// - A keyword is its table row on day 0 where it states a sky — the
+    ///   world's own time, a design row, a camera ([`TimeSite::Sky`]) — and on
+    ///   the world's day where it is a `set-time` cut ([`TimeSite::Cut`]), which
+    ///   changes the hour and keeps the moon.
+    pub fn clock(self, site: TimeSite, world: WorldTime) -> Clock {
+        let daytime = self.daytime_ticks();
+        let day = match (self, site) {
+            (WorldTime::Celestial(c), _) => c
+                .phase
+                .map(MoonPhase::index)
+                .unwrap_or_else(|| world.world_day()),
+            (_, TimeSite::Cut) => world.world_day(),
+            (_, TimeSite::Sky) => 0,
+        };
+        Clock { day, daytime }
+    }
+
+    /// The world's own clock: [`WorldTime::clock`] at the world's site.
+    pub fn world_clock(self) -> Clock {
+        self.clock(TimeSite::Sky, self)
+    }
+
+    /// **The vanilla `/time set` argument for `clock`**, the one token every
+    /// `time set` the engine emits goes through: a keyword on day 0 emits its
+    /// table argument verbatim (`night`, `12000`), so no keyword campaign's bytes
+    /// move; any other clock emits the integer `day × 24000 + daytime`.
+    pub fn token(self, clock: Clock) -> String {
+        match self.spec() {
+            Some((tok, t)) if clock.day == 0 && clock.daytime == t => tok.to_string(),
+            _ => clock.absolute().to_string(),
+        }
+    }
+
+    /// The keyword spelling, if this is a keyword.
+    fn keyword_str(self) -> Option<&'static str> {
+        match self {
+            WorldTime::Day => Some("day"),
+            WorldTime::Noon => Some("noon"),
+            WorldTime::Dusk => Some("dusk"),
+            WorldTime::Night => Some("night"),
+            WorldTime::Midnight => Some("midnight"),
+            WorldTime::Dawn => Some("dawn"),
+            WorldTime::Celestial(_) => None,
+        }
+    }
+
+    /// **What an author writes** — this state's spelling in a document: the
+    /// keyword, or the canonical JSON of a celestial statement
+    /// (`{"moon":"high","phase":"new-moon"}`).
+    ///
+    /// Not [`WorldTime::token`], which is the `/time set` argument and is a raw
+    /// tick count for every state vanilla does not name. A diagnostic that asks
+    /// an author to declare an hour has to say `dusk`, not `12000`.
+    pub fn keyword(self) -> String {
+        match self {
+            WorldTime::Celestial(c) => c.spelling(),
+            kw => kw.keyword_str().expect("a keyword").to_string(),
+        }
+    }
+}
+
+/// Where a time value is written, which decides the day a keyword names
+/// ([`WorldTime::clock`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TimeSite {
+    /// A statement of a sky: the world's own time, a design row, a camera.
+    Sky,
+    /// A `set-time` effect, quest or dialogue.
+    Cut,
 }
 
 /// A declared weather state (DSL v0.5, spec-0010). Values are the vanilla
