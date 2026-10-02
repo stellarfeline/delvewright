@@ -67,6 +67,9 @@ function check(label: string, ok: boolean, reading: string): void {
   if (!ok) failures.push(label);
 }
 
+type RegistryData = { id: string; entries: { key: string; value?: unknown }[] };
+const dialogRegistry = new Map<string, RegistryData["entries"]>();
+
 function join(username: string): Promise<Bot> {
   return new Promise((resolve, reject) => {
     // `createHarnessBot` reports `player_loaded` after the join and every respawn,
@@ -80,6 +83,14 @@ function join(username: string): Promise<Bot> {
       auth: "offline",
       respawn: false,
     });
+    // The dialog registry the server syncs at configuration: a `show_dialog`
+    // names a datapack dialog by its index here, never inline.
+    (bot as unknown as { _client: { on(n: string, l: (p: RegistryData) => void): void } })._client.on(
+      "registry_data",
+      (packet) => {
+        if (packet.id === "minecraft:dialog") dialogRegistry.set(username, packet.entries);
+      },
+    );
     bot.once("spawn", () => resolve(bot));
     bot.once("error", reject);
     bot.once("kicked", (r) => reject(new Error(`${username} kicked: ${JSON.stringify(r)}`)));
@@ -314,8 +325,18 @@ await guard("rw-b");
   if (fireA) await a.activateEntity(fireA);
   await sleep(1000);
   {
-    const shown = dialogsA.find((j) => j.includes("rest_tooltip") && j.includes("save_tooltip"));
-    check("control: a click by a player in play opens the fire's dialog, tooltips on both buttons", shown !== undefined, shown ? `${dialogsA.length} dialog(s); rest_tooltip and save_tooltip present` : `${dialogsA.length} dialog(s): ${dialogsA.join(" | ").slice(0, 300)}`);
+    // `show_dialog` carries `{dialog: <registry index>}`; the entry it names is
+    // read from the registry the server synced to rw-a at configuration.
+    const shown = dialogsA.map((j) => (JSON.parse(j) as { dialog?: { dialog?: unknown } }).dialog?.dialog);
+    const entries = dialogRegistry.get("rw-a") ?? [];
+    const named = shown.map((i) => (typeof i === "number" ? entries[i] : undefined));
+    const fire = named.find((e) => e?.key === `${ns}:bonfire_${bonfireText}`);
+    const body = fire ? JSON.stringify(fire.value) : "";
+    check(
+      "control: a click by a player in play opens the fire's dialog, tooltips on both buttons",
+      fire !== undefined && body.includes("rest_tooltip") && body.includes("save_tooltip"),
+      `${dialogsA.length} dialog(s) shown, naming ${named.map((e) => e?.key ?? "?").join(", ")} of ${entries.length} synced; rest_tooltip ${body.includes("rest_tooltip")}, save_tooltip ${body.includes("save_tooltip")}`,
+    );
     const at = await score("rw-a", "dw.rest_at");
     check("control: the opener ran for the player in play", at === Number(bonfireText), `dw.rest_at=${at}`);
   }
