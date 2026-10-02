@@ -1,11 +1,16 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import {
   RepaintPlanParseError,
   RepaintWatch,
+  loadRepaintPlanForCriticalPath,
   parseRepaintPlan,
   repaintBindingLine,
 } from "../src/repaint.ts";
+import { within } from "./bounded.ts";
 
 // spec-0080 §5.2: a repaint reaches the client as a `chunk_biomes` naming every
 // held chunk of its volume, and never as a `map_chunk` resend. Each failure mode
@@ -93,4 +98,26 @@ test("a chunk unloaded before the repaint is not counted as held", () => {
 test("a malformed export is refused", () => {
   assert.throws(() => parseRepaintPlan({ repaints: [{ effect: "x", biome: "y", after: 3, chunks: [[0, 0]] }] }), RepaintPlanParseError);
   assert.throws(() => parseRepaintPlan({ repaints: [{ effect: "x", biome: "y", after: null, chunks: [] }] }), RepaintPlanParseError);
+});
+
+test("the export is read from the build tree's validation/ beside the critical path", async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), "repaint-plan-"));
+  try {
+    const cp = path.join(dir, "critical-path.json");
+    await writeFile(cp, "{}");
+    assert.equal(
+      await within("loadRepaintPlanForCriticalPath(absent)", loadRepaintPlanForCriticalPath(cp)),
+      undefined,
+      "absent means no repaint",
+    );
+    await mkdir(path.join(dir, "validation"));
+    await writeFile(
+      path.join(dir, "validation", "atmosphere-repaints.json"),
+      JSON.stringify({ repaints: [{ effect: "e", biome: "b", after: "obj/x", chunks: [[1, 2]] }] }),
+    );
+    const plan = await within("loadRepaintPlanForCriticalPath(present)", loadRepaintPlanForCriticalPath(cp));
+    assert.equal(plan?.repaints.length, 1, "the build's own validation/ export is found");
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
 });

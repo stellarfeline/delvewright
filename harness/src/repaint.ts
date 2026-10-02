@@ -18,8 +18,9 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 
-/** Where the export sits, relative to the critical path's directory. */
-export const REPAINT_PLAN_FILE = "atmosphere-repaints.json";
+/** Where the export sits, relative to the critical path's directory — the
+ * build tree's `validation/`, beside every other contract the bot reads. */
+export const REPAINT_PLAN_SUBPATH = ["validation", "atmosphere-repaints.json"] as const;
 
 /** How long after its bundle's marker a repaint's packets may arrive. */
 export const REPAINT_WINDOW_MS = 10_000;
@@ -82,7 +83,7 @@ export function parseRepaintPlan(raw: unknown): RepaintPlan {
 export async function loadRepaintPlanForCriticalPath(
   criticalPathFile: string,
 ): Promise<RepaintPlan | undefined> {
-  const file = path.join(path.dirname(criticalPathFile), REPAINT_PLAN_FILE);
+  const file = path.join(path.dirname(criticalPathFile), ...REPAINT_PLAN_SUBPATH);
   let text: string;
   try {
     text = await readFile(file, "utf8");
