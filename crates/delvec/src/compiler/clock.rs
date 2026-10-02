@@ -19,6 +19,10 @@ use crate::compiler::light::{sky_base_judged, sky_light_game};
 
 /// `+2.86° E` — an altitude with its side; the zenith and nadir carry none.
 fn body_line(alt: f64, west: bool) -> String {
+    // Rounded to the printed two places first, so a body a few thousandths of
+    // a degree under the horizon prints `+0.00°`, never `-0.00°`.
+    let alt = (alt * 100.0).round() / 100.0;
+    let alt = if alt == 0.0 { 0.0 } else { alt };
     let side = if alt.abs() >= 90.0 - 1e-9 {
         String::new()
     } else if west {
