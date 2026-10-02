@@ -381,7 +381,7 @@ The subcommand tree is the whole surface, and this page uses all of it:
 | `delvec prefab` | admits a prefab into the library |
 | `delvec schem` | converts an outside schematic |
 | `delvec harvest` | turns in-game playtest notes into a report |
-| `delvec l10n-inventory` | the transcreation input: each row's English, kind, speaker and situation |
+| `delvec l10n-inventory` | the translation input |
 
 Ask the binary rather than this table when you need the exact shape:
 `delvec --help`, and `delvec <subcommand> --help` for a group's own verbs.
