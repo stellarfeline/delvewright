@@ -124,7 +124,11 @@ export class RepaintWatch {
   private readonly events: ChunkEvent[] = [];
   private readonly markers = new Map<string, number>();
 
-  constructor(private readonly plan: RepaintPlan) {}
+  private readonly plan: RepaintPlan;
+
+  constructor(plan: RepaintPlan) {
+    this.plan = plan;
+  }
 
   /** Feed one raw packet (`bot._client.on("packet", (data, meta) => …)`). */
   packet(name: string, data: unknown, at: number): void {
