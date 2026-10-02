@@ -255,10 +255,10 @@ to the owner once, with that cost.
 - **Every part rides the root** (a star): 34 `ride … mount` commands on one
   `item_display`, 34 passengers counted back (§8 row 2), a zombie holding
   two the same way. The star is what makes the assembly one thing to move
-  (§7): a `tp` of the root carries every passenger's position and rotation
-  (§8 row 3), and no part depends on another part's seat — a passenger that
-  is itself teleported leaves its vehicle (§8 row 3), so a chain would be
-  broken by any one such write and a star is not.
+  (§7): a `tp` of the root moves every passenger with it and turns each by
+  the root's own change of yaw (§8 row 3), and no part depends on another
+  part's seat — a passenger that is itself teleported leaves its vehicle (§8
+  row 3), so a chain would be broken by any one such write and a star is not.
 - The hitbox, when declared: one `minecraft:interaction` tagged
   `dw_asm_<id>_hit`, standing on its own at the mark (not riding; step 2
   replaces it with the mob's body).
@@ -397,7 +397,7 @@ What step 1 leaves open so step 2 is an addition and not a rewrite:
 - **Facing is the root's.** Step 1 bakes `facing` into the frames (§3.2) so
   that step 1 needs no client fact. Step 2 needs the parts to turn with the
   mob at runtime, and §8 row 3 draws the line it has to work inside: a
-  vehicle **teleported** with a yaw carries that yaw onto every passenger,
+  vehicle **teleported** with a yaw turns every passenger by the same change,
   `/rotate` on the vehicle rotates the vehicle alone, and a passenger
   teleported in place **dismounts**. So a mob turning under its own AI does
   not turn the parts, and the per-part rotation write is the destructive
@@ -430,7 +430,7 @@ raw readings in `observations.json`, coordinates in `site.json` written by
 |---|---|---|
 | 1 | **Build.** One root `item_display`, 34 `block_display` parts, one `interaction` 3 × 8 at the mark; the bot's entity list after 2 s. | 34 / 1 / 1 on the server; the bot saw 34 block displays, 1 item display, 1 interaction; the frame counter advanced within 1.5 s (`frame_advances: true`). |
 | 2 | **Passengers per vehicle.** Three displays mounted one by one on a fresh `item_display`, two on a NoAI zombie; the vehicle's passengers counted by `execute as <vehicle> on passengers run scoreboard players add` (a forked `store result … if entity` stores one branch's `1`, which is how this spec's first run misread it as one). | `item_display`: 3 of 3; zombie: 2 of 2; the assembly's root: **34 of 34**. Every `ride` answered *started riding*. |
-| 3 | **Moving the root.** `execute as <root> at @s run tp @s ~2 ~ ~`, then `… tp @s ~-2 ~ ~ 90 0`, then `rotate <root> 45 0`, then `… as <part 17> at @s run tp @s ~ ~ ~ ~ ~`, then remount and `tp @s ~ ~ ~ 0 0`; parts 0, 1, 17, 33 read each time. | +2 x: every sampled part at +2, still mounted; yaw 90 by `tp`: every part reads `[90, 0]`; `rotate` 45: the root reads 45, every part still 90; the in-place `tp` of part 17: it reads *no vehicle* and the root counts 33; after remount and the root's `tp … 0 0`: root 0, parts 45 (the yaw the last **vehicle** `tp` carried), root counts 34. The bot received one `sync_entity_position` for the root and no packet addressed to a part; its stored part positions did not move (a client positions riders from the vehicle; this rig cannot see what it draws). |
+| 3 | **Moving the root.** `execute as <root> at @s run tp @s ~2 ~ ~`, then `… tp @s ~-2 ~ ~ 90 0`, then `rotate <root> 45 0`, then `… as <part 17> at @s run tp @s ~ ~ ~ ~ ~`, then remount and `tp @s ~ ~ ~ 0 0`; parts 0, 1, 17, 33 read each time. | +2 x: every sampled part at +2, still mounted; root yaw 0 → 90 by `tp`: every part reads `[90, 0]`; `rotate` 45: the root reads 45, every part still 90; the in-place `tp` of part 17: it reads *no vehicle* and the root counts 33; after remount and the root's `tp … 0 0` (45 → 0): parts read **45** — turned by the root's own change of −45, not set to its yaw — and the root counts 34. A vehicle `tp` turns its passengers by the **difference**; `rotate` turns the vehicle alone. The bot received one `sync_entity_position` for the root and no packet addressed to a part; its stored part positions did not move (a client positions riders from the vehicle; this rig cannot see what it draws). |
 | 4 | **Melee.** The bot stands 1.5 blocks from the box's south face in adventure mode and attacks the `interaction` entity 7 times, 600 ms apart, with the poll counting off `attack` and clearing it; one raw record read with the poll paused. | 7 attacks, 7 counted; the raw record is `{player: [I; …], timestamp: 484L}`; the fifth hit switched the clip to `retract` and the sixth and seventh did not switch it back; a hitbox **riding a part** registered one attack as one hit. |
 | 5 | **Arrows.** A bow shot by the bot at the box's middle from 6 blocks; a summoned arrow owned by the bot and one owned by nobody, `Motion [0,0,-1.6]`, `NoGravity`, launched 4.5 blocks south of the box's face; the `attack` record read after each; the arrow's rest position classed against the box's z-span. | All three **passed through** (the shot arrow came to rest 77 blocks north of the box, the summoned pair 41 blocks north, none `inGround`); the `attack` record stayed absent for all three; the bot received no damage event. An arrow does not register on an `interaction`. |
 | 6 | **The strike pattern** (windup 8 frames, hold 20, strike 10 frames, cadence 5; `natural_health_regeneration` off). The bot stands in the landing box, then in the trigger box outside it, then outside both. | Windup begin → hold begin **36 ticks** (8 frames: the first applies on the next tick, 7 advances × 5); hold → swing **19**; swing → landing **46** (10 frames). In the landing box: health 20 → **14**, the declared 6. In the trigger box outside it: 20 → 20. Outside the trigger box: the landing count stayed at 3 over 5 s and the state machine read idle with the idle clip playing. |
