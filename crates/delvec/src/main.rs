@@ -289,6 +289,23 @@ enum Command {
         #[arg(long)]
         all: bool,
     },
+    /// One comparison sheet per `world.textures[]` row (spec-0084 §5.2):
+    /// vanilla's texture on the left and the campaign's on the right, scaled to
+    /// the same width on a chequered ground that shows alpha. The review medium
+    /// for a texture no frame this engine renders can show — a mob's skin, the
+    /// moon. Reads the pinned client jar, which a build never does, so it is a
+    /// verb of its own rather than a build output.
+    Textures {
+        /// Campaign directory.
+        campaign_dir: PathBuf,
+        /// Output directory; one `<id>.png` per row.
+        #[arg(short, long, default_value = "review/textures")]
+        out: PathBuf,
+        /// The 1.21.11 client jar. Overrides the `$DELVEWRIGHT_CLIENT_JAR` /
+        /// `~/.chunky` fallbacks.
+        #[arg(long)]
+        textures: Option<String>,
+    },
     /// Convert a harvested `rehearsal-report.json` (spec-0019) into per-shot
     /// `anchor + offset` DSL patches. Reads only the report and the creator
     /// overlay's `layout.json` — no campaign, no build, no world assembly.
@@ -479,6 +496,11 @@ fn main() -> ExitCode {
             layout,
             out,
         } => run_calibrate(report, layout, out, cli.json),
+        Command::Textures {
+            campaign_dir,
+            out,
+            textures,
+        } => run_textures(campaign_dir, out, textures.as_deref(), cli.json),
         Command::View(delvec::compiler::view::cli::ViewCommand::Cameras {
             build_dir,
             campaign,
@@ -732,6 +754,91 @@ pub(crate) fn load_or_refuse(campaign_dir: &Path, json: bool) -> Result<LoadedCa
             }
         },
     }
+}
+
+/// `delvec textures` (spec-0084 §5.2): one comparison sheet per declared texture.
+fn run_textures(campaign_dir: &Path, out: &Path, textures: Option<&str>, json: bool) -> ExitCode {
+    use delvec::compiler::textures;
+    let loaded = match load_or_refuse(campaign_dir, json) {
+        Ok(l) => l,
+        Err(code) => return ExitCode::from(code),
+    };
+    let campaign = match parse_campaign(&loaded.raw) {
+        Ok(c) => c,
+        Err(diags) => {
+            print_diags(&diags, json);
+            return ExitCode::from(1);
+        }
+    };
+    let (rows, findings) =
+        textures::resolve(&campaign, |p| loaded.textures.get(p).map(Vec::as_slice));
+    if !findings.is_empty() {
+        let diags: Vec<Diagnostic> = findings.iter().map(|f| f.diagnostic()).collect();
+        print_diags(&diags, json);
+        return ExitCode::from(1);
+    }
+    let jar = match delvec::compiler::view::cli::resolve_textures(textures) {
+        Ok(j) => j,
+        Err(d) => {
+            d.print(json);
+            return ExitCode::from(5);
+        }
+    };
+    let assets = match delvec::compiler::view::assets::Assets::open(Path::new(&jar)) {
+        Ok(a) => a,
+        Err(e) => {
+            eprintln!("textures: cannot open {jar}: {e}");
+            return ExitCode::from(5);
+        }
+    };
+    if let Err(e) = std::fs::create_dir_all(out) {
+        eprintln!("textures: mkdir {}: {e}", out.display());
+        return ExitCode::from(EXIT_INTERNAL);
+    }
+    for r in &rows {
+        let vanilla_path = format!("assets/minecraft/textures/{}.png", r.path);
+        let Some(vanilla) = assets.read(&vanilla_path) else {
+            eprintln!(
+                "textures: {jar} holds no `{vanilla_path}` — it is not the pinned client jar \
+                 the census was derived from"
+            );
+            return ExitCode::from(5);
+        };
+        // The left half is vanilla's only if these are the bytes the census
+        // measured — the same digest an override equal to vanilla is refused by.
+        let got = {
+            use sha2::{Digest, Sha256};
+            Sha256::digest(&vanilla)
+                .iter()
+                .map(|b| format!("{b:02x}"))
+                .collect::<String>()
+        };
+        if got != r.vanilla.sha256 {
+            eprintln!(
+                "textures: `{vanilla_path}` in {jar} has sha256 {got}, and the census records \
+                 {} — the jar is not the pinned {} client",
+                r.vanilla.sha256,
+                textures::census().minecraft
+            );
+            return ExitCode::from(5);
+        }
+        let Some(sheet) = textures::sheet(&vanilla, &r.png, r.vanilla.frame(), r.k) else {
+            eprintln!("textures: `{}` did not decode for its sheet", r.id);
+            return ExitCode::from(EXIT_INTERNAL);
+        };
+        let dest = out.join(format!("{}.png", r.id));
+        if let Err(e) = std::fs::write(&dest, &sheet) {
+            eprintln!("textures: write {}: {e}", dest.display());
+            return ExitCode::from(EXIT_INTERNAL);
+        }
+        println!("{} — `{}` replaces `{}`", dest.display(), r.id, r.replaces);
+    }
+    eprintln!(
+        "textures binding: {} sheet(s) written of {} row(s) declared, from {jar}",
+        rows.len(),
+        campaign.world.content.textures.len()
+    );
+    ExitCode::SUCCESS
 }
 
 /// Validate and return the parsed campaign + shared context (prefabs, loaded dir,

@@ -2587,7 +2587,7 @@ fn pack_note(
                 ""
             };
             s.push_str(&format!(
-                "- `{}` → `{}` ({scale}); {licence}; {shown}; sheet `{}`{still}\n",
+                "- `{}` → `{}` ({scale}); {licence}; {shown}; sheet: `delvec textures` writes `{}`{still}\n",
                 t.id,
                 t.pack_path(),
                 crate::compiler::textures::sheet_path(&t.id),

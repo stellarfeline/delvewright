@@ -494,7 +494,8 @@ pub fn overrides_vanilla<'a>(paths: impl IntoIterator<Item = &'a String>) -> boo
         .any(|p| p.starts_with("assets/minecraft/"))
 }
 
-/// The review path of a row's comparison sheet (spec-0084 §5.2).
+/// The review path of a row's comparison sheet (spec-0084 §5.2), as
+/// `delvec textures` writes it by default (relative to where it runs).
 pub fn sheet_path(id: &str) -> String {
     format!("review/textures/{id}.png")
 }
