@@ -1635,9 +1635,10 @@ fn run_cameras_preview(
         let id = camera::plan_campaign_id(&plan)?;
         let sheet =
             read(campaign_dir.join(camera::CAMERAS_FILE)).and_then(|b| camera::parse_sheet(&b))?;
-        let rows =
-            read(campaign_dir.join("design.json")).and_then(|b| camera::reference_names(&b))?;
-        // The record's own rule still holds here (`DW0721`), and the answered
+        let approved =
+            read(campaign_dir.join("design.json")).and_then(|b| camera::reference_rows(&b))?;
+        let rows: Vec<String> = approved.iter().map(|r| r.name.clone()).collect();
+        // The record's own rules still hold here (`DW0721`), and the answered
         // count is REPORTED and never refused: this is the instrument a creator
         // closes the hole with, so a rule that refused it would refuse the
         // repair it prescribes (spec-0070 §3).
@@ -1649,6 +1650,11 @@ fn run_cameras_preview(
             ));
         }
         let cams = camera::selected(&id, &sheet, only, bracket)?;
+        // The sky rule too (spec-0079 §6): a flat-lit preview draws no sky, but
+        // the record it reads is the record `delvec cameras` reads.
+        if let Some(why) = camera::skies(&cams, &approved).refusal {
+            return Err(Diagnostic::error(DW_INPUT, why));
+        }
         Ok((id, cams, answers))
     });
     let (campaign_id, cameras, answers) = match selected {
@@ -3190,7 +3196,9 @@ fn schema_stage_help() -> String {
         "Which document: a campaign stage `1`..`7` or any stage by name ({}); `walk-record` \
          for the hand-written walk record (a campaign artifact, not a stage document); \
          `prefab-metadata` for a prefab library asset's sibling `<prefab-id>.json` (a \
-         library asset, not a stage document); or `all` for every stage document at once.",
+         library asset, not a stage document); `cameras` for the showcase camera record \
+         `design/cameras.json` (a campaign artifact, not a stage document); or `all` for \
+         every stage document at once.",
         names.join(", ")
     )
 }
@@ -3250,6 +3258,20 @@ fn run_schema(stage: &str) -> ExitCode {
             );
             return ExitCode::SUCCESS;
         }
+        // `design/cameras.json` is not a stage document either — it is the showcase
+        // camera record (spec-0069), a campaign artifact `delvec place-camera`
+        // writes. Exported for the reason the walk record is, and absent from
+        // `all` for the reason prefab metadata is; the export names the file it
+        // lives at, which is how the gallery's coverage gate finds the document
+        // it binds the record's units against (spec-0079 §7).
+        "cameras" => {
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&delvec::compiler::view::camera::record_schema())
+                    .unwrap()
+            );
+            return ExitCode::SUCCESS;
+        }
         "all" => Stage::ALL.to_vec(),
         other => {
             let names: Vec<String> = Stage::ALL
@@ -3260,7 +3282,8 @@ fn run_schema(stage: &str) -> ExitCode {
                 "unknown document `{other}`. Want `1`..`7` (the campaign DSL's numbered \
                  stages), any stage by name — {names} — `walk-record` for the hand-written \
                  walk record, `prefab-metadata` for a prefab library asset's sibling \
-                 `<prefab-id>.json`, or `all` for every stage document at once.",
+                 `<prefab-id>.json`, `cameras` for the showcase camera record \
+                 `design/cameras.json`, or `all` for every stage document at once.",
                 names = names.join(", "),
             );
             return ExitCode::from(EXIT_INTERNAL);

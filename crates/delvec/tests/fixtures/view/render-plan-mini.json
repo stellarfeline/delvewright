@@ -61,7 +61,8 @@
   ],
   "sky": {
     "daytime_ticks": 12000,
-    "time": "dusk"
+    "time": "dusk",
+    "weather": "clear"
   },
   "version": "0.2.0"
 }

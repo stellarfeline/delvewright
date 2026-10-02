@@ -43,7 +43,8 @@
   ],
   "sky": {
     "daytime_ticks": 1000,
-    "time": "day"
+    "time": "day",
+    "weather": "clear"
   },
   "version": "0.6.0"
 }
