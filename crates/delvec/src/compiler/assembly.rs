@@ -104,6 +104,9 @@ pub const LANDING_REACH_CELLS: i32 = 3;
 /// ticks: the spike's own summon cadence (spec-0082 §8).
 pub const REST_INTERPOLATION: u32 = 5;
 
+/// How many cells a refusal names before it counts the rest.
+const NAME_LIMIT: usize = 24;
+
 /// The NBT storage the frame dispatch reads its clip and frame from.
 pub const STORAGE: &str = "dw:asm";
 
@@ -496,6 +499,26 @@ pub fn judge(
                 .collect();
             record.caught.extend(caught.iter().copied());
             if !unmet.is_empty() {
+                // The part of the limb that answers the question: its cells in
+                // the caught cells' floor band, at most `NAME_LIMIT` of them.
+                let lo_y = caught.iter().map(|c| c[1]).min().unwrap_or(0);
+                let hi_y = caught.iter().map(|c| c[1]).max().unwrap_or(0) + LANDING_REACH_CELLS;
+                let low: Vec<[i32; 3]> = limb
+                    .iter()
+                    .copied()
+                    .filter(|c| (lo_y..=hi_y).contains(&c[1]))
+                    .collect();
+                let shown = low
+                    .iter()
+                    .take(NAME_LIMIT)
+                    .map(|c| format!("[{}, {}, {}]", c[0], c[1], c[2]))
+                    .collect::<Vec<_>>()
+                    .join(" ");
+                let limb_says = match low.len() {
+                    0 => format!("none of its {} cell(s) is within that band", limb.len()),
+                    n if n > NAME_LIMIT => format!("{shown}, and {} more", n - NAME_LIMIT),
+                    _ => shown,
+                };
                 out.push(Failure::new(
                     DW_ASSEMBLY_STRIKE,
                     format!(
@@ -503,9 +526,10 @@ pub fn judge(
                          the strike clip `{}` never reaches — no part stands in the column from \
                          the cell's floor to {LANDING_REACH_CELLS} above it on the clip's last \
                          frame: {}. The thing the player saw come down must be the thing that \
-                         hurt them. The limb's last frame covers {}. Move the landing box under \
-                         the limb (`delvec rig describe` prints the footprint), or choose a \
-                         strike clip that reaches it",
+                         hurt them. Where the clip's last frame stands from that floor to \
+                         {LANDING_REACH_CELLS} above it: {}. Move the landing box under the limb \
+                         (`delvec rig describe` prints the footprint), or choose a strike clip \
+                         that reaches it",
                         s.id,
                         step.index,
                         l.path,
@@ -516,7 +540,7 @@ pub fn judge(
                             .map(|c| format!("[{}, {}, {}]", c[0], c[1], c[2]))
                             .collect::<Vec<_>>()
                             .join(" "),
-                        rig::cells_line(&limb)
+                        limb_says
                     ),
                 ));
             }
