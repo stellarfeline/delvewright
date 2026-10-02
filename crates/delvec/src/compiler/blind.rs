@@ -385,15 +385,25 @@ pub fn check(
     world: &World,
     entry: Option<[i32; 3]>,
 ) -> (BlindReach, Result<(), Failure>) {
+    // The counterfactual, never the world the router walks: the walk model
+    // already refuses the keep-out, so a reach taken over it could never meet
+    // one and this check would be green while binding to nothing.
+    judge(plan, &world.without_exclusions(), entry)
+}
+
+/// [`check`]'s judgement over the world the caller hands it as `open`. Public so
+/// the vacuity test can hand it the lethal-APPLIED world and watch a caught
+/// grant go green — the shape [`check`] exists not to have.
+pub fn judge(
+    plan: &Plan,
+    open: &World,
+    entry: Option<[i32; 3]>,
+) -> (BlindReach, Result<(), Failure>) {
     let mut binding = BlindReach::default();
     let found = grants(plan);
     if found.is_empty() {
         return (binding, Ok(()));
     }
-    // The counterfactual, never the world the router walks: the walk model
-    // already refuses the keep-out, so a reach taken over it could never meet
-    // one and this check would be green while binding to nothing.
-    let open = world.without_exclusions();
     let population =
         open.reachable_walkable(&crate::compiler::lethal::population_roots(plan, entry));
     let body = delvewright_dsl::metrics::Body::PLAYER;
@@ -416,16 +426,16 @@ pub fn check(
             continue;
         };
         let forbids_sprint = delvewright_dsl::perception::blinding(effect).unwrap_or(true);
-        let mut standing = standing_set(plan, &open, &population, f);
+        let mut standing = standing_set(plan, open, &population, f);
         // A delayed grant lands on a body that has had the delay to move, with
         // its eyes open — at the sprint. An `in` box is judged at the moment it
         // fires, so it is not widened.
         if f.delay_ticks > 0 && f.eff.within.is_none() {
             let pre = delvewright_dsl::perception::reach_moves(f.delay_ticks.div_ceil(20), false);
-            standing = flood(&open, &standing, pre).into_keys().collect();
+            standing = flood(open, &standing, pre).into_keys().collect();
         }
         let n = delvewright_dsl::perception::reach_moves(seconds, forbids_sprint);
-        let reach = flood(&open, &standing, n);
+        let reach = flood(open, &standing, n);
         let mut caught: Vec<[i32; 3]> = Vec::new();
         let mut caught_by: Option<String> = None;
         for &c in reach.keys() {

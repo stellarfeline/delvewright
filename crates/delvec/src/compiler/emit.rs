@@ -6188,6 +6188,25 @@ fn effect_audience(eff: &QuestEffect, aud: Audience) -> Audience {
     }
 }
 
+/// **One effect's emitted commands, under a party or a solo bundle** — the
+/// instrument `crates/delvec/tests/v35_perception.rs` binds
+/// [`delvewright_dsl::Verb::addresses_players`] to the emitter with: a verb's
+/// commands differ between the two exactly when it addresses players.
+///
+/// `solo` emits under [`Audience::Solo`] (`@s`), else [`Audience::Party`]
+/// (`@a`); both have an acting player, so the only thing that moves is the
+/// selector.
+pub fn effect_commands(plan: &Plan, eff: &QuestEffect, solo: bool) -> Vec<String> {
+    let aud = if solo {
+        Audience::Solo
+    } else {
+        Audience::Party
+    };
+    let mut body = Vec::new();
+    emit_quest_effect(plan, eff, aud, &mut body);
+    body
+}
+
 /// Emit a quest effect's commands into `body`, addressing `aud`.
 ///
 /// The envelope's `audience` and `in` (spec-0085 §3.2) are resolved here, once,
