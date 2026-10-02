@@ -161,6 +161,7 @@ pub mod strand;
 pub mod surround;
 pub mod teleport;
 pub mod textfit;
+pub mod textures;
 pub mod timeline;
 pub mod trap_trigger;
 pub mod traversal;

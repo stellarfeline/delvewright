@@ -686,8 +686,9 @@ pub mod codes {
     /// unadopted sidecar is a reported number on every run rather than silence
     /// that reads like a pass.
     pub const L10N_PROVENANCE_MISSING: DwCode = DwCode::new("DW0188", ExitTier::Build);
-    /// (v0.4) A mannequin NPC `skin.texture_id` is malformed (not a bare kebab
-    /// token) or duplicated across NPCs (spec-0009). A missing `model` is a
+    /// (v0.4, widened by spec-0084) An image id a campaign declares — a body's
+    /// `skin.texture_id` or a `world.textures[]` row's `id` — is malformed (not a bare kebab
+    /// token) or duplicated among the images of its kind (spec-0009). A missing `model` is a
     /// schema error (`DW0100`); a missing PNG is a build error (`DW0309`).
     pub const SKIN_INVALID: DwCode = DwCode::new("DW0190", ExitTier::Build);
     /// (v0.4) A `talk-to` objective has no **ungated** reachable completing
@@ -1099,6 +1100,24 @@ pub mod codes {
     ///
     /// Error tier, validation (exit 1).
     pub const GATE_NEVER_OPENS: DwCode = DwCode::new("DW0847", ExitTier::Build);
+    /// An asset's licence is outside the ADR-0013 allowlist, or its record lacks
+    /// a field the allowlist's rule for that asset requires. One code for every
+    /// asset that records a licence: a prefab catalog card (`delvec prefab`,
+    /// `delvec::admit::diag::DW_LICENSE`) and an image a campaign declares in
+    /// `world.textures[]` (spec-0084 §6.3, `crate::license`).
+    pub const LICENSE_REFUSED: DwCode = DwCode::new("DW0741", ExitTier::Build);
+    /// (spec-0084 §6.1) A `world.textures[]` row's `replaces` names a texture the
+    /// pinned client does not ship — not the `minecraft` namespace, a path with
+    /// `textures/` or `.png` left on, another version's path, a misspelling — or
+    /// two rows replace one texture. Judged against the census vendored from the
+    /// pinned client jar (`delvec::compiler::textures`); the duplicate half is
+    /// judged in validation, where no census is needed.
+    pub const TEXTURE_PATH: DwCode = DwCode::new("DW0939", ExitTier::Build);
+    /// (spec-0084 §6.2) A `world.textures[]` row's file is not an image the
+    /// named texture can be replaced by: not a PNG, not `k·w₀ × k·h₀` of the
+    /// vanilla frame (or `k·w₀ × n·k·h₀` with a sidecar), a sidecar that does not
+    /// parse as vanilla's animation metadata, or bytes identical to vanilla's.
+    pub const TEXTURE_IMAGE: DwCode = DwCode::new("DW0940", ExitTier::Build);
 }
 
 #[cfg(test)]

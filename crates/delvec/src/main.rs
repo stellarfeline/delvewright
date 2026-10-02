@@ -27,13 +27,15 @@ use delvec::compiler::plan::Plan;
 use delvec::compiler::registry::{FullEntityRegistry, FullItemRegistry, PrefabRegistry};
 use delvec::compiler::{DELVEC_VERSION, DSL_VERSION, MC_VERSION};
 use delvewright_dsl::{
-    Diagnostic, DwCode, ExitTier, Stage, parse_campaign, stage_schema, validate_campaign_with,
+    Diagnostic, DwCode, Stage, parse_campaign, stage_schema, validate_campaign_with,
 };
 
 /// `DW0309`: a staged **body** — a stage-2 npc or a stage-5 actor alike —
 /// declares a `skin.texture_id` for which the campaign ships no
-/// `skins/<texture_id>.png`. Build-tier (exit 3).
-const DW_SKIN_PNG_MISSING: DwCode = DwCode::new("DW0309", ExitTier::Build);
+/// `skins/<texture_id>.png`. Build-tier (exit 3). One rule with a
+/// `world.textures[]` row's missing file (spec-0084 §6.4), so it is declared
+/// once, beside that half.
+const DW_SKIN_PNG_MISSING: DwCode = delvec::compiler::textures::DW_IMAGE_MISSING;
 
 /// Internal-error exit code (spec-0002: ≥10).
 pub(crate) const EXIT_INTERNAL: u8 = 10;
@@ -830,6 +832,22 @@ fn validate_loaded(
             if let Err(d) = delvewright_dsl::declared_mc_codes(&campaign) {
                 diags.push(d);
             }
+            // spec-0084: every `world.textures[]` row against the pinned client's
+            // census (DW0939) and its own file (DW0309, DW0940). The same
+            // resolution the build bakes the pack from, so a row validate admits
+            // is a row the pack carries, byte for byte.
+            let (texture_rows, texture_diags) =
+                delvec::compiler::textures::resolve(&campaign, |p| {
+                    loaded.textures.get(p).map(Vec::as_slice)
+                });
+            diags.extend(texture_diags.iter().map(|f| f.diagnostic()));
+            examined.push(format!(
+                "textures: {} row(s) resolved of {} declared, against a census of {} vanilla \
+                 texture(s)",
+                texture_rows.len(),
+                campaign.world.content.textures.len(),
+                delvec::compiler::textures::census().textures.len()
+            ));
             // v0.6 sound + art-title surface (spec-0014): sound-event ids
             // (DW0326), the unsupported `play-sound at: actor` gate (DW0335), and
             // art-title glyph coverage against the `delve:art` font over the source

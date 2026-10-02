@@ -356,6 +356,10 @@ esbuild_version = "0.28.2"
 # [minecraft]). Never committed (EULA); resolved at run time from --textures,
 # $DELVEWRIGHT_CLIENT_JAR, or ~/.chunky/resources/minecraft.jar.
 textures = "minecraft-client-1.21.11.jar"
+# The sha256 of that jar. `tools/maintenance/derive-client-textures.py` refuses
+# any other jar, and `crates/delvec/data/textures-1.21.11.json` (the census a
+# `world.textures[]` row is judged against, spec-0084) states it in its header.
+textures_sha256 = "1473c9489ac50fda3c435049a76a70d61a10b8610db27f5ba9d8756b686cd3bd"
 
 [ci]
 # The toolchains CI selects, and the packages it installs into them. Until these
