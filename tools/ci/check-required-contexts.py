@@ -7,8 +7,7 @@ Every CI job is a required status check. An advisory job is one whose red never
 blocks a merge: only `gh pr merge`'s own refusal on an UNSTABLE state stops
 anything, and `--admin` goes straight through. That is no gate at all for
 `tier 2` (datapack load on the pinned server plus the entire generated PackTest
-suite), the storybook engine-version marker, or the determinism gate on prefab
-generators.
+suite) or the determinism gate on prefab generators.
 
 Requiring them all creates a hazard, and this checker exists for it: branch
 protection matches a required context **by its name string**. Rename a job and

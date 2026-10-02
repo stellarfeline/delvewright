@@ -515,12 +515,9 @@ fn run_batch(
     let mut manifests: Vec<PathBuf> = Vec::new();
     let mut claimed: std::collections::BTreeSet<PathBuf> = std::collections::BTreeSet::new();
     for path in &paths {
-        if path.extension().and_then(|x| x.to_str()) != Some("json") {
-            continue;
-        }
-        // The pool declaration is the one `.json` in a prefab library
-        // that is not a prefab document.
-        if path.file_name().and_then(|n| n.to_str()) == Some(crate::schem::prefab::POOLS_FILE) {
+        // The pool declaration and a gate report are `.json` files in a
+        // prefab library that are not prefab documents — the registry's one rule.
+        if !crate::compiler::registry::is_prefab_document(path) {
             continue;
         }
         match crate::schem::split::read_tile_set(path) {

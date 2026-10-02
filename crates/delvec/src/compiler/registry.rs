@@ -358,9 +358,27 @@ struct PoolDef {
 }
 
 /// The suffix that marks a gate report beside a piece: `<id>.report.json`.
-/// Written by `delvec grammar expand` and `delvec detail`, skipped by name by
-/// [`PrefabRegistry::load_dir`].
+/// Written by `delvec grammar expand` and `delvec detail`; never prefab metadata.
 pub const REPORT_SUFFIX: &str = ".report.json";
+
+/// Which files in a prefab library are prefab DOCUMENTS — the one rule every
+/// walker of a library directory reads (the registry, `delvec viewer`'s page
+/// builder, `delvec render batch`).
+///
+/// A document is a `*.json` that is neither the pool declaration
+/// ([`delvewright_dsl::prefab::POOLS_FILE`]) nor a gate report (`<id>`
+/// [`REPORT_SUFFIX`]). Both are told apart by NAME. The grammar's expander and
+/// `delvec detail` write `<id>.report.json` beside the piece they froze (the
+/// gates it passed, the measurements it was taken at); a walker that reads one
+/// as metadata refuses a library the compiler builds. The suffix is the full
+/// `.report.json`, so a metadata file whose stem merely contains `report` is
+/// still a document.
+pub fn is_prefab_document(path: &Path) -> bool {
+    path.extension().and_then(|e| e.to_str()) == Some("json")
+        && path.file_name().and_then(|n| n.to_str()).is_some_and(|n| {
+            n != delvewright_dsl::prefab::POOLS_FILE && !n.ends_with(REPORT_SUFFIX)
+        })
+}
 
 /// Loads and caches prefab metadata from a `prefabs/` directory, and answers
 /// anchor / pool / lighting queries for DSL validation and analysis.
@@ -401,22 +419,11 @@ impl PrefabRegistry {
         let mut paths: Vec<PathBuf> = Vec::new();
         for entry in std::fs::read_dir(dir)? {
             let path = entry?.path();
-            if path.extension().and_then(|e| e.to_str()) != Some("json") {
-                continue;
-            }
-            // **A gate report is not prefab metadata, and is told apart by
-            // name** — the one rule, as `pools.json` is told apart by name. The
-            // grammar's expander and `delvec detail` both write `<id>.report.json`
-            // beside the piece they froze (the gates it passed, the measurements
-            // it was taken at); read as metadata it is a `DW0346` on every build,
-            // which made an expander's output directory something the compiler
-            // refused. The suffix is the full `.report.json`, so a metadata file
-            // that happens to contain `report` in its stem is still read.
-            if path
-                .file_name()
-                .and_then(|n| n.to_str())
-                .is_some_and(|n| n.ends_with(REPORT_SUFFIX))
-            {
+            // Every prefab document, and the pool declaration read below by
+            // name; a gate report is neither (`is_prefab_document`).
+            let pools_file = path.file_name().and_then(|n| n.to_str())
+                == Some(delvewright_dsl::prefab::POOLS_FILE);
+            if !(is_prefab_document(&path) || pools_file) {
                 continue;
             }
             paths.push(path);
@@ -684,6 +691,29 @@ impl AnchorRegistry for PrefabRegistry {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The library's one naming rule, on every shape it decides: a piece's
+    /// metadata is a document; the pool declaration and a gate report are not;
+    /// a stem that merely contains `report` is; a template is not.
+    #[test]
+    fn which_files_are_prefab_documents() {
+        for (name, is_doc) in [
+            ("keep-gate-room.json", true),
+            ("doune-castle.json", true),
+            ("report.json", true),
+            ("reportage.json", true),
+            ("pools.json", false),
+            ("vesperhold.report.json", false),
+            ("keep-gate-room.nbt", false),
+            ("seating-limits.toml", false),
+        ] {
+            assert_eq!(
+                is_prefab_document(Path::new("prefabs").join(name).as_path()),
+                is_doc,
+                "{name}"
+            );
+        }
+    }
 
     /// The vendored stack-size table must cover EXACTLY the vendored item
     /// registry. Both come from the same 1.21.11 summary, so a regeneration that
