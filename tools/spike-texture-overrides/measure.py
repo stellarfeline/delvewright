@@ -135,11 +135,22 @@ def main() -> int:
                         # then rides in front of the text; the option starts at
                         # its dash.
                         help_lines.append(t[t.index("-texture") :].strip())
+        # Everything the core can draw that is not a block: the `entity` package,
+        # outer classes only. What is NOT here (a zombie, a drowned) is what no
+        # Chunky frame can show a creator.
+        entities = sorted(
+            {
+                n.rsplit("/", 1)[-1][: -len(".class")]
+                for n in cz.namelist()
+                if n.startswith("se/llbit/chunky/entity/") and n.endswith(".class") and "$" not in n
+            }
+        )
         chunky = {
             "core": args.chunky_core.rsplit("/", 1)[-1],
             "sha256": hashlib.sha256(open(args.chunky_core, "rb").read()).hexdigest(),
             "texture_options": sorted(set(help_lines)),
             "layered_resource_pack_classes": sorted(layered),
+            "entity_classes": entities,
         }
 
     out = {
