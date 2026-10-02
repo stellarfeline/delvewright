@@ -5998,7 +5998,8 @@ fn zone_box_in(
 ///
 /// - a quest `on_objective_complete` fires at that objective's step, an
 ///   `on_complete` at the quest's completion step — the player is *forced* through
-///   both, so both directions are modelled;
+///   both on a path that plays them, so both directions are modelled; on a path
+///   that never plays them they are unforced ([`firing_of`]);
 /// - an environment trigger's **openings** fire at the `trigger` step the path
 ///   performs it in (`trigger_step`), and a trigger the path never performs opens
 ///   nothing; its **fills** are rooted at step 0, forced, which seals every leg
@@ -6204,7 +6205,10 @@ fn collect_region_events(
 ///
 /// - a quest `on_objective_complete` fires at that objective's step, an
 ///   `on_complete` at the quest's completion step — the player is *forced*
-///   through both;
+///   through both on a path that plays them; a path that never performs the
+///   objective, or never completes the quest (a branch it does not take), is
+///   unforced at step 0, whatever the quest's optionality says about the paths
+///   that do;
 /// - an environment trigger fires at the `trigger` step the path performs it in,
 ///   forced; one the path never performs is unforced at step 0;
 /// - a trap payload and a dialogue-hosted `on_respawn` bundle have no step of

@@ -2385,8 +2385,10 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   **own** exported path, in that path's step order. Backed by a **per-branch
   `DW0311`**: every walked leg of every reachable branch path is routed over the
   assembled world under the branch's own causal gate seals before export, with
-  `gate_events` fire-steps and the strict-ancestor relation recomputed in the
-  branch path's own step space (`Plan::branch_gate_model`) — a branch path is a
+  `gate_events` fire-steps, forcedness and the strict-ancestor relation recomputed
+  in the branch path's own step space (`Plan::branch_gate_model`; a bundle whose
+  objective or quest the branch path never plays is unforced there, so it opens
+  nothing that path may cross) — a branch path is a
   different sequence, so default-path step indices are never carried across (the
   same trap `emit::rest_step_index` documents for bonfires). Each branch's
   routes also pass the `DW0314` standability self-check. Branch diagnostics are
@@ -3963,7 +3965,10 @@ objective on the path rather than the mandatory ones** (spec-0051).
 `plan::collect_region_events` drops a write that does not FILL when its root is
 unforced, so an `open-gate` hanging off a quest nobody has to play is not in
 `plan.region_events` for any relation to credit; an unforced FILL is kept, because
-a wall the party may find standing is one the proof must survive. A second reading
+a wall the party may find standing is one the proof must survive. A beat absent
+from the path being proven is unforced on it, so a branch proof credits only the
+openings its own path fires: an `open-gate` on another branch's objective leaves
+the door shut, and the leg through it is `DW0317`. A second reading
 of forcedness here would be a second authority, and for a fill it would be the
 answer that ships. A **branch** path (`Plan::branch_gate_model`) is ordered over
 what its world completes rather than by the finale's closure, so it can carry a
@@ -5808,9 +5813,13 @@ next to a filled box is credited as dry, and the server may flood it.
 
 A runtime write is registered with the answer to one more question than the block
 alone can settle: **is the party guaranteed to cause this firing?**
-(`plan::RegionEvent::is_forced`.) It is computed from the effect's root — a quest
-`on_objective_complete` bundle, a quest `on_complete`, an environment trigger and
-the world's own load-time seals are forced; a `traps[].payload`, a
+(`plan::RegionEvent::is_forced`.) It is computed from the effect's root and the
+path being proven (`plan::firing_of`) — a quest `on_objective_complete` bundle is
+forced on a path that performs that objective, a quest `on_complete` on a path
+that completes that quest, an environment trigger on a path that performs it, and
+the world's own load-time seals always; a bundle whose objective or quest is
+absent from the path (a branch the path does not take, a quest outside its
+closure) is unforced on that path whatever the quest's `mandatory` says; a `traps[].payload`, a
 `set-checkpoint` `on_respawn` bundle, a `shortcuts[].on_unlock`, the campaign's
 `on_death` and a `shops[].offers[].effects` are not. The DSL carries **no field on
 which an author can assert it**, and a `RegionEvent` cannot be constructed without
