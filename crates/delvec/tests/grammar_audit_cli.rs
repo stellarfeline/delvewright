@@ -192,11 +192,9 @@ fn an_audit_with_no_corpus_named_refuses() {
 /// live on a development branch until the owner accepts them — so a zero means a
 /// different thing in each and a summed total means neither.
 ///
-/// The run stays green: at a pin that carries no zone program, an empty campaign
-/// corpus is a fact about that checkout, and whether it is the RIGHT fact is
-/// judged by the enumeration in `.github/content-zone-corpus.json`
-/// (`tests/campaign_zones.rs`), not here. What must not happen is that it goes
-/// unsaid.
+/// The run stays green: an empty campaign corpus is a fact about that checkout,
+/// and whether it is the RIGHT fact is not something this command can know.
+/// What must not happen is that it goes unsaid.
 #[test]
 fn an_empty_campaign_root_beside_the_library_is_named_not_absorbed() {
     let dir = scratch("empty-beside-library");
@@ -220,8 +218,8 @@ fn an_empty_campaign_root_beside_the_library_is_named_not_absorbed() {
         "a zero campaign binding is not named as a finding:\n{text}"
     );
     assert!(
-        text.contains("content-zone-corpus.json"),
-        "the finding does not say where the zero is judged:\n{text}"
+        text.contains("not whether the right ones are present"),
+        "the finding does not say what the zero leaves unjudged:\n{text}"
     );
     // The library's own count is stated separately, and is not zero.
     assert!(

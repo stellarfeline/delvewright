@@ -408,8 +408,9 @@ anchors. Read the findings.
 A program that becomes one of a campaign's zones goes to
 `campaigns/<campaign>/design/programs/`, and is named in `zones.json` beside it
 with the region, the seed and the optional gates it claims. `delvec grammar audit
---campaign-root <content repo>` then expands and judges every zone there, and
-the engine's CI runs it over the pinned content checkout. A program file that directory carries and the manifest
+--campaign-root <content repo>` then expands and judges every zone there; it is
+judged at the campaign's release, by the engine it pins, never by the engine's
+CI. A program file that directory carries and the manifest
 does not name is a finding — without that, a zone nothing checks and a zone
 nobody wrote look the same.
 

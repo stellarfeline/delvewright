@@ -1628,11 +1628,10 @@ corpus: campaign N program(s) over R root(s)[ — FINDING: zero binding, …]
 ```
 
 The rule library is this repo's own (`library::PROGRAMS`), so `--library` over an
-empty one is a defect here and reds. The campaign corpus belongs to the content
-repo, where an in-progress campaign lives on its own development branch until the
-owner has played it, so a root carrying no zone program is a fact about that
-checkout: the run says so as a named finding and stays green. Whether that zero is
-the RIGHT zero is a separate question with a separate answer, §4f. The two
+empty one is a defect here and reds. A campaign corpus belongs to whoever owns
+the campaigns, so a root carrying no zone program is a fact about that checkout:
+the run says so as a named finding and stays green. Whether that zero is the
+RIGHT zero is not something the audit can know; who judges which corpus is §4f. The two
 totals are never summed, so an empty campaign root cannot hide behind a full
 library.
 
@@ -1656,8 +1655,7 @@ one more. An entry belongs there only while the engine is missing a capability
 the program needs. Ids are audit labels, so both corpora are recordable:
 `library/<program>` and `<campaign>/<zone>`.
 
-The pinned campaign corpus carries no zone program (§4f;
-`.github/content-zone-corpus.json` holds the inventory). The rule library holds
+The rule library holds
 one recorded red: `library/causeway` (`DW0800`) floods its ward floor to
 ceiling on both flanks of its spine, and that body of water is not contained —
 134 of its 252 cells run into open air and 36 run directions leave the piece's
@@ -1671,59 +1669,19 @@ their states in the scope's own axes — beside the gate whose population they
 come out of, so a green `oriented-fills` that got greener by writing fewer
 world literals says so in numbers rather than by silence.
 
-## 4f. The pinned campaign corpus, enumerated
+## 4f. Who judges which corpus
 
-`.github/content-zone-corpus.json` names the campaigns the pinned content repo
-carries and how many zone programs each declares.
-`crates/delvec/tests/grammar_campaign_zones.rs` checks every number in it against the
-content at that commit, read out of the content repository's object store
-(`crates/delvec/tests/common/pinned.rs`, [`worktree-bootstrap.md`](worktree-bootstrap.md) §1)
-and never out of a working tree, inside `cargo test`.
+The engine's CI judges only what the engine owns. Its `zone programs (expand +
+judge)` job runs `delvec grammar audit --library` over the rule library, which
+lives in this tree, with no content checkout. No engine-owned campaign declares
+zone programs: the gallery and the test fixtures carry no `design/programs/`.
 
-It exists because the campaign corpus is not this repo's to produce. An
-in-progress campaign lives on its own content-repo development branch and reaches
-content `main` only after the owner has played it, and CI checks the content out
-at `versions.toml` `[content].sha`. So the pinned tree can legitimately carry no
-zone program at all. "The sweep found nothing, so it passes" would then be an
-opt-out the defect itself supplies: deleting every zone program of every campaign
-produces exactly that state. Enumeration is the different demand — a campaign that
-loses its programs reds on a count, and a pin that genuinely carries none passes
-with its inventory printed.
-
-| Field | Meaning |
-|---|---|
-| `content_sha` | must equal `versions.toml` `[content].sha` |
-| `on_pin[]` | `campaign`, `zone_programs`, `note` — a campaign the pin carries |
-| `off_pin[]` | `campaign`, `zone_programs`, `branch`, `note` — a campaign known to own zone programs somewhere this repo cannot see |
-
-Five assertions, and the last two are what keep the enumeration from becoming a
-choice the author makes:
-
-1. `content_sha` equals the pin. This is what binds the record to the event it
-   guards: a re-pin cannot land without the inventory being restated at the new
-   pin, and a restated inventory is checked against the tree, so writing a number
-   the tree disagrees with is a red rather than a shortcut.
-2. Every `on_pin` count equals the number of program files in
-   `campaigns/<c>/design/programs/` **and** the number of entries in that
-   campaign's `zones.json`.
-3. Every campaign the checkout carries is named. An unnamed one would sweep as
-   zero and say nothing.
-4. Every `on_pin` entry is present in the checkout. A campaign emptied of both
-   `world.json` and `design/` stops being a campaign directory, and this is what
-   notices.
-5. Every `off_pin` entry is **absent** from the checkout. `off_pin` is a queue,
-   not an exemption: an entry that has landed must move across and have its count
-   checked, so a campaign cannot be parked in the queue to avoid the count. Which
-   list an entry belongs to is decided by the tree, never by the author.
-
-Every sweep in that file prints the corpus it examined, its binding count, and the
-pin it was measured at; a zero is printed as a named zero rather than left to
-silence.
-
-This repo can gate only what the pin lets it see. No content-repo workflow runs
-`delvec grammar audit`, so a campaign's zone programs on a content development
-branch are judged only when someone runs `delvec grammar audit --campaign-root`
-against that checkout.
+A content campaign's zone programs, like everything else about that campaign,
+are judged at the campaign's release, by the engine revision it pins. The engine
+never sweeps the content repository's campaigns, released or not: what a
+released campaign was judged against is the engine it pinned, and a later
+engine revision has no standing to re-judge it. `--campaign-root` is the door a
+creator, and a content release, uses for that judgement.
 
 ## 5. Rule library — ported buildings
 
