@@ -11971,6 +11971,72 @@ fn check_trigger_bodies(
     Ok(ledger)
 }
 
+/// The three gate fragments a polled trigger's tick clause carries: its
+/// at-most-once guard, its forbidden flags and its required flags and state.
+/// One authority for [`env_trigger_tick`] and the assembly PackTest that runs
+/// the very clause a blow on a hitbox meets (spec-0082).
+fn trigger_poll_guards(plan: &Plan, t: &delvewright_dsl::EnvTrigger) -> (String, String, String) {
+    let id = plan::safe_local(t.id.as_str());
+    let once_guard = if t.once {
+        format!("unless score #trig_{id} dw.sys matches 1 ")
+    } else {
+        String::new()
+    };
+    // Flags are party state (spec-0018): the gate is a single `#party` read,
+    // positive and negative alike. `unless … matches 1` is unset-safe (an
+    // uninitialized flag score counts as "not set").
+    let flag_guard = format!(
+        "{}{}",
+        party_flag_gate(&t.requires_flags),
+        // DSL v0.10 (spec-0031). A trigger's arming gate is a party predicate
+        // (`DW0503` keeps `player`-scoped data out of it).
+        state_cond(plan, &t.requires_state, false)
+    );
+    let forbid_guard: String = t
+        .forbids_flags
+        .iter()
+        .map(|f| {
+            format!(
+                "unless score {} {} matches 1 ",
+                plan::PARTY,
+                plan::flag_score(f.as_str())
+            )
+        })
+        .collect();
+    (once_guard, forbid_guard, flag_guard)
+}
+
+/// A click trigger's tick clause and the clear that consumes its record:
+/// `(poll, clear)`.
+///
+/// The two click streams are separate NBT fields on ONE
+/// `minecraft:interaction`: a left-click writes `attack`, a right-click writes
+/// `interaction`. That is what lets a `strike-npc` trigger share the hitbox
+/// with the NPC's dialogue — the dialogue advancement reads the right-click,
+/// this reads the left-click, and neither consumes the other's record. The
+/// poll fires when the interaction entity has recorded the event and (if
+/// gated) the party holds the flags; the clear removes the record. The
+/// carrier is the trigger's own tag, or — for a `strike-assembly` — the
+/// assembly's hitbox (spec-0082 §4.3).
+fn click_trigger_poll(plan: &Plan, t: &delvewright_dsl::EnvTrigger) -> (String, String) {
+    let ns = &plan.namespace;
+    let id = plan::safe_local(t.id.as_str());
+    let (once_guard, forbid_guard, flag_guard) = trigger_poll_guards(plan, t);
+    let rec = trigger_record(t);
+    let flag_cond = if flag_guard.is_empty() {
+        String::new()
+    } else {
+        format!("{} ", flag_guard.trim_start())
+    };
+    let carrier = trigger_carrier_tag(t);
+    (
+        format!(
+            "execute {once_guard}{forbid_guard}if entity @e[tag={carrier},nbt={{{rec}:{{}}}}] {flag_cond}run function {ns}:trig_{id}"
+        ),
+        format!("execute as @e[tag={carrier}] run data remove entity @s {rec}"),
+    )
+}
+
 /// Environment-trigger per-tick checks for the `tick` function. Empty for a
 /// campaign with no triggers.
 ///
@@ -12013,63 +12079,17 @@ fn env_trigger_tick(plan: &Plan, chrome: &delvewright_dsl::Chrome) -> Vec<String
             continue;
         }
         let id = plan::safe_local(t.id.as_str());
-        let once_guard = if t.once {
-            format!("unless score #trig_{id} dw.sys matches 1 ")
-        } else {
-            String::new()
-        };
-        // Flags are party state (spec-0018): the gate is a single `#party` read,
-        // positive and negative alike. `unless … matches 1` is unset-safe (an
-        // uninitialized flag score counts as "not set").
-        let flag_guard = format!(
-            "{}{}",
-            party_flag_gate(&t.requires_flags),
-            // DSL v0.10 (spec-0031). A trigger's arming gate is a party predicate
-            // (`DW0503` keeps `player`-scoped data out of it).
-            state_cond(plan, &t.requires_state, false)
-        );
-        let forbid_guard: String = t
-            .forbids_flags
-            .iter()
-            .map(|f| {
-                format!(
-                    "unless score {} {} matches 1 ",
-                    plan::PARTY,
-                    plan::flag_score(f.as_str())
-                )
-            })
-            .collect();
+        let (once_guard, forbid_guard, flag_guard) = trigger_poll_guards(plan, t);
         match &t.on {
             TriggerOn::Strike
             | TriggerOn::Use
             | TriggerOn::StrikeNpc { .. }
             | TriggerOn::StrikeAssembly { .. } => {
-                // The two click streams are separate NBT fields on ONE
-                // `minecraft:interaction`: a left-click writes `attack`, a
-                // right-click writes `interaction`. That is what lets a
-                // `strike-npc` trigger share the hitbox with the NPC's dialogue
-                // — the dialogue advancement reads the right-click, this reads
-                // the left-click, and neither consumes the other's record.
-                let rec = match t.on {
-                    TriggerOn::Use => "interaction",
-                    _ => "attack",
-                };
-                // Fire when the interaction entity has recorded the event and (if
-                // gated) the party holds the flags; then clear the record.
-                let flag_cond = if flag_guard.is_empty() {
-                    String::new()
-                } else {
-                    format!("{} ", flag_guard.trim_start())
-                };
-                // The carrier: the trigger's own tag, or — for a
-                // `strike-assembly` — the assembly's hitbox (spec-0082 §4.3).
-                let carrier = trigger_carrier_tag(t);
-                out.push(format!(
-                    "execute {once_guard}{forbid_guard}if entity @e[tag={carrier},nbt={{{rec}:{{}}}}] {flag_cond}run function {ns}:trig_{id}"
-                ));
-                let clear = format!("execute as @e[tag={carrier}] run data remove entity @s {rec}");
-                // Several triggers may ride one assembly's hitbox; it is
-                // cleared once, after every one of them has been offered it.
+                let (poll, clear) = click_trigger_poll(plan, t);
+                out.push(poll);
+                // Several triggers may ride one hitbox (an NPC's, an
+                // assembly's); it is cleared once, after every one of them has
+                // been offered it.
                 if !clears.contains(&clear) {
                     clears.push(clear);
                 }
@@ -18457,15 +18477,6 @@ fn emit_assembly_packtests(plan: &Plan, out: &mut BuildOutput) {
     use crate::compiler::assembly as asm;
     let ns = &plan.namespace;
     let title = artifact_title(plan.campaign);
-    // The completion objective the progression baseline zeroes beside the rest.
-    let comp_obj = plan
-        .critical_path
-        .iter()
-        .find_map(|s| match s {
-            Step::AssertComplete { objective, .. } => Some(objective.clone()),
-            _ => None,
-        })
-        .unwrap_or_else(|| "dw.campaign".to_string());
     let write = |name: &str, b: Vec<String>, out: &mut BuildOutput| {
         out.insert(
             format!("packtest-datapack/data/{ns}/test/{name}.mcfunction"),
@@ -18579,10 +18590,13 @@ fn emit_assembly_packtests(plan: &Plan, out: &mut BuildOutput) {
                 t.id, datum
             ));
             b.push(format!("function {ns}:setup"));
-            // The real `tick` runs below, so every `#party` term a gate on it
-            // reads is the template's own: the whole progression ledger at the
-            // campaign's start state (`DW0807`), then the trigger's own gate.
-            b.extend(campaign_progression_baseline(plan.campaign, &comp_obj));
+            // The blow meets the very clause `tick` polls it with, and the
+            // clear after it — never the whole `tick`, whose other gates read
+            // the whole progression ledger, and a template that zeroes that
+            // ledger inline runs under the campaign template's own phases in
+            // the same batch. What the clause reads is the trigger's own gate
+            // (`DW0807`), which `own` writes.
+            let (poll, clear) = click_trigger_poll(plan, t);
             b.extend(reset.iter().cloned());
             b.push(format!("function {ns}:{}", asm::spawn_fn(&s)));
             b.extend(own.iter().cloned());
@@ -18591,7 +18605,8 @@ fn emit_assembly_packtests(plan: &Plan, out: &mut BuildOutput) {
                 plan::PARTY
             ));
             b.push(hit.clone());
-            b.push(format!("function {ns}:tick"));
+            b.push(poll.clone());
+            b.push(clear.clone());
             b.push(format!(
                 "assert score {} {score} matches {}",
                 plan::PARTY,
@@ -18618,7 +18633,8 @@ fn emit_assembly_packtests(plan: &Plan, out: &mut BuildOutput) {
                     i64::from(at) - i64::from(amount)
                 ));
                 b.push(hit.clone());
-                b.push(format!("function {ns}:tick"));
+                b.push(poll.clone());
+                b.push(clear.clone());
                 b.push(format!("assert score {} {score} matches {at}", plan::PARTY));
                 b.push(format!(
                     "assert score {} dw.sys matches {k}",

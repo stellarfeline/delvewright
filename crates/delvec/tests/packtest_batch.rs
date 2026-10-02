@@ -506,6 +506,173 @@ fn party_state_across_ticks_is_owned() {
     }
 }
 
+/// The `#party` scores a template reads AFTER a tick boundary it scheduled:
+/// every `if score #party X` / `unless score #party X` in a function the
+/// template, or a helper it calls, reaches through `schedule function`, with
+/// helpers followed transitively inside the packtest datapack. Returned as
+/// `(score, template)` pairs, in template order.
+fn scores_read_after_a_schedule(out: &BuildOutput) -> Vec<(String, String)> {
+    let helper = |ns_fn: &str| -> Option<String> {
+        let (ns, f) = ns_fn.split_once(':')?;
+        out.get(&format!(
+            "packtest-datapack/data/{ns}/function/{f}.mcfunction"
+        ))
+        .map(|b| String::from_utf8(b.clone()).unwrap())
+    };
+    let callees = |body: &str, kind: &str| -> Vec<String> {
+        body.lines()
+            .flat_map(|l| {
+                let w: Vec<&str> = l.split_whitespace().collect();
+                w.windows(2)
+                    .filter(|p| p[0] == kind)
+                    .map(|p| p[1].to_string())
+                    .collect::<Vec<_>>()
+            })
+            .collect()
+    };
+    let mut found = Vec::new();
+    for (file, body) in templates(out) {
+        // Every packtest helper the template reaches, and which of them it
+        // reaches through a `schedule` (a later tick).
+        let mut seen: Vec<String> = Vec::new();
+        let mut later: Vec<String> = Vec::new();
+        let mut stack: Vec<(String, bool)> = Vec::new();
+        for c in callees(&body, "function") {
+            stack.push((c, false));
+        }
+        // `schedule function ns:f 20t`: the name follows `function`.
+        for l in body.lines().filter(|l| l.contains("schedule function ")) {
+            if let Some(n) = l
+                .split("schedule function ")
+                .nth(1)
+                .and_then(|r| r.split_whitespace().next())
+            {
+                stack.push((n.to_string(), true));
+            }
+        }
+        while let Some((f, is_later)) = stack.pop() {
+            let key = format!("{f}:{is_later}");
+            if seen.contains(&key) {
+                continue;
+            }
+            seen.push(key);
+            let Some(b) = helper(&f) else { continue };
+            if is_later && !later.contains(&f) {
+                later.push(f.clone());
+            }
+            for c in callees(&b, "function") {
+                stack.push((c, is_later));
+            }
+            for l in b.lines().filter(|l| l.contains("schedule function ")) {
+                if let Some(n) = l
+                    .split("schedule function ")
+                    .nth(1)
+                    .and_then(|r| r.split_whitespace().next())
+                {
+                    stack.push((n.to_string(), true));
+                }
+            }
+        }
+        for f in &later {
+            let b = helper(f).unwrap();
+            for l in b.lines() {
+                let w: Vec<&str> = l.split_whitespace().collect();
+                for t in w.windows(4) {
+                    if (t[0] == "if" || t[0] == "unless") && t[1] == "score" && t[2] == "#party" {
+                        let pair = (t[3].to_string(), file.clone());
+                        if !found.contains(&pair) {
+                            found.push(pair);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    found
+}
+
+/// Every sibling that touches a `#party` score another template reads after a
+/// tick boundary it scheduled: `(score, reader, sibling)`.
+fn siblings_touching_a_later_read(out: &BuildOutput) -> Vec<(String, String, String)> {
+    let tpls = templates(out);
+    let mut bad = Vec::new();
+    for (score, reader) in scores_read_after_a_schedule(out) {
+        for (file, body) in &tpls {
+            if *file == reader {
+                continue;
+            }
+            let touches = body.lines().any(|l| {
+                l.split_whitespace()
+                    .collect::<Vec<_>>()
+                    .windows(2)
+                    .any(|w| w[0] == "#party" && w[1] == score)
+            });
+            if touches {
+                bad.push((score.clone(), reader.clone(), file.clone()));
+            }
+        }
+    }
+    bad
+}
+
+/// The branch-shape campaign template drives each phase inside a hoisted
+/// helper and reads the completion score in a helper it schedules 20 ticks
+/// later (`pt_camp_check_<i>`). `party_state_across_ticks_is_owned` reads only
+/// a template's own text, so that read is invisible to it, and a sibling that
+/// zeroes the completion score in the gap — any template that opens with
+/// `campaign_progression_baseline` inline — turns one phase red by batch
+/// order. A score read after a scheduled tick boundary is touched by no other
+/// template.
+#[test]
+fn a_party_score_read_after_a_schedule_is_no_siblings() {
+    let mut bound = 0usize;
+    for (suite, out) in suites() {
+        bound += scores_read_after_a_schedule(&out).len();
+        let bad = siblings_touching_a_later_read(&out);
+        assert!(
+            bad.is_empty(),
+            "{suite}: `#party` score(s) read after a scheduled tick boundary are also \
+             touched by a sibling template, whose write between the two ticks decides \
+             the reader's verdict by batch order: {bad:?}"
+        );
+    }
+    assert!(
+        bound > 0,
+        "no suite reads a `#party` score after a scheduled tick boundary: the rule bound zero"
+    );
+}
+
+/// The rule above reds on the shape that shipped: a sibling that zeroes the
+/// completion score beside a branch-shape campaign template.
+#[test]
+fn a_sibling_zeroing_the_completion_score_is_caught() {
+    let mut out = build_dir(&common::compiler_fixtures_dir().join("branch-two-endings"));
+    let read = scores_read_after_a_schedule(&out);
+    let (score, reader) = read
+        .first()
+        .cloned()
+        .expect("branch shape reads after a schedule");
+    assert_eq!(reader, "campaign.mcfunction", "{read:?}");
+    assert!(siblings_touching_a_later_read(&out).is_empty());
+    let ns_dir = out
+        .keys()
+        .find(|k| {
+            k.starts_with("packtest-datapack/data/") && k.ends_with("/test/campaign.mcfunction")
+        })
+        .unwrap()
+        .trim_end_matches("campaign.mcfunction")
+        .to_string();
+    out.insert(
+        format!("{ns_dir}zeroes_the_ledger.mcfunction"),
+        format!("# @dummy\nscoreboard players set #party {score} 0\n").into_bytes(),
+    );
+    let bad = siblings_touching_a_later_read(&out);
+    assert_eq!(
+        bad,
+        vec![(score, reader, "zeroes_the_ledger.mcfunction".to_string())]
+    );
+}
+
 #[test]
 fn packtest_templates_are_interleaving_independent() {
     let suites: Vec<(&str, BuildOutput)> = suites();
