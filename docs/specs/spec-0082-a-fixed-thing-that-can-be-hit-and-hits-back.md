@@ -33,8 +33,8 @@
   or a constitution rule) or **authored** (this spec chooses).
 - **Numbers**: spec `0082`; DW codes `DW0935`–`DW0938` (§6), allocated by
   the planner. No ADR: no settled decision moves. `dsl_version` stays at the
-  number the crate manifest states (`0.35.0`): the quests stage gains an object
-  class, three verbs and a trigger kind under it.
+  number the crate manifest states: the quests stage gains an object class,
+  three verbs and a trigger kind under it.
 - **Non-goals**: a thing that walks (step 2, §7, planned and not specified
   here); a hitbox that is a living body (§3.4 says why, §11 records the ruling); health,
   equipment, traversal, a health bar or a kill credit on an assembly — it is
@@ -534,7 +534,7 @@ raw readings in `observations.json`, coordinates in `site.json` written by
 - **Settled, not asked**: a strike's wind-up length and a strike that kills
   an unhurt player in one blow are the creator's, with no refusal and no
   advisory — spec-0016 §3's ruling, applied in §5.4.
-- No ADR; `dsl_version` stays `0.35.0`.
+- No ADR; `dsl_version` does not move.
 
 ## 12. Acceptance criteria
 
