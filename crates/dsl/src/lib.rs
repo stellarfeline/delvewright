@@ -18,6 +18,7 @@
 pub mod blocks;
 pub mod blockshape;
 pub mod canonical;
+pub mod celestial;
 pub mod chrome;
 pub mod color;
 pub mod design;
@@ -54,6 +55,7 @@ pub mod stages;
 pub mod validate;
 
 pub use canonical::to_canonical_string;
+pub use celestial::{Body, CelestialTime, Clock, MoonPhase, Position};
 pub use chrome::{Chrome, ChromeString, validate_chrome_namespace};
 pub use design::{
     CONCEPT_DIR, DesignContent, IMAGE_EXTENSIONS, REFERENCE_DIR, REFERENCE_DIRS, Reference,
@@ -125,10 +127,10 @@ pub use stages::{
     PlannedQuest, PotionContents, PotionEffect, Prop, Quest, QuestEffect, QuestPlanContent,
     QuestsContent, Relationship, Role, SequenceStep, Shop, ShopOffer, Shortcut, ShotStyle,
     SkinModel, SlotDrop, SoundAt, Stake, StateCompare, StateDecl, StateDisplay, StateScope,
-    StateWrite, StealthZone, TimedGate, Trap, TrapDisarm, TrapEffect, TrapReset, TrapTrigger,
-    Trigger, TriggerAudience, TriggerOn, Verb, Wave, WaveLane, WaveMob, WaveSummon, WorldContent,
-    WorldDifficulty, WorldTime, WorldWeather, enchantment_component, is_potion_bearing_item,
-    offset_cell,
+    StateWrite, StealthZone, TimeKeyword, TimeSite, TimedGate, Trap, TrapDisarm, TrapEffect,
+    TrapReset, TrapTrigger, Trigger, TriggerAudience, TriggerOn, Verb, Wave, WaveLane, WaveMob,
+    WaveSummon, WorldContent, WorldDifficulty, WorldTime, WorldWeather, enchantment_component,
+    is_potion_bearing_item, offset_cell,
 };
 pub use stages::{
     BodyRef, BodySite, BodySkinSite, BodyTraversalSite, body_sites, body_skin_sites,

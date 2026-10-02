@@ -2927,8 +2927,8 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   `fog.uniformDensity`, `fog.color` and `fog.skyFogDensity 0` (so the fog colour
   never paints the sky). The block's values are a cell of a **look table** keyed
   by weather and by a **daylight class read off the emitted sun's altitude**,
-  never the hour's name: `high` at or above 20° (`noon` 90°, `day` 27.6°), `low`
-  from 0° up to 20° (`dusk` 12.4°), `below` under 0° (`night`, `dawn` −3.5°,
+  never the hour's name: `high` at or above 20° (`noon` 90°, `day` 27.55°), `low`
+  from 0° up to 20° (`dusk` 12.37°), `below` under 0° (`night`, `dawn` −3.52°,
   `midnight` −90°). Every cell shares `sky.color` (0.10, 0.11, 0.14), `sun.color`
   (0.9, 0.75, 0.65) and `fog.color` (0.20, 0.22, 0.26):
 

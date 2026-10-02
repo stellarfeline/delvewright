@@ -234,23 +234,12 @@ fn head_piece_is_a_remedy(entity: &str) -> bool {
         && delvewright_dsl::equipment::shows_slot(entity, delvewright_dsl::EquipSlot::Head)
 }
 
-/// Where the pinned `minecraft:day` timeline turns `minecraft:gameplay/monsters_burn`
-/// off: tick 12542 of the day. Read from `data/minecraft/timeline/day.json` in
-/// the pinned 1.21.11 server jar (`versions.toml` `[minecraft]`
-/// `server_jar_sha256` `f83b8e09…dd1726`, the bundled
-/// `META-INF/versions/1.21.11/server-1.21.11.jar`), keyframe
-/// `{"ticks": 12542, "value": false}`.
-const MONSTERS_BURN_OFF_AT: i64 = 12542;
-
-/// Where it turns back on: tick 23460, keyframe `{"ticks": 23460, "value": true}`
-/// of the same file.
-const MONSTERS_BURN_ON_AT: i64 = 23460;
-
 /// Whether the pinned game runs the sun-burn tick at this hour: the
-/// `monsters_burn` window of the `minecraft:day` timeline, read by tick.
+/// `gameplay/monsters_burn` track of the pinned `minecraft:day` timeline, read
+/// by tick from the vendored file (`delvewright_dsl::celestial`; off at 12542,
+/// on again at 23460). A celestial time answers it with no rule of its own.
 pub fn hour_burns(time: WorldTime) -> bool {
-    let tick = time.daytime_ticks().rem_euclid(24_000);
-    !(MONSTERS_BURN_OFF_AT..MONSTERS_BURN_ON_AT).contains(&tick)
+    delvewright_dsl::celestial::monsters_burn(time.daytime_ticks())
 }
 
 /// The biome `cell` stands in: the surround rectangle painting it, else the
@@ -980,11 +969,12 @@ fn burn_message(body: &Staged, exposure: &Exposure) -> String {
         ),
         None => String::new(),
     };
+    let (burn_off, burn_on) = delvewright_dsl::celestial::monsters_burn_switches();
     format!(
         "{kind} `{owner}` stages `{entity}` at [{}, {}, {}], and vanilla burns that species in \
          daylight (`#minecraft:burn_in_daylight`). The fight can stand in `{}` with `{}`, an \
          hour the pinned game burns undead in (its `minecraft:day` timeline keeps \
-         `monsters_burn` on from tick {MONSTERS_BURN_ON_AT} to tick {MONSTERS_BURN_OFF_AT}), \
+         `monsters_burn` on from tick {burn_on} to tick {burn_off}), \
          and open sky stands at [{}, {}, {}] — walkable ground inside this stack's own \
          {radius}-block aggro radius.{rain} A player retreating there is still its target, so \
          the fight the party is meant to have is decided by the sun instead: this is the \
@@ -1046,6 +1036,37 @@ mod tests {
         assert!(!hour_burns(WorldTime::Night));
         assert!(!hour_burns(WorldTime::Midnight));
         assert!(!hour_burns(WorldTime::Dawn));
+        // The window is the vendored track's, and it is the window the two
+        // constants this reader replaced stated: off at 12542, on at 23460.
+        use delvewright_dsl::celestial::monsters_burn;
+        assert!(monsters_burn(12541) && !monsters_burn(12542));
+        assert!(!monsters_burn(23459) && monsters_burn(23460));
+        // spec-0081 §5.2: the four horizon ticks do not burn.
+        for (body, pos) in [
+            (
+                delvewright_dsl::Body::Sun,
+                delvewright_dsl::Position::JustSet,
+            ),
+            (
+                delvewright_dsl::Body::Sun,
+                delvewright_dsl::Position::Setting,
+            ),
+            (
+                delvewright_dsl::Body::Moon,
+                delvewright_dsl::Position::JustSet,
+            ),
+            (
+                delvewright_dsl::Body::Sun,
+                delvewright_dsl::Position::Rising,
+            ),
+        ] {
+            let t = WorldTime::Celestial(delvewright_dsl::CelestialTime {
+                sun: (body == delvewright_dsl::Body::Sun).then_some(pos),
+                moon: (body == delvewright_dsl::Body::Moon).then_some(pos),
+                phase: None,
+            });
+            assert!(!hour_burns(t), "{} burns", t.keyword());
+        }
     }
 
     /// The radius is the declared `follow_range` or the one documented default —
