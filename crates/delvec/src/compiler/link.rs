@@ -632,9 +632,9 @@ pub fn check_carry_realised(campaign: &Campaign) -> Vec<Diagnostic> {
                          link realises that direction — no `triggers[]` entry declared \
                          `once: false` hosts a `teleport` from a station of `{x}` to a mark in \
                          `{y}`. A carry nothing performs is a way the graph claims and the delve \
-                         does not have. Remedy: host the teleport on a repeatable trigger as \
-                         spec-0083 says, or make the edge one-way (or remove it) if that \
-                         direction is not a way.",
+                         does not have. Remedy: host a teleport from a station of `{x}` to a mark in `{y}` \
+                         on a repeatable trigger, or make the edge one-way (or remove it) if \
+                         that direction is not a way.",
                         e.id()
                     ),
                 ));
