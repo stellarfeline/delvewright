@@ -193,6 +193,22 @@ impl<'a> Deriver<'a> {
         }
     }
 
+    /// Derive with the tints of a biome whose definition the caller holds —
+    /// a datapack biome a build ships (spec-0080: a delve's atmospheres), which
+    /// the pinned jar does not carry. Read by the same rule as a jar biome.
+    pub fn with_biome_definition(
+        assets: &'a Assets,
+        biome: &str,
+        definition: &serde_json::Value,
+    ) -> Self {
+        let tints = tints_of(assets, Some(definition));
+        Deriver {
+            assets,
+            biome: biome.to_string(),
+            tints,
+        }
+    }
+
     /// The biome whose tints this deriver applies.
     pub fn biome(&self) -> &str {
         &self.biome
@@ -743,8 +759,22 @@ fn read_tints(assets: &Assets, biome: &str) -> Tints {
         Some((a, b)) => (a.to_string(), b.to_string()),
         None => ("minecraft".to_string(), biome.to_string()),
     };
-    let Some(json) = assets.biome(&ns, &id) else {
+    let json = assets.biome(&ns, &id);
+    if json.is_none() {
         return neutral;
+    }
+    tints_of(assets, json.as_ref())
+}
+
+/// A biome definition's grass/foliage/water tints: its `effects` colours, else
+/// its `temperature`/`downfall` indexing the pinned colormaps.
+fn tints_of(assets: &Assets, json: Option<&serde_json::Value>) -> Tints {
+    let Some(json) = json else {
+        return Tints {
+            grass: [255, 255, 255],
+            foliage: [255, 255, 255],
+            water: [255, 255, 255],
+        };
     };
     let temperature = json
         .get("temperature")
@@ -1112,6 +1142,27 @@ mod tests {
             ..solid.clone()
         };
         assert!(!glass.is_opaque_cube());
+    }
+
+    /// spec-0080 §5.3: a biome the build ships (an atmosphere) tints by its
+    /// own `effects`, which the pinned jar cannot answer for.
+    #[test]
+    fn a_shipped_biome_tints_by_its_own_definition() {
+        let dir = std::env::temp_dir().join(format!("delvec-tints-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let assets = Assets::open(&dir).unwrap();
+        let def = serde_json::json!({
+            "effects": { "grass_color": "#6b6a2a", "foliage_color": "#5a4a2a", "water_color": "#1a0f1f" }
+        });
+        let shipped = Deriver::with_biome_definition(&assets, "demo:atmosphere/wrong-place", &def);
+        assert_eq!(shipped.biome(), "demo:atmosphere/wrong-place");
+        assert_eq!(shipped.tints.grass, [0x6b, 0x6a, 0x2a]);
+        assert_eq!(shipped.tints.foliage, [0x5a, 0x4a, 0x2a]);
+        assert_eq!(shipped.tints.water, [0x1a, 0x0f, 0x1f]);
+        // Asked of the asset source alone, the same id is unknown and neutral.
+        let unknown = Deriver::with_biome(&assets, "demo:atmosphere/wrong-place");
+        assert_eq!(unknown.tints.grass, [255, 255, 255]);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

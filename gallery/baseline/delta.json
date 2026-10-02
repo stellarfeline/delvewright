@@ -7,6 +7,7 @@
     "easy.en:packtest-datapack/data/gallery/test/atmosphere_repaint_0.mcfunction",
     "easy.en:packtest-datapack/data/gallery/test/atmosphere_repaint_1.mcfunction",
     "easy.en:validation/atmosphere-repaints.json",
+    "easy.en:validation/biome-map.json",
     "hard.en:datapack/data/gallery/function/atmosphere_bootstrap.mcfunction",
     "hard.en:datapack/data/gallery/worldgen/biome/atmosphere/frost-hall.json",
     "hard.en:datapack/data/gallery/worldgen/biome/atmosphere/still-air.json",
@@ -14,6 +15,7 @@
     "hard.en:packtest-datapack/data/gallery/test/atmosphere_repaint_0.mcfunction",
     "hard.en:packtest-datapack/data/gallery/test/atmosphere_repaint_1.mcfunction",
     "hard.en:validation/atmosphere-repaints.json",
+    "hard.en:validation/biome-map.json",
     "ocean-horizon.en:datapack/data/gallery/function/atmosphere_bootstrap.mcfunction",
     "ocean-horizon.en:datapack/data/gallery/worldgen/biome/atmosphere/frost-hall.json",
     "ocean-horizon.en:datapack/data/gallery/worldgen/biome/atmosphere/still-air.json",
@@ -22,6 +24,7 @@
     "ocean-horizon.en:packtest-datapack/data/gallery/test/atmosphere_repaint_0.mcfunction",
     "ocean-horizon.en:packtest-datapack/data/gallery/test/atmosphere_repaint_1.mcfunction",
     "ocean-horizon.en:validation/atmosphere-repaints.json",
+    "ocean-horizon.en:validation/biome-map.json",
     "primary.en:datapack/data/gallery/function/atmosphere_bootstrap.mcfunction",
     "primary.en:datapack/data/gallery/worldgen/biome/atmosphere/frost-hall.json",
     "primary.en:datapack/data/gallery/worldgen/biome/atmosphere/still-air.json",
@@ -29,6 +32,7 @@
     "primary.en:packtest-datapack/data/gallery/test/atmosphere_repaint_0.mcfunction",
     "primary.en:packtest-datapack/data/gallery/test/atmosphere_repaint_1.mcfunction",
     "primary.en:validation/atmosphere-repaints.json",
+    "primary.en:validation/biome-map.json",
     "primary.zh-cn:datapack/data/gallery/function/atmosphere_bootstrap.mcfunction",
     "primary.zh-cn:datapack/data/gallery/worldgen/biome/atmosphere/frost-hall.json",
     "primary.zh-cn:datapack/data/gallery/worldgen/biome/atmosphere/still-air.json",
@@ -36,16 +40,19 @@
     "primary.zh-cn:packtest-datapack/data/gallery/test/atmosphere_repaint_0.mcfunction",
     "primary.zh-cn:packtest-datapack/data/gallery/test/atmosphere_repaint_1.mcfunction",
     "primary.zh-cn:validation/atmosphere-repaints.json",
+    "primary.zh-cn:validation/biome-map.json",
     "site-plan.en:datapack/data/gallery/function/atmosphere_bootstrap.mcfunction",
     "site-plan.en:datapack/data/gallery/worldgen/biome/atmosphere/wet-court.json",
     "site-plan.en:packtest-datapack/data/gallery/test/atmosphere_places.mcfunction",
+    "site-plan.en:validation/biome-map.json",
     "void-horizon.en:datapack/data/gallery/function/atmosphere_bootstrap.mcfunction",
     "void-horizon.en:datapack/data/gallery/worldgen/biome/atmosphere/frost-hall.json",
     "void-horizon.en:datapack/data/gallery/worldgen/biome/atmosphere/still-air.json",
     "void-horizon.en:packtest-datapack/data/gallery/test/atmosphere_places.mcfunction",
     "void-horizon.en:packtest-datapack/data/gallery/test/atmosphere_repaint_0.mcfunction",
     "void-horizon.en:packtest-datapack/data/gallery/test/atmosphere_repaint_1.mcfunction",
-    "void-horizon.en:validation/atmosphere-repaints.json"
+    "void-horizon.en:validation/atmosphere-repaints.json",
+    "void-horizon.en:validation/biome-map.json"
   ],
   "base_commit": "4c0fb85e998104951d21f466871da46d677d5f71",
   "changed": [
@@ -91,7 +98,7 @@
   "classes": {
     "PackTest": 19,
     "datapack function": 46,
-    "validation ledger": 19
+    "validation ledger": 26
   },
   "removed": []
 }

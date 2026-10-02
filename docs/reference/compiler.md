@@ -2473,6 +2473,15 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   `map_chunk` resent, or one over chunks the client held none of, and prints
   `atmosphere repaints: … told by chunk_biomes, … resent by map_chunk`. Emitted
   only for a campaign that repaints.
+- `<out>/validation/biome-map.json` (spec-0080 §5.3): the biome map's place
+  paints — `{ground, places: [{place, atmosphere, biome, precipitates,
+  cells}]}` — read by `delvec palette --build … --place …` to tint a scene
+  inside a place under that place's biome. Emitted only when a place carries an
+  atmosphere. **A PackTest world is not the delve's world**: the suite runs in
+  the server's own test level, whose generator lays its own biome, so the
+  generated atmosphere templates read a carried place as itself (the bootstrap
+  painted it) and read the ground only as "not the repaint's biome", never by
+  its id.
 - `<out>/validation/death-plan.json`: **the bot tier's contract for
   dying** (`compiler::deathplan`). A PackTest fake player is permanently
   undamageable — measured twice, independently —

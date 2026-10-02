@@ -776,9 +776,21 @@ delvec contact-sheet <dir> -o <sheet.png> [--scores scores.json] [--shot ext-se]
 delvec viewer <nbt|dir|manifest.json>... -o <page.html> [--title T] [--textures <jar>]
                                              # ONE interactive page: a camera the reviewer drives,
                                              # every block drawn from the pinned version's own model
-delvec palette <nbt|dir>... -o <palette.json> [--biome minecraft:plains] [--textures <jar>]
+delvec palette <nbt|dir>... -o <palette.json> [--biome minecraft:plains | --build <out> --place <id>] [--textures <jar>]
                                              # the derived per-blockstate colour/shape table
 ```
+
+**A scene inside a place is tinted under that place's own sky** (spec-0080
+§5.3). `--build <out> --place <id>` reads the biome the build's map says the
+place stands in at the first tick (`validation/biome-map.json`; a build with no
+carried atmosphere has none, and every place stands in the ground biome its
+`generator-settings` lays), and reads that biome's definition from the build's
+own datapack when the build ships it — an atmosphere the pinned jar has never
+heard of — so its `effects` colour grass, foliage and water. One line on stderr
+names the biome and where its definition was read.
+
+**What a Chunky frame does with an atmosphere** is recorded in §4a: Chunky
+draws its own sky and has no table for a datapack biome.
 
 The same derivation over the whole pinned block registry is what
 `crates/delvec/data/block-appearance-1.21.11.json` holds — the table the CPU

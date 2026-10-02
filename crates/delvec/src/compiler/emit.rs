@@ -2247,6 +2247,34 @@ pub fn build_with_warnings(
     if let Some(rp) = atmosphere_repaint_plan(plan) {
         put_json(&mut out, "validation/atmosphere-repaints.json", &rp);
     }
+    // spec-0080 §5.3: which biome each carried place stands in at the first
+    // tick, as the biome map states it, so a reader that draws a scene inside
+    // a place (`delvec view palette --build … --place …`) tints it under that
+    // place's own biome rather than a guess. Emitted only when a place carries
+    // an atmosphere.
+    {
+        let map = crate::compiler::horizon::biome_map(plan);
+        let places: Vec<serde_json::Value> = map
+            .places()
+            .filter_map(|p| match &p.source {
+                crate::compiler::horizon::PaintSource::Place { place, atmosphere } => Some(json!({
+                    "place": place,
+                    "atmosphere": atmosphere,
+                    "biome": p.biome,
+                    "precipitates": p.precipitates,
+                    "cells": [p.cells.0, p.cells.1],
+                })),
+                crate::compiler::horizon::PaintSource::Band => None,
+            })
+            .collect();
+        if !places.is_empty() {
+            put_json(
+                &mut out,
+                "validation/biome-map.json",
+                &json!({ "ground": map.ground.id, "places": places }),
+            );
+        }
+    }
     // **The design gate's ledger** (`crate::compiler::design`, spec-0061 §6):
     // how many approved reference images the record holds, how many image files
     // stand under `design/`, which skies the rows state and which skies this
@@ -23203,9 +23231,31 @@ fn emit_atmosphere_packtests(plan: &Plan, out: &mut BuildOutput) {
         ));
         b.push("# after the beat".to_string());
         biome_assert(&format!("#atm_r{n}_after"), inside, &biome, true, &mut b);
+        // Outside the volume the repaint reached nothing. A carried place's
+        // biome there is the bootstrap's, so it is read as itself; the ground's
+        // is whatever the server's generator laid (a PackTest world is not the
+        // delve's own), so there the reading is that the new biome did not
+        // arrive — and when the new biome IS the ground, nothing outside can
+        // tell the two apart and no reading is made.
         if let Some(outside) = quart_outside(plan, cells, inside) {
-            let (kept, _) = map.at(outside);
-            biome_assert(&format!("#atm_r{n}_kept"), outside, kept, true, &mut b);
+            let carried = map
+                .places()
+                .filter(|p| {
+                    (0..3).all(|i| p.cells.0[i] <= outside[i] && outside[i] <= p.cells.1[i])
+                })
+                .last();
+            match carried {
+                Some(p) => {
+                    biome_assert(&format!("#atm_r{n}_kept"), outside, &p.biome, true, &mut b)
+                }
+                None if biome != ground => {
+                    biome_assert(&format!("#atm_r{n}_kept"), outside, &biome, false, &mut b)
+                }
+                None => b.push(format!(
+                    "# outside {outside:?} stands in the ground biome, which this repaint also \
+                     paints: no reading outside can tell them apart"
+                )),
+            }
         }
         b.extend(restore);
         write(&format!("atmosphere_repaint_{n}"), b);
