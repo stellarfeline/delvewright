@@ -612,7 +612,7 @@ if [ "$SUBJECT_KIND" = "campaign" ]; then
   # legitimate and has nothing to probe. Display slots are the campaign's: nothing
   # here sets or clears one (tools/tests/test_playtest_server_leaves_the_display_slots.py).
   [[ $OBJECTIVES == *"dw."* ]] || die_or_oom "no dw.* objectives — datapack not loaded"
-  NPCS_DECLARED="$(python3 -c 'import json, sys; print(len(json.load(open(sys.argv[1]))["content"]["npcs"]))' "$CAMPAIGN/npcs.json")" \
+  NPCS_DECLARED="$(python3 -c 'import json, sys; sys.stdout.reconfigure(newline="\n"); print(len(json.load(open(sys.argv[1]))["content"]["npcs"]))' "$CAMPAIGN/npcs.json")" \
     || die "cannot read the NPC count from $CAMPAIGN/npcs.json"
   if [ "$NPCS_DECLARED" -gt 0 ]; then
     NPC_PROBE="$(rcon "execute if entity @e[tag=dw_npc]")"

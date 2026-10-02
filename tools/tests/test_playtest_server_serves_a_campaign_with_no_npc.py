@@ -25,7 +25,7 @@ def _count_expression():
 
 
 def _npcs(tmp_path, npcs):
-    doc = {"campaign_id": "c", "content": {"npcs": npcs}, "dsl_version": "0.35.0", "stage": "npcs"}
+    doc = {"campaign_id": "c", "content": {"npcs": npcs}, "stage": "npcs"}
     path = tmp_path / "npcs.json"
     path.write_text(json.dumps(doc), encoding="utf-8")
     return path
