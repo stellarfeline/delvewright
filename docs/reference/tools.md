@@ -2113,3 +2113,15 @@ separating "nothing to do" from "rejected", since `No blocks were filled` and
 `Could not set the block` are legitimate answers that sit inside the shared
 rejection regex; and a `--phase 1`/restart/`--phase 2` split so "survives a
 reload" is measured rather than assumed.
+
+`tools/spike-seamless-loop/run.sh` (`EULA=TRUE tools/spike-seamless-loop/run.sh
+[--out <path>]`) measures, on the same throwaway pinned server, what a relative
+`tp` of a body crossing a one-cell slab does and tells: the body's position,
+motion and rotation read back on either side of the `tp` in one tick, the one
+relative position packet its client receives, the velocity and facing the client
+keeps, the chunk ring a move across a chunk boundary streams, whether a one-tick
+poll catches every crossing walking, sprinting, sprint-jumping and falling (with
+the fall law fitted from one drop), what a witness in the corridor is told, and
+that a party-wide release stands the loop down. Findings: spec-0086 §2; raw
+observations beside the rig (`tools/spike-seamless-loop/observations.json`). It
+publishes an **ephemeral** loopback port and never takes the 25565 mutex.
