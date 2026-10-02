@@ -3,7 +3,10 @@
  * waited for.
  *
  * A test that awaits something nothing guarantees will settle sits at 0 CPU and
- * reports nothing. Two bounds close that:
+ * reports nothing, forever: node:test holds the file's process open with a
+ * keep-alive interval while any test is pending (`node:internal/test_runner/harness`),
+ * so its "Promise resolution is still pending but the event loop has already
+ * resolved" cancellation never fires. Two bounds close that:
  *
  * - `npm test` runs `node --test --test-timeout=<ms>`, so no test outlives that
  *   bound, labelled or not; node:test fails it by name.
