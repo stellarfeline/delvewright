@@ -162,77 +162,70 @@ struct Found<'a> {
 /// Every blinding grant in the campaign, through the one root walk and the one
 /// nesting authority.
 fn grants<'a>(plan: &Plan<'a>) -> Vec<Found<'a>> {
-    fn descend<'a>(
+    /// What a nesting site hands down to the effects inside it.
+    #[derive(Clone, Copy)]
+    struct Ctx<'a> {
         stage: &'static str,
-        path: String,
-        eff: &'a QuestEffect,
         root: EffectRoot<'a>,
         seat: Seat<'a>,
         delay: u32,
         solo: bool,
-        out: &mut Vec<Found<'a>>,
-    ) {
+    }
+    fn descend<'a>(ctx: Ctx<'a>, path: String, eff: &'a QuestEffect, out: &mut Vec<Found<'a>>) {
         if let Some((effect, _, _, _, _)) = eff.give_effect()
             && delvewright_dsl::perception::blinding(effect).is_some()
         {
             out.push(Found {
-                stage,
+                stage: ctx.stage,
                 path: path.clone(),
                 eff,
-                root,
-                seat,
-                delay_ticks: delay,
-                solo,
+                root: ctx.root,
+                seat: ctx.seat,
+                delay_ticks: ctx.delay,
+                solo: ctx.solo,
             });
         }
         match &eff.verb {
             Verb::Sequence { steps } => {
                 for (s, st) in steps.iter().enumerate() {
+                    let inner_ctx = Ctx {
+                        delay: ctx.delay + st.at_ticks,
+                        ..ctx
+                    };
                     for (j, inner) in st.effects.iter().enumerate() {
                         descend(
-                            stage,
+                            inner_ctx,
                             format!("{path}/steps/{s}/effects/{j}"),
                             inner,
-                            root,
-                            seat,
-                            delay + st.at_ticks,
-                            solo,
                             out,
                         );
                     }
                 }
             }
             Verb::SetCheckpoint { anchor, on_respawn } => {
+                // The respawning player's own bundle, at the seat.
+                let inner_ctx = Ctx {
+                    seat: Seat::Anchor(anchor.as_str()),
+                    delay: 0,
+                    solo: true,
+                    ..ctx
+                };
                 for (j, inner) in on_respawn.iter().enumerate() {
-                    let p = format!("{path}/on_respawn/{j}");
-                    descend(
-                        stage,
-                        p,
-                        inner,
-                        root,
-                        Seat::Anchor(anchor.as_str()),
-                        0,
-                        true,
-                        out,
-                    );
+                    descend(inner_ctx, format!("{path}/on_respawn/{j}"), inner, out);
                 }
             }
             Verb::Bonfire {
                 anchor, on_rest, ..
             } => {
+                // A rest addresses the whole party from the tick.
+                let inner_ctx = Ctx {
+                    seat: Seat::Anchor(anchor.as_str()),
+                    delay: 0,
+                    solo: false,
+                    ..ctx
+                };
                 for (j, inner) in on_rest.iter().enumerate() {
-                    let p = format!("{path}/on_rest/{j}");
-                    // A rest addresses the whole party from the tick.
-                    descend(
-                        stage,
-                        p,
-                        inner,
-                        root,
-                        Seat::Anchor(anchor.as_str()),
-                        0,
-                        false,
-                        out,
-                    );
+                    descend(inner_ctx, format!("{path}/on_rest/{j}"), inner, out);
                 }
             }
             _ => {
@@ -243,9 +236,14 @@ fn grants<'a>(plan: &Plan<'a>) -> Vec<Found<'a>> {
                 for ((pseg, _k, list), solo) in
                     eff.nested_effect_lists_labeled().into_iter().zip(solos)
                 {
+                    let inner_ctx = Ctx {
+                        seat: Seat::Anywhere,
+                        delay: 0,
+                        solo,
+                        ..ctx
+                    };
                     for (j, inner) in list.iter().enumerate() {
-                        let p = format!("{path}/{pseg}/{j}");
-                        descend(stage, p, inner, root, Seat::Anywhere, 0, solo, out);
+                        descend(inner_ctx, format!("{path}/{pseg}/{j}"), inner, out);
                     }
                 }
             }
@@ -253,17 +251,15 @@ fn grants<'a>(plan: &Plan<'a>) -> Vec<Found<'a>> {
     }
     let mut out = Vec::new();
     crate::compiler::plan::for_each_effect_root(plan.campaign, &mut |site, effs| {
+        let ctx = Ctx {
+            stage: site.stage,
+            root: site.root,
+            seat: Seat::Root,
+            delay: 0,
+            solo: root_is_solo(&site.root),
+        };
         for (i, eff) in effs.iter().enumerate() {
-            descend(
-                site.stage,
-                format!("{}/{i}", site.path),
-                eff,
-                site.root,
-                Seat::Root,
-                0,
-                root_is_solo(&site.root),
-                &mut out,
-            );
+            descend(ctx, format!("{}/{i}", site.path), eff, &mut out);
         }
     });
     out
