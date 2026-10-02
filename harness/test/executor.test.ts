@@ -1420,7 +1420,21 @@ class InteractFakeBot extends FakeBot {
   }
   chat(message: string): void {
     this.calls.push(`chat(${message})`);
+    echoBracket(this, message);
   }
+}
+
+/**
+ * The fake server's `/tellraw @s` for the harness's reply brackets
+ * (`command-reply.ts`): the marker comes back as a chat line, in order with
+ * everything else the server says.
+ */
+function echoBracket(bot: EventEmitter, message: string): boolean {
+  if (!message.startsWith("/tellraw @s ")) return false;
+  const text = (JSON.parse(message.slice("/tellraw @s ".length)) as { text?: unknown }).text;
+  if (typeof text !== "string" || !text.startsWith("[dw:cmd ")) return false;
+  bot.emit("messagestr", text);
+  return true;
 }
 
 function interactStep(requiresItem: string | null): InteractStep {
@@ -1858,6 +1872,17 @@ class CombatFakeBot extends InteractFakeBot {
   moveOnGoto = false;
   /** Every `/damage <uuid>` staged blow the fake server received, by body id. */
   readonly stagedBlows: number[] = [];
+  /** The body a strike fells lands a hit on the bot as it falls — a shot it
+   * loosed before it died, as vesperhold's last walk-ambush pillager did. The
+   * corpse stays in the entity table through its death throes. */
+  posthumousShot = false;
+  /** The shot lands BEFORE the server announces the body's death, which then
+   * arrives just ahead of the refusal of the blow aimed at it. */
+  deathAnnouncedLate = false;
+  private readonly unannounced = new Map<number, FakeMob>();
+  /** Bodies dead and still in the entity table (their death throes). A `/damage`
+   * on one is refused in the server's own words: a dying body takes no damage. */
+  private readonly corpses = new Set<number>();
   private died = false;
   private nextId = 100;
   /** Server-side census state: which mobs wear the brand, and how many censuses
@@ -1983,6 +2008,7 @@ class CombatFakeBot extends InteractFakeBot {
 
   override chat(message: string): void {
     this.calls.push(`chat(${message})`);
+    if (echoBracket(this, message)) return;
     // The fake server answers the census the way a real one does: by TAG. Only
     // mobs in `entities` carry the wave tag here, so anything a test parks beside
     // the encounter is invisible to it — which is the whole point.
@@ -2022,8 +2048,16 @@ class CombatFakeBot extends InteractFakeBot {
         // whole reason the staged clear is a `player_attack` and not a `kill`.
         const [first] = this.waveMobs();
         if (first) {
-          delete this.entities[first.id];
           this.credited += 1;
+          if (this.posthumousShot) {
+            first.waveTagged = false;
+            this.corpses.add(first.id);
+            if (this.deathAnnouncedLate) this.unannounced.set(first.id, first);
+            else this.emit("entityDead", first);
+            this.emit("entityHurt", this.entity, first);
+          } else {
+            delete this.entities[first.id];
+          }
         }
         return;
       }
@@ -2071,6 +2105,15 @@ class CombatFakeBot extends InteractFakeBot {
     const staged = /^\/damage (uuid-(\d+)) /.exec(message);
     if (staged) {
       const id = Number(staged[2]);
+      if (this.corpses.has(id)) {
+        const late = this.unannounced.get(id);
+        if (late) {
+          this.unannounced.delete(id);
+          this.emit("entityDead", late);
+        }
+        this.emit("messagestr", "Target is invulnerable to the given damage type");
+        return;
+      }
       const ent = this.entities[id] as FakeMob | undefined;
       if (ent) {
         this.stagedBlows.push(id);
@@ -4378,6 +4421,54 @@ test("the kill step hunts only what the census calls the wave, never a bystander
 
   assert.equal(bot.hitsOn(77), 0, "no swing at the bystander");
   assert.deepEqual(bot.waveIds(), [], "the wave body was");
+});
+
+test("a refusal of a blow at a dying body is not the wave's strike refused", async () => {
+  // vesperhold 1.1.0-beta.1, release ladder, step 30: the strike felled the last
+  // walk-ambush pillager, a bolt it had loosed hit the bot as it fell, and the
+  // staged blow aimed at the corpse was refused ("Target is invulnerable to the
+  // given damage type"). The strike, sent a moment earlier, read that refusal in
+  // its own time window and failed the run with the wave already down.
+  const bot = new CombatFakeBot();
+  bot.seat(2);
+  bot.posthumousShot = true;
+  const executor = attach(bot);
+  executor.useCampaign("the-drowned-bell");
+  executor.useCombatPlan(combatPlan(2, true), false);
+
+  await within("executor.kill(KILL_STEP)", executor.kill({ ...KILL_STEP, count: 2 }));
+
+  assert.deepEqual(bot.waveIds(), [], "the wave is down");
+  assert.deepEqual(bot.stagedBlows, [], "no blow landed on a corpse");
+  assert.equal(
+    bot.calls.filter((c) => c.startsWith("chat(/damage uuid-")).length,
+    0,
+    "a body the server announced dead is not struck at all",
+  );
+});
+
+test("a blow refused because the body died first is recorded as that, not as a refusal", async () => {
+  // The same fall, with the death announced only after the hit: the blow is sent,
+  // and the server announces the death before it refuses the blow. The refusal
+  // belongs to the blow, never to the strike, and the record says why.
+  const bot = new CombatFakeBot();
+  bot.seat(2);
+  bot.posthumousShot = true;
+  bot.deathAnnouncedLate = true;
+  const executor = attach(bot);
+  executor.useCampaign("the-drowned-bell");
+  executor.useCombatPlan(combatPlan(2, true), false);
+
+  await within("executor.kill(KILL_STEP)", executor.kill({ ...KILL_STEP, count: 2 }));
+  const settled = await within("executor.settleStaging(5_000)", executor.settleStaging(5_000));
+  assert.equal(settled.unfinished, 0);
+
+  assert.deepEqual(bot.waveIds(), [], "the wave is down");
+  const fell = executor
+    .stagedBodies()
+    .filter((r) => r.detail?.startsWith("the body died before the blow landed"));
+  assert.equal(fell.length, 2, JSON.stringify(executor.stagedBodies()));
+  assert.ok(fell.every((r) => !r.performed));
 });
 
 // --- run-backs: a re-seated fight beside a later leg is fought, assisted --------
