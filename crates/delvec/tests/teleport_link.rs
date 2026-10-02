@@ -31,8 +31,14 @@ const SIZE: [i32; 3] = [21, 8, 9];
 /// body that walks into it lands at y 1 and cannot climb the two blocks out.
 const PIT: [i32; 3] = [17, 1, 2];
 
-/// Every non-air cell of the strait, with or without [`PIT`].
-fn strait_cells(pit: bool) -> Vec<([i32; 3], &'static str)> {
+/// The raised walk [`strait_cells`] builds when asked, in the east room: a
+/// two-block-high run at local `(16..=19, 3..=4, 6)` whose top is reached by
+/// one step at `(19, 3, 5)`, at its east end. `anchor/ledge` is the run's west
+/// end — a cell a body arrives on only by walking round by the step.
+const LEDGE: [i32; 3] = [16, 5, 6];
+
+/// Every non-air cell of the strait, with or without [`PIT`] and [`LEDGE`].
+fn strait_cells(pit: bool, ledge: bool) -> Vec<([i32; 3], &'static str)> {
     let [sx, sy, sz] = SIZE;
     let mut cells = Vec::new();
     for x in 0..sx {
@@ -42,6 +48,13 @@ fn strait_cells(pit: bool) -> Vec<([i32; 3], &'static str)> {
                 let wall = x == 8;
                 let hole = pit && x == PIT[0] && z == PIT[2] && (1..=2).contains(&y);
                 if hole {
+                    continue;
+                }
+                let pillar = ledge
+                    && ((z == LEDGE[2] && (16..=19).contains(&x) && (3..=4).contains(&y))
+                        || (x == 19 && y == 3 && z == 5));
+                if pillar {
+                    cells.push(([x, y, z], "minecraft:stone"));
                     continue;
                 }
                 if y == sy - 1 && z % 3 == 1 && x % 3 == 1 && x != 8 {
@@ -78,16 +91,22 @@ fn strait_anchors() -> Value {
         "anchor/far-deck": { "pos": [15, 3, 4] },
         "anchor/pit": { "pos": PIT },
         "anchor/rescue": { "pos": [17, 3, 1] },
+        "anchor/ledge": { "pos": LEDGE },
     })
 }
 
 /// A private prefab library: the pinned one, with every piece declaring its own
-/// outside, plus the strait (`prefab/ferry-strait`) and the strait with its pit
-/// cut (`prefab/ferry-strait-pit`).
+/// outside, plus the strait (`prefab/ferry-strait`), the strait with its pit
+/// cut (`prefab/ferry-strait-pit`) and the strait with its pillar raised
+/// (`prefab/ferry-strait-ledge`).
 fn ferry_prefabs() -> PathBuf {
     let dir = common::shown_prefabs_dir("ferry");
-    for (id, pit) in [("ferry-strait", false), ("ferry-strait-pit", true)] {
-        common::write_single_prefab(&dir, id, SIZE, &strait_cells(pit), strait_anchors());
+    for (id, pit, ledge) in [
+        ("ferry-strait", false, false),
+        ("ferry-strait-pit", true, false),
+        ("ferry-strait-ledge", false, true),
+    ] {
+        common::write_single_prefab(&dir, id, SIZE, &strait_cells(pit, ledge), strait_anchors());
         common::declare_shown_faces(&dir, id);
     }
     dir
@@ -792,4 +811,211 @@ fn a_pocket_whose_only_exit_is_a_live_links_stand_cell_is_not_a_trap() {
     let run = build(&pit_campaign("pit-shut", "flag/landed"));
     let line = run.refused("DW0921");
     assert!(line.contains("[17, "), "{line}");
+}
+
+// ---------------------------------------------------------------------------
+// Criterion 7 — two populations.
+// ---------------------------------------------------------------------------
+
+/// A `reach` whose anchor stands on a raised walk, on the far side of the link,
+/// with a radius that reaches the floor beside the walk: the party completes it
+/// from the floor and never climbs round by the step. The far shore is
+/// reached only by the link, so a population walked from the entry alone never
+/// stood there — `DW0881` judges it because the stands-at population roots at
+/// the link's `to` too.
+#[test]
+fn a_raised_reach_on_the_far_side_of_a_link_is_dw0881() {
+    let dir = campaign("ledge", |q| {
+        let far = &mut q["content"]["quests"][0]["objectives"][1];
+        far["anchor"] = json!("anchor/ledge");
+        far["radius"] = json!(2);
+    });
+    common::patch_file(&dir.join("world.json"), |w| {
+        w["content"]["areas"][0]["prefab"] = json!("prefab/ferry-strait-ledge");
+    });
+    let run = build(&dir);
+    let line = run.refused("DW0881");
+    assert!(line.contains("obj/far-shore"), "{line}");
+}
+
+/// The ferry with a crossing after the far shore — a second area, the keep,
+/// whose entry point the compiler carries the party to — and a trap on the far
+/// landing whose payload is a gather onto the far deck.
+fn populations_campaign() -> PathBuf {
+    let dir = campaign("populations", |q| {
+        let quests = q["content"]["quests"].as_array_mut().unwrap();
+        quests[0]["on_complete"] = json!([]);
+        quests.push(json!({
+            "id": "quest/keep",
+            "happening": {"verb": "arrives", "subject": "spawn", "text": "Beyond the strait, the keep."},
+            "trigger": {"type": "quest-complete", "quest": "quest/cross"},
+            "objectives": [{"id": "obj/keep", "type": "reach-anchor", "anchor": "anchor/exit",
+                "radius": 1,
+                "happening": {"verb": "arrives", "subject": "anchor/exit", "text": "They reach the keep's door."}}],
+            "on_complete": [{"type": "campaign-complete",
+                "happening": {"verb": "arrives", "subject": "anchor/exit", "text": "The journey ends."}}]
+        }));
+        q["content"]["traps"] = json!([{
+            "id": "trap/drop", "at": "anchor/far-landing", "trigger": "pressure-plate",
+            "lethality": "harmful", "reset": "rearm",
+            "effect": {"dispense": {"count": 1, "item": "minecraft:arrow"}},
+            "payload": [{"type": "teleport",
+                         "from": {"anchor": "anchor/far-landing", "extent": [0, 0, 0]},
+                         "to": {"anchor": "anchor/far-deck"}}]
+        }]);
+    });
+    common::patch_file(&dir.join("world.json"), |w| {
+        w["content"]["areas"]
+            .as_array_mut()
+            .unwrap()
+            .push(json!({"id": "area/keep", "name": "The Keep", "prefab": "prefab/hello-room"}));
+    });
+    common::patch_file(&dir.join("quest-plan.json"), |p| {
+        p["content"]["finale"] = json!("quest/keep");
+        p["content"]["quests"].as_array_mut().unwrap().push(json!({
+            "act": 1, "area": "area/keep", "depends_on": ["quest/cross"],
+            "goal": "Walk to the keep's door.", "id": "quest/keep", "mandatory": true, "npcs": []
+        }));
+    });
+    dir
+}
+
+#[test]
+fn the_put_at_roots_hold_every_destination_and_the_stands_at_roots_no_gather() {
+    use delvec::compiler::plan::Plan;
+    use delvec::compiler::registry::PrefabRegistry;
+    let dir = populations_campaign();
+    let loaded = delvec::compiler::load::load_campaign_dir(&dir).unwrap();
+    let campaign = delvewright_dsl::parse_campaign(&loaded.raw).expect("parses");
+    let prefabs = PrefabRegistry::load_dir(&ferry_prefabs()).unwrap();
+    let plan = Plan::build(&campaign, &prefabs).unwrap_or_else(|e| panic!("{}", e.failure.message));
+    assert_eq!(plan.links.len(), 1, "the tiller");
+    assert_eq!(plan.gathers.len(), 1, "the trap payload");
+    let crossing: Vec<[i32; 3]> = plan.transport.values().copied().collect();
+    assert_eq!(crossing.len(), 1, "one crossing, into the keep");
+    let entry = plan.campaign_start().map(|(_, p)| p);
+    let put = delvec::compiler::lethal::put_at_roots(&plan, entry);
+    let stands = delvec::compiler::lethal::stands_at_roots(&plan, entry);
+    let (link_to, gather_to) = (plan.links[0].to, plan.gathers[0].to);
+    assert!(
+        put.contains(&link_to) && put.contains(&gather_to),
+        "{put:?}"
+    );
+    assert!(put.contains(&crossing[0]), "{put:?}");
+    assert!(
+        stands.contains(&link_to) && stands.contains(&crossing[0]),
+        "{stands:?}"
+    );
+    assert!(
+        !stands.contains(&gather_to),
+        "a trap's gather is no place the party certainly stands"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Criterion 6 — branches.
+// ---------------------------------------------------------------------------
+
+/// `branch-transport`, with the bolt branch's way past the keep's door made a
+/// link instead of an `open-gate`: a lever at the entry, `once: false`, live
+/// only while `flag/<gate>` is held, carrying whoever stands by the Keeper out
+/// past the door onto the exit. The hold branch no longer crosses the door at
+/// all — it walks out by the entry — so the door has no opener anywhere.
+///
+/// The hold branch's own `open-gate` is removed rather than kept because the
+/// region model credits a bundle whose objective is absent from a branch's
+/// path at that path's step 0, forced (`plan::firing_of`'s `unwrap_or(0)`),
+/// which would open the door for the bolt branch too and leave the link
+/// nothing to carry.
+fn branch_link_campaign(who: &str, gate: &str) -> PathBuf {
+    let src = common::compiler_fixtures_dir().join("branch-transport");
+    let dir = Path::new(env!("CARGO_TARGET_TMPDIR")).join(format!("teleport-link-{who}"));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    for f in common::STAGE_FILES {
+        std::fs::copy(src.join(f), dir.join(f)).unwrap();
+    }
+    let gate = gate.to_string();
+    common::patch_file(&dir.join("quests.json"), move |q| {
+        let decide = &mut q["content"]["quests"][0]["on_objective_complete"]["obj/decide"];
+        decide
+            .as_array_mut()
+            .unwrap()
+            .retain(|e| e["type"] != "open-gate");
+        let hold = &mut q["content"]["quests"][3];
+        assert_eq!(hold["id"], "quest/hold");
+        hold["on_objective_complete"]["obj/watch"] = json!([]);
+        hold["objectives"][1]["anchor"] = json!("spawn");
+        q["content"]["triggers"] = json!([{
+            "id": "trigger/vault", "at": "spawn", "on": {"on": "use"}, "once": false,
+            "requires_flags": [gate],
+            "effects": [{"type": "teleport",
+                         "from": {"anchor": "anchor/keeper-stand", "extent": [1, 1, 1]},
+                         "to": {"anchor": "anchor/exit"}}]
+        }]);
+    });
+    dir
+}
+
+/// Every `branch-path-<slug>.json` a build wrote, by slug.
+fn branch_paths(run: &Run) -> Vec<(String, Value)> {
+    let mut out = Vec::new();
+    for e in std::fs::read_dir(run.out.join("validation")).unwrap() {
+        let p = e.unwrap().path();
+        let name = p.file_name().unwrap().to_string_lossy().to_string();
+        if let Some(slug) = name
+            .strip_prefix("branch-path-")
+            .and_then(|s| s.strip_suffix(".json"))
+        {
+            let v: Value = serde_json::from_str(&std::fs::read_to_string(&p).unwrap()).unwrap();
+            out.push((slug.to_string(), v));
+        }
+    }
+    out.sort_by(|a, b| a.0.cmp(&b.0));
+    out
+}
+
+#[test]
+fn a_link_live_on_one_branch_is_taken_on_that_branch_alone() {
+    let run = build(&branch_link_campaign("branch-live", "flag/flee"));
+    run.green();
+    let paths = branch_paths(&run);
+    assert_eq!(
+        paths.len(),
+        2,
+        "two reachable branches: {:?}",
+        paths.iter().map(|p| &p.0).collect::<Vec<_>>()
+    );
+    let carried: Vec<&str> = paths
+        .iter()
+        .filter(|(_, v)| carrying_step(v).is_some())
+        .map(|(s, _)| s.as_str())
+        .collect();
+    assert_eq!(
+        carried.len(),
+        1,
+        "exactly one branch takes the link: {carried:?}"
+    );
+    assert!(carried[0].contains("bolt"), "{carried:?}");
+    let step = paths
+        .iter()
+        .find(|(s, _)| s == carried[0])
+        .and_then(|(_, v)| carrying_step(v))
+        .unwrap();
+    assert_eq!(step["trigger"], "trigger/vault");
+    assert!(step.get("stand").is_some());
+    // The default path (the hold branch) walks.
+    assert!(carrying_step(&run.json("critical-path.json")).is_none());
+}
+
+#[test]
+fn a_branchs_link_made_shut_reds_that_branchs_proof() {
+    // `flag/wait` is the hold branch's flag: on the bolt branch the lever is
+    // shut, and the bolt branch's leg past the door has no way.
+    let run = build(&branch_link_campaign("branch-shut", "flag/wait"));
+    // The leg crosses the keep's door, so the refusal is the door's own
+    // (`DW0317`, the leg family's gate counterfactual) — naming the link too.
+    let line = run.refused("DW0317");
+    assert!(line.contains("branch `branch/bolt`"), "{line}");
+    assert!(line.contains("shut at this step"), "{line}");
 }

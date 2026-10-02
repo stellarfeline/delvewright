@@ -344,7 +344,7 @@ fn cell_shows(
 ///
 /// Deterministic: entry, then checkpoints in content order, then crossings in
 /// objective order, then links and gathers in declaration order (ADR-0006).
-pub(crate) fn put_at_roots(plan: &Plan, entry: Option<[i32; 3]>) -> Vec<[i32; 3]> {
+pub fn put_at_roots(plan: &Plan, entry: Option<[i32; 3]>) -> Vec<[i32; 3]> {
     let mut out: Vec<[i32; 3]> = Vec::new();
     out.extend(entry);
     out.extend(plan.checkpoints.iter().map(|cp| cp.pos));
@@ -359,7 +359,7 @@ pub(crate) fn put_at_roots(plan: &Plan, entry: Option<[i32; 3]>) -> Vec<[i32; 3]
 /// and every link's `to` — and not a gather's destination, which an optional
 /// root may never fire. It roots `DW0924`'s party cells and `DW0881`'s
 /// population, where a wider population would hide a finding.
-pub(crate) fn stands_at_roots(plan: &Plan, entry: Option<[i32; 3]>) -> Vec<[i32; 3]> {
+pub fn stands_at_roots(plan: &Plan, entry: Option<[i32; 3]>) -> Vec<[i32; 3]> {
     let mut out: Vec<[i32; 3]> = Vec::new();
     out.extend(entry);
     out.extend(plan.checkpoints.iter().map(|cp| cp.pos));

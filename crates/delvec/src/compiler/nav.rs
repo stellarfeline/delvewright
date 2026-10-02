@@ -5685,10 +5685,10 @@ fn performed_link(
     Ok(None)
 }
 
-/// The `DW0311` message for a leg no walk and no link carries (spec-0083 §3.1,
-/// §3.4): a gather over the leg's start is named with the remedy that makes it
-/// a link, and every link considered on the leg is named with why it did not
-/// carry.
+/// The message for a leg no walk and no link carries (spec-0083 §3.1, §3.4):
+/// under `DW0311` a gather over the leg's start is named with the remedy that
+/// makes it a link; under any code of the leg family, every link considered on
+/// the leg is named with why it did not carry.
 fn widen_unroutable(
     e: Failure,
     from: &VisitedPos,
@@ -5696,9 +5696,6 @@ fn widen_unroutable(
     carries: &Carries<'_>,
     misses: &BTreeMap<usize, LinkMiss>,
 ) -> Failure {
-    if e.code != DW_CRITICAL_UNROUTABLE {
-        return e;
-    }
     let considered: Vec<String> = carries
         .links
         .iter()
@@ -5719,7 +5716,9 @@ fn widen_unroutable(
             format!("`{}` (`{}`): {why}", l.trigger_id, l.path)
         })
         .collect();
-    if let Some(g) = carries.gathers.iter().find(|g| g.contains(from.pos)) {
+    if e.code == DW_CRITICAL_UNROUTABLE
+        && let Some(g) = carries.gathers.iter().find(|g| g.contains(from.pos))
+    {
         return Failure {
             code: DW_CRITICAL_UNROUTABLE,
             message: format!(
