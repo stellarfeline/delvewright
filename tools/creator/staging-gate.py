@@ -213,6 +213,7 @@ import json
 import pathlib
 import re
 import sys
+import zipfile
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 DEFAULT_LEDGER = REPO_ROOT / "docs" / "playtest-findings.json"
@@ -1542,6 +1543,43 @@ def write_admission(
     path.write_text(json.dumps(doc, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
+def pack_statement_refusal(build: pathlib.Path) -> str | None:
+    """spec-0084 §4.3 / §11: every serving script reads `manifest.json`'s
+    `resource_pack_overrides_vanilla` to know what the pack it serves carries,
+    so a build whose manifest does not state it — or states it falsely — is a
+    pack nobody can serve correctly. The statement is held to the zip itself:
+    true exactly when the archive holds an `assets/minecraft/` entry.
+
+    `None` when there is no pack, or the statement is present and true to the
+    archive; otherwise the refusal, naming spec-0084."""
+    pack = build / "resourcepack.zip"
+    if not pack.is_file():
+        return None
+    try:
+        manifest = json.loads((build / "manifest.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError) as e:
+        return f"the build ships resourcepack.zip and its manifest.json cannot be read ({e})"
+    stated = manifest.get("resource_pack_overrides_vanilla")
+    if not isinstance(stated, bool):
+        return (
+            "the build ships resourcepack.zip and manifest.json does not state "
+            "`resource_pack_overrides_vanilla` — every script that serves the pack reads "
+            "it (spec-0084 §4.2); rebuild with an engine that writes it"
+        )
+    try:
+        with zipfile.ZipFile(pack) as z:
+            actual = any(n.startswith("assets/minecraft/") for n in z.namelist())
+    except (OSError, zipfile.BadZipFile) as e:
+        return f"resourcepack.zip is not a readable archive ({e})"
+    if stated != actual:
+        return (
+            f"manifest.json states resource_pack_overrides_vanilla={str(stated).lower()}, "
+            f"and resourcepack.zip {'holds' if actual else 'holds no'} assets/minecraft/ "
+            "entry — the statement every serving script reads is false (spec-0084 §4.2)"
+        )
+    return None
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--campaign", required=True, type=pathlib.Path)
@@ -1595,6 +1633,13 @@ def main() -> int:
     if not args.build.is_dir():
         print(f"staging-gate: no build tree {args.build}", file=sys.stderr)
         return 2
+    pack_refusal = pack_statement_refusal(args.build)
+    if pack_refusal is not None:
+        stale = args.admit or (args.build / ADMISSION_NAME)
+        if stale.is_file():
+            stale.unlink()
+        print(f"staging-gate: REFUSED (spec-0084) — {pack_refusal}", file=sys.stderr)
+        return 1
     for flag, dest in (
         ("--report", args.report),
         ("--json", args.json_out),

@@ -1,0 +1,13 @@
+{
+  "code": "DW0940",
+  "patch": [
+    {
+      "doc": "world.json",
+      "op": "replace",
+      "path": "/content/textures/0/id",
+      "value": "wrong-shape"
+    }
+  ],
+  "units": [],
+  "why": "This edit points the `hall-stone` row at `textures/wrong-shape.png`, a 24×24 image the gallery generator writes, for a block texture vanilla draws at 16×16. A replacement may be vanilla's size or a whole multiple of it, never another proportion: 24 is one and a half times 16, and an atlas sprite of that shape would move its neighbours' cells, which nothing downstream checks. The refusal names the size the file must have."
+}

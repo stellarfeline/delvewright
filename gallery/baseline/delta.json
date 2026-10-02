@@ -1,18 +1,25 @@
 {
   "added": [],
-  "base_commit": "a58fb042a4700d669123ce9cd3bd17faadae2240",
+  "base_commit": "c0f22c512057afa9dfa51ef1f7b9ebd3b2af8985",
   "changed": [
-    "easy.en:render-plan.json",
-    "hard.en:render-plan.json",
-    "ocean-horizon.en:render-plan.json",
-    "primary.en:render-plan.json",
-    "primary.zh-cn:render-plan.json",
-    "site-plan.en:render-plan.json",
-    "valley-site.en:render-plan.json",
-    "void-horizon.en:render-plan.json"
+    "easy.en:SKINS.md",
+    "hard.en:SKINS.md",
+    "ocean-horizon.en:SKINS.md",
+    "primary.en:SKINS.md",
+    "primary.en:resourcepack.zip",
+    "primary.en:server/server.properties",
+    "primary.en:validation/watch-ledger.json",
+    "primary.zh-cn:SKINS.md",
+    "primary.zh-cn:resourcepack.zip",
+    "primary.zh-cn:server/server.properties",
+    "primary.zh-cn:validation/watch-ledger.json",
+    "site-plan.en:SKINS.md",
+    "void-horizon.en:SKINS.md"
   ],
   "classes": {
-    "other": 8
+    "other": 9,
+    "server config": 2,
+    "validation ledger": 2
   },
   "removed": []
 }

@@ -139,6 +139,44 @@ pub struct WorldContent {
     /// proof. Out of `1..=4` is `DW0370`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub min_players: Option<u8>,
+    /// **The vanilla textures this delve replaces** (spec-0084). Each row names
+    /// one texture the pinned client ships and the campaign's own image for it,
+    /// at `textures/<id>.png` in the campaign directory; the build bakes it into
+    /// the resource pack at the vanilla path, so it is drawn wherever the client
+    /// draws that texture — every mob of that kind, the moon over every area —
+    /// for every player who accepted the pack. Absent or empty = vanilla's look.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub textures: Vec<TextureOverride>,
+    /// **Whether a player must accept this delve's resource pack to play it**
+    /// (spec-0084 §11). `true` is emitted as `require-resource-pack=true`: a
+    /// player who declines is disconnected by the server. Absent or `false` =
+    /// the pack is offered and may be declined, in which case the player reads
+    /// English and sees vanilla's textures. A host may still set the server's own
+    /// flip (itzg's `RESOURCE_PACK_ENFORCE`), which is obeyed as given.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub require_resource_pack: bool,
+}
+
+/// One vanilla texture a campaign replaces (spec-0084 §3.1). The row is a
+/// judgement and nothing more: width, height and frame count are read off the
+/// file and the pinned client's census, and the namespace is fixed.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct TextureOverride {
+    /// A bare kebab token, unique among the campaign's textures (`DW0190`). The
+    /// image is `textures/<id>.png` in the campaign directory (`DW0309`), and a
+    /// `textures/<id>.png.mcmeta` beside it ships with it as the animation.
+    pub id: String,
+    /// The texture replaced, as a resource location in the `minecraft`
+    /// namespace without `textures/` and without `.png` — the path vanilla's own
+    /// models and atlases use (e.g. `minecraft:entity/zombie/drowned`,
+    /// `minecraft:environment/celestial/moon/full_moon`). It must name a texture
+    /// the pinned client ships (`DW0939`).
+    pub replaces: String,
+    /// Where the image came from and under what licence (ADR-0013): original
+    /// work (`spdx` and `source` both `original`), or an allowlisted third-party
+    /// image with its `url`, and its `attribution` for CC BY (`DW0741`).
+    pub license: crate::license::LicenseEvidence,
 }
 
 /// Who a granted item goes to (DSL v0.6, spec-0018).

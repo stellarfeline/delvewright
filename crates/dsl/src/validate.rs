@@ -2996,9 +2996,65 @@ fn check_player_state_not_scheduled(
     }
 }
 
+/// spec-0084: the half of a `world.textures[]` row that needs neither the
+/// pinned client's census nor the campaign's files — the id (`DW0190`, the rule
+/// a skin's `texture_id` already has), one row per replaced texture (`DW0939`),
+/// and the licence (`DW0741`). The census half (`DW0939`, `DW0940`) and the file
+/// (`DW0309`) are judged where the files are read, `delvec::compiler::textures`.
+fn texture_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
+    let mut ids: BTreeSet<&str> = BTreeSet::new();
+    let mut replaced: BTreeMap<&str, usize> = BTreeMap::new();
+    for (i, t) in c.world.content.textures.iter().enumerate() {
+        if !is_kebab(&t.id) {
+            d.push(Diagnostic::error(
+                codes::SKIN_INVALID,
+                "world",
+                format!("/content/textures/{i}/id"),
+                format!(
+                    "texture `id` `{}` is malformed — it must be a bare kebab token (e.g. \
+                     `red-moon`), matching the `textures/<id>.png` filename",
+                    t.id
+                ),
+            ));
+        } else if !ids.insert(t.id.as_str()) {
+            d.push(Diagnostic::error(
+                codes::SKIN_INVALID,
+                "world",
+                format!("/content/textures/{i}/id"),
+                format!(
+                    "duplicate texture `id` `{}` — each row names its own image; rename one \
+                     (and its `textures/<id>.png`)",
+                    t.id
+                ),
+            ));
+        }
+        if let Some(first) = replaced.insert(t.replaces.as_str(), i) {
+            d.push(Diagnostic::error(
+                codes::TEXTURE_PATH,
+                "world",
+                format!("/content/textures/{i}/replaces"),
+                format!(
+                    "texture `{}` replaces `{}`, which `world.textures[{first}]` already \
+                     replaces — a texture is drawn one way, so remove one of the two rows",
+                    t.id, t.replaces
+                ),
+            ));
+        }
+        for reason in crate::license::image_license_refusals(&t.license) {
+            d.push(Diagnostic::error(
+                codes::LICENSE_REFUSED,
+                "world",
+                format!("/content/textures/{i}/license"),
+                format!("texture `{}` (replaces `{}`): {reason}", t.id, t.replaces),
+            ));
+        }
+    }
+}
+
 /// Stage-1 `horizon`/`boundary` validation (spec-0013), the party size
-/// (spec-0018) and the declared difficulty.
+/// (spec-0018), the declared difficulty and the declared textures (spec-0084).
 fn world_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
+    texture_checks(c, d);
     // spec-0018: a delve is played by ONE party of 1–4, so a declared
     // mandatory size outside that range can never be honoured.
     if let Some(n) = c.world.content.min_players

@@ -44,6 +44,7 @@ import {
 import { installCrashReporter } from "./crash.ts";
 import { CLIENT_WAIT_TIMEOUT_MS, SERVER_LOAD_TIMEOUT_TICKS } from "./client-loaded.ts";
 import { unreportedWindows } from "./load-window.ts";
+import { judgeResourcePack } from "./resource-pack.ts";
 import {
   assertEntryChoicesOnPath,
   branchTierFromEnv,
@@ -371,6 +372,30 @@ async function main(): Promise<number> {
         (async () => {
           crashStage = "connect";
           await executor.connect();
+          // spec-0084 §11: the pack the server pushed is the pack the build
+          // made, downloaded from where it was pushed — the served pack reaching a
+          // client, measured on every run that names its manifest.
+          if (process.env["DELVEWRIGHT_PACK_VERIFY"] === "1") {
+            const manifestPath = process.env["DELVEWRIGHT_MANIFEST"] ?? "/delve/manifest.json";
+            const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as Record<string, unknown>;
+            const sha1 = manifest["resource_pack_sha1"];
+            const verdict = judgeResourcePack(
+              typeof sha1 === "string" ? sha1 : undefined,
+              executor.resourcePackPushes(),
+            );
+            report.recordResourcePack(verdict);
+            process.stderr.write(
+              `[resource-pack] ${verdict.pushes.length} push(es) against the build's ` +
+                `${verdict.manifestSha1 ?? "no pack"}` +
+                verdict.pushes
+                  .map((p) => ` [${p.url} pushed ${p.hash} downloaded ${p.downloadedSha1 ?? "nothing"}]`)
+                  .join("") +
+                "\n",
+            );
+            if (verdict.failures.length > 0) {
+              throw new Error(`resource pack: ${verdict.failures.join("; ")}`);
+            }
+          }
           // From here the executor is the authority on which stage a crash is in.
           crashStage = "critical-path";
           await runSequence(criticalPath, executor, {

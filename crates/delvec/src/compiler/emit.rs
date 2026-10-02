@@ -2058,11 +2058,26 @@ pub fn build_with_warnings(
     // `fallback` English riding on each component.
     let lang_files = lang_assets(plan, input_bytes, language)?;
     extra_assets.extend(lang_files);
-    let resource_pack_sha1 = if skins.is_empty() && extra_assets.is_empty() {
+    // spec-0084: the vanilla textures this delve replaces, at the vanilla path,
+    // through the one funnel every pack entry takes. Resolved by the same
+    // function `delvec validate` refused with, over the same bytes — which the
+    // loader made build inputs, so the manifest hashes them.
+    let (textures, texture_diags) = crate::compiler::textures::resolve(plan.campaign, |p| {
+        input_bytes.get(p).map(Vec::as_slice)
+    });
+    if let Some(d) = texture_diags.into_iter().next() {
+        return Err(BuildFailure::Diagnostic {
+            code: d.code,
+            message: format!("world.json {}: {}", d.path, d.message),
+        });
+    }
+    extra_assets.extend(crate::compiler::textures::pack_entries(&textures));
+    let resource_pack = if skins.is_empty() && extra_assets.is_empty() {
         None
     } else {
         let zip = crate::compiler::resourcepack::build_pack(skins, &extra_assets);
         let sha1 = crate::compiler::resourcepack::sha1_hex(&zip);
+        let overrides = crate::compiler::textures::overrides_vanilla(extra_assets.keys());
         out.insert("resourcepack.zip".to_string(), zip);
         out.insert(
             "SKINS.md".to_string(),
@@ -2072,10 +2087,12 @@ pub fn build_with_warnings(
                 plan.campaign.world.campaign_id.as_str(),
                 art,
                 &plan.campaign.world.content.languages,
+                &textures,
+                plan.campaign.world.content.require_resource_pack,
             )
             .into_bytes(),
         );
-        Some(sha1)
+        Some((sha1, overrides))
     };
 
     // spec-0025 validation metadata: `branch-plan.json` (the branch set, each
@@ -2243,13 +2260,7 @@ pub fn build_with_warnings(
     }
 
     // ---- manifest (hashes of inputs + all other outputs) ----
-    let manifest = emit_manifest(
-        plan,
-        input_bytes,
-        &out,
-        language,
-        resource_pack_sha1.as_deref(),
-    );
+    let manifest = emit_manifest(plan, input_bytes, &out, language, resource_pack.as_ref());
     put_json(&mut out, "manifest.json", &manifest);
 
     // ---- untranslated-literal scan (DW0185, spec-0029) ----
@@ -2475,18 +2486,35 @@ fn pack_note(
     campaign_id: &str,
     art: bool,
     languages: &[String],
+    textures: &[crate::compiler::textures::Resolved],
+    required: bool,
 ) -> String {
     let mut s = String::new();
     s.push_str("# Delve resource pack\n\n");
     s.push_str(
-        "This delve ships a server resource pack (`resourcepack.zip`). The packaging\n\
-         task serves it and sets the itzg env so vanilla clients receive it:\n\n",
+        "This delve ships a server resource pack (`resourcepack.zip`). It is SERVED by\n\
+         the server and never installed into a player's own `resourcepacks/` folder:\n\
+         a served pack applies while the player is connected and is gone when they\n\
+         leave, so nothing this delve changes follows them into another world. Every\n\
+         server that runs this delve serves it and sets the itzg env:\n\n",
     );
     s.push_str(&format!(
         "- `RESOURCE_PACK` = the URL the delve serves `resourcepack.zip` at\n\
          - `RESOURCE_PACK_SHA1` = `{sha1}`\n\
          - `RESOURCE_PACK_PROMPT` = a JSON text component (not a bare string)\n\n",
     ));
+    if required {
+        s.push_str(
+            "This delve REQUIRES the pack (`require-resource-pack=true` in\n\
+             `server/server.properties`): a player who declines the prompt is\n\
+             disconnected. A host may override that with `RESOURCE_PACK_ENFORCE`.\n\n",
+        );
+    } else {
+        s.push_str(
+            "The pack is offered, not required: a player may decline the prompt. A host\n\
+             who wants it required sets `RESOURCE_PACK_ENFORCE=TRUE`.\n\n",
+        );
+    }
     if !skins.is_empty() {
         // The archive path carries this delve's own texture directory
         // (`dsl::pack_texture_dir`): a client keeps every applied pack's textures in
@@ -2523,6 +2551,48 @@ fn pack_note(
              English too, and the delve is fully playable that way — the pack adds\n\
              the other languages, it is never required to finish the delve.\n",
         );
+    }
+    // spec-0084 §5.3: one line per replaced texture — what was authored, where it
+    // lands, at what scale, under what licence, and where a reviewer sees it.
+    if !textures.is_empty() {
+        if !languages.is_empty() {
+            s.push('\n');
+        }
+        s.push_str("## Textures\n\n");
+        s.push_str(
+            "Vanilla textures this delve replaces, for every player who accepts the pack\n\
+             (a player who declines sees vanilla's). `textures/<id>.png` → the vanilla path:\n\n",
+        );
+        for t in textures {
+            let scale = match t.frames {
+                Some(n) => format!("{}×, {n} frame(s)", t.k),
+                None => format!("{}×", t.k),
+            };
+            let lic = &t.license;
+            let mut licence = format!("licence `{}`, source `{}`", lic.spdx, lic.source);
+            if let Some(u) = &lic.url {
+                licence.push_str(&format!(", {u}"));
+            }
+            if let Some(a) = &lic.attribution {
+                licence.push_str(&format!("; attribution: {a}"));
+            }
+            let shown = if t.is_block() {
+                "shown by Chunky, the viewer and the palette".to_string()
+            } else {
+                "sheet only — no frame this engine renders draws it".to_string()
+            };
+            let still = if t.still {
+                "; *still* — vanilla animates this texture and the row ships no sidecar"
+            } else {
+                ""
+            };
+            s.push_str(&format!(
+                "- `{}` → `{}` ({scale}); {licence}; {shown}; sheet: `delvec textures` writes `{}`{still}\n",
+                t.id,
+                t.pack_path(),
+                crate::compiler::textures::sheet_path(&t.id),
+            ));
+        }
     }
     s
 }
@@ -23079,7 +23149,7 @@ fn emit_server(plan: &Plan, out: &mut BuildOutput) {
     // [`DELVE_VIEW_DISTANCE`] / [`DELVE_SIMULATION_DISTANCE`] carry the reasoning
     // for the two chunk-distance values; `validation/world-settings-entrypoint.sh`
     // derives both from this file, so the image cannot boot a different pair.
-    let props: BTreeMap<&str, String> = BTreeMap::from([
+    let mut props: BTreeMap<&str, String> = BTreeMap::from([
         ("allow-nether", "false".to_string()),
         ("difficulty", difficulty.to_string()),
         ("force-gamemode", "true".to_string()),
@@ -23096,6 +23166,13 @@ fn emit_server(plan: &Plan, out: &mut BuildOutput) {
         ("spawn-protection", "0".to_string()),
         ("view-distance", DELVE_VIEW_DISTANCE.to_string()),
     ]);
+    // spec-0084 §11: a campaign may declare its pack required. Written only when
+    // declared, so every campaign that does not is byte-identical; the delve
+    // image's entrypoint turns it into itzg's `RESOURCE_PACK_ENFORCE`, and the
+    // playtest server copies this file as it stands.
+    if plan.campaign.world.content.require_resource_pack {
+        props.insert("require-resource-pack", "true".to_string());
+    }
     let mut text = String::new();
     text.push_str(&format!(
         "# Generated by delvec for campaign {} (spec-0002 world strategy).\n",
@@ -23553,7 +23630,7 @@ fn emit_manifest(
     input_bytes: &BTreeMap<String, Vec<u8>>,
     out: &BuildOutput,
     language: Option<&str>,
-    resource_pack_sha1: Option<&str>,
+    resource_pack: Option<&(String, bool)>,
 ) -> Value {
     let inputs: BTreeMap<String, String> = input_bytes
         .iter()
@@ -23586,14 +23663,21 @@ fn emit_manifest(
     // Record the NPC-skin resource-pack SHA-1 (spec-0009: the pack bytes — and so
     // this hash — are part of the byte-identity contract). Absent for a campaign
     // with no skinned NPCs, keeping such builds byte-identical.
-    if let Some(sha1) = resource_pack_sha1 {
-        manifest
-            .as_object_mut()
-            .expect("manifest is a JSON object")
-            .insert(
-                "resource_pack_sha1".to_string(),
-                Value::String(sha1.to_string()),
-            );
+    //
+    // Beside it, `resource_pack_overrides_vanilla` (spec-0084 §4.2): whether the
+    // pack carries an `assets/minecraft/` entry. Written once, here, from the
+    // archive paths the pack was built from, and read by every host-side script
+    // — never re-derived from the zip.
+    if let Some((sha1, overrides)) = resource_pack {
+        let m = manifest.as_object_mut().expect("manifest is a JSON object");
+        m.insert(
+            "resource_pack_sha1".to_string(),
+            Value::String(sha1.to_string()),
+        );
+        m.insert(
+            "resource_pack_overrides_vanilla".to_string(),
+            Value::Bool(*overrides),
+        );
     }
     manifest
 }

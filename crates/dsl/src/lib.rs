@@ -40,6 +40,7 @@ pub mod healthbar;
 pub mod ids;
 pub mod l10n;
 pub mod layout;
+pub mod license;
 pub mod mclang;
 pub mod metrics;
 pub mod onkill;
@@ -125,10 +126,10 @@ pub use stages::{
     PlannedQuest, PotionContents, PotionEffect, Prop, Quest, QuestEffect, QuestPlanContent,
     QuestsContent, Relationship, Role, SequenceStep, Shop, ShopOffer, Shortcut, ShotStyle,
     SkinModel, SlotDrop, SoundAt, Stake, StateCompare, StateDecl, StateDisplay, StateScope,
-    StateWrite, StealthZone, TimedGate, Trap, TrapDisarm, TrapEffect, TrapReset, TrapTrigger,
-    Trigger, TriggerAudience, TriggerOn, Verb, Wave, WaveLane, WaveMob, WaveSummon, WorldContent,
-    WorldDifficulty, WorldTime, WorldWeather, enchantment_component, is_potion_bearing_item,
-    offset_cell,
+    StateWrite, StealthZone, TextureOverride, TimedGate, Trap, TrapDisarm, TrapEffect, TrapReset,
+    TrapTrigger, Trigger, TriggerAudience, TriggerOn, Verb, Wave, WaveLane, WaveMob, WaveSummon,
+    WorldContent, WorldDifficulty, WorldTime, WorldWeather, enchantment_component,
+    is_potion_bearing_item, offset_cell,
 };
 pub use stages::{
     BodyRef, BodySite, BodySkinSite, BodyTraversalSite, body_sites, body_skin_sites,
