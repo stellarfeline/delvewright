@@ -185,7 +185,7 @@ where it stands, and the moon's phase: *a new moon just above the horizon* is
 names, kebab-cased (`full-moon`, `waning-gibbous`, `third-quarter`,
 `waning-crescent`, `new-moon`, `waxing-crescent`, `first-quarter`,
 `waxing-gibbous`). On `world.time`, `phase` is required wherever the moon is up
-and refused wherever it is down (`DW0931` names which); a `set-time`, a design
+and refused wherever it is down (`delvec validate` names which, and why); a `set-time`, a design
 row or a camera that leaves it out takes the world's. The engine computes the
 tick count, day included, and every build prints a `clock:` line per stated time
 saying where the sun and moon stand and which phase shows — read it. `weather`

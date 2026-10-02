@@ -211,7 +211,15 @@ obs.steps.push({ step: "baseline (frozen cycle)", clock: await clock() });
 }
 
 obs.all_packets = packets;
-writeFileSync(OUT, JSON.stringify(obs, null, 2) + "\n");
+// Canonical at the writer (`delvec fmt`'s form: keys sorted, two-space indent),
+// so the committed observations pass the canonical-form sweep as written.
+const canon = (v) =>
+  Array.isArray(v)
+    ? v.map(canon)
+    : v && typeof v === "object"
+      ? Object.fromEntries(Object.keys(v).sort().map((k) => [k, canon(v[k])]))
+      : v;
+writeFileSync(OUT, JSON.stringify(canon(obs), null, 2) + "\n");
 console.log(`[spike] ${obs.steps.length} steps, ${packets.length} update_time packets -> ${OUT}`);
 bot.quit();
 process.exit(0);
