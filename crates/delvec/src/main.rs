@@ -858,6 +858,15 @@ fn validate_loaded(
             diags.extend(delvec::compiler::gates::check_close_gates(
                 &campaign, &prefabs,
             ));
+            // spec-0083 §3.5: a `teleport` that fires while its root's cutscene
+            // is still playing is undone by `cs_end` (DW0933); and §7: the
+            // layout graph's `carry` edges and the campaign's links agree
+            // (DW0934). Both are read off the documents alone, so they are
+            // refused at validation, where the fault is entered.
+            diags.extend(delvec::compiler::link::check_teleport_under_cutscene(
+                &campaign,
+            ));
+            diags.extend(delvec::compiler::link::check_carry_realised(&campaign));
             // v0.8 seal answers (DW0423): one gate anchor, one `sealed_hint`
             // wording. No-op for a campaign that authors none.
             diags.extend(delvec::compiler::gates::check_seal_hints(&campaign));

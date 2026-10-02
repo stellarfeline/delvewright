@@ -797,7 +797,14 @@ pub fn check_reach_footprint(
     // empty population would make every green here vacuous. `standing_population`
     // says so with a zero binding rather than by passing quietly, and it is the
     // same population `DW0850` judges against.
-    let standing = standing_population(world, entry);
+    // Rooted where the party CERTAINLY stands (spec-0083 §3.8): the walk from
+    // the entry, from every checkpoint seat, from every crossing's entry point
+    // and from every link's `to` — so an anchor in an area only a carry reaches
+    // is judged too.
+    let standing = match entry {
+        Some(_) => world.reachable_walkable(&crate::compiler::lethal::stands_at_roots(plan, entry)),
+        None => BTreeSet::new(),
+    };
     let mut binding = ReachFootprintBinding {
         standing: standing.len(),
         ..ReachFootprintBinding::default()

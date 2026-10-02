@@ -130,6 +130,7 @@ pub mod horizon;
 pub mod integrity;
 pub mod lethal;
 pub mod light;
+pub mod link;
 pub mod load;
 pub mod loot;
 pub mod mark;

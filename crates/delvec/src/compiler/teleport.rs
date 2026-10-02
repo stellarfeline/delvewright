@@ -135,6 +135,16 @@ pub struct TeleportGate {
     /// compile-time-only green over a runtime mechanism is the vacuity this
     /// number exists to make visible. Filled by the emitter.
     pub packtests: usize,
+    /// Of the resolved teleports, the **links** (spec-0083 §3.1): hosted in a
+    /// repeatable trigger, carrying a body within one area — the carries the
+    /// route proof may take. Counted from the triggers.
+    pub links: usize,
+    /// Of the resolved teleports, the **gathers** — every other one. `links +
+    /// gathers = resolved`.
+    pub gathers: usize,
+    /// Critical-path legs a link carries on this build. Filled by the emitter
+    /// from `DW0311`'s binding.
+    pub legs_carried: usize,
 }
 
 impl TeleportGate {
@@ -146,7 +156,13 @@ impl TeleportGate {
     /// The ledger as the `validation/teleport-gate.json` artifact.
     pub fn to_json(&self) -> serde_json::Value {
         serde_json::json!({
-            "teleports": { "declared": self.declared, "resolved": self.resolved },
+            "teleports": {
+                "declared": self.declared,
+                "resolved": self.resolved,
+                "links": self.links,
+                "gathers": self.gathers,
+            },
+            "legs_carried": self.legs_carried,
             "cells": self.cells,
             "affordances_examined": self.affordances,
             "packtest_templates": self.packtests,
@@ -219,6 +235,9 @@ pub fn check_bound_affordances(plan: &Plan) -> Result<TeleportGate, Failure> {
         cells: vols.iter().map(Volume::cells).sum(),
         affordances: 0,
         packtests: 0,
+        links: plan.links.len(),
+        gathers: plan.gathers.len(),
+        legs_carried: 0,
     };
     if vols.is_empty() {
         return Ok(gate);
