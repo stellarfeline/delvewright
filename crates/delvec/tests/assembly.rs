@@ -680,3 +680,22 @@ fn the_binding_line_is_printed_on_every_build() {
         "{err}"
     );
 }
+
+/// The press ledger (`DW0426`'s artifact) records a `strike-assembly` as a
+/// press resolved to the assembly's hitbox, so the strike is counted where
+/// every other click is.
+#[test]
+fn the_press_ledger_records_the_strike_on_the_hitbox() {
+    let out = build_fixture();
+    let v: Value =
+        serde_json::from_slice(out.get("validation/press-bodies.json").unwrap()).unwrap();
+    assert_eq!(v["examined"], 1, "{v:#}");
+    assert_eq!(v["presses"][0]["trigger"], "trigger/limb-struck");
+    assert!(
+        v["presses"][0]["body"]
+            .as_str()
+            .unwrap()
+            .contains("rides assembly `assembly/limb`'s hitbox, 1 x 2 standing on [5, 65, 8]"),
+        "{v:#}"
+    );
+}

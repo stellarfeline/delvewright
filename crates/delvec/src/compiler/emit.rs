@@ -11906,6 +11906,28 @@ fn check_trigger_bodies(
         if matches!(t.on, TriggerOn::Approach { .. }) {
             continue;
         }
+        // A `strike-assembly` (spec-0082) lands on the assembly's own hitbox.
+        // An assembly with none is `DW0936`, and one out of reach `DW0937`;
+        // what is recorded here is the body the press resolved to.
+        if let Some(a) = t.on.assembly_target() {
+            let placed = crate::compiler::assembly::placed(plan);
+            if let Some(p) = placed.iter().find(|p| p.decl.id == *a)
+                && let Some(h) = &p.decl.hitbox
+            {
+                ledger.push(
+                    t.id.as_str(),
+                    t.on.kind(),
+                    &p.decl.at.display(),
+                    &format!(
+                        "rides assembly `{a}`'s hitbox, {} x {} standing on {:?}",
+                        h.width,
+                        h.height,
+                        p.hitbox_cell()
+                    ),
+                );
+            }
+            continue;
+        }
         let Some(at) = t.at_anchor() else {
             continue;
         };

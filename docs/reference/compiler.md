@@ -2640,7 +2640,9 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   proof resolved a body for — `trigger`, `click`, `anchor`, and WHICH body it
   landed on (riding a `close-gate` seal's hitboxes, riding a shortcut door's,
   riding an NPC's dialogue hitbox, arming a region's clickable shell, or a point
-  in open air) — plus `examined`, `unbound` and, exactly when unbound, a
+  in open air; a `strike-assembly` is recorded as riding the assembly's hitbox,
+  with its size and cell, the `anchor` column then naming the assembly's mark,
+  spec-0082) — plus `examined`, `unbound` and, exactly when unbound, a
   `reason`. `DW0426` is error-tier, so a build that ships proves no press lands
   on nothing; that sentence is equally true of a campaign that arms no press at
   all, and only the count tells the two apart.
