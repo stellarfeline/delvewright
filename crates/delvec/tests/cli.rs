@@ -2398,6 +2398,75 @@ fn l10n_inventory_carries_speakers_and_existing_translations() {
         assert!(e.get("existing").is_none(), "{}", e["key"]);
     }
 }
+/// Every row carries the kind of text it is and, where the documents hold any,
+/// the situation it is said in — the intent a transcreator writes from
+/// (`tools/creator/i18n-translate.py`). Bound over the gallery, which declares one
+/// instance of every surface: a key the scheme grows that [`key_kind`] does not
+/// know is a `null` kind here, and a dialogue option that loses the NPC line it
+/// answers is a missing situation.
+#[test]
+fn l10n_inventory_rows_carry_kind_and_situation() {
+    let gallery = common::repo_root().join("gallery");
+    let doc = inventory_doc(&gallery, "zh-cn");
+    let entries = doc["entries"].as_array().unwrap();
+    assert!(!entries.is_empty());
+    let mut kinds = BTreeSet::new();
+    let mut situated = 0;
+    for e in entries {
+        let key = e["key"].as_str().unwrap();
+        let kind = e["kind"]
+            .as_str()
+            .unwrap_or_else(|| panic!("{key}: no kind — key_kind does not know this key"));
+        kinds.insert(kind.to_string());
+        if let Some(lines) = e["situation"].as_array() {
+            assert!(!lines.is_empty(), "{key}: an empty situation is omitted");
+            situated += 1;
+        }
+        if kind == "option-label" && key.starts_with("dlg.") {
+            let lines = e["situation"].as_array().expect("an option answers a line");
+            assert!(
+                lines
+                    .iter()
+                    .any(|l| l.as_str().unwrap().starts_with("Answers the NPC line: ")),
+                "{key}: {lines:?}"
+            );
+        }
+    }
+    eprintln!(
+        "kind bound on {} of {} rows; situation on {situated}",
+        entries.len(),
+        entries.len()
+    );
+    assert!(situated > 0);
+    for k in ["dialogue", "option-label", "objective", "narration", "name"] {
+        assert!(kinds.contains(k), "gallery binds no `{k}` row: {kinds:?}");
+    }
+}
+
+/// A row whose recorded `source` differs from the English it reads now is
+/// `stale` — the `DW0187` condition — so a translating tool redoes it instead of
+/// re-recording the new English against the old translation.
+#[test]
+fn l10n_inventory_marks_stale_rows() {
+    let dir = tmp("inventory-stale");
+    common::copy_dir_all(&common::keep_trial_dir(), &dir);
+    let doc = inventory_doc(&dir, "zh-cn");
+    let key = doc["entries"][0]["key"].as_str().unwrap().to_string();
+    let sidecar = dir.join("l10n").join("zh-cn.json");
+    common::patch_file(&sidecar, |v| {
+        v["source"][&key] = serde_json::json!("An English line nobody wrote.");
+    });
+    let doc = inventory_doc(&dir, "zh-cn");
+    let stale: Vec<&str> = doc["entries"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|e| e["stale"] == true)
+        .map(|e| e["key"].as_str().unwrap())
+        .collect();
+    assert_eq!(stale, vec![key.as_str()]);
+}
+
 /// A warning-tier diagnostic (`DW0330`) is **reported but does not fail the run**:
 /// `delvec` exits non-zero only on `Severity::Error`. This exit-code contract is what
 /// makes an advisory rule possible at all — without it a warning would be an error

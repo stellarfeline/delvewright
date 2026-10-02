@@ -1081,16 +1081,23 @@ fn run_analyze(campaign_dir: &Path, prefabs_dir: &Path, json: bool) -> ExitCode 
 }
 
 /// One `l10n-inventory` row: an inventory key, its canonical English source, the
-/// NPC whose voice it is (when the key scheme names one), and the translation the
-/// current sidecar already carries (absent = untranslated).
+/// kind of text it is, the NPC whose voice it is (when the key scheme names one),
+/// the situation it is said in, the translation the current sidecar already
+/// carries (absent = untranslated), and whether that translation was made from
+/// different English than the line reads now (`stale`, the `DW0187` condition).
 #[derive(serde::Serialize)]
 struct InventoryEntry<'a> {
     key: &'a str,
     en: &'a str,
+    kind: Option<delvewright_dsl::TextKind>,
     #[serde(skip_serializing_if = "Option::is_none")]
     speaker: Option<&'a str>,
+    #[serde(skip_serializing_if = "<[String]>::is_empty")]
+    situation: &'a [String],
     #[serde(skip_serializing_if = "Option::is_none")]
     existing: Option<&'a str>,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    stale: bool,
 }
 
 /// The persona context a translator needs to keep a character's voice: who they
@@ -1140,15 +1147,26 @@ fn run_l10n_inventory(campaign_dir: &Path, lang: &str, json: bool) -> ExitCode {
         .get(lang)
         .and_then(|b| serde_json::from_slice::<delvewright_dsl::L10nDoc>(b).ok());
     let existing = sidecar.as_ref().map(|d| &d.content);
+    let recorded = sidecar.as_ref().map(|d| &d.source);
 
     let inv = delvewright_dsl::l10n_inventory(&campaign);
+    let situations = delvewright_dsl::key_situations(&campaign);
     let entries: Vec<InventoryEntry<'_>> = inv
         .iter()
-        .map(|(key, en)| InventoryEntry {
-            key,
-            en,
-            speaker: delvewright_dsl::key_speaker(key),
-            existing: existing.and_then(|m| m.get(key)).map(String::as_str),
+        .map(|(key, en)| {
+            let existing = existing.and_then(|m| m.get(key)).map(String::as_str);
+            InventoryEntry {
+                key,
+                en,
+                kind: delvewright_dsl::key_kind(key),
+                speaker: delvewright_dsl::key_speaker(key),
+                situation: situations.get(key).map(Vec::as_slice).unwrap_or(&[]),
+                existing,
+                stale: existing.is_some()
+                    && recorded
+                        .and_then(|m| m.get(key))
+                        .is_some_and(|was| was != en),
+            }
         })
         .collect();
     let npcs: Vec<NpcContext<'_>> = campaign

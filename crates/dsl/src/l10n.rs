@@ -593,6 +593,345 @@ pub fn key_speaker(key: &str) -> Option<&str> {
     }
 }
 
+/// What kind of player-facing text an inventory key holds — the class a writer
+/// (or a transcreating model) needs before the English, because each class has
+/// its own job (`docs/reference/game-writing.md` §1–§2).
+///
+/// Derived from the key alone, beside [`key_speaker`] and the traversal that
+/// defines the key scheme ([`each_string`]); a CLI test asserts every key of a
+/// real campaign's inventory resolves to a kind, so a key the scheme grows that
+/// this function does not know is a red test rather than an unlabelled row.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum TextKind {
+    /// A proper name on a body, place, class, counter or the world itself.
+    Name,
+    /// A heading: a health bar's or shop dialog's title, the world title.
+    Title,
+    /// A class blurb: what the role is.
+    Description,
+    /// An objective title or hint, or a quest goal: tells the player what to do.
+    Objective,
+    /// A message shown when an action fails: says what is wrong and what fixes it.
+    Refusal,
+    /// An NPC's line in a dialogue tree.
+    Dialogue,
+    /// An NPC's murmured line in passing (a cast bark).
+    Bark,
+    /// The caption on a fixed-width button: the player's own words.
+    OptionLabel,
+    /// The hover text of a dialogue button: the consequence of choosing it.
+    ButtonTooltip,
+    /// An item's display name.
+    ItemName,
+    /// The hover text of a shop offer: what the item does.
+    ItemTooltip,
+    /// A dialog's prompt (a bonfire's rest question).
+    Prompt,
+    /// Narration in chat, on screen or on the action bar.
+    Narration,
+}
+
+/// The [`TextKind`] of an inventory key, or `None` for a key the scheme does not
+/// define. Pure on the key, like [`key_speaker`].
+pub fn key_kind(key: &str) -> Option<TextKind> {
+    use TextKind::*;
+    let segs: Vec<&str> = key.split('.').collect();
+    let first = *segs.first()?;
+    let last = *segs.last()?;
+    let n = segs.len();
+    Some(match first {
+        "world" => match key {
+            "world.title" => Title,
+            "world.boundary.message" => Refusal,
+            "world.outro" => Narration,
+            _ => return None,
+        },
+        "area" | "npc" | "state" if n == 3 && last == "name" => Name,
+        "class" => match (n, last) {
+            (3, "name") => Name,
+            (3, "blurb") => Description,
+            (5, "name") if segs[2] == "kit" => ItemName,
+            _ => return None,
+        },
+        "quest" if n == 3 && last == "goal" => Objective,
+        "obj" if n == 4 => match last {
+            "title" | "hint" => Objective,
+            "missing_item_hint" => Refusal,
+            "item_name" => ItemName,
+            _ => return None,
+        },
+        "cast" if n == 6 && segs[4] == "bark" => Bark,
+        "dlg" => match (n, last) {
+            (4, "text") => Dialogue,
+            (6, "label") if segs[3] == "opt" => OptionLabel,
+            (6, "tooltip") if segs[3] == "opt" => ButtonTooltip,
+            _ => return None,
+        },
+        "wave" | "actor" => match last {
+            "name" if segs.contains(&"drop") => ItemName,
+            "name" => Name,
+            "title" if segs[n - 2] == "health_bar" => Title,
+            _ => return None,
+        },
+        "loot" if n == 5 && last == "name" => ItemName,
+        "lethal" if n == 3 && last == "message" => Narration,
+        "stake" if n == 3 && last == "collected" => Narration,
+        "shop" => match (n, last) {
+            (3, "title") => Title,
+            (5, "label") => OptionLabel,
+            (5, "tooltip") => ItemTooltip,
+            _ => return None,
+        },
+        "fx" => match last {
+            "narrate" => Narration,
+            "give" => ItemName,
+            "rest_prompt" => Prompt,
+            "rest_label" | "save_label" => OptionLabel,
+            "sealed_hint" => Refusal,
+            _ => return None,
+        },
+        _ => return None,
+    })
+}
+
+/// The situation each inventory key is said in: the lines of campaign context a
+/// writer needs to write it from its intent rather than from its words — the
+/// quest it belongs to, the objective, what the beat does to the story (its
+/// `happening`), what the speaker is doing, the NPC line an option answers.
+///
+/// A procedural derivation from the stage documents, keyed exactly like
+/// [`inventory`]; a key with nothing to add maps to an empty list. Consumed by
+/// `delvec l10n-inventory`, which hands it to a transcreator beside the English
+/// (`tools/creator/i18n-translate.py`). Authoring context the player never sees
+/// (`happening.text`, a cast placement's `doing`) is exactly what this carries.
+pub fn key_situations(c: &Campaign) -> BTreeMap<String, Vec<String>> {
+    let goals: BTreeMap<&str, &str> = c
+        .quest_plan
+        .content
+        .quests
+        .iter()
+        .map(|q| (local(q.id.as_str()), q.goal.as_str()))
+        .collect();
+    let quests: BTreeMap<&str, &crate::stages::Quest> = c
+        .quests
+        .content
+        .quests
+        .iter()
+        .map(|q| (local(q.id.as_str()), q))
+        .collect();
+    let npc_names: BTreeMap<&str, &str> = c
+        .npcs
+        .content
+        .npcs
+        .iter()
+        .map(|n| (local(n.id.as_str()), n.name.as_str()))
+        .collect();
+    let mut nodes: BTreeMap<(&str, &str), &crate::stages::DialogueNode> = BTreeMap::new();
+    for tree in &c.dialogue.content.dialogues {
+        for node in &tree.nodes {
+            nodes.insert((local(tree.npc.as_str()), local(node.id.as_str())), node);
+        }
+    }
+    let shops: BTreeMap<&str, &crate::stages::Shop> = c
+        .quests
+        .content
+        .shops
+        .iter()
+        .map(|s| (local(s.id.as_str()), s))
+        .collect();
+    let mut beats: BTreeMap<String, &str> = BTreeMap::new();
+    each_effect_ref(c, &mut |_stage, _path, keybase, eff| {
+        if let Some(h) = &eff.happening {
+            beats.insert(keybase.to_string(), h.text.as_str());
+        }
+    });
+
+    let objective = |q: &str, o: &str| {
+        quests
+            .get(q)
+            .and_then(|q| q.objectives.iter().find(|x| local(x.id().as_str()) == o))
+    };
+    let quest_lines = |q: &str, out: &mut Vec<String>, own_goal: bool| {
+        if !own_goal && let Some(g) = goals.get(q) {
+            out.push(format!("Quest: {g}"));
+        }
+        if let Some(h) = quests.get(q).and_then(|x| x.happening.as_ref()) {
+            out.push(format!("What the quest does to the story: {}", h.text));
+        }
+    };
+    let option_lines = |np: &str, nd: &str, oi: &str, out: &mut Vec<String>, own: &str| {
+        let Some(node) = nodes.get(&(np, nd)) else {
+            return;
+        };
+        out.push(format!("Answers the NPC line: {}", node.text));
+        let Some(opt) = oi.parse::<usize>().ok().and_then(|i| node.options.get(i)) else {
+            return;
+        };
+        if own != "label" {
+            out.push(format!("Caption on the button: {}", opt.label));
+        }
+        if own == "label"
+            && let Some(t) = &opt.tooltip
+        {
+            out.push(format!("Full line in the tooltip: {t}"));
+        }
+        if let Some(h) = &opt.happening {
+            out.push(format!("Choosing it: {}", h.text));
+        }
+    };
+
+    let mut out = BTreeMap::new();
+    for key in inventory(c).into_keys() {
+        let segs: Vec<&str> = key.split('.').collect();
+        let mut lines: Vec<String> = Vec::new();
+        match segs.as_slice() {
+            ["world", "boundary", "message"] => {
+                lines.push("Shown when a player walks past the edge of the map.".into())
+            }
+            ["world", "outro"] => {
+                lines.push("The closing line, shown when the delve is complete.".into())
+            }
+            ["class", cl, "blurb"] | ["class", cl, "kit", _, "name"] => {
+                if let Some(class) = c
+                    .classes
+                    .content
+                    .classes
+                    .iter()
+                    .find(|x| local(x.id.as_str()) == *cl)
+                {
+                    lines.push(format!("Class: {}", class.name));
+                }
+            }
+            ["quest", q, "goal"] => quest_lines(q, &mut lines, true),
+            ["obj", q, o, field] => {
+                quest_lines(q, &mut lines, false);
+                if let Some(obj) = objective(q, o) {
+                    if *field != "title"
+                        && let Some(t) = obj.title()
+                    {
+                        lines.push(format!("Objective: {t}"));
+                    }
+                    if *field != "hint"
+                        && let Some(h) = obj.hint()
+                    {
+                        lines.push(format!("Objective hint: {h}"));
+                    }
+                    if let Some(h) = obj.happening() {
+                        lines.push(format!("Completing it: {}", h.text));
+                    }
+                }
+            }
+            ["cast", q, np, b, "bark", _] => {
+                quest_lines(q, &mut lines, false);
+                let doing = quests
+                    .get(q)
+                    .and_then(|x| {
+                        x.cast
+                            .iter()
+                            .find(|(id, _)| local(id.as_str()) == *np)
+                            .map(|(_, e)| e)
+                    })
+                    .and_then(|e| {
+                        b.parse::<usize>()
+                            .ok()
+                            .and_then(|i| e.placements().get(i).copied())
+                    })
+                    .and_then(|p| p.doing.as_deref());
+                if let Some(d) = doing {
+                    let who = npc_names.get(np).copied().unwrap_or(np);
+                    lines.push(format!("{who}, during this quest: {d}"));
+                }
+            }
+            ["dlg", np, nd, "text"] => {
+                if let Some(node) = nodes.get(&(*np, *nd))
+                    && !node.options.is_empty()
+                {
+                    let labels: Vec<&str> = node.options.iter().map(|o| o.label.as_str()).collect();
+                    lines.push(format!("The player can answer: {}", labels.join(" / ")));
+                }
+            }
+            ["dlg", np, nd, "opt", oi, field] => option_lines(np, nd, oi, &mut lines, field),
+            ["lethal", _, "message"] => {
+                lines.push("Shown to a player as this hazard kills them.".into())
+            }
+            ["stake", _, "collected"] => {
+                lines.push("Shown when a player picks up what they dropped at death.".into())
+            }
+            ["shop", h, rest @ ..] => {
+                if let Some(shop) = shops.get(h) {
+                    if rest != ["title"] {
+                        lines.push(format!("Shop: {}", shop.title));
+                    }
+                    if let [_, i, "tooltip"] = rest
+                        && let Some(off) = i.parse::<usize>().ok().and_then(|i| shop.offers.get(i))
+                    {
+                        lines.push(format!("Caption on the button: {}", off.label));
+                    }
+                }
+            }
+            ["fx", rest @ ..] => {
+                match rest {
+                    ["trig", ..] => lines.push("Fires from a trigger placed in the world.".into()),
+                    ["trap", ..] => lines.push("Fires from a trap.".into()),
+                    ["sc", ..] => lines.push("Fires when a shortcut opens.".into()),
+                    ["death", ..] => lines.push("Fires when a player dies.".into()),
+                    ["dlg", np, nd, oi, ..] => {
+                        if let Some(opt) = nodes
+                            .get(&(*np, *nd))
+                            .and_then(|n| oi.parse::<usize>().ok().and_then(|i| n.options.get(i)))
+                        {
+                            lines.push(format!("Fires after the player chooses: {}", opt.label));
+                        }
+                    }
+                    ["shop", h, oi, ..] => {
+                        if let Some(shop) = shops.get(h)
+                            && let Some(off) =
+                                oi.parse::<usize>().ok().and_then(|i| shop.offers.get(i))
+                        {
+                            lines.push(format!(
+                                "Fires after buying: {} (shop: {})",
+                                off.label, shop.title
+                            ));
+                        }
+                    }
+                    [q, "oc", o, ..] => {
+                        quest_lines(q, &mut lines, false);
+                        if let Some(obj) = objective(q, o) {
+                            let name = obj.title().unwrap_or(o);
+                            lines.push(format!("Fires when this objective is done: {name}"));
+                            if let Some(h) = obj.happening() {
+                                lines.push(format!("Completing it: {}", h.text));
+                            }
+                        }
+                    }
+                    [q, "done", ..] => {
+                        quest_lines(q, &mut lines, false);
+                        lines.push("Fires when the quest completes.".into());
+                    }
+                    _ => {}
+                }
+                // The nearest enclosing effect that states a beat: the effect
+                // holding this string, else the sequence or bundle around it.
+                let mut base: &str = key.rsplit_once('.').map(|(b, _)| b).unwrap_or(&key);
+                loop {
+                    if let Some(text) = beats.get(base) {
+                        lines.push(format!("This beat: {text}"));
+                        break;
+                    }
+                    match base.rsplit_once('.') {
+                        Some((up, _)) => base = up,
+                        None => break,
+                    }
+                }
+            }
+            _ => {}
+        }
+        out.insert(key, lines);
+    }
+    out
+}
+
 /// One `narrate` `art` occurrence (DSL v0.6, spec-0014): its stage-doc path (for
 /// diagnostics), its l10n inventory key, and the canonical English text.
 #[derive(Clone, Debug, PartialEq, Eq)]
