@@ -10,6 +10,7 @@ import type { AssertCompleteStep } from "../src/critical-path.ts";
 import {
   SUPPORTED_DEATH_PLAN_FORMAT,
   lethalTrialFailures,
+  openLethalTrial,
   parseDeathPlan,
 } from "../src/death-loop.ts";
 
@@ -4566,3 +4567,221 @@ test("a run-back is met along the leg's own proven cells, and the leg resumes fr
   );
 });
 
+
+// --- the death loop's approach meets a re-seated wave the way the path does ---
+
+/** The death loop's approach to `lethal/undertide`'s lip, as the stage walks it. */
+function approachOf(
+  executor: MineflayerExecutor,
+): (volume: string, lip: readonly [number, number, number]) => Promise<unknown> {
+  const walk = (
+    executor as unknown as {
+      walkPastReseated: (
+        label: string,
+        dest: readonly [number, number, number] | undefined,
+        destName: string,
+      ) => Promise<{ kind: string; why: string } | undefined>;
+    }
+  ).walkPastReseated.bind(executor);
+  return (volume, lip) => walk(`death-loop approach to ${volume}`, lip, "the near lip");
+}
+
+test("the death-loop approach reads and stages away a wave the delve put back, before it walks", async () => {
+  // vesperhold: the die-retry deaths re-seat `wave/unremembered-guard`, and the
+  // approach from [86,84,38] to `lethal/undertide`'s lip walked into it and was
+  // killed on both runs that measured it. The fake walk dies to any wave body
+  // standing when it starts — so a walk that does not first meet the wave the way
+  // the critical path does (muster, then the staged clear) dies here.
+  const bot = new CombatFakeBot();
+  bot.seat(2);
+  const executor = attach(bot);
+  executor.useCampaign("the-drowned-bell");
+  executor.useCombatPlan(combatPlan(2, true), false);
+  await executor.kill({ ...KILL_STEP, count: 2 });
+  assert.deepEqual(bot.waveIds(), [], "the critical path cleared the wave");
+
+  // A respawn puts it back: the second `spawn` is a death-respawn, which fires the
+  // rest's hooks and re-seats every `respawns_on_rest` wave.
+  bot.seat(2);
+  bot.emit("spawn");
+  bot.emit("spawn");
+  const reseated = bot.waveIds();
+  assert.equal(reseated.length, 2);
+
+  bot.moveOnGoto = true;
+  const walk = bot.pathfinder.goto;
+  let walkedPast = 0;
+  bot.pathfinder.goto = async (goal?: { x?: number; y?: number; z?: number }): Promise<void> => {
+    if (bot.waveIds().length > 0) {
+      bot.emit("messagestr", "delve-bot was slain by Unremembered Guard");
+      bot.emit("death");
+      throw new Error("Path was stopped before it could be completed!");
+    }
+    walkedPast += 1;
+    await walk(goal);
+  };
+  const strikesBefore = functionsCalled(bot).filter((f) => f.startsWith("wave_strike_")).length;
+  const approach = approachOf(executor);
+  const fault = await approach("lethal/undertide", [31, 68, 78]);
+
+  assert.equal(fault, undefined, JSON.stringify(fault));
+  assert.equal(executor.deathDiagnostic(), undefined, "the approach did not die");
+  assert.ok(walkedPast > 0, "and it walked, with the wave gone");
+  assert.deepEqual(bot.waveIds(), [], "the re-seated wave was staged away");
+  assert.equal(
+    functionsCalled(bot).filter((f) => f.startsWith("wave_strike_")).length - strikesBefore,
+    2,
+    "one attributed blow per re-seated body — the critical path's own staged clear",
+  );
+  assert.equal(
+    functionsCalled(bot).filter((f) => f.startsWith("wave_muster_")).length,
+    2,
+    "the new seating was read before it was removed",
+  );
+});
+
+test("a respawn that put nothing back is not read as a seating on the approach", async () => {
+  // The gallery's death loop respawns at `anchor/lectern`, a checkpoint that is no
+  // fire, so nothing re-seats; a muster taken there read 0 of 3 and filed the
+  // wave's declaration as unverified.
+  const bot = new CombatFakeBot();
+  bot.seat(2);
+  const executor = attach(bot);
+  executor.useCampaign("the-drowned-bell");
+  executor.useCombatPlan(combatPlan(2, true), false);
+  await executor.kill({ ...KILL_STEP, count: 2 });
+  bot.emit("spawn");
+  bot.emit("spawn");
+  bot.moveOnGoto = true;
+  const musters = functionsCalled(bot).filter((f) => f.startsWith("wave_muster_")).length;
+  const approach = approachOf(executor);
+  assert.equal(await approach("lethal/undertide", [31, 68, 78]), undefined);
+  assert.equal(
+    functionsCalled(bot).filter((f) => f.startsWith("wave_muster_")).length,
+    musters,
+    "no muster of a seating the census says is empty",
+  );
+  assert.ok(
+    functionsCalled(bot).some((f) => f.startsWith("wave_census_")),
+    "the census was asked",
+  );
+});
+
+test("the death-loop walk back stages away a wave the death put back, before it walks", async () => {
+  // vesperhold: the trial's own death respawns the bot at `anchor/throne-fire` and
+  // re-seats the Guard and the choir; the walk back to the stake met them as a
+  // bare body and was hit to 6.3 health. The fake walk dies to any standing wave
+  // body, so a walk back that does not meet the wave first dies here.
+  const bot = new CombatFakeBot();
+  bot.seat(2);
+  const executor = attach(bot);
+  executor.useCampaign("the-drowned-bell");
+  executor.useCombatPlan(combatPlan(2, true), false);
+  await executor.kill({ ...KILL_STEP, count: 2 });
+  bot.seat(2);
+  bot.emit("spawn");
+  bot.emit("spawn");
+  bot.moveOnGoto = true;
+  const walk = bot.pathfinder.goto;
+  bot.pathfinder.goto = async (goal?: { x?: number; y?: number; z?: number }): Promise<void> => {
+    if (bot.waveIds().length > 0) {
+      bot.emit("messagestr", "delve-bot was slain by Unremembered Guard");
+      bot.emit("death");
+      throw new Error("Path was stopped before it could be completed!");
+    }
+    await walk(goal);
+  };
+  const trial = openLethalTrial(
+    {
+      id: "lethal/undertide",
+      region: { lo: [35, 58, 79], hi: [37, 60, 81] },
+      keepOut: { lo: [34, 58, 78], hi: [38, 60, 82] },
+      message: "The undertide took you.",
+      messageKey: undefined,
+      damageType: "minecraft:drown",
+    },
+    [37, 60, 79],
+    [],
+  );
+  const walkBack = (
+    executor as unknown as {
+      walkBackToStake: (
+        plan: unknown,
+        volume: string,
+        trial: unknown,
+        anchor: readonly [number, number, number],
+      ) => Promise<boolean>;
+    }
+  ).walkBackToStake.bind(executor);
+  const arrived = await walkBack({ stakes: [] }, "lethal/undertide", trial, [31, 68, 78]);
+
+  assert.equal(executor.deathDiagnostic(), undefined, "the walk back did not die");
+  assert.equal(arrived, true, trial.walkBackFailure);
+  assert.equal(trial.walkedBack, true);
+  assert.equal(trial.walkBackFailure, undefined);
+  assert.deepEqual(bot.waveIds(), [], "the re-seated wave was staged away");
+});
+
+test("the bounties a staged clear pays into a wagered purse are taken back before the walk", async () => {
+  // vesperhold: the walk back's six re-seated waves paid 26 tallow into the purse
+  // the death had emptied, and the collection read `0 → 36` for a stake of 10.
+  const bot = new CombatFakeBot();
+  const executor = attach(bot);
+  const scores = (executor as unknown as { scores: Map<string, Map<string, number>> }).scores;
+  scores.set("dw.s_tallow", new Map([["delve-bot", 26]]));
+  const chat = bot.chat.bind(bot);
+  bot.chat = (message: string): void => {
+    chat(message);
+    const set = /^\/scoreboard players set @s (\S+) (-?\d+)$/.exec(message);
+    if (set) scores.get(set[1]!)!.set("delve-bot", Number(set[2]));
+  };
+  const trial = openLethalTrial(
+    {
+      id: "lethal/undertide",
+      region: { lo: [35, 58, 79], hi: [37, 60, 81] },
+      keepOut: { lo: [34, 58, 78], hi: [38, 60, 82] },
+      message: "The undertide took you.",
+      messageKey: undefined,
+      damageType: "minecraft:drown",
+    },
+    [37, 60, 79],
+    [
+      {
+        id: "stake/tallow",
+        currency: {
+          state: "tallow",
+          objective: "dw.s_tallow",
+          initial: 0,
+          scope: "player",
+          name: undefined,
+          nameKey: undefined,
+        },
+        forfeit: { kind: "all" },
+        maxLive: 1,
+        onFull: "replace",
+        collectBy: "interact",
+        collectedMessage: "You take back your tallow.",
+        markerItem: "minecraft:candle",
+      },
+    ],
+  );
+  const takeBack = (
+    executor as unknown as {
+      takeBackBounties: (
+        plan: unknown,
+        trial: unknown,
+        before: ReadonlyMap<string, number | undefined>,
+      ) => Promise<void>;
+    }
+  ).takeBackBounties.bind(executor);
+  await takeBack(
+    { stakes: [{ id: "stake/tallow", currency: { scope: "player" } }] },
+    trial,
+    new Map([["dw.s_tallow", 0]]),
+  );
+  assert.ok(bot.calls.includes("chat(/scoreboard players set @s dw.s_tallow 0)"), bot.calls.join(" | "));
+  assert.equal(scores.get("dw.s_tallow")!.get("delve-bot"), 0);
+  assert.ok(
+    executor.stagedBodies().some((r) => r.kind === "player" && /set back from 26 to 0/.test(r.why)),
+  );
+});
