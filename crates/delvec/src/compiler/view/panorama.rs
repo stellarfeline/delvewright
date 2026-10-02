@@ -62,10 +62,12 @@
 //! Framing the subject is what keeps it out of the picture; nothing here paints
 //! it.
 //!
-//! ## The sun is the campaign's hour, and the bearing is the creator's choice
+//! ## The sky is the campaign's, and the bearing is the creator's choice
 //!
-//! The sun is `scene::sun_at` of the plan's declared hour — the same one every
-//! review scene gets. So the bearing is purely a choice of which side is in shot,
+//! The sky is `scene::sky_of` of the plan's declared hour and weather — the same
+//! one every review scene gets (spec-0079 §5): it answers no `design.json` row,
+//! so it is the delve at its declared sky, overcast when that sky is rain or
+//! thunder. So the bearing is purely a choice of which side is in shot,
 //! and choosing it is the creator's job: at a given hour the sun stands east or
 //! west, and a bearing looking into it is a backlit frame. A delve declared at
 //! `night` or `midnight` renders dark, which is what a night delve looks like;
@@ -543,7 +545,7 @@ pub fn panorama_from_plan(
     opts: &PanoramaOptions,
 ) -> Result<Panorama, Diagnostic> {
     let plan = scene::parse_plan(plan_json)?;
-    scene::plan_sky(&plan)?;
+    let sky = scene::plan_sky(&plan)?;
     if opts.width == 0 || opts.height == 0 {
         return Err(Diagnostic::error(
             DW_INPUT,
@@ -616,7 +618,7 @@ pub fn panorama_from_plan(
         height: opts.height,
         spp: opts.spp_target,
     };
-    let scene = camera::world_scene(&plan, &stem, &frame, &opts.world_path)?;
+    let scene = camera::world_scene(&plan, &stem, &frame, &opts.world_path, sky)?;
 
     Ok(Panorama {
         file_name: format!("{stem}.json"),
@@ -631,6 +633,9 @@ pub fn panorama_from_plan(
             name: shot.replace('_', "-"),
             pitch: cam.pitch_deg,
             pos: cam.pos,
+            // The record a panorama prints answers the row a creator names, and
+            // takes that row's sky: no sky is stated for it.
+            sky: None,
             source: camera::Source::Estimated,
             spp: opts.spp_target,
             width: opts.width,
@@ -811,7 +816,7 @@ mod tests {
         br#"{"campaign_id":"vale","layout_aabb":{"min":[0,60,0],"max":[31,79,31]},
           "horizon":{"kind":"valley","gap_floor_y":63,"rim_height":40,
                      "extent":{"min":[-80,59,-80],"max":[111,110,111]}},
-          "sky":{"time":"day","daytime_ticks":1000},"shots":[]}"#;
+          "sky":{"time":"day","daytime_ticks":1000,"weather":"clear"},"shots":[]}"#;
 
     /// The subject is the placed areas on a valley too: the camera is the one
     /// solved for the layout box alone, while the chunk list still loads every

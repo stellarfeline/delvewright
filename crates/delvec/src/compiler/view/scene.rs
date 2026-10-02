@@ -91,6 +91,8 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
+use delvewright_dsl::WorldWeather;
+
 use crate::compiler::view::diag::{DW_INPUT, Diagnostic};
 
 /// The Chunky snapshot-core version the spike verified against 1.21.11. Recorded
@@ -190,8 +192,8 @@ pub(crate) struct RenderPlan {
     shots: Vec<Shot>,
 }
 
-/// The `sky` fact `render-plan.json` carries: the hour this delve is played at
-/// (`crate::compiler::render_plan`'s `sky_fact`).
+/// The `sky` fact `render-plan.json` carries: the hour and the weather this
+/// delve is played at (`crate::compiler::render_plan`'s `sky_fact`).
 #[derive(Debug, Clone, Deserialize)]
 pub struct Sky {
     /// The keyword the author wrote (`dusk`) — for messages, never for the sun.
@@ -201,6 +203,11 @@ pub struct Sky {
     /// sun is a function of, so a state vanilla does not name is worth as much
     /// as one it does.
     pub daytime_ticks: i64,
+    /// The declared initial weather. Optional **in the document type only**, for
+    /// the reason [`RenderPlan::sky`] is: a plan an older engine wrote is refused
+    /// by name ([`plan_sky`]).
+    #[serde(default)]
+    pub weather: Option<WorldWeather>,
 }
 
 /// An inclusive world box. Public because [`Horizon`] carries one: a horizon
@@ -370,6 +377,15 @@ pub(crate) struct ChunkyScene {
     /// before it is known, never a scene that ships without it.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) sun: Option<ChunkySun>,
+    /// The overcast sky of a rain or thunder scene ([`sky_of`]). Absent (not
+    /// `null`) on a clear scene, whose sky is the renderer's own simulated one,
+    /// so every clear scene keeps its bytes.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) sky: Option<ChunkySkyMode>,
+    /// The overcast fog of a rain or thunder scene ([`sky_of`]); absent on a
+    /// clear scene, for the reason `sky` is.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) fog: Option<ChunkyFog>,
     /// REVIEW POLICY (night-vision emulation) only: per-block material
     /// overrides making the scene's structural palette faintly self-emitting.
     /// Absent (not `null`) on every non-emulated scene, so those stay
@@ -387,6 +403,17 @@ pub(crate) struct ChunkyScene {
 }
 
 impl ChunkyScene {
+    /// Put the scene under `block` — its sun, and on a non-clear scene its sky and
+    /// fog. Every scene builder in this module tree takes its sky through here
+    /// from [`sky_of`], so a review frame, a panorama and a showcase camera are
+    /// one sky shape.
+    pub(crate) fn under(mut self, block: SkyBlock) -> Self {
+        self.sun = Some(block.sun);
+        self.sky = block.sky;
+        self.fog = block.fog;
+        self
+    }
+
     /// Attach `water` (if any) as the four `waterWorld*` keys.
     pub(crate) fn with_water_world(mut self, water: Option<WaterWorld>) -> Self {
         if let Some(w) = water {
@@ -424,10 +451,21 @@ pub(crate) struct MaterialOverride {
 /// azimuth `0` is +X (east) and grows toward +Z (south), the opposite turn from
 /// the render-plan yaw convention. Verified against the pinned core's
 /// `Sun.initSun`.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ChunkySun {
     pub altitude: f64,
     pub azimuth: f64,
+    /// Overcast scenes only ([`sky_of`]): the sun's emittance scale. Absent on a
+    /// clear scene, which keeps Chunky's own 1.25.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub intensity: Option<f64>,
+    /// Overcast scenes only: the sun's colour.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub color: Option<Rgb>,
+    /// Overcast scenes only: `false` — there is no sun disc under cloud.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub draw_texture: Option<bool>,
 }
 
 /// Round to 6 decimals, never emitting `-0.0` (it serializes differently from
@@ -484,6 +522,9 @@ pub fn sun_at(daytime_ticks: i64) -> ChunkySun {
     ChunkySun {
         altitude: round6(altitude),
         azimuth: round6(azimuth),
+        intensity: None,
+        color: None,
+        draw_texture: None,
     }
 }
 
@@ -496,24 +537,307 @@ fn sky_angle_rad(daytime_ticks: i64) -> f64 {
     (1.0 - (std::f64::consts::PI * turn).cos() + quarters) * 60f64.to_radians()
 }
 
-/// The hour a plan states, or [`DW_INPUT`] naming what is missing.
+/// The sky a scene is taken under: the hour as the `daytime` tick value the sun
+/// is a function of, and the weather. Built from `render-plan.json` by
+/// [`plan_sky`] (the panorama and the review frames) or from a showcase camera
+/// (`crate::compiler::view::camera`); turned into scene keys by [`sky_of`] alone.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SceneSky {
+    pub daytime_ticks: i64,
+    pub weather: WorldWeather,
+}
+
+/// The hour and weather a plan states, or [`DW_INPUT`] naming what is missing.
 ///
-/// **A scene is never emitted without one.** Chunky's default sun is a midday
-/// one, so a plan with no `sky` would render a night delve at noon and say
-/// nothing — the exact silence this key exists to end. The refusal is here, at
-/// the one door every scene goes through, rather than in the type, so it can say
-/// what to do about it.
-pub(crate) fn plan_sky(plan: &RenderPlan) -> Result<&Sky, Diagnostic> {
-    plan.sky.as_ref().ok_or_else(|| {
+/// **A scene is never emitted without both.** Chunky's default sun is a midday
+/// one and its default sky is clear, so a plan with no `sky` would render a night
+/// delve at noon, and one with no `sky.weather` would render a rain delve under a
+/// clear sky, and say nothing — the exact silence this key exists to end. The
+/// refusal is here, at the one door every plan-sky scene goes through, rather
+/// than in the type, so it can say what to do about it.
+pub(crate) fn plan_sky(plan: &RenderPlan) -> Result<SceneSky, Diagnostic> {
+    let sky = plan.sky.as_ref().ok_or_else(|| {
         Diagnostic::error(
             DW_INPUT,
-            "render-plan.json states no `sky`, so there is no hour to put a sun at. Chunky's own \
-             default is a midday sun, and emitting these scenes would hand back frames of a noon \
-             sky whatever hour `world.json` declares. Rebuild the delve with this engine — \
-             `delvec build` writes the key from the campaign's declared `time` — rather than \
-             rendering a plan an older one wrote",
+            format!(
+                "render-plan.json states no `sky`, so there is no hour to put a sun at. Chunky's \
+                 own default is a midday sun, and emitting these scenes would hand back frames of \
+                 a noon sky whatever hour `world.json` declares. The plan was written by an \
+                 engine older than this one (delvec {}): rebuild the delve with this engine — \
+                 `delvec build` writes the key from the campaign's declared `time` and \
+                 `weather` — rather than rendering a plan an older one wrote",
+                env!("CARGO_PKG_VERSION")
+            ),
         )
+    })?;
+    let weather = sky.weather.ok_or_else(|| {
+        Diagnostic::error(
+            DW_INPUT,
+            format!(
+                "render-plan.json states the hour (`{}`) but no `sky.weather`, so a rain or \
+                 thunder delve would render under Chunky's default clear sky. The plan was \
+                 written by an engine older than this one (delvec {}), which did not state the \
+                 weather: rebuild the delve with this engine — `delvec build` writes the key \
+                 from the campaign's declared `weather` — rather than rendering a plan an older \
+                 one wrote",
+                sky.time,
+                env!("CARGO_PKG_VERSION")
+            ),
+        )
+    })?;
+    Ok(SceneSky {
+        daytime_ticks: sky.daytime_ticks,
+        weather,
     })
+}
+
+// ---- the sky a scene is taken under ------------------------------------------
+
+/// A colour as Chunky's scene format writes one (`util/JsonUtil.rgbToJson` at the
+/// pinned core): three channels in `0..=1`.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
+pub struct Rgb {
+    pub red: f64,
+    pub green: f64,
+    pub blue: f64,
+}
+
+const fn rgb(red: f64, green: f64, blue: f64) -> Rgb {
+    Rgb { red, green, blue }
+}
+
+/// Chunky's `sky` object, as an overcast scene writes it (`renderer/scene/sky/
+/// Sky.java` at the pinned core): a solid colour, the light the sky casts
+/// (`skyLight`) and the brightness the lens sees (`apparentSkyLight`).
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChunkySkyMode {
+    pub mode: &'static str,
+    pub color: Rgb,
+    pub sky_light: f64,
+    pub apparent_sky_light: f64,
+}
+
+/// Chunky's `fog` object, as an overcast scene writes it (`renderer/scene/Fog.java`
+/// at the pinned core). `skyFogDensity` is always 0, so the fog colour never
+/// paints over the sky colour.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChunkyFog {
+    pub mode: &'static str,
+    pub uniform_density: f64,
+    pub color: Rgb,
+    pub sky_fog_density: f64,
+}
+
+/// How much daylight an overcast sky passes, decided by **the emitted sun's
+/// altitude**, never by the hour's name: an hour added to `WorldTime` falls into a
+/// class by its sun, with no row to remember.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum DaylightClass {
+    /// The sun at or above [`HIGH_SUN_DEG`] (`noon`, `day`).
+    High,
+    /// The sun from the horizon up to [`HIGH_SUN_DEG`] (`dusk`).
+    Low,
+    /// The sun under the horizon (`night`, `midnight`, `dawn`).
+    Below,
+}
+
+impl DaylightClass {
+    /// Every class, in order.
+    pub const ALL: [DaylightClass; 3] = [
+        DaylightClass::High,
+        DaylightClass::Low,
+        DaylightClass::Below,
+    ];
+
+    /// The class's own spelling, as the binding line prints it.
+    pub fn name(self) -> &'static str {
+        match self {
+            DaylightClass::High => "high",
+            DaylightClass::Low => "low",
+            DaylightClass::Below => "below",
+        }
+    }
+}
+
+/// The altitude, in degrees, at and above which an overcast sky takes the
+/// `high` cell. Authored (spec-0079 §4.3).
+pub const HIGH_SUN_DEG: f64 = 20.0;
+
+/// The daylight class of a sun ([`DaylightClass`]), read off the emitted — already
+/// rounded — altitude.
+pub fn daylight_class(sun: &ChunkySun) -> DaylightClass {
+    if sun.altitude >= HIGH_SUN_DEG.to_radians() {
+        DaylightClass::High
+    } else if sun.altitude >= 0.0 {
+        DaylightClass::Low
+    } else {
+        DaylightClass::Below
+    }
+}
+
+/// One cell of the overcast look table: every value an overcast scene writes
+/// beyond the sun's direction.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct OvercastCell {
+    pub sky_color: Rgb,
+    pub sky_light: f64,
+    pub apparent_sky_light: f64,
+    pub sun_intensity: f64,
+    pub sun_color: Rgb,
+    pub fog_density: f64,
+    pub fog_color: Rgb,
+}
+
+/// The colours every cell shares: a neutral grey-slate sky, a warm-grey sun, a
+/// slate fog (`docs/reference/showcase-shots.md` §2b's measured block).
+const OVERCAST_SKY: Rgb = rgb(0.10, 0.11, 0.14);
+const OVERCAST_SUN: Rgb = rgb(0.9, 0.75, 0.65);
+const OVERCAST_FOG: Rgb = rgb(0.20, 0.22, 0.26);
+
+/// `low` × `rain`: the measured overcast dusk, adopted verbatim — the one cell
+/// anyone had looked at before the table existed.
+pub const LOW_RAIN: OvercastCell = OvercastCell {
+    sky_color: OVERCAST_SKY,
+    sky_light: 1.6,
+    apparent_sky_light: 0.6,
+    sun_intensity: 0.25,
+    sun_color: OVERCAST_SUN,
+    fog_density: 0.002,
+    fog_color: OVERCAST_FOG,
+};
+
+/// `high` × `rain`: [`LOW_RAIN`] with both sky-light modifiers doubled.
+pub const HIGH_RAIN: OvercastCell = OvercastCell {
+    sky_light: 3.2,
+    apparent_sky_light: 1.2,
+    ..LOW_RAIN
+};
+
+/// `below` × `rain`: [`LOW_RAIN`] with both sky-light modifiers at a tenth and the
+/// sun, which is under the horizon, at 0.
+pub const BELOW_RAIN: OvercastCell = OvercastCell {
+    sky_light: 0.16,
+    apparent_sky_light: 0.06,
+    sun_intensity: 0.0,
+    ..LOW_RAIN
+};
+
+/// `high` × `thunder`: [`HIGH_RAIN`] at 0.6 of its sky-light modifiers, half its
+/// sun, 1.5 times its fog.
+pub const HIGH_THUNDER: OvercastCell = OvercastCell {
+    sky_light: 1.92,
+    apparent_sky_light: 0.72,
+    sun_intensity: 0.125,
+    fog_density: 0.003,
+    ..HIGH_RAIN
+};
+
+/// `low` × `thunder`: [`LOW_RAIN`] by the same rule.
+pub const LOW_THUNDER: OvercastCell = OvercastCell {
+    sky_light: 0.96,
+    apparent_sky_light: 0.36,
+    sun_intensity: 0.125,
+    fog_density: 0.003,
+    ..LOW_RAIN
+};
+
+/// `below` × `thunder`: [`BELOW_RAIN`] by the same rule; its sun is already 0.
+pub const BELOW_THUNDER: OvercastCell = OvercastCell {
+    sky_light: 0.096,
+    apparent_sky_light: 0.036,
+    sun_intensity: 0.0,
+    fog_density: 0.003,
+    ..BELOW_RAIN
+};
+
+/// The look-table cell of a class and a weather; `None` for `clear`, whose sky is
+/// the renderer's own.
+pub fn overcast_cell(class: DaylightClass, weather: WorldWeather) -> Option<&'static OvercastCell> {
+    match (weather, class) {
+        (WorldWeather::Clear, _) => None,
+        (WorldWeather::Rain, DaylightClass::High) => Some(&HIGH_RAIN),
+        (WorldWeather::Rain, DaylightClass::Low) => Some(&LOW_RAIN),
+        (WorldWeather::Rain, DaylightClass::Below) => Some(&BELOW_RAIN),
+        (WorldWeather::Thunder, DaylightClass::High) => Some(&HIGH_THUNDER),
+        (WorldWeather::Thunder, DaylightClass::Low) => Some(&LOW_THUNDER),
+        (WorldWeather::Thunder, DaylightClass::Below) => Some(&BELOW_THUNDER),
+    }
+}
+
+/// Everything a scene states about its sky: the sun, and on a non-clear scene the
+/// overcast sky and fog. Built by [`sky_of`] alone.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SkyBlock {
+    pub sun: ChunkySun,
+    pub sky: Option<ChunkySkyMode>,
+    pub fog: Option<ChunkyFog>,
+    /// The class the sun put the scene in — the look-table row read.
+    pub class: DaylightClass,
+}
+
+/// **The whole sky of a scene** (spec-0079 §4): the one writer of every sky, sun
+/// and fog key under `crate::compiler::view`.
+///
+/// - `clear` is the hour's sun direction and nothing more — Chunky's simulated
+///   sky with its default sun *is* a clear sky, so a clear scene's bytes are the
+///   ones the engine wrote before the weather reached a scene.
+/// - `rain` and `thunder` are an overcast block written in full: the sun where
+///   the hour puts it but dimmed and without its disc, a solid grey sky, uniform
+///   fog that never paints the sky — the cell of [`overcast_cell`] for the
+///   sun's [`DaylightClass`].
+///
+/// Constants, a class decision on the rounded altitude and [`round6`] on every
+/// float: deterministic (ADR-0006).
+pub fn sky_of(sky: SceneSky) -> SkyBlock {
+    let mut sun = sun_at(sky.daytime_ticks);
+    let class = daylight_class(&sun);
+    let Some(cell) = overcast_cell(class, sky.weather) else {
+        return SkyBlock {
+            sun,
+            sky: None,
+            fog: None,
+            class,
+        };
+    };
+    let r = |c: Rgb| rgb(round6(c.red), round6(c.green), round6(c.blue));
+    sun.intensity = Some(round6(cell.sun_intensity));
+    sun.color = Some(r(cell.sun_color));
+    sun.draw_texture = Some(false);
+    SkyBlock {
+        sun,
+        sky: Some(ChunkySkyMode {
+            mode: "SOLID_COLOR",
+            color: r(cell.sky_color),
+            sky_light: round6(cell.sky_light),
+            apparent_sky_light: round6(cell.apparent_sky_light),
+        }),
+        fog: Some(ChunkyFog {
+            mode: "UNIFORM",
+            uniform_density: round6(cell.fog_density),
+            color: r(cell.fog_color),
+            sky_fog_density: 0.0,
+        }),
+        class,
+    }
+}
+
+/// The look-table cell a scene sky reads, as one phrase for a binding line:
+/// `the renderer's own clear sky`, or the cell's name and its four judged numbers.
+pub fn sky_phrase(class: DaylightClass, weather: WorldWeather) -> String {
+    match overcast_cell(class, weather) {
+        None => "the renderer's own clear sky".to_string(),
+        Some(c) => format!(
+            "overcast cell {}×{}: skyLight {}, apparentSkyLight {}, sun {}, fog {}",
+            class.name(),
+            weather.keyword(),
+            c.sky_light,
+            c.apparent_sky_light,
+            c.sun_intensity,
+            c.fog_density
+        ),
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -673,7 +997,7 @@ pub fn scenes_from_plan(
     world_palette: &[String],
 ) -> Result<Vec<(String, Vec<u8>)>, Diagnostic> {
     let plan = parse_plan(plan_json)?;
-    let daytime_ticks = plan_sky(&plan)?.daytime_ticks;
+    let sky = plan_sky(&plan)?;
 
     // The ground the layout stands in is loaded with it. On a `valley` the
     // landform is real blocks in the save, OUTSIDE the layout AABB — a chunk
@@ -734,7 +1058,9 @@ pub fn scenes_from_plan(
             water_world_height: None,
             water_world_height_offset_enabled: None,
             water_world_clip_enabled: None,
-            sun: Some(sun_at(daytime_ticks)),
+            sun: None,
+            sky: None,
+            fog: None,
             materials,
             delvewright_review_policy: emulate.then_some(REVIEW_POLICY),
             world: WorldRef {
@@ -754,6 +1080,7 @@ pub fn scenes_from_plan(
             },
             chunk_list: chunks.clone(),
         }
+        .under(sky_of(sky))
         .with_water_world(water);
         out.push((format!("{stem}.json"), scene.to_bytes()?));
     }
@@ -819,7 +1146,7 @@ mod tests {
         // the sand because emission used a naive deg→rad. The verified mapping
         // (yaw+π, pitch−π/2) puts it level (pitch −π/2, upright) and facing +X.
         let plan = br#"{"campaign_id":"c","layout_aabb":{"min":[0,64,0],"max":[1,65,1]},
-          "sky":{"time":"noon","daytime_ticks":6000},
+          "sky":{"time":"noon","daytime_ticks":6000,"weather":"clear"},
           "shots":[{"id":"pov/leg0/wp1","kind":"pov","camera":{"pos":[7.5,68.62,10.5],
           "yaw":0.0,"pitch":0.0,"look_at":[8.5,68.62,10.5]}}]}"#;
         let scenes = scenes_from_plan(plan, &SceneOptions::default(), &[]).unwrap();
@@ -835,7 +1162,7 @@ mod tests {
     /// interior (never emulated), sharing one layout.
     const DARK_PLAN: &[u8] =
         br#"{"campaign_id":"cave","layout_aabb":{"min":[0,64,0],"max":[15,80,15]},
-      "sky":{"time":"midnight","daytime_ticks":18000},
+      "sky":{"time":"midnight","daytime_ticks":18000,"weather":"clear"},
       "shots":[
         {"id":"pov/leg0/wp0","kind":"pov",
          "lighting":{"profile":"dark","mitigation":"night-vision"},
@@ -1037,7 +1364,7 @@ mod tests {
         let at = |ticks: i64| {
             let plan = format!(
                 r#"{{"campaign_id":"c","layout_aabb":{{"min":[0,64,0],"max":[1,65,1]}},
-                   "sky":{{"time":"x","daytime_ticks":{ticks}}},
+                   "sky":{{"time":"x","daytime_ticks":{ticks},"weather":"clear"}},
                    "shots":[{{"id":"seam/x/0","kind":"seam","camera":{{"pos":[0.5,66.0,0.5],
                    "yaw":0.0,"pitch":0.0,"look_at":[4.5,66.0,0.5]}}}}]}}"#
             );
@@ -1128,6 +1455,332 @@ mod tests {
         );
     }
 
+    // ---- spec-0079: the sky a scene is taken under ---------------------------
+
+    const ALL_TIMES: [delvewright_dsl::WorldTime; 6] = [
+        delvewright_dsl::WorldTime::Day,
+        delvewright_dsl::WorldTime::Noon,
+        delvewright_dsl::WorldTime::Dusk,
+        delvewright_dsl::WorldTime::Night,
+        delvewright_dsl::WorldTime::Midnight,
+        delvewright_dsl::WorldTime::Dawn,
+    ];
+    const WEATHERS: [WorldWeather; 3] = [
+        WorldWeather::Clear,
+        WorldWeather::Rain,
+        WorldWeather::Thunder,
+    ];
+
+    /// The eleven keys an overcast block writes beyond the sun's direction, as
+    /// JSON pointers into an emitted scene.
+    const BLOCK_KEYS: [&str; 11] = [
+        "/sky/mode",
+        "/sky/color",
+        "/sky/skyLight",
+        "/sky/apparentSkyLight",
+        "/sun/intensity",
+        "/sun/color",
+        "/sun/drawTexture",
+        "/fog/mode",
+        "/fog/uniformDensity",
+        "/fog/color",
+        "/fog/skyFogDensity",
+    ];
+
+    /// **Criterion 6 — the class is the sun's.** Each of the six hours' daylight
+    /// class is read off `sun_at`'s altitude, and the thunder cell of every class
+    /// is darker than its rain cell and denser in fog.
+    ///
+    /// One sub-claim is weaker than the spec's wording, and says so: `below`'s
+    /// rain cell already has the sun at 0 (§4.4: the sun is under the horizon),
+    /// so its thunder cell's sun can be no lower — it is EQUAL there (0 = 0), and
+    /// strictly lower in the two classes whose rain sun is above 0.
+    #[test]
+    fn the_class_is_the_suns_and_thunder_is_darker_than_rain() {
+        use delvewright_dsl::WorldTime as T;
+        let want = [
+            (T::Noon, DaylightClass::High),
+            (T::Day, DaylightClass::High),
+            (T::Dusk, DaylightClass::Low),
+            (T::Night, DaylightClass::Below),
+            (T::Midnight, DaylightClass::Below),
+            (T::Dawn, DaylightClass::Below),
+        ];
+        for (t, class) in want {
+            let sun = sun_at(t.daytime_ticks());
+            eprintln!(
+                "class: {} altitude {:.4} rad ({:.2} deg) -> {}",
+                t.keyword(),
+                sun.altitude,
+                sun.altitude.to_degrees(),
+                daylight_class(&sun).name()
+            );
+            assert_eq!(daylight_class(&sun), class, "{}", t.keyword());
+        }
+        // The dusk altitude the showcase record read off an emitted scene, to
+        // the four places it states (0.2169 rad).
+        let dusk = sun_at(T::Dusk.daytime_ticks()).altitude;
+        assert_eq!((dusk * 1e4).round() / 1e4, 0.2169, "{dusk}");
+        let mut compared = 0;
+        for class in DaylightClass::ALL {
+            let rain = overcast_cell(class, WorldWeather::Rain).unwrap();
+            let thunder = overcast_cell(class, WorldWeather::Thunder).unwrap();
+            assert!(thunder.sky_light < rain.sky_light, "{class:?} skyLight");
+            assert!(
+                thunder.apparent_sky_light < rain.apparent_sky_light,
+                "{class:?} apparentSkyLight"
+            );
+            if rain.sun_intensity > 0.0 {
+                assert!(thunder.sun_intensity < rain.sun_intensity, "{class:?} sun");
+            } else {
+                assert_eq!(thunder.sun_intensity, 0.0, "{class:?} sun");
+            }
+            assert!(thunder.fog_density > rain.fog_density, "{class:?} fog");
+            compared += 1;
+        }
+        assert_eq!(compared, 3);
+    }
+
+    /// The table is the measured cell and the two authored rules of spec-0079
+    /// §4.4, and nothing else: `high` doubles the measured cell's light
+    /// modifiers, `below` takes a tenth of them and no sun, `thunder` is 0.6 of
+    /// its rain cell's modifiers, half its sun and 1.5 times its fog.
+    #[test]
+    fn the_look_table_is_the_measured_cell_and_two_rules() {
+        let close = |a: f64, b: f64| (a - b).abs() < 1e-12;
+        assert_eq!(LOW_RAIN.sky_light, 1.6);
+        assert_eq!(LOW_RAIN.apparent_sky_light, 0.6);
+        assert_eq!(LOW_RAIN.sun_intensity, 0.25);
+        assert_eq!(LOW_RAIN.fog_density, 0.002);
+        assert!(close(HIGH_RAIN.sky_light, 2.0 * LOW_RAIN.sky_light));
+        assert!(close(
+            HIGH_RAIN.apparent_sky_light,
+            2.0 * LOW_RAIN.apparent_sky_light
+        ));
+        assert!(close(BELOW_RAIN.sky_light, LOW_RAIN.sky_light / 10.0));
+        assert!(close(
+            BELOW_RAIN.apparent_sky_light,
+            LOW_RAIN.apparent_sky_light / 10.0
+        ));
+        assert_eq!(BELOW_RAIN.sun_intensity, 0.0);
+        for class in DaylightClass::ALL {
+            let r = overcast_cell(class, WorldWeather::Rain).unwrap();
+            let t = overcast_cell(class, WorldWeather::Thunder).unwrap();
+            assert!(close(t.sky_light, 0.6 * r.sky_light), "{class:?}");
+            assert!(
+                close(t.apparent_sky_light, 0.6 * r.apparent_sky_light),
+                "{class:?}"
+            );
+            assert!(close(t.sun_intensity, 0.5 * r.sun_intensity), "{class:?}");
+            assert!(close(t.fog_density, 1.5 * r.fog_density), "{class:?}");
+            for c in [r, t] {
+                assert_eq!(
+                    (c.sky_color, c.sun_color, c.fog_color),
+                    (LOW_RAIN.sky_color, LOW_RAIN.sun_color, LOW_RAIN.fog_color)
+                );
+            }
+        }
+    }
+
+    /// A plan of `time`, `weather`, with one review shot.
+    fn sky_plan(time: delvewright_dsl::WorldTime, weather: WorldWeather) -> Vec<u8> {
+        format!(
+            r#"{{"campaign_id":"c","layout_aabb":{{"min":[0,64,0],"max":[15,80,15]}},
+              "sky":{{"time":"{}","daytime_ticks":{},"weather":"{}"}},
+              "shots":[{{"id":"pov/a","kind":"pov","camera":{{"pos":[4.5,70.0,4.5],
+              "yaw":0.0,"pitch":5.0,"look_at":[8.5,70.0,4.5]}}}}]}}"#,
+            time.keyword(),
+            time.daytime_ticks(),
+            weather.keyword()
+        )
+        .into_bytes()
+    }
+
+    /// **Criterion 5 — the block is whole and one.** Over every hour and every
+    /// weather, through all three scene builders (a review frame, a panorama, a
+    /// showcase camera): a non-clear scene carries all eleven block keys, with
+    /// its cell's values, and a clear scene carries none of them.
+    #[test]
+    fn every_scene_builder_writes_the_whole_block_or_none_of_it() {
+        use crate::compiler::view::{camera, panorama};
+        let mut judged = 0;
+        for time in ALL_TIMES {
+            for weather in WEATHERS {
+                let plan = sky_plan(time, weather);
+                let review = scenes_from_plan(&plan, &SceneOptions::default(), &[]).unwrap();
+                let pano =
+                    panorama::panorama_from_plan(&plan, &[], &panorama::PanoramaOptions::default())
+                        .unwrap();
+                let sheet = camera::CameraSheet {
+                    campaign_id: "c".into(),
+                    cameras: vec![camera::Camera {
+                        answers: "concept/x".into(),
+                        exposure: 1.0,
+                        fov: 60.0,
+                        height: 90,
+                        name: "x".into(),
+                        pitch: 5.0,
+                        pos: [4.5, 70.0, 4.5],
+                        sky: None,
+                        source: camera::Source::Estimated,
+                        spp: 16,
+                        width: 160,
+                        yaw: 270.0,
+                    }],
+                };
+                let rows = [camera::ApprovedRow {
+                    name: "concept/x".into(),
+                    shows: String::new(),
+                    sky: Some(camera::CameraSky { time, weather }),
+                }];
+                let cam =
+                    camera::emit(&plan, &sheet, &rows, &camera::EmitOptions::default()).unwrap();
+                let class = daylight_class(&sun_at(time.daytime_ticks()));
+                for (kind, bytes) in [
+                    ("review", &review[0].1),
+                    ("panorama", &pano.bytes),
+                    ("camera", &cam.scenes[0].1),
+                ] {
+                    let v: serde_json::Value = serde_json::from_slice(bytes).unwrap();
+                    let at = format!("{kind} {}+{}", time.keyword(), weather.keyword());
+                    match overcast_cell(class, weather) {
+                        None => {
+                            for k in BLOCK_KEYS {
+                                assert!(v.pointer(k).is_none(), "{at}: a clear scene wrote {k}");
+                            }
+                            assert!(v.get("sky").is_none() && v.get("fog").is_none(), "{at}");
+                        }
+                        Some(cell) => {
+                            for k in BLOCK_KEYS {
+                                assert!(v.pointer(k).is_some(), "{at}: missing {k}");
+                            }
+                            assert_eq!(v["sky"]["mode"], "SOLID_COLOR", "{at}");
+                            assert_eq!(v["fog"]["mode"], "UNIFORM", "{at}");
+                            assert_eq!(v["sun"]["drawTexture"], false, "{at}");
+                            assert_eq!(v["fog"]["skyFogDensity"], 0.0, "{at}");
+                            assert_eq!(v["sky"]["skyLight"], cell.sky_light, "{at}");
+                            assert_eq!(
+                                v["sky"]["apparentSkyLight"], cell.apparent_sky_light,
+                                "{at}"
+                            );
+                            assert_eq!(v["sun"]["intensity"], cell.sun_intensity, "{at}");
+                            assert_eq!(v["fog"]["uniformDensity"], cell.fog_density, "{at}");
+                        }
+                    }
+                    // The sun's direction is the hour's, whatever the weather.
+                    let sun = sun_at(time.daytime_ticks());
+                    assert_eq!(v["sun"]["altitude"], sun.altitude, "{at}");
+                    assert_eq!(v["sun"]["azimuth"], sun.azimuth, "{at}");
+                    judged += 1;
+                }
+            }
+        }
+        eprintln!("sky block: {judged} scene(s) judged over 6 hours x 3 weathers x 3 builders");
+        assert_eq!(judged, 6 * 3 * 3);
+    }
+
+    /// An overcast scene is byte-deterministic: two emissions, one set of bytes.
+    #[test]
+    fn an_overcast_scene_is_byte_deterministic() {
+        for weather in [WorldWeather::Rain, WorldWeather::Thunder] {
+            let plan = sky_plan(delvewright_dsl::WorldTime::Dusk, weather);
+            assert_eq!(
+                scenes_from_plan(&plan, &SceneOptions::default(), &[]).unwrap(),
+                scenes_from_plan(&plan, &SceneOptions::default(), &[]).unwrap()
+            );
+        }
+    }
+
+    /// A plan that states the hour and not the weather was written by an older
+    /// engine, and every plan-sky builder refuses it by name.
+    #[test]
+    fn a_plan_with_no_weather_is_refused_naming_the_engine() {
+        let plan = br#"{"campaign_id":"c","layout_aabb":{"min":[0,64,0],"max":[1,65,1]},
+            "sky":{"time":"dusk","daytime_ticks":12000},"shots":[]}"#;
+        let err = scenes_from_plan(plan, &SceneOptions::default(), &[]).unwrap_err();
+        assert_eq!(err.code, DW_INPUT);
+        assert!(
+            err.message.contains("sky.weather")
+                && err.message.contains("older than this one")
+                && err.message.contains(env!("CARGO_PKG_VERSION")),
+            "{err:?}"
+        );
+        let err = crate::compiler::view::panorama::panorama_from_plan(
+            plan,
+            &[],
+            &crate::compiler::view::panorama::PanoramaOptions::default(),
+        )
+        .unwrap_err();
+        assert!(err.message.contains("sky.weather"), "{err:?}");
+    }
+
+    /// **A clear scene's bytes are the bytes the engine wrote before the weather
+    /// reached a scene** (spec-0079 §4.1, criterion 4). The two goldens were
+    /// emitted by the engine at the merge of spec-0079's base (`19eba477` plus
+    /// `main`, before any of this change) for this record, plan and options, and
+    /// are compared here byte for byte: a showcase camera answering a clear row
+    /// at the plan's own hour, and the default panorama of the same clear plan.
+    /// The review scene's golden is `golden_scene_matches`'s `spawn.json`.
+    #[test]
+    fn clear_scenes_keep_their_base_bytes() {
+        use crate::compiler::view::{camera, panorama};
+        use delvewright_dsl::WorldTime;
+        let ocean = include_bytes!("../../../tests/fixtures/view/render-plan-ocean.json");
+        let sheet = camera::CameraSheet {
+            campaign_id: "isle".into(),
+            cameras: vec![camera::Camera {
+                answers: "concept/quay".into(),
+                exposure: 2.0,
+                fov: 50.0,
+                height: 900,
+                name: "hero".into(),
+                pitch: 10.0,
+                pos: [10.5, 70.0, -4.25],
+                sky: None,
+                source: camera::Source::Estimated,
+                spp: 300,
+                width: 1600,
+                yaw: 30.0,
+            }],
+        };
+        let rows = [camera::ApprovedRow {
+            name: "concept/quay".into(),
+            shows: String::new(),
+            sky: Some(camera::CameraSky {
+                time: WorldTime::Day,
+                weather: WorldWeather::Clear,
+            }),
+        }];
+        let e = camera::emit(
+            ocean,
+            &sheet,
+            &rows,
+            &camera::EmitOptions {
+                world_path: "/abs/world".into(),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            std::str::from_utf8(&e.scenes[0].1).unwrap(),
+            std::str::from_utf8(include_bytes!(
+                "../../../tests/golden/view/clear-camera.json"
+            ))
+            .unwrap(),
+            "a clear camera scene moved from its base bytes"
+        );
+        let p = panorama::panorama_from_plan(ocean, &[], &panorama::PanoramaOptions::default())
+            .unwrap();
+        assert_eq!(
+            std::str::from_utf8(&p.bytes).unwrap(),
+            std::str::from_utf8(include_bytes!(
+                "../../../tests/golden/view/clear-panorama.json"
+            ))
+            .unwrap(),
+            "a clear panorama scene moved from its base bytes"
+        );
+    }
+
     /// `tests/golden/` sits outside the `delvec fmt --check` sweep on purpose,
     /// and it is now the **only** directory in the repository that does — the
     /// sweep's population is `git ls-files '*.json'`
@@ -1176,7 +1829,11 @@ mod tests {
 
         // Every entry here is pinned byte-for-byte to live emitter output by the
         // test named beside it.
-        let declared = ["view/spawn.json"]; // pinned by golden_scene_matches
+        let declared = [
+            "view/clear-camera.json",   // pinned by clear_scenes_keep_their_base_bytes
+            "view/clear-panorama.json", // pinned by clear_scenes_keep_their_base_bytes
+            "view/spawn.json",          // pinned by golden_scene_matches
+        ];
 
         assert!(
             !found.is_empty(),

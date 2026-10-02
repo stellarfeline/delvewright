@@ -89,7 +89,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "lib"))
 import gallery_domain  # noqa: E402
 from delvec_bin import resolve as resolve_delvec  # noqa: E402
-from gallery_units import Binder, Enumerator, stage_files  # noqa: E402
+from gallery_units import FILE_KEY, Binder, Enumerator, stage_files  # noqa: E402
 
 REPO = Path(__file__).resolve().parents[2]
 GALLERY = REPO / "gallery"
@@ -100,13 +100,70 @@ def die(msg: str) -> "None":
     raise SystemExit(1)
 
 
+# The non-stage documents the gallery binds beside the stage documents, each by
+# the `delvec schema --stage <name>` export that declares it. Only the NAME of
+# the export is here; the export states its own path (`gallery_units.FILE_KEY`)
+# and the units come from the schema exactly as a stage document's do. The camera
+# record is one (spec-0079 §7): until it was, the gate enumerated 0 of its units.
+RECORD_EXPORTS = ("cameras",)
+
+
 def schema_export(delvec: Path) -> dict:
     r = subprocess.run(
         [str(delvec), "schema", "--stage", "all"], capture_output=True, text=True
     )
     if r.returncode != 0:
         die(f"`delvec schema --stage all` exited {r.returncode}: {r.stderr.strip()}")
-    return json.loads(r.stdout)
+    export = json.loads(r.stdout)
+    for name in RECORD_EXPORTS:
+        r = subprocess.run(
+            [str(delvec), "schema", "--stage", name], capture_output=True, text=True
+        )
+        if r.returncode != 0:
+            die(f"`delvec schema --stage {name}` exited {r.returncode}: {r.stderr.strip()}")
+        doc = json.loads(r.stdout)
+        if not doc.get(FILE_KEY):
+            die(
+                f"`delvec schema --stage {name}` names no file under `{FILE_KEY}`, so "
+                "there is no document to bind its units against"
+            )
+        if name in export:
+            die(f"`delvec schema --stage all` already exports a document named `{name}`")
+        export[name] = doc
+    return export
+
+
+def record_line(
+    export: dict, units: dict, bound_ids: set, proven: set
+) -> tuple[str, list[str]]:
+    """The record documents' own units — enumerated from their exports and
+    declared by no stage document — with their counts, and the ones in neither
+    state. `schema_export` refuses an export missing any of `RECORD_EXPORTS`, so
+    a record absent here is a test's miniature export, never a real run."""
+    lines, neither = [], []
+    for name in (n for n in RECORD_EXPORTS if n in export):
+        own = sorted(u for u, unit in units.items() if unit.stages == (name,))
+        b = [u for u in own if u in bound_ids]
+        p = [u for u in own if u in proven]
+        n = [u for u in own if u not in bound_ids and u not in proven]
+        neither += n
+        lines.append(
+            f"record `{name}`: {len(own)} unit(s) enumerated from `delvec schema --stage "
+            f"{name}`, {len(b)} bound, {len(p)} refusal-proven, {len(n)} in NEITHER state"
+            + (f" ({', '.join(n)})" if n else "")
+            + (
+                f"; Camera.sky {'bound' if 'Camera.sky' in bound_ids else 'NOT bound'}"
+                if name == "cameras"
+                else ""
+            )
+            + "."
+        )
+        if not own:
+            die(
+                f"the `{name}` export enumerated ZERO units of its own. The record is "
+                "then bound by nothing, which is the vacuity this line exists to end."
+            )
+    return "\n".join(lines), neither
 
 
 def load_stage_docs(campaign: Path, export: dict) -> dict[str, dict]:
@@ -547,8 +604,11 @@ def main() -> int:
             f"refusal demonstrations: {len(demonstrations)} probe(s) refused with the code "
             f"they name and discharging no unit ({', '.join(sorted(demonstrations))})."
         )
+    record_text, _ = record_line(export, units, bound_ids, proven)
+    if record_text:
+        print(record_text)
     print(
-        f"binding domain: {docs_walked} primary stage document(s), "
+        f"binding domain: {docs_walked} primary document(s) (stage documents and records), "
         f"{len(overlay_rows)} overlay(s), {len(refusal)} unit(s) behind "
         f"{len({r['probe'] for r in refusal.values()})} probe(s)."
     )

@@ -505,7 +505,7 @@ fn a_camera_preview_is_the_snapshot_of_the_same_camera() {
     std::fs::write(
         build.join("render-plan.json"),
         br#"{"campaign_id":"keep-vertical","layout_aabb":{"min":[0,64,0],"max":[1,65,1]},
-            "sky":{"time":"noon","daytime_ticks":6000},"shots":[]}"#,
+            "sky":{"time":"noon","daytime_ticks":6000,"weather":"clear"},"shots":[]}"#,
     )
     .unwrap();
     let pf = common::prefabs_dir();

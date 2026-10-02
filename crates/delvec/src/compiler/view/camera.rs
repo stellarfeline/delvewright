@@ -52,9 +52,13 @@
 //!   camera, and judged at the value stated. `1.0` is the review frames' value.
 //! - `width`, `height` and `spp` are the frame and the path tracer's sample target:
 //!   everything else Chunky needs to reproduce the frame comes from the build (the
-//!   declared hour's sun, the loaded chunks, the ocean plane).
+//!   loaded chunks, the ocean plane) or from the record (the sky).
 //! - `answers` names the row of `design.json` whose approved image the camera is
 //!   judged against, and is refused when it names no row.
+//! - `sky` (optional, `{"time": "noon", "weather": "clear"}`) is the sky the
+//!   picture is taken under when it is not the answered row's: absent, the camera
+//!   renders under its row's `time` and `weather` ([`resolve_sky`], spec-0079), and
+//!   a stated sky equal to the row's is refused.
 //!
 //! # Candidates
 //!
@@ -66,12 +70,14 @@
 
 use std::collections::BTreeSet;
 
+use delvewright_dsl::{WorldTime, WorldWeather};
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::compiler::view::diag::{DW_INPUT, Diagnostic};
 use crate::compiler::view::scene::{
-    self, ChunkyCamera, ChunkyScene, Orientation, RenderPlan, WorldRef, Xyz, chunky_orientation,
-    round6,
+    self, ChunkyCamera, ChunkyScene, DaylightClass, Orientation, RenderPlan, SceneSky, WorldRef,
+    Xyz, chunky_orientation, round6,
 };
 
 /// Where the record lives inside a campaign directory.
@@ -84,6 +90,27 @@ pub const CAMERAS_FILE: &str = "design/cameras.json";
 /// give one answer (spec-0070 §5).
 pub const DW_RECORD_AT_BUILD: delvewright_dsl::DwCode =
     delvewright_dsl::DwCode::new(DW_INPUT, delvewright_dsl::ExitTier::Build);
+
+/// The key under which [`record_schema`] names the file the record lives at, so
+/// a tool reading the export (the gallery's coverage gate) finds the document
+/// without a second list of paths.
+pub const SCHEMA_FILE_KEY: &str = "x-delvewright-file";
+
+/// **The camera record's JSON Schema** — `delvec schema --stage cameras`. A
+/// campaign artifact, not a stage document, exported beside `walk-record` and
+/// `prefab-metadata` because it is a document a creator's tools write and an
+/// author reads the shape of; it names its own path ([`SCHEMA_FILE_KEY`]).
+pub fn record_schema() -> serde_json::Value {
+    let mut v = serde_json::to_value(schemars::schema_for!(CameraSheet))
+        .expect("the camera-record schema serializes to JSON");
+    if let Some(obj) = v.as_object_mut() {
+        obj.insert(
+            SCHEMA_FILE_KEY.into(),
+            serde_json::Value::String(CAMERAS_FILE.into()),
+        );
+    }
+    v
+}
 
 /// The file `--bracket` writes the candidates into, in the output directory.
 pub const CANDIDATES_FILE: &str = "candidates.json";
@@ -98,17 +125,24 @@ pub const DRAFT_DIVISOR: u32 = 4;
 /// about 20 seconds on a ten-core machine.
 pub const DRAFT_SPP: u32 = 128;
 
-/// The record: every showcase camera of one campaign.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+/// The showcase camera record, `design/cameras.json`: every showcase camera of
+/// one campaign. Written by `delvec place-camera` (or copied from a
+/// record-format file `delvec cameras --bracket` or `delvec panorama` writes);
+/// read by `delvec cameras` and `delvec build`. A campaign artifact, not a stage
+/// document: it carries no `dsl_version` and no `stage`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct CameraSheet {
+    /// The campaign the cameras stand in: a position means something only in
+    /// the world it was placed in.
     pub campaign_id: String,
+    /// The cameras, each named once.
     pub cameras: Vec<Camera>,
 }
 
 /// One camera. Field order is alphabetical, so the record a tool writes is
 /// already in the canonical key order `delvec fmt` holds campaign JSON to.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Camera {
     /// The `design.json` row whose approved image this camera answers.
@@ -126,6 +160,11 @@ pub struct Camera {
     pub pitch: f64,
     /// The lens, world blocks.
     pub pos: [f64; 3],
+    /// The sky the picture is taken under, when it is not the sky of the row
+    /// the camera answers. Absent: the row's `time` and `weather`. Stating the
+    /// row's own sky is refused (`DW0721`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sky: Option<CameraSky>,
     /// Who placed the camera: an estimate, or a person standing in the game.
     pub source: Source,
     /// Path-tracing sample target.
@@ -138,7 +177,7 @@ pub struct Camera {
 
 /// Who placed a camera. A hand camera is final: no estimate is written over it
 /// ([`place`]), and only deleting its row frees the name.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum Source {
     /// Derived by a tool or an agent: a panorama fit, a bracket candidate, a
@@ -147,6 +186,47 @@ pub enum Source {
     /// Captured in the running game where a person stood and looked
     /// (`/trigger dw.cam`, harvested by `delvec harvest`).
     Hand,
+}
+
+/// The sky a camera states (spec-0079 §3): one state, both halves required,
+/// typed by the enums `world.json` and `design.json` use.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct CameraSky {
+    /// The hour the picture is taken at.
+    pub time: WorldTime,
+    /// The weather the picture is taken under.
+    pub weather: WorldWeather,
+}
+
+impl CameraSky {
+    /// Parse `<time>,<weather>` in the two enums' own keywords (`dusk,rain`) —
+    /// `delvec place-camera --sky`'s spelling.
+    pub fn parse(spec: &str) -> Result<CameraSky, String> {
+        let shape = "a sky is `<time>,<weather>`: a time of day, day | noon | dusk | night | \
+                     midnight | dawn, and a weather, clear | rain | thunder (`dusk,rain`)";
+        let (time, weather) = spec
+            .split_once(',')
+            .ok_or_else(|| format!("`{spec}` is not a sky: {shape}"))?;
+        let time: WorldTime = serde_json::from_value(serde_json::Value::from(time.trim()))
+            .map_err(|_| format!("`{time}` is not a time of day: {shape}"))?;
+        let weather: WorldWeather = serde_json::from_value(serde_json::Value::from(weather.trim()))
+            .map_err(|_| format!("`{weather}` is not a weather: {shape}"))?;
+        Ok(CameraSky { time, weather })
+    }
+
+    /// `dusk+rain`: the pair as every line prints it.
+    pub fn label(self) -> String {
+        format!("{}+{}", self.time.keyword(), self.weather.keyword())
+    }
+
+    /// The scene sky this pair is.
+    pub fn scene(self) -> SceneSky {
+        SceneSky {
+            daytime_ticks: self.time.daytime_ticks(),
+            weather: self.weather,
+        }
+    }
 }
 
 impl Source {
@@ -246,8 +326,15 @@ impl Camera {
 /// Parse and check a record. A document that is not the record, a camera that
 /// breaks a rule, and two cameras of one name are each refused ([`DW_INPUT`]).
 pub fn parse_sheet(bytes: &[u8]) -> Result<CameraSheet, Diagnostic> {
-    let sheet: CameraSheet = serde_json::from_slice(bytes)
-        .map_err(|e| Diagnostic::error(DW_INPUT, format!("parse {CAMERAS_FILE}: {e}")))?;
+    let sheet: CameraSheet = serde_json::from_slice(bytes).map_err(|e| {
+        Diagnostic::error(
+            DW_INPUT,
+            format!(
+                "parse {CAMERAS_FILE}: {}",
+                camera_at_fault(bytes).unwrap_or_else(|| e.to_string())
+            ),
+        )
+    })?;
     let mut seen = BTreeSet::new();
     for cam in &sheet.cameras {
         cam.check().map_err(|why| {
@@ -275,6 +362,24 @@ pub fn parse_sheet(bytes: &[u8]) -> Result<CameraSheet, Diagnostic> {
     Ok(sheet)
 }
 
+/// The first camera of a record that does not parse as a camera, named with the
+/// row it answers and serde's reason — so a refusal of one field (a half-stated
+/// `sky`, a weather that is not one) says which camera to open. `None` when the
+/// document is not JSON, or the fault is not inside one camera.
+fn camera_at_fault(bytes: &[u8]) -> Option<String> {
+    let doc: serde_json::Value = serde_json::from_slice(bytes).ok()?;
+    doc.get("cameras")?.as_array()?.iter().find_map(|c| {
+        match serde_json::from_value::<Camera>(c.clone()) {
+            Ok(_) => None,
+            Err(e) => Some(format!(
+                "camera `{}` (answers `{}`): {e}",
+                c.get("name").and_then(|n| n.as_str()).unwrap_or("?"),
+                c.get("answers").and_then(|a| a.as_str()).unwrap_or("?")
+            )),
+        }
+    })
+}
+
 /// One row of `design.json` as the camera surface reads it: the name a camera
 /// answers, and the sentence that says which picture it is.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -283,6 +388,10 @@ pub struct ApprovedRow {
     pub name: String,
     /// The row's `shows` sentence, empty when the document states none.
     pub shows: String,
+    /// The `time` and `weather` the picture was drawn under — the sky a camera
+    /// answering the row renders under unless it states its own. `None` only
+    /// when the document does not state both (which `delvec validate` refuses).
+    pub sky: Option<CameraSky>,
 }
 
 /// The approved-image rows a `design.json` carries, in the design's own order.
@@ -308,6 +417,12 @@ pub fn reference_rows(design_json: &[u8]) -> Result<Vec<ApprovedRow>, Diagnostic
         .iter()
         .filter_map(|r| {
             let name = r.get("name").and_then(|n| n.as_str())?;
+            let time = r
+                .get("time")
+                .and_then(|t| serde_json::from_value::<WorldTime>(t.clone()).ok());
+            let weather = r
+                .get("weather")
+                .and_then(|w| serde_json::from_value::<WorldWeather>(w.clone()).ok());
             Some(ApprovedRow {
                 name: name.to_string(),
                 shows: r
@@ -315,6 +430,9 @@ pub fn reference_rows(design_json: &[u8]) -> Result<Vec<ApprovedRow>, Diagnostic
                     .and_then(|s| s.as_str())
                     .unwrap_or_default()
                     .to_string(),
+                sky: time
+                    .zip(weather)
+                    .map(|(time, weather)| CameraSky { time, weather }),
             })
         })
         .collect())
@@ -418,6 +536,150 @@ pub fn stray_message(name: &str, answers: &str, rows: &[String]) -> String {
             rows.join(", ")
         }
     )
+}
+
+/// Where a camera's sky came from.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SkyOrigin {
+    /// The camera states none: the sky of the `design.json` row it answers.
+    Derived(String),
+    /// The camera states its own `sky`.
+    Stated,
+}
+
+/// The sky one camera is emitted under (spec-0079 §3, §6).
+#[derive(Debug, Clone, PartialEq)]
+pub struct ResolvedSky {
+    /// The camera's name.
+    pub camera: String,
+    pub sky: CameraSky,
+    pub origin: SkyOrigin,
+    /// The daylight class the pair's sun falls in — the look-table row read.
+    pub class: DaylightClass,
+}
+
+impl ResolvedSky {
+    /// The per-camera binding line: `sky: <name> <time>+<weather> <derived from
+    /// <row> | stated> class <class> — <cell>`.
+    pub fn line(&self) -> String {
+        format!(
+            "sky: {} {} {} class {} — {}",
+            self.camera,
+            self.sky.label(),
+            match &self.origin {
+                SkyOrigin::Derived(row) => format!("derived from {row}"),
+                SkyOrigin::Stated => "stated".to_string(),
+            },
+            self.class.name(),
+            scene::sky_phrase(self.class, self.sky.weather)
+        )
+    }
+}
+
+/// **The sky a camera is taken under** — its stated `sky`, else the `time` and
+/// `weather` of the row it answers. The record's one rule about the sky lives
+/// here, and every reader (`delvec cameras`, `delvec place-camera`, `delvec
+/// build`) asks it through this function: a stated sky equal to the row's is
+/// refused, because it is a derivation typed where a judgement belongs and goes
+/// stale the moment the row changes.
+pub fn resolve_sky(cam: &Camera, rows: &[ApprovedRow]) -> Result<ResolvedSky, String> {
+    let names = || rows.iter().map(|r| r.name.clone()).collect::<Vec<_>>();
+    let row = rows
+        .iter()
+        .find(|r| r.name == cam.answers)
+        .ok_or_else(|| stray_message(&cam.name, &cam.answers, &names()))?;
+    let (sky, origin) = match (cam.sky, row.sky) {
+        (Some(stated), Some(own)) if stated == own => {
+            return Err(restated_message(&cam.name, &row.name, stated));
+        }
+        (Some(stated), _) => (stated, SkyOrigin::Stated),
+        (None, Some(own)) => (own, SkyOrigin::Derived(row.name.clone())),
+        (None, None) => {
+            return Err(format!(
+                "{CAMERAS_FILE}: camera `{}` states no `sky`, and the row it answers, `{}`, \
+                 states no `time` and `weather` to take one from. Run `delvec validate`: \
+                 every row of design.json states the sky its picture was drawn under",
+                cam.name, row.name
+            ));
+        }
+    };
+    let class = scene::daylight_class(&scene::sky_of(sky.scene()).sun);
+    Ok(ResolvedSky {
+        camera: cam.name.clone(),
+        sky,
+        origin,
+        class,
+    })
+}
+
+/// The sentence a camera restating its row's sky earns, wherever it is read.
+pub fn restated_message(name: &str, row: &str, sky: CameraSky) -> String {
+    format!(
+        "{CAMERAS_FILE}: camera `{name}` states `sky` {}, which is the sky of the row it \
+         answers, `{row}`. A camera with no `sky` already renders under its row's, and a copy \
+         of the row's sky goes stale the moment the row changes: REMOVE the `sky` field from \
+         camera `{name}`",
+        sky.label()
+    )
+}
+
+/// Every camera's sky, and the first refusal among them (in record order).
+///
+/// Both are returned so a run prints the binding line — every camera whose sky
+/// resolves — whether or not it then refuses (spec-0079 §6).
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct Skies {
+    pub resolved: Vec<ResolvedSky>,
+    /// How many cameras were asked about: the line's denominator.
+    pub cameras: usize,
+    pub refusal: Option<String>,
+}
+
+impl Skies {
+    /// The summary binding line: `skies: D derived, S stated, over C camera(s);
+    /// weathers emitted: {…}` — the weathers set names the non-clear weathers
+    /// only, since a clear scene emits no sky block.
+    pub fn summary(&self) -> String {
+        let derived = self
+            .resolved
+            .iter()
+            .filter(|r| matches!(r.origin, SkyOrigin::Derived(_)))
+            .count();
+        let stated = self.resolved.len() - derived;
+        let weathers: BTreeSet<&'static str> = [WorldWeather::Rain, WorldWeather::Thunder]
+            .into_iter()
+            .filter(|w| self.resolved.iter().any(|r| r.sky.weather == *w))
+            .map(|w| w.keyword())
+            .collect();
+        let refused = self.cameras - self.resolved.len();
+        format!(
+            "skies: {derived} derived, {stated} stated, over {} camera(s){}; weathers emitted: {{{}}}",
+            self.cameras,
+            if refused == 0 {
+                String::new()
+            } else {
+                format!(" ({refused} refused)")
+            },
+            weathers.into_iter().collect::<Vec<_>>().join(", ")
+        )
+    }
+}
+
+/// Resolve every camera's sky ([`resolve_sky`]).
+pub fn skies(cameras: &[Camera], rows: &[ApprovedRow]) -> Skies {
+    let mut out = Skies {
+        cameras: cameras.len(),
+        ..Skies::default()
+    };
+    for cam in cameras {
+        match resolve_sky(cam, rows) {
+            Ok(r) => out.resolved.push(r),
+            Err(why) => {
+                out.refusal.get_or_insert(why);
+            }
+        }
+    }
+    out
 }
 
 /// The steps a bracket moves a camera by. A zero step is not bracketed.
@@ -589,18 +851,18 @@ impl Frame {
     }
 }
 
-/// The Chunky scene of one frame of the assembled world: the plan's hour as the
-/// sun, the layout and whatever ground its horizon built as the loaded chunks,
-/// the ocean plane on an ocean horizon. [`crate::compiler::view::panorama`]
-/// emits through this too, so a solved camera and a stated one are one scene
-/// shape.
+/// The Chunky scene of one frame of the assembled world under `sky`: the layout
+/// and whatever ground its horizon built as the loaded chunks, the ocean plane
+/// on an ocean horizon. [`crate::compiler::view::panorama`] emits through this
+/// too, so a solved camera and a stated one are one scene shape; the caller
+/// says which sky (spec-0079 §5).
 pub(crate) fn world_scene(
     plan: &RenderPlan,
     stem: &str,
     frame: &Frame,
     world_path: &str,
+    sky: SceneSky,
 ) -> Result<ChunkyScene, Diagnostic> {
-    let sky = scene::plan_sky(plan)?;
     let (loaded_min, loaded_max) = scene::loaded_extent(&plan.layout_aabb, plan.horizon);
     let o = chunky_orientation(frame.plan_yaw_deg, frame.pitch_deg);
     Ok(ChunkyScene {
@@ -628,9 +890,11 @@ pub(crate) fn world_scene(
         water_world_height: None,
         water_world_height_offset_enabled: None,
         water_world_clip_enabled: None,
-        sun: Some(scene::sun_at(sky.daytime_ticks)),
-        // A showcase frame is the world as a player sees it at the declared
-        // hour; the night-vision review emulation never applies to it.
+        sun: None,
+        sky: None,
+        fog: None,
+        // A showcase frame is the world as a player sees it under its sky; the
+        // night-vision review emulation never applies to it.
         materials: None,
         delvewright_review_policy: None,
         world: WorldRef {
@@ -654,6 +918,7 @@ pub(crate) fn world_scene(
         },
         chunk_list: scene::chunk_list(loaded_min, loaded_max),
     }
+    .under(scene::sky_of(sky))
     .with_water_world(scene::water_world(plan.horizon)))
 }
 
@@ -774,23 +1039,36 @@ pub fn selected(
     Ok(out)
 }
 
-/// Emit the scenes of a record against a build's `render-plan.json`.
-/// Byte-deterministic (ADR-0006): the same plan, record and options give the
-/// same bytes.
+/// Emit the scenes of a record against a build's `render-plan.json`, each under
+/// its camera's sky ([`resolve_sky`] over `rows`, the design record's).
+/// Byte-deterministic (ADR-0006): the same plan, record, rows and options give
+/// the same bytes.
 pub fn emit(
     plan_json: &[u8],
     sheet: &CameraSheet,
+    rows: &[ApprovedRow],
     opts: &EmitOptions,
 ) -> Result<Emission, Diagnostic> {
     let plan = scene::parse_plan(plan_json)?;
+    // A camera's sky is its picture's, not the plan's — but a plan that states no
+    // sky, or no weather, was written by an older engine, and is refused by name
+    // here as every scene builder refuses it.
+    scene::plan_sky(&plan)?;
     let cameras = selected(&plan.campaign_id, sheet, &opts.only, opts.bracket.as_ref())?;
     let mut out = Emission {
         scenes: Vec::new(),
         cameras: Vec::new(),
     };
     for c in cameras {
+        let sky = resolve_sky(&c, rows).map_err(|why| Diagnostic::error(DW_INPUT, why))?;
         let stem = camera_stem(&plan.campaign_id, &c.name, opts.draft);
-        let scene = world_scene(&plan, &stem, &Frame::of(&c, opts.draft), &opts.world_path)?;
+        let scene = world_scene(
+            &plan,
+            &stem,
+            &Frame::of(&c, opts.draft),
+            &opts.world_path,
+            sky.sky.scene(),
+        )?;
         out.scenes.push((format!("{stem}.json"), scene.to_bytes()?));
         out.cameras.push(c);
     }
@@ -843,6 +1121,7 @@ pub fn place(
     campaign_id: &str,
     name: &str,
     answers: Option<&str>,
+    sky: Option<CameraSky>,
     placement: Placement,
 ) -> Result<(CameraSheet, Placed), Diagnostic> {
     let refuse = |why: String| Diagnostic::error(DW_INPUT, format!("{CAMERAS_FILE}: {why}"));
@@ -858,7 +1137,7 @@ pub fn place(
         )));
     }
     let existing = sheet.cameras.iter().position(|c| c.name == name);
-    let row = match (existing, &placement) {
+    let mut row = match (existing, &placement) {
         (Some(i), _) => {
             let old = &sheet.cameras[i];
             if old.source == Source::Hand && matches!(placement, Placement::Estimate(_)) {
@@ -931,6 +1210,7 @@ pub fn place(
                 name: name.to_string(),
                 pitch: *pitch,
                 pos: *pos,
+                sky: None,
                 source: Source::Hand,
                 spp: crate::compiler::view::panorama::DEFAULT_SPP,
                 width: crate::compiler::view::panorama::DEFAULT_WIDTH,
@@ -938,6 +1218,11 @@ pub fn place(
             }
         }
     };
+    // `--sky` states the row's sky; without it a hand row keeps the sky it had
+    // (a person placed the pose, not the sky) and an estimate carries its own.
+    if sky.is_some() {
+        row.sky = sky;
+    }
     row.check()
         .map_err(|why| refuse(format!("camera `{name}`: {why}")))?;
     let placed = match existing {
@@ -1128,11 +1413,42 @@ mod tests {
             name: name.to_string(),
             pitch: 10.0,
             pos: [10.5, 70.0, -4.25],
+            sky: None,
             source: Source::Estimated,
             spp: 300,
             width: 1600,
             yaw: 30.0,
         }
+    }
+
+    /// The design rows the test cameras answer: both at the ocean fixture's
+    /// declared sky (`day`, `clear`).
+    fn rows() -> Vec<ApprovedRow> {
+        ["concept/quay", "a"]
+            .into_iter()
+            .map(|name| ApprovedRow {
+                name: name.to_string(),
+                shows: String::new(),
+                sky: Some(CameraSky {
+                    time: WorldTime::Day,
+                    weather: WorldWeather::Clear,
+                }),
+            })
+            .collect()
+    }
+
+    fn emit3(plan: &[u8], sheet: &CameraSheet, opts: &EmitOptions) -> Result<Emission, Diagnostic> {
+        emit(plan, sheet, &rows(), opts)
+    }
+
+    fn place5(
+        sheet: Option<CameraSheet>,
+        campaign_id: &str,
+        name: &str,
+        answers: Option<&str>,
+        placement: Placement,
+    ) -> Result<(CameraSheet, Placed), Diagnostic> {
+        place(sheet, campaign_id, name, answers, None, placement)
     }
 
     fn sheet(id: &str, cams: Vec<Camera>) -> CameraSheet {
@@ -1178,7 +1494,7 @@ mod tests {
                 c.pitch = pitch;
                 c.answers = "a".into();
                 let s = sheet("isle", vec![c]);
-                let e = emit(OCEAN, &s, &EmitOptions::default()).unwrap();
+                let e = emit3(OCEAN, &s, &EmitOptions::default()).unwrap();
                 let v: serde_json::Value = serde_json::from_slice(&e.scenes[0].1).unwrap();
                 let (got, want) = (chunky_forward(&v), minecraft_forward(yaw, pitch));
                 for k in 0..3 {
@@ -1230,7 +1546,7 @@ mod tests {
     #[test]
     fn a_stated_camera_is_emitted_verbatim() {
         let s = sheet("isle", vec![cam("hero")]);
-        let e = emit(
+        let e = emit3(
             OCEAN,
             &s,
             &EmitOptions {
@@ -1261,7 +1577,7 @@ mod tests {
     /// Every stated field reaches a byte: perturb one, and the scene moves.
     #[test]
     fn every_stated_field_moves_the_scene() {
-        let base = emit(
+        let base = emit3(
             OCEAN,
             &sheet("isle", vec![cam("a")]),
             &EmitOptions::default(),
@@ -1282,7 +1598,7 @@ mod tests {
         for (what, edit) in edits {
             let mut c = cam("a");
             edit(&mut c);
-            let moved = emit(OCEAN, &sheet("isle", vec![c]), &EmitOptions::default()).unwrap();
+            let moved = emit3(OCEAN, &sheet("isle", vec![c]), &EmitOptions::default()).unwrap();
             assert_ne!(base.scenes, moved.scenes, "{what} did not reach the scene");
         }
     }
@@ -1295,14 +1611,14 @@ mod tests {
             ..Default::default()
         };
         assert_eq!(
-            emit(OCEAN, &s, &opts).unwrap(),
-            emit(OCEAN, &s, &opts).unwrap()
+            emit3(OCEAN, &s, &opts).unwrap(),
+            emit3(OCEAN, &s, &opts).unwrap()
         );
     }
 
     #[test]
     fn a_record_for_another_campaign_is_refused() {
-        let err = emit(
+        let err = emit3(
             OCEAN,
             &sheet("mini", vec![cam("a")]),
             &EmitOptions::default(),
@@ -1316,7 +1632,7 @@ mod tests {
     fn a_plan_with_no_hour_is_refused() {
         let no_sky =
             br#"{"campaign_id":"c","layout_aabb":{"min":[0,64,0],"max":[1,65,1]},"shots":[]}"#;
-        let err = emit(no_sky, &sheet("c", vec![cam("a")]), &EmitOptions::default()).unwrap_err();
+        let err = emit3(no_sky, &sheet("c", vec![cam("a")]), &EmitOptions::default()).unwrap_err();
         assert_eq!(err.code, DW_INPUT);
     }
 
@@ -1435,7 +1751,7 @@ mod tests {
     #[test]
     fn a_draft_is_small_cheap_and_never_shares_a_name_with_its_frame() {
         let s = sheet("isle", vec![cam("a")]);
-        let draft = emit(
+        let draft = emit3(
             OCEAN,
             &s,
             &EmitOptions {
@@ -1457,7 +1773,7 @@ mod tests {
     #[test]
     fn only_selects_and_refuses_a_name_it_does_not_have() {
         let s = sheet("mini", vec![cam("a"), cam("b")]);
-        let e = emit(
+        let e = emit3(
             MINI,
             &s,
             &EmitOptions {
@@ -1468,7 +1784,7 @@ mod tests {
         .unwrap();
         assert_eq!(e.cameras.len(), 1);
         assert_eq!(e.cameras[0].name, "b");
-        let err = emit(
+        let err = emit3(
             MINI,
             &s,
             &EmitOptions {
@@ -1494,7 +1810,7 @@ mod tests {
     /// hand pose replaces a hand row and keeps its frame and exposure.
     #[test]
     fn an_estimate_is_never_written_over_a_hand_camera() {
-        let (sheet, placed) = place(
+        let (sheet, placed) = place5(
             None,
             "isle",
             "hero",
@@ -1515,7 +1831,7 @@ mod tests {
         );
 
         let estimate = Placement::Estimate(cam("hero.yaw+8"));
-        let err = place(Some(sheet.clone()), "isle", "hero", None, estimate.clone()).unwrap_err();
+        let err = place5(Some(sheet.clone()), "isle", "hero", None, estimate.clone()).unwrap_err();
         assert_eq!(err.code, DW_INPUT);
         assert!(err.message.contains("`hero` was placed by hand"), "{err:?}");
 
@@ -1524,7 +1840,7 @@ mod tests {
         let mut exposed = sheet.clone();
         exposed.cameras[0].exposure = 8.0;
         let (again, placed) =
-            place(Some(exposed), "isle", "hero", None, hand([2.5, 71.0, -3.0])).unwrap();
+            place5(Some(exposed), "isle", "hero", None, hand([2.5, 71.0, -3.0])).unwrap();
         assert_eq!(placed, Placed::Replaced);
         assert_eq!(again.cameras[0].pos, [2.5, 71.0, -3.0]);
         assert_eq!(again.cameras[0].exposure, 8.0);
@@ -1535,7 +1851,7 @@ mod tests {
         two.cameras.push(cam("other"));
         let left = delete(two, "hero").unwrap().unwrap();
         let (written, placed) =
-            place(Some(left), "isle", "hero", Some("concept/quay"), estimate).unwrap();
+            place5(Some(left), "isle", "hero", Some("concept/quay"), estimate).unwrap();
         assert_eq!(placed, Placed::Added);
         let row = written.cameras.iter().find(|c| c.name == "hero").unwrap();
         assert_eq!(row.source, Source::Estimated);
@@ -1545,9 +1861,9 @@ mod tests {
 
     #[test]
     fn a_placement_answers_one_picture_in_one_world() {
-        let err = place(None, "isle", "hero", None, hand([0.5, 70.0, 0.5])).unwrap_err();
+        let err = place5(None, "isle", "hero", None, hand([0.5, 70.0, 0.5])).unwrap_err();
         assert!(err.message.contains("--answers"), "{err:?}");
-        let (sheet, _) = place(
+        let (sheet, _) = place5(
             None,
             "isle",
             "hero",
@@ -1555,7 +1871,7 @@ mod tests {
             hand([0.5, 70.0, 0.5]),
         )
         .unwrap();
-        let err = place(
+        let err = place5(
             Some(sheet.clone()),
             "isle",
             "hero",
@@ -1564,7 +1880,7 @@ mod tests {
         )
         .unwrap_err();
         assert!(err.message.contains("new row"), "{err:?}");
-        let err = place(
+        let err = place5(
             Some(sheet.clone()),
             "mini",
             "hero",
@@ -1579,13 +1895,13 @@ mod tests {
             pitch: 0.0,
             fov: 0.0,
         };
-        assert!(place(Some(sheet), "isle", "hero", None, bad).is_err());
+        assert!(place5(Some(sheet), "isle", "hero", None, bad).is_err());
     }
 
     /// The record a tool writes reads back as itself, in canonical key order.
     #[test]
     fn a_written_record_is_canonical_and_reads_back() {
-        let (sheet, _) = place(
+        let (sheet, _) = place5(
             None,
             "isle",
             "hero",

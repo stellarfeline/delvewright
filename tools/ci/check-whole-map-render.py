@@ -68,6 +68,15 @@ And for `delvec cameras`, on every point whose campaign carries a
   or the wrong zero is a red rather than a picture of the wrong wall.
 - the record binds: a campaign whose record states no camera, or a run that
   judged zero cameras over the whole domain, is a red.
+- **every camera is under its picture's sky** (spec-0079): the camera's own
+  `sky`, else the `time` and `weather` of the `design.json` row it answers —
+  read here from the two documents, sharing nothing with the engine's
+  resolution. A `clear` camera's scene carries no `sky` and no `fog` key; a
+  `rain` or `thunder` one carries `sky.mode SOLID_COLOR` and `fog.mode
+  UNIFORM`. Over the domain the weathers emitted are `{clear, rain, thunder}`
+  and the daylight classes — read off each scene's sun altitude, at or above
+  20° `high`, from 0° `low`, under 0° `below` — are `{high, low, below}`; a
+  domain reaching fewer is a red, because the gallery owes every cell a frame.
 
 The arms refuse a build with no world save (Chunky renders a missing world as an
 empty frame at exit 0). This gate judges scene bytes and renders nothing, so each
@@ -215,6 +224,32 @@ def camera_matches(doc: dict, cam: dict) -> list[str]:
 # The share of the frame a panorama's subject must cover. A third is what the
 # island's accepted release art measures: its built place's bounding rectangle
 # over its frame.
+def sky_matches(
+    doc: dict, cam: dict, design: dict, weathers: dict[str, int], classes: dict[str, int]
+) -> list[str]:
+    """Whether a camera's scene is under its picture's sky; tallies what it saw."""
+    rows = {r["name"]: r for r in design.get("content", {}).get("references", [])}
+    row = rows.get(cam["answers"])
+    sky = cam.get("sky") or ({"time": row["time"], "weather": row["weather"]} if row else None)
+    if sky is None:
+        return [f"answers `{cam['answers']}`, which design.json has no row for"]
+    bad = []
+    overcast = sky["weather"] != "clear"
+    has = doc.get("sky") is not None or doc.get("fog") is not None
+    if overcast and not (
+        (doc.get("sky") or {}).get("mode") == "SOLID_COLOR"
+        and (doc.get("fog") or {}).get("mode") == "UNIFORM"
+    ):
+        bad.append(f"is under {sky['weather']} and its scene carries no overcast sky and fog")
+    if not overcast and has:
+        bad.append("is under a clear sky and its scene carries a `sky` or `fog` key")
+    weathers[sky["weather"]] = weathers.get(sky["weather"], 0) + 1
+    alt = math.degrees(doc["sun"]["altitude"])
+    cls = "high" if alt >= 20.0 else "low" if alt >= 0.0 else "below"
+    classes[cls] = classes.get(cls, 0) + 1
+    return bad
+
+
 MIN_FILL = 1.0 / 3.0
 
 
@@ -292,6 +327,8 @@ def main() -> int:
     builds = 0
     cameras_judged = 0
     records = 0
+    weathers_seen: dict[str, int] = {}
+    classes_seen: dict[str, int] = {}
 
     for base in bases:
         point = found[base]
@@ -339,7 +376,11 @@ def main() -> int:
                         )
                         continue
                     cameras_judged += 1
-                    for why in camera_matches(json.loads(scene_file.read_text()), cam):
+                    doc = json.loads(scene_file.read_text())
+                    for why in camera_matches(doc, cam):
+                        findings.append(f"{base} ({label}) camera `{cam['name']}`: {why}")
+                    design = json.loads((src / "design.json").read_text())
+                    for why in sky_matches(doc, cam, design, weathers_seen, classes_seen):
                         findings.append(f"{base} ({label}) camera `{cam['name']}`: {why}")
 
         for arm in ("scene", "panorama"):
@@ -393,6 +434,19 @@ def main() -> int:
                             "ground in."
                         )
 
+    print(
+        f"camera skies: weathers {dict(sorted(weathers_seen.items()))}, daylight classes "
+        f"{dict(sorted(classes_seen.items()))}, over {cameras_judged} camera scene(s)."
+    )
+    if cameras_judged and (
+        set(weathers_seen) != {"clear", "rain", "thunder"}
+        or set(classes_seen) != {"high", "low", "below"}
+    ):
+        findings.append(
+            f"the domain's camera scenes reach weathers {sorted(weathers_seen)} and "
+            f"classes {sorted(classes_seen)}; the gallery owes every weather and every "
+            "daylight class a frame (spec-0079 §7)"
+        )
     print(
         f"whole-map render: {len(bases)} horizon base(s) declared "
         f"({', '.join(bases)}), {len(found)} point(s) found, {builds} build(s) "

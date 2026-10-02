@@ -80,9 +80,18 @@ def stage_files(export: dict) -> dict[str, str]:
 
     Nothing needs listing, because the filename IS the stage name: every stage
     document in a campaign directory is `<stage>.json`, which is a convention the
-    loader already keeps and which the export's own keys therefore state.
+    loader already keeps and which the export's own keys therefore state. A
+    document that is not a stage document and lives elsewhere — the showcase
+    camera record, `design/cameras.json` (spec-0079 §7) — names its own path in
+    its export under `FILE_KEY`, and that path is read, never typed here.
     """
-    return {stage: f"{stage}.json" for stage in export}
+    return {stage: doc.get(FILE_KEY) or f"{stage}.json" for stage, doc in export.items()}
+
+
+# The key under which a non-stage document's schema export names the file the
+# document lives at (`delvec schema --stage cameras` →
+# `camera::SCHEMA_FILE_KEY`). Read, never listed: the engine states the path.
+FILE_KEY = "x-delvewright-file"
 
 
 @dataclass(frozen=True)
