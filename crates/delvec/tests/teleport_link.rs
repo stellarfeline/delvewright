@@ -929,3 +929,43 @@ fn a_branchs_link_made_shut_reds_that_branchs_proof() {
     assert!(line.contains("branch `branch/bolt`"), "{line}");
     assert!(line.contains("shut at this step"), "{line}");
 }
+
+// ---------------------------------------------------------------------------
+// A site plan whose second place only a link reaches (the demo level's shape).
+// ---------------------------------------------------------------------------
+
+/// `tests/fixtures/ferry-site`: two boxes no seam joins, the strait drawn as
+/// two one-way `carry` edges, a ferry in each. The blockout battery seeds a
+/// carried place the way it seeds a declared fall, so the far boathouse is a
+/// place the built world reaches (`DW0837`), and the route proof takes both
+/// links. Before the battery read `carry`, this campaign was refused
+/// "no body can reach `node/far` in the built world".
+#[test]
+fn a_site_plan_place_only_a_link_reaches_is_reached_and_carried_to() {
+    let dir = Path::new(env!("CARGO_TARGET_TMPDIR")).join("teleport-link-ferry-site");
+    let _ = std::fs::remove_dir_all(&dir);
+    common::copy_dir_all(&common::compiler_fixtures_dir().join("ferry-site"), &dir);
+    let run = build(&dir);
+    run.green();
+    assert!(!run.stderr.contains("DW0837 [error]"), "{}", run.stderr);
+    assert!(
+        run.stderr.contains("2 carried by a link"),
+        "both ferries carry:\n{}",
+        run.stderr
+    );
+    let path = run.json("critical-path.json");
+    let carried = path["steps"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|s| s.get("stand").is_some())
+        .count();
+    assert_eq!(carried, 2);
+    // Without the far ferry's carry edge the graph cannot say the party comes
+    // home, and the walk back has no way: refused, never green.
+    common::patch_file(&dir.join("layout-graph.json"), |g| {
+        g["content"]["edges"].as_array_mut().unwrap().truncate(1);
+    });
+    let run = build(&dir);
+    assert_ne!(run.status, 0, "{}", run.stderr);
+}
