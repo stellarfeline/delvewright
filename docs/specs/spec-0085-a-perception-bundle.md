@@ -11,8 +11,9 @@
   (`DW0891`, `posted_places`, the keep-out), `nav::World::body_moves`,
   `dsl::metrics` (`WALK_SPEED_BLOCKS_PER_SECOND`, `FALL_DAMAGE_ONSET_BLOCKS`,
   `unarmoured_survivable_fall_blocks`), the pinned command tree
-  `crates/delvec/data/commands-1.21.11.json`, the findings ledger row
-  `isl-52`, the gallery (`give-effect` once, `play-sound` five times,
+  `crates/delvec/data/commands-1.21.11.json`, the findings-ledger row whose
+  general form is that a granted sight effect outlasts any authored camera it
+  can overlap, the gallery (`give-effect` once, `play-sound` five times,
   `sequence` once in `gallery/quests.json`), the harness (`harness/src`, 30
   files, 0 of them naming blindness, darkness or nausea) — and against the
   eldritch spike, branch `research/eldritch-visuals` at `2bbb1f28`,
@@ -363,9 +364,9 @@ the creator's picture. What a sight effect does owe a camera is §5.3.
 
 ### 5.3 A sight effect outlasts the camera it overlaps
 
-**Cited** (the findings ledger, `isl-52`, open, triage `capability`): *a
-granted sight effect outlasts any authored camera it can overlap, plus
-vanilla's wind-down, so it can never begin ramping down on screen*; the row
+**Cited** (the findings ledger, an open capability row): *a granted sight
+effect outlasts any authored camera it can overlap, plus vanilla's wind-down,
+so it can never begin ramping down on screen*; the row
 binds today only to an area's `mitigation` grant, whose lease the compiler
 derives, and states that *a `give-effect` sight grant's author-chosen
 `seconds` has no check against the cameras it can overlap*.
@@ -621,9 +622,11 @@ against the tree at `c0f22c51` before being written and is recorded as a
    `night_vision` at tick 0 and a 10-second cutscene shot at tick 0 is
    `DW_PERCEPTION_SIGHT_UNDER_A_CAMERA`; at 15 seconds it is green; the
    sight set and each wind-down are one table in `crates/dsl` with the wiki
-   page per row; the ledger row `isl-52` is closed by naming this code as
-   its general form. *Tree: debt — the row is open and binds only
-   `mitigation`.*
+   page per row; the ledger row whose general form is *a granted sight
+   effect outlasts any authored camera it can overlap, plus vanilla's
+   wind-down, so it can never begin ramping down on screen* gains a
+   `give-effect` binding and names this code as its general form. *Tree:
+   debt — the row is open and binds only `mitigation`.*
 8. **The blind reach.** On the gallery, a two-second `blindness` `in` a box
    at the west pit's rim is `DW_PERCEPTION_BLIND_REACH` naming the pit; the
    same grant as `nausea` is green; the same `blindness` thirty cells from
@@ -665,14 +668,16 @@ against the tree at `c0f22c51` before being written and is recorded as a
   run's last step strip the second player's tag.
 - **A particle is always `force`.** The alternative, a per-beat mode, offers
   a knob whose only effect is to lose an authored beat on some clients.
-- **A blinding whose reach meets a killing volume is refused** (one new
-  code), with `darkness` counted as blinding beside `blindness`. The cost:
-  a `darkness` or `blindness` anywhere in a campaign with a killing volume
-  must be `in`-scoped or short enough that its reach stops short; `nausea`
-  is the effect for a beat beside a pit. The alternative is an advisory,
-  which ships a player blind at a rim the bot never fails.
 - **A sight grant that ends under a camera is refused** — the ledger's own
-  open general form (`isl-52`), given its `give-effect` half here rather than
-  in a spec of its own.
+  open general form, given its `give-effect` half here rather than in a spec
+  of its own.
 - **Falls that hurt but do not kill are not caught**, and the record says so.
 - **`dsl_version` moves**; four codes to allocate; no ADR.
+
+**Settled under the danger-is-visible rule, not put to the owner.** A
+blinding whose reach meets a killing volume is refused (one new code), with
+`darkness` counted as blinding beside `blindness`: a hazard must read as a
+hazard to the player, and darkness's trough is complete darkness. The cost: a
+`darkness` or `blindness` anywhere in a campaign with a killing volume must
+be `in`-scoped or short enough that its reach stops short; `nausea` is the
+effect for a beat beside a pit.
