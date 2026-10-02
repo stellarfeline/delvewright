@@ -1,0 +1,440 @@
+{
+  "instrument": {
+    "server": "itzg/minecraft-server@sha256:3e7db256… (versions.toml [images.base]), vanilla 1.21.11",
+    "bot": "mineflayer 4.37.1 (harness pin)"
+  },
+  "replies": {
+    "reload": {
+      "cmd": "reload",
+      "reply": "Reloading!"
+    },
+    "datapack_list": {
+      "cmd": "datapack list enabled",
+      "reply": "There are 2 data pack(s) enabled: [vanilla (built-in)], [file/dw-eldritch-spike (world)]"
+    },
+    "start": {
+      "cmd": "execute as dw_eldritch run function dwe:start",
+      "reply": "Running function dwe:start"
+    },
+    "tick_query_before": {
+      "cmd": "tick query",
+      "reply": "The game is running normallyTarget tick rate: 20.0 per second.\n\u001b[0mAverage time per tick: 7.0ms (Target: 50.0ms)Percentiles: P50: 3.1ms P95: 30.4ms P99: 164.6ms. Sample: 100"
+    },
+    "tick_query_during_tentacle": {
+      "cmd": "tick query",
+      "reply": "The game is running normallyTarget tick rate: 20.0 per second.\n\u001b[0mAverage time per tick: 5.6ms (Target: 50.0ms)Percentiles: P50: 5.3ms P95: 12.5ms P99: 18.1ms. Sample: 100"
+    },
+    "stop": {
+      "cmd": "execute as dw_eldritch run function dwe:stop",
+      "reply": "Running function dwe:stop"
+    }
+  },
+  "build": {
+    "block_displays": 68,
+    "block_displays_main": 34,
+    "endermen": 1,
+    "glow_squids": 3,
+    "viewer_tagged": 1,
+    "floor_at_start": true,
+    "pit_open": true,
+    "lab_biome_at_zone": true,
+    "corridor_lamp": true,
+    "shrieker": true,
+    "sign_text": "4092, 64, 4100 has the following block data: [\"1  GIANT SHAPE\", \"block displays\", \"interpolated\", \"go to the pit\"]",
+    "bot_pos_after_start": {
+      "x": 4096.5,
+      "y": 64,
+      "z": 4087.5
+    }
+  },
+  "tick_before": "The game is running normallyTarget tick rate: 20.0 per second.\n\u001b[0mAverage time per tick: 7.0ms (Target: 50.0ms)Percentiles: P50: 3.1ms P95: 30.4ms P99: 164.6ms. Sample: 100",
+  "tentacle": {
+    "tip_samples": [
+      {
+        "s": 0,
+        "frame": 2,
+        "translation": "Block Display has the following entity data: [-0.6735f, -0.4898f, -2.2828f]",
+        "brightness": "Found no elements matching brightness"
+      },
+      {
+        "s": 2,
+        "frame": 10,
+        "translation": "Block Display has the following entity data: [-1.0974f, 12.8755f, -2.5952f]",
+        "brightness": "Found no elements matching brightness"
+      },
+      {
+        "s": 4,
+        "frame": 19,
+        "translation": "Block Display has the following entity data: [-0.2235f, 19.3165f, -1.2872f]",
+        "brightness": "Found no elements matching brightness"
+      },
+      {
+        "s": 6,
+        "frame": 29,
+        "translation": "Block Display has the following entity data: [2.2036f, 21.8888f, -0.6579f]",
+        "brightness": "Found no elements matching brightness"
+      },
+      {
+        "s": 8,
+        "frame": 37,
+        "translation": "Block Display has the following entity data: [3.2895f, 21.566f, -3.7131f]",
+        "brightness": "Found no elements matching brightness"
+      },
+      {
+        "s": 10,
+        "frame": 46,
+        "translation": "Block Display has the following entity data: [1.6514f, 20.2269f, -8.5189f]",
+        "brightness": "Found no elements matching brightness"
+      }
+    ],
+    "interpolation_duration": "Block Display has the following entity data: 5"
+  },
+  "tick_during": "The game is running normallyTarget tick rate: 20.0 per second.\n\u001b[0mAverage time per tick: 5.6ms (Target: 50.0ms)Percentiles: P50: 5.3ms P95: 12.5ms P99: 18.1ms. Sample: 100",
+  "fillbiome": {
+    "server_inside_is_wrong_place": true,
+    "server_outside_still_lab": true,
+    "expected_chunks": [
+      "255,258",
+      "255,259",
+      "255,260",
+      "256,258",
+      "256,259",
+      "256,260"
+    ],
+    "chunk_biomes_packets": 2,
+    "chunk_biomes_chunks": [
+      "255,258",
+      "256,258",
+      "255,259",
+      "256,259",
+      "255,260",
+      "256,260"
+    ],
+    "all_expected_received": true,
+    "map_chunk_for_zone": 0,
+    "unload_chunk_for_zone": 0,
+    "raw_first": {
+      "t": 1790926629827,
+      "name": "chunk_biomes",
+      "chunks": [
+        {
+          "z": 258,
+          "x": 255
+        },
+        {
+          "z": 258,
+          "x": 256
+        },
+        {
+          "z": 259,
+          "x": 255
+        },
+        {
+          "z": 259,
+          "x": 256
+        }
+      ]
+    }
+  },
+  "perception": {
+    "effects_at_0_5s": "dw_eldritch has the following entity data: [{duration: 148, show_icon: 0b, id: \"minecraft:darkness\", show_particles: 0b}, {duration: 188, show_icon: 0b, id: \"minecraft:nausea\", show_particles: 0b}]",
+    "effects_at_3_5s": "dw_eldritch has the following entity data: [{duration: 86, show_icon: 0b, id: \"minecraft:darkness\", show_particles: 0b}, {duration: 126, show_icon: 0b, id: \"minecraft:nausea\", show_particles: 0b}, {duration: 15, show_icon: 0b, id: \"minecraft:blindness\", show_particles: 0b}]",
+    "elder_guardian_particle_id": 17,
+    "particles_received": [
+      "elder_guardian",
+      "elder_guardian"
+    ],
+    "sounds_received": [
+      {
+        "data": {
+          "soundName": "minecraft:entity.elder_guardian.curse"
+        }
+      },
+      {
+        "data": {
+          "soundName": "minecraft:entity.warden.heartbeat"
+        }
+      },
+      {
+        "data": {
+          "soundName": "minecraft:entity.elder_guardian.curse"
+        }
+      }
+    ],
+    "curse_sound_registry_id": 545
+  },
+  "hall": {
+    "loops_scored": 6,
+    "walls_cracked_after_loop_2": true,
+    "lamp_4196_removed_after_loop_4": true,
+    "lamp_4190_kept": true,
+    "forced_moves": [
+      {
+        "t": 1790926641077,
+        "z": 4205.8967907567885
+      },
+      {
+        "t": 1790926643892,
+        "z": 4205.922423407416
+      },
+      {
+        "t": 1790926646683,
+        "z": 4205.948056058044
+      },
+      {
+        "t": 1790926649491,
+        "z": 4205.757829592962
+      },
+      {
+        "t": 1790926652284,
+        "z": 4205.783462243589
+      },
+      {
+        "t": 1790926655075,
+        "z": 4205.809094894217
+      },
+      {
+        "t": 1790926672834,
+        "z": 4282.5
+      }
+    ],
+    "position_packets": [
+      {
+        "x": 4096.5,
+        "y": 64,
+        "z": 4206.5,
+        "dx": 0,
+        "dz": 0,
+        "flags": {
+          "_value": 0,
+          "x": false,
+          "y": false,
+          "z": false,
+          "yaw": false,
+          "pitch": false,
+          "dx": false,
+          "dy": false,
+          "dz": false,
+          "yawDelta": false
+        }
+      },
+      {
+        "x": 0,
+        "y": 0,
+        "z": -12,
+        "dx": 0,
+        "dz": 0,
+        "flags": {
+          "_value": 255,
+          "x": true,
+          "y": true,
+          "z": true,
+          "yaw": true,
+          "pitch": true,
+          "dx": true,
+          "dy": true,
+          "dz": true,
+          "yawDelta": false
+        }
+      },
+      {
+        "x": 0,
+        "y": 0,
+        "z": -12,
+        "dx": 0,
+        "dz": 0,
+        "flags": {
+          "_value": 255,
+          "x": true,
+          "y": true,
+          "z": true,
+          "yaw": true,
+          "pitch": true,
+          "dx": true,
+          "dy": true,
+          "dz": true,
+          "yawDelta": false
+        }
+      },
+      {
+        "x": 0,
+        "y": 0,
+        "z": -12,
+        "dx": 0,
+        "dz": 0,
+        "flags": {
+          "_value": 255,
+          "x": true,
+          "y": true,
+          "z": true,
+          "yaw": true,
+          "pitch": true,
+          "dx": true,
+          "dy": true,
+          "dz": true,
+          "yawDelta": false
+        }
+      },
+      {
+        "x": 0,
+        "y": 0,
+        "z": -12,
+        "dx": 0,
+        "dz": 0,
+        "flags": {
+          "_value": 255,
+          "x": true,
+          "y": true,
+          "z": true,
+          "yaw": true,
+          "pitch": true,
+          "dx": true,
+          "dy": true,
+          "dz": true,
+          "yawDelta": false
+        }
+      },
+      {
+        "x": 0,
+        "y": 0,
+        "z": -12,
+        "dx": 0,
+        "dz": 0,
+        "flags": {
+          "_value": 255,
+          "x": true,
+          "y": true,
+          "z": true,
+          "yaw": true,
+          "pitch": true,
+          "dx": true,
+          "dy": true,
+          "dz": true,
+          "yawDelta": false
+        }
+      },
+      {
+        "x": 0,
+        "y": 0,
+        "z": -12,
+        "dx": 0,
+        "dz": 0,
+        "flags": {
+          "_value": 255,
+          "x": true,
+          "y": true,
+          "z": true,
+          "yaw": true,
+          "pitch": true,
+          "dx": true,
+          "dy": true,
+          "dz": true,
+          "yawDelta": false
+        }
+      }
+    ],
+    "released_bot_z": 4281.729025795115
+  },
+  "living": {
+    "watcher_rotation": "Enderman has the following entity data: [-171.8699f, -6.5348115f]",
+    "watcher_pos_before": "Enderman has the following entity data: [4090.5d, 64.0d, 4296.5d]",
+    "watcher_pos_after": "Enderman has the following entity data: [4102.5d, 64.0d, 4281.5d]",
+    "watcher_wpos": 1,
+    "bot_pos": {
+      "x": 4092.5,
+      "y": 64,
+      "z": 4299.7
+    },
+    "sculk_sensor_went_active": true,
+    "shrieker_shrieked": true,
+    "heartbeat_registry_id": 1676,
+    "sounds_received": [
+      {
+        "data": {
+          "soundName": "minecraft:entity.warden.heartbeat"
+        }
+      },
+      {
+        "data": {
+          "soundName": "minecraft:entity.warden.heartbeat"
+        }
+      },
+      {
+        "soundId": 1359
+      },
+      {
+        "soundId": 1359
+      },
+      {
+        "soundId": 1359
+      },
+      {
+        "data": {
+          "soundName": "minecraft:entity.warden.heartbeat"
+        }
+      },
+      {
+        "soundId": 1359
+      },
+      {
+        "soundId": 563
+      },
+      {
+        "soundId": 700
+      },
+      {
+        "data": {
+          "soundName": "minecraft:entity.enderman.teleport"
+        }
+      },
+      {
+        "soundId": 1360
+      },
+      {
+        "soundId": 1360
+      },
+      {
+        "soundId": 1359
+      },
+      {
+        "data": {
+          "soundName": "minecraft:entity.warden.heartbeat"
+        }
+      },
+      {
+        "soundId": 1360
+      },
+      {
+        "soundId": 1359
+      },
+      {
+        "soundId": 1360
+      },
+      {
+        "data": {
+          "soundName": "minecraft:entity.warden.heartbeat"
+        }
+      },
+      {
+        "soundId": 1360
+      },
+      {
+        "soundId": 672
+      },
+      {
+        "soundId": 1359
+      },
+      {
+        "data": {
+          "soundName": "minecraft:entity.warden.heartbeat"
+        }
+      },
+      {
+        "soundId": 1360
+      }
+    ]
+  },
+  "after_stop": {
+    "dwe_entities": 0
+  }
+}

@@ -1,0 +1,67 @@
+{
+  "attributes": {
+    "minecraft:audio/ambient_sounds": {
+      "additions": {
+        "sound": "minecraft:ambient.crimson_forest.additions",
+        "tick_chance": 0.0111
+      },
+      "loop": "minecraft:ambient.soul_sand_valley.loop",
+      "mood": {
+        "block_search_extent": 8,
+        "offset": 2.0,
+        "sound": "minecraft:ambient.soul_sand_valley.mood",
+        "tick_delay": 1200
+      }
+    },
+    "minecraft:audio/background_music": {},
+    "minecraft:audio/music_volume": 0.0,
+    "minecraft:visual/ambient_particles": [
+      {
+        "particle": {
+          "type": "minecraft:ash"
+        },
+        "probability": 0.02
+      },
+      {
+        "particle": {
+          "type": "minecraft:crimson_spore"
+        },
+        "probability": 0.004
+      }
+    ],
+    "minecraft:visual/cloud_color": "#e04a1424",
+    "minecraft:visual/cloud_fog_end_distance": 40.0,
+    "minecraft:visual/fog_color": "#56602f",
+    "minecraft:visual/fog_end_distance": 26.0,
+    "minecraft:visual/fog_start_distance": 1.0,
+    "minecraft:visual/sky_color": "#3b4a1e",
+    "minecraft:visual/sky_fog_end_distance": 30.0,
+    "minecraft:visual/sky_light_color": "#b6e07a",
+    "minecraft:visual/sky_light_factor": 0.55,
+    "minecraft:visual/star_brightness": 0.9,
+    "minecraft:visual/water_fog_color": "#120a16",
+    "minecraft:visual/water_fog_end_distance": 6.0
+  },
+  "carvers": [],
+  "downfall": 0.4,
+  "effects": {
+    "dry_foliage_color": "#4a3a2a",
+    "foliage_color": "#5a4a2a",
+    "grass_color": "#6b6a2a",
+    "water_color": "#1a0f1f"
+  },
+  "features": [],
+  "has_precipitation": false,
+  "spawn_costs": {},
+  "spawners": {
+    "ambient": [],
+    "axolotls": [],
+    "creature": [],
+    "misc": [],
+    "monster": [],
+    "underground_water_creature": [],
+    "water_ambient": [],
+    "water_creature": []
+  },
+  "temperature": 0.8
+}
