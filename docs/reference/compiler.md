@@ -158,7 +158,7 @@ delvec fmt      <path>… [--check]          # canonical form for authored JSON 
 delvec schema   --stage <1..7|name|all>    # export JSON Schema (named documents: §2)
 delvec metrics  [--gym <dir>]              # export the metrics standard as JSON (§10)
 delvec prefab anchors [--pool <id>]        # which anchors does a pool guarantee (library only)
-delvec l10n-inventory <dir> [--lang <c>]   # l10n key inventory as JSON (translation input)
+delvec l10n-inventory <dir> [--lang <c>]   # l10n key inventory as JSON (transcreation input)
 delvec l10n-apply <dir> --lang <c> --table <f>
                                            # write the sidecar from an English → translation table
 delvec allocation <dir> [<place>|--all]    # the handed allocation for a site-plan place

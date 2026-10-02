@@ -160,7 +160,12 @@ renders one name two ways four times, and two English names as one Chinese
 word once (§2 Zn, §3 rows 49–51); its shop label `Book of Smite III` delivers an
 item named `Litany for the Unquiet`.
 
-## 5. Check design (not built)
+## 5. Check design
+
+Step 4 of the dangling-reference check (one rendering per name, no shared
+rendering) is built as the transcreation tool's fact check, over the declared
+names (`name`/`title` rows) rather than a hand-declared glossary
+([i18n.md § The fact check](i18n.md#the-fact-check)). Nothing else here is built.
 
 ### Dangling-reference check
 
@@ -268,3 +273,43 @@ not a guarantee.
   replenish"), and one-way doors say "does not open from this side" (as players
   quote it). The obliqueness is in what the world withholds, not in how a
   prompt is worded.
+
+## 7. Who writes the Chinese — blind trial
+
+The question: with the rules of game-writing.md in hand, does the writer of the
+Chinese matter more than the rules? Measured once, blind.
+
+- **Rater.** One native Chinese rater, blind: each slot showed the speaker and
+  one line of situation, then the candidates as A/B/C in a seeded random order
+  (seed `20261002`), origin hidden; the question was which reads most natural,
+  with "about the same" allowed. One rater is a measurement of one reader, not
+  a consensus; §6 of game-writing.md is the protocol that would widen it.
+- **Candidates.** *Original*: Vesperhold's shipped Chinese. *Claude*: Claude's
+  Chinese written under the game-writing.md rules (old guidance: the skill's
+  writing craft before that page; new rules: the page). *DeepSeek*:
+  `deepseek-v4-pro` at temperature 0.7, through
+  `https://api.deepseek.com/v1/chat/completions`, given the same rules in its
+  system prompt and, per line, the English, the speaker and the situation, and
+  asked to transcreate, not translate.
+- **Set 1 — rewritten Vesperhold lines.** 20 slots: 16 lines whose English §3
+  rewrote, and 4 controls left unchanged, which the rater marked "about the
+  same". Original Chinese translates the original English; Claude and DeepSeek
+  write from the rewritten English, so the original's losses include the English
+  defects §3 fixed. Of the 16, 12 were decisive: **DeepSeek 9, original 2,
+  Claude 1**.
+- **Set 2 — eight fresh briefs** (an objective, an item tooltip, three NPC
+  lines, a refusal, a button tooltip, a journal page; each writer wrote English
+  and Chinese from the brief): **Claude old guidance 3, Claude new rules 3,
+  DeepSeek 1, about the same 1**.
+- **Reading.** On the task the pipeline runs — Chinese written from a fixed
+  English plus its intent — the model dominated: DeepSeek was chosen three times
+  as often as both alternatives together. The rules did not move Claude's count
+  on fresh writing (3 and 3). Writing from a brief with no English to hold it,
+  DeepSeek did not lead; that task is not the pipeline's.
+- **Consequence.** Claude writes the English and each line's intent; the
+  Chinese is transcreated by DeepSeek (`tools/creator/i18n-translate.py`,
+  [i18n.md](i18n.md)); in-agent Chinese is the fallback when no key is set.
+- **Record.** The trial's inputs and answer key are kept outside the
+  repository; the answer key hashes `sha256:6be143cfede1d28a…`, the DeepSeek
+  outputs `sha256:878c62602d5ac1fd…`, the rewritten-line set
+  `sha256:48464da4a01ec93d…` (first 16 hex digits of each).

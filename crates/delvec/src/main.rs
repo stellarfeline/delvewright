@@ -115,9 +115,11 @@ enum Command {
         #[arg(long, value_name = "PLACE")]
         perturb_place: Option<String>,
     },
-    /// Emit the l10n key inventory (key → canonical English) as JSON, with the
-    /// existing `--lang` sidecar and NPC persona context — the machine-readable
-    /// input for translation tooling (`tools/creator/i18n-translate.py`, docs/reference/i18n.md).
+    /// Emit the l10n key inventory (key → canonical English) as JSON, each row
+    /// with its kind of text, speaker, situation and the existing `--lang`
+    /// translation (and whether it is stale), plus NPC persona context — the
+    /// machine-readable input for transcreation (`tools/creator/i18n-translate.py`,
+    /// docs/reference/i18n.md).
     L10nInventory {
         /// Campaign directory.
         campaign_dir: PathBuf,
@@ -1121,9 +1123,12 @@ struct NpcContext<'a> {
 /// key set `DW0180`/`DW0181` enforce, so a translator (human, in-agent, or an
 /// external API via `tools/creator/i18n-translate.py`) can be handed the work list up front
 /// instead of discovering it by writing an empty sidecar and reading the coverage
-/// diagnostics back. Rows carry the canonical English, the speaking NPC (via
-/// [`delvewright_dsl::key_speaker`]) and any translation the current
-/// `l10n/<lang>.json` already has — so re-running only fills the gaps (idempotence).
+/// diagnostics back. Rows carry the canonical English, the kind of text (via
+/// [`delvewright_dsl::key_kind`]), the speaking NPC (via
+/// [`delvewright_dsl::key_speaker`]), the situation (via
+/// [`delvewright_dsl::key_situations`]) and any translation the current
+/// `l10n/<lang>.json` already has, marked `stale` when its recorded `source` is not
+/// today's English — so re-running only fills the gaps (idempotence).
 ///
 /// Deliberately runs **before** validation gating: an incomplete sidecar is the
 /// normal state when you ask for the inventory. Only an unparseable campaign fails

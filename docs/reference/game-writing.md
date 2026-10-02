@@ -120,6 +120,11 @@ any game, however oblique its story.
 
 ## 4. Chinese
 
+These rules are what `tools/creator/i18n-translate.py` sends the transcreating
+model: it reads this section's bullets, each cut before its **Cited** or
+**Authored** tail, so a rule edited here is the rule sent. Who writes the
+Chinese is §7.
+
 - **C1 — Write the Chinese from the scene's intent, with the English as the fact
   reference.** Read what the line must do (the beat's `happening`, the speaker's
   persona, what the player must learn), then write the line a Chinese writer
@@ -142,9 +147,9 @@ any game, however oblique its story.
   Guo et al. (HC3): ChatGPT answers in both English and Chinese are "typically
   formal" where people are colloquial. The register rule is **authored**.
 - **C4 — No calques.** 受不住更多了, 从……手里活下来, 某个曾经是鹅的东西,
-  这是我至少能做的, 一块东西 are English grammar in Chinese words. The existing
-  translationese checklist in `tools/creator/i18n-translate.py` (名词化, 弱动词,
-  的的不休, 被, front-loaded modifiers) applies. **Cited:** Xiao (2010): translated
+  这是我至少能做的, 一块东西 are English grammar in Chinese words. The translationese
+  checklist sent with these rules (名词化, 弱动词, 的的不休, 被, front-loaded
+  modifiers) applies. **Cited:** Xiao (2010): translated
   Chinese has lower lexical density (61.59% vs 66.93%) and more conjunctions
   (306.42 vs 243.23 per 10,000 tokens) than native Chinese, and more 被-passives
   overall; 余光中《怎样改进英式中文》 (ideas only).
@@ -154,7 +159,9 @@ any game, however oblique its story.
 
 ## 5. What a machine can check
 
-Summary of the design in the evidence file §4; nothing here is built.
+Summary of the design in the evidence file §5. One row is built: one name, one
+rendering is the transcreation tool's fact check, run on every line it writes
+([i18n.md § The fact check](i18n.md#the-fact-check)). The rest is not built.
 
 | Check | What it reads | Estimated precision on Vesperhold |
 |---|---|---|
@@ -207,22 +214,21 @@ LREC-COLING 2024); and even an LLM writing Chinese directly shows English
 patterns (Guo et al., ACL 2025), so authoring in parallel with the same model
 does not remove the defect by itself.
 
-**Recommended:** C1 — Chinese written from the intent of each line, English kept
-as the fact source and key of record, with name, number and direction
-consistency checked mechanically.
+**The practice.** C1: the other language is written from the intent of each
+line, with the English kept as the fact source and the key of record, and name,
+number and placeholder consistency checked mechanically. The English is still
+the canonical source; the sidecar's `source` map, the staleness check and the
+width gates are unchanged. Each inventory row carries its intent (`kind`,
+`speaker`, `situation`) beside its English, derived from the documents.
 
-**Cost to the current rule.** `CLAUDE.md` says "English-first for every repo
-artifact; i18n translates from English." C1 keeps English first (the English is
-still the canonical source, the sidecar's `source` map, the staleness check and
-the width gates are unchanged), but the Chinese is no longer a translation of
-the English sentences, so the words "translates from English" would no longer
-describe the practice. Changing that sentence is the owner's decision; this
-page does not change it. The working costs: the translation step needs each
-row's intent beside its English (the inventory carries persona context today,
-not the beat's `happening`), and accuracy needs a back-check because freer
-writing loses facts. Full parallel authoring would cost more: two sources of
-truth for every fact, a `source` map that no longer means anything, and no
-precedent.
+**Who writes the Chinese.** Claude writes the English and, through the
+documents, each line's intent; the Chinese is transcreated by DeepSeek through
+`tools/creator/i18n-translate.py`. In a blind native-reader trial, DeepSeek
+transcreating existing lines from English, speaker and situation was chosen in
+9 of 12 decisive slots, against the original Chinese in 2 and Claude's
+rule-guided Chinese in 1; writing fresh from a brief, no writer led, and rule
+guidance did not change Claude's count (evidence §7). In-agent Chinese is the
+fallback when no key is configured.
 
 ## Sources
 
