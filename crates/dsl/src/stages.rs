@@ -1723,6 +1723,10 @@ pub struct BonfireLabels<'a> {
     pub rest_label: Option<&'a str>,
     /// **Save only** button label; `None` → [`BONFIRE_SAVE_LABEL_EN`].
     pub save_label: Option<&'a str>,
+    /// **Rest and save** button hover tooltip (spec-0078); `None` → none emitted.
+    pub rest_tooltip: Option<&'a str>,
+    /// **Save only** button hover tooltip (spec-0078); `None` → none emitted.
+    pub save_tooltip: Option<&'a str>,
 }
 
 impl BonfireLabels<'_> {
@@ -5033,6 +5037,16 @@ pub enum Verb {
         /// Label of the **save only** button. Absent = `Save only`.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         save_label: Option<String>,
+        /// Hover tooltip of the **rest and save** button (spec-0078) — the same
+        /// optional `tooltip` every dialog button carries, beside the label it
+        /// explains. Absent = no tooltip. Not subject to `DW0331`: a tooltip
+        /// wraps in its own hover box. Inventoried as `fx.….rest_tooltip`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        rest_tooltip: Option<String>,
+        /// Hover tooltip of the **save only** button (spec-0078). Absent = no
+        /// tooltip. Inventoried as `fx.….save_tooltip`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        save_tooltip: Option<String>,
     },
     /// Begins a stealth beat (DSL v0.6, spec-0014):
     /// zone presence alone = hidden — no sneak requirement, which collides with
@@ -6610,11 +6624,15 @@ impl QuestEffect {
                 prompt,
                 rest_label,
                 save_label,
+                rest_tooltip,
+                save_tooltip,
                 ..
             } => Some(BonfireLabels {
                 prompt: prompt.as_deref(),
                 rest_label: rest_label.as_deref(),
                 save_label: save_label.as_deref(),
+                rest_tooltip: rest_tooltip.as_deref(),
+                save_tooltip: save_tooltip.as_deref(),
             }),
             _ => None,
         }
