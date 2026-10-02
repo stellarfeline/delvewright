@@ -38,7 +38,7 @@ order a player would:
 
 | Where | What it holds |
 | --- | --- |
-| `world.json` | the hall, its lighting and mitigation, the boundary, the declared languages, and the one vanilla texture the delve replaces — the hall's stone bricks, drawn in one flat colour from `textures/hall-stone.png` so a render shows which block the pack changed — with the pack declared required |
+| `world.json` | the hall, its lighting and mitigation, the boundary, the declared languages, and the one vanilla texture the delve replaces — stone bricks, the annex tiles' walls and the hall's tread courses, drawn in one flat colour from `textures/hall-stone.png` so a render shows which block the pack changed — with the pack declared required |
 | `npcs.json` | four speaking parts — a quest-giver, a gatekeeper, a counter, a drill officer |
 | `classes.json` | two kits, one carrying a flask (what a bonfire rest refills) |
 | `quest-plan.json` | three quests and the branch point the fork opens |

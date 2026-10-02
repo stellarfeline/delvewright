@@ -2075,9 +2075,10 @@ fn write_design(out: &Path) {
 /// The images the gallery's `world.textures[]` row and its probes name
 /// (spec-0084 §7), written into `--textures <dir>`.
 ///
-/// - `hall-stone` replaces `minecraft:block/stone_bricks`, the hall's tread and
-///   seal block: one flat colour, deliberately not art, so a render of the hall
-///   shows at a glance which block the pack replaced.
+/// - `hall-stone` replaces `minecraft:block/stone_bricks` — the annex tiles'
+///   walls, the hall's tread courses and the seal an unmated socket gets: one
+///   flat colour, deliberately not art, so a render of the annex shows at a
+///   glance which block the pack replaced.
 /// - `wrong-shape` is 24×24, which no 16×16 texture can be replaced by —
 ///   `a-texture-of-another-shape` points the row at it.
 /// - `blank` is byte-for-byte the pinned client's own
