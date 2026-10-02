@@ -154,6 +154,9 @@ struct Found<'a> {
     root: EffectRoot<'a>,
     seat: Seat<'a>,
     delay_ticks: u32,
+    /// Whether, absent an `audience`, the bundle addresses its actor (`@s`)
+    /// rather than the party.
+    solo: bool,
 }
 
 /// Every blinding grant in the campaign, through the one root walk and the one
@@ -166,6 +169,7 @@ fn grants<'a>(plan: &Plan<'a>) -> Vec<Found<'a>> {
         root: EffectRoot<'a>,
         seat: Seat<'a>,
         delay: u32,
+        solo: bool,
         out: &mut Vec<Found<'a>>,
     ) {
         if let Some((effect, _, _, _, _)) = eff.give_effect()
@@ -178,6 +182,7 @@ fn grants<'a>(plan: &Plan<'a>) -> Vec<Found<'a>> {
                 root,
                 seat,
                 delay_ticks: delay,
+                solo,
             });
         }
         match &eff.verb {
@@ -191,6 +196,7 @@ fn grants<'a>(plan: &Plan<'a>) -> Vec<Found<'a>> {
                             root,
                             seat,
                             delay + st.at_ticks,
+                            solo,
                             out,
                         );
                     }
@@ -199,7 +205,16 @@ fn grants<'a>(plan: &Plan<'a>) -> Vec<Found<'a>> {
             Verb::SetCheckpoint { anchor, on_respawn } => {
                 for (j, inner) in on_respawn.iter().enumerate() {
                     let p = format!("{path}/on_respawn/{j}");
-                    descend(stage, p, inner, root, Seat::Anchor(anchor.as_str()), 0, out);
+                    descend(
+                        stage,
+                        p,
+                        inner,
+                        root,
+                        Seat::Anchor(anchor.as_str()),
+                        0,
+                        true,
+                        out,
+                    );
                 }
             }
             Verb::Bonfire {
@@ -207,14 +222,30 @@ fn grants<'a>(plan: &Plan<'a>) -> Vec<Found<'a>> {
             } => {
                 for (j, inner) in on_rest.iter().enumerate() {
                     let p = format!("{path}/on_rest/{j}");
-                    descend(stage, p, inner, root, Seat::Anchor(anchor.as_str()), 0, out);
+                    // A rest addresses the whole party from the tick.
+                    descend(
+                        stage,
+                        p,
+                        inner,
+                        root,
+                        Seat::Anchor(anchor.as_str()),
+                        0,
+                        false,
+                        out,
+                    );
                 }
             }
             _ => {
-                for (pseg, _k, list) in eff.nested_effect_lists_labeled() {
+                let solos = eff
+                    .nested_effect_dispatch()
+                    .into_iter()
+                    .map(|(_, how)| how == delvewright_dsl::NestedDispatch::Player);
+                for ((pseg, _k, list), solo) in
+                    eff.nested_effect_lists_labeled().into_iter().zip(solos)
+                {
                     for (j, inner) in list.iter().enumerate() {
                         let p = format!("{path}/{pseg}/{j}");
-                        descend(stage, p, inner, root, Seat::Anywhere, 0, out);
+                        descend(stage, p, inner, root, Seat::Anywhere, 0, solo, out);
                     }
                 }
             }
@@ -230,11 +261,28 @@ fn grants<'a>(plan: &Plan<'a>) -> Vec<Found<'a>> {
                 site.root,
                 Seat::Root,
                 0,
+                root_is_solo(&site.root),
                 &mut out,
             );
         }
     });
     out
+}
+
+/// Whether a root's bundle addresses its actor when an effect states no
+/// `audience` — the emitter's `Audience::Solo` roots.
+fn root_is_solo(root: &EffectRoot<'_>) -> bool {
+    match root {
+        EffectRoot::Trigger(t) => t.addresses_presser(),
+        EffectRoot::DialogueRespawn
+        | EffectRoot::OnDeath
+        | EffectRoot::ShopOffer
+        | EffectRoot::OnKill(_) => true,
+        EffectRoot::ObjectiveComplete { .. }
+        | EffectRoot::QuestComplete(_)
+        | EffectRoot::TrapPayload(_)
+        | EffectRoot::ShortcutUnlock => false,
+    }
 }
 
 /// Standable cells of `open` whose cell lies within `radius` (Euclidean, cell to
@@ -260,6 +308,13 @@ fn standable_within(open: &World, at: [i32; 3], radius: f64) -> BTreeSet<[i32; 3
 
 /// **Where a grant's audience can stand when it lands** (spec-0085 §6.2's
 /// table), before a timeline's delay widens it.
+///
+/// The table's per-root rows are where the ACTOR stands, so they answer only a
+/// grant addressed to the actor. A grant addressed to the party — a stated
+/// `party`, or the default of a root that addresses the party — blinds every
+/// player wherever they are, and its standing set is the walked population `P`
+/// whatever its root. (Authored beyond the spec's table, which reads every row
+/// as the actor's; the party reading is the one the emitted `@a` makes true.)
 ///
 /// Every root the table names by a narrower set is answered by that set; every
 /// root it answers with the walked population `P` — and every place this model
@@ -287,6 +342,16 @@ fn standing_set(
             }
         }
         return out;
+    }
+    // A grant addressed to the party blinds every player wherever they stand,
+    // so where its root fired says nothing about where they are.
+    let to_actor = match f.eff.audience {
+        Some(delvewright_dsl::EffectAudience::Actor) => true,
+        Some(delvewright_dsl::EffectAudience::Party) => false,
+        None => f.solo,
+    };
+    if !to_actor {
+        return population.clone();
     }
     let reach = crate::compiler::crosshair::INTERACTION_REACH + 1.0;
     match f.seat {
@@ -450,15 +515,19 @@ pub fn judge(
                 continue;
             }
             if open.is_standable(c)
-                && let Some(side) = open.fatal_step_off(c)
+                && let Some((side, lava)) = open.fatal_step_off(c)
             {
                 caught.push(c);
                 caught_by.get_or_insert_with(|| {
-                    format!(
-                        "beside {c:?} a body steps off into column {side:?}, which arrests no \
-                         fall within the {} block(s) an unarmoured body survives",
-                        delvewright_dsl::metrics::unarmoured_survivable_fall_blocks()
-                    )
+                    if lava {
+                        format!("beside {c:?} a body steps into lava at {side:?}")
+                    } else {
+                        format!(
+                            "beside {c:?} a body steps off into column {side:?}, which arrests \
+                             no fall within the {} block(s) an unarmoured body survives",
+                            delvewright_dsl::metrics::unarmoured_survivable_fall_blocks()
+                        )
+                    }
                 });
             }
         }
