@@ -851,7 +851,7 @@ pub fn verb_lines(plan: &Plan<'_>, verb: &Verb) -> Option<Vec<String>> {
 
 /// Every function the build's assemblies need. `land` lowers one effect of an
 /// `on_land` bundle (the ordinary effect emitter, with no acting player).
-pub fn functions(
+pub fn assembly_functions(
     plan: &Plan<'_>,
     land: &dyn Fn(&QuestEffect, &mut Vec<String>),
 ) -> Vec<(String, String)> {

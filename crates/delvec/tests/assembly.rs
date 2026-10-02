@@ -8,243 +8,14 @@
 
 mod common;
 
-use std::collections::BTreeMap;
-
-use delvec::compiler::commands::CommandTree;
-use delvec::compiler::emit::{self, BuildFailure, BuildOutput};
-use delvec::compiler::plan::Plan;
+use common::assembly_fixture::*;
+use delvec::compiler::emit::BuildOutput;
 use delvec::compiler::registry::PrefabRegistry;
 use delvec::compiler::registry::{FullEntityRegistry, FullItemRegistry};
-use delvewright_dsl::rig::{Clip, PartKind, Rig, RigPart, RigProvenance, Transform};
-use delvewright_dsl::{Campaign, RawCampaign, parse_campaign};
+use delvewright_dsl::rig::Rig;
 use serde_json::{Value, json};
 
 const NS: &str = "hello-world";
-
-fn read_hw(name: &str) -> String {
-    std::fs::read_to_string(common::hello_world_dir().join(name)).unwrap()
-}
-
-fn t(translation: [f64; 3], scale: [f64; 3]) -> Transform {
-    Transform {
-        translation,
-        left_rotation: [0.0, 0.0, 0.0, 1.0],
-        scale,
-        right_rotation: [0.0, 0.0, 0.0, 1.0],
-    }
-}
-
-/// The fixture rig: three parts. `idle` stands a column on the mark cell;
-/// `windup` raises it; `strike` lays a 3 × 3 slab centred on the mark;
-/// `retract` sinks it below the floor.
-pub fn rig() -> Rig {
-    let column = |dy: f64| {
-        vec![
-            t([-0.5, dy, -0.5], [1.0, 1.0, 1.0]),
-            t([-0.5, dy + 1.0, -0.5], [1.0, 1.0, 1.0]),
-            t([-0.5, dy + 2.0, -0.5], [1.0, 0.5, 1.0]),
-        ]
-    };
-    let slab = vec![
-        t([-1.5, 0.0, -1.5], [3.0, 0.5, 3.0]),
-        t([-0.5, 0.5, -0.5], [1.0, 0.5, 1.0]),
-        t([-0.5, 1.0, -0.5], [1.0, 0.5, 1.0]),
-    ];
-    let mut clips = BTreeMap::new();
-    clips.insert(
-        "idle".to_string(),
-        Clip {
-            ticks_per_frame: 5,
-            looping: true,
-            frames: vec![column(0.0), column(0.1)],
-        },
-    );
-    clips.insert(
-        "windup".to_string(),
-        Clip {
-            ticks_per_frame: 2,
-            looping: false,
-            frames: vec![column(0.5), column(1.0)],
-        },
-    );
-    clips.insert(
-        "strike".to_string(),
-        Clip {
-            ticks_per_frame: 1,
-            looping: false,
-            frames: vec![column(0.5), slab],
-        },
-    );
-    clips.insert(
-        "retract".to_string(),
-        Clip {
-            ticks_per_frame: 5,
-            looping: false,
-            frames: vec![column(-3.0)],
-        },
-    );
-    Rig {
-        rig_version: 1,
-        parts: (0..3)
-            .map(|i| RigPart {
-                id: format!("seg-{i}"),
-                kind: PartKind::Block,
-                block: if i == 2 {
-                    "minecraft:crying_obsidian".into()
-                } else {
-                    "minecraft:sculk".into()
-                },
-                rest: None,
-            })
-            .collect(),
-        clips,
-        provenance: RigProvenance {
-            generator: "crates/delvec/tests/assembly.rs".into(),
-            source: "original".into(),
-            spdx: "GPL-3.0-or-later".into(),
-        },
-    }
-}
-
-/// The fixture's quests document as a JSON value, edited by the caller.
-pub fn quests() -> Value {
-    let mut q: Value = serde_json::from_str(&read_hw("quests.json")).unwrap();
-    let content = q["content"].as_object_mut().unwrap();
-    content.insert(
-        "state".into(),
-        json!([{ "id": "state/hits", "scope": "party", "initial": 0,
-                 "note": "how many times the thing on the exit has been struck" }]),
-    );
-    content.insert(
-        "assemblies".into(),
-        json!([{
-            "id": "assembly/limb",
-            "rig": "rig/limb",
-            "at": { "anchor": "anchor/exit" },
-            "initial": "idle",
-            "hitbox": { "width": 1.0, "height": 2.0 },
-            "strikes": {
-                "while_in": { "anchor": "anchor/exit", "extent": [2, 1, 1] },
-                "pattern": [{
-                    "windup": "windup", "hold": 10, "strike": "strike",
-                    "on_land": [
-                        { "type": "damage-players", "amount": 4,
-                          "in": { "anchor": "anchor/exit", "extent": [0, 0, 0] } }
-                    ]
-                }]
-            }
-        }]),
-    );
-    content.insert(
-        "triggers".into(),
-        json!([{
-            "id": "trigger/limb-struck",
-            "on": { "on": "strike-assembly", "assembly": "assembly/limb" },
-            "once": false,
-            "forbids_flags": ["flag/struck"],
-            "effects": [
-                { "type": "add-state", "state": "state/hits", "amount": 1 },
-                { "type": "play-clip", "assembly": "assembly/limb", "clip": "retract",
-                  "when": { "requires_state": [ { "state": "state/hits", "op": "at-least", "value": 3 } ] } },
-                { "type": "set-flag", "flag": "flag/struck",
-                  "when": { "requires_state": [ { "state": "state/hits", "op": "at-least", "value": 3 } ] } }
-            ]
-        }]),
-    );
-    // The thing appears when the keeper is talked to, and the exit waits on it.
-    let quest = &mut content["quests"][0];
-    quest["on_objective_complete"]["obj/talk"]
-        .as_array_mut()
-        .unwrap()
-        .push(json!({ "type": "spawn-assembly", "assembly": "assembly/limb" }));
-    quest["objectives"][1]["requires_flags"] = json!(["flag/struck"]);
-    q
-}
-
-/// Parse the fixture with `quests` as its quests document.
-pub fn campaign(quests: &Value) -> Campaign {
-    let raw = RawCampaign {
-        world: read_hw("world.json"),
-        npcs: read_hw("npcs.json"),
-        classes: read_hw("classes.json"),
-        quest_plan: read_hw("quest-plan.json"),
-        quests: quests.to_string(),
-        dialogue: read_hw("dialogue.json"),
-        world_edits: None,
-        geometry_brief: None,
-        layout_graph: None,
-        site_plan: None,
-        detail_plan: None,
-        design: None,
-    };
-    parse_campaign(&raw).expect("the fixture campaign parses")
-}
-
-/// The pinned library with the fixture rig added as `rig/limb`.
-pub fn prefabs_with(r: Rig) -> PrefabRegistry {
-    let mut p = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
-    p.insert_rig("rig/limb", Ok(r));
-    p
-}
-
-/// Build the campaign, keeping the failure and the advisory findings.
-pub fn try_build_warned(
-    c: &Campaign,
-    prefabs: &PrefabRegistry,
-) -> Result<(BuildOutput, Vec<delvewright_dsl::Diagnostic>), BuildFailure> {
-    let plan = Plan::build(c, prefabs).expect("plan builds");
-    let mut structures: BTreeMap<String, Vec<u8>> = BTreeMap::new();
-    for area in &plan.areas {
-        for piece in &area.pieces {
-            for tpl in &piece.templates {
-                let bytes = std::fs::read(common::prefabs_dir().join(&tpl.structure_file)).unwrap();
-                structures.insert(tpl.structure_file.clone(), bytes);
-            }
-        }
-    }
-    emit::build_with_warnings(
-        &plan,
-        &BTreeMap::new(),
-        &structures,
-        &CommandTree::v1_21_11(),
-        prefabs,
-        None,
-        &BTreeMap::new(),
-    )
-}
-
-/// Build the campaign, keeping the failure.
-pub fn try_build(c: &Campaign, prefabs: &PrefabRegistry) -> Result<BuildOutput, BuildFailure> {
-    let plan = Plan::build(c, prefabs).expect("plan builds");
-    let mut structures: BTreeMap<String, Vec<u8>> = BTreeMap::new();
-    for area in &plan.areas {
-        for piece in &area.pieces {
-            for tpl in &piece.templates {
-                let bytes = std::fs::read(common::prefabs_dir().join(&tpl.structure_file)).unwrap();
-                structures.insert(tpl.structure_file.clone(), bytes);
-            }
-        }
-    }
-    emit::build(
-        &plan,
-        &BTreeMap::new(),
-        &structures,
-        &CommandTree::v1_21_11(),
-        prefabs,
-        None,
-        &BTreeMap::new(),
-    )
-}
-
-/// Build the fixture as written.
-pub fn build_fixture() -> BuildOutput {
-    let c = campaign(&quests());
-    match try_build(&c, &prefabs_with(rig())) {
-        Ok(o) => o,
-        Err(BuildFailure::Diagnostic { code, message }) => panic!("{code}: {message}"),
-        Err(BuildFailure::Validation(e)) => panic!("{} invalid command(s): {:?}", e.len(), e),
-    }
-}
 
 /// One emitted function's body.
 pub fn function(out: &BuildOutput, name: &str) -> String {
@@ -267,57 +38,6 @@ pub fn all_functions(out: &BuildOutput) -> String {
         }
     }
     s
-}
-
-/// The fixture with `edit` applied to its quests document.
-fn quests_with(edit: impl FnOnce(&mut Value)) -> Value {
-    let mut q = quests();
-    edit(&mut q);
-    q
-}
-
-/// The one assembly's JSON.
-fn assembly(q: &mut Value) -> &mut Value {
-    &mut q["content"]["assemblies"][0]
-}
-
-/// The one trigger's JSON.
-fn trigger(q: &mut Value) -> &mut Value {
-    &mut q["content"]["triggers"][0]
-}
-
-/// The code a build refuses with, or `None` when it builds.
-fn build_code(q: &Value, r: Rig) -> Option<String> {
-    match try_build(&campaign(q), &prefabs_with(r)) {
-        Ok(_) => None,
-        Err(BuildFailure::Diagnostic { code, .. }) => Some(code.id().to_string()),
-        Err(BuildFailure::Validation(e)) => panic!("{} invalid command(s): {:?}", e.len(), e),
-    }
-}
-
-/// The refusal message of a build that must fail with `code`.
-fn refusal(q: &Value, r: Rig, code: &str) -> String {
-    match try_build(&campaign(q), &prefabs_with(r)) {
-        Err(BuildFailure::Diagnostic { code: c, message }) => {
-            assert_eq!(c.id(), code, "refused with the wrong code: {message}");
-            message
-        }
-        Err(BuildFailure::Validation(e)) => panic!("{} invalid command(s): {:?}", e.len(), e),
-        Ok(_) => panic!("the build was meant to be refused with {code} and was not"),
-    }
-}
-
-/// The validation diagnostics' codes.
-fn validation_codes(q: &Value, r: Rig) -> Vec<(String, String, String)> {
-    common::validation_diagnostics(
-        &campaign(q),
-        &FullItemRegistry::v1_21_11(),
-        &prefabs_with(r),
-        &FullEntityRegistry::v1_21_11(),
-    )
-    .into_iter()
-    .map(|d| (d.code.clone(), d.path.clone(), d.message.clone()))
-    .collect()
 }
 
 // ---------------------------------------------------------------------------
@@ -774,5 +494,189 @@ fn a_missing_rig_is_dw0935() {
             .iter()
             .any(|d| d.code == "DW0935" && d.message.contains("rigs/limb/rig.json")),
         "{codes:?}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// AC2 / AC10 — the command line
+// ---------------------------------------------------------------------------
+
+const BIN: &str = env!("CARGO_BIN_EXE_delvec");
+
+/// A library directory holding only `rigs/limb/rig.json` (written from `r`).
+fn rig_library(name: &str, r: &Rig) -> std::path::PathBuf {
+    let dir = std::path::Path::new(env!("CARGO_TARGET_TMPDIR")).join(name);
+    let _ = std::fs::remove_dir_all(&dir);
+    let rigs = dir.join("rigs").join("limb");
+    std::fs::create_dir_all(&rigs).unwrap();
+    std::fs::write(
+        rigs.join("rig.json"),
+        serde_json::to_string_pretty(r).unwrap(),
+    )
+    .unwrap();
+    dir
+}
+
+fn run(args: &[&str]) -> std::process::Output {
+    std::process::Command::new(BIN)
+        .args(args)
+        .output()
+        .expect("run delvec")
+}
+
+/// `delvec rig describe` prints the parts, every clip with its length in ticks
+/// and per clip its last-frame footprint; two runs are byte-identical.
+#[test]
+fn rig_describe_prints_the_rig_and_is_deterministic() {
+    let lib = rig_library("assembly_rig_describe", &rig());
+    let lib = lib.to_str().unwrap();
+    let a = run(&["--prefabs", lib, "rig", "describe", "rig/limb"]);
+    let b = run(&["--prefabs", lib, "rig", "describe", "rig/limb"]);
+    assert_eq!(
+        a.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&a.stderr)
+    );
+    assert_eq!(a.stdout, b.stdout);
+    let text = String::from_utf8(a.stdout).unwrap();
+    assert!(
+        text.contains("rig rig/limb: 3 part(s), 4 clip(s)"),
+        "{text}"
+    );
+    assert!(
+        text.contains("clip strike: 2 frame(s) every 1 tick(s), 2 tick(s)"),
+        "{text}"
+    );
+    // The strike's last frame: the 3 x 3 slab round the mark.
+    assert!(
+        text.contains(
+            "last-frame footprint, 10 cell(s) relative to the mark: [-1, 0, -1] [-1, 0, 0] [-1, 0, 1] [0, 0, -1] [0, 0, 0]"
+        ),
+        "{text}"
+    );
+    // `--facing` turns the footprint: a part one cell in front faces behind.
+    let mut r = rig();
+    r.clips.get_mut("retract").unwrap().frames[0][0].translation = [-0.5, 0.0, 1.5];
+    let lib = rig_library("assembly_rig_describe_facing", &r);
+    let north = run(&[
+        "--prefabs",
+        lib.to_str().unwrap(),
+        "rig",
+        "describe",
+        "rig/limb",
+        "--facing",
+        "north",
+    ]);
+    let text = String::from_utf8(north.stdout).unwrap();
+    assert!(text.contains("facing north"), "{text}");
+    assert!(text.contains("[0, 0, -2]"), "{text}");
+}
+
+/// A rig that breaks a rule is refused with `DW0935` naming the field; a rig
+/// the library does not hold is refused too.
+#[test]
+fn rig_describe_refuses_a_broken_or_missing_rig() {
+    let mut r = rig();
+    r.clips.get_mut("idle").unwrap().ticks_per_frame = 21;
+    let lib = rig_library("assembly_rig_describe_broken", &r);
+    let out = run(&[
+        "--prefabs",
+        lib.to_str().unwrap(),
+        "rig",
+        "describe",
+        "rig/limb",
+    ]);
+    assert_eq!(out.status.code(), Some(1));
+    let said = format!(
+        "{}{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(
+        said.contains("DW0935") && said.contains("/clips/idle/ticks_per_frame"),
+        "{said}"
+    );
+    let out = run(&[
+        "--prefabs",
+        lib.to_str().unwrap(),
+        "rig",
+        "describe",
+        "rig/absent",
+    ]);
+    assert_eq!(out.status.code(), Some(1));
+    let said = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        said.contains("DW0935") && said.contains("rigs/absent/rig.json"),
+        "{said}"
+    );
+}
+
+/// The binding line is printed on every build: zeroes on a campaign with no
+/// assembly, one assembly on the fixture.
+#[test]
+fn the_binding_line_is_printed_on_every_build() {
+    let tmp = std::path::Path::new(env!("CARGO_TARGET_TMPDIR")).join("assembly_binding_line");
+    let _ = std::fs::remove_dir_all(&tmp);
+    // The primary without the element: hello-world as shipped.
+    let plain = run(&[
+        "--prefabs",
+        common::prefabs_dir().to_str().unwrap(),
+        "build",
+        common::hello_world_dir().to_str().unwrap(),
+        "-o",
+        tmp.join("plain-out").to_str().unwrap(),
+    ]);
+    assert_eq!(
+        plain.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&plain.stderr)
+    );
+    assert!(
+        String::from_utf8_lossy(&plain.stderr).contains(
+            "assembly binding: 0 assembl(ies) declared, 0 part(s), 0 clip(s), 0 hitbox(es) \
+             examined, 0 strike step(s) checked, 0 refused"
+        ),
+        "{}",
+        String::from_utf8_lossy(&plain.stderr)
+    );
+    // The fixture: a library with the rig, a campaign directory with the
+    // assembly.
+    let lib = tmp.join("prefabs");
+    common::copy_dir_all(&common::prefabs_dir(), &lib);
+    let rigs = lib.join("rigs").join("limb");
+    std::fs::create_dir_all(&rigs).unwrap();
+    std::fs::write(
+        rigs.join("rig.json"),
+        serde_json::to_string(&rig()).unwrap(),
+    )
+    .unwrap();
+    let dir = tmp.join("campaign");
+    std::fs::create_dir_all(&dir).unwrap();
+    for f in common::STAGE_FILES {
+        std::fs::copy(common::hello_world_dir().join(f), dir.join(f)).unwrap();
+    }
+    std::fs::write(dir.join("quests.json"), quests().to_string()).unwrap();
+    let with = run(&[
+        "--prefabs",
+        lib.to_str().unwrap(),
+        "build",
+        dir.to_str().unwrap(),
+        "-o",
+        tmp.join("out").to_str().unwrap(),
+    ]);
+    let err = String::from_utf8_lossy(&with.stderr);
+    assert_eq!(with.status.code(), Some(0), "{err}");
+    assert!(
+        err.contains(
+            "assembly binding: 1 assembl(ies) declared, 3 part(s), 4 clip(s), 1 hitbox(es) \
+             examined, 1 strike step(s) checked, 0 refused"
+        ),
+        "{err}"
+    );
+    assert!(
+        err.contains("assembly cost: 3 display part(s) in all"),
+        "{err}"
     );
 }

@@ -4330,14 +4330,17 @@ fn emit_functions(
     fns.extend(crate::compiler::healthbar::functions(ns, &health_bars));
     // spec-0082: the assemblies' bodies, clips, drivers and landings. A landing
     // is an ordinary effect bundle, lowered here under its root's audience.
-    fns.extend(crate::compiler::assembly::functions(plan, &|e, body| {
-        emit_gated_effect(
-            plan,
-            e,
-            root_audience(delvewright_dsl::EffectRootKind::AssemblyLand),
-            body,
-        )
-    }));
+    fns.extend(crate::compiler::assembly::assembly_functions(
+        plan,
+        &|e, body| {
+            emit_gated_effect(
+                plan,
+                e,
+                root_audience(delvewright_dsl::EffectRootKind::AssemblyLand),
+                body,
+            )
+        },
+    ));
 
     // --- v0.6 checkpoint respawn dispatch (spec-0012) ---
     fns.extend(emit_checkpoint_functions(plan));

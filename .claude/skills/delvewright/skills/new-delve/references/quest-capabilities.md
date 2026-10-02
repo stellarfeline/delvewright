@@ -536,6 +536,49 @@ this section is what they are *for* and the traps in each.
     lists the words the game accepts. Leave them out to keep the game's defaults.
   - A rest that re-seats the fight re-seats the bar with it: it reads full
     again when the party walks back in.
+- **A thing that can be hit and hits back is an assembly, not a body.**
+  `assemblies[]` declares an object built of display entities that stands at a
+  mark — a limb rising from a pit, a statue that swings, a pendulum of chains —
+  plays clips, can be struck, and strikes a player who comes near. It has no
+  health and never dies, so it is never a fight: what striking it *does* is
+  yours, written with the ordinary verbs.
+  - *Its shape and motion come from a rig*, `"rig": "rig/<name>"`, a file a
+    generator writes into the prefab library (`rigs/<name>/rig.json`). You never
+    write keyframes. Read what a rig offers before you use it: the engine's
+    rig describe verb prints its parts, each clip with its length in ticks, and
+    the cells each clip's last frame stands in relative to the mark, turned the
+    way your assembly faces. `initial` is the clip it plays from
+    `spawn-assembly`; `play-clip {assembly, clip}` switches it; a `sequence`
+    times the beat after a clip from the tick lengths `rig describe` prints;
+    `despawn-assembly` removes it unseen. Naming a clip the rig lacks is refused
+    with the rig's clips listed.
+  - *It is struck in melee only.* Its `hitbox {width, height, offset?}` is an
+    invisible box a left-click registers on; **an arrow passes straight through
+    it**, so a ranged class cannot hit it and a party wants someone who fights
+    up close. The box must cover the parts the player sees, at most 6 wide and
+    22 tall, and when your critical path needs it struck, somewhere the party
+    can stand must be within arm's reach (3 blocks) of it.
+  - *A hit count is a `state` you declare*, not a field on the thing: a
+    `strike-assembly` trigger with `"once": false` that does `add-state` one per
+    blow, and the effects that happen at the count gated on `requires_state`
+    (play `retract`, set a flag, open the way). Give the trigger a
+    `forbids_flags` of the flag the last blow sets, so it stands down. When the
+    path depends on the count, the bot strikes it as many times as the gate
+    needs.
+  - *Where a blow lands is checked; when and how hard is yours.* `strikes
+    {while_in, pattern: [{windup, hold, strike, on_land}]}` winds up, holds,
+    strikes, and runs `on_land` on the tick the strike clip's last frame shows —
+    usually a `damage-players` with an `in` box, and a sound. Two things are
+    refused, both so the danger stays visible: **a blow that reaches a player who
+    never stepped into the arming region** (keep every landing box inside
+    `while_in`), and **a blow that lands where the limb does not come down**
+    (declare the landing box under the strike clip's last-frame cells that
+    rig describe prints). How long the wind-up is, how long it holds and how
+    much it hurts — down to no warning and a blow that kills — are your
+    judgement; nothing refuses them. For reference, a single expected stimulus
+    takes a person about a quarter of a second to answer (roughly five ticks of
+    clear movement), and a wind-up that barely moves at first gives no warning at
+    all however long it is.
 
 ## Sealed things, and pacing
 
