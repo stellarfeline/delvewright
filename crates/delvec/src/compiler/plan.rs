@@ -3175,8 +3175,10 @@ impl<'a> Plan<'a> {
             &flow,
             &flow.playthrough(),
             start.as_ref(),
-            &links,
-            &link_takes,
+            PathLinks {
+                links: &links,
+                takes: &link_takes,
+            },
         )?;
 
         // ---- v0.6 checkpoints + stealth beats (spec-0012 / spec-0014) ----
@@ -3454,8 +3456,10 @@ impl<'a> Plan<'a> {
             flow,
             path,
             self.campaign_start().as_ref(),
-            &self.links,
-            takes,
+            PathLinks {
+                links: &self.links,
+                takes,
+            },
         )
     }
 
@@ -4451,6 +4455,14 @@ fn plan_npc(npc: &Npc, tree: &NpcDialogue) -> NpcPlan {
     }
 }
 
+/// What the path builder needs to know about links (spec-0083): every link
+/// the campaign declares, and which of them the route proof took on this path.
+#[derive(Clone, Copy)]
+pub(crate) struct PathLinks<'l> {
+    links: &'l [crate::compiler::link::LinkPlan],
+    takes: &'l LinkTakes,
+}
+
 /// The computed critical path and its per-step metadata.
 pub struct CriticalPath {
     pub steps: Vec<Step>,
@@ -4495,9 +4507,9 @@ fn build_critical_path(
     flow: &crate::compiler::flow::Flow<'_>,
     path: &crate::compiler::flow::Playthrough,
     start: Option<&(String, [i32; 3])>,
-    links: &[crate::compiler::link::LinkPlan],
-    takes: &LinkTakes,
+    carry: PathLinks<'_>,
 ) -> Result<CriticalPath, PlanError> {
+    let PathLinks { links, takes } = carry;
     let mut steps = Vec::new();
     // `(path step index, first critical step it produced)`, in path order — how
     // a critical step is mapped back to the flags and data the party holds

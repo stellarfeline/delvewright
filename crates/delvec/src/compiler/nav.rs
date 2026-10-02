@@ -6555,7 +6555,7 @@ pub fn check_bodies_can_leave(
     // under it: a link's stand cell is a way out of a pocket there (spec-0083
     // §3.9), because a body standing in it performs the trigger and is put down
     // on a route cell — and the link is repeatable by construction.
-    let mut configs: Vec<(RegionState, usize, BTreeSet<[i32; 3]>, BTreeSet<usize>)> = Vec::new();
+    let mut configs: Vec<LeaveConfigSeed> = Vec::new();
     for (step, cells) in critical_route_cells(plan, world) {
         let st = world.region_state_at(&plan.region_events, step, &ancestor);
         let live: BTreeSet<usize> = plan
@@ -6599,6 +6599,10 @@ pub fn check_bodies_can_leave(
         .collect();
     verify_bodies_can_leave(&worlds, returned, &plan.shortcuts)
 }
+
+/// One configuration as it is gathered: its region state, the first step that
+/// arrives under it, its route cells, and the links live at those steps.
+type LeaveConfigSeed = (RegionState, usize, BTreeSet<[i32; 3]>, BTreeSet<usize>);
 
 /// One quest configuration `DW0921` judges: its world, the configuration in
 /// words, its route cells, and the stand cells of the links live in it.
