@@ -141,14 +141,6 @@ inputs = [
   { glob = "**", why = "the Windows job re-derives the population from every tracked file — a new shebang or a new executable bit anywhere joins it — and reads the whole working tree that checkout materialised" },
 ]
 
-[[group]]
-name = "storybook-version"
-inputs = [
-  { glob = "tools/creator/check-storybook-version.py", why = "the script this job runs" },
-  { glob = "tools/lib/**", why = "`versions.py`, which the script imports" },
-  { glob = "Cargo.toml", why = "the compiler's release version, read from `[workspace.package]`" },
-]
-
 # `check-pins.py --online` and `check-skill-page.py --online` also run their
 # offline rules, which read the whole tree (a fetch verb in any tracked file, any
 # engine path the page names). Those rules are `manifest`'s steps, run there on
@@ -171,7 +163,7 @@ inputs = [
 [[group]]
 name = "zone-audit"
 inputs = [
-  { glob = "crates/**", why = "`delvec grammar audit` builds and runs the engine over the rule library and the pinned campaigns' zone programs" },
+  { glob = "crates/**", why = "`delvec grammar audit --library` builds and runs the engine over the rule library, which lives under `crates/`" },
   { glob = "Cargo.toml", why = "the workspace manifest the build resolves" },
 ]
 

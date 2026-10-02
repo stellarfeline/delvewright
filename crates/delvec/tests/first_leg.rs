@@ -155,7 +155,9 @@ fn the_perturbation_is_which_piece_declares_an_entry() {
     let mut with_entry = 0usize;
     for e in std::fs::read_dir(&dir).unwrap() {
         let p = e.unwrap().path();
-        if p.extension().and_then(|x| x.to_str()) != Some("json") {
+        // A piece is a prefab document, by the library's one naming rule —
+        // never `pools.json` or a gate report.
+        if !delvec::compiler::registry::is_prefab_document(&p) {
             continue;
         }
         total += 1;

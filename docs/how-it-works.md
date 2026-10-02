@@ -251,7 +251,7 @@ flowchart TD
 | `tools/creator/staging-gate.py` + `docs/playtest-findings.json` | the gate on the findings ledger; the only key to the play port | 4 | the agent |
 | `tools/creator/playtest-server.sh` | a throwaway local itzg server on `localhost:25565` | 4, 5 | the agent starts it; the human walks |
 | `tools/creator/skin`, `i18n-translate.py`, `block-appearance.py`, `refscore.py` | NPC faces, translation, block choice by appearance, candidate scoring | 3, 5 | the agent |
-| `tools/creator/check-storybook-version.py` | the storybook's engine-version marker | 5, 6 | the agent and CI |
+| `tools/creator/check-storybook-version.py` | the storybook's engine-version marker | 5, 6 | the agent and the campaign's release |
 | `validation/` Docker Compose rig | `compose.yaml` with the `play`, `playtest`, `validate` and `packtest` profiles; `owner-play.yaml` | 4–6 | the agent and CI |
 | PackTest on Fabric | mechanism tests on a tool server; never in a shipped delve | 4, 6 | the agent and CI |
 | `harness/` | the mineflayer bot (TypeScript): critical path, die-retry, death-loop, branch runs | 4, 6 | the agent and CI |

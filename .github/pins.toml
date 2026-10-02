@@ -164,21 +164,20 @@ facts and then that the value stands as a whole token at every site.
 
 [[pin]]
 id = "content-repo"
-value = "8e09c30c17c78538ac0b6c36fa5edc5f681a45eb"
+value = "ff73411a1d7feabad57a4537e1384402a2b096d0"
 sites = ["versions.toml"]
 repo = "stellarfeline/delvewright-campaigns"
 policy = "track"
 judged_by = ".github/workflows/ci.yml"
-reviewed = "8e09c30c17c78538ac0b6c36fa5edc5f681a45eb"
+reviewed = "ff73411a1d7feabad57a4537e1384402a2b096d0"
 builds = []
 why = """
 The content commit every reproducible build resolves the prefab library and
 campaign sources from (versions.toml [content], spec-0007). Nothing is BUILT out
 of this checkout — the engine is built from this tree and the content arrives as
 data — so no source directory is watched and drift is reported rather than red.
-The re-pin convention and the zone-inventory restatement that goes with it are
-enforced separately by validation/check-versions.sh and
-.github/content-zone-corpus.json.
+The engine reads the prefab library from this checkout and judges nothing else
+in it: a campaign is judged at its own release, by the engine it pins.
 """
 
 [[pin]]
