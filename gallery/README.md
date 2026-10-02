@@ -148,6 +148,7 @@ holding them at once.
 | `a-row-with-no-picture` | `DW0890` | `validate` | pointing a `design.json` row at a stem no file under `design/concept/` answers |
 | `a-signal-the-floor-does-not-carry` | `DW0891` | `build` | declaring the east strip `shown_by` a cactus that stands in none of its cells |
 | `a-sky-no-picture-shows` | `DW0890` | `validate` | moving the midnight row to `night`, leaving an hour the world reaches that no approved picture shows |
+| `a-sky-that-restates-its-picture` | `DW0721` | `build` | stating on `hall-exterior` the `noon`+`clear` sky of the very row it answers, in place of the `dusk`+`clear` it states |
 | `a-walk-plane-the-void-still-owes` | `DW0886` | `validate` | seating the shard, which declares no walk plane, on a `void` horizon |
 | `nothing-places-the-whole` | `DW0883` | `validate` | deleting the entry box's pinned `min`, so nothing places the site plan |
 | `two-faces-at-one-place` | `DW0880` | `build` | giving two recovery stakes that share a place two different marker items |

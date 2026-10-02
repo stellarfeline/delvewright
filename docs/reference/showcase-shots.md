@@ -35,9 +35,9 @@ A front page for a map that is the point shows a different subject from §2: **t
 
 ## 2b. The sky a picture is taken under
 
-The design states a time and a weather per picture; the renderer carries the time and not the weather. `delvec cameras` sets Chunky's sun from the declared hour (dusk: altitude 0.2169 rad, about 12.4°, azimuth π, the west) and leaves the sky at Chunky's default, a clear simulated sky; rain and thunder have no Chunky counterpart and are not drawn. **[authored]** — read off the emitted scene.
+The design states a time and a weather per picture, and the engine renders both. A showcase camera with no `sky` is emitted under the `time` and `weather` of the `design.json` row it answers; the sky block `delvec cameras` writes for each weather — the hour's sun alone for `clear`, an overcast block for `rain` and `thunder`, its values a cell of a look table keyed by the sun's daylight class — is `compiler.md` §4, *The sky of a scene*. The pinned Chunky core draws no rain: weather reaches a frame as the sky's radiance and colour, the sun's intensity and disc, and fog. **[cited]** — spec-0079 §2.1, read from the pinned core's source. Never patch an emitted scene to change its sky.
 
-1. **Overcast dusk, as vesperhold's pictures are taken:** `sky.mode` `SOLID_COLOR`, `sky.color` (0.10, 0.11, 0.14), `sky.skyLight` 1.6, `sky.apparentSkyLight` 0.6; `sun.intensity` 0.25, `sun.color` (0.9, 0.75, 0.65), `sun.drawTexture` false, the sun's position left where the hour put it; `fog.mode` `UNIFORM`, `fog.uniformDensity` 0.002, `fog.color` (0.20, 0.22, 0.26), `fog.skyFogDensity` 0. These are Chunky's scene keys, set on the emitted scene beside the camera `delvec cameras` wrote; no block light is added or removed (§3.7). **[authored]** — chosen on vesperhold's aerial and hero frames, by look, over four rounds:
+1. **The overcast dusk the table's `low` × `rain` cell is**, measured on vesperhold's aerial and hero frames by look over four rounds, with the keys set on the emitted scene beside the camera `delvec cameras` wrote; no block light is added or removed (§3.7). **[authored]** — measured on vesperhold. What the rounds showed:
    - Chunky's default sky reads as a clear summer evening: a warm band on the horizon and hard shadows.
    - A grey `SOLID_COLOR` sky (0.30, 0.33, 0.38) with the sun at 0.3 reads overcast but pale: the sky is a blank white-grey third of the frame.
    - While `skyFogDensity` is 1 the fog's colour paints the visible sky, so darkening `sky.color` alone did not darken it; with `skyFogDensity` 0 it did.
@@ -45,10 +45,10 @@ The design states a time and a weather per picture; the renderer carries the tim
    - A `GRADIENT` sky (dark top, lighter horizon) looked the same as the solid one under this fog, and was dropped.
    - Uniform fog 0.006 turned the castle 250 blocks away into a grey silhouette; 0.002 separates the valley wall from the castle without hiding either.
    - A `LAYERED` fog band at the valley floor (y 72, breadth 10, density 0.04) drew no visible mist, so the concept images' valley mist is not in the pictures.
-2. **Expose a dusk exterior at 2.0 under that sky.** At 1.0 the castle's walls sink into one dark tone; the drafts at 1.5–1.8 read, and the final frames take 2.0. **[authored]** — measured on vesperhold.
+2. **Expose a dusk exterior at 2.0 under that sky.** At 1.0 the castle's walls sink into one dark tone; the drafts at 1.5–1.8 read, and the final frames take 2.0. **[authored]** — measured on vesperhold. Exposure stays the camera's own field.
 3. **1024 spp for an overcast dusk exterior.** Seven 1600 × 900 frames took 13 min 52 s to 17 min 57 s each at 9 threads and show no grain at full size; a lower count was not tried. **[authored]** — measured on vesperhold.
-4. **One sky for the whole set.** Every picture of one delve takes the same block, so the set reads as one place at one hour; in a candle-lit room it changes nothing visible, and a window or a broken roof shows the same sky. **[authored]**
-5. **A frame may take a different sky when the declared one leaves the room unreadable, and its caption says so.** **[authored]** — vesperhold's chapel is shown at a clear noon (Chunky's default simulated sky, sun altitude π/2, fog 0), exposure 10, 1024 spp plus BM3D: against a 4096-spp reference of the same 400 × 225 frame the rms error was 7.9 at 300 spp, 5.3 at 300 plus BM3D, 4.7 at 1024 plus BM3D and 4.5 at 4096 plus BM3D.
+4. **One sky for the whole set.** Every picture of one delve drawn under one sky takes the same block, so the set reads as one place at one hour; in a candle-lit room it changes nothing visible, and a window or a broken roof shows the same sky. **[authored]**
+5. **A frame may take a different sky when the declared one leaves the room unreadable: its camera states `sky`, and its caption says so.** `delvec place-camera --sky <time>,<weather>` writes it; a `sky` equal to the row's is refused. **[authored]** — vesperhold's chapel is shown at a clear noon (Chunky's default simulated sky, sun altitude π/2, fog 0), exposure 10, 1024 spp plus BM3D: against a 4096-spp reference of the same 400 × 225 frame the rms error was 7.9 at 300 spp, 5.3 at 300 plus BM3D, 4.7 at 1024 plus BM3D and 4.5 at 4096 plus BM3D.
 
 ## 3. Interiors
 
@@ -80,4 +80,4 @@ The design states a time and a weather per picture; the renderer carries the tim
 - No source for a vertical-field-of-view table per focal length was read; the `fov` ranges above are measured on renders, not converted from lenses.
 - Game showcase practice (FOV below play FOV, lighting direction) was read only through summaries.
 - No source gives a distance or frame-width ratio for a whole-map establishing shot; §2a.5's is measured on one site, vesperhold.
-- No source on reproducing weather in Chunky was read; §2b's values are chosen by look on one delve.
+- The research on what an overcast sky is, and what the pinned core can draw of one, is spec-0079 §2; the look table's numbers stay authored on that shape.
