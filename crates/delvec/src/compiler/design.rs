@@ -645,6 +645,21 @@ pub fn answered(c: &Campaign, files: &DesignFiles) -> Vec<Diagnostic> {
         // report a second number the first defect produced.
         return d;
     }
+    // The record's sky rule (spec-0079 §3.3), asked through the one function
+    // `delvec cameras` and `delvec place-camera` ask it through.
+    if let Some(bytes) = &files.cameras
+        && let Ok(sheet) = crate::compiler::view::camera::parse_sheet(bytes)
+        && let Some(why) =
+            crate::compiler::view::camera::skies(&sheet.cameras, &approved_rows(rows)).refusal
+    {
+        d.push(Diagnostic::error(
+            crate::compiler::view::camera::DW_RECORD_AT_BUILD,
+            "design",
+            crate::compiler::view::camera::CAMERAS_FILE,
+            why,
+        ));
+        return d;
+    }
     if !a.unanswered.is_empty() {
         d.push(Diagnostic::error(
             DW_DESIGN_ANSWERED,
@@ -663,6 +678,10 @@ fn approved_rows(rows: &[Reference]) -> Vec<crate::compiler::view::camera::Appro
         .map(|r| crate::compiler::view::camera::ApprovedRow {
             name: r.name.clone(),
             shows: r.shows.clone(),
+            sky: Some(crate::compiler::view::camera::CameraSky {
+                time: r.time,
+                weather: r.weather,
+            }),
         })
         .collect()
 }

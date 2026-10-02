@@ -89,15 +89,16 @@
 //! delve, of a midnight one — came off Chunky's own default and showed midday
 //! blue. The guarantees all held and the thing they protect was never emitted.
 //!
-//! So the plan states the hour as a fact of the campaign, exactly as it states
-//! [`horizon_fact`]: `{"time": "dusk", "daytime_ticks": 12000}` — the keyword an
-//! author wrote and the vanilla `daytime` tick it sets, which is the number the
-//! sun's position is a function of. `delvec scene` turns it into a Chunky sun
-//! ([`crate::compiler::view::scene::sun_at`]) and refuses a plan that omits it,
-//! so no frame can be taken under a default sun again.
-//!
-//! **The weather is deliberately not here.** Chunky has no rain, and a key a
-//! renderer cannot act on is the same unemitted shape one level along.
+//! So the plan states the sky as a fact of the campaign, exactly as it states
+//! [`horizon_fact`]: `{"time": "dusk", "daytime_ticks": 12000, "weather":
+//! "rain"}` — the keyword an author wrote, the vanilla `daytime` tick it sets
+//! (the number the sun's position is a function of), and the declared initial
+//! weather. `delvec scene` and `delvec panorama` turn it into a Chunky sky
+//! ([`crate::compiler::view::scene::sky_of`]: the sun, and under rain or
+//! thunder an overcast sky and fog) and refuse a plan that omits the hour or the
+//! weather, so no frame can be taken under a default sun or a default clear sky
+//! again. A showcase camera takes its sky from the picture it answers instead
+//! (spec-0079 §5).
 //!
 //! ## `lighting` stamp (declared-dark areas stay reviewable)
 //!
@@ -1092,12 +1093,14 @@ pub fn render_plan(
 /// clock with `set-time` reaches other hours at play, and `DW0890` holds the
 /// approved design's rows equal to that whole reachable set; a still frame has
 /// one sun and cannot be evidence about the beats after the cut. The plan states
-/// the hour it can keep rather than a set it cannot.
+/// the hour it can keep rather than a set it cannot — and, for the same reason,
+/// the declared initial `weather`.
 fn sky_fact(c: &Campaign) -> Value {
     let t = c.world.content.time;
     json!({
         "time": t.keyword(),
         "daytime_ticks": t.daytime_ticks(),
+        "weather": c.world.content.weather.keyword(),
     })
 }
 

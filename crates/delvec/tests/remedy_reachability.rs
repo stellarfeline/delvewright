@@ -2112,3 +2112,76 @@ fn dw0900_writing_the_camera_deleting_the_picture_and_deleting_the_record_all_bu
         "and the zero is measured, not silent:\n{after}"
     );
 }
+
+// ---------------------------------------------------------------------------
+// DW0721 — a camera that restates its picture's sky (spec-0079 §3.3)
+// ---------------------------------------------------------------------------
+
+/// **`REMOVE the `sky` field`** — the one move the record's sky rule names. A
+/// camera whose stated `sky` is its row's own is refused by the build, and the
+/// same campaign with the field removed builds. Beside it, the two shapes serde
+/// refuses (a half-stated sky, a weather that is not one) are refused by the
+/// build under the same code, naming the camera and the row.
+#[test]
+fn dw0721_removing_a_restated_sky_builds() {
+    let dir = common::prefabs_dir();
+    let eye = proven_eye("sky-eye");
+    let rows = [("concept/shore-far", "noon", "clear")];
+    let with_sky = |tag: &str, sky: Option<serde_json::Value>| {
+        let camp = design_campaign(tag, "noon", &["concept/shore-far.png"], &rows);
+        design_cameras(&camp, eye, &[("shore", "concept/shore-far")]);
+        if let Some(sky) = sky {
+            common::patch_file(&camp.join("design/cameras.json"), |v| {
+                v["cameras"][0]["sky"] = sky;
+            });
+        }
+        camp
+    };
+
+    let red = with_sky(
+        "sky-restated",
+        Some(serde_json::json!({"time": "noon", "weather": "clear"})),
+    );
+    let (code, before) = build("sky-restated", &red, &dir);
+    assert_eq!(code, 3, "refused:\n{before}");
+    assert!(before.contains("DW0721"), "{before}");
+    assert!(
+        before.contains("REMOVE the `sky` field from camera `shore`")
+            && before.contains("`concept/shore-far`"),
+        "the message names the camera, the row and the move:\n{before}"
+    );
+
+    // The move: remove the field.
+    let green = with_sky("sky-removed", None);
+    let (code, after) = build("sky-removed", &green, &dir);
+    assert_eq!(
+        code, 0,
+        "with the field removed the campaign builds:\n{after}"
+    );
+    assert!(!after.contains("DW0721"), "{after}");
+
+    for (tag, sky, says) in [
+        (
+            "sky-half",
+            serde_json::json!({"time": "dusk"}),
+            "missing field `weather`",
+        ),
+        (
+            "sky-snow",
+            serde_json::json!({"time": "dusk", "weather": "snow"}),
+            "unknown variant `snow`",
+        ),
+    ] {
+        let camp = with_sky(tag, Some(sky));
+        let (code, said) = build(tag, &camp, &dir);
+        assert_ne!(code, 0, "{tag} is refused:\n{said}");
+        assert!(
+            said.contains("DW0721") && said.contains(says),
+            "{tag}:\n{said}"
+        );
+        assert!(
+            said.contains("camera `shore` (answers `concept/shore-far`)"),
+            "{tag}: the camera and the row are named:\n{said}"
+        );
+    }
+}

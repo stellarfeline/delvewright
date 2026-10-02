@@ -1,0 +1,75 @@
+{
+  "sdfVersion": 9,
+  "name": "isle_panorama_se_45",
+  "width": 1600,
+  "height": 900,
+  "yClipMin": 48,
+  "yClipMax": 96,
+  "exposure": 1.0,
+  "postprocess": "GAMMA",
+  "outputMode": "PNG",
+  "renderTime": 0,
+  "spp": 0,
+  "sppTarget": 300,
+  "rayDepth": 5,
+  "pathTrace": true,
+  "dumpFrequency": 500,
+  "saveSnapshots": false,
+  "emittersEnabled": true,
+  "emitterIntensity": 13.0,
+  "sunEnabled": true,
+  "stillWater": false,
+  "waterWorldEnabled": true,
+  "waterWorldHeight": 62.875,
+  "waterWorldHeightOffsetEnabled": false,
+  "waterWorldClipEnabled": true,
+  "sun": {
+    "altitude": 0.481732,
+    "azimuth": 0.0
+  },
+  "world": {
+    "path": "world",
+    "dimension": 0
+  },
+  "camera": {
+    "name": "camera 1",
+    "position": {
+      "x": 61.183397,
+      "y": 128.68543,
+      "z": 71.185818
+    },
+    "orientation": {
+      "roll": 0.0,
+      "pitch": -0.785398,
+      "yaw": 5.497787
+    },
+    "projectionMode": "PINHOLE",
+    "fov": 40.0
+  },
+  "chunkList": [
+    [
+      0,
+      0
+    ],
+    [
+      0,
+      1
+    ],
+    [
+      0,
+      2
+    ],
+    [
+      1,
+      0
+    ],
+    [
+      1,
+      1
+    ],
+    [
+      1,
+      2
+    ]
+  ]
+}

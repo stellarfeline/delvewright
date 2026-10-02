@@ -1,0 +1,75 @@
+{
+  "sdfVersion": 9,
+  "name": "isle_camera_hero",
+  "width": 1600,
+  "height": 900,
+  "yClipMin": 48,
+  "yClipMax": 96,
+  "exposure": 2.0,
+  "postprocess": "GAMMA",
+  "outputMode": "PNG",
+  "renderTime": 0,
+  "spp": 0,
+  "sppTarget": 300,
+  "rayDepth": 5,
+  "pathTrace": true,
+  "dumpFrequency": 500,
+  "saveSnapshots": false,
+  "emittersEnabled": true,
+  "emitterIntensity": 13.0,
+  "sunEnabled": true,
+  "stillWater": false,
+  "waterWorldEnabled": true,
+  "waterWorldHeight": 62.875,
+  "waterWorldHeightOffsetEnabled": false,
+  "waterWorldClipEnabled": true,
+  "sun": {
+    "altitude": 0.481732,
+    "azimuth": 0.0
+  },
+  "world": {
+    "path": "/abs/world",
+    "dimension": 0
+  },
+  "camera": {
+    "name": "camera 1",
+    "position": {
+      "x": 10.5,
+      "y": 70.0,
+      "z": -4.25
+    },
+    "orientation": {
+      "roll": 0.0,
+      "pitch": -1.396263,
+      "yaw": 1.047198
+    },
+    "projectionMode": "PINHOLE",
+    "fov": 50.0
+  },
+  "chunkList": [
+    [
+      0,
+      0
+    ],
+    [
+      0,
+      1
+    ],
+    [
+      0,
+      2
+    ],
+    [
+      1,
+      0
+    ],
+    [
+      1,
+      1
+    ],
+    [
+      1,
+      2
+    ]
+  ]
+}

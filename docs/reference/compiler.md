@@ -2866,18 +2866,22 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   and an estimate to be moved, and never the geometry. A record its reader
   refuses stops the build as `DW0721` (exit 3). The count is
   `camera_eye_proof.showcase`, present only when the record is.
-- **`sky` fact** (`crate::render_plan::sky_fact`): **the hour this delve is
-  played at**, stated for the render layer exactly as `horizon` is —
-  `{"time": "dusk", "daytime_ticks": 12000}`, the keyword the author wrote plus
-  the vanilla `daytime` value it sets. Always present, because `world.json`'s
-  `time` is required. It is the **declared initial** hour — what the world save
+- **`sky` fact** (`crate::render_plan::sky_fact`): **the hour and weather this
+  delve is played at**, stated for the render layer exactly as `horizon` is —
+  `{"time": "dusk", "daytime_ticks": 12000, "weather": "rain"}`, the keyword the
+  author wrote, the vanilla `daytime` value it sets, and the declared initial
+  `weather` keyword. Always present, because `world.json`'s `time` and `weather`
+  are required. It is the **declared initial** hour — what the world save
   is written at, and therefore what every frame is of; a campaign that moves the
   clock with `set-time` reaches other hours at play (`DW0890` holds the design's
   rows equal to that whole reachable set), and a still frame has one sun and is
   not evidence about the beats after the cut. The renderer derives the sun from the **ticks** and never
   from the keyword, so a state vanilla does not name is worth as much as one it
-  does; the **weather is deliberately not here**, because Chunky has no rain and
-  a key the renderer cannot act on is an unemitted declaration one level along.
+  does. The **weather** reaches a frame as an overcast sky (`scene::sky_of`,
+  below): the pinned Chunky core draws no rain, but it draws the sky's radiance
+  and colour, the sun's intensity and disc, and fog. The panorama and the review
+  frames take this sky; a showcase camera takes its picture's (§7 `delvec
+  cameras`).
 - **The Chunky sun** (`crate::view::scene::sun_at`, used by `delvec scene` **and**
   `delvec panorama`): `altitude = asin(cos α)` and an azimuth of exactly east or
   exactly west, where α is minecraft.wiki's published sky angle for the plan's
@@ -2890,9 +2894,50 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   the sun is `(cos az·cos alt, sin alt, sin az·cos alt)` (pinned core's
   `Sun.initSun`) and nothing clamps the altitude, so `night`/`midnight` emit a sun
   below the horizon and those frames render dark — which is what a night delve
-  looks like. **A plan with no `sky` is `DW0721`**, in both `scene` and
-  `panorama`: Chunky's own default is a 60° midday sun, so emitting anyway would
-  hand back a noon frame of a midnight delve and say nothing. The panorama's
+  looks like. **A plan with no `sky`, or a `sky` with no `weather`, is
+  `DW0721`**, in `scene`, `panorama` and `cameras` (`scene::plan_sky`), naming
+  the plan as written by an engine older than the running one: Chunky's own
+  default is a 60° midday sun under a clear sky, so emitting anyway would hand
+  back a noon frame of a midnight delve, or a clear frame of a rain delve, and
+  say nothing.
+- **The sky of a scene** (`crate::view::scene::sky_of`, spec-0079 §4): the one
+  writer of every `sky`, `sun` and `fog` key under `compiler::view`; the review
+  frames (`scene::scenes_from_plan`), the panorama and every showcase camera
+  (`camera::world_scene`) take their sky through it. **`clear`** is the hour's
+  sun direction and nothing more — Chunky's simulated sky with its default sun is
+  a clear sky — so a clear scene's bytes are the bytes the engine wrote before
+  the weather reached a scene (pinned by `clear_scenes_keep_their_base_bytes`
+  against goldens emitted at spec-0079's base). **`rain`** and **`thunder`** write
+  the whole overcast block on every scene: the sun's direction from `sun_at`,
+  `sun.intensity`, `sun.color` and `sun.drawTexture false`; `sky.mode
+  SOLID_COLOR`, `sky.color`, `sky.skyLight` (the light the sky casts) and
+  `sky.apparentSkyLight` (the brightness the lens sees); `fog.mode UNIFORM`,
+  `fog.uniformDensity`, `fog.color` and `fog.skyFogDensity 0` (so the fog colour
+  never paints the sky). The block's values are a cell of a **look table** keyed
+  by weather and by a **daylight class read off the emitted sun's altitude**,
+  never the hour's name: `high` at or above 20° (`noon` 90°, `day` 27.6°), `low`
+  from 0° up to 20° (`dusk` 12.4°), `below` under 0° (`night`, `dawn` −3.5°,
+  `midnight` −90°). Every cell shares `sky.color` (0.10, 0.11, 0.14), `sun.color`
+  (0.9, 0.75, 0.65) and `fog.color` (0.20, 0.22, 0.26):
+
+  | Cell | `skyLight` | `apparentSkyLight` | `sun.intensity` | `fog.uniformDensity` |
+  |---|---|---|---|---|
+  | `high` × `rain` | 3.2 | 1.2 | 0.25 | 0.002 |
+  | `low` × `rain` | 1.6 | 0.6 | 0.25 | 0.002 |
+  | `below` × `rain` | 0.16 | 0.06 | 0 | 0.002 |
+  | `high` × `thunder` | 1.92 | 0.72 | 0.125 | 0.003 |
+  | `low` × `thunder` | 0.96 | 0.36 | 0.125 | 0.003 |
+  | `below` × `thunder` | 0.096 | 0.036 | 0 | 0.003 |
+
+  `low` × `rain` is the overcast dusk measured on one delve
+  (`docs/reference/showcase-shots.md` §2b); the other five derive from it by two
+  rules — `high` doubles both sky-light modifiers, `below` takes a tenth of them
+  and puts the sun (under the horizon) at 0; `thunder` takes its class's `rain`
+  cell at 0.6 of both modifiers, half its sun and 1.5 times its fog — asserted by
+  `the_look_table_is_the_measured_cell_and_two_rules`. This table is the record
+  of what the engine emits; the constants are `scene::{HIGH,LOW,BELOW}_{RAIN,
+  THUNDER}`. A night-vision review emulation (`REVIEW_POLICY`) is a material
+  override and independent of the sky: a declared-dark room under rain gets both. The panorama's
   bearing decides only which side is in shot, and a bearing that looks into the
   sun at the declared hour is a backlit frame the creator re-shoots from
   elsewhere.
@@ -6496,7 +6541,7 @@ rule, and the rule's domain is the more useful thing for the number to say.
 | `DW0702` | `delvec schem` | Source `DataVersion` ≠ pinned MC 1.21.11. |
 | `DW0710` | `delvec schem` | Input unreadable / not a Sponge schematic. |
 | `DW0720` | `delvec render` | Missing-texture (magenta) placeholder detected (fidelity gate; exit 4). |
-| `DW0721` | `delvec render` | Input (`.nbt`/metadata/`render-plan.json`/`design/cameras.json`) unreadable, a `cameras` record that breaks its rules (§7, `delvec cameras`; the same refusal stops `delvec build`, exit 3, since the build reads the record — **including a camera whose `answers` names no row of `design.json`** (spec-0070), refused through the record's one reader, with that reader's own sentence, before anything is placed), a `place-camera` write the record refuses (an estimate over a `hand` row, a new hand row without `--answers`, another row's `answers`, a slot the report does not hold), a `panorama --subject` anchor the build did not resolve, a `scene`/`panorama`/`cameras` world save that is not there (no `level.dat` or no region file in `--world`, default `<build-dir>/world`; Chunky would render it as an empty frame at exit 0), or a `--view` that cannot be rendered as asked (exit 2). A declared view is refused **before any frame**: a malformed spec, a bearing given twice or not at all, a subject the piece does not declare (the message lists the anchors it does), or a name a planned shot already holds — which would overwrite that shot's image and quietly regress a review set. A view is never dropped or silently re-aimed: a set missing the one camera the reviewer asked for still looks complete in a directory listing. |
+| `DW0721` | `delvec render` | Input (`.nbt`/metadata/`render-plan.json`/`design/cameras.json`) unreadable, a `cameras` record that breaks its rules (§7, `delvec cameras`; the same refusal stops `delvec build`, exit 3, since the build reads the record — **including a camera whose `answers` names no row of `design.json`** (spec-0070), and **a camera whose stated `sky` is the sky of the row it answers** (spec-0079 §3.3; remedy: remove the field), refused through the record's one reader, with that reader's own sentence, before anything is placed; a half-stated `sky` or a keyword outside the hour and weather enums is refused naming the camera and its row), a `place-camera` write the record refuses (an estimate over a `hand` row, a new hand row without `--answers`, another row's `answers`, a slot the report does not hold, a `--sky` that does not parse as `<time>,<weather>` or restates the row's sky), a `render-plan.json` whose `sky` states no `weather` (written by an older engine; `scene::plan_sky`), a `panorama --subject` anchor the build did not resolve, a `scene`/`panorama`/`cameras` world save that is not there (no `level.dat` or no region file in `--world`, default `<build-dir>/world`; Chunky would render it as an empty frame at exit 0), or a `--view` that cannot be rendered as asked (exit 2). A declared view is refused **before any frame**: a malformed spec, a bearing given twice or not at all, a subject the piece does not declare (the message lists the anchors it does), or a name a planned shot already holds — which would overwrite that shot's image and quietly regress a review set. A view is never dropped or silently re-aimed: a set missing the one camera the reviewer asked for still looks complete in a directory listing. |
 | `DW0722` | `delvec render` | Output file could not be written (exit 3). |
 | `DW0723` | `delvec render` | GPU renderer failed / textures absent (exit 5). |
 | `DW0724` | `delvec` (visual tier) | **A render-plan camera's eye cell is occupied** (solid/water) in the FINAL assembled world — the frame would render the inside of a block, and a picture of the inside of a block is indistinguishable from a picture of a featureless room. `compiler::nav::verify_camera_eyes`, over **every** shot the plan holds: `spawn`, `interior`, `seam`, `npc`, `interact`, `gate` and `pov`. It is bound at the derivation, not at a call site — `render_plan::render_plan` is the only constructor of a plan document and it takes the world, and every kind enters the shot list through one `push` that records the eye from the same position it writes into the camera, so a kind added later is covered without anyone remembering. Two verdicts, decided by the object rather than by the author. **`pov`** is the player's own eye, 1.62 above a DW0314-proven-standable waypoint, so it is clear by construction and is never moved: a violation there is the derivation changing (or a later pass mutating the cell) and fails the build (exit 3) — fix the derivation, never the waypoint or the geometry. **Every other kind** states a fixed stand-off from a subject it frames, which is a preference and not a position: a camera whose own cell holds a block stands instead at the furthest clear point on its own sight line (`compiler::camera::stand_in_open_air`) and records `camera.requested_pos` + `camera.standoff` on its shot, because a displaced camera is invisible in its own frame. It yields to that one fact and nothing else — an interior shot's dollhouse eye is deliberately above the piece and is not pulled through the roof it looks past. The error survives for those kinds too: it fires when even the subject's own cell is buried, so there is no vantage on the sight line at all. Every plan states the proof's binding counts (`camera_eye_proof`: `cameras` examined, `pulled_in`), and a plan holding zero cameras is a warning under the same code rather than a silent pass. **Second shape — every showcase camera of `design/cameras.json`** (spec-0069): its lens cell is clear, its lens is inside the build height, and its view ray meets the scene's loaded extent; a showcase camera is never moved, so each violation refuses (exit 3) naming the row, with `camera_eye_proof.showcase` its count. Numbered in the `DW072x` visual/render range. |
@@ -7297,9 +7342,13 @@ required: `campaign_id` — the campaign the record belongs to, held equal to th
 build's, so a record cannot silently place cameras in another world — and
 `cameras`. Per camera: `name`, `answers` (a `design.json` row), `pos` (the lens,
 world blocks), `yaw`/`pitch` in the `--camera` convention above, vertical `fov`,
-`exposure`, `width`, `height`, `source` (`estimated` or `hand`), `spp`. **Every
-field is required**: the reader denies unknown fields and serde refuses a missing
-one, both as `DW0721`. Keys are alphabetical, so the
+`exposure`, `width`, `height`, `source` (`estimated` or `hand`), `spp`, and the
+one optional field, `sky` — an object of `time` and `weather`, both required
+when the object is present, typed by the hour and weather enums `world.json` uses — the
+sky the picture is taken under when it is not the sky of the row the camera
+answers. **Every other field is required**: the reader denies unknown fields and
+serde refuses a missing one, both as `DW0721`, naming the camera and the row it
+answers. Keys are alphabetical, so the
 record a tool writes is already canonical. This list is not hand-kept:
 `crates/delvec/tests/hand_camera.rs` serialises the reader's own structs and
 holds this paragraph to the field names that come out, in both directions. The record is not a stage document
@@ -7308,11 +7357,13 @@ as a hashed input, proves every camera in it (`DW0724`, above) and holds it to
 `design.json` in both directions — every camera answers a row (`DW0721`) and
 every row is answered (`DW0900`) — so the only bytes of the build it moves are
 `manifest.json`'s input hash, `render-plan.json`'s `camera_eye_proof.showcase`
-and `validation/design-record.json`'s three camera keys.
+and `validation/design-record.json`'s three camera keys. `delvec schema --stage
+cameras` exports the record's JSON Schema (`camera::record_schema`), naming the
+file it lives at under `x-delvewright-file`; it is not part of `--stage all`.
 
 Emission writes one Chunky scene per camera (`<campaign>_camera_<name>.json`)
 against a build's `render-plan.json`: the camera verbatim, rounded to six
-decimals; the declared hour's sun (`scene::sun_at`); the layout and its landform
+decimals; the camera's sky (`scene::sky_of`, §4 above); the layout and its landform
 in the chunk list and Y clip; the ocean plane on an ocean horizon; no review
 emulation. `delvec panorama` emits through the same scene builder
 (`camera::world_scene`), so a solved camera and a stated one are one scene shape,
@@ -7321,11 +7372,36 @@ before any file: a record that does not parse or carries an unknown key, an
 illegal name, two cameras of one name, an empty `answers` or one naming no row,
 a non-positive exposure, a pitch outside −90..90, a field of view outside
 (0, 180), a zero frame or sample target, an empty record, a record for another
-campaign than the build, an `--only` name the record lacks. **Scene emission is
+campaign than the build, an `--only` name the record lacks, a `sky` with a
+member missing or a keyword outside the enums, **a stated `sky` equal to the
+answered row's** (a derivation typed where a judgement belongs; the remedy is to
+remove the field), and a plan whose `sky` states no `weather`. **Scene emission is
 also held to `DW0900`** (exit 2): a record leaving any approved image unanswered
 emits no scene, `--only` included, because the record is what is judged and a
 set with a hole in it is not a set. Every run prints how many approved images
 have a camera and names the rest.
+
+**Where each scene's sky comes from** (spec-0079 §5), one function, three callers:
+
+| Scene | `time`, `weather` from |
+|---|---|
+| a showcase camera (`delvec cameras`) | the camera's `sky`, else the `design.json` row it `answers` |
+| the whole-map panorama (`delvec panorama`) | `render-plan.json`'s `sky` |
+| a review frame (`delvec scene`: POV, interior, seam, …) | `render-plan.json`'s `sky` |
+
+A camera with no `sky` is a frame of its picture, so it takes its row's hour and
+weather, not the world's initial ones — `DW0890` holds every row's sky to a sky
+the party can be in. The record's sky rule (`camera::resolve_sky`) is asked by
+`delvec cameras` (and `--preview`), `delvec place-camera` and `delvec build`
+alike (`compiler::design::answered`, exit 3), one sentence wherever it is read.
+**Binding line**, printed by every `delvec cameras` run, refused or not, beside
+the `answers:` sentence: one line per camera this run frames — `sky: <name>
+<time>+<weather> <derived from <row> | stated> class <high|low|below> — <the
+renderer's own clear sky | overcast cell <class>×<weather>: skyLight …,
+apparentSkyLight …, sun …, fog …>` — and `skies: D derived, S stated, over C
+camera(s)[ (R refused)]; weathers emitted: {…}`, whose set names the non-clear
+weathers (a clear scene emits no sky block). A record stating no sky prints `0
+stated`; a rain delve rendering clear prints the empty set.
 
 `--bracket` appends, after each camera, the camera moved one field by one step
 each way (`dolly` along the heading, `truck` to the frame's right, `rise` up),
@@ -7350,6 +7426,7 @@ plan and options give the same scene, candidate and preview bytes.
 
 ```
 delvec place-camera <campaign-dir> --name <row> [--answers <design.json row>]
+    [--sky <time>,<weather>]
     (--report <camera-report.json> --slot <n> --fov <degrees>
      | --candidates <record-format file> --pick <camera>
      | --delete)
@@ -7368,8 +7445,12 @@ refused, naming the row**; only `--delete` frees the name. A row keeps its
 aimed at another picture is a new row). The written record is held to
 `design.json` like `delvec cameras` holds it, and the same
 `answers: K of N approved image(s) …` line is printed after the write, so the
-count moves under the creator's hand. Refusals are `DW0721` (exit 2) and
-write nothing.
+count moves under the creator's hand. `--sky <time>,<weather>` (`noon,clear`, in
+the two enums' keywords) writes the row's `sky`; without it a new row states
+none, a replaced hand row keeps the sky it had, and `--candidates` copies the
+candidate's verbatim. A `--sky` that does not parse, or that equals the answered
+row's sky, is refused; a written row prints its `sky:` line. Refusals are
+`DW0721` (exit 2) and write nothing.
 
 ### `delvec edit apply` / `delvec edit preview` (spec-0017)
 

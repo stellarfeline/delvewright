@@ -146,6 +146,12 @@ pub enum ViewCommand {
         /// The camera in `--candidates` to write.
         #[arg(long, requires = "candidates")]
         pick: Option<String>,
+        /// The sky the picture is taken under, `<time>,<weather>` (`noon,clear`),
+        /// when it is not the sky of the `design.json` row the camera answers.
+        /// Without it a new row takes its row's sky, a replaced hand row keeps
+        /// the sky it had, and an estimate carries its own.
+        #[arg(long, conflicts_with = "delete")]
+        sky: Option<String>,
         /// Remove the row. A hand camera is deleted only when the person who
         /// placed it asks.
         #[arg(long)]
@@ -334,11 +340,13 @@ impl ViewCommand {
                 fov,
                 candidates,
                 pick,
+                sky,
                 delete,
             } => run_place_camera(
                 campaign,
                 name,
                 answers.as_deref(),
+                sky.as_deref(),
                 PlaceFrom {
                     report: report.as_deref().zip(*slot).zip(*fov),
                     candidates: candidates.as_deref().zip(pick.as_deref()),
@@ -703,9 +711,25 @@ fn run_place_camera(
     campaign: &Path,
     name: &str,
     answers: Option<&str>,
+    sky: Option<&str>,
     from: PlaceFrom<'_>,
     json: bool,
 ) -> ExitCode {
+    // Parsed here rather than by clap, so a sky that is not one is refused under
+    // the record's own code, as every other rule of the record is.
+    let sky = match sky.map(camera::CameraSky::parse).transpose() {
+        Ok(s) => s,
+        Err(why) => {
+            return fail(
+                Diagnostic::error(
+                    DW_INPUT,
+                    format!("{}: camera `{name}`: --sky {why}", camera::CAMERAS_FILE),
+                ),
+                json,
+                exit::INPUT,
+            );
+        }
+    };
     let read = |path: &Path| {
         std::fs::read(path)
             .map_err(|e| Diagnostic::error(DW_INPUT, format!("read {}: {e}", path.display())))
@@ -845,14 +869,16 @@ fn run_place_camera(
         Ok(p) => p,
         Err(d) => return fail(d, json, exit::INPUT),
     };
-    let (written, how) = match camera::place(sheet, &campaign_id, name, answers, placement) {
+    let (written, how) = match camera::place(sheet, &campaign_id, name, answers, sky, placement) {
         Ok(w) => w,
         Err(d) => return fail(d, json, exit::INPUT),
     };
-    let rows = match read(&campaign.join("design.json")).and_then(|b| camera::reference_names(&b)) {
-        Ok(r) => r,
-        Err(d) => return fail(d, json, exit::INPUT),
-    };
+    let approved =
+        match read(&campaign.join("design.json")).and_then(|b| camera::reference_rows(&b)) {
+            Ok(r) => r,
+            Err(d) => return fail(d, json, exit::INPUT),
+        };
+    let rows: Vec<String> = approved.iter().map(|r| r.name.clone()).collect();
     let answers = camera::tally(&written, &rows);
     if let Some((name, a)) = answers.stray.first() {
         return fail(
@@ -860,6 +886,18 @@ fn run_place_camera(
             json,
             exit::INPUT,
         );
+    }
+    // The row is written only if the record's sky rule holds of it: the same
+    // question `delvec cameras` and `delvec build` ask (spec-0079 §6).
+    let placed_row: Vec<camera::Camera> = written
+        .cameras
+        .iter()
+        .filter(|c| c.name == name)
+        .cloned()
+        .collect();
+    let sky_of_row = camera::skies(&placed_row, &approved);
+    if let Some(why) = sky_of_row.refusal {
+        return fail(Diagnostic::error(DW_INPUT, why), json, exit::INPUT);
     }
     let bytes = match camera::sheet_bytes(&written) {
         Ok(b) => b,
@@ -887,6 +925,9 @@ fn run_place_camera(
         row.fov,
         row.answers
     );
+    for r in &sky_of_row.resolved {
+        eprintln!("{}", r.line());
+    }
     // The count a creator is placing cameras to move (spec-0070 §5), so it moves
     // under their hand rather than at the next build.
     eprintln!("{}", answers.line());
@@ -927,6 +968,22 @@ fn run_cameras(
         &sheet,
         &rows.iter().map(|r| r.name.clone()).collect::<Vec<_>>(),
     );
+    // **The sky each camera is taken under** (spec-0079 §6), printed on every
+    // run, refused or not: one line per camera this run frames, and the summary
+    // with its denominator. Cameras that cannot be selected (`--only` naming
+    // nobody, a record for another campaign) are refused by `emit` below.
+    let framed = camera::selected(
+        &sheet.campaign_id,
+        &sheet,
+        &opts.only,
+        opts.bracket.as_ref(),
+    )
+    .unwrap_or_default();
+    let skies = camera::skies(&framed, &rows);
+    for r in &skies.resolved {
+        eprintln!("{}", r.line());
+    }
+    eprintln!("{}", skies.summary());
     if let Some((name, a)) = answers.stray.first() {
         let names: Vec<String> = rows.iter().map(|r| r.name.clone()).collect();
         return fail(
@@ -948,11 +1005,18 @@ fn run_cameras(
             exit::INPUT,
         );
     }
+    if let Some(why) = skies.refusal {
+        return fail(
+            Diagnostic::error(camera::DW_RECORD_AT_BUILD.id(), why),
+            json,
+            exit::INPUT,
+        );
+    }
     opts.world_path = match resolve_world(build_dir, world) {
         Ok(w) => w,
         Err(d) => return fail(d, json, exit::INPUT),
     };
-    let emission = match camera::emit(&plan, &sheet, &opts) {
+    let emission = match camera::emit(&plan, &sheet, &rows, &opts) {
         Ok(e) => e,
         Err(d) => return fail(d, json, exit::INPUT),
     };

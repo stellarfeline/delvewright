@@ -604,11 +604,16 @@ fn the_instruments_that_close_the_hole_run_on_the_record_with_a_hole_in_it() {
 
 /// **Criterion 11 — byte identity.** Two builds of a campaign with a hand row
 /// write byte-identical `render-plan.json` and `manifest.json`, and `delvec
-/// cameras` over each writes byte-identical scenes.
+/// cameras` over each writes byte-identical scenes — and so do the overcast
+/// skies (spec-0079 criterion 4): the campaign is played in the rain, so the
+/// hand row's sky is DERIVED overcast (`noon+rain` from its row), and a second
+/// camera STATES an overcast sky of its own (`dusk+thunder`).
 #[test]
 fn a_hand_row_builds_byte_identically() {
     let (eye, _, _) = clear_eye_and_floor("plain-twice");
-    let rows = serde_json::json!([camera_row("hero", "hand", eye, 0.0, 10.0)]);
+    let mut stated = camera_row("stormy", "estimated", eye, 90.0, 10.0);
+    stated["sky"] = serde_json::json!({"time": "dusk", "weather": "thunder"});
+    let rows = serde_json::json!([camera_row("hero", "hand", eye, 0.0, 10.0), stated]);
     // `delvec cameras` refuses a world save that is not there; the scene bytes
     // name the save by path and depend on nothing it holds.
     let world = tmp("world");
@@ -618,6 +623,14 @@ fn a_hand_row_builds_byte_identically() {
     let mut outs = Vec::new();
     for run in ["a", "b"] {
         let camp = hello_with(&format!("twice-{run}"), Some(rows.clone()));
+        // Played in the rain, and the picture drawn in it (`DW0890` holds the two
+        // equal).
+        common::patch_file(&camp.join("world.json"), |v| {
+            v["content"]["weather"] = serde_json::json!("rain");
+        });
+        common::patch_file(&camp.join("design.json"), |v| {
+            v["content"]["references"][0]["weather"] = serde_json::json!("rain");
+        });
         let (code, out, dir) = build(&format!("twice-{run}"), &camp);
         assert_eq!(code, 0, "{out}");
         let scenes = tmp(&format!("scenes-{run}"));
@@ -632,6 +645,13 @@ fn a_hand_row_builds_byte_identically() {
             world.to_str().unwrap(),
         ]);
         assert!(r.status.success(), "{}", log(&r));
+        let said = log(&r);
+        assert!(
+            said.contains("sky: hero noon+rain derived from concept/keep class high")
+                && said.contains("sky: stormy dusk+thunder stated class low")
+                && said.contains("skies: 1 derived, 1 stated, over 2 camera(s); weathers emitted: {rain, thunder}"),
+            "{said}"
+        );
         let index = scenes.join("shot-index.json");
         let r = delvec(&[
             "index",
@@ -645,10 +665,17 @@ fn a_hand_row_builds_byte_identically() {
             json(&dir.join("manifest.json")),
             std::fs::read(scenes.join("hello-world_camera_hero.json")).unwrap(),
             std::fs::read(&index).unwrap(),
+            std::fs::read(scenes.join("hello-world_camera_stormy.json")).unwrap(),
         ));
     }
     assert_eq!(outs[0].0, outs[1].0, "render-plan.json");
     assert_eq!(outs[0].2, outs[1].2, "the hand row's scene");
+    assert_eq!(outs[0].4, outs[1].4, "the stated-overcast scene");
+    for (what, bytes) in [("derived", &outs[0].2), ("stated", &outs[0].4)] {
+        let v: serde_json::Value = serde_json::from_slice(bytes).unwrap();
+        assert_eq!(v["sky"]["mode"], "SOLID_COLOR", "{what}: {v}");
+        assert_eq!(v["fog"]["mode"], "UNIFORM", "{what}: {v}");
+    }
     assert_eq!(outs[0].3, outs[1].3, "the shot index");
     let inputs = &outs[0].1["inputs"];
     assert!(
@@ -677,6 +704,7 @@ fn the_record_s_documented_fields_are_the_reader_s_fields() {
     let sheet = camera::parse_sheet(
         br#"{"campaign_id":"c","cameras":[{"answers":"concept/a","exposure":1.0,
             "fov":70.0,"height":900,"name":"one","pitch":0.0,"pos":[0.5,70.0,0.5],
+            "sky":{"time":"dusk","weather":"rain"},
             "source":"estimated","spp":300,"width":1600,"yaw":0.0}]}"#,
     )
     .expect("the literal is a record");
@@ -684,6 +712,14 @@ fn the_record_s_documented_fields_are_the_reader_s_fields() {
     let mut fields: Vec<String> = value.as_object().unwrap().keys().cloned().collect();
     fields.extend(
         value["cameras"][0]
+            .as_object()
+            .unwrap()
+            .keys()
+            .cloned()
+            .collect::<Vec<String>>(),
+    );
+    fields.extend(
+        value["cameras"][0]["sky"]
             .as_object()
             .unwrap()
             .keys()
@@ -744,6 +780,6 @@ fn the_record_s_documented_fields_are_the_reader_s_fields() {
          mention(s) in the documented paragraph",
         fields.len()
     );
-    assert_eq!(fields.len(), 13, "the record's fields");
+    assert_eq!(fields.len(), 16, "the record's fields");
     assert!(named >= fields.len(), "every field named at least once");
 }

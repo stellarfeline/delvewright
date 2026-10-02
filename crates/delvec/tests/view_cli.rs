@@ -546,6 +546,72 @@ fn cameras_refuses_a_record_that_leaves_an_approved_image_unanswered() {
     }
 }
 
+/// **The sky binding line** (spec-0079 §6, criterion 9): `delvec cameras` prints
+/// one `sky:` line per camera and the `skies:` summary, every run. A record that
+/// states no sky prints `0 stated`, and — its rows being clear — the empty set of
+/// weathers, which is the line a creator whose rain delve renders clear reads it
+/// on; a record whose camera states a rain sky prints `1 stated` and `{rain}`.
+/// Refused or not: a camera restating its row's sky is counted in the
+/// denominator as refused.
+#[test]
+fn cameras_prints_the_sky_binding_line() {
+    let build_dir = tmp("cameras-sky-line");
+    std::fs::write(build_dir.join("render-plan.json"), render_plan_mini()).unwrap();
+    stub_world(&build_dir.join("world"));
+    let mut rain = a_camera("hall", "concept/hall");
+    rain["sky"] = serde_json::json!({"time": "dusk", "weather": "rain"});
+    let mut restated = a_camera("hall", "concept/hall");
+    restated["sky"] = serde_json::json!({"time": "dusk", "weather": "clear"});
+    for (tag, hall, code, lines) in [
+        (
+            "derived",
+            a_camera("hall", "concept/hall"),
+            0,
+            vec![
+                "sky: gate dusk+clear derived from concept/gate class low — the renderer's own clear sky",
+                "sky: hall dusk+clear derived from concept/hall class low",
+                "skies: 2 derived, 0 stated, over 2 camera(s); weathers emitted: {}",
+            ],
+        ),
+        (
+            "stated",
+            rain,
+            0,
+            vec![
+                "sky: hall dusk+rain stated class low — overcast cell low×rain: skyLight 1.6, \
+                 apparentSkyLight 0.6, sun 0.25, fog 0.002",
+                "skies: 1 derived, 1 stated, over 2 camera(s); weathers emitted: {rain}",
+            ],
+        ),
+        (
+            "refused",
+            restated,
+            2,
+            vec!["skies: 1 derived, 0 stated, over 2 camera(s) (1 refused); weathers emitted: {}"],
+        ),
+    ] {
+        let campaign = build_dir.join(tag);
+        camera_campaign(
+            &campaign,
+            serde_json::json!([a_camera("gate", "concept/gate"), hall]),
+        );
+        let result = Command::new(BIN)
+            .args(["cameras"])
+            .arg(&build_dir)
+            .arg("--campaign")
+            .arg(&campaign)
+            .arg("-o")
+            .arg(build_dir.join(format!("out-{tag}")))
+            .output()
+            .unwrap();
+        let stderr = String::from_utf8_lossy(&result.stderr);
+        assert_eq!(result.status.code(), Some(code), "{tag}: {stderr}");
+        for line in lines {
+            assert!(stderr.contains(line), "{tag}: `{line}` in:\n{stderr}");
+        }
+    }
+}
+
 /// A panorama fitted to the building its anchors stand in is framed on their
 /// span, not on the whole layout, and says so in its name.
 #[test]
