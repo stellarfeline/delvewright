@@ -1,0 +1,77 @@
+{
+  "campaign_id": "the-threshold",
+  "content": {
+    "areas": [],
+    "atmospheres": [
+      {
+        "attributes": {
+          "minecraft:audio/ambient_sounds": {
+            "additions": {
+              "sound": "minecraft:ambient.crimson_forest.additions",
+              "tick_chance": 0.0111
+            },
+            "loop": "minecraft:ambient.soul_sand_valley.loop",
+            "mood": {
+              "block_search_extent": 8,
+              "offset": 2.0,
+              "sound": "minecraft:ambient.soul_sand_valley.mood",
+              "tick_delay": 1200
+            }
+          },
+          "minecraft:audio/background_music": {},
+          "minecraft:audio/music_volume": 0.0,
+          "minecraft:visual/ambient_particles": [
+            {
+              "particle": {
+                "type": "minecraft:ash"
+              },
+              "probability": 0.02
+            },
+            {
+              "particle": {
+                "type": "minecraft:crimson_spore"
+              },
+              "probability": 0.004
+            }
+          ],
+          "minecraft:visual/cloud_color": "#e04a1424",
+          "minecraft:visual/cloud_fog_end_distance": 40.0,
+          "minecraft:visual/fog_color": "#56602f",
+          "minecraft:visual/fog_end_distance": 26.0,
+          "minecraft:visual/fog_start_distance": 1.0,
+          "minecraft:visual/sky_color": "#3b4a1e",
+          "minecraft:visual/sky_fog_end_distance": 30.0,
+          "minecraft:visual/sky_light_color": "#b6e07a",
+          "minecraft:visual/sky_light_factor": 0.55,
+          "minecraft:visual/star_brightness": 0.9,
+          "minecraft:visual/water_fog_color": "#120a16",
+          "minecraft:visual/water_fog_end_distance": 6.0
+        },
+        "climate": {
+          "downfall": 0.4,
+          "temperature": 0.8
+        },
+        "id": "atmosphere/wrong-place",
+        "precipitation": "none",
+        "tint": {
+          "dry_foliage": "#4a3a2a",
+          "foliage": "#5a4a2a",
+          "grass": "#6b6a2a",
+          "water": "#1a0f1f"
+        }
+      }
+    ],
+    "difficulty": "normal",
+    "min_players": 1,
+    "outro": "You came back through a door that opened onto the same wrong air on both sides.",
+    "premise": "A long hall, cut in two by a door. The near half is an ordinary afternoon. Past the door the air is wrong, and a bell stands in the middle of it.",
+    "seed": 20261002,
+    "target_minutes": 3,
+    "theme": "One stone hall whose far half stands under another sky.",
+    "time": "noon",
+    "title": "The Threshold",
+    "weather": "clear"
+  },
+  "dsl_version": "0.35.0",
+  "stage": "world"
+}

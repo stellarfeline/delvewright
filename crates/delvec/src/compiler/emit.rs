@@ -441,6 +441,25 @@ pub fn build_with_warnings(
             }
         })?;
         eprintln!("{}", atmosphere_binding(plan, &map).line());
+        // What the camera reads in each carried place: its fog and sky are the
+        // client's blend over the 4-cells within `BLEND_REACH`, so a place too
+        // small for its paint shows a sky mixed with the one outside it.
+        for p in map.places() {
+            let crate::compiler::horizon::PaintSource::Place { place, .. } = &p.source else {
+                continue;
+            };
+            match crate::compiler::horizon::standing_reach(plan, &map, place, &p.biome) {
+                Some((whole, eyes, best)) => eprintln!(
+                    "atmosphere reach: `{place}` — {whole} of {eyes} standing eye(s) read `{}` \
+                     whole; the best reads {:.1}% of it",
+                    p.biome,
+                    best * 100.0
+                ),
+                None => eprintln!(
+                    "atmosphere reach: `{place}` — unmeasured: an area states no floor to stand on"
+                ),
+            }
+        }
     }
 
     // The templates are the size their metadata says they are (DW0803). Bound
@@ -6394,7 +6413,7 @@ fn emit_quest_effect(plan: &Plan, eff: &QuestEffect, aud: Audience, body: &mut V
             }
         }
         // spec-0080 §3.3: a repaint is `fillbiome` over the volume — the
-        // region through `Plan::zone_box`, or the place's own bounds — with the
+        // region through `Plan::zone_box`, or the place's paint — with the
         // atmosphere's biome, or the ground biome for `atmosphere: null`,
         // through the one writer the bootstrap paint uses. An unresolvable
         // volume emits nothing: a dangling anchor or place is refused at

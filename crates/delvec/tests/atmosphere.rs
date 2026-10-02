@@ -565,3 +565,57 @@ fn every_build_prints_the_atmosphere_binding_line() {
     );
     let _ = std::fs::remove_dir_all(&out);
 }
+
+/// The blend (spec-0080 §2.2): the client reads every fog distance and sky
+/// colour as a weighted mean over the 4-cells within
+/// `horizon::BLEND_REACH` of the camera, so a carried place is painted that
+/// far past its own 4-cells — down into the ground under its floor, up over
+/// its headroom, sideways to the plan's region and the place's own chunks —
+/// and never toward a place under another sky. The fixture is The Threshold's
+/// first build: a 16×20 far half, carried, beside an uncarried near half; its
+/// play-space-only paint gave a standing eye at most 55.8% of the atmosphere
+/// (`horizon::tests::the_camera_reads_what_the_pinned_client_reads`), and its
+/// walker saw no fog.
+#[test]
+fn a_place_is_painted_as_far_as_the_camera_inside_it_reads() {
+    let out = std::env::temp_dir().join(format!("delvec-atmosphere-blend-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&out);
+    let run = std::process::Command::new(BIN)
+        .arg("build")
+        .arg(common::compiler_fixtures_dir().join("atmosphere-threshold"))
+        .arg("-o")
+        .arg(&out)
+        .arg("--prefabs")
+        .arg(common::prefabs_dir())
+        .output()
+        .unwrap();
+    let stderr = String::from_utf8_lossy(&run.stderr);
+    assert!(run.status.success(), "{stderr}");
+    let read = |f: &str| {
+        std::fs::read_to_string(out.join("datapack/data/the-threshold/function").join(f)).unwrap()
+    };
+    // The far half's play space is x 8200..8215, y 64..71, z 8217..8236 (its
+    // 4-cells reach z 8216): grown
+    // 12 down and up, sideways to the region's x and the far half's chunks in
+    // z, and not one cell toward the near half (z ≤ 8215), whose own sky is the
+    // horizon's.
+    assert_eq!(
+        read("atmosphere_bootstrap.mcfunction"),
+        "fillbiome 8192 52 8217 8223 83 8239 the-threshold:atmosphere/wrong-place\n"
+    );
+    // The bell repaints the near half with the far half's sky: the same growth,
+    // and nothing holds it back from a place already under that sky.
+    let bell = read("complete_o_ring_the_bell.mcfunction");
+    assert!(
+        bell.contains("fillbiome 8192 52 8192 8223 83 8223 the-threshold:atmosphere/wrong-place"),
+        "{bell}"
+    );
+    assert!(
+        stderr.contains(
+            "atmosphere reach: `node/far` — 48 of 320 standing eye(s) read \
+             `the-threshold:atmosphere/wrong-place` whole"
+        ),
+        "{stderr}"
+    );
+    let _ = std::fs::remove_dir_all(&out);
+}

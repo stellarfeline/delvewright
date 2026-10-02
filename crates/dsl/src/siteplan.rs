@@ -576,8 +576,9 @@ pub struct PlanBox {
     /// What closes it overhead.
     pub ceiling: Ceiling,
     /// **The sky this place stands under from the first tick** (spec-0080
-    /// §3.2): one of `world.atmospheres[]`, painted over the box's play space
-    /// at world setup — the same capability `areas[].atmosphere` is, on the
+    /// §3.2): one of `world.atmospheres[]`, painted at world setup over the
+    /// box's play space grown as far as the client's biome blend reads — the
+    /// same capability `areas[].atmosphere` is, on the
     /// other class of place with a world box. Absent: the horizon's biome.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub atmosphere: Option<crate::ids::AtmosphereId>,

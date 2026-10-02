@@ -767,8 +767,9 @@ pub struct Area {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mitigation: Option<AreaMitigation>,
     /// **The sky this place stands under from the first tick** (spec-0080
-    /// §3.2): one of `world.atmospheres[]`, painted over the area's placed
-    /// bounds at world setup. The volume is the placement's, never typed.
+    /// §3.2): one of `world.atmospheres[]`, painted at world setup over the
+    /// area's placed bounds grown up and down as far as the client's biome
+    /// blend reads. The volume is the placement's, never typed.
     /// Absent: the horizon's biome.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub atmosphere: Option<AtmosphereId>,
@@ -4941,8 +4942,8 @@ pub enum Verb {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         region: Option<StealthZone>,
         /// A whole place: an `area/…` id, or a site-plan box's `node/…`. Its
-        /// volume is the place's own bounds, the same the place's
-        /// `atmosphere` paints at setup.
+        /// volume is the cells the place's own `atmosphere` paints at setup:
+        /// its bounds, grown as far as the client's biome blend reads.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         place: Option<String>,
     },
