@@ -440,6 +440,46 @@ The pocket sits off the critical path on purpose. Blocking geometry on the route
 makes the build's render plan and the one `delvec snapshot` derives disagree —
 see below.
 
+## The ferry, and what a link is
+
+In the far hall's west corner is a **sealed cabin**: three walls and a roof,
+no door, no gap. The last beat of the delve, `obj/cross-the-strait`, stands
+inside it, and the only way in is the ferry. The party boards the deck
+(`obj/board-the-ferry`, which sets `flag/boarded`) and pulls the tiller:
+
+```json
+{ "id": "trigger/ferry-tiller", "at": "anchor/ferry-tiller", "on": { "on": "use" },
+  "once": false, "requires_flags": ["flag/boarded"],
+  "effects": [{ "type": "sequence", "steps": [
+    { "at_ticks": 0,  "effects": [{ "type": "cutscene", "seconds": 1, "path": [ … ] }] },
+    { "at_ticks": 22, "effects": [{ "type": "teleport",
+        "from": { "anchor": "anchor/ferry-deck", "extent": [1, 1, 1] },
+        "to": { "anchor": "anchor/ferry-landing" } }] } ] }] }
+```
+
+A `teleport` in a trigger declared `once: false` is a **link**: a carry the
+route proof takes where a walk fails, because a straggler left on the deck can
+pull the tiller again and follow. The build splices the pull into the path —
+`critical-path.json` carries a `trigger` step with `stand` (the deck cell the
+tiller is pulled from, inside the volume) and `transport` (the landing) — and
+the `DW0311 binding:` line counts one leg carried by a link. The hall's other
+teleport, on `obj/take-the-bone`'s completion, is a **gather**: whoever is in
+the march's box travels, once, and no proof leans on it. So
+`validation/teleport-gate.json` reads one link and one gather.
+
+The cutscene plays first and the teleport fires one tick after it ends: a
+cutscene's end puts every player back where it started, so a carry under the
+open bracket is undone. The layout graph draws the crossing as a `carry` edge
+from `node/exit` (the deck is its station) to `node/ferry-cabin` (the landing
+is its station), gated on the same flag, and nothing else joins the two.
+
+Four probes show what the engine refuses about it:
+`a-way-onward-that-fires-once` (the teleport on the cabin beat's own completion
+— a gather, `DW0311` naming it and prescribing the link), `a-lever-outside-its-own-boat`
+(the deck shrunk so no cell inside it reaches the tiller, `DW0932`),
+`a-crossing-the-cutscene-undoes` (the teleport at tick 0, `DW0933`) and
+`a-carry-the-graph-never-drew` (the edge removed, `DW0934`).
+
 ## The fight, and the floor it needs
 
 The far hall carries the one mandatory encounter — the muster, billed `elite`.

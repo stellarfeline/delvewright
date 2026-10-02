@@ -61,6 +61,16 @@
         "node": "node/near-hall",
         "objective": "obj/look-into-the-well",
         "quest": "quest/the-reliquary"
+      },
+      {
+        "node": "node/exit",
+        "objective": "obj/board-the-ferry",
+        "quest": "quest/far-hall"
+      },
+      {
+        "node": "node/ferry-cabin",
+        "objective": "obj/cross-the-strait",
+        "quest": "quest/far-hall"
       }
     ],
     "critical_path": [
@@ -69,7 +79,8 @@
       "node/far-hall",
       "node/loft",
       "node/far-hall",
-      "node/exit"
+      "node/exit",
+      "node/ferry-cabin"
     ],
     "edges": [
       {
@@ -179,10 +190,22 @@
         "b": "node/loft",
         "class": "vision",
         "id": "edge/loft-sightline"
+      },
+      {
+        "a": "node/exit",
+        "b": "node/ferry-cabin",
+        "class": "carry",
+        "gating": {
+          "flags": [
+            "flag/boarded"
+          ]
+        },
+        "id": "edge/ferry",
+        "one_way": "a-to-b"
       }
     ],
     "entry": "node/near-hall",
-    "goal": "node/exit",
+    "goal": "node/ferry-cabin",
     "nodes": [
       {
         "id": "node/near-hall",
@@ -216,7 +239,27 @@
       {
         "id": "node/exit",
         "intent": "goal-chamber",
-        "size_class": "alcove"
+        "size_class": "alcove",
+        "stations": [
+          {
+            "anchor": "anchor/ferry-deck",
+            "kind": "point",
+            "note": "the ferry's deck: the link's volume"
+          }
+        ]
+      },
+      {
+        "id": "node/ferry-cabin",
+        "intent": "cabin",
+        "note": "sealed: only the ferry's link reaches it",
+        "size_class": "alcove",
+        "stations": [
+          {
+            "anchor": "anchor/ferry-landing",
+            "kind": "point",
+            "note": "where the link puts the party down"
+          }
+        ]
       }
     ]
   },

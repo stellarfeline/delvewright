@@ -39,6 +39,24 @@ use serde::Serialize;
 /// generators' (`prefabs/invariants`).
 use prefab_invariants::{connections, document, invariants, walkplane, waterline};
 
+/// **The ferry cabin** (spec-0083): a sealed room in the far hall's west corner
+/// that no walk, gap or door reaches — the place only a link carries the party
+/// to. `(x0, x1, z0, z1)` inclusive, the cabin's footprint against the hall's
+/// west and back walls: its own walls stand on `x = x1` and `z = z0`, its roof
+/// is the course over the footprint, and its inside is `x0..x1`, `z0+1..=z1`,
+/// three courses tall. The west corner because the east one is where the
+/// stage-7 script plants its oak, and the far floor's scatter is told to avoid
+/// the cabin and the deck (`gallery/world-edits.json`).
+const CABIN: (i32, i32, i32, i32) = (1, 4, 25, 29);
+
+/// The cabin's roof course: walls stand `y ∈ 1..CABIN_ROOF_Y` and the roof is
+/// solid at `y = CABIN_ROOF_Y`.
+const CABIN_ROOF_Y: i32 = 4;
+
+/// The cabin's own light, hung from its roof: the hall's lantern grid is above
+/// the roof and lights nothing inside a sealed room.
+const CABIN_LANTERN: [i32; 3] = [2, 3, 27];
+
 /// MC 1.21.11 data version (ADR-0009).
 const DATA_VERSION: i32 = 4671;
 
@@ -491,6 +509,45 @@ const ANCHORS: &[Anchor] = &[
                — which is what makes the way load-bearing instead of scenery",
         role: None,
     },
+    Anchor {
+        name: "anchor/ferry-deck",
+        pos: [9, 1, 21],
+        facing: Some("east"),
+        trigger_block: None,
+        note: "the centre of the ferry's deck: the link's volume is this cell \
+               \u{b1}[1, 1, 1], and the party stands in its east column to pull \
+               the tiller. Off the patrol lane and clear of both bays' runtime \
+               regions, so nothing the campaign writes moves a deck cell",
+        role: None,
+    },
+    Anchor {
+        name: "anchor/ferry-tiller",
+        pos: [13, 1, 21],
+        facing: Some("west"),
+        trigger_block: None,
+        note: "the ferry's tiller: outside the deck's volume and within a strike \
+               of its east column only, so the volume shrunk to its middle column \
+               holds no cell a body pulls it from",
+        role: None,
+    },
+    Anchor {
+        name: "anchor/ferry-landing",
+        pos: [2, 1, 27],
+        facing: Some("south"),
+        trigger_block: None,
+        note: "inside the sealed cabin: where the link puts the party down, \
+               eight blocks west of the deck's east column so the bot can see \
+               the carry happen",
+        role: None,
+    },
+    Anchor {
+        name: "anchor/cabin",
+        pos: [2, 1, 29],
+        facing: Some("north"),
+        trigger_block: None,
+        note: "the cabin's far wall: the beat only the link reaches",
+        role: None,
+    },
     // Kept clear of the outer wall on purpose: a POV camera stands on an anchor
     // and looks along the leg it is walking, so an anchor one or two blocks from
     // a wall renders the wall — a flat frame, or one framing nothing declared.
@@ -861,6 +918,18 @@ fn block_at(
     let (lx0, lx1, lz0, lz1) = LOFT;
     if (lx0..=lx1).contains(&x) && (lz0..=lz1).contains(&z) && (1..=LOFT_TOP_Y).contains(&y) {
         return ("minecraft:stone", None);
+    }
+    // The ferry cabin: walls on the footprint's open edges, a roof over them,
+    // and its own lantern. Nothing cuts a way in.
+    let (fx0, fx1, fz0, fz1) = CABIN;
+    if (fx0..=fx1).contains(&x) && (fz0..=fz1).contains(&z) && (1..=CABIN_ROOF_Y).contains(&y) {
+        if [x, y, z] == CABIN_LANTERN {
+            return ("minecraft:lantern", Some(&[("hanging", "true")]));
+        }
+        if y == CABIN_ROOF_Y || x == fx1 || z == fz0 {
+            return ("minecraft:stone", None);
+        }
+        return ("minecraft:air", None);
     }
     if CONTAINERS.iter().any(|a| a.pos == [x, y, z]) {
         // Facing north, so the lid opens toward the walker coming down the hall.

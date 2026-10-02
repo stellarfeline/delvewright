@@ -4,7 +4,7 @@
     {
       "doc": "quests.json",
       "op": "replace",
-      "path": "/content/quests/1/on_objective_complete/obj~1clear-the-muster/16/grace_ticks",
+      "path": "/content/quests/1/on_objective_complete/obj~1clear-the-muster/15/grace_ticks",
       "value": 40
     }
   ],
