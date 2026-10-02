@@ -260,10 +260,13 @@ pub fn hour_burns(time: WorldTime) -> bool {
 /// repaint that reaches it (spec-0080 §4.2).
 struct Ground {
     map: crate::compiler::horizon::BiomeMap,
-    /// Every `set-atmosphere` with a resolvable volume, by effect address: the
-    /// 4-cells it paints, its biome, and whether rain falls in it.
-    repaints: BTreeMap<usize, (([i32; 3], [i32; 3]), String, bool)>,
+    /// Every `set-atmosphere` with a resolvable volume, by effect address.
+    repaints: BTreeMap<usize, Repaint>,
 }
+
+/// One repaint as the proof reads it: the 4-cells it paints, its biome, and
+/// whether rain falls in it.
+type Repaint = (([i32; 3], [i32; 3]), String, bool);
 
 impl Ground {
     fn of(plan: &Plan) -> Self {

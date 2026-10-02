@@ -23103,12 +23103,10 @@ fn atmosphere_bootstrap_lines(plan: &Plan) -> Vec<String> {
 /// jitters each sample by under half a 4-cell, so a block at 2 mod 4 always
 /// reads the cell it is in — the one place a reading is the cell's own.
 fn quart_sample(cells: ([i32; 3], [i32; 3])) -> [i32; 3] {
-    let mut out = [0; 3];
-    for i in 0..3 {
+    std::array::from_fn(|i| {
         let centre = (cells.0[i] + cells.1[i]).div_euclid(2);
-        out[i] = crate::compiler::atmosphere::quantize(centre) + 2;
-    }
-    out
+        crate::compiler::atmosphere::quantize(centre) + 2
+    })
 }
 
 /// A loaded block just outside `cells`, at 2 mod 4, beside `inside`: the first

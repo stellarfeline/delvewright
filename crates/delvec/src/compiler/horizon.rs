@@ -516,18 +516,17 @@ pub fn check_paints(
     map: &BiomeMap,
 ) -> Result<(), crate::compiler::failure::Failure> {
     let code = crate::compiler::atmosphere::DW_ATMOSPHERE_PAINT;
-    if let Some((a, b)) = meeting_places(map) {
-        if let (PaintSource::Place { place: pa, .. }, PaintSource::Place { place: pb, .. }) =
+    if let Some((a, b)) = meeting_places(map)
+        && let (PaintSource::Place { place: pa, .. }, PaintSource::Place { place: pb, .. }) =
             (&a.source, &b.source)
-        {
-            return Err(crate::compiler::failure::Failure {
-                code,
-                message: format!(
-                    "`{pa}` carries `{}` and `{pb}` carries `{}`, and the 4-cells they paint meet ({:?}..{:?} and {:?}..{:?}). A biome cell is 4×4×4, so a cell they share would belong to whichever `fillbiome` ran last — an order, not a declaration. Give the two places one atmosphere, or move them apart so that a whole 4-cell separates them.",
-                    a.biome, b.biome, a.cells.0, a.cells.1, b.cells.0, b.cells.1
-                ),
-            });
-        }
+    {
+        return Err(crate::compiler::failure::Failure {
+            code,
+            message: format!(
+                "`{pa}` carries `{}` and `{pb}` carries `{}`, and the 4-cells they paint meet ({:?}..{:?} and {:?}..{:?}). A biome cell is 4×4×4, so a cell they share would belong to whichever `fillbiome` ran last — an order, not a declaration. Give the two places one atmosphere, or move them apart so that a whole 4-cell separates them.",
+                a.biome, b.biome, a.cells.0, a.cells.1, b.cells.0, b.cells.1
+            ),
+        });
     }
     let columns = extent_columns(plan);
     for (_, path, eff) in crate::compiler::atmosphere::set_atmospheres(plan.campaign) {
