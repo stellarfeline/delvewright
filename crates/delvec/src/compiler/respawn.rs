@@ -513,7 +513,8 @@ fn site_effects(plan: &Plan) -> Vec<Sited> {
             | EffectRootOwner::ShortcutUnlock(_)
             | EffectRootOwner::OnDeath
             | EffectRootOwner::ShopOffer(_)
-            | EffectRootOwner::OnKill(_) => (Root::Ambient, CONSERVATIVE_ZERO, Vec::new()),
+            | EffectRootOwner::OnKill(_)
+            | EffectRootOwner::LoopCross(_) => (Root::Ambient, CONSERVATIVE_ZERO, Vec::new()),
         };
         let id = bundle;
         bundle += 1;

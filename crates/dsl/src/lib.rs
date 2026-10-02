@@ -75,9 +75,9 @@ pub use gate::{Gate, GateBinding, GateConsumer, GateSite, for_each_gate};
 pub use healthbar::{HealthBar, HealthBarBinding, health_bar_checks};
 pub use ids::{
     ActorId, AmbushId, AnchorId, AreaId, BranchId, BranchPointId, CampaignId, ClassId, DatumId,
-    DialogueId, EdgeId, EditBatchId, EndingId, FactId, FlagId, LethalVolumeId, NodeId, NpcId,
-    ObjectiveId, PoolId, PrefabId, QuestId, RegionId, ShortcutId, StateId, TimedGateId, TriggerId,
-    ViewId, VolumeId, WaveId,
+    DialogueId, EdgeId, EditBatchId, EndingId, FactId, FlagId, LethalVolumeId, LoopId, NodeId,
+    NpcId, ObjectiveId, PoolId, PrefabId, QuestId, RegionId, ShortcutId, StateId, TimedGateId,
+    TriggerId, ViewId, VolumeId, WaveId,
 };
 pub use l10n::{
     ArtNarrate, CANONICAL_LANG, L10nDoc, L10nKind, MARKER_SIGIL, OptionLabel, ScreenNarrate,
@@ -119,16 +119,16 @@ pub use stages::{
     DespawnStyle, DialogueContent, DialogueEffect, DialogueNode, DialogueOption, EffectSite,
     EnchantedItem, EncounterTier, EnvTrigger, EquipItem, EquipSlot, Facing, Fixture, Forfeit,
     Guard, Happening, HappeningSubject, HappeningVerb, Horizon, HorizonBase, HorizonSpec, ItemDrop,
-    KillFires, KitItem, LethalVolume, Lethality, Locomotion, Loot, LootItem, MAX_POTION_AMPLIFIER,
-    MAX_POTION_DURATION_TICKS, Mark, MobAttributes, MobDrop, MobEffect, MobEquipment, NarrateStyle,
-    Npc, NpcDialogue, NpcSkin, NpcsContent, Objective, OnFull, OnKill, Persona, Pieces,
-    PlannedQuest, PotionContents, PotionEffect, Prop, Quest, QuestEffect, QuestPlanContent,
-    QuestsContent, Relationship, Role, SequenceStep, Shop, ShopOffer, Shortcut, ShotStyle,
-    SkinModel, SlotDrop, SoundAt, Stake, StateCompare, StateDecl, StateDisplay, StateScope,
-    StateWrite, StealthZone, TimedGate, Trap, TrapDisarm, TrapEffect, TrapReset, TrapTrigger,
-    Trigger, TriggerAudience, TriggerOn, Verb, Wave, WaveLane, WaveMob, WaveSummon, WorldContent,
-    WorldDifficulty, WorldTime, WorldWeather, enchantment_component, is_potion_bearing_item,
-    offset_cell,
+    KillFires, KitItem, LethalVolume, Lethality, Locomotion, Loop, Loot, LootItem,
+    MAX_POTION_AMPLIFIER, MAX_POTION_DURATION_TICKS, Mark, MobAttributes, MobDrop, MobEffect,
+    MobEquipment, NarrateStyle, Npc, NpcDialogue, NpcSkin, NpcsContent, Objective, OnFull, OnKill,
+    Persona, Pieces, PlannedQuest, PotionContents, PotionEffect, Prop, Quest, QuestEffect,
+    QuestPlanContent, QuestsContent, Relationship, Role, SequenceStep, Shop, ShopOffer, Shortcut,
+    ShotStyle, SkinModel, SlotDrop, SoundAt, Stake, StateCompare, StateDecl, StateDisplay,
+    StateScope, StateWrite, StealthZone, TimedGate, Trap, TrapDisarm, TrapEffect, TrapReset,
+    TrapTrigger, Trigger, TriggerAudience, TriggerOn, Verb, Wave, WaveLane, WaveMob, WaveSummon,
+    WorldContent, WorldDifficulty, WorldTime, WorldWeather, enchantment_component,
+    is_potion_bearing_item, offset_cell,
 };
 pub use stages::{
     BodyRef, BodySite, BodySkinSite, BodyTraversalSite, body_sites, body_skin_sites,

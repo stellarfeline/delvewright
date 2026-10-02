@@ -586,6 +586,18 @@ pub mod codes {
     /// wording is refused rather than papered over: a gate that reports green
     /// while the player learns nothing is exactly the vacuous pass CLAUDE.md names.
     pub const LETHAL_MESSAGE_BLANK: DwCode = DwCode::new("DW0512", ExitTier::Build);
+    /// (spec-0086 §3.2, §3.4, §3.5) **A loop whose release is not a fact about the
+    /// party, or that has none.**
+    ///
+    /// One rule — *the gate is the release, and the release is the party's* —
+    /// asked four ways: a loop with no gate term at all (it holds forever, a
+    /// soft-lock spelled out); a `requires_state` term naming a `player`-scoped
+    /// datum (one player released and another looped is a party split in two);
+    /// a `counts` naming a `player`-scoped datum (for the same reason); and a
+    /// `teleport` inside `on_cross` (the body was just moved, and a second move in
+    /// the same tick is two carries with one position). Validation-tier (exit 1).
+    /// Prescription: a `party` datum, a flag, or a release the party reaches.
+    pub const LOOP_GATE: DwCode = DwCode::new("DW0949", ExitTier::Build);
     /// (spec-0062) **A killing volume and what shows it disagree.**
     ///
     /// One rule, three shapes, and every remedy each names is admitted by the

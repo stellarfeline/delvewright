@@ -144,6 +144,7 @@ fn root_repeats(owner: &EffectRootOwner<'_>) -> Option<&'static str> {
         EffectRootOwner::OnDeath => Some("the campaign's `on_death`, run on every death"),
         EffectRootOwner::ShopOffer(_) => Some("a shop offer, run each time it is bought"),
         EffectRootOwner::OnKill(_) => Some("a fight's `on_kill`, run for each credited kill"),
+        EffectRootOwner::LoopCross(_) => Some("a loop's `on_cross`, run on every move it makes"),
     }
 }
 

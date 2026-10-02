@@ -58,8 +58,9 @@ use serde_json::Value;
 /// (`fill-region` / `clear-region`) -> 33 (`give-effect` / `clear-effect` /
 /// `teleport`) -> 35 (spec-0032's `drop-stake`, and the seventh gate consumer,
 /// `ShopOffer`) -> 36 (spec-0042's `open-way`) -> **11** (one `Guard` under an
-/// effect's `when`, in place of twenty-six per-verb declarations).
-const GATE_SITES: usize = 11;
+/// effect's `when`, in place of twenty-six per-verb declarations) -> 12
+/// (spec-0086's `Loop`, the eighth gate consumer: the gate is the release).
+const GATE_SITES: usize = 12;
 
 /// The gate's fields, as they are spelled in the schema. Every site must declare
 /// all of them.

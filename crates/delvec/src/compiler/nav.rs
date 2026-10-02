@@ -1837,9 +1837,16 @@ impl World {
         // forced one, being a wall that additionally may not be stood on, and a
         // flood beats them all, because a flooded cell is everything a walled cell
         // is (impassable) and one thing more (not floor).
+        // A holding slab walls like an unforced fill and is never floor
+        // (spec-0086 §5.1), so it joins that set here and nowhere else.
+        let walled: BTreeSet<[i32; 3]> = if st.held.is_empty() {
+            st.unforced.clone()
+        } else {
+            st.unforced.union(&st.held).copied().collect()
+        };
         self.with_cleared(&st.cleared)
             .with_sealed(&st.solid)
-            .with_unforced(&st.unforced)
+            .with_unforced(&walled)
             .with_flooded(&st.flooded, &st.flood_regions)
     }
 
@@ -4627,6 +4634,27 @@ fn positions_of(
     }
     let mut transport_pending = false;
     for (i, step) in steps.iter().enumerate() {
+        // An exercise step (spec-0086 §5.2): the leg into it ends where the party
+        // stands on the approach, and the party goes on from the landing every
+        // crossing puts it down on. The carry between the two is marked like a
+        // crossing, so every reader of this enumeration skips it as a ride and
+        // the leg after it begins at the landing.
+        if let Step::Loop { pos, transport, .. } = step {
+            out.push(VisitedPos {
+                pos: *pos,
+                transport_before: transport_pending,
+                talk_to: false,
+                src_step: i,
+            });
+            transport_pending = false;
+            out.push(VisitedPos {
+                pos: *transport,
+                transport_before: true,
+                talk_to: false,
+                src_step: i,
+            });
+            continue;
+        }
         // A `trigger` step stands somewhere like an objective does: the party walks
         // to what it strikes, so the leg to it is a leg the proof owes.
         if let Some(pos) = step.pos() {
@@ -4771,6 +4799,12 @@ struct RegionState {
     /// carried for the same reason `flood_regions` is, so a route failure can NAME
     /// the beat instead of reporting geometry that reads perfectly open.
     unforced_regions: Vec<UnforcedBox>,
+    /// Cells a **holding loop's slab** covers on this leg (spec-0086 §5.1) —
+    /// impassable and never floor, the unforced shape, kept apart so a route
+    /// failure names the loop and the gate term that still holds it.
+    held: BTreeSet<[i32; 3]>,
+    /// The slabs behind `held`, each with its loop and gate in words.
+    held_regions: Vec<UnforcedBox>,
 }
 
 /// One box an unforced fill writes, with the beat that lays it in words — the blame
@@ -4791,6 +4825,17 @@ impl RegionState {
             && self.cleared.is_empty()
             && self.flooded.is_empty()
             && self.unforced.is_empty()
+            && self.held.is_empty()
+    }
+
+    /// This state with every holding loop released — the counterfactual a
+    /// route failure is tested against to say a loop, and not the geometry,
+    /// closed the leg (spec-0086 §5.1).
+    fn released(&self) -> RegionState {
+        let mut st = self.clone();
+        st.held.clear();
+        st.held_regions.clear();
+        st
     }
 
     /// This state as it would be **if every unforced fill were credited** — the
@@ -4805,6 +4850,24 @@ impl RegionState {
         st.unforced.clear();
         st
     }
+}
+
+/// The holding slabs a route's `cells` pass through (spec-0086 §5.1), each named
+/// with its loop and the gate term that holds it.
+fn held_blame_over(regions: &[UnforcedBox], cells: &[[i32; 3]]) -> Vec<String> {
+    let mut out: Vec<String> = regions
+        .iter()
+        .filter(|((lo, hi), _)| {
+            cells
+                .iter()
+                .any(|c| (0..3).all(|i| lo[i].min(hi[i]) <= c[i] && c[i] <= lo[i].max(hi[i])))
+        })
+        .map(|(_, why)| why.clone())
+        .collect();
+    if out.is_empty() {
+        out.push("a loop's slab while the loop holds".to_string());
+    }
+    out
 }
 
 /// The unforced boxes a route's `cells` stand in or on, each named with the beat that
@@ -4941,6 +5004,10 @@ impl World {
                     &mut st.flooded
                 }
                 RegionWrite::Unseal => continue,
+                RegionWrite::Hold => {
+                    st.held_regions.push((region, blame));
+                    &mut st.held
+                }
             };
             into.extend(crate::compiler::assembled::region_cells(region.0, region.1));
         }
@@ -5330,6 +5397,17 @@ fn route_visited(
         // pays nothing. Its blame ledger is taken by value for the same reason.
         let unforced_regions = st.unforced_regions.clone();
         let has_unforced = !st.unforced.is_empty();
+        // The loop counterfactual (spec-0086 §5.1): this leg with every holding
+        // slab released. Built only for a leg that has one, so every campaign
+        // without a loop routes over the identical single world.
+        let held_regions = st.held_regions.clone();
+        let released_owned;
+        let released: Option<&World> = if st.held.is_empty() {
+            None
+        } else {
+            released_owned = world.with_region_state(&st.released());
+            Some(&released_owned)
+        };
         let credited_owned;
         let credited: Option<&World> = if st.unforced.is_empty() {
             None
@@ -5532,6 +5610,31 @@ fn route_visited(
             }
         };
         if leg_world.find_path(start, goal).is_none() {
+            // A holding loop first (spec-0086 §5.1): when the leg routes with the
+            // slab released and not with it held, the corridor is endless for
+            // this party here, and the remedy is a release, never a walk.
+            if let Some(free) = released
+                && let (Some(s2), Some(g2)) = (
+                    free.snap_endpoint(from, false),
+                    free.snap_endpoint(to, pair[1].talk_to),
+                )
+                && let Some(cells) = free.find_path(s2, g2)
+            {
+                let held = held_blame_over(&held_regions, &cells).join("; ");
+                return Err(Failure {
+                    code: DW_CRITICAL_UNROUTABLE,
+                    message: format!(
+                        "critical path: the only route from {from:?} (floor {start:?}) to \
+                         {to:?} (floor {goal:?}) crosses {held}. A body that enters a holding \
+                         slab is returned to the approach on every crossing, so the party never \
+                         reaches the far side while the loop holds, and nothing the forced path \
+                         performs before this leg releases it. Release the loop before this leg \
+                         — set the flag its gate forbids, or raise the count it reads — from an \
+                         objective the party is forced to complete first, or route the forced \
+                         path so it does not cross the slab while the loop holds."
+                    ),
+                });
+            }
             // Lethality first: it is the strictly more specific answer, and the
             // generic one below would send the author to fix open geometry.
             if let Some(open) = open

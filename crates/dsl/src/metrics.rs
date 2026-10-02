@@ -360,6 +360,27 @@ pub const WALK_SPEED_BLOCKS_PER_SECOND: f64 = 4.317;
 /// Server ticks per second.
 pub const TICKS_PER_SECOND: f64 = 20.0;
 
+/// The fastest horizontal displacement a body makes in one tick without an
+/// item, in blocks: sprint-jumping with the jump held (spec-0086 §2.1).
+///
+/// Measured by `tools/spike-seamless-loop/` (the bot's own physics,
+/// prismarine-physics at the harness pin, on the pinned server): walking
+/// `0.2159`, sprinting `0.2806`, sprint-jumping `0.5878`. It is the bound a
+/// loop's horizontal slab is held to — a one-tick poll catches every crossing
+/// whose fastest tick is under the slab's thickness plus the body's reach.
+pub const POLL_HORIZONTAL_BLOCKS_PER_TICK: f64 = 0.5878;
+
+/// The speed a falling body approaches, in blocks per tick (spec-0086 §2.1):
+/// the fixed point `k·g / (1 − k)` of the fall law `v′ = k·(v + g)` with
+/// `k = 0.980`, `g = 0.080`, fitted over 87 consecutive per-tick pairs of one
+/// 184-block drop.
+///
+/// Measured by `tools/spike-seamless-loop/` with the same physics. It is the
+/// bound a loop's vertical slab is held to, the limit rather than the fastest
+/// tick one fall happened to reach (`3.333`): a one-cell slab caught 9 of 10
+/// drops and a three-cell slab 10 of 10.
+pub const POLL_FALL_BLOCKS_PER_TICK: f64 = 3.92;
+
 /// The fall distance in blocks below which vanilla deals no fall damage: damage
 /// is `ceil(distance − 3)` points, so a 3-block fall is free and a 4-block fall
 /// costs one.

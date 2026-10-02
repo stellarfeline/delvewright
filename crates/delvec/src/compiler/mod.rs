@@ -131,6 +131,7 @@ pub mod integrity;
 pub mod lethal;
 pub mod light;
 pub mod load;
+pub mod r#loop;
 pub mod loot;
 pub mod mark;
 pub mod massing;

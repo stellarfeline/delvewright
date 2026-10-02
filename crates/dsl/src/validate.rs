@@ -159,6 +159,7 @@ pub fn validate_campaign_with(
     // completability half (`DW0510` the forced route, `DW0511` the respawn seat)
     // is compiler-tier, because it needs the solved layout.
     lethal_volume_checks(c, anchors, &mut d);
+    loop_checks(c, anchors, &mut d);
     // spec-0032: a shop stands on a prefab anchor, and an anchor
     // no bound prefab provides is the same defect a lethal volume's is.
     shop_anchor_checks(c, anchors, &mut d);
@@ -521,6 +522,181 @@ fn lethal_volume_checks(c: &Campaign, anchors: &dyn AnchorRegistry, d: &mut Vec<
                      default that could be right for a cliff, a lava pit and an acid pool at \
                      once.",
                     v.id
+                ),
+            ));
+        }
+    }
+}
+
+/// Stage-5 loop structural checks (spec-0086): id syntax and uniqueness, the two
+/// anchors resolvable, and the release a fact about the party (`DW0949`).
+///
+/// Everything geometric — the slab's shape, the move clearing it, the closed and
+/// identical view — is about the solved layout and lives in the compiler
+/// (`compiler::loop`).
+fn loop_checks(c: &Campaign, anchors: &dyn AnchorRegistry, d: &mut Vec<Diagnostic>) {
+    let loops = &c.quests.content.loops;
+    if loops.is_empty() {
+        return;
+    }
+    let providers = AnchorProviders::build(c, anchors);
+    let scope_of: BTreeMap<&str, crate::stages::StateScope> = c
+        .quests
+        .content
+        .state
+        .iter()
+        .map(|s| (s.id.as_str(), s.scope))
+        .collect();
+    let mut seen_id: BTreeSet<&str> = BTreeSet::new();
+    for (i, l) in loops.iter().enumerate() {
+        let at = |tail: &str| format!("/content/loops/{i}{tail}");
+        if !l.id.is_valid_syntax() {
+            d.push(Diagnostic::error(
+                codes::ID_SYNTAX,
+                "quests",
+                at("/id"),
+                format!(
+                    "malformed loop id `{}` — loop ids must be lowercase kebab-case with the \
+                     `loop/` prefix (e.g. `loop/long-gallery`)",
+                    l.id
+                ),
+            ));
+        }
+        if !seen_id.insert(l.id.as_str()) {
+            d.push(Diagnostic::error(
+                codes::ID_DUPLICATE,
+                "quests",
+                at("/id"),
+                format!("duplicate loop id `{}`", l.id),
+            ));
+        }
+        for (field, anchor, what) in [
+            (
+                "/region/anchor",
+                l.region.anchor.as_str(),
+                "a loop's slab centre",
+            ),
+            ("/to/anchor", l.to.anchor.as_str(), "a loop's landing"),
+        ] {
+            if let Some(f) = station_kind_diag(
+                &providers,
+                anchor,
+                crate::layout::StationKind::Point,
+                what,
+                "quests",
+                at(field),
+            ) {
+                d.push(f);
+            }
+            if !providers.resolvable(anchor) {
+                d.push(Diagnostic::error(
+                    codes::ANCHOR_UNRESOLVED,
+                    "quests",
+                    at(field),
+                    format!(
+                        "loop `{}` names anchor `{anchor}` ({what}), which no prefab bound in \
+                         this campaign provides — {}",
+                        l.id,
+                        providers.anchor_remedy(
+                            "use an anchor the prefab exposes (anchor names come from prefab \
+                             metadata; do NOT invent one)"
+                        ),
+                    ),
+                ));
+            }
+        }
+        // `DW0949`: the gate is the release, and a loop with none holds forever.
+        if l.gate().is_empty() {
+            d.push(Diagnostic::error(
+                codes::LOOP_GATE,
+                "quests",
+                at(""),
+                format!(
+                    "loop `{}` declares no gate term — no `requires_flags`, no `forbids_flags`, \
+                     no `requires_state` — so it holds forever and a party that walks into it \
+                     can never leave: that is a soft-lock spelled out, not a mechanism. Give it \
+                     a release the party reaches: `forbids_flags: [flag/<found>]` ends it when \
+                     a flag is set, and `requires_state: [{{\"state\": <counts>, \"op\": \
+                     \"at-most\", \"value\": n}}]` on its own `counts` datum ends it after a \
+                     number of crossings",
+                    l.id
+                ),
+            ));
+        }
+        // …and the release is a fact about the party.
+        for (k, cmp) in l.requires_state.iter().enumerate() {
+            if scope_of.get(cmp.state.as_str()) == Some(&crate::stages::StateScope::Player) {
+                d.push(Diagnostic::error(
+                    codes::LOOP_GATE,
+                    "quests",
+                    at(&format!("/requires_state/{k}")),
+                    format!(
+                        "loop `{}` reads `{}` in its gate term `requires_state/{k}`, and that \
+                         datum is `player`-scoped: a release one player holds and another does \
+                         not splits the party into a looped half and a free half. The release \
+                         is a fact about the party — declare the datum `party`-scoped, or \
+                         release on a flag",
+                        l.id,
+                        cmp.state.as_str()
+                    ),
+                ));
+            }
+        }
+        if let Some(counts) = &l.counts {
+            match scope_of.get(counts.as_str()) {
+                None => d.push(Diagnostic::error(
+                    codes::STATE_UNDECLARED,
+                    "quests",
+                    at("/counts"),
+                    format!(
+                        "loop `{}` counts its crossings into `{}`, which the campaign never \
+                         declares. Add it to the stage-5 `state` list as a `party` datum, or \
+                         fix the id",
+                        l.id,
+                        counts.as_str()
+                    ),
+                )),
+                Some(crate::stages::StateScope::Player) => d.push(Diagnostic::error(
+                    codes::LOOP_GATE,
+                    "quests",
+                    at("/counts"),
+                    format!(
+                        "loop `{}` counts its crossings into `{}`, which is `player`-scoped: \
+                         the count a release reads is a fact about the party, and a count each \
+                         player keeps for themselves is a release one of them holds and \
+                         another does not. Declare the datum `party`-scoped",
+                        l.id,
+                        counts.as_str()
+                    ),
+                )),
+                Some(crate::stages::StateScope::Party) => {}
+            }
+        }
+        // A `teleport` inside `on_cross`, at any nesting depth.
+        fn teleports(effs: &[QuestEffect], path: &str, out: &mut Vec<String>) {
+            for (j, e) in effs.iter().enumerate() {
+                let here = format!("{path}/{j}");
+                if matches!(e.verb, crate::stages::Verb::Teleport { .. }) {
+                    out.push(here.clone());
+                }
+                for (pseg, _k, list) in e.nested_effect_lists_labeled() {
+                    teleports(list, &format!("{here}/{pseg}"), out);
+                }
+            }
+        }
+        let mut found = Vec::new();
+        teleports(&l.on_cross, &at("/on_cross"), &mut found);
+        for path in found {
+            d.push(Diagnostic::error(
+                codes::LOOP_GATE,
+                "quests",
+                path.clone(),
+                format!(
+                    "loop `{}` runs a `teleport` in its `on_cross` (term `{path}`): the body was \
+                     just moved by the loop, and a second move in the same tick is two carries \
+                     with one position. A place that looks different is a `teleport` of its \
+                     own, fired from a trigger the party reaches — take it out of the loop",
+                    l.id
                 ),
             ));
         }
@@ -2790,8 +2966,12 @@ fn state_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
                     // `evaluates_per_player` answers `None` here and the scope
                     // check for effects happens in the root walk below, which
                     // knows both the root's audience and the seams inside it.
+                    // A loop's gate is refused for a `player` datum by `DW0949`,
+                    // which names the release rather than the audience; one
+                    // fault, one code.
                     if decl.scope == crate::stages::StateScope::Player
                         && site.consumer.evaluates_per_player() == Some(false)
+                        && site.consumer != crate::gate::GateConsumer::Loop
                     {
                         d.push(Diagnostic::error(
                             codes::STATE_SCOPE_UNREACHABLE,
@@ -2836,6 +3016,14 @@ fn state_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
             }
         }
     });
+    // A loop's `counts` is a write: every move raises it by one (spec-0086 §3.4).
+    for l in &c.quests.content.loops {
+        if let Some(counts) = &l.counts
+            && declared.contains_key(counts.as_str())
+        {
+            written.insert(counts.as_str().to_string());
+        }
+    }
     // A `player`-scoped datum read or written where there is no acting player
     // has no subject, exactly as a `carrier: "one"` give does (`DW0357`).
     //
@@ -3133,7 +3321,8 @@ pub fn declares_bonfire(c: &Campaign) -> bool {
             | EffectSite::ShortcutUnlock { .. }
             | EffectSite::ShopOffer { .. }
             | EffectSite::OnDeath
-            | EffectSite::OnKill { .. } => false,
+            | EffectSite::OnKill { .. }
+            | EffectSite::LoopCross { .. } => false,
         };
         has_bonfire |= collected && eff.bonfire().is_some();
     });

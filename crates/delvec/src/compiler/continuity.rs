@@ -500,8 +500,13 @@ fn excluded_npcs(c: &Campaign) -> BTreeMap<String, &'static str> {
         | delvewright_dsl::EffectRootOwner::ShortcutUnlock(_)
         | delvewright_dsl::EffectRootOwner::ShopOffer(_)
         | delvewright_dsl::EffectRootOwner::OnDeath
-        | delvewright_dsl::EffectRootOwner::OnKill(_) => {
+        | delvewright_dsl::EffectRootOwner::OnKill(_)
+        | delvewright_dsl::EffectRootOwner::LoopCross(_) => {
             let reason = match site.owner {
+                delvewright_dsl::EffectRootOwner::LoopCross(_) => {
+                    "its lifecycle is driven from a loop's `on_cross` bundle, which fires on \
+                     every crossing any body makes while the loop holds — at any time, or never"
+                }
                 delvewright_dsl::EffectRootOwner::Trigger(_) => {
                     "its lifecycle is driven from an environment trigger, which the \
                      player may fire at any time (or never)"

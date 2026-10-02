@@ -830,6 +830,14 @@ pub enum RegionWrite {
     /// unseal still takes part in latest-write-wins, which is how a later
     /// `open-gate` cancels an earlier `close-gate`.
     Unseal,
+    /// **A loop's slab, while the loop holds** (spec-0086 §5.1): no block is
+    /// written, and no body passes — a body that enters is returned to the
+    /// approach — and none stands on it either. Impassable and never floor, the
+    /// shape an unforced fill takes, and named apart from one because the route
+    /// failure it causes is a release the party has not reached, not a beat it
+    /// may skip. An [`RegionWrite::Unseal`] at the step the gate shuts is what
+    /// cancels it.
+    Hold,
 }
 
 impl RegionWrite {
@@ -898,6 +906,19 @@ impl RegionEvent {
             fire_step,
             forced: true,
             blame: String::new(),
+        }
+    }
+
+    /// **A loop's slab, held** (spec-0086 §5.1): a [`RegionWrite::Hold`] at the
+    /// step the loop's gate opens, carrying the loop and the gate term that holds
+    /// it in words, for a route failure to name.
+    pub fn held(region: ([i32; 3], [i32; 3]), fire_step: usize, blame: impl Into<String>) -> Self {
+        RegionEvent {
+            region,
+            write: RegionWrite::Hold,
+            fire_step,
+            forced: true,
+            blame: blame.into(),
         }
     }
 
@@ -989,6 +1010,13 @@ pub struct Plan<'a> {
     /// for every campaign that declares none — which is what keeps the navigation
     /// world, the emitted tick and the build outputs byte-identical.
     pub lethal_volumes: Vec<LethalVolumePlan>,
+    /// Resolved loops (spec-0086), declaration-ordered. Empty for every campaign
+    /// that declares none, which keeps the region model, the emitted tick and
+    /// every output byte-identical.
+    pub loops: Vec<crate::compiler::r#loop::LoopPlan>,
+    /// Every exercise step on the default critical path (spec-0086 §5.2), in
+    /// path order.
+    pub loop_exercises: Vec<crate::compiler::r#loop::ExerciseRecord>,
     /// **Every placed furniture region** (spec-0065): `(anchor name, inclusive
     /// world box)` for each anchor with `role: furniture` on each placed piece, in
     /// area order, then placed-piece order, then anchor-name order — never hash
@@ -1551,6 +1579,25 @@ pub enum Step {
         /// An `approach` trigger's radius; `None` for a click.
         range: Option<u32>,
     },
+    /// **Exercise a loop** (spec-0086 §5.2): walk to `pos` on the approach, cross
+    /// the slab at `cross`, be moved by exactly `offset`, and repeat `times`
+    /// times. Spliced in front of the first step whose leg crosses a holding
+    /// slab; the party goes on from `transport`, the landing, where every
+    /// crossing puts it down.
+    Loop {
+        /// The `loop/<id>` exercised.
+        loop_id: String,
+        /// A standable cell on the approach, inside the span, on the route.
+        pos: [i32; 3],
+        /// The slab cell the route passes through.
+        cross: [i32; 3],
+        /// The loop's offset `d`.
+        offset: [i32; 3],
+        /// How many crossings the step makes.
+        times: u32,
+        /// `cross + offset`: where every crossing lands the body.
+        transport: [i32; 3],
+    },
     /// Assert a scoreboard objective value.
     AssertComplete {
         /// The objective (`dw.campaign`).
@@ -1572,7 +1619,10 @@ impl Step {
             | Step::Kill { objective_id, .. }
             | Step::Collect { objective_id, .. }
             | Step::Interact { objective_id, .. } => Some(objective_id.as_str()),
-            Step::SelectClass { .. } | Step::AssertComplete { .. } | Step::Trigger { .. } => None,
+            Step::SelectClass { .. }
+            | Step::AssertComplete { .. }
+            | Step::Trigger { .. }
+            | Step::Loop { .. } => None,
         }
     }
 
@@ -1590,7 +1640,8 @@ impl Step {
             | Step::Kill { pos, .. }
             | Step::Collect { pos, .. }
             | Step::Interact { pos, .. }
-            | Step::Trigger { pos, .. } => Some(*pos),
+            | Step::Trigger { pos, .. }
+            | Step::Loop { pos, .. } => Some(*pos),
             Step::SelectClass { .. } | Step::AssertComplete { .. } => None,
         }
     }
@@ -3071,6 +3122,7 @@ impl<'a> Plan<'a> {
         let (checkpoints, stealth_beats) = collect_v06_effects(campaign, &anchors, &cp.obj_step);
         let objective_steps = cp.obj_step;
         let trigger_steps = cp.trigger_step;
+        let loop_spliced = cp.loops;
 
         // ---- v0.6 traps (spec-0011) ----
         let traps = collect_traps(campaign, &anchors, &dispenser_cells);
@@ -3159,12 +3211,55 @@ impl<'a> Plan<'a> {
         region_events.extend(shortcuts.iter().map(|sc| {
             RegionEvent::forced(sc.gate_region, RegionWrite::of_block(&sc.gate_block), 0)
         }));
+        // spec-0086 §5.1–§5.2: every loop's slab as a gated seal, and the writes
+        // each exercise step's crossings perform, credited as forced at it.
+        region_events.extend(loop_spliced.events.iter().cloned());
         let strict_ancestor_steps = compute_strict_ancestor_steps(
             campaign,
             &objective_steps,
             &trigger_steps,
             cp.steps.len(),
         );
+        // ---- loops (spec-0086) ----
+        let loops = crate::compiler::r#loop::resolve(campaign, &anchors);
+        // `DW0950`: a loop the forced route never meets while it holds.
+        for (li, l) in loops.iter().enumerate() {
+            if loop_spliced.exercises.iter().any(|e| e.r#loop == l.id) {
+                continue;
+            }
+            let shut = loop_spliced
+                .holds
+                .get(li)
+                .and_then(|h| h.iter().position(|v| *v == Some(false)));
+            let index = campaign
+                .quests
+                .content
+                .loops
+                .iter()
+                .position(|d| d.id.as_str() == l.id)
+                .unwrap_or(0);
+            warnings.push(Diagnostic::warning(
+                crate::compiler::r#loop::DW_LOOP_UNMET,
+                "quests",
+                format!("/content/loops/{index}"),
+                match shut {
+                    Some(k) => format!(
+                        "loop `{}` is never met by the forced route while it holds — its gate is \
+                         first read shut at critical-path step {k}, and no leg before that crosses \
+                         its slab. Nobody is made to walk it; that is a design when the corridor \
+                         is endless only until a thing is found elsewhere, and a mechanism nobody \
+                         experiences when it is not",
+                        l.id
+                    ),
+                    None => format!(
+                        "loop `{}` is never met by the forced route: no leg of the critical path \
+                         crosses its slab, and its gate is never read shut on it. Nobody is made \
+                         to walk it",
+                        l.id
+                    ),
+                },
+            ));
+        }
         // v0.10 (spec-0031): where the party can be CARRIED rather than walk.
         let transit_teleports = collect_transit_teleports(campaign, &anchors);
 
@@ -3236,6 +3331,8 @@ impl<'a> Plan<'a> {
             critical_path: cp.steps,
             transport: cp.transport,
             critical_path_transport: cp.transport_by_step,
+            loops,
+            loop_exercises: loop_spliced.exercises,
             critical_path_sneak: cp.sneak_by_step,
             critical_path_cutscene: cp.cutscene_by_step,
             checkpoints,
@@ -3362,6 +3459,9 @@ impl<'a> Plan<'a> {
         region_events.extend(self.shortcuts.iter().map(|sc| {
             RegionEvent::forced(sc.gate_region, RegionWrite::of_block(&sc.gate_block), 0)
         }));
+        // The branch's own seals and exercise writes (spec-0086 §5.3), in the
+        // branch path's own step space.
+        region_events.extend(cp.loops.events.iter().cloned());
         let ancestors = compute_strict_ancestor_steps(
             self.campaign,
             &cp.obj_step,
@@ -4338,7 +4438,15 @@ pub struct CriticalPath {
     /// Trigger id → the `trigger` step that performs it on this path. The
     /// region-write model fires a trigger's openings at this step and at no
     /// other; a trigger absent here opens nothing any proof may lean on.
+    ///
+    /// **Every path act, keyed by its own id**: a loop's exercise step
+    /// (spec-0086 §5.2) is keyed here by its `loop/<id>` beside the triggers,
+    /// because it is the same kind of step to the ancestry — a party act no DAG
+    /// orders, which precedes every step after it on this path.
     pub(crate) trigger_step: BTreeMap<String, usize>,
+    /// The loop half of this path (spec-0086): the slab seals and exercise
+    /// writes in this path's step space, and the exercise records.
+    pub(crate) loops: crate::compiler::r#loop::Spliced,
 }
 
 /// Build the critical path: select first class, then each objective of the
@@ -4377,12 +4485,31 @@ fn build_critical_path(
     // place comparison possible at all.
     let history = crate::compiler::continuity::replay(campaign);
 
+    // spec-0086 §5.2: the loop half of this path — the flow walk's state step
+    // by step, the exercise steps it splices and the slab seals it reads off
+    // the gate. Inert (and never consulted) for a campaign with no loop.
+    let mut walk = flow.walk();
+    let data_of = |w: &crate::compiler::flow::Walk<'_, '_>| -> BTreeMap<String, Option<i64>> {
+        w.data()
+            .into_iter()
+            .map(|(k, v)| (k.to_string(), v))
+            .collect()
+    };
+    let mut loops = crate::compiler::r#loop::LoopSplice::new(
+        campaign,
+        anchors,
+        start.cloned(),
+        walk.flags().clone(),
+        data_of(&walk),
+    );
+
     // select-class: first declared class.
     if let Some(first) = campaign.classes.content.classes.first() {
         steps.push(Step::SelectClass {
             class_id: first.id.as_str().to_string(),
             command: "/trigger dw.class set 1".to_string(),
         });
+        loops.record();
     }
 
     // The branch-coherent playthrough: one world's completing quests in
@@ -4428,6 +4555,8 @@ fn build_critical_path(
     for (si, st) in path.steps.iter().enumerate() {
         let qid = st.quest.as_str();
         let Some(quest) = stage5.get(qid) else {
+            walk.take(st);
+            loops.advance(walk.flags().clone(), data_of(&walk));
             continue;
         };
         let area = campaign
@@ -4438,19 +4567,35 @@ fn build_critical_path(
             .find(|q| q.id.as_str() == qid)
             .map(|q| q.area.as_str())
             .unwrap_or("");
+        let entry = match anchors.entry_anchor(area) {
+            Some(ResolvedAnchor::Point { pos, .. }) => Some(*pos),
+            _ => None,
+        };
         for step in due.get(&si).into_iter().flatten() {
+            if let Some(pos) = step.pos()
+                && !loops.is_empty()
+            {
+                loops.before(&mut steps, &mut trigger_step, pos, area, entry, anchors);
+            }
             if let Step::Trigger { trigger_id, .. } = step {
                 trigger_step.insert(trigger_id.clone(), steps.len());
             }
             steps.push(step.clone());
+            loops.record();
+            if let Some(pos) = step.pos() {
+                loops.stand(area, pos);
+            }
         }
         let Some(obj) = quest
             .objectives
             .iter()
             .find(|o| o.id().as_str() == st.objective)
         else {
+            walk.take(st);
+            loops.advance(walk.flags().clone(), data_of(&walk));
             continue;
         };
+        let before = steps.len();
         {
             match obj {
                 Objective::TalkTo { id, npc, .. } => {
@@ -4789,12 +4934,56 @@ fn build_critical_path(
                 }
             }
         }
+        // The objective step is pushed; a leg into it that crosses a holding
+        // slab is exercised in front of it (spec-0086 §5.2), so it is lifted
+        // off, the exercise spliced, and put back.
+        walk.take(st);
+        if steps.len() == before + 1 {
+            let step = steps.pop().expect("the objective step was just pushed");
+            let step_area = obj_areas
+                .last()
+                .filter(|(_, _, idx)| *idx == before)
+                .map(|(_, a, _)| a.clone())
+                .unwrap_or_else(|| area.to_string());
+            if let Some(pos) = step.pos()
+                && !loops.is_empty()
+            {
+                let entry = match anchors.entry_anchor(&step_area) {
+                    Some(ResolvedAnchor::Point { pos, .. }) => Some(*pos),
+                    _ => None,
+                };
+                loops.before(
+                    &mut steps,
+                    &mut trigger_step,
+                    pos,
+                    &step_area,
+                    entry,
+                    anchors,
+                );
+            }
+            let pos = step.pos();
+            steps.push(step);
+            if let Some(last) = obj_areas.last_mut()
+                && last.2 == before
+            {
+                last.2 = steps.len() - 1;
+            }
+            loops.advance(walk.flags().clone(), data_of(&walk));
+            loops.record();
+            if let Some(pos) = pos {
+                loops.stand(&step_area, pos);
+            }
+        } else {
+            loops.advance(walk.flags().clone(), data_of(&walk));
+        }
     }
 
     steps.push(Step::AssertComplete {
         objective: "dw.campaign".to_string(),
         value: 1,
     });
+    loops.record();
+    let spliced = loops.finish();
 
     // ---- the legs the party must cross ----
     //
@@ -4930,6 +5119,15 @@ fn build_critical_path(
         .map(|(id, _, idx)| (id.clone(), *idx))
         .collect();
 
+    // An exercise step's transport is its landing (spec-0086 §5.2), marked on
+    // the same per-step channel a crossing is, so every reader of visited
+    // positions reads the leg after it as starting there.
+    for (i, s) in steps.iter().enumerate() {
+        if let Step::Loop { transport, .. } = s {
+            transport_by_step[i] = Some(*transport);
+        }
+    }
+
     Ok(CriticalPath {
         steps,
         transport,
@@ -4938,6 +5136,7 @@ fn build_critical_path(
         cutscene_by_step,
         obj_step,
         trigger_step,
+        loops: spliced,
     })
 }
 
@@ -5758,6 +5957,11 @@ pub(crate) enum EffectRoot<'a> {
     /// credited with one of the fight's bodies, so it has no step and is
     /// optional: nobody is forced to be credited with a kill. Carries the fight.
     OnKill(delvewright_dsl::Fight<'a>),
+    /// A loop's `on_cross` (spec-0086) — fired by a body crossing the holding
+    /// slab. Unforced from step 0 on its own (a mob crossing fires it too); the
+    /// crossings the path's exercise step performs are credited as forced at
+    /// that step by `Plan::build`, effect by effect, from the loop replay.
+    LoopCross(&'a delvewright_dsl::Loop),
 }
 
 /// **The area an [`EffectRoot`]'s bundle plays in, when it has one.**
@@ -5856,6 +6060,7 @@ pub(crate) fn for_each_effect_root<'a>(
             delvewright_dsl::EffectRootOwner::OnDeath => EffectRoot::OnDeath,
             delvewright_dsl::EffectRootOwner::ShopOffer(_) => EffectRoot::ShopOffer,
             delvewright_dsl::EffectRootOwner::OnKill(f) => EffectRoot::OnKill(f),
+            delvewright_dsl::EffectRootOwner::LoopCross(l) => EffectRoot::LoopCross(l),
         };
         f(
             &EffectRootSite {
@@ -5919,7 +6124,7 @@ pub(crate) fn for_each_gate_effect<'a>(
 /// nothing a body can stand on. Resolving the region without the block is what let
 /// that conclusion be assumed instead of derived, so there is deliberately no
 /// region-only variant of this lookup.
-fn gate_region_block_any(
+pub(crate) fn gate_region_block_any(
     anchors: &BTreeMap<(String, String), ResolvedAnchor>,
     name: &str,
 ) -> Option<([i32; 3], [i32; 3], String)> {
@@ -5937,7 +6142,7 @@ fn gate_region_block_any(
 /// core of [`Plan::point_any`], so the planning stage can resolve a box *while*
 /// building the `Plan` (which is where the region-write model is collected) rather
 /// than needing a finished one.
-fn point_any_in(
+pub(crate) fn point_any_in(
     anchors: &BTreeMap<(String, String), ResolvedAnchor>,
     anchor: &str,
 ) -> Option<[i32; 3]> {
@@ -5952,7 +6157,7 @@ fn point_any_in(
 /// Resolve an anchor-centred box (`anchor ± extent`) over a resolved-anchor map —
 /// the free-function core of [`Plan::zone_box`], for the same reason
 /// [`point_any_in`] exists.
-fn zone_box_in(
+pub(crate) fn zone_box_in(
     anchors: &BTreeMap<(String, String), ResolvedAnchor>,
     zone: &delvewright_dsl::StealthZone,
 ) -> Option<([i32; 3], [i32; 3])> {
@@ -6064,6 +6269,11 @@ fn collect_region_events(
                  credited with",
                 f.word(),
                 f.id()
+            ),
+            EffectRoot::LoopCross(l) => format!(
+                "the `on_cross` bundle of loop `{}` at `{}`, which fires only on a crossing \
+                 the path does not make",
+                l.id, site.path
             ),
             // The two DAG roots reach this arm only when their owning quest is
             // OPTIONAL (spec-0051 §8.6) — while it is mandatory they are forced
@@ -6216,7 +6426,8 @@ fn firing_of(
         | EffectRoot::ShortcutUnlock
         | EffectRoot::OnDeath
         | EffectRoot::ShopOffer
-        | EffectRoot::OnKill(_) => (0, false),
+        | EffectRoot::OnKill(_)
+        | EffectRoot::LoopCross(_) => (0, false),
     }
 }
 
