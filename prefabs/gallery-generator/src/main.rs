@@ -2098,13 +2098,9 @@ fn write_textures(out: &Path) {
 
 /// A `w`×`h` opaque RGB image of one colour.
 fn flat_png(w: u32, h: u32, c: [u8; 3]) -> Vec<u8> {
-    let mut raw = Vec::with_capacity((h * (1 + w * 3)) as usize);
-    for _ in 0..h {
-        raw.push(0);
-        for _ in 0..w {
-            raw.extend_from_slice(&c);
-        }
-    }
+    // Each scanline is filter type 0 (None) followed by its pixels.
+    let row: Vec<u8> = std::iter::once(0).chain((0..w).flat_map(|_| c)).collect();
+    let raw: Vec<u8> = (0..h).flat_map(|_| row.iter().copied()).collect();
     let mut z = flate2::write::ZlibEncoder::new(Vec::new(), Compression::new(6));
     z.write_all(&raw).expect("zlib write");
     let idat = z.finish().expect("zlib finish");

@@ -241,11 +241,20 @@ fn a_required_pack_is_written_into_server_properties_only_when_declared() {
     assert!(props.contains("require-resource-pack=true\n"), "{props}");
 }
 
+/// One refusal case: tag, rows, files, the code, and a phrase the message carries.
+type RefusalCase = (
+    &'static str,
+    serde_json::Value,
+    Vec<(&'static str, Vec<u8>)>,
+    &'static str,
+    &'static str,
+);
+
 /// Every refusal of spec-0084 §6, each on the shape it names, at `validate`.
 #[test]
 fn every_refusal_fires_on_the_shape_it_names() {
     let moon = |id: &str| moon_row(id);
-    let cases: Vec<(&str, serde_json::Value, Vec<(&str, Vec<u8>)>, &str, &str)> = vec![
+    let cases: Vec<RefusalCase> = vec![
         (
             "pre-pin-path",
             serde_json::json!([{ "id": "m", "replaces": "minecraft:environment/moon_phases",
