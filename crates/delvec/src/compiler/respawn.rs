@@ -32,7 +32,9 @@
 use delvewright_dsl::Verb;
 use std::collections::{BTreeMap, BTreeSet};
 
-use delvewright_dsl::{EffectRootOwner, QuestEffect, TriggerOn, for_each_effect_root};
+use delvewright_dsl::{QuestEffect, TriggerOn, for_each_effect_root};
+
+use crate::compiler::plan::{EffectRoot, GateSite};
 
 use crate::compiler::nav::World;
 use crate::compiler::plan::{CheckpointPlan, Plan};
@@ -68,8 +70,10 @@ enum Act {
 /// Which root fires a bundle — the part of the site this proof reads.
 #[derive(Clone, Debug, PartialEq, Eq)]
 enum Root {
-    /// A quest bundle: the party is forced to fire it, at a known step.
-    Forced,
+    /// A quest bundle (an objective's or a quest's completion). Whether the
+    /// party is forced to fire a line of it is not this proof's to decide: it is
+    /// [`Sited::path_forced`], read from `plan::firing_of`.
+    Quest,
     /// An environment trigger. `bearer` is the NPC whose body the trigger rides
     /// (`strike-npc`) — a trigger vanilla structurally cannot fire without.
     /// `approach` is its declared region, when it watches a place at a range.
@@ -104,6 +108,11 @@ struct Sited {
     /// line is still only reached by dying or being caught, so a proof that read
     /// it as forced would credit a removal on a route the party need never take.
     optional: bool,
+    /// Whether the exported path is guaranteed to fire this line — the ONE rule,
+    /// `plan::firing_of`, over `Plan::path_firing`: the beat is on the path, the
+    /// quest is not optional, and the replay fires the line with its whole gate
+    /// decided open. Never re-derived here.
+    path_forced: bool,
     root: Root,
     act: Act,
 }
@@ -115,10 +124,13 @@ impl Sited {
         self.requires.is_empty() && !self.negated
     }
 
-    /// Whether the party is FORCED to fire this line: a quest bundle, ungated,
-    /// and not inside a death or catch hook.
+    /// Whether the party is FORCED to fire this line: a quest bundle the path is
+    /// guaranteed to fire it from ([`Self::path_forced`]), ungated, and not
+    /// inside a death or catch hook. A trigger's line is never credited: its
+    /// sited step is the conservative zero, which would date a removal before
+    /// the path performs it.
     fn forced(&self) -> bool {
-        self.root == Root::Forced && self.unconditional() && !self.optional
+        self.root == Root::Quest && self.path_forced && self.unconditional() && !self.optional
     }
 }
 
@@ -469,24 +481,15 @@ fn distance(a: [i32; 3], b: [i32; 3]) -> f64 {
 /// enumeration (`delvewright_dsl::for_each_effect_root`) — so a new root cannot
 /// leave a staging beat invisible here.
 fn site_effects(plan: &Plan) -> Vec<Sited> {
+    let optional = plan.campaign.quest_plan.content.optional();
     let mut out: Vec<Sited> = Vec::new();
     let mut bundle = 0usize;
-    for_each_effect_root(plan.campaign, &mut |site, list| {
-        let (root, step, gate) = match &site.owner {
-            EffectRootOwner::ObjectiveComplete { objective, .. } => (
-                Root::Forced,
-                plan.objective_steps
-                    .get(*objective)
-                    .copied()
-                    .unwrap_or(CONSERVATIVE_ZERO),
-                Vec::new(),
-            ),
-            EffectRootOwner::QuestComplete { quest } => (
-                Root::Forced,
-                crate::compiler::plan::quest_complete_step(quest, &plan.objective_steps),
-                Vec::new(),
-            ),
-            EffectRootOwner::Trigger(t) => (
+    crate::compiler::plan::for_each_effect_root(plan.campaign, &mut |site, list| {
+        let (root, gate) = match site.root {
+            EffectRoot::ObjectiveComplete { .. } | EffectRoot::QuestComplete(_) => {
+                (Root::Quest, Vec::new())
+            }
+            EffectRoot::Trigger(t) => (
                 Root::Trigger {
                     id: t.id.as_str().to_string(),
                     bearer: t.on.npc_target().map(|n| n.as_str().to_string()),
@@ -495,43 +498,64 @@ fn site_effects(plan: &Plan) -> Vec<Sited> {
                         _ => None,
                     },
                 },
-                CONSERVATIVE_ZERO,
                 t.requires_flags
                     .iter()
                     .map(|f| f.as_str().to_string())
                     .collect(),
             ),
-            EffectRootOwner::TrapPayload(t) => (
+            EffectRoot::TrapPayload(t) => (
                 Root::Ambient,
-                CONSERVATIVE_ZERO,
                 t.requires_flags
                     .iter()
                     .map(|f| f.as_str().to_string())
                     .collect(),
             ),
-            EffectRootOwner::DialogueRespawn
-            | EffectRootOwner::ShortcutUnlock(_)
-            | EffectRootOwner::OnDeath
-            | EffectRootOwner::ShopOffer(_)
-            | EffectRootOwner::OnKill(_) => (Root::Ambient, CONSERVATIVE_ZERO, Vec::new()),
+            EffectRoot::DialogueRespawn
+            | EffectRoot::ShortcutUnlock
+            | EffectRoot::OnDeath
+            | EffectRoot::ShopOffer
+            | EffectRoot::OnKill(_) => (Root::Ambient, Vec::new()),
         };
         let id = bundle;
         bundle += 1;
         let mut line = 0usize;
-        let mut push = |eff: &QuestEffect, requires: Vec<String>, negated: bool, optional: bool| {
+        let mut push = |eff: &QuestEffect,
+                        pointer: &str,
+                        requires: Vec<String>,
+                        negated: bool,
+                        in_hook: bool| {
+            // When the line fires and whether the path is forced to fire it:
+            // the one reading, `plan::firing_of`. A quest bundle the path never
+            // plays lands at step 0 unforced; a trigger's line keeps the
+            // conservative zero, because the party may strike it whenever its
+            // gate holds.
+            let (fired_at, path_forced) = crate::compiler::plan::firing_of(
+                &GateSite {
+                    stage: site.stage,
+                    path: pointer.to_string(),
+                    root: site.root,
+                },
+                &plan.path_firing,
+                &optional,
+            );
+            let step = match root {
+                Root::Quest => fired_at,
+                _ => CONSERVATIVE_ZERO,
+            };
             out.push(Sited {
                 bundle: id,
                 line,
                 step,
                 requires,
                 negated,
-                optional,
+                optional: in_hook,
+                path_forced,
                 root: root.clone(),
                 act: act_of(eff),
             });
             line += 1;
         };
-        deep(list, &gate, false, false, &mut push);
+        deep(list, &site.path, &gate, false, false, &mut push);
     });
     out
 }
@@ -540,20 +564,25 @@ fn site_effects(plan: &Plan) -> Vec<Sited> {
 /// What [`deep`] hands each visited line: the effect, the gates it inherits,
 /// whether anything on the way down forbids a flag, and whether it sits inside a
 /// bundle only a death or a catch reaches.
-type LineVisitor<'a> = dyn FnMut(&QuestEffect, Vec<String>, bool, bool) + 'a;
+type LineVisitor<'a> = dyn FnMut(&QuestEffect, &str, Vec<String>, bool, bool) + 'a;
 
+/// `base` is the list's JSON pointer; a line's pointer is `base/<index>`, and a
+/// nested list's is `<line>/<segment>` — the spelling the gate-effect walk and
+/// the flow replay use, so `plan::firing_of` reads the same line.
 fn deep(
     list: &[QuestEffect],
+    base: &str,
     inherited: &[String],
     negated: bool,
     optional: bool,
     push: &mut LineVisitor<'_>,
 ) {
-    for eff in list {
+    for (i, eff) in list.iter().enumerate() {
+        let pointer = format!("{base}/{i}");
         let mut requires: Vec<String> = inherited.to_vec();
         requires.extend(eff.requires_flags().iter().map(|f| f.as_str().to_string()));
         let negated = negated || !eff.forbids_flags().is_empty();
-        push(eff, requires.clone(), negated, optional);
+        push(eff, &pointer, requires.clone(), negated, optional);
         for (pseg, _, inner) in eff.nested_effect_lists_labeled() {
             // `on_respawn` / `on_rest` / `on_caught` are reached by dying or by
             // being caught. Their root is a forced quest bundle and the lines
@@ -561,7 +590,14 @@ fn deep(
             // credit a removal on a route the party need never take.
             let optional =
                 optional || matches!(pseg.as_str(), "on_respawn" | "on_rest" | "on_caught");
-            deep(inner, &requires, negated, optional, push);
+            deep(
+                inner,
+                &format!("{pointer}/{pseg}"),
+                &requires,
+                negated,
+                optional,
+                push,
+            );
         }
     }
 }
@@ -940,7 +976,8 @@ mod tests {
             requires: requires.iter().map(|s| (*s).to_string()).collect(),
             negated: false,
             optional: false,
-            root: Root::Forced,
+            path_forced: true,
+            root: Root::Quest,
             act,
         }
     }
