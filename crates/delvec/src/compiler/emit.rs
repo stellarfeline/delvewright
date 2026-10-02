@@ -18453,7 +18453,7 @@ fn emit_assembly_packtests(plan: &Plan, out: &mut BuildOutput) {
     for p in asm::placed(plan) {
         let s = p.safe.clone();
         let id = p.decl.id.as_str();
-        let reset = vec![
+        let reset = [
             format!("kill @e[tag={}]", asm::tag(&s)),
             format!(
                 "scoreboard players set {} dw.sys 0",

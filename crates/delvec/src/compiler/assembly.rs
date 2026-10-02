@@ -243,6 +243,13 @@ pub struct StepSubject<'a> {
     pub landings: Vec<Landing>,
 }
 
+/// An inclusive box of cells, `(lo, hi)`.
+pub type CellBox = ([i32; 3], [i32; 3]);
+
+/// Whether a strike from somewhere the party can walk reaches a box, asked per
+/// performing trigger: `(trigger, lo, hi)`.
+pub type Reaches<'r> = dyn Fn(&str, [f64; 3], [f64; 3]) -> bool + 'r;
+
 /// What [`judge`] reads of one assembly: resolved, so it can be built by hand
 /// in a test.
 pub struct Subject<'a> {
@@ -261,7 +268,7 @@ pub struct Subject<'a> {
     /// The declared hitbox.
     pub hitbox: Option<&'a AssemblyHitbox>,
     /// The arming region, resolved, with the steps — `None` without `strikes`.
-    pub strikes: Option<(([i32; 3], [i32; 3]), Vec<StepSubject<'a>>)>,
+    pub strikes: Option<(CellBox, Vec<StepSubject<'a>>)>,
     /// `strike-assembly` triggers naming it, by id.
     pub struck_by: Vec<&'a str>,
     /// Of those, the ones the critical path performs.
@@ -308,7 +315,7 @@ pub struct Judged {
 pub fn judge(
     s: &Subject<'_>,
     population: &dyn Fn([i32; 3]) -> bool,
-    reaches: &dyn Fn(&str, [f64; 3], [f64; 3]) -> bool,
+    reaches: &Reaches<'_>,
 ) -> (Judged, Vec<Failure>) {
     let mut j = Judged::default();
     let mut out: Vec<Failure> = Vec::new();
@@ -691,7 +698,7 @@ impl AssemblyBinding {
 pub fn check(
     plan: &Plan<'_>,
     population: &dyn Fn([i32; 3]) -> bool,
-    reaches: &dyn Fn(&str, [f64; 3], [f64; 3]) -> bool,
+    reaches: &Reaches<'_>,
 ) -> (AssemblyBinding, Vec<Failure>) {
     let mut b = AssemblyBinding {
         declared: plan.campaign.quests.content.assemblies.len(),
