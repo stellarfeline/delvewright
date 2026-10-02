@@ -338,3 +338,189 @@ fn dw0925_refuses_a_wait_with_no_checkpoint() {
         "{with:?}"
     );
 }
+
+/// What the shipped tree says about a waiting player's answer channels
+/// (spec-0077 §5: a waiting player is asked nothing and answers nothing).
+#[derive(Debug)]
+struct AnswerLock {
+    /// Every trigger objective any shipped function declares.
+    triggers: std::collections::BTreeSet<String>,
+    /// Of those, the ones `rw_lock` does not reset for `@s`.
+    unlocked: Vec<String>,
+    /// Does `rw_start` lock on entry?
+    start_locks: bool,
+    /// The tick's lock line, if it is there and not held by a cutscene.
+    tick_lock: Option<usize>,
+    /// `scoreboard players enable` lines in the tick AFTER the lock line: they
+    /// would re-arm a waiting player's channel before the next command lands.
+    late_enables: Vec<String>,
+    /// `scoreboard players enable` lines outside the tick that do not name `@s`.
+    foreign_enables: Vec<(String, String)>,
+    /// `scoreboard players enable` lines in `rw_release`.
+    release_enables: usize,
+}
+
+impl AnswerLock {
+    fn holds(&self) -> bool {
+        !self.triggers.is_empty()
+            && self.unlocked.is_empty()
+            && self.start_locks
+            && self.tick_lock.is_some()
+            && self.late_enables.is_empty()
+            && self.foreign_enables.is_empty()
+            && self.release_enables == 0
+    }
+}
+
+/// Read every shipped (`datapack/`) function — the tier a player's server
+/// runs; `creator-datapack/` is a creator session's overlay and never ships.
+fn answer_lock(out: &BuildOutput) -> AnswerLock {
+    let funcs: BTreeMap<String, String> = out
+        .iter()
+        .filter(|(p, _)| p.starts_with("datapack/") && p.ends_with(".mcfunction"))
+        .filter_map(|(p, b)| {
+            let name = p.rsplit_once("/function/")?.1.strip_suffix(".mcfunction")?;
+            Some((name.to_string(), String::from_utf8_lossy(b).into_owned()))
+        })
+        .collect();
+    let triggers: std::collections::BTreeSet<String> = funcs
+        .values()
+        .flat_map(|b| b.lines())
+        .filter_map(|l| {
+            l.trim()
+                .strip_prefix("scoreboard objectives add ")?
+                .strip_suffix(" trigger")
+                .map(str::to_string)
+        })
+        .collect();
+    let lock = funcs.get("rw_lock").map(String::as_str).unwrap_or("");
+    let unlocked = triggers
+        .iter()
+        .filter(|t| {
+            !lock
+                .lines()
+                .any(|l| l == format!("scoreboard players reset @s {t}"))
+        })
+        .cloned()
+        .collect();
+    let call = format!("function {NS}:rw_lock");
+    let start_locks = funcs
+        .get("rw_start")
+        .is_some_and(|b| b.lines().any(|l| l == call));
+    let tick: Vec<&str> = funcs["tick"].lines().collect();
+    let tick_lock = tick
+        .iter()
+        .position(|l| *l == format!("execute as @a if score @s dw.rwait matches 1.. run {call}"));
+    let late_enables = tick
+        .iter()
+        .skip(tick_lock.map_or(0, |i| i + 1))
+        .filter(|l| l.contains("scoreboard players enable "))
+        .map(|l| l.to_string())
+        .collect();
+    let foreign_enables = funcs
+        .iter()
+        .filter(|(n, _)| n.as_str() != "tick")
+        .flat_map(|(n, b)| b.lines().map(move |l| (n, l)))
+        .filter(|(_, l)| {
+            l.contains("scoreboard players enable ") && !l.contains("scoreboard players enable @s ")
+        })
+        .map(|(n, l)| (n.clone(), l.to_string()))
+        .collect();
+    let release_enables = funcs
+        .get("rw_release")
+        .map_or(0, |b| b.matches("scoreboard players enable").count());
+    AnswerLock {
+        triggers,
+        unlocked,
+        start_locks,
+        tick_lock,
+        late_enables,
+        foreign_enables,
+        release_enables,
+    }
+}
+
+/// spec-0077 §5: every trigger objective the shipped tree declares — the
+/// class pick, the bonfire, each NPC's dialog, each interact — is locked for a
+/// waiting player on entry and on every tick of the wait, after every per-tick
+/// re-arm, whether or not a cutscene holds the clock; the release re-arms
+/// nothing of its own.
+#[test]
+fn a_waiting_player_has_every_answer_channel_locked() {
+    let out = build(&with_wait(10, false));
+    let a = answer_lock(&out);
+    println!(
+        "answer-lock binding: {} of {} trigger objective(s) reset by rw_lock: {:?}",
+        a.triggers.len() - a.unlocked.len(),
+        a.triggers.len(),
+        a.triggers
+    );
+    for kind in ["dw.class", "dw.rest", "dw.dlg_", "dw.i_"] {
+        assert!(
+            a.triggers.iter().any(|t| t.starts_with(kind)),
+            "the fixture declares no `{kind}` trigger: {:?}",
+            a.triggers
+        );
+    }
+    assert!(a.holds(), "{a:?}");
+    // Absent, nothing is locked.
+    assert!(
+        !build(&fixture()).contains_key(&format!("datapack/data/{NS}/function/rw_lock.mcfunction"))
+    );
+}
+
+/// The perturbations only the answer-lock check catches: a channel dropped
+/// from the lock, the entry lock removed, the tick lock held by a cutscene, and
+/// a per-tick re-arm moved after the lock.
+#[test]
+fn the_answer_lock_check_finds_each_hole() {
+    let base = build(&with_wait(10, false));
+    let path = |n: &str| format!("datapack/data/{NS}/function/{n}.mcfunction");
+    let edit = |n: &str, f: &dyn Fn(&str) -> String| {
+        let mut out = base.clone();
+        let body = String::from_utf8_lossy(&out[&path(n)]).into_owned();
+        let after = f(&body);
+        assert_ne!(after, body, "the perturbation of `{n}` changed nothing");
+        out.insert(path(n), after.into_bytes());
+        answer_lock(&out)
+    };
+
+    let dropped = edit("rw_lock", &|b| {
+        b.lines()
+            .filter(|l| !l.ends_with(" dw.rest"))
+            .map(|l| format!("{l}\n"))
+            .collect()
+    });
+    assert_eq!(dropped.unlocked, vec!["dw.rest".to_string()], "{dropped:?}");
+    assert!(!dropped.holds());
+
+    let no_entry = edit("rw_start", &|b| {
+        b.replace(&format!("function {NS}:rw_lock\n"), "")
+    });
+    assert!(!no_entry.start_locks && !no_entry.holds());
+
+    let held = edit("tick", &|b| {
+        b.replace(
+            "execute as @a if score @s dw.rwait matches 1.. run function",
+            "execute unless score #cs_live dw.sys matches 1.. as @a if score @s dw.rwait matches 1.. run function",
+        )
+    });
+    assert!(held.tick_lock.is_none() && !held.holds());
+
+    let late = edit("tick", &|b| {
+        let enable = b
+            .lines()
+            .find(|l| l.starts_with("scoreboard players enable @a dw.dlg_"))
+            .expect("a per-tick dialog re-arm")
+            .to_string();
+        let mut out: String = b
+            .lines()
+            .filter(|l| *l != enable)
+            .map(|l| format!("{l}\n"))
+            .collect();
+        out.push_str(&format!("{enable}\n"));
+        out
+    });
+    assert_eq!(late.late_enables.len(), 1, "{late:?}");
+    assert!(!late.holds());
+}

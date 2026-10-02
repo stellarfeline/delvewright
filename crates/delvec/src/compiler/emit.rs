@@ -3689,6 +3689,10 @@ fn emit_functions(
     fns.push(("place_verify".to_string(), lines(&place_verify)));
 
     // --- setup_finish: everything that must run on real placed structures ---
+    // spec-0077 §5: every answer channel the delve declares, read off the
+    // finished `setup` — the one place a trigger objective is declared — so the
+    // respawn wait locks each one, including any an emitter adds later.
+    let answer_channels = trigger_objectives(&setup);
     let mut setup = {
         let finished_setup = setup;
         fns.push(("setup".to_string(), {
@@ -4302,7 +4306,7 @@ fn emit_functions(
     // --- v0.6 checkpoint respawn dispatch (spec-0012) ---
     fns.extend(emit_checkpoint_functions(plan));
     // --- spec-0077 respawn wait ---
-    fns.extend(emit_respawn_wait_functions(plan, chrome));
+    fns.extend(emit_respawn_wait_functions(plan, chrome, &answer_channels));
     // --- spec-0016 §1 bonfire rest functions ---
     fns.extend(emit_bonfire_functions(plan));
     // --- spec-0016 §2 shortcut unlock functions ---
@@ -6960,6 +6964,11 @@ fn rw_watch_target() -> String {
 /// is one with a second player present. While a cutscene plays the wait is held
 /// whole: the cutscene owns every camera and its end restores every mode, so the
 /// clock resumes, and the state is re-applied, when it is over.
+///
+/// The lock line is NOT held by a cutscene: a waiting player answers nothing
+/// (spec-0077 §5) for the whole wait, and the per-tick `enable @a` lines near
+/// the top of the tick re-arm a dialog channel every tick. The lock runs after
+/// every one of them, so each tick ends with the waiting player's channels shut.
 fn respawn_wait_tick(plan: &Plan) -> Vec<String> {
     let Some(w) = respawn_wait(plan) else {
         return Vec::new();
@@ -6980,6 +6989,7 @@ fn respawn_wait_tick(plan: &Plan) -> Vec<String> {
             "execute if score {ALIVE} dw.sys matches 0 {party}as @a if score @s {RW_CLOCK} \
              matches 1.. run function {ns}:rw_release"
         ),
+        format!("execute as @a if score @s {RW_CLOCK} matches 1.. run function {ns}:rw_lock"),
         format!("execute {held}as @a if score @s {RW_CLOCK} matches 1.. run function {ns}:rw_tick"),
     ]
 }
@@ -6991,7 +7001,15 @@ fn respawn_wait_tick(plan: &Plan) -> Vec<String> {
 ///   play and they were not part of a wipe; alone, they wait only with `alone:
 ///   true`. Otherwise the respawn fires at once, exactly as without a wait.
 /// * `rw_start` enters the state: clock at 0, counted out of play for the rest
-///   of this tick, the observation tag, spectator.
+///   of this tick, the observation tag, spectator, and every answer channel
+///   locked.
+/// * `rw_lock` locks every trigger objective the delve declares (`answer_channels`,
+///   read off the finished `setup`) for `@s`: `scoreboard players reset` clears
+///   the score and revokes the permission, so `/trigger` is refused and no
+///   dispatch reads a stale answer. Run on entry and every tick of the wait.
+///   Release enables nothing: the normal flow re-arms each channel exactly as it
+///   would for any player — the per-tick `enable @a`, `class_arm`, or the
+///   bonfire / shop opening its own dialog.
 /// * `rw_tick` holds the state (a relog comes back in adventure and a cutscene's
 ///   end restores adventure, so mode and tag are re-applied), runs the clock,
 ///   shows the seconds left, and binds the view to a teammate in play unless the
@@ -7002,6 +7020,7 @@ fn respawn_wait_tick(plan: &Plan) -> Vec<String> {
 fn emit_respawn_wait_functions(
     plan: &Plan,
     chrome: &delvewright_dsl::Chrome,
+    answer_channels: &[String],
 ) -> Vec<(String, String)> {
     let Some(w) = respawn_wait(plan) else {
         return Vec::new();
@@ -7028,7 +7047,12 @@ fn emit_respawn_wait_functions(
         format!("scoreboard players remove {ALIVE} dw.sys 1"),
         format!("tag @s add {CUTSCENE_TAG}"),
         "gamemode spectator @s".to_string(),
+        format!("function {ns}:rw_lock"),
     ];
+    let lock: Vec<String> = answer_channels
+        .iter()
+        .map(|t| format!("scoreboard players reset @s {t}"))
+        .collect();
     let countdown = tr_with(
         &chrome.get(delvewright_dsl::chrome::RESPAWN_WAIT),
         &[
@@ -7070,6 +7094,7 @@ fn emit_respawn_wait_functions(
     let mut fns = vec![
         ("rw_begin".to_string(), lines(&begin)),
         ("rw_start".to_string(), lines(&start)),
+        ("rw_lock".to_string(), lines(&lock)),
         ("rw_tick".to_string(), lines(&tick)),
         ("rw_release".to_string(), lines(&release)),
     ];
@@ -7077,6 +7102,19 @@ fn emit_respawn_wait_functions(
         fns.push(("rw_watch_fire".to_string(), lines(&cp_seat_dispatch(plan))));
     }
     fns
+}
+
+/// Every trigger objective `setup` declares, in declaration order: the delve's
+/// answer channels, each a `/trigger` a non-operator player may run.
+fn trigger_objectives(setup: &[String]) -> Vec<String> {
+    setup
+        .iter()
+        .filter_map(|l| {
+            l.strip_prefix("scoreboard objectives add ")?
+                .strip_suffix(" trigger")
+                .map(str::to_string)
+        })
+        .collect()
 }
 
 /// One line per checkpoint: seat `@s` on the active checkpoint's cell.

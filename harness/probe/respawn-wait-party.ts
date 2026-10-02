@@ -2,7 +2,7 @@
 // (spec-0077 §6).
 //
 //   node harness/probe/respawn-wait-party.ts <host> <port> <container> <ns> \
-//     <bonfire> <wave> <trigger> <x,y,z> <seconds> [alone]
+//     <bonfire> <wave> <trigger> <x,y,z> <seconds> [npc=<id>:<option>] [alone]
 //
 // `<container>` is the server's container id (rcon goes through
 // `tools/lib/rcon.mjs`, the shared rejection rule). `<bonfire>` is the bonfire
@@ -10,6 +10,8 @@
 // id of a wave that fire re-seats (`spawn_<wave>`), `<trigger>` the safe id of an
 // `approach` trigger (`#trig_<trigger>` is its once-latch) and `<x,y,z>` the cell
 // it watches. `<seconds>` is the campaign's `world.respawn_wait.seconds`.
+// `npc=<id>:<option>` names an NPC's dialog trigger (`dw.dlg_<id>`) and an
+// option whose answer shows a dialog; the two-body run requires it.
 //
 // Two mineflayer clients join with auto-respawn OFF, so a dead body stays on its
 // death screen until the probe clicks *Respawn* for it. A re-seat is observed by
@@ -33,6 +35,12 @@
 //      and the second one back neither waits nor re-seats it again.
 //   6. Alone (`alone: false`), a death does not wait.
 //   7. Control: a player in play at the same trigger cell fires it.
+//   9. A waiting player answers nothing (spec-0077 §5): with every answer
+//      channel armed and an NPC's dialog opened and closed, a death waits, and
+//      each of the waiting player's own `/trigger`s — the NPC's dialog, the
+//      bonfire, the shop where the build has one, the class pick — is refused
+//      and shows no dialog; after the release the NPC's answer opens its dialog
+//      again and the bonfire's stays shut until a fire opens it.
 //
 // With the literal `alone` as the last argument it proves a build declaring
 // `alone: true` instead, with ONE body: a death waits, the watcher is held on the
@@ -44,8 +52,10 @@ import type { Bot } from "mineflayer";
 import { rconChannel } from "../../tools/lib/rcon.mjs";
 import { createHarnessBot } from "../src/client-loaded.ts";
 
-const [host, portText, container, ns, bonfireText, wave, trigger, cellText, secondsText, aloneArg] =
+const [host, portText, container, ns, bonfireText, wave, trigger, cellText, secondsText, ...rest] =
   process.argv.slice(2);
+const aloneArg = rest.includes("alone") ? "alone" : undefined;
+const npcArg = /^npc=([a-z0-9_]+):(\d+)$/.exec(rest.find((a) => a.startsWith("npc=")) ?? "");
 if (!host || !portText || !container || !ns || !bonfireText || !wave || !trigger || !cellText || !secondsText) {
   process.stderr.write(
     "usage: respawn-wait-party.ts <host> <port> <container> <ns> <bonfire> <wave> <trigger> <x,y,z> <seconds>\n",
@@ -194,6 +204,12 @@ if (aloneArg === "alone") {
   );
   process.exit(failures.length === 0 ? 0 : 1);
 }
+
+if (!npcArg) {
+  process.stderr.write("the two-body run needs npc=<id>:<option> (an NPC dialog option that shows a dialog)\n");
+  process.exit(2);
+}
+const [, npc, npcOption] = npcArg;
 
 let a = await join("rw-a");
 let b = await join("rw-b");
@@ -420,6 +436,68 @@ await guard("rw-b");
 await rcon.run(`tp rw-a ${cell[0] + 0.5} ${cell[1]} ${cell[2] + 0.5}`);
 await sleep(1000);
 check("control: a player in play at the cell fires the trigger", (await latch()) === 1, `#trig_${trigger}=${await latch()}`);
+
+// --- 9. a waiting player answers nothing (spec-0077 §5) ---
+//
+// Every dialog shown to rw-b is read off the raw `show_dialog` packet, and
+// every refusal off the raw `system_chat` packet: a refused `/trigger` is an
+// error the server sends whatever `sendCommandFeedback` says
+// (`commands.trigger.failed.unprimed`); an accepted one is silent under it.
+{
+  const shown: string[] = [];
+  const said: string[] = [];
+  const raw = b as unknown as { _client: { on(n: string, l: (p: unknown) => void): void } };
+  raw._client.on("show_dialog", (packet) => shown.push(JSON.stringify(packet)));
+  raw._client.on("system_chat", (packet) => said.push(JSON.stringify(packet)));
+  const UNPRIMED = "commands.trigger.failed.unprimed";
+  /** rw-b runs `/trigger <t> set <n>`: was it refused, and was a dialog shown? */
+  async function answer(objective: string, n: string): Promise<{ refused: boolean; dialogs: number }> {
+    shown.length = 0;
+    said.length = 0;
+    b.chat(`/trigger ${objective} set ${n}`);
+    await sleep(1000);
+    return { refused: said.some((j) => j.includes(UNPRIMED)), dialogs: shown.length };
+  }
+  const listed = await rcon.run("scoreboard objectives list");
+  const dlg = `dw.dlg_${npc}`;
+  const channels = [dlg, "dw.rest", "dw.class", "dw.shop"].filter((t) => listed.includes(`[${t}]`));
+  check("the build declares the channels the step answers on", channels.includes(dlg) && channels.includes("dw.rest"), `listed: ${channels.join(", ")}`);
+
+  // Control: rw-b, in play, answers the NPC and is shown the next dialog; it
+  // closes it (a closed dialog sends the server nothing).
+  const open = await answer(dlg, npcOption);
+  check("control: a player in play answering the NPC is shown its dialog", !open.refused && open.dialogs > 0, `refused=${open.refused}, ${open.dialogs} dialog(s) shown`);
+  // Every other channel armed, as an opened fire, shop and class screen leave it.
+  for (const t of channels) await rcon.run(`scoreboard players enable rw-b ${t}`);
+
+  await kill("rw-b");
+  await respawn(b);
+  const waiting = (await mode("rw-b")) === 3 && ((await clock("rw-b")) ?? 0) > 0;
+  check("a fall with every channel armed waits", waiting, `playerGameType=${await mode("rw-b")} dw.rwait=${await clock("rw-b")}`);
+  for (const t of channels) {
+    const r = await answer(t, t === dlg ? npcOption : "1");
+    check(`a waiting player's /trigger ${t} is refused and shows nothing`, waiting && r.refused && r.dialogs === 0, `refused=${r.refused}, ${r.dialogs} dialog(s) shown`);
+  }
+  {
+    const m = await mode("rw-b");
+    const c = await clock("rw-b");
+    check("answering changed nothing about the wait", m === 3 && c !== undefined && c > 0, `playerGameType=${m} dw.rwait=${c}`);
+  }
+
+  // The release re-arms nothing of its own: the NPC's channel is armed by the
+  // tick as for every player, the fire's only by a fire opening it.
+  {
+    const left = Math.max(0, seconds * 20 - ((await clock("rw-b")) ?? 0));
+    await sleep((left / 20) * 1000 + 1500);
+    const m = await mode("rw-b");
+    check("the wait ended", m === 2 && (await clock("rw-b")) === undefined, `playerGameType=${m} dw.rwait=${await clock("rw-b")}`);
+    const again = await answer(dlg, npcOption);
+    check("after the release the NPC's answer opens its dialog again", !again.refused && again.dialogs > 0, `refused=${again.refused}, ${again.dialogs} dialog(s) shown`);
+    const rest = await answer("dw.rest", "1");
+    check("after the release the bonfire's channel stays shut until a fire opens it", rest.refused && rest.dialogs === 0, `refused=${rest.refused}, ${rest.dialogs} dialog(s) shown`);
+  }
+}
+await guard("rw-b");
 
 // --- 6. alone, a death does not wait ---
 a.quit();
