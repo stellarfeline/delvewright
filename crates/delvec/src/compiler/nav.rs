@@ -12237,6 +12237,44 @@ mod tests {
         );
     }
 
+    /// spec-0086 §5.2: an exercise step is walked to, the carry to its landing
+    /// is marked like a crossing, and the next leg begins at the landing — the
+    /// one enumeration every consumer reads.
+    #[test]
+    fn an_exercise_step_marks_the_leg_out_of_it_from_the_landing() {
+        let steps = vec![
+            Step::Loop {
+                loop_id: "loop/g".into(),
+                pos: [2, 67, 16],
+                cross: [2, 67, 22],
+                offset: [0, 0, -6],
+                times: 2,
+                transport: [2, 67, 16],
+            },
+            Step::Reach {
+                objective_id: "obj/end".into(),
+                anchor_id: "anchor/end".into(),
+                pos: [2, 67, 41],
+                radius: 1,
+                completion: crate::compiler::reach::reach_completion([2, 67, 41], 1),
+            },
+        ];
+        let transports = vec![Some([2, 67, 16]), None];
+        let got: Vec<([i32; 3], bool, usize)> = positions_of(Some([2, 67, 2]), &steps, &transports)
+            .iter()
+            .map(|p| (p.pos, p.transport_before, p.src_step))
+            .collect();
+        assert_eq!(
+            got,
+            vec![
+                ([2, 67, 2], false, 0),
+                ([2, 67, 16], false, 0),
+                ([2, 67, 16], true, 0),
+                ([2, 67, 41], false, 1),
+            ]
+        );
+    }
+
     fn vp(pos: [i32; 3], transport_before: bool) -> VisitedPos {
         VisitedPos {
             pos,

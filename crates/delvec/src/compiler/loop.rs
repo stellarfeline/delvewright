@@ -1898,3 +1898,118 @@ fn check_one(
     }
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::compiler::assembled::Occupancy;
+    use crate::compiler::nav::{Premises, World};
+
+    fn world(solid: &[[i32; 3]], tall: &[[i32; 3]], flooded: &[[i32; 3]]) -> World {
+        World::from_occupancy(
+            Occupancy {
+                solid: solid.iter().copied().collect(),
+                tall: tall.iter().copied().collect(),
+                use_gates: BTreeSet::new(),
+                flooded: flooded.iter().copied().collect(),
+                partial: BTreeMap::new(),
+                waterloggable: BTreeSet::new(),
+                lava: BTreeSet::new(),
+            },
+            Premises::geometry_only(),
+        )
+    }
+
+    /// The sightline is `nav::walk_cells` stopped by `World::blocks_camera`: a
+    /// fence across the line stops it, water across it does not (spec-0086
+    /// criterion 4).
+    #[test]
+    fn a_fence_stops_the_sight_and_water_does_not() {
+        let eye = [[0.5, 1.62, 0.5]];
+        let target = [0, 1, 6];
+        let open = world(&[], &[], &[]);
+        assert_eq!(sight(&open, &eye, target).0, Sight::Seen);
+        // A fence on every cell of the plane between: the fence's own class is
+        // what blocks it, not a solid.
+        let fence: Vec<[i32; 3]> = (-2..=2)
+            .flat_map(|x| (-1..=4).map(move |y| [x, y, 3]))
+            .collect();
+        let fenced = world(&[], &fence, &[]);
+        assert_eq!(sight(&fenced, &eye, target).0, Sight::Hidden);
+        let flooded = world(&[], &[], &fence);
+        assert_eq!(sight(&flooded, &eye, target).0, Sight::Seen);
+        // The target cell itself may be a wall: it is what the eye sees.
+        let wall = world(&[target], &[], &[]);
+        assert_eq!(sight(&wall, &eye, target).0, Sight::Seen);
+    }
+
+    fn plan_loop(offset: [i32; 3]) -> LoopPlan {
+        LoopPlan {
+            id: "loop/t".into(),
+            safe: "t".into(),
+            area: "area/a".into(),
+            anchor_cell: [0, 2, 10],
+            slab: ([-1, 1, 10], [1, 3, 10]),
+            to_cell: shift([0, 2, 10], offset),
+            offset,
+            requires_flags: Vec::new(),
+            forbids_flags: vec!["flag/f".into()],
+            requires_state: Vec::new(),
+            counts: None,
+            on_cross: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn the_slab_reads_its_axis_its_approach_and_its_crossing_cell() {
+        let l = plan_loop([0, 0, -6]);
+        assert_eq!(l.axis(), Some(2));
+        assert_eq!(l.thickness(2), 1);
+        assert_eq!(l.cross(), [0, 1, 10]);
+        assert_eq!(l.transport(), [0, 1, 4]);
+        assert!(l.on_approach([0, 1, 4]));
+        assert!(!l.on_approach([0, 1, 11]));
+        assert!(l.beyond([0, 1, 11]));
+        assert_eq!(l.landing(), ([-1, 1, 4], [1, 3, 4]));
+        assert_eq!(plan_loop([0, 0, 0]).axis(), None);
+        assert_eq!(plan_loop([1, 0, -6]).axis(), None);
+    }
+
+    /// The seal is the gate: held from step 0, unsealed at the step it shuts,
+    /// held again when it reopens.
+    #[test]
+    fn the_seal_follows_the_gate_step_by_step() {
+        let l = plan_loop([0, 0, -6]);
+        let holds = [Some(true), None, Some(false), Some(false), Some(true)];
+        let terms = vec![String::new(); holds.len()];
+        let ev = seal_events(&l, &holds, &terms);
+        let shape: Vec<(usize, RegionWrite)> = ev.iter().map(|e| (e.fire_step, e.write)).collect();
+        assert_eq!(
+            shape,
+            vec![
+                (0, RegionWrite::Hold),
+                (2, RegionWrite::Unseal),
+                (4, RegionWrite::Hold)
+            ]
+        );
+    }
+
+    #[test]
+    fn a_gate_reads_flags_and_party_data_and_an_undatable_value_holds() {
+        let mut l = plan_loop([0, 0, -6]);
+        let mut st = GateState::default();
+        assert_eq!(st.holds(&l), Some(true));
+        st.flags.insert("flag/f".into());
+        assert_eq!(st.holds(&l), Some(false));
+        l.forbids_flags.clear();
+        l.requires_state = vec![StateCompare {
+            state: delvewright_dsl::StateId("state/n".into()),
+            op: CompareOp::AtMost,
+            value: 1,
+        }];
+        st.data.insert("state/n".into(), None);
+        assert_eq!(st.holds(&l), None, "undatable");
+        st.data.insert("state/n".into(), Some(2));
+        assert_eq!(st.holds(&l), Some(false));
+    }
+}
